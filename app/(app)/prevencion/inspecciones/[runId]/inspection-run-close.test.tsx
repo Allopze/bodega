@@ -65,6 +65,7 @@ const { readInspectionDrafts } = await import("@/lib/prevention/inspection-draft
 type DetailProps = React.ComponentProps<typeof InspectionRunDetail>
 
 const RUN_ID = "run-close-test"
+const USER = "user-1"
 
 const ITEM_TEXTO = { id: "item-1", label: "Observaciones", kind: "text" as const, required: false, countsForCompliance: false, danoPotencial: null }
 const ITEM_NUMERO = { id: "item-3", label: "Horómetro", kind: "number" as const, required: false, countsForCompliance: false, danoPotencial: null }
@@ -163,14 +164,14 @@ afterEach(() => {
 
 describe("cierre guardado en el dispositivo (P1-5)", () => {
   it("un cierre guardado antes se envía al abrir la pantalla, con señal y sin esperar el evento «online»", async () => {
-    await queueInspectionSubmission(CIERRE_GUARDADO)
+    await queueInspectionSubmission(CIERRE_GUARDADO, USER)
 
     montar()
 
     await waitFor(() => expect(completeInspectionRunAction).toHaveBeenCalledTimes(1))
     expect(completeInspectionRunAction).toHaveBeenCalledWith(expect.objectContaining({ runId: RUN_ID, expectedVersion: 7 }))
     await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith("Cierre enviado: la inspección quedó declarada ejecutada."))
-    expect(await getQueuedInspectionSubmission(RUN_ID)).toBeNull()
+    expect(await getQueuedInspectionSubmission(RUN_ID, USER)).toBeNull()
     expect(screen.queryByText("Cierre guardado en este dispositivo")).toBeNull()
   })
 
@@ -180,7 +181,7 @@ describe("cierre guardado en el dispositivo (P1-5)", () => {
       message: "La inspección cambió en otra sesión. Recarga y reintenta.",
       data: { code: "version_conflict" },
     })
-    await queueInspectionSubmission(CIERRE_GUARDADO)
+    await queueInspectionSubmission(CIERRE_GUARDADO, USER)
 
     montar()
 
@@ -196,19 +197,19 @@ describe("cierre guardado en el dispositivo (P1-5)", () => {
     // Lo guardado vuelve a ser trabajo en pantalla, listo para corregir y volver a declarar.
     await waitFor(() => expect(screen.queryByText("No se pudo enviar el cierre guardado en este dispositivo")).toBeNull())
     expect(campo("Observaciones").value).toBe("Del cierre guardado")
-    expect(await getQueuedInspectionSubmission(RUN_ID)).toBeNull()
+    expect(await getQueuedInspectionSubmission(RUN_ID, USER)).toBeNull()
   })
 
   it("«Descartar» borra el cierre rechazado sin tocar lo que hay en pantalla", async () => {
     completeInspectionRunAction.mockResolvedValue({ ok: false, message: "No se puede.", data: { code: "not_ready" } })
-    await queueInspectionSubmission(CIERRE_GUARDADO)
+    await queueInspectionSubmission(CIERRE_GUARDADO, USER)
 
     montar()
     const alerta = await screen.findByText("No se pudo enviar el cierre guardado en este dispositivo")
     fireEvent.click(within(alerta.closest("[role='alert']") as HTMLElement).getByRole("button", { name: "Descartar" }))
 
     await waitFor(() => expect(screen.queryByText("No se pudo enviar el cierre guardado en este dispositivo")).toBeNull())
-    expect(await getQueuedInspectionSubmission(RUN_ID)).toBeNull()
+    expect(await getQueuedInspectionSubmission(RUN_ID, USER)).toBeNull()
   })
 
   it("sin conexión, el diálogo de cierre ofrece guardarlo en el dispositivo y bloquea la edición", async () => {
@@ -225,7 +226,7 @@ describe("cierre guardado en el dispositivo (P1-5)", () => {
     fireEvent.click(within(dialogo).getByRole("button", { name: "Guardar cierre en este dispositivo" }))
 
     expect(await screen.findByText("Cierre guardado en este dispositivo")).toBeInTheDocument()
-    const guardado = await getQueuedInspectionSubmission(RUN_ID)
+    const guardado = await getQueuedInspectionSubmission(RUN_ID, USER)
     expect(guardado?.payload).toMatchObject({
       runId: RUN_ID,
       expectedVersion: 4,
@@ -253,7 +254,7 @@ describe("cierre guardado en el dispositivo (P1-5)", () => {
     await waitFor(() => expect(completeInspectionRunAction).toHaveBeenCalledTimes(1))
     await waitFor(() => expect(screen.queryByText("Cierre guardado en este dispositivo")).toBeNull())
     expect(toastSuccess).toHaveBeenCalledWith("Cierre enviado: la inspección quedó declarada ejecutada.")
-    expect(await getQueuedInspectionSubmission(RUN_ID)).toBeNull()
+    expect(await getQueuedInspectionSubmission(RUN_ID, USER)).toBeNull()
     expect(readInspectionDrafts(RUN_ID)).toHaveLength(0)
   })
 
@@ -269,7 +270,96 @@ describe("cierre guardado en el dispositivo (P1-5)", () => {
     await waitFor(() => expect(screen.queryByText("Cierre guardado en este dispositivo")).toBeNull())
     expect(campo("Observaciones")).toBeEnabled()
     expect(campo("Observaciones").value).toBe("Todo en orden")
-    expect(await getQueuedInspectionSubmission(RUN_ID)).toBeNull()
+    expect(await getQueuedInspectionSubmission(RUN_ID, USER)).toBeNull()
+  })
+})
+
+/*
+ * Un cierre guardado antes de que el servidor registrara quién lo dejó se enviaba
+ * con la sesión de quien abriera cualquier inspección: `executedByUserId` y las
+ * firmas quedaban a nombre de otra persona en un registro legal.
+ */
+describe("cierre guardado por otra persona en este dispositivo", () => {
+  it("no se envía al abrir la pantalla, no se muestra y se borra", async () => {
+    await queueInspectionSubmission(CIERRE_GUARDADO, "user-2")
+
+    montar()
+
+    await waitFor(async () => expect(await getQueuedInspectionSubmission(RUN_ID, "user-2")).toBeNull())
+    expect(completeInspectionRunAction).not.toHaveBeenCalled()
+    expect(screen.queryByText("Cierre guardado en este dispositivo")).toBeNull()
+    expect(screen.queryByText("No se pudo enviar el cierre guardado en este dispositivo")).toBeNull()
+  })
+
+  it("lo de la propia persona sí se sigue enviando aunque haya uno ajeno de otra inspección", async () => {
+    await queueInspectionSubmission({ ...CIERRE_GUARDADO, runId: "otra-ejecucion" }, "user-2")
+    await queueInspectionSubmission(CIERRE_GUARDADO, USER)
+
+    montar()
+
+    await waitFor(() => expect(completeInspectionRunAction).toHaveBeenCalledTimes(1))
+    expect(completeInspectionRunAction).toHaveBeenCalledWith(expect.objectContaining({ runId: RUN_ID }))
+  })
+})
+
+/*
+ * Reabrir una ejecución declarada (rectificar un error) sin salir de la pantalla
+ * dejaba el autoguardado y el espejo apagados para siempre, con la etiqueta en
+ * «Declarando ejecutada…»: se podía seguir editando sin que nada se guardara.
+ */
+describe("reabrir sin salir de la pantalla", () => {
+  const RESPUESTA = { answerId: "a1", sectionId: "sec-1", itemId: "item-1", itemLabel: "Observaciones", result: "recorded", value: "Primera", comment: null, needsConfirmation: false, evidence: [], danoPotencial: null }
+
+  function conEstado(status: string, version: number, extra: Partial<DetailProps> = {}) {
+    const base = propsDelDetalle()
+    return propsDelDetalle({ run: { ...base.run, status, version }, answers: [RESPUESTA] as never, ...extra })
+  }
+
+  it("declarar → reabrir → editar → vuelve a autoguardar", async () => {
+    const vista = montar()
+    fireEvent.change(campo("Observaciones"), { target: { value: "Primera" } })
+    fireEvent.click(within(abrirElCierre()).getByRole("button", { name: "Declarar ejecutada" }))
+    await waitFor(() => expect(completeInspectionRunAction).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+
+    // El servidor la deja ejecutada (v6) y alguien la reabre (v7).
+    vista.rerender(<InspectionRunDetail {...conEstado("completed", 6)} />)
+    vista.rerender(<InspectionRunDetail {...conEstado("in_progress", 7)} />)
+    await waitFor(() => expect(etiquetasDeEstado()).not.toContain("Declarando ejecutada…"))
+    saveInspectionAnswersAction.mockClear()
+
+    fireEvent.change(campo("Horómetro"), { target: { value: "1250" } })
+    expect(etiquetasDeEstado()).toContain("Cambios sin guardar")
+    expect(readInspectionDrafts(RUN_ID)).toHaveLength(1)
+
+    await waitFor(() => expect(saveInspectionAnswersAction).toHaveBeenCalledTimes(1), { timeout: 4_000 })
+    expect(saveInspectionAnswersAction).toHaveBeenCalledWith(expect.objectContaining({
+      runId: RUN_ID,
+      expectedVersion: 7,
+      answers: expect.arrayContaining([expect.objectContaining({ itemId: "item-3", value: "1250" })]),
+    }))
+    await waitFor(() => expect(etiquetasDeEstado()).toContain("Guardado"))
+  })
+
+  it("un «ya no se puede editar» seguido de reabrir también devuelve el autoguardado", async () => {
+    saveInspectionAnswersAction.mockResolvedValueOnce({
+      ok: false,
+      message: "No se pueden modificar respuestas de una inspección completada, cerrada o cancelada.",
+      data: { code: "not_editable" },
+    })
+    const vista = montar()
+    fireEvent.change(campo("Observaciones"), { target: { value: "Primera" } })
+    await waitFor(() => expect(etiquetasDeEstado()).toContain("Ya no se puede editar"), { timeout: 4_000 })
+
+    vista.rerender(<InspectionRunDetail {...conEstado("completed", 6)} />)
+    vista.rerender(<InspectionRunDetail {...conEstado("in_progress", 7)} />)
+    await waitFor(() => expect(etiquetasDeEstado()).not.toContain("Ya no se puede editar"))
+    saveInspectionAnswersAction.mockClear()
+
+    fireEvent.change(campo("Horómetro"), { target: { value: "1250" } })
+
+    await waitFor(() => expect(saveInspectionAnswersAction).toHaveBeenCalledTimes(1), { timeout: 4_000 })
+    expect(saveInspectionAnswersAction).toHaveBeenCalledWith(expect.objectContaining({ expectedVersion: 7 }))
   })
 })
 

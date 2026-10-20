@@ -8,6 +8,7 @@ import {
   flushInspectionSubmissionQueue,
   getQueuedInspectionSubmission,
   isInspectionSubmissionRejected,
+  purgeInspectionSubmissionsOfOthers,
   queueInspectionSubmission,
   type InspectionQueueFlushResult,
   type InspectionSubmissionSendResult,
@@ -32,6 +33,12 @@ function toEntry(entry: QueuedInspectionSubmission | null): OfflineCloseEntry | 
 
 export interface UseOfflineCloseQueueOptions {
   runId: string
+  /**
+   * Quién usa la pantalla. El cierre se guarda a su nombre y sólo se envía, se
+   * muestra o se recupera con su sesión: lo guardado por otra persona se borra
+   * sin enviarse (el servidor lo registraría como ejecutado por quien lo envía).
+   */
+  userId: string
   /**
    * `false` apaga todo: no lee la cola, no envía solo y `sendNow` no hace nada.
    * Pensado para una pantalla que no puede tener un cierre propio en cola.
@@ -65,7 +72,7 @@ export type QueueCloseResult =
  * dos canales competirían por el mismo `expectedVersion` y el que llegara
  * segundo se rechazaría por conflicto.
  */
-export function useOfflineCloseQueue({ runId, enabled = true, send, onDelivered }: UseOfflineCloseQueueOptions) {
+export function useOfflineCloseQueue({ runId, userId, enabled = true, send, onDelivered }: UseOfflineCloseQueueOptions) {
   const online = useOnlineStatus()
   const [entry, setEntry] = React.useState<OfflineCloseEntry | null>(null)
   const [loaded, setLoaded] = React.useState(false)
@@ -87,6 +94,13 @@ export function useOfflineCloseQueue({ runId, enabled = true, send, onDelivered 
     return () => { mountedRef.current = false }
   }, [])
 
+  // Barrido de lo que dejó otra sesión, aunque esta pantalla no pueda tener un
+  // cierre propio: es lo que impide que un cierre ajeno espere a quien llegue
+  // después. Con el almacenamiento bloqueado no hay nada que barrer.
+  React.useEffect(() => {
+    void purgeInspectionSubmissionsOfOthers(userId).catch(() => {})
+  }, [userId])
+
   // Lectura inicial: qué hay guardado para esta inspección.
   React.useEffect(() => {
     if (!enabled) {
@@ -95,14 +109,14 @@ export function useOfflineCloseQueue({ runId, enabled = true, send, onDelivered 
       return
     }
     let cancelled = false
-    getQueuedInspectionSubmission(runId)
+    getQueuedInspectionSubmission(runId, userId)
       .then((stored) => { if (!cancelled) setEntry(toEntry(stored)) })
       // IndexedDB bloqueado (ventana privada, datos del sitio bloqueados): sin
       // cola no hay cierre en espera, y la pantalla sigue funcionando.
       .catch(() => { if (!cancelled) setEntry(null) })
       .finally(() => { if (!cancelled) setLoaded(true) })
     return () => { cancelled = true }
-  }, [runId, enabled])
+  }, [runId, userId, enabled])
 
   const flush = React.useCallback((): Promise<InspectionQueueFlushResult | null> => {
     if (flightRef.current) return flightRef.current
@@ -118,8 +132,8 @@ export function useOfflineCloseQueue({ runId, enabled = true, send, onDelivered 
           const response = await sendRef.current(payload)
           if (response.ok && payload.runId === runId) outcome.delivered = response
           return response
-        })
-        stored = await getQueuedInspectionSubmission(runId)
+        }, userId)
+        stored = await getQueuedInspectionSubmission(runId, userId)
       } catch {
         // El almacenamiento falló: no hay nada que mostrar ni que reintentar
         // desde aquí, y una excepción suelta rompería la pantalla de captura.
@@ -137,7 +151,7 @@ export function useOfflineCloseQueue({ runId, enabled = true, send, onDelivered 
     })()
     flightRef.current = flight
     return flight
-  }, [runId])
+  }, [runId, userId])
 
   // Al montar con conexión y cada vez que vuelve la señal.
   React.useEffect(() => {
@@ -160,7 +174,7 @@ export function useOfflineCloseQueue({ runId, enabled = true, send, onDelivered 
     payload: Omit<OfflineInspectionSubmission, "runId"> & { runId?: string },
   ): Promise<QueueCloseResult> => {
     try {
-      const stored = toEntry(await queueInspectionSubmission({ ...payload, runId }))
+      const stored = toEntry(await queueInspectionSubmission({ ...payload, runId }, userId))
       if (!stored) return { ok: false, message: "No se pudo guardar el cierre en este dispositivo." }
       if (mountedRef.current) setEntry(stored)
       return { ok: true, entry: stored }
@@ -172,7 +186,7 @@ export function useOfflineCloseQueue({ runId, enabled = true, send, onDelivered 
           : "No se pudo guardar el cierre en este dispositivo. No cierres esta pestaña hasta enviarlo.",
       }
     }
-  }, [runId])
+  }, [runId, userId])
 
   /** «Descartar»: borra el cierre guardado sin enviarlo. `false` si no se pudo borrar. */
   const discard = React.useCallback(async (): Promise<boolean> => {

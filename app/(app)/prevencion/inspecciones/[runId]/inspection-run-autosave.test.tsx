@@ -606,6 +606,87 @@ describe("conflicto de versión (P1-4)", () => {
     expect(saveInspectionAnswersAction).not.toHaveBeenCalled()
   })
 
+  /*
+   * El rechazo por versión puede resolverse solo: otra sesión pasó la ejecución de
+   * planificada a en curso (o registró una desviación) y sólo subió la versión,
+   * sin tocar respuestas. El aviso, «Recuperar/Descartar» y el rechazo anterior
+   * seguían colgados hasta que la persona editara otra vez.
+   */
+  it("si el refresco sólo trae una versión más nueva, el conflicto desaparece y lo propio se reintenta", async () => {
+    const vista = await provocarConflicto()
+    expect(etiquetasDeEstado()).toContain("Cambió en otra sesión")
+    saveInspectionAnswersAction.mockClear()
+    saveInspectionAnswersAction.mockImplementation(
+      () => new Promise((resolve) => { setTimeout(() => resolve({ ok: true, data: { version: 3, answerRefs: [] } }), 50) }),
+    )
+
+    await vista.volverAMontar(conVersion(2, { sections: SECCION_DOS_TEXTOS }))
+    await dejarCorrerElDebounce()
+
+    expect(screen.queryByRole("alert")).toBeNull()
+    expect(etiquetasDeEstado()).not.toContain("Cambió en otra sesión")
+    expect(saveInspectionAnswersAction).toHaveBeenCalledTimes(1)
+    const envio = ultimoEnvio()
+    expect(envio.expectedVersion).toBe(2)
+    expect(envio.answers.map((answer) => [answer.itemId, answer.value])).toEqual([["item-1", "Lo mío"]])
+    expect(etiquetasDeEstado()).toContain("Guardado")
+  })
+
+  it("«Recuperar» no se queda ocupado si el refresco no trae nada más nuevo", async () => {
+    const vista = await provocarConflicto()
+    saveInspectionAnswersAction.mockClear()
+    saveInspectionAnswersAction.mockImplementation(
+      () => new Promise((resolve) => { setTimeout(() => resolve({ ok: true, data: { version: 2, answerRefs: [] } }), 50) }),
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Recuperar mis cambios" }))
+    // El refresco llega con la misma versión que ya se tenía.
+    await vista.volverAMontar({ sections: SECCION_DOS_TEXTOS })
+    await dejarCorrerElDebounce()
+
+    expect(screen.queryByRole("button", { name: "Recuperar mis cambios" })).toBeNull()
+    expect(screen.queryByRole("alert")).toBeNull()
+    expect(screen.getAllByLabelText("Respuesta de Observaciones")[0]).toHaveValue("Lo mío")
+    expect(saveInspectionAnswersAction).toHaveBeenCalledTimes(1)
+    expect(etiquetasDeEstado()).toContain("Guardado")
+  })
+
+  /*
+   * En terreno la respuesta de un guardado se pierde con la señal: el servidor lo
+   * aplicó (v → v+1), la persona siguió escribiendo y el reintento —con más
+   * respuestas— chocaba contra su propio guardado y decía «cambió en otra sesión».
+   */
+  it("un envío cuya respuesta se perdió no se confunde con otra sesión aunque haya más envíos después", async () => {
+    saveInspectionAnswersAction.mockRejectedValueOnce(new TypeError("Failed to fetch"))
+    saveInspectionAnswersAction.mockResolvedValueOnce(CONFLICTO)
+    const vista = await montar({ sections: SECCION_DOS_TEXTOS })
+    responder("Observaciones", "Lo mío")
+    await dejarCorrerElDebounce(1_300)
+    expect(saveInspectionAnswersAction).toHaveBeenCalledTimes(1)
+    // Sigue escribiendo mientras el primer envío (ya aplicado) queda sin confirmar.
+    responder("Otra nota", "Lo segundo")
+    await dejarCorrerElDebounce()
+    expect(saveInspectionAnswersAction).toHaveBeenCalledTimes(2)
+    expect(etiquetasDeEstado()).toContain("Cambió en otra sesión")
+
+    saveInspectionAnswersAction.mockImplementation(
+      () => new Promise((resolve) => { setTimeout(() => resolve({ ok: true, data: { version: 3, answerRefs: [] } }), 50) }),
+    )
+    // El servidor tiene exactamente lo del primer envío.
+    await vista.volverAMontar(conVersion(2, { sections: SECCION_DOS_TEXTOS, answers: [respuestaDelServidor("item-1", "Lo mío")] }))
+    await dejarCorrerElDebounce()
+
+    expect(screen.queryByRole("alert")).toBeNull()
+    expect(saveInspectionAnswersAction).toHaveBeenCalledTimes(3)
+    const envio = ultimoEnvio()
+    expect(envio.expectedVersion).toBe(2)
+    expect(envio.answers.map((answer) => [answer.itemId, answer.value]).sort()).toEqual([
+      ["item-1", "Lo mío"],
+      ["item-2", "Lo segundo"],
+    ])
+    expect(etiquetasDeEstado()).toContain("Guardado")
+  })
+
   it("una inspección que ya no se puede editar lo dice y no reintenta", async () => {
     saveInspectionAnswersAction.mockResolvedValue({
       ok: false,
@@ -641,6 +722,76 @@ describe("conflicto de versión (P1-4)", () => {
     })
     expect(saveInspectionAnswersAction).toHaveBeenCalledTimes(2)
     expect(etiquetasDeEstado()).toContain("Guardado")
+  })
+})
+
+/**
+ * Una ubicación capturada por otra sesión llegaba al estado «persistido» pero no
+ * a la pantalla: ésta quedaba «Cambios sin guardar» y mandaba un guardado con
+ * coordenadas nulas que subía la versión sin que nadie cambiara nada.
+ */
+describe("la ubicación que guardó otra sesión", () => {
+  it("se adopta en pantalla: sigue «Guardado» y no manda un guardado inútil", async () => {
+    const vista = await montar()
+    expect(etiquetasDeEstado()).toContain("Guardado")
+
+    await vista.volverAMontar(conVersion(2, { run: { ...propsDelDetalle().run, locationLatitude: "-33.4500", locationLongitude: "-70.6600", version: 2 } }))
+    await dejarCorrerElDebounce(3_000)
+
+    expect(etiquetasDeEstado()).toContain("Guardado")
+    expect(etiquetasDeEstado()).not.toContain("Cambios sin guardar")
+    expect(saveInspectionAnswersAction).not.toHaveBeenCalled()
+  })
+
+  it("no pisa una ubicación que esta pantalla capturó y todavía no envió", async () => {
+    Object.defineProperty(window.navigator, "geolocation", {
+      configurable: true,
+      value: { getCurrentPosition: (ok: (position: unknown) => void) => ok({ coords: { latitude: -33.4489, longitude: -70.6693 } }) },
+    })
+    const vista = await montar()
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Capturar ubicación" })) })
+
+    await vista.volverAMontar(conVersion(2, { run: { ...propsDelDetalle().run, locationLatitude: "-10.000000", locationLongitude: "-20.000000", version: 2 } }))
+    await dejarCorrerElDebounce()
+
+    expect(saveInspectionAnswersAction).toHaveBeenCalledTimes(1)
+    expect(saveInspectionAnswersAction.mock.calls[0]?.[0]).toMatchObject({
+      expectedVersion: 2, locationLatitude: "-33.448900", locationLongitude: "-70.669300",
+    })
+  })
+})
+
+/**
+ * Los espejos del dispositivo de otra persona, o abandonados hace semanas,
+ * quedaban en claro en un equipo compartido: sólo se limpiaba el de la ejecución
+ * que alguien abriera, o todo al cerrar sesión.
+ */
+describe("barrido de espejos al abrir cualquier inspección (SEG-03)", () => {
+  const DIA = 86_400_000
+  const haceDias = (dias: number) => new Date(Date.now() - dias * DIA).toISOString()
+
+  function sembrar() {
+    writeInspectionDraft("otra-ejecucion-ajena", { version: 1, drafts: { "sec-1::item-1": filaDelEspejo("secreto") }, userId: "user-ajeno" })
+    writeInspectionDraft("otra-ejecucion-vieja", { version: 1, drafts: { "sec-1::item-1": filaDelEspejo("viejo") }, userId: "user-1", savedAt: haceDias(31) })
+    writeInspectionDraft("otra-ejecucion-propia", { version: 1, drafts: { "sec-1::item-1": filaDelEspejo("mío") }, userId: "user-1", savedAt: haceDias(2) })
+  }
+
+  it("borra los de otro usuario y los de más de 30 días de OTRAS ejecuciones, y deja los propios recientes", async () => {
+    sembrar()
+    await montar()
+
+    expect(readInspectionDrafts("otra-ejecucion-ajena")).toHaveLength(0)
+    expect(readInspectionDrafts("otra-ejecucion-vieja")).toHaveLength(0)
+    expect(readInspectionDrafts("otra-ejecucion-propia")).toHaveLength(1)
+  })
+
+  it("también al abrir una ejecución que esta persona sólo puede leer", async () => {
+    sembrar()
+    await montar({ canExecute: false })
+
+    expect(readInspectionDrafts("otra-ejecucion-ajena")).toHaveLength(0)
+    expect(readInspectionDrafts("otra-ejecucion-vieja")).toHaveLength(0)
+    expect(readInspectionDrafts("otra-ejecucion-propia")).toHaveLength(1)
   })
 })
 

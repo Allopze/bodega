@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { reportBoundaryError } from "@/lib/observability/sentry-client"
 import { toast } from "@/lib/toast"
 
 export type OperationResult = {
@@ -94,6 +95,13 @@ export function useOperation(options?: OperationOptions) {
         result = await operation()
       } catch (error) {
         const offline = isOfflineFailure(error)
+        // Un fallo de red tiene su propio aviso; cualquier otra excepción es un
+        // defecto o un error del servidor y no puede perderse en silencio: antes
+        // llegaba al error boundary, que la registraba en la consola y en Sentry.
+        if (!offline) {
+          console.error(error)
+          reportBoundaryError(error instanceof Error ? error : new Error(String(error)))
+        }
         result = { ok: false, offline, message: offline ? OFFLINE_MESSAGE : GENERIC_FAILURE_MESSAGE }
       }
       if (!result.ok && result.fieldErrors) setFieldErrors(result.fieldErrors)

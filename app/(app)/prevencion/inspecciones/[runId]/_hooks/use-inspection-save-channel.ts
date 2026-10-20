@@ -100,6 +100,9 @@ function isNetworkFailure(error: unknown): boolean {
   return error instanceof TypeError && /failed to fetch|fetch failed|network|load failed/i.test(error.message)
 }
 
+/** Cuántos envíos sin confirmar se recuerdan: más allá de esto la señal lleva horas caída y ya hay otro aviso. */
+const MAX_UNCONFIRMED_SENDS = 10
+
 function versionOf(result: { data?: Record<string, unknown> } | null | undefined): number | null {
   const version = result?.data?.version
   return typeof version === "number" ? version : null
@@ -165,8 +168,14 @@ export function useInspectionSaveChannel({
   const persistedList = React.useMemo(() => Object.values(persisted), [persisted])
   const persistedDrafts = React.useMemo(() => draftsFromAnswers(persistedList), [persistedList])
 
-  /** Lo que viajó en el envío en vuelo (o en el último): si el servidor lo devuelve igual, es un cambio propio. */
-  const inFlightRef = React.useRef<{ answers: InspectionAnswerInput[]; coords: GeoCoords | null } | null>(null)
+  /**
+   * Lo que viajó en el envío en vuelo (el último de la lista) y en los que no
+   * llegaron a confirmarse desde el último guardado: si el servidor devuelve
+   * alguno de ellos, es un cambio propio. Hay que conservarlos todos: un envío
+   * pudo aplicarse con la respuesta perdida (sin señal), la persona siguió
+   * escribiendo y el reintento choca contra su propio guardado.
+   */
+  const sentRef = React.useRef<{ answers: InspectionAnswerInput[]; coords: GeoCoords | null }[]>([])
 
   /* ── Ids de respuesta y fotos ────────────────────────────────────────────── */
   const [answerIds, setAnswerIdsState] = React.useState<Record<string, string>>(() =>
@@ -241,6 +250,30 @@ export function useInspectionSaveChannel({
   const [resyncing, setResyncing] = React.useState(false)
   const resyncRef = React.useRef<"recover" | "discard" | null>(null)
 
+  /* ── La ejecución vuelve a ser editable ────────────────────────────────────
+   * `finished`, `completing` y `notEditable` sólo se encienden: declarar
+   * ejecutada, o un «ya no se puede editar», pausan el canal. Si la inspección se
+   * reabre sin salir de la pantalla (rectificar una ejecución declarada por
+   * error), esos bloqueos ya no valen y, sin reiniciarlos, el autoguardado y el
+   * espejo del dispositivo seguían apagados y la etiqueta decía «Declarando
+   * ejecutada…». Se reinician al pasar de no editable a editable —no en cada
+   * cambio de estado: planificada → en curso llega con el refresco de un guardado
+   * y no puede soltar un cierre en marcha— y la revisión nueva reintenta lo que
+   * hubiera quedado sin enviar. */
+  const wasEditableRef = React.useRef(editable)
+  React.useEffect(() => {
+    const was = wasEditableRef.current
+    wasEditableRef.current = editable
+    if (was || !editable) return
+    notEditableRef.current = false
+    setNotEditableState(false)
+    setCompletingState(false)
+    setFinished(false)
+    lastFailureRef.current = null
+    setFailureInfo(null)
+    bump()
+  }, [editable, bump])
+
   /* ── Cierre sin conexión ─────────────────────────────────────────────────── */
   const onDelivered = React.useCallback((result: { data?: Record<string, unknown> }) => {
     const next = versionOf(result)
@@ -252,6 +285,7 @@ export function useInspectionSaveChannel({
   }, [adoptVersion, run.id])
   const queue = useOfflineCloseQueue({
     runId: run.id,
+    userId: currentUserId,
     enabled: canExecute,
     send: (payload) => completeInspectionRunAction(payload),
     onDelivered,
@@ -267,7 +301,7 @@ export function useInspectionSaveChannel({
   async function sendAnswers() {
     const { answers: toSend } = buildNow()
     const coords = coordsRef.current
-    inFlightRef.current = { answers: toSend, coords }
+    sentRef.current = [...sentRef.current, { answers: toSend, coords }].slice(-MAX_UNCONFIRMED_SENDS)
     return saveInspectionAnswersAction({
       runId: run.id,
       expectedVersion: versionRef.current,
@@ -292,11 +326,13 @@ export function useInspectionSaveChannel({
       mergeAnswerIds(incoming)
     }
     // Lo guardado es lo realmente enviado, no lo que haya en pantalla ahora.
-    const sent = inFlightRef.current
+    const sent = sentRef.current[sentRef.current.length - 1]
     if (sent) {
       setPersisted(byKey(sent.answers))
       setPersistedCoords(sent.coords)
     }
+    // Confirmado el último, los anteriores ya no son candidatos a «lo mío».
+    sentRef.current = []
     lastFailureRef.current = null
     setFailureInfo(null)
     setConflict(false)
@@ -365,9 +401,25 @@ export function useInspectionSaveChannel({
   const adoptServer = React.useCallback((server: PersistedMap, serverVersion: number) => {
     adoptVersion(serverVersion)
     setPersisted(server)
-    if (propsCoordsRef.current) setPersistedCoords(propsCoordsRef.current)
+    const serverCoords = propsCoordsRef.current
+    if (serverCoords) {
+      // Otra sesión capturó la ubicación y aquí no se había tocado: se adopta
+      // también en pantalla. Sólo en el servidor dejaba la pantalla «sucia» y
+      // mandaba un guardado inútil con coordenadas nulas.
+      if (!coordsDiffer(coordsRef.current, persistedCoordsRef.current)) setCoords(serverCoords)
+      setPersistedCoords(serverCoords)
+    }
+    const wasConflict = conflictRef.current
     setConflict(false)
-  }, [adoptVersion, setPersisted, setPersistedCoords, setConflict])
+    if (wasConflict) {
+      // El conflicto se resolvió con lo que llegó (o por la vía de recuperar o
+      // descartar): el rechazo anterior ya no describe la pantalla, y lo que
+      // quede sin enviar se reintenta con la versión vigente.
+      lastFailureRef.current = null
+      setFailureInfo(null)
+      bump()
+    }
+  }, [adoptVersion, setPersisted, setPersistedCoords, setConflict, setCoords, coordsRef, bump])
 
   const applyResync = React.useCallback((kind: "recover" | "discard") => {
     const serverAnswers = latestAnswersRef.current
@@ -398,15 +450,25 @@ export function useInspectionSaveChannel({
     // Ids y fotos: siempre al día, aunque la versión no cambie.
     mergeAnswerIds(Object.fromEntries(answers.map((answer) => [captureKey(answer.sectionId, answer.itemId), answer.answerId])))
     // Una versión que no es más nueva que la última vista no trae respuestas nuevas.
-    if (run.version <= lastPropsVersionRef.current) return
+    if (run.version <= lastPropsVersionRef.current) {
+      // Quien pidió «Recuperar/Descartar» esperaba este refresco: si no trajo
+      // nada más nuevo, se aplica con lo que ya hay. Sin esto el botón quedaba
+      // ocupado para siempre.
+      if (resyncRef.current) applyResync(resyncRef.current)
+      return
+    }
     lastPropsVersionRef.current = run.version
 
     const server = answersToPersisted(answers, itemKeys)
     const serverList = Object.values(server)
-    const sent = inFlightRef.current
-    // Las respuestas del servidor igualan lo persistido o lo enviado: es un
-    // cambio propio (o ajeno que no tocó respuestas, como un participante).
-    if (sameAnswerSet(serverList, Object.values(persistedRef.current)) || (sent !== null && sameAnswerSet(serverList, sent.answers))) {
+    // Las respuestas del servidor igualan lo persistido o alguno de los envíos
+    // sin confirmar: es un cambio propio (o ajeno que no tocó respuestas, como
+    // un participante).
+    if (
+      sameAnswerSet(serverList, Object.values(persistedRef.current))
+      || sentRef.current.some((sent) => sameAnswerSet(serverList, sent.answers))
+    ) {
+      sentRef.current = []
       adoptServer(server, run.version)
       resyncRef.current = null
       setResyncing(false)
@@ -429,7 +491,8 @@ export function useInspectionSaveChannel({
 
   /** «Recuperar mis cambios» / «Descartar mis cambios»: con las props al día se aplica al instante; si no, se refresca y se aplica al llegar. */
   function requestResync(kind: "recover" | "discard") {
-    if (latestVersionRef.current > versionRef.current) {
+    // Sin conflicto vigente no hay nada que esperar: el servidor ya está adoptado.
+    if (latestVersionRef.current > versionRef.current || !conflictRef.current) {
       applyResync(kind)
       return
     }

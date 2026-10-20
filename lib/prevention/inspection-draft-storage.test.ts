@@ -7,6 +7,7 @@ import {
   clearInspectionDraftsOfRun,
   currentTabId,
   inspectionDraftKey,
+  purgeInspectionDrafts,
   readInspectionDraft,
   readInspectionDrafts,
   writeInspectionDraft,
@@ -180,6 +181,53 @@ describe("inspection-draft-storage", () => {
         clearInspectionDraftsOfRun("run-1")
         clearAllInspectionDrafts()
       }).not.toThrow()
+    })
+  })
+  /*
+   * Una sesión que termina sin «Cerrar sesión» (revocada, vencida) dejaba los
+   * espejos en claro: sólo se limpiaba el de la ejecución que alguien abría.
+   */
+  describe("purga de espejos abandonados", () => {
+    const DIA = 86_400_000
+    const AHORA = Date.parse("2026-10-20T12:00:00Z")
+    const hace = (dias: number) => new Date(AHORA - dias * DIA).toISOString()
+    const espejo = (userId: string | null, savedAt: string) => ({ schema: 2, userId, tabId: "t", version: 1, savedAt, drafts: DRAFTS })
+
+    it("borra los de otro usuario aunque sean de otra ejecución, y deja los propios recientes", () => {
+      seed("chome:inspection-draft:run-1:t1", espejo("ajeno", hace(1)))
+      seed("chome:inspection-draft:run-2:t2", espejo("yo", hace(1)))
+
+      expect(purgeInspectionDrafts("yo", 30, AHORA)).toBe(1)
+
+      expect(localStorage.getItem("chome:inspection-draft:run-1:t1")).toBeNull()
+      expect(localStorage.getItem("chome:inspection-draft:run-2:t2")).not.toBeNull()
+    })
+
+    it("borra los más viejos que el tope, también los propios y los sin dueño", () => {
+      seed("chome:inspection-draft:run-1:t1", espejo("yo", hace(31)))
+      seed("chome:inspection-draft:run-2:t2", espejo(null, hace(45)))
+      seed("chome:inspection-draft:run-3:t3", espejo("yo", hace(29)))
+      seed("chome:inspection-draft:run-4:t4", espejo(null, hace(2)))
+
+      expect(purgeInspectionDrafts("yo", 30, AHORA)).toBe(2)
+
+      expect(Object.keys(localStorage).sort()).toEqual(["chome:inspection-draft:run-3:t3", "chome:inspection-draft:run-4:t4"])
+    })
+
+    it("no toca lo que no es un espejo legible ni las claves ajenas al módulo", () => {
+      seed("chome:inspection-draft:run-1:t1", "{no es json")
+      seed("chome:inspection-draft:run-2:t2", { ...espejo("ajeno", hace(1)), schema: 3 })
+      localStorage.setItem("theme", "dark")
+
+      expect(purgeInspectionDrafts("yo", 30, AHORA)).toBe(0)
+
+      expect(Object.keys(localStorage).sort()).toEqual(["chome:inspection-draft:run-1:t1", "chome:inspection-draft:run-2:t2", "theme"])
+    })
+
+    it("un almacenamiento que lanza no rompe la pantalla", () => {
+      seed("chome:inspection-draft:run-1:t1", espejo("ajeno", hace(1)))
+      vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("bloqueado") })
+      expect(() => purgeInspectionDrafts("yo")).not.toThrow()
     })
   })
 })

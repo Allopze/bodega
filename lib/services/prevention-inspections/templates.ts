@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { and, eq, inArray, ne, sql } from "drizzle-orm"
+import { and, eq, inArray, isNull, ne, or, sql } from "drizzle-orm"
 import { z } from "zod"
 import { db, type Tx } from "@/db"
 import {
@@ -18,6 +18,7 @@ import {
   type InspectionAccess,
 } from "@/lib/services/prevention-inspections-access"
 import { nanoid } from "@/lib/id"
+import { allowedDocumentConfidentialities } from "@/lib/services/prevention-documents/utils"
 import { TRANSITION_REASON_MIN_LENGTH, type InspectionItemSpec } from "@/lib/prevention/inspections"
 import { CHECKLIST_DEFINITIONS, isNonInspectionDefinition, isPersonEvaluationDefinition } from "@/lib/sst/definitions"
 import { officialInspectionSourceFor, type OfficialInspectionSource } from "@/lib/sst/official-inspection-sources"
@@ -143,16 +144,35 @@ type TemplateSourceSnapshot = NonNullable<TemplateRow["sourceSnapshot"]>
  * Valida la versión documental elegida como fuente y arma su copia inmutable.
  * La usan incorporar (fuente opcional al nacer) y vincular después: las dos
  * puertas por las que una fuente entra a una plantilla deben exigir lo mismo.
+ *
+ * Además de estar aprobada o vigente, la versión tiene que ser una que quien
+ * la elige pueda ver: las mismas dos condiciones que
+ * `listInspectionDocumentSources` (confidencialidad por permiso y alcance de
+ * faena, dejando pasar los documentos corporativos). Sin ellas, conocer un id
+ * bastaba para dejar el nombre de archivo y el checksum de un documento
+ * restringido o de otra faena en una plantilla que ve todo el que tiene `view`.
+ * Una versión que no se ve responde igual que una que no existe: el mensaje no
+ * es un oráculo de existencia.
  */
 async function resolveTemplateSourceSnapshot(tx: Tx, args: {
   sourceDocumentVersionId: string
   sourceRevision?: string | null
   officialSource: OfficialInspectionSource | null
+  access: InspectionAccess
 }): Promise<TemplateSourceSnapshot> {
-  const [source] = await tx.select({ version: sstDocumentVersions, document: sstDocuments })
-    .from(sstDocumentVersions)
-    .innerJoin(sstDocuments, eq(sstDocuments.id, sstDocumentVersions.documentId))
-    .where(eq(sstDocumentVersions.id, args.sourceDocumentVersionId)).limit(1)
+  const { access } = args
+  const [source] = access.scope.mode === "none"
+    ? []
+    : await tx.select({ version: sstDocumentVersions, document: sstDocuments })
+      .from(sstDocumentVersions)
+      .innerJoin(sstDocuments, eq(sstDocuments.id, sstDocumentVersions.documentId))
+      .where(and(
+        eq(sstDocumentVersions.id, args.sourceDocumentVersionId),
+        inArray(sstDocuments.confidentiality, allowedDocumentConfidentialities(access.permissions)),
+        access.scope.mode === "some"
+          ? or(inArray(sstDocuments.worksiteId, access.scope.ids), isNull(sstDocuments.worksiteId))
+          : undefined,
+      )).limit(1)
   if (!source || !["aprobado", "vigente"].includes(source.version.status)) {
     throw new Error("La fuente documental debe existir y estar aprobada o vigente.")
   }
@@ -290,6 +310,7 @@ export async function importInspectionTemplate(input: unknown, access: Inspectio
             sourceDocumentVersionId: data.sourceDocumentVersionId,
             sourceRevision: data.sourceRevision,
             officialSource,
+            access,
           })
         : null
       const parityReport = {
@@ -592,6 +613,7 @@ export async function linkInspectionTemplateSource(input: unknown, access: Inspe
       // El mismo cotejo de checksum que al incorporar: el archivo debe ser el
       // anexo del SGI y no cualquier documento vigente de la Biblioteca.
       officialSource: template.sourceDefinitionCode ? officialInspectionSourceFor(template.sourceDefinitionCode) : null,
+      access,
     })
 
     const now = nowIso()

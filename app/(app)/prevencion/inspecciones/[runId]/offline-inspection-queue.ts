@@ -65,6 +65,14 @@ export interface OfflineInspectionSubmission {
 
 export interface QueuedInspectionSubmission {
   id: string
+  /**
+   * Quién encoló el cierre. El envío lo registra a nombre de la sesión vigente
+   * (`executedByUserId`, firmas): si la sesión de quien lo guardó terminó sin
+   * cerrar sesión y entra otra persona al mismo equipo, un cierre ajeno no puede
+   * salir con la identidad equivocada. Una entrada sin dueño (de antes de
+   * guardarlo) no se puede atribuir y se trata como ajena.
+   */
+  userId?: string
   payload: OfflineInspectionSubmission
   queuedAt: string
   attempts: number
@@ -152,7 +160,12 @@ function transactionPromise<T>(request: IDBRequest<T>) {
   })
 }
 
-export async function queueInspectionSubmission(payload: OfflineInspectionSubmission) {
+/** ¿Es de otra persona, o ya pasó el tope de edad? Ninguna de las dos se envía ni se muestra. */
+function isDiscardable(entry: QueueEntry, userId: string, now = Date.now()) {
+  return entry.userId !== userId || new Date(entry.queuedAt).getTime() < now - MAX_AGE_DAYS * 86_400_000
+}
+
+export async function queueInspectionSubmission(payload: OfflineInspectionSubmission, userId: string) {
   const database = await openQueueDatabase()
   try {
     const store = database.transaction(STORE, "readwrite").objectStore(STORE)
@@ -160,14 +173,14 @@ export async function queueInspectionSubmission(payload: OfflineInspectionSubmis
 
     // La edad purga siempre: entradas viejas que nunca se reintentaron
     // (dispositivo apagado) llenarían la cola y bloquearían la siguiente
-    // inspección justo cuando se necesita.
-    const cutoff = new Date(Date.now() - MAX_AGE_DAYS * 86_400_000)
-    const isExpired = (entry: QueueEntry) => new Date(entry.queuedAt) < cutoff
+    // inspección justo cuando se necesita. Lo de otra persona se va con ellas:
+    // no se le va a enviar nunca y tampoco puede ocupar un lugar.
+    const now = Date.now()
     for (const entry of all) {
-      if (isExpired(entry)) await transactionPromise(store.delete(entry.id))
+      if (isDiscardable(entry, userId, now)) await transactionPromise(store.delete(entry.id))
     }
 
-    let remaining = all.filter((entry) => !isExpired(entry))
+    let remaining = all.filter((entry) => !isDiscardable(entry, userId, now))
     // Reencolar la misma inspección reemplaza su entrada, no suma otra.
     if (remaining.length >= MAX_QUEUED && !remaining.some((entry) => entry.payload.runId === payload.runId)) {
       // Una entrada quemada es el cierre que alguien todavía tiene que recuperar
@@ -187,6 +200,7 @@ export async function queueInspectionSubmission(payload: OfflineInspectionSubmis
     const entry: QueueEntry = {
       // Por `runId`: una inspección tiene una sola ejecución pendiente de envío.
       id: payload.runId,
+      userId,
       payload: { ...payload, queuedAt },
       queuedAt,
       attempts: 0,
@@ -208,13 +222,62 @@ export async function listQueuedInspectionSubmissions() {
   }
 }
 
-/** La entrada pendiente de una inspección, o `null`. La clave de la cola ES el `runId`. */
-export async function getQueuedInspectionSubmission(runId: string): Promise<QueueEntry | null> {
+/**
+ * La entrada pendiente de una inspección, o `null`. La clave de la cola ES el
+ * `runId`. La de otra persona (o sin dueño) no se devuelve y se borra: no es de
+ * quien mira la pantalla.
+ */
+export async function getQueuedInspectionSubmission(runId: string, userId: string): Promise<QueueEntry | null> {
   if (typeof indexedDB === "undefined") return null
   const database = await openQueueDatabase()
+  let entry: QueueEntry | undefined
   try {
-    const entry = await transactionPromise(database.transaction(STORE).objectStore(STORE).get(runId)) as QueueEntry | undefined
-    return entry ?? null
+    entry = await transactionPromise(database.transaction(STORE).objectStore(STORE).get(runId)) as QueueEntry | undefined
+  } finally {
+    database.close()
+  }
+  if (!entry) return null
+  if (entry.userId !== userId) {
+    await discardEntryIfUnchanged(entry)
+    return null
+  }
+  return entry
+}
+
+/** Borra la entrada sólo si sigue siendo la misma que se leyó: otra pestaña pudo reencolar una nueva. */
+async function discardEntryIfUnchanged(entry: QueueEntry) {
+  const database = await openQueueDatabase()
+  try {
+    const store = database.transaction(STORE, "readwrite").objectStore(STORE)
+    const current = await transactionPromise(store.get(entry.id)) as QueueEntry | undefined
+    if (current && current.queuedAt === entry.queuedAt && current.userId === entry.userId) {
+      await transactionPromise(store.delete(entry.id))
+    }
+  } finally {
+    database.close()
+  }
+}
+
+/**
+ * Vacía de la cola lo que no es de `userId` o ya pasó el tope de edad. Se llama
+ * al abrir una inspección: un cierre guardado por una sesión que terminó sin
+ * cerrar sesión no debe quedar a la espera de la siguiente persona del equipo.
+ * Devuelve cuántas borró.
+ */
+export async function purgeInspectionSubmissionsOfOthers(userId: string): Promise<number> {
+  if (typeof indexedDB === "undefined") return 0
+  const database = await openQueueDatabase()
+  try {
+    const store = database.transaction(STORE, "readwrite").objectStore(STORE)
+    const all = await transactionPromise(store.getAll()) as QueueEntry[]
+    const now = Date.now()
+    let removed = 0
+    for (const entry of all) {
+      if (!isDiscardable(entry, userId, now)) continue
+      await transactionPromise(store.delete(entry.id))
+      removed++
+    }
+    return removed
   } finally {
     database.close()
   }
@@ -297,10 +360,16 @@ async function deleteQueuedEntry(id: string) {
   }
 }
 
-async function flushOnce(sender: InspectionSubmissionSender): Promise<InspectionQueueFlushResult> {
+async function flushOnce(sender: InspectionSubmissionSender, userId: string): Promise<InspectionQueueFlushResult> {
   const entries = await listQueuedInspectionSubmissions()
   const result: InspectionQueueFlushResult = { synchronized: 0, pending: 0, rejected: 0, dead: 0, rejectedRunIds: [] }
   for (const entry of entries) {
+    // El envío usa la sesión vigente: sólo sale lo que esa misma persona guardó.
+    // Lo ajeno o vencido se borra sin enviar y no cuenta como entrega ni rechazo.
+    if (isDiscardable(entry, userId)) {
+      await discardEntryIfUnchanged(entry)
+      continue
+    }
     if (isInspectionSubmissionRejected(entry)) {
       result.dead++
       continue
@@ -356,8 +425,8 @@ async function flushOnce(sender: InspectionSubmissionSender): Promise<Inspection
  * la vez. La espera anterior también se encadena, a diferencia de un candado
  * que dos esperando liberaban juntos.
  */
-export function flushInspectionSubmissionQueue(sender: InspectionSubmissionSender): Promise<InspectionQueueFlushResult> {
-  const run = flushChain.then(() => flushOnce(sender))
+export function flushInspectionSubmissionQueue(sender: InspectionSubmissionSender, userId: string): Promise<InspectionQueueFlushResult> {
+  const run = flushChain.then(() => flushOnce(sender, userId))
   flushChain = run.catch(() => undefined)
   return run
 }

@@ -13,7 +13,9 @@
  * el dispositivo hasta que se envía, se descarta, se declara ejecutada o
  * cancelada la inspección, o se cierra sesión (`clearAllInspectionDrafts`, que
  * llama `use-sign-out`): un equipo de faena compartido no puede heredar las
- * respuestas del usuario anterior.
+ * respuestas del usuario anterior. Una sesión que termina sin pasar por ahí
+ * (revocada, vencida) se cubre con `purgeInspectionDrafts`, que barre al abrir
+ * cualquier inspección lo de otro usuario y lo de más de 30 días.
  *
  * Una clave por ejecución **y por pestaña** (`…:${runId}:${tabId}`): dos
  * pestañas sobre la misma inspección no se pisan, y un guardado exitoso en una
@@ -280,6 +282,52 @@ export function clearInspectionDraftsOfRun(runId: string): void {
   } catch {
     // Ver arriba.
   }
+}
+
+/** Cuánto vive un espejo sin tocar: pasado esto es trabajo abandonado, no un borrador. */
+export const INSPECTION_DRAFT_MAX_AGE_DAYS = 30
+
+/**
+ * Barre los espejos que ya no son de nadie: los escritos por OTRA persona y los
+ * más viejos que `maxAgeDays`, de cualquier ejecución. Cerrar sesión los borra
+ * todos, pero una sesión que termina sin pasar por ahí (revocada, vencida) dejaba
+ * respuestas, nombres de participantes y coordenadas en claro en un equipo de
+ * faena compartido hasta que alguien abriera justo esa ejecución. Por eso se
+ * llama al abrir cualquier inspección y no sólo la propia.
+ *
+ * Un espejo sin dueño (migrado del esquema v1) sólo caduca por edad. Lo que no
+ * se puede leer como espejo se deja: puede ser de una versión más nueva de la
+ * pantalla en otra pestaña. Devuelve cuántos borró.
+ */
+export function purgeInspectionDrafts(
+  userId: string,
+  maxAgeDays: number = INSPECTION_DRAFT_MAX_AGE_DAYS,
+  now: number = Date.now(),
+): number {
+  let removed = 0
+  try {
+    const cutoff = now - maxAgeDays * 86_400_000
+    for (const key of localKeys()) {
+      let raw: string | null
+      try {
+        raw = localStorage.getItem(key)
+      } catch {
+        continue
+      }
+      const snapshot = parseSnapshot(raw, "")
+      if (!snapshot) continue
+      const savedAt = Date.parse(snapshot.savedAt)
+      const foreign = snapshot.userId !== null && snapshot.userId !== userId
+      const stale = !Number.isNaN(savedAt) && savedAt < cutoff
+      if (foreign || stale) {
+        localStorage.removeItem(key)
+        removed++
+      }
+    }
+  } catch {
+    // Ver arriba.
+  }
+  return removed
 }
 
 /**

@@ -10,6 +10,7 @@ import {
 import {
   clearInspectionDraft,
   inspectionDraftKey,
+  purgeInspectionDrafts,
   readInspectionDrafts,
   writeInspectionDraft,
   type InspectionDraftInput,
@@ -247,6 +248,8 @@ export function useInspectionDraft({
    * veces, y hacerlo durante el render produciría un cuadro distinto en el
    * servidor y en el cliente (error de hidratación).
    *
+   *   de otro usuario o de hace más de 30 días, de CUALQUIER ejecución
+   *                                          → se borra al abrir, antes de todo lo demás
    *   sin diferencias con el servidor        → se borra en silencio
    *   de otro usuario                        → se descarta en silencio
    *   la ejecución ya no es editable         → se avisa y se borra
@@ -257,6 +260,10 @@ export function useInspectionDraft({
   React.useEffect(() => {
     if (restoredRef.current) return
     restoredRef.current = true
+    // Antes que cualquier otra cosa, y aunque esta persona no pueda ejecutar:
+    // los espejos de otras ejecuciones —de otro usuario o abandonados hace
+    // semanas— no deben quedar en claro en un equipo compartido.
+    purgeInspectionDrafts(currentUserId)
     if (!canExecute) {
       setHydrated(true)
       return

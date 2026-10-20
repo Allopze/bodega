@@ -55,9 +55,15 @@ const PLATFORM_CODE = "inspeccion_condiciones_ambientales"
 
 const PASSED_PARITY = { status: "passed" as const, expectedItems: null, actualItems: null, differences: [] }
 
-async function seedSource(id: string, checksum: string, status = "vigente") {
+async function seedSource(
+  id: string,
+  checksum: string,
+  status = "vigente",
+  document: { confidentiality?: "publico_interno" | "restringido" | "sensible"; worksiteId?: string | null } = {},
+) {
   const now = new Date().toISOString()
   await testDb.insert(schema.sstDocuments).values({
+    ...document,
     id: `doc-${id}`,
     categorySlug: SST_CATEGORY,
     title: `Respaldo ${id}`,
@@ -380,6 +386,92 @@ describe("servicios del catálogo de plantillas", () => {
       await expect(service.linkInspectionTemplateSource({
         templateId: draft.id, expectedVersion: draft.version, sourceDocumentVersionId: draftSourceId,
       }, AUTHOR)).rejects.toThrow(/aprobada o vigente/i)
+    })
+
+    /*
+     * Con `inspections:manage` bastaba conocer el id de una versión para dejar en
+     * la plantilla —que ve todo el que tiene `view`— el nombre de archivo y el
+     * checksum de un documento restringido o de otra faena. La lista de fuentes
+     * ya filtraba; las dos puertas por las que una fuente entra no.
+     */
+    describe("confidencialidad y alcance de la fuente", () => {
+      const NO_VISIBLE = /debe existir y estar aprobada o vigente/i
+      const enFaena = (ids: string[]) => ({ ...AUTHOR, scope: { mode: "some", ids } as WorksiteScope })
+
+      it("no vincula la versión de un documento restringido ni sensible sin el permiso de esa confidencialidad", async () => {
+        const draft = await importDraft("observacion_maquinaria", "ln-20")
+        const restringido = await seedSource("ln-restringido", maquinariaSha, "vigente", { confidentiality: "restringido" })
+        const sensible = await seedSource("ln-sensible", maquinariaSha, "vigente", { confidentiality: "sensible" })
+        for (const sourceDocumentVersionId of [restringido, sensible]) {
+          await expect(service.linkInspectionTemplateSource({
+            templateId: draft.id, expectedVersion: draft.version, sourceDocumentVersionId,
+          }, AUTHOR)).rejects.toThrow(NO_VISIBLE)
+        }
+        expect(await readTemplate(draft.id)).toMatchObject({ sourceDocumentVersionId: null, version: draft.version })
+      })
+
+      it("quien sí tiene el permiso del documento restringido puede vincularlo", async () => {
+        const draft = await importDraft("observacion_maquinaria", "ln-21")
+        const restringido = await seedSource("ln-restringido-ok", maquinariaSha, "vigente", { confidentiality: "restringido" })
+        const linked = await service.linkInspectionTemplateSource({
+          templateId: draft.id, expectedVersion: draft.version, sourceDocumentVersionId: restringido,
+        }, { ...AUTHOR, permissions: [...AUTHOR.permissions, "prevention:docs:manage_restricted"] })
+        expect(linked.sourceDocumentVersionId).toBe(restringido)
+      })
+
+      it("no vincula un documento de una faena fuera del alcance, y sí uno corporativo", async () => {
+        const draft = await importDraft("observacion_maquinaria", "ln-22")
+        const deOtraFaena = await seedSource("ln-otra-faena", maquinariaSha, "vigente", { worksiteId: WORKSITE_ID })
+        const corporativo = await seedSource("ln-corporativo", maquinariaSha)
+        const alcance = enFaena(["ws-fuera-de-alcance"])
+
+        await expect(service.linkInspectionTemplateSource({
+          templateId: draft.id, expectedVersion: draft.version, sourceDocumentVersionId: deOtraFaena,
+        }, alcance)).rejects.toThrow(NO_VISIBLE)
+
+        const linked = await service.linkInspectionTemplateSource({
+          templateId: draft.id, expectedVersion: draft.version, sourceDocumentVersionId: corporativo,
+        }, alcance)
+        expect(linked.sourceDocumentVersionId).toBe(corporativo)
+
+        // Dentro del alcance, el de la faena sí.
+        const relinked = await service.linkInspectionTemplateSource({
+          templateId: linked.id, expectedVersion: linked.version, sourceDocumentVersionId: deOtraFaena,
+        }, enFaena([WORKSITE_ID]))
+        expect(relinked.sourceDocumentVersionId).toBe(deOtraFaena)
+      })
+
+      it("sin alcance de faena ninguna versión es elegible", async () => {
+        const draft = await importDraft("observacion_maquinaria", "ln-23")
+        const corporativo = await seedSource("ln-sin-alcance", maquinariaSha)
+        await expect(service.linkInspectionTemplateSource({
+          templateId: draft.id, expectedVersion: draft.version, sourceDocumentVersionId: corporativo,
+        }, { ...AUTHOR, scope: { mode: "none", ids: [] } as WorksiteScope })).rejects.toThrow(NO_VISIBLE)
+      })
+
+      it("incorporar con una fuente restringida o de otra faena tampoco la acepta, con el mismo mensaje", async () => {
+        const restringido = await seedSource("ln-imp-restringido", maquinariaSha, "vigente", { confidentiality: "restringido" })
+        const deOtraFaena = await seedSource("ln-imp-otra-faena", maquinariaSha, "vigente", { worksiteId: WORKSITE_ID })
+        await expect(importDraft("observacion_maquinaria", "ln-24", { sourceDocumentVersionId: restringido }))
+          .rejects.toThrow(NO_VISIBLE)
+        await expect(importDraft("observacion_maquinaria", "ln-25", { sourceDocumentVersionId: deOtraFaena }, enFaena(["ws-fuera-de-alcance"])))
+          .rejects.toThrow(NO_VISIBLE)
+        // Nada quedó a medias.
+        expect(await testDb.select().from(schema.preventionInspectionTemplates)).toHaveLength(0)
+      })
+
+      it("el mensaje no distingue una versión que no se ve de una que no existe", async () => {
+        const draft = await importDraft("observacion_maquinaria", "ln-26")
+        const restringido = await seedSource("ln-oraculo", maquinariaSha, "vigente", { confidentiality: "restringido" })
+        const errores: string[] = []
+        for (const sourceDocumentVersionId of [restringido, "docv-que-no-existe"]) {
+          await service.linkInspectionTemplateSource({
+            templateId: draft.id, expectedVersion: draft.version, sourceDocumentVersionId,
+          }, AUTHOR).catch((error: Error) => { errores.push(error.message) })
+        }
+        expect(errores).toHaveLength(2)
+        expect(errores[0]).toBe(errores[1])
+      })
     })
 
     it("exige permiso de gestión y respeta el bloqueo optimista", async () => {
