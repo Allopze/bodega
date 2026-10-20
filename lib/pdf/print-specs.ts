@@ -9,7 +9,7 @@
  */
 import { a4PdfOptions, type PdfMargin } from "./page-options"
 
-export type PrintDocumentId = "entrega" | "inspeccion" | "sst"
+export type PrintDocumentId = "entrega" | "inspeccion" | "sst" | "re20"
 
 export interface PrintDocumentSpec {
   id: PrintDocumentId
@@ -49,6 +49,12 @@ export const PRINT_DOCUMENT_SPECS: Record<PrintDocumentId, PrintDocumentSpec> = 
   sst: {
     id: "sst",
     path: (id) => `/sst/${encodeURIComponent(id)}/print`,
+    waitUntil: "domcontentloaded",
+    waitForImages: false,
+  },
+  re20: {
+    id: "re20",
+    path: (id) => `/prevencion/incidentes/${encodeURIComponent(id)}/re20/print`,
     waitUntil: "domcontentloaded",
     waitForImages: false,
   },

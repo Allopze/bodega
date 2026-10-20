@@ -1,4 +1,12 @@
 import { nanoid } from "@/lib/id"
+import {
+  deleteRe20OfflineDraft,
+  getRe20OfflineDraft,
+  listRe20OfflineDrafts,
+  putRe20OfflineDraft,
+  type OfflineDraft,
+} from "@/lib/prevention/re20-offline-vault"
+import { clearLegacyIncidentReports, listLegacyIncidentReports } from "./offline-incident-queue-legacy"
 
 export interface QueuedPerson {
   workerId?: string
@@ -28,195 +36,126 @@ export interface OfflineIncidentReport {
   evacuated: boolean
   isFatalOrSerious: boolean
   offlineSync: boolean
-  /**
-   * Momento del encolado en terreno. Viaja al servidor para poder distinguir
-   * "se reportó tarde" de "se sincronizó tarde": las bandas DIAT/DIEP se
-   * calculan sobre `knownAt`, así que un reporte encolado 24 días nace vencido
-   * y sin este dato no hay forma de saber que el trabajador sí reportó a tiempo.
-   */
   queuedAt?: string
   people: QueuedPerson[]
 }
 
-interface QueueEntry {
-  id: string
-  payload: OfflineIncidentReport
-  queuedAt: string
-  attempts: number
-  lastError?: string
-}
-
-const DB_NAME = "chome-prevention-offline"
-// v2 añadió el store de inspecciones (`offline-inspection-queue.ts`). Ambos
-// módulos DEBEN declarar la misma versión: abrir con una anterior a la que ya
-// tiene la base lanza `VersionError` y deja la cola inutilizable en terreno.
-const DB_VERSION = 2
-const STORE = "incident-reports"
-const INSPECTION_STORE = "inspection-submissions"
-const MAX_QUEUED = 25
-const MAX_AGE_DAYS = 30
-const MAX_RETRIES = 8
-
-let flushLock: Promise<unknown> | null = null
-
-function openQueueDatabase(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION)
-    request.onupgradeneeded = () => {
-      const database = request.result
-      // Se declaran los dos stores porque cualquiera de los dos módulos puede
-      // ser el primero en abrir la base y disparar la migración.
-      if (!database.objectStoreNames.contains(STORE)) database.createObjectStore(STORE, { keyPath: "id" })
-      if (!database.objectStoreNames.contains(INSPECTION_STORE)) database.createObjectStore(INSPECTION_STORE, { keyPath: "id" })
-    }
-    request.onsuccess = () => resolve(request.result)
-    request.onerror = () => reject(request.error ?? new Error("No se pudo abrir la cola offline."))
-  })
-}
-
-function transactionPromise<T>(request: IDBRequest<T>) {
-  return new Promise<T>((resolve, reject) => {
-    request.onsuccess = () => resolve(request.result)
-    request.onerror = () => reject(request.error ?? new Error("Error de almacenamiento offline."))
-  })
+export interface QueueEntry extends OfflineDraft<OfflineIncidentReport> {
+  kind: "incident_report"
 }
 
 export function createIncidentSubmissionId() {
   return `offline-${nanoid()}`
 }
 
-export async function queueIncidentReport(payload: OfflineIncidentReport) {
-  const database = await openQueueDatabase()
-  try {
-    const store = database.transaction(STORE, "readwrite").objectStore(STORE)
-    const all = await transactionPromise(store.getAll()) as QueueEntry[]
-
-    // Dos políticas SEPARADAS. Antes era una sola condición con `&&`
-    // (reintentos agotados Y 30 días), así que 25 reportes viejos que nunca se
-    // reintentaron —dispositivo apagado— no se purgaban nunca y bloqueaban todo
-    // reporte nuevo: el formulario quedaba inutilizable en terreno justo cuando
-    // se necesita.
-    const now = new Date()
-    const cutoff = new Date(now.getTime() - MAX_AGE_DAYS * 86_400_000)
-    const isExpired = (entry: QueueEntry) => new Date(entry.queuedAt) < cutoff
-    const isDead = (entry: QueueEntry) => entry.attempts >= MAX_RETRIES
-    for (const entry of all) {
-      if (isExpired(entry) || isDead(entry)) {
-        await transactionPromise(store.delete(entry.id))
-      }
-    }
-
-    const remaining = all.filter((e) => !isExpired(e) && !isDead(e))
-    if (remaining.length >= MAX_QUEUED) {
-      throw new Error(`La cola offline está llena (${MAX_QUEUED} reportes sin sincronizar). Conéctate y sincroniza antes de registrar otro.`)
-    }
-
-    const queuedAt = new Date().toISOString()
-    const entry: QueueEntry = {
-      id: payload.clientSubmissionId,
-      payload: { ...payload, offlineSync: true, queuedAt },
-      queuedAt,
-      attempts: 0,
-    }
-    await transactionPromise(store.put(entry))
-    return entry
-  } finally {
-    database.close()
-  }
+function draftId(reportId: string) {
+  return `incident-report:${reportId}`
 }
 
-export async function listQueuedIncidentReports() {
-  const database = await openQueueDatabase()
-  try {
-    return await transactionPromise(database.transaction(STORE).objectStore(STORE).getAll()) as QueueEntry[]
-  } finally {
-    database.close()
+/** Migra el almacén antiguo sólo después de desbloquear el cifrado local. */
+export async function migrateLegacyIncidentReportQueue(userId: string) {
+  const legacy = await listLegacyIncidentReports<OfflineIncidentReport>()
+  if (legacy.length === 0) return 0
+  for (const entry of legacy) {
+    const id = draftId(entry.payload.clientSubmissionId)
+    await putRe20OfflineDraft(userId, {
+      id,
+      kind: "incident_report",
+      payload: { ...entry.payload, offlineSync: true, queuedAt: entry.queuedAt },
+      createdAt: entry.queuedAt,
+      updatedAt: new Date().toISOString(),
+      attempts: entry.attempts,
+      ...(entry.lastError ? { lastError: entry.lastError } : {}),
+    })
+    const verified = await getRe20OfflineDraft<OfflineIncidentReport>(userId, id)
+    if (verified?.payload.clientSubmissionId !== entry.payload.clientSubmissionId) {
+      throw new Error("No se pudo verificar un reporte antiguo cifrado; la cola original se conservó.")
+    }
   }
+  await clearLegacyIncidentReports()
+  return legacy.length
+}
+
+export async function queueIncidentReport(userId: string, payload: OfflineIncidentReport) {
+  const queuedAt = payload.queuedAt ?? new Date().toISOString()
+  const entry = {
+    id: draftId(payload.clientSubmissionId),
+    kind: "incident_report" as const,
+    payload: { ...payload, offlineSync: true, queuedAt },
+    createdAt: queuedAt,
+    updatedAt: new Date().toISOString(),
+    attempts: 0,
+  }
+  await putRe20OfflineDraft(userId, entry)
+  const verified = await getRe20OfflineDraft<OfflineIncidentReport>(userId, entry.id)
+  if (verified?.payload.clientSubmissionId !== payload.clientSubmissionId) {
+    throw new Error("No se pudo verificar el reporte en la bóveda local; el formulario conserva los datos.")
+  }
+  return entry
+}
+
+export async function listQueuedIncidentReports(userId: string): Promise<QueueEntry[]> {
+  const drafts = await listRe20OfflineDrafts<OfflineIncidentReport>(userId)
+  return drafts.filter((draft): draft is QueueEntry => draft.kind === "incident_report")
 }
 
 /**
- * Vacía la cola. `sender` distingue el rechazo PERMANENTE (validación, permiso,
- * clave ya usada: reintentarlo no lo arregla) del fallo transitorio de red. Sin
- * esa distinción, un elemento venenoso gastaba los 8 reintentos y quedaba como
- * zombi invisible inflando el contador "Sincronizar (n)" durante 30 días.
+ * Una entrada sólo se elimina después de la aceptación del servidor. Los
+ * rechazos y fallos de red quedan cifrados, sin caducidad ni límite de intentos.
  */
 export async function flushIncidentReportQueue(
+  userId: string,
   sender: (payload: OfflineIncidentReport) => Promise<{ ok: boolean; message?: string; retriable?: boolean }>,
 ) {
-  if (flushLock) await flushLock
-  let resolveLock: () => void
-  flushLock = new Promise<void>((resolve) => { resolveLock = resolve })
-
-  try {
-    const entries = await listQueuedIncidentReports()
-    const result = { synchronized: 0, pending: 0, rejected: 0 }
-    for (const entry of entries) {
-      if (entry.attempts >= MAX_RETRIES) {
-        // Ya agotado: se cuenta aparte para que la UI pueda decir que ese
-        // reporte NUNCA se va a enviar, en vez de mostrarlo como pendiente.
-        result.rejected++
+  if (typeof navigator !== "undefined" && !navigator.onLine) return { synchronized: 0, pending: (await listQueuedIncidentReports(userId)).length, rejected: 0 }
+  const entries = await listQueuedIncidentReports(userId)
+  const result = { synchronized: 0, pending: 0, rejected: 0 }
+  for (const entry of entries) {
+    try {
+      const response = await sender(entry.payload)
+      if (response.ok) {
+        await deleteRe20OfflineDraft(userId, entry.id)
+        result.synchronized++
         continue
       }
-      try {
-        const response = await sender(entry.payload)
-        const database = await openQueueDatabase()
-        try {
-          if (response.ok) {
-            await transactionPromise(database.transaction(STORE, "readwrite").objectStore(STORE).delete(entry.id))
-            result.synchronized++
-          } else {
-            const permanent = response.retriable === false
-            await transactionPromise(database.transaction(STORE, "readwrite").objectStore(STORE).put({
-              ...entry,
-              attempts: permanent ? MAX_RETRIES : entry.attempts + 1,
-              lastError: response.message ?? "Sincronización rechazada",
-            }))
-            if (permanent) result.rejected++
-            else result.pending++
-          }
-        } finally {
-          database.close()
-        }
-      } catch (error) {
-        const database = await openQueueDatabase()
-        try {
-          await transactionPromise(database.transaction(STORE, "readwrite").objectStore(STORE).put({
-            ...entry,
-            attempts: entry.attempts + 1,
-            lastError: error instanceof Error ? error.message : "Sin conexión",
-          }))
-        } finally {
-          database.close()
-        }
-        result.pending++
-      }
+      const rejected = response.retriable === false
+      await putRe20OfflineDraft(userId, {
+        ...entry,
+        updatedAt: new Date().toISOString(),
+        attempts: entry.attempts + 1,
+        lastError: response.message ?? (rejected ? "El servidor rechazó el reporte." : "Sin conexión"),
+      })
+      if (rejected) result.rejected++
+      else result.pending++
+    } catch (error) {
+      await putRe20OfflineDraft(userId, {
+        ...entry,
+        updatedAt: new Date().toISOString(),
+        attempts: entry.attempts + 1,
+        lastError: error instanceof Error ? error.message : "Sin conexión",
+      })
+      result.pending++
     }
-    return result
-  } finally {
-    resolveLock!()
-    flushLock = null
   }
+  return result
+}
+
+/** Descarte explícito de un reporte, siempre con bóveda desbloqueada. */
+export async function discardQueuedIncidentReport(userId: string, id: string) {
+  await deleteRe20OfflineDraft(userId, id)
 }
 
 /**
- * Descarta la cola local. Se llama al cerrar sesión: el relato de un incidente
- * (hasta 10.000 caracteres describiendo un accidente con personas), el nombre
- * del trabajador y su referencia de identificación viven en claro en IndexedDB
- * hasta 30 días, en dispositivos que en faena suelen compartirse. El servidor
- * cifra ese mismo dato en reposo; el navegador no puede, así que al menos no se
- * queda para el siguiente usuario.
- *
- * Devuelve cuántas entradas sin sincronizar se perdieron, para poder avisar.
+ * Al cerrar sesión se bloquea la bóveda (sus borradores siguen cifrados) y se
+ * vacía la cola antigua en claro. Esa cola no registra a quién pertenece cada
+ * reporte: si sobreviviera al cambio de usuario, el siguiente que desbloquee
+ * en el mismo equipo la migraría a su propia bóveda.
  */
-export async function clearIncidentReportQueue(): Promise<number> {
+export async function lockAndPurgeIncidentQueues(): Promise<number> {
+  const { lockRe20Vault } = await import("@/lib/prevention/re20-offline-vault")
+  lockRe20Vault()
   if (typeof indexedDB === "undefined") return 0
-  const database = await openQueueDatabase()
-  try {
-    const store = database.transaction(STORE, "readwrite").objectStore(STORE)
-    const all = await transactionPromise(store.getAll()) as QueueEntry[]
-    await transactionPromise(store.clear())
-    return all.length
-  } finally {
-    database.close()
-  }
+  const legacy = await listLegacyIncidentReports()
+  if (legacy.length > 0) await clearLegacyIncidentReports()
+  return legacy.length
 }

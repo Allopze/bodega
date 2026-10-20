@@ -82,10 +82,11 @@ export async function renderPrintPageToPdf(args: {
   origin: string
   spec: PrintDocumentSpec
   entityId: string
+  query?: string
   credential: PrintCredential | null
 }): Promise<Buffer> {
   const origin = new URL(args.origin).origin
-  const target = `${origin}${args.spec.path(args.entityId)}`
+  const target = `${origin}${args.spec.path(args.entityId)}${args.query ? `?${args.query}` : ""}`
 
   const contextOptions = args.credential ? { extraHTTPHeaders: { cookie: args.credential.cookieHeader } } : {}
   const pdf = await withBrowserContext(contextOptions, async (ctx) => {

@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
   signOut: vi.fn(async (): Promise<void> => {}),
   getSession: vi.fn(async () => null),
   clearAllInspectionDrafts: vi.fn(),
-  clearIncidentReportQueue: vi.fn(async (): Promise<void> => {}),
+  lockAndPurgeIncidentQueues: vi.fn(async (): Promise<void> => {}),
   clearPpaQueue: vi.fn(async (): Promise<void> => {}),
   clearInspectionSubmissionQueue: vi.fn(async (): Promise<void> => {}),
 }))
@@ -15,7 +15,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("next-auth/react", () => ({ signOut: mocks.signOut, getSession: mocks.getSession }))
 vi.mock("@/lib/prevention/inspection-draft-storage", () => ({ clearAllInspectionDrafts: mocks.clearAllInspectionDrafts }))
 vi.mock("@/app/(app)/prevencion/incidentes/reportar/offline-incident-queue", () => ({
-  clearIncidentReportQueue: mocks.clearIncidentReportQueue,
+  lockAndPurgeIncidentQueues: mocks.lockAndPurgeIncidentQueues,
 }))
 vi.mock("@/lib/pwa/offline-queue", () => ({ clearPpaQueue: mocks.clearPpaQueue }))
 vi.mock("@/app/(app)/prevencion/inspecciones/[runId]/offline-inspection-queue", () => ({
@@ -47,7 +47,7 @@ describe("useSignOut", () => {
 
     expect(mocks.clearAllInspectionDrafts).toHaveBeenCalledTimes(1)
     expect(mocks.clearInspectionSubmissionQueue).toHaveBeenCalledTimes(1)
-    expect(mocks.clearIncidentReportQueue).toHaveBeenCalledTimes(1)
+    expect(mocks.lockAndPurgeIncidentQueues).toHaveBeenCalledTimes(1)
     expect(mocks.clearPpaQueue).toHaveBeenCalledTimes(1)
     expect(order.indexOf("drafts")).toBeLessThan(order.indexOf("signOut"))
     expect(order.indexOf("cola")).toBeLessThan(order.indexOf("signOut"))

@@ -5,19 +5,20 @@ import { getSession, signOut } from "next-auth/react"
 import { clearAllInspectionDrafts } from "@/lib/prevention/inspection-draft-storage"
 
 /**
- * Vacía las colas offline del dispositivo. Import dinámico para no arrastrar
- * IndexedDB ni el árbol de Prevención al bundle de la barra superior.
+ * Bloquea la bóveda RE-20 cifrada (conserva sus borradores) y vacía las colas
+ * en claro: la antigua de incidentes, PPA e inspecciones. Import dinámico para no cargar IndexedDB ni el
+ * árbol de Prevención en el bundle de la barra superior.
  */
 async function clearOfflineQueues() {
   try {
-    const [{ clearIncidentReportQueue }, { clearPpaQueue }, { clearInspectionSubmissionQueue }] = await Promise.all([
+    const [{ lockAndPurgeIncidentQueues }, { clearPpaQueue }, { clearInspectionSubmissionQueue }] = await Promise.all([
       import("@/app/(app)/prevencion/incidentes/reportar/offline-incident-queue"),
       import("@/lib/pwa/offline-queue"),
       // Las respuestas de una inspección y los nombres de quienes firman el
       // acta viven en claro en IndexedDB hasta 30 días, en equipos compartidos.
       import("@/app/(app)/prevencion/inspecciones/[runId]/offline-inspection-queue"),
     ])
-    await Promise.allSettled([clearIncidentReportQueue(), clearPpaQueue(), clearInspectionSubmissionQueue()])
+    await Promise.allSettled([lockAndPurgeIncidentQueues(), clearPpaQueue(), clearInspectionSubmissionQueue()])
   } catch {
     /* no-op: cerrar sesión nunca se bloquea por la limpieza local */
   }
@@ -63,10 +64,10 @@ export function useSignOut() {
   const handleSignOut = React.useCallback(async () => {
     setIsSigningOut(true)
     try {
-      // Las colas offline guardan datos personales en claro en IndexedDB (relato
-      // de incidentes con personas, RUT y nombre en los PPA). En un dispositivo
-      // de faena compartido no pueden sobrevivir al cambio de usuario. Es
-      // best-effort: si falla, no bloquea el cierre de sesión.
+      // La bóveda RE-20 usa una frase local distinta de la sesión: se bloquea y
+      // conserva sus borradores cifrados. Lo que vive en claro (cola antigua de
+      // incidentes, PPA, inspecciones) no puede sobrevivir al cambio de usuario
+      // en un equipo de faena compartido. Best-effort: no bloquea el cierre.
       clearLocalInspectionDrafts()
       await clearOfflineQueues()
       await signOut({ redirect: false })
