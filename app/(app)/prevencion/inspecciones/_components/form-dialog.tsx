@@ -27,7 +27,24 @@ export function useFormDialog(onOpen?: () => void) {
   return { open, changeOpen, operation }
 }
 
-type OperationMessage = Pick<ReturnType<typeof useOperation>, "message" | "messageTone">
+/**
+ * Lo mismo para un diálogo que abre otro componente: sus acciones viven en un
+ * menú, y un `DialogTrigger` dentro de un ítem de menú se desmonta con el menú.
+ * El estado `open` lo posee quien lo abre; acá queda la operación y el mensaje
+ * limpio al cerrar. Quien lo monta lo reinicia con una `key` nueva en cada
+ * apertura, así que lo que el usuario escribió en un intento no sobrevive al
+ * siguiente.
+ */
+export function useControlledFormDialog(open: boolean, onOpenChange: (open: boolean) => void) {
+  const operation = useOperation()
+  const changeOpen = (next: boolean) => {
+    operation.setMessage("")
+    onOpenChange(next)
+  }
+  return { open, changeOpen, operation }
+}
+
+type OperationMessage =Pick<ReturnType<typeof useOperation>, "message" | "messageTone">
 
 /** El error de una operación, dentro del diálogo y anunciado como alerta. */
 export function OperationError({ operation }: { operation: OperationMessage }) {

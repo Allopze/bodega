@@ -4,7 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { DANO_POTENCIAL_LABELS } from "@/lib/prevention/inspections"
@@ -43,13 +43,14 @@ const DANO_LABELS: Record<string, string> = {
  * aplican y, si hace falta, se ajusta la gravedad para este instrumento. La
  * selección cuelga del CÓDIGO del instrumento, así que versionarlo no la pierde.
  */
-export function DeviationCatalogDialog({ templateCode, name, entries, unclassified }: {
+export function DeviationCatalogDialog({ templateCode, name, entries, unclassified, open, onOpenChange }: {
   templateCode: string
   name: string
   entries: DeviationEntry[]
   unclassified: { description: string; criticality: string; occurrences: number }[]
+  open: boolean
+  onOpenChange: (open: boolean) => void
 }) {
-  const [open, setOpen] = React.useState(false)
   const [query, setQuery] = React.useState("")
 
   const visible = React.useMemo(() => {
@@ -66,12 +67,7 @@ export function DeviationCatalogDialog({ templateCode, name, entries, unclassifi
   const offered = entries.filter((entry) => entry.selected).length
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button size="sm" variant="ghost">
-          Desviaciones{unclassified.length > 0 ? ` (${unclassified.length})` : ""}
-        </Button>
-      </DialogTrigger>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Desviaciones · {name}</DialogTitle>

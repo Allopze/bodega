@@ -131,6 +131,9 @@ export interface RunViewModel {
   rejection: string | null
 
   /* ── Manejadores ───────────────────────────────────────────────────────── */
-  /** Salta al ítem (`sectionId::itemId`) y enfoca su primer control. */
-  jumpToItem: (key: string) => void
+  /**
+   * Salta al ítem (`sectionId::itemId`) y enfoca su primer control; con
+   * `"comment"`, su comentario (lo que falta cuando el resultado exige motivo).
+   */
+  jumpToItem: (key: string, focus?: "comment") => void
 }

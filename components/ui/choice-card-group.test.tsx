@@ -112,8 +112,11 @@ describe("ChoiceCardGroup", () => {
     it.each([
       ["conforming", "success"],
       ["non_conforming", "danger"],
+      ["partial", "warning"],
     ] as const)("la opción elegida %s usa la tinta del tono %s, un anillo y un check", (value, token) => {
-      const { container } = render(<ChoiceCardGroup variant="compact" label="Resultado" options={COMPACT} value={value} onChange={vi.fn()} />)
+      // «Regular» (escala B/R/M) es el tono ámbar: no es conforme ni incumple del todo.
+      const options = [...COMPACT, { value: "partial", title: "Regular", tone: "warning" as const }]
+      const { container } = render(<ChoiceCardGroup variant="compact" label="Resultado" options={options} value={value} onChange={vi.fn()} />)
       const selected = screen.getByRole("radio", { checked: true })
       expect(selected.className).toContain(`text-[var(--color-${token}-ink)]`)
       expect(selected.className).toContain(`bg-[var(--color-${token}-tint)]`)
@@ -152,6 +155,18 @@ describe("ChoiceCardGroup", () => {
       )
       expect(screen.getByRole("radiogroup", { name: "Estado de la prenda" })).toBeTruthy()
       expect(screen.getByRole("radio", { name: "Bueno" })).toHaveAccessibleDescription("Sin daño visible.")
+    })
+
+    it("aria-describedby y required se pasan al grupo para anunciar el error y la obligatoriedad", () => {
+      render(
+        <>
+          <p id="problema">Indica el motivo.</p>
+          <ChoiceCardGroup variant="compact" label="Resultado" aria-describedby="problema" required options={COMPACT} value="non_conforming" onChange={vi.fn()} />
+        </>,
+      )
+      const group = screen.getByRole("radiogroup", { name: "Resultado" })
+      expect(group).toHaveAccessibleDescription("Indica el motivo.")
+      expect(group).toHaveAttribute("aria-required", "true")
     })
 
     it("deshabilitado no avisa ni por clic ni por teclado", () => {

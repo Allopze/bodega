@@ -19,6 +19,14 @@ export function useUrlFilters(options: UseUrlFiltersOptions = {}) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
+  // Mientras la URL nueva se resuelve en el servidor la lista sigue mostrando la
+  // anterior sin decir nada: `isPending` deja a quien lo quiera marcarla
+  // (`aria-busy`). Es opcional: nadie está obligado a leerlo.
+  const [isPending, startTransition] = React.useTransition()
+  const navigate = React.useCallback(
+    (url: string) => startTransition(() => { router.replace(url, { scroll }) }),
+    [router, scroll],
+  )
 
   const setFilter = React.useCallback(
     (key: string, value: string | null | undefined) => {
@@ -30,9 +38,9 @@ export function useUrlFilters(options: UseUrlFiltersOptions = {}) {
       }
       for (const key of paginationKeys) params.delete(key)
       const query = params.toString()
-      router.replace(query ? `${pathname}?${query}` : pathname, { scroll })
+      navigate(query ? `${pathname}?${query}` : pathname)
     },
-    [router, pathname, searchParams, paginationKeys, scroll],
+    [navigate, pathname, searchParams, paginationKeys],
   )
 
   const setFilters = React.useCallback(
@@ -47,9 +55,9 @@ export function useUrlFilters(options: UseUrlFiltersOptions = {}) {
       }
       for (const key of paginationKeys) params.delete(key)
       const query = params.toString()
-      router.replace(query ? `${pathname}?${query}` : pathname, { scroll })
+      navigate(query ? `${pathname}?${query}` : pathname)
     },
-    [router, pathname, searchParams, paginationKeys, scroll],
+    [navigate, pathname, searchParams, paginationKeys],
   )
 
   const clearFilters = React.useCallback(
@@ -67,9 +75,9 @@ export function useUrlFilters(options: UseUrlFiltersOptions = {}) {
         if (val) params.set(key, val)
       }
       const query = params.toString()
-      router.replace(query ? `${pathname}?${query}` : pathname, { scroll })
+      navigate(query ? `${pathname}?${query}` : pathname)
     },
-    [router, pathname, searchParams, scroll],
+    [navigate, pathname, searchParams],
   )
 
   const getFilter = React.useCallback(
@@ -84,5 +92,6 @@ export function useUrlFilters(options: UseUrlFiltersOptions = {}) {
     setFilters,
     clearFilters,
     debounceMs,
+    isPending,
   }
 }

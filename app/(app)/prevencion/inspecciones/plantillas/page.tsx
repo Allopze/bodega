@@ -136,19 +136,23 @@ export default async function PlantillasInspeccionPage() {
     unclassifiedDeviations: unclassifiedByTemplate.get(row.id) ?? [],
   }))
   const importable = canManage ? listImportableDefinitions() : []
+  // El mismo botón del encabezado llena el catálogo vacío (A4): una acción real, no una ruta pegada como texto.
+  const importAction = canManage && importable.length > 0
+    ? <ImportTemplateDialog importable={importable} templates={templateItems} documentSources={documentSources} />
+    : undefined
 
   return (
     <PageContainer>
       <PageHeader
         title="Plantillas de inspección"
-        description="Los instrumentos versionados del catálogo SST —inspecciones, observaciones y la auditoría del Sistema de Gestión (DS 44 art. 22 n°4)—: qué se pregunta, con qué gravedad por ítem y qué actividad del programa anual acredita."
+        description="Instrumentos versionados: qué se pregunta y qué acredita."
         breadcrumb={<Breadcrumbs items={[
           { label: "Inicio", href: "/dashboard" },
           { label: "Prevención" },
           { label: "Inspecciones", href: "/prevencion/inspecciones" },
           { label: "Plantillas" },
         ]} />}
-        actions={canManage && importable.length > 0 ? <ImportTemplateDialog importable={importable} templates={templateItems} documentSources={documentSources} /> : undefined}
+        actions={importAction}
       />
       <InspectionTemplatesPanel
         templates={templateItems}
@@ -166,6 +170,7 @@ export default async function PlantillasInspeccionPage() {
         canManage={canManage}
         canApprove={session.user.permissions.includes("prevention:inspections:approve")}
         currentUserId={session.user.id}
+        emptyAction={importAction}
       />
     </PageContainer>
   )

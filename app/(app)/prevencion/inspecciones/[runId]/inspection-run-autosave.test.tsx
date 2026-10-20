@@ -730,17 +730,24 @@ describe("lo que no son respuestas también se conserva (P2-9)", () => {
 })
 
 describe("rótulos de la pantalla", () => {
-  it("«Obligatorio» sale de los ítems que el cierre exige, no sólo de `required` (L4)", async () => {
+  it("«Opcional» sólo sale en lo que el cierre no exige; lo obligatorio lo anuncia el grupo (L4)", async () => {
     await montar({
       sections: [{
         id: "sec-1",
         title: "EPP",
-        items: [{ id: "item-1", label: "Casco", required: false, countsForCompliance: true, danoPotencial: null }],
+        items: [
+          // Puntúa para el cumplimiento: el cierre lo exige aunque la plantilla no lo marque.
+          { id: "item-1", label: "Casco", kind: "cumple_nocumple_obs" as const, required: false, countsForCompliance: true, danoPotencial: null },
+          { id: "item-2", label: "Nota libre", kind: "text" as const, required: false, countsForCompliance: false, danoPotencial: null },
+        ],
       }],
     })
 
-    expect(screen.getAllByText("Obligatorio").length).toBeGreaterThan(0)
-    expect(screen.queryByText("Opcional")).toBeNull()
+    // Una sola marca: la del que de verdad es opcional. Antes las 24 tarjetas de EPP decían «Opcional».
+    expect(screen.getAllByText("Opcional")).toHaveLength(1)
+    expect(within(screen.getByRole("heading", { name: /Nota libre/ }).parentElement!).getByText("Opcional")).toBeInTheDocument()
+    expect(screen.getByRole("radiogroup", { name: "Resultado de Casco" })).toHaveAttribute("aria-required", "true")
+    expect(screen.getByText("0 de 1 obligatorios")).toBeInTheDocument()
   })
 
   it("quien ejecutó y no puede revisarse a sí mismo lo lee con el texto de autorrevisión", async () => {

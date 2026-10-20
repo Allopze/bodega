@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray } from "drizzle-orm"
+import { and, asc, eq, inArray, lte, sql } from "drizzle-orm"
 import { z } from "zod"
 import { db } from "@/db"
 import {
@@ -439,4 +439,65 @@ export async function listRiskEntriesForWorksite(worksiteId: string, access: Ins
     .where(eq(preventionRiskMatrices.worksiteId, worksiteId))
     .orderBy(asc(preventionRiskEntries.hazardCode))
     .limit(500)
+}
+
+/**
+ * Tope de peligros que se precargan por faena. Es el mismo de
+ * `listRiskEntriesForWorksite`: el picker de la programación no necesita más, y
+ * una MIPER grande no debe inflar el HTML de la pantalla.
+ */
+export const RISK_ENTRIES_PER_WORKSITE_LIMIT = 500
+
+/**
+ * Peligros de la MIPER de varias faenas de una vez, agrupados por faena.
+ *
+ * Programación precarga el picker de peligro para todas las faenas del alcance, y
+ * llamar a `listRiskEntriesForWorksite` una vez por faena eran N consultas en
+ * cada carga de la pantalla (P2-19). Acá es UNA, con el mismo tope por faena que
+ * la versión individual: `row_number()` numera dentro de cada faena, así que una
+ * MIPER enorme no deja sin peligros a las demás.
+ *
+ * Mismo criterio de alcance que `listInspectionSubjectsByWorksite`: las faenas
+ * fuera del alcance se descartan en silencio (no filtran su existencia) y toda
+ * faena permitida aparece en el resultado, aunque sea con una lista vacía.
+ */
+export async function listRiskEntriesByWorksite(
+  worksiteIds: string[],
+  access: InspectionAccess,
+): Promise<Record<string, { id: string; hazardCode: string; hazard: string | null }[]>> {
+  const grouped: Record<string, { id: string; hazardCode: string; hazard: string | null }[]> = {}
+  const allowed = Array.from(new Set(worksiteIds)).filter((worksiteId) => scopeAllows(access.scope, worksiteId))
+  for (const worksiteId of allowed) grouped[worksiteId] = []
+  if (allowed.length === 0) return grouped
+  requireAccess(access, "prevention:inspections:view")
+
+  const ranked = db.select({
+    worksiteId: preventionRiskMatrices.worksiteId,
+    id: preventionRiskEntries.id,
+    hazardCode: preventionRiskEntries.hazardCode,
+    hazard: preventionRiskEntries.hazard,
+    position: sql<number>`row_number() over (
+      partition by ${preventionRiskMatrices.worksiteId}
+      order by ${preventionRiskEntries.hazardCode} asc, ${preventionRiskEntries.id} asc
+    )`.as("position"),
+  })
+    .from(preventionRiskEntries)
+    .innerJoin(preventionRiskMatrices, eq(preventionRiskMatrices.id, preventionRiskEntries.matrixId))
+    .where(inArray(preventionRiskMatrices.worksiteId, allowed))
+    .as("ranked_risk_entries")
+
+  const rows = await db.select({
+    worksiteId: ranked.worksiteId,
+    id: ranked.id,
+    hazardCode: ranked.hazardCode,
+    hazard: ranked.hazard,
+  })
+    .from(ranked)
+    .where(lte(ranked.position, RISK_ENTRIES_PER_WORKSITE_LIMIT))
+    .orderBy(asc(ranked.worksiteId), asc(ranked.hazardCode), asc(ranked.id))
+
+  for (const row of rows) {
+    grouped[row.worksiteId]?.push({ id: row.id, hazardCode: row.hazardCode, hazard: row.hazard })
+  }
+  return grouped
 }

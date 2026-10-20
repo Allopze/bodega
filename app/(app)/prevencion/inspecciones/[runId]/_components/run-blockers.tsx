@@ -5,16 +5,17 @@ import { Callout } from "@/components/ui/callout"
 import { RemindReviewButton } from "./run-detail-controls"
 import type { RunViewModel } from "./run-view-types"
 
-export type RunBlockersModel = Pick<RunViewModel, "channel" | "pendingLines" | "jumpToItem">
+export type RunBlockersModel = Pick<RunViewModel, "channel" | "jumpToItem">
 
 /**
- * Lo que impide avanzar mientras se edita, en dos avisos que NO se mezclan
- * (P2-1): lo que el servidor todavía no tiene (filas retenidas en el
- * dispositivo; guardar sigue funcionando) y lo que falta para declarar
- * ejecutada. Cada línea salta al ítem. Sin nada que mostrar, no pinta nada.
+ * Lo que el servidor todavía no tiene mientras se edita: las filas retenidas en
+ * el dispositivo (guardar sigue funcionando; sólo estas quedan sin enviar). Cada
+ * línea salta al ítem. Lo que falta para declarar ejecutada ya no es un muro
+ * rojo aquí (P2-1): es el resumen del progreso (`RunProgress`). Sin filas
+ * retenidas, no pinta nada.
  */
 export function RunBlockers({ model }: { model: RunBlockersModel }) {
-  const { channel, pendingLines, jumpToItem } = model
+  const { channel, jumpToItem } = model
   return (
     <>
       {/* Lo que el servidor todavía no tiene. Aparte de lo que impide cerrar:
@@ -25,27 +26,11 @@ export function RunBlockers({ model }: { model: RunBlockersModel }) {
           <ul className="mt-2 list-disc space-y-1 pl-4">
             {channel.held.map((row) => (
               <li key={row.key}>
-                <button type="button" className="min-h-11 text-left underline md:min-h-0" onClick={() => jumpToItem(row.key)}>{row.problem}</button>
+                <button type="button" className="min-h-11 text-left underline md:min-h-0" onClick={() => jumpToItem(row.key, row.reason === "invalid" ? "comment" : undefined)}>{row.problem}</button>
               </li>
             ))}
           </ul>
         </Callout>
-      )}
-
-      {pendingLines.length > 0 && (
-        <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4 text-sm">
-          <p className="font-medium">Para declarar ejecutada falta:</p>
-          {/* I-06: lista completa con scroll interno, no un "y N más…" mudo. */}
-          <ul className="mt-2 max-h-56 list-disc space-y-1 overflow-y-auto pl-4">
-            {pendingLines.map((line) => (
-              <li key={`${line.key ?? "acta"}:${line.text}`}>
-                {line.key
-                  ? <button type="button" className="min-h-11 text-left underline md:min-h-0" onClick={() => jumpToItem(line.key!)}>{line.text}</button>
-                  : line.text}
-              </li>
-            ))}
-          </ul>
-        </div>
       )}
     </>
   )

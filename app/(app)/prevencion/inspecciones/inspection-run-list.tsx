@@ -3,10 +3,11 @@
 import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { MagnifyingGlass } from "@phosphor-icons/react"
+import { CaretRight, MagnifyingGlass, Warning } from "@phosphor-icons/react"
 import { MetaBadge } from "@/components/states/state-badge"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Button } from "@/components/ui/button"
+import { Callout } from "@/components/ui/callout"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Input } from "@/components/ui/input"
@@ -14,8 +15,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { DateRangePicker } from "@/components/ui/date-range-picker"
 import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
 import { Pagination } from "@/components/ui/pagination"
+import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui/responsive-data-list"
 import { useUrlFilters } from "@/lib/hooks/use-url-filters"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import {
   INSPECTION_KIND_LABELS,
   INSPECTION_ORIGIN_LABELS,
@@ -23,7 +25,7 @@ import {
   inspectionRunIsOverdue,
   runStatusBadgeVariant,
 } from "@/lib/prevention/inspections"
-import { formatDate, formatDateTime } from "@/lib/utils"
+import { cn, formatDate, formatDateTime } from "@/lib/utils"
 import { createInspectionRunAction } from "./actions"
 import { InspectionTemplateSelect } from "./template-select"
 import { SubjectSelectField } from "./_components/subject-select-field"
@@ -35,6 +37,7 @@ import {
   type InspectionAssigneeOption,
 } from "./assignee-picker"
 import {
+  NO_SUBJECT,
   inspectionTaskStatusLabel,
   safeNewInspectionDefaults,
   subjectIdsFromRef,
@@ -95,11 +98,66 @@ interface Props {
   worksites: { id: string; name: string }[]
   assignees: InspectionAssigneeOption[]
   subjectsByWorksite: Record<string, InspectionSubjectOption[]>
+  /**
+   * Avisos que la pantalla del servidor quiere ver sobre la barra de filtros (hoy,
+   * el resumen de actividades programadas del PDTP). Es un componente de
+   * servidor, así que llega ya armado como nodo: este componente de cliente no
+   * puede importarlo. Antes iba al pie, bajo hasta 50 filas y la paginación.
+   */
+  activities?: React.ReactNode
 }
 
-export function InspectionRunList({ runs, summary, page, pageSize, overdueProgramCount, today, canExecute, canReview, templates, worksites, assignees, subjectsByWorksite }: Props) {
+/**
+ * Hallazgos abiertos de una ejecución, con los graves aparte. `compact`: «1 abierto (1 grave)»;
+ * si no, «1 abierto · 1 grave». En cero dice «Sin hallazgos», no «Sin hallazgos abiertos»: esa
+ * frase es la del tile en cero y repetirla en cada fila la volvía ruido (y dos nodos con el mismo texto).
+ */
+function findingsLabel(open: number, critical: number, style: "compact" | "inline"): string {
+  if (open === 0) return "Sin hallazgos"
+  const opened = `${open} ${open === 1 ? "abierto" : "abiertos"}`
+  if (critical === 0) return opened
+  const severe = `${critical} ${critical === 1 ? "grave" : "graves"}`
+  return style === "compact" ? `${opened} (${severe})` : `${opened} · ${severe}`
+}
+
+/**
+ * «Fecha clave» de una ejecución: cuándo se ejecutó o, si no, para cuándo estaba programada.
+ *
+ * `stacked` (la tabla): bajo `xl` la columna es angosta y el navegador partía «Programada · 25-/08-2026»
+ * en el guion de la fecha. El salto va entre el rótulo y la fecha; desde `xl`, donde cabe, se oculta. El
+ * texto sigue siendo uno solo (el `<br>` no aporta texto), así que se lee y se busca igual.
+ */
+function KeyDate({ item, today, stacked = false }: { item: RunItem; today: string; stacked?: boolean }) {
+  if (item.executedAt) return <>{formatDateTime(item.executedAt)}</>
+  if (!item.scheduledFor) return <>Sin fecha</>
+  const overdue = inspectionRunIsOverdue(item, today)
+  return (
+    <span className={overdue ? "font-semibold text-[var(--color-danger-ink)]" : undefined}>
+      {overdue ? "Vencida · " : "Programada · "}{stacked && <br className="xl:hidden" />}{formatDate(item.scheduledFor)}
+    </span>
+  )
+}
+
+/** Cumplimiento de una ejecución, o por qué no se puede calcular. */
+function ComplianceValue({ item }: { item: RunItem }) {
+  if (item.compliancePercent === null) {
+    // En sans y sin cortes: en mono y con el ancho que le dejaba la columna se
+    // partía en dos líneas («No / calculable»).
+    return <span title={complianceUnavailableReason(item.status)} className="whitespace-nowrap">No calculable</span>
+  }
+  return <span className="font-mono tabular-nums">{item.compliancePercent}%</span>
+}
+
+function runAction(status: string): string {
+  if (status === "planned") return "Comenzar"
+  if (status === "in_progress") return "Continuar"
+  if (status === "completed") return "Revisar"
+  return "Ver detalle"
+}
+
+export function InspectionRunList({ runs, summary, page, pageSize, overdueProgramCount, today, canExecute, canReview, templates, worksites, assignees, subjectsByWorksite, activities }: Props) {
   // Filtros client-side en la URL (shareables + sobreviven refresh) vía useUrlFilters.
-  const { getFilter, setFilters, clearFilters: clearUrlFilters } = useUrlFilters()
+  const { getFilter, setFilters, clearFilters: clearUrlFilters, isPending } = useUrlFilters()
   const status = getFilter("estado") || "all"
   // El tipo de instrumento era una ruta aparte (/prevencion/auditorias) con la
   // misma pantalla; ahora es un filtro, que es lo que siempre fue en la tabla.
@@ -217,10 +275,12 @@ export function InspectionRunList({ runs, summary, page, pageSize, overdueProgra
 
   return (
     <div className="space-y-4">
-      {/* I-12: en móvil los KPI ocupaban una grilla de dos filas antes de la
-          primera tarjeta. Una fila con scroll horizontal baja eso a una sola
-          fila; desde `lg` vuelve a ser la grilla de siempre. */}
-      <div className="flex overflow-x-auto border-y border-[var(--color-border)] lg:grid lg:grid-cols-4 lg:overflow-hidden">
+      {/* Dos por fila hasta `lg` y cuatro desde ahí, sin región con scroll: la
+          tira horizontal escondía el cuarto tile en el teléfono y sumaba una
+          región enfocable que axe marcaba. Las líneas entre tiles son el `gap`
+          sobre el fondo del contenedor, así no hay que decidir qué tile lleva
+          qué borde en cada ancho. */}
+      <div className="grid grid-cols-2 gap-px border-y border-[var(--color-border)] bg-[var(--color-border)] lg:grid-cols-4">
         {metrics.map((metric) => {
           const active = quickFilter === metric.key
           // En cero no hay subconjunto al que llevar. Sigue siendo pulsable si
@@ -248,15 +308,18 @@ export function InspectionRunList({ runs, summary, page, pageSize, overdueProgra
               aria-pressed={active}
               // Señal no cromática del activo: borde inferior de 2 px, dibujado
               // como sombra interior para no sumar alto a la fila al activarse.
-              className="w-36 shrink-0 border-r border-[var(--color-border)] px-4 py-3 text-left enabled:hover:bg-[var(--color-surface-2)] disabled:cursor-default aria-pressed:bg-[var(--color-primary-tint)] aria-pressed:shadow-[inset_0_-2px_0_0_var(--color-primary)] lg:w-auto"
+              className="bg-[var(--color-surface)] px-4 py-3 text-left enabled:hover:bg-[var(--color-surface-2)] disabled:cursor-default aria-pressed:bg-[var(--color-primary-tint)] aria-pressed:shadow-[inset_0_-2px_0_0_var(--color-primary)]"
             >
-              <span className="text-eyebrow">{metric.label}</span>
+              {/* Hasta `xl` el rótulo más largo se parte en dos líneas y bajaba
+                  su cifra respecto de las otras tres: reservar las dos líneas
+                  las deja alineadas. Desde `xl` cabe en una y no hace falta. */}
+              <span className="line-clamp-2 min-h-[2lh] text-eyebrow xl:min-h-0">{metric.label}</span>
               <span className={inert
                 ? "mt-1 block font-mono text-xl font-semibold tabular-nums text-[var(--color-text-subtle)]"
                 : "mt-1 block font-mono text-xl font-semibold tabular-nums"}>{metric.value}</span>
               <span className={active
-                ? "text-xs font-medium text-[var(--color-primary-ink)]"
-                : "text-xs text-[var(--color-text-subtle)]"}>{caption}</span>
+                ? "block text-xs font-medium text-[var(--color-primary-ink)]"
+                : "block text-xs text-[var(--color-text-subtle)]"}>{caption}</span>
             </button>
           )
         })}
@@ -266,16 +329,20 @@ export function InspectionRunList({ runs, summary, page, pageSize, overdueProgra
           pantalla y no filtran esta lista. Como aviso accionable dice lo mismo
           sin disfrazarse de KPI, y desaparece cuando no hay nada que hacer. */}
       {overdueProgramCount > 0 && (
-        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-2 text-sm">
-          <span className="font-semibold text-[var(--color-warning-ink)]">
-            {overdueProgramCount} {overdueProgramCount === 1 ? "programación vencida" : "programaciones vencidas"}
-          </span>
-          <span className="text-[var(--color-text-subtle)]">no han generado su ejecución.</span>
-          <Link href="/prevencion/inspecciones/programacion?vista=vencidas" className="font-medium underline underline-offset-2">
-            Ver y regularizar
-          </Link>
-        </p>
+        <Callout tone="warning" role="none" icon={<Warning size={18} weight="fill" />}>
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="font-semibold">
+              {overdueProgramCount} {overdueProgramCount === 1 ? "programación vencida" : "programaciones vencidas"}
+            </span>
+            <span>no han generado su ejecución.</span>
+            <Link href="/prevencion/inspecciones/programacion?vista=vencidas" className="inline-flex min-h-11 items-center font-medium underline underline-offset-2 sm:min-h-0">
+              Ver y regularizar
+            </Link>
+          </p>
+        </Callout>
       )}
+
+      {activities}
 
       <FilterToolbar
         activeChips={activeChips}
@@ -307,7 +374,13 @@ export function InspectionRunList({ runs, summary, page, pageSize, overdueProgra
           </>
         }
       >
-        <div className="relative w-full sm:w-64">
+        {/* Bajo `xl` la búsqueda ocupa su propia fila: a 1024 px compartía la
+            primera con los selects y empujaba «Más filtros» a una segunda fila
+            solo. Los selects van en un contenedor de ancho fijo porque la barra
+            fuerza `w-auto` a sus botones directos y los dejaba a ancho del
+            contenido, distinto en cada carga según la opción elegida. La altura
+            del input es la de los selects (36 px; el input solo mide 34). */}
+        <div className="relative w-full xl:w-64">
           <MagnifyingGlass size={16} aria-hidden className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-subtle)]" />
           <Input
             type="search"
@@ -315,141 +388,152 @@ export function InspectionRunList({ runs, summary, page, pageSize, overdueProgra
             onChange={(event) => setSearchDraft(event.target.value)}
             placeholder="Código, plantilla, sujeto o faena"
             aria-label="Buscar inspecciones"
-            className="pl-9"
+            className="pl-9 sm:h-9"
           />
         </div>
-        <Select value={status} onValueChange={(value) => setFilters({ estado: value === "all" ? null : value, vista: null, pagina: null })}>
-          <SelectTrigger className="w-56" aria-label="Estado de la inspección"><SelectValue placeholder="Estado" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todos los estados</SelectItem>
-            {["planned", "in_progress", "completed", "reviewed", "cancelled"].map((value) => <SelectItem key={value} value={value}>{inspectionTaskStatusLabel(value)}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <Select value={kind} onValueChange={(value) => setFilters({ tipo: value === "all" ? null : value, pagina: null })}>
-          <SelectTrigger className="w-52" aria-label="Tipo de instrumento"><SelectValue placeholder="Tipo" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todos los tipos</SelectItem>
-            {Object.entries(INSPECTION_KIND_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <Select value={worksite} onValueChange={(value) => setFilters({ faena: value === "all" ? null : value, pagina: null })}>
-          <SelectTrigger className="w-52" aria-label="Faena"><SelectValue placeholder="Faena" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todas las faenas</SelectItem>
-            {runWorksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}
-          </SelectContent>
-        </Select>
+        <div className="w-[calc(50%-0.25rem)] sm:w-48">
+          <Select value={status} onValueChange={(value) => setFilters({ estado: value === "all" ? null : value, vista: null, pagina: null })}>
+            <SelectTrigger aria-label="Estado de la inspección"><SelectValue placeholder="Estado" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos los estados</SelectItem>
+              {["planned", "in_progress", "completed", "reviewed", "cancelled"].map((value) => <SelectItem key={value} value={value}>{inspectionTaskStatusLabel(value)}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="w-[calc(50%-0.25rem)] sm:w-44">
+          <Select value={kind} onValueChange={(value) => setFilters({ tipo: value === "all" ? null : value, pagina: null })}>
+            <SelectTrigger aria-label="Tipo de instrumento"><SelectValue placeholder="Tipo" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos los tipos</SelectItem>
+              {Object.entries(INSPECTION_KIND_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="w-[calc(50%-0.25rem)] sm:w-44">
+          <Select value={worksite} onValueChange={(value) => setFilters({ faena: value === "all" ? null : value, pagina: null })}>
+            <SelectTrigger aria-label="Faena"><SelectValue placeholder="Faena" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todas las faenas</SelectItem>
+              {runWorksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
       </FilterToolbar>
 
-      {filtered.length === 0 ? (
-        <EmptyState
-          icon={<MagnifyingGlass size={20} />}
-          title={isFiltered ? "No hay inspecciones con estos filtros" : "Aún no hay inspecciones ejecutadas"}
-          description={isFiltered
-            ? "Ajusta los filtros o el texto de búsqueda."
-            : "Habilita un instrumento en Plantillas y prográmalo por faena en Programación. Cada incumplimiento genera un hallazgo, y los graves exigen una acción CAPA antes de cerrar."}
-          action={isFiltered
-            ? <Button type="button" variant="secondary" onClick={clearFilters}>Ver todas</Button>
-            : canExecute && templates.length > 0 && worksites.length > 0
-              ? <NewRunDialog templates={templates} worksites={worksites} assignees={assignees} subjectsByWorksite={subjectsByWorksite} />
-              : undefined}
-        />
-      ) : (
-        <>
-        <div className="space-y-3 md:hidden">
-          {filtered.map((item) => {
-            const overdue = inspectionRunIsOverdue(item, today)
-            const action = item.status === "planned" ? "Comenzar" : item.status === "in_progress" ? "Continuar" : item.status === "completed" ? "Revisar" : "Ver detalle"
-            return (
-              <article key={item.id} className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-xs">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <span className="font-mono text-xs text-[var(--color-text-subtle)]">{item.code}</span>
-                    <h2 className="mt-0.5 text-sm font-semibold text-[var(--color-text)]">{item.templateName}</h2>
-                  </div>
-                  <MetaBadge meta={{ label: `${inspectionTaskStatusLabel(item.status)}`, variant: runStatusBadgeVariant(item.status) }} />
-                </div>
-                <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
-                  <div className="col-span-2">
-                    <dt className="text-[var(--color-text-subtle)]">Faena y sujeto</dt>
-                    <dd className="mt-0.5 font-medium text-[var(--color-text)]">{item.worksiteName}{item.subjectLabel ? ` · ${item.subjectLabel}` : ""}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-[var(--color-text-subtle)]">Fecha clave</dt>
-                    <dd className={overdue ? "mt-0.5 font-semibold text-[var(--color-danger)]" : "mt-0.5 text-[var(--color-text)]"}>
-                      {item.executedAt ? formatDateTime(item.executedAt) : item.scheduledFor ? `${overdue ? "Vencida" : "Programada"} · ${formatDate(item.scheduledFor)}` : "Sin fecha"}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-[var(--color-text-subtle)]">Resultado</dt>
-                    <dd className="mt-0.5 text-[var(--color-text)]">
-                      {item.compliancePercent === null
-                        ? <span title={complianceUnavailableReason(item.status)}>No calculable</span>
-                        : `${item.compliancePercent}%`} · {item.openFindings} hallazgo{item.openFindings === 1 ? "" : "s"}
-                    </dd>
-                  </div>
-                </dl>
-                <Button asChild className="mt-4 w-full" variant={item.status === "planned" || item.status === "in_progress" ? "primary" : "secondary"}>
-                  <Link href={`/prevencion/inspecciones/${item.id}`}>{action}</Link>
-                </Button>
-              </article>
-            )
-          })}
-        </div>
-        <div className="hidden overflow-x-auto rounded-lg border border-[var(--color-border)] md:block">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Código / plantilla</TableHead>
-                <TableHead>Tipo</TableHead>
-                <TableHead>Responsable</TableHead>
-                <TableHead>Faena / sujeto</TableHead>
-                <TableHead>Estado</TableHead>
-                <TableHead>Fecha clave</TableHead>
-                <TableHead className="text-right" title="Porcentaje sobre ítems evaluables; excluye los no aplica">Cumplimiento</TableHead>
-                <TableHead className="text-right" title="Hallazgos abiertos y, entre paréntesis, los graves">Hallazgos</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.map((item) => (
-                <TableRow key={item.id}>
-                  <TableCell>
-                    <Link href={`/prevencion/inspecciones/${item.id}`} className="hover:underline">
-                      <span className="font-mono text-xs">{item.code}</span>
-                      <span className="block text-sm font-medium">{item.templateName}</span>
-                    </Link>
-                  </TableCell>
-                  <TableCell className="text-sm">{INSPECTION_KIND_LABELS[item.templateKind] ?? item.templateKind}</TableCell>
-                  <TableCell className="text-sm">{item.assigneeName ?? "Sin asignar"}</TableCell>
-                  <TableCell className="text-sm">
-                    {item.worksiteName}
-                    {item.subjectLabel && <span className="block text-xs text-[var(--color-text-subtle)]">{item.subjectLabel}</span>}
-                  </TableCell>
-                  <TableCell>
-                    <MetaBadge meta={{ label: `${inspectionTaskStatusLabel(item.status)}`, variant: runStatusBadgeVariant(item.status) }} />
-                  </TableCell>
-                  <TableCell className="text-sm tabular-nums">
-                    {item.executedAt
-                      ? formatDateTime(item.executedAt)
-                      : item.scheduledFor
-                        ? <span className={inspectionRunIsOverdue(item, today) ? "font-semibold text-[var(--color-danger)]" : undefined}>{inspectionRunIsOverdue(item, today) ? "Vencida · " : "Programada · "}{formatDate(item.scheduledFor)}</span>
-                        : "Sin fecha"}
-                  </TableCell>
-                  <TableCell className="text-right font-mono text-sm tabular-nums">
-                    {item.compliancePercent === null
-                      ? <span title={complianceUnavailableReason(item.status)}>No calculable</span>
-                      : `${item.compliancePercent}%`}
-                  </TableCell>
-                  <TableCell className="text-right font-mono text-sm tabular-nums">
-                    {item.openFindings}{item.criticalFindings > 0 && ` (${item.criticalFindings})`}
-                  </TableCell>
+      {/* `aria-busy` mientras la URL nueva se resuelve en el servidor: la lista
+          vieja sigue en pantalla y, sin esto, nada dice que ya se pidió otra. */}
+      <div aria-busy={isPending || undefined} className={cn(isPending && "opacity-60")}>
+        {filtered.length === 0 ? (
+          <EmptyState
+            icon={<MagnifyingGlass size={20} />}
+            title={isFiltered ? "No hay inspecciones con estos filtros" : "Aún no hay inspecciones ejecutadas"}
+            description={isFiltered
+              ? "Ajusta los filtros o el texto de búsqueda."
+              : "Habilita un instrumento en Plantillas y prográmalo por faena en Programación. Cada incumplimiento genera un hallazgo, y los graves exigen una acción CAPA antes de cerrar."}
+            action={isFiltered
+              ? <Button type="button" variant="secondary" onClick={clearFilters}>Ver todas</Button>
+              : canExecute && templates.length > 0 && worksites.length > 0
+                ? <NewRunDialog templates={templates} worksites={worksites} assignees={assignees} subjectsByWorksite={subjectsByWorksite} />
+                : undefined}
+          />
+        ) : (
+          <>
+          <div className="space-y-3 md:hidden">
+            {filtered.map((item) => (
+              <ResponsiveDataListCard
+                key={item.id}
+                title={
+                  <Link href={`/prevencion/inspecciones/${item.id}`} className="font-mono hover:underline">
+                    {item.code}
+                  </Link>
+                }
+                description={<span className="text-sm text-[var(--color-text)]">{item.templateName}</span>}
+                status={<MetaBadge meta={{ label: inspectionTaskStatusLabel(item.status), variant: runStatusBadgeVariant(item.status) }} />}
+                actions={
+                  <Button asChild className="w-full" variant={item.status === "planned" || item.status === "in_progress" ? "primary" : "secondary"}>
+                    <Link href={`/prevencion/inspecciones/${item.id}`}>{runAction(item.status)}</Link>
+                  </Button>
+                }
+              >
+                <ResponsiveDataListField label="Faena y sujeto" className="col-span-2">
+                  <span className="font-medium text-[var(--color-text)]">{item.worksiteName}{item.subjectLabel ? ` · ${item.subjectLabel}` : ""}</span>
+                </ResponsiveDataListField>
+                <ResponsiveDataListField label="Responsable">{item.assigneeName ?? "Sin asignar"}</ResponsiveDataListField>
+                <ResponsiveDataListField label="Tipo">{INSPECTION_KIND_LABELS[item.templateKind] ?? item.templateKind}</ResponsiveDataListField>
+                <ResponsiveDataListField label="Fecha clave">
+                  <span className="text-[var(--color-text)]"><KeyDate item={item} today={today} /></span>
+                </ResponsiveDataListField>
+                <ResponsiveDataListField label="Resultado">
+                  <span className="text-[var(--color-text)]"><ComplianceValue item={item} /></span>
+                </ResponsiveDataListField>
+                <ResponsiveDataListField label="Hallazgos" className="col-span-2">
+                  <span className={item.criticalFindings > 0 ? "font-medium text-[var(--color-danger-ink)]" : undefined}>
+                    {findingsLabel(item.openFindings, item.criticalFindings, "inline")}
+                  </span>
+                </ResponsiveDataListField>
+              </ResponsiveDataListCard>
+            ))}
+          </div>
+          {/* La tabla va en `TableRoot`, que ya trae el borde, el recorte y la
+              región enfocable con su nombre: antes era un `div` propio con
+              `overflow-x-auto` y sin nombre. Hasta `xl` el responsable baja a
+              sublínea de «Faena / sujeto» y el tipo a sublínea de «Inspección»,
+              para que «Estado» y «Resultado» no queden tras un scroll horizontal. */}
+          <TableRoot aria-label="Inspecciones" className="hidden md:block">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="px-3">Inspección</TableHead>
+                  <TableHead className="px-3">Faena / sujeto</TableHead>
+                  <TableHead className="hidden px-3 xl:table-cell">Responsable</TableHead>
+                  {/* `w-px` en «Estado» y «Resultado»: la columna mide lo que su contenido
+                      (que no se parte) y el resto del ancho es para los textos que sí pueden
+                      envolverse. Sin eso la tabla repartía el ancho a ojo y partía
+                      «1 abierto (1 / grave)» a 1024 px mientras «Estado» sobraba. */}
+                  <TableHead className="w-px px-3">Estado</TableHead>
+                  <TableHead className="px-3">Fecha clave</TableHead>
+                  <TableHead className="w-px px-3" title="Cumplimiento sobre los ítems evaluables (sin los «no aplica») y hallazgos abiertos; entre paréntesis, los graves">Resultado</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-        </>
-      )}
+              </TableHeader>
+              <TableBody>
+                {filtered.map((item) => (
+                  <TableRow key={item.id}>
+                    <TableCell className="px-3 align-top">
+                      <Link href={`/prevencion/inspecciones/${item.id}`} className="hover:underline">
+                        <span className="font-mono text-xs">{item.code}</span>
+                        <span className="block text-sm font-medium">{item.templateName}</span>
+                      </Link>
+                      <span className="block text-xs text-[var(--color-text-subtle)]">{INSPECTION_KIND_LABELS[item.templateKind] ?? item.templateKind}</span>
+                    </TableCell>
+                    <TableCell className="px-3 align-top text-sm">
+                      <span className="block">{item.worksiteName}</span>
+                      {item.subjectLabel && <span className="block text-xs text-[var(--color-text-subtle)]">{item.subjectLabel}</span>}
+                      <span className="block text-xs text-[var(--color-text-subtle)] xl:hidden">Resp.: {item.assigneeName ?? "Sin asignar"}</span>
+                    </TableCell>
+                    <TableCell className="hidden px-3 align-top text-sm xl:table-cell">{item.assigneeName ?? "Sin asignar"}</TableCell>
+                    <TableCell className="whitespace-nowrap px-3 align-top">
+                      <MetaBadge meta={{ label: inspectionTaskStatusLabel(item.status), variant: runStatusBadgeVariant(item.status) }} />
+                    </TableCell>
+                    <TableCell className="px-3 align-top text-sm tabular-nums">
+                      <KeyDate item={item} today={today} stacked />
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap px-3 align-top text-sm">
+                      <ComplianceValue item={item} />
+                      <span
+                        title="Hallazgos abiertos; entre paréntesis, los graves"
+                        className={cn("block text-xs", item.criticalFindings > 0 ? "font-medium text-[var(--color-danger-ink)]" : "text-[var(--color-text-subtle)]")}
+                      >
+                        {findingsLabel(item.openFindings, item.criticalFindings, "compact")}
+                      </span>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableRoot>
+          </>
+        )}
+      </div>
 
       {totalPages > 1 && (
         <Pagination
@@ -506,7 +590,7 @@ export function InspectionPageActions({
 
 /* ── Alta de inspección ───────────────────────────────────────────────────── */
 
-export function NewRunDialog({ templates, worksites, assignees, subjectsByWorksite, initialTemplateId, initialWorksiteId, initialOpen }: {
+interface NewRunProps {
   templates: TemplateOption[]
   worksites: { id: string; name: string }[]
   assignees: InspectionAssigneeOption[]
@@ -515,10 +599,35 @@ export function NewRunDialog({ templates, worksites, assignees, subjectsByWorksi
   initialTemplateId?: string
   initialWorksiteId?: string
   initialOpen?: boolean
-}) {
+}
+
+/** Valor del selector de responsable cuando no se eligió a nadie (lo fija `findWorksiteSuggestedAssignee`). */
+const NO_ASSIGNEE = "_none"
+
+/** Los campos del formulario que el servidor puede señalar por nombre. */
+const NEW_RUN_FIELDS = ["templateId", "worksiteId", "subjectLabel", "scheduledFor", "assignedToUserId"] as const
+
+export function NewRunDialog(props: NewRunProps) {
+  const [open, setOpen] = React.useState(Boolean(props.initialOpen))
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild><Button size="sm">Nueva inspección</Button></DialogTrigger>
+      <DialogContent className="overflow-hidden p-0">
+        {/* El formulario es un componente aparte y no vive en este: el contenido
+            del diálogo se desmonta al cerrarlo, y con él los errores por campo
+            y lo escrito. Así reabrirlo parte limpio sin resetear a mano cada
+            estado (el aviso del intento anterior reaparecía sobre el formulario
+            vacío). */}
+        <NewRunForm {...props} onDone={() => setOpen(false)} />
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function NewRunForm({ templates, worksites, assignees, subjectsByWorksite, initialTemplateId, initialWorksiteId, initialOpen, onDone }: NewRunProps & { onDone: () => void }) {
   const validInitialTemplateId = initialTemplateId && templates.some((item) => item.id === initialTemplateId) ? initialTemplateId : ""
   const validInitialWorksiteId = initialWorksiteId && worksites.some((item) => item.id === initialWorksiteId) ? initialWorksiteId : ""
-  const [open, setOpen] = React.useState(Boolean(initialOpen))
   const defaults = safeNewInspectionDefaults()
   const initialEffectiveWorksiteId = validInitialWorksiteId || defaults.worksiteId
   const [templateId, setTemplateId] = React.useState<string>(validInitialTemplateId || defaults.templateId)
@@ -536,60 +645,44 @@ export function NewRunDialog({ templates, worksites, assignees, subjectsByWorksi
   const operation = useOperation()
   const router = useRouter()
 
-  function handleOpenChange(nextOpen: boolean) {
-    setOpen(nextOpen)
-    if (!nextOpen) return
-    const nextWorksiteId = validInitialWorksiteId || defaults.worksiteId
-    setTemplateId(validInitialTemplateId || defaults.templateId)
-    setWorksiteId(nextWorksiteId)
-    setSubjectRef("_none")
-    setAssignedToUserId(findWorksiteSuggestedAssignee(assignees, nextWorksiteId))
-    operation.setMessage("")
-  }
-
   function handleWorksiteChange(nextWorksiteId: string) {
     setWorksiteId(nextWorksiteId)
-    setSubjectRef("_none")
+    setSubjectRef(NO_SUBJECT)
     setAssignedToUserId(findWorksiteSuggestedAssignee(assignees, nextWorksiteId))
   }
 
   const template = templates.find((item) => item.id === templateId)
   const requiresContainer = templateRequiresContainer(template?.sourceDefinitionCode)
   const worksiteSubjects = subjectsByWorksite[worksiteId] ?? []
+  const missingContainer = requiresContainer && !subjectRef.startsWith("container:")
 
   function handleTemplateChange(nextTemplateId: string) {
     setTemplateId(nextTemplateId)
     // Cambiar de plantilla puede invalidar el sujeto elegido (un extintor no
     // sirve para la inspección de contenedores).
-    setSubjectRef("_none")
+    setSubjectRef(NO_SUBJECT)
   }
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!templateId || !worksiteId) {
-      operation.setMessage("Selecciona conscientemente la plantilla y la faena antes de crear.")
-      return
-    }
-    if (requiresContainer && !subjectRef.startsWith("container:")) {
-      operation.setMessage("Selecciona un contenedor del catálogo de la faena.")
-      return
-    }
+    // El botón ya viene deshabilitado sin plantilla, faena o contenedor: esto
+    // sólo cubre un envío que no pasó por él.
+    if (!templateId || !worksiteId || missingContainer) return
     const form = new FormData(event.currentTarget)
     const subjectType = String(form.get("subjectType") ?? "").trim()
     const subjectLabel = String(form.get("subjectLabel") ?? "").trim()
     const scheduledFor = String(form.get("scheduledFor") ?? "").trim()
-    const assignedToUserId = String(form.get("assignedToUserId") ?? "").trim()
     operation.run(() => createInspectionRunAction({
-      templateId: form.get("templateId"),
-      worksiteId: form.get("worksiteId"),
-      origin: form.get("origin"),
+      templateId,
+      worksiteId,
+      origin,
       subjectType: subjectType || null,
       subjectLabel: subjectLabel || null,
       ...subjectIdsFromRef(subjectRef),
       scheduledFor: scheduledFor || null,
-      assignedToUserId: assignedToUserId || null,
+      assignedToUserId: assignedToUserId === NO_ASSIGNEE ? null : assignedToUserId || null,
     }), (result) => {
-      setOpen(false)
+      onDone()
       // Se abre la inspección recién creada: el gesto siguiente es ejecutarla,
       // no volver a buscarla en la bandeja (INS-09).
       const runId = result.data?.runId
@@ -597,63 +690,88 @@ export function NewRunDialog({ templates, worksites, assignees, subjectsByWorksi
     })
   }
 
+  // El aviso general sólo cuando el servidor no señaló ninguno de los campos que
+  // se ven: si lo hizo, el mensaje ya está bajo su campo y repetirlo arriba lo
+  // leería dos veces.
+  const fieldErrorShown = NEW_RUN_FIELDS.some((name) => Boolean(operation.fieldError(name)))
+
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogTrigger asChild><Button size="sm">Nueva inspección</Button></DialogTrigger>
-      <DialogContent className="overflow-hidden p-0">
-        <form onSubmit={submit} className="flex max-h-[min(90dvh,54rem)] flex-col">
-          <DialogHeader className="mb-0 shrink-0 border-b border-[var(--color-border)] px-6 pb-4 pt-6">
-            <DialogTitle>Nueva inspección</DialogTitle>
-            <DialogDescription>{initialOpen
-              ? "La actividad programada dejó preseleccionados el instrumento y la faena. Confirma los datos antes de crear el registro nativo."
-              : "Elige explícitamente el instrumento y la faena. Así evitas registrar trabajo en un alcance distinto al que estás visitando."}</DialogDescription>
-          </DialogHeader>
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-4">
-          <Field label="Plantilla" required>
-            <InspectionTemplateSelect templates={templates} value={templateId} onValueChange={handleTemplateChange} /><input type="hidden" name="templateId" value={templateId} />
-          </Field>
-          <Field label="Faena" required>
-            <Select value={worksiteId} onValueChange={handleWorksiteChange}><SelectTrigger aria-label="Faena de la inspección"><SelectValue placeholder="Selecciona la faena" /></SelectTrigger><SelectContent>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="worksiteId" value={worksiteId} />
-          </Field>
-          <Field label="Origen" hint="Quién origina la inspección — la certificación Mutual distingue las del comité paritario.">
-            <Select value={origin} onValueChange={setOrigin}><SelectTrigger aria-label="Origen"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(INSPECTION_ORIGIN_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select><input type="hidden" name="origin" value={origin} />
-          </Field>
-          {/* I-25: antes este campo aparecía/desaparecía al elegir faena,
-              desplazando el resto del formulario. Ahora ocupa su lugar siempre,
-              con un estado explícito mientras no hay faena elegida o su
-              inventario está vacío. */}
-          <SubjectSelectField
-            worksiteId={worksiteId}
-            subjects={worksiteSubjects}
-            requiresContainer={requiresContainer}
-            value={subjectRef}
-            onValueChange={setSubjectRef}
-            noneLabel="Otro / texto libre"
-            hint={!worksiteId
-              ? "Selecciona una faena para ver su inventario."
-              : requiresContainer
-                ? "Obligatorio: esta inspección se hace por contenedor del catálogo."
-                : "Opcional. Un recurso del inventario actualiza su última inspección al completar; un equipo habilita derivar la falla a mantención."}
-          />
-          {requiresContainer
-            ? null
-            : subjectRef === "_none" ? <div className="grid gap-3 md:grid-cols-2">
-                <Field label="Tipo de sujeto" hint="Opcional. Ej: extintor, camión."><Input name="subjectType" maxLength={120} /></Field>
-                <Field label="Identificación del sujeto" hint="Úsalo sólo si el elemento no existe en el inventario."><Input name="subjectLabel" maxLength={300} /></Field>
-              </div> : <p className="rounded-lg bg-[var(--color-surface-2)] px-3 py-2 text-xs text-[var(--color-text-muted)]">Se usará el sujeto seleccionado del inventario; los campos de texto libre no aplican.</p>}
+    <form onSubmit={submit} className="flex max-h-[min(90dvh,54rem)] flex-col">
+      <DialogHeader className="mb-0 shrink-0 border-b border-[var(--color-border)] px-6 pb-4 pt-6">
+        <DialogTitle>Nueva inspección</DialogTitle>
+        <DialogDescription>{initialOpen
+          ? "La actividad programada dejó elegidos el instrumento y la faena. Confirma los datos antes de crear."
+          : "Elige el instrumento y la faena donde se hará."}</DialogDescription>
+      </DialogHeader>
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-4">
+        <Field label="Plantilla" required error={operation.fieldError("templateId")}>
+          <InspectionTemplateSelect templates={templates} value={templateId} onValueChange={handleTemplateChange} />
+        </Field>
+        <Field label="Faena" required error={operation.fieldError("worksiteId")}>
+          <Select value={worksiteId} onValueChange={handleWorksiteChange}>
+            <SelectTrigger aria-label="Faena de la inspección"><SelectValue placeholder="Selecciona la faena" /></SelectTrigger>
+            <SelectContent>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent>
+          </Select>
+        </Field>
+        {/* I-25: antes este campo aparecía/desaparecía al elegir faena,
+            desplazando el resto del formulario. Ahora ocupa su lugar siempre,
+            con un estado explícito mientras no hay faena elegida o su
+            inventario está vacío. */}
+        <SubjectSelectField
+          worksiteId={worksiteId}
+          subjects={worksiteSubjects}
+          requiresContainer={requiresContainer}
+          value={subjectRef}
+          onValueChange={setSubjectRef}
+          noneLabel="Otro / texto libre"
+          hint={!worksiteId
+            ? "Elige primero la faena."
+            : requiresContainer
+              ? "Obligatorio: se inspecciona por contenedor del catálogo."
+              : "Opcional. Un equipo del inventario permite derivar una falla a mantención."}
+        />
+        {/* El texto libre sólo existe con «Otro»: con un sujeto del inventario o
+            sin faena elegida eran dos campos que no aplicaban y que había que
+            leer para descubrirlo. */}
+        {worksiteId && !requiresContainer && subjectRef === NO_SUBJECT && (
           <div className="grid gap-3 md:grid-cols-2">
-            <Field label="Programada para" hint="Opcional."><DatePicker name="scheduledFor" /></Field>
-            <Field label="Asignada a" hint="Vacío = quien la crea. El prevencionista de la faena se sugiere automáticamente al elegirla.">
-              <Select value={assignedToUserId} onValueChange={setAssignedToUserId}><SelectTrigger aria-label="Asignada a"><SelectValue placeholder="Quien la crea" /></SelectTrigger><SelectContent><AssigneeSelectOptions assignees={assignees} worksiteId={worksiteId} noneLabel="Quien la crea" /></SelectContent></Select><input type="hidden" name="assignedToUserId" value={assignedToUserId === "_none" ? "" : assignedToUserId} />
+            <Field label="Tipo de sujeto" hint="Ej.: extintor, camión."><Input name="subjectType" maxLength={120} /></Field>
+            <Field label="Identificación del sujeto" hint="Si no está en el inventario." error={operation.fieldError("subjectLabel")}><Input name="subjectLabel" maxLength={300} /></Field>
+          </div>
+        )}
+        <div className="grid gap-3 md:grid-cols-2">
+          <Field label="Programada para" hint="Opcional." error={operation.fieldError("scheduledFor")}><DatePicker name="scheduledFor" /></Field>
+          <Field label="Asignada a" hint="Vacío: quien la crea." error={operation.fieldError("assignedToUserId")}>
+            <Select value={assignedToUserId} onValueChange={setAssignedToUserId}>
+              <SelectTrigger aria-label="Asignada a"><SelectValue placeholder="Quien la crea" /></SelectTrigger>
+              <SelectContent><AssigneeSelectOptions assignees={assignees} worksiteId={worksiteId} noneLabel="Quien la crea" /></SelectContent>
+            </Select>
+          </Field>
+        </div>
+        {/* «Origen» casi siempre es el valor por defecto: plegado deja de
+            competir con lo que sí hay que decidir, y el rótulo dice cuál está
+            vigente sin abrirlo. */}
+        <details className="group rounded-[var(--radius-lg)] border border-[var(--color-border)]">
+          <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 px-3 text-sm font-medium text-[var(--color-text-muted)] hover:text-[var(--color-text)] sm:min-h-9 [&::-webkit-details-marker]:hidden">
+            <CaretRight size={14} aria-hidden className="shrink-0 group-open:rotate-90" />
+            Más opciones · Origen: {INSPECTION_ORIGIN_LABELS[origin] ?? origin}
+          </summary>
+          <div className="border-t border-[var(--color-border)] px-3 py-3">
+            <Field label="Origen" hint="Quién origina la inspección; la certificación Mutual distingue al comité paritario.">
+              <Select value={origin} onValueChange={setOrigin}>
+                <SelectTrigger aria-label="Origen"><SelectValue /></SelectTrigger>
+                <SelectContent>{Object.entries(INSPECTION_ORIGIN_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
+              </Select>
             </Field>
           </div>
-          {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
-          </div>
-          <DialogFooter className="mt-0 shrink-0 border-t border-[var(--color-border)] bg-[var(--color-surface)] px-6 py-4">
-            <Button type="submit" disabled={operation.pending || !templateId || !worksiteId || (requiresContainer && !subjectRef.startsWith("container:"))}>{operation.pending ? "Creando…" : "Crear inspección"}</Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+        </details>
+        {operation.message && !fieldErrorShown && (
+          <Callout tone="danger" role="alert">{operation.message}</Callout>
+        )}
+      </div>
+      <DialogFooter className="mt-0 shrink-0 border-t border-[var(--color-border)] bg-[var(--color-surface)] px-6 py-4">
+        <Button type="submit" loading={operation.pending} disabled={!templateId || !worksiteId || missingContainer}>Crear inspección</Button>
+      </DialogFooter>
+    </form>
   )
 }

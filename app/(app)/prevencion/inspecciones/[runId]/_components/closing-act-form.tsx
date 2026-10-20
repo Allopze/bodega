@@ -19,8 +19,9 @@ export function ClosingActForm({ closingAct, closing, updateClosing }: {
   updateClosing: InspectionDraftApi["updateClosing"]
 }) {
   return (
-    <section className="space-y-3">
-      <h2 className="text-sm font-semibold">{closingAct.title}</h2>
+    // `id`: el resumen del progreso («acta incompleta») salta aquí.
+    <section id="acta-cierre" className="scroll-mt-20 space-y-3">
+      <h2 className="text-h2">{closingAct.title}</h2>
       <div className="space-y-3 rounded-lg border border-[var(--color-border)] p-4">
         <Field label="Resultado" required>
           <Select value={closing.result || "__unset__"} onValueChange={(value) => updateClosing((c) => ({ ...c, result: value === "__unset__" ? "" : value }))}>

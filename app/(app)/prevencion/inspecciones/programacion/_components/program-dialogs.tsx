@@ -212,7 +212,9 @@ export function RunProgramNowButton({ program }: { program: ProgramItem }) {
   }
 
   return (
-    <div className="space-y-1 text-right">
+    // `max-w-full`: en la columna de acción de la tabla (10 rem) un error largo
+    // debe partirse dentro de ella, no empujar la tabla fuera del pozo.
+    <div className="max-w-full space-y-1 text-right">
       <Button
         type="button"
         size="sm"
@@ -222,7 +224,7 @@ export function RunProgramNowButton({ program }: { program: ProgramItem }) {
       >
         {operation.pending ? "Creando…" : "Crear y abrir inspección"}
       </Button>
-      <InlineError operation={operation} className="max-w-64" />
+      <InlineError operation={operation} className="max-w-full" />
       <ConfirmDialog
         open={confirming}
         onOpenChange={setConfirming}

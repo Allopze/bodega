@@ -5,7 +5,7 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Callout } from "@/components/ui/callout"
 import { Combobox } from "@/components/ui/combobox"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -20,7 +20,30 @@ import {
   setInspectionTemplateParityAction,
 } from "../../actions"
 import type { DocumentSourceOption, TemplateItem } from "../../_components/catalog-types"
-import { FormDialogFooter, OperationError, ReasonField, useFormDialog } from "../../_components/form-dialog"
+import { FormDialogFooter, OperationError, ReasonField, useControlledFormDialog } from "../../_components/form-dialog"
+
+/*
+ * Los diálogos del ciclo de vida de una plantilla son CONTROLADOS: los abre la
+ * tabla (o la tarjeta) desde un botón de la fila o desde su menú «Más acciones»,
+ * y un `DialogTrigger` dentro de un ítem de menú se desmonta con el menú. El
+ * estado vive en el panel; cada diálogo se monta una vez y con una `key` nueva
+ * por apertura, de modo que parte siempre de la plantilla tal como está hoy.
+ */
+
+type ControlledDialogProps = {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}
+
+/** «Ver el cuestionario» desde un diálogo que pide decidir sobre él: se abre apilado, sin cerrar el diálogo. */
+function PreviewLink({ onPreview }: { onPreview?: () => void }) {
+  if (!onPreview) return null
+  return (
+    <Button type="button" variant="link" size="sm" className="h-auto min-h-11 sm:min-h-0" onClick={onPreview}>
+      Ver el cuestionario
+    </Button>
+  )
+}
 
 /**
  * Declara si la transcripción digital coincide con la planilla oficial.
@@ -31,13 +54,12 @@ import { FormDialogFooter, OperationError, ReasonField, useFormDialog } from "..
  * declara contra el documento ya vinculado, se pueden enumerar las diferencias,
  * y queda la traza de quién lo hizo.
  */
-export function ParityDialog({ item }: { item: TemplateItem }) {
-  const initialStatus = item.parityReport?.status === "failed" ? "failed" : "passed"
-  const [status, setStatus] = React.useState<"passed" | "failed">(initialStatus)
-  // Al abrir se parte de la paridad guardada, no de una elección abandonada.
-  const { open, changeOpen, operation } = useFormDialog(() => setStatus(initialStatus))
+export function ParityDialog({ item, open, onOpenChange, onPreview }: ControlledDialogProps & { item: TemplateItem; onPreview?: () => void }) {
+  // Se parte de la paridad guardada, no de una elección abandonada: el panel
+  // monta el diálogo de nuevo en cada apertura.
+  const [status, setStatus] = React.useState<"passed" | "failed">(item.parityReport?.status === "failed" ? "failed" : "passed")
+  const { changeOpen, operation } = useControlledFormDialog(open, onOpenChange)
   return <Dialog open={open} onOpenChange={changeOpen}>
-    <DialogTrigger asChild><Button size="sm" variant="secondary">Declarar paridad</Button></DialogTrigger>
     <DialogContent><form className="space-y-4" onSubmit={(event) => {
       event.preventDefault()
       const form = new FormData(event.currentTarget)
@@ -65,6 +87,7 @@ export function ParityDialog({ item }: { item: TemplateItem }) {
         <DialogDescription>
           Contrasta la definición digital con {item.sourceSnapshot?.fileName ?? "el anexo vinculado"}. Sin paridad aprobada el instrumento no puede habilitarse.
         </DialogDescription>
+        <PreviewLink onPreview={onPreview} />
       </DialogHeader>
       <Field label="Resultado" required>
         <Select value={status} onValueChange={(value) => setStatus(value as "passed" | "failed")}>
@@ -99,15 +122,13 @@ export function ParityDialog({ item }: { item: TemplateItem }) {
  * y volver a incorporarlo. Con el checksum conocido sólo se ofrece el archivo
  * que coincide (el servidor rechaza los demás) y viene elegido.
  */
-export function LinkSourceDialog({ item, documentSources, label }: {
+export function LinkSourceDialog({ item, documentSources, open, onOpenChange }: ControlledDialogProps & {
   item: TemplateItem
   documentSources: DocumentSourceOption[]
-  label: "Vincular fuente" | "Cambiar fuente"
 }) {
   const base = officialSourceGate({ needsOfficialSource: true, officialChecksumSha256: item.officialChecksumSha256, sources: documentSources, selectedId: "" })
-  const initialSourceId = base.preselectedId || item.sourceDocumentVersionId || ""
-  const [sourceId, setSourceId] = React.useState(initialSourceId)
-  const { open, changeOpen, operation } = useFormDialog(() => setSourceId(initialSourceId))
+  const [sourceId, setSourceId] = React.useState(base.preselectedId || item.sourceDocumentVersionId || "")
+  const { changeOpen, operation } = useControlledFormDialog(open, onOpenChange)
   const gate = officialSourceGate({ needsOfficialSource: true, officialChecksumSha256: item.officialChecksumSha256, sources: documentSources, selectedId: sourceId })
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -126,7 +147,6 @@ export function LinkSourceDialog({ item, documentSources, label }: {
 
   return (
     <Dialog open={open} onOpenChange={changeOpen}>
-      <DialogTrigger asChild><Button size="sm" variant="secondary">{label}</Button></DialogTrigger>
       <DialogContent>
         <form onSubmit={submit} className="space-y-4">
           <DialogHeader>
@@ -164,10 +184,9 @@ export function LinkSourceDialog({ item, documentSources, label }: {
   )
 }
 
-export function RollbackTemplateDialog({ current, previous }: { current: TemplateItem; previous: TemplateItem }) {
-  const { open, changeOpen, operation } = useFormDialog()
+export function RollbackTemplateDialog({ current, previous, open, onOpenChange }: ControlledDialogProps & { current: TemplateItem; previous: TemplateItem }) {
+  const { changeOpen, operation } = useControlledFormDialog(open, onOpenChange)
   return <Dialog open={open} onOpenChange={changeOpen}>
-    <DialogTrigger asChild><Button size="sm" variant="secondary">Revertir versión</Button></DialogTrigger>
     <DialogContent><form className="space-y-4" onSubmit={(event) => {
       event.preventDefault()
       const reason = String(new FormData(event.currentTarget).get("reason") ?? "")
@@ -186,12 +205,12 @@ export function RollbackTemplateDialog({ current, previous }: { current: Templat
 
 /* ── Aprobar plantilla ─────────────────────────────────────────────────────── */
 
-export function ApproveDialog({ templateId, name, expectedVersion }: { templateId: string; name: string; expectedVersion: number }) {
-  const { open, changeOpen, operation } = useFormDialog()
+export function ApproveDialog({ item, open, onOpenChange, onPreview }: ControlledDialogProps & { item: TemplateItem; onPreview?: () => void }) {
+  const { changeOpen, operation } = useControlledFormDialog(open, onOpenChange)
+  const { id: templateId, name, version: expectedVersion } = item
 
   return (
     <Dialog open={open} onOpenChange={changeOpen}>
-      <DialogTrigger asChild><Button size="sm" variant="secondary">Aprobar</Button></DialogTrigger>
       <DialogContent>
         <form
           onSubmit={(event) => {
@@ -207,6 +226,7 @@ export function ApproveDialog({ templateId, name, expectedVersion }: { templateI
           <DialogHeader>
             <DialogTitle>Aprobar {name}</DialogTitle>
             <DialogDescription>Congela el contenido y reemplaza la versión aprobada anterior del mismo código.</DialogDescription>
+            <PreviewLink onPreview={onPreview} />
           </DialogHeader>
           <ReasonField error={operation.fieldError("reason")} />
           <OperationError operation={operation} />
@@ -229,13 +249,12 @@ export function ApproveDialog({ templateId, name, expectedVersion }: { templateI
  * que sí hace esta pantalla es decir cuál de las dos cosas pasó, y a cuántas
  * programaciones activas dejó sin generar inspecciones.
  */
-export function RetireDialog({ templateId, name }: { templateId: string; name: string }) {
-  const { open, changeOpen, operation } = useFormDialog()
+export function RetireDialog({ item, open, onOpenChange }: ControlledDialogProps & { item: TemplateItem }) {
+  const { changeOpen, operation } = useControlledFormDialog(open, onOpenChange)
+  const { id: templateId, name } = item
 
   return (
     <Dialog open={open} onOpenChange={changeOpen}>
-      {/* I-20: una acción destructiva no se ve como una neutra. */}
-      <DialogTrigger asChild><Button size="sm" variant="ghost-danger">Retirar</Button></DialogTrigger>
       <DialogContent>
         <form
           onSubmit={(event) => {

@@ -7,9 +7,9 @@ import { SelectableCard, SelectableCardDescription, SelectableCardTitle } from "
 
 /**
  * `tone` sólo se usa en la variante `compact`: dice qué color toma la opción
- * cuando está elegida (conforme / no conforme / neutra). Sin `tone` es neutra.
+ * cuando está elegida (conforme / no conforme / parcial / neutra). Sin `tone` es neutra.
  */
-export type ChoiceCardTone = "positive" | "negative" | "neutral"
+export type ChoiceCardTone = "positive" | "negative" | "warning" | "neutral"
 export type ChoiceCardOption<T extends string | number> = { value: T; title: string; description?: string; tone?: ChoiceCardTone }
 
 /** El grupo necesita un nombre accesible: o un texto (`label`) o el id de un rótulo que ya está en pantalla. */
@@ -25,6 +25,7 @@ type ChoiceCardGroupName =
 const COMPACT_SELECTED_TONE: Record<ChoiceCardTone, string> = {
   positive: "border-[var(--color-success-line)] bg-[var(--color-success-tint)] text-[var(--color-success-ink)] ring-2 ring-[var(--color-success)]",
   negative: "border-[var(--color-danger-line)] bg-[var(--color-danger-tint)] text-[var(--color-danger-ink)] ring-2 ring-[var(--color-danger)]",
+  warning: "border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] text-[var(--color-warning-ink)] ring-2 ring-[var(--color-warning)]",
   neutral: "border-[var(--color-border-strong)] bg-[var(--color-surface-3)] text-[var(--color-text)] ring-2 ring-[var(--color-text-muted)]",
 }
 
@@ -44,7 +45,7 @@ const COMPACT_SELECTED_TONE: Record<ChoiceCardTone, string> = {
  * (`card`) no cambia.
  */
 export function ChoiceCardGroup<T extends string | number>({
-  label, "aria-labelledby": labelledBy, options, value, onChange, disabled = false, className, variant = "card",
+  label, "aria-labelledby": labelledBy, "aria-describedby": describedBy, required, options, value, onChange, disabled = false, className, variant = "card",
 }: ChoiceCardGroupName & {
   options: ReadonlyArray<ChoiceCardOption<T>>
   value: T | null
@@ -52,6 +53,10 @@ export function ChoiceCardGroup<T extends string | number>({
   disabled?: boolean
   className?: string
   variant?: "card" | "compact"
+  /** Id del texto que explica un problema del grupo (p. ej. un error en línea). */
+  "aria-describedby"?: string
+  /** Se anuncia como `aria-required`: el grupo no muestra marca visual de obligatorio. */
+  required?: boolean
 }) {
   const refs = React.useRef<Array<HTMLButtonElement | null>>([])
   const idBase = React.useId()
@@ -84,6 +89,8 @@ export function ChoiceCardGroup<T extends string | number>({
       role="radiogroup"
       aria-label={label}
       aria-labelledby={labelledBy}
+      aria-describedby={describedBy}
+      aria-required={required || undefined}
       aria-disabled={disabled || undefined}
       className={cn(
         compact ? "grid grid-cols-[repeat(auto-fit,minmax(5rem,1fr))] gap-1.5" : "grid gap-2 sm:grid-cols-3",

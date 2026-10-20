@@ -1,5 +1,5 @@
 import ExcelJS from "exceljs"
-import { asc, eq, inArray } from "drizzle-orm"
+import { and, asc, eq, ilike, inArray, or } from "drizzle-orm"
 import { alias } from "drizzle-orm/pg-core"
 import { db } from "@/db"
 import {
@@ -14,11 +14,20 @@ import {
 import type { InspectionAccess } from "@/lib/services/prevention-inspections"
 import { capaStatusLabel } from "@/lib/prevention/capa"
 import { FINDING_CRITICALITY_LABELS, INSPECTION_KIND_LABELS } from "@/lib/prevention/inspections"
+import {
+  compareByAttention,
+  followupStatusOf,
+  type FollowupStatus,
+  type InspectionFollowupFilter,
+  type InspectionFollowupOrder,
+} from "@/lib/prevention/inspection-followup-query"
 import { EXCEL_DATE_FORMAT, excelPlainDate } from "@/lib/reports/excel-dates"
 import { sanitizeCell } from "@/lib/reports/export-module/excel-builder"
-import { formatDateTime } from "@/lib/utils"
+import { formatDateTime, todayInChile } from "@/lib/utils"
 
-export interface InspectionFollowupRow {
+// `type` y no `interface`: la fila entra tal cual a `DataTable`, cuyo genérico exige un
+// `Record<string, unknown>`, y sólo un alias de tipo objeto cumple esa firma.
+export type InspectionFollowupRow = {
   findingId: string
   runId: string
   /** Código de la inspección (`INS-…`), para citarla y enlazarla. */
@@ -46,12 +55,32 @@ export interface InspectionFollowupRow {
   actionCode: string | null
   /** Estado de la acción CAPA, crudo; `status` ya trae su etiqueta. */
   capaStatus: string | null
+  /** Situación del hallazgo (sin acción, abierta, vencida, cerrada): ver `followupStatusOf`. */
+  followupStatus: FollowupStatus
+  /** Última nota de seguimiento de la acción CAPA; `null` sin acción o sin seguimientos. */
+  lastFollowup: { at: string; author: string; note: string } | null
 }
 
-export async function listInspectionFollowup(access: InspectionAccess): Promise<InspectionFollowupRow[]> {
+/**
+ * Hallazgos de las inspecciones con su acción CAPA y su avance.
+ *
+ * `order`: la pantalla pide `attention` (lo que exige acción primero); el Excel del Anexo 15 conserva
+ * `chronological`, que es el orden con que se entrega ese formato. `today` es el día de Chile contra el
+ * que se decide qué plazo está vencido; se puede fijar para que las pruebas no dependan del reloj.
+ *
+ * El alcance de faenas se aplica siempre; los filtros sólo acotan dentro de él.
+ */
+export async function listInspectionFollowup(
+  access: InspectionAccess,
+  filter: InspectionFollowupFilter = {},
+  options: { order?: InspectionFollowupOrder; today?: string } = {},
+): Promise<InspectionFollowupRow[]> {
   if (!access.permissions.includes("prevention:inspections:view")) throw new Error("Inspección no encontrada o fuera de alcance.")
+  const { order = "chronological", today = todayInChile() } = options
   const responsible = alias(users, "inspection_followup_responsible")
   if (access.scope.mode === "none" || (access.scope.mode === "some" && access.scope.ids.length === 0)) return []
+  // `\`, `%` y `_` se escapan para que lo que se escribe en el buscador se busque tal cual.
+  const pattern = filter.search ? `%${filter.search.replace(/[\\%_]/g, (match) => `\\${match}`)}%` : null
   const base = await db.select({
     findingId: preventionInspectionFindings.id,
     runId: preventionInspectionRuns.id,
@@ -79,11 +108,43 @@ export async function listInspectionFollowup(access: InspectionAccess): Promise<
     .innerJoin(worksites, eq(worksites.id, preventionInspectionRuns.worksiteId))
     .leftJoin(preventionCapaActions, eq(preventionCapaActions.id, preventionInspectionFindings.capaActionId))
     .leftJoin(responsible, eq(responsible.id, preventionCapaActions.responsibleUserId))
-    .where(access.scope.mode === "all" ? undefined : inArray(preventionInspectionRuns.worksiteId, access.scope.ids))
+    .where(and(
+      access.scope.mode === "all" ? undefined : inArray(preventionInspectionRuns.worksiteId, access.scope.ids),
+      filter.worksiteId ? eq(preventionInspectionRuns.worksiteId, filter.worksiteId) : undefined,
+      filter.kind ? eq(preventionInspectionTemplates.kind, filter.kind) : undefined,
+      pattern ? or(
+        ilike(preventionInspectionFindings.description, pattern),
+        ilike(preventionInspectionRuns.code, pattern),
+        ilike(preventionInspectionRuns.subjectLabel, pattern),
+        ilike(worksites.name, pattern),
+        ilike(preventionCapaActions.actionDescription, pattern),
+        ilike(preventionCapaActions.code, pattern),
+        ilike(responsible.name, pattern),
+        ilike(preventionCapaActions.responsibleSnapshot, pattern),
+      ) : undefined,
+    ))
     .orderBy(asc(preventionInspectionRuns.executedAt), asc(preventionInspectionFindings.createdAt))
 
-  const scoped = base
-  const actionIds = scoped.flatMap((row) => row.actionId ? [row.actionId] : [])
+  // La situación se decide una vez, con la función pura, y sirve al filtro, al orden y a la pantalla.
+  const classified = base
+    .map((row) => ({
+      row,
+      followupStatus: followupStatusOf({
+        actionId: row.actionId,
+        capaStatus: row.status,
+        targetDate: row.targetDate,
+        findingStatus: row.findingStatus,
+      }, today),
+    }))
+    .filter((item) => !filter.status || item.followupStatus === filter.status)
+  if (order === "attention") {
+    classified.sort((a, b) => compareByAttention(
+      { followupStatus: a.followupStatus, targetDate: a.row.targetDate },
+      { followupStatus: b.followupStatus, targetDate: b.row.targetDate },
+    ))
+  }
+
+  const actionIds = classified.flatMap(({ row }) => row.actionId ? [row.actionId] : [])
   const followups = actionIds.length === 0 ? [] : await db.select({
     actionId: preventionCapaFollowups.actionId,
     note: preventionCapaFollowups.note,
@@ -101,10 +162,11 @@ export async function listInspectionFollowup(access: InspectionAccess): Promise<
     byAction.set(followup.actionId, rows)
   }
 
-  return scoped.map((row) => {
+  return classified.map(({ row, followupStatus }) => {
     const history = row.actionId ? byAction.get(row.actionId) ?? [] : []
     const explicitProgress = [...history].reverse().find((item) => item.progress !== null)?.progress
     const progress = explicitProgress ?? (["verified", "closed"].includes(row.status ?? "") ? 100 : 0)
+    const last = history.at(-1)
     return {
       findingId: row.findingId,
       runId: row.runId,
@@ -127,6 +189,8 @@ export async function listInspectionFollowup(access: InspectionAccess): Promise<
       actionId: row.actionId,
       actionCode: row.actionCode,
       capaStatus: row.status,
+      followupStatus,
+      lastFollowup: last ? { at: last.createdAt, author: last.author, note: last.note } : null,
     }
   })
 }
@@ -151,9 +215,18 @@ const DATE_COLUMNS = [1, 6]
 const PROGRESS_COLUMN = 8
 const COMMENTS_COLUMN = 9
 
-export async function buildInspectionFollowupWorkbook(access: InspectionAccess): Promise<ArrayBuffer> {
+/**
+ * El libro del Anexo 15. Respeta los filtros de la pantalla (el enlace «Exportar Excel» los lleva en la
+ * query) pero NO su orden: el formato oficial se entrega del hallazgo más antiguo al más nuevo, y quien
+ * lo consume por posición no tiene por qué ver cambiar el orden según quién lo descargue.
+ */
+export async function buildInspectionFollowupWorkbook(
+  access: InspectionAccess,
+  filter: InspectionFollowupFilter = {},
+  options: { today?: string } = {},
+): Promise<ArrayBuffer> {
   if (!access.permissions.includes("prevention:inspections:export")) throw new Error("Sin permiso para exportar inspecciones.")
-  const rows = await listInspectionFollowup(access)
+  const rows = await listInspectionFollowup(access, filter, { order: "chronological", today: options.today })
   const workbook = new ExcelJS.Workbook()
   workbook.creator = "Plataforma Chome"
   for (const spec of [

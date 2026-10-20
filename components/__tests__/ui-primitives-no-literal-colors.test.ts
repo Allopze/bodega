@@ -53,7 +53,6 @@ const FROZEN_DEBT: Record<string, number> = {
   "app/(app)/admin/inventario-faena/[id]/page.tsx": 3,
   "app/(app)/combustibles/cuenta-corriente/[id]/statement-detail.tsx": 2,
   "app/(app)/admin/contenedores/[id]/page.tsx": 2,
-  "app/(app)/prevencion/inspecciones/seguimiento/page.tsx": 1,
   "app/(app)/modulo-inactivo/page.tsx": 1,
 }
 

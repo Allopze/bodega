@@ -66,9 +66,25 @@ test.describe("Inspecciones — bandeja de ejecuciones", () => {
     await expect(fila).toBeVisible({ timeout: 30_000 })
     await expect(fila.getByText("Pendiente de revisión")).toBeVisible()
     await expect(fila.getByText("Faena E2E")).toBeVisible()
-    // Hallazgos abiertos y, entre paréntesis, los graves.
-    await expect(fila.getByText("1 (1)")).toBeVisible()
+    // «Resultado» junta el cumplimiento y los hallazgos abiertos; entre paréntesis, los graves.
+    await expect(fila.getByText("1 abierto (1 grave)")).toBeVisible()
     await expect(fila.getByText("80%")).toBeVisible()
+  })
+
+  /**
+   * L5: la tabla es la región «Inspecciones» (un `TableRoot` con nombre, no un div sin él) y el
+   * tipo de instrumento ya no es una columna sino la sublínea de la primera.
+   */
+  test("la tabla es una región con nombre y el tipo es una sublínea, no una columna", async ({ page }) => {
+    const tabla = page.getByRole("region", { name: "Inspecciones" })
+    await expect(tabla).toBeVisible({ timeout: 30_000 })
+    await expect(tabla.getByRole("columnheader", { name: "Inspección", exact: true })).toBeVisible()
+    await expect(tabla.getByRole("columnheader", { name: "Resultado", exact: true })).toBeVisible()
+    await expect(tabla.getByRole("columnheader", { name: "Tipo", exact: true })).toHaveCount(0)
+    await expect(tabla.getByRole("columnheader", { name: "Cumplimiento", exact: true })).toHaveCount(0)
+    await expect(tabla.getByRole("columnheader", { name: "Hallazgos", exact: true })).toHaveCount(0)
+    const fila = tabla.getByRole("row").filter({ hasText: "INSP-E2E-0003" })
+    await expect(fila.getByText("Inspección", { exact: true })).toBeVisible()
   })
 
   /**

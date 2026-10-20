@@ -1,9 +1,8 @@
 "use client"
 
 import * as React from "react"
-import { Button } from "@/components/ui/button"
 import { Callout } from "@/components/ui/callout"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { PdtpActivityPicker, type PdtpActivityPickerOption } from "@/components/prevention/pdtp-activity-picker"
 import {
   changedPdtpAxes,
@@ -14,7 +13,7 @@ import {
 import { toast } from "@/lib/toast"
 import { setInspectionTemplatePdtpActivitiesAction } from "../../actions"
 import type { TemplateItem } from "../../_components/catalog-types"
-import { FormDialogFooter, OperationError, useFormDialog } from "../../_components/form-dialog"
+import { FormDialogFooter, OperationError, useControlledFormDialog } from "../../_components/form-dialog"
 
 /* ── Acreditación PDTP ─────────────────────────────────────────────────────── */
 
@@ -28,16 +27,22 @@ import { FormDialogFooter, OperationError, useFormDialog } from "../../_componen
  * ejes que la persona cambió**. Mandar siempre los dos vaciaba en silencio el
  * eje que no se tocó, y la plantilla dejaba de acreditar sin que nadie lo notara.
  */
-export function PdtpActivitiesDialog({ item, options }: { item: TemplateItem; options: PdtpActivityPickerOption[] }) {
+export function PdtpActivitiesDialog({ item, options, open, onOpenChange }: {
+  item: TemplateItem
+  options: PdtpActivityPickerOption[]
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  // Abre con lo que la plantilla acredita hoy: el panel monta el diálogo de
+  // nuevo en cada apertura, así que no hay una selección abandonada que limpiar.
   const preload = { execute: item.pdtpPreloadExecuteIds, review: item.pdtpPreloadReviewIds }
   const [execution, setExecution] = React.useState<string[]>(preload.execute)
   const [review, setReview] = React.useState<string[]>(preload.review)
-  const { open, changeOpen, operation } = useFormDialog(() => { setExecution(preload.execute); setReview(preload.review) })
+  const { changeOpen, operation } = useControlledFormDialog(open, onOpenChange)
   const changed = changedPdtpAxes({ execute: execution, review }, preload)
 
   return (
     <Dialog open={open} onOpenChange={changeOpen}>
-      <DialogTrigger asChild><Button size="sm" variant="ghost">Acreditación PDTP</Button></DialogTrigger>
       <DialogContent>
         <form
           onSubmit={(event) => {

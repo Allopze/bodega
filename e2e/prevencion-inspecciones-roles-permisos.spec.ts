@@ -32,6 +32,9 @@ test.describe("Inspecciones — Matriz de Roles y Permisos", () => {
     await expect(page.getByRole("button", { name: "Declarar paridad" })).toHaveCount(0)
     await expect(page.getByText("Falta vincular la planilla oficial.")).toHaveCount(0)
     await expect(page.getByText("La paridad la declara otra persona con permiso de aprobación.")).toHaveCount(0)
+    // Lo único que sí puede hacer es leer el cuestionario: sin acciones de gestión no hay menú, sólo ese botón.
+    await expect(page.getByRole("button", { name: /^Más acciones de/ })).toHaveCount(0)
+    await expect(page.getByRole("button", { name: "Ver cuestionario" }).first()).toBeVisible()
 
     // 4. Acceder a una inspección ejecutada por otro usuario para revisar: el botón no debe estar disponible
     await page.goto("/prevencion/inspecciones/insp-e2e-bloqueada")
@@ -46,6 +49,10 @@ test.describe("Inspecciones — Matriz de Roles y Permisos", () => {
     await page.goto("/prevencion/inspecciones/plantillas")
     await expectPageTitle(page, "Plantillas de inspección")
     await expect(page.getByRole("button", { name: "Incorporar borrador" })).toBeVisible()
+    // La acción de la fila es su siguiente paso; el resto, incluida «Retirar…», está en «Más acciones de …».
+    await page.getByRole("button", { name: /^Más acciones de/ }).first().click()
+    await expect(page.getByRole("menuitem", { name: "Ver cuestionario" })).toBeVisible()
+    await page.keyboard.press("Escape")
 
     await page.goto("/prevencion/inspecciones/programacion")
     await expectPageTitle(page, "Programación de inspecciones")

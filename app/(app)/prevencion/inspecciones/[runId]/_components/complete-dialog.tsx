@@ -10,7 +10,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog"
 import type { OperationResult } from "@/lib/hooks/use-operation"
 import { summarizeCompletion, type HeldRow } from "@/lib/prevention/inspection-capture"
@@ -35,9 +34,14 @@ const MAX_SUMMARY_LINES = 10
  *
  * Sin conexión el cierre no se pierde: ofrece guardarlo en el dispositivo, y se
  * envía solo al volver la señal.
+ *
+ * Es controlado y se monta UNA vez: «Declarar ejecutada» está en la cabecera de
+ * trabajo (escritorio) y en la barra fija (teléfono), y las dos lo abren con el
+ * mismo `open`. Antes eran dos copias del diálogo, cada una con su propio estado
+ * de error, de «sin conexión» y de envío.
  */
 export function CompleteDialog({
-  run, completion, held, online, saving = false, disabled = false, onComplete, onQueueClose, onJump,
+  run, completion, held, online, saving = false, onComplete, onQueueClose, onJump, open, onOpenChange,
 }: {
   run: Pick<RunInfo, "code">
   completion: { allowed: boolean; blockers: CompletionBlocker[] }
@@ -46,13 +50,13 @@ export function CompleteDialog({
   online: boolean
   /** Autoguardado en vuelo: sólo se informa, el cierre lo espera. */
   saving?: boolean
-  disabled?: boolean
+  open: boolean
+  onOpenChange: (open: boolean) => void
   onComplete: () => Promise<OperationResult>
   onQueueClose: () => Promise<{ ok: boolean; message?: string }>
   /** Lleva al ítem (y enfoca su control). */
   onJump: (key: string) => void
 }) {
-  const [open, setOpen] = React.useState(false)
   // El envío falló por la red aunque el navegador creyera tener señal.
   const [offlineFailure, setOfflineFailure] = React.useState(false)
   /* Estado propio y no `useOperation`: ese hook corre la operación dentro de
@@ -66,13 +70,16 @@ export function CompleteDialog({
   const blocked = !summary.canComplete
   const offline = !online || offlineFailure
 
-  function changeOpen(next: boolean) {
-    if (next) {
-      // Un error de un intento anterior no debe esperar a quien vuelve a abrir.
+  // Un error de un intento anterior no debe esperar a quien vuelve a abrir. Se
+  // ajusta al pasar a abierto (patrón de React para estado derivado de una prop):
+  // sin disparador propio, nadie llama a `onOpenChange(true)` desde aquí.
+  const [seenOpen, setSeenOpen] = React.useState(open)
+  if (open !== seenOpen) {
+    setSeenOpen(open)
+    if (open) {
       setError("")
       setOfflineFailure(false)
     }
-    setOpen(next)
   }
 
   async function submit() {
@@ -81,7 +88,7 @@ export function CompleteDialog({
     setError("")
     try {
       const result = await onComplete()
-      if (result.ok) setOpen(false)
+      if (result.ok) onOpenChange(false)
       else if (result.offline) setOfflineFailure(true)
       else setError(result.message ?? "No se pudo declarar ejecutada la inspección.")
     } finally {
@@ -94,7 +101,7 @@ export function CompleteDialog({
     setError("")
     try {
       const stored = await onQueueClose()
-      if (stored.ok) setOpen(false)
+      if (stored.ok) onOpenChange(false)
       else setError(stored.message ?? "No se pudo guardar el cierre en este dispositivo.")
     } finally {
       setQueuing(false)
@@ -104,14 +111,13 @@ export function CompleteDialog({
   function jumpToFirst() {
     const key = summary.firstKey
     if (!key) return
-    setOpen(false)
-    // Radix devuelve el foco al disparador al cerrar: se espera a que lo haga.
+    onOpenChange(false)
+    // Radix devuelve el foco al elemento que lo tenía al cerrar: se espera a que lo haga.
     window.setTimeout(() => onJump(key), 150)
   }
 
   return (
-    <Dialog open={open} onOpenChange={(next) => { if (next || !(pending || queuing)) changeOpen(next) }}>
-      <DialogTrigger asChild><Button size="sm" disabled={disabled}>Declarar ejecutada</Button></DialogTrigger>
+    <Dialog open={open} onOpenChange={(next) => { if (next || !(pending || queuing)) onOpenChange(next) }}>
       <DialogContent>
         <form
           onSubmit={(event) => {

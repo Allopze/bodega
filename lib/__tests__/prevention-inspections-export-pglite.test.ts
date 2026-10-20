@@ -28,7 +28,7 @@ testGlobal.__db = testDb
 vi.mock("@/db", () => ({ get db() { return testGlobal.__db } }))
 
 const { buildInspectionExport, inspectionExportFilterSummary } = await import("@/lib/services/prevention-inspections-export")
-const { buildInspectionFollowupWorkbook } = await import("@/lib/services/prevention-inspection-followup")
+const { buildInspectionFollowupWorkbook, listInspectionFollowup } = await import("@/lib/services/prevention-inspection-followup")
 const { buildXlsxBuffer } = await import("@/lib/reports/export")
 
 const EJECUTOR = "u-exp-ejecutor"
@@ -525,5 +525,198 @@ describe("Excel de Seguimiento (Anexo 15)", () => {
   it("sin permiso de exportar no entrega nada", async () => {
     await expect(buildInspectionFollowupWorkbook({ ...access, permissions: ["prevention:inspections:view"] }))
       .rejects.toThrow(/Sin permiso/)
+  })
+})
+
+/* ── Seguimiento: orden de atención y filtros (listInspectionFollowup) ───────────────────────── */
+
+describe("Seguimiento — listInspectionFollowup", () => {
+  /** El día de Chile contra el que se mide lo vencido: fijo, para que el reloj no cambie el resultado. */
+  const TODAY = "2026-10-20"
+  const WS2 = "ws-exp-2"
+  const RUN_FUP = "run-fup"
+  const attention = { order: "attention", today: TODAY } as const
+  const ids = (rows: { findingId: string }[]) => rows.map((row) => row.findingId)
+
+  beforeAll(async () => {
+    await testDb.insert(schema.worksites).values({ id: WS2, name: "Faena Seguimiento Dos", code: "FUP", isActive: true })
+    await testDb.insert(schema.preventionInspectionRuns).values({
+      id: RUN_FUP, code: "INS-FUP-0001", templateId: TPL_EXT, worksiteId: WS2, status: "reviewed",
+      subjectLabel: "Camión FUP-1", executedByUserId: EJECUTOR, executedAt: "2026-09-01T15:00:00.000Z",
+      reviewedByUserId: REVISOR, reviewedAt: "2026-09-02T15:00:00.000Z", createdByUserId: EJECUTOR,
+    })
+    const capa = (id: string, code: string, status: string, targetDate: string, over: Record<string, unknown> = {}) => ({
+      id, code, sourceType: "inspection", sourceId: RUN_FUP, worksiteId: WS2,
+      finding: "Hallazgo FUP", actionDescription: `Medida de ${code}`, targetDate, status,
+      createdByUserId: REVISOR, createdAt: "2026-09-02T16:00:00.000Z", updatedAt: "2026-09-02T16:00:00.000Z", ...over,
+    })
+    await testDb.insert(schema.preventionCapaActions).values([
+      capa("capa-fup-late", "CAPA-FUP-001", "pending", "2026-10-01", { actionDescription: "Cambiar la manguera dañada", responsibleUserId: ASIGNADA }),
+      // Más atrasada que la anterior, y con responsable sólo por texto (sin usuario).
+      capa("capa-fup-late2", "CAPA-FUP-002", "in_progress", "2026-09-15", { responsibleSnapshot: "Contratista Externo" }),
+      // Plazo vencido pero ya cerrada: no cuenta como vencida.
+      capa("capa-fup-done", "CAPA-FUP-003", "closed", "2026-09-10"),
+      // Vence hoy: todavía no está vencida.
+      capa("capa-fup-today", "CAPA-FUP-004", "pending", "2026-10-20"),
+    ])
+    await testDb.insert(schema.preventionInspectionFindings).values([
+      { id: "fnd-fup-late", runId: RUN_FUP, description: "Manguera dañada FUP", criticality: "high", status: "capa_linked", capaActionId: "capa-fup-late", createdAt: "2026-09-01T15:10:00.000Z" },
+      { id: "fnd-fup-late2", runId: RUN_FUP, description: "Extintor sin presión FUP", criticality: "critical", status: "capa_linked", capaActionId: "capa-fup-late2", createdAt: "2026-09-01T15:11:00.000Z" },
+      { id: "fnd-fup-done", runId: RUN_FUP, description: "Señal borrada FUP", criticality: "low", status: "closed", capaActionId: "capa-fup-done", closedByUserId: REVISOR, closedAt: "2026-09-12T15:00:00.000Z", createdAt: "2026-09-01T15:12:00.000Z" },
+      { id: "fnd-fup-today", runId: RUN_FUP, description: "Piso resbaloso FUP", criticality: "medium", status: "capa_linked", capaActionId: "capa-fup-today", createdAt: "2026-09-01T15:13:00.000Z" },
+      { id: "fnd-fup-sin", runId: RUN_FUP, description: "Luminaria apagada FUP", criticality: "medium", status: "open", createdAt: "2026-09-01T15:14:00.000Z" },
+    ])
+  })
+
+  it("la pantalla ordena por atención: vencidas (la más atrasada primero), sin acción CAPA, abiertas por plazo y cerradas", async () => {
+    const rows = await listInspectionFollowup(access, {}, attention)
+
+    expect(ids(rows)).toEqual([
+      "fnd-fup-late2", "fnd-fup-late", // vencidas: 15-09 antes que 01-10
+      "fnd-fup-sin", "fnd-exp-obs", // sin acción CAPA, en orden cronológico
+      "fnd-fup-today", "fnd-exp-1", // abiertas: vence hoy antes que 02-11
+      "fnd-fup-done", "fnd-exp-2", // cerradas (una con CAPA cerrada, otra cerrada sin CAPA)
+    ])
+    expect(Object.fromEntries(rows.map((row) => [row.findingId, row.followupStatus]))).toEqual({
+      "fnd-fup-late2": "vencidas", "fnd-fup-late": "vencidas",
+      "fnd-fup-sin": "sin_capa", "fnd-exp-obs": "sin_capa",
+      "fnd-fup-today": "abiertas", "fnd-exp-1": "abiertas",
+      "fnd-fup-done": "cerradas", "fnd-exp-2": "cerradas",
+    })
+  })
+
+  it("sin pedir orden conserva el cronológico de siempre, que es el del Excel oficial", async () => {
+    const chronological = [
+      "fnd-fup-late", "fnd-fup-late2", "fnd-fup-done", "fnd-fup-today", "fnd-fup-sin", // run del 01-09
+      "fnd-exp-1", "fnd-exp-2", // run del 19-10
+      "fnd-exp-obs", // run del 20-10
+    ]
+
+    expect(ids(await listInspectionFollowup(access, {}, { today: TODAY }))).toEqual(chronological)
+    expect(ids(await listInspectionFollowup(access))).toEqual(chronological)
+    expect(ids(await listInspectionFollowup(access, {}, { order: "chronological", today: TODAY }))).toEqual(chronological)
+  })
+
+  it("el día del plazo todavía no está vencido; pasa a vencida al día siguiente", async () => {
+    const statusOf = async (today: string, id: string) =>
+      (await listInspectionFollowup(access, {}, { today })).find((row) => row.findingId === id)?.followupStatus
+
+    expect(await statusOf("2026-10-20", "fnd-fup-today")).toBe("abiertas")
+    expect(await statusOf("2026-10-21", "fnd-fup-today")).toBe("vencidas")
+    // Una acción cerrada no vence nunca, por atrasado que esté su plazo.
+    expect(await statusOf("2027-01-01", "fnd-fup-done")).toBe("cerradas")
+  })
+
+  it("cada estado filtra exactamente su subconjunto, y los cuatro juntos son el total", async () => {
+    const byStatus = async (status: "sin_capa" | "abiertas" | "vencidas" | "cerradas") =>
+      ids(await listInspectionFollowup(access, { status }, attention)).sort()
+
+    const parts = {
+      vencidas: await byStatus("vencidas"),
+      sin_capa: await byStatus("sin_capa"),
+      abiertas: await byStatus("abiertas"),
+      cerradas: await byStatus("cerradas"),
+    }
+    expect(parts.vencidas).toEqual(["fnd-fup-late", "fnd-fup-late2"])
+    expect(parts.sin_capa).toEqual(["fnd-exp-obs", "fnd-fup-sin"])
+    expect(parts.abiertas).toEqual(["fnd-exp-1", "fnd-fup-today"])
+    expect(parts.cerradas).toEqual(["fnd-exp-2", "fnd-fup-done"])
+    // Excluyentes y completos: ninguna fila queda sin estado ni cuenta en dos.
+    const all = ids(await listInspectionFollowup(access, {}, attention)).sort()
+    expect(Object.values(parts).flat().sort()).toEqual(all)
+  })
+
+  it("filtra por faena y por tipo de instrumento", async () => {
+    expect(ids(await listInspectionFollowup(access, { worksiteId: WS2 }, attention))).toEqual([
+      "fnd-fup-late2", "fnd-fup-late", "fnd-fup-sin", "fnd-fup-today", "fnd-fup-done",
+    ])
+    expect(ids(await listInspectionFollowup(access, { kind: "observation" }, attention))).toEqual(["fnd-exp-obs"])
+    expect(await listInspectionFollowup(access, { kind: "audit" }, attention)).toEqual([])
+  })
+
+  it("busca en el hallazgo, la medida, los códigos, el sujeto, la faena y el responsable, sin distinguir mayúsculas", async () => {
+    const search = async (text: string) => ids(await listInspectionFollowup(access, { search: text }, attention)).sort()
+
+    expect(await search("MANGUERA")).toEqual(["fnd-exp-2", "fnd-fup-late"]) // hallazgo "Manguera con grietas" y "Manguera dañada"
+    expect(await search("repuesto")).toEqual([]) // el seguimiento no es campo de búsqueda
+    expect(await search("capa-fup-002")).toEqual(["fnd-fup-late2"]) // código de la acción
+    expect(await search("INS-FUP")).toHaveLength(5) // código de la inspección
+    expect(await search("Camión FUP-1")).toHaveLength(5) // sujeto
+    expect(await search("Seguimiento Dos")).toHaveLength(5) // faena
+    expect(await search("Ana Asignada")).toEqual(["fnd-exp-1", "fnd-fup-late"]) // responsable con usuario
+    expect(await search("Contratista")).toEqual(["fnd-fup-late2"]) // responsable sólo por texto
+    expect(await search("Reponer el sello")).toEqual(["fnd-exp-1"]) // medida
+  })
+
+  it("lo que se escribe en el buscador se busca tal cual: % y _ no son comodines", async () => {
+    expect(await listInspectionFollowup(access, { search: "%" }, attention)).toEqual([])
+    expect(await listInspectionFollowup(access, { search: "_" }, attention)).toEqual([])
+    expect(await listInspectionFollowup(access, { search: "\\" }, attention)).toEqual([])
+  })
+
+  it("combina filtros: todos acotan a la vez", async () => {
+    const rows = await listInspectionFollowup(access, { worksiteId: WS2, status: "vencidas", search: "extintor" }, attention)
+
+    expect(ids(rows)).toEqual(["fnd-fup-late2"])
+  })
+
+  it("los filtros nunca amplían el alcance de faenas de quien mira", async () => {
+    const onlyWs = { ...access, scope: { mode: "some", ids: [WS] } as WorksiteScope }
+
+    expect(ids(await listInspectionFollowup(onlyWs, {}, attention))).toEqual(["fnd-exp-obs", "fnd-exp-1", "fnd-exp-2"])
+    // Pedir una faena fuera de su alcance no la revela.
+    expect(await listInspectionFollowup(onlyWs, { worksiteId: WS2 }, attention)).toEqual([])
+    // Sin ninguna faena en el alcance, nada.
+    expect(await listInspectionFollowup({ ...access, scope: { mode: "some", ids: [] } as WorksiteScope }, {}, attention)).toEqual([])
+  })
+
+  it("trae el último seguimiento de la acción, el responsable y el avance", async () => {
+    const rows = await listInspectionFollowup(access, {}, attention)
+    const withFollowup = rows.find((row) => row.findingId === "fnd-exp-1")!
+
+    expect(withFollowup.lastFollowup).toEqual({ at: expect.stringContaining("2026-10-20"), author: "Rodrigo Revisor", note: "Se pidió el repuesto" })
+    expect(withFollowup.progress).toBe(40)
+    expect(withFollowup.responsible).toBe("Ana Asignada")
+    expect(rows.find((row) => row.findingId === "fnd-fup-late2")!.responsible).toBe("Contratista Externo")
+    // Sin seguimientos o sin acción: nada que mostrar.
+    expect(rows.find((row) => row.findingId === "fnd-fup-late")!.lastFollowup).toBeNull()
+    expect(rows.find((row) => row.findingId === "fnd-exp-obs")!.lastFollowup).toBeNull()
+  })
+
+  it("sin permiso de ver no entrega nada", async () => {
+    await expect(listInspectionFollowup({ ...access, permissions: [] }, {}, attention)).rejects.toThrow(/fuera de alcance/)
+  })
+})
+
+describe("Excel de Seguimiento — respeta los filtros pero no el orden de la pantalla", () => {
+  const TODAY = "2026-10-20"
+  /** La faena que sembró el bloque de arriba. */
+  const WS2 = "ws-exp-2"
+  const desviaciones = (workbook: ExcelJS.Workbook, sheet: string) =>
+    rowsOf(workbook.getWorksheet(sheet)!).map((row) => row["Desviación"]!.value)
+
+  it("con un estado entrega sólo esas filas, en el orden cronológico del formato oficial", async () => {
+    const workbook = await open(await buildInspectionFollowupWorkbook(access, { status: "vencidas" }, { today: TODAY }))
+
+    // La pantalla pondría primero la más atrasada («Extintor sin presión»); el Excel conserva el cronológico.
+    expect(desviaciones(workbook, "SEGUIMENTO INSPECCIONES")).toEqual(["Manguera dañada FUP", "Extintor sin presión FUP"])
+    expect(desviaciones(workbook, "SEGUIMIENTO OBSERVACIONES")).toEqual([])
+  })
+
+  it("con un tipo, la hoja del otro tipo queda con sus encabezados oficiales y sin filas", async () => {
+    const workbook = await open(await buildInspectionFollowupWorkbook(access, { kind: "observation" }, { today: TODAY }))
+
+    expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual(ANEXO_15_SHEETS)
+    expect(desviaciones(workbook, "SEGUIMENTO INSPECCIONES")).toEqual([])
+    expect(desviaciones(workbook, "SEGUIMIENTO OBSERVACIONES")).toEqual(["Orden deficiente en la bodega"])
+    for (const sheet of workbook.worksheets) expect(headersOf(sheet).slice(0, 9)).toEqual(ANEXO_15_HEADERS)
+  })
+
+  it("faena y texto se combinan, y sin filtros sigue entregando el universo entero", async () => {
+    const filtered = await open(await buildInspectionFollowupWorkbook(access, { worksiteId: WS2, search: "FUP-1" }, { today: TODAY }))
+    expect(desviaciones(filtered, "SEGUIMENTO INSPECCIONES")).toHaveLength(5)
+
+    const all = await open(await buildInspectionFollowupWorkbook(access, {}, { today: TODAY }))
+    expect(desviaciones(all, "SEGUIMENTO INSPECCIONES")).toHaveLength(7)
   })
 })

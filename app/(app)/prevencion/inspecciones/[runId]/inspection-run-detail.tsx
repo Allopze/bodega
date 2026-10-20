@@ -21,6 +21,7 @@ import type {
 } from "./_components/types"
 import { RunCaptureView } from "./_components/run-capture-view"
 import { RunReadView } from "./_components/run-read-view"
+import { publishRunVersion } from "./_components/run-live-version"
 import { draftKey, jumpToItem } from "./_components/run-view-helpers"
 import type { RunViewModel } from "./_components/run-view-types"
 import { useGeolocation } from "./_hooks/use-geolocation"
@@ -102,6 +103,13 @@ export function InspectionRunDetail({
   })
   const geo = useGeolocation(inspectionDraft.changeCoords)
   const { drafts, closing, coords } = inspectionDraft
+
+  // Las acciones del registro (Acta PDF, Reabrir, Cancelar) viven en el encabezado
+  // de la página, fuera de este árbol: la versión vigente del canal les llega por
+  // aquí, no por las props, que van un paso atrás mientras un guardado está en vuelo.
+  React.useEffect(() => {
+    publishRunVersion(run.id, channel.version)
+  }, [run.id, channel.version])
 
   // Lo que se evalúa para el cierre y el avance: las respuestas ya normalizadas
   // (recortadas), las mismas que el servidor va a ver.

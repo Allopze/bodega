@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, or } from "drizzle-orm"
+import { and, asc, count, desc, eq, inArray, isNull, lt, or } from "drizzle-orm"
 import { db } from "@/db"
 import {
   preventionInspectionPrograms,
@@ -27,6 +27,7 @@ import { CHECKLIST_DEFINITIONS, isNonInspectionDefinition, isPersonEvaluationDef
 import { officialInspectionSourceFor } from "@/lib/sst/official-inspection-sources"
 import type { ChecklistDefinition } from "@/lib/sst/types"
 import { vehicleLabel } from "@/lib/services/fleet"
+import { todayInChile } from "@/lib/utils"
 import { pdtpActivityCandidatesFor } from "@/lib/services/pdtp-adapters/inspection-templates-2026"
 import { type InspectionKindFilter, kindCondition } from "./queries"
 import { itemsFromDefinition, contentHashOf, inspectionDefinitionNeedsOfficialSource } from "./templates"
@@ -141,6 +142,34 @@ export async function listInspectionPrograms(access: InspectionAccess, filter: I
       ?? (vehiclePlate ? vehicleLabel({ plate: vehiclePlate, code: vehicleCode }) : null)
       ?? (containerCode ? containerLabel({ code: containerCode, location: containerLocation }) : null),
   }))
+}
+
+/**
+ * Cuántas programaciones están vencidas: activas, con plantilla aprobada y su
+ * próxima fecha ya pasada. Es el mismo criterio que `inspectionProgramIsOverdue`
+ * (la regla de un solo lugar que usan el badge, el filtro y la celda de
+ * Programación), pero contado en SQL: la bandeja sólo necesita la cifra del aviso
+ * y traer todas las programaciones —con cinco joins cada una— para contarlas en
+ * memoria era el costo de una cifra. `today` es el día civil de Chile
+ * (`todayInChile()`); se recibe para poder fijarlo en una prueba.
+ */
+export async function countOverdueInspectionPrograms(
+  access: InspectionAccess,
+  filter: InspectionKindFilter = {},
+  today: string = todayInChile(),
+): Promise<number> {
+  requireAccess(access, "prevention:inspections:view")
+  const [row] = await db.select({ value: count() })
+    .from(preventionInspectionPrograms)
+    .innerJoin(preventionInspectionTemplates, eq(preventionInspectionPrograms.templateId, preventionInspectionTemplates.id))
+    .where(and(
+      scopeCondition(access.scope, preventionInspectionPrograms.worksiteId),
+      kindCondition(filter),
+      eq(preventionInspectionPrograms.isActive, true),
+      eq(preventionInspectionTemplates.status, "approved"),
+      lt(preventionInspectionPrograms.nextDueOn, today),
+    ))
+  return row?.value ?? 0
 }
 
 /** Faenas visibles para el alcance, para poblar la programación y la alta de ejecución. */

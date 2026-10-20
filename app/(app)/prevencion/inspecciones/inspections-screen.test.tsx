@@ -11,8 +11,10 @@ const mocks = vi.hoisted(() => ({
   subjects: vi.fn(),
   runs: vi.fn(),
   summary: vi.fn(),
-  programs: vi.fn(),
+  overdue: vi.fn(),
   assignees: vi.fn(),
+  panelProps: vi.fn(),
+  header: vi.fn(),
 }))
 
 vi.mock("next/navigation", () => ({ redirect: (href: string) => { throw new Error(href) } }))
@@ -23,21 +25,25 @@ vi.mock("@/lib/auth/can", () => ({
 }))
 vi.mock("@/lib/auth/scope", () => ({ resolveWorksiteScope: () => ({ mode: "some", ids: ["ws-1", "ws-2", "ws-3"] }) }))
 vi.mock("@/components/ui/page-header", () => ({
-  PageHeader: ({ title, actions }: { title: string; actions?: React.ReactNode }) => <header><h1>{title}</h1>{actions}</header>,
+  PageHeader: (props: { title: string; actions?: React.ReactNode }) => { mocks.header(props); return <header><h1>{props.title}</h1>{props.actions}</header> },
   Breadcrumbs: () => null,
 }))
 vi.mock("@/components/prevention/pdtp-scheduled-activity-panel-server", () => ({
-  PdtpScheduledActivityPanelServer: () => null,
+  PdtpScheduledActivityPanelServer: (props: unknown) => { mocks.panelProps(props); return null },
 }))
 vi.mock("./inspection-run-list", () => ({
-  InspectionRunList: (props: unknown) => { mocks.listProps(props); return <div data-testid="run-list" /> },
+  // Pinta `activities` como lo hace la lista real: el nodo se crea en la pantalla del
+  // servidor y la lista de cliente sólo decide dónde ponerlo.
+  InspectionRunList: (props: { activities?: React.ReactNode }) => { mocks.listProps(props); return <div data-testid="run-list">{props.activities}</div> },
   InspectionPageActions: (props: unknown) => { mocks.actionsProps(props); return null },
 }))
 vi.mock("@/lib/services/prevention-inspections", () => ({
   INSPECTION_PAGE_SIZE: 50,
   listInspectionRuns: mocks.runs,
   summarizeInspectionRuns: mocks.summary,
-  listInspectionPrograms: mocks.programs,
+  // Sin `listInspectionPrograms` a propósito: la pantalla sólo necesita la cifra de las
+  // vencidas y, si volviera a pedir todas las programaciones, este mock lanzaría.
+  countOverdueInspectionPrograms: mocks.overdue,
   listInspectionTemplates: mocks.templates,
   listInspectionWorksites: mocks.worksites,
   listInspectionSubjectsByWorksite: mocks.subjects,
@@ -59,7 +65,7 @@ const EXECUTE = "prevention:inspections:execute"
 beforeEach(() => {
   mocks.runs.mockResolvedValue([])
   mocks.summary.mockResolvedValue({ total: 0, pendingReview: 0, withOpenFindings: 0, withCriticalFindings: 0, overdueRuns: 0 })
-  mocks.programs.mockResolvedValue([])
+  mocks.overdue.mockResolvedValue(0)
   mocks.assignees.mockResolvedValue([])
   mocks.worksites.mockResolvedValue(WORKSITES)
   mocks.templates.mockResolvedValue([
@@ -135,5 +141,47 @@ describe("bandeja de inspecciones — la pantalla del servidor", () => {
     const expectedFilter = { status: "planned", worksiteId: "ws-1" }
     expect(mocks.runs).toHaveBeenCalledWith(expect.anything(), expectedFilter, { offset: 50 })
     expect(mocks.summary).toHaveBeenCalledWith(expect.anything(), expectedFilter)
+  })
+
+  it("el encabezado lleva una descripción corta, la que no se trunca a 1024 px", async () => {
+    await renderScreen([VIEW])
+    // Con la frase larga de antes («… del Sistema de Gestión (DS 44). Todo incumplimiento
+    // genera un hallazgo.») el encabezado la cortaba con «…» y la información se perdía.
+    const { description } = mocks.header.mock.calls.at(-1)![0] as { description: string }
+    expect(description).toBe("Inspecciones, observaciones y auditorías por faena.")
+    expect(description.length).toBeLessThan(60)
+  })
+})
+
+describe("bandeja de inspecciones — avisos sobre la lista", () => {
+  it("cuenta las programaciones vencidas en SQL con el filtro de tipos, sin traer todas", async () => {
+    mocks.overdue.mockResolvedValue(3)
+    mocks.permissions = [VIEW]
+    render(await InspectionsScreen({ searchParams: { tipo: "audit" } }))
+
+    expect(mocks.overdue).toHaveBeenCalledTimes(1)
+    expect(mocks.overdue).toHaveBeenCalledWith(expect.objectContaining({ userId: "u-lectura" }), { kinds: ["audit"] })
+    expect((mocks.listProps.mock.calls.at(-1)![0] as Record<string, unknown>).overdueProgramCount).toBe(3)
+  })
+
+  it("las actividades programadas llegan como resumen, sobre la lista, con la faena ya elegida", async () => {
+    mocks.permissions = [VIEW]
+    render(await InspectionsScreen({ searchParams: { faena: "ws-2", q: "extintor" } }))
+
+    // La pantalla sólo arma el aviso; dónde va lo decide la lista (encima de la barra de filtros).
+    expect(mocks.panelProps).toHaveBeenCalledTimes(1)
+    expect(mocks.panelProps).toHaveBeenCalledWith({
+      connectorKey: "inspections",
+      searchQuery: "extintor",
+      worksiteId: "ws-2",
+      presentation: "summary",
+    })
+    expect((mocks.listProps.mock.calls.at(-1)![0] as Record<string, unknown>).activities).toBeTruthy()
+  })
+
+  it("sin faena filtrada el aviso no acota por ninguna", async () => {
+    mocks.permissions = [VIEW]
+    render(await InspectionsScreen({ searchParams: {} }))
+    expect(mocks.panelProps.mock.calls.at(-1)![0]).toMatchObject({ presentation: "summary", worksiteId: undefined })
   })
 })

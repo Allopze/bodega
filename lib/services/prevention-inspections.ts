@@ -77,6 +77,7 @@ export {
   listInspectionTemplates,
   listInspectionDocumentSources,
   listInspectionPrograms,
+  countOverdueInspectionPrograms,
   listInspectionWorksites,
   type InspectionAssignee,
   listInspectionAssignees,

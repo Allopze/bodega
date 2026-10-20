@@ -4,15 +4,16 @@ import { expect, type Page } from "@playwright/test"
  * Apoyo de los specs de captura de una inspección (`/prevencion/inspecciones/<runId>`).
  *
  * Vive aparte de `helpers.ts` a propósito: ese archivo es del helper de ítems
- * (`responderItemInspeccion`, `campoInspeccion`), que la Ola 2 reescribe, y lo que hay acá
- * sólo habla del estado de guardado, que es independiente de cómo se pinte cada ítem.
+ * (`responderItemInspeccion`, `campoInspeccion`), y lo que hay acá sólo habla del estado de
+ * guardado, que es independiente de cómo se pinte cada ítem.
  */
 
 /**
  * El estado de guardado que está realmente pintado.
  *
- * `RunSaveStatus` aparece DOS veces en el DOM —junto a las acciones del escritorio y en la
- * barra fija del teléfono— y una de las dos queda oculta por CSS según el ancho. Un
+ * `RunSaveStatus` aparece DOS veces en el DOM —junto al avance de la cabecera de trabajo
+ * (`hidden md:inline`) y en la barra fija del teléfono (`md:hidden`)— y una de las dos queda
+ * oculta por CSS según el ancho. Un
  * `getByRole("status")` o un `.first()` devolvería, según el viewport, justo la copia que no
  * se ve; filtrar por visibilidad deja siempre la que importa. El nodo trae
  * `data-save-state` (`saved`, `dirty`, `saving`, `offline`, `conflict`, `queued_close`…),

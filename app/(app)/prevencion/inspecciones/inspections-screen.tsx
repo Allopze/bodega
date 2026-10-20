@@ -7,8 +7,8 @@ import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import {
+  countOverdueInspectionPrograms,
   listInspectionAssignees,
-  listInspectionPrograms,
   listInspectionRuns,
   listInspectionSubjectsByWorksite,
   listInspectionTemplates,
@@ -20,7 +20,6 @@ import { InspectionPageActions, InspectionRunList } from "./inspection-run-list"
 import type { InspectionSubjectOption } from "@/lib/prevention/inspection-list-query"
 import { todayInChile } from "@/lib/utils"
 import { buildInspectionExportQuery, parseInspectionListQuery } from "@/lib/prevention/inspection-list-query"
-import { inspectionProgramIsOverdue } from "@/lib/prevention/inspections"
 import { PdtpScheduledActivityPanelServer } from "@/components/prevention/pdtp-scheduled-activity-panel-server"
 
 /**
@@ -74,11 +73,13 @@ export async function InspectionsScreen({ searchParams }: {
   const { page, filter } = parseInspectionListQuery(searchParams ?? {})
   const exportQuery = buildInspectionExportQuery(filter)
 
-  const [runs, summary, programs, templates, worksites, assignees] = await Promise.all([
+  const [runs, summary, overdueProgramCount, templates, worksites, assignees] = await Promise.all([
     listInspectionRuns(access, filter, { offset: (page - 1) * INSPECTION_PAGE_SIZE }),
     // KPIs sobre el universo completo, no sobre la página visible (C-09).
     summarizeInspectionRuns(access, filter),
-    listInspectionPrograms(access, { kinds: filter.kinds }),
+    // Sólo se necesita la cifra del aviso de programaciones vencidas: se cuenta
+    // en SQL en vez de traer todas las programaciones con sus joins.
+    countOverdueInspectionPrograms(access, { kinds: filter.kinds }),
     canExecute ? listInspectionTemplates(access, { kinds: filter.kinds }) : Promise.resolve([]),
     // P1-10: las faenas del alcance las pide cualquiera con `view` (el servicio
     // no exige más). Condicionarlas a `execute` dejaba el filtro «Faena» casi
@@ -105,7 +106,7 @@ export async function InspectionsScreen({ searchParams }: {
     <PageContainer>
       <PageHeader
         title="Inspecciones"
-        description="Inspecciones, observaciones y auditorías del Sistema de Gestión (DS 44). Todo incumplimiento genera un hallazgo."
+        description="Inspecciones, observaciones y auditorías por faena."
         breadcrumb={<Breadcrumbs items={[
           { label: "Inicio", href: "/dashboard" },
           { label: "Prevención" },
@@ -159,10 +160,7 @@ export async function InspectionsScreen({ searchParams }: {
         summary={summary}
         page={page}
         pageSize={INSPECTION_PAGE_SIZE}
-        overdueProgramCount={programs.filter((row) => inspectionProgramIsOverdue(
-          { isActive: row.program.isActive, templateApproved: row.templateStatus === "approved", nextDueOn: row.program.nextDueOn },
-          todayInChile(),
-        )).length}
+        overdueProgramCount={overdueProgramCount}
         today={todayInChile()}
         canExecute={canExecute}
         canReview={canReview}
@@ -170,8 +168,16 @@ export async function InspectionsScreen({ searchParams }: {
         worksites={worksites}
         assignees={assignees}
         subjectsByWorksite={subjectsByWorksite}
+        // Sobre la barra de filtros y no al pie, y como aviso de una línea: con
+        // 50 filas y la paginación debajo, el bloque completo no lo veía nadie.
+        // Sigue la faena que la pantalla ya filtró y no pregunta otra vez.
+        activities={<PdtpScheduledActivityPanelServer
+          connectorKey="inspections"
+          searchQuery={filter.search}
+          worksiteId={filter.worksiteId}
+          presentation="summary"
+        />}
       />
-      <PdtpScheduledActivityPanelServer connectorKey="inspections" searchQuery={filter.search} />
     </PageContainer>
   )
 }
