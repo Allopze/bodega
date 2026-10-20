@@ -1,115 +1,142 @@
-# Implementación de la Ola 1 (integridad) del submódulo Inspecciones — 20 de octubre de 2026
+# Implementación de la Ola 2 (layout y UX) del submódulo Inspecciones — 20 de octubre de 2026
 
-Implementa la primera de las dos olas del plan derivado de [la auditoría del 19 de octubre](2026-10-19-inspecciones-uiux-audit.md). Rama `fix/inspecciones-uiux-ola1`, base `d8dc1eb3`, 18 commits. La Ola 2 (layout, listas y catálogo) queda pendiente.
-
-**Alcance de la Ola 1:** captura en terreno y datos (el P0 y los P1 de guardado), KPI y filtros de la bandeja, un solo vocabulario de estados, exports Excel, y la lógica y los textos del catálogo y de Programación. No cambia el diseño de las pantallas: eso es la Ola 2.
+Cierra el plan derivado de [la auditoría del 19 de octubre](2026-10-19-inspecciones-uiux-audit.md). La Ola 1 (integridad) está en [su informe](2026-10-20-inspecciones-uiux-implementacion-ola1.md); esta ola rehace la presentación. Rama `fix/inspecciones-uiux-ola2`, que parte de la rama de la Ola 1, 29 commits sobre `main` en total (193 archivos). **No se hizo merge a `main`, push ni deploy.**
 
 ## Resultado
 
-| Medición | Antes | Después |
+| Medición | Antes (auditoría) | Después |
 |---|---|---|
-| P0 | 1 | **0** (verificado en navegador y con E2E) |
-| P1 resueltos | 0 de 13 | **12 de 13** (P1-12, la vista previa de plantillas, queda para la Ola 2; P1-3 y P1-10 sin verificación en navegador, ver «Cobertura») |
-| Puntaje de la auditoría | 11/20 | **no se repitió**: se mide al cerrar la Ola 2 |
+| P0 | 1 | **0** |
+| P1 | 13 | **0 abiertos** (P1-3 y P1-10 sin verificación en navegador: ver «Cobertura») |
+| Puntaje de la auditoría | 11/20 | **16/20** (reauditoría independiente en navegador; antes de la ronda de cierre) |
+| Ficha de EPP en el teléfono | 11.792 px de alto | **4.469 px** |
+| Columnas de acción ocultas por scroll a 1024–1440 px | bandeja, Plantillas, Seguimiento | **ninguna** |
+| axe (WCAG 2.2 AA), 50 pantalla×ancho | 2 violaciones *serious* | **0** |
+| Desborde horizontal, 50 pantalla×ancho | varios | **0** |
 
-**Veredicto:** la Ola 1 se puede liberar sola. Lo que la pantalla dice guardado es lo que el servidor tiene, una fila mala ya no frena el resto, y sin conexión el detalle no se cae. No se hizo push ni deploy.
+| Dimensión | Antes | Después | Qué lo explica |
+|---|---|---|---|
+| Accesibilidad | 2 | **3** | axe 0 en 54 vistas y diálogos; 0 objetivos táctiles cortos a 390 px; teclado y retorno de foco correctos. No llega a 4 por los nombres accesibles repetidos (corregidos después de la medición) y no haber probado con lector de pantalla |
+| Rendimiento | 2 | **3** | Ya no se invalida lo operacional en cada autoguardado; consulta de riesgos en una sola; carga marcada al filtrar. **No se midió producción**: solo modo dev |
+| Tema | 3 | **3** | Tokens correctos, sin literales ni tokens inexistentes; siguen la tipografía mixta de los badges (regla de `DESIGN.md`) y «Vencida» en dos colores |
+| Responsive | 2 | **4** | 0 desbordes, tarjetas en móvil, columnas por prioridad, KPI 2×2, estado de guardado en la barra del teléfono |
+| Integridad | 2 | **3** | P0 y P1 comprobados, un solo vocabulario, componentes compartidos |
+| **Total** | **11** | **16** | **Bueno** |
+
+El puntaje lo asignó un revisor independiente que no vio el trabajo de implementación (sin acceso al razonamiento de las líneas) y midió en el navegador con la rúbrica de la auditoría original. Se midió **antes** de la ronda de cierre, que corrigió varios de los hallazgos que le restaban puntos.
+
+## Qué cambió
+
+**Detalle de captura.** Una sola cabecera de trabajo (faena · sujeto · responsable, avance «{a} de {n} obligatorios» con barra y estado de guardado, un solo badge de estado, el resto de los datos plegado). El progreso reemplaza al muro rojo: «3 sin responder · 1 sin motivo · acta incompleta», cada parte salta al primer ítem. Cada ítem es un solo árbol con botones de 44 px por resultado (con check y anillo, no solo color) y comentario/foto plegados que se abren solos cuando se exige motivo. La matriz de EPP lleva dos grupos por prenda. Las acciones del registro (Acta PDF, Reabrir, Cancelar inspección) pasan al encabezado de la página. El cumplimiento aparece solo después de declarar ejecutada.
+
+**Detalle en lectura y revisión.** Resumen primero (resultado oficial y normalizado, conteos, hallazgos, acta y firmas, quién ejecutó y quién revisó). Hallazgos como tarjetas con acciones de 44 px en el teléfono (antes la tabla las dejaba fuera de pantalla). No conformidades a la vista y lo conforme plegado por sección. Una cancelada dice por quién, cuándo y por qué.
+
+**Bandeja.** Tabla dentro de una región con nombre, sin columnas ocultas desde 1024 px; tarjetas con responsable y hallazgos graves; KPI en 2×2; avisos de actividades del programa preventivo y de programaciones vencidas sobre los filtros; «Nueva inspección» reordenada (Origen plegado, errores por campo).
+
+**Plantillas.** Vista previa del cuestionario en una hoja (con historial de versiones y detalle técnico plegado), una fila por instrumento, acción siguiente más el menú «Más acciones de {nombre}».
+
+**Programación y Seguimiento.** Un solo control de estado en Programación y una sola consulta de riesgos. Seguimiento pasa de una tabla fija a una herramienta: filtros, enlaces al hallazgo y a la CAPA, orden por atención y Excel que respeta los filtros (con los encabezados oficiales del Anexo 15 intactos).
 
 ## Verificaciones ejecutadas
 
 | Puerta | Resultado |
 |---|---|
-| `npm run typecheck` (worktree desechable) | **Limpio.** La primera pasada marcó un error mío (`ReportCell` sin importar), corregido |
-| `eslint` | Limpio en cada commit (el hook de commit corre el lint de todo el repo) |
-| `npm run test:fast` completo | 11 942 ✓ · 2 ✗. Una era un defecto real nuestro (ver abajo, corregido); la otra, `solicitudes/item-editor`, **falla igual en `main`** |
-| `npm run test:pglite` completo | 3 123 ✓ · 1 ✗: `miper-work-queue`, **falla igual en `main`** |
-| Suite Postgres real de Inspecciones | **91 de 91**, ninguna omitida (contenedor `bodega-e2e-postgres`, base propia) |
-| `npm run db:verify-migrations` | Limpio, 351 entradas, sin cambios de esquema |
-| E2E completa (worktree desechable) | **842 ✓ · 4 omitidas · 1 ✗** en 34,9 min. La falla es `servicios-costo-pendiente` (ficha de Solicitudes busca un campo «Colaborador»): la misma zona del unit test que falla en `main`, y la rama no toca Solicitudes |
-| 18 specs de Inspecciones y de shell, uno a uno | Todos en verde (ver línea 1K) |
-| Recorrido en navegador (dev :3001, datos `QA_`) | Ver tabla más abajo |
+| `npm run typecheck` (worktree desechable) | **Limpio** en la rama final. En el camino marcó 9 errores míos (tipos de pruebas y de un manejador), todos corregidos |
+| `eslint` | Limpio en cada commit (el hook corre el lint de todo el repo) |
+| `npm run test:fast` completo | Sobre la Ola 2 antes del cierre: 12.378 ✓ · 1 ✗ (`solicitudes/item-editor`, **falla igual en `main`**). La corrida final tras la ronda de cierre: ver «Corrida final» |
+| `npm run test:pglite` completo | Antes del cierre: 3.159 ✓ · 1 ✗ (`miper-work-queue`, **falla igual en `main`**) |
+| Suite Postgres real de Inspecciones | **91 de 91** |
+| E2E completa de la plataforma (worktree desechable) | **867 ✓ · 4 omitidas · 1 ✗** en 36,7 min. La falla es `servicios-costo-pendiente` (Solicitudes), **preexistente** y sin relación con esta rama |
+| 21 specs de Inspecciones y de shell | Todos en verde (línea 2G); 8 de ellos nuevos o ampliados |
+| Recorrido en navegador | 10 pantallas × 5 anchos (1440, 1280, 1024, 720×450 y 390 táctil): axe 0, consola 0, red 0, desborde 0 |
+| Revisión independiente (3 revisores aislados) | Ver más abajo |
 
-Cada línea además comprobó **por mutación** que sus pruebas fallan si el defecto vuelve (por ejemplo, reintroducir el rearme del temporizador tras un éxito rompe 3 pruebas del hook; quitar el atajo de filas idénticas rompe la prueba PGlite).
+### Corrida final tras la ronda de cierre
 
-## Defectos encontrados y corregidos durante la verificación
+Se repitió el E2E dirigido de Inspecciones y las suites completas sobre la rama definitiva. Resultados en la sección «Corrida final», al final de este informe.
 
-- **`ReportCell` sin importar** en el constructor de Excel (typecheck). Era mío; corregido.
-- **`client-memo-boundary` (unitaria):** `run-detail-controls.tsx` no declaraba `"use client"` y, al importar `ConfirmDialog` (un `memo` de cliente), la regla de frontera servidor → cliente lo tomó por un Server Component. Corregido con la directiva.
-- **Adjuntar una foto a una respuesta aún no guardada no subía nada ni avisaba** (preexistente en `main`; lo reveló el E2E de P1-6). `upload()` esperaba `ensureAnswerId()` antes de recorrer la `FileList`, y el `onChange` ya había vaciado el input; la `FileList` de Chromium es viva y llegaba vacía. Ahora copia los archivos antes de cualquier `await`. Sin prueba unitaria (jsdom no reproduce la lista viva): la regresión la cubre el E2E de captura.
-- **El `next dev` de :3001 estaba detenido** cuando fui a usarlo (no encontré causa; lo más probable es presión de memoria con las puertas pesadas). Lo volví a levantar con `npm run dev`.
+## Revisión independiente y ronda de cierre
 
-**Hallazgo nuevo, sin corregir:** con el resultado del acta sin elegir, el bloqueo dice «El resultado del acta no corresponde a las opciones de la plantilla.», que se lee como un error de la plantilla cuando solo falta elegirlo. Un E2E (`ejecucion.spec.ts:104`) afirma ese texto; es candidato para el pulido final (P3).
+Tres revisores de solo lectura, sin ver el trabajo de los otros, revisaron la rama: uno el código y los datos (con sondas ejecutables), otro la seguridad y la autorización, y otro reauditó en navegador. Ninguno encontró P0 ni un defecto de autorización explotable entre faenas. Encontraron esto, que **se corrigió** en una ronda de cierre y cada corrección se probó por mutación:
 
-## Estado por hallazgo
+| ID | Sev. | Hallazgo | Estado |
+|---|---|---|---|
+| CD-01 | **P1** | Tras declarar ejecutada (o «ya no se puede editar») y reabrir sin salir, el autoguardado y el respaldo quedaban muertos con la etiqueta «Declarando ejecutada…» | ✅ |
+| CD-02 | P2 | Un conflicto de versión que se resolvía solo dejaba «Recuperar/Descartar» colgados | ✅ |
+| CD-03 / SEG-01 | P2 | La cola de cierres sin conexión no sabía de quién era cada entrada y se vaciaba al montar: un equipo compartido podía enviar el cierre de A con la sesión de B | ✅ cola atada al usuario; purga de lo ajeno, lo sin dueño y lo de más de 30 días |
+| R-01 | P2 | «El resultado del acta no corresponde a las opciones…» cuando solo faltaba elegirlo | ✅ «Falta elegir el resultado…» con «Ir al acta» |
+| R-02 | P2 | La cancelación exigía un motivo de 10 caracteres que nadie podía leer | ✅ «Cancelada por X el dd-mm-aaaa: motivo» |
+| R-03 | P2 | Acciones por fila con el mismo nombre accesible («Detener» ×4, «Aprobar» ×3) | ✅ nombre con el instrumento o el hallazgo |
+| SEG-02 | P3 | Vincular o importar una fuente documental no validaba confidencialidad ni alcance de faena | ✅ |
+| SEG-03 | P3 | Los borradores locales de otro usuario no caducaban | ✅ purga por usuario y edad |
+| CD-04 / CD-05 / CD-06 | P3 | Ubicación de otra sesión, falso conflicto tras una respuesta perdida, excepciones inesperadas sin rastro | ✅ |
+| R-04, R-07, R-09 | P3 | Fuente «obligatoria» contradictoria, carga sin marcar en 3 pantallas, «materializa» | ✅ |
+| R-06 (parcial), R-11 (parcial) | P3 | «Vencida» repetido bajo la insignia; columna «Origen» del Excel con código interno | ✅ |
 
-| ID | Estado | Dónde |
-|---|---|---|
-| **P0-1** borrador recuperado dice «Guardado» y no se envía | ✅ Verificado en navegador: tras recargar en menos de 1 s la respuesta vuelve, dice «Cambios sin guardar» y «Recuperamos cambios… Se están guardando», a los 5 s «Guardado», y un contexto nuevo la ve en el servidor | 1A, 1J |
-| P1-1 una fila inválida frena el guardado | ✅ Navegador: «Guardado, salvo 1 respuesta incompleta», «Guardar respuestas» habilitado, el servidor tiene las demás | 1A, 1C, 1J |
-| P1-2 sin conexión tira la pantalla | ✅ Navegador: sin «Algo salió mal»; «Sin conexión · se enviará al volver la señal»; al volver, «Guardado» | F0, 1J |
-| P1-3 derivar a CAPA también envía la revisión | ✅ jsdom (el test falla con el código viejo); ⚠️ no verificado en navegador (falta un segundo usuario revisor) | 1D |
-| P1-4 reintentos sin fin y pérdida al recargar | ✅ | 1A, 1C, 1J |
-| P1-5 cola offline | ✅ E2E: cierre guardado, envío al volver la señal, idempotente ante respuesta perdida | 1B, 1J |
-| P1-6 no se puede quitar una foto | ✅ E2E y jsdom. Las fotos quitadas quedan en disco (seguimiento) | 1C, 1D |
-| P1-7 sin estado de guardado en el teléfono | ✅ Navegador a 390×844: la barra inferior muestra «Guardado» | 1J |
-| P1-8 errores pintados como éxito | ✅ | F0, 1D, 1J |
-| P1-9 KPI que afirman estados falsos | ✅ Navegador y PGlite: tile y lista usan el mismo predicado; el total de la paginación conserva el filtro | 1F |
-| P1-10 filtro de faena casi vacío para solo lectura | ✅ jsdom; ⚠️ no verificado con un rol de solo lectura | 1F |
-| P1-11 anexo oficial sin fuente: callejón sin salida | ✅ «Vincular fuente» (servicio, acción y diálogo) | 1H, 1I |
-| P1-12 aprobar sin ver el cuestionario | ⏭ Ola 2 (vista previa) | — |
-| P1-13 tres vocabularios | ✅ Un solo mapa de estados (acta y Excel dicen «Pendiente de revisión»), mensaje de motivo con la escala del ítem. Excel con encabezados de agregados renombrados | F0, 1E, 1G |
-| P2-1 (texto) · P2-2 · P2-3 · P2-4 · P2-6 · P2-9 · P2-11 · P2-13 · P2-14 · P2-15 · P2-16 | ✅ | 1C–1J |
-| P2-17 (sujeto, «vencidas», estado vacío) | ✅ parcial: la barra de filtros es de la Ola 2 | 1H, 1I |
-| P2-19 (revalidación en cada autoguardado) | ✅ parcial: la consulta de riesgos por faena y el conteo de vencidas son de la Ola 2 | F0 |
-| P2-5, P2-10, P2-12, P2-18, L1–L16 (layout) | ⏭ Ola 2 | — |
-| P3-6 · P3-7 · P3-8 · P3-9 | ✅ | F0, 1D, 1E |
-| P3-1 · P3-2 · P3-3 · P3-4 | ⏭ Diferidos con motivo (ver el plan) | — |
+**No se corrigió (queda registrado):**
 
-## Cambios de comportamiento que los usuarios notarán
+- **R-05** — «Pendientes de revisión 0» convive con un estado que lista 1 fila, y «Vencidas 0» con el aviso de «2 programaciones vencidas». El predicado es correcto («para ti»), pero las mismas palabras significan cosas distintas. Se propone rotular «Para tu revisión» y «Ejecuciones vencidas»; no se hizo porque obliga a reescribir muchas pruebas y E2E (decisión de vocabulario).
+- **R-06** (tipografía y color de los badges) — es regla de `DESIGN.md` (severidades en mono, informativos en sans); «Vencida» sigue rojo en unas pantallas y naranja en otras.
+- **R-08** — cada autoguardado sigue devolviendo la página de detalle; se midieron ~18 KB y ~260 ms **en modo dev**. Falta medir producción.
+- **R-10** — a 720×450 (zoom 200 %) la barra fija de guardado y la cabecera ocupan ~40 % del alto.
+- **R-11** (resto) — «Resultado oficial %» trae el texto «Sin fórmula documental» y «Resultado normalizado %» un 80 sin formato; arreglarlo cambia los valores que otros usuarios del Excel ya leen.
 
-- **Guardar ya no se detiene por una fila mala:** esa fila se queda en el dispositivo y lo que se bloquea es declarar ejecutada.
-- **«Encolar cierre» desaparece de la página.** Sin conexión, el diálogo de cierre ofrece «Guardar cierre en este dispositivo»; después la pantalla queda bloqueada hasta «Seguir editando» y el cierre se envía solo al volver la señal.
-- **Lo no enviado sobrevive al cierre de la pestaña** (`localStorage` por ejecución y pestaña) y se borra al cerrar sesión.
-- **Los KPI de la bandeja ya no cambian con estado ni vista.** «Pendientes de revisión» significa *para mí* (lo que no ejecutó quien mira, salvo plantillas con ejecutor declarado en el formulario) y lo mismo cuenta la vista y el Excel filtrado por ella.
-- **«Planificada» y «Ejecutada» desaparecen** del acta y del Excel: ahora «Pendiente de ejecución» y «Pendiente de revisión».
-- **Excel:** fechas reales en hora de Chile (antes texto en UTC, 3 horas adelantado; **puede romper macros que leían texto**), etiquetas en vez de enums, hoja «Metadatos», columnas nuevas a la derecha. **El Anexo 15 conserva sus encabezados y nombres de hoja** y gana seis columnas a la derecha. «Generado» de Metadatos sale en hora de Chile en **todos** los exports de la plataforma.
-- **Catálogo:** «Aprobar» ya no se ofrece donde el servidor lo rechazaría; importar crea los vínculos con el catálogo de actividades; el tipo (inspección, observación, auditoría) sale de la definición; revertir solo acepta la versión que la actual reemplazó y verifica el anexo oficial; retirar dice qué pasa con las programaciones.
-- **«Cancelar inspección» / «Volver»:** el botón que confirma deja de llamarse «Cancelar».
-- **`useOperation` ya no deja que una excepción de red tire la página** en las 88 pantallas que lo usan: avisa y expone `offline`.
+## Cambios de comportamiento que los usuarios notarán en la Ola 2
 
-## Decisiones tomadas durante la ejecución
-
-- **El nombre de la primera hoja del Anexo 15 es «SEGUIMENTO INSPECCIONES»** (con la errata, como en el código y en la auditoría); el plan lo había copiado mal como «SEGUMENTO». Como la decisión era conservar los nombres oficiales, el test fija el nombre real.
-- **Una fila heredada que ya no cumple la regla de motivo no bloquea el guardado, pero sí el cierre** (el cierre revalida todas las filas).
-- **`registerDeviation` y `registerInspectionPreventiveAction` devuelven la versión solo cuando la subieron**, para que el cliente no adopte la versión de otra sesión y pise sus respuestas.
-- **La fuente documental de una plantilla oficial es obligatoria solo cuando hay con qué cumplirla:** con checksum conocido se ofrece el archivo que coincide; si la Biblioteca no lo tiene, se avisa y se puede vincular después.
+- **El cumplimiento ya no se muestra mientras se edita**; aparece al declarar ejecutada.
+- **Elegir un resultado es tocar un botón**, no abrir una lista; comentario y foto quedan plegados y se abren solos cuando hacen falta.
+- **«Acta PDF», «Reabrir para rectificar» y «Cancelar inspección» salieron del contenido** y están en el encabezado de la página.
+- **En Plantillas, las versiones reemplazadas o retiradas ya no se listan**: están en el historial del cuestionario de cada instrumento (o con el filtro «Reemplazadas o retiradas»).
+- **En lectura, lo conforme, lo que no aplica y lo sin responder quedan plegados** por sección; solo se ve de entrada lo que pide atención. *Conviene confirmarlo con Prevención.*
+- **La búsqueda de Seguimiento y de Programación** vive en su propia barra (la de la shell está oculta en estas rutas).
+- **El Excel de Seguimiento filtrado se llama `…-filtrado.xlsx`**, para que nadie lo reenvíe como el Anexo 15 completo.
 
 ## Datos que quedaron en `bodega_dev`
 
-Ejecuciones `QA_` creadas por la interfaz, para reproducir los casos:
+Todos con prefijo `QA_` o creados por la interfaz, para reproducir los casos:
 
-- `INSP-2026-U8K7E5H1` (Extintores): completada, con 1 hallazgo ALTA abierto, firmada `QA_Firmante 1/2`.
-- `INSP-2026-JVE5OWTP` (Extintores, sujeto `QA_Ola1 extintor`): en ejecución, con respuestas y una fila retenida (un «Malo» sin motivo).
-- `QA_INS-EPP-001`: con 3 respuestas.
-
-## Evidencia
-
-Capturas en [`evidence/2026-10-19-inspecciones-ola1/`](evidence/2026-10-19-inspecciones-ola1/) (ignoradas por git): recuperación tras recargar, fila retenida, sin conexión, barra móvil, acta, importar plantilla y acreditación PDTP. Los dos `.xlsx` se abrieron con ExcelJS: «Ejecutada» llega como fecha con formato `dd-mm-yyyy hh:mm` y valor 15:34 donde antes decía 18:34; «Metadatos» dice «19-10-2026 18:36 (hora de Chile)»; el Anexo 15 trae sus nueve encabezados originales y seis columnas nuevas.
+- Las ejecuciones de la Ola 1 (`INSP-2026-U8K7E5H1`, `INSP-2026-JVE5OWTP`, `QA_INS-EPP-001`) y, **sembrada por la línea de Seguimiento con SQL directo** (sin bitácora ni historial), `QA_INS-SEG-001` («Revisada y cerrada») con 5 CAPA, 7 hallazgos y 4 seguimientos; borrable por prefijo.
+- 5 programaciones `QA_` creadas por la línea de Programación a través del servicio.
+- Cambios de prueba de los revisores: `Peso = 9` y `Rótulo = Bueno` en `INSP-2026-JVE5OWTP`, y un ítem de `QA_INS-EPP-001` en «No aplica».
 
 ## Cobertura: lo que no se recorrió
 
-- **Revisión por un segundo usuario** (P1-3 en navegador): hay una sola sesión QA. Cubierto por jsdom y por el E2E de cierre.
-- **Roles distintos de administrador** (P1-10, plantillas con permisos parciales): cubierto por jsdom y por `roles-permisos`.
-- **Subida real de fotos en navegador contra `bodega_dev`:** cubierta por el E2E, no por el recorrido manual.
-- **Cola offline de punta a punta en el dispositivo real:** cubierta por E2E con `setOffline`, no con una red móvil real.
-- **Gestos táctiles reales:** solo viewport emulado.
-- **Lector de pantalla real, rendimiento en producción.**
-- **E2E en navegadores móviles** (`mobile-safari`, `mobile-chrome`): solo Chromium de escritorio.
+- **Revisión por un segundo usuario** (P1-3 en navegador): hay una sola sesión QA; lo cubren jsdom y el E2E de cierre.
+- **Roles distintos de administrador** (P1-10, permisos parciales del catálogo): cubierto por jsdom y por `roles-permisos`.
+- **Rendimiento en producción** (LCP, TTFB, costo real de revalidar el detalle).
+- **Lector de pantalla real, gestos táctiles reales y navegadores móviles o Safari/Firefox**: solo Chromium, con viewport emulado.
+- **Subida real de fotos, «Quitar foto» y PDF del acta** en el recorrido manual (cubiertos por E2E y jsdom).
+- **Cola sin conexión con dos usuarios reales**: el mecanismo se probó (fake-indexeddb y sonda), no el cambio de sesión de punta a punta.
+- **Acciones del catálogo que mutan** (aprobar, retirar, revertir, paridad): cubiertas por PGlite y E2E, no por el recorrido manual.
+- **Estados «vacío real»** (sin datos): solo se vieron vacíos por filtro.
 
-## Pendientes que quedan
+## Pendientes
 
-1. **Ola 2:** layout del detalle (cabecera de trabajo, botones de 44 px por ítem, hallazgos como tarjetas, modo lectura), bandeja, Plantillas (vista previa y una fila por instrumento), Programación y Seguimiento.
-2. Repetir `/impeccable audit` al cerrar la Ola 2 para medir el puntaje.
-3. **Fotos quitadas:** el archivo físico queda en disco; el recolector de evidencias no cubre este directorio y conectarlo tal como está borraría documentos y evidencias de hallazgos.
-4. `linkInspectionTemplateSource` no vuelve a comprobar confidencialidad ni alcance de faena de la versión documental elegida (igual que importar); endurecerlo es una decisión aparte.
-5. El mensaje del acta sin resultado (arriba).
-6. Fallas preexistentes en `main`, ajenas a esta rama: `item-editor` (Solicitudes), `miper-work-queue` (MIPER) y el E2E `servicios-costo-pendiente`.
+1. **Merge de las dos ramas a `main`** (`fix/inspecciones-uiux-ola1` está contenida en `fix/inspecciones-uiux-ola2`) y, cuando se decida, push y deploy. No se hizo nada de eso.
+2. Los pendientes no corregidos de la sección anterior (R-05, R-06, R-08, R-10, R-11) y los diferidos del plan (P3-1 a P3-4, vista previa de plantillas ya hecha).
+3. **Fotos quitadas:** el archivo físico queda en disco; el recolector de evidencias no cubre ese directorio y conectarlo como está borraría documentos y evidencias de hallazgos.
+4. El panel «Desviaciones encontradas» del detalle en lectura repite en una tabla (sin diseño para móvil) lo que ya está en «Hallazgos».
+5. Fallas preexistentes en `main`, ajenas a esta rama: `solicitudes/item-editor`, `miper-work-queue` y el E2E `servicios-costo-pendiente`.
+6. Conviene **repetir `/impeccable audit`** tras el merge para confirmar el puntaje con una segunda medición.
+
+## Corrida final
+
+Rama definitiva `fix/inspecciones-uiux-ola2` tras la ronda de cierre (`e4c3c9d4`) más una última corrección que apareció en esta corrida.
+
+| Verificación | Resultado |
+|---|---|
+| `npm run typecheck` (worktree desechable) | 0 errores, también con la corrección final |
+| `npm run test:fast` completo | **12.427 ✓ · 1 ✗** — `solicitudes/item-editor`, **falla igual en `main`** |
+| `npm run test:pglite` completo | **3.168 ✓ · 1 ✗** — `miper-work-queue`, **falla igual en `main`** |
+| Suite Postgres real de Inspecciones | **91 de 91** |
+| E2E dirigido: 21 specs de Inspecciones y de shell (worktree desechable) | 120 ✓ · 2 omitidas · **1 ✗** (la de abajo) |
+| E2E `prevencion-inspecciones-ejecucion` tras la corrección | **10 de 10** ✓ |
+
+### Defecto encontrado en esta corrida y corregido
+
+- **«Ir al acta» no dejaba el foco en «Resultado del acta»** (accesibilidad: tras elegir el atajo, el foco volvía al botón «Declarar ejecutada»). Causa: el salto se disparaba con un `setTimeout(150)` tras cerrar el diálogo, pero Radix devuelve el foco al disparador cuando el diálogo **termina de desmontarse**, y su animación de salida (`--duration-default`) dura más que eso; el foco del atajo quedaba pisado. Las pruebas jsdom no lo veían porque ahí no hay animación. Corrección en `complete-dialog.tsx`: el salto se hace desde `onCloseAutoFocus` del diálogo (con `preventDefault`), que es justo el instante en que Radix reclamaría el foco, sin temporizadores. Verificado en navegador real: el spec que fallaba pasa (2,9 s) y la suite del archivo queda en 10 de 10.
+- Alcanza también a «Ir al primero»: usa la misma función.
+
+### Lo que esta corrida no repitió
+
+La E2E **completa** de la plataforma (867 ✓) se corrió sobre el estado previo a la ronda de cierre; tras ella se repitieron solo los 21 specs de Inspecciones y de shell, las suites completas de unitarias y PGlite y la suite Postgres real. Las fallas preexistentes en `main` siguen siendo las mismas tres.
