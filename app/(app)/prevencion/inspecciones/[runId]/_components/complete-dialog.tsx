@@ -109,10 +109,16 @@ export function CompleteDialog({
     }
   }
 
-  /** Cierra el diálogo y salta; Radix devuelve el foco al elemento que lo tenía al cerrar, así que se espera a que lo haga. */
+  /**
+   * Cierra el diálogo y salta. Radix devuelve el foco al disparador cuando el
+   * diálogo termina de desmontarse (después de su animación de salida), así que
+   * un salto inmediato o con temporizador queda pisado: se hace en
+   * `onCloseAutoFocus`, que es justo el momento en que Radix lo reclamaría.
+   */
+  const pendingJump = React.useRef<(() => void) | null>(null)
   function closeAndJump(jump: () => void) {
+    pendingJump.current = jump
     onOpenChange(false)
-    window.setTimeout(jump, 150)
   }
 
   function jumpToFirst() {
@@ -122,7 +128,15 @@ export function CompleteDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => { if (next || !(pending || queuing)) onOpenChange(next) }}>
-      <DialogContent>
+      <DialogContent
+        onCloseAutoFocus={(event) => {
+          const jump = pendingJump.current
+          if (!jump) return
+          pendingJump.current = null
+          event.preventDefault()
+          jump()
+        }}
+      >
         <form
           onSubmit={(event) => {
             event.preventDefault()
