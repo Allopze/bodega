@@ -138,7 +138,10 @@ test.describe("Inspecciones — revisión independiente y cierre", () => {
 
     await page.reload()
     await expect(page.getByText("Revisada y cerrada", { exact: true }).filter({ visible: true }).first()).toBeVisible({ timeout: 15_000 })
-    await expect(page.getByText(/Revisada .* por Admin E2E: Revisada en terreno/)).toBeVisible()
+    // El resumen deja constancia de quién revisó y de lo que dijo.
+    const resumen = page.getByRole("region", { name: "Resumen de la inspección" })
+    await expect(resumen.getByText(/Revisó:\s*Admin E2E/)).toBeVisible()
+    await expect(resumen.getByText("Revisada en terreno; el sello se repuso en el acto.")).toBeVisible()
     // Cerrada, deja de ofrecer la revisión y conserva el camino de rectificación.
     await expect(page.getByRole("button", { name: "Revisar y cerrar" })).toHaveCount(0)
     await expect(page.getByRole("button", { name: "Reabrir para rectificar" })).toBeVisible()
@@ -163,16 +166,20 @@ test.describe("Inspecciones — revisión independiente y cierre", () => {
 
     await page.reload()
     await expect(page.getByText("En ejecución", { exact: true }).filter({ visible: true }).first()).toBeVisible({ timeout: 15_000 })
-    // Las respuestas siguen ahí, así que la pantalla vuelve a proyectar un 80% sobre los
-    // ítems evaluados. Lo que se borró es el porcentaje FIRMADO. La distinción ya no está
-    // en el texto ("80% de 5 evaluados" no existe) sino en dos filas del encabezado:
-    // "Resultado oficial" es el del documento y "Resultado normalizado" la proyección.
-    await expect(textoVisible(page, "Sin fórmula en el documento").first()).toBeVisible()
-    await expect(textoVisible(page, "80%").first()).toBeVisible()
+    // Mientras se edita no hay cumplimiento a la vista (sólo existe una vez declarada ejecutada), así
+    // que el 80% firmado no puede quedar en pantalla...
+    await expect(textoVisible(page, "80%")).toHaveCount(0)
+    await expect(page.getByRole("region", { name: "Resumen de la inspección" }).getByText("Resultado normalizado")).toHaveCount(0)
     // La sección de hallazgos sólo existe en ejecutada o cerrada.
     await expect(page.getByRole("heading", { name: /^Hallazgos \(/ })).toHaveCount(0)
     // Y vuelve a ser editable.
     await expect(page.getByRole("button", { name: "Guardar respuestas" })).toBeVisible()
+
+    // ...y lo que importa: el porcentaje FIRMADO se borró en el servidor. La bandeja lo muestra.
+    await page.goto("/prevencion/inspecciones?q=INSP-E2E-0006")
+    const fila = page.getByRole("row").filter({ hasText: "INSP-E2E-0006" })
+    await expect(fila.getByText("No calculable")).toBeVisible({ timeout: 30_000 })
+    await expect(fila.getByText("80%")).toHaveCount(0)
   })
 
   /**

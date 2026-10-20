@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test"
-import { campoInspeccion, crearInspeccion as crearInspeccionE2E, login, textoVisible } from "./helpers"
+import { crearInspeccion as crearInspeccionE2E, expectResultadoItem, login, responderItemInspeccion, textoVisible } from "./helpers"
 import { esperarGuardado, estadoDeGuardado } from "./inspecciones-captura-helpers"
 
 /**
@@ -24,14 +24,12 @@ test.describe("Inspecciones — Concurrencia y bloqueo optimista", () => {
     await crearInspeccion(page)
 
     // Guardado 1: Ítem Manómetro
-    await campoInspeccion(page, "Resultado de Manómetro").click()
-    await page.getByRole("option", { name: "Bueno", exact: true }).click()
+    await responderItemInspeccion(page, "Manómetro", "Bueno")
     await page.getByRole("button", { name: "Guardar respuestas" }).click()
     await expect(textoVisible(page, "En ejecución").first()).toBeVisible({ timeout: 30_000 })
 
     // Guardado 2: Ítem Sello inmediatamente después (usando la nueva versión interna sin recargar toda la página)
-    await campoInspeccion(page, "Resultado de Sello").click()
-    await page.getByRole("option", { name: "Bueno", exact: true }).click()
+    await responderItemInspeccion(page, "Sello", "Bueno")
     /* Esperar a que la server action responda ANTES de recargar. Sin esto la
      * recarga abortaba el guardado en vuelo y sólo persistía el primer ítem: el
      * test fallaba mostrando "1 de 10" y parecía un conflicto de CAS que en
@@ -52,7 +50,7 @@ test.describe("Inspecciones — Concurrencia y bloqueo optimista", () => {
 
     // Recargar y comprobar que ambos ítems persistieron correctamente
     await page.reload()
-    await expect(textoVisible(page, "2 de 5 obligatorios · 2 de 10 totales")).toBeVisible({ timeout: 15_000 })
+    await expect(textoVisible(page, "2 de 5 obligatorios")).toBeVisible({ timeout: 15_000 })
   })
 
   /**
@@ -72,15 +70,13 @@ test.describe("Inspecciones — Concurrencia y bloqueo optimista", () => {
     await expect(textoVisible(page2, "Pendiente de ejecución").first()).toBeVisible({ timeout: 15_000 })
 
     // En la página 1 guardamos cambios (avanzando la versión del registro en BD)
-    await campoInspeccion(page, "Resultado de Manómetro").click()
-    await page.getByRole("option", { name: "Bueno", exact: true }).click()
+    await responderItemInspeccion(page, "Manómetro", "Bueno")
     await page.getByRole("button", { name: "Guardar respuestas" }).click()
     await expect(textoVisible(page, "En ejecución").first()).toBeVisible({ timeout: 30_000 })
     await esperarGuardado(page)
 
     // En la página 2 (que tiene la versión vieja cargada) respondemos otro ítem: el autoguardado choca.
-    await campoInspeccion(page2, "Resultado de Sello").click()
-    await page2.getByRole("option", { name: "Bueno", exact: true }).click()
+    await responderItemInspeccion(page2, "Sello", "Bueno")
 
     const alerta = page2.getByRole("alert").filter({ hasText: "La inspección cambió en otra sesión" })
     await expect(alerta).toBeVisible({ timeout: 30_000 })
@@ -88,7 +84,7 @@ test.describe("Inspecciones — Concurrencia y bloqueo optimista", () => {
     await expect(alerta.getByText("Tus cambios sin guardar siguen en este dispositivo.")).toBeVisible()
     await expect(alerta.getByRole("button", { name: "Descartar mis cambios" })).toBeVisible()
     // Lo propio sigue en pantalla: el choque no vació la respuesta.
-    await expect(campoInspeccion(page2, "Resultado de Sello")).toContainText("Bueno")
+    await expectResultadoItem(page2, "Sello", "Bueno")
 
     // Recuperar aplica lo propio encima de lo que guardó la otra persona, y vuelve a guardar.
     await alerta.getByRole("button", { name: "Recuperar mis cambios" }).click()
@@ -97,9 +93,9 @@ test.describe("Inspecciones — Concurrencia y bloqueo optimista", () => {
 
     // Tras recargar están las dos: la de la pestaña 1 no se pisó y la de la 2 no se perdió.
     await page2.reload()
-    await expect(textoVisible(page2, "2 de 5 obligatorios · 2 de 10 totales")).toBeVisible({ timeout: 15_000 })
-    await expect(campoInspeccion(page2, "Resultado de Manómetro")).toContainText("Bueno")
-    await expect(campoInspeccion(page2, "Resultado de Sello")).toContainText("Bueno")
+    await expect(textoVisible(page2, "2 de 5 obligatorios")).toBeVisible({ timeout: 15_000 })
+    await expectResultadoItem(page2, "Manómetro", "Bueno")
+    await expectResultadoItem(page2, "Sello", "Bueno")
     await page2.close()
   })
 })

@@ -541,12 +541,9 @@ export async function crearInspeccion(page: Page, opciones: {
  * (`ChoiceCardGroup variant="compact"`): `radiogroup` «Resultado de {ítem}» y, dentro, el
  * `radio` con el nombre del resultado («Cumple», «No cumple», «Bueno»…). En una prenda de la
  * matriz de EPP hay dos grupos, «Resultado de Casco: usa» y «Resultado de Casco: estado».
- * Soporta también la implementación anterior (un `Select`: se abre el combobox y se elige la
- * `option`), porque los specs no deben enterarse de cómo se pinta el control.
  *
- * El nombre del grupo se busca con `exact: true`: «Resultado de Casco» es prefijo de
- * «Resultado de Casco: usa», y sin `exact` el localizador resolvía a los dos grupos de la
- * prenda y Playwright abortaba por strict mode.
+ * El grupo se busca por `grupoDeResultado`: el nombre accesible lleva la etiqueta completa del ítem
+ * y los specs nombran sólo su comienzo.
  *
  * Antes la pantalla pintaba DOS veces cada ítem —tarjetas para móvil (`item-mobile-*`) y tabla
  * para escritorio (`item-desktop-*`)— con idéntico `aria-label`, una oculta por CSS según el
@@ -563,19 +560,41 @@ export async function responderItemInspeccion(
   resultado: string,
   comentario?: string,
 ) {
-  const nombre = `Resultado de ${item}`
-  const grupo = page.getByRole("radiogroup", { name: nombre, exact: true })
-  const selector = campoInspeccion(page, nombre)
-  // Espera a que aparezca cualquiera de los dos: no se asume cuál implementación hay.
-  await grupo.or(selector).first().waitFor({ state: "visible" })
-  if ((await grupo.count()) > 0) {
-    await grupo.getByRole("radio", { name: resultado, exact: true }).click()
-  } else {
-    await selector.click()
-    await page.getByRole("option", { name: resultado, exact: true }).click()
-  }
+  const grupo = await grupoDeResultado(page, item)
+  await grupo.getByRole("radio", { name: resultado, exact: true }).click()
   if (comentario !== undefined) {
     await (await abrirComentarioInspeccion(page, item)).fill(comentario)
+  }
+}
+
+/**
+ * El `radiogroup` «Resultado de {ítem}» de la captura.
+ *
+ * El nombre accesible lleva la etiqueta COMPLETA del ítem («Resultado de Manómetro: aguja en zona
+ * verde.») y los specs nombran sólo su comienzo, así que el nombre se busca por subcadena. Con una
+ * sola excepción: en la matriz de EPP «Resultado de Casco» es prefijo de «Resultado de Casco: usa» y
+ * de «Resultado de Casco: estado»; si uno de los grupos se llama EXACTAMENTE como se pidió, manda ése.
+ */
+export async function grupoDeResultado(page: Page, item: string) {
+  const nombre = `Resultado de ${item}`
+  const exacto = page.getByRole("radiogroup", { name: nombre, exact: true })
+  const parcial = page.getByRole("radiogroup", { name: nombre })
+  // Se espera a que haya alguno de los dos antes de decidir: contar sin esperar elegiría el parcial
+  // sólo porque la pantalla todavía no hidrató.
+  await exacto.or(parcial).first().waitFor({ state: "visible" }).catch(() => undefined)
+  return (await exacto.count()) > 0 ? exacto.first() : parcial.first()
+}
+
+/**
+ * Afirma qué resultado tiene un ítem de la captura: el radio marcado de su grupo, o ninguno
+ * (`null`, «Sin responder»: el grupo no marca nada).
+ */
+export async function expectResultadoItem(page: Page, item: string, resultado: string | null, opciones: { timeout?: number } = {}) {
+  const grupo = await grupoDeResultado(page, item)
+  if (resultado === null) {
+    await expect(grupo.getByRole("radio", { checked: true })).toHaveCount(0, opciones)
+  } else {
+    await expect(grupo.getByRole("radio", { name: resultado, exact: true, checked: true })).toBeVisible(opciones)
   }
 }
 

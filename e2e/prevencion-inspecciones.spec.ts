@@ -42,7 +42,11 @@ test.describe("Prevención — Inspecciones y auditorías", () => {
     await page.goto("/prevencion/inspecciones/plantillas")
     await expect(page).toHaveURL(/\/prevencion\/inspecciones\/plantillas/)
     await expectPageTitle(page, "Plantillas de inspección")
-    await expect(textoVisible(page, "AUD-E2E").first()).toBeVisible()
+    // La fila identifica el instrumento por su nombre («Auditoría interna del SGSST E2E · 01 · Auditoría»);
+    // el código interno sólo se usa para buscar, ya no se pinta.
+    await expect(page.getByRole("button", { name: "Auditoría interna del SGSST E2E", exact: true })).toBeVisible()
+    await page.getByRole("searchbox", { name: "Buscar plantillas" }).fill("AUD-E2E")
+    await expect(page.getByRole("button", { name: "Auditoría interna del SGSST E2E", exact: true })).toBeVisible()
   })
 })
 

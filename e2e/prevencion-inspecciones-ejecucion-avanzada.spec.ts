@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test"
-import { MINIMAL_PNG, campoInspeccion, confirmarDeclararEjecutada, crearInspeccion as crearInspeccionE2E, login, responderItemInspeccion, textoVisible } from "./helpers"
+import { MINIMAL_PNG, abrirComentarioInspeccion, campoInspeccion, confirmarDeclararEjecutada, crearInspeccion as crearInspeccionE2E, login, responderItemInspeccion, textoVisible } from "./helpers"
 
 /**
  * E2E Spec: Ejecución Avanzada de Inspecciones SST.
@@ -36,9 +36,11 @@ test.describe("Inspecciones — Ejecución avanzada y validaciones de campo", ()
     // Ubicación / Observaciones (Texto libre)
     await campoInspeccion(page, "Respuesta de Observaciones adicionales").fill("Ubicado en pasillo principal sector talleres.")
 
-    // Verificamos que los campos se computen en ítems respondidos pero no otorguen % de cumplimiento firmado
-    await expect(textoVisible(page, "0 de 5 obligatorios · 3 de 10 totales")).toBeVisible()
-    await expect(textoVisible(page, "Aún no calculable")).toBeVisible()
+    // Los campos descriptivos no mueven el avance de los obligatorios, y mientras se edita no hay
+    // cumplimiento que mostrar (sólo existe tras declarar ejecutada).
+    await expect(textoVisible(page, "0 de 5 obligatorios")).toBeVisible()
+    await expect(textoVisible(page, "Aún no calculable")).toHaveCount(0)
+    await expect(textoVisible(page, "Resultado normalizado")).toHaveCount(0)
 
     // Guardar respuestas parciales
     await page.getByRole("button", { name: "Guardar respuestas" }).click()
@@ -82,7 +84,7 @@ test.describe("Inspecciones — Ejecución avanzada y validaciones de campo", ()
     await expect(page.getByRole("dialog")).toHaveCount(0)
 
     // Llenar la justificación requerida
-    await campoInspeccion(page, "Comentario de Manguera").fill("Manguera cortada en dos puntos; extintor fuera de servicio.")
+    await (await abrirComentarioInspeccion(page, "Manguera")).fill("Manguera cortada en dos puntos; extintor fuera de servicio.")
     await expect(motivoFaltante).toHaveCount(0)
     await expect(textoVisible(page, "Respuestas que todavía no se guardan")).toHaveCount(0)
     await expect(page.getByRole("button", { name: "Guardar respuestas" })).toBeEnabled()
@@ -122,9 +124,10 @@ test.describe("Inspecciones — Ejecución avanzada y validaciones de campo", ()
     await expect(textoVisible(page, "Pendiente de revisión").first()).toBeVisible({ timeout: 15_000 })
     // El acta cerrada se relee resolviendo el `value` contra el rótulo de la
     // plantilla, y la firma queda con la hora que estampó el servidor.
-    await expect(page.getByText(/Resultado:\s*No operativo \/ requiere recarga/)).toBeVisible()
-    await expect(textoVisible(page, /prevencionista:\s*Prevencionista E2E/i).first()).toBeVisible()
-    await expect(page.getByText(/supervisor:\s*Supervisor Turno E2E/i)).toBeVisible()
+    const acta = page.locator("section#acta-cierre")
+    await expect(acta.getByText("No operativo / requiere recarga", { exact: true })).toBeVisible()
+    await expect(acta.getByText(/^Prevencionista E2E · \d{2}-\d{2}-\d{4}/)).toBeVisible()
+    await expect(acta.getByText(/^Supervisor Turno E2E · \d{2}-\d{2}-\d{4}/)).toBeVisible()
   })
 
   test("subida y visualización de hoja de respaldo física", async ({ page }) => {
