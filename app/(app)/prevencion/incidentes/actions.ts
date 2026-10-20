@@ -11,6 +11,7 @@ import {
   authorizePreventionIncidentRestart,
   classifyIncidentPersonForIndicators,
   confirmIncidentDiffusion,
+  createCapaFromRe20Measure,
   createPreliminaryReport,
   createPreventionIncidentCapa,
   markIncidentDiffusion,
@@ -18,8 +19,11 @@ import {
   recordBiweeklyFollowup,
   recordIncidentStatement,
   recordPreventionIncidentNotification,
+  reviewPreventionIncidentRe20Quality,
   reportPreventionIncident,
-  savePreventionIncidentInvestigation,
+  savePreventionIncidentRe20Policy,
+  savePreventionIncidentRe20CatalogOption,
+  savePreventionIncidentRe20Workspace,
   savePreventionIncidentPersonSensitive,
   transitionPreventionIncident,
   triagePreventionIncident,
@@ -35,6 +39,7 @@ function access(session: NonNullable<Awaited<ReturnType<typeof guardPermission>>
     ctx: { userId: session.user.id },
     scope: resolveWorksiteScope(session),
     permissions: session.user.permissions,
+    roles: session.user.roles ?? [],
   }
 }
 
@@ -101,15 +106,52 @@ export async function transitionPreventionIncidentAction(input: {
   }
 }
 
-export async function savePreventionIncidentInvestigationAction(input: unknown): Promise<ActionState> {
+export async function savePreventionIncidentRe20WorkspaceAction(input: unknown): Promise<ActionState & { version?: number; idempotentReplay?: boolean }> {
   const guard = await guardPermission("prevention:incidents:investigate")
   if (guard.error) return guard.error
   try {
-    const result = await savePreventionIncidentInvestigation({ input, access: access(guard.session) })
-    refresh(result.incident.id)
-    return { ok: true, message: "Investigación guardada" }
+    const result = await savePreventionIncidentRe20Workspace({ input, access: access(guard.session) })
+    refresh(result.incidentId)
+    return { ok: true, message: result.idempotentReplay ? "El guardado RE-20 ya estaba sincronizado" : "Expediente RE-20 guardado", version: result.workspace.version, idempotentReplay: result.idempotentReplay }
   } catch (error) {
-    return fail(error, "No se pudo guardar la investigación")
+    return fail(error, "No se pudo guardar el expediente RE-20")
+  }
+}
+
+export async function reviewPreventionIncidentRe20QualityAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:incidents:review_quality")
+  if (guard.error) return guard.error
+  try {
+    await reviewPreventionIncidentRe20Quality({ input, access: access(guard.session) })
+    const incidentId = typeof input === "object" && input !== null && "incidentId" in input ? String(input.incidentId) : undefined
+    refresh(incidentId)
+    return { ok: true, message: "Revisión de calidad RE-20 registrada" }
+  } catch (error) {
+    return fail(error, "No se pudo registrar la revisión de calidad")
+  }
+}
+
+export async function savePreventionIncidentRe20PolicyAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:incidents:configure_re20")
+  if (guard.error) return guard.error
+  try {
+    await savePreventionIncidentRe20Policy({ input, access: access(guard.session) })
+    revalidatePath(ROOT)
+    return { ok: true, message: "Plazos internos RE-20 actualizados para nuevos expedientes" }
+  } catch (error) {
+    return fail(error, "No se pudo guardar la política RE-20")
+  }
+}
+
+export async function savePreventionIncidentRe20CatalogOptionAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:incidents:configure_re20")
+  if (guard.error) return guard.error
+  try {
+    await savePreventionIncidentRe20CatalogOption({ input, access: access(guard.session) })
+    revalidatePath(ROOT)
+    return { ok: true, message: "Catálogo RE-20 actualizado" }
+  } catch (error) {
+    return fail(error, "No se pudo actualizar el catálogo RE-20")
   }
 }
 
@@ -162,6 +204,24 @@ export async function createPreventionIncidentCapaAction(input: unknown): Promis
   }
 }
 
+/** Medida RE-20 → CAPA: crea la acción y deja su vínculo (`capaId`) en el expediente con la misma versión optimista. */
+export async function createCapaFromRe20MeasureAction(input: {
+  incidentId: string
+  measureId: string
+  expectedWorkspaceVersion: number
+}): Promise<ActionState & { version?: number; capaId?: string }> {
+  const guard = await guardPermission("prevention:incidents:investigate")
+  if (guard.error) return guard.error
+  try {
+    const result = await createCapaFromRe20Measure({ input, access: access(guard.session) })
+    refresh(input.incidentId)
+    revalidatePath("/prevencion/capa")
+    return { ok: true, message: `CAPA ${result.capa.code} creada y vinculada a la medida`, version: result.workspaceVersion, capaId: result.capa.id }
+  } catch (error) {
+    return fail(error, "No se pudo crear la CAPA desde la medida")
+  }
+}
+
 export async function classifyIncidentPersonForIndicatorsAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:incidents:investigate")
   if (guard.error) return guard.error
@@ -190,6 +250,7 @@ export async function createPreliminaryReportAction(args: { incidentId: string; 
 export async function recordIncidentStatementAction(args: {
   incidentId: string
   kind: "involved" | "witness" | "cphs"
+  purpose: string
   deponentName: string
   deponentRole?: string
   statementText: string
@@ -205,11 +266,13 @@ export async function recordIncidentStatementAction(args: {
   }
 }
 
+/** ONE PAGE RE-20-06. Sin textos explícitos se genera desde el expediente (medidas, causas raíz); exige revisión aprobada. */
 export async function publishOnePageDiffusionAction(args: {
   incidentId: string
-  onePageSummary: string
-  rootCauseText: string
-  actionPlanSummary: string
+  onePageSummary?: string
+  rootCauseText?: string
+  actionPlanSummary?: string
+  learning?: string
   evidenceRef?: string
 }): Promise<ActionState> {
   const guard = await guardPermission("prevention:incidents:investigate")
@@ -223,20 +286,36 @@ export async function publishOnePageDiffusionAction(args: {
   }
 }
 
+/** Seguimiento de medidas (RE-20-08 accidente / RE-20-09 daño) con estado triple implementada / verificada / eficaz. */
 export async function recordBiweeklyFollowupAction(args: {
   incidentId: string
   followupDate: string
   note: string
   evidenceRef?: string
+  kind?: "accident" | "damage"
+  measureId?: string
+  rootCauseId?: string
+  controlType?: string
+  verifierUserId?: string
+  verifiedAt?: string
+  residualRisk?: string
+  implementedAt?: string
+  verified?: boolean
+  effective?: boolean
+  lostDays?: number
+  lossDescription?: string
 }): Promise<ActionState> {
   const guard = await guardPermission("prevention:incidents:investigate")
   if (guard.error) return guard.error
   try {
-    await recordBiweeklyFollowup({ ...args, access: access(guard.session) })
+    const result = await recordBiweeklyFollowup({ ...args, access: access(guard.session) })
     refresh(args.incidentId)
-    return { ok: true, message: "Seguimiento quincenal registrado y acreditado en PDTP" }
+    return {
+      ok: true,
+      message: result.idempotentReplay ? "El seguimiento ya estaba registrado" : "Seguimiento registrado y acreditado en PDTP",
+    }
   } catch (error) {
-    return fail(error, "No se pudo registrar el seguimiento quincenal")
+    return fail(error, "No se pudo registrar el seguimiento")
   }
 }
 

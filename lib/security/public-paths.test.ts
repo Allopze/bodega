@@ -13,6 +13,15 @@ describe("rutas públicas del proxy", () => {
     expect(isPublicPath("/reportar-incidentes-admin")).toBe(false)
   })
 
+  // El shell offline RE-20 es estático: descifra en el cliente y no consulta
+  // datos al servidor. Abrirlo no puede abrir el resto de /prevencion/incidentes.
+  it("abre sólo el shell offline RE-20, no los expedientes", () => {
+    expect(isPublicPath("/prevencion/incidentes/re20-offline")).toBe(true)
+    expect(isPublicPath("/prevencion/incidentes/re20-offline-x")).toBe(false)
+    expect(isPublicPath("/prevencion/incidentes/inc-123")).toBe(false)
+    expect(isPublicPath("/prevencion/incidentes/inc-123/re20/print")).toBe(false)
+  })
+
   it("abre sólo la configuración de respaldos, no el resto de /api/backups", () => {
     expect(isPublicPath("/api/backups/config")).toBe(true)
     expect(isPublicPath("/api/backups/status")).toBe(false)

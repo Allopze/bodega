@@ -400,7 +400,16 @@ services:
         condition: service_healthy
     environment:
       - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
-    command: ["sh", "-c", "node scripts/migrate.mjs && node scripts/ensure-prevention-program-slots.mjs && node scripts/backfill-cphs-mandatory-sessions.mjs && node scripts/reconcile-epp-delivery-scale.mjs --apply"]
+      # El backfill RE-20 cifra declaraciones históricas con la misma clave que la app.
+      - PREVENTION_DATA_ENCRYPTION_KEY=${PREVENTION_DATA_ENCRYPTION_KEY:-}
+      - PREVENTION_DATA_ENCRYPTION_KEY_VERSION=${PREVENTION_DATA_ENCRYPTION_KEY_VERSION:-v1}
+      # Los anexos RE-20 antiguos se trasladan al almacenamiento cifrado de la app.
+      - STORAGE_PATH=${STORAGE_PATH:-/data/storage}
+    volumes:
+      - bodega-storage:/data/storage
+    # El traslado de anexos no corta el despliegue: una fila que no verifica queda
+    # legible desde Postgres y su detalle queda en el log de este servicio.
+    command: ["sh", "-c", "node scripts/migrate.mjs && node scripts/backfill-re20-statements.mjs --apply && node scripts/ensure-prevention-program-slots.mjs && node scripts/backfill-cphs-mandatory-sessions.mjs && node scripts/reconcile-epp-delivery-scale.mjs --apply && (node scripts/migrate-re20-attachments-to-files.mjs --apply || echo '[re20] Hay anexos sin trasladar a disco: siguen legibles desde Postgres; revisa el informe de arriba.')"]
 
   # One-shot: sync RBAC permissions from module manifests to the database.
   # Run automatically by deploy-prod.sh after migrations. Also run manually:

@@ -472,6 +472,29 @@ RUN ./node_modules/.bin/esbuild scripts/backfill-cphs-mandatory-sessions.ts \
     --external:postgres \
     --outfile=/tmp/backfill-cphs-mandatory-sessions.mjs
 
+# Cifra las declaraciones RE-20 que quedaron en claro antes de la migración
+# 0352. Mientras quede una, el acceso reservado del RE-20 se mantiene cerrado
+# en ese incidente. Con cero pendientes termina sin exigir la clave.
+RUN ./node_modules/.bin/esbuild scripts/backfill-re20-statements.ts \
+    --bundle \
+    --platform=node \
+    --format=esm \
+    --external:drizzle-orm \
+    --external:drizzle-orm/* \
+    --external:postgres \
+    --outfile=/tmp/backfill-re20-statements.mjs
+
+# Traslada a archivos cifrados en disco los anexos RE-20 que quedaron en base64
+# dentro de Postgres (anteriores a 0354). Con cero pendientes no hace nada.
+RUN ./node_modules/.bin/esbuild scripts/migrate-re20-attachments-to-files.ts \
+    --bundle \
+    --platform=node \
+    --format=esm \
+    --external:drizzle-orm \
+    --external:drizzle-orm/* \
+    --external:postgres \
+    --outfile=/tmp/migrate-re20-attachments-to-files.mjs
+
 # Da de baja las variantes que son la misma talla física escrita de dos formas
 # (`N41` junto a `T41`, `L` junto a `T/L`) o duplicadas de plano. Desactiva con
 # `is_active = false`, nunca borra, y sólo toca variantes sin stock ni
@@ -633,6 +656,8 @@ COPY --from=build /tmp/reconcile-request-status.mjs ./scripts/reconcile-request-
 COPY --from=build /tmp/seed-size-catalog.mjs ./scripts/seed-size-catalog.mjs
 COPY --from=build /tmp/ensure-prevention-program-slots.mjs ./scripts/ensure-prevention-program-slots.mjs
 COPY --from=build /tmp/backfill-cphs-mandatory-sessions.mjs ./scripts/backfill-cphs-mandatory-sessions.mjs
+COPY --from=build /tmp/backfill-re20-statements.mjs ./scripts/backfill-re20-statements.mjs
+COPY --from=build /tmp/migrate-re20-attachments-to-files.mjs ./scripts/migrate-re20-attachments-to-files.mjs
 COPY --from=build /tmp/reconcile-epp-duplicate-sizes.mjs ./scripts/reconcile-epp-duplicate-sizes.mjs
 COPY --from=build /tmp/backfill-epp-clothing-sizes.mjs ./scripts/backfill-epp-clothing-sizes.mjs
 COPY --from=build /tmp/backfill-epp-size-ranges.mjs ./scripts/backfill-epp-size-ranges.mjs

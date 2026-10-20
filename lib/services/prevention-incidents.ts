@@ -1,8 +1,8 @@
-import { and, asc, desc, eq, inArray, lte, sql } from "drizzle-orm"
+import { and, asc, desc, eq, inArray, like, lte, not, sql } from "drizzle-orm"
 import { automaticChargeDaysForSeverity } from "@/lib/prevention/charge-days"
 import { totalAbsenceDays } from "@/lib/prevention/absence-allocation"
 import { z } from "zod"
-import { db, type DB, type Tx } from "@/db"
+import { db } from "@/db"
 import { resolveOwnWorkSigning } from "@/lib/services/prevention-signing"
 import {
   preventionCapaActions,
@@ -17,11 +17,14 @@ import {
   preventionIncidents,
   preventionIncidentClassificationCatalog,
   preventionIncidentStatements,
+  preventionIncidentRe20Workspaces,
+  preventionIncidentRe20QualityReviews,
+  preventionIncidentRe20Policy,
+  preventionIncidentRe20Mutations,
   preventionIncidentDiffusion,
   preventionIncidentShiftDiffusions,
   preventionIncidentFollowups,
   preventionRiskReviewTriggers,
-  preventionSensitiveAccessAudit,
   users,
   workers,
   worksites,
@@ -39,7 +42,15 @@ import {
   onIncidentStatementRecorded,
   reconcileIncidentObligationsAfterTriage,
 } from "@/lib/services/pdtp-adapters/incident-accreditation-connector"
-import type { WorksiteScope } from "@/lib/auth/scope"
+import {
+  auditIncidentSensitiveAccess,
+  hasPermission,
+  requireAccess,
+  scopeAllows,
+  scopeCondition,
+  type IncidentAccess,
+  type IncidentClient,
+} from "@/lib/services/prevention-incident-access"
 import { recordModuleHistory } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import {
@@ -47,7 +58,6 @@ import {
   encryptPreventionPayload,
 } from "@/lib/security/prevention-field-encryption"
 import { createCapaActionWithClient } from "@/lib/services/prevention-capa"
-import type { RequestContext } from "@/lib/services/prevention-documents/utils"
 import { getUserIdsWithPermissionForWorksite } from "@/lib/services/notifications"
 import { onSafetyIndicatorPeriodReopened } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
 import { invalidateClosedIndicatorPeriodWithClient, type ReopenedPeriodRevocation } from "@/lib/services/prevention-indicadores"
@@ -55,6 +65,23 @@ import { createRiskReviewTriggerWithClient } from "@/lib/services/prevention-ris
 import { addDaysToPlainDate, codeYear, todayInChile } from "@/lib/utils"
 import { enqueueGeneratedDocumentTx } from "@/lib/services/generated-documents/enqueue"
 import { PERSON_SEX_VALUES } from "@/lib/person-sex"
+import {
+  DEFAULT_RE20_SLA_POLICY,
+  RE20_CLASSIFICATION_OPTIONS,
+  RE20_QUALITY_CRITERIA,
+  RE20_TASK_DEFINITIONS,
+  deriveRe20RootCauses,
+  re20ApplicableTaskIds,
+  re20CausalGraphCompletenessIssues,
+  re20TreeRequired,
+  type Re20SlaPolicy,
+} from "@/lib/prevention/incidents"
+import {
+  re20PublicDataSchema,
+  re20SensitivePayloadSchema,
+  type Re20Measure,
+  type Re20PublicData,
+} from "@/lib/services/prevention-incident-re20-schema"
 
 const CHILE_YEAR_FORMAT = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago", year: "numeric" })
 const CHILE_MONTH_FORMAT = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago", month: "numeric" })
@@ -91,13 +118,7 @@ export const INCIDENT_NOTIFICATION_TYPES = [
 export type IncidentEventType = typeof INCIDENT_EVENT_TYPES[number]
 export type IncidentStatus = typeof INCIDENT_STATUSES[number]
 export type IncidentNotificationType = typeof INCIDENT_NOTIFICATION_TYPES[number]
-type IncidentClient = DB | Tx
-
-export interface IncidentAccess {
-  ctx: RequestContext
-  scope: WorksiteScope
-  permissions: readonly string[]
-}
+export type { IncidentAccess }
 
 const sensitivePersonSchema = z.object({
   fullName: z.string().trim().min(2).max(300).optional(),
@@ -261,6 +282,12 @@ const indicatorClassificationSchema = z.object({
  * nada en runtime. `followupDate` entraba sin comprobar formato y los textos
  * largos sin cota, directo al insert.
  */
+/** Fecha con o sin hora; una fecha civil se guarda a mediodía UTC para no cambiar de día al mostrarla. */
+const followupInstant = z.union([
+  z.string().datetime({ offset: true }),
+  z.string().regex(/^\d{4}-\d{2}-\d{2}$/).transform((date) => `${date}T12:00:00.000Z`),
+])
+
 const re20TextSchemas = {
   preliminary: z.object({
     incidentId: z.string().min(1),
@@ -269,15 +296,19 @@ const re20TextSchemas = {
   statement: z.object({
     incidentId: z.string().min(1),
     kind: z.enum(["involved", "witness", "cphs"]),
+    purpose: z.string().trim().min(3).max(300),
     deponentName: z.string().trim().min(3).max(200),
     deponentRole: z.string().trim().max(200).optional(),
     statementText: z.string().trim().min(10).max(10000),
   }),
   onePage: z.object({
     incidentId: z.string().min(1),
-    onePageSummary: z.string().trim().min(10).max(5000),
-    rootCauseText: z.string().trim().min(10).max(5000),
-    actionPlanSummary: z.string().trim().min(10).max(5000),
+    // Si no vienen, se derivan del expediente (reconstrucción, causas raíz y medidas).
+    onePageSummary: z.string().trim().min(10).max(5000).optional(),
+    rootCauseText: z.string().trim().min(10).max(5000).optional(),
+    actionPlanSummary: z.string().trim().min(10).max(5000).optional(),
+    /** RE-20-06 D24: aprendizaje para otras faenas. */
+    learning: z.string().trim().max(3000).optional(),
     evidenceRef: z.string().trim().max(4000).optional(),
   }),
   followup: z.object({
@@ -285,6 +316,19 @@ const re20TextSchemas = {
     followupDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha de seguimiento inválida"),
     note: z.string().trim().min(5).max(5000),
     evidenceRef: z.string().trim().max(4000).optional(),
+    /** RE-20-08 (accidente) o RE-20-09 (daño). */
+    kind: z.enum(["accident", "damage"]).default("accident"),
+    measureId: z.string().trim().min(1).max(80).optional(),
+    rootCauseId: z.string().trim().max(80).optional(),
+    controlType: z.string().trim().max(80).optional(),
+    verifierUserId: z.string().trim().min(1).optional(),
+    verifiedAt: followupInstant.optional(),
+    residualRisk: z.string().trim().max(80).optional(),
+    implementedAt: followupInstant.optional(),
+    verified: z.boolean().default(false),
+    effective: z.boolean().default(false),
+    lostDays: z.number().int().min(0).max(10000).optional(),
+    lossDescription: z.string().trim().max(2000).optional(),
   }),
   diffusion: z.object({
     incidentId: z.string().min(1),
@@ -294,6 +338,26 @@ const re20TextSchemas = {
   }),
   confirmDiffusion: z.object({ diffusionId: z.string().min(1) }),
 } as const
+
+const re20WorkspaceSaveSchema = z.object({
+  incidentId: z.string().min(1),
+  expectedVersion: z.number().int().min(0),
+  mutationId: z.string().trim().min(8).max(200),
+  data: re20PublicDataSchema,
+  sensitive: re20SensitivePayloadSchema.optional(),
+})
+
+const re20QualityReviewSchema = z.object({
+  incidentId: z.string().min(1),
+  expectedWorkspaceVersion: z.number().int().positive(),
+  decision: z.enum(["approved", "approved_with_observations", "changes_required"]),
+  observation: z.string().trim().max(5000).nullable().optional(),
+  criteria: z.array(z.object({
+    id: z.string().trim().min(1).max(80),
+    result: z.enum(["meets", "partial", "does_not_meet"]),
+    observation: z.string().trim().max(1000).optional(),
+  })).length(RE20_QUALITY_CRITERIA.length),
+})
 
 const evidenceSchema = z.object({
   incidentId: z.string().min(1),
@@ -322,6 +386,8 @@ const capaSchema = z.object({
   evidenceRequired: z.boolean().default(true),
   /** CAPA-002: si la CAPA del incidente no exigirá evidencia, hay que decir por qué. */
   evidenceExemptionReason: z.string().trim().max(1000).nullable().optional(),
+  /** Elemento del expediente que originó la acción (p. ej. la medida RE-20). */
+  sourceItemId: z.string().trim().min(1).max(120).nullable().optional(),
 })
 
 const transitionSchema = z.object({
@@ -385,26 +451,6 @@ const TRANSITION_PERMISSION: Record<IncidentStatus, string> = {
   pending_capa: "prevention:incidents:investigate",
   pending_verification: "prevention:incidents:investigate",
   closed: "prevention:incidents:close",
-}
-
-function hasPermission(permissions: readonly string[], permission: string) {
-  return permissions.includes(permission)
-}
-
-function scopeAllows(scope: WorksiteScope, worksiteId: string) {
-  return scope.mode === "all" || (scope.mode === "some" && scope.ids.includes(worksiteId))
-}
-
-function requireAccess(access: IncidentAccess, permission: string, worksiteId?: string) {
-  if (!hasPermission(access.permissions, permission) || (worksiteId && !scopeAllows(access.scope, worksiteId))) {
-    throw new Error("Incidente no encontrado o fuera de alcance.")
-  }
-}
-
-function scopeCondition(scope: WorksiteScope) {
-  if (scope.mode === "all") return undefined
-  if (scope.mode === "some" && scope.ids.length > 0) return inArray(preventionIncidents.worksiteId, scope.ids)
-  return sql`false`
 }
 
 export function incidentNotificationDeadline(knownAt: string) {
@@ -913,34 +959,6 @@ export async function listPreventionIncidents(args: {
     .where(and(...conditions.filter(Boolean)))
     .orderBy(desc(preventionIncidents.occurredAt))
     .limit(Math.min(Math.max(args.limit ?? 500, 1), 2000))
-}
-
-async function auditIncidentSensitiveAccess(args: {
-  access: IncidentAccess
-  incidentId: string
-  worksiteId: string
-  workerId?: string | null
-  purpose: string
-  outcome: "granted" | "denied"
-  reasonCode?: string
-  action?: "read_incident_sensitive" | "create" | "update"
-  client?: IncidentClient
-}) {
-  await (args.client ?? db).insert(preventionSensitiveAccessAudit).values({
-    id: `psa-${nanoid()}`,
-    domain: "incident",
-    entityId: args.incidentId,
-    subjectWorkerId: args.workerId ?? null,
-    worksiteId: args.worksiteId,
-    actorUserId: args.access.ctx.userId,
-    action: args.action ?? "read_incident_sensitive",
-    purpose: args.purpose,
-    outcome: args.outcome,
-    reasonCode: args.reasonCode ?? null,
-    ip: args.access.ctx.ip ?? null,
-    userAgent: args.access.ctx.userAgent ?? null,
-    createdAt: nowIso(),
-  })
 }
 
 export async function getPreventionIncidentDetail(args: {
@@ -1692,6 +1710,50 @@ export async function authorizePreventionIncidentRestart(args: {
   })
 }
 
+type CapaInput = z.infer<typeof capaSchema>
+
+/** Crea la CAPA y sube la versión del incidente dentro de la transacción del llamador. */
+async function createIncidentCapaInTx(tx: IncidentClient, args: {
+  incident: typeof preventionIncidents.$inferSelect
+  input: CapaInput
+  userId: string
+}) {
+  const { incident, input } = args
+  const now = nowIso()
+  const [capa, [updated]] = await Promise.all([
+    createCapaActionWithClient(tx, {
+      sourceType: "incident",
+      sourceId: incident.id,
+      sourceItemId: input.sourceItemId ?? null,
+      worksiteId: incident.worksiteId,
+      finding: input.finding,
+      immediateMeasure: input.immediateMeasure ?? null,
+      rootCause: input.rootCause ?? null,
+      actionDescription: input.actionDescription,
+      responsibleUserId: input.responsibleUserId ?? null,
+      responsibleSnapshot: input.responsibleSnapshot ?? null,
+      responsibleRole: input.responsibleRole ?? null,
+      priority: input.priority,
+      targetDate: input.targetDate,
+      evidenceRequired: input.evidenceRequired,
+      evidenceExemptionReason: input.evidenceExemptionReason ?? null,
+    }, args.userId),
+    tx.update(preventionIncidents).set({
+      version: sql`${preventionIncidents.version} + 1`, updatedAt: now,
+    }).where(and(eq(preventionIncidents.id, incident.id), eq(preventionIncidents.version, input.expectedVersion))).returning(),
+  ])
+  if (!updated) throw new Error("El incidente cambió; recarga e intenta nuevamente.")
+  await appendHistory(tx, {
+    incidentId: incident.id,
+    changeType: "capa",
+    actorUserId: args.userId,
+    reason: "Acción CAPA creada desde la investigación",
+    changeSet: { capaActionId: capa.id, code: capa.code, priority: capa.priority },
+    createdAt: now,
+  })
+  return { incident: updated, capa }
+}
+
 export async function createPreventionIncidentCapa(args: {
   input: unknown
   access: IncidentAccess
@@ -1702,38 +1764,7 @@ export async function createPreventionIncidentCapa(args: {
   return db.transaction(async (tx) => {
     const incident = await findIncidentForMutation(tx, input.incidentId)
     requireAccess(args.access, "prevention:incidents:investigate", incident.worksiteId)
-    const now = nowIso()
-    const [capa, [updated]] = await Promise.all([
-      createCapaActionWithClient(tx, {
-        sourceType: "incident",
-        sourceId: incident.id,
-        worksiteId: incident.worksiteId,
-        finding: input.finding,
-        immediateMeasure: input.immediateMeasure ?? null,
-        rootCause: input.rootCause ?? null,
-        actionDescription: input.actionDescription,
-        responsibleUserId: input.responsibleUserId ?? null,
-        responsibleSnapshot: input.responsibleSnapshot ?? null,
-        responsibleRole: input.responsibleRole ?? null,
-        priority: input.priority,
-        targetDate: input.targetDate,
-        evidenceRequired: input.evidenceRequired,
-        evidenceExemptionReason: input.evidenceExemptionReason ?? null,
-      }, args.access.ctx.userId),
-      tx.update(preventionIncidents).set({
-        version: sql`${preventionIncidents.version} + 1`, updatedAt: now,
-      }).where(and(eq(preventionIncidents.id, incident.id), eq(preventionIncidents.version, input.expectedVersion))).returning(),
-    ])
-    if (!updated) throw new Error("El incidente cambió; recarga e intenta nuevamente.")
-    await appendHistory(tx, {
-      incidentId: incident.id,
-      changeType: "capa",
-      actorUserId: args.access.ctx.userId,
-      reason: "Acción CAPA creada desde la investigación",
-      changeSet: { capaActionId: capa.id, code: capa.code, priority: capa.priority },
-      createdAt: now,
-    })
-    return { incident: updated, capa }
+    return createIncidentCapaInTx(tx, { incident, input, userId: args.access.ctx.userId })
   })
 }
 
@@ -1792,6 +1823,20 @@ export async function listIncidentNotificationResponsibles(access: IncidentAcces
     .where(and(inArray(users.id, ids), eq(users.isActive, true))).orderBy(asc(users.name))
 }
 
+/**
+ * Personas que pueden integrar el equipo, responder o verificar en el RE-20 de
+ * una faena: quienes ven incidentes de esa faena. Nombre y cargo (de su ficha de
+ * trabajador): la interfaz nunca muestra ni pide un ID.
+ */
+export async function listIncidentRe20Participants(access: IncidentAccess, worksiteId: string) {
+  requireAccess(access, "prevention:incidents:view", worksiteId)
+  const ids = await getUserIdsWithPermissionForWorksite("prevention:incidents:view", worksiteId)
+  if (ids.length === 0) return []
+  return db.select({ id: users.id, name: users.name, position: workers.position }).from(users)
+    .leftJoin(workers, eq(workers.id, users.workerId))
+    .where(and(inArray(users.id, ids), eq(users.isActive, true))).orderBy(asc(users.name))
+}
+
 /* ── RE-20: Módulo de Investigación y Auto-acreditación PDTP ─────────────── */
 
 /**
@@ -1811,6 +1856,664 @@ async function getInvestigableIncident(incidentId: string, access: IncidentAcces
   requireAccess(access, "prevention:incidents:investigate", incident.worksiteId)
   if (incident.status === "closed") throw new Error("El incidente está cerrado y su expediente de investigación es inmutable.")
   return incident
+}
+
+function policyForSnapshot(version: number, policy: Record<string, number> | null | undefined): Re20SlaPolicy {
+  return {
+    version,
+    preliminaryHours: policy?.preliminaryHours ?? DEFAULT_RE20_SLA_POLICY.preliminaryHours,
+    witnessStatementsHours: policy?.witnessStatementsHours ?? DEFAULT_RE20_SLA_POLICY.witnessStatementsHours,
+    injuredInterviewHours: policy?.injuredInterviewHours ?? DEFAULT_RE20_SLA_POLICY.injuredInterviewHours,
+    definitiveHours: policy?.definitiveHours ?? DEFAULT_RE20_SLA_POLICY.definitiveHours,
+    diffusionHours: policy?.diffusionHours ?? DEFAULT_RE20_SLA_POLICY.diffusionHours,
+    followupDays: policy?.followupDays ?? DEFAULT_RE20_SLA_POLICY.followupDays,
+  }
+}
+
+export async function getPreventionIncidentRe20Workspace(args: { incidentId: string; access: IncidentAccess; includeInactiveOptions?: boolean }) {
+  requireAccess(args.access, "prevention:incidents:view")
+  const [incident] = await db.select().from(preventionIncidents)
+    .where(and(eq(preventionIncidents.id, args.incidentId), scopeCondition(args.access.scope)))
+    .limit(1)
+  if (!incident) return null
+  const [workspace] = await db.select().from(preventionIncidentRe20Workspaces)
+    .where(eq(preventionIncidentRe20Workspaces.incidentId, incident.id)).limit(1)
+  const [globalPolicy] = await db.select().from(preventionIncidentRe20Policy)
+    .where(eq(preventionIncidentRe20Policy.id, "default")).limit(1)
+  // El caso no ofrece valores heredados (`legacy_*`) ni inactivos: sólo la administración del catálogo los ve.
+  const options = await db.select().from(preventionIncidentClassificationCatalog)
+    .where(args.includeInactiveOptions
+      ? sql`true`
+      : and(
+        eq(preventionIncidentClassificationCatalog.isActive, true),
+        not(like(preventionIncidentClassificationCatalog.category, "legacy\\_%")),
+      ))
+    .orderBy(
+      asc(preventionIncidentClassificationCatalog.category),
+      asc(preventionIncidentClassificationCatalog.sortOrder),
+      asc(preventionIncidentClassificationCatalog.name),
+    )
+  const [reviews, statements] = await Promise.all([
+    db.select().from(preventionIncidentRe20QualityReviews)
+      .where(eq(preventionIncidentRe20QualityReviews.incidentId, incident.id))
+      .orderBy(desc(preventionIncidentRe20QualityReviews.reviewedAt)),
+    db.select({ id: preventionIncidentStatements.id, kind: preventionIncidentStatements.kind, createdAt: preventionIncidentStatements.createdAt })
+      .from(preventionIncidentStatements).where(eq(preventionIncidentStatements.incidentId, incident.id))
+      .orderBy(asc(preventionIncidentStatements.createdAt)),
+  ])
+  const policy = workspace
+    ? policyForSnapshot(workspace.policyVersion, workspace.policySnapshot as Record<string, number>)
+    : policyForSnapshot(globalPolicy?.version ?? 1, globalPolicy?.policy as Record<string, number> | undefined)
+  return {
+    incident,
+    workspace: workspace ? {
+      id: workspace.id,
+      version: workspace.version,
+      data: normalizedWorkspaceData(workspace.data),
+      policyVersion: workspace.policyVersion,
+      policySnapshot: workspace.policySnapshot,
+      createdAt: workspace.createdAt,
+      updatedByUserId: workspace.updatedByUserId,
+      updatedAt: workspace.updatedAt,
+    } : null,
+    policy,
+    options: options.length ? options : RE20_CLASSIFICATION_OPTIONS.map((option) => ({ ...option })),
+    qualityReviews: reviews,
+    statements,
+  }
+}
+
+export async function getPreventionIncidentRe20SensitivePayload(args: {
+  incidentId: string
+  purpose: string
+  access: IncidentAccess
+}) {
+  const purpose = args.purpose.trim()
+  const [incident] = await db.select({ worksiteId: preventionIncidents.worksiteId }).from(preventionIncidents)
+    .where(and(eq(preventionIncidents.id, args.incidentId), scopeCondition(args.access.scope))).limit(1)
+  if (!incident) throw new Error("Incidente no encontrado o fuera de alcance.")
+  if (purpose.length < 3 || purpose.length > 300 || !hasPermission(args.access.permissions, "prevention:incidents:view_sensitive")) {
+    await auditIncidentSensitiveAccess({
+      access: args.access, incidentId: args.incidentId, worksiteId: incident.worksiteId,
+      purpose: purpose || "sin propósito", outcome: "denied", reasonCode: "permission_or_purpose",
+    })
+    throw new Error("No tienes autorización para ver la información sensible del RE-20.")
+  }
+  const [workspace] = await db.select().from(preventionIncidentRe20Workspaces)
+    .where(eq(preventionIncidentRe20Workspaces.incidentId, args.incidentId)).limit(1)
+  const statementRows = await db.select().from(preventionIncidentStatements)
+    .where(eq(preventionIncidentStatements.incidentId, args.incidentId)).orderBy(asc(preventionIncidentStatements.createdAt))
+  if (statementRows.some((row) => !row.encryptedPayload || !row.encryptedIv || !row.encryptedAuthTag || !row.encryptedKeyVersion)) {
+    throw new Error("Hay declaraciones históricas pendientes de cifrado; el acceso reservado RE-20 se habilitará después de completar la migración verificada.")
+  }
+  const payload = workspace?.encryptedSensitivePayload && workspace.sensitiveIv && workspace.sensitiveAuthTag && workspace.sensitiveKeyVersion
+    ? decryptPreventionPayload<Record<string, unknown>>({
+      encryptedPayload: workspace.encryptedSensitivePayload,
+      iv: workspace.sensitiveIv,
+      authTag: workspace.sensitiveAuthTag,
+      keyVersion: workspace.sensitiveKeyVersion,
+    }, `incident-re20:${args.incidentId}`)
+    : { declarations: [], injuredInterview: {}, injuryClinical: {}, diat: { form: {}, status: "draft" } }
+  const historicalStatements = statementRows.map((row) => ({
+    id: row.id,
+    kind: row.kind,
+    createdAt: row.createdAt,
+    ...(row.encryptedPayload && row.encryptedIv && row.encryptedAuthTag && row.encryptedKeyVersion
+      ? decryptPreventionPayload<{ name: string; role: string | null; statement: string }>({
+        encryptedPayload: row.encryptedPayload,
+        iv: row.encryptedIv,
+        authTag: row.encryptedAuthTag,
+        keyVersion: row.encryptedKeyVersion,
+      }, `incident-statement:${row.id}`)
+      : {}),
+  }))
+  await auditIncidentSensitiveAccess({ access: args.access, incidentId: args.incidentId, worksiteId: incident.worksiteId, purpose, outcome: "granted" })
+  return { ...payload, historicalStatements }
+}
+
+/** Datos del expediente normalizados al esquema vigente (lo anterior queda en `legacy`); si no parsean, lo guardado tal cual. */
+function normalizedWorkspaceData(raw: unknown): Record<string, unknown> {
+  const parsed = re20PublicDataSchema.safeParse(raw)
+  return parsed.success ? (parsed.data as unknown as Record<string, unknown>) : ((raw ?? {}) as Record<string, unknown>)
+}
+
+type IncidentRow = typeof preventionIncidents.$inferSelect
+
+const SERIOUS_SEVERITIES = new Set(["serious", "fatal"])
+function incidentIsFatalOrSerious(incident: IncidentRow) {
+  return incident.isFatalOrSerious || SERIOUS_SEVERITIES.has(incident.actualSeverity)
+}
+
+/** Tareas del protocolo que aplican a este evento (PASO A PASO!N7). */
+function applicableTaskIds(incident: IncidentRow, data: Re20PublicData) {
+  return new Set(re20ApplicableTaskIds(incident.eventType, {
+    nearMissPotential: data.nearMiss.potential ?? incident.potentialSeverity,
+    isFatalOrSerious: incidentIsFatalOrSerious(incident),
+  }))
+}
+
+/** El árbol es obligatorio salvo cuasi accidente cuyo potencial (reportado o del expediente) no sea «Grave o fatal». */
+function treeIsRequired(incident: IncidentRow, data: Re20PublicData) {
+  return [data.nearMiss.potential, incident.potentialSeverity]
+    .some((potential) => re20TreeRequired(incident.eventType, { nearMissPotential: potential }))
+}
+
+/**
+ * Qué falta para dar por completado el informe definitivo (INV.DEF.ACC): árbol completo cuando es obligatorio,
+ * conclusión, cada causa raíz con ≥1 medida (B146) y cada medida con responsable y verificador (B112).
+ * El verificador distinto del responsable lo impone el esquema en cada guardado.
+ */
+export function re20DefinitiveCompletionIssues(incident: IncidentRow, data: Re20PublicData): string[] {
+  const issues: string[] = []
+  const tree = data.causalTree
+  const required = treeIsRequired(incident, data)
+  if (required) issues.push(...re20CausalGraphCompletenessIssues(tree))
+  if ((data.definitive.conclusion?.trim().length ?? 0) < 10) issues.push("Falta la conclusión del equipo investigador.")
+  const eventIds = new Set(tree.events.map((event) => event.id))
+  for (const rootId of deriveRe20RootCauses(tree)) {
+    if (!data.measures.some((measure) => measure.rootCauseId === rootId)) {
+      issues.push(`La causa raíz ${rootId} no tiene ninguna medida asociada.`)
+    }
+  }
+  data.measures.forEach((measure, index) => {
+    const label = `La medida ${index + 1}`
+    if (measure.rootCauseId && !eventIds.has(measure.rootCauseId)) issues.push(`${label} apunta a un hecho inexistente (${measure.rootCauseId}).`)
+    if (!measure.responsibleUserId) issues.push(`${label} no tiene responsable.`)
+    if (!measure.verifierUserId) issues.push(`${label} no tiene verificador.`)
+  })
+  return [...new Set(issues)]
+}
+
+async function assertRe20CapaLinks(tx: IncidentClient, incidentId: string, measures: Re20Measure[]) {
+  const capaIds = [...new Set(measures.map((measure) => measure.capaId).filter((id): id is string => Boolean(id)))]
+  if (capaIds.length === 0) return
+  const rows = await tx.select({ id: preventionCapaActions.id }).from(preventionCapaActions).where(and(
+    inArray(preventionCapaActions.id, capaIds),
+    eq(preventionCapaActions.sourceType, "incident"),
+    eq(preventionCapaActions.sourceId, incidentId),
+  ))
+  if (rows.length !== capaIds.length) throw new Error("Una medida apunta a una CAPA que no existe o no pertenece a este incidente.")
+}
+
+const APPROVING_DECISIONS = ["approved", "approved_with_observations"] as const
+const isApproval = (decision: string) => (APPROVING_DECISIONS as readonly string[]).includes(decision)
+
+async function syncRe20Milestones(args: {
+  incident: IncidentRow
+  data: Re20PublicData
+  sensitive?: z.infer<typeof re20SensitivePayloadSchema>
+  userId: string
+}) {
+  const { incident, data, sensitive, userId } = args
+  const completed = (id: string) => data.tasks.find((task) => task.id === id)?.status === "completed"
+  if (completed("preliminary_report")) {
+    const at = data.tasks.find((task) => task.id === "preliminary_report")?.completedAt ?? nowIso()
+    await onIncidentPreliminaryReported({ incidentId: incident.id, worksiteId: incident.worksiteId, reportedAt: at, userId })
+  }
+  if ((sensitive?.declarations.length ?? 0) > 0) {
+    const at = sensitive?.declarations.find((declaration) => declaration.signedAt)?.signedAt ?? nowIso()
+    await onIncidentStatementRecorded({ incidentId: incident.id, worksiteId: incident.worksiteId, recordedAt: at, userId })
+  }
+  // El informe definitivo se acredita al aprobarse la revisión de calidad (RE-20-13, «aprobado» o «aprobado
+  // con observaciones»), no al marcar la tarea. La difusión y el seguimiento se acreditan al registrarse en sus
+  // tablas canónicas (`publishOnePageDiffusion`, `recordBiweeklyFollowup`).
+}
+
+export async function savePreventionIncidentRe20Workspace(args: { input: unknown; access: IncidentAccess }) {
+  requireAccess(args.access, "prevention:incidents:investigate")
+  const input = re20WorkspaceSaveSchema.parse(args.input)
+  if (input.sensitive && !hasPermission(args.access.permissions, "prevention:incidents:view_sensitive")) {
+    const [target] = await db.select({ worksiteId: preventionIncidents.worksiteId }).from(preventionIncidents)
+      .where(eq(preventionIncidents.id, input.incidentId)).limit(1)
+    if (target) await auditIncidentSensitiveAccess({
+      access: args.access, incidentId: input.incidentId, worksiteId: target.worksiteId,
+      purpose: input.sensitive.purpose, outcome: "denied", reasonCode: "permission", action: "update",
+    })
+    throw new Error("No tienes autorización para guardar información sensible del RE-20.")
+  }
+  const result = await db.transaction(async (tx) => {
+    const incident = await getInvestigableIncident(input.incidentId, args.access, tx)
+    const [priorMutation] = await tx.select().from(preventionIncidentRe20Mutations)
+      .where(and(eq(preventionIncidentRe20Mutations.incidentId, incident.id), eq(preventionIncidentRe20Mutations.mutationId, input.mutationId))).limit(1)
+    if (priorMutation) {
+      const [workspace] = await tx.select().from(preventionIncidentRe20Workspaces)
+        .where(eq(preventionIncidentRe20Workspaces.incidentId, incident.id)).limit(1)
+      if (!workspace) throw new Error("El guardado idempotente no tiene un expediente RE-20 asociado.")
+      return { incident, workspace, data: null as Re20PublicData | null, idempotentReplay: true as const }
+    }
+    const [existing] = await tx.select().from(preventionIncidentRe20Workspaces)
+      .where(eq(preventionIncidentRe20Workspaces.incidentId, incident.id)).limit(1)
+    if ((existing?.version ?? 0) !== input.expectedVersion) {
+      throw new Error("Otra persona modificó el expediente RE-20. Conserva tu borrador y recarga para resolver el conflicto.")
+    }
+
+    // ── Reglas del servidor ────────────────────────────────────────────────
+    const stored = existing ? normalizedWorkspaceData(existing.data) as Partial<Re20PublicData> : {}
+    const storedMethodology = (existing?.data as { methodology?: string } | undefined)?.methodology
+    if (input.data.methodology !== "causal_tree" && input.data.methodology !== storedMethodology) {
+      throw new Error("La metodología del RE-20 es el árbol de causas: «5 porqués» y «otra» sólo se conservan en expedientes que ya las usaban.")
+    }
+    const data: Re20PublicData = {
+      ...input.data,
+      // Las copias anteriores se conservan aunque el cliente no las reenvíe.
+      ...(stored.legacy || input.data.legacy ? { legacy: { ...(stored.legacy ?? {}), ...(input.data.legacy ?? {}) } } : {}),
+      // La vinculación con la CAPA la fija `createCapaFromRe20Measure`: un cliente que no la conoce no la borra.
+      measures: input.data.measures.map((measure) => ({
+        ...measure,
+        capaId: measure.capaId ?? stored.measures?.find((item) => item.id === measure.id)?.capaId ?? null,
+      })),
+    }
+    const required = treeIsRequired(incident, data)
+    // Cuasi accidente de potencial grave o fatal: árbol obligatorio (Reporte Cuasi Accidente!D24), no se desmarca.
+    if (required && incident.eventType === "dangerous_incident") {
+      data.nearMiss = { ...data.nearMiss, seriousOrFatalPotential: true, do36TreeRequired: true }
+    }
+    await assertRe20CapaLinks(tx, incident.id, data.measures)
+    const applicable = applicableTaskIds(incident, data)
+    const alreadyCompleted = new Set((stored.tasks ?? []).filter((task) => task.status === "completed").map((task) => task.id))
+    for (const task of data.tasks) {
+      if (task.status === "completed" && !applicable.has(task.id) && !alreadyCompleted.has(task.id)) {
+        const label = RE20_TASK_DEFINITIONS.find((definition) => definition.id === task.id)?.label ?? task.label
+        throw new Error(`La tarea «${label}» no aplica a este tipo de evento: no puede marcarse como completada.`)
+      }
+    }
+    if (data.tasks.some((task) => task.id === "definitive_report" && task.status === "completed")) {
+      const issues = re20DefinitiveCompletionIssues(incident, data)
+      if (issues.length > 0) throw new Error(`No se puede completar el informe definitivo: ${issues.join(" ")}`)
+    }
+
+    const [globalPolicy] = await tx.select().from(preventionIncidentRe20Policy)
+      .where(eq(preventionIncidentRe20Policy.id, "default")).limit(1)
+    const policy = existing
+      ? policyForSnapshot(existing.policyVersion, existing.policySnapshot as Record<string, number>)
+      : policyForSnapshot(globalPolicy?.version ?? 1, globalPolicy?.policy as Record<string, number> | undefined)
+    const now = nowIso()
+    const encrypted = input.sensitive
+      ? encryptPreventionPayload({ ...input.sensitive, purpose: undefined }, `incident-re20:${incident.id}`)
+      : null
+    const nextVersion = (existing?.version ?? 0) + 1
+    const values = {
+      version: nextVersion,
+      data,
+      policyVersion: policy.version,
+      policySnapshot: { ...policy },
+      ...(encrypted ? {
+        encryptedSensitivePayload: encrypted.encryptedPayload,
+        sensitiveIv: encrypted.iv,
+        sensitiveAuthTag: encrypted.authTag,
+        sensitiveKeyVersion: encrypted.keyVersion,
+      } : {}),
+      updatedByUserId: args.access.ctx.userId,
+      updatedAt: now,
+    }
+    const [workspace] = existing
+      ? await tx.update(preventionIncidentRe20Workspaces).set(values)
+        .where(and(eq(preventionIncidentRe20Workspaces.id, existing.id), eq(preventionIncidentRe20Workspaces.version, input.expectedVersion))).returning()
+      : await tx.insert(preventionIncidentRe20Workspaces).values({
+        id: `re20-${nanoid()}`,
+        incidentId: incident.id,
+        ...values,
+        createdByUserId: args.access.ctx.userId,
+        createdAt: now,
+      }).returning()
+    if (!workspace) throw new Error("Otra persona modificó el expediente RE-20. Recarga para resolver el conflicto.")
+    await tx.insert(preventionIncidentRe20Mutations).values({
+      id: `re20m-${nanoid()}`,
+      incidentId: incident.id,
+      mutationId: input.mutationId,
+      workspaceVersion: nextVersion,
+      createdAt: now,
+    })
+    // Trabajar el expediente es iniciar la investigación: la «Investigación guiada» que se retiró hacía
+    // esta transición, y sin ella ningún control llevaba el caso de medidas inmediatas a investigación.
+    let toStatus = incident.status
+    if (incident.status === "immediate_measures") {
+      await tx.update(preventionIncidents).set({
+        status: "under_investigation",
+        version: sql`${preventionIncidents.version} + 1`,
+        updatedAt: now,
+      }).where(eq(preventionIncidents.id, incident.id))
+      toStatus = "under_investigation"
+    }
+    await appendHistory(tx, {
+      incidentId: incident.id,
+      changeType: "investigation",
+      actorUserId: args.access.ctx.userId,
+      ...(toStatus !== incident.status ? { fromStatus: incident.status, toStatus } : {}),
+      reason: "Expediente RE-20 actualizado",
+      changeSet: { re20WorkspaceVersion: nextVersion, policyVersion: policy.version },
+      createdAt: now,
+    })
+    await recordModuleHistory(tx, {
+      module: "prevention_incident",
+      entityType: "re20_workspace",
+      entityId: incident.id,
+      worksiteId: incident.worksiteId,
+      changeType: "updated",
+      reason: "Expediente RE-20 actualizado",
+      beforeState: existing ? { version: existing.version } : undefined,
+      afterState: { version: nextVersion, policyVersion: policy.version },
+      actorUserId: args.access.ctx.userId,
+    })
+    if (input.sensitive) await auditIncidentSensitiveAccess({
+      access: args.access, incidentId: incident.id, worksiteId: incident.worksiteId,
+      purpose: input.sensitive.purpose, outcome: "granted", action: "update", client: tx,
+    })
+    return { incident, workspace, data: data as Re20PublicData | null, idempotentReplay: false as const }
+  })
+  // Un reintento (cola offline) no vuelve a acreditar: el primer guardado ya lo hizo.
+  if (!result.idempotentReplay && result.data) {
+    await syncRe20Milestones({ incident: result.incident, data: result.data, sensitive: input.sensitive, userId: args.access.ctx.userId })
+  }
+  const { encryptedSensitivePayload: _ciphertext, sensitiveIv: _iv, sensitiveAuthTag: _tag, sensitiveKeyVersion: _keyVersion, ...safeWorkspace } = result.workspace
+  return { incidentId: result.incident.id, workspace: safeWorkspace, idempotentReplay: result.idempotentReplay }
+}
+
+/** Rol con el que firma la revisión: `jefa_chome` si lo tiene (la impresión muestra «en reemplazo» si no es ese). */
+function reviewerRoleLabel(roles: readonly string[] | undefined) {
+  if (roles?.includes("jefa_chome")) return "jefa_chome"
+  return roles?.join(", ") || "Revisor de calidad RE-20"
+}
+
+const REVIEW_HISTORY_REASON: Record<string, string> = {
+  approved: "Revisión de calidad RE-20 aprobada",
+  approved_with_observations: "Revisión de calidad RE-20 aprobada con observaciones",
+  changes_required: "Correcciones RE-20 solicitadas",
+}
+
+export async function reviewPreventionIncidentRe20Quality(args: { input: unknown; access: IncidentAccess }) {
+  requireAccess(args.access, "prevention:incidents:review_quality")
+  const input = re20QualityReviewSchema.parse(args.input)
+  const ids = input.criteria.map((criterion) => criterion.id)
+  if (new Set(ids).size !== RE20_QUALITY_CRITERIA.length || RE20_QUALITY_CRITERIA.some((criterion) => !ids.includes(criterion.id))) {
+    throw new Error("La revisión debe contener exactamente los 13 criterios RE-20.")
+  }
+  // La decisión la manda quien revisa (Clasificación!AI); el servidor sólo comprueba que sea coherente con los criterios.
+  if (input.decision === "approved" && input.criteria.some((criterion) => criterion.result !== "meets")) {
+    throw new Error("Para aprobar, los 13 criterios deben cumplir. Usa «Aprobado con observaciones» si hay criterios parciales.")
+  }
+  if (input.decision === "approved_with_observations" && input.criteria.some((criterion) => criterion.result === "does_not_meet")) {
+    throw new Error("No se puede aprobar con observaciones un criterio que «No cumple»: solicita correcciones.")
+  }
+  if (input.decision !== "approved" && !input.observation?.trim()) {
+    throw new Error("Registra la observación final de la revisión: es obligatoria salvo en una aprobación sin reparos.")
+  }
+  const result = await db.transaction(async (tx) => {
+    const incident = await getInvestigableIncident(input.incidentId, args.access, tx)
+    requireAccess(args.access, "prevention:incidents:review_quality", incident.worksiteId)
+    const [workspace] = await tx.select().from(preventionIncidentRe20Workspaces)
+      .where(eq(preventionIncidentRe20Workspaces.incidentId, incident.id)).limit(1)
+    if (!workspace || workspace.version !== input.expectedWorkspaceVersion) {
+      throw new Error("El expediente cambió desde que se abrió la revisión. Recarga y vuelve a revisar.")
+    }
+    const investigators = (workspace.data as { team?: Array<{ userId?: string }> }).team ?? []
+    if (investigators.some((member) => member.userId === args.access.ctx.userId) || workspace.updatedByUserId === args.access.ctx.userId) {
+      throw new Error("Quien investigó o modificó el expediente no puede aprobar su propia revisión de calidad.")
+    }
+    const now = nowIso()
+    const [review] = await tx.insert(preventionIncidentRe20QualityReviews).values({
+      id: `re20review-${nanoid()}`,
+      incidentId: incident.id,
+      workspaceVersion: workspace.version,
+      criteria: input.criteria,
+      decision: input.decision,
+      observation: input.observation?.trim() || null,
+      reviewerRole: reviewerRoleLabel(args.access.roles),
+      reviewerUserId: args.access.ctx.userId,
+      reviewedAt: now,
+    }).returning()
+    if (!review) throw new Error("No se pudo registrar la revisión de calidad RE-20.")
+    // Las dos aprobaciones dan por terminada la investigación definitiva: sin esto, CAPA, cierre y reinicio
+    // quedan bloqueados porque ya no existe otro formulario que la complete.
+    if (isApproval(input.decision)) {
+      await completeIncidentInvestigationFromRe20(tx, {
+        incident,
+        data: re20PublicDataSchema.parse(workspace.data),
+        userId: args.access.ctx.userId,
+        now,
+      })
+    }
+    // «Requiere corrección» devuelve el informe al equipo: reabre la tarea y sube la versión en la misma
+    // transacción, así un guardado offline con la versión anterior choca y no pisa la corrección.
+    // `updatedByUserId` no cambia: quien pide correcciones no pasa a ser autor del expediente.
+    // Una aprobación, en cambio, cierra la tarea de revisión: sin esto la etapa 5 quedaba «en curso».
+    {
+      const stored = workspace.data as { tasks?: Array<Record<string, unknown>> }
+      const tasks = Array.isArray(stored.tasks) ? stored.tasks : []
+      const taskId = input.decision === "changes_required" ? "definitive_report" : "quality_review"
+      const patch = input.decision === "changes_required"
+        ? { status: "in_progress", completedAt: null }
+        : { status: "completed", completedAt: now, note: input.observation ?? null }
+      const definition = RE20_TASK_DEFINITIONS.find((task) => task.id === taskId)
+      const nextTasks = tasks.some((task) => task.id === taskId)
+        ? tasks.map((task) => task.id === taskId ? { ...task, ...patch } : task)
+        : [...tasks, { id: taskId, sheet: definition?.sheet ?? "RE-20", label: definition?.label ?? taskId, ...patch }]
+      const [bumped] = await tx.update(preventionIncidentRe20Workspaces).set({
+        data: { ...workspace.data, tasks: nextTasks },
+        version: workspace.version + 1,
+        updatedAt: now,
+      }).where(and(eq(preventionIncidentRe20Workspaces.id, workspace.id), eq(preventionIncidentRe20Workspaces.version, workspace.version))).returning({ id: preventionIncidentRe20Workspaces.id })
+      if (!bumped) throw new Error("El expediente cambió desde que se abrió la revisión. Recarga y vuelve a revisar.")
+    }
+    await appendHistory(tx, {
+      incidentId: incident.id, changeType: "investigation", actorUserId: args.access.ctx.userId,
+      reason: REVIEW_HISTORY_REASON[input.decision],
+      changeSet: { qualityReviewId: review.id, workspaceVersion: workspace.version, decision: input.decision }, createdAt: now,
+    })
+    await recordModuleHistory(tx, {
+      module: "prevention_incident", entityType: "re20_quality_review", entityId: review.id,
+      worksiteId: incident.worksiteId, changeType: input.decision,
+      reason: input.observation ?? "Revisión de calidad RE-20", afterState: { incidentId: incident.id, workspaceVersion: workspace.version },
+      actorUserId: args.access.ctx.userId,
+    })
+    return { review, worksiteId: incident.worksiteId }
+  })
+  if (isApproval(result.review.decision)) {
+    await onIncidentInvestigationCompleted({
+      incidentId: result.review.incidentId,
+      worksiteId: result.worksiteId,
+      completedAt: result.review.reviewedAt,
+      userId: args.access.ctx.userId,
+    })
+  }
+  return result.review
+}
+
+async function completeIncidentInvestigationFromRe20(tx: IncidentClient, args: {
+  incident: IncidentRow
+  data: Re20PublicData
+  userId: string
+  now: string
+}) {
+  const { data, incident } = args
+  if (data.tasks.find((task) => task.id === "definitive_report")?.status !== "completed") {
+    throw new Error("Marca el informe definitivo como completado antes de aprobar la revisión de calidad.")
+  }
+  const conclusion = data.definitive.conclusion?.trim() ?? ""
+  if (conclusion.length < 10) throw new Error("El informe definitivo necesita una conclusión del equipo antes de aprobarse.")
+  const issues = re20DefinitiveCompletionIssues(incident, data)
+  if (issues.length > 0) throw new Error(`El informe definitivo está incompleto: ${issues.join(" ")}`)
+  const describe = (id: string) => data.causalTree.events.find((event) => event.id === id)?.description.trim() ?? ""
+  const rootCauses = deriveRe20RootCauses(data.causalTree).map(describe).filter(Boolean)
+  const finalFactId = data.causalTree.events.find((event) => event.id === "H1")?.id ?? data.causalTree.events[0]?.id
+  const immediateCauses = data.causalTree.relations
+    .filter((relation) => relation.to === finalFactId)
+    .map((relation) => describe(relation.from))
+    .filter(Boolean)
+
+  const [existing] = await tx.select().from(preventionIncidentInvestigations)
+    .where(eq(preventionIncidentInvestigations.incidentId, incident.id)).limit(1)
+  // Las marcas MIPER, procedimiento y capacitación siguen siendo compuertas:
+  // la aprobación no puede saltarse una actualización que quedó comprometida.
+  if (existing?.miperUpdateRequired && !existing.miperUpdatedAt) throw new Error("La investigación exige actualizar la MIPER antes de completarse.")
+  if (existing?.procedureUpdateRequired && !existing.procedureUpdatedAt) throw new Error("La investigación exige actualizar el procedimiento antes de completarse.")
+  if (existing?.trainingRequired && !existing.trainingCompletedAt) throw new Error("La investigación exige registrar la capacitación antes de completarse.")
+
+  const values = {
+    status: "completed",
+    methodology: "Árbol de causas",
+    team: data.team.filter((member) => member.userId).map((member) => ({ userId: member.userId, role: member.role })),
+    immediateCauses,
+    basicCauses: rootCauses,
+    conclusions: conclusion,
+    completedByUserId: existing?.completedAt ? existing.completedByUserId : args.userId,
+    completedAt: existing?.completedAt ?? args.now,
+    definitiveReportSentAt: existing?.definitiveReportSentAt ?? args.now,
+    updatedAt: args.now,
+  }
+  if (existing) {
+    await tx.update(preventionIncidentInvestigations).set({
+      ...values,
+      version: sql`${preventionIncidentInvestigations.version} + 1`,
+    }).where(eq(preventionIncidentInvestigations.id, existing.id))
+  } else {
+    await tx.insert(preventionIncidentInvestigations).values({
+      id: `inci-${nanoid()}`,
+      incidentId: incident.id,
+      ...values,
+      startedByUserId: args.userId,
+      startedAt: args.now,
+      version: 1,
+    })
+  }
+}
+
+/** Medida → CAPA. Crea la acción con los datos de la medida y la vincula (`capaId`) con la misma versión optimista del expediente. */
+const capaFromMeasureSchema = z.object({
+  incidentId: z.string().min(1),
+  measureId: z.string().trim().min(1).max(80),
+  expectedWorkspaceVersion: z.number().int().positive(),
+})
+
+const CAPA_PRIORITY_BY_LABEL: Record<string, CapaInput["priority"]> = { alta: "high", media: "medium", baja: "low" }
+
+export async function createCapaFromRe20Measure(args: { input: unknown; access: IncidentAccess }) {
+  requireAccess(args.access, "prevention:incidents:investigate")
+  requireAccess(args.access, "prevention:capa:manage")
+  const input = capaFromMeasureSchema.parse(args.input)
+  return db.transaction(async (tx) => {
+    const incident = await getInvestigableIncident(input.incidentId, args.access, tx)
+    const [workspace] = await tx.select().from(preventionIncidentRe20Workspaces)
+      .where(eq(preventionIncidentRe20Workspaces.incidentId, incident.id)).limit(1)
+    if (!workspace || workspace.version !== input.expectedWorkspaceVersion) {
+      throw new Error("Otra persona modificó el expediente RE-20. Recarga para resolver el conflicto.")
+    }
+    const data = re20PublicDataSchema.parse(workspace.data)
+    const measure = data.measures.find((item) => item.id === input.measureId)
+    if (!measure) throw new Error("La medida no existe en el expediente RE-20.")
+    if (measure.capaId) throw new Error("La medida ya tiene una CAPA vinculada.")
+    if (measure.description.trim().length < 3) throw new Error("Describe la medida antes de crear su CAPA.")
+    if (!measure.dueAt) throw new Error("La medida necesita una fecha compromiso para crear su CAPA.")
+    const rootCause = measure.rootCauseId
+      ? data.causalTree.events.find((event) => event.id === measure.rootCauseId)?.description.trim() || null
+      : null
+    const now = nowIso()
+    const created = await createIncidentCapaInTx(tx, {
+      incident,
+      userId: args.access.ctx.userId,
+      input: capaSchema.parse({
+        incidentId: incident.id,
+        expectedVersion: incident.version,
+        finding: rootCause ?? measure.description,
+        rootCause,
+        actionDescription: measure.description,
+        responsibleUserId: measure.responsibleUserId ?? null,
+        responsibleRole: measure.responsibleRole ?? null,
+        priority: CAPA_PRIORITY_BY_LABEL[(measure.priority ?? "").trim().toLowerCase()] ?? "medium",
+        targetDate: todayInChile(new Date(measure.dueAt)),
+        evidenceRequired: true,
+        sourceItemId: `re20-measure:${measure.id}`,
+      }),
+    })
+    const linked = data.measures.map((item) => item.id === measure.id ? { ...item, capaId: created.capa.id } : item)
+    const [bumped] = await tx.update(preventionIncidentRe20Workspaces).set({
+      data: { ...data, measures: linked },
+      version: workspace.version + 1,
+      updatedByUserId: args.access.ctx.userId,
+      updatedAt: now,
+    }).where(and(eq(preventionIncidentRe20Workspaces.id, workspace.id), eq(preventionIncidentRe20Workspaces.version, workspace.version))).returning({ version: preventionIncidentRe20Workspaces.version })
+    if (!bumped) throw new Error("Otra persona modificó el expediente RE-20. Recarga para resolver el conflicto.")
+    return { capa: created.capa, incident: created.incident, workspaceVersion: bumped.version, measureId: measure.id }
+  })
+}
+
+const re20PolicyInputSchema = z.object({
+  preliminaryHours: z.number().int().min(1).max(168),
+  witnessStatementsHours: z.number().int().min(1).max(168),
+  injuredInterviewHours: z.number().int().min(1).max(168),
+  definitiveHours: z.number().int().min(1).max(720),
+  diffusionHours: z.number().int().min(1).max(168),
+  followupDays: z.number().int().min(1).max(365),
+})
+
+export async function savePreventionIncidentRe20Policy(args: { input: unknown; access: IncidentAccess }) {
+  requireAccess(args.access, "prevention:incidents:configure_re20")
+  const policy = re20PolicyInputSchema.parse(args.input)
+  const now = nowIso()
+  return db.transaction(async (tx) => {
+    const [current] = await tx.select().from(preventionIncidentRe20Policy)
+      .where(eq(preventionIncidentRe20Policy.id, "default")).for("update").limit(1)
+    const version = (current?.version ?? 0) + 1
+    const values = { version, policy, updatedByUserId: args.access.ctx.userId, updatedAt: now }
+    const [saved] = current
+      ? await tx.update(preventionIncidentRe20Policy).set(values).where(eq(preventionIncidentRe20Policy.id, "default")).returning()
+      : await tx.insert(preventionIncidentRe20Policy).values({ id: "default", ...values }).returning()
+    if (!saved) throw new Error("No se pudo guardar la política SLA RE-20.")
+    return policyForSnapshot(saved.version, saved.policy as Record<string, number>)
+  })
+}
+
+const re20CatalogOptionSchema = z.object({
+  category: z.string().trim().min(1).max(80).refine((category) => RE20_CLASSIFICATION_OPTIONS.some((option) => option.category === category), "Categoría RE-20 inválida."),
+  code: z.string().trim().min(1).max(40).regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/, "Usa un código simple, sin espacios."),
+  name: z.string().trim().min(1).max(240),
+  isActive: z.boolean(),
+  sortOrder: z.number().int().min(0).max(100000).optional(),
+  parentCode: z.string().trim().max(40).nullable().optional(),
+})
+
+/** Gestiona valores del catálogo RE-20 con clave estable: se inactiva, nunca se borra. */
+export async function savePreventionIncidentRe20CatalogOption(args: { input: unknown; access: IncidentAccess }) {
+  requireAccess(args.access, "prevention:incidents:configure_re20")
+  const input = re20CatalogOptionSchema.parse(args.input)
+  return db.transaction(async (tx) => {
+    const [current] = await tx.select().from(preventionIncidentClassificationCatalog)
+      .where(and(
+        eq(preventionIncidentClassificationCatalog.category, input.category),
+        eq(preventionIncidentClassificationCatalog.code, input.code),
+      )).for("update").limit(1)
+    const option = current
+      ? (await tx.update(preventionIncidentClassificationCatalog).set({
+        name: input.name,
+        isActive: input.isActive,
+        ...(input.sortOrder !== undefined ? { sortOrder: input.sortOrder } : {}),
+        ...(input.parentCode !== undefined ? { parentCode: input.parentCode } : {}),
+      }).where(eq(preventionIncidentClassificationCatalog.id, current.id)).returning())[0]
+      : (await tx.insert(preventionIncidentClassificationCatalog).values({
+        id: `re20cat-${nanoid()}`,
+        category: input.category,
+        code: input.code,
+        name: input.name,
+        isActive: input.isActive,
+        parentCode: input.parentCode ?? null,
+        // Un valor nuevo va al final de su lista, como una fila nueva del libro.
+        sortOrder: input.sortOrder ?? (await tx.select({ max: sql<number>`coalesce(max(${preventionIncidentClassificationCatalog.sortOrder}), 0)` })
+          .from(preventionIncidentClassificationCatalog)
+          .where(eq(preventionIncidentClassificationCatalog.category, input.category)))[0]!.max + 1,
+      }).returning())[0]
+    if (!option) throw new Error("No se pudo guardar el valor del catálogo RE-20.")
+    await recordModuleHistory(tx, {
+      module: "prevention_incident",
+      entityType: "re20_classification_catalog",
+      entityId: option.id,
+      changeType: current ? "updated" : "created",
+      reason: input.isActive ? "Opción de clasificación RE-20 activa" : "Opción de clasificación RE-20 inactiva",
+      beforeState: current ? { category: current.category, code: current.code, name: current.name, isActive: current.isActive } : undefined,
+      afterState: { category: option.category, code: option.code, name: option.name, isActive: option.isActive },
+      actorUserId: args.access.ctx.userId,
+    })
+    return option
+  })
 }
 
 export async function createPreliminaryReport(args: {
@@ -1857,6 +2560,7 @@ export async function createPreliminaryReport(args: {
 export async function recordIncidentStatement(args: {
   incidentId: string
   kind: "involved" | "witness" | "cphs"
+  purpose: string
   deponentName: string
   deponentRole?: string
   statementText: string
@@ -1866,18 +2570,40 @@ export async function recordIncidentStatement(args: {
   const now = new Date().toISOString()
   const { incident, created } = await db.transaction(async (tx) => {
     const found = await getInvestigableIncident(input.incidentId, args.access, tx)
+    if (!hasPermission(args.access.permissions, "prevention:incidents:view_sensitive") || !scopeAllows(args.access.scope, found.worksiteId)) {
+      await auditIncidentSensitiveAccess({
+        access: args.access, incidentId: found.id, worksiteId: found.worksiteId, purpose: input.purpose,
+        outcome: "denied", reasonCode: "permission_or_scope", action: "create", client: tx,
+      })
+      throw new Error("No tienes autorización para registrar una declaración reservada.")
+    }
+    const id = `incstmt-${nanoid()}`
+    const encrypted = encryptPreventionPayload({
+      name: input.deponentName,
+      role: input.deponentRole ?? null,
+      statement: input.statementText,
+    }, `incident-statement:${id}`)
     const [row] = await tx.insert(preventionIncidentStatements).values({
-      id: `incstmt-${nanoid()}`,
+      id,
       incidentId: found.id,
       kind: input.kind,
-      deponentName: input.deponentName,
-      deponentRole: input.deponentRole ?? null,
-      statementText: input.statementText,
+      deponentName: null,
+      deponentRole: null,
+      statementText: null,
+      encryptedPayload: encrypted.encryptedPayload,
+      encryptedIv: encrypted.iv,
+      encryptedAuthTag: encrypted.authTag,
+      encryptedKeyVersion: encrypted.keyVersion,
       signedAt: now,
       createdByUserId: args.access.ctx.userId,
       createdAt: now,
     }).returning()
-    return { incident: found, created: row }
+    if (!row) throw new Error("No se pudo guardar la declaración cifrada.")
+    await auditIncidentSensitiveAccess({
+      access: args.access, incidentId: found.id, worksiteId: found.worksiteId, purpose: input.purpose,
+      outcome: "granted", action: "create", client: tx,
+    })
+    return { incident: found, created: { id: row.id, kind: row.kind, signedAt: row.signedAt, createdAt: row.createdAt } }
   })
 
   // Auto-acreditación PDTP: Actividad 69 (declaración ≤24h)
@@ -1886,11 +2612,41 @@ export async function recordIncidentStatement(args: {
   return created
 }
 
+/** Última revisión de calidad del expediente; la difusión sólo sale si esa revisión aprobó. */
+async function latestRe20Review(client: IncidentClient, incidentId: string) {
+  const [review] = await client.select().from(preventionIncidentRe20QualityReviews)
+    .where(eq(preventionIncidentRe20QualityReviews.incidentId, incidentId))
+    .orderBy(desc(preventionIncidentRe20QualityReviews.reviewedAt)).limit(1)
+  return review ?? null
+}
+
+/** Tabla causa / medida / responsable / plazo / estatus del RE-20-06 (C16:L23), generada desde las medidas. */
+async function buildDiffusionMeasuresTable(client: IncidentClient, data: Re20PublicData) {
+  const responsibleIds = [...new Set(data.measures.map((measure) => measure.responsibleUserId).filter((id): id is string => Boolean(id)))]
+  const names = new Map<string, string>()
+  if (responsibleIds.length > 0) {
+    const rows = await client.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, responsibleIds))
+    for (const row of rows) names.set(row.id, row.name)
+  }
+  const describe = (id?: string | null) => id ? data.causalTree.events.find((event) => event.id === id)?.description.trim() ?? "" : ""
+  return data.measures.filter((measure) => measure.description.trim()).map((measure) => ({
+    rootCauseId: measure.rootCauseId ?? null,
+    rootCause: describe(measure.rootCauseId),
+    measure: measure.description.trim(),
+    responsible: (measure.responsibleUserId ? names.get(measure.responsibleUserId) : null) ?? measure.responsibleRole ?? null,
+    dueAt: measure.dueAt ?? null,
+    status: measure.status ?? null,
+  }))
+}
+
+const clip = (value: string, max: number) => value.length > max ? `${value.slice(0, max - 1)}…` : value
+
 export async function publishOnePageDiffusion(args: {
   incidentId: string
-  onePageSummary: string
-  rootCauseText: string
-  actionPlanSummary: string
+  onePageSummary?: string
+  rootCauseText?: string
+  actionPlanSummary?: string
+  learning?: string
   evidenceRef?: string
   access: IncidentAccess
 }) {
@@ -1898,13 +2654,35 @@ export async function publishOnePageDiffusion(args: {
   const now = new Date().toISOString()
   const { incident, created } = await db.transaction(async (tx) => {
     const found = await getInvestigableIncident(input.incidentId, args.access, tx)
+    // RE-20-13: la difusión va después de la aprobación (ya sea con o sin observaciones).
+    const review = await latestRe20Review(tx, found.id)
+    if (!review || !isApproval(review.decision)) {
+      throw new Error("La difusión exige la revisión de calidad RE-20 aprobada (RE-20-13).")
+    }
+    const [workspace] = await tx.select().from(preventionIncidentRe20Workspaces)
+      .where(eq(preventionIncidentRe20Workspaces.incidentId, found.id)).limit(1)
+    const data = workspace ? re20PublicDataSchema.parse(workspace.data) : null
+    const measuresTable = data ? await buildDiffusionMeasuresTable(tx, data) : []
+    const rootCauses = data
+      ? deriveRe20RootCauses(data.causalTree).map((id) => data.causalTree.events.find((event) => event.id === id)?.description.trim()).filter(Boolean)
+      : []
+    const onePageSummary = input.onePageSummary
+      ?? clip(data?.definitive.reconstruction?.trim() || data?.preliminary.eventDescription?.trim() || found.initialNarrative, 5000)
+    const rootCauseText = input.rootCauseText ?? clip(rootCauses.join("; "), 5000)
+    const actionPlanSummary = input.actionPlanSummary ?? clip(measuresTable.map((row) => row.measure).join("; "), 5000)
+    if (onePageSummary.length < 10 || rootCauseText.length < 10 || actionPlanSummary.length < 10) {
+      throw new Error("El ONE PAGE necesita el resumen, las causas raíz y el plan de acción: completa el árbol y las medidas del expediente.")
+    }
     const [row] = await tx.insert(preventionIncidentDiffusion).values({
       id: `incdif-${nanoid()}`,
       incidentId: found.id,
-      onePageSummary: input.onePageSummary,
-      rootCauseText: input.rootCauseText,
-      actionPlanSummary: input.actionPlanSummary,
+      onePageSummary,
+      rootCauseText,
+      actionPlanSummary,
       evidenceRef: input.evidenceRef ?? null,
+      measuresTable,
+      learning: input.learning ?? data?.definitive.closure.learningDetail?.trim() ?? null,
+      workspaceVersion: workspace?.version ?? null,
       diffusedAt: now,
       createdByUserId: args.access.ctx.userId,
       createdAt: now,
@@ -1923,12 +2701,49 @@ export async function recordBiweeklyFollowup(args: {
   followupDate: string
   note: string
   evidenceRef?: string
+  kind?: "accident" | "damage"
+  measureId?: string
+  rootCauseId?: string
+  controlType?: string
+  verifierUserId?: string
+  verifiedAt?: string
+  residualRisk?: string
+  implementedAt?: string
+  verified?: boolean
+  effective?: boolean
+  lostDays?: number
+  lossDescription?: string
   access: IncidentAccess
 }) {
   const input = re20TextSchemas.followup.parse(args)
+  // Estado triple: eficaz ⊂ verificada ⊂ implementada (RE-20-08!R6:T6 / INV.DEF.ACC!B124).
+  if (input.effective && !input.verified) throw new Error("Una medida eficaz debe estar verificada.")
+  if (input.verified && !input.implementedAt) throw new Error("Una medida verificada debe estar implementada: registra la fecha de implementación.")
+  if (input.verified && !input.verifierUserId) throw new Error("Una medida verificada necesita quién la verificó.")
   const now = new Date().toISOString()
-  const { incident, created } = await db.transaction(async (tx) => {
+  const { incident, created, replay } = await db.transaction(async (tx) => {
     const found = await getInvestigableIncident(input.incidentId, args.access, tx)
+    if (input.measureId) {
+      const [workspace] = await tx.select().from(preventionIncidentRe20Workspaces)
+        .where(eq(preventionIncidentRe20Workspaces.incidentId, found.id)).limit(1)
+      const measure = workspace ? re20PublicDataSchema.parse(workspace.data).measures.find((item) => item.id === input.measureId) : undefined
+      if (!measure) throw new Error("La medida del seguimiento no existe en el expediente RE-20.")
+      // INV.DEF.ACC!B112: el verificador es una persona distinta del responsable de la medida.
+      if (input.verifierUserId && input.verifierUserId === measure.responsibleUserId) {
+        throw new Error("El verificador debe ser una persona distinta del responsable de la medida.")
+      }
+    }
+    // Reintento del mismo seguimiento (misma medida, fecha y estado): no duplica la fila ni vuelve a acreditar.
+    const [same] = await tx.select().from(preventionIncidentFollowups).where(and(
+      eq(preventionIncidentFollowups.incidentId, found.id),
+      eq(preventionIncidentFollowups.kind, input.kind),
+      eq(preventionIncidentFollowups.followupDate, input.followupDate),
+      input.measureId ? eq(preventionIncidentFollowups.measureId, input.measureId) : sql`${preventionIncidentFollowups.measureId} IS NULL`,
+      eq(preventionIncidentFollowups.verified, input.verified),
+      eq(preventionIncidentFollowups.effective, input.effective),
+      eq(preventionIncidentFollowups.note, input.note),
+    )).limit(1)
+    if (same) return { incident: found, created: same, replay: true }
     const [row] = await tx.insert(preventionIncidentFollowups).values({
       id: `incflw-${nanoid()}`,
       incidentId: found.id,
@@ -1936,33 +2751,65 @@ export async function recordBiweeklyFollowup(args: {
       note: input.note,
       evidenceRef: input.evidenceRef ?? null,
       status: "completed",
+      kind: input.kind,
+      measureId: input.measureId ?? null,
+      rootCauseId: input.rootCauseId ?? null,
+      controlType: input.controlType ?? null,
+      verifierUserId: input.verifierUserId ?? null,
+      verifiedAt: input.verified ? (input.verifiedAt ?? now) : (input.verifiedAt ?? null),
+      residualRisk: input.residualRisk ?? null,
+      implementedAt: input.implementedAt ?? null,
+      verified: input.verified,
+      effective: input.effective,
+      lostDays: input.lostDays ?? null,
+      lossDescription: input.lossDescription ?? null,
       createdByUserId: args.access.ctx.userId,
       createdAt: now,
     }).returning()
     if (!row) throw new Error("No se pudo registrar el seguimiento quincenal.")
-    return { incident: found, created: row }
+    return { incident: found, created: row, replay: false }
   })
 
   // Auto-acreditación PDTP: Actividad 76 (seguimiento quincenal)
-  await onIncidentFollowupRecorded({
-    incidentId: incident.id,
-    worksiteId: incident.worksiteId,
-    followupId: created.id,
-    recordedAt: now,
-  })
+  if (!replay) {
+    await onIncidentFollowupRecorded({
+      incidentId: incident.id,
+      worksiteId: incident.worksiteId,
+      followupId: created.id,
+      recordedAt: now,
+    })
+  }
 
-  return created
+  return { ...created, idempotentReplay: replay }
 }
 
-export async function listIncidentClassificationCatalog(category?: string) {
-  if (category) {
-    return db.select().from(preventionIncidentClassificationCatalog)
-      .where(and(eq(preventionIncidentClassificationCatalog.category, category), eq(preventionIncidentClassificationCatalog.isActive, true)))
-      .orderBy(asc(preventionIncidentClassificationCatalog.name))
-  }
+/** Valores del catálogo en el orden del libro. Las categorías heredadas (`legacy_*`) sólo salen con `includeLegacy`. */
+export async function listIncidentClassificationCatalog(category?: string, opts: { includeLegacy?: boolean } = {}) {
   return db.select().from(preventionIncidentClassificationCatalog)
-    .where(eq(preventionIncidentClassificationCatalog.isActive, true))
-    .orderBy(asc(preventionIncidentClassificationCatalog.category), asc(preventionIncidentClassificationCatalog.name))
+    .where(and(
+      eq(preventionIncidentClassificationCatalog.isActive, true),
+      category ? eq(preventionIncidentClassificationCatalog.category, category) : undefined,
+      opts.includeLegacy || category?.startsWith("legacy_") ? undefined : not(like(preventionIncidentClassificationCatalog.category, "legacy\\_%")),
+    ))
+    .orderBy(
+      asc(preventionIncidentClassificationCatalog.category),
+      asc(preventionIncidentClassificationCatalog.sortOrder),
+      asc(preventionIncidentClassificationCatalog.name),
+    )
+}
+
+/** Seguimiento canónico (RE-20-08/09) del incidente, del más reciente al más antiguo. */
+export async function listIncidentFollowups(incidentId: string) {
+  return db.select().from(preventionIncidentFollowups)
+    .where(eq(preventionIncidentFollowups.incidentId, incidentId))
+    .orderBy(desc(preventionIncidentFollowups.followupDate), desc(preventionIncidentFollowups.createdAt))
+}
+
+/** ONE PAGE (RE-20-06) publicados del incidente, del más reciente al más antiguo. */
+export async function listIncidentOnePageDiffusions(incidentId: string) {
+  return db.select().from(preventionIncidentDiffusion)
+    .where(eq(preventionIncidentDiffusion.incidentId, incidentId))
+    .orderBy(desc(preventionIncidentDiffusion.diffusedAt))
 }
 
 /* ── RE-20: Difusiones en turnos (71) y de medidas correctivas (75) ──────────
