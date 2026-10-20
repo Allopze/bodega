@@ -776,7 +776,7 @@ describe("plantillas: vista previa del cuestionario", () => {
   it("al abrir pide el cuestionario a la ruta, con esqueleto mientras llega, y lo muestra completo", async () => {
     fetchMock.mockResolvedValue(respond(payload()))
     renderTemplates([template()])
-    fireEvent.click(table().getByRole("button", { name: "Inspección de Contenedores", exact: true }))
+    fireEvent.click(table().getByRole("button", { name: /^Inspección\ de\ Contenedores$/ }))
 
     const sheet = screen.getByRole("dialog", { name: "Inspección de Contenedores" })
     expect(within(sheet).getByRole("status", { name: "Cargando el cuestionario" })).toBeTruthy()
@@ -799,7 +799,7 @@ describe("plantillas: vista previa del cuestionario", () => {
   it("el detalle técnico viene plegado y trae el hash, la planilla y las diferencias de la paridad", async () => {
     fetchMock.mockResolvedValue(respond(payload()))
     renderTemplates([template()])
-    fireEvent.click(table().getByRole("button", { name: "Inspección de Contenedores", exact: true }))
+    fireEvent.click(table().getByRole("button", { name: /^Inspección\ de\ Contenedores$/ }))
     const sheet = screen.getByRole("dialog", { name: "Inspección de Contenedores" })
     await within(sheet).findByText("Puertas y bisagras")
 
@@ -818,7 +818,7 @@ describe("plantillas: vista previa del cuestionario", () => {
   it("el historial lista las versiones del instrumento, con «Retirada», y permite leer otra", async () => {
     fetchMock.mockResolvedValueOnce(respond(payload()))
     renderTemplates([template()])
-    fireEvent.click(table().getByRole("button", { name: "Inspección de Contenedores", exact: true }))
+    fireEvent.click(table().getByRole("button", { name: /^Inspección\ de\ Contenedores$/ }))
     const sheet = screen.getByRole("dialog", { name: "Inspección de Contenedores" })
     await within(sheet).findByText("Puertas y bisagras")
 
@@ -838,7 +838,7 @@ describe("plantillas: vista previa del cuestionario", () => {
     const base = payload()
     fetchMock.mockResolvedValue(respond({ ...base, questionnaire: { ...base.questionnaire, rowsFromWarehouse: true } }))
     renderTemplates([template({ code: "inspeccion_epp", name: "Inspección de EPP" })])
-    fireEvent.click(table().getByRole("button", { name: "Inspección de EPP", exact: true }))
+    fireEvent.click(table().getByRole("button", { name: /^Inspección\ de\ EPP$/ }))
     const sheet = screen.getByRole("dialog", { name: "Inspección de EPP" })
     expect(await within(sheet).findByText("Las prendas se arman con la bodega de la faena al crear la inspección; aquí ves solo las filas fijas.")).toBeTruthy()
   })
@@ -846,7 +846,7 @@ describe("plantillas: vista previa del cuestionario", () => {
   it("si falla, dice qué pasó como alerta y «Reintentar» vuelve a pedirlo", async () => {
     fetchMock.mockResolvedValueOnce(respond({ error: "No se pudo cargar el cuestionario." }, 500))
     renderTemplates([template()])
-    fireEvent.click(table().getByRole("button", { name: "Inspección de Contenedores", exact: true }))
+    fireEvent.click(table().getByRole("button", { name: /^Inspección\ de\ Contenedores$/ }))
     const sheet = screen.getByRole("dialog", { name: "Inspección de Contenedores" })
     const alert = await within(sheet).findByRole("alert")
     expect(alert.textContent).toContain("No se pudo cargar el cuestionario.")
@@ -861,7 +861,7 @@ describe("plantillas: vista previa del cuestionario", () => {
   it("sin red también dice qué pasó y deja reintentar, sin tirar la pantalla", async () => {
     fetchMock.mockRejectedValueOnce(new TypeError("Failed to fetch"))
     renderTemplates([template()])
-    fireEvent.click(table().getByRole("button", { name: "Inspección de Contenedores", exact: true }))
+    fireEvent.click(table().getByRole("button", { name: /^Inspección\ de\ Contenedores$/ }))
     const sheet = screen.getByRole("dialog", { name: "Inspección de Contenedores" })
     expect((await within(sheet).findByRole("alert")).textContent).toContain("Revisa la conexión")
     expect(within(sheet).getByRole("button", { name: "Reintentar" })).toBeTruthy()
@@ -874,7 +874,7 @@ describe("plantillas: vista previa del cuestionario", () => {
       return new Promise(() => {})
     })
     const { unmount } = renderTemplates([template()])
-    fireEvent.click(table().getByRole("button", { name: "Inspección de Contenedores", exact: true }))
+    fireEvent.click(table().getByRole("button", { name: /^Inspección\ de\ Contenedores$/ }))
     expect(signal?.aborted).toBe(false)
     unmount()
     expect(signal?.aborted).toBe(true)

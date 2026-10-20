@@ -116,12 +116,16 @@ export function TemplateRowActions({ item, ctx, previous, onOpen, menuLabelOf, m
   // Quien sólo mira no tiene nada más que «Ver cuestionario»: un menú de un solo
   // ítem es un clic de más, así que el botón lo ofrece directamente.
   const onlyPreview = menu.length === 1 && !destructive && !primary
+  // El tipo de la acción que abre un diálogo; «solicitar aprobación» no abre ninguno (avisa por su
+  // cuenta). Es una constante aparte porque TypeScript no conserva dentro de un manejador el
+  // estrechamiento de `primary.kind`.
+  const directKind = primary && primary.kind !== "request" ? primary.kind : null
 
   return (
     <div className={mobile ? "flex flex-wrap items-center justify-end gap-2" : "flex items-center justify-end gap-1.5"}>
       {primary?.kind === "request" && <RequestApprovalButton templateId={item.id} />}
-      {primary && primary.kind !== "request" && (
-        <Button type="button" size="sm" variant="secondary" onClick={() => onOpen(primary.kind, item)}>
+      {primary && directKind && (
+        <Button type="button" size="sm" variant="secondary" onClick={() => onOpen(directKind, item)}>
           {primary.label}
         </Button>
       )}
