@@ -74,11 +74,25 @@ describe("browser pool", () => {
 
     it("uses the runtime Chromium executable when configured", async () => {
       process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH = "/usr/bin/chromium-browser"
+      vi.mocked(existsSync).mockImplementation((path) => path === "/usr/bin/chromium-browser")
       await poolModule.withBrowserContext({}, async () => "ok")
       expect(mockLaunch).toHaveBeenCalledWith({
         timeout: 30_000,
         executablePath: "/usr/bin/chromium-browser",
       })
+    })
+
+    it("ignores a configured executable that does not exist and falls back", async () => {
+      process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH = "/opt/no-existe/chromium"
+      vi.mocked(existsSync).mockImplementation((path) => path === "/usr/bin/chromium")
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+      await poolModule.withBrowserContext({}, async () => "ok")
+      expect(mockLaunch).toHaveBeenCalledWith({
+        timeout: 30_000,
+        executablePath: "/usr/bin/chromium",
+      })
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("/opt/no-existe/chromium"))
+      warn.mockRestore()
     })
 
     it("falls back to a system Chromium executable when the runtime env var is missing", async () => {
