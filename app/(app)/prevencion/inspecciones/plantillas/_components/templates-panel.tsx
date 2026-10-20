@@ -261,7 +261,7 @@ export function InspectionTemplatesPanel({ templates, catalogActivities = [], do
           {hiddenVersions > 0 && (
             <p className="text-xs text-[var(--color-text-muted)]">
               {hiddenVersions === 1 ? "Una versión reemplazada o retirada no se lista" : `${hiddenVersions} versiones reemplazadas o retiradas no se listan`}: están en el historial del cuestionario de cada instrumento.{" "}
-              <button type="button" className="font-medium text-[var(--color-primary-ink)] underline underline-offset-2" onClick={() => setFilters({ estado: "superseded" })}>
+              <button type="button" className="inline-flex min-h-11 items-center font-medium text-[var(--color-primary-ink)] underline underline-offset-2 md:min-h-0" onClick={() => setFilters({ estado: "superseded" })}>
                 Ver reemplazadas o retiradas
               </button>
             </p>

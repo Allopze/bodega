@@ -443,7 +443,7 @@ export function InspectionRunList({ runs, summary, page, pageSize, overdueProgra
               <ResponsiveDataListCard
                 key={item.id}
                 title={
-                  <Link href={`/prevencion/inspecciones/${item.id}`} className="font-mono hover:underline">
+                  <Link href={`/prevencion/inspecciones/${item.id}`} className="inline-flex min-h-11 items-center font-mono hover:underline md:min-h-0">
                     {item.code}
                   </Link>
                 }
