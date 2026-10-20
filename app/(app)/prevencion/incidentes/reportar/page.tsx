@@ -7,6 +7,7 @@ import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { listIncidentWorksites } from "@/lib/services/prevention-incidents"
 import { todayInChile } from "@/lib/utils"
 import { IncidentReportForm } from "./incident-report-form"
+import { Re20PwaRegister } from "@/components/pwa/re20-pwa-register"
 
 export const metadata: Metadata = { title: "Reportar incidente" }
 
@@ -30,6 +31,7 @@ export default async function ReportIncidentPage() {
 
   return (
     <PageContainer width="form">
+      <Re20PwaRegister />
       <PageHeader
         title="Reportar incidente"
         description="Captura rápida móvil, con cola offline e idempotencia al sincronizar. En fatal/grave, suspende y documenta medidas inmediatas."
@@ -40,7 +42,7 @@ export default async function ReportIncidentPage() {
           { label: "Reportar" },
         ]} />}
       />
-      <IncidentReportForm worksites={worksites} defaultDate={defaultDate} defaultTime={defaultTime} />
+      <IncidentReportForm worksites={worksites} defaultDate={defaultDate} defaultTime={defaultTime} userId={session.user.id} />
     </PageContainer>
   )
 }

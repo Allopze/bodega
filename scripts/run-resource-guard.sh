@@ -29,7 +29,9 @@ if ! flock -n 9; then
 fi
 
 max_workers="${BODEGA_MAX_WORKERS:-3}"
-heap_mb="${BODEGA_NODE_HEAP_MB:-4096}"
+# 5120: desde 2026-10 el typecheck completo ya no cabe en 4096 (main pedía
+# ~4000–4096 MiB y cualquier rama mediana lo cruzaba; lo dominan drizzle y zod).
+heap_mb="${BODEGA_NODE_HEAP_MB:-5120}"
 nice_level="${BODEGA_NICE_LEVEL:-10}"
 oom_score_adj="${BODEGA_OOM_SCORE_ADJ:-500}"
 

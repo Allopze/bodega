@@ -23,6 +23,9 @@ export const PUBLIC_PATHS = [
   // sin cuenta pueda reportar un cuasi accidente. Faltaba aquí y el proxy lo
   // mandaba al login.
   "/reportar-incidente",
+  // Shell estático de la bóveda RE-20; el contenido se descifra en el cliente
+  // después de validar la frase local y nunca se obtiene del servidor offline.
+  "/prevencion/incidentes/re20-offline",
 ] as const
 
 export function matchesRoutePrefix(pathname: string, prefix: string) {

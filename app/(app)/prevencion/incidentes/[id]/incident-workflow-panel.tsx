@@ -19,7 +19,6 @@ import {
   classifyIncidentPersonForIndicatorsAction,
   createPreventionIncidentCapaAction,
   recordPreventionIncidentNotificationAction,
-  savePreventionIncidentInvestigationAction,
   transitionPreventionIncidentAction,
   triagePreventionIncidentAction,
 } from "../actions"
@@ -66,34 +65,12 @@ interface IncidentPersonForIndicators {
   version: number
 }
 
-/** Lo guardado de la investigación que el formulario precarga y reenvía. */
-export interface IncidentInvestigationSnapshot {
-  id: string
-  status: string
-  methodology: string
-  team: Array<{ userId: string; role: string }>
-  evidenceSummary: string | null
-  immediateCauses: string[]
-  basicCauses: string[]
-  organizationalCauses: string[]
-  failedControls: string[]
-  conclusions: string | null
-  miperUpdateRequired: boolean
-  miperUpdatedAt: string | null
-  procedureUpdateRequired: boolean
-  procedureUpdatedAt: string | null
-  trainingRequired: boolean
-  trainingCompletedAt: string | null
-}
-
 interface Props {
   incident: IncidentSnapshot
   notifications: Lane[]
-  investigation: IncidentInvestigationSnapshot | null
   capa: CapaItem[]
   people: IncidentPersonForIndicators[]
   responsibles: Array<{ id: string; name: string; email: string }>
-  currentUser: { id: string; name: string }
   permissions: string[]
   defaultTargetDate: string
 }
@@ -103,10 +80,6 @@ const NEXT_STATUS: Partial<Record<IncidentStatus, IncidentStatus>> = {
   under_investigation: "pending_capa",
   pending_capa: "pending_verification",
   pending_verification: "closed",
-}
-
-function splitLines(value: FormDataEntryValue | null) {
-  return String(value ?? "").split("\n").map((line) => line.trim()).filter(Boolean)
 }
 
 /*
@@ -123,7 +96,7 @@ function onSubmitWith(handler: (formData: FormData) => void) {
   }
 }
 
-export function IncidentWorkflowPanel({ incident, notifications, investigation, capa, people, responsibles, currentUser, permissions, defaultTargetDate }: Props) {
+export function IncidentWorkflowPanel({ incident, notifications, capa, people, responsibles, permissions, defaultTargetDate }: Props) {
   const [pending, startTransition] = useTransition()
   const [actualSeverity, setActualSeverity] = useState(incident.actualSeverity)
   const [potentialSeverity, setPotentialSeverity] = useState(incident.potentialSeverity)
@@ -163,9 +136,9 @@ export function IncidentWorkflowPanel({ incident, notifications, investigation, 
             administratorName: String(formData.get("administratorName") ?? "") || null,
             reason: String(formData.get("reason") ?? ""),
           })))}>
-            <div className="space-y-2"><Label>Gravedad real</Label><Select value={actualSeverity} onValueChange={setActualSeverity}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="none">Sin lesión</SelectItem><SelectItem value="minor">Menor</SelectItem><SelectItem value="medical_treatment">Tratamiento médico</SelectItem><SelectItem value="lost_time">Tiempo perdido</SelectItem><SelectItem value="serious">Grave</SelectItem><SelectItem value="fatal">Fatal</SelectItem></SelectContent></Select></div>
-            <div className="space-y-2"><Label>Gravedad potencial</Label><Select value={potentialSeverity} onValueChange={setPotentialSeverity}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="low">Baja</SelectItem><SelectItem value="medium">Media</SelectItem><SelectItem value="high">Alta</SelectItem><SelectItem value="critical">Crítica</SelectItem><SelectItem value="fatal">Fatal</SelectItem></SelectContent></Select></div>
-            <div className="space-y-2"><Label>Responsable DIAT/DIEP</Label><Select value={responsibleId} onValueChange={setResponsibleId}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="unassigned">Sin asignar (requiere regularización)</SelectItem>{responsibles.map((user) => <SelectItem key={user.id} value={user.id}>{user.name}</SelectItem>)}</SelectContent></Select></div>
+            <div className="space-y-2"><Label htmlFor="triage-actual-severity">Gravedad real</Label><Select value={actualSeverity} onValueChange={setActualSeverity}><SelectTrigger id="triage-actual-severity"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="none">Sin lesión</SelectItem><SelectItem value="minor">Menor</SelectItem><SelectItem value="medical_treatment">Tratamiento médico</SelectItem><SelectItem value="lost_time">Tiempo perdido</SelectItem><SelectItem value="serious">Grave</SelectItem><SelectItem value="fatal">Fatal</SelectItem></SelectContent></Select></div>
+            <div className="space-y-2"><Label htmlFor="triage-potential-severity">Gravedad potencial</Label><Select value={potentialSeverity} onValueChange={setPotentialSeverity}><SelectTrigger id="triage-potential-severity"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="low">Baja</SelectItem><SelectItem value="medium">Media</SelectItem><SelectItem value="high">Alta</SelectItem><SelectItem value="critical">Crítica</SelectItem><SelectItem value="fatal">Fatal</SelectItem></SelectContent></Select></div>
+            <div className="space-y-2"><Label htmlFor="triage-diat-responsible">Responsable DIAT/DIEP</Label><Select value={responsibleId} onValueChange={setResponsibleId}><SelectTrigger id="triage-diat-responsible"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="unassigned">Sin asignar (requiere regularización)</SelectItem>{responsibles.map((user) => <SelectItem key={user.id} value={user.id}>{user.name}</SelectItem>)}</SelectContent></Select></div>
             <div className="space-y-2"><Label htmlFor="administrator">Organismo administrador</Label><Input id="administrator" name="administratorName" placeholder="Mutualidad / ISL" /></div>
             <div className="space-y-2 md:col-span-2"><Label htmlFor="triage-measures">Medidas inmediatas</Label><Textarea id="triage-measures" name="immediateMeasures" required defaultValue={incident.immediateMeasures ?? ""} rows={3} /></div>
             <Checkbox label="Clasificación fatal/grave" checked={fatalOrSerious} onChange={(event) => setFatalOrSerious(event.target.checked)} />
@@ -184,43 +157,11 @@ export function IncidentWorkflowPanel({ incident, notifications, investigation, 
         </div>
       )}
 
-      {["immediate_measures", "under_investigation", "pending_capa"].includes(incident.status) && can("prevention:incidents:investigate") && (
-        <details className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-          <summary className="cursor-pointer font-semibold">Investigación guiada</summary>
-          {/* Precarga lo guardado: el servicio guarda lo que recibe, y un
-              formulario en blanco borraba causas, resumen y marcas al volver a
-              guardar. */}
-          <form key={`investigation-${incident.version}`} className="mt-4 grid gap-4" onSubmit={onSubmitWith((formData) => run(() => savePreventionIncidentInvestigationAction({
-            incidentId: incident.id,
-            expectedIncidentVersion: incident.version,
-            methodology: String(formData.get("methodology") ?? ""),
-            team: investigation?.team.length ? investigation.team : [{ userId: currentUser.id, role: "Investigador responsable" }],
-            evidenceSummary: String(formData.get("evidenceSummary") ?? "") || null,
-            immediateCauses: splitLines(formData.get("immediateCauses")),
-            basicCauses: splitLines(formData.get("basicCauses")),
-            organizationalCauses: splitLines(formData.get("organizationalCauses")),
-            failedControls: splitLines(formData.get("failedControls")),
-            conclusions: String(formData.get("conclusions") ?? "") || null,
-            miperUpdateRequired: formData.get("miperUpdateRequired") === "on",
-            miperUpdated: formData.get("miperUpdated") === "on",
-            procedureUpdateRequired: formData.get("procedureUpdateRequired") === "on",
-            procedureUpdated: formData.get("procedureUpdated") === "on",
-            trainingRequired: formData.get("trainingRequired") === "on",
-            trainingCompleted: formData.get("trainingCompleted") === "on",
-            complete: formData.get("complete") === "on",
-            reason: String(formData.get("reason") ?? ""),
-          })))}>
-            <div className="space-y-2"><Label htmlFor="methodology">Metodología</Label><Input id="methodology" name="methodology" required defaultValue={investigation?.methodology ?? "Árbol de causas"} /></div>
-            <p className="text-xs text-[var(--color-text-subtle)]">{investigation?.team.length ? `Se conserva el equipo registrado (${investigation.team.length} ${investigation.team.length === 1 ? "persona" : "personas"}).` : `Equipo inicial: ${currentUser.name}.`} Las entrevistas identificables se guardan sólo en el payload cifrado.</p>
-            <div className="grid gap-4 md:grid-cols-2"><div className="space-y-2"><Label>Causas inmediatas, una por línea</Label><Textarea name="immediateCauses" defaultValue={investigation?.immediateCauses.join("\n") ?? ""} rows={3} /></div><div className="space-y-2"><Label>Causas básicas, una por línea</Label><Textarea name="basicCauses" defaultValue={investigation?.basicCauses.join("\n") ?? ""} rows={3} /></div><div className="space-y-2"><Label>Causas organizacionales</Label><Textarea name="organizationalCauses" defaultValue={investigation?.organizationalCauses.join("\n") ?? ""} rows={3} /></div><div className="space-y-2"><Label>Controles fallidos</Label><Textarea name="failedControls" defaultValue={investigation?.failedControls.join("\n") ?? ""} rows={3} /></div></div>
-            <div className="space-y-2"><Label>Resumen de evidencia</Label><Textarea name="evidenceSummary" defaultValue={investigation?.evidenceSummary ?? ""} rows={2} /></div>
-            <div className="space-y-2"><Label>Conclusiones</Label><Textarea name="conclusions" defaultValue={investigation?.conclusions ?? ""} rows={4} /></div>
-            <div className="grid gap-2 text-sm md:grid-cols-3"><Checkbox name="miperUpdateRequired" defaultChecked={investigation?.miperUpdateRequired ?? false} label="Requiere actualizar MIPER" /><Checkbox name="miperUpdated" defaultChecked={Boolean(investigation?.miperUpdatedAt)} label="MIPER actualizado" /><span /><Checkbox name="procedureUpdateRequired" defaultChecked={investigation?.procedureUpdateRequired ?? false} label="Requiere procedimiento" /><Checkbox name="procedureUpdated" defaultChecked={Boolean(investigation?.procedureUpdatedAt)} label="Procedimiento actualizado" /><span /><Checkbox name="trainingRequired" defaultChecked={investigation?.trainingRequired ?? false} label="Requiere capacitación" /><Checkbox name="trainingCompleted" defaultChecked={Boolean(investigation?.trainingCompletedAt)} label="Capacitación completada" /></div>
-            <div className="space-y-2"><Label>Motivo de actualización</Label><Input name="reason" required minLength={5} /></div>
-            <Checkbox name="complete" defaultChecked={investigation?.status === "completed"} label={<span className="font-medium">Declarar investigación completa</span>} />
-            <div><Button type="submit" disabled={pending}>Guardar investigación</Button></div>
-          </form>
-        </details>
+      {incident.status === "immediate_measures" && can("prevention:incidents:investigate") && (
+        <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+          <p className="font-medium">Siguiente etapa: {INCIDENT_STATUS_LABELS.under_investigation}</p>
+          <p className="text-sm text-[var(--color-text-subtle)]">La investigación empieza al guardar el expediente RE-20 de este caso: completa el informe preliminar y guarda.</p>
+        </div>
       )}
 
       {can("prevention:incidents:investigate") && (
@@ -231,10 +172,10 @@ export function IncidentWorkflowPanel({ incident, notifications, investigation, 
               `onSubmitWith`). */}
           <div className="mt-4 grid gap-6 lg:grid-cols-2">
             <form key={`evidence-${incident.version}`} className="space-y-3" onSubmit={onSubmitWith((formData) => run(() => addPreventionIncidentEvidenceAction({ incidentId: incident.id, expectedVersion: incident.version, kind: formData.get("kind"), reference: formData.get("reference"), description: formData.get("description") || null, isSensitive: formData.get("isSensitive") === "on" })))}>
-              <p className="font-medium">Evidencia</p><Select name="kind" defaultValue="document"><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="document">Documento</SelectItem><SelectItem value="photo">Fotografía</SelectItem><SelectItem value="video">Video</SelectItem><SelectItem value="diagram">Diagrama</SelectItem><SelectItem value="external_reference">Referencia externa</SelectItem><SelectItem value="note">Nota</SelectItem></SelectContent></Select><Input name="reference" required placeholder="ID documental, URL o referencia controlada" /><Input name="description" placeholder="Descripción" /><Checkbox name="isSensitive" label="Evidencia sensible" /><Button type="submit" variant="secondary" disabled={pending}>Agregar evidencia</Button>
+              <p className="font-medium" id="evidence-kind-label">Evidencia</p><Select name="kind" defaultValue="document"><SelectTrigger aria-labelledby="evidence-kind-label"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="document">Documento</SelectItem><SelectItem value="photo">Fotografía</SelectItem><SelectItem value="video">Video</SelectItem><SelectItem value="diagram">Diagrama</SelectItem><SelectItem value="external_reference">Referencia externa</SelectItem><SelectItem value="note">Nota</SelectItem></SelectContent></Select><Input name="reference" required placeholder="ID documental, URL o referencia controlada" /><Input name="description" placeholder="Descripción" /><Checkbox name="isSensitive" label="Evidencia sensible" /><Button type="submit" variant="secondary" disabled={pending}>Agregar evidencia</Button>
             </form>
             {can("prevention:capa:manage") && <form key={`capa-${incident.version}`} className="space-y-3" onSubmit={onSubmitWith((formData) => run(() => createPreventionIncidentCapaAction({ incidentId: incident.id, expectedVersion: incident.version, finding: formData.get("finding"), actionDescription: formData.get("actionDescription"), priority: formData.get("priority"), targetDate, evidenceRequired: true }), () => setTargetDate(defaultTargetDate)))}>
-              <p className="font-medium">Acción CAPA común</p><Input name="finding" required minLength={3} placeholder="Hallazgo / causa a controlar" /><Textarea name="actionDescription" required minLength={3} rows={2} placeholder="Acción correctiva o preventiva" /><Select name="priority" defaultValue="high"><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="low">Baja</SelectItem><SelectItem value="medium">Media</SelectItem><SelectItem value="high">Alta</SelectItem><SelectItem value="critical">Crítica</SelectItem></SelectContent></Select><DatePicker value={targetDate} onChange={setTargetDate} min={defaultTargetDate} /><Button type="submit" variant="secondary" disabled={pending}>Crear CAPA</Button>
+              <p className="font-medium">Acción CAPA común</p><Input name="finding" required minLength={3} placeholder="Hallazgo / causa a controlar" /><Textarea name="actionDescription" required minLength={3} rows={2} placeholder="Acción correctiva o preventiva" /><Select name="priority" defaultValue="high"><SelectTrigger aria-label="Prioridad de la acción CAPA"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="low">Baja</SelectItem><SelectItem value="medium">Media</SelectItem><SelectItem value="high">Alta</SelectItem><SelectItem value="critical">Crítica</SelectItem></SelectContent></Select><DatePicker value={targetDate} onChange={setTargetDate} min={defaultTargetDate} /><Button type="submit" variant="secondary" disabled={pending}>Crear CAPA</Button>
             </form>}
           </div>
           {capa.length > 0 && <div className="mt-4 text-sm">{capa.map((action) => <Link key={action.id} href={`/prevencion/capa/${action.id}`} className="mr-3 text-[var(--color-primary-ink)] hover:underline">{action.code} · {action.status}</Link>)}</div>}
@@ -270,7 +211,7 @@ export function IncidentWorkflowPanel({ incident, notifications, investigation, 
                 : undefined,
             })))}>
               <div className="md:col-span-2 lg:col-span-4"><p className="font-medium">{person.displayLabel}</p><p className="text-xs text-[var(--color-text-subtle)]">Estado actual: {person.indicatorInclusionStatus === "included" ? "Incluida" : person.indicatorInclusionStatus === "excluded" ? "Excluida" : "Pendiente"}</p></div>
-              <div className="space-y-2"><Label>Decisión</Label><Select name="inclusionStatus" defaultValue={person.indicatorInclusionStatus}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="pending">Pendiente / provisional</SelectItem><SelectItem value="included">Incluida</SelectItem><SelectItem value="excluded">Excluida</SelectItem></SelectContent></Select></div>
+              <div className="space-y-2"><Label htmlFor={`inclusion-${person.id}`}>Decisión</Label><Select name="inclusionStatus" defaultValue={person.indicatorInclusionStatus}><SelectTrigger id={`inclusion-${person.id}`}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="pending">Pendiente / provisional</SelectItem><SelectItem value="included">Incluida</SelectItem><SelectItem value="excluded">Excluida</SelectItem></SelectContent></Select></div>
               <div className="space-y-2"><Label>Calificación administrador</Label><Input name="administratorQualification" defaultValue={person.administratorQualification ?? ""} placeholder="Resolución o calificación" /></div>
               <div className="space-y-2"><Label>Inicio del reposo</Label><Input name="absenceStartDate" type="date" defaultValue={person.absenceStartDate ?? ""} /></div>
               <div className="space-y-2"><Label>Reintegro (vacío = reposo vigente)</Label><Input name="returnToWorkDate" type="date" defaultValue={person.returnToWorkDate ?? ""} /></div>

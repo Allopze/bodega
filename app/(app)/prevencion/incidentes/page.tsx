@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 import { redirect } from "next/navigation"
-import { DownloadSimple, Plus } from "@phosphor-icons/react/dist/ssr"
+import { DownloadSimple, Plus, SlidersHorizontal } from "@phosphor-icons/react/dist/ssr"
 import { requirePermission, can } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { Button } from "@/components/ui/button"
@@ -11,6 +11,7 @@ import { getIncidentDashboardCounts, listIncidentWorksites, listPreventionIncide
 import { IncidentList } from "./incident-list"
 import { PublicIncidentReportsPanel } from "./public-reports-panel"
 import { PdtpScheduledActivityPanelServer } from "@/components/prevention/pdtp-scheduled-activity-panel-server"
+import { Re20PwaRegister } from "@/components/pwa/re20-pwa-register"
 
 export const metadata: Metadata = { title: "Incidentes y accidentes" }
 
@@ -55,9 +56,11 @@ export default async function IncidentsPage({ searchParams }: { searchParams: Pr
   // Triar el buzón es clasificar; abrir el incidente desde un reporte es además
   // reportarlo, con el permiso de siempre.
   const canTriage = can(session, "prevention:incidents:triage")
+  const canConfigure = can(session, "prevention:incidents:configure_re20")
 
   return (
     <PageContainer>
+      <Re20PwaRegister />
       <PageHeader
         title="Incidentes y accidentes"
         description="Fuente canónica de eventos, plazos DIAT/DIEP, investigación, CAPA y autorización de reinicio."
@@ -65,6 +68,7 @@ export default async function IncidentsPage({ searchParams }: { searchParams: Pr
         actions={<div className="flex gap-2">
           {canReport && <Button asChild><Link href="/prevencion/incidentes/reportar"><Plus className="size-4" />Reportar</Link></Button>}
           {canExport && <Button asChild variant="secondary"><a href="/api/prevencion/incidentes/export" download><DownloadSimple className="size-4" />Exportar Excel</a></Button>}
+          {canConfigure && <Button asChild variant="secondary"><Link href="/prevencion/incidentes/configuracion"><SlidersHorizontal className="size-4" />Configurar RE-20</Link></Button>}
         </div>}
       />
       {/* INC-001: lo que llega por el canal público del trabajador, donde se tría. */}

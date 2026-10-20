@@ -73,6 +73,8 @@ export const preventionModule = {
     "prevention:incidents:close",
     "prevention:incidents:diffuse",
     "prevention:incidents:view_sensitive",
+    "prevention:incidents:review_quality",
+    "prevention:incidents:configure_re20",
     "prevention:incidents:export",
     "prevention:risk:view",
     "prevention:risk:edit",
@@ -206,6 +208,8 @@ export const preventionModule = {
     // registrarlas, pese a que la planilla se las asigna al jefe de terreno.
     "prevention:incidents:diffuse": { id: "p-prev-inc-diffuse", description: "Confirmar que una difusión de incidente o de medidas efectivamente se realizó" },
     "prevention:incidents:view_sensitive": { id: "p-prev-inc-sensitive", description: "Acceder nominativamente a identidad, lesión y evidencia sensible de incidentes por propósito" },
+    "prevention:incidents:review_quality": { id: "p-prev-inc-review-quality", description: "Revisar la calidad RE-20 con aprobación segregada de la investigación" },
+    "prevention:incidents:configure_re20": { id: "p-prev-inc-configure-re20", description: "Configurar catálogos y plazos operacionales internos RE-20" },
     "prevention:incidents:export": { id: "p-prev-inc-export", description: "Exportar registro y expediente Excel de incidentes dentro del alcance" },
     "prevention:risk:view": { id: "p-prev-risk-view", description: "Ver MIPER, controles críticos, revisiones y cobertura dentro de la faena autorizada" },
     "prevention:risk:edit": { id: "p-prev-risk-edit", description: "Crear y corregir la MIPER de sus faenas, responder observaciones y enviarla a revisión" },
@@ -456,6 +460,15 @@ export const preventionModule = {
           iconName: "MegaphoneSimple",
           group: "Cumplimiento del programa",
           permissions: ["prevention:incidents:report"],
+        },
+        {
+          // Administración del catálogo y de los plazos RE-20 (antes vivía dentro
+          // de cada caso). Mismo permiso que la página y que sus acciones.
+          label: "Configuración RE-20",
+          href: "/prevencion/incidentes/configuracion",
+          iconName: "GearSix",
+          group: "Cumplimiento del programa",
+          permissions: ["prevention:incidents:configure_re20"],
         },
         {
           // El módulo compara requisitos por cargo/faena contra las entregas de
@@ -971,6 +984,10 @@ export const preventionModule = {
     { roleSlug: "jefa_chome",           permission: "prevention:incidents:authorize_restart" },
     { roleSlug: "jefa_chome",           permission: "prevention:incidents:close" },
     { roleSlug: "jefa_chome",           permission: "prevention:incidents:diffuse" },
+    { roleSlug: "jefa_chome",           permission: "prevention:incidents:review_quality" },
+    { roleSlug: "jefa_chome",           permission: "prevention:incidents:configure_re20" },
+    { roleSlug: "administrador",        permission: "prevention:incidents:review_quality" },
+    { roleSlug: "administrador",        permission: "prevention:incidents:configure_re20" },
     /* Confirmar la difusión: quien la marcó no puede confirmarla —el servicio
      * lo verifica por actor, no sólo por permiso—, así que darlo a terreno no
      * afloja la regla de las dos personas. */

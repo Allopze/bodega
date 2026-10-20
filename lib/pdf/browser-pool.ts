@@ -38,7 +38,11 @@ const waiters: Array<() => void> = []
 
 function resolveChromiumExecutablePath(): string | undefined {
   const configuredPath = readRuntimeEnv("PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH")
-  if (configuredPath) return configuredPath
+  if (configuredPath && existsSync(configuredPath)) return configuredPath
+  // Una ruta configurada que no existe hacía fallar todo PDF con «executable doesn't
+  // exist». Se avisa y se sigue con los Chromium del sistema o, sin ninguno, con el
+  // que trae Playwright (undefined).
+  if (configuredPath) console.warn(`[pdf] PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH apunta a un archivo inexistente (${configuredPath}); se usa otro Chromium.`)
   return SYSTEM_CHROMIUM_PATHS.find((path) => existsSync(path))
 }
 

@@ -3,6 +3,7 @@ import Link from "next/link"
 import { notFound, redirect } from "next/navigation"
 import { ArrowLeft, DownloadSimple, LockKeyOpen } from "@phosphor-icons/react/dist/ssr"
 import { can, requirePermission } from "@/lib/auth/can"
+import { auditIncidentSensitiveAccess } from "@/lib/services/prevention-incident-access"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { formatDateTime } from "@/lib/utils"
 import { MetaBadge } from "@/components/states/state-badge"
@@ -20,19 +21,25 @@ import {
 } from "@/lib/prevention/incidents"
 import {
   getPreventionIncidentDetail,
+  getPreventionIncidentRe20SensitivePayload,
+  getPreventionIncidentRe20Workspace,
   listIncidentDiffusions,
+  listIncidentFollowups,
+  listIncidentOnePageDiffusions,
   listIncidentNotificationResponsibles,
+  listIncidentRe20Participants,
   type IncidentStatus,
 } from "@/lib/services/prevention-incidents"
-import { IncidentWorkflowPanel, type IncidentInvestigationSnapshot } from "./incident-workflow-panel"
-import { RE20Panel } from "./re20-panel"
+import { IncidentWorkflowPanel } from "./incident-workflow-panel"
+import { Re20WorkspaceShell } from "./re20/re20-workspace-shell"
 import { SensitivePersonForm } from "./sensitive-person-form"
+import { Re20PwaRegister } from "@/components/pwa/re20-pwa-register"
 
 export const metadata: Metadata = { title: "Detalle de incidente" }
 
 type PageProps = {
   params: Promise<{ id: string }>
-  searchParams: Promise<{ sensitive?: string; purpose?: string }>
+  searchParams: Promise<{ sensitive?: string; purpose?: string; etapa?: string }>
 }
 
 function dateTime(value: string | null) {
@@ -45,8 +52,12 @@ export default async function IncidentDetailPage({ params, searchParams }: PageP
   let session
   try { session = await requirePermission("prevention:incidents:view") }
   catch { redirect(`/forbidden?desde=${encodeURIComponent("/prevencion/incidentes")}`) }
-  const access = { ctx: { userId: session.user.id }, scope: resolveWorksiteScope(session), permissions: session.user.permissions }
-  const requestSensitive = query.sensitive === "1" && Boolean(query.purpose?.trim())
+  const access = { ctx: { userId: session.user.id }, scope: resolveWorksiteScope(session), permissions: session.user.permissions, roles: session.user.roles ?? [] }
+  // Sin `view_sensitive`, un enlace con `?sensitive=1` (compartido por alguien que sí lo tiene)
+  // devolvía 404 del caso entero; se muestra la vista normal con el velo y el servicio sigue
+  // sin entregar nada reservado.
+  const askedSensitive = query.sensitive === "1" && Boolean(query.purpose?.trim())
+  const requestSensitive = askedSensitive && can(session, "prevention:incidents:view_sensitive")
   let bundle
   try {
     bundle = await getPreventionIncidentDetail({
@@ -59,24 +70,90 @@ export default async function IncidentDetailPage({ params, searchParams }: PageP
     notFound()
   }
   if (!bundle) notFound()
+  // El intento sin permiso no abre nada, pero queda auditado como «denegado», con su propósito.
+  if (askedSensitive && !requestSensitive) {
+    await auditIncidentSensitiveAccess({
+      access, incidentId: id, worksiteId: bundle.incident.worksiteId,
+      purpose: query.purpose?.trim() ?? "", outcome: "denied", reasonCode: "permission",
+    })
+  }
+  const canConfigureRe20 = can(session, "prevention:incidents:configure_re20")
+  const re20 = await getPreventionIncidentRe20Workspace({ incidentId: id, access, includeInactiveOptions: canConfigureRe20 })
+  if (!re20) notFound()
+  const canSensitive = can(session, "prevention:incidents:view_sensitive")
+  let re20Sensitive: Record<string, unknown> | null = null
+  let re20SensitiveError: string | null = null
+  if (requestSensitive && canSensitive) {
+    try {
+      const loaded = await getPreventionIncidentRe20SensitivePayload({ incidentId: id, purpose: query.purpose ?? "", access }) as (Record<string, unknown> & { declarations?: Array<Record<string, unknown>>; historicalStatements?: Array<Record<string, unknown>> }) | null
+      if (loaded) {
+        const declarations = loaded.declarations ?? []
+        const known = new Set(declarations.map((entry) => String(entry.id)))
+        const historic = (loaded.historicalStatements ?? []).filter((entry) => !known.has(String(entry.id))).map((entry) => ({
+          id: String(entry.id),
+          kind: entry.kind,
+          name: entry.name,
+          role: entry.role,
+          statement: entry.statement,
+          reserveIdentity: false,
+          attachmentReferences: [],
+          signedAt: entry.createdAt,
+        }))
+        re20Sensitive = { ...loaded, declarations: [...declarations, ...historic] }
+      }
+    } catch (error) {
+      re20SensitiveError = error instanceof Error ? error.message : "No se pudo abrir la información sensible RE-20."
+      re20Sensitive = null
+    }
+  }
   const incident = bundle.incident
   const responsibles = can(session, "prevention:incidents:triage")
     ? await listIncidentNotificationResponsibles(access, incident.worksiteId)
     : []
-  const canSensitive = can(session, "prevention:incidents:view_sensitive")
   const canExport = can(session, "prevention:incidents:export")
-  const diffusions = (await listIncidentDiffusions(incident.id)).map((d) => ({
+  const re20People = await listIncidentRe20Participants(access, incident.worksiteId)
+  const re20UpdatedBy = re20.workspace?.updatedByUserId ? re20People.find((person) => person.id === re20.workspace?.updatedByUserId)?.name ?? null : null
+  const personName = (id: string | null | undefined) => (id ? re20People.find((person) => person.id === id)?.name ?? null : null)
+  const [shiftDiffusionRows, followupRows, onePageRows] = await Promise.all([
+    listIncidentDiffusions(incident.id),
+    listIncidentFollowups(incident.id),
+    listIncidentOnePageDiffusions(incident.id),
+  ])
+  const diffusions = shiftDiffusionRows.map((d) => ({
     id: d.id,
     kind: d.kind as "shift" | "corrective_measures",
     summary: d.summary,
     status: d.status as "pending_confirmation" | "confirmed",
     markedAt: d.markedAt,
     confirmedAt: d.confirmedAt,
+    markedByUserId: d.markedByUserId,
+    markedByName: personName(d.markedByUserId),
+    confirmedByName: personName(d.confirmedByUserId),
   }))
+  const followups = followupRows.map((row) => ({
+    id: row.id,
+    kind: (row.kind === "damage" ? "damage" : "accident") as "accident" | "damage",
+    followupDate: row.followupDate,
+    note: row.note,
+    measureId: row.measureId ?? null,
+    implementedAt: row.implementedAt ?? null,
+    verified: Boolean(row.verified),
+    effective: Boolean(row.effective),
+    verifierUserId: row.verifierUserId ?? null,
+    verifiedAt: row.verifiedAt ?? null,
+    residualRisk: row.residualRisk ?? null,
+    lostDays: row.lostDays ?? null,
+    lossDescription: row.lossDescription ?? null,
+    createdAt: row.createdAt,
+  }))
+  const onePageDiffusions = [...onePageRows]
+    .sort((a, b) => b.diffusedAt.localeCompare(a.diffusedAt))
+    .map((row) => ({ id: row.id, diffusedAt: row.diffusedAt, createdByName: personName(row.createdByUserId) }))
   const defaultTargetDate = new Date(new Date(incident.updatedAt).getTime() + 7 * 86_400_000).toISOString().slice(0, 10)
 
   return (
     <PageContainer width="workbench">
+      <Re20PwaRegister />
       <PageHeader
         title={incident.code}
         description={`${INCIDENT_EVENT_LABELS[incident.eventType] ?? incident.eventType} · ${bundle.worksiteName}`}
@@ -95,7 +172,63 @@ export default async function IncidentDetailPage({ params, searchParams }: PageP
           <div><p className="text-eyebrow">Plazo crítico</p><p className={`mt-2 text-sm font-medium ${bundle.notifications.some((lane) => lane.status === "overdue") ? "text-[var(--color-danger)]" : ""}`}>{bundle.notifications.some((lane) => lane.status === "overdue") ? "Existe carril atrasado" : "Sin atraso abierto"}</p></div>
         </section>
 
-        <div className="grid gap-5 lg:grid-cols-[minmax(0,1.45fr)_minmax(18rem,0.55fr)]">
+        {/* El expediente RE-20 es el trabajo principal del caso: va a ancho completo,
+            antes del ciclo de vida y sus carriles, para que el árbol de causas tenga espacio. */}
+        <Re20WorkspaceShell
+          incident={{
+            id: incident.id,
+            code: incident.code,
+            companyName: incident.companyName,
+            location: incident.location,
+            // ISO: los datos reservados del RE-20 validan fechas ISO 8601 y Postgres entrega otro formato.
+            occurredAt: new Date(incident.occurredAt).toISOString(),
+            knownAt: new Date(incident.knownAt).toISOString(),
+            potentialSeverity: incident.potentialSeverity,
+            status: incident.status,
+            actualSeverity: incident.actualSeverity,
+            eventType: incident.eventType,
+            isFatalOrSerious: incident.isFatalOrSerious,
+            worksiteName: bundle.worksiteName,
+            version: incident.version,
+          }}
+          workspace={re20.workspace ? { version: re20.workspace.version, data: re20.workspace.data, updatedAt: re20.workspace.updatedAt, updatedByName: re20UpdatedBy } : null}
+          policy={re20.policy}
+          options={re20.options.map((option) => ({ category: option.category, code: option.code, name: option.name, isActive: option.isActive, sortOrder: "sortOrder" in option ? option.sortOrder : null }))}
+          qualityReviews={re20.qualityReviews.map((review) => ({ ...review, reviewerName: personName(review.reviewerUserId) }))}
+          legacyInvestigation={bundle.investigation ? {
+            methodology: bundle.investigation.methodology,
+            preliminaryReportText: bundle.investigation.preliminaryReportText,
+            preliminaryReportAt: bundle.investigation.preliminaryReportAt,
+            conclusions: bundle.investigation.conclusions,
+            immediateCauses: bundle.investigation.immediateCauses,
+            basicCauses: bundle.investigation.basicCauses,
+            organizationalCauses: bundle.investigation.organizationalCauses,
+          } : null}
+          sensitivePayload={re20Sensitive}
+          sensitiveLoadError={re20SensitiveError}
+          permissions={{
+            canInvestigate: can(session, "prevention:incidents:investigate"),
+            canSensitive,
+            canNotify: can(session, "prevention:incidents:notify"),
+            canReview: can(session, "prevention:incidents:review_quality"),
+            canConfigure: canConfigureRe20,
+            canConfirmDiffusion: can(session, "prevention:incidents:diffuse") && incident.status !== "closed",
+          }}
+          currentUser={{ id: session.user.id, name: session.user.name ?? session.user.email ?? "Usuario" }}
+          userId={session.user.id}
+          people={re20People}
+          involvedPeople={bundle.people.map((person) => ({ id: person.id, displayLabel: person.displayLabel, relationshipType: person.relationshipType, employerName: person.employerName ?? null }))}
+          diffusions={diffusions}
+          followups={followups}
+          renderedAt={new Date().toISOString()}
+          onePageDiffusions={onePageDiffusions}
+          notifications={bundle.notifications.map((item) => ({ notificationType: item.notificationType, status: item.status, deadlineAt: item.deadlineAt, sentAt: item.sentAt, evidenceReference: item.evidenceReference }))}
+          capa={bundle.capa.map((item) => ({ id: item.id, code: item.code, status: item.status }))}
+          initialPurpose={query.purpose ?? ""}
+          initialStage={query.etapa ?? null}
+        />
+
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,1.45fr)_minmax(18rem,0.55fr)]">
           <div className="space-y-5">
             <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
               <h2 className="font-semibold">Reporte inicial</h2>
@@ -113,25 +246,13 @@ export default async function IncidentDetailPage({ params, searchParams }: PageP
             <IncidentWorkflowPanel
               incident={incident}
               notifications={bundle.notifications}
-              investigation={bundle.investigation ? investigationForForm(bundle.investigation) : null}
               capa={bundle.capa}
               people={bundle.people}
               responsibles={responsibles}
-              currentUser={{ id: session.user.id, name: session.user.name ?? session.user.email ?? "Usuario" }}
               permissions={session.user.permissions}
               defaultTargetDate={defaultTargetDate}
             />
 
-            {/* Cerrado el incidente, el expediente RE-20 es inmutable (el
-                servidor también lo rechaza); el panel queda de solo lectura. */}
-            <RE20Panel
-              incidentId={incident.id}
-              preliminaryReportText={bundle.investigation?.preliminaryReportText}
-              preliminaryReportAt={bundle.investigation?.preliminaryReportAt}
-              canInvestigate={can(session, "prevention:incidents:investigate") && incident.status !== "closed"}
-              canConfirmDiffusion={can(session, "prevention:incidents:diffuse") && incident.status !== "closed"}
-              diffusions={diffusions}
-            />
           </div>
 
           <aside className="space-y-5">
@@ -160,30 +281,4 @@ export default async function IncidentDetailPage({ params, searchParams }: PageP
       </div>
     </PageContainer>
   )
-}
-
-/**
- * Lo que el formulario de investigación precarga, y nada más: la fila completa
- * trae las entrevistas cifradas (payload, IV y tag), que no tienen por qué
- * viajar al navegador.
- */
-function investigationForForm(row: IncidentInvestigationSnapshot): IncidentInvestigationSnapshot {
-  return {
-    id: row.id,
-    status: row.status,
-    methodology: row.methodology,
-    team: row.team,
-    evidenceSummary: row.evidenceSummary,
-    immediateCauses: row.immediateCauses,
-    basicCauses: row.basicCauses,
-    organizationalCauses: row.organizationalCauses,
-    failedControls: row.failedControls,
-    conclusions: row.conclusions,
-    miperUpdateRequired: row.miperUpdateRequired,
-    miperUpdatedAt: row.miperUpdatedAt,
-    procedureUpdateRequired: row.procedureUpdateRequired,
-    procedureUpdatedAt: row.procedureUpdatedAt,
-    trainingRequired: row.trainingRequired,
-    trainingCompletedAt: row.trainingCompletedAt,
-  }
 }

@@ -10,7 +10,7 @@ describe("local resource guard", () => {
     const guard = readFileSync(guardPath, "utf8")
 
     expect(guard).toContain('BODEGA_MAX_WORKERS:-3')
-    expect(guard).toContain('BODEGA_NODE_HEAP_MB:-4096')
+    expect(guard).toContain('BODEGA_NODE_HEAP_MB:-5120')
     expect(guard).toContain('BODEGA_NICE_LEVEL:-10')
     expect(guard).toContain('BODEGA_OOM_SCORE_ADJ:-500')
     expect(guard).toContain('PLAYWRIGHT_WORKERS:-1')

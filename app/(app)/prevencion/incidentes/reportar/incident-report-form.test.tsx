@@ -19,7 +19,15 @@ vi.mock("./offline-incident-queue", () => ({
   createIncidentSubmissionId: () => "sub-1",
   flushIncidentReportQueue: vi.fn(async () => ({ synchronized: 0, pending: 0 })),
   listQueuedIncidentReports: vi.fn(async () => []),
+  migrateLegacyIncidentReportQueue: vi.fn(async () => 0),
+  discardQueuedIncidentReport: vi.fn(async () => {}),
   queueIncidentReport,
+}))
+vi.mock("@/lib/prevention/re20-offline-vault", () => ({
+  getRe20VaultState: vi.fn(async () => ({ configured: false, unlocked: false, draftCount: 0 })),
+  listRe20OfflineDraftHeaders: vi.fn(async () => []),
+  lockRe20Vault: vi.fn(),
+  unlockRe20Vault: vi.fn(async () => ({ configured: false, deviceId: "device-test" })),
 }))
 
 import { IncidentReportForm } from "./incident-report-form"
@@ -32,6 +40,7 @@ function renderForm() {
       worksites={[{ id: "w1", name: "Faena Norte", code: "FN" }]}
       defaultDate="2026-08-07"
       defaultTime="10:00"
+      userId="user-test"
     />,
   )
   fireEvent.change(screen.getByLabelText("Empresa o empleador"), { target: { value: "Constructora X" } })
@@ -84,5 +93,24 @@ describe("IncidentReportForm", () => {
     } finally {
       onLine.mockRestore()
     }
+  })
+
+  it("permite crear un reporte desde el shell offline aunque el navegador tenga conexión", async () => {
+    reportPreventionIncidentAction.mockClear()
+    const view = render(
+      <IncidentReportForm
+        worksites={[{ id: "w1", name: "Faena Norte", code: "FN" }]}
+        defaultDate="2026-08-07"
+        defaultTime="10:00"
+        userId="user-test"
+        offlineOnly
+      />,
+    )
+    fireEvent.change(screen.getByLabelText("Empresa o empleador"), { target: { value: "Constructora X" } })
+    fireEvent.change(screen.getByLabelText("Lugar exacto"), { target: { value: "Frente 3, cancha de acopio" } })
+    fireEvent.change(screen.getByLabelText("¿Qué ocurrió?"), { target: { value: NARRATIVE } })
+    fireEvent.submit(view.container.querySelector("form")!)
+    await waitFor(() => expect(queueIncidentReport).toHaveBeenCalled())
+    expect(reportPreventionIncidentAction).not.toHaveBeenCalled()
   })
 })

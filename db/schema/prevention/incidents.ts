@@ -218,9 +218,19 @@ export const preventionIncidentClassificationCatalog = pgTable("prevention_incid
   code: text("code").notNull(),
   name: text("name").notNull(),
   isActive: boolean("is_active").notNull().default(true),
+  /** Orden del libro RE-20 (fila de la lista en «Clasificación»). */
+  sortOrder: integer("sort_order").notNull().default(0),
+  /** Relación agente → categoría (Clasificación columna K): `code` de la fila padre en `agent_category`. */
+  parentCode: text("parent_code"),
 }, (table) => [
   uniqueIndex("prevention_incident_classification_cat_code_unique").on(table.category, table.code),
-  check("prevention_incident_classification_cat_valid", sql`${table.category} IN ('accident_type', 'situation', 'causal_agent', 'source', 'body_zone', 'mutual_status')`),
+  check("prevention_incident_classification_cat_valid", sql`${table.category} IN (
+    'event_type', 'mutual_classification', 'potential_severity', 'mutual_status', 'situation', 'activity', 'accident_type', 'causal_agent', 'agent_category', 'source', 'body_zone', 'loss',
+    'temperature', 'weather', 'shift_system', 'physical_conditions', 'causal_event_id', 'causal_relation', 'control_type', 'corrective_preventive', 'action_scope', 'priority',
+    'action_status', 'effectiveness', 'residual_risk', 'evidence_type', 'declarant_quality', 'investigation_role', 'quality_result', 'review_result', 'cphs_decision',
+    'yes_no', 'yes_no_unverified', 'yes_no_not_applicable', 'authorization_license', 'worker_sex', 'legacy_substandard_act', 'legacy_substandard_condition',
+    'legacy_personal_factor', 'legacy_work_factor', 'legacy_root_cause', 'legacy_probability', 'legacy_severity', 'legacy_marital_status', 'legacy_incident_type'
+  )`),
 ])
 
 /* ── RE-20: Declaraciones y Entrevistas (Actividad 69 - SLA 24h) ────────── */
@@ -228,15 +238,23 @@ export const preventionIncidentStatements = pgTable("prevention_incident_stateme
   id: text("id").primaryKey(),
   incidentId: text("incident_id").notNull().references(() => preventionIncidents.id, { onDelete: "cascade" }),
   kind: text("kind").notNull(),
-  deponentName: text("deponent_name").notNull(),
+  deponentName: text("deponent_name"),
   deponentRole: text("deponent_role"),
-  statementText: text("statement_text").notNull(),
+  statementText: text("statement_text"),
+  encryptedPayload: text("encrypted_payload"),
+  encryptedIv: text("encrypted_iv"),
+  encryptedAuthTag: text("encrypted_auth_tag"),
+  encryptedKeyVersion: text("encrypted_key_version"),
   signedAt: timestamp("signed_at", { withTimezone: true, mode: "string" }),
   createdByUserId: text("created_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   index("prevention_incident_statements_incident_idx").on(table.incidentId),
   check("prevention_incident_statement_kind_valid", sql`${table.kind} IN ('involved', 'witness', 'cphs')`),
+  check("prevention_incident_statement_payload_complete", sql`
+    (${table.encryptedPayload} IS NULL AND ${table.encryptedIv} IS NULL AND ${table.encryptedAuthTag} IS NULL AND ${table.encryptedKeyVersion} IS NULL AND ${table.statementText} IS NOT NULL)
+    OR (${table.encryptedPayload} IS NOT NULL AND ${table.encryptedIv} IS NOT NULL AND ${table.encryptedAuthTag} IS NOT NULL AND ${table.encryptedKeyVersion} IS NOT NULL AND ${table.statementText} IS NULL)
+  `),
 ])
 
 /* ── RE-20: Difusión ONE PAGE RE-20-06 (Actividad 78 - SLA 24h) ────────── */
@@ -248,6 +266,19 @@ export const preventionIncidentDiffusion = pgTable("prevention_incident_diffusio
   actionPlanSummary: text("action_plan_summary").notNull(),
   diffusedAt: timestamp("diffused_at", { withTimezone: true, mode: "string" }).notNull(),
   evidenceRef: text("evidence_ref"),
+  /** RE-20-06 C16:L23: causa / medida / responsable / plazo / estatus, generada desde las medidas del expediente. */
+  measuresTable: jsonb("measures_table").$type<Array<{
+    rootCauseId: string | null
+    rootCause: string
+    measure: string
+    responsible: string | null
+    dueAt: string | null
+    status: string | null
+  }>>().notNull().default([]),
+  /** RE-20-06 D24: aprendizaje para otras faenas. */
+  learning: text("learning"),
+  /** Versión del expediente RE-20 desde la que se generó la tabla. */
+  workspaceVersion: integer("workspace_version"),
   createdByUserId: text("created_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
@@ -262,10 +293,30 @@ export const preventionIncidentFollowups = pgTable("prevention_incident_followup
   note: text("note").notNull(),
   status: text("status").notNull().default("completed"),
   evidenceRef: text("evidence_ref"),
+  /** RE-20-08 (accidente) / RE-20-09 (daño). */
+  kind: text("kind").notNull().default("accident"),
+  /** ID de la medida del expediente RE-20 a la que se da seguimiento. */
+  measureId: text("measure_id"),
+  rootCauseId: text("root_cause_id"),
+  controlType: text("control_type"),
+  verifierUserId: text("verifier_user_id").references(() => users.id, { onDelete: "restrict" }),
+  verifiedAt: timestamp("verified_at", { withTimezone: true, mode: "string" }),
+  residualRisk: text("residual_risk"),
+  /** Estado triple: implementada (hay evidencia de ejecución) ⊂ verificada (otra persona lo confirma) ⊂ eficaz. */
+  implementedAt: timestamp("implemented_at", { withTimezone: true, mode: "string" }),
+  verified: boolean("verified").notNull().default(false),
+  effective: boolean("effective").notNull().default(false),
+  lostDays: integer("lost_days"),
+  lossDescription: text("loss_description"),
   createdByUserId: text("created_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   index("prevention_incident_followups_incident_idx").on(table.incidentId),
+  check("prevention_incident_followup_kind_valid", sql`${table.kind} IN ('accident', 'damage')`),
+  check("prevention_incident_followup_triple_state", sql`
+    (${table.effective} = false OR ${table.verified} = true)
+    AND (${table.verified} = false OR ${table.implementedAt} IS NOT NULL)
+  `),
 ])
 
 /* ── RE-20: Difusiones en turnos (Act. 71) y de medidas correctivas (Act. 75) ──

@@ -259,7 +259,7 @@ export const preventionSensitiveFiles = pgTable("prevention_sensitive_files", {
 }, (table) => [
   index("prevention_sensitive_file_entity_idx").on(table.domain, table.entityId, table.createdAt),
   index("prevention_sensitive_file_subject_idx").on(table.subjectWorkerId, table.createdAt),
-  check("prevention_sensitive_file_domain_valid", sql`${table.domain} IN ('health', 'reserved_case')`),
+  check("prevention_sensitive_file_domain_valid", sql`${table.domain} IN ('health', 'reserved_case', 'incident_re20')`),
   check("prevention_sensitive_file_size_valid", sql`${table.fileSize} > 0`),
   check("prevention_sensitive_file_checksums_valid", sql`length(${table.sourceChecksum}) = 64 AND length(${table.encryptedChecksum}) = 64`),
 ])
