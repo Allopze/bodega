@@ -145,6 +145,12 @@ fi
 # `isProviderEnabled()`: apagado, la ficha decía "Inactivo" y el escenario que
 # distingue "falta configurar" de "está caído" no tenía cómo ocurrir. Sin
 # `BILLING_CHIPAX_APP_ID`/`SECRET_KEY` no hay ninguna llamada real al proveedor.
+# PREVENTION_DATA_ENCRYPTION_KEY — llave de cifrado del dominio sensible de Prevención (AES-256-GCM, 32 bytes en base64). El
+# servidor standalone no lee `.env*`, y sin ella cualquier guardado de datos reservados
+# —declaraciones, entrevista y DIAT del expediente RE-20, anexos— falla con «El dominio
+# sensible está deshabilitado: falta la llave de cifrado». Es una constante de prueba: la base
+# E2E es desechable y nunca comparte llave con un ambiente real.
+#
 # Documentos generados → Cloudreve: la llave de entorno y una cuenta WebDAV que
 # apunta al servidor falso de `e2e/fixtures/fake-webdav.ts` (127.0.0.1:3198).
 # La base E2E no guarda credenciales de Cloudreve, así que estas del entorno son
@@ -155,6 +161,8 @@ CLOUDREVE_BASE_URL="http://127.0.0.1:3198" \
 CLOUDREVE_USERNAME="e2e-webdav" \
 CLOUDREVE_PASSWORD="e2e-webdav" \
 STORAGE_PATH="$ROOT/storage" \
+PREVENTION_DATA_ENCRYPTION_KEY="ZTJlLXByZXZlbnRpb24tZGF0YS1rZXktMzJieXRlcyE=" \
+PREVENTION_DATA_ENCRYPTION_KEY_VERSION="e2e" \
 DATABASE_URL="$DB_URL" \
 AUTH_SECRET="$AUTH_SECRET_VALUE" \
 NEXTAUTH_SECRET="$AUTH_SECRET_VALUE" \
