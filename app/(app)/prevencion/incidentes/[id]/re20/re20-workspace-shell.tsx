@@ -4,7 +4,7 @@ import type { Re20WorkspaceApi } from "./use-re20-workspace"
 
 import * as React from "react"
 import Link from "next/link"
-import { CloudSlash, Printer } from "@phosphor-icons/react"
+import { Printer } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Callout } from "@/components/ui/callout"
 import { MetaBadge } from "@/components/states/state-badge"
@@ -12,13 +12,11 @@ import { INCIDENT_STATUS_LABELS, incidentStatusBadgeVariant } from "@/lib/preven
 import { formatDateTime } from "@/lib/utils"
 import type { IncidentStatus } from "@/lib/services/prevention-incidents"
 import { Re20ConflictDialog } from "./conflict-dialog"
-import { re20RelativeTime } from "./deadlines"
 import { Re20SensitiveVeil } from "./sensitive-veil"
 import { Re20MissingList, Re20MobileBar, Re20NextStep, Re20SaveIndicator, Re20StageNav } from "./shell-parts"
 import { RE20_STAGE_MODULES, re20StageViews } from "./stages"
 import type { Re20WorkspaceProps } from "./types"
 import { isRe20StageId, Re20WorkspaceContext, useRe20Workspace } from "./use-re20-workspace"
-import { Re20VaultGate } from "./vault-gate"
 import { cn } from "@/lib/utils"
 
 /**
@@ -70,14 +68,9 @@ export function Re20WorkspaceShell(props: Re20WorkspaceProps) {
                 </Link>
               </Button>
             )}
-            {!ws.vault.visible && !ws.readOnly && (
-              <Button type="button" variant="ghost" size="sm" onClick={ws.vault.request}>
-                <CloudSlash aria-hidden className="size-4" />Preparar para trabajar sin conexión
-              </Button>
-            )}
             {!ws.readOnly && (
               <Button type="button" size="sm" className="hidden md:inline-flex" loading={ws.saving} disabled={!ws.dirty && ws.status !== "error"} onClick={() => void ws.save()}>
-                {ws.offlineOnly || !ws.online ? "Guardar en este dispositivo" : "Guardar"}
+                {ws.offlineOnly || !ws.online ? "Guardar en este equipo" : "Guardar"}
               </Button>
             )}
           </div>
@@ -115,26 +108,8 @@ export function Re20WorkspaceShell(props: Re20WorkspaceProps) {
         )}
         {ws.localSensitivePending && (
           <Callout tone="warning" role="alert">
-            Este borrador trae datos reservados que tu perfil no puede abrir. Queda cifrado en el dispositivo hasta que lo abra una persona con acceso reservado.
+            Este borrador trae datos reservados que tu perfil no puede abrir. Queda guardado en este equipo hasta que lo abra una persona con acceso reservado.
           </Callout>
-        )}
-
-        {ws.vault.visible && (
-          <Re20VaultGate
-            configured={ws.vault.configured}
-            unlocked={ws.vault.unlocked}
-            onUnlock={(passphrase) => ws.vault.unlock(passphrase)}
-            onLock={ws.vault.lock}
-            reason={!ws.online || ws.offlineOnly
-              ? "Sin conexión: abre la bóveda para que tus cambios queden cifrados en este dispositivo y se envíen al volver la señal."
-              : ws.vault.draftExists ? "Hay una copia de este expediente guardada en este dispositivo. Ábrela para revisarla y enviarla." : undefined}
-            pendingSummary={ws.vault.draftExists && ws.vault.draftSavedAt
-              ? `Copia de este expediente guardada ${formatDateTime(ws.vault.draftSavedAt)} (${re20RelativeTime(ws.vault.draftSavedAt, ws.now)}).`
-              : null}
-            unlockedActions={!ws.readOnly && (
-              <Button type="button" variant="secondary" size="sm" onClick={() => void ws.vault.saveNow().catch(() => {})}>Guardar copia ahora</Button>
-            )}
-          />
         )}
 
         {ws.readOnly && <Re20SensitiveVeil standalone title="Datos reservados" />}

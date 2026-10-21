@@ -1,4 +1,4 @@
-/* RE-20 worker, scoped to /prevencion/incidentes/ (see components/pwa/re20-pwa-register.tsx). It caches only a content-free unlock shell and
+/* RE-20 worker, scoped to /prevencion/incidentes/ (see components/pwa/re20-pwa-register.tsx). It caches only a content-free offline shell (no user data) and
  * immutable Next static assets; authenticated HTML, RSC payloads and APIs stay
  * network-only. Its cache namespace is isolated from the PPA worker. */
 const CACHE_NAME = "chome-re20-shell-v1"

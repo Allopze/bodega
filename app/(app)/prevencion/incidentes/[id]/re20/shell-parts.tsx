@@ -14,14 +14,16 @@ import type { Re20SaveStatus, Re20WorkspaceApi } from "./use-re20-workspace"
 
 /* ── Estado de guardado ───────────────────────────────────────────────────── */
 
-export function re20SaveStatusLabel(ws: Pick<Re20WorkspaceApi, "status" | "lastSavedAt" | "dirty" | "vault" | "version">): string {
-  const encrypted = ws.vault.unlocked
+export function re20SaveStatusLabel(ws: Pick<Re20WorkspaceApi, "status" | "lastSavedAt" | "dirty" | "version"> & { reservedUnsaved?: boolean }): string {
   switch (ws.status) {
     case "saving": return "Guardando…"
     case "conflict": return "Hay diferencias con otra versión por revisar"
     case "error": return "No se guardó: revisa el aviso y vuelve a intentar"
-    case "offline": return !ws.dirty ? "Sin conexión" : encrypted ? "Sin conexión · cambios cifrados en este dispositivo" : "Sin conexión · tus cambios están solo en esta pantalla"
-    case "dirty": return encrypted ? "Cambios sin enviar · copia cifrada en este dispositivo" : "Cambios sin guardar"
+    // El trabajo sin conexión es automático: aquí sólo se dice dónde queda lo que se escribe.
+    case "offline":
+      if (ws.reservedUnsaved) return "Sin conexión · los datos reservados y los anexos no se guardan en este equipo: no cierres esta pestaña hasta guardar con conexión"
+      return ws.dirty ? "Sin conexión · tus cambios se guardan en este equipo" : "Sin conexión · lo que escribas se guarda en este equipo"
+    case "dirty": return "Cambios sin guardar"
     case "saved": return ws.lastSavedAt ? `Guardado ${formatDateTime(ws.lastSavedAt)}` : ws.version > 0 ? "Todo guardado" : "Sin cambios"
   }
 }

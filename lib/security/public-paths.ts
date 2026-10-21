@@ -23,8 +23,8 @@ export const PUBLIC_PATHS = [
   // sin cuenta pueda reportar un cuasi accidente. Faltaba aquí y el proxy lo
   // mandaba al login.
   "/reportar-incidente",
-  // Shell estático de la bóveda RE-20; el contenido se descifra en el cliente
-  // después de validar la frase local y nunca se obtiene del servidor offline.
+  // Shell estático del trabajo sin conexión RE-20: sin sesión no puede traer
+  // nada del servidor; sólo muestra lo que ya guardó este equipo (IndexedDB).
   "/prevencion/incidentes/re20-offline",
 ] as const
 

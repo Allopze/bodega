@@ -3,7 +3,7 @@ import { Re20OfflineShell } from "./offline-shell"
 
 export const metadata: Metadata = {
   title: "Borradores offline RE-20",
-  description: "Desbloqueo local cifrado para continuar borradores RE-20 sin conexión.",
+  description: "Continúa sin conexión los borradores RE-20 guardados en este equipo.",
   robots: { index: false, follow: false },
 }
 

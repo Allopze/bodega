@@ -74,7 +74,7 @@ Regresiones PGlite agregadas: la aprobación completa `quality_review`; guardar 
 
 ## Cierre de pendientes (misma fecha)
 
-La E2E se amplió a 32 pruebas: usuario sin `view_sensitive` (velo, impresión sin reservado, PDF/anexos reservados rechazados, intento auditado como «denegado»), registro de la DIAT, cuestionario RE-20-03, anexos (PNG real subido y descargado; contenido que no coincide rechazado) y trabajo sin conexión con la bóveda (editar offline, volver, sincronizar, recargar).
+La E2E se amplió a 32 pruebas: usuario sin `view_sensitive` (velo, impresión sin reservado, PDF/anexos reservados rechazados, intento auditado como «denegado»), registro de la DIAT, cuestionario RE-20-03, anexos (PNG real subido y descargado; contenido que no coincide rechazado) y trabajo sin conexión con la bóveda (editar offline, volver, sincronizar, recargar; reemplazada después por el guardado automático, ver más abajo).
 
 Ajustes de producto derivados:
 
@@ -88,11 +88,23 @@ Ajustes de producto derivados:
 | La reunión post accidente vivía como texto con encabezados en la nota de la tarea | Deuda técnica | Campo propio `postAccidentMeeting`; las notas antiguas se leen como respaldo |
 | Anexos antiguos en base64 dependían de correr un script a mano en cada ambiente | Despliegue | El servicio `migrate` los traslada a disco en cada despliegue (con volumen de almacenamiento); un fallo no corta el despliegue y la fila sigue legible |
 
+## Decisión posterior: la bóveda con frase se reemplazó por guardado automático
+
+**Nota (2026-10-21, por decisión del usuario).** La «bóveda» sin conexión descrita arriba (frase local de 12+ caracteres, cifrado PBKDF2 + AES-GCM, bloqueo por inactividad, «Preparar para trabajar sin conexión») **ya no existe**. El trabajo sin conexión de Incidentes / RE-20 es ahora automático e invisible, con el mismo contrato que la cola de Inspecciones:
+
+- Almacén por usuario en IndexedDB (`chome-re20-offline-drafts`, entradas con `ownerUserId`), **sin frase y sin cifrado propio**. Al abrirse borra la base antigua `chome-re20-encrypted-vault`.
+- Reportes de incidente: se guardan solos sin conexión y se envían solos al volver la señal (o al abrir «Reportar incidente» con conexión). La cola antigua v2 en claro se migra al almacén de la persona al cargar.
+- Expediente: la copia local corre siempre con cada cambio; se recupera al reabrir el caso y se retira al guardar en el servidor. **No se envía sola al volver la señal**: se avisa y la persona guarda (puede haber diferencias con otra versión que resolver y datos reservados que exigen propósito).
+- Pantalla pública `/prevencion/incidentes/re20-offline`: muestra directamente lo guardado por el último usuario del equipo, sin frase.
+- Cerrar sesión purga todos los borradores y la cola de reportes (además de la cola antigua, PPA e inspecciones). Lo aún sin enviar se pierde: los avisos piden no cerrar sesión hasta que vuelva la señal.
+
+**Riesgo asumido con esta decisión:** lo guardado (incluidos datos reservados y anexos del expediente) queda en claro en el disco del equipo hasta enviarse o cerrar sesión, y la pantalla pública sin conexión lo muestra sin autenticar a quien tenga el equipo. Antes la frase lo impedía. La E2E de «trabajo sin conexión» y de «cierre de sesión» se reescribió para este comportamiento (pendiente de volver a correrse).
+
 ## Lo que NO se verificó (coverage gaps)
 
 - E2E solo en Chromium de escritorio; el ancho 390 px se verificó en el recorrido asistido, no en la E2E.
 - El DROP de las columnas legado de anexos queda para una migración posterior, cuando producción informe 0 pendientes.
-- Trabajo efectivamente sin conexión (bóveda cifrada con datos y sincronización al volver): solo se verificó el registro del service worker y el shell.
+- Trabajo efectivamente sin conexión con el guardado automático (editar offline, volver, guardar, recargar): cubierto por la E2E reescrita, aún sin correrse tras el cambio; antes solo se verificó el registro del service worker y el shell.
 - La ruta `/re20/print/pdf` en sí, por la limitación de entorno indicada arriba.
 - Teclado: el foco visible y los enlaces «Falta…» se revisaron por código y axe, no con un recorrido manual completo.
 - El botón «N» que tapa la barra móvil es el indicador de desarrollo de Next; no existe en producción.

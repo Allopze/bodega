@@ -1,25 +1,20 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { toast } from "@/lib/toast"
+import { useCallback, useEffect, useState } from "react"
+import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Callout } from "@/components/ui/callout"
 import { EmptyState } from "@/components/ui/empty-state"
-import { formatDate, formatDateTime } from "@/lib/utils"
+import { formatDateTime } from "@/lib/utils"
 import {
+  lastRe20OfflineDraftOwner,
   listRe20OfflineDrafts,
-  listRe20VaultProfiles,
-  lockRe20Vault,
-  unlockRe20Vault,
   type OfflineDraft,
-} from "@/lib/prevention/re20-offline-vault"
-import { migrateLegacyIncidentReportQueue } from "@/app/(app)/prevencion/incidentes/reportar/offline-incident-queue"
+} from "@/lib/prevention/re20-offline-drafts"
 import { Re20WorkspaceShell } from "@/app/(app)/prevencion/incidentes/[id]/re20/re20-workspace-shell"
 import type { Re20LocalDraft } from "@/app/(app)/prevencion/incidentes/[id]/re20/types"
-import { Re20VaultGate } from "@/app/(app)/prevencion/incidentes/[id]/re20/vault-gate"
 import { IncidentReportForm } from "@/app/(app)/prevencion/incidentes/reportar/incident-report-form"
 
-type VaultProfile = Awaited<ReturnType<typeof listRe20VaultProfiles>>[number]
 type OfflineReportConfig = { worksites: Array<{ id: string; name: string; code: string }>; defaultDate: string; defaultTime: string }
 
 function currentChileDateTime() {
@@ -28,104 +23,86 @@ function currentChileDateTime() {
   return { date: `${value.year}-${value.month}-${value.day}`, time: `${value.hour}:${value.minute}` }
 }
 
+/**
+ * Trabajo sin conexión de Incidentes / RE-20, sin sesión: muestra directamente
+ * lo que quedó guardado en este equipo por la última persona que trabajó aquí.
+ * No hay frase ni desbloqueo; para enviarlo hay que abrir la aplicación con
+ * sesión y conexión (el cierre de sesión vacía este almacén).
+ */
 export function Re20OfflineShell() {
-  const [profiles, setProfiles] = useState<VaultProfile[]>([])
-  const [selectedUserId, setSelectedUserId] = useState("")
-  const [unlocked, setUnlocked] = useState(false)
-  const [headers, setHeaders] = useState<Array<OfflineDraft<unknown>>>([])
+  const [loaded, setLoaded] = useState(false)
+  const [ownerUserId, setOwnerUserId] = useState<string | null>(null)
+  const [drafts, setDrafts] = useState<Array<OfflineDraft<unknown>>>([])
   const [workspaceDrafts, setWorkspaceDrafts] = useState<Array<OfflineDraft<Re20LocalDraft>>>([])
   const [selectedDraftId, setSelectedDraftId] = useState("")
   const [reportConfig, setReportConfig] = useState<OfflineReportConfig | null>(null)
   const [showOfflineReportForm, setShowOfflineReportForm] = useState(false)
 
-  useEffect(() => {
-    void listRe20VaultProfiles().then(setProfiles).catch(() => {})
+  const load = useCallback(async () => {
+    try {
+      const owner = await lastRe20OfflineDraftOwner()
+      const stored = owner ? await listRe20OfflineDrafts<unknown>(owner) : []
+      const workspaces = stored.filter((draft): draft is OfflineDraft<Re20LocalDraft> => draft.kind === "incident_workspace")
+      setOwnerUserId(owner)
+      setDrafts(stored)
+      setWorkspaceDrafts(workspaces)
+      setReportConfig(stored.find((draft) => draft.kind === "incident_report_config")?.payload as OfflineReportConfig | undefined ?? null)
+      setSelectedDraftId((current) => (workspaces.some((draft) => draft.id === current) ? current : workspaces[0]?.id ?? ""))
+    } catch {
+      /* sin almacenamiento local no hay nada que mostrar: queda el estado vacío */
+    } finally {
+      setLoaded(true)
+    }
   }, [])
 
   useEffect(() => {
-    const handleVaultLock = (event: Event) => {
-      const lockedUserId = (event as CustomEvent<{ userId?: string }>).detail?.userId
-      if (!lockedUserId || lockedUserId !== selectedUserId) return
-      setUnlocked(false)
-      setHeaders([])
-      setWorkspaceDrafts([])
-      setSelectedDraftId("")
-      setReportConfig(null)
-      setShowOfflineReportForm(false)
-    }
-    window.addEventListener("re20-vault-locked", handleVaultLock)
-    return () => window.removeEventListener("re20-vault-locked", handleVaultLock)
-  }, [selectedUserId])
+    void load()
+  }, [load])
 
   const selectedDraft = workspaceDrafts.find((draft) => draft.id === selectedDraftId) ?? workspaceDrafts[0]
   const payload = selectedDraft?.payload
   const context = payload?.context
-
-  async function unlock(passphrase: string, profileUserId?: string) {
-    const userId = profileUserId ?? profiles[0]?.userId
-    if (!userId) return
-    await unlockRe20Vault(userId, passphrase)
-    await migrateLegacyIncidentReportQueue(userId)
-    const drafts = await listRe20OfflineDrafts<unknown>(userId)
-    const workspaces = drafts.filter((draft): draft is OfflineDraft<Re20LocalDraft> => draft.kind === "incident_workspace")
-    const storedReportConfig = drafts.find((draft) => draft.kind === "incident_report_config")?.payload as OfflineReportConfig | undefined
-    setSelectedUserId(userId)
-    setHeaders(drafts)
-    setWorkspaceDrafts(workspaces)
-    setReportConfig(storedReportConfig ?? null)
-    setSelectedDraftId(workspaces[0]?.id ?? "")
-    setUnlocked(true)
-    toast.success("Bóveda abierta en este dispositivo.")
-  }
-
-  async function reloadDrafts() {
-    if (!selectedUserId) return
-    const drafts = await listRe20OfflineDrafts<unknown>(selectedUserId)
-    setHeaders(drafts)
-    setWorkspaceDrafts(drafts.filter((draft): draft is OfflineDraft<Re20LocalDraft> => draft.kind === "incident_workspace"))
-    setReportConfig(drafts.find((draft) => draft.kind === "incident_report_config")?.payload as OfflineReportConfig | undefined ?? null)
-  }
-
-  function lock() {
-    lockRe20Vault(selectedUserId)
-    setUnlocked(false)
-    setHeaders([])
-    setWorkspaceDrafts([])
-    setSelectedDraftId("")
-    setReportConfig(null)
-    setShowOfflineReportForm(false)
-  }
-
-  const reportCount = headers.filter((item) => item.kind === "incident_report").length
+  const reportCount = drafts.filter((item) => item.kind === "incident_report").length
+  const hasWork = reportCount > 0 || workspaceDrafts.length > 0
 
   return (
     <main className="mx-auto w-full max-w-6xl space-y-5 bg-[var(--color-bg)] px-4 py-6 text-[var(--color-text)] md:px-8">
       <header className="space-y-1">
         <h1 className="text-xl font-semibold">Trabajo sin conexión</h1>
-        <p className="max-w-3xl text-sm text-[var(--color-text-muted)]">Aquí sigues los borradores de investigación y los reportes guardados en este dispositivo. Todo se descifra solo aquí, con la frase del dispositivo; para enviarlos, vuelve a abrir el caso con sesión y conexión.</p>
+        <p className="max-w-3xl text-sm text-[var(--color-text-muted)]">Aquí sigues los borradores de investigación y los reportes guardados en este equipo. Para enviarlos, abre la aplicación con sesión y conexión. No cierres sesión hasta entonces: al cerrarla, lo guardado aquí se borra.</p>
       </header>
 
-      <Re20VaultGate
-        configured={profiles.length > 0}
-        unlocked={unlocked}
-        profiles={profiles.map((profile, index) => ({ userId: profile.userId, label: `Bóveda ${index + 1} · creada ${formatDate(profile.createdAt)}` }))}
-        onUnlock={unlock}
-        onLock={lock}
-        pendingSummary={unlocked ? `${reportCount} ${reportCount === 1 ? "reporte" : "reportes"} sin enviar · ${workspaceDrafts.length} ${workspaceDrafts.length === 1 ? "expediente" : "expedientes"} de investigación` : null}
-        unlockedActions={<Button type="button" size="sm" variant="secondary" onClick={() => void reloadDrafts()}>Actualizar lista</Button>}
-      />
+      {loaded && !ownerUserId && (
+        <EmptyState
+          align="start"
+          title="No hay trabajo guardado en este equipo"
+          description="Lo que escribas sin conexión en un reporte o en un expediente de investigación se guarda aquí solo. Para tener un expediente a mano, ábrelo con conexión y sigue trabajando aunque se corte la señal."
+          action={<Button asChild variant="secondary" size="sm"><Link href="/prevencion/incidentes">Ir a incidentes</Link></Button>}
+        />
+      )}
 
-      {unlocked && <>
+      {ownerUserId && <>
+        <Callout tone="info" role="status">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p>
+              {hasWork
+                ? `${reportCount} ${reportCount === 1 ? "reporte guardado" : "reportes guardados"} en este equipo · ${workspaceDrafts.length} ${workspaceDrafts.length === 1 ? "expediente" : "expedientes"} de investigación con cambios sin enviar.`
+                : "No hay reportes ni expedientes con cambios sin enviar en este equipo."}
+            </p>
+            <Button type="button" size="sm" variant="secondary" onClick={() => void load()}>Actualizar lista</Button>
+          </div>
+        </Callout>
+
         {workspaceDrafts.length === 0 ? (
           <EmptyState
             compact
             align="start"
-            title="No hay expedientes preparados para trabajar sin conexión"
-            description="Con conexión, abre el incidente, abre la bóveda desde «Preparar para trabajar sin conexión» y guarda una copia antes de salir a terreno."
+            title="No hay expedientes con cambios guardados en este equipo"
+            description="Lo que escribas en un expediente sin conexión se guarda aquí solo. Para trabajar uno sin señal, ábrelo con conexión antes de salir a terreno."
           />
         ) : <>
           {workspaceDrafts.length > 1 && (
-            <nav aria-label="Expedientes guardados en este dispositivo" className="flex gap-2 overflow-x-auto pb-1">
+            <nav aria-label="Expedientes guardados en este equipo" className="flex gap-2 overflow-x-auto pb-1">
               {workspaceDrafts.map((draft) => {
                 const active = (selectedDraft?.id ?? "") === draft.id
                 return (
@@ -157,7 +134,7 @@ export function Re20OfflineShell() {
                 canConfirmDiffusion: context.canConfirmDiffusion,
               }}
               currentUser={context.currentUser}
-              userId={selectedUserId}
+              userId={ownerUserId}
               people={context.people ?? []}
               involvedPeople={context.involvedPeople ?? []}
               diffusions={context.diffusions}
@@ -176,12 +153,12 @@ export function Re20OfflineShell() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 id="offline-report-title" className="font-semibold">Nuevo reporte de incidente</h2>
-              <p className="mt-1 text-sm text-[var(--color-text-muted)]">Se guarda cifrado aquí y se envía después, desde una sesión con conexión.</p>
+              <p className="mt-1 text-sm text-[var(--color-text-muted)]">Se guarda en este equipo y se envía solo cuando abras la aplicación con conexión.</p>
             </div>
             {reportConfig && <Button type="button" variant="secondary" onClick={() => setShowOfflineReportForm((visible) => !visible)}>{showOfflineReportForm ? "Cerrar formulario" : "Crear reporte sin conexión"}</Button>}
           </div>
-          {!reportConfig && <p className="text-sm text-[var(--color-text-muted)]">Para reportar sin conexión, abre una vez el formulario de reportes con conexión y abre la bóveda: así quedan guardadas las faenas que puedes usar.</p>}
-          {showOfflineReportForm && reportConfig && (() => { const now = currentChileDateTime(); return <IncidentReportForm key={selectedUserId} worksites={reportConfig.worksites} defaultDate={now.date} defaultTime={now.time} userId={selectedUserId} offlineOnly /> })()}
+          {!reportConfig && <p className="text-sm text-[var(--color-text-muted)]">Para reportar sin conexión, abre «Reportar incidente» una vez con conexión: así quedan guardadas en este equipo las faenas que puedes usar.</p>}
+          {showOfflineReportForm && reportConfig && (() => { const now = currentChileDateTime(); return <IncidentReportForm key={ownerUserId} worksites={reportConfig.worksites} defaultDate={now.date} defaultTime={now.time} userId={ownerUserId} offlineOnly /> })()}
         </section>
       </>}
     </main>

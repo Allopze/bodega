@@ -4,16 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useLayoutEffect, use
 import { useRouter } from "next/navigation"
 import { toast } from "@/lib/toast"
 import { RE20_ATTACHMENT_ACCEPT_MESSAGE, RE20_ATTACHMENT_LIMITS } from "@/lib/prevention/re20-attachment-limits"
-import {
-  deleteRe20OfflineDraft,
-  getRe20OfflineDraft,
-  getRe20VaultState,
-  listRe20OfflineDraftHeaders,
-  lockRe20Vault,
-  putRe20OfflineDraft,
-  touchRe20Vault,
-  unlockRe20Vault,
-} from "@/lib/prevention/re20-offline-vault"
+import { deleteRe20OfflineDraft, getRe20OfflineDraft, putRe20OfflineDraft } from "@/lib/prevention/re20-offline-drafts"
 import { savePreventionIncidentRe20WorkspaceAction } from "../../actions"
 import { re20StageDeadlines, type Re20Deadline } from "./deadlines"
 import type {
@@ -53,14 +44,10 @@ export function isRe20StageId(value: unknown): value is Re20StageId {
   return typeof value === "string" && (RE20_STAGE_IDS as readonly string[]).includes(value)
 }
 
-interface VaultState {
-  configured: boolean
-  unlocked: boolean
-  /** Hay una copia cifrada de ESTE expediente en el dispositivo. */
+/** La copia de ESTE expediente que se guarda sola en el equipo (cambios sin enviar). */
+interface LocalCopyState {
   draftExists: boolean
   draftSavedAt: string | null
-  /** La persona pidió preparar el trabajo sin conexión. */
-  requested: boolean
 }
 
 interface State {
@@ -84,8 +71,8 @@ interface State {
   error: string | null
   lastSavedAt: string | null
   stage: Re20StageId
-  vault: VaultState
-  /** Hay cambios que la bóveda todavía no tiene. */
+  local: LocalCopyState
+  /** Hay cambios que la copia local todavía no tiene. */
   localDirty: boolean
 }
 
@@ -104,8 +91,10 @@ type Action =
   | { type: "addAttachments"; items: Re20OfflineAttachment[] }
   | { type: "removeAttachment"; id: string }
   | { type: "attachmentsUploaded"; remaining: Re20OfflineAttachment[] }
-  | { type: "vault"; patch: Partial<VaultState> }
+  | { type: "local"; patch: Partial<LocalCopyState> }
   | { type: "localPersisted"; savedAt: string }
+  /** Se retiró la copia local (el servidor ya tiene todo); `dirty` si hubo ediciones mientras se guardaba. */
+  | { type: "localCleared"; dirty: boolean }
   | { type: "stage"; stage: Re20StageId }
 
 function isDirty(state: Pick<State, "data" | "base" | "sensitiveTouched" | "attachments">) {
@@ -156,7 +145,7 @@ function reducer(state: State, action: Action): State {
         data: draftData,
         attachments: copyJson(payload.attachments ?? []),
         extras: { ...(payload.qualityCriteria ? { qualityCriteria: payload.qualityCriteria } : {}), ...(payload.extras ?? {}) },
-        vault: { ...state.vault, draftExists: true, draftSavedAt: payload.savedAt },
+        local: { draftExists: true, draftSavedAt: payload.savedAt },
       }
       if (payload.conflicts?.length) {
         next = {
@@ -253,10 +242,12 @@ function reducer(state: State, action: Action): State {
       }
     case "attachmentsUploaded":
       return { ...state, attachments: action.remaining }
-    case "vault":
-      return { ...state, vault: { ...state.vault, ...action.patch } }
+    case "local":
+      return { ...state, local: { ...state.local, ...action.patch } }
     case "localPersisted":
-      return { ...state, localDirty: false, vault: { ...state.vault, draftExists: true, draftSavedAt: action.savedAt } }
+      return { ...state, localDirty: false, local: { draftExists: true, draftSavedAt: action.savedAt } }
+    case "localCleared":
+      return { ...state, localDirty: action.dirty, local: { draftExists: false, draftSavedAt: null } }
     case "stage":
       return { ...state, stage: action.stage }
   }
@@ -350,7 +341,7 @@ function initialState(props: Re20WorkspaceProps): State {
     error: null,
     lastSavedAt: null,
     stage: isRe20StageId(initialStage) ? initialStage : "preliminar",
-    vault: { configured: false, unlocked: Boolean(initialLocalDraft), draftExists: Boolean(initialLocalDraft), draftSavedAt: initialLocalDraft?.savedAt ?? null, requested: false },
+    local: { draftExists: Boolean(initialLocalDraft), draftSavedAt: initialLocalDraft?.savedAt ?? null },
     localDirty: false,
   }
   if (!initialLocalDraft) return state
@@ -381,7 +372,7 @@ export function useRe20Workspace(props: Re20WorkspaceProps) {
   }, [])
   const router = useRouter()
   const [state, dispatch] = useReducer(reducer, props, initialState)
-  // Las funciones asíncronas (guardar, copia cifrada) leen el estado vigente, no el de su render.
+  // Las funciones asíncronas (guardar, copia local) leen el estado vigente, no el de su render.
   const stateRef = useRef(state)
   useLayoutEffect(() => { stateRef.current = state })
   const online = useSyncExternalStore(subscribeOnline, () => navigator.onLine, () => true)
@@ -406,42 +397,39 @@ export function useRe20Workspace(props: Re20WorkspaceProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspace?.version])
 
-  /* Bóveda: estado inicial y, si ya está abierta, la copia de este expediente. */
+  function restore(payload: Re20LocalDraft) {
+    if (payload.incidentId !== incident.id) return
+    dispatch({
+      type: "restore",
+      payload,
+      latestVersion: workspace?.version ?? 0,
+      latestData: normalizeRe20Data(workspace?.data ?? {}),
+      remoteSensitive: sensitivePayload ? normalizeRe20Sensitive(sensitivePayload, incident.knownAt) : null,
+      canSensitive: permissions.canSensitive,
+    })
+  }
+
+  /* Copia local de este expediente: si quedaron cambios sin enviar, se recuperan al abrirlo. */
   useEffect(() => {
     let cancelled = false
     void (async () => {
-      const vaultState = await getRe20VaultState(userId)
-      const headers = await listRe20OfflineDraftHeaders(userId)
-      if (cancelled) return
-      dispatch({ type: "vault", patch: { configured: vaultState.configured, unlocked: vaultState.unlocked, draftExists: headers.some((header) => header.id === localDraftId) } })
-      if (!vaultState.unlocked || props.initialLocalDraft) return
       const draft = await getRe20OfflineDraft<Re20LocalDraft>(userId, localDraftId)
-      if (!cancelled && draft?.kind === "incident_workspace") restore(draft.payload)
+      if (cancelled) return
+      dispatch({ type: "local", patch: { draftExists: Boolean(draft), draftSavedAt: draft?.payload.savedAt ?? null } })
+      if (!draft || draft.kind !== "incident_workspace" || props.initialLocalDraft || incident.status === "closed" || draft.payload.incidentId !== incident.id) return
+      restore(draft.payload)
+      const { data, baseData, sensitive, attachments } = draft.payload
+      if (stableJson(data) !== stableJson(baseData) || sensitive || (attachments?.length ?? 0) > 0) {
+        toast.info("Recuperamos los cambios de este equipo que no se habían enviado. Revísalos y guarda.")
+      }
     })().catch(() => {})
     return () => { cancelled = true }
   // Se restaura una vez por expediente al montar.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, localDraftId])
 
-  /* La bóveda se cierra sola por inactividad o desde otra pestaña. */
-  useEffect(() => {
-    const keepAlive = () => touchRe20Vault(userId)
-    const handleLock = (event: Event) => {
-      if ((event as CustomEvent<{ userId?: string }>).detail?.userId !== userId) return
-      dispatch({ type: "vault", patch: { unlocked: false } })
-    }
-    const events = ["pointerdown", "keydown", "touchstart"] as const
-    for (const name of events) window.addEventListener(name, keepAlive)
-    window.addEventListener("re20-vault-locked", handleLock)
-    return () => {
-      for (const name of events) window.removeEventListener(name, keepAlive)
-      window.removeEventListener("re20-vault-locked", handleLock)
-    }
-  }, [userId])
-
   const persistLocalDraft = useCallback(async (overrides: { version?: number; base?: Re20Data; data?: Re20Data; attachments?: Re20OfflineAttachment[] } = {}) => {
     const current = stateRef.current
-    if (!current.vault.unlocked) throw new Error("Desbloquea la bóveda de este dispositivo para guardar una copia cifrada.")
     if (current.localSensitivePending) throw new Error("Este borrador trae datos reservados: sólo una persona con acceso reservado puede abrirlo o sincronizarlo.")
     const savedAt = new Date().toISOString()
     const payload: Re20LocalDraft = {
@@ -449,10 +437,11 @@ export function useRe20Workspace(props: Re20WorkspaceProps) {
       baseVersion: overrides.version ?? current.version,
       baseData: copyJson(overrides.base ?? current.base) as Record<string, unknown>,
       data: copyJson(overrides.data ?? current.data) as Record<string, unknown>,
-      ...(current.sensitiveTouched ? { sensitive: copyJson(current.sensitive), baseSensitive: copyJson(current.baseSensitive) } : {}),
-      ...(current.sensitiveConflict ? { sensitiveConflict: copyJson(current.sensitiveConflict) } : {}),
+      // Lo reservado (declaraciones, entrevista, detalle clínico, DIAT) y los anexos NO se guardan
+      // en el equipo: el borrador local va en claro y la pantalla pública sin conexión lo lee sin
+      // sesión. Viven sólo en memoria y se envían con conexión y propósito auditado.
       conflicts: copyJson(current.conflicts),
-      attachments: copyJson(overrides.attachments ?? current.attachments),
+      attachments: [],
       ...(current.remoteData ? { remoteData: copyJson(current.remoteData) as Record<string, unknown>, remoteVersion: current.remoteVersion ?? undefined } : {}),
       extras: copyJson(current.extras),
       context: {
@@ -467,55 +456,43 @@ export function useRe20Workspace(props: Re20WorkspaceProps) {
     await putRe20OfflineDraft(userId, { id: localDraftId, kind: "incident_workspace", payload, attempts: 0 })
     const verified = await getRe20OfflineDraft<Re20LocalDraft>(userId, localDraftId)
     if (!verified || verified.payload.incidentId !== incident.id || verified.payload.savedAt !== savedAt) {
-      throw new Error("No se pudo comprobar la copia cifrada. Deja esta pantalla abierta e inténtalo de nuevo.")
+      throw new Error("No se pudo comprobar la copia guardada en este equipo. Deja esta pantalla abierta e inténtalo de nuevo.")
     }
     dispatch({ type: "localPersisted", savedAt })
   }, [incident, policy, options, qualityReviews, legacyInvestigation, diffusions, notifications, capa, currentUser, people, involvedPeople, permissions, userId, localDraftId])
 
-  /* Copia cifrada automática mientras la bóveda está abierta. */
+  /* Copia local automática: todo cambio sin enviar queda guardado en este equipo (sin frase, sin pantalla). */
   useEffect(() => {
-    if (!state.vault.unlocked || !state.localDirty || state.localSensitivePending) return
+    if (!state.localDirty || state.localSensitivePending) return
     const timer = setTimeout(() => {
-      void persistLocalDraft().catch((error) => toast.error(error instanceof Error ? error.message : "No se pudo guardar la copia cifrada."))
+      void persistLocalDraft().catch((error) => {
+        // Con conexión la copia es sólo una red de seguridad: sin almacenamiento local no se molesta a nadie.
+        if (!navigator.onLine || offlineOnly) toast.error(error instanceof Error ? error.message : "No se pudo guardar tu trabajo en este equipo.")
+      })
     }, 700)
     return () => clearTimeout(timer)
-  }, [state.data, state.sensitive, state.extras, state.conflicts, state.attachments, state.localDirty, state.vault.unlocked, state.localSensitivePending, persistLocalDraft])
+  }, [state.data, state.sensitive, state.extras, state.conflicts, state.attachments, state.localDirty, state.localSensitivePending, persistLocalDraft, offlineOnly])
 
-  /* Salir con cambios que no están ni en el servidor ni cifrados en el dispositivo. */
+  /* Salir con cambios que no están ni en el servidor ni guardados en este equipo. */
   useEffect(() => {
     if (!dirty || readOnly) return
     const warn = (event: BeforeUnloadEvent) => {
-      if (stateRef.current.vault.unlocked && !stateRef.current.localDirty) return
+      if (stateRef.current.local.draftExists && !stateRef.current.localDirty) return
       event.preventDefault()
     }
     window.addEventListener("beforeunload", warn)
     return () => window.removeEventListener("beforeunload", warn)
   }, [dirty, readOnly])
 
-  function restore(payload: Re20LocalDraft) {
-    if (payload.incidentId !== incident.id) return
-    dispatch({
-      type: "restore",
-      payload,
-      latestVersion: workspace?.version ?? 0,
-      latestData: normalizeRe20Data(workspace?.data ?? {}),
-      remoteSensitive: sensitivePayload ? normalizeRe20Sensitive(sensitivePayload, incident.knownAt) : null,
-      canSensitive: permissions.canSensitive,
-    })
-  }
-
-  async function unlockVault(passphrase: string) {
-    await unlockRe20Vault(userId, passphrase)
-    const draft = await getRe20OfflineDraft<Re20LocalDraft>(userId, localDraftId)
-    if (draft?.kind === "incident_workspace") restore(draft.payload)
-    dispatch({ type: "vault", patch: { configured: true, unlocked: true } })
-    toast.success(draft ? "Recuperamos la copia de este dispositivo. Revisa los cambios y guarda." : "Bóveda abierta: los cambios se copiarán cifrados en este dispositivo.")
-  }
-
-  function lockVault() {
-    lockRe20Vault(userId)
-    dispatch({ type: "vault", patch: { unlocked: false } })
-  }
+  /* Vuelve la señal con cambios sin enviar: se avisa; guardar (con la elección de conflictos y el propósito de los datos reservados) sigue siendo de la persona. */
+  const wasOnline = useRef(online)
+  useEffect(() => {
+    const returned = online && !wasOnline.current
+    wasOnline.current = online
+    if (returned && !offlineOnly && !readOnly && isDirty(stateRef.current)) {
+      toast.info("Volvió la conexión. Guarda el expediente para enviar tus cambios.")
+    }
+  }, [online, offlineOnly, readOnly])
 
   async function uploadAttachment(attachment: Re20OfflineAttachment, expectedWorkspaceVersion: number) {
     const form = new FormData()
@@ -548,20 +525,15 @@ export function useRe20Workspace(props: Re20WorkspaceProps) {
       return null
     }
     if (current.localSensitivePending) {
-      toast.error("Este borrador trae datos reservados. Queda cifrado hasta que lo abra una persona con acceso reservado.")
+      toast.error("Este borrador trae datos reservados. Queda en este equipo hasta que lo abra una persona con acceso reservado.")
       return null
     }
     if (offlineOnly || !online) {
-      if (!current.vault.unlocked) {
-        dispatch({ type: "vault", patch: { requested: true } })
-        toast.error("Sin conexión. Abre la bóveda de este dispositivo para guardar una copia cifrada.")
-        return null
-      }
       try {
         await persistLocalDraft()
-        toast.success("Guardado cifrado en este dispositivo. Se enviará cuando abras el caso con conexión.")
+        toast.success("Guardado en este equipo. Para enviarlo, abre el caso con conexión y guarda.")
       } catch (error) {
-        toast.error(error instanceof Error ? error.message : "No se pudo guardar la copia cifrada.")
+        toast.error(error instanceof Error ? error.message : "No se pudo guardar tu trabajo en este equipo.")
       }
       return null
     }
@@ -573,7 +545,8 @@ export function useRe20Workspace(props: Re20WorkspaceProps) {
     const sent = copyJson(current.data)
     const sentSensitive = current.sensitiveTouched
     try {
-      if (current.attachments.length > 0 && current.vault.unlocked) await persistLocalDraft()
+      // Los anexos pesan: se aseguran en este equipo antes de enviar, por si se corta la señal a mitad.
+      if (current.attachments.length > 0) await persistLocalDraft().catch(() => {})
       const result = await savePreventionIncidentRe20WorkspaceAction({
         incidentId: incident.id,
         expectedVersion: current.version,
@@ -598,28 +571,33 @@ export function useRe20Workspace(props: Re20WorkspaceProps) {
           remaining = remaining.filter((item) => item.id !== attachment.id)
           dispatch({ type: "attachmentsUploaded", remaining })
         } catch (error) {
-          if (stateRef.current.vault.unlocked) await persistLocalDraft({ version: nextVersion, base: sent, attachments: remaining }).catch(() => {})
+          await persistLocalDraft({ version: nextVersion, base: sent, attachments: remaining }).catch(() => {})
           toast.warning(`${error instanceof Error ? error.message : "Un anexo no se pudo subir."} El expediente sí quedó guardado; vuelve a guardar para reintentar el anexo.`)
           return nextVersion
         }
       }
-      if (stateRef.current.vault.unlocked) {
-        if (remaining.length > 0) await persistLocalDraft({ version: nextVersion, base: sent, attachments: remaining })
-        else if (stateRef.current.vault.draftExists) {
-          await deleteRe20OfflineDraft(userId, localDraftId)
-          dispatch({ type: "vault", patch: { draftExists: false, draftSavedAt: null } })
-        }
+      // El servidor ya lo tiene: la copia de este equipo sobra, salvo anexos por subir o lo escrito mientras se guardaba.
+      if (remaining.length > 0) {
+        await persistLocalDraft({ version: nextVersion, base: sent, attachments: remaining }).catch(() => {})
+      } else {
+        const latest = stateRef.current
+        const editedDuringSave = stableJson(latest.data) !== stableJson(sent)
+          || (sentSensitive ? stableJson(latest.sensitive) !== stableJson(current.sensitive) : latest.sensitiveTouched)
+        await deleteRe20OfflineDraft(userId, localDraftId).catch(() => {})
+        dispatch({ type: "localCleared", dirty: editedDuringSave })
       }
       toast.success(result.message ?? "Expediente guardado")
       return nextVersion
     } catch (error) {
-      if (!navigator.onLine && stateRef.current.vault.unlocked) {
+      const failure = error instanceof Error ? error.message : ""
+      if (!navigator.onLine || /failed to fetch|networkerror|network request failed|load failed/i.test(failure)) {
         await persistLocalDraft().catch(() => {})
-        dispatch({ type: "saveError", message: "Se cortó la conexión. Los cambios quedaron cifrados en este dispositivo." })
-        toast.warning("Se cortó la conexión. Los cambios quedaron cifrados en este dispositivo.")
+        const lost = "Se cortó la conexión. Los cambios quedaron guardados en este equipo."
+        dispatch({ type: "saveError", message: lost })
+        toast.warning(lost)
         return null
       }
-      const message = error instanceof Error ? error.message : "No se pudo guardar el expediente."
+      const message = failure || "No se pudo guardar el expediente."
       dispatch({ type: "saveError", message })
       toast.error(message)
       return null
@@ -663,11 +641,6 @@ export function useRe20Workspace(props: Re20WorkspaceProps) {
     if (list.length === 0 || readOnly) return []
     if (!permissions.canSensitive || (!offlineOnly && purpose.length < 3)) {
       toast.error("Los anexos son datos reservados: ábrelos primero indicando para qué los necesitas.")
-      return []
-    }
-    if ((offlineOnly || !online) && !stateRef.current.vault.unlocked) {
-      dispatch({ type: "vault", patch: { requested: true } })
-      toast.error("Sin conexión. Abre la bóveda de este dispositivo para guardar el anexo cifrado.")
       return []
     }
     const current = stateRef.current
@@ -759,7 +732,7 @@ export function useRe20Workspace(props: Re20WorkspaceProps) {
     updateSensitive: (mutate: (sensitive: Re20Sensitive) => Re20Sensitive) => dispatch({ type: "updateSensitive", mutate }),
     task: (taskId: string): Re20Task => re20TaskOf(state.data, taskId),
     setTaskStatus: (taskId: string, taskStatus: Re20Task["status"]) => dispatch({ type: "update", mutate: (data) => withRe20TaskStatus(data, taskId, taskStatus) }),
-    /** Borradores de etapa que no son parte de `data` (p. ej. la revisión de calidad sin enviar); viajan en la bóveda. */
+    /** Borradores de etapa que no son parte de `data` (p. ej. la revisión de calidad sin enviar); viajan en la copia local del equipo. */
     extras: state.extras,
     setExtra: (key: string, value: unknown) => dispatch({ type: "setExtra", key, value }),
 
@@ -786,25 +759,13 @@ export function useRe20Workspace(props: Re20WorkspaceProps) {
 
     /* Anexos: se validan aquí (tipo real y tamaño) y se suben al guardar. */
     pendingAttachments,
+    /** Hay datos reservados o anexos sin enviar: no se guardan en el equipo, sólo en memoria. */
+    reservedUnsaved: state.sensitiveTouched || state.attachments.length > 0,
     addAttachments,
     removeAttachment: (id: string) => dispatch({ type: "removeAttachment", id }),
     attachmentHref: (id: string) => (sensitiveAvailable && purpose.length >= 3 && !offlineOnly && !state.attachments.some((item) => item.id === id)
       ? `/api/prevencion/incidentes/${incident.id}/re20/attachments/${encodeURIComponent(id)}?purpose=${encodeURIComponent(purpose)}`
       : null),
-
-    /* Bóveda cifrada del dispositivo. */
-    vault: {
-      ...state.vault,
-      /**
-       * Se muestra sólo si hay copia de este caso, no hay conexión, está abierta o
-       * se pidió. En la pantalla sin conexión la bóveda la maneja esa pantalla.
-       */
-      visible: !offlineOnly && (!online || state.vault.draftExists || state.vault.unlocked || state.vault.requested),
-      unlock: unlockVault,
-      lock: lockVault,
-      request: () => dispatch({ type: "vault", patch: { requested: true } }),
-      saveNow: () => persistLocalDraft(),
-    },
 
     /* Navegación entre etapas (`?etapa=`). */
     stage: state.stage,
