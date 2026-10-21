@@ -72,14 +72,8 @@ export const preventionIncidentRe20Attachments = pgTable("prevention_incident_re
   id: text("id").primaryKey(),
   incidentId: text("incident_id").notNull().references(() => preventionIncidents.id, { onDelete: "cascade" }),
   clientAttachmentId: text("client_attachment_id").notNull(),
-  /** Anexos nuevos: el binario cifrado vive en disco (`prevention_sensitive_files`). */
-  sensitiveFileId: text("sensitive_file_id").references(() => preventionSensitiveFiles.id, { onDelete: "restrict" }),
-  /** LEGADO: binario en base64 dentro de Postgres. Sólo filas anteriores a la migración a disco;
-   *  `scripts/migrate-re20-attachments-to-files.ts` las mueve y una migración posterior elimina estas columnas. */
-  encryptedFile: text("encrypted_file"),
-  fileIv: text("file_iv"),
-  fileAuthTag: text("file_auth_tag"),
-  fileKeyVersion: text("file_key_version"),
+  /** El binario cifrado vive en disco (`prevention_sensitive_files`). */
+  sensitiveFileId: text("sensitive_file_id").notNull().references(() => preventionSensitiveFiles.id, { onDelete: "restrict" }),
   encryptedMetadata: text("encrypted_metadata").notNull(),
   metadataIv: text("metadata_iv").notNull(),
   metadataAuthTag: text("metadata_auth_tag").notNull(),
@@ -91,7 +85,6 @@ export const preventionIncidentRe20Attachments = pgTable("prevention_incident_re
 }, (table) => [
   uniqueIndex("prevention_incident_re20_attachment_client_unique").on(table.incidentId, table.clientAttachmentId),
   uniqueIndex("prevention_incident_re20_attachment_file_unique").on(table.sensitiveFileId),
-  check("prevention_incident_re20_attachment_storage_valid", sql`${table.sensitiveFileId} IS NOT NULL OR ${table.encryptedFile} IS NOT NULL`),
   check("prevention_incident_re20_attachment_checksum_valid", sql`length(${table.checksumSha256}) = 64`),
   check("prevention_incident_re20_attachment_size_valid", sql`${table.fileSize} > 0 AND ${table.fileSize} <= 10485760`),
 ])

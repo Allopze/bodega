@@ -34,8 +34,7 @@ import {
 
 /* Anexos RE-20. El binario va cifrado en disco (infraestructura de archivos
  * sensibles); la tabla de anexos es el índice por (incidente, id de cliente) y
- * guarda nombre/MIME cifrados. Las filas anteriores (binario en base64 en
- * Postgres) siguen siendo legibles hasta correr scripts/migrate-re20-attachments-to-files.ts. */
+ * guarda nombre/MIME cifrados. */
 
 const metadataSchema = z.object({
   incidentId: z.string().min(1),
@@ -234,25 +233,15 @@ export async function getPreventionIncidentRe20Attachment(args: {
     encryptedPayload: row.encryptedMetadata, iv: row.metadataIv, authTag: row.metadataAuthTag, keyVersion: row.metadataKeyVersion,
   }, `${aad}:metadata`)
 
-  let buffer: Buffer
-  if (row.sensitiveFileId) {
-    const [file] = await db.select().from(preventionSensitiveFiles)
-      .where(and(eq(preventionSensitiveFiles.id, row.sensitiveFileId), eq(preventionSensitiveFiles.entityId, args.incidentId))).limit(1)
-    if (!file) throw new Error("Archivo sensible no disponible.")
-    const absolutePath = resolvePreventionSensitiveFile(file.encryptedFilePath)
-    if (!absolutePath) throw new Error("Archivo sensible no disponible.")
-    const encryptedBuffer = await readFile(absolutePath)
-    if (sha256(encryptedBuffer) !== file.encryptedChecksum) throw new Error("El archivo cifrado no supera la verificación de integridad.")
-    buffer = decryptPreventionBuffer({ encryptedBuffer, iv: file.iv, authTag: file.authTag, keyVersion: file.keyVersion }, `sensitive-file:${file.id}`)
-    if (sha256(buffer) !== file.sourceChecksum) throw new Error("El archivo restaurado no coincide con el checksum de origen.")
-  } else if (row.encryptedFile && row.fileIv && row.fileAuthTag && row.fileKeyVersion) {
-    // LEGADO: binario en Postgres, aún no movido a disco.
-    buffer = decryptPreventionBuffer({
-      encryptedBuffer: Buffer.from(row.encryptedFile, "base64"), iv: row.fileIv, authTag: row.fileAuthTag, keyVersion: row.fileKeyVersion,
-    }, `${aad}:file`)
-  } else {
-    throw new Error("Archivo sensible no disponible.")
-  }
+  const [file] = await db.select().from(preventionSensitiveFiles)
+    .where(and(eq(preventionSensitiveFiles.id, row.sensitiveFileId), eq(preventionSensitiveFiles.entityId, args.incidentId))).limit(1)
+  if (!file) throw new Error("Archivo sensible no disponible.")
+  const absolutePath = resolvePreventionSensitiveFile(file.encryptedFilePath)
+  if (!absolutePath) throw new Error("Archivo sensible no disponible.")
+  const encryptedBuffer = await readFile(absolutePath)
+  if (sha256(encryptedBuffer) !== file.encryptedChecksum) throw new Error("El archivo cifrado no supera la verificación de integridad.")
+  const buffer = decryptPreventionBuffer({ encryptedBuffer, iv: file.iv, authTag: file.authTag, keyVersion: file.keyVersion }, `sensitive-file:${file.id}`)
+  if (sha256(buffer) !== file.sourceChecksum) throw new Error("El archivo restaurado no coincide con el checksum de origen.")
   await auditAccess({ access: args.access, incidentId: args.incidentId, worksiteId: incident.worksiteId, purpose, outcome: "granted" })
   return { buffer, metadata, checksumSha256: row.checksumSha256, createdAt: row.createdAt, createdByUserId: row.createdByUserId }
 }

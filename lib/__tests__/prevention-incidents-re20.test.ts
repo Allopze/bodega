@@ -1233,11 +1233,10 @@ describe("barrido RE-20 (D4): reconcileIncidentRe20Obligations", () => {
 
       const [stored] = await inMemoryDb.select().from(schema.preventionIncidentRe20Attachments)
         .where(eq(schema.preventionIncidentRe20Attachments.clientAttachmentId, input.clientAttachmentId))
-      expect(stored?.encryptedFile).toBeNull()
       expect(stored?.sensitiveFileId).toBeTruthy()
       expect(JSON.stringify(stored)).not.toContain("evidencia-reservada.txt")
       const [file] = await inMemoryDb.select().from(schema.preventionSensitiveFiles)
-        .where(eq(schema.preventionSensitiveFiles.id, stored!.sensitiveFileId!))
+        .where(eq(schema.preventionSensitiveFiles.id, stored!.sensitiveFileId))
       expect(file).toMatchObject({ domain: "incident_re20", entityId: input.incidentId, mimeType: "text/plain" })
       expect(JSON.stringify(file)).not.toContain("evidencia-reservada.txt")
       const onDisk = await readdir(resolvePreventionSensitiveFilesDir())
@@ -1269,20 +1268,6 @@ describe("barrido RE-20 (D4): reconcileIncidentRe20Obligations", () => {
       expect(all).toHaveLength(1)
       expect(await readdir(resolvePreventionSensitiveFilesDir())).toHaveLength(1)
 
-      // Las filas LEGADO (binario en Postgres) siguen siendo legibles hasta migrarlas a disco.
-      const { encryptPreventionBuffer, encryptPreventionPayload } = await import("@/lib/security/prevention-field-encryption")
-      const legacyAad = "incident-re20-attachment:inc-re20-attachment:attachment-legacy-1"
-      const legacyBytes = Buffer.from("anexo legado")
-      const legacyFile = encryptPreventionBuffer(legacyBytes, `${legacyAad}:file`)
-      const legacyMeta = encryptPreventionPayload({ fileName: "legado.txt", mimeType: "text/plain", size: legacyBytes.length }, `${legacyAad}:metadata`)
-      await inMemoryDb.insert(schema.preventionIncidentRe20Attachments).values({
-        id: "re20att-legacy", incidentId: input.incidentId, clientAttachmentId: "attachment-legacy-1",
-        encryptedFile: legacyFile.encryptedBuffer.toString("base64"), fileIv: legacyFile.iv, fileAuthTag: legacyFile.authTag, fileKeyVersion: legacyFile.keyVersion,
-        encryptedMetadata: legacyMeta.encryptedPayload, metadataIv: legacyMeta.iv, metadataAuthTag: legacyMeta.authTag, metadataKeyVersion: legacyMeta.keyVersion,
-        checksumSha256: "0".repeat(64), fileSize: legacyBytes.length, createdByUserId: USER_ID, createdAt: new Date().toISOString(),
-      })
-      const legacy = await read({ incidentId: input.incidentId, attachmentId: "attachment-legacy-1", purpose: input.purpose, access })
-      expect(Buffer.from(legacy.buffer).toString("utf8")).toBe("anexo legado")
     } finally {
       await inMemoryDb.delete(schema.preventionIncidentRe20Attachments)
       await inMemoryDb.delete(schema.preventionSensitiveFiles)
