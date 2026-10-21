@@ -575,6 +575,9 @@ RUN addgroup -g 1001 -S nodejs && \
 # the server-side PDF route (app/(print)/sst/[id]/print/pdf/route.ts).
 # PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH tells playwright-core to use the
 # system Chromium rather than its own downloaded browser.
+# gnupg: backup-orchestrator.sh cifra el snapshot con gpg cuando
+# BACKUP_ENCRYPTION_PASSPHRASE está definida, y aborta si gpg no existe. Sin el
+# paquete, definir la passphrase dejaba de producir respaldos del todo.
 RUN apk add --no-cache \
     libc6-compat \
     chromium \
@@ -587,7 +590,8 @@ RUN apk add --no-cache \
     coreutils \
     bash \
     rclone \
-    jq
+    jq \
+    gnupg
 
 ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
@@ -688,8 +692,14 @@ RUN chmod +x ./scripts/backup-*.sh ./scripts/restore-all.sh ./scripts/catastroph
 # UID/GID 1001 (Docker copies the mountpoint's ownership into an empty volume).
 # Otherwise the volume defaults to root and `mkdir /data/storage/<repuestos|...>`
 # at runtime fails with EACCES.
-RUN mkdir -p /app/storage /app/.next/cache /data/storage /app/backups && \
-    chown nextjs:nodejs /app/storage /data/storage /app/backups && \
+# /data/backups (BACKUP_DIR) es el mismo caso para el volumen bodega-backups: sin
+# precrearlo, el orquestador de respaldos no puede crear ni un snapshot.
+# /app/.gnupg: backup-scheduler corre con HOME=/app (de root) y gpg aborta si no
+# puede crear su homedir —"can't create directory '/app/.gnupg'"—, así que el
+# snapshot cifrado fallaba aun con gnupg instalado.
+RUN mkdir -p /app/storage /app/.next/cache /data/storage /data/backups /app/backups /app/.gnupg && \
+    chown nextjs:nodejs /app/storage /data/storage /data/backups /app/backups /app/.gnupg && \
+    chmod 700 /app/.gnupg && \
     chown -R nextjs:nodejs /app/.next/cache
 
 USER nextjs

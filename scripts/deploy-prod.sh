@@ -764,6 +764,43 @@ if [ "$public_smoke_ok" -ne 1 ]; then
 fi
 [ -n "$PROD_PUBLIC_URL" ] && echo "    200 OK desde fuera"
 
+# `backup-scheduler` vive bajo `profiles: ["backup"]`, así que ningún `up` sin
+# `--profile backup` lo crea ni lo actualiza. El deploy no lo tocaba: hasta el
+# 2026-10-21 producción pasó semanas sin el contenedor —sin respaldo diario— y
+# con el BACKUP_HOST_PATH en root:root, donde el uid 1001 no puede escribir, sin
+# que un solo deploy lo notara. Va después del rollback a propósito: un
+# scheduler roto no invalida la release, pero el deploy no termina en verde.
+start_backup_scheduler() {
+  run_in_prod docker compose --profile backup up -d --no-deps --force-recreate backup-scheduler
+}
+
+check_backup_scheduler() {
+  scheduler_containers=$(run_in_prod docker compose --profile backup ps -q backup-scheduler | tr -d '\r')
+  set -- $scheduler_containers
+  test "$#" -eq 1
+  scheduler_container="$1"
+  test "$(prod_run docker inspect --format '{{.Config.Image}}' "$scheduler_container" | tr -d '\r')" = "$IMAGE"
+  # El scheduler espera a /api/health y sale si no responde; tras ese margen
+  # tiene que seguir corriendo, no reiniciándose.
+  sleep 10
+  test "$(prod_run docker inspect --format '{{.State.Status}}' "$scheduler_container" | tr -d '\r')" = "running"
+  # Mismo montaje y mismo uid que `app`: si acá no se escribe, tampoco funciona
+  # el botón de Administración › Respaldos.
+  run_in_prod docker compose --profile backup exec -T backup-scheduler sh -c 'test -w "$BACKUP_DIR"'
+}
+
+run_timed "Levantando el respaldo programado (backup-scheduler)" start_backup_scheduler
+if ! run_timed "Verificando el respaldo programado" check_backup_scheduler; then
+  echo
+  echo "ERROR: la release quedó arriba, pero el respaldo diario no está operativo."
+  echo "       backup-scheduler no corre con $IMAGE o no puede escribir en BACKUP_DIR."
+  echo "       Revisa en el servidor:"
+  echo "         docker compose --profile backup logs --tail=50 backup-scheduler"
+  echo "         ls -ld \"\$BACKUP_HOST_PATH\"   # debe ser 1001:1001 (sudo chown 1001:1001 ...)"
+  echo "       No se hace rollback: la aplicación no depende del scheduler."
+  exit 1
+fi
+
 echo
 echo "==> Verificando Base preventiva 2026..."
 
