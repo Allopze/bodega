@@ -210,7 +210,10 @@ describe("atención de Prevención — tipo MIPER", () => {
     expect(ids).toContain("miper_entry:entry-intol-retirada")
     expect(ids).not.toContain("miper_entry:entry-imp-texto")
     expect(ids).not.toContain("miper_entry:entry-imp-controlado")
-    expect(items.find((item) => item.id === "miper_entry:entry-intol-existente")!.title).toBe("Riesgo Intolerable sin medida por implementar con responsable y plazo")
+    // El título es el riesgo; la banda y lo que falta van en el detalle.
+    const existente = items.find((item) => item.id === "miper_entry:entry-intol-existente")!
+    expect(existente.title).toBe("Caída desde la batea")
+    expect(existente.detail).toBe("Intolerable · falta una medida con responsable y plazo")
     // Lo de antes no cambia: el Intolerable sin medidas y el Importante cuya medida no tiene plazo siguen.
     expect(ids).toEqual(expect.arrayContaining(["miper_entry:entry-intol", "miper_entry:entry-important"]))
   })
