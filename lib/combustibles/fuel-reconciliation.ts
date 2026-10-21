@@ -50,6 +50,23 @@ export interface CycleMovementCandidate {
   quantity: number
 }
 
+export interface TaeReceiptCandidate {
+  id: string
+  sourceId: string | null
+  eventType: string
+  productId: string
+  worksiteId: string
+  targetLocationId: string | null
+  quantity: number
+}
+
+export interface TaeReceiptDecision {
+  status: "matched" | "ambiguous" | "unmatched"
+  candidateId: string | null
+  reason: string
+  litersDelta: number | null
+}
+
 export interface CycleReconciliationDecision {
   status: "matched" | "ambiguous" | "unmatched"
   candidate: CycleMovementCandidate | null
@@ -146,6 +163,30 @@ export function decideCycleMovementMatch(
   if (withinLitersTolerance.length > 1) return { status: "ambiguous", candidate: null, candidates: withinLitersTolerance, reason: "más de una entrega física coincide dentro de tolerancia", litersDelta: null }
   if (scoped.length > 0) return { status: "unmatched", candidate: null, candidates: scoped, reason: "litros fuera de tolerancia para las entregas físicas candidatas", litersDelta: null }
   return { status: "unmatched", candidate: null, candidates: [], reason: "sin entrega física compatible por proveedor, producto, faena, vehículo y fecha", litersDelta: null }
+}
+
+/** TAE is station-to-tank evidence: match its exact guide to a received movement. */
+export function decideTaeReceiptMatch(
+  evidence: Pick<ProviderEvidence, "productId" | "worksiteId" | "quantity"> & { documentNumber: string | null; storageLocationId: string | null },
+  candidates: TaeReceiptCandidate[],
+  toleranceLiters = DEFAULT_TOLERANCES.liters,
+): TaeReceiptDecision {
+  const byGuide = candidates.filter((candidate) => candidate.sourceId === evidence.documentNumber && candidate.eventType === "received")
+  const scoped = byGuide.filter((candidate) => (
+    evidence.productId !== null
+    && candidate.productId === evidence.productId
+    && evidence.worksiteId !== null
+    && candidate.worksiteId === evidence.worksiteId
+    && (!evidence.storageLocationId || candidate.targetLocationId === evidence.storageLocationId)
+  ))
+  const matches = scoped.filter((candidate) => evidence.quantity !== null && withinTolerance(candidate.quantity, evidence.quantity, toleranceLiters))
+  if (matches.length === 1) {
+    const candidate = matches[0]!
+    return { status: "matched", candidateId: candidate.id, reason: "guía, destino, producto y litros coinciden dentro de tolerancia", litersDelta: candidate.quantity - evidence.quantity! }
+  }
+  if (matches.length > 1) return { status: "ambiguous", candidateId: null, reason: "más de una recepción física coincide con la guía TAE", litersDelta: null }
+  if (byGuide.length > 0) return { status: "unmatched", candidateId: null, reason: "la guía existe, pero difieren destino, producto o litros", litersDelta: null }
+  return { status: "unmatched", candidateId: null, reason: "no existe una recepción física con la guía TAE", litersDelta: null }
 }
 
 /**
@@ -280,6 +321,40 @@ export async function reconcileProviderTransactionToCycleMovement(
   return decision
 }
 
+/** Conciliates TAE financial evidence with its separately stored physical receipt. */
+export async function reconcileProviderTransactionToTaeReceipt(
+  transactionId: string,
+  toleranceLiters = DEFAULT_TOLERANCES.liters,
+): Promise<TaeReceiptDecision> {
+  const transaction = await db.query.fuelProviderTransactions.findFirst({
+    where: eq(fuelProviderTransactions.id, transactionId),
+    columns: { id: true, documentNumber: true, productId: true, worksiteId: true, storageLocationId: true, quantity: true },
+  })
+  if (!transaction) throw new Error("La transacción externa no existe")
+  const candidates = transaction.documentNumber ? await db.query.fuelCycleMovements.findMany({
+    where: and(
+      eq(fuelCycleMovements.eventType, "received"),
+      eq(fuelCycleMovements.sourceType, "copec_tae"),
+      eq(fuelCycleMovements.sourceId, transaction.documentNumber),
+    ),
+    columns: { id: true, sourceId: true, eventType: true, productId: true, worksiteId: true, targetLocationId: true, quantity: true },
+  }) : []
+  const decision = decideTaeReceiptMatch(transaction as Parameters<typeof decideTaeReceiptMatch>[0], candidates, toleranceLiters)
+  await replaceLink({
+    id: nanoid(),
+    providerTransactionId: transactionId,
+    linkType: "cycle_movement",
+    cycleMovementId: decision.candidateId,
+    status: decision.status,
+    matchMethod: "tae_guide_product_worksite_location_quantity",
+    litersDelta: decision.litersDelta,
+    toleranceLiters,
+    reason: decision.reason,
+    updatedAt: new Date().toISOString(),
+  })
+  return decision
+}
+
 /**
  * Concilia las transacciones aceptadas de una corrida contra las cargas
  * internas y las entregas del ciclo físico.
@@ -302,7 +377,7 @@ export async function reconcileProviderTransactionToCycleMovement(
 export async function reconcileFuelProviderRun(runId: string): Promise<{ reconciled: number; matched: number; skippedAggregates: number }> {
   const accepted = await db.query.fuelProviderTransactions.findMany({
     where: and(eq(fuelProviderTransactions.syncRunId, runId), eq(fuelProviderTransactions.status, "accepted")),
-    columns: { id: true, provider: true, supplierId: true, granularity: true },
+    columns: { id: true, provider: true, supplierId: true, sourceAccount: true, granularity: true },
   })
 
   // La evidencia agregada (informe TCT de Copec: una fila por patente y MES) no
@@ -336,6 +411,11 @@ export async function reconcileFuelProviderRun(runId: string): Promise<{ reconci
     // `replaceLink` abre su transacción con un DELETE por (transacción, tipo).
     // El `const [a, b] = [await ..., await ...]` anterior parecía paralelo y no
     // lo era; esto dice lo que hace.
+    if (transaction.provider === "copec" && transaction.sourceAccount.startsWith("tae:")) {
+      const receipt = await reconcileProviderTransactionToTaeReceipt(transaction.id)
+      if (receipt.status === "matched") matched++
+      continue
+    }
     const load = await reconcileProviderTransactionToFuelLoads(transaction.id)
     const cycle = await reconcileProviderTransactionToCycleMovement(transaction.id)
     if (load.status === "matched" || cycle.status === "matched") matched++

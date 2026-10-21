@@ -129,6 +129,57 @@ describe("parseConsumptionExcel", () => {
     })
   })
 
+  it("rejects a Copec detail row with a non-numeric amount instead of recording zero", async () => {
+    const buffer = await createTestExcel([
+      { "Producto": "Diésel", "Tarjeta": "1001", "Patente": "AA-BB11", "Fecha Transacción": "01-01-2026", "Volumen": "10,5", "Monto": "12abc", "RUT Chofer": "12.345.678-9" },
+    ])
+
+    const result = await parseConsumptionExcel(buffer)
+
+    expect(result.rows).toEqual([])
+    expect(result.errors).toContainEqual(expect.objectContaining({ field: "Monto ($)" }))
+    const error = result.errors.find((item) => item.field === "Monto ($)")
+    expect(error?.rawRow).toMatchObject({ Patente: "AA-BB11", Monto: "12abc" })
+    expect(error?.rawRow).not.toHaveProperty("RUT Chofer")
+  })
+
+  it("acepta las variantes de tarjeta TCT y rechaza las de otro canal", async () => {
+    // El informe real de 2026-09 traía 167 filas "TCT PREMIUM" contra 84 "TCT":
+    // la comparación exacta rechazaba dos tercios del consumo y el mes no entraba.
+    const buffer = await createTestExcel([
+      { "Producto": "Diésel", "Tarjeta": "1001", "Tipo de Tarjeta": "TCT", "Patente": "AA-BB11", "Fecha Transacción": "01-01-2026", "Volumen": "10", "Monto": "10.000" },
+      { "Producto": "Diésel", "Tarjeta": "1002", "Tipo de Tarjeta": "TCT PREMIUM", "Patente": "CC-DD22", "Fecha Transacción": "02-01-2026", "Volumen": "20", "Monto": "20.000" },
+      { "Producto": "Diésel", "Tarjeta": "1003", "Tipo de Tarjeta": "TAE", "Patente": "EE-FF33", "Fecha Transacción": "03-01-2026", "Volumen": "30", "Monto": "30.000" },
+    ])
+
+    const result = await parseConsumptionExcel(buffer, { expectedProduct: "diesel", period: { from: "2026-01-01", to: "2026-01-31" } })
+
+    expect(result.rows.map((row) => row.patente).sort()).toEqual(["AA-BB11", "CC-DD22"])
+    expect(result.errors).toEqual([expect.objectContaining({ field: "Tipo de Tarjeta" })])
+  })
+
+  it("rejects Copec detail dates outside the requested month", async () => {
+    const buffer = await createTestExcel([
+      { "Producto": "Diésel", "Tarjeta": "1001", "Patente": "AA-BB11", "Fecha Transacción": "01-02-2026", "Volumen": "10,5", "Monto": "10.000" },
+    ])
+
+    const result = await parseConsumptionExcel(buffer, { expectedProduct: "diesel", period: { from: "2026-01-01", to: "2026-01-31" } })
+
+    expect(result.rows).toEqual([])
+    expect(result.errors[0]).toMatchObject({ field: "Fecha Transacción" })
+  })
+
+  it("rejects Copec detail rows whose declared product differs from the selected report", async () => {
+    const buffer = await createTestExcel([
+      { "Producto": "BlueMax", "Tarjeta": "1001", "Patente": "AA-BB11", "Fecha Transacción": "01-01-2026", "Volumen": "10,5", "Monto": "10.000" },
+    ])
+
+    const result = await parseConsumptionExcel(buffer, { expectedProduct: "diesel", period: { from: "2026-01-01", to: "2026-01-31" } })
+
+    expect(result.rows).toEqual([])
+    expect(result.errors[0]).toMatchObject({ field: "Producto" })
+  })
+
   it("returns a friendly error for a corrupt file", async () => {
     const buffer = new TextEncoder().encode("not an excel file").buffer
     const result = await parseConsumptionExcel(buffer)

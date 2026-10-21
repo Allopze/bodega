@@ -1,10 +1,11 @@
 import { relations, sql } from "drizzle-orm"
-import { boolean, check, index, integer, jsonb, numeric, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
+import { boolean, check, foreignKey, index, integer, jsonb, numeric, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
 import { users } from "./users"
 import { worksites } from "./worksites"
 import { fuelVehicles } from "./fuel-vehicles"
 import { fuelProducts } from "./fuel-products"
 import { fuelSuppliers } from "./fuel-suppliers"
+import { fuelStorageLocations } from "./fuel-cycle"
 
 export const fuelProviderSyncRuns = pgTable("fuel_provider_sync_runs", {
   id: text("id").primaryKey(),
@@ -53,10 +54,12 @@ export const fuelProviderTransactions = pgTable("fuel_provider_transactions", {
   supplierId: text("supplier_id").references(() => fuelSuppliers.id),
   identityKey: text("identity_key").notNull(),
   externalId: text("external_id"),
+  documentNumber: text("document_number"),
   fingerprint: text("fingerprint").notNull(),
   sourceRowKey: text("source_row_key").notNull(),
   worksiteId: text("worksite_id").references(() => worksites.id),
   vehicleId: text("vehicle_id").references(() => fuelVehicles.id),
+  storageLocationId: text("storage_location_id"),
   productId: text("product_id").references(() => fuelProducts.id),
   sourceProduct: text("source_product"),
   sourcePlate: text("source_plate"),
@@ -64,6 +67,7 @@ export const fuelProviderTransactions = pgTable("fuel_provider_transactions", {
   quantity: numeric("quantity", { precision: 14, scale: 4, mode: "number" }),
   unitPrice: numeric("unit_price", { precision: 14, scale: 4, mode: "number" }),
   amount: numeric("amount", { precision: 14, scale: 2, mode: "number" }),
+  amountBasis: text("amount_basis").notNull().default("reported"),
   status: text("status").notNull(),
   /**
    * Qué representa la fila: una transacción del proveedor o el agregado de un
@@ -86,11 +90,13 @@ export const fuelProviderTransactions = pgTable("fuel_provider_transactions", {
   check("fuel_provider_transactions_provider_valid", sql`${table.provider} IN ('copec', 'aramco')`),
   check("fuel_provider_transactions_status_valid", sql`${table.status} IN ('accepted', 'rejected', 'pending', 'superseded')`),
   check("fuel_provider_transactions_granularity_valid", sql`${table.granularity} IN ('transaction', 'period_aggregate')`),
+  check("fuel_provider_transactions_amount_basis_valid", sql`${table.amountBasis} = 'reported'`),
   check("fuel_provider_transactions_values_valid", sql`
     (${table.quantity} IS NULL OR ${table.quantity} >= 0) AND
     (${table.amount} IS NULL OR ${table.amount} >= 0) AND
     (${table.unitPrice} IS NULL OR ${table.unitPrice} >= 0)
   `),
+  foreignKey({ name: "fuel_provider_tx_storage_fk", columns: [table.storageLocationId], foreignColumns: [fuelStorageLocations.id] }),
   uniqueIndex("fuel_provider_transactions_identity_unique")
     .on(table.provider, table.sourceAccount, table.identityKey),
   index("fuel_provider_transactions_run_idx").on(table.syncRunId),
@@ -98,6 +104,7 @@ export const fuelProviderTransactions = pgTable("fuel_provider_transactions", {
   index("fuel_provider_transactions_status_idx").on(table.status),
   index("fuel_provider_transactions_occurred_idx").on(table.occurredAt),
   index("fuel_provider_transactions_source_plate_idx").on(table.sourcePlate),
+  index("fuel_provider_transactions_document_idx").on(table.provider, table.sourceAccount, table.documentNumber),
 ])
 
 export const fuelProviderRejections = pgTable("fuel_provider_rejections", {
@@ -155,6 +162,107 @@ export const fuelProviderMappings = pgTable("fuel_provider_mappings", {
   index("fuel_provider_mappings_vehicle_idx").on(table.vehicleId),
 ])
 
+/** Private, encrypted evidence received from a provider report download. */
+export const fuelProviderFiles = pgTable("fuel_provider_files", {
+  id: text("id").primaryKey(),
+  syncRunId: text("sync_run_id").notNull(),
+  provider: text("provider").notNull(),
+  sourceAccount: text("source_account").notNull(),
+  channel: text("channel").notNull(),
+  product: text("product").notNull(),
+  periodMonth: text("period_month").notNull(),
+  originalFileName: text("original_file_name").notNull(),
+  storagePath: text("storage_path").notNull(),
+  sourceSha256: text("source_sha256").notNull(),
+  encryptedSha256: text("encrypted_sha256").notNull(),
+  encryptionIv: text("encryption_iv").notNull(),
+  encryptionAuthTag: text("encryption_auth_tag").notNull(),
+  encryptionKeyVersion: text("encryption_key_version").notNull(),
+  parserVersion: text("parser_version").notNull(),
+  sourceBytes: integer("source_bytes").notNull(),
+  rowsReceived: integer("rows_received").notNull().default(0),
+  rowsAccepted: integer("rows_accepted").notNull().default(0),
+  rowsRejected: integer("rows_rejected").notNull().default(0),
+  rowsPending: integer("rows_pending").notNull().default(0),
+  quantityTotal: numeric("quantity_total", { precision: 14, scale: 4, mode: "number" }).notNull().default(0),
+  amountTotal: numeric("amount_total", { precision: 14, scale: 2, mode: "number" }).notNull().default(0),
+  status: text("status").notNull().default("archived"),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [
+  check("fuel_provider_files_provider_valid", sql`${table.provider} IN ('copec', 'aramco')`),
+  check("fuel_provider_files_channel_valid", sql`${table.channel} IN ('TCT', 'TAE')`),
+  check("fuel_provider_files_product_valid", sql`${table.product} IN ('diesel', 'bluemax')`),
+  check("fuel_provider_files_status_valid", sql`${table.status} IN ('archived', 'processed', 'invalid')`),
+  check("fuel_provider_files_counts_valid", sql`${table.sourceBytes} > 0 AND ${table.rowsReceived} >= 0 AND ${table.rowsAccepted} >= 0 AND ${table.rowsRejected} >= 0 AND ${table.rowsPending} >= 0`),
+  foreignKey({ name: "fuel_provider_files_run_fk", columns: [table.syncRunId], foreignColumns: [fuelProviderSyncRuns.id] }),
+  uniqueIndex("fuel_provider_files_evidence_unique").on(table.syncRunId, table.channel, table.product, table.periodMonth, table.sourceSha256),
+  index("fuel_provider_files_period_idx").on(table.provider, table.sourceAccount, table.channel, table.product, table.periodMonth),
+])
+
+/** Per-channel/product/month coverage. A cursor alone never proves completion. */
+export const fuelProviderPeriodCoverage = pgTable("fuel_provider_period_coverage", {
+  id: text("id").primaryKey(),
+  provider: text("provider").notNull(),
+  sourceAccount: text("source_account").notNull(),
+  channel: text("channel").notNull(),
+  product: text("product").notNull(),
+  periodMonth: text("period_month").notNull(),
+  status: text("status").notNull().default("unknown"),
+  sourceAvailability: text("source_availability").notNull().default("unknown"),
+  syncRunId: text("sync_run_id"),
+  sourceFileId: text("source_file_id"),
+  rowsReceived: integer("rows_received").notNull().default(0),
+  rowsAccepted: integer("rows_accepted").notNull().default(0),
+  rowsRejected: integer("rows_rejected").notNull().default(0),
+  quantityTotal: numeric("quantity_total", { precision: 14, scale: 4, mode: "number" }).notNull().default(0),
+  amountTotal: numeric("amount_total", { precision: 14, scale: 2, mode: "number" }).notNull().default(0),
+  parserVersion: text("parser_version"),
+  evidence: text("evidence"),
+  evidenceActorUserId: text("evidence_actor_user_id"),
+  rowsPending: integer("rows_pending").notNull().default(0),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [
+  check("fuel_provider_coverage_provider_valid", sql`${table.provider} IN ('copec', 'aramco')`),
+  check("fuel_provider_coverage_channel_valid", sql`${table.channel} IN ('TCT', 'TAE')`),
+  check("fuel_provider_coverage_product_valid", sql`${table.product} IN ('diesel', 'bluemax')`),
+  check("fuel_provider_coverage_status_valid", sql`${table.status} IN ('unknown', 'incomplete', 'failed', 'complete', 'legitimate_empty')`),
+  check("fuel_provider_coverage_source_valid", sql`${table.sourceAvailability} IN ('unknown', 'available', 'unavailable')`),
+  check("fuel_provider_coverage_period_valid", sql`${table.periodMonth} ~ '^\\d{4}-(0[1-9]|1[0-2])-01$'`),
+  check("fuel_provider_coverage_counts_valid", sql`${table.rowsReceived} >= 0 AND ${table.rowsAccepted} >= 0 AND ${table.rowsRejected} >= 0 AND ${table.rowsPending} >= 0`),
+  check("fuel_provider_coverage_empty_evidence", sql`${table.status} <> 'legitimate_empty' OR (${table.sourceAvailability} = 'available' AND ${table.evidence} IS NOT NULL AND length(trim(${table.evidence})) > 0 AND ${table.evidenceActorUserId} IS NOT NULL)`),
+  foreignKey({ name: "fuel_provider_coverage_run_fk", columns: [table.syncRunId], foreignColumns: [fuelProviderSyncRuns.id] }),
+  foreignKey({ name: "fuel_provider_coverage_file_fk", columns: [table.sourceFileId], foreignColumns: [fuelProviderFiles.id] }),
+  foreignKey({ name: "fuel_provider_coverage_actor_fk", columns: [table.evidenceActorUserId], foreignColumns: [users.id] }),
+  uniqueIndex("fuel_provider_coverage_period_unique").on(table.provider, table.sourceAccount, table.channel, table.product, table.periodMonth),
+  index("fuel_provider_coverage_status_idx").on(table.provider, table.status, table.periodMonth),
+])
+
+/** Append-only evidence of provider event changes; current ledger rows stay queryable. */
+export const fuelProviderEventRevisions = pgTable("fuel_provider_event_revisions", {
+  id: text("id").primaryKey(),
+  transactionId: text("transaction_id").notNull(),
+  syncRunId: text("sync_run_id").notNull(),
+  sourceFileId: text("source_file_id"),
+  fingerprint: text("fingerprint").notNull(),
+  quantity: numeric("quantity", { precision: 14, scale: 4, mode: "number" }),
+  unitPrice: numeric("unit_price", { precision: 14, scale: 4, mode: "number" }),
+  amount: numeric("amount", { precision: 14, scale: 2, mode: "number" }),
+  amountBasis: text("amount_basis").notNull().default("reported"),
+  status: text("status").notNull(),
+  payloadHash: text("payload_hash").notNull(),
+  rawPayload: jsonb("raw_payload"),
+  observedAt: timestamp("observed_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [
+  check("fuel_provider_event_revisions_amount_basis_valid", sql`${table.amountBasis} = 'reported'`),
+  check("fuel_provider_event_revisions_status_valid", sql`${table.status} IN ('accepted', 'rejected', 'pending', 'superseded', 'correction_review')`),
+  foreignKey({ name: "fuel_provider_event_rev_transaction_fk", columns: [table.transactionId], foreignColumns: [fuelProviderTransactions.id] }),
+  foreignKey({ name: "fuel_provider_event_rev_run_fk", columns: [table.syncRunId], foreignColumns: [fuelProviderSyncRuns.id] }),
+  foreignKey({ name: "fuel_provider_event_rev_file_fk", columns: [table.sourceFileId], foreignColumns: [fuelProviderFiles.id] }),
+  uniqueIndex("fuel_provider_event_revision_unique").on(table.transactionId, table.fingerprint, table.sourceFileId),
+  index("fuel_provider_event_revision_observed_idx").on(table.transactionId, table.observedAt),
+])
+
 export const fuelProviderSyncRunsRelations = relations(fuelProviderSyncRuns, ({ one, many }) => ({
   actor: one(users, { fields: [fuelProviderSyncRuns.actorUserId], references: [users.id] }),
   transactions: many(fuelProviderTransactions),
@@ -167,6 +275,7 @@ export const fuelProviderTransactionsRelations = relations(fuelProviderTransacti
   vehicle: one(fuelVehicles, { fields: [fuelProviderTransactions.vehicleId], references: [fuelVehicles.id] }),
   product: one(fuelProducts, { fields: [fuelProviderTransactions.productId], references: [fuelProducts.id] }),
   supplier: one(fuelSuppliers, { fields: [fuelProviderTransactions.supplierId], references: [fuelSuppliers.id] }),
+  storageLocation: one(fuelStorageLocations, { fields: [fuelProviderTransactions.storageLocationId], references: [fuelStorageLocations.id] }),
 }))
 
 export const fuelProviderRejectionsRelations = relations(fuelProviderRejections, ({ one }) => ({

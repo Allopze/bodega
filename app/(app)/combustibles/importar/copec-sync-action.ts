@@ -2,35 +2,28 @@
 
 import { safeActionMessage } from "@/lib/action-error"
 
-import { db } from "@/db"
-import { desc, eq } from "drizzle-orm"
-import { fuelProviderSyncRuns, systemSettings } from "@/db/schema"
 import { guardPermission } from "@/lib/auth/can"
 import { civilDate, civilDateRange } from "@/lib/validation/dates"
-import { getCopecSyncPlan, setCopecSyncStartDate, syncCopecReportPeriod } from "@/lib/combustibles/copec-sync"
+import { getCopecSyncPlan, getCopecSyncState, setCopecSyncStartDate, syncCopecReportPeriod } from "@/lib/combustibles/copec-sync"
+import { listCopecPeriodCoverage, recordCopecPeriodCoverage } from "@/lib/combustibles/copec-coverage-store"
+import { canConfirmCopecEmpty } from "@/lib/combustibles/copec-coverage"
 import { withCronLock } from "@/lib/services/cron-lock"
 import { isOpenPeriod } from "@/lib/combustibles/open-period"
 import { z } from "zod"
 
-const STATE_KEY = "combustibles.copec.sync"
 const copecPeriodSchema = civilDateRange({ required: true, message: "El período de Copec no es válido" })
 const copecStartDateSchema = z.object({
   startDate: civilDate(),
   expectedStart: civilDate(),
 })
+const copecEmptyCoverageSchema = z.object({
+  month: civilDate(),
+  channel: z.enum(["TCT", "TAE"]),
+  product: z.enum(["diesel", "bluemax"]),
+  evidence: z.string().trim().min(20, "Describe la evidencia consultada en Copec").max(500),
+})
 
-export interface CopecSyncStatus {
-  lastRunAt: string | null
-  lastRunStatus: string | null
-  rowsReceived: number
-  rowsAccepted: number
-  rowsRejected: number
-  rowsPending: number
-  affectedQuantity: number
-  affectedAmount: number
-  cursor: string | null
-  pending: number
-}
+export type CopecSyncStatus = Awaited<ReturnType<typeof getCopecSyncState>>
 
 export interface CopecSyncStartOptions {
   currentStart: string
@@ -46,30 +39,7 @@ export async function getCopecSyncStatusAction(): Promise<
   const guard = await guardPermission("combustibles:sync_integrations", "/combustibles/importar")
   if (guard.error) return guard.error
   try {
-    const [row, latestRun] = await Promise.all([
-      db.query.systemSettings.findFirst({ where: eq(systemSettings.key, STATE_KEY) }),
-      db.query.fuelProviderSyncRuns.findFirst({ where: eq(fuelProviderSyncRuns.provider, "copec"), orderBy: [desc(fuelProviderSyncRuns.startedAt)] }),
-    ])
-    if (!row) {
-      return { ok: true, data: { lastRunAt: latestRun?.finishedAt ?? latestRun?.startedAt ?? null, lastRunStatus: latestRun?.status ?? null, rowsReceived: latestRun?.rowsReceived ?? 0, rowsAccepted: latestRun?.rowsAccepted ?? 0, rowsRejected: latestRun?.rowsRejected ?? 0, rowsPending: latestRun?.rowsPending ?? 0, affectedQuantity: latestRun?.affectedQuantity ?? 0, affectedAmount: latestRun?.affectedAmount ?? 0, cursor: null, pending: latestRun?.rowsPending ?? 0 } }
-    }
-    let state: { cursor?: string | null; lastRunAt?: string | null; pending?: string[] } = {}
-    try { state = JSON.parse(row.value) } catch { /* fall through */ }
-    return {
-      ok: true,
-      data: {
-        lastRunAt: latestRun?.finishedAt ?? latestRun?.startedAt ?? state.lastRunAt ?? null,
-        lastRunStatus: latestRun?.status ?? null,
-        rowsReceived: latestRun?.rowsReceived ?? 0,
-        rowsAccepted: latestRun?.rowsAccepted ?? 0,
-        rowsRejected: latestRun?.rowsRejected ?? 0,
-        rowsPending: latestRun?.rowsPending ?? 0,
-        affectedQuantity: latestRun?.affectedQuantity ?? 0,
-        affectedAmount: latestRun?.affectedAmount ?? 0,
-        cursor: state.cursor ?? null,
-        pending: latestRun?.rowsPending ?? (Array.isArray(state.pending) ? state.pending.length : 0),
-      },
-    }
+    return { ok: true, data: await getCopecSyncState() }
   } catch (error) {
     return { ok: false, message: safeActionMessage(error, "No fue posible obtener el estado del sync") }
   }
@@ -86,6 +56,64 @@ export async function getCopecSyncPlanAction(): Promise<
     return { ok: true, from: result.from, to: result.to, periods: result.periods }
   } catch (error) {
     return { ok: false, message: safeActionMessage(error, "No fue posible preparar la sincronización Copec") }
+  }
+}
+
+/** Read-only coverage/provenance contract for dashboards and data exports. */
+export async function getCopecCoverageRangeAction(range: { from: string; to: string }): Promise<
+  | { ok: true; data: Awaited<ReturnType<typeof listCopecPeriodCoverage>> }
+  | { ok: false; message: string }
+> {
+  const guard = await guardPermission("combustibles:view_costs", "/combustibles")
+  if (guard.error) return guard.error
+  try {
+    const parsed = copecPeriodSchema.safeParse(range)
+    if (!parsed.success || !parsed.data.from || !parsed.data.to) return { ok: false, message: "El rango de cobertura no es válido" }
+    return { ok: true, data: await listCopecPeriodCoverage(parsed.data.from, parsed.data.to) }
+  } catch (error) {
+    return { ok: false, message: safeActionMessage(error, "No fue posible obtener la cobertura Copec") }
+  }
+}
+
+export async function confirmCopecPeriodEmptyAction(input: {
+  month: string
+  channel: "TCT" | "TAE"
+  product: "diesel" | "bluemax"
+  evidence: string
+}): Promise<
+  | { ok: true; data: CopecSyncStatus }
+  | { ok: false; message: string }
+> {
+  const guard = await guardPermission("combustibles:sync_integrations", "/combustibles/importar")
+  if (guard.error) return guard.error
+  try {
+    const parsed = copecEmptyCoverageSchema.safeParse(input)
+    if (!parsed.success) return { ok: false, message: parsed.error.issues[0]?.message ?? "La confirmación de período vacío no es válida" }
+    const { month, channel, product, evidence } = parsed.data
+    if (!month.endsWith("-01")) return { ok: false, message: "El mes debe comenzar el día 1" }
+    const end = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).toISOString().slice(0, 10)
+    if (isOpenPeriod(end)) return { ok: false, message: "No se puede cerrar como vacío un mes que todavía está abierto" }
+    const plan = await getCopecSyncPlan()
+    if (plan.from !== month) return { ok: false, message: "Solo puedes confirmar el mes pendiente más antiguo; actualiza la página e inténtalo de nuevo" }
+    const existing = await listCopecPeriodCoverage(month, end)
+    const currentCoverage = existing.find((row) => row.channel === channel && row.product === product)
+    if (!canConfirmCopecEmpty(currentCoverage)) {
+      return { ok: false, message: "Solo se puede confirmar vacío cuando no existe un archivo procesable ni datos rechazados o pendientes" }
+    }
+    await recordCopecPeriodCoverage({
+      channel,
+      product,
+      month,
+      status: "legitimate_empty",
+      sourceAvailability: "available",
+      // Si Copec entregó un archivo vacío, la confirmación queda ligada a él.
+      sourceFileId: currentCoverage?.sourceFileId ?? null,
+      evidence,
+      evidenceActorUserId: guard.session.user.id,
+    })
+    return { ok: true, data: await getCopecSyncState() }
+  } catch (error) {
+    return { ok: false, message: safeActionMessage(error, "No fue posible confirmar el período vacío") }
   }
 }
 

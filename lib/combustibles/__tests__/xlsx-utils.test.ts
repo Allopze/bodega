@@ -1,5 +1,34 @@
 import { describe, it, expect } from "vitest"
-import { parseChileanNumber, nullableChileanNumber, formatExcelDateUTC, parseSheetDate } from "../xlsx-utils"
+import { parseChileanNumber, nullableChileanNumber, formatExcelDateUTC, parseSheetDate, parseExactChileanDecimal } from "../xlsx-utils"
+
+describe("parseExactChileanDecimal", () => {
+  it("devuelve unidades exactas para importes y litros con escala distinta", () => {
+    expect(parseExactChileanDecimal("1.234,56", 2)).toEqual({
+      status: "value", units: BigInt(123456), normalized: "1234.56",
+    })
+    expect(parseExactChileanDecimal("32,9194", 4)).toEqual({
+      status: "value", units: BigInt(329194), normalized: "32.9194",
+    })
+  })
+
+  it("distingue vacío de texto inválido y no acepta prefijos numéricos", () => {
+    expect(parseExactChileanDecimal("  ", 2)).toEqual({ status: "empty" })
+    expect(parseExactChileanDecimal("-", 2)).toEqual({ status: "empty" })
+    expect(parseExactChileanDecimal("12abc", 2)).toEqual({ status: "invalid", reason: "format" })
+  })
+
+  it("acepta cero legítimo, conserva signo y rechaza exceso de escala o rango", () => {
+    expect(parseExactChileanDecimal("0", 2)).toEqual({ status: "value", units: BigInt(0), normalized: "0.00" })
+    expect(parseExactChileanDecimal("-1,25", 2)).toEqual({ status: "value", units: BigInt(-125), normalized: "-1.25" })
+    expect(parseExactChileanDecimal("1,234", 2)).toEqual({ status: "invalid", reason: "scale" })
+    expect(parseExactChileanDecimal("1000000000000,00", 2)).toEqual({ status: "invalid", reason: "range" })
+  })
+
+  it("interpreta una celda numérica según su decimal y no como miles", () => {
+    expect(parseExactChileanDecimal(12.345, 4)).toEqual({ status: "value", units: BigInt(123450), normalized: "12.3450" })
+    expect(parseExactChileanDecimal(12.345, 2)).toEqual({ status: "invalid", reason: "scale" })
+  })
+})
 
 describe("parseChileanNumber", () => {
   it("no se come la coma decimal cuando hay 3 o más decimales", () => {

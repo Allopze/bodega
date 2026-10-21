@@ -1,0 +1,2 @@
+ALTER TABLE "fuel_provider_transactions" ADD COLUMN "document_number" text;--> statement-breakpoint
+CREATE INDEX "fuel_provider_transactions_document_idx" ON "fuel_provider_transactions" USING btree ("provider","source_account","document_number");

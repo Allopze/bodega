@@ -1,11 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { CopecReportFailure } from "../copec-reports"
 
 const mockSettingFindFirst = vi.fn()
 const mockUserFindFirst = vi.fn()
 const mockBatchFindFirst = vi.fn()
 const mockVehiclesFindMany = vi.fn()
+const mockMappingsFindMany = vi.fn()
 const mockConsumptionFindMany = vi.fn()
 const mockDownloadCopecReports = vi.fn()
+const mockPortalSessions = vi.fn()
 const mockParseConsumptionExcel = vi.fn()
 const mockParseTaeReceiptExcel = vi.fn()
 const mockImportTaeReceipts = vi.fn()
@@ -17,6 +20,28 @@ const mockTxUpdateSet = vi.fn()
 const mockSaveStateReturning = vi.fn().mockResolvedValue([{ key: "combustibles.copec.sync" }])
 /** Lotes existentes del período, para el barrido de lotes sin respaldo. */
 const mockBatchFindMany = vi.fn().mockResolvedValue([])
+const mockProviderTransactionsFindMany = vi.fn().mockResolvedValue([])
+const mockStorageLocationsFindMany = vi.fn().mockResolvedValue([])
+const mockCoverageRows: Array<{ provider: string; sourceAccount: string; channel: string; product: string; periodMonth: string; status: string }> = []
+const mockListCopecCoverage = vi.fn(async (from: string, to: string) => mockCoverageRows.filter((row) => row.periodMonth >= `${from.slice(0, 7)}-01` && row.periodMonth <= `${to.slice(0, 7)}-01`))
+const mockRecordCopecCoverage = vi.fn(async (input: {
+  channel: string
+  product: string
+  month: string
+  status: string
+}) => {
+  const row = {
+    provider: "copec",
+    sourceAccount: `${input.channel.toLowerCase()}:${input.product}`,
+    channel: input.channel,
+    product: input.product,
+    periodMonth: input.month,
+    status: input.status,
+  }
+  const index = mockCoverageRows.findIndex((existing) => existing.sourceAccount === row.sourceAccount && existing.periodMonth === row.periodMonth)
+  if (index < 0) mockCoverageRows.push(row)
+  else mockCoverageRows[index] = row
+})
 
 vi.mock("@/db", () => ({
   db: {
@@ -24,13 +49,15 @@ vi.mock("@/db", () => ({
       systemSettings: { findFirst: (...args: unknown[]) => mockSettingFindFirst(...args) },
       users: { findFirst: (...args: unknown[]) => mockUserFindFirst(...args) },
       fuelVehicles: { findMany: (...args: unknown[]) => mockVehiclesFindMany(...args) },
-      fuelProviderMappings: { findMany: vi.fn().mockResolvedValue([]) },
+      fuelProviderMappings: { findMany: (...args: unknown[]) => mockMappingsFindMany(...args) },
       fuelImportBatches: {
         findFirst: (...args: unknown[]) => mockBatchFindFirst(...args),
         // Usado por el barrido de lotes que los informes ya no respaldan.
         findMany: (...args: unknown[]) => mockBatchFindMany(...args),
       },
       fuelConsumptionRecords: { findMany: (...args: unknown[]) => mockConsumptionFindMany(...args) },
+      fuelProviderTransactions: { findMany: (...args: unknown[]) => mockProviderTransactionsFindMany(...args) },
+      fuelStorageLocations: { findMany: (...args: unknown[]) => mockStorageLocationsFindMany(...args) },
     },
     insert: vi.fn(() => ({
       values: vi.fn((payload: { value: string }) => ({
@@ -52,7 +79,28 @@ vi.mock("@/db", () => ({
 vi.mock("@/db/schema", () => ({
   // Marcadas para que el mock de `tx.insert` distinga el lote de los registros.
   fuelConsumptionRecords: { __table: "records" }, fuelImportBatches: { __table: "batches" },
-  fuelVehicles: {}, fuelProviderMappings: {}, systemSettings: {}, users: {},
+  fuelVehicles: {}, fuelProviderMappings: {}, fuelProviderTransactions: { provider: {}, sourceAccount: {}, occurredAt: {}, sourceRowKey: {} },
+  fuelStorageLocations: { taeCardNumber: {}, productId: {}, isActive: {} },
+  fuelProviderFiles: {}, fuelProviderPeriodCoverage: {}, fuelProviderEventRevisions: {}, systemSettings: {}, users: {},
+}))
+vi.mock("@/lib/combustibles/copec-coverage-store", () => ({
+  listCopecPeriodCoverage: (...args: [string, string]) => mockListCopecCoverage(...args),
+  recordCopecPeriodCoverage: (...args: [Parameters<typeof mockRecordCopecCoverage>[0]]) => mockRecordCopecCoverage(...args),
+  recordCopecFile: vi.fn().mockResolvedValue(undefined),
+  updateCopecFileParseResult: vi.fn().mockResolvedValue(undefined),
+}))
+vi.mock("@/lib/combustibles/copec-evidence", () => ({
+  COPEC_PARSER_VERSION: "copec-xlsx-test",
+  archiveCopecEvidence: vi.fn(async (id: string, buffer: Buffer) => ({
+    id,
+    storagePath: `copec-evidence/${id}.xlsx.enc`,
+    sourceSha256: "a".repeat(64),
+    encryptedSha256: "b".repeat(64),
+    encryptionIv: "aXY=",
+    encryptionAuthTag: "YXV0aFRhZw==",
+    encryptionKeyVersion: "v1",
+    sourceBytes: buffer.byteLength,
+  })),
 }))
 // La conciliación tiene sus propias pruebas contra Postgres; acá se aísla para
 // que estos casos sigan midiendo sólo la importación.
@@ -65,8 +113,14 @@ vi.mock("@/lib/combustibles/fuel-provider-ledger", () => ({
   recordFuelProviderValidation: vi.fn().mockResolvedValue({ accepted: 1, rejected: 0, pending: 0 }),
   finishFuelProviderSyncRun: vi.fn().mockResolvedValue(undefined),
 }))
-vi.mock("@/lib/combustibles/copec-reports", () => ({
-  downloadCopecReports: (...args: unknown[]) => mockDownloadCopecReports(...args),
+vi.mock("@/lib/combustibles/copec-reports", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/combustibles/copec-reports")>()),
+  // Una sesión del portal por corrida; cada `download` es lo que antes era una
+  // llamada a `downloadCopecReports`, así que las aserciones siguen igual.
+  withCopecPortalSession: async (run: (session: unknown) => Promise<unknown>) => {
+    mockPortalSessions()
+    return run({ download: (...args: unknown[]) => mockDownloadCopecReports(...args) })
+  },
 }))
 vi.mock("@/lib/combustibles/consumption-import", () => ({
   parseConsumptionExcel: (...args: unknown[]) => mockParseConsumptionExcel(...args),
@@ -184,6 +238,24 @@ describe("syncCopecReportPeriod", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockBatchFindMany.mockResolvedValue([])
+    mockCoverageRows.length = 0
+    mockProviderTransactionsFindMany.mockResolvedValue([])
+    mockStorageLocationsFindMany.mockResolvedValue([])
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(new Date("2026-03-02T12:00:00.000Z"))
+    mockMappingsFindMany.mockImplementation(async () => {
+      const result = mockVehiclesFindMany.mock.results.at(-1)?.value
+      const rows = result ? await result : []
+      return (Array.isArray(rows) ? rows : []).map((vehicle) => ({
+        externalKey: vehicle.plate,
+        vehicleId: vehicle.id,
+        worksiteId: vehicle.worksiteId,
+        effectiveFrom: "2020-01-01",
+        effectiveTo: null,
+        isActive: true,
+        version: 1,
+      }))
+    })
     // importCopecPeriod only looks up the importer user when this env var is
     // set — stub it here so the test doesn't depend on the ambient shell/CI
     // environment ever defining it.
@@ -200,6 +272,7 @@ describe("syncCopecReportPeriod", () => {
 
   afterEach(() => {
     vi.unstubAllEnvs()
+    vi.useRealTimers()
   })
 
   it("does NOT advance the cursor when Copec delivered no file at all (portal likely broken)", async () => {
@@ -213,15 +286,34 @@ describe("syncCopecReportPeriod", () => {
     // `reports` sigue vacío aunque el canal TAE también se haya consultado: ese
     // arreglo es el que decide si el cursor avanza, y solo debe contar TCT.
     expect(result).toMatchObject({ imported: 0, received: 0, unavailable: ["Diesel", "BlueMax", "TAE Diesel", "TAE BlueMax"], reports: [] })
-    expect(mockDownloadCopecReports).toHaveBeenCalledWith([
+    expect(mockDownloadCopecReports).toHaveBeenNthCalledWith(1, [
       { product: "diesel", from: "2026-02-01", to: "2026-02-28" },
       { product: "bluemax", from: "2026-02-01", to: "2026-02-28" },
-    ])
+    ], "TCT")
+    expect(mockDownloadCopecReports).toHaveBeenNthCalledWith(2, [
+      { product: "diesel", from: "2026-02-01", to: "2026-02-28" },
+      { product: "bluemax", from: "2026-02-01", to: "2026-02-28" },
+    ], "TAE")
     // El cursor se queda en el inicio del período (no avanza a 2026-03-01), para
     // reintentar en vez de saltarse datos por un portal caído.
     expect(mockSaveState).toHaveBeenCalledOnce()
     const savedState = JSON.parse(mockSaveState.mock.calls[0]![0].set.value)
     expect(savedState.cursor).toBe("2026-02-01")
+  })
+
+  it("continúa con TAE si falla la descarga del canal TCT", async () => {
+    mockDownloadCopecReports
+      .mockRejectedValueOnce(new CopecReportFailure("network", "Copec está temporalmente fuera de servicio"))
+      .mockResolvedValueOnce([
+        { product: "diesel", unavailable: true },
+        { product: "bluemax", unavailable: true },
+      ])
+
+    const result = await syncCopecReportPeriod({ from: "2026-02-01", to: "2026-02-28" }, "operator-1")
+
+    expect(mockDownloadCopecReports).toHaveBeenCalledTimes(2)
+    expect(result.unavailable).toContain("Diesel: [network] Copec está temporalmente fuera de servicio")
+    expect(mockCoverageRows.some((row) => row.channel === "TCT" && row.product === "diesel" && row.status === "failed")).toBe(true)
   })
 
   it("un proveedor faltante en el catálogo no tumba la corrida ni avanza el cursor TAE", async () => {
@@ -244,10 +336,13 @@ describe("syncCopecReportPeriod", () => {
     // TCT importó igual y la corrida no explota.
     expect(result.imported).toBe(1)
     expect(result.unavailable.some((item) => item.includes("proveedor Copec"))).toBe(true)
-    // El cursor TCT avanza; el de TAE se queda para reintentar el mes.
+    // Un producto TCT y un producto TAE siguen sin cierre terminal; el cursor
+    // legado se conserva en el mes y ya no es la evidencia de cobertura.
     const saved = JSON.parse(mockSaveState.mock.calls[0]![0].set.value)
-    expect(saved.cursor).toBe("2026-03-01")
+    expect(saved.cursor).toBe("2026-02-01")
     expect(saved.taeCursor).toBe("2026-02-01")
+    expect(mockCoverageRows.some((row) => row.channel === "TCT" && row.product === "diesel" && row.status === "incomplete")).toBe(true)
+    expect(mockCoverageRows.some((row) => row.channel === "TCT" && row.product === "bluemax" && row.status === "unknown")).toBe(true)
   })
 
   it("no avanza el cursor TAE cuando el portal entregó TCT pero no TAE", async () => {
@@ -269,11 +364,11 @@ describe("syncCopecReportPeriod", () => {
     await syncCopecReportPeriod({ from: "2026-02-01", to: "2026-02-28" }, "operator-1")
 
     const saved = JSON.parse(mockSaveState.mock.calls[0]![0].set.value)
-    expect(saved.cursor).toBe("2026-03-01")
+    expect(saved.cursor).toBe("2026-02-01")
     expect(saved.taeCursor).toBe("2026-02-01")
   })
 
-  it("avanza los dos cursores cuando el portal entregó ambos canales", async () => {
+  it("conserva ambos cursores hasta cerrar cobertura de cada producto", async () => {
     const row = (patente: string): unknown => ({ rowIndex: 1, patente, numeroTarjetas: 1, numeroTransacciones: 2, cantidadUnidad: 100, monto: 50000, rendimientoPromedio: 3, rawRow: {} })
     mockDownloadCopecReports.mockResolvedValue([
       { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "informe.xlsx" } },
@@ -285,8 +380,8 @@ describe("syncCopecReportPeriod", () => {
     await syncCopecReportPeriod({ from: "2026-02-01", to: "2026-02-28" }, "operator-1")
 
     const saved = JSON.parse(mockSaveState.mock.calls[0]![0].set.value)
-    expect(saved.cursor).toBe("2026-03-01")
-    expect(saved.taeCursor).toBe("2026-03-01")
+    expect(saved.cursor).toBe("2026-02-01")
+    expect(saved.taeCursor).toBe("2026-02-01")
   })
 
   it("uses the authenticated operator for a manual sync without requiring cron configuration", async () => {
@@ -321,11 +416,12 @@ describe("syncCopecReportPeriod", () => {
 
     expect(result.imported).toBe(1)
     expect(tx._insertedRecords).toHaveLength(1)
+    expect(mockCoverageRows.find((row) => row.channel === "TCT" && row.product === "diesel")?.status).toBe("incomplete")
   })
 
-  it("atribuye las filas inválidas del archivo a un solo lote, no a cada faena", async () => {
-    // `parsed.errors` es del ARCHIVO. Con 2 faenas en el mismo reporte, sumarle
-    // el conteo completo a cada lote triplicaba las filas rechazadas.
+  it("conserva la proyección previa si el archivo incluye filas inválidas", async () => {
+    // Un archivo parcialmente rechazado no cierra cobertura ni reemplaza una
+    // proyección que ya era confiable.
     const row = (patente: string): unknown => ({ rowIndex: 1, patente, numeroTarjetas: 1, numeroTransacciones: 2, cantidadUnidad: 100, monto: 50000, rendimientoPromedio: 3, rawRow: {} })
     mockDownloadCopecReports.mockResolvedValue([
       { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "tct-diesel.xlsx" } },
@@ -347,16 +443,12 @@ describe("syncCopecReportPeriod", () => {
 
     await syncCopecReportPeriod({ from: "2026-02-01", to: "2026-02-28" }, "operator-1")
 
-    const batches = tx._insertedBatches as Array<{ totalFilas: number; filasValidas: number; filasInvalidas: number }>
-    expect(batches).toHaveLength(2)
-    expect(batches.map((batch) => batch.filasInvalidas)).toEqual([2, 0])
-    // El invariante que audita `batch_detail_mismatches` del preflight.
-    for (const batch of batches) expect(batch.totalFilas).toBe(batch.filasValidas + batch.filasInvalidas)
+    expect(tx._insertedBatches).toHaveLength(0)
+    expect(tx._insertedRecords).toHaveLength(0)
+    expect(mockCoverageRows.find((row) => row.channel === "TCT" && row.product === "diesel")?.status).toBe("failed")
   })
 
-  it("mantiene la atribución de filas inválidas al refrescar un lote existente", async () => {
-    // La rama de refresco escribía `parsed.errors.length` sin el reparto, así que
-    // un mes ya importado volvía a multiplicar las rechazadas en cada faena.
+  it("deja intacto un lote existente cuando falla la validación del archivo", async () => {
     const row = (patente: string): unknown => ({ rowIndex: 1, patente, numeroTarjetas: 1, numeroTransacciones: 2, cantidadUnidad: 100, monto: 50000, rendimientoPromedio: 3, rawRow: {} })
     mockDownloadCopecReports.mockResolvedValue([
       { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "tct-diesel.xlsx" } },
@@ -380,12 +472,9 @@ describe("syncCopecReportPeriod", () => {
 
     await syncCopecReportPeriod({ from: "2026-02-01", to: "2026-02-28" }, "operator-1")
 
-    const patches = mockTxUpdateSet.mock.calls
-      .map((call) => call[0] as { filasInvalidas?: number; totalFilas?: number; filasValidas?: number })
-      .filter((patch) => patch.filasInvalidas !== undefined)
-    expect(patches).toHaveLength(2)
-    expect(patches.map((patch) => patch.filasInvalidas)).toEqual([2, 0])
-    for (const patch of patches) expect(patch.totalFilas).toBe(patch.filasValidas! + patch.filasInvalidas!)
+    expect(mockTxUpdateSet).not.toHaveBeenCalled()
+    expect(mockConsumptionFindMany).not.toHaveBeenCalled()
+    expect(mockCoverageRows.find((row) => row.channel === "TCT" && row.product === "diesel")?.status).toBe("failed")
   })
 
   it("re-imports only the newly-linked plates into an existing batch (no duplicates)", async () => {
@@ -506,7 +595,7 @@ describe("syncCopecReportPeriod", () => {
       await withToday("2026-09-02T12:00:00.000Z", async () => {
         await syncCopecReportPeriod(OPEN, "operator-1")
       })
-      expect(JSON.parse(mockSaveState.mock.calls[0]![0].set.value)).toMatchObject({ cursor: "2026-09-01" })
+      expect(JSON.parse(mockSaveState.mock.calls[0]![0].set.value)).toMatchObject({ cursor: "2026-08-01" })
     })
 
     it("sets an open batch's totals instead of adding to them", async () => {
@@ -549,6 +638,7 @@ describe("syncCopecReportPeriod", () => {
       // El mes en curso puede no existir aún en el portal. Fallar ahí rompería
       // el cron todos los días por algo que no es un problema.
       mockSettingFindFirst.mockResolvedValue({ value: JSON.stringify({ cursor: "2026-08-01", lastRunAt: null, pending: [] }) })
+      vi.stubEnv("COPEC_SYNC_START_DATE", "2026-08-01")
       mockBatchFindFirst.mockResolvedValue(undefined)
       mockDownloadCopecReports.mockResolvedValue([
         { product: "diesel", unavailable: true },
@@ -563,6 +653,7 @@ describe("syncCopecReportPeriod", () => {
       // Ese caso sí indica portal cambiado o credenciales rotas, y enmascararlo
       // fue lo que dejó la sync "al día" con la tabla vacía.
       mockSettingFindFirst.mockResolvedValue({ value: JSON.stringify({ cursor: "2026-06-01", lastRunAt: null, pending: [] }) })
+      vi.stubEnv("COPEC_SYNC_START_DATE", "2026-06-01")
       mockBatchFindFirst.mockResolvedValue(undefined)
       mockDownloadCopecReports.mockResolvedValue([
         { product: "diesel", unavailable: true },
@@ -598,12 +689,150 @@ describe("syncCopecReportPeriod", () => {
     const guardLiterals = collectStrings(mockBatchFindFirst.mock.calls[1]?.[0])
     expect(AUTOMATED_SOURCES.filter((source) => !guardLiterals.includes(source))).toEqual([])
   })
+
+  it("importa las patentes vinculadas aunque otra del archivo no tenga vehículo", async () => {
+    // Antes una sola fila `pending` detenía el producto completo del mes: un
+    // equipo nuevo dejaba sin consumos Diésel a todas las faenas.
+    const { recordFuelProviderValidation } = await import("../fuel-provider-ledger")
+    vi.mocked(recordFuelProviderValidation).mockResolvedValueOnce({ accepted: 2, rejected: 0, pending: 1 } as never)
+    const row = (patente: string): unknown => ({ rowIndex: 1, patente, numeroTarjetas: 1, numeroTransacciones: 2, cantidadUnidad: 100, monto: 50000, rendimientoPromedio: 3, rawRow: {} })
+    mockDownloadCopecReports.mockResolvedValue([
+      { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "tct-diesel.xlsx" } },
+      { product: "bluemax", unavailable: true },
+    ])
+    mockParseConsumptionExcel.mockResolvedValue({ rows: [row("AAA"), row("SINVEHICULO")], errors: [], duplicates: [], detail: [] })
+    mockVehiclesFindMany.mockResolvedValue([{ id: "v-aaa", plate: "AAA", worksiteId: "W1" }])
+    const tx = makeTx()
+    mockTransaction.mockImplementation(async (cb: (t: unknown) => unknown) => cb(tx))
+
+    const result = await syncCopecReportPeriod({ from: "2026-02-01", to: "2026-02-28" }, "operator-1")
+
+    expect(tx._insertedRecords.map((record) => record.patente)).toEqual(["AAA"])
+    expect(result.pendingPlates).toEqual(["SINVEHICULO"])
+    expect(result.unavailable).toContain("Diesel: asignación histórica pendiente")
+    expect(mockCoverageRows.find((item) => item.channel === "TCT" && item.product === "diesel")?.status).toBe("incomplete")
+  })
+
+  it("no importa al ciclo físico una recepción TAE que el validador rechazó", async () => {
+    const taeRow = (documentNumber: string, liters: number): unknown => ({
+      rowIndex: 1, documentNumber, cardNumber: "7001", productId: "fuel-diesel",
+      sourceDate: "2026-02-10", occurredAt: "2026-02-10T13:00:00.000Z",
+      liters, unitPrice: 1000, amount: liters * 1000, assignment: "", station: "Copec Ruta 5", rawRow: {},
+    })
+    mockDownloadCopecReports
+      .mockResolvedValueOnce([{ product: "diesel", unavailable: true }, { product: "bluemax", unavailable: true }])
+      .mockResolvedValueOnce([
+        { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "tae-diesel.xlsx" } },
+        { product: "bluemax", unavailable: true },
+      ])
+    mockParseTaeReceiptExcel.mockResolvedValue({ rows: [taeRow("G-1", 500), taeRow("G-2", -200)], errors: [] })
+
+    await syncCopecReportPeriod({ from: "2026-02-01", to: "2026-02-28" }, "operator-1")
+
+    expect(mockImportTaeReceipts).toHaveBeenCalledOnce()
+    const imported = mockImportTaeReceipts.mock.calls[0]![0] as Array<{ documentNumber: string }>
+    expect(imported.map((row) => row.documentNumber)).toEqual(["G-1"])
+  })
+
+  describe("revisión histórica pedida a mano", () => {
+    const dimensions = [["TCT", "diesel"], ["TCT", "bluemax"], ["TAE", "diesel"], ["TAE", "bluemax"]] as const
+    function closeMonth(month: string) {
+      for (const [channel, product] of dimensions) {
+        mockCoverageRows.push({ provider: "copec", sourceAccount: `${channel.toLowerCase()}:${product}`, channel, product, periodMonth: month, status: "complete" })
+      }
+    }
+
+    beforeEach(() => {
+      vi.stubEnv("COPEC_SYNC_START_DATE", "2025-11-01")
+      closeMonth("2025-11-01")
+      closeMonth("2025-12-01")
+      closeMonth("2026-01-01")
+      // La reverificación del mock vuelve a observar lo mismo: el mes sigue cerrado.
+      mockRecordCopecCoverage.mockImplementation(async () => {})
+      mockDownloadCopecReports.mockResolvedValue([
+        { product: "diesel", unavailable: true },
+        { product: "bluemax", unavailable: true },
+      ])
+    })
+
+    afterEach(() => {
+      mockRecordCopecCoverage.mockReset()
+    })
+
+    it("avanza la fecha pedida al mes siguiente cuando el mes revisado sigue cerrado", async () => {
+      // Sin esto el plan quedaba clavado en el mes pedido y reverificaba los
+      // mismos cuatro meses en cada corrida, para siempre.
+      mockSettingFindFirst.mockResolvedValue({ value: JSON.stringify({ cursor: null, taeCursor: null, requestedStart: "2025-11-01", lastRunAt: null, pending: [] }), updatedAt: "2026-03-01T00:00:00.000Z" })
+
+      await syncCopecReportPeriod({ from: "2025-11-01", to: "2025-11-30" }, "operator-1")
+
+      expect(JSON.parse(mockSaveState.mock.calls[0]![0].set.value).requestedStart).toBe("2025-12-01")
+    })
+
+    it("borra la fecha pedida cuando alcanza al primer mes sin cubrir", async () => {
+      mockSettingFindFirst.mockResolvedValue({ value: JSON.stringify({ cursor: null, taeCursor: null, requestedStart: "2026-01-01", lastRunAt: null, pending: [] }), updatedAt: "2026-03-01T00:00:00.000Z" })
+
+      await syncCopecReportPeriod({ from: "2026-01-01", to: "2026-01-31" }, "operator-1")
+
+      const saved = mockSaveState.mock.calls[0]![0].set.value as string
+      expect(JSON.parse(saved).requestedStart).toBeNull()
+      // Con el estado persistido, el plan retoma el primer mes sin cubrir.
+      mockSettingFindFirst.mockResolvedValue({ value: saved, updatedAt: "2026-03-02T12:00:00.000Z" })
+      await expect(getCopecSyncPlan()).resolves.toMatchObject({ from: "2026-02-01" })
+    })
+  })
+
+  it("refresca el mes en curso aunque un mes histórico detenga el barrido", async () => {
+    // El plan parte del mes sin cobertura más antiguo y tiene tope de períodos:
+    // con un mes viejo atascado, el mes en curso no entraba a ninguna corrida.
+    vi.stubEnv("COPEC_SYNC_START_DATE", "2026-01-01")
+    vi.setSystemTime(new Date("2026-08-22T12:00:00.000Z"))
+    mockDownloadCopecReports.mockResolvedValue([
+      { product: "diesel", unavailable: true },
+      { product: "bluemax", unavailable: true },
+    ])
+
+    await expect(syncCopecReports()).rejects.toThrow(/2026-01-01 a 2026-01-31/)
+
+    // Todo el barrido (mes en curso + histórico, TCT y TAE) en UNA sesión del
+    // portal: cada sesión es un login, y cada login un correo con código.
+    expect(mockPortalSessions).toHaveBeenCalledOnce()
+    expect(mockDownloadCopecReports.mock.calls.length).toBeGreaterThanOrEqual(4)
+    expect(mockDownloadCopecReports.mock.calls[0]![0]).toEqual([
+      { product: "diesel", from: "2026-08-01", to: "2026-08-31" },
+      { product: "bluemax", from: "2026-08-01", to: "2026-08-31" },
+    ])
+  })
 })
 
 describe("Copec synchronization start date", () => {
+  const dimensions = [
+    ["TCT", "diesel"], ["TCT", "bluemax"], ["TAE", "diesel"], ["TAE", "bluemax"],
+  ] as const
+
+  function setMonthCoverage(month: string, statuses: string[] = ["complete", "complete", "complete", "complete"]) {
+    dimensions.forEach(([channel, product], index) => mockCoverageRows.push({
+      provider: "copec",
+      sourceAccount: `${channel.toLowerCase()}:${product}`,
+      channel,
+      product,
+      periodMonth: month,
+      status: statuses[index]!,
+    }))
+  }
+
+  function seedCoverageBefore(exclusiveMonth: string) {
+    const cursor = new Date("2020-01-01T00:00:00.000Z")
+    while (cursor.toISOString().slice(0, 10) < exclusiveMonth) {
+      setMonthCoverage(cursor.toISOString().slice(0, 10))
+      cursor.setUTCMonth(cursor.getUTCMonth() + 1)
+    }
+  }
+
   beforeEach(() => {
     vi.clearAllMocks()
     mockBatchFindMany.mockResolvedValue([])
+    mockCoverageRows.length = 0
     vi.stubEnv("COPEC_SYNC_START_DATE", "2020-01-01")
     mockSettingFindFirst.mockResolvedValue({
       value: JSON.stringify({ cursor: "2020-02-01", lastRunAt: null, pending: [] }),
@@ -617,12 +846,8 @@ describe("Copec synchronization start date", () => {
     vi.unstubAllEnvs()
   })
 
-  it("corta el plan en el tope por corrida en vez de planificar el histórico entero", async () => {
-    // Cada mes son DOS sesiones de navegador con login y el cron corta a los 5
-    // minutos: sin tope, un cursor viejo planifica decenas de meses y la corrida
-    // muere por timeout siempre en el mismo lugar. El cursor avanza lo que
-    // alcanzó y la corrida siguiente sigue desde ahí.
-    mockSettingFindFirst.mockResolvedValue({ value: JSON.stringify({ cursor: "2020-01-01", lastRunAt: null, pending: [] }) })
+  it("ignora el cursor legado cuando no existe evidencia de cobertura", async () => {
+    mockSettingFindFirst.mockResolvedValue({ value: JSON.stringify({ cursor: "2026-08-01", taeCursor: "2026-08-01", lastRunAt: null, pending: [] }) })
     mockBatchFindFirst.mockResolvedValue(undefined)
     vi.useFakeTimers({ toFake: ["Date"] })
     vi.setSystemTime(new Date("2026-08-07T12:00:00.000Z"))
@@ -638,99 +863,65 @@ describe("Copec synchronization start date", () => {
     }
   })
 
-  it("keeps the explicit cursor even when a foreign batch reaches a later month", async () => {
-    // El piso (mes siguiente al último lote activo) es solo informativo: recortar
-    // el cursor contra él saltaba en silencio todos los meses intermedios.
-    const options = await getCopecSyncStartOptions()
-
-    expect(options).toMatchObject({
-      currentStart: "2020-02-01",
-      minimumStart: "2026-07-01",
-      latestImportedUntil: "2026-06-30",
-    })
-  })
-
-  it("allows going back before the latest imported period to recover skipped months", async () => {
-    const result = await setCopecSyncStartDate("2026-04-01", "2020-02-01")
-
-    expect(result.currentStart).toBe("2026-04-01")
-    expect(mockSaveState).toHaveBeenCalledOnce()
-  })
-
-  it("plans the months a foreign manual batch used to swallow, up to the open one", async () => {
-    // Cursor en mayo y un lote ajeno que llega hasta julio: el plan debe cubrir
-    // mayo–agosto, no quedar vacío con "no hay meses nuevos". Agosto es el mes
-    // en curso y también entra: se refresca en cada corrida.
-    mockSettingFindFirst.mockResolvedValue({ value: JSON.stringify({ cursor: "2026-05-01", lastRunAt: null, pending: [] }) })
-    mockBatchFindFirst.mockResolvedValue({ periodoHasta: "2026-07-31" })
+  it("mantiene abierto el mes cuando falta un solo producto de un canal", async () => {
+    seedCoverageBefore("2026-04-01")
+    setMonthCoverage("2026-04-01", ["complete", "incomplete", "complete", "complete"])
     vi.useFakeTimers({ toFake: ["Date"] })
     vi.setSystemTime(new Date("2026-08-07T12:00:00.000Z"))
     try {
       const plan = await getCopecSyncPlan()
-      expect(plan.from).toBe("2026-05-01")
-      expect(plan.to).toBe("2026-08-31")
+      expect(plan.from).toBe("2026-04-01")
+      expect(plan.to).toBe("2026-07-31")
       expect(plan.periods).toHaveLength(4)
-      expect(plan.periods.at(-1)).toEqual({ from: "2026-08-01", to: "2026-08-31" })
+      expect(plan.periods[0]).toEqual({ from: "2026-04-01", to: "2026-04-30" })
     } finally {
       vi.useRealTimers()
     }
   })
 
-  it("el plan retrocede hasta el mes TAE atrasado, con tope", async () => {
-    // TCT iba en agosto y TAE quedó en abril porque el portal no entregó sus
-    // informes. Recuperar TAE es volver a pedir esos meses completos, y cada uno
-    // es una sesión de navegador: el tope evita que la puesta al día cuelgue el
-    // cron. TCT ya importado sale por el atajo del hash sin escribir nada.
-    mockSettingFindFirst.mockResolvedValue({ value: JSON.stringify({ cursor: "2026-08-01", taeCursor: "2026-04-01", lastRunAt: null, pending: [] }) })
-    mockBatchFindFirst.mockResolvedValue(undefined)
+  it("trata complete y legitimate_empty como terminales, pero no failed o incomplete", async () => {
+    seedCoverageBefore("2026-04-01")
+    setMonthCoverage("2026-04-01", ["complete", "legitimate_empty", "complete", "complete"])
+    setMonthCoverage("2026-05-01", ["complete", "complete", "failed", "complete"])
     vi.useFakeTimers({ toFake: ["Date"] })
     vi.setSystemTime(new Date("2026-08-07T12:00:00.000Z"))
     try {
       const plan = await getCopecSyncPlan()
-      // Tope de 3 meses: no arranca en abril sino en mayo.
       expect(plan.from).toBe("2026-05-01")
     } finally {
       vi.useRealTimers()
     }
   })
 
-  it("no retrocede el plan cuando el canal TAE está al día", async () => {
-    mockSettingFindFirst.mockResolvedValue({ value: JSON.stringify({ cursor: "2026-08-01", taeCursor: "2026-08-01", lastRunAt: null, pending: [] }) })
-    mockBatchFindFirst.mockResolvedValue(undefined)
+  it("no permite saltar un mes desconocido por ajuste manual", async () => {
     vi.useFakeTimers({ toFake: ["Date"] })
     vi.setSystemTime(new Date("2026-08-07T12:00:00.000Z"))
     try {
-      expect((await getCopecSyncPlan()).from).toBe("2026-08-01")
+      await expect(setCopecSyncStartDate("2020-02-01", "2020-01-01"))
+        .rejects.toThrow("No se puede saltar un mes")
+      expect(mockSaveState).not.toHaveBeenCalled()
     } finally {
       vi.useRealTimers()
     }
   })
 
-  it("keeps the open month reachable even after importing it", async () => {
-    // Un lote del mes en curso dejaría el piso en el mes SIGUIENTE, y el plan
-    // quedaría vacío: el mes abierto no volvería a sincronizarse nunca.
-    mockSettingFindFirst.mockResolvedValue(undefined)
-    mockBatchFindFirst.mockResolvedValue({ periodoHasta: "2026-08-31" })
+  it("permite solicitar una revisión histórica anterior al primer mes abierto", async () => {
+    seedCoverageBefore("2026-07-01")
     vi.useFakeTimers({ toFake: ["Date"] })
     vi.setSystemTime(new Date("2026-08-07T12:00:00.000Z"))
     try {
+      const result = await setCopecSyncStartDate("2026-04-01", "2026-07-01")
+      expect(result.currentStart).toBe("2026-04-01")
+      expect(mockSaveState).toHaveBeenCalledOnce()
       const options = await getCopecSyncStartOptions()
-      expect(options.minimumStart).toBe("2026-08-01")
-      const plan = await getCopecSyncPlan()
-      expect(plan.periods).toEqual([{ from: "2026-08-01", to: "2026-08-31" }])
+      expect(options).toMatchObject({ minimumStart: "2020-01-01", latestImportedUntil: "2026-06-30" })
     } finally {
       vi.useRealTimers()
     }
-  })
-
-  it("allows skipping ahead to a date after imported periods", async () => {
-    const result = await setCopecSyncStartDate("2026-07-01", "2020-02-01")
-
-    expect(result.currentStart).toBe("2026-07-01")
-    expect(mockSaveState).toHaveBeenCalledOnce()
   })
 
   it("rejects a stale edit instead of overwriting a newer sync cursor", async () => {
+    seedCoverageBefore("2026-07-01")
     await expect(setCopecSyncStartDate("2026-07-01", "2020-01-01"))
       .rejects.toThrow("La sincronización cambió")
     expect(mockSaveState).not.toHaveBeenCalled()
@@ -741,9 +932,10 @@ describe("Copec synchronization start date", () => {
   // atrapa la carrera cuando DOS escrituras pasan esa comprobación a la vez —
   // sin esto, la segunda pisaba el cursor de la primera en silencio.
   it("rejects the write itself when another process updated the state row concurrently", async () => {
+    seedCoverageBefore("2026-07-01")
     mockSaveStateReturning.mockResolvedValueOnce([])
 
-    await expect(setCopecSyncStartDate("2026-07-01", "2020-02-01"))
+    await expect(setCopecSyncStartDate("2026-06-01", "2026-07-01"))
       .rejects.toThrow("cambió en otra ejecución")
   })
 })
