@@ -160,8 +160,10 @@ describe("ItemEditor — campos condicionales de servicio", () => {
 
   it("en consulta muestra el colaborador asignado sin ofrecer el selector", () => {
     renderItem(VACUNA, { workerId: "w-1", workerName: "Ana Colaboradora" }, { readOnly: true })
-    const field = screen.getByLabelText(/Colaborador/)
-    expect(field).toHaveValue("Ana Colaboradora")
-    expect(field).toBeDisabled()
+    // La consulta es un resumen (dl), no un formulario deshabilitado.
+    const term = screen.getByText("Colaborador:")
+    expect(term.nextElementSibling).toHaveTextContent("Ana Colaboradora")
+    expect(screen.queryByLabelText(/Colaborador/)).toBeNull()
+    expect(screen.queryByRole("combobox")).toBeNull()
   })
 })
