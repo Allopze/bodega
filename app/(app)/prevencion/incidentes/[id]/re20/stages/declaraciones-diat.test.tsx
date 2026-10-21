@@ -10,15 +10,10 @@ import type { Re20WorkspaceApi } from "../use-re20-workspace"
 vi.mock("@/lib/toast", () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() } }))
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn(), replace: vi.fn() }) }))
 vi.mock("../../../actions", () => ({ savePreventionIncidentRe20WorkspaceAction: vi.fn(), recordPreventionIncidentNotificationAction: vi.fn() }))
-vi.mock("@/lib/prevention/re20-offline-vault", () => ({
-  getRe20VaultState: vi.fn(async () => ({ configured: false, unlocked: false, draftCount: 0 })),
-  listRe20OfflineDraftHeaders: vi.fn(async () => []),
+vi.mock("@/lib/prevention/re20-offline-drafts", () => ({
   getRe20OfflineDraft: vi.fn(async () => null),
   putRe20OfflineDraft: vi.fn(async () => ({})),
   deleteRe20OfflineDraft: vi.fn(async () => {}),
-  lockRe20Vault: vi.fn(),
-  touchRe20Vault: vi.fn(),
-  unlockRe20Vault: vi.fn(async () => ({ configured: true, deviceId: "d" })),
 }))
 
 import { Re20WorkspaceShell } from "../re20-workspace-shell"

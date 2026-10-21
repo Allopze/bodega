@@ -30,7 +30,7 @@ export function emptyQualityDraft(): QualityDraft {
   return { criteria: {}, decision: null, observation: "" }
 }
 
-/** Lee el borrador guardado en `ws.extras` (o en la bóveda); tolera formas anteriores o dañadas. */
+/** Lee el borrador guardado en `ws.extras` (o en la copia local del equipo); tolera formas anteriores o dañadas. */
 export function readQualityDraft(raw: unknown): QualityDraft {
   const draft = emptyQualityDraft()
   if (!raw || typeof raw !== "object") return draft

@@ -39,7 +39,7 @@ export function newRe20Id(prefix: string) {
 }
 
 /**
- * Lleva cualquier forma guardada (servidor, borrador antiguo de la bóveda) a la
+ * Lleva cualquier forma guardada (servidor, borrador local antiguo) a la
  * forma vigente con sus valores por defecto. Un árbol estructuralmente inválido
  * —un borrador a medias— no impide abrir el expediente: se conserva tal cual.
  */

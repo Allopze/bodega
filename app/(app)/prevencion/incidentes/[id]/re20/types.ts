@@ -166,7 +166,7 @@ export interface Re20WorkspaceProps {
   sensitiveLoadError: string | null
   permissions: Re20Permissions
   currentUser: { id: string; name: string }
-  /** Dueño de la bóveda local (el usuario de la sesión, o el perfil elegido sin conexión). */
+  /** Dueño de los borradores locales de este equipo (el usuario de la sesión, o el último usuario del equipo en la pantalla sin conexión). */
   userId: string
   /** Personas elegibles para equipo, responsables y verificadores (nombre y cargo). */
   people: Re20Person[]
@@ -184,7 +184,7 @@ export interface Re20WorkspaceProps {
   initialLocalDraft?: Re20LocalDraft | null
 }
 
-/** Copia cifrada del expediente en la bóveda del dispositivo. Compatible con los borradores ya guardados. */
+/** Copia local del expediente (cambios sin enviar) guardada en este equipo. Compatible con los borradores ya guardados. */
 export interface Re20LocalDraft {
   incidentId: string
   baseVersion: number

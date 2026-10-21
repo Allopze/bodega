@@ -14,15 +14,10 @@ vi.mock("../../../../actions", () => ({
   savePreventionIncidentRe20WorkspaceAction: vi.fn(),
   createCapaFromRe20MeasureAction: capaAction,
 }))
-vi.mock("@/lib/prevention/re20-offline-vault", () => ({
-  getRe20VaultState: vi.fn(async () => ({ configured: false, unlocked: false, draftCount: 0 })),
-  listRe20OfflineDraftHeaders: vi.fn(async () => []),
+vi.mock("@/lib/prevention/re20-offline-drafts", () => ({
   getRe20OfflineDraft: vi.fn(async () => null),
   putRe20OfflineDraft: vi.fn(async () => ({})),
   deleteRe20OfflineDraft: vi.fn(async () => {}),
-  lockRe20Vault: vi.fn(),
-  touchRe20Vault: vi.fn(),
-  unlockRe20Vault: vi.fn(async () => ({ configured: true, deviceId: "d" })),
 }))
 
 import { Re20WorkspaceShell } from "../../re20-workspace-shell"

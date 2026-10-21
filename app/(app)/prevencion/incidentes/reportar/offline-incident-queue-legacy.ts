@@ -1,4 +1,4 @@
-/** Lectura de la cola RE-20 v2 en claro, sólo para migrarla a la bóveda cifrada. */
+/** Lectura de la cola RE-20 v2 en claro (sin dueño), sólo para migrarla al almacén de borradores por usuario. */
 interface LegacyQueueEntry<T = unknown> {
   id: string
   payload: T

@@ -1,15 +1,16 @@
 // @vitest-environment jsdom
 import "fake-indexeddb/auto"
-import { beforeEach, describe, expect, it } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 import {
   discardQueuedIncidentReport,
   flushIncidentReportQueue,
   listQueuedIncidentReports,
-  lockAndPurgeIncidentQueues,
+  migrateLegacyIncidentReportQueue,
+  purgeIncidentOfflineData,
   queueIncidentReport,
   type OfflineIncidentReport,
 } from "./offline-incident-queue"
-import { lockRe20Vault, unlockRe20Vault } from "@/lib/prevention/re20-offline-vault"
+import { listRe20OfflineDrafts, putRe20OfflineDraft } from "@/lib/prevention/re20-offline-drafts"
 import { listLegacyIncidentReports } from "./offline-incident-queue-legacy"
 
 /** Siembra la cola v2 en claro tal como la dejaba la versión anterior. */
@@ -33,7 +34,7 @@ function seedLegacyQueue(entry: { id: string; payload: unknown; queuedAt: string
 }
 
 const USER_ID = "offline-queue-test-user"
-const PASSPHRASE = "bodega-test-passphrase-2026"
+const OTHER_USER_ID = "offline-queue-other-user"
 
 const payload: OfflineIncidentReport = {
   clientSubmissionId: "offline-test-idempotent-001",
@@ -55,10 +56,10 @@ const payload: OfflineIncidentReport = {
 }
 
 beforeEach(async () => {
-  await unlockRe20Vault(USER_ID, PASSPHRASE)
-  for (const entry of await listQueuedIncidentReports(USER_ID)) {
-    await discardQueuedIncidentReport(USER_ID, entry.id)
+  for (const userId of [USER_ID, OTHER_USER_ID]) {
+    for (const entry of await listQueuedIncidentReports(userId)) await discardQueuedIncidentReport(userId, entry.id)
   }
+  await purgeIncidentOfflineData()
 })
 
 describe("incident offline queue", () => {
@@ -84,30 +85,89 @@ describe("incident offline queue", () => {
     expect(entry).toMatchObject({ id: `incident-report:${payload.clientSubmissionId}`, attempts: 1, lastError: "sin red" })
   })
 
-  it("keeps the draft after locking the key and reopening the browser session", async () => {
+  it("no deja rechazado para siempre un fallo sin veredicto, pero sí un rechazo permanente", async () => {
     await queueIncidentReport(USER_ID, payload)
-    lockRe20Vault(USER_ID)
-    await expect(listQueuedIncidentReports(USER_ID)).rejects.toThrow(/desbloquea/i)
-    await unlockRe20Vault(USER_ID, PASSPHRASE)
+    let calls = 0
+    const sender = async () => { calls++; return { ok: false, message: "La faena no existe", retriable: false } }
+
+    expect(await flushIncidentReportQueue(USER_ID, sender)).toEqual({ synchronized: 0, pending: 0, rejected: 1 })
     const [entry] = await listQueuedIncidentReports(USER_ID)
-    expect(entry?.payload.clientSubmissionId).toBe(payload.clientSubmissionId)
+    expect(entry).toMatchObject({ rejected: true, lastError: "La faena no existe", attempts: 1 })
+
+    // Ya rechazado: no se reenvía solo ni se vuelve a contar como rechazo nuevo.
+    expect(await flushIncidentReportQueue(USER_ID, sender)).toEqual({ synchronized: 0, pending: 0, rejected: 0 })
+    expect(calls).toBe(1)
+    expect(await listQueuedIncidentReports(USER_ID)).toHaveLength(1)
   })
 
-  it("does not evict drafts as the queue grows past the old plaintext limit", async () => {
+  it("un fallo de red deja el reporte en cola para el próximo intento", async () => {
+    await queueIncidentReport(USER_ID, payload)
+    expect(await flushIncidentReportQueue(USER_ID, async () => { throw new TypeError("Failed to fetch") })).toEqual({ synchronized: 0, pending: 1, rejected: 0 })
+    expect(await flushIncidentReportQueue(USER_ID, async () => ({ ok: true }))).toEqual({ synchronized: 1, pending: 0, rejected: 0 })
+    expect(await listQueuedIncidentReports(USER_ID)).toHaveLength(0)
+  })
+
+  it("dos envíos simultáneos (montaje + evento online) no mandan el mismo reporte dos veces", async () => {
+    await queueIncidentReport(USER_ID, payload)
+    let calls = 0
+    const sender = async () => { calls++; await new Promise((resolve) => setTimeout(resolve, 10)); return { ok: true } }
+    await Promise.all([flushIncidentReportQueue(USER_ID, sender), flushIncidentReportQueue(USER_ID, sender)])
+    expect(calls).toBe(1)
+  })
+
+  it("sin conexión no envía ni gasta intentos", async () => {
+    await queueIncidentReport(USER_ID, payload)
+    const onLine = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false)
+    try {
+      let calls = 0
+      expect(await flushIncidentReportQueue(USER_ID, async () => { calls++; return { ok: true } })).toEqual({ synchronized: 0, pending: 1, rejected: 0 })
+      expect(calls).toBe(0)
+      expect((await listQueuedIncidentReports(USER_ID))[0]?.attempts).toBe(0)
+    } finally {
+      onLine.mockRestore()
+    }
+  })
+
+  it("cada persona ve y envía sólo sus reportes", async () => {
+    await queueIncidentReport(USER_ID, payload)
+    await queueIncidentReport(OTHER_USER_ID, { ...payload, clientSubmissionId: "offline-test-other" })
+    expect(await listQueuedIncidentReports(USER_ID)).toHaveLength(1)
+    const sent: string[] = []
+    await flushIncidentReportQueue(USER_ID, async (report) => { sent.push(report.clientSubmissionId); return { ok: true } })
+    expect(sent).toEqual([payload.clientSubmissionId])
+    expect(await listQueuedIncidentReports(OTHER_USER_ID)).toHaveLength(1)
+  })
+
+  it("no expulsa borradores cuando la cola crece: no hay tope ni caducidad", async () => {
     for (let i = 0; i < 27; i++) {
       await queueIncidentReport(USER_ID, { ...payload, clientSubmissionId: `offline-test-${i}` })
     }
     expect(await listQueuedIncidentReports(USER_ID)).toHaveLength(27)
   })
 
-  it("purges the plaintext legacy queue on sign-out so the next user cannot adopt it", async () => {
-    await seedLegacyQueue({ id: "legacy-1", payload, queuedAt: "2026-07-18T10:20:00.000Z", attempts: 0 })
-    await queueIncidentReport(USER_ID, payload)
+  it("migra la cola antigua en claro al almacén de la persona y la vacía", async () => {
+    await seedLegacyQueue({ id: "legacy-1", payload, queuedAt: "2026-07-18T10:20:00.000Z", attempts: 3 })
 
-    expect(await lockAndPurgeIncidentQueues()).toBe(1)
+    expect(await migrateLegacyIncidentReportQueue(USER_ID)).toBe(1)
 
     expect(await listLegacyIncidentReports()).toHaveLength(0)
-    await unlockRe20Vault(USER_ID, PASSPHRASE)
-    expect(await listQueuedIncidentReports(USER_ID)).toHaveLength(1)
+    const [entry] = await listQueuedIncidentReports(USER_ID)
+    expect(entry).toMatchObject({ id: `incident-report:${payload.clientSubmissionId}`, attempts: 3, createdAt: "2026-07-18T10:20:00.000Z" })
+    expect(entry?.payload.offlineSync).toBe(true)
+    expect(await migrateLegacyIncidentReportQueue(USER_ID)).toBe(0)
+  })
+
+  it("al cerrar sesión se purga TODO: la cola antigua en claro y los borradores de cualquier persona", async () => {
+    await seedLegacyQueue({ id: "legacy-1", payload, queuedAt: "2026-07-18T10:20:00.000Z", attempts: 0 })
+    await queueIncidentReport(USER_ID, payload)
+    await queueIncidentReport(OTHER_USER_ID, { ...payload, clientSubmissionId: "offline-test-other" })
+    await putRe20OfflineDraft(USER_ID, { id: "incident-workspace:inc-1", kind: "incident_workspace", payload: { incidentId: "inc-1" }, attempts: 0 })
+
+    expect(await purgeIncidentOfflineData()).toBe(4)
+
+    expect(await listLegacyIncidentReports()).toHaveLength(0)
+    expect(await listRe20OfflineDrafts(USER_ID)).toEqual([])
+    expect(await listRe20OfflineDrafts(OTHER_USER_ID)).toEqual([])
+    expect(await purgeIncidentOfflineData()).toBe(0)
   })
 })

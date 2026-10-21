@@ -5,20 +5,21 @@ import { getSession, signOut } from "next-auth/react"
 import { clearAllInspectionDrafts } from "@/lib/prevention/inspection-draft-storage"
 
 /**
- * Bloquea la bóveda RE-20 cifrada (conserva sus borradores) y vacía las colas
- * en claro: la antigua de incidentes, PPA e inspecciones. Import dinámico para no cargar IndexedDB ni el
- * árbol de Prevención en el bundle de la barra superior.
+ * Vacía lo que el trabajo sin conexión dejó en este equipo: los borradores de
+ * Incidentes / RE-20 (reportes por enviar y copia local de los expedientes), la
+ * cola antigua de incidentes, PPA e inspecciones. Import dinámico para no cargar
+ * IndexedDB ni el árbol de Prevención en el bundle de la barra superior.
  */
 async function clearOfflineQueues() {
   try {
-    const [{ lockAndPurgeIncidentQueues }, { clearPpaQueue }, { clearInspectionSubmissionQueue }] = await Promise.all([
+    const [{ purgeIncidentOfflineData }, { clearPpaQueue }, { clearInspectionSubmissionQueue }] = await Promise.all([
       import("@/app/(app)/prevencion/incidentes/reportar/offline-incident-queue"),
       import("@/lib/pwa/offline-queue"),
       // Las respuestas de una inspección y los nombres de quienes firman el
       // acta viven en claro en IndexedDB hasta 30 días, en equipos compartidos.
       import("@/app/(app)/prevencion/inspecciones/[runId]/offline-inspection-queue"),
     ])
-    await Promise.allSettled([lockAndPurgeIncidentQueues(), clearPpaQueue(), clearInspectionSubmissionQueue()])
+    await Promise.allSettled([purgeIncidentOfflineData(), clearPpaQueue(), clearInspectionSubmissionQueue()])
   } catch {
     /* no-op: cerrar sesión nunca se bloquea por la limpieza local */
   }
@@ -64,10 +65,12 @@ export function useSignOut() {
   const handleSignOut = React.useCallback(async () => {
     setIsSigningOut(true)
     try {
-      // La bóveda RE-20 usa una frase local distinta de la sesión: se bloquea y
-      // conserva sus borradores cifrados. Lo que vive en claro (cola antigua de
-      // incidentes, PPA, inspecciones) no puede sobrevivir al cambio de usuario
-      // en un equipo de faena compartido. Best-effort: no bloquea el cierre.
+      // Lo que quedó guardado sin conexión (borradores de incidentes y RE-20,
+      // cola antigua de incidentes, PPA, inspecciones) vive en claro en este
+      // equipo y no puede sobrevivir al cambio de usuario en un equipo de faena
+      // compartido. Lo aún sin enviar se pierde: por eso los avisos de sin
+      // conexión piden no cerrar sesión hasta que vuelva la señal. Best-effort:
+      // no bloquea el cierre.
       clearLocalInspectionDrafts()
       await clearOfflineQueues()
       await signOut({ redirect: false })

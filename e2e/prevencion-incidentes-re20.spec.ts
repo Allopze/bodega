@@ -11,8 +11,8 @@ import { esperarGuardado } from "./inspecciones-captura-helpers"
  *   • Bandeja de incidentes, reporte y exportación a Excel (flujo original).
  *   • El expediente RE-20 rediseñado (`/prevencion/incidentes/[id]`, etapas en
  *     `re20/stages/*`): accidente con tiempo perdido de punta a punta, accidente de
- *     trayecto (3 etapas), cuasi accidente grave (árbol obligatorio) y la purga de la
- *     cola antigua en claro al cerrar sesión.
+ *     trayecto (3 etapas), cuasi accidente grave (árbol obligatorio) y la purga de lo
+ *     guardado sin conexión (cola antigua en claro y borradores por usuario) al cerrar sesión.
  *
  * Cómo está armado:
  *   • El expediente es UNA pantalla con 7 etapas (`?etapa=`): nada de duplicar árbol
@@ -39,7 +39,8 @@ import { esperarGuardado } from "./inspecciones-captura-helpers"
  *   • cuestionario RE-20-03 a la persona accidentada: se responde, se guarda, persiste y se termina;
  *   • anexos: un PNG real se sube y se descarga como `image/png`; lo que no es un archivo
  *     admitido se rechaza con un mensaje claro;
- *   • sin conexión: bóveda cifrada → cambio sin red → borrador local → sincroniza al volver.
+ *   • sin conexión (automático, sin frase ni bóveda): cambio sin red → se guarda solo en el
+ *     equipo → pantalla pública sin conexión → se recupera al reabrir → guardar lo envía.
  *
  * Sin defectos de producto abiertos. Al escribirlo se confirmaron cinco, ya corregidos, y su
  * cobertura quedó como pruebas normales:
@@ -244,6 +245,36 @@ function contarColaAntigua(page: Page): Promise<number> {
       cuenta.onerror = () => reject(cuenta.error)
     }
   }))
+}
+
+/**
+ * Cuántos registros guarda el almacén de borradores de este equipo (`chome-re20-offline-drafts`,
+ * almacén `drafts`), de un tipo o de todos. No abre una base que no existe: abrirla con una
+ * versión sin `onupgradeneeded` la dejaría creada y vacía, sin su almacén.
+ */
+function contarBorradoresLocales(page: Page, tipo?: "incident_workspace" | "incident_report" | "incident_report_config"): Promise<number> {
+  return page.evaluate(async (kind) => {
+    const bases = await indexedDB.databases()
+    if (!bases.some((base) => base.name === "chome-re20-offline-drafts")) return 0
+    return await new Promise<number>((resolve, reject) => {
+      const abrir = indexedDB.open("chome-re20-offline-drafts", 1)
+      abrir.onerror = () => reject(abrir.error)
+      abrir.onsuccess = () => {
+        const base = abrir.result
+        const pedido = base.transaction("drafts").objectStore("drafts").getAll()
+        pedido.onsuccess = () => {
+          base.close()
+          resolve((pedido.result as Array<{ kind: string }>).filter((registro) => !kind || registro.kind === kind).length)
+        }
+        pedido.onerror = () => reject(pedido.error)
+      }
+    })
+  }, tipo)
+}
+
+/** ¿Sigue existiendo la base de la bóveda cifrada con frase (`chome-re20-encrypted-vault`)? Ya no debe. */
+function existeBovedaRetirada(page: Page): Promise<boolean> {
+  return page.evaluate(async () => (await indexedDB.databases()).some((base) => base.name === "chome-re20-encrypted-vault"))
 }
 
 /* ── Escenario 0: el flujo original (reporte, detalle, exportación) ─────── */
@@ -933,16 +964,20 @@ test.describe("RE-20 — cuasi accidente", () => {
   })
 })
 
-/* ── Escenario 4: cerrar sesión purga la cola antigua en claro ──────────── */
+/* ── Escenario 4: cerrar sesión vacía todo lo guardado sin conexión ───────── */
 
 test.describe("RE-20 — cierre de sesión y cola sin conexión", () => {
-  test("cerrar sesión vacía la cola antigua de reportes, que estaba en claro en IndexedDB", async ({ page }) => {
+  test("al abrir «Reportar incidente» la cola antigua en claro pasa al almacén de la persona, y cerrar sesión vacía todo lo guardado en el equipo", async ({ page }) => {
     await login(page, INVESTIGADOR.email)
     await page.goto("/prevencion/incidentes/reportar")
     await expectPageTitle(page, "Reportar incidente")
     await page.waitForLoadState("networkidle").catch(() => undefined)
 
-    // Se siembra la cola v2 anterior a la bóveda: `chome-prevention-offline`, almacén `incident-reports`
+    // Sin frase ni pantalla de apertura: las faenas quedan guardadas solas para poder reportar sin conexión.
+    await expect.poll(() => contarBorradoresLocales(page, "incident_report_config"), { timeout: 15_000 }).toBe(1)
+    expect(await existeBovedaRetirada(page)).toBe(false)
+
+    // Se siembra la cola v2 anterior: `chome-prevention-offline`, almacén `incident-reports`
     // (keyPath `id`), con un reporte en claro como el que dejaba el modo sin conexión de entonces.
     const sembrados = await page.evaluate(() => new Promise<number>((resolve, reject) => {
       const abrir = indexedDB.open("chome-prevention-offline", 2)
@@ -970,19 +1005,23 @@ test.describe("RE-20 — cierre de sesión y cola sin conexión", () => {
       }
     }))
     expect(sembrados).toBeGreaterThanOrEqual(1)
-    // Control: nada más que cerrar sesión la vacía. Recargar la pantalla la deja intacta.
+
+    // Al recargar, la cola antigua pasa al almacén de esta persona (y queda vacía en claro). El servidor rechaza
+    // ese reporte sembrado (no trae faena), así que NO se borra: queda guardado como rechazado.
     await page.reload()
     await page.waitForLoadState("networkidle").catch(() => undefined)
-    expect(await contarColaAntigua(page)).toBe(sembrados)
+    await expect.poll(() => contarColaAntigua(page), { timeout: 15_000 }).toBe(0)
+    await expect.poll(() => contarBorradoresLocales(page, "incident_report"), { timeout: 15_000 }).toBeGreaterThanOrEqual(1)
 
     // Cerrar sesión desde el menú de usuario.
     await page.getByRole("button", { name: "Abrir menú de usuario" }).click()
     await page.getByRole("menuitem", { name: "Cerrar sesión" }).click()
     await expect(page).toHaveURL(/\/login/, { timeout: 30_000 })
 
-    // La cola en claro quedó vacía: lo que sigue en el dispositivo es solo lo cifrado de la bóveda.
-    const restantes = await contarColaAntigua(page)
-    expect(restantes).toBe(0)
+    // Nada quedó en el equipo: ni la cola antigua en claro, ni los borradores de ninguna persona.
+    expect(await contarColaAntigua(page)).toBe(0)
+    expect(await contarBorradoresLocales(page)).toBe(0)
+    expect(await existeBovedaRetirada(page)).toBe(false)
   })
 })
 
@@ -1622,28 +1661,12 @@ test.describe("RE-20 — anexos", () => {
   })
 })
 
-/* ── Sin conexión: bóveda cifrada, borrador local y sincronización ──────── */
-
-/** Cuántos borradores cifrados guarda la bóveda de este dispositivo (`chome-re20-encrypted-vault`). */
-function contarBorradoresCifrados(page: Page): Promise<number> {
-  return page.evaluate(() => new Promise<number>((resolve, reject) => {
-    const abrir = indexedDB.open("chome-re20-encrypted-vault", 1)
-    abrir.onerror = () => reject(abrir.error)
-    abrir.onsuccess = () => {
-      const base = abrir.result
-      if (!base.objectStoreNames.contains("encrypted-drafts")) { base.close(); resolve(0); return }
-      const cuenta = base.transaction("encrypted-drafts").objectStore("encrypted-drafts").count()
-      cuenta.onsuccess = () => { base.close(); resolve(cuenta.result) }
-      cuenta.onerror = () => reject(cuenta.error)
-    }
-  }))
-}
+/* ── Sin conexión: guardado automático en el equipo y envío al guardar ───── */
 
 test.describe("RE-20 — trabajo sin conexión", () => {
   test.setTimeout(240_000)
 
-  test("con la bóveda abierta, un cambio hecho sin red queda cifrado en el dispositivo, se sincroniza al volver la conexión y sobrevive a recargar", async ({ page, context }) => {
-    const frase = "frase-del-dispositivo-e2e-2026"
+  test("sin frase ni bóveda: un cambio hecho sin red se guarda solo en el equipo, se ve en la pantalla pública sin conexión, se recupera al reabrir y se envía al guardar con conexión", async ({ page, context }) => {
     const jefe = `Jefe sin señal QA_ ${RUN}`
     await login(page, INVESTIGADOR.email)
     const id = await reportarAccidente(page, `Mina rajo norte E2E-${RUN}`, `Un operario se torció la espalda levantando un repuesto en terreno E2E-${RUN}.`)
@@ -1651,54 +1674,62 @@ test.describe("RE-20 — trabajo sin conexión", () => {
     const estado = page.locator("[data-save-state]").filter({ visible: true })
     await expect(estado).toHaveAttribute("data-save-state", "saved")
 
-    // Preparar el dispositivo: la bóveda se crea con una frase propia de este equipo (≥ 12 caracteres).
-    await page.getByRole("button", { name: "Preparar para trabajar sin conexión" }).click()
-    await expect(page.getByRole("heading", { name: "Crea una bóveda para trabajar sin conexión" })).toBeVisible()
-    const crear = page.getByRole("button", { name: "Crear y abrir", exact: true })
-    await page.getByLabel("Frase del dispositivo", { exact: true }).fill("corta")
-    await crear.click()
-    await expect(textoVisible(page, "La frase debe tener al menos 12 caracteres.")).toBeVisible()
-    await page.getByLabel("Frase del dispositivo", { exact: true }).fill(frase)
-    await crear.click()
-    await expect(aviso(page, "Bóveda abierta")).toBeVisible({ timeout: 30_000 })
-    await expect(page.getByRole("region", { name: "Bóveda de este dispositivo" })).toContainText("Bóveda abierta en este dispositivo")
-    expect(await contarBorradoresCifrados(page)).toBe(0)
+    // Nada que preparar: no hay bóveda, ni frase, ni botón para «preparar». Con conexión no se guarda nada aparte.
+    await expect(page.getByRole("button", { name: "Preparar para trabajar sin conexión" })).toHaveCount(0)
+    await expect(page.getByLabel("Frase del dispositivo", { exact: true })).toHaveCount(0)
+    await expect(page.getByText(/bóveda/i)).toHaveCount(0)
+    expect(await contarBorradoresLocales(page, "incident_workspace")).toBe(0)
+    expect(await existeBovedaRetirada(page)).toBe(false)
 
-    // Se corta la conexión: el expediente lo dice y no pierde lo que ya mostraba.
+    // Se corta la conexión: el indicador lo dice y no pierde lo que ya mostraba.
     await context.setOffline(true)
     await expect(estado).toHaveAttribute("data-save-state", "offline")
-    await expect(estado).toHaveText("Sin conexión")
-    await expect(page.getByRole("button", { name: "Guardar en este dispositivo" })).toBeDisabled()
+    await expect(estado).toHaveText("Sin conexión · lo que escribas se guarda en este equipo")
+    await expect(page.getByRole("button", { name: "Guardar en este equipo" })).toBeDisabled()
 
-    // Se edita sin red: el estado pasa a «cambios cifrados en este dispositivo» y la copia llega a IndexedDB.
+    // Se edita sin red: se guarda solo, sin pedir nada, y la copia llega a IndexedDB.
     await campo(page, "re20-preliminar-managerName").fill(jefe)
     await expect(estado).toHaveAttribute("data-save-state", "offline")
-    await expect(estado).toHaveText("Sin conexión · cambios cifrados en este dispositivo")
-    await expect.poll(() => contarBorradoresCifrados(page), { timeout: 15_000 }).toBeGreaterThanOrEqual(1)
-    await expect(page.getByRole("region", { name: "Bóveda de este dispositivo" })).toContainText("Copia de este expediente guardada")
+    await expect(estado).toHaveText("Sin conexión · tus cambios se guardan en este equipo")
+    await expect.poll(() => contarBorradoresLocales(page, "incident_workspace"), { timeout: 15_000 }).toBe(1)
 
-    // «Guardar en este dispositivo» no manda nada al servidor: confirma que quedó cifrado y espera la conexión.
+    // «Guardar en este equipo» no manda nada al servidor: confirma que quedó guardado y espera la conexión.
     await waitForToastsToClear(page)
-    await page.getByRole("button", { name: "Guardar en este dispositivo" }).click()
-    await expect(aviso(page, "Guardado cifrado en este dispositivo. Se enviará cuando abras el caso con conexión.")).toBeVisible()
+    await page.getByRole("button", { name: "Guardar en este equipo" }).click()
+    await expect(aviso(page, "Guardado en este equipo. Para enviarlo, abre el caso con conexión y guarda.")).toBeVisible()
     await expect(estado).toHaveAttribute("data-save-state", "offline")
     await expect(campo(page, "re20-preliminar-managerName")).toHaveValue(jefe)
 
-    // Vuelve la señal: el cambio sigue ahí, pendiente de enviarse, y guardar lo sincroniza.
+    // Vuelve la señal: el cambio sigue ahí, se avisa que falta guardar y no se manda nada solo.
+    await waitForToastsToClear(page)
     await context.setOffline(false)
     await expect(estado).toHaveAttribute("data-save-state", "dirty")
-    await expect(estado).toHaveText("Cambios sin enviar · copia cifrada en este dispositivo")
+    await expect(estado).toHaveText("Cambios sin guardar")
+    await expect(aviso(page, "Volvió la conexión. Guarda el expediente para enviar tus cambios.")).toBeVisible()
     await expect(campo(page, "re20-preliminar-managerName")).toHaveValue(jefe)
+    expect(await contarBorradoresLocales(page, "incident_workspace")).toBe(1)
+
+    // La pantalla pública sin conexión muestra directamente lo guardado, sin frase.
+    await page.goto("/prevencion/incidentes/re20-offline")
+    await expect(page.getByRole("heading", { level: 1, name: "Trabajo sin conexión" })).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByText(/1 expediente de investigación con cambios sin enviar/)).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByLabel("Frase del dispositivo", { exact: true })).toHaveCount(0)
+    await expect(campo(page, "re20-preliminar-managerName")).toHaveValue(jefe)
+
+    // Al reabrir el caso con conexión, lo pendiente vuelve a estar ahí y guardar lo sincroniza.
+    await abrirCaso(page, id, { etapa: "preliminar" })
+    await expect(campo(page, "re20-preliminar-managerName")).toHaveValue(jefe)
+    await expect(estado).toHaveAttribute("data-save-state", "dirty")
     await waitForToastsToClear(page)
     await guardar(page)
     await expect(aviso(page, "Expediente RE-20 guardado")).toBeVisible()
-    // Sincronizado: la copia del dispositivo ya no hace falta y se retira.
-    await expect.poll(() => contarBorradoresCifrados(page), { timeout: 15_000 }).toBe(0)
+    // Sincronizado: la copia del equipo ya no hace falta y se retira.
+    await expect.poll(() => contarBorradoresLocales(page, "incident_workspace"), { timeout: 15_000 }).toBe(0)
 
-    // El servidor lo tiene: tras recargar con la bóveda cerrada sigue ahí, sin copia local de por medio.
+    // El servidor lo tiene: tras recargar sigue ahí, sin copia local de por medio.
     await abrirCaso(page, id, { etapa: "preliminar" })
     await expect(campo(page, "re20-preliminar-managerName")).toHaveValue(jefe)
     await expect(estado).toHaveAttribute("data-save-state", "saved")
-    expect(await contarBorradoresCifrados(page)).toBe(0)
+    expect(await contarBorradoresLocales(page, "incident_workspace")).toBe(0)
   })
 })

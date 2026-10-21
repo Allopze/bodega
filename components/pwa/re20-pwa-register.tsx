@@ -6,7 +6,7 @@ import { useEffect } from "react"
  *  Es subruta del directorio del script ("/re20-sw.js"), así que no requiere Service-Worker-Allowed. */
 export const RE20_SW_SCOPE = "/prevencion/incidentes/"
 
-/** Registers an isolated worker, scoped to RE-20 routes, for the offline unlock shell. */
+/** Registers an isolated worker, scoped to RE-20 routes, for the offline work shell. */
 export function Re20PwaRegister() {
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return

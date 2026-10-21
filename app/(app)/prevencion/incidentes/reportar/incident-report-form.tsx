@@ -6,6 +6,7 @@ import { CloudArrowUp, CloudSlash, Siren } from "@phosphor-icons/react"
 import { toast } from "@/lib/toast"
 import { formatDateTime } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
+import { Callout } from "@/components/ui/callout"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -23,8 +24,7 @@ import {
   type QueueEntry,
   type OfflineIncidentReport,
 } from "./offline-incident-queue"
-import { getRe20VaultState, listRe20OfflineDraftHeaders, lockRe20Vault, putRe20OfflineDraft, unlockRe20Vault } from "@/lib/prevention/re20-offline-vault"
-import { Re20VaultGate } from "../[id]/re20/vault-gate"
+import { putRe20OfflineDraft } from "@/lib/prevention/re20-offline-drafts"
 
 interface WorksiteOption {
   id: string
@@ -83,52 +83,18 @@ export function IncidentReportForm({ worksites, defaultDate, defaultTime, userId
   const [hasPerson, setHasPerson] = useState(false)
   const [queued, setQueued] = useState(0)
   const [rejected, setRejected] = useState(0)
-  const [vaultConfigured, setVaultConfigured] = useState(false)
-  const [vaultUnlocked, setVaultUnlocked] = useState(false)
-  const [vaultRequested, setVaultRequested] = useState(false)
   const [queuedEntries, setQueuedEntries] = useState<QueueEntry[]>([])
 
+  /** Lo guardado en este equipo: `queued` son los que esperan señal; los rechazados por el servidor se cuentan aparte. */
   const refreshLocalQueue = useCallback(async () => {
-    if (!vaultUnlocked) {
-      const state = await getRe20VaultState(userId)
-      setVaultConfigured(state.configured)
-      setVaultUnlocked(state.unlocked)
-      const headers = await listRe20OfflineDraftHeaders(userId)
-      setQueued(headers.filter((entry) => entry.kind === "incident_report").length)
-      return
-    }
     const entries = await listQueuedIncidentReports(userId)
     setQueuedEntries(entries)
-    setQueued(entries.length)
-  }, [userId, vaultUnlocked])
-
-  /** Lanza el error al `Re20VaultGate`, que lo muestra junto a la frase. */
-  async function unlockLocalVault(passphrase: string) {
-    await unlockRe20Vault(userId, passphrase)
-    await putRe20OfflineDraft(userId, {
-      id: "incident-report-config",
-      kind: "incident_report_config",
-      payload: { worksites, defaultDate, defaultTime },
-      attempts: 0,
-    })
-    const migrated = await migrateLegacyIncidentReportQueue(userId)
-    setVaultConfigured(true)
-    setVaultUnlocked(true)
-    const entries = await listQueuedIncidentReports(userId)
-    setQueuedEntries(entries)
-    setQueued(entries.length)
-    if (migrated > 0) toast.success(`${migrated} ${migrated === 1 ? "reporte guardado pasó" : "reportes guardados pasaron"} a la bóveda cifrada`)
-    else toast.success("Bóveda abierta en este dispositivo")
-  }
-
-  function lockLocalVault() {
-    lockRe20Vault(userId)
-    setVaultUnlocked(false)
-    setQueuedEntries([])
-  }
+    setQueued(entries.filter((entry) => !entry.rejected).length)
+    setRejected(entries.filter((entry) => entry.rejected).length)
+  }, [userId])
 
   const synchronize = useCallback(async () => {
-    if (!navigator.onLine || !vaultUnlocked || offlineOnly) return
+    if (!navigator.onLine || offlineOnly) return
     const result = await flushIncidentReportQueue(userId, async (payload) => {
       // `ok: false` del servidor es un rechazo permanente (validación, alcance,
       // clave ya usada): la cola no debe gastar reintentos ni dejarlo como
@@ -136,27 +102,45 @@ export function IncidentReportForm({ worksites, defaultDate, defaultTime, userId
       const res = await reportPreventionIncidentAction(payload)
       return res.ok ? res : { ...res, retriable: false }
     })
-    setQueued(result.pending)
-    setRejected(result.rejected)
-    setQueuedEntries(await listQueuedIncidentReports(userId))
-    if (result.synchronized > 0) toast.success(`${result.synchronized} reporte(s) offline sincronizado(s)`)
+    await refreshLocalQueue()
+    if (result.synchronized > 0) toast.success(`${result.synchronized} ${result.synchronized === 1 ? "reporte guardado sin conexión se envió" : "reportes guardados sin conexión se enviaron"}`)
     if (result.rejected > 0) {
-      toast.error(`${result.rejected} reporte(s) offline no se pudieron enviar y quedaron rechazados. Revísalos y vuelve a registrarlos.`)
+      toast.error(`${result.rejected} ${result.rejected === 1 ? "reporte guardado no se pudo enviar y quedó rechazado" : "reportes guardados no se pudieron enviar y quedaron rechazados"}. Revísalos y vuelve a registrarlos.`)
     }
-  }, [userId, vaultUnlocked, offlineOnly])
+  }, [userId, offlineOnly, refreshLocalQueue])
 
+  // Cuando vuelve la señal, lo guardado en este equipo se envía solo.
   useEffect(() => {
-    window.addEventListener("online", synchronize)
-    return () => window.removeEventListener("online", synchronize)
+    const onOnline = () => { void synchronize().catch(() => {}) }
+    window.addEventListener("online", onOnline)
+    return () => window.removeEventListener("online", onOnline)
   }, [synchronize])
 
-  // Si la página se abre ya con conexión, el evento "online" nunca dispara: un
-  // reporte encolado en una sesión anterior quedaba en IndexedDB sin sincronizar
-  // y sin siquiera mostrarse en el contador.
+  // Las faenas quedan guardadas para poder reportar desde la pantalla sin conexión.
   useEffect(() => {
-    void refreshLocalQueue().catch(() => {})
-    if (!offlineOnly && navigator.onLine && vaultUnlocked) void synchronize()
-  }, [refreshLocalQueue, synchronize, vaultUnlocked, offlineOnly])
+    if (offlineOnly) return
+    void putRe20OfflineDraft(userId, {
+      id: "incident-report-config",
+      kind: "incident_report_config",
+      payload: { worksites, defaultDate, defaultTime },
+      attempts: 0,
+    }).catch(() => {})
+  }, [userId, offlineOnly, worksites, defaultDate, defaultTime])
+
+  // Si la página se abre ya con conexión, el evento "online" nunca dispara: un
+  // reporte guardado en una sesión anterior quedaba en IndexedDB sin enviar y
+  // sin siquiera mostrarse. Al cargar se pasa la cola antigua al almacén de
+  // esta persona, se muestra lo pendiente y, con conexión, se envía.
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      if (!offlineOnly) await migrateLegacyIncidentReportQueue(userId).catch(() => 0)
+      if (cancelled) return
+      await refreshLocalQueue()
+      if (!cancelled && !offlineOnly && navigator.onLine) await synchronize()
+    })().catch(() => {})
+    return () => { cancelled = true }
+  }, [userId, offlineOnly, refreshLocalQueue, synchronize])
 
   // `onSubmit` y no `action=`: React 19 pide el reset del formulario ANTES de
   // correr la acción, así que con `action={handleSubmit}` un rechazo del
@@ -204,11 +188,13 @@ export function IncidentReportForm({ worksites, defaultDate, defaultTime, userId
 
         if (offlineOnly || !navigator.onLine) {
           await queueIncidentReport(userId, payload)
-          await refreshLocalQueue()
+          await refreshLocalQueue().catch(() => {})
           // Sin limpiar, el formulario lleno invita a reenviar y el
           // `clientSubmissionId` se regenera en cada envío: entraría duplicado.
           form.reset()
-          toast.success("Reporte guardado cifrado en este dispositivo; se sincronizará al iniciar sesión con conexión")
+          toast.success(offlineOnly
+            ? "Reporte guardado en este equipo; se enviará cuando abras la aplicación con conexión."
+            : "Reporte guardado en este equipo; se enviará solo al volver la conexión.")
           return
         }
         try {
@@ -232,9 +218,9 @@ export function IncidentReportForm({ worksites, defaultDate, defaultTime, userId
             return
           }
           await queueIncidentReport(userId, { ...payload, offlineSync: true })
-          await refreshLocalQueue()
+          await refreshLocalQueue().catch(() => {})
           form.reset()
-          toast.warning("La red falló: el reporte quedó en la cola offline")
+          toast.warning("La red falló: el reporte quedó guardado en este equipo y se enviará solo al volver la conexión.")
         }
       } catch (error) {
         toast.error(error instanceof Error ? error.message : "No se pudo preparar el reporte")
@@ -242,46 +228,68 @@ export function IncidentReportForm({ worksites, defaultDate, defaultTime, userId
     })
   }
 
-  // La bóveda aparece sólo cuando sirve: hay reportes guardados, no hay conexión o se pidió.
-  const vaultVisible = offlineOnly || !isOnline || queued > 0 || vaultUnlocked || vaultRequested
+  const offlineMode = offlineOnly || !isOnline
+  const pendingLabel = `${queued} ${queued === 1 ? "reporte guardado" : "reportes guardados"} en este equipo`
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      {vaultVisible ? (
-        <div className="space-y-3">
-          <Re20VaultGate
-            configured={vaultConfigured}
-            unlocked={vaultUnlocked}
-            onUnlock={unlockLocalVault}
-            onLock={lockLocalVault}
-            reason={!isOnline || offlineOnly ? "Sin conexión: abre la bóveda para guardar el reporte cifrado en este dispositivo y enviarlo al volver la señal." : undefined}
-            pendingSummary={queued > 0 ? `${queued} ${queued === 1 ? "reporte guardado" : "reportes guardados"} en este dispositivo sin enviar.` : null}
-          />
-          {vaultUnlocked && queuedEntries.length > 0 && <ul className="space-y-2">{queuedEntries.map((entry) => <li key={entry.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-[var(--color-surface-2)] p-3 text-sm"><div><p className="font-medium">Reporte {entry.payload.clientSubmissionId}</p><p className="text-xs text-[var(--color-text-muted)]">Guardado {formatDateTime(entry.createdAt)} · {entry.attempts} intento(s){entry.lastError ? ` · ${entry.lastError}` : ""}</p></div><Button type="button" variant="ghost" size="sm" disabled={pending} onClick={async () => { await discardQueuedIncidentReport(userId, entry.id); await refreshLocalQueue(); toast.success("Borrador local descartado") }}>Descartar</Button></li>)}</ul>}
-        </div>
-      ) : (
-        <div>
-          <Button type="button" variant="ghost" size="sm" onClick={() => setVaultRequested(true)}>
-            <CloudSlash className="size-4" />Preparar para reportar sin conexión
-          </Button>
-        </div>
+      {/* Avisos sólo cuando corresponden: sin conexión o con reportes guardados esperando. */}
+      {(offlineMode || queued > 0) && (
+        <Callout tone="info" role="status" icon={offlineMode ? <CloudSlash className="size-5" /> : <CloudArrowUp className="size-5" />}>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="space-y-1">
+              {offlineMode && (
+                <p>
+                  {offlineOnly
+                    ? "Lo que escribas se guarda en este equipo y se envía cuando abras la aplicación con conexión."
+                    : "Sin conexión: lo que escribas se guarda en este equipo y se envía al volver la señal. No cierres sesión hasta entonces."}
+                </p>
+              )}
+              {queued > 0 && <p>{offlineMode ? `${pendingLabel}, se enviarán al volver la conexión.` : `${pendingLabel}, sin enviar.`}</p>}
+            </div>
+            {queued > 0 && !offlineMode && (
+              <Button type="button" size="sm" variant="secondary" disabled={pending} onClick={() => void synchronize().catch(() => {})}>
+                Enviar ahora
+              </Button>
+            )}
+          </div>
+        </Callout>
       )}
-
-      <div className={`flex items-center justify-between gap-3 rounded-lg border px-4 py-3 text-sm ${isOnline ? "border-[var(--color-success-line)] bg-[var(--color-success-tint)]" : "border-[var(--color-warning-line)] bg-[var(--color-warning-tint)]"}`}>
-        <div className="flex items-center gap-2">
-          {isOnline ? <CloudArrowUp className="size-5" /> : <CloudSlash className="size-5" />}
-          <span>{offlineOnly ? "Modo local: el reporte quedará cifrado en este dispositivo para sincronizarlo después." : isOnline ? "Con conexión: el reporte se enviará ahora." : "Sin conexión: el reporte se guardará cifrado en este dispositivo y se sincronizará al iniciar sesión con conexión."}</span>
-        </div>
-        {!offlineOnly && (queued > 0 || isOnline) && (
-          <Button type="button" size="sm" variant="secondary" onClick={synchronize} disabled={!isOnline || !vaultUnlocked || pending}>
-            Sincronizar{queued > 0 ? ` (${queued})` : ""}
-          </Button>
-        )}
-      </div>
       {rejected > 0 && (
-        <p className="rounded-lg border border-[var(--color-danger-line)] bg-[var(--color-danger-tint)] px-4 py-3 text-sm">
-          {rejected} reporte(s) fueron rechazados por el servidor. Siguen cifrados en la bóveda hasta que los corrijas o los descartes expresamente.
-        </p>
+        <Callout tone="danger" role="alert">
+          {rejected} {rejected === 1 ? "reporte fue rechazado" : "reportes fueron rechazados"} por el servidor. Siguen guardados en este equipo hasta que los descartes expresamente.
+        </Callout>
+      )}
+      {queuedEntries.length > 0 && (
+        <ul className="space-y-2">
+          {queuedEntries.map((entry) => (
+            <li key={entry.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-[var(--color-surface-2)] p-3 text-sm">
+              <div>
+                <p className="font-medium">Reporte en {entry.payload.location || "lugar sin indicar"}</p>
+                <p className="text-xs text-[var(--color-text-muted)]">
+                  Guardado {formatDateTime(entry.createdAt)}{entry.rejected ? " · rechazado por el servidor" : entry.attempts > 0 ? ` · ${entry.attempts} ${entry.attempts === 1 ? "intento" : "intentos"}` : ""}{entry.lastError ? ` · ${entry.lastError}` : ""}
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={pending}
+                onClick={async () => {
+                  try {
+                    await discardQueuedIncidentReport(userId, entry.id)
+                    await refreshLocalQueue()
+                    toast.success("Reporte guardado descartado")
+                  } catch (error) {
+                    toast.error(error instanceof Error ? error.message : "No se pudo descartar el reporte guardado")
+                  }
+                }}
+              >
+                Descartar
+              </Button>
+            </li>
+          ))}
+        </ul>
       )}
 
       <section className="grid gap-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 md:grid-cols-2">
@@ -376,7 +384,7 @@ export function IncidentReportForm({ worksites, defaultDate, defaultTime, userId
 
       <div className="flex justify-end">
         <Button type="submit" disabled={pending || !worksiteId}>
-          <Siren className="size-4" /> {pending ? "Guardando…" : offlineOnly ? "Guardar reporte local" : isOnline ? "Reportar incidente" : "Guardar para sincronizar"}
+          <Siren className="size-4" /> {pending ? "Guardando…" : offlineOnly ? "Guardar en este equipo" : isOnline ? "Reportar incidente" : "Guardar para enviar después"}
         </Button>
       </div>
     </form>
