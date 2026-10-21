@@ -58,9 +58,23 @@ corrida, con litros/monto cuando la fila los trae.
   `CRON_ALLOWED_SOURCES` en producción y rate limit.
 - Reprocesar no exige retroceder el cursor: repetir un período usa identidad y
   hash; el cambio se aplica al ledger/proyección sin borrar mappings manuales.
-- Cada corrida planifica como máximo **4 meses** (`MAX_PERIODS_PER_RUN`): cada
-  período abre dos sesiones de navegador con login y el cron corta a los 5
-  minutos. El cursor avanza lo que alcanzó y la corrida siguiente continúa.
+- Cada corrida planifica como máximo **4 meses** (`MAX_PERIODS_PER_RUN`), y
+  no empieza un mes nuevo pasados 150 s: cada período abre dos contextos de
+  navegador (TCT y TAE) y el cron corta a los 5 minutos. Lo que falte lo toma
+  la corrida siguiente.
+- **Verificación por correo (desde 2026-10).** Después de la clave, el portal
+  pide un código de 6 dígitos que envía a la casilla de la cuenta de plataforma.
+  `lib/combustibles/copec-otp.ts` lo lee por IMAP (`COPEC_OTP_IMAP_*`): sólo
+  correos de `info@copec.cl` no leídos y recibidos después del clic en
+  "Ingresar" (con un minuto de margen de reloj), el más nuevo primero, y lo
+  marca leído al usarlo. El campo del código nace `readonly` y se habilita con
+  un clic. El código nunca entra a un log: el call log de Playwright repite los
+  argumentos de `fill`, así que los errores de ese tramo se reescriben.
+- Cada login es un correo, así que la sesión se **reutiliza** entre productos,
+  canales y meses de la misma corrida (cookies en memoria, 15 minutos). Tras
+  una falla de acceso (`session_expired`, `mfa_timeout`, `mfa_mailbox`,
+  `mfa_rejected`) no se vuelve a intentar el login por 5 minutos: el resto de la
+  corrida falla con el mismo motivo en vez de disparar un correo por intento.
 - Sin `COPEC_USERNAME`/`COPEC_PASSWORD`, o con `COPEC_SYNC_ENABLED=false`, el
   cron responde `disabled` y no corre. Antes fallaba dentro de la corrida y
   reportaba `failed` a diario por una integración que nadie configuró.

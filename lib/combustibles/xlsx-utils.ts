@@ -156,6 +156,93 @@ export function parseSheetDate(value: unknown): string | null {
   return formatExcelDateUTC(utc)
 }
 
+export type ExactChileanDecimalResult =
+  | { status: "value"; units: bigint; normalized: string }
+  | { status: "empty" }
+  | { status: "invalid"; reason: "format" | "scale" | "range" | "excel_error" }
+
+/**
+ * Lee una cifra con escala fija sin pasar por coma flotante. En strings respeta
+ * separadores chilenos; las celdas numéricas de Excel se interpretan como
+ * números y no como texto con separador de miles. `units` representa la cifra
+ * multiplicada por 10 ** scale (centavos para scale 2; 1/10.000 para litros).
+ */
+export function parseExactChileanDecimal(value: unknown, scale: number, precision = 14): ExactChileanDecimalResult {
+  if (!Number.isInteger(scale) || scale < 0 || scale > 8 || !Number.isInteger(precision) || precision <= scale) {
+    return { status: "invalid", reason: "range" }
+  }
+  if (value === null || value === undefined) return { status: "empty" }
+  if (typeof value === "number" && !Number.isFinite(value)) return { status: "invalid", reason: "format" }
+  if (typeof value !== "string" && typeof value !== "number") return { status: "invalid", reason: "format" }
+
+  let text = String(value).trim().replace(/\u00a0/g, " ")
+  if (!text || text === "-") return { status: "empty" }
+  if (isExcelErrorText(text)) return { status: "invalid", reason: "excel_error" }
+  text = text.replace(/\s/g, "")
+  if (text.startsWith("$")) text = text.slice(1)
+
+  let sign = ""
+  if (text.startsWith("-") || text.startsWith("+")) {
+    sign = text[0] === "-" ? "-" : ""
+    text = text.slice(1)
+  }
+  if (!text) return { status: "invalid", reason: "format" }
+
+  let integerPart = ""
+  let fractionPart = ""
+  const numericCell = typeof value === "number"
+
+  if (numericCell) {
+    const numericText = expandDecimalExponent(text)
+    if (!numericText) return { status: "invalid", reason: "range" }
+    const match = /^(\d+)(?:\.(\d+))?$/.exec(numericText)
+    if (!match) return { status: "invalid", reason: "format" }
+    integerPart = match[1]!
+    fractionPart = match[2] ?? ""
+  } else if (text.includes(",")) {
+    if (text.indexOf(",") !== text.lastIndexOf(",")) return { status: "invalid", reason: "format" }
+    const [rawInteger = "", rawFraction = ""] = text.split(",")
+    if (!/^\d+$/.test(rawFraction)) return { status: "invalid", reason: "format" }
+    if (/^\d{1,3}(?:\.\d{3})+$/.test(rawInteger)) integerPart = rawInteger.replace(/\./g, "")
+    else if (/^\d+$/.test(rawInteger)) integerPart = rawInteger
+    else return { status: "invalid", reason: "format" }
+    fractionPart = rawFraction
+  } else {
+    const grouped = /^(\d{1,3}(?:\.\d{3})+)$/.exec(text)
+    if (grouped) integerPart = grouped[1]!.replace(/\./g, "")
+    else {
+      const match = /^(\d+)(?:\.(\d+))?$/.exec(text)
+      if (!match) return { status: "invalid", reason: "format" }
+      integerPart = match[1]!
+      fractionPart = match[2] ?? ""
+    }
+  }
+
+  if (fractionPart.length > scale) return { status: "invalid", reason: "scale" }
+  const significantInteger = integerPart.replace(/^0+(?=\d)/, "")
+  if (significantInteger.length > precision - scale) return { status: "invalid", reason: "range" }
+  const normalizedInteger = significantInteger || "0"
+  const normalizedFraction = fractionPart.padEnd(scale, "0")
+  const unsignedUnits = BigInt(`${normalizedInteger}${normalizedFraction}` || "0")
+  const units = sign && unsignedUnits !== BigInt(0) ? -unsignedUnits : unsignedUnits
+  const normalized = `${units < BigInt(0) ? "-" : ""}${normalizedInteger}${scale ? `.${normalizedFraction}` : ""}`
+  return { status: "value", units, normalized }
+}
+
+function expandDecimalExponent(value: string): string | null {
+  const match = /^(\d+)(?:\.(\d+))?[eE]([+-]?\d+)$/.exec(value)
+  if (!match) return value
+  const integer = match[1]!
+  const fraction = match[2] ?? ""
+  const exponent = Number(match[3])
+  if (!Number.isInteger(exponent) || Math.abs(exponent) > 100) return null
+  const digits = `${integer}${fraction}`
+  const decimalIndex = integer.length + exponent
+  if (decimalIndex <= 0) return `0.${"0".repeat(-decimalIndex)}${digits}`
+  if (decimalIndex >= digits.length) return `${digits}${"0".repeat(decimalIndex - digits.length)}`
+  return `${digits.slice(0, decimalIndex)}.${digits.slice(decimalIndex)}`
+}
+
 /** Convierte un valor de celda (número, o texto con formato chileno —
  *  miles con "." y decimales con ",") a número. Vacío/no numérico → 0. */
 export function parseChileanNumber(value: unknown): number {
@@ -190,6 +277,17 @@ export function nullableChileanNumber(value: unknown): number | null {
  * import masivo normalizaban distinto, así que " BPDH-41 " (tipeado a mano) y
  * "BPDH-41" (del Excel) no calzaban contra el mismo `UNIQUE` de `fuel_vehicles.plate`.
  *  Conserva guiones — el formato de patente no es uniforme en los datos reales. */
+/**
+ * Si el "Tipo de Tarjeta" de una fila Copec pertenece al canal. Copec nombra las
+ * variantes de una tarjeta con el canal como primera palabra: "TCT PREMIUM" es
+ * una TCT. Comparar contra el texto exacto rechazaba dos tercios de las filas
+ * del informe TCT real de 2026-09 (167 "TCT PREMIUM" contra 84 "TCT"), y un
+ * archivo con filas rechazadas no se importa.
+ */
+export function isCopecCardOfChannel(value: unknown, channel: "TCT" | "TAE"): boolean {
+  return new RegExp(`^${channel}(?:\\s|$)`, "i").test(String(value ?? "").trim())
+}
+
 export function normalizePlate(value: string): string {
   return value.trim().toUpperCase().replace(/\s+/g, "")
 }

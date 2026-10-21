@@ -17,10 +17,17 @@ export interface ProviderRowInput {
   accountKey: string
   sourceRowKey: string
   externalId: string | number | null
+  documentNumber?: string | null
   occurredAt: string | null
+  /** Provider-local civil date used for period validation when occurredAt is UTC. */
+  sourceDate?: string | null
+  /** End of source period for aggregated rows that cannot be assigned mid-month. */
+  periodEnd?: string | null
   plate: string | null
   product: string | null
   quantity: unknown
+  /** Optional value explicitly reported by the provider; amounts remain as reported. */
+  unitPrice?: unknown
   amount: unknown
   payload: unknown
   /** Por defecto `transaction`: sólo Copec TCT declara agregado. */
@@ -35,6 +42,8 @@ export type ProviderValidationCode =
   | "negative_quantity"
   | "invalid_amount"
   | "negative_amount"
+  | "invalid_unit_price"
+  | "negative_unit_price"
   | "unknown_product"
   | "missing_plate"
   | "duplicate_identity"
@@ -51,9 +60,12 @@ export interface AcceptedProviderRow {
   accountKey: string
   sourceRowKey: string
   externalId: string | null
+  documentNumber: string | null
   identityKey: string
   fingerprint: string
   occurredAt: string
+  sourceDate: string | null
+  periodEnd: string | null
   /** Clave de comparación (`plateMatchKey`), para resolver el vehículo. */
   plate: string
   /**
@@ -151,10 +163,14 @@ export function fingerprintProviderRow(input: ProviderRowInput): string {
     input.accountKey,
     input.sourceRowKey,
     input.externalId ?? "",
+    input.documentNumber ?? "",
     input.occurredAt ?? "",
+    input.sourceDate ?? "",
+    input.periodEnd ?? "",
     input.plate ? plateMatchKey(input.plate) : "",
     input.product ? compact(input.product) : "",
     typeof input.quantity === "number" ? input.quantity : String(input.quantity ?? ""),
+    typeof input.unitPrice === "number" ? input.unitPrice : String(input.unitPrice ?? ""),
     typeof input.amount === "number" ? input.amount : String(input.amount ?? ""),
   ].join("|")
   return createHash("sha256").update(value, "utf8").digest("hex")
@@ -186,7 +202,7 @@ export function validateProviderRows(
       rejected.push(issue(input, "invalid_date", "La fecha de la transacción no es válida"))
       continue
     }
-    const occurred = datePart(input.occurredAt)
+    const occurred = datePart(input.sourceDate ?? input.occurredAt)
     if (occurred < period.from || occurred > period.to) {
       rejected.push(issue(input, "date_out_of_range", "La fecha de la transacción está fuera del período solicitado"))
       continue
@@ -206,6 +222,14 @@ export function validateProviderRows(
     }
     if (input.amount < 0) {
       rejected.push(issue(input, "negative_amount", "El monto negativo requiere revisión como reversa externa"))
+      continue
+    }
+    if (input.unitPrice !== undefined && input.unitPrice !== null && (typeof input.unitPrice !== "number" || !Number.isFinite(input.unitPrice))) {
+      rejected.push(issue(input, "invalid_unit_price", "El precio unitario reportado no es un número finito"))
+      continue
+    }
+    if (typeof input.unitPrice === "number" && input.unitPrice < 0) {
+      rejected.push(issue(input, "negative_unit_price", "El precio unitario negativo requiere revisión"))
       continue
     }
 
@@ -238,16 +262,23 @@ export function validateProviderRows(
       accountKey: input.accountKey,
       sourceRowKey: input.sourceRowKey,
       externalId,
+      documentNumber: input.documentNumber?.trim() || null,
       identityKey,
       fingerprint: fingerprintProviderRow(input),
       occurredAt: input.occurredAt,
+      sourceDate: input.sourceDate ?? null,
+      periodEnd: input.periodEnd ?? null,
       plate,
       sourcePlate: input.plate,
       sourceProduct: input.product,
       product,
       quantity: input.quantity,
       amount: input.amount,
-      unitPrice: input.quantity > 0 ? Math.round(input.amount / input.quantity * 10_000) / 10_000 : null,
+      unitPrice: typeof input.unitPrice === "number"
+        ? input.unitPrice
+        : input.unitPrice === null
+          ? null
+          : input.quantity > 0 ? Math.round(input.amount / input.quantity * 10_000) / 10_000 : null,
       payload: input.payload,
       granularity: input.granularity ?? "transaction",
     })

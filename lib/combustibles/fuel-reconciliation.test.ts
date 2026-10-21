@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { decideCycleMovementMatch, decideFuelLoadMatch, type CycleMovementCandidate, type FuelLoadCandidate, type ProviderEvidence } from "./fuel-reconciliation"
+import { decideCycleMovementMatch, decideFuelLoadMatch, decideTaeReceiptMatch, type CycleMovementCandidate, type FuelLoadCandidate, type ProviderEvidence, type TaeReceiptCandidate } from "./fuel-reconciliation"
 
 const evidence: ProviderEvidence = {
   provider: "aramco",
@@ -39,6 +39,19 @@ function cycleCandidate(overrides: Partial<CycleMovementCandidate> = {}): CycleM
   }
 }
 
+function taeReceiptCandidate(overrides: Partial<TaeReceiptCandidate> = {}): TaeReceiptCandidate {
+  return {
+    id: "receipt-1",
+    sourceId: "GUIDE-123",
+    eventType: "received",
+    productId: "fuel-diesel",
+    worksiteId: "W1",
+    targetLocationId: "tank-1",
+    quantity: 100,
+    ...overrides,
+  }
+}
+
 describe("fuel provider reconciliation", () => {
   it("matches exact provider, object and values within tolerance", () => {
     expect(decideFuelLoadMatch(evidence, [candidate()])).toMatchObject({ status: "matched", candidate: { id: "load-1" } })
@@ -62,5 +75,25 @@ describe("fuel provider reconciliation", () => {
 
   it("keeps two physical deliveries ambiguous", () => {
     expect(decideCycleMovementMatch(evidence, [cycleCandidate(), cycleCandidate({ id: "movement-2" })]).status).toBe("ambiguous")
+  })
+
+  it("matches TAE to the physical receipt by guide, destination, product and liters", () => {
+    expect(decideTaeReceiptMatch({
+      productId: "fuel-diesel",
+      worksiteId: "W1",
+      quantity: 100,
+      documentNumber: "GUIDE-123",
+      storageLocationId: "tank-1",
+    }, [taeReceiptCandidate()])).toMatchObject({ status: "matched", candidateId: "receipt-1" })
+  })
+
+  it("does not match TAE by equal liters when the guide differs", () => {
+    expect(decideTaeReceiptMatch({
+      productId: "fuel-diesel",
+      worksiteId: "W1",
+      quantity: 100,
+      documentNumber: "GUIDE-OTHER",
+      storageLocationId: "tank-1",
+    }, [taeReceiptCandidate()])).toMatchObject({ status: "unmatched", candidateId: null })
   })
 })

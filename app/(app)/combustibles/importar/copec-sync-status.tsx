@@ -1,15 +1,24 @@
 "use client"
 
-import { useReducer, useTransition, useCallback } from "react"
+import { useReducer, useTransition, useCallback, useState, type FormEvent } from "react"
 import { useRouter } from "next/navigation"
 import { ArrowsClockwise, CheckCircle, PencilSimple, WarningCircle, XCircle } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { DatePicker } from "@/components/ui/date-picker"
 import { toast } from "@/lib/toast"
 import { formatDateTime, formatQty } from "@/lib/utils"
-import { getCopecSyncPlanAction, runCopecSyncPeriodAction, getCopecSyncStatusAction, updateCopecSyncStartAction, type CopecSyncStartOptions, type CopecSyncStatus } from "./copec-sync-action"
+import { confirmCopecPeriodEmptyAction, getCopecSyncPlanAction, runCopecSyncPeriodAction, getCopecSyncStatusAction, updateCopecSyncStartAction, type CopecSyncStartOptions, type CopecSyncStatus } from "./copec-sync-action"
+import { Textarea } from "@/components/ui/textarea"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 const MONTH_FORMATTER = new Intl.DateTimeFormat("es-CL", { month: "long", year: "numeric", timeZone: "UTC" })
+const COVERAGE_STATUS_LABEL: Record<CopecSyncStatus["coverage"][number]["status"], string> = {
+  unknown: "Desconocido",
+  incomplete: "Incompleto",
+  failed: "Fallido",
+  complete: "Completo",
+  legitimate_empty: "Vacío confirmado",
+}
 
 interface SyncProgress {
   current: number
@@ -57,6 +66,11 @@ export function CopecSyncStatus({ initialStatus, initialStartOptions }: { initia
     syncInProgress: false,
     result: null,
   })
+  const [emptyConfirmation, setEmptyConfirmation] = useState<{
+    channel: "TCT" | "TAE"
+    product: "diesel" | "bluemax"
+    evidence: string
+  }>({ channel: "TCT", product: "diesel", evidence: "" })
   const { status, startOptions, selectedStart, isEditingStart, progress, syncInProgress, result } = view
 
   const sync = useCallback(() => {
@@ -166,8 +180,26 @@ export function CopecSyncStatus({ initialStatus, initialStartOptions }: { initia
     })
   }, [router, selectedStart, startOptions.currentStart])
 
+  const confirmEmptyPeriod = useCallback((event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    startTransition(async () => {
+      const response = await confirmCopecPeriodEmptyAction({ month: status.coverageMonth, ...emptyConfirmation })
+      if (!response.ok) {
+        toast.error(response.message)
+        return
+      }
+      dispatchView({ type: "patch", patch: { status: response.data } })
+      setEmptyConfirmation((current) => ({ ...current, evidence: "" }))
+      toast.success("Cobertura vacía registrada con evidencia")
+      router.refresh()
+    })
+  }, [emptyConfirmation, router, status.coverageMonth])
+
+  const selectedCoverage = status.coverage.find((item) => item.channel === emptyConfirmation.channel && item.product === emptyConfirmation.product)
+  const canConfirmEmpty = selectedCoverage?.canConfirmEmpty ?? false
+
   return (
-    <section className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4" aria-label="Sincronización mensual Copec TCT">
+    <section className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4" aria-label="Sincronización mensual Copec TCT y TAE">
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
         <div className="space-y-3">
           <div className="flex items-center gap-2">
@@ -197,6 +229,55 @@ export function CopecSyncStatus({ initialStatus, initialStartOptions }: { initia
             {status.pending > 0 && <span className="text-[var(--color-warning-ink)]">{status.pending} patente(s) sin vehículo registrado: su consumo no se importa hasta que las registres en la flota y vuelvas a sincronizar su período</span>}
             {status.lastRunStatus && <span className="text-[var(--color-text-muted)]">Calidad última corrida: {status.rowsReceived} recibidas · {status.rowsAccepted} aceptadas · {status.rowsRejected} rechazadas · {status.rowsPending} pendientes · impacto {formatQty(status.affectedQuantity, undefined, { maximumFractionDigits: 2 })} L / ${formatQty(status.affectedAmount, undefined, { maximumFractionDigits: 2 })} ({status.lastRunStatus})</span>}
           </div>
+          {status.lastRunStatus === "running" && <p role="status" className="text-xs text-[var(--color-warning-ink)]">Copec mantiene una corrida abierta. Espera a que cierre o revisa la bitácora de cron antes de intentar otra sincronización.</p>}
+
+          <div className="border-t border-[var(--color-border)] pt-3" aria-label={`Cobertura Copec para ${formatMonth(status.coverageMonth)}`}>
+            <p className="mb-2 text-xs font-medium text-[var(--color-text)]">Cobertura de {formatMonth(status.coverageMonth)}</p>
+            <div className="grid grid-cols-2 gap-x-4 text-xs sm:grid-cols-4">
+              {status.coverage.map((item) => (
+                <div key={`${item.channel}:${item.product}`} className="flex min-w-0 items-center justify-between gap-2 border-b border-[var(--color-border)] py-2">
+                  <p className="font-medium text-[var(--color-text)]">{item.channel} · {item.product === "diesel" ? "Diésel" : "BlueMax"}</p>
+                  <p className="shrink-0 text-[var(--color-text-muted)]">{COVERAGE_STATUS_LABEL[item.status]}</p>
+                </div>
+              ))}
+            </div>
+            <p className="mt-2 text-xs text-[var(--color-text-muted)]">Solo “Completo” y “Vacío confirmado” cierran un producto y canal. Un mes sin archivo sigue desconocido hasta verificarlo.</p>
+          </div>
+
+          <details className="border-t border-[var(--color-border)] pt-3">
+            <summary className="cursor-pointer text-xs font-medium text-[var(--color-text)]">Confirmar un producto y canal sin movimientos</summary>
+            <form onSubmit={confirmEmptyPeriod} className="mt-3 grid gap-3">
+              <p className="text-xs text-[var(--color-text-muted)]">Disponible para meses cerrados. Registra qué verificaste en el portal; la confirmación queda asociada a tu usuario.</p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid gap-1.5">
+                  <label className="text-xs font-medium text-[var(--color-text)]">Canal</label>
+                  <Select value={emptyConfirmation.channel} onValueChange={(value) => setEmptyConfirmation((current) => ({ ...current, channel: value as "TCT" | "TAE" }))}>
+                    <SelectTrigger aria-label="Canal de Copec"><SelectValue /></SelectTrigger>
+                    <SelectContent><SelectItem value="TCT">TCT</SelectItem><SelectItem value="TAE">TAE</SelectItem></SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-1.5">
+                  <label className="text-xs font-medium text-[var(--color-text)]">Producto</label>
+                  <Select value={emptyConfirmation.product} onValueChange={(value) => setEmptyConfirmation((current) => ({ ...current, product: value as "diesel" | "bluemax" }))}>
+                    <SelectTrigger aria-label="Producto Copec"><SelectValue /></SelectTrigger>
+                    <SelectContent><SelectItem value="diesel">Diésel</SelectItem><SelectItem value="bluemax">BlueMax</SelectItem></SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <Textarea
+                aria-label="Evidencia de período sin movimientos"
+                value={emptyConfirmation.evidence}
+                onChange={(event) => setEmptyConfirmation((current) => ({ ...current, evidence: event.target.value }))}
+                placeholder="Describe el resultado que revisaste en Copec"
+                rows={2}
+              />
+              <div>
+                <Button type="submit" variant="secondary" size="sm" disabled={pending || !canConfirmEmpty || emptyConfirmation.evidence.trim().length < 20}>
+                  {pending ? "Registrando…" : "Registrar período vacío"}
+                </Button>
+              </div>
+            </form>
+          </details>
 
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-[var(--color-border)] pt-3 text-xs">
             <span className="text-[var(--color-text-muted)]">Primer mes pendiente: <span className="font-medium text-[var(--color-text)]">{formatMonth(startOptions.currentStart)}</span></span>

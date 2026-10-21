@@ -12,7 +12,7 @@ import { and, desc, eq, inArray, isNotNull, lte, ne, sql } from "drizzle-orm"
 import type { DB } from "@/db"
 import { fuelLoads, fuelMeterReadings } from "@/db/schema"
 import { nanoid } from "@/lib/id"
-import { normKey, normalizePlate, parseChileanNumber, santiagoInstant } from "./xlsx-utils"
+import { formatExcelDateUTC, normKey, normalizePlate, parseChileanNumber, santiagoInstant } from "./xlsx-utils"
 import { ACCOUNTABLE_FUEL_LOAD_STATUSES } from "./load-status"
 import { isValidReason, reasonRequiredMessage } from "@/lib/validation/reason-thresholds"
 
@@ -24,6 +24,8 @@ export interface ParsedMeterReading {
   /** Clave natural de la transacción en su fuente. Da la idempotencia. */
   sourceRef: string
   occurredAt: string
+  /** Source-local date is used to resolve historical vehicle assignments. */
+  sourceDate?: string
   /** `null` cuando la transacción no trae lectura: la fila sigue sirviendo para
    *  acumular litros en el tramo siguiente, pero no se persiste como lectura. */
   value: number | null
@@ -49,7 +51,8 @@ const PERSONAL_COLUMNS = new Set(["rut chofer", "rut atendedor"].map(normKey))
 export function withoutPersonalData(record: Record<string, unknown>): Record<string, unknown> {
   const clean: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(record)) {
-    if (PERSONAL_COLUMNS.has(normKey(key))) continue
+    const normalizedKey = normKey(key)
+    if (PERSONAL_COLUMNS.has(normalizedKey) || normalizedKey.includes("rut")) continue
     clean[key] = value
   }
   return clean
@@ -106,6 +109,7 @@ export function copecDetailReading(record: Record<string, unknown>): ParsedMeter
     plate,
     sourceRef,
     occurredAt: santiagoInstant(date, asDate(get("Hora Transacción", "Hora Transaccion"))),
+    sourceDate: formatExcelDateUTC(date),
     value: value > 0 ? value : null,
     liters: liters > 0 ? liters : null,
     stationName: text(get("Estación de Servicio", "Estacion de Servicio")) || null,
@@ -164,6 +168,7 @@ export function aramcoMovementReading(movement: Record<string, unknown>): Parsed
     plate,
     sourceRef,
     occurredAt,
+    sourceDate: occurredAtRaw.slice(0, 10),
     value: Number.isFinite(value) && value > 0 ? value : null,
     liters: liters > 0 ? liters : null,
     stationName: text(movement["serviceStationName"]) || null,
@@ -198,7 +203,7 @@ export async function saveMeterReadings(
   tx: ReadingsTx,
   source: MeterReadingSource,
   readings: ParsedMeterReading[],
-  resolveVehicle: (plate: string) => { id: string; meterType?: string } | undefined,
+  resolveVehicle: (plate: string, effectiveOn?: string) => { id: string; meterType?: string } | undefined,
 ): Promise<SaveMeterReadingsResult> {
   const values: (typeof fuelMeterReadings.$inferInsert)[] = []
   let unresolved = 0
@@ -207,7 +212,9 @@ export async function saveMeterReadings(
     // Sin lectura no hay nada que guardar; sin clave natural no hay idempotencia
     // y reimportar el mes duplicaría la fila.
     if (reading.value === null || !reading.sourceRef) continue
-    const vehicle = resolveVehicle(reading.plate)
+    const vehicle = source === "copec_tct"
+      ? resolveVehicle(reading.plate, reading.sourceDate ?? reading.occurredAt.slice(0, 10))
+      : resolveVehicle(reading.plate)
     const meterType = vehicle?.meterType
     if (!vehicle || (meterType !== "odometer" && meterType !== "hour_meter")) {
       unresolved++

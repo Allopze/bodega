@@ -34,6 +34,6 @@ describe("persistencia inicial del cursor Copec", () => {
       where: eq(schema.systemSettings.key, "combustibles.copec.sync"),
     })
     expect(row).toBeDefined()
-    expect(JSON.parse(row!.value)).toMatchObject({ cursor: before.currentStart })
+    expect(JSON.parse(row!.value)).toMatchObject({ cursor: null, requestedStart: before.currentStart })
   })
 })

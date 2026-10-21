@@ -3,6 +3,7 @@ import { and, eq, ne, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
   fuelProviderRejections,
+  fuelProviderEventRevisions,
   fuelProviderSyncRuns,
   fuelProviderTransactions,
 } from "@/db/schema"
@@ -64,6 +65,7 @@ async function recordRejectedItem(runId: string, item: DurableProviderIssue, sta
   const input = item.input
   const identityKey = rejectedIdentity(input)
   const quantity = typeof input.quantity === "number" && Number.isFinite(input.quantity) && input.quantity >= 0 ? input.quantity : null
+  const unitPrice = typeof input.unitPrice === "number" && Number.isFinite(input.unitPrice) && input.unitPrice >= 0 ? input.unitPrice : null
   const amount = typeof input.amount === "number" && Number.isFinite(input.amount) && input.amount >= 0 ? input.amount : null
   await db.insert(fuelProviderTransactions).values({
     id: nanoid(),
@@ -73,12 +75,14 @@ async function recordRejectedItem(runId: string, item: DurableProviderIssue, sta
     supplierId,
     identityKey,
     externalId: input.externalId === null || input.externalId === undefined ? null : String(input.externalId),
+    documentNumber: input.documentNumber?.trim() || null,
     fingerprint: fingerprintProviderRow(input),
     sourceRowKey: input.sourceRowKey,
     sourceProduct: input.product,
     sourcePlate: input.plate,
     occurredAt: input.occurredAt,
     quantity,
+    unitPrice,
     amount,
     status,
     granularity: input.granularity ?? "transaction",
@@ -93,10 +97,12 @@ async function recordRejectedItem(runId: string, item: DurableProviderIssue, sta
       syncRunId: runId,
       supplierId,
       fingerprint: fingerprintProviderRow(input),
+      documentNumber: input.documentNumber?.trim() || null,
       sourceProduct: input.product,
       sourcePlate: input.plate,
       occurredAt: input.occurredAt,
       quantity,
+      unitPrice,
       amount,
       status,
       granularity: input.granularity ?? "transaction",
@@ -158,6 +164,7 @@ export async function recordFuelProviderIssues(runId: string, issues: DurablePro
 export interface ProviderRowResolution {
   worksiteId?: string | null
   vehicleId?: string | null
+  storageLocationId?: string | null
   productId?: string | null
 }
 
@@ -170,6 +177,7 @@ export async function recordFuelProviderValidation(
   runId: string,
   result: ProviderValidationResult,
   resolve: (row: ProviderRowInput) => ProviderRowResolution = () => ({}),
+  options: { sourceFileId?: string | null } = {},
 ) {
   let accepted = 0
   let pending = 0
@@ -186,16 +194,21 @@ export async function recordFuelProviderValidation(
       accountKey: row.accountKey,
       sourceRowKey: row.sourceRowKey,
       externalId: row.externalId,
+      documentNumber: row.documentNumber,
       occurredAt: row.occurredAt,
+      sourceDate: row.sourceDate,
+      periodEnd: row.periodEnd,
       plate: row.plate,
       product: row.sourceProduct,
       quantity: row.quantity,
+      unitPrice: row.unitPrice,
       amount: row.amount,
       payload: row.payload,
       granularity: row.granularity,
     }
     const resolution = resolve(input)
-    const status = resolution.worksiteId && resolution.vehicleId && resolution.productId ? "accepted" : "pending"
+    const mappedTaeReceipt = row.provider === "copec" && row.accountKey.startsWith("tae:") && resolution.worksiteId && resolution.storageLocationId && resolution.productId
+    const status = resolution.worksiteId && resolution.productId && (resolution.vehicleId || mappedTaeReceipt) ? "accepted" : "pending"
     await db.insert(fuelProviderTransactions).values({
       id: nanoid(),
       syncRunId: runId,
@@ -204,10 +217,12 @@ export async function recordFuelProviderValidation(
       supplierId: supplierIds.get(row.provider) ?? null,
       identityKey: row.identityKey,
       externalId: row.externalId,
+      documentNumber: row.documentNumber,
       fingerprint: row.fingerprint,
       sourceRowKey: row.sourceRowKey,
       worksiteId: resolution.worksiteId ?? null,
       vehicleId: resolution.vehicleId ?? null,
+      storageLocationId: resolution.storageLocationId ?? null,
       productId: resolution.productId ?? null,
       sourceProduct: row.sourceProduct,
       sourcePlate: row.sourcePlate,
@@ -227,9 +242,11 @@ export async function recordFuelProviderValidation(
       set: {
         syncRunId: runId,
         fingerprint: row.fingerprint,
+        documentNumber: row.documentNumber,
         supplierId: supplierIds.get(row.provider) ?? null,
         worksiteId: resolution.worksiteId ?? null,
         vehicleId: resolution.vehicleId ?? null,
+        storageLocationId: resolution.storageLocationId ?? null,
         productId: resolution.productId ?? null,
         sourceProduct: row.sourceProduct,
         sourcePlate: row.sourcePlate,
@@ -246,6 +263,30 @@ export async function recordFuelProviderValidation(
         updatedAt: new Date().toISOString(),
       },
     })
+    const persisted = await db.query.fuelProviderTransactions.findFirst({
+      where: and(
+        eq(fuelProviderTransactions.provider, row.provider),
+        eq(fuelProviderTransactions.sourceAccount, row.accountKey),
+        eq(fuelProviderTransactions.identityKey, row.identityKey),
+      ),
+      columns: { id: true },
+    })
+    if (persisted) {
+      await db.insert(fuelProviderEventRevisions).values({
+        id: nanoid(),
+        transactionId: persisted.id,
+        syncRunId: runId,
+        sourceFileId: options.sourceFileId ?? null,
+        fingerprint: row.fingerprint,
+        quantity: row.quantity,
+        unitPrice: row.unitPrice,
+        amount: row.amount,
+        amountBasis: "reported",
+        status,
+        payloadHash: jsonHash(row.payload),
+        rawPayload: row.payload,
+      }).onConflictDoNothing()
+    }
     if (status === "accepted") accepted++
     else pending++
   }

@@ -11,7 +11,7 @@ const HEADERS = [
 ]
 
 /** Copec entrega la fecha a medianoche UTC y la hora como serial Excel (época 1899). */
-function row(over: Partial<{ product: string; cardType: string; guia: number; volumen: number; hora: Date }> = {}) {
+function row(over: Partial<{ product: string; cardType: string; guia: number; volumen: number; hora: Date; amount: unknown; price: unknown }> = {}) {
   return [
     over.product ?? "Diésel",
     "1-242269-00230-9-1",
@@ -21,7 +21,7 @@ function row(over: Partial<{ product: string; cardType: string; guia: number; vo
     over.hora ?? new Date("1899-12-30T08:44:47.000Z"),
     over.guia ?? 45769934,
     "0-0",
-    1318, over.volumen ?? 1241, 1635638, 0, 0, 0,
+    over.price ?? 1318, over.volumen ?? 1241, over.amount ?? 1635638, 0, 0, 0,
   ]
 }
 
@@ -34,6 +34,13 @@ async function fixture(rows: unknown[][]) {
 }
 
 describe("parseTaeReceiptExcel", () => {
+  it("clasifica un archivo corrupto sin abortar la corrida", async () => {
+    const result = await parseTaeReceiptExcel(Buffer.from("not-an-xlsx"))
+
+    expect(result.rows).toEqual([])
+    expect(result.errors).toContainEqual(expect.objectContaining({ rowIndex: 0, field: "archivo" }))
+  })
+
   it("mapea una recepción TAE con guía, litros y producto", async () => {
     const result = await parseTaeReceiptExcel(await fixture([row()]))
 
@@ -70,6 +77,16 @@ describe("parseTaeReceiptExcel", () => {
     expect(result.errors[0]).toMatchObject({ field: "Tipo de Tarjeta" })
   })
 
+  it("acepta las variantes de tarjeta TAE pero no una que sólo la contenga", async () => {
+    const result = await parseTaeReceiptExcel(await fixture([
+      row({ cardType: "TAE PREMIUM", guia: 1 }),
+      row({ cardType: "TCT TAE", guia: 2 }),
+    ]))
+
+    expect(result.rows).toHaveLength(1)
+    expect(result.errors).toEqual([expect.objectContaining({ field: "Tipo de Tarjeta" })])
+  })
+
   it("descarta guías repetidas dentro del archivo", async () => {
     const result = await parseTaeReceiptExcel(await fixture([row(), row()]))
 
@@ -82,5 +99,38 @@ describe("parseTaeReceiptExcel", () => {
 
     expect(result.rows).toEqual([])
     expect(result.errors[0]).toMatchObject({ field: "Volumen" })
+  })
+
+  it("rechaza una fila con monto no numérico en vez de guardar cero", async () => {
+    const result = await parseTaeReceiptExcel(await fixture([row({ amount: "12abc" })]))
+
+    expect(result.rows).toEqual([])
+    expect(result.errors[0]).toMatchObject({
+      field: "Monto",
+      rawRow: expect.objectContaining({ "Guía de Despacho": 45769934, Monto: "12abc" }),
+    })
+    expect(result.errors[0]?.rawRow).not.toHaveProperty("Rut Chofer")
+    expect(result.errors[0]?.rawRow).not.toHaveProperty("Rut Atendedor")
+  })
+
+  it("rechaza un precio mal formado cuando la columna viene informada", async () => {
+    const result = await parseTaeReceiptExcel(await fixture([row({ price: "1.234xyz" })]))
+
+    expect(result.rows).toEqual([])
+    expect(result.errors[0]).toMatchObject({ field: "Precio" })
+  })
+
+  it("rechaza una fecha fuera del período TAE solicitado", async () => {
+    const result = await parseTaeReceiptExcel(await fixture([row()]), { from: "2026-07-01", to: "2026-07-31", expectedProduct: "diesel" })
+
+    expect(result.rows).toEqual([])
+    expect(result.errors[0]).toMatchObject({ field: "Fecha Transacción" })
+  })
+
+  it("rechaza un producto TAE distinto al que se solicitó al portal", async () => {
+    const result = await parseTaeReceiptExcel(await fixture([row({ product: "BlueMax" })]), { from: "2026-06-01", to: "2026-06-30", expectedProduct: "diesel" })
+
+    expect(result.rows).toEqual([])
+    expect(result.errors[0]).toMatchObject({ field: "Producto" })
   })
 })
