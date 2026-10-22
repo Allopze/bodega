@@ -146,6 +146,7 @@ export function PrivacyRequestsWorkbench({ rows, canExport, canExportClinical, p
     if (!exportRow || exportPurpose.trim().length < 3) return
     const query = new URLSearchParams({ purpose: exportPurpose.trim() })
     if (includeClinical) query.set("includeClinical", "1")
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- es la descarga de un archivo desde una ruta de API, no una página
     window.location.assign(`/api/prevencion/privacidad/solicitudes/${exportRow.id}/export?${query}`)
     setExportRow(null)
     setExportPurpose("")

@@ -63,6 +63,7 @@ export function Re20SensitiveVeil({ title = "Datos reservados", description, chi
     url.searchParams.set("sensitive", "1")
     url.searchParams.set("purpose", purpose.trim())
     url.searchParams.set("etapa", ws.stage)
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- abrir los datos reservados exige recargar el caso en el servidor, con su propósito auditado
     window.location.assign(`${url.pathname}${url.search}`)
   }
 

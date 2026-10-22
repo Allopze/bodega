@@ -87,6 +87,7 @@ export function useSignOut() {
         await signOut({ redirect: false })
       }
     } finally {
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- al cerrar sesión se recarga entero para no dejar estado del cliente de la sesión anterior
       window.location.href = "/login"
     }
   }, [])

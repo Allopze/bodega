@@ -121,6 +121,7 @@ export function WorkflowBar({ workspace, mode, issues, openObservations, onOpenE
         onConfirm={(reason) => operation.run(() => requestMiperCorrectionsAction({ ...base, comment: reason }), close)} />
       <ConfirmDialog open={dialog === "discard"} onOpenChange={(open) => { if (!open) close() }} title="Descartar borrador"
         description="El borrador se elimina. Queda registrado en la auditoría." confirmLabel="Descartar" variant="destructive" reasonLabel="Motivo" loading={operation.pending} returnFocusRef={moreRef}
+        // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- navegación completa: el autoguardado del borrador recién descartado no debe volver a dispararse al desmontar
         onConfirm={(reason) => operation.run(() => discardMiperDraftAction({ ...base, reason }), () => { window.location.assign("/prevencion/miper") })} />
 
       <Dialog open={dialog === "approveFinal"} onOpenChange={(open) => { if (!open) close() }}>

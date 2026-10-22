@@ -1,7 +1,7 @@
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
 import { and, eq } from "drizzle-orm"
-import { beforeAll, describe, expect, it, vi } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import path from "node:path"
 import * as schema from "@/db/schema"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
