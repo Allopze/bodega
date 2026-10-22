@@ -368,10 +368,10 @@ Se aplican con `npm run db:sync-rbac` (los `defaultGrants` solo se aplican la pr
 
 | Puerta | Resultado |
 |---|---|
-| `npm run typecheck` | Sin errores |
+| `npm run typecheck` | Sin errores (repetido sobre el commit final `3b0db0f6`) |
 | `npm run lint` | Sin errores (1 advertencia preexistente en `lib/combustibles/__tests__/copec-coverage-store.test.ts`) |
-| `npm run test:fast` | 984 archivos y 13.141 pruebas en verde tras corregir 7 fallas: 3 propias de la rama (inventario de rutas, conteo de permisos de `ARCHITECTURE.md`, texto de la llamada TAE en una prueba) y 4 heredadas de `main` en Copec (lista blanca IMAP del respaldo y mocks del portal sin el campo OTP), también corregidas |
-| `npm run test:pglite` | 273 archivos, 3.304 pruebas en verde (antes de dividir la prueba de anomalías; sus 3 partes pasan 34/34 por separado) |
+| `npm run test:fast` | 989 archivos, 13.149 pruebas en verde sobre el commit final. En el camino se corrigieron 7 fallas: 3 propias de la rama (inventario de rutas, conteo de permisos de `ARCHITECTURE.md`, texto de la llamada TAE en una prueba) y 4 heredadas de `main` en Copec (lista blanca IMAP del respaldo y mocks del portal sin el campo OTP) |
+| `npm run test:pglite` | 275 archivos, 3.305 pruebas en verde sobre el commit final |
 | `npm run db:verify-migrations` | Cadena verificada hasta 0359 |
 | `npm run check:secrets` | Pasa |
 | `npm run check:security-audit` | **Falla, preexistente:** avisos de `sharp`, `source-map-js` y `vite` fuera del allowlist. Esta rama no cambió `package-lock.json`; requiere decidir la actualización de dependencias. |
