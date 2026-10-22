@@ -71,13 +71,18 @@ describe("downloadCopecReports", () => {
 
     const page = {
       setDefaultTimeout: vi.fn(),
+      close: vi.fn().mockResolvedValue(undefined),
+      url: vi.fn(() => "https://tctcliente.copec.cl/AdmCteInicio.aspx"),
       goto: vi.fn(),
-      waitForURL: vi.fn(),
+      waitForURL: vi.fn().mockResolvedValue(undefined),
       waitForLoadState: vi.fn().mockResolvedValue(undefined),
       route: vi.fn(async (_url: string, handler: (route: unknown) => Promise<void>) => { routeHandler = handler }),
       unroute: vi.fn(),
       request: { fetch },
       locator: vi.fn((selector: string) => {
+        // El campo del código por correo nunca aparece en estas pruebas: el
+        // login cae directo al inicio (`waitForURL`), como una cuenta sin OTP.
+        if (selector === "#TxbOtpCodigo") return { waitFor: () => new Promise(() => {}) }
         if (selector === "#TxbUsuario") return username
         if (selector === "#TxbClave") return password
         if (selector === "#BtnIngresar") return login
@@ -128,10 +133,13 @@ describe("downloadCopecReports", () => {
 
     const page = {
       setDefaultTimeout: vi.fn(),
+      close: vi.fn().mockResolvedValue(undefined),
+      url: vi.fn(() => "https://tctcliente.copec.cl/AdmCteInicio.aspx"),
       goto: vi.fn(),
-      waitForURL: vi.fn(),
+      waitForURL: vi.fn().mockResolvedValue(undefined),
       waitForLoadState: vi.fn().mockResolvedValue(undefined),
       locator: vi.fn((selector: string) => {
+        if (selector === "#TxbOtpCodigo") return { waitFor: () => new Promise(() => {}) }
         if (selector === '[id$="PeriodoIni_MonthYearTableViewID"]') return monthView
         if (selector === "#Cph1_RbTipoProductoPatPatentes_1") return bluemax
         if (selector === "#Cph1_LinkBtnBuscarPatentes") return search
