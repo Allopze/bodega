@@ -11,6 +11,7 @@ const mockRecordAudit = vi.fn()
 const mockMkdirp = vi.fn()
 const mockWriteBuffer = vi.fn()
 const mockRemoveFile = vi.fn()
+const mockProjectOperationRecords = vi.fn()
 
 vi.mock("@/lib/auth/can", () => ({ requirePermission: (...a: unknown[]) => mockRequirePermission(...a) }))
 vi.mock("@/lib/auth/scope", () => ({ isGlobalRole: (...a: unknown[]) => mockIsGlobalRole(...a) }))
@@ -20,6 +21,10 @@ vi.mock("@/lib/storage/helpers", () => ({
   mkdirp: (...a: unknown[]) => mockMkdirp(...a),
   writeBuffer: (...a: unknown[]) => mockWriteBuffer(...a),
   removeFile: (...a: unknown[]) => mockRemoveFile(...a),
+}))
+vi.mock("@/lib/combustibles/control/projection", () => ({
+  projectOperationRecords: (...a: unknown[]) => mockProjectOperationRecords(...a),
+  removeProjectionsForOperationBatch: vi.fn(),
 }))
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
 vi.mock("@/db", () => ({
@@ -95,6 +100,7 @@ describe("confirmOperationsImportAction", () => {
     mockIsGlobalRole.mockReturnValue(true)
     mockFindManyWorksites.mockResolvedValue([])
     mockFindManyFuelSuppliers.mockResolvedValue([])
+    mockProjectOperationRecords.mockResolvedValue({ projected: 0, skipped: [], vehicleIds: [], resetLoadIds: [] })
     mockFindManyFuelVehicles.mockResolvedValue([{ id: "veh-1", plate: "ABCD12", code: null, type: "camion", brand: null, model: null, year: null }])
   })
 
@@ -115,6 +121,60 @@ describe("confirmOperationsImportAction", () => {
     expect(mockRecordAudit.mock.calls[0]![0]).toMatchObject({ action: "create", entityType: "fuel_operation_batch" })
     expect(mockRecordAudit.mock.calls[0]![1]).toBe(tx)
     expect(mockRemoveFile).not.toHaveBeenCalled()
+    // Cada carga importada entra a la serie canónica en la misma transacción.
+    expect(mockProjectOperationRecords).toHaveBeenCalledOnce()
+    expect(mockProjectOperationRecords.mock.calls[0]![0]).toBe(tx)
+    expect(mockProjectOperationRecords.mock.calls[0]![1]).toHaveLength(1)
+  })
+
+  const rejectionRowsOf = (tx: ReturnType<typeof makeTx>) =>
+    tx._insertedRows.flatMap((entry) => Array.isArray(entry.values) ? entry.values : [entry.values])
+      .filter((row): row is Record<string, unknown> => typeof row === "object" && row !== null && (row as { batchKind?: string }).batchKind === "operations")
+
+  it("rechaza con motivo las fechas de relleno y los litros en cero, y persiste cada rechazo con su fila original", async () => {
+    const tx = makeTx()
+    mockTransaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(tx))
+
+    const file = await makeXlsxFile([
+      { "Patente": "ABCD12", "Fecha": "2026-06-01", "LT": 50 },
+      { "Patente": "ABCD12", "Fecha": "1899-12-30", "LT": 40 },
+      { "Patente": "ABCD12", "Fecha": "2026-06-02", "LT": 0 },
+    ])
+    const res = await confirmOperationsImportAction(makeFormData(file))
+
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(res.data.imported).toBe(1)
+    expect(res.data.rejected).toBe(2)
+    expect(res.data.errors.map((e) => e.field).sort()).toEqual(["Fecha", "LT"])
+    // Al cliente no viaja la fila original: puede pesar mucho en 8.000 filas.
+    expect(res.data.errors[0]).not.toHaveProperty("rawRow")
+
+    const rejections = rejectionRowsOf(tx)
+    expect(rejections).toHaveLength(2)
+    expect(rejections).toEqual(expect.arrayContaining([
+      expect.objectContaining({ batchId: "batch-new", batchKind: "operations", rowIndex: 3, field: "Fecha", message: expect.stringContaining("relleno") }),
+      expect.objectContaining({ batchKind: "operations", rowIndex: 4, field: "LT", message: expect.stringContaining("mayores que cero"), rawRow: expect.objectContaining({ Patente: "ABCD12" }) }),
+    ]))
+    expect(mockRecordAudit.mock.calls[0]![0]).toMatchObject({ newState: expect.objectContaining({ filasRechazadas: 2, rechazadasEnArchivo: 2 }) })
+  })
+
+  it("guarda también las filas que la proyección no pudo convertir en carga", async () => {
+    const tx = makeTx()
+    mockTransaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(tx))
+    mockProjectOperationRecords.mockImplementation(async (_tx: unknown, ids: string[]) => ({
+      projected: 0,
+      skipped: [{ recordId: ids[0], reason: "La carga no tiene faena reconocida" }],
+      vehicleIds: [],
+      resetLoadIds: [],
+    }))
+
+    const res = await confirmOperationsImportAction(makeFormData(await makeXlsxFile(validRows)))
+
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(res.data.rejected).toBe(1)
+    expect(rejectionRowsOf(tx)).toEqual([expect.objectContaining({ rowIndex: 2, field: null, message: "La carga no tiene faena reconocida" })])
   })
 
   // CO-026: el recheck de duplicado por hash de archivo se movió DENTRO de la

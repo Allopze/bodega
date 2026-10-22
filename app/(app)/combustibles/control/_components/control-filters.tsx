@@ -9,6 +9,7 @@ import { useUrlFilters } from "@/lib/hooks/use-url-filters"
 import { MONTH_LABELS, cn } from "@/lib/utils"
 
 const ALL = "_all"
+const RESET_PAGE_KEYS = ["cargas"]
 const MONTH_NAMES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
 
 interface Option { id: string; name: string }
@@ -33,7 +34,9 @@ export interface ControlFiltersProps {
  */
 export function ControlFilters({ years, defaultYear, worksites, mandantes, extraKeys = [], children }: ControlFiltersProps) {
   const searchParams = useSearchParams()
-  const { setFilter, setFilters, isPending } = useUrlFilters({ pageKey: "pagina" })
+  // `cargas` es la página del detalle de cargas en las vistas de rendimiento:
+  // cambiar el período o la faena la vuelve a la primera.
+  const { setFilter, setFilters, isPending } = useUrlFilters({ pageKey: "pagina", resetPageKeys: RESET_PAGE_KEYS })
 
   const year = searchParams.get("anio") ?? String(defaultYear)
   const months = new Set((searchParams.get("meses") ?? "").split(",").map(Number).filter((month) => month >= 1 && month <= 12))

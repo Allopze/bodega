@@ -214,7 +214,9 @@ describe("anomaly detection engine (PostgreSQL integration)", () => {
   })
 
   it("evidencia_faltante cuenta evidencias reales, no un valor fijo", async () => {
-    const submission = baseSubmission()
+    // Con los dos números de sello la carga debía adjuntar las cuatro fotos; sin
+    // sello solo se exigen dos (D-9), así que el mínimo sigue lo que esa carga debía traer.
+    const submission = { ...baseSubmission(), removedSealNumber: "R-1", installedSealNumber: "I-1" }
     await inMemoryDb.insert(fuelTaeSubmissions).values(submission)
     await inMemoryDb.insert(fuelTaeEvidence).values([
       { id: nanoid(), submissionId: submission.id, kind: "odometer", fileName: "a.jpg", filePath: "a.jpg", mimeType: "image/jpeg" },

@@ -1,34 +1,16 @@
 import { createHash } from "node:crypto"
 import { NextResponse } from "next/server"
 import { headers } from "next/headers"
-import sharp from "sharp"
 import { resolveTrustedClientIp } from "@/lib/security/login-rate-limit-ip"
 import { checkRateLimit, consumeFixedWindowLimit, recordFailure, recordSuccessForTelemetry } from "@/lib/services/rate-limit"
-import { validateFileBuffer, MimeType } from "@/lib/file-validation"
-import { createTaeSubmission, type TaeEvidenceKind, type TaeEvidenceUpload } from "@/lib/services/fuel-tae"
-import { taeEvidenceKinds, taePublicSubmissionSchema } from "@/lib/validation/fuel-tae"
-import { extractMeterReading } from "@/lib/services/tae-ocr"
+import { createTaeSubmission } from "@/lib/services/fuel-tae"
+import { isTaeSubmissionRejected } from "@/lib/services/fuel-tae/errors"
+import { parseFieldLoadRequest } from "@/lib/services/fuel-tae/request"
 import { isRouteOperational } from "@/lib/services/module-toggles"
 import { safeActionMessage } from "@/lib/action-error"
 import { logger } from "@/lib/logger"
 
 export const runtime = "nodejs"
-
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024
-const MAX_IMAGE_PIXELS = 24_000_000
-const MIN_IMAGE_SIDE = 200
-
-async function validateImageDimensions(buffer: Buffer) {
-  const metadata = await sharp(buffer, { limitInputPixels: MAX_IMAGE_PIXELS }).metadata()
-  const width = metadata.width ?? 0
-  const height = metadata.height ?? 0
-  if (width < MIN_IMAGE_SIDE || height < MIN_IMAGE_SIDE) {
-    throw new Error("Cada evidencia debe medir al menos 200 × 200 píxeles")
-  }
-  if (width * height > MAX_IMAGE_PIXELS) {
-    throw new Error("La resolución de una evidencia es demasiado grande")
-  }
-}
 
 export async function POST(request: Request) {
   if (!await isRouteOperational("/combustibles/tae")) {
@@ -55,45 +37,19 @@ export async function POST(request: Request) {
     if (!tokenLimit.allowed) {
       return NextResponse.json({ ok: false, message: "Este acceso TAE alcanzó temporalmente su límite de envíos." }, { status: 429 })
     }
-    const rawPayload = String(formData.get("payload") ?? "")
-    let payload: unknown
-    try { payload = JSON.parse(rawPayload) } catch {
-      return NextResponse.json({ ok: false, message: "Datos del formulario inválidos" }, { status: 400 })
-    }
-    const parsed = taePublicSubmissionSchema.safeParse(payload)
-    if (!parsed.success) {
-      return NextResponse.json({ ok: false, message: parsed.error.issues[0]?.message ?? "Revisa los campos del formulario", fieldErrors: parsed.error.flatten().fieldErrors }, { status: 400 })
-    }
+    const parsedRequest = await parseFieldLoadRequest(formData)
+    if (!parsedRequest.ok) return NextResponse.json(parsedRequest.body, { status: parsedRequest.status })
 
-    const evidence: TaeEvidenceUpload[] = []
-    for (const kind of taeEvidenceKinds) {
-      const file = formData.get(kind)
-      if (!(file instanceof File) || file.size === 0) {
-        return NextResponse.json({ ok: false, message: "Debes adjuntar las cuatro evidencias" }, { status: 400 })
-      }
-      if (file.size > MAX_IMAGE_BYTES) {
-        return NextResponse.json({ ok: false, message: "Cada fotografía debe pesar como máximo 5 MB" }, { status: 400 })
-      }
-      const buffer = Buffer.from(await file.arrayBuffer())
-      const validation = validateFileBuffer(new Uint8Array(buffer), file.size, MimeType.IMAGE)
-      if (validation.error) {
-        return NextResponse.json({ ok: false, message: `Evidencia ${kind}: ${validation.error}` }, { status: 400 })
-      }
-      try {
-        await validateImageDimensions(buffer)
-      } catch (error) {
-        return NextResponse.json({ ok: false, message: `Evidencia ${kind}: ${error instanceof Error ? error.message : "dimensiones inválidas"}` }, { status: 400 })
-      }
-      evidence.push({ kind: kind as TaeEvidenceKind, fileName: file.name, mimeType: validation.mimeType, buffer })
-    }
-
-    const odometerFile = evidence.find((e) => e.kind === "odometer")
-    const ocrResult = odometerFile ? await extractMeterReading(odometerFile.buffer) : undefined
-
-    const result = await createTaeSubmission({ accessToken, input: parsed.data, evidence, ipAddress, ocrResult })
+    const result = await createTaeSubmission({ accessToken, input: parsedRequest.input, evidence: parsedRequest.evidence, ipAddress, ocrResult: parsedRequest.ocrResult })
     await recordSuccessForTelemetry(`tae:submit:${rateLimitIp}`)
     return NextResponse.json({ ok: true, data: result })
   } catch (error) {
+    // Un rechazo de negocio (lectura menor, litros sobre la capacidad, sello de
+    // relleno…) no es abuso ni falla del sistema: responde 422 con la causa y
+    // no cuenta contra el límite de reintentos del origen.
+    if (isTaeSubmissionRejected(error)) {
+      return NextResponse.json({ ok: false, code: error.code, field: error.field, message: error.message }, { status: 422 })
+    }
     await recordFailure(`tae:submit:${rateLimitIp}`, { maxAttempts: 12 })
     logger.error("[tae/submit]", error)
     const message = safeActionMessage(error, "No se pudo registrar la carga TAE")

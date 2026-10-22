@@ -20,6 +20,7 @@ import { TaeExportButton } from "./tae-export-button"
 import { TaeFilters } from "./tae-filters"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { getTaeGroupedTotals } from "@/lib/combustibles/tae-dashboard"
+import { PERSONAL_DATA_LABEL } from "@/lib/combustibles/fuel-log-shared"
 import { TaeGroupChart } from "./tae-group-chart"
 import { addDaysToPlainDate, formatDateTime, todayInChile } from "@/lib/utils"
 import { TAE_STATUS_LABELS as STATUS } from "@/lib/combustibles/labels"
@@ -36,6 +37,8 @@ export default async function TaeControlPage({ searchParams }: { searchParams: P
   let session
   try { session = await requirePermission("combustibles:tae_view") } catch { redirect("/forbidden") }
   const raw = await searchParams
+  // D-10: nombres de conductor y supervisor solo con `combustibles:view_personal`.
+  const canViewPersonal = can(session, "combustibles:view_personal")
   const filters = {
     q: raw.q?.trim().slice(0, 120) ?? "",
     from: /^\d{4}-\d{2}-\d{2}$/.test(raw.from ?? "") ? raw.from! : "",
@@ -58,11 +61,12 @@ export default async function TaeControlPage({ searchParams }: { searchParams: P
     filters.evidence ? sql`(select count(distinct ${fuelTaeEvidence.kind}) from ${fuelTaeEvidence} where ${fuelTaeEvidence.submissionId} = ${fuelTaeSubmissions.id}) < 4` : undefined,
     filters.from ? sql`(${fuelTaeSubmissions.loadedAt} at time zone 'America/Santiago')::date >= ${filters.from}::date` : undefined,
     filters.to ? sql`(${fuelTaeSubmissions.loadedAt} at time zone 'America/Santiago')::date <= ${filters.to}::date` : undefined,
+    // Sin `view_personal` la búsqueda no mira nombres: sería un oráculo para adivinar quién cargó.
     filters.q ? or(
       ilike(fuelTaeSubmissions.equipmentCodeSnapshot, `%${filters.q}%`),
       ilike(fuelTaeSubmissions.plateSnapshot, `%${filters.q}%`),
-      ilike(fuelTaeSubmissions.supervisorNameSnapshot, `%${filters.q}%`),
-      ilike(fuelTaeSubmissions.driverNameSnapshot, `%${filters.q}%`),
+      canViewPersonal ? ilike(fuelTaeSubmissions.supervisorNameSnapshot, `%${filters.q}%`) : undefined,
+      canViewPersonal ? ilike(fuelTaeSubmissions.driverNameSnapshot, `%${filters.q}%`) : undefined,
     ) : undefined,
   ].filter((condition) => condition !== undefined)
   const where = conditions.length > 0 ? and(...conditions) : undefined
@@ -116,6 +120,10 @@ export default async function TaeControlPage({ searchParams }: { searchParams: P
     settle(getTaeGroupedTotals(session, chartRange, "driver"), TAEGROUP_FALLBACK, "tae-group-driver"),
     settle(getTaeGroupedTotals(session, chartRange, "loadingPoint"), TAEGROUP_FALLBACK, "tae-group-loadingPoint"),
   ])
+  // Se enmascara en el servidor: el nombre ni siquiera llega al HTML de quien no puede verlo.
+  const visibleSubmissions = canViewPersonal
+    ? submissions
+    : submissions.map((item) => ({ ...item, supervisorNameSnapshot: null, driverNameSnapshot: null }))
   const metrics = metricsRows[0] ?? { total: 0, liters: 0, observed: 0, pending: 0 }
   const pagination = resolvePagination({ pageParam: String(page), totalItems: Number(metrics.total), pageSize: PAGE_SIZE })
   const canConfigure = can(session, "combustibles:tae_manage_config")
@@ -172,7 +180,7 @@ export default async function TaeControlPage({ searchParams }: { searchParams: P
 
       <div className="overflow-x-auto border border-(--color-border)">
         <Table className="min-w-[920px]"><TableHeader><TableRow><TableHead>Fecha</TableHead><TableHead>Faena</TableHead><TableHead>Punto</TableHead><TableHead>Equipo</TableHead><TableHead>Producto</TableHead><TableHead>Litros</TableHead><TableHead>Supervisor</TableHead><TableHead>Estado</TableHead><TableHead className="text-right">Acción</TableHead></TableRow></TableHeader><TableBody>
-          {submissions.length === 0 ? <TableRow><TableCell colSpan={9} className="py-10 text-center text-[var(--color-text-muted)]">Aún no hay cargas TAE. Genera un QR y compártelo en el punto de carga.</TableCell></TableRow> : submissions.map((item) => { const status = metaFor(STATUS, item.status); return <TableRow key={item.id}><TableCell className="font-mono text-xs">{formatDateTime(item.loadedAt)}</TableCell><TableCell>{item.worksite?.name ?? "—"}</TableCell><TableCell>{item.loadingPoint?.name ?? "—"}</TableCell><TableCell className="font-mono">{item.equipmentCodeSnapshot}</TableCell><TableCell>{item.product?.name ?? "—"}</TableCell><TableCell className="font-mono text-right">{Number(item.liters).toLocaleString("es-CL")} L</TableCell><TableCell>{item.supervisorNameSnapshot}</TableCell><TableCell><MetaBadge meta={status} /></TableCell><TableCell className="text-right"><Button asChild variant="ghost" size="sm"><Link href={`/combustibles/tae/${item.id}`}>Revisar</Link></Button></TableCell></TableRow> })}
+          {visibleSubmissions.length === 0 ? <TableRow><TableCell colSpan={9} className="py-10 text-center text-[var(--color-text-muted)]">Aún no hay cargas TAE. Genera un QR y compártelo en el punto de carga.</TableCell></TableRow> : visibleSubmissions.map((item) => { const status = metaFor(STATUS, item.status); return <TableRow key={item.id}><TableCell className="font-mono text-xs">{formatDateTime(item.loadedAt)}</TableCell><TableCell>{item.worksite?.name ?? "—"}</TableCell><TableCell>{item.loadingPoint?.name ?? "—"}</TableCell><TableCell className="font-mono">{item.equipmentCodeSnapshot}</TableCell><TableCell>{item.product?.name ?? "—"}</TableCell><TableCell className="font-mono text-right">{Number(item.liters).toLocaleString("es-CL")} L</TableCell><TableCell>{canViewPersonal ? item.supervisorNameSnapshot : <span className="text-[var(--color-text-muted)]" title="Requiere el permiso para ver datos personales">{PERSONAL_DATA_LABEL}</span>}</TableCell><TableCell><MetaBadge meta={status} /></TableCell><TableCell className="text-right"><Button asChild variant="ghost" size="sm"><Link href={`/combustibles/tae/${item.id}`}>Revisar</Link></Button></TableCell></TableRow> })}
         </TableBody></Table>
       </div>
       <ServerPagination pagination={pagination} hrefForPage={(target) => buildPaginationHref("/combustibles/tae", raw, target)} />

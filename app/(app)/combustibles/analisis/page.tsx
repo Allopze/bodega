@@ -16,6 +16,7 @@ import { DatePicker } from "@/components/ui/date-picker"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { ChartErrorBoundary } from "@/components/chart-error-boundary"
 import { HistogramChart, PerformanceGroupChart } from "./analysis-charts-lazy"
+import { buildGroupDrilldownHrefs, groupHrefKey } from "./drilldown-hrefs"
 import { addDaysToPlainDate, todayInChile } from "@/lib/utils"
 import { FilterSelect } from "@/components/ui/filter-select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
@@ -37,13 +38,6 @@ const RELIABILITY_META: Record<string, StateMetaInput> = {
 
 type AnalisisSearchParams = { preset?: string; agrupar?: string; faena?: string; desde?: string; hasta?: string }
 
-
-function bitacoraHref(group: { unit: string; singlePlate: string | null }, worksiteId: string | undefined, from: string, to: string) {
-  const params = new URLSearchParams({ desde: from, hasta: to })
-  if (group.singlePlate) params.set("q", group.singlePlate)
-  if (worksiteId) params.set("faena", worksiteId)
-  return `/combustibles/bitacora?${params.toString()}`
-}
 
 export default async function EquipmentPerformancePage({ searchParams }: { searchParams: Promise<AnalisisSearchParams> }) {
   let session
@@ -68,6 +62,9 @@ export default async function EquipmentPerformancePage({ searchParams }: { searc
     }),
     getEquipmentPerformanceAnalysis(session, { preset, aggregateBy, worksiteId, from, to }),
   ])
+
+  // Serializables: el gráfico es un Client Component y no puede recibir funciones (D-12).
+  const drilldownHrefs = buildGroupDrilldownHrefs(groups, { worksiteId, from, to })
 
   const presetHref = (nextPreset: EquipmentPreset) => {
     const params = new URLSearchParams({ preset: nextPreset, agrupar: aggregateBy, desde: from, hasta: to })
@@ -121,7 +118,7 @@ export default async function EquipmentPerformancePage({ searchParams }: { searc
               </CardHeader>
               <CardContent>
                 <ChartErrorBoundary chartName={`Rendimiento medio (${UNIT_LABEL[unit] ?? unit})`}>
-                  <PerformanceGroupChart groups={groups.filter((g) => g.unit === unit)} drilldownHref={(group) => bitacoraHref(group, worksiteId, from, to)} />
+                  <PerformanceGroupChart groups={groups.filter((g) => g.unit === unit)} hrefs={drilldownHrefs} />
                 </ChartErrorBoundary>
               </CardContent>
             </Card>
@@ -172,7 +169,7 @@ export default async function EquipmentPerformancePage({ searchParams }: { searc
                     <TableCell className="font-mono">{group.stats.p10} – {group.stats.p90}</TableCell><TableCell className="font-mono text-(--color-text-muted)">{group.expectedRange ? `${group.expectedRange.low} – ${group.expectedRange.high}` : "—"}</TableCell>
                     <TableCell className="font-mono">{group.variationPct == null ? "—" : `${group.variationPct > 0 ? "+" : ""}${group.variationPct}%`}</TableCell>
                     <TableCell className="font-mono text-xs">{trendLabel(group.trend)}<br /><span className="text-(--color-text-muted)">{group.trend ? `R²=${group.trend.r2}` : ""}</span></TableCell>
-                    <TableCell><Link href={bitacoraHref(group, worksiteId, from, to)} className="text-xs text-(--color-primary-ink) hover:underline">Ver cargas</Link></TableCell>
+                    <TableCell><Link href={drilldownHrefs[groupHrefKey(group)]!} className="text-xs text-(--color-primary-ink) hover:underline">Ver cargas</Link></TableCell>
                   </TableRow>
                 )
               })}

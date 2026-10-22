@@ -19,7 +19,7 @@ import {
   notifyAfterCommit,
   notifyManyUser,
 } from "@/lib/services/notifications"
-import { getFuelLogExportRows, getFuelLogRowsBySelection, FUEL_LOG_SOURCE_LABEL, fuelLogEntityType, type FuelLogFilters, type FuelLogRow, type FuelLogSource } from "@/lib/combustibles/fuel-log"
+import { canViewFuelPersonalData, getFuelLogExportRows, getFuelLogRowsBySelection, FUEL_LOG_SOURCE_LABEL, fuelLogEntityType, type FuelLogFilters, type FuelLogRow, type FuelLogSource } from "@/lib/combustibles/fuel-log"
 import { addExportMetadataSheet } from "@/lib/combustibles/xlsx-utils"
 import { todayInChile } from "@/lib/utils"
 
@@ -155,7 +155,7 @@ export async function toggleReviewMarkAction(source: FuelLogSource, entityId: st
   return { ok: true as const, marked: true as const, markId: id }
 }
 
-async function buildWorkbook(rows: FuelLogRow[]) {
+async function buildWorkbook(rows: FuelLogRow[], includePersonal: boolean) {
   const ExcelJS = await import("exceljs")
   const wb = new ExcelJS.Workbook()
   const ws = wb.addWorksheet("Bitácora general")
@@ -168,8 +168,11 @@ async function buildWorkbook(rows: FuelLogRow[]) {
     { header: "Código equipo", key: "equipmentCode", width: 14 },
     { header: "Patente", key: "plate", width: 12 },
     { header: "Tipo de equipo", key: "equipmentTypeName", width: 16 },
-    { header: "Conductor", key: "driverName", width: 20 },
-    { header: "Supervisor", key: "supervisorName", width: 20 },
+    // D-10: sin `combustibles:view_personal` las columnas de personas no se exportan.
+    ...(includePersonal ? [
+      { header: "Conductor", key: "driverName", width: 20 },
+      { header: "Supervisor", key: "supervisorName", width: 20 },
+    ] : []),
     { header: "Producto", key: "productName", width: 16 },
     { header: "Litros", key: "liters", width: 12 },
     { header: "Medidor", key: "meterReading", width: 12 },
@@ -211,7 +214,7 @@ export async function exportFuelLogAction(filters: FuelLogFilters) {
   catch { return { ok: false as const, message: "Sin permisos para exportar" } }
 
   const { rows, truncated } = await getFuelLogExportRows(session, filters)
-  const wb = await buildWorkbook(rows)
+  const wb = await buildWorkbook(rows, canViewFuelPersonalData(session))
   addExportMetadataSheet(wb, session, { filters, rowCount: rows.length, from: filters.from, to: filters.to })
   const base64 = await xlsxToBase64(wb)
   await recordAudit({
@@ -236,7 +239,7 @@ export async function exportFuelLogSelectionAction(selection: Array<{ source: Fu
   if (!selection.length) return { ok: false as const, message: "No hay filas seleccionadas" }
 
   const rows = await getFuelLogRowsBySelection(session, selection)
-  const wb = await buildWorkbook(rows)
+  const wb = await buildWorkbook(rows, canViewFuelPersonalData(session))
   addExportMetadataSheet(wb, session, { rowCount: rows.length })
   const base64 = await xlsxToBase64(wb)
   await recordAudit({

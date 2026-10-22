@@ -52,7 +52,13 @@ export function TaeGroupChart({ data, drilldownBaseHref }: { data: TaeGroupRow[]
             barSize={17}
             fill={BAR_COLOR}
             style={{ cursor: "pointer" }}
-            onClick={(entry) => router.push(buildTaeGroupDrilldownHref(drilldownBaseHref, (entry as unknown as { payload: { fullName: string } }).payload.fullName))}
+            onClick={(entry) => {
+              const fullName = (entry as unknown as { payload: { fullName: string } }).payload.fullName
+              // Un grupo reservado ("Reservado 1") no es un nombre: filtrar la
+              // bitácora por él no devolvería nada y el servidor lo ignora.
+              if (/^Reservado \d+$/.test(fullName)) return
+              router.push(buildTaeGroupDrilldownHref(drilldownBaseHref, fullName))
+            }}
             animationDuration={420}
             animationEasing="ease-out"
           />

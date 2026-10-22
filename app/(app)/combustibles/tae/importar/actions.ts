@@ -9,6 +9,7 @@ import { db } from "@/db"
 import { fuelSealMovements, fuelTaeImportBatches, fuelTaeSubmissions, fuelTaeVehicleMappings, fuelTaeWorkerMappings, fuelVehicles, workers } from "@/db/schema"
 import { can, guardPermission } from "@/lib/auth/can"
 import { canAccessWorksite, resolveWorksiteScope } from "@/lib/auth/scope"
+import { recomputeVehicleSeries } from "@/lib/combustibles/control/projection"
 import { generateTaeImportDryRunReport, generateTaeImportPreview } from "@/lib/services/fuel-tae"
 import { importTaeLegacyWorkbook, reprocessTaeImportRejectedRows, type TaeImportMappingDecision } from "@/lib/combustibles/tae-import-service"
 import { nanoid } from "@/lib/id"
@@ -147,7 +148,7 @@ export async function revertTaeImportBatchAction(batchId: string) {
       // de FK. Una vez aplicada la migración, este borrado queda redundante
       // pero inofensivo — el CASCADE ya lo habría hecho.
       const submissions = await tx
-        .select({ id: fuelTaeSubmissions.id, worksiteId: fuelTaeSubmissions.worksiteId })
+        .select({ id: fuelTaeSubmissions.id, worksiteId: fuelTaeSubmissions.worksiteId, vehicleId: fuelTaeSubmissions.vehicleId })
         .from(fuelTaeSubmissions)
         .where(eq(fuelTaeSubmissions.importBatchId, batchId))
         .for("update")
@@ -167,6 +168,11 @@ export async function revertTaeImportBatchAction(batchId: string) {
         .delete(fuelTaeSubmissions)
         .where(eq(fuelTaeSubmissions.importBatchId, batchId))
         .returning({ id: fuelTaeSubmissions.id })
+
+      // Las cargas proyectadas se van con ON DELETE CASCADE, pero el rendimiento
+      // de los equipos afectados se calculó con ellas: se recalcula su serie.
+      const affectedVehicleIds = [...new Set(submissions.map((submission) => submission.vehicleId).filter((id): id is string => id != null))]
+      for (const vehicleId of affectedVehicleIds) await recomputeVehicleSeries(tx, vehicleId)
 
       await recordAudit({
         userId: guard.session.user.id,

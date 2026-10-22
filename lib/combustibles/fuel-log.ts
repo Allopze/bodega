@@ -31,6 +31,29 @@ import type { FuelLogSource, FuelLogRow, FuelLogFilters } from "./fuel-log-share
 export type { FuelLogSource, FuelLogRow, FuelLogFilters }
 export { FUEL_LOG_SOURCE_LABEL } from "./fuel-log-shared"
 
+/**
+ * Datos personales (D-10, P-01): nombres de conductor y supervisor. Se decide
+ * aquí, en el servidor, a partir de la sesión: sin `combustibles:view_personal`
+ * la consulta devuelve NULL en esas columnas, ignora los filtros por nombre y
+ * no busca por ellos (un filtro por nombre sería un oráculo para adivinar
+ * quién cargó). No usa `can()` para no arrastrar `next/headers` a este módulo.
+ */
+export function canViewFuelPersonalData(session: Session | null): boolean {
+  return session?.user?.permissions?.includes("combustibles:view_personal") ?? false
+}
+
+/**
+ * La unidad de rendimiento del filtro (`km_per_liter`, `liters_per_hour`) es el
+ * vocabulario de `fuel_vehicles.performance_unit`; el log operacional guarda
+ * `tipo_rendimiento` con el suyo (`km_lt`, `lt_hr`). Compararlos en crudo
+ * descartaba todo el log operacional al filtrar por unidad (D-11).
+ */
+const OPERATION_PERFORMANCE_UNIT: Record<string, string> = { km_per_liter: "km_lt", liters_per_hour: "lt_hr" }
+
+export function operationPerformanceUnitCode(unit: string): string {
+  return OPERATION_PERFORMANCE_UNIT[unit] ?? unit
+}
+
 /** Ruta de detalle en el sistema fuente de cada fila. */
 export function fuelLogDetailHref(row: Pick<FuelLogRow, "source" | "detailId">): string {
   if (row.source === "tae_pwa") return `/combustibles/tae/${row.detailId}`
@@ -107,6 +130,7 @@ export function fuelLogAuditEntity(row: Pick<FuelLogRow, "source" | "id">): { en
 }
 
 function buildTaeBranch(session: Session, filters: FuelLogFilters, searchPattern: string | null, ids?: string[]) {
+  const personal = canViewFuelPersonalData(session)
   return db
     .select({
       // Toda columna de aquí en más lleva `.as()` explícito, aunque Drizzle a
@@ -135,8 +159,8 @@ function buildTaeBranch(session: Session, filters: FuelLogFilters, searchPattern
       plate: sql<string | null>`${fuelTaeSubmissions.plateSnapshot}`.as("plate"),
       equipmentTypeId: sql<string | null>`${fuelEquipmentTypes.id}`.as("equipmentTypeId"),
       equipmentTypeName: sql<string | null>`${fuelEquipmentTypes.name}`.as("equipmentTypeName"),
-      driverName: sql<string | null>`${fuelTaeSubmissions.driverNameSnapshot}`.as("driverName"),
-      supervisorName: sql<string | null>`${fuelTaeSubmissions.supervisorNameSnapshot}`.as("supervisorName"),
+      driverName: (personal ? sql<string | null>`${fuelTaeSubmissions.driverNameSnapshot}` : sql<string | null>`NULL`).as("driverName"),
+      supervisorName: (personal ? sql<string | null>`${fuelTaeSubmissions.supervisorNameSnapshot}` : sql<string | null>`NULL`).as("supervisorName"),
       // productId es NOT NULL en esta tabla; nullable en el log operacional (sin
       // concepto de producto). Mismo motivo que equipmentCode/driverName arriba.
       productId: sql<string | null>`${fuelTaeSubmissions.productId}`.as("productId"),
@@ -177,8 +201,8 @@ function buildTaeBranch(session: Session, filters: FuelLogFilters, searchPattern
       searchPattern ? or(
         ilike(fuelTaeSubmissions.equipmentCodeSnapshot, searchPattern),
         ilike(fuelTaeSubmissions.plateSnapshot, searchPattern),
-        ilike(fuelTaeSubmissions.driverNameSnapshot, searchPattern),
-        ilike(fuelTaeSubmissions.supervisorNameSnapshot, searchPattern),
+        personal ? ilike(fuelTaeSubmissions.driverNameSnapshot, searchPattern) : undefined,
+        personal ? ilike(fuelTaeSubmissions.supervisorNameSnapshot, searchPattern) : undefined,
       ) : undefined,
       ids ? inArray(fuelTaeSubmissions.id, ids) : undefined,
       // TAE no tiene proveedor: filtrar por proveedor excluye toda esta rama.
@@ -189,8 +213,8 @@ function buildTaeBranch(session: Session, filters: FuelLogFilters, searchPattern
       // Marca/modelo: TAE se asocia vía fuelVehicles.
       filters.brand ? ilike(fuelVehicles.brand, `%${filters.brand}%`) : undefined,
       filters.model ? ilike(fuelVehicles.model, `%${filters.model}%`) : undefined,
-      filters.driverName ? ilike(fuelTaeSubmissions.driverNameSnapshot, `%${filters.driverName}%`) : undefined,
-      filters.supervisorName ? ilike(fuelTaeSubmissions.supervisorNameSnapshot, `%${filters.supervisorName}%`) : undefined,
+      personal && filters.driverName ? ilike(fuelTaeSubmissions.driverNameSnapshot, `%${filters.driverName}%`) : undefined,
+      personal && filters.supervisorName ? ilike(fuelTaeSubmissions.supervisorNameSnapshot, `%${filters.supervisorName}%`) : undefined,
       filters.loadingPointId ? eq(fuelTaeLoadingPoints.id, filters.loadingPointId) : undefined,
       filters.performanceUnit ? eq(fuelVehicles.performanceUnit, filters.performanceUnit) : undefined,
       filters.operationalStatus ? eq(fuelVehicles.operationalStatus, filters.operationalStatus) : undefined,
@@ -282,6 +306,7 @@ function buildInvoicedBranch(session: Session, filters: FuelLogFilters, searchPa
 }
 
 function buildOperationBranch(session: Session, filters: FuelLogFilters, searchPattern: string | null, ids?: string[]) {
+  const personal = canViewFuelPersonalData(session)
   return db
     .select({
       id: sql<string>`${fuelOperationRecords.id}`.as("id"),
@@ -297,8 +322,8 @@ function buildOperationBranch(session: Session, filters: FuelLogFilters, searchP
       plate: sql<string | null>`${fuelOperationRecords.plate}`.as("plate"),
       equipmentTypeId: sql<string | null>`${fuelEquipmentTypes.id}`.as("equipmentTypeId"),
       equipmentTypeName: sql<string | null>`${fuelEquipmentTypes.name}`.as("equipmentTypeName"),
-      driverName: sql<string | null>`${fuelOperationRecords.operador}`.as("driverName"),
-      supervisorName: sql<string | null>`${fuelOperationRecords.supervisor}`.as("supervisorName"),
+      driverName: (personal ? sql<string | null>`${fuelOperationRecords.operador}` : sql<string | null>`NULL`).as("driverName"),
+      supervisorName: (personal ? sql<string | null>`${fuelOperationRecords.supervisor}` : sql<string | null>`NULL`).as("supervisorName"),
       productId: sql<string | null>`NULL`.as("productId"),
       productName: sql<string | null>`NULL`.as("productName"),
       liters: sql<number>`${fuelOperationRecords.liters}`.as("liters"),
@@ -336,8 +361,8 @@ function buildOperationBranch(session: Session, filters: FuelLogFilters, searchP
       searchPattern ? or(
         ilike(fuelOperationRecords.code, searchPattern),
         ilike(fuelOperationRecords.plate, searchPattern),
-        ilike(fuelOperationRecords.operador, searchPattern),
-        ilike(fuelOperationRecords.supervisor, searchPattern),
+        personal ? ilike(fuelOperationRecords.operador, searchPattern) : undefined,
+        personal ? ilike(fuelOperationRecords.supervisor, searchPattern) : undefined,
       ) : undefined,
       ids ? inArray(fuelOperationRecords.id, ids) : undefined,
       filters.supplierId ? eq(fuelOperationRecords.fuelSupplierId, filters.supplierId) : undefined,
@@ -348,11 +373,11 @@ function buildOperationBranch(session: Session, filters: FuelLogFilters, searchP
       filters.hasNotes ? sql`false` : undefined,
       filters.brand ? ilike(fuelOperationRecords.marca, `%${filters.brand}%`) : undefined,
       filters.model ? ilike(fuelOperationRecords.modelo, `%${filters.model}%`) : undefined,
-      filters.driverName ? ilike(fuelOperationRecords.operador, `%${filters.driverName}%`) : undefined,
-      filters.supervisorName ? ilike(fuelOperationRecords.supervisor, `%${filters.supervisorName}%`) : undefined,
+      personal && filters.driverName ? ilike(fuelOperationRecords.operador, `%${filters.driverName}%`) : undefined,
+      personal && filters.supervisorName ? ilike(fuelOperationRecords.supervisor, `%${filters.supervisorName}%`) : undefined,
       // Tampoco tiene lugar de carga ni observaciones.
       filters.loadingPointId ? sql`false` : undefined,
-      filters.performanceUnit ? eq(fuelOperationRecords.tipoRendimiento, filters.performanceUnit) : undefined,
+      filters.performanceUnit ? eq(fuelOperationRecords.tipoRendimiento, operationPerformanceUnitCode(filters.performanceUnit)) : undefined,
       filters.operationalStatus ? eq(fuelVehicles.operationalStatus, filters.operationalStatus) : undefined,
       filters.sealRemoved ? sql`false` : undefined,
       filters.sealInstalled ? sql`false` : undefined,

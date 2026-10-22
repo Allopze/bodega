@@ -8,10 +8,12 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { FileText, WarningCircle, CheckCircle, ArrowLeft, ArrowUp, ArrowDown } from "@phosphor-icons/react"
 import { toast } from "@/lib/toast"
+import { ExportButton } from "@/components/ui/export-button"
 import { formatCLP, formatQty } from "@/lib/utils"
 import {
   previewOperationsImportAction,
   confirmOperationsImportAction,
+  downloadOperationsTemplateAction,
   type OperationsPreviewData,
   type OperationsImportResultSummary,
 } from "../actions-operaciones"
@@ -118,10 +120,15 @@ export function OperationsImportWizard() {
               <p className="mt-1 text-xs text-[var(--color-text-muted)]">{result.duplicateRows} {result.duplicateRows === 1 ? "fila ya estaba" : "filas ya estaban"} importada{result.duplicateRows === 1 ? "" : "s"} de un lote anterior y se omitieron.</p>
             )}
           </div>
+          {result.rejected > 0 && (
+            <p className="text-sm text-[var(--color-text-muted)]">
+              {result.rejected} {result.rejected === 1 ? "fila fue rechazada" : "filas fueron rechazadas"} y quedó guardada con su motivo. En el detalle del lote puedes descargarlas en Excel, corregirlas y volver a subirlas.
+            </p>
+          )}
           <ImportErrorList errors={result.errors} filename="errores-operaciones.xlsx" title={`${result.errors.length} filas omitidas por errores:`} maxVisible={20} />
           <div className="flex justify-center gap-3">
             <Button variant="secondary" onClick={reset}>Importar otro archivo</Button>
-            <Button asChild><a href={`/combustibles/importar/operaciones/${result.batchId}`}>Ver lote</a></Button>
+            <Button asChild><a href={`/combustibles/importar/operaciones/${result.batchId}`}>Ver lote y filas rechazadas</a></Button>
           </div>
         </CardContent>
       </Card>
@@ -164,6 +171,9 @@ export function OperationsImportWizard() {
             </div>
           )}
 
+          <p className="text-xs text-[var(--color-text-muted)]">
+            Se rechazan las filas con fecha vacía o de relleno (30-12-1899), litros en cero y sellos de relleno. Las demás se importan: lo que no cuadre (lectura menor que la anterior, proveedor desconocido, rendimiento raro) queda marcado en Control › Revisión.
+          </p>
           <ImportErrorList errors={preview.errores} filename="errores-preview-operaciones.xlsx" />
 
           {preview.equiposSinVehiculo > 0 && (
@@ -218,6 +228,11 @@ export function OperationsImportWizard() {
           </div>
         </div>
 
+        <div className="flex flex-wrap items-center gap-3">
+          <ExportButton action={downloadOperationsTemplateAction} label="Descargar plantilla" />
+          <span className="text-xs text-[var(--color-text-muted)]">Mismas columnas que lee el importador, con una hoja de instrucciones (formatos y unidades).</span>
+        </div>
+
         <ImportFileDropzone
           file={file}
           fileError={fileError}
@@ -245,7 +260,7 @@ export function OperationsImportWizard() {
               <p className="text-xs leading-relaxed text-[var(--color-text-muted)]">
                 Codigo, Patente, Fecha, Hora Carga, Faena, Tipo Equipo, Marca, Modelo, Año,
                 Horometro/Odometro, Medido Por (Km/Hora), LT, Operador, Supervisor Turno,
-                Suministro entregado por, Rendimiento, Tipo de Rendimiento, $/lt, Monto ($)
+                Suministro entregado por, Rendimiento, Tipo de Rendimiento, $/lt, Monto ($). El «Rendimiento» digitado se guarda solo como referencia: la plataforma calcula el suyo con las lecturas y los litros.
               </p>
             </div>
           )}

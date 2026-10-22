@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { CrossFilterCell } from "@/components/ui/cross-filter-cell"
-import { FUEL_LOG_SOURCE_LABEL, type FuelLogRow, type FuelLogSource } from "@/lib/combustibles/fuel-log-shared"
+import { FUEL_LOG_SOURCE_LABEL, PERSONAL_DATA_LABEL, type FuelLogRow, type FuelLogSource } from "@/lib/combustibles/fuel-log-shared"
 import { formatDateTime } from "@/lib/utils"
 import { toast } from "@/lib/toast"
 import { BitacoraSelectionExport } from "./export-button"
@@ -27,8 +27,16 @@ interface ColumnDef {
   key: string
   label: string
   defaultVisible: boolean
-  render: (row: EnrichedRow) => React.ReactNode
+  /** `canViewPersonal`: la sesión tiene `combustibles:view_personal`. El servidor ya enmascaró el dato; esto solo rotula el vacío. */
+  render: (row: EnrichedRow, canViewPersonal: boolean) => React.ReactNode
   numeric?: boolean
+}
+
+function personalCell(value: string | null, canViewPersonal: boolean): React.ReactNode {
+  if (!canViewPersonal) {
+    return <span className="text-[var(--color-text-muted)]" title="Requiere el permiso para ver datos personales">{PERSONAL_DATA_LABEL}</span>
+  }
+  return value ?? "—"
 }
 
 const COLUMNS: ColumnDef[] = [
@@ -47,8 +55,8 @@ const COLUMNS: ColumnDef[] = [
       ? <CrossFilterCell value={r.equipmentTypeName} paramKey="tipo" paramValue={r.equipmentTypeId} />
       : (r.equipmentTypeName ?? "—"),
   },
-  { key: "driverName", label: "Conductor", defaultVisible: true, render: (r) => r.driverName ?? "—" },
-  { key: "supervisorName", label: "Supervisor", defaultVisible: true, render: (r) => r.supervisorName ?? "—" },
+  { key: "driverName", label: "Conductor", defaultVisible: true, render: (r, personal) => personalCell(r.driverName, personal) },
+  { key: "supervisorName", label: "Supervisor", defaultVisible: true, render: (r, personal) => personalCell(r.supervisorName, personal) },
   {
     key: "supplierName", label: "Proveedor", defaultVisible: false,
     render: (r) => r.supplierId
@@ -112,7 +120,7 @@ function ReviewToggle({ row }: { row: EnrichedRow }) {
 
 const rowKey = (row: EnrichedRow) => `${row.source}:${row.id}`
 
-export function BitacoraTable({ rows }: { rows: EnrichedRow[] }) {
+export function BitacoraTable({ rows, canViewPersonal }: { rows: EnrichedRow[]; canViewPersonal: boolean }) {
   const [visible, setVisible] = React.useState<Set<string>>(() => new Set(COLUMNS.filter((c) => c.defaultVisible).map((c) => c.key)))
   const [selected, setSelected] = React.useState<Set<string>>(new Set())
   const columns = COLUMNS.filter((c) => visible.has(c.key))
@@ -179,12 +187,12 @@ export function BitacoraTable({ rows }: { rows: EnrichedRow[] }) {
               return (
                 <TableRow key={key} className={row.reviewMark ? "bg-amber-50/40 dark:bg-amber-900/10" : ""}>
                   <TableCell><Checkbox id={`select-${key}`} label="" checked={selected.has(key)} onChange={() => toggleRow(key)} aria-label={`Seleccionar fila ${key}`} /></TableCell>
-                  {columns.map((column) => <TableCell key={column.key} className={column.numeric ? "text-right font-mono" : ""}>{column.render(row)}</TableCell>)}
+                  {columns.map((column) => <TableCell key={column.key} className={column.numeric ? "text-right font-mono" : ""}>{column.render(row, canViewPersonal)}</TableCell>)}
                   <TableCell>
                     <div className="flex items-center gap-1">
                       <ReviewToggle row={row} />
                       <Link href={row.detailHref} className="inline-flex items-center gap-1 text-xs text-[var(--color-primary-ink)] hover:underline" title="Abrir detalle"><ArrowSquareOut size={14} /></Link>
-                      {row.source === "tae_pwa" && (row.evidenceCount ?? 0) > 0 && (
+                      {canViewPersonal && row.source === "tae_pwa" && (row.evidenceCount ?? 0) > 0 && (
                         <Link href={`${row.detailHref}#evidencia`} className="inline-flex items-center gap-1 text-xs text-[var(--color-primary-ink)] hover:underline" title="Ver evidencias"><Camera size={14} /></Link>
                       )}
                       {row.auditEntity && (

@@ -46,6 +46,21 @@ describe("GET /api/tae/evidence/[id]", () => {
     expect(mockFindFirst).not.toHaveBeenCalled()
   })
 
+  it("rechaza con 403 sin combustibles:view_personal aunque tenga tae_view, sin consultar la base ni registrar acceso", async () => {
+    mockCan.mockImplementation((_session: unknown, permission: string) => permission !== "combustibles:view_personal")
+    const res = await callRoute("ev-1")
+    expect(res.status).toBe(403)
+    expect(mockFindFirst).not.toHaveBeenCalled()
+    expect(mockLogEvidenceAccess).not.toHaveBeenCalled()
+  })
+
+  it("exige ambos permisos: tae_view y view_personal", async () => {
+    mockFindFirst.mockResolvedValueOnce(undefined)
+    await callRoute("ev-1")
+    expect(mockCan).toHaveBeenCalledWith(session, "combustibles:tae_view")
+    expect(mockCan).toHaveBeenCalledWith(session, "combustibles:view_personal")
+  })
+
   it("devuelve 404 (no 403) cuando la evidencia no existe", async () => {
     mockFindFirst.mockResolvedValueOnce(undefined)
     const res = await callRoute("ev-missing")

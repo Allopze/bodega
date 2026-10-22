@@ -14,6 +14,13 @@ export const FUEL_LOG_SOURCE_LABEL: Record<FuelLogSource, string> = {
   operation_manual: "Log operacional",
 }
 
+/**
+ * Lo que ve en lugar del nombre de una persona quien no tiene
+ * `combustibles:view_personal` (D-10). El servidor ya entrega `null`; la UI
+ * rotula ese vacío con esto y no con "—", que se leería como "sin dato".
+ */
+export const PERSONAL_DATA_LABEL = "Reservado"
+
 export interface FuelLogRow {
   /** Identidad real de la fila — única incluso cuando varias filas comparten `detailId` (log operacional). */
   id: string
@@ -29,7 +36,9 @@ export interface FuelLogRow {
   plate: string | null
   equipmentTypeId: string | null
   equipmentTypeName: string | null
+  /** `null` también cuando la sesión no tiene `combustibles:view_personal`: se enmascara en la consulta. */
   driverName: string | null
+  /** Ídem `driverName`. */
   supervisorName: string | null
   productId: string | null
   productName: string | null

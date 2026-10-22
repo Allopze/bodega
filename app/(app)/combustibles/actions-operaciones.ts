@@ -1,15 +1,12 @@
 "use server"
 
 import { createHash } from "node:crypto"
-import { revalidatePath } from "next/cache"
-import { and, eq, gte, inArray, lte, ne, sql } from "drizzle-orm"
+import { and, eq, ne, sql } from "drizzle-orm"
 import { db } from "@/db"
-import { fuelAnomalyCases, fuelOperationBatches, fuelOperationRecords, fuelVehicles, worksites } from "@/db/schema"
+import { fuelOperationBatches, fuelOperationRecords, fuelVehicles } from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
-import { isGlobalRole } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
-import { validateFileBuffer, MimeType } from "@/lib/file-validation"
 import { mkdirp, removeFile, writeBuffer } from "@/lib/storage/helpers"
 import { createFuelImportPath, resolveFuelImportsDir, resolveStorageFile } from "@/lib/storage/config"
 import {
@@ -18,73 +15,27 @@ import {
   matchByNameOrContains,
   type ImportError,
 } from "@/lib/combustibles/operations-import"
-import type { ActionState } from "@/lib/validation/masters"
+import {
+  computeTotales,
+  existingOperationKeys,
+  insertInChunks,
+  lookupMatchedPlateKeys,
+  operationRowKey,
+  readImportFile,
+  requireGlobalImportSession,
+  sanitizeFileName,
+  type Totales,
+} from "@/lib/combustibles/operations-import-shared"
+import { buildOperationRejectionsXlsx, persistOperationRejections, type OperationRejection } from "@/lib/combustibles/operations-import-rejections"
+import { buildOperationsTemplateBase64 } from "@/lib/combustibles/operations-import-template"
+import { auditResetDecisions } from "@/lib/combustibles/projection-audit"
+import { projectOperationRecords } from "@/lib/combustibles/control/projection"
 import { fuelEquipmentTypeIdForLegacy, fuelMetricDefaultsForLegacy } from "@/lib/combustibles/validation"
+import { todayInChile } from "@/lib/utils"
 
-const MAX_FILE_BYTES = 10 * 1024 * 1024
-
-/**
- * Este log operacional abarca varias faenas por archivo (a diferencia del
- * import de consumos, que declara una sola faena por lote) — se restringe a
- * roles con visibilidad global para no importar/revertir datos de faenas que
- * el usuario no puede ver.
- */
-async function requireGlobalImportSession(permission: "combustibles:import" | "combustibles:revert") {
-  const session = await requirePermission(permission)
-  if (!isGlobalRole(session)) {
-    throw new Error("Esta importación abarca múltiples faenas; requiere acceso global")
-  }
-  return session
-}
-
-function sanitizeFileName(name: string) {
-  return name
-    .normalize("NFKD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[^a-zA-Z0-9._-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 120) || "importacion.xlsx"
-}
-
-async function readImportFile(formData: FormData): Promise<
-  | { ok: true; buffer: Buffer; fileName: string }
-  | { ok: false; message: string }
-> {
-  const file = formData.get("file")
-  if (!(file instanceof File) || file.size === 0) {
-    return { ok: false, message: "Selecciona un archivo Excel" }
-  }
-  if (!file.name.toLocaleLowerCase("es-CL").endsWith(".xlsx")) {
-    return { ok: false, message: "El archivo debe estar en formato .xlsx" }
-  }
-  if (file.size > MAX_FILE_BYTES) {
-    return { ok: false, message: "El archivo no puede superar 10 MB" }
-  }
-  const buffer = Buffer.from(await file.arrayBuffer())
-  const validation = validateFileBuffer(new Uint8Array(buffer), file.size, MimeType.SPREADSHEET)
-  if (validation.error) return { ok: false, message: validation.error }
-  return { ok: true, buffer, fileName: file.name }
-}
-
-interface Totales {
-  totalFilas: number
-  totalEquipos: number
-  totalLitros: number
-  totalMonto: number
-  periodoDesde: string
-  periodoHasta: string
-}
-
-function computeTotales(rows: Awaited<ReturnType<typeof parseFuelOperationsExcel>>["rows"]): Totales {
-  const fechas = rows.map((r) => r.fecha).sort()
-  return {
-    totalFilas: rows.length,
-    totalEquipos: new Set(rows.map((r) => r.plate)).size,
-    totalLitros: Math.round(rows.reduce((s, r) => s + r.liters, 0) * 10000) / 10000,
-    totalMonto: Math.round(rows.reduce((s, r) => s + (r.monto ?? 0), 0) * 100) / 100,
-    periodoDesde: fechas[0] ?? "",
-    periodoHasta: fechas[fechas.length - 1] ?? "",
-  }
+/** Lo que viaja al cliente de cada rechazo: sin la fila original, que puede pesar mucho en un archivo de miles de filas. */
+function publicErrors(errors: ImportError[]): ImportError[] {
+  return errors.map(({ rowIndex, field, message }) => ({ rowIndex, field, message }))
 }
 
 export interface OperationsPreviewData {
@@ -150,7 +101,7 @@ export async function previewOperationsImportAction(
     ok: true,
     data: {
       totales: computeTotales(parsed.rows),
-      errores: parsed.errors,
+      errores: publicErrors(parsed.errors),
       equiposConVehiculo,
       equiposSinVehiculo: equiposVistos.size - equiposConVehiculo,
       faenasSinMatch: [...faenasSinMatch].sort(),
@@ -161,71 +112,14 @@ export async function previewOperationsImportAction(
   }
 }
 
-async function lookupMatchedPlateKeys(plates: string[]): Promise<Set<string>> {
-  const uniquePlates = [...new Set(plates)]
-  if (uniquePlates.length === 0) return new Set()
-  const vehicles = await db.query.fuelVehicles.findMany({ columns: { plate: true } })
-  const vehicleKeys = new Set(vehicles.map((v) => plateMatchKey(v.plate)))
-  return new Set(uniquePlates.map(plateMatchKey).filter((k) => vehicleKeys.has(k)))
-}
-
-/** Identidad natural de una carga del log operacional: la combinación que
- *  distingue dos eventos reales. `undefined`/`null` se normalizan a cadena
- *  vacía para que el mismo campo ausente en ambos lados siga comparando igual. */
-function operationRowKey(row: { plate: string; fecha: string; horaCarga: string | null; liters: number; horometro: number | null }): string {
-  return [plateMatchKey(row.plate), row.fecha, row.horaCarga ?? "", row.liters, row.horometro ?? ""].join("|")
-}
-
-/**
- * Filas del archivo que YA existen como carga real (de un lote no revertido).
- * Antes la deduplicación era sólo por hash del ARCHIVO completo: un
- * consolidado reimportado con filas nuevas AÑADIDAS al final tiene un hash
- * distinto, así que pasaba el guard e insertaba de nuevo TODO lo ya cargado.
- * Acotado por rango de fecha del archivo — `fecha` está indexada — para no
- * escanear la tabla completa en cada confirmación.
- */
-async function existingOperationKeys(
-  rows: Awaited<ReturnType<typeof parseFuelOperationsExcel>>["rows"],
-  client: Parameters<Parameters<typeof db.transaction>[0]>[0] | typeof db = db,
-): Promise<Set<string>> {
-  if (rows.length === 0) return new Set()
-  const fechas = rows.map((r) => r.fecha)
-  const minFecha = fechas.reduce((a, b) => (a < b ? a : b))
-  const maxFecha = fechas.reduce((a, b) => (a > b ? a : b))
-  const existing = await client.select({
-    plate: fuelOperationRecords.plate,
-    fecha: fuelOperationRecords.fecha,
-    horaCarga: fuelOperationRecords.horaCarga,
-    liters: fuelOperationRecords.liters,
-    horometro: fuelOperationRecords.horometro,
-  })
-    .from(fuelOperationRecords)
-    .innerJoin(fuelOperationBatches, eq(fuelOperationRecords.batchId, fuelOperationBatches.id))
-    .where(and(
-      gte(fuelOperationRecords.fecha, minFecha),
-      lte(fuelOperationRecords.fecha, maxFecha),
-      ne(fuelOperationBatches.estado, "revertido"),
-    ))
-  return new Set(existing.map(operationRowKey))
-}
-
-/** Postgres rechaza más de 65.535 parámetros por sentencia — 25 columnas por
- *  fila dan un techo real de ~2.621 filas, muy por debajo de lo que cabe en
- *  el límite de 10 MB del archivo. Se inserta en lotes. */
-const INSERT_CHUNK_SIZE = 2000
-
-async function insertInChunks<T>(tx: Parameters<Parameters<typeof db.transaction>[0]>[0], table: typeof fuelOperationRecords, rows: T[]) {
-  for (let i = 0; i < rows.length; i += INSERT_CHUNK_SIZE) {
-    await tx.insert(table).values(rows.slice(i, i + INSERT_CHUNK_SIZE) as (typeof fuelOperationRecords.$inferInsert)[])
-  }
-}
-
 export interface OperationsImportResultSummary {
   batchId: string
   imported: number
   /** Filas del archivo que ya existían como carga de un lote vigente y se omitieron. */
   duplicateRows: number
   errors: ImportError[]
+  /** Filas que no se convirtieron en carga: errores del archivo más las que la proyección no pudo ubicar. Detalle en el lote. */
+  rejected: number
 }
 
 export async function confirmOperationsImportAction(
@@ -361,7 +255,7 @@ export async function confirmOperationsImportAction(
 
       // `newRows`, no `parsed.rows`: excluye las cargas ya existentes. En lotes
       // (INSERT_CHUNK_SIZE) para no superar el límite de parámetros de Postgres.
-      await insertInChunks(tx, fuelOperationRecords, newRows.map((row) => {
+      const recordRows = newRows.map((row) => {
         const vehicle = vehicleByKey.get(plateMatchKey(row.plate))
         const worksite = row.faenaNombre ? matchByNameOrContains(row.faenaNombre, allWorksites) : null
         const supplier = row.proveedorNombre ? matchByNameOrContains(row.proveedorNombre, allSuppliers) : null
@@ -392,7 +286,26 @@ export async function confirmOperationsImportAction(
           tipoRendimiento: row.tipoRendimiento,
           rawRow: row.rawRow,
         }
-      }))
+      })
+      await insertInChunks(tx, fuelOperationRecords, recordRows)
+
+      // Cada carga entra a la serie canónica con el rendimiento calculado por el
+      // servidor (el «Rendimiento» digitado solo queda como declarado). Lo que la
+      // proyección no puede convertir en carga —sin faena, sin litros— se
+      // devuelve en `skipped` y se guarda junto a los errores del archivo.
+      const projection = await projectOperationRecords(tx, recordRows.map((record) => record.id))
+      await auditResetDecisions(tx, projection.resetLoadIds, { userId: session.user.id, userEmail: session.user.email ?? undefined }, null)
+      const metaByRecordId = new Map(recordRows.map((record, index) => [record.id, { rowIndex: newRows[index]!.rowIndex, rawRow: newRows[index]!.rawRow }]))
+      const rejections: OperationRejection[] = [
+        ...parsed.errors.map((error) => ({ rowIndex: error.rowIndex, field: error.field, message: error.message, rawRow: error.rawRow ?? null })),
+        ...projection.skipped.map((item) => ({
+          rowIndex: metaByRecordId.get(item.recordId)?.rowIndex ?? 0,
+          field: null,
+          message: item.reason,
+          rawRow: metaByRecordId.get(item.recordId)?.rawRow ?? null,
+        })),
+      ]
+      await persistOperationRejections(tx, batchId, rejections)
 
       // Auditoría dentro de la misma transacción que el lote (CO-025).
       await recordAudit({
@@ -401,10 +314,17 @@ export async function confirmOperationsImportAction(
         action: "create",
         entityType: "fuel_operation_batch",
         entityId: batchId,
-        newState: { periodo: `${totales.periodoDesde}..${totales.periodoHasta}`, ...totales },
+        newState: {
+          periodo: `${totales.periodoDesde}..${totales.periodoHasta}`,
+          ...totales,
+          filasRechazadas: rejections.length,
+          rechazadasEnArchivo: parsed.errors.length,
+          rechazadasEnProyeccion: projection.skipped.length,
+          cargasProyectadas: projection.projected,
+        },
       }, tx)
 
-      return { ok: true as const, batchId, imported: newRows.length, duplicateRows }
+      return { ok: true as const, batchId, imported: newRows.length, duplicateRows, rejected: rejections.length }
     })
 
     if (!result.ok) {
@@ -423,136 +343,36 @@ export async function confirmOperationsImportAction(
     // dinámicas (usan sesión/cookies) y se renderizan frescas en cada visita
     // real, así que no necesitan revalidación explícita aquí.
 
-    return { ok: true, data: { batchId: result.batchId, imported: result.imported, duplicateRows: result.duplicateRows, errors: parsed.errors } }
+    return { ok: true, data: { batchId: result.batchId, imported: result.imported, duplicateRows: result.duplicateRows, errors: publicErrors(parsed.errors), rejected: result.rejected } }
   } catch (error) {
     await removeFile(absolutePath)
     throw error
   }
 }
 
-export async function revertBatchOperationsAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  let session
-  try { session = await requireGlobalImportSession("combustibles:revert") }
-  catch (e) { return { ok: false, message: e instanceof Error ? e.message : "Sin permisos" } }
 
-  const batchId = String(formData.get("batchId") ?? "")
-  if (!batchId) return { ok: false, message: "Lote requerido" }
-
-  const batch = await db.query.fuelOperationBatches.findFirst({ where: eq(fuelOperationBatches.id, batchId) })
-  if (!batch) return { ok: false, message: "Lote no encontrado" }
-  if (batch.estado === "revertido") return { ok: false, message: "Este lote ya fue revertido" }
-
-  await db.transaction(async (tx) => {
-    // Capturar los ids ANTES de borrar: `fuel_anomaly_cases.reference_entity_id`
-    // es una referencia polimórfica sin FK (apunta a cualquiera de varias
-    // tablas), así que borrar estas filas no falla — deja los casos abiertos
-    // apuntando a un `fuel_operation_record` que ya no existe, invisibles pero
-    // eternamente "activos" en /combustibles/anomalias.
-    const deletedRows = await tx.delete(fuelOperationRecords)
-      .where(eq(fuelOperationRecords.batchId, batchId))
-      .returning({ id: fuelOperationRecords.id })
-    if (deletedRows.length > 0) {
-      const deletedIds = deletedRows.map((r) => r.id)
-      const now = new Date().toISOString()
-      await tx.update(fuelAnomalyCases).set({
-        status: "dismissed",
-        resolution: `Descartado automáticamente: el lote de origen (${batchId}) fue revertido.`,
-        resolvedById: session.user.id,
-        resolvedAt: now,
-        updatedAt: now,
-      }).where(and(
-        eq(fuelAnomalyCases.referenceEntityType, "fuel_operation_record"),
-        inArray(fuelAnomalyCases.referenceEntityId, deletedIds),
-        // No pisar un caso que un humano ya cerró — sólo los que seguían abiertos.
-        inArray(fuelAnomalyCases.status, ["open", "in_review", "reopened"]),
-      ))
-    }
-    await tx.update(fuelOperationBatches).set({ estado: "revertido", updatedAt: new Date().toISOString() }).where(eq(fuelOperationBatches.id, batchId))
-  })
-
-  await recordAudit({
-    userId: session.user.id,
-    userEmail: session.user.email ?? undefined,
-    action: "delete",
-    entityType: "fuel_operation_batch",
-    entityId: batchId,
-    oldState: { estado: batch.estado },
-    newState: { estado: "revertido" },
-  })
-
-  revalidatePath("/combustibles")
-  revalidatePath("/combustibles/importar")
-  revalidatePath(`/combustibles/importar/operaciones/${batchId}`)
-  return { ok: true, message: "Lote revertido: sus registros fueron eliminados del dashboard" }
+/** Plantilla del consolidado de cargas: los mismos encabezados que lee el importador, más una hoja de instrucciones. */
+export async function downloadOperationsTemplateAction() {
+  try { await requirePermission("combustibles:import") }
+  catch { return { ok: false as const, message: "Sin permisos" } }
+  return { ok: true as const, data: { base64: await buildOperationsTemplateBase64(), filename: "plantilla_cargas_combustible.xlsx" } }
 }
 
-export async function linkOperationVehicleAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+/** Excel con las filas rechazadas de un lote (motivo + columnas originales), para corregirlas y volver a subirlas. */
+export async function exportOperationRejectionsAction(batchId: string) {
   let session
-  try { session = await requirePermission("combustibles:manage_vehicles", "/combustibles/importar") }
-  catch { return { ok: false, message: "Sin permisos" } }
-  // Los lotes de operaciones son multi-faena: se restringe a roles globales,
-  // igual que el resto del flujo (import/preview/confirm/revert/detalle). Sin
-  // esto, un rol scoped con manage_vehicles podría vincular registros de
-  // faenas que no puede ver invocando la action directamente.
-  if (!isGlobalRole(session)) return { ok: false, message: "Requiere acceso global a todas las faenas" }
-
-  const batchId = String(formData.get("batchId") ?? "")
-  const plate = String(formData.get("plate") ?? "").trim().toUpperCase()
-  const vehicleId = String(formData.get("vehicleId") ?? "")
-  if (!batchId || !plate || !vehicleId) return { ok: false, message: "Datos incompletos" }
-
-  const vehicle = await db.query.fuelVehicles.findFirst({ where: eq(fuelVehicles.id, vehicleId) })
-  if (!vehicle) return { ok: false, message: "Vehículo no encontrado" }
-
-  const updated = await db.update(fuelOperationRecords)
-    .set({ vehicleId })
-    .where(and(eq(fuelOperationRecords.batchId, batchId), eq(fuelOperationRecords.plate, plate)))
-    .returning({ id: fuelOperationRecords.id })
-
+  try { session = await requireGlobalImportSession("combustibles:import") }
+  catch (e) { return { ok: false as const, message: e instanceof Error ? e.message : "Sin permisos" } }
+  const batch = await db.query.fuelOperationBatches.findFirst({ where: eq(fuelOperationBatches.id, batchId), columns: { id: true, archivoNombre: true } })
+  if (!batch) return { ok: false as const, message: "Lote no encontrado" }
+  const { base64, rowCount } = await buildOperationRejectionsXlsx(batch.id, batch.archivoNombre, session)
   await recordAudit({
     userId: session.user.id,
     userEmail: session.user.email ?? undefined,
-    action: "update",
-    entityType: "fuel_operation_record",
-    entityId: batchId,
-    newState: { plate, vehicleId, count: updated.length },
+    action: "export",
+    entityType: "fuel_operation_rejections_export",
+    entityId: batch.id,
+    newState: { rowCount },
   })
-
-  revalidatePath(`/combustibles/importar/operaciones/${batchId}`)
-  revalidatePath("/combustibles")
-  return { ok: true, message: `${updated.length} registro(s) vinculados a la patente ${vehicle.plate}` }
-}
-
-export async function linkOperationWorksiteAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  let session
-  try { session = await requirePermission("combustibles:manage_vehicles", "/combustibles/importar") }
-  catch { return { ok: false, message: "Sin permisos" } }
-  // Lote multi-faena: restringido a roles globales (ver linkOperationVehicleAction).
-  if (!isGlobalRole(session)) return { ok: false, message: "Requiere acceso global a todas las faenas" }
-
-  const batchId = String(formData.get("batchId") ?? "")
-  const faenaNombre = String(formData.get("faenaNombre") ?? "")
-  const worksiteId = String(formData.get("worksiteId") ?? "")
-  if (!batchId || !faenaNombre || !worksiteId) return { ok: false, message: "Datos incompletos" }
-
-  const worksite = await db.query.worksites.findFirst({ where: eq(worksites.id, worksiteId) })
-  if (!worksite) return { ok: false, message: "Faena no encontrada" }
-
-  const updated = await db.update(fuelOperationRecords)
-    .set({ worksiteId })
-    .where(and(eq(fuelOperationRecords.batchId, batchId), eq(fuelOperationRecords.faenaNombre, faenaNombre)))
-    .returning({ id: fuelOperationRecords.id })
-
-  await recordAudit({
-    userId: session.user.id,
-    userEmail: session.user.email ?? undefined,
-    action: "update",
-    entityType: "fuel_operation_record",
-    entityId: batchId,
-    newState: { faenaNombre, worksiteId, count: updated.length },
-  })
-
-  revalidatePath(`/combustibles/importar/operaciones/${batchId}`)
-  revalidatePath("/combustibles")
-  return { ok: true, message: `${updated.length} registro(s) vinculados a la faena ${worksite.name}` }
+  return { ok: true as const, data: { base64, filename: `filas_rechazadas_${todayInChile()}.xlsx` } }
 }

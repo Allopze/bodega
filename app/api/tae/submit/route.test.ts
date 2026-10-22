@@ -26,6 +26,8 @@ vi.mock("@/lib/validation/fuel-tae", () => ({
 vi.mock("@/lib/file-validation", () => ({ MimeType: { IMAGE: "image" }, validateFileBuffer: vi.fn() }))
 vi.mock("@/lib/services/tae-ocr", () => ({ extractMeterReading: vi.fn() }))
 
+const { TaeSubmissionRejected } = await import("@/lib/services/fuel-tae/errors")
+
 const trustedIp = "198.51.100.24"
 
 function headersFor(xForwardedFor: string) {
@@ -87,5 +89,21 @@ describe("POST /api/tae/submit", () => {
 
     expect(response.status).toBe(400)
     expect(mockRecordFailure).toHaveBeenCalledWith(`tae:submit:${trustedIp}`, { maxAttempts: 12 })
+  })
+
+  it.each([
+    ["meter_regression", "La lectura 100 es menor que la última registrada para este equipo (200). Pide a tu supervisor que lo corrija.", "meterReading"],
+    ["over_capacity", "Los 500 L superan la capacidad del estanque de este equipo (300 L).", "liters"],
+    ["filler_seal", "El sello retirado \"777777\" no parece un número real.", "removedSealNumber"],
+  ] as const)("responde 422 con el motivo para el operador cuando el servicio rechaza (%s)", async (code, message, field) => {
+    mockCreateTaeSubmission.mockRejectedValueOnce(new TaeSubmissionRejected(message, code, field))
+    const { POST } = await import("./route")
+
+    const response = await POST(makeRequest())
+
+    expect(response.status).toBe(422)
+    expect(await response.json()).toEqual({ ok: false, code, field, message })
+    // Un rechazo de negocio no es abuso: no cuenta contra el límite de reintentos del origen.
+    expect(mockRecordFailure).not.toHaveBeenCalled()
   })
 })

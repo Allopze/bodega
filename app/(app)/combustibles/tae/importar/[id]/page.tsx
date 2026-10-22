@@ -87,6 +87,10 @@ export default async function TaeImportBatchDetailPage({ params }: { params: Pro
   const decidedVehicleKeys = new Set(vehicleMappings.map((m) => vehicleMappingKey(m.worksiteId, m.legacyCode)))
   const decidedWorkerKeys = new Set(workerMappings.map((m) => `${m.role}:${workerMappingKey(m.worksiteId, m.legacyName)}`))
 
+  // Nombres de conductor y supervisor son datos personales: sin el permiso se
+  // muestran reservados y no se ofrecen para mapear (no hay cómo decidir a
+  // ciegas a qué persona corresponde un nombre).
+  const canViewPersonal = can(session, "combustibles:view_personal")
   const ambiguous = new Map<string, AmbiguousIdentity>()
   for (const submission of batch.submissions) {
     if (submission.status !== "observed") continue
@@ -95,6 +99,7 @@ export default async function TaeImportBatchDetailPage({ params }: { params: Pro
       const key = `vehicle:${submission.worksiteId}:${submission.equipmentCodeSnapshot}`
       if (!ambiguous.has(key)) ambiguous.set(key, { kind: "vehicle", worksiteId: submission.worksiteId, worksiteName, legacyValue: submission.equipmentCodeSnapshot })
     }
+    if (!canViewPersonal) continue
     if (!submission.driverWorkerId && !decidedWorkerKeys.has(`driver:${workerMappingKey(submission.worksiteId, submission.driverNameSnapshot)}`)) {
       const key = `driver:${submission.worksiteId}:${submission.driverNameSnapshot}`
       if (!ambiguous.has(key)) ambiguous.set(key, { kind: "driver", worksiteId: submission.worksiteId, worksiteName, legacyValue: submission.driverNameSnapshot })
@@ -140,7 +145,7 @@ export default async function TaeImportBatchDetailPage({ params }: { params: Pro
             <Table className="min-w-[960px]">
               <TableHeader><TableRow><TableHead>Fecha carga</TableHead><TableHead>Faena</TableHead><TableHead>Equipo</TableHead><TableHead>Producto</TableHead><TableHead>Conductor</TableHead><TableHead>Supervisor</TableHead><TableHead>Medidor</TableHead><TableHead className="text-right">Litros</TableHead><TableHead>Estado</TableHead></TableRow></TableHeader>
               <TableBody>
-                {batch.submissions.map((submission) => <TableRow key={submission.id}><TableCell>{formatDateTime(submission.loadedAt)}</TableCell><TableCell>{submission.worksite?.name ?? "—"}</TableCell><TableCell>{submission.vehicle?.code ?? submission.equipmentCodeSnapshot}{(submission.vehicle?.plate ?? submission.plateSnapshot) ? ` · ${submission.vehicle?.plate ?? submission.plateSnapshot}` : ""}</TableCell><TableCell>{submission.product?.name ?? "—"}</TableCell><TableCell>{submission.driverNameSnapshot}</TableCell><TableCell>{submission.supervisorNameSnapshot}</TableCell><TableCell className="font-mono">{submission.meterReading == null ? "—" : formatQty(Number(submission.meterReading))}</TableCell><TableCell className="text-right font-mono">{formatQty(Number(submission.liters), "L")}</TableCell><TableCell><MetaBadge meta={{ label: `${submission.status === "observed" ? "Observada" : "Validada"}`, variant: submission.status === "observed" ? "warning" : "success" }} /></TableCell></TableRow>)}
+                {batch.submissions.map((submission) => <TableRow key={submission.id}><TableCell>{formatDateTime(submission.loadedAt)}</TableCell><TableCell>{submission.worksite?.name ?? "—"}</TableCell><TableCell>{submission.vehicle?.code ?? submission.equipmentCodeSnapshot}{(submission.vehicle?.plate ?? submission.plateSnapshot) ? ` · ${submission.vehicle?.plate ?? submission.plateSnapshot}` : ""}</TableCell><TableCell>{submission.product?.name ?? "—"}</TableCell><TableCell>{canViewPersonal ? submission.driverNameSnapshot : "Reservado"}</TableCell><TableCell>{canViewPersonal ? submission.supervisorNameSnapshot : "Reservado"}</TableCell><TableCell className="font-mono">{submission.meterReading == null ? "—" : formatQty(Number(submission.meterReading))}</TableCell><TableCell className="text-right font-mono">{formatQty(Number(submission.liters), "L")}</TableCell><TableCell><MetaBadge meta={{ label: `${submission.status === "observed" ? "Observada" : "Validada"}`, variant: submission.status === "observed" ? "warning" : "success" }} /></TableCell></TableRow>)}
                 {batch.submissions.length === 0 && <TableRow><TableCell colSpan={9} className="py-10 text-center text-(--color-text-muted)">No hay cargas vigentes en este lote.</TableCell></TableRow>}
               </TableBody>
             </Table>

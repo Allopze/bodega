@@ -9,6 +9,7 @@
 
 import ExcelJS from "exceljs"
 import { normKey, sheetToRecords, parseChileanNumber, nullableChileanNumber, normalizePlate, parseSheetDate, plateMatchKey } from "./xlsx-utils"
+import { isFillerDate, isFillerSealNumber } from "./control/validation"
 
 export { normalizePlate, plateMatchKey }
 
@@ -43,6 +44,8 @@ export interface ImportError {
   rowIndex: number
   field: string
   message: string
+  /** Fila tal como venía en el archivo; se guarda con el rechazo para poder corregirla y reimportarla. */
+  rawRow?: Record<string, unknown>
 }
 
 export interface OperationsImportResult {
@@ -123,6 +126,8 @@ function formatTimeUTC(date: Date): string {
   return `${h}:${min}`
 }
 
+const SEAL_COLUMNS = ["Sello", "Sello Retirado", "Sello Instalado", "Sello Inicial", "Sello Final"] as const
+
 function nullableText(value: unknown): string | null {
   const s = String(value ?? "").trim()
   return s && s !== "#N/D" ? s : null
@@ -181,9 +186,11 @@ export async function parseFuelOperationsExcel(fileBuffer: ArrayBuffer | Buffer)
     // Saltar filas completamente vacías
     if (!get("Patente") && !get("Fecha") && !get("LT")) continue
 
+    const reject = (field: string, message: string) => errors.push({ rowIndex: rowNum, field, message, rawRow: record })
+
     const plateRaw = String(get("Patente") ?? "").trim()
     if (!plateRaw) {
-      errors.push({ rowIndex: rowNum, field: "Patente", message: "La patente es requerida" })
+      reject("Patente", "La patente es requerida")
       continue
     }
     const plate = normalizePlate(plateRaw)
@@ -192,7 +199,14 @@ export async function parseFuelOperationsExcel(fileBuffer: ArrayBuffer | Buffer)
     // las fechas chilenas de los días 1-12 sin dejar rastro.
     const fecha = parseSheetDate(get("Fecha"))
     if (!fecha) {
-      errors.push({ rowIndex: rowNum, field: "Fecha", message: "Fecha requerida o inválida" })
+      reject("Fecha", "Fecha requerida o inválida")
+      continue
+    }
+    // D-8: la planilla arrastra fechas de relleno (Excel muestra 30-12-1899 para
+    // una celda en cero). No son una fecha de carga: se rechazan con motivo en
+    // vez de entrar como una carga de hace más de un siglo.
+    if (isFillerDate(fecha)) {
+      reject("Fecha", `La fecha ${fecha} es un valor de relleno, no la fecha de la carga`)
       continue
     }
 
@@ -200,8 +214,19 @@ export async function parseFuelOperationsExcel(fileBuffer: ArrayBuffer | Buffer)
     const horaCarga = rawHora instanceof Date ? formatTimeUTC(rawHora) : null
 
     const liters = parseChileanNumber(get("LT", "Litros"))
-    if (liters < 0) {
-      errors.push({ rowIndex: rowNum, field: "LT", message: "Debe ser ≥ 0" })
+    if (!Number.isFinite(liters) || liters <= 0) {
+      reject("LT", "Los litros deben ser mayores que cero")
+      continue
+    }
+
+    // Sellos de relleno (777777, 666666, 0…): la planilla de cargas no trae
+    // columnas de sello, pero las versiones con control de sellos sí. Si vienen,
+    // un valor de relleno invalida la fila igual que en terreno.
+    const fillerSeal = SEAL_COLUMNS
+      .map((column) => ({ column, value: nullableText(get(column)) }))
+      .find((entry) => entry.value != null && isFillerSealNumber(entry.value))
+    if (fillerSeal) {
+      reject(fillerSeal.column, `El sello "${fillerSeal.value}" es un valor de relleno, no un número de sello real`)
       continue
     }
 

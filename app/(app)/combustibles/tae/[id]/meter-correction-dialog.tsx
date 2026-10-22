@@ -3,6 +3,7 @@
 import * as React from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/field"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -37,6 +38,7 @@ export function MeterCorrectionDialog({
   const [meterType, setMeterType] = React.useState(() => currentMeterType)
   const [meterReading, setMeterReading] = React.useState(() => currentMeterReading != null ? String(currentMeterReading) : suggestedMeterReading != null ? String(suggestedMeterReading) : "")
   const [reason, setReason] = React.useState("")
+  const [meterReset, setMeterReset] = React.useState(false)
 
   function handleSubmit() {
     const value = Number(meterReading)
@@ -55,6 +57,7 @@ export function MeterCorrectionDialog({
         meterReading: value,
         meterType: meterType as "odometer" | "hour_meter",
         reason: reason.trim(),
+        meterReset,
       })
       if (result.ok) {
         toast.success(result.message ?? "Lectura actualizada")
@@ -101,13 +104,24 @@ export function MeterCorrectionDialog({
               onChange={(e) => setMeterReading(e.target.value)}
             />
           </div>
+          <div className="space-y-1">
+            <Checkbox
+              id="corr-meter-reset"
+              label="Cambio de tablero o de equipo (inicia una serie nueva)"
+              checked={meterReset}
+              onChange={(event) => setMeterReset(event.target.checked)}
+            />
+            <p className="pl-6 text-xs text-[var(--color-text-muted)]">
+              Márcalo solo si el medidor se reemplazó o se reinició. Esta lectura deja de compararse con las anteriores y pasa a ser el punto de partida del rendimiento.
+            </p>
+          </div>
           <div>
-            <Label htmlFor="corr-reason">Motivo</Label>
+            <Label htmlFor="corr-reason">{meterReset ? "Motivo del cambio de tablero o de equipo" : "Motivo"}</Label>
             <Textarea
               id="corr-reason"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder="Ej: el OCR leyó mal el dígito, la foto estaba borrosa..."
+              placeholder={meterReset ? "Ej: se cambió el tablero del camión el 12-10, el nuevo parte en 0" : "Ej: el OCR leyó mal el dígito, la foto estaba borrosa..."}
               rows={3}
             />
           </div>

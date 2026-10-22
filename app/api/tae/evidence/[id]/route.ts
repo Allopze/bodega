@@ -16,6 +16,10 @@ export const runtime = "nodejs"
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth()
   if (!can(session, "combustibles:tae_view")) return new NextResponse("Forbidden", { status: 403 })
+  // P-01: las fotos de las cargas muestran personas, patentes y tableros; solo las ve
+  // quien además tiene `view_personal`. Se corta antes de tocar la base: ni siquiera
+  // confirma que la evidencia exista.
+  if (!can(session, "combustibles:view_personal")) return new NextResponse("Forbidden", { status: 403 })
   if (!await isRouteOperational("/combustibles/tae")) {
     return new NextResponse("Service unavailable", { status: 503 })
   }
