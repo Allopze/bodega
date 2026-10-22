@@ -305,7 +305,7 @@ Estados: **Implementado**, **Pendiente**, **Fuera de alcance**. La evidencia apu
 
 | ID | Estado | Dónde quedó |
 |---|---|---|
-| I-01 Histórico de cargas | Implementado | Proyección `app/(app)/combustibles/actions-operaciones.ts:296`; rechazos persistidos `:308` y `lib/combustibles/operations-import-rejections.ts:24`; plantilla `lib/combustibles/operations-import-template.ts:31`; reversión `app/(app)/combustibles/actions-operaciones-batch.ts:32`; respaldo de lo ya cargado: `scripts/backfill-fuel-equipment-loads.ts` (corre al final de `db:migrate`) |
+| I-01 Histórico de cargas | Implementado | Proyección `app/(app)/combustibles/actions-operaciones.ts:296`; rechazos persistidos `:308` y `lib/combustibles/operations-import-rejections.ts:24`; plantilla `lib/combustibles/operations-import-template.ts:31`; reversión `app/(app)/combustibles/actions-operaciones-batch.ts:32`; respaldo de lo ya cargado: `scripts/backfill-fuel-equipment-loads.ts` (corre solo en cada despliegue: servicio `migrate` de `docker-compose.yml` y, en local, al final de `db:migrate`) |
 | I-02 Proveedores y tarjetas | Implementado | Copec y Aramco se leen del libro existente (`queries/reconciliation.ts`); el resto por archivo: `lib/combustibles/control/imports/service.ts:209,263` |
 | I-03 Telemetría | Implementado | `lib/combustibles/control/imports/telemetry.ts`, mismo servicio |
 | I-04 Fotos históricas | Fuera de alcance | Campo listo: `fuel_tae_evidence.external_url` (`db/schema/fuel-tae.ts:204`) |
@@ -344,7 +344,7 @@ D-1 a D-15 corregidos. D-11 en `lib/combustibles/fuel-log.ts:51` (con prueba). D
 
 `db/migrations/0359_fuel_control.sql`: tablas `fuel_mandantes`, `fuel_mandante_worksites`, `fuel_supply_media`, `fuel_equipment_loads`, `fuel_control_import_batches`, `fuel_control_import_rejections`, `fuel_supply_inputs`, `fuel_telemetry_daily`; columnas nuevas en `fuel_equipment_types` y `fuel_tae_submissions`; tipos de lugar de carga; índices por equipo + fecha, faena + fecha y medio + fecha; siembra idempotente de medios, `grua` y familias. Checksum registrado; `npm run db:verify-migrations` pasa; `drizzle-kit generate` informa «No schema changes».
 
-**Despliegue:** `db:migrate` ahora termina con `npm run db:backfill-fuel-equipment-loads`, que proyecta el histórico ya cargado (idempotente, una transacción por equipo; `FUEL_LOADS_BACKFILL_DRY_RUN=true` para ensayar). No se corrió contra producción ni contra `bodega_dev`: el `next dev` local (:3001, base `bodega_dev`) necesita `npm run db:migrate` antes de abrir las pantallas nuevas.
+**Despliegue:** automático. El servicio `migrate` de `docker-compose.yml`, que `scripts/deploy-prod.sh` ejecuta en cada despliegue, termina con `node scripts/backfill-fuel-equipment-loads.mjs` (empaquetado en el `Dockerfile` junto a los demás one-shot de combustible); en local lo corre `npm run db:migrate`. Proyecta el histórico ya cargado, es idempotente (una transacción por equipo; la segunda corrida no hace nada) y deja en el log del despliegue cuántas cargas quedaron en revisión y por qué motivo (`enRevision`, `enRevisionPorMotivo`). `FUEL_LOADS_BACKFILL_DRY_RUN=true` sirve para ensayar a mano, pero no es un paso obligatorio.
 
 ### Permisos nuevos y asignación
 
@@ -355,12 +355,12 @@ D-1 a D-15 corregidos. D-11 en `lib/combustibles/fuel-log.ts:51` (con prueba). D
 | `combustibles:view_personal` | administrador, jefa_chome |
 | `combustibles:manage_control` | administrador |
 
-Se aplican con `npm run db:sync-rbac` (los `defaultGrants` solo se aplican la primera vez que el permiso aparece en una base). **Cambio de comportamiento:** desde ahora ver fotos de cargas y nombres de conductor y supervisor exige `view_personal`; los roles que hoy veían nombres solo con `combustibles:view` (jefe_mantencion, solicitante_faena, prevencionista_faena, admin_contrato) dejan de verlos.
+Se aplican solos: `scripts/deploy-prod.sh` corre el servicio `sync-rbac` en cada despliegue (en local, `npm run db:sync-rbac`; los `defaultGrants` solo se aplican la primera vez que el permiso aparece en una base). **Cambio de comportamiento:** desde ahora ver fotos de cargas y nombres de conductor y supervisor exige `view_personal`; los roles que hoy veían nombres solo con `combustibles:view` (jefe_mantencion, solicitante_faena, prevencionista_faena, admin_contrato) dejan de verlos.
 
 ### Pendientes y riesgos
 
 - **Alertas de conciliación:** se muestran en la vista (alerta roja sobre la tolerancia); no envían correo ni notificación.
-- **Primer respaldo en producción:** el historial importado con valores de relleno o lecturas erróneas va a poblar la cola de revisión la primera vez. Conviene ensayar con `FUEL_LOADS_BACKFILL_DRY_RUN=true` y mirar cuántas cargas quedan marcadas antes de comunicarlo.
+- **Primer respaldo en producción:** el historial importado con valores de relleno o lecturas erróneas va a poblar la cola de revisión la primera vez; el log del servicio `migrate` dice cuántas y por qué, y eso es lo que conviene comunicar.
 - **Formato de VisionLink y del surtidor CMPC:** supuestos S-1 y S-2, a validar con un archivo real; las plantillas descargables documentan el formato esperado.
 - **Fotos históricas:** fuera de alcance (I-04).
 
