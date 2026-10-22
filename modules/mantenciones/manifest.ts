@@ -25,6 +25,7 @@ export const mantencionesModule = {
           href:     "/mantenciones",
           iconName: "Wrench",
           permissions: ["mantenciones:view"],
+          group:    "Flota",
         },
       ],
     },

@@ -23,6 +23,13 @@ export interface NavItem {
   children?: NavChild[]
   /** Encabezado de sección bajo el que se agrupa este ítem (opcional). */
   group?: string
+  /**
+   * Prefijos de ruta que también pertenecen a este ítem aunque vivan en otro
+   * árbol (`/combustibles/control/revision` es parte de «Revisión»). Cuentan
+   * para el ítem activo, la miga de la top bar y el interruptor de submódulo;
+   * no se pintan en el menú.
+   */
+  aliases?: string[]
 }
 
 export interface NavSection {

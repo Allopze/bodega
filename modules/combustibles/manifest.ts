@@ -67,42 +67,48 @@ export const combustiblesModule = {
   nav: [
     {
       areaId: "control-operacional",
+      // Ordenado por lo que la persona viene a hacer, no por la fuente del dato:
+      // TCT, TAE y el control de cargas comparten un solo análisis; importar,
+      // revisar y facturar son una entrada cada uno (CO-IA, 2026-10-22).
       items: [
         {
-          label: "Combustibles",
+          label: "Consumo y rendimiento",
           href: "/combustibles",
           iconName: "GasPump",
           permissions: ["combustibles:view"],
+          group: "Combustible",
         },
         {
-          label: "Importar consumos",
-          href: "/combustibles/importar",
-          iconName: "Upload",
-          permissions: ["combustibles:import"],
-        },
-        {
-          label: "Bitácora general",
+          label: "Cargas",
           href: "/combustibles/bitacora",
           iconName: "Books",
           permissions: ["combustibles:view"],
+          group: "Combustible",
+          aliases: ["/combustibles/control/registrar", "/combustibles/importar", "/combustibles/control/importar"],
         },
         {
-          label: "Análisis de rendimiento",
-          href: "/combustibles/analisis",
-          iconName: "ChartLineUp",
+          label: "Revisión",
+          href: "/combustibles/revision",
+          iconName: "WarningDiamond",
           permissions: ["combustibles:view"],
+          group: "Combustible",
+          aliases: ["/combustibles/control/revision", "/combustibles/anomalias"],
         },
         {
-          label: "Control de combustible",
-          href: "/combustibles/control",
-          iconName: "Gauge",
-          permissions: ["combustibles:view"],
-        },
-        {
-          label: "Control TAE",
+          label: "TAE y sellos",
           href: "/combustibles/tae",
           iconName: "QrCode",
           permissions: ["combustibles:tae_view"],
+          group: "Combustible",
+          aliases: ["/combustibles/control/sellos", "/combustibles/sellos"],
+        },
+        {
+          label: "Facturas y pagos",
+          href: "/combustibles/facturas",
+          iconName: "Receipt",
+          permissions: ["combustibles:view_costs"],
+          group: "Combustible",
+          aliases: ["/combustibles/cuenta-corriente", "/combustibles/nueva"],
         },
       ],
     },

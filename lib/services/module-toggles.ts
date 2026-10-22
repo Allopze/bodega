@@ -46,6 +46,7 @@ interface ToggleableNavItem {
   href: string
   permissions?: readonly string[]
   children?: ToggleableNavItem[]
+  aliases?: readonly string[]
 }
 
 /**
@@ -68,12 +69,14 @@ const NAV_ROUTE_TARGETS = (registry as readonly {
   id: string
   nav?: Array<{ items: ToggleableNavItem[] }>
 }[]).flatMap((module) => (module.nav ?? []).flatMap((section) =>
-  toggleableNavItems(section.items).map((item) => ({
+  toggleableNavItems(section.items).flatMap((item) => [item.href, ...(item.aliases ?? [])].map((prefix) => ({
     moduleId: module.id,
+    // Un alias (`/combustibles/control/revision` de «Revisión») lo gobierna el
+    // interruptor del ítem al que pertenece en el menú, no el de su árbol de rutas.
     submoduleHref: item.href,
-    prefix: item.href,
+    prefix,
     permissions: item.permissions ?? [],
-  })),
+  }))),
 ))
 
 

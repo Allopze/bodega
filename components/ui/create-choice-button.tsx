@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import { CaretRight, Plus } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -14,7 +15,13 @@ export interface CreateChoice {
   /** Texto del botón cuando es la única opción disponible ("Nuevo comité"). */
   soloLabel: string
   /** Pinta el diálogo de alta, abierto por este componente. */
-  render: (state: { open: boolean; onOpenChange: (open: boolean) => void }) => React.ReactNode
+  render?: (state: { open: boolean; onOpenChange: (open: boolean) => void }) => React.ReactNode
+  /**
+   * Destino cuando la opción es otra pantalla y no un diálogo (p. ej. cada
+   * importador de combustible). Con `href` la opción es un enlace y `render`
+   * no se usa.
+   */
+  href?: string
 }
 
 /**
@@ -33,11 +40,16 @@ export function CreateChoiceButton({
   label = "Nuevo",
   title = "¿Qué quieres crear?",
   description,
+  icon = <Plus size={14} aria-hidden />,
+  variant = "primary",
 }: {
   choices: CreateChoice[]
   label?: string
   title?: string
   description: string
+  /** Ícono del botón; `Plus` para altas, otro para entradas como «Importar». */
+  icon?: React.ReactNode
+  variant?: "primary" | "secondary"
 }) {
   const [chooserOpen, setChooserOpen] = React.useState(false)
   const [active, setActive] = React.useState<string | null>(null)
@@ -45,16 +57,24 @@ export function CreateChoiceButton({
   if (choices.length === 0) return null
   const solo = choices.length === 1 ? choices[0] : null
 
+  const choiceClass = "group flex items-center gap-3 rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) p-4 text-left transition-colors hover:border-(--color-primary) hover:bg-(--color-primary-tint) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-primary)"
+
   return (
     <>
-      <Button
-        size="sm"
-        variant="primary"
-        aria-haspopup="dialog"
-        onClick={() => (solo ? setActive(solo.key) : setChooserOpen(true))}
-      >
-        <Plus size={14} aria-hidden />{solo ? solo.soloLabel : label}
-      </Button>
+      {solo?.href ? (
+        <Button asChild size="sm" variant={variant}>
+          <Link href={solo.href}>{icon}{solo.soloLabel}</Link>
+        </Button>
+      ) : (
+        <Button
+          size="sm"
+          variant={variant}
+          aria-haspopup="dialog"
+          onClick={() => (solo ? setActive(solo.key) : setChooserOpen(true))}
+        >
+          {icon}{solo ? solo.soloLabel : label}
+        </Button>
+      )}
 
       {!solo && (
         <Dialog open={chooserOpen} onOpenChange={setChooserOpen}>
@@ -64,26 +84,37 @@ export function CreateChoiceButton({
               <DialogDescription>{description}</DialogDescription>
             </DialogHeader>
             <div className="flex flex-col gap-2">
-              {choices.map((choice) => (
-                <button
-                  key={choice.key}
-                  type="button"
-                  data-choice={choice.key}
-                  onClick={() => { setChooserOpen(false); setActive(choice.key) }}
-                  className="group flex items-center gap-3 rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) p-4 text-left transition-colors hover:border-(--color-primary) hover:bg-(--color-primary-tint) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-primary)"
-                >
-                  {choice.icon && (
-                    <span aria-hidden className="flex h-9 w-9 shrink-0 items-center justify-center rounded-(--radius) bg-(--color-surface-2) text-(--color-text-muted) group-hover:bg-white group-hover:text-(--color-primary)">
-                      {choice.icon}
+              {choices.map((choice) => {
+                const content = (
+                  <>
+                    {choice.icon && (
+                      <span aria-hidden className="flex h-9 w-9 shrink-0 items-center justify-center rounded-(--radius) bg-(--color-surface-2) text-(--color-text-muted) group-hover:bg-white group-hover:text-(--color-primary)">
+                        {choice.icon}
+                      </span>
+                    )}
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-semibold text-(--color-text)">{choice.label}</span>
+                      <span className="block text-xs text-(--color-text-muted)">{choice.description}</span>
                     </span>
-                  )}
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-semibold text-(--color-text)">{choice.label}</span>
-                    <span className="block text-xs text-(--color-text-muted)">{choice.description}</span>
-                  </span>
-                  <CaretRight aria-hidden size={16} className="shrink-0 text-(--color-text-faint)" />
-                </button>
-              ))}
+                    <CaretRight aria-hidden size={16} className="shrink-0 text-(--color-text-faint)" />
+                  </>
+                )
+                return choice.href ? (
+                  <Link key={choice.key} href={choice.href} data-choice={choice.key} onClick={() => setChooserOpen(false)} className={choiceClass}>
+                    {content}
+                  </Link>
+                ) : (
+                  <button
+                    key={choice.key}
+                    type="button"
+                    data-choice={choice.key}
+                    onClick={() => { setChooserOpen(false); setActive(choice.key) }}
+                    className={choiceClass}
+                  >
+                    {content}
+                  </button>
+                )
+              })}
             </div>
           </DialogContent>
         </Dialog>
@@ -91,7 +122,7 @@ export function CreateChoiceButton({
 
       {choices.map((choice) => (
         <React.Fragment key={choice.key}>
-          {choice.render({
+          {choice.render?.({
             open: active === choice.key,
             onOpenChange: (open) => setActive(open ? choice.key : null),
           })}

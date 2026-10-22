@@ -27,6 +27,8 @@ export interface NavItem {
   badge?:       "count"
   children?:    NavChild[]
   group?:       string
+  /** Prefijos de otro árbol que también son este ítem (ver `modules/manifest-types.ts`). */
+  aliases?:     string[]
 }
 
 export interface AreaNode {
@@ -78,14 +80,17 @@ function sortByGroup(items: NavItem[]): NavItem[] {
 export const AREA_TREE: AreaNode[] = buildAreaTree()
 
 /**
- * Destinos que el sidebar puede seleccionar, incluidos los enlaces de ramas.
- * Cuando dos destinos comparten prefijo, la ruta pertenece al más específico.
- * Así `/combustibles/importar` no deja activo también `/combustibles`.
+ * Prefijos que el sidebar puede seleccionar, cada uno con el `href` del ítem al
+ * que pertenece: el propio ítem, sus ramas y sus alias. Cuando dos prefijos
+ * coinciden, la ruta pertenece al más específico. Así `/combustibles/importar`
+ * no deja activo también `/combustibles`, y `/combustibles/control/revision`
+ * (alias de «Revisión») no marca «Consumo y rendimiento».
  */
-const REGISTERED_NAV_HREFS = new Set(
+const NAV_PREFIX_OWNERS = new Map<string, string>(
   AREA_TREE.flatMap((area) => area.items.flatMap((item) => [
-    item.href,
-    ...(item.children?.map((child) => child.href) ?? []),
+    [item.href, item.href] as const,
+    ...(item.children?.map((child) => [child.href, child.href] as const) ?? []),
+    ...(item.aliases?.map((alias) => [alias, item.href] as const) ?? []),
   ])),
 )
 
@@ -97,14 +102,15 @@ function withoutSearchOrHash(pathname: string): string {
   return pathname.split(/[?#]/, 1)[0] || "/"
 }
 
+/** `href` del ítem dueño del prefijo registrado más específico, o null. */
 function findMostSpecificRegisteredNavHref(pathname: string): string | null {
-  let match: string | null = null
-  for (const href of REGISTERED_NAV_HREFS) {
-    if (pathBelongsToHref(pathname, href) && (match === null || href.length > match.length)) {
-      match = href
+  let matchPrefix: string | null = null
+  for (const prefix of NAV_PREFIX_OWNERS.keys()) {
+    if (pathBelongsToHref(pathname, prefix) && (matchPrefix === null || prefix.length > matchPrefix.length)) {
+      matchPrefix = prefix
     }
   }
-  return match
+  return matchPrefix === null ? null : NAV_PREFIX_OWNERS.get(matchPrefix) ?? null
 }
 
 // ── Module toggle support ──────────────────────────────────────────────────
@@ -188,8 +194,9 @@ export function isHrefActive(href: string, pathname: string): boolean {
     }
   }
 
-  if (!pathBelongsToHref(currentPathname, href)) return false
-  return mostSpecificNavHref === null || mostSpecificNavHref === href
+  // Un alias deja activo a su dueño aunque la ruta no cuelgue de su `href`.
+  if (mostSpecificNavHref !== null) return mostSpecificNavHref === href
+  return pathBelongsToHref(currentPathname, href)
 }
 const matchesHref = isHrefActive
 
