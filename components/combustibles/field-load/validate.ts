@@ -1,5 +1,6 @@
 import { checkLiters, checkSealInputs } from "@/lib/combustibles/field-load-rules"
 import { parseFieldNumber } from "@/lib/combustibles/field-load-number"
+import { METER_READING_MAX } from "@/lib/validation/fuel-tae"
 import type { FieldIdentity } from "./use-field-identity"
 import type { FieldLoadConfig, FieldLoadDraft, FieldLoadPhotos, FieldLoadStep } from "./types"
 
@@ -39,6 +40,8 @@ export function validateStep(step: FieldLoadStep, context: ValidationContext): S
     if (vehicle && vehicle.meterType !== "none") {
       const reading = parseFieldNumber(draft.meterReading)
       if (reading == null) errors.meterReading = `Escribe la lectura del ${vehicle.meterType === "hour_meter" ? "horómetro" : "odómetro"} tal como aparece en el tablero.`
+      else if (reading < 0) errors.meterReading = "La lectura no puede ser negativa."
+      else if (reading > METER_READING_MAX) errors.meterReading = "La lectura no puede superar 9.999.999. Revisa que no tenga dígitos de más."
     }
     if (!photos.odometer) errors.odometer = "Falta la foto del tablero con la lectura."
   }

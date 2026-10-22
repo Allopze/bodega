@@ -55,6 +55,12 @@ describe("taePublicSubmissionSchema campos nuevos", () => {
     expect(result.success).toBe(true)
   })
 
+  it("una lectura sobre el tope responde en español, no con el mensaje crudo de zod", () => {
+    const result = taePublicSubmissionSchema.safeParse(submission({ meterReading: 1_761_000_000 }))
+    expect(result.success).toBe(false)
+    expect(result.error?.issues[0]?.message).toBe("La lectura no puede superar 9.999.999. Revisa que no tenga dígitos de más.")
+  })
+
   it("ya no topa los litros en 2.000: la capacidad del equipo se valida en el servicio", () => {
     expect(taePublicSubmissionSchema.safeParse(submission({ liters: 4500 })).success).toBe(true)
     expect(taePublicSubmissionSchema.safeParse(submission({ liters: 0 })).success).toBe(false)

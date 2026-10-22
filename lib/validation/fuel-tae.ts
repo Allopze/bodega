@@ -1,6 +1,10 @@
 import { z } from "zod"
 
-const nullableText = (max: number) => z.string().trim().max(max).optional().or(z.literal(""))
+const nullableText = (max: number) => z.string().trim().max(max, `Usa como máximo ${max} caracteres`).optional().or(z.literal(""))
+
+/** Tope de una lectura de odómetro u horómetro. Exportado para que el formulario avise antes de enviar. */
+export const METER_READING_MAX = 9_999_999
+const METER_READING_MAX_MESSAGE = "La lectura no puede superar 9.999.999. Revisa que no tenga dígitos de más."
 
 export const taeEvidenceKinds = ["odometer", "liter_meter", "removed_seal", "installed_seal"] as const
 
@@ -35,9 +39,9 @@ export const taePublicSubmissionSchema = z.object({
   supervisorName: z.string().trim().min(2, "Indica el supervisor o líder").max(120),
   manualIdentity: z.boolean().default(false),
   meterType: z.enum(["odometer", "hour_meter"]),
-  meterReading: z.number().finite().nonnegative("La lectura no puede ser negativa").max(9_999_999).optional().nullable(),
+  meterReading: z.number().finite("Escribe la lectura como número").nonnegative("La lectura no puede ser negativa").max(METER_READING_MAX, METER_READING_MAX_MESSAGE).optional().nullable(),
   meterUnavailableReason: nullableText(250),
-  liters: z.number().finite().positive("Los litros deben ser mayores que cero"),
+  liters: z.number().finite("Escribe los litros como número").positive("Los litros deben ser mayores que cero"),
   removedSealNumber: nullableText(80),
   installedSealNumber: nullableText(80),
   noSealReason: nullableText(250),
@@ -72,7 +76,7 @@ export const taeMeterCorrectionSchema = z.object({
   /** Cambio de tablero o de equipo: la lectura inicia una serie nueva (S-6). */
   meterReset: z.boolean().optional().default(false),
   expectedStatus: taeSubmissionStatusSchema,
-  meterReading: z.number().finite().nonnegative("La lectura debe ser mayor o igual a cero").max(9_999_999),
+  meterReading: z.number().finite("Escribe la lectura como número").nonnegative("La lectura debe ser mayor o igual a cero").max(METER_READING_MAX, METER_READING_MAX_MESSAGE),
   meterType: z.enum(["odometer", "hour_meter"]),
   reason: z.string().trim().min(4, "Indica el motivo de la corrección").max(1000),
 })

@@ -19,8 +19,9 @@ async function fillTaeForm(page: Page, liters: string) {
   // Paso 2 · Medidor: lectura digitada (si el equipo tiene medidor) y foto.
   await expect(page.getByText("Paso 2 de 6")).toBeVisible()
   const reading = page.locator("#tae-meter-reading")
-  // Monótona entre corridas: una lectura menor que la anterior se rechaza.
-  if (await reading.count()) await reading.fill(String(Math.floor(Date.now() / 1000)))
+  // Monótona entre corridas (una lectura menor que la anterior se rechaza) y
+  // bajo el tope de 9.999.999: minutos transcurridos desde 2026.
+  if (await reading.count()) await reading.fill(String(Math.floor((Date.now() - Date.UTC(2026, 0, 1)) / 60_000)))
   await page.locator("#tae-evidence-odometer").setInputFiles(photoPath)
   await expect(page.getByText("Repetir foto")).toHaveCount(1, { timeout: 30_000 })
   await next.click()
