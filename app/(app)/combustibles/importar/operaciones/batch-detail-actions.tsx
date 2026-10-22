@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Trash } from "@phosphor-icons/react"
 import { toast } from "@/lib/toast"
-import { revertBatchOperationsAction, linkOperationVehicleAction, linkOperationWorksiteAction } from "../../actions-operaciones"
+import { revertBatchOperationsAction, linkOperationVehicleAction, linkOperationWorksiteAction } from "../../actions-operaciones-batch"
 import type { ActionState } from "@/lib/validation/masters"
 
 const INITIAL_STATE: ActionState = { ok: true }

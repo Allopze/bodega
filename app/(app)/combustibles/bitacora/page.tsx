@@ -8,7 +8,7 @@ import { fuelTaeLoadingPoints } from "@/db/schema/fuel-tae"
 import { settle } from "@/lib/async-settle"
 import { can, requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope, worksiteScopeSql } from "@/lib/auth/scope"
-import { getFuelLogRows, getFuelLogTotal, FUEL_LOG_SOURCE_LABEL, fuelLogDetailHref, fuelLogAuditEntity, type FuelLogSource } from "@/lib/combustibles/fuel-log"
+import { canViewFuelPersonalData, getFuelLogRows, getFuelLogTotal, FUEL_LOG_SOURCE_LABEL, fuelLogDetailHref, fuelLogAuditEntity, type FuelLogSource } from "@/lib/combustibles/fuel-log"
 import { ANOMALY_RULE_SEVERITY_LABELS, ANOMALY_RULE_SEVERITIES, FUEL_VEHICLE_STATUS_LABELS, FUEL_VEHICLE_STATUSES } from "@/lib/combustibles/validation"
 import { PageContainer } from "@/components/ui/page-container"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -55,6 +55,9 @@ export default async function FuelLogPage({ searchParams }: { searchParams: Prom
   try { session = await requirePermission("combustibles:view") } catch { redirect("/forbidden") }
 
   const sp = await searchParams
+  // D-10: sin `view_personal` no hay filtros ni búsqueda por nombre y la tabla muestra "Reservado".
+  // El servidor igualmente enmascara y ignora estos filtros; esto solo evita ofrecerlos.
+  const canViewPersonal = canViewFuelPersonalData(session)
   const filters = {
     q: sp.q?.trim().slice(0, 120) || undefined,
     worksiteId: sp.faena?.trim() || undefined,
@@ -67,8 +70,8 @@ export default async function FuelLogPage({ searchParams }: { searchParams: Prom
     hasNotes: sp.observaciones === "si" ? true : undefined,
     brand: sp.marca?.trim() || undefined,
     model: sp.modelo?.trim() || undefined,
-    driverName: sp.conductor?.trim() || undefined,
-    supervisorName: sp.supervisor?.trim() || undefined,
+    driverName: canViewPersonal ? sp.conductor?.trim() || undefined : undefined,
+    supervisorName: canViewPersonal ? sp.supervisor?.trim() || undefined : undefined,
     loadingPointId: sp.punto_carga?.trim() || undefined,
     performanceUnit: sp.unidad_rendimiento === "km_per_liter" || sp.unidad_rendimiento === "liters_per_hour" ? sp.unidad_rendimiento : undefined,
     // …y un valor fuera del enum se descarta en vez de filtrar por un estado
@@ -179,7 +182,9 @@ export default async function FuelLogPage({ searchParams }: { searchParams: Prom
     filters.anomalyAssigneeId ? { key: "anomalia_responsable", label: `Responsable: ${anomalyAssigneesList.find((u) => u.id === filters.anomalyAssigneeId)?.name ?? filters.anomalyAssigneeId}` } : null,
   ].filter((chip): chip is { key: keyof BitacoraSearchParams; label: string } => chip !== null)
 
-  const advancedActiveCount = ADVANCED_FILTER_KEYS.filter((key) => Boolean(sp[key])).length
+  const advancedActiveCount = ADVANCED_FILTER_KEYS
+    .filter((key) => canViewPersonal || (key !== "conductor" && key !== "supervisor"))
+    .filter((key) => Boolean(sp[key])).length
 
   return (
     <PageContainer width="full">
@@ -193,7 +198,7 @@ export default async function FuelLogPage({ searchParams }: { searchParams: Prom
       <form className="mb-4 flex flex-col gap-3 border-y border-(--color-border) py-4">
         {/* Filtros primarios: lo que se usa a diario. La tabla arranca justo debajo. */}
         <div className="grid gap-3 md:grid-cols-4">
-          <Input name="q" defaultValue={sp.q} aria-label="Buscar por equipo, patente, conductor, supervisor o proveedor" placeholder="Equipo, patente, conductor, supervisor, proveedor…" className="md:col-span-2" />
+          <Input name="q" defaultValue={sp.q} aria-label={canViewPersonal ? "Buscar por equipo, patente, conductor, supervisor o proveedor" : "Buscar por equipo, patente o proveedor"} placeholder={canViewPersonal ? "Equipo, patente, conductor, supervisor, proveedor…" : "Equipo, patente, proveedor…"} className="md:col-span-2" />
           <DatePicker name="desde" defaultValue={sp.desde} placeholder="Desde" />
           <DatePicker name="hasta" defaultValue={sp.hasta} placeholder="Hasta" />
           <FilterSelect name="faena" defaultValue={sp.faena} options={worksitesList.map((item) => ({ value: item.id, label: item.name }))} placeholder="Todas las faenas autorizadas" />
@@ -220,8 +225,17 @@ export default async function FuelLogPage({ searchParams }: { searchParams: Prom
               <Input name="marca" defaultValue={sp.marca} aria-label="Marca del vehículo" placeholder="Marca del vehículo" />
               <Input name="modelo" defaultValue={sp.modelo} aria-label="Modelo del vehículo" placeholder="Modelo del vehículo" />
               <FilterSelect name="tipo" defaultValue={sp.tipo} options={equipmentTypesList.map((item) => ({ value: item.id, label: item.name }))} placeholder="Todos los tipos de equipo" />
-              <Input name="conductor" defaultValue={sp.conductor} aria-label="Nombre del conductor" placeholder="Nombre del conductor" />
-              <Input name="supervisor" defaultValue={sp.supervisor} aria-label="Nombre del supervisor" placeholder="Nombre del supervisor" />
+              {canViewPersonal ? (
+                <>
+                  <Input name="conductor" defaultValue={sp.conductor} aria-label="Nombre del conductor" placeholder="Nombre del conductor" />
+                  <Input name="supervisor" defaultValue={sp.supervisor} aria-label="Nombre del supervisor" placeholder="Nombre del supervisor" />
+                </>
+              ) : (
+                <>
+                  <Input disabled aria-label="Nombre del conductor (reservado)" placeholder="Conductor: reservado" title="Requiere el permiso para ver datos personales" />
+                  <Input disabled aria-label="Nombre del supervisor (reservado)" placeholder="Supervisor: reservado" title="Requiere el permiso para ver datos personales" />
+                </>
+              )}
             </fieldset>
             <fieldset className="grid gap-3 md:grid-cols-4">
               <legend className="text-eyebrow mb-2 md:col-span-4">Operación</legend>
@@ -275,7 +289,7 @@ export default async function FuelLogPage({ searchParams }: { searchParams: Prom
         </div>
       )}
 
-      <BitacoraTable rows={enriched} />
+      <BitacoraTable rows={enriched} canViewPersonal={canViewPersonal} />
 
       <ServerPagination pagination={pagination} hrefForPage={pageHref} className="mt-2" />
     </PageContainer>

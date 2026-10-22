@@ -10,6 +10,8 @@ export const fuelEquipmentTypes = pgTable("fuel_equipment_types", {
   defaultMeterType:       text("default_meter_type").notNull().default("none"),
   defaultPerformanceUnit: text("default_performance_unit").notNull().default("not_applicable"),
   description:            text("description"),
+  /** Familia de las vistas de rendimiento del control; nula = el tipo no aparece en ellas. */
+  performanceFamily:      text("performance_family"),
   sortOrder:              integer("sort_order").notNull().default(0),
   isSystem:               boolean("is_system").notNull().default(false),
   isActive:               boolean("is_active").notNull().default(true),
@@ -21,5 +23,6 @@ export const fuelEquipmentTypes = pgTable("fuel_equipment_types", {
   index("fuel_equipment_types_active_sort_idx").on(table.isActive, table.sortOrder),
   check("fuel_equipment_types_category_valid", sql`${table.category} IN ('truck', 'light', 'heavy', 'storage', 'support', 'other')`),
   check("fuel_equipment_types_meter_valid", sql`${table.defaultMeterType} IN ('odometer', 'hour_meter', 'none')`),
+  check("fuel_equipment_types_family_valid", sql`${table.performanceFamily} IS NULL OR ${table.performanceFamily} IN ('camiones', 'cargadores_camionetas', 'maquinaria')`),
   check("fuel_equipment_types_performance_unit_valid", sql`${table.defaultPerformanceUnit} IN ('km_per_liter', 'liters_per_hour', 'not_applicable')`),
 ])

@@ -8,9 +8,12 @@ import { and, desc, eq, ilike, or, sql } from "drizzle-orm"
 import { isNetworkError } from "@/lib/network-error"
 import { db } from "@/db"
 import { fuelStorageLocations, fuelTaeEvidence, fuelTaeLoadingPoints, fuelTaePublicLinks, fuelTaeSubmissions } from "@/db/schema"
-import { guardPermission, requirePermission } from "@/lib/auth/can"
+import { can, guardPermission, requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite, worksiteScopeSql } from "@/lib/auth/scope"
 import { createTaePublicLink, revokeTaePublicLink, reviewTaeSubmission } from "@/lib/services/fuel-tae"
+import { auditResetDecisions } from "@/lib/combustibles/projection-audit"
+import { projectTaeSubmissions } from "@/lib/combustibles/control/projection"
+import { LOADING_POINT_TYPE_LABELS } from "@/lib/combustibles/control/contracts"
 import { taeMeterCorrectionSchema, taeReviewSchema } from "@/lib/validation/fuel-tae"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { logger } from "@/lib/logger"
@@ -57,8 +60,9 @@ export async function createTaeLoadingPointAction(input: { worksiteId: string; n
   if (!canAccessWorksite(guard.session, input.worksiteId)) return { ok: false, message: "No tienes acceso a esta faena" }
   const name = input.name.trim()
   if (name.length < 2) return { ok: false, message: "Indica el nombre del punto de carga" }
-  const allowed = ["fixed_dispenser", "truck_dispenser", "pickup_tank", "tae", "other"]
-  if (!allowed.includes(input.type)) return { ok: false, message: "Tipo de punto inválido" }
+  // Los tipos salen del catálogo de etiquetas, el mismo que limita la tabla: un
+  // tipo nuevo (bidón, estación con tarjeta) solo se agrega en un lugar.
+  if (!Object.hasOwn(LOADING_POINT_TYPE_LABELS, input.type)) return { ok: false, message: "Tipo de punto inválido" }
   try {
     await db.transaction(async (tx) => {
       // Mismo contrato que al reasignar la vasija: sin esto, el alta enlazaba un
@@ -128,6 +132,8 @@ export async function updateTaeMeterReadingAction(input: {
   meterReading: number
   meterType: "odometer" | "hour_meter"
   reason: string
+  /** Cambio de tablero o de equipo: la lectura inicia una serie nueva. */
+  meterReset?: boolean
 }) {
   const guard = await guardPermission("combustibles:tae_review", "/combustibles/tae")
   if (guard.error) return guard.error
@@ -146,6 +152,15 @@ export async function updateTaeMeterReadingAction(input: {
         meterReading: parsed.data.meterReading,
         meterReadingSource: "manual",
         meterType: parsed.data.meterType,
+        // Contrato con la proyección: `raw_row.meterReset === true` marca esta carga
+        // como inicio de serie (`fuel_equipment_loads.meter_reset`). Se guarda en el
+        // jsonb porque la tabla no tiene columna propia; el motivo queda aquí y en
+        // la auditoría. Una corrección posterior sin la marca la retira.
+        rawRow: sql`(case when jsonb_typeof(${fuelTaeSubmissions.rawRow}) = 'object' then ${fuelTaeSubmissions.rawRow} else '{}'::jsonb end) ${
+          parsed.data.meterReset
+            ? sql`|| ${JSON.stringify({ meterReset: true, meterResetReason: parsed.data.reason, meterResetBy: guard.session.user.id, meterResetAt: now })}::jsonb`
+            : sql`- 'meterReset' - 'meterResetReason' - 'meterResetBy' - 'meterResetAt'`
+        }`,
         status: nextStatus,
         reviewNote: submission.status === "validated" ? `Lectura corregida: ${parsed.data.reason}` : submission.reviewNote,
         reviewedBy: submission.status === "validated" ? guard.session.user.id : submission.reviewedBy,
@@ -159,12 +174,16 @@ export async function updateTaeMeterReadingAction(input: {
         entityType: "fuel_tae_submission",
         entityId: parsed.data.id,
         oldState: { meterReading: submission.meterReading, meterType: submission.meterType, meterReadingSource: submission.meterReadingSource, ocrSuggestedReading: submission.ocrSuggestedReading, status: submission.status },
-        newState: { meterReading: parsed.data.meterReading, meterType: parsed.data.meterType, meterReadingSource: "manual", status: nextStatus },
-        reason: parsed.data.reason,
+        newState: { meterReading: parsed.data.meterReading, meterType: parsed.data.meterType, meterReadingSource: "manual", meterReset: parsed.data.meterReset, status: nextStatus },
+        reason: parsed.data.meterReset ? `Cambio de tablero o de equipo (inicia serie nueva): ${parsed.data.reason}` : parsed.data.reason,
+        worksiteId: submission.worksiteId,
       }, tx)
       if (nextStatus !== submission.status) {
         await recordStatusChange({ entityType: "fuel_tae_submission", entityId: parsed.data.id, fromStatus: submission.status, toStatus: nextStatus, changedBy: guard.session.user.id, reason: parsed.data.reason }, tx)
       }
+      // La serie de la carga sigue a la lectura corregida (y a la marca de reinicio).
+      const projection = await projectTaeSubmissions(tx, [parsed.data.id])
+      await auditResetDecisions(tx, projection.resetLoadIds, { userId: guard.session.user.id }, submission.worksiteId)
     })
   } catch (error) {
     logger.error("[updateTaeMeterReadingAction]", error)
@@ -184,6 +203,9 @@ export async function exportTaeSubmissionsXlsxAction(filters: TaeExportFilters =
   try { session = await requirePermission("combustibles:tae_export", "/combustibles/tae") }
   catch { return { ok: false as const, message: "Sin permisos" } }
 
+  // P-01: nombres de conductor y supervisor solo con `view_personal`. Sin él ni
+  // se exportan ni se pueden sondear buscando por nombre en `q`.
+  const canSeePersonal = can(session, "combustibles:view_personal")
   const status = ["submitted", "observed", "validated", "voided"].includes(filters.status ?? "") ? filters.status : undefined
   const q = filters.q?.trim().slice(0, 120)
   const where = and(
@@ -195,7 +217,11 @@ export async function exportTaeSubmissionsXlsxAction(filters: TaeExportFilters =
     filters.evidence === "missing" ? sql`(select count(distinct ${fuelTaeEvidence.kind}) from ${fuelTaeEvidence} where ${fuelTaeEvidence.submissionId} = ${fuelTaeSubmissions.id}) < 4` : undefined,
     /^\d{4}-\d{2}-\d{2}$/.test(filters.from ?? "") ? sql`(${fuelTaeSubmissions.loadedAt} at time zone 'America/Santiago')::date >= ${filters.from}::date` : undefined,
     /^\d{4}-\d{2}-\d{2}$/.test(filters.to ?? "") ? sql`(${fuelTaeSubmissions.loadedAt} at time zone 'America/Santiago')::date <= ${filters.to}::date` : undefined,
-    q ? or(ilike(fuelTaeSubmissions.equipmentCodeSnapshot, `%${q}%`), ilike(fuelTaeSubmissions.plateSnapshot, `%${q}%`), ilike(fuelTaeSubmissions.supervisorNameSnapshot, `%${q}%`), ilike(fuelTaeSubmissions.driverNameSnapshot, `%${q}%`)) : undefined,
+    q ? or(
+      ilike(fuelTaeSubmissions.equipmentCodeSnapshot, `%${q}%`),
+      ilike(fuelTaeSubmissions.plateSnapshot, `%${q}%`),
+      ...(canSeePersonal ? [ilike(fuelTaeSubmissions.supervisorNameSnapshot, `%${q}%`), ilike(fuelTaeSubmissions.driverNameSnapshot, `%${q}%`)] : []),
+    ) : undefined,
   )
   const rows = await db.query.fuelTaeSubmissions.findMany({
     where,
@@ -216,8 +242,10 @@ export async function exportTaeSubmissionsXlsxAction(filters: TaeExportFilters =
     { header: "Punto de carga", key: "loadingPoint", width: 22 },
     { header: "Equipo", key: "equipment", width: 12 },
     { header: "Patente", key: "plate", width: 12 },
-    { header: "Supervisor / líder", key: "supervisor", width: 22 },
-    { header: "Conductor", key: "driver", width: 22 },
+    ...(canSeePersonal ? [
+      { header: "Supervisor / líder", key: "supervisor", width: 22 },
+      { header: "Conductor", key: "driver", width: 22 },
+    ] : []),
     { header: "Tipo medidor", key: "meterType", width: 14 },
     { header: "Lectura", key: "meterReading", width: 12 },
     { header: "Fuente lectura", key: "meterReadingSource", width: 14 },
@@ -239,8 +267,7 @@ export async function exportTaeSubmissionsXlsxAction(filters: TaeExportFilters =
       loadingPoint: row.loadingPoint?.name ?? "",
       equipment: row.equipmentCodeSnapshot,
       plate: row.plateSnapshot ?? "",
-      supervisor: row.supervisorNameSnapshot,
-      driver: row.driverNameSnapshot,
+      ...(canSeePersonal ? { supervisor: row.supervisorNameSnapshot, driver: row.driverNameSnapshot } : {}),
       meterType: row.meterType === "hour_meter" ? "Horómetro" : "Odómetro",
       meterReading: row.meterReading ?? "",
       meterReadingSource: taeMeterSourceLabel(row.meterReadingSource),

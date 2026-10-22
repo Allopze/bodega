@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { BarChart, Bar, Cell, ErrorBar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts"
 import { ChartLineUp } from "@phosphor-icons/react"
 import type { PerformanceGroup } from "@/lib/combustibles/equipment-performance"
+import { groupHrefKey } from "./drilldown-hrefs"
 
 const NORMAL_COLOR = "var(--color-primary)"
 const LOW_RELIABILITY_COLOR = "var(--color-warning-ink)"
@@ -25,8 +26,10 @@ function truncate(label: string, max = 18) {
  * error y el rango esperado del grupo comparable como línea de referencia. Nunca
  * mezcla unidades: se le pasan sólo los grupos de una unidad — el llamador ya
  * separó km/L de L/h antes de renderizar (equipment-performance.ts lo garantiza).
+ * `hrefs` son los enlaces de cada barra, ya calculados por la página (ver
+ * `drilldown-hrefs.ts`): un Server Component no puede pasar funciones a este.
  */
-export function PerformanceGroupChart({ groups, drilldownHref }: { groups: PerformanceGroup[]; drilldownHref: (group: PerformanceGroup) => string }) {
+export function PerformanceGroupChart({ groups, hrefs }: { groups: PerformanceGroup[]; hrefs: Record<string, string> }) {
   const router = useRouter()
   if (groups.length === 0) return <ChartEmpty icon={<ChartLineUp size={24} className="mb-2 text-[var(--color-text-subtle)]" aria-hidden />} className="border-[var(--color-border-strong)]" label="Sin observaciones de rendimiento para este filtro." />
 
@@ -86,7 +89,10 @@ export function PerformanceGroupChart({ groups, drilldownHref }: { groups: Perfo
             name="Rendimiento medio"
             maxBarSize={34}
             style={{ cursor: "pointer" }}
-            onClick={(entry) => router.push(drilldownHref((entry as unknown as { payload: { group: PerformanceGroup } }).payload.group))}
+            onClick={(entry) => {
+              const href = hrefs[groupHrefKey((entry as unknown as { payload: { group: PerformanceGroup } }).payload.group)]
+              if (href) router.push(href)
+            }}
             animationDuration={420}
             animationEasing="ease-out"
           >

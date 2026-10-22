@@ -1,6 +1,6 @@
 "use client"
 
-import type { TaeEvidenceKind } from "@/lib/services/fuel-tae"
+import type { TaeEvidenceKind } from "@/lib/validation/fuel-tae"
 
 const DB_NAME = "tae-offline"
 const DB_VERSION = 2
@@ -24,6 +24,8 @@ export interface QueuedTaeSubmission {
   status: "pending" | "syncing" | "synced" | "failed"
   attempts: number
   lastError?: string
+  /** Campo del formulario que motivó el rechazo del servidor, para llevar al operador al paso que debe corregir. */
+  lastErrorField?: string
   publicResultToken?: string
   syncedAt?: string
 }
@@ -106,6 +108,45 @@ export async function saveTaeIdentity(scopeKey: string, role: TaeIdentityRole, i
 
 export async function getTaeIdentity(scopeKey: string, role: TaeIdentityRole): Promise<CachedTaeIdentity | null> {
   return (await withStore(SETTINGS, "readonly", (store) => store.get(`identity:${scopeKey}:${role}`))) ?? null
+}
+
+/**
+ * Borrador de la carga en curso. Se guarda en el mismo almacén de ajustes que el
+ * acceso y las identidades, por faena y lugar de carga, para que cerrar el
+ * navegador o perder la señal a mitad del formulario no obligue a empezar de
+ * cero. Todo es "mejor esfuerzo": un navegador sin IndexedDB (modo privado)
+ * simplemente no recuerda, y el formulario funciona igual.
+ */
+export interface TaeDraftPhoto {
+  blob: Blob
+  fileName: string
+}
+
+export async function saveTaeDraft(scopeKey: string, draft: Record<string, unknown>) {
+  try { await withStore(SETTINGS, "readwrite", (store) => store.put(draft, `draft:${scopeKey}`)) } catch { /* sin borrador */ }
+}
+
+export async function getTaeDraft<T extends Record<string, unknown>>(scopeKey: string): Promise<T | null> {
+  try { return ((await withStore(SETTINGS, "readonly", (store) => store.get(`draft:${scopeKey}`))) as T | undefined) ?? null } catch { return null }
+}
+
+export async function saveTaeDraftPhotos(scopeKey: string, photos: Partial<Record<TaeEvidenceKind, TaeDraftPhoto>>) {
+  try { await withStore(SETTINGS, "readwrite", (store) => store.put(photos, `draft-photos:${scopeKey}`)) } catch { /* sin fotos guardadas */ }
+}
+
+export async function getTaeDraftPhotos(scopeKey: string): Promise<Partial<Record<TaeEvidenceKind, TaeDraftPhoto>>> {
+  try { return ((await withStore(SETTINGS, "readonly", (store) => store.get(`draft-photos:${scopeKey}`))) as Partial<Record<TaeEvidenceKind, TaeDraftPhoto>> | undefined) ?? {} } catch { return {} }
+}
+
+export async function clearTaeDraft(scopeKey: string) {
+  try {
+    await withStore(SETTINGS, "readwrite", (store) => store.delete(`draft:${scopeKey}`))
+    await withStore(SETTINGS, "readwrite", (store) => store.delete(`draft-photos:${scopeKey}`))
+  } catch { /* nada que limpiar */ }
+}
+
+export async function getTaeSubmission(id: string): Promise<QueuedTaeSubmission | null> {
+  return ((await withStore(SUBMISSIONS, "readonly", (store) => store.get(id))) as QueuedTaeSubmission | undefined) ?? null
 }
 
 export async function registerTaeBackgroundSync(): Promise<boolean> {

@@ -1,0 +1,31 @@
+"use client"
+
+import { useEffect } from "react"
+import { GasPump, WifiSlash } from "@phosphor-icons/react"
+import { ReportErrorButton } from "@/components/report-error-button"
+import { Button } from "@/components/ui/button"
+import { EmptyState } from "@/components/ui/empty-state"
+import { isNetworkError } from "@/lib/network-error"
+import { reportBoundaryError } from "@/lib/observability/sentry-client"
+
+export default function IdleError({ error, unstable_retry }: { error: Error & { digest?: string }; unstable_retry: () => void }) {
+  const isNetwork = isNetworkError(error)
+  useEffect(() => {
+    console.error(error)
+    reportBoundaryError(error)
+  }, [error])
+
+  return (
+    <div className="flex min-h-[50vh] items-center justify-center p-8">
+      <EmptyState
+        as="h1"
+        icon={isNetwork ? <WifiSlash size={24} /> : <GasPump size={24} />}
+        title={isNetwork ? "Error de conexión" : "No se pudo cargar esta vista"}
+        description={isNetwork
+          ? "No se pudo conectar con el servidor. Verifica tu conexión e inténtalo de nuevo."
+          : "Ocurrió un error al armar el ralentí. Inténtalo de nuevo o reporta el error si persiste."}
+        action={<div className="flex flex-wrap gap-2"><Button variant="secondary" onClick={unstable_retry}>Intentar de nuevo</Button><ReportErrorButton error={error} variant="secondary" /></div>}
+      />
+    </div>
+  )
+}

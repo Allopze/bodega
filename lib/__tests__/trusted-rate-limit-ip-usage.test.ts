@@ -28,6 +28,6 @@ describe("identidad de IP para límites públicos", () => {
     expect(source).toContain("const ipAddress = rateLimitIp")
     expect(source).toContain("tae:submit-volume:ip:${rateLimitIp}")
     expect(source).toContain("tae:submit:${rateLimitIp}")
-    expect(source).toContain("createTaeSubmission({ accessToken, input: parsed.data, evidence, ipAddress, ocrResult })")
+    expect(source).toContain("createTaeSubmission({ accessToken, input: parsedRequest.input, evidence: parsedRequest.evidence, ipAddress, ocrResult: parsedRequest.ocrResult })")
   })
 })

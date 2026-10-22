@@ -8,7 +8,7 @@ import type { HistogramBin } from "@/lib/combustibles/performance-statistics"
 
 type PerformanceGroupChartType = ComponentType<{
   groups: PerformanceGroup[]
-  drilldownHref: (group: PerformanceGroup) => string
+  hrefs: Record<string, string>
 }>
 type HistogramChartType = ComponentType<{ bins: HistogramBin[]; mean: number; unitLabel: string }>
 

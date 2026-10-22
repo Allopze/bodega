@@ -78,7 +78,7 @@ const renderRow = (r: OperationBatchRowFlat, _index: number) => {
       <TableCell className="text-right font-mono">{formatQty(r.totalEquipos)}</TableCell>
       <TableCell className="text-right font-mono text-xs">
         {formatQty(r.filasValidas)}
-        {r.filasInvalidas > 0 && <span className="text-[var(--color-danger)]"> ({r.filasInvalidas} err.)</span>}
+        {r.filasInvalidas > 0 && <span className="text-[var(--color-danger-ink)]" title="Filas rechazadas; el motivo de cada una está en el detalle del lote"> ({r.filasInvalidas} rechazadas)</span>}
       </TableCell>
       <TableCell className="text-right font-mono">{formatQty(r.totalLitros, "L")}</TableCell>
       <TableCell className="text-right font-mono">{formatCLP(r.totalMonto)}</TableCell>
@@ -131,7 +131,7 @@ export function OperationsBatchHistory({ batches }: { batches: OperationBatchRow
               actions={<Button asChild type="button" variant="ghost" size="sm"><Link href={`/combustibles/importar/operaciones/${r.id}`}>Ver lote</Link></Button>}
             >
               <ResponsiveDataListField label="Equipos"><span className="font-mono tabular-nums text-[var(--color-text)]">{formatQty(r.totalEquipos)}</span></ResponsiveDataListField>
-              <ResponsiveDataListField label="Filas"><span className="font-mono tabular-nums text-[var(--color-text)]">{formatQty(r.filasValidas)}{r.filasInvalidas > 0 ? ` válidas · ${r.filasInvalidas} con error` : " válidas"}</span></ResponsiveDataListField>
+              <ResponsiveDataListField label="Filas"><span className="font-mono tabular-nums text-[var(--color-text)]">{formatQty(r.filasValidas)}{r.filasInvalidas > 0 ? ` válidas · ${r.filasInvalidas} rechazadas` : " válidas"}</span></ResponsiveDataListField>
               <ResponsiveDataListField label="Litros"><span className="font-mono tabular-nums text-[var(--color-text)]">{formatQty(r.totalLitros, "L")}</span></ResponsiveDataListField>
               <ResponsiveDataListField label="Monto"><span className="font-mono tabular-nums text-[var(--color-text)]">{formatCLP(r.totalMonto)}</span></ResponsiveDataListField>
               <ResponsiveDataListField label="Importado por" className="col-span-2">{r.importerName} · {formatDateTime(r.createdAt)}</ResponsiveDataListField>

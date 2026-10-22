@@ -350,7 +350,6 @@ const eslintConfig = defineConfig([
       // Sólo manipulan el nombre (extname/basename), nunca arman una ruta de escritura.
       "app/api/prevencion/documentacion/bulk-download/route.ts",
       "lib/requests/request-service-module/add-quotation.ts",
-      "lib/services/fuel-tae.ts",
       "lib/services/prevention-documents/utils.ts",
       "lib/services/prevention-sensitive-files.ts",
     ],

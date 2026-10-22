@@ -155,9 +155,24 @@ export const pgliteTestFiles = [
   "lib/__tests__/fuel-load-lifecycle.test.ts",
   "lib/__tests__/fuel-cycle-invariants.test.ts",
   "lib/__tests__/fuel-load-anomaly-reevaluation.test.ts",
+  // Control de combustible: proyección a la serie canónica, revisión de cargas
+  // marcadas y consultas agregadas de las vistas G/R, C y V.
+  "lib/__tests__/fuel-control-projection.test.ts",
+  "lib/__tests__/fuel-control-review.test.ts",
+  "lib/combustibles/control/queries/queries.test.ts",
+  "lib/combustibles/control/queries/seals.test.ts",
+  "lib/combustibles/control/queries/reconciliation.test.ts",
+  "lib/combustibles/control/queries/idle.test.ts",
+  "lib/__tests__/fuel-control-imports-pglite.test.ts",
+  "lib/__tests__/fuel-control-catalogs-pglite.test.ts",
+  "lib/__tests__/fuel-control-review-queue.test.ts",
+  "lib/__tests__/fuel-log-personal.test.ts",
   // Faltaba desde que se escribió: instancia PGlite y migra, igual que las de
   // arriba con el mismo comentario.
   "lib/__tests__/anomaly-detection-integration.test.ts",
+  // Partes del mismo motor, separadas para que ningún archivo pase de 500 líneas.
+  "lib/__tests__/anomaly-detection-batch-integration.test.ts",
+  "lib/__tests__/anomaly-detection-evidence-integration.test.ts",
   "lib/__tests__/full-flow-integration.test.ts",
   "lib/__tests__/integration-rbac-sequences.test.ts",
   "lib/__tests__/item-state-mutations.test.ts",

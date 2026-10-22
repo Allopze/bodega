@@ -9,6 +9,8 @@ import { and, eq, ne, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { fuelTaeLoadingPoints, fuelTaeSubmissions } from "@/db/schema"
 import { worksiteScopeSql } from "@/lib/auth/scope"
+import { canViewFuelPersonalData } from "@/lib/combustibles/fuel-log"
+import { PERSONAL_DATA_LABEL } from "@/lib/combustibles/fuel-log-shared"
 
 export type TaeGroupDimension = "driver" | "supervisor" | "loadingPoint"
 
@@ -48,6 +50,11 @@ export async function getTaeGroupedTotals(session: Session, filters: TaeDashboar
     return rows.map((row) => ({ group: row.group ?? "Sin punto asignado", liters: Number(row.liters), count: Number(row.count) })).sort((a, b) => b.liters - a.liters)
   }
 
+  // Sin `view_personal` el agrupamiento por persona conserva litros y cargas (son
+  // agregados operacionales) pero no revela quién es cada una: los grupos salen
+  // numerados por volumen, "Reservado 1", "Reservado 2"…, resuelto aquí en el
+  // servidor para que el nombre nunca viaje al navegador.
+  const personal = canViewFuelPersonalData(session)
   const column = dimension === "driver" ? fuelTaeSubmissions.driverNameSnapshot : fuelTaeSubmissions.supervisorNameSnapshot
   const rows = await db.select({
     group: column,
@@ -57,5 +64,7 @@ export async function getTaeGroupedTotals(session: Session, filters: TaeDashboar
     .from(fuelTaeSubmissions)
     .where(where)
     .groupBy(column)
-  return rows.map((row) => ({ group: row.group, liters: Number(row.liters), count: Number(row.count) })).sort((a, b) => b.liters - a.liters)
+  const sorted = rows.map((row) => ({ group: row.group, liters: Number(row.liters), count: Number(row.count) })).sort((a, b) => b.liters - a.liters)
+  if (personal) return sorted
+  return sorted.map((row, index) => ({ ...row, group: `${PERSONAL_DATA_LABEL} ${index + 1}` }))
 }

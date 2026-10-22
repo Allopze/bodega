@@ -12,10 +12,13 @@ import { MetaBadge } from "@/components/states/state-badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { formatCLP, formatQty, formatDateTime } from "@/lib/utils"
 import { RevertOperationsBatchButton, LinkOperationVehicleForm, LinkOperationWorksiteForm } from "../batch-detail-actions"
+import { OperationRejectionsExport } from "../operation-rejections-export"
+import { countOperationRejections, listOperationRejections } from "@/lib/combustibles/operations-import-rejections"
 
 export const metadata: Metadata = { title: "Detalle de importación (Log operacional)" }
 
 const SAMPLE_LIMIT = 50
+const REJECTION_PREVIEW_LIMIT = 50
 
 export default async function OperationsBatchDetailPage({ params }: { params: Promise<{ id: string }> }) {
   let session
@@ -33,7 +36,7 @@ export default async function OperationsBatchDetailPage({ params }: { params: Pr
   const canManageVehicles = can(session, "combustibles:manage_vehicles")
   const canRevert = can(session, "combustibles:revert") && batch.estado !== "revertido"
 
-  const [unmatchedPlateRows, unmatchedFaenaRows, sampleRecords, vehicles, worksitesList] = await Promise.all([
+  const [unmatchedPlateRows, unmatchedFaenaRows, sampleRecords, vehicles, worksitesList, rejections, rejectionCount] = await Promise.all([
     db.selectDistinct({ plate: fuelOperationRecords.plate })
       .from(fuelOperationRecords)
       .where(and(eq(fuelOperationRecords.batchId, id), isNull(fuelOperationRecords.vehicleId))),
@@ -48,6 +51,8 @@ export default async function OperationsBatchDetailPage({ params }: { params: Pr
     }),
     canManageVehicles ? db.query.fuelVehicles.findMany({ orderBy: [fuelVehicles.plate] }) : Promise.resolve([]),
     canManageVehicles ? db.query.worksites.findMany({ orderBy: [worksites.name] }) : Promise.resolve([]),
+    listOperationRejections(id, REJECTION_PREVIEW_LIMIT),
+    countOperationRejections(id),
   ])
 
   const unmatchedPlates = unmatchedPlateRows.map((r) => r.plate).sort()
@@ -76,6 +81,45 @@ export default async function OperationsBatchDetailPage({ params }: { params: Pr
           <Field label="Monto total" value={formatCLP(batch.totalMonto)} />
           <Field label="Importado por" value={`${batch.importer?.name ?? batch.importer?.email ?? "—"}`} />
           <Field label="Fecha de importación" value={formatDateTime(batch.createdAt)} />
+        </CardContent>
+      </Card>
+
+      <Card className="mb-6">
+        <CardHeader className="flex flex-row items-center justify-between gap-3">
+          <CardTitle className="text-base">Filas rechazadas ({formatQty(rejectionCount)})</CardTitle>
+          {rejectionCount > 0 && <OperationRejectionsExport batchId={batch.id} />}
+        </CardHeader>
+        <CardContent>
+          {rejectionCount === 0 ? (
+            <p className="text-sm text-[var(--color-text-muted)]">Ninguna fila de este archivo fue rechazada. Las que no cuadran (lectura menor que la anterior, proveedor desconocido) se importaron y están marcadas en Control › Revisión.</p>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-sm text-[var(--color-text-muted)]">Estas filas no se convirtieron en carga. Descarga el Excel, corrige el dato indicado y vuelve a subirlas como un archivo nuevo.</p>
+              <div className="border rounded-lg overflow-x-auto">
+                <Table className="min-w-[600px]">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-right">Fila</TableHead>
+                      <TableHead>Campo</TableHead>
+                      <TableHead>Motivo</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {rejections.slice(0, REJECTION_PREVIEW_LIMIT).map((rejection) => (
+                      <TableRow key={rejection.id}>
+                        <TableCell className="text-right font-mono text-xs">{rejection.rowIndex}</TableCell>
+                        <TableCell className="text-sm">{rejection.field ?? "—"}</TableCell>
+                        <TableCell className="text-sm">{rejection.message}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              {rejectionCount > REJECTION_PREVIEW_LIMIT && (
+                <p className="text-xs text-[var(--color-text-muted)]">Se muestran las primeras {REJECTION_PREVIEW_LIMIT}. El Excel incluye las {formatQty(rejectionCount)}.</p>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -126,7 +170,7 @@ export default async function OperationsBatchDetailPage({ params }: { params: Pr
                   <TableHead>Faena</TableHead>
                   <TableHead className="text-right">Litros</TableHead>
                   <TableHead className="text-right">Monto</TableHead>
-                  <TableHead className="text-right">Rendimiento</TableHead>
+                  <TableHead className="text-right" title="Valor que traía la planilla. No es el rendimiento calculado por la plataforma.">Rend. declarado</TableHead>
                   <TableHead>Operador</TableHead>
                 </TableRow>
               </TableHeader>

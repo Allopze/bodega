@@ -10,6 +10,7 @@ const mockUpdateReturning = vi.fn()
 const mockDeleteReturning = vi.fn()
 const mockSelectSubmissions = vi.fn()
 const mockForUpdate = vi.fn(() => mockSelectSubmissions())
+const mockRecomputeVehicleSeries = vi.fn(async (..._args: unknown[]) => undefined)
 
 const tx = {
   update: vi.fn(() => ({
@@ -44,6 +45,7 @@ vi.mock("@/lib/audit", () => ({
   recordAudit: (...args: unknown[]) => mockRecordAudit(...args),
   recordStatusChange: (...args: unknown[]) => mockRecordStatusChange(...args),
 }))
+vi.mock("@/lib/combustibles/control/projection", () => ({ recomputeVehicleSeries: (...args: unknown[]) => mockRecomputeVehicleSeries(...args) }))
 vi.mock("@/lib/services/fuel-tae", () => ({ generateTaeImportDryRunReport: vi.fn(), generateTaeImportPreview: vi.fn() }))
 vi.mock("@/lib/combustibles/tae-import-service", () => ({ importTaeLegacyWorkbook: vi.fn(), reprocessTaeImportRejectedRows: vi.fn() }))
 
@@ -58,8 +60,8 @@ beforeEach(() => {
   mockUpdateReturning.mockResolvedValue([{ id: "batch-1", status: "reverted" }])
   mockDeleteReturning.mockResolvedValue([{ id: "submission-1" }, { id: "submission-2" }])
   mockSelectSubmissions.mockResolvedValue([
-    { id: "submission-1", worksiteId: "worksite-1" },
-    { id: "submission-2", worksiteId: "worksite-2" },
+    { id: "submission-1", worksiteId: "worksite-1", vehicleId: "vehicle-1" },
+    { id: "submission-2", worksiteId: "worksite-2", vehicleId: "vehicle-1" },
   ])
 })
 
@@ -96,6 +98,9 @@ describe("revertTaeImportBatchAction", () => {
     expect(tx.select).toHaveBeenCalled()
     expect(mockForUpdate).toHaveBeenCalledWith("update")
     expect(tx.delete).toHaveBeenCalledTimes(2)
+    // El rendimiento de los equipos afectados se recalcula sin las cargas revertidas.
+    expect(mockRecomputeVehicleSeries).toHaveBeenCalledTimes(1)
+    expect(mockRecomputeVehicleSeries).toHaveBeenCalledWith(tx, "vehicle-1")
   })
 
   it("skips the seal-movements cleanup when the batch has no submissions", async () => {

@@ -25,6 +25,10 @@ export const combustiblesModule = {
     "combustibles:export_sensitive",
     "combustibles:view_costs",
     "combustibles:manage_statements",
+    "combustibles:register_load",
+    "combustibles:approve_flagged",
+    "combustibles:view_personal",
+    "combustibles:manage_control",
   ] as const,
 
   permissionMeta: {
@@ -54,6 +58,11 @@ export const combustiblesModule = {
     "combustibles:export_sensitive":     { id: "p-fuel-export-sensitive", description: "Exportar combustible con montos (IEC, IVA, total) — datos sensibles de costo" },
     "combustibles:view_costs":           { id: "p-fuel-view-costs", description: "Ver montos de combustible (facturas y reportes) — costo, no sólo consumo" },
     "combustibles:manage_statements":    { id: "p-fuel-manage-statements", description: "Crear estados de cuenta y registrar pagos de combustible" },
+    // Submódulo de control (reemplazo del tablero de Looker Studio). Ver GAP_MODULO_COMBUSTIBLE.md §7.
+    "combustibles:register_load":        { id: "p-fuel-register-load", description: "Registrar cargas de combustible a equipos desde la plataforma" },
+    "combustibles:approve_flagged":      { id: "p-fuel-approve-flagged", description: "Aprobar o rechazar cargas marcadas para revisión (atípicas, retroceso de medidor, duplicadas)" },
+    "combustibles:view_personal":        { id: "p-fuel-view-personal", description: "Ver nombres de conductores y supervisores y las fotos de las cargas" },
+    "combustibles:manage_control":       { id: "p-fuel-manage-control", description: "Administrar mandantes, medios de suministro, familias de equipos y umbrales del control" },
   },
   nav: [
     {
@@ -81,6 +90,12 @@ export const combustiblesModule = {
           label: "Análisis de rendimiento",
           href: "/combustibles/analisis",
           iconName: "ChartLineUp",
+          permissions: ["combustibles:view"],
+        },
+        {
+          label: "Control de combustible",
+          href: "/combustibles/control",
+          iconName: "Gauge",
           permissions: ["combustibles:view"],
         },
         {
@@ -115,6 +130,10 @@ export const combustiblesModule = {
     { roleSlug: "administrador",  permission: "combustibles:export_sensitive" },
     { roleSlug: "administrador",  permission: "combustibles:view_costs" },
     { roleSlug: "administrador",  permission: "combustibles:manage_statements" },
+    { roleSlug: "administrador",  permission: "combustibles:register_load" },
+    { roleSlug: "administrador",  permission: "combustibles:approve_flagged" },
+    { roleSlug: "administrador",  permission: "combustibles:view_personal" },
+    { roleSlug: "administrador",  permission: "combustibles:manage_control" },
     { roleSlug: "jefa_chome",     permission: "combustibles:view" },
     { roleSlug: "jefa_chome",     permission: "combustibles:create" },
     { roleSlug: "jefa_chome",     permission: "combustibles:import" },
@@ -133,10 +152,14 @@ export const combustiblesModule = {
     { roleSlug: "jefa_chome",     permission: "combustibles:export_sensitive" },
     { roleSlug: "jefa_chome",     permission: "combustibles:view_costs" },
     { roleSlug: "jefa_chome",     permission: "combustibles:manage_statements" },
+    { roleSlug: "jefa_chome",     permission: "combustibles:register_load" },
+    { roleSlug: "jefa_chome",     permission: "combustibles:approve_flagged" },
+    { roleSlug: "jefa_chome",     permission: "combustibles:view_personal" },
     { roleSlug: "jefe_mantencion", permission: "combustibles:view" },
     { roleSlug: "jefe_mantencion", permission: "combustibles:create" },
     { roleSlug: "jefe_mantencion", permission: "combustibles:export" },
     { roleSlug: "jefe_mantencion", permission: "combustibles:manage_vehicles" },
+    { roleSlug: "jefe_mantencion", permission: "combustibles:register_load" },
     { roleSlug: "solicitante_faena", permission: "combustibles:view" },
     { roleSlug: "solicitante_faena", permission: "combustibles:manage_vehicles" },
     { roleSlug: "prevencionista_faena", permission: "combustibles:view" },
@@ -145,5 +168,6 @@ export const combustiblesModule = {
     { roleSlug: "admin_contrato", permission: "combustibles:import" },
     { roleSlug: "admin_contrato", permission: "combustibles:revert" },
     { roleSlug: "admin_contrato", permission: "combustibles:manage_vehicles" },
+    { roleSlug: "admin_contrato", permission: "combustibles:register_load" },
   ],
 } as const satisfies ModuleManifest

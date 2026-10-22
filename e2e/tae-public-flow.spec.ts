@@ -2,23 +2,51 @@ import { createHash } from "node:crypto"
 import path from "node:path"
 import { expect, test, type Page } from "@playwright/test"
 import postgres from "postgres"
-import { blobStorageWorks, selectRadixById } from "./helpers"
+import { blobStorageWorks } from "./helpers"
 
 const accessToken = "tae-e2e-access-token"
 const photoPath = path.resolve(process.cwd(), "public/tae-icon-512.png")
 
+/** Recorre los seis pasos del formulario de terreno y deja la carga lista en «Revisar y enviar». */
 async function fillTaeForm(page: Page, liters: string) {
+  const next = page.getByRole("button", { name: "Siguiente" })
+  // Paso 1 · Equipo. El producto único y el medio sugerido por el lugar («TAE») quedan elegidos solos.
+  await expect(page.getByText("Paso 1 de 6")).toBeVisible()
+  await page.getByRole("option", { name: /E2E-FUEL-1/ }).click()
+  const diesel = page.getByRole("radio", { name: /Di[eé]sel/i })
+  if (await diesel.count()) await diesel.first().click()
+  await next.click()
+  // Paso 2 · Medidor: lectura digitada (si el equipo tiene medidor) y foto.
+  await expect(page.getByText("Paso 2 de 6")).toBeVisible()
+  const reading = page.locator("#tae-meter-reading")
+  // Monótona entre corridas (una lectura menor que la anterior se rechaza) y
+  // bajo el tope de 9.999.999: minutos transcurridos desde 2026.
+  if (await reading.count()) await reading.fill(String(Math.floor((Date.now() - Date.UTC(2026, 0, 1)) / 60_000)))
+  await page.locator("#tae-evidence-odometer").setInputFiles(photoPath)
+  await expect(page.getByText("Repetir foto")).toHaveCount(1, { timeout: 30_000 })
+  await next.click()
+  // Paso 3 · Litros
+  await expect(page.getByText("Paso 3 de 6")).toBeVisible()
+  await page.locator("#tae-liters").fill(liters)
+  await page.locator("#tae-evidence-liter_meter").setInputFiles(photoPath)
+  await expect(page.getByText("Repetir foto")).toHaveCount(1, { timeout: 30_000 })
+  await next.click()
+  // Paso 4 · Sellos (número + foto de cada uno)
+  await expect(page.getByText("Paso 4 de 6")).toBeVisible()
+  await page.locator("#tae-removed").fill("SELLO-ANTERIOR")
+  await page.locator("#tae-evidence-removed_seal").setInputFiles(photoPath)
+  await page.locator("#tae-installed").fill(`SELLO-${liters}`)
+  await page.locator("#tae-evidence-installed_seal").setInputFiles(photoPath)
+  await expect(page.getByText("Repetir foto")).toHaveCount(2, { timeout: 30_000 })
+  await next.click()
+  // Paso 5 · Personas (sin RUT verificado se escribe el nombre)
+  await expect(page.getByText("Paso 5 de 6")).toBeVisible()
   await page.locator("#tae-driver").fill("Conductor E2E")
   await page.locator("#tae-supervisor").fill("Supervisor E2E")
-  await selectRadixById(page, "tae-vehicle", /E2E-FUEL-1/)
-  await selectRadixById(page, "tae-product", /Di[eé]sel/i)
-  await page.locator("#tae-liters").fill(liters)
-  await page.locator("#tae-removed").fill("SELLO-ANTERIOR")
-  await page.locator("#tae-installed").fill(`SELLO-${liters}`)
-  for (const kind of ["odometer", "liter_meter", "removed_seal", "installed_seal"]) {
-    await page.locator(`#tae-evidence-${kind}`).setInputFiles(photoPath)
-  }
-  await expect(page.getByText("Repetir foto")).toHaveCount(4, { timeout: 30_000 })
+  await next.click()
+  // Paso 6 · Revisar y enviar
+  await expect(page.getByText("Paso 6 de 6")).toBeVisible()
+  await expect(page.getByText(`SELLO-${liters}`)).toBeVisible()
 }
 
 test.describe("TAE — flujo público completo", () => {
@@ -47,7 +75,7 @@ test.describe("TAE — flujo público completo", () => {
     await expect(page.getByRole("heading", { name: "Carga TAE" })).toBeVisible()
 
     await fillTaeForm(page, "101.5")
-    await page.getByRole("button", { name: "Registrar carga TAE" }).click()
+    await page.getByRole("button", { name: "Enviar carga" }).click()
     await expect(page).toHaveURL(/\/tae\/resultado\//, { timeout: 45_000 })
     await expect(page.getByRole("heading", { name: "Carga registrada" })).toBeVisible()
     await page.getByRole("link", { name: "Registrar otra carga con el acceso guardado" }).click()
@@ -60,7 +88,7 @@ test.describe("TAE — flujo público completo", () => {
     // creado en memoria— así que el encolado no puede completarse y el fallo no
     // mediría la aplicación. Ver `blobStorageWorks`.
     test.skip(!await blobStorageWorks(page), "Con la red simulada apagada este navegador no puede releer un Blob: el escenario no mide la aplicación.")
-    await page.getByRole("button", { name: "Registrar carga TAE" }).click()
+    await page.getByRole("button", { name: "Enviar carga" }).click()
     await expect(page.getByText(/1 pendiente/)).toBeVisible({ timeout: 15_000 })
     await context.setOffline(false)
 

@@ -23,7 +23,9 @@ vi.mock("@/db", () => ({
 
 await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
-const { getTaeLinkWorksiteId, createTaeSubmission, reviewTaeSubmission } = await import("@/lib/services/fuel-tae")
+const { getTaeLinkWorksiteId, createTaeSubmission, createInternalFieldLoad, reviewTaeSubmission } = await import("@/lib/services/fuel-tae")
+const { TaeSubmissionRejected } = await import("@/lib/services/fuel-tae/errors")
+const { projectTaeSubmissions } = await import("@/lib/combustibles/control/projection")
 
 function hashToken(value: string) {
   return createHash("sha256").update(value).digest("hex")
@@ -41,6 +43,7 @@ describe("seguridad de la PWA pública TAE (PostgreSQL integration)", () => {
   const equipmentTypeId = nanoid()
   const vehicleInA = nanoid()
   const vehicleInB = nanoid()
+  const meteredVehicle = nanoid()
   const productId = nanoid()
   const loadingPointId = nanoid()
   const userId = nanoid()
@@ -59,10 +62,12 @@ describe("seguridad de la PWA pública TAE (PostgreSQL integration)", () => {
     await inMemoryDb.insert(schema.fuelVehicles).values([
       { id: vehicleInA, plate: `AA${nanoid().slice(0, 4).toUpperCase()}`, type: "camion", equipmentTypeId, worksiteId: worksiteA, isActive: true },
       { id: vehicleInB, plate: `BB${nanoid().slice(0, 4).toUpperCase()}`, type: "camion", equipmentTypeId, worksiteId: worksiteB, isActive: true },
+      { id: meteredVehicle, plate: `CC${nanoid().slice(0, 4).toUpperCase()}`, type: "camion", equipmentTypeId, worksiteId: worksiteA, isActive: true, meterType: "odometer", tankCapacityLiters: 300 },
     ])
     await inMemoryDb.insert(schema.fuelVehicleProducts).values([
       { vehicleId: vehicleInA, productId },
       { vehicleId: vehicleInB, productId },
+      { vehicleId: meteredVehicle, productId },
     ])
     await inMemoryDb.insert(schema.fuelTaeLoadingPoints).values({ id: loadingPointId, worksiteId: worksiteA, name: "Punto 1", type: "truck_dispenser" })
     await inMemoryDb.insert(schema.fuelTaePublicLinks).values([
@@ -92,6 +97,10 @@ describe("seguridad de la PWA pública TAE (PostgreSQL integration)", () => {
     kind, fileName: `${kind}.jpg`, mimeType: "image/jpeg", buffer: Buffer.from([1, 2, 3]),
   }))
 
+  // Cada carga sube la lectura: una menor se rechaza (D-6).
+  let reading = 1000
+  const nextReading = () => (reading += 10)
+
   function baseInput(overrides: Partial<Record<string, unknown>> = {}) {
     return {
       clientSubmissionId: nanoid(20),
@@ -99,16 +108,17 @@ describe("seguridad de la PWA pública TAE (PostgreSQL integration)", () => {
       loadingPointId,
       vehicleId: vehicleInA,
       productId,
+      supplyMediumId: "fsm-tae",
       equipmentCode: "AA-1",
       plate: null,
-      loadedAt: new Date().toISOString(),
+      offline: false,
       driverWorkerId: "",
       driverName: "Conductor",
       supervisorWorkerId: "",
       supervisorName: "Supervisor",
       manualIdentity: false,
       meterType: "odometer" as const,
-      meterReading: 100,
+      meterReading: nextReading(),
       meterUnavailableReason: null,
       liters: 50,
       removedSealNumber: "S1",
@@ -204,9 +214,10 @@ describe("seguridad de la PWA pública TAE (PostgreSQL integration)", () => {
   })
 
   it("prioriza la lectura manual y conserva la sugerencia OCR para trazabilidad", async () => {
+    const typed = nextReading()
     const result = await createTaeSubmission({
       accessToken: validToken,
-      input: baseInput({ meterReading: 123_456 }),
+      input: baseInput({ meterReading: typed }),
       evidence: fourEvidences,
       ocrResult: { value: 987_654, confidence: 0.42, rawText: "987654" },
     })
@@ -214,14 +225,14 @@ describe("seguridad de la PWA pública TAE (PostgreSQL integration)", () => {
       .where(eq(schema.fuelTaeSubmissions.id, result.id))
 
     expect(submission).toMatchObject({
-      meterReading: 123_456,
+      meterReading: typed,
       meterReadingSource: "manual",
       ocrSuggestedReading: 987_654,
       ocrConfidence: 0.42,
     })
   })
 
-  it("aplica OCR sólo cuando no hay lectura manual y supera el umbral de confianza", async () => {
+  it("el OCR nunca ocupa el lugar de la lectura digitada: sin lectura queda solo como sugerencia", async () => {
     const result = await createTaeSubmission({
       accessToken: validToken,
       input: baseInput({ meterReading: null }),
@@ -232,8 +243,8 @@ describe("seguridad de la PWA pública TAE (PostgreSQL integration)", () => {
       .where(eq(schema.fuelTaeSubmissions.id, result.id))
 
     expect(submission).toMatchObject({
-      meterReading: 654_321,
-      meterReadingSource: "ocr",
+      meterReading: null,
+      meterReadingSource: null,
       ocrSuggestedReading: 654_321,
       ocrConfidence: 0.91,
     })
@@ -284,5 +295,122 @@ describe("seguridad de la PWA pública TAE (PostgreSQL integration)", () => {
       .where(eq(schema.auditLog.entityId, retried.id))).toHaveLength(1)
     expect(await inMemoryDb.select().from(schema.statusHistory)
       .where(and(eq(schema.statusHistory.entityType, "fuel_tae_submission"), eq(schema.statusHistory.entityId, retried.id)))).toHaveLength(1)
+  })
+
+  // ── Reglas de la carga en terreno (C-01, C-08) ───────────────────────────
+  const twoEvidences = fourEvidences.filter((item) => item.kind === "odometer" || item.kind === "liter_meter")
+
+  async function rejection(promise: Promise<unknown>) {
+    try { await promise } catch (error) { return error }
+    return null
+  }
+
+  it("rechaza con 422 una lectura menor a la última del equipo y nombra la lectura anterior", async () => {
+    const first = await createTaeSubmission({ accessToken: validToken, input: baseInput({ vehicleId: meteredVehicle, meterReading: 50_000.5 }), evidence: fourEvidences })
+    expect(first.duplicate).toBe(false)
+    const error = await rejection(createTaeSubmission({ accessToken: validToken, input: baseInput({ vehicleId: meteredVehicle, meterReading: 49_000 }), evidence: fourEvidences }))
+    expect(error).toBeInstanceOf(TaeSubmissionRejected)
+    expect(error).toMatchObject({ status: 422, code: "meter_regression", field: "meterReading" })
+    expect((error as Error).message).toContain("50.000,5")
+    expect((error as Error).message).toContain("supervisor")
+  })
+
+  it("acepta una lectura igual o mayor y exige la lectura en equipos con medidor", async () => {
+    const ok = await createTaeSubmission({ accessToken: validToken, input: baseInput({ vehicleId: meteredVehicle, meterReading: 50_000.5, removedSealNumber: "S2", installedSealNumber: "S3" }), evidence: fourEvidences })
+    expect(ok.duplicate).toBe(false)
+    const missing = await rejection(createTaeSubmission({ accessToken: validToken, input: baseInput({ vehicleId: meteredVehicle, meterReading: null }), evidence: fourEvidences }))
+    expect(missing).toMatchObject({ status: 422, code: "reading_required" })
+  })
+
+  it("rechaza litros sobre la capacidad del estanque del equipo", async () => {
+    const error = await rejection(createTaeSubmission({ accessToken: validToken, input: baseInput({ vehicleId: meteredVehicle, meterReading: 60_000, liters: 301 }), evidence: fourEvidences }))
+    expect(error).toMatchObject({ status: 422, code: "over_capacity", field: "liters" })
+    // Sin capacidad cargada rige el tope de respaldo de 2.000 L.
+    const fallback = await rejection(createTaeSubmission({ accessToken: validToken, input: baseInput({ liters: 2001 }), evidence: fourEvidences }))
+    expect(fallback).toMatchObject({ status: 422, code: "over_capacity" })
+  })
+
+  it("rechaza sellos de relleno y sello faltante sin motivo", async () => {
+    const filler = await rejection(createTaeSubmission({ accessToken: validToken, input: baseInput({ removedSealNumber: "777777" }), evidence: fourEvidences }))
+    expect(filler).toMatchObject({ status: 422, code: "filler_seal", field: "removedSealNumber" })
+    const noReason = await rejection(createTaeSubmission({ accessToken: validToken, input: baseInput({ removedSealNumber: "", installedSealNumber: "S9" }), evidence: fourEvidences.filter((item) => item.kind !== "removed_seal") }))
+    expect(noReason).toMatchObject({ status: 422, code: "seal_reason_required" })
+  })
+
+  it("la foto de sello se exige solo si hay número de ese sello", async () => {
+    const missingPhoto = await rejection(createTaeSubmission({ accessToken: validToken, input: baseInput(), evidence: twoEvidences }))
+    expect(missingPhoto).toMatchObject({ status: 422, code: "evidence_missing" })
+    const withoutSeals = await createTaeSubmission({
+      accessToken: validToken,
+      input: baseInput({ removedSealNumber: "", installedSealNumber: "", noSealReason: "Sello cortado" }),
+      evidence: twoEvidences,
+    })
+    const evidences = await inMemoryDb.select().from(schema.fuelTaeEvidence).where(eq(schema.fuelTaeEvidence.submissionId, withoutSeals.id))
+    expect(evidences.map((item) => item.kind).sort()).toEqual(["liter_meter", "odometer"])
+  })
+
+  it("en línea la hora es la del servidor; desde la cola se conserva la del dispositivo", async () => {
+    const before = Date.now()
+    const online = await createTaeSubmission({ accessToken: validToken, input: baseInput({ capturedAt: "2026-01-01T00:00:00.000Z" }), evidence: fourEvidences })
+    const [row] = await inMemoryDb.select().from(schema.fuelTaeSubmissions).where(eq(schema.fuelTaeSubmissions.id, online.id))
+    expect(row!.loadedAtSource).toBe("server")
+    expect(new Date(row!.loadedAt).getTime()).toBeGreaterThanOrEqual(before - 1000)
+
+    const captured = new Date(Date.now() - 2 * 3_600_000).toISOString()
+    const queued = await createTaeSubmission({ accessToken: validToken, input: baseInput({ offline: true, capturedAt: captured }), evidence: fourEvidences })
+    const [queuedRow] = await inMemoryDb.select().from(schema.fuelTaeSubmissions).where(eq(schema.fuelTaeSubmissions.id, queued.id))
+    expect(queuedRow!.loadedAtSource).toBe("device_offline")
+    expect(new Date(queuedRow!.loadedAt).toISOString()).toBe(captured)
+    expect(new Date(queuedRow!.submittedAt).getTime()).toBeGreaterThanOrEqual(before - 1000)
+
+    const tooOld = await rejection(createTaeSubmission({ accessToken: validToken, input: baseInput({ offline: true, capturedAt: "2020-01-01T00:00:00.000Z" }), evidence: fourEvidences }))
+    expect(tooOld).toMatchObject({ status: 422, code: "invalid_time" })
+  })
+
+  it("persiste la cadena de sellos, guarda el sello tal como está grabado y audita la ruptura sin rechazar", async () => {
+    const vehicle = meteredVehicle
+    const start = 70_000
+    await createTaeSubmission({ accessToken: validToken, input: baseInput({ vehicleId: vehicle, meterReading: start, removedSealNumber: "0100", installedSealNumber: "0504" }), evidence: fourEvidences })
+    const ok = await createTaeSubmission({ accessToken: validToken, input: baseInput({ vehicleId: vehicle, meterReading: start + 10, removedSealNumber: "504", installedSealNumber: "0600" }), evidence: fourEvidences })
+    const broken = await createTaeSubmission({ accessToken: validToken, input: baseInput({ vehicleId: vehicle, meterReading: start + 20, removedSealNumber: "0999", installedSealNumber: "0700" }), evidence: fourEvidences })
+
+    const [okRow] = await inMemoryDb.select().from(schema.fuelTaeSubmissions).where(eq(schema.fuelTaeSubmissions.id, ok.id))
+    expect(okRow).toMatchObject({ sealChainStatus: "ok", sealChainExpected: null, removedSealNumber: "504", installedSealNumber: "0600" })
+    const [brokenRow] = await inMemoryDb.select().from(schema.fuelTaeSubmissions).where(eq(schema.fuelTaeSubmissions.id, broken.id))
+    expect(brokenRow).toMatchObject({ sealChainStatus: "mismatch", sealChainExpected: "0600", removedSealNumber: "0999" })
+    const audit = await inMemoryDb.select().from(schema.auditLog).where(eq(schema.auditLog.entityId, broken.id))
+    expect(audit).toHaveLength(1)
+    expect(audit[0]!.reason).toBe("Cadena de sellos rota: se esperaba 0600")
+  })
+
+  it("proyecta la carga a la serie canónica en la misma transacción", async () => {
+    const created = await createTaeSubmission({ accessToken: validToken, input: baseInput(), evidence: fourEvidences })
+    const loads = await inMemoryDb.select().from(schema.fuelEquipmentLoads).where(eq(schema.fuelEquipmentLoads.taeSubmissionId, created.id))
+    expect(loads).toHaveLength(1)
+    expect(loads[0]).toMatchObject({ source: "field", worksiteId: worksiteA, vehicleId: vehicleInA, supplyMediumId: "fsm-tae" })
+    await reviewTaeSubmission({ id: created.id, expectedStatus: "submitted", status: "voided", reviewNote: "Cargada por error.", userId })
+    const [voided] = await inMemoryDb.select().from(schema.fuelEquipmentLoads).where(eq(schema.fuelEquipmentLoads.taeSubmissionId, created.id))
+    expect(voided!.voidedAt).not.toBeNull()
+  })
+
+  it("contrato del reinicio de medidor: raw_row.meterReset = true marca la carga proyectada como inicio de serie", async () => {
+    const created = await createTaeSubmission({ accessToken: validToken, input: baseInput({ vehicleId: meteredVehicle, meterReading: 80_000 }), evidence: fourEvidences })
+    await inMemoryDb.update(schema.fuelTaeSubmissions)
+      .set({ rawRow: { meterReset: true, meterResetReason: "Cambio de tablero" } })
+      .where(eq(schema.fuelTaeSubmissions.id, created.id))
+    await inMemoryDb.transaction((tx) => projectTaeSubmissions(tx as never, [created.id]))
+    const [load] = await inMemoryDb.select().from(schema.fuelEquipmentLoads).where(eq(schema.fuelEquipmentLoads.taeSubmissionId, created.id))
+    expect(load!.meterReset).toBe(true)
+  })
+
+  it("rechaza un medio de suministro inexistente o inactivo", async () => {
+    const error = await rejection(createTaeSubmission({ accessToken: validToken, input: baseInput({ supplyMediumId: "no-existe" }), evidence: fourEvidences }))
+    expect(error).toMatchObject({ status: 422, code: "invalid_medium" })
+  })
+
+  it("el registro autenticado guarda la fuente interna y quién registró", async () => {
+    const result = await createInternalFieldLoad({ userId, input: baseInput(), evidence: fourEvidences })
+    const [row] = await inMemoryDb.select().from(schema.fuelTaeSubmissions).where(eq(schema.fuelTaeSubmissions.id, result.id))
+    expect(row).toMatchObject({ source: "internal_app", registeredBy: userId, loadedAtSource: "server" })
   })
 })
