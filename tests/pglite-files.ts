@@ -170,6 +170,9 @@ export const pgliteTestFiles = [
   // Faltaba desde que se escribió: instancia PGlite y migra, igual que las de
   // arriba con el mismo comentario.
   "lib/__tests__/anomaly-detection-integration.test.ts",
+  // Partes del mismo motor, separadas para que ningún archivo pase de 500 líneas.
+  "lib/__tests__/anomaly-detection-batch-integration.test.ts",
+  "lib/__tests__/anomaly-detection-evidence-integration.test.ts",
   "lib/__tests__/full-flow-integration.test.ts",
   "lib/__tests__/integration-rbac-sequences.test.ts",
   "lib/__tests__/item-state-mutations.test.ts",
