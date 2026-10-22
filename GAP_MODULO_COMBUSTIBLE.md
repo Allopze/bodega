@@ -189,6 +189,10 @@ Estados: **Existe**, **Parcial**, **Falta**, **Incorrecto** (existe pero contrad
 | S-10 | Exportación CSV | No se implementa: la regla de exportación del repositorio exige Excel (`AGENTS.md`, «Export Format Rule»). |
 | S-11 | Mandantes iniciales | No se siembran: la relación faena→mandante es un dato de negocio que el código no conoce. Se cargan desde la pantalla de configuración. |
 | S-12 | Alcance de faena en la vista por mandante | Un usuario solo ve las faenas de su alcance; los totales del mandante se rotulan como «en tus faenas» cuando el alcance es parcial. |
+| S-13 | Carga con valor de relleno (fecha 1899-12-30, sello 777777) importada del histórico | Queda en la cola de revisión con la marca «valor de relleno» y **fuera del recorrido de la serie** mientras no se apruebe: con fecha inventada se ordena primero y, si trae lectura alta, todas las cargas siguientes del equipo saldrían como retroceso falso. Aprobada, vuelve a la serie (`lib/combustibles/control/calc/performance-series.ts:146-147`). |
+| S-14 | Familias de equipos | Camiones = camión, tracto, camión 3/4; cargadores y camionetas = cargador, camioneta, station wagon; maquinaria = retroexcavadora, excavadora, minicargador, tractor, bulldozer. `estanque`, `hidrolavadora` y `grua` quedan sin familia (administrable en Configuración). |
+| S-15 | Lectura regresiva en terreno | Se compara contra las cargas en terreno del mismo equipo (`fuel_tae_submissions`), no contra la planilla importada: un dato erróneo del histórico no debe bloquear a un operador. La serie canónica sí marca el retroceso entre canales para revisión. |
+| S-16 | Ralentí con dos fuentes para el mismo equipo y día | Se usa la fuente con más horas de funcionamiento; no se suman (`lib/combustibles/control/queries/idle.ts:36-55`). |
 
 ## 6. Diseño de cálculo
 
@@ -234,4 +238,147 @@ Se reutilizan: `combustibles:view` (vistas G, R, V y revisión de solo lectura),
 | 10 | Datos personales: permiso en fotos, bitácora y exportaciones; correcciones D-11 y D-12 | `app/api/tae/evidence/[id]/route.ts`, `lib/combustibles/fuel-log.ts`, `app/(app)/combustibles/bitacora/**`, `app/(app)/combustibles/analisis/**` |
 | 11 | Pruebas unitarias, PGlite, E2E; suite completa, lint, tipos, build | `lib/combustibles/control/*.test.ts`, `lib/__tests__/fuel-control-*.test.ts`, `e2e/combustibles-control.spec.ts` |
 
-<!-- Las secciones de cierre se completan al terminar la implementación. -->
+## 9. Estado final por ID (cierre, 2026-10-22)
+
+Estados: **Implementado**, **Pendiente**, **Fuera de alcance**. La evidencia apunta a donde quedó cada capacidad.
+
+### Dimensiones transversales
+
+| ID | Estado | Dónde quedó |
+|---|---|---|
+| X-01 Faena | Implementado (reutilizada) | `worksites`; alcance con `worksiteScopeSql` en `lib/combustibles/control/filters.ts:138` |
+| X-02 Mandante | Implementado | `db/schema/fuel-control.ts:17-40` (mandante y sus faenas); administración en `app/(app)/combustibles/control/configuracion/mandantes-section.tsx` |
+| X-03 Medio de suministro | Implementado | `db/schema/fuel-control.ts:42-62`, siembra en `db/migrations/0359_fuel_control.sql` (final); administración en `configuracion/supply-media-section.tsx` |
+| X-04 Lugar de carga | Implementado | `db/schema/fuel-tae.ts:48` (`jerrycan`, `card_station`); selector en `app/(app)/combustibles/tae/tae-access-panel.tsx:83` |
+| X-05 Tipo de equipo | Implementado | `grua` sembrado en `0359_fuel_control.sql`; catálogo administrable existente |
+| X-06 Unidad por equipo | Implementado | La serie usa siempre la del equipo: `lib/combustibles/control/calc/performance-series.ts:89-96` |
+| X-07 Familia | Implementado | `db/schema/fuel-equipment-types.ts:14,26`; administración en `configuracion/equipment-families-section.tsx` |
+| X-08 Año, mes, rango | Implementado | `lib/combustibles/control/filters.ts:40-67`, `app/(app)/combustibles/control/_components/control-filters.tsx` |
+
+### G — Vista general (`/combustibles/control`)
+
+| ID | Estado | Dónde quedó |
+|---|---|---|
+| G-01 | Implementado | `_components/control-filters.tsx` (año, meses conmutables, faena, limpiar; todo en la URL) |
+| G-02 | Implementado | `lib/combustibles/control/queries/overview.ts:65`, `app/(app)/combustibles/control/page.tsx:137` |
+| G-03 | Implementado | `queries/overview.ts:89` (tabla cruzada con totales por fila, columna y general), `_charts/overview-crosstab.tsx`, `page.tsx:145-172` |
+| G-04 | Implementado | Mismo componente con `liters_per_hour` (`page.tsx:145-172`) |
+| G-05 | Implementado | `_charts/overview-ranking-chart.tsx`, `page.tsx:156` (uno por unidad, por litros) |
+| G-06 | Implementado | `queries/overview.ts:130` (Σ avance ÷ Σ litros), `page.tsx:181-202` |
+| G-07 | Implementado | Ídem con horómetro |
+
+### R — Rendimiento por familia (`/combustibles/control/rendimiento/[familia]`)
+
+| ID | Estado | Dónde quedó |
+|---|---|---|
+| R-01 | Implementado | `rendimiento/[familia]/family-filters.tsx` (unidad, medio, equipo, rango) + filtros globales |
+| R-02 | Implementado | `lib/combustibles/control/queries/performance.ts:37` (`avg`, `stddev_samp`, CV), `[familia]/stats-tables.tsx` |
+| R-03 | Implementado | `queries/performance.ts:124` (paginada), `[familia]/stats-tables.tsx` |
+| R-04 | Implementado | `_charts/performance-dispersion-chart.tsx` (promedio en barras, σ en eje derecho) |
+| R-05 | Implementado | `lib/combustibles/control/queries/performance-detail.ts:41` (solo la familia, paginado), `[familia]/load-detail-table.tsx` |
+| R-06 | Implementado | `queries/performance.ts:124` (promedio del modelo sin el propio equipo y su histórico de 12 meses), `lib/combustibles/control/view-helpers.ts:164-176` («Rinde peor» sobre 10 %) |
+
+### C — Sellos por mandante (`/combustibles/control/sellos?mandante=`)
+
+| ID | Estado | Dónde quedó |
+|---|---|---|
+| C-01 | Implementado | Formulario por pasos `components/combustibles/field-load/field-load-wizard.tsx`; servicio `lib/services/fuel-tae/submit.ts` (hora de servidor `:84`, lectura y retroceso, capacidad `:125`, sellos `:88`, medio `:105-112`, bloqueo por equipo `:157`); registro autenticado `app/api/combustibles/cargas/route.ts:25-43` y `app/(app)/combustibles/control/registrar/` |
+| C-02 | Implementado | `lib/combustibles/control/queries/reconciliation.ts:112`, `lib/combustibles/control/calc/reconciliation.ts:21`, alerta en `control/sellos/flow-section.tsx` |
+| C-03 | Implementado | `queries/reconciliation.ts:167`, `control/sellos/medium-section.tsx` |
+| C-04 | Implementado | `lib/combustibles/control/queries/seals.ts:43` |
+| C-05 | Implementado | `queries/seals.ts:43` (sin sello retirado por supervisor) |
+| C-06 | Implementado | `queries/seals.ts:43,67` (sin sello nuevo, con las justificaciones), `control/sellos/supervisors-section.tsx` |
+| C-07 | Implementado | `queries/seals.ts:132` (paginado), fotos solo con `view_personal` en `control/sellos/detail-section.tsx:83` |
+| C-08 Cadena de sellos | Implementado (por equipo) | `lib/combustibles/control/seal-chain.ts:16`, persistida al registrar en `lib/services/fuel-tae/submit.ts:167`. Un estanque registrado como equipo (tipo `estanque`) tiene su propia cadena; los estanques del ciclo (`fuel_storage_locations`) no llevan sello en el modelo. |
+
+### V — Ralentí (`/combustibles/control/ralenti`)
+
+| ID | Estado | Dónde quedó |
+|---|---|---|
+| V-01 a V-05 | Implementado | `lib/combustibles/control/queries/idle.ts:123,149`, `control/ralenti/equipment-month-table.tsx` (con total general) |
+| V-06 | Implementado | `_charts/idle-monthly-chart.tsx`, `_charts/idle-liters-chart.tsx` |
+| V-07 | Implementado | `queries/idle.ts:181`, `_charts/idle-daily-chart.tsx` |
+| V-08 | Implementado | `lib/combustibles/control/queries/idle-comparison.ts:28` |
+| V-09 | Implementado | `queries/idle.ts:190` |
+
+### Ingesta, exportación y transversales
+
+| ID | Estado | Dónde quedó |
+|---|---|---|
+| I-01 Histórico de cargas | Implementado | Proyección `app/(app)/combustibles/actions-operaciones.ts:296`; rechazos persistidos `:308` y `lib/combustibles/operations-import-rejections.ts:24`; plantilla `lib/combustibles/operations-import-template.ts:31`; reversión `app/(app)/combustibles/actions-operaciones-batch.ts:32`; respaldo de lo ya cargado: `scripts/backfill-fuel-equipment-loads.ts` (corre al final de `db:migrate`) |
+| I-02 Proveedores y tarjetas | Implementado | Copec y Aramco se leen del libro existente (`queries/reconciliation.ts`); el resto por archivo: `lib/combustibles/control/imports/service.ts:209,263` |
+| I-03 Telemetría | Implementado | `lib/combustibles/control/imports/telemetry.ts`, mismo servicio |
+| I-04 Fotos históricas | Fuera de alcance | Campo listo: `fuel_tae_evidence.external_url` (`db/schema/fuel-tae.ts:204`) |
+| I-05 Plantillas | Implementado | `lib/combustibles/control/imports/templates.ts:75`, `lib/combustibles/operations-import-template.ts:31` |
+| E-01 Exportación | Implementado (Excel) | `control/export-overview-actions.ts`, `control/rendimiento/export-actions.ts`, `control/sellos/export-actions.ts`, `control/ralenti/export-actions.ts`. CSV fuera de alcance por la regla del repositorio (S-10). |
+| A-01 Auditoría | Implementado | Revisión `lib/combustibles/control/review.ts:20`; umbrales `lib/combustibles/control/settings.ts:90`; importaciones y reversiones en `imports/service.ts`; catálogos en `configuracion/actions.ts`; cadena rota y decisiones reiniciadas en `lib/combustibles/projection-audit.ts`. Las cargas del submódulo se anulan, nunca se borran. |
+| P-01 Datos personales | Implementado | Fotos `app/api/tae/evidence/[id]/route.ts:22`; bitácora `lib/combustibles/fuel-log.ts:36-42`; exportación TAE `app/(app)/combustibles/tae/actions.ts:206-208`; agrupaciones `lib/combustibles/tae-dashboard.ts:53` |
+
+### Defectos de §1
+
+D-1 a D-15 corregidos. D-11 en `lib/combustibles/fuel-log.ts:51` (con prueba). D-12 en `app/(app)/combustibles/analisis/drilldown-hrefs.ts` y `analisis/page.tsx:121`. D-14 reemplazado por la tolerancia por mandante (`fuel_mandantes.tolerance_pct`); el ciclo por faena existente conserva su escala propia.
+
+### Defectos del tablero que no se replicaron
+
+| # | Cómo se evita |
+|---|---|
+| 1 | El rendimiento lo calcula el servidor (`calc/performance-series.ts:98`); el de la planilla queda como `declared_performance`, solo para contraste. |
+| 2 | Sellos y fechas de relleno se rechazan en terreno (`lib/combustibles/control/validation.ts:30,45`) y quedan marcados en el histórico (S-13); un sello ausente exige motivo. |
+| 3 | Unidad por equipo (X-06). |
+| 4 | Cada vista R filtra por familia (`queries/performance-detail.ts:41`). |
+| 5 | Cada widget tiene estado vacío y de error propio (`SectionError`, `DegradedDataBanner`); verificado en navegador. |
+| 6 | Una sola vista de sellos parametrizada por mandante. |
+| 7 | Una ruta por vista y meses en español (`MONTH_LABELS`). |
+| 8 | Fotos por endpoint autenticado con `view_personal`; nombres enmascarados en servidor. |
+
+## 10. Cierre de la implementación
+
+### Archivos
+
+- **Creados (200):** el submódulo vive en `app/(app)/combustibles/control/**` (vistas, acciones, exportaciones), `lib/combustibles/control/**` (contratos, filtros, cálculo, proyección, revisión, consultas, importadores, catálogos), `components/combustibles/field-load/**` (formulario de terreno por pasos), `lib/services/fuel-tae/**` (división de `lib/services/fuel-tae.ts`), `app/api/combustibles/cargas/**`, `db/schema/fuel-control*.ts`, la migración 0359, el script de respaldo y las pruebas.
+- **Modificados (57):** entre ellos `modules/combustibles/manifest.ts`, `db/schema/fuel-tae.ts`, `db/schema/fuel-equipment-types.ts`, `app/(public)/tae/**`, `app/api/tae/**`, `app/(app)/combustibles/{tae,bitacora,analisis,importar}/**`, `lib/combustibles/{fuel-log,operations-import,tae-import-service}.ts`, `components/layout/{top-bar,nav-icons}.tsx`, `lib/services/module-toggles.ts`. `git diff --stat 6dbea284..HEAD` tiene la lista completa.
+- **Divididos por tamaño:** `lib/services/fuel-tae.ts` (772 líneas), `lib/combustibles/tae-import-service.ts` (506), `app/(app)/combustibles/actions-operaciones.ts` (558), `app/(public)/tae/tae-form.tsx` (394), `lib/services/module-toggles.ts` (632) y `lib/__tests__/anomaly-detection-integration.test.ts` (1.033).
+- **Excepciones a la regla de 500 líneas (tocados, no divididos):** `scripts/capture-all-routes.ts` (6.904; +10 líneas de inventario de rutas que exige su prueba) y `scripts/backup-orchestrator.sh` (611; +3 líneas de la lista blanca de variables). Son herramientas de QA y respaldo ajenas al submódulo, y dividirlas aquí arriesga el despliegue sin beneficio para él.
+
+### Migraciones
+
+`db/migrations/0359_fuel_control.sql`: tablas `fuel_mandantes`, `fuel_mandante_worksites`, `fuel_supply_media`, `fuel_equipment_loads`, `fuel_control_import_batches`, `fuel_control_import_rejections`, `fuel_supply_inputs`, `fuel_telemetry_daily`; columnas nuevas en `fuel_equipment_types` y `fuel_tae_submissions`; tipos de lugar de carga; índices por equipo + fecha, faena + fecha y medio + fecha; siembra idempotente de medios, `grua` y familias. Checksum registrado; `npm run db:verify-migrations` pasa; `drizzle-kit generate` informa «No schema changes».
+
+**Despliegue:** `db:migrate` ahora termina con `npm run db:backfill-fuel-equipment-loads`, que proyecta el histórico ya cargado (idempotente, una transacción por equipo; `FUEL_LOADS_BACKFILL_DRY_RUN=true` para ensayar). No se corrió contra producción ni contra `bodega_dev`: el `next dev` local (:3001, base `bodega_dev`) necesita `npm run db:migrate` antes de abrir las pantallas nuevas.
+
+### Permisos nuevos y asignación
+
+| Permiso | Roles |
+|---|---|
+| `combustibles:register_load` | administrador, jefa_chome, jefe_mantencion, admin_contrato |
+| `combustibles:approve_flagged` | administrador, jefa_chome |
+| `combustibles:view_personal` | administrador, jefa_chome |
+| `combustibles:manage_control` | administrador |
+
+Se aplican con `npm run db:sync-rbac` (los `defaultGrants` solo se aplican la primera vez que el permiso aparece en una base). **Cambio de comportamiento:** desde ahora ver fotos de cargas y nombres de conductor y supervisor exige `view_personal`; los roles que hoy veían nombres solo con `combustibles:view` (jefe_mantencion, solicitante_faena, prevencionista_faena, admin_contrato) dejan de verlos.
+
+### Pendientes y riesgos
+
+- **Alertas de conciliación:** se muestran en la vista (alerta roja sobre la tolerancia); no envían correo ni notificación.
+- **Primer respaldo en producción:** el historial importado con valores de relleno o lecturas erróneas va a poblar la cola de revisión la primera vez. Conviene ensayar con `FUEL_LOADS_BACKFILL_DRY_RUN=true` y mirar cuántas cargas quedan marcadas antes de comunicarlo.
+- **Formato de VisionLink y del surtidor CMPC:** supuestos S-1 y S-2, a validar con un archivo real; las plantillas descargables documentan el formato esperado.
+- **Fotos históricas:** fuera de alcance (I-04).
+
+### Verificación (2026-10-22, rama `feat/control-combustible`)
+
+| Puerta | Resultado |
+|---|---|
+| `npm run typecheck` | Sin errores |
+| `npm run lint` | Sin errores (1 advertencia preexistente en `lib/combustibles/__tests__/copec-coverage-store.test.ts`) |
+| `npm run test:fast` | 984 archivos y 13.141 pruebas en verde tras corregir 7 fallas: 3 propias de la rama (inventario de rutas, conteo de permisos de `ARCHITECTURE.md`, texto de la llamada TAE en una prueba) y 4 heredadas de `main` en Copec (lista blanca IMAP del respaldo y mocks del portal sin el campo OTP), también corregidas |
+| `npm run test:pglite` | 273 archivos, 3.304 pruebas en verde (antes de dividir la prueba de anomalías; sus 3 partes pasan 34/34 por separado) |
+| `npm run db:verify-migrations` | Cadena verificada hasta 0359 |
+| `npm run check:secrets` | Pasa |
+| `npm run check:security-audit` | **Falla, preexistente:** avisos de `sharp`, `source-map-js` y `vite` fuera del allowlist. Esta rama no cambió `package-lock.json`; requiere decidir la actualización de dependencias. |
+| `npm run doctor` | Termina con código 0 (puntaje 69/100 del repositorio). Las advertencias en archivos de esta rama son de estilo (`await` secuencial dentro de transacciones, gráficos que ya cargan en diferido); dos sospechosas se revisaron y no son fallas. |
+| Build (`next build`, dentro de `test:e2e`) | Pasa |
+| `npm run test:e2e` (suite completa) | 913 pasan, 2 fallan, 4 omitidas. `tae-public-flow` falló por una lectura de prueba sobre el tope (y destapó que el operador veía el mensaje crudo de zod en inglés): ambas cosas corregidas, y el spec pasa al repetirlo. `servicios-costo-pendiente` **falla también en `main` @ `6dbea284`**: la ficha de solicitud muestra «Colaborador» como dato de solo lectura (`app/(app)/solicitudes/item-editor.tsx:135`) y la prueba espera un campo; es de Solicitudes, ajeno a este trabajo. |
+| E2E del submódulo `e2e/combustibles-control.spec.ts` | 7/7: registro con sellos desde la app, cadena de sellos `ok` y `mismatch` por API, atípico marcado y retroceso rechazado con 422, tablero de camiones, aprobación con promedio recalculado (10 → 11,67) y fila de auditoría, importación de entradas con conciliación por mandante y reimportación bloqueada, y la API negando registrar y ver fotos (403) a un rol sin permisos |
+| Navegador | 10 pantallas nuevas en 1440 px y 390 px: todas responden 200, sin desborde horizontal de página, sin errores de consola ni respuestas fallidas, con datos y con estados vacíos. Se corrigió el ajuste de columnas de la cola de revisión. |
+| Tamaño de archivos | Ningún archivo nuevo o modificado de la rama supera 500 líneas, salvo las dos excepciones documentadas arriba. |
+| Corrección de seguridad posterior a la revisión automática | Un usuario con alcance parcial podía sobrescribir un despacho de otra faena reusando su referencia; ahora se rechaza (`lib/combustibles/control/imports/service.ts`, prueba en `lib/__tests__/fuel-control-imports-pglite.test.ts`). |

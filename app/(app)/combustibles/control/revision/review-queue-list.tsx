@@ -112,17 +112,17 @@ export function ReviewQueueList({ rows, canDecide, decided }: { rows: ReviewQueu
               <TableRow key={row.id}>
                 <TableCell className="whitespace-nowrap">{formatDateTime(row.occurredAt)}</TableCell>
                 <TableCell className="whitespace-nowrap font-medium">{equipmentLabel(row)}</TableCell>
-                <TableCell>{row.worksiteName}</TableCell>
-                <TableCellNum>{formatQty(row.liters)} L</TableCellNum>
-                <TableCellNum>{formatMeterReading(row.meterReading, row.meterType)}</TableCellNum>
+                <TableCell className="whitespace-nowrap">{row.worksiteName}</TableCell>
+                <TableCellNum className="whitespace-nowrap">{formatQty(row.liters)} L</TableCellNum>
+                <TableCellNum className="whitespace-nowrap">{formatMeterReading(row.meterReading, row.meterType)}</TableCellNum>
                 <TableCellNum>
                   <div className="flex flex-col items-end gap-0.5">
                     <PerformanceTitle row={row} />
                     <Average row={row} />
                   </div>
                 </TableCellNum>
-                <TableCell className="min-w-56"><Reasons row={row} /></TableCell>
-                <TableCell><Origin row={row} /></TableCell>
+                <TableCell className="min-w-48"><Reasons row={row} /></TableCell>
+                <TableCell className="whitespace-nowrap"><Origin row={row} /></TableCell>
                 {decided ? <TableCell className="min-w-56"><Decision row={row} /></TableCell> : null}
                 {showActions ? <TableCell><DecisionButtons loadId={row.id} label={`${equipmentLabel(row)}, ${formatQty(row.liters)} L`} /></TableCell> : null}
               </TableRow>
