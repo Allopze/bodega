@@ -313,6 +313,13 @@ describe("proyección del control de combustible", () => {
 
     const second = await backfillFuelEquipmentLoads()
     expect(second).toMatchObject({ pendientesTerreno: 0, pendientesLog: 0, proyectadas: 0 })
+    // El resumen de la cola de revisión es lo que el log de despliegue muestra:
+    // tiene que coincidir con la tabla, también cuando no quedó nada pendiente.
+    const flagged = (await inMemoryDb.select({ reasons: schema.fuelEquipmentLoads.flagReasons }).from(schema.fuelEquipmentLoads)
+      .where(eq(schema.fuelEquipmentLoads.reviewStatus, "flagged")))
+    expect(second.enRevision).toBe(flagged.length)
+    expect(second.enRevision).toBeGreaterThan(0)
+    expect(Object.values(second.enRevisionPorMotivo).reduce((sum, count) => sum + count, 0)).toBe(flagged.flatMap((row) => row.reasons).length)
     expect(stable(await loadsOf())).toEqual(stable(rows))
   })
 

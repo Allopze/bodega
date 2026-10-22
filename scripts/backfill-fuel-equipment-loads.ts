@@ -8,8 +8,10 @@
  *   npm run db:backfill-fuel-equipment-loads
  *   FUEL_LOADS_BACKFILL_DRY_RUN=true npm run db:backfill-fuel-equipment-loads
  *
- * Corre en cada despliegue (al final de `db:migrate`), así que tiene que ser
- * barato cuando no hay nada que hacer: solo lee los orígenes SIN carga
+ * Corre en cada despliegue: en local al final de `db:migrate` y en producción
+ * dentro del servicio `migrate` de docker-compose (producción no corre
+ * `npm run db:migrate`). Tiene que ser barato cuando no hay nada que hacer:
+ * solo lee los orígenes SIN carga
  * proyectada (anti-join) y, si no hay ninguno, termina sin escribir.
  * Idempotente: la proyección es un upsert por origen, reejecutar no duplica.
  *
@@ -47,6 +49,10 @@ export interface FuelLoadsBackfillReport {
   sinEquipo: number
   proyectadas: number
   omitidas: number
+  /** Cargas que quedan esperando revisión humana, en total y por motivo: lo
+   *  que el log de despliegue tiene que mostrar sin ensayo previo. */
+  enRevision: number
+  enRevisionPorMotivo: Record<string, number>
 }
 
 const chunks = <T>(items: T[]) => Array.from({ length: Math.ceil(items.length / CHUNK) }, (_, i) => items.slice(i * CHUNK, (i + 1) * CHUNK))
@@ -103,16 +109,28 @@ export async function backfillFuelEquipmentLoads(): Promise<FuelLoadsBackfillRep
     sinEquipo: (groups.get(null)?.tae.length ?? 0) + (groups.get(null)?.ops.length ?? 0),
     proyectadas: 0,
     omitidas: 0,
+    enRevision: 0,
+    enRevisionPorMotivo: {},
   }
-  if (groups.size === 0) return report
+  if (groups.size > 0) {
+    const context = await loadPerformanceControlContext(db)
+    for (const [vehicleId, group] of groups) {
+      const counts = await projectGroup(vehicleId, group, context)
+      report.proyectadas += counts.projected
+      report.omitidas += counts.skipped
+    }
+  }
+  return { ...report, ...await reviewSummary() }
+}
 
-  const context = await loadPerformanceControlContext(db)
-  for (const [vehicleId, group] of groups) {
-    const counts = await projectGroup(vehicleId, group, context)
-    report.proyectadas += counts.projected
-    report.omitidas += counts.skipped
-  }
-  return report
+/** Cola de revisión tal como queda (en un ensayo, la de antes: nada se escribió). */
+async function reviewSummary(): Promise<Pick<FuelLoadsBackfillReport, "enRevision" | "enRevisionPorMotivo">> {
+  const flagged = await db.select({ reasons: fuelEquipmentLoads.flagReasons })
+    .from(fuelEquipmentLoads)
+    .where(eq(fuelEquipmentLoads.reviewStatus, "flagged"))
+  const byReason: Record<string, number> = {}
+  for (const row of flagged) for (const reason of row.reasons) byReason[reason] = (byReason[reason] ?? 0) + 1
+  return { enRevision: flagged.length, enRevisionPorMotivo: byReason }
 }
 
 async function main() {

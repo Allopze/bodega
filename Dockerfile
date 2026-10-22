@@ -384,9 +384,14 @@ RUN ./node_modules/.bin/esbuild scripts/download-backup-cloudreve.ts \
 # nuevas sin esperar la ventana del cron. Se externalizan sólo `drizzle-orm` y
 # `postgres` —los dos paquetes que la imagen standalone sí resuelve— y todo lo
 # demás (incluido `exceljs`, del que cuelgan los helpers de parseo) se empaqueta.
+#
+# `backfill-fuel-equipment-loads` proyecta a la serie canónica del control de
+# combustible las cargas que aún no la tienen. Corre en el servicio `migrate`:
+# en `npm run db:migrate` solo cubría el camino local.
 RUN ./node_modules/.bin/esbuild \
     scripts/backfill-fuel-meter-readings.ts \
     scripts/seed-fuel-anomaly-rules.ts \
+    scripts/backfill-fuel-equipment-loads.ts \
     --bundle \
     --platform=node \
     --format=esm \
@@ -639,6 +644,7 @@ COPY --from=build /tmp/upload-backup-cloudreve.cjs ./scripts/upload-backup-cloud
 COPY --from=build /tmp/download-backup-cloudreve.cjs ./scripts/download-backup-cloudreve.cjs
 COPY --from=build /tmp/fuel/backfill-fuel-meter-readings.mjs ./scripts/backfill-fuel-meter-readings.mjs
 COPY --from=build /tmp/fuel/seed-fuel-anomaly-rules.mjs ./scripts/seed-fuel-anomaly-rules.mjs
+COPY --from=build /tmp/fuel/backfill-fuel-equipment-loads.mjs ./scripts/backfill-fuel-equipment-loads.mjs
 COPY --from=build /tmp/preflight-fuel-integrations.mjs ./scripts/preflight-fuel-integrations.mjs
 COPY --from=build /tmp/normalize-epp-skus.mjs ./scripts/normalize-epp-skus.mjs
 COPY --from=build /tmp/reconcile-request-status.mjs ./scripts/reconcile-request-status.mjs

@@ -408,7 +408,7 @@ services:
       # El backfill RE-20 cifra declaraciones históricas con la misma clave que la app.
       - PREVENTION_DATA_ENCRYPTION_KEY=${PREVENTION_DATA_ENCRYPTION_KEY:-}
       - PREVENTION_DATA_ENCRYPTION_KEY_VERSION=${PREVENTION_DATA_ENCRYPTION_KEY_VERSION:-v1}
-    command: ["sh", "-c", "node scripts/migrate.mjs && node scripts/backfill-re20-statements.mjs --apply && node scripts/ensure-prevention-program-slots.mjs && node scripts/backfill-cphs-mandatory-sessions.mjs && node scripts/reconcile-epp-delivery-scale.mjs --apply"]
+    command: ["sh", "-c", "node scripts/migrate.mjs && node scripts/backfill-re20-statements.mjs --apply && node scripts/ensure-prevention-program-slots.mjs && node scripts/backfill-cphs-mandatory-sessions.mjs && node scripts/reconcile-epp-delivery-scale.mjs --apply && node scripts/backfill-fuel-equipment-loads.mjs"]
 
   # One-shot: sync RBAC permissions from module manifests to the database.
   # Run automatically by deploy-prod.sh after migrations. Also run manually:
