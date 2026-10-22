@@ -386,7 +386,7 @@ export async function importFuelVehiclesFromXlsx(_prev: ActionState, formData: F
           sortOrder: 1000 + index,
         }))
         await tx.insert(fuelEquipmentTypes).values(createdTypes)
-        for (const item of createdTypes) equipmentTypeBySlug.set(item.slug, { ...item, isSystem: false, isActive: true, createdAt: "", updatedAt: "" })
+        for (const item of createdTypes) equipmentTypeBySlug.set(item.slug, { ...item, performanceFamily: null, isSystem: false, isActive: true, createdAt: "", updatedAt: "" })
       }
       for (const row of importable) {
         const equipmentType = equipmentTypeBySlug.get(row.equipmentTypeSlug)!

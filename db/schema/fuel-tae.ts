@@ -5,6 +5,7 @@ import { worksites, workers } from "./worksites"
 import { fuelVehicles } from "./fuel-vehicles"
 import { fuelProducts } from "./fuel-products"
 import { fuelStorageLocations } from "./fuel-cycle"
+import { fuelSupplyMedia } from "./fuel-control"
 
 /** Lotes de importación del control manual TAE. */
 export const fuelTaeImportBatches = pgTable("fuel_tae_import_batches", {
@@ -44,7 +45,7 @@ export const fuelTaeLoadingPoints = pgTable("fuel_tae_loading_points", {
   createdAt:    timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:    timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
-  check("fuel_tae_loading_points_type_valid", sql`${table.type} IN ('fixed_dispenser', 'truck_dispenser', 'pickup_tank', 'tae', 'other')`),
+  check("fuel_tae_loading_points_type_valid", sql`${table.type} IN ('fixed_dispenser', 'truck_dispenser', 'pickup_tank', 'jerrycan', 'card_station', 'tae', 'other')`),
   uniqueIndex("fuel_tae_loading_points_worksite_name_unique").on(table.worksiteId, table.name),
   index("fuel_tae_loading_points_worksite_idx").on(table.worksiteId),
 ])
@@ -107,10 +108,21 @@ export const fuelTaeSubmissions = pgTable("fuel_tae_submissions", {
   reviewedBy:            text("reviewed_by").references(() => users.id),
   reviewedAt:            timestamp("reviewed_at", { withTimezone: true, mode: "string" }),
   rawRow:                jsonb("raw_row"),
+  /** Medio con que se surtió esta carga (control por mandante, C-02/C-03). */
+  supplyMediumId:        text("supply_medium_id").references(() => fuelSupplyMedia.id, { onDelete: "set null" }),
+  /** Quién puso la hora: el servidor al recibir, el dispositivo (envío encolado sin conexión) o la planilla. */
+  loadedAtSource:        text("loaded_at_source").notNull().default("device"),
+  /** Usuario autenticado que registró la carga desde la app (nulo en la PWA pública). */
+  registeredBy:          text("registered_by").references(() => users.id),
+  /** Cadena de sellos evaluada al registrar: el sello retirado debe ser el instalado en la carga anterior. */
+  sealChainStatus:       text("seal_chain_status").notNull().default("not_evaluated"),
+  sealChainExpected:     text("seal_chain_expected"),
   createdAt:             timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:             timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
-  check("fuel_tae_submissions_source_valid", sql`${table.source} IN ('public_pwa', 'legacy_xlsx')`),
+  check("fuel_tae_submissions_source_valid", sql`${table.source} IN ('public_pwa', 'internal_app', 'legacy_xlsx')`),
+  check("fuel_tae_submissions_loaded_at_source_valid", sql`${table.loadedAtSource} IN ('server', 'device', 'device_offline', 'import')`),
+  check("fuel_tae_submissions_seal_chain_valid", sql`${table.sealChainStatus} IN ('not_evaluated', 'ok', 'mismatch', 'no_previous', 'no_seal')`),
   check("fuel_tae_submissions_meter_type_valid", sql`${table.meterType} IN ('odometer', 'hour_meter')`),
   check("fuel_tae_submissions_meter_reading_source_valid", sql`${table.meterReadingSource} IN ('ocr', 'manual', 'import')`),
   check("fuel_tae_submissions_liters_positive", sql`${table.liters} > 0`),
@@ -122,6 +134,7 @@ export const fuelTaeSubmissions = pgTable("fuel_tae_submissions", {
   index("fuel_tae_submissions_status_idx").on(table.status),
   index("fuel_tae_submissions_import_batch_idx").on(table.importBatchId),
   index("fuel_tae_submissions_installed_seal_idx").on(table.installedSealNumber),
+  index("fuel_tae_submissions_medium_loaded_idx").on(table.supplyMediumId, table.loadedAt),
   uniqueIndex("fuel_tae_submissions_legacy_source_unique")
     .on(table.importBatchId, table.legacySourceId)
     .where(sql`${table.legacySourceId} IS NOT NULL`),

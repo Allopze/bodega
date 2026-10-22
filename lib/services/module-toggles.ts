@@ -116,6 +116,7 @@ const ROUTE_OWNER_ALIASES: RouteOwnerRule[] = [
   { moduleId: "combustibles", submoduleHref: "/combustibles/tae", prefix: "/tae" },
   { moduleId: "combustibles", submoduleHref: "/combustibles/tae", prefix: "/api/tae" },
   { moduleId: "combustibles", submoduleHref: "/combustibles/importar", prefix: "/api/combustibles/import" },
+  { moduleId: "combustibles", submoduleHref: "/combustibles/control", prefix: "/api/combustibles/cargas" },
   { moduleId: "flota", submoduleHref: "/flota", prefix: "/api/flota" },
   { moduleId: "mantenciones", submoduleHref: "/mantenciones", prefix: "/api/mantenciones" },
   { moduleId: "warehouse", submoduleHref: "/bodega", prefix: "/api/bodega" },
@@ -249,6 +250,7 @@ const ROUTE_TARGETS: RouteOwnerRule[] = [
 const PERMISSION_TARGET_OVERRIDES: Array<{ test: (permission: string) => boolean; href: string }> = [
   { test: (permission) => permission.startsWith("combustibles:tae_"), href: "/combustibles/tae" },
   { test: (permission) => permission === "combustibles:import" || permission === "combustibles:revert", href: "/combustibles/importar" },
+  { test: (permission) => ["combustibles:register_load", "combustibles:approve_flagged", "combustibles:manage_control"].includes(permission), href: "/combustibles/control" },
   { test: (permission) => permission.startsWith("sst:"), href: "/prevencion/evaluaciones" },
   { test: (permission) => permission.startsWith("ppa:"), href: "/prevencion/ppa" },
   { test: (permission) => permission.startsWith("prevention:pdtp:"), href: "/prevencion/pdtp" },
