@@ -4,7 +4,7 @@ import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import { describe, it, expect, beforeAll, vi } from "vitest"
 import path from "node:path"
 import type { Session } from "next-auth"
-import { eq } from "drizzle-orm"
+import { and, eq } from "drizzle-orm"
 import * as schema from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { buildXlsx } from "@/lib/combustibles/control/imports/test-helpers"
@@ -226,6 +226,25 @@ describe("importadores de telemetría y entradas de suministro (PostgreSQL)", ()
       expect((await service.commitControlImport(global(), "supply_inputs", { buffer, fileName: "x.xlsx", supplyMediumId: "no-existe" })).ok).toBe(false)
       const scoped = await service.commitControlImport(session(otherUserId, [worksiteA]), "supply_inputs", { buffer, fileName: "x.xlsx", supplyMediumId: mediumId })
       expect(scoped.ok).toBe(false)
+    })
+
+    it("un usuario acotado no sobrescribe un despacho de otra faena reusando su referencia", async () => {
+      // G-2 es de Faena Sur. Alguien con alcance solo en Faena Norte sube la
+      // misma referencia rotulada como Faena Norte: la llave (medio, referencia)
+      // la haría un update del despacho ajeno si no se filtrara.
+      const scoped = session(otherUserId, [worksiteA])
+      const buffer = await buildXlsx(SUPPLY_HEADERS, [["20-01-2026", "Faena Norte", 1, "G-2", null], ["20-01-2026", "Faena Norte", 30, "N-7", null]])
+      const preview = await service.previewControlImport(scoped, "supply_inputs", { buffer, fileName: "ajeno.xlsx", supplyMediumId: mediumId })
+      if (!preview.ok) throw new Error(preview.message)
+      expect(preview.data).toMatchObject({ validRows: 1, toUpdate: 0, toInsert: 1 })
+      expect(preview.data.rejected.map((issue) => issue.message)).toContain("La referencia G-2 ya está registrada en una faena fuera de tu alcance")
+
+      const result = await service.commitControlImport(scoped, "supply_inputs", { buffer, fileName: "ajeno.xlsx", supplyMediumId: mediumId })
+      if (!result.ok) throw new Error(result.message)
+      expect(result.data).toMatchObject({ inserted: 1, updated: 0, rejectedCount: 1 })
+      const [g2] = await inMemoryDb.select().from(schema.fuelSupplyInputs)
+        .where(and(eq(schema.fuelSupplyInputs.supplyMediumId, mediumId), eq(schema.fuelSupplyInputs.reference, "G-2")))
+      expect(g2).toMatchObject({ worksiteId: worksiteB, liters: 500 })
     })
 
     it("lista y descarga los rechazos guardados de un lote", async () => {

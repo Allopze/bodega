@@ -169,14 +169,35 @@ async function existingTelemetryKeys(client: Tx | typeof db, source: string, row
   return keys
 }
 
-async function existingSupplyReferences(client: Tx | typeof db, mediumId: string, rows: ResolvedSupplyRow[]): Promise<Set<string>> {
-  const references = new Set<string>()
+/** Referencias del medio que ya existen, con la faena a la que pertenecen hoy. */
+async function existingSupplyReferences(client: Tx | typeof db, mediumId: string, rows: ResolvedSupplyRow[]): Promise<Map<string, string>> {
+  const references = new Map<string, string>()
   for (const part of chunked(rows.map((row) => row.reference), 1000)) {
-    const found = await client.select({ reference: fuelSupplyInputs.reference }).from(fuelSupplyInputs)
+    const found = await client.select({ reference: fuelSupplyInputs.reference, worksiteId: fuelSupplyInputs.worksiteId }).from(fuelSupplyInputs)
       .where(and(eq(fuelSupplyInputs.supplyMediumId, mediumId), inArray(fuelSupplyInputs.reference, part)))
-    for (const row of found) references.add(row.reference)
+    for (const row of found) references.set(row.reference, row.worksiteId)
   }
   return references
+}
+
+/**
+ * La llave de un despacho es (medio, referencia), no la faena: sin este filtro,
+ * un usuario acotado podía reimportar la referencia de un despacho de otra
+ * faena y sobrescribirlo (faena, litros, fecha) con el upsert. Esas filas se
+ * rechazan con su motivo, igual que una faena fuera de alcance.
+ */
+function guardSupplyScope(session: Session, rows: ResolvedSupplyRow[], existing: Map<string, string>): { rows: ResolvedSupplyRow[]; issues: ImportRowIssue[] } {
+  const kept: ResolvedSupplyRow[] = []
+  const issues: ImportRowIssue[] = []
+  for (const row of rows) {
+    const owner = existing.get(row.reference)
+    if (owner && !canAccessWorksite(session, owner)) {
+      issues.push({ rowIndex: row.rowIndex, field: "Referencia", message: `La referencia ${row.reference} ya está registrada en una faena fuera de tu alcance` })
+    } else {
+      kept.push(row)
+    }
+  }
+  return { rows: kept, issues }
 }
 
 function periodOf(days: string[]): { from: string | null; to: string | null } {
@@ -216,21 +237,24 @@ export async function previewControlImport(session: Session, kind: ControlImport
   }
 
   const existing = await existingSupplyReferences(db, prepared.medium!.id, prepared.supply)
+  const guarded = guardSupplyScope(session, prepared.supply, existing)
+  const supply = guarded.rows
   const isUpdate = (row: ResolvedSupplyRow) => existing.has(row.reference)
-  const period = periodOf(prepared.supply.map((row) => row.day))
-  const toUpdate = prepared.supply.filter(isUpdate).length
+  const period = periodOf(supply.map((row) => row.day))
+  const toUpdate = supply.filter(isUpdate).length
   return {
     ok: true,
     data: {
-      ...base, validRows: prepared.supply.length, toUpdate, toInsert: prepared.supply.length - toUpdate,
+      ...base, rejected: sortIssues([...prepared.issues, ...guarded.issues]),
+      validRows: supply.length, toUpdate, toInsert: supply.length - toUpdate,
       sampleHeaders: ["Fila", "Fecha", "Faena", "Litros", "Referencia"],
-      sample: prepared.supply.slice(0, 8).map((row) => ({
+      sample: supply.slice(0, 8).map((row) => ({
         rowIndex: row.rowIndex, action: isUpdate(row) ? "update" : "insert",
         cells: [String(row.rowIndex), row.day, row.worksite, String(row.liters), row.reference],
       })),
       periodFrom: period.from, periodTo: period.to,
       distinctVehicles: 0,
-      totalLiters: prepared.supply.reduce((sum, row) => sum + row.liters, 0),
+      totalLiters: supply.reduce((sum, row) => sum + row.liters, 0),
       targetLabel: prepared.medium!.name,
     },
   }
@@ -255,9 +279,13 @@ export async function commitControlImport(session: Session, kind: ControlImportK
       updated = prepared.telemetry.filter((row) => existing.has(`${row.vehicleId}|${row.day}`)).length
     } else {
       const existing = await existingSupplyReferences(tx, prepared.medium!.id, prepared.supply)
+      const guarded = guardSupplyScope(session, prepared.supply, existing)
+      prepared.supply = guarded.rows
+      prepared.issues = sortIssues([...prepared.issues, ...guarded.issues])
+      if (prepared.supply.length === 0) return { ok: false as const, message: "No hay filas válidas para importar. Corrige las filas rechazadas y vuelve a subir el archivo." }
       updated = prepared.supply.filter((row) => existing.has(row.reference)).length
     }
-    const inserted = validCount - updated
+    const inserted = (kind === "telemetry" ? prepared.telemetry.length : prepared.supply.length) - updated
 
     await tx.insert(fuelControlImportBatches).values({
       id: batchId, kind, fileName: input.fileName.slice(0, 200), fileHash: prepared.fileHash, status: "imported",
