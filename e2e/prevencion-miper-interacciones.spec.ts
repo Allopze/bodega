@@ -305,9 +305,15 @@ test("el scroll vuelve con Atrás y con «‹ Volver a la matriz»; cambiar de p
 
   const pozo = page.locator("[data-shell-scroll]")
   const scrollDelPozo = () => pozo.evaluate((element) => element.scrollTop)
+  // Bajar al fondo es la precondición, no lo que se prueba: con la suite
+  // completa la máquina va cargada y el primer `scrollTo` podía llegar antes de
+  // que la matriz tuviera su alto final (el pozo aún no hacía scroll y quedaba
+  // en 0). Se reintenta hasta que el pozo de verdad baja.
   const alFondo = async () => {
-    await pozo.evaluate((element) => element.scrollTo({ top: element.scrollHeight }))
-    expect(await scrollDelPozo()).toBeGreaterThan(50)
+    await expect.poll(async () => {
+      await pozo.evaluate((element) => element.scrollTo({ top: element.scrollHeight }))
+      return scrollDelPozo()
+    }, { timeout: 10_000 }).toBeGreaterThan(50)
   }
   const tarea = page.getByRole("link", { name: /^Control de acceso/ })
   const tituloTarea = page.getByRole("heading", { level: 2, name: "Control de acceso" })

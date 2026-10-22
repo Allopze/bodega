@@ -69,8 +69,14 @@ test("solicitar, aprobar y comprar servicios con costo pendiente, y registrar el
   expect(requestCode).toMatch(/^SOL-/)
 
   // La ficha dice para quién y sobre qué equipo es, sin re-escribir los datos.
-  await expect(page.getByLabel(/Colaborador/).first()).toHaveValue(/Trabajador E2E/)
-  await expect(page.getByLabel(/Código del equipo/).first()).toHaveValue(new RegExp(EQUIPO_NUEVO))
+  // Desde 89aafc25 el ítem de una solicitud enviada se muestra como resumen de
+  // solo lectura (`<dt>Etiqueta:</dt><dd>valor</dd>`), no como campos editables.
+  const itemFact = (label: string) => page.locator("dl > div")
+    .filter({ visible: true })
+    .filter({ has: page.locator("dt", { hasText: `${label}:` }) })
+    .locator("dd")
+  await expect(itemFact("Colaborador")).toHaveText(/Trabajador E2E/)
+  await expect(itemFact("Código del equipo")).toContainText(EQUIPO_NUEVO)
 
   // El registro de equipos se formó solo: la ficha quedó en Administración, en
   // la faena de la solicitud y marcada para completar.

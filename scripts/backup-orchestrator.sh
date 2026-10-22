@@ -279,6 +279,9 @@ ENV_WHITELIST=(
   # restore debe dejarlo igual (y no volver en silencio al modo de prueba).
   PDTP_EVIDENCE_GC_DELETE
   COPEC_USERNAME COPEC_PASSWORD COPEC_SYNC_START_DATE COPEC_SYNC_IMPORTER_EMAIL
+  # Desde 2026-10 el portal pide un código por correo: sin la casilla IMAP un
+  # restore deja el sync de Copec sin poder iniciar sesión.
+  COPEC_OTP_IMAP_HOST COPEC_OTP_IMAP_PORT COPEC_OTP_IMAP_USER COPEC_OTP_IMAP_PASSWORD
   # Aramco Fleet (Esmax): mismo caso que Copec. Lo normal es que las
   # credenciales vivan cifradas en `system_settings`, pero estas variables son
   # su respaldo, y sin ellas un dump restaurado en una máquina sin keyring se

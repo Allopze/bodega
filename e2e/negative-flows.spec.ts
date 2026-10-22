@@ -91,7 +91,10 @@ test("CSRF: direct POST to a server action without origin header is rejected", a
     data: "{}",
   })
   // Next.js rejects server action calls missing the correct origin/host pairing.
-  expect([403, 404]).toContain(response.status())
+  // Since 16.4 an action id that is not a valid Server Reference is rejected
+  // even earlier, with 400 ("did not match the expected format"). Any of the
+  // three means the action never ran; a 2xx would be the regression.
+  expect([400, 403, 404]).toContain(response.status())
 })
 
 // ── Double receipt guard ───────────────────────────────────────────────────────
