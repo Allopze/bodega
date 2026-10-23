@@ -8,7 +8,7 @@ import { can, isGlobalRole, requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { assertFuelCostAccess } from "@/lib/operational-control/capabilities"
 import { buildFuelLoadsWhere, buildFuelVehiclesWhere } from "@/lib/combustibles/queries"
-import { facturasNavItems } from "@/lib/combustibles/section-nav"
+import { facturasNavItems, fuelImportAvailability } from "@/lib/combustibles/section-nav"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { SectionNav } from "@/components/ui/section-nav"
@@ -16,7 +16,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { FuelLoadTable } from "../fuel-load-table"
-import { ImportFuelLoadsModal } from "../import-fuel-modal"
+import { FuelImportButton } from "../fuel-import-button"
 import { FuelDashboardKpis } from "../fuel-kpis"
 import { FuelFilters } from "../fuel-filters"
 import { MonthlyEvolutionChart, CategoryBarChart } from "../fuel-charts-lazy"
@@ -187,10 +187,12 @@ export default async function CombustiblesFacturasPage({
         headerActions={
           <div className="flex gap-2">
             {can(session, "combustibles:export_sensitive") && <ExportXlsxButton filters={{ month, startDate, endDate, serviceType, vehicleId, worksiteId, fuelSupplierId: supplierId, product, productId, status }} />}
-            <ImportFuelLoadsModal worksites={worksitesList} />
-            <Button asChild size="sm">
-              <Link href="/combustibles/nueva">+ Nueva carga</Link>
-            </Button>
+            <FuelImportButton available={fuelImportAvailability(session)} worksites={worksitesList.map(({ id, name }) => ({ id, name }))} />
+            {can(session, "combustibles:create") && (
+              <Button asChild size="sm">
+                <Link href="/combustibles/nueva">+ Nueva carga</Link>
+              </Button>
+            )}
           </div>
         }
       />

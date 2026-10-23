@@ -138,7 +138,7 @@ export default async function TaeControlPage({ searchParams }: { searchParams: P
         description="Cargas físicas registradas desde el formulario público de Copec TAE."
         breadcrumb={<Breadcrumbs items={[{ label: "Control operacional", href: "/control-operacional" }, { label: "TAE y sellos" }]} />}
         actions={<div className="flex gap-2">
-          <FuelImportButton available={fuelImportAvailability(session)} />
+          <FuelImportButton available={fuelImportAvailability(session)} worksites={worksitesList.map(({ id, name }) => ({ id, name }))} />
           {canExport && <TaeExportButton filters={filters} />}
         </div>}
       />

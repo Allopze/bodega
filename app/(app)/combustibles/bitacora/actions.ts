@@ -158,7 +158,7 @@ export async function toggleReviewMarkAction(source: FuelLogSource, entityId: st
 async function buildWorkbook(rows: FuelLogRow[], includePersonal: boolean) {
   const ExcelJS = await import("exceljs")
   const wb = new ExcelJS.Workbook()
-  const ws = wb.addWorksheet("Bitácora general")
+  const ws = wb.addWorksheet("Cargas de combustible")
   ws.columns = [
     { header: "Fecha y hora", key: "occurredAt", width: 20 },
     { header: "Fuente", key: "source", width: 16 },
@@ -226,7 +226,7 @@ export async function exportFuelLogAction(filters: FuelLogFilters) {
     ok: true as const,
     data: {
       base64,
-      filename: exportFileName("bitacora_combustible"),
+      filename: exportFileName("cargas_combustible"),
       truncated,
     },
   }
@@ -251,7 +251,7 @@ export async function exportFuelLogSelectionAction(selection: Array<{ source: Fu
     ok: true as const,
     data: {
       base64,
-      filename: exportFileName("bitacora_seleccion"),
+      filename: exportFileName("cargas_combustible_seleccion"),
       truncated: false,
     },
   }

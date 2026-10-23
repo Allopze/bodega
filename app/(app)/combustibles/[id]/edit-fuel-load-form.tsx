@@ -47,12 +47,20 @@ interface LoadData {
 
 interface EditFuelLoadFormProps {
   load: LoadData
+  /**
+   * `combustibles:view_costs`. Sin él la página ya entrega los montos en 0 (no
+   * viajan al cliente) y aquí no se pintan: ni la tarjeta «Montos» ni los campos
+   * ocultos que el formulario enviaría al guardar.
+   */
+  showCosts: boolean
+  /** `combustibles:create`: quien sólo puede ver recibe la ficha en lectura. */
+  canWrite: boolean
   vehicles: Array<{ id: string; plate: string; type: string }>
   suppliers: Array<{ id: string; name: string }>
   worksites: Array<{ id: string; name: string }>
 }
 
-export function EditFuelLoadForm({ load, vehicles, suppliers, worksites }: EditFuelLoadFormProps) {
+export function EditFuelLoadForm({ load, showCosts, canWrite, vehicles, suppliers, worksites }: EditFuelLoadFormProps) {
   const router = useRouter()
   const [state, formAction, isPending] = useActionState<ActionState, FormData>(updateFuelLoadAction, { ok: false, message: "" })
   const [meterState, meterFormAction, meterPending] = useActionState<ActionState, FormData>(correctFuelLoadMeterAction, { ok: false, message: "" })
@@ -72,7 +80,7 @@ export function EditFuelLoadForm({ load, vehicles, suppliers, worksites }: EditF
   useEffect(() => {
     if (state.ok) {
       toast.success(state.message)
-      router.push("/combustibles")
+      router.push("/combustibles/facturas")
     } else if (state.message && !state.ok) {
       toast.error(state.message)
     }
@@ -83,14 +91,19 @@ export function EditFuelLoadForm({ load, vehicles, suppliers, worksites }: EditF
     else if (meterState.message) toast.error(meterState.message)
   }, [meterState, router])
 
-  const isEditable = load.status === "draft"
+  // Editar la ficha regenera montos: exige poder verlos y poder escribirlos. Las
+  // acciones del servidor repiten esa condición (`requireFuelLoadSession`).
+  const isEditable = load.status === "draft" && showCosts && canWrite
+  // La corrección de medidor no toca dinero, así que no depende de `showCosts`;
+  // una carga en borrador sin costos tampoco tiene otro modo de corregirla.
+  const canCorrectMeter = canWrite && !isEditable && load.status !== "cancelled"
 
   async function handleDelete() {
     setConfirmDeleteOpen(false)
     const result = await deleteFuelLoadAction(load.id)
     if (result.ok) {
       toast.success(result.message)
-      router.push("/combustibles")
+      router.push("/combustibles/facturas")
     } else {
       toast.error(result.message)
     }
@@ -115,10 +128,16 @@ export function EditFuelLoadForm({ load, vehicles, suppliers, worksites }: EditF
         )}
       </div>
 
+      {!showCosts && (
+        <p className="text-sm text-[var(--color-text-muted)]">
+          Los montos de esta carga requieren el permiso para ver costos de combustible.
+        </p>
+      )}
+
       {/* El formulario principal sólo se habilita en borrador, así que sin esta
           tarjeta una carga registrada o conciliada con el odómetro mal tecleado
           no tenía forma de arreglarse desde la pantalla. */}
-      {!isEditable && (load.status === "registered" || load.status === "reconciled") && (
+      {canCorrectMeter && (
         <Card>
           <CardHeader><CardTitle>Corregir lectura del medidor</CardTitle></CardHeader>
           <CardContent>
@@ -165,11 +184,15 @@ export function EditFuelLoadForm({ load, vehicles, suppliers, worksites }: EditF
 
       <form action={formAction} className="space-y-6">
         <input type="hidden" name="id" value={load.id} />
-        <input type="hidden" name="iecFixed" value={iecFixed} />
-        <input type="hidden" name="iecVariable" value={iecVariable} />
-        <input type="hidden" name="iecTotal" value={iecTotal} />
-        <input type="hidden" name="ivaAmount" value={ivaAmount} />
-        <input type="hidden" name="totalAmount" value={totalAmount} />
+        {showCosts && (
+          <>
+            <input type="hidden" name="iecFixed" value={iecFixed} />
+            <input type="hidden" name="iecVariable" value={iecVariable} />
+            <input type="hidden" name="iecTotal" value={iecTotal} />
+            <input type="hidden" name="ivaAmount" value={ivaAmount} />
+            <input type="hidden" name="totalAmount" value={totalAmount} />
+          </>
+        )}
 
         <Card>
           <CardHeader><CardTitle>Datos de la carga</CardTitle></CardHeader>
@@ -260,38 +283,42 @@ export function EditFuelLoadForm({ load, vehicles, suppliers, worksites }: EditF
         </Card>
 
         <Card>
-          <CardHeader><CardTitle>Montos</CardTitle></CardHeader>
+          <CardHeader><CardTitle>{showCosts ? "Montos" : "Consumo"}</CardTitle></CardHeader>
           <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <div className="space-y-2">
               <Label>Litros *</Label>
               <Input name="liters" type="number" step="0.01" min="0" required
                 value={liters} onChange={(e) => setLiters(Number(e.target.value))} disabled={!isEditable} />
             </div>
-            <div className="space-y-2">
-              <Label>Base Afecta (CLP) *</Label>
-              <Input name="baseAmount" type="number" step="0.01" min="0" required
-                value={baseAmount} onChange={(e) => setBaseAmount(Number(e.target.value))} disabled={!isEditable} />
-            </div>
-            <div className="space-y-2">
-              <Label>IEC Fijo</Label>
-              <Input value={formatCLP(iecFixed)} disabled className="bg-[var(--color-surface-2)]" />
-            </div>
-            <div className="space-y-2">
-              <Label>IEC Variable</Label>
-              <Input value={formatCLP(iecVariable)} disabled className="bg-[var(--color-surface-2)]" />
-            </div>
-            <div className="space-y-2">
-              <Label>IVA (19%)</Label>
-              <Input value={formatCLP(ivaAmount)} disabled className="bg-[var(--color-surface-2)]" />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-lg font-semibold">Total</Label>
-              <Input value={formatCLP(totalAmount)} disabled className="bg-[var(--color-surface-2)] text-lg font-bold" />
-            </div>
-            {litersChanged && (
-              <p className="sm:col-span-2 text-xs text-[var(--color-warning-ink)]">
-                Cambiaste los litros: el IEC (CLP por litro) y el total se recalculan al guardar con las tasas vigentes. Los valores de arriba son los de la carga actual.
-              </p>
+            {showCosts && (
+              <>
+                <div className="space-y-2">
+                  <Label>Base Afecta (CLP) *</Label>
+                  <Input name="baseAmount" type="number" step="0.01" min="0" required
+                    value={baseAmount} onChange={(e) => setBaseAmount(Number(e.target.value))} disabled={!isEditable} />
+                </div>
+                <div className="space-y-2">
+                  <Label>IEC Fijo</Label>
+                  <Input value={formatCLP(iecFixed)} disabled className="bg-[var(--color-surface-2)]" />
+                </div>
+                <div className="space-y-2">
+                  <Label>IEC Variable</Label>
+                  <Input value={formatCLP(iecVariable)} disabled className="bg-[var(--color-surface-2)]" />
+                </div>
+                <div className="space-y-2">
+                  <Label>IVA (19%)</Label>
+                  <Input value={formatCLP(ivaAmount)} disabled className="bg-[var(--color-surface-2)]" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-lg font-semibold">Total</Label>
+                  <Input value={formatCLP(totalAmount)} disabled className="bg-[var(--color-surface-2)] text-lg font-bold" />
+                </div>
+                {litersChanged && (
+                  <p className="sm:col-span-2 text-xs text-[var(--color-warning-ink)]">
+                    Cambiaste los litros: el IEC (CLP por litro) y el total se recalculan al guardar con las tasas vigentes. Los valores de arriba son los de la carga actual.
+                  </p>
+                )}
+              </>
             )}
           </CardContent>
         </Card>

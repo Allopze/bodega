@@ -56,6 +56,17 @@ function scopedSession(worksiteIds: string[]): Session {
   }
 }
 
+/**
+ * `POST /api/combustibles/import` crea cargas con montos: además de `import`
+ * exige el contrato monetario de combustible (`view` + `view_costs`), igual que
+ * la opción de la interfaz que lo llama.
+ */
+function costImporterSession(worksiteIds: string[]): Session {
+  const session = scopedSession(worksiteIds)
+  session.user.permissions = [...session.user.permissions, "combustibles:view", "combustibles:view_costs"]
+  return session
+}
+
 function getTestDb() {
   if (!testDb) throw new Error("Postgres test DB was not initialized")
   return testDb
@@ -274,7 +285,7 @@ describeIf("combustibles — alcance de faena en mutaciones masivas y vinculaci�
 
     it("rejects CREATE_FAENA for a non-global session without admin:worksites", async () => {
       const { importRoute } = await loadActions()
-      mockAuth.mockResolvedValue(scopedSession(["ws-a"]))
+      mockAuth.mockResolvedValue(costImporterSession(["ws-a"]))
       const req = importRequest({
         loads: [minimalLoad("Faena Nueva")],
         faenaMapping: { "Faena Nueva": "__create__" },
@@ -290,7 +301,7 @@ describeIf("combustibles — alcance de faena en mutaciones masivas y vinculaci�
 
     it("rejects mapping to an existing worksite outside the session's scope", async () => {
       const { importRoute } = await loadActions()
-      mockAuth.mockResolvedValue(scopedSession(["ws-a"]))
+      mockAuth.mockResolvedValue(costImporterSession(["ws-a"]))
       const req = importRequest({
         loads: [minimalLoad("Faena B (archivo)")],
         faenaMapping: { "Faena B (archivo)": "ws-b" },

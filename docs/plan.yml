@@ -1156,7 +1156,11 @@ modules:
   tier_label: Control operacional
   reason: Flota, combustibles y mantenciones comparten el área /control-operacional y se acoplan entre sí (vehículos, equipos, consumo).
   knowledge_path: docs/.knowledge/modules/combustibles/
-  pages_count: 28
+  # 2026-10-22: /combustibles/analisis y /combustibles/reportes se retiraron y salen del plan
+  # (28 -> 26 páginas). Hoy son sólo redirecciones: análisis a /combustibles/control/rendimiento/<familia>
+  # y reportes a /combustibles?vista=analisis («Consumo y rendimiento»). Las demás rutas de
+  # combustibles siguen existiendo (el menú agrupa varias bajo un solo ítem), así que no se tocan.
+  pages_count: 26
   document:
     pages: true
     include_permissions: true
@@ -1168,7 +1172,6 @@ modules:
     files:
       - combustibles.md
       - combustibles-detalle.md
-      - combustibles-analisis.md
       - combustibles-anomalias.md
       - combustibles-anomalias-reglas.md
       - combustibles-bitacora.md
@@ -1182,7 +1185,6 @@ modules:
       - combustibles-importar-operaciones-detalle.md
       - combustibles-nueva.md
       - combustibles-proveedores-combustible.md
-      - combustibles-reportes.md
       - combustibles-sellos.md
       - combustibles-tae.md
       - combustibles-tae-detalle.md
@@ -1203,10 +1205,6 @@ modules:
       route: /combustibles/[id]
       dynamic: true
       file: combustibles-detalle.md
-    -
-      route: /combustibles/analisis
-      dynamic: false
-      file: combustibles-analisis.md
     -
       route: /combustibles/anomalias
       dynamic: false
@@ -1260,10 +1258,6 @@ modules:
       dynamic: false
       file: combustibles-proveedores-combustible.md
     -
-      route: /combustibles/reportes
-      dynamic: false
-      file: combustibles-reportes.md
-    -
       route: /combustibles/sellos
       dynamic: false
       file: combustibles-sellos.md
@@ -1309,7 +1303,7 @@ modules:
       file: tae-resultado-token.md
   status: complete
   completed_at: "2026-09-15T14:00:00.000Z"
-  completion_notes: "28/28 páginas: 22 con captura real (7 fallaron en el primer intento por una caída del servidor local, recapturadas después), 6 documentadas desde el esquema y 3 páginas dinámicas (una polimórfica, dos de token público de un solo uso) documentadas como tales, sin tabla de campos."
+  completion_notes: "28/28 páginas al 2026-09-15 (26 tras retirar análisis y reportes el 2026-10-22): 22 con captura real (7 fallaron en el primer intento por una caída del servidor local, recapturadas después), 6 documentadas desde el esquema y 3 páginas dinámicas (una polimórfica, dos de token público de un solo uso) documentadas como tales, sin tabla de campos."
 -
   name: flota
   priority: 17

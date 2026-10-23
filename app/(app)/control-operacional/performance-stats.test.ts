@@ -71,7 +71,28 @@ describe("buildPerformanceStats", () => {
     expect(at(95)).not.toHaveProperty("tone")
     expect(at(95)).not.toHaveProperty("hint")
     expect(at(85)).toMatchObject({ tone: "signal", hint: "Bajo 90%" })
-    expect(at(60)).toMatchObject({ tone: "signal", hint: "Bajo 80%" })
+    expect(at(60)).toMatchObject({ tone: "danger", hint: "Bajo 80%" })
+  })
+
+  it("el rojo empieza justo bajo el umbral crítico: 80 es naranja y 79,9 es rojo", () => {
+    const at = (availabilityPercent: number) =>
+      buildPerformanceStats({ ...METRICS, availabilityPercent }, ALL).find((s) => s.key === "availability")!
+    expect(at(80)).toMatchObject({ tone: "signal", hint: "Bajo 90%" })
+    expect(at(79.9)).toMatchObject({ tone: "danger", hint: "Bajo 80%" })
+  })
+
+  it("el tono se pide también para el 0 %, que es el caso más grave y no debe quedar atenuado", () => {
+    const stats = buildPerformanceStats({ ...METRICS, availabilityPercent: 0, preventiveCompliancePercent: 0 }, ALL)
+    for (const key of ["availability", "preventive"]) {
+      expect(stats.find((s) => s.key === key)).toMatchObject({ tone: "danger", toneWhenZero: true })
+    }
+  })
+
+  it("una cifra sana no pide tono ni lo pide para el cero", () => {
+    const stats = buildPerformanceStats(METRICS, ALL)
+    for (const key of ["availability", "preventive"]) {
+      expect(stats.find((s) => s.key === key)).not.toHaveProperty("toneWhenZero")
+    }
   })
 
   it("el cumplimiento preventivo usa sus propios umbrales (70 y 90)", () => {
@@ -79,7 +100,8 @@ describe("buildPerformanceStats", () => {
       buildPerformanceStats({ ...METRICS, preventiveCompliancePercent }, ALL).find((s) => s.key === "preventive")!
     expect(at(95)).not.toHaveProperty("hint")
     expect(at(80)).toMatchObject({ tone: "signal", hint: "Bajo 90%" })
-    expect(at(0)).toMatchObject({ tone: "signal", hint: "Bajo 70%" })
+    expect(at(69.9)).toMatchObject({ tone: "danger", hint: "Bajo 70%" })
+    expect(at(0)).toMatchObject({ tone: "danger", hint: "Bajo 70%" })
   })
 
   it("un umbral exacto no alerta", () => {

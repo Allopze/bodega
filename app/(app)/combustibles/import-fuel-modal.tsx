@@ -22,9 +22,30 @@ import { autoMatchWorksite, resetImportState, STEP_LABELS } from "./import-fuel-
 import type { ImportResult } from "./import-fuel-modal.helpers"
 import type { ParsedFuelLoad, ImportError } from "@/lib/combustibles/import"
 
-export function ImportFuelLoadsModal({ worksites }: { worksites: Worksite[] }) {
+/**
+ * Importador de cargas facturadas desde Excel (`POST /api/combustibles/import`).
+ *
+ * Se abre desde la opción «Cargas facturadas (Excel)» del único botón
+ * «Importar» (`fuel-import-button.tsx`), que controla `open`. Sin `open` conserva
+ * su propio botón, por compatibilidad: así se usaba antes de unificar la entrada.
+ */
+export function ImportFuelLoadsModal({
+  worksites,
+  open: openProp,
+  onOpenChange,
+}: {
+  worksites: Worksite[]
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+}) {
   const router = useRouter()
-  const [open, setOpen] = useState(false)
+  const [openState, setOpenState] = useState(false)
+  const controlled = openProp !== undefined
+  const open = openProp ?? openState
+  const setOpen = (value: boolean) => {
+    if (!controlled) setOpenState(value)
+    onOpenChange?.(value)
+  }
   const [step, setStep] = useState<Step>("upload")
   const [fileName, setFileName] = useState("")
   const [loads, setLoads] = useState<ParsedFuelLoad[]>([])
@@ -144,16 +165,18 @@ export function ImportFuelLoadsModal({ worksites }: { worksites: Worksite[] }) {
 
   return (
     <>
-      <Button variant="secondary" size="sm" onClick={() => setOpen(true)}>
-        <Upload className="h-4 w-4 mr-1.5" />
-        Importar Excel
-      </Button>
+      {!controlled && (
+        <Button variant="secondary" size="sm" onClick={() => setOpen(true)}>
+          <Upload className="h-4 w-4 mr-1.5" />
+          Importar Excel
+        </Button>
+      )}
 
       <Dialog open={open} onOpenChange={handleOpen}>
         <DialogContent className={cn("w-[calc(100%-2rem)]", step === "preview" ? "max-w-4xl" : "max-w-xl")}>
           <DialogHeader>
             <DialogTitle>Importar cargas desde Excel</DialogTitle>
-            <DialogDescription>Sube el archivo Excel de TCT Copec</DialogDescription>
+            <DialogDescription>Sube el Excel de cargas facturadas: cada fila crea una carga registrada con su factura, IEC e IVA.</DialogDescription>
           </DialogHeader>
 
           {/* Step indicator */}

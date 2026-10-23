@@ -37,7 +37,7 @@ export function NewFuelLoadForm({ data, rates }: { data: NewFuelLoadData; rates:
   const { iecFixed, iecVariable, iecTotal, ivaAmount, totalAmount } =
     calculateFuelAmounts({ liters, baseAmount, iecFixedRate: rates.iecFixedRate, iecVariableRate: rates.iecVariableRate })
 
-  // En éxito, createFuelLoadAction redirige server-side a /combustibles
+  // En éxito, createFuelLoadAction redirige server-side a /combustibles/facturas
   // (ver actions-module/loads.ts) — este efecto solo necesita mostrar
   // errores de validación; nunca observará state.ok: true.
   useEffect(() => {

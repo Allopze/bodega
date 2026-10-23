@@ -2,6 +2,7 @@ import * as React from "react"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
 import type { SummaryStat } from "./summary-bar"
+import { SUMMARY_TONE_TEXT, activeSummaryTone } from "./summary-bar-tone"
 
 /** Variante inline para encabezados compactos. */
 export function SummaryBarCompactStrip({ stats, className }: { stats: SummaryStat[]; className?: string }) {
@@ -12,13 +13,13 @@ export function SummaryBarCompactStrip({ stats, className }: { stats: SummarySta
       {stats.map((stat, i) => {
         const numeric = typeof stat.value === "number" ? stat.value : Number.parseFloat(String(stat.value)) || 0
         const isZero = numeric === 0
-        const signalActive = stat.tone === "signal" && numeric > 0
+        const tone = activeSummaryTone(stat)
         const content = (
           <>
             <span className="text-[var(--color-text-muted)]">{stat.label}</span>
             <span className={cn(
               "font-mono font-semibold tabular-nums",
-              signalActive ? "text-[var(--color-signal-ink)]" : isZero ? "text-[var(--color-text-faint)]" : "text-[var(--color-text)]",
+              tone ? SUMMARY_TONE_TEXT[tone] : isZero ? "text-[var(--color-text-faint)]" : "text-[var(--color-text)]",
             )}>{stat.value}</span>
             {stat.hint && <span className="text-text-subtle">{stat.hint}</span>}
           </>

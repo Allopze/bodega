@@ -7,6 +7,7 @@ import { dteDocuments, fuelLoads, fuelVehicles } from "@/db/schema"
 import { and, eq, inArray, isNull } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite } from "@/lib/auth/scope"
+import { assertFuelCostAccess } from "@/lib/operational-control/capabilities"
 import { nanoid } from "@/lib/id"
 import {
   createFuelLoadSchema,
@@ -32,6 +33,15 @@ import { meterReadingFieldErrors, meterReplacementDeclarationError, readMeterRep
 import { notifyAfterCommit } from "@/lib/services/notifications"
 
 const REVALIDATE = "/combustibles"
+
+/**
+ * Destino tras crear una carga: su pantalla natural es «Facturas y pagos», no
+ * «Consumo y rendimiento». Desde que alta y edición exigen `view_costs`
+ * (`requireFuelLoadSession`), el usuario que llega aquí siempre puede ver esa
+ * lista; antes caía en `/combustibles`, que ni siquiera lista cargas
+ * facturadas. El cliente (`[id]/edit-fuel-load-form.tsx`) navega a la misma ruta.
+ */
+const AFTER_SAVE = "/combustibles/facturas"
 
 const CONN_MSG = "Sin conexión al servidor. Verifica tu conexión a internet e inténtalo nuevamente."
 
@@ -70,6 +80,28 @@ function dteReference(doc: { tipoDte: string; folio: number }): string {
   return `el DTE tipo ${doc.tipoDte} folio ${doc.folio}`
 }
 
+/**
+ * Autoriza una mutación de una carga facturada: el permiso propio de la acción
+ * MÁS el contrato monetario de combustible (`assertFuelCostAccess`: `view` +
+ * `view_costs`).
+ *
+ * Crear, editar, registrar y eliminar una carga leen, reciben o regeneran sus
+ * montos (boleta, IEC, IVA, total), y la pantalla que las dispara
+ * (`/combustibles/nueva`, `/combustibles/[id]`) los muestra. Con sólo `create`
+ * o `delete`, un rol sin acceso a costos podía grabar y borrar cifras que la
+ * propia plataforma le oculta en «Facturas y pagos». Las páginas aplican el
+ * mismo gate, pero ocultar una pantalla no es autorización: la frontera es ésta.
+ *
+ * `correctFuelLoadMeterAction` queda fuera a propósito: sólo toca el odómetro y
+ * el horómetro, no recibe ni devuelve montos, y la ficha de la carga la ofrece
+ * también a quien no ve costos.
+ */
+async function requireFuelLoadSession(permission: "combustibles:create" | "combustibles:delete") {
+  const session = await requirePermission(permission, "/combustibles")
+  assertFuelCostAccess(session)
+  return session
+}
+
 export async function dbErrMsg(e: unknown, fallback: string): Promise<string> {
   if (!(e instanceof Error)) return fallback
   if (isNetworkError(e)) return CONN_MSG
@@ -84,7 +116,7 @@ export async function createFuelLoadAction(
   formData: FormData,
 ): Promise<ActionState> {
   let session
-  try { session = await requirePermission("combustibles:create", "/combustibles") }
+  try { session = await requireFuelLoadSession("combustibles:create") }
   catch { return { ok: false, message: "Sin permisos para crear cargas" } }
 
   const liters = Number(formData.get("liters") ?? 0)
@@ -219,7 +251,7 @@ export async function createFuelLoadAction(
   // entera (AppShell exportado como objeto memo) antes de que el useEffect
   // llegara a disparar el push.
   revalidatePath(REVALIDATE)
-  redirect(REVALIDATE)
+  redirect(AFTER_SAVE)
 }
 
 export async function updateFuelLoadAction(
@@ -227,7 +259,7 @@ export async function updateFuelLoadAction(
   formData: FormData,
 ): Promise<ActionState> {
   let session
-  try { session = await requirePermission("combustibles:create", "/combustibles") }
+  try { session = await requireFuelLoadSession("combustibles:create") }
   catch { return { ok: false, message: "Sin permisos" } }
 
   const id = String(formData.get("id") ?? "")
@@ -430,7 +462,7 @@ export async function updateFuelLoadAction(
 
 export async function deleteFuelLoadAction(id: string): Promise<ActionState> {
   let session
-  try { session = await requirePermission("combustibles:delete", "/combustibles") }
+  try { session = await requireFuelLoadSession("combustibles:delete") }
   catch { return { ok: false, message: "Sin permisos para eliminar" } }
 
   const existing = await db.query.fuelLoads.findFirst({ where: eq(fuelLoads.id, id) })
@@ -492,7 +524,7 @@ export async function deleteFuelLoadAction(id: string): Promise<ActionState> {
 
 export async function registerFuelLoadAction(id: string): Promise<ActionState> {
   let session
-  try { session = await requirePermission("combustibles:create", "/combustibles") }
+  try { session = await requireFuelLoadSession("combustibles:create") }
   catch { return { ok: false, message: "Sin permisos" } }
 
   const existing = await db.query.fuelLoads.findFirst({ where: eq(fuelLoads.id, id) })

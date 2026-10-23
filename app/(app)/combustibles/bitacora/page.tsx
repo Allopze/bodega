@@ -203,7 +203,7 @@ export default async function FuelLogPage({ searchParams }: { searchParams: Prom
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <BitacoraExportButton filters={filters} />
-            <FuelImportButton available={fuelImportAvailability(session)} />
+            <FuelImportButton available={fuelImportAvailability(session)} worksites={worksitesList.map(({ id, name }) => ({ id, name }))} />
             {canRegisterLoad && (
               <Button asChild size="sm">
                 <Link href="/combustibles/control/registrar">Registrar carga</Link>

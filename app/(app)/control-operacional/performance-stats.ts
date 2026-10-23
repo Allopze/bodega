@@ -33,15 +33,17 @@ export function formatKpi(value: number | null, suffix = "", precision = 1): str
 }
 
 /**
- * Umbrales de alerta: bajo `danger` es crítico y bajo `warning`, en observación.
- * `SummaryBar` sólo conoce el naranja «signal», así que ambos niveles lo usan y
- * el umbral cruzado se escribe en el `hint`: el color solo no puede ser la
- * única señal.
+ * Umbrales de alerta: bajo `danger` es crítico (rojo) y bajo `warning`, en
+ * observación (naranja). El umbral cruzado también va escrito en el `hint`: el
+ * color solo no puede ser la única señal. `toneWhenZero` porque aquí lo malo es
+ * que la cifra sea baja: 0 % es el caso más grave y no puede quedar atenuado
+ * como un «0» de conteo.
  */
 function belowThreshold(value: number | null, thresholds: { danger: number; warning: number }) {
   if (value == null) return {}
-  const crossed = value < thresholds.danger ? thresholds.danger : value < thresholds.warning ? thresholds.warning : null
-  return crossed == null ? {} : { tone: "signal" as const, hint: `Bajo ${crossed}%` }
+  if (value < thresholds.danger) return { tone: "danger" as const, toneWhenZero: true, hint: `Bajo ${thresholds.danger}%` }
+  if (value < thresholds.warning) return { tone: "signal" as const, toneWhenZero: true, hint: `Bajo ${thresholds.warning}%` }
+  return {}
 }
 
 export const AVAILABILITY_THRESHOLDS = { danger: 80, warning: 90 }

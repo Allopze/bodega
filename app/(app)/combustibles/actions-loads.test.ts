@@ -21,8 +21,17 @@ const mockFindDte = vi.fn(async (..._args: unknown[]): Promise<unknown> => undef
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
 vi.mock("next/navigation", () => ({ redirect: (...args: unknown[]) => mockRedirect(...args) }))
+type TestSession = { user: { permissions: string[]; isGlobal?: boolean } } | null
+
+// `assertFuelCostAccess` (lib/operational-control/capabilities.ts) decide con
+// `can`/`canAny`/`isGlobalRole` de este mismo módulo, así que se simulan sobre
+// `session.user.permissions` igual que el real: el gate de costos se ejercita de
+// verdad y no queda mockeado junto con el módulo.
 vi.mock("@/lib/auth/can", () => ({
   requirePermission: (...args: unknown[]) => mockRequirePermission(...args),
+  can: (session: TestSession, permission: string) => session?.user?.permissions?.includes(permission) ?? false,
+  canAny: (session: TestSession, ...permissions: string[]) => permissions.some((p) => session?.user?.permissions?.includes(p)),
+  isGlobalRole: (session: TestSession) => session?.user?.isGlobal === true,
 }))
 vi.mock("@/lib/auth/scope", () => ({
   canAccessWorksite: (...args: unknown[]) => mockCanAccessWorksite(...args),
@@ -88,11 +97,18 @@ beforeEach(() => {
   mockFindVehicle.mockResolvedValue({ id: "v-1", worksiteId: "ws-1", plate: "XX-XX-01", worksite: { name: "Faena Test" } })
 })
 
+// Alta, edición, registro y borrado de una carga facturada exigen el permiso de la
+// acción Y el contrato monetario de combustible (`view` + `view_costs`).
+const COST_PERMISSIONS = ["combustibles:view", "combustibles:view_costs"]
 const globalSession = {
-  user: { id: "user-1", roles: ["administrador"], worksiteIds: [], isGlobal: true, permissions: ["combustibles:delete", "combustibles:create"] },
+  user: { id: "user-1", roles: ["administrador"], worksiteIds: [], isGlobal: true, permissions: ["combustibles:delete", "combustibles:create", ...COST_PERMISSIONS] },
 }
 const scopedSession = {
-  user: { id: "user-2", roles: ["solicitante_faena"], worksiteIds: ["ws-mine"], isGlobal: false, permissions: ["combustibles:delete", "combustibles:create"] },
+  user: { id: "user-2", roles: ["solicitante_faena"], worksiteIds: ["ws-mine"], isGlobal: false, permissions: ["combustibles:delete", "combustibles:create", ...COST_PERMISSIONS] },
+}
+// Rol operativo real (jefe_mantencion): crea y corrige cargas en terreno pero no ve costos.
+const noCostsSession = {
+  user: { id: "user-3", roles: ["jefe_mantencion"], worksiteIds: ["ws-mine"], isGlobal: false, permissions: ["combustibles:delete", "combustibles:create", "combustibles:view"] },
 }
 
 describe("deleteFuelLoadAction", () => {
@@ -365,7 +381,7 @@ describe("createFuelLoadAction — audit logging", () => {
     mockRecordAudit.mockResolvedValue(undefined)
   })
 
-  it("records an audit entry and redirects to /combustibles after successful create", async () => {
+  it("records an audit entry and redirects to /combustibles/facturas after successful create", async () => {
     const fd = new FormData()
     fd.set("loadDate", "2026-01-15")
     fd.set("serviceType", "TCT")
@@ -394,7 +410,9 @@ describe("createFuelLoadAction — audit logging", () => {
       expect.objectContaining({ action: "create", entityType: "fuel_load" }),
       expect.anything(),
     )
-    expect(mockRedirect).toHaveBeenCalledWith("/combustibles")
+    // Con el gate de costos, quien crea una carga siempre puede ver «Facturas y
+    // pagos»: es la pantalla natural, no «Consumo y rendimiento».
+    expect(mockRedirect).toHaveBeenCalledWith("/combustibles/facturas")
   })
 })
 
@@ -542,5 +560,145 @@ describe("COM-002 — declaración de medidor reemplazado", () => {
       meterReplaced: true,
       meterReplacementReason: "Horómetro reiniciado tras cambio de tablero",
     }))
+  })
+})
+
+/**
+ * Hueco de autorización de costos: `/combustibles/nueva` exigía sólo
+ * `combustibles:create` y `/combustibles/[id]` sólo `combustibles:view`, pero las
+ * dos muestran y editan boleta, IEC, IVA y total. Y las acciones que invocan
+ * (crear, editar, registrar, eliminar) sólo comprobaban su permiso propio, así
+ * que un rol operativo sin `view_costs` —p. ej. jefe_mantencion, que sí tiene
+ * `create`— podía grabar y borrar cifras que «Facturas y pagos» le oculta. La
+ * frontera es la acción, no la pantalla: cada una exige además el contrato
+ * monetario de combustible (`view` + `view_costs`).
+ */
+describe("acciones de carga — contrato de costos", () => {
+  function newLoadForm() {
+    const fd = new FormData()
+    fd.set("loadDate", "2026-01-15")
+    fd.set("serviceType", "TCT")
+    fd.set("vehicleId", "v-1")
+    fd.set("fuelSupplierId", "s-1")
+    fd.set("worksiteId", "ws-1")
+    fd.set("product", "PETROLEO DIESEL")
+    fd.set("liters", "100")
+    fd.set("baseAmount", "1000")
+    fd.set("iecFixed", "10")
+    fd.set("iecVariable", "8")
+    fd.set("iecTotal", "18")
+    fd.set("ivaAmount", "190")
+    fd.set("totalAmount", "1208")
+    return fd
+  }
+
+  function editLoadForm() {
+    const fd = new FormData()
+    for (const [key, value] of Object.entries({
+      id: "load-1", loadDate: "2026-01-15", serviceType: "TCT", vehicleId: "v-1", fuelSupplierId: "s-1", worksiteId: "ws-1", product: "PETROLEO DIESEL",
+      receiptNumber: "", notes: "", liters: "100", baseAmount: "1000", iecFixed: "0", iecVariable: "0", iecTotal: "0", ivaAmount: "190", totalAmount: "1190",
+    })) fd.set(key, value)
+    return fd
+  }
+
+  const registeredLoad = {
+    id: "load-1", worksiteId: "ws-1", vehicleId: "v-1", loadDate: "2026-01-15", statementId: null, status: "registered",
+    odometerReading: 12_000, hourMeterReading: null, meterReplaced: false, meterReplacementReason: null,
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockRequirePermission.mockResolvedValue(noCostsSession)
+    mockCanAccessWorksite.mockReturnValue(true)
+    mockInsertValues.mockResolvedValue(undefined)
+    mockRecordAudit.mockResolvedValue(undefined)
+    mockFindLoad.mockResolvedValue(registeredLoad)
+  })
+
+  it("crear una carga exige view_costs además de create: sin él no se inserta ni se redirige", async () => {
+    const result = await createFuelLoadAction({ ok: false, message: "" }, newLoadForm())
+
+    expect(result.ok).toBe(false)
+    expect(result.message).toMatch(/Sin permisos/)
+    expect(mockInsertValues).not.toHaveBeenCalled()
+    expect(mockRecordAudit).not.toHaveBeenCalled()
+    expect(mockRedirect).not.toHaveBeenCalled()
+  })
+
+  it("editar una carga exige view_costs: no se lee la fila ni se actualiza", async () => {
+    const result = await updateFuelLoadAction({ ok: false, message: "" }, editLoadForm())
+
+    expect(result.ok).toBe(false)
+    expect(result.message).toMatch(/Sin permisos/)
+    // El gate corre antes de tocar la base: ni siquiera confirma si la carga existe.
+    expect(mockFindLoad).not.toHaveBeenCalled()
+    expect(mockUpdateWhere).not.toHaveBeenCalled()
+  })
+
+  it("registrar una carga (borrador → registrada) exige view_costs", async () => {
+    mockFindLoad.mockResolvedValue({ ...registeredLoad, status: "draft" })
+
+    const result = await registerFuelLoadAction("load-1")
+
+    expect(result.ok).toBe(false)
+    expect(mockFindLoad).not.toHaveBeenCalled()
+    expect(mockUpdateWhere).not.toHaveBeenCalled()
+  })
+
+  it("eliminar una carga exige view_costs además de delete", async () => {
+    const result = await deleteFuelLoadAction("load-1")
+
+    expect(result.ok).toBe(false)
+    expect(result.message).toMatch(/Sin permisos/)
+    expect(mockFindLoad).not.toHaveBeenCalled()
+    expect(mockDeleteWhere).not.toHaveBeenCalled()
+    expect(mockRecordAudit).not.toHaveBeenCalled()
+  })
+
+  it("ver costos sin el permiso operativo de combustible tampoco alcanza", async () => {
+    mockRequirePermission.mockResolvedValue({
+      user: { id: "user-4", roles: [], worksiteIds: [], isGlobal: true, permissions: ["combustibles:create", "combustibles:delete", "combustibles:view_costs"] },
+    })
+
+    const created = await createFuelLoadAction({ ok: false, message: "" }, newLoadForm())
+    const deleted = await deleteFuelLoadAction("load-1")
+
+    expect(created.ok).toBe(false)
+    expect(deleted.ok).toBe(false)
+    expect(mockInsertValues).not.toHaveBeenCalled()
+    expect(mockDeleteWhere).not.toHaveBeenCalled()
+  })
+
+  it("cada acción sigue pidiendo su permiso propio, no sólo el de costos", async () => {
+    mockRequirePermission.mockRejectedValue(new Error("Forbidden"))
+
+    await createFuelLoadAction({ ok: false, message: "" }, newLoadForm())
+    await updateFuelLoadAction({ ok: false, message: "" }, editLoadForm())
+    await registerFuelLoadAction("load-1")
+    await deleteFuelLoadAction("load-1")
+
+    expect(mockRequirePermission.mock.calls.map((call) => call[0])).toEqual([
+      "combustibles:create",
+      "combustibles:create",
+      "combustibles:create",
+      "combustibles:delete",
+    ])
+  })
+
+  it("corregir la lectura del medidor NO exige costos: no toca ni devuelve montos", async () => {
+    mockUpdateReturning.mockResolvedValue([{ id: "load-1" }])
+    const fd = new FormData()
+    fd.set("id", "load-1")
+    fd.set("odometerReading", "5000")
+    fd.set("meterReplaced", "1")
+    fd.set("meterReplacementReason", "Odómetro reiniciado tras cambio de tablero")
+
+    const result = await correctFuelLoadMeterAction({ ok: false, message: "" }, fd)
+
+    // La ficha de la carga (`/combustibles/[id]`) se ofrece sin montos a quien no
+    // ve costos; esta corrección es lo único editable ahí.
+    expect(result.ok).toBe(true)
+    expect(mockUpdateSet).toHaveBeenCalledWith(expect.objectContaining({ odometerReading: 5_000 }))
+    expect(mockUpdateSet).toHaveBeenCalledWith(expect.not.objectContaining({ totalAmount: expect.anything() }))
   })
 })

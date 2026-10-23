@@ -69,3 +69,21 @@ export function resolveExpiryCandidates(
   }
   return candidates
 }
+
+/**
+ * Próximo vencimiento de un equipo: la menor de sus fechas vigentes
+ * (`resolveExpiryCandidates`), o `null` si no tiene ninguna.
+ *
+ * Es **el** criterio de vencimiento: lo usan la lista y la ficha de Flota
+ * (`lib/services/fleet.ts`) y los conteos de «Requiere atención» del Panel
+ * operacional (`lib/operational-control/attention.ts`). Cada cifra del panel
+ * enlaza a una lista de Flota y tiene que contar lo mismo que ella, así que no
+ * se re-implementa en otro lado.
+ */
+export function resolveNextExpiryDate(
+  declared: Partial<Record<CanonicalExpiryField, string | null>>,
+  currentDocuments: Array<{ documentType: string; expiresAt: string | null }>,
+): string | null {
+  return resolveExpiryCandidates(declared, currentDocuments)
+    .sort((a, b) => a.localeCompare(b))[0] ?? null
+}

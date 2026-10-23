@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   failing: new Set<string>(),
   issued: [] as string[],
   logError: vi.fn(),
+  fleetSettings: vi.fn(async () => ({ warningDays: 30, defaultVehicleStatus: "operativo" })),
 }))
 
 vi.mock("@/db", async () => {
@@ -54,7 +55,7 @@ vi.mock("@/lib/auth/can", () => ({
 }))
 
 vi.mock("@/lib/services/system-settings", () => ({
-  getFleetAdminSettings: vi.fn(async () => ({ warningDays: 30, defaultVehicleStatus: "operativo" })),
+  getFleetAdminSettings: mocks.fleetSettings,
 }))
 
 vi.mock("@/lib/logger", () => ({
@@ -90,6 +91,7 @@ beforeEach(() => {
   mocks.failing.clear()
   mocks.issued.length = 0
   mocks.logError.mockClear()
+  mocks.fleetSettings.mockClear()
   vi.useFakeTimers()
   // 15:00 UTC = 12:00 en Chile: hoy es 2026-10-22 y la ventana de aviso (30 días) termina el 2026-11-21.
   vi.setSystemTime(new Date("2026-10-22T15:00:00Z"))
@@ -124,6 +126,26 @@ describe("getOperationalControlHub · atención", () => {
       expiringSoon: 1,
     })
     expect(hub.attention.openWorkOrders).toBe(7)
+    // Por defecto (la página) las consultas de atención sí se emiten.
+    expect(mocks.issued).toContain("fleet_vehicle_documents")
+    expect(mocks.issued).toContain("maintenance_records:abiertas")
+  })
+
+  it("includeAttention: false (la exportación) no consulta atención y conserva activos y métricas", async () => {
+    const hub = await getOperationalControlHub(
+      session("flota:view", "mantenciones:view"),
+      {},
+      { includeAttention: false },
+    )
+
+    expect(hub.attention).toEqual({ stoppedVehicles: null, fleetDocuments: null, openWorkOrders: null })
+    expect(mocks.issued).not.toContain("fleet_vehicle_documents")
+    expect(mocks.issued).not.toContain("maintenance_records:abiertas")
+    expect(mocks.fleetSettings).not.toHaveBeenCalled()
+    // Lo que la exportación sí usa sigue llegando.
+    expect(mocks.issued).toContain("fuel_vehicles")
+    expect(hub.assets).toHaveLength(5)
+    expect(hub.metrics).toBeDefined()
   })
 
   it("no consulta ni devuelve lo que la sesión no puede ver", async () => {

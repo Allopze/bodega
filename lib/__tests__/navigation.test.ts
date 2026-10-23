@@ -297,7 +297,7 @@ describe("sidebar navigation", () => {
       ["Flota", "Vehículos"],
       ["Flota", "Monitoreo GPS"],
       ["Flota", "Mantenciones"],
-      ["Combustible", "Consumo y rendimiento"],
+      ["Combustible", "Consumo"],
       ["Combustible", "Cargas"],
       ["Combustible", "Revisión"],
       ["Combustible", "TAE y sellos"],

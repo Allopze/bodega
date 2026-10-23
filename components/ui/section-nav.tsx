@@ -25,7 +25,7 @@ export interface SectionNavItem {
  * período): cambiar de vista no obliga a volver a filtrar. Un parámetro que ya
  * trae el `href` de la pestaña manda sobre el que se arrastra.
  *
- * Generaliza la barra que tenía `/combustibles/control` (`control-nav.tsx`).
+ * Generaliza la barra propia que tenía `/combustibles/control` (retirada el 2026-10-22).
  */
 export function SectionNav({
   items,

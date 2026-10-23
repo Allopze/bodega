@@ -16,8 +16,17 @@ export interface SummaryStat {
   icon?: React.ReactNode
   /** Si se setea, la celda es un link (p.ej. vista pre-filtrada). */
   href?: string
-  /** "signal" pone naranja solo cuando el valor numérico es > 0 (alertas / críticas). */
-  tone?: "signal"
+  /**
+   * "signal" pone naranja y "danger" rojo, solo cuando el valor numérico es > 0
+   * (alertas / críticas). Con `toneWhenZero` también cuando vale 0.
+   */
+  tone?: "signal" | "danger"
+  /**
+   * Aplica `tone` aunque el valor sea 0. Para cifras donde lo malo es que sea
+   * poco (disponibilidad, cumplimiento): el llamador ya decidió que esta cifra
+   * cruzó un umbral, y un 0 % es el caso más grave, no uno que atenuar.
+   */
+  toneWhenZero?: boolean
   /** Etiqueta inline después del valor (p.ej. "2 crít."). */
   hint?: string
   /** Texto secundario bajo el valor (p.ej. desglose). Solo modo completo. */
@@ -51,7 +60,7 @@ interface SummaryBarProps {
  * Tira editorial de resumen para listas con pocos registros. Sin tarjetas: una
  * banda acotada por reglas hairline con divisores (truco de margen negativo) que
  * adapta a cualquier ancho. Mismo lenguaje visual que la MetricBar del dashboard.
- * Los ceros se atenúan; las señales (>0) usan el naranja "signal".
+ * Los ceros se atenúan; las señales (>0) usan el naranja "signal" o el rojo "danger".
  *
  * Modo `compact`: fila inline separada por puntos para el TopBar/headerActions;
  * replica el patrón WarehouseHeaderMetrics.

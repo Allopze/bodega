@@ -250,7 +250,7 @@ export default async function CombustiblesPage({
         title="Consumo y rendimiento"
         description="Cuánto combustible se carga, cuánto cuesta y con qué rendimiento, por período, faena y equipo."
         breadcrumb={<Breadcrumbs items={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Consumo y rendimiento" }]} />}
-        actions={<FuelImportButton available={fuelImportAvailability(session)} />}
+        actions={<FuelImportButton available={fuelImportAvailability(session)} worksites={worksitesList.map(({ id, name }) => ({ id, name }))} />}
       />
 
       <DegradedDataBanner degraded={degradedSources} total={trackedCount} />

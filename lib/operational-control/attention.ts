@@ -1,5 +1,5 @@
 import { FLEET_STOPPED_FILTER, filterFleetOverviewRows } from "@/lib/fleet-overview-filters"
-import { resolveExpiryCandidates } from "@/lib/validation/fleet-documents"
+import { resolveNextExpiryDate } from "@/lib/validation/fleet-documents"
 
 /**
  * Conteos de «Requiere atención» del Panel operacional.
@@ -77,16 +77,15 @@ export function countStoppedVehicles(vehicles: readonly AttentionVehicle[]): Sto
 }
 
 /**
- * Próximo vencimiento de un equipo: el menor de sus fechas vigentes. Replica
- * `getNextExpiryDate` de `lib/services/fleet.ts` (privada) con las mismas
- * candidatas: columnas declaradas del equipo más el documento vigente de cada
- * tipo cuya columna esté vacía.
+ * Próximo vencimiento de un equipo, con el mismo criterio que la lista y la
+ * ficha de Flota (`resolveNextExpiryDate`): columnas declaradas del equipo más
+ * el documento vigente de cada tipo cuya columna esté vacía.
  */
 function nextExpiryDate(
   vehicle: AttentionVehicle,
   documents: ReadonlyArray<{ documentType: string; expiresAt: string | null }>,
 ): string | null {
-  const candidates = resolveExpiryCandidates(
+  return resolveNextExpiryDate(
     {
       soapExpiresAt: vehicle.soapExpiresAt,
       technicalReviewExpiresAt: vehicle.technicalReviewExpiresAt,
@@ -95,7 +94,6 @@ function nextExpiryDate(
     },
     [...documents],
   )
-  return candidates.filter(Boolean).sort((a, b) => a.localeCompare(b))[0] ?? null
 }
 
 /**

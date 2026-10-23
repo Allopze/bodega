@@ -72,7 +72,10 @@ export const combustiblesModule = {
       // revisar y facturar son una entrada cada uno (CO-IA, 2026-10-22).
       items: [
         {
-          label: "Consumo y rendimiento",
+          // La página se titula «Consumo y rendimiento», pero activo (font-semibold)
+          // el rótulo completo no cabe en el sidebar de escritorio (158 px de texto
+          // en 156 px) y se truncaba; el grupo «Combustible» ya da el contexto.
+          label: "Consumo",
           href: "/combustibles",
           iconName: "GasPump",
           permissions: ["combustibles:view"],

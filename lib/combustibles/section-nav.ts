@@ -89,6 +89,13 @@ export interface FuelImportAvailability {
   control: boolean
   /** Histórico TAE (`/combustibles/tae/importar`). */
   tae: boolean
+  /**
+   * Cargas facturadas desde Excel (diálogo `ImportFuelLoadsModal`, que postea a
+   * `/api/combustibles/import`). Crea cargas con montos, así que además de
+   * `import` exige el contrato monetario (`view` + `view_costs`), el mismo que
+   * aplica la ruta.
+   */
+  facturas: boolean
 }
 
 export function fuelImportAvailability(session: Session): FuelImportAvailability {
@@ -98,5 +105,6 @@ export function fuelImportAvailability(session: Session): FuelImportAvailability
     operaciones: canImport && isGlobalRole(session),
     control: canImport,
     tae: can(session, "combustibles:tae_import"),
+    facturas: canImport && can(session, "combustibles:view") && can(session, "combustibles:view_costs"),
   }
 }

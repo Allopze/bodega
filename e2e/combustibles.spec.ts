@@ -91,7 +91,8 @@ test.describe("Combustibles module", () => {
 
     // Submit
     await page.getByRole("button", { name: "Registrar carga" }).click()
-    await expect(page).toHaveURL(/\/combustibles$/, { timeout: 15_000 })
+    // Una carga facturada vuelve a su listado natural, Facturas y pagos.
+    await expect(page).toHaveURL(/\/combustibles\/facturas$/, { timeout: 15_000 })
   })
 
   test("import operational log: upload, preview, confirm and view batch detail", async ({ page }) => {
@@ -173,8 +174,10 @@ test.describe("Combustibles module", () => {
 
   test("invoice import modal opens from facturas dashboard", async ({ page }) => {
     await page.goto("/combustibles/facturas")
-    await page.getByRole("button", { name: "Importar Excel" }).click()
-    const dialog = page.getByRole("dialog")
+    // El importador de facturas es una opción del único botón «Importar».
+    await page.getByRole("button", { name: "Importar", exact: true }).click()
+    await page.getByRole("button", { name: /Cargas facturadas \(Excel\)/ }).click()
+    const dialog = page.getByRole("dialog", { name: "Importar cargas desde Excel" })
     await expect(dialog).toBeVisible()
     await expect(dialog.getByText("Importar cargas desde Excel")).toBeVisible()
     await expect(dialog.getByText("Subir archivo")).toBeVisible()

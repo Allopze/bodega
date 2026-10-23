@@ -1,16 +1,23 @@
 "use client"
 
-import { ChartBar, ClipboardText, QrCode, Upload } from "@phosphor-icons/react"
+import { ChartBar, ClipboardText, QrCode, Receipt, Upload } from "@phosphor-icons/react"
 import { CreateChoiceButton, type CreateChoice } from "@/components/ui/create-choice-button"
 import type { FuelImportAvailability } from "@/lib/combustibles/section-nav"
+import { ImportFuelLoadsModal } from "./import-fuel-modal"
+import type { Worksite } from "./import-fuel-modal.helpers"
 
 /**
  * La única entrada para importar datos de combustible. Había tres botones
  * «Importar» en tres pantallas, cada uno a un importador distinto y sin decir
  * cuál; este pregunta *qué* se importa (AGENTS.md, layout 5 y densidad A3).
  * Con un solo importador disponible va directo a él.
+ *
+ * «Cargas facturadas (Excel)» es la única opción que abre un diálogo en vez de
+ * navegar, y ese diálogo necesita las faenas para mapear las del archivo: sin
+ * `worksites` la opción no se ofrece, aunque `available.facturas` sea cierto.
+ * Cada página las pasa ya acotadas al alcance del usuario.
  */
-export function FuelImportButton({ available }: { available: FuelImportAvailability }) {
+export function FuelImportButton({ available, worksites }: { available: FuelImportAvailability; worksites?: Worksite[] }) {
   const choices: CreateChoice[] = []
   if (available.tct) choices.push({
     key: "tct",
@@ -43,6 +50,16 @@ export function FuelImportButton({ available }: { available: FuelImportAvailabil
     icon: <QrCode size={18} />,
     soloLabel: "Importar histórico TAE",
     href: "/combustibles/tae/importar",
+  })
+  if (available.facturas && worksites) choices.push({
+    key: "facturas",
+    label: "Cargas facturadas (Excel)",
+    description: "Planilla de control de facturas: cada fila crea una carga registrada con su factura, IEC e IVA.",
+    icon: <Receipt size={18} />,
+    soloLabel: "Importar cargas facturadas",
+    render: ({ open, onOpenChange }) => (
+      <ImportFuelLoadsModal worksites={worksites} open={open} onOpenChange={onOpenChange} />
+    ),
   })
 
   return (

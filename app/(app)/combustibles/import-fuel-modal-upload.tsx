@@ -42,7 +42,7 @@ export function UploadStep({
             <span className="text-[var(--color-primary)]">haz clic para buscar</span>
           </p>
           <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
-            Excel de TCT Copec (.xlsx o .xls)
+            Excel «Control de facturas de combustible» (.xlsx o .xls)
           </p>
         </div>
         <input

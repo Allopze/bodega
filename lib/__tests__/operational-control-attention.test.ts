@@ -6,6 +6,7 @@ import {
   type AttentionVehicleDocument,
 } from "@/lib/operational-control/attention"
 import { FLEET_STOPPED_FILTER, filterFleetOverviewRows } from "@/lib/fleet-overview-filters"
+import { resolveNextExpiryDate } from "@/lib/validation/fleet-documents"
 
 /**
  * Los tiles de «Requiere atención» enlazan a `/flota?estado=detenidos` y
@@ -151,15 +152,23 @@ describe("countFleetDocumentExpiry", () => {
     ]
     const documents = [doc("solo-documento", "Revisión técnica", "2026-10-15")]
     const result = countFleetDocumentExpiry(fleet, documents, DATES)
-    // Lo que declara la ficha o el documento vigente, resuelto como lo hace la lista.
-    const nextByVehicle: Record<string, string | null> = {
-      vencido: "2026-10-01",
-      hoy: "2026-10-22",
-      fin: "2026-11-21",
-      lejos: "2027-01-01",
-      "solo-documento": "2026-10-15",
-    }
-    const listRows = fleet.map((v) => ({ ...v, brand: null, model: null, responsibleName: null, nextExpiryDate: nextByVehicle[v.id]! }))
+    // El vencimiento de cada fila lo resuelve el mismo helper que usa la lista de Flota.
+    const documentsOf = (vehicleId: string) => documents.filter((document) => document.vehicleId === vehicleId)
+    const listRows = fleet.map((v) => ({
+      ...v,
+      brand: null,
+      model: null,
+      responsibleName: null,
+      nextExpiryDate: resolveNextExpiryDate(
+        {
+          soapExpiresAt: v.soapExpiresAt,
+          technicalReviewExpiresAt: v.technicalReviewExpiresAt,
+          circulationPermitExpiresAt: v.circulationPermitExpiresAt,
+          insuranceExpiresAt: v.insuranceExpiresAt,
+        },
+        documentsOf(v.id),
+      ),
+    }))
     expect(result.expired).toBe(filterFleetOverviewRows(listRows, { expiry: "vencidos" }, DATES).length)
     expect(result.expiringSoon).toBe(filterFleetOverviewRows(listRows, { expiry: "proximos" }, DATES).length)
     expect(result).toEqual({ expired: 2, expiringSoon: 2 })

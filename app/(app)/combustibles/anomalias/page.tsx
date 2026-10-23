@@ -20,6 +20,8 @@ import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { SectionNav } from "@/components/ui/section-nav"
 import { Button } from "@/components/ui/button"
 import { AnomalyCaseCard } from "./anomaly-case-card"
+import { AnomalyEmptyState } from "./anomaly-empty-state"
+import { DegradedDataBanner } from "@/components/ui/degraded-data-banner"
 import { AnomalyDistributionChart } from "./anomaly-charts-lazy"
 import { FilterSelect } from "@/components/ui/filter-select"
 import { WorksiteFilterPresence } from "@/components/layout/header-context"
@@ -61,6 +63,12 @@ export default async function AnomalyCasesPage({ searchParams }: { searchParams:
   // `?page=` no numérico → 1, no NaN (guard compartido en lib/utils).
   const page = parsePageParam(sp.page)
 
+  // Fuentes que cayeron a su fallback: una lista vacía porque la consulta falló
+  // no puede leerse como «Aún no hay anomalías» (mismo criterio que CO-037).
+  const degraded: string[] = []
+  const tracked = <T,>(promise: Promise<T>, fallback: T, label: string) =>
+    settle(promise.catch((error: unknown) => { degraded.push(label); throw error }), fallback, label)
+
   const [worksitesList, anomalyCasesResult, distribution, counts] = await Promise.all([
     settle(
       scope.mode === "none" ? Promise.resolve([]) : db.query.worksites.findMany({
@@ -70,12 +78,12 @@ export default async function AnomalyCasesPage({ searchParams }: { searchParams:
       [] as Array<{ id: string; name: string }>,
       "anomalias-worksites",
     ),
-    settle(
+    tracked(
       getAnomalyCases({ worksiteId, status, severity, referenceEntityType, referenceEntityId, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }, session),
       { cases: [], total: 0 },
       "anomalias-cases",
     ),
-    settle(
+    tracked(
       getAnomalyDistribution({ worksiteId, status }, session),
       { total: 0, byStatus: [], bySeverity: [], byRuleCode: [] },
       "anomalias-distribution",
@@ -86,6 +94,9 @@ export default async function AnomalyCasesPage({ searchParams }: { searchParams:
   const pagination = resolvePagination({ pageParam: String(page), totalItems: total, pageSize: PAGE_SIZE })
   const totalPages = pagination.totalPages
   const pageHref = (target: number) => buildPaginationHref("/combustibles/anomalias", sp, target)
+  // Sólo cuentan los filtros que el servidor aplicó: `?estado=basura` se ignora
+  // arriba y no puede ser la razón de una lista vacía.
+  const filtered = Boolean(worksiteId || status || severity || sp.ref)
 
   return (
     <PageContainer width="wide">
@@ -95,6 +106,7 @@ export default async function AnomalyCasesPage({ searchParams }: { searchParams:
         breadcrumb={<Breadcrumbs items={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Revisión", href: "/combustibles/revision" }, { label: "Anomalías" }]} />}
         actions={canManageRules ? <Button asChild variant="secondary"><Link href="/combustibles/anomalias/reglas"><Gear size={16} />Reglas</Link></Button> : undefined}
       />
+      <DegradedDataBanner degraded={degraded} total={2} />
       <SectionNav items={revisionNavItems(counts)} activeKey="anomalias" ariaLabel="Colas de revisión" carryParams={["faena"]} />
 
       <form className="mb-4 grid gap-3 border-y border-(--color-border) py-4 md:grid-cols-4">
@@ -110,20 +122,20 @@ export default async function AnomalyCasesPage({ searchParams }: { searchParams:
           Mostrando sólo el/los caso(s) del registro de origen. <Link href="/combustibles/anomalias" className="text-(--color-primary) hover:underline">Ver todos los casos</Link>
         </p>
       )}
-      <p className="mb-3 text-xs text-(--color-text-muted)">
-        {total} {total === 1 ? "caso encontrado" : "casos encontrados"}
-        {totalPages > 1 && ` · página ${page} de ${totalPages}`}
-      </p>
+      {!degraded.includes("anomalias-cases") && (
+        <p className="mb-3 text-xs text-(--color-text-muted)">
+          {total} {total === 1 ? "caso encontrado" : "casos encontrados"}
+          {totalPages > 1 && ` · página ${page} de ${totalPages}`}
+        </p>
+      )}
 
       {/* Gráfico de distribución (sección 5) */}
       <div className="mb-6">
         <AnomalyDistributionChart distribution={distribution} />
       </div>
 
-      {cases.length === 0 ? (
-        <div className="border border-dashed border-(--color-border-strong) p-8 text-center text-sm text-(--color-text-muted)">
-          No se han detectado anomalías todavía. Las reglas de detección se ejecutan al validar cargas TAE y al analizar rendimientos.
-        </div>
+      {cases.length === 0 && degraded.includes("anomalias-cases") ? null : cases.length === 0 ? (
+        <AnomalyEmptyState filtered={filtered} canManageRules={canManageRules} />
       ) : (
         <div className="space-y-4">
           {cases.map((c) => (

@@ -9,7 +9,7 @@ import { getExpiringFleetDocuments } from "@/lib/services/dashboard-domains-data
 import { getFuelMonthlyTrend, getMaintenanceMonthlyTrend } from "@/lib/services/dashboard-fleet-maintenance"
 import { FLEET_OVERVIEW_LOOKBACK_MONTHS, getFleetOverview } from "@/lib/services/fleet"
 import { getUsageMaintenanceAlerts } from "@/lib/services/maintenance"
-import { operationalControlCapabilities } from "@/lib/operational-control/capabilities"
+import { canViewOperationalControl, operationalControlCapabilities } from "@/lib/operational-control/capabilities"
 import { countPendingFuelCreditNotes } from "@/lib/services/dte-portal/reconciliation"
 import { readDtePortalConfig } from "@/lib/services/dte-portal/config"
 import { DASHBOARD_DOMAINS } from "../dashboard-domains"
@@ -118,8 +118,10 @@ export async function FleetSection({ session, scope }: DomainSectionsProps) {
       <DomainSection
         domain={DASHBOARD_DOMAINS.flota}
         links={[
-          ...(canViewFuel ? [{ label: "Combustibles", href: "/combustibles" }] : []),
-          ...(canViewFleet ? [{ label: "Flota", href: "/flota" }] : []),
+          // Mismos nombres que el menú del área (CO-IA, 2026-10-22).
+          ...(canViewOperationalControl(session) ? [{ label: "Panel operacional", href: "/control-operacional" }] : []),
+          ...(canViewFuel ? [{ label: "Consumo y rendimiento", href: "/combustibles" }] : []),
+          ...(canViewFleet ? [{ label: "Vehículos", href: "/flota" }] : []),
           ...(canViewMaintenance ? [{ label: "Mantenciones", href: "/mantenciones" }] : []),
           ...(canViewFuel && canSeeCosts ? [{ label: "Finanzas", href: "/dashboard?vista=finanzas" }] : []),
         ]}

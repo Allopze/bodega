@@ -133,8 +133,23 @@ export function resolveOperationalControlPeriod(input: Partial<OperationalContro
   return { from, to }
 }
 
+export interface OperationalControlHubOptions {
+  /**
+   * Calcula los conteos de «Requiere atención» (por defecto `true`, que es lo que
+   * pinta la página). La exportación a Excel no los usa: con `false` no se
+   * emiten sus consultas (documentos de flota, ajustes de aviso, OT abiertas) ni
+   * se cuentan los detenidos, y `attention` queda con todos sus campos en `null`.
+   */
+  includeAttention?: boolean
+}
+
 /** Read model común: unifica navegación y métricas sin borrar las diferencias de dominio. */
-export async function getOperationalControlHub(session: Session, input: Partial<OperationalControlPeriod> = {}) {
+export async function getOperationalControlHub(
+  session: Session,
+  input: Partial<OperationalControlPeriod> = {},
+  options: OperationalControlHubOptions = {},
+) {
+  const includeAttention = options.includeAttention !== false
   const period = resolveOperationalControlPeriod(input)
   const canViewFleet = can(session, "flota:view")
   const canViewMaintenance = can(session, "mantenciones:view")
@@ -191,7 +206,7 @@ export async function getOperationalControlHub(session: Session, input: Partial<
     // «Requiere atención»: lo que `/flota?vencimiento=vencidos` cuenta. Mismo
     // origen que `getFleetOverviewPage`: documentos vigentes con fecha de los
     // vehículos del alcance, y los días de aviso que configura Flota.
-    canViewFleet ? settleAttention("documentos de flota", async () => {
+    includeAttention && canViewFleet ? settleAttention("documentos de flota", async () => {
       const [documents, settings] = await Promise.all([
         db.select({
           vehicleId: fleetVehicleDocuments.vehicleId,
@@ -211,7 +226,7 @@ export async function getOperationalControlHub(session: Session, input: Partial<
     // Las OT abiertas que cuenta `/mantenciones?status=abiertas`: todas las del
     // alcance de la OT (no del vehículo), sin ventana de fechas. No es el
     // `backlog` de las métricas, que sólo ve las OT fechadas dentro del período.
-    canViewMaintenance ? settleAttention("OT abiertas", async () => {
+    includeAttention && canViewMaintenance ? settleAttention("OT abiertas", async () => {
       const [row] = await db.select({ count: sql<number>`COUNT(*)::int` }).from(maintenanceRecords).where(and(
         worksiteScopeSql(session, maintenanceRecords.worksiteId),
         inArray(maintenanceRecords.status, [...MAINTENANCE_OPEN_STATUSES]),
@@ -277,7 +292,7 @@ export async function getOperationalControlHub(session: Session, input: Partial<
   const preventiveDue = maintenanceAgg.reduce((sum, row) => sum + Number(row.preventiveDue), 0)
   const today = todayInChile()
   const attention: OperationalAttention = {
-    stoppedVehicles: canViewFleet ? countStoppedVehicles(vehicles) : null,
+    stoppedVehicles: includeAttention && canViewFleet ? countStoppedVehicles(vehicles) : null,
     fleetDocuments: fleetDocumentData
       ? {
           warningDays: fleetDocumentData.warningDays,
