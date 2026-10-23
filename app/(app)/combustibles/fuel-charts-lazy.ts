@@ -12,7 +12,6 @@ interface ChartDataPoint {
 
 type MonthlyEvolutionChartType = ComponentType<{ data: ChartDataPoint[] }>
 type CategoryBarChartType = ComponentType<{ data: ChartDataPoint[]; title: string; onSelect?: (group: string) => void; metric?: "amount" | "liters" }>
-type ProductPieChartType = ComponentType<{ data: ChartDataPoint[] }>
 
 export const MonthlyEvolutionChart = dynamic(
   () => import("./fuel-charts").then((m) => m.MonthlyEvolutionChart),
@@ -23,8 +22,3 @@ export const CategoryBarChart = dynamic(
   () => import("./fuel-charts").then((m) => m.CategoryBarChart),
   { ssr: false },
 ) as CategoryBarChartType
-
-export const ProductPieChart = dynamic(
-  () => import("./fuel-charts").then((m) => m.ProductPieChart),
-  { ssr: false },
-) as ProductPieChartType

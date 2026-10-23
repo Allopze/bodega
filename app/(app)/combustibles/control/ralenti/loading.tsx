@@ -1,5 +1,6 @@
 import { PageContainer } from "@/components/ui/page-container"
 import { PageHeader } from "@/components/ui/page-header"
+import { SectionNavSkeleton } from "@/components/ui/section-nav-skeleton"
 import { Skeleton, SkeletonPage } from "@/components/ui/skeleton"
 
 export default function Loading() {
@@ -8,9 +9,9 @@ export default function Loading() {
       <PageHeader
         title="Ralentí"
         description="Tiempo y combustible que los equipos gastan con el motor en vacío"
-        breadcrumb={[{ label: "Combustibles", href: "/combustibles" }, { label: "Control", href: "/combustibles/control" }, { label: "Ralentí" }]}
+        breadcrumb={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Consumo y rendimiento", href: "/combustibles" }, { label: "Ralentí" }]}
       />
-      <Skeleton className="mb-5 h-11 w-full" />
+      <SectionNavSkeleton tabs={6} />
       <Skeleton className="mb-6 h-10 w-2/3" />
       <div className="mb-8 grid gap-6 xl:grid-cols-2">
         <Skeleton className="h-72" />

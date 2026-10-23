@@ -352,6 +352,38 @@ async function main() {
     worksiteId: "ws-e2e",
     isPrimary: true,
   })
+  /*
+   * Combustible sin costos: `combustibles:view` + `create`, como
+   * `jefe_mantencion`. Prueba que «Facturas y pagos» no aparece en el menú y
+   * que las pantallas con montos (facturas, nueva carga) rechazan la ruta
+   * escrita a mano (control-operacional-navegacion.spec.ts).
+   */
+  await db.insert(schema.roles).values({
+    id: "rol-comb-sin-costos",
+    name: "combustible_sin_costos",
+    label: "Combustible sin costos",
+    description: "Ve consumo y cargas de combustible, sin montos — E2E",
+  })
+  await db.insert(schema.rolePermissions).values([
+    { roleId: "rol-comb-sin-costos", permissionId: "p-fuel-view" },
+    { roleId: "rol-comb-sin-costos", permissionId: "p-fuel-create" },
+  ])
+  await db.insert(schema.users).values({
+    id: "user-comb-sin-costos-e2e",
+    name: "Combustible Sin Costos E2E",
+    email: "combustible.sincostos@e2e.chome.cl",
+    hashedPassword: await bcrypt.hash("chome2026", 10),
+    avatarColor: "120",
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.userRoles).values({ userId: "user-comb-sin-costos-e2e", roleId: "rol-comb-sin-costos" })
+  await db.insert(schema.worksiteUsers).values({
+    userId: "user-comb-sin-costos-e2e",
+    worksiteId: "ws-e2e",
+    isPrimary: true,
+  })
   await db.insert(schema.users).values({
     id: "user-scoped-e2e",
     name: "Scoped E2E",

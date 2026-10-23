@@ -15,7 +15,6 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { loadControlContext } from "../_components/control-context"
-import { ControlNav } from "../_components/control-nav"
 import { RegistrarForm } from "./registrar-form"
 import { RegistrarPicker } from "./registrar-picker"
 
@@ -58,17 +57,16 @@ export default async function RegistrarCargaPage({ searchParams }: { searchParam
       <PageHeader
         title="Registrar carga"
         description="Anota una carga de combustible hecha en terreno, paso a paso"
-        breadcrumb={<Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Control", href: "/combustibles/control" }, { label: "Registrar carga" }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Cargas", href: "/combustibles/bitacora" }, { label: "Registrar carga" }]} />}
       />
-      <ControlNav items={context.navItems} />
       <DegradedDataBanner degraded={pointsResult === null ? ["lugares de carga"] : []} total={1} />
 
       {context.worksites.length === 0 || (pointsResult !== null && points.length === 0) ? (
         <EmptyState
           icon={<GasPump size={24} />}
           title="Aún no hay lugares de carga para registrar"
-          description="Para registrar una carga hace falta una faena a tu alcance con un lugar de carga activo (surtidor, camión surtidor, bidón…). Se crean en Control TAE."
-          action={<Button asChild variant="secondary" size="sm"><Link href="/combustibles/tae">Ir a Control TAE</Link></Button>}
+          description="Para registrar una carga hace falta una faena a tu alcance con un lugar de carga activo (surtidor, camión surtidor, bidón…). Se crean en TAE y sellos."
+          action={<Button asChild variant="secondary" size="sm"><Link href="/combustibles/tae">Ir a TAE y sellos</Link></Button>}
         />
       ) : (
         <div className="space-y-6">

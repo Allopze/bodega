@@ -5,9 +5,16 @@ const mockRequirePermission = vi.fn()
 const mockCanAccessWorksite = vi.fn()
 const mockTransaction = vi.fn()
 
+type TestSession = { user: { permissions: string[]; isGlobal?: boolean } }
+
+// `assertFuelCostAccess` (capabilities.ts) decide con `can`/`canAny`/`isGlobalRole`
+// de este mismo módulo: se simulan sobre `session.user.permissions`, igual que el real.
 vi.mock("@/lib/auth/can", () => ({
   requirePermission: (...args: unknown[]) => mockRequirePermission(...args),
   canAccessWorksite: (...args: unknown[]) => mockCanAccessWorksite(...args),
+  can: (s: TestSession | null, permission: string) => s?.user?.permissions?.includes(permission) ?? false,
+  canAny: (s: TestSession | null, ...permissions: string[]) => permissions.some((p) => s?.user?.permissions?.includes(p)),
+  isGlobalRole: (s: TestSession | null) => s?.user?.isGlobal === true,
 }))
 
 vi.mock("@/db", () => ({
@@ -22,7 +29,8 @@ vi.mock("@/lib/services/module-toggles", () => ({
   isRouteOperational: vi.fn(async () => true),
 }))
 
-const session = { user: { id: "user-1", isGlobal: true, worksiteIds: [] as string[], permissions: ["combustibles:import"] } }
+// Importar cargas facturadas exige `import` y el contrato monetario (`view` + `view_costs`).
+const session = { user: { id: "user-1", isGlobal: true, worksiteIds: [] as string[], permissions: ["combustibles:import", "combustibles:view", "combustibles:view_costs"] } }
 
 const validLoad = {
   rowIndex: 2,
@@ -79,6 +87,24 @@ describe("POST /api/combustibles/import", () => {
     const { POST } = await import("./route")
     const res = await POST(makeRequest({ loads: [validLoad], faenaMapping: {} }))
     expect(res.status).toBe(403)
+  })
+
+  // Cada fila crea una carga con base, IEC, IVA y total: es un alta de cifras de
+  // costo, y la opción de la interfaz sólo se ofrece con `view_costs`.
+  it("returns 403 when user can import but cannot view fuel costs", async () => {
+    mockRequirePermission.mockResolvedValue({ user: { id: "user-2", isGlobal: true, worksiteIds: [], permissions: ["combustibles:import", "combustibles:view"] } })
+    const { POST } = await import("./route")
+    const res = await POST(makeRequest({ loads: [validLoad], faenaMapping: {} }))
+    expect(res.status).toBe(403)
+    expect(mockTransaction).not.toHaveBeenCalled()
+  })
+
+  it("returns 403 when user has view_costs but lacks the operational view permission", async () => {
+    mockRequirePermission.mockResolvedValue({ user: { id: "user-3", isGlobal: true, worksiteIds: [], permissions: ["combustibles:import", "combustibles:view_costs"] } })
+    const { POST } = await import("./route")
+    const res = await POST(makeRequest({ loads: [validLoad], faenaMapping: {} }))
+    expect(res.status).toBe(403)
+    expect(mockTransaction).not.toHaveBeenCalled()
   })
 
   it("returns 400 for invalid payload shape", async () => {

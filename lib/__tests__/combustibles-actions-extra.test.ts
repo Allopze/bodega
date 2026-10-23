@@ -3,9 +3,17 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 const mockRequirePermission = vi.hoisted(() => vi.fn())
 const mockCanAccessWorksite = vi.hoisted(() => vi.fn(() => true))
 
+type TestSession = { user: { permissions: string[]; isGlobal?: boolean } } | null
+
+// `assertFuelCostAccess` (lib/operational-control/capabilities.ts), que las
+// acciones de carga aplican tras `requirePermission`, decide con `can`/`canAny`/
+// `isGlobalRole` de este mismo módulo: se simulan sobre `session.user.permissions`.
 vi.mock("@/lib/auth/can", () => ({
   requirePermission: mockRequirePermission,
   canAccessWorksite: mockCanAccessWorksite,
+  can: (session: TestSession, permission: string) => session?.user?.permissions?.includes(permission) ?? false,
+  canAny: (session: TestSession, ...permissions: string[]) => permissions.some((p) => session?.user?.permissions?.includes(p)),
+  isGlobalRole: (session: TestSession) => session?.user?.isGlobal === true,
 }))
 vi.mock("@/db", () => {
   const db = {
@@ -38,7 +46,8 @@ import type { ActionState } from "@/lib/validation/masters"
 
 const prevState: ActionState = { ok: false, message: "" }
 
-function makeSession(permissions: string[] = ["combustibles:delete", "combustibles:create", "combustibles:manage_suppliers"]) {
+// Las acciones de carga (eliminar, registrar) exigen además `view` + `view_costs`.
+function makeSession(permissions: string[] = ["combustibles:delete", "combustibles:create", "combustibles:manage_suppliers", "combustibles:view", "combustibles:view_costs"]) {
   return {
     expires: "2099-01-01",
     user: {

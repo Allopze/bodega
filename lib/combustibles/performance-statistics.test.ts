@@ -1,58 +1,5 @@
 import { describe, it, expect } from "vitest"
-import {
-  mean, median, standardDeviation, percentile, coefficientOfVariation,
-  sampleReliability, MIN_CONCLUSIVE_SAMPLE, flagOutliers,
-} from "./performance-statistics"
-
-describe("mean/median/standardDeviation", () => {
-  it("computes mean, median and population standard deviation", () => {
-    expect(mean([2, 4, 6])).toBe(4)
-    expect(median([1, 2, 3, 4])).toBe(2.5)
-    expect(median([1, 2, 3])).toBe(2)
-    // Población (÷n), no muestral (÷n-1): [2,4,6] → varianza 8/3, desv ≈ 1.633.
-    expect(standardDeviation([2, 4, 6])).toBeCloseTo(1.633, 2)
-  })
-
-  it("returns 0 for empty input instead of NaN", () => {
-    expect(mean([])).toBe(0)
-    expect(median([])).toBe(0)
-    expect(standardDeviation([])).toBe(0)
-  })
-})
-
-describe("percentile", () => {
-  it("interpolates linearly between ranks", () => {
-    const values = [10, 20, 30, 40, 50]
-    expect(percentile(values, 0)).toBe(10)
-    expect(percentile(values, 100)).toBe(50)
-    expect(percentile(values, 50)).toBe(30)
-  })
-})
-
-describe("coefficientOfVariation", () => {
-  it("returns null when the mean is zero (division by zero guard)", () => {
-    expect(coefficientOfVariation([-1, 0, 1])).toBeNull()
-  })
-
-  it("returns a percentage otherwise", () => {
-    expect(coefficientOfVariation([10, 10, 10])).toBe(0)
-  })
-})
-
-describe("sampleReliability", () => {
-  it("is insuficiente below MIN_CONCLUSIVE_SAMPLE", () => {
-    expect(sampleReliability(MIN_CONCLUSIVE_SAMPLE - 1)).toBe("insuficiente")
-  })
-
-  it("is baja between the threshold and double", () => {
-    expect(sampleReliability(MIN_CONCLUSIVE_SAMPLE)).toBe("baja")
-    expect(sampleReliability(MIN_CONCLUSIVE_SAMPLE * 2 - 1)).toBe("baja")
-  })
-
-  it("is confiable at double the threshold or above", () => {
-    expect(sampleReliability(MIN_CONCLUSIVE_SAMPLE * 2)).toBe("confiable")
-  })
-})
+import { DEFAULT_OUTLIER_THRESHOLD_STDDEVS, MIN_CONCLUSIVE_SAMPLE, flagOutliers } from "./performance-statistics"
 
 describe("flagOutliers", () => {
   it("flags values beyond the threshold of standard deviations", () => {
@@ -66,5 +13,24 @@ describe("flagOutliers", () => {
     const rows = [{ v: 10 }, { v: 1000 }]
     const flagged = flagOutliers(rows, (r) => r.v)
     expect(flagged.every((r) => !r.atipico)).toBe(true)
+  })
+
+  it("always flags zeros, even when there is not enough data to infer", () => {
+    const flagged = flagOutliers([{ v: 0 }, { v: 12 }], (r) => r.v)
+    expect(flagged.map((r) => r.atipico)).toEqual([true, false])
+  })
+
+  it("uses the population standard deviation (÷n), not the sample one (÷n−1)", () => {
+    // [10, 10, 10, 10, 20]: media 12; desviación poblacional 4, muestral ≈ 4.47.
+    // El 20 queda a 2 desviaciones poblacionales (8) pero sólo a ≈1.79 muestrales.
+    const rows = [{ v: 10 }, { v: 10 }, { v: 10 }, { v: 10 }, { v: 20 }]
+    const flaggedAt = (threshold: number) => flagOutliers(rows, (r) => r.v, threshold).find((r) => r.v === 20)?.atipico
+    expect(flaggedAt(1.9)).toBe(true)
+    expect(flaggedAt(2.1)).toBe(false)
+  })
+
+  it("keeps the shared defaults the anomaly detector relies on", () => {
+    expect(DEFAULT_OUTLIER_THRESHOLD_STDDEVS).toBe(1.5)
+    expect(MIN_CONCLUSIVE_SAMPLE).toBe(5)
   })
 })

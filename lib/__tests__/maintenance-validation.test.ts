@@ -8,8 +8,11 @@ import {
   maintenancePartSchema,
   maintenancePlanSchema,
   maintenanceTaskSchema,
+  MAINTENANCE_OPEN_FILTER,
+  MAINTENANCE_OPEN_STATUSES,
   MAINTENANCE_STATUSES,
   MAINTENANCE_STATUS_LABELS,
+  resolveMaintenanceStatusFilter,
   maintenanceStatusMeta,
   MAINTENANCE_STATUS_VARIANTS,
   transitionMaintenanceRecordSchema,
@@ -194,5 +197,34 @@ describe("detalle de orden de trabajo", () => {
     }).success).toBe(false)
     expect(maintenanceCostApprovalSchema.safeParse({ maintenanceId: "ot-1", decision: "approve" }).success).toBe(true)
     expect(maintenanceCostApprovalSchema.safeParse({ maintenanceId: "ot-1", decision: "self_approve" }).success).toBe(false)
+  })
+})
+
+describe("resolveMaintenanceStatusFilter", () => {
+  // `/mantenciones?status=abiertas`: el backlog del Panel operacional cuenta las
+  // OT programadas y en curso; la lista que abre tiene que contar lo mismo.
+  it("expande el alias `abiertas` a programadas y en curso", () => {
+    expect(MAINTENANCE_OPEN_FILTER).toBe("abiertas")
+    expect(resolveMaintenanceStatusFilter("abiertas")).toEqual(["scheduled", "in_progress"])
+    expect([...MAINTENANCE_OPEN_STATUSES]).toEqual(["scheduled", "in_progress"])
+  })
+
+  it("deja pasar cada estado conocido como un filtro de un solo estado", () => {
+    for (const status of MAINTENANCE_STATUSES) {
+      expect(resolveMaintenanceStatusFilter(status)).toEqual([status])
+    }
+  })
+
+  it("no filtra con un valor ausente o vacío", () => {
+    expect(resolveMaintenanceStatusFilter(undefined)).toBeNull()
+    expect(resolveMaintenanceStatusFilter(null)).toBeNull()
+    expect(resolveMaintenanceStatusFilter("")).toBeNull()
+    expect(resolveMaintenanceStatusFilter("   ")).toBeNull()
+  })
+
+  it("un valor desconocido no coincide con ningún estado (lista blanca, nunca SQL crudo)", () => {
+    expect(resolveMaintenanceStatusFilter("completada")).toEqual([])
+    expect(resolveMaintenanceStatusFilter("scheduled'; DROP TABLE x;--")).toEqual([])
+    expect(resolveMaintenanceStatusFilter("ABIERTAS")).toEqual([])
   })
 })

@@ -25,7 +25,7 @@ export function MaintenanceOrderWorkbench({ record, canEdit, canViewCosts, canAp
   const status = maintenanceStatusMeta(record.status)
   const editable = canEdit && ["scheduled", "in_progress"].includes(record.status)
   return <PageContainer width="workbench">
-    <PageHeader title={record.code ?? "Orden de trabajo"} description={`${record.vehicle.code ? `${record.vehicle.code} · ` : ""}${record.vehicle.plate} · ${record.worksite.name}`} breadcrumb={<Breadcrumbs items={[{ label: "Mantenciones", href: "/mantenciones" }, { label: record.code ?? "Detalle" }]} />} actions={<Button asChild variant="secondary"><Link href={`/flota/${record.vehicleId}`}>Ver activo</Link></Button>} />
+    <PageHeader title={record.code ?? "Orden de trabajo"} description={`${record.vehicle.code ? `${record.vehicle.code} · ` : ""}${record.vehicle.plate} · ${record.worksite.name}`} breadcrumb={<Breadcrumbs items={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Mantenciones", href: "/mantenciones" }, { label: record.code ?? "Detalle" }]} />} actions={<Button asChild variant="secondary"><Link href={`/flota/${record.vehicleId}`}>Ver activo</Link></Button>} />
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
       <div className="space-y-4">
         <Card><CardHeader className="flex-row items-start justify-between"><div><CardTitle>Alcance de la orden</CardTitle><p className="mt-1 text-sm text-[var(--color-text-muted)]">{record.maintenanceType} · {formatDate(record.maintenanceDate)}</p></div><MetaBadge meta={status} /></CardHeader><CardContent><dl className="grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-3">

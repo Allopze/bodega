@@ -6,6 +6,8 @@ import { can, requirePermission } from "@/lib/auth/can"
 import { assertFuelCostAccess } from "@/lib/operational-control/capabilities"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
+import { SectionNav } from "@/components/ui/section-nav"
+import { facturasNavItems } from "@/lib/combustibles/section-nav"
 import { StatementsTable } from "./statements-table"
 import { NewStatementDialog } from "./new-statement-dialog"
 import { todayInChile } from "@/lib/utils"
@@ -31,13 +33,14 @@ export default async function CuentaCorrientePage() {
       <PageHeader
         title="Cuenta corriente de combustible"
         description="Resúmenes mensuales por proveedor y control de pagos"
-        breadcrumb={<Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Cuenta corriente" }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Facturas y pagos", href: "/combustibles/facturas" }, { label: "Cuenta corriente" }]} />}
         actions={can(session, "combustibles:manage_statements") ? (
           <div className="flex gap-2">
             <NewStatementDialog suppliers={suppliersList.map(s => ({ id: s.id, name: s.name }))} />
           </div>
         ) : undefined}
       />
+      <SectionNav items={facturasNavItems(session)} activeKey="cuenta-corriente" ariaLabel="Facturas y pagos" />
       <StatementsTable statements={statements} today={todayInChile()} />
     </PageContainer>
   )

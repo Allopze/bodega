@@ -271,9 +271,38 @@ describe("sidebar navigation", () => {
     const targets = flattenNavTargets(session, enabled, disabled).map((target) => target.href)
 
     expect(hrefs).toContain("/combustibles")
-    expect(hrefs).toContain("/combustibles/importar")
+    expect(hrefs).toContain("/combustibles/bitacora")
     expect(hrefs).not.toContain("/combustibles/tae")
     expect(targets).not.toContain("/combustibles/tae")
+  })
+
+  it("marks the owning item for routes declared as aliases in another route tree", () => {
+    // «Revisión» agrupa la cola del control y la de anomalías.
+    expect(isHrefActive("/combustibles/revision", "/combustibles/control/revision")).toBe(true)
+    expect(isHrefActive("/combustibles/revision", "/combustibles/anomalias/reglas")).toBe(true)
+    expect(isHrefActive("/combustibles", "/combustibles/control/revision")).toBe(false)
+    // El resto del control sigue siendo «Consumo y rendimiento».
+    expect(isHrefActive("/combustibles", "/combustibles/control/ralenti")).toBe(true)
+    expect(isHrefActive("/combustibles/tae", "/combustibles/control/sellos")).toBe(true)
+    expect(isHrefActive("/combustibles/bitacora", "/combustibles/control/registrar")).toBe(true)
+    // El histórico TAE se queda en TAE aunque sea un importador.
+    expect(isHrefActive("/combustibles/tae", "/combustibles/tae/importar")).toBe(true)
+    expect(isHrefActive("/combustibles/bitacora", "/combustibles/tae/importar")).toBe(false)
+  })
+
+  it("groups Control operacional as Seguimiento, then Flota, then Combustible", () => {
+    const area = AREA_TREE.find((candidate) => candidate.id === "control-operacional")
+    expect(area?.items.map((item) => [item.group ?? null, item.label])).toEqual([
+      ["Seguimiento", "Panel operacional"],
+      ["Flota", "Vehículos"],
+      ["Flota", "Monitoreo GPS"],
+      ["Flota", "Mantenciones"],
+      ["Combustible", "Consumo"],
+      ["Combustible", "Cargas"],
+      ["Combustible", "Revisión"],
+      ["Combustible", "TAE y sellos"],
+      ["Combustible", "Facturas y pagos"],
+    ])
   })
 
   it("keeps Evaluaciones SST active for its list, creation and worker detail routes only", () => {

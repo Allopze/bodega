@@ -6,10 +6,9 @@ export default function Loading() {
   return (
     <PageContainer>
       <PageHeader
-        title="Importar datos del control"
-        breadcrumb={<Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Control", href: "/combustibles/control" }, { label: "Importar" }]} />}
+        title="Importar telemetría y suministro"
+        breadcrumb={<Breadcrumbs items={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Cargas", href: "/combustibles/bitacora" }, { label: "Importar telemetría y suministro" }]} />}
       />
-      <Skeleton className="mb-5 h-11 w-full" />
       <Skeleton className="mb-2 h-6 w-56" />
       <Skeleton className="mb-4 h-4 w-full max-w-xl" />
       <SkeletonPage rows={6} />

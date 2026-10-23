@@ -35,7 +35,7 @@ const COLUMNS = (canViewCosts: boolean, canViewMaintenance: boolean, canViewInsp
     { key: "worksiteName", label: "Faena", sortable: true },
     { key: "operationalStatusLabel", label: "Estado", sortable: true },
     ...(canViewMaintenance
-      ? [{ key: "openMaintenanceCount", label: "OT abiertas", sortable: true, numeric: true }]
+      ? [{ key: "openMaintenanceCount", label: "OT abiertas (período)", sortable: true, numeric: true }]
       : []),
     ...(canViewInspections
       ? [{ key: "inspectionCount", label: "Inspecciones", sortable: true, numeric: true }]
@@ -81,7 +81,7 @@ export function OperationalAssetsTable({
       <dl className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs">
         {canViewMaintenance && (
           <div>
-            <dt className="text-[var(--color-text-subtle)]">OT abiertas</dt>
+            <dt className="text-[var(--color-text-subtle)]">OT abiertas del período</dt>
             <dd>{asset.openMaintenanceCount}</dd>
           </div>
         )}

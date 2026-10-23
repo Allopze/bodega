@@ -40,7 +40,8 @@ export default async function StatementDetailPage({
         description={`${statement.supplier?.name ?? "Proveedor"}, ${statement.loads?.length ?? 0} cargas`}
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Combustibles", href: "/combustibles" },
+            { label: "Control operacional", href: "/control-operacional" },
+            { label: "Facturas y pagos", href: "/combustibles/facturas" },
             { label: "Cuenta corriente", href: "/combustibles/cuenta-corriente" },
             { label: `${statement.month} · ${statement.supplier?.name ?? ""}` },
           ]} />

@@ -6,10 +6,9 @@ export default function Loading() {
   return (
     <PageContainer>
       <PageHeader
-        title="Configuración del control"
-        breadcrumb={<Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Control", href: "/combustibles/control" }, { label: "Configuración" }]} />}
+        title="Configuración del control de combustible"
+        breadcrumb={<Breadcrumbs items={[{ label: "Administración", href: "/admin" }, { label: "Configuración de combustible" }, { label: "Control de combustible" }]} />}
       />
-      <Skeleton className="mb-5 h-11 w-full" />
       {Array.from({ length: 3 }, (_, index) => (
         <div key={index} className="border-t border-[var(--color-border)] py-8 first:border-t-0 first:pt-2">
           <Skeleton className="mb-2 h-6 w-48" />

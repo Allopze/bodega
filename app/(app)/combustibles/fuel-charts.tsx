@@ -1,7 +1,7 @@
 "use client"
 import { ChartEmpty } from "@/components/ui/chart-empty"
 
-import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts"
+import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts"
 import { chartTooltipStyle } from "@/lib/chart-palette"
 import { formatCompactCLP, formatCompactQty, formatPricePerLiter } from "@/lib/utils"
 
@@ -12,48 +12,8 @@ interface ChartDataPoint {
   count?: number
 }
 
-const COLORS = [
-  "var(--color-primary)",
-  "var(--color-signal)",
-  "var(--color-info)",
-  "var(--color-warning)",
-  "var(--color-danger)",
-  "var(--color-accent)",
-  "var(--color-primary-strong)",
-  "var(--color-signal-ink)",
-]
-
 const AMOUNT_COLOR = "var(--color-info)"
 const PRICE_COLOR = "var(--color-signal)"
-
-
-function groupSmallProductSlices(data: ChartDataPoint[]) {
-  const chartData = data
-    .map(d => ({
-      name: d.group ?? "Otro",
-      value: d.totalAmount,
-      liters: d.totalLiters,
-    }))
-    .sort((a, b) => b.value - a.value)
-  const total = chartData.reduce((sum, item) => sum + item.value, 0)
-  if (chartData.length <= 2 || total <= 0) return chartData
-
-  const visible = chartData.filter((item, index) => index < 5 && item.value / total >= 0.1)
-  const grouped = chartData.filter((item, index) => index >= 5 || item.value / total < 0.1)
-
-  if (grouped.length === 0) return visible
-
-  const others = grouped.reduce(
-    (acc, item) => ({
-      name: "Otros",
-      value: acc.value + item.value,
-      liters: acc.liters + item.liters,
-    }),
-    { name: "Otros", value: 0, liters: 0 },
-  )
-
-  return [...visible.slice(0, 5), others]
-}
 
 /* ── Monthly Evolution (Area Chart) ──────────────────────────────────────── */
 export function MonthlyEvolutionChart({ data }: { data: ChartDataPoint[] }) {
@@ -141,48 +101,3 @@ export function CategoryBarChart({ data, title, onSelect, metric = "amount" }: {
     </div>
   )
 }
-
-/* ── By Product (Pie Chart) ──────────────────────────────────────────────── */
-export function ProductPieChart({ data }: { data: ChartDataPoint[] }) {
-  if (data.length === 0) return <ChartEmpty className="h-64 px-6" label="Sin datos de producto" />
-
-  const chartData = groupSmallProductSlices(data)
-
-  return (
-    <div className="h-64">
-      <ResponsiveContainer width="100%" height="100%">
-        <PieChart>
-          <Pie
-            data={chartData}
-            cx="50%"
-            cy="50%"
-            innerRadius={52}
-            outerRadius={82}
-            paddingAngle={3}
-            dataKey="value"
-            nameKey="name"
-            label={({ percent }) => (percent != null && percent >= 0.06 ? `${(percent * 100).toFixed(0)}%` : "")}
-            labelLine={false}
-          >
-            {chartData.map((entry, i) => <Cell key={entry.name} fill={COLORS[i % COLORS.length]} stroke="var(--color-surface)" strokeWidth={2} />)}
-          </Pie>
-          <Tooltip
-            contentStyle={chartTooltipStyle()}
-            formatter={(value, name, item) => {
-              const litros = (item?.payload as { liters?: number } | undefined)?.liters ?? 0
-              return [`${formatCompactCLP(Number(value))} · ${formatCompactQty(litros)} L`, String(name)]
-            }}
-          />
-          <Legend
-            verticalAlign="bottom"
-            height={36}
-            iconType="circle"
-            formatter={(value) => <span className="text-xs text-[var(--color-text-muted)]">{value}</span>}
-          />
-        </PieChart>
-      </ResponsiveContainer>
-    </div>
-  )
-}
-
-/* ── Empty State ─────────────────────────────────────────────────────────── */

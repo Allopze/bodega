@@ -21,6 +21,12 @@ const MAX_KPIS_TABLERO = 8
 /** Pantallas de gestión nombradas por TASK-UI-006. */
 const PANTALLAS = [
   { path: "/flota", name: "Flota" },
+  // Panel operacional (área «Control operacional», reordenada por tarea el
+  // 2026-10-22): cuatro tiles de «Requiere atención ahora» y debajo una tira
+  // editorial (`SummaryBar`, que no usa `data-kpi-card`) con el desempeño del
+  // período. El conteo impide que un quinto tile —o la tira convertida en
+  // tarjetas— entre sin que nadie lo decida.
+  { path: "/control-operacional", name: "Panel operacional" },
   { path: "/pendientes", name: "Mis pendientes" },
   { path: "/admin/backups", name: "Respaldos" },
   // El panel de administración ganó tiles de estado y con ellos el tope de A1.
@@ -198,6 +204,45 @@ test.describe("Densidad — todo KPI de subconjunto llega a su subconjunto", () 
 
     expect(noEncontrados).toEqual([])
     expect(sinAcotar).toEqual([])
+  })
+
+  /**
+   * El panel operacional no vive en el tablero, así que no entra en la tabla de
+   * arriba (que navega por `?vista=`); su contrato es el mismo: «Equipos
+   * detenidos» no puede llevar a la lista completa de vehículos.
+   *
+   * La tabla se declara por **destino**, no por rótulo: el rótulo es texto del
+   * tile y puede afinarse sin que el contrato cambie, mientras que a dónde
+   * lleva es justo lo que esta guarda protege. Con todos los permisos (el
+   * administrador del seed) hay un tile por dominio; un rol acotado ve menos,
+   * y eso lo cubre `control-operacional-navegacion.spec.ts`.
+   */
+  const TILES_DEL_PANEL = [
+    { dominio: "Equipos detenidos", destino: "/flota?estado=detenidos" },
+    { dominio: "OT abiertas", destino: "/mantenciones?status=abiertas" },
+    { dominio: "Documentos vencidos", destino: "/flota?vencimiento=vencidos" },
+    { dominio: "Combustible por revisar", destino: "/combustibles/revision" },
+  ]
+
+  test("los tiles del panel operacional enlazan a su subconjunto, no al total", async ({ page }) => {
+    await login(page)
+    await page.goto("/control-operacional")
+    await page.waitForLoadState("networkidle").catch(() => undefined)
+
+    // `KpiCard` envuelve la tarjeta en el enlace (ver la prueba de arriba).
+    const enlaces = page.locator("a:has([data-kpi-card])")
+    await expect(enlaces.first()).toBeVisible()
+    const hrefs = await enlaces.evaluateAll((links) => links.map((link) => link.getAttribute("href") ?? "(sin href)"))
+
+    // Un tile sin ancla no lleva a ninguna parte: cada tarjeta tiene que ser un enlace.
+    expect(await page.locator("[data-kpi-card]").count(), "hay tiles que no son enlaces").toBe(hrefs.length)
+
+    const faltantes = TILES_DEL_PANEL
+      .filter((tile) => !hrefs.includes(tile.destino))
+      .map((tile) => `${tile.dominio}: no enlaza a ${tile.destino}`)
+    const sobrantes = hrefs.filter((href) => !TILES_DEL_PANEL.some((tile) => tile.destino === href))
+    expect(faltantes).toEqual([])
+    expect(sobrantes, "tiles con un destino que la tabla no declara").toEqual([])
   })
 
   test("cada destino acotado reconoce su filtro y ofrece quitarlo", async ({ page }) => {

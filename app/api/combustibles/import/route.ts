@@ -5,6 +5,7 @@ import { fuelLoads, fuelVehicles, fuelSuppliers, worksites } from "@/db/schema"
 import { inArray } from "drizzle-orm"
 import { can, canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { isGlobalRole } from "@/lib/auth/scope"
+import { assertFuelCostAccess } from "@/lib/operational-control/capabilities"
 import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
 import { fuelProductIdForLegacy } from "@/lib/combustibles/fuel-products"
@@ -68,7 +69,15 @@ const loadKey = (supplierId: string, receipt: string | null, vehicleId: string, 
 
 export async function POST(req: NextRequest) {
   let session
-  try { session = await requirePermission("combustibles:import") }
+  try {
+    session = await requirePermission("combustibles:import")
+    // Cada fila de este archivo crea una carga CON montos (base, IEC, IVA, total):
+    // es un alta de cifras de costo igual que `createFuelLoadAction`, y su único
+    // cliente (la opción «Cargas facturadas (Excel)» del botón Importar) sólo se
+    // ofrece con `view_costs`. Ocultar la opción no es autorización: sin esto, un
+    // rol con `import` pero sin acceso a costos podía postear aquí a mano.
+    assertFuelCostAccess(session)
+  }
   catch { return NextResponse.json({ ok: false, message: "Sin permisos" }, { status: 403 }) }
   if (!await isRouteOperational("/combustibles/importar")) {
     return NextResponse.json({ ok: false, message: "Importación de combustibles inactiva" }, { status: 503 })

@@ -1,5 +1,6 @@
 import { PageContainer } from "@/components/ui/page-container"
 import { PageHeader } from "@/components/ui/page-header"
+import { SectionNavSkeleton } from "@/components/ui/section-nav-skeleton"
 import { Skeleton, SkeletonPage } from "@/components/ui/skeleton"
 
 export default function Loading() {
@@ -8,9 +9,9 @@ export default function Loading() {
       <PageHeader
         title="Sellos por mandante"
         description="Conciliación, sellos y cargas en terreno por mandante"
-        breadcrumb={[{ label: "Combustibles", href: "/combustibles" }, { label: "Control", href: "/combustibles/control" }, { label: "Sellos por mandante" }]}
+        breadcrumb={[{ label: "Control operacional", href: "/control-operacional" }, { label: "TAE y sellos", href: "/combustibles/tae" }, { label: "Sellos por mandante" }]}
       />
-      <Skeleton className="mb-5 h-11 w-full" />
+      <SectionNavSkeleton tabs={4} />
       <Skeleton className="mb-6 h-10 w-2/3" />
       <div className="mb-8 grid gap-3 md:grid-cols-3">
         <Skeleton className="h-20" />

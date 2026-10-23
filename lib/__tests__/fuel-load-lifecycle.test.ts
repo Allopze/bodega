@@ -44,7 +44,8 @@ function session(): Session {
   return {
     user: {
       id: "actor", name: "Operador", email: "op@example.com", roles: ["administrador"],
-      permissions: ["combustibles:create", "combustibles:delete"],
+      // Editar, registrar y eliminar una carga exigen además `view` + `view_costs`.
+      permissions: ["combustibles:create", "combustibles:delete", "combustibles:view", "combustibles:view_costs"],
       worksiteIds: [], primaryWorksiteId: null, avatarColor: null, isActive: true, isGlobal: true,
     },
     expires: "2099-01-01T00:00:00.000Z",

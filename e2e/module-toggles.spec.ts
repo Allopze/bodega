@@ -70,7 +70,7 @@ test.describe("Module toggles", () => {
     // First, verify the "Control operacional" nav is visible before toggle
     await page.goto("/dashboard")
     await page.getByRole("button", { name: "Control operacional" }).click()
-    await expect(page.getByRole("link", { name: "Flota" }).first()).toBeVisible()
+    await expect(page.getByRole("link", { name: "Vehículos", exact: true }).first()).toBeVisible()
 
     // Go to admin/modulos and toggle "Control operacional" off
     await page.goto("/admin/modulos")
@@ -97,7 +97,7 @@ test.describe("Module toggles", () => {
     await page.waitForTimeout(500) // Allow nav to re-render
     // There might be icons/avatars with "Flota" text elsewhere;
     // check that it's NOT in the sidebar navigation
-    const sidebarFlota = page.locator('nav[aria-label="Navegación"], nav[aria-label="Áreas"]').getByRole("link", { name: "Flota" })
+    const sidebarFlota = page.locator('nav[aria-label="Navegación"], nav[aria-label="Áreas"]').getByRole("link", { name: "Vehículos", exact: true })
     await expect(sidebarFlota).toHaveCount(0)
 
     await page.goto("/flota")
@@ -142,7 +142,7 @@ test.describe("Module toggles", () => {
     await page.getByRole("button", { name: "Control operacional" }).click()
     await page.waitForTimeout(500)
 
-    const sidebarFlota = page.locator('nav[aria-label="Navegación"], nav[aria-label="Áreas"]').getByRole("link", { name: "Flota" })
+    const sidebarFlota = page.locator('nav[aria-label="Navegación"], nav[aria-label="Áreas"]').getByRole("link", { name: "Vehículos", exact: true })
     await expect(sidebarFlota.first()).toBeVisible()
   })
 
@@ -152,9 +152,9 @@ test.describe("Module toggles", () => {
     // Find the "Control operacional" card
     const card = flotaModuleSection(page)
 
-    // Selecciona Flota por su contrato accesible, no por posición: Control
+    // Selecciona Vehículos (`/flota`) por su contrato accesible, no por posición: Control
     // operacional comparte la tarjeta y puede agregar superficies antes.
-    const subToggle = card.getByLabel("Desactivar Flota")
+    const subToggle = card.getByLabel("Desactivar Vehículos")
     await expect(subToggle).toBeVisible()
     await subToggle.click({ force: true })
     const submoduleResponse = page.waitForResponse((response) => response.status() === 200 && response.url().includes("/admin/modulos"))

@@ -1,6 +1,7 @@
 import { SkeletonPage } from "@/components/ui/skeleton"
 import { PageHeader } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
+import { SectionNavSkeleton } from "@/components/ui/section-nav-skeleton"
 
 // M-15: skeleton de carga. El breadcrumb no se declara a propósito — el TopBar
 // lo deriva de NAV_ITEMS + usePathname(), así que duplicarlo aquí sólo abriría
@@ -9,6 +10,7 @@ export default function Loading() {
   return (
     <PageContainer>
       <PageHeader title="Facturas de combustible" />
+      <SectionNavSkeleton tabs={2} />
       <SkeletonPage rows={6} />
     </PageContainer>
   )

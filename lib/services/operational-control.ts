@@ -1,7 +1,8 @@
 import type { Session } from "next-auth"
-import { and, desc, eq, sql } from "drizzle-orm"
+import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
+  fleetVehicleDocuments,
   fuelImportBatches,
   fuelVehicleOperationalIntervals,
   fuelVehicles,
@@ -12,8 +13,17 @@ import {
 } from "@/db/schema"
 import { can } from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"
+import { logger } from "@/lib/logger"
+import { getFleetAdminSettings } from "@/lib/services/system-settings"
 import { addDaysToPlainDate, todayInChile } from "@/lib/utils"
 import { civilDate } from "@/lib/validation/dates"
+import { MAINTENANCE_OPEN_STATUSES } from "@/lib/validation/maintenance"
+import {
+  countFleetDocumentExpiry,
+  countStoppedVehicles,
+  type FleetDocumentExpiry,
+  type StoppedVehicles,
+} from "@/lib/operational-control/attention"
 import {
   FUEL_IMPORT_SOURCE_HEALTH,
   formatFuelImportBatchStatus,
@@ -62,6 +72,35 @@ export interface OperationalControlPeriod {
   to: string
 }
 
+/**
+ * Lo que «Requiere atención» del Panel operacional cuenta **hoy**, sin período.
+ *
+ * Cada campo es `null` cuando la sesión no tiene la capacidad de su dominio
+ * (la página no pinta el tile) o cuando su consulta falló (la página dice «No se
+ * pudo calcular» en vez de pintar 0): un fallo no tumba el resto del panel. La
+ * página distingue ambos casos con `permissions`.
+ *
+ * Cada cifra se mide con el criterio de la lista a la que enlaza su tile:
+ * detenidos y documentos con `filterFleetOverviewRows` sobre todos los
+ * vehículos del alcance (activos e inactivos, como `/flota`), y OT abiertas
+ * sobre todas las OT del alcance de la propia OT, sin fecha (como `/mantenciones`).
+ */
+export interface OperationalAttention {
+  stoppedVehicles: StoppedVehicles | null
+  fleetDocuments: (FleetDocumentExpiry & { warningDays: number }) | null
+  openWorkOrders: number | null
+}
+
+/** Una consulta de atención que falla se registra y se vuelve `null`; no rechaza el panel entero. */
+async function settleAttention<T>(label: string, run: () => PromiseLike<T>): Promise<T | null> {
+  try {
+    return await run()
+  } catch (error) {
+    logger.error(`[control-operacional] conteo de atención «${label}» falló`, error)
+    return null
+  }
+}
+
 export interface OperationalControlMetricInputs {
   totalIntervalHours: number
   operativeHours: number
@@ -94,8 +133,23 @@ export function resolveOperationalControlPeriod(input: Partial<OperationalContro
   return { from, to }
 }
 
+export interface OperationalControlHubOptions {
+  /**
+   * Calcula los conteos de «Requiere atención» (por defecto `true`, que es lo que
+   * pinta la página). La exportación a Excel no los usa: con `false` no se
+   * emiten sus consultas (documentos de flota, ajustes de aviso, OT abiertas) ni
+   * se cuentan los detenidos, y `attention` queda con todos sus campos en `null`.
+   */
+  includeAttention?: boolean
+}
+
 /** Read model común: unifica navegación y métricas sin borrar las diferencias de dominio. */
-export async function getOperationalControlHub(session: Session, input: Partial<OperationalControlPeriod> = {}) {
+export async function getOperationalControlHub(
+  session: Session,
+  input: Partial<OperationalControlPeriod> = {},
+  options: OperationalControlHubOptions = {},
+) {
+  const includeAttention = options.includeAttention !== false
   const period = resolveOperationalControlPeriod(input)
   const canViewFleet = can(session, "flota:view")
   const canViewMaintenance = can(session, "mantenciones:view")
@@ -110,9 +164,9 @@ export async function getOperationalControlHub(session: Session, input: Partial<
   const vehicleScope = worksiteScopeSql(session, fuelVehicles.worksiteId)
   const serviceScope = worksiteScopeSql(session, serviceEquipment.worksiteId)
 
-  const [vehicles, instruments, maintenanceAgg, inspectionAgg, availabilityRows, latestImport] = await Promise.all([
+  const [vehicles, instruments, maintenanceAgg, inspectionAgg, availabilityRows, latestImport, fleetDocumentData, openWorkOrders] = await Promise.all([
     canViewFleet || canViewMaintenance || canViewInspections
-      ? db.select({ id: fuelVehicles.id, code: fuelVehicles.code, plate: fuelVehicles.plate, type: fuelVehicles.type, worksiteId: fuelVehicles.worksiteId, worksiteName: worksites.name, operationalStatus: fuelVehicles.operationalStatus, isActive: fuelVehicles.isActive })
+      ? db.select({ id: fuelVehicles.id, code: fuelVehicles.code, plate: fuelVehicles.plate, type: fuelVehicles.type, worksiteId: fuelVehicles.worksiteId, worksiteName: worksites.name, operationalStatus: fuelVehicles.operationalStatus, isActive: fuelVehicles.isActive, soapExpiresAt: fuelVehicles.soapExpiresAt, technicalReviewExpiresAt: fuelVehicles.technicalReviewExpiresAt, circulationPermitExpiresAt: fuelVehicles.circulationPermitExpiresAt, insuranceExpiresAt: fuelVehicles.insuranceExpiresAt })
           .from(fuelVehicles).innerJoin(worksites, eq(worksites.id, fuelVehicles.worksiteId)).where(vehicleScope).orderBy(fuelVehicles.plate)
       : [],
     canViewServiceEquipment
@@ -149,6 +203,36 @@ export async function getOperationalControlHub(session: Session, input: Partial<
     }).from(fuelVehicleOperationalIntervals).innerJoin(fuelVehicles, eq(fuelVehicles.id, fuelVehicleOperationalIntervals.vehicleId)).where(vehicleScope).groupBy(fuelVehicleOperationalIntervals.vehicleId) : [],
     canViewFuelImport ? db.select({ id: fuelImportBatches.id, status: fuelImportBatches.estado, createdAt: fuelImportBatches.createdAt, validRows: fuelImportBatches.filasValidas, invalidRows: fuelImportBatches.filasInvalidas, source: fuelImportBatches.fuente })
       .from(fuelImportBatches).where(worksiteScopeSql(session, fuelImportBatches.worksiteId)).orderBy(desc(fuelImportBatches.createdAt)).limit(1) : [],
+    // «Requiere atención»: lo que `/flota?vencimiento=vencidos` cuenta. Mismo
+    // origen que `getFleetOverviewPage`: documentos vigentes con fecha de los
+    // vehículos del alcance, y los días de aviso que configura Flota.
+    includeAttention && canViewFleet ? settleAttention("documentos de flota", async () => {
+      const [documents, settings] = await Promise.all([
+        db.select({
+          vehicleId: fleetVehicleDocuments.vehicleId,
+          documentType: fleetVehicleDocuments.documentType,
+          expiresAt: fleetVehicleDocuments.expiresAt,
+        }).from(fleetVehicleDocuments)
+          .innerJoin(fuelVehicles, eq(fuelVehicles.id, fleetVehicleDocuments.vehicleId))
+          .where(and(
+            isNotNull(fleetVehicleDocuments.expiresAt),
+            eq(fleetVehicleDocuments.status, "current"),
+            vehicleScope,
+          )),
+        getFleetAdminSettings(),
+      ])
+      return { documents, warningDays: settings.warningDays }
+    }) : null,
+    // Las OT abiertas que cuenta `/mantenciones?status=abiertas`: todas las del
+    // alcance de la OT (no del vehículo), sin ventana de fechas. No es el
+    // `backlog` de las métricas, que sólo ve las OT fechadas dentro del período.
+    includeAttention && canViewMaintenance ? settleAttention("OT abiertas", async () => {
+      const [row] = await db.select({ count: sql<number>`COUNT(*)::int` }).from(maintenanceRecords).where(and(
+        worksiteScopeSql(session, maintenanceRecords.worksiteId),
+        inArray(maintenanceRecords.status, [...MAINTENANCE_OPEN_STATUSES]),
+      ))
+      return Number(row?.count ?? 0)
+    }) : null,
   ])
 
   const maintenanceByVehicle = new Map(maintenanceAgg.map((row) => [row.vehicleId, row]))
@@ -206,8 +290,23 @@ export async function getOperationalControlHub(session: Session, input: Partial<
   const completedCorrective = maintenanceAgg.reduce((sum, row) => sum + Number(row.completedCorrective), 0)
   const preventiveCompleted = maintenanceAgg.reduce((sum, row) => sum + Number(row.preventiveCompleted), 0)
   const preventiveDue = maintenanceAgg.reduce((sum, row) => sum + Number(row.preventiveDue), 0)
+  const today = todayInChile()
+  const attention: OperationalAttention = {
+    stoppedVehicles: includeAttention && canViewFleet ? countStoppedVehicles(vehicles) : null,
+    fleetDocuments: fleetDocumentData
+      ? {
+          warningDays: fleetDocumentData.warningDays,
+          ...countFleetDocumentExpiry(vehicles, fleetDocumentData.documents, {
+            today,
+            warningWindowEnd: addDaysToPlainDate(today, fleetDocumentData.warningDays),
+          }),
+        }
+      : null,
+    openWorkOrders,
+  }
   return {
     period,
+    attention,
     assets: [...vehicleAssets, ...serviceAssets],
     metrics: calculateOperationalControlMetrics({
       totalIntervalHours,

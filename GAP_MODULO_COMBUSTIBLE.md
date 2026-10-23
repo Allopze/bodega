@@ -7,6 +7,18 @@
 >
 > Toda afirmación sobre el estado actual cita `ruta:línea`. Las rutas son
 > relativas a la raíz del repositorio.
+>
+> **Nota 2026-10-22 (rama `feat/control-operacional-orden`).** Este documento
+> describe el módulo tal como estaba el 2026-10-21 y no se reescribe. Desde
+> entonces `/combustibles/analisis` y `/combustibles/reportes` se retiraron (hoy
+> son sólo redirecciones) y se borraron `app/(app)/combustibles/analisis/**`
+> (salvo la redirección), `app/(app)/combustibles/reportes/reports-view.tsx`,
+> `lib/combustibles/equipment-performance.ts` y `lib/combustibles/reports.ts`;
+> `lib/combustibles/performance-statistics.ts` conserva sólo el marcado de
+> atípicos (`flagOutliers`) que usa el detector de anomalías. Las citas de §1 y
+> §2 a esos archivos describen el estado previo; lo que cubría la vista de
+> análisis (R-01 a R-06) vive en `/combustibles/control/rendimiento/[familia]`
+> (§9). El nuevo orden del menú está en §11.
 
 ## 0. Stack detectado
 
@@ -39,7 +51,7 @@ por las preguntas que responde el tablero. Las piezas relevantes:
 - **Log operacional «CONSOLIDADO COMBUSTIBLES»**, que es la planilla de cargas del tablero: patente, fecha, hora, litros, código, faena, tipo, marca, modelo, horómetro/odómetro, operador, supervisor, «Suministro entregado por», rendimiento y tipo de rendimiento (`lib/combustibles/operations-import.ts:142-234`, `db/schema/fuel-operations.ts:41-75`, `app/(app)/combustibles/actions-operaciones.ts:102,231`).
 - **Integraciones de proveedor**: Copec TCT/TAE por portal (`lib/combustibles/copec-sync.ts:1044`) y Aramco por API (`lib/combustibles/aramco-sync.ts:259`), con un libro de transacciones idempotente (`db/schema/fuel-integrations.ts:49-108`, `lib/combustibles/fuel-provider-ledger.ts:94,240`).
 - **Ciclo de combustible**: estanques, recepciones, transferencias y entregas, con comparación recibido/entregado por faena (`db/schema/fuel-cycle.ts:10-69`, `lib/combustibles/fuel-cycle.ts:113-262`).
-- **Rendimiento**: vista `/combustibles/analisis` con presets por familia y estadística descriptiva (`app/(app)/combustibles/analisis/page.tsx`, `lib/combustibles/equipment-performance.ts:33-309`, `lib/combustibles/performance-statistics.ts`).
+- **Rendimiento**: vista `/combustibles/analisis` con presets por familia y estadística descriptiva (`app/(app)/combustibles/analisis/page.tsx`, `lib/combustibles/equipment-performance.ts:33-309`, `lib/combustibles/performance-statistics.ts`). _(Retirada el 2026-10-22: `/combustibles/analisis` redirige a `/combustibles/control/rendimiento/<familia>`, donde viven R-01 a R-06; ver §9 y §11.)_
 - **Anomalías**: reglas configurables con casos investigables (`db/schema/fuel-anomalies.ts:9-60`, `lib/combustibles/anomaly-rule-catalog.ts:22-72`, `app/(app)/combustibles/anomalias/**`).
 - **Telemetría**: integración GPS OnWay (posición, viajes, horómetro), sin consumo de combustible ni ralentí agregado (`lib/integrations/onway/onway-sync.ts:91-333`, `db/schema/fleet-gps.ts:92-210`).
 
@@ -58,7 +70,7 @@ por las preguntas que responde el tablero. Las piezas relevantes:
 | D-9 | **Las fotos de sello se exigen aun cuando no hay sello** y se justificó con motivo. | `lib/validation/fuel-tae.ts:5`, `app/api/tae/submit/route.ts:69-73`, `lib/services/fuel-tae.ts:190-194` | Foto de sello obligatoria solo si se informa el número. |
 | D-10 | **Nombres de conductor y supervisor visibles para cualquiera con `combustibles:view`.** | `app/(app)/combustibles/bitacora/bitacora-table.tsx:50-51`, `app/(app)/combustibles/bitacora/page.tsx:55`, `app/(app)/combustibles/bitacora/actions.ts:171-172,210` | Permiso nuevo `combustibles:view_personal`. |
 | D-11 | **Filtro «unidad de rendimiento» de la bitácora descarta todo el log operacional**: compara `km_lt|lt_hr` con `km_per_liter|liters_per_hour`. | `lib/combustibles/fuel-log.ts:355`, `lib/combustibles/operations-import.ts:16,115-116`, `app/(app)/combustibles/bitacora/page.tsx:73` | Mapear la unidad antes de comparar. |
-| D-12 | **`/combustibles/analisis` pasa una función de un Server Component a un Client Component** (`drilldownHref`), lo que Next.js rechaza al renderizar. | `app/(app)/combustibles/analisis/page.tsx:124`, `app/(app)/combustibles/analisis/performance-charts.tsx:29`, `app/(app)/combustibles/analisis/analysis-charts-lazy.tsx:9-12` | Pasar hrefs precalculados (datos serializables). Verificar en navegador. |
+| D-12 | **`/combustibles/analisis` pasa una función de un Server Component a un Client Component** (`drilldownHref`), lo que Next.js rechaza al renderizar. | `app/(app)/combustibles/analisis/page.tsx:124`, `app/(app)/combustibles/analisis/performance-charts.tsx:29`, `app/(app)/combustibles/analisis/analysis-charts-lazy.tsx:9-12` | Pasar hrefs precalculados (datos serializables). Verificar en navegador. _(Superado el 2026-10-22: la vista se retiró.)_ |
 | D-13 | **Cargadores contados en dos familias** (preset «cargadores y camionetas» y preset «heavy»). | `lib/combustibles/equipment-performance.ts:33-43` | Familia como atributo administrable del tipo de equipo. |
 | D-14 | **Tolerancia del ciclo fija en código** (2 % y 5 %), marcada como pendiente. | `lib/combustibles/fuel-cycle.ts:12-18` | Tolerancia por mandante, administrable. |
 | D-15 | **Las filas rechazadas del log operacional no se guardan** (solo el conteo). | `app/(app)/combustibles/actions-operaciones.ts:311,426` | Persistir rechazos con motivo. |
@@ -93,6 +105,10 @@ Estados: **Existe**, **Parcial**, **Falta**, **Incorrecto** (existe pero contrad
 | G-07 | Serie mensual horas vs litros con L/h global | Falta | Ídem | Serie mensual de Δhorómetro y litros. |
 
 ### R — Rendimiento por familia
+
+> Nota 2026-10-22: la columna «Evidencia» de esta tabla cita la vista de análisis
+> y `equipment-performance.ts`, ya retirados (ver la nota del encabezado). El
+> estado de R-01 a R-06 hoy está en §9, en `/combustibles/control/rendimiento/[familia]`.
 
 | ID | Capacidad | Estado | Evidencia | Acción |
 |---|---|---|---|---|
@@ -235,7 +251,7 @@ Se reutilizan: `combustibles:view` (vistas G, R, V y revisión de solo lectura),
 | 7 | Vistas G y R con consultas agregadas en SQL, estados de carga/vacío/error y exportación | `app/(app)/combustibles/control/page.tsx`, `.../rendimiento/[familia]/**`, `lib/combustibles/control/queries-*.ts` |
 | 8 | Vistas C (por mandante) y V | `.../control/sellos/**`, `.../control/ralenti/**` |
 | 9 | Revisión de cargas marcadas y configuración | `.../control/revision/**`, `.../control/configuracion/**` |
-| 10 | Datos personales: permiso en fotos, bitácora y exportaciones; correcciones D-11 y D-12 | `app/api/tae/evidence/[id]/route.ts`, `lib/combustibles/fuel-log.ts`, `app/(app)/combustibles/bitacora/**`, `app/(app)/combustibles/analisis/**` |
+| 10 | Datos personales: permiso en fotos, bitácora y exportaciones; correcciones D-11 y D-12 | `app/api/tae/evidence/[id]/route.ts`, `lib/combustibles/fuel-log.ts`, `app/(app)/combustibles/bitacora/**`, `app/(app)/combustibles/analisis/**` (retirado el 2026-10-22; la ruta redirige) |
 | 11 | Pruebas unitarias, PGlite, E2E; suite completa, lint, tipos, build | `lib/combustibles/control/*.test.ts`, `lib/__tests__/fuel-control-*.test.ts`, `e2e/combustibles-control.spec.ts` |
 
 ## 9. Estado final por ID (cierre, 2026-10-22)
@@ -316,7 +332,7 @@ Estados: **Implementado**, **Pendiente**, **Fuera de alcance**. La evidencia apu
 
 ### Defectos de §1
 
-D-1 a D-15 corregidos. D-11 en `lib/combustibles/fuel-log.ts:51` (con prueba). D-12 en `app/(app)/combustibles/analisis/drilldown-hrefs.ts` y `analisis/page.tsx:121`. D-14 reemplazado por la tolerancia por mandante (`fuel_mandantes.tolerance_pct`); el ciclo por faena existente conserva su escala propia.
+D-1 a D-15 corregidos. D-11 en `lib/combustibles/fuel-log.ts:51` (con prueba). D-12 en `app/(app)/combustibles/analisis/drilldown-hrefs.ts` y `analisis/page.tsx:121` (ambos se borraron el 2026-10-22 con la vista; `analisis/page.tsx` es hoy sólo una redirección). D-14 reemplazado por la tolerancia por mandante (`fuel_mandantes.tolerance_pct`); el ciclo por faena existente conserva su escala propia.
 
 ### Defectos del tablero que no se replicaron
 
@@ -382,3 +398,61 @@ Se aplican solos: `scripts/deploy-prod.sh` corre el servicio `sync-rbac` en cada
 | Navegador | 10 pantallas nuevas en 1440 px y 390 px: todas responden 200, sin desborde horizontal de página, sin errores de consola ni respuestas fallidas, con datos y con estados vacíos. Se corrigió el ajuste de columnas de la cola de revisión. |
 | Tamaño de archivos | Ningún archivo nuevo o modificado de la rama supera 500 líneas, salvo las dos excepciones documentadas arriba. |
 | Corrección de seguridad posterior a la revisión automática | Un usuario con alcance parcial podía sobrescribir un despacho de otra faena reusando su referencia; ahora se rechaza (`lib/combustibles/control/imports/service.ts`, prueba en `lib/__tests__/fuel-control-imports-pglite.test.ts`). |
+
+## 11. Navegación (2026-10-22)
+
+Rama `feat/control-operacional-orden`. El área «Control operacional» se ordenó por
+**tarea** (qué viene a hacer la persona) y no por fuente del dato (TCT, TAE,
+control de cargas). El cambio es de organización: el menú y qué pantallas se
+agrupan bajo cada ítem. Una barra de pestañas (`SectionNav`) enlaza las pantallas
+de cada ítem; su definición única es `lib/combustibles/section-nav.ts` y el menú
+sale de `modules/combustibles/manifest.ts`.
+
+| Grupo del menú | Ítem | Ruta | Alias que lo dejan resaltado |
+|---|---|---|---|
+| Seguimiento | Panel operacional | `/control-operacional` | |
+| Flota | Vehículos | `/flota` | |
+| Flota | Monitoreo GPS | `/flota/monitoreo` | |
+| Flota | Mantenciones | `/mantenciones` | |
+| Combustible | Consumo y rendimiento | `/combustibles` | el resto de las rutas bajo `/combustibles` que no tienen ítem propio |
+| Combustible | Cargas | `/combustibles/bitacora` | `/combustibles/control/registrar`, `/combustibles/importar`, `/combustibles/control/importar` |
+| Combustible | Revisión | `/combustibles/revision` | `/combustibles/control/revision`, `/combustibles/anomalias` |
+| Combustible | TAE y sellos | `/combustibles/tae` | `/combustibles/control/sellos`, `/combustibles/sellos` |
+| Combustible | Facturas y pagos | `/combustibles/facturas` | `/combustibles/cuenta-corriente`, `/combustibles/nueva` |
+| Administración › Catálogos de flota | Control de combustible | `/combustibles/control/configuracion` | |
+| Administración › Catálogos de flota | Reglas de anomalías | `/combustibles/anomalias/reglas` | |
+
+La página de `/combustibles` se titula «Consumo y rendimiento»; en el sidebar de
+escritorio el rótulo del ítem puede abreviarse a «Consumo» por ancho.
+
+Dónde quedó cada vista (pestañas de cada ítem):
+
+| Vista | Ítem del menú | Ruta |
+|---|---|---|
+| Resumen | Consumo y rendimiento | `/combustibles` |
+| Consumo por tarjeta (TCT) | Consumo y rendimiento | `/combustibles?vista=analisis` |
+| Cargas por equipo (G-01 a G-07) | Consumo y rendimiento | `/combustibles/control` |
+| Rendimiento por familia (R-01 a R-06) | Consumo y rendimiento | `/combustibles/control/rendimiento/<familia>` (la primera es `FIRST_PERFORMANCE_HREF`) |
+| Ralentí (V-01 a V-09) | Consumo y rendimiento | `/combustibles/control/ralenti` |
+| Ciclo físico | Consumo y rendimiento | `/combustibles/ciclo` |
+| Cargas (bitácora y registro) | Cargas | `/combustibles/bitacora`, `/combustibles/control/registrar` |
+| Importar (un solo botón, `fuel-import-button.tsx`) | Cargas | Según el permiso abre `/combustibles/importar` (TCT y log operacional), `/combustibles/control/importar` (telemetría y entradas de suministro), `/combustibles/tae/importar` (histórico TAE) o el diálogo de cargas facturadas (Excel) |
+| Cargas marcadas | Revisión | `/combustibles/control/revision` |
+| Anomalías | Revisión | `/combustibles/anomalias` (`/combustibles/revision` es sólo la entrada: manda a la cola que tenga trabajo) |
+| Cargas TAE | TAE y sellos | `/combustibles/tae` |
+| Conciliación | TAE y sellos | `/combustibles/tae/conciliacion` |
+| Sellos por mandante (C-01 a C-08) | TAE y sellos | `/combustibles/control/sellos?mandante=` |
+| Historial de sellos | TAE y sellos | `/combustibles/sellos` |
+| Facturas | Facturas y pagos | `/combustibles/facturas` |
+| Cuenta corriente | Facturas y pagos | `/combustibles/cuenta-corriente` |
+| Configuración (mandantes, medios, familias, umbrales) y reglas de anomalías | Administración › Catálogos de flota | `/combustibles/control/configuracion`, `/combustibles/anomalias/reglas` |
+
+Rutas retiradas (sólo redirigen, para favoritos y enlaces antiguos):
+
+- `/combustibles/analisis` → `/combustibles/control/rendimiento/<familia>`; conserva `preset` (traducido a familia), `faena`, `desde` y `hasta` (`app/(app)/combustibles/analisis/redirect-target.ts`).
+- `/combustibles/reportes` → `/combustibles?vista=analisis`; conserva `desde` y `hasta`. Leía la tabla legada `fuel_loads` y nada enlazaba a ella.
+
+Cada ítem y cada pestaña se muestran con el mismo permiso que exige su pantalla (el
+menú no es una frontera de seguridad). «Facturas y pagos» exige `combustibles:view_costs`;
+«TAE y sellos» exige `combustibles:tae_view`, salvo el historial de sellos, que sólo pide
+`combustibles:view`; la cuenta corriente es global y monetaria.

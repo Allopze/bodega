@@ -16,8 +16,8 @@ import { parseControlFilters } from "@/lib/combustibles/control/filters"
 import { getLitersByMonthAndMedium, getMeterSeries, getOverviewHeader, getWorksiteMediumCrosstab, hasAnyLoads } from "@/lib/combustibles/control/queries/overview"
 import { pickControlParams, pivotMonthlyByMedium, revisionHref } from "@/lib/combustibles/control/view-helpers"
 import { formatQty } from "@/lib/utils"
+import { ConsumoNav } from "../consumo-nav"
 import { ControlFilters } from "./_components/control-filters"
-import { ControlNav } from "./_components/control-nav"
 import { loadControlContext } from "./_components/control-context"
 import { OverviewMeterChart, OverviewMonthlyChart, OverviewRankingChart } from "./_charts/overview-charts-lazy"
 import { OverviewCrosstab } from "./_charts/overview-crosstab"
@@ -25,7 +25,7 @@ import { ViewSection, SectionError } from "./_charts/overview-section"
 import { ReviewExclusionNote } from "./_charts/performance-review-note"
 import { exportCrosstabAction, exportOverviewAction } from "./export-overview-actions"
 
-export const metadata: Metadata = { title: "Control de combustible" }
+export const metadata: Metadata = { title: "Cargas por equipo" }
 
 type PageProps = { searchParams: Promise<Record<string, string | string[] | undefined>> }
 
@@ -114,13 +114,13 @@ export default async function ControlOverviewPage({ searchParams }: PageProps) {
   return (
     <PageContainer>
       <PageHeader
-        title="Control de combustible"
+        title="Cargas por equipo"
         description="Cuánto combustible se carga, dónde y con qué rendimiento."
-        breadcrumb={[{ label: "Combustibles", href: "/combustibles" }, { label: "Control" }]}
+        breadcrumb={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Consumo y rendimiento", href: "/combustibles" }, { label: "Cargas por equipo" }]}
         actions={exportAction}
       />
       <DegradedDataBanner degraded={failed} total={sources.length} />
-      <ControlNav items={ctx.navItems} />
+      <ConsumoNav activeKey="equipos" />
       <ControlFilters years={ctx.years} defaultYear={ctx.defaultYear} worksites={ctx.worksites} mandantes={ctx.mandantes} />
 
       {noLoadsAtAll ? (

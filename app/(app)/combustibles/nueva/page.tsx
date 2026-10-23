@@ -4,6 +4,7 @@ import { db } from "@/db"
 import { fuelVehicles, fuelSuppliers, worksites } from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"
+import { assertFuelCostAccess } from "@/lib/operational-control/capabilities"
 import { getFuelIecRates } from "@/lib/services/system-settings"
 import { PageContainer } from "@/components/ui/page-container"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
@@ -11,7 +12,14 @@ import { NewFuelLoadForm } from "./new-fuel-load-form"
 
 export default async function NuevaCargaPage() {
   let session
-  try { session = await requirePermission("combustibles:create") }
+  try {
+    // El formulario captura y calcula boleta, IEC e IVA, y el menú lo cuelga de
+    // «Facturas y pagos» (`view_costs`): crear exige además ver costos. La acción
+    // `createFuelLoadAction` aplica el mismo contrato; esta guarda sólo evita
+    // mostrar un formulario que el servidor rechazaría.
+    session = await requirePermission("combustibles:create")
+    assertFuelCostAccess(session)
+  }
   catch { redirect("/forbidden") }
 
   // Antes ofrecía vehículos/proveedores DESACTIVADOS y faenas fuera del
@@ -32,7 +40,7 @@ export default async function NuevaCargaPage() {
     <PageContainer>
       <PageHeader
         title="Nueva carga de combustible"
-        breadcrumb={<Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Nueva carga" }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Facturas y pagos", href: "/combustibles/facturas" }, { label: "Nueva carga" }]} />}
       />
       <NewFuelLoadForm
         data={{

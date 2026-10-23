@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { MAINTENANCE_STATUS_LABELS } from "@/lib/validation/maintenance"
+import { MAINTENANCE_OPEN_FILTER, MAINTENANCE_OPEN_FILTER_LABEL, MAINTENANCE_STATUS_LABELS } from "@/lib/validation/maintenance"
 
 interface MaintenanceFiltersProps {
   vehicles: Array<{ id: string; plate: string }>
@@ -86,6 +86,7 @@ export function MaintenanceFilters({ vehicles, worksites, current }: Maintenance
         <SelectTrigger aria-label="Estado"><SelectValue placeholder="Todos los estados" /></SelectTrigger>
         <SelectContent>
           <SelectItem value="all">Todos los estados</SelectItem>
+          <SelectItem value={MAINTENANCE_OPEN_FILTER}>{MAINTENANCE_OPEN_FILTER_LABEL}</SelectItem>
           {Object.entries(MAINTENANCE_STATUS_LABELS).map(([value, label]) => (
             <SelectItem key={value} value={value}>{label}</SelectItem>
           ))}

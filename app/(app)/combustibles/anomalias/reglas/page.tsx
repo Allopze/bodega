@@ -8,7 +8,7 @@ import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { AnomalyRuleCatalog } from "./rule-catalog"
 import { NewAnomalyRuleButton } from "./new-rule-button"
 
-export const metadata: Metadata = { title: "Reglas de anomalía" }
+export const metadata: Metadata = { title: "Reglas de anomalías" }
 
 export default async function AnomalyRulesPage() {
   try { await requirePermission("combustibles:manage_anomaly_rules") }
@@ -19,9 +19,9 @@ export default async function AnomalyRulesPage() {
   return (
     <PageContainer>
       <PageHeader
-        title="Reglas de anomalía"
+        title="Reglas de anomalías"
         description="Activa, desactiva y ajusta los parámetros de las reglas de detección de combustible."
-        breadcrumb={<Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Anomalías", href: "/combustibles/anomalias" }, { label: "Reglas" }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Administración", href: "/admin" }, { label: "Configuración de combustible" }, { label: "Reglas de anomalías" }]} />}
         actions={<NewAnomalyRuleButton />}
       />
       <AnomalyRuleCatalog rows={rows} />

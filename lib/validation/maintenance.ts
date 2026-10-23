@@ -23,6 +23,30 @@ export const MAINTENANCE_STATUS_LABELS: Record<MaintenanceStatus, string> = {
   cancelled: "Cancelada",
 }
 
+/**
+ * Valor de `status` (URL y filtro) que agrupa las OT sin cerrar: programadas o
+ * en curso. Es el «backlog» que cuenta el Panel operacional, que enlaza aquí
+ * (`/mantenciones?status=abiertas`) para que la cifra y la lista digan lo mismo.
+ */
+export const MAINTENANCE_OPEN_FILTER = "abiertas"
+export const MAINTENANCE_OPEN_FILTER_LABEL = "Abiertas (programadas o en curso)"
+export const MAINTENANCE_OPEN_STATUSES = ["scheduled", "in_progress"] as const satisfies readonly MaintenanceStatus[]
+
+/**
+ * Traduce el filtro de estado de la lista a los estados que debe coincidir.
+ * Lista blanca: solo un estado conocido o el alias llegan a la consulta.
+ *
+ * - `null`: sin filtro (valor ausente o vacío).
+ * - `[]`: valor desconocido; no coincide con nada (no se ignora en silencio ni
+ *   se manda crudo a SQL).
+ */
+export function resolveMaintenanceStatusFilter(value: string | null | undefined): readonly MaintenanceStatus[] | null {
+  const trimmed = value?.trim()
+  if (!trimmed) return null
+  if (trimmed === MAINTENANCE_OPEN_FILTER) return MAINTENANCE_OPEN_STATUSES
+  return (MAINTENANCE_STATUSES as readonly string[]).includes(trimmed) ? [trimmed as MaintenanceStatus] : []
+}
+
 export type MaintenanceStatusVariant = "default" | "warning" | "success" | "danger" | "outline"
 // Igual a `StateMetaInput["variant"]` en los valores que el módulo usa; se
 // mantiene literal para que el schema de validación no dependa de UI.

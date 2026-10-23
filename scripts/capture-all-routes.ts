@@ -679,7 +679,7 @@ const routeTargets: RouteTarget[] = [
   { slug: "combustibles", path: "/combustibles", auth: true },
   { slug: "combustibles-nueva", path: "/combustibles/nueva", auth: true },
   { slug: "combustibles-detalle", path: "/combustibles/fuel-audit-1", auth: true },
-  { slug: "combustibles-reportes", path: "/combustibles/reportes", auth: true },
+  { slug: "combustibles-revision", path: "/combustibles/revision", auth: true, notes: "Redirige a la cola con pendientes (cargas marcadas o anomalías)." },
   { slug: "combustibles-vehiculos-legacy", path: "/combustibles/vehiculos", auth: true, allowedPaths: ["/admin/flota-catalogos/vehiculos"], captureView: false, notes: "Compatibilidad: redirige al catálogo administrativo canónico." },
   { slug: "combustibles-proveedores-legacy", path: "/combustibles/proveedores-combustible", auth: true, allowedPaths: ["/admin/flota-catalogos/proveedores-combustible"], captureView: false, notes: "Compatibilidad: redirige al catálogo administrativo canónico." },
   {
@@ -701,7 +701,6 @@ const routeTargets: RouteTarget[] = [
   { slug: "combustibles-tae-importar-detalle", path: "/combustibles/tae/importar/tae-import-audit-1", auth: true },
   { slug: "combustibles-tae-importar-historial", path: "/combustibles/tae/importar/historial", auth: true },
   { slug: "combustibles-tae-conciliacion", path: "/combustibles/tae/conciliacion", auth: true },
-  { slug: "combustibles-analisis", path: "/combustibles/analisis", auth: true },
   { slug: "combustibles-anomalias", path: "/combustibles/anomalias", auth: true },
   { slug: "combustibles-anomalias-reglas", path: "/combustibles/anomalias/reglas", auth: true },
   { slug: "combustibles-bitacora", path: "/combustibles/bitacora", auth: true },

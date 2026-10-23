@@ -16,7 +16,7 @@ import { isGlobalRole, visibleWorksiteIds, worksiteScopeSql } from "@/lib/auth/s
 import { can } from "@/lib/auth/can"
 import { accountableFuelLoadsWhere } from "@/lib/combustibles/load-status"
 import { fuelOperationOccurredAtSql } from "@/lib/combustibles/fuel-log"
-import { fleetDocumentMetadataSchema, resolveExpiryCandidates } from "@/lib/validation/fleet-documents"
+import { fleetDocumentMetadataSchema, resolveNextExpiryDate } from "@/lib/validation/fleet-documents"
 import { isCivilDate } from "@/lib/validation/dates"
 import { filterFleetOverviewRows, type FleetOverviewFilters } from "@/lib/fleet-overview-filters"
 import { isValidReason, reasonRequiredMessage } from "@/lib/validation/reason-thresholds"
@@ -251,12 +251,12 @@ export async function getFleetOverview(session: Session, worksiteId?: string, ve
       circulationPermitExpiresAt: vehicle.circulationPermitExpiresAt,
       insurancePolicyNumber: vehicle.insurancePolicyNumber,
       insuranceExpiresAt: vehicle.insuranceExpiresAt,
-      nextExpiryDate: getNextExpiryDate(resolveExpiryCandidates({
+      nextExpiryDate: resolveNextExpiryDate({
         soapExpiresAt: vehicle.soapExpiresAt,
         technicalReviewExpiresAt: vehicle.technicalReviewExpiresAt,
         circulationPermitExpiresAt: vehicle.circulationPermitExpiresAt,
         insuranceExpiresAt: vehicle.insuranceExpiresAt,
-      }, currentDocumentsByVehicle.get(vehicle.id) ?? [])),
+      }, currentDocumentsByVehicle.get(vehicle.id) ?? []),
       totalFuelAmount,
       totalMaintenanceAmount,
       totalOperationalCost,
@@ -320,12 +320,12 @@ export async function getFleetOverviewPage(
     operationalStatus: vehicle.operationalStatus,
     responsibleName: vehicle.responsibleUser?.name ?? vehicle.responsibleUser?.email ?? null,
     isActive: vehicle.isActive,
-    nextExpiryDate: getNextExpiryDate(resolveExpiryCandidates({
+    nextExpiryDate: resolveNextExpiryDate({
       soapExpiresAt: vehicle.soapExpiresAt,
       technicalReviewExpiresAt: vehicle.technicalReviewExpiresAt,
       circulationPermitExpiresAt: vehicle.circulationPermitExpiresAt,
       insuranceExpiresAt: vehicle.insuranceExpiresAt,
-    }, currentDocumentsByVehicle.get(vehicle.id) ?? [])),
+    }, currentDocumentsByVehicle.get(vehicle.id) ?? []),
   }))
   const matching = filterFleetOverviewRows(index, filters, dates)
   const limit = Math.max(1, pagination.limit)
@@ -495,19 +495,13 @@ export async function getFleetVehicleDetail(session: Session, id: string) {
     recentOperations,
     topOperators: operatorCounts.map((o) => ({ operador: o.operador!, count: Number(o.count) })),
     operationalIntervals,
-    nextExpiryDate: getNextExpiryDate(resolveExpiryCandidates({
+    nextExpiryDate: resolveNextExpiryDate({
       soapExpiresAt: vehicle.soapExpiresAt,
       technicalReviewExpiresAt: vehicle.technicalReviewExpiresAt,
       circulationPermitExpiresAt: vehicle.circulationPermitExpiresAt,
       insuranceExpiresAt: vehicle.insuranceExpiresAt,
-    }, documents.filter((document) => document.status === "current"))),
+    }, documents.filter((document) => document.status === "current")),
   }
-}
-
-function getNextExpiryDate(values: Array<string | null | undefined>) {
-  return values
-    .filter((value): value is string => Boolean(value))
-    .sort((a, b) => a.localeCompare(b))[0] ?? null
 }
 
 /* ── Document management ────────────────────────────────────────────────────── */

@@ -63,7 +63,7 @@ export default async function OperationsBatchDetailPage({ params }: { params: Pr
       <PageHeader
         title="Detalle de importación (Log operacional)"
         description={`${batch.archivoNombre} · ${batch.periodoDesde} a ${batch.periodoHasta}`}
-        breadcrumb={<Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Importar consumos", href: "/combustibles/importar" }, { label: batch.archivoNombre }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Cargas", href: "/combustibles/bitacora" }, { label: "Importar consumos", href: "/combustibles/importar?tab=operaciones" }, { label: batch.archivoNombre }]} />}
         headerActions={<RevertOperationsBatchButton batchId={batch.id} canRevert={canRevert} />}
       />
 

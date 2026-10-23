@@ -69,7 +69,8 @@ describe("FleetSection capability matrix", () => {
     expect(getMaintenanceMonthlyTrend).not.toHaveBeenCalled()
     expect(getUsageMaintenanceAlerts).not.toHaveBeenCalled()
     expect(readDtePortalConfig).not.toHaveBeenCalled()
-    expect(domainSectionOf(section).props.links.map((link) => link.href)).toEqual(["/flota"])
+    // flota:view abre el Panel operacional, así que la sección también lo enlaza.
+    expect(domainSectionOf(section).props.links.map((link) => link.href)).toEqual(["/control-operacional", "/flota"])
   })
 
   it("a fuel-only role does not query fleet or maintenance and does not include TAE implicitly", async () => {
@@ -89,7 +90,7 @@ describe("FleetSection capability matrix", () => {
 
     expect(readDtePortalConfig).not.toHaveBeenCalled()
     expect(countPendingFuelCreditNotes).not.toHaveBeenCalled()
-    expect(domainSectionOf(section).props.links.map((link) => link.href)).toEqual(["/flota"])
+    expect(domainSectionOf(section).props.links.map((link) => link.href)).toEqual(["/control-operacional", "/flota"])
   })
 })
 

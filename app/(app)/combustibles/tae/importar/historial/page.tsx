@@ -33,7 +33,7 @@ export default async function TaeImportHistoryPage({ searchParams }: { searchPar
         description={isGlobal
           ? `${formatQty(count)} lotes registrados con trazabilidad de estado y responsable.`
           : `${formatQty(count)} lotes con cargas de tus faenas. Las cifras corresponden sólo a tus faenas.`}
-        breadcrumb={<Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Control TAE", href: "/combustibles/tae" }, { label: "Importar histórico", href: "/combustibles/tae/importar" }, { label: "Historial" }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Control operacional", href: "/control-operacional" }, { label: "TAE y sellos", href: "/combustibles/tae" }, { label: "Importar histórico", href: "/combustibles/tae/importar" }, { label: "Historial" }]} />}
         actions={<Button asChild><Link href="/combustibles/tae/importar">Nueva importación</Link></Button>}
       />
 

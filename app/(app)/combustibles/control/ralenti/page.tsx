@@ -13,9 +13,9 @@ import { getIdleDailySeries, getIdleEquipmentMonths, getIdleFleetMonths, getIdle
 import { getLitersPerHourComparison } from "@/lib/combustibles/control/queries/idle-comparison"
 import { resolvePagination } from "@/lib/pagination"
 import { IdleDailyChartLazy, IdleLitersChartLazy, IdleMonthlyChartLazy } from "../_charts/idle-charts-lazy"
+import { ConsumoNav } from "../../consumo-nav"
 import { ControlFilters } from "../_components/control-filters"
 import { loadControlContext } from "../_components/control-context"
-import { ControlNav } from "../_components/control-nav"
 import { ControlSection, SectionError } from "../sellos/section"
 import { EquipmentSelect } from "../sellos/equipment-select"
 import { monthText, numberText, pctText } from "../sellos/format"
@@ -28,7 +28,7 @@ export const metadata: Metadata = { title: "Ralentí" }
 
 const PAGE_SIZE = 50
 const PATH = "/combustibles/control/ralenti"
-const BREADCRUMB = [{ label: "Combustibles", href: "/combustibles" }, { label: "Control", href: "/combustibles/control" }, { label: "Ralentí" }]
+const BREADCRUMB = [{ label: "Control operacional", href: "/control-operacional" }, { label: "Consumo y rendimiento", href: "/combustibles" }, { label: "Ralentí" }]
 
 export default async function IdlePage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   let session
@@ -55,7 +55,7 @@ export default async function IdlePage({ searchParams }: { searchParams: Promise
     return (
       <PageContainer>
         {header}
-        <ControlNav items={ctx.navItems} />
+        <ConsumoNav activeKey="ralenti" />
         <EmptyState
           title="Aún no hay telemetría de equipos"
           description={canImport
@@ -85,9 +85,9 @@ export default async function IdlePage({ searchParams }: { searchParams: Promise
   return (
     <PageContainer>
       {header}
-      <ControlNav items={ctx.navItems} />
-      <ControlFilters years={ctx.years} defaultYear={ctx.defaultYear} worksites={ctx.worksites} mandantes={ctx.mandantes} extraKeys={["equipo"]} />
       <DegradedDataBanner degraded={degraded} total={total()} />
+      <ConsumoNav activeKey="ralenti" />
+      <ControlFilters years={ctx.years} defaultYear={ctx.defaultYear} worksites={ctx.worksites} mandantes={ctx.mandantes} extraKeys={["equipo"]} />
       {fleet && fleet.idlePct !== null ? (
         <p className="mb-2 mt-3 text-sm text-[var(--color-text-muted)]">
           En el período, <strong className="font-semibold text-[var(--color-text)]">{pctText(fleet.idlePct)}</strong> de las {numberText(fleet.operatingHours)} horas de funcionamiento fueron en vacío ({numberText(fleet.idleHours)} h).

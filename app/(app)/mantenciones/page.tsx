@@ -1,13 +1,10 @@
 import type { Metadata } from "next"
-import Link from "next/link"
 import { redirect } from "next/navigation"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
 import { ServerPagination } from "@/components/ui/server-pagination"
 import { can, requirePermission } from "@/lib/auth/can"
-import { isGlobalRole } from "@/lib/auth/scope"
 import { MAINTENANCE_PAGE_SIZE, getMaintenancePageData, getUpcomingMaintenance, getUsageMaintenanceAlerts, listMaintenanceAssignees } from "@/lib/services/maintenance"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { MaintenanceCreateButton } from "./maintenance-create-button"
@@ -15,6 +12,7 @@ import { MaintenanceTable } from "./maintenance-table"
 import { MaintenanceFilters } from "./maintenance-filters"
 import { formatDate, formatQty } from "@/lib/utils"
 import { MaintenanceExportButton } from "./maintenance-export-button"
+import { MaintenanceSectionNav } from "./maintenance-section-nav"
 
 export const metadata: Metadata = { title: "Mantenciones" }
 
@@ -90,17 +88,12 @@ export default async function MantencionesPage({
         description={canViewCosts ? "Registro operativo de servicios, costos, kilometraje, horómetro y documentos de flota." : "Registro operativo de servicios, kilometraje, horómetro y documentos de flota."}
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Control operacional", href: "/" },
+            { label: "Control operacional", href: "/control-operacional" },
             { label: "Mantenciones" },
           ]} />
         }
         actions={
           <div className="flex items-center gap-2">
-            {can(session, "flota:view") && <Button asChild size="sm" variant="secondary">
-              <Link href="/flota">Ver flota</Link>
-            </Button>}
-            <Button asChild size="sm" variant="secondary"><Link href="/mantenciones/planes">Planes preventivos</Link></Button>
-            {canEdit && isGlobalRole(session) && <Button asChild size="sm" variant="secondary"><Link href="/mantenciones/politicas-documentales">Política documental</Link></Button>}
             <MaintenanceExportButton filters={{ vehicleId, worksiteId, status, q }} />
             {canCreate && (
               <MaintenanceCreateButton
@@ -114,6 +107,8 @@ export default async function MantencionesPage({
           </div>
         }
       />
+
+      <MaintenanceSectionNav session={session} activeKey="ot" />
 
       <Card>
         <CardHeader>

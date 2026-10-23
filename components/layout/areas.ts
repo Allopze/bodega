@@ -44,6 +44,11 @@ export const NAV_GROUP_ORDER: string[] = [
   // como una sola lista (auditoría UI/UX TI 2026-10-05, TIUX-45).
   "Equipos",
   "Servicios",
+  // Control operacional — el panel abre el área bajo "Seguimiento"; después los equipos
+  // y lo que se hace con ellos, y el combustible. Diez ítems planos de tres
+  // módulos mezclaban flota, mantención y cinco vistas de combustible.
+  "Flota",
+  "Combustible",
 ]
 
 export const AREAS: AreaDef[] = [

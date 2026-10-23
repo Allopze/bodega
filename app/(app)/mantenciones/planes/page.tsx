@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { can, requirePermission } from "@/lib/auth/can"
 import { getMaintenancePageData, listMaintenanceAssignees, listMaintenancePlans } from "@/lib/services/maintenance"
+import { MaintenanceSectionNav } from "../maintenance-section-nav"
 import { MaintenancePlansScreen } from "./maintenance-plans-screen"
 
 export const metadata: Metadata = { title: "Planes preventivos" }
@@ -16,6 +17,7 @@ export default async function MaintenancePlansPage() {
     listMaintenanceAssignees(session),
   ])
   return <MaintenancePlansScreen
+    nav={<MaintenanceSectionNav session={session} activeKey="planes" />}
     plans={plans}
     vehicles={options.vehicles.map((vehicle) => ({ id: vehicle.id, plate: vehicle.plate, code: vehicle.code, worksiteId: vehicle.worksiteId }))}
     suppliers={options.suppliers.map((supplier) => ({ id: supplier.id, name: supplier.name }))}

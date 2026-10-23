@@ -194,8 +194,8 @@ export function severityOf(rule: { severity?: string | null }, fallback: Anomaly
  * outlier. Sólo el log operacional (`fuel_operation_records`) tiene una fila
  * por transacción con id propio; TCT sólo tiene rendimiento agregado por
  * período (`fuel_consumption_records`, sin una "carga" individual que
- * referenciar) y TAE no calcula rendimiento en absoluto (ver el comentario
- * en `equipment-performance.ts`) — por eso estas dos reglas sólo cubren el
+ * referenciar) y TAE no calcula rendimiento en absoluto (el rendimiento de las
+ * cargas en terreno lo calcula la serie del control, `lib/combustibles/control/`) — por eso estas dos reglas sólo cubren el
  * log operacional, no las tres fuentes.
  */
 async function getOperationPerformanceObservations(rowLimit: number) {

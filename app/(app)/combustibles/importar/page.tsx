@@ -13,6 +13,7 @@ import { PageContainer } from "@/components/ui/page-container"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { ImportWizard } from "./import-wizard"
+import { resolveImportTab } from "./import-tab"
 import { ImportBatchHistory } from "./import-batch-history"
 import { OperationsImportWizard } from "./operations-import-wizard"
 import { CopecSyncStatus } from "./copec-sync-status"
@@ -23,16 +24,23 @@ import { FuelProviderQualityExportButton } from "./fuel-provider-quality-export-
 
 export const metadata: Metadata = { title: "Importar consumos de combustible" }
 
-export default async function ImportarConsumosPage() {
+export default async function ImportarConsumosPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}) {
   let session
   try { session = await requirePermission("combustibles:import") }
   catch { redirect("/forbidden") }
+
+  const { tab } = await searchParams
 
   const worksiteScope = resolveWorksiteScope(session)
   const canImportOperations = isGlobalRole(session)
   const canSyncIntegrations = can(session, "combustibles:sync_integrations")
   const canViewTae = can(session, "combustibles:tae_view")
   const canExportQuality = can(session, "combustibles:export")
+  const initialTab = resolveImportTab(tab, canImportOperations)
 
   const [worksitesList, batches, operationBatches, copecSyncState, copecSyncStartOptions, aramcoStatus] = await Promise.all([
     worksiteScope.mode === "none"
@@ -62,9 +70,11 @@ export default async function ImportarConsumosPage() {
   return (
     <PageContainer>
       <PageHeader
-        title="Importar consumos TCT"
-        description="Sincroniza los consumos mensuales desde Copec y Aramco, o carga un reporte Excel manual"
-        breadcrumb={<Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Importar consumos" }]} />}
+        title="Importar consumos"
+        description={canImportOperations
+          ? "Sincroniza los consumos mensuales desde Copec y Aramco, carga un reporte Excel manual o importa el log operacional de cargas"
+          : "Sincroniza los consumos mensuales desde Copec y Aramco, o carga un reporte Excel manual"}
+        breadcrumb={<Breadcrumbs items={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Cargas", href: "/combustibles/bitacora" }, { label: "Importar consumos" }]} />}
         actions={(canViewTae || canExportQuality) ? (
           <div className="flex flex-wrap gap-2">
             {canExportQuality && <FuelProviderQualityExportButton />}
@@ -77,7 +87,7 @@ export default async function ImportarConsumosPage() {
         ) : undefined}
       />
 
-      <Tabs defaultValue="consumos">
+      <Tabs key={initialTab} defaultValue={initialTab}>
         <TabsList>
           <TabsTrigger value="consumos">TCT · Diésel y BlueMax</TabsTrigger>
           {canImportOperations && <TabsTrigger value="operaciones">Log operacional</TabsTrigger>}
@@ -87,7 +97,7 @@ export default async function ImportarConsumosPage() {
           {canViewTae && (
             <div className="mb-4 flex flex-col gap-2 border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2.5 text-xs text-[var(--color-text-muted)] sm:flex-row sm:items-center sm:justify-between">
               <span>TAE se extrae junto con la sincronización Copec y las cargas físicas también pueden registrarse manualmente por QR.</span>
-              <Link href="/combustibles/tae" className="shrink-0 font-medium text-[var(--color-primary)] hover:underline">Ir a Control TAE</Link>
+              <Link href="/combustibles/tae" className="shrink-0 font-medium text-[var(--color-primary)] hover:underline">Ir a TAE y sellos</Link>
             </div>
           )}
           <div className="mb-6 grid gap-4">

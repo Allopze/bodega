@@ -5,8 +5,8 @@ export default function Loading() {
   return (
     <>
       <PageHeader
-        title="Control operacional"
-        breadcrumb={<Breadcrumbs items={[{ label: "Control operacional" }]} />}
+        title="Panel operacional"
+        breadcrumb={<Breadcrumbs items={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Panel operacional" }]} />}
       />
       <SkeletonPage rows={8} />
     </>

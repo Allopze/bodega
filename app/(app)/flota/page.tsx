@@ -17,7 +17,7 @@ import { FleetFilters } from "./fleet-filters"
 import { FleetTable } from "./fleet-table"
 import { FleetExportButton } from "./fleet-export-button"
 
-export const metadata: Metadata = { title: "Flota" }
+export const metadata: Metadata = { title: "Vehículos" }
 
 const formatNumber = (value: number) => formatQty(value, undefined, { maximumFractionDigits: 1 })
 const FLEET_PAGE_SIZE = 25
@@ -100,19 +100,16 @@ export default async function FlotaPage({
   return (
     <PageContainer>
       <PageHeader
-        title="Flota"
+        title="Vehículos"
         description={canViewCosts && (canViewFuel || canViewMaintenance) ? "Catálogo operativo de vehículos con costos autorizados, mantenciones, lecturas y vencimientos." : "Catálogo operativo de vehículos, mantenciones, lecturas y vencimientos."}
         breadcrumb={
           <Breadcrumbs items={[
-            { label: "Control operacional", href: "/" },
-            { label: "Flota" },
+            { label: "Control operacional", href: "/control-operacional" },
+            { label: "Vehículos" },
           ]} />
         }
         actions={<div className="flex items-center gap-2">
           <FleetExportButton filters={{ operationalStatus: filterEstado, responsibleName: filterResponsable, expiry: filterVencimiento as "vencidos" | "proximos" | "al-dia" | undefined, q }} />
-          <Button asChild size="sm" variant="secondary">
-            <Link href="/flota/monitoreo">Monitoreo GPS</Link>
-          </Button>
           {/* El botón lleva al padrón, así que se guarda con el permiso del
               padrón y no con el de la decisión operativa. */}
           {can(session, "admin:fleet_vehicles") && (

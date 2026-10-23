@@ -1,6 +1,6 @@
 "use client"
 
-import { useActionState, useState } from "react"
+import { useActionState, useState, type ReactNode } from "react"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -17,8 +17,9 @@ type Data = Awaited<ReturnType<typeof listMaintenanceDocumentPolicies>>
 const TYPES = [{ value: "quote", label: "Cotización" }, { value: "diagnosis", label: "Diagnóstico" }, { value: "work_order", label: "Orden / acta de taller" }, { value: "invoice", label: "Factura" }, { value: "evidence", label: "Evidencia" }, { value: "other", label: "Otro antecedente" }]
 const MOMENTS = [{ value: "before_start", label: "Antes de iniciar la OT" }, { value: "before_complete", label: "Antes de completar la OT" }]
 
-export function MaintenanceDocumentPolicies({ data, canEdit }: { data: Data; canEdit: boolean }) {
-  return <PageContainer width="workbench"><PageHeader title="Políticas documentales" description="Documentos obligatorios por clase de activo y momento del flujo de la OT." breadcrumb={<Breadcrumbs items={[{ label: "Mantenciones", href: "/mantenciones" }, { label: "Políticas documentales" }]} />} />
+export function MaintenanceDocumentPolicies({ nav, data, canEdit }: { nav: ReactNode; data: Data; canEdit: boolean }) {
+  return <PageContainer width="workbench"><PageHeader title="Políticas documentales" description="Documentos obligatorios por clase de activo y momento del flujo de la OT." breadcrumb={<Breadcrumbs items={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Mantenciones", href: "/mantenciones" }, { label: "Políticas documentales" }]} />} />
+    {nav}
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]"><Card><CardHeader><CardTitle>Reglas vigentes e históricas</CardTitle></CardHeader><CardContent><div className="space-y-2">{data.policies.length === 0 ? <p className="text-sm text-[var(--color-text-muted)]">No hay documentos obligatorios configurados.</p> : data.policies.map((policy) => <PolicyRow key={policy.id} policy={policy} canEdit={canEdit} />)}</div></CardContent></Card>{canEdit && <PolicyForm equipmentTypes={data.equipmentTypes} />}</div>
   </PageContainer>
 }

@@ -44,6 +44,9 @@ contratos de servidor.
   `combustibles/operations-charts-lazy.tsx` y
   `combustibles/analisis/analysis-charts-lazy.tsx`) conservan sólo su geometría
   específica y heredan color, animación y radio de `Skeleton`.
+  _(Nota 2026-10-22: `analysis-charts-lazy.tsx` se borró con la vista
+  `/combustibles/analisis`, que ahora redirige a «Consumo y rendimiento»; los
+  gráficos de esa área viven en `combustibles/control/_charts/`.)_
 - Mantenciones centraliza label y variant en
   `lib/validation/maintenance.ts:38`, con regresión en
   `lib/__tests__/maintenance-validation.test.ts:41-47`; las tres superficies
@@ -87,7 +90,8 @@ queries, permisos, ordenamiento ni exportaciones. Ejemplos de evidencia:
   `admin/suplencias/suplencias-client.tsx:27`.
 - Prevención y combustibles: `prevencion/campanas/campanas-client.tsx:20`,
   tabs PDTP, `combustibles/sellos/page.tsx:20`, `analisis/page.tsx:21` y
-  `ciclo/page.tsx:20`.
+  `ciclo/page.tsx:20` (`analisis/page.tsx` es hoy sólo una redirección desde el
+  2026-10-22; ya no usa `DataTable`).
 
 Se conserva `DataTable` sólo cuando la superficie es una lista tabular con
 columnas, búsqueda y paginación compatibles. Las celdas combinadas, acciones

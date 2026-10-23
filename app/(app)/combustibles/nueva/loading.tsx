@@ -6,7 +6,7 @@ export default function Loading() {
     <>
       <PageHeader
         title="Nueva carga de combustible"
-        breadcrumb={<Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Nueva carga" }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Facturas y pagos", href: "/combustibles/facturas" }, { label: "Nueva carga" }]} />}
       />
       <SkeletonPage rows={6} />
     </>

@@ -17,15 +17,18 @@ import { Input } from "@/components/ui/input"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { X } from "@phosphor-icons/react/dist/ssr"
+import { GasPump, X } from "@phosphor-icons/react/dist/ssr"
 import { ServerPagination } from "@/components/ui/server-pagination"
 import { pluralize } from "@/lib/utils"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
+import { EmptyState } from "@/components/ui/empty-state"
+import { fuelImportAvailability } from "@/lib/combustibles/section-nav"
 import { BitacoraTable } from "./bitacora-table"
 import { BitacoraExportButton } from "./export-button"
 import { FilterSelect } from "@/components/ui/filter-select"
+import { FuelImportButton } from "../fuel-import-button"
 
-export const metadata: Metadata = { title: "Bitácora general de combustible" }
+export const metadata: Metadata = { title: "Cargas de combustible" }
 
 const PAGE_SIZE = 50
 const SOURCE_OPTIONS: FuelLogSource[] = ["tae_pwa", "invoiced", "operation_manual"]
@@ -151,6 +154,7 @@ export default async function FuelLogPage({ searchParams }: { searchParams: Prom
   const rows = await settle(getFuelLogRows(session, filters, { limit: PAGE_SIZE, offset: pagination.offset, sort }), [], "bitacora-rows")
 
   const canViewAudit = can(session, "combustibles:view_audit")
+  const canRegisterLoad = can(session, "combustibles:register_load")
   const enriched = rows.map((row) => ({
     ...row,
     detailHref: fuelLogDetailHref(row),
@@ -185,14 +189,28 @@ export default async function FuelLogPage({ searchParams }: { searchParams: Prom
   const advancedActiveCount = ADVANCED_FILTER_KEYS
     .filter((key) => canViewPersonal || (key !== "conductor" && key !== "supervisor"))
     .filter((key) => Boolean(sp[key])).length
+  // Hay filtros activos aunque no haya chip: marca, modelo, conductor, sellos y otros
+  // secundarios filtran sin chip. Sin esto, un filtro sin resultados se leía como
+  // «aún no hay cargas».
+  const filtered = chips.length > 0 || advancedActiveCount > 0
 
   return (
     <PageContainer width="full">
       <PageHeader
-        title="Bitácora general"
-        description="TAE, facturación y log operacional en una sola consulta, cada fila con su fuente original."
-        breadcrumb={<Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Bitácora general" }]} />}
-        actions={<BitacoraExportButton filters={filters} />}
+        title="Cargas de combustible"
+        description="Reúne las cargas de TAE, de facturación y del log operacional en una sola consulta; cada fila indica su fuente."
+        breadcrumb={<Breadcrumbs items={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Cargas" }]} />}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <BitacoraExportButton filters={filters} />
+            <FuelImportButton available={fuelImportAvailability(session)} worksites={worksitesList.map(({ id, name }) => ({ id, name }))} />
+            {canRegisterLoad && (
+              <Button asChild size="sm">
+                <Link href="/combustibles/control/registrar">Registrar carga</Link>
+              </Button>
+            )}
+          </div>
+        }
       />
 
       <form className="mb-4 flex flex-col gap-3 border-y border-(--color-border) py-4">
@@ -205,7 +223,7 @@ export default async function FuelLogPage({ searchParams }: { searchParams: Prom
           <FilterSelect name="fuente" defaultValue={sp.fuente} options={SOURCE_OPTIONS.map((source) => ({ value: source, label: FUEL_LOG_SOURCE_LABEL[source] }))} placeholder="Todas las fuentes" />
           <div className="flex flex-wrap items-center gap-2 md:col-span-2">
             <Button type="submit" variant="secondary">Aplicar</Button>
-            {chips.length > 0 && <Link href="/combustibles/bitacora" className="text-xs text-(--color-text-muted) hover:underline">Limpiar filtros</Link>}
+            {filtered && <Link href="/combustibles/bitacora" className="text-xs text-(--color-text-muted) hover:underline">Limpiar filtros</Link>}
             <label className="ml-auto flex items-center gap-2 text-xs text-(--color-text-muted)">
               Orden
               <FilterSelect name="orden" defaultValue={sp.orden === "asc" ? "asc" : "desc"} options={[{ value: "desc", label: "Más reciente primero" }, { value: "asc", label: "Más antiguo primero" }]} placeholder="Orden" />
@@ -278,18 +296,24 @@ export default async function FuelLogPage({ searchParams }: { searchParams: Prom
 
       <p className="mb-2 text-xs text-(--color-text-muted)">{pagination.totalItems} registros · mostrando {pagination.from}–{pagination.to}</p>
 
-      {pagination.totalItems === 0 && chips.length > 0 && (
+      {pagination.totalItems === 0 && filtered && (
         <div className="mb-4 border border-dashed border-(--color-border-strong) p-4 text-center text-sm text-(--color-text-muted)">
           Sin coincidencias para estos filtros. Intenta con otros criterios o limpia los filtros para ver todos los registros.
         </div>
       )}
-      {pagination.totalItems === 0 && chips.length === 0 && (
-        <div className="mb-4 border border-dashed border-(--color-border-strong) p-4 text-center text-sm text-(--color-text-muted)">
-          No hay registros en la bitácora para este alcance de faena. Si acabas de migrar, ejecuta la importación histórica TAE desde /combustibles/tae/importar.
-        </div>
+      {pagination.totalItems === 0 && !filtered && (
+        <EmptyState
+          compact
+          icon={<GasPump size={20} />}
+          title="Aún no hay cargas en tu alcance de faenas"
+          description="Aquí aparecen las cargas registradas por TAE, las facturadas y las importadas desde el log operacional."
+          action={canRegisterLoad ? <Button asChild size="sm"><Link href="/combustibles/control/registrar">Registrar carga</Link></Button> : undefined}
+          secondaryAction={can(session, "combustibles:tae_import") ? <Button asChild variant="secondary" size="sm"><Link href="/combustibles/tae/importar">Importar histórico TAE</Link></Button> : undefined}
+          className="mb-4 border border-dashed border-(--color-border-strong)"
+        />
       )}
 
-      <BitacoraTable rows={enriched} canViewPersonal={canViewPersonal} />
+      {(pagination.totalItems > 0 || filtered) && <BitacoraTable rows={enriched} canViewPersonal={canViewPersonal} />}
 
       <ServerPagination pagination={pagination} hrefForPage={pageHref} className="mt-2" />
     </PageContainer>

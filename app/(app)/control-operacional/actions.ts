@@ -17,7 +17,8 @@ export async function exportOperationalControlXlsxAction(filters: Partial<Operat
   catch { return { ok: false as const, message: "Sin permisos para exportar Control operacional" } }
   try {
     const period = resolveOperationalControlPeriod(filters)
-    const data = await getOperationalControlHub(session, period)
+    // El Excel lleva activos e indicadores; los conteos de «Requiere atención» son del panel.
+    const data = await getOperationalControlHub(session, period, { includeAttention: false })
     const { canViewMaintenance, canViewInspections, canViewCosts } = data.permissions
     const showCost = canViewMaintenance && canViewCosts
     const ExcelJS = await import("exceljs")
