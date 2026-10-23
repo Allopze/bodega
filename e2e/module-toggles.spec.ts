@@ -152,9 +152,9 @@ test.describe("Module toggles", () => {
     // Find the "Control operacional" card
     const card = flotaModuleSection(page)
 
-    // Selecciona Flota por su contrato accesible, no por posición: Control
+    // Selecciona Vehículos (`/flota`) por su contrato accesible, no por posición: Control
     // operacional comparte la tarjeta y puede agregar superficies antes.
-    const subToggle = card.getByLabel("Desactivar Flota")
+    const subToggle = card.getByLabel("Desactivar Vehículos")
     await expect(subToggle).toBeVisible()
     await subToggle.click({ force: true })
     const submoduleResponse = page.waitForResponse((response) => response.status() === 200 && response.url().includes("/admin/modulos"))
