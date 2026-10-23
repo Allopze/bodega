@@ -40,7 +40,9 @@ export default async function CombustiblesFacturasPage({
 }) {
   let session
   try {
-    session = await requirePermission("combustibles:view")
+    // El menú muestra «Facturas y pagos» con `view_costs`; el gate lo declara
+    // igual y `assertFuelCostAccess` exige además `view` (paridad menú–página).
+    session = await requirePermission("combustibles:view_costs")
     assertFuelCostAccess(session)
   }
   catch { redirect("/forbidden") }

@@ -42,7 +42,7 @@ export function SectionNav({
 
   function hrefFor(href: string) {
     if (carryParams.length === 0) return href
-    const [path, query = ""] = href.split("?", 2)
+    const [path = href, query = ""] = href.split("?", 2)
     const params = new URLSearchParams(query)
     for (const key of carryParams) {
       const value = searchParams.get(key)

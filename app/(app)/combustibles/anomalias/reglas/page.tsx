@@ -21,7 +21,7 @@ export default async function AnomalyRulesPage() {
       <PageHeader
         title="Reglas de anomalía"
         description="Activa, desactiva y ajusta los parámetros de las reglas de detección de combustible."
-        breadcrumb={<Breadcrumbs items={[{ label: "Administración", href: "/admin" }, { label: "Catálogos de flota", href: "/admin/flota-catalogos" }, { label: "Reglas de anomalías" }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Administración", href: "/admin" }, { label: "Configuración de combustible" }, { label: "Reglas de anomalías" }]} />}
         actions={<NewAnomalyRuleButton />}
       />
       <AnomalyRuleCatalog rows={rows} />

@@ -91,7 +91,7 @@ export default async function ControlConfigurationPage() {
       <PageHeader
         title="Configuración del control de combustible"
         description="Mandantes, medios de suministro, familias de equipos y umbrales que usa el control de combustible"
-        breadcrumb={<Breadcrumbs items={[{ label: "Administración", href: "/admin" }, { label: "Catálogos de flota", href: "/admin/flota-catalogos" }, { label: "Control de combustible" }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Administración", href: "/admin" }, { label: "Configuración de combustible" }, { label: "Control de combustible" }]} />}
       />
       <DegradedDataBanner degraded={Array.from({ length: degraded }, () => "fuente")} total={sources.length} />
       <MandantesSection mandantes={mandantes} worksites={worksiteOptions} clients={clientOptions} />

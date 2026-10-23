@@ -31,10 +31,16 @@ export const ADMIN_AREAS: AreaNode[] = [
           { label: "Tipos de equipo",             href: "/admin/flota-catalogos/tipos-equipo",            permissions: ["admin:fleet_catalog"] },
           { label: "Vehículos",                   href: "/admin/flota-catalogos/vehiculos",               permissions: ["admin:fleet_vehicles"] },
           { label: "Proveedores de combustible",  href: "/admin/flota-catalogos/proveedores-combustible", permissions: ["combustibles:manage_suppliers"] },
-          // Viven en el árbol de combustibles, pero son configuración: salieron de
-          // las pestañas del control para no mezclarse con el trabajo diario.
-          { label: "Control de combustible",      href: "/combustibles/control/configuracion",          permissions: ["combustibles:manage_control"] },
-          { label: "Reglas de anomalías",         href: "/combustibles/anomalias/reglas",               permissions: ["combustibles:manage_anomaly_rules"] },
+        ],
+      },
+      {
+        // Vive en el árbol de combustibles, pero es configuración: salió de las
+        // pestañas del control para no mezclarse con el trabajo diario. El padre
+        // pasa al primer hijo visible para quien solo administra reglas.
+        label: "Configuración de combustible", href: "/combustibles/control/configuracion", iconName: "GasPump", permissions: ["combustibles:manage_control"],
+        children: [
+          { label: "Control de combustible", href: "/combustibles/control/configuracion", permissions: ["combustibles:manage_control"] },
+          { label: "Reglas de anomalías",    href: "/combustibles/anomalias/reglas",      permissions: ["combustibles:manage_anomaly_rules"] },
         ],
       },
       { label: "Tipos de activo TI",    href: "/admin/tipos-activo",        iconName: "Laptop",            permissions: ["admin:it_asset_types"] },
