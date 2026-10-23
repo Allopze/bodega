@@ -13,8 +13,11 @@ import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { getAnomalyCases, getAnomalyDistribution, type AnomalyCaseStatus } from "@/lib/combustibles/anomaly-cases"
 import { ANOMALY_STATUS_LABELS, ANOMALY_SEVERITY_LABELS } from "@/lib/combustibles/anomaly-labels"
 import { parsePageParam } from "@/lib/utils"
+import { ANOMALY_OPEN_FILTER, ANOMALY_OPEN_FILTER_LABEL, OPEN_ANOMALY_STATUSES, loadRevisionCounts } from "@/lib/combustibles/revision-counts"
+import { revisionNavItems } from "@/lib/combustibles/section-nav"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
+import { SectionNav } from "@/components/ui/section-nav"
 import { Button } from "@/components/ui/button"
 import { AnomalyCaseCard } from "./anomaly-case-card"
 import { AnomalyDistributionChart } from "./anomaly-charts-lazy"
@@ -44,7 +47,11 @@ export default async function AnomalyCasesPage({ searchParams }: { searchParams:
   const canResolve = can(session, "combustibles:resolve_anomalies")
   const canManageRules = can(session, "combustibles:manage_anomaly_rules")
 
-  const status = ["open", "in_review", "resolved", "dismissed", "reopened"].includes(sp.estado ?? "") ? sp.estado as AnomalyCaseStatus : undefined
+  // `vigentes` es lo que cuenta la pestaña de «Revisión» (OPEN_ANOMALY_STATUSES):
+  // la cifra de la pestaña y la lista que abre tienen que ser la misma.
+  const status: AnomalyCaseStatus | AnomalyCaseStatus[] | undefined = sp.estado === ANOMALY_OPEN_FILTER
+    ? [...OPEN_ANOMALY_STATUSES]
+    : ["open", "in_review", "resolved", "dismissed", "reopened"].includes(sp.estado ?? "") ? sp.estado as AnomalyCaseStatus : undefined
   const severity = ["low", "medium", "high", "critical"].includes(sp.severidad ?? "") ? sp.severidad as "low" | "medium" | "high" | "critical" : undefined
   const worksiteId = sp.faena?.trim() || undefined
   // "Abrir el caso de anomalía relacionado" desde la bitácora llega como ?ref=<source>:<id>.
@@ -54,7 +61,7 @@ export default async function AnomalyCasesPage({ searchParams }: { searchParams:
   // `?page=` no numérico → 1, no NaN (guard compartido en lib/utils).
   const page = parsePageParam(sp.page)
 
-  const [worksitesList, anomalyCasesResult, distribution] = await Promise.all([
+  const [worksitesList, anomalyCasesResult, distribution, counts] = await Promise.all([
     settle(
       scope.mode === "none" ? Promise.resolve([]) : db.query.worksites.findMany({
         where: scope.mode === "some" ? inArray(worksites.id, scope.ids) : undefined,
@@ -73,6 +80,7 @@ export default async function AnomalyCasesPage({ searchParams }: { searchParams:
       { total: 0, byStatus: [], bySeverity: [], byRuleCode: [] },
       "anomalias-distribution",
     ),
+    loadRevisionCounts(session),
   ])
   const { cases, total } = anomalyCasesResult
   const pagination = resolvePagination({ pageParam: String(page), totalItems: total, pageSize: PAGE_SIZE })
@@ -84,14 +92,15 @@ export default async function AnomalyCasesPage({ searchParams }: { searchParams:
       <PageHeader
         title="Anomalías de combustible"
         description="Casos detectados por reglas de control. Asigna, revisa y resuelve cada caso desde aquí."
-        breadcrumb={<Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Anomalías" }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Revisión", href: "/combustibles/revision" }, { label: "Anomalías" }]} />}
         actions={canManageRules ? <Button asChild variant="secondary"><Link href="/combustibles/anomalias/reglas"><Gear size={16} />Reglas</Link></Button> : undefined}
       />
+      <SectionNav items={revisionNavItems(counts)} activeKey="anomalias" ariaLabel="Colas de revisión" carryParams={["faena"]} />
 
       <form className="mb-4 grid gap-3 border-y border-(--color-border) py-4 md:grid-cols-4">
         <WorksiteFilterPresence />
         <FilterSelect name="faena" defaultValue={sp.faena} options={worksitesList.map((w) => ({ value: w.id, label: w.name }))} placeholder="Todas las faenas" />
-        <FilterSelect name="estado" defaultValue={sp.estado} options={Object.entries(ANOMALY_STATUS_LABELS).map(([k, v]) => ({ value: k, label: v }))} placeholder="Todos los estados" />
+        <FilterSelect name="estado" defaultValue={sp.estado} options={[{ value: ANOMALY_OPEN_FILTER, label: ANOMALY_OPEN_FILTER_LABEL }, ...Object.entries(ANOMALY_STATUS_LABELS).map(([k, v]) => ({ value: k, label: v }))]} placeholder="Todos los estados" />
         <FilterSelect name="severidad" defaultValue={sp.severidad} options={Object.entries(ANOMALY_SEVERITY_LABELS).map(([k, v]) => ({ value: k, label: v }))} placeholder="Todas las severidades" />
         <Button type="submit" variant="secondary">Aplicar</Button>
       </form>

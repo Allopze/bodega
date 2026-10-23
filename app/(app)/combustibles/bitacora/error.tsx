@@ -26,10 +26,10 @@ export default function BitacoraError({
       <EmptyState
         as="h1"
         icon={isNetwork ? <WifiSlash size={24} /> : <BookOpen size={24} />}
-        title={isNetwork ? "Error de conexión" : "Error al cargar la bitácora"}
+        title={isNetwork ? "Error de conexión" : "No se pudo cargar el listado de cargas"}
         description={isNetwork
           ? "No se pudo conectar con el servidor. Verifica tu conexión a internet y que el servicio esté disponible."
-          : "No se pudo consultar la bitácora general. Intenta nuevamente o reporta el error si persiste."
+          : "No se pudo consultar el listado de cargas de combustible. Intenta nuevamente o reporta el error si persiste."
         }
         action={<div className="flex flex-wrap gap-2"><Button variant="secondary" onClick={unstable_retry}>Intentar de nuevo</Button><ReportErrorButton error={error} variant="secondary" /></div>}
       />

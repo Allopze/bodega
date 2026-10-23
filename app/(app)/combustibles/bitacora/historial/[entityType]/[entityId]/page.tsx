@@ -55,7 +55,7 @@ export default async function FuelLogHistoryPage({ params }: { params: Promise<{
       <PageHeader
         title="Historial de cambios"
         description={`${ENTITY_LABEL[entityType]} · ${entityId}`}
-        breadcrumb={<Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Bitácora general", href: "/combustibles/bitacora" }, { label: "Historial" }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Cargas", href: "/combustibles/bitacora" }, { label: "Historial de cambios" }]} />}
       />
 
       <Card className="mb-5">

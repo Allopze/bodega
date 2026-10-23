@@ -37,6 +37,7 @@ export default async function FlotaVehiclePage({
         description={[vehicle.brand, vehicle.model, vehicle.year].filter(Boolean).join(" ") || vehicle.equipmentType?.name || vehicle.type}
         breadcrumb={
           <Breadcrumbs items={[
+            { label: "Control operacional", href: "/control-operacional" },
             { label: "Vehículos", href: "/flota" },
             { label: vehicle.plate },
           ]} />

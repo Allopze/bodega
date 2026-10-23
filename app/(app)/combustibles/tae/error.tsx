@@ -26,7 +26,7 @@ export default function TaeError({
       <EmptyState
         as="h1"
         icon={isNetwork ? <WifiSlash size={24} /> : <GasPump size={24} />}
-        title={isNetwork ? "Error de conexión" : "Error al cargar el control TAE"}
+        title={isNetwork ? "Error de conexión" : "Error al cargar TAE y sellos"}
         description={isNetwork
           ? "No se pudo conectar con el servidor. Verifica tu conexión a internet y que el servicio esté disponible."
           : "No se pudo cargar esta vista. Intenta nuevamente o reporta el error si persiste."

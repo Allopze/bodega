@@ -11,11 +11,13 @@ import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { ServerPagination } from "@/components/ui/server-pagination"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
+import { SectionNav } from "@/components/ui/section-nav"
 import { parseControlFilters } from "@/lib/combustibles/control/filters"
 import { getReviewQueue, parseReviewTab, REVIEW_PAGE_SIZE, type ReviewQueueResult } from "@/lib/combustibles/control/review-queue"
+import { loadRevisionCounts } from "@/lib/combustibles/revision-counts"
+import { revisionNavItems } from "@/lib/combustibles/section-nav"
 import { ControlFilters } from "../_components/control-filters"
 import { loadControlContext } from "../_components/control-context"
-import { ControlNav } from "../_components/control-nav"
 import { ReviewQueueList } from "./review-queue-list"
 import { ReviewTabs } from "./review-tabs"
 
@@ -49,9 +51,10 @@ export default async function ReviewPage({ searchParams }: { searchParams: Promi
   const tab = parseReviewTab(raw.estado)
   const canDecide = can(session, "combustibles:approve_flagged")
 
-  const [context, queue] = await Promise.all([
+  const [context, queue, counts] = await Promise.all([
     loadControlContext(session),
     settle(getReviewQueue(session, filters, tab), EMPTY_QUEUE, "control-review-queue"),
+    loadRevisionCounts(session),
   ])
   const degraded = queue === EMPTY_QUEUE
   const pagination = resolvePagination({ pageParam: raw.pagina, totalItems: queue.total, pageSize: REVIEW_PAGE_SIZE })
@@ -63,11 +66,11 @@ export default async function ReviewPage({ searchParams }: { searchParams: Promi
       <PageHeader
         title="Revisión de cargas"
         description="Cargas que el sistema marcó para que una persona decida si cuentan en el rendimiento del equipo"
-        breadcrumb={<Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Control", href: "/combustibles/control" }, { label: "Revisión" }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Revisión", href: "/combustibles/revision" }, { label: "Cargas marcadas" }]} />}
       />
-      <ControlNav items={context.navItems} />
-      <ControlFilters years={context.years} defaultYear={context.defaultYear} worksites={context.worksites} mandantes={context.mandantes} />
       <DegradedDataBanner degraded={degraded ? ["cola de revisión"] : []} total={1} />
+      <SectionNav items={revisionNavItems(counts)} activeKey="cargas" ariaLabel="Colas de revisión" carryParams={["faena"]} />
+      <ControlFilters years={context.years} defaultYear={context.defaultYear} worksites={context.worksites} mandantes={context.mandantes} />
 
       <ReviewTabs active={tab.value} counts={queue.counts} searchParams={raw} />
 
@@ -84,7 +87,7 @@ export default async function ReviewPage({ searchParams }: { searchParams: Promi
           title={empty.title}
           description={empty.description}
           action={tab.value === "en-revision" ? (
-            <Button asChild variant="secondary" size="sm"><Link href="/combustibles/control">Ir a la vista general</Link></Button>
+            <Button asChild variant="secondary" size="sm"><Link href="/combustibles/control">Ver cargas por equipo</Link></Button>
           ) : (
             <Button asChild variant="secondary" size="sm"><Link href="/combustibles/control/revision">Ver cargas en revisión</Link></Button>
           )}

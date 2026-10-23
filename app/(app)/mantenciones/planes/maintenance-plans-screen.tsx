@@ -1,6 +1,6 @@
 "use client"
 
-import { useActionState, useState } from "react"
+import { useActionState, useState, type ReactNode } from "react"
 import { useOperation } from "@/lib/hooks/use-operation"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
@@ -57,7 +57,9 @@ const TYPES = [
   { value: "revision_tecnica", label: "Revisión técnica" },
 ]
 
-export function MaintenancePlansScreen({ plans, vehicles, suppliers, costCenters, assignees, canEdit, canCreateOrders }: {
+export function MaintenancePlansScreen({ nav, plans, vehicles, suppliers, costCenters, assignees, canEdit, canCreateOrders }: {
+  /** Barra de pestañas de Mantenciones, armada en el servidor (`MaintenanceSectionNav`). */
+  nav: ReactNode
   plans: Plan[]
   vehicles: Vehicle[]
   suppliers: Supplier[]
@@ -72,12 +74,13 @@ export function MaintenancePlansScreen({ plans, vehicles, suppliers, costCenters
     <PageHeader
       title="Planes preventivos"
       description="Reglas por activo que generan órdenes antes de vencer por fecha, kilometraje u horómetro."
-      breadcrumb={<Breadcrumbs items={[{ label: "Mantenciones", href: "/mantenciones" }, { label: "Planes preventivos" }]} />}
+      breadcrumb={<Breadcrumbs items={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Mantenciones", href: "/mantenciones" }, { label: "Planes preventivos" }]} />}
       actions={<div className="flex gap-2">
         {canCreateOrders && <Button type="button" variant="secondary" disabled={materialize.pending} onClick={() => materialize.run(materializeMaintenancePlansAction)}>{materialize.pending ? "Evaluando…" : "Evaluar vencimientos"}</Button>}
         {canEdit && <Button type="button" onClick={() => setEditing("new")}>Nuevo plan</Button>}
       </div>}
     />
+    {nav}
     {materialize.message && <p role="status" className="mb-3 text-sm text-[var(--color-text-muted)]">{materialize.message}</p>}
     {plans.length === 0 ? <EmptyState title="No hay planes preventivos" description="Crea una regla por activo para que la plataforma programe la OT antes del vencimiento." action={canEdit ? <Button type="button" onClick={() => setEditing("new")}>Crear primer plan</Button> : undefined} /> : (
       <div className="grid gap-4 lg:grid-cols-2">

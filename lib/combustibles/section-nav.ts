@@ -49,7 +49,8 @@ export function consumoNavItems(): SectionNavItem[] {
 export function revisionNavItems(counts: { flagged: number | null; anomalies: number | null }): SectionNavItem[] {
   return [
     { key: "cargas", href: "/combustibles/control/revision", label: "Cargas marcadas", count: counts.flagged ?? undefined },
-    { key: "anomalias", href: "/combustibles/anomalias", label: "Anomalías", count: counts.anomalies ?? undefined },
+    // `estado=vigentes`: la lista abre con lo mismo que cuenta la pestaña (ver revision-counts.ts).
+    { key: "anomalias", href: "/combustibles/anomalias?estado=vigentes", label: "Anomalías", count: counts.anomalies ?? undefined },
   ]
 }
 

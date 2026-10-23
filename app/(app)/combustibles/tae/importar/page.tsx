@@ -23,7 +23,7 @@ export default async function TaeImportPage() {
       <PageHeader
         title="Importar histórico TAE"
         description="Revisa el mapeo del control manual TAE y confirma su importación trazable."
-        breadcrumb={<Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Control TAE", href: "/combustibles/tae" }, { label: "Importar histórico" }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Control operacional", href: "/control-operacional" }, { label: "TAE y sellos", href: "/combustibles/tae" }, { label: "Importar histórico" }]} />}
         actions={<Button asChild variant="secondary"><Link href="/combustibles/tae/importar/historial">Ver historial</Link></Button>}
       />
       <TaeImportReportForm />

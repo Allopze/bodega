@@ -1,8 +1,5 @@
 import { describe, it, expect } from "vitest"
-import {
-  mean, median, standardDeviation, percentile, coefficientOfVariation,
-  sampleReliability, MIN_CONCLUSIVE_SAMPLE, flagOutliers,
-} from "./performance-statistics"
+import { mean, median, standardDeviation, percentile, coefficientOfVariation, flagOutliers } from "./performance-statistics"
 
 describe("mean/median/standardDeviation", () => {
   it("computes mean, median and population standard deviation", () => {
@@ -36,21 +33,6 @@ describe("coefficientOfVariation", () => {
 
   it("returns a percentage otherwise", () => {
     expect(coefficientOfVariation([10, 10, 10])).toBe(0)
-  })
-})
-
-describe("sampleReliability", () => {
-  it("is insuficiente below MIN_CONCLUSIVE_SAMPLE", () => {
-    expect(sampleReliability(MIN_CONCLUSIVE_SAMPLE - 1)).toBe("insuficiente")
-  })
-
-  it("is baja between the threshold and double", () => {
-    expect(sampleReliability(MIN_CONCLUSIVE_SAMPLE)).toBe("baja")
-    expect(sampleReliability(MIN_CONCLUSIVE_SAMPLE * 2 - 1)).toBe("baja")
-  })
-
-  it("is confiable at double the threshold or above", () => {
-    expect(sampleReliability(MIN_CONCLUSIVE_SAMPLE * 2)).toBe("confiable")
   })
 })
 

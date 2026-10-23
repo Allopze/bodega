@@ -6,9 +6,8 @@ export default function ImportarLoading() {
   return (
     <PageContainer>
       <PageHeader
-        title="Importar consumos de combustible"
-        description="Carga reportes de tarjetas de combustible por patente y período, o el log operacional de cargas"
-        breadcrumb={<Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Importar consumos" }]} />}
+        title="Importar consumos"
+        breadcrumb={<Breadcrumbs items={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Cargas", href: "/combustibles/bitacora" }, { label: "Importar consumos" }]} />}
       />
       <SkeletonPage rows={6} />
     </PageContainer>

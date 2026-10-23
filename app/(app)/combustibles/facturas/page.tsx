@@ -8,8 +8,10 @@ import { can, isGlobalRole, requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { assertFuelCostAccess } from "@/lib/operational-control/capabilities"
 import { buildFuelLoadsWhere, buildFuelVehiclesWhere } from "@/lib/combustibles/queries"
+import { facturasNavItems } from "@/lib/combustibles/section-nav"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
+import { SectionNav } from "@/components/ui/section-nav"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -25,11 +27,11 @@ export const metadata: Metadata = { title: "Facturas de combustible" }
 const PAGE_SIZE = 50
 
 /**
- * Control de facturas de combustible (IEC/IVA, proveedores, cuenta corriente).
- * Relocalizado desde /combustibles el 2026-07-09 al introducir el dashboard de
- * consumos por patente como vista principal del módulo. Sigue activo — las
- * facturas y pagos aquí registrados son datos financieros reales — pero ya no
- * está enlazado desde el nav; se accede desde /combustibles o directamente.
+ * Control de facturas de combustible (IEC/IVA, proveedores). Es la pantalla
+ * principal de «Facturas y pagos» en el menú (`facturasNavItems`); la cuenta
+ * corriente es su otra pestaña. Nació en /combustibles y se relocalizó aquí el
+ * 2026-07-09 al introducir el dashboard de consumos por patente. Las facturas
+ * y pagos son datos financieros reales, por eso exige `combustibles:view_costs`.
  */
 export default async function CombustiblesFacturasPage({
   searchParams,
@@ -179,7 +181,7 @@ export default async function CombustiblesFacturasPage({
       <PageHeader
         title="Facturas de combustible"
         description="Control de facturas, IEC/IVA y cuenta corriente por proveedor"
-        breadcrumb={<Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Facturas" }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Facturas y pagos" }]} />}
         headerActions={
           <div className="flex gap-2">
             {can(session, "combustibles:export_sensitive") && <ExportXlsxButton filters={{ month, startDate, endDate, serviceType, vehicleId, worksiteId, fuelSupplierId: supplierId, product, productId, status }} />}
@@ -190,6 +192,8 @@ export default async function CombustiblesFacturasPage({
           </div>
         }
       />
+
+      <SectionNav items={facturasNavItems(session)} activeKey="facturas" ariaLabel="Facturas y pagos" />
 
       <FuelDashboardKpis
         totalLiters={kpiRow?.totalLiters ?? 0}

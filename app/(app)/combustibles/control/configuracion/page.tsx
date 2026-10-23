@@ -12,8 +12,6 @@ import { getPerformanceControlSettings } from "@/lib/combustibles/control/settin
 import { DegradedDataBanner } from "@/components/ui/degraded-data-banner"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
-import { loadControlContext } from "../_components/control-context"
-import { ControlNav } from "../_components/control-nav"
 import type { EquipmentTypeRow, MandanteRow, Option, SupplyMediumRow, WorksiteOption } from "./config-types"
 import { EquipmentFamiliesSection } from "./equipment-families-section"
 import { MandantesSection } from "./mandantes-section"
@@ -35,8 +33,7 @@ export default async function ControlConfigurationPage() {
 
   const scope = resolveWorksiteScope(session)
 
-  const [context, mandanteRows, linkRows, worksiteRows, clientRows, mediaRows, supplierRows, typeRows, settings] = await Promise.all([
-    loadControlContext(session),
+  const [mandanteRows, linkRows, worksiteRows, clientRows, mediaRows, supplierRows, typeRows, settings] = await Promise.all([
     load(
       db.select({ id: fuelMandantes.id, name: fuelMandantes.name, clientId: fuelMandantes.clientId, clientName: clients.name, tolerancePct: fuelMandantes.tolerancePct, isActive: fuelMandantes.isActive })
         .from(fuelMandantes).leftJoin(clients, eq(clients.id, fuelMandantes.clientId)).orderBy(asc(fuelMandantes.name)),
@@ -92,11 +89,10 @@ export default async function ControlConfigurationPage() {
   return (
     <PageContainer>
       <PageHeader
-        title="Configuración del control"
+        title="Configuración del control de combustible"
         description="Mandantes, medios de suministro, familias de equipos y umbrales que usa el control de combustible"
-        breadcrumb={<Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Control", href: "/combustibles/control" }, { label: "Configuración" }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Administración", href: "/admin" }, { label: "Catálogos de flota", href: "/admin/flota-catalogos" }, { label: "Control de combustible" }]} />}
       />
-      <ControlNav items={context.navItems} />
       <DegradedDataBanner degraded={Array.from({ length: degraded }, () => "fuente")} total={sources.length} />
       <MandantesSection mandantes={mandantes} worksites={worksiteOptions} clients={clientOptions} />
       <SupplyMediaSection media={media} suppliers={supplierOptions} />

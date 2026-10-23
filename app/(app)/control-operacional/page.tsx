@@ -1,43 +1,52 @@
+import type { ReactNode } from "react"
 import type { Metadata } from "next"
 import Link from "next/link"
 import { redirect } from "next/navigation"
 import {
   ArrowRight,
-  ChartLineUp,
-  ClockClockwise,
-  ShieldCheck,
+  Certificate,
+  GasPump,
+  Truck,
   Wrench,
 } from "@phosphor-icons/react/dist/ssr"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Callout } from "@/components/ui/callout"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Field } from "@/components/ui/field"
 import { MetaBadge } from "@/components/states/state-badge"
 import { KpiCard } from "@/components/ui/kpi-card"
+import { SummaryBar } from "@/components/ui/summary-bar"
 import { can, requireAuth } from "@/lib/auth/can"
+import { loadRevisionCounts, type RevisionCounts } from "@/lib/combustibles/revision-counts"
 import {
   getOperationalControlHub,
   resolveOperationalControlPeriod,
   type OperationalControlPeriod,
 } from "@/lib/services/operational-control"
 import { canViewOperationalControl } from "@/lib/operational-control/capabilities"
+import { formatDate, formatDateTime } from "@/lib/utils"
 import {
-  addDaysToPlainDate,
-  formatCLP,
-  formatDate,
-  formatDateTime,
-  todayInChile,
-} from "@/lib/utils"
+  documentsTile,
+  fuelReviewTile,
+  stoppedTile,
+  workOrdersTile,
+  type AttentionTile,
+  type AttentionTileKey,
+} from "./attention-tiles"
 import { OperationalAssetsTable } from "./operational-assets-table"
 import { OperationalExportButton } from "./operational-export-button"
+import { buildPerformanceGlossary, buildPerformanceStats } from "./performance-stats"
 
-export const metadata: Metadata = { title: "Control operacional" }
+export const metadata: Metadata = { title: "Panel operacional" }
 
-function formatKpi(value: number | null, suffix = "", precision = 1): string {
-  if (value == null) return "Sin datos"
-  return `${value.toLocaleString("es-CL", { maximumFractionDigits: precision })}${suffix}`
+const ATTENTION_ICONS: Record<AttentionTileKey, ReactNode> = {
+  stopped: <Truck size={16} weight="duotone" />,
+  workOrders: <Wrench size={16} weight="duotone" />,
+  documents: <Certificate size={16} weight="duotone" />,
+  fuel: <GasPump size={16} weight="duotone" />,
 }
 
 function sourceHealthVariant(status: string): "success" | "signal" | "outline" {
@@ -60,54 +69,70 @@ export default async function OperationalControlPage({
   if (!canViewOperationalControl(session)) redirect("/forbidden")
 
   const sp = await searchParams
-  // Un rango invertido (desde > hasta) rompe `resolveOperationalControlPeriod`;
-  // en lugar de caer en la página de error, se vuelve al período por defecto.
+  // Un rango invertido (desde > hasta) rompe `resolveOperationalControlPeriod`.
+  // No se cae a la página de error ni se redirige en silencio: se muestra el
+  // período por defecto y se avisa por qué, para que quien lo escribió sepa que
+  // su rango no se aplicó.
   let period: OperationalControlPeriod
+  let invalidRange = false
   try {
     period = resolveOperationalControlPeriod({
       from: typeof sp.desde === "string" ? sp.desde : undefined,
       to: typeof sp.hasta === "string" ? sp.hasta : undefined,
     })
   } catch {
-    redirect("/control-operacional")
+    period = resolveOperationalControlPeriod()
+    invalidRange = true
   }
-  const data = await getOperationalControlHub(session, period)
 
-  // B-04: la métrica de backlog en la tira editorial SÓLO cuenta OT de
-  // vehículos (los instrumentos de servicio aún no modelan OT). Lo decimos
-  // explícitamente en el label para no vender un universo que el modelo
-  // todavía no soporta.
-  const isDefaultPeriod = !sp.desde && !sp.hasta
-  const defaultFrom = addDaysToPlainDate(todayInChile(), -89)
-  const headerDescription = `Salud, trabajo pendiente y desempeño de activos entre ${formatDate(period.from)} y ${formatDate(period.to)}.`
+  const canViewFuel = can(session, "combustibles:view")
+  const [data, revisionCounts] = await Promise.all([
+    getOperationalControlHub(session, period),
+    // Las dos colas de «Revisión»: cada conteo cae a null por separado y el
+    // tile lo dice. El `catch` es sólo una red: `loadRevisionCounts` ya los atrapa.
+    canViewFuel
+      ? loadRevisionCounts(session).catch((): RevisionCounts => ({ flagged: null, anomalies: null }))
+      : Promise.resolve(null),
+  ])
 
-  const availabilityTone =
-    data.metrics.availabilityPercent == null
-      ? "neutral"
-      : data.metrics.availabilityPercent < 80
-        ? "danger"
-        : data.metrics.availabilityPercent < 90
-          ? "signal"
-          : "neutral"
-  const preventiveTone =
-    data.metrics.preventiveCompliancePercent == null
-      ? "neutral"
-      : data.metrics.preventiveCompliancePercent < 70
-        ? "danger"
-        : data.metrics.preventiveCompliancePercent < 90
-          ? "signal"
-          : "neutral"
+  // El período «por defecto» es el que resuelve el servicio sin parámetros, no
+  // la ausencia de `desde`/`hasta` en la URL: enviar el formulario con las
+  // fechas de siempre no es un período distinto.
+  const defaultPeriod = resolveOperationalControlPeriod()
+  const isDefaultPeriod = period.from === defaultPeriod.from && period.to === defaultPeriod.to
+  const periodLabel = `${formatDate(period.from)} – ${formatDate(period.to)}`
+  const headerDescription = `Qué requiere atención hoy en flota, mantención y combustible, y el desempeño de los activos entre ${formatDate(period.from)} y ${formatDate(period.to)}.`
+
+  const { canViewFleet, canViewMaintenance, canViewInspections, canViewCosts } = data.permissions
+  const fleetSize = data.assets.filter((asset) => asset.kind === "vehicle").length
+
+  // Orden de lectura: lo que está parado, el trabajo abierto, los papeles y, al
+  // final, el combustible. Cada tile existe sólo con la capacidad de su dominio.
+  const attentionTiles: AttentionTile[] = [
+    ...(canViewFleet ? [stoppedTile(data.attention.stoppedVehicles, fleetSize)] : []),
+    ...(canViewMaintenance ? [workOrdersTile(data.attention.openWorkOrders)] : []),
+    ...(canViewFleet ? [documentsTile(data.attention.fleetDocuments)] : []),
+    ...(revisionCounts ? [fuelReviewTile(revisionCounts)] : []),
+  ]
+
+  const performanceStats = buildPerformanceStats(data.metrics, { canViewFleet, canViewMaintenance, canViewCosts })
+  const glossary = buildPerformanceGlossary({ canViewFleet, canViewMaintenance })
 
   return (
     <PageContainer>
       <PageHeader
-        title="Control operacional"
+        title="Panel operacional"
         description={headerDescription}
-        breadcrumb={<Breadcrumbs items={[{ label: "Control operacional" }]} />}
+        breadcrumb={
+          <Breadcrumbs items={[
+            { label: "Control operacional", href: "/control-operacional" },
+            { label: "Panel operacional" },
+          ]} />
+        }
         actions={
           <>
             <OperationalExportButton period={period} />
-            {data.permissions.canViewMaintenance && (
+            {canViewMaintenance && (
               <Button asChild>
                 <Link href="/mantenciones">Gestionar OT</Link>
               </Button>
@@ -116,94 +141,90 @@ export default async function OperationalControlPage({
         }
       />
 
-      <Card className="mb-4">
-        <CardContent className="pt-6">
-          <form method="get" className="grid gap-3 sm:grid-cols-[1fr_1fr_auto_auto]">
-            <Field label="Desde" htmlFor="operational-from">
-              <DatePicker id="operational-from" name="desde" defaultValue={period.from} />
-            </Field>
-            <Field label="Hasta" htmlFor="operational-to">
-              <DatePicker id="operational-to" name="hasta" defaultValue={period.to} />
-            </Field>
-            <Button type="submit" className="self-end">
-              Aplicar período
-            </Button>
-            {!isDefaultPeriod && (
-              <Button asChild type="button" variant="ghost" className="self-end">
-                <Link href="/control-operacional">
-                  Restablecer
-                  <span className="sr-only">
-                    {" "}
-                    (período por defecto {formatDate(defaultFrom)} – {formatDate(todayInChile())})
-                  </span>
-                </Link>
-              </Button>
-            )}
-          </form>
-        </CardContent>
-      </Card>
-
-      <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {data.permissions.canViewFleet && (
-          <KpiCard
-            icon={<ChartLineUp size={16} weight="duotone" />}
-            label="Disponibilidad"
-            value={formatKpi(data.metrics.availabilityPercent, "%")}
-            detail={
-              data.metrics.availabilityPercent == null
-                ? "Sin datos en el período"
-                : "Horas operativas vs. horas con estado registrado"
-            }
-            glossary="Porcentaje de horas del período en que los vehículos se mantuvieron operativos, sobre las horas cubiertas por el historial de estado del equipo. Sin vehículos activos o sin intervalos registrados, el indicador devuelve 'Sin datos' en lugar de 0%."
-            tone={availabilityTone}
-          />
-        )}
-        {data.permissions.canViewMaintenance && (
-          <>
-            <KpiCard
-              icon={<ClockClockwise size={16} weight="duotone" />}
-              label="MTBF"
-              value={formatKpi(data.metrics.mtbfHours, " h", 0)}
-              detail="Tiempo medio entre fallas correctivas"
-              glossary="MTBF (Mean Time Between Failures): horas operativas promedio entre dos mantenciones correctivas completadas dentro del período. Útil para comparar con la cadencia objetivo por equipo."
-            />
-            <KpiCard
-              icon={<Wrench size={16} weight="duotone" />}
-              label="MTTR"
-              value={formatKpi(data.metrics.mttrHours, " h", 1)}
-              detail="Tiempo medio de reparación"
-              glossary="MTTR (Mean Time To Repair): horas promedio de detención por mantención correctiva completada en el período. Una cifra alta sugiere piezas, mano de obra o aprobaciones que están frenando el retorno a operación."
-            />
-            <KpiCard
-              icon={<ShieldCheck size={16} weight="duotone" />}
-              label="Cumplimiento preventivo"
-              value={formatKpi(data.metrics.preventiveCompliancePercent, "%")}
-              detail="OT preventivas completadas / programadas"
-              glossary="Porcentaje de mantenciones preventivas no canceladas que se cerraron como completadas dentro del período. Bajo 70% abre una alerta para revisar capacidad del equipo de planificación."
-              tone={preventiveTone}
-            />
-          </>
-        )}
-      </div>
-
-      {data.permissions.canViewMaintenance && (
-        <div
-          className="mb-4 flex flex-wrap items-center gap-x-8 gap-y-2 rounded-xl border border-[var(--color-border)] bg-white px-5 py-3 text-sm"
-          aria-label="Resumen editorial de operación"
-        >
-          <span>
-            <strong>{formatKpi(data.metrics.downtimeHours, " h", 0)}</strong> de detención
-          </span>
-          <span>
-            <strong>{data.metrics.backlog.toLocaleString("es-CL")}</strong> OT de vehículos abiertas
-          </span>
-          {data.permissions.canViewCosts && (
-            <span>
-              <strong>{formatCLP(data.metrics.maintenanceCost ?? 0)}</strong> en mantenciones
-            </span>
-          )}
-        </div>
+      {attentionTiles.length > 0 && (
+        <section aria-labelledby="atencion-ahora" className="mb-5">
+          <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5">
+            <h2 id="atencion-ahora" className="text-eyebrow">Requiere atención ahora</h2>
+            <p className="text-xs text-[var(--color-text-subtle)]">
+              Foto de hoy: el período de más abajo no cambia estas cifras.
+            </p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {attentionTiles.map((tile) => (
+              <KpiCard
+                key={tile.key}
+                icon={ATTENTION_ICONS[tile.key]}
+                label={tile.label}
+                value={tile.value}
+                detail={tile.detail}
+                tone={tile.tone}
+                href={tile.href}
+              />
+            ))}
+          </div>
+        </section>
       )}
+
+      <section aria-labelledby="desempeno-periodo" className="mb-4 space-y-3">
+        <div>
+          <h2 id="desempeno-periodo" className="text-eyebrow">Desempeño del período</h2>
+          <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">
+            {periodLabel}
+            {isDefaultPeriod && " · últimos 90 días"}
+          </p>
+        </div>
+
+        {invalidRange && (
+          <Callout tone="warning">
+            El rango pedido no es válido: el inicio no puede ser posterior al término. Se muestra el período por defecto.
+          </Callout>
+        )}
+
+        <Card>
+          <CardContent className="pt-6">
+            <form method="get" className="grid gap-3 sm:grid-cols-[1fr_1fr_auto_auto]">
+              <Field label="Desde" htmlFor="operational-from">
+                <DatePicker id="operational-from" name="desde" defaultValue={period.from} />
+              </Field>
+              <Field label="Hasta" htmlFor="operational-to">
+                <DatePicker id="operational-to" name="hasta" defaultValue={period.to} />
+              </Field>
+              <Button type="submit" className="self-end">
+                Aplicar período
+              </Button>
+              {!isDefaultPeriod && (
+                <Button asChild type="button" variant="ghost" className="self-end">
+                  <Link href="/control-operacional">
+                    Restablecer
+                    <span className="sr-only">
+                      {" "}
+                      (período por defecto {formatDate(defaultPeriod.from)} – {formatDate(defaultPeriod.to)})
+                    </span>
+                  </Link>
+                </Button>
+              )}
+            </form>
+          </CardContent>
+        </Card>
+
+        <SummaryBar stats={performanceStats} />
+
+        {glossary.length > 0 && (
+          <details className="rounded-[var(--radius-lg)] border border-[var(--color-border)] px-3.5 py-2.5">
+            <summary className="cursor-pointer list-none text-sm font-medium text-[var(--color-text)] [&::-webkit-details-marker]:hidden">
+              Cómo se calculan estas cifras
+            </summary>
+            <dl className="mt-3 grid gap-3 md:grid-cols-2">
+              {glossary.map((entry) => (
+                <div key={entry.key}>
+                  <dt className="text-sm font-medium text-[var(--color-text)]">{entry.term}</dt>
+                  <dd className="mt-0.5 text-xs leading-relaxed text-[var(--color-text-muted)]">{entry.definition}</dd>
+                </div>
+              ))}
+            </dl>
+          </details>
+        )}
+      </section>
 
       {/* `grid-cols-1` (= `minmax(0, 1fr)`) bajo xl: con la pista `auto` la
           tabla de activos —que desplaza dentro de su `TableRoot`— ensanchaba
@@ -216,9 +237,9 @@ export default async function OperationalControlPage({
           <CardContent>
             <OperationalAssetsTable
               assets={data.assets}
-              canViewCosts={data.permissions.canViewCosts}
-              canViewMaintenance={data.permissions.canViewMaintenance}
-              canViewInspections={data.permissions.canViewInspections}
+              canViewCosts={canViewCosts}
+              canViewMaintenance={canViewMaintenance}
+              canViewInspections={canViewInspections}
             />
           </CardContent>
         </Card>

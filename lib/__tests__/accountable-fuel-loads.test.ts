@@ -2,8 +2,9 @@
  * CO-014: reportes, ciclo, Flota, analítica y estados de cuenta cerraban el
  * mismo mes con cifras distintas porque cada superficie decidía por su cuenta
  * qué estados contaban. Esta prueba fija el predicado canónico y comprueba que
- * las cinco lo comparten: una carga en borrador y una anulada no pueden mover
- * ninguna de ellas.
+ * ciclo y Flota lo comparten: una carga en borrador y una anulada no pueden
+ * mover ninguna de ellas. (La pantalla de reportes se retiró junto con su
+ * consulta, y con ella su caso aquí.)
  */
 import path from "node:path"
 import { PGlite } from "@electric-sql/pglite"
@@ -41,7 +42,6 @@ vi.mock("@/db", () => ({
 await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
 const { ACCOUNTABLE_FUEL_LOAD_STATUSES } = await import("@/lib/combustibles/load-status")
-const { getFuelReportsData } = await import("@/lib/combustibles/reports")
 const { getFuelCycleComparison } = await import("@/lib/combustibles/fuel-cycle")
 const { getFleetOverview, getFleetVehicleDetail } = await import("@/lib/services/fleet")
 
@@ -87,14 +87,6 @@ describe("predicado canónico de cargas contabilizables", () => {
 
   it("declara `registered` y `reconciled` como únicos estados contables", () => {
     expect([...ACCOUNTABLE_FUEL_LOAD_STATUSES]).toEqual(["registered", "reconciled"])
-  })
-
-  it("los reportes de gasto ignoran borradores y anuladas", async () => {
-    const data = await getFuelReportsData(session(), { startDate: dayOf(1), endDate: dayOf(28) })
-    const june = data.byMonth.find((row) => row.group === MONTH)
-    // `numeric` vuelve como string desde el driver; lo que se compara es la cifra.
-    expect(Number(june?.totalLiters)).toBe(150)
-    expect(Number(june?.totalAmount)).toBe(150_000)
   })
 
   it("el ciclo físico compara contra las mismas cargas", async () => {

@@ -8,7 +8,7 @@ export default function Loading() {
       <PageHeader
         title="Ralentí"
         description="Tiempo y combustible que los equipos gastan con el motor en vacío"
-        breadcrumb={[{ label: "Combustibles", href: "/combustibles" }, { label: "Control", href: "/combustibles/control" }, { label: "Ralentí" }]}
+        breadcrumb={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Consumo y rendimiento", href: "/combustibles" }, { label: "Ralentí" }]}
       />
       <Skeleton className="mb-5 h-11 w-full" />
       <Skeleton className="mb-6 h-10 w-2/3" />

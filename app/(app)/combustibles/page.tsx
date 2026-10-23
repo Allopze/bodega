@@ -15,9 +15,9 @@ import { logger } from "@/lib/logger"
 import { DegradedDataBanner } from "@/components/ui/degraded-data-banner"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
+import { SegmentedControl } from "@/components/ui/segmented-control"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Upload, FileXls, QrCode, Drop } from "@phosphor-icons/react/dist/ssr"
+import { fuelImportAvailability } from "@/lib/combustibles/section-nav"
 import { ConsumptionAnalysisMetrics, ConsumptionKpis } from "./consumption-kpis"
 import { ConsumptionFiltersBar } from "./consumption-filters"
 import { ConsumptionAlerts } from "./consumption-alerts"
@@ -29,10 +29,12 @@ import { EvolutionByVehicleChart, LitersVsHourMeterChart, LitersVsKmChart } from
 import { WorksiteEquipmentHeatmap } from "./worksite-equipment-heatmap"
 import { AnomalyDistributionChart } from "./anomalias/anomaly-charts-lazy"
 import { ChartErrorBoundary } from "@/components/chart-error-boundary"
-import { formatCLP, formatDate, formatQty, cn, pluralize, parsePageParam } from "@/lib/utils"
+import { formatCLP, formatDate, formatQty, pluralize, parsePageParam } from "@/lib/utils"
 import { FuelControlOverviewPanel } from "./fuel-control-overview"
+import { FuelImportButton } from "./fuel-import-button"
+import { ConsumoNav } from "./consumo-nav"
 
-export const metadata: Metadata = { title: "Combustibles" }
+export const metadata: Metadata = { title: "Consumo y rendimiento" }
 
 const PAGE_SIZE = 50
 const ANOMALY_DIST_FALLBACK = { total: 0, byStatus: [], bySeverity: [], byRuleCode: [] }
@@ -69,7 +71,6 @@ export default async function CombustiblesPage({
   const requestedFilters = normalizeConsumptionFilters({ fromDate, toDate, worksiteId, fuente, patente, associated })
 
   const worksiteScope = resolveWorksiteScope(session)
-  const canImport = can(session, "combustibles:import")
   const canViewTae = can(session, "combustibles:tae_view")
   const canViewCosts = can(session, "combustibles:view_costs")
 
@@ -223,10 +224,17 @@ export default async function CombustiblesPage({
     params.set("asociacion", "no")
     return `/combustibles?${params.toString()}`
   })()
-  const VISTA_TABS: Array<{ key: "resumen" | "analisis" | "registros"; label: string }> = [
-    { key: "resumen", label: "Resumen" },
-    { key: "analisis", label: "Análisis" },
-    { key: "registros", label: `Registros${!detailCountDegraded && totalDetail > 0 ? ` · ${totalDetail}` : ""}` },
+  // Dentro de la pestaña «Consumo por tarjeta (TCT)» de la barra de sección, el
+  // análisis y el detalle transaccional se alternan con este selector chico.
+  // El Resumen ya no es una de sus opciones: es la primera pestaña de la barra.
+  const tctVistaItems = [
+    { key: "analisis", label: "Análisis", active: vista === "analisis", href: vistaHref("analisis") },
+    {
+      key: "registros",
+      label: `Registros${!detailCountDegraded && totalDetail > 0 ? ` · ${totalDetail}` : ""}`,
+      active: vista === "registros",
+      href: vistaHref("registros"),
+    },
   ]
   // `Boolean(dashboard)` volvía esto siempre verdadero: el dashboard existe aunque
   // no haya ni una fila, así que el estado vacío era inalcanzable y la vista
@@ -239,32 +247,18 @@ export default async function CombustiblesPage({
   return (
     <PageContainer>
       <PageHeader
-        title="Combustibles"
-        description="Control ejecutivo, operación TAE y análisis de consumo TCT en un mismo contexto."
-        breadcrumb={<Breadcrumbs items={[{ label: "Combustibles" }]} />}
-        actions={
-          <div className="flex gap-2">
-            <Button asChild variant="secondary" size="sm">
-              <Link href="/combustibles/ciclo"><Drop className="h-4 w-4 mr-1.5" />Ciclo físico</Link>
-            </Button>
-            {canViewTae && (
-              <Button asChild variant="secondary" size="sm">
-                <Link href="/combustibles/tae"><QrCode className="h-4 w-4 mr-1.5" />Control TAE</Link>
-              </Button>
-            )}
-            {canViewCosts && <Button asChild variant="secondary" size="sm">
-              <Link href="/combustibles/facturas"><FileXls className="h-4 w-4 mr-1.5" />Facturas</Link>
-            </Button>}
-            {canImport && (
-              <Button asChild size="sm">
-                <Link href="/combustibles/importar"><Upload className="h-4 w-4 mr-1.5" />Importar consumos</Link>
-              </Button>
-            )}
-          </div>
-        }
+        title="Consumo y rendimiento"
+        description="Cuánto combustible se carga, cuánto cuesta y con qué rendimiento, por período, faena y equipo."
+        breadcrumb={<Breadcrumbs items={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Consumo y rendimiento" }]} />}
+        actions={<FuelImportButton available={fuelImportAvailability(session)} />}
       />
 
       <DegradedDataBanner degraded={degradedSources} total={trackedCount} />
+
+      <ConsumoNav
+        activeKey={vista === "resumen" ? "resumen" : "tct"}
+        hrefs={{ resumen: vistaHref("resumen"), tct: vistaHref("analisis") }}
+      />
 
       {needsSummary && controlOverview && (
         <FuelControlOverviewPanel
@@ -295,26 +289,9 @@ export default async function CombustiblesPage({
         proveedor={proveedor}
       />
 
-      <div className="mb-6 mt-2 flex items-end gap-0 border-b border-[var(--color-border)]">
-        {VISTA_TABS.map((tab) => {
-          const active = vista === tab.key
-          return (
-            <Link
-              key={tab.key}
-              href={vistaHref(tab.key)}
-              aria-current={active ? "page" : undefined}
-              className={cn(
-                "-mb-px border-b-2 px-4 pb-2.5 pt-1 text-sm font-medium transition-[color,border-color] duration-[var(--duration-fast)] ease-[var(--ease-out)]",
-                active
-                  ? "border-[var(--color-text)] text-[var(--color-text)]"
-                  : "border-transparent text-[var(--color-text-muted)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]",
-              )}
-            >
-              {tab.label}
-            </Link>
-          )
-        })}
-      </div>
+      {vista !== "resumen" && (
+        <SegmentedControl ariaLabel="Vista del consumo por tarjeta" items={tctVistaItems} className="mb-6 mt-2" />
+      )}
 
       {vista === "resumen" && (
         <>

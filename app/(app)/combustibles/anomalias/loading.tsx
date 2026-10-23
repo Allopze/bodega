@@ -6,7 +6,7 @@ export default function Loading() {
     <>
       <PageHeader
         title="Anomalías de combustible"
-        breadcrumb={<Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Anomalías" }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Revisión", href: "/combustibles/revision" }, { label: "Anomalías" }]} />}
       />
       <SkeletonPage rows={4} />
     </>

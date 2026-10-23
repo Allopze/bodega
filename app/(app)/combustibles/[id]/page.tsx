@@ -46,7 +46,7 @@ export default async function FuelLoadDetailPage({
       <PageHeader
         title={`Carga: ${load.receiptNumber ?? "Sin número"}`}
         description={`${load.loadDate} · ${load.serviceType} · ${load.vehicle?.plate ?? "—"}`}
-        breadcrumb={<Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: `Carga ${load.receiptNumber ?? load.id.slice(0, 8)}` }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Facturas y pagos", href: "/combustibles/facturas" }, { label: `Carga ${load.receiptNumber ?? load.id.slice(0, 8)}` }]} />}
         actions={can(session, "combustibles:view_audit") ? <Button asChild variant="secondary" size="sm"><Link href={`/combustibles/bitacora/historial/fuel_load/${load.id}`}>Ver auditoría</Link></Button> : undefined}
       />
 

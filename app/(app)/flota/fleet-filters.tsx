@@ -6,6 +6,7 @@ import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-too
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { formatFuelVehicleStatus } from "@/lib/combustibles/validation"
+import { FLEET_STOPPED_FILTER, FLEET_STOPPED_FILTER_LABEL } from "@/lib/fleet-overview-filters"
 
 interface FleetFiltersProps {
   operationalStatuses: string[]
@@ -17,6 +18,11 @@ interface FleetFiltersProps {
     q?: string
   }
   warningDays: number
+}
+
+/** El estado puede ser un estado operativo o el alias `detenidos` (enlazado desde el Panel operacional). */
+function formatFleetStatusFilter(value: string) {
+  return value === FLEET_STOPPED_FILTER ? FLEET_STOPPED_FILTER_LABEL : formatFuelVehicleStatus(value)
 }
 
 export function FleetFilters({ operationalStatuses, responsibleUsers, current, warningDays }: FleetFiltersProps) {
@@ -40,7 +46,7 @@ export function FleetFilters({ operationalStatuses, responsibleUsers, current, w
 
   const activeChips: ActiveFilterChip[] = []
   if (current.estado) {
-    activeChips.push({ key: "estado", label: "Estado", value: current.estado, displayValue: formatFuelVehicleStatus(current.estado) })
+    activeChips.push({ key: "estado", label: "Estado", value: current.estado, displayValue: formatFleetStatusFilter(current.estado) })
   }
   if (current.responsable) {
     const resp = responsibleUsers.find((r) => r.id === current.responsable)
@@ -84,9 +90,10 @@ export function FleetFilters({ operationalStatuses, responsibleUsers, current, w
         defaultValue={current.estado ?? "all"}
         onValueChange={(v) => setFilter("estado", v === "all" ? "" : v)}
       >
-        <SelectTrigger className="w-full text-xs sm:w-44" aria-label="Estado operacional"><SelectValue placeholder="Todos los estados" /></SelectTrigger>
+        <SelectTrigger className="w-full text-xs sm:w-56" aria-label="Estado operacional"><SelectValue placeholder="Todos los estados" /></SelectTrigger>
         <SelectContent>
           <SelectItem value="all">Todos los estados</SelectItem>
+          <SelectItem value={FLEET_STOPPED_FILTER}>{FLEET_STOPPED_FILTER_LABEL}</SelectItem>
           {operationalStatuses.map((s) => (
             <SelectItem key={s} value={s}>{formatFuelVehicleStatus(s)}</SelectItem>
           ))}

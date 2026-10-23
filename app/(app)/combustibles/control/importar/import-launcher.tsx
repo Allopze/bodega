@@ -1,8 +1,7 @@
 "use client"
 
 import * as React from "react"
-import Link from "next/link"
-import { CaretRight, ClockCounterClockwise, FileXls, Gauge, GasPump, Upload } from "@phosphor-icons/react"
+import { CaretRight, Gauge, GasPump, Upload } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import type { ControlImportKind } from "@/lib/combustibles/control/imports/constants"
@@ -14,8 +13,7 @@ interface Choice {
   label: string
   description: string
   icon: React.ReactNode
-  kind?: ControlImportKind
-  href?: string
+  kind: ControlImportKind
 }
 
 const CHOICES: Choice[] = [
@@ -33,25 +31,11 @@ const CHOICES: Choice[] = [
     description: "Despachos de un medio sin integración (surtidor CMPC, tarjetas): fecha, faena, litros y guía.",
     icon: <GasPump size={18} />,
   },
-  {
-    key: "operations",
-    href: "/combustibles/importar",
-    label: "Planilla de cargas",
-    description: "El consolidado de cargas por equipo. Se importa en su pantalla propia.",
-    icon: <FileXls size={18} />,
-  },
-  {
-    key: "seals",
-    href: "/combustibles/tae/importar",
-    label: "Histórico de sellos",
-    description: "La planilla histórica del formulario de sellos. Se importa en su pantalla propia.",
-    icon: <ClockCounterClockwise size={18} />,
-  },
 ]
 
 const ROW_CLASS = "group flex w-full items-center gap-3 rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) p-4 text-left transition-colors hover:border-(--color-primary) hover:bg-(--color-primary-tint) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-primary)"
 
-function ChoiceBody({ choice, external }: { choice: Choice; external: boolean }) {
+function ChoiceBody({ choice }: { choice: Choice }) {
   return (
     <>
       <span aria-hidden className="flex h-9 w-9 shrink-0 items-center justify-center rounded-(--radius) bg-(--color-surface-2) text-(--color-text-muted) group-hover:bg-white group-hover:text-(--color-primary)">
@@ -61,16 +45,16 @@ function ChoiceBody({ choice, external }: { choice: Choice; external: boolean })
         <span className="block text-sm font-semibold text-(--color-text)">{choice.label}</span>
         <span className="block text-xs text-(--color-text-muted)">{choice.description}</span>
       </span>
-      {external ? <span className="shrink-0 text-xs text-(--color-text-faint)">Otra pantalla</span> : null}
       <CaretRight aria-hidden size={16} className="shrink-0 text-(--color-text-faint)" />
     </>
   )
 }
 
 /**
- * Un solo «Importar» de página que pregunta QUÉ importar (AGENTS.md, layout 5).
- * Las dos planillas que ya tienen su pantalla se enlazan; telemetría y entradas
- * se importan aquí, en un diálogo con tres pasos (archivo, revisión, listo).
+ * El «Importar» de esta pantalla: pregunta QUÉ se importa aquí (telemetría o
+ * entradas de suministro), cada una en un diálogo con tres pasos (archivo,
+ * revisión, listo). Los demás importadores de combustible no se listan: su
+ * única entrada es el botón «Importar» de Cargas (`fuel-import-button.tsx`).
  */
 export function ImportLauncher({ media, label = "Importar" }: { media: MediumOption[]; label?: string }) {
   const [chooserOpen, setChooserOpen] = React.useState(false)
@@ -89,19 +73,15 @@ export function ImportLauncher({ media, label = "Importar" }: { media: MediumOpt
             <DialogDescription>Todas las importaciones muestran una revisión antes de guardar y se pueden revertir.</DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-2">
-            {CHOICES.map((choice) => choice.href ? (
-              <Link key={choice.key} href={choice.href} className={ROW_CLASS} onClick={() => setChooserOpen(false)}>
-                <ChoiceBody choice={choice} external />
-              </Link>
-            ) : (
+            {CHOICES.map((choice) => (
               <button
                 key={choice.key}
                 type="button"
                 data-choice={choice.key}
                 className={ROW_CLASS}
-                onClick={() => { setChooserOpen(false); setActive(choice.kind ?? null) }}
+                onClick={() => { setChooserOpen(false); setActive(choice.kind) }}
               >
-                <ChoiceBody choice={choice} external={false} />
+                <ChoiceBody choice={choice} />
               </button>
             ))}
           </div>

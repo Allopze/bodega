@@ -4,7 +4,6 @@ import { ServerPagination } from "@/components/ui/server-pagination"
 import Link from "next/link"
 import { redirect } from "next/navigation"
 import { and, count, desc, eq, ilike, inArray, or, sql } from "drizzle-orm"
-import { ArrowsLeftRight, Upload } from "@phosphor-icons/react/dist/ssr"
 import { db } from "@/db"
 import { fuelStorageLocations, fuelTaeEvidence, fuelTaeLoadingPoints, fuelTaePublicLinks, fuelTaeSubmissions, worksites } from "@/db/schema"
 import { settle } from "@/lib/async-settle"
@@ -15,6 +14,8 @@ import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { MetaBadge, metaFor } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
+import { SectionNav } from "@/components/ui/section-nav"
+import { FuelImportButton } from "../fuel-import-button"
 import { TaeAccessPanel } from "./tae-access-panel"
 import { TaeExportButton } from "./tae-export-button"
 import { TaeFilters } from "./tae-filters"
@@ -24,8 +25,9 @@ import { PERSONAL_DATA_LABEL } from "@/lib/combustibles/fuel-log-shared"
 import { TaeGroupChart } from "./tae-group-chart"
 import { addDaysToPlainDate, formatDateTime, todayInChile } from "@/lib/utils"
 import { TAE_STATUS_LABELS as STATUS } from "@/lib/combustibles/labels"
+import { fuelImportAvailability, taeNavItems } from "@/lib/combustibles/section-nav"
 
-export const metadata: Metadata = { title: "Control TAE" }
+export const metadata: Metadata = { title: "Cargas TAE" }
 
 const TAEGROUP_FALLBACK: Array<{ name: string; liters: number; group: string; count: number }> = []
 
@@ -128,20 +130,19 @@ export default async function TaeControlPage({ searchParams }: { searchParams: P
   const pagination = resolvePagination({ pageParam: String(page), totalItems: Number(metrics.total), pageSize: PAGE_SIZE })
   const canConfigure = can(session, "combustibles:tae_manage_config")
   const canExport = can(session, "combustibles:tae_export")
-  const canImport = can(session, "combustibles:tae_import")
 
   return (
     <PageContainer>
       <PageHeader
-        title="Control TAE"
+        title="Cargas TAE"
         description="Cargas físicas registradas desde el formulario público de Copec TAE."
-        breadcrumb={<Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Control TAE" }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Control operacional", href: "/control-operacional" }, { label: "TAE y sellos" }]} />}
         actions={<div className="flex gap-2">
-          <Button asChild variant="secondary" size="sm"><Link href="/combustibles/tae/conciliacion"><ArrowsLeftRight className="mr-1 h-4 w-4" />Conciliación</Link></Button>
-          {canImport && <Button asChild variant="secondary" size="sm"><Link href="/combustibles/tae/importar"><Upload className="mr-1 h-4 w-4" />Importar histórico</Link></Button>}
+          <FuelImportButton available={fuelImportAvailability(session)} />
           {canExport && <TaeExportButton filters={filters} />}
         </div>}
       />
+      <SectionNav items={taeNavItems(session)} activeKey="cargas" ariaLabel="Vistas de TAE y sellos" carryParams={["faena"]} />
 
       <section className="mb-5 grid grid-cols-2 gap-px border border-(--color-border) bg-(--color-border) md:grid-cols-4">
         <div className="bg-(--color-surface) p-4"><p className="text-eyebrow">Resultados</p><p className="mt-1 font-mono text-xl tabular-nums">{Number(metrics.total).toLocaleString("es-CL")}</p></div>

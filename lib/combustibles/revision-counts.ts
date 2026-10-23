@@ -8,6 +8,9 @@ import { logger } from "@/lib/logger"
 
 /** Estados de un caso de anomalía que todavía piden una decisión. */
 export const OPEN_ANOMALY_STATUSES = ["open", "in_review", "reopened"] as const
+/** Valor de `?estado=` en `/combustibles/anomalias` que lista exactamente esos estados. */
+export const ANOMALY_OPEN_FILTER = "vigentes"
+export const ANOMALY_OPEN_FILTER_LABEL = "Vigentes (abiertos, en revisión o reabiertos)"
 
 export interface RevisionCounts {
   /** Cargas del control marcadas para revisión. `null` si la consulta falló. */

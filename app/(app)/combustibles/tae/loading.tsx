@@ -5,8 +5,8 @@ export default function Loading() {
   return (
     <>
       <PageHeader
-        title="Control TAE"
-        breadcrumb={<Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Control TAE" }]} />}
+        title="Cargas TAE"
+        breadcrumb={<Breadcrumbs items={[{ label: "Control operacional", href: "/control-operacional" }, { label: "TAE y sellos" }]} />}
       />
       <SkeletonPage rows={7} />
     </>

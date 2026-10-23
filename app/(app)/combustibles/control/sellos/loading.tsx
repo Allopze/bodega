@@ -8,7 +8,7 @@ export default function Loading() {
       <PageHeader
         title="Sellos por mandante"
         description="Conciliación, sellos y cargas en terreno por mandante"
-        breadcrumb={[{ label: "Combustibles", href: "/combustibles" }, { label: "Control", href: "/combustibles/control" }, { label: "Sellos por mandante" }]}
+        breadcrumb={[{ label: "Control operacional", href: "/control-operacional" }, { label: "TAE y sellos", href: "/combustibles/tae" }, { label: "Sellos por mandante" }]}
       />
       <Skeleton className="mb-5 h-11 w-full" />
       <Skeleton className="mb-6 h-10 w-2/3" />

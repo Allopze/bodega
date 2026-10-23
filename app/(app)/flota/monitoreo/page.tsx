@@ -57,7 +57,6 @@ export default async function FleetGpsMonitoringPage() {
         description="Posición operacional de la flota vinculada con Entel OnWay."
         breadcrumb={<Breadcrumbs items={[
           { label: "Control operacional", href: "/control-operacional" },
-          { label: "Flota", href: "/flota" },
           { label: "Monitoreo GPS" },
         ]} />}
         actions={adminStatus ? <OnwayControls status={adminStatus} /> : undefined}

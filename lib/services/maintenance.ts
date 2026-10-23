@@ -35,7 +35,7 @@ import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { addDaysToPlainDate, codeYear, todayInChile } from "@/lib/utils"
 import { can } from "@/lib/auth/can"
-import type { MaintenanceLaborInput, MaintenancePartInput, MaintenancePlanInput, MaintenanceTaskInput } from "@/lib/validation/maintenance"
+import { resolveMaintenanceStatusFilter, type MaintenanceLaborInput, type MaintenancePartInput, type MaintenancePlanInput, type MaintenanceTaskInput } from "@/lib/validation/maintenance"
 import { setVehicleOperationalStatus } from "@/lib/services/fleet-operational-status"
 import { nextCodeTx } from "@/lib/code-sequences"
 import { applyMovementTx } from "@/lib/services/stock-movement"
@@ -94,11 +94,20 @@ export async function getMaintenancePageData(session: Session, filters: Maintena
       ? inArray(fuelVehicles.worksiteId, scopedWorksites)
       : sql`false`
 
+  // `status` acepta un estado conocido o el alias `abiertas` (programadas + en
+  // curso); un valor desconocido no coincide con nada en vez de llegar crudo a SQL.
+  const statuses = resolveMaintenanceStatusFilter(filters.status)
+  const statusWhere = statuses === null
+    ? undefined
+    : statuses.length === 0
+      ? sql`false`
+      : inArray(maintenanceRecords.status, [...statuses])
+
   const where = and(
     worksiteScope,
     filters.vehicleId ? eq(maintenanceRecords.vehicleId, filters.vehicleId) : undefined,
     filters.worksiteId ? eq(maintenanceRecords.worksiteId, filters.worksiteId) : undefined,
-    filters.status ? eq(maintenanceRecords.status, filters.status) : undefined,
+    statusWhere,
     filters.q?.trim() ? sql`(
       ${maintenanceRecords.maintenanceType} ILIKE ${`%${filters.q.trim()}%`}
       OR COALESCE(${maintenanceRecords.documentNumber}, '') ILIKE ${`%${filters.q.trim()}%`}

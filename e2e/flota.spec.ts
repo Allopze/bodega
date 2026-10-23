@@ -8,7 +8,7 @@ test.describe("Flota module", () => {
 
   test("overview page loads", async ({ page }) => {
     await page.goto("/flota")
-    await expect(page.getByRole("heading", { name: "Flota" })).toBeVisible()
+    await expect(page.getByRole("heading", { name: "Vehículos", exact: true })).toBeVisible()
   })
 
   test("vehicle detail page loads", async ({ page }) => {

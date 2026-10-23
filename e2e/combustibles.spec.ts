@@ -14,7 +14,7 @@ test.describe("Combustibles module", () => {
 
   test("consumption dashboard loads with KPIs and charts", async ({ page }) => {
     await page.goto("/combustibles")
-    await expect(page.locator("h1").first()).toContainText("Combustibles")
+    await expect(page.locator("h1").first()).toContainText("Consumo y rendimiento")
     // KPI cards should be visible
     await expect(page.getByText("Total consumido")).toBeVisible()
     await expect(page.getByText("Monto total", { exact: true })).toBeVisible()
@@ -158,11 +158,17 @@ test.describe("Combustibles module", () => {
     await expect(page.locator("h1").first()).toContainText("Cuenta corriente")
   })
 
-  test("reports page loads with tabs", async ({ page }) => {
-    await page.goto("/combustibles/reportes")
-    await expect(page.locator("h1").first()).toContainText("Reportes")
-    await expect(page.getByRole("tab", { name: "Semanal" })).toBeVisible()
-    await expect(page.getByRole("tab", { name: "Mensual" })).toBeVisible()
+  // Reportes y Análisis de rendimiento se fusionaron en «Consumo y rendimiento»
+  // (2026-10-22): las URL viejas siguen vivas en marcadores y correos.
+  test("retired fuel report and analysis routes redirect into Consumo y rendimiento", async ({ page }) => {
+    await page.goto("/combustibles/reportes?desde=2026-07-01&hasta=2026-07-31")
+    await expect(page).toHaveURL(/\/combustibles\?.*vista=analisis/)
+    await expect(page).toHaveURL(/desde=2026-07-01/)
+    await expect(page.getByRole("navigation", { name: "Vistas de consumo y rendimiento" })
+      .getByRole("link", { name: "Consumo por tarjeta (TCT)" })).toHaveAttribute("aria-current", "page")
+
+    await page.goto("/combustibles/analisis")
+    await expect(page).toHaveURL(/\/combustibles\/control\/rendimiento\/camiones/)
   })
 
   test("invoice import modal opens from facturas dashboard", async ({ page }) => {

@@ -7,7 +7,7 @@ export default function Loading() {
     <>
       <PageHeader
         title="Revisión de cargas"
-        breadcrumb={<Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Control", href: "/combustibles/control" }, { label: "Revisión" }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Revisión", href: "/combustibles/revision" }, { label: "Cargas marcadas" }]} />}
       />
       <PageContainer>
         <Skeleton className="mb-5 h-11 w-full" />

@@ -18,13 +18,14 @@ import { DETAIL_PAGE_SIZE, getEquipmentStats, getReviewExclusions, getWorksiteSt
 import { getFamilyVehicleOptions, getLoadDetail, getSupplyMediumOptions } from "@/lib/combustibles/control/queries/performance-detail"
 import { pickControlParams, revisionHref } from "@/lib/combustibles/control/view-helpers"
 import { ControlFilters } from "../../_components/control-filters"
-import { ControlNav } from "../../_components/control-nav"
+import { ConsumoNav } from "../../../consumo-nav"
 import { loadControlContext } from "../../_components/control-context"
 import { PerformanceDispersionChart } from "../../_charts/performance-charts-lazy"
 import { SectionError, ViewSection } from "../../_charts/overview-section"
 import { ReviewExclusionNote } from "../../_charts/performance-review-note"
 import { exportEquipmentStatsAction, exportLoadDetailAction, exportWorksiteStatsAction } from "../export-actions"
 import { FamilyFilters } from "./family-filters"
+import { FamilySwitch } from "./family-switch"
 import { LoadDetailTable } from "./load-detail-table"
 import { EquipmentStatsTable, WorksiteStatsTable } from "./stats-tables"
 
@@ -107,10 +108,11 @@ export default async function FamilyPerformancePage({ params, searchParams }: Pa
       <PageHeader
         title={`Rendimiento · ${label}`}
         description="Promedio y dispersión por faena y por equipo, comparados con su modelo y su histórico."
-        breadcrumb={[{ label: "Combustibles", href: "/combustibles" }, { label: "Control", href: "/combustibles/control" }, { label: label }]}
+        breadcrumb={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Consumo y rendimiento", href: "/combustibles" }, { label: "Rendimiento" }]}
       />
       <DegradedDataBanner degraded={failed} total={sources.length} />
-      <ControlNav items={ctx.navItems} />
+      <ConsumoNav activeKey="rendimiento" />
+      <FamilySwitch active={family} searchParams={sp} />
       <ControlFilters years={ctx.years} defaultYear={ctx.defaultYear} worksites={ctx.worksites} mandantes={ctx.mandantes} extraKeys={["unidad", "medio", "equipo"]}>
         <FamilyFilters media={media ?? []} vehicles={vehicles ?? []} />
       </ControlFilters>

@@ -5,13 +5,15 @@ import { inArray } from "drizzle-orm"
 import { db } from "@/db"
 import { worksites } from "@/db/schema"
 import { settle } from "@/lib/async-settle"
-import { requirePermission } from "@/lib/auth/can"
+import { can, requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
+import { taeNavItems } from "@/lib/combustibles/section-nav"
 import { SEAL_HISTORY_MAX_ROWS, getSealHistory } from "@/lib/combustibles/seal-history"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
+import { SectionNav } from "@/components/ui/section-nav"
 import { DatePicker } from "@/components/ui/date-picker"
 import { MetaBadge } from "@/components/states/state-badge"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -55,8 +57,9 @@ export default async function SealHistoryPage({ searchParams }: { searchParams: 
       <PageHeader
         title="Historial de sellos"
         description="Movimientos de sellos derivados de cargas TAE validadas. Cada carga que registra sello retirado o instalado aparece aquí."
-        breadcrumb={<Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Historial de sellos" }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Control operacional", href: "/control-operacional" }, { label: "TAE y sellos", href: can(session, "combustibles:tae_view") ? "/combustibles/tae" : undefined }, { label: "Historial de sellos" }]} />}
       />
+      <SectionNav items={taeNavItems(session)} activeKey="historial-sellos" ariaLabel="Vistas de TAE y sellos" carryParams={["faena"]} />
 
       {/* Los filtros no tienen etiqueta visible (van rotulados por placeholder):
           `aria-label` es lo que los hace anunciables por lector de pantalla. */}

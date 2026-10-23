@@ -7,10 +7,9 @@ export default function Loading() {
     <>
       <PageHeader
         title="Registrar carga"
-        breadcrumb={<Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Control", href: "/combustibles/control" }, { label: "Registrar carga" }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Cargas", href: "/combustibles/bitacora" }, { label: "Registrar carga" }]} />}
       />
       <PageContainer width="form">
-        <Skeleton className="mb-5 h-11 w-full" />
         <Skeleton className="mb-4 h-14 w-full" />
         <Skeleton className="mb-4 h-14 w-full" />
         <Skeleton className="h-64 w-full" />

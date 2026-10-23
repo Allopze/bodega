@@ -119,7 +119,7 @@ export default async function TaeImportBatchDetailPage({ params }: { params: Pro
       <PageHeader
         title="Detalle de lote TAE"
         description={batch.fileName}
-        breadcrumb={<Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Control TAE", href: "/combustibles/tae" }, { label: "Importar histórico", href: "/combustibles/tae/importar" }, { label: "Historial", href: "/combustibles/tae/importar/historial" }, { label: batch.fileName }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Control operacional", href: "/control-operacional" }, { label: "TAE y sellos", href: "/combustibles/tae" }, { label: "Importar histórico", href: "/combustibles/tae/importar" }, { label: "Historial", href: "/combustibles/tae/importar/historial" }, { label: batch.fileName }]} />}
         actions={<div className="flex flex-wrap gap-2"><ReprocessTaeBatchButton batchId={batch.id} canReprocess={canReprocess} /><RevertTaeBatchButton batchId={batch.id} canRevert={canRevert} /></div>}
       />
 

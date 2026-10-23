@@ -806,6 +806,50 @@ describe("getUsageMaintenanceAlerts", () => {
 })
 
 
+// `/mantenciones?status=abiertas`: el backlog del Panel operacional es "OT
+// programadas o en curso"; la lista que abre el enlace filtra igual, y la
+// exportación comparte esta consulta.
+describe("Maintenance Service (filtro de estado y alias abiertas)", () => {
+  const globalSession = {
+    user: { id: "user-1", isGlobal: true, worksiteIds: [], permissions: ["mantenciones:view"] },
+  } as unknown as Session
+
+  async function listWhere(status: string | undefined) {
+    mockMaintenanceFindMany.mockResolvedValue([])
+    mockVehicleFindMany.mockResolvedValue([])
+    await getMaintenancePageData(globalSession, { status })
+    return sqlChunks((mockMaintenanceFindMany.mock.calls[0]![0] as { where: unknown }).where)
+  }
+
+  it("`abiertas` incluye programadas y en curso y deja fuera completadas y canceladas", async () => {
+    const where = await listWhere("abiertas")
+    expect(where).toContain("status")
+    expect(where).toContain("scheduled")
+    expect(where).toContain("in_progress")
+    expect(where).not.toContain("completed")
+    expect(where).not.toContain("cancelled")
+    expect(where).not.toContain("abiertas")
+  })
+
+  it("un estado concreto sigue filtrando solo por ese estado", async () => {
+    const where = await listWhere("completed")
+    expect(where).toContain("completed")
+    expect(where).not.toContain("scheduled")
+    expect(where).not.toContain("in_progress")
+  })
+
+  it("sin estado no agrega filtro de estado", async () => {
+    const where = await listWhere(undefined)
+    expect(where).not.toContain("status")
+  })
+
+  it("un estado desconocido no llega a SQL: no coincide con nada y no rompe la consulta", async () => {
+    const where = await listWhere("inventado")
+    expect(where).not.toContain("inventado")
+    expect(where).toContain("false")
+  })
+})
+
 // CO-008: los centros de costo tienen faena; el catálogo completo dejaba
 // imputar el gasto de una faena a la estructura de otra.
 describe("Maintenance Service (centros de costo con alcance)", () => {

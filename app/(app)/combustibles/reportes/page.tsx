@@ -1,46 +1,28 @@
 import { redirect } from "next/navigation"
-import { requirePermission } from "@/lib/auth/can"
-import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
-import { PageContainer } from "@/components/ui/page-container"
-import { getFuelReportsData } from "@/lib/combustibles/reports"
-import { assertFuelCostAccess } from "@/lib/operational-control/capabilities"
-import { ReportsView } from "./reports-view"
 
-export default async function ReportesPage({
+const PLAIN_DATE = /^\d{4}-\d{2}-\d{2}$/
+
+function plainDate(value: string | string[] | undefined) {
+  const raw = (Array.isArray(value) ? value[0] : value)?.trim()
+  return raw && PLAIN_DATE.test(raw) ? raw : undefined
+}
+
+/**
+ * Vista retirada: «Reportes de combustible» leía la tabla legada `fuel_loads` y
+ * nada enlazaba a ella. El análisis por período, faena y equipo vive en
+ * «Consumo y rendimiento»; se conserva la ruta y el rango de fechas para los
+ * favoritos antiguos.
+ */
+export default async function ReportesRedirectPage({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
-  let session
-  try {
-    session = await requirePermission("combustibles:view")
-    assertFuelCostAccess(session)
-  }
-  catch { redirect("/forbidden") }
-
   const sp = await searchParams
-  const startDate = typeof sp.desde === "string" ? sp.desde : undefined
-  const endDate = typeof sp.hasta === "string" ? sp.hasta : undefined
-
-  const { byMonth, byWeek, byWorksite, byVehicle, bySupplier, byProduct } =
-    await getFuelReportsData(session, { startDate, endDate })
-
-  return (
-    <PageContainer>
-      <PageHeader
-        title="Reportes de combustible"
-        description="Análisis de consumo por período, faena, vehículo y proveedor"
-        breadcrumb={<Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Reportes" }]} />}
-      />
-      <ReportsView
-        byMonth={byMonth}
-        byWeek={byWeek}
-        byWorksite={byWorksite}
-        byVehicle={byVehicle}
-        bySupplier={bySupplier}
-        byProduct={byProduct}
-        currentFilters={{ startDate, endDate }}
-      />
-    </PageContainer>
-  )
+  const params = new URLSearchParams({ vista: "analisis" })
+  const desde = plainDate(sp.desde)
+  const hasta = plainDate(sp.hasta)
+  if (desde) params.set("desde", desde)
+  if (hasta) params.set("hasta", hasta)
+  redirect(`/combustibles?${params.toString()}`)
 }

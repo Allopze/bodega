@@ -885,7 +885,7 @@ Esta sección documenta los cambios realizados para corregir el problema:
 | `bodega/guias/guide-filters.tsx` | `router.push` → `router.replace` + `scroll: false` |
 | `analitica/analytics-filters.tsx` | `router.push` → `router.replace` + `scroll: false` |
 | `facturacion/facturas/invoice-filters.tsx` | `startTransition(() => router.push)` → `router.replace` + `scroll: false` |
-| `combustibles/reportes/reports-view.tsx` | `router.push` → `router.replace` + `scroll: false` |
+| `combustibles/reportes/reports-view.tsx` | `router.push` → `router.replace` + `scroll: false` (retirado el 2026-10-22: `/combustibles/reportes` redirige a «Consumo y rendimiento») |
 | `prevencion/miper/miper-workbench.tsx` | `router.push` → `router.replace` + `scroll: false` (navegación imports) |
 | `prevencion/capa/capa-list.tsx` | `router.push` → `router.replace` + `scroll: false` |
 | `prevencion/pdtp/acciones/acciones-table.tsx` | `router.push` → `router.replace` + `scroll: false` |

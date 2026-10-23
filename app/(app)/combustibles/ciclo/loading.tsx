@@ -6,7 +6,7 @@ export default function Loading() {
     <>
       <PageHeader
         title="Ciclo físico de combustible"
-        breadcrumb={<Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Ciclo físico" }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Consumo y rendimiento", href: "/combustibles" }, { label: "Ciclo físico" }]} />}
       />
       <SkeletonPage rows={6} />
     </>

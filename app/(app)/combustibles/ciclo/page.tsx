@@ -1,7 +1,7 @@
 import Link from "next/link"
 import { and, desc, eq, gte, inArray, lte } from "drizzle-orm"
 import { redirect } from "next/navigation"
-import { ArrowLeft, ArrowSquareOut, Database, WarningCircle } from "@phosphor-icons/react/dist/ssr"
+import { ArrowSquareOut, Database, WarningCircle } from "@phosphor-icons/react/dist/ssr"
 import { settle } from "@/lib/async-settle"
 import { db } from "@/db"
 import { fuelCycleMovements, fuelProducts, fuelStorageLocations, fuelSuppliers, fuelVehicles, worksites } from "@/db/schema"
@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button"
 import { MetaBadge } from "@/components/states/state-badge"
 import { DatePicker } from "@/components/ui/date-picker"
 import { addDaysToPlainDate, formatQty, todayInChile } from "@/lib/utils"
+import { ConsumoNav } from "../consumo-nav"
 import { CycleWorkbench } from "./cycle-workbench"
 import { CycleStageChart, type CycleStagePoint } from "./cycle-stage-chart"
 import { FilterSelect } from "@/components/ui/filter-select"
@@ -140,14 +141,11 @@ export default async function FuelCyclePage({ searchParams }: { searchParams: Pr
       <PageHeader
         title="Ciclo físico de combustible"
         description="Recepciones, transferencias y entregas conciliadas contra las cargas registradas."
-        breadcrumb={<Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Ciclo físico" }]} />}
-        actions={(
-          <div className="flex gap-2">
-            <Button asChild variant="secondary" size="sm"><Link href="/combustibles"><ArrowLeft size={16} />Panel</Link></Button>
-            <CycleWorkbench canCreate={canCreate} worksites={worksitesList} products={products} suppliers={suppliers} locations={locations} vehicles={vehicles} />
-          </div>
-        )}
+        breadcrumb={<Breadcrumbs items={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Consumo y rendimiento", href: "/combustibles" }, { label: "Ciclo físico" }]} />}
+        actions={<CycleWorkbench canCreate={canCreate} worksites={worksitesList} products={products} suppliers={suppliers} locations={locations} vehicles={vehicles} />}
       />
+
+      <ConsumoNav activeKey="ciclo" />
 
       <form className="mb-5 grid gap-3 border-y border-[var(--color-border)] py-4 md:grid-cols-5">
         <label className="grid gap-1 text-xs font-medium">Desde<DatePicker name="desde" defaultValue={from} placeholder="Desde" /></label>

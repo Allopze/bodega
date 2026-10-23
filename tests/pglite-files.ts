@@ -143,7 +143,6 @@ export const pgliteTestFiles = [
   // APR-002: la aprobación masiva avisa al solicitante igual que la individual.
   "lib/__tests__/apr-002-aprobacion-masiva-avisa-solicitante.test.ts",
   "lib/__tests__/document-chain.test.ts",
-  "lib/__tests__/equipment-performance-integration.test.ts",
   "lib/__tests__/feedback.test.ts",
   "lib/__tests__/feedback-sla-reminders.test.ts",
   "lib/__tests__/accountable-fuel-loads.test.ts",

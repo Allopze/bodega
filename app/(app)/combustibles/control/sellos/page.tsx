@@ -8,15 +8,16 @@ import { DegradedDataBanner } from "@/components/ui/degraded-data-banner"
 import { EmptyState } from "@/components/ui/empty-state"
 import { PageContainer } from "@/components/ui/page-container"
 import { PageHeader } from "@/components/ui/page-header"
+import { SectionNav } from "@/components/ui/section-nav"
 import { can, requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { controlFiltersToParams, parseControlFilters } from "@/lib/combustibles/control/filters"
 import { getMediumCross, getMandante, getReconciliationFlow } from "@/lib/combustibles/control/queries/reconciliation"
 import { getSealJustifications, getSupervisorSealSummary, listSealDetail, listSealVehicles } from "@/lib/combustibles/control/queries/seals"
+import { taeNavItems } from "@/lib/combustibles/section-nav"
 import { resolvePagination } from "@/lib/pagination"
 import { ControlFilters } from "../_components/control-filters"
 import { loadControlContext } from "../_components/control-context"
-import { ControlNav } from "../_components/control-nav"
 import { DetailSection } from "./detail-section"
 import { EquipmentSelect } from "./equipment-select"
 import { FlowSection } from "./flow-section"
@@ -30,7 +31,8 @@ export const metadata: Metadata = { title: "Sellos por mandante" }
 
 const PAGE_SIZE = 50
 const PATH = "/combustibles/control/sellos"
-const BREADCRUMB = [{ label: "Combustibles", href: "/combustibles" }, { label: "Control", href: "/combustibles/control" }, { label: "Sellos por mandante" }]
+const BREADCRUMB = [{ label: "Control operacional", href: "/control-operacional" }, { label: "TAE y sellos", href: "/combustibles/tae" }, { label: "Sellos por mandante" }]
+const NAV_LABEL = "Vistas de TAE y sellos"
 
 export default async function SealsByMandantePage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   let session
@@ -52,7 +54,7 @@ export default async function SealsByMandantePage({ searchParams }: { searchPara
         description="Conciliación, sellos y cargas en terreno por mandante"
         breadcrumb={BREADCRUMB}
       />
-      <ControlNav items={ctx.navItems} />
+      <SectionNav items={taeNavItems(session)} activeKey="sellos-mandante" ariaLabel={NAV_LABEL} carryParams={["faena"]} />
       {children}
     </PageContainer>
   )
@@ -103,9 +105,9 @@ export default async function SealsByMandantePage({ searchParams }: { searchPara
         breadcrumb={BREADCRUMB}
         actions={canExport ? <SealsExportButton query={exportQuery} /> : null}
       />
-      <ControlNav items={ctx.navItems} />
-      <ControlFilters years={ctx.years} defaultYear={ctx.defaultYear} worksites={ctx.worksites} mandantes={ctx.mandantes} extraKeys={["equipo"]} />
       <DegradedDataBanner degraded={degraded} total={total()} />
+      <SectionNav items={taeNavItems(session)} activeKey="sellos-mandante" ariaLabel={NAV_LABEL} carryParams={["faena"]} />
+      <ControlFilters years={ctx.years} defaultYear={ctx.defaultYear} worksites={ctx.worksites} mandantes={ctx.mandantes} extraKeys={["equipo"]} />
       <p className="mb-2 mt-3 text-sm text-[var(--color-text-muted)]">
         {mandante
           ? <>Mandante <strong className="font-semibold text-[var(--color-text)]">{mandante.name}</strong>{mandante.worksiteNames.length > 0 ? ` · ${mandante.worksiteNames.join(", ")}` : ""}{partialScope ? " · solo las faenas de tu alcance." : "."}</>
