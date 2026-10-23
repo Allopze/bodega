@@ -60,3 +60,34 @@ Cada sección de Combustible tiene una barra de pestañas (`SectionNav`). Hay un
 - No se recorrió con un rol acotado por faena ni sin `view_costs`. La visibilidad por permiso la cubren las pruebas de paridad menú–página y de navegación.
 - `bodega_dev` tiene pocos datos: los tiles del panel se vieron en su estado vacío («Ninguno», «Todo operativo»), salvo combustible.
 - No se corrió la suite E2E completa, solo las 17 specs relacionadas.
+
+## Segunda ronda (misma fecha): pendientes cerrados
+
+| Tipo | Cambio |
+|---|---|
+| PRODUCT BUG (previo) | Crear, editar, registrar, eliminar e importar cargas facturadas exigían solo su permiso, sin `view_costs`, aunque muestran y graban montos. Ahora lo exigen la página, la acción y `/api/combustibles/import`. La ficha `/combustibles/[id]` redacta los montos en el servidor para quien llega desde Cargas sin costos. **Efecto:** `jefe_mantencion` ya no crea ni edita cargas facturadas; conserva «Registrar carga» del control y la corrección de medidor. |
+| UX FINDING | El menú dice «Consumo», porque «Consumo y rendimiento» activo se truncaba por 2 px; el título de la página no cambia. Anomalías tiene estado vacío con acción y aviso de datos degradados: antes una consulta fallida se leía como «Aún no hay anomalías». Los `loading.tsx` reservan la barra de pestañas. La tira del panel distingue danger y signal. |
+| INCONSISTENCIA | El importador de facturas pasó a ser la 5.ª opción del único «Importar». Al guardar una carga facturada se vuelve a Facturas y pagos. Se unificaron «Reglas de anomalías» y el Excel «Cargas de combustible». Los enlaces del dashboard usan los nombres del menú. |
+| Deuda | Un solo criterio de vencimiento de flota (`resolveNextExpiryDate`). La exportación del panel ya no consulta los conteos de atención. Se retiró el código muerto (`accountableOnly`, `ProductPieChart`, estadísticas sin uso) y se actualizaron GAP_MODULO_COMBUSTIBLE.md §11, `docs/plan.yml` y `docs/auditoria-componentes.md`. |
+
+### Verificación de la segunda ronda
+
+- `typecheck`, `lint`, `db:verify-migrations`, `check:secrets`, `check:security-audit` (en el checkout principal): verde.
+  - En el worktree, `check:security-audit` falla por el `node_modules` enlazado; con las mismas dependencias pasa en el checkout principal.
+- `test:fast`: 1.001 archivos y 13.270 pruebas. `test:pglite`: 274 archivos y 3.300 pruebas.
+- **Suite E2E completa:** 943 pasan, 4 se saltan y falló 1.
+  - La falla era de la propia prueba nueva: el localizador ubicaba el menú por el Panel, que el rol sin costos no ve.
+  - Se corrigió el localizador; `control-operacional-navegacion` y `densidad-kpi` pasan 44/44.
+- Navegador: 11 vistas sin errores ni desborde. Las 5 opciones de «Importar» aparecen; la de facturas abre su modal y cierra el selector.
+- E2E nuevas:
+  - Navegación del área, alias, pestañas, «Importar», Revisión y rutas retiradas.
+  - Tiles del panel, con navegación real y filtro activo.
+  - Tres roles acotados: sin permisos del área, solo inspecciones, y combustible sin costos (nuevo en el seed).
+
+### Sigue abierto
+
+- Merge a `main` hecho en local; falta push y deploy.
+- Si en producción algún interruptor de submódulo está apagado para `/combustibles/importar`, `/analisis` o `/control`, deja de aplicarse. Es de bajo riesgo porque el área todavía no se usa.
+- El gráfico de distribución de Anomalías no filtra por `?ref=` (ya pasaba antes).
+- `docs/.knowledge` y el registro de docs se regeneran con sus scripts; no se regeneraron.
+- Con el rótulo «Consumo», la búsqueda ⌘K no encuentra «rendimiento».

@@ -74,7 +74,9 @@ function empiezaCon(texto: string): RegExp {
 // Menú del área
 // ─────────────────────────────────────────────────────────────────────────────
 
-const MENU_DEL_AREA = [
+interface DestinoDelMenu { href: string; nombre: string | RegExp }
+
+const MENU_DEL_AREA: ReadonlyArray<{ grupo: string; destinos: readonly DestinoDelMenu[] }> = [
   {
     grupo: "Seguimiento",
     destinos: [{ href: "/control-operacional", nombre: "Panel operacional" }],
@@ -90,15 +92,15 @@ const MENU_DEL_AREA = [
   {
     grupo: "Combustible",
     destinos: [
-      // «Consumo y rendimiento» se acorta a «Consumo» en el sidebar; se aceptan ambos.
-      { href: "/combustibles", nombre: /^Consumo( y rendimiento)?$/ },
+      // El sidebar dice «Consumo»: «Consumo y rendimiento» (el título) no cabe activo.
+      { href: "/combustibles", nombre: "Consumo" },
       { href: "/combustibles/bitacora", nombre: "Cargas" },
       { href: "/combustibles/revision", nombre: "Revisión" },
       { href: "/combustibles/tae", nombre: "TAE y sellos" },
       { href: "/combustibles/facturas", nombre: "Facturas y pagos" },
     ],
   },
-] as const
+]
 
 const HREFS_DEL_MENU: string[] = MENU_DEL_AREA.flatMap((grupo) => grupo.destinos.map((destino) => destino.href))
 
@@ -562,12 +564,19 @@ test.describe("Control operacional — roles acotados", () => {
 
     await page.goto("/combustibles/bitacora")
     await expect(page).toHaveURL(/\/combustibles\/bitacora$/)
+    // `menuDelArea` se ancla en el Panel, que este rol no ve (su gate no incluye
+    // `combustibles:view`): el área se ubica por su ítem de Cargas.
+    const menu = page
+      .getByRole("navigation", { name: "Navegación", exact: true })
+      .locator("ul")
+      .filter({ has: page.locator('a[href="/combustibles/bitacora"]') })
     for (const href of ["/combustibles", "/combustibles/bitacora", "/combustibles/revision"]) {
-      await expect(itemDelMenu(page, href)).toBeVisible()
+      await expect(menu.locator(`a[href="${href}"]`)).toBeVisible()
     }
-    // TAE exige `tae_view` y Facturas `view_costs`: ninguno de los dos está.
-    await expect(itemDelMenu(page, "/combustibles/facturas")).toHaveCount(0)
-    await expect(itemDelMenu(page, "/combustibles/tae")).toHaveCount(0)
+    // Panel (flota/mantención/inspecciones), TAE (`tae_view`) y Facturas (`view_costs`): ninguno está.
+    for (const href of ["/control-operacional", "/combustibles/facturas", "/combustibles/tae"]) {
+      await expect(menu.locator(`a[href="${href}"]`)).toHaveCount(0)
+    }
 
     for (const ruta of ["/combustibles/facturas", "/combustibles/cuenta-corriente", "/combustibles/nueva"]) {
       await page.goto(ruta)
