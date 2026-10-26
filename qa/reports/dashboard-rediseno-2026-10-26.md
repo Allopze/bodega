@@ -92,4 +92,7 @@ Revisión en dos ejes (estándares del repo y especificación + errores) sobre `
 
 Puertas tras las correcciones: `typecheck` y `lint` limpios (salvo la carpeta local `dashboards-referencia/`), `test:fast` 13.492 pruebas pasan, E2E de los cuatro specs del tablero: 63 pasan y 1 se omite (orden de la antigüedad de la deuda: la base E2E no tiene saldo abierto; lo cubre la prueba unitaria).
 
-Quedan para decisión del usuario: devolver a un rol que sólo aprueba una acción primaria en la cabecera, y el orden tendencia/medidor del Resumen (sigue el del mockup).
+Decisiones del usuario (2026-10-26), sin cambio de código:
+
+- **Rol que sólo aprueba sin acción primaria en la cabecera:** se mantiene. El conteo de aprobaciones ya está en «Requiere atención», en la primera pantalla del Resumen, y repetirlo en la cabecera es la duplicación que A5 prohíbe (la misma razón por la que salió «Ver N vencidas»). «Mis pendientes» en el sidebar sigue siendo el acceso.
+- **Orden del Resumen:** la tendencia (8 columnas, el panorama de la operación) va antes del medidor PDTP (4 columnas, una cifra), como en el mockup. Si un rol falta, el otro bloque toma el ancho. Se revisaría sólo si un rol de Prevención lo pide.
