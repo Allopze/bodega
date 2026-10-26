@@ -6,7 +6,7 @@ import { ArrowRight, CheckCircle } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { formatMoney } from "@/lib/services/billing/money"
-import { cn, formatCompactCLP } from "@/lib/utils"
+import { cn, formatCompactCLP, countOf } from "@/lib/utils"
 import { ChartFrame, ChartHeadlineCaption, ChartHeadlineValue } from "./chart-frame"
 
 /**
@@ -67,10 +67,6 @@ function bucketColor(index: number, count: number) {
   return `color-mix(in oklch, var(--color-danger) ${pct}%, var(--color-surface))`
 }
 
-function plural(count: number) {
-  return `${count.toLocaleString("es-CL")} ${count === 1 ? "factura" : "facturas"}`
-}
-
 export function DebtAgingChart({
   buckets,
   totalAmount,
@@ -122,7 +118,7 @@ export function DebtAgingChart({
   const sumAmounts = withDebt.reduce((sum, bucket) => sum + bucket.amount, 0)
 
   const summary = withDebt
-    .map((bucket) => `${bucket.label} ${exact(bucket.amount)}${bucket.count === null ? "" : `, ${plural(bucket.count)}`}`)
+    .map((bucket) => `${bucket.label} ${exact(bucket.amount)}${bucket.count === null ? "" : `, ${countOf(bucket.count, "factura")}`}`)
     .join("; ")
 
   const overdueLabel = overdueAmount > 0
@@ -145,7 +141,7 @@ export function DebtAgingChart({
       headline={(
         <>
           <span title={exact(totalAmount)}><ChartHeadlineValue>{compact(totalAmount)}</ChartHeadlineValue></span>
-          <ChartHeadlineCaption>{invoiceTotal === null ? "por cobrar" : `en ${plural(invoiceTotal)}`}</ChartHeadlineCaption>
+          <ChartHeadlineCaption>{invoiceTotal === null ? "por cobrar" : `en ${countOf(invoiceTotal, "factura")}`}</ChartHeadlineCaption>
           {overdueAmount > 0 && overdueHref ? (
             <Link
               href={overdueHref}
@@ -173,7 +169,7 @@ export function DebtAgingChart({
                 key={bucket.key}
                 data-segment={bucket.key}
                 data-state={state}
-                title={`${bucket.label}: ${exact(bucket.amount)}${bucket.count === null ? "" : ` · ${plural(bucket.count)}`}`}
+                title={`${bucket.label}: ${exact(bucket.amount)}${bucket.count === null ? "" : ` · ${countOf(bucket.count, "factura")}`}`}
                 onMouseEnter={() => setActiveKey(bucket.key)}
                 // `min-w-1`: un tramo de 0,1 % del total no desaparece.
                 className={cn(
@@ -212,7 +208,7 @@ export function DebtAgingChart({
                 />
                 <span className="truncate">{bucket.label}</span>
                 <span className="min-w-[76px] text-right text-[13px] tabular-nums text-[var(--color-text-muted)]">
-                  {bucket.count === null ? "" : bucket.count > 0 ? plural(bucket.count) : "—"}
+                  {bucket.count === null ? "" : bucket.count > 0 ? countOf(bucket.count, "factura") : "—"}
                 </span>
                 <span className={cn("text-right tabular-nums", !zero && "font-semibold")} title={exact(bucket.amount)}>
                   {compact(bucket.amount)}

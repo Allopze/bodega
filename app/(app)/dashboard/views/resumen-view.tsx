@@ -7,7 +7,7 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { can } from "@/lib/auth/can"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { formatCLP, formatDate, pluralize } from "@/lib/utils"
-import { ORDERS_ISSUED_METRIC, ORDERS_SPEND_METRIC, ORDERS_SPEND_TREND_POLARITY } from "../dashboard-metric-definitions"
+import { ORDERS_ISSUED_METRIC, ORDERS_SPEND_METRIC, ORDERS_SPEND_TREND_POLARITY, spendVariationPct } from "../dashboard-metric-definitions"
 import { DASHBOARD_GLOSSARY } from "../dashboard-glossary"
 import { getDashboardData } from "@/lib/services/dashboard"
 import { listOperationalActivity } from "@/lib/services/operational-activity"
@@ -428,16 +428,6 @@ export function buildOperationalBacklogSummary(input: {
  * que tomar: la copia correcta es confirmarlo, no inventar un CTA. La regla
  * apunta a tiles vacíos por falta de configuración, no a contadores en cero.
  */
-/**
- * Variación porcentual de `current` contra `previous`, a un decimal. `null` si
- * no hay con qué comparar —sin período anterior, o con uno en cero, donde un
- * porcentaje no está definido—: una tendencia que no existe no se dibuja.
- */
-function percentChange(current: number, previous: number | null | undefined) {
-  if (previous === null || previous === undefined || previous === 0) return null
-  return Math.round(((current - previous) / previous) * 1000) / 10
-}
-
 /** "este mes" / "este trimestre" / "este año": completa "Sin OC emitidas …". */
 const PERIOD_PHRASE: Record<OperationalPeriodSpan, string> = {
   mes: "este mes",
@@ -487,7 +477,9 @@ export function buildOperationalMetrics(input: {
       href: canStartOrder ? "/compras/nueva" : periodWindowHref(input.scope, "/compras"),
       // Una variación de dinero que sube es MALA noticia (`up-bad`); contra el
       // período anterior, en porcentaje. Sin período anterior comparable, nada.
-      trend: percentChange(input.periodSpend, input.periodSpendPrevious),
+      // Sin OC el tile dice qué pasa: una baja "buena" del 100 % junto a «Sin OC
+      // emitidas» se leía como un logro.
+      trend: noOrders ? null : spendVariationPct(input.periodSpend, input.periodSpendPrevious),
       trendPolarity: ORDERS_SPEND_TREND_POLARITY,
       trendFormat: "percent",
       trendLabel: periodComparisonShortLabel(input.scope.period, input.now),

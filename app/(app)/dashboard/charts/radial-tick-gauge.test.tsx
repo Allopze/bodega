@@ -15,12 +15,12 @@ describe("RadialTickGauge", () => {
 
   it("el aria-label resume avance, esperado y meta", () => {
     render(<RadialTickGauge percent={0} expectedPercent={58} targetPercent={90} />)
-    expect(screen.getByRole("img")).toHaveAttribute("aria-label", "Avance 0 %; esperado 58 %; meta 90 %")
+    expect(screen.getByRole("img")).toHaveAttribute("aria-label", "Avance 0%; esperado 58%; meta 90%")
   })
 
   it("muestra la cifra y el rótulo por defecto «avance real»", () => {
     render(<RadialTickGauge percent={34} expectedPercent={58} targetPercent={90} />)
-    expect(screen.getByText("34 %")).toBeInTheDocument()
+    expect(screen.getByText("34%")).toBeInTheDocument()
     expect(screen.getByText("avance real")).toBeInTheDocument()
   })
 
@@ -31,24 +31,24 @@ describe("RadialTickGauge", () => {
 
   it("la leyenda dice esperado y meta", () => {
     const { container } = render(<RadialTickGauge percent={0} expectedPercent={58} targetPercent={90} />)
-    expect(container.querySelector("p")).toHaveTextContent("Esperado al período 58 % · Meta 90 %")
+    expect(container.querySelector("p")).toHaveTextContent("Esperado al período 58% · Meta 90%")
   })
 
   it("sin esperado la leyenda sólo lleva la meta y el aria-label lo calla", () => {
     const { container } = render(<RadialTickGauge percent={20} expectedPercent={null} targetPercent={90} />)
-    expect(container.querySelector("p")).toHaveTextContent(/^Meta 90 %$/)
-    expect(screen.getByRole("img")).toHaveAttribute("aria-label", "Avance 20 %; meta 90 %")
+    expect(container.querySelector("p")).toHaveTextContent(/^Meta 90%$/)
+    expect(screen.getByRole("img")).toHaveAttribute("aria-label", "Avance 20%; meta 90%")
     expect(container.querySelector("[data-marker=expected]")).toBeNull()
   })
 
   it("la cifra se pinta de alerta (`-ink`) cuando va por debajo de lo esperado", () => {
     render(<RadialTickGauge percent={20} expectedPercent={58} targetPercent={90} />)
-    expect(screen.getByText("20 %")).toHaveAttribute("fill", "var(--color-danger-ink)")
+    expect(screen.getByText("20%")).toHaveAttribute("fill", "var(--color-danger-ink)")
   })
 
   it("y de texto normal cuando alcanza lo esperado", () => {
     render(<RadialTickGauge percent={60} expectedPercent={58} targetPercent={90} />)
-    expect(screen.getByText("60 %")).toHaveAttribute("fill", "var(--color-text)")
+    expect(screen.getByText("60%")).toHaveAttribute("fill", "var(--color-text)")
   })
 
   it("con avance 0 ninguna marca se rellena de primario", () => {
@@ -110,7 +110,7 @@ describe("RadialTickGauge", () => {
 
     it("el aria-label dice que no hay programa", () => {
       render(<RadialTickGauge percent={null} targetPercent={90} />)
-      expect(screen.getByRole("img")).toHaveAttribute("aria-label", "Sin programa vigente; meta 90 %")
+      expect(screen.getByRole("img")).toHaveAttribute("aria-label", "Sin programa vigente; meta 90%")
     })
   })
 })

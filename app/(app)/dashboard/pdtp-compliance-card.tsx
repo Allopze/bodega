@@ -1,6 +1,6 @@
 import Link from "next/link"
 import { ChartLineUp } from "@phosphor-icons/react/dist/ssr"
-import { cn, formatDateTime, MONTH_LABELS } from "@/lib/utils"
+import { cn, formatDateTime, MONTH_LABELS, formatQty } from "@/lib/utils"
 import { Progress } from "@/components/ui/progress"
 import { getPdtpIntegralCompliance } from "@/lib/services/prevention-pdtp"
 import { listPendingPdtpExecutions } from "@/lib/services/prevention-pdtp"
@@ -157,7 +157,7 @@ export function PdtpComplianceCard(props: PdtpComplianceCardProps) {
           )}
         </span>
         <span className="tabular-nums text-[var(--color-text-subtle)]">
-          {executed.toLocaleString("es-CL")} de {planned.toLocaleString("es-CL")} planificado
+          {formatQty(executed)} de {formatQty(planned)} planificado
         </span>
         {expectedPct !== null && (
           <span>

@@ -1,5 +1,6 @@
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { getOperationalCalendarBounds, type OperationalPeriodSpan } from "@/lib/services/operational-period-bounds"
+import { MONTH_LABELS } from "@/lib/utils"
 import {
   DEFAULT_DASHBOARD_VIEW,
   parseDashboardView,
@@ -119,8 +120,6 @@ export function periodComparisonLabel(period: OperationalPeriodSpan) {
   return DASHBOARD_PERIODS.find((entry) => entry.value === period)?.comparison ?? "vs. período anterior"
 }
 
-const SHORT_MONTHS = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"] as const
-
 /**
  * Rótulo corto del período anterior para las variaciones (`<Delta>`): "vs. sep",
  * "vs. T3", "vs. 2025". El largo ("vs. mes anterior") no cabe junto a la cifra
@@ -132,7 +131,7 @@ export function periodComparisonShortLabel(period: OperationalPeriodSpan, now = 
   switch (period) {
     case "anio": return `vs. ${previous.getUTCFullYear()}`
     case "trimestre": return `vs. T${Math.floor(month / 3) + 1}`
-    default: return `vs. ${SHORT_MONTHS[month]}`
+    default: return `vs. ${MONTH_LABELS[month]?.toLowerCase()}`
   }
 }
 

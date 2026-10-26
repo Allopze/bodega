@@ -67,7 +67,7 @@ export function DomainSection({ domain, kpis, kpiGroups, summary, charts, links,
   // Bento del panel: 3 columnas en 2xl, 2 en xl, 1 abajo. Cada gráfico va en un
   // `ChartSlot` (con `span="wide"` las series temporales); el slot se oculta si
   // el gráfico no tiene datos, así que no quedan huecos.
-  const chartsPanel = <DashboardPanel cols="charts" className={chartsFirst ? undefined : "mt-4"}>{charts}</DashboardPanel>
+  const chartsPanel = <DashboardPanel cols="charts">{charts}</DashboardPanel>
   // Ya no hay capas sticky sobre el pozo: sólo aire para que el ancla no quede
   // pegada al borde superior.
   return (
@@ -93,17 +93,22 @@ export function DomainSection({ domain, kpis, kpiGroups, summary, charts, links,
 
       {note && <p className="mb-3 text-xs text-[var(--color-text-muted)]">{note}</p>}
 
-      {chartsFirst && chartsPanel}
-      {groups.map((group, index) => (
-        <div key={group.key} className={index === 0 && !chartsFirst ? undefined : "mt-4"}>
-          {group.label && (
-            <h3 className="text-eyebrow mb-2 text-[var(--color-text-faint)]">{group.label}</h3>
-          )}
-          <DashboardPanel cols="kpis">{group.content}</DashboardPanel>
-        </div>
-      ))}
-      {summary && <div className="mt-3">{summary}</div>}
-      {!chartsFirst && chartsPanel}
+      {/* Espaciado con `gap` y no con márgenes: un panel que se oculta (todos
+          sus gráficos sin datos) queda `display: none` y en un flex no deja
+          hueco; con `mt-4` sobre el bloque siguiente quedaba aire de más. */}
+      <div className="flex flex-col gap-4">
+        {chartsFirst && chartsPanel}
+        {groups.map((group) => (
+          <div key={group.key}>
+            {group.label && (
+              <h3 data-kpi-group-label="" className="text-eyebrow mb-2 text-[var(--color-text-faint)]">{group.label}</h3>
+            )}
+            <DashboardPanel cols="kpis">{group.content}</DashboardPanel>
+          </div>
+        ))}
+        {summary && <div>{summary}</div>}
+        {!chartsFirst && chartsPanel}
+      </div>
     </section>
   )
 }

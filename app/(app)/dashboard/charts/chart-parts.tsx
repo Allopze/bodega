@@ -4,26 +4,18 @@ import * as React from "react"
 import { Rectangle, Text, type BarShapeProps } from "recharts"
 import {
   chartLegendButtonClass,
-  formatChartValue,
   seriesOpacity,
-  type ChartTooltipCardItem,
-  type ChartValueFormat,
 } from "@/components/ui/chart-interactions"
-import { MONTH_LABELS, cn } from "@/lib/utils"
+import { MONTH_LABELS, MONTH_NAMES, cn } from "@/lib/utils"
 
 /*
  * Piezas que comparten los gráficos de series por mes (tendencia, facturación,
- * SST, flota). Viven acá y no en `components/ui/chart-interactions.tsx`
- * (contrato de la Fase 0, que esta línea no edita) porque dependen de recharts
- * y de la forma de los datos del tablero.
+ * SST, flota). Las genéricas (tooltip, brillo, foco de luz, punto activo) viven
+ * en `components/ui/chart-interactions.tsx`; éstas dependen de la forma de los
+ * datos del tablero (meses, ejes de conteo, leyenda).
  */
 
 // ── Meses ────────────────────────────────────────────────────────────────────
-
-const MONTH_NAMES = [
-  "enero", "febrero", "marzo", "abril", "mayo", "junio",
-  "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
-] as const
 
 /**
  * "Ene" → "enero"; "Jul 2026" → "julio". Los servicios entregan el mes como
@@ -80,33 +72,6 @@ export function niceCountMax(dataMax: number): number {
 
 /** Para `<YAxis domain={COUNT_DOMAIN} tickCount={5} allowDecimals={false} />`. */
 export const COUNT_DOMAIN = [0, niceCountMax] as const
-
-// ── Brillo ───────────────────────────────────────────────────────────────────
-
-/**
- * Brillo suave de la serie protagonista.
- *
- * Mismo efecto que `GlowFilter` de `chart-interactions`, pero con la región del
- * filtro en coordenadas de usuario. `GlowFilter` usa el cuadro del elemento
- * (`objectBoundingBox`) y una serie plana —todos sus valores iguales, p. ej. 0
- * solicitudes porque el rol no ve ese volumen— tiene un cuadro de alto 0: por
- * especificación el navegador no dibuja el elemento y la línea desaparece. Con
- * `userSpaceOnUse` la región es el SVG entero y la línea plana se ve.
- */
-export function ChartGlow({ id, std = 4 }: { id: string; std?: number }) {
-  return (
-    <filter id={id} filterUnits="userSpaceOnUse" x="0" y="-10%" width="100%" height="120%">
-      <feGaussianBlur in="SourceGraphic" stdDeviation={std} result="blur" />
-      <feComponentTransfer in="blur" result="soft">
-        <feFuncA type="linear" slope={0.5} />
-      </feComponentTransfer>
-      <feMerge>
-        <feMergeNode in="soft" />
-        <feMergeNode in="SourceGraphic" />
-      </feMerge>
-    </filter>
-  )
-}
 
 // ── Enfoque de series (leyenda) ──────────────────────────────────────────────
 
@@ -224,50 +189,4 @@ export function emphasizedTick(current: string | undefined) {
       </Text>
     )
   }
-}
-
-// ── Tooltip con unidades distintas por serie ─────────────────────────────────
-
-/**
- * `ChartTooltipCard` formatea todas las filas con un único `valueFormat`. Combustible
- * y mantención mezclan litros, dinero y conteos en un mismo tooltip, y además
- * pueden traer `null` (mes sin costo): `formatChartValue(null)` lo lee como 0 y
- * mostraría "$0" donde no hay dato. Esta versión formatea por serie y pinta "—"
- * para los vacíos. Mismo marcado que `ChartTooltipCard`.
- */
-export function MixedUnitsTooltipCard({ active, payload, label, formats, labelFormatter, footer }: {
-  active?: boolean
-  payload?: ChartTooltipCardItem[]
-  label?: unknown
-  /** Formato por `dataKey`; el que falte se muestra como conteo. */
-  formats: Record<string, ChartValueFormat>
-  labelFormatter?: (label: unknown) => React.ReactNode
-  footer?: (payload: ChartTooltipCardItem[]) => React.ReactNode
-}) {
-  if (!active || !payload?.length) return null
-  const heading = labelFormatter ? labelFormatter(label) : label != null ? String(label) : null
-  const footerContent = footer?.(payload)
-  return (
-    <div className="min-w-40 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5 text-sm shadow-[0_14px_34px_-10px_oklch(0_0_0/0.22),0_2px_6px_oklch(0_0_0/0.06)]">
-      {heading != null && heading !== "" && <p className="mb-1.5 text-xs text-[var(--color-text-muted)]">{heading}</p>}
-      <div className="space-y-1">
-        {payload.map((item, index) => {
-          const key = String(item.dataKey ?? item.name ?? index)
-          const color = item.color ?? item.stroke ?? item.fill
-          return (
-            <div key={key} className="flex items-center gap-2">
-              <span aria-hidden className="h-2 w-2 shrink-0 rounded-full" style={{ background: color }} />
-              <span className="flex-1 text-[var(--color-text-muted)]">{item.name}</span>
-              <span className="font-semibold tabular-nums text-[var(--color-text)]">
-                {item.value == null ? "—" : formatChartValue(item.value, formats[key] ?? "count")}
-              </span>
-            </div>
-          )
-        })}
-      </div>
-      {footerContent != null && footerContent !== false && (
-        <div className="mt-2 border-t border-[var(--color-border)] pt-2 text-xs text-[var(--color-text-muted)]">{footerContent}</div>
-      )}
-    </div>
-  )
 }

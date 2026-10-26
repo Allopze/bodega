@@ -88,4 +88,13 @@ describe("groupConsecutiveActivity", () => {
     expect(entries.map((item) => item.id)).toEqual(["a", "b"])
     expect(entries[0]).not.toHaveProperty("count")
   })
+
+  it("marca si todos los movimientos del grupo llevan al mismo destino", () => {
+    const [mismo] = groupConsecutiveActivity([entry("a"), entry("b")])
+    const [distinto] = groupConsecutiveActivity([entry("a", { href: "/x/1" }), entry("b", { href: "/x/2" })])
+
+    expect(mismo?.sameTarget).toBe(true)
+    // El grupo enlaza al más reciente; el renglón tiene que decir que es sólo ése.
+    expect(distinto).toMatchObject({ href: "/x/1", sameTarget: false, count: 2 })
+  })
 })

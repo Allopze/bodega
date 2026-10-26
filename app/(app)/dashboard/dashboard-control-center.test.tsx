@@ -249,7 +249,7 @@ describe("DashboardResumenBody — la fila de gráficos y apoyo", () => {
 describe("RecentActivity", () => {
   const group = (over: Partial<ActivityGroup> = {}): ActivityGroup => ({
     id: "a", module: "pdtp", actionLabel: "Obligación PDTP reportada", entityCode: "OB-1", worksiteName: "Masisa",
-    actorName: "Alejandro López", occurredAt: "2026-10-20T17:24:00.000Z", href: "/prevencion/pdtp", count: 1, ids: ["a"], ...over,
+    actorName: "Alejandro López", occurredAt: "2026-10-20T17:24:00.000Z", href: "/prevencion/pdtp", count: 1, ids: ["a"], sameTarget: true, ...over,
   })
 
   it("un movimiento suelto muestra su código y ninguna píldora", () => {

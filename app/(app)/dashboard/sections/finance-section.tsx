@@ -11,7 +11,6 @@ import { getDashboardData } from "@/lib/services/dashboard"
 import { getFuelMonthlyTrend } from "@/lib/services/dashboard-fleet-maintenance"
 import { getOverdueFuelDebt } from "@/lib/services/dashboard-domains-data"
 import { getOperationalCalendarBounds, getOperationalPeriodMetrics } from "@/lib/services/operational-period-metrics"
-import { variationPct } from "@/lib/services/analytics-module/helpers"
 import { isGlobalRole } from "@/lib/auth/scope"
 import { DASHBOARD_DOMAINS } from "../dashboard-domains"
 import { DASHBOARD_KPI, DomainSection, type DomainKpiGroup } from "../dashboard-domain-shell"
@@ -19,7 +18,7 @@ import { periodComparisonShortLabel, periodScopeLabel, scopedWorksiteId } from "
 import { BillingFlowChart, CompositionDonutChart } from "../dashboard-domain-charts"
 import { ChartFrame } from "../charts/chart-frame"
 import { DebtAgingChart } from "../charts/debt-aging-chart"
-import { ORDERS_ISSUED_METRIC, ORDERS_SPEND_METRIC, ORDERS_SPEND_TREND_POLARITY } from "../dashboard-metric-definitions"
+import { ORDERS_ISSUED_METRIC, ORDERS_SPEND_METRIC, ORDERS_SPEND_TREND_POLARITY, spendVariationPct } from "../dashboard-metric-definitions"
 import { analyticsFilters, type DomainSectionsProps } from "./shared"
 
 /**
@@ -210,7 +209,7 @@ export async function FinanceSection({ session, scope }: DomainSectionsProps) {
               glossary={ORDERS_SPEND_METRIC.glossary}
               // Un gasto que baja es buena noticia: sin `up-bad` el tile pintaba
               // la baja en rojo (INI-01, auditoría 2026-10-05).
-              trend={noOrders || periodMetrics.spend.previous === null ? null : variationPct(periodMetrics.spend.current, periodMetrics.spend.previous)}
+              trend={noOrders ? null : spendVariationPct(periodMetrics.spend.current, periodMetrics.spend.previous)}
               trendPolarity={ORDERS_SPEND_TREND_POLARITY}
               trendLabel={periodComparisonShortLabel(scope.period)}
               href={noOrders && canCreateOrder ? `/compras/nueva${worksiteId ? `?faena=${worksiteId}` : ""}` : "/compras"}

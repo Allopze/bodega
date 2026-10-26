@@ -17,9 +17,9 @@ import {
   useChartMotion,
   useTooltipProps,
 } from "@/components/ui/chart-interactions"
-import { formatCLP } from "@/lib/utils"
+import { formatCLP, formatQty } from "@/lib/utils"
 import { CHART_SERIES } from "@/lib/chart-palette"
-import { ChartFrame } from "./chart-frame"
+import { ChartFrame, ChartHeadlineValue } from "./chart-frame"
 import { InteractiveLegend, useSeriesFocus, type LegendEntry } from "./chart-parts"
 
 
@@ -80,7 +80,7 @@ export function CompositionDonutChart({ data, title, description, totalLabel, fo
   )
   if (slices.length === 0) return null
 
-  const formatted = (value: number) => (format === "clp" ? formatCLP(value) : value.toLocaleString("es-CL"))
+  const formatted = (value: number) => (format === "clp" ? formatCLP(value) : formatQty(value))
   // Una porción se resalta al apuntar su arco o su rótulo en la leyenda.
   const highlightedKey = focus.focusedKey ?? (activeIndex === null ? null : slices[activeIndex]?.key ?? null)
   const legend: LegendEntry[] = slices.map((slice, index) => ({
@@ -99,7 +99,7 @@ export function CompositionDonutChart({ data, title, description, totalLabel, fo
            reservar 192 px de alto para un solo dato. */
         <div>
           <p className="flex items-baseline gap-2">
-            <span className="font-mono text-2xl font-bold text-[var(--color-text)]">{formatted(total)}</span>
+            <ChartHeadlineValue>{formatted(total)}</ChartHeadlineValue>
             <span className="text-xs text-[var(--color-text-muted)]">{totalLabel}</span>
           </p>
           <div className="mt-2 flex h-3 w-full overflow-hidden rounded-full bg-[var(--color-surface-2)]" aria-hidden>
@@ -111,7 +111,7 @@ export function CompositionDonutChart({ data, title, description, totalLabel, fo
             {slices.map((slice, index) => (
               <li key={slice.key} className="flex items-center gap-1.5 text-xs text-[var(--color-text-muted)]">
                 <span className="size-2 rounded-full" style={{ background: CHART_SERIES[index % CHART_SERIES.length] }} aria-hidden />
-                {slice.label}: <span className="font-mono font-semibold text-[var(--color-text)]">{formatted(slice.value)}</span>
+                {slice.label}: <span className="font-semibold tabular-nums text-[var(--color-text)]">{formatted(slice.value)}</span>
               </li>
             ))}
           </ul>
@@ -140,7 +140,7 @@ export function CompositionDonutChart({ data, title, description, totalLabel, fo
                   if (!viewBox || !("cx" in viewBox)) return null
                   return (
                     <text x={viewBox.cx} y={viewBox.cy} textAnchor="middle" dominantBaseline="middle">
-                      <tspan x={viewBox.cx} y={viewBox.cy} className="fill-[var(--color-text)] font-mono text-lg font-bold">{formatted(total)}</tspan>
+                      <tspan x={viewBox.cx} y={viewBox.cy} className="fill-[var(--color-text)] text-lg font-semibold tabular-nums">{formatted(total)}</tspan>
                       <tspan x={viewBox.cx} y={(viewBox.cy ?? 0) + 18} className="fill-[var(--color-text-muted)] text-xs">{totalLabel}</tspan>
                     </text>
                   )
@@ -205,7 +205,7 @@ export function StatusShareBar({ data, title, description }: {
           <li key={slice.key} className="flex items-center gap-1.5 text-xs text-[var(--color-text-muted)]">
             <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: slice.color ?? CHART_SERIES[index % CHART_SERIES.length] }} aria-hidden />
             {slice.label}
-            <span className="font-mono tabular-nums text-[var(--color-text)]">{slice.value}</span>
+            <span className="font-semibold tabular-nums text-[var(--color-text)]">{slice.value}</span>
           </li>
         ))}
       </ul>

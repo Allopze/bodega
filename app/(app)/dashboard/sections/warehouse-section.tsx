@@ -1,4 +1,5 @@
 import Link from "next/link"
+import { formatQty } from "@/lib/utils"
 import { Gauge, Package, Truck } from "@phosphor-icons/react/dist/ssr"
 import { Button } from "@/components/ui/button"
 import { ChartSlot } from "@/components/ui/dashboard-panel"
@@ -61,6 +62,9 @@ export async function WarehouseSection({ session, scope }: DomainSectionsProps) 
   // en vez de mostrar un "0" pelado (A1/A4). La puerta para llenar cada una es
   // distinta: las entregas se registran en /entregas y el stock se mueve en /bodega.
   const noDeliveries = analytics.eppDeliveries.length === 0
+  // Trabajadores distintos del período. `eppDeliveries.length` contaba filas
+  // trabajador × producto de un top 10: nunca pasaba de 10 ni eran trabajadores.
+  const eppWorkers = analytics.eppWorkerCount ?? analytics.eppDeliveries.length
   const noRotation = analytics.productRotation.length === 0
 
   return (
@@ -69,7 +73,7 @@ export async function WarehouseSection({ session, scope }: DomainSectionsProps) 
       links={[{ label: "Bodega", href: "/bodega" }, { label: "Entregas", href: "/entregas" }]}
       kpis={
         <>
-          <KpiCard {...DASHBOARD_KPI} icon={<Truck size={16} />} label="Entregas de EPP" value={String(analytics.eppDeliveries.length)}
+          <KpiCard {...DASHBOARD_KPI} icon={<Truck size={16} />} label="Entregas de EPP" value={formatQty(eppWorkers)}
             detail={`Trabajadores con entrega · ${periodo}`} href="/entregas"
             empty={noDeliveries ? { message: `Sin entregas de EPP en ${periodo}`, actionLabel: canDeliver ? "Registrar una entrega" : "Ver entregas" } : undefined} />
           <KpiCard {...DASHBOARD_KPI} icon={<Gauge size={16} />} label="Productos en rotación" value={String(analytics.productRotation.length)}

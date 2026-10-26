@@ -1,4 +1,5 @@
 import { Certificate, Gauge, Truck, Wrench } from "@phosphor-icons/react/dist/ssr"
+import { formatQty } from "@/lib/utils"
 import { ChartSlot } from "@/components/ui/dashboard-panel"
 import { KpiCard } from "@/components/ui/kpi-card"
 import { RankedList } from "@/components/ui/ranked-list"
@@ -148,7 +149,7 @@ export async function FleetSection({ session, scope }: DomainSectionsProps) {
                 de 6 meses fijos, sin relación con `scope.period` — el rótulo
                 contradecía directamente su propio valor (CO-038). */}
             {canViewFuel && <KpiCard {...DASHBOARD_KPI} icon={<Gauge size={16} />} label={`Litros (${TREND_MONTHS} meses)`}
-              value={`${totalLiters.toLocaleString("es-CL")} L`}
+              value={`${formatQty(totalLiters)} L`}
               detail="Cargas registradas · ahora" href="/combustibles"
               empty={totalLiters === 0 && !degradedSources.includes("fuelTrend")
                 ? { message: `Sin cargas registradas en ${TREND_MONTHS} meses`, actionLabel: "Ir a combustibles" }
@@ -166,7 +167,7 @@ export async function FleetSection({ session, scope }: DomainSectionsProps) {
             key: "tae-billed-gap",
             // A6: sigla con su nombre en el rótulo (glosario en `dashboard-glossary.ts`).
             label: "Brecha tarjeta TAE vs. facturado",
-            value: fuelControl?.tae ? `${Math.abs(Math.round(fuelControl.tae.liters - fuelControl.billed.liters)).toLocaleString("es-CL")} L` : "—",
+            value: fuelControl?.tae ? `${formatQty(Math.abs(Math.round(fuelControl.tae.liters - fuelControl.billed.liters)))} L` : "—",
             secondary: fuelControl?.tae ? `${fuelControl.tae.pendingReview} por revisar · ${periodo}` : "Sin control de tarjeta TAE",
             href: "/combustibles/tae/conciliacion",
           }] : []),

@@ -1,5 +1,6 @@
 "use client"
 
+import { formatQty } from "@/lib/utils"
 import {
   Bar,
   CartesianGrid,
@@ -20,6 +21,7 @@ import {
   useActiveIndex,
   useChartMotion,
   useTooltipProps,
+  ChartActiveSync,
 } from "@/components/ui/chart-interactions"
 import { CHART_COLORS } from "@/lib/chart-palette"
 import { ChartFrame, ChartHeadlineCaption, ChartHeadlineValue } from "./chart-frame"
@@ -111,7 +113,7 @@ export interface MaterialEnvironmentalPoint {
 // ── 3. SST Trend Chart (Tasa Frecuencia y Tasa Gravedad) ─────────────────────
 
 /** Las tasas llevan hasta 2 decimales: con 1 una TG de 0,04 se leería como 0. */
-const formatRate = (value: number) => value.toLocaleString("es-CL", { maximumFractionDigits: 2 })
+const formatRate = (value: number) => formatQty(value, undefined, { maximumFractionDigits: 2 })
 
 /**
  * Un eje por tasa. Comparten el rótulo "× 1.000.000 / HH" pero no la escala: la
@@ -149,11 +151,10 @@ export function SstTrendChart({ data }: { data: SstMonthlyPoint[] }) {
           aria-label="Tasas de Siniestralidad SST"
           data={data}
           margin={{ top: 12, right: 0, left: 0, bottom: 0 }}
-          onMouseMove={active.onMouseMove}
-          onMouseLeave={active.onMouseLeave}
         >
           <CartesianGrid strokeDasharray="3 3" vertical={false} />
           <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} fontSize={11} tick={emphasizedTick(at?.month)} />
+          <ChartActiveSync labels={data.map((row) => row.month)} onIndex={active.setActiveIndex} />
           <YAxis yAxisId="tf" tickLine={false} axisLine={false} tickMargin={8} width={36} fontSize={11} />
           <YAxis yAxisId="tg" orientation="right" tickLine={false} axisLine={false} tickMargin={4} width={44} fontSize={11} />
           <ChartTooltip
@@ -220,8 +221,8 @@ export function SstAccidentChart({ data }: { data: SstMonthlyPoint[] }) {
     ? at.confirmados + at.porCalificar
     : data.reduce((sum, point) => sum + point.confirmados + point.porCalificar, 0)
   const legend: LegendEntry[] = [
-    { key: "confirmados", label: "Confirmados", color: CHART_COLORS.danger, swatch: "box", value: at ? at.confirmados.toLocaleString("es-CL") : undefined },
-    { key: "porCalificar", label: "Por calificar", color: CHART_COLORS.signal, swatch: "box", value: at ? at.porCalificar.toLocaleString("es-CL") : undefined },
+    { key: "confirmados", label: "Confirmados", color: CHART_COLORS.danger, swatch: "box", value: at ? formatQty(at.confirmados) : undefined },
+    { key: "porCalificar", label: "Por calificar", color: CHART_COLORS.signal, swatch: "box", value: at ? formatQty(at.porCalificar) : undefined },
   ]
 
   return (
@@ -232,7 +233,7 @@ export function SstAccidentChart({ data }: { data: SstMonthlyPoint[] }) {
         : "Todos los accidentes del período están confirmados"}
       headline={
         <>
-          <ChartHeadlineValue>{total.toLocaleString("es-CL")}</ChartHeadlineValue>
+          <ChartHeadlineValue>{formatQty(total)}</ChartHeadlineValue>
           <ChartHeadlineCaption>
             {total === 1 ? "accidente" : "accidentes"} en {at ? monthFullName(at.month) : data.length === 12 ? "el año" : "el período"}
           </ChartHeadlineCaption>
@@ -245,11 +246,10 @@ export function SstAccidentChart({ data }: { data: SstMonthlyPoint[] }) {
           aria-label="Accidentes por estado de calificación"
           data={data}
           margin={{ top: 12, right: 0, left: 0, bottom: 0 }}
-          onMouseMove={active.onMouseMove}
-          onMouseLeave={active.onMouseLeave}
         >
           <CartesianGrid strokeDasharray="3 3" vertical={false} />
           <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} fontSize={11} tick={emphasizedTick(at?.month)} />
+          <ChartActiveSync labels={data.map((row) => row.month)} onIndex={active.setActiveIndex} />
           <YAxis tickLine={false} axisLine={false} tickMargin={8} width={32} fontSize={11} domain={COUNT_DOMAIN} tickCount={5} allowDecimals={false} />
           <ChartTooltip
             {...tooltip}
@@ -258,7 +258,7 @@ export function SstAccidentChart({ data }: { data: SstMonthlyPoint[] }) {
               <ChartTooltipCard
                 valueFormat="count"
                 labelFormatter={(label) => monthTitle(String(label))}
-                footer={(payload) => `Total del mes: ${payload.reduce((sum, item) => sum + (Number(item.value) || 0), 0).toLocaleString("es-CL")}`}
+                footer={(payload) => `Total del mes: ${formatQty(payload.reduce((sum, item) => sum + (Number(item.value) || 0), 0))}`}
               />
             }
           />
@@ -303,9 +303,9 @@ export function MaterialEnvironmentalChart({ data }: { data: MaterialEnvironment
 
   const at = active.activeIndex === null ? undefined : data[Math.min(active.activeIndex, data.length - 1)]
   const legend: LegendEntry[] = [
-    { key: "dangerousIncidents", label: "Inc. Peligrosos", color: CHART_COLORS.violet, swatch: "box", value: at?.dangerousIncidents.toLocaleString("es-CL") },
-    { key: "materialDamage", label: "Daño Material", color: CHART_COLORS.signal, swatch: "box", value: at?.materialDamage.toLocaleString("es-CL") },
-    { key: "environmentalSpills", label: "Daño Ambiental", color: CHART_COLORS.teal, swatch: "box", value: at?.environmentalSpills.toLocaleString("es-CL") },
+    { key: "dangerousIncidents", label: "Inc. Peligrosos", color: CHART_COLORS.violet, swatch: "box", value: at ? formatQty(at.dangerousIncidents) : undefined },
+    { key: "materialDamage", label: "Daño Material", color: CHART_COLORS.signal, swatch: "box", value: at ? formatQty(at.materialDamage) : undefined },
+    { key: "environmentalSpills", label: "Daño Ambiental", color: CHART_COLORS.teal, swatch: "box", value: at ? formatQty(at.environmentalSpills) : undefined },
   ]
 
   return (
@@ -319,11 +319,10 @@ export function MaterialEnvironmentalChart({ data }: { data: MaterialEnvironment
           aria-label="Impacto Material y Ambiental"
           data={data}
           margin={{ top: 12, right: 0, left: 0, bottom: 0 }}
-          onMouseMove={active.onMouseMove}
-          onMouseLeave={active.onMouseLeave}
         >
           <CartesianGrid strokeDasharray="3 3" vertical={false} />
           <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} fontSize={11} tick={emphasizedTick(at?.month)} />
+          <ChartActiveSync labels={data.map((row) => row.month)} onIndex={active.setActiveIndex} />
           <YAxis tickLine={false} axisLine={false} tickMargin={8} width={32} fontSize={11} domain={COUNT_DOMAIN} tickCount={5} allowDecimals={false} />
           <ChartTooltip
             {...tooltip}

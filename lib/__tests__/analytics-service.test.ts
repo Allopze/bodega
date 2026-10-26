@@ -127,7 +127,8 @@ describe("getAnalyticsDashboard", () => {
       toDate: "2026-06-30",
     })
 
-    expect(selectCallCount).toBe(10)
+    // 10 consultas del tablero + el conteo de trabajadores con entrega de EPP.
+    expect(selectCallCount).toBe(11)
     expect(data.kpis).toMatchObject({ fuelLiters: 0, fuelLoadCount: 0 })
     expect(data.spendByModule.some((row) => row.module === "Combustible")).toBe(false)
     expect(data.vehicleCosts).toEqual([])

@@ -55,7 +55,7 @@ export function RecentActivity({ groups }: { groups: ActivityGroup[] }) {
                         className="ml-1.5 inline-block rounded-full bg-[var(--color-surface-2)] px-1.5 py-0.5 align-[1px] text-xs font-bold tabular-nums text-[var(--color-text-muted)]"
                       >
                         <span aria-hidden>×{group.count}</span>
-                        <span className="sr-only">{group.count} veces</span>
+                        <span className="sr-only">{group.count} veces{group.href && !group.sameTarget ? "; el enlace abre el más reciente" : ""}</span>
                       </span>
                     )}
                   </span>
@@ -71,7 +71,13 @@ export function RecentActivity({ groups }: { groups: ActivityGroup[] }) {
             return (
               <li key={group.id}>
                 {group.href ? (
-                  <Link href={group.href} className={cn(ROW, "transition-colors duration-150 hover:bg-[var(--color-surface-2)]")}>
+                  <Link
+                    href={group.href}
+                    // Un "×N" de entidades distintas abre sólo la más reciente:
+                    // se dice en vez de dejar creer que lleva a las N.
+                    title={group.count > 1 && !group.sameTarget ? `Abre el más reciente de los ${group.count}` : undefined}
+                    className={cn(ROW, "transition-colors duration-150 hover:bg-[var(--color-surface-2)]")}
+                  >
                     {content}
                   </Link>
                 ) : (

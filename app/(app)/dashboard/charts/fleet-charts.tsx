@@ -20,14 +20,15 @@ import {
   useActiveIndex,
   useChartMotion,
   useTooltipProps,
+  ChartActiveSync,
+  ChartTooltipCard,
 } from "@/components/ui/chart-interactions"
-import { formatCompactCLP, formatCompactQty } from "@/lib/utils"
+import { countOf, formatCompactCLP, formatCompactQty, formatQty } from "@/lib/utils"
 import { CHART_COLORS } from "@/lib/chart-palette"
 import { ChartFrame, ChartHeadlineCaption, ChartHeadlineValue } from "./chart-frame"
 import {
   COUNT_DOMAIN,
   InteractiveLegend,
-  MixedUnitsTooltipCard,
   SERIES_FADE_CLASS,
   SURFACE,
   activeDotFor,
@@ -116,7 +117,7 @@ export function FuelConsumptionChart({ data, showCosts = true, periodLabel }: { 
       description={`${showCosts ? "Litros cargados y costo por mes" : "Litros cargados por mes"}${periodLabel ? ` · ${periodLabel}` : ""}`}
       headline={
         <>
-          <ChartHeadlineValue>{liters.toLocaleString("es-CL", { maximumFractionDigits: 0 })}</ChartHeadlineValue>
+          <ChartHeadlineValue>{formatQty(liters, undefined, { maximumFractionDigits: 0 })}</ChartHeadlineValue>
           <ChartHeadlineCaption>litros cargados en {at ? monthFullName(at.month) : "el período"}</ChartHeadlineCaption>
         </>
       }
@@ -127,23 +128,22 @@ export function FuelConsumptionChart({ data, showCosts = true, periodLabel }: { 
           aria-label="Consumo de Combustibles"
           data={data}
           margin={{ top: 12, right: 0, left: 0, bottom: 0 }}
-          onMouseMove={active.onMouseMove}
-          onMouseLeave={active.onMouseLeave}
         >
           <CartesianGrid strokeDasharray="3 3" vertical={false} />
           <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} fontSize={11} tick={emphasizedTick(at?.month)} />
+          <ChartActiveSync labels={data.map((row) => row.month)} onIndex={active.setActiveIndex} />
           <YAxis yAxisId="liters" tickLine={false} axisLine={false} tickMargin={8} width={40} fontSize={11} tickFormatter={formatCompactQty} />
           {showCosts && <YAxis yAxisId="amount" orientation="right" tickLine={false} axisLine={false} tickMargin={4} width={52} fontSize={11} tickFormatter={formatCompactCLP} />}
           <ChartTooltip
             {...tooltip}
             cursor={<ColumnHoverCursor />}
             content={
-              <MixedUnitsTooltipCard
+              <ChartTooltipCard
                 formats={{ liters: "liters", amount: "clp" }}
                 labelFormatter={(label) => monthTitle(String(label))}
                 footer={(payload) => {
                   const loads = payload[0]?.payload?.loads
-                  return typeof loads === "number" ? `${loads.toLocaleString("es-CL")} ${loads === 1 ? "carga" : "cargas"}` : null
+                  return typeof loads === "number" ? countOf(loads, "carga") : null
                 }}
               />
             }
@@ -208,8 +208,8 @@ export function MaintenanceTrendChart({ data, showCosts = true, periodLabel }: {
   const at = active.activeIndex === null ? undefined : data[Math.min(active.activeIndex, data.length - 1)]
   const completed = at ? at.completed : data.reduce((sum, point) => sum + point.completed, 0)
   const legend: LegendEntry[] = [
-    { key: "completed", label: "Completadas", color: CHART_COLORS.brand, swatch: "box", value: at ? at.completed.toLocaleString("es-CL") : undefined },
-    { key: "scheduled", label: "Programadas", color: CHART_COLORS.blue, swatch: "box", value: at ? at.scheduled.toLocaleString("es-CL") : undefined },
+    { key: "completed", label: "Completadas", color: CHART_COLORS.brand, swatch: "box", value: at ? formatQty(at.completed) : undefined },
+    { key: "scheduled", label: "Programadas", color: CHART_COLORS.blue, swatch: "box", value: at ? formatQty(at.scheduled) : undefined },
     ...(showCosts
       ? [{ key: "amount", label: "Costo", color: CHART_COLORS.violet, value: at ? (at.amount == null ? "—" : formatCompactCLP(at.amount)) : undefined } satisfies LegendEntry]
       : []),
@@ -221,7 +221,7 @@ export function MaintenanceTrendChart({ data, showCosts = true, periodLabel }: {
       description={`${showCosts ? "Completadas vs. programadas y costo por mes" : "Completadas vs. programadas por mes"}${periodLabel ? ` · ${periodLabel}` : ""}`}
       headline={
         <>
-          <ChartHeadlineValue>{completed.toLocaleString("es-CL")}</ChartHeadlineValue>
+          <ChartHeadlineValue>{formatQty(completed)}</ChartHeadlineValue>
           <ChartHeadlineCaption>
             {completed === 1 ? "mantención completada" : "mantenciones completadas"} en {at ? monthFullName(at.month) : "el período"}
           </ChartHeadlineCaption>
@@ -235,18 +235,17 @@ export function MaintenanceTrendChart({ data, showCosts = true, periodLabel }: {
           aria-label="Mantención de Flota"
           data={data}
           margin={{ top: 12, right: 0, left: 0, bottom: 0 }}
-          onMouseMove={active.onMouseMove}
-          onMouseLeave={active.onMouseLeave}
         >
           <CartesianGrid strokeDasharray="3 3" vertical={false} />
           <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} fontSize={11} tick={emphasizedTick(at?.month)} />
+          <ChartActiveSync labels={data.map((row) => row.month)} onIndex={active.setActiveIndex} />
           <YAxis yAxisId="count" tickLine={false} axisLine={false} tickMargin={8} width={32} fontSize={11} domain={COUNT_DOMAIN} tickCount={5} allowDecimals={false} />
           {showCosts && <YAxis yAxisId="amount" orientation="right" tickLine={false} axisLine={false} tickMargin={4} width={52} fontSize={11} tickFormatter={formatCompactCLP} />}
           <ChartTooltip
             {...tooltip}
             cursor={<ColumnHoverCursor />}
             content={
-              <MixedUnitsTooltipCard
+              <ChartTooltipCard
                 formats={{ completed: "count", scheduled: "count", amount: "clp" }}
                 labelFormatter={(label) => monthTitle(String(label))}
               />

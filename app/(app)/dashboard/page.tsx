@@ -147,7 +147,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         // America/Santiago, y un "YYYY-MM-DD" se parsearía como medianoche UTC,
         // que en Chile es el día anterior.
         description={formatDateLong(new Date())}
-        actions={<QuickActions session={session} scope={scope} summary={queue.summary} />}
+        actions={<QuickActions session={session} />}
       />
       <div className="animate-in fade-in duration-(--duration-default)">
         {/* Modos y filtros comparten fila: son las dos preguntas del encuadre

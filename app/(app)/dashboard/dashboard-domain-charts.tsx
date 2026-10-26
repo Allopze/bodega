@@ -26,7 +26,9 @@ import { ChartErrorBoundary } from "@/components/chart-error-boundary"
 function chartSkeleton(heightClass: string) {
   return function ChartSkeleton() {
     return (
-      <div className={`flex flex-col p-5 ${heightClass}`}>
+      // `data-chart-loading`: las pruebas esperan a que no quede ninguno antes de
+      // medir celdas vacías; un skeleton todavía no sabe si su gráfico tiene datos.
+      <div data-chart-loading="" className={`flex flex-col p-5 ${heightClass}`}>
         <Skeleton className="mb-3 h-3 w-40" />
         <Skeleton className="w-full flex-1" />
       </div>

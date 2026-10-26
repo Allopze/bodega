@@ -1,5 +1,5 @@
 import { ArrowDown, ArrowUp, Equals } from "@phosphor-icons/react/dist/ssr"
-import { cn } from "@/lib/utils"
+import { cn, formatQty, formatPercent } from "@/lib/utils"
 
 /**
  * Qué significa que la cifra suba. `up-bad` para gasto, atraso o backlog:
@@ -23,9 +23,8 @@ const TONE_CLASSES: Record<DeltaTone, string> = {
 
 function formatDeltaValue(value: number, format: "percent" | "number" | "pp") {
   const abs = Math.abs(value)
-  const text = Number.isInteger(abs) ? abs.toLocaleString("es-CL") : abs.toLocaleString("es-CL", { maximumFractionDigits: 1 })
-  // Sin espacio, como la píldora histórica de `KpiCard` ("12%").
-  if (format === "percent") return `${text}%`
+  if (format === "percent") return formatPercent(abs)
+  const text = formatQty(abs, undefined, { maximumFractionDigits: 1 })
   if (format === "pp") return `${text} pp`
   return text
 }

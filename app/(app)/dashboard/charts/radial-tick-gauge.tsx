@@ -1,4 +1,4 @@
-import { cn } from "@/lib/utils"
+import { cn, formatPercent } from "@/lib/utils"
 
 /*
  * Medidor de marcas radiales: un semicírculo de rayitas en vez de un arco
@@ -29,9 +29,6 @@ function nearestTick(percent: number) {
   return Math.round((clampPercent(percent) / 100) * (TICKS - 1))
 }
 
-function formatPercent(value: number) {
-  return `${value.toLocaleString("es-CL", { maximumFractionDigits: 1 })} %`
-}
 
 type TickKind = "fill" | "expected" | "target" | "rest"
 

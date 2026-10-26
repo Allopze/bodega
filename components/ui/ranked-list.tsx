@@ -1,6 +1,6 @@
 import Link from "next/link"
 import { CaretRight } from "@phosphor-icons/react/dist/ssr"
-import { cn, formatCLP } from "@/lib/utils"
+import { cn, formatCLP, formatQty, formatPercent } from "@/lib/utils"
 
 /*
  * Contrato (fase 0): la interfaz pública (`RankedListProps`, `RankedListItem`,
@@ -46,8 +46,8 @@ export interface RankedListProps {
 
 export function formatRankedValue(value: number, format: RankedListFormat, unit = "") {
   if (format === "clp") return formatCLP(value)
-  if (format === "percent") return `${Math.round(value)}%`
-  return `${value.toLocaleString("es-CL")}${unit}`
+  if (format === "percent") return formatPercent(value, 0)
+  return `${formatQty(value)}${unit}`
 }
 
 type Tone = "share" | "good" | "warn" | "bad"
@@ -79,7 +79,7 @@ function toneFor(value: number, thresholds: { good: number; warn: number; invert
 }
 
 function formatShare(fraction: number) {
-  return `${(fraction * 100).toLocaleString("es-CL", { maximumFractionDigits: 1 })}%`
+  return formatPercent(fraction * 100)
 }
 
 /** Entrada del relleno: crece desde la izquierda; sin movimiento si el usuario lo pidió. */

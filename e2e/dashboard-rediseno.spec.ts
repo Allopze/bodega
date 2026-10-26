@@ -77,9 +77,11 @@ test.describe("Rediseño del tablero", () => {
 
   test("Finanzas abre con los gráficos y deja los grupos de KPIs debajo", async ({ page }) => {
     await page.goto("/dashboard?vista=finanzas")
-    const finanzas = page.getByRole("region", { name: "Finanzas" })
-    const ingresos = finanzas.getByText(GRUPO_INGRESOS, { exact: true })
-    const egresos = finanzas.getByText(GRUPO_EGRESOS, { exact: true })
+    const finanzas = page.getByRole("region", { name: "Finanzas", exact: true })
+    // Los rótulos de grupo son `h3`: por rol, que ignora lo oculto (AGENTS,
+    // «Locators in this repository»).
+    const ingresos = finanzas.getByRole("heading", { name: GRUPO_INGRESOS, exact: true })
+    const egresos = finanzas.getByRole("heading", { name: GRUPO_EGRESOS, exact: true })
     // La sección se renderiza entera de una vez: con esto visible, un conteo de
     // gráficos en 0 significa de verdad «no hay gráficos de venta».
     await expect(ingresos).toBeVisible()
@@ -101,7 +103,7 @@ test.describe("Rediseño del tablero", () => {
   // ranking genérico) ponía «Más de 90 días» antes de «No vencida».
   test("Antigüedad de la deuda lista los tramos en orden cronológico", async ({ page }) => {
     await page.goto("/dashboard?vista=finanzas")
-    await expect(page.getByRole("region", { name: "Finanzas" }).getByText(GRUPO_INGRESOS, { exact: true })).toBeVisible()
+    await expect(page.getByRole("region", { name: "Finanzas", exact: true }).getByRole("heading", { name: GRUPO_INGRESOS, exact: true })).toBeVisible()
 
     const titulo = page.getByRole("heading", { name: "Antigüedad de la deuda", exact: true })
     if ((await titulo.count()) === 0) test.skip(true, "Sin deuda por tramo en esta base: el gráfico no se dibuja")
@@ -112,7 +114,7 @@ test.describe("Rediseño del tablero", () => {
     await expect(celda).toHaveCount(1)
     // Con facturación pero sin saldo abierto el gráfico muestra su estado vacío
     // (A4) en vez de los tramos: no hay orden que comprobar.
-    if ((await celda.getByText("Sin saldo pendiente").count()) > 0) {
+    if ((await celda.getByText("Sin saldo pendiente").filter({ visible: true }).count()) > 0) {
       test.skip(true, "Sin saldo pendiente en esta base: el gráfico muestra su estado vacío")
     }
 
@@ -146,6 +148,23 @@ test.describe("Rediseño del tablero", () => {
       expect(familia, "una cifra del tablero sigue en mono").not.toMatch(/mono/i)
     }
 
+    // Finanzas mezcla `MoneyStat` y `KpiCard`, y sus gráficos tienen cifras
+    // propias (la cabecera de cada uno, el total de la dona): todas en sans.
+    await page.goto("/dashboard?vista=finanzas")
+    const finanzas = page.getByRole("region", { name: "Finanzas", exact: true })
+    if ((await finanzas.count()) > 0) {
+      await expect(finanzas).toBeVisible()
+      await expect(page.locator("[data-chart-loading]")).toHaveCount(0)
+      // Toda cifra tabular visible de la vista: tiles, cabeceras de gráfico,
+      // rankings y tramos de la deuda.
+      const deFinanzas = await finanzas.locator(".tabular-nums").evaluateAll((nodes) =>
+        nodes.filter((node) => node.getClientRects().length > 0).map((node) => getComputedStyle(node).fontFamily),
+      )
+      for (const familia of deFinanzas) {
+        expect(familia, "una cifra de Finanzas sigue en mono").not.toMatch(/mono/i)
+      }
+    }
+
     await page.goto("/analitica")
     if (new URL(page.url()).pathname !== "/analitica") test.skip(true, "El usuario no tiene acceso a /analitica")
     await expect(page.getByRole("region", { name: "KPIs ejecutivos" })).toBeVisible()
@@ -162,8 +181,10 @@ test.describe("Rediseño del tablero", () => {
     await page.goto("/dashboard?vista=prevencion")
     await expect(page.getByRole("region", { name: "Prevención", exact: true })).toBeVisible()
     // Los gráficos son componentes de cliente: pueden decidir que no tienen
-    // datos después de hidratar.
+    // datos después de hidratar. Hasta que no quede ningún skeleton, una celda
+    // "con contenido" puede ser sólo el placeholder de carga.
     await page.waitForLoadState("networkidle")
+    await expect(page.locator("[data-chart-loading]")).toHaveCount(0)
 
     const { paneles, problemas } = await page.evaluate(() => {
       const conContenido = (celda: Element) =>

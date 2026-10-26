@@ -10,6 +10,12 @@ import type { OperationalActivityEntry } from "@/lib/services/operational-activi
 export interface ActivityGroup extends OperationalActivityEntry {
   count: number
   ids: string[]
+  /**
+   * `true` si todos los movimientos del grupo llevan al mismo destino. Si no, el
+   * `href` del grupo es el del más reciente y el renglón tiene que decirlo: no
+   * existe una pantalla que liste los demás.
+   */
+  sameTarget: boolean
 }
 
 /**
@@ -35,9 +41,10 @@ export function groupConsecutiveActivity(entries: readonly OperationalActivityEn
     ) {
       last.count += 1
       last.ids.push(entry.id)
+      if (entry.href !== last.href) last.sameTarget = false
       continue
     }
-    groups.push({ ...entry, count: 1, ids: [entry.id] })
+    groups.push({ ...entry, count: 1, ids: [entry.id], sameTarget: true })
   }
   return groups
 }

@@ -81,6 +81,9 @@ export function KpiCard({
 }) {
   const hasSparkline = Array.isArray(sparkline) && sparkline.length >= 2
   const flat = surface === "flat"
+  // Un tile vacío no muestra variación: "↓ 100 %" junto a «Sin OC emitidas»
+  // se leía como una baja buena, cuando lo que pasó es que no hubo nada.
+  const showTrend = typeof trend === "number" && !empty
   const body = (
     <>
       <div className="flex items-center justify-between gap-2">
@@ -117,9 +120,12 @@ export function KpiCard({
           {empty.actionLabel}
           <ArrowRight size={12} weight="bold" aria-hidden className="transition-transform duration-[var(--duration-fast)] group-hover/kpi:translate-x-0.5" />
         </span>
-      ) : (typeof trend === "number" || detail) && (
-        <div className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-          {typeof trend === "number" && (
+      ) : (showTrend || detail) && (
+        // `items-start gap-2` es la fila histórica (los usos fuera del tablero no
+        // cambian); en el panel del tablero la variación y su rótulo pueden saltar
+        // de línea.
+        <div className={cn("mt-2.5 text-xs", flat ? "flex flex-wrap items-center gap-x-2 gap-y-1" : "flex items-start gap-2")}>
+          {showTrend && (
             <Delta value={trend} format={trendFormat} polarity={trendPolarity} comparisonLabel={trendLabel} />
           )}
           {detail && (
@@ -174,5 +180,7 @@ export function KpiCard({
     </Card>
   )
   if (secondaryAction) return card
-  return href ? <Link href={href} className="block h-full focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-primary)]">{card}</Link> : card
+  return href
+    ? <Link href={href} className={cn("block h-full", flat && "focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-primary)]")}>{card}</Link>
+    : card
 }

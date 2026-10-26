@@ -19,20 +19,20 @@ import {
 import {
   ChartTooltipCard,
   ColumnHoverCursor,
-  composeChartHandlers,
   seriesOpacity,
   useActiveIndex,
   useChartMotion,
   useSpotlight,
   useTooltipProps,
+  ChartActiveSync,
+  GlowFilter,
 } from "@/components/ui/chart-interactions"
 import { Delta } from "@/components/ui/delta"
-import { MONTH_LABELS, formatCompactCLP } from "@/lib/utils"
+import { MONTH_LABELS, formatCompactCLP, formatQty, formatPercent } from "@/lib/utils"
 import { CHART_COLORS } from "@/lib/chart-palette"
 import { ChartFrame, ChartHeadlineCaption, ChartHeadlineValue } from "./chart-frame"
 import {
   COUNT_DOMAIN,
-  ChartGlow,
   InteractiveLegend,
   SERIES_FADE_CLASS,
   activeDotFor,
@@ -150,7 +150,7 @@ export function OperationalTrendChart({ data }: { data: TrendPoint[] }) {
     key: series.key,
     label: series.label,
     color: series.color,
-    value: current[series.key].toLocaleString("es-CL"),
+    value: formatQty(current[series.key]),
   }))
 
   return (
@@ -159,7 +159,7 @@ export function OperationalTrendChart({ data }: { data: TrendPoint[] }) {
       description="Solicitudes, órdenes y recepciones (últimos 6 meses)"
       headline={
         <>
-          <ChartHeadlineValue>{current[emphasized.key].toLocaleString("es-CL")}</ChartHeadlineValue>
+          <ChartHeadlineValue>{formatQty(current[emphasized.key])}</ChartHeadlineValue>
           <ChartHeadlineCaption>{emphasized.noun} en {monthFullName(current.month)}</ChartHeadlineCaption>
           {previous && (
             <Delta
@@ -177,11 +177,6 @@ export function OperationalTrendChart({ data }: { data: TrendPoint[] }) {
           aria-label="Tendencia Operativa"
           data={data}
           margin={{ top: 12, right: 12, left: 0, bottom: 0 }}
-          onMouseMove={composeChartHandlers(active.onMouseMove, spot.onMouseMove)}
-          onMouseLeave={() => {
-            active.onMouseLeave()
-            spot.onMouseLeave()
-          }}
         >
           <defs>
             <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
@@ -189,10 +184,11 @@ export function OperationalTrendChart({ data }: { data: TrendPoint[] }) {
               <stop offset="100%" stopColor={emphasized.color} stopOpacity={0} />
             </linearGradient>
             {spot.defs}
-            <ChartGlow id={glowId} />
+            <GlowFilter id={glowId} />
           </defs>
           <CartesianGrid vertical={false} strokeDasharray="3 3" />
           <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} fontSize={11} tick={emphasizedTick(current.month)} />
+          <ChartActiveSync labels={data.map((row) => row.month)} onIndex={active.setActiveIndex} onX={spot.setX} />
           <YAxis tickLine={false} axisLine={false} tickMargin={8} width={32} fontSize={11} domain={COUNT_DOMAIN} tickCount={5} allowDecimals={false} />
           <ChartTooltip
             {...tooltip}
@@ -240,7 +236,7 @@ export function OperationalTrendChart({ data }: { data: TrendPoint[] }) {
               stroke="none"
               ifOverflow="extendDomain"
               label={{
-                value: `Máx. ${peak.value.toLocaleString("es-CL")} ${peak.series.noun} · ${(data[peak.index]?.month ?? "").toLowerCase()}`,
+                value: `Máx. ${formatQty(peak.value)} ${peak.series.noun} · ${(data[peak.index]?.month ?? "").toLowerCase()}`,
                 position: peak.index > lastIndex / 2 ? "left" : "right",
                 offset: 10,
                 fill: "var(--color-text)",
@@ -358,8 +354,6 @@ export function BillingFlowChart({ data: rawData }: {
           margin={{ left: 0, right: 12, top: 12, bottom: 0 }}
           barCategoryGap="28%"
           barGap={8}
-          onMouseMove={active.onMouseMove}
-          onMouseLeave={active.onMouseLeave}
         >
           <defs>
             <linearGradient id={invoicedGradient} x1="0" y1="0" x2="0" y2="1">
@@ -370,10 +364,11 @@ export function BillingFlowChart({ data: rawData }: {
               <stop offset="0%" stopColor={CHART_COLORS.brand} stopOpacity={1} />
               <stop offset="100%" stopColor={CHART_COLORS.brand} stopOpacity={0.5} />
             </linearGradient>
-            <ChartGlow id={glowId} />
+            <GlowFilter id={glowId} />
           </defs>
           <CartesianGrid vertical={false} strokeDasharray="3 3" />
           <XAxis dataKey="period" tickLine={false} axisLine={false} tickMargin={8} fontSize={11} tick={emphasizedTick(focusedRow?.period ?? last?.period)} />
+          <ChartActiveSync labels={data.map((row) => row.period)} onIndex={active.setActiveIndex} />
           <YAxis tickLine={false} axisLine={false} width={56} fontSize={11} tickFormatter={formatCompactCLP} />
           <ChartTooltip
             {...tooltip}
@@ -388,7 +383,7 @@ export function BillingFlowChart({ data: rawData }: {
                   const collected = Number(row?.collected)
                   if (!Number.isFinite(invoiced) || !Number.isFinite(collected)) return null
                   if (invoiced <= 0) return "Sin facturación en el mes"
-                  return `${((collected / invoiced) * 100).toLocaleString("es-CL", { maximumFractionDigits: 1 })} % de lo facturado está cobrado`
+                  return `${formatPercent((collected / invoiced) * 100)} de lo facturado está cobrado`
                 }}
               />
             }
