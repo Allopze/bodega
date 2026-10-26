@@ -2,7 +2,15 @@ import type { ReactNode } from "react"
 import { Skeleton } from "@/components/ui/skeleton"
 import Link from "next/link"
 import { ArrowRight } from "@phosphor-icons/react/dist/ssr"
+import { DashboardPanel } from "@/components/ui/dashboard-panel"
 import type { DashboardDomain } from "./dashboard-domains"
+
+/**
+ * Variante de tile del tablero: celda plana del panel y cifras sans. Se
+ * esparce en cada `KpiCard` de las secciones (`<KpiCard {...DASHBOARD_KPI} …/>`);
+ * es explícita porque `KpiCard` es server component y no puede leer contexto.
+ */
+export const DASHBOARD_KPI = { numerals: "sans", surface: "flat" } as const
 
 /*
  * `DomainIndex` vivía acá: un rail de anclas `#dominio-*` sobre una página que
@@ -32,7 +40,7 @@ export interface DomainKpiGroup {
   content: ReactNode
 }
 
-export function DomainSection({ domain, kpis, kpiGroups, summary, charts, links, note }: {
+export function DomainSection({ domain, kpis, kpiGroups, summary, charts, links, note, chartsFirst = false }: {
   domain: DashboardDomain
   /** Una sola fila sin rótulo. Excluyente con `kpiGroups`. */
   kpis?: ReactNode
@@ -48,8 +56,18 @@ export function DomainSection({ domain, kpis, kpiGroups, summary, charts, links,
   links: Array<{ label: string; href: string }>
   /** Advertencia de alcance cuando alguna cifra no puede respetar el filtro. */
   note?: string
+  /**
+   * Gráficos antes que los KPIs. Sólo Finanzas: su pregunta es cómo evolucionan
+   * la facturación y la deuda, y eso lo responden los gráficos; en las vistas
+   * operativas (Prevención, Adquisiciones) lo accionable son los tiles.
+   */
+  chartsFirst?: boolean
 }) {
   const groups: DomainKpiGroup[] = kpiGroups ?? (kpis ? [{ key: "default", label: null, content: kpis }] : [])
+  // Bento del panel: 3 columnas en 2xl, 2 en xl, 1 abajo. Cada gráfico va en un
+  // `ChartSlot` (con `span="wide"` las series temporales); el slot se oculta si
+  // el gráfico no tiene datos, así que no quedan huecos.
+  const chartsPanel = <DashboardPanel cols="charts" className={chartsFirst ? undefined : "mt-4"}>{charts}</DashboardPanel>
   // Ya no hay capas sticky sobre el pozo: sólo aire para que el ancla no quede
   // pegada al borde superior.
   return (
@@ -75,21 +93,17 @@ export function DomainSection({ domain, kpis, kpiGroups, summary, charts, links,
 
       {note && <p className="mb-3 text-xs text-[var(--color-text-muted)]">{note}</p>}
 
+      {chartsFirst && chartsPanel}
       {groups.map((group, index) => (
-        <div key={group.key} className={index === 0 ? undefined : "mt-4"}>
+        <div key={group.key} className={index === 0 && !chartsFirst ? undefined : "mt-4"}>
           {group.label && (
             <h3 className="text-eyebrow mb-2 text-[var(--color-text-faint)]">{group.label}</h3>
           )}
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{group.content}</div>
+          <DashboardPanel cols="kpis">{group.content}</DashboardPanel>
         </div>
       ))}
       {summary && <div className="mt-3">{summary}</div>}
-
-      {/* Bento: 3 columnas en 2xl, 2 en xl, 1 abajo. Un gráfico pide ancho
-          doble envolviéndose en `<div className="xl:col-span-2">`; las series
-          temporales lo necesitan y los donuts y rankings verticales se leen
-          mejor en una sola columna. */}
-      <div className="mt-4 grid grid-cols-1 gap-6 xl:grid-cols-2 2xl:grid-cols-3">{charts}</div>
+      {!chartsFirst && chartsPanel}
     </section>
   )
 }
@@ -99,12 +113,8 @@ export function DomainSectionFallback() {
   return (
     <div aria-hidden>
       <Skeleton className="mb-3 h-6 w-48" />
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-24 rounded-2xl" />)}
-      </div>
-      <div className="mt-4 grid gap-6 grid-cols-1 xl:grid-cols-2">
-        {[0, 1].map((i) => <Skeleton key={i} className="h-64 rounded-2xl" />)}
-      </div>
+      <Skeleton className="h-24 rounded-[var(--radius-2xl)]" />
+      <Skeleton className="mt-4 h-72 rounded-[var(--radius-2xl)]" />
     </div>
   )
 }

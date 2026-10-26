@@ -119,6 +119,23 @@ export function periodComparisonLabel(period: OperationalPeriodSpan) {
   return DASHBOARD_PERIODS.find((entry) => entry.value === period)?.comparison ?? "vs. período anterior"
 }
 
+const SHORT_MONTHS = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"] as const
+
+/**
+ * Rótulo corto del período anterior para las variaciones (`<Delta>`): "vs. sep",
+ * "vs. T3", "vs. 2025". El largo ("vs. mes anterior") no cabe junto a la cifra
+ * de un tile y no dice cuál mes.
+ */
+export function periodComparisonShortLabel(period: OperationalPeriodSpan, now = new Date()) {
+  const previous = new Date(getOperationalCalendarBounds(now, period).previousStart)
+  const month = previous.getUTCMonth()
+  switch (period) {
+    case "anio": return `vs. ${previous.getUTCFullYear()}`
+    case "trimestre": return `vs. T${Math.floor(month / 3) + 1}`
+    default: return `vs. ${SHORT_MONTHS[month]}`
+  }
+}
+
 /** Rótulo del período para las cabeceras de sección ("Trimestre en curso"). */
 export function periodScopeLabel(period: OperationalPeriodSpan) {
   switch (period) {
