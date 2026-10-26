@@ -15,6 +15,3 @@ export { FuelConsumptionChart, MaintenanceTrendChart } from "./charts/fleet-char
 export type { FuelMonthlyChartPoint, MaintenanceMonthlyChartPoint } from "./charts/fleet-charts"
 export { CompositionDonutChart, StatusShareBar } from "./charts/composition-charts"
 export type { CompositionSlice, StatusShare } from "./charts/composition-charts"
-export { ModuleWorkloadChart, WorksiteActivityChart, ThresholdRankingChart } from "./charts/ranking-charts"
-export type { ModuleWorkloadPoint, ThresholdBar } from "./charts/ranking-charts"
-export { RadialGaugeChart } from "./charts/radial-gauge"

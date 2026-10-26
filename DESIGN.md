@@ -94,7 +94,9 @@ Cada color semántico tiene 4 variantes: base, `-tint` (superficie), `-line`
 - El naranja signal **solo** para pendientes y sus badges/alertas.
 - Los colores de estado comparten la estructura tint/line/ink.
 - Los bordes y la elevación llevan la jerarquía; las sombras son suaves y se
-  reservan a superficies flotantes (cards, popovers, modales).
+  reservan a superficies flotantes (cards, popovers, modales). **Excepción: el
+  tablero (`/dashboard`)** no lleva sombra por bloque; ver «Excepción del
+  tablero» más abajo y la regla 7 de `AGENTS.md`.
 
 ---
 
@@ -106,7 +108,7 @@ Cada color semántico tiene 4 variantes: base, `-tint` (superficie), `-line`
 |---|---|---|
 | `--font-display` | **Exo** | Marca Chome, títulos (`text-h1/h2/h3`, `text-display`) |
 | `--font-sans` | **Myriad Pro** | UI, body, formularios, tablas, navegación |
-| `--font-mono` | **Geist Mono** | Datos tabulares, códigos, badges, valores numéricos |
+| `--font-mono` | **Geist Mono** | Datos tabulares, códigos, badges, valores numéricos (salvo las cifras de KPI del tablero, que van en sans) |
 
 `--font-serif` existe solo por compatibilidad y apunta a Exo. Los títulos y el
 cuerpo comparten un sistema tipográfico coherente: Exo para display, Myriad Pro
@@ -130,6 +132,9 @@ para lectura.
 ### Reglas
 
 - Datos numéricos (cantidades, precios, totales) siempre en `font-mono tabular-nums`.
+  **Excepción: el tablero (`/dashboard`)**, donde las cifras de KPI y los
+  titulares de gráfico van en `font-sans font-semibold tabular-nums`
+  (`KpiCard numerals="sans"`, vía `DASHBOARD_KPI`).
 - Badges en `font-mono`, uppercase, tracking wide.
 - Fechas y códigos de transacción en mono.
 - El cuerpo aplica `font-feature-settings: "ss01", "cv11"`.
@@ -378,6 +383,17 @@ al borde lateral y esquina superior del pozo principal — no es una superficie
 flotante, es el propio contenedor de scroll del pozo (`[data-shell-scroll]`,
 hermano mayor de `<main>`).
 
+### Excepción del tablero (`/dashboard`)
+
+Sólo en `/dashboard` (todas sus vistas) la superficie no es una tarjeta flotante
+por bloque sino **un panel por grupo**: `DashboardPanel`
+(`components/ui/dashboard-panel.tsx`) pone el borde, `rounded-2xl` y el fondo, y
+sus celdas (`PanelBlock`, `ChartSlot`, tiles `KpiCard surface="flat"`) se separan
+con líneas de 1px, sin sombra ni tarjeta anidada. Las cifras de KPI van en sans
+semibold con `tabular-nums`, no en mono. El resto de la app mantiene tarjetas
+flotantes y numerales mono. Motivo y límites (los paneles son `div`, nunca
+regiones; Finanzas abre con gráficos) en la regla 7 de `AGENTS.md`.
+
 ---
 
 ## Accesibilidad
@@ -437,7 +453,8 @@ trabajo, qué acción se espera. Resumen (detalle en [AGENTS.md](AGENTS.md)):
 2. **Respetar los acentos**: naranja signal solo para pendientes; verde para
    acciones; amber para realces.
 3. **Tipografía**: Exo para títulos (`text-h1/2/3`, `text-display`), Myriad para
-   UI/body, mono para datos.
+   UI/body, mono para datos (excepción: las cifras de KPI del tablero van en
+   Myriad `tabular-nums`).
 4. **Transiciones de color, no de escala** — excepción ya existente: `Button`
    usa `active:scale-[0.98]` (`motion-safe`). No repetir el patrón en
    componentes nuevos sin justificarlo.

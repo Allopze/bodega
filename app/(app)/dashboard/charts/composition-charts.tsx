@@ -10,13 +10,17 @@ import {
 import {
   ChartConfig,
   ChartContainer,
-  ChartLegend,
-  ChartLegendContent,
   ChartTooltip,
-  ChartTooltipContent,
 } from "@/components/ui/chart"
+import {
+  ChartTooltipCard,
+  useChartMotion,
+  useTooltipProps,
+} from "@/components/ui/chart-interactions"
 import { formatCLP } from "@/lib/utils"
 import { CHART_SERIES } from "@/lib/chart-palette"
+import { ChartFrame } from "./chart-frame"
+import { InteractiveLegend, useSeriesFocus, type LegendEntry } from "./chart-parts"
 
 
 // ── 9. Dona de composición ───────────────────────────────────────────────────
@@ -56,6 +60,9 @@ export function CompositionDonutChart({ data, title, description, totalLabel, fo
    * sí. Lo detectó la pasada visual; ningún test lo veía.
    */
   const [activeIndex, setActiveIndex] = React.useState<number | null>(null)
+  const motion = useChartMotion()
+  const tooltip = useTooltipProps()
+  const focus = useSeriesFocus()
   const slices = React.useMemo(() => {
     const merged = new Map<string, CompositionSlice>()
     for (const slice of data) {
@@ -74,14 +81,18 @@ export function CompositionDonutChart({ data, title, description, totalLabel, fo
   if (slices.length === 0) return null
 
   const formatted = (value: number) => (format === "clp" ? formatCLP(value) : value.toLocaleString("es-CL"))
+  // Una porción se resalta al apuntar su arco o su rótulo en la leyenda.
+  const highlightedKey = focus.focusedKey ?? (activeIndex === null ? null : slices[activeIndex]?.key ?? null)
+  const legend: LegendEntry[] = slices.map((slice, index) => ({
+    key: slice.key,
+    label: slice.label,
+    color: CHART_SERIES[index % CHART_SERIES.length] ?? CHART_SERIES[0],
+    swatch: "box",
+    value: formatted(slice.value),
+  }))
 
   return (
-    <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs">
-      <div className="mb-3">
-        <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]">{title}</h3>
-        <p className="text-xs text-[var(--color-text-muted)]">{description}</p>
-      </div>
-
+    <ChartFrame title={title} description={description}>
       {slices.length <= 2 ? (
         /* I-09: una dona de 1-2 categorías es decoración (Tufte) — la misma
            composición cabe en una barra apilada de 12 px y la tarjeta deja de
@@ -106,35 +117,41 @@ export function CompositionDonutChart({ data, title, description, totalLabel, fo
           </ul>
         </div>
       ) : (
-        <ChartContainer config={config} className="h-48 w-full">
-          <PieChart aria-label={title} onMouseLeave={() => setActiveIndex(null)}>
-            <ChartTooltip content={<ChartTooltipContent formatter={(value, name) => [formatted(Number(value)), String(name)]} />} />
-            <Pie data={slices} dataKey="value" nameKey="label" innerRadius={52} outerRadius={78} strokeWidth={2} paddingAngle={2}>
-              {slices.map((slice, index) => (
-                <Cell
-                  key={slice.key}
-                  fill={CHART_SERIES[index % CHART_SERIES.length]}
-                  opacity={activeIndex === null || activeIndex === index ? 1 : 0.4}
-                  onMouseEnter={() => setActiveIndex(index)}
-                  onMouseLeave={() => setActiveIndex(null)}
-                  className="cursor-pointer transition-opacity duration-200"
-                />
-              ))}
-              <Label content={({ viewBox }) => {
-                if (!viewBox || !("cx" in viewBox)) return null
-                return (
-                  <text x={viewBox.cx} y={viewBox.cy} textAnchor="middle" dominantBaseline="middle">
-                    <tspan x={viewBox.cx} y={viewBox.cy} className="fill-[var(--color-text)] font-mono text-lg font-bold">{formatted(total)}</tspan>
-                    <tspan x={viewBox.cx} y={(viewBox.cy ?? 0) + 18} className="fill-[var(--color-text-muted)] text-xs">{totalLabel}</tspan>
-                  </text>
-                )
-              }} />
-            </Pie>
-            <ChartLegend content={<ChartLegendContent />} />
-          </PieChart>
-        </ChartContainer>
+        <>
+          <ChartContainer config={config} className="h-44 w-full" data-chart-kind="donut">
+            <PieChart aria-label={title} accessibilityLayer onMouseLeave={() => setActiveIndex(null)}>
+              <ChartTooltip
+                {...tooltip}
+                cursor={false}
+                content={<ChartTooltipCard valueFormat={format === "clp" ? "clp" : "count"} />}
+              />
+              <Pie data={slices} dataKey="value" nameKey="label" innerRadius={52} outerRadius={78} strokeWidth={2} paddingAngle={2} {...motion}>
+                {slices.map((slice, index) => (
+                  <Cell
+                    key={slice.key}
+                    fill={CHART_SERIES[index % CHART_SERIES.length]}
+                    opacity={highlightedKey === null || highlightedKey === slice.key ? 1 : 0.4}
+                    onMouseEnter={() => setActiveIndex(index)}
+                    onMouseLeave={() => setActiveIndex(null)}
+                    className="cursor-pointer transition-opacity duration-200"
+                  />
+                ))}
+                <Label content={({ viewBox }) => {
+                  if (!viewBox || !("cx" in viewBox)) return null
+                  return (
+                    <text x={viewBox.cx} y={viewBox.cy} textAnchor="middle" dominantBaseline="middle">
+                      <tspan x={viewBox.cx} y={viewBox.cy} className="fill-[var(--color-text)] font-mono text-lg font-bold">{formatted(total)}</tspan>
+                      <tspan x={viewBox.cx} y={(viewBox.cy ?? 0) + 18} className="fill-[var(--color-text-muted)] text-xs">{totalLabel}</tspan>
+                    </text>
+                  )
+                }} />
+              </Pie>
+            </PieChart>
+          </ChartContainer>
+          <InteractiveLegend entries={legend} focus={focus} label={`Porciones de ${title}`} />
+        </>
       )}
-    </div>
+    </ChartFrame>
   )
 }
 
@@ -171,12 +188,7 @@ export function StatusShareBar({ data, title, description }: {
   if (total === 0) return null
 
   return (
-    <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs">
-      <div className="mb-3">
-        <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]">{title}</h3>
-        <p className="text-xs text-[var(--color-text-muted)]">{description}</p>
-      </div>
-
+    <ChartFrame title={title} description={description}>
       <div className="flex h-6 w-full overflow-hidden rounded-full bg-[var(--color-surface-2)]" role="img" aria-label={slices.map((s) => `${s.label}: ${s.value}`).join(", ")}>
         {slices.map((slice, index) => (
           <div
@@ -197,6 +209,6 @@ export function StatusShareBar({ data, title, description }: {
           </li>
         ))}
       </ul>
-    </div>
+    </ChartFrame>
   )
 }

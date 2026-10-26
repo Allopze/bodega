@@ -250,8 +250,32 @@ test.describe("Dashboard operacional", () => {
     const finanzas = page.getByRole("region", { name: "Finanzas" })
 
     await expect(finanzas.getByText("Ingresos (facturación de venta)")).toBeVisible()
-    await expect(finanzas.getByText("Pendiente de cobro", { exact: true })).toBeVisible()
+    await expect(finanzas.getByText("Egresos (compra y consumo)")).toBeVisible()
+    await expect(finanzas.getByText("Gasto en OC", { exact: true })).toBeVisible()
     await expect(finanzas.getByRole("link", { name: "Facturación" })).toHaveAttribute("href", "/facturacion")
+
+    // A5: «Pendiente de cobro» y «Vencido» ya no son tiles. El titular del
+    // gráfico «Antigüedad de la deuda» dice el saldo pendiente y lo vencido, así
+    // que repetirlos en un tile era la misma cifra en dos representaciones. Se
+    // mide sobre los tiles (`[data-kpi-card]`) y no sobre el texto de la sección,
+    // porque el titular del gráfico puede nombrar «vencido» legítimamente.
+    const tiles = finanzas.locator("[data-kpi-card]")
+    await expect(tiles.filter({ hasText: "Pendiente de cobro" })).toHaveCount(0)
+    await expect(tiles.filter({ has: page.getByText("Vencido", { exact: true }) })).toHaveCount(0)
+
+    // El gráfico sólo existe si hay deuda por tramo: sin facturación sincronizada
+    // en la base de la corrida no hay nada que dibujar, y eso no es un defecto.
+    // Un `test.skip` acá marcaría como saltado un test cuyas aserciones de arriba
+    // sí corrieron, así que se anota en vez de saltar.
+    const antiguedad = finanzas.getByRole("heading", { name: "Antigüedad de la deuda", exact: true })
+    if ((await antiguedad.count()) > 0) {
+      await expect(antiguedad).toBeVisible()
+    } else {
+      test.info().annotations.push({
+        type: "cobertura",
+        description: "Sin deuda por tramo en esta base: no se verificó el gráfico «Antigüedad de la deuda».",
+      })
+    }
   })
 
   /*

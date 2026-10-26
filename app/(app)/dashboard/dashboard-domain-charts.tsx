@@ -18,12 +18,17 @@ import { ChartErrorBoundary } from "@/components/chart-error-boundary"
  * gráfico que reviente no puede tumbar la página entera.
  */
 
+/**
+ * Esqueleto sin superficie: va dentro de un `ChartSlot` (el panel pone borde,
+ * fondo y radio). Conserva el `p-5` que `ChartFrame` aplica al gráfico real,
+ * para que al llegar el chunk el contenido no salte de lugar.
+ */
 function chartSkeleton(heightClass: string) {
   return function ChartSkeleton() {
     return (
-      <div className={`rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs ${heightClass}`}>
+      <div className={`flex flex-col p-5 ${heightClass}`}>
         <Skeleton className="mb-3 h-3 w-40" />
-        <Skeleton className="h-[calc(100%-2rem)] w-full" />
+        <Skeleton className="w-full flex-1" />
       </div>
     )
   }
@@ -47,16 +52,12 @@ function lazyChart<P extends object>(
   }
 }
 
-export const OperationalTrendChart = lazyChart(() => import("./dashboard-charts").then((m) => m.OperationalTrendChart), "la tendencia operativa")
-export const ModuleWorkloadChart = lazyChart(() => import("./dashboard-charts").then((m) => m.ModuleWorkloadChart), "la distribución por módulo")
-export const WorksiteActivityChart = lazyChart(() => import("./dashboard-charts").then((m) => m.WorksiteActivityChart), "la inversión por faena", "h-72")
-export const SstTrendChart = lazyChart(() => import("./dashboard-charts").then((m) => m.SstTrendChart), "las tasas de siniestralidad")
-export const SstAccidentChart = lazyChart(() => import("./dashboard-charts").then((m) => m.SstAccidentChart), "los accidentes por estado")
-export const MaterialEnvironmentalChart = lazyChart(() => import("./dashboard-charts").then((m) => m.MaterialEnvironmentalChart), "los eventos materiales y ambientales")
-export const FuelConsumptionChart = lazyChart(() => import("./dashboard-charts").then((m) => m.FuelConsumptionChart), "el consumo de combustible")
-export const MaintenanceTrendChart = lazyChart(() => import("./dashboard-charts").then((m) => m.MaintenanceTrendChart), "la mantención de flota")
-export const CompositionDonutChart = lazyChart(() => import("./dashboard-charts").then((m) => m.CompositionDonutChart), "la composición")
-export const ThresholdRankingChart = lazyChart(() => import("./dashboard-charts").then((m) => m.ThresholdRankingChart), "el ranking")
-export const StatusShareBar = lazyChart(() => import("./dashboard-charts").then((m) => m.StatusShareBar), "el reparto por estado", "h-28")
-export const BillingFlowChart = lazyChart(() => import("./dashboard-charts").then((m) => m.BillingFlowChart), "el flujo de facturación", "h-80")
-export const RadialGaugeChart = lazyChart(() => import("./dashboard-charts").then((m) => m.RadialGaugeChart), "el medidor de cumplimiento", "h-64")
+export const OperationalTrendChart = lazyChart(() => import("./dashboard-charts").then((m) => m.OperationalTrendChart), "la tendencia operativa", "h-[25rem]")
+export const SstTrendChart = lazyChart(() => import("./dashboard-charts").then((m) => m.SstTrendChart), "las tasas de siniestralidad", "h-[22rem]")
+export const SstAccidentChart = lazyChart(() => import("./dashboard-charts").then((m) => m.SstAccidentChart), "los accidentes por estado", "h-96")
+export const MaterialEnvironmentalChart = lazyChart(() => import("./dashboard-charts").then((m) => m.MaterialEnvironmentalChart), "los eventos materiales y ambientales", "h-[22rem]")
+export const FuelConsumptionChart = lazyChart(() => import("./dashboard-charts").then((m) => m.FuelConsumptionChart), "el consumo de combustible", "h-96")
+export const MaintenanceTrendChart = lazyChart(() => import("./dashboard-charts").then((m) => m.MaintenanceTrendChart), "la mantención de flota", "h-96")
+export const CompositionDonutChart = lazyChart(() => import("./dashboard-charts").then((m) => m.CompositionDonutChart), "la composición", "h-80")
+export const StatusShareBar = lazyChart(() => import("./dashboard-charts").then((m) => m.StatusShareBar), "el reparto por estado", "h-40")
+export const BillingFlowChart = lazyChart(() => import("./dashboard-charts").then((m) => m.BillingFlowChart), "el flujo de facturación", "h-[25rem]")

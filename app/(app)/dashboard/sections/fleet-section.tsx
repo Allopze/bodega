@@ -1,5 +1,7 @@
 import { Certificate, Gauge, Truck, Wrench } from "@phosphor-icons/react/dist/ssr"
+import { ChartSlot } from "@/components/ui/dashboard-panel"
 import { KpiCard } from "@/components/ui/kpi-card"
+import { RankedList } from "@/components/ui/ranked-list"
 import { SummaryBar } from "@/components/ui/summary-bar"
 import { DegradedDataBanner } from "@/components/ui/degraded-data-banner"
 import { logger } from "@/lib/logger"
@@ -13,12 +15,12 @@ import { canViewOperationalControl, operationalControlCapabilities } from "@/lib
 import { countPendingFuelCreditNotes } from "@/lib/services/dte-portal/reconciliation"
 import { readDtePortalConfig } from "@/lib/services/dte-portal/config"
 import { DASHBOARD_DOMAINS } from "../dashboard-domains"
-import { DomainSection } from "../dashboard-domain-shell"
+import { DASHBOARD_KPI, DomainSection } from "../dashboard-domain-shell"
 import { periodScopeLabel, scopedWorksiteId } from "../dashboard-scope"
+import { ChartFrame } from "../charts/chart-frame"
 import {
   FuelConsumptionChart,
   MaintenanceTrendChart,
-  ThresholdRankingChart,
 } from "../dashboard-domain-charts"
 
 import type { DomainSectionsProps } from "./shared"
@@ -101,12 +103,22 @@ export async function FleetSection({ session, scope }: DomainSectionsProps) {
   const costPerUse = canSeeCosts ? fleet
     .filter((vehicle) => vehicle.costPerKm !== null || vehicle.costPerHour !== null)
     .map((vehicle) => ({
-      name: vehicle.plate ?? vehicle.id,
+      key: vehicle.id,
+      label: vehicle.plate ?? vehicle.id,
       value: Math.round(vehicle.costPerKm ?? vehicle.costPerHour ?? 0),
       detail: vehicle.costPerKm !== null ? "$ por km" : "$ por hora",
-    }))
-    .sort((left, right) => right.value - left.value)
-    .slice(0, 8) : []
+      href: `/flota/${vehicle.id}`,
+    })) : []
+
+  /*
+   * Un "0" en estos dos tiles es un estado sin configurar, no una buena noticia
+   * (a diferencia de "documentos por vencer"): dicen qué falta y a dónde ir. Si
+   * la fuente falló, el cero no es un dato y el banner de degradación ya lo
+   * avisa, así que ahí se conserva la cifra.
+   */
+  const activeVehicles = fleet.filter((vehicle) => vehicle.isActive).length
+  const totalLiters = Math.round(fuelTrend.reduce((sum, point) => sum + point.liters, 0))
+  const canRegisterVehicles = permissions.includes("admin:fleet_vehicles")
 
   // Los posibles resets de medidor no son "uso vencido" — son una lectura que
   // necesita verificación. Se excluyen de este KPI (siguen visibles en /mantenciones).
@@ -127,23 +139,29 @@ export async function FleetSection({ session, scope }: DomainSectionsProps) {
         ]}
         kpis={
           <>
-            {canViewFleet && <KpiCard icon={<Truck size={16} />} label="Vehículos activos" value={String(fleet.filter((vehicle) => vehicle.isActive).length)}
-              detail="En catálogo operativo · ahora" href="/flota" />}
+            {canViewFleet && <KpiCard {...DASHBOARD_KPI} icon={<Truck size={16} />} label="Vehículos activos" value={String(activeVehicles)}
+              detail="En catálogo operativo · ahora" href="/flota"
+              empty={activeVehicles === 0 && !degradedSources.includes("fleetOverview")
+                ? { message: "Aún no hay vehículos activos", actionLabel: canRegisterVehicles ? "Registrar un vehículo" : "Ver vehículos" }
+                : undefined} />}
             {/* Antes decía "Litros del período" con un valor que en realidad sale
                 de 6 meses fijos, sin relación con `scope.period` — el rótulo
                 contradecía directamente su propio valor (CO-038). */}
-            {canViewFuel && <KpiCard icon={<Gauge size={16} />} label={`Litros (${TREND_MONTHS} meses)`}
-              value={`${Math.round(fuelTrend.reduce((sum, point) => sum + point.liters, 0)).toLocaleString("es-CL")} L`}
-              detail="Cargas registradas · ahora" href="/combustibles" />}
-            {canViewFleet && <KpiCard icon={<Certificate size={16} />} label="Documentos por vencer" value={String(docs.within30)}
+            {canViewFuel && <KpiCard {...DASHBOARD_KPI} icon={<Gauge size={16} />} label={`Litros (${TREND_MONTHS} meses)`}
+              value={`${totalLiters.toLocaleString("es-CL")} L`}
+              detail="Cargas registradas · ahora" href="/combustibles"
+              empty={totalLiters === 0 && !degradedSources.includes("fuelTrend")
+                ? { message: `Sin cargas registradas en ${TREND_MONTHS} meses`, actionLabel: "Ir a combustibles" }
+                : undefined} />}
+            {canViewFleet && <KpiCard {...DASHBOARD_KPI} icon={<Certificate size={16} />} label="Documentos por vencer" value={String(docs.within30)}
               detail={docs.expired > 0 ? `${docs.expired} ya vencido(s) · próximos 30 días` : "Próximos 30 días"}
               tone={docs.within30 + docs.expired > 0 ? "signal" : "neutral"} href="/flota" />}
-            {canViewMaintenance && <KpiCard icon={<Wrench size={16} />} label="Mantención vencida por uso" value={String(overdueUsageAlerts.length)}
+            {canViewMaintenance && <KpiCard {...DASHBOARD_KPI} icon={<Wrench size={16} />} label="Mantención vencida por uso" value={String(overdueUsageAlerts.length)}
               detail={overdueUsageAlerts.length > 0 ? `${overdueUsageAlerts[0]!.plate} lleva ${Math.round(overdueUsageAlerts[0]!.usageSinceLastMaintenance)} ${overdueUsageAlerts[0]!.medidoPor} · ahora` : "Ninguna pasada de intervalo"}
               tone={overdueUsageAlerts.length > 0 ? "signal" : "neutral"} href="/mantenciones" />}
           </>
         }
-        summary={<SummaryBar stats={[
+        summary={<SummaryBar numerals="sans" stats={[
           ...(canViewFuel && canViewTae ? [{
             key: "tae-billed-gap",
             // A6: sigla con su nombre en el rótulo (glosario en `dashboard-glossary.ts`).
@@ -163,18 +181,33 @@ export async function FleetSection({ session, scope }: DomainSectionsProps) {
             href: "/compras/dte?tipo=61",
           }] : []),
         ]} />}
+        /*
+         * Bento de 3 columnas (2xl) y 2 (xl) sin huecos: el consumo comparte fila
+         * con el ranking de costo (2 + 1) y la mantención cierra la suya completa.
+         * Sin ranking —sin permiso de costos o sin tasas calculables— el consumo
+         * toma la fila entera en vez de dejar una columna vacía a su lado. En xl
+         * el ranking, solo en su fila, ocupa las dos columnas.
+         */
         charts={
           <>
-            {canViewFuel && <div className="xl:col-span-2"><FuelConsumptionChart data={fuelTrend} showCosts={canSeeCosts} periodLabel={`últimos ${TREND_MONTHS} meses`} /></div>}
-            {canViewMaintenance && <div className="xl:col-span-2"><MaintenanceTrendChart data={maintenanceTrend} showCosts={canSeeCosts} periodLabel={`últimos ${TREND_MONTHS} meses`} /></div>}
+            {canViewFuel && <ChartSlot span={costPerUse.length > 0 ? "wide" : "full"}><FuelConsumptionChart data={fuelTrend} showCosts={canSeeCosts} periodLabel={`últimos ${TREND_MONTHS} meses`} /></ChartSlot>}
             {costPerUse.length > 0 && (
-              <ThresholdRankingChart
-                title="Costo operacional por unidad de uso"
-                description={`Combustible + mantención por km o por hora (últimos ${FLEET_OVERVIEW_LOOKBACK_MONTHS} meses)`}
-                unit="" format="clp" invert goodAtOrAbove={Number.POSITIVE_INFINITY} warnAtOrAbove={Number.POSITIVE_INFINITY}
-                data={costPerUse}
-              />
+              <ChartSlot className="xl:col-span-2 2xl:col-span-1">
+                <ChartFrame
+                  title="Costo operacional por unidad de uso"
+                  description={`Combustible + mantención por km o por hora (últimos ${FLEET_OVERVIEW_LOOKBACK_MONTHS} meses)`}
+                >
+                  {/* Sin % del total: las tasas son $/km para unos equipos y $/hora
+                      para otros, y su suma no mide nada. Es una comparación de
+                      tasas, no un reparto. */}
+                  <RankedList
+                    items={costPerUse} format="clp" mode="share" showShare={false} moreHref="/flota"
+                    ariaLabel="Costo operacional por unidad de uso, por vehículo"
+                  />
+                </ChartFrame>
+              </ChartSlot>
             )}
+            {canViewMaintenance && <ChartSlot span="full"><MaintenanceTrendChart data={maintenanceTrend} showCosts={canSeeCosts} periodLabel={`últimos ${TREND_MONTHS} meses`} /></ChartSlot>}
           </>
         }
       />

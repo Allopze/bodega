@@ -2,8 +2,8 @@ import type { Session } from "next-auth"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { getOperationalCalendarBounds } from "@/lib/services/operational-period-metrics"
 import { addDaysToPlainDate, todayInChile as utilsTodayInChile } from "@/lib/utils"
+import { OPERATIONAL_MODULE_LABELS } from "@/lib/work-queue-labels"
 import { scopedWorksiteId, type DashboardScope } from "../dashboard-scope"
-import type { ModuleWorkloadPoint } from "../dashboard-charts"
 
 /**
  * Lo que comparten las siete secciones de dominio: su contrato de props y los
@@ -15,6 +15,19 @@ import type { ModuleWorkloadPoint } from "../dashboard-charts"
  * en runtime— pero real, y con un archivo por dominio se habría multiplicado
  * por siete.
  */
+
+/**
+ * Una fila de la distribución del backlog por módulo. Vivía junto al gráfico de
+ * barras (`ModuleWorkloadChart`), que se retiró: ahora el reparto es una lista
+ * (`RankedList`) y el tipo no tiene por qué depender de recharts.
+ *
+ * `module` es el **rótulo** visible ("Recepciones"), no la clave del módulo: la
+ * página lo arma así desde `queue.summary.moduleCounts`.
+ */
+export interface ModuleWorkloadPoint {
+  module: string
+  count: number
+}
 
 export interface DomainSectionsProps {
   session: Session
@@ -45,6 +58,18 @@ export function analyticsFilters(scope: DashboardScope) {
 /** Hoy en calendario chileno: delega en el helper canónico de lib/utils. */
 export function todayInChile() {
   return utilsTodayInChile()
+}
+
+/**
+ * Destino de una fila del reparto por módulo: la cola de pendientes ya filtrada
+ * por ese módulo. La página entrega el rótulo y no la clave, así que se
+ * recupera con el mismo diccionario que lo generó. Sin coincidencia (un módulo
+ * nuevo sin rótulo propio) la fila no enlaza en vez de llevar a un filtro que
+ * la cola ignoraría y mostraría completa.
+ */
+export function moduleWorkloadHref(point: ModuleWorkloadPoint): string | undefined {
+  const entry = Object.entries(OPERATIONAL_MODULE_LABELS).find(([, label]) => label === point.module)
+  return entry ? `/pendientes?module=${entry[0]}` : undefined
 }
 
 /** Porcentaje entero, con 0 cuando no hay denominador (evita NaN en el gráfico). */

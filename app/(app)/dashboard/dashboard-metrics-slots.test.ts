@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { buildOperationalAlerts, buildOperationalMetrics, buildOperationalPeriodSummary } from "./views/resumen-view"
+import { buildOperationalAlerts, buildOperationalBacklogSummary, buildOperationalMetrics, buildOperationalPeriodSummary } from "./views/resumen-view"
 import type { DashboardScope } from "./dashboard-scope"
 
 /**
@@ -282,5 +282,130 @@ describe("buildOperationalPeriodSummary — rótulos", () => {
     expect(labels).toContain("OC emitidas")
     expect(labels).not.toContain("Inversión emitida")
     expect(labels).not.toContain("Gasto en OC")
+  })
+})
+
+/*
+ * Variaciones reales y estado vacío del tile de dinero. La variación sólo se
+ * dibuja si hay con qué comparar: una tendencia inventada es peor que ninguna.
+ */
+describe("buildOperationalMetrics — variación y estado vacío del gasto en OC", () => {
+  // Mediados de octubre: el período anterior (mes) es septiembre.
+  const now = new Date("2026-10-15T15:00:00Z")
+  const spendOf = (over: Partial<Parameters<typeof buildOperationalMetrics>[0]> = {}) =>
+    buildOperationalMetrics({ ...jefatura, now, ...over }).find((m) => m.key === "spend")!
+
+  it("compara contra el período anterior en porcentaje y cuenta el alza como mala noticia", () => {
+    const spend = spendOf({ periodSpend: 12_400_000, periodSpendPrevious: 10_000_000, periodOrders: 5 })
+
+    expect(spend.trend).toBe(24)
+    expect(spend.trendPolarity).toBe("up-bad")
+    expect(spend.trendFormat).toBe("percent")
+    expect(spend.trendLabel).toBe("vs. sep")
+    expect(spend.empty).toBeUndefined()
+  })
+
+  it("el rótulo de la comparación sigue al período elegido", () => {
+    const trimestre = buildOperationalMetrics({ ...jefatura, now, scope: { ...scope, period: "trimestre" } }).find((m) => m.key === "spend")!
+    const anio = buildOperationalMetrics({ ...jefatura, now, scope: { ...scope, period: "anio" } }).find((m) => m.key === "spend")!
+
+    expect(trimestre.trendLabel).toBe("vs. T3")
+    expect(anio.trendLabel).toBe("vs. 2025")
+  })
+
+  it("sin período anterior comparable no hay variación", () => {
+    expect(spendOf({ periodSpendPrevious: null }).trend).toBeNull()
+    expect(spendOf({}).trend).toBeNull()
+  })
+
+  // Un porcentaje sobre cero no está definido: mejor ninguna cifra que "∞ %".
+  it("con el período anterior en cero tampoco se inventa un porcentaje", () => {
+    expect(spendOf({ periodSpendPrevious: 0 }).trend).toBeNull()
+  })
+
+  it("una baja del gasto es negativa en la cifra y se sigue pintando con la polaridad del gasto", () => {
+    const spend = spendOf({ periodSpend: 5_000_000, periodSpendPrevious: 10_000_000 })
+
+    expect(spend.trend).toBe(-50)
+    expect(spend.trendPolarity).toBe("up-bad")
+  })
+
+  it("sin OC emitidas el tile dice qué pasa y ofrece emitir una, si el rol puede", () => {
+    const spend = spendOf({ periodSpend: 0, periodOrders: 0, canCreateOrder: true })
+
+    expect(spend.empty).toEqual({ message: "Sin OC emitidas este mes", actionLabel: "Emitir una OC" })
+    expect(spend.href).toBe("/compras/nueva")
+  })
+
+  it("sin permiso para emitir, el tile vacío no ofrece una acción que no puede hacer", () => {
+    const spend = spendOf({ periodSpend: 0, periodOrders: 0, canCreateOrder: false })
+
+    expect(spend.empty).toEqual({ message: "Sin OC emitidas este mes", actionLabel: undefined })
+    expect(spend.href).toMatch(/^\/compras\?desde=/)
+  })
+
+  it("el mensaje del vacío sigue al período", () => {
+    const spend = buildOperationalMetrics({ ...jefatura, now, periodSpend: 0, periodOrders: 0, scope: { ...scope, period: "trimestre" } })
+      .find((m) => m.key === "spend")!
+
+    expect(spend.empty?.message).toBe("Sin OC emitidas este trimestre")
+  })
+
+  it("con OC emitidas no hay estado vacío aunque el gasto sea chico", () => {
+    expect(spendOf({ periodSpend: 0, periodOrders: 2 }).empty).toBeUndefined()
+  })
+
+  it("los tiles sin comparación real no traen variación", () => {
+    const others = buildOperationalMetrics({ ...jefatura, now }).filter((m) => m.key !== "spend")
+
+    expect(others.length).toBeGreaterThan(0)
+    for (const metric of others) expect(metric.trend ?? null).toBeNull()
+  })
+})
+
+describe("variaciones de las listas del Resumen", () => {
+  const now = new Date("2026-10-15T15:00:00Z")
+  const metric = (current: number, previous: number | null) => ({ current, previous })
+  const periodMetrics = {
+    requests: metric(7, 5),
+    ordersIssued: metric(0, 3),
+    receipts: metric(2, 2),
+    deliveries: metric(1, null),
+    spend: metric(0, 0),
+  }
+
+  it("los flujos del período son volúmenes: variación neutral contra el período anterior", () => {
+    const entries = buildOperationalPeriodSummary({ periodMetrics, scope, now, canViewRequests: true, canViewPurchasing: true, canReceive: true, canDeliver: true })
+    const delta = (key: string) => entries.find((entry) => entry.key === key)?.delta
+
+    expect(delta("requests")).toEqual({ value: 2, polarity: "neutral", format: "number", label: "vs. sep" })
+    expect(delta("orders")?.value).toBe(-3)
+    expect(delta("receipts")?.value).toBe(0)
+    for (const entry of entries) expect(entry.delta?.polarity).toBe("neutral")
+  })
+
+  it("sin período anterior comparable el delta es null y el texto de respaldo se conserva", () => {
+    const entries = buildOperationalPeriodSummary({ periodMetrics, scope, now, canViewRequests: false, canViewPurchasing: false, canReceive: false, canDeliver: true })
+
+    expect(entries).toHaveLength(1)
+    expect(entries[0]?.delta?.value).toBeNull()
+    expect(entries[0]?.comparison).toBe("Sin período comparable")
+  })
+
+  it("el backlog que sube es atraso (up-bad) y lleva la fecha del corte", () => {
+    const entries = buildOperationalBacklogSummary({
+      backlogComparisons: [
+        { metric: "backlog_requests", current: 36, previous: 31, snapshotDate: "2026-09-07" },
+        { metric: "backlog_orders", current: 14, previous: null, snapshotDate: null },
+      ],
+      snapshotHistory: { backlog_requests: [], backlog_orders: [], backlog_capa: [], backlog_pdtp: [] },
+      scope, canViewRequests: true, canViewPurchasing: true, canViewCapa: false, canViewPdtp: false,
+    })
+
+    expect(entries.find((entry) => entry.key === "backlog_requests")?.delta).toEqual({ value: 5, polarity: "up-bad", format: "number", label: "vs. 07-09" })
+    // Sin corte comparable: sin variación y con el texto de respaldo.
+    const orders = entries.find((entry) => entry.key === "backlog_orders")
+    expect(orders?.delta?.value).toBeNull()
+    expect(orders?.comparison).toBe("Sin corte mensual comparable")
   })
 })

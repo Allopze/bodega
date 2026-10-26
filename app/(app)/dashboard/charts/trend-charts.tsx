@@ -1,100 +1,263 @@
 "use client"
 
+import * as React from "react"
 import {
   Area,
-  AreaChart,
+  Bar,
   CartesianGrid,
+  ComposedChart,
   Line,
-  LineChart,
+  ReferenceDot,
   XAxis,
   YAxis,
 } from "recharts"
 import {
   ChartConfig,
   ChartContainer,
-  ChartLegend,
-  ChartLegendContent,
   ChartTooltip,
-  ChartTooltipContent,
 } from "@/components/ui/chart"
-import { MONTH_LABELS, formatCLP, formatCompactCLP } from "@/lib/utils"
+import {
+  ChartTooltipCard,
+  ColumnHoverCursor,
+  composeChartHandlers,
+  seriesOpacity,
+  useActiveIndex,
+  useChartMotion,
+  useSpotlight,
+  useTooltipProps,
+} from "@/components/ui/chart-interactions"
+import { Delta } from "@/components/ui/delta"
+import { MONTH_LABELS, formatCompactCLP } from "@/lib/utils"
 import { CHART_COLORS } from "@/lib/chart-palette"
+import { ChartFrame, ChartHeadlineCaption, ChartHeadlineValue } from "./chart-frame"
+import {
+  COUNT_DOMAIN,
+  ChartGlow,
+  InteractiveLegend,
+  SERIES_FADE_CLASS,
+  activeDotFor,
+  dimmedBarShape,
+  emphasizedTick,
+  lastPointDot,
+  monthFullName,
+  monthTitle,
+  useChartUid,
+  useSeriesFocus,
+  type LegendEntry,
+} from "./chart-parts"
 
+type TrendKey = "requests" | "orders" | "receipts"
+
+interface TrendSeries {
+  key: TrendKey
+  label: string
+  /** Cómo se nombra la cifra en una frase ("35 recepciones", "14 solicitudes"). */
+  noun: string
+  color: string
+}
+
+const REQUESTS_SERIES: TrendSeries = { key: "requests", label: "Solicitudes", noun: "solicitudes", color: CHART_COLORS.brand }
+
+/** En orden de prioridad para ser la serie protagonista y el de la leyenda. */
+const TREND_SERIES: readonly TrendSeries[] = [
+  REQUESTS_SERIES,
+  { key: "orders", label: "OC emitidas", noun: "OC emitidas", color: CHART_COLORS.blue },
+  { key: "receipts", label: "Recepciones", noun: "recepciones", color: CHART_COLORS.neutral },
+]
 
 const trendChartConfig = {
-  requests: {
-    label: "Solicitudes",
-    color: CHART_COLORS.blue,
-  },
-  orders: {
-    label: "OC Emitidas",
-    color: CHART_COLORS.violet,
-  },
-  receipts: {
-    label: "Recepciones",
-    color: CHART_COLORS.brand,
-  },
+  requests: { label: "Solicitudes", color: CHART_COLORS.brand },
+  orders: { label: "OC emitidas", color: CHART_COLORS.blue },
+  receipts: { label: "Recepciones", color: CHART_COLORS.neutral },
 } satisfies ChartConfig
 
 const billingFlowConfig = {
-  invoiced:  { label: "Facturado", color: CHART_COLORS.brand },
-  collected: { label: "Cobrado",   color: CHART_COLORS.blue },
+  invoiced: { label: "Facturado", color: CHART_COLORS.neutral },
+  collected: { label: "Cobrado", color: CHART_COLORS.brand },
 } satisfies ChartConfig
 
-// ── 1. Operational Trend Area Chart (supports 6+ data points) ───────────────
+// ── 1. Tendencia operativa ───────────────────────────────────────────────────
 
-export function OperationalTrendChart({ data }: { data: Array<{ month: string; requests: number; orders: number; receipts: number }> }) {
-  // Todo-en-cero también se oculta: una rejilla vacía con conclusión absurda
-  // ("el mes de mayor actividad es Mar: 0") es peor que nada (I-03).
-  if (!data.some((row) => row.requests + row.orders + row.receipts > 0)) return null
+/**
+ * Contenido del tooltip de la tendencia. recharts sólo aplica `tooltipType="none"`
+ * e `itemSorter` en su contenido por defecto; con uno propio la fila del `<Area>`
+ * de relleno llega igual (y `ChartTooltipCard` la pintaría como una serie más, "requests 0")
+ * y las filas llegan en el orden en que se dibujaron las series, con la protagonista
+ * al final. Acá se quita la fila del relleno y se ordenan como la leyenda.
+ */
+function TrendTooltip(props: React.ComponentProps<typeof ChartTooltipCard>) {
+  const order = TREND_SERIES.map((series) => String(series.key))
+  const payload = props.payload
+    ?.filter((item) => (item as { type?: string }).type !== "none")
+    .sort((left, right) => order.indexOf(String(left.dataKey)) - order.indexOf(String(right.dataKey)))
+  return <ChartTooltipCard {...props} payload={payload} />
+}
+
+type TrendPoint = { month: string; requests: number; orders: number; receipts: number }
+
+/**
+ * Solicitudes, órdenes y recepciones de los últimos meses.
+ *
+ * Una serie protagonista (por defecto Solicitudes: trazo grueso, brillo y área
+ * bajo la curva con foco de luz) y dos de apoyo más delgadas. La cifra grande de
+ * la cabecera y los valores de la leyenda siguen al mes apuntado y, en reposo,
+ * muestran el último.
+ *
+ * Si el rol no ve el volumen de solicitudes esa serie llega toda en 0; entonces
+ * la protagonista pasa a la primera serie con datos, para que la cabecera no diga
+ * "0 solicitudes" de algo que simplemente no puede ver.
+ */
+export function OperationalTrendChart({ data }: { data: TrendPoint[] }) {
+  const uid = useChartUid()
+  const motion = useChartMotion()
+  const tooltip = useTooltipProps()
+  const spot = useSpotlight(360)
+  const active = useActiveIndex()
+  const focus = useSeriesFocus()
+
+  const hasData = data.some((row) => row.requests + row.orders + row.receipts > 0)
+  const emphasized = TREND_SERIES.find((series) => data.some((row) => row[series.key] > 0)) ?? REQUESTS_SERIES
+
+  /** El máximo de todas las series juntas, para anotarlo sobre la curva que lo alcanza. */
+  const peak = React.useMemo(() => {
+    let best: { series: TrendSeries; index: number; value: number } | undefined
+    for (const series of TREND_SERIES) {
+      for (let index = 0; index < data.length; index++) {
+        const value = data[index]?.[series.key] ?? 0
+        if (value > (best?.value ?? 0)) best = { series, index, value }
+      }
+    }
+    return best
+  }, [data])
+
+  // Sin datos no hay línea que leer: una rejilla vacía con la conclusión "el mes
+  // de mayor actividad es Mar: 0" es peor que nada (I-03). Los hooks ya corrieron.
+  if (!hasData) return null
+
+  const lastIndex = data.length - 1
+  const at = Math.min(active.activeIndex ?? lastIndex, lastIndex)
+  const current = data[at]
+  if (!current) return null
+  const previous = at > 0 ? data[at - 1] : undefined
+
+  const gradientId = `trend-fill-${uid}`
+  const glowId = `trend-glow-${uid}`
+  const hovering = active.activeIndex !== null
+  // La protagonista se dibuja al final para quedar sobre las otras.
+  const drawOrder = [...TREND_SERIES.filter((series) => series.key !== emphasized.key), emphasized]
+
+  const legend: LegendEntry[] = TREND_SERIES.map((series) => ({
+    key: series.key,
+    label: series.label,
+    color: series.color,
+    value: current[series.key].toLocaleString("es-CL"),
+  }))
 
   return (
-    <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs flex flex-col justify-between">
-      <div className="mb-3">
-        <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Tendencia Operativa</h3>
-        <p className="text-xs text-[var(--color-text-muted)]">Solicitudes, órdenes y recepciones (últimos 6 meses)</p>
-      </div>
-
-      <ChartContainer config={trendChartConfig} className="h-48 w-full">
-        <AreaChart aria-label="Tendencia Operativa" data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+    <ChartFrame
+      title="Tendencia Operativa"
+      description="Solicitudes, órdenes y recepciones (últimos 6 meses)"
+      headline={
+        <>
+          <ChartHeadlineValue>{current[emphasized.key].toLocaleString("es-CL")}</ChartHeadlineValue>
+          <ChartHeadlineCaption>{emphasized.noun} en {monthFullName(current.month)}</ChartHeadlineCaption>
+          {previous && (
+            <Delta
+              value={current[emphasized.key] - previous[emphasized.key]}
+              polarity="neutral"
+              comparisonLabel={`vs. ${previous.month.toLowerCase()}`}
+            />
+          )}
+        </>
+      }
+    >
+      <ChartContainer config={trendChartConfig} className={`h-56 w-full ${SERIES_FADE_CLASS}`} data-chart-kind="lines">
+        <ComposedChart
+          accessibilityLayer
+          aria-label="Tendencia Operativa"
+          data={data}
+          margin={{ top: 12, right: 12, left: 0, bottom: 0 }}
+          onMouseMove={composeChartHandlers(active.onMouseMove, spot.onMouseMove)}
+          onMouseLeave={() => {
+            active.onMouseLeave()
+            spot.onMouseLeave()
+          }}
+        >
           <defs>
-            <linearGradient id="fillRequests" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor={CHART_COLORS.blue} stopOpacity={0.35} />
-              <stop offset="95%" stopColor={CHART_COLORS.blue} stopOpacity={0.0} />
+            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={emphasized.color} stopOpacity={0.26} />
+              <stop offset="100%" stopColor={emphasized.color} stopOpacity={0} />
             </linearGradient>
-            <linearGradient id="fillOrders" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor={CHART_COLORS.violet} stopOpacity={0.35} />
-              <stop offset="95%" stopColor={CHART_COLORS.violet} stopOpacity={0.0} />
-            </linearGradient>
-            <linearGradient id="fillReceipts" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor={CHART_COLORS.brand} stopOpacity={0.35} />
-              <stop offset="95%" stopColor={CHART_COLORS.brand} stopOpacity={0.0} />
-            </linearGradient>
+            {spot.defs}
+            <ChartGlow id={glowId} />
           </defs>
-          <CartesianGrid strokeDasharray="3 3" vertical={false} />
-          <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} />
-          <YAxis tickLine={false} axisLine={false} tickMargin={8} />
-          <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
-          <ChartLegend content={<ChartLegendContent />} />
-          <Area type="monotone" dataKey="requests" stroke={CHART_COLORS.blue} strokeWidth={2} fillOpacity={1} fill="url(#fillRequests)" />
-          <Area type="monotone" dataKey="orders" stroke={CHART_COLORS.violet} strokeWidth={2} fillOpacity={1} fill="url(#fillOrders)" />
-          <Area type="monotone" dataKey="receipts" stroke={CHART_COLORS.brand} strokeWidth={2} fillOpacity={1} fill="url(#fillReceipts)" />
-        </AreaChart>
+          <CartesianGrid vertical={false} strokeDasharray="3 3" />
+          <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} fontSize={11} tick={emphasizedTick(current.month)} />
+          <YAxis tickLine={false} axisLine={false} tickMargin={8} width={32} fontSize={11} domain={COUNT_DOMAIN} tickCount={5} allowDecimals={false} />
+          <ChartTooltip
+            {...tooltip}
+            content={<TrendTooltip valueFormat="count" labelFormatter={(label) => monthTitle(String(label))} />}
+          />
+          {/* Sólo el relleno: el trazo lo pone la <Line> de abajo para poder darle brillo. */}
+          <Area
+            dataKey={emphasized.key}
+            type="monotone"
+            stroke="none"
+            fill={`url(#${gradientId})`}
+            fillOpacity={seriesOpacity(emphasized.key, focus.focusedKey)}
+            mask={spot.mask}
+            tooltipType="none"
+            legendType="none"
+            activeDot={false}
+            {...motion}
+          />
+          {drawOrder.map((series) => {
+            const isEmphasized = series.key === emphasized.key
+            return (
+              <Line
+                key={series.key}
+                dataKey={series.key}
+                name={series.label}
+                type="monotone"
+                stroke={series.color}
+                strokeWidth={isEmphasized ? 2.5 : 1.7}
+                strokeLinecap="round"
+                strokeOpacity={seriesOpacity(series.key, focus.focusedKey)}
+                filter={isEmphasized ? `url(#${glowId})` : undefined}
+                dot={lastPointDot(series.color, lastIndex, hovering, isEmphasized ? 4 : 3)}
+                activeDot={activeDotFor(series.color, isEmphasized ? 5.5 : 4)}
+                {...motion}
+              />
+            )
+          })}
+          {/* La anotación se esconde al apuntar: chocaría con la guía y el tooltip. */}
+          {peak && !hovering && data[peak.index] && (
+            <ReferenceDot
+              x={data[peak.index]?.month}
+              y={peak.value}
+              r={3.5}
+              fill={peak.series.color}
+              stroke="none"
+              ifOverflow="extendDomain"
+              label={{
+                value: `Máx. ${peak.value.toLocaleString("es-CL")} ${peak.series.noun} · ${(data[peak.index]?.month ?? "").toLowerCase()}`,
+                position: peak.index > lastIndex / 2 ? "left" : "right",
+                offset: 10,
+                fill: "var(--color-text)",
+                fontSize: 11,
+                fontWeight: 600,
+              }}
+            />
+          )}
+        </ComposedChart>
       </ChartContainer>
-    </div>
+      <InteractiveLegend entries={legend} focus={focus} label="Series de la tendencia operativa" />
+    </ChartFrame>
   )
 }
 
+// ── 12. Facturado y cobrado ──────────────────────────────────────────────────
 
-// ── 12. Billing Flow Chart ───────────────────────────────────────────────────
-
-/**
- * Facturado contra cobrado, mes a mes.
- *
- * Las dos series son dinero en la misma moneda y la misma escala, así que
- * comparten eje (A5b sólo prohíbe mezclar unidades distintas). La brecha entre
- * ambas líneas **es** la lectura: lo emitido que todavía no entra en caja.
- */
 /**
  * "2026-07" → "Jul 2026". El eje mostraba la clave cruda del período, mientras
  * el resto de los gráficos del tablero rotula los meses en español (INI,
@@ -106,32 +269,185 @@ export function billingPeriodLabel(period: string): string {
   return match && label ? `${label} ${match[1]}` : period
 }
 
+/** Hasta esta cantidad de períodos se dibujan columnas pareadas; sobre ella, líneas. */
+const BILLING_MAX_BARS = 6
+
+type BillingRow = { period: string; invoiced: number; collected: number }
+
+/** "julio" o, si la ventana cruza de año, "julio de 2025". */
+function periodName(label: string, withYear: boolean): string {
+  const year = /\b(\d{4})\b/.exec(label)?.[1]
+  return withYear && year ? `${monthFullName(label)} de ${year}` : monthFullName(label)
+}
+
+/**
+ * Facturado contra cobrado, mes a mes.
+ *
+ * Las dos series son dinero en la misma moneda y la misma escala, así que
+ * comparten eje (A5b sólo prohíbe mezclar unidades distintas). La brecha entre
+ * ambas **es** la lectura: lo emitido que todavía no entra en caja.
+ *
+ * Con pocos períodos las columnas pareadas se leen mejor; con muchos, las líneas
+ * siguen siendo legibles. Cobrado se agrupa por mes de emisión de la factura
+ * (`paidAmount` de las facturas emitidas ese mes), así que "% cobrado" tiene
+ * sentido período a período.
+ */
 export function BillingFlowChart({ data: rawData }: {
   data: Array<{ period: string; invoiced: number; collected: number }>
 }) {
-  const data = rawData.map((row) => ({ ...row, period: billingPeriodLabel(row.period) }))
+  const motion = useChartMotion()
+  const tooltip = useTooltipProps()
+  const active = useActiveIndex()
+  const focus = useSeriesFocus()
+  const uid = useChartUid()
+
+  const data = React.useMemo<BillingRow[]>(
+    () => rawData.map((row) => ({ ...row, period: billingPeriodLabel(row.period) })),
+    [rawData],
+  )
   // Todo-en-cero también se oculta: una rejilla vacía con conclusión absurda
   // ("el mayor facturado se registró en Mar: $0") es peor que nada (I-03).
   if (!data.some((row) => row.invoiced + row.collected > 0)) return null
 
-  return (
-    <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs">
-      <div className="mb-3">
-        <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Facturado y cobrado</h3>
-        <p className="text-xs text-[var(--color-text-muted)]">Emisión contra pagos confirmados, por mes</p>
-      </div>
+  const asBars = data.length <= BILLING_MAX_BARS
+  const lastIndex = data.length - 1
+  const hovering = active.activeIndex !== null
+  const focusedRow = hovering ? data[Math.min(active.activeIndex ?? 0, lastIndex)] : undefined
 
-      <ChartContainer config={billingFlowConfig} className="h-56 w-full">
-        <LineChart aria-label="Facturado y cobrado" data={data} margin={{ left: 4, right: 8, top: 8, bottom: 0 }}>
+  const totals = data.reduce((sum, row) => ({ invoiced: sum.invoiced + row.invoiced, collected: sum.collected + row.collected }), { invoiced: 0, collected: 0 })
+  const shown = focusedRow ?? totals
+
+  const years = new Set(data.map((row) => /\b(\d{4})\b/.exec(row.period)?.[1]).filter(Boolean))
+  const crossesYears = years.size > 1
+  const first = data[0]
+  const last = data[lastIndex]
+  const windowText = !first || !last || data.length === 1
+    ? `en ${periodName(first?.period ?? "", crossesYears)}`
+    : `entre ${periodName(first.period, crossesYears)} y ${periodName(last.period, crossesYears)}`
+  const scope = focusedRow ? `en ${periodName(focusedRow.period, crossesYears)}` : windowText
+
+  const invoicedGradient = `billing-invoiced-${uid}`
+  const collectedGradient = `billing-collected-${uid}`
+  const glowId = `billing-glow-${uid}`
+
+  const legend: LegendEntry[] = [
+    { key: "invoiced", label: "Facturado", color: CHART_COLORS.neutral, swatch: asBars ? "box" : "line", value: focusedRow ? formatCompactCLP(focusedRow.invoiced) : undefined },
+    { key: "collected", label: "Cobrado", color: CHART_COLORS.brand, swatch: asBars ? "box" : "line", value: focusedRow ? formatCompactCLP(focusedRow.collected) : undefined },
+  ]
+
+  return (
+    <ChartFrame
+      title="Facturado y cobrado"
+      description="Emisión contra pagos confirmados, por mes"
+      headline={
+        <>
+          <ChartHeadlineValue>{formatCompactCLP(shown.collected)}</ChartHeadlineValue>
+          <ChartHeadlineCaption>cobrado de {formatCompactCLP(shown.invoiced)} facturado {scope}</ChartHeadlineCaption>
+        </>
+      }
+    >
+      <ChartContainer
+        config={billingFlowConfig}
+        className={`h-56 w-full ${SERIES_FADE_CLASS}`}
+        data-chart-kind={asBars ? "bars" : "lines"}
+      >
+        <ComposedChart
+          accessibilityLayer
+          aria-label="Facturado y cobrado"
+          data={data}
+          margin={{ left: 0, right: 12, top: 12, bottom: 0 }}
+          barCategoryGap="28%"
+          barGap={8}
+          onMouseMove={active.onMouseMove}
+          onMouseLeave={active.onMouseLeave}
+        >
+          <defs>
+            <linearGradient id={invoicedGradient} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={CHART_COLORS.neutral} stopOpacity={1} />
+              <stop offset="100%" stopColor={CHART_COLORS.neutral} stopOpacity={0.5} />
+            </linearGradient>
+            <linearGradient id={collectedGradient} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={CHART_COLORS.brand} stopOpacity={1} />
+              <stop offset="100%" stopColor={CHART_COLORS.brand} stopOpacity={0.5} />
+            </linearGradient>
+            <ChartGlow id={glowId} />
+          </defs>
           <CartesianGrid vertical={false} strokeDasharray="3 3" />
-          <XAxis dataKey="period" tickLine={false} axisLine={false} tickMargin={8} fontSize={11} />
-          <YAxis tickLine={false} axisLine={false} width={52} fontSize={11} tickFormatter={formatCompactCLP} />
-          <ChartTooltip content={<ChartTooltipContent formatter={(value, name) => `${String(name)}: ${formatCLP(Number(value))}`} />} />
-          <ChartLegend content={<ChartLegendContent />} />
-          <Line dataKey="invoiced" type="monotone" stroke={CHART_COLORS.brand} strokeWidth={2} dot={false} />
-          <Line dataKey="collected" type="monotone" stroke={CHART_COLORS.blue} strokeWidth={2} dot={false} />
-        </LineChart>
+          <XAxis dataKey="period" tickLine={false} axisLine={false} tickMargin={8} fontSize={11} tick={emphasizedTick(focusedRow?.period ?? last?.period)} />
+          <YAxis tickLine={false} axisLine={false} width={56} fontSize={11} tickFormatter={formatCompactCLP} />
+          <ChartTooltip
+            {...tooltip}
+            cursor={asBars ? <ColumnHoverCursor /> : tooltip.cursor}
+            content={
+              <ChartTooltipCard
+                valueFormat="clp"
+                labelFormatter={(label) => monthTitle(String(label))}
+                footer={(payload) => {
+                  const row = payload[0]?.payload
+                  const invoiced = Number(row?.invoiced)
+                  const collected = Number(row?.collected)
+                  if (!Number.isFinite(invoiced) || !Number.isFinite(collected)) return null
+                  if (invoiced <= 0) return "Sin facturación en el mes"
+                  return `${((collected / invoiced) * 100).toLocaleString("es-CL", { maximumFractionDigits: 1 })} % de lo facturado está cobrado`
+                }}
+              />
+            }
+          />
+          {asBars ? (
+            <>
+              <Bar
+                dataKey="invoiced"
+                name="Facturado"
+                fill={`url(#${invoicedGradient})`}
+                radius={[6, 6, 0, 0]}
+                maxBarSize={44}
+                minPointSize={3}
+                shape={dimmedBarShape("invoiced", active.activeIndex, focus.focusedKey)}
+                {...motion}
+              />
+              <Bar
+                dataKey="collected"
+                name="Cobrado"
+                fill={`url(#${collectedGradient})`}
+                radius={[6, 6, 0, 0]}
+                maxBarSize={44}
+                minPointSize={3}
+                shape={dimmedBarShape("collected", active.activeIndex, focus.focusedKey)}
+                {...motion}
+              />
+            </>
+          ) : (
+            <>
+              <Line
+                dataKey="invoiced"
+                name="Facturado"
+                type="monotone"
+                stroke={CHART_COLORS.neutral}
+                strokeWidth={1.7}
+                strokeLinecap="round"
+                strokeOpacity={seriesOpacity("invoiced", focus.focusedKey)}
+                dot={lastPointDot(CHART_COLORS.neutral, lastIndex, hovering, 3)}
+                activeDot={activeDotFor(CHART_COLORS.neutral, 4)}
+                {...motion}
+              />
+              <Line
+                dataKey="collected"
+                name="Cobrado"
+                type="monotone"
+                stroke={CHART_COLORS.brand}
+                strokeWidth={2.5}
+                strokeLinecap="round"
+                strokeOpacity={seriesOpacity("collected", focus.focusedKey)}
+                filter={`url(#${glowId})`}
+                dot={lastPointDot(CHART_COLORS.brand, lastIndex, hovering, 4)}
+                activeDot={activeDotFor(CHART_COLORS.brand, 5.5)}
+                {...motion}
+              />
+            </>
+          )}
+        </ComposedChart>
       </ChartContainer>
-    </div>
+      <InteractiveLegend entries={legend} focus={focus} label="Series de facturado y cobrado" />
+    </ChartFrame>
   )
 }

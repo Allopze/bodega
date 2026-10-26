@@ -1,10 +1,11 @@
 import { ClipboardText, ShieldWarning, Siren, WarningOctagon } from "@phosphor-icons/react/dist/ssr"
+import { ChartSlot } from "@/components/ui/dashboard-panel"
 import { KpiCard } from "@/components/ui/kpi-card"
 import { SummaryBar, type SummaryStat } from "@/components/ui/summary-bar"
 import { getFieldControlSummary } from "@/lib/services/dashboard-domains-data"
 import { getOperationalCalendarBounds } from "@/lib/services/operational-period-metrics"
 import { DASHBOARD_DOMAINS } from "../dashboard-domains"
-import { DomainSection } from "../dashboard-domain-shell"
+import { DASHBOARD_KPI, DomainSection } from "../dashboard-domain-shell"
 import { periodScopeLabel, scopedWorksiteId } from "../dashboard-scope"
 import { CHART_COLORS } from "@/lib/chart-palette"
 import { StatusShareBar } from "../dashboard-domain-charts"
@@ -51,53 +52,65 @@ export async function FieldControlSection({ session, scope }: DomainSectionsProp
       kpis={
         <>
           {field.visible.inspections && (
-          <KpiCard icon={<ClipboardText size={16} />} label="Cumplimiento de inspecciones"
+          <KpiCard {...DASHBOARD_KPI} icon={<ClipboardText size={16} />} label="Cumplimiento de inspecciones"
             value={field.inspectionCompliance === null ? "—" : `${field.inspectionCompliance}%`}
             // INI-05: es la única cifra de la vista que sigue al período, y decía "ahora".
             detail={field.inspectionsReviewed > 0 ? `${field.inspectionsReviewed} revisadas · ${periodo}` : "Sin inspecciones con resultado"}
+            // Sin inspecciones con resultado no hay promedio que mostrar: un "—"
+            // pelado no dice por qué ni qué hacer (A1).
+            empty={field.inspectionCompliance === null ? { message: `Sin inspecciones con resultado en ${periodo}`, actionLabel: "Ir a inspecciones" } : undefined}
             href="/prevencion/inspecciones" />
           )}
           {field.visible.inspections && (
-          <KpiCard icon={<WarningOctagon size={16} />} label="Hallazgos críticos abiertos"
+          <KpiCard {...DASHBOARD_KPI} icon={<WarningOctagon size={16} />} label="Hallazgos críticos abiertos"
             value={String(field.criticalFindingsOpen)}
             detail={field.criticalFindingsOpen > 0 ? "Criticidad alta o crítica · ahora" : "Ninguno abierto, ahora"}
             tone={field.criticalFindingsOpen > 0 ? "danger" : "neutral"} href="/prevencion/inspecciones?vista=critical" />
           )}
           {field.visible.drills && (
-          <KpiCard icon={<Siren size={16} />} label="Simulacros por mejorar"
+          <KpiCard {...DASHBOARD_KPI} icon={<Siren size={16} />} label="Simulacros por mejorar"
             value={String(field.drillsNeedingImprovement)}
             detail={drillTotal > 0 ? `De ${drillTotal} ejecutado(s) · ahora` : "Sin simulacros ejecutados"}
             tone={field.drillsNeedingImprovement > 0 ? "signal" : "neutral"} href="/prevencion/emergencias?tab=drills&vista=needs_improvement" />
           )}
           {field.visible.hygiene && (
-          <KpiCard icon={<ShieldWarning size={16} />} label="Mediciones sobre el límite"
+          <KpiCard {...DASHBOARD_KPI} icon={<ShieldWarning size={16} />} label="Mediciones sobre el límite"
             value={String(field.measurementsAboveLimit)}
             detail={field.measurementsAboveLimit > 0 ? "Exposición sobre el límite permisible · ahora" : "Ninguna sobre el límite"}
             tone={field.measurementsAboveLimit > 0 ? "danger" : "neutral"} href="/prevencion/higiene?tab=groups&vista=above_limit" />
           )}
         </>
       }
-      summary={<SummaryBar stats={fieldControlSummaryStats(field)} />}
+      summary={<SummaryBar numerals="sans" stats={fieldControlSummaryStats(field)} />}
       charts={
+        /*
+         * Las dos barras de reparto comparten fila cuando están las dos (1 + 1 en
+         * xl, 1 + 2 en 2xl); si hay una sola, toma la fila completa en vez de
+         * dejar el resto del panel en blanco.
+         */
         permitTotal > 0 || drillTotal > 0 ? (
           <>
             {permitTotal > 0 && (
-              <StatusShareBar
-                title="Permisos de trabajo por estado" description="Reparto entre activos y suspendidos, ahora"
-                data={[
-                  { key: "active", label: "Activos", value: field.permitsActive, color: CHART_COLORS.brand },
-                  { key: "suspended", label: "Suspendidos", value: field.permitsSuspended, color: CHART_COLORS.signal },
-                ]}
-              />
+              <ChartSlot span={drillTotal > 0 ? "one" : "full"}>
+                <StatusShareBar
+                  title="Permisos de trabajo por estado" description="Reparto entre activos y suspendidos, ahora"
+                  data={[
+                    { key: "active", label: "Activos", value: field.permitsActive, color: CHART_COLORS.brand },
+                    { key: "suspended", label: "Suspendidos", value: field.permitsSuspended, color: CHART_COLORS.signal },
+                  ]}
+                />
+              </ChartSlot>
             )}
             {drillTotal > 0 && (
-              <StatusShareBar
-                title="Resultado de los simulacros" description="Ejecutados, por resultado registrado"
-                data={[
-                  { key: "ok", label: "Satisfactorios", value: Math.max(0, drillTotal - field.drillsNeedingImprovement), color: CHART_COLORS.brand },
-                  { key: "mejora", label: "Por mejorar", value: field.drillsNeedingImprovement, color: CHART_COLORS.signal },
-                ]}
-              />
+              <ChartSlot span={permitTotal > 0 ? "one" : "full"} className={permitTotal > 0 ? "2xl:col-span-2" : undefined}>
+                <StatusShareBar
+                  title="Resultado de los simulacros" description="Ejecutados, por resultado registrado"
+                  data={[
+                    { key: "ok", label: "Satisfactorios", value: Math.max(0, drillTotal - field.drillsNeedingImprovement), color: CHART_COLORS.brand },
+                    { key: "mejora", label: "Por mejorar", value: field.drillsNeedingImprovement, color: CHART_COLORS.signal },
+                  ]}
+                />
+              </ChartSlot>
             )}
           </>
         ) : null

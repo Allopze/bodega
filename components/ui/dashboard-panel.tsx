@@ -15,7 +15,9 @@ import { cn } from "@/lib/utils"
  * cuenta los tiles por región y un panel con nombre los juntaría todos.
  */
 const PANEL_COLS = {
-  kpis: "sm:grid-cols-2 xl:grid-cols-4",
+  // auto-fit y no 4 fijas: un grupo de 2 o 3 tiles (Ingresos en Finanzas) se
+  // reparte el ancho en vez de dejar media fila vacía.
+  kpis: "sm:grid-cols-2 xl:grid-cols-[repeat(auto-fit,minmax(14rem,1fr))]",
   charts: "xl:grid-cols-2 2xl:grid-cols-3",
   /** Resumen: 12 columnas desde `lg`, los bloques eligen su ancho. */
   twelve: "lg:grid-cols-12",
