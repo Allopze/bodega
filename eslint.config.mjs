@@ -233,6 +233,9 @@ const eslintConfig = defineConfig([
     "app_cumplimiento/**",
     // Proyectos externos de referencia; no forman parte de la aplicación.
     "erpnext-develop/**",
+    // Bloques de dashboard de referencia (Efferd/shadcn) copiados en local para
+    // el rediseño del tablero; `.gitignore` los excluye, ESLint no lo lee.
+    "dashboards-referencia/**",
     "odoo-19.0/**",
     // Muestra estática de composición visual (no es código de la app).
     "referencia/**",

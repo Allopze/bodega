@@ -5,7 +5,7 @@ import { Progress } from "./progress"
 import type { SummaryLinkProps, SummaryStat } from "./summary-bar"
 import { SUMMARY_TONE_TEXT, activeSummaryTone } from "./summary-bar-tone"
 
-export function SummaryBarStatCell({ stat, renderLink }: { stat: SummaryStat; renderLink?: (props: SummaryLinkProps) => React.ReactNode }) {
+export function SummaryBarStatCell({ stat, renderLink, numerals = "mono" }: { stat: SummaryStat; renderLink?: (props: SummaryLinkProps) => React.ReactNode; numerals?: "mono" | "sans" }) {
   const isText = stat.valueKind === "text"
   const isZero = !isText && typeof stat.value === "number" && stat.value === 0
   const tone = activeSummaryTone(stat, { isText })
@@ -23,7 +23,7 @@ export function SummaryBarStatCell({ stat, renderLink }: { stat: SummaryStat; re
       </div>
       <div className="mt-2 flex items-end gap-2">
         <span className={cn(
-          isText ? "text-base font-semibold leading-snug" : "font-mono text-[1.375rem] font-semibold leading-none tabular-nums tracking-tight",
+          isText ? "text-base font-semibold leading-snug" : cn(numerals === "sans" ? "font-sans" : "font-mono", "text-[1.375rem] font-semibold leading-none tabular-nums tracking-tight"),
           toneClass ?? (isZero ? "text-[var(--color-text-faint)]" : "text-[var(--color-text)]"),
         )}>{stat.value}</span>
         {stat.hint && <span className={cn(

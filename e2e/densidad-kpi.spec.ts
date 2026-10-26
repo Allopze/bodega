@@ -116,7 +116,9 @@ test.describe("Densidad — máximo cuatro KPI y seis filtros", () => {
       // Sobre cuatro tiles la fila tiene que estar rotulada por grupos: ocho
       // cifras seguidas sin ese corte se leen como una sola lista.
       if (total > MAX_KPIS) {
-        const grupos = await page.locator("section[aria-labelledby] h3").count()
+        // Sólo los rótulos de grupo (`DomainSection`): contar cualquier `h3` de la
+        // sección pasaba siempre, porque cada título de gráfico también es `h3`.
+        const grupos = await page.locator("section[aria-labelledby] [data-kpi-group-label]").count()
         if (grupos < 2) sinAgrupar.push(`${vista}: ${total} tiles, ${grupos} grupos`)
       }
     }

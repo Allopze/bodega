@@ -54,6 +54,8 @@ interface SummaryBarProps {
    * sin ida al servidor.
    */
   renderLink?: (props: SummaryLinkProps) => React.ReactNode
+  /** `sans` en el tablero (excepción de la regla 7); el resto de la app, mono. */
+  numerals?: "mono" | "sans"
 }
 
 /**
@@ -68,7 +70,7 @@ interface SummaryBarProps {
  * Pensado para usarse entre el PageHeader y la tabla. No renderiza nada si no
  * hay stats; deja el caso vacío (0 filas) al EmptyState de la tabla.
  */
-const SummaryBarInner = React.memo(function SummaryBarInner({ stats, className, compact = false, renderLink }: SummaryBarProps) {
+const SummaryBarInner = React.memo(function SummaryBarInner({ stats, className, compact = false, renderLink, numerals }: SummaryBarProps) {
   if (stats.length === 0) return null
   return compact ? (
     <SummaryBarCompactStrip stats={stats} className={className} />
@@ -76,7 +78,7 @@ const SummaryBarInner = React.memo(function SummaryBarInner({ stats, className, 
     <div className={cn("overflow-hidden border-y border-[var(--color-border)]", className)}>
       <div className="-ml-px -mt-px flex flex-wrap">
         {stats.map((stat) => (
-          <SummaryBarStatCell key={stat.key} stat={stat} renderLink={renderLink} />
+          <SummaryBarStatCell key={stat.key} stat={stat} renderLink={renderLink} numerals={numerals} />
         ))}
       </div>
     </div>

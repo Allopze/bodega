@@ -1,11 +1,12 @@
 import { Certificate, FileText, ShieldWarning, Siren } from "@phosphor-icons/react/dist/ssr"
+import { ChartSlot } from "@/components/ui/dashboard-panel"
 import { KpiCard } from "@/components/ui/kpi-card"
 import { getDashboardCounters } from "@/lib/services/prevention-documents/search"
 import { getPpaStats } from "@/lib/services/ppa-module/calculos"
 import { getDashboardStats } from "@/lib/services/sst-module/dashboard"
 import { listTrainingOccurrences, resolveTrainingOccurrenceYear } from "@/lib/services/prevention-training-occurrences"
 import { DASHBOARD_DOMAINS } from "../dashboard-domains"
-import { DomainSection } from "../dashboard-domain-shell"
+import { DASHBOARD_KPI, DomainSection } from "../dashboard-domain-shell"
 import { CHART_COLORS } from "@/lib/chart-palette"
 import { SST_DOCUMENT_STATUS_LABELS } from "@/lib/prevention/privacy-inventory"
 import { DASHBOARD_GLOSSARY } from "../dashboard-glossary"
@@ -52,47 +53,66 @@ export async function GovernanceSection({ session, worksiteScope, worksiteIds }:
       ]}
       kpis={
         <>
-          <KpiCard icon={<FileText size={16} />} label="Documentos por vencer"
+          <KpiCard {...DASHBOARD_KPI} icon={<FileText size={16} />} label="Documentos por vencer"
             value={String(docs?.expiringSoon.within30 ?? 0)}
             detail={`${docs?.expiringSoon.within7 ?? 0} en 7 días · ${docs?.byStatus.vencido ?? 0} ya vencidos`}
             // El indicador lleva a la lista ya acotada al mismo rango que cuenta:
             // antes anunciaba una urgencia y dejaba al usuario buscándola a mano.
             tone={(docs?.expiringSoon.within7 ?? 0) > 0 ? "signal" : "neutral"} href="/prevencion/documentacion?vence=30" />
-          <KpiCard icon={<Certificate size={16} />} label="Acuses pendientes" value={String(docs?.ackPending ?? 0)}
+          <KpiCard {...DASHBOARD_KPI} icon={<Certificate size={16} />} label="Acuses pendientes" value={String(docs?.ackPending ?? 0)}
             detail="Distribuciones sin firmar, ahora" href="/prevencion/documentacion" />
-          <KpiCard icon={<ShieldWarning size={16} />} label="Capacitaciones pendientes" value={String(pendingTraining)}
+          <KpiCard {...DASHBOARD_KPI} icon={<ShieldWarning size={16} />} label="Capacitaciones pendientes" value={String(pendingTraining)}
             detail={`${notDoneTraining} declaradas no hechas · ahora`}
             tone={notDoneTraining > 0 ? "signal" : "neutral"} href="/prevencion/capacitacion" />
-          <KpiCard icon={<Siren size={16} />} label="Desviaciones PPA"
-            value={ppa ? `${Math.round(ppa.porcentajeDesviaciones)}%` : "—"}
-            // Los PPA no se acotan por fecha (`getPpaStats` no recibe período): decir
-            // "· mes" era falso, y es la razón por la que el selector no aplica acá (INI-05).
-            detail={ppa ? `${ppa.detenidos} detenciones de ${ppa.total} · acumulado` : "Sin registros PPA"}
-            glossary={DASHBOARD_GLOSSARY.PPA}
-            tone={ppa && ppa.detenidos > 0 ? "signal" : "neutral"} href="/prevencion/ppa" />
+          {/* Sin `ppa:view` la cifra no existe: ni "—" ni un acceso a una pantalla
+              que respondería 403. Con permiso y sin registros, un "0 %" de
+              desviaciones sobre 0 PPA no mide nada; dice qué falta (A4). */}
+          {has("ppa:view") && (ppa && ppa.total > 0 ? (
+            <KpiCard {...DASHBOARD_KPI} icon={<Siren size={16} />} label="Desviaciones PPA"
+              value={`${Math.round(ppa.porcentajeDesviaciones)}%`}
+              // Los PPA no se acotan por fecha (`getPpaStats` no recibe período): decir
+              // "· mes" era falso, y es la razón por la que el selector no aplica acá (INI-05).
+              detail={`${ppa.detenidos} detenciones de ${ppa.total} · acumulado`}
+              glossary={DASHBOARD_GLOSSARY.PPA}
+              tone={ppa.detenidos > 0 ? "signal" : "neutral"} href="/prevencion/ppa" />
+          ) : (
+            <KpiCard {...DASHBOARD_KPI} icon={<Siren size={16} />} label="Desviaciones PPA"
+              value="—" detail="" glossary={DASHBOARD_GLOSSARY.PPA}
+              empty={{ message: "Aún no hay registros PPA", actionLabel: "Ir al PPA" }} href="/prevencion/ppa" />
+          ))}
         </>
       }
       charts={
+        /*
+         * Con las dos tarjetas, la dona (1 columna) y la barra de reparto
+         * comparten la fila: la barra ocupa el resto (1 en xl, 2 en 2xl). Si
+         * falta una, la que queda toma la fila completa en vez de dejar la mitad
+         * del panel en blanco.
+         */
         <>
           {docs && (
-            <CompositionDonutChart
-              title="Documentos por estado" description="Cómo se reparte la biblioteca documental SST"
-              totalLabel="documentos"
-              data={Object.entries(docs.byStatus).map(([status, value]) => ({
-                // Antes salía el valor crudo del enum ("borrador: 99", "en revision").
-                key: status, label: SST_DOCUMENT_STATUS_LABELS[status] ?? status, value,
-              }))}
-            />
+            <ChartSlot span={sstStats ? "one" : "full"}>
+              <CompositionDonutChart
+                title="Documentos por estado" description="Cómo se reparte la biblioteca documental SST"
+                totalLabel="documentos"
+                data={Object.entries(docs.byStatus).map(([status, value]) => ({
+                  // Antes salía el valor crudo del enum ("borrador: 99", "en revision").
+                  key: status, label: SST_DOCUMENT_STATUS_LABELS[status] ?? status, value,
+                }))}
+              />
+            </ChartSlot>
           )}
           {sstStats && (
-            <StatusShareBar
-              title="Evaluaciones SST de trabajador" description="Reparto entre habilitados y no habilitados"
-              data={[
-                { key: "habilitados", label: "Habilitados", value: sstStats.habilitados, color: CHART_COLORS.brand },
-                { key: "noHabilitados", label: "No habilitados", value: sstStats.noHabilitados, color: CHART_COLORS.danger },
-                { key: "borrador", label: "En borrador", value: sstStats.borrador, color: CHART_COLORS.neutral },
-              ]}
-            />
+            <ChartSlot span={docs ? "one" : "full"} className={docs ? "2xl:col-span-2" : undefined}>
+              <StatusShareBar
+                title="Evaluaciones SST de trabajador" description="Reparto entre habilitados y no habilitados"
+                data={[
+                  { key: "habilitados", label: "Habilitados", value: sstStats.habilitados, color: CHART_COLORS.brand },
+                  { key: "noHabilitados", label: "No habilitados", value: sstStats.noHabilitados, color: CHART_COLORS.danger },
+                  { key: "borrador", label: "En borrador", value: sstStats.borrador, color: CHART_COLORS.neutral },
+                ]}
+              />
+            </ChartSlot>
           )}
         </>
       }

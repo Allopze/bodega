@@ -1,15 +1,19 @@
 import { Broom, ClipboardText, Package, Truck } from "@phosphor-icons/react/dist/ssr"
+import { ChartSlot } from "@/components/ui/dashboard-panel"
 import { KpiCard } from "@/components/ui/kpi-card"
+import { RankedList } from "@/components/ui/ranked-list"
 import { getDashboardData } from "@/lib/services/dashboard"
 import { getOperationalCalendarBounds, getOperationalPeriodMetrics } from "@/lib/services/operational-period-metrics"
 import { getReceptionQuality } from "@/lib/services/dashboard-domains-data"
 import { getOperationalTrendHistory } from "@/lib/services/operational-trend-history"
 import { DASHBOARD_DOMAINS } from "../dashboard-domains"
-import { DomainSection } from "../dashboard-domain-shell"
-import { periodScopeLabel, scopedWorksiteId } from "../dashboard-scope"
-import { ModuleWorkloadChart, OperationalTrendChart } from "../dashboard-domain-charts"
+import { DASHBOARD_KPI, DomainSection } from "../dashboard-domain-shell"
+import { periodComparisonShortLabel, periodScopeLabel, scopedWorksiteId } from "../dashboard-scope"
+import { OperationalTrendChart } from "../dashboard-domain-charts"
+import { ChartFrame, ChartHeadlineCaption, ChartHeadlineValue } from "../charts/chart-frame"
 
 import type { DomainSectionsProps } from "./shared"
+import { moduleWorkloadHref } from "./shared"
 import { ORDERS_ISSUED_METRIC } from "../dashboard-metric-definitions"
 
 // ── Adquisiciones ────────────────────────────────────────────────────────────
@@ -51,6 +55,10 @@ export async function AcquisitionsSection({ session, scope, moduleWorkload, queu
   const pendingApprovals = dashboardData.metrics.pending_approvals
 
   const periodo = periodScopeLabel(scope.period).toLocaleLowerCase("es-CL")
+  // La variación sólo existe con período anterior: sin él no hay contra qué
+  // comparar y se omite en vez de inventar un 0.
+  const previousOrders = periodMetrics.ordersIssued.previous
+  const ordersTrend = previousOrders === null ? undefined : periodMetrics.ordersIssued.current - previousOrders
 
   return (
     <DomainSection
@@ -58,24 +66,43 @@ export async function AcquisitionsSection({ session, scope, moduleWorkload, queu
       links={[{ label: "Compras", href: "/compras" }, { label: "Analítica", href: "/analitica" }, { label: "Finanzas", href: "/dashboard?vista=finanzas" }]}
       kpis={
         <>
-          <KpiCard icon={<ClipboardText size={16} />} label={ORDERS_ISSUED_METRIC.label} value={String(periodMetrics.ordersIssued.current)}
+          <KpiCard {...DASHBOARD_KPI} icon={<ClipboardText size={16} />} label={ORDERS_ISSUED_METRIC.label} value={String(periodMetrics.ordersIssued.current)}
+            // Emitir más o menos OC no es bueno ni malo por sí solo: el delta va en gris.
+            trend={ordersTrend} trendFormat="number" trendPolarity="neutral" trendLabel={periodComparisonShortLabel(scope.period)}
             detail={`Salieron de borrador · ${periodo}`} glossary={ORDERS_ISSUED_METRIC.glossary} href="/compras" />
-          <KpiCard icon={<Truck size={16} />} label="Pendiente de recepción" value={String(dashboardData.metrics.orders_pending_receipt)}
+          <KpiCard {...DASHBOARD_KPI} icon={<Truck size={16} />} label="Pendiente de recepción" value={String(dashboardData.metrics.orders_pending_receipt)}
             detail="Órdenes enviadas que aún no llegan · ahora"
             tone={dashboardData.metrics.orders_pending_receipt > 0 ? "signal" : "neutral"} href="/recepcion" />
-          <KpiCard icon={<Broom size={16} />} label="Rechazo en recepción" value={`${quality.rejectionRate}%`}
+          <KpiCard {...DASHBOARD_KPI} icon={<Broom size={16} />} label="Rechazo en recepción" value={`${quality.rejectionRate}%`}
             detail={quality.rejected + quality.damaged > 0 ? `${quality.rejected} rechazadas · ${quality.damaged} dañadas · ${periodo}` : `Todo llegó conforme · ${periodo}`}
             tone={quality.rejectionRate > 5 ? "signal" : "neutral"} href="/recepcion" />
-          <KpiCard icon={<Package size={16} />} label="Por aprobar" value={String(pendingApprovals)}
+          <KpiCard {...DASHBOARD_KPI} icon={<Package size={16} />} label="Por aprobar" value={String(pendingApprovals)}
             detail="Ítems esperando decisión ahora" href="/pendientes?module=aprobaciones" />
         </>
       }
       charts={
         <>
-          <div className="xl:col-span-2">
+          <ChartSlot span="wide">
             <OperationalTrendChart data={trend.map((p) => ({ month: p.month, requests: p.requests, orders: p.orders, receipts: p.receipts }))} />
-          </div>
-          {moduleWorkload.length > 0 && <ModuleWorkloadChart data={moduleWorkload} total={queueTotal} />}
+          </ChartSlot>
+          {moduleWorkload.length > 0 && (
+            // 2 + 1 en 2xl; en xl (2 columnas) la lista toma la fila para no dejar un hueco al lado.
+            <ChartSlot className="xl:col-span-2 2xl:col-span-1">
+              {/* Lista y no barras: el color de cada barra no codificaba nada, y
+                  cada módulo ahora lleva a su cola ya filtrada. */}
+              <ChartFrame
+                title="Distribución por módulo"
+                description="Pendiente al día de hoy"
+                headline={<><ChartHeadlineValue>{queueTotal}</ChartHeadlineValue><ChartHeadlineCaption>{queueTotal === 1 ? "tarea pendiente" : "tareas pendientes"}</ChartHeadlineCaption></>}
+              >
+                <RankedList
+                  items={moduleWorkload.map((point) => ({ key: point.module, label: point.module, value: point.count, href: moduleWorkloadHref(point) }))}
+                  format="count" mode="share" moreHref="/pendientes"
+                  ariaLabel="Tareas pendientes por módulo"
+                />
+              </ChartFrame>
+            </ChartSlot>
+          )}
         </>
       }
     />

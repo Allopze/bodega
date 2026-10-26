@@ -18,6 +18,9 @@ vi.mock("@/lib/services/maintenance", () => ({ getUsageMaintenanceAlerts }))
 vi.mock("@/lib/services/dte-portal/reconciliation", () => ({ countPendingFuelCreditNotes }))
 vi.mock("@/lib/services/dte-portal/config", () => ({ readDtePortalConfig }))
 
+import { ChartSlot } from "@/components/ui/dashboard-panel"
+import { KpiCard } from "@/components/ui/kpi-card"
+import { RankedList } from "@/components/ui/ranked-list"
 import { FleetSection } from "./fleet-section"
 import type { DomainSectionsProps } from "./shared"
 
@@ -110,5 +113,78 @@ describe("FleetSection degradation tracking", () => {
     const section = await FleetSection(props("flota:view", "combustibles:view", "mantenciones:view"))
 
     expect(bannerOf(section).props.degraded).toEqual([])
+  })
+})
+
+type Element = { type: unknown; props: Record<string, unknown> }
+
+/** Recorre el árbol React sin renderizarlo, incluidas las props que llevan nodos. */
+function find(node: unknown, match: (element: Element) => boolean, result: Element[] = []): Element[] {
+  if (Array.isArray(node)) {
+    node.forEach((child) => find(child, match, result))
+    return result
+  }
+  if (!node || typeof node !== "object" || !("props" in node) || !("type" in node)) return result
+  const element = node as Element
+  if (match(element)) result.push(element)
+  Object.values(element.props).forEach((value) => find(value, match, result))
+  return result
+}
+
+function sectionOf(section: unknown) {
+  return domainSectionOf(section).props as unknown as { kpis: unknown; charts: unknown }
+}
+
+const vehicle = (overrides: Record<string, unknown>) => ({ id: "v1", plate: "AA-11", isActive: true, costPerKm: null, costPerHour: null, ...overrides })
+
+// Rediseño del tablero: los gráficos van en `ChartSlot` y el ranking de costo
+// es una lista, no barras multicolor.
+describe("FleetSection · panel del tablero", () => {
+  it("el costo por unidad de uso es un ranking en un ChartSlot y no reparte un % del total", async () => {
+    getFleetOverview.mockResolvedValue([
+      vehicle({ id: "v1", plate: "AA-11", costPerKm: 120.4 }),
+      vehicle({ id: "v2", plate: "BB-22", costPerHour: 5000 }),
+      vehicle({ id: "v3", plate: "CC-33" }),
+    ])
+    const { charts } = sectionOf(await FleetSection(props("flota:view", "combustibles:view", "combustibles:view_costs")))
+
+    const slots = find(charts, (element) => element.type === ChartSlot)
+    expect(slots.length).toBeGreaterThanOrEqual(2)
+    const list = find(charts, (element) => element.type === RankedList)[0]!
+    // $/km y $/hora no se suman: un % del total no mediría nada.
+    expect(list.props).toMatchObject({ format: "clp", mode: "share", showShare: false })
+    // El vehículo sin tasa calculable no entra (no se inventan ceros) y cada fila lleva a su ficha.
+    expect(list.props.items).toEqual([
+      { key: "v1", label: "AA-11", value: 120, detail: "$ por km", href: "/flota/v1" },
+      { key: "v2", label: "BB-22", value: 5000, detail: "$ por hora", href: "/flota/v2" },
+    ])
+  })
+
+  it("sin permiso de costos no hay ranking de costo", async () => {
+    getFleetOverview.mockResolvedValue([vehicle({ costPerKm: 120 })])
+    const { charts } = sectionOf(await FleetSection(props("flota:view")))
+
+    expect(find(charts, (element) => element.type === RankedList)).toHaveLength(0)
+  })
+
+  it("todos los tiles llevan la variante del tablero", async () => {
+    const { kpis } = sectionOf(await FleetSection(props("flota:view", "combustibles:view", "mantenciones:view")))
+    const tiles = find(kpis, (element) => element.type === KpiCard)
+
+    expect(tiles).toHaveLength(4)
+    for (const tile of tiles) expect(tile.props).toMatchObject({ numerals: "sans", surface: "flat" })
+  })
+
+  it("sin vehículos ni cargas los tiles dicen qué falta; si la fuente falló conservan la cifra", async () => {
+    const empty = sectionOf(await FleetSection(props("flota:view", "combustibles:view")))
+    const byLabel = (kpis: unknown, label: string) => find(kpis, (element) => element.type === KpiCard && element.props.label === label)[0]!
+
+    expect(byLabel(empty.kpis, "Vehículos activos").props.empty).toMatchObject({ message: "Aún no hay vehículos activos" })
+    expect(byLabel(empty.kpis, "Litros (6 meses)").props.empty).toMatchObject({ message: "Sin cargas registradas en 6 meses" })
+
+    // Un cero por falla de la consulta no es "aún no hay": el banner de degradación lo avisa.
+    getFleetOverview.mockRejectedValue(new Error("boom"))
+    const degraded = sectionOf(await FleetSection(props("flota:view")))
+    expect(byLabel(degraded.kpis, "Vehículos activos").props.empty).toBeUndefined()
   })
 })

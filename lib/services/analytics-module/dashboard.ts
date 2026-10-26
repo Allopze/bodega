@@ -152,7 +152,7 @@ export async function getAnalyticsDashboard(session: Session, rawFilters: Analyt
   const previousFuelWhere = and(accountableFuelLoadsWhere(), fuelScope, gte(fuelLoads.loadDate, previous.fromDate), lte(fuelLoads.loadDate, previous.toDate), filters.worksiteId ? eq(fuelLoads.worksiteId, filters.worksiteId) : undefined, filters.vehicleId ? eq(fuelLoads.vehicleId, filters.vehicleId) : undefined)
   const maintenanceWhere = and(maintenanceScope, gte(maintenanceRecords.maintenanceDate, filters.fromDate), lte(maintenanceRecords.maintenanceDate, filters.toDate), filters.worksiteId ? eq(maintenanceRecords.worksiteId, filters.worksiteId) : undefined, filters.vehicleId ? eq(maintenanceRecords.vehicleId, filters.vehicleId) : undefined, sql`${maintenanceRecords.status} <> 'cancelled'`)
 
-  const [[purchaseSummary], [previousPurchaseSummary], [fuelSummary], [previousFuelSummary], [approvalSummary], purchaseMonths, fuelMonths, purchaseModules, fuelModules, purchaseSuppliers, fuelSupplierRows, purchaseWorksites, fuelWorksites, vehicleRows, lastReadingRows, rotationRows, eppRows, recentOrders, maintenanceRows] = await Promise.all([
+  const [[purchaseSummary], [previousPurchaseSummary], [fuelSummary], [previousFuelSummary], [approvalSummary], purchaseMonths, fuelMonths, purchaseModules, fuelModules, purchaseSuppliers, fuelSupplierRows, purchaseWorksites, fuelWorksites, vehicleRows, lastReadingRows, rotationRows, eppRows, recentOrders, maintenanceRows, [eppWorkerSummary]] = await Promise.all([
     db.select({ totalAmount: sql<number>`COALESCE(SUM(${purchaseOrders.totalAmount}), 0)`, orderCount: sql<number>`COUNT(*)`, averageOrderAmount: sql<number>`COALESCE(AVG(${purchaseOrders.totalAmount}), 0)` }).from(purchaseOrders).where(orderWhere),
     db.select({ totalAmount: sql<number>`COALESCE(SUM(${purchaseOrders.totalAmount}), 0)` }).from(purchaseOrders).where(previousOrderWhere),
     canViewFuel
@@ -201,6 +201,10 @@ export async function getAnalyticsDashboard(session: Session, rawFilters: Analyt
     canViewMaintenanceCosts
       ? db.select({ vehicleId: maintenanceRecords.vehicleId, totalMaintenanceAmount: sql<number>`COALESCE(SUM(${maintenanceRecords.totalAmount}), 0)`, maintenanceCount: sql<number>`COUNT(*)` }).from(maintenanceRecords).where(maintenanceWhere).groupBy(maintenanceRecords.vehicleId)
       : Promise.resolve([]),
+    // Trabajadores distintos con entrega de EPP en el período. `eppRows` no sirve
+    // para contarlos: agrupa por trabajador × producto y trae sólo los 10 de más
+    // cantidad, así que el tile del tablero nunca pasaba de 10.
+    db.select({ workers: sql<number>`COUNT(DISTINCT COALESCE(${deliveries.workerId}::text, ${deliveries.receiverName}, 'sin-trabajador'))` }).from(deliveryItems).innerJoin(deliveries, eq(deliveryItems.deliveryId, deliveries.id)).leftJoin(products, eq(deliveryItems.productId, products.id)).leftJoin(productCategories, eq(products.categoryId, productCategories.id)).where(and(deliveryScope, filters.worksiteId ? eq(deliveries.worksiteId, filters.worksiteId) : undefined, chileDayRange(deliveries.deliveredAt, filters.fromDate, filters.toDate), sql`(${products.isEpp} = true OR ${productCategories.isEpp} = true)`)),
   ])
 
   const purchaseTotal = Number(purchaseSummary?.totalAmount ?? 0)
@@ -229,6 +233,7 @@ export async function getAnalyticsDashboard(session: Session, rawFilters: Analyt
   return {
     filters, kpis: { totalSpend, previousTotalSpend: previousTotal, spendVariationPct: variationPct(totalSpend, previousTotal), purchaseOrderCount: Number(purchaseSummary?.orderCount ?? 0), pendingApprovals: Number(approvalSummary?.pendingApprovals ?? 0), fuelLiters: Number(fuelSummary?.totalLiters ?? 0), fuelLoadCount: Number(fuelSummary?.loadCount ?? 0), averageOrderAmount: Number(purchaseSummary?.averageOrderAmount ?? 0) },
     spendByMonth, spendByModule, topSuppliers, topWorksites, vehicleCosts, productRotation, eppDeliveries,
+    eppWorkerCount: Number(eppWorkerSummary?.workers ?? 0),
     recentOrders: recentOrders.map((r) => ({ id: r.id, code: r.code, worksiteName: r.worksiteName, supplierName: r.supplierName, totalAmount: Number(r.totalAmount ?? 0), createdAt: r.createdAt })),
     alerts, dataGaps,
   }

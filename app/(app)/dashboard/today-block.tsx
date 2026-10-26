@@ -1,8 +1,22 @@
 import Link from "next/link"
-import { ArrowRight, CheckCircle, WarningCircle } from "@phosphor-icons/react/dist/ssr"
+import {
+  ArrowRight,
+  CaretRight,
+  CheckCircle,
+  CheckSquare,
+  Clock,
+  HardHat,
+  Package,
+  Prohibit,
+  ShieldWarning,
+  Truck,
+  WarningCircle,
+} from "@phosphor-icons/react/dist/ssr"
 import { MetaBadge, type StateMetaInput } from "@/components/states/state-badge"
+import { DashboardPanel, PanelBlock } from "@/components/ui/dashboard-panel"
 import { EmptyState } from "@/components/ui/empty-state"
 import { cn } from "@/lib/utils"
+import { ChartFrame } from "./charts/chart-frame"
 import type { DashboardAlert } from "./dashboard-control-center"
 import { pendientesLinkLabel, type TodayItem } from "./dashboard-today"
 
@@ -19,18 +33,61 @@ import { pendientesLinkLabel, type TodayItem } from "./dashboard-today"
  * - hasta cinco filas de la cola, con el vencimiento en palabras;
  * - **un** enlace a `/pendientes`.
  *
+ * Rediseño del tablero: las dos listas son bloques de **un solo panel** con una
+ * línea fina entre ellos, y cada fila es una línea compacta (icono · título ·
+ * pista · cifra · flecha) en vez de una tarjeta alta con borde propio. Con
+ * cinco alertas las tarjetas empujaban los indicadores bajo el pliegue.
+ *
  * Es server component: sólo hay enlaces.
  */
 
 const CRITICAL_META: StateMetaInput = { label: "Crítica", variant: "danger" }
 
-const SEVERITY_META: Record<string, StateMetaInput> = {
-  critical: CRITICAL_META,
-  warning:  { label: "Atención", variant: "warning" },
-  info:     { label: "Pendiente", variant: "info" },
+/**
+ * La severidad ya no es una insignia repetida en cada fila ("CRÍTICA" cinco
+ * veces seguidas era ruido): la dicen el color del icono y de la cifra, y la
+ * palabra sigue en el enlace como texto solo para lector de pantalla — el e2e
+ * `dashboard.spec.ts` y quien no distingue colores dependen de ella.
+ *
+ * Texto con tokens `-ink` (AGENTS.md regla 8): los base no pasan AA.
+ */
+const SEVERITY_META: Record<DashboardAlert["severity"], { label: string; tile: string; pill: string }> = {
+  critical: {
+    label: "Crítica",
+    tile: "bg-[var(--color-danger-tint)] text-[var(--color-danger-ink)]",
+    pill: "bg-[var(--color-danger-tint)] text-[var(--color-danger-ink)]",
+  },
+  warning: {
+    label: "Atención",
+    tile: "bg-[var(--color-warning-tint)] text-[var(--color-warning-ink)]",
+    pill: "bg-[var(--color-warning-tint)] text-[var(--color-warning-ink)]",
+  },
+  info: {
+    label: "Pendiente",
+    tile: "bg-[var(--color-surface-2)] text-[var(--color-text-muted)]",
+    pill: "bg-[var(--color-surface-2)] text-[var(--color-text-muted)]",
+  },
 }
 
+/** El icono dice de qué trata la alerta; el color, cuán grave es. */
+const ALERT_ICON = {
+  critical: WarningCircle,
+  overdue: Clock,
+  blocked: Prohibit,
+  capa: ShieldWarning,
+  approvals: CheckSquare,
+  receipts: Truck,
+  deliveries: Package,
+  epp: HardHat,
+} as const
+
 const FOCUS = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]"
+
+/** Fila de lista compacta: el hover se extiende 8px más allá del texto. */
+const ROW = cn(
+  "group -mx-2 flex items-center gap-3 rounded-[var(--radius-md)] px-2 py-2.5 transition-colors hover:bg-[var(--color-surface-2)]",
+  FOCUS,
+)
 
 export function TodayBlock({
   alerts,
@@ -62,52 +119,53 @@ export function TodayBlock({
       <ArrowRight size={14} weight="bold" aria-hidden />
     </Link>
   ) : null
+  // Con una sola lista ocupa la fila entera; con las dos, mitad y mitad.
+  const span = alerts.length > 0 && items.length > 0 ? "lg:col-span-6" : "lg:col-span-12"
 
-  // Sin chrome de tarjeta: "Hoy" es la banda principal del pozo y sus alertas
-  // y pendientes ya son superficies propias; envolverlas en otra tarjeta las
-  // anidaba (piso de calidad, 2026-10-05).
   return (
     <section aria-labelledby="hoy-titulo" className="min-w-0">
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-[var(--color-border)] pb-3">
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <h2 id="hoy-titulo" className="text-h2 text-[var(--color-text)]">Hoy</h2>
         {!empty && link}
       </div>
 
       {empty ? (
-        <EmptyState
-          compact
-          icon={<CheckCircle size={20} weight="fill" />}
-          tone="success"
-          title={`Nada urgente hoy en ${scopeLabel}`}
-          description="No hay alertas ni pendientes vencidos o críticos."
-          action={link ?? undefined}
-        />
+        <DashboardPanel>
+          <PanelBlock padding="none">
+            <EmptyState
+              compact
+              icon={<CheckCircle size={20} weight="fill" />}
+              tone="success"
+              title={`Nada urgente hoy en ${scopeLabel}`}
+              description="No hay alertas ni pendientes vencidos o críticos."
+              action={link ?? undefined}
+            />
+          </PanelBlock>
+        </DashboardPanel>
       ) : (
-        <div className={cn("mt-4 grid grid-cols-1 gap-x-8 gap-y-6", items.length > 0 && alerts.length > 0 && "lg:grid-cols-2")}>
+        <DashboardPanel cols="twelve">
           {alerts.length > 0 && (
-            <div className="min-w-0">
-              <h3 id="alertas-operacionales" className="mb-2.5 flex items-baseline gap-2 text-sm font-semibold text-[var(--color-text)]">
-                Requiere atención
-                <span className="font-mono text-xs font-semibold text-[var(--color-text-muted)]">
-                  {alerts.length} activa{alerts.length === 1 ? "" : "s"}
-                </span>
-              </h3>
-              <ul aria-labelledby="alertas-operacionales" className="flex flex-col gap-2.5">
-                {alerts.map((alert) => <li key={alert.key}><OperationalAlert alert={alert} /></li>)}
-              </ul>
-            </div>
+            <PanelBlock padding="none" className={span}>
+              <ChartFrame
+                title="Requiere atención"
+                description={`${alerts.length} activa${alerts.length === 1 ? "" : "s"}`}
+              >
+                <ul aria-label="Requiere atención" className="divide-y divide-[var(--color-border)]">
+                  {alerts.map((alert) => <li key={alert.key}><OperationalAlert alert={alert} /></li>)}
+                </ul>
+              </ChartFrame>
+            </PanelBlock>
           )}
           {items.length > 0 && (
-            <div className="min-w-0">
-              <h3 id="pendientes-urgentes" className="mb-2.5 text-sm font-semibold text-[var(--color-text)]">
-                Lo más urgente de tus pendientes
-              </h3>
-              <ol aria-labelledby="pendientes-urgentes" className="divide-y divide-[var(--color-border)] rounded-xl border border-[var(--color-border)]">
-                {items.map((item) => <li key={item.id}><TodayRow item={item} /></li>)}
-              </ol>
-            </div>
+            <PanelBlock padding="none" className={span}>
+              <ChartFrame title="Lo más urgente de tus pendientes">
+                <ol aria-label="Lo más urgente de tus pendientes" className="divide-y divide-[var(--color-border)]">
+                  {items.map((item) => <li key={item.id}><TodayRow item={item} /></li>)}
+                </ol>
+              </ChartFrame>
+            </PanelBlock>
           )}
-        </div>
+        </DashboardPanel>
       )}
     </section>
   )
@@ -122,15 +180,7 @@ const DUE_TONE: Record<TodayItem["due"], string> = {
 
 function TodayRow({ item }: { item: TodayItem }) {
   return (
-    <Link
-      href={item.href}
-      data-pressable
-      className={cn(
-        "flex min-h-14 items-start justify-between gap-3 px-3.5 py-2.5 transition-colors hover:bg-[var(--color-surface-2)]",
-        "first:rounded-t-xl last:rounded-b-xl",
-        FOCUS,
-      )}
-    >
+    <Link href={item.href} data-pressable className={cn(ROW, "min-h-14 items-start justify-between")}>
       <span className="min-w-0 flex-1">
         <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span className="text-sm font-semibold text-[var(--color-text)]">{item.title}</span>
@@ -147,29 +197,42 @@ function TodayRow({ item }: { item: TodayItem }) {
 }
 
 function OperationalAlert({ alert }: { alert: DashboardAlert }) {
-  const meta = SEVERITY_META[alert.severity] ?? { label: alert.severity, variant: "default" as const }
+  const meta = SEVERITY_META[alert.severity]
+  const AlertIcon = ALERT_ICON[alert.key as keyof typeof ALERT_ICON] ?? WarningCircle
   const content = (
     <>
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius)] bg-[var(--color-surface-2)] text-[var(--color-text-muted)]">
-        <WarningCircle size={17} weight={alert.severity === "critical" ? "fill" : "regular"} aria-hidden />
+      <span className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-lg", meta.tile)}>
+        <AlertIcon size={16} weight={alert.severity === "critical" ? "fill" : "regular"} aria-hidden />
       </span>
-      <span className="min-w-0 flex-1">
-        <span className="flex flex-wrap items-center gap-2">
-          <span className="font-mono text-lg font-semibold tabular-nums text-[var(--color-text)]">{alert.count}</span>
-          <span className="text-sm font-semibold text-[var(--color-text)]">{alert.title}</span>
-          <MetaBadge meta={meta} dot />
+      <span className="flex min-w-0 flex-1 items-baseline gap-2">
+        {/* La cifra va a la derecha, en la píldora, pero se lee primero: el
+            título dice "tareas vencidas" y sin el número delante no significa
+            nada ("215 tareas vencidas"). El `sr-only` la antepone al nombre del
+            enlace y la píldora se oculta para no leerla dos veces. Va como
+            hermano y no dentro del título para que `first-letter` capitalice
+            el texto visible y no el número. */}
+        <span className="sr-only">{alert.count} </span>
+        {/* Desde `sm` el título no se parte: lo que cede espacio es la pista, que
+            se trunca. Bajo `sm` la pista no se muestra y el título puede envolver. */}
+        <span className="min-w-0 text-sm font-semibold text-[var(--color-text)] first-letter:uppercase sm:shrink-0">
+          {alert.title}
+          <span className="sr-only"> · {meta.label}</span>
         </span>
-        <span className="mt-1 block text-xs leading-5 text-[var(--color-text-muted)]">{alert.description}</span>
+        <span title={alert.description} className="hidden min-w-0 truncate text-[13px] text-[var(--color-text-muted)] sm:block">
+          {alert.description}
+        </span>
       </span>
+      <span aria-hidden className={cn("shrink-0 rounded-full px-2 py-0.5 text-[13px] font-bold tabular-nums", meta.pill)}>
+        {alert.count}
+      </span>
+      <CaretRight
+        size={16}
+        aria-hidden
+        className="shrink-0 text-[var(--color-text-subtle)] transition-[transform,color] duration-[var(--duration-fast)] ease-[var(--ease-out)] group-hover:text-[var(--color-text)] motion-safe:group-hover:translate-x-0.5"
+      />
     </>
   )
-  const className = cn(
-    "group flex min-h-16 items-start gap-3 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-left",
-    "transition-[background-color,border-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)]",
-    "hover:border-[var(--color-border-strong)] hover:bg-[var(--color-surface-2)] motion-safe:active:scale-[0.99]",
-    FOCUS,
-  )
 
-  if (alert.href) return <Link href={alert.href} data-pressable className={className}>{content}</Link>
-  return <div className={className}>{content}</div>
+  if (alert.href) return <Link href={alert.href} data-pressable className={ROW}>{content}</Link>
+  return <div className={ROW}>{content}</div>
 }

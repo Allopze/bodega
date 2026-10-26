@@ -1,6 +1,6 @@
 import Link from "next/link"
 import { ChartLineUp } from "@phosphor-icons/react/dist/ssr"
-import { cn, formatDateTime, MONTH_LABELS } from "@/lib/utils"
+import { cn, formatDateTime, MONTH_LABELS, formatQty } from "@/lib/utils"
 import { Progress } from "@/components/ui/progress"
 import { getPdtpIntegralCompliance } from "@/lib/services/prevention-pdtp"
 import { listPendingPdtpExecutions } from "@/lib/services/prevention-pdtp"
@@ -45,7 +45,11 @@ type PdtpComplianceCardProps = {
 }
 
 /**
- * Tarjeta compacta de cumplimiento PDTP para el dashboard.
+ * Bloque de cumplimiento PDTP para el dashboard.
+ *
+ * Es **plano**: lo aloja un `PanelBlock` dentro de un `DashboardPanel` (ver
+ * `sections/prevention-section.tsx`), que es quien pone superficie y bordes.
+ * Usada fuera de un panel, quedaría sin marco.
  *
  * Gated por `prevention:pdtp:view` (gating se hace en page.tsx antes de
  * instanciarla). Muestra % de cumplimiento anual con barra de progreso,
@@ -77,13 +81,17 @@ export function PdtpComplianceCard(props: PdtpComplianceCardProps) {
   const monthLabel = MONTH_LABELS[month - 1] ?? "—"
 
   return (
-    <div className="space-y-2">
+    <div>
     <Link
       href={`/prevencion/pdtp?anio=${year}`}
       data-pressable
+      // Plana: la superficie, el borde y la separación con los vecinos los pone
+      // el `DashboardPanel` que la contiene. Antes era una tarjeta flotante
+      // (`rounded-2xl border shadow-xs`) y, dentro del panel, dibujaba un marco
+      // dentro del marco.
       className={cn(
-        "group block rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs transition-all duration-150 ease-out",
-        "hover:border-[var(--color-primary-line)] hover:bg-[var(--color-surface-2)]",
+        "group block p-5 transition-colors duration-150 ease-out",
+        "hover:bg-[var(--color-surface-2)]",
         "focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-primary)]",
       )}
     >
@@ -92,7 +100,8 @@ export function PdtpComplianceCard(props: PdtpComplianceCardProps) {
           <span className="flex h-7 w-7 items-center justify-center rounded-[var(--radius)] bg-[var(--color-surface-2)] text-[var(--color-text-muted)] group-hover:bg-[var(--color-surface)] group-hover:text-[var(--color-primary)]">
             <ChartLineUp size={14} weight="bold" />
           </span>
-          <p className="text-eyebrow text-[var(--color-text-muted)] group-hover:text-[var(--color-text)]">PDTP {year}</p>
+          {/* h3 como los demás bloques del panel (`ChartFrame`). */}
+          <h3 className="text-eyebrow text-[var(--color-text)]">PDTP {year}</h3>
         </div>
         {/* El agregado global existe (mismo motor que la sección Prevención);
             antes esta tarjeta pedía "selecciona faena" mientras esa sección
@@ -102,10 +111,11 @@ export function PdtpComplianceCard(props: PdtpComplianceCardProps) {
         </span>
       </div>
 
-      <div className="mt-3 flex flex-wrap items-end gap-x-2 gap-y-1">
+      <div className="mt-3 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        {/* Cifra sans, como los tiles del tablero (`DASHBOARD_KPI`). */}
         <span
           className={cn(
-            "font-mono text-2xl font-semibold leading-none tabular-nums tracking-tight",
+            "font-sans text-[28px] font-semibold leading-none tabular-nums tracking-tight",
             percent === null
               ? "text-[var(--color-text-faint)]"
               : belowTarget
@@ -115,9 +125,9 @@ export function PdtpComplianceCard(props: PdtpComplianceCardProps) {
         >
           {percent === null ? "—" : `${value}%`}
         </span>
-        <span className="mb-0.5 text-xs text-[var(--color-text-subtle)]">avance real</span>
+        <span className="text-xs text-[var(--color-text-subtle)]">avance real</span>
         {integralPercent !== null && (
-          <span className="mb-0.5 text-xs text-[var(--color-text-muted)]">· gestión {integralPercent}%</span>
+          <span className="text-xs text-[var(--color-text-muted)]">· gestión {integralPercent}%</span>
         )}
       </div>
 
@@ -143,23 +153,23 @@ export function PdtpComplianceCard(props: PdtpComplianceCardProps) {
               por aprobar
             </>
           ) : (
-            <span className="text-[var(--color-success)]">Sin pendientes</span>
+            <span className="text-[var(--color-success-ink)]">Sin pendientes</span>
           )}
         </span>
-        <span className="font-mono tabular-nums text-[var(--color-text-subtle)]">
-          {executed.toLocaleString("es-CL")} de {planned.toLocaleString("es-CL")} planificado
+        <span className="tabular-nums text-[var(--color-text-subtle)]">
+          {formatQty(executed)} de {formatQty(planned)} planificado
         </span>
         {expectedPct !== null && (
           <span>
-            Esperado al período: <strong className="font-mono tabular-nums text-[var(--color-text)]">{expectedPct}%</strong>
+            Esperado al período: <strong className="tabular-nums text-[var(--color-text)]">{expectedPct}%</strong>
             {variancePercent !== null && (
-              <span className={cn("ml-1 font-mono tabular-nums", variancePercent < 0 ? "text-[var(--color-danger-ink)]" : "text-[var(--color-success-ink)]")}>
+              <span className={cn("ml-1 tabular-nums", variancePercent < 0 ? "text-[var(--color-danger-ink)]" : "text-[var(--color-success-ink)]")}>
                 ({variancePercent > 0 ? "+" : ""}{variancePercent} <abbr title={DASHBOARD_GLOSSARY.pp} className="no-underline">pp</abbr>)
               </span>
             )}
           </span>
         )}
-        <span className="font-mono tabular-nums">{monthLabel} · <abbr title={DASHBOARD_GLOSSARY.S} className="no-underline">S</abbr>{week} · meta {targetPct}%</span>
+        <span className="tabular-nums">{monthLabel} · <abbr title={DASHBOARD_GLOSSARY.S} className="no-underline">S</abbr>{week} · meta {targetPct}%</span>
         {versionLabels && versionLabels.length > 1 && (
           <span className="sm:col-span-2">Incluye las versiones {versionLabels.join(" y ")} del programa</span>
         )}
@@ -171,7 +181,7 @@ export function PdtpComplianceCard(props: PdtpComplianceCardProps) {
     {closingYear ? (
       <Link
         href={`/prevencion/pdtp?anio=${closingYear}`}
-        className="block rounded-[var(--radius)] px-1 text-xs font-medium text-[var(--color-warning-ink)] hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]"
+        className="block px-5 pb-4 text-xs font-medium text-[var(--color-warning-ink)] hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]"
       >
         PDTP {closingYear} · cierre pendiente
       </Link>

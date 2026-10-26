@@ -1,95 +1,48 @@
 import { describe, expect, it } from "vitest"
-import type { OperationalQueueResult } from "@/lib/services/operational-work-queue"
 import type { Permission } from "@/modules/permissions"
 import { resolveQuickActions } from "./dashboard-quick-actions"
-import type { DashboardScope } from "./dashboard-scope"
-
-const scope: DashboardScope = { worksiteId: "all", worksiteName: null, period: "mes", view: "resumen" }
-
-function summary(over: Partial<OperationalQueueResult["summary"]> = {}, moduleCounts: OperationalQueueResult["summary"]["moduleCounts"] = {}) {
-  return { all: 0, critical: 0, overdue: 0, today: 0, blocked: 0, unassigned: 0, mine: 0, ...over, moduleCounts }
-}
 
 const grant = (...permissions: Permission[]) => (permission: Permission) => permissions.includes(permission)
 
-describe("resolveQuickActions — la primaria se calcula", () => {
-  it("con 215 vencidas y 1 aprobación, la primaria son las vencidas, no las aprobaciones", () => {
-    const { primary } = resolveQuickActions({
-      can: grant("operations:view_work", "approvals:approve"),
-      scope,
-      summary: summary({ overdue: 215, critical: 4 }, { aprobaciones: 1 }),
-    })
+describe("resolveQuickActions — Más acciones", () => {
+  it("ofrece las altas que el permiso autoriza, solicitud primero", () => {
+    const actions = resolveQuickActions({ can: grant("requests:create", "purchasing:create_order") })
 
-    expect(primary).toEqual({ key: "overdue", label: "Ver 215 vencidas", href: "/pendientes?quick=overdue" })
+    expect(actions.map((action) => action.key)).toEqual(["new-request", "new-oc"])
+    expect(actions.map((action) => action.label)).toEqual(["Nueva solicitud", "Nueva OC"])
+    expect(actions.map((action) => action.href)).toEqual(["/solicitudes/nueva", "/compras/nueva"])
   })
 
-  it("conserva la faena del alcance en el destino", () => {
-    const { primary } = resolveQuickActions({
-      can: grant("operations:view_work"),
-      scope: { ...scope, worksiteId: "ws-sur" },
-      summary: summary({ overdue: 3 }),
-    })
-
-    expect(primary?.href).toBe("/pendientes?quick=overdue&worksiteId=ws-sur")
+  it("no ofrece lo que no puede crear", () => {
+    expect(resolveQuickActions({ can: grant("requests:create") }).map((action) => action.key)).toEqual(["new-request"])
+    expect(resolveQuickActions({ can: grant("purchasing:create_order") }).map((action) => action.key)).toEqual(["new-oc"])
   })
 
-  it("elige el grupo accionable más grande que el usuario puede atender", () => {
-    const { primary } = resolveQuickActions({
-      can: grant("operations:view_work", "approvals:approve"),
-      scope,
-      summary: summary({ overdue: 2, critical: 1 }, { aprobaciones: 9 }),
-    })
-
-    expect(primary).toEqual({ key: "approvals", label: "Revisar 9 aprobaciones", href: "/aprobaciones" })
+  it("sin ningún permiso de alta no hay acciones", () => {
+    expect(resolveQuickActions({ can: grant() })).toEqual([])
   })
 
-  it("no ofrece lo que no puede atender: sin permiso de aprobar, no hay aprobaciones", () => {
-    const { primary } = resolveQuickActions({
-      can: grant("operations:view_work"),
-      scope,
-      summary: summary({ overdue: 2 }, { aprobaciones: 50 }),
-    })
+  // La primaria calculada ("Ver 215 vencidas") se retiró: esa cifra ya es la
+  // alerta de "Requiere atención" (A5). Ningún permiso de lectura de la cola
+  // produce una acción en la cabecera.
+  it("los permisos de lectura y de cola no generan acciones: sólo se ofrecen altas", () => {
+    const everything = grant(
+      "operations:view_work", "approvals:approve", "analytics:view", "prevention:pdtp:view",
+      "receiving:view", "deliveries:view", "warehouse:view_stock", "reports:view",
+    )
 
-    expect(primary?.key).toBe("overdue")
+    expect(resolveQuickActions({ can: everything })).toEqual([])
   })
 
-  it("singular con una sola", () => {
-    const { primary } = resolveQuickActions({ can: grant("operations:view_work"), scope, summary: summary({ overdue: 1 }) })
-
-    expect(primary?.label).toBe("Ver 1 vencida")
-  })
-})
-
-describe("resolveQuickActions — fallback y Más acciones", () => {
-  it("sin pendientes cae a la lógica histórica: aprobaciones primero", () => {
-    const { primary, more } = resolveQuickActions({
-      can: grant("approvals:approve", "requests:create", "purchasing:create_order"),
-      scope,
-      summary: summary(),
-    })
-
-    expect(primary).toEqual({ key: "approvals", label: "Revisar aprobaciones", href: "/aprobaciones" })
-    expect(more.map((action) => action.key)).toEqual(["new-request", "new-oc"])
-  })
-
-  it("sin aprobar, la primaria es la alta de solicitud", () => {
-    const { primary } = resolveQuickActions({ can: grant("requests:create"), scope, summary: summary() })
-
-    expect(primary?.key).toBe("new-request")
-  })
-
-  it("sin ningún permiso no hay acción", () => {
-    expect(resolveQuickActions({ can: grant(), scope, summary: summary() }).primary).toBeNull()
-  })
-
-  it("Más acciones sólo trae altas reales, no navegación del sidebar", () => {
+  it("no devuelve una primaria ni mezcla navegación del sidebar con las altas", () => {
     const everything = grant(
       "operations:view_work", "approvals:approve", "requests:create", "purchasing:create_order",
       "analytics:view", "prevention:pdtp:view", "receiving:view", "deliveries:view", "warehouse:view_stock", "reports:view",
     )
-    const { more } = resolveQuickActions({ can: everything, scope, summary: summary({ overdue: 5 }) })
+    const actions = resolveQuickActions({ can: everything })
 
-    expect(more.map((action) => action.key)).toEqual(["new-request", "new-oc"])
-    expect(more.map((action) => action.label)).toEqual(["Nueva solicitud", "Nueva OC"])
+    expect(Array.isArray(actions)).toBe(true)
+    expect(actions.map((action) => action.key)).toEqual(["new-request", "new-oc"])
+    expect(actions.some((action) => /vencida|crítica|aprobaci/i.test(action.label))).toBe(false)
   })
 })

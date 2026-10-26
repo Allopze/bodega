@@ -197,6 +197,22 @@ export function formatCompactQty(value: number): string {
  */
 export const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"] as const
 
+/** Nombres completos de mes, en minúscula ("solicitudes en julio"). Mismo índice que `MONTH_LABELS`. */
+export const MONTH_NAMES = [
+  "enero", "febrero", "marzo", "abril", "mayo", "junio",
+  "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+] as const
+
+/**
+ * Porcentaje en es-CL y sin espacio ("12,3%"), el formato de la píldora de
+ * `KpiCard`. El tablero lo escribía de tres maneras ("12 %", "12%", redondeado
+ * o con un decimal) según quién dibujara la cifra.
+ */
+export function formatPercent(value: number, maximumFractionDigits = 1): string {
+  if (!Number.isFinite(value)) return VALUE_MISSING
+  return `${qtyFormat(maximumFractionDigits).format(value)}%`
+}
+
 /** Etiquetas de trimestre, indexadas por `quarterNumber - 1` (1–4). */
 export const QUARTER_LABELS = ["Trim. 1", "Trim. 2", "Trim. 3", "Trim. 4"] as const
 

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { analyticsFilters } from "./shared"
+import { analyticsFilters, moduleWorkloadHref } from "./shared"
 import type { DashboardScope } from "../dashboard-scope"
 
 const scope = (period: DashboardScope["period"]): DashboardScope => ({
@@ -23,5 +23,19 @@ describe("analyticsFilters", () => {
   it("agrega la faena sólo cuando el alcance la fija", () => {
     expect(analyticsFilters(scope("mes"))).not.toHaveProperty("worksiteId")
     expect(analyticsFilters({ ...scope("mes"), worksiteId: "ws-1", worksiteName: "Norte" })).toHaveProperty("worksiteId", "ws-1")
+  })
+})
+
+describe("moduleWorkloadHref", () => {
+  // La página entrega el rótulo ("Recepciones"), no la clave; el enlace de cada
+  // fila del reparto por módulo tiene que volver a la clave que entiende la cola.
+  it("lleva la fila a la cola de pendientes filtrada por su módulo", () => {
+    expect(moduleWorkloadHref({ module: "Recepciones", count: 3 })).toBe("/pendientes?module=recepciones")
+    expect(moduleWorkloadHref({ module: "PDTP", count: 1 })).toBe("/pendientes?module=pdtp")
+    expect(moduleWorkloadHref({ module: "Comité Paritario", count: 2 })).toBe("/pendientes?module=cphs")
+  })
+
+  it("un rótulo desconocido no enlaza: la cola ignoraría el filtro y mostraría todo", () => {
+    expect(moduleWorkloadHref({ module: "Módulo nuevo", count: 1 })).toBeUndefined()
   })
 })

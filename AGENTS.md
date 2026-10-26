@@ -575,7 +575,53 @@ export default function MyNewPage() {
 
 - **Sidebar 1:1:** Fondo blanco puro (`bg-white`), encabezado de sección micro-uppercase (`PLATAFORMA`), ítems con pills redondeados suaves (`rounded-xl bg-slate-100 font-semibold text-slate-900`) y perfil de usuario fijado al fondo del panel.
 - **TopBar integrado en Desktop:** En escritorio el `TopBar` se mantiene transparente (`bg-transparent border-b-0`), proyectando el título de página y la barra de controles directamente sobre el lienzo sin franjas ni bordes rígidos.
-- **Mainzone / Tarjetas flotantes:** Las vistas (tablas, gráficos, listas) flotan sobre el lienzo tenue (`bg-[#f8fafc]`) como contenedores blancos redondeados (`bg-white border border-slate-200/70 rounded-2xl p-6 shadow-xs`).
+- **Mainzone / Tarjetas flotantes:** Las vistas (tablas, gráficos, listas) flotan sobre el lienzo tenue (`bg-[#f8fafc]`) como contenedores blancos redondeados (`bg-white border border-slate-200/70 rounded-2xl p-6 shadow-xs`). La única pantalla exceptuada es el tablero (`/dashboard`): ver la excepción declarada a continuación. Todo lo demás conserva las tarjetas flotantes.
+
+### Excepción declarada: el tablero (`/dashboard`), superficie y cifras
+
+El tablero se aparta de las tarjetas flotantes **sólo en `/dashboard`** (todas sus
+vistas) y por una razón observada: al compararlo con tableros de referencia, una
+tarjeta flotante por bloque —cada KPI, cada gráfico, cada lista con su propio
+borde, radio y sombra— producía ruido visual (decenas de rectángulos del mismo
+peso compitiendo) y el ojo no distinguía qué era un grupo y qué un bloque suelto. Un
+panel por grupo se lee como un solo sistema.
+
+- **Un panel por grupo, divisiones con línea fina.** `DashboardPanel`
+  (`components/ui/dashboard-panel.tsx`) es el único contenedor con borde,
+  `rounded-2xl` y fondo; sus celdas (`PanelBlock`, `ChartSlot`, y los tiles de
+  `KpiCard surface="flat"`) se separan por 1px con el borde superior e izquierdo
+  de cada celda. **Nada de sombra por bloque** ni de una tarjeta dentro de una
+  celda. Un `ChartSlot` sin datos se oculta (`empty:hidden`) y el panel entero
+  desaparece si ninguna celda tiene contenido: no se dejan huecos ni marcos
+  vacíos.
+- **Los paneles son `div`, nunca regiones.** `e2e/densidad-kpi-filtros.spec.ts`
+  cuenta los tiles por región (A1); un panel con `role="region"` o nombre
+  accesible juntaría todos los tiles de la vista y rompería ese conteo. La región
+  sigue siendo la sección del dominio (`DomainSection`).
+- **Cifras en sans, no en mono.** Los números de KPI del tablero van en la fuente
+  del cuerpo (Myriad), `font-semibold` y `tabular-nums`: `KpiCard numerals="sans"`,
+  que las secciones pasan con `{...DASHBOARD_KPI}` (exportado de
+  `app/(app)/dashboard/dashboard-domain-shell.tsx`; `KpiCard` es server component y
+  no puede leer contexto, por eso es explícito). El resto de la plataforma sigue con
+  `font-mono` en sus cifras (ver DESIGN.md); no lo cambies fuera del tablero.
+- **Una variación se muestra con `Delta`** (`components/ui/delta.tsx`) y **un
+  ranking con `RankedList`** (`components/ui/ranked-list.tsx`, un solo tono):
+  nada de píldoras o textos sueltos ("-5 vs. mes anterior") ni de barras
+  multicolor donde el color no codifica nada.
+- **Cada vista parte por lo que responde su pregunta.** El Resumen abre con
+  «Hoy» (lo que requiere atención) y las vistas operativas (Prevención,
+  Adquisiciones…) con sus tiles, porque lo accionable es una cifra. Finanzas
+  abre con los **gráficos** (`DomainSection chartsFirst`): su pregunta es cómo
+  evolucionan la facturación y la deuda, y los grupos "Ingresos (facturación de
+  venta)" y "Egresos (compra y consumo)" van debajo. Antigüedad de la deuda
+  conserva el orden cronológico de los tramos (No vencida → 1–30 → 31–60 → 61–90
+  → Más de 90 días), no el orden por monto, y su titular ya dice el saldo
+  pendiente y lo vencido: esas cifras no se repiten en un tile (A5).
+
+Lo que **no** se relaja: los tokens de color y texto (regla 8), la accesibilidad de
+los gráficos (nombre accesible, `prefers-reduced-motion`) y el tope de tiles por
+vista (A1). `e2e/dashboard-rediseno.spec.ts` verifica el orden de Finanzas, los
+numerales sans y que ninguna celda de gráfico quede vacía.
 
 ## 8. Color de texto: siempre tokens `-ink`, nunca los base
 
@@ -604,7 +650,10 @@ Examples:
 - inconsistent buttons → inspect `Button`;
 - inconsistent fields → inspect `Field`;
 - inconsistent empty states → inspect `EmptyState`;
-- inconsistent export behavior → inspect `ExportButton` / `ExportDialog`.
+- inconsistent export behavior → inspect `ExportButton` / `ExportDialog`;
+- dashboard (`/dashboard`) surface or spacing → inspect `DashboardPanel` / `PanelBlock` / `ChartSlot`;
+- a variation (↑/↓ vs. previous period) rendered differently → inspect `Delta`;
+- a ranking drawn with one color per bar → inspect `RankedList`.
 
 Do not spread local class overrides across pages to compensate for a shared-component problem.
 <!-- END:shared-ui-fix-rule -->
@@ -723,6 +772,9 @@ Lo que **no** se relaja:
   nació Finanzas, y el cumplimiento PDTP salió de la fila de tiles al ganar su
   medidor radial.
 - El resto de las pantallas conserva el tope de 4 sin excepciones.
+- La superficie del tablero (un panel por grupo en vez de una tarjeta por
+  bloque) y sus cifras en sans tienen su propia excepción en la regla 7; no
+  cambian ningún tope de esta sección.
 
 ## A2 — Muro de filtros: 4–6 primarios + "Más filtros (N)"
 

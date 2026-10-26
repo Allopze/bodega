@@ -22,3 +22,18 @@ export const ORDERS_SPEND_METRIC = {
 
 /** Gasto en OC: una variación de dinero que sube es malo (A6/KpiCard `trendPolarity`). */
 export const ORDERS_SPEND_TREND_POLARITY = "up-bad" as const
+
+/**
+ * Variación porcentual del gasto contra el período anterior, a un decimal.
+ * `null` si no hay con qué comparar —sin período anterior, o con uno en cero,
+ * donde un porcentaje no está definido—: una tendencia que no existe no se
+ * dibuja.
+ *
+ * Resumen y Finanzas muestran la misma cifra y la calculaban con funciones
+ * distintas (un decimal y `null` con base 0, contra entero y `0` para 0→0), así
+ * que la misma variación podía leerse distinto en dos vistas.
+ */
+export function spendVariationPct(current: number, previous: number | null | undefined): number | null {
+  if (previous === null || previous === undefined || previous === 0) return null
+  return Math.round(((current - previous) / previous) * 1000) / 10
+}

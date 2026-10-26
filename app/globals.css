@@ -502,6 +502,14 @@ body {
   }
 }
 
+/* ─── Tablero: entrada de rankings, medidor y antigüedad ──
+   Los rellenos crecen desde su origen y las marcas del medidor aparecen en
+   secuencia. Se aplican con `motion-safe:` (o dentro de este no-preference),
+   así que con "reducir movimiento" el estado final se pinta de una. */
+@keyframes bar-grow-x { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes bar-grow-y { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@keyframes tick-in { from { opacity: 0; } to { opacity: 1; } }
+
 /* ─── Reduced motion (kill switch global) ──
    WCAG 2.3.3. El switch mata movimiento, no señal: las animaciones de los
    `animate-in`/`animate-out` y las transiciones de presión se completan en

@@ -1,13 +1,13 @@
 import Link from "next/link"
 import { optionalBlock } from "../optional-block"
 import type { Session } from "next-auth"
-import { Plus } from "@phosphor-icons/react/dist/ssr"
+import { ArrowRight, Plus } from "@phosphor-icons/react/dist/ssr"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { can } from "@/lib/auth/can"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { formatCLP, formatDate, pluralize } from "@/lib/utils"
-import { ORDERS_ISSUED_METRIC, ORDERS_SPEND_METRIC } from "../dashboard-metric-definitions"
+import { ORDERS_ISSUED_METRIC, ORDERS_SPEND_METRIC, ORDERS_SPEND_TREND_POLARITY, spendVariationPct } from "../dashboard-metric-definitions"
 import { DASHBOARD_GLOSSARY } from "../dashboard-glossary"
 import { getDashboardData } from "@/lib/services/dashboard"
 import { listOperationalActivity } from "@/lib/services/operational-activity"
@@ -32,7 +32,10 @@ import { getOperationalTrendHistory } from "@/lib/services/operational-trend-his
 import { getPdtpOperationalYears } from "@/lib/services/pdtp/operational-years"
 import { loadPdtpComplianceSummary } from "../pdtp-compliance-card"
 import { RecentActivity } from "../recent-activity"
-import { OperationalTrendChart, RadialGaugeChart } from "../dashboard-domain-charts"
+import { ChartFrame } from "../charts/chart-frame"
+import { RadialTickGauge } from "../charts/radial-tick-gauge"
+import { groupConsecutiveActivity } from "../activity-groups"
+import { OperationalTrendChart } from "../dashboard-domain-charts"
 import {
   DashboardResumenBody,
   type DashboardAlert,
@@ -41,6 +44,7 @@ import {
 } from "../dashboard-control-center"
 import {
   periodComparisonLabel,
+  periodComparisonShortLabel,
   // DASH-002: `periodWindowHref` vivía acá y perdía la faena del alcance; se
   // mudó junto a `dashboardScopeHref`, que es donde se conserva el alcance.
   periodWindowHref,
@@ -64,6 +68,11 @@ export interface ResumenViewProps {
   /** Las filas más urgentes de la cola, ya elegidas por la página (`pickTodayItems`). */
   todayItems: TodayItem[]
 }
+
+/** Movimientos que se piden a la bitácora para poder agrupar los repetidos. */
+const ACTIVITY_FETCH_LIMIT = 24
+/** Grupos que caben en el panel de "Actividad reciente". */
+const ACTIVITY_GROUP_LIMIT = 6
 
 /**
  * Vista de entrada: lo transversal, no un dominio. **"Hoy" arriba, panorama
@@ -121,7 +130,9 @@ export async function ResumenView({
     pdtpSummary, activeProgram, allPrograms, capaCounts, incidentCounts, trend,
   ] = await Promise.all([
     getDashboardData(session, scopedWorksite),
-    listOperationalActivity(session, 6),
+    // 24 y no 6: el panel muestra hasta 6 **grupos**, y una carga masiva de un
+    // mismo movimiento se come los seis renglones si se pide sólo esa cantidad.
+    listOperationalActivity(session, ACTIVITY_FETCH_LIMIT),
     canViewEpp
       ? optionalBlock("brechas de EPP", listEppCoverageGaps({ userId: session.user.id, scope: worksiteScope, permissions: session.user.permissions })
           .then((gaps) => gaps.filter((gap) => gap.enforcement === "blocking").length), 0)
@@ -157,11 +168,16 @@ export async function ResumenView({
   const hasNextYearProgram = allPrograms.some((p) => p.year === pdtpYear + 1)
   const shouldSuggestNextYear = activeProgram && !hasNextYearProgram && canManagePdtp
 
+  const activeOrdersComparison = backlogComparisons.find((entry) => entry.metric === "backlog_orders")
   const metrics = buildOperationalMetrics({
     scope,
     ordersPendingReceipt: data.metrics.orders_pending_receipt,
-    activeOrders: backlogComparisons.find((entry) => entry.metric === "backlog_orders")?.current ?? 0,
+    activeOrders: activeOrdersComparison?.current ?? 0,
+    activeOrdersPrevious: activeOrdersComparison?.previous ?? null,
+    activeOrdersSnapshotDate: activeOrdersComparison?.snapshotDate ?? null,
     periodSpend: periodMetrics.spend.current,
+    periodSpendPrevious: periodMetrics.spend.previous,
+    periodOrders: periodMetrics.ordersIssued.current,
     pdtpPercent: pdtpSummary?.percent ?? null,
     pdtpTarget: pdtpSummary?.target ?? 0.9,
     openIncidents: incidentCounts.totalOpen,
@@ -169,6 +185,7 @@ export async function ResumenView({
     overdueCapa: capaCounts.overdue,
     canReceive,
     canViewPurchasing,
+    canCreateOrder: can(session, "purchasing:create_order"),
     canViewPdtp,
     canViewIncidents,
     canViewCapa,
@@ -193,6 +210,20 @@ export async function ResumenView({
     canViewCapa,
   })
 
+  // La tendencia sólo entra a la fila cuando va a dibujar algo: el gráfico se
+  // oculta solo con las tres series en cero, y el ancho del medidor depende de si
+  // hay tendencia (8+4 o 12). Misma condición que `OperationalTrendChart`.
+  const trendData = trend.map((point) => ({
+    month: point.month,
+    requests: canSeeRequestVolume ? point.requests : 0,
+    orders: canViewPurchasing ? point.orders : 0,
+    receipts: canReceive ? point.receipts : 0,
+  }))
+  const hasTrend = trendData.some((point) => point.requests + point.orders + point.receipts > 0)
+
+  const pdtpTitle = "Cumplimiento PDTP"
+  const pdtpDescription = `Avance acreditado · año ${pdtpYear}`
+
   return (
     <DashboardResumenBody
       scope={scope}
@@ -204,63 +235,64 @@ export async function ResumenView({
       queueVisible={canViewWork}
       periodSummary={buildOperationalPeriodSummary({ periodMetrics, scope, canViewRequests, canViewPurchasing, canReceive, canDeliver })}
       backlogSummary={buildOperationalBacklogSummary({ backlogComparisons, snapshotHistory, scope, canViewRequests, canViewPurchasing, canViewCapa, canViewPdtp })}
-      mainSlot={
-        <>
-          {/* Dos lecturas transversales, no un dominio: el cumplimiento anual
-              contra su meta y el pulso de la operación. El detalle del PDTP
-              —por faena, por actividad— vive en la pestaña de Prevención; A5
-              impide que la misma cifra tenga dos representaciones acá. */}
-          {/* `grid-cols-1` = `minmax(0, 1fr)`. Sin columnas declaradas la pista
-              implícita es `auto` y crece hasta el ancho fijo en px que recharts
-              midió para el gráfico: a 390 px las dos tarjetas se salían 9 px
-              del pozo del shell. */}
-          <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-            {/* `percent === null` es "sin acreditación todavía", no 0%: dibujar
-                un arco vacío afirmaría un incumplimiento que nadie midió. */}
-            {canViewPdtp && pdtpSummary?.percent != null ? (
-              // El medidor no tiene tooltip ni ejes interactivos, así que
-              // envolverlo en el enlace no le roba ningún gesto: sigue siendo un
-              // indicador accionable, como exige A1.
-              <Link href="/prevencion/pdtp" className="block rounded-2xl focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]">
-                <RadialGaugeChart
-                  title="Cumplimiento PDTP"
-                  description={`Avance acreditado · año ${pdtpYear}`}
-                  percent={Math.round(pdtpSummary.percent * 100)}
-                  targetPercent={Math.round(pdtpSummary.target * 100)}
-                />
-              </Link>
-            ) : canViewPdtp ? (
-              <EmptyState
-                compact
-                align="start"
-                title={pdtpSummary
-                  ? `El programa ${pdtpYear} no tiene avance acreditado`
-                  : `No hay un programa activo para ${pdtpYear}`}
-                description={pdtpSummary
-                  ? "El cumplimiento aparece cuando se acredite la primera actividad."
-                  : "Crea o activa un programa para visualizar el avance preventivo desde acá."}
-                action={canManagePdtp && !pdtpSummary ? (
-                  <Button asChild size="sm">
-                    <Link href="/prevencion/pdtp/nuevo">
-                      <Plus size={13} />
-                      {shouldSuggestNextYear ? `Preparar ${pdtpYear + 1}` : "Crear programa"}
-                    </Link>
-                  </Button>
-                ) : undefined}
+      /* Dos lecturas transversales, no un dominio: el pulso de la operación y el
+         cumplimiento anual contra su meta. El detalle del PDTP —por faena, por
+         actividad— vive en la pestaña de Prevención; A5 impide que la misma cifra
+         tenga dos representaciones acá. */
+      trendSlot={hasTrend ? <OperationalTrendChart data={trendData} /> : undefined}
+      gaugeSlot={
+        /* `percent === null` es "sin acreditación todavía", no 0%: dibujar un
+           medidor en cero afirmaría un incumplimiento que nadie midió. */
+        canViewPdtp && pdtpSummary?.percent != null ? (
+          // El medidor no tiene tooltip ni ejes interactivos, así que envolverlo
+          // en el enlace no le roba ningún gesto: sigue siendo un indicador
+          // accionable, como exige A1.
+          <Link
+            href="/prevencion/pdtp"
+            className="block h-full transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-surface-2)] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-primary)]"
+          >
+            <ChartFrame
+              title={pdtpTitle}
+              description={pdtpDescription}
+              aside={
+                <span className="inline-flex items-center gap-1 text-[13px] font-semibold text-[var(--color-primary)]">
+                  Detalle <ArrowRight size={13} weight="bold" aria-hidden />
+                </span>
+              }
+            >
+              {/* El medidor trabaja en 0-100; el resumen entrega fracciones. */}
+              <RadialTickGauge
+                percent={Math.round(pdtpSummary.percent * 100)}
+                expectedPercent={pdtpSummary.expectedPercent === null ? null : Math.round(pdtpSummary.expectedPercent * 100)}
+                targetPercent={Math.round(pdtpSummary.target * 100)}
               />
-            ) : null}
-            <OperationalTrendChart
-              data={trend.map((point) => ({
-                month: point.month,
-                requests: canSeeRequestVolume ? point.requests : 0,
-                orders: canViewPurchasing ? point.orders : 0,
-                receipts: canReceive ? point.receipts : 0,
-              }))}
+            </ChartFrame>
+          </Link>
+        ) : canViewPdtp ? (
+          <ChartFrame title={pdtpTitle} description={pdtpDescription}>
+            <EmptyState
+              compact
+              align="start"
+              className="px-0 py-2"
+              title={pdtpSummary
+                ? `El programa ${pdtpYear} no tiene avance acreditado`
+                : `No hay un programa activo para ${pdtpYear}`}
+              description={pdtpSummary
+                ? "El cumplimiento aparece cuando se acredite la primera actividad."
+                : "Crea o activa un programa para visualizar el avance preventivo desde acá."}
+              action={canManagePdtp && !pdtpSummary ? (
+                <Button asChild size="sm">
+                  <Link href="/prevencion/pdtp/nuevo">
+                    <Plus size={13} />
+                    {shouldSuggestNextYear ? `Preparar ${pdtpYear + 1}` : "Crear programa"}
+                  </Link>
+                </Button>
+              ) : undefined}
             />
-          </div>
-          <RecentActivity entries={activity} />
-        </>
+          </ChartFrame>
+        ) : undefined
       }
+      activitySlot={<RecentActivity groups={groupConsecutiveActivity(activity).slice(0, ACTIVITY_GROUP_LIMIT)} />}
     />
   )
 }
@@ -277,6 +309,23 @@ function periodComparison(metric: OperationalPeriodMetric, period: OperationalPe
   return `${difference > 0 ? "+" : ""}${Math.round(difference)} ${label}`
 }
 
+/**
+ * Variación de un flujo del período contra el período anterior, para `<Delta>`.
+ *
+ * Solicitudes, OC emitidas, recepciones y entregas son **volúmenes**: que suban
+ * no es bueno ni malo por sí solo (`neutral`), así que no se pintan de verde ni
+ * de rojo. Sin período anterior comparable no hay variación (`null`): el texto
+ * de respaldo ("Sin período comparable") la reemplaza.
+ */
+function periodDelta(metric: OperationalPeriodMetric, label: string): NonNullable<OperationalPeriodSummaryEntry["delta"]> {
+  return {
+    value: metric.previous === null ? null : metric.current - metric.previous,
+    polarity: "neutral",
+    format: "number",
+    label,
+  }
+}
+
 export function buildOperationalPeriodSummary(input: {
   periodMetrics: OperationalPeriodMetrics
   scope: DashboardScope
@@ -284,17 +333,26 @@ export function buildOperationalPeriodSummary(input: {
   canViewPurchasing: boolean
   canReceive: boolean
   canDeliver: boolean
+  /** Sólo para fijar el rótulo "vs. sep" en las pruebas. */
+  now?: Date
 }): OperationalPeriodSummaryEntry[] {
   const compare = (metric: OperationalPeriodMetric) => periodComparison(metric, input.scope.period)
+  const comparedTo = periodComparisonShortLabel(input.scope.period, input.now)
+  const delta = (metric: OperationalPeriodMetric) => periodDelta(metric, comparedTo)
   const entries: Array<OperationalPeriodSummaryEntry | null> = [
-    input.canViewRequests ? { key: "requests", label: "Solicitudes creadas", value: input.periodMetrics.requests.current, comparison: compare(input.periodMetrics.requests), href: periodWindowHref(input.scope, "/solicitudes") } : null,
-    input.canViewPurchasing ? { key: "orders", label: ORDERS_ISSUED_METRIC.label, hint: ORDERS_ISSUED_METRIC.glossary, value: input.periodMetrics.ordersIssued.current, comparison: compare(input.periodMetrics.ordersIssued), href: periodWindowHref(input.scope, "/compras") } : null,
-    input.canReceive ? { key: "receipts", label: "Recepciones", value: input.periodMetrics.receipts.current, comparison: compare(input.periodMetrics.receipts), href: "/recepcion" } : null,
-    input.canDeliver ? { key: "deliveries", label: "Entregas", value: input.periodMetrics.deliveries.current, comparison: compare(input.periodMetrics.deliveries), href: "/entregas" } : null,
+    input.canViewRequests ? { key: "requests", label: "Solicitudes creadas", value: input.periodMetrics.requests.current, comparison: compare(input.periodMetrics.requests), delta: delta(input.periodMetrics.requests), href: periodWindowHref(input.scope, "/solicitudes") } : null,
+    input.canViewPurchasing ? { key: "orders", label: ORDERS_ISSUED_METRIC.label, hint: ORDERS_ISSUED_METRIC.glossary, value: input.periodMetrics.ordersIssued.current, comparison: compare(input.periodMetrics.ordersIssued), delta: delta(input.periodMetrics.ordersIssued), href: periodWindowHref(input.scope, "/compras") } : null,
+    input.canReceive ? { key: "receipts", label: "Recepciones", value: input.periodMetrics.receipts.current, comparison: compare(input.periodMetrics.receipts), delta: delta(input.periodMetrics.receipts), href: "/recepcion" } : null,
+    input.canDeliver ? { key: "deliveries", label: "Entregas", value: input.periodMetrics.deliveries.current, comparison: compare(input.periodMetrics.deliveries), delta: delta(input.periodMetrics.deliveries), href: "/entregas" } : null,
     // El gasto en OC **no** va acá: ya es un tile del panorama (A5). Estaba en
     // el tile del hero y otra vez en esta lista, la misma cifra dos veces.
   ]
   return entries.filter((entry): entry is OperationalPeriodSummaryEntry => entry !== null)
+}
+
+/** "vs. 07-09": el corte mensual contra el que se compara el backlog, sin el año. */
+function snapshotComparisonLabel(snapshotDate: string) {
+  return `vs. ${formatDate(snapshotDate).slice(0, 5)}`
 }
 
 function backlogComparison(comparison: OperationalBacklogComparison) {
@@ -308,7 +366,7 @@ function backlogComparison(comparison: OperationalBacklogComparison) {
   return `${difference > 0 ? "+" : ""}${difference} vs. ${formatDate(comparison.snapshotDate)}`
 }
 
-function buildOperationalBacklogSummary(input: {
+export function buildOperationalBacklogSummary(input: {
   backlogComparisons: OperationalBacklogComparison[]
   snapshotHistory: Record<OperationalSnapshotMetric, number[]>
   scope: DashboardScope
@@ -321,7 +379,18 @@ function buildOperationalBacklogSummary(input: {
   const entry = (metric: OperationalBacklogComparison["metric"], label: string, href: string, hint?: string): OperationalPeriodSummaryEntry | null => {
     const comparison = byMetric.get(metric)
     return comparison
-      ? { key: metric, label, value: comparison.current, comparison: backlogComparison(comparison), href, hint, sparkline: input.snapshotHistory[metric] }
+      ? {
+          key: metric, label, value: comparison.current, comparison: backlogComparison(comparison), href, hint,
+          sparkline: input.snapshotHistory[metric],
+          // Backlog que sube es atraso que se acumula: `up-bad`. Sin corte
+          // mensual previo no hay variación y se queda el texto de respaldo.
+          delta: {
+            value: comparison.previous === null || !comparison.snapshotDate ? null : comparison.current - comparison.previous,
+            polarity: "up-bad",
+            format: "number",
+            label: comparison.snapshotDate ? snapshotComparisonLabel(comparison.snapshotDate) : undefined,
+          },
+        }
       : null
   }
   const href = (module: string) => pendientesHref(input.scope, { module })
@@ -359,11 +428,26 @@ function buildOperationalBacklogSummary(input: {
  * que tomar: la copia correcta es confirmarlo, no inventar un CTA. La regla
  * apunta a tiles vacíos por falta de configuración, no a contadores en cero.
  */
+/** "este mes" / "este trimestre" / "este año": completa "Sin OC emitidas …". */
+const PERIOD_PHRASE: Record<OperationalPeriodSpan, string> = {
+  mes: "este mes",
+  trimestre: "este trimestre",
+  anio: "este año",
+}
+
 export function buildOperationalMetrics(input: {
   scope: DashboardScope
   ordersPendingReceipt: number
   activeOrders: number
+  /** Backlog de OC del último corte mensual; `null` sin corte comparable. */
+  activeOrdersPrevious?: number | null
+  /** Fecha del corte contra el que se compara `activeOrders` ("YYYY-MM-DD"). */
+  activeOrdersSnapshotDate?: string | null
   periodSpend: number
+  /** Gasto del período anterior; `null` sin período comparable. */
+  periodSpendPrevious?: number | null
+  /** OC emitidas en el período. Sin él, "sin OC" se deduce de un gasto en cero. */
+  periodOrders?: number
   pdtpPercent: number | null
   pdtpTarget: number
   openIncidents: number
@@ -371,21 +455,49 @@ export function buildOperationalMetrics(input: {
   overdueCapa: number
   canReceive: boolean
   canViewPurchasing: boolean
+  /** `purchasing:create_order`: sin él el tile vacío no ofrece "Emitir una OC". */
+  canCreateOrder?: boolean
   canViewPdtp: boolean
   canViewIncidents: boolean
   canViewCapa: boolean
+  /** Sólo para fijar el rótulo "vs. sep" en las pruebas. */
+  now?: Date
 }): DashboardMetric[] {
   const periodLabel = periodScopeLabel(input.scope.period).toLocaleLowerCase("es-CL")
   const href = (params?: Record<string, string>) => pendientesHref(input.scope, params)
 
+  // Sin OC emitidas el tile no pinta "$0": dice qué pasa y, con permiso para
+  // crearlas, cómo dejar de estar vacío (A1).
+  const noOrders = (input.periodOrders ?? input.periodSpend) === 0
+  const canStartOrder = noOrders && input.canCreateOrder === true
+
   const money: Array<DashboardMetric | null> = [
     input.canViewPurchasing ? { key: "spend", label: ORDERS_SPEND_METRIC.label, glossary: ORDERS_SPEND_METRIC.glossary, value: formatCLP(input.periodSpend),
-      description: `${ORDERS_ISSUED_METRIC.label} · ${periodLabel}`, icon: "investment", href: periodWindowHref(input.scope, "/compras"),
+      description: `${ORDERS_ISSUED_METRIC.label} · ${periodLabel}`, icon: "investment",
+      href: canStartOrder ? "/compras/nueva" : periodWindowHref(input.scope, "/compras"),
+      // Una variación de dinero que sube es MALA noticia (`up-bad`); contra el
+      // período anterior, en porcentaje. Sin período anterior comparable, nada.
+      // Sin OC el tile dice qué pasa: una baja "buena" del 100 % junto a «Sin OC
+      // emitidas» se leía como un logro.
+      trend: noOrders ? null : spendVariationPct(input.periodSpend, input.periodSpendPrevious),
+      trendPolarity: ORDERS_SPEND_TREND_POLARITY,
+      trendFormat: "percent",
+      trendLabel: periodComparisonShortLabel(input.scope.period, input.now),
+      empty: noOrders
+        ? { message: `Sin OC emitidas ${PERIOD_PHRASE[input.scope.period]}`, actionLabel: canStartOrder ? "Emitir una OC" : undefined }
+        : undefined,
     } : null,
     input.canViewPurchasing ? {
       key: "orders", label: "OC activas", value: input.activeOrders,
       description: input.activeOrders > 0 ? "Órdenes en curso sin cerrar" : "Sin órdenes en curso",
       icon: "investment", href: href({ module: "compras" }),
+      // Backlog: contra el último corte mensual, en unidades, y subir es atraso.
+      trend: input.activeOrdersPrevious === null || input.activeOrdersPrevious === undefined || !input.activeOrdersSnapshotDate
+        ? null
+        : input.activeOrders - input.activeOrdersPrevious,
+      trendPolarity: "up-bad",
+      trendFormat: "number",
+      trendLabel: input.activeOrdersSnapshotDate ? snapshotComparisonLabel(input.activeOrdersSnapshotDate) : undefined,
     } : null,
   ]
 

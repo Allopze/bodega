@@ -152,4 +152,32 @@ describe("PdtpComplianceCard", () => {
     )
     expect(screen.queryByText(/cierre pendiente/)).toBeNull()
   })
+
+  // Rediseño del tablero: la tarjeta es un bloque de panel, no una tarjeta flotante.
+  it("es plana: no dibuja su propio marco ni sombra y usa cifras sans", () => {
+    const { container } = render(
+      <PdtpComplianceCard
+        year={2026}
+        worksiteCount={3}
+        pendingCount={0}
+        target={0.9}
+        percent={0.5}
+        integralPercent={null}
+        planned={120}
+        executed={60}
+        expectedPercent={0.58}
+        variancePercent={-8}
+        lastExecutionUpdatedAt={null}
+        month={7}
+        week={2}
+      />,
+    )
+
+    const link = container.querySelector("a")!
+    expect(link.className).not.toMatch(/rounded|shadow|border/)
+    expect(container.querySelector(".font-mono")).toBeNull()
+    expect(screen.getByText("50%").className).toContain("font-sans")
+    // El título del bloque es un h3, como los demás bloques del panel.
+    expect(screen.getByRole("heading", { level: 3, name: "PDTP 2026" })).toBeDefined()
+  })
 })

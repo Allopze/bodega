@@ -54,6 +54,8 @@ export interface AnalyticsDashboardData {
   kpis: AnalyticsKpis; spendByMonth: SpendByMonthRow[]; spendByModule: SpendByModuleRow[]
   topSuppliers: RankingRow[]; topWorksites: WorksiteSpendRow[]; vehicleCosts: VehicleCostRow[]
   productRotation: RotationRow[]; eppDeliveries: EppDeliveryRow[]
+  /** Trabajadores distintos con entrega de EPP (`eppDeliveries` es un top 10 por trabajador × producto). */
+  eppWorkerCount?: number
   recentOrders: Array<{ id: string; code: string; worksiteName: string; supplierName: string; totalAmount: number; createdAt: string }>
   alerts: AnalyticsAlert[]; dataGaps: string[]
 }

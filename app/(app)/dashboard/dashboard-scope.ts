@@ -1,5 +1,6 @@
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { getOperationalCalendarBounds, type OperationalPeriodSpan } from "@/lib/services/operational-period-bounds"
+import { MONTH_LABELS } from "@/lib/utils"
 import {
   DEFAULT_DASHBOARD_VIEW,
   parseDashboardView,
@@ -117,6 +118,21 @@ export function intersectWorksiteScope(base: WorksiteScope, scope: DashboardScop
 /** Rótulo del comparativo del período en curso ("vs. mes anterior"). */
 export function periodComparisonLabel(period: OperationalPeriodSpan) {
   return DASHBOARD_PERIODS.find((entry) => entry.value === period)?.comparison ?? "vs. período anterior"
+}
+
+/**
+ * Rótulo corto del período anterior para las variaciones (`<Delta>`): "vs. sep",
+ * "vs. T3", "vs. 2025". El largo ("vs. mes anterior") no cabe junto a la cifra
+ * de un tile y no dice cuál mes.
+ */
+export function periodComparisonShortLabel(period: OperationalPeriodSpan, now = new Date()) {
+  const previous = new Date(getOperationalCalendarBounds(now, period).previousStart)
+  const month = previous.getUTCMonth()
+  switch (period) {
+    case "anio": return `vs. ${previous.getUTCFullYear()}`
+    case "trimestre": return `vs. T${Math.floor(month / 3) + 1}`
+    default: return `vs. ${MONTH_LABELS[month]?.toLowerCase()}`
+  }
 }
 
 /** Rótulo del período para las cabeceras de sección ("Trimestre en curso"). */
