@@ -63,9 +63,12 @@ export async function createBackupLog(input: {
   backupDate: string
   trigger?: "cron" | "manual" | "deploy"
   triggeredByUserId?: string
+  /** El respaldo diario se registra al terminar: trae su id de corrida y su hora real de inicio. */
+  id?: string
+  startedAt?: string
 }): Promise<BackupEntry> {
-  const id = nanoid()
-  const now = new Date().toISOString()
+  const id = input.id ?? nanoid()
+  const now = input.startedAt ?? new Date().toISOString()
 
   const [row] = await db
     .insert(backupLog)

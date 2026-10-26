@@ -14,6 +14,13 @@ import { promisify } from "node:util"
 import path from "node:path"
 import fs from "node:fs/promises"
 import { todayInChile } from "@/lib/utils"
+import { logger } from "@/lib/logger"
+import {
+  buildOrchestratorEnv,
+  describeFailedStep,
+  readBackupStatusForRun,
+  successfulBackupCompletion,
+} from "@/lib/services/backup-run"
 
 const execFileAsync = promisify(execFile)
 
@@ -111,92 +118,57 @@ export async function triggerManualBackupAction(): Promise<BackupActionResult> {
       backupCfg = await getBackupConfig()
     } catch { /* usar defaults */ }
 
-    // Pasar solo las variables que el orquestador necesita, no todo process.env.
-    const env = {
+    // El mismo entorno que el respaldo diario: la whitelist completa (lo que
+    // `env-config.tar.gz` guarda y la subida a Cloudreve necesita para abrir
+    // sus credenciales) y no todo process.env.
+    const env = buildOrchestratorEnv(process.env, {
       BACKUP_DIR: backupDir,
-      DATABASE_URL: process.env.DATABASE_URL ?? "",
+      BACKUP_RUN_ID: logId,
       APP_VERSION:
         process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA ||
         process.env.APP_VERSION ||
         "manual",
-      GDRIVE_BACKUPS_DEST: process.env.GDRIVE_BACKUPS_DEST ?? "",
-      STORAGE_PATH: process.env.STORAGE_PATH ?? "",
       RETENTION_DAYS: String(backupCfg.retentionDays),
       DRIVE_BACKUP_ENABLED: String(backupCfg.driveBackupsEnabled),
       CLOUDREVE_BACKUP_ENABLED: String(backupCfg.cloudreveBackupsEnabled),
       CLOUDREVE_BACKUP_PATH: backupCfg.cloudreveBackupsPath,
-      // Sin esto el respaldo manual sube en claro mientras el programado va
-      // cifrado: la peor variante, porque la configuración dice «cifrado» y
-      // media de las copias no lo está.
-      BACKUP_ENCRYPTION_PASSPHRASE: process.env.BACKUP_ENCRYPTION_PASSPHRASE ?? "",
-      HOME: process.env.HOME ?? "/root",
-      PATH: process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin",
-    } as Record<string, string>
-
-    const { stdout } = await execFileAsync(orchestratorPath, [], {
-      env: env as NodeJS.ProcessEnv,
-      timeout: backupCfg.manualTimeoutMinutes * 60 * 1000,
-      maxBuffer: 10 * 1024 * 1024, // 10 MB
     })
 
-    // ── 5. Leer manifest.json con las métricas reales ─────────────────────
-    const snapshotDir = path.join(/*turbopackIgnore: true*/ backupDir, "snapshots", today)
-    const manifestPath = path.join(/*turbopackIgnore: true*/ snapshotDir, "manifest.json")
-
-    let manifest: Record<string, unknown> | null = null
     try {
-      const raw = await fs.readFile(manifestPath, "utf-8")
-      manifest = JSON.parse(raw)
-    } catch {
-      // El snapshots puede crearse con la fecha-hora (YYYY-MM-DD-HHMMSS),
-      // no solo con la fecha. Buscar el más reciente.
-      try {
-        const entries = await fs.readdir(path.join(/*turbopackIgnore: true*/ backupDir, "snapshots"))
-        const latest = entries.filter((e) => e.startsWith(today)).sort().reverse()[0]
-        if (latest) {
-          const altManifest = path.join(/*turbopackIgnore: true*/ backupDir, "snapshots", latest, "manifest.json")
-          const raw = await fs.readFile(altManifest, "utf-8")
-          manifest = JSON.parse(raw)
-        }
-      } catch { /* no se pudo leer */ }
+      await execFileAsync(orchestratorPath, [], {
+        env: env as NodeJS.ProcessEnv,
+        timeout: backupCfg.manualTimeoutMinutes * 60 * 1000,
+        maxBuffer: 10 * 1024 * 1024, // 10 MB
+      })
+    } catch (err) {
+      // El texto de `execFile` lleva la ruta del script y la pantalla lo
+      // descarta: el motivo real está en el paso que el orquestador anotó.
+      const failure = describeFailedStep(await readBackupStatusForRun(backupDir, logId))
+      const stdout = (err as { stdout?: string }).stdout ?? ""
+      logger.error("[admin/backups] el orquestador falló", {
+        errorCode: failure.code,
+        stdoutTail: stdout.split("\n").slice(-40).join("\n"),
+      })
+      await completeBackupLog(logId, {
+        status: "failed",
+        errorMessage: failure.message,
+        errorCode: failure.code,
+        appVersion: process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA ?? "unknown",
+        hostname: "manual-trigger",
+      })
+      revalidatePath("/admin/backups")
+      return { ok: false, message: failure.message }
     }
 
-    const c = manifest?.components as Record<string, Record<string, unknown>> | undefined
-    const pg = c?.postgres
-    const storage = c?.storage
-    const config = c?.config
-
-    const driveUploaded = !!(
-      backupCfg.driveBackupsEnabled
-      && process.env.GDRIVE_BACKUPS_DEST
-      && stdout.includes("Upload completado")
-    )
-
-    const cloudreveUploaded = !!(
-      backupCfg.cloudreveBackupsEnabled && stdout.includes("Cloudreve upload completado")
-    )
-
-    const result: Parameters<typeof completeBackupLog>[1] = {
-      status: "success",
-      pgSizeBytes: (pg?.size_bytes as number) ?? null,
-      pgSha256: (pg?.sha256 as string) ?? null,
-      storageSizeBytes: (storage?.size_bytes as number) ?? null,
-      storageSha256: (storage?.sha256 as string) ?? null,
-      configSizeBytes: (config?.size_bytes as number) ?? null,
-      configSha256: (config?.sha256 as string) ?? null,
-      manifestSha256: ((manifest?.integrity as Record<string, unknown>)?.manifest_sha256 as string) ?? null,
-      totalSizeBytes: (manifest?.total_size_bytes as number) ?? null,
-      driveUploaded,
-      drivePath: backupCfg.driveBackupsEnabled && process.env.GDRIVE_BACKUPS_DEST
-        ? `${process.env.GDRIVE_BACKUPS_DEST}/${today}`
-        : undefined,
-      cloudreveUploaded,
-      cloudrevePath: cloudreveUploaded
-        ? `${backupCfg.cloudreveBackupsPath}/${today}`
-        : undefined,
+    // ── 5. Registrar las métricas reales del manifiesto ───────────────────
+    const status = await readBackupStatusForRun(backupDir, logId)
+    const result = await successfulBackupCompletion({
+      backupDir,
+      status: status ?? { BACKUP_DATE: today },
+      driveDest: process.env.GDRIVE_BACKUPS_DEST,
+      cloudrevePath: backupCfg.cloudreveBackupsPath,
       appVersion: process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA ?? "unknown",
-      hostname: ((manifest?.backup as Record<string, unknown>)?.hostname as string) ?? "",
-    }
+    })
 
     await completeBackupLog(logId, result)
 

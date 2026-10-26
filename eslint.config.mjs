@@ -347,6 +347,7 @@ const eslintConfig = defineConfig([
       "**/__tests__/**",
       // Rutas del host o de assets, no del almacenamiento de la app.
       "app/(app)/admin/backups/actions.ts",
+      "lib/services/backup-run.ts",
       "**/oc-pdfcn-render.ts",
       "lib/services/platform-health.ts",
       "lib/services/purchasing-module/invoice-ocr.ts",

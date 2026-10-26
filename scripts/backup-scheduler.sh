@@ -103,16 +103,29 @@ while true; do
   log "=== INICIANDO BACKUP DIARIO ==="
 
   if [ -x "$ORCHESTRATOR" ]; then
-    RETENTION_DAYS="${RETENTION_DAYS}" \
+    # El id viaja al orquestador (lo anota en .backup-status) y al reporte: así
+    # la app no le atribuye a esta corrida el estado de una anterior.
+    RUN_ID="cron-$(date -u '+%Y%m%dT%H%M%SZ')"
+    RUN_STARTED_AT="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+    BACKUP_RUN_ID="${RUN_ID}" \
+      RETENTION_DAYS="${RETENTION_DAYS}" \
       DRIVE_BACKUP_ENABLED="${DRIVE_BACKUP_ENABLED}" \
       CLOUDREVE_BACKUP_ENABLED="${CLOUDREVE_BACKUP_ENABLED}" \
       CLOUDREVE_BACKUP_PATH="${CLOUDREVE_BACKUP_PATH}" \
       "$ORCHESTRATOR" || error "Orquestador falló con exit code $?"
 
-    # Notificar al endpoint de backup-health internamente
     if [ -n "${CRON_SECRET:-}" ]; then
+      # Primero el registro en backup_log (lo que leen la pantalla y
+      # backup-health); después el chequeo, que ya ve esta corrida.
+      wget -qO- --header="Authorization: Bearer ${CRON_SECRET}" \
+        --header="Content-Type: application/json" \
+        --post-data="{\"runId\":\"${RUN_ID}\",\"startedAt\":\"${RUN_STARTED_AT}\"}" \
+        "${APP_URL}/api/cron/backup-report" >/dev/null \
+        || error "No se pudo registrar la corrida ${RUN_ID} en la app"
       wget -qO- --header="Authorization: Bearer ${CRON_SECRET}" \
         "${APP_URL}/api/cron/backup-health" &>/dev/null || true
+    else
+      error "CRON_SECRET no configurado: la corrida ${RUN_ID} no queda registrada en la app"
     fi
   else
     error "Orquestador no encontrado o no ejecutable: ${ORCHESTRATOR}"

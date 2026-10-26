@@ -8,13 +8,18 @@
 import { describe, expect, it } from "vitest"
 import { readFileSync } from "node:fs"
 import path from "node:path"
+import { ORCHESTRATOR_ENV_WHITELIST } from "@/lib/services/backup-run"
 
 const root = path.join(__dirname, "..")
 
 /** Nombres de variable que docker-compose.yml inyecta al servicio `app`. */
 function composeAppEnvVars(): string[] {
+  return composeServiceEnvVars("app")
+}
+
+function composeServiceEnvVars(service: string): string[] {
   const compose = readFileSync(path.join(root, "docker-compose.yml"), "utf8").split("\n")
-  const start = compose.findIndex((line) => line === "  app:")
+  const start = compose.findIndex((line) => line === `  ${service}:`)
   expect(start).toBeGreaterThanOrEqual(0)
   const end = compose.findIndex((line, index) => index > start && /^ {2}[a-z][\w-]*:$/.test(line))
   const names = new Set<string>()
@@ -66,6 +71,25 @@ describe("backup-orchestrator ENV_WHITELIST", () => {
 
   it("no guarda la passphrase con la que se cifra el propio snapshot", () => {
     expect(orchestratorWhitelist()).not.toContain("BACKUP_ENCRYPTION_PASSPHRASE")
+  })
+
+  it("el respaldo diario recibe todo lo que el respaldo guardaría de app", () => {
+    // El orquestador corre en `backup-scheduler`, no en `app`: lo que este
+    // servicio no recibe sale del .env del snapshot. Así se perdían
+    // AUTH_SECRET y PREVENTION_DATA_ENCRYPTION_KEY, que no tienen otra copia.
+    const whitelist = new Set(orchestratorWhitelist())
+    const scheduler = new Set(composeServiceEnvVars("backup-scheduler"))
+    const missing = composeAppEnvVars()
+      .filter((name) => whitelist.has(name))
+      .filter((name) => !scheduler.has(name))
+
+    expect(missing).toEqual([])
+  })
+
+  it("el botón «Respaldar ahora» reenvía la misma whitelist que el script", () => {
+    // El botón no le pasaba el keyring DTE al orquestador y la subida a
+    // Cloudreve no podía abrir sus credenciales.
+    expect([...ORCHESTRATOR_ENV_WHITELIST].sort()).toEqual([...new Set(orchestratorWhitelist())].sort())
   })
 
   it("el servicio app recibe la llave del dominio sensible de Prevención", () => {

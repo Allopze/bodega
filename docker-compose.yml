@@ -217,6 +217,66 @@ services:
       - DTE_SETTINGS_KEYRING=${DTE_SETTINGS_KEYRING:-}
       - DTE_SETTINGS_ACTIVE_KEY_ID=${DTE_SETTINGS_ACTIVE_KEY_ID:-}
       - DTE_SETTINGS_MODE=${DTE_SETTINGS_MODE:-compat}
+      # El orquestador guarda en env-config.tar.gz las variables de su
+      # ENV_WHITELIST que encuentre en SU entorno: lo que este servicio no
+      # recibe, el respaldo no lo trae, y estas llaves no tienen otra copia
+      # (AUTH_SECRET, PREVENTION_DATA_ENCRYPTION_KEY, credenciales de las
+      # integraciones). Mismos valores que `app`; backup-env-whitelist.test.ts
+      # falla si este servicio vuelve a quedarse atrás.
+      - HOSTNAME=0.0.0.0
+      - AUTH_SECRET=${AUTH_SECRET:?err}
+      - AUTH_SECRET_PREVIOUS=${AUTH_SECRET_PREVIOUS:-}
+      - AUTH_URL=${AUTH_URL:?err}
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-}
+      - PREVENTION_DATA_ENCRYPTION_KEY=${PREVENTION_DATA_ENCRYPTION_KEY:-}
+      - PREVENTION_DATA_ENCRYPTION_KEY_VERSION=${PREVENTION_DATA_ENCRYPTION_KEY_VERSION:-v1}
+      - PREVENTION_ACK_TTL_DAYS=${PREVENTION_ACK_TTL_DAYS:-}
+      - PREVENTION_ACK_LEGACY_UNTIL=${PREVENTION_ACK_LEGACY_UNTIL:-}
+      - PDF_RENDER_ORIGIN=${PDF_RENDER_ORIGIN:-http://127.0.0.1:3000}
+      - RESEND_API_KEY=${RESEND_API_KEY:-}
+      - BACKUP_SCRIPTS_PATH=${BACKUP_SCRIPTS_PATH:-}
+      - CRON_ALLOWED_SOURCES=${CRON_ALLOWED_SOURCES:-}
+      - PDTP_EVIDENCE_GC_DELETE=${PDTP_EVIDENCE_GC_DELETE:-}
+      - COPEC_USERNAME=${COPEC_USERNAME:-}
+      - COPEC_PASSWORD=${COPEC_PASSWORD:-}
+      - COPEC_SYNC_START_DATE=${COPEC_SYNC_START_DATE:-2020-01-01}
+      - COPEC_SYNC_IMPORTER_EMAIL=${COPEC_SYNC_IMPORTER_EMAIL:-}
+      - COPEC_OTP_IMAP_HOST=${COPEC_OTP_IMAP_HOST:-}
+      - COPEC_OTP_IMAP_PORT=${COPEC_OTP_IMAP_PORT:-993}
+      - COPEC_OTP_IMAP_USER=${COPEC_OTP_IMAP_USER:-}
+      - COPEC_OTP_IMAP_PASSWORD=${COPEC_OTP_IMAP_PASSWORD:-}
+      - ARAMCO_DOCUMENT_NUMBER=${ARAMCO_DOCUMENT_NUMBER:-}
+      - ARAMCO_PASSWORD=${ARAMCO_PASSWORD:-}
+      - ARAMCO_SYNC_ENABLED=${ARAMCO_SYNC_ENABLED:-false}
+      - ARAMCO_SYNC_IMPORTER_EMAIL=${ARAMCO_SYNC_IMPORTER_EMAIL:-}
+      - ONWAY_USERNAME=${ONWAY_USERNAME:-}
+      - ONWAY_PASSWORD=${ONWAY_PASSWORD:-}
+      - ONWAY_SYNC_ENABLED=${ONWAY_SYNC_ENABLED:-false}
+      - GENERATED_DOCS_ARCHIVE_ENABLED=${GENERATED_DOCS_ARCHIVE_ENABLED:-true}
+      - PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=${PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH:-/usr/bin/chromium-browser}
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-production}
+      - NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA=${NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA:-}
+      - DTE_PORTAL_BASE_URL=${DTE_PORTAL_BASE_URL:-https://clientes.dtefacturaenlinea.cl/facturaenlinea}
+      - DTE_PORTAL_RUT_USR=${DTE_PORTAL_RUT_USR:-}
+      - DTE_PORTAL_RUT_EMP=${DTE_PORTAL_RUT_EMP:-}
+      - DTE_PORTAL_CLAVE=${DTE_PORTAL_CLAVE:-}
+      - DTE_PORTAL_CODEMP=${DTE_PORTAL_CODEMP:-}
+      - DTE_SYNC_ENABLED=${DTE_SYNC_ENABLED:-false}
+      - DTE_SYNC_IMPORTER_EMAIL=${DTE_SYNC_IMPORTER_EMAIL:-}
+      - DTE_SYNC_DELAY_MS=${DTE_SYNC_DELAY_MS:-500}
+      - BILLING_SALES_SYNC_ENABLED=${BILLING_SALES_SYNC_ENABLED:-false}
+      - BILLING_HISTORY_FLOOR=${BILLING_HISTORY_FLOOR:-2024-01}
+      - BILLING_MATCH_AMOUNT_TOLERANCE_CLP=${BILLING_MATCH_AMOUNT_TOLERANCE_CLP:-1000}
+      - BILLING_MATCH_DATE_WINDOW_DAYS=${BILLING_MATCH_DATE_WINDOW_DAYS:-60}
+      - BILLING_COMPANY_TAX_ID=${BILLING_COMPANY_TAX_ID:-}
+      - BILLING_CHIPAX_ENABLED=${BILLING_CHIPAX_ENABLED:-false}
+      - BILLING_CHIPAX_SYNC_ENABLED=${BILLING_CHIPAX_SYNC_ENABLED:-false}
+      - CHIPAX_OPENAPI_URL=${CHIPAX_OPENAPI_URL:-https://api.chipax.com/v2/swagger-docs/}
+      - CHIPAX_API_BASE_URL=${CHIPAX_API_BASE_URL:-}
+      - CHIPAX_APP_ID=${CHIPAX_APP_ID:-}
+      - CHIPAX_SECRET_KEY=${CHIPAX_SECRET_KEY:-}
+      - CHIPAX_REQUEST_TIMEOUT_MS=${CHIPAX_REQUEST_TIMEOUT_MS:-30000}
       # Passthrough, nunca un valor literal: es la llave con la que
       # backup-orchestrator.sh cifra el snapshot antes de subirlo a Drive. Sin
       # ella acá el respaldo sube EN CLARO aunque el host la tenga configurada
@@ -236,6 +296,15 @@ services:
       # apunte al mismo destino en ambos).
       - ${BACKUP_HOST_PATH:-bodega-backups}:/data/backups
     command: ["bash", "/app/scripts/backup-scheduler.sh"]
+    # Sin esto hereda el HEALTHCHECK de la imagen (GET :3000/api/health), que
+    # aquí nunca responde porque este contenedor no sirve la app: quedaba
+    # `unhealthy` para siempre y una caída real no se distinguía. Lo que mide
+    # es que el bucle siga vivo; si un respaldo salió bien lo dice backup-health.
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f backup-scheduler.sh >/dev/null"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
 
   # Scheduler de los endpoints /api/cron/*.
   #

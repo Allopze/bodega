@@ -68,10 +68,15 @@ cleanup() {
     if [ -n "$_FAILED_STEP" ]; then
       error "  Failed at step: ${_FAILED_STEP}"
     fi
-    # Dejar rastro para monitoreo
-    echo "BACKUP_STATUS=FAILED" > "${BACKUP_DIR}/.backup-status"
-    echo "BACKUP_ERROR=exit_code_${exit_code}" >> "${BACKUP_DIR}/.backup-status"
-    echo "BACKUP_FAILED_STEP=${_FAILED_STEP:-unknown}" >> "${BACKUP_DIR}/.backup-status"
+    # Dejar rastro para monitoreo. BACKUP_RUN_ID lo fija quien invoca (el botón
+    # o el scheduler) para no atribuirle a su corrida el estado de otra.
+    {
+      echo "BACKUP_STATUS=FAILED"
+      echo "BACKUP_RUN_ID=${BACKUP_RUN_ID:-}"
+      echo "BACKUP_DATE=${DATE_STR}"
+      echo "BACKUP_ERROR=exit_code_${exit_code}"
+      echo "BACKUP_FAILED_STEP=${_FAILED_STEP:-unknown}"
+    } > "${BACKUP_DIR}/.backup-status"
   fi
   exit $exit_code
 }
@@ -187,11 +192,26 @@ STORAGE_FILE="${SNAPSHOT_DIR}/storage.tar.gz"
 # ruta relativa (`storage/sst-documents/`) para que restore-all.sh siga
 # funcionando sin cambios. Si la descarga falla, el backup ABORTA: un backup
 # "exitoso" sin los documentos DS 44 es un respaldo que miente.
+# El backend activo lo decide la app con `system_settings` antes que con
+# SST_STORAGE_BACKEND (lib/storage/sst-backend.ts). Mirar sólo la variable
+# dejaba fuera del tar los documentos que la app guarda en Cloudreve cuando el
+# backend se eligió desde Administración. Fuera de la imagen (sin el script
+# empaquetado) queda la variable.
+SST_BACKEND="${SST_STORAGE_BACKEND:-filesystem}"
+SST_DOWNLOADER="/app/scripts/download-sst-documents.mjs"
+if [ -f "$SST_DOWNLOADER" ]; then
+  if ! SST_BACKEND="$(node "$SST_DOWNLOADER" --print-backend | tail -n 1)"; then
+    error "No se pudo determinar dónde viven los documentos SST. Backup abortado."
+    exit 1
+  fi
+fi
+log "  Documentos SST: backend ${SST_BACKEND}"
+
 _CLOUDREVE_SST_TMP=""
-if [ "${SST_STORAGE_BACKEND:-filesystem}" = "cloudreve" ]; then
+if [ "${SST_BACKEND}" = "cloudreve" ]; then
   _CLOUDREVE_SST_TMP=$(mktemp -d)
   log "  Descargando documentos SST desde Cloudreve..."
-  if ! node /app/scripts/download-sst-documents.mjs "${_CLOUDREVE_SST_TMP}"; then
+  if ! node "$SST_DOWNLOADER" "${_CLOUDREVE_SST_TMP}"; then
     error "No se pudieron descargar los documentos SST desde Cloudreve. Backup abortado."
     rm -rf "${_CLOUDREVE_SST_TMP}"
     exit 1
@@ -455,6 +475,8 @@ log "Subiendo a destinos remotos..."
 _FAILED_STEP="upload_remote"
 
 UPLOAD_PATH="${GDRIVE_DEST}/${DATE_STR}"
+CLOUDREVE_UPLOADED="false"
+DRIVE_UPLOADED="false"
 
 # ── Cifrado del snapshot antes de salir del host ─────────────────────────────
 # El dump lleva los sobres `enc:v1:` y el .env generado lleva la llave que los
@@ -509,6 +531,7 @@ if [ "${CLOUDREVE_BACKUP_ENABLED:-false}" = "true" ]; then
   # El script sale != 0 si faltan credenciales o si algún artefacto no subió;
   # con `set -euo pipefail` el backup entero aborta (no queda "copia remota"
   # que en realidad no existe).
+  CLOUDREVE_UPLOADED="true"
 else
   log "  Cloudreve desactivado (CLOUDREVE_BACKUP_ENABLED != true)."
 fi
@@ -528,6 +551,7 @@ if [ "${DRIVE_BACKUP_ENABLED:-false}" = "true" ]; then
     rclone copy "${SNAPSHOT_DIR}/manifest.json" "${GDRIVE_DEST}/latest/" --quiet
 
     log "  Upload completado."
+    DRIVE_UPLOADED="true"
   else
     warn "  DRIVE_BACKUP_ENABLED=true pero rclone/gdrive-backups no configurado."
     warn "  Para configurar: sigue docs/deploy/SETUP_GOOGLE_DRIVE_BACKUP.md"
@@ -603,9 +627,14 @@ log ""
 _FAILED_STEP=""
 
 # Escribir estado para monitoreo
-echo "BACKUP_STATUS=OK" > "${BACKUP_DIR}/.backup-status"
-echo "BACKUP_DATE=${DATE_STR}" >> "${BACKUP_DIR}/.backup-status"
-echo "BACKUP_MANIFEST_SHA256=${MANIFEST_SHA256}" >> "${BACKUP_DIR}/.backup-status"
-echo "BACKUP_TOTAL_SIZE=${TOTAL_SIZE}" >> "${BACKUP_DIR}/.backup-status"
+{
+  echo "BACKUP_STATUS=OK"
+  echo "BACKUP_RUN_ID=${BACKUP_RUN_ID:-}"
+  echo "BACKUP_DATE=${DATE_STR}"
+  echo "BACKUP_MANIFEST_SHA256=${MANIFEST_SHA256}"
+  echo "BACKUP_TOTAL_SIZE=${TOTAL_SIZE}"
+  echo "BACKUP_CLOUDREVE_UPLOADED=${CLOUDREVE_UPLOADED}"
+  echo "BACKUP_DRIVE_UPLOADED=${DRIVE_UPLOADED}"
+} > "${BACKUP_DIR}/.backup-status"
 
 exit 0

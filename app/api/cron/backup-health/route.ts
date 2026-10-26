@@ -86,25 +86,27 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
       if (stats.lastBackup.status === "failed") {
         status = "critical"
-        alerts.push(`Last backup FAILED (${ageHours}h ago)`)
+        alerts.push(`El último respaldo falló (hace ${ageHours} h)`)
       } else if (ageHours > maxAgeHours) {
         status = "critical"
-        alerts.push(`Last backup is ${ageHours}h old (max: ${maxAgeHours}h)`)
+        alerts.push(`El último respaldo es de hace ${ageHours} h (máximo: ${maxAgeHours} h)`)
       } else {
-        alerts.push(`Last backup OK (${ageHours}h ago, status: ${stats.lastBackup.status})`)
+        alerts.push(stats.lastBackup.status === "running"
+          ? `Hay un respaldo en curso (iniciado hace ${ageHours} h)`
+          : `Último respaldo correcto (hace ${ageHours} h)`)
       }
     } else {
       status = "critical"
-      alerts.push("No backup records found in backup_log table")
+      alerts.push("No hay ningún respaldo registrado")
     }
 
     if (stats.failedCount > 0) {
-      alerts.push(`${stats.failedCount} failed backup(s) on record`)
+      alerts.push(`${stats.failedCount} respaldo(s) fallido(s) en el historial`)
     }
 
     if (stats.runningCount > 2) {
       status = status === "healthy" ? "degraded" : status
-      alerts.push(`${stats.runningCount} backups currently running (possible stuck job)`)
+      alerts.push(`${stats.runningCount} respaldos en curso (posible proceso trabado)`)
     }
 
     if (status === "critical") {
