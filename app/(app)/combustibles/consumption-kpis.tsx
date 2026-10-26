@@ -3,27 +3,33 @@ import { KpiCard } from "@/app/(app)/analitica/analytics-kpi-card"
 import { formatCLP, formatQty } from "@/lib/utils"
 import type { ConsumptionDashboardData } from "@/lib/combustibles/consumption-dashboard"
 
-export function ConsumptionKpis({ kpis, hrefs, canViewCosts }: {
+export function ConsumptionKpis({ kpis, hrefs, canViewCosts, omitChannelTotals = false }: {
   kpis: ConsumptionDashboardData["kpis"]
   canViewCosts: boolean
+  /**
+   * El panel «Estado del combustible» ya muestra los litros y transacciones TCT
+   * (son las mismas cifras): con él en pantalla esos dos tiles se omiten (A5).
+   */
+  omitChannelTotals?: boolean
   /** Enlaces a la vista de Registros (con los filtros vigentes) que respalda cada cifra. */
   hrefs?: { registros?: string; sinAsociacion?: string }
 }) {
   return (
-    <section className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4" aria-label="Indicadores de consumo de combustible">
+    <section className={omitChannelTotals ? "mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2" : "mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4"} aria-label="Indicadores de consumo de combustible">
       {/* Consumir y gastar más NO es buena noticia: sin declarar la polaridad,
           el tile pintaba un alza de gasto con badge verde de éxito, y además
           contradecía al panel de canales de arriba, que ya la pinta en ámbar. */}
-      <KpiCard
+      {!omitChannelTotals && <KpiCard
         icon={<Drop size={18} />}
         label="Total consumido"
         value={formatQty(Math.round(kpis.totalCantidad), "L")}
         detail={`${formatQty(kpis.totalTarjetas)} tarjetas activas`}
         trend={kpis.variacionCantidadPct}
         trendPolarity="up-bad"
+        trendLabel="vs. período anterior"
         tone={kpis.variacionCantidadPct != null && kpis.variacionCantidadPct >= 30 ? "signal" : "neutral"}
         href={hrefs?.registros}
-      />
+      />}
       {canViewCosts ? <KpiCard
         icon={<CurrencyCircleDollar size={18} />}
         label="Monto total"
@@ -31,6 +37,7 @@ export function ConsumptionKpis({ kpis, hrefs, canViewCosts }: {
         detail="Gasto del período filtrado"
         trend={kpis.variacionMontoPct}
         trendPolarity="up-bad"
+        trendLabel="vs. período anterior"
         tone={kpis.variacionMontoPct != null && kpis.variacionMontoPct >= 30 ? "signal" : "neutral"}
         href={hrefs?.registros}
       /> : <KpiCard
@@ -40,13 +47,13 @@ export function ConsumptionKpis({ kpis, hrefs, canViewCosts }: {
         detail="Equipos con consumo en el período"
         href={hrefs?.registros}
       />}
-      <KpiCard
+      {!omitChannelTotals && <KpiCard
         icon={<ArrowsClockwise size={18} />}
         label="Transacciones"
         value={formatQty(kpis.totalTransacciones)}
         detail="Cargas registradas en el período"
         href={hrefs?.registros}
-      />
+      />}
       <KpiCard
         icon={<WarningDiamond size={18} />}
         label="Sin asociación"

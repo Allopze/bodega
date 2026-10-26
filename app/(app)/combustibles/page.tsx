@@ -244,6 +244,10 @@ export default async function CombustiblesPage({
     || (dashboard?.seriesPorPeriodo.length ?? 0) > 0
     || (operationsSummary?.totalRegistros ?? 0) > 0
 
+  // Acción de los estados vacíos: importar, sólo si el rol puede (A4).
+  const importHref = fuelImportAvailability(session).tct ? "/combustibles/importar" : undefined
+  const importAction = importHref ? { label: "Importar cargas", href: importHref } : undefined
+
   return (
     <PageContainer>
       <PageHeader
@@ -260,6 +264,16 @@ export default async function CombustiblesPage({
         hrefs={{ resumen: vistaHref("resumen"), tct: vistaHref("analisis") }}
       />
 
+      {/* Los filtros van antes que todo lo que filtran: el panel de canales
+          también se acota por período, faena, fuente y patente. */}
+      <ConsumptionFiltersBar
+        worksites={worksitesList}
+        fuentes={fuentes}
+        currentFilters={effectiveFilters}
+        hasExplicitDateRange={Boolean(fromDate || toDate)}
+        proveedor={proveedor}
+      />
+
       {needsSummary && controlOverview && (
         <FuelControlOverviewPanel
           data={controlOverview}
@@ -268,8 +282,10 @@ export default async function CombustiblesPage({
             liters: dashboard?.kpis.totalCantidad ?? 0,
             transactions: dashboard?.kpis.totalTransacciones ?? 0,
             vehicles: dashboard?.kpis.patentesUnicas ?? 0,
+            cards: dashboard?.kpis.totalTarjetas,
             variationLitersPct: dashboard?.kpis.variacionCantidadPct ?? null,
           }}
+          importHref={importHref}
           period={{
             fromDate: effectiveFilters.fromDate,
             toDate: effectiveFilters.toDate,
@@ -281,21 +297,13 @@ export default async function CombustiblesPage({
         />
       )}
 
-      <ConsumptionFiltersBar
-        worksites={worksitesList}
-        fuentes={fuentes}
-        currentFilters={effectiveFilters}
-        hasExplicitDateRange={Boolean(fromDate || toDate)}
-        proveedor={proveedor}
-      />
-
       {vista !== "resumen" && (
         <SegmentedControl ariaLabel="Vista del consumo por tarjeta" items={tctVistaItems} className="mb-6 mt-2" />
       )}
 
       {vista === "resumen" && (
         <>
-      {dashboard && <ConsumptionKpis kpis={dashboard.kpis} canViewCosts={canViewCosts} hrefs={{ registros: vistaHref("registros"), sinAsociacion: sinAsociacionHref }} />}
+      {dashboard && <ConsumptionKpis kpis={dashboard.kpis} canViewCosts={canViewCosts} omitChannelTotals={Boolean(controlOverview)} hrefs={{ registros: vistaHref("registros"), sinAsociacion: sinAsociacionHref }} />}
 
       {dashboard && (
         <section aria-labelledby="consumo-evolucion-title" className="mb-8">
@@ -314,7 +322,7 @@ export default async function CombustiblesPage({
               </CardHeader>
             <CardContent>
               <ChartErrorBoundary chartName="Evolución mensual">
-                <EvolutionChart data={dashboard.seriesPorPeriodo} showCosts={canViewCosts} />
+                <EvolutionChart data={dashboard.seriesPorPeriodo} showCosts={canViewCosts} emptyAction={importAction} />
               </ChartErrorBoundary>
             </CardContent>
           </Card>
@@ -324,7 +332,7 @@ export default async function CombustiblesPage({
               <CardDescription>CLP por litro, aislado de la variación por cantidad.</CardDescription>
             </CardHeader>
             <CardContent>
-              <PriceEvolutionChart data={dashboard.seriesPorPeriodo} />
+              <PriceEvolutionChart data={dashboard.seriesPorPeriodo} emptyAction={importAction} />
             </CardContent>
           </Card>}
           </div>

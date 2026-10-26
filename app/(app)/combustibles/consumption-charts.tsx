@@ -79,8 +79,10 @@ function chartAxisProps() {
 }
 
 /* ── Evolución: cantidad consumida + monto por período ─────────────────────── */
-export function EvolutionChart({ data, showCosts = true }: { data: PeriodoRow[]; showCosts?: boolean }) {
-  if (data.length === 0) return <ChartEmpty icon={<ChartLineUp size={24} className="mb-2 text-[var(--color-text-subtle)]" aria-hidden />} className="border-[var(--color-border-strong)]" label="Aún no hay períodos importados para esta selección." />
+export function EvolutionChart({ data, showCosts = true, emptyAction }: { data: PeriodoRow[]; showCosts?: boolean; emptyAction?: { label: string; href: string } }) {
+  // A4: el vacío dice qué hacer y ofrece la acción real (importar), no sólo
+  // que no hay datos. Sin permiso de importar, sugiere ampliar la selección.
+  if (data.length === 0) return <ChartEmpty className="border-[var(--color-border-strong)]" label="Aún no hay períodos importados para esta selección." hint={emptyAction ? "Importa las cargas del proveedor o amplía el período y los filtros." : "Amplía el período o quita filtros para ver otros períodos."} ctaLabel={emptyAction?.label} ctaHref={emptyAction?.href} />
 
   return (
     <div className="h-72" aria-label={showCosts ? "Evolución de consumo y gasto por período" : "Evolución de consumo por período"}>
@@ -139,9 +141,9 @@ export function EvolutionChart({ data, showCosts = true }: { data: PeriodoRow[];
 }
 
 /* ── Precio promedio por unidad, por período ─────────────────────────────── */
-export function PriceEvolutionChart({ data }: { data: PeriodoRow[] }) {
+export function PriceEvolutionChart({ data, emptyAction }: { data: PeriodoRow[]; emptyAction?: { label: string; href: string } }) {
   const chartData = data.filter((row) => row.precioPromedio != null)
-  if (chartData.length === 0) return <ChartEmpty icon={<ChartLineUp size={24} className="mb-2 text-[var(--color-text-subtle)]" aria-hidden />} className="border-[var(--color-border-strong)]" label="No hay litros suficientes para calcular un precio promedio." />
+  if (chartData.length === 0) return <ChartEmpty className="border-[var(--color-border-strong)]" label="No hay litros suficientes para calcular un precio promedio." hint="El precio por litro aparece cuando el período tiene cargas con monto." ctaLabel={emptyAction?.label} ctaHref={emptyAction?.href} />
 
   return (
     <div className="h-72" aria-label="Precio promedio por litro y período">

@@ -15,11 +15,18 @@ test.describe("Combustibles module", () => {
   test("consumption dashboard loads with KPIs and charts", async ({ page }) => {
     await page.goto("/combustibles")
     await expect(page.locator("h1").first()).toContainText("Consumo y rendimiento")
-    // KPI cards should be visible
-    await expect(page.getByText("Total consumido")).toBeVisible()
-    await expect(page.getByText("Monto total", { exact: true })).toBeVisible()
-    await expect(page.getByText("Transacciones", { exact: true })).toBeVisible()
-    await expect(page.getByText("Sin asociación")).toBeVisible()
+    // Los litros y transacciones TCT viven en el panel de canales; los tiles
+    // «Total consumido» y «Transacciones» repetían esas mismas cifras (A5).
+    await expect(page.getByText("Consumo reportado TCT")).toBeVisible()
+    const tiles = page.getByRole("region", { name: "Indicadores de consumo de combustible" })
+    await expect(tiles.getByText("Total consumido")).toHaveCount(0)
+    await expect(tiles.getByText("Transacciones", { exact: true })).toHaveCount(0)
+    await expect(tiles.getByText("Monto total", { exact: true })).toBeVisible()
+    await expect(tiles.getByText("Sin asociación")).toBeVisible()
+    // Los filtros van antes del panel que también filtran.
+    const filtros = await page.getByRole("heading", { name: "Filtros de consumo" }).boundingBox()
+    const canales = await page.getByRole("heading", { name: "Estado del combustible" }).boundingBox()
+    expect(filtros && canales && filtros.y < canales.y).toBe(true)
     // Detail table (subordinate to the dashboard, not the main view)
     await expect(page.getByRole("link", { name: /Ver .*registros del período/ })).toBeVisible()
   })

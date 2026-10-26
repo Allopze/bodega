@@ -12,6 +12,8 @@ import {
 } from "@phosphor-icons/react/dist/ssr"
 import type { FuelControlOverview } from "@/lib/combustibles/fuel-control-overview"
 import { formatCLP, formatQty } from "@/lib/utils"
+import { Delta } from "@/components/ui/delta"
+import { EmptyState } from "@/components/ui/empty-state"
 
 interface FuelControlOverviewProps {
   data: FuelControlOverview
@@ -21,8 +23,12 @@ interface FuelControlOverviewProps {
     liters: number
     transactions: number
     vehicles: number
+    /** Tarjetas activas: el dato del tile «Total consumido», que se omite con este panel en pantalla. */
+    cards?: number
     variationLitersPct: number | null
   }
+  /** Destino para llenar el panel cuando no hay actividad (importar), si el rol puede. */
+  importHref?: string
   period: { fromDate: string; toDate: string; worksiteId?: string; source?: string; plate?: string; associated?: "yes" | "no" }
 }
 
@@ -32,7 +38,7 @@ const CHANNEL_BAR_COLORS = {
   info: "bg-[var(--color-info-ink)]",
 }
 
-export function FuelControlOverviewPanel({ data, canViewCosts, tct, period }: FuelControlOverviewProps) {
+export function FuelControlOverviewPanel({ data, canViewCosts, tct, period, importHref }: FuelControlOverviewProps) {
   const taeHref = buildHref("/combustibles/tae", period)
   const reconciliationHref = buildHref("/combustibles/tae/conciliacion", period)
   const recordsHref = `${buildHref("/combustibles", period)}&vista=registros`
@@ -81,7 +87,7 @@ export function FuelControlOverviewPanel({ data, canViewCosts, tct, period }: Fu
           icon={<Drop size={18} aria-hidden />}
           label="Consumo reportado TCT"
           value={formatQty(Math.round(tct.liters), "L")}
-          detail={`${formatQty(tct.transactions)} transacciones · ${formatQty(tct.vehicles)} equipos`}
+          detail={`${formatQty(tct.transactions)} transacciones · ${formatQty(tct.vehicles)} equipos${tct.cards != null ? ` · ${formatQty(tct.cards)} tarjetas` : ""}`}
           trend={tct.variationLitersPct}
           href={recordsHref}
         />
@@ -95,7 +101,20 @@ export function FuelControlOverviewPanel({ data, canViewCosts, tct, period }: Fu
               <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">Escala común para comparar actividad. Los canales no se suman como una cadena contable.</p>
             </div>
             {data.byWorksite.length === 0 ? (
-              <p className="p-6 text-sm text-[var(--color-text-muted)]">No hay actividad para el período y alcance seleccionados.</p>
+              // A4: qué significa, qué hacer y una acción real.
+              <EmptyState
+                compact
+                align="start"
+                as="p"
+                title="Sin actividad en el período"
+                description="Ninguno de los tres canales tiene cargas para el período y los filtros elegidos. Amplía el período, quita filtros o importa las cargas del proveedor."
+                action={
+                  <Link href={importHref ?? "/combustibles"} className="text-sm font-medium text-[var(--color-primary-ink)] hover:underline">
+                    {importHref ? "Importar cargas →" : "Quitar filtros →"}
+                  </Link>
+                }
+                className="px-5 py-6"
+              />
             ) : (
               <div className="divide-y divide-[var(--color-border)]">
                 {data.byWorksite.slice(0, 8).map((row) => (
@@ -147,7 +166,10 @@ function ChannelSummary({ icon, label, value, detail, trend, href }: {
       <div className="flex items-center gap-2 text-[var(--color-text-muted)]">{icon}<span className="text-xs font-medium uppercase tracking-[0.08em]">{label}</span></div>
       <div className="mt-4 flex flex-wrap items-baseline justify-between gap-2">
         <span className="font-mono text-xl font-semibold tabular-nums text-[var(--color-text)]">{value}</span>
-        {trend != null && <span className={trend > 0 ? "text-xs font-medium text-[var(--color-warning-ink)]" : "text-xs font-medium text-[var(--color-success-ink)]"}>{trend > 0 ? "+" : ""}{trend}%</span>}
+        {/* Mismo formato que la variación del tile «Monto total»: flecha, valor
+            y contra qué se compara. Antes era un "+12%" suelto y un 0 % se
+            pintaba verde, como si no variar fuera una buena noticia (I-14). */}
+        <Delta value={trend} format="percent" polarity="up-bad" comparisonLabel="vs. período anterior" />
       </div>
       <span className="mt-1 text-xs text-[var(--color-text-muted)]">{detail}</span>
     </div>
