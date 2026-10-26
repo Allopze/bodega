@@ -682,6 +682,41 @@ exit $?
     expect(deployScript).toContain("compose_backup")
   })
 
+  // 2026-10-21: producción llevaba semanas sin `backup-scheduler` (vive bajo un
+  // profile que ningún `up` del deploy levantaba) y sin poder escribir en
+  // BACKUP_DIR. El deploy tiene que recrearlo y fallar si no queda operativo.
+  it("levanta y verifica el respaldo programado después de desarmar el rollback", () => {
+    const deployScript = readFileSync(path.join(repoRoot, "scripts/deploy-prod.sh"), "utf8")
+
+    expect(deployFunction(deployScript, "start_backup_scheduler")).toContain(
+      "docker compose --profile backup up -d --no-deps --force-recreate backup-scheduler",
+    )
+    const check = deployFunction(deployScript, "check_backup_scheduler")
+    expect(check).toContain('= "$IMAGE"')
+    expect(check).toContain('= "running"')
+    expect(check).toContain('test -w "$BACKUP_DIR"')
+
+    // Un scheduler roto no debe revertir una release sana.
+    const disarmed = deployScript.indexOf("ROLLBACK_ARMED=0")
+    expect(disarmed).toBeGreaterThan(-1)
+    expect(deployScript.indexOf('run_timed "Levantando el respaldo programado')).toBeGreaterThan(disarmed)
+    expect(deployScript).toMatch(/if ! run_timed "Verificando el respaldo programado" check_backup_scheduler; then[\s\S]*?exit 1\n\s*fi/)
+  })
+
+  it("trae gpg y deja /data/backups escribible por nextjs en la imagen", () => {
+    const dockerfile = readFileSync(path.join(repoRoot, "Dockerfile"), "utf8")
+    const prodStage = dockerfile.slice(dockerfile.indexOf("AS prod"))
+
+    // backup-orchestrator.sh aborta si BACKUP_ENCRYPTION_PASSPHRASE está
+    // definida y gpg no existe.
+    expect(prodStage).toMatch(/apk add --no-cache[^\n]*\\\n(?:\s+[\w-]+ \\\n)*\s+gnupg\b/)
+    expect(prodStage).toMatch(/mkdir -p [^\n]*\/data\/backups/)
+    expect(prodStage).toMatch(/chown nextjs:nodejs [^\n]*\/data\/backups/)
+    // backup-scheduler corre con HOME=/app: sin este homedir gpg no arranca.
+    expect(prodStage).toMatch(/chown nextjs:nodejs [^\n]*\/app\/\.gnupg/)
+    expect(prodStage).toContain("chmod 700 /app/.gnupg")
+  })
+
   it("refuses an automatic legacy rollback after encrypted-only cutover or an unknown cutover state", () => {
     const workflow = readFileSync(path.join(repoRoot, ".github/workflows/deploy.yml"), "utf8")
     const deployScript = readFileSync(path.join(repoRoot, "scripts/deploy-prod.sh"), "utf8")

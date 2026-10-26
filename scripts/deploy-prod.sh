@@ -126,18 +126,6 @@ prod_sh() {
   ssh "${prod_ssh_opts[@]}" "$PROD_SSH" "$1"
 }
 
-# backup-scheduler vive en el perfil `backup`, así que los `up` de app y cron no
-# lo tocan: seguía con la imagen y el entorno del deploy en que se levantó, y los
-# arreglos del orquestador o de su bloque del compose no le llegaban nunca. Sólo
-# se recrea si ya corre: un deploy no enciende respaldos donde nadie los usa.
-recreate_backup_scheduler() {
-  if [ -n "$(run_in_prod docker compose --profile backup ps -q backup-scheduler | tr -d '\r')" ]; then
-    run_in_prod docker compose --profile backup up -d --no-deps --force-recreate backup-scheduler
-  else
-    echo "    backup-scheduler no está corriendo; se deja como está."
-  fi
-}
-
 if ! prod_run test -d "$PROD_DIR"; then
   echo "ERROR: no se pudo entrar a $PROD_SSH o falta el directorio $PROD_DIR"
   echo "       Prueba: ssh ${prod_ssh_opts[*]} $PROD_SSH true"
@@ -355,7 +343,6 @@ rollback_release() {
     fi
     run_in_prod docker compose up -d --no-deps --force-recreate app
     run_in_prod docker compose up -d --no-deps --force-recreate cron
-    recreate_backup_scheduler || echo "    backup-scheduler no se pudo recrear en el rollback; revisarlo a mano."
     sleep 5
     if prod_run curl -sf http://127.0.0.1:3000/api/health; then
       echo "    rollback restored $PREV_IMAGE"
@@ -721,7 +708,6 @@ check_cron_health() {
 }
 
 run_timed "Cron health check" check_cron_health
-run_timed "Recreating backup-scheduler" recreate_backup_scheduler
 # Read-only protected evaluator smoke. It does not call either sync route and
 # keeps CRON_SECRET inside the app container process.
 run_protected_cron_smoke() {
@@ -777,6 +763,43 @@ if [ "$public_smoke_ok" -ne 1 ]; then
   exit 1
 fi
 [ -n "$PROD_PUBLIC_URL" ] && echo "    200 OK desde fuera"
+
+# `backup-scheduler` vive bajo `profiles: ["backup"]`, así que ningún `up` sin
+# `--profile backup` lo crea ni lo actualiza. El deploy no lo tocaba: hasta el
+# 2026-10-21 producción pasó semanas sin el contenedor —sin respaldo diario— y
+# con el BACKUP_HOST_PATH en root:root, donde el uid 1001 no puede escribir, sin
+# que un solo deploy lo notara. Va después del rollback a propósito: un
+# scheduler roto no invalida la release, pero el deploy no termina en verde.
+start_backup_scheduler() {
+  run_in_prod docker compose --profile backup up -d --no-deps --force-recreate backup-scheduler
+}
+
+check_backup_scheduler() {
+  scheduler_containers=$(run_in_prod docker compose --profile backup ps -q backup-scheduler | tr -d '\r')
+  set -- $scheduler_containers
+  test "$#" -eq 1
+  scheduler_container="$1"
+  test "$(prod_run docker inspect --format '{{.Config.Image}}' "$scheduler_container" | tr -d '\r')" = "$IMAGE"
+  # El scheduler espera a /api/health y sale si no responde; tras ese margen
+  # tiene que seguir corriendo, no reiniciándose.
+  sleep 10
+  test "$(prod_run docker inspect --format '{{.State.Status}}' "$scheduler_container" | tr -d '\r')" = "running"
+  # Mismo montaje y mismo uid que `app`: si acá no se escribe, tampoco funciona
+  # el botón de Administración › Respaldos.
+  run_in_prod docker compose --profile backup exec -T backup-scheduler sh -c 'test -w "$BACKUP_DIR"'
+}
+
+run_timed "Levantando el respaldo programado (backup-scheduler)" start_backup_scheduler
+if ! run_timed "Verificando el respaldo programado" check_backup_scheduler; then
+  echo
+  echo "ERROR: la release quedó arriba, pero el respaldo diario no está operativo."
+  echo "       backup-scheduler no corre con $IMAGE o no puede escribir en BACKUP_DIR."
+  echo "       Revisa en el servidor:"
+  echo "         docker compose --profile backup logs --tail=50 backup-scheduler"
+  echo "         ls -ld \"\$BACKUP_HOST_PATH\"   # debe ser 1001:1001 (sudo chown 1001:1001 ...)"
+  echo "       No se hace rollback: la aplicación no depende del scheduler."
+  exit 1
+fi
 
 echo
 echo "==> Verificando Base preventiva 2026..."
