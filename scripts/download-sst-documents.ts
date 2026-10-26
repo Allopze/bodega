@@ -13,12 +13,20 @@
  */
 import { promises as fs } from "node:fs"
 import path from "node:path"
-import { readSstDocument, listSstStorageFiles } from "@/lib/storage/sst-backend"
+import { readSstDocument, listSstStorageFiles, resolveSstBackend } from "@/lib/storage/sst-backend"
 
 async function main() {
+  // El orquestador pregunta primero dónde viven los documentos, con la misma
+  // regla que la app (`system_settings` → env → filesystem). Va en la última
+  // línea del stdout: el logger puede escribir antes.
+  if (process.argv[2] === "--print-backend") {
+    console.log(await resolveSstBackend())
+    return
+  }
+
   const destination = process.argv[2]
   if (!destination) {
-    console.error("Uso: node scripts/download-sst-documents.mjs <directorio-destino>")
+    console.error("Uso: node scripts/download-sst-documents.mjs <directorio-destino> | --print-backend")
     process.exit(2)
   }
 

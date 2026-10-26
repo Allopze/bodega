@@ -126,6 +126,18 @@ prod_sh() {
   ssh "${prod_ssh_opts[@]}" "$PROD_SSH" "$1"
 }
 
+# backup-scheduler vive en el perfil `backup`, así que los `up` de app y cron no
+# lo tocan: seguía con la imagen y el entorno del deploy en que se levantó, y los
+# arreglos del orquestador o de su bloque del compose no le llegaban nunca. Sólo
+# se recrea si ya corre: un deploy no enciende respaldos donde nadie los usa.
+recreate_backup_scheduler() {
+  if [ -n "$(run_in_prod docker compose --profile backup ps -q backup-scheduler | tr -d '\r')" ]; then
+    run_in_prod docker compose --profile backup up -d --no-deps --force-recreate backup-scheduler
+  else
+    echo "    backup-scheduler no está corriendo; se deja como está."
+  fi
+}
+
 if ! prod_run test -d "$PROD_DIR"; then
   echo "ERROR: no se pudo entrar a $PROD_SSH o falta el directorio $PROD_DIR"
   echo "       Prueba: ssh ${prod_ssh_opts[*]} $PROD_SSH true"
@@ -343,6 +355,7 @@ rollback_release() {
     fi
     run_in_prod docker compose up -d --no-deps --force-recreate app
     run_in_prod docker compose up -d --no-deps --force-recreate cron
+    recreate_backup_scheduler || echo "    backup-scheduler no se pudo recrear en el rollback; revisarlo a mano."
     sleep 5
     if prod_run curl -sf http://127.0.0.1:3000/api/health; then
       echo "    rollback restored $PREV_IMAGE"
@@ -708,6 +721,7 @@ check_cron_health() {
 }
 
 run_timed "Cron health check" check_cron_health
+run_timed "Recreating backup-scheduler" recreate_backup_scheduler
 # Read-only protected evaluator smoke. It does not call either sync route and
 # keeps CRON_SECRET inside the app container process.
 run_protected_cron_smoke() {
