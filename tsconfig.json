@@ -43,6 +43,7 @@
     "referencia",
     "erpnext-develop",
     "odoo-19.0",
+    "dashboards-referencia",
     ".claude/worktrees"
   ]
 }
