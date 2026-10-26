@@ -75,3 +75,21 @@ Fecha: 2026-10-26 · Rama: `feat/dashboard-rediseno` · Entorno: `next dev` loca
 - E2E en un worktree desechable (`e2e/dashboard.spec.ts`, `e2e/dashboard-rediseno.spec.ts`, `e2e/densidad-kpi.spec.ts`, `e2e/densidad-kpi-filtros.spec.ts`):
   - primera corrida: 61 pasan, 2 fallan por el hallazgo 8 y 1 se omite por el 9;
   - nueva corrida de `dashboard.spec.ts` tras el arreglo: 27 de 27 pasan.
+
+## Revisión de código y correcciones (commit `12ea3b0c`)
+
+Revisión en dos ejes (estándares del repo y especificación + errores) sobre `c34e1efe...HEAD`. Se corrigió:
+
+| # | Clase | Hallazgo | Resolución |
+|---|---|---|---|
+| R1 | PRODUCT BUG | En el Resumen, el tile vacío «Gasto en OC» mostraba «↓100% vs. sep» en verde (rol sin permiso de crear OC) | La variación se anula sin OC y `KpiCard` nunca muestra variación en un tile vacío |
+| R2 | PRODUCT BUG (preexistente) | «Entregas de EPP» contaba filas trabajador × producto de un top 10: nunca pasaba de 10 | Conteo de trabajadores distintos en el servicio de analítica (`eppWorkerCount`) |
+| R3 | ACCESIBILIDAD | La cifra principal seguía al mouse pero no a las flechas | `ChartActiveSync` lee el punto activo de recharts para puntero y teclado; verificado en navegador (octubre → septiembre con flechas) |
+| R4 | INCONSISTENCY | La variación de gasto se calculaba distinto en Resumen y Finanzas; porcentajes escritos de tres formas | `spendVariationPct` y `formatPercent` como única fuente |
+| R5 | INCONSISTENCY | Dona del tablero con cifras mono; tooltip, brillo y nombres de mes duplicados | Sans, `ChartTooltipCard` con formato por serie, `GlowFilter` corregido, `MONTH_NAMES` en `lib/utils` |
+| R6 | UX FINDING | Margen de más en Finanzas al ocultarse el panel de gráficos; «×N» de actividad enlazaba a una sola entidad sin decirlo | `gap` en vez de márgenes; el enlace declara que abre el más reciente |
+| R7 | COVERAGE GAP | `densidad-kpi.spec.ts` contaba cualquier `h3` (pasaba siempre); la prueba de celdas vacías no esperaba a los gráficos diferidos | `data-kpi-group-label` y espera de `[data-chart-loading]` |
+
+Puertas tras las correcciones: `typecheck` y `lint` limpios (salvo la carpeta local `dashboards-referencia/`), `test:fast` 13.492 pruebas pasan, E2E de los cuatro specs del tablero: 63 pasan y 1 se omite (orden de la antigüedad de la deuda: la base E2E no tiene saldo abierto; lo cubre la prueba unitaria).
+
+Quedan para decisión del usuario: devolver a un rol que sólo aprueba una acción primaria en la cabecera, y el orden tendencia/medidor del Resumen (sigue el del mockup).
