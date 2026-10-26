@@ -252,7 +252,7 @@ test.describe("Dashboard operacional", () => {
     await expect(finanzas.getByText("Ingresos (facturación de venta)")).toBeVisible()
     await expect(finanzas.getByText("Egresos (compra y consumo)")).toBeVisible()
     await expect(finanzas.getByText("Gasto en OC", { exact: true })).toBeVisible()
-    await expect(finanzas.getByRole("link", { name: "Facturación" })).toHaveAttribute("href", "/facturacion")
+    await expect(finanzas.getByRole("link", { name: "Facturación", exact: true })).toHaveAttribute("href", "/facturacion")
 
     // A5: «Pendiente de cobro» y «Vencido» ya no son tiles. El titular del
     // gráfico «Antigüedad de la deuda» dice el saldo pendiente y lo vencido, así
@@ -298,9 +298,11 @@ test.describe("Dashboard operacional", () => {
   test("cada sección enlaza al módulo que la explica", async ({ page }) => {
     await page.goto("/dashboard?vista=adquisiciones")
     const adquisiciones = page.getByRole("region", { name: "Adquisiciones" })
-    await expect(adquisiciones.getByRole("link", { name: "Compras" })).toHaveAttribute("href", "/compras")
+    // `exact`: la fila «Compras» del ranking de módulos también es un enlace
+    // (a /pendientes?module=compras) y su nombre empieza igual.
+    await expect(adquisiciones.getByRole("link", { name: "Compras", exact: true })).toHaveAttribute("href", "/compras")
     // `/analitica` no estaba enlazada desde ningún punto del dashboard.
-    await expect(adquisiciones.getByRole("link", { name: "Analítica" })).toHaveAttribute("href", "/analitica")
+    await expect(adquisiciones.getByRole("link", { name: "Analítica", exact: true })).toHaveAttribute("href", "/analitica")
   })
 
   /*
