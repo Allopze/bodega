@@ -174,3 +174,8 @@ miper-web-mockup-3.html
 
 # Excels del RE-04 que se cargan con scripts/importar-miper-* (datos de faena: no se versionan).
 /importar-miper/
+
+# Rediseño del tablero (2026-10): bloques de referencia (Efferd) y el mockup
+# aprobado. Material de trabajo local, como miper-web-mockup-3.html.
+/dashboards-referencia
+/mockup-dashboard.html
