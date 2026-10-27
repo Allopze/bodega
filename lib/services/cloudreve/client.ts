@@ -462,6 +462,15 @@ function basicAuth(config: { username: string; password: string }): string {
   return `Basic ${Buffer.from(`${config.username}:${config.password}`, "utf8").toString("base64")}`
 }
 
+/**
+ * ¿La entrada de un PROPFIND es una carpeta? Cloudreve la marca como
+ * `<D:collection xmlns:D="DAV:"/>`: exigir la etiqueta sin atributos hacía que
+ * cada carpeta pasara por archivo, el GET devolviera 405 y el respaldo abortara.
+ */
+function isDavCollection(block: string): boolean {
+  return /<(?:[a-zA-Z0-9]+:)?collection\b[^>]*>/.test(block)
+}
+
 async function listRemoteFilesRecursive(prefixKey: string): Promise<string[]> {
   const config = await readCloudreveConfig()
   if (!config.hasCredentials) {
@@ -495,7 +504,7 @@ async function listRemoteFilesRecursive(prefixKey: string): Promise<string[]> {
     const href = /<[a-zA-Z0-9]+:href>([^<]+)<\/[a-zA-Z0-9]+:href>|<href>([^<]+)<\/href>/.exec(block)
     const raw = href?.[1] ?? href?.[2]
     if (!raw) continue
-    const isCollection = /<[a-zA-Z0-9]+:collection\s*\/?>/.test(block)
+    const isCollection = isDavCollection(block)
     const decodedPath = hrefPathname(raw)
     if (decodedPath === selfPath) continue
     const name = decodeURIComponent(decodedPath.split("/").pop() ?? "")
@@ -627,7 +636,7 @@ export async function listCloudreveBackupDates(basePath: string): Promise<string
   const dates: string[] = []
   const blocks = body.split(/<[a-zA-Z0-9]+:response\b|(?:\/)?<response\b/)
   for (const block of blocks) {
-    const isCollection = /<[a-zA-Z0-9]+:collection\s*\/?>/.test(block)
+    const isCollection = isDavCollection(block)
     if (!isCollection) continue
     const href = /<[a-zA-Z0-9]+:href>([^<]+)<\/[a-zA-Z0-9]+:href>|<href>([^<]+)<\/href>/.exec(block)
     const raw = href?.[1] ?? href?.[2]
