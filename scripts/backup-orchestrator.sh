@@ -49,6 +49,8 @@ warn()  { log "WARN: $*"; }
 # Variables globales para directorios temporales (los limpia cleanup)
 _CONFIG_TMP=""
 _UPLOAD_TMP=""
+_CLOUDREVE_SST_TMP=""
+_SST_STAGE=""
 # Variable global para trackear el paso que falló
 _FAILED_STEP=""
 
@@ -62,6 +64,13 @@ cleanup() {
   if [ -n "$_UPLOAD_TMP" ] && [ -d "$_UPLOAD_TMP" ]; then
     rm -rf "$_UPLOAD_TMP" 2>/dev/null || true
   fi
+  # Copias de los documentos SST: si el respaldo aborta a medio armar el tar,
+  # no deben quedar en el temporal.
+  for _tmp in "$_CLOUDREVE_SST_TMP" "$_SST_STAGE"; do
+    if [ -n "$_tmp" ] && [ -d "$_tmp" ]; then
+      rm -rf "$_tmp" 2>/dev/null || true
+    fi
+  done
 
   if [ $exit_code -ne 0 ]; then
     error "Backup FAILED with exit code $exit_code"
@@ -198,7 +207,7 @@ STORAGE_FILE="${SNAPSHOT_DIR}/storage.tar.gz"
 # backend se eligió desde Administración. Fuera de la imagen (sin el script
 # empaquetado) queda la variable.
 SST_BACKEND="${SST_STORAGE_BACKEND:-filesystem}"
-SST_DOWNLOADER="/app/scripts/download-sst-documents.mjs"
+SST_DOWNLOADER="${SST_DOWNLOADER:-/app/scripts/download-sst-documents.mjs}"
 if [ -f "$SST_DOWNLOADER" ]; then
   if ! SST_BACKEND="$(node "$SST_DOWNLOADER" --print-backend | tail -n 1)"; then
     error "No se pudo determinar dónde viven los documentos SST. Backup abortado."
@@ -225,7 +234,10 @@ if [ -d "$STORAGE_PATH" ]; then
     # contenido fresco desde Cloudreve. El volumen real queda intacto.
     # cp sin -a no preserva timestamps pero evita fallar si el destino tiene
     # dueño distinto (volumen Docker); los contenidos son lo que importa.
-    _SST_STAGE=$(mktemp -d "$(dirname "$STORAGE_PATH")/.sst-backup-stage.XXXXXX")
+    # En el temporal del sistema, no junto al storage: en prod el padre
+    # (/data) es de root y el proceso corre como nextjs, así que el mktemp
+    # fallaba y el respaldo abortaba en storage_tar sin decir por qué.
+    _SST_STAGE=$(mktemp -d)
     cp -a "$STORAGE_PATH" "${_SST_STAGE}/storage" 2>/dev/null || cp -r "$STORAGE_PATH" "${_SST_STAGE}/storage"
     rm -rf "${_SST_STAGE}/storage/sst-documents"
     mkdir -p "${_SST_STAGE}/storage/sst-documents"

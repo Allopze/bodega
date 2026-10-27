@@ -130,6 +130,44 @@ describe("I13-D — el respaldo no parte con el storage vacío", () => {
   })
 })
 
+describe("documentos SST en Cloudreve", () => {
+  // En prod la app y el scheduler corren como nextjs y el padre del storage
+  // (/data) es de root: el staging se armaba con `mktemp -d /data/...`, que
+  // fallaba sin mensaje en el log y abortaba en storage_tar (2026-10-27).
+  function cloudreveSetup() {
+    const parent = path.join(work, "data")
+    const storage = path.join(parent, "storage")
+    mkdirSync(path.join(storage, "pdtp-evidence"), { recursive: true })
+    writeFileSync(path.join(storage, "pdtp-evidence", "a.pdf"), "A")
+    const downloader = path.join(work, "download-sst-documents.mjs")
+    writeFileSync(downloader, "// lo reemplaza el node de mentira")
+    // node de mentira: responde el backend y "descarga" un PDF al destino.
+    stub("node", `
+if [ "$2" = "--print-backend" ]; then echo cloudreve; exit 0; fi
+if [ "$1" = "${downloader}" ]; then mkdir -p "$2/Evaluaciones SST"; printf 'PDF' > "$2/Evaluaciones SST/e1.pdf"; exit 0; fi
+exit 0`)
+    chmodSync(parent, 0o555)
+    return { parent, storage, downloader }
+  }
+
+  it("arma el tar con los documentos de Cloudreve aunque el padre del storage no sea escribible", () => {
+    const { parent, storage, downloader } = cloudreveSetup()
+    try {
+      const { code, out } = run("backup-orchestrator.sh", orchestratorEnv(storage, { SST_DOWNLOADER: downloader }))
+      expect(code, out).toBe(0)
+      expect(out).toContain("Documentos SST: backend cloudreve")
+      expect(latestManifest().components.storage.file_count).toBe(2)
+      const snapshots = path.join(work, "backups", "snapshots")
+      const [date] = spawnSync("ls", [snapshots], { encoding: "utf8" }).stdout.trim().split("\n")
+      const listing = spawnSync("tar", ["-tzf", path.join(snapshots, date!, "storage.tar.gz")], { encoding: "utf8" }).stdout
+      expect(listing).toContain("storage/sst-documents/Evaluaciones SST/e1.pdf")
+      expect(listing).toContain("storage/pdtp-evidence/a.pdf")
+    } finally {
+      chmodSync(parent, 0o755)
+    }
+  })
+})
+
 describe("I13-D — backup-storage.sh no calla una copia que no hizo", () => {
   it("sin destino sale con 1", () => {
     const storage = path.join(work, "storage")

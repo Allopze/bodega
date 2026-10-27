@@ -144,10 +144,13 @@ export async function triggerManualBackupAction(): Promise<BackupActionResult> {
       // El texto de `execFile` lleva la ruta del script y la pantalla lo
       // descarta: el motivo real está en el paso que el orquestador anotó.
       const failure = describeFailedStep(await readBackupStatusForRun(backupDir, logId))
-      const stdout = (err as { stdout?: string }).stdout ?? ""
+      const { stdout = "", stderr = "" } = err as { stdout?: string; stderr?: string }
+      // stderr también: ahí escriben mktemp, tar y node cuando fallan, y sin él
+      // el log sólo mostraba el paso, no el motivo.
       logger.error("[admin/backups] el orquestador falló", {
         errorCode: failure.code,
         stdoutTail: stdout.split("\n").slice(-40).join("\n"),
+        stderrTail: stderr.split("\n").slice(-20).join("\n"),
       })
       await completeBackupLog(logId, {
         status: "failed",
