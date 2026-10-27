@@ -72,13 +72,19 @@ export function DocumentTableRow({
       <TableCell className="text-xs text-(--color-text-subtle)">{formatDate(d.updatedAt)}</TableCell>
       <TableCell className="text-xs text-(--color-text-subtle)">{formatFileSize(d.fileSize)}</TableCell>
       <TableCell>
-        <div className="flex justify-end gap-1">
-          <Button asChild size="sm" variant="secondary">
-            <a href={`/api/prevencion/documentacion/${d.id}?download=1`} download>
-              <DownloadSimple size={14} className="mr-1" />
-              Descargar
-            </a>
-          </Button>
+        <div className="flex items-center justify-end gap-1">
+          {/* Sin versión vigente la ruta responde 404 en JSON, y `download` lo
+              guardaría como archivo: el RE-08 se sembró así, sin binario. */}
+          {d.currentVersionId ? (
+            <Button asChild size="sm" variant="secondary">
+              <a href={`/api/prevencion/documentacion/${d.id}?download=1`} download>
+                <DownloadSimple size={14} className="mr-1" />
+                Descargar
+              </a>
+            </Button>
+          ) : (
+            <span className="px-2 text-xs text-(--color-text-subtle)">Sin archivo</span>
+          )}
           {canManage && (
             <Button type="button" size="sm" variant="ghost" onClick={onMove}>
               Mover
@@ -93,7 +99,9 @@ export function DocumentTableRow({
             <DropdownMenuContent align="end">
               <DropdownMenuItem onSelect={onOpenDetail}>Ver detalle</DropdownMenuItem>
               <DropdownMenuItem onSelect={onOpenDetail}>Vista previa</DropdownMenuItem>
-              <DropdownMenuItem asChild><a href={`/api/prevencion/documentacion/${d.id}?download=1`} download>Descargar</a></DropdownMenuItem>
+              {d.currentVersionId && (
+                <DropdownMenuItem asChild><a href={`/api/prevencion/documentacion/${d.id}?download=1`} download>Descargar</a></DropdownMenuItem>
+              )}
               {canManage && <DropdownMenuSeparator />}
               {canManage && <DropdownMenuItem onSelect={onMove}>Mover</DropdownMenuItem>}
               {canManage && <DropdownMenuItem onSelect={onOpenDetail}>Subir nueva versión</DropdownMenuItem>}

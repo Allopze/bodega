@@ -210,14 +210,17 @@ export function ContextMenu({
             >
               Vista previa
             </button>
-            <Link
-              role="menuitem"
-              href={`/api/prevencion/documentacion/${menu.doc.id}?download=1`}
-              className="block rounded px-2.5 py-2 text-sm hover:bg-(--color-surface-2)"
-              onClick={onClose}
-            >
-              Descargar
-            </Link>
+            {menu.doc.currentVersionId && (
+              <a
+                role="menuitem"
+                href={`/api/prevencion/documentacion/${menu.doc.id}?download=1`}
+                download
+                className="block rounded px-2.5 py-2 text-sm hover:bg-(--color-surface-2)"
+                onClick={onClose}
+              >
+                Descargar
+              </a>
+            )}
             {canManage && (
               <button
                 type="button"

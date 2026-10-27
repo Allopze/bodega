@@ -182,6 +182,39 @@ describe("DocumentacionView", () => {
     expect(screen.getAllByLabelText(/Documento Matriz de riesgos/i).length).toBeGreaterThan(0)
   })
 
+  // Los 99 del RE-08 se sembraron como inventario: borrador y sin versión. La
+  // ruta de descarga responde 404 en JSON y el atributo `download` lo guardaba
+  // como archivo, así que quien pedía el documento recibía un `.json`.
+  it("sólo ofrece descargar un documento que tiene versión vigente", () => {
+    render(
+      <DocumentacionView
+        counters={counters}
+        expiring={[]}
+        documents={[
+          DOCUMENT,
+          { ...DOCUMENT, id: "sdoc-2", title: "Política del Sistema Integrado", currentVersionId: null, fileName: null, mimeType: null, fileSize: null },
+        ]}
+        folders={[]}
+        folderOptions={[]}
+        breadcrumbs={[{ label: "Prevención", href: "/prevencion" }, { label: "Documentación" }]}
+        searchParams={{}}
+        total={2}
+        canManage={false}
+        canArchive={false}
+        userId="test-user"
+      />,
+    )
+
+    const downloads = screen.getAllByRole("link", { name: /^Descargar$/ })
+    expect(downloads).toHaveLength(1)
+    expect(downloads[0]).toHaveAttribute("href", "/api/prevencion/documentacion/sdoc-1?download=1")
+    expect(screen.getByText("Sin archivo")).toBeInTheDocument()
+
+    fireEvent.contextMenu(screen.getAllByText("Política del Sistema Integrado")[0]!)
+    const menu = screen.getByRole("menu", { name: "Acciones" })
+    expect(within(menu).queryByRole("menuitem", { name: "Descargar" })).not.toBeInTheDocument()
+  })
+
   it("lets the user switch between list and grid via the toggle", () => {
     render(
       <DocumentacionView
