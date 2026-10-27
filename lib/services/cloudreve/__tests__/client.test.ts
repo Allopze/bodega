@@ -20,6 +20,7 @@ import {
   deleteCloudreveFile,
   ensureParentDirs,
   getCloudreveFile,
+  listCloudreveBackupDates,
   listSstDir,
   listSstFilesRecursive,
   mkdirCloudreveCollection,
@@ -238,6 +239,44 @@ describe("cloudreve WebDAV client", () => {
       "raiz.pdf",
       "Carpeta/dentro.pdf",
     ])
+  })
+
+  it("reconoce las carpetas tal como las marca Cloudreve (collection con xmlns)", async () => {
+    // Cloudreve responde `<D:collection xmlns:D="DAV:"/>`: el regex exigía la
+    // etiqueta sin atributos, cada carpeta pasaba por archivo, el GET devolvía
+    // 405 y el respaldo abortaba en storage_tar (prod, 2026-10-27).
+    const folder = (href: string) =>
+      `<D:response><D:href>${href}</D:href><D:propstat><D:prop>`
+      + `<D:resourcetype><D:collection xmlns:D="DAV:"/></D:resourcetype>`
+      + `</D:prop></D:propstat></D:response>`
+    mockFetch
+      .mockResolvedValueOnce(new Response(
+        `<?xml version="1.0" encoding="UTF-8"?><D:multistatus xmlns:D="DAV:">`
+        + folder("/dav/storage/sst-documents/")
+        + folder("/dav/storage/sst-documents/6_Planificaci%C3%B3n/")
+        + `</D:multistatus>`,
+        { status: 207 },
+      ))
+      .mockResolvedValueOnce(new Response(
+        `<?xml version="1.0" encoding="UTF-8"?><D:multistatus xmlns:D="DAV:">`
+        + folder("/dav/storage/sst-documents/6_Planificaci%C3%B3n/")
+        + `<D:response><D:href>/dav/storage/sst-documents/6_Planificaci%C3%B3n/plan.pdf</D:href>`
+        + `<D:propstat><D:prop><D:resourcetype></D:resourcetype></D:prop></D:propstat></D:response>`
+        + `</D:multistatus>`,
+        { status: 207 },
+      ))
+    await expect(listSstFilesRecursive()).resolves.toEqual(["6_Planificación/plan.pdf"])
+  })
+
+  it("lista las fechas de respaldo con el formato de carpeta de Cloudreve", async () => {
+    mockFetch.mockResolvedValueOnce(new Response(
+      `<?xml version="1.0" encoding="UTF-8"?><D:multistatus xmlns:D="DAV:">`
+      + `<D:response><D:href>/dav/backups/plataforma/</D:href><D:propstat><D:prop><D:resourcetype><D:collection xmlns:D="DAV:"/></D:resourcetype></D:prop></D:propstat></D:response>`
+      + `<D:response><D:href>/dav/backups/plataforma/2026-10-26/</D:href><D:propstat><D:prop><D:resourcetype><D:collection xmlns:D="DAV:"/></D:resourcetype></D:prop></D:propstat></D:response>`
+      + `</D:multistatus>`,
+      { status: 207 },
+    ))
+    await expect(listCloudreveBackupDates("backups/plataforma")).resolves.toEqual(["2026-10-26"])
   })
 
   it("classifies an unusable base URL as a configuration error on a normal read", async () => {
