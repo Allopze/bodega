@@ -243,6 +243,7 @@ const MODULE_LABELS: Record<string, string> = {
   combustibles:    "Combustibles",
   flota:           "Flota",
   mantenciones:    "Mantenciones",
+  mantencion_equipos: "Mantención de equipos",
   prevention:      "Prevención",
   operations:      "Pendientes operacionales",
   billing:         "Facturación y cobranza",

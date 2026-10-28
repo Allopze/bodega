@@ -660,3 +660,26 @@ export function resolveTiFile(filePath: string): string | null {
   if (!isSafeStorageName(storageName)) return null
   return path.join(/*turbopackIgnore: true*/ resolveTiDir(), storageName)
 }
+
+/* ── Mantención de equipos: fotos de respaldo y PDF archivados ───────────────
+ * Un solo directorio plano (`storage/mantencion/`). Las fotos se nombran por su
+ * UUID de teléfono y los PDF por registro y revisión, así que los nombres son
+ * únicos sin subcarpetas. Se sirven sólo por `/api/mantencion/*`, que verifica
+ * sesión y alcance antes de leer el disco. */
+const MANTENCION_FILE_PREFIX = "storage/mantencion/"
+
+export function resolveMantencionDir(): string {
+  return path.join(/*turbopackIgnore: true*/ resolveStorageDir(), "mantencion")
+}
+
+export function createMantencionFilePath(storageName: string): string {
+  if (!isSafeStorageName(storageName)) throw new Error("Invalid maintenance file storage name")
+  return `${MANTENCION_FILE_PREFIX}${storageName}`
+}
+
+export function resolveMantencionFile(filePath: string): string | null {
+  if (!filePath.startsWith(MANTENCION_FILE_PREFIX)) return null
+  const storageName = filePath.slice(MANTENCION_FILE_PREFIX.length)
+  if (!isSafeStorageName(storageName)) return null
+  return path.join(/*turbopackIgnore: true*/ resolveMantencionDir(), storageName)
+}

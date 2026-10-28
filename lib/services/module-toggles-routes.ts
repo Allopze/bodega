@@ -47,6 +47,12 @@ export const ROUTE_OWNER_ALIASES: RouteOwnerRule[] = [
   { moduleId: "combustibles", submoduleHref: "/combustibles/control", prefix: "/api/combustibles/cargas" },
   { moduleId: "flota", submoduleHref: "/flota", prefix: "/api/flota" },
   { moduleId: "mantenciones", submoduleHref: "/mantenciones", prefix: "/api/mantenciones" },
+  // Mantención de equipos: la app del mecánico (PWA) y sus APIs, incluidas las
+  // de sincronización que autentican con credencial de dispositivo.
+  { moduleId: "mantencion_equipos", submoduleHref: "/m/mantencion", prefix: "/api/mantencion/sync" },
+  { moduleId: "mantencion_equipos", submoduleHref: "/m/mantencion", prefix: "/api/mantencion/dispositivo" },
+  { moduleId: "mantencion_equipos", submoduleHref: "/mantencion/registros", prefix: "/api/mantencion" },
+  { moduleId: "mantencion_equipos", submoduleHref: "/mantencion/registros", prefix: "/mantencion/importar" },
   { moduleId: "warehouse", submoduleHref: "/bodega", prefix: "/api/bodega" },
   { moduleId: "deliveries", submoduleHref: "/entregas", prefix: "/api/entregas" },
   // Módulo TI: fotos y adjuntos sirven evidencia de asignaciones/actas.

@@ -1,0 +1,2615 @@
+{
+ "_nota": "Datos semilla extraídos del prototipo validado (28-10-2026). Fuente de verdad para la carga inicial; los registros de ejemplo del prototipo NO se incluyen.",
+ "faenas": [
+  {
+   "nombre": "Biodiversa",
+   "codigoFolio": "BIO"
+  },
+  {
+   "nombre": "Cholguan",
+   "codigoFolio": "CHO"
+  },
+  {
+   "nombre": "Santa Fe",
+   "codigoFolio": "STF"
+  },
+  {
+   "nombre": "Pacífico",
+   "codigoFolio": "PAC"
+  },
+  {
+   "nombre": "Flor del Laja",
+   "codigoFolio": "FDL"
+  },
+  {
+   "nombre": "Arauco",
+   "codigoFolio": "ARA"
+  },
+  {
+   "nombre": "Cabrero",
+   "codigoFolio": "CAB"
+  },
+  {
+   "nombre": "Teno",
+   "codigoFolio": "TEN"
+  },
+  {
+   "nombre": "Servimar",
+   "codigoFolio": "SER"
+  },
+  {
+   "nombre": "Sin ubicación",
+   "codigoFolio": "SUB"
+  }
+ ],
+ "tiposEquipo": [
+  {
+   "nombre": "Camión",
+   "unidad": "km"
+  },
+  {
+   "nombre": "Tracto",
+   "unidad": "km"
+  },
+  {
+   "nombre": "Camioneta",
+   "unidad": "km"
+  },
+  {
+   "nombre": "Cargador frontal",
+   "unidad": "h"
+  },
+  {
+   "nombre": "Minicargador",
+   "unidad": "h"
+  },
+  {
+   "nombre": "Excavadora",
+   "unidad": "h"
+  },
+  {
+   "nombre": "Bulldozer",
+   "unidad": "h"
+  },
+  {
+   "nombre": "Retroexcavadora",
+   "unidad": "h"
+  },
+  {
+   "nombre": "Tractor",
+   "unidad": "h"
+  },
+  {
+   "nombre": "Grúa horquilla",
+   "unidad": "h"
+  }
+ ],
+ "marcasConReglas": [
+  "Scania",
+  "Mercedes",
+  "MAN",
+  "Ford Cargo",
+  "Volkswagen",
+  "Freightliner",
+  "Sinotruk"
+ ],
+ "mecanicos": [
+  {
+   "nombre": "Javier Roa",
+   "faena": "Biodiversa"
+  },
+  {
+   "nombre": "Deivis González",
+   "faena": "Biodiversa"
+  },
+  {
+   "nombre": "Luis Campos",
+   "faena": "Biodiversa"
+  },
+  {
+   "nombre": "Marcelo Bastías",
+   "faena": "Cholguan"
+  },
+  {
+   "nombre": "Leonardo Echeverría",
+   "faena": "Cholguan"
+  },
+  {
+   "nombre": "Nelson Silva",
+   "faena": "Cholguan"
+  },
+  {
+   "nombre": "Emilio Padilla",
+   "faena": "Cholguan"
+  }
+ ],
+ "talleresExternos": [
+  "Maestranza Melo",
+  "Maestranza Meléndez",
+  "Moisés Chavarría",
+  "Hidráulica JB",
+  "Majesa",
+  "Tesca",
+  "Tecno Aire",
+  "Eduardo Silva",
+  "Maestranza Crossal",
+  "Salfa"
+ ],
+ "conductores": [
+  "AEDO POLANCO JOSE A.",
+  "BELTRAN IRARRAZAVAL HECTOR A.",
+  "BRICEÑO SEPULVEDA JOSE R.",
+  "BURGOS PEÑA PEDRO G.",
+  "BURGOS TRONCOSO MAURICIO A.",
+  "CHAVARRIA AZUA EDUARDO E.",
+  "CID RIVERA JUAN O.",
+  "CID SOTO NORA DEL C.",
+  "FRIZ HERRERA FREDY E.",
+  "GARRIDO INOSTROZA JONATHAN A.",
+  "GODOY ROMAN JOSE M.",
+  "GONZALEZ CANALES CARLOS E.",
+  "INOSTROZA VILLABLANCA CARLOS E.",
+  "JARA SALAZAR PEDRO E.",
+  "MENA CID RAMON E.",
+  "PALMA TRONCOSO JORGE E.",
+  "PARADA AVENDAÑO CHRISTIAN P.",
+  "REYES CID GERALDINE",
+  "REYES FERNANDEZ JUAN C.",
+  "RIVERA CHAVARRIA IVAN",
+  "ROCA ROCA SERGIO DE LA C",
+  "SAN MARTIN RIQUELME CLAUDIO",
+  "SAN MARTIN VALERIA CARLOS H.",
+  "VALLEJOS MUÑOZ MAURICIO A.",
+  "VASQUEZ ALTAMIRANO NATANAEL F.",
+  "VEGA VALENZUELA HECTOR M.",
+  "VIDAL VIDAL CESAR P."
+ ],
+ "tiposTrabajo": [
+  "Mecánico",
+  "Soldadura",
+  "Eléctrico",
+  "Hidráulico"
+ ],
+ "aceites": [
+  "Motor",
+  "Transmisión",
+  "Corona",
+  "Hidráulico"
+ ],
+ "motivosRapidosNoRealizado": [
+  "Falta repuesto",
+  "Sin herramienta",
+  "Requiere taller",
+  "Equipo en operación"
+ ],
+ "pautas": [
+  {
+   "id": "p-camiones",
+   "nombre": "Camiones y tractos",
+   "unidad": "km",
+   "intervalos": [
+    10000,
+    20000,
+    40000,
+    80000,
+    160000
+   ],
+   "origen": "Planilla «Diferencias actividades por equipo».",
+   "grupos": [
+    {
+     "nombre": "Motor",
+     "items": [
+      {
+       "clave": "km1",
+       "nombre": "Inspección visual general",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "km2",
+       "nombre": "Escaneo electrónico",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "km3",
+       "nombre": "Revisión fugas de motor",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "km4",
+       "nombre": "Revisión nivel aceite motor",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "km5",
+       "nombre": "Cambio aceite motor",
+       "aplicaPorIntervalo": [
+        0,
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "km6",
+       "nombre": "Cambio filtro aceite motor",
+       "aplicaPorIntervalo": [
+        0,
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "km7",
+       "nombre": "Revisión filtro aire motor",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "km8",
+       "nombre": "Cambio filtro aire motor",
+       "aplicaPorIntervalo": [
+        0,
+        0,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "km9",
+       "nombre": "Cambio filtro combustible",
+       "aplicaPorIntervalo": [
+        0,
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "km10",
+       "nombre": "Cambio filtro separador agua",
+       "aplicaPorIntervalo": [
+        0,
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "km11",
+       "nombre": "Revisión correas auxiliares",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "km12",
+       "nombre": "Cambio correas auxiliares",
+       "aplicaPorIntervalo": [
+        0,
+        0,
+        0,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "km13",
+       "nombre": "Revisión sistema refrigeración",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "km14",
+       "nombre": "Cambio refrigerante",
+       "aplicaPorIntervalo": [
+        0,
+        0,
+        0,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "km15",
+       "nombre": "Regulación válvulas motor*",
+       "aplicaPorIntervalo": [
+        0,
+        0,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "km16",
+       "nombre": "Revisión turbo",
+       "aplicaPorIntervalo": [
+        0,
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "km17",
+       "nombre": "Revisión sistema SCR/AdBlue",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "km18",
+       "nombre": "Revisión DPF",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1,
+        1
+       ]
+      }
+     ]
+    },
+    {
+     "nombre": "Transmisión y tren motriz",
+     "items": [
+      {
+       "clave": "km19",
+       "nombre": "Revisión fugas transmisión",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "km20",
+       "nombre": "Revisión fugas diferencial",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "km21",
+       "nombre": "Cambio aceite caja cambios",
+       "aplicaPorIntervalo": [
+        0,
+        0,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "km22",
+       "nombre": "Cambio filtro caja automatizada",
+       "aplicaPorIntervalo": [
+        0,
+        0,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "km23",
+       "nombre": "Revisión embrague",
+       "aplicaPorIntervalo": [
+        0,
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "km24",
+       "nombre": "Cambio aceite diferencial",
+       "aplicaPorIntervalo": [
+        0,
+        0,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "km25",
+       "nombre": "Revisión cardanes",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "km26",
+       "nombre": "Engrase cardanes",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "km27",
+       "nombre": "Revisión crucetas",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "km28",
+       "nombre": "Revisión soporte cardán",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1,
+        1
+       ]
+      }
+     ]
+    },
+    {
+     "nombre": "Ruedas y frenos",
+     "items": [
+      {
+       "clave": "km29",
+       "nombre": "Revisión masas de rueda",
+       "aplicaPorIntervalo": [
+        0,
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "km30",
+       "nombre": "Revisión rodamientos",
+       "aplicaPorIntervalo": [
+        0,
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "km31",
+       "nombre": "Revisión neumáticos",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "km32",
+       "nombre": "Rotación neumáticos (si aplica)",
+       "aplicaPorIntervalo": [
+        0,
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "km33",
+       "nombre": "Revisión presión neumáticos",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "km34",
+       "nombre": "Revisión pastillas/balatas",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "km35",
+       "nombre": "Revisión discos/tambores",
+       "aplicaPorIntervalo": [
+        0,
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "km36",
+       "nombre": "Revisión cálipers",
+       "aplicaPorIntervalo": [
+        0,
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "km37",
+       "nombre": "Revisión sistema ABS/EBS",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1,
+        1
+       ]
+      }
+     ]
+    },
+    {
+     "nombre": "Aire y suspensión",
+     "items": [
+      {
+       "clave": "km38",
+       "nombre": "Revisión compresor aire",
+       "aplicaPorIntervalo": [
+        0,
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "km39",
+       "nombre": "Cambio cartucho secador aire",
+       "aplicaPorIntervalo": [
+        0,
+        0,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "km40",
+       "nombre": "Revisión válvulas neumáticas",
+       "aplicaPorIntervalo": [
+        0,
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "km41",
+       "nombre": "Revisión líneas de aire TECALAN",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "km42",
+       "nombre": "Revisión suspensión",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "km43",
+       "nombre": "Revisión amortiguadores",
+       "aplicaPorIntervalo": [
+        0,
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "km44",
+       "nombre": "Revisión bujes suspensión",
+       "aplicaPorIntervalo": [
+        0,
+        1,
+        1,
+        1,
+        1
+       ]
+      }
+     ]
+    },
+    {
+     "nombre": "Dirección",
+     "items": [
+      {
+       "clave": "km45",
+       "nombre": "Revisión dirección hidráulica",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "km46",
+       "nombre": "Cambio aceite dirección**",
+       "aplicaPorIntervalo": [
+        0,
+        0,
+        0,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "km47",
+       "nombre": "Revisión terminales dirección",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1,
+        1
+       ]
+      }
+     ]
+    },
+    {
+     "nombre": "Eléctrico y luces",
+     "items": [
+      {
+       "clave": "km48",
+       "nombre": "Revisión alternador",
+       "aplicaPorIntervalo": [
+        0,
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "km49",
+       "nombre": "Revisión motor partida",
+       "aplicaPorIntervalo": [
+        0,
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "km50",
+       "nombre": "Prueba de baterías",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "km51",
+       "nombre": "Limpieza bornes batería",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "km52",
+       "nombre": "Revisión luces y señalización",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "km53",
+       "nombre": "Calibración sensores críticos",
+       "aplicaPorIntervalo": [
+        0,
+        0,
+        1,
+        1,
+        1
+       ]
+      }
+     ]
+    }
+   ],
+   "reglasPorMarca": {
+    "marcas": [
+     "Scania",
+     "Mercedes",
+     "MAN",
+     "Ford Cargo",
+     "Volkswagen",
+     "Freightliner",
+     "Sinotruk"
+    ],
+    "codigos": {
+     "A": "Aplica",
+     "W": "Revisar: se muestra con aviso «Confirmar con pauta del fabricante»",
+     "X": "No aplica: se oculta"
+    },
+    "filas": [
+     {
+      "actividadPlanilla": "Regulación de válvulas motor",
+      "claveItem": "km15",
+      "valores": "AWAAAWA"
+     },
+     {
+      "actividadPlanilla": "Diagnóstico electrónico motor",
+      "claveItem": null,
+      "valores": "AAAAAAW"
+     },
+     {
+      "actividadPlanilla": "Revisión sistema SCR (AdBlue/Urea)",
+      "claveItem": "km17",
+      "valores": "AAAWWAW"
+     },
+     {
+      "actividadPlanilla": "Revisión DPF",
+      "claveItem": "km18",
+      "valores": "AAAWWAW"
+     },
+     {
+      "actividadPlanilla": "Cambio filtro caja automatizada",
+      "claveItem": "km22",
+      "valores": "AAWXXAX"
+     },
+     {
+      "actividadPlanilla": "Revisión suspensión neumática",
+      "claveItem": "km42",
+      "valores": "AAAWWAW"
+     },
+     {
+      "actividadPlanilla": "Cambio aceite dirección hidráulica",
+      "claveItem": "km46",
+      "valores": "WWWAAWA"
+     },
+     {
+      "actividadPlanilla": "Escaneo de sistemas electrónicos",
+      "claveItem": "km2",
+      "valores": "AAAWWAW"
+     },
+     {
+      "actividadPlanilla": "Calibración sensores motor",
+      "claveItem": "km53",
+      "valores": "AAAWWAW"
+     }
+    ]
+   }
+  },
+  {
+   "id": "p-maquinaria",
+   "nombre": "Maquinaria pesada",
+   "unidad": "h",
+   "intervalos": [
+    300,
+    600,
+    900,
+    1200
+   ],
+   "origen": "Formulario «PAUTA MANTENCION PREVENTIVA MAQUINARIA». Falta definir qué ítems van en cada intervalo: por ahora todos aparecen en todos.",
+   "grupos": [
+    {
+     "nombre": "General y estructura",
+     "items": [
+      {
+       "clave": "h1",
+       "nombre": "Inspección general del equipo",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "h2",
+       "nombre": "Revisión de fugas de aceite, combustible y refrigerante",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "h3",
+       "nombre": "Revisión de niveles de fluidos",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "h4",
+       "nombre": "Inspección estructura, bastidor y soldaduras",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1
+       ]
+      }
+     ]
+    },
+    {
+     "nombre": "Motor",
+     "items": [
+      {
+       "clave": "h5",
+       "nombre": "Nivel y condición aceite motor",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "h6",
+       "nombre": "Cambio aceite y filtro motor según pauta específica",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "h7",
+       "nombre": "Inspección correas y tensores",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "h8",
+       "nombre": "Revisión sistema de refrigeración",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "h9",
+       "nombre": "Limpieza radiador/enfriadores",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "h10",
+       "nombre": "Drenaje separador de agua",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "h11",
+       "nombre": "Cambio filtros combustible según pauta específica",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "h12",
+       "nombre": "Inspección filtro de aire primario",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "h13",
+       "nombre": "Inspección filtro de aire secundario",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "h14",
+       "nombre": "Control concentración/condición refrigerante",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "h15",
+       "nombre": "Muestra S·O·S refrigerante",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1
+       ]
+      }
+     ]
+    },
+    {
+     "nombre": "Hidráulico",
+     "items": [
+      {
+       "clave": "h16",
+       "nombre": "Nivel aceite hidráulico",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "h17",
+       "nombre": "Inspección mangueras, cilindros y conexiones",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "h18",
+       "nombre": "Inspección fugas y estado de bombas",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "h19",
+       "nombre": "Muestra S·O·S aceite hidráulico",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1
+       ]
+      }
+     ]
+    },
+    {
+     "nombre": "Transmisión y mandos",
+     "items": [
+      {
+       "clave": "h20",
+       "nombre": "Nivel y condición aceite transmisión",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "h21",
+       "nombre": "Cambio aceite/filtro transmisión según pauta específica",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "h22",
+       "nombre": "Nivel/condición aceite diferenciales",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "h23",
+       "nombre": "Nivel/condición aceite mandos finales",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "h24",
+       "nombre": "Inspección fugas mandos finales",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1
+       ]
+      }
+     ]
+    },
+    {
+     "nombre": "Tren de rodado y herramienta",
+     "items": [
+      {
+       "clave": "h25",
+       "nombre": "Medición desgaste de cadenas",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "h26",
+       "nombre": "Control tensión de cadenas",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "h27",
+       "nombre": "Inspección rodillos, rueda guía y sprocket",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "h28",
+       "nombre": "Engrase completo de puntos de lubricación",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "h29",
+       "nombre": "Inspección pasadores y bujes",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "h30",
+       "nombre": "Medición desgaste de pasadores/bujes",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "h31",
+       "nombre": "Inspección balde/hoja y elementos de desgaste",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1
+       ]
+      }
+     ]
+    },
+    {
+     "nombre": "Eléctrico y seguridad",
+     "items": [
+      {
+       "clave": "h32",
+       "nombre": "Prueba de baterías",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "h33",
+       "nombre": "Inspección alternador y motor de arranque",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "h34",
+       "nombre": "Lectura y registro de códigos de falla",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "h35",
+       "nombre": "Prueba alarma de retroceso",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "h36",
+       "nombre": "Prueba bocina y luces",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "clave": "h37",
+       "nombre": "Inspección cinturón, espejos y elementos de seguridad",
+       "aplicaPorIntervalo": [
+        1,
+        1,
+        1,
+        1
+       ]
+      }
+     ]
+    }
+   ],
+   "reglasPorMarca": null
+  }
+ ],
+ "equipos": [
+  {
+   "codigo": "KA-135",
+   "patente": "RBYD-98",
+   "tipo": "Camión",
+   "marca": "Freightliner",
+   "modelo": "M2 106",
+   "anio": 2021,
+   "faena": "Arauco",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KA-137",
+   "patente": "RXGR-19",
+   "tipo": "Camión",
+   "marca": "Sinotruk",
+   "modelo": "T5G-340 MEC",
+   "anio": 2022,
+   "faena": "Arauco",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KA-140",
+   "patente": "SGCP-84",
+   "tipo": "Camión",
+   "marca": "Scania",
+   "modelo": "P 410 B",
+   "anio": 2023,
+   "faena": "Biodiversa",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KA-141",
+   "patente": "SGCP-77",
+   "tipo": "Camión",
+   "marca": "Scania",
+   "modelo": "P 410 B",
+   "anio": 2023,
+   "faena": "Biodiversa",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KA-142",
+   "patente": "SJFC-34",
+   "tipo": "Camión",
+   "marca": "MAN",
+   "modelo": "TGS 33.400 BL 6X4",
+   "anio": 2023,
+   "faena": "Biodiversa",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KA-143",
+   "patente": "SJFC-66",
+   "tipo": "Camión",
+   "marca": "MAN",
+   "modelo": "TGS 33.400 BL 6X4",
+   "anio": 2023,
+   "faena": "Biodiversa",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KCH-133",
+   "patente": "SRCJ-47",
+   "tipo": "Tracto",
+   "marca": "MAN",
+   "modelo": "TGS 33.400 BL 6X4",
+   "anio": 2023,
+   "faena": "Biodiversa",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KCH-134",
+   "patente": "SRCJ-44",
+   "tipo": "Tracto",
+   "marca": "MAN",
+   "modelo": "TGS 33.400 BL 6X4",
+   "anio": 2023,
+   "faena": "Biodiversa",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KCH-135",
+   "patente": "SRCJ-42",
+   "tipo": "Tracto",
+   "marca": "MAN",
+   "modelo": "TGS 33.400 BL 6X4",
+   "anio": 2023,
+   "faena": "Biodiversa",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KCH-136",
+   "patente": "SRCJ-39",
+   "tipo": "Tracto",
+   "marca": "MAN",
+   "modelo": "TGS 33.400 BL 6X4",
+   "anio": 2023,
+   "faena": "Biodiversa",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "CR-31",
+   "patente": "WT-1699",
+   "tipo": "Minicargador",
+   "marca": "Caterpillar",
+   "modelo": "246B",
+   "anio": 2007,
+   "faena": "Cabrero",
+   "unidad": "h",
+   "pautaId": "p-maquinaria"
+  },
+  {
+   "codigo": "KA-108",
+   "patente": "DGDK-73",
+   "tipo": "Camión",
+   "marca": "Mercedes",
+   "modelo": "2726K",
+   "anio": 2011,
+   "faena": "Cabrero",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KA-125",
+   "patente": "JFDR-85",
+   "tipo": "Camión",
+   "marca": "Volkswagen",
+   "modelo": "Constellation 31280",
+   "anio": 2017,
+   "faena": "Cabrero",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KA-138",
+   "patente": "RXGR-20",
+   "tipo": "Camión",
+   "marca": "Sinotruk",
+   "modelo": "T5G-340 MEC",
+   "anio": 2022,
+   "faena": "Cabrero",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KA-63",
+   "patente": "YT-2530",
+   "tipo": "Camión",
+   "marca": "Ford Cargo",
+   "modelo": "Cargo 2631",
+   "anio": 2005,
+   "faena": "Cabrero",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KA-71",
+   "patente": "CBJY-18",
+   "tipo": "Camión",
+   "marca": "Freightliner",
+   "modelo": "M2",
+   "anio": 2010,
+   "faena": "Cabrero",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KA-75",
+   "patente": "ZY-3880",
+   "tipo": "Camión",
+   "marca": "Mercedes",
+   "modelo": "1720",
+   "anio": 2006,
+   "faena": "Cabrero",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KA-80",
+   "patente": "WS-7760",
+   "tipo": "Camión",
+   "marca": "Ford Cargo",
+   "modelo": "2628",
+   "anio": 2007,
+   "faena": "Cabrero",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KA-90",
+   "patente": "BPDH-67",
+   "tipo": "Camión",
+   "marca": "Ford Cargo",
+   "modelo": "2628e",
+   "anio": 2008,
+   "faena": "Cabrero",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KR-22",
+   "patente": "PT-7530",
+   "tipo": "Camión",
+   "marca": "Mercedes",
+   "modelo": "1617",
+   "anio": 1997,
+   "faena": "Cabrero",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KCH-92",
+   "patente": "CHHK-17",
+   "tipo": "Tracto",
+   "marca": "Freightliner",
+   "modelo": "M2",
+   "anio": 2010,
+   "faena": "Calymag",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "CR-35",
+   "patente": "BSLH-81",
+   "tipo": "Cargador frontal",
+   "marca": "Case",
+   "modelo": "821 E",
+   "anio": 2009,
+   "faena": "Cholguan",
+   "unidad": "h",
+   "pautaId": "p-maquinaria"
+  },
+  {
+   "codigo": "CR-51",
+   "patente": "RKHR-26",
+   "tipo": "Cargador frontal",
+   "marca": "Caterpillar",
+   "modelo": "950 GC",
+   "anio": 2022,
+   "faena": "Cholguan",
+   "unidad": "h",
+   "pautaId": "p-maquinaria"
+  },
+  {
+   "codigo": "CR-52",
+   "patente": "RKHR-28",
+   "tipo": "Cargador frontal",
+   "marca": "Caterpillar",
+   "modelo": "950 GC",
+   "anio": 2022,
+   "faena": "Cholguan",
+   "unidad": "h",
+   "pautaId": "p-maquinaria"
+  },
+  {
+   "codigo": "CR-53",
+   "patente": "LGHF-46",
+   "tipo": "Cargador frontal",
+   "marca": "Caterpillar",
+   "modelo": "938 K",
+   "anio": 2018,
+   "faena": "Cholguan",
+   "unidad": "h",
+   "pautaId": "p-maquinaria"
+  },
+  {
+   "codigo": "EO-08",
+   "patente": "JFCZ-69",
+   "tipo": "Excavadora",
+   "marca": "Caterpillar",
+   "modelo": "312",
+   "anio": 2017,
+   "faena": "Cholguan",
+   "unidad": "h",
+   "pautaId": "p-maquinaria"
+  },
+  {
+   "codigo": "GR-06",
+   "patente": "DHBL-45",
+   "tipo": "Excavadora",
+   "marca": "Caterpillar",
+   "modelo": "320 FM",
+   "anio": 2011,
+   "faena": "Cholguan",
+   "unidad": "h",
+   "pautaId": "p-maquinaria"
+  },
+  {
+   "codigo": "GR-09",
+   "patente": "HKPF-56",
+   "tipo": "Excavadora",
+   "marca": "Caterpillar",
+   "modelo": "M322D",
+   "anio": 2015,
+   "faena": "Cholguan",
+   "unidad": "h",
+   "pautaId": "p-maquinaria"
+  },
+  {
+   "codigo": "GR-10",
+   "patente": "RKHR-20",
+   "tipo": "Excavadora",
+   "marca": "Caterpillar",
+   "modelo": "320 CG",
+   "anio": 2022,
+   "faena": "Cholguan",
+   "unidad": "h",
+   "pautaId": "p-maquinaria"
+  },
+  {
+   "codigo": "GR-11",
+   "patente": "RKHR-21",
+   "tipo": "Excavadora",
+   "marca": "Caterpillar",
+   "modelo": "320 CG",
+   "anio": 2022,
+   "faena": "Cholguan",
+   "unidad": "h",
+   "pautaId": "p-maquinaria"
+  },
+  {
+   "codigo": "KA-111",
+   "patente": "DPFG-37",
+   "tipo": "Camión",
+   "marca": "Mercedes",
+   "modelo": "2726K",
+   "anio": 2012,
+   "faena": "Cholguan",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KA-114",
+   "patente": "DRHY-62",
+   "tipo": "Camión",
+   "marca": "Mercedes",
+   "modelo": "2729",
+   "anio": 2012,
+   "faena": "Cholguan",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KA-115",
+   "patente": "DZTH-66",
+   "tipo": "Camión",
+   "marca": "Mercedes",
+   "modelo": "2729",
+   "anio": 2012,
+   "faena": "Cholguan",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KA-128",
+   "patente": "KLJZ-68",
+   "tipo": "Camión",
+   "marca": "Volvo",
+   "modelo": "VM",
+   "anio": 2018,
+   "faena": "Cholguan",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KA-139",
+   "patente": "RXBW-93",
+   "tipo": "Camión",
+   "marca": "Sinotruk",
+   "modelo": "T5G 6X4 MEC EV",
+   "anio": 2022,
+   "faena": "Cholguan",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KA-59",
+   "patente": "KX-2609",
+   "tipo": "Camión",
+   "marca": "Freightliner",
+   "modelo": "MB-80",
+   "anio": 1995,
+   "faena": "Cholguan",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KA-79",
+   "patente": "ZY-3970",
+   "tipo": "Camión",
+   "marca": "Mercedes",
+   "modelo": "2423",
+   "anio": 2006,
+   "faena": "Cholguan",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KA-81",
+   "patente": "BPDH-41",
+   "tipo": "Camión",
+   "marca": "Ford Cargo",
+   "modelo": "2628",
+   "anio": 2008,
+   "faena": "Cholguan",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KA-82",
+   "patente": "ZY-4242",
+   "tipo": "Camión",
+   "marca": "Mercedes",
+   "modelo": "2423",
+   "anio": 2007,
+   "faena": "Cholguan",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "TO-33",
+   "patente": "HR-7933",
+   "tipo": "Bulldozer",
+   "marca": "Caterpillar",
+   "modelo": "D6H",
+   "anio": 1988,
+   "faena": "Cholguan",
+   "unidad": "h",
+   "pautaId": "p-maquinaria"
+  },
+  {
+   "codigo": "TO-37",
+   "patente": "TO-37",
+   "tipo": "Bulldozer",
+   "marca": "Caterpillar",
+   "modelo": "D6 H",
+   "anio": 2004,
+   "faena": "Cholguan",
+   "unidad": "h",
+   "pautaId": "p-maquinaria"
+  },
+  {
+   "codigo": "TO-38",
+   "patente": "DDZV-11",
+   "tipo": "Bulldozer",
+   "marca": "Caterpillar",
+   "modelo": "D6T",
+   "anio": 2011,
+   "faena": "Cholguan",
+   "unidad": "h",
+   "pautaId": "p-maquinaria"
+  },
+  {
+   "codigo": "TR-32",
+   "patente": "DZTD-52",
+   "tipo": "Tractor",
+   "marca": "John Deere",
+   "modelo": "165 JMFW",
+   "anio": 2012,
+   "faena": "Cholguan",
+   "unidad": "h",
+   "pautaId": "p-maquinaria"
+  },
+  {
+   "codigo": "TR-33",
+   "patente": "GKHJ-99",
+   "tipo": "Tractor",
+   "marca": "Massey Ferguson",
+   "modelo": "MF 7618",
+   "anio": 2015,
+   "faena": "Cholguan",
+   "unidad": "h",
+   "pautaId": "p-maquinaria"
+  },
+  {
+   "codigo": "TR-34",
+   "patente": "RJZS-63",
+   "tipo": "Tractor",
+   "marca": "Case",
+   "modelo": "PUMA 155",
+   "anio": 2022,
+   "faena": "Cholguan",
+   "unidad": "h",
+   "pautaId": "p-maquinaria"
+  },
+  {
+   "codigo": "KA-93",
+   "patente": "CBJY-17",
+   "tipo": "Camión",
+   "marca": "Freightliner",
+   "modelo": "M2 106",
+   "anio": 2010,
+   "faena": "Ecoservitran",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KA-144",
+   "patente": "RFJR-63",
+   "tipo": "Camión",
+   "marca": "Chevrolet",
+   "modelo": "NPR 816 AMT",
+   "anio": 2021,
+   "faena": "Fab. Puertas",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "CPSG-30",
+   "patente": "CPSG-30",
+   "tipo": "Camión",
+   "marca": "Chevrolet",
+   "modelo": "NPR 815",
+   "anio": 2011,
+   "faena": "Flor del Laja",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "CR-28",
+   "patente": "WF-1150",
+   "tipo": "Cargador frontal",
+   "marca": "Caterpillar",
+   "modelo": "930 G",
+   "anio": 2006,
+   "faena": "Flor del Laja",
+   "unidad": "h",
+   "pautaId": "p-maquinaria"
+  },
+  {
+   "codigo": "KA-13",
+   "patente": "LV-8445",
+   "tipo": "Camión",
+   "marca": "Mercedes",
+   "modelo": "1714-48",
+   "anio": 1995,
+   "faena": "Flor del Laja",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KA-146",
+   "patente": "VVJS-38",
+   "tipo": "Camión",
+   "marca": "Sinotruk",
+   "modelo": "HOWO TX",
+   "anio": 2026,
+   "faena": "Flor del Laja",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KA-85",
+   "patente": "WK-5867",
+   "tipo": "Camión",
+   "marca": "Mercedes",
+   "modelo": "1720 K 36",
+   "anio": 2007,
+   "faena": "Flor del Laja",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KA-91",
+   "patente": "YX-2749",
+   "tipo": "Camión",
+   "marca": "Iveco",
+   "modelo": "MLC-160 E 23 RSU",
+   "anio": 2005,
+   "faena": "Flor del Laja",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "RR-03",
+   "patente": "WT-1698",
+   "tipo": "Retroexcavadora",
+   "marca": "Caterpillar",
+   "modelo": "416 D",
+   "anio": 2007,
+   "faena": "Flor del Laja",
+   "unidad": "h",
+   "pautaId": "p-maquinaria"
+  },
+  {
+   "codigo": "RR-04",
+   "patente": "BVCX-63",
+   "tipo": "Retroexcavadora",
+   "marca": "Caterpillar",
+   "modelo": "416 E",
+   "anio": 2009,
+   "faena": "Flor del Laja",
+   "unidad": "h",
+   "pautaId": "p-maquinaria"
+  },
+  {
+   "codigo": "RR-05",
+   "patente": "WA-3604",
+   "tipo": "Retroexcavadora",
+   "marca": "Caterpillar",
+   "modelo": "416D",
+   "anio": 2006,
+   "faena": "Flor del Laja",
+   "unidad": "h",
+   "pautaId": "p-maquinaria"
+  },
+  {
+   "codigo": "TO-23",
+   "patente": "TO-23",
+   "tipo": "Bulldozer",
+   "marca": "Caterpillar",
+   "modelo": "",
+   "anio": null,
+   "faena": "Flor del Laja",
+   "unidad": "h",
+   "pautaId": "p-maquinaria"
+  },
+  {
+   "codigo": "XX-7493",
+   "patente": "XX-7493",
+   "tipo": "Excavadora",
+   "marca": "Caterpillar",
+   "modelo": "312C",
+   "anio": 2005,
+   "faena": "Flor del Laja",
+   "unidad": "h",
+   "pautaId": "p-maquinaria"
+  },
+  {
+   "codigo": "CR-45",
+   "patente": "JFCZ-66",
+   "tipo": "Cargador frontal",
+   "marca": "Caterpillar",
+   "modelo": "950 GC",
+   "anio": 2017,
+   "faena": "Pacífico",
+   "unidad": "h",
+   "pautaId": "p-maquinaria"
+  },
+  {
+   "codigo": "CR-47",
+   "patente": "JFDB-73",
+   "tipo": "Cargador frontal",
+   "marca": "Caterpillar",
+   "modelo": "930K",
+   "anio": 2017,
+   "faena": "Pacífico",
+   "unidad": "h",
+   "pautaId": "p-maquinaria"
+  },
+  {
+   "codigo": "CR-48",
+   "patente": "JFCZ-64",
+   "tipo": "Minicargador",
+   "marca": "Caterpillar",
+   "modelo": "236 D",
+   "anio": 2017,
+   "faena": "Pacífico",
+   "unidad": "h",
+   "pautaId": "p-maquinaria"
+  },
+  {
+   "codigo": "CR-50",
+   "patente": "LCTC-21",
+   "tipo": "Cargador frontal",
+   "marca": "Volvo",
+   "modelo": "L110",
+   "anio": 2019,
+   "faena": "Pacífico",
+   "unidad": "h",
+   "pautaId": "p-maquinaria"
+  },
+  {
+   "codigo": "GR-08",
+   "patente": "GR-08",
+   "tipo": "Excavadora",
+   "marca": "Caterpillar",
+   "modelo": "320 DL",
+   "anio": 2012,
+   "faena": "Pacífico",
+   "unidad": "h",
+   "pautaId": "p-maquinaria"
+  },
+  {
+   "codigo": "KA-119",
+   "patente": "JFDB-88",
+   "tipo": "Camión",
+   "marca": "Volkswagen",
+   "modelo": "Constellation 31280",
+   "anio": 2017,
+   "faena": "Pacífico",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KA-120",
+   "patente": "JFDB-89",
+   "tipo": "Camión",
+   "marca": "Volkswagen",
+   "modelo": "Constellation 31280",
+   "anio": 2017,
+   "faena": "Pacífico",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KA-121",
+   "patente": "JFDR-84",
+   "tipo": "Camión",
+   "marca": "Volkswagen",
+   "modelo": "Constellation 31280",
+   "anio": 2017,
+   "faena": "Pacífico",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KA-124",
+   "patente": "JFDR-86",
+   "tipo": "Camión",
+   "marca": "Volkswagen",
+   "modelo": "Constellation 31280",
+   "anio": 2017,
+   "faena": "Pacífico",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KA-54",
+   "patente": "UD-1187",
+   "tipo": "Camión",
+   "marca": "Mercedes",
+   "modelo": "1720",
+   "anio": 2001,
+   "faena": "Pacífico",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KA-72",
+   "patente": "ZT-3947",
+   "tipo": "Camión",
+   "marca": "Mercedes",
+   "modelo": "2428 K",
+   "anio": 2006,
+   "faena": "Pacífico",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KCH-119",
+   "patente": "FZFS-26",
+   "tipo": "Tracto",
+   "marca": "Freightliner",
+   "modelo": "CL-120",
+   "anio": 2014,
+   "faena": "Pacífico",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KPL-116",
+   "patente": "FBWH-42",
+   "tipo": "Camión",
+   "marca": "Mercedes",
+   "modelo": "ATEGO",
+   "anio": 2012,
+   "faena": "Pacífico",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "TO-26",
+   "patente": "RR-7024",
+   "tipo": "Bulldozer",
+   "marca": "Caterpillar",
+   "modelo": "D4-H E 214",
+   "anio": 1993,
+   "faena": "Pacífico",
+   "unidad": "h",
+   "pautaId": "p-maquinaria"
+  },
+  {
+   "codigo": "TO-29",
+   "patente": "PE-3032",
+   "tipo": "Bulldozer",
+   "marca": "Caterpillar",
+   "modelo": "D4HXL",
+   "anio": null,
+   "faena": "Pacífico",
+   "unidad": "h",
+   "pautaId": "p-maquinaria"
+  },
+  {
+   "codigo": "GR-04",
+   "patente": "BBVW-32",
+   "tipo": "Excavadora",
+   "marca": "Caterpillar",
+   "modelo": "320 CL",
+   "anio": null,
+   "faena": "Panguipulli",
+   "unidad": "h",
+   "pautaId": "p-maquinaria"
+  },
+  {
+   "codigo": "CR-25",
+   "patente": "XA-8821",
+   "tipo": "Cargador frontal",
+   "marca": "Caterpillar",
+   "modelo": "950 G",
+   "anio": 2003,
+   "faena": "Santa Fe",
+   "unidad": "h",
+   "pautaId": "p-maquinaria"
+  },
+  {
+   "codigo": "CR-30",
+   "patente": "WG-2193",
+   "tipo": "Cargador frontal",
+   "marca": "Caterpillar",
+   "modelo": "950 G",
+   "anio": 2006,
+   "faena": "Santa Fe",
+   "unidad": "h",
+   "pautaId": "p-maquinaria"
+  },
+  {
+   "codigo": "CR-41",
+   "patente": "DWZD-11",
+   "tipo": "Cargador frontal",
+   "marca": "Caterpillar",
+   "modelo": "950 H",
+   "anio": 2012,
+   "faena": "Santa Fe",
+   "unidad": "h",
+   "pautaId": "p-maquinaria"
+  },
+  {
+   "codigo": "CR-43",
+   "patente": "JCKB-63",
+   "tipo": "Cargador frontal",
+   "marca": "Caterpillar",
+   "modelo": "950 GC",
+   "anio": 2015,
+   "faena": "Santa Fe",
+   "unidad": "h",
+   "pautaId": "p-maquinaria"
+  },
+  {
+   "codigo": "CR-46",
+   "patente": "JFCZ-65",
+   "tipo": "Cargador frontal",
+   "marca": "Caterpillar",
+   "modelo": "950GC",
+   "anio": 2017,
+   "faena": "Santa Fe",
+   "unidad": "h",
+   "pautaId": "p-maquinaria"
+  },
+  {
+   "codigo": "CR-49",
+   "patente": "JFDB-72",
+   "tipo": "Cargador frontal",
+   "marca": "Caterpillar",
+   "modelo": "930K",
+   "anio": 2017,
+   "faena": "Santa Fe",
+   "unidad": "h",
+   "pautaId": "p-maquinaria"
+  },
+  {
+   "codigo": "EO-07",
+   "patente": "JFDB-13",
+   "tipo": "Excavadora",
+   "marca": "Caterpillar",
+   "modelo": "312",
+   "anio": 2017,
+   "faena": "Santa Fe",
+   "unidad": "h",
+   "pautaId": "p-maquinaria"
+  },
+  {
+   "codigo": "GR-05",
+   "patente": "DHBL-44",
+   "tipo": "Excavadora",
+   "marca": "Caterpillar",
+   "modelo": "320 DL",
+   "anio": 2011,
+   "faena": "Santa Fe",
+   "unidad": "h",
+   "pautaId": "p-maquinaria"
+  },
+  {
+   "codigo": "KA-106",
+   "patente": "CPSG-36",
+   "tipo": "Camión",
+   "marca": "Freightliner",
+   "modelo": "M2",
+   "anio": 2011,
+   "faena": "Santa Fe",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KA-107",
+   "patente": "DCHR-67",
+   "tipo": "Camión",
+   "marca": "Ford Cargo",
+   "modelo": "Ford Cargo 5032 E",
+   "anio": 2011,
+   "faena": "Santa Fe",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KA-109",
+   "patente": "DKLK-26",
+   "tipo": "Camión",
+   "marca": "Ford Cargo",
+   "modelo": "Ford Cargo 2628",
+   "anio": 2012,
+   "faena": "Santa Fe",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KA-110",
+   "patente": "DKPG-54",
+   "tipo": "Camión",
+   "marca": "Ford Cargo",
+   "modelo": "Cargo 2628",
+   "anio": 2012,
+   "faena": "Santa Fe",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KA-112",
+   "patente": "DPFK-13",
+   "tipo": "Camión",
+   "marca": "Mercedes",
+   "modelo": "2726",
+   "anio": 2012,
+   "faena": "Santa Fe",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KA-122",
+   "patente": "JFDB-87",
+   "tipo": "Camión",
+   "marca": "Volkswagen",
+   "modelo": "Constellation 31280",
+   "anio": 2017,
+   "faena": "Santa Fe",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KA-123",
+   "patente": "JFDB-90",
+   "tipo": "Camión",
+   "marca": "Volkswagen",
+   "modelo": "Constellation 31280",
+   "anio": 2017,
+   "faena": "Santa Fe",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KA-134",
+   "patente": "PSKL-61",
+   "tipo": "Camión",
+   "marca": "Freightliner",
+   "modelo": "M2 106",
+   "anio": 2021,
+   "faena": "Santa Fe",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KA-136",
+   "patente": "RXGR-18",
+   "tipo": "Camión",
+   "marca": "Sinotruk",
+   "modelo": "T5G-340 MEC",
+   "anio": 2022,
+   "faena": "Santa Fe",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KA-145",
+   "patente": "TFYJ-62",
+   "tipo": "Camión",
+   "marca": "Sinotruk",
+   "modelo": "HOWO TX",
+   "anio": 2024,
+   "faena": "Santa Fe",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KA-86",
+   "patente": "BFPP-86",
+   "tipo": "Camión",
+   "marca": "Ford Cargo",
+   "modelo": "Cargo 2628, Año 2008",
+   "anio": 2008,
+   "faena": "Santa Fe",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KCH-126",
+   "patente": "KRJC-75",
+   "tipo": "Tracto",
+   "marca": "MAN",
+   "modelo": "TGS",
+   "anio": 2018,
+   "faena": "Santa Fe",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KCH-129",
+   "patente": "KXZD-19",
+   "tipo": "Tracto",
+   "marca": "Mercedes",
+   "modelo": "Actros 2641",
+   "anio": 2018,
+   "faena": "Santa Fe",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KCH-130",
+   "patente": "KXZD-20",
+   "tipo": "Tracto",
+   "marca": "Mercedes",
+   "modelo": "Actros 2018",
+   "anio": 2018,
+   "faena": "Santa Fe",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KCH-131",
+   "patente": "PFVP-52",
+   "tipo": "Tracto",
+   "marca": "Mercedes",
+   "modelo": "Actros 2641",
+   "anio": 2020,
+   "faena": "Santa Fe",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KCH-132",
+   "patente": "PGBK-42",
+   "tipo": "Tracto",
+   "marca": "Mercedes",
+   "modelo": "Actros new",
+   "anio": 2020,
+   "faena": "Santa Fe",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KPL-133",
+   "patente": "PFJX-24",
+   "tipo": "Camión",
+   "marca": "Mercedes",
+   "modelo": "Atego",
+   "anio": 2021,
+   "faena": "Santa Fe",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KPL-134",
+   "patente": "VDGS-52",
+   "tipo": "Camión",
+   "marca": "Sinotruk",
+   "modelo": "HOWO TX",
+   "anio": 2025,
+   "faena": "Santa Fe",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "RR-06",
+   "patente": "JFCZ-67",
+   "tipo": "Retroexcavadora",
+   "marca": "Caterpillar",
+   "modelo": "416F-2",
+   "anio": 2017,
+   "faena": "Santa Fe",
+   "unidad": "h",
+   "pautaId": "p-maquinaria"
+  },
+  {
+   "codigo": "RR-07",
+   "patente": "JFCZ-68",
+   "tipo": "Retroexcavadora",
+   "marca": "Caterpillar",
+   "modelo": "416F-2",
+   "anio": 2017,
+   "faena": "Santa Fe",
+   "unidad": "h",
+   "pautaId": "p-maquinaria"
+  },
+  {
+   "codigo": "TO-34",
+   "patente": "TO-34",
+   "tipo": "Bulldozer",
+   "marca": "Caterpillar",
+   "modelo": "D6 H",
+   "anio": 2004,
+   "faena": "Santa Fe",
+   "unidad": "h",
+   "pautaId": "p-maquinaria"
+  },
+  {
+   "codigo": "CR-18",
+   "patente": "VE-8891",
+   "tipo": "Minicargador",
+   "marca": "Caterpillar",
+   "modelo": "236",
+   "anio": 2002,
+   "faena": "Servimar",
+   "unidad": "h",
+   "pautaId": "p-maquinaria"
+  },
+  {
+   "codigo": "CR-23",
+   "patente": "VV-8500",
+   "tipo": "Cargador frontal",
+   "marca": "Caterpillar",
+   "modelo": "950G",
+   "anio": 2003,
+   "faena": "Servimar",
+   "unidad": "h",
+   "pautaId": "p-maquinaria"
+  },
+  {
+   "codigo": "DLFZ-34",
+   "patente": "DLFZ-34",
+   "tipo": "Cargador frontal",
+   "marca": "Caterpillar",
+   "modelo": "950H",
+   "anio": 2012,
+   "faena": "Servimar",
+   "unidad": "h",
+   "pautaId": "p-maquinaria"
+  },
+  {
+   "codigo": "GR-07",
+   "patente": "DVHP-53",
+   "tipo": "Excavadora",
+   "marca": "Caterpillar",
+   "modelo": "320 D",
+   "anio": 2011,
+   "faena": "Servimar",
+   "unidad": "h",
+   "pautaId": "p-maquinaria"
+  },
+  {
+   "codigo": "KA-60",
+   "patente": "NJ-9749",
+   "tipo": "Camión",
+   "marca": "Freightliner",
+   "modelo": "FL-80",
+   "anio": 1995,
+   "faena": "Servimar",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "CR-32",
+   "patente": "WG-2180",
+   "tipo": "Cargador frontal",
+   "marca": "Caterpillar",
+   "modelo": "938 G",
+   "anio": 2006,
+   "faena": "Sin ubicación",
+   "unidad": "h",
+   "pautaId": "p-maquinaria"
+  },
+  {
+   "codigo": "CR-33",
+   "patente": "WG-2181",
+   "tipo": "Cargador frontal",
+   "marca": "Caterpillar",
+   "modelo": "930G",
+   "anio": 2006,
+   "faena": "Sin ubicación",
+   "unidad": "h",
+   "pautaId": "p-maquinaria"
+  },
+  {
+   "codigo": "KA-52",
+   "patente": "UD-1328",
+   "tipo": "Camión",
+   "marca": "Mercedes",
+   "modelo": "1720 48",
+   "anio": 2001,
+   "faena": "Sin ubicación",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KA-62",
+   "patente": "VL-9073",
+   "tipo": "Camión",
+   "marca": "Ford Cargo",
+   "modelo": "CARGO 2631",
+   "anio": 2003,
+   "faena": "Sin ubicación",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KA-87",
+   "patente": "ZR-7183",
+   "tipo": "Camión",
+   "marca": "Mercedes",
+   "modelo": "2423 K 36",
+   "anio": 2006,
+   "faena": "Sin ubicación",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "LC-1315",
+   "patente": "LC-1315",
+   "tipo": "Camión",
+   "marca": "Nissan",
+   "modelo": "CPC 14 BTLT",
+   "anio": 1993,
+   "faena": "Sin ubicación",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "RT-5367",
+   "patente": "RT-5367",
+   "tipo": "Camión",
+   "marca": "Mercedes",
+   "modelo": "L 222154",
+   "anio": 1998,
+   "faena": "Sin ubicación",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "SX-2728",
+   "patente": "SX-2728",
+   "tipo": "Camión",
+   "marca": "Mercedes",
+   "modelo": "L 222154",
+   "anio": 1999,
+   "faena": "Sin ubicación",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "TO-16",
+   "patente": "CF-9347",
+   "tipo": "Bulldozer",
+   "marca": "Caterpillar",
+   "modelo": "D4 E PS",
+   "anio": 1986,
+   "faena": "Sin ubicación",
+   "unidad": "h",
+   "pautaId": "p-maquinaria"
+  },
+  {
+   "codigo": "TO-27",
+   "patente": "TO-27",
+   "tipo": "Bulldozer",
+   "marca": "Caterpillar",
+   "modelo": "",
+   "anio": null,
+   "faena": "Sin ubicación",
+   "unidad": "h",
+   "pautaId": "p-maquinaria"
+  },
+  {
+   "codigo": "KA-127",
+   "patente": "KLJZ-69",
+   "tipo": "Camión",
+   "marca": "Volvo",
+   "modelo": "VM",
+   "anio": 2018,
+   "faena": "Teno",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  },
+  {
+   "codigo": "KA-83",
+   "patente": "ZY-4243",
+   "tipo": "Camión",
+   "marca": "Mercedes",
+   "modelo": "1720",
+   "anio": 2006,
+   "faena": "Teno",
+   "unidad": "km",
+   "pautaId": "p-camiones"
+  }
+ ]
+}
