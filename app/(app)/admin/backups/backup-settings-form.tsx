@@ -39,7 +39,7 @@ const FIELDS: FieldDef[] = [
     unit: "días",
     min: 1,
     max: 365,
-    description: "Backups más antiguos se eliminan del disco y de Google Drive",
+    description: "Backups más antiguos se eliminan del disco del servidor",
   },
   {
     key: "maxAgeHours",

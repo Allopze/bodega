@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { buildBackupStatusCards } from "./backup-health"
-import type { BackupStats, DriveHealth } from "@/lib/services/backups"
+import type { BackupStats } from "@/lib/services/backups"
 
 const emptyStats: BackupStats = {
   lastBackup: null,
@@ -13,26 +13,12 @@ const emptyStats: BackupStats = {
   backupsLast7Days: 0,
   successfulBackupsLast7Days: 0,
   totalSizeBytes: null,
-  driveUploaded: false,
   cloudreveUploaded: false,
-}
-
-const healthyDrive: DriveHealth = {
-  rcloneInstalled: true,
-  remoteConfigured: true,
-  saJsonPresent: true,
-  saValid: true,
-  saEmail: "backups@example.test",
-  saPath: "/run/secrets/backups.json",
-  saDetail: "Cuenta de servicio válida",
-  reachable: true,
-  lastChecked: "2026-08-02T00:00:00.000Z",
-  rcloneConfPath: "/run/rclone.conf",
 }
 
 describe("buildBackupStatusCards", () => {
   it("no informa verde ni éxito cuando todavía no existe un respaldo", () => {
-    const cards = buildBackupStatusCards(emptyStats, null)
+    const cards = buildBackupStatusCards(emptyStats)
 
     expect(cards).toHaveLength(3)
     expect(cards[0]).toMatchObject({
@@ -60,10 +46,8 @@ describe("buildBackupStatusCards", () => {
         configSizeBytes: 1,
         configSha256: "config",
         manifestSha256: "manifest",
-        drivePath: "gdrive-backups:/2026-08-02",
-        driveUploaded: true,
-        cloudrevePath: null,
-        cloudreveUploaded: null,
+        cloudrevePath: "backups/plataforma/2026-08-02",
+        cloudreveUploaded: true,
         appVersion: "test",
         hostname: "test",
         totalSizeBytes: 3,
@@ -73,7 +57,7 @@ describe("buildBackupStatusCards", () => {
         triggeredByUserId: "user-1",
       },
       successfulBackupsLast7Days: 1,
-    }, healthyDrive)
+    }, { enabled: true, reachable: true })
 
     expect(cards.map((card) => card.status)).toEqual(["success", "success", "success"])
   })

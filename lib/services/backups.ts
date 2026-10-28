@@ -29,8 +29,6 @@ export interface BackupEntry {
   configSizeBytes:   number | null
   configSha256:      string | null
   manifestSha256:    string | null
-  drivePath:         string | null
-  driveUploaded:     boolean | null
   cloudrevePath:     string | null
   cloudreveUploaded: boolean | null
   appVersion:        string | null
@@ -53,7 +51,6 @@ export interface BackupStats {
   backupsLast7Days:  number
   successfulBackupsLast7Days: number
   totalSizeBytes:    number | null
-  driveUploaded:     boolean
   cloudreveUploaded: boolean
 }
 
@@ -98,8 +95,6 @@ export async function completeBackupLog(
     configSizeBytes?: number
     configSha256?: string
     manifestSha256?: string
-    drivePath?: string
-    driveUploaded?: boolean
     cloudrevePath?: string
     cloudreveUploaded?: boolean
     appVersion?: string
@@ -123,8 +118,6 @@ export async function completeBackupLog(
       configSizeBytes: result.configSizeBytes ?? null,
       configSha256: result.configSha256 ?? null,
       manifestSha256: result.manifestSha256 ?? null,
-      drivePath: result.drivePath ?? null,
-      driveUploaded: result.driveUploaded ?? null,
       cloudrevePath: result.cloudrevePath ?? null,
       cloudreveUploaded: result.cloudreveUploaded ?? null,
       appVersion: result.appVersion ?? null,
@@ -185,10 +178,6 @@ export async function getBackupStats(): Promise<BackupStats> {
   const last7Days = all.filter((b) => b.startedAt >= sevenDaysAgo)
   const successfulLast7Days = last7Days.filter((b) => b.status === "success")
 
-  const lastBackupWithDrive = all
-    .filter((b) => b.driveUploaded)
-    .sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0] ?? null
-
   const lastBackupWithCloudreve = all
     .filter((b) => b.cloudreveUploaded)
     .sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0] ?? null
@@ -204,241 +193,8 @@ export async function getBackupStats(): Promise<BackupStats> {
     backupsLast7Days: last7Days.length,
     successfulBackupsLast7Days: successfulLast7Days.length,
     totalSizeBytes: lastSuccess?.totalSizeBytes ?? null,
-    driveUploaded: lastBackupWithDrive?.driveUploaded ?? false,
     cloudreveUploaded: lastBackupWithCloudreve?.cloudreveUploaded ?? false,
   }
-}
-
-// ── Drive Health ─────────────────────────────────────────────────────────────
-
-/** Resultado del healthcheck de conectividad con Google Drive */
-export interface DriveHealth {
-  /** ¿rclone está instalado en el sistema? */
-  rcloneInstalled:  boolean
-  /** ¿El remote `gdrive-backups:` está configurado en rclone? */
-  remoteConfigured: boolean
-  /** ¿Existe el archivo del Service Account JSON en alguna ruta esperada? */
-  saJsonPresent:    boolean
-  /** ¿El JSON del Service Account es sintácticamente válido y tiene los campos críticos? */
-  saValid:          boolean
-  /** Email del Service Account (cliente_email del JSON), si se pudo leer */
-  saEmail:          string | null
-  /** Ruta donde se encontró el SA JSON */
-  saPath:           string | null
-  /** Mensaje descriptivo sobre el estado del SA */
-  saDetail:         string
-  /** ¿Se pudo listar el destino remoto (conectividad real)? */
-  reachable:        boolean
-  /** Timestamp ISO de la última verificación */
-  lastChecked:      string | null
-  /** Ruta del archivo rclone.conf si existe */
-  rcloneConfPath:   string | null
-}
-
-/**
- * Verifica la conectividad con Google Drive vía rclone.
- *
- * Ejecuta comandos rclone para determinar si:
- * 1. rclone está instalado
- * 2. El Service Account JSON existe y tiene campos válidos
- * 3. El remote gdrive-backups está configurado
- * 4. El destino es alcanzable (lsd real)
- *
- * Es best-effort: si algo falla, retorna el estado parcial.
- */
-export async function getDriveHealth(): Promise<DriveHealth> {
-  const result: DriveHealth = {
-    rcloneInstalled:  false,
-    remoteConfigured: false,
-    saJsonPresent:    false,
-    saValid:          false,
-    saEmail:          null,
-    saPath:           null,
-    saDetail:         "No se pudo verificar",
-    reachable:        false,
-    lastChecked:      null,
-    rcloneConfPath:   null,
-  }
-
-  try {
-    // `turbopackIgnore` applies only when the import target is dynamic. These
-    // modules are runtime-only healthcheck dependencies and are present in the
-    // Node standalone image, so the tracer must leave them out of the bundle.
-    const childProcessModule = "node:child_process"
-    const utilModule = "node:util"
-    const fsModule = "node:fs"
-    const { execFile } = await import(/* webpackIgnore: true */ childProcessModule)
-    const { promisify } = await import(/* webpackIgnore: true */ utilModule)
-    const execFileAsync = promisify(execFile)
-    const { existsSync, readFileSync } = await import(/* webpackIgnore: true */ fsModule)
-
-    // 1. Verificar archivo rclone.conf
-    const home = process.env.HOME || "/root"
-    const rcloneConfCandidates = [
-      process.env.RCLONE_CONFIG || `${home}/.config/rclone/rclone.conf`,
-    ]
-    for (const p of rcloneConfCandidates) {
-      // El path procede del host operativo, no del árbol de la aplicación.
-      // Evita que NFT intente trazar el proyecto completo durante `next build`.
-      if (existsSync(/* turbopackIgnore: true */ p)) {
-        result.rcloneConfPath = p
-        break
-      }
-    }
-
-    // 2. Verificar Service Account JSON (existencia + validez)
-    const saPaths = [
-      "/srv/bodega/secrets/gdrive-service-account.json",
-      `${home}/.config/rclone/gdrive-service-account.json`,
-    ]
-    for (const p of saPaths) {
-      if (existsSync(/* turbopackIgnore: true */ p)) {
-        result.saPath = p
-        result.saJsonPresent = true
-
-        // Validar contenido del JSON
-        try {
-          const raw = readFileSync(/* turbopackIgnore: true */ p, "utf-8")
-          const parsed = JSON.parse(raw)
-
-          const hasPrivateKey = typeof parsed.private_key === "string"
-            && parsed.private_key.startsWith("-----BEGIN PRIVATE KEY-----")
-          const hasClientEmail = typeof parsed.client_email === "string"
-            && parsed.client_email.includes("iam.gserviceaccount.com")
-          const hasTokenUri = typeof parsed.token_uri === "string"
-            && parsed.token_uri === "https://oauth2.googleapis.com/token"
-
-          result.saValid = hasPrivateKey && hasClientEmail && hasTokenUri
-          result.saEmail = parsed.client_email || null
-
-          if (!hasPrivateKey) {
-            result.saDetail = "JSON sin private_key válida"
-          } else if (!hasClientEmail) {
-            result.saDetail = "JSON sin client_email de Service Account"
-          } else if (!hasTokenUri) {
-            result.saDetail = "JSON con token_uri incorrecto"
-          } else {
-            result.saDetail = "Válido"
-          }
-        } catch (parseErr) {
-          result.saDetail = `Error al parsear JSON: ${parseErr instanceof Error ? parseErr.message.slice(0, 80) : "desconocido"}`
-        }
-
-        break
-      }
-    }
-
-    if (!result.saJsonPresent) {
-      result.saDetail = "Archivo no encontrado en las rutas esperadas"
-    }
-
-    // 3. ¿rclone instalado? (se necesita para los siguientes pasos)
-    try {
-      await execFileAsync("rclone", ["--version"], { timeout: 5000 })
-      result.rcloneInstalled = true
-    } catch {
-      result.lastChecked = new Date().toISOString()
-      return result // Sin rclone no hay más que verificar
-    }
-
-    // 4. ¿Remote gdrive-backups configurado?
-    try {
-      const { stdout } = await execFileAsync("rclone", ["listremotes"], { timeout: 5000 })
-      result.remoteConfigured = stdout.includes("gdrive-backups:")
-    } catch {
-      result.lastChecked = new Date().toISOString()
-      return result
-    }
-
-    // 5. Verificar conectividad real (listar bucket remoto)
-    if (result.remoteConfigured) {
-      try {
-        await execFileAsync("rclone", ["lsd", "gdrive-backups:bodega-backups/"], { timeout: 10000 })
-        result.reachable = true
-      } catch {
-        result.reachable = false
-      }
-    }
-
-    result.lastChecked = new Date().toISOString()
-  } catch {
-    // Best-effort completo
-  }
-
-  return result
-}
-/**
- * Obtiene un resumen textual del estado del SA para mostrar en el panel.
- */
-export function getSaStatusSummary(drive: DriveHealth | null): {
-  label: string
-  status: "success" | "failed" | "none"
-  details: string[]
-} {
-  if (!drive) {
-    return { label: "Sin verificar", status: "none", details: ["Healthcheck no disponible"] }
-  }
-
-  const details: string[] = []
-
-  if (drive.saPath) {
-    details.push(`Archivo: ${drive.saPath}`)
-  } else {
-    details.push("Archivo: no encontrado")
-  }
-
-  if (drive.saEmail) {
-    details.push(`Email: ${drive.saEmail}`)
-  }
-
-  if (drive.saValid) {
-    details.push("Private key: presente ✓")
-    details.push("Token URI: correcto ✓")
-  } else if (drive.saJsonPresent) {
-    details.push(`⚠️ ${drive.saDetail}`)
-  }
-
-  if (drive.rcloneConfPath) {
-    details.push(`rclone.conf: presente`)
-  } else {
-    details.push(`rclone.conf: no encontrado`)
-  }
-
-  if (drive.rcloneInstalled) {
-    if (drive.remoteConfigured && drive.reachable) {
-      details.push("Conectividad Drive: OK ✓")
-    } else if (drive.remoteConfigured && !drive.reachable) {
-      details.push("Conectividad Drive: error. Verifica conectividad de red")
-    }
-  }
-
-  if (drive.lastChecked) {
-    const ago = Math.round((Date.now() - new Date(drive.lastChecked).getTime()) / 60000)
-    details.push(`Verificado hace ${ago} min`)
-  }
-
-  // Estado general
-  let status: "success" | "failed" | "none"
-  let label: string
-
-  if (!drive.saJsonPresent) {
-    status = "failed"
-    label = "No configurado"
-  } else if (!drive.saValid) {
-    status = "failed"
-    label = "SA inválido"
-  } else if (drive.reachable) {
-    status = "success"
-    label = "SA operativo"
-  } else if (drive.remoteConfigured) {
-    status = "none"
-    label = "SA configurado, Drive inaccesible"
-  } else {
-    status = "none"
-    label = "SA presente, remote no configurado"
-  }
-
-  return { label, status, details }
 }
 
 // ── Cleanup ──────────────────────────────────────────────────────────────────
@@ -466,7 +222,6 @@ export interface BackupConfig {
   retentionDays: number
   maxAgeHours: number
   manualTimeoutMinutes: number
-  driveBackupsEnabled: boolean
   cloudreveBackupsEnabled: boolean
   cloudreveBackupsPath: string
 }
@@ -482,7 +237,6 @@ export async function getBackupConfig(): Promise<BackupConfig> {
     retentionDays: row?.retentionDays ?? 30,
     maxAgeHours: row?.maxAgeHours ?? 36,
     manualTimeoutMinutes: row?.manualTimeoutMinutes ?? 30,
-    driveBackupsEnabled: row?.driveBackupsEnabled ?? false,
     cloudreveBackupsEnabled: row?.cloudreveBackupsEnabled ?? false,
     cloudreveBackupsPath: normalizeBackupCloudrevePath(row?.cloudreveBackupsPath),
   }
@@ -515,12 +269,6 @@ export async function updateBackupConfig(input: Partial<BackupConfig>): Promise<
     }
     updates.manualTimeoutMinutes = input.manualTimeoutMinutes
   }
-  if (input.driveBackupsEnabled !== undefined) {
-    if (typeof input.driveBackupsEnabled !== "boolean") {
-      throw new Error("driveBackupsEnabled must be boolean")
-    }
-    updates.driveBackupsEnabled = input.driveBackupsEnabled
-  }
   if (input.cloudreveBackupsEnabled !== undefined) {
     if (typeof input.cloudreveBackupsEnabled !== "boolean") {
       throw new Error("cloudreveBackupsEnabled must be boolean")
@@ -546,7 +294,6 @@ export async function updateBackupConfig(input: Partial<BackupConfig>): Promise<
       retentionDays: updates.retentionDays ?? 30,
       maxAgeHours: updates.maxAgeHours ?? 36,
       manualTimeoutMinutes: updates.manualTimeoutMinutes ?? 30,
-      driveBackupsEnabled: updates.driveBackupsEnabled ?? false,
       cloudreveBackupsEnabled: updates.cloudreveBackupsEnabled ?? false,
       cloudreveBackupsPath: updates.cloudreveBackupsPath ?? DEFAULT_BACKUP_CLOUDREVE_PATH,
     } as typeof backupSettings.$inferInsert)
@@ -575,8 +322,6 @@ function toEntry(row: any): BackupEntry {
     configSizeBytes:   row.configSizeBytes,
     configSha256:      row.configSha256,
     manifestSha256:    row.manifestSha256,
-    drivePath:         row.drivePath,
-    driveUploaded:     row.driveUploaded,
     cloudrevePath:     row.cloudrevePath,
     cloudreveUploaded: row.cloudreveUploaded,
     appVersion:        row.appVersion,

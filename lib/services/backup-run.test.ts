@@ -104,9 +104,7 @@ describe("estado y manifiesto de una corrida", () => {
         BACKUP_DATE: "2026-10-26",
         BACKUP_MANIFEST_SHA256: "mf",
         BACKUP_CLOUDREVE_UPLOADED: "true",
-        BACKUP_DRIVE_UPLOADED: "false",
       },
-      driveDest: "gdrive-backups:bodega",
       cloudrevePath: "backups/plataforma",
       appVersion: "v1",
     })
@@ -119,8 +117,6 @@ describe("estado y manifiesto de una corrida", () => {
       manifestSha256: "mf",
       cloudreveUploaded: true,
       cloudrevePath: "backups/plataforma/2026-10-26",
-      driveUploaded: false,
-      drivePath: undefined,
       hostname: "srv",
     })
   })

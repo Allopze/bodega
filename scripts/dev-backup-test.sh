@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ── Dev backup test — ejecuta backup + restore completo en local ──────────────
-# No toca /srv/bodega ni Google Drive. Usa paths temporales y la DB E2E.
+# No toca /srv/bodega ni Cloudreve. Usa paths temporales y la DB E2E.
 #
 # Uso:
 #   bash scripts/dev-backup-test.sh

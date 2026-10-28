@@ -2521,6 +2521,13 @@
       "when": 1792636544206,
       "tag": "0359_fuel_control",
       "breakpoints": true
+    },
+    {
+      "idx": 360,
+      "version": "7",
+      "when": 1793147782109,
+      "tag": "0360_tricky_mole_man",
+      "breakpoints": true
     }
   ]
 }

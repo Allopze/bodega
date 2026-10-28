@@ -1,4 +1,4 @@
-import type { BackupStats, DriveHealth } from "@/lib/services/backups"
+import type { BackupStats } from "@/lib/services/backups"
 
 export type BackupCardStatus = "success" | "failed" | "running" | "warning" | "none"
 
@@ -16,36 +16,13 @@ function timeAgo(dateStr: string | null): string {
   return `hace ${Math.floor(hours / 24)} días`
 }
 
-function getDriveCard(driveHealth: DriveHealth | null): BackupStatusCard {
-  if (!driveHealth) {
-    return { label: "Destino remoto", value: "No se pudo verificar Google Drive", status: "warning" }
-  }
-  if (driveHealth.reachable) {
-    return {
-      label: "Destino remoto",
-      value: driveHealth.saJsonPresent && driveHealth.saValid
-        ? "Google Drive accesible con cuenta de servicio"
-        : "Google Drive accesible; revisa la cuenta de servicio",
-      status: driveHealth.saJsonPresent && driveHealth.saValid ? "success" : "warning",
-    }
-  }
-  if (driveHealth.remoteConfigured) {
-    return { label: "Destino remoto", value: "Google Drive configurado, pero no accesible", status: "failed" }
-  }
-  if (driveHealth.rcloneInstalled) {
-    return { label: "Destino remoto", value: "Google Drive no está configurado", status: "warning" }
-  }
-  return { label: "Destino remoto", value: "rclone no está instalado", status: "warning" }
-}
-
 export interface CloudreveDestinationStatus {
   enabled: boolean
   reachable: boolean | null
 }
 
-/** Cloudreve es el destino remoto activo; Drive queda como fallback legado. */
+/** Cloudreve es el único destino remoto: sin él, la copia sólo vive en el servidor. */
 function getRemoteDestinationCard(
-  driveHealth: DriveHealth | null,
   cloudreve: CloudreveDestinationStatus | null | undefined,
 ): BackupStatusCard {
   if (cloudreve?.enabled) {
@@ -57,7 +34,7 @@ function getRemoteDestinationCard(
     }
     return { label: "Destino remoto", value: "Cloudreve activado; sin verificación reciente", status: "warning" }
   }
-  return getDriveCard(driveHealth)
+  return { label: "Destino remoto", value: "Sin destino remoto: la copia queda sólo en el servidor", status: "warning" }
 }
 
 /**
@@ -67,7 +44,6 @@ function getRemoteDestinationCard(
  */
 export function buildBackupStatusCards(
   stats: BackupStats,
-  driveHealth: DriveHealth | null,
   cloudreve?: CloudreveDestinationStatus | null,
 ): BackupStatusCard[] {
   const latest = stats.lastBackup
@@ -107,5 +83,5 @@ export function buildBackupStatusCards(
         status: "failed",
       }
 
-  return [lastBackupCard, cadenceCard, getRemoteDestinationCard(driveHealth, cloudreve)]
+  return [lastBackupCard, cadenceCard, getRemoteDestinationCard(cloudreve)]
 }

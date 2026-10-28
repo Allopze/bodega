@@ -3,8 +3,8 @@
  * la lista se pueda probar sin levantar Auth.js.
  *
  * NOTE: se lista "/api/backups/config" y NO "/api/backups". El cotejo es por
- * prefijo, así que el prefijo corto habría abierto también `/status` y
- * `/drive-health`, que se protegen por sesión y permiso. Sólo `config` se
+ * prefijo, así que el prefijo corto habría abierto también `/status`, que se
+ * protege por sesión y permiso. Sólo `config` se
  * autentica con CRON_SECRET —la consume el backup-scheduler—, así que sólo
  * ella puede prescindir de la sesión.
  */

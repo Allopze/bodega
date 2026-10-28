@@ -11,7 +11,6 @@ const mockCan = vi.hoisted(() => vi.fn(() => true))
 const mockExecFile = vi.hoisted(() => vi.fn())
 const mockStats = vi.hoisted(() => vi.fn())
 const mockLatest = vi.hoisted(() => vi.fn())
-const mockDrive = vi.hoisted(() => vi.fn())
 const mockConfig = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/auth/auth", () => ({ auth: mockAuth }))
@@ -20,7 +19,6 @@ vi.mock("node:child_process", () => ({ execFile: mockExecFile }))
 vi.mock("@/lib/services/backups", () => ({
   getBackupStats: mockStats,
   getLatestBackup: mockLatest,
-  getDriveHealth: mockDrive,
   getBackupConfig: mockConfig,
 }))
 
@@ -45,12 +43,9 @@ beforeEach(() => {
     totalBackups: 3, successCount: 3, failedCount: 0, runningCount: 0, backupsLast7Days: 3,
   })
   mockLatest.mockResolvedValue({
-    backupDate: "2026-08-20", status: "success", startedAt: new Date(), totalSizeBytes: 1024, driveUploaded: true,
+    backupDate: "2026-08-20", status: "success", startedAt: new Date(), totalSizeBytes: 1024, cloudreveUploaded: true,
   })
   mockConfig.mockResolvedValue({ backupHour: 3, retentionDays: 30, maxAgeHours: 36, manualTimeoutMinutes: 30 })
-  mockDrive.mockResolvedValue({
-    rcloneInstalled: true, remoteConfigured: true, saJsonPresent: true, reachable: true, lastChecked: null,
-  })
   verifyExits(0, "OK")
 })
 

@@ -48,7 +48,7 @@ El pipeline (`.github/workflows/deploy.yml`) corre en este orden: `build-and-pus
 Corren bajo perfiles de compose y su caída **no** tumba la aplicación, pero sí degrada en
 silencio; por eso conviene revisarlos cuando algo "dejó de actualizarse solo".
 
-- `backup-scheduler` (perfil `backup`): respaldo diario a `BACKUP_HOUR` UTC, retención `RETENTION_DAYS` (30 por defecto), destino remoto opcional `GDRIVE_BACKUPS_DEST`.
+- `backup-scheduler` (perfil `backup`): respaldo diario a `BACKUP_HOUR` UTC, retención `RETENTION_DAYS` (30 por defecto), destino remoto opcional Cloudreve (se activa en Administración › Respaldos).
 - `cron`: tareas programadas de la plataforma. Requiere `CRON_SECRET`. Es el **único
   scheduler** de los endpoints `/api/cron/*`: la lista de trabajos vive en
   `scripts/cron-runner.mjs` y el crontab se escribe desde `docker-compose.yml` (la paridad la

@@ -1,10 +1,9 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { requirePermission } from "@/lib/auth/can"
-import { getBackupStats, getRecentBackups, getDriveHealth, getSaStatusSummary, getBackupConfig } from "@/lib/services/backups"
+import { getBackupStats, getRecentBackups, getBackupConfig } from "@/lib/services/backups"
 import { probeCloudreveBackupPath } from "@/lib/services/cloudreve/client"
 import { normalizeBackupCloudrevePath } from "@/lib/services/cloudreve/backup"
-import SaHealthSection from "./sa-health-section"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { BackupsStatusCards } from "./backup-status-cards"
@@ -31,10 +30,9 @@ export default async function BackupsPage() {
   try { await requirePermission("admin:backups") }
   catch { redirect("/forbidden") }
 
-  const [stats, recent, driveHealth, backupConfig] = await Promise.all([
+  const [stats, recent, backupConfig] = await Promise.all([
     getBackupStats(),
     getRecentBackups(30),
-    getDriveHealth().catch(() => null),
     getBackupConfig(),
   ])
 
@@ -42,12 +40,10 @@ export default async function BackupsPage() {
     ? await probeCloudreveBackupPath(normalizeBackupCloudrevePath(backupConfig.cloudreveBackupsPath)).catch(() => null)
     : null
 
-  const statusCards = buildBackupStatusCards(stats, driveHealth, {
+  const statusCards = buildBackupStatusCards(stats, {
     enabled: backupConfig.cloudreveBackupsEnabled,
     reachable: cloudreveProbe?.ok ?? null,
   })
-
-  const saSummary = driveHealth ? getSaStatusSummary(driveHealth) : null
 
   const localPath = process.env.BACKUP_DIR ?? "/srv/backups/plataforma"
 
@@ -74,11 +70,6 @@ export default async function BackupsPage() {
       {/* ── Destinos ─────────────────────────────────────────────────── */}
       <BackupDestinationsForm initialConfig={backupConfig} localPath={localPath} />
 
-      {/* ── Service Account Health ───────────────────────────────────── */}
-      {driveHealth && saSummary && (
-        <SaHealthSection initialHealth={driveHealth} initialSummary={saSummary} />
-      )}
-
       <BackupsList backups={recent.map((b) => ({
         id: b.id,
         date: b.backupDate,
@@ -90,7 +81,6 @@ export default async function BackupsPage() {
         storageSizeBytes: b.storageSizeBytes,
         configSizeBytes: b.configSizeBytes,
         totalSizeBytes: b.totalSizeBytes,
-        driveUploaded: b.driveUploaded,
         cloudreveUploaded: b.cloudreveUploaded,
         manifestSha256: b.manifestSha256?.slice(0, 16) ?? null,
         errorMessage: b.errorMessage,

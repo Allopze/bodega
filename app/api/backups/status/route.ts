@@ -5,7 +5,7 @@
  * - Último backup (fecha, estado, tamaño, checksum)
  * - Estadísticas (totales, éxito/fallo últimos 7 días)
  * - Verificación de script de backup (¿existe?)
- * - Estado de Google Drive (última subida)
+ * - Estado de Cloudreve (destino remoto)
  *
  * Usado por el panel admin /admin/backups. Exige `admin:backups`: no es un
  * endpoint de monitoreo externo. Para eso, exponer uno nuevo por CRON_SECRET
@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic"
 import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth/auth"
 import { can } from "@/lib/auth/can"
-import { getBackupStats, getLatestBackup, getDriveHealth, getBackupConfig } from "@/lib/services/backups"
+import { getBackupStats, getLatestBackup, getBackupConfig } from "@/lib/services/backups"
 import { probeCloudreveBackupPath } from "@/lib/services/cloudreve/client"
 import { normalizeBackupCloudrevePath } from "@/lib/services/cloudreve/backup"
 import { execFile } from "node:child_process"
@@ -45,7 +45,6 @@ interface BackupApiStatus {
     status: string | null
     age_hours: number | null
     total_size_bytes: number | null
-    drive_uploaded: boolean | null
     cloudreve_uploaded: boolean | null
   }
   stats: {
@@ -56,13 +55,6 @@ interface BackupApiStatus {
     last_7_days: number
   }
   scripts: Record<string, boolean>
-  drive: {
-    rclone_installed: boolean
-    remote_configured: boolean
-    sa_json_present: boolean
-    reachable: boolean
-    last_checked: string | null
-  }
   cloudreve: {
     enabled: boolean
     path: string
@@ -84,7 +76,6 @@ export async function GET() {
       status: null,
       age_hours: null,
       total_size_bytes: null,
-      drive_uploaded: null,
       cloudreve_uploaded: null,
     },
     stats: {
@@ -95,13 +86,6 @@ export async function GET() {
       last_7_days: 0,
     },
     scripts: {},
-    drive: {
-      rclone_installed:  false,
-      remote_configured: false,
-      sa_json_present:   false,
-      reachable:         false,
-      last_checked:      null,
-    },
     cloudreve: {
       enabled:   false,
       path:      "",
@@ -154,7 +138,6 @@ export async function GET() {
         status: latest.status,
         age_hours: ageHours,
         total_size_bytes: latest.totalSizeBytes,
-        drive_uploaded: latest.driveUploaded,
         cloudreve_uploaded: latest.cloudreveUploaded,
       }
 
@@ -173,33 +156,7 @@ export async function GET() {
     result.status = "degraded"
   }
 
-  // 3. Drive healthcheck
-  try {
-    const drive = await getDriveHealth()
-    result.drive = {
-      rclone_installed:  drive.rcloneInstalled,
-      remote_configured: drive.remoteConfigured,
-      sa_json_present:   drive.saJsonPresent,
-      reachable:         drive.reachable,
-      last_checked:      drive.lastChecked,
-    }
-    if (!drive.reachable && drive.remoteConfigured && result.status === "ok") {
-      result.status = "degraded"
-    }
-    if (!drive.remoteConfigured && drive.rcloneInstalled && result.status === "ok") {
-      result.status = "degraded"
-    }
-  } catch {
-    result.drive = {
-      rclone_installed:  false,
-      remote_configured: false,
-      sa_json_present:   false,
-      reachable:         false,
-      last_checked:      null,
-    }
-  }
-
-  // 3b. Cloudreve healthcheck (solo si el destino está activo)
+  // 3. Cloudreve healthcheck (solo si el destino está activo)
   try {
     const config = await getBackupConfig()
     result.cloudreve = {

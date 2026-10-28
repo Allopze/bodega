@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useState } from "react"
-import { Cloud, HardDrives, Warning, FloppyDisk, Lightning } from "@phosphor-icons/react/dist/ssr"
+import { Cloud, HardDrives, FloppyDisk, Lightning } from "@phosphor-icons/react/dist/ssr"
 import { updateBackupConfigAction, probeCloudreveBackupAction } from "./actions"
 import type { BackupConfig } from "@/lib/services/backups"
 import { Button } from "@/components/ui/button"
@@ -14,14 +14,13 @@ interface Props {
 export function BackupDestinationsForm({ initialConfig, localPath }: Props) {
   const [config, setConfig] = useState<BackupConfig>(initialConfig)
   const [pathDraft, setPathDraft] = useState(initialConfig.cloudreveBackupsPath)
-  const [saving, setSaving] = useState<"drive" | "cloudreve" | "path" | null>(null)
+  const [saving, setSaving] = useState<"cloudreve" | "path" | null>(null)
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
   const [probe, setProbe] = useState<{ ok: boolean; message: string } | null>(null)
 
   const applyConfig = useCallback(async (input: Partial<BackupConfig>) => {
     setMessage(null)
-    setSaving(input.driveBackupsEnabled !== undefined ? "drive"
-      : input.cloudreveBackupsEnabled !== undefined ? "cloudreve" : "path")
+    setSaving(input.cloudreveBackupsEnabled !== undefined ? "cloudreve" : "path")
     try {
       const updated = await updateBackupConfigAction(input)
       setConfig(updated)
@@ -117,29 +116,6 @@ export function BackupDestinationsForm({ initialConfig, localPath }: Props) {
                 {probe.message}
               </p>
             )}
-          </div>
-        </div>
-
-        {/* Google Drive (off por defecto) */}
-        <div className="flex items-start gap-3">
-          <Warning size={16} className="mt-0.5 text-[var(--color-text-muted)]" />
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <input
-                id="drive-enabled"
-                type="checkbox"
-                checked={config.driveBackupsEnabled}
-                disabled={saving === "drive"}
-                onChange={(e) => applyConfig({ driveBackupsEnabled: e.target.checked })}
-                className="h-4 w-4 rounded border-[var(--color-border)] accent-[var(--color-primary)]"
-              />
-              <label htmlFor="drive-enabled" className="text-sm font-medium text-[var(--color-text)]">
-                Google Drive (rclone)
-              </label>
-            </div>
-            <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-              Desactivado por defecto: el destino remoto activo es Cloudreve. Requiere rclone con Service Account.
-            </p>
           </div>
         </div>
 

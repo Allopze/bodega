@@ -11,7 +11,7 @@
  * que lo que la base restaurada referencia esté dentro del tar.
  *
  * Todo corre contra directorios temporales y binarios de mentira (`pg_dump`,
- * `pg_restore`, `psql`, `docker`, `rclone`) puestos al frente del PATH: estas
+ * `pg_restore`, `psql`, `docker`) puestos al frente del PATH: estas
  * pruebas nunca tocan una base ni un storage reales.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
@@ -42,7 +42,6 @@ echo called >> "${work}/pg_dump.calls"
 for arg in "$@"; do case "$arg" in --file=*) printf 'PGDMP-falso' > "\${arg#--file=}" ;; esac; done
 exit 0`)
   stub("docker", "exit 1")
-  stub("rclone", "exit 1")
 })
 
 afterEach(() => {
@@ -71,7 +70,6 @@ function orchestratorEnv(storagePath: string, extra: Record<string, string> = {}
     DATABASE_URL: "postgres://stub@127.0.0.1:1/no_existe_test",
     APP_VERSION: "test",
     CLOUDREVE_BACKUP_ENABLED: "false",
-    DRIVE_BACKUP_ENABLED: "false",
     BACKUP_ENCRYPTION_PASSPHRASE: "",
     SST_STORAGE_BACKEND: "filesystem",
     ...extra,

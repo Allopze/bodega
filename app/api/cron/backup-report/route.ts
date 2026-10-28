@@ -67,7 +67,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       await completeBackupLog(runId, await successfulBackupCompletion({
         backupDir,
         status,
-        driveDest: process.env.GDRIVE_BACKUPS_DEST,
         cloudrevePath: config.cloudreveBackupsPath,
         appVersion,
       }))

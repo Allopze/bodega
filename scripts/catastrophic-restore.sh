@@ -5,25 +5,28 @@ set -euo pipefail
 # Uso ÚNICAMENTE cuando:
 #   - El servidor de producción se perdió totalmente (fire, ransomware, etc.)
 #   - Tienes un servidor NUEVO con SO instalado
-#   - Tienes acceso al JSON del Service Account de Google Drive
+#   - Tienes las credenciales de Cloudreve (CLOUDREVE_BASE_URL,
+#     CLOUDREVE_USERNAME, CLOUDREVE_PASSWORD), o ya descargaste el snapshot
 #
 # Este script INSTALA todo desde cero y restaura el backup más reciente.
 #
 # Requisitos:
 #   - Servidor Ubuntu/Debian 22.04+ limpio
 #   - Acceso root o sudo
-#   - Service Account JSON disponible (ver SETUP_GOOGLE_DRIVE_BACKUP.md)
+#   - Credenciales de Cloudreve en el entorno, o --snapshot-dir con un snapshot
+#     ya descargado (manifest.json + los tres artefactos, en claro o .gpg)
 #   - Si los respaldos se suben cifrados: BACKUP_ENCRYPTION_PASSPHRASE en el
 #     entorno. NO viaja dentro del snapshot (ese es el punto); vive en el
 #     gestor de secretos corporativo. Ver docs/deploy/RESPALDOS_Y_RESTAURACION.md
 #
 # Usage:
-#   sudo ./scripts/catastrophic-restore.sh --service-account-json /path/to/sa.json
-#   sudo ./scripts/catastrophic-restore.sh --date 2026-07-19 --service-account-json /path/to/sa.json
-#   sudo BACKUP_ENCRYPTION_PASSPHRASE='...' ./scripts/catastrophic-restore.sh --service-account-json /path/to/sa.json
+#   sudo -E ./scripts/catastrophic-restore.sh
+#   sudo -E ./scripts/catastrophic-restore.sh --date 2026-07-19
+#   sudo ./scripts/catastrophic-restore.sh --snapshot-dir /ruta/al/snapshot
+#   sudo -E BACKUP_ENCRYPTION_PASSPHRASE='...' ./scripts/catastrophic-restore.sh
 #
 # Flags:
-#   --service-account-json PATH   (REQUERIDO) Ruta al JSON del Service Account
+#   --snapshot-dir PATH          Snapshot ya descargado; no se toca Cloudreve
 #   --date YYYY-MM-DD            Fecha específica a restaurar (default: latest)
 #   --app-path PATH              Ruta de instalación (default: /srv/bodega)
 #   --dry-run                    Solo muestra lo que se haría
@@ -34,14 +37,14 @@ set -euo pipefail
 # Se guarda para poder sugerir el reintento exacto si falta la passphrase.
 ORIGINAL_ARGS="$*"
 
-SA_JSON=""
+SNAPSHOT_DIR=""
 RESTORE_DATE=""
 APP_PATH=""
 DRY_RUN=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --service-account-json) SA_JSON="$2"; shift 2 ;;
+    --snapshot-dir) SNAPSHOT_DIR="$2"; shift 2 ;;
     --date) RESTORE_DATE="$2"; shift 2 ;;
     --app-path) APP_PATH="$2"; shift 2 ;;
     --dry-run) DRY_RUN=true; shift ;;
@@ -51,14 +54,14 @@ done
 
 # ── Validaciones ──────────────────────────────────────────────────────────────
 
-if [ -z "$SA_JSON" ]; then
-  echo "ERROR: --service-account-json es OBLIGATORIO"
-  echo "  Uso: sudo ./scripts/catastrophic-restore.sh --service-account-json /ruta/al/sa.json"
-  exit 1
-fi
-
-if [ ! -f "$SA_JSON" ]; then
-  echo "ERROR: No se encontró el archivo: ${SA_JSON}"
+if [ -n "$SNAPSHOT_DIR" ]; then
+  if [ ! -f "${SNAPSHOT_DIR}/manifest.json" ]; then
+    echo "ERROR: ${SNAPSHOT_DIR} no contiene manifest.json"
+    exit 1
+  fi
+elif [ -z "${CLOUDREVE_BASE_URL:-}" ] || [ -z "${CLOUDREVE_USERNAME:-}" ] || [ -z "${CLOUDREVE_PASSWORD:-}" ]; then
+  echo "ERROR: faltan CLOUDREVE_BASE_URL, CLOUDREVE_USERNAME o CLOUDREVE_PASSWORD."
+  echo "  Defínelas (y corre con sudo -E) o pasa --snapshot-dir con un snapshot ya descargado."
   exit 1
 fi
 
@@ -90,7 +93,7 @@ cat <<BANNER
 ║        RESTAURACIÓN CATASTRÓFICA - Plataforma Chome         ║
 ╠══════════════════════════════════════════════════════════════╣
 ║  Esto INSTALARÁ TODO desde cero y RESTAURARÁ el backup      ║
-║  más reciente desde Google Drive.                           ║
+║  más reciente desde Cloudreve.                              ║
 ║                                                              ║
 ║  Fecha a restaurar: ${RESTORE_DATE}                             ║
 ║  Ruta de instalación: ${APP_PATH}                              ║
@@ -112,7 +115,7 @@ log "=== Paso 1/8: Instalando dependencias del sistema ==="
 run apt-get update -y
 run apt-get install -y \
   curl wget gnupg ca-certificates \
-  rclone postgresql-client \
+  postgresql-client \
   jq git
 
 # ── 2. Instalar Docker ───────────────────────────────────────────────────────
@@ -135,45 +138,35 @@ if ! command -v node &>/dev/null; then
   run apt-get install -y nodejs
 fi
 
-# ── 4. Configurar rclone con Service Account ─────────────────────────────────
+# ── 4/5. Obtener el snapshot ─────────────────────────────────────────────────
+# Sin --snapshot-dir se baja de Cloudreve con el script empaquetado en la imagen
+# de la app: en un servidor nuevo no hay repo ni Node con dependencias, pero sí
+# Docker (paso 2). Las credenciales viajan por entorno, nunca por argumento.
 
 log ""
-log "=== Paso 4/8: Configurando rclone con Service Account ==="
-
-run mkdir -p /srv/bodega/secrets
-run cp "$SA_JSON" /srv/bodega/secrets/gdrive-service-account.json
-run chmod 600 /srv/bodega/secrets/gdrive-service-account.json
-
-run rclone config create gdrive-backups drive \
-  scope drive.file \
-  service_account_file /srv/bodega/secrets/gdrive-service-account.json \
-  --quiet
-
-# Probar conexión
-log "Probando conexión a Google Drive..."
-if ! run rclone lsd "gdrive-backups:" 2>/dev/null; then
-  error "No se pudo conectar a Google Drive. Verifica el Service Account."
-  exit 1
-fi
-
-# ── 5. Descargar y verificar backup ──────────────────────────────────────────
-
-log ""
-log "=== Paso 5/8: Descargando backup desde Google Drive ==="
+log "=== Paso 4/8: Preparando directorio de restauración ==="
 
 RESTORE_TARGET="${APP_PATH}/restore"
 run mkdir -p "$RESTORE_TARGET"
 
-# Primero verificar que el backup existe
-REMOTE_PATH="gdrive-backups:bodega-backups/${RESTORE_DATE}"
-if ! run rclone ls "$REMOTE_PATH" 2>/dev/null | grep -q manifest.json; then
-  error "No se encontró backup en ${REMOTE_PATH}"
-  error "Backups disponibles:"
-  run rclone lsd "gdrive-backups:bodega-backups/"
-  exit 1
-fi
+log ""
+log "=== Paso 5/8: Obteniendo backup ==="
 
-run rclone copy "${REMOTE_PATH}/" "${RESTORE_TARGET}/" --verbose --checksum
+if [ -n "$SNAPSHOT_DIR" ]; then
+  log "Usando snapshot local: ${SNAPSHOT_DIR}"
+  run cp -a "${SNAPSHOT_DIR}/." "${RESTORE_TARGET}/"
+else
+  APP_IMAGE="${APP_IMAGE:-ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}}"
+  log "Descargando '${RESTORE_DATE}' desde Cloudreve con ${APP_IMAGE}..."
+  # --user 0:0: la imagen corre como `nextjs` y no podría escribir en el
+  # directorio de restauración, que es de root.
+  run docker run --rm --user 0:0 \
+    -e CLOUDREVE_BASE_URL -e CLOUDREVE_USERNAME -e CLOUDREVE_PASSWORD \
+    -v "${RESTORE_TARGET}:/restore" \
+    "$APP_IMAGE" \
+    node /app/scripts/download-backup-cloudreve.cjs \
+      "$RESTORE_DATE" /restore "${CLOUDREVE_BACKUP_PATH:-backups/plataforma}"
+fi
 
 # Verificar integridad
 log "Verificando integridad del backup..."
@@ -209,7 +202,7 @@ if [ -f "${RESTORE_TARGET}/postgres.dump.gpg" ] || [ "$MANIFEST_ENCRYPTED" = "tr
     error "    3. Procedimiento completo: docs/deploy/RESPALDOS_Y_RESTAURACION.md"
     error ""
     error "  Reintenta con:"
-    error "    sudo BACKUP_ENCRYPTION_PASSPHRASE='<passphrase>' $0 ${ORIGINAL_ARGS}"
+    error "    sudo -E BACKUP_ENCRYPTION_PASSPHRASE='<passphrase>' $0 ${ORIGINAL_ARGS}"
     exit 1
   fi
 
@@ -291,47 +284,6 @@ if [ -f "${CONFIG_TMP}/.env" ]; then
   run cp "${CONFIG_TMP}/.env" "${APP_PATH}/.env"
   run chmod 600 "${APP_PATH}/.env"
   log ".env restaurado"
-fi
-
-# Restaurar rclone.conf desde el backup
-if [ -f "${CONFIG_TMP}/rclone.conf" ]; then
-  RCLONE_DEFAULT="${HOME}/.config/rclone/rclone.conf"
-  RCLONE_DIR=$(dirname "${RCLONE_CONFIG:-${RCLONE_DEFAULT}}")
-  run mkdir -p "$RCLONE_DIR"
-  run cp "${CONFIG_TMP}/rclone.conf" "${RCLONE_DIR}/rclone.conf"
-  run chmod 600 "${RCLONE_DIR}/rclone.conf"
-  log "rclone.conf: restaurado en ${RCLONE_DIR}/rclone.conf"
-else
-  log "  rclone.conf no encontrado en el backup (se configurará vía SA JSON)"
-fi
-
-# Restaurar Service Account JSON
-if [ -f "${CONFIG_TMP}/gdrive-service-account.json" ]; then
-  SA_DIR="/srv/bodega/secrets"
-  run mkdir -p "$SA_DIR"
-  run cp "${CONFIG_TMP}/gdrive-service-account.json" "${SA_DIR}/gdrive-service-account.json"
-  run chmod 600 "${SA_DIR}/gdrive-service-account.json"
-  log "Service Account JSON: restaurado en ${SA_DIR}/gdrive-service-account.json"
-
-  # Reconfigurar rclone con el SA restaurado (eliminar remote existente y recrear)
-  log "  Reconfigurando rclone remote con el Service Account restaurado..."
-  run rclone config delete gdrive-backups 2>/dev/null || true
-  run rclone config create gdrive-backups drive \
-    scope drive.file \
-    service_account_file /srv/bodega/secrets/gdrive-service-account.json \
-    --quiet
-
-  # Verificar conectividad post-restauración
-  log "  Verificando conectividad con Google Drive..."
-  if run rclone lsd "gdrive-backups:bodega-backups/" 2>/dev/null; then
-    log "  ✓ Conectividad Drive OK"
-  else
-    warn "  No se pudo conectar a Google Drive después de restaurar el SA."
-    warn "  Revisa docs/deploy/SETUP_GOOGLE_DRIVE_BACKUP.md — sección 'Solución de problemas'"
-  fi
-else
-  log "  Service Account JSON no encontrado en el backup."
-  log "  Deberás proporcionarlo manualmente (ver docs/deploy/SETUP_GOOGLE_DRIVE_BACKUP.md)"
 fi
 
 # Mostrar resumen
@@ -482,21 +434,17 @@ log "      (docker-compose / systemd / cron). NO está en el .env restaurado a"
 log "      propósito, así que sin este paso los respaldos futuros suben SIN CIFRAR."
 log "      Verifica después con: sudo scripts/backup-verify.sh"
 log ""
-log "  2. Verifica que el Service Account JSON esté en su lugar:"
-log "     ls -la /srv/bodega/secrets/gdrive-service-account.json"
-log "     → Si no aparece, sácalo del password manager"
-log ""
-log "  3. Verifica que la app responde:"
+log "  2. Verifica que la app responde:"
 log "     curl -f http://localhost:3000/api/health"
 log ""
-log "  4. Revisa los logs:"
+log "  3. Revisa los logs:"
 log "     docker compose logs --tail=50 app"
 log ""
-log "  5. Verifica backups futuros:"
+log "  4. Verifica backups futuros:"
 log "     sudo /srv/bodega/scripts/backup-orchestrator.sh"
-log "     rclone ls gdrive-backups:bodega-backups/$(date +%F)/"
+log "     sudo /srv/bodega/scripts/backup-verify.sh"
 log ""
-log "  6. Programa el cron diario de backups:"
+log "  5. Programa el cron diario de backups:"
 log "     crontab -e"
 log "     0 3 * * * /srv/bodega/scripts/backup-orchestrator.sh >> /var/log/bodega-backup.log 2>&1"
 log ""
