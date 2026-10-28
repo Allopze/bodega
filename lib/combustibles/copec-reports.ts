@@ -1,4 +1,4 @@
-import { withBrowserContext } from "@/lib/pdf/browser-pool"
+import { openBrowserPage, withIsolatedBrowserContext } from "@/lib/pdf/browser-pool"
 import type { APIResponse, Locator, Page, Route } from "playwright"
 import { CopecOtpTimeoutError, openCopecOtpMailbox, readCopecOtpConfig, waitForCopecOtp, type CopecOtpMailbox } from "@/lib/combustibles/copec-otp"
 
@@ -432,14 +432,14 @@ export interface CopecPortalSession {
  * El login es perezoso: si la corrida no descarga nada, no se entra al portal.
  */
 export async function withCopecPortalSession<T>(run: (session: CopecPortalSession) => Promise<T>): Promise<T> {
-  return withBrowserContext({ acceptDownloads: true, viewport: { width: 1440, height: 900 } }, async (context) => {
+  return withIsolatedBrowserContext({ acceptDownloads: true, viewport: { width: 1440, height: 900 } }, async (context) => {
     let page: Page | null = null
     /** Canal ya elegido en los combos de la página; `null` obliga a elegirlo de nuevo. */
     let selectedChannel: CopecChannel | null = null
 
     const ensureReportsPage = async (channel: CopecChannel): Promise<Page> => {
       if (!page) {
-        const fresh = await context.newPage()
+        const fresh = await openBrowserPage(context, "No fue posible abrir el navegador para consultar Copec. La sincronización se detuvo.")
         fresh.setDefaultTimeout(20_000)
         try {
           await login(fresh, env("COPEC_USERNAME"), env("COPEC_PASSWORD"))

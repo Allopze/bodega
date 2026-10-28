@@ -4,8 +4,9 @@ const { mockWithBrowserContext } = vi.hoisted(() => ({
   mockWithBrowserContext: vi.fn(),
 }))
 
-vi.mock("@/lib/pdf/browser-pool", () => ({
-  withBrowserContext: (...args: unknown[]) => mockWithBrowserContext(...args),
+vi.mock("@/lib/pdf/browser-pool", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/pdf/browser-pool")>()),
+  withIsolatedBrowserContext: (...args: unknown[]) => mockWithBrowserContext(...args),
 }))
 
 const { downloadCopecReports } = await import("../copec-reports")

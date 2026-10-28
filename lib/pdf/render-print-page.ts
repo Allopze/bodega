@@ -18,7 +18,7 @@
  * - El resultado tiene que empezar con `%PDF`.
  */
 import type { Route } from "playwright"
-import { withBrowserContext } from "./browser-pool"
+import { openBrowserPage, withBrowserContext } from "./browser-pool"
 import { PRINT_READY_ATTRIBUTE, printPdfOptions, type PrintDocumentSpec } from "./print-specs"
 
 export type PrintRenderErrorCode = "RENDER_UNAUTHORIZED" | "RENDER_FAILED" | "INVALID_OUTPUT"
@@ -112,7 +112,10 @@ export async function renderPrintPageToPdf(args: {
       }
     })
 
-    const page = await ctx.newPage()
+    const page = await openBrowserPage(ctx, "No fue posible abrir el navegador para generar el documento.")
+      .catch((error: unknown) => {
+        throw new PrintRenderError("RENDER_FAILED", error instanceof Error ? error.message : "No se pudo abrir el navegador")
+      })
     const response = await page.goto(target, { waitUntil: args.spec.waitUntil, timeout: 30_000 })
       .catch((error: unknown) => {
         throw new PrintRenderError("RENDER_FAILED", error instanceof Error ? error.message : "No se pudo abrir la página")
