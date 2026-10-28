@@ -110,7 +110,6 @@ export async function triggerManualBackupAction(): Promise<BackupActionResult> {
       retentionDays: 30,
       maxAgeHours: 36,
       manualTimeoutMinutes: 30,
-      driveBackupsEnabled: false,
       cloudreveBackupsEnabled: false,
       cloudreveBackupsPath: "backups/plataforma",
     }
@@ -129,7 +128,6 @@ export async function triggerManualBackupAction(): Promise<BackupActionResult> {
         process.env.APP_VERSION ||
         "manual",
       RETENTION_DAYS: String(backupCfg.retentionDays),
-      DRIVE_BACKUP_ENABLED: String(backupCfg.driveBackupsEnabled),
       CLOUDREVE_BACKUP_ENABLED: String(backupCfg.cloudreveBackupsEnabled),
       CLOUDREVE_BACKUP_PATH: backupCfg.cloudreveBackupsPath,
     })
@@ -168,7 +166,6 @@ export async function triggerManualBackupAction(): Promise<BackupActionResult> {
     const result = await successfulBackupCompletion({
       backupDir,
       status: status ?? { BACKUP_DATE: today },
-      driveDest: process.env.GDRIVE_BACKUPS_DEST,
       cloudrevePath: backupCfg.cloudreveBackupsPath,
       appVersion: process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA ?? "unknown",
     })

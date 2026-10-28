@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ── Restore All — Restauración completa desde Google Drive ────────────────────
+# ── Restore All — Restauración completa desde Cloudreve ───────────────────────
 # Uso en desastre:
 #   1. Servidor nuevo, instalar Docker + Node + PostgreSQL
-#   2. Configurar rclone con Service Account (ver SETUP_GOOGLE_DRIVE_BACKUP.md)
+#   2. Definir CLOUDREVE_BASE_URL, CLOUDREVE_USERNAME y CLOUDREVE_PASSWORD
 #   3. Ejecutar este script
 #
 # Usage:
@@ -29,11 +29,8 @@ set -euo pipefail
 
 RESTORE_DATE="${RESTORE_DATE:-latest}"
 RESTORE_TARGET="${RESTORE_TARGET:-/srv/bodega/restore}"
-GDRIVE_DEST="${GDRIVE_DEST:-gdrive-backups:bodega-backups}"
 STORAGE_PATH="${STORAGE_PATH:-/srv/bodega/storage}"
 ENV_TARGET="${ENV_TARGET:-/srv/bodega/.env}"
-# Origen del snapshot: "drive" (default) o "cloudreve" (WebDAV).
-RESTORE_SOURCE="${RESTORE_SOURCE:-drive}"
 CLOUDREVE_BACKUP_PATH="${CLOUDREVE_BACKUP_PATH:-backups/plataforma}"
 # Ruta del script de descarga empaquetado. En la imagen vive en /app/scripts;
 # en un host desnudo apúntalo a una copia del .cjs o corre dentro del contenedor.
@@ -56,8 +53,8 @@ for arg in "$@"; do
     --skip-storage) SKIP_STORAGE=true ;;
     --skip-config) SKIP_CONFIG=true ;;
     --verify-only) VERIFY_ONLY=true ;;
-    --source=cloudreve) RESTORE_SOURCE="cloudreve" ;;
-    --source=drive)     RESTORE_SOURCE="drive" ;;
+    # Cloudreve es el único origen; se acepta el flag de antes por compatibilidad.
+    --source=cloudreve) ;;
     *) log "WARN: Argumento desconocido: $arg" ;;
   esac
 done
@@ -72,64 +69,32 @@ sha256file() {
   sha256sum "$1" | cut -d' ' -f1
 }
 
-# ── Verificación inicial ─────────────────────────────────────────────────────
-
 log "=== Restore All ==="
 log ""
 
-if [ "$RESTORE_SOURCE" = "drive" ]; then
-  if ! command -v rclone &>/dev/null; then
-    error "rclone no está instalado. Instálalo y configura el Service Account."
-    exit 1
-  fi
+# ── Descargar backup desde Cloudreve ─────────────────────────────────────────
 
-  if ! rclone listremotes 2>/dev/null | grep -q 'gdrive-backups:'; then
-    error "rclone remote 'gdrive-backups:' no encontrado."
-    error "Ejecuta: rclone config create gdrive-backups drive ..."
-    error "Ver docs/deploy/SETUP_GOOGLE_DRIVE_BACKUP.md"
-    exit 1
-  fi
-fi
-
-# ── Descargar backup desde el destino configurado ─────────────────────────────
-
-log "Descargando backup '${RESTORE_DATE}' desde ${RESTORE_SOURCE}..."
+log "Descargando backup '${RESTORE_DATE}' desde Cloudreve..."
 mkdir -p "$RESTORE_TARGET"
 
-if [ "$RESTORE_SOURCE" = "cloudreve" ]; then
-  if ! command -v node &>/dev/null; then
-    error "node no está instalado: se necesita para descargar desde Cloudreve."
-    exit 1
-  fi
-  if [ ! -f "$DOWNLOAD_CLOUDREVE_SCRIPT" ]; then
-    error "No se encontró el script de descarga: ${DOWNLOAD_CLOUDREVE_SCRIPT}"
-    error "Apúntalo con DOWNLOAD_CLOUDREVE_SCRIPT o corre dentro del contenedor."
-    exit 1
-  fi
-
-  if $DRY_RUN; then
-    log "[DRY-RUN] node ${DOWNLOAD_CLOUDREVE_SCRIPT} ${RESTORE_DATE} ${RESTORE_TARGET} ${CLOUDREVE_BACKUP_PATH}"
-    exit 0
-  fi
-
-  node "$DOWNLOAD_CLOUDREVE_SCRIPT" "$RESTORE_DATE" "$RESTORE_TARGET" "$CLOUDREVE_BACKUP_PATH" 2>&1 \
-    | while IFS= read -r line; do log "  cloudreve: ${line}"; done
-  log "  Descarga completada en ${RESTORE_TARGET}"
-else
-  REMOTE_PATH="${GDRIVE_DEST}/${RESTORE_DATE}"
-
-  if $DRY_RUN; then
-    log "[DRY-RUN] rclone copy ${REMOTE_PATH} ${RESTORE_TARGET}"
-    rclone ls "${REMOTE_PATH}"
-    exit 0
-  fi
-
-  rclone copy "${REMOTE_PATH}/" "${RESTORE_TARGET}/" \
-    --verbose \
-    --checksum 2>&1 | while IFS= read -r line; do log "  rclone: ${line}"; done
-
-  log "  Descarga completada en ${RESTORE_TARGET}"
+if ! command -v node &>/dev/null; then
+  error "node no está instalado: se necesita para descargar desde Cloudreve."
+  exit 1
 fi
+if [ ! -f "$DOWNLOAD_CLOUDREVE_SCRIPT" ]; then
+  error "No se encontró el script de descarga: ${DOWNLOAD_CLOUDREVE_SCRIPT}"
+  error "Apúntalo con DOWNLOAD_CLOUDREVE_SCRIPT o corre dentro del contenedor."
+  exit 1
+fi
+
+if $DRY_RUN; then
+  log "[DRY-RUN] node ${DOWNLOAD_CLOUDREVE_SCRIPT} ${RESTORE_DATE} ${RESTORE_TARGET} ${CLOUDREVE_BACKUP_PATH}"
+  exit 0
+fi
+
+node "$DOWNLOAD_CLOUDREVE_SCRIPT" "$RESTORE_DATE" "$RESTORE_TARGET" "$CLOUDREVE_BACKUP_PATH" 2>&1 \
+  | while IFS= read -r line; do log "  cloudreve: ${line}"; done
+log "  Descarga completada en ${RESTORE_TARGET}"
 
 # ── Verificar manifiesto ─────────────────────────────────────────────────────
 
@@ -388,40 +353,6 @@ if ! $SKIP_CONFIG; then
       cp "${CONFIG_TMP}/.env" "${RESTORE_TARGET}/.env"
     fi
 
-    # Restaurar configuración de rclone
-    if [ -f "${CONFIG_TMP}/rclone.conf" ]; then
-      RCLONE_DEFAULT="${HOME}/.config/rclone/rclone.conf"
-      RCLONE_DIR=$(dirname "${RCLONE_CONFIG:-${RCLONE_DEFAULT}}")
-      mkdir -p "$RCLONE_DIR"
-      cp "${CONFIG_TMP}/rclone.conf" "${RCLONE_DIR}/rclone.conf"
-      chmod 600 "${RCLONE_DIR}/rclone.conf"
-      log "  rclone.conf: restaurado en ${RCLONE_DIR}/rclone.conf"
-    else
-      warn "  rclone.conf no encontrado en el backup"
-    fi
-
-    # Restaurar Service Account JSON
-    if [ -f "${CONFIG_TMP}/gdrive-service-account.json" ]; then
-      SA_DIR="/srv/bodega/secrets"
-      mkdir -p "$SA_DIR"
-      cp "${CONFIG_TMP}/gdrive-service-account.json" "${SA_DIR}/gdrive-service-account.json"
-      chmod 600 "${SA_DIR}/gdrive-service-account.json"
-      log "  Service Account: restaurado en ${SA_DIR}/gdrive-service-account.json"
-
-      # Verificar conectividad con Drive post-restauración
-      if command -v rclone &>/dev/null && rclone listremotes 2>/dev/null | grep -q 'gdrive-backups:'; then
-        log "  Verificando conectividad con Google Drive..."
-        if rclone lsd "gdrive-backups:bodega-backups/" 2>/dev/null; then
-          log "  ✓ Conectividad Drive OK"
-        else
-          warn "  No se pudo conectar a Google Drive después de restaurar el SA."
-          warn "  Revisa docs/deploy/SETUP_GOOGLE_DRIVE_BACKUP.md — sección 'Solución de problemas'"
-        fi
-      fi
-    else
-      warn "  Service Account JSON no encontrado en el backup"
-    fi
-
     # Mostrar info del sistema
     if [ -f "${CONFIG_TMP}/system-info.json" ]; then
       log "  Información del sistema del backup:"
@@ -450,14 +381,10 @@ log ""
 log "  2. Revisar healthcheck:"
 log "     curl -f http://localhost:3000/api/health"
 log ""
-log "  3. Verificar que el Service Account JSON esté en su lugar:"
-log "     ls -la /srv/bodega/secrets/gdrive-service-account.json"
-log "     → Si no aparece, sácalo del password manager"
-log ""
-log "  4. Si restauraste en un servidor nuevo, ajusta .env con las"
+log "  3. Si restauraste en un servidor nuevo, ajusta .env con las"
 log "     credenciales correctas (AUTH_SECRET, etc.)"
 log ""
-log "  5. Ejecutar migraciones si la versión de la app es más nueva:"
+log "  4. Ejecutar migraciones si la versión de la app es más nueva:"
 log "     docker compose run --rm migrate"
 log ""
 

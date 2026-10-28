@@ -7,13 +7,12 @@ set -euo pipefail
 #   2. Storage     (adjuntos, tar + gzip)
 #   3. Config      (.env + metadatos del sistema)
 #   4. Manifiesto  (checksums SHA-256, metadatos, fechas)
-#   5. Upload      (a Google Drive vía rclone)
-#   6. Limpieza    (retención local + remota)
+#   5. Upload      (a Cloudreve vía WebDAV)
+#   6. Limpieza    (retención local)
 #
 # Usage:
 #   ./scripts/backup-orchestrator.sh                    # defaults
 #   BACKUP_DIR=/custom/backups ./scripts/backup-orchestrator.sh
-#   GDRIVE_DEST=gdrive-backups:bodega-backups ./scripts/backup-orchestrator.sh
 #
 # Cron recomendado (después del horario laboral chileno):
 #   0 3 * * * /srv/bodega/scripts/backup-orchestrator.sh >> /var/log/bodega-backup.log 2>&1
@@ -27,18 +26,10 @@ DATE_STR="$(date '+%Y-%m-%d')"
 SNAPSHOT_DIR="${BACKUP_DIR}/snapshots/${DATE_STR}"
 LOCAL_PG_DIR="${BACKUP_DIR}/pg"
 LOCAL_STORAGE_BACKUP="${BACKUP_DIR}/storage"
-GDRIVE_DEST="${GDRIVE_DEST:-gdrive-backups:bodega-backups}"
 STORAGE_PATH="${STORAGE_PATH:-/srv/bodega/storage}"
 RETENTION_DAYS="${RETENTION_DAYS:-30}"
 LOG_FILE="${LOG_FILE:-/var/log/bodega-backup.log}"
 APP_VERSION="${APP_VERSION:-$(git describe --tags --always 2>/dev/null || echo 'unknown')}"
-
-# Rutas de secrets de rclone (se incluyen en el backup de configuración)
-RCLONE_CONFIG_PATH="${RCLONE_CONFIG:-${HOME}/.config/rclone/rclone.conf}"
-SA_SEARCH_PATHS=(
-  "/srv/bodega/secrets/gdrive-service-account.json"
-  "${HOME}/.config/rclone/gdrive-service-account.json"
-)
 
 # ── Funciones ─────────────────────────────────────────────────────────────────
 
@@ -305,7 +296,7 @@ ENV_WHITELIST=(
   APP_URL PDF_RENDER_ORIGIN
   RESEND_API_KEY
   STORAGE_PATH BACKUP_DIR BACKUP_SCRIPTS_PATH
-  GDRIVE_BACKUPS_DEST RETENTION_DAYS RCLONE_CONFIG
+  RETENTION_DAYS
   CRON_SECRET CRON_ALLOWED_SOURCES
   # W5-GC (D13): si el borrado real del GC de evidencia estaba encendido, un
   # restore debe dejarlo igual (y no volver en silencio al modo de prueba).
@@ -378,17 +369,6 @@ else
   log "  .env: generado con whitelist de ${#ENV_WHITELIST[@]} variables"
 fi
 
-# rclone.conf y el Service Account de Drive NO entran al tar: son las
-# credenciales del propio destino y viajaban al mismo directorio que protegen,
-# así que un solo snapshot filtrado daba acceso a los 30 retenidos. El restore
-# ya exige `--service-account-json` como parámetro obligatorio y no los necesita
-# desde adentro; su copia vive en el gestor de secretos, fuera del respaldo.
-HAS_RCLONE_CONF="false"
-HAS_SA="false"
-if [ -f "$RCLONE_CONFIG_PATH" ] || [ -f "${SA_SEARCH_PATHS[0]}" ]; then
-  log "  rclone.conf / Service Account: NO incluidos a propósito (credenciales del destino)"
-fi
-
 # Metadata del sistema
 cat > "${_CONFIG_TMP}/system-info.json" <<SYSINFO
 {
@@ -398,8 +378,7 @@ cat > "${_CONFIG_TMP}/system-info.json" <<SYSINFO
   "docker_version": "$(docker --version 2>/dev/null || echo 'N/A')",
   "node_version": "$(node --version 2>/dev/null || echo 'N/A')",
   "app_version": "${APP_VERSION}",
-  "pg_version": "$(pg_dump --version 2>/dev/null || echo 'N/A')",
-  "rclone_version": "$(rclone version 2>/dev/null | head -1 || echo 'N/A')"
+  "pg_version": "$(pg_dump --version 2>/dev/null || echo 'N/A')"
 }
 SYSINFO
 
@@ -455,9 +434,7 @@ cat > "$MANIFEST" <<MANIFEST_EOF
       "includes": {
         "env_source": "${ENV_SOURCE}",
         "docker_volumes": true,
-        "system_info": true,
-        "rclone_conf": ${HAS_RCLONE_CONF},
-        "gdrive_service_account": ${HAS_SA}
+        "system_info": true
       }
     }
   },
@@ -480,15 +457,13 @@ MANIFEST_SHA256=$(sha256file "$MANIFEST")
 MANIFEST_SIZE=$(bytes "$MANIFEST")
 log "  Manifiesto: ${MANIFEST_SIZE} bytes | SHA256: ${MANIFEST_SHA256}"
 
-# ── 5. Upload a destinos remotos (Cloudreve + Drive opcional) ────────────────
+# ── 5. Upload al destino remoto (Cloudreve) ──────────────────────────────────
 
 log ""
 log "Subiendo a destinos remotos..."
 _FAILED_STEP="upload_remote"
 
-UPLOAD_PATH="${GDRIVE_DEST}/${DATE_STR}"
 CLOUDREVE_UPLOADED="false"
-DRIVE_UPLOADED="false"
 
 # ── Cifrado del snapshot antes de salir del host ─────────────────────────────
 # El dump lleva los sobres `enc:v1:` y el .env generado lleva la llave que los
@@ -548,30 +523,6 @@ else
   log "  Cloudreve desactivado (CLOUDREVE_BACKUP_ENABLED != true)."
 fi
 
-# ── Google Drive (opcional, off por defecto) ─────────────────────────────────
-if [ "${DRIVE_BACKUP_ENABLED:-false}" = "true" ]; then
-  if command -v rclone &>/dev/null && rclone listremotes 2>/dev/null | grep -q 'gdrive-backups:'; then
-    log "  Destino: ${UPLOAD_PATH}"
-
-    rclone copy "${UPLOAD_SRC}/" "${UPLOAD_PATH}/" \
-      --verbose \
-      --checksum \
-      --progress 2>&1 | while IFS= read -r line; do log "  rclone: ${line}"; done
-
-    # Actualizar symlink "latest" en Drive
-    rclone delete "${GDRIVE_DEST}/latest" --quiet 2>/dev/null || true
-    rclone copy "${SNAPSHOT_DIR}/manifest.json" "${GDRIVE_DEST}/latest/" --quiet
-
-    log "  Upload completado."
-    DRIVE_UPLOADED="true"
-  else
-    warn "  DRIVE_BACKUP_ENABLED=true pero rclone/gdrive-backups no configurado."
-    warn "  Para configurar: sigue docs/deploy/SETUP_GOOGLE_DRIVE_BACKUP.md"
-  fi
-else
-  log "  Google Drive desactivado (DRIVE_BACKUP_ENABLED != true)."
-fi
-
 # ── 6. Limpieza de backups locales antiguos ──────────────────────────────────
 
 log ""
@@ -586,39 +537,6 @@ find "${LOCAL_PG_DIR}" -name 'bodega-*.dump' -type f -mtime "+${RETENTION_DAYS}"
 find "${BACKUP_DIR}/snapshots" -maxdepth 1 -type d -mtime "+${RETENTION_DAYS}" \
   -exec rm -rfv {} \; 2>&1 | while IFS= read -r line; do log "  cleanup: ${line}"; done
 
-# ── 7. Limpieza de backups remotos en Drive ──────────────────────────────────
-
-if [ "${DRIVE_BACKUP_ENABLED:-false}" = "true" ] \
-  && command -v rclone &>/dev/null && rclone listremotes 2>/dev/null | grep -q 'gdrive-backups:'; then
-  log "Limpiando backups remotos antiguos..."
-  _FAILED_STEP="cleanup_remote"
-
-  cutoff_ts=$(date -d "-${RETENTION_DAYS} days" +%s)
-
-  rclone lsd "${GDRIVE_DEST}/" 2>/dev/null | while IFS= read -r line; do
-    # rclone lsd outputs: <size> <date> <time> <folder_name>
-    # We extract the date+time and folder name from known positions
-    folder_date=$(echo "$line" | awk 'NF>=4 {print $2}')
-    folder_time=$(echo "$line" | awk 'NF>=4 {print $3}')
-    folder_name=$(echo "$line" | awk 'NF>=4 {for(i=4;i<=NF;i++) printf "%s%s", $i, (i==NF?"\n":" ")}' | sed 's/ $//')
-
-    if [ -z "$folder_date" ] || [ -z "$folder_name" ]; then
-      continue
-    fi
-
-    # Validate folder name matches YYYY-MM-DD pattern before treating as backup date
-    if ! echo "$folder_name" | grep -qE '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'; then
-      continue
-    fi
-
-    folder_ts=$(date -d "${folder_date} ${folder_time}" +%s 2>/dev/null || echo 0)
-    if [ "$folder_ts" -gt 0 ] && [ "$folder_ts" -lt "$cutoff_ts" ] && [ "$folder_name" != "latest" ]; then
-      log "  Eliminando remoto: ${folder_name}"
-      rclone purge "${GDRIVE_DEST}/${folder_name}" --quiet 2>/dev/null || true
-    fi
-  done
-fi
-
 # ── Finalización ──────────────────────────────────────────────────────────────
 
 TOTAL_SIZE=$((PG_SIZE + STORAGE_SIZE + CONFIG_SIZE))
@@ -632,7 +550,7 @@ log "  Postgres: ${PG_SIZE} bytes"
 log "  Storage:  ${STORAGE_SIZE} bytes"
 log "  Config:   ${CONFIG_SIZE} bytes"
 log "  Manifiesto SHA256: ${MANIFEST_SHA256}"
-log "  Drive:    ${UPLOAD_PATH}"
+log "  Cloudreve: ${CLOUDREVE_UPLOADED}"
 log ""
 
 # Clear failed step on success
@@ -646,7 +564,6 @@ _FAILED_STEP=""
   echo "BACKUP_MANIFEST_SHA256=${MANIFEST_SHA256}"
   echo "BACKUP_TOTAL_SIZE=${TOTAL_SIZE}"
   echo "BACKUP_CLOUDREVE_UPLOADED=${CLOUDREVE_UPLOADED}"
-  echo "BACKUP_DRIVE_UPLOADED=${DRIVE_UPLOADED}"
 } > "${BACKUP_DIR}/.backup-status"
 
 exit 0

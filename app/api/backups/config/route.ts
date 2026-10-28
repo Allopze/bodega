@@ -31,7 +31,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       retentionDays: config.retentionDays,
       maxAgeHours: config.maxAgeHours,
       manualTimeoutMinutes: config.manualTimeoutMinutes,
-      driveBackupsEnabled: config.driveBackupsEnabled,
       cloudreveBackupsEnabled: config.cloudreveBackupsEnabled,
       cloudreveBackupsPath: config.cloudreveBackupsPath,
     })
@@ -41,7 +40,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       retentionDays: 30,
       maxAgeHours: 36,
       manualTimeoutMinutes: 30,
-      driveBackupsEnabled: false,
       cloudreveBackupsEnabled: false,
       cloudreveBackupsPath: "backups/plataforma",
     })

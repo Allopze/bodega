@@ -66,15 +66,13 @@ while true; do
     BACKUP_HOUR="$(cfg "$CONFIG_JSON" backupHour 3)"
     RETENTION_DAYS="$(cfg "$CONFIG_JSON" retentionDays 30)"
     MAX_AGE_HOURS="$(cfg "$CONFIG_JSON" maxAgeHours 36)"
-    DRIVE_BACKUP_ENABLED="$(cfg "$CONFIG_JSON" driveBackupsEnabled false)"
     CLOUDREVE_BACKUP_ENABLED="$(cfg "$CONFIG_JSON" cloudreveBackupsEnabled false)"
     CLOUDREVE_BACKUP_PATH="$(cfg "$CONFIG_JSON" cloudreveBackupsPath backups/plataforma)"
-    log "Config desde API: backupHour=${BACKUP_HOUR} retentionDays=${RETENTION_DAYS} maxAgeHours=${MAX_AGE_HOURS} cloudreve=${CLOUDREVE_BACKUP_ENABLED} drive=${DRIVE_BACKUP_ENABLED}"
+    log "Config desde API: backupHour=${BACKUP_HOUR} retentionDays=${RETENTION_DAYS} maxAgeHours=${MAX_AGE_HOURS} cloudreve=${CLOUDREVE_BACKUP_ENABLED}"
   else
     BACKUP_HOUR=3
     RETENTION_DAYS=30
     MAX_AGE_HOURS=36
-    DRIVE_BACKUP_ENABLED=false
     CLOUDREVE_BACKUP_ENABLED=false
     CLOUDREVE_BACKUP_PATH="backups/plataforma"
     log "API /api/backups/config no respondió, usando defaults"
@@ -109,7 +107,6 @@ while true; do
     RUN_STARTED_AT="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
     BACKUP_RUN_ID="${RUN_ID}" \
       RETENTION_DAYS="${RETENTION_DAYS}" \
-      DRIVE_BACKUP_ENABLED="${DRIVE_BACKUP_ENABLED}" \
       CLOUDREVE_BACKUP_ENABLED="${CLOUDREVE_BACKUP_ENABLED}" \
       CLOUDREVE_BACKUP_PATH="${CLOUDREVE_BACKUP_PATH}" \
       "$ORCHESTRATOR" || error "Orquestador falló con exit code $?"

@@ -92,7 +92,7 @@ describe("costura de cifrado entre backup-orchestrator y catastrophic-restore", 
   it("el orchestrator comprueba que puede volver a abrir lo que cifró, antes de subirlo", () => {
     const encryptAt = orchestrator.indexOf("--symmetric --cipher-algo AES256")
     const rehearsalAt = orchestrator.indexOf('--output /dev/null "${_UPLOAD_TMP}/${plain}.gpg"')
-    const uploadAt = orchestrator.indexOf('rclone copy "${UPLOAD_SRC}/"')
+    const uploadAt = orchestrator.indexOf('node /app/scripts/upload-backup-cloudreve.cjs')
     expect(rehearsalAt, "falta el ensayo de descifrado previo a la subida").toBeGreaterThan(encryptAt)
     expect(rehearsalAt).toBeLessThan(uploadAt)
     expect(orchestrator).toContain("NO se sube un snapshot ilegible")
@@ -222,7 +222,7 @@ describe.runIf(hasGpg()).each(RESTORERS)("ensayo real de descifrado — $name", 
       "error() { echo \"[ERROR] $*\"; }",
       "DRY_RUN=false",
       'RESTORE_DATE="2026-08-20"',
-      'ORIGINAL_ARGS="--service-account-json /tmp/sa.json"',
+      'ORIGINAL_ARGS="--date 2026-08-20"',
       `RESTORE_TARGET=${JSON.stringify(dir)}`,
       'MANIFEST="${RESTORE_TARGET}/manifest.json"',
       script.slice(start, end),

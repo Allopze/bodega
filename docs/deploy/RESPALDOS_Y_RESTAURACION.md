@@ -9,7 +9,7 @@ respaldo no se puede abrir, y no hay forma de recuperarlo.
 `scripts/backup-orchestrator.sh` (cron diario, 03:00) produce un *snapshot* por
 fecha en `${BACKUP_DIR}/snapshots/YYYY-MM-DD/`. Los destinos se configuran desde
 **Administración › Respaldos › Destinos**: local (siempre, path fijado por
-infraestructura), Cloudreve (WebDAV) y, opcionalmente, Google Drive vía rclone.
+infraestructura) y Cloudreve (WebDAV).
 
 | Archivo             | Contenido                                                       |
 | ------------------- | --------------------------------------------------------------- |
@@ -30,9 +30,8 @@ con 1 si falta el origen o `RCLONE_DEST`: sin destino no hubo copia.
 
 No entran al respaldo, a propósito:
 
-- `rclone.conf` y el Service Account JSON de Drive — son las credenciales del
-  destino; viajaban dentro de lo que protegen. Se sacan del gestor de secretos y
-  se pasan al restore con `--service-account-json`.
+- Las credenciales de Cloudreve — son las del destino; no viajan dentro de lo
+  que protegen. Se sacan del gestor de secretos y se pasan al restore por entorno.
 - `BACKUP_ENCRYPTION_PASSPHRASE` — ver abajo.
 
 ### Dónde quedan los archivos en el host
@@ -81,8 +80,6 @@ En **Administración › Respaldos › Destinos**:
   credenciales de **Administración › Almacenamiento de documentos**. Si el
   upload falla (o no hay credenciales), el respaldo se marca **fallido**: no se
   deja una «copia remota» que en realidad no existe.
-- **Google Drive** — desactivado por defecto. Requiere rclone + Service Account;
-  su código se conserva para poder reactivarlo.
 
 La subida a Cloudreve la hace `scripts/upload-backup-cloudreve.cjs` (invocado por
 el orquestador). La restauración desde Cloudreve usa
@@ -190,16 +187,14 @@ sudo /srv/bodega/scripts/backup-verify.sh          # legible
 sudo /srv/bodega/scripts/backup-verify.sh --json   # para monitoreo
 ```
 
-Exit `0` OK, `1` WARNING, `2` CRITICAL. Además de edad, tamaño y presencia en
-Drive, si el snapshot remoto está cifrado baja `env-config.tar.gz.gpg` (unos KB)
-y lo descifra hacia `/dev/null`: prueba real de que la passphrase de este host
-abre el snapshot de hoy. Si no la abre, el resultado es CRITICAL — es el único
-momento en que ese problema se puede arreglar todavía.
+Exit `0` OK, `1` WARNING, `2` CRITICAL. Revisa edad y tamaño del respaldo local
+y, con Cloudreve activo, que el snapshot del día esté en la carpeta remota.
 
-Para que el ensayo corra, `BACKUP_ENCRYPTION_PASSPHRASE` tiene que estar en el
-entorno del proceso que ejecuta `backup-verify.sh` (el mismo del cron de
-respaldo). Si falta, el resultado es WARNING: los respaldos siguen subiendo
-cifrados, pero nadie está comprobando que sean recuperables.
+**Pendiente:** el ensayo de descifrado del snapshot remoto (bajar
+`env-config.tar.gz.gpg` y abrirlo con la passphrase del host) sólo existía para
+Google Drive y se fue con él; para Cloudreve todavía no está implementado. Hoy
+la única prueba de que un snapshot cifrado se abre es el ensayo que hace el
+orquestador antes de subirlo.
 
 ### Quién avisa si el respaldo deja de correr (PRV-14)
 
@@ -296,22 +291,26 @@ día. El resultado queda en `${BACKUP_DIR}/restore-drill.json` y lo recoge
 ## Restauración catastrófica (servidor nuevo)
 
 ```bash
-sudo BACKUP_ENCRYPTION_PASSPHRASE='<passphrase>' \
+sudo -E BACKUP_ENCRYPTION_PASSPHRASE='<passphrase>' \
+  CLOUDREVE_BASE_URL='…' CLOUDREVE_USERNAME='…' CLOUDREVE_PASSWORD='…' \
   ./scripts/catastrophic-restore.sh \
-  --service-account-json /ruta/al/sa.json \
   [--date 2026-08-19]   # default: latest
+# o, con el snapshot ya bajado desde la interfaz web de Cloudreve:
+sudo ./scripts/catastrophic-restore.sh --snapshot-dir /ruta/al/snapshot
 ```
 
 Lo que necesitas a mano **antes** de empezar:
 
-1. El Service Account JSON de Drive (gestor de secretos).
+1. Las credenciales de Cloudreve (gestor de secretos), o el snapshot ya
+   descargado (`manifest.json` y los tres artefactos, en claro o `.gpg`).
 2. La `BACKUP_ENCRYPTION_PASSPHRASE` vigente en la fecha del snapshot que vas a
    restaurar. Si te equivocas, el script lo dice y sugiere probar la anterior; no
    deja archivos a medio descifrar.
 3. Los secretos que el respaldo no guarda: `AUTH_SECRET`,
    `PREVENTION_DATA_ENCRYPTION_KEY`, `CRON_SECRET`.
 
-El script instala dependencias, configura rclone, baja el snapshot, descifra,
+El script instala dependencias, baja el snapshot de Cloudreve con la imagen de
+la app (`docker run … download-backup-cloudreve.cjs`), descifra,
 verifica checksums, restaura configuración, storage y PostgreSQL, aplica
 migraciones y levanta la app.
 
@@ -325,7 +324,7 @@ después del primer respaldo.
 ## Ensayo en desarrollo
 
 - `bash scripts/dev-backup-test.sh` — ciclo dump → validate → restore contra
-  `bodega_e2e`, sin tocar Drive (no ejercita el cifrado).
+  `bodega_e2e`, sin tocar Cloudreve (no ejercita el cifrado).
 - `npx vitest run --config vitest.non-pglite.config.ts scripts/backup-encryption.test.ts`
   — fija la costura orchestrator ↔ restore (nombres `.gpg`, AES256, orden
   descifrar→verificar) y ensaya con gpg real el descifrado, la passphrase

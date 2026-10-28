@@ -25,7 +25,7 @@ function runVerify(backupDir: string, env: Record<string, string> = {}) {
   try {
     const stdout = execFileSync("bash", [path.join(root, "scripts/backup-verify.sh"), "--json"], {
       encoding: "utf8",
-      env: { ...process.env, BACKUP_DIR: backupDir, STORAGE_PATH: path.join(backupDir, "storage"), DRIVE_BACKUP_ENABLED: "false", ...env },
+      env: { ...process.env, BACKUP_DIR: backupDir, STORAGE_PATH: path.join(backupDir, "storage"), ...env },
       stdio: ["ignore", "pipe", "ignore"],
     })
     return { code: 0, json: JSON.parse(stdout) as { status: string; issues: string[] } }

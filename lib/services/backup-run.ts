@@ -30,7 +30,7 @@ export const ORCHESTRATOR_ENV_WHITELIST = [
   "APP_URL", "PDF_RENDER_ORIGIN",
   "RESEND_API_KEY",
   "STORAGE_PATH", "BACKUP_DIR", "BACKUP_SCRIPTS_PATH",
-  "GDRIVE_BACKUPS_DEST", "RETENTION_DAYS", "RCLONE_CONFIG",
+  "RETENTION_DAYS",
   "CRON_SECRET", "CRON_ALLOWED_SOURCES",
   "PDTP_EVIDENCE_GC_DELETE",
   "COPEC_USERNAME", "COPEC_PASSWORD", "COPEC_SYNC_START_DATE", "COPEC_SYNC_IMPORTER_EMAIL",
@@ -147,7 +147,6 @@ type BackupCompletion = Parameters<typeof completeBackupLog>[1]
 export async function successfulBackupCompletion(input: {
   backupDir: string
   status: BackupStatusFile
-  driveDest: string | undefined
   cloudrevePath: string
   appVersion: string
 }): Promise<BackupCompletion> {
@@ -164,7 +163,6 @@ export async function successfulBackupCompletion(input: {
   }
 
   const c = manifest?.components as Record<string, Record<string, unknown>> | undefined
-  const driveUploaded = input.status.BACKUP_DRIVE_UPLOADED === "true"
   const cloudreveUploaded = input.status.BACKUP_CLOUDREVE_UPLOADED === "true"
 
   return {
@@ -177,8 +175,6 @@ export async function successfulBackupCompletion(input: {
     configSha256: (c?.config?.sha256 as string) ?? undefined,
     manifestSha256: input.status.BACKUP_MANIFEST_SHA256 || undefined,
     totalSizeBytes: (manifest?.total_size_bytes as number) ?? undefined,
-    driveUploaded,
-    drivePath: driveUploaded && input.driveDest ? `${input.driveDest}/${date}` : undefined,
     cloudreveUploaded,
     cloudrevePath: cloudreveUploaded ? `${input.cloudrevePath}/${date}` : undefined,
     appVersion: input.appVersion,

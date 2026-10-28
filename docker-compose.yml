@@ -149,14 +149,12 @@ services:
       # subcarpeta propia dentro de la carpeta compartida del drive de Chome.
       - CLOUDREVE_SST_PATH=${CLOUDREVE_SST_PATH:-}
       - BACKUP_DIR=${BACKUP_DIR:-/data/backups}
-      - GDRIVE_BACKUPS_DEST=${GDRIVE_BACKUPS_DEST:-}
       - RETENTION_DAYS=${RETENTION_DAYS:-30}
       # Passthrough, nunca un valor literal. `app` también respalda: el botón
       # de Administración › Respaldos invoca al mismo orquestador. Sin esto el
       # respaldo manual subiría EN CLARO mientras el programado va cifrado.
       - BACKUP_ENCRYPTION_PASSPHRASE=${BACKUP_ENCRYPTION_PASSPHRASE:-}
       - BACKUP_SCRIPTS_PATH=${BACKUP_SCRIPTS_PATH:-}
-      - RCLONE_CONFIG=${RCLONE_CONFIG:-}
       - NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA=${NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA:-}
     volumes:
       - bodega-storage:/data/storage
@@ -173,11 +171,11 @@ services:
       start_period: 15s
 
   # Daily backup scheduler: runs backup-orchestrator.sh every day at BACKUP_HOUR UTC.
-  # Uses the same prod image plus rclone/bash/jq (already bundled in Dockerfile).
+  # Uses the same prod image plus bash/jq/gnupg (already bundled in Dockerfile).
   # Activate with: docker compose --profile backup up -d backup-scheduler
   #
   # Backups land in /data/backups/snapshots/<YYYY-MM-DD>/ (shared volume bodega-backups)
-  # and are uploaded to GDRIVE_BACKUPS_DEST via rclone if configured.
+  # and are uploaded to Cloudreve when enabled in Administración › Respaldos.
   backup-scheduler:
     profiles: ["backup"]
     build:
@@ -197,7 +195,6 @@ services:
       - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
       - STORAGE_PATH=${STORAGE_PATH:-/data/storage}
       - BACKUP_DIR=${BACKUP_DIR:-/data/backups}
-      - GDRIVE_BACKUPS_DEST=${GDRIVE_BACKUPS_DEST:-}
       - RETENTION_DAYS=${RETENTION_DAYS:-30}
       # RES-001: base DESECHABLE donde el ensayo semanal restaura el dump del
       # día. Su esquema `public` se destruye en cada ensayo — nunca apuntar a la
@@ -278,7 +275,7 @@ services:
       - CHIPAX_SECRET_KEY=${CHIPAX_SECRET_KEY:-}
       - CHIPAX_REQUEST_TIMEOUT_MS=${CHIPAX_REQUEST_TIMEOUT_MS:-30000}
       # Passthrough, nunca un valor literal: es la llave con la que
-      # backup-orchestrator.sh cifra el snapshot antes de subirlo a Drive. Sin
+      # backup-orchestrator.sh cifra el snapshot antes de subirlo a Cloudreve. Sin
       # ella acá el respaldo sube EN CLARO aunque el host la tenga configurada
       # —con el keyring DTE dentro del mismo tar— y nadie se entera. Está
       # deliberadamente fuera de ENV_WHITELIST: no viaja dentro de lo que cifra.
@@ -288,7 +285,6 @@ services:
       - APP_VERSION=${APP_VERSION:-}
       - NODE_ENV=production
       - HOME=/app
-      - RCLONE_CONFIG=${RCLONE_CONFIG:-/app/.config/rclone/rclone.conf}
     volumes:
       - bodega-storage:/data/storage:ro
       # Mismo montaje que `app`: el scheduler escribe en /data/backups y debe
