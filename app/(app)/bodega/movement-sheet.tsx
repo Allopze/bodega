@@ -190,7 +190,9 @@ export function BodegaMovementSheet({
 
   return (
     <Sheet open={open} onOpenChange={handleOpenChange}>
-      <SheetContent>
+      {/* El menú de tareas y los tres paneles de trabajo no miden igual: el
+          alto fijo evita que la hoja salte al entrar y salir de cada uno. */}
+      <SheetContent stableHeight>
         <SheetHeader>
           <div>
             <SheetTitle>Registrar movimiento</SheetTitle>

@@ -117,7 +117,7 @@ export function ImportWizard({ kind, media, open, onOpenChange }: {
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="h-[min(90dvh,40rem)] max-w-3xl" stableHeight>
         <DialogHeader>
           <DialogTitle>{step === "preview" ? "Revisa antes de importar" : step === "done" ? "Importación terminada" : copy.title}</DialogTitle>
           <DialogDescription>

@@ -31,10 +31,24 @@ const DialogOverlay = React.forwardRef<
 ))
 DialogOverlay.displayName = DialogPrimitive.Overlay.displayName
 
+export interface DialogContentProps extends React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> {
+  /**
+   * Alto fijo mientras el diálogo está abierto: la caja deja de medir su
+   * contenido y el contenido que no cabe scrollea, igual que cuando hoy
+   * supera el `max-h`.
+   *
+   * Sin esto un diálogo con pasos o segmentos cambia de alto al alternarlos
+   * (importadores de Excel, «Subir documento», «Aplicar patrón»). El alto por
+   * defecto es la cota del `max-h`; para uno más justo se pasa `h-[…]` por
+   * `className` (twMerge deja ganar la última clase).
+   */
+  stableHeight?: boolean
+}
+
 const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
->(({ className, children, onOpenAutoFocus, onCloseAutoFocus, onEscapeKeyDown, ...props }, ref) => {
+  DialogContentProps
+>(({ className, children, stableHeight = false, onOpenAutoFocus, onCloseAutoFocus, onEscapeKeyDown, ...props }, ref) => {
   const returnFocus = useReturnFocus(onOpenAutoFocus, onCloseAutoFocus)
   return (
   <DialogPortal>
@@ -43,7 +57,9 @@ const DialogContent = React.forwardRef<
       ref={ref}
       className={cn(
         "fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2",
-        "w-[calc(100%-2rem)] max-w-lg max-h-[min(90dvh,54rem)] overflow-y-auto",
+        "w-[calc(100%-2rem)] max-w-lg overflow-y-auto",
+        // Una sola de las dos: ver la nota de `stableHeight`.
+        stableHeight ? "h-[min(90dvh,54rem)]" : "max-h-[min(90dvh,54rem)]",
         "bg-[var(--color-surface)] rounded-[var(--radius-2xl)]",
         "shadow-[var(--shadow-lg)]",
         "p-6",

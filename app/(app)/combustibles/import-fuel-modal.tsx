@@ -13,7 +13,6 @@ import {
 import { Upload } from "@phosphor-icons/react"
 import { parseFuelExcel } from "@/lib/combustibles/import"
 import { toast } from "@/lib/toast"
-import { cn } from "@/lib/utils"
 import { UploadStep } from "./import-fuel-modal-upload"
 import { PreviewStep } from "./import-fuel-modal-preview"
 import { DoneStep } from "./import-fuel-modal-done"
@@ -173,7 +172,10 @@ export function ImportFuelLoadsModal({
       )}
 
       <Dialog open={open} onOpenChange={handleOpen}>
-        <DialogContent className={cn("w-[calc(100%-2rem)]", step === "preview" ? "max-w-4xl" : "max-w-xl")}>
+        {/* Un solo alto y un solo ancho para los tres pasos: antes la vista
+            previa pasaba de `max-w-xl` a `max-w-4xl` y el diálogo se movía dos
+            veces por el mismo flujo. */}
+        <DialogContent className="h-[min(90dvh,40rem)] w-[calc(100%-2rem)] max-w-4xl" stableHeight>
           <DialogHeader>
             <DialogTitle>Importar cargas desde Excel</DialogTitle>
             <DialogDescription>Sube el Excel de cargas facturadas: cada fila crea una carga registrada con su factura, IEC e IVA.</DialogDescription>

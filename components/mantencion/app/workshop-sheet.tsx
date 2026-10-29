@@ -56,7 +56,7 @@ export function WorkshopSheet({ entry, onClose }: { entry: WorkshopEntry; onClos
   }
 
   return (
-    <Sheet title="Estado del equipo" onClose={onClose}>
+    <Sheet title="Estado del equipo" onClose={onClose} stable>
       <div>
         <div className="mono" style={{ fontWeight: 600 }}>{equipmentLabel({ code: entry.equipmentCode, plate: entry.equipmentPlate })}</div>
         <p className="hint">

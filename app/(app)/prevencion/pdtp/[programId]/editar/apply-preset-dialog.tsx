@@ -380,7 +380,9 @@ export function ApplyPresetDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent>
+      {/* El formulario y la lista de conflictos manejaban altos distintos con
+          el mismo `max-h`: al aparecer los conflictos el diálogo se movía. */}
+      <DialogContent className="h-[min(90dvh,36rem)]" stableHeight>
         <DialogHeader>
           <DialogTitle>Aplicar patrón de planificación</DialogTitle>
           <DialogDescription>

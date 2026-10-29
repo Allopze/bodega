@@ -150,6 +150,9 @@ export function DocumentacionHeaderActions({
         </DialogTrigger>
         <DialogContent
           className="sm:max-w-2xl"
+          // «Documento clasificado» y «Carga masiva» son dos formularios de alto
+          // muy distinto: con `max-h` el diálogo saltaba al cambiar de modo.
+          stableHeight
           // Llegada con el tipo declarado (`?tipo=`): el foco va al archivo, no al
           // buscador de tipo, que al abrirse ocultaría el tipo elegido.
           onOpenAutoFocus={initialTypeId ? (event) => { event.preventDefault(); document.getElementById("typed-upload-file")?.focus() } : undefined}

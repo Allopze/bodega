@@ -251,7 +251,9 @@ export function LicensePanel({ license, canManage, workers, worksites, assets, s
       />
 
       <Sheet open={open} onOpenChange={(v) => { if (!v) setOpen(false) }}>
-        <SheetContent className="sm:max-w-md">
+        {/* Los cuatro destinos muestran un solo campo y no miden lo mismo (el de
+            área lleva helper): sin alto fijo el sheet se encogía al cambiarlos. */}
+        <SheetContent className="sm:max-w-md sm:h-[34rem]" stableHeight>
           <form action={assignAction} className="flex flex-col flex-1 min-h-0">
             <input type="hidden" name="licenseId" value={license.id} />
             <SheetHeader>

@@ -103,17 +103,23 @@ export interface SheetProps {
   onClose: () => void
   /** Elemento donde cae el foco al abrir; por defecto el primero que se pueda tocar. */
   initialFocus?: RefObject<HTMLElement | null>
+  /**
+   * Alto fijo (`.sheet-stable`): la hoja no cambia de tamaño cuando su
+   * contenido alterna entre vistas, como «Sigue en taller» y «Ya salió».
+   * Sin esto la hoja mide su contenido y salta al cambiar la opción.
+   */
+  stable?: boolean
 }
 
 /** Hoja inferior: para tareas cortas que no justifican cambiar de pantalla. */
-export function Sheet({ title, children, onClose, initialFocus }: SheetProps) {
+export function Sheet({ title, children, onClose, initialFocus, stable = false }: SheetProps) {
   const titleId = useId()
   const panel = useRef<HTMLDivElement>(null)
   useModalBehavior(panel, onClose, initialFocus)
   return (
     <Portal>
       <div className="sheetbg" onClick={(event) => { if (event.target === event.currentTarget) onClose() }}>
-        <div ref={panel} className="sheet" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>
+        <div ref={panel} className={stable ? "sheet sheet-stable" : "sheet"} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>
           <h2 className="h2" id={titleId} style={{ fontSize: 22 }}>{title}</h2>
           {children}
         </div>

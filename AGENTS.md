@@ -653,7 +653,11 @@ Examples:
 - inconsistent export behavior → inspect `ExportButton` / `ExportDialog`;
 - dashboard (`/dashboard`) surface or spacing → inspect `DashboardPanel` / `PanelBlock` / `ChartSlot`;
 - a variation (↑/↓ vs. previous period) rendered differently → inspect `Delta`;
-- a ranking drawn with one color per bar → inspect `RankedList`.
+- a ranking drawn with one color per bar → inspect `RankedList`;
+- a modal that changes size when switching tabs, segments or wizard steps → pass `stableHeight`
+  to `SheetContent` / `DialogContent` (see `DESIGN.md` § Modales multivista). Never solve it with a
+  page-local `h-`/`max-h-`; the primitive is what guarantees it, and
+  `components/__tests__/modal-alto-estable.test.ts` fails when a tabbed or segmented modal lacks it.
 
 Do not spread local class overrides across pages to compensate for a shared-component problem.
 <!-- END:shared-ui-fix-rule -->

@@ -95,16 +95,24 @@ export function VehicleForm({ open, onClose, worksites, users, equipmentTypes, s
       submitLabel={isEdit ? "Guardar cambios" : "Crear vehículo"}
       submittingLabel={isEdit ? "Guardando..." : "Creando..."}
       successMessage={isEdit ? "Vehículo actualizado" : "Vehículo creado"}
+      // El sheet mide lo que mide la pestaña activa: sin alto fijo, pasar de
+      // «Documentos» a «Combustible» estiraba la caja ~600 px (reportado el
+      // 2026-10-29). El cuerpo scrollea y la tira de pestañas queda fija.
+      stableHeight
+      bodyClassName="flex min-h-0 flex-col overflow-hidden"
     >
       {(state) => (
-            <Tabs defaultValue="general">
-              <TabsList className="mb-4 w-full">
+            <Tabs defaultValue="general" className="flex min-h-0 flex-1 flex-col">
+              <TabsList className="mb-4 w-full shrink-0">
                 <TabsTrigger value="general">General</TabsTrigger>
                 <TabsTrigger value="combustible">Combustible</TabsTrigger>
                 <TabsTrigger value="estado">Estado y vigencias</TabsTrigger>
                 {isEdit && <TabsTrigger value="documentos">Documentos</TabsTrigger>}
               </TabsList>
 
+              {/* Sólo el panel scrollea: con el `SheetBody` en `overflow-hidden`,
+                  la tira queda siempre a la vista mientras se recorre el formulario. */}
+              <div className="min-h-0 flex-1 overflow-y-auto">
               {/* ── General tab ── */}
               <TabsContent value="general" forceMount>
                 <FieldGroup className="gap-4">
@@ -289,6 +297,7 @@ export function VehicleForm({ open, onClose, worksites, users, equipmentTypes, s
                   </Button>
                 </TabsContent>
               )}
+              </div>
             </Tabs>
       )}
     </CatalogFormSheet>

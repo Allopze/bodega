@@ -34,6 +34,10 @@ interface CatalogFormSheetProps {
   embeddedCloseLabel?: string
   bodyClassName?: string
   footerClassName?: string
+  /** Alto fijo del sheet: la caja no cambia al alternar pestañas o pasos. */
+  stableHeight?: boolean
+  /** Ancho u otras clases del contenedor (por defecto el sheet es `sm:max-w-lg`). */
+  contentClassName?: string
   hiddenFields?: ReactNode
   externalActionState?: ExternalActionState
   /** Only the field group — the Sheet/form/footer scaffolding lives here. */
@@ -49,7 +53,7 @@ export function CatalogFormSheet({
   open, onClose, isEdit, entityId, title, description,
   create, update, submitLabel, submittingLabel = "Guardando...",
   successMessage, variant = "sheet", embeddedCloseLabel = "Volver al catálogo",
-  bodyClassName, footerClassName, hiddenFields, externalActionState, children,
+  bodyClassName, footerClassName, stableHeight, contentClassName, hiddenFields, externalActionState, children,
 }: CatalogFormSheetProps) {
   const action = isEdit ? update : create
   const [internalState, internalFormAction] = useActionState<ActionState, FormData>(
@@ -109,7 +113,7 @@ export function CatalogFormSheet({
 
   return (
     <Sheet open={open} onOpenChange={(v) => { if (!v) onClose() }}>
-      <SheetContent>{form}</SheetContent>
+      <SheetContent stableHeight={stableHeight} className={contentClassName}>{form}</SheetContent>
     </Sheet>
   )
 }

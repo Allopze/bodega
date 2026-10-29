@@ -72,7 +72,7 @@ export function AssignEquipmentDialog({ open, onOpenChange, scheduleId, schedule
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[min(90dvh,48rem)] max-w-2xl flex-col overflow-hidden p-0">
+      <DialogContent className="flex h-[min(90dvh,48rem)] max-w-2xl flex-col overflow-hidden p-0">
         <DialogHeader className="mb-0 px-6 pt-6">
           <DialogTitle>Asignar equipos a «{scheduleName}»</DialogTitle>
           <DialogDescription>

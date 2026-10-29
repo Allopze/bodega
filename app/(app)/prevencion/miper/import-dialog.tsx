@@ -225,7 +225,7 @@ export function ImportMiperDialog({ worksites, currentYear, canManageCatalog, op
           Importar
         </Button>
       </SheetTrigger>}
-      <SheetContent className="sm:max-w-5xl">
+      <SheetContent className="sm:max-w-5xl" stableHeight>
         <SheetHeader>
           <div>
             <SheetTitle>Importar el RE-04</SheetTitle>

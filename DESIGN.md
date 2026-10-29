@@ -326,6 +326,27 @@ mobile (`renderMobileCard`).
   usuario + CTA real. **Skeleton**: shimmer en cargas. **Avatar**: iniciales con
   color por hash del nombre (OKLCH). **Pagination**: componente compartido único.
 
+### Modales multivista: el alto no cambia
+
+Un modal cuya vista activa alterna —pestañas, `SegmentedControl`, pasos de un
+asistente— pasa `stableHeight` a `DialogContent`/`SheetContent`. El primitivo
+cambia el `max-h` por un `h` fijo y el cuerpo scrollea, así que la caja deja de
+medir su contenido. Sin eso, «Editar vehículo» saltaba ~600 px al pasar de
+«Documentos» a «Combustible» (reportado el 2026-10-29); el defecto es de
+escritorio, porque en móvil el sheet ya es `inset-0`.
+
+- El alto por defecto es la cota del `max-h` (`min(85vh,56rem)` en Sheet,
+  `min(90dvh,54rem)` en Dialog). Si la vista más alta es más corta, se calibra
+  con un `h-[…]` por `className` (`twMerge` deja ganar la última clase); nunca
+  se vuelve a un alto variable.
+- En un sheet con pestañas, la `TabsList` va `shrink-0` y sólo el panel scrollea
+  (`min-h-0 flex-1 overflow-y-auto`); si no, la tira se va con el formulario.
+- No se aplica a la divulgación progresiva (aparece un campo condicional, un
+  aviso de validación): ahí crecer es información nueva, no un cambio de vista.
+- `components/__tests__/modal-alto-estable.test.ts` falla si un modal con
+  pestañas o segmentos no lo usa; `e2e/modal-alto-estable.spec.ts` mide la caja
+  real al recorrer las pestañas del vehículo.
+
 ---
 
 ## Motion

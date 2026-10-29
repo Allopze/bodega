@@ -1045,7 +1045,7 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
   return (
     <>
       <Sheet open={open} onOpenChange={(v) => { if (!v) handleClose() }}>
-        <SheetContent className="sm:max-w-xl">{formContent}</SheetContent>
+        <SheetContent className="sm:max-w-xl" stableHeight>{formContent}</SheetContent>
       </Sheet>
 
       <ConfirmDialog

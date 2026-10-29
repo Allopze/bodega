@@ -45,10 +45,27 @@ const SheetOverlay = React.forwardRef<
 SheetOverlay.displayName = "SheetOverlay"
 
 // ── Modal content (centered dialog) ───────────────────────────────────────────
+export interface SheetContentProps extends React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> {
+  /**
+   * Alto fijo mientras el modal está abierto: la caja deja de medir su
+   * contenido y el cuerpo scrollea (`SheetBody` ya es `flex-1 overflow-y-auto`).
+   *
+   * Sin esto el sheet es `max-h`: cualquier vista alterna (pestañas, segmentos,
+   * pasos) lo hace crecer y encogerse, y como está centrado se mueve en las dos
+   * direcciones. Es lo que reportó «Editar vehículo» al cambiar de pestaña
+   * (2026-10-29). En móvil no se notaba porque ahí el sheet ya es `inset-0`.
+   *
+   * El alto por defecto es la misma cota que el `max-h`; si la vista más alta
+   * es más corta, se pasa un `sm:h-[…]` por `className` (twMerge deja ganar la
+   * última clase) en vez de volver a un alto variable.
+   */
+  stableHeight?: boolean
+}
+
 const SheetContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
->(({ className, children, onOpenAutoFocus, onCloseAutoFocus, onEscapeKeyDown, ...props }, ref) => {
+  SheetContentProps
+>(({ className, children, stableHeight = false, onOpenAutoFocus, onCloseAutoFocus, onEscapeKeyDown, ...props }, ref) => {
   const returnFocus = useReturnFocus(onOpenAutoFocus, onCloseAutoFocus)
   return (
   <DialogPrimitive.Portal>
@@ -58,7 +75,10 @@ const SheetContent = React.forwardRef<
       className={cn(
         // Position: full-screen on mobile, centered modal on desktop
         "fixed inset-0 z-50 sm:inset-auto sm:left-1/2 sm:top-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2",
-        "w-full sm:w-[calc(100%-2rem)] sm:max-w-lg sm:max-h-[min(85vh,56rem)]",
+        "w-full sm:w-[calc(100%-2rem)] sm:max-w-lg",
+        // Una sola de las dos: con `h` fijo el `max-h` sobra, y si conviven un
+        // alto más justo pasado por `className` quedaría recortado por la cota.
+        stableHeight ? "sm:h-[min(85vh,56rem)]" : "sm:max-h-[min(85vh,56rem)]",
         "bg-[var(--color-surface)]",
         "border-0 sm:border sm:border-[var(--color-border)]",
         "rounded-none sm:rounded-[var(--radius-2xl)]",
