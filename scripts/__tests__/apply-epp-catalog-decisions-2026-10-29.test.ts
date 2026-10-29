@@ -28,6 +28,12 @@ const CATEGORY_ID = "cat-epp"
 
 beforeEach(async () => {
   await inMemoryDb.delete(schema.auditLog)
+  await inMemoryDb.delete(schema.approvalDecisions)
+  await inMemoryDb.delete(schema.requestItemAttributes)
+  await inMemoryDb.delete(schema.purchaseRequestItems)
+  await inMemoryDb.delete(schema.purchaseRequests)
+  await inMemoryDb.delete(schema.users)
+  await inMemoryDb.delete(schema.worksites)
   await inMemoryDb.delete(schema.productAttributes)
   await inMemoryDb.delete(schema.products)
   await inMemoryDb.delete(schema.eppProductFamilies)
@@ -96,7 +102,8 @@ describe("decisiones de catálogo EPP 2026-10-29", () => {
     expect(await attributesOf("EPP-157")).toEqual({ Talla: "38", Color: "Negro/Azul", Modelo: "V15" })
     expect(await attributesOf("EPP-096")).toMatchObject({ Género: "Hombre" })
     expect(await attributesOf("EPP-332")).toEqual({ "Talla calzado": "36", Color: "Gris", Género: "Mujer" })
-    expect(await attributesOf("EPP-313")).toEqual({ "Talla calzado": "38", Color: "Negro", Género: "Mujer" })
+    // El Evalight gris es de mujer y el negro de hombre (precisado por el usuario).
+    expect(await attributesOf("EPP-313")).toEqual({ "Talla calzado": "38", Color: "Negro", Género: "Hombre" })
     expect((await productBySku("EPP-313")).name).toBe("Botín VFlex V81 Evalight")
     expect((await productBySku("EPP-332")).name).toBe("Botín VFlex V81 Evalight")
     expect((await productBySku("EPP-276")).isActive).toBe(true)
@@ -137,5 +144,116 @@ describe("decisiones de catálogo EPP 2026-10-29", () => {
 
     expect(outcomes.find((o) => o.sku === "EPP-096")).toMatchObject({ result: "omitido" })
     expect(await attributesOf("EPP-096")).toEqual({ Talla: "L", Género: "Unisex" })
+  })
+})
+
+describe("Evalight negro de hombre y SOL-0062", () => {
+  const WORKSITE = "ws-cholguan"
+  const REQUESTER = "u-lorena"
+
+  async function request(input: { code: string; status: string; sku: string; itemStatus: string; attributes: Record<string, string> }) {
+    const requestId = `r-${input.code}`
+    const itemId = `i-${input.code}`
+    await inMemoryDb.insert(schema.purchaseRequests).values({
+      id: requestId, code: input.code, worksiteId: WORKSITE, requesterId: REQUESTER, status: input.status, requestType: "epp",
+    })
+    await inMemoryDb.insert(schema.purchaseRequestItems).values({
+      id: itemId, requestId, productId: `p-${input.sku}`, quantity: 1, unitOfMeasure: "par",
+      status: input.itemStatus, sortOrder: 0, notes: "para el turno B",
+    })
+    for (const [name, value] of Object.entries(input.attributes)) {
+      await inMemoryDb.insert(schema.requestItemAttributes).values({ id: nanoid(), requestItemId: itemId, attributeName: name, value })
+    }
+    return itemId
+  }
+
+  /** Producción después de la primera corrida del plan: los negros quedaron «Mujer». */
+  async function seedAfterFirstRun() {
+    await inMemoryDb.insert(schema.worksites).values({ id: WORKSITE, name: "Cholguan - Arauco", code: "CHO" })
+    await inMemoryDb.insert(schema.users).values({ id: REQUESTER, name: "Lorena", email: "lorena@test", hashedPassword: "x", isActive: true })
+    const evalight = (sku: string, size: string, color: string, gender: string) =>
+      product({ sku, name: "Botín VFlex V81 Evalight", familyId: "fam-evalight", attributes: { "Talla calzado": size, Color: color, Género: gender } })
+    await evalight("EPP-320", "42", "Gris", "Mujer")
+    await evalight("EPP-321", "42", "Negro", "Mujer")
+    await evalight("EPP-330", "37", "Gris", "Mujer")
+    const pending = await request({ code: "SOL-0062", status: "submitted", sku: "EPP-320", itemStatus: "requested", attributes: { "Talla calzado": "42", Color: "Gris" } })
+    const previous = await request({ code: "SOL-0061", status: "in_purchasing", sku: "EPP-330", itemStatus: "purchased", attributes: { "Talla calzado": "37", Color: "Gris" } })
+    return { pending, previous }
+  }
+
+  async function item(itemId: string) {
+    const row = await inMemoryDb.query.purchaseRequestItems.findFirst({
+      where: eq(schema.purchaseRequestItems.id, itemId),
+      with: { product: true, attributes: true },
+    })
+    return {
+      sku: row!.product!.sku, status: row!.status, quantity: row!.quantity, notes: row!.notes,
+      attributes: Object.fromEntries(row!.attributes.map((a) => [a.attributeName, a.value])),
+    }
+  }
+
+  it("corrige el género de los negros sin tocar los grises", async () => {
+    await seedAfterFirstRun()
+    const { applyCatalogDecisions20261029 } = await import("../apply-epp-catalog-decisions-2026-10-29")
+
+    await applyCatalogDecisions20261029({ apply: true })
+
+    expect(await attributesOf("EPP-321")).toMatchObject({ Color: "Negro", Género: "Hombre" })
+    expect(await attributesOf("EPP-320")).toMatchObject({ Color: "Gris", Género: "Mujer" })
+    expect(await attributesOf("EPP-330")).toMatchObject({ Color: "Gris", Género: "Mujer" })
+  })
+
+  it("cambia el botín 42 de SOL-0062 al negro y la deja pendiente de aprobación", async () => {
+    const { pending } = await seedAfterFirstRun()
+    const { applyCatalogDecisions20261029 } = await import("../apply-epp-catalog-decisions-2026-10-29")
+
+    await applyCatalogDecisions20261029({ apply: true })
+
+    expect(await item(pending)).toEqual({
+      sku: "EPP-321", status: "requested", quantity: 1, notes: "para el turno B",
+      attributes: { "Talla calzado": "42", Color: "Negro", Género: "Hombre" },
+    })
+    const request = await inMemoryDb.query.purchaseRequests.findFirst({ where: eq(schema.purchaseRequests.code, "SOL-0062") })
+    expect(request!.status).toBe("submitted")
+    const [entry] = await inMemoryDb.select().from(schema.auditLog).where(eq(schema.auditLog.entityType, "request_item"))
+    expect(entry).toMatchObject({ entityId: pending, entityCode: "SOL-0062", worksiteId: WORKSITE })
+    expect(JSON.parse(entry!.oldState!)).toMatchObject({ productId: "p-EPP-320" })
+    expect(JSON.parse(entry!.newState!)).toMatchObject({ productId: "p-EPP-321" })
+  })
+
+  it("no toca la solicitud anterior del botín de mujer", async () => {
+    const { previous } = await seedAfterFirstRun()
+    const { applyCatalogDecisions20261029 } = await import("../apply-epp-catalog-decisions-2026-10-29")
+
+    await applyCatalogDecisions20261029({ apply: true })
+
+    expect(await item(previous)).toEqual({
+      sku: "EPP-330", status: "purchased", quantity: 1, notes: "para el turno B",
+      attributes: { "Talla calzado": "37", Color: "Gris" },
+    })
+  })
+
+  it("no cambia un ítem que ya tiene una decisión de aprobación", async () => {
+    const { pending } = await seedAfterFirstRun()
+    await inMemoryDb.insert(schema.approvalDecisions).values({
+      id: nanoid(), requestItemId: pending, requestId: "r-SOL-0062", type: "approve", decidedBy: REQUESTER,
+    })
+    const { applyCatalogDecisions20261029 } = await import("../apply-epp-catalog-decisions-2026-10-29")
+
+    const outcomes = await applyCatalogDecisions20261029({ apply: true })
+
+    expect(outcomes.find((o) => o.sku === "SOL-0062")).toMatchObject({ result: "omitido" })
+    expect((await item(pending)).sku).toBe("EPP-320")
+  })
+
+  it("una segunda corrida no vuelve a cambiar nada", async () => {
+    await seedAfterFirstRun()
+    const { applyCatalogDecisions20261029 } = await import("../apply-epp-catalog-decisions-2026-10-29")
+
+    await applyCatalogDecisions20261029({ apply: true })
+    const second = await applyCatalogDecisions20261029({ apply: true })
+
+    expect(second.filter((o) => o.result === "aplicado")).toEqual([])
+    expect(second.find((o) => o.sku === "SOL-0062")).toMatchObject({ result: "ya estaba" })
   })
 })
