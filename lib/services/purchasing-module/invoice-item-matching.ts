@@ -1,3 +1,5 @@
+import { normalizeSizeLabel } from "@/lib/products/product-size"
+
 export interface InvoiceItemForMatching {
   productName: string
   productCode?: string | null
@@ -11,6 +13,12 @@ export interface PurchaseOrderItemForMatching {
   productName: string
   productCode: string | null
   unitOfMeasure: string
+  /**
+   * Talla de la variante. El catálogo guarda el mismo nombre en todas las
+   * tallas, así que sin ella las líneas de una OC con varias tallas de la
+   * misma prenda son indistinguibles por nombre.
+   */
+  sizeLabel?: string | null
 }
 
 export type InvoiceItemMatchType = "code" | "name" | "ambiguous" | "none"
@@ -35,10 +43,11 @@ export function matchInvoiceItemsToPurchaseOrderItems<T extends InvoiceItemForMa
   const claimedOrderItemIds = new Set<string>()
 
   return extractedItems.map((item) => {
+    const documentSize = documentSizeOf(item)
     const byCode = item.productCode
       ? ocItems.filter((ocItem) => !claimedOrderItemIds.has(ocItem.id) && normalizeCode(ocItem.productCode) === normalizeCode(item.productCode))
       : []
-    const codeResolution = resolveCandidate(byCode, item.unitOfMeasure)
+    const codeResolution = resolveCandidate(sizeCompatible(byCode, documentSize), item.unitOfMeasure)
     if (codeResolution.candidate) {
       claimedOrderItemIds.add(codeResolution.candidate.id)
       return { item, ocItemId: codeResolution.candidate.id, matchType: "code", candidateCount: byCode.length }
@@ -53,7 +62,7 @@ export function matchInvoiceItemsToPurchaseOrderItems<T extends InvoiceItemForMa
           return ocName.length >= 3 && (normalizedName.includes(ocName) || ocName.includes(normalizedName))
         })())
       : []
-    const nameResolution = resolveCandidate(byName, item.unitOfMeasure)
+    const nameResolution = resolveCandidate(sizeCompatible(byName, documentSize), item.unitOfMeasure)
     if (nameResolution.candidate) {
       claimedOrderItemIds.add(nameResolution.candidate.id)
       return { item, ocItemId: nameResolution.candidate.id, matchType: "name", candidateCount: byName.length }
@@ -63,6 +72,27 @@ export function matchInvoiceItemsToPurchaseOrderItems<T extends InvoiceItemForMa
 
     return { item, ocItemId: null, matchType: "none", candidateCount: 0 }
   })
+}
+
+/**
+ * Talla que declara la línea del documento: al final del código del proveedor
+ * (`12-01-011-T-2XL`) o del nombre (`… T/XXL`, `… T- XL`, `… T T41`). `null`
+ * cuando no declara ninguna; nunca se adivina desde el medio del texto.
+ */
+export function documentSizeOf(item: Pick<InvoiceItemForMatching, "productName" | "productCode">): string | null {
+  const raw = item.productCode?.trim().match(/-T-([A-Z0-9]+)$/i)?.[1]
+    ?? item.productName.trim().match(/\bT\s*[-/]?\s*([0-9]*X*[SML]|\d+X?L|T?\d{2})$/i)?.[1]
+  return raw ? normalizeSizeLabel(raw) || null : null
+}
+
+/**
+ * Descarta los candidatos cuya talla contradice la del documento. Un candidato
+ * sin talla declarada sigue en juego: la talla sólo excluye con evidencia.
+ */
+function sizeCompatible(candidates: PurchaseOrderItemForMatching[], documentSize: string | null) {
+  if (!documentSize) return candidates
+  return candidates.filter((candidate) =>
+    !candidate.sizeLabel || normalizeSizeLabel(candidate.sizeLabel) === documentSize)
 }
 
 function resolveCandidate(candidates: PurchaseOrderItemForMatching[], documentUnit: string | null | undefined): {

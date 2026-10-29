@@ -15,6 +15,7 @@ import {
   type InvoiceReconciliationEvidence,
 } from "./invoice-reconciliation"
 import { matchInvoiceItemsToPurchaseOrderItems } from "./invoice-item-matching"
+import { getProductSizesByIds } from "@/lib/services/product-sizes"
 import { getPurchaseOrderInvoiceReconciliation, persistPurchaseOrderInvoiceReconciliationTx, reconciliationWarnings } from "./invoice-reconciliation-service"
 import { classifyOrderReference, dteDocumentKind, dteInvoiceRejection, normalizeSupplierProductCode, normalizeSupplierProductName, type DteCandidateOrderReference } from "./dte-candidates"
 import { normalizeOrderCodeRef } from "./dte-parser"
@@ -750,6 +751,7 @@ async function linkDteItemsToOrderTx(
   const orderItems = await tx
     .select({
       id: purchaseOrderItems.id,
+      productId: purchaseOrderItems.productId,
       productNameFree: purchaseOrderItems.productNameFree,
       productName: products.name,
       productCode: products.sku,
@@ -758,6 +760,7 @@ async function linkDteItemsToOrderTx(
     .from(purchaseOrderItems)
     .leftJoin(products, eq(purchaseOrderItems.productId, products.id))
     .where(eq(purchaseOrderItems.purchaseOrderId, purchaseOrderId))
+  const sizes = await getProductSizesByIds(orderItems.flatMap((item) => item.productId ? [item.productId] : []), tx)
 
   const matches = matchInvoiceItemsToPurchaseOrderItems(
     invoiceItems,
@@ -766,6 +769,7 @@ async function linkDteItemsToOrderTx(
       productName: item.productNameFree ?? item.productName ?? item.id,
       productCode: item.productCode ?? null,
       unitOfMeasure: item.unitOfMeasure,
+      sizeLabel: item.productId ? sizes.get(item.productId)?.label ?? null : null,
     })),
   )
   return matches.map((match) => ({
