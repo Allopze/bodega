@@ -174,9 +174,12 @@ entradas, con `Edit` puntual), `package.json` (sólo L1: script `db:seed:mantenc
   y un flaky ajeno que pasa aislado), `test:pglite` completo (281 archivos, 3.450 pruebas),
   `db:verify-migrations`, `check:secrets`, migración + RBAC + seed idempotente en `bodega_dev` y concurrencia
   real de 20 folios únicos.
-- Pendiente: E2E 1–4 en un worktree con los cambios commiteados, PDF real con Chromium y recorrido manual en
-  navegador. `check:security-audit` y `doctor` reportan hallazgos ajenos al módulo (undici/zod y avisos de
-  React).
+- Cierre de verificación (28-10-2026, noche): E2E 1–8 + specs relacionadas **320/320** en build de producción;
+  axe sin violaciones en 15 vistas; PDF real con Chromium; app sin señal tras recargar. Se corrigieron cuatro
+  defectos que sólo aparecieron en navegador (worker al llegar desde el login, pauta comprimida por choque de
+  la clase `done`, contraste de los botones verdes, casilla de bajas). Detalle en
+  `qa/reports/mantencion-equipos-2026-10-28.md`.
+- `check:security-audit` y `doctor` siguen reportando hallazgos ajenos y preexistentes (ver P8).
 
 ## 11. Pendientes y decisiones del usuario
 
