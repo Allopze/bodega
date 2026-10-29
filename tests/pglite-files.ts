@@ -377,6 +377,8 @@ export const pgliteTestFiles = [
   // C07 sobre ocurrencias: "no aplica" y cancelación en revisión.
   "lib/__tests__/pdtp-scheduled-instance-outcome-review.test.ts",
   "scripts/__tests__/revert-pdtp-revoked-approvals.test.ts",
+  // Decisiones de catálogo EPP 2026-10-29: atributos faltantes, nombre del Evalight y color Piedra.
+  "scripts/__tests__/apply-epp-catalog-decisions-2026-10-29.test.ts",
   // Mantención de equipos: carga inicial idempotente y conciliada con la flota (§13).
   "lib/__tests__/mantencion-seed-pglite.test.ts",
   // Mantención de equipos: recepción de registros, folio, revalidación y ciclo de vida (L1a).
