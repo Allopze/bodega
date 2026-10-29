@@ -49,7 +49,10 @@ Corren bajo perfiles de compose y su caída **no** tumba la aplicación, pero s�
 silencio; por eso conviene revisarlos cuando algo "dejó de actualizarse solo".
 
 - `backup-scheduler` (perfil `backup`): respaldo diario a `BACKUP_HOUR` UTC, retención `RETENTION_DAYS` (30 por defecto), destino remoto opcional Cloudreve (se activa en Administración › Respaldos).
-- `cron`: tareas programadas de la plataforma. Requiere `CRON_SECRET`. Es el **único
+- `cron`: tareas programadas de la plataforma. Requiere `CRON_SECRET`. Los jobs GPS
+  OnWay también requieren `FLEET_GPS_CRON_INTERNAL_SECRET`, distinto de `CRON_SECRET`
+  y configurado en `app` y `cron`; así se autentican las llamadas internas que no pasan
+  por un proxy con IP confiable. Es el **único
   scheduler** de los endpoints `/api/cron/*`: la lista de trabajos vive en
   `scripts/cron-runner.mjs` y el crontab se escribe desde `docker-compose.yml` (la paridad la
   verifica `lib/__tests__/deploy-workflow.test.ts`). No agendar el mismo endpoint en GitHub

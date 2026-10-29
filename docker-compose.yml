@@ -96,6 +96,7 @@ services:
       # what actually put the values into the running app container.
       - CRON_SECRET=${CRON_SECRET:-}
       - CRON_ALLOWED_SOURCES=${CRON_ALLOWED_SOURCES:-}
+      - FLEET_GPS_CRON_INTERNAL_SECRET=${FLEET_GPS_CRON_INTERNAL_SECRET:-}
       # W5-GC (D13): el GC de evidencia PDTP corre a diario en modo de prueba.
       # `true` habilita el borrado real; encenderlo sólo después de revisar una
       # o dos semanas de filas `storage_orphan_sweep` en audit_log
@@ -233,6 +234,7 @@ services:
       - RESEND_API_KEY=${RESEND_API_KEY:-}
       - BACKUP_SCRIPTS_PATH=${BACKUP_SCRIPTS_PATH:-}
       - CRON_ALLOWED_SOURCES=${CRON_ALLOWED_SOURCES:-}
+      - FLEET_GPS_CRON_INTERNAL_SECRET=${FLEET_GPS_CRON_INTERNAL_SECRET:-}
       - PDTP_EVIDENCE_GC_DELETE=${PDTP_EVIDENCE_GC_DELETE:-}
       - COPEC_USERNAME=${COPEC_USERNAME:-}
       - COPEC_PASSWORD=${COPEC_PASSWORD:-}
@@ -282,6 +284,7 @@ services:
       - BACKUP_ENCRYPTION_PASSPHRASE=${BACKUP_ENCRYPTION_PASSPHRASE:-}
       - APP_URL=http://app:3000
       - CRON_SECRET=${CRON_SECRET:-}
+      - FLEET_GPS_CRON_INTERNAL_SECRET=${FLEET_GPS_CRON_INTERNAL_SECRET:-}
       - APP_VERSION=${APP_VERSION:-}
       - NODE_ENV=production
       - HOME=/app
@@ -320,9 +323,9 @@ services:
   #
   # El crontab se escribe al arrancar en vez de venir en la imagen para que los
   # horarios se cambien acá, versionados, sin reconstruir ni volver a publicar.
-  # CRON_SECRET se materializa sólo en el crontab al arrancar porque busybox
-  # crond no propaga el entorno del contenedor a los trabajos. El runner nunca
-  # lo imprime y el keyring DTE jamás se inyecta en este servicio.
+  # Los secretos cron se materializan sólo en el crontab al arrancar porque
+  # busybox crond no propaga el entorno del contenedor a los trabajos. El runner
+  # nunca los imprime y el keyring DTE jamás se inyecta en este servicio.
   #
   # El montaje de /usr/share/zoneinfo NO es decorativo: la imagen no trae tzdata.
   # Node resuelve America/Santiago por ICU (por eso `app` no lo necesita), pero
@@ -339,6 +342,7 @@ services:
     environment:
       - TZ=America/Santiago
       - CRON_SECRET=${CRON_SECRET:-}
+      - FLEET_GPS_CRON_INTERNAL_SECRET=${FLEET_GPS_CRON_INTERNAL_SECRET:-}
     volumes:
       - /usr/share/zoneinfo:/usr/share/zoneinfo:ro
     entrypoint: ["sh", "-c"]
@@ -376,9 +380,9 @@ services:
         30 8 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs fuel-statement-notifications >/proc/1/fd/1 2>&1
         # Flota GPS — refresco cada 5 minutos. La app reutiliza una sesión
         # Auth0 en memoria para no autenticar contra OnWay en cada ejecución.
-        */5 * * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs fleet-onway-sync >/proc/1/fd/1 2>&1
+        */5 * * * * CRON_SECRET="$$CRON_SECRET" FLEET_GPS_CRON_INTERNAL_SECRET="$$FLEET_GPS_CRON_INTERNAL_SECRET" node /app/scripts/cron-runner.mjs fleet-onway-sync >/proc/1/fd/1 2>&1
         # GPS OnWay — retención diaria de puntos y coordenadas detalladas.
-        20 4 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs fleet-onway-retention >/proc/1/fd/1 2>&1
+        20 4 * * * CRON_SECRET="$$CRON_SECRET" FLEET_GPS_CRON_INTERNAL_SECRET="$$FLEET_GPS_CRON_INTERNAL_SECRET" node /app/scripts/cron-runner.mjs fleet-onway-retention >/proc/1/fd/1 2>&1
         # Mantenciones — SLA y escalamiento antes del inicio de la jornada.
         0 6 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs maintenance-reminders >/proc/1/fd/1 2>&1
         # Soporte — alerta diaria a gestores por tickets próximos a vencer o fuera de SLA.
@@ -448,7 +452,7 @@ services:
         # -03, nunca UTC. Los horarios de abajo se leen contra esta hora.
         echo "[cron] hora local del scheduler: $$(date)"
         echo "[cron] horarios cargados:"
-        sed -E 's/(CRON_SECRET=)[^[:space:]]+/\1***/' /etc/crontabs/root
+        sed -E 's/((CRON_SECRET|FLEET_GPS_CRON_INTERNAL_SECRET)=)[^[:space:]]+/\1***/g' /etc/crontabs/root
         exec crond -f -l 8
     healthcheck:
       test: ["CMD-SHELL", "pgrep crond >/dev/null && CRON_SECRET=$$CRON_SECRET node /app/scripts/cron-runner.mjs health >/dev/null 2>&1"]

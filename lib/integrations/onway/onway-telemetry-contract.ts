@@ -67,9 +67,26 @@ function boundedText(value: unknown, maxLength = MAX_TEXT_LENGTH): string | null
   return trimmed.length > 0 && trimmed.length <= maxLength ? trimmed : null
 }
 
+function localizedText(value: unknown, maxLength = MAX_TEXT_LENGTH): string | null {
+  const direct = boundedText(value, maxLength)
+  if (direct) return direct
+  if (!isRecord(value)) return null
+  return boundedText(value.es, maxLength)
+    ?? boundedText(value["es-CL"], maxLength)
+    ?? Object.values(value).map((item) => boundedText(item, maxLength)).find((item) => item !== null)
+    ?? null
+}
+
 function isoInstant(value: unknown): string | null {
   if (typeof value !== "string") return null
-  const timestamp = Date.parse(value)
+  const trimmed = value.trim()
+  const dotNetDate = /^\/Date\((-?\d+)(?:[+-]\d{4})?\)\/$/.exec(trimmed)
+  if (dotNetDate) {
+    const milliseconds = Number(dotNetDate[1])
+    if (!Number.isFinite(milliseconds) || Math.abs(milliseconds) > 8_640_000_000_000_000) return null
+    return new Date(milliseconds).toISOString()
+  }
+  const timestamp = Date.parse(trimmed)
   return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : null
 }
 
@@ -82,6 +99,11 @@ function optionalNumber(value: unknown, min: number, max: number): number | null
 function valueOrNull(value: number | null | "invalid"): number | null {
   if (value === "invalid") throw new Error("ONWAY_TELEMETRY_INVALID")
   return value
+}
+
+function optionalSensorValue(value: unknown, min: number, max: number): number | null {
+  const parsed = optionalNumber(value, min, max)
+  return parsed === "invalid" ? null : parsed
 }
 
 function coordinates(row: Record<string, unknown>): { latitude: number | null; longitude: number | null } | null {
@@ -118,13 +140,13 @@ export function parseOnwayDeviceDetail(input: unknown): OnwayDeviceTelemetry | n
       movementState: boundedText(input.movement_state, 80),
       odometer: valueOrNull(optionalNumber(input.odometer, 0, 9_999_999)),
       hourMeter: valueOrNull(optionalNumber(input.total_ignition_time_calculate ?? input.currentHourMeter, 0, 9_999_999)),
-      internalBatteryLevel: valueOrNull(optionalNumber(input.internal_battery_level, 0, 100)),
-      externalPowerVolts: valueOrNull(optionalNumber(input.external_power_vcc ?? input.externalPowerSupplyLevel, 0, 100)),
-      engineRpm: valueOrNull(optionalNumber(input.engineRpm, 0, 20_000)),
-      coolantTemperature: valueOrNull(optionalNumber(input.engineCoolantTemperature, -100, 300)),
-      fuelLevel: valueOrNull(optionalNumber(input.fuelLevelInput, 0, 100)),
-      temperature1: valueOrNull(optionalNumber(input.temperature_1, -100, 200)),
-      humidity1: valueOrNull(optionalNumber(input.humidity_1, 0, 100)),
+      internalBatteryLevel: optionalSensorValue(input.internal_battery_level, 0, 100),
+      externalPowerVolts: optionalSensorValue(input.external_power_vcc ?? input.externalPowerSupplyLevel, 0, 100),
+      engineRpm: optionalSensorValue(input.engineRpm, 0, 20_000),
+      coolantTemperature: optionalSensorValue(input.engineCoolantTemperature, -100, 300),
+      fuelLevel: optionalSensorValue(input.fuelLevelInput, 0, 100),
+      temperature1: optionalSensorValue(input.temperature_1, -100, 200),
+      humidity1: optionalSensorValue(input.humidity_1, 0, 100),
       driverExternalId: boundedText(input.authentication_id, 160),
       driverDisplayName: boundedText(input.driver_name_with_key, 160),
     }
@@ -138,7 +160,9 @@ export function parseOnwayAlertHistory(input: unknown): OnwayAlertSnapshot | nul
   const alertType = typeof input.alert_id === "number" && Number.isInteger(input.alert_id) && input.alert_id >= 0
     ? String(input.alert_id)
     : boundedText(input.alert_id, 80)
-  const title = boundedText(input.alert_description ?? input.message, 240)
+  const title = localizedText(input.alert_description, 240)
+    ?? localizedText(input.message, 240)
+    ?? localizedText(input.alert_string, 240)
   const occurredAt = isoInstant(input.generate_time ?? input.entry_time)
   if (!alertType || !title || !occurredAt) return null
   const point = coordinates(input)
@@ -154,12 +178,41 @@ export function parseOnwayAlertHistory(input: unknown): OnwayAlertSnapshot | nul
     externalEventKey: externalEventKey(input, alertType, occurredAt, point.latitude, point.longitude),
     alertType,
     title,
-    priority: boundedText(input.priority, 32),
+    priority: typeof input.priority === "number" && Number.isFinite(input.priority)
+      ? String(input.priority)
+      : boundedText(input.priority, 32),
     occurredAt,
     latitude: point.latitude,
     longitude: point.longitude,
     speedKph,
   }
+}
+
+export function parseOnwayAlertRows(
+  input: unknown,
+  refs: Array<{ deviceId: string; unitId: string; imei: string | null }>,
+): { alerts: OnwayAlertSnapshot[]; incomplete: boolean } {
+  if (!Array.isArray(input) || input.length > MAX_RECORDS) return { alerts: [], incomplete: true }
+  const deviceIdByImei = new Map(refs.flatMap((ref) => ref.imei ? [[ref.imei, ref.deviceId] as const] : []))
+  const deviceIdByUnitId = new Map(refs.map((ref) => [ref.unitId, ref.deviceId]))
+  const alerts: OnwayAlertSnapshot[] = []
+  let incomplete = false
+  for (const row of input) {
+    const parsed = parseOnwayAlertHistory(row)
+    if (!parsed) {
+      incomplete = true
+      continue
+    }
+    const sourceImei = isRecord(row) && typeof row.unit_imei === "string" ? row.unit_imei : null
+    const externalDeviceId = (sourceImei ? deviceIdByImei.get(sourceImei) : undefined)
+      ?? (parsed.externalDeviceId ? deviceIdByUnitId.get(parsed.externalDeviceId) ?? parsed.externalDeviceId : undefined)
+    if (!externalDeviceId) {
+      incomplete = true
+      continue
+    }
+    alerts.push({ ...parsed, externalDeviceId })
+  }
+  return { alerts, incomplete }
 }
 
 export function parseOnwayHistory(input: unknown): OnwayHistoryPoint[] {

@@ -50,7 +50,7 @@ export function FleetGpsWorkspace({ positions, alerts, canViewHistory, adminStat
         <Card id="vehiculos-gps" className="overflow-hidden">
           <CardHeader>
             <CardTitle as="h2" className="text-base">Vehículos monitoreados</CardTitle>
-            <CardDescription>La tabla es la alternativa accesible al mapa; la hora de captura y la hora GPS se diferencian en el detalle.</CardDescription>
+            <CardDescription>La hora de captura indica cuándo la plataforma consultó OnWay; la hora GPS indica cuándo el dispositivo reportó la ubicación.</CardDescription>
           </CardHeader>
           <FleetGpsTable positions={positions} />
         </Card>

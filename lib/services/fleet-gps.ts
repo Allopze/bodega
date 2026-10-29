@@ -27,18 +27,11 @@ export interface FleetGpsPosition {
   odometer: number | null
   hourMeter: number | null
   driverName: string | null
+  gpsIsStale: boolean
   observedAt: string
 }
 
-/**
- * ¿La última captura de OnWay quedó fuera de la ventana de frescura?
- *
- * Compara INSTANTES, no texto: `observedAt` es `timestamptz mode:"string"` y
- * drizzle lo serializa con separador de espacio ("2026-09-19 12:00:00.000+00"),
- * mientras `staleBefore` es ISO ("...T...Z"). Un `<` sobre los strings decidía
- * en el carácter del separador (' ' < 'T') y marcaba toda captura del mismo día
- * como desactualizada, aunque OnWay hubiera sincronizado un minuto antes.
- */
+/** Compares an OnWay timestamp with the freshness threshold as instants, not text. */
 export function isGpsCaptureStale(latestCapture: string | null, staleBefore: string): boolean {
   if (!latestCapture) return false
   const capture = Date.parse(latestCapture)
@@ -47,6 +40,7 @@ export function isGpsCaptureStale(latestCapture: string | null, staleBefore: str
 }
 
 export async function getFleetGpsMonitoring(session: Session) {
+  const staleBefore = new Date(Date.now() - 15 * 60_000).toISOString()
   const rawPositions = await db.select({
     id: fleetGpsLatestPositions.id,
     vehicleId: fuelVehicles.id,
@@ -86,6 +80,7 @@ export async function getFleetGpsMonitoring(session: Session) {
     driverName: canViewDriver && driverWorksiteId && canAccessWorksite(session, driverWorksiteId)
       ? `${driverFirstName ?? ""} ${driverLastName ?? ""}`.trim() || null
       : null,
+    gpsIsStale: isGpsCaptureStale(position.gpsReportedAt, staleBefore),
   }))
 
   const canManage = can(session, "flota:manage_gps")
@@ -101,7 +96,7 @@ export async function getFleetGpsMonitoring(session: Session) {
     canManage,
     latestRun,
     unmatched,
-    staleBefore: new Date(Date.now() - 15 * 60_000).toISOString(),
+    staleBefore,
   }
 }
 

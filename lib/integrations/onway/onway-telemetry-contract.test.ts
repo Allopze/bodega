@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
   parseOnwayAlertHistory,
+  parseOnwayAlertRows,
   parseOnwayDeviceDetail,
   parseOnwayHistory,
   parseOnwayTrips,
@@ -78,6 +79,20 @@ describe("OnWay telemetry contracts", () => {
     })
   })
 
+  it("keeps valid device telemetry when an optional sensor is outside its range", () => {
+    expect(parseOnwayDeviceDetail({
+      device_id: 42,
+      gps_message_time: "2026-08-28T13:05:00Z",
+      odometer: 12345,
+      temperature_1: 240,
+    })).toMatchObject({
+      deviceId: "42",
+      gpsReportedAt: "2026-08-28T13:05:00.000Z",
+      odometer: 12345,
+      temperature1: null,
+    })
+  })
+
   it("normalizes an alert into a stable external event without retaining its raw payload", () => {
     expect(parseOnwayAlertHistory({
       message_key: "msg-1",
@@ -103,6 +118,56 @@ describe("OnWay telemetry contracts", () => {
       longitude: -70.66,
       speedKph: 112,
     })
+  })
+
+  it("reads the portal's localized alert title and numeric priority", () => {
+    expect(parseOnwayAlertHistory({
+      message_key: "msg-es-1",
+      alert_id: 68,
+      message: { es: "Exceso de velocidad", en: "Speeding" },
+      generate_time: "2026-08-28T13:10:00Z",
+      latitude: -33.45,
+      longitude: -70.66,
+      speed: 112,
+      priority: 2,
+    })).toMatchObject({
+      externalEventKey: "msg-es-1",
+      alertType: "68",
+      title: "Exceso de velocidad",
+      priority: "2",
+      occurredAt: "2026-08-28T13:10:00.000Z",
+    })
+  })
+
+  it("parses OnWay's .NET JSON date wrapper", () => {
+    const milliseconds = Date.parse("2026-08-28T13:10:00Z")
+    expect(parseOnwayAlertHistory({
+      alert_id: 68,
+      message: { es: "Exceso de velocidad" },
+      generate_time: `/Date(${milliseconds}+0000)/`,
+      latitude: -33.45,
+      longitude: -70.66,
+    })).toMatchObject({ occurredAt: "2026-08-28T13:10:00.000Z" })
+  })
+
+  it("maps alerts by provider IMEI and marks dropped rows as incomplete", () => {
+    const result = parseOnwayAlertRows([
+      {
+        message_key: "msg-es-2",
+        alert_id: 68,
+        message: { es: "Exceso de velocidad" },
+        generate_time: "2026-08-28T13:10:00Z",
+        latitude: -33.45,
+        longitude: -70.66,
+        speed: 112,
+        unit_imei: "device-imei",
+        priority: 2,
+      },
+      { message: "fila incompleta" },
+    ], [{ deviceId: "device-42", unitId: "unit-42", imei: "device-imei" }])
+
+    expect(result.alerts).toMatchObject([{ externalDeviceId: "device-42", title: "Exceso de velocidad" }])
+    expect(result.incomplete).toBe(true)
   })
 
   it("keeps only bounded route and trip values with real timestamps", () => {

@@ -66,12 +66,16 @@ const JOBS = Object.freeze({
     timeoutMs: 2 * 60 * 1_000,
     kind: "sync",
     codePrefix: "FLEET_GPS_CRON_",
+    internalSecretEnv: "FLEET_GPS_CRON_INTERNAL_SECRET",
+    internalSecretHeader: "X-Fleet-Gps-Cron-Secret",
   },
   "fleet-onway-retention": {
     url: "http://app:3000/api/cron/fleet-onway-retention",
     timeoutMs: 2 * 60 * 1_000,
     kind: "sync",
     codePrefix: "FLEET_GPS_CRON_",
+    internalSecretEnv: "FLEET_GPS_CRON_INTERNAL_SECRET",
+    internalSecretHeader: "X-Fleet-Gps-Cron-Secret",
   },
   "maintenance-reminders": {
     url: "http://app:3000/api/cron/maintenance-reminders",
@@ -250,9 +254,12 @@ export async function runCronJob(jobName, options = {}) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), job.timeoutMs)
   try {
+    const headers = { Authorization: `Bearer ${secret}`, Accept: "application/json" }
+    const internalSecret = job.internalSecretEnv ? options.internalSecret ?? process.env[job.internalSecretEnv] : undefined
+    if (internalSecret && job.internalSecretHeader) headers[job.internalSecretHeader] = internalSecret
     const response = await fetchImpl(job.url, {
       method: "GET",
-      headers: { Authorization: `Bearer ${secret}`, Accept: "application/json" },
+      headers,
       redirect: "manual",
       signal: controller.signal,
     })

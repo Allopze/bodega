@@ -4,7 +4,7 @@ import { onwayCronContractFor, type OnwayCronOutcome } from "@/lib/integrations/
 import { readOnwayConfig } from "@/lib/integrations/onway/onway-settings"
 import { syncOnway } from "@/lib/integrations/onway/onway-sync"
 import { logger } from "@/lib/logger"
-import { cronRequestSource, parseCronAllowedSources, verifyCronRequest } from "@/lib/security/cron-auth"
+import { cronRequestSource, parseCronAllowedSources, verifyCronInternalRequest, verifyCronRequest } from "@/lib/security/cron-auth"
 import { withCronLock } from "@/lib/services/cron-lock"
 import { isRouteOperational } from "@/lib/services/module-toggles"
 import { consumeFixedWindowLimit } from "@/lib/services/rate-limit"
@@ -27,11 +27,17 @@ export async function GET(request: NextRequest) {
   const secret = process.env.CRON_SECRET
   const allowedSources = parseCronAllowedSources(process.env.CRON_ALLOWED_SOURCES)
   const enforceSource = process.env.NODE_ENV === "production" || allowedSources.length > 0
-  if (!secret || !verifyCronRequest({
+  const requestHeaders = {
     authorization: request.headers.get("authorization"),
     forwardedFor: request.headers.get("x-forwarded-for"),
     realIp: request.headers.get("x-real-ip"),
-  }, secret, allowedSources, enforceSource)) {
+  }
+  const authorizedBySource = !!secret && verifyCronRequest(requestHeaders, secret, allowedSources, enforceSource)
+  const authorizedInternally = !!secret && verifyCronInternalRequest({
+    authorization: requestHeaders.authorization,
+    internalSecret: request.headers.get("x-fleet-gps-cron-secret"),
+  }, secret, process.env.FLEET_GPS_CRON_INTERNAL_SECRET)
+  if (!secret || (!authorizedBySource && !authorizedInternally)) {
     return respond("unauthorized")
   }
 
@@ -47,7 +53,8 @@ export async function GET(request: NextRequest) {
   try {
     const result = await withCronLock("fleet-onway-sync", () => syncOnway({ trigger: "cron" }))
     if ("skipped" in result) return respond("conflict")
-    return respond(result.warnings.length > 0 ? "partial" : "success", {
+    const hasIncompleteData = result.rejected > 0 || result.unmatched > 0 || result.warnings.length > 0
+    return respond(hasIncompleteData ? "partial" : "success", {
       received: result.received,
       matched: result.matched,
       rejected: result.rejected,

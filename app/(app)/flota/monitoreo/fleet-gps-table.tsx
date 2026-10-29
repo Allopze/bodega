@@ -64,7 +64,7 @@ export function FleetGpsTable({ positions }: { positions: FleetGpsPosition[] }) 
             <TableHead>Encendido</TableHead>
             <TableHead className="text-right">Velocidad</TableHead>
             <TableHead>Señal / medidor</TableHead>
-            <TableHead>Capturado</TableHead>
+            <TableHead>Captura / hora GPS</TableHead>
             <TableHead><span className="sr-only">Mapa</span></TableHead>
           </TableRow>
         </TableHeader>
@@ -89,7 +89,17 @@ export function FleetGpsTable({ positions }: { positions: FleetGpsPosition[] }) 
                   {position.driverName ? ` · ${position.driverName}` : ""}
                 </div>
               </TableCell>
-              <TableCell className="whitespace-nowrap">{formatDateTime(position.observedAt)}</TableCell>
+              <TableCell className="whitespace-nowrap">
+                <div>{formatDateTime(position.observedAt)}</div>
+                <div className="text-xs text-[var(--color-text-subtle)]">
+                  {position.gpsReportedAt ? (
+                    <>
+                      GPS: {formatDateTime(position.gpsReportedAt)}
+                      {position.gpsIsStale ? <span className="ml-2 font-semibold text-[var(--color-warning-ink)]">Dato atrasado</span> : null}
+                    </>
+                  ) : "Hora GPS no disponible"}
+                </div>
+              </TableCell>
               <TableCell className="text-right">
                 <Button asChild variant="ghost" size="sm">
                   <a

@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   cronRequestSource: vi.fn(() => null),
   parseCronAllowedSources: vi.fn(() => []),
   verifyCronRequest: vi.fn(() => true),
+  verifyCronInternalRequest: vi.fn(() => false),
   isRouteOperational: vi.fn(),
   readOnwayConfig: vi.fn(),
   syncOnway: vi.fn(),
@@ -16,6 +17,7 @@ vi.mock("@/lib/security/cron-auth", () => ({
   cronRequestSource: (...args: unknown[]) => Reflect.apply(mocks.cronRequestSource, null, args),
   parseCronAllowedSources: (...args: unknown[]) => Reflect.apply(mocks.parseCronAllowedSources, null, args),
   verifyCronRequest: (...args: unknown[]) => Reflect.apply(mocks.verifyCronRequest, null, args),
+  verifyCronInternalRequest: (...args: unknown[]) => Reflect.apply(mocks.verifyCronInternalRequest, null, args),
 }))
 vi.mock("@/lib/services/module-toggles", () => ({ isRouteOperational: (...args: unknown[]) => Reflect.apply(mocks.isRouteOperational, null, args) }))
 vi.mock("@/lib/integrations/onway/onway-settings", () => ({ readOnwayConfig: (...args: unknown[]) => Reflect.apply(mocks.readOnwayConfig, null, args) }))
@@ -37,6 +39,7 @@ describe("GET /api/cron/fleet-onway-sync", () => {
     process.env.CRON_SECRET = "cron-secret"
     vi.clearAllMocks()
     mocks.verifyCronRequest.mockReturnValue(true)
+    mocks.verifyCronInternalRequest.mockReturnValue(false)
     mocks.isRouteOperational.mockResolvedValue(true)
     mocks.readOnwayConfig.mockResolvedValue({ username: "configured", password: "configured", syncEnabled: true, hasCredentials: true })
     mocks.withCronLock.mockImplementation(async (_job: string, run: () => Promise<unknown>) => run())
@@ -67,8 +70,8 @@ describe("GET /api/cron/fleet-onway-sync", () => {
 
   it("returns the bounded synchronization summary", async () => {
     const response = await GET(request())
-    expect(response.status).toBe(200)
-    expect(await response.json()).toMatchObject({ outcome: "success", code: "FLEET_GPS_CRON_SUCCESS", matched: 4 })
+    expect(response.status).toBe(503)
+    expect(await response.json()).toMatchObject({ outcome: "partial", code: "FLEET_GPS_CRON_PARTIAL", matched: 4 })
   })
 
   it("classifies an interactive challenge as degraded", async () => {

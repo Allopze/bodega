@@ -15,10 +15,10 @@ import { OnwayControls } from "./onway-controls"
 
 export const metadata: Metadata = { title: "Monitoreo GPS" }
 
-function staleSinceLabel(latestCapture: string): string {
+function staleSinceLabel(observedAt: string): string {
   // Sin capturar por más de un día, dejar de contar en minutos y hablar en días
   // para no acumular cuatro dígitos en el banner.
-  const diffMs = Date.now() - Date.parse(latestCapture)
+  const diffMs = Date.now() - Date.parse(observedAt)
   if (!Number.isFinite(diffMs) || diffMs <= 0) return "reciente"
   const minutes = Math.round(diffMs / 60_000)
   if (minutes < 60) return `${minutes} minuto${minutes === 1 ? "" : "s"}`
@@ -35,18 +35,18 @@ export default async function FleetGpsMonitoringPage() {
 
   const [monitoring, alerts] = await Promise.all([getFleetGpsMonitoring(session), getFleetGpsAlerts(session)])
   const adminStatus = monitoring.canManage ? await readOnwayAdminStatus() : null
-  const latestCapture = monitoring.positions.reduce<string | null>(
+  const latestSyncAt = monitoring.positions.reduce<string | null>(
     (latest, position) => !latest || position.observedAt > latest ? position.observedAt : latest,
     null,
   )
-  const captureIsStale = isGpsCaptureStale(latestCapture, monitoring.staleBefore)
+  const syncIsStale = isGpsCaptureStale(latestSyncAt, monitoring.staleBefore)
   const hasData = monitoring.positions.length > 0
   const blockedAlerts = alerts.filter((alert) => alert.processingStatus === "blocked").length
   const stats: SummaryStat[] = hasData ? [
     { key: "linked", label: "Vehículos vinculados", value: monitoring.positions.length },
     { key: "moving", label: "En movimiento", value: monitoring.positions.filter((position) => position.speedKph > 0).length },
     { key: "ignition", label: "Con encendido", value: monitoring.positions.filter((position) => position.ignition).length },
-    { key: "capture", label: "Última captura", value: latestCapture ? formatDateTime(latestCapture) : "Sin datos" },
+    { key: "capture", label: "Última consulta", value: latestSyncAt ? formatDateTime(latestSyncAt) : "Sin datos" },
   ] : []
   const onwayIsConfigured = adminStatus?.hasCredentials ?? false
 
@@ -64,9 +64,9 @@ export default async function FleetGpsMonitoringPage() {
 
       <SummaryBar stats={stats} />
 
-      {captureIsStale && latestCapture ? (
+      {syncIsStale && latestSyncAt ? (
         <Callout tone="warning" className="mt-3">
-          <strong>Captura desactualizada:</strong> la última posición se tomó hace {staleSinceLabel(latestCapture)}. Las ubicaciones son el último dato conocido, no una lectura en tiempo real.
+          <strong>Consulta a OnWay atrasada:</strong> la plataforma no consulta los datos desde hace {staleSinceLabel(latestSyncAt)}. Las ubicaciones reflejan el último reporte GPS recibido, no una lectura en tiempo real.
           {monitoring.canManage ? <span> Si OnWay no responde, ejecuta <em>Actualizar ahora</em> desde la barra superior.</span> : null}
         </Callout>
       ) : null}
@@ -77,6 +77,12 @@ export default async function FleetGpsMonitoringPage() {
             <span><strong>Última sincronización de OnWay falló.</strong> Revisa las credenciales en <em>Configurar</em> (arriba a la derecha) o ejecuta una corrida manual.</span>
             {monitoring.latestRun.errorCode ? <span className="rounded bg-[var(--color-surface-2)] px-2 py-0.5 font-mono text-xs">{monitoring.latestRun.errorCode}</span> : null}
           </div>
+        </Callout>
+      ) : null}
+
+      {monitoring.canManage && monitoring.latestRun?.status === "partial" && Number(monitoring.unmatched ?? 0) === 0 ? (
+        <Callout tone="warning" role="status" className="mt-3">
+          <strong>La última sincronización fue parcial.</strong> OnWay devolvió datos incompletos; pueden faltar telemetría, alertas o historial.
         </Callout>
       ) : null}
 

@@ -45,8 +45,12 @@ export async function runOnwaySyncAction(): Promise<ActionState> {
     const detail = result.unmatched > 0
       ? ` ${result.unmatched} patente${result.unmatched === 1 ? "" : "s"} no coincide${result.unmatched === 1 ? "" : "n"} con el catálogo de Flota.`
       : ""
+    const rejected = result.rejected > 0
+      ? ` ${result.rejected} registro${result.rejected === 1 ? " fue" : "s fueron"} rechazado${result.rejected === 1 ? "" : "s"}.`
+      : ""
     const warnings = result.warnings.length > 0 ? ` Se omitieron temporalmente: ${result.warnings.join(", ")}.` : ""
-    return { ok: true, message: `${result.matched} vehículo${result.matched === 1 ? "" : "s"} actualizado${result.matched === 1 ? "" : "s"}.${detail}${warnings}` }
+    const partial = result.unmatched > 0 || result.rejected > 0 || result.warnings.length > 0
+    return { ok: true, message: `${partial ? "Sincronización parcial. " : ""}${result.matched} vehículo${result.matched === 1 ? "" : "s"} actualizado${result.matched === 1 ? "" : "s"}.${detail}${rejected}${warnings}` }
   } catch (error) {
     const code = error instanceof OnwayClientError ? error.code : "ONWAY_SYNC_FAILED"
     logger.error("[flota/onway/manual-sync]", { code })

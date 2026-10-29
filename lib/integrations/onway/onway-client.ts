@@ -1,7 +1,8 @@
+import { existsSync } from "node:fs"
 import type { Browser, Page, Response } from "playwright"
 import { parseOnwaySnapshot, type OnwaySnapshotResult } from "./onway-contract"
 import {
-  parseOnwayAlertHistory,
+  parseOnwayAlertRows,
   parseOnwayDeviceDetail,
   parseOnwayHistory,
   parseOnwayTrips,
@@ -186,7 +187,9 @@ async function getBrowserSession(): Promise<OnwayBrowserSession> {
   await closeBrowserSession()
 
   const { chromium } = await import("playwright")
-  const browser = await chromium.launch(resolveOnwayLaunchOptions(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH))
+  const configuredPath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?.trim()
+  const launchPath = configuredPath && existsSync(configuredPath) ? configuredPath : undefined
+  const browser = await chromium.launch(resolveOnwayLaunchOptions(launchPath))
   const context = await browser.newContext({
     locale: "es-CL",
     timezoneId: "America/Santiago",
@@ -226,70 +229,74 @@ function unwrapArray(input: unknown): unknown[] {
   return []
 }
 
-async function fetchDeviceDetails(page: Page, refs: OnwayPortalDeviceRef[]): Promise<OnwayDeviceTelemetry[]> {
-  const details: OnwayDeviceTelemetry[] = []
-  for (const ref of refs) {
-    const payload = await portalJson(page, `${DEVICE_DETAIL_PATH}?unitId=${encodeURIComponent(ref.unitId)}`)
-    const detail = parseOnwayDeviceDetail(isRecord(payload) && isRecord(payload.data) ? payload.data : payload)
-    if (detail && detail.deviceId === ref.deviceId) details.push(detail)
-  }
-  return details
+function hasArrayPayload(input: unknown): boolean {
+  if (Array.isArray(input)) return true
+  return isRecord(input) && ["data", "alerts", "items", "rows", "result"].some((key) => Array.isArray(input[key]))
 }
 
-async function fetchAlerts(page: Page, refs: OnwayPortalDeviceRef[]): Promise<OnwayAlertSnapshot[]> {
+async function fetchDeviceDetails(page: Page, refs: OnwayPortalDeviceRef[]): Promise<{ details: OnwayDeviceTelemetry[]; incomplete: boolean }> {
+  const details: OnwayDeviceTelemetry[] = []
+  let incomplete = false
+  for (const ref of refs) {
+    try {
+      const payload = await portalJson(page, `${DEVICE_DETAIL_PATH}?unitId=${encodeURIComponent(ref.unitId)}`)
+      const detail = parseOnwayDeviceDetail(isRecord(payload) && isRecord(payload.data) ? payload.data : payload)
+      if (detail && detail.deviceId === ref.deviceId) details.push(detail)
+      else incomplete = true
+    } catch {
+      incomplete = true
+    }
+  }
+  return { details, incomplete }
+}
+
+async function fetchAlerts(page: Page, refs: OnwayPortalDeviceRef[]): Promise<{ alerts: OnwayAlertSnapshot[]; incomplete: boolean }> {
   const imeis = refs.flatMap((ref) => ref.imei ? [ref.imei] : [])
-  if (imeis.length === 0) return []
-  const deviceIdByImei = new Map(refs.flatMap((ref) => ref.imei ? [[ref.imei, ref.deviceId] as const] : []))
-  const deviceIdByUnitId = new Map(refs.map((ref) => [ref.unitId, ref.deviceId]))
+  if (imeis.length === 0) return { alerts: [], incomplete: refs.length > 0 }
   const payload = await portalJson(page, ALERTS_PATH, {
     method: "POST",
-    body: { imeis, searchMode: "today", page: 1, pageSize: 1_000, noCache: Date.now() },
+    // `tracking.alerts.js` sends numeric mode 0 and uses zero-based paging.
+    // The old scraper's "today" / page 1 combination returns HTTP 500.
+    body: { imeis, searchMode: 0, page: 0, pageSize: 1_000, noCache: Date.now() },
   })
-  return unwrapArray(payload).flatMap((row) => {
-    const parsed = parseOnwayAlertHistory(row)
-    if (!parsed) return []
-    const sourceImei = isRecord(row) && typeof row.unit_imei === "string" ? row.unit_imei : null
-    const externalDeviceId = (sourceImei ? deviceIdByImei.get(sourceImei) : undefined)
-      ?? (parsed.externalDeviceId ? deviceIdByUnitId.get(parsed.externalDeviceId) ?? parsed.externalDeviceId : undefined)
-    return externalDeviceId ? [{ ...parsed, externalDeviceId }] : []
-  })
+  if (!hasArrayPayload(payload)) throw new OnwayClientError("ONWAY_RESPONSE_INVALID")
+  const rows = unwrapArray(payload)
+  return parseOnwayAlertRows(rows, refs)
 }
 
 async function fetchHistory(page: Page, ref: OnwayPortalDeviceRef, from: string, to: string): Promise<OnwayHistoryPoint[]> {
   if (!ref.imei) return []
-  try {
-    const payload = await page.evaluate(async ({ imei, from, to, timeoutMs }) => {
-      const context = (globalThis as { lbs?: { apiHistory?: { get?: (...args: unknown[]) => void }; getContext?: () => { loggedUser?: Record<string, unknown> } } }).lbs
-      const get = context?.apiHistory?.get
-      const loggedUser = context?.getContext?.().loggedUser
-      if (!get || !loggedUser || typeof loggedUser.client_id !== "string") throw new Error("ONWAY_HISTORY_UNAVAILABLE")
-      return await new Promise<unknown>((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error("ONWAY_HISTORY_TIMEOUT")), timeoutMs)
-        try {
-          get("devices/quick/history", {
-            clientId: loggedUser.client_id,
-            imei,
-            from,
-            to,
-            culture: typeof loggedUser.two_letters_culture === "string" ? loggedUser.two_letters_culture : "es",
-            timeZone: typeof loggedUser.time_zone_offset === "string" ? loggedUser.time_zone_offset : "-04:00",
-            filteredAlerts: "",
-          }, (response: unknown) => { clearTimeout(timeout); resolve(response) })
-        } catch (error) {
-          clearTimeout(timeout)
-          reject(error)
-        }
-      })
-    }, { imei: ref.imei, from, to, timeoutMs: NAVIGATION_TIMEOUT_MS })
-    return parseOnwayHistory(unwrapArray(payload))
-  } catch {
-    return []
-  }
+  const payload = await page.evaluate(async ({ imei, from, to, timeoutMs }) => {
+    const context = (globalThis as { lbs?: { apiHistory?: { get?: (...args: unknown[]) => void }; getContext?: () => { loggedUser?: Record<string, unknown> } } }).lbs
+    const get = context?.apiHistory?.get
+    const loggedUser = context?.getContext?.().loggedUser
+    if (!get || !loggedUser || typeof loggedUser.client_id !== "string") throw new Error("ONWAY_HISTORY_UNAVAILABLE")
+    return await new Promise<unknown>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error("ONWAY_HISTORY_TIMEOUT")), timeoutMs)
+      try {
+        get("devices/quick/history", {
+          clientId: loggedUser.client_id,
+          imei,
+          from,
+          to,
+          culture: typeof loggedUser.two_letters_culture === "string" ? loggedUser.two_letters_culture : "es",
+          timeZone: typeof loggedUser.time_zone_offset === "string" ? loggedUser.time_zone_offset : "-04:00",
+          filteredAlerts: "",
+        }, (response: unknown) => { clearTimeout(timeout); resolve(response) })
+      } catch (error) {
+        clearTimeout(timeout)
+        reject(error)
+      }
+    })
+  }, { imei: ref.imei, from, to, timeoutMs: NAVIGATION_TIMEOUT_MS })
+  if (!hasArrayPayload(payload)) throw new Error("ONWAY_HISTORY_RESPONSE_INVALID")
+  return parseOnwayHistory(unwrapArray(payload))
 }
 
 async function fetchTrips(page: Page, ref: OnwayPortalDeviceRef): Promise<OnwayTripSnapshot[]> {
   if (!ref.imei) return []
   const payload = await portalJson(page, `/OnlineTracking/GetDeviceLatestTrips/?noCache=${Date.now()}&imei=${encodeURIComponent(ref.imei)}`)
+  if (!hasArrayPayload(payload)) throw new OnwayClientError("ONWAY_RESPONSE_INVALID")
   return parseOnwayTrips(unwrapArray(payload))
 }
 
@@ -357,9 +364,17 @@ export async function fetchOnwayTelemetry(input: OnwayCredentials, options: { in
   const warnings: OnwayTelemetryBundle["warnings"] = []
   let details: OnwayDeviceTelemetry[] = []
   let alerts: OnwayAlertSnapshot[] = []
-  try { details = await fetchDeviceDetails(page, portal.refs) }
+  try {
+    const detailResult = await fetchDeviceDetails(page, portal.refs)
+    details = detailResult.details
+    if (detailResult.incomplete) warnings.push("details")
+  }
   catch { warnings.push("details") }
-  try { alerts = await fetchAlerts(page, portal.refs) }
+  try {
+    const alertResult = await fetchAlerts(page, portal.refs)
+    alerts = alertResult.alerts
+    if (alertResult.incomplete) warnings.push("alerts")
+  }
   catch { warnings.push("alerts") }
   const historyByDeviceId = new Map<string, OnwayHistoryPoint[]>()
   const tripsByDeviceId = new Map<string, OnwayTripSnapshot[]>()

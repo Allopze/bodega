@@ -9,7 +9,7 @@ export interface OnwayRetentionResult {
   deletedTrips: number
 }
 
-function cutoff(now: Date, months: number) {
+function cutoffMonths(now: Date, months: number) {
   const value = new Date(now)
   value.setUTCMonth(value.getUTCMonth() - months)
   return value.toISOString()
@@ -20,8 +20,8 @@ function cutoff(now: Date, months: number) {
  * 30 días; los resúmenes y alertas existen a lo sumo 24 meses.
  */
 export async function purgeOnwayRetention(now = new Date()): Promise<OnwayRetentionResult> {
-  const pointCutoff = cutoff(now, 1)
-  const summaryCutoff = cutoff(now, 24)
+  const pointCutoff = new Date(now.getTime() - 30 * 86_400_000).toISOString()
+  const summaryCutoff = cutoffMonths(now, 24)
   const purgedAt = now.toISOString()
   return await db.transaction(async (tx) => {
     const deletedPoints = await tx.delete(fleetGpsPositionHistory)

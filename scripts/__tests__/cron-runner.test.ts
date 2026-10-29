@@ -110,6 +110,37 @@ describe("cron runner", () => {
     expect(success).toBe(0)
   })
 
+  it("sends the second secret only to Fleet GPS jobs", async () => {
+    const gpsFetch = vi.fn().mockResolvedValue(jsonResponse(200, {
+      ok: true,
+      outcome: "success",
+      code: "FLEET_GPS_CRON_SUCCESS",
+    }))
+    await runCronJob("fleet-onway-sync", {
+      secret: "cron-secret",
+      internalSecret: "fleet-secret",
+      log: vi.fn(),
+      fetchImpl: gpsFetch,
+    })
+    expect(gpsFetch.mock.calls[0]?.[1]?.headers).toMatchObject({
+      Authorization: "Bearer cron-secret",
+      "X-Fleet-Gps-Cron-Secret": "fleet-secret",
+    })
+
+    const regularFetch = vi.fn().mockResolvedValue(jsonResponse(200, {
+      ok: true,
+      outcome: "success",
+      code: "DTE_CRON_SUCCESS",
+    }))
+    await runCronJob("dte", {
+      secret: "cron-secret",
+      internalSecret: "must-not-be-sent",
+      log: vi.fn(),
+      fetchImpl: regularFetch,
+    })
+    expect(regularFetch.mock.calls[0]?.[1]?.headers).not.toHaveProperty("X-Fleet-Gps-Cron-Secret")
+  })
+
   it("maps a rate-limited response to a failed runner exit without accepting it as provider failure", async () => {
     const exitCode = await runCronJob("fuel-copec-sync", {
       secret: "cron-secret",
