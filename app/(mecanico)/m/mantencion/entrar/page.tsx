@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth/auth"
 import { can } from "@/lib/auth/can"
 import { isRouteOperational } from "@/lib/services/module-toggles"
 import { AppLogin } from "@/components/mantencion/app/app-login"
+import { InstallPrompt } from "@/components/mantencion/app/install-prompt"
 import { MANT_APP_METADATA, MANT_APP_VIEWPORT } from "../app-metadata"
 
 export const dynamic = "force-dynamic"
@@ -51,6 +52,7 @@ export default async function MantencionLoginPage() {
                 : "Con tu cuenta de Chome. La primera vez necesitas señal; después la app funciona sin conexión."}
             </p>
           </div>
+          <InstallPrompt />
           <AppLogin />
         </div>
       </div>

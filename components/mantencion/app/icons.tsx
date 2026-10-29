@@ -29,3 +29,6 @@ export const IconAlert = () => <Icon size={18}><path d="M12 3l10 18H2z" /><path 
 export const IconBackspace = () => <Icon size={26}><path d="M21 5H9l-6 7 6 7h12z" /><path d="M13 9l4 6M17 9l-4 6" /></Icon>
 export const IconUser = () => <Icon size={22}><circle cx="12" cy="8" r="4" /><path d="M4 21c1-4 4-6 8-6s7 2 8 6" /></Icon>
 export const IconExternal = () => <Icon size={14}><path d="M14 4h6v6" /><path d="M20 4l-9 9" /><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" /></Icon>
+/** «Compartir» de Safari (cuadro con flecha hacia arriba): el mecánico lo busca en su pantalla. */
+export const IconShare = () => <Icon size={18}><path d="M12 3v12" /><path d="M8 7l4-4 4 4" /><path d="M6 11H5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-1" /></Icon>
+export const IconInstall = () => <Icon size={18}><path d="M12 4v11" /><path d="M8 11l4 4 4-4" /><path d="M5 20h14" /></Icon>

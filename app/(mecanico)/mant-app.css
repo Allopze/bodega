@@ -73,6 +73,7 @@
 .btnp:disabled { background: #dfe4e1; color: var(--mu); }
 .btns { min-height: 44px; padding: 0 14px; border: 1px solid #c9cfcc; background: #fff; border-radius: 8px; font-weight: 600; font-size: 15px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .btns.wide { width: 100%; min-height: 52px; font-size: 16px; }
+.btns.pri { background: var(--gi); border-color: var(--gi); color: #fff; }
 .lnk { border: 0; background: transparent; color: var(--gi); font-weight: 700; font-size: 15px; min-height: 44px; padding: 0; text-decoration: underline; text-underline-offset: 3px; align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; }
 .lnk.xs { min-height: 44px; font-size: 14px; flex-shrink: 0; align-self: baseline; }
 
@@ -120,7 +121,9 @@ select.inp { padding-right: 8px; }
 .banner { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; background: var(--amt); border: 1px solid var(--amb); border-radius: 8px; padding: 12px 14px; font-size: 15px; line-height: 1.35; }
 .banner.okb { background: var(--gt); border-color: #b9dcc6; }
 .banner-text { flex: 1; min-width: 0; }
-.banner-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.banner-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-top: 10px; }
+.banner-steps { margin: 8px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
+.banner-steps svg { display: inline-block; vertical-align: -3px; }
 .warn { display: inline-block; margin-left: 4px; padding: 2px 7px; border-radius: 4px; background: var(--amt); border: 1px solid var(--amb); font-size: 12px; font-weight: 700; vertical-align: 1px; line-height: 1.3; }
 .dtag { flex-shrink: 0; display: inline-flex; align-items: center; min-height: 26px; padding: 0 9px; border-radius: 999px; font-size: 13px; font-weight: 700; }
 .dtag.v { background: #fbe3dc; color: #8f1c12; }

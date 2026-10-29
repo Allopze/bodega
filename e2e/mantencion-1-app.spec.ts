@@ -175,6 +175,40 @@ test.describe("App del mecánico", () => {
     await expect(pagina.getByRole("heading", { name: /Iniciar sesión/ })).toHaveCount(0)
     // El manifest de la app (no el de la plataforma) es el que el teléfono instala.
     await expect(pagina.locator('link[rel="manifest"]')).toHaveAttribute("href", "/mant-manifest.json")
+
+    // Si el navegador la ofrece como instalable (Chrome en Android), la app invita a instalarla y
+    // el botón abre el diálogo nativo. El evento se simula: Playwright no lo emite solo.
+    await pagina.evaluate(() => {
+      const evento = Object.assign(new Event("beforeinstallprompt", { cancelable: true }), {
+        prompt: async () => { (window as unknown as { __instalada?: boolean }).__instalada = true },
+        userChoice: Promise.resolve({ outcome: "accepted" }),
+      })
+      window.dispatchEvent(evento)
+    })
+    const invitacion = pagina.getByRole("region", { name: "Instala la app en tu teléfono" })
+    await expect(invitacion).toBeVisible()
+    await invitacion.getByRole("button", { name: "Instalar app", exact: true }).click()
+    await expect.poll(() => pagina.evaluate(() => (window as unknown as { __instalada?: boolean }).__instalada === true)).toBe(true)
+    await expect(invitacion).toHaveCount(0)
+  })
+
+  test("0b · en iPhone, abierta en Safari, la app muestra cómo agregarla a inicio", async ({ browser }) => {
+    const iphone = await browser.newContext({
+      baseURL: test.info().project.use.baseURL ?? "http://localhost:3100",
+      viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true,
+      userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
+    })
+    try {
+      const telefonoIos = await iphone.newPage()
+      await telefonoIos.goto("/m/mantencion")
+      const pasos = telefonoIos.getByRole("region", { name: "Instala la app en tu iPhone" })
+      await expect(pasos).toBeVisible()
+      await expect(pasos.getByText("Agregar a inicio")).toBeVisible()
+      await pasos.getByRole("button", { name: "Ahora no", exact: true }).click()
+      await expect(pasos).toHaveCount(0)
+    } finally {
+      await iphone.close()
+    }
   })
 
   test("1 · con señal: desde «Le toca mantención», «Todo realizado» por sistema, una excepción con motivo, «Cambiar», firmar y folio", async () => {

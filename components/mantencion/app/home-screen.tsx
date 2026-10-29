@@ -18,6 +18,7 @@ import { ObservationSheet } from "./observation-sheet"
 import { useDrafts } from "./use-drafts"
 import { Banner, firstName, initials } from "./ui"
 import { WorkshopSheet } from "./workshop-sheet"
+import { InstallPrompt } from "./install-prompt"
 
 export interface HomeProps {
   onStart: (kind: "P" | "C", vehicleId?: string | null) => void
@@ -98,6 +99,7 @@ export function HomeScreen({ onStart, onResume, onFix, onNeedLogin, onOtherAccou
       </header>
 
       <div className="body">
+        <InstallPrompt />
         {stats.needsLogin > 0 ? (
           <Banner action={<button type="button" className="lnk" onClick={onNeedLogin}>Entrar de nuevo</button>}>
             <strong>Tu sesión venció</strong>

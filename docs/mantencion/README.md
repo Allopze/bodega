@@ -31,6 +31,11 @@ Módulo de mantención preventiva y correctiva, independiente del módulo antigu
 4. La primera vez necesita señal; después registra sin conexión y envía sola
    cuando vuelve la señal.
 
+Si la app se abre en el navegador y no está instalada, ella misma invita a
+instalarla (en el login y en el inicio): en Android con el botón **«Instalar
+app»**, que abre el diálogo del navegador; en iPhone con los pasos de Safari.
+«Ahora no» la calla tres días; abierta desde la pantalla de inicio no aparece.
+
 Sin sesión, cualquier ruta de la app lleva a su propio login, nunca al de la
 plataforma. Un mecánico puede igual entrar a la plataforma web y ver sus
 registros en **Registros**; la app no se ofrece desde el menú.
