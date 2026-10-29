@@ -107,11 +107,11 @@
 .stack { display: flex; height: 10px; border-radius: 5px; overflow: hidden; gap: 2px; }
 .trio { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; font-size: 15px; }
 .trio strong { font: 700 22px/1 var(--ft); display: block; margin-bottom: 2px; }
-.done { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 24px; gap: 14px; overflow: auto; }
-.done .circ { width: 84px; height: 84px; border-radius: 50%; background: var(--gi); color: #fff; display: flex; align-items: center; justify-content: center; }
-.done .circ.pend { background: var(--am); color: var(--ink); }
-.done .circ.rej { background: #a3271a; color: #fff; }
-.done p { margin: 0; font-size: 16px; line-height: 1.4; max-width: 320px; }
+.saved { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 24px; gap: 14px; overflow: auto; }
+.saved .circ { width: 84px; height: 84px; border-radius: 50%; background: var(--gi); color: #fff; display: flex; align-items: center; justify-content: center; }
+.saved .circ.pend { background: var(--am); color: var(--ink); }
+.saved .circ.rej { background: #a3271a; color: #fff; }
+.saved p { margin: 0; font-size: 16px; line-height: 1.4; max-width: 320px; }
 
 /* Cuentas y PIN */
 .pindots { display: flex; justify-content: center; gap: 16px; padding: 8px 0; }

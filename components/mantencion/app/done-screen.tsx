@@ -15,7 +15,7 @@ export function DoneScreen({ itemId, onHome, onStartOther }: {
   if (!item) {
     return (
       <div className="scr">
-        <div className="done"><h1 className="h2">Registro guardado</h1></div>
+        <div className="saved"><h1 className="h2">Registro guardado</h1></div>
         <div className="foot"><button type="button" className="btnp" onClick={onHome}>Volver al inicio</button></div>
       </div>
     )
@@ -36,7 +36,7 @@ export function DoneScreen({ itemId, onHome, onStartOther }: {
 
   return (
     <div className="scr">
-      <div className="done">
+      <div className="saved">
         <div className={`circ${sent ? "" : rejected ? " rej" : " pend"}`}>{sent ? <IconCheckBig /> : rejected ? <IconAlert /> : <IconClockBig />}</div>
         <h1 className="h2">Registro guardado</h1>
         <div className="mono" style={{ fontSize: 15, fontWeight: 600 }}>{item.folio ?? "Folio pendiente"} · {summary.equipmentCode}</div>

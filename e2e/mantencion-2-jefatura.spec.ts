@@ -486,8 +486,9 @@ test("el supervisor de Biodiversa ve su faena, no la ajena, y no puede anular", 
   await expect(page.getByRole("link", { name: `Ver el registro ${rec.C.folio}` })).toHaveCount(0)
 
   // El registro de otra faena responde 404 por su URL y por su PDF; el de la suya sí se descarga.
-  const foreign = await page.goto(`/mantencion/registros/${rec.C.id}`)
-  expect(foreign?.status()).toBe(404)
+  // `notFound()` en una respuesta con streaming llega con HTTP 200: se verifica la página.
+  await page.goto(`/mantencion/registros/${rec.C.id}`)
+  await expect(page.getByRole("heading", { name: "No encontramos este registro", level: 1 })).toBeVisible()
   expect((await page.request.get(`/api/mantencion/registros/${rec.C.id}/pdf`)).status()).toBe(404)
   expect((await page.request.get(`/api/mantencion/registros/${rec.D.id}/pdf`)).status()).toBe(200)
 
