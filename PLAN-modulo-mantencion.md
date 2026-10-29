@@ -204,3 +204,23 @@ regresiones al cierre: `equipment-resolve.ts` (397), `equipment-import.ts` (376)
 `equipment.ts` (342), `seed.ts` (324), `records-detail.ts` (309) y las specs `mantencion-1-app` (369) y
 `mantencion-2-jefatura` (498). La spec de equipos y pautas (525) se dividió en `mantencion-3a-equipos` y
 `mantencion-3b-pautas`.
+
+## 12. Correcciones del mockup (29-10-2026)
+
+Documento «Correcciones del Mockup: Módulo de Mantenciones». Decisiones del usuario (29-10-2026):
+
+| Corrección | Estado / decisión |
+|---|---|
+| Búsqueda por código o patente | Ya existía (app paso 1 y lista de Equipos). |
+| Mantener equipos de cualquier faena | Ya existía (`out_of_worksite`, regla de §6). |
+| Taller externo en la correctiva | Ya existía. |
+| Hoja de vida en la ficha del equipo + antecedentes de seguro | **Etapa 1.** Historial completo de mantenciones; el seguro parte de lo que la flota ya guarda (`fuel_vehicles.insurance_policy_number`, `insurance_expires_at`). Qué más mostrar de seguros queda por definir. |
+| Exportar el historial de cada equipo | **Etapa 1.** |
+| Repuestos y horas por cada tipo de trabajo | **Etapa 1.** Migración nueva (no se edita la 0361). |
+| «¿El equipo sigue en taller?» al final, con motivo obligatorio si «Sí» | **Etapa 1.** |
+| Tolerancia 5.000 km / 50 h | Decisión: **sólo hacia adelante** (se bloquea adelantar una pauta más que la tolerancia; ponerse al día con una atrasada se permite). **Etapa 2**, junto con los ciclos: el punto de cada pauta lo fija el ciclo. |
+| Ciclos de pautas A/B/C | **Etapa 2.** Faltan intervalos reales, tipos y checklist. |
+| Selección km / horas | Decisión: **equipos con ambos contadores** (odómetro y horómetro; el mecánico elige con cuál registra y cada unidad tiene su propia lectura vigente). **Etapa 2.** |
+| Pauta de lubricación | Pendiente de definición. |
+| Órdenes de trabajo | Decisión: **flujo nuevo en este módulo** (administrador de contrato crea → se notifica a Alexis → Alexis asigna al mecánico → ejecución y cierre desde la app con la correctiva → conformidad del administrador de contrato → cierre). **Etapa 3.** Pendiente: qué pasa si se rechaza la conformidad y si la fecha de disponibilidad es estimada o efectiva. |
+| App del mecánico aparte de la plataforma | Decisión (29-10-2026): **misma dirección, app aparte**. Sale del menú lateral; login propio en `/m/mantencion/entrar` (pública; el proxy manda ahí, no a `/login`); manifest «Chome Mantención»; se reparte con un QR («Instalar app del mecánico») desde Equipos y Dispositivos. El mecánico **puede** seguir viendo sus registros en la web. Sin subdominio propio. Además (29-10-2026): la app invita a instalarse cuando se abre en el navegador (Android: botón con el diálogo nativo; iPhone: pasos de Safari; «Ahora no» la calla 3 días). |

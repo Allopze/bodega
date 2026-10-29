@@ -144,9 +144,12 @@ test("siembra de registros propios con fotos reales", async () => {
     ])}`
     await sql`insert into mant_record_correctives ${sql({
       record_id: rec.B.id, work_types: sql.json(["Mecánico"]), oils: sql.json([]), description: "Cambio de manguera hidráulica", no_parts: false,
-      hours: 3.5, in_workshop: true, workshop_entry_date: chileDay(-3),
+      hours: 3.5, in_workshop: true, workshop_entry_date: chileDay(-3), workshop_reason: "Espera la manguera importada",
     })}`
-    await sql`insert into mant_record_parts ${sql({ id: randomUUID(), record_id: rec.B.id, quantity: 2, description: "Manguera hidráulica 1/2", sort_order: 0 })}`
+    const [tipoMecanico] = await sql<Array<{ id: string; name: string }>>`select id, name from mant_work_types order by name limit 1`
+    const jobId = randomUUID()
+    await sql`insert into mant_record_jobs ${sql({ id: jobId, record_id: rec.B.id, work_type_id: tipoMecanico!.id, work_type_name: tipoMecanico!.name, hours: 3.5, no_parts: false, sort_order: 0 })}`
+    await sql`insert into mant_record_parts ${sql({ id: randomUUID(), record_id: rec.B.id, job_id: jobId, quantity: 2, description: "Manguera hidráulica 1/2", sort_order: 0 })}`
     await sql`insert into mant_record_drivers ${sql({ record_id: rec.B.id, driver_id: driver.id, driver_name: driver.name })}`
 
     // Fotos de verdad en el disco que sirve `/api/mantencion/fotos/{id}`. La segunda de A trae un
@@ -285,7 +288,7 @@ test("registros: el Excel trae sus cinco hojas, fechas reales y la autoría «en
   const { workbook, filename } = await download(page, "Exportar a Excel")
   expect(filename).toMatch(/^registros-mantencion-\d{4}-\d{2}-\d{2}\.xlsx$/)
   expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual(expect.arrayContaining([
-    "Registros", "Ítems de preventivas", "Repuestos", "Conductores", "Actualizaciones de taller", "Metadatos",
+    "Registros", "Ítems de preventivas", "Trabajos", "Repuestos", "Conductores", "Actualizaciones de taller", "Metadatos",
   ]))
 
   const sheet = workbook.getWorksheet("Registros")!

@@ -88,8 +88,8 @@ export function correctivePayload(id: string, photoId: string, overrides: Partia
     kind: "C", id, vehicleId: "veh-1", reading: 40_400, workDate: "2026-10-28", signedAt: "2026-10-28T15:00:00.000Z",
     offlineSince: null, deviceId: UUID(900), appVersion: "test", readingJumpConfirmed: false, duplicateConfirmed: false,
     correctsRecordId: null, photos: [{ id: photoId, kind: "correctiva" }],
-    workTypeIds: ["t-1"], oilIds: [], noOilChange: true, executor: { kind: "yo" }, description: "Cambio de manguera",
-    parts: [], noParts: true, hours: 2, inWorkshop: true, workshopEntryDate: "2026-10-28", workOrder: null, driverIds: ["d-1"],
+    jobs: [{ workTypeId: "t-1", hours: 2, noParts: true, parts: [] }], oilIds: [], noOilChange: true, executor: { kind: "yo" }, description: "Cambio de manguera",
+    inWorkshop: true, workshopEntryDate: "2026-10-28", workshopReason: "Espera un repuesto", workOrder: null, driverIds: ["d-1"],
     ...overrides,
   }
 }

@@ -45,14 +45,14 @@ async function nuevoContexto(browser: Browser, viewport: { width: number; height
   return browser.newContext({ baseURL, viewport, hasTouch: true, serviceWorkers: "allow" })
 }
 
-/** Entra por el login real de la plataforma y vuelve a la app (como lo hace «Entrar con otra cuenta»). */
+/** Entra por el login PROPIO de la app (no el de la plataforma), como al abrirla instalada o con «Entrar con otra cuenta». */
 async function entrar(page: Page, email: string) {
   await clearRateLimits()
-  if (!/\/login/.test(page.url())) await page.goto("/login?callbackUrl=%2Fm%2Fmantencion")
-  await page.getByLabel("Correo electrónico", { exact: true }).fill(email)
+  if (!/\/m\/mantencion\/entrar/.test(page.url())) await page.goto("/m/mantencion/entrar")
+  await page.getByLabel("Correo", { exact: true }).fill(email)
   await page.getByLabel("Contraseña", { exact: true }).fill("chome2026")
-  await page.getByRole("button", { name: "Ingresar", exact: true }).click()
-  await expect(page).toHaveURL(/\/m\/mantencion/, { timeout: 30_000 })
+  await page.getByRole("button", { name: "Entrar", exact: true }).click()
+  await expect(page).toHaveURL(/\/m\/mantencion$/, { timeout: 30_000 })
 }
 
 async function teclearPin(page: Page, pin: string) {
@@ -71,16 +71,16 @@ async function definirPin(page: Page, pin: string) {
 
 /** El service worker tiene que haber guardado la app y sus archivos ANTES de cortar la señal. */
 async function esperarSwListo(page: Page) {
-  // Se pregunta por el registro y no por `controller`: tras el login la app llega con navegación
-  // del lado del cliente, el documento nació en `/login` y no queda controlado hasta la próxima
+  // Se pregunta por el registro y no por `controller`: si la app se abre por navegación del lado
+  // del cliente desde fuera de su alcance, el documento no queda controlado hasta la próxima
   // carga. Lo que importa para abrir sin señal es que el worker esté activo y los cachés llenos.
   await expect.poll(() => page.evaluate(async () => {
     const registro = await navigator.serviceWorker.getRegistration("/m/mantencion")
     return Boolean(registro?.active?.state === "activated")
   }), { timeout: 30_000 }).toBe(true)
   const tamano = (nombre: string) => page.evaluate(async (cache) => (await (await caches.open(cache)).keys()).length, nombre)
-  await expect.poll(() => tamano("mant-shell-v1"), { timeout: 30_000 }).toBeGreaterThan(0)
-  await expect.poll(() => tamano("mant-static-v1"), { timeout: 30_000 }).toBeGreaterThan(0)
+  await expect.poll(() => tamano("mant-shell-v2"), { timeout: 30_000 }).toBeGreaterThan(0)
+  await expect.poll(() => tamano("mant-static-v2"), { timeout: 30_000 }).toBeGreaterThan(0)
 }
 
 /** JPEG pequeño y válido, generado en memoria en el propio navegador (sin archivos ni dependencias). */
@@ -123,11 +123,12 @@ async function registrarCorrectiva(page: Page, opciones: { indice?: number; desc
   await page.getByRole("button", { name: "Continuar", exact: true }).click()
   await opciones.antesDeLaLectura?.()
 
-  await page.getByRole("group", { name: "Tipo de trabajo" }).getByRole("button").first().click()
+  // Un trabajo del primer tipo del catálogo: sus horas (por defecto 1 h) y «No se usaron repuestos» van dentro de su tarjeta.
+  await page.getByRole("group", { name: "Agregar trabajo" }).getByRole("button").first().click()
+  await expect(page.getByText(/^Total: /)).toBeVisible()
   await page.getByRole("button", { name: "No se cambió aceite", exact: true }).click()
   await page.getByLabel("Trabajo realizado").fill(opciones.descripcion)
   await page.getByRole("checkbox", { name: "No se usaron repuestos" }).check()
-  await page.getByRole("button", { name: opciones.enTaller === false ? "No, ya salió" : "Sí, sigue", exact: true }).click()
   await page.getByLabel(/Conductores de las últimas 24 h/).fill("a")
   await page.getByRole("group", { name: "Conductores encontrados" }).getByRole("button").first().click()
   const cantidad = opciones.fotos ?? 1
@@ -135,6 +136,9 @@ async function registrarCorrectiva(page: Page, opciones: { indice?: number; desc
     await page.getByLabel("Agregar foto del trabajo").setInputFiles(await jpeg(page, `${codigo} foto ${n}`))
     await expect(page.getByRole("img", { name: `Foto ${n} del trabajo` })).toBeVisible()
   }
+  // «¿Sigue en taller?» cierra el formulario; con «Sí» pide el motivo.
+  await page.getByRole("button", { name: opciones.enTaller === false ? "No, ya salió" : "Sí, sigue", exact: true }).click()
+  if (opciones.enTaller !== false) await page.getByLabel("¿Por qué sigue en taller?").fill("QA_ Espera un repuesto")
   await page.getByRole("button", { name: "Revisar registro", exact: true }).click()
   await page.getByRole("button", { name: "Firmar y guardar", exact: true }).click()
   await expect(page.getByRole("heading", { name: "Registro guardado" })).toBeVisible()
@@ -163,6 +167,49 @@ test.describe("App del mecánico", () => {
     })
   })
   test.afterAll(async () => { await telefono.close() })
+
+  test("0 · la app es aparte: sin sesión abre su propio login, no el de la plataforma", async () => {
+    await pagina.goto("/m/mantencion")
+    await expect(pagina).toHaveURL(/\/m\/mantencion\/entrar/)
+    await expect(pagina.getByRole("heading", { name: "Entrar", level: 1 })).toBeVisible()
+    await expect(pagina.getByRole("heading", { name: /Iniciar sesión/ })).toHaveCount(0)
+    // El manifest de la app (no el de la plataforma) es el que el teléfono instala.
+    await expect(pagina.locator('link[rel="manifest"]')).toHaveAttribute("href", "/mant-manifest.json")
+
+    // Si el navegador la ofrece como instalable (Chrome en Android), la app invita a instalarla y
+    // el botón abre el diálogo nativo. El evento se simula: Playwright no lo emite solo.
+    await pagina.evaluate(() => {
+      const evento = Object.assign(new Event("beforeinstallprompt", { cancelable: true }), {
+        prompt: async () => { (window as unknown as { __instalada?: boolean }).__instalada = true },
+        userChoice: Promise.resolve({ outcome: "accepted" }),
+      })
+      window.dispatchEvent(evento)
+    })
+    const invitacion = pagina.getByRole("region", { name: "Instala la app en tu teléfono" })
+    await expect(invitacion).toBeVisible()
+    await invitacion.getByRole("button", { name: "Instalar app", exact: true }).click()
+    await expect.poll(() => pagina.evaluate(() => (window as unknown as { __instalada?: boolean }).__instalada === true)).toBe(true)
+    await expect(invitacion).toHaveCount(0)
+  })
+
+  test("0b · en iPhone, abierta en Safari, la app muestra cómo agregarla a inicio", async ({ browser }) => {
+    const iphone = await browser.newContext({
+      baseURL: test.info().project.use.baseURL ?? "http://localhost:3100",
+      viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true,
+      userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
+    })
+    try {
+      const telefonoIos = await iphone.newPage()
+      await telefonoIos.goto("/m/mantencion")
+      const pasos = telefonoIos.getByRole("region", { name: "Instala la app en tu iPhone" })
+      await expect(pasos).toBeVisible()
+      await expect(pasos.getByText("Agregar a inicio")).toBeVisible()
+      await pasos.getByRole("button", { name: "Ahora no", exact: true }).click()
+      await expect(pasos).toHaveCount(0)
+    } finally {
+      await iphone.close()
+    }
+  })
 
   test("1 · con señal: desde «Le toca mantención», «Todo realizado» por sistema, una excepción con motivo, «Cambiar», firmar y folio", async () => {
     await entrar(pagina, MEC1)
@@ -286,15 +333,16 @@ test.describe("App del mecánico", () => {
     await aviso.getByRole("button", { name: "Sí, está bien", exact: true }).click()
     await expect(pagina.getByText("PASO 3/4")).toBeVisible()
 
-    await pagina.getByRole("group", { name: "Tipo de trabajo" }).getByRole("button").first().click()
+    // Mismo orden que `registrarCorrectiva`: trabajos con sus repuestos, y «¿sigue en taller?» al final.
+    await pagina.getByRole("group", { name: "Agregar trabajo" }).getByRole("button").first().click()
     await pagina.getByRole("button", { name: "No se cambió aceite", exact: true }).click()
     await pagina.getByLabel("Trabajo realizado").fill("QA_ Lectura con salto confirmado")
     await pagina.getByRole("checkbox", { name: "No se usaron repuestos" }).check()
-    await pagina.getByRole("button", { name: "No, ya salió", exact: true }).click()
     await pagina.getByLabel(/Conductores de las últimas 24 h/).fill("a")
     await pagina.getByRole("group", { name: "Conductores encontrados" }).getByRole("button").first().click()
     await pagina.getByLabel("Agregar foto del trabajo").setInputFiles(await jpeg(pagina, `${codigo} salto`))
     await expect(pagina.getByRole("img", { name: "Foto 1 del trabajo" })).toBeVisible()
+    await pagina.getByRole("button", { name: "No, ya salió", exact: true }).click()
     await pagina.getByRole("button", { name: "Revisar registro", exact: true }).click()
     await pagina.getByRole("button", { name: "Firmar y guardar", exact: true }).click()
     await expect(pagina.getByText("Ya llegó a la plataforma.")).toBeVisible({ timeout: 60_000 })
@@ -329,7 +377,7 @@ test.describe("Tablet compartida", () => {
       await definirPin(pagina, PIN_MEC1)
       await pagina.getByRole("button", { name: /^Cuenta de .*Cambiar de cuenta/ }).click()
       await pagina.getByRole("button", { name: "Entrar con otra cuenta", exact: true }).click()
-      await expect(pagina).toHaveURL(/\/login/, { timeout: 30_000 })
+      await expect(pagina).toHaveURL(/\/m\/mantencion\/entrar/, { timeout: 30_000 })
       await entrar(pagina, MEC2)
       await definirPin(pagina, PIN_MEC2)
       await esperarSwListo(pagina)

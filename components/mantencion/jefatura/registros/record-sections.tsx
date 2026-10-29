@@ -174,27 +174,39 @@ export function CorrectiveSections({ detail }: { detail: RecordDetail }) {
     <>
       <SectionCard title="Trabajo realizado">
         <dl className={GRID}>
-          <DetailItem layout="stacked" label="Tipo de trabajo" value={corrective.workTypes.join(", ")} />
           <DetailItem layout="stacked" label="Cambio de aceite" value={corrective.oils.length ? corrective.oils.join(", ") : "No se cambió aceite"} />
-          <DetailItem layout="stacked" label="Horas trabajadas" value={formatHours(corrective.hours)} mono />
           {corrective.workOrder && <DetailItem layout="stacked" label="Orden de trabajo" value={corrective.workOrder} mono />}
         </dl>
         <p className="mt-4 whitespace-pre-wrap text-sm text-[var(--color-text)]">{corrective.description}</p>
       </SectionCard>
 
-      <SectionCard title="Repuestos">
-        {corrective.parts.length === 0 ? (
-          <p className="text-sm text-[var(--color-text-muted)]">No se usaron repuestos.</p>
-        ) : (
-          <ul className="divide-y divide-[var(--color-border)] text-sm">
-            {corrective.parts.map((part, index) => (
-              <li key={index} className="flex gap-3 py-2">
-                <span className="w-16 shrink-0 text-right font-mono tabular-nums">{formatNumber(part.quantity)} ×</span>
-                <span>{part.description}</span>
-              </li>
-            ))}
-          </ul>
-        )}
+      <SectionCard title="Trabajos y repuestos">
+        <ul className="divide-y divide-[var(--color-border)] text-sm">
+          {corrective.jobs.map((job) => (
+            <li key={job.id} className="py-3">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="font-medium">{job.workTypeName}</span>
+                <span className="font-mono tabular-nums">{formatHours(job.hours)}</span>
+              </div>
+              {job.parts.length === 0 ? (
+                <p className="mt-1 text-[var(--color-text-muted)]">No se usaron repuestos.</p>
+              ) : (
+                <ul className="mt-1">
+                  {job.parts.map((part, index) => (
+                    <li key={index} className="flex gap-3 py-0.5">
+                      <span className="w-16 shrink-0 text-right font-mono tabular-nums">{formatNumber(part.quantity)} ×</span>
+                      <span>{part.description}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </li>
+          ))}
+        </ul>
+        <p className="mt-2 flex justify-between border-t border-[var(--color-border)] pt-2 text-sm font-medium">
+          <span>Total de horas</span>
+          <span className="font-mono tabular-nums">{formatHours(corrective.hours)}</span>
+        </p>
       </SectionCard>
 
       <SectionCard title="Taller">
@@ -212,6 +224,7 @@ export function CorrectiveSections({ detail }: { detail: RecordDetail }) {
             value={workshop?.daysStopped != null ? plural(workshop.daysStopped, "día", "días") : null}
             mono
           />
+          {corrective.workshopReason && <DetailItem layout="stacked" label="Motivo de seguir en taller" value={corrective.workshopReason} />}
         </dl>
         {workshop?.inWorkshop && workshop.stale && (
           <p className="mt-3 text-sm font-medium text-[var(--color-signal-ink)]">Sin actualizar hace más de 2 días.</p>

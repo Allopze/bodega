@@ -3,7 +3,7 @@ import { buildRows } from "../fleet-view"
 import { flowReducer, type FlowAction } from "../flow"
 import { buildFlowEnv } from "../flow-env"
 import { buildRecord, draftFromRejected } from "../flow-record"
-import { newDraft, stepsFor, type FlowDraft } from "../flow-types"
+import { newDraft, normalizeDraft, stepsFor, type FlowDraft } from "../flow-types"
 import { analyzeLecture, checklistCounts, validateAll, type FlowCtx } from "../flow-validate"
 import { SCHEDULE, UUID, equipment, recordItem, storedCatalog } from "./fixtures"
 
@@ -220,14 +220,43 @@ describe("registro firmado", () => {
     let draft = run(start(ctx, "C"), ctx, { type: "patch", patch: { readingText: "40400" } }, { type: "next", env })
     expect(stepsFor("C")[draft.step]).toBe("trabajo")
     draft = run(draft, ctx, { type: "next", env })
-    expect(Object.keys(draft.errors).sort()).toEqual(["description", "drivers", "oil", "parts", "photos", "workTypes", "workshop"])
+    expect(Object.keys(draft.errors).sort()).toEqual(["description", "drivers", "oil", "photos", "workTypes", "workshop"])
     draft = run(draft, ctx,
-      { type: "toggleId", field: "workTypeIds", id: "t-1" }, { type: "noOilChange" },
-      { type: "patch", patch: { description: "Cambio de manguera", noParts: true, inWorkshop: true } },
-      { type: "toggleId", field: "driverIds", id: "d-1" }, { type: "photoAdd", id: UUID(21) }, { type: "hours", hours: 3 })
+      { type: "jobAdd", workTypeId: "t-1" }, { type: "jobNoParts", workTypeId: "t-1", noParts: true }, { type: "noOilChange" },
+      { type: "patch", patch: { description: "Cambio de manguera", inWorkshop: true, workshopReason: "Espera un repuesto" } },
+      { type: "toggleId", field: "driverIds", id: "d-1" }, { type: "photoAdd", id: UUID(21) }, { type: "jobHours", workTypeId: "t-1", hours: 3 })
     expect(draft.errors).toEqual({})
     const built = buildRecord(draft, input(ctx))
-    expect(built.ok && built.payload.kind === "C" && built.payload.hours).toBe(3)
+    expect(built.ok && built.payload.kind === "C" && built.payload.jobs[0]?.hours).toBe(3)
+    expect(built.ok && built.payload.kind === "C" && built.payload.workshopReason).toBe("Espera un repuesto")
+  })
+
+  it("trabajos: un tipo no se repite, repuestos o «sin repuestos» por trabajo, y el motivo de taller es obligatorio con «Sí»", () => {
+    const ctx = ctxFor()
+    const env = buildFlowEnv(ctx)
+    let draft = run(start(ctx, "C"), ctx, { type: "patch", patch: { readingText: "40400" } }, { type: "next", env },
+      { type: "jobAdd", workTypeId: "t-1" }, { type: "jobAdd", workTypeId: "t-1" }, { type: "jobAdd", workTypeId: "t-2" })
+    expect(draft.jobs.map((job) => job.workTypeId)).toEqual(["t-1", "t-2"])
+    draft = run(draft, ctx, { type: "noOilChange" }, { type: "patch", patch: { description: "Cambio de manguera", inWorkshop: true } },
+      { type: "toggleId", field: "driverIds", id: "d-1" }, { type: "photoAdd", id: UUID(21) },
+      { type: "jobPart", workTypeId: "t-1", index: 0, field: "description", text: "Manguera" }, { type: "jobNoParts", workTypeId: "t-2", noParts: true },
+      { type: "next", env })
+    expect(Object.keys(draft.errors)).toEqual(["workshopReason"])
+    draft = run(draft, ctx, { type: "jobNoParts", workTypeId: "t-2", noParts: false }, { type: "patch", patch: { workshopReason: "Espera repuesto" } }, { type: "next", env })
+    expect(Object.keys(draft.errors)).toEqual(["job:t-2"])
+    draft = run(draft, ctx, { type: "jobRemove", workTypeId: "t-2" }, { type: "next", env })
+    expect(draft.errors).toEqual({})
+  })
+
+  it("un borrador con el formato anterior se normaliza sin perder lo escrito", () => {
+    const ctx = ctxFor()
+    const { jobs: _jobs, workshopReason: _reason, ...base } = start(ctx, "C")
+    const old = { ...base, workTypeIds: ["t-1", "t-2"], hours: 4.5, noParts: false, parts: [{ quantity: "2", description: "Manguera" }] } as unknown as FlowDraft
+    const draft = normalizeDraft(old)
+    expect(draft.jobs.map((job) => [job.workTypeId, job.hours])).toEqual([["t-1", 4.5], ["t-2", 1]])
+    expect(draft.jobs[0]?.parts).toEqual([{ quantity: "2", description: "Manguera" }])
+    expect(draft.workshopReason).toBe("")
+    expect("workTypeIds" in draft).toBe(false)
   })
 
   it("«No se cambió aceite» y los aceites se excluyen", () => {

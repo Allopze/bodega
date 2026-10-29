@@ -5,9 +5,11 @@ import type { EquipmentDetailData, EquipmentEditData } from "@/components/manten
 import { can, requireAnyPermission } from "@/lib/auth/can"
 import { formatNumber } from "@/lib/mantencion/format"
 import { equipmentScope, recordVisibility, recordVisibilitySql, viewerFromSession } from "@/lib/services/mantencion/access"
-import { countEquipmentRecords, listRecentEquipmentRecords } from "@/lib/services/mantencion/equipment"
+import { countEquipmentRecords } from "@/lib/services/mantencion/equipment"
+import { loadEquipmentInsurance, loadLifeRows, loadLifeTotals } from "@/lib/services/mantencion/equipment-life"
 import { listEquipmentHistory } from "@/lib/services/mantencion/equipment-history"
 import { loadFleet } from "@/lib/services/mantencion/fleet"
+import { LIFE_PAGE_SIZE } from "@/components/mantencion/jefatura/equipos/equipment-life-section"
 import { loadEquipmentFormCatalogs } from "../form-catalogs"
 
 export const metadata: Metadata = { title: "Ficha de equipo" }
@@ -28,16 +30,24 @@ export default async function EquipmentDetailPage({
   }
   const viewer = viewerFromSession(session)
   const { id } = await params
-  const justCreated = (await searchParams).creado === "1"
+  const query = await searchParams
+  const justCreated = query.creado === "1"
+  // «Mostrar más» sube `?vida=`; se acota para que la URL no pida el mundo.
+  const requested = Number(Array.isArray(query.vida) ? query.vida[0] : query.vida)
+  const lifeLimit = Number.isInteger(requested) && requested > LIFE_PAGE_SIZE ? Math.min(requested, 500) : LIFE_PAGE_SIZE
 
   // El alcance de faenas se aplica en la carga: un equipo ajeno es «no encontrado», no «sin permiso».
   const [row] = await loadFleet({ scope: equipmentScope(viewer), includeRetired: true, vehicleIds: [id], readingsPerEquipment: 1 })
   if (!row) notFound()
 
   const canManage = can(session, "mant:equipment:manage")
-  const [history, records, recordCount, catalogs] = await Promise.all([
+  // La hoja de vida y sus totales respetan el alcance de lectura: un supervisor sólo ve su faena y lo propio.
+  const visibility = recordVisibilitySql(recordVisibility(viewer))
+  const [history, life, totals, insurance, recordCount, catalogs] = await Promise.all([
     listEquipmentHistory(id),
-    listRecentEquipmentRecords(id, recordVisibilitySql(recordVisibility(viewer))),
+    loadLifeRows(id, visibility, { limit: lifeLimit }),
+    loadLifeTotals(id, visibility),
+    loadEquipmentInsurance(id),
     countEquipmentRecords(id),
     canManage ? loadEquipmentFormCatalogs() : Promise.resolve(null),
   ])
@@ -68,7 +78,9 @@ export default async function EquipmentDetailPage({
     },
     workshop: workshop ? { entryDate: workshop.entryDate, daysStopped: workshop.daysStopped, stale: workshop.stale } : null,
     recordCount,
-    records,
+    life: { rows: life.rows, totals, hasMore: life.hasMore, limit: lifeLimit },
+    insurance,
+    canViewFleet: can(session, "flota:view"),
     history,
   }
 
@@ -94,5 +106,5 @@ export default async function EquipmentDetailPage({
       }
     : null
 
-  return <EquipmentDetailView data={data} edit={edit} canSeeSchedules={can(session, "mant:schedules:manage")} justCreated={justCreated} />
+  return <EquipmentDetailView data={data} edit={edit} canSeeSchedules={can(session, "mant:schedules:manage")} canExport={can(session, "mant:export")} justCreated={justCreated} />
 }

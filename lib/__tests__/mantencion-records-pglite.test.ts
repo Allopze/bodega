@@ -115,14 +115,16 @@ beforeAll(async () => {
 
   // R3 · correctiva de Cholguán, el equipo sigue en taller desde hace 5 días y su última novedad tiene 3.
   await insertRecord({ id: R.workshop, folio: "MC-CHO-0001", kind: "C", vehicleId: IDS.truckCho, worksiteId: IDS.wsCho, worksiteName: "Cholguán", unit: "km", registeredBy: IDS.mecCho, executorUserId: IDS.mecCho, executorName: "Pedro Cholguán", reading: 21_000, workDate: daysAgo(5), snapshotCode: "KA-200", snapshotPlate: "BCDF-12" })
-  await testDb.insert(schema.mantRecordCorrectives).values({ recordId: R.workshop, workTypes: ["Mecánico"], oils: [], description: "Cambio de bomba de agua", noParts: false, hours: 4.5, inWorkshop: true, workshopEntryDate: daysAgo(5) })
-  await testDb.insert(schema.mantRecordParts).values({ id: "part-1", recordId: R.workshop, quantity: 1, description: "Bomba de agua" })
+  await testDb.insert(schema.mantRecordCorrectives).values({ recordId: R.workshop, workTypes: ["Mecánico"], oils: [], description: "Cambio de bomba de agua", noParts: false, hours: 4.5, inWorkshop: true, workshopEntryDate: daysAgo(5), workshopReason: "Espera la bomba de agua" })
+  await testDb.insert(schema.mantRecordJobs).values({ id: "job-1", recordId: R.workshop, workTypeId: IDS.wtMec, workTypeName: "Mecánico", hours: 4.5, noParts: false, sortOrder: 0 })
+  await testDb.insert(schema.mantRecordParts).values({ id: "part-1", recordId: R.workshop, jobId: "job-1", quantity: 1, description: "Bomba de agua" })
   await testDb.insert(schema.mantRecordDrivers).values({ recordId: R.workshop, driverId: IDS.driver1, driverName: "AEDO POLANCO JOSE A." })
   await testDb.insert(schema.mantWorkshopUpdates).values({ id: "wu-1", recordId: R.workshop, kind: "sigue", note: "Esperando el repuesto", userId: IDS.mecCho, createdAt: new Date(Date.now() - 3 * 86_400_000).toISOString() })
 
   // R4 · correctiva de un mecánico de Cholguán sobre un equipo de Biodiversa (fuera de faena).
   await insertRecord({ id: R.outside, folio: "MC-BIO-0001", kind: "C", vehicleId: IDS.truckBio, ...bio, unit: "km", registeredBy: IDS.mecCho, executorUserId: IDS.mecCho, executorName: "Pedro Cholguán", reading: 10_400, workDate: daysAgo(1), snapshotCode: "KA-135", snapshotPlate: "RBYD-98", outside: true })
   await testDb.insert(schema.mantRecordCorrectives).values({ recordId: R.outside, workTypes: ["Soldadura"], oils: ["Motor"], description: "Soldadura de soporte", noParts: true, hours: 2, inWorkshop: false })
+  await testDb.insert(schema.mantRecordJobs).values({ id: "job-2", recordId: R.outside, workTypeId: IDS.wtSold, workTypeName: "Soldadura", hours: 2, noParts: true, sortOrder: 0 })
   await testDb.insert(schema.mantRecordDrivers).values({ recordId: R.outside, driverId: IDS.driver2, driverName: "BELTRAN IRARRAZAVAL HECTOR A." })
 
   // R5 · preventiva de Arauco marcada como duplicada de R1.
@@ -273,7 +275,10 @@ describe("detalle de un registro", () => {
   it("una correctiva trae trabajo, repuestos, conductores y taller", async () => {
     const detail = await loadRecordDetail(await viewerOf(IDS.jefe), R.workshop)
     expect(detail?.corrective).toMatchObject({ workTypes: ["Mecánico"], hours: 4.5, inWorkshop: true })
-    expect(detail?.corrective?.parts).toEqual([{ quantity: 1, description: "Bomba de agua" }])
+    expect(detail?.corrective?.workshopReason).toBe("Espera la bomba de agua")
+    expect(detail?.corrective?.jobs).toEqual([
+      { id: "job-1", workTypeName: "Mecánico", hours: 4.5, noParts: false, parts: [{ quantity: 1, description: "Bomba de agua" }] },
+    ])
     expect(detail?.corrective?.drivers).toEqual(["AEDO POLANCO JOSE A."])
     expect(detail?.corrective?.workshop?.stale).toBe(true)
     expect(detail?.corrective?.updates[0]).toMatchObject({ kind: "sigue", note: "Esperando el repuesto" })
@@ -289,11 +294,11 @@ describe("libro de Excel de registros", () => {
     return { outcome, workbook }
   }
 
-  it("trae las cinco hojas más los metadatos, con fechas de tipo fecha y números de tipo número", async () => {
+  it("trae las seis hojas más los metadatos, con fechas de tipo fecha y números de tipo número", async () => {
     const { outcome, workbook } = await workbookOf(IDS.jefe)
     expect(outcome.ok).toBe(true)
     expect(workbook!.worksheets.map((sheet) => sheet.name)).toEqual([
-      "Registros", "Ítems de preventivas", "Repuestos", "Conductores", "Actualizaciones de taller", "Metadatos",
+      "Registros", "Ítems de preventivas", "Trabajos", "Repuestos", "Conductores", "Actualizaciones de taller", "Metadatos",
     ])
     const sheet = workbook!.getWorksheet("Registros")!
     const headers = (sheet.getRow(1).values as unknown[]).slice(1)
@@ -323,6 +328,16 @@ describe("libro de Excel de registros", () => {
     const { workbook } = await workbookOf(IDS.jefe)
     expect(workbook!.getWorksheet("Ítems de preventivas")!.rowCount).toBe(1 + 3)
     expect(workbook!.getWorksheet("Repuestos")!.rowCount).toBe(2)
+    // Hoja «Trabajos»: tipo y horas por registro; «Repuestos» dice a qué trabajo pertenece cada uno.
+    const trabajos = workbook!.getWorksheet("Trabajos")!
+    expect(trabajos.rowCount).toBe(1 + 2)
+    expect((trabajos.getRow(1).values as unknown[]).slice(6)).toEqual(["Tipo de trabajo", "Horas", "Sin repuestos"])
+    const repuestos = workbook!.getWorksheet("Repuestos")!
+    expect((repuestos.getRow(1).values as unknown[]).slice(6)).toEqual(["Trabajo", "Cantidad", "Repuesto"])
+    expect(repuestos.getRow(2).getCell(6).value).toBe("Mecánico")
+    const registros = workbook!.getWorksheet("Registros")!
+    const motivoCol = (registros.getRow(1).values as unknown[]).indexOf("Motivo de seguir en taller")
+    expect(motivoCol).toBeGreaterThan(0)
     expect(workbook!.getWorksheet("Conductores")!.rowCount).toBe(3)
     const updates = workbook!.getWorksheet("Actualizaciones de taller")!
     expect(updates.rowCount).toBe(2)

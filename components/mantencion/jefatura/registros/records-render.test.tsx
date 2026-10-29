@@ -121,12 +121,22 @@ describe("detalle de un registro", () => {
       kind: "C", schedule: null, groups: [],
       corrective: {
         workTypes: ["Mecánico", "Soldadura"], oils: [], description: "Cambio de manguera", hours: 3.5, inWorkshop: true, workshopEntryDate: "2026-10-24",
-        workOrder: null, noParts: false, parts: [{ quantity: 2, description: "Manguera 1/2" }], drivers: ["AEDO POLANCO JOSE A."],
+        workOrder: null, workshopReason: "Espera repuesto importado",
+        jobs: [
+          { id: "j1", workTypeName: "Mecánico", hours: 2, noParts: false, parts: [{ quantity: 2, description: "Manguera 1/2" }] },
+          { id: "j2", workTypeName: "Soldadura", hours: 1.5, noParts: true, parts: [] },
+        ],
+        drivers: ["AEDO POLANCO JOSE A."],
         workshop: { inWorkshop: true, stale: true, lastActivityDate: "2026-10-24", exitDate: null, daysStopped: 4 },
         updates: [{ id: "u1", kind: "sigue", note: "Esperando repuesto", exitDate: null, userName: "Pedro", createdAt: "2026-10-25T12:00:00.000Z" }],
       },
     })} />)
-    expect(screen.getByText("Mecánico, Soldadura")).toBeTruthy()
+    expect(screen.getByText("Mecánico")).toBeTruthy()
+    expect(screen.getByText("Soldadura")).toBeTruthy()
+    expect(screen.getByText("2 h")).toBeTruthy()
+    expect(screen.getByText("1,5 h")).toBeTruthy()
+    expect(screen.getByText("No se usaron repuestos.")).toBeTruthy()
+    expect(screen.getByText("Espera repuesto importado")).toBeTruthy()
     expect(screen.getByText("No se cambió aceite")).toBeTruthy()
     expect(screen.getByText("3,5 h")).toBeTruthy()
     expect(screen.getByText("Manguera 1/2")).toBeTruthy()

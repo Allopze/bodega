@@ -145,6 +145,7 @@ export function WorkshopCard({ data }: { data: PanelData }) {
                 <span className="min-w-0 text-sm">
                   <strong className="font-mono text-[13px] font-semibold">{row.code}{row.plate !== row.code ? ` · ${row.plate}` : ""}</strong>
                   <span className="block truncate text-[var(--color-text-muted)]">{row.worksiteName} · {row.summary}</span>
+                  {row.reason && <span className="block truncate text-[var(--color-text-muted)]">Sigue en taller: {row.reason}</span>}
                 </span>
                 <span className="shrink-0 text-right text-sm tabular-nums">
                   {row.daysStopped ? plural(row.daysStopped, "día", "días") : "desde hoy"}

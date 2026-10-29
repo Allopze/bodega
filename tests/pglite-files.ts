@@ -388,4 +388,6 @@ export const pgliteTestFiles = [
   "lib/__tests__/mantencion-schedules-pglite.test.ts",
   // Mantención de equipos: lista de registros por alcance, filtros, indicadores, panel, Excel y PDF archivado (L3).
   "lib/__tests__/mantencion-records-pglite.test.ts",
+  // Mantención de equipos: hoja de vida de la ficha (alcance, anuladas, totales), seguro y Excel del historial.
+  "lib/__tests__/mantencion-equipment-life-pglite.test.ts",
 ]

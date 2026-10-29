@@ -27,7 +27,8 @@ const CREDENTIALS_MESSAGE = "Correo o contraseña incorrectos."
 /** También lo usa el formulario cuando `signIn` lanza (red caída): el mismo texto para el mismo desenlace. */
 export const GENERIC_LOGIN_ERROR = "No pudimos iniciar sesión. Intenta nuevamente."
 
-function authErrorMessage(error: string) {
+/** También la usa el login propio de la app del mecánico (`components/mantencion/app/app-login.tsx`). */
+export function authErrorMessage(error: string) {
   // U-02: surface rate-limit reasons (custom codes from lib/auth/auth.ts)
   if (error === "ip_rate_limited") {
     return IP_RATE_LIMITED_MESSAGE

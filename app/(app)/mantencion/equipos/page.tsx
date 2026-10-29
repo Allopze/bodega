@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Callout } from "@/components/ui/callout"
 import { PageContainer } from "@/components/ui/page-container"
 import { PageHeader } from "@/components/ui/page-header"
+import { MechanicAppInstallDialog } from "@/components/mantencion/jefatura/shared/mechanic-app-install-dialog"
 import { EquipmentExportButton } from "@/components/mantencion/jefatura/equipos/equipment-export-button"
 import { EquipmentFilters } from "@/components/mantencion/jefatura/equipos/equipment-filters"
 import { EquipmentTable } from "@/components/mantencion/jefatura/equipos/equipment-table"
@@ -54,6 +55,8 @@ export default async function EquipmentPage({ searchParams }: { searchParams: Pr
   const canManage = can(session, "mant:equipment:manage")
   const canExport = can(session, "mant:export")
   const canDevices = can(session, "mant:devices:manage")
+  // Quien reparte la app en terreno: jefatura y supervisión de faena.
+  const canShareApp = canDevices || can(session, "mant:records:view_worksite")
 
   return (
     <PageContainer>
@@ -63,6 +66,7 @@ export default async function EquipmentPage({ searchParams }: { searchParams: Pr
         breadcrumb={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Mantención" }, { label: "Equipos" }]}
         actions={(
           <div className="flex flex-wrap items-center gap-2">
+            {canShareApp && <MechanicAppInstallDialog />}
             {canDevices && (
               <Button asChild variant="ghost" size="sm">
                 <Link href="/mantencion/dispositivos"><DeviceMobile size={14} aria-hidden />Dispositivos de la app</Link>

@@ -5,6 +5,7 @@ import { formatHours, formatReading, parseReadingInput } from "@/lib/mantencion/
 import type { FleetRow } from "@/lib/mantencion/client/fleet-view"
 import type { FlowDraft } from "@/lib/mantencion/client/flow-types"
 import { partsFilled, parseQuantity } from "@/lib/mantencion/client/flow-validate"
+import { totalHours } from "@/lib/mantencion/client/flow-types"
 import { formatDate } from "@/lib/utils"
 import { useAppData } from "./app-context"
 import { EquipmentSummary } from "./step-lectura"
@@ -77,20 +78,24 @@ export function StepRevisar({ draft, row, onChange }: { draft: FlowDraft; row: F
       ? names([draft.executorUserId], catalog?.mechanics ?? []).join("")
       : `${names([draft.executorWorkshopId], catalog?.workshops ?? []).join("")} (externo)`
   const oil = draft.noOilChange ? "No se cambió" : names(draft.oilIds, catalog?.oils ?? []).join(", ")
-  const parts = draft.noParts ? "No se usaron" : partsFilled(draft).map((part) => `${parseQuantity(part.quantity)} × ${part.description.trim()}`).join(", ")
+  const workTypes = catalog?.workTypes ?? []
+  const jobLines = draft.jobs.map((job) => {
+    const parts = job.noParts ? "sin repuestos" : partsFilled(job).map((part) => `${parseQuantity(part.quantity)} × ${part.description.trim()}`).join(", ")
+    return `${names([job.workTypeId], workTypes).join("")} · ${formatHours(job.hours)} · ${parts}`
+  })
   return (
     <>
       <EquipmentSummary row={row} />
       <dl className="dl">
-        <Row label="Trabajo" step={2} onChange={onChange}>Correctiva · {names(draft.workTypeIds, catalog?.workTypes ?? []).join(", ")}</Row>
+        <Row label="Trabajo" step={2} onChange={onChange}>Correctiva · {names(draft.jobs.map((job) => job.workTypeId), workTypes).join(", ")}</Row>
         <Row label="Lectura" step={1} onChange={onChange}><span className="mono" style={{ fontSize: 15 }}>{formatReading(reading, unit)}</span></Row>
         <Row label="Fecha" step={1} onChange={onChange}>{formatDate(draft.workDate)}</Row>
         <Row label="Hecho por" step={2} onChange={onChange}>{who}</Row>
         <Row label="Aceite" step={2} onChange={onChange}>{oil}</Row>
         <Row label="Detalle" step={2} onChange={onChange}>{draft.description}</Row>
-        <Row label="Repuestos" step={2} onChange={onChange}>{parts}</Row>
-        <Row label="Horas" step={2} onChange={onChange}>{formatHours(draft.hours)}</Row>
-        <Row label="En taller" step={2} onChange={onChange}>{draft.inWorkshop ? `Sí, desde ${formatDate(draft.workshopEntryDate)}` : "No"}</Row>
+        <Row label="Trabajos" step={2} onChange={onChange}>{jobLines.map((line) => <div key={line}>{line}</div>)}</Row>
+        <Row label="Horas" step={2} onChange={onChange}>{formatHours(totalHours(draft.jobs))} en total</Row>
+        <Row label="En taller" step={2} onChange={onChange}>{draft.inWorkshop ? `Sí, desde ${formatDate(draft.workshopEntryDate)}. ${draft.workshopReason.trim()}` : "No"}</Row>
         <Row label="Conductores" step={2} onChange={onChange}>{names(draft.driverIds, catalog?.drivers ?? []).join(", ")}</Row>
         <Row label="Fotos" step={2} onChange={onChange}>{draft.photos.correctiva.length}</Row>
       </dl>

@@ -54,17 +54,29 @@ export interface PreventivePlan {
   duplicateOf: PreventiveRef | null
 }
 
+export interface CorrectiveJobPlan {
+  workTypeId: string
+  /** Snapshot del nombre del tipo. */
+  workTypeName: string
+  hours: number
+  noParts: boolean
+  parts: Array<{ quantity: number; description: string }>
+}
+
 export interface CorrectivePlan {
   /** Nombres (snapshot), no ids: un catálogo editado después no cambia el documento firmado. */
   workTypes: string[]
   oils: string[]
   description: string
+  /** Verdadero sólo si ningún trabajo usó repuestos. */
   noParts: boolean
+  /** Total: suma de las horas de los trabajos. */
   hours: number
+  jobs: CorrectiveJobPlan[]
   inWorkshop: boolean
   entryDate: string | null
+  workshopReason: string | null
   workOrder: string | null
-  parts: Array<{ quantity: number; description: string }>
   drivers: Array<{ id: string; name: string }>
 }
 

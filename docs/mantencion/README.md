@@ -7,14 +7,38 @@ Módulo de mantención preventiva y correctiva, independiente del módulo antigu
 
 ## Superficies
 
-- **App del mecánico** — `/m/mantencion`. PWA de pantalla completa, sin el
-  AppShell de la plataforma. Registra preventivas y correctivas, actualiza el
-  estado en taller y funciona sin conexión.
+- **App del mecánico** — `/m/mantencion`. PWA que se instala en el teléfono
+  («Chome Mantención»), aparte de la plataforma: no está en el menú lateral,
+  tiene su propio login (`/m/mantencion/entrar`, misma cuenta de Chome) y nunca
+  muestra pantallas de escritorio. Registra preventivas y correctivas, actualiza
+  el estado en taller y funciona sin conexión.
 - **Jefatura** — `/mantencion/{panel,registros,registros/[id],equipos,equipos/[id],equipos/nuevo,equipos/importar,pautas,pautas/[id],dispositivos}`.
 - **API de sincronización** — `/api/mantencion/sync/*`, autenticada sólo con
   `Authorization: Bearer <credencial de dispositivo>`.
 - **PDF** — `/mantencion/registros/[id]/print`, renderizado con Chromium y
   archivado en `storage/mantencion/`.
+
+## Instalar la app en el teléfono
+
+1. En la plataforma, jefatura o supervisión abre **Equipos** o **Dispositivos**
+   y toca **«Instalar app del mecánico»**: aparece un QR con el enlace (se puede
+   copiar o descargar en PDF para dejarlo impreso en el taller).
+2. El mecánico lo escanea, entra con su cuenta en el login de la app y define
+   su PIN.
+3. La agrega a la pantalla de inicio:
+   - **Android (Chrome):** «Instalar app», o menú ⋮ → «Agregar a la pantalla principal».
+   - **iPhone (Safari):** «Compartir» → «Agregar a inicio».
+4. La primera vez necesita señal; después registra sin conexión y envía sola
+   cuando vuelve la señal.
+
+Si la app se abre en el navegador y no está instalada, ella misma invita a
+instalarla (en el login y en el inicio): en Android con el botón **«Instalar
+app»**, que abre el diálogo del navegador; en iPhone con los pasos de Safari.
+«Ahora no» la calla tres días; abierta desde la pantalla de inicio no aparece.
+
+Sin sesión, cualquier ruta de la app lleva a su propio login, nunca al de la
+plataforma. Un mecánico puede igual entrar a la plataforma web y ver sus
+registros en **Registros**; la app no se ofrece desde el menú.
 
 ## Arquitectura
 

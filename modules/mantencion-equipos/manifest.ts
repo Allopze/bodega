@@ -5,8 +5,9 @@ import type { ModuleManifest } from "@/modules/manifest-types"
  *
  * Independiente del módulo `mantenciones` (órdenes de trabajo con costos): no
  * comparte rutas, tablas ni permisos con él. El mecánico registra desde la app
- * `/m/mantencion` (PWA sin conexión); jefatura y supervisión revisan en
- * `/mantencion/*`. Los permisos se validan siempre en el servidor; la
+ * `/m/mantencion`, una PWA que se instala en el teléfono y NO está en el menú de
+ * la plataforma (se reparte por QR desde Equipos y Dispositivos); jefatura y
+ * supervisión revisan en `/mantencion/*`. Los permisos se validan siempre en el servidor; la
  * navegación sólo los refleja.
  */
 export const mantencionEquiposModule = {
@@ -69,13 +70,6 @@ export const mantencionEquiposModule = {
           href: "/mantencion/pautas",
           iconName: "ListChecks",
           permissions: ["mant:schedules:manage"],
-          group: "Mantención",
-        },
-        {
-          label: "App del mecánico",
-          href: "/m/mantencion",
-          iconName: "DeviceMobile",
-          permissions: ["mant:app:use"],
           group: "Mantención",
         },
       ],

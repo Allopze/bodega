@@ -1,6 +1,7 @@
 import type { EquipmentHistoryEntry } from "@/lib/services/mantencion/equipment-history"
-import type { RecentEquipmentRecord } from "@/lib/services/mantencion/equipment"
+import type { EquipmentInsurance } from "@/lib/services/mantencion/equipment-life"
 import type { MantEquipmentState, MantUnit } from "@/lib/mantencion/types"
+import type { EquipmentLifeData } from "./equipment-life-section"
 import type { EquipmentFormCatalogs, EquipmentFormValues } from "./equipment-form-types"
 
 /** Lo que la ficha en modo lectura muestra del equipo, ya resuelto en el servidor. */
@@ -29,7 +30,11 @@ export interface EquipmentDetailData {
   }
   workshop: { entryDate: string | null; daysStopped: number | null; stale: boolean } | null
   recordCount: number
-  records: RecentEquipmentRecord[]
+  /** Hoja de vida: historial completo de mantenciones dentro del alcance de lectura. */
+  life: EquipmentLifeData
+  insurance: EquipmentInsurance
+  /** `flota:view`: habilita el enlace a la ficha de flota y a los documentos de seguro. */
+  canViewFleet: boolean
   history: EquipmentHistoryEntry[]
 }
 

@@ -29,16 +29,14 @@ const corrective = {
   id: uuid(1),
   kind: "C" as const,
   photos: [{ id: uuid(10), kind: "correctiva" as const }],
-  workTypeIds: ["wt-1"],
+  jobs: [{ workTypeId: "wt-1", hours: 2, noParts: true, parts: [] }],
   oilIds: [],
   noOilChange: true,
   executor: { kind: "yo" as const },
   description: "Cambio de manguera",
-  parts: [],
-  noParts: true,
-  hours: 2,
   inWorkshop: false,
   workshopEntryDate: null,
+  workshopReason: null,
   workOrder: null,
   driverIds: ["drv-1"],
 }
@@ -63,13 +61,23 @@ describe("regla 9 · correctiva obligatoria (lo que el contrato exige)", () => {
     expect(syncRecordSchema.safeParse(corrective).success).toBe(true)
   })
 
-  it("horas entre 0,5 y 72 en pasos de 0,5", () => {
-    for (const hours of [0.5, 1, 1.5, 12.5, 72]) expect(correctiveRecordSchema.safeParse({ ...corrective, hours }).success, String(hours)).toBe(true)
-    for (const hours of [0, 0.4, 0.75, 1.25, 72.5, 73, -1]) expect(correctiveRecordSchema.safeParse({ ...corrective, hours }).success, String(hours)).toBe(false)
+  const withHours = (hours: number) => ({ ...corrective, jobs: [{ workTypeId: "wt-1", hours, noParts: true, parts: [] }] })
+
+  it("horas por trabajo entre 0,5 y 72 en pasos de 0,5", () => {
+    for (const hours of [0.5, 1, 1.5, 12.5, 72]) expect(correctiveRecordSchema.safeParse(withHours(hours)).success, String(hours)).toBe(true)
+    for (const hours of [0, 0.4, 0.75, 1.25, 72.5, 73, -1]) expect(correctiveRecordSchema.safeParse(withHours(hours)).success, String(hours)).toBe(false)
   })
 
-  it("al menos un tipo de trabajo, una descripción de 5 caracteres y un conductor", () => {
-    expect(correctiveRecordSchema.safeParse({ ...corrective, workTypeIds: [] }).success).toBe(false)
+  it("un mismo tipo de trabajo no se repite y el total no pasa de 72 horas", () => {
+    const job = (workTypeId: string, hours: number) => ({ workTypeId, hours, noParts: true, parts: [] })
+    expect(correctiveRecordSchema.safeParse({ ...corrective, jobs: [job("wt-1", 1), job("wt-2", 1)] }).success).toBe(true)
+    expect(correctiveRecordSchema.safeParse({ ...corrective, jobs: [job("wt-1", 1), job("wt-1", 2)] }).success).toBe(false)
+    expect(correctiveRecordSchema.safeParse({ ...corrective, jobs: [job("wt-1", 40), job("wt-2", 32)] }).success).toBe(true)
+    expect(correctiveRecordSchema.safeParse({ ...corrective, jobs: [job("wt-1", 40), job("wt-2", 32.5)] }).success).toBe(false)
+  })
+
+  it("al menos un trabajo, una descripción de 5 caracteres y un conductor", () => {
+    expect(correctiveRecordSchema.safeParse({ ...corrective, jobs: [] }).success).toBe(false)
     expect(correctiveRecordSchema.safeParse({ ...corrective, description: "Rota" }).success).toBe(false)
     expect(correctiveRecordSchema.safeParse({ ...corrective, description: "  Rota " }).success).toBe(false)
     expect(correctiveRecordSchema.safeParse({ ...corrective, description: "Rotas" }).success).toBe(true)
@@ -84,11 +92,11 @@ describe("regla 9 · correctiva obligatoria (lo que el contrato exige)", () => {
   })
 
   it("el mensaje de cada error está en español", () => {
-    const result = correctiveRecordSchema.safeParse({ ...corrective, workTypeIds: [], description: "x" })
+    const result = correctiveRecordSchema.safeParse({ ...corrective, jobs: [], description: "x" })
     expect(result.success).toBe(false)
     if (!result.success) {
       const messages = result.error.issues.map((issue) => issue.message)
-      expect(messages).toContain("Marca al menos un tipo de trabajo.")
+      expect(messages).toContain("Agrega al menos un trabajo.")
       expect(messages).toContain("Describe el trabajo realizado.")
     }
   })

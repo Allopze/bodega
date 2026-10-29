@@ -87,23 +87,41 @@ export const correctiveExecutorSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("externo"), workshopId: id }),
 ])
 
+/** Tope de horas de un trabajo y del total de la correctiva (columna `hours`, regla 9). */
+export const MANT_JOB_HOURS_MAX = 72
+export const MANT_MAX_JOBS = 20
+
+const jobHours = z.number().min(0.5, "Mínimo 0,5 horas por trabajo.").max(MANT_JOB_HOURS_MAX).refine((value) => Number.isInteger(value * 2), "Las horas van en pasos de 0,5.")
+
+/** Un trabajo de la correctiva: su tipo, sus horas y sus repuestos (o «No se usaron repuestos»). */
+export const correctiveJobSchema = z.object({
+  workTypeId: id,
+  hours: jobHours,
+  /** Con `noParts`, `parts` va vacío; sin él, al menos un repuesto (lo exige el servidor con mensaje). */
+  noParts: z.boolean(),
+  parts: z.array(z.object({
+    quantity: z.number().positive().max(100_000),
+    description: z.string().trim().min(1).max(300),
+  })).max(50),
+})
+export type SyncCorrectiveJob = z.infer<typeof correctiveJobSchema>
+
 export const correctiveRecordSchema = z.object({
   ...recordBase,
   kind: z.literal("C"),
-  workTypeIds: z.array(id).min(1, "Marca al menos un tipo de trabajo."),
+  /** Al menos un trabajo y sin repetir tipo; el total de horas no pasa de 72. */
+  jobs: z.array(correctiveJobSchema).min(1, "Agrega al menos un trabajo.").max(MANT_MAX_JOBS)
+    .refine((jobs) => new Set(jobs.map((job) => job.workTypeId)).size === jobs.length, "No repitas el mismo tipo de trabajo.")
+    .refine((jobs) => jobs.reduce((sum, job) => sum + job.hours, 0) <= MANT_JOB_HOURS_MAX, "El total de horas no puede pasar de 72."),
   /** Vacío sólo si `noOilChange`. */
   oilIds: z.array(id),
   noOilChange: z.boolean(),
   executor: correctiveExecutorSchema,
   description: z.string().trim().min(5, "Describe el trabajo realizado.").max(4000),
-  parts: z.array(z.object({
-    quantity: z.number().positive().max(100_000),
-    description: z.string().trim().min(1).max(300),
-  })).max(50),
-  noParts: z.boolean(),
-  hours: z.number().min(0.5).max(72).refine((value) => Number.isInteger(value * 2), "Las horas van en pasos de 0,5."),
   inWorkshop: z.boolean(),
   workshopEntryDate: isoDate.nullable(),
+  /** Por qué sigue en taller; obligatorio (≥ 5 caracteres) si `inWorkshop`. */
+  workshopReason: z.string().trim().max(1000).nullable(),
   workOrder: z.string().trim().max(60).nullable(),
   driverIds: z.array(id).min(1, "Agrega al menos un conductor.").max(20),
 })

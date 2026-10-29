@@ -1,7 +1,7 @@
 import type { MantItemValue, MantScheduleSnapshot } from "../types"
 import { groupChecklist } from "../schedule"
 import { groupDone, HOURS_MAX, HOURS_MIN } from "./flow-validate"
-import { stepsFor, type FlowDraft, type FlowErrors, type FlowStep } from "./flow-types"
+import { newJob, stepsFor, type FlowDraft, type FlowErrors, type FlowJob, type FlowStep } from "./flow-types"
 
 /**
  * Reductor puro del flujo de registro. No toca red, ni IndexedDB, ni el reloj:
@@ -23,7 +23,7 @@ export interface FlowEnv {
 export type FlowAction =
   | { type: "patch"; patch: Partial<FlowDraft> }
   | { type: "pickEquipment"; vehicleId: string; schedule: MantScheduleSnapshot | null }
-  | { type: "toggleId"; field: "workTypeIds" | "oilIds" | "driverIds"; id: string }
+  | { type: "toggleId"; field: "oilIds" | "driverIds"; id: string }
   | { type: "noOilChange" }
   | { type: "mark"; key: string; value: MantItemValue }
   | { type: "markGroup"; group: number }
@@ -33,10 +33,15 @@ export type FlowAction =
   | { type: "photo"; slot: "filtros" | "sticker"; id: string | null }
   | { type: "photoAdd"; id: string }
   | { type: "photoRemove"; id: string }
-  | { type: "part"; index: number; field: "quantity" | "description"; text: string }
-  | { type: "partAdd" }
-  | { type: "partRemove"; index: number }
-  | { type: "hours"; hours: number }
+  | { type: "jobAdd"; workTypeId: string }
+  | { type: "jobRemove"; workTypeId: string }
+  /** Deshace un «Quitar trabajo»: lo vuelve a su lugar (sin repetir el tipo). */
+  | { type: "jobRestore"; job: FlowJob; index: number }
+  | { type: "jobHours"; workTypeId: string; hours: number }
+  | { type: "jobNoParts"; workTypeId: string; noParts: boolean }
+  | { type: "jobPart"; workTypeId: string; index: number; field: "quantity" | "description"; text: string }
+  | { type: "jobPartAdd"; workTypeId: string }
+  | { type: "jobPartRemove"; workTypeId: string; index: number }
   | { type: "back" }
   | { type: "goStep"; step: number; backToReview: boolean }
   | { type: "next"; env: FlowEnv }
@@ -50,18 +55,16 @@ const ERRORS_CLEARED_BY: Partial<Record<keyof FlowDraft, string[]>> = {
   intervalIndex: ["ivReason", "duplicate"],
   intervalReason: ["ivReason"],
   notes: ["notes"],
-  workTypeIds: ["workTypes"],
+  jobs: ["workTypes", "hours"],
   oilIds: ["oil"],
   noOilChange: ["oil"],
   executorKind: ["executor"],
   executorUserId: ["executor"],
   executorWorkshopId: ["executor"],
   description: ["description"],
-  parts: ["parts"],
-  noParts: ["parts"],
-  hours: ["hours"],
-  inWorkshop: ["workshop"],
+  inWorkshop: ["workshop", "workshopReason"],
   workshopEntryDate: ["workshop"],
+  workshopReason: ["workshopReason"],
   driverIds: ["drivers"],
   photos: ["photos", "photo_filtros", "photo_sticker"],
   ackJump: ["jump"],
@@ -70,13 +73,19 @@ const ERRORS_CLEARED_BY: Partial<Record<keyof FlowDraft, string[]>> = {
 
 function clearErrors(draft: FlowDraft, changed: Array<keyof FlowDraft>): FlowErrors {
   const drop = new Set(changed.flatMap((field) => ERRORS_CLEARED_BY[field] ?? []))
+  const dropJobs = changed.includes("jobs")
   if (drop.size === 0) return draft.errors
-  return Object.fromEntries(Object.entries(draft.errors).filter(([key]) => !drop.has(key)))
+  // Los errores por trabajo (`job:<tipo>`) también se limpian al editar la lista.
+  return Object.fromEntries(Object.entries(draft.errors).filter(([key]) => !drop.has(key) && !(dropJobs && key.startsWith("job:"))))
 }
 
 function patched(draft: FlowDraft, patch: Partial<FlowDraft>): FlowDraft {
   const changed = Object.keys(patch) as Array<keyof FlowDraft>
   return { ...draft, ...patch, errors: patch.errors ?? clearErrors(draft, changed) }
+}
+
+function withJob(draft: FlowDraft, workTypeId: string, change: (job: FlowJob) => FlowJob): FlowJob[] {
+  return draft.jobs.map((job) => (job.workTypeId === workTypeId ? change(job) : job))
 }
 
 function toggled(list: readonly string[], id: string): string[] {
@@ -173,21 +182,46 @@ export function flowReducer(draft: FlowDraft, action: FlowAction): FlowDraft {
         },
       })
 
-    case "part":
-      return patched(draft, { parts: draft.parts.map((part, i) => (i === action.index ? { ...part, [action.field]: action.text } : part)) })
+    case "jobAdd":
+      if (draft.jobs.some((job) => job.workTypeId === action.workTypeId)) return draft
+      return patched(draft, { jobs: [...draft.jobs, newJob(action.workTypeId)] })
 
-    case "partAdd":
-      return { ...draft, parts: [...draft.parts, { quantity: "1", description: "" }] }
+    case "jobRemove":
+      return patched(draft, { jobs: draft.jobs.filter((job) => job.workTypeId !== action.workTypeId) })
 
-    case "partRemove": {
-      const parts = draft.parts.filter((_, i) => i !== action.index)
-      return { ...draft, parts: parts.length > 0 ? parts : [{ quantity: "1", description: "" }] }
+    case "jobRestore": {
+      if (draft.jobs.some((job) => job.workTypeId === action.job.workTypeId)) return draft
+      const jobs = [...draft.jobs]
+      jobs.splice(Math.min(action.index, jobs.length), 0, action.job)
+      return patched(draft, { jobs })
     }
 
-    case "hours": {
+    case "jobHours": {
       const stepped = Math.round(action.hours * 2) / 2
-      return patched(draft, { hours: Math.min(HOURS_MAX, Math.max(HOURS_MIN, stepped)) })
+      const hours = Math.min(HOURS_MAX, Math.max(HOURS_MIN, stepped))
+      return patched(draft, { jobs: withJob(draft, action.workTypeId, (job) => ({ ...job, hours })) })
     }
+
+    case "jobNoParts":
+      return patched(draft, { jobs: withJob(draft, action.workTypeId, (job) => ({ ...job, noParts: action.noParts })) })
+
+    case "jobPart":
+      return patched(draft, {
+        jobs: withJob(draft, action.workTypeId, (job) => ({
+          ...job, parts: job.parts.map((part, i) => (i === action.index ? { ...part, [action.field]: action.text } : part)),
+        })),
+      })
+
+    case "jobPartAdd":
+      return patched(draft, { jobs: withJob(draft, action.workTypeId, (job) => ({ ...job, parts: [...job.parts, { quantity: "1", description: "" }] })) })
+
+    case "jobPartRemove":
+      return patched(draft, {
+        jobs: withJob(draft, action.workTypeId, (job) => {
+          const parts = job.parts.filter((_, i) => i !== action.index)
+          return { ...job, parts: parts.length > 0 ? parts : [{ quantity: "1", description: "" }] }
+        }),
+      })
 
     case "back":
       return draft.step === 0 ? draft : { ...draft, step: draft.step - 1, ret: null, errors: {} }

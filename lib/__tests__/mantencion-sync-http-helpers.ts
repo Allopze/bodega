@@ -66,8 +66,9 @@ export function correctiveBody(photos: Array<{ id: string; kind: string }>, over
   return {
     id: crypto.randomUUID(), vehicleId: "v-ka135", reading: 12_000, workDate: daysAgo(2), signedAt: new Date().toISOString(),
     offlineSince: null, deviceId: crypto.randomUUID(), appVersion: "test", readingJumpConfirmed: false, duplicateConfirmed: false,
-    correctsRecordId: null, photos, kind: "C", workTypeIds: ["wt-mec"], oilIds: ["oil-motor"], noOilChange: false, executor: { kind: "yo" },
-    description: "Cambio de manguera de aire", parts: [{ quantity: 1, description: "Manguera" }], noParts: false, hours: 2,
-    inWorkshop: false, workshopEntryDate: null, workOrder: null, driverIds: ["dr-1"], ...overrides,
+    correctsRecordId: null, photos, kind: "C", oilIds: ["oil-motor"], noOilChange: false, executor: { kind: "yo" },
+    jobs: [{ workTypeId: "wt-mec", hours: 2, noParts: false, parts: [{ quantity: 1, description: "Manguera" }] }],
+    description: "Cambio de manguera de aire",
+    inWorkshop: false, workshopEntryDate: null, workshopReason: null, workOrder: null, driverIds: ["dr-1"], ...overrides,
   }
 }

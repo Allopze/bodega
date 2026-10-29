@@ -16,7 +16,7 @@
  *
  * Alcance: `/m/mantencion` (ver components/mantencion/app/sw-register.tsx).
  */
-const VERSION = "v1"
+const VERSION = "v2"
 const CACHE_PREFIX = "mant-"
 const SHELL_CACHE = `${CACHE_PREFIX}shell-${VERSION}`
 const STATIC_CACHE = `${CACHE_PREFIX}static-${VERSION}`
@@ -75,9 +75,12 @@ function isStaticAsset(url) {
 }
 
 async function appNavigation(request) {
+  // Sólo la app misma se guarda como «la app»: su login (`/m/mantencion/entrar`)
+  // también está en el alcance, y abrir sin señal debe mostrar la app, no el login.
+  const isAppShell = new URL(request.url).pathname === APP_PATH
   try {
     const response = await fetch(request)
-    if (isCacheableShell(response)) {
+    if (isAppShell && isCacheableShell(response)) {
       const cache = await caches.open(SHELL_CACHE)
       await cache.put(APP_PATH, response.clone())
       return response

@@ -1,7 +1,7 @@
 import { STORE, idbGet, idbGetAllByIndex, idbPut, idbDelete } from "./db"
 import { emit } from "./events"
 import { deletePhotos } from "./photo-store"
-import { draftKey, draftPhotoIds, type FlowDraft } from "./flow-types"
+import { draftKey, draftPhotoIds, normalizeDraft, type FlowDraft } from "./flow-types"
 import { listQueue } from "./queue"
 
 /**
@@ -20,13 +20,14 @@ interface StoredDraft {
 }
 
 export async function loadDraft(userId: string, kind: "P" | "C"): Promise<FlowDraft | null> {
-  return (await idbGet<StoredDraft>(STORE.drafts, draftKey(userId, kind)))?.draft ?? null
+  const stored = await idbGet<StoredDraft>(STORE.drafts, draftKey(userId, kind))
+  return stored ? normalizeDraft(stored.draft) : null
 }
 
 /** Los borradores de una cuenta, el más reciente primero. */
 export async function listDrafts(userId: string): Promise<FlowDraft[]> {
   const stored = await idbGetAllByIndex<StoredDraft>(STORE.drafts, "userId", userId)
-  return stored.map((entry) => entry.draft).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+  return stored.map((entry) => normalizeDraft(entry.draft)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
 }
 
 export async function saveDraft(draft: FlowDraft): Promise<void> {

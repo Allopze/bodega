@@ -15,6 +15,15 @@ describe("rutas públicas del proxy", () => {
 
   // El shell offline RE-20 es estático: descifra en el cliente y no consulta
   // datos al servidor. Abrirlo no puede abrir el resto de /prevencion/incidentes.
+  // La app del mecánico es una PWA con login propio: sólo su pantalla de entrar
+  // es pública; la app misma, sus registros y su API de jefatura exigen sesión.
+  it("abre sólo el login de la app del mecánico, no la app", () => {
+    expect(isPublicPath("/m/mantencion/entrar")).toBe(true)
+    expect(isPublicPath("/m/mantencion")).toBe(false)
+    expect(isPublicPath("/m/mantencion/entrar-x")).toBe(false)
+    expect(isPublicPath("/mantencion/registros")).toBe(false)
+  })
+
   it("abre sólo el shell offline RE-20, no los expedientes", () => {
     expect(isPublicPath("/prevencion/incidentes/re20-offline")).toBe(true)
     expect(isPublicPath("/prevencion/incidentes/re20-offline-x")).toBe(false)
