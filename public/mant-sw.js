@@ -16,7 +16,7 @@
  *
  * Alcance: `/m/mantencion` (ver components/mantencion/app/sw-register.tsx).
  */
-const VERSION = "v1"
+const VERSION = "v2"
 const CACHE_PREFIX = "mant-"
 const SHELL_CACHE = `${CACHE_PREFIX}shell-${VERSION}`
 const STATIC_CACHE = `${CACHE_PREFIX}static-${VERSION}`

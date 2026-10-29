@@ -79,8 +79,8 @@ async function esperarSwListo(page: Page) {
     return Boolean(registro?.active?.state === "activated")
   }), { timeout: 30_000 }).toBe(true)
   const tamano = (nombre: string) => page.evaluate(async (cache) => (await (await caches.open(cache)).keys()).length, nombre)
-  await expect.poll(() => tamano("mant-shell-v1"), { timeout: 30_000 }).toBeGreaterThan(0)
-  await expect.poll(() => tamano("mant-static-v1"), { timeout: 30_000 }).toBeGreaterThan(0)
+  await expect.poll(() => tamano("mant-shell-v2"), { timeout: 30_000 }).toBeGreaterThan(0)
+  await expect.poll(() => tamano("mant-static-v2"), { timeout: 30_000 }).toBeGreaterThan(0)
 }
 
 /** JPEG pequeño y válido, generado en memoria en el propio navegador (sin archivos ni dependencias). */
