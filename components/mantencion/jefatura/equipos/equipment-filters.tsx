@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import { Checkbox } from "@/components/ui/checkbox"
 import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
 import { OptionSelect, type OptionSelectOption } from "@/components/ui/option-select"
@@ -31,6 +32,14 @@ const FILTER_KEYS = ["faena", "tipo", "pauta", "estado", "bajas"] as const
 export function EquipmentFilters({ options }: { options: EquipmentFilterOptions }) {
   const { searchParams, setFilter, setFilters, getFilter } = useUrlFilters()
   const filters = parseEquipmentListFilters(Object.fromEntries(searchParams.entries()))
+  // La casilla responde al toque antes de que termine la navegación de la URL; si la URL cambia
+  // por otro camino (quitar el chip, «Limpiar»), se vuelve a alinear con ella.
+  const [includeRetired, setIncludeRetired] = useState(filters.includeRetired)
+  const [urlIncludeRetired, setUrlIncludeRetired] = useState(filters.includeRetired)
+  if (urlIncludeRetired !== filters.includeRetired) {
+    setUrlIncludeRetired(filters.includeRetired)
+    setIncludeRetired(filters.includeRetired)
+  }
   const labelOf = (list: OptionSelectOption[], value: string | undefined) => String(list.find((item) => item.value === value)?.label ?? value ?? "")
 
   const chips: ActiveFilterChip[] = []
@@ -58,10 +67,13 @@ export function EquipmentFilters({ options }: { options: EquipmentFilterOptions 
       <Checkbox
         id="eq-f-bajas"
         label="Mostrar dados de baja"
-        checked={filters.includeRetired}
+        checked={includeRetired}
         // Con «Estado: Dado de baja» las bajas ya están a la vista: la casilla no se puede apagar.
         disabled={filters.state === "baja"}
-        onChange={(event) => setFilter("bajas", event.target.checked ? "1" : null)}
+        onChange={(event) => {
+          setIncludeRetired(event.target.checked)
+          setFilter("bajas", event.target.checked ? "1" : null)
+        }}
       />
     </FilterToolbar>
   )

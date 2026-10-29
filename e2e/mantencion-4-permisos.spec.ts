@@ -118,8 +118,11 @@ test("el supervisor de Biodiversa no ve el registro de Cholguan ni por su URL", 
   await page.goto("/mantencion/registros")
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible()
   await expect(page.getByText(/MC-CHO-/)).toHaveCount(0)
-  const direct = await page.goto(`/mantencion/registros/${foreignRecordId}`)
-  expect(direct?.status()).toBe(404)
+  // `notFound()` dentro de una respuesta en streaming llega con HTTP 200: lo que se verifica es
+  // que la página no muestra el registro.
+  await page.goto(`/mantencion/registros/${foreignRecordId}`)
+  await expect(page.getByRole("heading", { name: "No encontramos este registro", level: 1 })).toBeVisible()
+  await expect(page.getByText(/MC-CHO-/)).toHaveCount(0)
   await cerrarSesion(page)
 })
 

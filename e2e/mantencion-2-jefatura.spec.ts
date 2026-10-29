@@ -24,6 +24,10 @@ import { expectPageTitle, login } from "./helpers"
  * rótulo es prefijo de otro.
  */
 
+
+/** Texto sin espacios ni mayúsculas, para comparar con lo que extrae `pdf-parse`. */
+const flat = (value: string) => value.replace(/\s+/g, "").toLowerCase()
+
 test.describe.configure({ mode: "serial" })
 test.setTimeout(180_000)
 
@@ -376,9 +380,9 @@ test("PDF: páginas, folio, firma de jefatura pendiente y el mismo archivo en la
   const { pageCount, text } = await parsePdf(bytes)
   expect(pageCount).toBeGreaterThanOrEqual(1)
   expect(text).toContain(rec.A.folio)
-  // La hoja imprime las etiquetas de firma en mayúsculas (CSS `uppercase`) y el texto del PDF
-  // las conserva así: se compara sin distinguir mayúsculas.
-  expect(text.toLowerCase()).toContain("firma jefatura (segunda etapa)")
+  // La hoja imprime rótulos en mayúsculas y con espaciado entre letras: el texto extraído del PDF
+  // los trae así («ANUL ADO»), de modo que se comparan sin espacios ni mayúsculas.
+  expect(flat(text)).toContain(flat("Firma jefatura (segunda etapa)"))
   expect(text).toContain("Pastillas de freno")
   expect(text).toContain("Falta repuesto")
   // «Página X de Y» en cada hoja, con Y = el total real.
@@ -470,7 +474,7 @@ test("el PDF de un registro anulado se vuelve a generar y dice ANULADO con su mo
   const response = await page.request.get(`/api/mantencion/registros/${rec.A.id}/pdf`)
   expect(response.status()).toBe(200)
   const { text } = await parsePdf(await response.body())
-  expect(text).toContain("ANULADO")
+  expect(flat(text)).toContain("anulado")
   expect(text).toContain("Se registró en el equipo equivocado (E2E)")
   expect(text).toContain(rec.A.folio)
 })
