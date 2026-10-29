@@ -290,15 +290,16 @@ test.describe("App del mecánico", () => {
     await aviso.getByRole("button", { name: "Sí, está bien", exact: true }).click()
     await expect(pagina.getByText("PASO 3/4")).toBeVisible()
 
-    await pagina.getByRole("group", { name: "Tipo de trabajo" }).getByRole("button").first().click()
+    // Mismo orden que `registrarCorrectiva`: trabajos con sus repuestos, y «¿sigue en taller?» al final.
+    await pagina.getByRole("group", { name: "Agregar trabajo" }).getByRole("button").first().click()
     await pagina.getByRole("button", { name: "No se cambió aceite", exact: true }).click()
     await pagina.getByLabel("Trabajo realizado").fill("QA_ Lectura con salto confirmado")
     await pagina.getByRole("checkbox", { name: "No se usaron repuestos" }).check()
-    await pagina.getByRole("button", { name: "No, ya salió", exact: true }).click()
     await pagina.getByLabel(/Conductores de las últimas 24 h/).fill("a")
     await pagina.getByRole("group", { name: "Conductores encontrados" }).getByRole("button").first().click()
     await pagina.getByLabel("Agregar foto del trabajo").setInputFiles(await jpeg(pagina, `${codigo} salto`))
     await expect(pagina.getByRole("img", { name: "Foto 1 del trabajo" })).toBeVisible()
+    await pagina.getByRole("button", { name: "No, ya salió", exact: true }).click()
     await pagina.getByRole("button", { name: "Revisar registro", exact: true }).click()
     await pagina.getByRole("button", { name: "Firmar y guardar", exact: true }).click()
     await expect(pagina.getByText("Ya llegó a la plataforma.")).toBeVisible({ timeout: 60_000 })
