@@ -40,6 +40,7 @@
     "db:reconcile-epp-delivery-scale": "tsx --env-file-if-exists=.env.local scripts/reconcile-epp-delivery-scale.ts --apply",
     "db:push": "drizzle-kit push",
     "db:seed": "tsx --env-file=.env.local db/seed.ts",
+    "db:seed:mantencion": "tsx --env-file-if-exists=.env.local scripts/seed-mantencion.ts",
     "db:seed-pdtp-inspection-templates": "tsx --env-file=.env.local scripts/seed-pdtp-inspection-templates-2026.ts",
     "db:apply-sst-taxonomy": "tsx --env-file-if-exists=.env.local scripts/apply-sst-document-taxonomy.ts",
     "db:seed-document-root-folders": "tsx --env-file=.env.local scripts/seed-document-root-folders.ts",

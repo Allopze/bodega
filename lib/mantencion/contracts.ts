@@ -144,6 +144,10 @@ export const workshopUpdateSchema = z.discriminatedUnion("kind", [
 ])
 export type WorkshopUpdatePayload = z.infer<typeof workshopUpdateSchema>
 
+export type SyncWorkshopResponse =
+  | { ok: true; id: string; receivedAt: string; duplicate: boolean }
+  | { ok: false; code: "rejected"; message: string }
+
 // ── Respuesta a una observación: POST /api/mantencion/sync/observaciones ────
 
 export const observationReplySchema = z.object({

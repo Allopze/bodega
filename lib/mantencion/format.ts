@@ -45,7 +45,8 @@ export function parseReadingInput(raw: string): { value: number | null; text: st
 /** «faltan 141 km» / «pasada por 312 km». */
 export function remainingText(status: Pick<MantEquipmentStatus, "remaining">, unit: MantUnit): string {
   if (status.remaining == null) return ""
-  return status.remaining <= 0
+  if (status.remaining === 0) return "ya corresponde"
+  return status.remaining < 0
     ? `pasada por ${formatReading(-status.remaining, unit)}`
     : `faltan ${formatReading(status.remaining, unit)}`
 }

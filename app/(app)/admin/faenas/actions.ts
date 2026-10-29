@@ -6,13 +6,12 @@ import { revalidatePath } from "next/cache"
 import { eq } from "drizzle-orm"
 import { db } from "@/db"
 import { worksites } from "@/db/schema"
-import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { can, canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { worksiteSchema, type ActionState } from "@/lib/validation/masters"
 import { setWorksiteActive } from "@/lib/services/worksite-lifecycle"
-import { ensurePreventionProgramSlotsForWorksiteTx } from "@/lib/services/prevention-program-slots"
+import { createWorksiteTx } from "@/lib/services/worksite-create"
 
 const REVALIDATE = "/admin/faenas"
 
@@ -42,12 +41,12 @@ export async function createWorksite(_prev: ActionState, formData: FormData): Pr
   const exists = await db.query.worksites.findFirst({ where: eq(worksites.code, d.code) })
   if (exists) return { ok: false, fieldErrors: { code: ["Este código ya existe"] } }
 
-  const id = nanoid()
   try {
     await db.transaction(async (tx) => {
-      await tx.insert(worksites).values({ id, name: d.name, code: d.code, address: d.address ?? null, region: d.region ?? null, commune: d.commune || null, adminContratoLabel: d.adminContratoLabel || null, isActive: d.isActive })
-      if (d.isActive) await ensurePreventionProgramSlotsForWorksiteTx(tx, id)
-      await recordAudit({ userId: session.user.id, userEmail: session.user.email ?? undefined, action: "create", entityType: "worksite", entityId: id, entityCode: d.code, newState: { name: d.name, code: d.code, isActive: d.isActive } }, tx)
+      await createWorksiteTx(tx, {
+        name: d.name, code: d.code, address: d.address, region: d.region, commune: d.commune,
+        adminContratoLabel: d.adminContratoLabel, isActive: d.isActive,
+      }, { userId: session.user.id, email: session.user.email })
     })
   } catch (error) {
     return { ok: false, message: safeActionMessage(error, "No se pudo crear la faena") }

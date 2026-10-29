@@ -640,6 +640,29 @@ services:
       - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
     command: ["node", "scripts/seed-size-catalog.mjs"]
 
+  # One-shot MANUAL: carga inicial del módulo de mantención de equipos.
+  # NO va en `migrate` ni en el deploy: escribe sobre la flota compartida
+  # (`fuel_vehicles`). Correr sólo con respaldo previo y revisión de jefatura.
+  # Para reconocer cuentas ya creadas, montar el archivo de correos y pasar
+  # `--correos` sobreescribiendo el comando:
+  #
+  #   docker compose run --rm seed-mantencion \
+  #     node scripts/seed-mantencion.cjs --correos /app/correos.json
+  #
+  seed-mantencion:
+    build:
+      context: .
+      target: prod
+    image: ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
+    command: ["node", "scripts/seed-mantencion.cjs"]
+
   # One-shot: da de baja las variantes que son la misma talla física escrita de
   # dos formas (`N41` junto a `T41`, `L` junto a `T/L`) o duplicadas de plano.
   # Desactiva con `is_active = false`, nunca borra, y sólo toca variantes sin
