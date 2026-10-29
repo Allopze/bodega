@@ -290,13 +290,18 @@ describe("sidebar navigation", () => {
     expect(isHrefActive("/combustibles/bitacora", "/combustibles/tae/importar")).toBe(false)
   })
 
-  it("groups Control operacional as Seguimiento, then Flota, then Combustible", () => {
+  it("groups Control operacional as Seguimiento, then Flota, then Mantención, then Combustible", () => {
     const area = AREA_TREE.find((candidate) => candidate.id === "control-operacional")
     expect(area?.items.map((item) => [item.group ?? null, item.label])).toEqual([
       ["Seguimiento", "Panel operacional"],
       ["Flota", "Vehículos"],
       ["Flota", "Monitoreo GPS"],
       ["Flota", "Mantenciones"],
+      ["Mantención", "Panel"],
+      ["Mantención", "Registros"],
+      ["Mantención", "Equipos"],
+      ["Mantención", "Pautas"],
+      ["Mantención", "App del mecánico"],
       ["Combustible", "Consumo"],
       ["Combustible", "Cargas"],
       ["Combustible", "Revisión"],

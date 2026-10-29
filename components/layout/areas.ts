@@ -45,9 +45,10 @@ export const NAV_GROUP_ORDER: string[] = [
   "Equipos",
   "Servicios",
   // Control operacional — el panel abre el área bajo "Seguimiento"; después los equipos
-  // y lo que se hace con ellos, y el combustible. Diez ítems planos de tres
-  // módulos mezclaban flota, mantención y cinco vistas de combustible.
+  // y lo que se hace con ellos, la mantención y el combustible. Diez ítems planos
+  // de tres módulos mezclaban flota, mantención y cinco vistas de combustible.
   "Flota",
+  "Mantención",
   "Combustible",
 ]
 

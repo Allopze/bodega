@@ -9,7 +9,7 @@
  */
 import { a4PdfOptions, type PdfMargin } from "./page-options"
 
-export type PrintDocumentId = "entrega" | "inspeccion" | "sst" | "re20"
+export type PrintDocumentId = "entrega" | "inspeccion" | "sst" | "re20" | "mantencion"
 
 export interface PrintDocumentSpec {
   id: PrintDocumentId
@@ -57,6 +57,13 @@ export const PRINT_DOCUMENT_SPECS: Record<PrintDocumentId, PrintDocumentSpec> = 
     path: (id) => `/prevencion/incidentes/${encodeURIComponent(id)}/re20/print`,
     waitUntil: "domcontentloaded",
     waitForImages: false,
+  },
+  mantencion: {
+    id: "mantencion",
+    path: (id) => `/mantencion/registros/${encodeURIComponent(id)}/print`,
+    waitUntil: "domcontentloaded",
+    // El PDF lleva las fotos con su sello: sin esperarlas saldría con cuadros vacíos.
+    waitForImages: true,
   },
 }
 

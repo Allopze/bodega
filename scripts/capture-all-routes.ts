@@ -657,6 +657,20 @@ const routeTargets: RouteTarget[] = [
   { slug: "mantenciones-detalle", path: "/mantenciones/maint-audit-1", auth: true },
   { slug: "mantenciones-planes", path: "/mantenciones/planes", auth: true },
   { slug: "mantenciones-politicas-documentales", path: "/mantenciones/politicas-documentales", auth: true },
+  // Mantención de equipos (módulo nuevo): fixtures propios para que las capturas
+  // muestren el panel, un registro con su PDF y el editor de pautas con datos.
+  { slug: "mantencion-panel", path: "/mantencion/panel", auth: true },
+  { slug: "mantencion-registros", path: "/mantencion/registros", auth: true },
+  { slug: "mantencion-registro-detalle", path: "/mantencion/registros/mant-record-audit-1", auth: true },
+  { slug: "mantencion-registro-print", path: "/mantencion/registros/mant-record-audit-1/print", auth: true },
+  { slug: "mantencion-equipos", path: "/mantencion/equipos", auth: true },
+  { slug: "mantencion-equipo-detalle", path: "/mantencion/equipos/fuel-veh-audit-1", auth: true },
+  { slug: "mantencion-equipo-nuevo", path: "/mantencion/equipos/nuevo", auth: true },
+  { slug: "mantencion-equipo-importar", path: "/mantencion/equipos/importar", auth: true },
+  { slug: "mantencion-pautas", path: "/mantencion/pautas", auth: true },
+  { slug: "mantencion-pauta-detalle", path: "/mantencion/pautas/mant-sched-audit-1", auth: true },
+  { slug: "mantencion-dispositivos", path: "/mantencion/dispositivos", auth: true },
+  { slug: "mantencion-app", path: "/m/mantencion", auth: true },
   { slug: "ti", path: "/ti", auth: true },
   { slug: "ti-activos", path: "/ti/activos", auth: true },
   { slug: "ti-activo-detalle", path: "/ti/activos/it-asset-audit-1", auth: true },
@@ -906,6 +920,7 @@ const seedCoverage: CaptureSeedArea[] = [
   { section: "analitica", fixtures: ["compras", "combustible", "flota", "EPP"] },
   { section: "flota", fixtures: ["vehículos activos", "cargas de combustible", "mantenciones"] },
   { section: "mantenciones", fixtures: ["vehículos", "proveedores", "mantenciones registradas"] },
+  { section: "mantencion", fixtures: ["panel con indicadores", "registro preventivo con su PDF", "equipo con perfil y pauta", "pauta con matriz", "credencial de dispositivo"] },
   { section: "ti", fixtures: ["activo asignado con acta de custodia", "ticket TI abierto asociado a activo", "activo disponible con garantía vigente", "activo con garantía vencida y reparación costosa", "garantía por vencer dentro de 30 días", "licencia con asignaciones a trabajador y equipo", "mantención correctiva con costo alto", "mantención preventiva", "baja de activo autorizada", "sistemas de acceso con trabajador activo y suspendido", "checklist de alta con tareas pendientes", "proveedor TI con vínculo de reparación y de venta"] },
   { section: "combustibles", fixtures: ["cargas de combustible", "lote de consumos con registros asociados y sin asociar", "lote de log operacional con faena pendiente de asociar", "carga TAE con resultado público", "lote TAE histórico con carga observada y rechazo", "vehículos de combustible", "proveedores de combustible", "cuentas corrientes", "reportes mensuales"] },
   { section: "repuestos", fixtures: ["solicitud de repuestos", "ítem libre", "cotización pendiente"] },
@@ -5728,6 +5743,72 @@ async function prepareDatabase(captureDbUrl: string) {
     END;
     $$
   `)
+
+  // ── Mantención de equipos: fixtures mínimos con IDs fijos ──────────────
+  // Las rutas dinámicas de captura apuntan a estos IDs, así que no dependen
+  // de los identificadores aleatorios que genera el seed real.
+  await db.insert(schema.mantWorksiteSettings).values({
+    worksiteId, folioCode: "AUD", createdAt: now, updatedAt: now,
+  }).onConflictDoNothing()
+  await db.insert(schema.mantBrands).values({
+    id: "mant-brand-audit-1", name: "Toyota", nameKey: "toyota", sortOrder: 0, createdAt: now, updatedAt: now,
+  }).onConflictDoNothing()
+  await db.insert(schema.mantSchedules).values({
+    id: "mant-sched-audit-1", name: "Pauta de captura", nameKey: "pauta de captura", unit: "km", version: 1, createdAt: now, updatedAt: now,
+  }).onConflictDoNothing()
+  await db.insert(schema.mantScheduleIntervals).values({
+    id: "mant-int-audit-1", scheduleId: "mant-sched-audit-1", value: 10_000, createdAt: now, updatedAt: now,
+  }).onConflictDoNothing()
+  await db.insert(schema.mantScheduleGroups).values({
+    id: "mant-group-audit-1", scheduleId: "mant-sched-audit-1", name: "Motor", sortOrder: 0, createdAt: now, updatedAt: now,
+  }).onConflictDoNothing()
+  await db.insert(schema.mantScheduleItems).values({
+    id: "mant-item-audit-1", scheduleId: "mant-sched-audit-1", groupId: "mant-group-audit-1",
+    itemKey: "motor-audit-1", name: "Revisión de aceite y filtros", sortOrder: 0, createdAt: now, updatedAt: now,
+  }).onConflictDoNothing()
+  await db.insert(schema.mantScheduleItemIntervals).values({
+    itemId: "mant-item-audit-1", intervalId: "mant-int-audit-1", applies: true,
+  }).onConflictDoNothing()
+  await db.insert(schema.mantEquipmentProfiles).values({
+    vehicleId: "fuel-veh-audit-1", brandId: "mant-brand-audit-1", scheduleId: "mant-sched-audit-1",
+    initialReading: 10_000, initialReadingDate: "2026-05-01", createdAt: now, updatedAt: now,
+  }).onConflictDoNothing()
+  await db.insert(schema.mantRecords).values({
+    id: "mant-record-audit-1",
+    folio: "MP-AUD-0001",
+    kind: "P",
+    vehicleId: "fuel-veh-audit-1",
+    equipmentSnapshot: {
+      code: "FD-71-22", plate: "FD-71-22", noPlate: false, type: "Camioneta",
+      brand: "Toyota", model: "Hilux 4x4", year: 2023, worksite: "Faena Mininco", unit: "km",
+    },
+    worksiteId,
+    reading: 10_050,
+    unit: "km",
+    workDate: "2026-06-08",
+    registeredBy: userId,
+    executorKind: "yo",
+    executorUserId: userId,
+    executorName: "Admin E2E",
+    signedAt: now,
+    scheduleId: "mant-sched-audit-1",
+    scheduleVersion: 1,
+    scheduleNameSnapshot: "Pauta de captura",
+    intervalValue: 10_000,
+    suggestedIntervalValue: 10_000,
+    notes: "Sin novedad",
+    createdAt: now,
+    updatedAt: now,
+  }).onConflictDoNothing()
+  await db.insert(schema.mantRecordItems).values({
+    id: "mant-record-item-audit-1", recordId: "mant-record-audit-1", itemKey: "motor-audit-1",
+    groupName: "Motor", itemName: "Revisión de aceite y filtros", sortOrder: 0, value: "R",
+  }).onConflictDoNothing()
+  await db.insert(schema.mantDeviceCredentials).values({
+    id: "mant-dev-audit-1", userId, deviceId: "00000000-0000-4000-8000-000000000001",
+    tokenHash: "a".repeat(64), label: "Tablet de captura", createdAt: now,
+    expiresAt: new Date(Date.parse(now) + 30 * 86_400_000).toISOString(),
+  }).onConflictDoNothing()
 
   await pgClient.end()
 }

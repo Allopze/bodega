@@ -37,7 +37,11 @@ interface TopBarProps {
 // rotulado.
 // El control de combustible no tiene búsqueda de texto: todas sus tablas se
 // acotan con filtros estructurados (período, faena, equipo) agregados en SQL.
-const ROUTES_WITH_OWN_SEARCH = ["/solicitudes", "/aprobaciones", "/compras", "/recepcion", "/pendientes", "/entregas", "/bodega", "/flota", "/mantenciones", "/soporte", "/prevencion/ppa", "/prevencion/inspecciones", "/prevencion/pdtp/obligaciones", "/facturacion/facturas", "/seguimiento", "/ti/accesos", "/ti/tickets", "/admin/taxonomia-sst", "/combustibles/control"]
+// Mantención de equipos: `/mantencion/registros` (lista y detalle) filtra en SQL con
+// `recordVisibilitySql` y sus filtros viven en la URL, así que el input de la shell
+// sólo filtraría las 25 filas de la página. `/mantencion/panel` es una portada de
+// indicadores sin colección que filtrar (mismo criterio que `/dashboard`).
+const ROUTES_WITH_OWN_SEARCH = ["/solicitudes", "/aprobaciones", "/compras", "/recepcion", "/pendientes", "/entregas", "/bodega", "/flota", "/mantenciones", "/soporte", "/prevencion/ppa", "/prevencion/inspecciones", "/prevencion/pdtp/obligaciones", "/facturacion/facturas", "/seguimiento", "/ti/accesos", "/ti/tickets", "/admin/taxonomia-sst", "/combustibles/control", "/mantencion/registros", "/mantencion/panel"]
 
 /** Formularios de alta/edición: no hay lista que filtrar, así que el input de
  *  la shell prometería un filtrado inexistente. Ninguna ruta bajo estos

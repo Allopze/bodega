@@ -52,7 +52,10 @@ export const ROUTE_OWNER_ALIASES: RouteOwnerRule[] = [
   { moduleId: "mantencion_equipos", submoduleHref: "/m/mantencion", prefix: "/api/mantencion/sync" },
   { moduleId: "mantencion_equipos", submoduleHref: "/m/mantencion", prefix: "/api/mantencion/dispositivo" },
   { moduleId: "mantencion_equipos", submoduleHref: "/mantencion/registros", prefix: "/api/mantencion" },
-  { moduleId: "mantencion_equipos", submoduleHref: "/mantencion/registros", prefix: "/mantencion/importar" },
+  { moduleId: "mantencion_equipos", submoduleHref: "/mantencion/equipos", prefix: "/mantencion/dispositivos" },
+  // Fallback: la portada y cualquier rama futura bajo /mantencion. Los prefijos
+  // de los ítems de navegación son más largos y ganan por orden.
+  { moduleId: "mantencion_equipos", submoduleHref: "/mantencion/panel", prefix: "/mantencion" },
   { moduleId: "warehouse", submoduleHref: "/bodega", prefix: "/api/bodega" },
   { moduleId: "deliveries", submoduleHref: "/entregas", prefix: "/api/entregas" },
   // Módulo TI: fotos y adjuntos sirven evidencia de asignaciones/actas.
@@ -128,6 +131,7 @@ export const ROUTE_OWNER_ALIASES: RouteOwnerRule[] = [
 
   // Automatizaciones: el secreto se valida en el handler antes de consultar el toggle.
   { moduleId: "admin", submoduleHref: "/admin", prefix: "/api/cron/backup-health" },
+  { moduleId: "admin", submoduleHref: "/admin", prefix: "/api/cron/backup-report" },
   // Documentos generados → Cloudreve: se configura en Administración › Almacenamiento.
   { moduleId: "admin", submoduleHref: "/admin", prefix: "/api/cron/generated-documents-archive" },
   { moduleId: "billing", submoduleHref: "/facturacion/sincronizacion", prefix: "/api/cron/billing-sales-sync" },
