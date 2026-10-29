@@ -13,17 +13,21 @@ const browser = vi.hoisted(() => ({
   status: 200,
   finalUrl: "http://127.0.0.1:3000/entregas/d1/print",
   markerPresent: true,
+  pageCreationFails: false,
   pdfBytes: Buffer.from("%PDF-1.7 prueba"),
   handler: null as RouteHandler | null,
   contextOptions: null as null | { extraHTTPHeaders?: Record<string, string> },
 }))
 
-vi.mock("@/lib/pdf/browser-pool", () => ({
+vi.mock("@/lib/pdf/browser-pool", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/pdf/browser-pool")>()),
   withBrowserContext: async (options: { extraHTTPHeaders?: Record<string, string> }, fn: (ctx: unknown) => Promise<unknown>) => {
     browser.contextOptions = options
     return fn({
     route: async (_pattern: string, handler: RouteHandler) => { browser.handler = handler },
-    newPage: async () => ({
+    newPage: async () => {
+      if (browser.pageCreationFails) throw new Error("El navegador no abrió una página")
+      return {
       goto: async () => ({ status: () => browser.status }),
       url: () => browser.finalUrl,
       waitForSelector: async () => {
@@ -31,7 +35,8 @@ vi.mock("@/lib/pdf/browser-pool", () => ({
       },
       waitForFunction: async () => undefined,
       pdf: async () => browser.pdfBytes,
-    }),
+      }
+    },
     })
   },
 }))
@@ -50,6 +55,7 @@ beforeEach(() => {
   browser.status = 200
   browser.finalUrl = `${ORIGIN}/entregas/d1/print`
   browser.markerPresent = true
+  browser.pageCreationFails = false
   browser.pdfBytes = Buffer.from("%PDF-1.7 prueba")
   browser.handler = null
 })
@@ -73,6 +79,11 @@ describe("printCredentialFromCookieHeader", () => {
 })
 
 describe("renderPrintPageToPdf", () => {
+  it("reporta como fallo de render si Chromium no puede abrir una página", async () => {
+    browser.pageCreationFails = true
+    await expect(render()).rejects.toMatchObject({ code: "RENDER_FAILED" })
+  })
+
   it("devuelve el PDF y solo manda la cookie a la propia plataforma", async () => {
     const pdf = await render()
     expect(pdf.subarray(0, 4).toString()).toBe("%PDF")

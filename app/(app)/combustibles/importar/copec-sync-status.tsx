@@ -6,6 +6,7 @@ import { ArrowsClockwise, CheckCircle, PencilSimple, WarningCircle, XCircle } fr
 import { Button } from "@/components/ui/button"
 import { DatePicker } from "@/components/ui/date-picker"
 import { toast } from "@/lib/toast"
+import { reportBoundaryError } from "@/lib/observability/sentry-client"
 import { formatDateTime, formatQty } from "@/lib/utils"
 import { confirmCopecPeriodEmptyAction, getCopecSyncPlanAction, runCopecSyncPeriodAction, getCopecSyncStatusAction, updateCopecSyncStartAction, type CopecSyncStartOptions, type CopecSyncStatus } from "./copec-sync-action"
 import { Textarea } from "@/components/ui/textarea"
@@ -18,6 +19,22 @@ const COVERAGE_STATUS_LABEL: Record<CopecSyncStatus["coverage"][number]["status"
   failed: "Fallido",
   complete: "Completo",
   legitimate_empty: "Vacío confirmado",
+}
+
+const STATUS_TIMEOUT_MS = 10_000
+
+async function getCopecStatusWithDeadline(): Promise<Awaited<ReturnType<typeof getCopecSyncStatusAction>>> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      getCopecSyncStatusAction(),
+      new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error("Se agotó la espera del estado de Copec")), STATUS_TIMEOUT_MS)
+      }),
+    ])
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId)
+  }
 }
 
 interface SyncProgress {
@@ -74,10 +91,19 @@ export function CopecSyncStatus({ initialStatus, initialStartOptions }: { initia
   const { status, startOptions, selectedStart, isEditingStart, progress, syncInProgress, result } = view
 
   const sync = useCallback(() => {
-    startTransition(async () => {
+    const run = async () => {
       dispatchView({ type: "patch", patch: { result: null, syncInProgress: true } })
 
-      const plan = await getCopecSyncPlanAction()
+      let plan: Awaited<ReturnType<typeof getCopecSyncPlanAction>>
+      try {
+        plan = await getCopecSyncPlanAction()
+      } catch (error) {
+        reportBoundaryError(error instanceof Error ? error : new Error("No fue posible preparar la sincronización Copec"))
+        const message = "No se pudo preparar la sincronización de Copec. No se inició ninguna corrida; recarga la página e inténtalo de nuevo."
+        dispatchView({ type: "patch", patch: { result: message, syncInProgress: false } })
+        toast.error(message)
+        return
+      }
       if (!plan.ok) { toast.error(plan.message); dispatchView({ type: "patch", patch: { syncInProgress: false } }); return }
       if (plan.periods.length === 0) {
         dispatchView({ type: "patch", patch: { result: "No hay meses nuevos para sincronizar", syncInProgress: false } })
@@ -94,12 +120,21 @@ export function CopecSyncStatus({ initialStatus, initialStartOptions }: { initia
       const unavailable: string[] = []
       const unmappedCards = new Set<string>()
       let stoppedAt: SyncProgress | null = null
+      let responseLost = false
 
       for (const [index, period] of plan.periods.entries()) {
         const sp: SyncProgress = { current: index + 1, total: plan.periods.length, from: period.from, to: period.to }
         dispatchView({ type: "patch", patch: { progress: sp } })
 
-        const r = await runCopecSyncPeriodAction(period)
+        let r: Awaited<ReturnType<typeof runCopecSyncPeriodAction>>
+        try {
+          r = await runCopecSyncPeriodAction(period)
+        } catch (error) {
+          reportBoundaryError(error instanceof Error ? error : new Error("No fue posible recibir el resultado de Copec"))
+          stoppedAt = sp
+          responseLost = true
+          break
+        }
         if (!r.ok) {
           toast.error(`${formatMonth(period.from)}: ${r.message}`)
           stoppedAt = sp
@@ -127,16 +162,32 @@ export function CopecSyncStatus({ initialStatus, initialStartOptions }: { initia
         }
       }
 
-      dispatchView({ type: "patch", patch: { progress: null, syncInProgress: false } })
+      const initialResult = responseLost && stoppedAt
+        ? `Hay ${imported} registros confirmados de meses anteriores. No se recibió el resultado de ${formatMonth(stoppedAt.from)}. La corrida podría seguir en curso; revisa su estado antes de volver a intentarlo.`
+        : stoppedAt
+          ? `Se importaron ${imported} registros antes de detenerse. Reintenta desde ${formatMonth(stoppedAt.from)}.`
+          : `${imported} registros importados${refreshed ? ` · ${refreshed} actualizados` : ""} · ${received} recepciones TAE · ${rowsReceived} filas recibidas · ${rowsRejected} rechazadas · ${rowsPending} pendientes${pendingPlates ? ` · ${pendingPlates} patentes pendientes` : ""}${unmappedCards.size ? ` · ${unmappedCards.size} tarjetas TAE sin estanque` : ""}${unavailable.length ? ` · ${unavailable.length} reportes sin importar` : ""}`
+      // Mostrar el resultado antes de consultar el estado: esa petición también
+      // puede quedar pendiente si se perdió la conexión.
+      dispatchView({ type: "patch", patch: { progress: null, syncInProgress: false, result: initialResult } })
+      if (responseLost) toast.error(initialResult)
 
-      const updated = await getCopecSyncStatusAction()
-      if (updated.ok) dispatchView({ type: "patch", patch: { status: updated.data } })
-
-      if (stoppedAt) {
-        dispatchView({ type: "patch", patch: { result: `Se importaron ${imported} registros antes de detenerse. Reintenta desde ${formatMonth(stoppedAt.from)}.` } })
-      } else {
-        dispatchView({ type: "patch", patch: { result: `${imported} registros importados${refreshed ? ` · ${refreshed} actualizados` : ""} · ${received} recepciones TAE · ${rowsReceived} filas recibidas · ${rowsRejected} rechazadas · ${rowsPending} pendientes${pendingPlates ? ` · ${pendingPlates} patentes pendientes` : ""}${unmappedCards.size ? ` · ${unmappedCards.size} tarjetas TAE sin estanque` : ""}${unavailable.length ? ` · ${unavailable.length} reportes sin importar` : ""}` } })
+      let statusRefreshFailed = false
+      try {
+        const updated = await getCopecStatusWithDeadline()
+        if (updated.ok) dispatchView({ type: "patch", patch: { status: updated.data } })
+        else statusRefreshFailed = true
+      } catch (error) {
+        reportBoundaryError(error instanceof Error ? error : new Error("No fue posible actualizar el estado de Copec"))
+        statusRefreshFailed = true
       }
+
+      if (statusRefreshFailed) {
+        const statusWarning = "No se pudo actualizar el estado de Copec; recarga la página para revisarlo."
+        dispatchView({ type: "patch", patch: { result: `${initialResult} ${statusWarning}` } })
+        if (!responseLost) toast.warning(statusWarning)
+      }
+      if (responseLost) return
 
       // `router.refresh()` AL FINAL, después de fijar el resultado en el estado
       // local: antes corría primero y el resumen dispatchado justo después se
@@ -156,6 +207,17 @@ export function CopecSyncStatus({ initialStatus, initialStartOptions }: { initia
       // faena ya tenía una importación manual de ese período y se omitió.
       if (unavailable.length) toast.warning(`${unavailable.length} reporte(s) de Copec sin importar`)
       else toast.success(`Copec sincronizado: ${imported} registros`)
+    }
+
+    startTransition(async () => {
+      try {
+        await run()
+      } catch (error) {
+        reportBoundaryError(error instanceof Error ? error : new Error("No fue posible completar la sincronización Copec"))
+        const message = "No se pudo completar la sincronización de Copec. La corrida podría seguir en curso; revisa su estado antes de volver a intentarlo."
+        dispatchView({ type: "patch", patch: { progress: null, syncInProgress: false, result: message } })
+        toast.error(message)
+      }
     })
   }, [router])
 

@@ -16,7 +16,10 @@ vi.mock("@/lib/auth/auth", () => ({ auth: mockAuth }))
 vi.mock("@/db", () => ({
   db: { query: { purchaseOrders: { findFirst: mockFindFirst } } },
 }))
-vi.mock("@/lib/pdf/browser-pool", () => ({ withBrowserContext: mockWithBrowserContext }))
+vi.mock("@/lib/pdf/browser-pool", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/pdf/browser-pool")>()),
+  withBrowserContext: mockWithBrowserContext,
+}))
 vi.mock("@/app/(print)/compras/[id]/print/oc-pdfcn-render", () => ({ renderOcPdf: mockRenderOcPdf }))
 vi.mock("@/app/(print)/compras/[id]/print/oc-print-data", () => ({
   loadOcPrintDataOrNull: mockLoadOrNull,

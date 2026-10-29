@@ -102,8 +102,9 @@ function fakePage(script: PageScript) {
   }
 }
 
-vi.mock("@/lib/pdf/browser-pool", () => ({
-  withBrowserContext: async (_options: unknown, run: (context: unknown) => Promise<unknown>) => run({
+vi.mock("@/lib/pdf/browser-pool", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/pdf/browser-pool")>()),
+  withIsolatedBrowserContext: async (_options: unknown, run: (context: unknown) => Promise<unknown>) => run({
     newPage: async () => fakePage(pageScripts.shift() ?? {}),
   }),
 }))
