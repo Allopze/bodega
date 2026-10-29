@@ -376,4 +376,16 @@ export const pgliteTestFiles = [
   // C07 sobre ocurrencias: "no aplica" y cancelación en revisión.
   "lib/__tests__/pdtp-scheduled-instance-outcome-review.test.ts",
   "scripts/__tests__/revert-pdtp-revoked-approvals.test.ts",
+  // Mantención de equipos: carga inicial idempotente y conciliada con la flota (§13).
+  "lib/__tests__/mantencion-seed-pglite.test.ts",
+  // Mantención de equipos: recepción de registros, folio, revalidación y ciclo de vida (L1a).
+  "lib/__tests__/mantencion-sync-pglite.test.ts",
+  "lib/__tests__/mantencion-sync-http-pglite.test.ts",
+  "lib/__tests__/mantencion-sync-catalog-pglite.test.ts",
+  // Mantención de equipos: alta, incorporación, patente, faena nueva, baja e importación (L4).
+  "lib/__tests__/mantencion-equipment-pglite.test.ts",
+  // Mantención de equipos: edición de pautas con versión y snapshot, copia, asignación y baja (L4).
+  "lib/__tests__/mantencion-schedules-pglite.test.ts",
+  // Mantención de equipos: lista de registros por alcance, filtros, indicadores, panel, Excel y PDF archivado (L3).
+  "lib/__tests__/mantencion-records-pglite.test.ts",
 ]
