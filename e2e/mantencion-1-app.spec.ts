@@ -45,14 +45,14 @@ async function nuevoContexto(browser: Browser, viewport: { width: number; height
   return browser.newContext({ baseURL, viewport, hasTouch: true, serviceWorkers: "allow" })
 }
 
-/** Entra por el login real de la plataforma y vuelve a la app (como lo hace «Entrar con otra cuenta»). */
+/** Entra por el login PROPIO de la app (no el de la plataforma), como al abrirla instalada o con «Entrar con otra cuenta». */
 async function entrar(page: Page, email: string) {
   await clearRateLimits()
-  if (!/\/login/.test(page.url())) await page.goto("/login?callbackUrl=%2Fm%2Fmantencion")
-  await page.getByLabel("Correo electrónico", { exact: true }).fill(email)
+  if (!/\/m\/mantencion\/entrar/.test(page.url())) await page.goto("/m/mantencion/entrar")
+  await page.getByLabel("Correo", { exact: true }).fill(email)
   await page.getByLabel("Contraseña", { exact: true }).fill("chome2026")
-  await page.getByRole("button", { name: "Ingresar", exact: true }).click()
-  await expect(page).toHaveURL(/\/m\/mantencion/, { timeout: 30_000 })
+  await page.getByRole("button", { name: "Entrar", exact: true }).click()
+  await expect(page).toHaveURL(/\/m\/mantencion$/, { timeout: 30_000 })
 }
 
 async function teclearPin(page: Page, pin: string) {
@@ -71,8 +71,8 @@ async function definirPin(page: Page, pin: string) {
 
 /** El service worker tiene que haber guardado la app y sus archivos ANTES de cortar la señal. */
 async function esperarSwListo(page: Page) {
-  // Se pregunta por el registro y no por `controller`: tras el login la app llega con navegación
-  // del lado del cliente, el documento nació en `/login` y no queda controlado hasta la próxima
+  // Se pregunta por el registro y no por `controller`: si la app se abre por navegación del lado
+  // del cliente desde fuera de su alcance, el documento no queda controlado hasta la próxima
   // carga. Lo que importa para abrir sin señal es que el worker esté activo y los cachés llenos.
   await expect.poll(() => page.evaluate(async () => {
     const registro = await navigator.serviceWorker.getRegistration("/m/mantencion")
@@ -167,6 +167,15 @@ test.describe("App del mecánico", () => {
     })
   })
   test.afterAll(async () => { await telefono.close() })
+
+  test("0 · la app es aparte: sin sesión abre su propio login, no el de la plataforma", async () => {
+    await pagina.goto("/m/mantencion")
+    await expect(pagina).toHaveURL(/\/m\/mantencion\/entrar/)
+    await expect(pagina.getByRole("heading", { name: "Entrar", level: 1 })).toBeVisible()
+    await expect(pagina.getByRole("heading", { name: /Iniciar sesión/ })).toHaveCount(0)
+    // El manifest de la app (no el de la plataforma) es el que el teléfono instala.
+    await expect(pagina.locator('link[rel="manifest"]')).toHaveAttribute("href", "/mant-manifest.json")
+  })
 
   test("1 · con señal: desde «Le toca mantención», «Todo realizado» por sistema, una excepción con motivo, «Cambiar», firmar y folio", async () => {
     await entrar(pagina, MEC1)
@@ -334,7 +343,7 @@ test.describe("Tablet compartida", () => {
       await definirPin(pagina, PIN_MEC1)
       await pagina.getByRole("button", { name: /^Cuenta de .*Cambiar de cuenta/ }).click()
       await pagina.getByRole("button", { name: "Entrar con otra cuenta", exact: true }).click()
-      await expect(pagina).toHaveURL(/\/login/, { timeout: 30_000 })
+      await expect(pagina).toHaveURL(/\/m\/mantencion\/entrar/, { timeout: 30_000 })
       await entrar(pagina, MEC2)
       await definirPin(pagina, PIN_MEC2)
       await esperarSwListo(pagina)

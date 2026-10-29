@@ -96,7 +96,6 @@ const MENU_DEL_AREA: ReadonlyArray<{ grupo: string; destinos: readonly DestinoDe
       { href: "/mantencion/registros", nombre: "Registros" },
       { href: "/mantencion/equipos", nombre: "Equipos" },
       { href: "/mantencion/pautas", nombre: "Pautas" },
-      { href: "/m/mantencion", nombre: "App del mecánico" },
     ],
   },
   {
@@ -119,7 +118,7 @@ test.describe("Control operacional — menú del área", () => {
     await login(page)
   })
 
-  test("agrupa el área en Seguimiento, Flota, Mantención y Combustible con sus catorce destinos en orden", async ({ page }) => {
+  test("agrupa el área en Seguimiento, Flota, Mantención y Combustible con sus trece destinos en orden", async ({ page }) => {
     await page.goto("/control-operacional")
 
     const area = page
@@ -150,8 +149,7 @@ test.describe("Control operacional — menú del área", () => {
     // los destinos manda a /forbidden para quien tiene todos los permisos, y cada
     // uno se reconoce a sí mismo. «Revisión» redirige a la cola con trabajo,
     // pero su ítem sigue siendo el activo (la cola es alias suyo).
-    // La app del mecánico es una superficie de pantalla completa, sin el menú de la plataforma.
-    for (const href of HREFS_DEL_MENU.filter((destino) => !destino.startsWith("/m/"))) {
+    for (const href of HREFS_DEL_MENU) {
       await page.goto(href)
       await expect.soft(page, `${href} no debe mandar a /forbidden`).not.toHaveURL(/\/forbidden|\/login/)
       await expect.soft(menuDelArea(page).locator('[aria-current="page"]'), `${href}: un solo ítem activo`).toHaveCount(1)

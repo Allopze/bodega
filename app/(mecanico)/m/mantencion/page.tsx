@@ -2,26 +2,12 @@ import type { Metadata, Viewport } from "next"
 import { redirect } from "next/navigation"
 import { requirePermission } from "@/lib/auth/can"
 import { MantApp } from "@/components/mantencion/app/mant-app"
+import { MANT_APP_METADATA, MANT_APP_VIEWPORT } from "./app-metadata"
 
 export const dynamic = "force-dynamic"
 
-export const metadata: Metadata = {
-  title: "Mantención",
-  description: "Registro de mantención preventiva y correctiva de equipos, con o sin señal.",
-  manifest: "/mant-manifest.json",
-  robots: { index: false, follow: false },
-  appleWebApp: { capable: true, title: "Mantención", statusBarStyle: "default" },
-  icons: { apple: "/mant-icon-192.png" },
-}
-
-export const viewport: Viewport = {
-  themeColor: "#ffffff",
-  width: "device-width",
-  initialScale: 1,
-  // Sin `userScalable: false`: bloquear el zoom incumple WCAG 1.4.4.
-  maximumScale: 5,
-  viewportFit: "cover",
-}
+export const metadata: Metadata = MANT_APP_METADATA
+export const viewport: Viewport = MANT_APP_VIEWPORT
 
 /**
  * Esta página sólo entrega QUIEN es el usuario y la versión: ningún dato de
@@ -38,7 +24,8 @@ export default async function MantencionAppPage() {
   try {
     session = await requirePermission("mant:app:use")
   } catch {
-    redirect("/forbidden")
+    // Sin acceso a la app: su propio login lo explica (no el /forbidden de la plataforma).
+    redirect("/m/mantencion/entrar")
   }
   const { id, name, email } = session.user
   return (

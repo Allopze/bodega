@@ -49,8 +49,11 @@ export const ROUTE_OWNER_ALIASES: RouteOwnerRule[] = [
   { moduleId: "mantenciones", submoduleHref: "/mantenciones", prefix: "/api/mantenciones" },
   // Mantención de equipos: la app del mecánico (PWA) y sus APIs, incluidas las
   // de sincronización que autentican con credencial de dispositivo.
-  { moduleId: "mantencion_equipos", submoduleHref: "/m/mantencion", prefix: "/api/mantencion/sync" },
-  { moduleId: "mantencion_equipos", submoduleHref: "/m/mantencion", prefix: "/api/mantencion/dispositivo" },
+  // La app del mecánico no está en el menú (es una PWA aparte): su ruta, su login
+  // y su sincronización cuelgan del mismo submódulo que los Registros.
+  { moduleId: "mantencion_equipos", submoduleHref: "/mantencion/registros", prefix: "/m/mantencion" },
+  { moduleId: "mantencion_equipos", submoduleHref: "/mantencion/registros", prefix: "/api/mantencion/sync" },
+  { moduleId: "mantencion_equipos", submoduleHref: "/mantencion/registros", prefix: "/api/mantencion/dispositivo" },
   { moduleId: "mantencion_equipos", submoduleHref: "/mantencion/registros", prefix: "/api/mantencion" },
   { moduleId: "mantencion_equipos", submoduleHref: "/mantencion/equipos", prefix: "/mantencion/dispositivos" },
   // Fallback: la portada y cualquier rama futura bajo /mantencion. Los prefijos

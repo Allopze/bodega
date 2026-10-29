@@ -69,7 +69,10 @@ export default auth(async (req) => {
 
   // All other paths require authentication
   if (!isLoggedIn) {
-    const loginUrl = new URL("/login", req.url)
+    // La app del mecánico tiene su propio login: quien la abre instalada en el
+    // teléfono no debe caer en el login de escritorio de la plataforma.
+    const isMechanicApp = matchesRoutePrefix(pathname, "/m/mantencion")
+    const loginUrl = new URL(isMechanicApp ? "/m/mantencion/entrar" : "/login", req.url)
     loginUrl.searchParams.set("callbackUrl", pathname)
     return withSecurityHeaders(NextResponse.redirect(loginUrl), csp)
   }

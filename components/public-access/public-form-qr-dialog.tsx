@@ -29,6 +29,10 @@ interface PublicFormQrDialogProps {
   pdfSubtitle: string
   triggerLabel?: string
   qrAlt: (option: PublicFormQrOption) => string
+  /** Con una sola opción el selector no decide nada: se puede ocultar. */
+  hideSelector?: boolean
+  /** Contenido extra al pie del diálogo (p. ej. los pasos para instalar una app). */
+  children?: React.ReactNode
 }
 
 /**
@@ -45,6 +49,8 @@ export function PublicFormQrDialog({
   pdfSubtitle,
   triggerLabel = "QR / Enlace",
   qrAlt,
+  hideSelector = false,
+  children,
 }: PublicFormQrDialogProps) {
   const [open, setOpen] = React.useState(false)
   const [qr, setQr] = React.useState("")
@@ -116,7 +122,7 @@ export function PublicFormQrDialog({
         </DialogHeader>
 
         <div className="flex flex-col gap-5">
-          <label className="flex flex-col gap-1.5">
+          {!hideSelector && <label className="flex flex-col gap-1.5">
             <span className="text-eyebrow">{selectorLabel}</span>
             <Select value={selected?.id ?? ""} onValueChange={onSelectedOptionChange} disabled={options.length === 0}>
               <SelectTrigger className="w-full">
@@ -128,7 +134,7 @@ export function PublicFormQrDialog({
                 ))}
               </SelectContent>
             </Select>
-          </label>
+          </label>}
 
           <div className="flex flex-col items-center gap-3">
             <div className="flex h-44 w-44 items-center justify-center rounded-xl border border-(--color-border) bg-white p-2">
@@ -155,6 +161,7 @@ export function PublicFormQrDialog({
               </Button>
             </div>
           </div>
+          {children}
         </div>
       </DialogContent>
     </Dialog>

@@ -327,6 +327,11 @@ describe("module-toggles service", () => {
       expect(resolveModuleRoute("/api/prevencion/cgrd/mapa/plano-1")).toEqual({ moduleId: "prevention", submoduleHref: "/prevencion/cgrd/mapa" })
       expect(resolveModuleRoute("/api/prevencion/cgrd/evidence/acta-1")).toEqual({ moduleId: "prevention", submoduleHref: "/prevencion/cgrd" })
       expect(resolveModuleRoute("/api/cron/billing-sales-sync")).toEqual({ moduleId: "billing", submoduleHref: "/facturacion/sincronizacion" })
+      // La app del mecánico salió del menú (PWA aparte): su ruta, su login y su
+      // sincronización siguen bajo el interruptor de Mantención de equipos.
+      expect(resolveModuleRoute("/m/mantencion")).toEqual({ moduleId: "mantencion_equipos", submoduleHref: "/mantencion/registros" })
+      expect(resolveModuleRoute("/m/mantencion/entrar")).toEqual({ moduleId: "mantencion_equipos", submoduleHref: "/mantencion/registros" })
+      expect(resolveModuleRoute("/api/mantencion/sync/registros")).toEqual({ moduleId: "mantencion_equipos", submoduleHref: "/mantencion/registros" })
       expect(resolveModuleRoute("/api/facturacion/facturas/export")).toEqual({ moduleId: "billing", submoduleHref: "/facturacion/facturas" })
       expect(resolveModuleRoute("/api/prevencion/inspecciones/export")).toEqual({ moduleId: "prevention", submoduleHref: undefined })
       // El Excel del Anexo 15 cuelga del mismo prefijo: la ruta lo resuelve a Prevención, y el

@@ -1,10 +1,10 @@
 import { getSession, signOut } from "next-auth/react"
 
 /** Dónde vuelve el mecánico después de entrar con otra cuenta. */
-export const MANT_LOGIN_URL = "/login?callbackUrl=%2Fm%2Fmantencion"
+export const MANT_LOGIN_URL = "/m/mantencion/entrar"
 
 /**
- * Cierra la sesión de la PLATAFORMA y manda al login con retorno a la app.
+ * Cierra la sesión y manda al login propio de la app (no al de la plataforma).
  *
  * No toca la cola, los borradores ni las cuentas del dispositivo: eso vive en
  * IndexedDB (`mant-offline`) y es justamente lo que no puede perderse al cambiar

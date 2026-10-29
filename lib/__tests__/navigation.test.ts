@@ -301,7 +301,6 @@ describe("sidebar navigation", () => {
       ["Mantención", "Registros"],
       ["Mantención", "Equipos"],
       ["Mantención", "Pautas"],
-      ["Mantención", "App del mecánico"],
       ["Combustible", "Consumo"],
       ["Combustible", "Cargas"],
       ["Combustible", "Revisión"],

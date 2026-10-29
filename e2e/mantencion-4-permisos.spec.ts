@@ -45,7 +45,9 @@ test("un mecánico no entra a las vistas de jefatura por URL", async ({ page }) 
     await page.goto(url)
     await expect(page.getByRole("heading", { name: "Sin permisos suficientes", level: 1 }), `${url} debe quedar bloqueada para un mecánico`).toBeVisible()
   }
-  // La navegación no ofrece la jefatura: sólo la app y sus registros.
+  // La app del mecánico no está en el menú de la plataforma: es una PWA aparte.
+  await page.goto("/mantencion/registros")
+  await expect(page.getByRole("link", { name: "App del mecánico" })).toHaveCount(0)
   await page.goto("/m/mantencion")
   await expect(page).toHaveURL(/\/m\/mantencion/)
   await cerrarSesion(page)
@@ -132,6 +134,12 @@ test("jefatura ve la alerta fuera de faena y revoca la credencial del dispositiv
   await expect(page.getByText("Fuera de faena", { exact: false }).first()).toBeVisible()
 
   await page.goto("/mantencion/dispositivos")
+  // La app se reparte por QR desde jefatura: el enlace es el de la app instalable.
+  await page.getByRole("button", { name: "Instalar app del mecánico", exact: true }).click()
+  const instalar = page.getByRole("dialog", { name: "Instalar la app del mecánico" })
+  await expect(instalar.getByAltText("Código QR para abrir la app de mantención en el teléfono")).toBeVisible()
+  await expect(instalar.getByText(/\/m\/mantencion$/)).toBeVisible()
+  await page.keyboard.press("Escape")
   const row = page.getByRole("row").filter({ hasText: MEC2 }).filter({ hasText: /vigente/i }).first()
   await row.getByRole("button", { name: /Revocar/ }).click()
   await page.getByRole("dialog").getByRole("button", { name: /Revocar/ }).click()
