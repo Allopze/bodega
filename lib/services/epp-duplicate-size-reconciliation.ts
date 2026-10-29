@@ -6,8 +6,8 @@
  * así que el catálogo acumuló `N41` junto a `T41` y `L` junto a `T/L` —la misma
  * talla como dos productos con saldos separados— y pares idénticos en nombre,
  * talla, color y modelo que sólo se distinguen por el SKU. Para el bodeguero son
- * dos filas indistinguibles; para `getSizeVariantPicker` son motivo para no
- * mostrar selector de talla, porque no puede ofrecer dos opciones iguales.
+ * dos filas indistinguibles; el selector de Solicitudes (`getVariantAxes`) las
+ * ofrece como una sola opción, y la de SKU mayor no se puede pedir.
  *
  * **Se da de baja, no se borra.** `is_active = false` alcanza para que la
  * variante salga del catálogo —Solicitudes filtra por `is_active`, así que el
@@ -23,7 +23,9 @@ import { inArray, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { products } from "@/db/schema"
 import { recordAudit } from "@/lib/audit"
-import { normalizeSizeLabel, resolveProductSize } from "@/lib/products/product-size"
+import { normalizeAttributeName } from "@/lib/products/attribute-names"
+import { isSizeAttributeName, normalizeSizeLabel, resolveProductSize } from "@/lib/products/product-size"
+import { resolveVariantAttributes, type VariantAttribute } from "@/lib/products/variant-grouping"
 
 /**
  * Tablas que referencian `products.id` con `ON DELETE NO ACTION`. Una variante
@@ -116,11 +118,29 @@ function pickSurvivor(variants: DuplicateVariantFacts[]): DuplicateVariantFacts 
   )[0]!
 }
 
-/** Grupos de variantes activas que comparten familia y talla canónica. */
+/**
+ * Lo que distingue a una variante además de la talla: sus atributos de un solo
+ * valor, con nombre y valor normalizados (`Color: Negro` = `color: negro`).
+ *
+ * La familia se identifica sin el color —el importador lo saca del nombre—, así
+ * que «Botín negro 42» y «Botín café 42» comparten familia y talla sin ser la
+ * misma cosa. Agruparlas sólo por talla daba de baja en cada deploy el color sin
+ * historial. Un atributo que una declara y la otra no también las separa: si
+ * son el mismo producto lo decide una persona, no este paso automático.
+ */
+function otherAttributesKey(attributes: readonly VariantAttribute[]): string {
+  return resolveVariantAttributes(attributes)
+    .filter((attribute) => !isSizeAttributeName(attribute.name))
+    .map((attribute) => `${normalizeAttributeName(attribute.name)}=${normalizeAttributeName(attribute.value)}`)
+    .sort()
+    .join("|")
+}
+
+/** Grupos de variantes activas que comparten familia, talla canónica y el resto de sus atributos. */
 export async function findDuplicateSizeGroups(): Promise<DuplicateSizeGroup[]> {
   const result = await db.execute(sql`
     select p.id as product_id, p.sku, f.id as family_id, f.canonical_name as family_name,
-           coalesce(json_agg(json_build_object('name', pa.name, 'options', pa.options)
+           coalesce(json_agg(json_build_object('name', pa.name, 'type', pa.type, 'options', pa.options)
                     order by pa.sort_order) filter (where pa.id is not null), '[]') as attrs
     from products p
     join epp_product_families f on f.id = p.family_id
@@ -138,12 +158,12 @@ export async function findDuplicateSizeGroups(): Promise<DuplicateSizeGroup[]> {
   }>()
 
   for (const raw of rows) {
-    const attrs = raw.attrs as Array<{ name: string; options: string | null }>
+    const attrs = raw.attrs as Array<{ name: string; type: string; options: string | null }>
     const size = resolveProductSize(attrs)
     if (!size) continue
     const sizeLabel = normalizeSizeLabel(size.label)
     const familyId = String(raw.family_id)
-    const key = `${familyId}::${sizeLabel}`
+    const key = `${familyId}::${sizeLabel}::${otherAttributesKey(attrs)}`
     const member = { productId: String(raw.product_id), sku: String(raw.sku) }
     const bucket = buckets.get(key)
     if (bucket) bucket.members.push(member)

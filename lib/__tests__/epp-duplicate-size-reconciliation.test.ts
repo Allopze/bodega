@@ -53,6 +53,8 @@ async function addVariant(input: {
   size: string
   isActive?: boolean
   stock?: number
+  /** Atributos además de la talla (`Color`, `Modelo`…), cada uno de un solo valor. */
+  attributes?: Record<string, string>
 }) {
   const productId = `p-${input.sku}`
   await inMemoryDb.insert(schema.products).values({
@@ -64,6 +66,12 @@ async function addVariant(input: {
     id: nanoid(), productId, name: "Talla", type: "select",
     isRequired: true, options: JSON.stringify([input.size]), sortOrder: 0,
   })
+  for (const [index, [name, value]] of Object.entries(input.attributes ?? {}).entries()) {
+    await inMemoryDb.insert(schema.productAttributes).values({
+      id: nanoid(), productId, name, type: "select",
+      isRequired: true, options: JSON.stringify([value]), sortOrder: index + 1,
+    })
+  }
   if (input.stock != null) {
     await inMemoryDb.insert(schema.worksiteStock).values({
       id: nanoid(), worksiteId: WORKSITE_ID, productId, quantity: input.stock,
@@ -120,6 +128,36 @@ describe("findDuplicateSizeGroups", () => {
     expect(await findDuplicateSizeGroups()).toEqual([])
   })
 
+  // El importador quita el color del nombre y la familia se identifica sin él,
+  // así que «Botín negro 42» y «Botín café 42» comparten familia y talla. No
+  // son un duplicado: agruparlas daba de baja en cada deploy el color sin
+  // historial, típicamente el que se acababa de crear.
+  it("no agrupa la misma talla en colores distintos", async () => {
+    await addFamily("fam-botin", "Botín de seguridad")
+    await addVariant({ familyId: "fam-botin", sku: "EPP-301", size: "42", attributes: { Color: "Negro" } })
+    await addVariant({ familyId: "fam-botin", sku: "EPP-302", size: "42", attributes: { Color: "Café" } })
+
+    expect(await findDuplicateSizeGroups()).toEqual([])
+  })
+
+  it("agrupa la misma talla cuando el resto de los atributos coincide, aunque se escriba distinto", async () => {
+    await addFamily("fam-botin", "Botín de seguridad")
+    await addVariant({ familyId: "fam-botin", sku: "EPP-301", size: "N42", attributes: { Color: "Negro", Modelo: "V15" } })
+    await addVariant({ familyId: "fam-botin", sku: "EPP-302", size: "42", attributes: { color: "negro", Modelo: "V15" } })
+
+    expect(await findDuplicateSizeGroups()).toHaveLength(1)
+  })
+
+  it("no agrupa una variante a la que le falta un atributo que la otra declara", async () => {
+    // Sin `Modelo` no se sabe si es el mismo producto: lo decide una persona
+    // (informe de catálogo), no un paso automático del deploy.
+    await addFamily("fam-botin", "Botín V-Flex Thinsulate")
+    await addVariant({ familyId: "fam-botin", sku: "EPP-021", size: "N41", attributes: { Color: "Negro/Azul", Modelo: "V15" } })
+    await addVariant({ familyId: "fam-botin", sku: "EPP-022", size: "T41", attributes: { Color: "Negro/Azul" } })
+
+    expect(await findDuplicateSizeGroups()).toEqual([])
+  })
+
   it("ignora las variantes ya dadas de baja", async () => {
     await addFamily("fam-botin", "Botín")
     await addVariant({ familyId: "fam-botin", sku: "EPP-021", size: "N41" })
@@ -141,6 +179,17 @@ describe("retireDuplicateSizeVariants", () => {
     expect(summary.groupsSkipped).toBe(0)
     expect(await isActive("EPP-021")).toBe(true)
     expect(await isActive("EPP-022")).toBe(false)
+  })
+
+  it("no da de baja un color distinto de la misma talla", async () => {
+    await addFamily("fam-botin", "Botín de seguridad")
+    await addVariant({ familyId: "fam-botin", sku: "EPP-301", size: "42", attributes: { Color: "Negro" }, stock: 3 })
+    await addVariant({ familyId: "fam-botin", sku: "EPP-302", size: "42", attributes: { Color: "Café" } })
+
+    const summary = await retireDuplicateSizeVariants({ dryRun: false })
+
+    expect(summary.variantsRetired).toBe(0)
+    expect(await isActive("EPP-302")).toBe(true)
   })
 
   it("por omisión no escribe", async () => {
