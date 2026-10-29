@@ -289,6 +289,10 @@ RUN ./node_modules/.bin/esbuild scripts/revert-pdtp-revoked-approvals.ts \
 # Mismo motivo que sync-rbac: los one-shots de conciliación OC-factura viven en
 # TypeScript con alias `@/`, y la imagen de producción no lleva ni `tsx` ni el
 # source. Se bundlean acá y se corren con `node` desde `docker-compose.yml`.
+# Externos sólo los drivers que la imagen copia, no `--packages=external`: desde
+# que la conciliación reparte las líneas con el parser de DTE, el backfill
+# necesita `fast-xml-parser`, que la imagen standalone no trae (el deploy del
+# 2026-10-29 cayó acá; lo vigila `dockerfile-script-bundles.test.ts`).
 RUN ./node_modules/.bin/esbuild \
     scripts/preflight-purchase-invoice-reconciliation.ts \
     scripts/backfill-purchase-invoice-reconciliation.ts \
@@ -296,7 +300,9 @@ RUN ./node_modules/.bin/esbuild \
     --bundle \
     --platform=node \
     --format=esm \
-    --packages=external \
+    --external:drizzle-orm \
+    --external:drizzle-orm/* \
+    --external:postgres \
     --outdir=/tmp/invoice-reconciliation \
     --out-extension:.js=.mjs
 
