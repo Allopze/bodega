@@ -113,7 +113,7 @@ const campoLectura = (page: Page) => page.getByLabel(/Odómetro actual|Horómetr
 async function registrarCorrectiva(page: Page, opciones: { indice?: number; descripcion: string; fotos?: number; enTaller?: boolean; sumarLectura?: number; antesDeLaLectura?: () => Promise<void> }): Promise<string> {
   await page.getByRole("button", { name: /^Mantención correctiva/ }).click()
   await expect(page.getByRole("heading", { name: "¿Qué equipo vas a mantener?" })).toBeVisible()
-  const fila = page.getByRole("group", { name: "Equipos" }).getByRole("button").nth(opciones.indice ?? 0)
+  const fila = page.getByRole("group", { name: "Equipos", exact: true }).getByRole("button").nth(opciones.indice ?? 0)
   const codigo = ((await fila.innerText()).split("\n")[0] ?? "").split(" · ")[0] ?? ""
   await fila.click()
   await page.getByRole("button", { name: `Continuar con ${codigo}`, exact: true }).click()
@@ -272,7 +272,7 @@ test.describe("App del mecánico", () => {
 
   test("4 · salto de lectura: pide confirmar con la pregunta, y la jefatura lo ve como alerta", async ({ browser }) => {
     await pagina.getByRole("button", { name: /^Mantención correctiva/ }).click()
-    const fila = pagina.getByRole("group", { name: "Equipos" }).getByRole("button").first()
+    const fila = pagina.getByRole("group", { name: "Equipos", exact: true }).getByRole("button").first()
     const codigo = ((await fila.innerText()).split("\n")[0] ?? "").split(" · ")[0] ?? ""
     await fila.click()
     await pagina.getByRole("button", { name: `Continuar con ${codigo}`, exact: true }).click()
