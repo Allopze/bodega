@@ -301,6 +301,18 @@ describe("syncCopecReportPeriod", () => {
     expect(savedState.cursor).toBe("2026-02-01")
   })
 
+  it("cierra la corrida como fallida sin avanzar el cursor si el navegador no abre", async () => {
+    const { finishFuelProviderSyncRun } = await import("@/lib/combustibles/fuel-provider-ledger")
+    const message = "No fue posible abrir el navegador para consultar Copec. La sincronización se detuvo."
+    mockDownloadCopecReports.mockRejectedValueOnce(new Error(message))
+
+    await expect(syncCopecReportPeriod({ from: "2026-02-01", to: "2026-02-28" }, "operator-1"))
+      .rejects.toThrow(message)
+
+    expect(finishFuelProviderSyncRun).toHaveBeenCalledWith("run-1", expect.objectContaining({ status: "failed", error: message }))
+    expect(mockSaveState).not.toHaveBeenCalled()
+  })
+
   it("continúa con TAE si falla la descarga del canal TCT", async () => {
     mockDownloadCopecReports
       .mockRejectedValueOnce(new CopecReportFailure("network", "Copec está temporalmente fuera de servicio"))

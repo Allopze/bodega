@@ -81,6 +81,16 @@ corrida, con litros/monto cuando la fila los trae.
 - El botón manual toma el **mismo lock** que el cron (`fuel-copec-sync`): el
   portal es de sesión única y dos corridas simultáneas se pelean la sesión y el
   cursor.
+- La espera por un turno, la creación del contexto y la apertura de la página
+  tienen cada una un plazo de 30 segundos. Copec usa un proceso de navegador
+  aislado, compartiendo el límite de concurrencia con los PDF. Cuando termina la
+  importación se espera hasta 5 segundos por el cierre del contexto y se detiene
+  el proceso antes de devolver el turno o el lock; no se abandona una importación
+  que todavía pudiera escribir. Un turno vencido se retira de la cola.
+- Si la interfaz pierde la respuesta de un mes, muestra el trabajo confirmado
+  previamente, actualiza el estado si puede y advierte que esa corrida podría
+  seguir activa. Si sólo falla la consulta final del estado, conserva el
+  resultado confirmado y pide recargar la página.
 - Los lotes del período que los informes ya no respaldan se **vacían** (totales
   en cero), sólo para las fuentes que la corrida sí pudo leer completas.
 - La evidencia TCT se marca `granularity = 'period_aggregate'` en el ledger: es
