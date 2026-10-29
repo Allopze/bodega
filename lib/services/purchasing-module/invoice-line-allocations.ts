@@ -16,7 +16,8 @@ export interface ReplaceInvoiceLineAllocationsInput {
   coverage: "partial" | "complete"
   source: "operator" | "dte_suggestion"
   allocations: InvoiceLineAllocationInput[]
-  actor: { userId: string; userEmail?: string }
+  /** `userId: null` = reparto automático del sistema (ver invoice-line-auto-link). */
+  actor: { userId: string | null; userEmail?: string }
   worksiteScope: string[] | "all"
 }
 

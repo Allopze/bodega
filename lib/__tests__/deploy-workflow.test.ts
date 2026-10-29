@@ -172,6 +172,9 @@ describe("deploy workflow", () => {
     expect(pending).toContain(`NOT LIKE 'v${INVOICE_RECONCILIATION_VERSION}:%'`)
     // Mismo universo que el backfill, que ignora facturas anuladas.
     expect(pending).toContain("voided_at IS NULL")
+    // Y las líneas de DTE sin reparto ni historia, que el recálculo reparte solo.
+    expect(pending).toContain("source_dte_document_item_id IS NOT NULL")
+    expect(pending).toContain("entity_type = 'purchase_order_invoice_item_allocation'")
   })
 
   it("selects the app image even when Compose lists PostgreSQL first", () => {

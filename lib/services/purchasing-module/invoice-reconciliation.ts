@@ -170,6 +170,20 @@ function effectiveUnitPrice(subtotal: number | null | undefined, quantity: numbe
   return normalizedSubtotal === null || quantity === 0 ? null : normalizedSubtotal / quantity
 }
 
+/**
+ * Unidad con la que se compara una línea del documento contra su ítem de OC.
+ * Muchos proveedores no informan la unidad en el DTE (`UnmdItem` vacío); si la
+ * OC está en «unidad», esa ausencia no contradice nada y se asume «unidad».
+ * Para cualquier otra unidad de la OC (kg, litro, par, caja…) la ausencia sigue
+ * siendo evidencia faltante: asumirla podría esconder un DTE en cajas contra
+ * una OC en unidades.
+ */
+export function documentUnitFor(documentUnit: string | null | undefined, orderUnit: string | null | undefined) {
+  const normalized = normalizeUnit(documentUnit)
+  if (normalized) return normalized
+  return normalizeUnit(orderUnit) === "unidad" ? "unidad" : null
+}
+
 export function normalizeUnit(value: string | null | undefined) {
   const normalized = value?.trim().toLocaleLowerCase("es-CL").replace(/[._]/g, "")
   if (!normalized) return null
@@ -332,7 +346,7 @@ export function reconcileInvoiceEvidence({
       linkedLinesByOrderItem.set(orderItem.id, linked)
 
       const ocUnit = normalizeUnit(orderItem.unitOfMeasure)
-      const invoiceUnit = normalizeUnit(line.unitOfMeasure)
+      const invoiceUnit = documentUnitFor(line.unitOfMeasure, orderItem.unitOfMeasure)
       if (!ocUnit || !invoiceUnit) {
         issues.push({ code: "missing_unit", orderItemId: orderItem.id, invoiceId: invoice.id, invoiceItemId: line.id, expected: orderItem.unitOfMeasure ?? null, actual: line.unitOfMeasure ?? null })
         continue

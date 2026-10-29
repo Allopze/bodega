@@ -38,9 +38,15 @@ describe("validateInvoiceLineAllocationSet", () => {
     expect(validateInvoiceLineAllocationSet({ ...base, orderItems: [{ ...base.orderItems[0]!, purchaseOrderId: "other" }, base.orderItems[1]!] }))
       .toMatchObject({ ok: false, code: "CROSS_ORDER_TARGET" })
   })
-  it.each([null, "", "  "])("does not substitute missing documentary UOM %s", (unitOfMeasure) => {
-    expect(validateInvoiceLineAllocationSet({ ...base, invoiceItem: { ...base.invoiceItem, unitOfMeasure } }))
-      .toMatchObject({ ok: false, code: "MISSING_UNIT" })
+  it.each([null, "", "  "])("assumes «unidad» for missing documentary UOM %s when the OC is in units", (unitOfMeasure) => {
+    expect(validateInvoiceLineAllocationSet({ ...base, invoiceItem: { ...base.invoiceItem, unitOfMeasure } })).toEqual({ ok: true })
+  })
+  it.each([null, "", "  "])("does not substitute missing documentary UOM %s for any other OC unit", (unitOfMeasure) => {
+    expect(validateInvoiceLineAllocationSet({
+      ...base,
+      invoiceItem: { ...base.invoiceItem, unitOfMeasure },
+      orderItems: base.orderItems.map(row => ({ ...row, unitOfMeasure: "kg" })),
+    })).toMatchObject({ ok: false, code: "MISSING_UNIT" })
   })
   it.each([[null, "MISSING_UNIT"], ["kg", "UNIT_MISMATCH"]])("rejects target UOM %s", (unitOfMeasure, code) => {
     expect(validateInvoiceLineAllocationSet({ ...base, orderItems: base.orderItems.map(row => ({ ...row, unitOfMeasure })) }))
