@@ -177,3 +177,27 @@ entradas, con `Edit` puntual), `package.json` (sólo L1: script `db:seed:mantenc
 - Pendiente: E2E 1–4 en un worktree con los cambios commiteados, PDF real con Chromium y recorrido manual en
   navegador. `check:security-audit` y `doctor` reportan hallazgos ajenos al módulo (undici/zod y avisos de
   React).
+
+## 11. Pendientes y decisiones del usuario
+
+Lo que el código no puede resolver solo. Nada de esto bloquea integrar la rama; sí bloquea usar el módulo en
+producción.
+
+| # | Pendiente | Quién | Notas |
+|---|---|---|---|
+| P1 | Invitar a los 7 mecánicos desde `/admin/usuarios` con rol **Mecánico** y su faena | Administración | Javier Roa, Deivis González y Luis Campos (Biodiversa); Marcelo Bastías, Leonardo Echeverría, Nelson Silva y Emilio Padilla (Cholguan). El seed no trae correos (D10). Después, correr el seed otra vez: vincula rol y faena a las cuentas que ya existan. |
+| P2 | Asignar el rol **Supervisor de faena (mantención)** a Francisco Amestica (Biodiversa) y confirmar que Alexis Morales tiene **Jefe de mantención** | Administración | Los roles nuevos los crea `sync-rbac` en el deploy. |
+| P3 | Revisar datos del seed con jefatura | Alexis | `KA-71` (patente `CBJY-18`) coincide con la patente de `KA-91` en la flota: en `bodega_dev` quedó sin perfil. Seis equipos traen la patente igual al código y se cargan «Sin patente», pero `CPSG-30`, `DLFZ-34`, `XX-7493`, `RT-5367` y `SX-2728` parecen patentes reales. `LC-1315` (Nissan CPC 14 BTLT, 1993) está como Camión en km y parece una grúa horquilla. |
+| P4 | Autorizar y correr el seed en producción | Usuario | Después del deploy (migración 0361 + `sync-rbac`): `docker compose run --rm seed-mantencion` (opcional `--correos /app/correos.json`, fuera del repo). Es idempotente y no corre en el deploy automático. |
+| P5 | Decidir cuándo apagar el módulo antiguo «Mantenciones» | Usuario / Alexis | Hasta entonces Control operacional muestra «Mantenciones» (OT con costos) y el grupo «Mantención». Se apaga desde Administración › Módulos, sin borrar datos. |
+| P6 | Confirmar las decisiones abiertas de §8 (§19 del prompt) | Alexis / Francisco | En especial: `*`/`**` de la planilla (1), mapeo de reglas por marca (2), intervalos de los 37 ítems de maquinaria (3), tope de horas (6), tablet compartida con PIN (7) y «Orden de trabajo» opcional (8). |
+| P7 | Contraste de la serie «Correctiva» del gráfico | Diseño | #f39200 sobre blanco ≈ 2,4:1, bajo el 3:1 de WCAG 1.4.11 para elementos gráficos. Lo compensan la leyenda con texto, el tooltip y la tabla «Ver datos»; si se exige el 3:1, oscurecer a ≈ #c06f00. |
+| P8 | Hallazgos de `check:security-audit` (undici, zod) y avisos de `doctor` | Plataforma | Preexistentes: la rama no cambia `package-lock.json`. No se tocan en este módulo. |
+
+### Excepciones al tope de 300 líneas (§17)
+
+Ningún archivo pasa el límite estricto de 500. Quedan sobre el objetivo de 300, sin dividir para no arriesgar
+regresiones al cierre: `equipment-resolve.ts` (397), `equipment-import.ts` (376), `schedules.ts` (374),
+`equipment.ts` (342), `seed.ts` (324), `records-detail.ts` (309) y las specs `mantencion-1-app` (369) y
+`mantencion-2-jefatura` (498). La spec de equipos y pautas (525) se dividió en `mantencion-3a-equipos` y
+`mantencion-3b-pautas`.

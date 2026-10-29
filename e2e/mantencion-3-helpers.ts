@@ -63,15 +63,15 @@ export async function fillEquipmentForm(page: Page, values: {
   code: string; plate?: string; noPlate?: boolean; type: RegExp; brand: string; model: string; year: string
   worksite: string; newWorksite?: string; schedule?: string; reading?: string
 }) {
-  await page.getByLabel("Código interno", { exact: true }).fill(values.code)
+  await page.getByRole("textbox", { name: "Código interno", exact: true }).fill(values.code)
   if (values.noPlate) await page.getByLabel("Sin patente", { exact: true }).check()
-  else await page.getByLabel("Patente", { exact: true }).fill(values.plate ?? "")
+  else await page.getByRole("textbox", { name: "Patente", exact: true }).fill(values.plate ?? "")
   await selectRadixById(page, "eq-type", values.type)
   await selectRadixById(page, "eq-brand", values.brand)
-  await page.getByLabel("Modelo", { exact: true }).fill(values.model)
-  await page.getByLabel("Año", { exact: true }).fill(values.year)
+  await page.getByRole("textbox", { name: "Modelo", exact: true }).fill(values.model)
+  await page.getByRole("textbox", { name: "Año", exact: true }).fill(values.year)
   await selectRadixById(page, "eq-worksite", values.newWorksite ? "Nueva faena…" : values.worksite)
-  if (values.newWorksite) await page.getByLabel("Nombre de la faena nueva", { exact: true }).fill(values.newWorksite)
+  if (values.newWorksite) await page.getByRole("textbox", { name: "Nombre de la faena nueva", exact: true }).fill(values.newWorksite)
   if (values.schedule) await selectRadixById(page, "eq-schedule", new RegExp(`^${values.schedule}`))
   if (values.reading) await page.getByLabel(/^Lectura actual/).fill(values.reading)
 }

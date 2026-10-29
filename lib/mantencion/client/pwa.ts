@@ -29,12 +29,29 @@ export async function registerMantServiceWorker(): Promise<ServiceWorkerRegistra
   }
   try {
     const registration = await navigator.serviceWorker.register(SW_URL, { scope: SW_SCOPE })
-    const ready = await navigator.serviceWorker.ready
-    ready.active?.postMessage({ type: "precache", urls: loadedStaticUrls() })
+    // No `navigator.serviceWorker.ready`: tras el login la app llega con navegación del lado del
+    // cliente y el documento nació en `/login`, fuera del alcance; `ready` no resuelve nunca y la
+    // precarga no se pedía, así que el primer arranque sin señal no tenía los archivos de Next.
+    const worker = await activatedWorker(registration)
+    worker?.postMessage({ type: "precache", urls: loadedStaticUrls() })
     return registration
   } catch {
     return null
   }
+}
+
+/** El worker activo del registro, esperando a que termine de instalarse (con tope). */
+function activatedWorker(registration: ServiceWorkerRegistration, timeoutMs = 30_000): Promise<ServiceWorker | null> {
+  if (registration.active) return Promise.resolve(registration.active)
+  const pending = registration.installing ?? registration.waiting
+  if (!pending) return Promise.resolve(null)
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(registration.active), timeoutMs)
+    pending.addEventListener("statechange", () => {
+      if (pending.state === "activated") { clearTimeout(timer); resolve(pending) }
+      if (pending.state === "redundant") { clearTimeout(timer); resolve(registration.active) }
+    })
+  })
 }
 
 export async function requestPersistentStorage(): Promise<boolean> {
@@ -51,7 +68,8 @@ export async function requestPersistentStorage(): Promise<boolean> {
 export async function registerBackgroundSync(): Promise<void> {
   try {
     if (!("serviceWorker" in navigator)) return
-    const registration = (await navigator.serviceWorker.ready) as SyncCapableRegistration
-    await registration.sync?.register("mant-sync")
+    // Por el registro y no por `ready`, por la misma razón que arriba.
+    const registration = (await navigator.serviceWorker.getRegistration(SW_SCOPE)) as SyncCapableRegistration | undefined
+    await registration?.sync?.register("mant-sync")
   } catch { /* sin Background Sync */ }
 }

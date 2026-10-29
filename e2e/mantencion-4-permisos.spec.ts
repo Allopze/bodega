@@ -40,9 +40,10 @@ async function bearerGet<T>(request: APIRequestContext, token: string, path: str
 test("un mecánico no entra a las vistas de jefatura por URL", async ({ page }) => {
   await login(page, "mecanico1@e2e.chome.cl")
   for (const url of ["/mantencion/panel", "/mantencion/equipos", "/mantencion/equipos/nuevo", "/mantencion/pautas", "/mantencion/dispositivos"]) {
-    const response = await page.goto(url)
-    const blocked = page.url().includes("/forbidden") || response?.status() === 403 || response?.status() === 404
-    expect(blocked, `${url} debe quedar bloqueada para un mecánico`).toBe(true)
+    // La página redirige a /forbidden desde el servidor, pero en una navegación ya en curso
+    // la URL cambia después de que `goto` resuelve: lo que se verifica es lo que ve el mecánico.
+    await page.goto(url)
+    await expect(page.getByRole("heading", { name: "Sin permisos suficientes", level: 1 }), `${url} debe quedar bloqueada para un mecánico`).toBeVisible()
   }
   // La navegación no ofrece la jefatura: sólo la app y sus registros.
   await page.goto("/m/mantencion")

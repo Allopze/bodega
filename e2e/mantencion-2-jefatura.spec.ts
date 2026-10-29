@@ -376,7 +376,9 @@ test("PDF: páginas, folio, firma de jefatura pendiente y el mismo archivo en la
   const { pageCount, text } = await parsePdf(bytes)
   expect(pageCount).toBeGreaterThanOrEqual(1)
   expect(text).toContain(rec.A.folio)
-  expect(text).toContain("Firma jefatura (segunda etapa)")
+  // La hoja imprime las etiquetas de firma en mayúsculas (CSS `uppercase`) y el texto del PDF
+  // las conserva así: se compara sin distinguir mayúsculas.
+  expect(text.toLowerCase()).toContain("firma jefatura (segunda etapa)")
   expect(text).toContain("Pastillas de freno")
   expect(text).toContain("Falta repuesto")
   // «Página X de Y» en cada hoja, con Y = el total real.

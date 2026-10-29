@@ -71,9 +71,12 @@ async function definirPin(page: Page, pin: string) {
 
 /** El service worker tiene que haber guardado la app y sus archivos ANTES de cortar la señal. */
 async function esperarSwListo(page: Page) {
+  // Se pregunta por el registro y no por `controller`: tras el login la app llega con navegación
+  // del lado del cliente, el documento nació en `/login` y no queda controlado hasta la próxima
+  // carga. Lo que importa para abrir sin señal es que el worker esté activo y los cachés llenos.
   await expect.poll(() => page.evaluate(async () => {
-    const registro = await navigator.serviceWorker.ready
-    return Boolean(registro.active && navigator.serviceWorker.controller)
+    const registro = await navigator.serviceWorker.getRegistration("/m/mantencion")
+    return Boolean(registro?.active?.state === "activated")
   }), { timeout: 30_000 }).toBe(true)
   const tamano = (nombre: string) => page.evaluate(async (cache) => (await (await caches.open(cache)).keys()).length, nombre)
   await expect.poll(() => tamano("mant-shell-v1"), { timeout: 30_000 }).toBeGreaterThan(0)

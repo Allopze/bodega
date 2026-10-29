@@ -55,8 +55,8 @@ test.describe("E2E 7 · Pautas", () => {
     await page.getByRole("button", { name: "Nueva pauta", exact: true }).click()
     const dialog = page.getByRole("dialog")
     await expect(dialog.getByRole("heading", { name: "Nueva pauta" })).toBeVisible()
-    await dialog.getByLabel("Nombre", { exact: true }).fill(SCHEDULE)
-    await dialog.getByLabel("Intervalos", { exact: true }).fill("10.000, 30000")
+    await dialog.getByRole("textbox", { name: "Nombre", exact: true }).fill(SCHEDULE)
+    await dialog.getByRole("textbox", { name: "Intervalos", exact: true }).fill("10.000, 30000")
     await selectRadixById(page, "np-copy", "Copia de «Camiones y tractos»")
     await dialog.getByRole("button", { name: "Crear pauta", exact: true }).click()
 
@@ -104,7 +104,7 @@ test.describe("E2E 7 · Pautas", () => {
     await asJefe(page)
     await page.goto(`/mantencion/pautas/${ids.schedule}`)
     const before = (await scheduleState(SCHEDULE))!.version
-    await page.getByLabel("Nuevo intervalo (km)", { exact: true }).fill("50000")
+    await page.getByRole("textbox", { name: "Nuevo intervalo (km)", exact: true }).fill("50000")
     await page.getByRole("button", { name: "Agregar intervalo", exact: true }).click()
     const intervals = page.getByRole("list", { name: "Intervalos de la pauta" })
     await expect(intervals.getByRole("listitem").filter({ hasText: "50.000 km" })).toContainText("Por revisar")
@@ -127,7 +127,7 @@ test.describe("E2E 7 · Pautas", () => {
     await page.goto(`/mantencion/pautas/${ids.schedule}`)
     const first = (await scheduleState(SCHEDULE))!
     await page.getByRole("button", { name: "+ Agregar ítem en Motor", exact: true }).click()
-    await page.getByLabel("Nuevo ítem en Motor", { exact: true }).fill(ITEM)
+    await page.getByRole("textbox", { name: "Nuevo ítem en Motor", exact: true }).fill(ITEM)
     await page.getByRole("button", { name: "Agregar", exact: true }).click()
     await expect(page.getByRole("rowheader", { name: ITEM })).toBeVisible()
     await page.getByRole("button", { name: "Listo", exact: true }).click()
@@ -182,7 +182,7 @@ test.describe("E2E 7 · Pautas", () => {
     // Selección final: sólo los dos equipos de prueba, uno sin pauta y otro con «Camiones y tractos».
     await dialog.getByRole("combobox", { name: "Filtrar por faena" }).click()
     await page.getByRole("option", { name: "Todas las faenas", exact: true }).click()
-    await dialog.getByLabel("Buscar por código, patente o marca", { exact: true }).fill("QA-EQ")
+    await dialog.getByRole("searchbox", { name: "Buscar por código, patente o marca", exact: true }).fill("QA-EQ")
     await dialog.getByRole("button", { name: "Marcar los filtrados", exact: true }).click()
     await expect(dialog.getByRole("listitem").filter({ hasText: "QA-EQ2" })).toContainText("Se agrega")
     await expect(dialog.getByRole("listitem").filter({ hasText: "QA-EQ1" })).toContainText("Cambia desde «Camiones y tractos»")
@@ -252,7 +252,7 @@ test.describe("E2E 7 · Pautas", () => {
       await page.goto(`/mantencion/equipos/${id}`)
       await page.getByRole("button", { name: "Editar ficha", exact: true }).click()
       await page.getByRole("radio", { name: "Dado de baja", exact: true }).check()
-      await page.getByLabel("Motivo de la baja", { exact: true }).fill("Equipo de prueba automática")
+      await page.getByRole("textbox", { name: "Motivo de la baja", exact: true }).fill("Equipo de prueba automática")
       await page.getByRole("button", { name: "Guardar cambios", exact: true }).click()
       await expect(fichaValue(page, "Estado")).toContainText("Dado de baja")
     }
