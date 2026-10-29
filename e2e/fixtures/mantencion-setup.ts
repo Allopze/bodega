@@ -42,8 +42,25 @@ export async function seedMantencionE2E(db: DB, options: { hashedPassword: strin
   const grants = SYSTEM_ROLE_PERMISSIONS.filter((grant) => roleIds.includes(grant.roleId))
   if (grants.length) await db.insert(schema.rolePermissions).values(grants).onConflictDoNothing()
 
-  const data = JSON.parse(readFileSync(path.resolve(process.cwd(), "db/seed/mantencion-seed.json"), "utf8"))
-  await seedMantencion(db, data, { actorUserId: "user-admin-e2e" })
+  const data = JSON.parse(readFileSync(path.resolve(process.cwd(), "db/seed/mantencion-seed.json"), "utf8")) as {
+    faenas: Array<{ nombre: string }>
+    equipos: Array<{ faena: string }>
+  }
+
+  // Las faenas que estas specs no usan se crean antes y DADAS DE BAJA, para que la carga
+  // inicial las reutilice (conserva los 120 equipos) sin abrirlas como faenas activas: cada
+  // faena activa genera su programa de Prevención y agranda pantallas de otras suites
+  // (capacitación, el selector de faena de MIPER), que dejaban de pasar sólo por eso.
+  const ACTIVE = new Set(["Biodiversa", "Cholguan", "Teno"])
+  const names = [...new Set([...data.faenas.map((faena) => faena.nombre), ...data.equipos.map((equipo) => equipo.faena)])]
+  const dormant = names.filter((name) => !ACTIVE.has(name))
+  if (dormant.length) {
+    await db.insert(schema.worksites).values(dormant.map((name, index) => ({
+      id: `ws-mant-e2e-${index + 1}`, name, code: `MANT-E2E-${String(index + 1).padStart(2, "0")}`,
+      isActive: false, deactivatedAt: options.now, createdAt: options.now, updatedAt: options.now,
+    })))
+  }
+  await seedMantencion(db, data as Parameters<typeof seedMantencion>[1], { actorUserId: "user-admin-e2e" })
 
   const [biodiversa] = await db.select({ id: schema.worksites.id }).from(schema.worksites)
     .where(eq(schema.worksites.name, "Biodiversa")).limit(1)

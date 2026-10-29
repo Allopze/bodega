@@ -351,9 +351,11 @@ test.describe("Tablet compartida", () => {
 
       // Vuelve la señal: la cola se envía sola, cada elemento con la credencial de SU autor.
       await tablet.setOffline(false)
-      await expect(resumen(pagina).getByText(/MC-BIO-\d{4}/)).toBeVisible({ timeout: 90_000 })
-      const folioUno = (await resumen(pagina).getByText(/MC-BIO-\d{4}/).first().innerText()).trim()
-      await expect(resumen(pagina).getByText(/MC-BIO-\d{4}/)).toHaveCount(1)
+      // El mecánico 1 ya traía la correctiva del escenario 2: su registro nuevo es el folio más alto.
+      await expect(resumen(pagina).getByText("Folio pendiente")).toHaveCount(0, { timeout: 90_000 })
+      const foliosUno = (await resumen(pagina).getByText(/MC-BIO-\d{4}/).allInnerTexts()).map((texto) => texto.match(/MC-BIO-\d{4}/)?.[0] ?? "")
+      expect(foliosUno.length).toBeGreaterThanOrEqual(2)
+      const folioUno = foliosUno.sort().at(-1) ?? ""
 
       await pagina.getByRole("button", { name: /^Cuenta de .*Cambiar de cuenta/ }).click()
       await pagina.getByRole("button", { name: new RegExp(NOMBRE_MEC2) }).click()
