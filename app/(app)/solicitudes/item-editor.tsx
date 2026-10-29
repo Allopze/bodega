@@ -17,7 +17,7 @@ import { ItemEditorEquipment } from "./item-editor-equipment"
 import { ItemEditorSupplier } from "./item-editor-supplier"
 import { ItemEditorCotizaciones } from "./item-editor-cotizaciones"
 import { VariantSelector } from "./variant-selector"
-import { getSizeVariantPicker } from "./variant-selector.helpers"
+import { getVariantAxes } from "./variant-selector.helpers"
 import { ItemEditorAttributes } from "./item-editor-attributes"
 import { groupProductVariants, formatVariantProductName } from "@/lib/products/variant-grouping"
 import { URGENCY_OPTS } from "./request-form.constants"
@@ -59,7 +59,14 @@ export function ItemEditor({
   const variants = selectedProduct
     ? groupProductVariants(products).find((group) => group.variants.some((variant) => variant.id === selectedProduct.id))?.variants ?? []
     : []
-  const sizeVariantPicker = getSizeVariantPicker(variants)
+  // Los atributos que elige el selector de variante (talla, color…) no se
+  // repiten como campos sueltos ni en el resumen de consulta. Conjunto propio de
+  // strings y no un `.map` del resultado: el React Compiler supone que ese
+  // resultado puede ser alias de `selectedProduct` y descarta los `useMemo` de abajo.
+  const variantAxisNames = new Set<string>()
+  for (const axis of (selectedProduct ? getVariantAxes(variants, selectedProduct.id) : null) ?? []) {
+    variantAxisNames.add(axis.attributeName.toLocaleLowerCase("es-CL"))
+  }
 
   const workerRequired = selectedProduct?.requiresWorker ?? false
   const quantityDriver = item.attributes.find((attribute) => attribute.drivesQuantity)
@@ -108,7 +115,6 @@ export function ItemEditor({
   }, [readOnly, requestType, item.workerId, item.productId])
 
   if (readOnly) {
-    const variantAttributeName = sizeVariantPicker?.attributeName.toLocaleLowerCase("es-CL")
     const attributeDetails = isQuotationType
       ? [
           { label: "N° de parte", value: item.partNumber },
@@ -122,7 +128,7 @@ export function ItemEditor({
           .filter(({ attribute }) =>
             attribute.value.trim()
             && !attribute.drivesQuantity
-            && attribute.attributeName.toLocaleLowerCase("es-CL") !== variantAttributeName,
+            && !variantAxisNames.has(attribute.attributeName.toLocaleLowerCase("es-CL")),
           )
           .map(({ attribute }) => ({ label: attribute.attributeName, value: attribute.value }))
     const supplierName = item.suggestedSupplierId
@@ -276,13 +282,13 @@ export function ItemEditor({
       </div>
 
       {selectedProduct && variants.length > 1 && (
-        <div className="ml-8 max-w-sm">
+        <div className="ml-8">
           <VariantSelector
             variants={variants}
             selectedVariantId={selectedProduct.id}
             readOnly={readOnly}
             onSelect={onSelectProduct}
-            id={`size-${item._key}`}
+            itemKey={item._key}
           />
         </div>
       )}
@@ -514,7 +520,7 @@ export function ItemEditor({
           readOnly={readOnly}
           onUpdate={onUpdate}
           onUpdateAttr={onUpdateAttr}
-          hiddenAttributeNames={sizeVariantPicker ? [sizeVariantPicker.attributeName] : []}
+          hiddenAttributeNames={[...variantAxisNames]}
         />
       )}
     </div>

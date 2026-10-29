@@ -35,7 +35,12 @@ await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
 const { completeSizeRanges, labelInGroupStyle, targetSizesFor } = await import("@/lib/services/epp-size-ranges")
 const FOOTWEAR_TARGET_SIZES = targetSizesFor("calzado")
-const { getSizeVariantPicker } = await import("@/app/(app)/solicitudes/variant-selector.helpers")
+const { getVariantAxes, SIZE_AXIS_KEY } = await import("@/app/(app)/solicitudes/variant-selector.helpers")
+
+function sizeLabels(variants: ProductOption[]) {
+  return getVariantAxes(variants, variants[0]!.id)
+    ?.find((axis) => axis.key === SIZE_AXIS_KEY)?.choices.map((choice) => choice.label) ?? null
+}
 
 const CATEGORY_ID = "cat-epp-calzado"
 const SUPPLIER_ID = "sup-vflex"
@@ -138,8 +143,7 @@ describe("completeSizeRanges · calzado", () => {
     // Lo que ve quien pide: un único selector de talla con 38..46 en orden.
     const options = variants.map((v) => ({ id: v.id, name: v.name, sku: v.sku, familyId: v.familyId, attributes: v.productAttributes })) as unknown as ProductOption[]
     const [group] = groupProductVariants(options)
-    const picker = getSizeVariantPicker(group!.variants)
-    expect(picker?.choices.map((c) => c.label)).toEqual(["N38", "N39", "N40", "N41", "N42", "N43", "N44", "N45", "N46"])
+    expect(sizeLabels(group!.variants)).toEqual(["N38", "N39", "N40", "N41", "N42", "N43", "N44", "N45", "N46"])
   })
 
   it("es idempotente", async () => {
@@ -224,7 +228,7 @@ describe("completeSizeRanges · ropa", () => {
     const options = rows.map((v) => ({ id: v.id, name: v.name, sku: v.sku, familyId: v.familyId, attributes: v.productAttributes })) as unknown as ProductOption[]
     const groups = groupProductVariants(options)
     expect(groups).toHaveLength(1)
-    return getSizeVariantPicker(groups[0]!.variants)?.choices.map((c) => c.label) ?? null
+    return sizeLabels(groups[0]!.variants)
   }
 
   it("completa el chaleco geólogo, da de baja la fila sin talla y Solicitudes vuelve a ofrecer «Talla»", async () => {
