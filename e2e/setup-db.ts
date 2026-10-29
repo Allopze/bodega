@@ -9,6 +9,7 @@ import { loadEnvConfig } from "@next/env"
 import { eq, sql } from "drizzle-orm"
 import * as schema from "../db/schema"
 import { SYSTEM_PERMISSIONS } from "../lib/auth/system-rbac"
+import { seedMantencionE2E } from "./fixtures/mantencion-setup"
 import { INSPECCION_EXTINTORES } from "../lib/sst/definitions/inspeccion-extintores"
 import {
   assertSafeDestructiveDatabase,
@@ -3557,6 +3558,9 @@ async function main() {
     newState: JSON.stringify({ changeType: "entry_updated", object: "entry" }),
     createdAt: new Date(bitacoraBase + index * 60_000).toISOString(),
   })))
+
+  // Mantención de equipos: roles del módulo, carga inicial y usuarios de prueba.
+  await seedMantencionE2E(db, { hashedPassword: password, now })
 
   await client.end()
 }
