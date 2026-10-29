@@ -1,4 +1,4 @@
-import { normalizeUnit } from "./invoice-reconciliation"
+import { documentUnitFor, normalizeUnit } from "./invoice-reconciliation"
 import { CLP_ROUNDING_TOLERANCE } from "./money-tolerance"
 
 export interface InvoiceLineAllocationInput {
@@ -43,7 +43,7 @@ export function validateInvoiceLineAllocationSet(input: AllocationEvidence): All
     if (target.purchaseOrderId !== input.orderId) return fail("CROSS_ORDER_TARGET")
     if (!Number.isFinite(row.quantity) || row.quantity === 0 || !Number.isFinite(row.subtotal)) return fail("INVALID_NUMBER")
     if (Math.sign(row.quantity) !== sign || (row.subtotal !== 0 && Math.sign(row.subtotal) !== sign)) return fail("SIGN_MISMATCH")
-    const unit = normalizeUnit(invoiceItem.unitOfMeasure)
+    const unit = documentUnitFor(invoiceItem.unitOfMeasure, target.unitOfMeasure)
     const targetUnit = normalizeUnit(target.unitOfMeasure)
     if (!unit || !targetUnit) return fail("MISSING_UNIT")
     if (unit !== targetUnit) return fail("UNIT_MISMATCH")

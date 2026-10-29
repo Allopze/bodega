@@ -453,8 +453,13 @@ run_timed "Marcando con logo las prendas EPP" run_in_prod docker compose run --r
 # huella v1 dejaría la pantalla y la cola con semántica antigua. El prefijo del
 # conteo es `INVOICE_RECONCILIATION_VERSION`: al subirla, súbelo acá (lo exige
 # deploy-workflow.test.ts); con un prefijo viejo el backfill corre en cada deploy.
+# También cuenta las OC con líneas de DTE que nunca tuvieron reparto: cada
+# recálculo intenta repartirlas con evidencia (invoice-line-auto-link.ts), y sin
+# esto las facturas ya cargadas esperarían a que alguien tocara su OC. Una línea
+# que sigue ambigua vuelve a contar, así que el backfill corre mientras quede
+# alguna; es barato (decenas de OC) y no escribe lo que no puede repartir.
 echo "==> Proyección de conciliación OC-factura"
-pending_reconciliation="$(run_in_prod docker compose exec -T db psql -U "$PROD_DB_USER" -d "$PROD_DB_NAME" -tAc "SELECT COUNT(*) FROM purchase_orders po WHERE (po.invoice_reconciliation_fingerprint IS NULL OR po.invoice_reconciliation_fingerprint NOT LIKE 'v3:%') AND EXISTS (SELECT 1 FROM purchase_order_invoices poi WHERE poi.purchase_order_id = po.id AND poi.voided_at IS NULL)" 2>/dev/null | tr -d '[:space:]' || true)"
+pending_reconciliation="$(run_in_prod docker compose exec -T db psql -U "$PROD_DB_USER" -d "$PROD_DB_NAME" -tAc "SELECT COUNT(*) FROM purchase_orders po WHERE (po.invoice_reconciliation_fingerprint IS NULL OR po.invoice_reconciliation_fingerprint NOT LIKE 'v3:%' OR EXISTS (SELECT 1 FROM purchase_order_invoice_items ii JOIN purchase_order_invoices i ON i.id = ii.invoice_id AND i.voided_at IS NULL WHERE i.purchase_order_id = po.id AND ii.source_dte_document_item_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM purchase_order_invoice_item_allocations a WHERE a.invoice_item_id = ii.id) AND NOT EXISTS (SELECT 1 FROM audit_log al WHERE al.entity_type = 'purchase_order_invoice_item_allocation' AND al.entity_id = ii.id))) AND EXISTS (SELECT 1 FROM purchase_order_invoices poi WHERE poi.purchase_order_id = po.id AND poi.voided_at IS NULL)" 2>/dev/null | tr -d '[:space:]' || true)"
 case "$pending_reconciliation" in
   ''|*[!0-9]*)
     echo "    no se pudo contar OC pendientes; se ejecuta el backfill igual (es idempotente)"

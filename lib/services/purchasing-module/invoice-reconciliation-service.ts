@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, inArray, ne, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { getOperationalSettings } from "@/lib/services/system-settings"
+import { autoLinkUnallocatedDteLinesTx } from "./invoice-line-auto-link"
 import {
   productSuppliers,
   products,
@@ -136,6 +137,9 @@ export async function persistPurchaseOrderInvoiceReconciliationTx(
   tx: DbTransaction,
   purchaseOrderId: string,
 ) {
+  // Antes de proyectar: lo que se pueda repartir con evidencia entra en esta
+  // misma huella, en vez de esperar al próximo recálculo.
+  await autoLinkUnallocatedDteLinesTx(tx, purchaseOrderId)
   const reconciliation = await reconcilePurchaseOrderInvoicesTx(tx, purchaseOrderId)
   await tx.update(purchaseOrders)
     .set({

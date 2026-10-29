@@ -69,6 +69,7 @@ export const pgliteTestFiles = [
   "lib/__tests__/cancel-request-service.test.ts",
   "lib/__tests__/create-submitted-request-service.test.ts",
   "lib/__tests__/invoice-reconciliation-service.test.ts",
+  "lib/__tests__/invoice-line-auto-link.test.ts",
   "lib/__tests__/invoice-line-allocations-service.test.ts",
   "lib/__tests__/operational-integrity-ledger.test.ts",
   "lib/__tests__/pago-manual-idempotente.test.ts",

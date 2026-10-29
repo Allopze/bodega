@@ -99,9 +99,10 @@ describe("invoice line allocation transactions", () => {
     await expect(replace({ ...input, worksiteScope: "all", allocations: [{ purchaseOrderItemId: "foreign-target-a", quantity: 10, subtotal: 100_000 }] })).rejects.toMatchObject({ code: "CROSS_ORDER_TARGET" })
     expect(await audit(input.invoiceItemId)).toEqual([])
   })
-  it("reloads missing UOM without replacing it from OC", async () => {
+  it("reloads missing UOM without replacing it from an OC that is not in units", async () => {
     const input = await fixture("missing-uom")
     await db.update(schema.purchaseOrderInvoiceItems).set({ unitOfMeasure: null }).where(eq(schema.purchaseOrderInvoiceItems.id, input.invoiceItemId))
+    await db.update(schema.purchaseOrderItems).set({ unitOfMeasure: "kg" }).where(eq(schema.purchaseOrderItems.purchaseOrderId, "missing-uom"))
     const current = await read(input)
     await expect(replace({ ...input, expectedFingerprint: current.fingerprint })).rejects.toMatchObject({ code: "MISSING_UNIT" })
   })

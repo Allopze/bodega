@@ -183,12 +183,12 @@ describe("reconcileInvoiceEvidence", () => {
   })
 
   it.each([
-    { unit: null, code: "missing_unit" },
-    { unit: "kg", code: "unit_mismatch" },
-  ])("does not evaluate price when invoice unit is $unit", ({ unit, code }) => {
+    { unit: null, orderUnit: "kg", code: "missing_unit" },
+    { unit: "kg", orderUnit: "unidad", code: "unit_mismatch" },
+  ])("does not evaluate price when invoice unit is $unit against $orderUnit", ({ unit, orderUnit, code }) => {
     const result = reconcileInvoiceEvidence({
       totalOC: 100,
-      orderItems: [orderItems[0]!],
+      orderItems: [{ ...orderItems[0]!, unitOfMeasure: orderUnit }],
       invoices: [{
         id: "inv-1", invoiceNumber: "123", amount: 100,
         items: [{ id: "line-1", allocations: [{ id: "line-1" + "-allocation", purchaseOrderItemId: "oc-1", quantity: 2, subtotal: 160 }], productName: "Producto documental", productCode: null, unitOfMeasure: unit, quantity: 2, unitPrice: 80, subtotal: 160 }],
@@ -197,6 +197,22 @@ describe("reconcileInvoiceEvidence", () => {
 
     expect(result.issues.map((issue) => issue.code)).toContain(code)
     expect(result.issues.map((issue) => issue.code)).not.toContain("price_variance")
+  })
+
+  it("assumes «unidad» when the DTE omits the unit and the OC is in units", () => {
+    const result = reconcileInvoiceEvidence({
+      totalOC: 100,
+      orderItems: [orderItems[0]!],
+      invoices: [{
+        id: "inv-1", invoiceNumber: "123", amount: 100,
+        items: [{ id: "line-1", allocations: [{ id: "line-1-allocation", purchaseOrderItemId: "oc-1", quantity: 2, subtotal: 160 }], productName: "Casco", productCode: null, unitOfMeasure: null, quantity: 2, unitPrice: 80, subtotal: 160 }],
+      }],
+    })
+
+    const codes = result.issues.map((issue) => issue.code)
+    expect(codes).not.toContain("missing_unit")
+    // Con la unidad resuelta se vuelve a comparar el precio.
+    expect(codes).toContain("price_variance")
   })
 
   it("marks a pending OC cost and exposes its concrete invoice source", () => {
@@ -336,7 +352,7 @@ describe("reconcileInvoiceEvidence", () => {
       orderItems: [orderItems[0]!],
       invoices: [{
         id: "inv-1", invoiceNumber: "123", amount: 100,
-        items: [{ id: "line-1", allocations: [{ id: "line-1" + "-allocation", purchaseOrderItemId: "oc-1", quantity: 2, subtotal: 100 }], productName: "Producto documental", productCode: null, unitOfMeasure: null, quantity: 2, subtotal: 100 }],
+        items: [{ id: "line-1", allocations: [{ id: "line-1" + "-allocation", purchaseOrderItemId: "oc-1", quantity: 2, subtotal: 100 }], productName: "Producto documental", productCode: null, unitOfMeasure: "kg", quantity: 2, subtotal: 100 }],
       }],
     }
     const first = reconcileInvoiceEvidence(input)
