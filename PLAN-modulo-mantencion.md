@@ -125,10 +125,11 @@ entradas, con `Edit` puntual), `package.json` (sólo L1: script `db:seed:mantenc
 | D7 | «Cambiar de cuenta» local exige PIN también con señal; «Entrar con otra cuenta» pasa por el login normal. | Un solo camino para cambiar de autor en la cola; con señal, agregar una cuenta nueva sí requiere contraseña. |
 | D8 | La sincronización usa siempre la credencial de dispositivo (nunca la cookie). | Tablet compartida y sesión expirada (§9) + elimina CSRF en rutas públicas. |
 | D9 | Jefatura usa los tokens de la plataforma (danger/warning/success de `DESIGN.md`) para los estados; la app del mecánico usa la paleta del prototipo (verde #1e6e3e seleccionado). Gráficos: #1e6e3e / #f39200. | §14: reutilizar tokens existentes; la app es una superficie propia, de pantalla completa, validada en el prototipo. Los estados siempre llevan texto. |
-| D10 | Mecánicos del seed: no se crean cuentas sin correo. El script vincula cuentas existentes por nombre y, con `--correos <archivo>` (fuera del repo), crea invitaciones con rol y faena. | La tabla `users` exige correo y el prompt prohíbe contraseñas; la invitación es el flujo de alta de la plataforma. |
+| D10 | Mecánicos del seed: no se crean cuentas ni invitaciones. El script vincula rol `mecanico` y faena a las cuentas que ya existen (por nombre o por el correo de `--correos <archivo>`, fuera del repo) y reporta las pendientes con la acción «crear invitación desde /admin/usuarios». | `users` exige correo y el prompt prohíbe contraseñas; la única vía de invitación (`inviteUser`) es una server action atada a la sesión que envía el correo, y crear la fila sin enviarlo dejaría una invitación que nadie recibe. |
 | D11 | Cada fase cierra con typecheck + pruebas del módulo; la suite completa y las E2E corren al cierre. | Preferencia registrada del usuario para trabajos largos; las E2E borran `.next` y se corren en worktree desechable. |
 | D13 | El seed lee `db/seed/mantencion-seed.json` (copia byte a byte de `docs/mantencion/referencias/seed-mantencion.json`). | `/docs/**` es lista blanca de `.md`/`.svg` en `.gitignore` (evita versionar documentos con datos personales), así que la referencia no llegaría a la imagen de producción. Las planillas y PDF de referencia quedan locales, sin versionar. |
 | D12 | Conductores en `mant_drivers` con vínculo opcional a `workers`. | La planilla trae «APELLIDO APELLIDO NOMBRE» sin RUT; vincular a ciegas con `workers` podría equivocar a la persona. |
+| D14 | La serie correctiva del gráfico semanal usa `#c96a00` en vez del naranjo de marca `#f39200`. | El naranjo de marca da 2,4:1 sobre blanco y no cumple el 3:1 de WCAG 1.4.11 para elementos gráficos; el naranjo de marca se conserva en elementos no gráficos. |
 
 ## 8. Decisiones abiertas aplicadas (§19)
 
@@ -137,13 +138,16 @@ entradas, con `Edit` puntual), `package.json` (sólo L1: script `db:seed:mantenc
 | 1 | `*`/`**` se quitan del nombre; el ítem lleva `note = "Por confirmar"`, visible en el editor. | seed + editor de pautas |
 | 2 | Mapeo `actividadPlanilla → claveItem` del seed; «Diagnóstico electrónico motor» queda sin ítem (`item_id` nulo). | seed |
 | 3 | Los 37 ítems de maquinaria aplican en los 4 intervalos. | seed |
-| 4 | Masisa, Rodantes, Mininco no se crean; jefatura puede crearlas desde la ficha de equipo. | seed |
+| 4 | Masisa, Rodantes, Mininco no se crean; jefatura puede crearlas desde la ficha de equipo. Sí se crean Calymag, Ecoservitran, Fab. Puertas y Panguipulli (folios CAL, ECO, FAB, PAN): no están en `faenas` del seed pero sus equipos las referencian y `fuel_vehicles.worksite_id` es obligatorio. | seed |
 | 5 | «Otro mecánico» permitido con «Registrado por X en nombre de Y». | app, detalle, PDF, Excel |
 | 6 | Horas 0,5–72; aviso sin bloqueo sobre 12 h. | contratos + app |
 | 7 | Tablet compartida con PIN local según §9. | app |
 | 8 | «Orden de trabajo» opcional en la correctiva. | contratos + app |
 | 9 | Mecánicos asignados a la faena del seed. | seed |
 | 10 | El historial de Google Forms no se migra; queda preparado el importador de registros (`lib/services/mantencion/legacy-import.ts`, sin UI). | L1 |
+| 11 | El panel muestra 4 tarjetas KPI; «Horas hombre» va en una tira de texto, no en una quinta tarjeta. | `panel-kpis.tsx` |
+| 12 | El motivo de anulación exige al menos 10 caracteres, alineado con `REASON_MIN_LENGTH`; el diálogo ya lo validaba y el servicio se quedó en 5 hasta este cierre. | `record-lifecycle.ts`, `confirm-dialog.tsx` |
+| 13 | `/mantencion/panel` tiene buscador propio y oculta el de la barra superior (`ROUTES_WITH_OWN_SEARCH`). | `top-bar.tsx` |
 
 ## 9. Riesgos y seguimiento
 
@@ -151,6 +155,25 @@ entradas, con `Edit` puntual), `package.json` (sólo L1: script `db:seed:mantenc
   Se recomienda apagar el antiguo con su interruptor cuando el nuevo esté en uso.
 - El seed toca la flota compartida (`fuel_vehicles`): concilia por código y luego por patente, nunca duplica,
   y reporta diferencias sin sobrescribir datos de flota existentes (salvo marca nula).
+- Verificación en `bodega_dev` (28-10-2026): 120 equipos del seed quedaron en 119 perfiles porque `KA-71`
+  (patente `CBJY-18`) coincide con la patente de la flota `KA-91`. Revisar con jefatura antes de producción;
+  el seed reporta la diferencia pero no la corrige.
 - Las credenciales de dispositivo viven en IndexedDB del equipo: quien tenga el teléfono desbloqueado puede
   sincronizar como ese mecánico hasta revocarla. Por eso duran 30 días, se revocan desde jefatura y el PIN
   protege el cambio de cuenta.
+
+## 10. Estado de ejecución (28-10-2026)
+
+- L1 (servidor de sincronización y seed) y L3 (panel, registros, detalle, Excel y PDF): implementados y con
+  pruebas verdes.
+- L2 (app del mecánico offline) y L4 (equipos, pautas y dispositivos): implementados en disco, incluidos
+  IndexedDB, cola, PIN, service worker, `?corregir=` y las cuatro specs E2E.
+- Cierre técnico (28-10-2026): integración de RBAC/menú/toggles, contratos de sync y PDF, motivo de
+  anulación de 10 caracteres, contraste del gráfico, capturas, README, ARCHITECTURE y empaquetado del seed.
+- Verificado: `typecheck`, `lint` global, `test:fast` (sólo quedan 5 fallos de Chipax por variables del shell
+  y un flaky ajeno que pasa aislado), `test:pglite` completo (281 archivos, 3.450 pruebas),
+  `db:verify-migrations`, `check:secrets`, migración + RBAC + seed idempotente en `bodega_dev` y concurrencia
+  real de 20 folios únicos.
+- Pendiente: E2E 1–4 en un worktree con los cambios commiteados, PDF real con Chromium y recorrido manual en
+  navegador. `check:security-audit` y `doctor` reportan hallazgos ajenos al módulo (undici/zod y avisos de
+  React).
