@@ -27,6 +27,5 @@ else
   export SKIP_PUBLIC_SMOKE=1
 fi
 export DEPLOY_LABEL="dev"
-export SKIP_SST_CLOUDREVE_MIGRATION=1
 
 exec bash "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/deploy-prod.sh" "$@"

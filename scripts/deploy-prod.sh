@@ -22,14 +22,11 @@ set -euo pipefail
 # exigidas y variables nuevas) y el nombre de imagen se resuelve ALLÁ.
 # Steps: sync compose -> contrastar .env -> resolver nombre de imagen -> tag
 # current image as rollback -> pg_dump -> build -> ship image -> preflight
-# conciliación -> preflight combustible -> rescate de la historia de prevención
-# -> migrate -> migración documental SST
-# a Cloudreve -> normalize EPP -> estado de solicitudes -> catálogo de tallas
-# -> conciliar variantes
-# duplicadas por talla -> completar el rango de tallas de ropa EPP ->
-# marcar con logo las prendas EPP ->
+# conciliación -> preflight combustible -> migrate -> catálogo de tallas
+# -> conciliar variantes duplicadas por talla -> completar el rango de tallas
+# de ropa EPP -> marcar con logo las prendas EPP ->
 # backfill conciliación (si hace falta) ->
-# backfill referencias OC en DTE (si hace falta) -> backfill lecturas de medidor
+# backfill referencias OC en DTE (si hace falta)
 # -> catálogo de reglas de anomalía -> sync-rbac -> decisiones de catálogo PDTP
 # -> dato de cursos/planes/campañas -> catálogo de inspecciones -> recreate app
 # then cron containers ->
@@ -419,73 +416,7 @@ run_timed "Diagnóstico de conciliación OC-factura (previo a migrar)" run_in_pr
 run_timed "Diagnóstico de integraciones de combustible (previo a migrar)" \
   run_in_prod docker compose run --rm -e "SKIP_FUEL_PREFLIGHT_GATE=$SKIP_FUEL_PREFLIGHT_GATE" preflight-fuel-integrations
 
-# Rescate de la historia de prevención, FASE 1 de 2. El orden no es cosmético:
-# la migración 0319 dropea once tablas `prevention_*_history`, así que esto va
-# antes. El commit que la preparó migró las ESCRITURAS al `audit_log`, no las
-# filas —«diez de las once eran la ÚNICA traza que existía»—, y el rescate las
-# copia conservando su fecha original.
-#
-# POR QUÉ DOS FASES. El destino es `audit_log.worksite_id`, columna que CREA la
-# 0318 — y el migrador aplica todas las pendientes en UNA transacción, así que
-# no hay ningún instante en que las tablas origen y esa columna coexistan. Se
-# intentó en un paso el 2026-09-21 y el deploy murió con «column worksite_id of
-# relation audit_log does not exist». De ahí la tabla de paso: la fase 1 copia
-# mientras el origen vive, la fase 2 vuelca cuando la columna ya existe.
-#
-# Condicionales como los demás backfills de este script: del segundo deploy en
-# adelante el origen ya no está y cada fase se salta sola en vez de reventar el
-# despliegue con «relation does not exist».
-
-# El .sql vive en ESTE checkout, así que hay que empujarlo por stdin al psql de
-# allá; `prod_sh` no sirve porque redirige en el lado remoto.
-run_prod_sql_file() {
-  ssh "${prod_ssh_opts[@]}" "$PROD_SSH" \
-    "cd $(printf '%q' "$PROD_DIR") && docker compose exec -T db psql -U $(printf '%q' "$PROD_DB_USER") -d $(printf '%q' "$PROD_DB_NAME") -v ON_ERROR_STOP=1 -f -" \
-    < "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$1"
-}
-
-prod_relation_exists() {
-  [ "$(run_in_prod docker compose exec -T db psql -U "$PROD_DB_USER" -d "$PROD_DB_NAME" -tAc "SELECT to_regclass('$1') IS NOT NULL" 2>/dev/null | tr -d '[:space:]' || true)" = "t" ]
-}
-
-if prod_relation_exists prevention_epp_history; then
-  rescue_history_stage() { run_prod_sql_file rescue-prevention-history-1-stage.sql; }
-  run_timed "Historia de prevención, fase 1: a la tabla de paso (previo a migrar)" rescue_history_stage
-else
-  echo "==> Historia de prevención: las tablas origen ya no existen, nada que copiar"
-fi
-
 run_timed "Applying migrations" run_in_prod docker compose run --rm migrate
-
-# Rescate de la historia de prevención, FASE 2 de 2: ahora que la 0318 creó
-# `audit_log.worksite_id`, se vuelca la tabla de paso y se borra, todo en una
-# transacción. Si el volcado falla, el paso sobrevive y se puede reintentar sin
-# haber perdido nada — por eso este paso va aquí y no más abajo.
-if prod_relation_exists prevention_history_rescue; then
-  rescue_history_flush() { run_prod_sql_file rescue-prevention-history-2-flush.sql; }
-  run_timed "Historia de prevención, fase 2: volcando al audit_log" rescue_history_flush
-else
-  echo "==> Historia de prevención: no hay tabla de paso, nada que volcar"
-fi
-
-# La migración SST es idempotente y conserva el origen local; debe ejecutarse
-# después de que la base ya tenga el esquema y antes de levantar la nueva app.
-# deploy:dev la salta (SKIP_SST_CLOUDREVE_MIGRATION): el entorno de pruebas no
-# tiene Cloudreve a propósito, y sin credenciales el script sale con 2.
-if [ -n "${SKIP_SST_CLOUDREVE_MIGRATION:-}" ]; then
-  echo "==> Migración de documentos SST a Cloudreve omitida: $DEPLOY_LABEL no usa Cloudreve"
-else
-  run_timed "Migrando documentos SST a Cloudreve" run_in_prod docker compose run --rm migrate-sst-to-cloudreve
-fi
-
-run_timed "Normalizando SKUs de EPP y servicios" run_in_prod docker compose run --rm normalize-epp-skus
-
-# Recalcula el estado derivado de las solicitudes cuya regla de cierre cambió
-# después de que sus ítems llegaran a estado terminal. Sin esto quedan con el
-# estado que calculó la regla vieja, porque el rollup solo se dispara en una
-# transición de ítem y a esas solicitudes ya no les queda ninguna. Idempotente:
-# sin deriva no escribe.
-run_timed "Reconciliando el estado de las solicitudes" run_in_prod docker compose run --rm reconcile-request-status
 
 # Los tres pasos de tallas van en este orden y no en otro:
 #
@@ -505,8 +436,7 @@ run_timed "Sincronizando el catálogo de tallas" run_in_prod docker compose run 
 run_timed "Conciliando variantes duplicadas por talla" run_in_prod docker compose run --rm reconcile-epp-duplicate-sizes
 
 # Completa S/M/L/XL/2XL/3XL —el rango que el negocio realmente compra— en toda
-# familia EPP que declare `size_family = 'ropa'`. Va después de normalizar SKUs
-# para que las tallas nuevas nazcan con la numeración secuencial vigente.
+# familia EPP que declare `size_family = 'ropa'`.
 # Idempotente: familias completas o de otra familia de tallas no se tocan.
 run_timed "Completando el rango de tallas de ropa EPP" run_in_prod docker compose run --rm backfill-epp-clothing-sizes
 
@@ -520,9 +450,11 @@ run_timed "Marcando con logo las prendas EPP" run_in_prod docker compose run --r
 
 # El backfill recalcula tanto OC nunca proyectadas como huellas de una versión
 # anterior. La versión 2 introduce estados parciales, así que conservar una
-# huella v1 dejaría la pantalla y la cola con semántica antigua.
+# huella v1 dejaría la pantalla y la cola con semántica antigua. El prefijo del
+# conteo es `INVOICE_RECONCILIATION_VERSION`: al subirla, súbelo acá (lo exige
+# deploy-workflow.test.ts); con un prefijo viejo el backfill corre en cada deploy.
 echo "==> Proyección de conciliación OC-factura"
-pending_reconciliation="$(run_in_prod docker compose exec -T db psql -U "$PROD_DB_USER" -d "$PROD_DB_NAME" -tAc "SELECT COUNT(*) FROM purchase_orders po WHERE (po.invoice_reconciliation_fingerprint IS NULL OR po.invoice_reconciliation_fingerprint NOT LIKE 'v2:%') AND EXISTS (SELECT 1 FROM purchase_order_invoices poi WHERE poi.purchase_order_id = po.id)" 2>/dev/null | tr -d '[:space:]' || true)"
+pending_reconciliation="$(run_in_prod docker compose exec -T db psql -U "$PROD_DB_USER" -d "$PROD_DB_NAME" -tAc "SELECT COUNT(*) FROM purchase_orders po WHERE (po.invoice_reconciliation_fingerprint IS NULL OR po.invoice_reconciliation_fingerprint NOT LIKE 'v3:%') AND EXISTS (SELECT 1 FROM purchase_order_invoices poi WHERE poi.purchase_order_id = po.id AND poi.voided_at IS NULL)" 2>/dev/null | tr -d '[:space:]' || true)"
 case "$pending_reconciliation" in
   ''|*[!0-9]*)
     echo "    no se pudo contar OC pendientes; se ejecuta el backfill igual (es idempotente)"
@@ -555,18 +487,7 @@ else
   echo "    referencias al día; backfill omitido"
 fi
 
-# Sin conteo previo: no hay forma barata de saber cuántas filas guardaron un
-# valor del normalizador viejo sin releer sus XML, que es justo lo que hace el
-# script. Es idempotente y sólo escribe cuando el valor cambia, así que sobre
-# una base al día no toca ninguna fila.
-run_timed "Relectura de referencias a OC con el normalizador actual" run_in_prod docker compose run --rm reparse-dte-order-refs
-
-# Sin conteo previo y siempre: el backfill relee el detalle que ya está en
-# `raw_row` y hace upsert por (fuente, guía), así que sobre una base al día no
-# escribe nada. Contar lo pendiente costaría el mismo escaneo que hacerlo.
-run_timed "Rescate de lecturas de odómetro del detalle de proveedor" run_in_prod docker compose run --rm backfill-fuel-meter-readings
-
-# Después del backfill y antes de levantar la app: una regla que no existe como
+# Antes de levantar la app: una regla que no existe como
 # fila no dispara aunque su detector esté en el código, y el cron de detección
 # corre a las 05:00 — sin este paso, el primer día tras el deploy no se detecta
 # nada nuevo.
@@ -653,13 +574,6 @@ run_timed "Diagnóstico del cableado de acreditación del PDTP" run_in_prod dock
 # programa en borrador o un mapeo que se acaba de corregir en los pasos
 # anteriores. Idempotente; nunca aborta el deploy por su cuenta.
 run_timed "Reconciliando eventos de cumplimiento pendientes del PDTP" run_in_prod docker compose run --rm reconcile-pdtp-fulfillment-events
-
-# Después de la conciliación, para mirar el estado final: devuelve a revisión
-# las aprobaciones automáticas sin evidencia verificable y las de semanas
-# futuras (PRV-01/PRV-03). Idempotente, no toca meses cerrados y nunca aborta el
-# deploy por su cuenta (PDTP_UNVERIFIED_DEPLOY_MODE). El log del paso lista cada
-# ejecución devuelta; quedan en Aprobaciones para que una persona las revise.
-run_timed "Devolviendo a revisión aprobaciones PDTP sin evidencia verificable" run_in_prod docker compose run --rm apply-pdtp-unverified-approvals
 
 # The durable database marker, not merely a host env var, determines whether
 # the immediately previous image is safe. A failed probe is deliberately

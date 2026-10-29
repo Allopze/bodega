@@ -96,6 +96,10 @@ export interface OcItem {
   id: string
   catalogProductId: string | null
   productName: string
+  /** Nombre de catálogo sin la talla agregada: es el que se compara con el documento. */
+  catalogName?: string | null
+  /** Talla de la variante; distingue líneas de la OC que comparten nombre. */
+  sizeLabel?: string | null
   productCode: string | null
   attributes?: Array<{ name: string; value: string }>
   unitOfMeasure: string
@@ -697,7 +701,10 @@ function AddInvoiceForm({
 
     // Auto-match items to OC items
     if (data.items && data.items.length > 0) {
-      const matched = matchInvoiceItemsToPurchaseOrderItems(data.items, ocItems)
+      const matched = matchInvoiceItemsToPurchaseOrderItems(
+        data.items,
+        ocItems.map((item) => ({ ...item, productName: item.catalogName ?? item.productName })),
+      )
       setLineItems(matched.map((m) => ({
         id: createInvoiceLineId(),
         ocItemId: m.ocItemId ?? "",

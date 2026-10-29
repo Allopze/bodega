@@ -470,10 +470,11 @@ services:
         condition: service_healthy
     environment:
       - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
-      # El backfill RE-20 cifra declaraciones históricas con la misma clave que la app.
+      # Misma clave que la app, para correr a mano `node scripts/backfill-re20-statements.mjs`
+      # con este servicio (ya no va en la cadena: RE-20 se backfilleó en el deploy del 2026-10-21).
       - PREVENTION_DATA_ENCRYPTION_KEY=${PREVENTION_DATA_ENCRYPTION_KEY:-}
       - PREVENTION_DATA_ENCRYPTION_KEY_VERSION=${PREVENTION_DATA_ENCRYPTION_KEY_VERSION:-v1}
-    command: ["sh", "-c", "node scripts/migrate.mjs && node scripts/backfill-re20-statements.mjs --apply && node scripts/ensure-prevention-program-slots.mjs && node scripts/backfill-cphs-mandatory-sessions.mjs && node scripts/reconcile-epp-delivery-scale.mjs --apply && node scripts/backfill-fuel-equipment-loads.mjs"]
+    command: ["sh", "-c", "node scripts/migrate.mjs && node scripts/ensure-prevention-program-slots.mjs && node scripts/backfill-fuel-equipment-loads.mjs"]
 
   # One-shot: sync RBAC permissions from module manifests to the database.
   # Run automatically by deploy-prod.sh after migrations. Also run manually:

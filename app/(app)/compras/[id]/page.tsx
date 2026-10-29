@@ -1,4 +1,5 @@
 import { getProductAttributesByIds } from "@/lib/services/product-sizes"
+import { resolveProductSize } from "@/lib/products/product-size"
 import { formatVariantProductName } from "@/lib/products/variant-grouping"
 import type { Metadata } from "next"
 import Link from "next/link"
@@ -694,6 +695,8 @@ export default async function OcDetailPage({
                     id: i.id,
                     catalogProductId: i.productId,
                     productName: itemName(i),
+                    catalogName: (i.productId ? productMap[i.productId]?.name : null) ?? i.productNameFree ?? null,
+                    sizeLabel: i.productId ? resolveProductSize(productMap[i.productId]?.attributes ?? [])?.label ?? null : null,
                     productCode: i.productId ? productMap[i.productId]?.sku ?? null : null,
                     attributes: i.requestItemId
                       ? reqItemMap[i.requestItemId]?.attributes.map((attribute) => ({
