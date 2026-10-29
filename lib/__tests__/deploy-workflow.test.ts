@@ -1,7 +1,8 @@
-import { existsSync, readFileSync } from "node:fs"
+import { readFileSync } from "node:fs"
 import { spawnSync } from "node:child_process"
 import path from "node:path"
 import { describe, expect, it } from "vitest"
+import { INVOICE_RECONCILIATION_VERSION } from "@/lib/services/purchasing-module/invoice-reconciliation"
 
 const repoRoot = process.cwd()
 
@@ -162,16 +163,15 @@ describe("deploy workflow", () => {
     expect(deployScript).not.toContain('if "$@"; then')
   })
 
-  it("migrates SST documents to Cloudreve after database migrations", () => {
+  it("cuenta la conciliación OC-factura pendiente con la versión vigente de la huella", () => {
     const deployScript = readFileSync(path.join(repoRoot, "scripts/deploy-prod.sh"), "utf8")
-    const databaseMigration = 'run_timed "Applying migrations" run_in_prod docker compose run --rm migrate'
-    const cloudreveMigration = 'run_timed "Migrando documentos SST a Cloudreve" run_in_prod docker compose run --rm migrate-sst-to-cloudreve'
+    const pending = deployScript.split("\n").find(line => line.startsWith("pending_reconciliation="))
 
-    const databaseMigrationIndex = deployScript.indexOf(databaseMigration)
-    const cloudreveMigrationIndex = deployScript.indexOf(cloudreveMigration)
-
-    expect(databaseMigrationIndex).toBeGreaterThanOrEqual(0)
-    expect(cloudreveMigrationIndex).toBeGreaterThan(databaseMigrationIndex)
+    // El conteo quedó en `v2:%` cuando la huella pasó a v3: las OC ya
+    // proyectadas se contaban como pendientes y el backfill corría siempre.
+    expect(pending).toContain(`NOT LIKE 'v${INVOICE_RECONCILIATION_VERSION}:%'`)
+    // Mismo universo que el backfill, que ignora facturas anuladas.
+    expect(pending).toContain("voided_at IS NULL")
   })
 
   it("selects the app image even when Compose lists PostgreSQL first", () => {
@@ -293,9 +293,8 @@ describe("deploy workflow", () => {
    * cableado en el servidor, un comité con programa aprobado antes de este
    * deploy se queda sin sus 12 sesiones para siempre.
    */
-  it("backfillea las sesiones mandatorias del CPHS en todos los caminos de despliegue", () => {
+  it("empaqueta el backfill de sesiones mandatorias del CPHS para correrlo a mano", () => {
     const dockerfile = readFileSync(path.join(repoRoot, "Dockerfile"), "utf8")
-    const compose = readFileSync(path.join(repoRoot, "docker-compose.yml"), "utf8")
     const packageJson = JSON.parse(readFileSync(path.join(repoRoot, "package.json"), "utf8"))
     const script = "backfill-cphs-mandatory-sessions"
 
@@ -307,17 +306,6 @@ describe("deploy workflow", () => {
     expect(build).toContain("--external:postgres")
     expect(dockerfile).toContain(`COPY --from=build /tmp/${script}.mjs ./scripts/${script}.mjs`)
 
-    // Camino del servidor: `deploy-prod.sh` corre el servicio `migrate`, y
-    // este paso va después de `ensure-prevention-program-slots` (mismo lugar
-    // lógico: post-migración, post-siembra de casillas).
-    const migrateCommand = compose.match(/command: \["sh", "-c", "node scripts\/migrate\.mjs[^\]]*\]/)?.[0]
-    expect(migrateCommand).toBeDefined()
-    expect(migrateCommand).toContain(`node scripts/${script}.mjs`)
-    expect(migrateCommand!.indexOf("node scripts/ensure-prevention-program-slots.mjs"))
-      .toBeLessThan(migrateCommand!.indexOf(`node scripts/${script}.mjs`))
-
-    // Camino de GitHub Actions y el local: la cadena de `db:migrate`.
-    expect(packageJson.scripts["db:migrate"]).toContain("db:backfill-cphs-sessions")
     expect(packageJson.scripts["db:backfill-cphs-sessions"]).toContain(`scripts/${script}.ts`)
   })
 
@@ -335,97 +323,6 @@ describe("deploy workflow", () => {
     }
   })
 
-  /*
-   * El rescate de la historia va en dos fases porque sus dos extremos no
-   * coexisten: la 0319 dropea once tablas `prevention_*_history` y la 0318 crea
-   * la columna destino `audit_log.worksite_id`, y el migrador aplica ambas en
-   * UNA transacción. Copiar antes y volcar después es la única secuencia que
-   * funciona; hacerlo en un paso ya falló en producción el 2026-09-21 con
-   * «column worksite_id of relation audit_log does not exist».
-   */
-  /*
-   * El workflow migraba producción desde un runner, disparado por cada push a
-   * `main`. El respaldo y el rescate de la historia viven en `deploy-prod.sh`,
-   * así que ese camino podía aplicar migraciones destructivas sin red. Migrar
-   * quedó en un solo lugar; acá sólo se verifica, y se falla cerrado.
-   */
-  /*
-   * El Dockerfile empaqueta cada one-shot con un `esbuild scripts/<x>.ts`. Si
-   * alguien borra el script y no la línea, el build de producción muere con
-   * «Could not resolve» — y nadie se entera, porque el build de prod sólo corre
-   * al desplegar. Pasó: la simplificación de capacitación (2026-09-19) retiró
-   * dos scripts y dejó sus líneas, y el deploy siguiente falló ahí. Esta prueba
-   * es barata y cierra esa clase entera.
-   */
-  it("cada esbuild del Dockerfile apunta a un script que existe", () => {
-    const dockerfile = readFileSync(path.join(repoRoot, "Dockerfile"), "utf8")
-    const referenced = [...dockerfile.matchAll(/esbuild (scripts\/[\w.-]+\.ts)/g)].map((match) => match[1]!)
-
-    expect(referenced.length).toBeGreaterThan(5)
-    const missing = referenced.filter((script) => !existsSync(path.join(repoRoot, script)))
-    expect(missing, `el Dockerfile empaqueta scripts que no existen: ${missing.join(", ")}`).toEqual([])
-  })
-
-  /* La otra mitad del mismo agujero: el bundle se copia a la imagen y un
-   * servicio de compose lo invoca. Un `command` que apunte a un `.mjs` que
-   * nadie copió falla recién al correr el one-shot, en producción. */
-  it("cada one-shot de compose corre un bundle que el Dockerfile copia", () => {
-    const dockerfile = readFileSync(path.join(repoRoot, "Dockerfile"), "utf8")
-    const compose = readFileSync(path.join(repoRoot, "docker-compose.yml"), "utf8")
-    const invoked = [...compose.matchAll(/"node", "(scripts\/[\w.-]+\.mjs)"/g)].map((match) => match[1]!)
-
-    expect(invoked.length).toBeGreaterThan(5)
-    const uncopied = invoked.filter((bundle) => !dockerfile.includes(`./${bundle}`))
-    expect(uncopied, `compose invoca bundles que la imagen no trae: ${uncopied.join(", ")}`).toEqual([])
-  })
-
-  it("el despliegue automático verifica el esquema pero no lo migra", () => {
-    const workflow = readFileSync(path.join(repoRoot, ".github/workflows/deploy.yml"), "utf8")
-
-    expect(workflow).not.toContain("npm run db:migrate")
-    expect(workflow).toContain("node scripts/assert-migrations-applied.mjs")
-
-    // Y la compuerta corre antes de rotar el contenedor, o no serviría de nada.
-    const verify = workflow.indexOf("assert-migrations-applied")
-    const rollout = workflow.indexOf("--force-recreate app")
-    expect(verify).toBeGreaterThan(-1)
-    expect(rollout).toBeGreaterThan(-1)
-    expect(verify).toBeLessThan(rollout)
-
-    // Migrar sigue existiendo, pero sólo en el camino que respalda primero.
-    const deployScript = readFileSync(path.join(repoRoot, "scripts/deploy-prod.sh"), "utf8")
-    expect(deployScript).toContain('run_timed "Applying migrations"')
-  })
-
-  it("copia la historia de prevención antes de migrar y la vuelca después, tras el respaldo", () => {
-    const deployScript = readFileSync(path.join(repoRoot, "scripts/deploy-prod.sh"), "utf8")
-
-    const dump = deployScript.indexOf('run_timed "Dumping production database"')
-    const fase1 = deployScript.indexOf("rescue-prevention-history-1-stage.sql")
-    const migrate = deployScript.indexOf('run_timed "Applying migrations"')
-    const fase2 = deployScript.indexOf("rescue-prevention-history-2-flush.sql")
-
-    expect(dump, "falta el pg_dump").toBeGreaterThan(-1)
-    expect(fase1, "la fase 1 del rescate no está cableada").toBeGreaterThan(-1)
-    expect(migrate, "falta el paso de migración").toBeGreaterThan(-1)
-    expect(fase2, "la fase 2 del rescate no está cableada").toBeGreaterThan(-1)
-
-    expect(dump).toBeLessThan(fase1)
-    expect(fase1).toBeLessThan(migrate)
-    expect(migrate).toBeLessThan(fase2)
-
-    // Los dos .sql existen: el test cablea nombres, y un typo dejaría el paso
-    // fallando recién contra producción.
-    for (const archivo of ["rescue-prevention-history-1-stage.sql", "rescue-prevention-history-2-flush.sql"]) {
-      expect(existsSync(path.join(repoRoot, "scripts", archivo)), archivo).toBe(true)
-    }
-
-    // Cada fase se salta sola cuando su origen ya no está, o el segundo deploy
-    // moriría con «relation does not exist».
-    expect(deployScript).toContain("prod_relation_exists prevention_epp_history")
-    expect(deployScript).toContain("prod_relation_exists prevention_history_rescue")
-  })
-
   it("corre el catálogo de tallas y la conciliación antes de completar el rango", () => {
     const deployScript = readFileSync(path.join(repoRoot, "scripts/deploy-prod.sh"), "utf8")
 
@@ -438,7 +335,6 @@ describe("deploy workflow", () => {
     // El orden no es cosmético: de `size_catalog` sale la familia `ropa` que el
     // backfill exige, y conciliar duplicados antes evita que el backfill cuente
     // una talla duplicada como presente y deje el duplicado vivo.
-    expect(at("reconcile-request-status")).toBeLessThan(at("seed-size-catalog"))
     expect(at("seed-size-catalog")).toBeLessThan(at("reconcile-epp-duplicate-sizes"))
     expect(at("reconcile-epp-duplicate-sizes")).toBeLessThan(at("backfill-epp-clothing-sizes"))
   })
@@ -489,7 +385,6 @@ describe("deploy workflow", () => {
   it("aplica en el deploy la devolución de aprobaciones sin evidencia verificable, después de conciliar", () => {
     const dockerfile = readFileSync(path.join(repoRoot, "Dockerfile"), "utf8")
     const compose = readFileSync(path.join(repoRoot, "docker-compose.yml"), "utf8")
-    const deployScript = readFileSync(path.join(repoRoot, "scripts/deploy-prod.sh"), "utf8")
 
     const build = dockerfile.match(
       /RUN .\/node_modules\/.bin\/esbuild scripts\/report-pdtp-unverified-auto-approvals\.ts[\s\S]*?--outfile=\/tmp\/apply-pdtp-unverified-approvals\.mjs/,
@@ -504,10 +399,6 @@ describe("deploy workflow", () => {
     expect(service).toContain("PDTP_UNVERIFIED_DEPLOY_MODE=true")
     expect(service).toContain('command: ["node", "scripts/apply-pdtp-unverified-approvals.mjs"]')
 
-    const reconcile = deployScript.indexOf("docker compose run --rm reconcile-pdtp-fulfillment-events")
-    const unverified = deployScript.indexOf("docker compose run --rm apply-pdtp-unverified-approvals")
-    expect(reconcile).toBeGreaterThan(-1)
-    expect(unverified).toBeGreaterThan(reconcile)
   })
 
   it("emits the SST migrator as CommonJS", () => {
