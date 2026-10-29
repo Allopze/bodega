@@ -36,7 +36,9 @@
   overscroll-behavior: none;
 }
 .mant *, .mant *::before, .mant *::after { box-sizing: border-box; }
-.mant button, .mant input, .mant select, .mant textarea { font: inherit; color: inherit; }
+/* Especificidad cero: es la base de los controles y cualquier clase (.btnp, .bigbtn…) la reemplaza.
+   Con `.mant button` ganaba a esas clases y los botones verdes quedaban con texto negro (2,7:1). */
+:where(.mant) :where(button, input, select, textarea) { font: inherit; color: inherit; }
 .mant button { cursor: pointer; }
 .mant button:disabled { cursor: not-allowed; }
 .mant :focus-visible { outline: 3px solid var(--gi); outline-offset: 2px; }
