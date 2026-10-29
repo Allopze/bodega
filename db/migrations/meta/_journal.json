@@ -2528,6 +2528,13 @@
       "when": 1793147782109,
       "tag": "0360_tricky_mole_man",
       "breakpoints": true
+    },
+    {
+      "idx": 361,
+      "version": "7",
+      "when": 1793215635954,
+      "tag": "0361_mantencion_equipos",
+      "breakpoints": true
     }
   ]
 }

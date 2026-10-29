@@ -26,6 +26,13 @@ export const PUBLIC_PATHS = [
   // Shell estático del trabajo sin conexión RE-20: sin sesión no puede traer
   // nada del servidor; sólo muestra lo que ya guardó este equipo (IndexedDB).
   "/prevencion/incidentes/re20-offline",
+  // App del mecánico: la sincronización autentica con la credencial de
+  // dispositivo (Bearer) dentro de cada handler, porque la cola de una tablet
+  // compartida se envía con la credencial de su autor aunque la sesión del
+  // navegador sea de otra persona o haya expirado. Sólo estas rutas: el
+  // resto de /api/mantencion exige sesión en el proxy.
+  "/api/mantencion/sync/catalogo", "/api/mantencion/sync/fotos", "/api/mantencion/sync/registros",
+  "/api/mantencion/sync/taller", "/api/mantencion/sync/observaciones",
 ] as const
 
 export function matchesRoutePrefix(pathname: string, prefix: string) {

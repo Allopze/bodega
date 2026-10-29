@@ -7,6 +7,8 @@ export const WORKSITE_SCOPED_ROLE_NAMES = [
   "jefe_terreno",
   "supervisor_terreno",
   "cphs",
+  "mecanico",
+  "supervisor_mantencion",
 ] as const
 
 export function requiresWorksiteAssignment(roleName: string) {

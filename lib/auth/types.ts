@@ -31,3 +31,5 @@ export type RoleSlug =
   | "admin_contrato"
   | "jefe_terreno"
   | "cphs"
+  | "mecanico"
+  | "supervisor_mantencion"

@@ -68,7 +68,7 @@ contienen lógica de negocio; solo declaran permisos, entradas de nav (por
 
 Permisos, sidebar y seed RBAC se derivan automáticamente del registry.
 
-### Módulos registrados (21)
+### Módulos registrados (22)
 
 | ID | Permisos | Descripción |
 |---|---|---|
@@ -90,11 +90,12 @@ Permisos, sidebar y seed RBAC se derivan automáticamente del registry.
 | `feedback` | 4 | Soporte / feedback interno |
 | `combustibles` | 26 | Cargas, cuentas corrientes, TAE, anomalías, import de combustible, control de combustible |
 | `flota` | 5 | Vehículos |
-| `mantenciones` | 4 | Mantención de flota/equipos |
+| `mantenciones` | 4 | Mantención de flota/equipos (órdenes de trabajo con costos) |
+| `mantencion_equipos` | 11 | Mantención preventiva y correctiva de equipos (app del mecánico + jefatura) |
 | `prevention` | 117 | Documentación SST, capacitaciones, incidentes, inspecciones, PDTP, indicadores |
 | `ti` | 10 | Módulo de TI |
 
-**Total: 269 permisos**, derivados automáticamente. Recalcular con:
+**Total: 280 permisos**, derivados automáticamente. Recalcular con:
 
 ```bash
 npx tsx -e "import { registry } from './modules/registry'; \
@@ -279,7 +280,7 @@ consumió los bienes, para no dejar stock negativo.
   tras N intentos fallidos consecutivos.
 - **Registro**: el primer usuario obtiene rol `administrador`; el resto requiere invitación.
 
-### RBAC — 15 roles
+### RBAC — 17 roles
 
 Fuente de verdad: `SYSTEM_ROLES` en `lib/auth/system-rbac.ts`.
 
@@ -292,6 +293,8 @@ Fuente de verdad: `SYSTEM_ROLES` en `lib/auth/system-rbac.ts`.
 | `solicitante_faena` | Faenas asignadas | Crear y enviar solicitudes |
 | `prevencionista_faena` | Faenas asignadas | Solicita EPP y servicios desde faena |
 | `jefe_mantencion` | Todas | Gestión de mantención de flota/equipos |
+| `mecanico` | Faenas asignadas | Registra mantención desde la app del mecánico |
+| `supervisor_mantencion` | Faenas asignadas | Revisa, observa y exporta registros de sus faenas |
 | `conductor_lider` | Faenas asignadas | Evaluaciones SST de conductores |
 | `admin_contrato` | Faenas asignadas | Administrador de contrato / supervisor de faena |
 | `jefe_terreno` | Faenas asignadas | Jefe de terreno |
@@ -301,7 +304,7 @@ Fuente de verdad: `SYSTEM_ROLES` en `lib/auth/system-rbac.ts`.
 | `subgerente_operaciones` | Todas | Subgerente de operaciones |
 | `tecnico_ti` | Todas | Técnico TI |
 
-**269 permisos granulares** derivados del registry (`modules/registry.ts` vía
+**280 permisos granulares** derivados del registry (`modules/registry.ts` vía
 `modules/permissions.ts`). La lista completa vive en el registry, no se mantiene a mano.
 
 ### Guards

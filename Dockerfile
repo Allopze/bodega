@@ -449,6 +449,19 @@ RUN ./node_modules/.bin/esbuild scripts/seed-size-catalog.ts \
     --external:postgres \
     --outfile=/tmp/seed-size-catalog.mjs
 
+# Carga inicial del módulo de mantención de equipos. NO corre en el deploy:
+# escribe sobre la flota compartida (`fuel_vehicles`) y debe ejecutarse a mano,
+# con respaldo previo y revisión de jefatura. Se bundlea porque la imagen slim
+# no lleva `tsx` ni las fuentes TypeScript.
+RUN ./node_modules/.bin/esbuild scripts/seed-mantencion.ts \
+    --bundle \
+    --platform=node \
+    --format=cjs \
+    --external:drizzle-orm \
+    --external:drizzle-orm/* \
+    --external:postgres \
+    --outfile=/tmp/seed-mantencion.cjs
+
 # Materializa las casillas del programa preventivo de las faenas ya existentes.
 # Las migraciones 0314/0316 crearon esas tablas vacías y sólo el alta de faena
 # las llena, así que sin este paso el servidor arranca con las pantallas de
@@ -653,6 +666,7 @@ COPY --from=build /tmp/preflight-fuel-integrations.mjs ./scripts/preflight-fuel-
 COPY --from=build /tmp/normalize-epp-skus.mjs ./scripts/normalize-epp-skus.mjs
 COPY --from=build /tmp/reconcile-request-status.mjs ./scripts/reconcile-request-status.mjs
 COPY --from=build /tmp/seed-size-catalog.mjs ./scripts/seed-size-catalog.mjs
+COPY --from=build /tmp/seed-mantencion.cjs ./scripts/seed-mantencion.cjs
 COPY --from=build /tmp/ensure-prevention-program-slots.mjs ./scripts/ensure-prevention-program-slots.mjs
 COPY --from=build /tmp/backfill-cphs-mandatory-sessions.mjs ./scripts/backfill-cphs-mandatory-sessions.mjs
 COPY --from=build /tmp/backfill-re20-statements.mjs ./scripts/backfill-re20-statements.mjs
