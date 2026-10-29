@@ -3,7 +3,7 @@
  * ropa o pantalón (S..3XL), para que Solicitudes pueda ofrecerlas.
  *
  * En esta plataforma la variante es el producto: el selector de talla de
- * Solicitudes (`getSizeVariantPicker`) sólo puede ofrecer las tallas que ya
+ * Solicitudes (`getVariantAxes`) sólo puede ofrecer las tallas que ya
  * existen como fila de `products`. El catálogo importado dejó cada ítem con la
  * talla o las tallas que traía la planilla —el chaleco geólogo con S y L, la
  * Bota PVC Segusa sólo con 41—, así que pedir otra era imposible aunque
@@ -36,8 +36,8 @@
  *
  * **Variantes sin talla dentro de un grupo con tallas.** El catálogo importado
  * dejó filas como «Chaleco Geologo Activex» con sólo Color junto a sus hermanas
- * T/L y T/S. `getSizeVariantPicker` no puede ofrecer «Talla» si una variante no
- * tiene, y cae a la lista genérica «Variante». Esas filas se dan de baja
+ * T/L y T/S. `getVariantAxes` no puede ofrecerle una talla que no tiene, así
+ * que queda fuera del selector y no se puede pedir. Esas filas se dan de baja
  * (`is_active = false`, nunca DELETE) **sólo si no tienen stock ni historial**,
  * el mismo criterio que `retireDuplicateSizeVariants`; las que sí tienen se
  * informan, porque trasladar stock es una decisión contable.

@@ -2999,8 +2999,8 @@ async function main() {
     updatedAt: now,
   })
   // `prod-epp-e2e` NO entra a la familia: es el casco genérico de los fixtures
-  // de recepción y entrega, y no tiene atributo "Talla". `getSizeVariantPicker`
-  // anula la familia entera si **algún** miembro carece de talla, así que
+  // de recepción y entrega, y no tiene atributo "Talla". El selector de talla
+  // anulaba la familia entera si **algún** miembro carecía de talla, así que
   // meterlo aquí dejaba al `VariantSelector` sin renderizar y a
   // `epp-variant-request-flow` sin nada que probar — el mismo síntoma que ya
   // documenta el comentario de más abajo, por otra causa.
@@ -3026,7 +3026,7 @@ async function main() {
   ])
   // Cada fila de catálogo es UNA talla, así que su atributo declara sólo la
   // suya. Antes las tres recibían `["S","M","L"]` completo y eso rompía el
-  // picker: `getSizeVariantPicker` toma la primera opción como la talla de esa
+  // picker: el selector de talla tomaba la primera opción como la talla de esa
   // variante, las tres resolvían a "S", detectaba labels duplicados y devolvía
   // `null` — el `VariantSelector` no se renderizaba nunca y
   // `epp-variant-request-flow` no tenía nada que probar.

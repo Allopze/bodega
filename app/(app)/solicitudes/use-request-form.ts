@@ -18,6 +18,7 @@ import {
 } from "./request-form.helpers"
 import { groupProductVariants } from "@/lib/products/variant-grouping"
 import { normalizeSizeLabel, suggestedWorkerSize } from "@/lib/products/product-size"
+import { closestVariant } from "./variant-selector.helpers"
 
 const AUTOSAVE_INTERVAL_MS = 60_000
 
@@ -439,11 +440,13 @@ export function useRequestForm({
       const variants = selectedProduct
         ? groupProductVariants(products).find((group) => group.variants.some((variant) => variant.id === selectedProduct.id))?.variants ?? []
         : []
-      const matchingVariant = variants.find((variant) => variant.attributes.some((attribute) => {
+      const inWorkerSize = variants.filter((variant) => variant.attributes.some((attribute) => {
         const suggestedSize = suggestSize(attribute.name, worker)
         const options = new Set(parseAttributeOptions(attribute.options).map(normalizeSizeLabel))
         return suggestedSize != null && options.has(suggestedSize)
       }))
+      // La talla habitual cambia la talla, no el color ni el modelo ya elegidos.
+      const matchingVariant = selectedProduct ? closestVariant(variants, selectedProduct.id, inWorkerSize) : null
       const product = matchingVariant ?? selectedProduct
       const attrs = (product ? buildAttrsFromProduct(product) : i.attributes).map((a) => {
         const size = suggestSize(a.attributeName, worker)

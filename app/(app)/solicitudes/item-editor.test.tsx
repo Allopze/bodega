@@ -167,3 +167,43 @@ describe("ItemEditor — campos condicionales de servicio", () => {
     expect(screen.queryByRole("combobox")).toBeNull()
   })
 })
+
+describe("ItemEditor — variantes de una familia", () => {
+  const botin = (id: string, size: string, color: string, sku: string) => product({
+    id, sku, name: "Botín de seguridad", isEpp: true, unitOfMeasure: "par", familyId: "botin",
+    attributes: [
+      { id: `${id}-talla`, name: "Talla calzado", type: "select", isRequired: true, drivesQuantity: false, options: JSON.stringify([size]) },
+      { id: `${id}-color`, name: "Color", type: "select", isRequired: true, drivesQuantity: false, options: JSON.stringify([color]) },
+    ],
+  })
+  const BOTIN = [
+    botin("42-negro", "42", "Negro", "EPP-001"),
+    botin("42-cafe", "42", "Café", "EPP-002"),
+    botin("43-negro", "43", "Negro", "EPP-003"),
+  ]
+
+  it("ofrece elegir el color además de la talla cuando la familia los mezcla", () => {
+    render(
+      <ItemEditor
+        item={itemFor(BOTIN[1]!)}
+        idx={0}
+        products={BOTIN}
+        suppliers={[]}
+        workers={WORKERS}
+        readOnly={false}
+        requestType="epp"
+        maxFileSizeMb={10}
+        onUpdate={vi.fn()}
+        onSelectProduct={vi.fn()}
+        onSelectFreeProduct={vi.fn()}
+        onClearProduct={vi.fn()}
+        onUpdateAttr={vi.fn()}
+        onUpdateWorker={vi.fn()}
+        onRemove={vi.fn()}
+        canRemove={false}
+      />,
+    )
+    expect(screen.getByRole("combobox", { name: /Talla calzado/ })).toHaveTextContent("42")
+    expect(screen.getByRole("combobox", { name: /^Color/ })).toHaveTextContent("Café")
+  })
+})
