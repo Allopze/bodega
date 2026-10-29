@@ -3,7 +3,7 @@ import { alias } from "drizzle-orm/pg-core"
 import { db } from "@/db"
 import {
   mantEquipmentProfiles, mantRecordCorrectives, mantRecordDrivers, mantRecordItems, mantRecordObservations,
-  mantRecordParts, mantRecordPhotos, mantRecordVoids, mantRecords, mantWorkshopUpdates, users, worksites,
+  mantRecordPhotos, mantRecordVoids, mantRecords, mantWorkshopUpdates, users, worksites,
   type MantEquipmentSnapshot,
 } from "@/db/schema"
 import { readingBounds } from "@/lib/mantencion/readings"
@@ -14,6 +14,7 @@ import type {
 import { todayInChile } from "@/lib/utils"
 import { canSeeRecord, recordVisibility, recordVisibilitySql, type MantViewer } from "./access"
 import { STAMP_GAP_LIMIT_HOURS } from "./records-filters"
+import { loadRecordJobs, type RecordJob } from "./records-jobs"
 
 /**
  * Todo lo que muestran el detalle de un registro, su PDF y su Excel individual,
@@ -86,8 +87,10 @@ export interface RecordDetail {
     inWorkshop: boolean
     workshopEntryDate: string | null
     workOrder: string | null
-    noParts: boolean
-    parts: Array<{ quantity: number; description: string }>
+    /** Por qué sigue en taller (sólo con `inWorkshop`). */
+    workshopReason: string | null
+    /** Trabajos con sus horas y repuestos; `hours` de arriba es el total. */
+    jobs: RecordJob[]
     drivers: string[]
     workshop: WorkshopState | null
     updates: Array<{ id: string; kind: "sigue" | "salio"; note: string | null; exitDate: string | null; userName: string; createdAt: string }>
@@ -140,7 +143,7 @@ export async function loadRecordDetail(viewer: MantViewer, id: string): Promise<
   const isCorrective = record.kind === "C"
 
   const [
-    items, corrective, parts, drivers, updates, photos, observations, [voidRow], [correctedByRow], history, readings, [profile],
+    items, corrective, jobs, drivers, updates, photos, observations, [voidRow], [correctedByRow], history, readings, [profile],
   ] = await Promise.all([
     record.kind === "P"
       ? db.select().from(mantRecordItems).where(eq(mantRecordItems.recordId, id)).orderBy(asc(mantRecordItems.sortOrder), asc(mantRecordItems.itemName))
@@ -149,7 +152,7 @@ export async function loadRecordDetail(viewer: MantViewer, id: string): Promise<
       ? db.select().from(mantRecordCorrectives).where(eq(mantRecordCorrectives.recordId, id)).limit(1)
       : Promise.resolve([]),
     isCorrective
-      ? db.select().from(mantRecordParts).where(eq(mantRecordParts.recordId, id)).orderBy(asc(mantRecordParts.sortOrder))
+      ? loadRecordJobs(id)
       : Promise.resolve([]),
     isCorrective
       ? db.select({ name: mantRecordDrivers.driverName }).from(mantRecordDrivers).where(eq(mantRecordDrivers.recordId, id)).orderBy(asc(mantRecordDrivers.driverName))
@@ -266,8 +269,8 @@ export async function loadRecordDetail(viewer: MantViewer, id: string): Promise<
         inWorkshop: correctiveRow.inWorkshop,
         workshopEntryDate: correctiveRow.workshopEntryDate,
         workOrder: correctiveRow.workOrder,
-        noParts: correctiveRow.noParts,
-        parts: parts.map((part) => ({ quantity: part.quantity, description: part.description })),
+        workshopReason: correctiveRow.workshopReason,
+        jobs,
         drivers: drivers.map((driver) => driver.name),
         workshop: correctiveRow.inWorkshop
           ? workshopState({

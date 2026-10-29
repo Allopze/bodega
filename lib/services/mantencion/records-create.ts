@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm"
 import { db, type Tx } from "@/db"
 import {
-  mantRecordCorrectives, mantRecordDrivers, mantRecordItems, mantRecordParts, mantRecordPhotos, mantRecords,
+  mantRecordCorrectives, mantRecordDrivers, mantRecordItems, mantRecordJobs, mantRecordParts, mantRecordPhotos, mantRecords,
   type MantEquipmentSnapshot,
 } from "@/db/schema"
 import { recordAudit } from "@/lib/audit"
@@ -190,12 +190,19 @@ async function insertRecord(
       inWorkshop: corrective.inWorkshop,
       workshopEntryDate: corrective.entryDate,
       workOrder: corrective.workOrder,
+      workshopReason: corrective.workshopReason,
     })
-    if (corrective.parts.length) {
-      await tx.insert(mantRecordParts).values(corrective.parts.map((part, index) => ({
-        id: nanoid(), recordId: input.id, quantity: part.quantity, description: part.description, sortOrder: index,
-      })))
-    }
+    // Trabajos y repuestos en la misma transacción: cada repuesto cuelga de su trabajo (`job_id`).
+    const jobRows = corrective.jobs.map((job, index) => ({
+      id: nanoid(), recordId: input.id, workTypeId: job.workTypeId, workTypeName: job.workTypeName,
+      hours: job.hours, noParts: job.noParts, sortOrder: index,
+    }))
+    await tx.insert(mantRecordJobs).values(jobRows)
+    const partRows = corrective.jobs.flatMap((job, jobIndex) => job.parts.map((part, index) => ({
+      id: nanoid(), recordId: input.id, jobId: (jobRows[jobIndex] as { id: string }).id,
+      quantity: part.quantity, description: part.description, sortOrder: index,
+    })))
+    if (partRows.length) await tx.insert(mantRecordParts).values(partRows)
     await tx.insert(mantRecordDrivers).values(corrective.drivers.map((driver) => ({
       recordId: input.id, driverId: driver.id, driverName: driver.name,
     })))

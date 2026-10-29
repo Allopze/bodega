@@ -64,8 +64,8 @@ export async function exportPanel(input: { session: Session; filters: PanelFilte
       },
       {
         worksheetName: "En taller ahora",
-        headers: ["Equipo", "Patente", "Faena", "Folio", "Trabajo", "Días detenido", "Sin actualizar"],
-        rows: data.workshop.rows.map((row) => [row.code, row.plate, row.worksiteName, row.folio ?? "", row.summary, row.daysStopped, row.stale ? "Sí" : "No"]),
+        headers: ["Equipo", "Patente", "Faena", "Folio", "Trabajo", "Motivo de seguir en taller", "Días detenido", "Sin actualizar"],
+        rows: data.workshop.rows.map((row) => [row.code, row.plate, row.worksiteName, row.folio ?? "", row.summary, row.reason ?? "", row.daysStopped, row.stale ? "Sí" : "No"]),
       },
       {
         worksheetName: "Horas por faena",

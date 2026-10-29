@@ -3,7 +3,7 @@ import { boolean, check, index, integer, jsonb, numeric, pgTable, primaryKey, te
 import { fuelVehicles } from "./fuel-vehicles"
 import { users } from "./users"
 import { worksites } from "./worksites"
-import { mantDrivers, mantWorkshops } from "./mantencion-catalogs"
+import { mantDrivers, mantWorkTypes, mantWorkshops } from "./mantencion-catalogs"
 import { mantSchedules } from "./mantencion-schedules"
 
 /** El equipo tal como era al firmar. Editar la ficha después no cambia el documento. */
@@ -118,7 +118,12 @@ export const mantRecordItems = pgTable("mant_record_items", {
   check("mant_record_items_reason_valid", sql`${table.value} <> 'NR' OR char_length(trim(coalesce(${table.reason}, ''))) >= 3`),
 ])
 
-/** Datos propios de una correctiva. Tipos de trabajo y aceites van como nombres (snapshot). */
+/**
+ * Datos propios de una correctiva. Tipos de trabajo y aceites van como nombres (snapshot).
+ * `hours` es el TOTAL (suma de `mant_record_jobs.hours`) y `work_types` la lista de nombres de
+ * los trabajos: los dejan así para que el panel, la ficha y la flota no tengan que sumar.
+ * `no_parts` queda en verdadero sólo si ningún trabajo usó repuestos.
+ */
 export const mantRecordCorrectives = pgTable("mant_record_correctives", {
   recordId:          text("record_id").primaryKey().references(() => mantRecords.id, { onDelete: "cascade" }),
   workTypes:         jsonb("work_types").$type<string[]>().notNull(),
@@ -130,21 +135,43 @@ export const mantRecordCorrectives = pgTable("mant_record_correctives", {
   inWorkshop:        boolean("in_workshop").notNull(),
   workshopEntryDate: text("workshop_entry_date"),
   workOrder:         text("work_order"),
+  /** Por qué sigue en taller (obligatorio si `in_workshop`). */
+  workshopReason:    text("workshop_reason"),
 }, (table) => [
   check("mant_record_correctives_description_valid", sql`char_length(trim(${table.description})) >= 5`),
   check("mant_record_correctives_hours_valid", sql`${table.hours} >= 0.5 AND ${table.hours} <= 72 AND (${table.hours} * 2) = floor(${table.hours} * 2)`),
   check("mant_record_correctives_workshop_valid", sql`NOT ${table.inWorkshop} OR ${table.workshopEntryDate} IS NOT NULL`),
+  check("mant_record_correctives_workshop_reason_valid", sql`NOT ${table.inWorkshop} OR char_length(trim(coalesce(${table.workshopReason}, ''))) >= 5`),
   check("mant_record_correctives_work_types_valid", sql`jsonb_array_length(${table.workTypes}) >= 1`),
+])
+
+/** Un trabajo de la correctiva: su tipo (snapshot de nombre), sus horas y sus repuestos. */
+export const mantRecordJobs = pgTable("mant_record_jobs", {
+  id:           text("id").primaryKey(),
+  recordId:     text("record_id").notNull().references(() => mantRecords.id, { onDelete: "cascade" }),
+  workTypeId:   text("work_type_id").notNull().references(() => mantWorkTypes.id, { onDelete: "restrict" }),
+  workTypeName: text("work_type_name").notNull(),
+  hours:        numeric("hours", { precision: 4, scale: 1, mode: "number" }).notNull(),
+  /** «No se usaron repuestos» en este trabajo. */
+  noParts:      boolean("no_parts").notNull().default(false),
+  sortOrder:    integer("sort_order").notNull().default(0),
+}, (table) => [
+  index("mant_record_jobs_record_idx").on(table.recordId),
+  uniqueIndex("mant_record_jobs_type_unique").on(table.recordId, table.workTypeId),
+  check("mant_record_jobs_hours_valid", sql`${table.hours} >= 0.5 AND ${table.hours} <= 72 AND (${table.hours} * 2) = floor(${table.hours} * 2)`),
 ])
 
 export const mantRecordParts = pgTable("mant_record_parts", {
   id:          text("id").primaryKey(),
   recordId:    text("record_id").notNull().references(() => mantRecords.id, { onDelete: "cascade" }),
+  /** Trabajo al que pertenece. Nulo sólo por compatibilidad con filas previas: el servidor siempre lo llena. */
+  jobId:       text("job_id").references(() => mantRecordJobs.id, { onDelete: "cascade" }),
   quantity:    numeric("quantity", { precision: 10, scale: 2, mode: "number" }).notNull(),
   description: text("description").notNull(),
   sortOrder:   integer("sort_order").notNull().default(0),
 }, (table) => [
   index("mant_record_parts_record_idx").on(table.recordId),
+  index("mant_record_parts_job_idx").on(table.jobId),
   check("mant_record_parts_quantity_positive", sql`${table.quantity} > 0`),
 ])
 
@@ -255,6 +282,7 @@ export const mantRecordsRelations = relations(mantRecords, ({ one, many }) => ({
   schedule:         one(mantSchedules, { fields: [mantRecords.scheduleId], references: [mantSchedules.id] }),
   corrective:       one(mantRecordCorrectives, { fields: [mantRecords.id], references: [mantRecordCorrectives.recordId] }),
   items:            many(mantRecordItems),
+  jobs:             many(mantRecordJobs),
   parts:            many(mantRecordParts),
   drivers:          many(mantRecordDrivers),
   photos:           many(mantRecordPhotos),
@@ -265,8 +293,13 @@ export const mantRecordsRelations = relations(mantRecords, ({ one, many }) => ({
 export const mantRecordItemsRelations = relations(mantRecordItems, ({ one }) => ({
   record: one(mantRecords, { fields: [mantRecordItems.recordId], references: [mantRecords.id] }),
 }))
+export const mantRecordJobsRelations = relations(mantRecordJobs, ({ one, many }) => ({
+  record: one(mantRecords, { fields: [mantRecordJobs.recordId], references: [mantRecords.id] }),
+  parts:  many(mantRecordParts),
+}))
 export const mantRecordPartsRelations = relations(mantRecordParts, ({ one }) => ({
   record: one(mantRecords, { fields: [mantRecordParts.recordId], references: [mantRecords.id] }),
+  job:    one(mantRecordJobs, { fields: [mantRecordParts.jobId], references: [mantRecordJobs.id] }),
 }))
 export const mantRecordDriversRelations = relations(mantRecordDrivers, ({ one }) => ({
   record: one(mantRecords, { fields: [mantRecordDrivers.recordId], references: [mantRecords.id] }),

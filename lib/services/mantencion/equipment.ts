@@ -1,12 +1,11 @@
-import { and, desc, eq, type SQL } from "drizzle-orm"
+import { eq } from "drizzle-orm"
 import { db, type Tx } from "@/db"
 import {
-  fuelEquipmentTypes, fuelVehicleOperationalIntervals, fuelVehicles, mantEquipmentProfiles, mantRecords, worksites,
+  fuelEquipmentTypes, fuelVehicleOperationalIntervals, fuelVehicles, mantEquipmentProfiles, worksites,
 } from "@/db/schema"
 import { isUniqueViolation } from "@/lib/action-error"
 import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
-import type { MantUnit } from "@/lib/mantencion/types"
 import { isValidReason, reasonRequiredMessage } from "@/lib/validation/reason-thresholds"
 import {
   diffEquipmentFields, summarizeChanges, writeEquipmentHistory, type EquipmentFields, type MantActor,
@@ -311,32 +310,4 @@ export async function reactivateEquipment(actor: MantActor, vehicleId: string): 
     await applyReactivate(tx, actor, vehicleId, current.fields.code)
     return { ok: true as const, data: undefined, message: `${current.fields.code} volvió a estar activo.` }
   })
-}
-
-export interface RecentEquipmentRecord {
-  id: string
-  folio: string | null
-  kind: "P" | "C"
-  reading: number
-  unit: MantUnit
-  workDate: string
-  intervalValue: number | null
-  voided: boolean
-}
-
-/** Registros más recientes del equipo, dentro de lo que la persona puede ver (`visibility` es un predicado SQL de `access.ts`). */
-export async function listRecentEquipmentRecords(vehicleId: string, visibility: SQL, limit = 6): Promise<RecentEquipmentRecord[]> {
-  const rows = await db
-    .select({
-      id: mantRecords.id, folio: mantRecords.folio, kind: mantRecords.kind, reading: mantRecords.reading,
-      unit: mantRecords.unit, workDate: mantRecords.workDate, intervalValue: mantRecords.intervalValue, status: mantRecords.status,
-    })
-    .from(mantRecords)
-    .where(and(eq(mantRecords.vehicleId, vehicleId), visibility))
-    .orderBy(desc(mantRecords.workDate), desc(mantRecords.receivedAt))
-    .limit(limit)
-  return rows.map((row) => ({
-    id: row.id, folio: row.folio, kind: row.kind as "P" | "C", reading: row.reading, unit: row.unit as MantUnit,
-    workDate: row.workDate, intervalValue: row.intervalValue, voided: row.status === "anulado",
-  }))
 }

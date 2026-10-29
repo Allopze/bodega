@@ -79,7 +79,12 @@ export function buildRecord(draft: FlowDraft, input: SignInput): BuiltRecord {
     candidate = {
       ...common,
       kind: "C",
-      workTypeIds: draft.workTypeIds,
+      jobs: draft.jobs.map((job) => ({
+        workTypeId: job.workTypeId,
+        hours: job.hours,
+        noParts: job.noParts,
+        parts: job.noParts ? [] : partsFilled(job).map((part) => ({ quantity: parseQuantity(part.quantity), description: part.description.trim() })),
+      })),
       oilIds: draft.noOilChange ? [] : draft.oilIds,
       noOilChange: draft.noOilChange,
       executor: draft.executorKind === "yo"
@@ -88,11 +93,9 @@ export function buildRecord(draft: FlowDraft, input: SignInput): BuiltRecord {
           ? { kind: "otro_mecanico", userId: draft.executorUserId }
           : { kind: "externo", workshopId: draft.executorWorkshopId },
       description: draft.description.trim(),
-      parts: draft.noParts ? [] : partsFilled(draft).map((part) => ({ quantity: parseQuantity(part.quantity), description: part.description.trim() })),
-      noParts: draft.noParts,
-      hours: draft.hours,
       inWorkshop,
       workshopEntryDate: inWorkshop ? draft.workshopEntryDate : null,
+      workshopReason: inWorkshop ? draft.workshopReason.trim() : null,
       workOrder: draft.workOrder.trim() || null,
       driverIds: draft.driverIds,
     }
@@ -181,7 +184,12 @@ export function draftFromRejected(item: QueueRecordItem, row: FleetRow, now: Dat
   return {
     ...draft,
     step: stepsFor("C").length - 1,
-    workTypeIds: payload.workTypeIds,
+    jobs: payload.jobs.map((job) => ({
+      workTypeId: job.workTypeId,
+      hours: job.hours,
+      noParts: job.noParts,
+      parts: job.parts.length > 0 ? job.parts.map((part) => ({ quantity: String(part.quantity).replace(".", ","), description: part.description })) : [{ quantity: "1", description: "" }],
+    })),
     oilIds: payload.oilIds,
     noOilChange: payload.noOilChange,
     executorKind: payload.executor.kind,
@@ -189,10 +197,8 @@ export function draftFromRejected(item: QueueRecordItem, row: FleetRow, now: Dat
     executorWorkshopId: payload.executor.kind === "externo" ? payload.executor.workshopId : "",
     description: payload.description,
     workOrder: payload.workOrder ?? "",
-    parts: payload.parts.length > 0 ? payload.parts.map((part) => ({ quantity: String(part.quantity).replace(".", ","), description: part.description })) : [{ quantity: "1", description: "" }],
-    noParts: payload.noParts,
-    hours: payload.hours,
     inWorkshop: payload.inWorkshop,
+    workshopReason: payload.workshopReason ?? "",
     workshopEntryDate: payload.workshopEntryDate ?? draft.workshopEntryDate,
     driverIds: payload.driverIds,
     photos: { filtros: null, sticker: null, correctiva: payload.photos.map((photo) => photo.id) },

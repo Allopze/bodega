@@ -18,7 +18,7 @@ function panelData(overrides: Partial<PanelData> = {}): PanelData {
     fleet: { active: 10, counts: { vencida: 3, proxima: 2, al_dia: 4, sin_lecturas: 1, sin_pauta: 0, baja: 0 } },
     workshop: {
       equipment: 2, stale: 1,
-      rows: [{ recordId: "rec-1", folio: "MC-BIO-0001", code: "KA-135", plate: "RBYD-98", worksiteName: "Biodiversa", summary: "Cambio de bomba", daysStopped: 5, stale: true }],
+      rows: [{ recordId: "rec-1", folio: "MC-BIO-0001", code: "KA-135", plate: "RBYD-98", worksiteName: "Biodiversa", summary: "Cambio de bomba", reason: "Espera repuesto de Santiago", daysStopped: 5, stale: true }],
     },
     stoppedDays: { total: 9, equipment: 2 },
     weeks: [{ start: "2026-10-19", preventive: 3, corrective: 1 }, { start: "2026-10-26", preventive: 2, corrective: 0 }],
@@ -111,6 +111,7 @@ describe("tarjetas del panel", () => {
     expect(row.getAttribute("href")).toBe("/mantencion/registros/rec-1")
     expect(row.textContent).toContain("5 días")
     expect(row.textContent).toContain("Sin actualizar")
+    expect(row.textContent).toContain("Sigue en taller: Espera repuesto de Santiago")
   })
 
   it("horas por faena y los ítems sin hacer con su último motivo", () => {

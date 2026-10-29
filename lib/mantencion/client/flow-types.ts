@@ -19,6 +19,14 @@ export type FlowErrors = Record<string, string>
 
 export interface FlowPart { quantity: string; description: string }
 
+/** Un trabajo de la correctiva (único por tipo): sus horas y sus repuestos. */
+export interface FlowJob {
+  workTypeId: string
+  hours: number
+  noParts: boolean
+  parts: FlowPart[]
+}
+
 export interface FlowDraft {
   /** Id del registro: la llave de idempotencia con la que se envía. */
   id: string
@@ -63,7 +71,7 @@ export interface FlowDraft {
   notes: string
 
   // Paso 3 · Trabajo (correctiva)
-  workTypeIds: string[]
+  jobs: FlowJob[]
   oilIds: string[]
   noOilChange: boolean
   executorKind: MantExecutorKind
@@ -71,11 +79,9 @@ export interface FlowDraft {
   executorWorkshopId: string
   description: string
   workOrder: string
-  parts: FlowPart[]
-  noParts: boolean
-  hours: number
   inWorkshop: boolean | null
   workshopEntryDate: string
+  workshopReason: string
   driverIds: string[]
   driverQuery: string
 
@@ -120,7 +126,7 @@ export function newDraft(input: { userId: string; kind: "P" | "C"; vehicleId?: s
     openGroup: 0,
     photos: { filtros: null, sticker: null, correctiva: [] },
     notes: "",
-    workTypeIds: [],
+    jobs: [],
     oilIds: [],
     noOilChange: false,
     executorKind: "yo",
@@ -128,11 +134,9 @@ export function newDraft(input: { userId: string; kind: "P" | "C"; vehicleId?: s
     executorWorkshopId: "",
     description: "",
     workOrder: "",
-    parts: [{ quantity: "1", description: "" }],
-    noParts: false,
-    hours: 1,
     inWorkshop: null,
     workshopEntryDate: today,
+    workshopReason: "",
     driverIds: [],
     driverQuery: "",
     correctsRecordId: null,
@@ -150,4 +154,26 @@ export function draftPhotoIds(draft: Pick<FlowDraft, "photos">): string[] {
 /** ¿Hay algo que perder? Un borrador recién abierto sin equipo ni datos se descarta sin preguntar. */
 export function draftHasContent(draft: FlowDraft): boolean {
   return draft.vehicleId !== null || draftPhotoIds(draft).length > 0
+}
+
+/** Un trabajo recién agregado: una hora y una línea de repuesto en blanco. */
+export function newJob(workTypeId: string): FlowJob {
+  return { workTypeId, hours: 1, noParts: false, parts: [{ quantity: "1", description: "" }] }
+}
+
+export const totalHours = (jobs: readonly Pick<FlowJob, "hours">[]): number => jobs.reduce((sum, job) => sum + job.hours, 0)
+
+/**
+ * Borradores guardados con el formato anterior (`workTypeIds`, `hours`, `parts`,
+ * `noParts` sueltos) se normalizan al abrirlos: un trabajo por cada tipo marcado,
+ * con las horas totales y los repuestos en el primero. No se pierde nada de lo escrito.
+ */
+export function normalizeDraft(raw: FlowDraft): FlowDraft {
+  const legacy = raw as unknown as { workTypeIds?: string[]; hours?: number; parts?: FlowPart[]; noParts?: boolean }
+  if (!legacy.workTypeIds && Array.isArray(raw.jobs)) return { ...raw, workshopReason: raw.workshopReason ?? "" }
+  const { workTypeIds = [], hours = 1, parts, noParts = false, ...rest } = legacy as typeof legacy & Record<string, unknown>
+  const jobs = workTypeIds.map((workTypeId, index): FlowJob => index === 0
+    ? { workTypeId, hours, noParts, parts: parts && parts.length > 0 ? parts : [{ quantity: "1", description: "" }] }
+    : newJob(workTypeId))
+  return { ...(rest as unknown as FlowDraft), jobs, workshopReason: raw.workshopReason ?? "" }
 }

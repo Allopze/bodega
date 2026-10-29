@@ -44,6 +44,8 @@ export interface PanelWorkshopRow {
   plate: string
   worksiteName: string
   summary: string
+  /** Por qué sigue en taller, tal como lo escribió el mecánico. */
+  reason: string | null
   daysStopped: number | null
   stale: boolean
 }
@@ -162,7 +164,8 @@ export async function loadPanel(viewer: MantViewer, filters: PanelFilters, today
           code: row.code,
           plate: row.plate,
           worksiteName: row.worksiteName,
-          summary: summaries.get(row.workshop!.recordId) ?? "",
+          summary: summaries.get(row.workshop!.recordId)?.description ?? "",
+          reason: summaries.get(row.workshop!.recordId)?.reason ?? null,
           daysStopped: row.workshop!.daysStopped,
           stale: row.workshop!.stale,
         }))
@@ -202,13 +205,13 @@ function upcomingRows(fleet: FleetRow[]): PanelUpcomingRow[] {
     }))
 }
 
-async function correctiveSummaries(recordIds: string[]): Promise<Map<string, string>> {
+async function correctiveSummaries(recordIds: string[]): Promise<Map<string, { description: string; reason: string | null }>> {
   if (recordIds.length === 0) return new Map()
   const rows = await db
-    .select({ recordId: mantRecordCorrectives.recordId, description: mantRecordCorrectives.description })
+    .select({ recordId: mantRecordCorrectives.recordId, description: mantRecordCorrectives.description, reason: mantRecordCorrectives.workshopReason })
     .from(mantRecordCorrectives)
     .where(inArray(mantRecordCorrectives.recordId, recordIds))
-  return new Map(rows.map((row) => [row.recordId, row.description]))
+  return new Map(rows.map((row) => [row.recordId, { description: row.description, reason: row.reason }]))
 }
 
 /** Faenas del selector del panel: las de su alcance de equipos (nunca las de otros). */

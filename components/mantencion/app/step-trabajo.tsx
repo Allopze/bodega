@@ -1,17 +1,16 @@
 "use client"
 
 import type { Dispatch } from "react"
-import { formatHours } from "@/lib/mantencion/format"
 import type { FleetRow } from "@/lib/mantencion/client/fleet-view"
 import type { FlowAction } from "@/lib/mantencion/client/flow"
 import type { FlowDraft } from "@/lib/mantencion/client/flow-types"
-import { HOURS_MAX, HOURS_MIN, HOURS_WARNING } from "@/lib/mantencion/client/flow-validate"
 import { todayInChile } from "@/lib/utils"
 import { useAppData } from "./app-context"
 import { PhotoGrid } from "./photo-slot"
 import { photoContext } from "./step-fotos"
 import { EquipmentSummary } from "./step-lectura"
-import { DriversField, PartsField } from "./trabajo-parts"
+import { JobsField } from "./trabajo-jobs"
+import { DriversField } from "./trabajo-parts"
 import { CheckBox, FieldError } from "./ui"
 
 /** Paso 3 (correctiva): qué se hizo, quién, con qué, cuánto tardó y en qué quedó el equipo. */
@@ -25,16 +24,7 @@ export function StepTrabajo({ draft, dispatch, row }: { draft: FlowDraft; dispat
   return (
     <>
       <EquipmentSummary row={row} />
-      <div>
-        <div className="lbl">Tipo de trabajo <small>· puedes marcar varios</small></div>
-        <div className="seg multi" role="group" aria-label="Tipo de trabajo" style={{ gridTemplateColumns: "1fr 1fr" }}>
-          {(catalog?.workTypes ?? []).map((type) => {
-            const on = draft.workTypeIds.includes(type.id)
-            return <button key={type.id} type="button" aria-pressed={on} onClick={() => dispatch({ type: "toggleId", field: "workTypeIds", id: type.id })}><CheckBox on={on} />{type.name}</button>
-          })}
-        </div>
-        <FieldError message={errors.workTypes} />
-      </div>
+      <JobsField draft={draft} dispatch={dispatch} workTypes={catalog?.workTypes ?? []} />
 
       <div>
         <div className="lbl">¿Quién hizo el trabajo?</div>
@@ -89,19 +79,12 @@ export function StepTrabajo({ draft, dispatch, row }: { draft: FlowDraft; dispat
         <input id="orden" className="inp" value={draft.workOrder} maxLength={60} autoComplete="off" onChange={(event) => dispatch({ type: "patch", patch: { workOrder: event.target.value } })} />
       </div>
 
-      <PartsField draft={draft} dispatch={dispatch} />
+      <DriversField draft={draft} dispatch={dispatch} drivers={catalog?.drivers ?? []} />
 
       <div>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-          <div className="lbl" style={{ margin: 0 }} id="horas-lbl">Horas trabajadas</div>
-          <div className="stepper" role="group" aria-labelledby="horas-lbl">
-            <button type="button" aria-label="Restar media hora" disabled={draft.hours <= HOURS_MIN} onClick={() => dispatch({ type: "hours", hours: draft.hours - 0.5 })}>−</button>
-            <output aria-live="polite">{formatHours(draft.hours)}</output>
-            <button type="button" aria-label="Sumar media hora" disabled={draft.hours >= HOURS_MAX} onClick={() => dispatch({ type: "hours", hours: draft.hours + 0.5 })}>+</button>
-          </div>
-        </div>
-        {draft.hours > HOURS_WARNING ? <p className="hint">Son más de {HOURS_WARNING} horas. Si está bien, sigue.</p> : null}
-        <FieldError message={errors.hours} />
+        <div className="lbl">Fotos del repuesto o la reparación <small>· de 1 a 3</small></div>
+        <PhotoGrid photoIds={draft.photos.correctiva} context={photoContext(draft, row, deviceId, "correctiva")} error={errors.photos}
+          onAdd={(id) => dispatch({ type: "photoAdd", id })} onRemove={(id) => dispatch({ type: "photoRemove", id })} />
       </div>
 
       <div className="card">
@@ -114,18 +97,14 @@ export function StepTrabajo({ draft, dispatch, row }: { draft: FlowDraft; dispat
           <>
             <label className="lbl" htmlFor="ingreso" style={{ marginTop: 12 }}>Entró a taller el</label>
             <input id="ingreso" type="date" className="inp" value={draft.workshopEntryDate} max={today} onChange={(event) => dispatch({ type: "patch", patch: { workshopEntryDate: event.target.value } })} />
+            <label className="lbl" htmlFor="motivo" style={{ marginTop: 12 }}>¿Por qué sigue en taller?</label>
+            <textarea id="motivo" className={errors.workshopReason ? "inp bad" : "inp"} rows={2} value={draft.workshopReason} maxLength={1000} placeholder="Ej: Espera un repuesto importado"
+              aria-invalid={Boolean(errors.workshopReason)} onChange={(event) => dispatch({ type: "patch", patch: { workshopReason: event.target.value } })} />
+            <FieldError message={errors.workshopReason} />
             <p className="hint">Si pasa más de 1 día, la app te pedirá actualizar el estado cada 2 días.</p>
           </>
         ) : null}
         <FieldError message={errors.workshop} />
-      </div>
-
-      <DriversField draft={draft} dispatch={dispatch} drivers={catalog?.drivers ?? []} />
-
-      <div>
-        <div className="lbl">Fotos del repuesto o la reparación <small>· de 1 a 3</small></div>
-        <PhotoGrid photoIds={draft.photos.correctiva} context={photoContext(draft, row, deviceId, "correctiva")} error={errors.photos}
-          onAdd={(id) => dispatch({ type: "photoAdd", id })} onRemove={(id) => dispatch({ type: "photoRemove", id })} />
       </div>
     </>
   )

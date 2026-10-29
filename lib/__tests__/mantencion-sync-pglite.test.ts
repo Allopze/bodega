@@ -1,6 +1,6 @@
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
-import { and, eq } from "drizzle-orm"
+import { and, asc, eq } from "drizzle-orm"
 import path from "node:path"
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 import * as schema from "@/db/schema"
@@ -68,12 +68,18 @@ async function preventive(userId: string, overrides: Record<string, unknown> = {
   })
 }
 
+/** Un trabajo de correctiva para armar el registro; por defecto, con un repuesto. */
+function job(workTypeId: string, hours: number, overrides: Record<string, unknown> = {}) {
+  return { workTypeId, hours, noParts: false, parts: [{ quantity: 1, description: "Manguera" }], ...overrides }
+}
+
 async function corrective(userId: string, overrides: Record<string, unknown> = {}): Promise<SyncRecord> {
   return syncRecordSchema.parse({
     ...common(IDS.truckBio, 12_000, daysAgo(2)),
-    kind: "C", workTypeIds: [IDS.wtMec], oilIds: [IDS.oilMotor], noOilChange: false, executor: { kind: "yo" },
-    description: "Cambio de manguera de aire", parts: [{ quantity: 1, description: "Manguera" }], noParts: false, hours: 2,
-    inWorkshop: false, workshopEntryDate: null, workOrder: null, driverIds: [IDS.driver1],
+    kind: "C", oilIds: [IDS.oilMotor], noOilChange: false, executor: { kind: "yo" },
+    jobs: [{ workTypeId: IDS.wtMec, hours: 2, noParts: false, parts: [{ quantity: 1, description: "Manguera" }] }],
+    description: "Cambio de manguera de aire",
+    inWorkshop: false, workshopEntryDate: null, workshopReason: null, workOrder: null, driverIds: [IDS.driver1],
     photos: await photosFor(userId, ["correctiva"]),
     ...overrides,
   })
@@ -289,11 +295,16 @@ describe("folio", () => {
 describe("registro correctivo", () => {
   it("guarda nombres (snapshot) de tipos de trabajo, aceites y conductores", async () => {
     const ctx = await contextOf(IDS.mecBio)
-    const input = await corrective(IDS.mecBio, { workTypeIds: [IDS.wtMec, IDS.wtSold], hours: 14, driverIds: [IDS.driver1, IDS.driver2] })
+    const input = await corrective(IDS.mecBio, { jobs: [job(IDS.wtMec, 8), job(IDS.wtSold, 6)], driverIds: [IDS.driver1, IDS.driver2] })
     const body = success(await createRecord(input, ctx))
     expect(body.warnings.map((warning) => warning.code)).toEqual(["hours_over_12"])
     const [detail] = await testDb.select().from(schema.mantRecordCorrectives).where(eq(schema.mantRecordCorrectives.recordId, input.id))
-    expect(detail).toMatchObject({ workTypes: ["Mecánico", "Soldadura"], oils: ["Motor"], hours: 14, inWorkshop: false })
+    expect(detail).toMatchObject({ workTypes: ["Mecánico", "Soldadura"], oils: ["Motor"], hours: 14, inWorkshop: false, noParts: false })
+    const jobs = await testDb.select().from(schema.mantRecordJobs).where(eq(schema.mantRecordJobs.recordId, input.id)).orderBy(asc(schema.mantRecordJobs.sortOrder))
+    expect(jobs.map((row) => [row.workTypeName, row.hours])).toEqual([["Mecánico", 8], ["Soldadura", 6]])
+    const parts = await testDb.select().from(schema.mantRecordParts).where(eq(schema.mantRecordParts.recordId, input.id))
+    expect(parts).toHaveLength(2)
+    expect(parts.every((part) => part.jobId !== null && jobs.some((row) => row.id === part.jobId))).toBe(true)
     const drivers = await testDb.select().from(schema.mantRecordDrivers).where(eq(schema.mantRecordDrivers.recordId, input.id))
     expect(drivers.map((driver) => driver.driverName).sort()).toEqual(["AEDO POLANCO JOSE A.", "BELTRAN IRARRAZAVAL HECTOR A."])
   })
@@ -302,9 +313,31 @@ describe("registro correctivo", () => {
     const ctx = await contextOf(IDS.mecBio)
     expect(failure(await createRecord(await corrective(IDS.mecBio, { oilIds: [], noOilChange: false }), ctx)).field).toBe("oilIds")
     expect(failure(await createRecord(await corrective(IDS.mecBio, { noOilChange: true }), ctx)).field).toBe("oilIds")
-    expect(failure(await createRecord(await corrective(IDS.mecBio, { parts: [], noParts: false }), ctx)).field).toBe("parts")
-    expect(failure(await createRecord(await corrective(IDS.mecBio, { noParts: true }), ctx)).field).toBe("parts")
-    success(await createRecord(await corrective(IDS.mecBio, { oilIds: [], noOilChange: true, parts: [], noParts: true }), ctx))
+    success(await createRecord(await corrective(IDS.mecBio, { oilIds: [], noOilChange: true, jobs: [job(IDS.wtMec, 2, { parts: [], noParts: true })] }), ctx))
+  })
+
+  it("repuestos por trabajo: cada uno lleva repuestos o «No se usaron», nunca ambos ni ninguno", async () => {
+    const ctx = await contextOf(IDS.mecBio)
+    const sinNada = job(IDS.wtMec, 2, { parts: [], noParts: false })
+    const ambos = job(IDS.wtMec, 2, { noParts: true })
+    expect(failure(await createRecord(await corrective(IDS.mecBio, { jobs: [sinNada] }), ctx)).field).toBe("jobs")
+    expect(failure(await createRecord(await corrective(IDS.mecBio, { jobs: [ambos] }), ctx)).field).toBe("jobs")
+    // El segundo trabajo es el que no cumple: el primero, bien, no lo salva.
+    expect(failure(await createRecord(await corrective(IDS.mecBio, { jobs: [job(IDS.wtMec, 2), { ...sinNada, workTypeId: IDS.wtSold }] }), ctx)).field).toBe("jobs")
+    const mixto = await corrective(IDS.mecBio, { jobs: [job(IDS.wtMec, 2), job(IDS.wtSold, 1, { parts: [], noParts: true })] })
+    success(await createRecord(mixto, ctx))
+    const [row] = await testDb.select().from(schema.mantRecordCorrectives).where(eq(schema.mantRecordCorrectives.recordId, mixto.id))
+    expect(row).toMatchObject({ hours: 3, noParts: false })
+  })
+
+  it("trabajos: un tipo no se repite y el total no pasa de 72 horas", async () => {
+    const ctx = await contextOf(IDS.mecBio)
+    // El servidor revalida aunque el contrato ya lo exija: se arma el registro sin pasar por zod.
+    const forced = async (jobs: unknown[]) => ({ ...(await corrective(IDS.mecBio)), jobs }) as unknown as SyncRecord
+    expect(failure(await createRecord(await forced([job(IDS.wtMec, 1), job(IDS.wtMec, 2)]), ctx)).field).toBe("jobs")
+    expect(failure(await createRecord(await forced([job(IDS.wtMec, 40), job(IDS.wtSold, 32.5)]), ctx)).field).toBe("jobs")
+    expect(failure(await createRecord(await forced([job(IDS.wtMec, 0.25)]), ctx)).field).toBe("jobs")
+    success(await createRecord(await corrective(IDS.mecBio, { jobs: [job(IDS.wtMec, 40), job(IDS.wtSold, 32)] }), ctx))
   })
 
   it("quién hizo el trabajo: otro mecánico con la app, taller externo; nunca uno sin permiso ni el mismo autor", async () => {
@@ -329,9 +362,20 @@ describe("registro correctivo", () => {
     const ctx = await contextOf(IDS.mecBio)
     expect(failure(await createRecord(await corrective(IDS.mecBio, { inWorkshop: true, workshopEntryDate: null }), ctx)).field).toBe("workshopEntryDate")
     expect(failure(await createRecord(await corrective(IDS.mecBio, { inWorkshop: true, workshopEntryDate: daysAgo(-3) }), ctx)).field).toBe("workshopEntryDate")
-    success(await createRecord(await corrective(IDS.mecBio, { inWorkshop: true, workshopEntryDate: daysAgo(2) }), ctx))
+    // «Sí sigue en taller» exige el motivo (≥ 5 caracteres) además de la fecha.
+    expect(failure(await createRecord(await corrective(IDS.mecBio, { inWorkshop: true, workshopEntryDate: daysAgo(2) }), ctx)).field).toBe("workshopReason")
+    expect(failure(await createRecord(await corrective(IDS.mecBio, { inWorkshop: true, workshopEntryDate: daysAgo(2), workshopReason: " abc " }), ctx)).field).toBe("workshopReason")
+    const staying = await corrective(IDS.mecBio, { inWorkshop: true, workshopEntryDate: daysAgo(2), workshopReason: "Espera un repuesto importado" })
+    success(await createRecord(staying, ctx))
+    const [saved] = await testDb.select().from(schema.mantRecordCorrectives).where(eq(schema.mantRecordCorrectives.recordId, staying.id))
+    expect(saved?.workshopReason).toBe("Espera un repuesto importado")
+    // Si ya salió, el motivo no se guarda aunque llegue.
+    const left = await corrective(IDS.mecBio, { workshopReason: "no corresponde" })
+    success(await createRecord(left, ctx))
+    const [notSaved] = await testDb.select().from(schema.mantRecordCorrectives).where(eq(schema.mantRecordCorrectives.recordId, left.id))
+    expect(notSaved?.workshopReason).toBeNull()
 
-    expect(failure(await createRecord(await corrective(IDS.mecBio, { workTypeIds: ["wt-fantasma"] }), ctx)).field).toBe("workTypeIds")
+    expect(failure(await createRecord(await corrective(IDS.mecBio, { jobs: [job("wt-fantasma", 1)] }), ctx)).field).toBe("jobs")
     expect(failure(await createRecord(await corrective(IDS.mecBio, { driverIds: ["dr-fantasma"] }), ctx)).field).toBe("driverIds")
   })
 

@@ -213,27 +213,26 @@ function Corrective({ detail }: { detail: RecordDetail }) {
       <section>
         <h2>Trabajo realizado</h2>
         <dl className="grid">
-          <Item label="Tipo de trabajo" value={corrective.workTypes.join(", ")} />
           <Item label="Cambio de aceite" value={corrective.oils.length ? corrective.oils.join(", ") : "No se cambió aceite"} />
-          <Item label="Horas trabajadas" value={formatHours(corrective.hours)} mono />
           {corrective.workOrder && <Item label="Orden de trabajo" value={corrective.workOrder} />}
         </dl>
         <p className="note">{corrective.description}</p>
       </section>
       <section>
-        <h2>Repuestos</h2>
-        {corrective.parts.length === 0 ? (
-          <p className="note">No se usaron repuestos.</p>
-        ) : (
-          <table>
-            <thead><tr><th>Cantidad</th><th>Repuesto</th></tr></thead>
-            <tbody>
-              {corrective.parts.map((part, index) => (
-                <tr key={index}><td className="num mono">{formatNumber(part.quantity)} ×</td><td>{part.description}</td></tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+        <h2>Trabajos y repuestos</h2>
+        <table>
+          <thead><tr><th>Tipo de trabajo</th><th>Horas</th><th>Repuestos</th></tr></thead>
+          <tbody>
+            {corrective.jobs.map((job) => (
+              <tr key={job.id}>
+                <td>{job.workTypeName}</td>
+                <td className="num mono">{formatHours(job.hours)}</td>
+                <td>{job.parts.length === 0 ? "No se usaron repuestos" : job.parts.map((part) => `${formatNumber(part.quantity)} × ${part.description}`).join("; ")}</td>
+              </tr>
+            ))}
+            <tr><td><strong>Total</strong></td><td className="num mono"><strong>{formatHours(corrective.hours)}</strong></td><td /></tr>
+          </tbody>
+        </table>
       </section>
       <section>
         <h2>Taller</h2>
@@ -241,6 +240,7 @@ function Corrective({ detail }: { detail: RecordDetail }) {
           <Item label="Entró a taller" value={corrective.workshopEntryDate ? formatDate(corrective.workshopEntryDate) : "No pasó por taller"} />
           <Item label="Estado" value={corrective.workshop ? (corrective.workshop.inWorkshop ? "Sigue en taller" : `Salió el ${corrective.workshop.exitDate ? formatDate(corrective.workshop.exitDate) : "—"}`) : "—"} />
           <Item label="Días detenido" value={corrective.workshop?.daysStopped != null ? String(corrective.workshop.daysStopped) : "—"} />
+          {corrective.workshopReason && <Item label="Motivo de seguir en taller" value={corrective.workshopReason} />}
         </dl>
         {corrective.updates.length > 0 && (
           <table style={{ marginTop: 6 }}>

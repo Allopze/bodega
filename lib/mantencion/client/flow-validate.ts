@@ -4,7 +4,7 @@ import { baseInterval, checkItemResults, checklistFor, suggestInterval } from ".
 import { findDuplicatePreventive, type PreventiveRef } from "../status"
 import type { MantChecklistItem, MantScheduleSnapshot, MantSuggestion } from "../types"
 import type { FleetRow } from "./fleet-view"
-import type { FlowDraft, FlowErrors, FlowStep } from "./flow-types"
+import { totalHours, type FlowDraft, type FlowErrors, type FlowPart, type FlowStep } from "./flow-types"
 
 /**
  * Validación por paso y análisis de la lectura. Todo puro: la misma lógica
@@ -19,6 +19,7 @@ export interface FlowCtx {
 
 export const MIN_NOTE = 3
 export const MIN_DESCRIPTION = 5
+export const MIN_REASON = 5
 export const HOURS_WARNING = 12
 export const HOURS_MIN = 0.5
 export const HOURS_MAX = 72
@@ -79,8 +80,8 @@ export function checklistCounts(draft: Pick<FlowDraft, "checklist" | "marks" | "
   return { total, done, missingReason }
 }
 
-export function partsFilled(draft: Pick<FlowDraft, "parts">) {
-  return draft.parts.filter((part) => part.description.trim())
+export function partsFilled(job: { parts: readonly FlowPart[] }) {
+  return job.parts.filter((part) => part.description.trim())
 }
 
 /** «1,5» o «1.5» → 1,5. Una cantidad ilegible vale 0 (y no pasa la validación). */
@@ -109,18 +110,26 @@ function validateLectura(draft: FlowDraft, ctx: FlowCtx, errors: FlowErrors): vo
 }
 
 function validateTrabajo(draft: FlowDraft, ctx: FlowCtx, errors: FlowErrors): void {
-  if (draft.workTypeIds.length === 0) errors.workTypes = "Marca al menos un tipo de trabajo."
+  if (draft.jobs.length === 0) errors.workTypes = "Agrega al menos un trabajo."
+  for (const job of draft.jobs) {
+    if (job.hours < HOURS_MIN || job.hours > HOURS_MAX) errors[`job:${job.workTypeId}`] = `Las horas van entre ${HOURS_MIN} y ${HOURS_MAX}.`
+    else if (!job.noParts && !partsFilled(job).some((part) => parseQuantity(part.quantity) > 0)) {
+      errors[`job:${job.workTypeId}`] = "Agrega los repuestos con su cantidad, o marca «No se usaron repuestos»."
+    }
+  }
+  if (totalHours(draft.jobs) > HOURS_MAX) errors.hours = `El total de horas no puede pasar de ${HOURS_MAX}.`
   if (draft.executorKind === "otro_mecanico" && !draft.executorUserId) errors.executor = "Elige qué mecánico hizo el trabajo."
   if (draft.executorKind === "externo" && !draft.executorWorkshopId) errors.executor = "Elige el taller externo."
   if (!draft.noOilChange && draft.oilIds.length === 0) errors.oil = "Marca qué aceite se cambió, o «No se cambió aceite»."
   if (draft.description.trim().length < MIN_DESCRIPTION) errors.description = "Describe el trabajo realizado."
-  if (!draft.noParts && !partsFilled(draft).some((part) => parseQuantity(part.quantity) > 0)) errors.parts = "Agrega los repuestos con su cantidad, o marca «No se usaron repuestos»."
-  if (draft.hours < HOURS_MIN || draft.hours > HOURS_MAX) errors.hours = `Las horas van entre ${HOURS_MIN} y ${HOURS_MAX}.`
-  if (draft.inWorkshop === null) errors.workshop = "Indica si el equipo sigue en taller."
-  else if (draft.inWorkshop && !draft.workshopEntryDate) errors.workshop = "Indica cuándo entró a taller."
-  else if (draft.inWorkshop && draft.workshopEntryDate > ctx.today) errors.workshop = "La fecha de ingreso no puede ser futura."
   if (draft.driverIds.length === 0) errors.drivers = "Agrega al menos un conductor."
   if (draft.photos.correctiva.length === 0) errors.photos = "Falta al menos una foto."
+  if (draft.inWorkshop === null) errors.workshop = "Indica si el equipo sigue en taller."
+  else if (draft.inWorkshop) {
+    if (!draft.workshopEntryDate) errors.workshop = "Indica cuándo entró a taller."
+    else if (draft.workshopEntryDate > ctx.today) errors.workshop = "La fecha de ingreso no puede ser futura."
+    if (draft.workshopReason.trim().length < MIN_REASON) errors.workshopReason = "Cuenta por qué el equipo sigue en taller."
+  }
 }
 
 export function validateStep(draft: FlowDraft, step: FlowStep, ctx: FlowCtx): FlowErrors {

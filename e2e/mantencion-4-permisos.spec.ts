@@ -100,9 +100,9 @@ test("el catálogo del mecánico trae sólo sus faenas y un registro ajeno queda
       signedAt: new Date().toISOString(), offlineSince: null, deviceId: randomUUID(), appVersion: "e2e",
       readingJumpConfirmed: false, duplicateConfirmed: false, correctsRecordId: null,
       photos: [{ id: photoId, kind: "correctiva" }],
-      workTypeIds: [catalog.workTypes[0]!.id], oilIds: [], noOilChange: true,
-      executor: { kind: "yo" }, description: "Cambio de manguera hidráulica E2E", parts: [], noParts: true,
-      hours: 1.5, inWorkshop: false, workshopEntryDate: null, workOrder: null, driverIds: [catalog.drivers[0]!.id],
+      jobs: [{ workTypeId: catalog.workTypes[0]!.id, hours: 1.5, noParts: true, parts: [] }], oilIds: [], noOilChange: true,
+      executor: { kind: "yo" }, description: "Cambio de manguera hidráulica E2E",
+      inWorkshop: false, workshopEntryDate: null, workshopReason: null, workOrder: null, driverIds: [catalog.drivers[0]!.id],
     },
   })
   expect(created.status()).toBe(200)

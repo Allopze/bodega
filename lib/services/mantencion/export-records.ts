@@ -3,7 +3,7 @@ import { alias } from "drizzle-orm/pg-core"
 import type { Session } from "next-auth"
 import { db } from "@/db"
 import {
-  mantRecordCorrectives, mantRecordDrivers, mantRecordItems, mantRecordParts, mantRecordVoids, mantRecords,
+  mantRecordCorrectives, mantRecordDrivers, mantRecordItems, mantRecordJobs, mantRecordParts, mantRecordVoids, mantRecords,
   mantWorkshopUpdates, users, worksites,
 } from "@/db/schema"
 import { recordAudit } from "@/lib/audit"
@@ -92,9 +92,11 @@ export async function exportRecords(input: {
   const ids = kept.map((row) => row.record.id)
   const today = todayInChile()
 
-  const [items, parts, drivers, updates] = await Promise.all([
+  const [items, jobs, parts, drivers, updates] = await Promise.all([
     db.select().from(mantRecordItems).where(inArray(mantRecordItems.recordId, ids))
       .orderBy(asc(mantRecordItems.recordId), asc(mantRecordItems.sortOrder), asc(mantRecordItems.itemName)),
+    db.select().from(mantRecordJobs).where(inArray(mantRecordJobs.recordId, ids))
+      .orderBy(asc(mantRecordJobs.recordId), asc(mantRecordJobs.sortOrder)),
     db.select().from(mantRecordParts).where(inArray(mantRecordParts.recordId, ids))
       .orderBy(asc(mantRecordParts.recordId), asc(mantRecordParts.sortOrder)),
     db.select().from(mantRecordDrivers).where(inArray(mantRecordDrivers.recordId, ids))
@@ -117,6 +119,10 @@ export async function exportRecords(input: {
     const m = meta.get(recordId)!
     return [m.folio, m.date, m.worksite, m.code, m.plate]
   }
+  const jobNameById = new Map(jobs.map((job) => [job.id, job.workTypeName]))
+  /** Un repuesto sin trabajo (filas previas a los trabajos por tipo) cae bajo el primero de su registro. */
+  const firstJobName = new Map<string, string>()
+  for (const job of jobs) if (!firstJobName.has(job.recordId)) firstJobName.set(job.recordId, job.workTypeName)
   const updatesByRecord = new Map<string, Array<{ kind: "sigue" | "salio"; createdDate: string; exitDate: string | null }>>()
   for (const { update } of updates) {
     const list = updatesByRecord.get(update.recordId) ?? []
@@ -167,6 +173,7 @@ export async function exportRecords(input: {
       excelPlainDate(c?.workshopEntryDate),
       excelPlainDate(workshop?.exitDate),
       workshop?.daysStopped ?? null,
+      c?.inWorkshop ? (c.workshopReason ?? "") : "",
       yesNo(r.readingJumpAlert),
       yesNo(r.outOfWorksite),
       row.duplicateFolio ?? "",
@@ -183,12 +190,12 @@ export async function exportRecords(input: {
     "Pauta", "Intervalo", "Intervalo sugerido", "Pauta elegida a mano", "Motivo de la pauta a mano",
     "Hecho por", "Registrado por", "Detalle de autoría",
     "Ítems realizados", "Ítems no realizados", "Ítems no aplica", "Observaciones",
-    "Tipos de trabajo", "Aceites", "Trabajo realizado", "Horas", "Pasó por taller", "Entró a taller", "Salió de taller", "Días detenido",
+    "Tipos de trabajo", "Aceites", "Trabajo realizado", "Horas", "Pasó por taller", "Entró a taller", "Salió de taller", "Días detenido", "Motivo de seguir en taller",
     "Salto de lectura", "Fuera de faena", "Duplicado de", "Corrige a", "Motivo de anulación", "Anulado por", "Anulado el",
   ]
   const recordFormats: Record<number, string> = {
     4: EXCEL_DATE_FORMAT, 5: EXCEL_DATETIME_FORMAT, 6: EXCEL_DATETIME_FORMAT,
-    17: "#,##0", 18: "#,##0", 31: "0.0", 33: EXCEL_DATE_FORMAT, 34: EXCEL_DATE_FORMAT, 42: EXCEL_DATETIME_FORMAT,
+    17: "#,##0", 18: "#,##0", 31: "0.0", 33: EXCEL_DATE_FORMAT, 34: EXCEL_DATE_FORMAT, 43: EXCEL_DATETIME_FORMAT,
   }
 
   const leadHeaders = ["Folio", "Fecha del trabajo", "Faena", "Equipo", "Patente"]
@@ -204,9 +211,18 @@ export async function exportRecords(input: {
       columnFormats: leadFormats,
     },
     {
+      worksheetName: "Trabajos",
+      headers: [...leadHeaders, "Tipo de trabajo", "Horas", "Sin repuestos"],
+      rows: jobs.map((job) => [...lead(job.recordId), job.workTypeName, job.hours, yesNo(job.noParts)]),
+      columnFormats: { ...leadFormats, 6: "0.0" },
+    },
+    {
       worksheetName: "Repuestos",
-      headers: [...leadHeaders, "Cantidad", "Repuesto"],
-      rows: parts.map((part) => [...lead(part.recordId), part.quantity, part.description]),
+      headers: [...leadHeaders, "Trabajo", "Cantidad", "Repuesto"],
+      rows: parts.map((part) => [
+        ...lead(part.recordId), (part.jobId ? jobNameById.get(part.jobId) : undefined) ?? firstJobName.get(part.recordId) ?? "",
+        part.quantity, part.description,
+      ]),
       columnFormats: leadFormats,
     },
     {

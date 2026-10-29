@@ -160,7 +160,7 @@ describe("catálogo", () => {
   })
 
   it("un equipo en taller aparece con su estado de taller en el catálogo", async () => {
-    const created = await createCorrective(IDS.mecBio, { inWorkshop: true, workshopEntryDate: daysAgo(4), workDate: daysAgo(4) })
+    const created = await createCorrective(IDS.mecBio, { inWorkshop: true, workshopEntryDate: daysAgo(4), workshopReason: "Espera repuesto", workDate: daysAgo(4) })
     const { body } = await fetchCatalog(IDS.mecBio)
     expect(body.equipment.find((equipment) => equipment.code === "KA-135")?.workshop).toMatchObject({
       recordId: created.id, folio: created.folio, entryDate: daysAgo(4), stale: true,
@@ -197,7 +197,7 @@ describe("POST /sync/taller", () => {
   })
 
   it("«Sigue» y «Salió» son idempotentes por id; tras la salida no se aceptan más; el estado de taller se libera", async () => {
-    const created = await createCorrective(IDS.mecBio, { inWorkshop: true, workshopEntryDate: daysAgo(4), workDate: daysAgo(4) })
+    const created = await createCorrective(IDS.mecBio, { inWorkshop: true, workshopEntryDate: daysAgo(4), workshopReason: "Espera repuesto", workDate: daysAgo(4) })
     const update = sigue(created.id)
     const first = await post(taller, "/api/mantencion/sync/taller", IDS.mecBio, update)
     expect(first).toMatchObject({ status: 200, body: { ok: true, id: update.id, duplicate: false } })
@@ -225,7 +225,7 @@ describe("POST /sync/taller", () => {
   })
 
   it("rechaza salida anterior al ingreso o futura, registros inexistentes, anulados o que no dejaron el equipo en taller", async () => {
-    const created = await createCorrective(IDS.mecBio, { inWorkshop: true, workshopEntryDate: daysAgo(4), workDate: daysAgo(4) })
+    const created = await createCorrective(IDS.mecBio, { inWorkshop: true, workshopEntryDate: daysAgo(4), workshopReason: "Espera repuesto", workDate: daysAgo(4) })
     const before = await post(taller, "/api/mantencion/sync/taller", IDS.mecBio, salio(created.id, daysAgo(6)))
     expect(before.status).toBe(422)
     expect(String(before.body.message)).toContain("anterior al ingreso")
@@ -244,7 +244,7 @@ describe("POST /sync/taller", () => {
   })
 
   it("alcance: de otra faena no; quien lo registró (aunque sea de otra faena), el global y el de la faena sí", async () => {
-    const created = await createCorrective(IDS.mecBio, { inWorkshop: true, workshopEntryDate: daysAgo(2) })
+    const created = await createCorrective(IDS.mecBio, { inWorkshop: true, workshopEntryDate: daysAgo(2), workshopReason: "Espera repuesto" })
     const outsider = await post(taller, "/api/mantencion/sync/taller", IDS.mecCho, sigue(created.id))
     expect(outsider.status).toBe(422)
     expect(String(outsider.body.message)).toContain("no es de tu faena")
@@ -253,7 +253,7 @@ describe("POST /sync/taller", () => {
     expect((await post(taller, "/api/mantencion/sync/taller", IDS.jefe, sigue(created.id))).status).toBe(200)
 
     // Mecánico de Cholguán que registró un equipo de Biodiversa (fuera de faena): puede seguirlo él mismo.
-    const outOfWorksite = await createCorrective(IDS.mecCho, { vehicleId: IDS.machineBio, reading: 1_000, inWorkshop: true, workshopEntryDate: daysAgo(2) })
+    const outOfWorksite = await createCorrective(IDS.mecCho, { vehicleId: IDS.machineBio, reading: 1_000, inWorkshop: true, workshopEntryDate: daysAgo(2), workshopReason: "Espera repuesto" })
     expect((await post(taller, "/api/mantencion/sync/taller", IDS.mecCho, sigue(outOfWorksite.id))).status).toBe(200)
     expect((await post(taller, "/api/mantencion/sync/taller", IDS.mecBio, sigue(outOfWorksite.id))).status).toBe(200)
   })

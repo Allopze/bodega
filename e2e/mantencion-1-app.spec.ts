@@ -123,11 +123,12 @@ async function registrarCorrectiva(page: Page, opciones: { indice?: number; desc
   await page.getByRole("button", { name: "Continuar", exact: true }).click()
   await opciones.antesDeLaLectura?.()
 
-  await page.getByRole("group", { name: "Tipo de trabajo" }).getByRole("button").first().click()
+  // Un trabajo del primer tipo del catálogo: sus horas (por defecto 1 h) y «No se usaron repuestos» van dentro de su tarjeta.
+  await page.getByRole("group", { name: "Agregar trabajo" }).getByRole("button").first().click()
+  await expect(page.getByText(/^Total: /)).toBeVisible()
   await page.getByRole("button", { name: "No se cambió aceite", exact: true }).click()
   await page.getByLabel("Trabajo realizado").fill(opciones.descripcion)
   await page.getByRole("checkbox", { name: "No se usaron repuestos" }).check()
-  await page.getByRole("button", { name: opciones.enTaller === false ? "No, ya salió" : "Sí, sigue", exact: true }).click()
   await page.getByLabel(/Conductores de las últimas 24 h/).fill("a")
   await page.getByRole("group", { name: "Conductores encontrados" }).getByRole("button").first().click()
   const cantidad = opciones.fotos ?? 1
@@ -135,6 +136,9 @@ async function registrarCorrectiva(page: Page, opciones: { indice?: number; desc
     await page.getByLabel("Agregar foto del trabajo").setInputFiles(await jpeg(page, `${codigo} foto ${n}`))
     await expect(page.getByRole("img", { name: `Foto ${n} del trabajo` })).toBeVisible()
   }
+  // «¿Sigue en taller?» cierra el formulario; con «Sí» pide el motivo.
+  await page.getByRole("button", { name: opciones.enTaller === false ? "No, ya salió" : "Sí, sigue", exact: true }).click()
+  if (opciones.enTaller !== false) await page.getByLabel("¿Por qué sigue en taller?").fill("QA_ Espera un repuesto")
   await page.getByRole("button", { name: "Revisar registro", exact: true }).click()
   await page.getByRole("button", { name: "Firmar y guardar", exact: true }).click()
   await expect(page.getByRole("heading", { name: "Registro guardado" })).toBeVisible()
