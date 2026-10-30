@@ -8,6 +8,7 @@ import type { FlowAction } from "@/lib/mantencion/client/flow"
 import type { FlowDraft } from "@/lib/mantencion/client/flow-types"
 import { checklistCounts, groupDone } from "@/lib/mantencion/client/flow-validate"
 import { IconCheck, IconChevronDown, IconChevronRight, IconChevronUp } from "./icons"
+import { FieldError } from "./ui"
 
 /** Atajos para el motivo de un «No realizado». */
 export const REASON_SHORTCUTS = ["Falta repuesto", "Sin herramienta", "Requiere taller", "Equipo en operación"] as const
@@ -37,6 +38,8 @@ const focusLater = (id: string) => requestAnimationFrame(() => document.getEleme
 export function StepPauta({ draft, dispatch }: { draft: FlowDraft; dispatch: Dispatch<FlowAction> }) {
   const groups = groupChecklist(draft.checklist)
   const previousOpen = useRef(draft.openGroup)
+  // Al tocar «Continuar» con ítems sin marcar, el aviso va dentro del primer sistema incompleto (que el reductor deja abierto).
+  const firstPending = groups.findIndex((group) => !groupDone(draft, group.items))
 
   useEffect(() => {
     if (previousOpen.current === draft.openGroup) return
@@ -48,6 +51,7 @@ export function StepPauta({ draft, dispatch }: { draft: FlowDraft; dispatch: Dis
 
   return (
     <>
+      {firstPending < 0 ? <FieldError message={draft.errors.pauta} /> : null}
       {groups.map((group, index) => {
         const open = draft.openGroup === index
         const done = groupDone(draft, group.items)
@@ -65,6 +69,7 @@ export function StepPauta({ draft, dispatch }: { draft: FlowDraft; dispatch: Dis
             </button>
             {open ? (
               <div id={`gb-${index}`}>
+                {index === firstPending ? <div style={{ padding: "0 14px" }}><FieldError message={draft.errors.pauta} /></div> : null}
                 {left > 0 ? (
                   <div className="gall">
                     <button type="button" className="gallb" onClick={() => { dispatch({ type: "markGroup", group: index }); focusLater(`gnext-${index}`) }}>

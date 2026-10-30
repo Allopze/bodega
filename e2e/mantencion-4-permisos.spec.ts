@@ -131,7 +131,8 @@ test("el supervisor de Biodiversa no ve el registro de Cholguan ni por su URL", 
 test("jefatura ve la alerta fuera de faena y revoca la credencial del dispositivo", async ({ page }) => {
   await login(page, "jefe.mant@e2e.chome.cl")
   await page.goto(`/mantencion/registros/${foreignRecordId}`)
-  await expect(page.getByText("Fuera de faena", { exact: false }).first()).toBeVisible()
+  // La alerta es un aviso en tipo oración (ya no una etiqueta «Fuera de faena»).
+  await expect(page.getByText("Registrado fuera de la faena del equipo", { exact: true })).toBeVisible()
 
   await page.goto("/mantencion/dispositivos")
   // La app se reparte por QR desde jefatura: el enlace es el de la app instalable.
@@ -140,10 +141,16 @@ test("jefatura ve la alerta fuera de faena y revoca la credencial del dispositiv
   await expect(instalar.getByAltText("Código QR para abrir la app de mantención en el teléfono")).toBeVisible()
   await expect(instalar.getByText(/\/m\/mantencion$/)).toBeVisible()
   await page.keyboard.press("Escape")
-  const row = page.getByRole("row").filter({ hasText: MEC2 }).filter({ hasText: /vigente/i }).first()
-  await row.getByRole("button", { name: /Revocar/ }).click()
+  // Una sección por persona (`role="group"`, con su correo) y, dentro, un renglón por dispositivo.
+  const person = page.getByRole("group").filter({ hasText: MEC2 })
+  const device = person.getByRole("listitem").filter({ has: page.getByRole("button", { name: /Revocar/ }) }).first()
+  await device.getByRole("button", { name: /Revocar/ }).click()
   await page.getByRole("dialog").getByRole("button", { name: /Revocar/ }).click()
-  await expect(page.getByRole("row").filter({ hasText: MEC2 }).filter({ hasText: /revocada/i }).first()).toBeVisible()
+  // El dispositivo revocado deja de ser «conectado» y pasa a «anteriores», plegado bajo la persona.
+  const previous = person.locator("summary").filter({ hasText: /^Ver \d+ anterior(es)?$/ })
+  await expect(previous).toBeVisible()
+  await previous.click()
+  await expect(person.getByRole("listitem").filter({ hasText: "Revocada" }).first()).toBeVisible()
 
   const revoked = await page.request.get("/api/mantencion/sync/catalogo", { headers: { authorization: `Bearer ${mec2Token}` } })
   expect(revoked.status()).toBe(401)

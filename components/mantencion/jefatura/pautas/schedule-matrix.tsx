@@ -11,7 +11,8 @@ import { toast } from "@/lib/toast"
 import { addScheduleItemAction, setScheduleCellAction, setScheduleItemActiveAction } from "@/app/(app)/mantencion/pautas/[id]/actions"
 import { SectionCard } from "../shared/section-card"
 import { ScheduleAddSystem } from "./schedule-add-system"
-import { ScheduleMatrixGroup } from "./schedule-matrix-group"
+import { REMOVE_COLUMN, ScheduleMatrixGroup } from "./schedule-matrix-group"
+import { useGridNavigation } from "./use-grid-navigation"
 import { toastWithUndo, useScheduleEdit } from "./use-schedule-edit"
 
 const cellKey = (itemId: string, intervalId: string) => `${itemId}:${intervalId}`
@@ -22,7 +23,9 @@ const cellKey = (itemId: string, intervalId: string) => `${itemId}:${intervalId}
  * tabla no puede tener `overflow` propio en escritorio). Cada casilla se guarda
  * al instante: se pinta de inmediato (`useOptimistic`) y vuelve atrás sola si el
  * servidor la rechaza. Quitar un ítem lo inactiva y ofrece «Deshacer». El filtro
- * de la barra superior busca ítems por nombre.
+ * de la barra superior busca ítems por nombre. Para el teclado la matriz es una
+ * sola parada de Tab (casillas y «Quitar» incluidos) y las flechas se mueven por
+ * ella (`useGridNavigation`).
  */
 export function ScheduleMatrix({ scheduleId, unit, intervals, groups }: {
   scheduleId: string
@@ -49,6 +52,15 @@ export function ScheduleMatrix({ scheduleId, unit, intervals, groups }: {
     [groups, needle],
   )
 
+  // Filas que se ven (no plegadas ni filtradas) y columnas: una por intervalo y la de «Quitar».
+  const rowIds = React.useMemo(
+    () => visibleGroups.flatMap((group) => (!needle && collapsed.has(group.id) ? [] : group.items.map((item) => item.id))),
+    [visibleGroups, collapsed, needle],
+  )
+  const colIds = React.useMemo(() => [...intervals.map((interval) => interval.id), REMOVE_COLUMN], [intervals])
+  const grid = useGridNavigation(rowIds, colIds)
+  const hintId = React.useId()
+
   function toggleCell(item: EditorItem, interval: EditorInterval, applies: boolean) {
     startCell(async () => {
       setCell({ key: cellKey(item.id, interval.id), applies })
@@ -58,6 +70,7 @@ export function ScheduleMatrix({ scheduleId, unit, intervals, groups }: {
   }
 
   function removeItem(item: EditorItem) {
+    grid.keepFocus()
     edit(
       () => setScheduleItemActiveAction({ scheduleId, itemId: item.id, active: false }),
       () => toastWithUndo(`«${item.name}» quitado de la pauta. Los registros ya firmados no cambian.`, () => {
@@ -88,11 +101,14 @@ export function ScheduleMatrix({ scheduleId, unit, intervals, groups }: {
         <EmptyState compact align="start" title="Esta pauta aún no tiene actividades" description="Agrega el primer sistema con su primer ítem aquí abajo; después podrás sumar más en cada sistema." />
       ) : (
         <div className="max-md:overflow-x-auto" aria-busy={pending}>
-          <table className="w-full min-w-[34rem] border-separate border-spacing-0 text-sm">
+          <p id={hintId} className="sr-only">
+            La matriz es una sola parada de tabulación: usa las flechas para moverte entre las casillas, Inicio y Fin para ir a los extremos de la fila, y Enter o espacio para marcar o desmarcar.
+          </p>
+          <table aria-describedby={hintId} className="w-full min-w-[34rem] border-separate border-spacing-0 text-sm">
             <caption className="sr-only">Actividades de la pauta por intervalo</caption>
             <thead>
               <tr>
-                <th scope="col" className="sticky top-0 z-10 border-y border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-[var(--color-text-subtle)]">Actividad</th>
+                <th scope="col" className="sticky top-0 z-10 min-w-40 border-y border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-[var(--color-text-subtle)]">Actividad</th>
                 {intervals.map((interval) => (
                   <th
                     key={interval.id}
@@ -113,6 +129,7 @@ export function ScheduleMatrix({ scheduleId, unit, intervals, groups }: {
                 intervals={intervals}
                 unit={unit}
                 cells={cells}
+                grid={grid}
                 collapsed={!needle && collapsed.has(group.id)}
                 searching={!!needle}
                 adding={addingTo === group.id}

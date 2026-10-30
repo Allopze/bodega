@@ -19,5 +19,5 @@ export function RecordStatusBadges({
   if (status === "anulado") return <Badge variant="danger" size="sm">Anulado</Badge>
   if (review === "observado") return <Badge variant="signal" size="sm">{REVIEW_LABEL.observado}</Badge>
   if (review === "revisado") return <Badge variant="success" size="sm">{REVIEW_LABEL.revisado}</Badge>
-  return showPending ? <Badge variant="neutral" size="sm">{REVIEW_LABEL.pendiente}</Badge> : null
+  return showPending ? <Badge variant="neutral" size="sm">Por revisar</Badge> : null
 }

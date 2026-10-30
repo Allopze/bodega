@@ -1,7 +1,7 @@
 "use client"
 
-import { Bar, BarChart, CartesianGrid, Legend, XAxis, YAxis } from "recharts"
-import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
+import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts"
+import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
 import { ChartEmpty } from "@/components/ui/chart-empty"
 import { useChartMotion } from "@/components/ui/chart-interactions"
 import { weekLabel, weekRangeLabel } from "@/lib/services/mantencion/panel-filters"
@@ -18,6 +18,11 @@ const config = {
  * Registros por semana, columnas apiladas (preventiva abajo, correctiva arriba).
  * Una sola unidad en el eje (registros), así que no hace falta eje doble (A5b).
  * La tabla «Ver datos» de la tarjeta repite estas mismas cifras en texto.
+ *
+ * La leyenda usa `ChartLegendContent`: la muestra lleva el color de la serie y el
+ * TEXTO el color de texto. Con la `Legend` de recharts el texto heredaba el de la
+ * serie y «Correctivas» medía 3,8:1 sobre blanco (falla AA 1.4.3); la serie sigue
+ * siendo naranja, sólo el rótulo cambia.
  */
 export function WeeklyChartInner({ data }: { data: WeeklyPoint[] }) {
   const motion = useChartMotion()
@@ -39,7 +44,7 @@ export function WeeklyChartInner({ data }: { data: WeeklyPoint[] }) {
         <ChartTooltip
           content={<ChartTooltipContent labelFormatter={(_, payload) => `Semana del ${String(payload?.[0]?.payload?.range ?? "")}`} />}
         />
-        <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
+        <ChartLegend content={<ChartLegendContent />} />
         <Bar dataKey="preventive" name="Preventivas" stackId="records" fill={WEEKLY_COLORS.preventive} maxBarSize={40} {...motion} />
         <Bar dataKey="corrective" name="Correctivas" stackId="records" fill={WEEKLY_COLORS.corrective} maxBarSize={40} radius={[3, 3, 0, 0]} {...motion} />
       </BarChart>

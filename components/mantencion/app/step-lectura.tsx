@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useRef, type Dispatch } from "react"
-import { formatReading, parseReadingInput, recordKindText } from "@/lib/mantencion/format"
+import { brandAndModel, formatReading, parseReadingInput, recordKindText } from "@/lib/mantencion/format"
 import { equipmentLabel, type FleetRow } from "@/lib/mantencion/client/fleet-view"
 import type { FlowAction } from "@/lib/mantencion/client/flow"
 import type { FlowDraft } from "@/lib/mantencion/client/flow-types"
@@ -17,7 +17,7 @@ export function EquipmentSummary({ row, onChange }: { row: FleetRow; onChange?: 
     <div className="eqsum">
       <div style={{ minWidth: 0 }}>
         <div className="c">{equipmentLabel(row.eq)}</div>
-        <div className="hint" style={{ marginTop: 3 }}>{row.eq.brandName}{row.eq.model ? ` ${row.eq.model}` : ""} · {row.eq.typeName} · {row.eq.worksiteName}</div>
+        <div className="hint" style={{ marginTop: 3 }}>{brandAndModel(row.eq.brandName, row.eq.model)} · {row.eq.typeName} · {row.eq.worksiteName}</div>
       </div>
       {onChange ? <button type="button" className="lnk" style={{ alignSelf: "center" }} onClick={onChange} aria-label="Cambiar equipo">Cambiar</button> : null}
     </div>

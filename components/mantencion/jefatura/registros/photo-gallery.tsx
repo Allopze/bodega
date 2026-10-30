@@ -20,7 +20,13 @@ export function PhotoGallery({ photos }: { photos: LightboxPhoto[] }) {
     <>
       <ul className="grid grid-cols-2 gap-3">
         {photos.map((photo, index) => (
-          <li key={photo.id}>
+          // `id` + `:target`: las alertas del registro enlazan a la foto que las explica (`#foto-…`).
+          <li
+            key={photo.id}
+            id={`foto-${photo.id}`}
+            tabIndex={-1}
+            className="scroll-mt-4 rounded-lg outline-offset-4 target:outline-2 target:outline-[var(--color-signal)]"
+          >
             <button
               type="button"
               onClick={() => setOpenIndex(index)}

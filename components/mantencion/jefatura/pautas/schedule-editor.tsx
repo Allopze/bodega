@@ -62,7 +62,7 @@ export function ScheduleEditor({ model, candidates, canExport }: { model: Schedu
       <div className="flex flex-col gap-5">
         <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)]">
           <ScheduleNameCard scheduleId={model.id} name={model.name} origin={model.origin} />
-          <ScheduleIntervalsCard scheduleId={model.id} unit={model.unit} intervals={model.intervals} />
+          <ScheduleIntervalsCard scheduleId={model.id} unit={model.unit} intervals={model.intervals} equipmentCount={equipmentCount} />
         </div>
         <ScheduleMatrix scheduleId={model.id} unit={model.unit} intervals={model.intervals} groups={model.groups} />
         {model.brandRules.rows.length > 0 && (

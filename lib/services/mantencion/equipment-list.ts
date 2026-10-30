@@ -102,6 +102,10 @@ export interface EquipmentListRow extends Record<string, unknown> {
   urgency: number | null
   nextIntervalValue: number | null
   inWorkshop: boolean
+  /** Días corridos detenido (`null` si la correctiva no trae fecha de ingreso). Sólo con `inWorkshop`. */
+  workshopDays: number | null
+  /** En taller y sin novedades hace más de 2 días (C4: se muestra como «Sin actualizar»). */
+  workshopStale: boolean
 }
 
 export function toEquipmentListRow(row: FleetRow): EquipmentListRow {
@@ -129,6 +133,8 @@ export function toEquipmentListRow(row: FleetRow): EquipmentListRow {
     urgency: Number.isFinite(urgency(row)) ? urgency(row) : null,
     nextIntervalValue: status.nextIntervalValue,
     inWorkshop: row.workshop !== null,
+    workshopDays: row.workshop?.daysStopped ?? null,
+    workshopStale: row.workshop?.stale ?? false,
   }
 }
 

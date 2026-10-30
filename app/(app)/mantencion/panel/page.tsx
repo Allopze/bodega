@@ -43,15 +43,22 @@ export default async function MantencionPanelPage({ searchParams }: { searchPara
       <PanelKpis data={data} />
       <PanelStrip data={data} />
 
-      {/* Dos columnas que no se estiran: cada una apila sus tarjetas con su propia altura. */}
+      {/*
+        Lo accionable primero. Columna izquierda: el estado de los EQUIPOS (qué
+        está detenido, qué toca y cómo está la flota); derecha: el contexto de
+        los REGISTROS (cuánto se registra por semana, dónde se gastan las horas
+        y qué ítems quedan sin hacer). El orden del DOM es el de lectura en
+        teléfono (una sola columna) y en escritorio (izquierda y luego derecha).
+        Las columnas no se estiran: cada una apila sus tarjetas con su altura.
+      */}
       <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <div className="flex min-w-0 flex-col gap-4">
-          <WeeklyCard data={data} />
+          <WorkshopCard data={data} />
           <UpcomingCard data={data} />
+          <FleetCard data={data} />
         </div>
         <div className="flex min-w-0 flex-col gap-4">
-          <FleetCard data={data} />
-          <WorkshopCard data={data} />
+          <WeeklyCard data={data} />
           <HoursCard data={data} />
           <NotDoneCard data={data} />
         </div>

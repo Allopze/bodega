@@ -37,6 +37,18 @@ function workshopText(row: LifeRow): string {
 }
 
 /**
+ * Una sola etiqueta por fila, con el mismo criterio que la lista de registros:
+ * anulado, observado o revisado cuando lo son, y «Vigente» para el resto. La
+ * revisión «Pendiente» no se pinta —es el estado por omisión, y la lista de
+ * registros tampoco lo muestra—; antes «Vigente» y «PENDIENTE» convivían en la
+ * misma celda con dos estilos.
+ */
+function LifeStatus({ row }: { row: LifeRow }) {
+  if (row.status === "anulado" || row.review !== "pendiente") return <RecordStatusBadges status={row.status} review={row.review} />
+  return <Badge variant="outline" size="sm">Vigente</Badge>
+}
+
+/**
  * Hoja de vida del equipo: todas sus mantenciones, vigentes y anuladas (éstas
  * marcadas), dentro del alcance de lectura de quien mira. Reemplaza a «Registros
  * recientes»: es la misma lista, completa y con más columnas.
@@ -53,7 +65,8 @@ export function EquipmentLifeSection({ life, code }: { life: EquipmentLifeData; 
         />
       ) : (
         <>
-          <TableRoot aria-label={`Mantenciones del equipo ${code}`}>
+          {/* La tabla sangra hasta el borde de la tarjeta: sin su propio marco, para no dibujar un borde dentro del borde. */}
+          <TableRoot aria-label={`Mantenciones del equipo ${code}`} className="-mx-5 w-auto rounded-none border-0">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -72,7 +85,7 @@ export function EquipmentLifeSection({ life, code }: { life: EquipmentLifeData; 
                   <TableRow key={row.id} className={row.status === "anulado" ? "text-[var(--color-text-muted)]" : undefined}>
                     <TableCell className="whitespace-nowrap font-mono text-xs">{formatDate(row.workDate)}</TableCell>
                     <TableCell className="whitespace-nowrap">
-                      <Link href={`/mantencion/registros/${row.id}`} className="font-mono text-xs font-semibold text-[var(--color-primary-ink)] underline-offset-2 hover:underline">
+                      <Link href={`/mantencion/registros/${row.id}`} className="inline-flex min-h-11 items-center font-mono text-xs font-semibold text-[var(--color-primary-ink)] underline-offset-2 hover:underline sm:min-h-0">
                         {row.folio ?? "Sin folio"}
                       </Link>
                     </TableCell>
@@ -83,12 +96,7 @@ export function EquipmentLifeSection({ life, code }: { life: EquipmentLifeData; 
                     <TableCell className="min-w-48 text-xs">{executorText(row)}</TableCell>
                     <TableCell className="whitespace-nowrap font-mono text-xs">{row.hours != null ? formatHours(row.hours) : "—"}</TableCell>
                     <TableCell className="whitespace-nowrap text-xs">{workshopText(row)}</TableCell>
-                    <TableCell>
-                      <div className="flex flex-wrap items-center gap-1">
-                        {row.status === "vigente" && <Badge variant="outline" size="sm">Vigente</Badge>}
-                        <RecordStatusBadges status={row.status} review={row.review} showPending />
-                      </div>
-                    </TableCell>
+                    <TableCell><LifeStatus row={row} /></TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -101,7 +109,7 @@ export function EquipmentLifeSection({ life, code }: { life: EquipmentLifeData; 
                 href={`?vida=${limit + LIFE_PAGE_SIZE}`}
                 replace
                 scroll={false}
-                className="font-semibold text-[var(--color-primary-ink)] hover:underline"
+                className="inline-flex min-h-11 items-center font-semibold text-[var(--color-primary-ink)] hover:underline sm:min-h-0"
               >
                 Mostrar más
               </Link>

@@ -39,7 +39,7 @@ export function DoneScreen({ itemId, onHome, onStartOther }: {
       <div className="saved">
         <div className={`circ${sent ? "" : rejected ? " rej" : " pend"}`}>{sent ? <IconCheckBig /> : rejected ? <IconAlert /> : <IconClockBig />}</div>
         <h1 className="h2">Registro guardado</h1>
-        <div className="mono" style={{ fontSize: 15, fontWeight: 600 }}>{item.folio ?? "Folio pendiente"} · {summary.equipmentCode}</div>
+        <div className="mono nw" style={{ fontSize: 15, fontWeight: 600 }}>{item.folio ?? "Folio pendiente"} · {summary.equipmentCode}</div>
         <p role="status">{message}</p>
         {item.warnings.map((warning) => <p key={warning.code + (warning.recordId ?? "")} className="hint">{warning.message}</p>)}
       </div>

@@ -3,8 +3,8 @@ import { buildRows } from "../fleet-view"
 import { flowReducer, type FlowAction } from "../flow"
 import { buildFlowEnv } from "../flow-env"
 import { buildRecord, draftFromRejected } from "../flow-record"
-import { newDraft, normalizeDraft, stepsFor, type FlowDraft } from "../flow-types"
-import { analyzeLecture, checklistCounts, validateAll, type FlowCtx } from "../flow-validate"
+import { newDraft, normalizeDraft, STEPS_VERSION, stepsFor, type FlowDraft } from "../flow-types"
+import { analyzeLecture, checklistCounts, faltaText, validateAll, validateStep, type FlowCtx } from "../flow-validate"
 import { SCHEDULE, UUID, equipment, recordItem, storedCatalog } from "./fixtures"
 
 const TODAY = "2026-10-28"
@@ -134,6 +134,53 @@ describe("pauta", () => {
     expect(stepsFor("P")[draft.step]).toBe("fotos")
   })
 
+  it("«Continuar» con ítems sin marcar dice cuántos faltan, abre el primer sistema pendiente y el aviso se va al marcar", () => {
+    const ctx = ctxFor()
+    const env = buildFlowEnv(ctx)
+    let draft = run(start(ctx), ctx, { type: "patch", patch: { readingText: "40312" } }, { type: "next", env })
+    const total = draft.checklist.length
+    // Sistema 0 completo, el 1 sin tocar; el 0 está abierto.
+    draft = run(draft, ctx, { type: "markGroup", group: 0 }, { type: "openGroup", group: 0 }, { type: "next", env })
+    expect(stepsFor("P")[draft.step]).toBe("pauta")
+    expect(draft.errors.pauta).toBe(`${faltaText(total - 2, "ítem", "ítems")} por marcar.`)
+    expect(draft.openGroup).toBe(1)
+    // Marcar algo corrige el aviso: el contador del pie sigue diciendo cuántos faltan.
+    draft = run(draft, ctx, { type: "mark", key: "f1", value: "R" })
+    expect(draft.errors.pauta).toBeUndefined()
+  })
+
+  it("un «No realizado» sin motivo se avisa con su propio texto", () => {
+    const ctx = ctxFor()
+    const env = buildFlowEnv(ctx)
+    let draft = run(start(ctx), ctx, { type: "patch", patch: { readingText: "40312" } }, { type: "next", env })
+    for (const group of [0, 1]) draft = run(draft, ctx, { type: "markGroup", group })
+    draft = run(draft, ctx, { type: "mark", key: "f1", value: "NR" }, { type: "next", env })
+    expect(draft.errors.pauta).toBe("Falta el motivo de 1 ítem no realizado.")
+  })
+
+  it("el verbo concuerda con la cantidad", () => {
+    expect(faltaText(1, "ítem", "ítems")).toBe("Falta 1 ítem")
+    expect(faltaText(17, "ítem", "ítems")).toBe("Faltan 17 ítems")
+  })
+
+  it("las notas de la preventiva son obligatorias y el mensaje apunta al atajo «Sin novedad»", () => {
+    const ctx = ctxFor()
+    const errors = validateStep({ ...start(ctx), photos: { filtros: UUID(11), sticker: UUID(12), correctiva: [] }, notes: "  " }, "fotos", ctx)
+    expect(errors.notes).toMatch(/Sin novedad/)
+    expect(validateStep({ ...start(ctx), photos: { filtros: UUID(11), sticker: UUID(12), correctiva: [] }, notes: "Sin novedad" }, "fotos", ctx)).toEqual({})
+  })
+
+  it("editar un campo con otro aviso a la vista no cambia los avisos (no se vuelve a desplazar la pantalla)", () => {
+    const ctx = ctxFor()
+    const env = buildFlowEnv(ctx)
+    let draft = run(start(ctx, "C"), ctx, { type: "patch", patch: { readingText: "40400" } }, { type: "next", env }, { type: "next", env })
+    const before = draft.errors
+    expect(before.workTypes).toBeTruthy()
+    // La fecha del taller no tiene ningún aviso que limpiar.
+    draft = run(draft, ctx, { type: "patch", patch: { workOrder: "OT-1" } })
+    expect(draft.errors).toBe(before)
+  })
+
   it("al completar el sistema abierto se abre el siguiente pendiente", () => {
     const ctx = ctxFor()
     const env = buildFlowEnv(ctx)
@@ -214,21 +261,39 @@ describe("registro firmado", () => {
     expect(built.ok && built.payload.kind === "P" && built.payload.scheduleVersion).toBe(3)
   })
 
-  it("una correctiva incompleta muestra el primer problema; completa, se valida", () => {
+  it("una correctiva incompleta muestra el primer problema; completa, se valida (las fotos van en su propio paso)", () => {
     const ctx = ctxFor()
     const env = buildFlowEnv(ctx)
     let draft = run(start(ctx, "C"), ctx, { type: "patch", patch: { readingText: "40400" } }, { type: "next", env })
     expect(stepsFor("C")[draft.step]).toBe("trabajo")
     draft = run(draft, ctx, { type: "next", env })
-    expect(Object.keys(draft.errors).sort()).toEqual(["description", "drivers", "oil", "photos", "workTypes", "workshop"])
+    // «Trabajo» ya no exige fotos: eso se pide en «Fotos».
+    expect(Object.keys(draft.errors).sort()).toEqual(["description", "drivers", "oil", "workTypes", "workshop"])
     draft = run(draft, ctx,
       { type: "jobAdd", workTypeId: "t-1" }, { type: "jobNoParts", workTypeId: "t-1", noParts: true }, { type: "noOilChange" },
       { type: "patch", patch: { description: "Cambio de manguera", inWorkshop: true, workshopReason: "Espera un repuesto" } },
-      { type: "toggleId", field: "driverIds", id: "d-1" }, { type: "photoAdd", id: UUID(21) }, { type: "jobHours", workTypeId: "t-1", hours: 3 })
+      { type: "toggleId", field: "driverIds", id: "d-1" }, { type: "jobHours", workTypeId: "t-1", hours: 3 })
     expect(draft.errors).toEqual({})
+    draft = run(draft, ctx, { type: "next", env })
+    expect(stepsFor("C")[draft.step]).toBe("fotos")
+    draft = run(draft, ctx, { type: "next", env })
+    expect(draft.errors).toEqual({ photos: "Falta al menos una foto." })
+    draft = run(draft, ctx, { type: "photoAdd", id: UUID(21) })
+    expect(draft.errors).toEqual({})
+    draft = run(draft, ctx, { type: "next", env })
+    expect(stepsFor("C")[draft.step]).toBe("revisar")
+    expect(validateAll(draft, stepsFor("C"), ctx)).toBeNull()
     const built = buildRecord(draft, input(ctx))
     expect(built.ok && built.payload.kind === "C" && built.payload.jobs[0]?.hours).toBe(3)
     expect(built.ok && built.payload.kind === "C" && built.payload.workshopReason).toBe("Espera un repuesto")
+  })
+
+  it("la correctiva no da por completo el borrador mientras falten las fotos, aunque el trabajo esté listo", () => {
+    const ctx = ctxFor()
+    let draft = start(ctx, "C")
+    draft = run(draft, ctx, { type: "patch", patch: { readingText: "40400", description: "Cambio de manguera", inWorkshop: false } },
+      { type: "jobAdd", workTypeId: "t-1" }, { type: "jobNoParts", workTypeId: "t-1", noParts: true }, { type: "noOilChange" }, { type: "toggleId", field: "driverIds", id: "d-1" })
+    expect(validateAll(draft, stepsFor("C"), ctx)?.step).toBe("fotos")
   })
 
   it("trabajos: un tipo no se repite, repuestos o «sin repuestos» por trabajo, y el motivo de taller es obligatorio con «Sí»", () => {
@@ -257,6 +322,48 @@ describe("registro firmado", () => {
     expect(draft.jobs[0]?.parts).toEqual([{ quantity: "2", description: "Manguera" }])
     expect(draft.workshopReason).toBe("")
     expect("workTypeIds" in draft).toBe(false)
+  })
+
+  it("un borrador correctivo guardado con los pasos viejos se abre en el paso que corresponde", () => {
+    // Versión 1: equipo, lectura, trabajo, revisar. «Revisar» era el 3 y ahora es el 4; el 3 pasó a ser «Fotos».
+    const ctx = ctxFor()
+    const current = start(ctx, "C")
+    const { stepsVersion: _version, ...legacy } = current
+    const old = (patch: Partial<FlowDraft>) => ({ ...legacy, ...patch }) as unknown as FlowDraft
+    expect(stepsFor("C")).toHaveLength(5)
+
+    const atReview = normalizeDraft(old({ step: 3 }))
+    expect(stepsFor("C")[atReview.step]).toBe("revisar")
+    expect(atReview.stepsVersion).toBe(STEPS_VERSION)
+
+    // Los pasos que no se movieron se quedan donde estaban.
+    expect(normalizeDraft(old({ step: 2 })).step).toBe(2)
+    expect(normalizeDraft(old({ step: 0 })).step).toBe(0)
+
+    // Un «Cambiar» a medias desde Revisar sigue apuntando a Revisar.
+    const changing = normalizeDraft(old({ step: 1, ret: 3 }))
+    expect(changing.step).toBe(1)
+    expect(stepsFor("C")[changing.ret ?? -1]).toBe("revisar")
+
+    // Normalizar dos veces no vuelve a mover nada.
+    expect(normalizeDraft(atReview)).toEqual(atReview)
+  })
+
+  it("la preventiva guardada antes de existir la versión de pasos no se mueve", () => {
+    const ctx = ctxFor()
+    const { stepsVersion: _version, ...legacy } = start(ctx, "P")
+    const old = { ...legacy, step: 3, ret: 4 } as unknown as FlowDraft
+    const draft = normalizeDraft(old)
+    expect([draft.step, draft.ret]).toEqual([3, 4])
+  })
+
+  it("un índice fuera de rango se acota: el borrador siempre abre", () => {
+    const ctx = ctxFor()
+    const base = start(ctx, "C")
+    expect(normalizeDraft({ ...base, step: 99, ret: 99 }).step).toBe(stepsFor("C").length - 1)
+    expect(normalizeDraft({ ...base, step: 99, ret: 99 }).ret).toBe(stepsFor("C").length - 1)
+    expect(normalizeDraft({ ...base, step: -4, ret: null }).step).toBe(0)
+    expect(normalizeDraft({ ...base, step: Number.NaN, ret: undefined } as unknown as FlowDraft).step).toBe(0)
   })
 
   it("«No se cambió aceite» y los aceites se excluyen", () => {

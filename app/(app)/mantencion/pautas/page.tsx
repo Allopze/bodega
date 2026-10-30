@@ -28,7 +28,7 @@ export default async function SchedulesPage() {
     <PageContainer>
       <PageHeader
         title="Pautas de mantención"
-        description="Cada pauta define qué revisa el mecánico en cada intervalo. Cada equipo tiene una pauta asignada."
+        description="Qué revisa el mecánico en cada intervalo. Cada equipo tiene una pauta."
         breadcrumb={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Mantención" }, { label: "Pautas" }]}
         actions={(
           <div className="flex flex-wrap items-center gap-2">

@@ -64,8 +64,8 @@ test.describe("E2E 6 · Equipos", () => {
     const errors = trackConsole(page)
     await asJefe(page)
     await page.goto("/mantencion/equipos")
-    await page.getByRole("link", { name: "Agregar equipo", exact: true }).click()
-    await expectPageTitle(page, "Agregar equipo")
+    await page.getByRole("link", { name: "Nuevo equipo", exact: true }).click()
+    await expectPageTitle(page, "Nuevo equipo")
     const worksitesBefore = await withSql(async (sql) => Number((await sql`select count(*) as n from worksites`)[0]?.n))
 
     await fillEquipmentForm(page, {

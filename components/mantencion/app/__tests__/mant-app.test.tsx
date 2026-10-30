@@ -29,7 +29,7 @@ const USER = { id: "u-1", name: "Javier Roa", email: "javier@e2e.chome.cl" }
 const CATALOG = catalog("u-1", [equipment({ readings: [{ value: 39_900, date: "2026-10-01", source: "MP-BIO-0001" }], state: "proxima", remaining: 100, nextReading: 40_000 })])
 const calls: Array<{ method: string; url: string; auth: string | null }> = []
 
-function installServer(options: { online: boolean }) {
+function installServer(options: { online: boolean; catalog?: typeof CATALOG }) {
   Object.defineProperty(navigator, "onLine", { value: options.online, configurable: true })
   vi.stubGlobal("fetch", vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
     const path = String(url)
@@ -38,7 +38,7 @@ function installServer(options: { online: boolean }) {
     if (!navigator.onLine) throw new TypeError("Failed to fetch")
     const json = (body: unknown, status = 200, headers: Record<string, string> = {}) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } })
     if (path.endsWith("/api/mantencion/dispositivo")) return json({ token: "token-u-1", expiresAt: new Date(Date.now() + 30 * 86_400_000).toISOString(), user: USER })
-    if (path.includes("/sync/catalogo")) return path.includes("alcance=todos") ? json({ version: "o1", equipment: [] }, 200, { etag: '"o1"' }) : json(CATALOG, 200, { etag: '"v1"' })
+    if (path.includes("/sync/catalogo")) return path.includes("alcance=todos") ? json({ version: "o1", equipment: [] }, 200, { etag: '"o1"' }) : json(options.catalog ?? CATALOG, 200, { etag: '"v1"' })
     if (method === "PUT") return new Response(null, { status: 200 })
     if (method === "POST" && path.endsWith("/sync/registros")) {
       const body = JSON.parse(String(init?.body)) as { id: string }
@@ -72,7 +72,11 @@ async function signPreventive() {
   expect(screen.getByLabelText("Odómetro actual")).toHaveProperty("value", "40.010")
   click("Ver pauta")
 
-  expect(screen.getByRole("button", { name: "Continuar a fotos" })).toHaveProperty("disabled", true)
+  // «Continuar» no se bloquea: valida al tocarlo, dice cuántos ítems faltan y se queda en la pauta.
+  expect(screen.getByRole("button", { name: "Continuar a fotos" })).toHaveProperty("disabled", false)
+  click("Continuar a fotos")
+  expect(await screen.findByText("Faltan 4 ítems por marcar.")).toBeTruthy()
+  expect(screen.getByText("PASO 3/5")).toBeTruthy()
   expect(screen.getByText("Confirmar con pauta del fabricante")).toBeTruthy()
   click(/^Todo realizado en Motor/)
   click(/^Listo · seguir con Frenos/)
@@ -85,14 +89,20 @@ async function signPreventive() {
     fireEvent.change(screen.getByLabelText(`Tomar foto de ${label}`), { target: { files: [new File(["x"], "foto.jpg", { type: "image/jpeg" })] } })
     expect(await screen.findByRole("img", { name: `Foto: ${name}` })).toBeTruthy()
   }
-  fireEvent.change(screen.getByLabelText("Observaciones"), { target: { value: "Sin novedad" } })
+  // «Revisar registro» queda habilitado: sin notas valida al tocarlo y dice qué falta.
+  click("Revisar registro")
+  expect(await screen.findByText("Escribe tus notas, o toca «Sin novedad» si no hay nada que anotar.")).toBeTruthy()
+  expect(screen.getByText("PASO 4/5")).toBeTruthy()
+  // El atajo llena el campo de un toque y sigue siendo editable.
+  click("Sin novedad")
+  expect(screen.getByLabelText(/^Notas/)).toHaveProperty("value", "Sin novedad")
   click("Revisar registro")
   expect(screen.getByText("Firmas como Javier Roa. Después de guardar no se puede editar.")).toBeTruthy()
 
   // «Cambiar» vuelve directo a Revisar.
-  click("Cambiar observ.")
+  click("Cambiar notas")
   expect(await screen.findByText("PASO 4/5")).toBeTruthy()
-  fireEvent.change(screen.getByLabelText("Observaciones"), { target: { value: "Sin novedad. Sticker nuevo." } })
+  fireEvent.change(screen.getByLabelText(/^Notas/), { target: { value: "Sin novedad. Sticker nuevo." } })
   click("Volver a revisar")
   expect(await screen.findByText("Sin novedad. Sticker nuevo.")).toBeTruthy()
   click("Firmar y guardar")
@@ -163,22 +173,118 @@ describe("App del mecánico (arranque, PIN, preventiva completa y envío)", () =
     await waitFor(() => expect(calls.filter((call) => call.method === "POST" && call.url.endsWith("/sync/registros"))).toHaveLength(1))
   })
 
-  it("salir a medias pregunta con el diálogo propio y no descarta si se sigue registrando", async () => {
+  it("salir a medias guarda el avance y el inicio lo ofrece para seguir; descartar es una acción aparte", async () => {
     installServer({ online: true })
     await openAndDefinePin()
     click(/^Mantención correctiva/)
     fireEvent.click(within(await screen.findByRole("group", { name: "Equipos" })).getByRole("button", { name: /KA-140/ }))
     click("Continuar con KA-140")
-    // Desde el paso 2 se vuelve al 1; desde el 1 se sale, con confirmación.
-    click("Paso anterior")
+    expect(await screen.findByText("PASO 2/5")).toBeTruthy()
+
+    // «Salir» está en la barra de arriba en cada paso (no sólo retrocediendo hasta el primero).
     click("Salir del registro")
     const dialog = await screen.findByRole("alertdialog", { name: "¿Salir del registro?" })
-    expect(within(dialog).getByText("Se pierde lo que ingresaste de KA-140.")).toBeTruthy()
+    expect(within(dialog).getByText(/Tu avance queda guardado en este teléfono/)).toBeTruthy()
+    // Lo principal conserva el trabajo y es donde parte el foco; descartar es otra cosa, aparte.
+    const save = within(dialog).getByRole("button", { name: "Guardar y salir" })
+    expect(document.activeElement).toBe(save)
+    expect(save.className).toContain("pri")
+    expect(within(dialog).getByRole("button", { name: "Descartar registro" }).className).toContain("quiet-danger")
     fireEvent.click(within(dialog).getByRole("button", { name: "Seguir registrando" }))
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull())
-    expect(screen.getByText("PASO 1/4")).toBeTruthy()
+    expect(screen.getByText("PASO 2/5")).toBeTruthy()
+
     click("Salir del registro")
-    fireEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Salir y descartar" }))
+    fireEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Guardar y salir" }))
+    const drafts = await screen.findByRole("region", { name: "Registros sin terminar" })
+    expect(within(drafts).getByText("Correctiva sin terminar · KA-140 · SGCP-84")).toBeTruthy()
+    expect(within(drafts).getByText("Tu avance está guardado en este teléfono.")).toBeTruthy()
+
+    // «Seguir» abre el borrador en el mismo paso.
+    fireEvent.click(within(drafts).getByRole("button", { name: /^Seguir Correctiva sin terminar/ }))
+    expect(await screen.findByText("PASO 2/5")).toBeTruthy()
+
+    // Descartar sí lo borra, y sólo por elección explícita.
+    click("Salir del registro")
+    fireEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Descartar registro" }))
     expect(await screen.findByRole("region", { name: "Nuevo registro" })).toBeTruthy()
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Registros sin terminar" })).toBeNull())
+  })
+
+  it("sin equipo elegido no hay nada que guardar: salir no pregunta", async () => {
+    installServer({ online: true })
+    await openAndDefinePin()
+    click(/^Mantención correctiva/)
+    expect(await screen.findByRole("heading", { name: "¿Qué equipo vas a mantener?" })).toBeTruthy()
+    click("Salir del registro")
+    expect(await screen.findByRole("region", { name: "Nuevo registro" })).toBeTruthy()
+    expect(screen.queryByRole("alertdialog")).toBeNull()
+  })
+
+  it("«Continuar» sin elegir equipo no se bloquea: avisa y deja el aviso arriba", async () => {
+    installServer({ online: true })
+    await openAndDefinePin()
+    click(/^Mantención preventiva/)
+    expect(await screen.findByRole("heading", { name: "¿Qué equipo vas a mantener?" })).toBeTruthy()
+    click("Continuar")
+    expect(await screen.findByText("Elige un equipo.")).toBeTruthy()
+    expect(screen.getByText("PASO 1/5")).toBeTruthy()
+  })
+
+  it("correctiva: las fotos tienen su propio paso, se exigen ahí y «Cambiar» vuelve a Revisar", async () => {
+    installServer({ online: true })
+    await openAndDefinePin()
+    click(/^Mantención correctiva/)
+    fireEvent.click(within(await screen.findByRole("group", { name: "Equipos" })).getByRole("button", { name: /KA-140/ }))
+    click("Continuar con KA-140")
+    expect(await screen.findByText("PASO 2/5")).toBeTruthy()
+    fireEvent.change(screen.getByLabelText("Odómetro actual"), { target: { value: "40100" } })
+    click("Continuar")
+
+    // Paso 3 · Trabajo: sin el bloque de fotos.
+    expect(await screen.findByText("PASO 3/5")).toBeTruthy()
+    expect(screen.queryByLabelText("Agregar foto del trabajo")).toBeNull()
+    fireEvent.click(within(screen.getByRole("group", { name: "Agregar trabajo" })).getAllByRole("button")[0]!)
+    click("No se cambió aceite")
+    fireEvent.change(screen.getByLabelText("Trabajo realizado"), { target: { value: "Cambio de manguera" } })
+    fireEvent.click(screen.getByRole("checkbox", { name: "No se usaron repuestos" }))
+    fireEvent.change(screen.getByLabelText(/Conductores de las últimas 24 h/), { target: { value: "a" } })
+    fireEvent.click(within(await screen.findByRole("group", { name: "Conductores encontrados" })).getAllByRole("button")[0]!)
+    click("No, ya salió")
+    click("Continuar a fotos")
+
+    // Paso 4 · Fotos: se exige al menos una, con el aviso en el paso.
+    expect(await screen.findByText("PASO 4/5")).toBeTruthy()
+    click("Revisar registro")
+    expect(await screen.findByText("Falta al menos una foto.")).toBeTruthy()
+    expect(screen.getByText("PASO 4/5")).toBeTruthy()
+    fireEvent.change(screen.getByLabelText("Agregar foto del trabajo"), { target: { files: [new File(["x"], "foto.jpg", { type: "image/jpeg" })] } })
+    expect(await screen.findByRole("img", { name: "Foto 1 del trabajo" })).toBeTruthy()
+    click("Revisar registro")
+
+    // Paso 5 · Revisar: «Cambiar» en Fotos lleva al paso 4 y vuelve directo a Revisar.
+    expect(await screen.findByText("PASO 5/5")).toBeTruthy()
+    click("Cambiar fotos")
+    expect(await screen.findByText("PASO 4/5")).toBeTruthy()
+    click("Volver a revisar")
+    expect(await screen.findByRole("button", { name: "Firmar y guardar" })).toBeTruthy()
+  })
+
+  it("con varias faenas el encabezado dice «3 faenas» y ofrece verlas; con una dice su nombre", async () => {
+    const several = catalog("u-1", [equipment({ readings: [{ value: 39_900, date: "2026-10-01", source: "MP-BIO-0001" }], state: "proxima", remaining: 100, nextReading: 40_000 })])
+    several.worksites = [{ id: "ws-bio", name: "Biodiversa" }, { id: "ws-min", name: "Mininco" }, { id: "ws-ara", name: "Arauco" }]
+    several.user = { ...several.user, worksiteIds: ["ws-bio", "ws-min", "ws-ara"] }
+    installServer({ online: true, catalog: several })
+    await openAndDefinePin()
+    const toggle = screen.getByRole("button", { name: "3 faenas" })
+    expect(toggle.getAttribute("aria-expanded")).toBe("false")
+    expect(screen.queryByRole("list")).toBeNull()
+    fireEvent.click(toggle)
+    expect(toggle.getAttribute("aria-expanded")).toBe("true")
+    expect(within(screen.getByRole("list")).getAllByRole("listitem").map((item) => item.textContent)).toEqual(["Biodiversa", "Mininco", "Arauco"])
+
+    // El chip del paso «Equipo» también se resume: «Mis 3 faenas», no los tres nombres en tres líneas.
+    click(/^Mantención correctiva/)
+    expect(await screen.findByRole("button", { name: "Mis 3 faenas" })).toBeTruthy()
   })
 })

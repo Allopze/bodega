@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 import { redirect } from "next/navigation"
-import { DeviceMobile, Info } from "@phosphor-icons/react/dist/ssr"
+import { Info, Plus } from "@phosphor-icons/react/dist/ssr"
 import { Button } from "@/components/ui/button"
 import { Callout } from "@/components/ui/callout"
 import { PageContainer } from "@/components/ui/page-container"
@@ -54,9 +54,10 @@ export default async function EquipmentPage({ searchParams }: { searchParams: Pr
 
   const canManage = can(session, "mant:equipment:manage")
   const canExport = can(session, "mant:export")
+  // La app se reparte por QR. Quien administra los dispositivos lo hace desde «Dispositivos» (ítem del menú, con su
+  // propio botón «Instalar app»); la supervisión de faena, que no entra ahí, la reparte desde esta cabecera.
   const canDevices = can(session, "mant:devices:manage")
-  // Quien reparte la app en terreno: jefatura y supervisión de faena.
-  const canShareApp = canDevices || can(session, "mant:records:view_worksite")
+  const canShareApp = !canDevices && can(session, "mant:records:view_worksite")
 
   return (
     <PageContainer>
@@ -67,14 +68,9 @@ export default async function EquipmentPage({ searchParams }: { searchParams: Pr
         actions={(
           <div className="flex flex-wrap items-center gap-2">
             {canShareApp && <MechanicAppInstallDialog />}
-            {canDevices && (
-              <Button asChild variant="ghost" size="sm">
-                <Link href="/mantencion/dispositivos"><DeviceMobile size={14} aria-hidden />Dispositivos de la app</Link>
-              </Button>
-            )}
             {canExport && <EquipmentExportButton rows={rows} includeRetired={filters.includeRetired} filterLabels={filterLabels} />}
             {canManage && <Button asChild variant="secondary" size="sm"><Link href="/mantencion/equipos/importar">Importar</Link></Button>}
-            {canManage && <Button asChild size="sm"><Link href="/mantencion/equipos/nuevo">Agregar equipo</Link></Button>}
+            {canManage && <Button asChild size="sm"><Link href="/mantencion/equipos/nuevo"><Plus size={14} aria-hidden />Nuevo equipo</Link></Button>}
           </div>
         )}
       />

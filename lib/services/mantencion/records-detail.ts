@@ -101,8 +101,19 @@ export interface RecordDetail {
     response: string | null; respondedByName: string | null; respondedAt: string | null
   }>
   voided: { reason: string; userName: string; createdAt: string } | null
-  /** Horas entre el sello/firma y la recepción, si superan el límite sin un período sin señal registrado. */
-  stampGapHours: number | null
+  /**
+   * La mayor diferencia entre un instante del teléfono (la firma o el sello de una foto) y la
+   * recepción, cuando supera el límite sin un período sin señal registrado. Dice cuál fue el
+   * instante para que el aviso nombre la foto o la firma y no sólo «hay una diferencia».
+   */
+  stampGap: {
+    hours: number
+    subject: "firma" | "foto"
+    /** La foto que difiere (sólo con `subject: "foto"`). */
+    photoId: string | null
+    /** El instante que difiere: el sello de la foto o la firma. */
+    at: string
+  } | null
   history: Array<{ id: string; folio: string | null; kind: MantRecordKind; workDate: string; reading: number; unit: MantUnit; intervalValue: number | null }>
   pdfStorageKey: string | null
 }
@@ -217,9 +228,12 @@ export async function loadRecordDetail(viewer: MantViewer, id: string): Promise<
 
   // Regla 8: el sello (o la firma) de una hora y la recepción de otra, sin un período
   // sin señal que lo explique, es lo único que la jefatura puede ver para dudar de la hora.
-  const gaps = [hoursApart(record.signedAt, record.receivedAt), ...orderedPhotos.map((photo) => hoursApart(photo.stampedAt, record.receivedAt))]
-  const worstGap = Math.max(...gaps)
-  const stampGapHours = !record.offlineSince && worstGap > STAMP_GAP_LIMIT_HOURS ? Math.round(worstGap) : null
+  const gaps: Array<NonNullable<RecordDetail["stampGap"]>> = [
+    { hours: hoursApart(record.signedAt, record.receivedAt), subject: "firma", photoId: null, at: record.signedAt },
+    ...orderedPhotos.map((photo) => ({ hours: hoursApart(photo.stampedAt, record.receivedAt), subject: "foto" as const, photoId: photo.id, at: photo.stampedAt })),
+  ]
+  const worstGap = gaps.reduce((worst, gap) => (gap.hours > worst.hours ? gap : worst))
+  const stampGap = !record.offlineSince && worstGap.hours > STAMP_GAP_LIMIT_HOURS ? { ...worstGap, hours: Math.round(worstGap.hours) } : null
 
   return {
     id: record.id,
@@ -288,7 +302,7 @@ export async function loadRecordDetail(viewer: MantViewer, id: string): Promise<
     })),
     observations,
     voided: voidRow ?? null,
-    stampGapHours,
+    stampGap,
     history: history.map((item) => ({ ...item, kind: item.kind as MantRecordKind, unit: item.unit as MantUnit })),
     pdfStorageKey: record.pdfStorageKey,
   }

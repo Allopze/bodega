@@ -26,6 +26,9 @@ export interface FilterToolbarProps {
   activeCount?: number
   className?: string
   actions?: React.ReactNode
+  /** Título y bajada de la hoja «Más filtros». Por defecto, genéricos; conviene decir qué filtra. */
+  overflowTitle?: string
+  overflowDescription?: string
 }
 
 export function FilterToolbar({
@@ -38,6 +41,8 @@ export function FilterToolbar({
   activeCount = 0,
   className,
   actions,
+  overflowTitle = "Filtros avanzados",
+  overflowDescription = "Aplica parámetros adicionales para reducir los resultados.",
 }: FilterToolbarProps) {
   const [sheetOpen, setSheetOpen] = React.useState(false)
 
@@ -81,8 +86,8 @@ export function FilterToolbar({
                 <SheetContent className="sm:max-w-md">
                   <SheetHeader>
                     <div>
-                      <SheetTitle>Filtros avanzados</SheetTitle>
-                      <SheetDescription>Aplica parámetros adicionales para reducir los resultados.</SheetDescription>
+                      <SheetTitle>{overflowTitle}</SheetTitle>
+                      <SheetDescription>{overflowDescription}</SheetDescription>
                     </div>
                     <SheetCloseButton />
                   </SheetHeader>

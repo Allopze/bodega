@@ -78,7 +78,7 @@ function Thumb({ photoId, index, onRemove }: { photoId: string; index: number; o
   return (
     <div className="thumb">
       {/* eslint-disable-next-line @next/next/no-img-element -- vista previa de un Blob local (blob:), no pasa por el optimizador */}
-      {url ? <img src={url} alt={`Foto ${index + 1} del trabajo`} /> : <div className="ph" style={{ height: 110 }} />}
+      {url ? <img className="ph" src={url} alt={`Foto ${index + 1} del trabajo`} /> : <div className="ph" style={{ minHeight: 120 }} />}
       <button type="button" onClick={() => onRemove(photoId)} aria-label={`Quitar foto ${index + 1}`}><IconClose /></button>
     </div>
   )

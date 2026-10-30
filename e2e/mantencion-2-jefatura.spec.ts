@@ -191,6 +191,24 @@ test("el panel muestra los cuatro indicadores, el gráfico con sus datos y cada 
   await page.getByText("Ver datos", { exact: true }).click()
   await expect(page.getByRole("table", { name: "Registros por semana" })).toBeVisible()
 
+  // La leyenda lleva el color de la serie sólo en su muestra: el texto va en color de texto y pasa AA (la correctiva sigue en naranja).
+  const legendLabel = page.getByRole("img", { name: /^Registros por semana/ }).getByText("Correctivas", { exact: true })
+  const legendContrast = await legendLabel.evaluate((node) => {
+    const context = document.createElement("canvas").getContext("2d")!
+    context.fillStyle = getComputedStyle(node).color
+    context.fillRect(0, 0, 1, 1)
+    const [r = 0, g = 0, b = 0] = context.getImageData(0, 0, 1, 1).data
+    const linear = (value: number) => { const c = value / 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4 }
+    return 1.05 / (0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b) + 0.05)
+  })
+  expect(legendContrast).toBeGreaterThanOrEqual(4.5)
+
+  // Lo accionable primero: el taller y las próximas mantenciones van antes del gráfico de contexto.
+  const headings = await page.locator("main h2").allTextContents()
+  expect(headings.indexOf("En taller ahora")).toBeGreaterThanOrEqual(0)
+  expect(headings.indexOf("En taller ahora")).toBeLessThan(headings.indexOf("Registros por semana"))
+  expect(headings.indexOf("Próximas mantenciones")).toBeLessThan(headings.indexOf("Registros por semana"))
+
   // La correctiva abierta aparece en «En taller ahora» y lleva a su detalle.
   await expect(page.locator(`a[href="/mantencion/registros/${rec.B.id}"]`)).toBeVisible()
 
@@ -236,10 +254,29 @@ test("registros: indicadores con su rango, filtros en la URL y orden por columna
   await login(page, JEFE)
   await page.goto("/mantencion/registros")
   await expectPageTitle(page, "Registros de mantención")
-  await expect(page.getByRole("heading", { level: 2, name: /^Indicadores · registros del \d{2}-\d{2}-\d{4} al \d{2}-\d{2}-\d{4}/ })).toBeVisible()
+  await expect(page.getByRole("heading", { level: 2, name: /^Indicadores · \d+ registros? vigentes? del \d{2}-\d{2}-\d{4} al \d{2}-\d{2}-\d{4}/ })).toBeVisible()
   for (const seeded of [rec.A, rec.B, rec.C, rec.D]) {
     await expect(page.getByRole("link", { name: `Ver el registro ${seeded.folio}` })).toBeVisible()
   }
+
+  // La revisión son pestañas sobre la tabla, con su contador, y no un filtro escondido en «Más filtros».
+  const tabs = page.getByRole("navigation", { name: "Revisión de los registros" })
+  await expect(tabs.getByRole("link", { name: /^Por revisar \d+$/ })).toBeVisible()
+  await expect(tabs.getByRole("link", { name: /^Observados \d+$/ })).toBeVisible()
+  await expect(tabs.getByRole("link", { name: /^Revisados \d+$/ })).toBeVisible()
+  await expect(tabs.getByRole("link", { name: "Todos", exact: true })).toHaveAttribute("aria-current", "page")
+  await tabs.getByRole("link", { name: /^Observados/ }).click()
+  await expect(page).toHaveURL(/revision=observado/)
+  // Los cuatro sembrados siguen pendientes: no están en «Observados».
+  await expect(page.getByRole("link", { name: `Ver el registro ${rec.A.folio}` })).toHaveCount(0)
+  await tabs.getByRole("link", { name: /^Por revisar/ }).click()
+  await expect(page).toHaveURL(/revision=pendiente/)
+  await expect(page.getByRole("link", { name: `Ver el registro ${rec.A.folio}` })).toBeVisible()
+  await tabs.getByRole("link", { name: "Todos", exact: true }).click()
+  await expect(page).not.toHaveURL(/revision=/)
+  await page.getByRole("button", { name: "Más filtros", exact: true }).click()
+  await expect(page.getByRole("combobox", { name: "Revisión" })).toHaveCount(0)
+  await page.keyboard.press("Escape")
 
   // Tipo (lista) → sólo la correctiva, con su pastilla removible.
   await page.getByRole("combobox", { name: "Filtrar por tipo de mantención" }).click()
@@ -320,15 +357,26 @@ test("detalle: datos, alertas, firmas y visor de fotos a pantalla completa", asy
   await login(page, JEFE)
   await page.goto("/mantencion/registros")
   await page.getByRole("link", { name: `Ver el registro ${rec.A.folio}` }).click()
-  await expect(page).toHaveURL(new RegExp(`/mantencion/registros/${rec.A.id}$`))
+  // Desde la lista, el detalle recuerda de dónde viene (`?lista=`) para ofrecer anterior y siguiente.
+  await expect(page).toHaveURL(new RegExp(`/mantencion/registros/${rec.A.id}\\?lista=`))
+  const listNav = page.getByRole("navigation", { name: "Lista de registros" })
+  await expect(listNav.getByRole("link", { name: "Volver a la lista" })).toBeVisible()
+  await expect(listNav).toContainText(/\d+ de \d+/)
   await expectPageTitle(page, /^Preventiva 40\.000 km · /)
 
   await expect(page.getByRole("heading", { level: 2, name: "Resultado de la pauta", exact: true })).toBeVisible()
   await expect(page.getByText(/Pastillas de freno — Falta repuesto/)).toBeVisible()
   await expect(page.getByText(/Confirmar con la pauta del fabricante/)).toBeVisible()
-  // Regla 8: sello y recepción separados más de 72 h sin período sin señal.
-  await expect(page.getByRole("list", { name: "Alertas del registro" })).toContainText("difieren más de 72 h")
-  await expect(page.getByText("Jefatura · segunda etapa")).toBeVisible()
+  // Regla 8: sello y recepción separados más de 72 h sin período sin señal. El aviso nombra la foto,
+  // dice qué hacer y enlaza a ella: nada vive sólo en un `title`.
+  const photoAlert = page.getByRole("list", { name: "Alertas del registro" })
+  await expect(photoAlert).toContainText("La fecha de una foto no cuadra")
+  await expect(photoAlert).toContainText("«Sticker de mantención»")
+  await expect(photoAlert).toContainText("Pide una foto nueva o confirma con el mecánico.")
+  await expect(photoAlert.getByRole("link", { name: "Ver la foto" })).toHaveAttribute("href", `#foto-${photoIds.a2}`)
+  await expect(page.getByRole("heading", { level: 2, name: "Firma del mecánico" })).toBeVisible()
+  await expect(page.getByText(/segunda etapa/)).toHaveCount(0)
+  await expect(page.getByRole("heading", { level: 2, name: "Notas del mecánico" })).toBeVisible()
 
   // Visor: abrir, cambiar de foto con flecha y con botón, acercar, foco atrapado y Esc.
   const thumb = page.getByRole("button", { name: /Filtros usados/ })
@@ -356,7 +404,7 @@ test("detalle: datos, alertas, firmas y visor de fotos a pantalla completa", asy
   const alerts = page.getByRole("list", { name: "Alertas del registro" })
   await expect(alerts).toContainText("Salto de lectura")
   await expect(alerts).toContainText("Pauta elegida a mano")
-  await expect(alerts).toContainText("Preventiva duplicada")
+  await expect(alerts).toContainText("Posible preventiva duplicada")
   await expect(alerts.getByRole("link", { name: new RegExp(rec.A.folio) })).toHaveAttribute("href", `/mantencion/registros/${rec.A.id}`)
   await expect(page.getByText(/Motivo: Pedido de la jefatura/)).toBeVisible()
 
@@ -365,7 +413,7 @@ test("detalle: datos, alertas, firmas y visor de fotos a pantalla completa", asy
   await expect(page.getByText("Registrado por Mecánico Dos E2E en nombre de Mecánico Uno E2E")).toBeVisible()
   await expect(page.getByText("Manguera hidráulica 1/2")).toBeVisible()
   await expect(page.getByRole("button", { name: /Foto del trabajo 3 de 3/ })).toBeVisible()
-  await expect(page.getByText("Sigue en taller", { exact: true })).toBeVisible()
+  await expect(page.getByText("Aún en taller", { exact: true })).toBeVisible()
 
   expect(consoleErrors, `errores de consola: ${consoleErrors.join(" | ")}`).toEqual([])
 })
@@ -385,7 +433,7 @@ test("PDF: páginas, folio, firma de jefatura pendiente y el mismo archivo en la
   expect(text).toContain(rec.A.folio)
   // La hoja imprime rótulos en mayúsculas y con espaciado entre letras: el texto extraído del PDF
   // los trae así («ANUL ADO»), de modo que se comparan sin espacios ni mayúsculas.
-  expect(flat(text)).toContain(flat("Firma jefatura (segunda etapa)"))
+  expect(flat(text)).toContain(flat("Firma jefatura"))
   expect(text).toContain("Pastillas de freno")
   expect(text).toContain("Falta repuesto")
   // «Página X de Y» en cada hoja, con Y = el total real.
@@ -408,9 +456,45 @@ test("Excel de un solo registro desde su detalle", async ({ page }) => {
   expect(workbook.getWorksheet("Registros")!.rowCount).toBe(2)
 })
 
+test("la cola de revisión: anterior y siguiente, «Marcar revisado y siguiente» y el aviso al terminar", async ({ page }) => {
+  await login(page, JEFE)
+  // A y D comparten equipo: es la pareja de pendientes que ninguna otra spec toca.
+  const queue = `/mantencion/registros?revision=pendiente&equipo=${encodeURIComponent(rec.A.code)}`
+  await page.goto(queue)
+  await expect(page.getByRole("link", { name: `Ver el registro ${rec.D.folio}` })).toBeVisible()
+  await page.getByRole("link", { name: `Ver el registro ${rec.A.folio}` }).click()
+  await expect(page).toHaveURL(new RegExp(`/mantencion/registros/${rec.A.id}\\?lista=`))
+
+  // A es la más reciente: no tiene anterior; el siguiente es D. Recorrer no apila historial (`replace`).
+  const nav = page.getByRole("navigation", { name: "Lista de registros" })
+  await expect(nav).toContainText("1 de 2")
+  await expect(nav.getByRole("button", { name: "Anterior", exact: true })).toBeDisabled()
+  await nav.getByRole("link", { name: new RegExp(`^Siguiente: ${rec.D.folio}`) }).click()
+  await expect(page).toHaveURL(new RegExp(`/mantencion/registros/${rec.D.id}\\?lista=`))
+  await expect(nav).toContainText("2 de 2")
+  await nav.getByRole("link", { name: new RegExp(`^Anterior: ${rec.A.folio}`) }).click()
+  await expect(page).toHaveURL(new RegExp(`/mantencion/registros/${rec.A.id}\\?lista=`))
+
+  // «Volver a la lista» vuelve a ella con sus filtros.
+  await nav.getByRole("link", { name: "Volver a la lista" }).click()
+  await expect(page).toHaveURL(/revision=pendiente/)
+  await expect(page).toHaveURL(/equipo=/)
+  await page.getByRole("link", { name: `Ver el registro ${rec.A.folio}` }).click()
+
+  // La acción principal sigue con el siguiente de la lista, sin pedir confirmación.
+  await page.getByRole("button", { name: "Marcar revisado y siguiente", exact: true }).click()
+  await expect(page).toHaveURL(new RegExp(`/mantencion/registros/${rec.D.id}\\?lista=`))
+  await expect(nav).toContainText("1 de 1")
+  // Revisada, A salió de «Por revisar»: D es el último. Al marcarlo no queda ninguno y vuelve a la lista.
+  await page.getByRole("button", { name: "Marcar revisado y siguiente", exact: true }).click()
+  await expect(page).toHaveURL(/\/mantencion\/registros\?/)
+  await expect(page.getByText(/No quedan registros por revisar/)).toBeVisible()
+})
+
 test("observar un registro y marcarlo revisado", async ({ page }) => {
   await login(page, JEFE)
-  await page.goto(`/mantencion/registros/${rec.D.id}`)
+  // C (otra faena): A y D ya se revisaron en la cola de arriba.
+  await page.goto(`/mantencion/registros/${rec.C.id}`)
   await page.getByRole("button", { name: "Observar", exact: true }).click()
   const dialog = page.getByRole("dialog", { name: /^Observar / })
   await expect(dialog).toBeVisible()

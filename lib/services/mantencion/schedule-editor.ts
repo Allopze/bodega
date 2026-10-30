@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, sql } from "drizzle-orm"
+import { and, eq, inArray, isNull, ne, sql } from "drizzle-orm"
 import { db, type Tx } from "@/db"
 import {
   mantBrands, mantScheduleBrandRules, mantScheduleGroups, mantScheduleIntervals, mantScheduleItemIntervals,
@@ -7,7 +7,7 @@ import {
 import { isUniqueViolation } from "@/lib/action-error"
 import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
-import { formatReading } from "@/lib/mantencion/format"
+import { formatReading, plural } from "@/lib/mantencion/format"
 import { cleanName, nameKey } from "@/lib/mantencion/normalize"
 import { inheritedIntervalFor } from "@/lib/mantencion/schedule"
 import type { MantBrandRuleValue, MantUnit } from "@/lib/mantencion/types"
@@ -167,9 +167,44 @@ export async function setScheduleItemActive(actor: MantActor, input: { scheduleI
 }
 
 /**
- * Agrega un intervalo. Hereda la columna del MAYOR intervalo existente que lo
- * divide exacto (o la de la base) y queda «por revisar» (regla 15). Si el valor
- * ya existió y se quitó, se reactiva con la columna que corresponde por herencia.
+ * Completa la columna de un intervalo con las celdas que le faltan: todas si el
+ * intervalo es nuevo; si es uno que se quitó y vuelve, sólo las de los ítems que
+ * nacieron mientras no estaba (las demás conservan lo que ya tenían). Lo que falta
+ * hereda de la columna del mayor intervalo activo que lo divide (regla 15).
+ */
+async function fillMissingCells(
+  tx: Tx,
+  scheduleId: string,
+  interval: { id: string; value: number },
+  others: Array<{ id: string; value: number }>,
+): Promise<{ filled: number; sourceValue: number | null }> {
+  const sourceValue = others.length ? inheritedIntervalFor(others.map((other) => other.value), interval.value) : null
+  const source = others.find((other) => other.value === sourceValue)
+  const items = await tx.select({ id: mantScheduleItems.id }).from(mantScheduleItems).where(eq(mantScheduleItems.scheduleId, scheduleId))
+  if (items.length === 0) return { filled: 0, sourceValue }
+  const own = await tx.select({ itemId: mantScheduleItemIntervals.itemId }).from(mantScheduleItemIntervals)
+    .where(and(eq(mantScheduleItemIntervals.intervalId, interval.id), inArray(mantScheduleItemIntervals.itemId, items.map((item) => item.id))))
+  const have = new Set(own.map((cell) => cell.itemId))
+  const missing = items.map((item) => item.id).filter((id) => !have.has(id))
+  if (missing.length === 0) return { filled: 0, sourceValue }
+
+  const sourceCells = source
+    ? await tx.select().from(mantScheduleItemIntervals)
+      .where(and(eq(mantScheduleItemIntervals.intervalId, source.id), inArray(mantScheduleItemIntervals.itemId, missing)))
+    : []
+  const applies = new Map(sourceCells.map((cell) => [cell.itemId, cell.applies]))
+  await tx.insert(mantScheduleItemIntervals)
+    .values(missing.map((itemId) => ({ itemId, intervalId: interval.id, applies: applies.get(itemId) ?? false })))
+    .onConflictDoNothing()
+  return { filled: missing.length, sourceValue }
+}
+
+/**
+ * Agrega un intervalo. Uno nuevo hereda la columna del MAYOR intervalo existente
+ * que lo divide exacto (o la de la base) y queda «por revisar» (regla 15). Si el
+ * valor ya existió y se quitó, vuelve con SU columna: no se borran sus celdas ni
+ * se copia la de otro intervalo; sólo los ítems que nacieron mientras estaba
+ * quitado heredan, y en ese caso la columna queda «por revisar».
  */
 export async function addScheduleInterval(actor: MantActor, input: { scheduleId: string; value: number }) {
   return editSchedule(actor, input.scheduleId, async (tx, schedule) => {
@@ -182,31 +217,41 @@ export async function addScheduleInterval(actor: MantActor, input: { scheduleId:
     if (active.some((interval) => interval.value === value)) return { ok: false, message: "Ese intervalo ya existe.", field: "value" }
     if (active.length >= MAX_SCHEDULE_INTERVALS) return { ok: false, message: `Una pauta admite hasta ${MAX_SCHEDULE_INTERVALS} intervalos.`, field: "value" }
 
-    const sourceValue = inheritedIntervalFor(active.map((interval) => interval.value), value)
-    const source = active.find((interval) => interval.value === sourceValue)!
+    const unit = unitOf(schedule)
+    const label = formatReading(value, unit)
     const dormant = intervals.find((interval) => interval.value === value && !interval.isActive)
+    const now = new Date().toISOString()
     let intervalId: string
     if (dormant) {
       intervalId = dormant.id
-      await tx.update(mantScheduleIntervals).set({ isActive: true, needsReview: true, updatedAt: new Date().toISOString() }).where(eq(mantScheduleIntervals.id, dormant.id))
-      await tx.delete(mantScheduleItemIntervals).where(eq(mantScheduleItemIntervals.intervalId, dormant.id))
+      await tx.update(mantScheduleIntervals).set({ isActive: true, updatedAt: now }).where(eq(mantScheduleIntervals.id, dormant.id))
     } else {
       intervalId = nanoid()
       await tx.insert(mantScheduleIntervals).values({ id: intervalId, scheduleId: schedule.id, value, needsReview: true })
     }
-    const items = await tx.select({ id: mantScheduleItems.id }).from(mantScheduleItems).where(eq(mantScheduleItems.scheduleId, schedule.id))
-    if (items.length) {
-      const sourceCells = await tx.select().from(mantScheduleItemIntervals)
-        .where(and(eq(mantScheduleItemIntervals.intervalId, source.id), inArray(mantScheduleItemIntervals.itemId, items.map((item) => item.id))))
-      const applies = new Map(sourceCells.map((cell) => [cell.itemId, cell.applies]))
-      await tx.insert(mantScheduleItemIntervals).values(items.map((item) => ({ itemId: item.id, intervalId, applies: applies.get(item.id) ?? false })))
+    const { filled, sourceValue } = await fillMissingCells(tx, schedule.id, { id: intervalId, value }, active)
+    const data = { intervalId, value, restored: Boolean(dormant) }
+
+    if (!dormant) {
+      return {
+        ok: true,
+        summary: `Intervalo de ${label} agregado (hereda la columna de ${formatReading(sourceValue ?? value, unit)})`,
+        message: `Intervalo de ${label} agregado: copia la columna de ${formatReading(sourceValue ?? value, unit)}. Revísala.`,
+        data,
+      }
     }
-    const unit = unitOf(schedule)
+    // Volvió con su columna; si quedaron ítems sin celda (nacieron mientras no estaba) heredaron y hay que mirarlos.
+    if (filled > 0 && !dormant.needsReview) {
+      await tx.update(mantScheduleIntervals).set({ needsReview: true, updatedAt: now }).where(eq(mantScheduleIntervals.id, dormant.id))
+    }
+    const inherited = filled > 0 && sourceValue !== null
+      ? ` ${plural(filled, "actividad nueva heredó", "actividades nuevas heredaron")} su valor de la columna de ${formatReading(sourceValue, unit)}. Revisa la columna.`
+      : ""
     return {
       ok: true,
-      summary: `Intervalo de ${formatReading(value, unit)} agregado (hereda la columna de ${formatReading(sourceValue, unit)})`,
-      message: `Intervalo de ${formatReading(value, unit)} agregado: copia la columna de ${formatReading(sourceValue, unit)}. Revísala.`,
-      data: { intervalId, value },
+      summary: `Intervalo de ${label} restituido con su columna${inherited ? ` (${plural(filled, "actividad nueva hereda", "actividades nuevas heredan")} la de ${formatReading(sourceValue!, unit)})` : ""}`,
+      message: `Intervalo de ${label} restituido con su columna.${inherited}`,
+      data,
     }
   })
 }
@@ -224,6 +269,15 @@ export async function setScheduleIntervalActive(actor: MantActor, input: { sched
     }
     await tx.update(mantScheduleIntervals).set({ isActive: input.active, updatedAt: new Date().toISOString() }).where(eq(mantScheduleIntervals.id, interval.id))
     const label = formatReading(interval.value, unitOf(schedule))
+    if (input.active && !interval.isActive) {
+      // «Deshacer» también devuelve la columna entera; si un ítem nació mientras estaba quitado, hereda y la columna queda por revisar.
+      const others = await tx.select({ id: mantScheduleIntervals.id, value: mantScheduleIntervals.value }).from(mantScheduleIntervals)
+        .where(and(eq(mantScheduleIntervals.scheduleId, schedule.id), eq(mantScheduleIntervals.isActive, true), ne(mantScheduleIntervals.id, interval.id)))
+      const { filled } = await fillMissingCells(tx, schedule.id, { id: interval.id, value: interval.value }, others)
+      if (filled > 0 && !interval.needsReview) {
+        await tx.update(mantScheduleIntervals).set({ needsReview: true, updatedAt: new Date().toISOString() }).where(eq(mantScheduleIntervals.id, interval.id))
+      }
+    }
     return {
       ok: true,
       summary: input.active ? `Intervalo restituido: ${label}` : `Intervalo quitado: ${label}`,

@@ -1,10 +1,11 @@
 "use client"
 
 import { useMemo, type Dispatch } from "react"
-import { plural } from "@/lib/mantencion/format"
+import { brandAndModel, plural } from "@/lib/mantencion/format"
 import { equipmentLabel, filterForPicking } from "@/lib/mantencion/client/fleet-view"
 import type { FlowAction } from "@/lib/mantencion/client/flow"
 import type { FlowDraft } from "@/lib/mantencion/client/flow-types"
+import { worksiteSummary } from "@/lib/mantencion/client/home-model"
 import { useAppData } from "./app-context"
 import { IconCheck, IconSearch } from "./icons"
 import { FieldError } from "./ui"
@@ -17,11 +18,15 @@ export function StepEquipo({ draft, dispatch }: { draft: FlowDraft; dispatch: Di
   const list = useMemo(() => filterForPicking(rows, { scope: draft.scope, query: draft.query }), [rows, draft.scope, draft.query])
   const shown = list.slice(0, MAX_ROWS)
   const worksites = (stored?.catalog.worksites ?? []).filter((site) => stored?.catalog.user.worksiteIds.includes(site.id)).map((site) => site.name)
-  const mineLabel = worksites.length === 0 ? "Mi faena" : `Faena ${worksites.join(" y ")}`
+  // Un nombre si es una faena; «Mis 6 faenas» si son varias (la lista entera ocupaba tres líneas en el chip).
+  const summary = worksiteSummary(worksites)
+  const mineLabel = !summary ? "Mi faena" : summary.many ? `Mis ${summary.text}` : summary.text
 
   return (
     <>
       <h2 className="h2">¿Qué equipo vas a mantener?</h2>
+      {/* El error va arriba y no bajo la lista: con 40 equipos, el desplazamiento al primer error lo dejaba al fondo. */}
+      <FieldError message={draft.errors.vehicle} />
       <div>
         <label className="lbl" htmlFor="q">Patente o código</label>
         <div className="search">
@@ -43,7 +48,7 @@ export function StepEquipo({ draft, dispatch }: { draft: FlowDraft; dispatch: Di
                 <button key={row.eq.id} type="button" className="eqrow" aria-pressed={selected} onClick={() => dispatch({ type: "pickEquipment", vehicleId: row.eq.id, schedule: row.schedule })}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div className="c">{equipmentLabel(row.eq)}</div>
-                    <div className="d">{row.eq.brandName}{row.eq.model ? ` ${row.eq.model}` : ""} · {row.eq.typeName}</div>
+                    <div className="d">{brandAndModel(row.eq.brandName, row.eq.model)} · {row.eq.typeName}</div>
                     {draft.scope === "all" ? <div className="f">{row.eq.worksiteName}</div> : null}
                   </div>
                   {row.status.state === "vencida" ? <span className="dtag v">Vencida</span> : row.status.state === "proxima" ? <span className="dtag p">Próxima</span> : null}
@@ -62,7 +67,6 @@ export function StepEquipo({ draft, dispatch }: { draft: FlowDraft; dispatch: Di
           </p>
         )}
         {list.length > MAX_ROWS ? <p className="hint">Hay más equipos: escribe la patente o el código para encontrarlo.</p> : null}
-        <FieldError message={draft.errors.vehicle} />
       </div>
     </>
   )

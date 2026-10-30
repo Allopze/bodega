@@ -72,6 +72,15 @@ export const mantencionEquiposModule = {
           permissions: ["mant:schedules:manage"],
           group: "Mantención",
         },
+        {
+          // Quién tiene la app conectada y el botón para desconectarla. Mismo permiso que exige la
+          // página y su acción (`mant:devices:manage`): el menú sólo lo refleja.
+          label: "Dispositivos",
+          href: "/mantencion/dispositivos",
+          iconName: "DeviceMobile",
+          permissions: ["mant:devices:manage"],
+          group: "Mantención",
+        },
       ],
     },
   ],

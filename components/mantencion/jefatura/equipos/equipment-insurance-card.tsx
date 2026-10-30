@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { FileText } from "@phosphor-icons/react/dist/ssr"
 import { MetaBadge } from "@/components/states/state-badge"
+import { Button } from "@/components/ui/button"
 import { DetailItem } from "@/components/ui/detail-item"
 import { EmptyState } from "@/components/ui/empty-state"
 import { plural } from "@/lib/mantencion/format"
@@ -23,6 +24,11 @@ function expiryText(insurance: EquipmentInsurance): string | null {
   return days > 0 ? `vence en ${plural(days, "día", "días")}` : `venció hace ${plural(-days, "día", "días")}`
 }
 
+/** ¿Hay algo que hacer con el seguro? Un vencimiento próximo o pasado sube en la ficha; el resto va abajo. */
+export function insuranceNeedsAttention(insurance: EquipmentInsurance): boolean {
+  return insurance.hasData && (insurance.state === "por_vencer" || insurance.state === "vencido")
+}
+
 /**
  * Antecedentes de seguro que la flota ya guarda: póliza, vencimiento y los
  * documentos de tipo «Seguro». Los documentos se abren por la ruta de flota
@@ -40,14 +46,20 @@ export function EquipmentInsuranceCard({
   canViewFleet: boolean
 }) {
   if (!insurance.hasData) {
+    // Vacío compacto: sin la caja alta de un estado vacío de pantalla, que en la ficha era lo primero que se veía.
     return (
       <SectionCard title="Seguro">
         <EmptyState
           compact
+          as="p"
+          align="start"
+          className="px-0 py-1"
           title="Sin datos de seguro en la flota"
-          description="La póliza y su vencimiento se cargan en la ficha del vehículo de la flota."
+          description={canViewFleet
+            ? "La póliza y su vencimiento se cargan en la ficha del vehículo de la flota."
+            : "La póliza y su vencimiento se cargan en la ficha del vehículo de la flota; pídeselo a quien la administra."}
           action={canViewFleet
-            ? <Link href={`/flota/${vehicleId}`} className="text-sm font-semibold text-[var(--color-primary-ink)] hover:underline">Ir a la ficha de flota</Link>
+            ? <Button asChild variant="secondary" size="sm"><Link href={`/flota/${vehicleId}`}>Cargar en la ficha de flota</Link></Button>
             : undefined}
         />
       </SectionCard>
@@ -58,7 +70,7 @@ export function EquipmentInsuranceCard({
   return (
     <SectionCard
       title="Seguro"
-      action={canViewFleet ? <Link href={`/flota/${vehicleId}`} className="text-xs font-semibold text-[var(--color-primary-ink)] hover:underline">Ficha de flota</Link> : undefined}
+      action={canViewFleet ? <Link href={`/flota/${vehicleId}`} className="inline-flex min-h-11 items-center text-xs font-semibold text-[var(--color-primary-ink)] hover:underline sm:min-h-0">Ficha de flota</Link> : undefined}
     >
       <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
         <DetailItem layout="stacked" mono label="Póliza" value={insurance.policyNumber} />
@@ -83,7 +95,7 @@ export function EquipmentInsuranceCard({
               <span className="flex min-w-0 items-center gap-1.5">
                 <FileText size={14} aria-hidden className="shrink-0 text-[var(--color-text-subtle)]" />
                 {canViewFleet
-                  ? <a href={`/api/flota/documentos/${doc.id}`} target="_blank" rel="noopener noreferrer" className="truncate font-medium text-[var(--color-primary-ink)] hover:underline" title={doc.fileName}>{doc.fileName}</a>
+                  ? <a href={`/api/flota/documentos/${doc.id}`} target="_blank" rel="noopener noreferrer" className="block min-w-0 truncate py-3 font-medium text-[var(--color-primary-ink)] hover:underline sm:py-0" title={doc.fileName}>{doc.fileName}</a>
                   : <span className="truncate font-medium" title={doc.fileName}>{doc.fileName}</span>}
               </span>
               <span className="flex shrink-0 items-center gap-2 text-xs text-[var(--color-text-muted)]">

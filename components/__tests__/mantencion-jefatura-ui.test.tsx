@@ -63,7 +63,8 @@ describe("ScheduleMatrix", () => {
     expect(within(table).getByRole("columnheader", { name: "Actividad" })).toBeDefined()
     expect(within(table).getByRole("columnheader", { name: /30\.000 km Por revisar/ })).toBeDefined()
     expect(screen.getByRole("button", { name: "Inspección visual en 10.000 km" }).getAttribute("aria-pressed")).toBe("true")
-    expect(screen.getByRole("button", { name: "Inspección visual en 30.000 km" }).getAttribute("aria-pressed")).toBe("false")
+    // La columna por revisar sólo se distingue por el tinte: el nombre de sus casillas lo dice con texto.
+    expect(screen.getByRole("button", { name: "Inspección visual en 30.000 km (columna por revisar)" }).getAttribute("aria-pressed")).toBe("false")
     expect(within(table).getByText("Por confirmar")).toBeDefined()
     // El pie cuenta las actividades de cada intervalo.
     const footer = within(table).getByRole("row", { name: /Actividades en el intervalo/ })
@@ -131,7 +132,7 @@ function equipmentRow(index: number, overrides: Partial<EquipmentListRow> = {}):
     id: `v${index}`, code: `KA-${String(index).padStart(3, "0")}`, plate: `PL-${index}`, showPlate: true, noPlate: false,
     typeName: "Camión", brandName: "Scania", model: "R450", year: 2021, worksiteName: index % 2 ? "Arauco" : "Teno",
     scheduleName: "Camiones y tractos", hasSchedule: true, unit: "km", state: "al_dia", stateOrder: 2, reading: 12000, readingDate: "2026-10-01",
-    nextReading: 20000, remaining: 8000, urgency: 0.8, nextIntervalValue: 20000, inWorkshop: false,
+    nextReading: 20000, remaining: 8000, urgency: 0.8, nextIntervalValue: 20000, inWorkshop: false, workshopDays: null, workshopStale: false,
     ...overrides,
   }
 }
@@ -172,16 +173,39 @@ describe("EquipmentTable", () => {
   })
 
   it("el estado va con texto y el equipo sin patente lo dice", () => {
-    render(<EquipmentTable rows={[equipmentRow(1, { state: "vencida", stateOrder: 0, noPlate: true, showPlate: false, inWorkshop: true })]} canManage filtered={false} />)
+    render(<EquipmentTable rows={[equipmentRow(1, { state: "vencida", stateOrder: 0, noPlate: true, showPlate: false })]} canManage filtered={false} />)
     const row = screen.getByRole("row", { name: /KA-001/ })
     expect(within(row).getByText("Vencida")).toBeDefined()
-    expect(within(row).getByText("En taller")).toBeDefined()
     expect(within(row).getByText("Sin patente")).toBeDefined()
+    expect(within(row).queryByText(/En taller/)).toBeNull()
+  })
+
+  it("un equipo en taller lleva «En taller · N días» junto a su estado de pauta, y «Sin actualizar» sólo si lo está", () => {
+    render(<EquipmentTable rows={[
+      equipmentRow(1, { state: "al_dia", inWorkshop: true, workshopDays: 15, workshopStale: true }),
+      equipmentRow(2, { state: "proxima", stateOrder: 1, inWorkshop: true, workshopDays: 1, workshopStale: false }),
+    ]} canManage filtered={false} />)
+    const stale = screen.getByRole("row", { name: /KA-001/ })
+    expect(within(stale).getByText("En taller · 15 días")).toBeDefined()
+    expect(within(stale).getByText("Al día")).toBeDefined()
+    expect(within(stale).getByText("Sin actualizar").className).toContain("signal-ink")
+    const fresh = screen.getByRole("row", { name: /KA-002/ })
+    expect(within(fresh).getByText("En taller · 1 día")).toBeDefined()
+    expect(within(fresh).queryByText("Sin actualizar")).toBeNull()
+  })
+
+  it("la marca no se repite cuando el modelo ya la trae", () => {
+    render(<EquipmentTable rows={[
+      equipmentRow(1, { brandName: "Ford Cargo", model: "Ford Cargo 5032 E", year: 2011 }),
+      equipmentRow(2, { brandName: "Scania", model: "R450", year: 2021 }),
+    ]} canManage filtered={false} />)
+    expect(screen.getByText("Ford Cargo 5032 E · 2011")).toBeDefined()
+    expect(screen.getByText("Scania R450 · 2021")).toBeDefined()
   })
 
   it("sin equipos ofrece cómo llenar la lista; con filtros ofrece quitarlos", () => {
     const { unmount } = render(<EquipmentTable rows={[]} canManage filtered={false} />)
-    expect(screen.getByRole("link", { name: "Agregar equipo" }).getAttribute("href")).toBe("/mantencion/equipos/nuevo")
+    expect(screen.getByRole("link", { name: "Nuevo equipo" }).getAttribute("href")).toBe("/mantencion/equipos/nuevo")
     expect(screen.getByRole("link", { name: "Importar desde Excel" }).getAttribute("href")).toBe("/mantencion/equipos/importar")
     unmount()
     render(<EquipmentTable rows={[]} canManage filtered />)

@@ -9,32 +9,46 @@ import { cn } from "@/lib/utils"
 import { formatReading, plural } from "@/lib/mantencion/format"
 import type { MantUnit } from "@/lib/mantencion/types"
 import type { EditorGroup, EditorInterval, EditorItem } from "@/lib/services/mantencion/schedules"
+import type { GridNavigation } from "./use-grid-navigation"
 
-/** «Quitar» aparece al pasar el mouse o al enfocar la fila; con pantalla táctil (sin hover) queda siempre visible. */
+/** Id de la última «columna» de la matriz, la de «Quitar»: forma parte del recorrido con flechas. */
+export const REMOVE_COLUMN = "__quitar__"
+
+/**
+ * «Quitar» aparece al pasar el mouse o al enfocar la fila; con pantalla táctil (sin hover) queda siempre visible.
+ * En móvil mide 44 px de alto y de ancho; desde `sm` vuelve a su tamaño compacto.
+ */
 const REMOVE_CLASS = cn(
-  "rounded-md px-2 py-1 text-xs font-medium text-[var(--color-danger-ink)] hover:bg-[var(--color-danger-tint)]",
+  "inline-flex min-h-11 min-w-11 items-center justify-center rounded-md px-2 text-xs font-medium text-[var(--color-danger-ink)] hover:bg-[var(--color-danger-tint)] sm:min-h-7 sm:min-w-0 sm:py-1",
   "focus-visible:outline-2 focus-visible:outline-[var(--color-primary)]",
   "[@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/row:opacity-100",
   "[@media(hover:hover)]:group-focus-within/row:opacity-100 [@media(hover:hover)]:focus-visible:opacity-100",
 )
 
-function Cell({ item, interval, unit, applies, review, onToggle }: {
+/**
+ * Una casilla de la matriz. El nombre dice ítem e intervalo (y si la columna está por
+ * revisar, que sólo se ve por el tinte); el estado lo da `aria-pressed`, que además se
+ * anuncia solo al marcar. Mide 44 px en móvil y 28 px desde `sm`.
+ */
+function Cell({ item, interval, unit, applies, review, grid, onToggle }: {
   item: EditorItem
   interval: EditorInterval
   unit: MantUnit
   applies: boolean
   review: boolean
+  grid: GridNavigation
   onToggle: (next: boolean) => void
 }) {
   return (
-    <td className={cn("px-1 py-1 text-center", review && "bg-[var(--color-warning-tint)]/60")}>
+    <td className={cn("px-1 py-0.5 text-center sm:py-1", review && "bg-[var(--color-warning-tint)]/60")}>
       <button
         type="button"
+        {...grid.cell(item.id, interval.id)}
         aria-pressed={applies}
-        aria-label={`${item.name} en ${formatReading(interval.value, unit)}`}
+        aria-label={`${item.name} en ${formatReading(interval.value, unit)}${review ? " (columna por revisar)" : ""}`}
         onClick={() => onToggle(!applies)}
         className={cn(
-          "inline-flex h-9 w-9 items-center justify-center rounded-md border transition-colors duration-[var(--duration-fast)] sm:h-7 sm:w-7",
+          "inline-flex h-11 w-11 scroll-mt-16 items-center justify-center rounded-md border transition-colors duration-[var(--duration-fast)] sm:h-7 sm:w-7",
           "focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--color-primary)]",
           applies
             ? "border-[var(--color-primary)] bg-[var(--color-primary)] text-white"
@@ -88,11 +102,12 @@ function AddItemRow({ group, colSpan, busy, onAdd, onClose }: {
   )
 }
 
-export function ScheduleMatrixGroup({ group, intervals, unit, cells, collapsed, searching, adding, busy, onToggleGroup, onToggleCell, onRemove, onStartAdd, onStopAdd, onAddItem }: {
+export function ScheduleMatrixGroup({ group, intervals, unit, cells, grid, collapsed, searching, adding, busy, onToggleGroup, onToggleCell, onRemove, onStartAdd, onStopAdd, onAddItem }: {
   group: EditorGroup
   intervals: EditorInterval[]
   unit: MantUnit
   cells: Record<string, boolean>
+  grid: GridNavigation
   collapsed: boolean
   searching: boolean
   adding: boolean
@@ -114,7 +129,7 @@ export function ScheduleMatrixGroup({ group, intervals, unit, cells, collapsed, 
             type="button"
             aria-expanded={!collapsed}
             onClick={onToggleGroup}
-            className="flex min-h-9 w-full items-center gap-2 rounded-md px-1 text-left hover:bg-[var(--color-chrome-hover)] focus-visible:outline-2 focus-visible:outline-[var(--color-primary)]"
+            className="flex min-h-11 w-full items-center gap-2 rounded-md px-1 text-left hover:bg-[var(--color-chrome-hover)] focus-visible:outline-2 focus-visible:outline-[var(--color-primary)] sm:min-h-9"
           >
             <Caret size={14} weight="bold" aria-hidden />
             <span className="text-sm font-semibold text-[var(--color-text)]">{group.name}</span>
@@ -136,12 +151,13 @@ export function ScheduleMatrixGroup({ group, intervals, unit, cells, collapsed, 
               unit={unit}
               applies={cells[`${item.id}:${interval.id}`] ?? false}
               review={interval.needsReview}
+              grid={grid}
               onToggle={(next) => onToggleCell(item, interval, next)}
             />
           ))}
           {/* Separada de las casillas por su propio borde y espacio: un clic torpe en una casilla no quita el ítem. */}
           <td className="border-l border-[var(--color-border)] pl-3 pr-2 text-right">
-            <button type="button" className={REMOVE_CLASS} onClick={() => onRemove(item)} aria-label={`Quitar ${item.name} de la pauta`}>Quitar</button>
+            <button type="button" {...grid.cell(item.id, REMOVE_COLUMN)} className={REMOVE_CLASS} onClick={() => onRemove(item)} aria-label={`Quitar ${item.name} de la pauta`}>Quitar</button>
           </td>
         </tr>
       ))}
@@ -150,7 +166,7 @@ export function ScheduleMatrixGroup({ group, intervals, unit, cells, collapsed, 
         : (
           <tr>
             <td colSpan={colSpan} className="px-3 py-1">
-              <button type="button" onClick={onStartAdd} className="min-h-9 rounded-md px-2 text-sm font-medium text-[var(--color-primary-ink)] hover:underline focus-visible:outline-2 focus-visible:outline-[var(--color-primary)]">
+              <button type="button" onClick={onStartAdd} className="min-h-11 rounded-md px-2 text-sm font-medium text-[var(--color-primary-ink)] hover:underline focus-visible:outline-2 focus-visible:outline-[var(--color-primary)] sm:min-h-9">
                 + Agregar ítem en {group.name}
               </button>
             </td>

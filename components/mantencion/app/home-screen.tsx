@@ -5,7 +5,7 @@ import { plural } from "@/lib/mantencion/format"
 import { discardDraft } from "@/lib/mantencion/client/drafts"
 import { dueRows, equipmentLabel, workshopEntries, type WorkshopEntry } from "@/lib/mantencion/client/fleet-view"
 import { draftHasContent, type FlowDraft } from "@/lib/mantencion/client/flow-types"
-import { buildRecent, openObservations, rejectedRecords } from "@/lib/mantencion/client/home-model"
+import { buildRecent, openObservations, rejectedRecords, worksiteSummary } from "@/lib/mantencion/client/home-model"
 import { queueStats, STALE_PENDING_MS } from "@/lib/mantencion/client/queue"
 import type { DeviceAccount, QueueRecordItem } from "@/lib/mantencion/client/types"
 import { formatDateTime } from "@/lib/utils"
@@ -13,7 +13,7 @@ import { AccountSheet } from "./account-sheet"
 import { useAppActions, useAppData } from "./app-context"
 import { ConfirmDialog } from "./dialog"
 import { DraftBanners, DueSection, ObservationBanner, RecentSection, RejectedSection, WorkshopSection } from "./home-lists"
-import { IconChevronDown, IconChevronRight, IconWifi, IconWifiOff } from "./icons"
+import { IconChevronDown, IconChevronRight, IconChevronUp, IconWifi, IconWifiOff } from "./icons"
 import { ObservationSheet } from "./observation-sheet"
 import { useDrafts } from "./use-drafts"
 import { Banner, firstName, initials } from "./ui"
@@ -58,6 +58,7 @@ export function HomeScreen({ onStart, onResume, onFix, onNeedLogin, onOtherAccou
   const drafts = useDrafts(account.userId)
   const [accountOpen, setAccountOpen] = useState(false)
   const [observationsOpen, setObservationsOpen] = useState(false)
+  const [sitesOpen, setSitesOpen] = useState(false)
   const [workshop, setWorkshop] = useState<WorkshopEntry | null>(null)
   const [discarding, setDiscarding] = useState<FlowDraft | null>(null)
   const [askStart, setAskStart] = useState<{ kind: "P" | "C"; vehicleId: string | null; existing: FlowDraft } | null>(null)
@@ -71,7 +72,7 @@ export function HomeScreen({ onStart, onResume, onFix, onNeedLogin, onOtherAccou
   const rejected = useMemo(() => rejectedRecords(queue, account.userId), [queue, account.userId])
   const observations = useMemo(() => openObservations(stored?.catalog, queue), [stored, queue])
   const worksites = (stored?.catalog.worksites ?? []).filter((site) => stored?.catalog.user.worksiteIds.includes(site.id)).map((site) => site.name)
-  const worksiteText = worksites.length === 0 ? null : `${worksites.length === 1 ? "Faena" : "Faenas"} ${worksites.join(" y ")}`
+  const sites = worksiteSummary(worksites)
   const equipmentOf = (vehicleId: string | null) => {
     const row = rows.find((entry) => entry.eq.id === vehicleId)
     return row ? equipmentLabel(row.eq) : null
@@ -94,7 +95,16 @@ export function HomeScreen({ onStart, onResume, onFix, onNeedLogin, onOtherAccou
           </button>
         </div>
         <h1 className="h1" style={{ margin: "16px 0 6px" }}>Hola, {firstName(account.name)}</h1>
-        {worksiteText ? <div className="cap" style={{ color: "var(--gr)" }}>{worksiteText}</div> : null}
+        {sites && !sites.many ? <div className="sitel">{sites.text}</div> : null}
+        {sites?.many ? (
+          <>
+            <button type="button" className="sitesb" aria-expanded={sitesOpen} aria-controls="faenas-lista" onClick={() => setSitesOpen((open) => !open)}>
+              {sites.text}{sitesOpen ? <IconChevronUp /> : <IconChevronDown />}
+            </button>
+            {/* Una por línea: varios nombres traen « - » dentro (p. ej. «Cholguan - Arauco») y separados por comas no se distinguen. */}
+            {sitesOpen ? <ul id="faenas-lista" role="list" className="sitelist">{worksites.map((name) => <li key={name}>{name}</li>)}</ul> : null}
+          </>
+        ) : null}
         <SignalLine online={online} pending={stats.pending} sending={sending} old={old} />
       </header>
 

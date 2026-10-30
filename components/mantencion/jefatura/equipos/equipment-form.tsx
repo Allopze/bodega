@@ -25,7 +25,7 @@ const SELECT = "h-11 w-full sm:h-9"
 type FormAction = (prev: ActionState, formData: FormData) => Promise<ActionState>
 
 /**
- * Formulario del equipo: es el mismo para «Agregar equipo» y «Editar ficha». Los
+ * Formulario del equipo: es el mismo para «Nuevo equipo» y «Editar ficha». Los
  * campos están controlados porque unos dependen de otros (el tipo fija la unidad
  * y con ella las pautas que se ofrecen; «Nueva faena…» muestra su nombre; la baja
  * pide su motivo). El servidor vuelve a validar todo y devuelve los errores por

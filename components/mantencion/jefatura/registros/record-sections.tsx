@@ -1,5 +1,7 @@
 import Link from "next/link"
+import { Warning } from "@phosphor-icons/react/dist/ssr"
 import { Badge } from "@/components/ui/badge"
+import { Callout } from "@/components/ui/callout"
 import { DetailItem } from "@/components/ui/detail-item"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import { executorText, formatHours, formatNumber, formatReading, plural } from "@/lib/mantencion/format"
@@ -10,28 +12,41 @@ import { recordAlertTags } from "./record-alerts"
 
 const GRID = "grid gap-x-6 gap-y-4 sm:grid-cols-2 xl:grid-cols-3"
 
-/** Alertas como etiquetas, con el enlace al duplicado anterior cuando lo hay. */
+const ALERT_LINK = "inline-flex min-h-11 items-center font-medium underline underline-offset-2 sm:min-h-6"
+
+/**
+ * Alertas del registro: un solo aviso con una entrada por alerta, en tipo
+ * oración. Cada una dice qué pasó y por qué importa, qué hacer y lleva al dato
+ * (la foto, las lecturas) o al registro que la explica. Todo es texto visible:
+ * nada vive sólo en un `title`.
+ */
 export function RecordAlerts({ detail }: { detail: RecordDetail }) {
   const tags = recordAlertTags(detail)
   if (tags.length === 0) return null
   return (
-    <ul className="mb-4 flex flex-wrap gap-2" aria-label="Alertas del registro">
-      {tags.map((tag) => (
-        <li key={tag.key}>
-          <Badge variant="signal" size="lg" title={tag.hint}>
-            {tag.label}
+    <Callout
+      tone="warning"
+      icon={<Warning size={18} weight="fill" />}
+      // Con una sola alerta, su propio titular ya dice todo: un encabezado encima lo repetiría.
+      title={tags.length > 1 ? `Este registro tiene ${tags.length} alertas` : undefined}
+      className="mb-4"
+    >
+      <ul aria-label="Alertas del registro" className="divide-y divide-[var(--color-warning-line)]">
+        {tags.map((tag) => (
+          <li key={tag.key} className="py-2.5 first:pt-1 last:pb-0">
+            <p className="font-semibold">{tag.title}</p>
+            <p className="mt-0.5">{tag.message}</p>
+            <p className="mt-0.5">{tag.action}</p>
+            {tag.anchor && <a href={tag.anchor.href} className={ALERT_LINK}>{tag.anchor.label}</a>}
             {tag.linkTo && (
-              <>
-                {": "}
-                <Link href={`/mantencion/registros/${tag.linkTo.id}`} className="underline underline-offset-2">
-                  ver {tag.linkTo.folio ?? "la anterior"}
-                </Link>
-              </>
+              <Link href={`/mantencion/registros/${tag.linkTo.id}`} className={ALERT_LINK}>
+                Ver {tag.linkTo.folio ?? "la preventiva anterior"}
+              </Link>
             )}
-          </Badge>
-        </li>
-      ))}
-    </ul>
+          </li>
+        ))}
+      </ul>
+    </Callout>
   )
 }
 
@@ -39,75 +54,73 @@ export function EquipmentSection({ detail }: { detail: RecordDetail }) {
   const equipment = detail.equipment
   const plate = equipment.noPlate || equipment.plate === equipment.code ? "Sin patente" : equipment.plate
   return (
-    <SectionCard title="Equipo" description="Tal como estaba en la ficha cuando se firmó; editar la ficha después no cambia este registro.">
-      <dl className={GRID}>
-        <DetailItem layout="stacked" label="Código" value={equipment.code} mono />
-        <DetailItem layout="stacked" label="Patente" value={plate} mono />
-        <DetailItem layout="stacked" label="Tipo" value={equipment.type} />
-        <DetailItem layout="stacked" label="Marca y modelo" value={[equipment.brand, equipment.model].filter(Boolean).join(" ") || null} />
-        <DetailItem layout="stacked" label="Año" value={equipment.year ? String(equipment.year) : null} mono />
-        <DetailItem layout="stacked" label="Faena" value={detail.worksiteName} />
-      </dl>
-    </SectionCard>
+    <div id="equipo" className="scroll-mt-4">
+      <SectionCard title="Equipo" description="Tal como estaba en la ficha cuando se firmó; editar la ficha después no cambia este registro.">
+        <dl className={GRID}>
+          <DetailItem layout="stacked" label="Código" value={equipment.code} mono />
+          <DetailItem layout="stacked" label="Patente" value={plate} mono />
+          <DetailItem layout="stacked" label="Tipo" value={equipment.type} />
+          <DetailItem layout="stacked" label="Marca y modelo" value={[equipment.brand, equipment.model].filter(Boolean).join(" ") || null} />
+          <DetailItem layout="stacked" label="Año" value={equipment.year ? String(equipment.year) : null} mono />
+          <DetailItem layout="stacked" label="Faena" value={detail.worksiteName} />
+        </dl>
+      </SectionCard>
+    </div>
   )
 }
 
 export function RecordDataSection({ detail }: { detail: RecordDetail }) {
-  const manual = detail.schedule && detail.schedule.intervalValue !== detail.schedule.suggestedIntervalValue
+  const manual = !!detail.schedule && detail.schedule.intervalValue !== detail.schedule.suggestedIntervalValue
   const proxy = detail.executorKind !== "yo"
   return (
-    <SectionCard title="Datos del registro">
-      <dl className={GRID}>
-        <DetailItem layout="stacked" label="Fecha del trabajo" value={formatDate(detail.workDate)} mono />
-        <DetailItem layout="stacked" label="Hecho por" value={detail.executorName} />
-        <DetailItem layout="stacked" label="Registrado por" value={detail.registeredByName} />
-        <DetailItem layout="stacked" label="Lectura" value={formatReading(detail.reading, detail.unit)} mono />
-        <DetailItem
-          layout="stacked"
-          label="Lectura anterior"
-          value={detail.previousReading ? `${formatReading(detail.previousReading.value, detail.unit)} · ${formatDate(detail.previousReading.date)}` : null}
-          mono
-        />
-        <DetailItem layout="stacked" label="Firmado en el teléfono" value={formatDateTime(detail.signedAt)} mono />
-        <DetailItem
-          layout="stacked"
-          label="Recibido en la plataforma"
-          value={
-            <>
-              {formatDateTime(detail.receivedAt)}
-              {detail.offlineSince && <span className="block text-xs font-normal text-[var(--color-text-muted)]">Sin señal desde {formatDateTime(detail.offlineSince)}</span>}
-            </>
-          }
-          mono
-        />
-        {detail.schedule && (
+    <div id="datos-del-registro" className="scroll-mt-4">
+      <SectionCard title="Datos del registro">
+        <dl className={GRID}>
+          <DetailItem layout="stacked" label="Fecha del trabajo" value={formatDate(detail.workDate)} mono />
+          <DetailItem layout="stacked" label="Hecho por" value={detail.executorName} />
+          <DetailItem layout="stacked" label="Registrado por" value={detail.registeredByName} />
+          <DetailItem layout="stacked" label="Lectura" value={formatReading(detail.reading, detail.unit)} mono />
           <DetailItem
             layout="stacked"
-            label="Pauta usada"
+            label="Lectura anterior"
+            value={detail.previousReading ? `${formatReading(detail.previousReading.value, detail.unit)} · ${formatDate(detail.previousReading.date)}` : null}
+            mono
+          />
+          <DetailItem layout="stacked" label="Firmado en el teléfono" value={formatDateTime(detail.signedAt)} mono />
+          <DetailItem
+            layout="stacked"
+            label="Recibido en la plataforma"
             value={
               <>
-                {detail.schedule.name} · {formatReading(detail.schedule.intervalValue, detail.unit)}
-                <span className="block text-xs font-normal text-[var(--color-text-muted)]">Versión {detail.schedule.version} de la pauta</span>
+                {formatDateTime(detail.receivedAt)}
+                {detail.offlineSince && <span className="block text-xs font-normal text-[var(--color-text-muted)]">Sin señal desde {formatDateTime(detail.offlineSince)}</span>}
               </>
             }
+            mono
           />
-        )}
-      </dl>
-      {proxy && (
-        <p className="mt-4 rounded-lg bg-[var(--color-surface-2)] px-3 py-2 text-sm text-[var(--color-text)]">
-          {executorText({ executorKind: detail.executorKind, registeredByName: detail.registeredByName, executorName: detail.executorName })}
-        </p>
-      )}
-      {manual && detail.schedule && (
-        <div className="mt-4 text-sm">
-          <Badge variant="signal" size="sm">Elegida a mano</Badge>
-          <p className="mt-1.5 text-[var(--color-text)]">
-            La pauta sugerida era la de {formatReading(detail.schedule.suggestedIntervalValue, detail.unit)}.{" "}
-            <span className="text-[var(--color-text-muted)]">Motivo: {detail.schedule.manualReason ?? "sin motivo"}</span>
+          {detail.schedule && (
+            <DetailItem
+              layout="stacked"
+              label="Pauta usada"
+              value={
+                <>
+                  {detail.schedule.name} · {formatReading(detail.schedule.intervalValue, detail.unit)}
+                  <span className="block text-xs font-normal text-[var(--color-text-muted)]">
+                    Versión {detail.schedule.version} de la pauta
+                    {manual && ` · elegida a mano (la sugerida era la de ${formatReading(detail.schedule.suggestedIntervalValue, detail.unit)})`}
+                  </span>
+                </>
+              }
+            />
+          )}
+        </dl>
+        {proxy && (
+          <p className="mt-4 rounded-lg bg-[var(--color-surface-2)] px-3 py-2 text-sm text-[var(--color-text)]">
+            {executorText({ executorKind: detail.executorKind, registeredByName: detail.registeredByName, executorName: detail.executorName })}
           </p>
-        </div>
-      )}
-    </SectionCard>
+        )}
+      </SectionCard>
+    </div>
   )
 }
 
@@ -122,7 +135,8 @@ export function PreventiveSection({ detail }: { detail: RecordDetail }) {
         title="Resultado de la pauta"
         description={`${formatNumber(done)} realizados · ${formatNumber(notDone)} no realizados · ${formatNumber(notApplicable)} no aplica`}
       >
-        <TableRoot aria-label="Resultado de la pauta por sistema">
+        {/* Sin marco propio dentro de la tarjeta (el borde ya es el de la tarjeta). */}
+        <TableRoot aria-label="Resultado de la pauta por sistema" className="rounded-none border-0">
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
@@ -159,7 +173,7 @@ export function PreventiveSection({ detail }: { detail: RecordDetail }) {
           </Table>
         </TableRoot>
       </SectionCard>
-      <SectionCard title="Observaciones del mecánico">
+      <SectionCard title="Notas del mecánico">
         <p className="whitespace-pre-wrap text-sm text-[var(--color-text)]">{detail.notes ?? "—"}</p>
       </SectionCard>
     </>
@@ -214,8 +228,8 @@ export function CorrectiveSections({ detail }: { detail: RecordDetail }) {
           <DetailItem layout="stacked" label="Entró a taller" value={corrective.workshopEntryDate ? formatDate(corrective.workshopEntryDate) : "No pasó por taller"} mono />
           <DetailItem
             layout="stacked"
-            label="Salió de taller"
-            value={workshop ? (workshop.inWorkshop ? <Badge variant="signal" size="sm">Sigue en taller</Badge> : workshop.exitDate ? formatDate(workshop.exitDate) : null) : null}
+            label="Salida de taller"
+            value={workshop ? (workshop.inWorkshop ? <span className="text-[var(--color-signal-ink)]">Aún en taller</span> : workshop.exitDate ? formatDate(workshop.exitDate) : null) : null}
             mono
           />
           <DetailItem

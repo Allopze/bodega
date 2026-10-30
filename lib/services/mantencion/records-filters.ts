@@ -134,11 +134,78 @@ export function recordFiltersToParams(filters: RecordFilters): URLSearchParams {
   return params
 }
 
-/** Cuántos filtros de «Más filtros» están activos (el contador del botón). */
+/**
+ * Cuántos filtros de «Más filtros» están activos (el contador del botón). La
+ * revisión no cuenta: tiene sus pestañas sobre la tabla y una dimensión se
+ * representa una sola vez (regla A5).
+ */
 export function advancedFilterCount(filters: RecordFilters): number {
-  return [filters.registeredBy, filters.status, filters.review, filters.alert, filters.situation].filter(Boolean).length
+  return [filters.registeredBy, filters.status, filters.alert, filters.situation].filter(Boolean).length
 }
 
 export function hasRecordFilters(filters: RecordFilters): boolean {
   return Object.values(filters).some(Boolean)
+}
+
+/**
+ * Los parámetros que escribe la barra de filtros: «Limpiar filtros» los quita todos.
+ * No incluye `revision` (tiene sus pestañas) ni el orden: limpiar filtros no cambia
+ * la pestaña en la que se está ni cómo se ordena la lista.
+ */
+export const RECORD_FILTER_PARAMS = ["faena", "tipo", "equipo", "hecho", "registro", "desde", "hasta", "estado", "alerta", "situacion"] as const
+
+/** Las pestañas de revisión sobre la tabla (parámetro `revision`; sin parámetro = «Todos»). */
+export const RECORD_REVIEW_TABS = ["pendiente", "observado", "revisado"] as const
+
+/**
+ * La lista tal como está en pantalla, en forma de parámetros de URL: filtros,
+ * orden y sentido, sin la página. Lo omitido es lo que la lista ya haría por
+ * omisión, así que la misma lista siempre produce el mismo texto.
+ */
+export function recordQueryToParams(query: Pick<RecordListQuery, "filters" | "sort" | "dir">): URLSearchParams {
+  const params = recordFiltersToParams(query.filters)
+  const defaultDir: SortDirection = query.sort === "fecha" ? "desc" : "asc"
+  if (query.sort !== "fecha") params.set("orden", query.sort)
+  if (query.dir !== defaultDir) params.set("dir", query.dir)
+  return params
+}
+
+/** Parámetro del detalle que recuerda de qué lista viene (`?lista=<parámetros de la lista>`). */
+export const RECORD_LIST_PARAM = "lista"
+
+const LIST_PATH = "/mantencion/registros"
+
+/**
+ * Enlace al detalle de un registro conservando la lista de la que se viene. La
+ * lista sin filtros también viaja (`?lista=` vacío): lo que importa es que el
+ * detalle sepa que se llegó desde ella para ofrecer anterior y siguiente.
+ */
+export function recordDetailHref(id: string, listQuery: string | null): string {
+  const base = `${LIST_PATH}/${encodeURIComponent(id)}`
+  return listQuery === null ? base : `${base}?${RECORD_LIST_PARAM}=${encodeURIComponent(listQuery)}`
+}
+
+/**
+ * Lee `?lista=` del detalle. `null` = se llegó al detalle por otro camino (sin
+ * lista). La consulta se vuelve a interpretar con el mismo `parseRecordQuery`
+ * de la lista: un valor inventado no filtra por algo que no existe, y el
+ * alcance del usuario lo pone el servicio, no esta URL.
+ */
+export function parseRecordListContext(raw: RawSearchParams): { query: RecordListQuery; listQuery: string } | null {
+  const value = raw[RECORD_LIST_PARAM]
+  const text = (Array.isArray(value) ? value[0] : value)
+  if (text === undefined) return null
+  const parsed = new URLSearchParams(text.slice(0, 600))
+  const query = parseRecordQuery(Object.fromEntries(parsed.entries()))
+  // Se vuelve a escribir desde lo ya interpretado: lo que no se entiende no se reenvía.
+  return { query, listQuery: recordQueryToParams(query).toString() }
+}
+
+/** La lista con sus filtros, en la página que corresponde a la posición del registro. */
+export function recordListHref(listQuery: string, position?: number | null): string {
+  const params = new URLSearchParams(listQuery)
+  const page = position && position > 0 ? Math.ceil(position / RECORDS_PAGE_SIZE) : 1
+  if (page > 1) params.set("page", String(page))
+  const query = params.toString()
+  return query ? `${LIST_PATH}?${query}` : LIST_PATH
 }

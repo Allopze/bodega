@@ -12,6 +12,7 @@ import type { ReportData } from "@/lib/reports/export-module/types"
 import { viewerFromSession } from "./access"
 import type { ExportOutcome } from "./export-records"
 import { loadPanel } from "./panel"
+import { fleetCoverage } from "./panel-coverage"
 import { PANEL_PERIOD_PHRASE, type PanelFilters } from "./panel-filters"
 
 /**
@@ -26,6 +27,7 @@ export async function exportPanel(input: { session: Session; filters: PanelFilte
     ? (await db.select({ name: worksites.name }).from(worksites).where(eq(worksites.id, input.filters.worksiteId)).limit(1))[0]?.name ?? "Faena desconocida"
     : "Todas las faenas"
   const period = PANEL_PERIOD_PHRASE[input.filters.period]
+  const coverage = fleetCoverage(data.fleet.counts)
 
   const report: ReportData = {
     filenameBase: "panel-mantencion",
@@ -34,8 +36,9 @@ export async function exportPanel(input: { session: Session; filters: PanelFilte
     rows: [
       ["Período", period, data.from ? `Desde el ${data.from}` : "Sin límite de fecha"],
       ["Faena", worksiteName, ""],
-      ["Registros del período", data.records.total, `${data.records.preventive} preventivas · ${data.records.corrective} correctivas`],
-      ["Mantenciones vencidas", data.fleet.counts.vencida, `${data.fleet.counts.proxima} próximas a vencer`],
+      ["Registros del período", data.records.total, `${data.records.preventive} preventivas · ${data.records.corrective} correctivas · ${data.records.pendingReview} por revisar`],
+      // «0 vencidas» no es «todo al día» si hay equipos que no se pudieron evaluar: el libro lo dice igual que la pantalla.
+      ["Mantenciones vencidas", data.fleet.counts.vencida, `${data.fleet.counts.proxima} próximas a vencer · ${coverage.evaluable} de ${data.fleet.active} equipos con pauta y lectura`],
       ["Equipos en taller", data.workshop.equipment, `${data.workshop.stale} sin actualizar hace más de 2 días`],
       ["Días fuera de servicio del período", data.stoppedDays.total, `En ${data.stoppedDays.equipment} equipos`],
       ["Horas hombre del período (h)", data.records.hours, `En ${data.records.corrective} correctivas`],
@@ -56,10 +59,10 @@ export async function exportPanel(input: { session: Session; filters: PanelFilte
       },
       {
         worksheetName: "Próximas mantenciones",
-        headers: ["Equipo", "Patente", "Faena", "Pauta", "Unidad", "Lectura", "Próxima", "Falta", "Pauta que toca", "Estado"],
+        headers: ["Equipo", "Patente", "Faena", "Pauta", "Unidad", "Lectura", "Próxima", "Falta", "Pauta que toca", "Estado", "Días en taller"],
         rows: data.upcoming.map((row) => [
           row.code, row.plate, row.worksiteName, row.scheduleName ?? "", row.unit, row.reading, row.nextReading, row.remaining,
-          row.nextIntervalValue, EQUIPMENT_STATE_LABEL[row.state],
+          row.nextIntervalValue, EQUIPMENT_STATE_LABEL[row.state], row.workshopDays,
         ]),
       },
       {

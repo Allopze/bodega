@@ -6,16 +6,14 @@ import type { FlowAction } from "@/lib/mantencion/client/flow"
 import type { FlowDraft } from "@/lib/mantencion/client/flow-types"
 import { todayInChile } from "@/lib/utils"
 import { useAppData } from "./app-context"
-import { PhotoGrid } from "./photo-slot"
-import { photoContext } from "./step-fotos"
 import { EquipmentSummary } from "./step-lectura"
 import { JobsField } from "./trabajo-jobs"
 import { DriversField } from "./trabajo-parts"
 import { CheckBox, FieldError } from "./ui"
 
-/** Paso 3 (correctiva): qué se hizo, quién, con qué, cuánto tardó y en qué quedó el equipo. */
+/** Paso 3 (correctiva): qué se hizo, quién, con qué, cuánto tardó y en qué quedó el equipo. Las fotos van en el paso siguiente. */
 export function StepTrabajo({ draft, dispatch, row }: { draft: FlowDraft; dispatch: Dispatch<FlowAction>; row: FleetRow }) {
-  const { stored, account, deviceId } = useAppData()
+  const { stored, account } = useAppData()
   const catalog = stored?.catalog
   const { errors } = draft
   const mechanics = (catalog?.mechanics ?? []).filter((mechanic) => mechanic.id !== account.userId)
@@ -80,12 +78,6 @@ export function StepTrabajo({ draft, dispatch, row }: { draft: FlowDraft; dispat
       </div>
 
       <DriversField draft={draft} dispatch={dispatch} drivers={catalog?.drivers ?? []} />
-
-      <div>
-        <div className="lbl">Fotos del repuesto o la reparación <small>· de 1 a 3</small></div>
-        <PhotoGrid photoIds={draft.photos.correctiva} context={photoContext(draft, row, deviceId, "correctiva")} error={errors.photos}
-          onAdd={(id) => dispatch({ type: "photoAdd", id })} onRemove={(id) => dispatch({ type: "photoRemove", id })} />
-      </div>
 
       <div className="card">
         <div className="lbl" id="taller-lbl">¿El equipo sigue en taller?</div>

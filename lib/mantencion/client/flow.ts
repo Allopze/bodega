@@ -69,6 +69,9 @@ const ERRORS_CLEARED_BY: Partial<Record<keyof FlowDraft, string[]>> = {
   photos: ["photos", "photo_filtros", "photo_sticker"],
   ackJump: ["jump"],
   ackDuplicate: ["duplicate"],
+  // El aviso «Faltan N ítems» se va apenas se marca algo: el contador del pie sigue contando.
+  marks: ["pauta"],
+  reasons: ["pauta"],
 }
 
 function clearErrors(draft: FlowDraft, changed: Array<keyof FlowDraft>): FlowErrors {
@@ -76,7 +79,9 @@ function clearErrors(draft: FlowDraft, changed: Array<keyof FlowDraft>): FlowErr
   const dropJobs = changed.includes("jobs")
   if (drop.size === 0) return draft.errors
   // Los errores por trabajo (`job:<tipo>`) también se limpian al editar la lista.
-  return Object.fromEntries(Object.entries(draft.errors).filter(([key]) => !drop.has(key) && !(dropJobs && key.startsWith("job:"))))
+  const kept = Object.entries(draft.errors).filter(([key]) => !drop.has(key) && !(dropJobs && key.startsWith("job:")))
+  // Si no cayó ninguno se conserva el mismo objeto: así editar otro campo no vuelve a desplazar la pantalla al primer error.
+  return kept.length === Object.keys(draft.errors).length ? draft.errors : Object.fromEntries(kept)
 }
 
 function patched(draft: FlowDraft, patch: Partial<FlowDraft>): FlowDraft {
@@ -98,7 +103,14 @@ function advance(draft: FlowDraft, env: FlowEnv): FlowDraft {
   const current = steps[draft.step]
   if (!current) return draft
   const errors = env.validate(draft, current)
-  if (Object.keys(errors).length > 0) return { ...draft, errors }
+  if (Object.keys(errors).length > 0) {
+    // En la pauta, el error lleva al primer sistema que falta: se abre para que el ítem pendiente quede a la vista.
+    if (current === "pauta") {
+      const open = firstIncompleteGroupAfter(draft, -1)
+      return { ...draft, errors, openGroup: open >= 0 ? open : draft.openGroup }
+    }
+    return { ...draft, errors }
+  }
 
   const left = { ...draft, ...(env.leave(draft, current) ?? {}), errors: {} }
   if (draft.ret === null) return { ...left, step: Math.min(draft.step + 1, steps.length - 1) }
@@ -138,7 +150,7 @@ export function flowReducer(draft: FlowDraft, action: FlowAction): FlowDraft {
       const marks = { ...draft.marks }
       if (was === action.value) delete marks[action.key]
       else marks[action.key] = action.value
-      const next = { ...draft, marks }
+      const next = { ...draft, marks, errors: clearErrors(draft, ["marks"]) }
       const groups = groupChecklist(draft.checklist)
       const at = groups.findIndex((group) => group.items.some((item) => item.key === action.key))
       const group = groups[at]
@@ -154,11 +166,11 @@ export function flowReducer(draft: FlowDraft, action: FlowAction): FlowDraft {
       if (!group) return draft
       const marks = { ...draft.marks }
       for (const item of group.items) if (!marks[item.key]) marks[item.key] = "R"
-      return { ...draft, marks }
+      return { ...draft, marks, errors: clearErrors(draft, ["marks"]) }
     }
 
     case "reason":
-      return { ...draft, reasons: { ...draft.reasons, [action.key]: action.text } }
+      return { ...draft, reasons: { ...draft.reasons, [action.key]: action.text }, errors: clearErrors(draft, ["reasons"]) }
 
     case "toggleGroup":
       return { ...draft, openGroup: draft.openGroup === action.group ? -1 : action.group }

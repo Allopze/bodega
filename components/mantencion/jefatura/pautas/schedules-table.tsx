@@ -40,7 +40,7 @@ export function SchedulesTable({ rows }: { rows: ScheduleListRow[] }) {
             <TableCell className="font-mono text-[13px]">{row.intervals.map(formatNumber).join(" · ")}</TableCell>
             <TableCell className="text-right font-mono tabular-nums">{row.itemCount}</TableCell>
             <TableCell className="text-right font-mono tabular-nums">{row.equipmentCount}</TableCell>
-            <TableCell>{row.hasBrandRules ? <Badge variant="info" size="sm">Sí</Badge> : <span className="text-[var(--color-text-muted)]">No</span>}</TableCell>
+            <TableCell>{row.hasBrandRules ? <Badge variant="info" size="sm">Sí</Badge> : <Badge variant="default" size="sm">No</Badge>}</TableCell>
           </TableRow>
         )
       }}

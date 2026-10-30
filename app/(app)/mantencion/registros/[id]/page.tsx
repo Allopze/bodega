@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/ui/page-header"
 import { PhotoGallery } from "@/components/mantencion/jefatura/registros/photo-gallery"
 import { photoCaption } from "@/components/mantencion/jefatura/registros/photo-labels"
 import { RecordActions } from "@/components/mantencion/jefatura/registros/record-actions"
+import { RecordListNav } from "@/components/mantencion/jefatura/registros/record-list-nav"
 import { CorrectiveSections, EquipmentSection, PreventiveSection, RecordAlerts, RecordDataSection } from "@/components/mantencion/jefatura/registros/record-sections"
 import { RecordAside } from "@/components/mantencion/jefatura/registros/record-aside"
 import { RecordStatusBadges } from "@/components/mantencion/jefatura/shared/record-badges"
@@ -14,12 +15,14 @@ import { can, requireAnyPermission } from "@/lib/auth/can"
 import { recordKindText } from "@/lib/mantencion/format"
 import { canObserveRecord, viewerFromSession } from "@/lib/services/mantencion/access"
 import { loadRecordDetail } from "@/lib/services/mantencion/records-detail"
+import { parseRecordListContext, recordDetailHref, recordListHref, type RawSearchParams } from "@/lib/services/mantencion/records-filters"
+import { loadRecordNeighbors } from "@/lib/services/mantencion/records-query"
 import { formatDateTime } from "@/lib/utils"
 
 export const dynamic = "force-dynamic"
 export const metadata: Metadata = { title: "Registro de mantención" }
 
-export default async function RecordDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function RecordDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<RawSearchParams> }) {
   let session
   try {
     session = await requireAnyPermission(["mant:records:view_own", "mant:records:view_worksite", "mant:records:view_all"])
@@ -28,9 +31,20 @@ export default async function RecordDetailPage({ params }: { params: Promise<{ i
   }
   const { id } = await params
   const viewer = viewerFromSession(session)
+  // De qué lista se llegó (`?lista=`), si se llegó desde una: da el anterior y el siguiente y el «Volver».
+  const context = parseRecordListContext(await searchParams)
   // `null` cubre «no existe» y «no es de tu alcance»: el mismo 404, sin confirmar que el id existe.
-  const detail = await loadRecordDetail(viewer, id)
+  const [detail, neighbors] = await Promise.all([
+    loadRecordDetail(viewer, id),
+    context ? loadRecordNeighbors(viewer, context.query, id) : Promise.resolve(null),
+  ])
   if (!detail) notFound()
+  const listHref = context ? recordListHref(context.listQuery, neighbors?.position) : "/mantencion/registros"
+  // «Marcar revisado y siguiente» sigue con el siguiente de ESA lista, calculado antes de marcar:
+  // en «Por revisar» el registro revisado sale de la lista, y el siguiente sigue siendo el mismo.
+  const queue = context
+    ? { nextHref: neighbors?.next ? recordDetailHref(neighbors.next.id, context.listQuery) : null, listHref }
+    : null
 
   const photos = detail.photos.map((photo, index) => ({
     id: photo.id,
@@ -51,7 +65,7 @@ export default async function RecordDetailPage({ params }: { params: Promise<{ i
         breadcrumb={[
           { label: "Control operacional", href: "/control-operacional" },
           { label: "Mantención" },
-          { label: "Registros", href: "/mantencion/registros" },
+          { label: "Registros", href: listHref },
           { label: folio },
         ]}
         actions={
@@ -65,22 +79,26 @@ export default async function RecordDetailPage({ params }: { params: Promise<{ i
             canReview={can(session, "mant:records:review")}
             canVoid={can(session, "mant:records:void")}
             canCorrect={can(session, "mant:app:use")}
+            queue={queue}
           />
         }
       />
 
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <RecordStatusBadges status={detail.status} review={detail.review} showPending />
-        {detail.correctedBy && (
-          <Link href={`/mantencion/registros/${detail.correctedBy.id}`} className="text-sm font-medium text-[var(--color-primary-ink)] underline-offset-2 hover:underline">
-            Corregido en {detail.correctedBy.folio ?? "otro registro"}
-          </Link>
-        )}
-        {detail.correctsRecord && (
-          <Link href={`/mantencion/registros/${detail.correctsRecord.id}`} className="text-sm font-medium text-[var(--color-primary-ink)] underline-offset-2 hover:underline">
-            Corrige a {detail.correctsRecord.folio ?? "un registro anulado"}
-          </Link>
-        )}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <RecordStatusBadges status={detail.status} review={detail.review} showPending />
+          {detail.correctedBy && (
+            <Link href={`/mantencion/registros/${detail.correctedBy.id}`} className="text-sm font-medium text-[var(--color-primary-ink)] underline-offset-2 hover:underline">
+              Corregido en {detail.correctedBy.folio ?? "otro registro"}
+            </Link>
+          )}
+          {detail.correctsRecord && (
+            <Link href={`/mantencion/registros/${detail.correctsRecord.id}`} className="text-sm font-medium text-[var(--color-primary-ink)] underline-offset-2 hover:underline">
+              Corrige a {detail.correctsRecord.folio ?? "un registro anulado"}
+            </Link>
+          )}
+        </div>
+        {context && <RecordListNav listHref={listHref} listQuery={context.listQuery} neighbors={neighbors} />}
       </div>
 
       {voided && detail.voided && (
