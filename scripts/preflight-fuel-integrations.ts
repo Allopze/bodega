@@ -47,18 +47,24 @@ export async function readFuelIntegrationsPreflight(sql: postgres.Sql): Promise<
     provider_performance_zero: number
   }[]>`
     WITH split_tct_identities AS (
-      -- El informe TCT es un agregado mensual POR PATENTE, así que la misma
-      -- cuenta, el mismo mes y la misma patente sólo pueden tener UNA
-      -- transacción. Dos identidades distintas ahí significan que la fila se
-      -- duplicó en el ledger, que es el síntoma de una identidad inestable.
+      -- La misma cuenta, el mismo instante (o mes, en la fila agregada) y la
+      -- misma patente sólo pueden tener UNA transacción. Dos identidades
+      -- distintas ahí significan que la fila se duplicó en el ledger, que es el
+      -- síntoma de una identidad inestable.
       --
       -- Reemplaza a un chequeo que agrupaba por (provider, source_account,
       -- identity_key), o sea exactamente las columnas del índice único
       -- fuel_provider_transactions_identity_unique: daba cero por construcción
       -- y no podía encontrar nada.
+      --
+      -- La copia ':correction-review' queda fuera: es, por diseño, una segunda
+      -- identidad de la misma carga mientras alguien revisa si Copec la
+      -- corrigió. Contarla detenía el deploy por cada corrección legítima (y el
+      -- 2026-10-30, por las que dejó el error de la guía reutilizada).
       SELECT source_account, occurred_at, regexp_replace(upper(trim(coalesce(source_plate, ''))), '[^A-Z0-9]', '', 'g') AS normalized_plate
       FROM fuel_provider_transactions
       WHERE provider = 'copec' AND source_account LIKE 'tct:%' AND source_plate IS NOT NULL
+        AND identity_key NOT LIKE '%:correction-review'
       GROUP BY 1, 2, 3
       HAVING COUNT(DISTINCT identity_key) > 1
     ),
@@ -115,9 +121,13 @@ export async function readFuelIntegrationsPreflight(sql: postgres.Sql): Promise<
       WHERE odometer IS NOT NULL AND odometer > 0
     ),
     detail_duplicate_keys AS (
-      SELECT source_ref FROM provider_detail
+      -- Por guía Y patente, como la identidad de fuel_meter_readings desde la
+      -- 0363: Copec reutiliza la guía entre vehículos (660150998: SRCJ-47 y
+      -- TBZW-37), y eso son dos cargas. Lo que queda es la misma carga en dos
+      -- lotes, típicamente un vehículo que cambió de faena con el mes abierto.
+      SELECT source_ref, plate_key FROM provider_detail
       WHERE source_ref IS NOT NULL
-      GROUP BY source_ref HAVING COUNT(*) > 1
+      GROUP BY source_ref, plate_key HAVING COUNT(*) > 1
     ),
     detail_plates_without_vehicle AS (
       SELECT DISTINCT d.plate_key
@@ -183,17 +193,23 @@ export async function readFuelIntegrationsPreflight(sql: postgres.Sql): Promise<
 /**
  * Contadores que describen una invariante, no una deuda: si alguno deja de ser
  * cero, el dato contradice algo que el código ya da por cierto (una identidad
- * estable por transacción, un proveedor conocido, un lote activo por cuenta,
- * una clave única en el detalle). Desplegar sobre eso es pedirle a una
- * migración o a un backfill que rompa a mitad de camino, así que el deploy se
- * detiene antes de tocar nada: el preflight corre después del pg_dump y antes
- * de migrar.
+ * estable por transacción, un proveedor conocido, un lote activo por cuenta).
+ * Desplegar sobre eso es pedirle a una migración o a un backfill que rompa a
+ * mitad de camino, así que el deploy se detiene antes de tocar nada: el
+ * preflight corre después del pg_dump y antes de migrar.
  *
  * Deliberadamente fuera de esta lista: la cola de pendientes del proveedor, los
  * rechazos abiertos, los enlaces sin conciliar, los odómetros regresivos y el
  * rendimiento en cero. Todo eso es trabajo operativo acumulado, real pero
  * inofensivo para el despliegue; bloquear por ahí sería dejar los deploys
  * rehenes de una digitación del proveedor.
+ *
+ * `detailDuplicateKeys` salió de aquí con la 0363. Cuidaba al backfill de
+ * lecturas, que con la identidad (fuente, guía) pisaba la lectura de otro
+ * vehículo; con la patente en la clave ya no puede. Lo que mide ahora —la misma
+ * carga en dos lotes porque el vehículo cambió de faena con el mes abierto— es
+ * deuda que el cierre del mes vacía (`emptyUnbackedProviderBatches`), no una
+ * invariante: bloquear dejaba el deploy rehén de cada traslado.
  */
 export const BLOCKING_FUEL_COUNTERS = [
   "splitTctIdentities",
@@ -202,7 +218,6 @@ export const BLOCKING_FUEL_COUNTERS = [
   "duplicateActiveBatches",
   "projectionPlateDuplicates",
   "batchDetailMismatches",
-  "detailDuplicateKeys",
 ] as const satisfies readonly (keyof FuelIntegrationsPreflight)[]
 
 /** Contadores que sí se informan, pero nunca detienen un despliegue. */
@@ -212,6 +227,7 @@ export const FUEL_DEBT_COUNTERS = [
   "unmatchedReconciliationLinks",
   "dteReconciliationMismatches",
   "detailWithoutOdometer",
+  "detailDuplicateKeys",
   "detailPlatesWithoutVehicle",
   "meterReadingsRegressive",
   "meterReadingsNoChange",

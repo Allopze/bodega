@@ -160,6 +160,7 @@ export const pgliteTestFiles = [
   "lib/__tests__/fuel-control-projection.test.ts",
   "lib/__tests__/fuel-control-review.test.ts",
   "lib/combustibles/__tests__/meter-readings-identity.test.ts",
+  "lib/combustibles/__tests__/preflight-fuel-integrations-pglite.test.ts",
   "lib/combustibles/control/queries/queries.test.ts",
   "lib/combustibles/control/queries/seals.test.ts",
   "lib/combustibles/control/queries/reconciliation.test.ts",

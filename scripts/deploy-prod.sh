@@ -408,10 +408,10 @@ run_timed "Diagnóstico de conciliación OC-factura (previo a migrar)" run_in_pr
 # resuelven a un equipo y cuántas lecturas regresivas arrastra el histórico. Es
 # la cifra con la que se contrasta el backfill de más abajo.
 # Este diagnóstico además corta: si el dato contradice una invariante
-# estructural (identidades partidas, proveedor desconocido, claves duplicadas en
-# el detalle) sale distinto de cero y el deploy se detiene acá, con el pg_dump ya
-# hecho y sin migrar nada. La deuda operativa —pendientes del proveedor,
-# odómetros regresivos— sólo se informa. `SKIP_FUEL_PREFLIGHT_GATE=1` fuerza el
+# estructural (identidades partidas, proveedor desconocido, lotes duplicados) sale
+# distinto de cero y el deploy se detiene acá, con el pg_dump ya hecho y sin
+# migrar nada. La deuda operativa —pendientes del proveedor, odómetros
+# regresivos, la misma carga en dos lotes tras un traslado— sólo se informa. `SKIP_FUEL_PREFLIGHT_GATE=1` fuerza el
 # paso, que es lo que se necesita cuando el deploy trae justamente el arreglo.
 run_timed "Diagnóstico de integraciones de combustible (previo a migrar)" \
   run_in_prod docker compose run --rm -e "SKIP_FUEL_PREFLIGHT_GATE=$SKIP_FUEL_PREFLIGHT_GATE" preflight-fuel-integrations
