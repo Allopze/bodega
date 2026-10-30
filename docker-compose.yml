@@ -74,9 +74,11 @@ services:
       - AUTH_URL=${AUTH_URL:?err}
       - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-}
       - PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=${PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH:-/usr/bin/chromium-browser}
-      # Credenciales Copec TCT/TAE (portal de informes)
+      # Credenciales Copec TCT/TAE (las mismas del portal; los web services usan además el RUT cliente)
       - COPEC_USERNAME=${COPEC_USERNAME:-}
       - COPEC_PASSWORD=${COPEC_PASSWORD:-}
+      - COPEC_CLIENT_RUT=${COPEC_CLIENT_RUT:-}
+      - COPEC_SOURCE=${COPEC_SOURCE:-}
       - COPEC_SYNC_START_DATE=${COPEC_SYNC_START_DATE:-2020-01-01}
       - COPEC_SYNC_IMPORTER_EMAIL=${COPEC_SYNC_IMPORTER_EMAIL:-}
       # Casilla IMAP de la cuenta de plataforma: Copec envía ahí el código de verificación del login
@@ -240,6 +242,8 @@ services:
       - PDTP_EVIDENCE_GC_DELETE=${PDTP_EVIDENCE_GC_DELETE:-}
       - COPEC_USERNAME=${COPEC_USERNAME:-}
       - COPEC_PASSWORD=${COPEC_PASSWORD:-}
+      - COPEC_CLIENT_RUT=${COPEC_CLIENT_RUT:-}
+      - COPEC_SOURCE=${COPEC_SOURCE:-}
       - COPEC_SYNC_START_DATE=${COPEC_SYNC_START_DATE:-2020-01-01}
       - COPEC_SYNC_IMPORTER_EMAIL=${COPEC_SYNC_IMPORTER_EMAIL:-}
       - COPEC_OTP_IMAP_HOST=${COPEC_OTP_IMAP_HOST:-}

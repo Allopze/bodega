@@ -1,11 +1,90 @@
 # Integraciones Copec TCT y TAE
 
+## Fuente: web services o portal
+
+Desde 2026-10-30 la sincronización puede leer de los **web services de
+consulta** de Copec (`lib/combustibles/copec-ws.ts`, documento «Web Service TCT
+v2.1»): sin navegador, sin código por correo y sin sesión. Basta definir
+`COPEC_CLIENT_RUT`; el portal queda de respaldo con `COPEC_SOURCE=portal`.
+
+| Variable | Para qué |
+| --- | --- |
+| `COPEC_USERNAME` / `COPEC_PASSWORD` | Las mismas del portal. Para los web services el usuario tiene que ser **ADMINISTRADOR CLIENTE**. |
+| `COPEC_CLIENT_RUT` | RUT de la empresa cliente (78.023.530-6 para Servicios Industriales Chome; «TRANSPORTES CHOME LTDA.» es un departamento dentro de esa cuenta). Con él la fuente pasa a ser `ws`. |
+| `COPEC_SOURCE` | `ws` o `portal` para forzarla. Sin valor: `ws` si hay RUT, `portal` si no. |
+
+| Canal y producto | Servicio |
+| --- | --- |
+| TCT y TAE Diésel | SOAP `ventas-api.copec.cl/WS_consTCTTAC/services/ConsultaTCTWSS`, `PRODUCTO` = `TCT` o `TAE` |
+| TCT y TAE BlueMax | REST `tarjetas-api.copec.cl/WS_ConsumosTCTBlue/…/consultaConsumosBlue`, credenciales en la query. El PDF dice `www.copec.cl`, que desde 2026-10-30 responde 308 hacia ese host; las redirecciones se siguen sólo dentro de `copec.cl` y por HTTPS. |
+
+Cada fila del web service se traduce a **las mismas columnas y valores** del
+Excel de «Descargar Detalle» (`copecWsItemToRecord`) y pasa por los mismos
+parsers. La identidad de una carga en el ledger es un hash de fecha, hora,
+patente, tarjeta, litros, precio, monto y estación (`copec-events.ts`): si la
+traducción difiriera, cada mes ya importado desde el Excel aparecería como
+«corrección pendiente de revisión». La estación se reconstruye del código SAP
+(`0000020017` → `2017-…`, ver `copecStationLabel`).
+
+Lo que la respuesta real hace y el PDF no dice (sondeo del 2026-10-30, ene-2026:
+505 cargas idénticas al Excel):
+
+- SOAP trae la guía en `CDENROGUIA` (con ceros a la izquierda) y **no** trae
+  `FACTURA`. Éxito = `ID_MENSAJE` "1", con «Cantidad de registros: N.», que se
+  cruza contra las filas recibidas.
+- `ID_MENSAJE` "0" es tanto «No hay registros para el filtro seleccionado.»
+  como un error («El rango máximo a consultar es de 31 días.»). Sólo el primero
+  es un mes vacío (`CopecUnavailableReason = "no_records"`).
+- BlueMax responde JSON bajo `detalle.item`, con guía y odómetro; su campo
+  `descuento` trae valores sin sentido y no se usa.
+- El mes en curso llega con unos 20 minutos de atraso, y se aceptan fechas de
+  fin futuras.
+- Sin probar: la respuesta con credenciales malas (podría bloquear la cuenta) y
+  los servicios de Restricciones, que escriben sobre las tarjetas y no se
+  integran.
+
+Defensas del cliente, para lo que no se pudo probar contra Copec:
+
+- **Un rechazo de acceso corta la sesión.** HTTP 401/403, o un mensaje de Copec
+  sobre usuario, clave o cliente (`CopecWsAccessFailure`), hace que el resto de
+  las consultas de la corrida fallen con el mismo motivo sin enviarse: con las
+  credenciales del portal, insistir por cada producto, canal y mes podría
+  bloquear la cuenta.
+- **«No hay registros» sólo cierra un mes si la sesión ya leyó cargas** de este
+  cliente. Antes de eso queda como `no_results` (desconocido): podría ser la
+  respuesta de Copec a un RUT o usuario equivocado, y `legitimate_empty` no se
+  vuelve a pedir nunca.
+- Un `soap:Fault` es un rechazo con su motivo aunque llegue con HTTP 500, y no
+  se reintenta. Un 5xx sin Fault se reintenta una vez.
+- Una fecha u hora con otra forma que `YYYY-MM-DD` / `HH:MM:SS` falla el
+  producto (`invalid_file`) en vez de fechar la carga a medianoche. Una guía
+  toda en ceros es «sin guía».
+- El texto que devuelve Copec se guarda y se muestra con usuario y clave
+  tachados, por si alguna vez los repite.
+- `COPEC_SOURCE` con un valor que no sea `ws` ni `portal` detiene la corrida.
+
+**Migración 0363 (lecturas de odómetro).** La identidad de `fuel_meter_readings`
+pasó de `(source, source_ref)` a `(source, source_ref, plate)`: Copec reutiliza
+la guía entre vehículos (ene-2026: 660150998 para SRCJ-47 y TBZW-37, 660297420
+para SRCJ-47 y DZJY-31). Con la clave vieja, el período entero caía con
+`21000` en cuanto los dos vehículos estaban en la flota, por la fuente que
+fuera, y entre meses la lectura de uno pisaba la del otro. Durante el deploy,
+entre `migrate` y el reemplazo del contenedor, el código viejo fallaría con
+`42P10` si alguna sincronización guardara lecturas justo entonces; la corrida
+siguiente lo repone. Las lecturas que la clave vieja pisó no vuelven solas:
+`npm run db:backfill-fuel-meter-readings` las reconstruye desde `raw_row`.
+
+La evidencia que se archiva es la respuesta tal cual (`.xml` o `.json`, cifrada
+como el Excel) y la cobertura registra `parserVersion = copec-ws-v1`. Las
+secciones de abajo sobre OTP, sesión única y contextos de navegador sólo aplican
+con `COPEC_SOURCE=portal`.
+
 ## Contrato operativo
 
 Copec se consulta por período mensual y producto. Los dos canales se descargan
-con la opción "Descargar Detalle" del portal, así que el Excel trae **una fila
-por transacción**: producto, tarjeta, patente, fecha y hora, estación de
-servicio, guía de despacho, volumen, monto y **odómetro**.
+con la opción "Descargar Detalle" del portal, o con los web services, y en los
+dos casos llega **una fila por transacción**: producto, tarjeta, patente, fecha
+y hora, estación de servicio, guía de despacho, volumen, monto y **odómetro**.
 
 TCT se AGREGA por patente al proyectarlo (`fuel_consumption_records` guarda un
 consolidado mensual, y el detalle crudo queda en `raw_row`); la agregación es
@@ -19,7 +98,8 @@ también acá desde 2026-08-28 (las filas cargadas antes conservan esas columnas
 hasta que su período se refresque; ver la nota de remediación).
 
 El odómetro de cada transacción se persiste aparte, en `fuel_meter_readings`
-(identidad: guía de despacho), y de ahí salen el rendimiento calculado y las
+(identidad: fuente, guía de despacho y patente, porque Copec reutiliza la guía
+entre vehículos), y de ahí salen el rendimiento calculado y las
 reglas de medidor regresivo y de salto implausible. Esa columna guarda
 **instantes UTC** para las tres fuentes (`copec_tct`, `aramco`, `gps_onway`):
 Aramco entrega hora de pared chilena y se convierte al importar. El histórico se reconstruye
@@ -115,7 +195,8 @@ corrida, con litros/monto cuando la fila los trae.
   escrita y el importador como responsable. Una búsqueda que no mostró
   resultados (`no_results`) no prueba nada y sigue desconocida. Antes ambos
   casos quedaban «desconocido» y el mes no avanzaba hasta confirmarlo a mano,
-  todos los meses (TAE BlueMax casi nunca tiene cargas).
+  todos los meses (TAE BlueMax casi nunca tiene cargas). Con los web services,
+  «No hay registros…» (`no_records`) pesa igual que el producto deshabilitado.
 - **Asignaciones con fecha.** Un mes cerrado sólo se atribuye con una
   asignación de `fuel_provider_mappings` vigente para ese mes; la faena es la
   guardada en la asignación, no la del vehículo. Por eso trasladar un vehículo

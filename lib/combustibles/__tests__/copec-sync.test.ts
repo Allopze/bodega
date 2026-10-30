@@ -10,7 +10,9 @@ const mockConsumptionFindMany = vi.fn()
 const mockDownloadCopecReports = vi.fn()
 const mockPortalSessions = vi.fn()
 const mockParseConsumptionExcel = vi.fn()
+const mockParseCopecDetail = vi.fn()
 const mockParseTaeReceiptExcel = vi.fn()
+const mockParseTaeReceiptRecords = vi.fn()
 const mockImportTaeReceipts = vi.fn()
 const mockSaveState = vi.fn()
 const mockTransaction = vi.fn()
@@ -113,22 +115,26 @@ vi.mock("@/lib/combustibles/fuel-provider-ledger", () => ({
   recordFuelProviderValidation: vi.fn().mockResolvedValue({ accepted: 1, rejected: 0, pending: 0 }),
   finishFuelProviderSyncRun: vi.fn().mockResolvedValue(undefined),
 }))
-vi.mock("@/lib/combustibles/copec-reports", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/combustibles/copec-reports")>()),
-  // Una sesión del portal por corrida; cada `download` es lo que antes era una
-  // llamada a `downloadCopecReports`, así que las aserciones siguen igual.
-  withCopecPortalSession: async (run: (session: unknown) => Promise<unknown>) => {
+vi.mock("@/lib/combustibles/copec-ws", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/combustibles/copec-ws")>()),
+  // Una sesión Copec por corrida, sea web service o portal; cada `download` es
+  // lo que antes era una llamada a `downloadCopecReports`, así que las
+  // aserciones siguen igual. Sin esto, un `COPEC_CLIENT_RUT` en el entorno
+  // haría que la prueba consultara a Copec de verdad.
+  withCopecSourceSession: async (run: (session: unknown) => Promise<unknown>) => {
     mockPortalSessions()
     return run({ download: (...args: unknown[]) => mockDownloadCopecReports(...args) })
   },
 }))
 vi.mock("@/lib/combustibles/consumption-import", () => ({
   parseConsumptionExcel: (...args: unknown[]) => mockParseConsumptionExcel(...args),
+  parseCopecDetail: (...args: unknown[]) => mockParseCopecDetail(...args),
 }))
 // El canal TAE (recepciones) tiene sus propias pruebas; aquí se aísla para que
 // estos casos sigan midiendo solo la importación TCT.
 vi.mock("@/lib/combustibles/tae-receipt-import", () => ({
   parseTaeReceiptExcel: (...args: unknown[]) => mockParseTaeReceiptExcel(...args),
+  parseTaeReceiptRecords: (...args: unknown[]) => mockParseTaeReceiptRecords(...args),
 }))
 vi.mock("@/lib/combustibles/tae-receipts", async (importOriginal) => ({
   // La clase de error va real: la sincronización la distingue con `instanceof`.
@@ -742,6 +748,63 @@ describe("syncCopecReportPeriod", () => {
       expect(august.length).toBeGreaterThan(0)
       expect(august.every((observation) => observation.status === "unknown")).toBe(true)
     })
+
+    it("closes a CLOSED month as empty when the web service answers «No hay registros»", async () => {
+      // Es la misma respuesta de Copec que el producto deshabilitado del portal,
+      // dicha en palabras. Un error con `ID_MENSAJE` 0 (rango excedido) llega
+      // como falla, no como `no_records`: eso lo cubre `copec-ws.test.ts`.
+      mockSettingFindFirst.mockResolvedValue({ value: JSON.stringify({ cursor: "2026-06-01", lastRunAt: null, pending: [] }) })
+      vi.stubEnv("COPEC_SYNC_START_DATE", "2026-06-01")
+      mockBatchFindFirst.mockResolvedValue(undefined)
+      mockDownloadCopecReports.mockResolvedValue([
+        { product: "diesel", unavailable: true, reason: "no_records" },
+        { product: "bluemax", unavailable: true, reason: "no_records" },
+      ])
+      mockRecordCopecCoverage.mockClear()
+      await withToday("2026-08-22T12:00:00.000Z", async () => {
+        await expect(syncCopecReports({ importerId: "operador-1" })).resolves.toMatchObject({ imported: 0 })
+      })
+      const june = mockRecordCopecCoverage.mock.calls.map(([observation]) => observation).filter((observation) => observation.month === "2026-06-01")
+      expect(june).toHaveLength(4)
+      expect(june).toEqual(Array.from({ length: 4 }, () => expect.objectContaining({
+        status: "legitimate_empty",
+        evidenceActorUserId: "operador-1",
+        evidence: expect.stringMatching(/web service de Copec respondió «No hay registros.*en 2026-06/),
+      })))
+      // El mes en curso sigue abierto: todavía pueden llegar cargas.
+      const august = mockRecordCopecCoverage.mock.calls.map(([observation]) => observation).filter((observation) => observation.month === "2026-08-01")
+      expect(august.length).toBeGreaterThan(0)
+      expect(august.every((observation) => observation.status === "unknown")).toBe(true)
+    })
+  })
+
+  it("parsea las filas del web service sin leer el buffer y archiva la respuesta tal cual", async () => {
+    const { archiveCopecEvidence } = await import("../copec-evidence")
+    const records = [{ __row: 1, Patente: "AB-CD12", Volumen: 54.15 }]
+    const taeRecords = [{ __row: 1, Tarjeta: "1-000000-00001-9-8" }]
+    mockDownloadCopecReports
+      .mockResolvedValueOnce([
+        { product: "diesel", unavailable: false, report: { buffer: Buffer.from("<soap/>"), fileName: "copec-ws-tct-diesel-2026-02.xml", contentType: "text/xml", records } },
+        { product: "bluemax", unavailable: true, reason: "no_records" },
+      ])
+      .mockResolvedValueOnce([
+        { product: "diesel", unavailable: false, report: { buffer: Buffer.from("<soap/>"), fileName: "copec-ws-tae-diesel-2026-02.xml", contentType: "text/xml", records: taeRecords } },
+        { product: "bluemax", unavailable: true, reason: "no_records" },
+      ])
+    mockParseCopecDetail.mockReturnValue({ rows: [{ rowIndex: 1, patente: "AB-CD12", numeroTarjetas: 1, numeroTransacciones: 1, cantidadUnidad: 54.15, monto: 52142, rendimientoPromedio: 0, rawRow: {} }], errors: [], duplicates: [], detail: [], transactions: [] })
+    mockParseTaeReceiptRecords.mockReturnValue({ rows: [], errors: [] })
+    mockVehiclesFindMany.mockResolvedValue([{ id: "v-1", plate: "ABCD12", worksiteId: "W1" }])
+
+    await syncCopecReportPeriod({ from: "2026-02-01", to: "2026-02-28" }, "operator-1")
+
+    expect(mockParseConsumptionExcel).not.toHaveBeenCalled()
+    expect(mockParseCopecDetail).toHaveBeenCalledWith(records, { expectedProduct: "diesel", period: { from: "2026-02-01", to: "2026-02-28" } })
+    expect(mockParseTaeReceiptExcel).not.toHaveBeenCalled()
+    expect(mockParseTaeReceiptRecords).toHaveBeenCalledWith(taeRecords, { from: "2026-02-01", to: "2026-02-28", expectedProduct: "diesel" })
+    expect(vi.mocked(archiveCopecEvidence).mock.calls.map(([, , format]) => format)).toEqual(["xml", "xml"])
+    const versions = mockRecordCopecCoverage.mock.calls.map(([observation]) => (observation as { parserVersion?: string }).parserVersion).filter(Boolean)
+    expect(versions.length).toBeGreaterThan(0)
+    expect(new Set(versions)).toEqual(new Set(["copec-ws-v1"]))
   })
 
   // Regresión: el guard de "import ajeno" excluía SÓLO las fuentes de Copec, así

@@ -51,6 +51,7 @@ const status = {
   pending: 0,
   coverageMonth: "2025-01-01",
   coverage: [],
+  source: "ws" as const,
 }
 const startOptions = { currentStart: "2025-01-01", minimumStart: "2020-01-01", maximumStart: "2026-10-01", latestImportedUntil: null }
 
@@ -77,6 +78,21 @@ describe("aviso de cargas pendientes", () => {
     render(<CopecSyncStatus initialStatus={{ ...status, pending: 566, lastRunMonth: "2025-01-01" }} initialStartOptions={startOptions} />)
     expect(screen.getByText(/566 carga\(s\) de enero de 2025 quedaron pendientes/)).toBeInTheDocument()
     expect(screen.queryByText(/patente\(s\) sin vehículo/)).not.toBeInTheDocument()
+  })
+})
+
+describe("descripción de la fuente", () => {
+  afterEach(() => cleanup())
+
+  it("con los web services no describe el recorrido del portal", () => {
+    render(<CopecSyncStatus initialStatus={status} initialStartOptions={startOptions} />)
+    expect(screen.getByText(/consulta los web services de Copec/)).toBeInTheDocument()
+    expect(screen.queryByText(/Informes de Consumos/)).not.toBeInTheDocument()
+  })
+
+  it("con el portal de respaldo sigue describiendo su recorrido", () => {
+    render(<CopecSyncStatus initialStatus={{ ...status, source: "portal" }} initialStartOptions={startOptions} />)
+    expect(screen.getByText(/Informes de Consumos/)).toBeInTheDocument()
   })
 })
 

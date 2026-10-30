@@ -258,7 +258,9 @@ export function CopecSyncStatus({ initialStatus, initialStartOptions }: { initia
             <ArrowsClockwise className="h-4 w-4 text-[var(--color-primary)]" />
             <div>
               <p className="text-sm font-semibold text-[var(--color-text)]">Copec TCT · detalle mensual automático</p>
-              <p className="max-w-[75ch] text-xs text-[var(--color-text-muted)]">Cada corrida entra a Informes → Informes de Consumos, busca Diésel y BlueMax por separado y descarga el Detalle en Excel. Incluye el mes en curso, que se recalcula en cada corrida. TAE se consulta en el mismo ciclo y sus recepciones quedan conciliables con el estanque.</p>
+              <p className="max-w-[75ch] text-xs text-[var(--color-text-muted)]">{status.source === "ws"
+                ? "Cada corrida consulta los web services de Copec y trae el detalle de Diésel y de BlueMax, carga por carga. Incluye el mes en curso, que se recalcula en cada corrida. TAE se consulta en el mismo ciclo y sus recepciones quedan conciliables con el estanque."
+                : "Cada corrida entra a Informes → Informes de Consumos, busca Diésel y BlueMax por separado y descarga el Detalle en Excel. Incluye el mes en curso, que se recalcula en cada corrida. TAE se consulta en el mismo ciclo y sus recepciones quedan conciliables con el estanque."}</p>
             </div>
           </div>
 
