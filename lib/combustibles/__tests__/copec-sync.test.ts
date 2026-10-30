@@ -699,17 +699,48 @@ describe("syncCopecReportPeriod", () => {
 
     it("still fails loudly when a CLOSED month delivers no file", async () => {
       // Ese caso sí indica portal cambiado o credenciales rotas, y enmascararlo
-      // fue lo que dejó la sync "al día" con la tabla vacía.
+      // fue lo que dejó la sync "al día" con la tabla vacía. Una búsqueda sin
+      // resultados (`no_results`) no prueba que el mes esté vacío.
       mockSettingFindFirst.mockResolvedValue({ value: JSON.stringify({ cursor: "2026-06-01", lastRunAt: null, pending: [] }) })
       vi.stubEnv("COPEC_SYNC_START_DATE", "2026-06-01")
       mockBatchFindFirst.mockResolvedValue(undefined)
       mockDownloadCopecReports.mockResolvedValue([
-        { product: "diesel", unavailable: true },
-        { product: "bluemax", unavailable: true },
+        { product: "diesel", unavailable: true, reason: "no_results" },
+        { product: "bluemax", unavailable: true, reason: "no_results" },
       ])
       await withToday("2026-08-22T12:00:00.000Z", async () => {
         await expect(syncCopecReports()).rejects.toThrow(/no entregó ningún archivo/)
       })
+    })
+
+    it("closes a CLOSED month as empty when the portal disables the product, with evidence and the importer as responsible", async () => {
+      // El portal deshabilita el producto que la cuenta no tuvo en el mes. Antes
+      // quedaba «desconocido» y el mes no avanzaba hasta confirmarlo a mano,
+      // todos los meses: TAE BlueMax casi nunca tiene cargas.
+      mockSettingFindFirst.mockResolvedValue({ value: JSON.stringify({ cursor: "2026-06-01", lastRunAt: null, pending: [] }) })
+      vi.stubEnv("COPEC_SYNC_START_DATE", "2026-06-01")
+      mockBatchFindFirst.mockResolvedValue(undefined)
+      mockDownloadCopecReports.mockResolvedValue([
+        { product: "diesel", unavailable: true, reason: "product_disabled" },
+        { product: "bluemax", unavailable: true, reason: "product_disabled" },
+      ])
+      mockRecordCopecCoverage.mockClear()
+      await withToday("2026-08-22T12:00:00.000Z", async () => {
+        await expect(syncCopecReports({ importerId: "operador-1" })).resolves.toMatchObject({ imported: 0 })
+      })
+      const observations = mockRecordCopecCoverage.mock.calls.map(([observation]) => observation)
+      const june = observations.filter((observation) => observation.month === "2026-06-01")
+      expect(june).toHaveLength(4)
+      expect(june).toEqual(Array.from({ length: 4 }, () => expect.objectContaining({
+        status: "legitimate_empty",
+        sourceAvailability: "available",
+        evidenceActorUserId: "operador-1",
+        evidence: expect.stringMatching(/deshabilitado para 2026-06/),
+      })))
+      // El mes en curso no se cierra así: el producto puede aparecer más adelante.
+      const august = observations.filter((observation) => observation.month === "2026-08-01")
+      expect(august.length).toBeGreaterThan(0)
+      expect(august.every((observation) => observation.status === "unknown")).toBe(true)
     })
   })
 
@@ -780,6 +811,36 @@ describe("syncCopecReportPeriod", () => {
     expect(mockImportTaeReceipts).toHaveBeenCalledOnce()
     const imported = mockImportTaeReceipts.mock.calls[0]![0] as Array<{ documentNumber: string }>
     expect(imported.map((row) => row.documentNumber)).toEqual(["G-1"])
+  })
+
+  // 2026-10-30, producción: con las vasijas ya creadas, ninguna recepción TAE se
+  // aceptaba en el ledger. El validador entrega la tarjeta en forma compacta
+  // (`plateMatchKey`: «12422690023091») y el mapa de estanques usaba la tarjeta
+  // tal como la guardó la vasija («1-242269-00230-9-1»): nunca calzaban, la
+  // cobertura TAE quedaba incompleta y el barrido no pasaba del mes.
+  it("resuelve la vasija de una recepción TAE aunque la tarjeta llegue compacta del validador", async () => {
+    const { recordFuelProviderValidation } = await import("../fuel-provider-ledger")
+    vi.mocked(recordFuelProviderValidation).mockClear()
+    mockStorageLocationsFindMany.mockResolvedValue([{ id: "loc-cholguan", worksiteId: "W-CHO", productId: "fuel-diesel", taeCardNumber: "1-242269-00230-9-1" }])
+    mockDownloadCopecReports
+      .mockResolvedValueOnce([{ product: "diesel", unavailable: true }, { product: "bluemax", unavailable: true }])
+      .mockResolvedValueOnce([
+        { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "tae-diesel.xlsx" } },
+        { product: "bluemax", unavailable: true },
+      ])
+    mockParseTaeReceiptExcel.mockResolvedValue({ rows: [{
+      rowIndex: 1, documentNumber: "G-9", cardNumber: "1-242269-00230-9-1", productId: "fuel-diesel",
+      sourceDate: "2026-02-10", occurredAt: "2026-02-10T13:00:00.000Z",
+      liters: 500, unitPrice: 1000, amount: 500_000, assignment: "CHOLGUAN", station: "Copec Ruta 5", rawRow: {},
+    }], errors: [] })
+
+    await syncCopecReportPeriod({ from: "2026-02-01", to: "2026-02-28" }, "operator-1")
+
+    const taeCall = vi.mocked(recordFuelProviderValidation).mock.calls.find(([, validation]) =>
+      (validation as { accepted: Array<{ accountKey: string }> }).accepted.some((row) => row.accountKey === "tae:diesel"))
+    expect(taeCall).toBeDefined()
+    const resolve = taeCall![2] as (input: { plate: string; product: string }) => { storageLocationId?: string; worksiteId?: string }
+    expect(resolve({ plate: "12422690023091", product: "diesel" })).toMatchObject({ storageLocationId: "loc-cholguan", worksiteId: "W-CHO" })
   })
 
   describe("revisión histórica pedida a mano", () => {

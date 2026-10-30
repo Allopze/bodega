@@ -33,6 +33,11 @@
  *   en Pacífico) y FBKS-63, minibús en el inventario, pasa al tipo nuevo
  *   «Minibús» (se había dado de alta como camioneta). El plan ya los declara
  *   así; el paso de correcciones arregla lo que dejó la corrida anterior.
+ * - **Tercera tanda, 2026-10-30.** Las 16 patentes que cargaron en enero de 2026
+ *   y no estaban en el padrón, con los datos del inventario y las mismas reglas
+ *   de faena (SANTA FE → Santa Fe - Grúas, PACIFICO → Pacífico). JTBP-17 es una
+ *   casa rodante: se crea el tipo «Casa rodante», y queda sin código interno
+ *   porque el inventario no le asigna uno.
  *
  * Cada acción comprueba el estado esperado y se salta si no coincide, así que
  * reejecutar es seguro. Todo queda en `audit_log` a nombre de `--actor-email`.
@@ -76,12 +81,14 @@ const REACTIVATED_WORKSITES = [
 /** Tipos que el catálogo no tenía. Mismos campos y validación que Administración › Tipos de equipo. */
 const NEW_EQUIPMENT_TYPES = [
   { name: "Minibús", category: "light", defaultMeterType: "odometer", defaultPerformanceUnit: "km_per_liter", sortOrder: 45, description: "Vehículo de pasajeros de hasta 15 asientos (p. ej. Peugeot Expert)." },
+  { name: "Casa rodante", category: "truck", defaultMeterType: "odometer", defaultPerformanceUnit: "km_per_liter", sortOrder: 35, description: "Vehículo habitable sobre chasis de camión (p. ej. Mercedes-Benz Vario)." },
 ] as const
 
 interface VehiclePlan {
-  code: string
+  /** Código interno; `null` si el inventario no le asigna uno. */
+  code: string | null
   plate: string
-  type: "camion" | "tracto" | "camioneta" | "minibus"
+  type: "camion" | "tracto" | "camioneta" | "minibus" | "casa-rodante"
   brand: string
   model: string
   year: number | null
@@ -89,43 +96,62 @@ interface VehiclePlan {
   worksite: string
   /** Copec registró cargas de BlueMax con su tarjeta. */
   bluemax: boolean
+  /** De dónde salen la marca, el modelo y el año. */
+  source: "semilla" | "inventario"
 }
 
 /** Desde `db/seed/mantencion-seed.json`, con la faena ya traducida. */
 const VEHICLES: VehiclePlan[] = [
-  { code: "KA-135", plate: "RBYD-98", type: "camion", brand: "Freightliner", model: "M2 106", year: 2021, worksite: "Cholguan - Arauco", bluemax: true },
-  { code: "KA-137", plate: "RXGR-19", type: "camion", brand: "Sinotruk", model: "T5G-340 MEC", year: 2022, worksite: "Cholguan - Arauco", bluemax: true },
-  { code: "KA-140", plate: "SGCP-84", type: "camion", brand: "Scania", model: "P 410 B", year: 2023, worksite: "Biodiversa", bluemax: true },
-  { code: "KA-141", plate: "SGCP-77", type: "camion", brand: "Scania", model: "P 410 B", year: 2023, worksite: "Biodiversa", bluemax: true },
-  { code: "KA-142", plate: "SJFC-34", type: "camion", brand: "MAN", model: "TGS 33.400 BL 6X4", year: 2023, worksite: "Biodiversa", bluemax: true },
-  { code: "KA-143", plate: "SJFC-66", type: "camion", brand: "MAN", model: "TGS 33.400 BL 6X4", year: 2023, worksite: "Biodiversa", bluemax: true },
-  { code: "KCH-133", plate: "SRCJ-47", type: "tracto", brand: "MAN", model: "TGS 33.400 BL 6X4", year: 2023, worksite: "Biodiversa", bluemax: true },
-  { code: "KCH-134", plate: "SRCJ-44", type: "tracto", brand: "MAN", model: "TGS 33.400 BL 6X4", year: 2023, worksite: "Biodiversa", bluemax: false },
-  { code: "KCH-135", plate: "SRCJ-42", type: "tracto", brand: "MAN", model: "TGS 33.400 BL 6X4", year: 2023, worksite: "Biodiversa", bluemax: true },
-  { code: "KCH-136", plate: "SRCJ-39", type: "tracto", brand: "MAN", model: "TGS 33.400 BL 6X4", year: 2023, worksite: "Biodiversa", bluemax: true },
-  { code: "KA-144", plate: "RFJR-63", type: "camion", brand: "Chevrolet", model: "NPR 816 AMT", year: 2021, worksite: "Fábrica de Puertas", bluemax: false },
-  { code: "KA-85", plate: "WK-5867", type: "camion", brand: "Mercedes", model: "1720 K 36", year: 2007, worksite: "Flor del Laja", bluemax: false },
-  { code: "KA-134", plate: "PSKL-61", type: "camion", brand: "Freightliner", model: "M2 106", year: 2021, worksite: "Santa Fe - Grúas", bluemax: false },
-  { code: "KA-136", plate: "RXGR-18", type: "camion", brand: "Sinotruk", model: "T5G-340 MEC", year: 2022, worksite: "Santa Fe - Grúas", bluemax: true },
-  { code: "KCH-126", plate: "KRJC-75", type: "tracto", brand: "MAN", model: "TGS", year: 2018, worksite: "Santa Fe - Grúas", bluemax: true },
-  { code: "KCH-129", plate: "KXZD-19", type: "tracto", brand: "Mercedes", model: "Actros 2641", year: 2018, worksite: "Santa Fe - Grúas", bluemax: false },
-  { code: "KCH-130", plate: "KXZD-20", type: "tracto", brand: "Mercedes", model: "Actros 2018", year: 2018, worksite: "Santa Fe - Grúas", bluemax: false },
-  { code: "KCH-131", plate: "PFVP-52", type: "tracto", brand: "Mercedes", model: "Actros 2641", year: 2020, worksite: "Santa Fe - Grúas", bluemax: false },
+  { code: "KA-135", plate: "RBYD-98", type: "camion", brand: "Freightliner", model: "M2 106", year: 2021, worksite: "Cholguan - Arauco", bluemax: true, source: "semilla" },
+  { code: "KA-137", plate: "RXGR-19", type: "camion", brand: "Sinotruk", model: "T5G-340 MEC", year: 2022, worksite: "Cholguan - Arauco", bluemax: true, source: "semilla" },
+  { code: "KA-140", plate: "SGCP-84", type: "camion", brand: "Scania", model: "P 410 B", year: 2023, worksite: "Biodiversa", bluemax: true, source: "semilla" },
+  { code: "KA-141", plate: "SGCP-77", type: "camion", brand: "Scania", model: "P 410 B", year: 2023, worksite: "Biodiversa", bluemax: true, source: "semilla" },
+  { code: "KA-142", plate: "SJFC-34", type: "camion", brand: "MAN", model: "TGS 33.400 BL 6X4", year: 2023, worksite: "Biodiversa", bluemax: true, source: "semilla" },
+  { code: "KA-143", plate: "SJFC-66", type: "camion", brand: "MAN", model: "TGS 33.400 BL 6X4", year: 2023, worksite: "Biodiversa", bluemax: true, source: "semilla" },
+  { code: "KCH-133", plate: "SRCJ-47", type: "tracto", brand: "MAN", model: "TGS 33.400 BL 6X4", year: 2023, worksite: "Biodiversa", bluemax: true, source: "semilla" },
+  { code: "KCH-134", plate: "SRCJ-44", type: "tracto", brand: "MAN", model: "TGS 33.400 BL 6X4", year: 2023, worksite: "Biodiversa", bluemax: false, source: "semilla" },
+  { code: "KCH-135", plate: "SRCJ-42", type: "tracto", brand: "MAN", model: "TGS 33.400 BL 6X4", year: 2023, worksite: "Biodiversa", bluemax: true, source: "semilla" },
+  { code: "KCH-136", plate: "SRCJ-39", type: "tracto", brand: "MAN", model: "TGS 33.400 BL 6X4", year: 2023, worksite: "Biodiversa", bluemax: true, source: "semilla" },
+  { code: "KA-144", plate: "RFJR-63", type: "camion", brand: "Chevrolet", model: "NPR 816 AMT", year: 2021, worksite: "Fábrica de Puertas", bluemax: false, source: "semilla" },
+  { code: "KA-85", plate: "WK-5867", type: "camion", brand: "Mercedes", model: "1720 K 36", year: 2007, worksite: "Flor del Laja", bluemax: false, source: "semilla" },
+  { code: "KA-134", plate: "PSKL-61", type: "camion", brand: "Freightliner", model: "M2 106", year: 2021, worksite: "Santa Fe - Grúas", bluemax: false, source: "semilla" },
+  { code: "KA-136", plate: "RXGR-18", type: "camion", brand: "Sinotruk", model: "T5G-340 MEC", year: 2022, worksite: "Santa Fe - Grúas", bluemax: true, source: "semilla" },
+  { code: "KCH-126", plate: "KRJC-75", type: "tracto", brand: "MAN", model: "TGS", year: 2018, worksite: "Santa Fe - Grúas", bluemax: true, source: "semilla" },
+  { code: "KCH-129", plate: "KXZD-19", type: "tracto", brand: "Mercedes", model: "Actros 2641", year: 2018, worksite: "Santa Fe - Grúas", bluemax: false, source: "semilla" },
+  { code: "KCH-130", plate: "KXZD-20", type: "tracto", brand: "Mercedes", model: "Actros 2018", year: 2018, worksite: "Santa Fe - Grúas", bluemax: false, source: "semilla" },
+  { code: "KCH-131", plate: "PFVP-52", type: "tracto", brand: "Mercedes", model: "Actros 2641", year: 2020, worksite: "Santa Fe - Grúas", bluemax: false, source: "semilla" },
   // Segunda tanda: inventario de equipos del 21-08-26 + faena decidida por el usuario.
-  { code: "KCH-119", plate: "FZFS-26", type: "tracto", brand: "Freightliner", model: "CL-120", year: 2014, worksite: "Pacifico", bluemax: false },
-  { code: "CA-19", plate: "JGZT-92", type: "camioneta", brand: "Mahindra", model: "Pick Up", year: 2017, worksite: "Pacifico", bluemax: false },
-  { code: "CA-96", plate: "RWYH-93", type: "camioneta", brand: "RAM", model: "Van 700 City 1,2", year: 2022, worksite: "Oficina Central", bluemax: false },
-  { code: "CA-100", plate: "VPTR-69", type: "camioneta", brand: "Maxus", model: "T60 4X2 DX", year: 2025, worksite: "Oficina Central", bluemax: true },
-  { code: "CA-86", plate: "KLHH-93", type: "camioneta", brand: "Toyota", model: "Hi-Lux", year: 2018, worksite: "Oficina Central", bluemax: false },
-  { code: "CA-88", plate: "KXWD-95", type: "camioneta", brand: "Mercedes-Benz", model: "X 250D 4x4 2.3", year: 2019, worksite: "Oficina Central", bluemax: false },
-  { code: "CA-98", plate: "SZGB-72", type: "camioneta", brand: "Maxus", model: "T60 4X2 DX", year: 2025, worksite: "Oficina Central", bluemax: false },
-  { code: "CA-99", plate: "VHVL-38", type: "camioneta", brand: "Chevrolet", model: "Silverado 3.0 TD 4X4", year: 2025, worksite: "Oficina Central", bluemax: false },
-  { code: "CA-91", plate: "SBRP-15", type: "camioneta", brand: "Maxus", model: "T60 GL 2.8", year: 2022, worksite: "Biodiversa", bluemax: false },
-  { code: "CA-92", plate: "STSF-58", type: "camioneta", brand: "Mahindra", model: "Refresh SC 4X2 MT", year: 2023, worksite: "Santa Fe - Grúas", bluemax: false },
-  { code: "CA-97", plate: "TDSJ-73", type: "camioneta", brand: "Maxus", model: "T60 4X2 DX", year: 2024, worksite: "Santa Fe - Grúas", bluemax: false },
-  { code: "CA-95", plate: "FBKS-63", type: "minibus", brand: "Peugeot", model: "Expert Confort HDi Full 1.6", year: 2012, worksite: "Fábrica de Puertas", bluemax: false },
-  { code: "CA-93", plate: "TBZW-37", type: "camioneta", brand: "Mazda", model: "BT-50 4WD 3.0", year: null, worksite: "Fábrica de Puertas", bluemax: false },
-  { code: "CA-94", plate: "TFJX-48", type: "camioneta", brand: "Toyota", model: "Hilux 4X4 2.8 AUT", year: 2024, worksite: "Flor del Laja", bluemax: false },
+  { code: "KCH-119", plate: "FZFS-26", type: "tracto", brand: "Freightliner", model: "CL-120", year: 2014, worksite: "Pacifico", bluemax: false, source: "inventario" },
+  { code: "CA-19", plate: "JGZT-92", type: "camioneta", brand: "Mahindra", model: "Pick Up", year: 2017, worksite: "Pacifico", bluemax: false, source: "inventario" },
+  { code: "CA-96", plate: "RWYH-93", type: "camioneta", brand: "RAM", model: "Van 700 City 1,2", year: 2022, worksite: "Oficina Central", bluemax: false, source: "inventario" },
+  { code: "CA-100", plate: "VPTR-69", type: "camioneta", brand: "Maxus", model: "T60 4X2 DX", year: 2025, worksite: "Oficina Central", bluemax: true, source: "inventario" },
+  { code: "CA-86", plate: "KLHH-93", type: "camioneta", brand: "Toyota", model: "Hi-Lux", year: 2018, worksite: "Oficina Central", bluemax: false, source: "inventario" },
+  { code: "CA-88", plate: "KXWD-95", type: "camioneta", brand: "Mercedes-Benz", model: "X 250D 4x4 2.3", year: 2019, worksite: "Oficina Central", bluemax: false, source: "inventario" },
+  { code: "CA-98", plate: "SZGB-72", type: "camioneta", brand: "Maxus", model: "T60 4X2 DX", year: 2025, worksite: "Oficina Central", bluemax: false, source: "inventario" },
+  { code: "CA-99", plate: "VHVL-38", type: "camioneta", brand: "Chevrolet", model: "Silverado 3.0 TD 4X4", year: 2025, worksite: "Oficina Central", bluemax: false, source: "inventario" },
+  { code: "CA-91", plate: "SBRP-15", type: "camioneta", brand: "Maxus", model: "T60 GL 2.8", year: 2022, worksite: "Biodiversa", bluemax: false, source: "inventario" },
+  { code: "CA-92", plate: "STSF-58", type: "camioneta", brand: "Mahindra", model: "Refresh SC 4X2 MT", year: 2023, worksite: "Santa Fe - Grúas", bluemax: false, source: "inventario" },
+  { code: "CA-97", plate: "TDSJ-73", type: "camioneta", brand: "Maxus", model: "T60 4X2 DX", year: 2024, worksite: "Santa Fe - Grúas", bluemax: false, source: "inventario" },
+  { code: "CA-95", plate: "FBKS-63", type: "minibus", brand: "Peugeot", model: "Expert Confort HDi Full 1.6", year: 2012, worksite: "Fábrica de Puertas", bluemax: false, source: "inventario" },
+  { code: "CA-93", plate: "TBZW-37", type: "camioneta", brand: "Mazda", model: "BT-50 4WD 3.0", year: null, worksite: "Fábrica de Puertas", bluemax: false, source: "inventario" },
+  { code: "CA-94", plate: "TFJX-48", type: "camioneta", brand: "Toyota", model: "Hilux 4X4 2.8 AUT", year: 2024, worksite: "Flor del Laja", bluemax: false, source: "inventario" },
+  // Tercera tanda: patentes de enero 2026 que no estaban en el padrón (inventario 21-08-26).
+  { code: "KA-106", plate: "CPSG-36", type: "camion", brand: "Freightliner", model: "M2", year: 2011, worksite: "Santa Fe - Grúas", bluemax: false, source: "inventario" },
+  { code: "KA-112", plate: "DPFK-13", type: "camion", brand: "Mercedes-Benz", model: "2726", year: 2012, worksite: "Santa Fe - Grúas", bluemax: false, source: "inventario" },
+  { code: "CA-77", plate: "DZJY-31", type: "camioneta", brand: "Mahindra", model: "XL", year: 2012, worksite: "Santa Fe - Grúas", bluemax: false, source: "inventario" },
+  { code: "CA-79", plate: "GBTX-84", type: "camioneta", brand: "Mahindra", model: "XL", year: 2012, worksite: "Santa Fe - Grúas", bluemax: false, source: "inventario" },
+  { code: "KA-122", plate: "JFDB-87", type: "camion", brand: "Volkswagen", model: "Constellation 31280", year: 2017, worksite: "Santa Fe - Grúas", bluemax: false, source: "inventario" },
+  { code: "KA-123", plate: "JFDB-90", type: "camion", brand: "Volkswagen", model: "Constellation 31280", year: 2017, worksite: "Santa Fe - Grúas", bluemax: false, source: "inventario" },
+  { code: "CA-17", plate: "JGZH-30", type: "camioneta", brand: "Kia", model: "Frontier", year: 2017, worksite: "Santa Fe - Grúas", bluemax: false, source: "inventario" },
+  { code: "KCH-132", plate: "PGBK-42", type: "tracto", brand: "Mercedes-Benz", model: "Actros New", year: 2020, worksite: "Santa Fe - Grúas", bluemax: true, source: "inventario" },
+  { code: "KA-145", plate: "TFYJ-62", type: "camion", brand: "Sinotruk", model: "Howo TX", year: 2024, worksite: "Santa Fe - Grúas", bluemax: false, source: "inventario" },
+  { code: "CA-38", plate: "WK-4542", type: "camioneta", brand: "Hyundai", model: "Porter H-100", year: 2005, worksite: "Santa Fe - Grúas", bluemax: false, source: "inventario" },
+  { code: "KA-119", plate: "JFDB-88", type: "camion", brand: "Volkswagen", model: "Constellation 31280", year: 2017, worksite: "Pacifico", bluemax: false, source: "inventario" },
+  { code: "KA-120", plate: "JFDB-89", type: "camion", brand: "Volkswagen", model: "Constellation 31280", year: 2017, worksite: "Pacifico", bluemax: false, source: "inventario" },
+  { code: "KA-121", plate: "JFDR-84", type: "camion", brand: "Volkswagen", model: "Constellation 31280", year: 2017, worksite: "Pacifico", bluemax: false, source: "inventario" },
+  { code: "KA-124", plate: "JFDR-86", type: "camion", brand: "Volkswagen", model: "Constellation 31280", year: 2017, worksite: "Pacifico", bluemax: false, source: "inventario" },
+  { code: "CA-16", plate: "JGZH-29", type: "camioneta", brand: "Kia", model: "Frontier", year: 2017, worksite: "Pacifico", bluemax: false, source: "inventario" },
+  { code: null, plate: "JTBP-17", type: "casa-rodante", brand: "Mercedes-Benz", model: "Vario 818 4X4", year: 2013, worksite: "Flor del Laja", bluemax: false, source: "inventario" },
 ]
 
 /** Vehículos que la corrida del 2026-10-29 dejó distinto de lo decidido después. */
@@ -260,10 +286,10 @@ async function runVehicleRegistrations(apply: boolean, actor: Actor, report: Rep
   const existing = await db.select({ plate: fuelVehicles.plate, worksite: worksites.name })
     .from(fuelVehicles).innerJoin(worksites, eq(worksites.id, fuelVehicles.worksiteId))
   const existingByPlate = new Map(existing.map((row) => [plateMatchKey(row.plate), row.worksite]))
-  const types = await db.select().from(fuelEquipmentTypes).where(inArray(fuelEquipmentTypes.slug, ["camion", "tracto", "camioneta", "minibus"]))
+  const types = await db.select().from(fuelEquipmentTypes).where(inArray(fuelEquipmentTypes.slug, ["camion", "tracto", "camioneta", "minibus", "casa-rodante"]))
   const { defaultVehicleStatus } = await getFleetAdminSettings()
   for (const plan of VEHICLES) {
-    const action = `alta ${plan.code} en «${plan.worksite}»`
+    const action = `alta ${plan.code ?? "sin código"} en «${plan.worksite}»`
     // Un vehículo que ya existe no se mueve: su faena pudo decidirla alguien. Si
     // no coincide con el plan se informa, para revisarlo a mano.
     const currentWorksite = existingByPlate.get(plateMatchKey(plan.plate))
@@ -303,7 +329,7 @@ async function runVehicleRegistrations(apply: boolean, actor: Actor, report: Rep
         worksiteId: worksite.id,
         operationalStatus: defaultVehicleStatus,
         isActive: true,
-        notes: plan.code.startsWith("CA-") || plan.code === "KCH-119"
+        notes: plan.source === "inventario"
           ? "Alta desde el inventario de equipos (21-08-26) con la faena decidida por la jefatura, para atribuir los consumos Copec (2026-10-29)."
           : "Alta desde la semilla de mantención validada, para atribuir los consumos Copec (2026-10-29).",
       }

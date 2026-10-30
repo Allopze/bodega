@@ -13,6 +13,7 @@ import { fuelCycleMovements, fuelStorageLocations } from "@/db/schema"
 import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { fuelSupplierIdForProvider } from "./fuel-sources"
+import { plateMatchKey } from "./xlsx-utils"
 import type { ParsedTaeReceiptRow } from "./tae-receipt-import"
 export const TAE_RECEIPT_SOURCE = "copec_tae"
 
@@ -36,8 +37,9 @@ export interface TaeReceiptImportOutcome {
   unmappedLiters: number
 }
 
+/** Tarjeta compacta (`plateMatchKey`) + producto: la vasija puede guardar la tarjeta con o sin guiones. */
 function cardKey(cardNumber: string, productId: string) {
-  return `${cardNumber}::${productId}`
+  return `${plateMatchKey(cardNumber)}::${productId}`
 }
 
 export async function importTaeReceipts(rows: ParsedTaeReceiptRow[], importerId: string): Promise<TaeReceiptImportOutcome> {
@@ -55,10 +57,10 @@ export async function importTaeReceipts(rows: ParsedTaeReceiptRow[], importerId:
   const supplierId = await fuelSupplierIdForProvider("copec")
   if (!supplierId) throw new TaeSupplierMissingError()
 
-  const cards = [...new Set(rows.map((row) => row.cardNumber))]
+  const productIds = [...new Set(rows.map((row) => row.productId))]
   const locations = await db.query.fuelStorageLocations.findMany({
     where: and(
-      inArray(fuelStorageLocations.taeCardNumber, cards),
+      inArray(fuelStorageLocations.productId, productIds),
       isNotNull(fuelStorageLocations.taeCardNumber),
       eq(fuelStorageLocations.isActive, true),
     ),

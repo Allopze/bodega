@@ -70,10 +70,16 @@ export function buildCopecTransactionRows(
  * A reused guide with different contents, or a no-guide event for the same
  * vehicle/day with changed contents, cannot safely be called a correction or a
  * second load. Keep it in review rather than replacing either observation.
+ *
+ * Salvo que sea de OTRO vehículo (o tarjeta, en TAE): Copec reutiliza el número
+ * de guía entre cargas de vehículos distintos (2026-10-30: la guía 660150998
+ * para TBZW-37 y SRCJ-47 el mismo día) y una carga de otro vehículo no corrige
+ * nada. Cuando se conocen ambas patentes y difieren, son dos cargas.
  */
 export function hasPossibleCopecCorrection(
   sourceRowKey: string,
-  previous: Array<{ sourceRowKey: string }>,
+  previous: Array<{ sourceRowKey: string; plate?: string | null }>,
+  plate?: string | null,
 ): boolean {
   const marker = ":sig:"
   const markerIndex = sourceRowKey.lastIndexOf(marker)
@@ -83,6 +89,7 @@ export function hasPossibleCopecCorrection(
   return previous.some((row) => {
     const priorIndex = row.sourceRowKey.lastIndexOf(marker)
     if (priorIndex < 0 || row.sourceRowKey.slice(0, priorIndex + 1) !== prefix) return false
+    if (plate && row.plate && plateMatchKey(plate) !== plateMatchKey(row.plate)) return false
     return row.sourceRowKey.slice(priorIndex + marker.length).split(":")[0] !== signature
   })
 }

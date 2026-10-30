@@ -40,6 +40,7 @@ class Boundary extends React.Component<React.PropsWithChildren, { failed: boolea
 const status = {
   lastRunAt: null,
   lastRunStatus: null,
+  lastRunMonth: null,
   rowsReceived: 0,
   rowsAccepted: 0,
   rowsRejected: 0,
@@ -68,6 +69,16 @@ async function clickSyncAndAdvance(ms: number) {
     await vi.advanceTimersByTimeAsync(ms)
   })
 }
+
+describe("aviso de cargas pendientes", () => {
+  afterEach(() => cleanup())
+
+  it("habla de cargas y de su mes, no de patentes", () => {
+    render(<CopecSyncStatus initialStatus={{ ...status, pending: 566, lastRunMonth: "2025-01-01" }} initialStartOptions={startOptions} />)
+    expect(screen.getByText(/566 carga\(s\) de enero de 2025 quedaron pendientes/)).toBeInTheDocument()
+    expect(screen.queryByText(/patente\(s\) sin vehículo/)).not.toBeInTheDocument()
+  })
+})
 
 describe("sincronización Copec en segundo plano", () => {
   beforeEach(() => {

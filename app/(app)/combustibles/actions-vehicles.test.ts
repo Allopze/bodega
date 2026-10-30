@@ -59,6 +59,11 @@ vi.mock("@/lib/id", () => ({
   nanoid: () => "veh-new",
 }))
 
+const mockMoveProviderMappings = vi.fn(async (..._args: unknown[]) => 0)
+vi.mock("@/lib/combustibles/provider-mappings", () => ({
+  moveProviderMappingsWithVehicleTx: (...args: unknown[]) => mockMoveProviderMappings(...args),
+}))
+
 const mockGetFleetAdminSettings = vi.fn(async () => ({ warningDays: 30, defaultVehicleStatus: "mantencion" }))
 vi.mock("@/lib/services/system-settings", () => ({
   getFleetAdminSettings: () => mockGetFleetAdminSettings(),
@@ -205,6 +210,24 @@ describe("updateFuelVehicleAction governance fields", () => {
 
     expect(result.ok).toBe(true)
     expect(mockInsertValues).not.toHaveBeenCalledWith(expect.objectContaining({ vehicleId: "veh-1", status: "operativo" }))
+  })
+})
+
+// La sincronización atribuye el consumo por la faena de la asignación de
+// proveedor, no por la del vehículo: trasladar el vehículo tiene que llevarla.
+describe("updateFuelVehicleAction worksite transfer", () => {
+  it("moves the provider mappings when the vehicle changes worksite", async () => {
+    const result = await updateFuelVehicleAction({ ok: false }, vehicleForm({ id: "veh-1", worksiteId: "ws-2" }))
+
+    expect(result.ok).toBe(true)
+    expect(mockMoveProviderMappings).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ vehicleId: "veh-1", worksiteId: "ws-2", actorUserId: "user-1" }))
+  })
+
+  it("leaves the provider mappings alone when the worksite does not change", async () => {
+    const result = await updateFuelVehicleAction({ ok: false }, vehicleForm({ id: "veh-1", worksiteId: "ws-1" }))
+
+    expect(result.ok).toBe(true)
+    expect(mockMoveProviderMappings).not.toHaveBeenCalled()
   })
 })
 

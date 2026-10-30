@@ -155,7 +155,7 @@ describe("downloadCopecReports", () => {
 
     const result = await downloadCopecReports([{ product: "bluemax", from: "2020-01-01", to: "2020-01-31" }])
 
-    expect(result).toEqual([{ product: "bluemax", unavailable: true }])
+    expect(result).toEqual([{ product: "bluemax", unavailable: true, reason: "product_disabled" }])
     // Un radio deshabilitado corta el mes ahí: nunca se llega a buscar ni exportar.
     expect(search.click).not.toHaveBeenCalled()
   })
