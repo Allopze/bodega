@@ -70,7 +70,7 @@ describe("decisiones de flota para la sincronización Copec (2026-10-29)", () =>
     expect(await inMemoryDb.select().from(schema.fuelStorageLocations)).toHaveLength(0)
   })
 
-  it("crea las faenas, reactiva Pacífico, traslada a la activa, da de alta los 32 vehículos y las 3 vasijas, con bitácora", async () => {
+  it("crea las faenas, reactiva Pacífico, traslada a la activa, da de alta los 48 vehículos y las 3 vasijas, con bitácora", async () => {
     await run(true)
 
     const fabrica = await worksiteId("Fábrica de Puertas")
@@ -85,7 +85,7 @@ describe("decisiones de flota para la sincronización Copec (2026-10-29)", () =>
     expect((await inMemoryDb.select().from(schema.fuelVehicles).where(eq(schema.fuelVehicles.id, "v-pac")))[0]?.worksiteId).toBe("w-pac-old")
 
     const created = (await inMemoryDb.select().from(schema.fuelVehicles)).filter((v) => v.notes?.endsWith("Copec (2026-10-29)."))
-    expect(created).toHaveLength(32)
+    expect(created).toHaveLength(48)
     const byPlate = new Map(created.map((v) => [v.plate, v]))
     expect(byPlate.get("KXZD-20")).toMatchObject({ code: "KCH-130", type: "tracto", equipmentTypeId: "fet-tracto", meterType: "odometer", worksiteId: "w-sfg", brand: "Mercedes", year: 2018 })
     expect(byPlate.get("RBYD-98")).toMatchObject({ code: "KA-135", type: "camion", worksiteId: "w-cho" })
@@ -99,6 +99,12 @@ describe("decisiones de flota para la sincronización Copec (2026-10-29)", () =>
     expect(minibus).toMatchObject({ name: "Minibús", category: "light", defaultMeterType: "odometer", defaultPerformanceUnit: "km_per_liter", isActive: true })
     expect(byPlate.get("FBKS-63")).toMatchObject({ type: "minibus", equipmentTypeId: minibus!.id, meterType: "odometer" })
     expect(byPlate.get("TBZW-37")).toMatchObject({ worksiteId: fabrica, year: null })
+    // Tercera tanda: patentes de enero 2026; la casa rodante, con su tipo nuevo y sin código interno.
+    const casaRodante = (await inMemoryDb.select().from(schema.fuelEquipmentTypes).where(eq(schema.fuelEquipmentTypes.slug, "casa-rodante")))[0]
+    expect(casaRodante).toMatchObject({ name: "Casa rodante", category: "truck", defaultMeterType: "odometer", isActive: true })
+    expect(byPlate.get("JTBP-17")).toMatchObject({ code: null, type: "casa-rodante", equipmentTypeId: casaRodante!.id, worksiteId: flor })
+    expect(byPlate.get("JFDB-88")?.worksiteId).toBe("w-pac-old")
+    expect(byPlate.get("PGBK-42")).toMatchObject({ code: "KCH-132", worksiteId: "w-sfg" })
 
     const products = await inMemoryDb.select().from(schema.fuelVehicleProducts).where(eq(schema.fuelVehicleProducts.vehicleId, byPlate.get("SGCP-77")!.id))
     expect(products.map((p) => p.productId).sort()).toEqual(["fuel-bluemax", "fuel-diesel"])
@@ -113,8 +119,8 @@ describe("decisiones de flota para la sincronización Copec (2026-10-29)", () =>
     ].sort())
 
     const audit = await inMemoryDb.select().from(schema.auditLog)
-    // 2 faenas + 1 tipo + 1 reactivación + 2 traslados + 32 vehículos + 3 estanques, todos del responsable.
-    expect(audit).toHaveLength(41)
+    // 2 faenas + 2 tipos + 1 reactivación + 2 traslados + 48 vehículos + 3 estanques, todos del responsable.
+    expect(audit).toHaveLength(58)
     expect(audit.every((row) => row.userId === "u-actor")).toBe(true)
   })
 
@@ -124,7 +130,7 @@ describe("decisiones de flota para la sincronización Copec (2026-10-29)", () =>
     const second = await run(true)
     expect(second.filter((o) => o.result === "aplicado")).toEqual([])
     expect((await inMemoryDb.select().from(schema.auditLog)).length).toBe(auditAfterFirst)
-    expect(await inMemoryDb.select().from(schema.fuelVehicles)).toHaveLength(35)
+    expect(await inMemoryDb.select().from(schema.fuelVehicles)).toHaveLength(51)
   })
 
   it("respeta una patente que ya existe y una faena nueva que ya estaba con otro nombre", async () => {
