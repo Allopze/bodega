@@ -4,10 +4,12 @@ import { safeActionMessage } from "@/lib/action-error"
 
 import { guardPermission } from "@/lib/auth/can"
 import { civilDate, civilDateRange } from "@/lib/validation/dates"
-import { getCopecSyncPlan, getCopecSyncState, setCopecSyncStartDate, syncCopecReportPeriod } from "@/lib/combustibles/copec-sync"
+import { getCopecSweepPeriods, getCopecSyncPlan, getCopecSyncState, listCopecSyncRunsSince, setCopecSyncStartDate, syncCopecReports } from "@/lib/combustibles/copec-sync"
+import { copecSyncAvailability } from "@/lib/combustibles/copec-reports"
 import { listCopecPeriodCoverage, recordCopecPeriodCoverage } from "@/lib/combustibles/copec-coverage-store"
 import { canConfirmCopecEmpty } from "@/lib/combustibles/copec-coverage"
-import { withCronLock } from "@/lib/services/cron-lock"
+import { getCronRunSince, isCronJobRunning, startCronJobInBackground } from "@/lib/services/cron-lock"
+import { userFacingErrorText } from "@/lib/user-facing-error"
 import { isOpenPeriod } from "@/lib/combustibles/open-period"
 import { z } from "zod"
 
@@ -45,17 +47,86 @@ export async function getCopecSyncStatusAction(): Promise<
   }
 }
 
-export async function getCopecSyncPlanAction(): Promise<
-  | { ok: true; from: string; to: string; periods: Array<{ from: string; to: string }> }
+export interface CopecSweepRunView {
+  from: string
+  status: string
+  rowsReceived: number
+  rowsAccepted: number
+  rowsRejected: number
+  rowsPending: number
+  /** Ya filtrado para el operador: nunca una consulta SQL ni una ruta del servidor. */
+  error: string | null
+}
+
+const COPEC_SYNC_JOB = "fuel-copec-sync"
+
+/**
+ * Inicia la MISMA corrida del cron —el mes en curso y los meses pendientes, en
+ * una sola sesión del portal— y responde apenas toma el lock, sin esperar a que
+ * termine: detrás de Cloudflare una petición de más de ~100 s se corta y la
+ * pantalla daba por perdida una corrida que sí terminaba. El avance se lee con
+ * `getCopecSyncProgressAction`.
+ *
+ * Antes el botón pedía un mes por petición, siempre el pendiente más antiguo:
+ * si ese mes quedaba incompleto el siguiente se rechazaba («ya no corresponde
+ * al siguiente tramo») y el mes en curso nunca se pedía. Y cada mes era un login
+ * —un correo con código— distinto.
+ */
+export async function startCopecSyncAction(): Promise<
+  | { ok: true; since: string; periods: Array<{ from: string; to: string }> }
   | { ok: false; message: string }
 > {
   const guard = await guardPermission("combustibles:sync_integrations", "/combustibles/importar")
   if (guard.error) return guard.error
+  if (!copecSyncAvailability().hasCredentials) {
+    return { ok: false, message: "Faltan las credenciales de Copec en el servidor (COPEC_USERNAME y COPEC_PASSWORD)." }
+  }
   try {
-    const result = await getCopecSyncPlan()
-    return { ok: true, from: result.from, to: result.to, periods: result.periods }
+    const periods = await getCopecSweepPeriods()
+    // Un margen hacia atrás: el reloj de la base marca `started_at`, no el de la app.
+    const since = new Date(Date.now() - 2_000).toISOString()
+    const importerId = guard.session.user.id
+    const outcome = await startCronJobInBackground(COPEC_SYNC_JOB, () => syncCopecReports({ importerId }))
+    if (outcome === "busy") {
+      return { ok: false, message: "Ya hay una sincronización de Copec en curso (la automática o la de otra persona). Espera a que termine e inténtalo nuevamente." }
+    }
+    return { ok: true, since, periods }
   } catch (error) {
-    return { ok: false, message: safeActionMessage(error, "No fue posible preparar la sincronización Copec") }
+    return { ok: false, message: safeActionMessage(error, "No fue posible iniciar la sincronización Copec") }
+  }
+}
+
+export async function getCopecSyncProgressAction(input: { since: string }): Promise<
+  | { ok: true; running: boolean; outcome: string | null; detail: string | null; runs: CopecSweepRunView[] }
+  | { ok: false; message: string }
+> {
+  const guard = await guardPermission("combustibles:sync_integrations", "/combustibles/importar")
+  if (guard.error) return guard.error
+  const parsed = z.object({ since: z.iso.datetime() }).safeParse(input)
+  if (!parsed.success) return { ok: false, message: "La consulta de avance no es válida" }
+  try {
+    const [running, cronRun, runs] = await Promise.all([
+      isCronJobRunning(COPEC_SYNC_JOB),
+      getCronRunSince(COPEC_SYNC_JOB, parsed.data.since),
+      listCopecSyncRunsSince(parsed.data.since),
+    ])
+    return {
+      ok: true,
+      running,
+      outcome: cronRun?.outcome ?? null,
+      detail: cronRun?.detail ? userFacingErrorText(cronRun.detail) ?? "La corrida se detuvo por un error interno; revisa la bitácora de cron." : null,
+      runs: runs.map((run) => ({
+        from: run.requestedFrom,
+        status: run.status,
+        rowsReceived: run.rowsReceived,
+        rowsAccepted: run.rowsAccepted,
+        rowsRejected: run.rowsRejected,
+        rowsPending: run.rowsPending,
+        error: run.error ? userFacingErrorText(run.error) ?? "Error interno en este mes; revisa la bitácora de sincronización." : null,
+      })),
+    }
+  } catch (error) {
+    return { ok: false, message: safeActionMessage(error, "No fue posible obtener el avance de la sincronización Copec") }
   }
 }
 
@@ -129,49 +200,5 @@ export async function updateCopecSyncStartAction(input: { startDate: string; exp
     return { ok: true, data: await setCopecSyncStartDate(parsed.data.startDate, parsed.data.expectedStart) }
   } catch (error) {
     return { ok: false, message: safeActionMessage(error, "No fue posible actualizar la fecha de inicio") }
-  }
-}
-
-export async function runCopecSyncPeriodAction(period: { from: string; to: string }): Promise<
-  | { ok: true; imported: number; refreshed: number; received: number; pending: number; rowsReceived: number; rowsAccepted: number; rowsRejected: number; rowsPending: number; unavailable: string[]; reports: number; unmappedCards: string[]; openPeriod: boolean }
-  | { ok: false; message: string }
-> {
-  const guard = await guardPermission("combustibles:sync_integrations", "/combustibles/importar")
-  if (guard.error) return guard.error
-  const session = guard.session
-  try {
-    const parsedPeriod = copecPeriodSchema.safeParse(period)
-    if (!parsedPeriod.success || !parsedPeriod.data.from || !parsedPeriod.data.to) {
-      return { ok: false, message: "El período de Copec no es válido" }
-    }
-    const periodRange = { from: parsedPeriod.data.from, to: parsedPeriod.data.to }
-
-    const plan = await getCopecSyncPlan()
-    const expected = plan.periods[0]
-    if (!expected || expected.from !== periodRange.from || expected.to !== periodRange.to) {
-      return { ok: false, message: "El período ya no corresponde al siguiente tramo pendiente. Actualiza e inténtalo nuevamente." }
-    }
-
-    // La acción manual usa al operador autenticado. El importador configurado
-    // queda reservado para el cron, que no tiene sesión de usuario.
-    //
-    // Bajo el MISMO lock que el cron: Copec abre una sesión de navegador con
-    // login por descarga y el portal es de sesión única, así que un botón
-    // manual durante la corrida automática pelea por la sesión del portal y
-    // por el cursor (el `saveState` optimista descarta el avance del perdedor).
-    const outcome = await withCronLock("fuel-copec-sync", () => syncCopecReportPeriod(periodRange, session.user.id))
-    if ("skipped" in outcome) {
-      return { ok: false, message: "La sincronización automática de Copec está corriendo en este momento. Espera a que termine e inténtalo nuevamente." }
-    }
-    const result = outcome
-    // `openPeriod` lo decide el servidor: el cliente no puede compararlo contra
-    // "hoy" sin arriesgar el desfase de zona horaria que ya costó un bug acá.
-    return { ok: true, imported: result.imported, refreshed: result.refreshed, received: result.received, pending: result.pending, rowsReceived: result.rowsReceived, rowsAccepted: result.rowsAccepted, rowsRejected: result.rowsRejected, rowsPending: result.rowsPending, unavailable: result.unavailable, reports: result.reports.length, unmappedCards: result.unmappedCards, openPeriod: isOpenPeriod(periodRange.to) }
-  } catch (error) {
-    // Los errores de Playwright arrastran el "Call log:" completo -kilobytes de
-    // reintentos- y el toast del operador, que persiste hasta cerrarlo a mano,
-    // los mostraba enteros. El motivo siempre va en la primera linea.
-    const message = error instanceof Error ? (error.message.split(/\r?\nCall log:/)[0] ?? "").trim() : ""
-    return { ok: false, message: message || "No fue posible sincronizar Copec" }
   }
 }

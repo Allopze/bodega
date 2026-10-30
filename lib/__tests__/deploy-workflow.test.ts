@@ -535,6 +535,40 @@ exit $?
     expect(cronService).not.toMatch(/PDTP_EVIDENCE_GC_DELETE=\S*\s+node/)
   })
 
+  // 2026-10-29: el cron de Copec (y el de Aramco) respondía 401 en producción
+  // desde que existía. Su ruta exige un origen de `CRON_ALLOWED_SOURCES`, y el
+  // scheduler interno llama a `http://app:3000` sin cabeceras de proxy, así que
+  // ese origen nunca llega. Toda ruta que pida origen necesita el camino del
+  // secreto interno, cableado de punta a punta: runner, crontab, cron y app.
+  it("da secreto interno a cada job cuya ruta exige un origen permitido", () => {
+    const compose = readFileSync(path.join(repoRoot, "docker-compose.yml"), "utf8")
+    const runner = readFileSync(path.join(repoRoot, "scripts/cron-runner.mjs"), "utf8")
+    const cronService = cronServiceFromCompose(compose)
+    const appService = appServiceFromCompose(compose)
+    const jobs = [...runner.matchAll(/^ {2}"?([a-z0-9-]+)"?: \{\n([\s\S]*?)\n {2}\},/gm)].map((match) => ({
+      name: match[1]!,
+      routePath: match[2]!.match(/url: "http:\/\/app:3000\/api\/cron\/([a-z0-9-]+)"/)?.[1],
+      secretEnv: match[2]!.match(/internalSecretEnv: "([A-Z0-9_]+)"/)?.[1],
+      secretHeader: match[2]!.match(/internalSecretHeader: "([A-Za-z0-9-]+)"/)?.[1],
+    }))
+    const sourceGated = jobs.filter((job) => job.routePath && readFileSync(path.join(repoRoot, "app/api/cron", job.routePath, "route.ts"), "utf8").includes("verifyCronRequest("))
+    expect(sourceGated.map((job) => job.name)).toEqual(expect.arrayContaining(["fuel-copec-sync", "fuel-aramco-sync", "fleet-onway-sync"]))
+
+    for (const job of sourceGated) {
+      const route = readFileSync(path.join(repoRoot, "app/api/cron", job.routePath!, "route.ts"), "utf8")
+      expect(job.secretEnv, `${job.name} no declara internalSecretEnv`).toBeDefined()
+      expect(job.secretHeader, `${job.name} no declara internalSecretHeader`).toBeDefined()
+      expect(route, `${job.name}: la ruta no acepta el secreto interno`).toContain("verifyCronInternalRequest(")
+      expect(route).toContain(`process.env.${job.secretEnv}`)
+      expect(route).toContain(`"${job.secretHeader!.toLowerCase()}"`)
+      expect(cronService, `${job.name}: el crontab no pasa ${job.secretEnv}`).toMatch(new RegExp(`${job.secretEnv}="\\$\\$${job.secretEnv}" node /app/scripts/cron-runner\\.mjs ${job.name} `))
+      expect(cronService).toMatch(new RegExp(`\\n\\s+- ${job.secretEnv}=\\$\\{${job.secretEnv}:-\\}`))
+      expect(appService).toMatch(new RegExp(`\\n\\s+- ${job.secretEnv}=\\$\\{${job.secretEnv}:-\\}`))
+      // El crontab se imprime al arrancar: el secreto no puede quedar en el log.
+      expect(cronService).toMatch(new RegExp(`sed -E 's/\\(\\([^)]*\\b${job.secretEnv}\\b[^)]*\\)=\\)`))
+    }
+  })
+
   // W5-GC (T7a, D13): la variable que habilita el borrado real la lee la ruta,
   // que corre en `app`. Si el compose no la inyecta, encenderla en el .env de
   // producción no haría nada y el barrido seguiría en prueba sin avisar.

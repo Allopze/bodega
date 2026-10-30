@@ -1,4 +1,5 @@
-import { desc, eq, gte, sql } from "drizzle-orm"
+import { and, asc, desc, eq, gte, ne, sql } from "drizzle-orm"
+import { after } from "next/server"
 import { db } from "@/db"
 import { cronRuns } from "@/db/schema"
 import { nanoid } from "@/lib/id"
@@ -207,4 +208,70 @@ async function runWithPooledLock<T>(
   } finally {
     await db.execute(sql`SELECT pg_advisory_unlock(hashtext(${key}))`).catch(() => {})
   }
+}
+
+/**
+ * Si alguien tiene tomado ahora el lock de `jobName`. Usa la variante de
+ * TRANSACCIÓN del mismo lock: si está libre la toma y la suelta al cerrar la
+ * transacción, sin dejar nada tomado ni ocupar la conexión. Es lo único que
+ * distingue una corrida viva de una fila `running` de `cron_runs` que quedó
+ * abierta porque el proceso murió a mitad.
+ */
+export async function isCronJobRunning(jobName: string): Promise<boolean> {
+  const key = `cron:${jobName}`
+  return db.transaction(async (tx) => {
+    const result = await tx.execute(sql`SELECT pg_try_advisory_xact_lock(hashtext(${key})) AS free`)
+    // postgres-js devuelve las filas como arreglo; PGlite, en `rows`.
+    const rows = (Array.isArray(result) ? result : (result as unknown as { rows?: unknown[] }).rows ?? []) as Array<{ free: boolean }>
+    return rows[0]?.free === false
+  })
+}
+
+/**
+ * La primera corrida REAL de `jobName` iniciada en `since` o después: la que tomó
+ * el lock. Los disparos que se saltaron mientras corría (otro clic, el cron
+ * programado) dejan filas `skipped` más nuevas que no dicen nada de ella.
+ */
+export async function getCronRunSince(jobName: string, since: string) {
+  const [row] = await db
+    .select({ startedAt: cronRuns.startedAt, finishedAt: cronRuns.finishedAt, outcome: cronRuns.outcome, detail: cronRuns.detail })
+    .from(cronRuns)
+    .where(and(eq(cronRuns.jobName, jobName), gte(cronRuns.startedAt, since), ne(cronRuns.outcome, "skipped")))
+    .orderBy(asc(cronRuns.startedAt))
+    .limit(1)
+  return row ?? null
+}
+
+/**
+ * Arranca `run` bajo el lock de `jobName` y vuelve apenas el lock queda tomado,
+ * sin esperar a que termine. Es para los botones que disparan una corrida larga:
+ * detrás de Cloudflare una petición que no responde en ~100 s se corta (524), y
+ * el navegador daba la corrida por perdida aunque el servidor la terminara. El
+ * lock y la bitácora (`cron_runs`) son los mismos de la corrida programada, así
+ * que el botón y el cron no se pisan. `after()` deja la corrida como trabajo
+ * pendiente: un apagado ordenado del servidor la espera antes de salir.
+ */
+export async function startCronJobInBackground(jobName: string, run: () => Promise<unknown>): Promise<"started" | "busy"> {
+  let markStarted: () => void = () => {}
+  const started = new Promise<"started">((resolve) => { markStarted = () => resolve("started") })
+  const execution = withCronLock(jobName, async () => {
+    markStarted()
+    return run()
+  })
+  const first = await Promise.race([
+    started,
+    execution.then((outcome) => (typeof outcome === "object" && outcome !== null && "skipped" in outcome ? "busy" as const : "started" as const)),
+  ])
+  if (first === "busy") return first
+  const settled = execution.then(
+    () => undefined,
+    (error: unknown) => { logger.error(`[cron/${jobName}] falló la corrida iniciada a mano`, error) },
+  )
+  try {
+    after(() => settled)
+  } catch {
+    // Fuera de un request (scripts, pruebas) `after()` lanza; la corrida sigue
+    // igual porque `execution` ya está en marcha.
+  }
+  return first
 }

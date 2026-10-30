@@ -172,8 +172,9 @@ Administración: Combustibles → Importar → «Credenciales y automatización�
 - El botón manual llama la **misma** función, con el operador autenticado como
   importador. No requiere que la automatización esté encendida.
 - En producción el Bearer no es suficiente: la ruta exige un origen presente en
-  `CRON_ALLOWED_SOURCES` y aplica una ventana de rate limit. El proxy o runner
-  debe enviar `X-Forwarded-For`/`X-Real-IP` de forma confiable.
+  `CRON_ALLOWED_SOURCES` o, para el scheduler de Docker (que llama sin pasar por
+  el proxy), el secreto interno `FUEL_CRON_INTERNAL_SECRET` en
+  `X-Fuel-Cron-Secret`. Aplica además una ventana de rate limit.
 
 ## Ledger, pendientes y conciliación
 

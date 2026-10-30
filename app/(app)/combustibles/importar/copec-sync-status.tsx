@@ -8,7 +8,7 @@ import { DatePicker } from "@/components/ui/date-picker"
 import { toast } from "@/lib/toast"
 import { reportBoundaryError } from "@/lib/observability/sentry-client"
 import { formatDateTime, formatQty } from "@/lib/utils"
-import { confirmCopecPeriodEmptyAction, getCopecSyncPlanAction, runCopecSyncPeriodAction, getCopecSyncStatusAction, updateCopecSyncStartAction, type CopecSyncStartOptions, type CopecSyncStatus } from "./copec-sync-action"
+import { confirmCopecPeriodEmptyAction, getCopecSyncProgressAction, getCopecSyncStatusAction, startCopecSyncAction, updateCopecSyncStartAction, type CopecSweepRunView, type CopecSyncStartOptions, type CopecSyncStatus } from "./copec-sync-action"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
@@ -22,12 +22,20 @@ const COVERAGE_STATUS_LABEL: Record<CopecSyncStatus["coverage"][number]["status"
 }
 
 const STATUS_TIMEOUT_MS = 10_000
+/** Cada cuánto se pregunta por el avance de una corrida en segundo plano. */
+const PROGRESS_POLL_MS = 4_000
+/**
+ * Hasta cuándo se espera en pantalla. Una corrida recorre hasta cinco meses de
+ * 1–2 minutos cada uno; pasado esto la corrida puede seguir, pero la pantalla
+ * deja de esperar y lo dice.
+ */
+const PROGRESS_MAX_WAIT_MS = 15 * 60_000
 
-async function getCopecStatusWithDeadline(): Promise<Awaited<ReturnType<typeof getCopecSyncStatusAction>>> {
+async function withStatusDeadline<T>(operation: Promise<T>): Promise<T> {
   let timeoutId: ReturnType<typeof setTimeout> | undefined
   try {
     return await Promise.race([
-      getCopecSyncStatusAction(),
+      operation,
       new Promise<never>((_, reject) => {
         timeoutId = setTimeout(() => reject(new Error("Se agotó la espera del estado de Copec")), STATUS_TIMEOUT_MS)
       }),
@@ -37,11 +45,21 @@ async function getCopecStatusWithDeadline(): Promise<Awaited<ReturnType<typeof g
   }
 }
 
+function getCopecStatusWithDeadline() {
+  return withStatusDeadline(getCopecSyncStatusAction())
+}
+
+function wait(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms))
+}
+
 interface SyncProgress {
-  current: number
-  total: number
-  from: string
-  to: string
+  /** Meses que la corrida planeaba recorrer al iniciarse. */
+  planned: Array<{ from: string; to: string }>
+  /** Meses ya cerrados por la corrida. */
+  done: number
+  /** Mes que está procesando ahora, si se sabe. */
+  current: string | null
 }
 
 interface CopecSyncViewState {
@@ -65,6 +83,19 @@ function copecSyncViewReducer(state: CopecSyncViewState, action: CopecSyncViewAc
 
 function formatMonth(value: string) {
   return MONTH_FORMATTER.format(new Date(`${value}T00:00:00.000Z`))
+}
+
+/** Resumen de lo que dejó una corrida, mes por mes, con el motivo de cada observación. */
+function summarizeSweep(runs: CopecSweepRunView[], stopReason: string | null): string {
+  if (runs.length === 0) return stopReason ? `La sincronización de Copec no procesó ningún mes: ${stopReason}` : "No hubo meses que sincronizar."
+  const total = (key: "rowsReceived" | "rowsAccepted" | "rowsRejected" | "rowsPending") => runs.reduce((sum, item) => sum + item[key], 0)
+  const months = runs.map((item) => formatMonth(item.from)).join(", ")
+  const observations = runs.filter((item) => item.error).map((item) => `${formatMonth(item.from)}: ${item.error}`)
+  return [
+    `Meses sincronizados: ${months}. ${total("rowsReceived")} filas recibidas · ${total("rowsAccepted")} aceptadas · ${total("rowsPending")} pendientes · ${total("rowsRejected")} rechazadas.`,
+    ...observations,
+    ...(stopReason ? [`Se detuvo: ${stopReason}`] : []),
+  ].join(" ")
 }
 
 function firstDayOfMonth(value: string) {
@@ -92,85 +123,53 @@ export function CopecSyncStatus({ initialStatus, initialStartOptions }: { initia
 
   const sync = useCallback(() => {
     const run = async () => {
-      dispatchView({ type: "patch", patch: { result: null, syncInProgress: true } })
+      dispatchView({ type: "patch", patch: { result: null, progress: null, syncInProgress: true } })
 
-      let plan: Awaited<ReturnType<typeof getCopecSyncPlanAction>>
+      // La acción sólo INICIA la corrida y vuelve: la corrida completa tarda
+      // minutos, y detrás de Cloudflare una petición de más de ~100 s se corta.
+      let started: Awaited<ReturnType<typeof startCopecSyncAction>>
       try {
-        plan = await getCopecSyncPlanAction()
+        started = await startCopecSyncAction()
       } catch (error) {
-        reportBoundaryError(error instanceof Error ? error : new Error("No fue posible preparar la sincronización Copec"))
-        const message = "No se pudo preparar la sincronización de Copec. No se inició ninguna corrida; recarga la página e inténtalo de nuevo."
+        reportBoundaryError(error instanceof Error ? error : new Error("No fue posible iniciar la sincronización Copec"))
+        const message = "No se pudo confirmar el inicio de la sincronización de Copec. Podría estar en curso; revisa su estado antes de volver a intentarlo."
         dispatchView({ type: "patch", patch: { result: message, syncInProgress: false } })
         toast.error(message)
         return
       }
-      if (!plan.ok) { toast.error(plan.message); dispatchView({ type: "patch", patch: { syncInProgress: false } }); return }
-      if (plan.periods.length === 0) {
-        dispatchView({ type: "patch", patch: { result: "No hay meses nuevos para sincronizar", syncInProgress: false } })
+      if (!started.ok) {
+        dispatchView({ type: "patch", patch: { result: started.message, syncInProgress: false } })
+        toast.error(started.message)
         return
       }
+      dispatchView({ type: "patch", patch: { progress: { planned: started.periods, done: 0, current: started.periods[0]?.from ?? null } } })
 
-      let imported = 0
-      let refreshed = 0
-      let received = 0
-      let rowsReceived = 0
-      let rowsRejected = 0
-      let rowsPending = 0
-      let pendingPlates = 0
-      const unavailable: string[] = []
-      const unmappedCards = new Set<string>()
-      let stoppedAt: SyncProgress | null = null
-      let responseLost = false
-
-      for (const [index, period] of plan.periods.entries()) {
-        const sp: SyncProgress = { current: index + 1, total: plan.periods.length, from: period.from, to: period.to }
-        dispatchView({ type: "patch", patch: { progress: sp } })
-
-        let r: Awaited<ReturnType<typeof runCopecSyncPeriodAction>>
+      // Una consulta que falla no corta la espera: la corrida sigue en el
+      // servidor aunque se pierda una respuesta.
+      const deadline = Date.now() + PROGRESS_MAX_WAIT_MS
+      let latest: Extract<Awaited<ReturnType<typeof getCopecSyncProgressAction>>, { ok: true }> | null = null
+      while (Date.now() < deadline) {
+        await wait(PROGRESS_POLL_MS)
         try {
-          r = await runCopecSyncPeriodAction(period)
+          const response = await withStatusDeadline(getCopecSyncProgressAction({ since: started.since }))
+          if (!response.ok) continue
+          latest = response
+          dispatchView({ type: "patch", patch: { progress: {
+            planned: started.periods,
+            done: response.runs.filter((item) => item.status !== "running").length,
+            current: response.runs.find((item) => item.status === "running")?.from ?? null,
+          } } })
+          if (!response.running) break
         } catch (error) {
-          reportBoundaryError(error instanceof Error ? error : new Error("No fue posible recibir el resultado de Copec"))
-          stoppedAt = sp
-          responseLost = true
-          break
-        }
-        if (!r.ok) {
-          toast.error(`${formatMonth(period.from)}: ${r.message}`)
-          stoppedAt = sp
-          break
-        }
-        imported += r.imported
-        refreshed += r.refreshed
-        received += r.received
-        rowsReceived += r.rowsReceived
-        rowsRejected += r.rowsRejected
-        rowsPending += r.rowsPending
-        pendingPlates = r.pending
-        for (const card of r.unmappedCards) unmappedCards.add(card)
-        unavailable.push(...r.unavailable.map((product) => `${formatMonth(period.from)} (${product})`))
-        // Sin ninguna descarga = portal/credenciales rotos. Se detiene y avisa en
-        // lugar de seguir barriendo el histórico sin traer nada.
-        if (r.reports === 0) {
-          // El mes en curso puede no estar disponible aún en el portal, o no
-          // tener consumo todavía: no es portal roto. Se corta el barrido sin
-          // alarmar. Un mes cerrado sin detalles sí es señal de problema.
-          if (r.openPeriod) break
-          toast.error(`Copec no entregó detalles para ${formatMonth(period.from)}. Revisa el portal, las credenciales o el primer mes configurado.`)
-          stoppedAt = sp
-          break
+          reportBoundaryError(error instanceof Error ? error : new Error("No fue posible leer el avance de Copec"))
         }
       }
 
-      const initialResult = responseLost && stoppedAt
-        ? `Hay ${imported} registros confirmados de meses anteriores. No se recibió el resultado de ${formatMonth(stoppedAt.from)}. La corrida podría seguir en curso; revisa su estado antes de volver a intentarlo.`
-        : stoppedAt
-          ? `Se importaron ${imported} registros antes de detenerse. Reintenta desde ${formatMonth(stoppedAt.from)}.`
-          : `${imported} registros importados${refreshed ? ` · ${refreshed} actualizados` : ""} · ${received} recepciones TAE · ${rowsReceived} filas recibidas · ${rowsRejected} rechazadas · ${rowsPending} pendientes${pendingPlates ? ` · ${pendingPlates} patentes pendientes` : ""}${unmappedCards.size ? ` · ${unmappedCards.size} tarjetas TAE sin estanque` : ""}${unavailable.length ? ` · ${unavailable.length} reportes sin importar` : ""}`
-      // Mostrar el resultado antes de consultar el estado: esa petición también
-      // puede quedar pendiente si se perdió la conexión.
-      dispatchView({ type: "patch", patch: { progress: null, syncInProgress: false, result: initialResult } })
-      if (responseLost) toast.error(initialResult)
+      const finished = latest && !latest.running ? latest : null
+      const result = finished
+        ? summarizeSweep(finished.runs, finished.outcome === "failed" ? finished.detail : null)
+        : "La sincronización de Copec sigue en curso en el servidor. Revisa el estado en unos minutos; no hace falta volver a iniciarla."
+      dispatchView({ type: "patch", patch: { progress: null, syncInProgress: false, result } })
 
       let statusRefreshFailed = false
       try {
@@ -181,13 +180,11 @@ export function CopecSyncStatus({ initialStatus, initialStartOptions }: { initia
         reportBoundaryError(error instanceof Error ? error : new Error("No fue posible actualizar el estado de Copec"))
         statusRefreshFailed = true
       }
-
       if (statusRefreshFailed) {
         const statusWarning = "No se pudo actualizar el estado de Copec; recarga la página para revisarlo."
-        dispatchView({ type: "patch", patch: { result: `${initialResult} ${statusWarning}` } })
-        if (!responseLost) toast.warning(statusWarning)
+        dispatchView({ type: "patch", patch: { result: `${result} ${statusWarning}` } })
+        toast.warning(statusWarning)
       }
-      if (responseLost) return
 
       // `router.refresh()` AL FINAL, después de fijar el resultado en el estado
       // local: antes corría primero y el resumen dispatchado justo después se
@@ -197,16 +194,9 @@ export function CopecSyncStatus({ initialStatus, initialStartOptions }: { initia
       // ocurre; el orden se conserva.
       router.refresh()
 
-      if (stoppedAt) return
-
-      // Una tarjeta sin estanque asociado significa que ese combustible NO entró al
-      // ciclo: la recepción se omitió. Hay que avisarlo, no dejarlo en el resumen.
-      if (unmappedCards.size) toast.warning(`${unmappedCards.size} tarjeta(s) TAE sin estanque asociado: sus recepciones no se importaron. Asócialas en Administración › Estanques de combustible.`)
-
-      // "Sin importar" cubre los dos casos: el portal no entregó el archivo, o la
-      // faena ya tenía una importación manual de ese período y se omitió.
-      if (unavailable.length) toast.warning(`${unavailable.length} reporte(s) de Copec sin importar`)
-      else toast.success(`Copec sincronizado: ${imported} registros`)
+      if (!finished) toast.warning(result)
+      else if (finished.outcome === "failed" || finished.runs.some((item) => item.status !== "success")) toast.warning("Copec sincronizado con observaciones: revisa el detalle de cada mes")
+      else toast.success("Copec sincronizado")
     }
 
     startTransition(async () => {
@@ -379,14 +369,18 @@ export function CopecSyncStatus({ initialStatus, initialStartOptions }: { initia
       </div>
 
       {progress && (
-        <div className="mt-4 border-t border-[var(--color-border)] pt-3">
+        <div className="mt-4 border-t border-[var(--color-border)] pt-3" role="status">
           <div className="mb-1.5 flex items-center justify-between gap-3 text-xs text-[var(--color-text-muted)]">
-            <span>Mes {progress.current} de {progress.total}: {formatMonth(progress.from)}</span>
-            <span className="font-mono tabular-nums">{Math.round((progress.current / progress.total) * 100)}%</span>
+            <span>
+              {progress.current ? `Sincronizando ${formatMonth(progress.current)}` : "Preparando la sesión en Copec"}
+              {progress.planned.length > 0 ? ` · ${Math.min(progress.done, progress.planned.length)} de ${progress.planned.length} mes(es) listos` : ""}
+            </span>
+            <span className="font-mono tabular-nums">{progress.planned.length ? Math.round((Math.min(progress.done, progress.planned.length) / progress.planned.length) * 100) : 0}%</span>
           </div>
           <div className="h-1.5 overflow-hidden rounded-full bg-[var(--color-surface-2)]">
-            <div className="h-full rounded-full bg-[var(--color-primary)] transition-[width] duration-300" style={{ width: `${Math.round((progress.current / progress.total) * 100)}%` }} />
+            <div className="h-full rounded-full bg-[var(--color-primary)] transition-[width] duration-300" style={{ width: `${progress.planned.length ? Math.round((Math.min(progress.done, progress.planned.length) / progress.planned.length) * 100) : 0}%` }} />
           </div>
+          <p className="mt-1.5 text-xs text-[var(--color-text-muted)]">La corrida sigue en el servidor aunque cierres esta página.</p>
         </div>
       )}
       {result && <p className="mt-3 border-t border-[var(--color-border)] pt-3 text-xs text-[var(--color-text-muted)]">{result}</p>}

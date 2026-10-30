@@ -50,9 +50,10 @@ silencio; por eso conviene revisarlos cuando algo "dejó de actualizarse solo".
 
 - `backup-scheduler` (perfil `backup`): respaldo diario a `BACKUP_HOUR` UTC, retención `RETENTION_DAYS` (30 por defecto), destino remoto opcional Cloudreve (se activa en Administración › Respaldos).
 - `cron`: tareas programadas de la plataforma. Requiere `CRON_SECRET`. Los jobs GPS
-  OnWay también requieren `FLEET_GPS_CRON_INTERNAL_SECRET`, distinto de `CRON_SECRET`
-  y configurado en `app` y `cron`; así se autentican las llamadas internas que no pasan
-  por un proxy con IP confiable. Es el **único
+  OnWay también requieren `FLEET_GPS_CRON_INTERNAL_SECRET`, y los de Copec y Aramco
+  `FUEL_CRON_INTERNAL_SECRET`; ambos distintos de `CRON_SECRET` y configurados en `app`
+  y `cron`. Así se autentican las llamadas internas que no pasan por un proxy con IP
+  confiable: sin ellos esos jobs responden 401 cada día. Es el **único
   scheduler** de los endpoints `/api/cron/*`: la lista de trabajos vive en
   `scripts/cron-runner.mjs` y el crontab se escribe desde `docker-compose.yml` (la paridad la
   verifica `lib/__tests__/deploy-workflow.test.ts`). No agendar el mismo endpoint en GitHub

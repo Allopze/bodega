@@ -141,6 +141,21 @@ describe("cron runner", () => {
     expect(regularFetch.mock.calls[0]?.[1]?.headers).not.toHaveProperty("X-Fleet-Gps-Cron-Secret")
   })
 
+  it("sends the fuel internal secret to the Copec and Aramco jobs", async () => {
+    for (const job of ["fuel-copec-sync", "fuel-aramco-sync"]) {
+      const fuelFetch = vi.fn().mockResolvedValue(jsonResponse(200, { ok: true, outcome: "success", code: "FUEL_CRON_SUCCESS" }))
+      await runCronJob(job, { secret: "cron-secret", internalSecret: "fuel-secret", log: vi.fn(), fetchImpl: fuelFetch })
+      expect(fuelFetch.mock.calls[0]?.[1]?.headers).toMatchObject({
+        Authorization: "Bearer cron-secret",
+        "X-Fuel-Cron-Secret": "fuel-secret",
+      })
+    }
+    // La detección de anomalías no entra a ningún portal: sólo Bearer.
+    const anomalyFetch = vi.fn().mockResolvedValue(jsonResponse(200, { ok: true, outcome: "success", code: "FUEL_CRON_SUCCESS" }))
+    await runCronJob("fuel-anomaly-detection", { secret: "cron-secret", internalSecret: "must-not-be-sent", log: vi.fn(), fetchImpl: anomalyFetch })
+    expect(anomalyFetch.mock.calls[0]?.[1]?.headers).not.toHaveProperty("X-Fuel-Cron-Secret")
+  })
+
   it("maps a rate-limited response to a failed runner exit without accepting it as provider failure", async () => {
     const exitCode = await runCronJob("fuel-copec-sync", {
       secret: "cron-secret",
