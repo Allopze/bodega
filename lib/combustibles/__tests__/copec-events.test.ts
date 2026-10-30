@@ -53,6 +53,19 @@ describe("hasPossibleCopecCorrection", () => {
     expect(hasPossibleCopecCorrection(withoutGuideCorrected!.sourceRowKey, [{ sourceRowKey: withoutGuide!.sourceRowKey }])).toBe(true)
   })
 
+  // 2026-10-30, producción: Copec repitió la guía 660150998 para TBZW-37
+  // (57,99 L a las 21:18) y SRCJ-47 (327,45 L a las 17:59) el mismo día, en el
+  // mismo archivo. La segunda quedó «en revisión» como corrección de la primera
+  // y enero no cerraba. Una carga de OTRO vehículo no corrige nada.
+  it("does not treat the same guide on a different vehicle as a correction", () => {
+    const [first] = buildCopecTransactionRows("2026-01-01", "2026-01-31", "diesel", [event({ sourceRef: "660150998", plate: "TBZW-37", liters: 57.99 })])
+    const [second] = buildCopecTransactionRows("2026-01-01", "2026-01-31", "diesel", [event({ sourceRef: "660150998", plate: "SRCJ-47", liters: 327.45 })])
+    expect(hasPossibleCopecCorrection(second!.sourceRowKey, [{ sourceRowKey: first!.sourceRowKey, plate: "TBZW-37" }], "SRCJ-47")).toBe(false)
+    // La misma guía en el MISMO vehículo con otros datos sigue en revisión.
+    const [changed] = buildCopecTransactionRows("2026-01-01", "2026-01-31", "diesel", [event({ sourceRef: "660150998", plate: "TBZW37", liters: 60 })])
+    expect(hasPossibleCopecCorrection(changed!.sourceRowKey, [{ sourceRowKey: first!.sourceRowKey, plate: "TBZW-37" }], "TBZW37")).toBe(true)
+  })
+
   it("does not treat an identical re-download as a correction", () => {
     const [row] = buildCopecTransactionRows("2026-02-01", "2026-02-28", "diesel", [event()])
     expect(hasPossibleCopecCorrection(row!.sourceRowKey, [{ sourceRowKey: row!.sourceRowKey }])).toBe(false)

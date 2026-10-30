@@ -4,11 +4,12 @@ import {
   fuelEquipmentTypes, fuelVehicleOperationalIntervals, fuelVehicles, mantEquipmentProfiles, worksites,
 } from "@/db/schema"
 import { isUniqueViolation } from "@/lib/action-error"
+import { moveProviderMappingsWithVehicleTx } from "@/lib/combustibles/provider-mappings"
 import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { isValidReason, reasonRequiredMessage } from "@/lib/validation/reason-thresholds"
 import {
-  diffEquipmentFields, summarizeChanges, writeEquipmentHistory, type EquipmentFields, type MantActor,
+  EQUIPMENT_FIELD_LABELS, diffEquipmentFields, summarizeChanges, writeEquipmentHistory, type EquipmentFields, type MantActor,
 } from "./equipment-history"
 import {
   equipmentFailure, loadEquipmentCurrent, resolveEquipment,
@@ -65,7 +66,7 @@ export async function applyCreate(
     const [row] = await tx
       .select({
         code: fuelVehicles.code, plate: fuelVehicles.plate, brand: fuelVehicles.brand, model: fuelVehicles.model,
-        year: fuelVehicles.year, typeName: fuelEquipmentTypes.name, worksiteName: worksites.name,
+        year: fuelVehicles.year, typeName: fuelEquipmentTypes.name, worksiteName: worksites.name, worksiteId: fuelVehicles.worksiteId,
       })
       .from(fuelVehicles)
       .innerJoin(fuelEquipmentTypes, eq(fuelEquipmentTypes.id, fuelVehicles.equipmentTypeId))
@@ -79,6 +80,10 @@ export async function applyCreate(
       }
     }
     await tx.update(fuelVehicles).set({ ...sharedValues, updatedAt: now }).where(eq(fuelVehicles.id, vehicleId))
+    // Incorporar puede cambiar la faena del vehículo: sus asignaciones de proveedor lo siguen.
+    if (row && row.worksiteId !== resolved.worksite.id) {
+      await moveProviderMappingsWithVehicleTx(tx, { vehicleId, worksiteId: resolved.worksite.id, actorUserId: actor.userId, actorEmail: actor.email })
+    }
   } else {
     // `meterType` y `performanceUnit` sólo se siembran en el alta: son editables por vehículo.
     await tx.insert(fuelVehicles).values({
@@ -198,6 +203,10 @@ export async function applyUpdate(
     updatedAt: now,
     updatedBy: actor.userId,
   }).where(eq(mantEquipmentProfiles.vehicleId, current.vehicleId))
+  // La sincronización atribuye por la faena de la asignación de proveedor, no por la del vehículo.
+  if (EQUIPMENT_FIELD_LABELS.worksite in changes) {
+    await moveProviderMappingsWithVehicleTx(tx, { vehicleId: current.vehicleId, worksiteId: resolved.worksite.id, actorUserId: actor.userId, actorEmail: actor.email })
+  }
   const action = origin === "import" ? "import" : historyActionFor(changes)
   await writeEquipmentHistory(tx, {
     vehicleId: current.vehicleId,

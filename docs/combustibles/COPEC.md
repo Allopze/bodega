@@ -109,6 +109,20 @@ corrida, con litros/monto cuando la fila los trae.
   falla la consulta final del estado, conserva el resumen y pide recargar la
   página. Los errores de cada mes pasan por `userFacingErrorText` antes de
   mostrarse: una consulta SQL guardada como error no llega a la pantalla.
+- **Producto deshabilitado = mes vacío.** El portal deshabilita el producto que
+  la cuenta no tuvo en el mes (`CopecUnavailableReason = "product_disabled"`).
+  En un mes cerrado eso se registra como vacío confirmado, con la evidencia
+  escrita y el importador como responsable. Una búsqueda que no mostró
+  resultados (`no_results`) no prueba nada y sigue desconocida. Antes ambos
+  casos quedaban «desconocido» y el mes no avanzaba hasta confirmarlo a mano,
+  todos los meses (TAE BlueMax casi nunca tiene cargas).
+- **Asignaciones con fecha.** Un mes cerrado sólo se atribuye con una
+  asignación de `fuel_provider_mappings` vigente para ese mes; la faena es la
+  guardada en la asignación, no la del vehículo. Por eso trasladar un vehículo
+  (flota, importación de flota, mantención) versiona sus asignaciones
+  (`moveProviderMappingsWithVehicleTx`): la vigente se cierra el día anterior y
+  nace otra desde el traslado. El agregado mensual del mes del traslado queda
+  pendiente a propósito: ese reparto lo decide una persona.
 - Los lotes del período que los informes ya no respaldan se **vacían** (totales
   en cero), sólo para las fuentes que la corrida sí pudo leer completas.
 - La evidencia TCT se marca `granularity = 'period_aggregate'` en el ledger: es

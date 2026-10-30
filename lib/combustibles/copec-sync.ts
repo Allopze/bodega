@@ -83,7 +83,7 @@ export interface CopecCoverageStatusView {
   canConfirmEmpty: boolean
 }
 
-export async function getCopecSyncState(): Promise<{ lastRunAt: string | null; lastRunStatus: string | null; rowsReceived: number; rowsAccepted: number; rowsRejected: number; rowsPending: number; affectedQuantity: number; affectedAmount: number; cursor: string | null; pending: number; coverageMonth: string; coverage: CopecCoverageStatusView[] }> {
+export async function getCopecSyncState(): Promise<{ lastRunAt: string | null; lastRunStatus: string | null; lastRunMonth: string | null; rowsReceived: number; rowsAccepted: number; rowsRejected: number; rowsPending: number; affectedQuantity: number; affectedAmount: number; cursor: string | null; pending: number; coverageMonth: string; coverage: CopecCoverageStatusView[] }> {
   const [s, latestRun, nextUncovered] = await Promise.all([
     state(),
     db.query.fuelProviderSyncRuns.findFirst({ where: eq(fuelProviderSyncRuns.provider, "copec"), orderBy: [desc(fuelProviderSyncRuns.startedAt)] }),
@@ -103,6 +103,8 @@ export async function getCopecSyncState(): Promise<{ lastRunAt: string | null; l
   return {
     lastRunAt: latestRun?.finishedAt ?? latestRun?.startedAt ?? s.lastRunAt,
     lastRunStatus: latestRun?.status ?? null,
+    // El mes de esa corrida: sin él, sus filas pendientes se leían como un problema de hoy.
+    lastRunMonth: latestRun?.requestedFrom ?? null,
     rowsReceived: latestRun?.rowsReceived ?? 0,
     rowsAccepted: latestRun?.rowsAccepted ?? 0,
     rowsRejected: latestRun?.rowsRejected ?? 0,
@@ -181,6 +183,39 @@ function exactTotal(values: number[], scale: 100 | 10_000): number {
 }
 
 /** Keep channel extraction failures local so TAE can run even if TCT fails. */
+/**
+ * Un producto que el portal muestra deshabilitado en un mes CERRADO es la
+ * respuesta de Copec de que la cuenta no lo tuvo ese mes: se registra como
+ * vacío confirmado, con esa evidencia y el importador como responsable. Antes
+ * quedaba «desconocido» y el mes no avanzaba hasta que alguien lo confirmara a
+ * mano, todos los meses (TAE BlueMax casi nunca tiene cargas). Un mes abierto
+ * no se cierra así: el producto puede aparecer más adelante. Devuelve si lo
+ * registró.
+ */
+async function recordDisabledProductAsEmpty(input: {
+  download: CopecReportDownloadResult
+  channel: "TCT" | "TAE"
+  from: string
+  to: string
+  importerId: string
+  runId?: string
+}): Promise<boolean> {
+  const { download, channel, from, to } = input
+  if (!download.unavailable || download.reason !== "product_disabled" || isOpenPeriod(to)) return false
+  const productLabel = download.product === "diesel" ? "Diésel" : "BlueMax"
+  await recordCopecPeriodCoverage({
+    channel,
+    product: download.product,
+    month: monthKey(from),
+    status: "legitimate_empty",
+    sourceAvailability: "available",
+    syncRunId: input.runId,
+    evidence: `El portal Copec mostró ${channel} ${productLabel} deshabilitado para ${monthKey(from).slice(0, 7)}: la cuenta no tuvo ese producto en el mes. Confirmado por la sincronización.`,
+    evidenceActorUserId: input.importerId,
+  })
+  return true
+}
+
 async function downloadCopecChannel(
   portal: CopecPortalSession,
   requests: Array<{ product: "diesel" | "bluemax"; from: string; to: string }>,
@@ -237,8 +272,8 @@ async function archiveDownloadedCopecReport(input: {
 async function priorCopecEvents(accountKey: string, from: string, to: string) {
   return db.query.fuelProviderTransactions.findMany({
     where: and(eq(fuelProviderTransactions.provider, "copec"), eq(fuelProviderTransactions.sourceAccount, accountKey), gte(fuelProviderTransactions.occurredAt, `${from}T00:00:00.000Z`), lte(fuelProviderTransactions.occurredAt, `${nextMonth(to)}T06:00:00.000Z`)),
-    columns: { sourceRowKey: true },
-  })
+    columns: { sourceRowKey: true, sourcePlate: true },
+  }).then((rows) => rows.map((row) => ({ sourceRowKey: row.sourceRowKey, plate: row.sourcePlate })))
 }
 
 function isValidIsoDate(value: string | null | undefined): value is string {
@@ -455,6 +490,7 @@ async function importCopecPeriod(
     const productLabel = product === "diesel" ? "Diesel" : "BlueMax"
     const source = copecTctSource(product)
     if (download.unavailable) {
+      if (await recordDisabledProductAsEmpty({ download, channel: "TCT", from, to, importerId: resolvedImporterId, runId })) continue
       unavailable.push(productLabel)
       await recordCopecPeriodCoverage({ channel: "TCT", product, month: monthKey(from), status: "unknown", sourceAvailability: "unavailable", syncRunId: runId })
       continue
@@ -541,8 +577,8 @@ async function importCopecPeriod(
     const acceptedEventInputs: ProviderRowInput[] = []
     for (let index = 0; index < eventRows.length; index++) {
       const row = eventRows[index]!
-      const earlierRows = eventRows.slice(0, index).map((previous) => ({ sourceRowKey: previous.sourceRowKey }))
-      if (hasPossibleCopecCorrection(row.sourceRowKey, [...priorEvents, ...earlierRows])) {
+      const earlierRows = eventRows.slice(0, index).map((previous) => ({ sourceRowKey: previous.sourceRowKey, plate: previous.plate }))
+      if (hasPossibleCopecCorrection(row.sourceRowKey, [...priorEvents, ...earlierRows], row.plate)) {
         correctionReviewRows.push({ ...row, sourceRowKey: `${row.sourceRowKey}:correction-review` })
       } else acceptedEventInputs.push(row)
     }
@@ -773,6 +809,7 @@ async function importTaeReceiptPeriod(
   for (const download of downloads) {
     const productLabel = download.product === "diesel" ? "Diesel" : "BlueMax"
     if (download.unavailable) {
+      if (await recordDisabledProductAsEmpty({ download, channel: "TAE", from, to, importerId, runId })) continue
       unavailable.push(`TAE ${productLabel}`)
       await recordCopecPeriodCoverage({ channel: "TAE", product: download.product, month: monthKey(from), status: "unknown", sourceAvailability: "unavailable", syncRunId: runId })
       continue
@@ -837,8 +874,8 @@ async function importTaeReceiptPeriod(
     const correctionIndexes = new Set<number>()
     for (let index = 0; index < eventRows.length; index++) {
       const row = eventRows[index]!
-      const earlierRows = eventRows.slice(0, index).map((previous) => ({ sourceRowKey: previous.sourceRowKey }))
-      if (hasPossibleCopecCorrection(row.sourceRowKey, [...priorEvents, ...earlierRows])) {
+      const earlierRows = eventRows.slice(0, index).map((previous) => ({ sourceRowKey: previous.sourceRowKey, plate: previous.plate }))
+      if (hasPossibleCopecCorrection(row.sourceRowKey, [...priorEvents, ...earlierRows], row.plate)) {
         correctionReviewRows.push({ ...row, sourceRowKey: `${row.sourceRowKey}:correction-review` })
         correctionIndexes.add(index)
       } else acceptedEventInputs.push(row)
@@ -848,20 +885,21 @@ async function importTaeReceiptPeriod(
       const id = fuelProductIdForLegacy(input.product)
       return id ? [id] : []
     }))]
-    const cards = [...new Set(acceptedEventInputs.map((input) => input.plate).filter((card): card is string => Boolean(card)))]
-    const locations = cards.length && productIds.length ? await db.query.fuelStorageLocations.findMany({
+    const locations = productIds.length ? await db.query.fuelStorageLocations.findMany({
       where: and(
-        inArray(fuelStorageLocations.taeCardNumber, cards),
         inArray(fuelStorageLocations.productId, productIds),
         isNotNull(fuelStorageLocations.taeCardNumber),
         eq(fuelStorageLocations.isActive, true),
       ),
       columns: { id: true, worksiteId: true, productId: true, taeCardNumber: true },
     }) : []
-    const locationByCardProduct = new Map(locations.map((location) => [`${location.taeCardNumber}::${location.productId}`, location]))
+    // La tarjeta se compara compacta en los dos lados: el validador la entrega
+    // como `plateMatchKey` («12422690023091») y la vasija puede guardarla con o
+    // sin guiones. Comparándola tal cual, ninguna recepción encontraba su vasija.
+    const locationByCardProduct = new Map(locations.map((location) => [`${plateMatchKey(location.taeCardNumber!)}::${location.productId}`, location]))
     const eventPersisted = await recordFuelProviderValidation(runId, eventValidation, (input) => {
       const productId = fuelProductIdForLegacy(input.product)
-      const location = productId && input.plate ? locationByCardProduct.get(`${input.plate}::${productId}`) : undefined
+      const location = productId && input.plate ? locationByCardProduct.get(`${plateMatchKey(input.plate)}::${productId}`) : undefined
       return { worksiteId: location?.worksiteId, storageLocationId: location?.id, productId }
     }, { sourceFileId })
     const correctionsPersisted = correctionReviewRows.length > 0

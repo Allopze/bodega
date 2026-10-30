@@ -149,7 +149,7 @@ describe("sesión Copec", () => {
 
     expect(results).toEqual([
       { product: "diesel", unavailable: false, failure: { kind: "selector_changed", message: "Copec no mostró el control esperado para este producto." } },
-      { product: "bluemax", unavailable: true },
+      { product: "bluemax", unavailable: true, reason: "product_disabled" },
     ])
     expect(opened).toHaveLength(1)
     expect(portal.logins).toBe(1)
@@ -161,8 +161,8 @@ describe("sesión Copec", () => {
     const results = await downloadCopecReports(requests)
 
     expect(results).toEqual([
-      { product: "diesel", unavailable: true },
-      { product: "bluemax", unavailable: true },
+      { product: "diesel", unavailable: true, reason: "product_disabled" },
+      { product: "bluemax", unavailable: true, reason: "product_disabled" },
     ])
     expect(opened).toHaveLength(1)
   })

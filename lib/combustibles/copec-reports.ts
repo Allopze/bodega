@@ -28,7 +28,7 @@ export interface CopecDownloadedReport {
 
 export type CopecReportDownloadResult =
   | { product: CopecProduct; report: CopecDownloadedReport; unavailable: false }
-  | { product: CopecProduct; unavailable: true }
+  | { product: CopecProduct; unavailable: true; reason: CopecUnavailableReason }
   | { product: CopecProduct; unavailable: false; failure: { kind: CopecReportFailureKind; message: string } }
 
 /** `mfa_*`: el código de verificación por correo (no llegó, la casilla no responde o Copec lo rechazó). */
@@ -110,11 +110,21 @@ const PRODUCT_LABEL: Record<CopecProduct, string> = {
 
 const MONTH_LABELS = ["ene.", "feb.", "mar.", "abr.", "may.", "jun.", "jul.", "ago.", "sept.", "oct.", "nov.", "dic."] as const
 
+/**
+ * Por qué el portal no entregó un detalle. Los dos casos no pesan lo mismo:
+ * - `product_disabled`: el portal deshabilita el producto que la cuenta no tuvo
+ *   en el mes. Es la respuesta de Copec de que ese mes no hubo consumo, y en un
+ *   mes cerrado basta para darlo por vacío (`importCopecPeriod`).
+ * - `no_results`: la búsqueda no mostró el botón de exportar a tiempo. Puede
+ *   ser un mes sin datos o un portal lento: no prueba nada.
+ */
+export type CopecUnavailableReason = "product_disabled" | "no_results"
+
 /** El portal no genera un archivo para todos los meses/productos. Este caso es
  * recuperable durante una sincronización histórica, a diferencia de una falla
  * de credenciales, navegación o conectividad. */
 export class CopecReportUnavailableError extends CopecReportFailure {
-  constructor(from: string, to: string, product: CopecProduct) {
+  constructor(from: string, to: string, product: CopecProduct, readonly reason: CopecUnavailableReason = "no_results") {
     super("report_unavailable", `Copec no entregó un detalle ${PRODUCT_LABEL[product]} para el mes ${from} a ${to}`)
     this.name = "CopecReportUnavailableError"
   }
@@ -216,7 +226,7 @@ async function downloadReportFromPage(page: Page, request: CopecReportRequest, c
     await radio.check({ timeout: 10_000 })
   } catch (error) {
     if (!(await radio.isDisabled().catch(() => false))) throw error
-    throw new CopecReportUnavailableError(request.from, request.to, request.product)
+    throw new CopecReportUnavailableError(request.from, request.to, request.product, "product_disabled")
   }
 
   await page.locator("#Cph1_LinkBtnBuscarPatentes").click()
@@ -224,7 +234,7 @@ async function downloadReportFromPage(page: Page, request: CopecReportRequest, c
   try {
     await exportButton.waitFor({ state: "visible", timeout: 30_000 })
   } catch {
-    throw new CopecReportUnavailableError(request.from, request.to, request.product)
+    throw new CopecReportUnavailableError(request.from, request.to, request.product, "no_results")
   }
 
   const downloadType = page.locator('input[id$="RcbxTipoDescargaPatente_Input"]')
@@ -523,7 +533,7 @@ export async function withCopecPortalSession<T>(run: (session: CopecPortalSessio
               results.push({ product: request.product, report: await downloadReportFromPage(reportsPage, request, channel), unavailable: false })
             } catch (error) {
               if (isCopecReportUnavailableError(error)) {
-                results.push({ product: request.product, unavailable: true })
+                results.push({ product: request.product, unavailable: true, reason: error.reason })
                 continue
               }
               const failure = classifyProductFailure(error)

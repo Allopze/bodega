@@ -351,3 +351,41 @@ describe("importación", () => {
     expect(brands).toContain("Scania")
   })
 })
+
+// La sincronización Copec atribuye el consumo por la faena de la asignación de
+// proveedor, no por la del vehículo: cambiar la faena desde la mantención
+// tiene que llevar sus asignaciones.
+describe("las asignaciones de proveedor siguen al equipo cuando cambia de faena", () => {
+  async function mapPlate(vehicleId: string, plateKey: string, worksiteId: string) {
+    await testDb.insert(schema.fuelProviderMappings).values({
+      id: `map-${plateKey}`, provider: "copec", sourceAccount: "tct:diesel", externalKey: plateKey, normalizedValue: plateKey,
+      worksiteId, vehicleId, decidedBy: actor.userId, reason: "prueba", effectiveFrom: "2026-01-01",
+    })
+  }
+  async function activeMapping(plateKey: string) {
+    const rows = await testDb.select().from(schema.fuelProviderMappings).where(eq(schema.fuelProviderMappings.externalKey, plateKey))
+    return { active: rows.filter((row) => row.isActive), closed: rows.filter((row) => !row.isActive) }
+  }
+
+  it("al incorporar un vehículo de la flota en otra faena", async () => {
+    await testDb.insert(schema.fuelVehicles).values({ id: "veh-flota-map", plate: "DFGH56", code: "KA-310", type: "test-camion", equipmentTypeId: T.km, worksiteId: WS.cholguan, isActive: true })
+    await mapPlate("veh-flota-map", "DFGH56", WS.cholguan)
+    await createdId(await createEquipment(actor, input({ code: "KA-310", plate: "DFGH-56", worksiteId: WS.arauco })))
+    const { active, closed } = await activeMapping("DFGH56")
+    expect(active).toEqual([expect.objectContaining({ worksiteId: WS.arauco, vehicleId: "veh-flota-map", version: 2 })])
+    expect(closed).toEqual([expect.objectContaining({ worksiteId: WS.cholguan, version: 1 })])
+  })
+
+  it("al editar la faena del equipo, y no al editar otra cosa", async () => {
+    const vehicleId = await createdId(await createEquipment(actor, input({ code: "KA-710", plate: "JKLP-71", worksiteId: WS.arauco })))
+    await mapPlate(vehicleId, "JKLP71", WS.arauco)
+
+    await updateEquipment(actor, vehicleId, input({ code: "KA-710", plate: "JKLP-71", model: "R460", worksiteId: WS.arauco }), { active: true, retiredReason: "" })
+    expect((await activeMapping("JKLP71")).closed).toHaveLength(0)
+
+    await updateEquipment(actor, vehicleId, input({ code: "KA-710", plate: "JKLP-71", model: "R460", worksiteId: WS.cholguan }), { active: true, retiredReason: "" })
+    const { active, closed } = await activeMapping("JKLP71")
+    expect(active).toEqual([expect.objectContaining({ worksiteId: WS.cholguan, version: 2 })])
+    expect(closed).toEqual([expect.objectContaining({ worksiteId: WS.arauco })])
+  })
+})

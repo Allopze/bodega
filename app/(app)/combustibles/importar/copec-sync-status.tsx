@@ -278,7 +278,8 @@ export function CopecSyncStatus({ initialStatus, initialStartOptions }: { initia
                 Próximo mes pendiente: {formatMonth(status.cursor)}
               </span>
             )}
-            {status.pending > 0 && <span className="text-[var(--color-warning-ink)]">{status.pending} patente(s) sin vehículo registrado: su consumo no se importa hasta que las registres en la flota y vuelvas a sincronizar su período</span>}
+            {/* Son FILAS de la última corrida, no patentes: antes decía «566 patente(s)» por 566 cargas de un mes ya fuera del plan. */}
+            {status.pending > 0 && <span className="text-[var(--color-warning-ink)]">{status.pending} carga(s) de {status.lastRunMonth ? formatMonth(status.lastRunMonth) : "la última corrida"} quedaron pendientes: su patente no está en la flota o no tiene asignación para ese mes. No se importan hasta resolverlo y volver a sincronizar ese mes.</span>}
             {status.lastRunStatus && <span className="text-[var(--color-text-muted)]">Calidad última corrida: {status.rowsReceived} recibidas · {status.rowsAccepted} aceptadas · {status.rowsRejected} rechazadas · {status.rowsPending} pendientes · impacto {formatQty(status.affectedQuantity, undefined, { maximumFractionDigits: 2 })} L / ${formatQty(status.affectedAmount, undefined, { maximumFractionDigits: 2 })} ({status.lastRunStatus})</span>}
           </div>
           {status.lastRunStatus === "running" && <p role="status" className="text-xs text-[var(--color-warning-ink)]">Copec mantiene una corrida abierta. Espera a que cierre o revisa la bitácora de cron antes de intentar otra sincronización.</p>}
