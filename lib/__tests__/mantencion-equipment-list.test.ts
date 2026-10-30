@@ -82,6 +82,16 @@ describe("toEquipmentListRow y matchesEquipmentSearch", () => {
     expect(toEquipmentListRow(row("TO-38", "al_dia", { plate: "TO-38" })).showPlate).toBe(false)
   })
 
+  it("lleva los días en taller y si la correctiva está sin actualizar; sin taller, ni uno ni otro", () => {
+    const state = (daysStopped: number | null, stale: boolean) => ({
+      inWorkshop: true, stale, lastActivityDate: "2026-10-27", exitDate: null, daysStopped,
+      recordId: "r1", folio: "MC-SAN-9103", entryDate: "2026-10-14", hours: 3.5,
+    })
+    expect(toEquipmentListRow(row("KA-110", "al_dia", { workshop: state(15, true) }))).toMatchObject({ inWorkshop: true, workshopDays: 15, workshopStale: true })
+    expect(toEquipmentListRow(row("KA-107", "al_dia", { workshop: state(null, false) }))).toMatchObject({ inWorkshop: true, workshopDays: null, workshopStale: false })
+    expect(toEquipmentListRow(row("KA-106", "al_dia"))).toMatchObject({ inWorkshop: false, workshopDays: null, workshopStale: false })
+  })
+
   it("la búsqueda ignora tildes y mayúsculas y exige todas las palabras", () => {
     const item = toEquipmentListRow(row("KA-135", "al_dia", { plate: "RBYD-98", worksiteName: "Cholguán" }))
     expect(matchesEquipmentSearch(item, "cholguan")).toBe(true)

@@ -1,3 +1,4 @@
+import { nameKey } from "./normalize"
 import type { MantEquipmentStatus, MantUnit } from "./types"
 
 /**
@@ -55,6 +56,34 @@ export function remainingText(status: Pick<MantEquipmentStatus, "remaining">, un
 export function dueText(status: Pick<MantEquipmentStatus, "remaining" | "nextIntervalValue">, unit: MantUnit): string {
   if (status.nextIntervalValue == null) return ""
   return `Toca la de ${formatReading(status.nextIntervalValue, unit)} · ${remainingText(status, unit)}`
+}
+
+/**
+ * «Scania R450»: marca y modelo en una sola línea. Muchos modelos de la planilla
+ * de inventario ya traen la marca («Ford Cargo» + «Ford Cargo 5032 E»); en ese
+ * caso se muestra el modelo tal cual en vez de repetirla. La marca se reconoce
+ * sin importar tildes ni mayúsculas y sólo si termina en el límite de una
+ * palabra: «Ford» no es prefijo de «Fordson».
+ */
+export function brandAndModel(brand: string | null | undefined, model: string | null | undefined): string {
+  const brandText = brand?.trim() ?? ""
+  const modelText = model?.trim() ?? ""
+  if (!modelText) return brandText
+  if (!brandText) return modelText
+  const brandKey = nameKey(brandText)
+  const modelKey = nameKey(modelText)
+  const repeated = modelKey.startsWith(brandKey) && !/[a-z0-9]/.test(modelKey.charAt(brandKey.length))
+  if (repeated) return modelText
+  // La marca «Ford Cargo» con el modelo «Cargo 2628» se leía «Ford Cargo Cargo 2628»: si el
+  // modelo empieza con las últimas palabras de la marca, ese tramo va una sola vez.
+  const brandWords = brandText.split(/\s+/)
+  const modelWords = modelText.split(/\s+/)
+  for (let overlap = Math.min(brandWords.length - 1, modelWords.length); overlap > 0; overlap--) {
+    const tail = nameKey(brandWords.slice(-overlap).join(" "))
+    const head = nameKey(modelWords.slice(0, overlap).join(" "))
+    if (tail === head) return [brandText, ...modelWords.slice(overlap)].join(" ")
+  }
+  return `${brandText} ${modelText}`
 }
 
 export const EQUIPMENT_STATE_LABEL = {

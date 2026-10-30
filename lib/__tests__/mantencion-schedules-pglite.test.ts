@@ -61,6 +61,12 @@ function ok<T extends { ok: boolean }>(result: T): Extract<T, { ok: true }> {
   return result as Extract<T, { ok: true }>
 }
 
+/** Id del ítem que acaba de agregar `addScheduleItem` (el servicio lo devuelve en `data`). */
+function newItemId(result: { data?: { itemId: string } }): string {
+  if (!result.data) throw new Error("La edición del ítem no devolvió sus identificadores")
+  return result.data.itemId
+}
+
 beforeAll(async () => {
   await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
   const now = new Date().toISOString()
@@ -226,16 +232,75 @@ describe("intervalos (regla 15)", () => {
     expect(await setScheduleIntervalActive(actor, { scheduleId: single.data.id, intervalId: only.id, active: false })).toMatchObject({ ok: false, message: "La pauta necesita al menos un intervalo." })
   })
 
-  it("agregar de nuevo un intervalo quitado lo reactiva sin duplicar la fila", async () => {
+  it("agregar de nuevo un intervalo quitado lo reactiva sin duplicar la fila y sin volver a marcarlo por revisar", async () => {
     const model = (await loadScheduleEditor(sourceId))!
     const eighty = model.intervals.find((item) => item.value === 80000)!
     ok(await setScheduleIntervalActive(actor, { scheduleId: sourceId, intervalId: eighty.id, active: false }))
-    ok(await addScheduleInterval(actor, { scheduleId: sourceId, value: 80000 }))
+    const restored = ok(await addScheduleInterval(actor, { scheduleId: sourceId, value: 80000 }))
+    expect(restored.message).toBe("Intervalo de 80.000 km restituido con su columna.")
+    expect(restored.data).toMatchObject({ intervalId: eighty.id, restored: true })
     const rows = await testDb.select().from(schema.mantScheduleIntervals)
       .where(and(eq(schema.mantScheduleIntervals.scheduleId, sourceId), eq(schema.mantScheduleIntervals.value, 80000)))
     expect(rows).toHaveLength(1)
-    expect(rows[0]).toMatchObject({ isActive: true, needsReview: true })
+    // La columna ya estaba revisada al quitarla: vuelve tal cual, no como una columna nueva.
+    expect(rows[0]).toMatchObject({ isActive: true, needsReview: false })
     expect(await addScheduleInterval(actor, { scheduleId: sourceId, value: 80000 })).toMatchObject({ ok: false, field: "value" })
+  })
+
+  it("restituir un intervalo devuelve SU columna intacta, aunque difiera de la que heredaría de otro", async () => {
+    const model = (await loadScheduleEditor(sourceId))!
+    const eighty = model.intervals.find((item) => item.value === 80000)!
+    const fortyK = model.intervals.find((item) => item.value === 40000)!
+    const item = model.groups[0]!.items[0]!
+    // En 40.000 el ítem aplica; en 80.000 lo desmarcamos: si «restituir» copiara otra columna, volvería marcado.
+    expect(item.applies[fortyK.id]).toBe(true)
+    ok(await setScheduleCell(actor, { scheduleId: sourceId, itemId: item.id, intervalId: eighty.id, applies: false }))
+    const cellsBefore = await testDb.select().from(schema.mantScheduleItemIntervals).where(eq(schema.mantScheduleItemIntervals.intervalId, eighty.id))
+
+    ok(await setScheduleIntervalActive(actor, { scheduleId: sourceId, intervalId: eighty.id, active: false }))
+    const restored = ok(await addScheduleInterval(actor, { scheduleId: sourceId, value: 80000 }))
+    expect(restored.message).toBe("Intervalo de 80.000 km restituido con su columna.")
+
+    const cellsAfter = await testDb.select().from(schema.mantScheduleItemIntervals).where(eq(schema.mantScheduleItemIntervals.intervalId, eighty.id))
+    expect(cellsAfter).toEqual(cellsBefore)
+    expect((await loadScheduleEditor(sourceId))!.groups[0]!.items[0]!.applies[eighty.id]).toBe(false)
+    const snapshot = await getScheduleSnapshot(sourceId, restored.version)
+    expect(snapshot?.intervals).toEqual([10000, 20000, 40000, 60000, 80000])
+    expect(snapshot?.groups[0]?.items[0]?.applies).toEqual([true, false, true, expect.any(Boolean), false])
+    // Sin ítems nuevos entre medio no hay nada que heredar: la columna no queda por revisar.
+    expect((await loadScheduleEditor(sourceId))!.intervals.find((interval) => interval.id === eighty.id)?.needsReview).toBe(false)
+  })
+
+  it("un ítem que nació mientras el intervalo estaba quitado hereda al volver y deja la columna por revisar", async () => {
+    const model = (await loadScheduleEditor(sourceId))!
+    const eighty = model.intervals.find((item) => item.value === 80000)!
+    const group = model.groups[0]!
+    const cellOf = async (itemId: string) => (await testDb.select().from(schema.mantScheduleItemIntervals)
+      .where(and(eq(schema.mantScheduleItemIntervals.itemId, itemId), eq(schema.mantScheduleItemIntervals.intervalId, eighty.id))))[0]
+
+    // Vía «Agregar intervalo»: el ítem nuevo no tenía celda en 80.000.
+    ok(await setScheduleIntervalActive(actor, { scheduleId: sourceId, intervalId: eighty.id, active: false }))
+    const frenos = newItemId(ok(await addScheduleItem(actor, { scheduleId: sourceId, groupId: group.id, name: "Frenos de prueba" })))
+    expect(await cellOf(frenos)).toBeUndefined()
+    const restored = ok(await addScheduleInterval(actor, { scheduleId: sourceId, value: 80000 }))
+    expect(restored.message).toBe("Intervalo de 80.000 km restituido con su columna. 1 actividad nueva heredó su valor de la columna de 40.000 km. Revisa la columna.")
+    expect(await cellOf(frenos)).toMatchObject({ applies: true })
+    expect((await loadScheduleEditor(sourceId))!.intervals.find((interval) => interval.id === eighty.id)?.needsReview).toBe(true)
+
+    // Vía «Deshacer» (restituir con la misma acción de quitar): también devuelve la columna sin huecos.
+    ok(await clearIntervalReview(actor, { scheduleId: sourceId }))
+    ok(await setScheduleIntervalActive(actor, { scheduleId: sourceId, intervalId: eighty.id, active: false }))
+    const luces = newItemId(ok(await addScheduleItem(actor, { scheduleId: sourceId, groupId: group.id, name: "Luces de prueba" })))
+    expect(await cellOf(luces)).toBeUndefined()
+    ok(await setScheduleIntervalActive(actor, { scheduleId: sourceId, intervalId: eighty.id, active: true }))
+    expect(await cellOf(luces)).toMatchObject({ applies: true })
+    expect(await cellOf(frenos)).toMatchObject({ applies: true })
+    expect((await loadScheduleEditor(sourceId))!.intervals.find((interval) => interval.id === eighty.id)?.needsReview).toBe(true)
+
+    // Deja la pauta como estaba para las pruebas que siguen.
+    ok(await setScheduleItemActive(actor, { scheduleId: sourceId, itemId: frenos, active: false }))
+    ok(await setScheduleItemActive(actor, { scheduleId: sourceId, itemId: luces, active: false }))
+    ok(await clearIntervalReview(actor, { scheduleId: sourceId }))
   })
 })
 

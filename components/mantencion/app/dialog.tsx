@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, type ReactNode, type RefObject } from "react"
 import { createPortal } from "react-dom"
+import { FieldError } from "./ui"
 
 /**
  * Diálogos y hojas de la app del mecánico. Los tres cuidados que no se negocian:
@@ -90,6 +91,51 @@ export function ConfirmDialog({ title, children, cancelLabel = "Cancelar", confi
           <div className="dlgb">
             <button ref={cancel} type="button" className="dbtn" onClick={onCancel}>{cancelLabel}</button>
             <button type="button" className={danger ? "dbtn danger" : "dbtn pri"} onClick={onConfirm} disabled={busy}>{confirmLabel}</button>
+          </div>
+        </div>
+      </div>
+    </Portal>
+  )
+}
+
+export interface SaveOrDiscardDialogProps {
+  title: string
+  children: ReactNode
+  saveLabel: string
+  keepLabel: string
+  discardLabel: string
+  onSave: () => void
+  /** «Seguir»: cierra el diálogo y deja todo como estaba. También es lo que hacen Esc y tocar fuera. */
+  onKeep: () => void
+  onDiscard: () => void
+  busy?: boolean
+  error?: string | undefined
+}
+
+/**
+ * Salir de algo que se guarda solo: la salida principal CONSERVA el trabajo y el
+ * descarte es una acción aparte, abajo y sin relleno (nunca en la posición del
+ * botón principal). El foco parte en «Guardar»: lo único que no destruye nada.
+ */
+export function SaveOrDiscardDialog({ title, children, saveLabel, keepLabel, discardLabel, onSave, onKeep, onDiscard, busy, error }: SaveOrDiscardDialogProps) {
+  const titleId = useId()
+  const textId = useId()
+  const panel = useRef<HTMLDivElement>(null)
+  const save = useRef<HTMLButtonElement>(null)
+  useModalBehavior(panel, onKeep, save)
+  return (
+    <Portal>
+      <div className="dbg" onClick={(event) => { if (event.target === event.currentTarget) onKeep() }}>
+        <div ref={panel} className="dlg" role="alertdialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={textId} tabIndex={-1}>
+          <h2 id={titleId}>{title}</h2>
+          <div id={textId}>{children}</div>
+          <FieldError message={error} />
+          <div className="dlgb stacked">
+            <button ref={save} type="button" className="dbtn pri" onClick={onSave} disabled={busy}>{saveLabel}</button>
+            <button type="button" className="dbtn" onClick={onKeep} disabled={busy}>{keepLabel}</button>
+          </div>
+          <div className="dlgd">
+            <button type="button" className="dbtn quiet-danger" onClick={onDiscard} disabled={busy}>{discardLabel}</button>
           </div>
         </div>
       </div>

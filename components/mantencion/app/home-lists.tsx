@@ -66,7 +66,7 @@ export function RecentSection({ rows, now }: { rows: RecentRow[]; now: number })
           <div style={{ flex: 1, minWidth: 0 }}>
             <div className="c">{equipmentLabel({ code: row.equipmentCode, plate: row.equipmentPlate })}</div>
             <div className="d">
-              {row.title} · {shortWhen(row.when, now)} · <span className="mono" style={{ fontSize: 14 }}>{row.folio ?? "Folio pendiente"}</span>
+              {row.title} · {shortWhen(row.when, now)} · <span className="mono nw" style={{ fontSize: 14 }}>{row.folio ?? "Folio pendiente"}</span>
             </div>
           </div>
           <PillFor row={row} />
@@ -103,7 +103,7 @@ export function ObservationBanner({ observations, onOpen }: { observations: Cata
   return (
     <Banner action={<button type="button" className="lnk" onClick={onOpen}>Ver y responder</button>}>
       <strong>{plural(count, "registro observado", "registros observados")}</strong>
-      <div>Tu supervisor dejó {observations.length === 1 ? "un comentario" : "comentarios"}. Respóndelos para cerrarlos.</div>
+      <div>{observations.length === 1 ? "Tu supervisor dejó una observación. Respóndela para cerrarla." : `Tu supervisor dejó ${observations.length} observaciones. Respóndelas para cerrarlas.`}</div>
     </Banner>
   )
 }
@@ -123,7 +123,7 @@ export function DraftBanners({ drafts, equipmentOf, onResume, onDiscard }: {
         return (
           <Banner key={draft.id} tone="ok">
             <strong>{what}</strong>
-            <div>Lo que ingresaste está guardado.</div>
+            <div>Tu avance está guardado en este teléfono.</div>
             <div className="banner-actions">
               <button type="button" className="btns" onClick={() => onResume(draft)} aria-label={`Seguir ${what}`}>Seguir</button>
               <button type="button" className="btns" onClick={() => onDiscard(draft)} aria-label={`Descartar ${what}`}>Descartar</button>

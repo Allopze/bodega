@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
-  dueText, EQUIPMENT_STATE_LABEL, executorText, formatHours, formatNumber, formatReading, meterName, parseReadingInput,
+  brandAndModel, dueText, EQUIPMENT_STATE_LABEL, executorText, formatHours, formatNumber, formatReading, meterName, parseReadingInput,
   plural, recordKindText, remainingText, unitName,
 } from "../format"
 import { MANT_EQUIPMENT_STATES } from "../types"
@@ -30,6 +30,27 @@ describe("formatos (§14): miles con punto, decimales con coma, unidades visible
     expect(unitName("h")).toBe("horas")
     expect(meterName("km")).toBe("odómetro")
     expect(meterName("h")).toBe("horómetro")
+  })
+
+  it("brandAndModel no repite la marca cuando el modelo ya empieza con ella", () => {
+    expect(brandAndModel("Scania", "R450")).toBe("Scania R450")
+    expect(brandAndModel("Ford Cargo", "Ford Cargo 5032 E")).toBe("Ford Cargo 5032 E")
+    // Sin tildes ni mayúsculas, y con la marca escrita aparte del modelo.
+    expect(brandAndModel("Mercedes", "mercedes 1720")).toBe("mercedes 1720")
+    expect(brandAndModel("Ford", "Cargo 2628")).toBe("Ford Cargo 2628")
+    // La marca termina con la palabra con que empieza el modelo: va una sola vez.
+    expect(brandAndModel("Ford Cargo", "Cargo 2628")).toBe("Ford Cargo 2628")
+    expect(brandAndModel("Ford Cargo", "cargo 1722 E")).toBe("Ford Cargo 1722 E")
+    // Un modelo que es SÓLO esa palabra no queda vacío.
+    expect(brandAndModel("Ford Cargo", "Cargo")).toBe("Ford Cargo")
+    // Sólo cuenta en el límite de una palabra.
+    expect(brandAndModel("Ford", "Fordson")).toBe("Ford Fordson")
+    expect(brandAndModel("Mercedes", "Mercedes-Benz 1720")).toBe("Mercedes-Benz 1720")
+    // Sin modelo, o sin marca, queda lo que hay.
+    expect(brandAndModel("Caterpillar", null)).toBe("Caterpillar")
+    expect(brandAndModel("Caterpillar", "  ")).toBe("Caterpillar")
+    expect(brandAndModel("", "M2")).toBe("M2")
+    expect(brandAndModel(null, undefined)).toBe("")
   })
 
   it("plural cuenta con separador de miles y concuerda con 1", () => {

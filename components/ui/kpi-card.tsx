@@ -87,7 +87,7 @@ export function KpiCard({
   const body = (
     <>
       <div className="flex items-center justify-between gap-2">
-        <p className="text-xs font-medium text-[var(--color-text-subtle)] truncate">{label}</p>
+        <p className="min-w-0 break-words text-xs font-medium text-[var(--color-text-subtle)] line-clamp-2">{label}</p>
         <div className="flex items-center gap-1.5 shrink-0">
           {hasSparkline && <MiniSparkline data={sparkline!} color={CHART_COLORS.signal} />}
           {icon && (
@@ -170,7 +170,9 @@ export function KpiCard({
     // evidencia: el criterio es "máximo cuatro tiles por pantalla" y sin un
     // selector fiable sólo podía comprobarse a ojo.
     <Card data-kpi-card="" className={cn(
-      "group/kpi transition-[background-color,border-color,box-shadow] duration-(--duration-fast)",
+      // `h-full`: en una fila de la grilla los tiles miden lo mismo aunque un
+      // rótulo ocupe dos líneas (en móvil van de a dos).
+      "group/kpi h-full transition-[background-color,border-color,box-shadow] duration-(--duration-fast)",
       secondaryAction && "relative",
       tone === "signal" && "ring-1 ring-[var(--color-signal-line)]",
       tone === "danger" && "ring-1 ring-[var(--color-danger-line)]",

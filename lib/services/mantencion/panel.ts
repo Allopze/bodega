@@ -35,6 +35,11 @@ export interface PanelUpcomingRow {
   remaining: number | null
   nextIntervalValue: number | null
   state: MantEquipmentState
+  /**
+   * Días que lleva detenido en taller; `null` si no está en taller. Es lo que
+   * evita que un equipo con 15 días en taller salga sólo como «Al día».
+   */
+  workshopDays: number | null
 }
 
 export interface PanelWorkshopRow {
@@ -55,7 +60,7 @@ export interface PanelData {
   today: string
   /** Primer día del período; `null` = todo el historial. */
   from: string | null
-  records: { total: number; preventive: number; corrective: number; hours: number }
+  records: { total: number; preventive: number; corrective: number; hours: number; pendingReview: number }
   fleet: { counts: Record<MantEquipmentState, number>; active: number }
   workshop: { equipment: number; stale: number; rows: PanelWorkshopRow[] }
   stoppedDays: { total: number; equipment: number }
@@ -92,6 +97,7 @@ export async function loadPanel(viewer: MantViewer, filters: PanelFilters, today
       total: sql<number>`count(*)::int`,
       preventive: sql<number>`(count(*) filter (where ${mantRecords.kind} = 'P'))::int`,
       corrective: sql<number>`(count(*) filter (where ${mantRecords.kind} = 'C'))::int`,
+      pendingReview: sql<number>`(count(*) filter (where ${mantRecords.review} = 'pendiente'))::int`,
       hours: sql<number>`coalesce(sum(${mantRecordCorrectives.hours}), 0)::float`,
     }).from(mantRecords)
       .leftJoin(mantRecordCorrectives, eq(mantRecordCorrectives.recordId, mantRecords.id))
@@ -152,7 +158,13 @@ export async function loadPanel(viewer: MantViewer, filters: PanelFilters, today
     filters,
     today,
     from,
-    records: { total: totals?.total ?? 0, preventive: totals?.preventive ?? 0, corrective: totals?.corrective ?? 0, hours: totals?.hours ?? 0 },
+    records: {
+      total: totals?.total ?? 0,
+      preventive: totals?.preventive ?? 0,
+      corrective: totals?.corrective ?? 0,
+      hours: totals?.hours ?? 0,
+      pendingReview: totals?.pendingReview ?? 0,
+    },
     fleet: { counts, active: fleet.length },
     workshop: {
       equipment: inShop.length,
@@ -202,6 +214,8 @@ function upcomingRows(fleet: FleetRow[]): PanelUpcomingRow[] {
       remaining: row.status.remaining,
       nextIntervalValue: row.status.nextIntervalValue,
       state: row.status.state,
+      // El ingreso a taller es obligatorio en la correctiva (regla 11): `null` sólo sería un dato viejo, y cuenta como «desde hoy».
+      workshopDays: row.workshop ? (row.workshop.daysStopped ?? 0) : null,
     }))
 }
 

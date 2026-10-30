@@ -26,6 +26,8 @@ export interface ExportButtonProps<TFilters = undefined> {
   action: (filters: TFilters) => Promise<ExportActionResult>
   filters?: TFilters
   label?: string
+  /** Nombre accesible completo cuando el rótulo visible es corto (debe contener el rótulo: WCAG 2.5.3). */
+  ariaLabel?: string
   variant?: ButtonProps["variant"]
   size?: ButtonProps["size"]
   className?: string
@@ -42,6 +44,7 @@ export function ExportButton<TFilters = undefined>({
   action,
   filters,
   label = "Exportar Excel",
+  ariaLabel,
   variant = "secondary",
   size = "sm",
   className,
@@ -77,6 +80,7 @@ export function ExportButton<TFilters = undefined>({
       onClick={handleExport}
       loading={loading}
       className={className}
+      aria-label={ariaLabel}
     >
       <FileXls className="h-4 w-4 mr-1 shrink-0" />
       {label}

@@ -40,7 +40,10 @@ export function recordsWhere(viewer: MantViewer, filters: RecordFilters): SQL {
   if (filters.from) conditions.push(gte(mantRecords.workDate, filters.from))
   if (filters.to) conditions.push(lte(mantRecords.workDate, filters.to))
   if (filters.status) conditions.push(eq(mantRecords.status, filters.status))
-  if (filters.review) conditions.push(eq(mantRecords.review, filters.review))
+  if (filters.review) {
+    // Las pestañas de revisión hablan de trabajo por hacer: un registro anulado ya no lo es.
+    conditions.push(eq(mantRecords.review, filters.review), eq(mantRecords.status, "vigente"))
+  }
   if (filters.alert === "salto") conditions.push(eq(mantRecords.readingJumpAlert, true))
   if (filters.alert === "fuera") conditions.push(eq(mantRecords.outOfWorksite, true))
   if (filters.alert === "pauta") {
@@ -193,6 +196,64 @@ export async function listRecords(
       workshop: open.has(row.id) ? { daysStopped: open.get(row.id)!.daysStopped, stale: open.get(row.id)!.stale } : null,
     })),
   }
+}
+
+export interface RecordNeighbors {
+  /** Lugar del registro dentro de la lista (desde 1) y cuántos hay en ella. */
+  position: number
+  total: number
+  previous: { id: string; folio: string | null } | null
+  next: { id: string; folio: string | null } | null
+}
+
+/**
+ * Anterior y siguiente de un registro dentro de una lista: la MISMA consulta
+ * (`recordsWhere`, con el alcance del usuario) y el MISMO orden que `listRecords`,
+ * así «Siguiente» es la fila que el usuario tenía debajo. `null` cuando el
+ * registro no está en esa lista (otro filtro, otra faena, ya no coincide).
+ */
+export async function loadRecordNeighbors(viewer: MantViewer, query: RecordListQuery, recordId: string): Promise<RecordNeighbors | null> {
+  const where = recordsWhere(viewer, query.filters)
+  const order = sql.join(orderBy(query.sort, query.dir), sql`, `)
+  const ranked = db
+    .select({
+      id: mantRecords.id,
+      position: sql<number>`(row_number() over (order by ${order}))::int`.as("position"),
+      total: sql<number>`(count(*) over ())::int`.as("total"),
+      previousId: sql<string | null>`lag(${mantRecords.id}) over (order by ${order})`.as("previous_id"),
+      previousFolio: sql<string | null>`lag(${mantRecords.folio}) over (order by ${order})`.as("previous_folio"),
+      nextId: sql<string | null>`lead(${mantRecords.id}) over (order by ${order})`.as("next_id"),
+      nextFolio: sql<string | null>`lead(${mantRecords.folio}) over (order by ${order})`.as("next_folio"),
+    })
+    .from(mantRecords)
+    .innerJoin(worksites, eq(worksites.id, mantRecords.worksiteId))
+    .where(where)
+    .as("ranked")
+  const [row] = await db.select().from(ranked).where(eq(ranked.id, recordId)).limit(1)
+  if (!row) return null
+  return {
+    position: row.position,
+    total: row.total,
+    previous: row.previousId ? { id: row.previousId, folio: row.previousFolio } : null,
+    next: row.nextId ? { id: row.nextId, folio: row.nextFolio } : null,
+  }
+}
+
+/**
+ * Cuántos registros hay en cada pestaña de revisión, con los demás filtros de la
+ * lista aplicados (el de revisión no, porque cada conteo es el suyo). Sólo cuentan
+ * los vigentes: la pestaña «Por revisar» es trabajo por hacer.
+ */
+export async function loadRecordReviewCounts(viewer: MantViewer, filters: RecordFilters): Promise<Record<MantReview, number>> {
+  const where = and(recordsWhere(viewer, { ...filters, review: undefined }), eq(mantRecords.status, "vigente"))
+  const rows = await db
+    .select({ review: mantRecords.review, total: sql<number>`count(*)::int` })
+    .from(mantRecords)
+    .where(where)
+    .groupBy(mantRecords.review)
+  const counts: Record<MantReview, number> = { pendiente: 0, observado: 0, revisado: 0 }
+  for (const row of rows) counts[row.review as MantReview] = row.total
+  return counts
 }
 
 export interface RecordIndicators {

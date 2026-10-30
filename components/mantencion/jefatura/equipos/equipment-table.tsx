@@ -4,11 +4,10 @@ import * as React from "react"
 import Link from "next/link"
 import { CaretDown, CaretUp, CaretUpDown, Truck } from "@phosphor-icons/react"
 import { useSafeShellHeader } from "@/components/layout/header-context"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
-import { formatReading, plural, remainingText } from "@/lib/mantencion/format"
+import { brandAndModel, formatReading, plural, remainingText } from "@/lib/mantencion/format"
 import { matchesEquipmentSearch, type EquipmentListRow } from "@/lib/services/mantencion/equipment-list"
 import { formatDate } from "@/lib/utils"
 import { EquipmentStateBadge } from "../shared/equipment-state-badge"
@@ -104,7 +103,7 @@ export function EquipmentTable({ rows, canManage, filtered }: { rows: EquipmentL
           : "Agrega los equipos uno a uno o impórtalos desde una planilla de Excel: aparecerán en la app del mecánico en su próxima sincronización."}
         action={filtered
           ? <Button asChild variant="secondary" size="sm"><Link href="/mantencion/equipos">Quitar los filtros</Link></Button>
-          : canManage ? <Button asChild size="sm"><Link href="/mantencion/equipos/nuevo">Agregar equipo</Link></Button> : undefined}
+          : canManage ? <Button asChild size="sm"><Link href="/mantencion/equipos/nuevo">Nuevo equipo</Link></Button> : undefined}
         secondaryAction={!filtered && canManage ? <Button asChild variant="secondary" size="sm"><Link href="/mantencion/equipos/importar">Importar desde Excel</Link></Button> : undefined}
       />
     )
@@ -115,7 +114,40 @@ export function EquipmentTable({ rows, canManage, filtered }: { rows: EquipmentL
 
   return (
     <div className="flex flex-col gap-3">
-      <TableRoot aria-label="Equipos de mantención">
+      {/* Móvil: una tarjeta por equipo. A 390 px la tabla dejaba el estado fuera de la pantalla. */}
+      <ul className="flex flex-col gap-2 md:hidden" aria-label="Equipos de mantención">
+        {shown.length === 0 && (
+          <li className="py-6 text-center text-sm text-[var(--color-text-muted)]">Ningún equipo coincide con «{searchQuery.trim()}».</li>
+        )}
+        {shown.map((row) => (
+          <li key={row.id}>
+            <Link
+              href={`/mantencion/equipos/${row.id}`}
+              className="flex min-h-11 flex-col gap-1.5 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 transition-colors duration-(--duration-fast) hover:bg-[var(--color-surface-2)]"
+            >
+              <span className="flex items-baseline justify-between gap-3">
+                <span className="whitespace-nowrap font-mono text-[13px] font-semibold text-[var(--color-primary-ink)]">
+                  {row.code}
+                  {row.showPlate && <span className="ml-2 font-normal text-[var(--color-text-muted)]">{row.plate}</span>}
+                </span>
+                <span className="truncate text-xs text-[var(--color-text-muted)]">{row.worksiteName}</span>
+              </span>
+              <span className="text-sm text-[var(--color-text)]">
+                {[row.typeName, brandAndModel(row.brandName, row.model)].filter(Boolean).join(" · ")}
+              </span>
+              <span className="text-xs text-[var(--color-text-muted)]">
+                {row.hasSchedule ? row.scheduleName : "Sin pauta"}
+                {row.reading != null && <> · <span className="whitespace-nowrap font-mono tabular-nums">{formatReading(row.reading, row.unit)}</span></>}
+              </span>
+              <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <EquipmentStateBadge state={row.state} workshop={row.inWorkshop ? { days: row.workshopDays ?? null } : null} />
+                {row.inWorkshop && row.workshopStale && <span className="text-xs font-semibold text-[var(--color-signal-ink)]">Sin actualizar</span>}
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+      <TableRoot aria-label="Equipos de mantención" className="hidden md:block">
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
@@ -133,9 +165,10 @@ export function EquipmentTable({ rows, canManage, filtered }: { rows: EquipmentL
             {shown.map((row) => (
               <TableRow key={row.id} className={row.state === "baja" ? "bg-[var(--color-surface-2)]/60" : undefined}>
                 <TableCell className="whitespace-nowrap">
+                  {/* Objetivo táctil de 44 px en móvil; en escritorio la línea normal. */}
                   <Link
                     href={`/mantencion/equipos/${row.id}`}
-                    className="font-mono text-[13px] font-semibold text-[var(--color-primary-ink)] underline-offset-2 hover:underline focus-visible:underline"
+                    className="inline-flex min-h-11 items-center font-mono text-[13px] font-semibold text-[var(--color-primary-ink)] underline-offset-2 hover:underline focus-visible:underline sm:min-h-0"
                   >
                     {row.code}
                   </Link>
@@ -145,7 +178,7 @@ export function EquipmentTable({ rows, canManage, filtered }: { rows: EquipmentL
                 <TableCell>
                   <div>{row.typeName}</div>
                   <div className="text-xs text-[var(--color-text-muted)]">
-                    {[`${row.brandName} ${row.model}`.trim(), row.year].filter(Boolean).join(" · ")}
+                    {[brandAndModel(row.brandName, row.model), row.year].filter(Boolean).join(" · ")}
                   </div>
                 </TableCell>
                 <TableCell>{row.worksiteName}</TableCell>
@@ -160,10 +193,11 @@ export function EquipmentTable({ rows, canManage, filtered }: { rows: EquipmentL
                 </TableCell>
                 <TableCell className="whitespace-nowrap"><NextMaintenance row={row} /></TableCell>
                 <TableCell>
-                  <div className="flex flex-wrap items-center gap-1">
-                    <EquipmentStateBadge state={row.state} />
-                    {row.inWorkshop && <Badge variant="outline" size="sm">En taller</Badge>}
-                  </div>
+                  {/* Sin fecha de ingreso (`workshopDays` nulo) no hay cuántos días decir: la etiqueta dice sólo «En taller». */}
+                  <EquipmentStateBadge state={row.state} workshop={row.inWorkshop ? { days: row.workshopDays ?? null } : null} />
+                  {row.inWorkshop && row.workshopStale && (
+                    <div className="mt-1 text-xs font-semibold text-[var(--color-signal-ink)]">Sin actualizar</div>
+                  )}
                 </TableCell>
               </TableRow>
             ))}

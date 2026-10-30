@@ -8,7 +8,7 @@ import { requirePermission } from "@/lib/auth/can"
 import { createEquipmentAction } from "../actions"
 import { loadEquipmentFormCatalogs } from "../form-catalogs"
 
-export const metadata: Metadata = { title: "Agregar equipo" }
+export const metadata: Metadata = { title: "Nuevo equipo" }
 export const dynamic = "force-dynamic"
 
 export default async function NewEquipmentPage() {
@@ -21,9 +21,9 @@ export default async function NewEquipmentPage() {
   return (
     <PageContainer width="form">
       <PageHeader
-        title="Agregar equipo"
+        title="Nuevo equipo"
         description="Si el vehículo ya está en la flota de la plataforma, se incorpora a la mantención sin duplicarlo."
-        breadcrumb={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Equipos", href: "/mantencion/equipos" }, { label: "Agregar equipo" }]}
+        breadcrumb={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Equipos", href: "/mantencion/equipos" }, { label: "Nuevo equipo" }]}
       />
       <EquipmentForm
         action={createEquipmentAction}

@@ -131,14 +131,18 @@ async function registrarCorrectiva(page: Page, opciones: { indice?: number; desc
   await page.getByRole("checkbox", { name: "No se usaron repuestos" }).check()
   await page.getByLabel(/Conductores de las últimas 24 h/).fill("a")
   await page.getByRole("group", { name: "Conductores encontrados" }).getByRole("button").first().click()
+  // «¿Sigue en taller?» cierra el paso «Trabajo»; con «Sí» pide el motivo.
+  await page.getByRole("button", { name: opciones.enTaller === false ? "No, ya salió" : "Sí, sigue", exact: true }).click()
+  if (opciones.enTaller !== false) await page.getByLabel("¿Por qué sigue en taller?").fill("QA_ Espera un repuesto")
+  await page.getByRole("button", { name: "Continuar a fotos", exact: true }).click()
+
+  // Las fotos tienen su propio paso (4/5), a todo el ancho como las de la preventiva.
+  await expect(page.getByText("PASO 4/5")).toBeVisible()
   const cantidad = opciones.fotos ?? 1
   for (let n = 1; n <= cantidad; n++) {
     await page.getByLabel("Agregar foto del trabajo").setInputFiles(await jpeg(page, `${codigo} foto ${n}`))
     await expect(page.getByRole("img", { name: `Foto ${n} del trabajo` })).toBeVisible()
   }
-  // «¿Sigue en taller?» cierra el formulario; con «Sí» pide el motivo.
-  await page.getByRole("button", { name: opciones.enTaller === false ? "No, ya salió" : "Sí, sigue", exact: true }).click()
-  if (opciones.enTaller !== false) await page.getByLabel("¿Por qué sigue en taller?").fill("QA_ Espera un repuesto")
   await page.getByRole("button", { name: "Revisar registro", exact: true }).click()
   await page.getByRole("button", { name: "Firmar y guardar", exact: true }).click()
   await expect(page.getByRole("heading", { name: "Registro guardado" })).toBeVisible()
@@ -231,7 +235,10 @@ test.describe("App del mecánico", () => {
     await pagina.getByRole("button", { name: "Ver pauta", exact: true }).click()
 
     // Pauta: «Todo realizado» y «Listo · seguir con …», sistema por sistema.
-    await expect(pagina.getByRole("button", { name: "Continuar a fotos", exact: true })).toBeDisabled()
+    // «Continuar» no se bloquea: con ítems sin marcar valida al tocarlo, dice cuántos faltan y se queda en la pauta.
+    await pagina.getByRole("button", { name: "Continuar a fotos", exact: true }).click()
+    await expect(pagina.getByRole("alert").filter({ hasText: /^Faltan \d+ ítems por marcar\.$/ })).toBeVisible()
+    await expect(pagina.getByText("PASO 3/5")).toBeVisible()
     for (let vuelta = 0; vuelta < 12; vuelta++) {
       const todo = pagina.getByRole("button", { name: /^(Todo realizado en|Marcar los \d+ que faltan)/ })
       if (!(await todo.count())) break
@@ -252,14 +259,18 @@ test.describe("App del mecánico", () => {
     await expect(pagina.getByRole("img", { name: "Foto: Filtros usados" })).toBeVisible()
     await pagina.getByLabel("Tomar foto de Sticker de mantención realizada").setInputFiles(await jpeg(pagina, "Sticker"))
     await expect(pagina.getByRole("img", { name: "Foto: Sticker de mantención realizada" })).toBeVisible()
-    await pagina.getByLabel("Observaciones").fill("Sin novedad")
+    // Las notas son obligatorias: «Revisar registro» valida al tocarlo y «Sin novedad» las llena de un toque.
+    await pagina.getByRole("button", { name: "Revisar registro", exact: true }).click()
+    await expect(pagina.getByText("Escribe tus notas, o toca «Sin novedad» si no hay nada que anotar.")).toBeVisible()
+    await pagina.getByRole("button", { name: "Sin novedad", exact: true }).click()
+    await expect(pagina.getByLabel(/^Notas/)).toHaveValue("Sin novedad")
     await pagina.getByRole("button", { name: "Revisar registro", exact: true }).click()
 
     // «Cambiar» lleva al paso y vuelve DIRECTO a Revisar.
     await expect(pagina.getByText(`Firmas como ${NOMBRE_MEC1}.`)).toBeVisible()
-    await pagina.getByRole("button", { name: "Cambiar observ.", exact: true }).click()
+    await pagina.getByRole("button", { name: "Cambiar notas", exact: true }).click()
     await expect(pagina.getByText("PASO 4/5")).toBeVisible()
-    await pagina.getByLabel("Observaciones").fill("Sin novedad. Se cambió el sticker.")
+    await pagina.getByLabel(/^Notas/).fill("Sin novedad. Se cambió el sticker.")
     await pagina.getByRole("button", { name: "Volver a revisar", exact: true }).click()
     await expect(pagina.getByRole("button", { name: "Firmar y guardar", exact: true })).toBeVisible()
     await expect(pagina.getByText("Sin novedad. Se cambió el sticker.")).toBeVisible()
@@ -329,20 +340,21 @@ test.describe("App del mecánico", () => {
 
     const aviso = pagina.getByRole("alert").filter({ hasText: "Son 363.000 km más que la última vez. ¿Está bien?" })
     await expect(aviso).toBeVisible()
-    await expect(pagina.getByText("PASO 2/4")).toBeVisible() // no avanzó sin confirmar
+    await expect(pagina.getByText("PASO 2/5")).toBeVisible() // no avanzó sin confirmar
     await aviso.getByRole("button", { name: "Sí, está bien", exact: true }).click()
-    await expect(pagina.getByText("PASO 3/4")).toBeVisible()
+    await expect(pagina.getByText("PASO 3/5")).toBeVisible()
 
-    // Mismo orden que `registrarCorrectiva`: trabajos con sus repuestos, y «¿sigue en taller?» al final.
+    // Mismo orden que `registrarCorrectiva`: trabajos con sus repuestos y «¿sigue en taller?»; después, las fotos en su paso.
     await pagina.getByRole("group", { name: "Agregar trabajo" }).getByRole("button").first().click()
     await pagina.getByRole("button", { name: "No se cambió aceite", exact: true }).click()
     await pagina.getByLabel("Trabajo realizado").fill("QA_ Lectura con salto confirmado")
     await pagina.getByRole("checkbox", { name: "No se usaron repuestos" }).check()
     await pagina.getByLabel(/Conductores de las últimas 24 h/).fill("a")
     await pagina.getByRole("group", { name: "Conductores encontrados" }).getByRole("button").first().click()
+    await pagina.getByRole("button", { name: "No, ya salió", exact: true }).click()
+    await pagina.getByRole("button", { name: "Continuar a fotos", exact: true }).click()
     await pagina.getByLabel("Agregar foto del trabajo").setInputFiles(await jpeg(pagina, `${codigo} salto`))
     await expect(pagina.getByRole("img", { name: "Foto 1 del trabajo" })).toBeVisible()
-    await pagina.getByRole("button", { name: "No, ya salió", exact: true }).click()
     await pagina.getByRole("button", { name: "Revisar registro", exact: true }).click()
     await pagina.getByRole("button", { name: "Firmar y guardar", exact: true }).click()
     await expect(pagina.getByText("Ya llegó a la plataforma.")).toBeVisible({ timeout: 60_000 })
@@ -363,6 +375,57 @@ test.describe("App del mecánico", () => {
       await jefatura.close()
     }
     expect(errores).toEqual([])
+  })
+})
+
+test.describe("Salir de un registro", () => {
+  test.describe.configure({ mode: "serial" })
+
+  test("5 · salir guarda el avance (sobrevive a recargar) y descartar es una acción aparte", async ({ browser }) => {
+    const telefono = await nuevoContexto(browser, { width: 390, height: 844 })
+    const pagina = await telefono.newPage()
+    const errores = vigilarConsola(pagina)
+    try {
+      // Teléfono propio (contexto nuevo): entra una vez con señal y define su PIN, como al instalarla.
+      await entrar(pagina, MEC1)
+      await definirPin(pagina, PIN_MEC1)
+
+      await pagina.getByRole("button", { name: /^Mantención correctiva/ }).click()
+      const fila = pagina.getByRole("group", { name: "Equipos", exact: true }).getByRole("button").first()
+      const codigo = ((await fila.innerText()).split("\n")[0] ?? "").split(" · ")[0] ?? ""
+      await fila.click()
+      await pagina.getByRole("button", { name: `Continuar con ${codigo}`, exact: true }).click()
+      await expect(pagina.getByText("PASO 2/5")).toBeVisible()
+
+      // «Salir» está en la barra de arriba en cada paso; el diálogo conserva por defecto.
+      await pagina.getByRole("button", { name: "Salir del registro", exact: true }).click()
+      const dialogo = pagina.getByRole("alertdialog", { name: "¿Salir del registro?" })
+      await expect(dialogo.getByText(/Tu avance queda guardado en este teléfono/)).toBeVisible()
+      await expect(dialogo.getByRole("button", { name: "Guardar y salir", exact: true })).toBeFocused()
+      await dialogo.getByRole("button", { name: "Seguir registrando", exact: true }).click()
+      await expect(dialogo).toHaveCount(0)
+      await expect(pagina.getByText("PASO 2/5")).toBeVisible()
+
+      await pagina.getByRole("button", { name: "Salir del registro", exact: true }).click()
+      await dialogo.getByRole("button", { name: "Guardar y salir", exact: true }).click()
+      const borradores = pagina.getByRole("region", { name: "Registros sin terminar" })
+      await expect(borradores.getByText(new RegExp(`^Correctiva sin terminar · ${codigo}`))).toBeVisible()
+
+      // El borrador sobrevive a recargar y «Seguir» lo abre en el mismo paso.
+      await pagina.reload()
+      await expect(borradores.getByText(new RegExp(`^Correctiva sin terminar · ${codigo}`))).toBeVisible({ timeout: 30_000 })
+      await borradores.getByRole("button", { name: /^Seguir Correctiva sin terminar/ }).click()
+      await expect(pagina.getByText("PASO 2/5")).toBeVisible()
+
+      // Descartar es la única forma de perderlo.
+      await pagina.getByRole("button", { name: "Salir del registro", exact: true }).click()
+      await dialogo.getByRole("button", { name: "Descartar registro", exact: true }).click()
+      await expect(pagina.getByRole("region", { name: "Nuevo registro" })).toBeVisible()
+      await expect(borradores).toHaveCount(0)
+      expect(errores).toEqual([])
+    } finally {
+      await telefono.close()
+    }
   })
 })
 

@@ -55,7 +55,6 @@ export const ROUTE_OWNER_ALIASES: RouteOwnerRule[] = [
   { moduleId: "mantencion_equipos", submoduleHref: "/mantencion/registros", prefix: "/api/mantencion/sync" },
   { moduleId: "mantencion_equipos", submoduleHref: "/mantencion/registros", prefix: "/api/mantencion/dispositivo" },
   { moduleId: "mantencion_equipos", submoduleHref: "/mantencion/registros", prefix: "/api/mantencion" },
-  { moduleId: "mantencion_equipos", submoduleHref: "/mantencion/equipos", prefix: "/mantencion/dispositivos" },
   // Fallback: la portada y cualquier rama futura bajo /mantencion. Los prefijos
   // de los ítems de navegación son más largos y ganan por orden.
   { moduleId: "mantencion_equipos", submoduleHref: "/mantencion/panel", prefix: "/mantencion" },

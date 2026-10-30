@@ -34,7 +34,7 @@ export function SummaryBarStatCell({ stat, renderLink, numerals = "mono" }: { st
           <Progress value={stat.progress} label={stat.label} size="sm" className="mb-1.5 flex-1" />
         )}
       </div>
-      {stat.secondary && <p className="mt-1 text-[11px] text-[var(--color-text-subtle)]">{stat.secondary}</p>}
+      {stat.secondary && <p className="mt-1 text-xs text-[var(--color-text-subtle)]">{stat.secondary}</p>}
     </div>
   )
 

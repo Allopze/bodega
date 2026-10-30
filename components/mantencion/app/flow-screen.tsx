@@ -1,19 +1,19 @@
 "use client"
 
 import { useEffect, useMemo, useReducer, useRef, useState } from "react"
-import { createDraftSaver, discardDraft } from "@/lib/mantencion/client/drafts"
+import { createDraftSaver, discardDraft, saveDraft } from "@/lib/mantencion/client/drafts"
 import { StorageFullError } from "@/lib/mantencion/client/db"
 import { flowReducer } from "@/lib/mantencion/client/flow"
 import { buildFlowEnv } from "@/lib/mantencion/client/flow-env"
 import { buildRecord } from "@/lib/mantencion/client/flow-record"
 import { draftHasContent, draftKey, stepsFor, type FlowDraft } from "@/lib/mantencion/client/flow-types"
-import { checklistCounts, validateAll } from "@/lib/mantencion/client/flow-validate"
+import { checklistCounts, faltaText, validateAll } from "@/lib/mantencion/client/flow-validate"
 import { commitRecord, newRecordItem } from "@/lib/mantencion/client/queue"
 import { getOfflineSince } from "@/lib/mantencion/client/signal"
 import { plural } from "@/lib/mantencion/format"
 import { todayInChile } from "@/lib/utils"
 import { useAppActions, useAppData } from "./app-context"
-import { ConfirmDialog } from "./dialog"
+import { SaveOrDiscardDialog } from "./dialog"
 import { IconBack, IconWifiOff } from "./icons"
 import { PautaStatus, StepPauta } from "./step-pauta"
 import { StepEquipo } from "./step-equipo"
@@ -34,6 +34,8 @@ export function FlowScreen({ initial, onExit, onSigned }: { initial: FlowDraft; 
   const { syncNow, toast } = useAppActions()
   const [draft, dispatch] = useReducer(flowReducer, initial)
   const [confirmExit, setConfirmExit] = useState(false)
+  const [exiting, setExiting] = useState(false)
+  const [exitError, setExitError] = useState<string | null>(null)
   const [signing, setSigning] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const finished = useRef(false)
@@ -69,13 +71,33 @@ export function FlowScreen({ initial, onExit, onSigned }: { initial: FlowDraft; 
     requestAnimationFrame(() => bodyRef.current?.querySelector<HTMLElement>(".err, .ask")?.scrollIntoView({ block: "center", behavior: reduce ? "auto" : "smooth" }))
   }, [draft.errors])
 
-  const exit = async () => {
+  /** «Descartar registro»: borra el borrador y sus fotos. Sólo se llega aquí por una elección explícita. */
+  const discardAndExit = async () => {
     finished.current = true
     saver.cancel()
     await discardDraft(draft).catch(() => {})
     onExit()
   }
-  const requestExit = () => { if (draftHasContent(draft)) setConfirmExit(true); else void exit() }
+  /** «Guardar y salir»: deja el borrador guardado y vuelve al inicio, que lo ofrece para seguir. */
+  const saveAndExit = async () => {
+    setExiting(true)
+    setExitError(null)
+    saver.cancel()
+    try {
+      await saveDraft({ ...draft, errors: {}, updatedAt: new Date().toISOString() })
+    } catch (cause) {
+      // No se guardó: se queda aquí, con lo ingresado intacto, y se dice por qué.
+      setExitError(cause instanceof StorageFullError ? cause.message : "No pudimos guardar tu avance en el teléfono. Sigue registrando, o descártalo si no lo necesitas.")
+      setExiting(false)
+      return
+    }
+    finished.current = true
+    toast("Avance guardado en este teléfono.")
+    onExit()
+  }
+  const closeExit = () => { setConfirmExit(false); setExitError(null) }
+  // Sin equipo ni fotos no hay nada que guardar: se sale sin preguntar.
+  const requestExit = () => { if (draftHasContent(draft)) setConfirmExit(true); else void discardAndExit() }
   const back = () => { if (draft.step === 0) requestExit(); else dispatch({ type: "back" }) }
   const next = () => dispatch({ type: "next", env })
   const confirmAnd = (patch: Partial<FlowDraft>) => { dispatch({ type: "patch", patch }); dispatch({ type: "next", env }) }
@@ -113,26 +135,29 @@ export function FlowScreen({ initial, onExit, onSigned }: { initial: FlowDraft; 
   const counts = checklistCounts(draft)
   const left = counts.total - counts.done
   const footNote = name === "pauta"
-    ? (left > 0 ? `Faltan ${plural(left, "ítem", "ítems")}. Todos son obligatorios.` : counts.missingReason > 0 ? `Falta el motivo de ${plural(counts.missingReason, "ítem no realizado", "ítems no realizados")}.` : "Pauta completa.")
+    ? (left > 0 ? `${faltaText(left, "ítem", "ítems")}. Todos son obligatorios.` : counts.missingReason > 0 ? `Falta el motivo de ${plural(counts.missingReason, "ítem no realizado", "ítems no realizados")}.` : "Pauta completa.")
     : name === "revisar" ? `Firmas como ${account.name}. Después de guardar no se puede editar.` : null
   const footLabel = {
-    equipo: row ? `Continuar con ${row.eq.code}` : "Elige un equipo",
+    equipo: row ? `Continuar con ${row.eq.code}` : "Continuar",
     lectura: draft.kind === "P" ? "Ver pauta" : "Continuar",
     pauta: "Continuar a fotos",
     revisar: signing ? "Guardando…" : "Firmar y guardar",
     fotos: "Revisar registro",
-    trabajo: "Revisar registro",
+    trabajo: "Continuar a fotos",
   }[name]
-  const footDisabled = name === "equipo" ? !row : name === "pauta" ? left > 0 || counts.missingReason > 0 : name === "revisar" ? signing : false
+  // «Continuar» queda siempre habilitado y valida al tocarlo: dice qué falta y lleva hasta ahí (el reductor deja los errores
+  // a la vista y el efecto de arriba desplaza al primero). Sólo se bloquea mientras se guarda la firma, para no firmar dos veces.
+  const footDisabled = name === "revisar" && signing
 
   const title = draft.kind === "P" ? "Nueva preventiva" : "Nueva correctiva"
   return (
     <div className="scr">
       <div className="top">
         <div className="toprow">
-          <button type="button" className="ibtn" onClick={back} aria-label={draft.step ? "Paso anterior" : "Salir del registro"}><IconBack /></button>
+          <button type="button" className="ibtn" onClick={back} aria-label={draft.step ? "Paso anterior" : "Volver al inicio"}><IconBack /></button>
           <div className="ttl">{title}</div>
           <div className="stepn">PASO {draft.step + 1}/{steps.length}</div>
+          <button type="button" className="exitb" onClick={requestExit} aria-label="Salir del registro">Salir</button>
         </div>
         <div className="prog" style={{ gridTemplateColumns: `repeat(${steps.length}, minmax(0, 1fr))` }} role="progressbar" aria-label="Avance del registro" aria-valuemin={1} aria-valuemax={steps.length} aria-valuenow={draft.step + 1}>
           {steps.map((step, index) => <span key={step} className={index <= draft.step ? "on" : ""} />)}
@@ -159,16 +184,19 @@ export function FlowScreen({ initial, onExit, onSigned }: { initial: FlowDraft; 
         <button type="button" className="btnp" id={name === "revisar" ? "savebtn" : undefined} onClick={name === "revisar" ? () => { void sign() } : next} disabled={footDisabled}>{returning ? "Volver a revisar" : footLabel}</button>
       </div>
       {confirmExit ? (
-        <ConfirmDialog
+        <SaveOrDiscardDialog
           title="¿Salir del registro?"
-          confirmLabel="Salir y descartar"
-          cancelLabel="Seguir registrando"
-          danger
-          onCancel={() => setConfirmExit(false)}
-          onConfirm={() => { setConfirmExit(false); void exit() }}
+          saveLabel="Guardar y salir"
+          keepLabel="Seguir registrando"
+          discardLabel="Descartar registro"
+          busy={exiting}
+          error={exitError ?? undefined}
+          onSave={() => { void saveAndExit() }}
+          onKeep={closeExit}
+          onDiscard={() => { closeExit(); void discardAndExit() }}
         >
-          <p>Se pierde lo que ingresaste{row ? ` de ${row.eq.code}` : ""}.</p>
-        </ConfirmDialog>
+          <p>Tu avance queda guardado en este teléfono. Lo retomas desde el inicio, en «{draft.kind === "P" ? "Preventiva" : "Correctiva"} sin terminar».</p>
+        </SaveOrDiscardDialog>
       ) : null}
     </div>
   )

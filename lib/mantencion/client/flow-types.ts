@@ -9,7 +9,17 @@ import { todayInChile } from "@/lib/utils"
 export type FlowStep = "equipo" | "lectura" | "pauta" | "fotos" | "trabajo" | "revisar"
 
 export const STEPS_PREVENTIVE: readonly FlowStep[] = ["equipo", "lectura", "pauta", "fotos", "revisar"]
-export const STEPS_CORRECTIVE: readonly FlowStep[] = ["equipo", "lectura", "trabajo", "revisar"]
+export const STEPS_CORRECTIVE: readonly FlowStep[] = ["equipo", "lectura", "trabajo", "fotos", "revisar"]
+
+/**
+ * Versión del orden de pasos con el que se guardó el borrador. `step` y `ret` son
+ * ÍNDICES en `stepsFor(kind)`: si el orden cambia, un borrador viejo apunta a otro paso.
+ *  - 1: correctiva de 4 pasos (equipo, lectura, trabajo, revisar). Los borradores guardados antes de
+ *       existir este campo se leen como 1.
+ *  - 2: la correctiva suma «Fotos» antes de «Revisar». La preventiva no cambió.
+ * `normalizeDraft` lleva cualquier versión anterior a la vigente.
+ */
+export const STEPS_VERSION = 2
 
 export function stepsFor(kind: "P" | "C"): readonly FlowStep[] {
   return kind === "P" ? STEPS_PREVENTIVE : STEPS_CORRECTIVE
@@ -36,6 +46,8 @@ export interface FlowDraft {
   updatedAt: string
 
   step: number
+  /** Versión del orden de pasos con el que se guardó (ver `STEPS_VERSION`). */
+  stepsVersion: number
   /** Índice del paso al que volver (Revisar) tras un «Cambiar»; `null` si no se viene de ahí. */
   ret: number | null
 
@@ -106,6 +118,7 @@ export function newDraft(input: { userId: string; kind: "P" | "C"; vehicleId?: s
     createdAt: now.toISOString(),
     updatedAt: now.toISOString(),
     step: input.vehicleId ? 1 : 0,
+    stepsVersion: STEPS_VERSION,
     ret: null,
     vehicleId: input.vehicleId ?? null,
     scope: "mine",
@@ -164,16 +177,33 @@ export function newJob(workTypeId: string): FlowJob {
 export const totalHours = (jobs: readonly Pick<FlowJob, "hours">[]): number => jobs.reduce((sum, job) => sum + job.hours, 0)
 
 /**
- * Borradores guardados con el formato anterior (`workTypeIds`, `hours`, `parts`,
- * `noParts` sueltos) se normalizan al abrirlos: un trabajo por cada tipo marcado,
- * con las horas totales y los repuestos en el primero. No se pierde nada de lo escrito.
+ * Borradores guardados con un formato anterior se normalizan al abrirlos:
+ *  - `workTypeIds`, `hours`, `parts` y `noParts` sueltos pasan a un trabajo por cada tipo marcado,
+ *    con las horas totales y los repuestos en el primero. No se pierde nada de lo escrito.
+ *  - `step` y `ret` se llevan al orden de pasos vigente (ver `STEPS_VERSION`) y se acotan al rango válido:
+ *    un borrador viejo se abre siempre, aunque el orden de los pasos haya cambiado desde que se guardó.
  */
 export function normalizeDraft(raw: FlowDraft): FlowDraft {
   const legacy = raw as unknown as { workTypeIds?: string[]; hours?: number; parts?: FlowPart[]; noParts?: boolean }
-  if (!legacy.workTypeIds && Array.isArray(raw.jobs)) return { ...raw, workshopReason: raw.workshopReason ?? "" }
+  if (!legacy.workTypeIds && Array.isArray(raw.jobs)) return migrateSteps({ ...raw, workshopReason: raw.workshopReason ?? "" })
   const { workTypeIds = [], hours = 1, parts, noParts = false, ...rest } = legacy as typeof legacy & Record<string, unknown>
   const jobs = workTypeIds.map((workTypeId, index): FlowJob => index === 0
     ? { workTypeId, hours, noParts, parts: parts && parts.length > 0 ? parts : [{ quantity: "1", description: "" }] }
     : newJob(workTypeId))
-  return { ...(rest as unknown as FlowDraft), jobs, workshopReason: raw.workshopReason ?? "" }
+  return migrateSteps({ ...(rest as unknown as FlowDraft), jobs, workshopReason: raw.workshopReason ?? "" })
+}
+
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
+
+function migrateSteps(draft: FlowDraft): FlowDraft {
+  const from = typeof draft.stepsVersion === "number" ? draft.stepsVersion : 1
+  let step = Number.isInteger(draft.step) ? draft.step : 0
+  let ret = typeof draft.ret === "number" && Number.isInteger(draft.ret) ? draft.ret : null
+  if (from < 2 && draft.kind === "C") {
+    // Antes «Revisar» era el paso 3; ahora es el 4, y el 3 es «Fotos». Los pasos 0–2 no se movieron.
+    if (step >= 3) step += 1
+    if (ret !== null && ret >= 3) ret += 1
+  }
+  const last = stepsFor(draft.kind).length - 1
+  return { ...draft, stepsVersion: STEPS_VERSION, step: clamp(step, 0, last), ret: ret === null ? null : clamp(ret, 0, last) }
 }

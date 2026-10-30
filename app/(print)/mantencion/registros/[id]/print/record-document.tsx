@@ -137,7 +137,7 @@ export function RecordDocument({ detail, logoSrc }: { detail: RecordDetail; logo
             <div>Recibido en la plataforma el {formatDateTime(detail.receivedAt)}.</div>
           </div>
           <div className="sig pending">
-            <div className="label">Firma jefatura (segunda etapa)</div>
+            <div className="label">Firma jefatura</div>
           </div>
         </div>
       </section>

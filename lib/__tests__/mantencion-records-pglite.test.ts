@@ -35,7 +35,7 @@ process.env.STORAGE_PATH = storageDir
 
 const { getUserRbacById } = await import("@/lib/auth/rbac")
 const { viewerFromSession } = await import("@/lib/services/mantencion/access")
-const { listRecords, loadRecordFilterOptions, loadRecordIndicators } = await import("@/lib/services/mantencion/records-query")
+const { listRecords, loadRecordFilterOptions, loadRecordIndicators, loadRecordNeighbors, loadRecordReviewCounts } = await import("@/lib/services/mantencion/records-query")
 const { loadRecordDetail } = await import("@/lib/services/mantencion/records-detail")
 const { loadPanel } = await import("@/lib/services/mantencion/panel")
 const { parsePanelFilters } = await import("@/lib/services/mantencion/panel-filters")
@@ -228,6 +228,92 @@ describe("filtros", () => {
   })
 })
 
+describe("bandeja de revisión", () => {
+  async function setReview(id: string, review: "pendiente" | "observado" | "revisado", status: "vigente" | "anulado" = "vigente") {
+    await testDb.update(schema.mantRecords).set({ review, status }).where(eq(schema.mantRecords.id, id))
+  }
+
+  it("cuenta lo vigente por pestaña y respeta los demás filtros", async () => {
+    const viewer = await viewerOf(IDS.jefe)
+    expect(await loadRecordReviewCounts(viewer, {})).toEqual({ pendiente: 5, observado: 0, revisado: 0 })
+    expect((await loadRecordReviewCounts(viewer, { kind: "C" })).pendiente).toBe(2)
+    expect((await loadRecordReviewCounts(await viewerOf(IDS.supBio), {})).pendiente).toBe(3)
+
+    await setReview(R.outside, "revisado")
+    await setReview(R.manual, "observado")
+    try {
+      expect(await loadRecordReviewCounts(viewer, {})).toEqual({ pendiente: 3, observado: 1, revisado: 1 })
+      // El filtro de revisión no achica su propio conteo: cada pestaña dice cuántos hay en ELLA.
+      expect(await loadRecordReviewCounts(viewer, { review: "revisado" })).toEqual({ pendiente: 3, observado: 1, revisado: 1 })
+      expect(folios((await listAs(IDS.jefe, { review: "observado" })).rows)).toEqual(["MP-BIO-0002"])
+      expect(folios((await listAs(IDS.jefe, { review: "revisado" })).rows)).toEqual(["MC-BIO-0001"])
+      // Lo que cuenta la pestaña es lo que trae la lista.
+      expect((await listAs(IDS.jefe, { review: "pendiente" })).total).toBe(3)
+    } finally {
+      await setReview(R.outside, "pendiente")
+      await setReview(R.manual, "pendiente")
+    }
+  })
+
+  it("un registro anulado no es trabajo por revisar: ni se cuenta ni aparece en las pestañas", async () => {
+    await setReview(R.duplicate, "pendiente", "anulado")
+    try {
+      expect((await loadRecordReviewCounts(await viewerOf(IDS.jefe), {})).pendiente).toBe(4)
+      expect(folios((await listAs(IDS.jefe, { review: "pendiente" })).rows)).not.toContain("MP-ARA-0001")
+      // «Todos» (sin la pestaña) lo sigue mostrando, marcado.
+      expect(folios((await listAs(IDS.jefe)).rows)).toContain("MP-ARA-0001")
+    } finally {
+      await setReview(R.duplicate, "pendiente", "vigente")
+    }
+  })
+
+  it("anterior y siguiente son los de la lista: mismo orden, mismo alcance, mismo filtro", async () => {
+    const jefe = await viewerOf(IDS.jefe)
+    for (const query of [
+      { filters: {}, sort: "fecha", dir: "desc" },
+      { filters: {}, sort: "folio", dir: "asc" },
+      { filters: {}, sort: "lectura", dir: "desc" },
+      { filters: { kind: "P" as const }, sort: "faena", dir: "asc" },
+    ] as const) {
+      const listed = (await listRecords(jefe, { ...query, page: 1 }, 100)).rows
+      for (const [index, item] of listed.entries()) {
+        const neighbors = await loadRecordNeighbors(jefe, { ...query, page: 1 }, item.id)
+        expect(neighbors?.position, `${query.sort} ${query.dir} · ${item.folio}`).toBe(index + 1)
+        expect(neighbors?.total).toBe(listed.length)
+        expect(neighbors?.previous?.id ?? null).toBe(listed[index - 1]?.id ?? null)
+        expect(neighbors?.next?.id ?? null).toBe(listed[index + 1]?.id ?? null)
+        expect(neighbors?.next?.folio ?? null).toBe(listed[index + 1]?.folio ?? null)
+      }
+    }
+  })
+
+  it("no cruza el alcance ni el filtro: fuera de la lista no hay vecinos", async () => {
+    const sup = await viewerOf(IDS.supBio)
+    const query = { filters: {}, sort: "fecha", dir: "desc", page: 1 } as const
+    // Supervisor de Biodiversa: R4, R1 y R2 (por fecha). El registro de Cholguán no está en SU lista.
+    expect(await loadRecordNeighbors(sup, query, R.workshop)).toBeNull()
+    expect(await loadRecordNeighbors(sup, query, "no-existe")).toBeNull()
+    const middle = await loadRecordNeighbors(sup, query, R.prev)
+    expect(middle).toMatchObject({ position: 2, total: 3, previous: { id: R.outside }, next: { id: R.manual } })
+    // Con otro filtro, el registro que ya no coincide tampoco está.
+    expect(await loadRecordNeighbors(await viewerOf(IDS.jefe), { ...query, filters: { kind: "C" } }, R.prev)).toBeNull()
+  })
+
+  it("la «cola» de revisión: el siguiente se conoce antes de marcar y no se pierde al salir del filtro", async () => {
+    const jefe = await viewerOf(IDS.jefe)
+    const query = { filters: { review: "pendiente" as const }, sort: "fecha", dir: "desc", page: 1 } as const
+    const before = await loadRecordNeighbors(jefe, query, R.prev)
+    await setReview(R.prev, "revisado")
+    try {
+      // Revisado, R1 sale de «Por revisar»: ya no está en su propia cola, pero el siguiente calculado antes sigue en ella.
+      expect(await loadRecordNeighbors(jefe, query, R.prev)).toBeNull()
+      expect((await listAs(IDS.jefe, { review: "pendiente" })).rows.some((item) => item.id === before?.next?.id)).toBe(true)
+    } finally {
+      await setReview(R.prev, "pendiente")
+    }
+  })
+})
+
 describe("indicadores de la lista", () => {
   it("cuentan lo vigente, con el rango de fechas, y respetan el alcance", async () => {
     const all = await loadRecordIndicators(await viewerOf(IDS.jefe), {})
@@ -265,10 +351,13 @@ describe("detalle de un registro", () => {
   })
 
   it("advierte cuando el sello y la recepción difieren más de 72 h sin período sin señal", async () => {
-    expect((await loadRecordDetail(await viewerOf(IDS.jefe), R.prev))?.stampGapHours).toBeGreaterThan(72)
+    const gap = (await loadRecordDetail(await viewerOf(IDS.jefe), R.prev))?.stampGap
+    expect(gap?.hours).toBeGreaterThan(72)
+    // El aviso nombra QUÉ difiere: aquí, el sello de la foto del sticker (la de hace 100 días).
+    expect(gap).toMatchObject({ subject: "foto", photoId: "ph-2" })
     // Con `offline_since` registrado la diferencia se explica sola.
     await testDb.update(schema.mantRecords).set({ offlineSince: new Date(Date.now() - 101 * 86_400_000).toISOString() }).where(eq(schema.mantRecords.id, R.prev))
-    expect((await loadRecordDetail(await viewerOf(IDS.jefe), R.prev))?.stampGapHours).toBeNull()
+    expect((await loadRecordDetail(await viewerOf(IDS.jefe), R.prev))?.stampGap).toBeNull()
     await testDb.update(schema.mantRecords).set({ offlineSince: null }).where(eq(schema.mantRecords.id, R.prev))
   })
 

@@ -26,7 +26,7 @@ function detail(overrides: Partial<RecordDetail> = {}): RecordDetail {
     executorKind: "yo", executorName: "Javier Roa", readingJumpAlert: false, readingJumpConfirmed: false, duplicateConfirmed: false, duplicateOf: null,
     correctsRecord: null, correctedBy: null,
     schedule: { name: "Camiones y tractos", version: 2, intervalValue: 40_000, suggestedIntervalValue: 40_000, manualReason: null },
-    notes: "Sin novedad", corrective: null, photos: [], observations: [], voided: null, stampGapHours: null, history: [], pdfStorageKey: null,
+    notes: "Sin novedad", corrective: null, photos: [], observations: [], voided: null, stampGap: null, history: [], pdfStorageKey: null,
     groups: [
       { name: "Motor", items: [{ key: "k1", name: "Revisión aceite motor", value: "R", reason: null, manufacturerWarning: false }] },
       { name: "Frenos", items: [{ key: "k4", name: "Revisión pastillas", value: "NR", reason: "Falta repuesto", manufacturerWarning: true }] },
@@ -37,62 +37,110 @@ function detail(overrides: Partial<RecordDetail> = {}): RecordDetail {
 
 const sortHref = (key: string) => `/mantencion/registros?orden=${key}`
 
-describe("tabla de registros", () => {
+/** La tabla y las tarjetas conviven en el DOM (una se oculta por CSS): cada prueba mira la que le toca. */
+const table = () => within(screen.getByRole("region", { name: "Registros de mantención" }))
+const cards = () => within(screen.getByRole("list", { name: "Registros de mantención como tarjetas" }))
+
+describe("lista de registros", () => {
   afterEach(cleanup)
 
-  it("cada folio lleva al detalle y los encabezados ordenables son enlaces con aria-sort", () => {
-    render(<RecordsTable rows={[row()]} sort="fecha" dir="desc" sortHref={sortHref} />)
-    expect(screen.getByRole("link", { name: "Ver el registro MP-BIO-0001" }).getAttribute("href")).toBe("/mantencion/registros/rec-1")
+  it("cada folio lleva al detalle con la lista de la que se viene, y los encabezados ordenables son enlaces con aria-sort", () => {
+    render(<RecordsTable rows={[row()]} sort="fecha" dir="desc" sortHref={sortHref} listQuery="revision=pendiente" />)
+    expect(table().getByRole("link", { name: "Ver el registro MP-BIO-0001" }).getAttribute("href")).toBe("/mantencion/registros/rec-1?lista=revision%3Dpendiente")
     expect(screen.getByRole("columnheader", { name: /^Fecha/ }).getAttribute("aria-sort")).toBe("descending")
     expect(screen.getByRole("columnheader", { name: /^Folio/ }).getAttribute("aria-sort")).toBe("none")
     expect(screen.getByRole("link", { name: /^Folio/ }).getAttribute("href")).toBe("/mantencion/registros?orden=folio")
   })
 
-  it("el estado dice qué pasó con palabras: ítems no realizados, taller, anulado", () => {
+  it("la lista sin filtros también viaja: el detalle sabe que se llegó desde ella", () => {
+    render(<RecordsTable rows={[row()]} sort="fecha" dir="desc" sortHref={sortHref} listQuery="" />)
+    expect(table().getByRole("link", { name: "Ver el registro MP-BIO-0001" }).getAttribute("href")).toBe("/mantencion/registros/rec-1?lista=")
+  })
+
+  it("el estado es una línea principal y, como mucho, una secundaria: ítems no realizados, taller, anulado", () => {
     render(<RecordsTable
-      sort="fecha" dir="desc" sortHref={sortHref}
+      sort="fecha" dir="desc" sortHref={sortHref} listQuery=""
       rows={[
         row({ id: "a", folio: "MP-A", notDoneCount: 2 }),
         row({ id: "b", folio: "MC-B", kind: "C", intervalValue: null, workshop: { daysStopped: 4, stale: true } }),
         row({ id: "c", folio: "MP-C", status: "anulado" }),
+        row({ id: "d", folio: "MP-D", review: "revisado" }),
       ]}
     />)
-    expect(screen.getByText("2 ítems no realizados")).toBeTruthy()
-    expect(screen.getByText(/En taller · 4 días · sin actualizar/)).toBeTruthy()
-    expect(screen.getByText("No cuenta en los cálculos")).toBeTruthy()
-    expect(screen.getByText("Anulado")).toBeTruthy()
+    const t = table()
+    expect(t.getByText("2 ítems no realizados")).toBeTruthy()
+    // Taller: lo principal es «En taller · 4 días»; «Sin actualizar» va aparte, en la secundaria.
+    expect(t.getByText("En taller · 4 días")).toBeTruthy()
+    expect(t.getByText("Sin actualizar")).toBeTruthy()
+    expect(t.getByText("No cuenta en los cálculos")).toBeTruthy()
+    expect(t.getByText("Anulado")).toBeTruthy()
+    // «Completa» + «Revisado»: el resultado y la revisión no se mezclan en una misma línea.
+    expect(t.getByText("Revisado").textContent).toBe("Revisado")
   })
 
-  it("registrado por otro mecánico dice «en nombre de» y las alertas van como etiquetas", () => {
+  it("«Sin actualizar» y «Observado» van en tono de señal, nunca en rojo", () => {
     render(<RecordsTable
-      sort="fecha" dir="desc" sortHref={sortHref}
+      sort="fecha" dir="desc" sortHref={sortHref} listQuery=""
+      rows={[row({ id: "b", folio: "MC-B", kind: "C", intervalValue: null, review: "observado", workshop: { daysStopped: 3, stale: true } })]}
+    />)
+    const t = table()
+    for (const label of ["Sin actualizar", "Observado", "En taller · 3 días"]) {
+      expect(t.getByText(label).className).toContain("--color-signal-ink")
+      expect(t.getByText(label).className).not.toContain("--color-danger")
+    }
+  })
+
+  it("la revisión pendiente no se pinta: es lo normal y las pestañas ya cuentan lo que falta", () => {
+    render(<RecordsTable rows={[row({ review: "pendiente" })]} sort="fecha" dir="desc" sortHref={sortHref} listQuery="" />)
+    expect(table().queryByText("Pendiente")).toBeNull()
+  })
+
+  it("registrado por otro mecánico dice «en nombre de» y las alertas van en una línea de texto, no en chips", () => {
+    render(<RecordsTable
+      sort="fecha" dir="desc" sortHref={sortHref} listQuery=""
       rows={[row({
         executorKind: "otro_mecanico", executorName: "Javier Roa", registeredByName: "Deivis González",
         alerts: { jump: true, outOfWorksite: true, manualSchedule: true, duplicate: true },
       })]}
     />)
-    expect(screen.getByText("Registrado por Deivis González en nombre de Javier Roa")).toBeTruthy()
-    for (const label of ["Salto de lectura", "Fuera de faena", "Pauta a mano", "Duplicado"]) expect(screen.getByText(label)).toBeTruthy()
+    const t = table()
+    expect(t.getByText("Registrado por Deivis González en nombre de Javier Roa")).toBeTruthy()
+    expect(t.getByText("Alertas: salto de lectura, fuera de faena, pauta a mano y duplicado")).toBeTruthy()
   })
 
   it("un equipo sin patente muestra sólo el código", () => {
-    render(<RecordsTable rows={[row({ equipment: { ...equipment, plate: "MQ-01", code: "MQ-01", noPlate: true } })]} sort="fecha" dir="desc" sortHref={sortHref} />)
-    expect(screen.getByText("MQ-01").textContent).toBe("MQ-01")
-    expect(screen.queryByText(/·\s*MQ-01/)).toBeNull()
+    render(<RecordsTable rows={[row({ equipment: { ...equipment, plate: "MQ-01", code: "MQ-01", noPlate: true } })]} sort="fecha" dir="desc" sortHref={sortHref} listQuery="" />)
+    expect(table().getByText("MQ-01").textContent).toBe("MQ-01")
+    expect(table().queryByText(/·\s*MQ-01/)).toBeNull()
+  })
+
+  it("bajo md la misma lista son tarjetas, con una acción «Ver el registro» y el estado dicho igual", () => {
+    render(<RecordsTable
+      sort="fecha" dir="desc" sortHref={sortHref} listQuery="revision=pendiente"
+      rows={[row({ id: "a", folio: "MP-A", notDoneCount: 2 }), row({ id: "b", folio: "MC-B", kind: "C", intervalValue: null, workshop: { daysStopped: 4, stale: true } })]}
+    />)
+    const c = cards()
+    expect(c.getAllByRole("listitem")).toHaveLength(2)
+    expect(c.getByRole("link", { name: "Ver el registro MP-A" }).getAttribute("href")).toBe("/mantencion/registros/a?lista=revision%3Dpendiente")
+    expect(c.getByRole("link", { name: "Ver el registro MP-A" }).textContent).toBe("Ver el registro")
+    expect(c.getByText("2 ítems no realizados")).toBeTruthy()
+    expect(c.getByText("En taller · 4 días")).toBeTruthy()
+    expect(c.getByText("Sin actualizar")).toBeTruthy()
   })
 })
 
 describe("detalle de un registro", () => {
   afterEach(cleanup)
 
-  it("datos del registro: lectura anterior, pauta usada y «elegida a mano» con su motivo", () => {
+  it("datos del registro: lectura anterior y pauta usada, que dice si se eligió a mano (el motivo lo da la alerta)", () => {
     render(<RecordDataSection detail={detail({
       schedule: { name: "Camiones y tractos", version: 2, intervalValue: 20_000, suggestedIntervalValue: 40_000, manualReason: "Pedido de la jefatura" },
       executorKind: "otro_mecanico", registeredByName: "Deivis González",
     })} />)
     expect(screen.getByText("Lectura anterior").nextSibling?.textContent).toContain("20.100 km")
-    expect(screen.getByText("Elegida a mano")).toBeTruthy()
-    expect(screen.getByText(/Motivo: Pedido de la jefatura/)).toBeTruthy()
+    expect(screen.getByText(/elegida a mano \(la sugerida era la de 40\.000 km\)/)).toBeTruthy()
+    // El motivo vive en la alerta, no en dos lugares (regla A5).
+    expect(screen.queryByText(/Motivo:/)).toBeNull()
     expect(screen.getByText("Registrado por Deivis González en nombre de Javier Roa")).toBeTruthy()
   })
 
@@ -103,12 +151,26 @@ describe("detalle de un registro", () => {
     expect(screen.getByText(/Confirmar con la pauta del fabricante: Revisión pastillas/)).toBeTruthy()
   })
 
-  it("las alertas son una lista con nombre, con el enlace al duplicado", () => {
-    render(<RecordAlerts detail={detail({ readingJumpAlert: true, duplicateOf: { id: "rec-0", folio: "MP-BIO-0000" }, stampGapHours: 120 })} />)
+  it("las alertas son una lista con nombre: dicen qué pasó, qué hacer y enlazan al duplicado y a la foto", () => {
+    render(<RecordAlerts detail={detail({
+      readingJumpAlert: true, duplicateOf: { id: "rec-0", folio: "MP-BIO-0000" },
+      photos: [{ id: "ph-9", kind: "sticker", stampedAt: "2026-07-22T11:38:00.000Z", receivedAt: "2026-10-27T15:01:00.000Z", width: 800, height: 600 }],
+      stampGap: { hours: 2400, subject: "foto", photoId: "ph-9", at: "2026-07-22T11:38:00.000Z" },
+    })} />)
     const list = screen.getByRole("list", { name: "Alertas del registro" })
     expect(within(list).getByText("Salto de lectura")).toBeTruthy()
-    expect(within(list).getByRole("link", { name: /ver MP-BIO-0000/ }).getAttribute("href")).toBe("/mantencion/registros/rec-0")
-    expect(within(list).getByText(/difieren más de 72 h/)).toBeTruthy()
+    expect(within(list).getByRole("link", { name: "Ver MP-BIO-0000" }).getAttribute("href")).toBe("/mantencion/registros/rec-0")
+    // La explicación y la acción están a la vista, no en un `title`.
+    expect(within(list).getByText(/«Sticker de mantención» es del 22-07-2026/)).toBeTruthy()
+    expect(within(list).getByText("Pide una foto nueva o confirma con el mecánico.")).toBeTruthy()
+    expect(within(list).getByRole("link", { name: "Ver la foto" }).getAttribute("href")).toBe("#foto-ph-9")
+    expect(list.querySelector("[title]")).toBeNull()
+  })
+
+  it("el aviso cuenta las alertas y no usa mayúsculas sostenidas (cabe en 390 px)", () => {
+    render(<RecordAlerts detail={detail({ readingJumpAlert: true, outOfWorksite: true })} />)
+    expect(screen.getByText("Este registro tiene 2 alertas")).toBeTruthy()
+    expect(screen.getByRole("list", { name: "Alertas del registro" }).innerHTML).not.toContain("uppercase")
   })
 
   it("sin alertas no dibuja la lista", () => {
@@ -140,7 +202,9 @@ describe("detalle de un registro", () => {
     expect(screen.getByText("No se cambió aceite")).toBeTruthy()
     expect(screen.getByText("3,5 h")).toBeTruthy()
     expect(screen.getByText("Manguera 1/2")).toBeTruthy()
-    expect(screen.getByText("Sigue en taller")).toBeTruthy()
+    // Etiqueta y valor calzan: «Salida de taller» → «Aún en taller».
+    expect(screen.getByText("Salida de taller")).toBeTruthy()
+    expect(screen.getByText("Aún en taller")).toBeTruthy()
     expect(screen.getByText("Sin actualizar hace más de 2 días.")).toBeTruthy()
     expect(screen.getByText(/Esperando repuesto/)).toBeTruthy()
     expect(screen.getByText("AEDO POLANCO JOSE A.")).toBeTruthy()
@@ -152,7 +216,13 @@ describe("detalle de un registro", () => {
     expect(screen.getByText(/editar la ficha después no cambia este registro/)).toBeTruthy()
   })
 
-  it("columna lateral: firma de jefatura en segunda etapa, observaciones con respuesta e historial", () => {
+  it("la sección de texto libre del mecánico se llama «Notas del mecánico»", () => {
+    render(<PreventiveSection detail={detail()} />)
+    expect(screen.getByRole("heading", { name: "Notas del mecánico" })).toBeTruthy()
+    expect(screen.queryByRole("heading", { name: "Observaciones del mecánico" })).toBeNull()
+  })
+
+  it("columna lateral: firma del mecánico sin texto de hoja de ruta, observaciones con respuesta e historial", () => {
     render(<RecordAside
       photos={<p>Galería</p>}
       detail={detail({
@@ -163,7 +233,8 @@ describe("detalle de un registro", () => {
         history: [{ id: "rec-0", folio: "MP-BIO-0000", kind: "P", workDate: "2026-09-12", reading: 20_100, unit: "km", intervalValue: 20_000 }],
       })}
     />)
-    expect(screen.getByText("Jefatura · segunda etapa")).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "Firma del mecánico" })).toBeTruthy()
+    expect(screen.queryByText(/segunda etapa/)).toBeNull()
     expect(screen.getByText("Ya la subí")).toBeTruthy()
     expect(screen.getByText("Aún sin respuesta del mecánico.")).toBeTruthy()
     expect(screen.getByRole("link", { name: /Preventiva 20\.000 km/ }).getAttribute("href")).toBe("/mantencion/registros/rec-0")

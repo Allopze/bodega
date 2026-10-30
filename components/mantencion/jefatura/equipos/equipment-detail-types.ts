@@ -28,7 +28,8 @@ export interface EquipmentDetailData {
     nextIntervalValue: number | null
     lastPreventive: { reading: number; date: string; intervalValue: number } | null
   }
-  workshop: { entryDate: string | null; daysStopped: number | null; stale: boolean } | null
+  /** Correctiva abierta con el equipo en taller: ingreso, días detenido y fecha de la última novedad (`YYYY-MM-DD`). */
+  workshop: { entryDate: string | null; daysStopped: number | null; stale: boolean; lastActivityDate: string } | null
   recordCount: number
   /** Hoja de vida: historial completo de mantenciones dentro del alcance de lectura. */
   life: EquipmentLifeData

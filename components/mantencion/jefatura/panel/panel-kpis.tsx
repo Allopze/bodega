@@ -1,7 +1,9 @@
+import Link from "next/link"
 import { CalendarX, ClipboardText, Truck, Warning } from "@phosphor-icons/react/dist/ssr"
 import { KpiCard } from "@/components/ui/kpi-card"
 import { formatHours, plural } from "@/lib/mantencion/format"
 import type { PanelData } from "@/lib/services/mantencion/panel"
+import { overdueDetail } from "@/lib/services/mantencion/panel-coverage"
 import { PANEL_PERIOD_PHRASE } from "@/lib/services/mantencion/panel-filters"
 
 /**
@@ -14,6 +16,12 @@ import { PANEL_PERIOD_PHRASE } from "@/lib/services/mantencion/panel-filters"
  *
  * Cada tarjeta lleva a su subconjunto, no al total. Si no hay nada que ver, el
  * tile lo dice con palabras en vez de un «0» pelado.
+ *
+ * «0 vencidas» no puede leerse como «todo al día» cuando casi nadie tiene
+ * lectura: el detalle dice entre cuántos equipos se pudo evaluar (`overdueDetail`).
+ *
+ * En teléfono son dos por fila (2×2) y no cuatro apilados: apilados se comían
+ * ~540 px antes del primer contenido accionable.
  */
 export function PanelKpis({ data }: { data: PanelData }) {
   const { records, fleet, workshop, stoppedDays, filters, from } = data
@@ -21,10 +29,14 @@ export function PanelKpis({ data }: { data: PanelData }) {
   const worksite = filters.worksiteId ? `&faena=${encodeURIComponent(filters.worksiteId)}` : ""
   const since = from ? `&desde=${from}` : ""
   const overdue = fleet.counts.vencida
-  const upcoming = fleet.counts.proxima
 
   return (
-    <section aria-label="Indicadores" className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <section
+      aria-label="Indicadores"
+      // En 2×2 cada tile mide ~175 px y el rótulo (`truncate` en KpiCard) quedaba en «Mantenciones ve…», sin el período. Bajo `sm` se
+      // deja envolver y los tiles de una fila se igualan. Lo correcto sería que KpiCard envuelva su rótulo; mientras tanto, local y acotado.
+      className="mb-4 grid grid-cols-2 gap-2 sm:mb-5 sm:gap-3 xl:grid-cols-4"
+    >
       <KpiCard
         icon={<ClipboardText size={16} aria-hidden />}
         label={`Registros · ${period}`}
@@ -42,7 +54,7 @@ export function PanelKpis({ data }: { data: PanelData }) {
         icon={<Warning size={16} aria-hidden />}
         label="Mantenciones vencidas"
         value={String(overdue)}
-        detail={overdue === 0 ? "Todas las pautas al día" : `${plural(upcoming, "próxima a vencer", "próximas a vencer")}`}
+        detail={overdueDetail(fleet.counts)}
         tone={overdue > 0 ? "danger" : "neutral"}
         href={`/mantencion/equipos?estado=vencida${worksite}`}
       />
@@ -68,13 +80,26 @@ export function PanelKpis({ data }: { data: PanelData }) {
 }
 
 /**
- * Tira de texto con las cifras que no necesitan tarjeta (A1): se leen de corrido
- * y no abren nada por sí solas.
+ * Tira de texto con las cifras que no necesitan tarjeta (A1): se leen de corrido.
+ * «Por revisar» es la excepción útil: es el trabajo pendiente de la jefatura y
+ * lleva directo a esos registros (los vigentes del período y la faena elegidos,
+ * con la misma regla de la pestaña «Por revisar» de Registros).
  */
 export function PanelStrip({ data }: { data: PanelData }) {
-  const { records, fleet, filters } = data
+  const { records, fleet, filters, from } = data
+  const worksite = filters.worksiteId ? `&faena=${encodeURIComponent(filters.worksiteId)}` : ""
+  const since = from ? `&desde=${from}` : ""
   return (
-    <p className="mb-5 flex flex-wrap items-baseline gap-x-6 gap-y-1 border-y border-[var(--color-border)] py-2.5 text-sm text-[var(--color-text-muted)]">
+    <p className="mb-4 flex flex-wrap items-baseline gap-x-6 gap-y-1 border-y border-[var(--color-border)] py-1 text-sm text-[var(--color-text-muted)] sm:mb-5 sm:py-2.5">
+      {records.pendingReview > 0 && (
+        <Link
+          href={`/mantencion/registros?revision=pendiente&estado=vigente${since}${worksite}`}
+          className="inline-flex min-h-11 items-center gap-1 font-semibold text-[var(--color-primary-ink)] underline-offset-2 hover:underline focus-visible:underline sm:min-h-0"
+        >
+          {plural(records.pendingReview, "registro por revisar", "registros por revisar")} · {PANEL_PERIOD_PHRASE[filters.period]}
+          <span aria-hidden>→</span>
+        </Link>
+      )}
       <span>
         Horas hombre · {PANEL_PERIOD_PHRASE[filters.period]}:{" "}
         <strong className="font-mono font-semibold tabular-nums text-[var(--color-text)]">{formatHours(records.hours)}</strong>

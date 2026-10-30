@@ -41,7 +41,7 @@ function ObservationItem({ observation, onSaved }: { observation: CatalogObserva
   return (
     <div className="card" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       <div>
-        <div className="mono" style={{ fontWeight: 600, fontSize: 15 }}>{observation.folio ?? "Registro"} · {observation.equipmentCode}</div>
+        <div className="mono nw" style={{ fontWeight: 600, fontSize: 15 }}>{observation.folio ?? "Registro"} · {observation.equipmentCode}</div>
         <div className="hint" style={{ marginTop: 2 }}>{observation.by} · {formatDateTime(observation.createdAt)}</div>
       </div>
       <p style={{ margin: 0, fontSize: 16, lineHeight: 1.4 }}>{observation.text}</p>
@@ -50,7 +50,7 @@ function ObservationItem({ observation, onSaved }: { observation: CatalogObserva
         <textarea id={inputId} className={error ? "inp bad" : "inp"} rows={2} value={text} aria-invalid={Boolean(error)} onChange={(event) => { setText(event.target.value); setError(undefined) }} />
         <FieldError message={error} />
       </div>
-      <button type="button" className="btns wide" onClick={() => { void send() }} disabled={saving} aria-label={`Enviar respuesta sobre ${observation.equipmentCode}`}>Enviar respuesta</button>
+      <button type="button" className="btns wide pri" onClick={() => { void send() }} disabled={saving} aria-label={`Enviar respuesta sobre ${observation.equipmentCode}`}>Enviar respuesta</button>
     </div>
   )
 }

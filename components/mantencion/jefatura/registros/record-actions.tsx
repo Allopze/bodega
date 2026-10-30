@@ -2,13 +2,15 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { CheckCircle, Eye, FilePdf } from "@phosphor-icons/react"
+import { useRouter } from "next/navigation"
+import { CheckCircle, ChatCircleText, FilePdf } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Field } from "@/components/ui/field"
 import { Textarea } from "@/components/ui/textarea"
 import { useOperation } from "@/lib/hooks/use-operation"
+import { toast } from "@/lib/toast"
 import type { MantRecordStatus, MantReview } from "@/lib/mantencion/types"
 import { markRecordReviewedAction, observeRecordAction, voidRecordAction } from "@/app/(app)/mantencion/registros/[id]/actions"
 import { RecordExportButton } from "@/app/(app)/mantencion/registros/[id]/record-export-button"
@@ -24,26 +26,58 @@ export interface RecordActionsProps {
   canVoid: boolean
   /** Quien puede abrir la app del mecánico puede crear el registro corregido. */
   canCorrect: boolean
+  /**
+   * Se llegó desde una lista: «Marcar revisado» sigue con el siguiente de ESA lista. `nextHref`
+   * es `null` cuando no queda ninguno, y entonces se vuelve a `listHref`. Sin lista (`null`), es
+   * un simple «Marcar revisado».
+   */
+  queue: { nextHref: string | null; listHref: string } | null
 }
 
 /**
- * Acciones del detalle (§10), todas según permiso: Descargar PDF, Exportar a
- * Excel, Observar, Marcar revisado y Anular. Van en `PageHeader.actions`
- * (regla 5 de AGENTS.md). Los permisos que llegan aquí sólo deciden qué botones
- * se dibujan: el servidor vuelve a pedirlos en cada acción.
+ * Acciones del detalle (§10), todas según permiso. Van en `PageHeader.actions`
+ * (regla 5 de AGENTS.md) y se leen por peso: UNA acción principal («Marcar
+ * revisado», que en una lista sigue con el siguiente registro), «Observar» como
+ * secundaria, las descargas ligeras y «Anular» al final y en rojo suave. Los
+ * permisos que llegan aquí sólo deciden qué botones se dibujan: el servidor
+ * vuelve a pedirlos en cada acción.
  *
- * Los diálogos son propios, con el verbo en el botón; nunca `window.confirm`.
+ * Marcar revisado es rutina: no pide confirmación. Los diálogos que quedan son
+ * los de escribir algo (observar) o destruir algo (anular), con el verbo en el
+ * botón; nunca `window.confirm`.
  */
-export function RecordActions({ recordId, folio, status, review, canExport, canObserve, canReview, canVoid, canCorrect }: RecordActionsProps) {
+export function RecordActions({ recordId, folio, status, review, canExport, canObserve, canReview, canVoid, canCorrect, queue }: RecordActionsProps) {
+  const router = useRouter()
   const [observeOpen, setObserveOpen] = React.useState(false)
   const [voidOpen, setVoidOpen] = React.useState(false)
   const [afterVoidOpen, setAfterVoidOpen] = React.useState(false)
   const [text, setText] = React.useState("")
   const observe = useOperation()
-  const reviewOp = useOperation({ feedback: "toast" })
+  const reviewOp = useOperation()
   const voidOp = useOperation()
   const active = status === "vigente"
   const label = folio ?? "el registro"
+
+  /** Marca el registro y, si se llegó desde una lista, sigue con el siguiente de esa lista. */
+  function markReviewed() {
+    reviewOp.run(
+      () => markRecordReviewedAction({ recordId }),
+      (result) => {
+        if (!queue) {
+          toast.success(result.message ?? "Registro marcado como revisado.")
+          return
+        }
+        if (queue.nextHref) {
+          toast.success(result.message ?? "Registro marcado como revisado.")
+          router.replace(queue.nextHref)
+        } else {
+          toast.success(`${result.message ?? "Registro marcado como revisado."} No quedan registros por revisar.`)
+          router.push(queue.listHref)
+        }
+      },
+      (result) => toast.error(result.message ?? "No se pudo marcar el registro como revisado."),
+    )
+  }
 
   function sendObservation(event: React.FormEvent) {
     event.preventDefault()
@@ -55,32 +89,32 @@ export function RecordActions({ recordId, folio, status, review, canExport, canO
 
   return (
     <div className="flex flex-wrap items-center gap-2">
+      {active && canReview && review !== "revisado" && (
+        <Button
+          variant="primary"
+          size="sm"
+          loading={reviewOp.pending}
+          onClick={markReviewed}
+        >
+          <CheckCircle className="h-4 w-4 shrink-0" weight="bold" aria-hidden />
+          {queue ? "Marcar revisado y siguiente" : "Marcar revisado"}
+        </Button>
+      )}
+      {active && canObserve && (
+        <Button variant="secondary" size="sm" onClick={() => { observe.setMessage(""); setObserveOpen(true) }}>
+          <ChatCircleText className="h-4 w-4 shrink-0" aria-hidden />
+          Observar
+        </Button>
+      )}
       {canExport && (
-        <Button asChild variant="secondary" size="sm">
-          <a href={`/api/mantencion/registros/${recordId}/pdf`} download>
+        <Button asChild variant="ghost" size="sm">
+          <a href={`/api/mantencion/registros/${recordId}/pdf`} download aria-label="Descargar PDF">
             <FilePdf className="h-4 w-4 shrink-0" aria-hidden />
-            Descargar PDF
+            PDF
           </a>
         </Button>
       )}
       {canExport && <RecordExportButton recordId={recordId} />}
-      {active && canObserve && (
-        <Button variant="secondary" size="sm" onClick={() => { observe.setMessage(""); setObserveOpen(true) }}>
-          <Eye className="h-4 w-4 shrink-0" aria-hidden />
-          Observar
-        </Button>
-      )}
-      {active && canReview && review !== "revisado" && (
-        <Button
-          variant="secondary"
-          size="sm"
-          loading={reviewOp.pending}
-          onClick={() => reviewOp.run(() => markRecordReviewedAction({ recordId }))}
-        >
-          <CheckCircle className="h-4 w-4 shrink-0" aria-hidden />
-          Marcar revisado
-        </Button>
-      )}
       {active && canVoid && (
         <Button variant="ghost-danger" size="sm" onClick={() => { voidOp.setMessage(""); setVoidOpen(true) }}>
           Anular

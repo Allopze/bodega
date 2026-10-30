@@ -5,7 +5,7 @@ import { formatHours, formatReading, parseReadingInput } from "@/lib/mantencion/
 import type { FleetRow } from "@/lib/mantencion/client/fleet-view"
 import type { FlowDraft } from "@/lib/mantencion/client/flow-types"
 import { partsFilled, parseQuantity } from "@/lib/mantencion/client/flow-validate"
-import { totalHours } from "@/lib/mantencion/client/flow-types"
+import { stepsFor, totalHours, type FlowStep } from "@/lib/mantencion/client/flow-types"
 import { formatDate } from "@/lib/utils"
 import { useAppData } from "./app-context"
 import { EquipmentSummary } from "./step-lectura"
@@ -34,6 +34,8 @@ export function StepRevisar({ draft, row, onChange }: { draft: FlowDraft; row: F
   const catalog = stored?.catalog
   const unit = row.eq.unit
   const reading = parseReadingInput(draft.readingText).value ?? 0
+  // «Cambiar» lleva al paso por su nombre, no por su número: el orden de los pasos de cada tipo no es el mismo.
+  const at = (step: FlowStep) => Math.max(0, stepsFor(draft.kind).indexOf(step))
 
   if (draft.kind === "P") {
     const items = draft.checklist
@@ -45,16 +47,16 @@ export function StepRevisar({ draft, row, onChange }: { draft: FlowDraft; row: F
         <EquipmentSummary row={row} />
         <dl className="dl">
           <dt>Tipo</dt><dd>Preventiva</dd>
-          <Row label="Pauta" step={1} onChange={onChange}>{draft.intervalValue ? formatReading(draft.intervalValue, unit) : "—"}{manual ? " (elegida a mano)" : ""}</Row>
-          <Row label="Lectura" step={1} onChange={onChange}><span className="mono" style={{ fontSize: 15 }}>{formatReading(reading, unit)}</span></Row>
-          <Row label="Fecha" step={1} onChange={onChange}>{formatDate(draft.workDate)}</Row>
-          <Row label="Fotos" step={3} onChange={onChange}>{[draft.photos.filtros, draft.photos.sticker].filter(Boolean).length} de 2</Row>
-          <Row label="Observ." step={3} onChange={onChange}>{draft.notes}</Row>
+          <Row label="Pauta" step={at("lectura")} onChange={onChange}>{draft.intervalValue ? formatReading(draft.intervalValue, unit) : "—"}{manual ? " (elegida a mano)" : ""}</Row>
+          <Row label="Lectura" step={at("lectura")} onChange={onChange}><span className="mono" style={{ fontSize: 15 }}>{formatReading(reading, unit)}</span></Row>
+          <Row label="Fecha" step={at("lectura")} onChange={onChange}>{formatDate(draft.workDate)}</Row>
+          <Row label="Fotos" step={at("fotos")} onChange={onChange}>{[draft.photos.filtros, draft.photos.sticker].filter(Boolean).length} de 2</Row>
+          <Row label="Notas" step={at("fotos")} onChange={onChange}>{draft.notes}</Row>
         </dl>
         <div className="card">
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 10 }}>
             <div className="cap">Resultado de la pauta · {items.length} ítems</div>
-            <button type="button" className="lnk xs" onClick={() => onChange(2)}>Revisar ítems</button>
+            <button type="button" className="lnk xs" onClick={() => onChange(at("pauta"))}>Revisar ítems</button>
           </div>
           <div className="stack" aria-hidden="true">
             {done ? <div style={{ flex: done, background: "var(--gi)" }} /> : null}
@@ -87,17 +89,17 @@ export function StepRevisar({ draft, row, onChange }: { draft: FlowDraft; row: F
     <>
       <EquipmentSummary row={row} />
       <dl className="dl">
-        <Row label="Trabajo" step={2} onChange={onChange}>Correctiva · {names(draft.jobs.map((job) => job.workTypeId), workTypes).join(", ")}</Row>
-        <Row label="Lectura" step={1} onChange={onChange}><span className="mono" style={{ fontSize: 15 }}>{formatReading(reading, unit)}</span></Row>
-        <Row label="Fecha" step={1} onChange={onChange}>{formatDate(draft.workDate)}</Row>
-        <Row label="Hecho por" step={2} onChange={onChange}>{who}</Row>
-        <Row label="Aceite" step={2} onChange={onChange}>{oil}</Row>
-        <Row label="Detalle" step={2} onChange={onChange}>{draft.description}</Row>
-        <Row label="Trabajos" step={2} onChange={onChange}>{jobLines.map((line) => <div key={line}>{line}</div>)}</Row>
-        <Row label="Horas" step={2} onChange={onChange}>{formatHours(totalHours(draft.jobs))} en total</Row>
-        <Row label="En taller" step={2} onChange={onChange}>{draft.inWorkshop ? `Sí, desde ${formatDate(draft.workshopEntryDate)}. ${draft.workshopReason.trim()}` : "No"}</Row>
-        <Row label="Conductores" step={2} onChange={onChange}>{names(draft.driverIds, catalog?.drivers ?? []).join(", ")}</Row>
-        <Row label="Fotos" step={2} onChange={onChange}>{draft.photos.correctiva.length}</Row>
+        <Row label="Trabajo" step={at("trabajo")} onChange={onChange}>Correctiva · {names(draft.jobs.map((job) => job.workTypeId), workTypes).join(", ")}</Row>
+        <Row label="Lectura" step={at("lectura")} onChange={onChange}><span className="mono" style={{ fontSize: 15 }}>{formatReading(reading, unit)}</span></Row>
+        <Row label="Fecha" step={at("lectura")} onChange={onChange}>{formatDate(draft.workDate)}</Row>
+        <Row label="Hecho por" step={at("trabajo")} onChange={onChange}>{who}</Row>
+        <Row label="Aceite" step={at("trabajo")} onChange={onChange}>{oil}</Row>
+        <Row label="Detalle" step={at("trabajo")} onChange={onChange}>{draft.description}</Row>
+        <Row label="Trabajos" step={at("trabajo")} onChange={onChange}>{jobLines.map((line) => <div key={line}>{line}</div>)}</Row>
+        <Row label="Horas" step={at("trabajo")} onChange={onChange}>{formatHours(totalHours(draft.jobs))} en total</Row>
+        <Row label="En taller" step={at("trabajo")} onChange={onChange}>{draft.inWorkshop ? `Sí, desde ${formatDate(draft.workshopEntryDate)}. ${draft.workshopReason.trim()}` : "No"}</Row>
+        <Row label="Conductores" step={at("trabajo")} onChange={onChange}>{names(draft.driverIds, catalog?.drivers ?? []).join(", ")}</Row>
+        <Row label="Fotos" step={at("fotos")} onChange={onChange}>{draft.photos.correctiva.length}</Row>
       </dl>
     </>
   )

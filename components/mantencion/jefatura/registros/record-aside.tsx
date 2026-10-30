@@ -6,31 +6,22 @@ import { formatDate, formatDateTime } from "@/lib/utils"
 import { SectionCard } from "../shared/section-card"
 
 /**
- * Columna lateral del detalle: fotos de respaldo, firmas, observaciones con su
- * respuesta e historial del equipo. Las fotos llegan ya armadas (`photos`) para
+ * Columna lateral del detalle: fotos de respaldo, firma del mecánico, observaciones
+ * con su respuesta e historial del equipo. Las fotos llegan ya armadas (`photos`) para
  * que esta pieza siga siendo de servidor y sólo la galería sea de cliente.
  */
 export function RecordAside({ detail, photos }: { detail: RecordDetail; photos: ReactNode }) {
   return (
-    <aside aria-label="Fotos, firmas e historial" className="flex min-w-0 flex-col gap-4">
+    <aside aria-label="Fotos, firma, observaciones e historial" className="flex min-w-0 flex-col gap-4">
       <SectionCard title="Fotos de respaldo" description="Toca una foto para verla a pantalla completa.">
         {photos}
       </SectionCard>
 
-      <SectionCard title="Firmas">
-        <div className="flex flex-col gap-3">
-          <div className="rounded-lg border border-[var(--color-border-strong)] px-4 py-3">
-            <p className="text-eyebrow">Mecánico</p>
-            <p className="mt-1 text-base font-semibold text-[var(--color-text)]">{detail.registeredByName}</p>
-            <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">
-              Firmado con su cuenta · <span className="font-mono tabular-nums">{formatDateTime(detail.signedAt)}</span>
-            </p>
-          </div>
-          <div className="rounded-lg border border-dashed border-[var(--color-border-control)] px-4 py-3">
-            <p className="text-eyebrow">Jefatura · segunda etapa</p>
-            <p className="mt-1 text-sm text-[var(--color-text-muted)]">La firma de jefatura queda para una segunda etapa, después de probar este flujo.</p>
-          </div>
-        </div>
+      <SectionCard title="Firma del mecánico">
+        <p className="text-base font-semibold text-[var(--color-text)]">{detail.registeredByName}</p>
+        <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">
+          Firmado con su cuenta · <span className="whitespace-nowrap font-mono tabular-nums">{formatDateTime(detail.signedAt)}</span>
+        </p>
       </SectionCard>
 
       {detail.observations.length > 0 && (

@@ -85,3 +85,18 @@ export function daysInWorkshopText(days: number | null): string {
   if (days === null) return "En taller"
   return days === 0 ? "Entró hoy a taller" : `En taller hace ${days} ${days === 1 ? "día" : "días"}`
 }
+
+export interface WorksiteSummary {
+  /** «Faena Biodiversa» si es una; «6 faenas» si son varias. */
+  text: string
+  /** Con varias, el resumen no dice cuáles: la pantalla ofrece verlas. */
+  many: boolean
+}
+
+/** Las faenas del mecánico en una línea corta. Una lista de seis nombres no cabe en el encabezado (ocupaba tres líneas en mayúscula). */
+export function worksiteSummary(names: readonly string[]): WorksiteSummary | null {
+  const [first, second] = names
+  if (first === undefined) return null
+  if (second === undefined) return { text: `Faena ${first}`, many: false }
+  return { text: `${names.length} faenas`, many: true }
+}

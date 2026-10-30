@@ -110,14 +110,119 @@ test.describe("E2E 7 · Pautas", () => {
     await expect(intervals.getByRole("listitem").filter({ hasText: "50.000 km" })).toContainText("Por revisar")
     expect((await scheduleState(SCHEDULE))!.version).toBe(before + 1)
 
-    // Tocar una celda de esa columna la da por revisada.
-    await page.getByRole("button", { name: "Inspección visual general en 50.000 km", exact: true }).click()
+    // Tocar una celda de esa columna la da por revisada. Mientras está por revisar, el nombre de sus casillas lo dice.
+    await page.getByRole("button", { name: "Inspección visual general en 50.000 km (columna por revisar)", exact: true }).click()
     await expect(intervals.getByRole("listitem").filter({ hasText: "50.000 km" })).not.toContainText("Por revisar")
 
     await page.getByRole("button", { name: "Quitar el intervalo de 50.000 km", exact: true }).click()
+    const dialog = page.getByRole("dialog")
+    await expect(dialog.getByRole("heading", { name: "¿Quitar el intervalo de 50.000 km?" })).toBeVisible()
+    await dialog.getByRole("button", { name: "Quitar intervalo", exact: true }).click()
     await expect(intervals.getByRole("listitem").filter({ hasText: "50.000 km" })).toHaveCount(0)
     await page.getByRole("button", { name: "Deshacer", exact: true }).click()
     await expect(intervals.getByRole("listitem").filter({ hasText: "50.000 km" })).toBeVisible()
+    expect(errors).toEqual([])
+  })
+
+  test("quitar un intervalo pide confirmar con el impacto; cancelar no cambia nada y volver a agregarlo devuelve SU columna", async ({ page }) => {
+    const errors = trackConsole(page)
+    await asJefe(page)
+    await page.goto(`/mantencion/pautas/${ids.schedule}`)
+    const intervals = page.getByRole("list", { name: "Intervalos de la pauta" })
+    const remove = page.getByRole("button", { name: "Quitar el intervalo de 50.000 km", exact: true })
+    const cell = page.getByRole("button", { name: "Inspección visual general en 50.000 km", exact: true })
+    const version = (await scheduleState(SCHEDULE))!.version
+
+    // En esta etapa la pauta aún no tiene equipos: el diálogo lo dice en vez de inventar un número.
+    await remove.click()
+    const dialog = page.getByRole("dialog")
+    await expect(dialog.getByText("Ningún equipo usa esta pauta todavía, así que nadie deja de tener la mantención de 50.000 km.")).toBeVisible()
+    await expect(dialog.getByText("Los registros ya firmados no cambian.")).toBeVisible()
+    await dialog.getByRole("button", { name: "Cancelar", exact: true }).click()
+    await expect(dialog).toBeHidden()
+    await expect(intervals.getByRole("listitem").filter({ hasText: "50.000 km" })).toBeVisible()
+    await expect(remove).toBeFocused() // cancelar devuelve el foco al botón que abrió el diálogo
+    expect((await scheduleState(SCHEDULE))!.version).toBe(version)
+
+    // 50.000 hereda de 10.000, donde el ítem aplica; en 50.000 el test anterior lo desmarcó. Si «restituir» copiara otra columna volvería marcado.
+    await expect(cell).toHaveAttribute("aria-pressed", "false")
+    await remove.click()
+    await page.getByRole("dialog").getByRole("button", { name: "Quitar intervalo", exact: true }).click()
+    await expect(intervals.getByRole("listitem").filter({ hasText: "50.000 km" })).toHaveCount(0)
+    await page.getByRole("textbox", { name: "Nuevo intervalo (km)", exact: true }).fill("50000")
+    await page.getByRole("button", { name: "Agregar intervalo", exact: true }).click()
+    await expect(page.getByText("Intervalo de 50.000 km restituido con su columna.", { exact: true })).toBeVisible()
+    await expect(intervals.getByRole("listitem").filter({ hasText: "50.000 km" })).not.toContainText("Por revisar")
+    await expect(cell).toHaveAttribute("aria-pressed", "false")
+    expect(errors).toEqual([])
+  })
+
+  test("con teclado la matriz es una sola parada de Tab y las flechas recorren sus casillas", async ({ page }) => {
+    await asJefe(page)
+    await page.goto(`/mantencion/pautas/${ids.schedule}`)
+    const matrix = page.getByRole("table", { name: "Actividades de la pauta por intervalo" })
+    const gridButtons = matrix.locator('button[aria-pressed], button[aria-label^="Quitar "]')
+    // `count()` no espera: sin esto cuenta antes de que la matriz se dibuje.
+    await expect(gridButtons.first()).toBeVisible()
+    expect(await gridButtons.count()).toBeGreaterThan(20)
+    await expect(matrix.locator('button[aria-pressed][tabindex="0"], button[aria-label^="Quitar "][tabindex="0"]')).toHaveCount(1)
+
+    const first = page.getByRole("button", { name: "Inspección visual general en 10.000 km", exact: true })
+    await first.focus()
+    await expect(first).toHaveAttribute("tabindex", "0")
+    const focusedLabel = () => page.evaluate(() => document.activeElement?.getAttribute("aria-label") ?? "")
+    await page.keyboard.press("ArrowRight")
+    await expect.poll(focusedLabel).toMatch(/^Inspección visual general en 30\.000 km/)
+    await page.keyboard.press("ArrowDown")
+    await expect.poll(focusedLabel).toMatch(/ en 30\.000 km/)
+    expect(await focusedLabel()).not.toMatch(/^Inspección visual general/)
+    await page.keyboard.press("End")
+    await expect.poll(focusedLabel).toMatch(/^Quitar .* de la pauta$/)
+    await page.keyboard.press("Home")
+    await expect.poll(focusedLabel).toMatch(/ en 10\.000 km/)
+    // Tab sale de la matriz: el foco no sigue en una de sus casillas.
+    await page.keyboard.press("Tab")
+    expect(await page.evaluate(() => {
+      const active = document.activeElement
+      return !!active && (active.hasAttribute("aria-pressed") || (active.getAttribute("aria-label") ?? "").startsWith("Quitar "))
+    })).toBe(false)
+  })
+
+  test("en móvil las casillas, «Quitar» y «Quitar el intervalo» miden al menos 44 px", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await asJefe(page)
+    await page.goto(`/mantencion/pautas/${ids.schedule}`)
+    const sizeOf = async (locator: ReturnType<typeof page.getByRole>) => {
+      const box = await locator.boundingBox()
+      return { width: Math.round(box?.width ?? 0), height: Math.round(box?.height ?? 0) }
+    }
+    const cell = await sizeOf(page.getByRole("button", { name: "Inspección visual general en 10.000 km", exact: true }))
+    expect(cell.width).toBeGreaterThanOrEqual(44)
+    expect(cell.height).toBeGreaterThanOrEqual(44)
+    const interval = await sizeOf(page.getByRole("button", { name: "Quitar el intervalo de 10.000 km", exact: true }))
+    expect(interval.width).toBeGreaterThanOrEqual(44)
+    expect(interval.height).toBeGreaterThanOrEqual(44)
+    const row = await sizeOf(page.getByRole("button", { name: /^Quitar Inspección visual general de la pauta$/ }))
+    expect(row.height).toBeGreaterThanOrEqual(44)
+    // Y en la tabla de reglas por marca.
+    const rule = await sizeOf(page.getByRole("table", { name: "Reglas por marca de cada actividad" }).getByRole("button").first())
+    expect(rule.height).toBeGreaterThanOrEqual(44)
+  })
+
+  test("el nombre se guarda al salir del campo y lo dice en línea («Guardado»), sin toast", async ({ page }) => {
+    const errors = trackConsole(page)
+    await asJefe(page)
+    await page.goto(`/mantencion/pautas/${ids.schedule}`)
+    const name = page.getByRole("textbox", { name: "Nombre de la pauta", exact: true })
+    await name.fill(`${SCHEDULE} B`)
+    await name.blur()
+    await expect(page.getByRole("status").filter({ hasText: "Guardado" })).toBeVisible()
+    await expectPageTitle(page, `${SCHEDULE} B`)
+    // Lo deja como estaba para el resto de la spec, que busca la pauta por su nombre.
+    await name.fill(SCHEDULE)
+    await name.blur()
+    await expect(page.getByRole("status").filter({ hasText: "Guardado" })).toBeVisible()
+    await expectPageTitle(page, SCHEDULE)
     expect(errors).toEqual([])
   })
 

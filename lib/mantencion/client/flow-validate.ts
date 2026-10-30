@@ -1,4 +1,4 @@
-import { meterName, parseReadingInput } from "../format"
+import { meterName, parseReadingInput, plural } from "../format"
 import { checkReading, type ReadingCheck, type ReadingJump } from "../readings"
 import { baseInterval, checkItemResults, checklistFor, suggestInterval } from "../schedule"
 import { findDuplicatePreventive, type PreventiveRef } from "../status"
@@ -80,6 +80,11 @@ export function checklistCounts(draft: Pick<FlowDraft, "checklist" | "marks" | "
   return { total, done, missingReason }
 }
 
+/** «Falta 1 ítem» / «Faltan 3 ítems»: el verbo concuerda con la cantidad. */
+export function faltaText(count: number, one: string, many: string): string {
+  return `${count === 1 ? "Falta" : "Faltan"} ${plural(count, one, many)}`
+}
+
 export function partsFilled(job: { parts: readonly FlowPart[] }) {
   return job.parts.filter((part) => part.description.trim())
 }
@@ -123,7 +128,6 @@ function validateTrabajo(draft: FlowDraft, ctx: FlowCtx, errors: FlowErrors): vo
   if (!draft.noOilChange && draft.oilIds.length === 0) errors.oil = "Marca qué aceite se cambió, o «No se cambió aceite»."
   if (draft.description.trim().length < MIN_DESCRIPTION) errors.description = "Describe el trabajo realizado."
   if (draft.driverIds.length === 0) errors.drivers = "Agrega al menos un conductor."
-  if (draft.photos.correctiva.length === 0) errors.photos = "Falta al menos una foto."
   if (draft.inWorkshop === null) errors.workshop = "Indica si el equipo sigue en taller."
   else if (draft.inWorkshop) {
     if (!draft.workshopEntryDate) errors.workshop = "Indica cuándo entró a taller."
@@ -144,13 +148,19 @@ export function validateStep(draft: FlowDraft, step: FlowStep, ctx: FlowCtx): Fl
     case "pauta": {
       const counts = checklistCounts(draft)
       const results = draft.checklist.map((item) => ({ itemKey: item.key, value: draft.marks[item.key] ?? "", reason: draft.reasons[item.key] }))
-      if (counts.done < counts.total || counts.missingReason > 0 || !checkItemResults(draft.checklist, results).ok) errors.pauta = "Completa todos los ítems."
+      const left = counts.total - counts.done
+      if (left > 0) errors.pauta = `${faltaText(left, "ítem", "ítems")} por marcar.`
+      else if (counts.missingReason > 0) errors.pauta = `Falta el motivo de ${plural(counts.missingReason, "ítem no realizado", "ítems no realizados")}.`
+      else if (!checkItemResults(draft.checklist, results).ok) errors.pauta = "Completa todos los ítems."
       break
     }
     case "fotos":
-      if (!draft.photos.filtros) errors.photo_filtros = "Falta la foto de los filtros usados."
-      if (!draft.photos.sticker) errors.photo_sticker = "Falta la foto del sticker de mantención."
-      if (draft.notes.trim().length < MIN_NOTE) errors.notes = "Escribe una observación (si no hay novedad, escribe «sin novedad»)."
+      // Preventiva: las dos fotos con nombre y las notas. Correctiva: de 1 a 3 fotos del trabajo.
+      if (draft.kind === "P") {
+        if (!draft.photos.filtros) errors.photo_filtros = "Falta la foto de los filtros usados."
+        if (!draft.photos.sticker) errors.photo_sticker = "Falta la foto del sticker de mantención."
+        if (draft.notes.trim().length < MIN_NOTE) errors.notes = "Escribe tus notas, o toca «Sin novedad» si no hay nada que anotar."
+      } else if (draft.photos.correctiva.length === 0) errors.photos = "Falta al menos una foto."
       break
     case "trabajo":
       validateTrabajo(draft, ctx, errors)

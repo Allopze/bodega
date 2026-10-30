@@ -76,7 +76,7 @@ export default async function EquipmentDetailPage({
       nextIntervalValue: status.nextIntervalValue,
       lastPreventive: status.lastPreventive,
     },
-    workshop: workshop ? { entryDate: workshop.entryDate, daysStopped: workshop.daysStopped, stale: workshop.stale } : null,
+    workshop: workshop ? { entryDate: workshop.entryDate, daysStopped: workshop.daysStopped, stale: workshop.stale, lastActivityDate: workshop.lastActivityDate } : null,
     recordCount,
     life: { rows: life.rows, totals, hasMore: life.hasMore, limit: lifeLimit },
     insurance,

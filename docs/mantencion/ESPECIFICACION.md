@@ -11,7 +11,7 @@
 - **Alexis Morales**: jefatura de mantención. **Francisco Amestica**: supervisor de la faena Biodiversa.
   Los **mecánicos** registran en terreno, a diario, desde **teléfonos personales**; se evalúa una **tablet compartida por faena**.
 - Acuerdos 27-10-2026: (1) todos los campos y fotos son **obligatorios**; (2) la **firma de jefatura queda
-  para una segunda etapa** (sólo el espacio visible en detalle y PDF); (3) módulo dentro de la plataforma,
+  para una segunda etapa** (sólo el espacio para firmar a mano en el PDF; la pantalla no lo muestra porque ahí no hace nada); (3) módulo dentro de la plataforma,
   mecánicos con **cuenta propia**; (4) funciona **sin conexión** y sincroniza solo; (5) reportes **PDF y Excel**.
 - Módulo **independiente** del de mantención antiguo (no modificarlo). Navegación: **Control operacional →
   Mantención** con **Panel, Registros, Equipos y Pautas**.
@@ -110,17 +110,22 @@ con la credencial de ese autor. Cerrar sesión con pendientes avisa y **no** bor
   {sistema} (n)**»; corregir excepciones sin que la pantalla salte; «Listo · seguir con {siguiente}».
   Realizado / No realizado / No aplica; NR abre motivo con atajos (Falta repuesto, Sin herramienta, Requiere
   taller, Equipo en operación). Barra «n de N». No continúa con ítems sin marcar o sin motivo.
-- **Paso 4 · Fotos** (P): 2 fotos con cámara trasera + observaciones obligatorias («sin novedad»).
+- **Paso 4 · Fotos** (P): 2 fotos con cámara trasera + notas obligatorias (atajo de un toque «Sin novedad»).
 - **Paso 3 · Trabajo** (C): tipos de trabajo y aceites con **casilla visible** (múltiple), «No se cambió aceite»
   aparte y excluyente; quién hizo el trabajo (Yo / Otro mecánico / Taller externo); descripción; repuestos con
   cantidad (o «No se usaron»); horas con +/−; si sigue en taller y fecha de ingreso; conductores de las
-  últimas 24 h con búsqueda por apellido; fotos.
+  últimas 24 h con búsqueda por apellido.
+- **Paso 4 · Fotos** (C): la foto del trabajo, en su propio paso como en la preventiva (antes cerraba el paso
+  Trabajo, que llegaba a 2,5 pantallas). Los borradores guardados con los pasos viejos se reubican solos
+  (`stepsVersion` en `lib/mantencion/client/flow-types.ts`).
 - **Revisar**: resumen con «**Cambiar**» en cada dato → lleva al paso y **vuelve directo a Revisar** (si el
   cambio invalida un paso intermedio, se detiene ahí). Una acción: «Firmar y guardar», con «Firmas como
   {nombre}. Después de guardar no se puede editar».
 - **Guardado**: folio (o «Folio pendiente») y estado del envío; «Volver al inicio» y «Registrar {la otra} en {código}».
 - **Actualizar estado en taller**: hoja inferior con «Sigue en taller» (motivo obligatorio) o «Ya salió» (fecha).
-- **Salir a medias**: diálogo propio «Seguir registrando» / «Salir y descartar». Borradores se guardan solos.
+- **Salir a medias**: «Salir» en la barra de cada paso. Diálogo propio con «Guardar y salir» como acción
+  principal (el borrador ya se guarda solo y el inicio ofrece «Seguir/Descartar»), «Seguir registrando» y,
+  aparte, «Descartar registro».
 
 **Diseño para el trabajador**: táctiles ≥ 44 px (52–56 px acciones principales); texto 15–17 px; un solo
 estilo de seleccionado (verde #1e6e3e, texto blanco); mensajes cortos en español de Chile; cero pasos innecesarios.
@@ -139,8 +144,10 @@ estilo de seleccionado (verde #1e6e3e, texto blanco); mensajes cortos en españo
   paginada y ordenable; Exportar a Excel.
 - **Detalle**: snapshot del equipo, lectura anterior, hora de firma y de recepción; pauta usada + «Elegida a
   mano» y motivo; resultado por sistema; fotos con **visor a pantalla completa** (zoom, flechas, Esc, sello
-  visible); firmas (mecánico + espacio «Jefatura · segunda etapa»); historial del equipo; acciones Descargar
-  PDF, Exportar a Excel, **Observar** y **Anular** (según permiso); alertas como etiquetas.
+  visible); firma del mecánico; historial del equipo; acciones **Marcar revisado y
+  siguiente** (principal), **Observar**, Descargar PDF, Exportar a Excel y **Anular** (según permiso), con
+  «Anterior · N de M · Siguiente» sobre la misma lista filtrada; alertas como un aviso en tipo oración que dice
+  qué pasó, qué hacer y enlaza a la foto o al dato.
 - **Equipos**: orden por estado (vencida → próxima → al día → sin lecturas → sin pauta), encabezados
   ordenables; filtros búsqueda, faena, tipo, pauta, estado, «mostrar dados de baja»; aviso de equipos sin pauta
   con enlace; «Mostrar 50 más»; Exportar a Excel.
@@ -187,7 +194,7 @@ con motivo y opción de corregir y reenviar; **nunca se pierde**.
   próxima); **Pautas** (una hoja por pauta con matriz y reglas por marca); **Panel** (KPI y tablas con filtros).
 - **PDF de un registro** (servidor, desde el registro firmado y su snapshot): encabezado Chome, folio, «página
   X de Y»; datos del equipo y registro; tabla completa de ítems con valor y motivo; fotos con sello; firma del
-  mecánico, hora de firma y de recepción, espacio «Firma jefatura (segunda etapa)»; «ANULADO» con motivo.
+  mecánico, hora de firma y de recepción, espacio «Firma jefatura» para firmar a mano; «ANULADO» con motivo.
   Se guarda la primera vez y luego se entrega el mismo; se regenera sólo al anular.
 
 ## 13. Carga inicial

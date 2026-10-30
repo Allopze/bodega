@@ -65,6 +65,9 @@ const OWN_SEARCH_PATTERNS = [
   /^\/ti$/,
   /^\/ti\/reportes$/,
   /^\/ti\/activos\/[^/]+$/,
+  // Mantención: «Importar» es una carga de archivo y la ficha de un equipo no
+  // tiene lista que la shell pueda filtrar. La lista `/mantencion/equipos` lo conserva.
+  /^\/mantencion\/equipos\/[^/]+$/,
 ]
 
 /**

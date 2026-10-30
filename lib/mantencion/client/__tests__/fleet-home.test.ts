@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { buildRows, dueRows, filterForPicking, searchKey, workshopEntries } from "../fleet-view"
-import { buildRecent, openObservations, shortWhen } from "../home-model"
+import { buildRecent, openObservations, shortWhen, worksiteSummary } from "../home-model"
 import { newReplyItem, newWorkshopItem } from "../queue"
 import type { QueueItem } from "../types"
 import { UUID, catalog, equipment, recordItem, storedCatalog } from "./fixtures"
@@ -126,5 +126,14 @@ describe("inicio: mis registros y observaciones", () => {
     expect(openObservations(cat, []).map((entry) => entry.id)).toEqual(["o1"])
     const reply: QueueItem = newReplyItem({ authorUserId: "u-1", payload: { observationId: "o1", response: "Ya la subí" }, summary: { folio: null, equipmentCode: "KA-140" } }, UUID(80))
     expect(openObservations(cat, [reply])).toEqual([])
+  })
+})
+
+describe("faenas del encabezado", () => {
+  it("una faena dice su nombre; varias, cuántas son; ninguna, nada", () => {
+    expect(worksiteSummary([])).toBeNull()
+    expect(worksiteSummary(["Biodiversa"])).toEqual({ text: "Faena Biodiversa", many: false })
+    expect(worksiteSummary(["Biodiversa", "Mininco", "Arauco", "Cañete", "Mulchén", "Nacimiento"])).toEqual({ text: "6 faenas", many: true })
+    expect(worksiteSummary(["Biodiversa", "Mininco"])?.text).toBe("2 faenas")
   })
 })
