@@ -284,6 +284,7 @@ const fuelVehicleBaseSchema = z.object({
   brand:     z.string().max(100).optional(),
   model:     z.string().max(100).optional(),
   year:      z.coerce.number().int().min(1990).max(2030).optional(),
+  serialNumber: z.string().trim().max(40).regex(/^[A-Za-z0-9-]+$/, "Usa letras, números o guion").transform((value) => value.toUpperCase()).optional(),
   worksiteId: z.string().min(1, "Faena requerida"),
   responsibleUserId: z.string().optional(),
   operationalStatus: z.enum(FUEL_VEHICLE_STATUSES).optional(),

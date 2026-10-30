@@ -22,6 +22,9 @@ export const fuelVehicles = pgTable("fuel_vehicles", {
   brand:     text("brand"),                           // Marca
   model:     text("model"),                           // Modelo
   year:      integer("year"),                         // Año
+  // N.º de serie del fabricante (PIN Cat, VIN). Es la llave con que se cruza la
+  // telemetría de VisionLink: el nombre del equipo allá es texto libre.
+  serialNumber: text("serial_number"),
   worksiteId: text("worksite_id").notNull().references(() => worksites.id),  // Faena asignada
   responsibleUserId: text("responsible_user_id").references(() => users.id),
   operationalStatus: text("operational_status").notNull().default("operativo"),
@@ -47,6 +50,7 @@ export const fuelVehicles = pgTable("fuel_vehicles", {
   index("fuel_vehicles_performance_unit_idx").on(table.performanceUnit),
   index("fuel_vehicles_usual_supplier_idx").on(table.usualFuelSupplierId),
   index("fuel_vehicles_code_idx").on(table.code),
+  uniqueIndex("fuel_vehicles_serial_number_key").on(table.serialNumber),
   check("fuel_vehicles_meter_type_valid", sql`${table.meterType} IN ('odometer', 'hour_meter', 'none')`),
   check("fuel_vehicles_performance_unit_valid", sql`${table.performanceUnit} IN ('km_per_liter', 'liters_per_hour', 'not_applicable')`),
   check("fuel_vehicles_tank_capacity_positive", sql`${table.tankCapacityLiters} IS NULL OR ${table.tankCapacityLiters} > 0`),
