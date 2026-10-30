@@ -379,6 +379,8 @@ export const pgliteTestFiles = [
   "scripts/__tests__/revert-pdtp-revoked-approvals.test.ts",
   // Decisiones de catálogo EPP 2026-10-29: atributos faltantes, nombre del Evalight y color Piedra.
   "scripts/__tests__/apply-epp-catalog-decisions-2026-10-29.test.ts",
+  "scripts/__tests__/apply-fleet-copec-decisions-2026-10-29.test.ts",
+  "scripts/__tests__/apply-copec-dated-mappings-2026-10-30.test.ts",
   // Mantención de equipos: carga inicial idempotente y conciliada con la flota (§13).
   "lib/__tests__/mantencion-seed-pglite.test.ts",
   // Mantención de equipos: recepción de registros, folio, revalidación y ciclo de vida (L1a).
