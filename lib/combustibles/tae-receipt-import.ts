@@ -67,7 +67,13 @@ function reader(record: Record<string, unknown>) {
   }
 }
 
-export async function parseTaeReceiptExcel(buffer: Buffer, context?: { from: string; to: string; expectedProduct?: "diesel" | "bluemax" }): Promise<TaeReceiptImportResult> {
+export interface TaeReceiptParseContext {
+  from: string
+  to: string
+  expectedProduct?: "diesel" | "bluemax"
+}
+
+export async function parseTaeReceiptExcel(buffer: Buffer, context?: TaeReceiptParseContext): Promise<TaeReceiptImportResult> {
   const workbook = new ExcelJS.Workbook()
   try {
     await workbook.xlsx.load(buffer as unknown as ArrayBuffer)
@@ -76,12 +82,16 @@ export async function parseTaeReceiptExcel(buffer: Buffer, context?: { from: str
   }
   const sheet = workbook.worksheets[0]
   if (!sheet) return { rows: [], errors: [{ rowIndex: 0, field: "archivo", message: "El archivo no tiene hojas" }] }
+  return parseTaeReceiptRecords(sheetToRecords(sheet), context)
+}
 
+/** Filas con las columnas del Excel: las de la hoja, o las del web service ya traducidas (`copec-ws.ts`). */
+export function parseTaeReceiptRecords(records: Array<Record<string, unknown> & { __row?: number }>, context?: TaeReceiptParseContext): TaeReceiptImportResult {
   const rows: ParsedTaeReceiptRow[] = []
   const errors: TaeReceiptImportError[] = []
   const seen = new Set<string>()
 
-  sheetToRecords(sheet).forEach((record, index) => {
+  records.forEach((record, index) => {
     const rowIndex = record.__row ?? index + 2 // fila 1 = encabezados; conserva filas vacías intercaladas
     const get = reader(record)
     const fail = (field: string, message: string) => errors.push({ rowIndex, field, message, rawRow: withoutPersonalData(record) })

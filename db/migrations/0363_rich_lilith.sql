@@ -1,0 +1,2 @@
+DROP INDEX IF EXISTS "fuel_meter_readings_source_ref_unique";--> statement-breakpoint
+CREATE UNIQUE INDEX "fuel_meter_readings_source_ref_plate_unique" ON "fuel_meter_readings" USING btree ("source","source_ref","plate");

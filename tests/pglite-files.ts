@@ -159,6 +159,7 @@ export const pgliteTestFiles = [
   // marcadas y consultas agregadas de las vistas G/R, C y V.
   "lib/__tests__/fuel-control-projection.test.ts",
   "lib/__tests__/fuel-control-review.test.ts",
+  "lib/combustibles/__tests__/meter-readings-identity.test.ts",
   "lib/combustibles/control/queries/queries.test.ts",
   "lib/combustibles/control/queries/seals.test.ts",
   "lib/combustibles/control/queries/reconciliation.test.ts",

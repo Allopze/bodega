@@ -31,7 +31,9 @@ export const fuelMeterReadings = pgTable("fuel_meter_readings", {
   plate:     text("plate").notNull(),
   source:    text("source").notNull(),
   /** Clave natural de la transacción en su fuente: guía de despacho (Copec) o
-   *  `transactionId` (Aramco). Junto con `source` da la idempotencia. */
+   *  `transactionId` (Aramco). Junto con `source` y `plate` da la idempotencia:
+   *  Copec reutiliza la guía entre vehículos distintos (ene-2026: la 660150998
+   *  para SRCJ-47 y TBZW-37), así que la guía sola no identifica la carga. */
   sourceRef: text("source_ref").notNull(),
   /** Instante real de la carga en hora chilena, ISO 8601. Copec entrega fecha y
    *  hora en celdas separadas; `santiagoInstant` las compone. */
@@ -52,7 +54,7 @@ export const fuelMeterReadings = pgTable("fuel_meter_readings", {
   check("fuel_meter_readings_meter_type_valid", sql`${table.meterType} IN ('odometer', 'hour_meter')`),
   check("fuel_meter_readings_value_positive", sql`${table.value} >= 0`),
   check("fuel_meter_readings_liters_positive", sql`${table.liters} IS NULL OR ${table.liters} >= 0`),
-  uniqueIndex("fuel_meter_readings_source_ref_unique").on(table.source, table.sourceRef),
+  uniqueIndex("fuel_meter_readings_source_ref_plate_unique").on(table.source, table.sourceRef, table.plate),
   // El detector recorre la serie de un equipo en orden cronológico dentro de una
   // misma fuente: lecturas de fuentes distintas no son comparables entre sí.
   index("fuel_meter_readings_series_idx").on(table.vehicleId, table.source, table.meterType, table.occurredAt),

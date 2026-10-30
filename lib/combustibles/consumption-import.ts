@@ -82,7 +82,8 @@ export interface CopecParseContext {
   period?: { from: string; to: string }
 }
 
-function parseCopecDetail(records: Record<string, unknown>[], context?: CopecParseContext): ConsumptionImportResult {
+/** Filas del detalle con las columnas del Excel: las de la hoja, o las del web service ya traducidas (`copec-ws.ts`). */
+export function parseCopecDetail(records: Record<string, unknown>[], context?: CopecParseContext): ConsumptionImportResult {
   const errors: ImportError[] = []
   const detail: ParsedMeterReading[] = []
   const transactions: ParsedCopecTransaction[] = []

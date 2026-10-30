@@ -25,6 +25,8 @@ export interface ArchivedCopecEvidence {
 export async function archiveCopecEvidence(
   id: string,
   original: Uint8Array,
+  /** El Excel del portal, o la respuesta SOAP (`xml`) o REST (`json`) del web service. */
+  format: "xlsx" | "xml" | "json" = "xlsx",
 ): Promise<ArchivedCopecEvidence> {
   if (!/^[A-Za-z0-9_-]{8,80}$/.test(id)) throw new Error("Identificador de evidencia inválido")
   if (original.byteLength === 0 || original.byteLength > COPEC_EVIDENCE_MAX_BYTES) {
@@ -33,9 +35,9 @@ export async function archiveCopecEvidence(
 
   const aad = `copec-provider-file:${id}`
   const encrypted = encryptPreventionBuffer(original, aad)
-  const storagePath = `copec-evidence/${id}.xlsx.enc`
+  const storagePath = `copec-evidence/${id}.${format}.enc`
   const directory = resolveStorageFile(resolveStorageDir(), "copec-evidence")
-  const target = resolveStorageFile(directory, `${id}.xlsx.enc`)
+  const target = resolveStorageFile(directory, `${id}.${format}.enc`)
   const temporary = resolveStorageFile(directory, `.${id}.${process.pid}.tmp`)
 
   await mkdir(directory, { recursive: true, mode: 0o700 })

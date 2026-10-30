@@ -21,9 +21,15 @@ export interface CopecReportRequest {
 }
 
 export interface CopecDownloadedReport {
+  /** Lo que entregó Copec tal cual: el Excel del portal o la respuesta del web service. Es la evidencia que se archiva. */
   buffer: Buffer
   fileName: string
   contentType: string
+  /**
+   * Sólo el web service (`copec-ws.ts`): sus filas ya traducidas a las columnas
+   * del Excel de «Descargar Detalle». Con ellas se parsea sin leer `buffer`.
+   */
+  records?: Array<Record<string, unknown> & { __row: number }>
 }
 
 export type CopecReportDownloadResult =
@@ -117,8 +123,11 @@ const MONTH_LABELS = ["ene.", "feb.", "mar.", "abr.", "may.", "jun.", "jul.", "a
  *   mes cerrado basta para darlo por vacío (`importCopecPeriod`).
  * - `no_results`: la búsqueda no mostró el botón de exportar a tiempo. Puede
  *   ser un mes sin datos o un portal lento: no prueba nada.
+ * - `no_records`: el web service contestó «No hay registros para el filtro
+ *   seleccionado.». Es la misma respuesta de Copec que `product_disabled`, dicha
+ *   en palabras, y pesa lo mismo.
  */
-export type CopecUnavailableReason = "product_disabled" | "no_results"
+export type CopecUnavailableReason = "product_disabled" | "no_results" | "no_records"
 
 /** El portal no genera un archivo para todos los meses/productos. Este caso es
  * recuperable durante una sincronización histórica, a diferencia de una falla

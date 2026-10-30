@@ -187,7 +187,12 @@ export interface SaveMeterReadingsResult {
 }
 
 /**
- * Persiste lecturas, idempotente por `(source, sourceRef)`.
+ * Persiste lecturas, idempotente por `(source, sourceRef, plate)`. La patente
+ * entra en la clave porque Copec reutiliza la guía entre vehículos distintos:
+ * con `(source, sourceRef)` las dos cargas iban en el mismo INSERT con la misma
+ * clave y Postgres rechazaba el período entero (21000, «ON CONFLICT DO UPDATE
+ * command cannot affect row a second time»), y entre meses la lectura de un
+ * vehículo pisaba en silencio la del otro.
  *
  * Una lectura sin vehículo resuelto NO se guarda: el tipo de medidor sale del
  * catálogo (`fuel_vehicles.meterType`) y no del archivo — Copec rotula la
@@ -205,7 +210,10 @@ export async function saveMeterReadings(
   readings: ParsedMeterReading[],
   resolveVehicle: (plate: string, effectiveOn?: string) => { id: string; meterType?: string } | undefined,
 ): Promise<SaveMeterReadingsResult> {
-  const values: (typeof fuelMeterReadings.$inferInsert)[] = []
+  // Por clave: la misma guía dos veces para la misma patente dentro de un
+  // archivo es una fila repetida, y repetirla en el INSERT tumbaría el lote
+  // (21000). Gana la última, como ganaría en dos importaciones sucesivas.
+  const byKey = new Map<string, typeof fuelMeterReadings.$inferInsert>()
   let unresolved = 0
 
   for (const reading of readings) {
@@ -220,7 +228,7 @@ export async function saveMeterReadings(
       unresolved++
       continue
     }
-    values.push({
+    byKey.set(`${reading.sourceRef}\u0000${reading.plate}`, {
       id: nanoid(),
       vehicleId: vehicle.id,
       plate: reading.plate,
@@ -237,9 +245,10 @@ export async function saveMeterReadings(
     })
   }
 
+  const values = [...byKey.values()]
   if (values.length > 0) {
     await tx.insert(fuelMeterReadings).values(values).onConflictDoUpdate({
-      target: [fuelMeterReadings.source, fuelMeterReadings.sourceRef],
+      target: [fuelMeterReadings.source, fuelMeterReadings.sourceRef, fuelMeterReadings.plate],
       set: {
         vehicleId: sqlExcluded("vehicle_id"),
         occurredAt: sqlExcluded("occurred_at"),

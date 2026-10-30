@@ -4,7 +4,7 @@ import { db } from "@/db"
 import { fuelConsumptionRecords, fuelImportBatches, fuelProviderSyncRuns, fuelProviderTransactions, fuelStorageLocations, systemSettings, users } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { todayInChile, addDaysToPlainDate } from "@/lib/utils"
-import { parseConsumptionExcel, type ParsedConsumptionRow } from "@/lib/combustibles/consumption-import"
+import { parseConsumptionExcel, parseCopecDetail, type ParsedConsumptionRow } from "@/lib/combustibles/consumption-import"
 import { computeBatchTotals } from "@/lib/combustibles/consumption-calculations"
 import { plateMatchKey } from "@/lib/combustibles/xlsx-utils"
 import { loadVehicleResolver } from "@/lib/combustibles/plate-resolver"
@@ -17,12 +17,12 @@ import { validateProviderRows, type ProviderRowInput } from "@/lib/combustibles/
 import { reconcileFuelProviderRun } from "@/lib/combustibles/fuel-reconciliation"
 import {
   CopecReportFailure,
-  withCopecPortalSession,
   type CopecPortalSession,
   type CopecReportDownloadResult,
   type CopecDownloadedReport,
 } from "@/lib/combustibles/copec-reports"
-import { parseTaeReceiptExcel } from "@/lib/combustibles/tae-receipt-import"
+import { COPEC_WS_PARSER_VERSION, copecSource, withCopecSourceSession, type CopecSource } from "@/lib/combustibles/copec-ws"
+import { parseTaeReceiptExcel, parseTaeReceiptRecords } from "@/lib/combustibles/tae-receipt-import"
 import { importTaeReceipts, TaeSupplierMissingError } from "@/lib/combustibles/tae-receipts"
 import { archiveCopecEvidence, COPEC_PARSER_VERSION } from "@/lib/combustibles/copec-evidence"
 import { buildCopecTransactionRows, hasPossibleCopecCorrection } from "@/lib/combustibles/copec-events"
@@ -55,6 +55,8 @@ interface SyncState { cursor: string | null; taeCursor: string | null; requested
  * instalación sin cursor planifica desde `DEFAULT_START` —más de 60 meses— y
  * cada corrida muere por timeout en el mismo lugar sin avanzar del todo. Con
  * tope, la cobertura avanza los meses cerrados que sí quedaron verificados.
+ * Con el web service (`copec-ws.ts`) un período tarda segundos, pero el tope se
+ * queda: `COPEC_SOURCE=portal` sigue siendo el respaldo.
  */
 const MAX_PERIODS_PER_RUN = 4
 
@@ -83,7 +85,7 @@ export interface CopecCoverageStatusView {
   canConfirmEmpty: boolean
 }
 
-export async function getCopecSyncState(): Promise<{ lastRunAt: string | null; lastRunStatus: string | null; lastRunMonth: string | null; rowsReceived: number; rowsAccepted: number; rowsRejected: number; rowsPending: number; affectedQuantity: number; affectedAmount: number; cursor: string | null; pending: number; coverageMonth: string; coverage: CopecCoverageStatusView[] }> {
+export async function getCopecSyncState(): Promise<{ lastRunAt: string | null; lastRunStatus: string | null; lastRunMonth: string | null; rowsReceived: number; rowsAccepted: number; rowsRejected: number; rowsPending: number; affectedQuantity: number; affectedAmount: number; cursor: string | null; pending: number; coverageMonth: string; coverage: CopecCoverageStatusView[]; source: CopecSource }> {
   const [s, latestRun, nextUncovered] = await Promise.all([
     state(),
     db.query.fuelProviderSyncRuns.findFirst({ where: eq(fuelProviderSyncRuns.provider, "copec"), orderBy: [desc(fuelProviderSyncRuns.startedAt)] }),
@@ -115,6 +117,8 @@ export async function getCopecSyncState(): Promise<{ lastRunAt: string | null; l
     pending: latestRun?.rowsPending ?? s.pending.length,
     coverageMonth,
     coverage,
+    // La pantalla describe el recorrido de la fuente que de verdad se usa.
+    source: copecSource(),
   }
 }
 
@@ -188,9 +192,10 @@ function exactTotal(values: number[], scale: 100 | 10_000): number {
  * respuesta de Copec de que la cuenta no lo tuvo ese mes: se registra como
  * vacío confirmado, con esa evidencia y el importador como responsable. Antes
  * quedaba «desconocido» y el mes no avanzaba hasta que alguien lo confirmara a
- * mano, todos los meses (TAE BlueMax casi nunca tiene cargas). Un mes abierto
- * no se cierra así: el producto puede aparecer más adelante. Devuelve si lo
- * registró.
+ * mano, todos los meses (TAE BlueMax casi nunca tiene cargas). El web service
+ * dice lo mismo en palabras («No hay registros…», `no_records`) y pesa igual.
+ * Un mes abierto no se cierra así: el producto puede aparecer más adelante.
+ * Devuelve si lo registró.
  */
 async function recordDisabledProductAsEmpty(input: {
   download: CopecReportDownloadResult
@@ -201,8 +206,12 @@ async function recordDisabledProductAsEmpty(input: {
   runId?: string
 }): Promise<boolean> {
   const { download, channel, from, to } = input
-  if (!download.unavailable || download.reason !== "product_disabled" || isOpenPeriod(to)) return false
+  if (!download.unavailable || (download.reason !== "product_disabled" && download.reason !== "no_records") || isOpenPeriod(to)) return false
   const productLabel = download.product === "diesel" ? "Diésel" : "BlueMax"
+  const month = monthKey(from).slice(0, 7)
+  const observed = download.reason === "no_records"
+    ? `El web service de Copec respondió «No hay registros para el filtro seleccionado» para ${channel} ${productLabel} en ${month}`
+    : `El portal Copec mostró ${channel} ${productLabel} deshabilitado para ${month}`
   await recordCopecPeriodCoverage({
     channel,
     product: download.product,
@@ -210,7 +219,7 @@ async function recordDisabledProductAsEmpty(input: {
     status: "legitimate_empty",
     sourceAvailability: "available",
     syncRunId: input.runId,
-    evidence: `El portal Copec mostró ${channel} ${productLabel} deshabilitado para ${monthKey(from).slice(0, 7)}: la cuenta no tuvo ese producto en el mes. Confirmado por la sincronización.`,
+    evidence: `${observed}: la cuenta no tuvo ese producto en el mes. Confirmado por la sincronización.`,
     evidenceActorUserId: input.importerId,
   })
   return true
@@ -233,6 +242,11 @@ async function downloadCopecChannel(
   }
 }
 
+/** Qué parser leyó el informe: queda en el archivo y en la cobertura del mes. */
+function copecParserVersion(report: CopecDownloadedReport): string {
+  return report.records ? COPEC_WS_PARSER_VERSION : COPEC_PARSER_VERSION
+}
+
 async function archiveDownloadedCopecReport(input: {
   runId: string
   channel: "TCT" | "TAE"
@@ -241,7 +255,10 @@ async function archiveDownloadedCopecReport(input: {
   report: CopecDownloadedReport
 }): Promise<string> {
   const id = nanoid()
-  const evidence = await archiveCopecEvidence(id, input.report.buffer)
+  // Se archiva lo que entregó Copec, no las filas traducidas: la respuesta del
+  // web service es la evidencia, igual que el Excel lo era del portal.
+  const format = input.report.records ? (/\.json$/i.test(input.report.fileName) ? "json" : "xml") : "xlsx"
+  const evidence = await archiveCopecEvidence(id, input.report.buffer, format)
   await recordCopecFile({
     id,
     syncRunId: input.runId,
@@ -257,7 +274,7 @@ async function archiveDownloadedCopecReport(input: {
     encryptionIv: evidence.encryptionIv,
     encryptionAuthTag: evidence.encryptionAuthTag,
     encryptionKeyVersion: evidence.encryptionKeyVersion,
-    parserVersion: COPEC_PARSER_VERSION,
+    parserVersion: copecParserVersion(input.report),
     sourceBytes: evidence.sourceBytes,
     status: "archived",
   })
@@ -504,7 +521,9 @@ async function importCopecPeriod(
     if (!runId) throw new Error("La evidencia Copec requiere una corrida durable asociada")
     const sourceFileId = await archiveDownloadedCopecReport({ runId, channel: "TCT", product, from, report })
     reports.push(`${productLabel}:${report.fileName}`)
-    const parsed = await parseConsumptionExcel(report.buffer, { expectedProduct: product, period: { from, to } })
+    const parseContext = { expectedProduct: product, period: { from, to } }
+    const parsed = report.records ? parseCopecDetail(report.records, parseContext) : await parseConsumptionExcel(report.buffer, parseContext)
+    const parserVersion = copecParserVersion(report)
     const sourceRowsReceived = (parsed.transactions?.length ?? 0) > 0 ? parsed.transactions!.length + parsed.errors.length : parsed.rows.length + parsed.errors.length
     rowsReceived += sourceRowsReceived
     const accountKey = `tct:${product}`
@@ -532,7 +551,7 @@ async function importCopecPeriod(
       rowsRejected += rejectedCount
       unavailable.push(`${productLabel}: archivo ${parsed.rows.length === 0 && parsed.errors.length === 0 ? "vacío sin evidencia de período vacío" : "con filas inválidas"}`)
       await updateCopecFileParseResult({ id: sourceFileId, status: "invalid", rowsReceived: sourceRowsReceived, rowsAccepted: 0, rowsRejected: rejectedCount, quantityTotal: parsedQuantity, amountTotal: parsedAmount })
-      await recordCopecPeriodCoverage({ channel: "TCT", product, month: monthKey(from), status: "failed", sourceAvailability: "available", syncRunId: runId, sourceFileId, rowsReceived: sourceRowsReceived, rowsAccepted: 0, rowsRejected: rejectedCount, quantityTotal: parsedQuantity, amountTotal: parsedAmount, parserVersion: COPEC_PARSER_VERSION })
+      await recordCopecPeriodCoverage({ channel: "TCT", product, month: monthKey(from), status: "failed", sourceAvailability: "available", syncRunId: runId, sourceFileId, rowsReceived: sourceRowsReceived, rowsAccepted: 0, rowsRejected: rejectedCount, quantityTotal: parsedQuantity, amountTotal: parsedAmount, parserVersion })
       if (parserErrors.length) {
         const persistedIssues = await recordFuelProviderIssues(runId, parserErrors)
         if (quality) quality.rejected += persistedIssues.rejected ?? 0
@@ -621,7 +640,7 @@ async function importCopecPeriod(
       const acceptedCount = eventRows.length > 0 ? eventRows.length - correctionReviewRows.length - eventValidation.rejected.length : persistedProjection.accepted
       const coverageStatus = validationFailed ? "failed" : "incomplete"
       await updateCopecFileParseResult({ id: sourceFileId, status: validationFailed ? "invalid" : "processed", rowsReceived: sourceRowsReceived, rowsAccepted: acceptedCount, rowsRejected: rejectedCount, rowsPending: trackedRows.pending, quantityTotal: parsedQuantity, amountTotal: parsedAmount })
-      await recordCopecPeriodCoverage({ channel: "TCT", product, month: monthKey(from), status: coverageStatus, sourceAvailability: "available", syncRunId: runId, sourceFileId, rowsReceived: sourceRowsReceived, rowsAccepted: acceptedCount, rowsRejected: rejectedCount, rowsPending: trackedRows.pending, quantityTotal: parsedQuantity, amountTotal: parsedAmount, parserVersion: COPEC_PARSER_VERSION })
+      await recordCopecPeriodCoverage({ channel: "TCT", product, month: monthKey(from), status: coverageStatus, sourceAvailability: "available", syncRunId: runId, sourceFileId, rowsReceived: sourceRowsReceived, rowsAccepted: acceptedCount, rowsRejected: rejectedCount, rowsPending: trackedRows.pending, quantityTotal: parsedQuantity, amountTotal: parsedAmount, parserVersion })
       unavailable.push(`${productLabel}: ${validationFailed ? "validación de filas requiere revisión" : "corrección pendiente de revisión"}`)
       continue
     }
@@ -734,7 +753,7 @@ async function importCopecPeriod(
     if (mappingsPending) unavailable.push(`${productLabel}: asignación histórica pendiente`)
     const acceptedFileRows = Math.max(0, (eventRows.length > 0 ? eventRows.length - correctionReviewRows.length : parsed.rows.length) - trackedRows.pending)
     await updateCopecFileParseResult({ id: sourceFileId, status: "processed", rowsReceived: sourceRowsReceived, rowsAccepted: acceptedFileRows, rowsRejected: correctionReviewRows.length, rowsPending: trackedRows.pending, quantityTotal: parsedQuantity, amountTotal: parsedAmount })
-    await recordCopecPeriodCoverage({ channel: "TCT", product, month: monthKey(from), status: tctStatus, sourceAvailability: "available", syncRunId: runId, sourceFileId, rowsReceived: sourceRowsReceived, rowsAccepted: acceptedFileRows, rowsRejected: correctionReviewRows.length, rowsPending: trackedRows.pending, quantityTotal: parsedQuantity, amountTotal: parsedAmount, parserVersion: COPEC_PARSER_VERSION })
+    await recordCopecPeriodCoverage({ channel: "TCT", product, month: monthKey(from), status: tctStatus, sourceAvailability: "available", syncRunId: runId, sourceFileId, rowsReceived: sourceRowsReceived, rowsAccepted: acceptedFileRows, rowsRejected: correctionReviewRows.length, rowsPending: trackedRows.pending, quantityTotal: parsedQuantity, amountTotal: parsedAmount, parserVersion })
     if (cleanupSafe) cleanupEligibleSources.add(source)
   }
 
@@ -821,7 +840,9 @@ async function importTaeReceiptPeriod(
     }
     if (!runId) throw new Error("La evidencia Copec requiere una corrida durable asociada")
     const sourceFileId = await archiveDownloadedCopecReport({ runId, channel: "TAE", product: download.product, from, report: download.report })
-    const parsed = await parseTaeReceiptExcel(download.report.buffer, { from, to, expectedProduct: download.product })
+    const parseContext = { from, to, expectedProduct: download.product }
+    const parsed = download.report.records ? parseTaeReceiptRecords(download.report.records, parseContext) : await parseTaeReceiptExcel(download.report.buffer, parseContext)
+    const parserVersion = copecParserVersion(download.report)
     rowsReceived += parsed.rows.length + parsed.errors.length
     const product = download.product
     const accountKey = `tae:${product}`
@@ -849,7 +870,7 @@ async function importTaeReceiptPeriod(
       const rejectedCount = parsed.errors.length || 1
       rowsRejected += rejectedCount
       await updateCopecFileParseResult({ id: sourceFileId, status: "invalid", rowsReceived: parsed.rows.length + parsed.errors.length, rowsAccepted: 0, rowsRejected: rejectedCount, quantityTotal, amountTotal })
-      await recordCopecPeriodCoverage({ channel: "TAE", product, month: monthKey(from), status: "failed", sourceAvailability: "available", syncRunId: runId, sourceFileId, rowsReceived: parsed.rows.length + parsed.errors.length, rowsAccepted: 0, rowsRejected: rejectedCount, quantityTotal, amountTotal, parserVersion: COPEC_PARSER_VERSION })
+      await recordCopecPeriodCoverage({ channel: "TAE", product, month: monthKey(from), status: "failed", sourceAvailability: "available", syncRunId: runId, sourceFileId, rowsReceived: parsed.rows.length + parsed.errors.length, rowsAccepted: 0, rowsRejected: rejectedCount, quantityTotal, amountTotal, parserVersion })
       if (parserIssues.length) await recordFuelProviderIssues(runId, parserIssues)
       continue
     }
@@ -926,7 +947,7 @@ async function importTaeReceiptPeriod(
       if (!(error instanceof TaeSupplierMissingError)) throw error
       unavailable.push(`TAE ${productLabel}: ${error.message}`)
       await updateCopecFileParseResult({ id: sourceFileId, status: "processed", rowsReceived: parsed.rows.length, rowsAccepted: parsed.rows.length - correctionReviewRows.length, rowsRejected: correctionReviewRows.length, quantityTotal, amountTotal })
-      await recordCopecPeriodCoverage({ channel: "TAE", product, month: monthKey(from), status: "incomplete", sourceAvailability: "available", syncRunId: runId, sourceFileId, rowsReceived: parsed.rows.length, rowsAccepted: parsed.rows.length - correctionReviewRows.length, rowsRejected: correctionReviewRows.length, quantityTotal, amountTotal, parserVersion: COPEC_PARSER_VERSION })
+      await recordCopecPeriodCoverage({ channel: "TAE", product, month: monthKey(from), status: "incomplete", sourceAvailability: "available", syncRunId: runId, sourceFileId, rowsReceived: parsed.rows.length, rowsAccepted: parsed.rows.length - correctionReviewRows.length, rowsRejected: correctionReviewRows.length, quantityTotal, amountTotal, parserVersion })
       continue
     }
     // Recién acá: el contador decide si avanza el cursor TAE, así que tiene que
@@ -960,7 +981,7 @@ async function importTaeReceiptPeriod(
     const rejectedCount = correctionReviewRows.length + eventValidation.rejected.length + (correctionsPersisted.rejected ?? 0)
     const acceptedCount = parsed.rows.length - correctionReviewRows.length - eventValidation.rejected.length - eventPersisted.pending
     await updateCopecFileParseResult({ id: sourceFileId, status: rowsWithValidationErrors ? "invalid" : "processed", rowsReceived: parsed.rows.length, rowsAccepted: acceptedCount, rowsRejected: rejectedCount, rowsPending: eventPersisted.pending, quantityTotal, amountTotal })
-    await recordCopecPeriodCoverage({ channel: "TAE", product, month: monthKey(from), status: coverageStatus, sourceAvailability: "available", syncRunId: runId, sourceFileId, rowsReceived: parsed.rows.length, rowsAccepted: acceptedCount, rowsRejected: rejectedCount, rowsPending: eventPersisted.pending, quantityTotal, amountTotal, parserVersion: COPEC_PARSER_VERSION })
+    await recordCopecPeriodCoverage({ channel: "TAE", product, month: monthKey(from), status: coverageStatus, sourceAvailability: "available", syncRunId: runId, sourceFileId, rowsReceived: parsed.rows.length, rowsAccepted: acceptedCount, rowsRejected: rejectedCount, rowsPending: eventPersisted.pending, quantityTotal, amountTotal, parserVersion })
   }
   return { received, unmappedCards: [...unmappedCards].sort(), taeReports, rowsReceived, rowsAccepted, rowsRejected, rowsPending }
 }
@@ -982,11 +1003,12 @@ async function nextRequestedStart(requested: string | null | undefined, period: 
 }
 
 /**
- * `portal` es la sesión del portal Copec de la corrida. Sin ella se abre una
- * propia: un login —un correo con código— para este período.
+ * `portal` es la sesión Copec de la corrida (web service o portal, ver
+ * `withCopecSourceSession`). Sin ella se abre una propia; con el portal eso es
+ * un login —un correo con código— para este período.
  */
 export async function syncCopecReportPeriod(period: CopecSyncPeriod, importerId?: string, portal?: CopecPortalSession): Promise<PeriodSyncResult> {
-  if (!portal) return withCopecPortalSession((session) => syncCopecReportPeriod(period, importerId, session))
+  if (!portal) return withCopecSourceSession((session) => syncCopecReportPeriod(period, importerId, session))
   const current = await state()
   // Set NUEVO, no la continuación del guardado. Antes se sembraba con
   // `current.pending` y sólo se hacía `add`: ninguna patente salía nunca, ni
@@ -1110,7 +1132,7 @@ export async function listCopecSyncRunsSince(since: string) {
 
 /**
  * El barrido completo: el mes en curso y los meses pendientes, en UNA sesión
- * del portal. Lo corre el cron y también el botón «Sincronizar» (en segundo
+ * Copec. Lo corre el cron y también el botón «Sincronizar» (en segundo
  * plano, ver `startCopecSyncAction`); `importerId` es el operador que lo pidió,
  * y sin él la corrida queda a nombre de `COPEC_SYNC_IMPORTER_EMAIL`.
  */
@@ -1128,9 +1150,10 @@ export async function syncCopecReports(options: { importerId?: string } = {}): P
   // escondía las patentes sin vincular de todos los anteriores.
   const pendingPlates = new Set<string>()
   const periods = copecSweepPeriods(plan.periods)
-  // Una sola sesión del portal para todo el barrido: cada login es un correo
-  // con código, y el portal no deja retomar una sesión desde otra página.
-  return withCopecPortalSession(async (portal) => {
+  // Una sola sesión para todo el barrido: con el portal cada login es un correo
+  // con código, y el portal no deja retomar una sesión desde otra página. El
+  // web service no tiene sesión, pero entra por la misma forma.
+  return withCopecSourceSession(async (portal) => {
     const startedAt = Date.now()
     for (const [index, period] of periods.entries()) {
       // `maxDuration = 300` en la ruta del cron, y un período puede tomar más de
