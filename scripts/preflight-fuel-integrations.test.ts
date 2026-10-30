@@ -87,10 +87,15 @@ describe("puerta del preflight de combustible", () => {
   })
 
   it("bloquea cuando una invariante estructural deja de ser cero", () => {
-    expect(findBlockingFuelCounters({ ...EMPTY_REPORT, splitTctIdentities: 1, detailDuplicateKeys: 2 })).toEqual([
+    expect(findBlockingFuelCounters({ ...EMPTY_REPORT, splitTctIdentities: 1, unknownProviderTransactions: 2 })).toEqual([
       { counter: "splitTctIdentities", value: 1 },
-      { counter: "detailDuplicateKeys", value: 2 },
+      { counter: "unknownProviderTransactions", value: 2 },
     ])
+  })
+
+  it("la misma carga en dos lotes es deuda: el cierre del mes la vacía", () => {
+    expect(findBlockingFuelCounters({ ...EMPTY_REPORT, detailDuplicateKeys: 1 })).toEqual([])
+    expect(findFuelDebtCounters({ ...EMPTY_REPORT, detailDuplicateKeys: 1 })).toEqual([{ counter: "detailDuplicateKeys", value: 1 }])
   })
 
   it("no bloquea por deuda operativa: los pendientes y los odómetros sólo se informan", () => {
