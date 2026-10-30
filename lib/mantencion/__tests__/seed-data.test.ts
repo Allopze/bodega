@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs"
+import { createHash } from "node:crypto"
+import { existsSync, readFileSync } from "node:fs"
 import path from "node:path"
 import { describe, expect, it, vi } from "vitest"
 
@@ -16,10 +17,20 @@ const raw = (): unknown => JSON.parse(readFileSync(FILE, "utf8"))
 const data = parseMantSeedData(raw())
 const clone = (): MantSeedData => structuredClone(data)
 
+// La referencia validada con la jefatura vive en `docs/mantencion/referencias/`,
+// que está fuera de git junto con las planillas y notas del cliente: en un
+// checkout limpio —el CI— no existe. Su sha256 fija la copia de `db/seed` en
+// cualquier checkout; la comparación directa corre donde el archivo está.
+const VALIDATED_REFERENCE_SHA256 = "5b905cb2b3ebc1ea31acb75de910176d5040a639df78aceb5dc18ed2fe3eed60"
+const REFERENCE = path.resolve(process.cwd(), "docs/mantencion/referencias/seed-mantencion.json")
+
 describe("db/seed/mantencion-seed.json (§13)", () => {
   it("es copia exacta de la referencia validada con la jefatura (desviación D13)", () => {
-    const reference = readFileSync(path.resolve(process.cwd(), "docs/mantencion/referencias/seed-mantencion.json"), "utf8")
-    expect(readFileSync(FILE, "utf8")).toBe(reference)
+    expect(createHash("sha256").update(readFileSync(FILE)).digest("hex")).toBe(VALIDATED_REFERENCE_SHA256)
+  })
+
+  it.skipIf(!existsSync(REFERENCE))("coincide byte a byte con la referencia local, cuando está", () => {
+    expect(readFileSync(FILE, "utf8")).toBe(readFileSync(REFERENCE, "utf8"))
   })
 
   it("trae lo que dice la especificación", () => {

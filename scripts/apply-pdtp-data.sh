@@ -43,9 +43,10 @@ PDTP_DATA_STEPS=(
   "db:seed-pdtp-inspection-templates|seed-inspection-templates"
   "db:preflight-pdtp-wiring|preflight-pdtp-wiring"
   "pdtp:reconcile-fulfillment-events|reconcile-pdtp-fulfillment-events"
-  # En dev sólo reporta (sin `--apply`); en producción el one-shot aplica.
-  "pdtp:report-unverified-approvals|apply-pdtp-unverified-approvals"
 )
+# `pdtp:report-unverified-approvals` salió de la cadena el 2026-10-29 junto con su
+# one-shot de producción (`apply-pdtp-unverified-approvals`, ya aplicado; ver
+# ac627e5c). Se corre a mano con `npm run pdtp:report-unverified-approvals`.
 
 # Pasos que NO saben simular: no tienen modo de sólo lectura, así que en un
 # dry run se omiten en vez de correrse igual. Decir "no escribe nada" y escribir
