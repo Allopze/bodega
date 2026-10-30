@@ -90,6 +90,11 @@ services:
       - ARAMCO_PASSWORD=${ARAMCO_PASSWORD:-}
       - ARAMCO_SYNC_ENABLED=${ARAMCO_SYNC_ENABLED:-false}
       - ARAMCO_SYNC_IMPORTER_EMAIL=${ARAMCO_SYNC_IMPORTER_EMAIL:-}
+      # VisionLink (Cat Digital): telemetría diaria de horas y litros por equipo.
+      - VISIONLINK_CLIENT_ID=${VISIONLINK_CLIENT_ID:-}
+      - VISIONLINK_CLIENT_SECRET=${VISIONLINK_CLIENT_SECRET:-}
+      - VISIONLINK_SCOPE=${VISIONLINK_SCOPE:-}
+      - VISIONLINK_SYNC_ENABLED=${VISIONLINK_SYNC_ENABLED:-false}
       - ONWAY_USERNAME=${ONWAY_USERNAME:-}
       - ONWAY_PASSWORD=${ONWAY_PASSWORD:-}
       - ONWAY_SYNC_ENABLED=${ONWAY_SYNC_ENABLED:-false}
@@ -254,6 +259,11 @@ services:
       - ARAMCO_PASSWORD=${ARAMCO_PASSWORD:-}
       - ARAMCO_SYNC_ENABLED=${ARAMCO_SYNC_ENABLED:-false}
       - ARAMCO_SYNC_IMPORTER_EMAIL=${ARAMCO_SYNC_IMPORTER_EMAIL:-}
+      # VisionLink (Cat Digital): telemetría diaria de horas y litros por equipo.
+      - VISIONLINK_CLIENT_ID=${VISIONLINK_CLIENT_ID:-}
+      - VISIONLINK_CLIENT_SECRET=${VISIONLINK_CLIENT_SECRET:-}
+      - VISIONLINK_SCOPE=${VISIONLINK_SCOPE:-}
+      - VISIONLINK_SYNC_ENABLED=${VISIONLINK_SYNC_ENABLED:-false}
       - ONWAY_USERNAME=${ONWAY_USERNAME:-}
       - ONWAY_PASSWORD=${ONWAY_PASSWORD:-}
       - ONWAY_SYNC_ENABLED=${ONWAY_SYNC_ENABLED:-false}
@@ -385,6 +395,8 @@ services:
         0 5 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs fuel-anomaly-detection >/proc/1/fd/1 2>&1
         30 5 * * * CRON_SECRET="$$CRON_SECRET" FUEL_CRON_INTERNAL_SECRET="$$FUEL_CRON_INTERNAL_SECRET" node /app/scripts/cron-runner.mjs fuel-copec-sync >/proc/1/fd/1 2>&1
         45 5 * * * CRON_SECRET="$$CRON_SECRET" FUEL_CRON_INTERNAL_SECRET="$$FUEL_CRON_INTERNAL_SECRET" node /app/scripts/cron-runner.mjs fuel-aramco-sync >/proc/1/fd/1 2>&1
+        # VisionLink — telemetría de los últimos 14 días, ya cerrado el día anterior.
+        0 6 * * * CRON_SECRET="$$CRON_SECRET" FUEL_CRON_INTERNAL_SECRET="$$FUEL_CRON_INTERNAL_SECRET" node /app/scripts/cron-runner.mjs fuel-visionlink-sync >/proc/1/fd/1 2>&1
         30 8 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs fuel-statement-notifications >/proc/1/fd/1 2>&1
         # Flota GPS — refresco cada 5 minutos. La app reutiliza una sesión
         # Auth0 en memoria para no autenticar contra OnWay en cada ejecución.

@@ -143,6 +143,8 @@ export const ROUTE_OWNER_ALIASES: RouteOwnerRule[] = [
   { moduleId: "combustibles", submoduleHref: "/combustibles", prefix: "/api/cron/fuel-anomaly-detection" },
   { moduleId: "combustibles", submoduleHref: "/combustibles/importar", prefix: "/api/cron/fuel-copec-sync" },
   { moduleId: "combustibles", submoduleHref: "/combustibles/importar", prefix: "/api/cron/fuel-aramco-sync" },
+  // Telemetría VisionLink: alimenta el ralentí de Control, no la importación de consumos.
+  { moduleId: "combustibles", submoduleHref: "/combustibles/control", prefix: "/api/cron/fuel-visionlink-sync" },
   { moduleId: "combustibles", submoduleHref: "/combustibles", prefix: "/api/cron/fuel-statement-notifications" },
   { moduleId: "feedback", submoduleHref: "/soporte", prefix: "/api/cron/feedback-sla-reminders" },
   { moduleId: "flota", submoduleHref: "/flota/monitoreo", prefix: "/api/cron/fleet-onway-retention" },

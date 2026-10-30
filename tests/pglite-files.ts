@@ -166,6 +166,8 @@ export const pgliteTestFiles = [
   "lib/combustibles/control/queries/reconciliation.test.ts",
   "lib/combustibles/control/queries/idle.test.ts",
   "lib/__tests__/fuel-control-imports-pglite.test.ts",
+  // VisionLink: cruce por serie, upsert idempotente y fuente separada de los lotes manuales.
+  "lib/__tests__/visionlink-sync-pglite.test.ts",
   "lib/__tests__/fuel-control-catalogs-pglite.test.ts",
   "lib/__tests__/fuel-control-review-queue.test.ts",
   "lib/__tests__/fuel-log-personal.test.ts",
