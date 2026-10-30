@@ -300,3 +300,19 @@ describe("fuel vehicle serial number (llave de VisionLink)", () => {
     expect(mockInsertValues).not.toHaveBeenCalled()
   })
 })
+
+describe("fuel vehicle serial number can be cleared", () => {
+  it("stores null when the field is submitted empty, so a wrong link can be undone", async () => {
+    const result = await updateFuelVehicleAction({ ok: false }, vehicleForm({ id: "veh-1", serialNumber: "" }))
+
+    expect(result.ok).toBe(true)
+    expect(mockUpdateSet).toHaveBeenCalledWith(expect.objectContaining({ serialNumber: null }))
+  })
+
+  it("leaves the serial untouched when the form does not send the field", async () => {
+    const result = await updateFuelVehicleAction({ ok: false }, vehicleForm({ id: "veh-1" }))
+
+    expect(result.ok).toBe(true)
+    expect(mockUpdateSet).toHaveBeenCalledWith(expect.not.objectContaining({ serialNumber: expect.anything() }))
+  })
+})

@@ -62,7 +62,7 @@ function vehicleFormData(formData: FormData, id?: string) {
     brand: formData.get("brand") || undefined,
     model: formData.get("model") || undefined,
     year: formData.get("year") || undefined,
-    serialNumber: formData.get("serialNumber") || undefined,
+    serialNumber: formData.has("serialNumber") ? String(formData.get("serialNumber")) : undefined,
     worksiteId: formData.get("worksiteId") || undefined,
     responsibleUserId: formData.get("responsibleUserId") || undefined,
     operationalStatus: formData.get("operationalStatus") || undefined,
@@ -77,7 +77,7 @@ function vehicleFormData(formData: FormData, id?: string) {
 }
 
 /** El índice único ya lo impide, pero su error llega como un mensaje genérico. */
-async function serialNumberTaken(serialNumber: string | undefined, exceptId?: string): Promise<ActionState | null> {
+async function serialNumberTaken(serialNumber: string | null | undefined, exceptId?: string): Promise<ActionState | null> {
   if (!serialNumber) return null
   const other = await db.query.fuelVehicles.findFirst({
     where: exceptId ? and(eq(fuelVehicles.serialNumber, serialNumber), ne(fuelVehicles.id, exceptId)) : eq(fuelVehicles.serialNumber, serialNumber),
