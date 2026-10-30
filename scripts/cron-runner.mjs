@@ -48,12 +48,16 @@ const JOBS = Object.freeze({
     timeoutMs: 5 * 60 * 1_000,
     kind: "sync",
     codePrefix: "FUEL_CRON_",
+    internalSecretEnv: "FUEL_CRON_INTERNAL_SECRET",
+    internalSecretHeader: "X-Fuel-Cron-Secret",
   },
   "fuel-aramco-sync": {
     url: "http://app:3000/api/cron/fuel-aramco-sync",
     timeoutMs: 5 * 60 * 1_000,
     kind: "sync",
     codePrefix: "FUEL_CRON_",
+    internalSecretEnv: "FUEL_CRON_INTERNAL_SECRET",
+    internalSecretHeader: "X-Fuel-Cron-Secret",
   },
   "fuel-statement-notifications": {
     url: "http://app:3000/api/cron/fuel-statement-notifications",

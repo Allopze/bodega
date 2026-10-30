@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   cronRequestSource: vi.fn(() => null),
   parseCronAllowedSources: vi.fn(() => []),
   verifyCronRequest: vi.fn(() => true),
+  verifyCronInternalRequest: vi.fn(() => false),
   isRouteOperational: vi.fn(),
   syncCopecReports: vi.fn(),
   withCronLock: vi.fn(async (_job: string, run: () => Promise<unknown>) => run()),
@@ -17,6 +18,7 @@ vi.mock("@/lib/security/cron-auth", () => ({
   cronRequestSource: (...args: unknown[]) => Reflect.apply(mocks.cronRequestSource, null, args),
   parseCronAllowedSources: (...args: unknown[]) => Reflect.apply(mocks.parseCronAllowedSources, null, args),
   verifyCronRequest: (...args: unknown[]) => Reflect.apply(mocks.verifyCronRequest, null, args),
+  verifyCronInternalRequest: (...args: unknown[]) => Reflect.apply(mocks.verifyCronInternalRequest, null, args),
 }))
 vi.mock("@/lib/services/module-toggles", () => ({ isRouteOperational: (...args: unknown[]) => Reflect.apply(mocks.isRouteOperational, null, args) }))
 vi.mock("@/lib/combustibles/copec-sync", () => ({ syncCopecReports: (...args: unknown[]) => Reflect.apply(mocks.syncCopecReports, null, args) }))

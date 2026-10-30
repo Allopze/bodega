@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { cronRequestSource, parseCronAllowedSources, verifyCronRequest } from "@/lib/security/cron-auth"
+import { cronRequestSource, parseCronAllowedSources, verifyCronInternalRequest, verifyCronRequest } from "@/lib/security/cron-auth"
 import { syncCopecReports } from "@/lib/combustibles/copec-sync"
 import { copecSyncAvailability } from "@/lib/combustibles/copec-reports"
 import { fuelCronContractFor } from "@/lib/combustibles/fuel-cron-contract"
@@ -23,11 +23,20 @@ export async function GET(request: NextRequest) {
   if (!quota.allowed) return respond(fuelCronContractFor({ rateLimited: true }))
   const allowedSources = parseCronAllowedSources(process.env.CRON_ALLOWED_SOURCES)
   const enforceSource = process.env.NODE_ENV === "production" || allowedSources.length > 0
-  if (!secret || !verifyCronRequest({
-    authorization: request.headers.get("authorization"),
+  const authorization = request.headers.get("authorization")
+  const authorizedBySource = !!secret && verifyCronRequest({
+    authorization,
     forwardedFor: request.headers.get("x-forwarded-for"),
     realIp: request.headers.get("x-real-ip"),
-  }, secret ?? "", allowedSources, enforceSource)) {
+  }, secret, allowedSources, enforceSource)
+  // El scheduler interno llama a `http://app:3000` sin pasar por el proxy, así
+  // que nunca trae un origen de la lista: sin este camino la ruta respondió 401
+  // en producción desde que existe. Mismo patrón que los jobs GPS de flota.
+  const authorizedInternally = !!secret && verifyCronInternalRequest({
+    authorization,
+    internalSecret: request.headers.get("x-fuel-cron-secret"),
+  }, secret, process.env.FUEL_CRON_INTERNAL_SECRET)
+  if (!secret || (!authorizedBySource && !authorizedInternally)) {
     return respond(fuelCronContractFor({ unauthorized: true }))
   }
   if (!await isRouteOperational("/combustibles/importar")) {

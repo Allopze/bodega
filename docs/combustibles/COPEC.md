@@ -54,8 +54,12 @@ corrida, con litros/monto cuando la fila los trae.
 - `npm run db:preflight-fuel-integrations` sólo lee y reporta duplicados,
   inconsistencias lote-detalle, pendientes y conciliaciones abiertas.
 - La sincronización no imprime credenciales, tokens ni cuerpos de login.
-- Las rutas cron requieren Bearer, origen permitido mediante
-  `CRON_ALLOWED_SOURCES` en producción y rate limit.
+- Las rutas cron requieren Bearer y rate limit, más uno de dos caminos: un
+  origen de `CRON_ALLOWED_SOURCES` (llamadores externos, detrás del proxy) o el
+  secreto interno `FUEL_CRON_INTERNAL_SECRET` en `X-Fuel-Cron-Secret`, que es
+  como entra el scheduler de Docker: llama a `http://app:3000` sin cabeceras de
+  proxy y nunca trae un origen de la lista. Hasta el 2026-10-29 sólo existía el
+  primero y el cron respondió 401 todos los días.
 - Reprocesar no exige retroceder el cursor: repetir un período usa identidad y
   hash; el cambio se aplica al ledger/proyección sin borrar mappings manuales.
 - Cada corrida planifica como máximo **4 meses** (`MAX_PERIODS_PER_RUN`), y
@@ -78,19 +82,33 @@ corrida, con litros/monto cuando la fila los trae.
 - Sin `COPEC_USERNAME`/`COPEC_PASSWORD`, o con `COPEC_SYNC_ENABLED=false`, el
   cron responde `disabled` y no corre. Antes fallaba dentro de la corrida y
   reportaba `failed` a diario por una integración que nadie configuró.
-- El botón manual toma el **mismo lock** que el cron (`fuel-copec-sync`): el
-  portal es de sesión única y dos corridas simultáneas se pelean la sesión y el
-  cursor.
+- El botón «Sincronizar» corre **el mismo barrido** que el cron
+  (`syncCopecReports`): el mes en curso primero y después los meses pendientes,
+  en una sola sesión del portal —un correo con código por clic— y a nombre del
+  operador. Toma el **mismo lock** (`fuel-copec-sync`): el portal es de sesión
+  única y dos corridas simultáneas se pelean la sesión y el cursor.
+- El botón **no espera** la corrida dentro de la petición:
+  `startCopecSyncAction` vuelve apenas toma el lock (`startCronJobInBackground`,
+  con `after()`), y la pantalla pregunta cada 4 s a
+  `getCopecSyncProgressAction` si el lock sigue tomado y qué dejó cada mes.
+  Detrás de Cloudflare una petición de más de ~100 s se corta (524) y una
+  corrida tarda de 1,5 a 4 minutos. Hasta el 2026-10-29 el botón pedía un mes por
+  petición, siempre el pendiente más antiguo: si ese mes quedaba incompleto el
+  siguiente se rechazaba («ya no corresponde al siguiente tramo») y el mes en
+  curso nunca se pedía.
 - La espera por un turno, la creación del contexto y la apertura de la página
   tienen cada una un plazo de 30 segundos. Copec usa un proceso de navegador
   aislado, compartiendo el límite de concurrencia con los PDF. Cuando termina la
   importación se espera hasta 5 segundos por el cierre del contexto y se detiene
   el proceso antes de devolver el turno o el lock; no se abandona una importación
   que todavía pudiera escribir. Un turno vencido se retira de la cola.
-- Si la interfaz pierde la respuesta de un mes, muestra el trabajo confirmado
-  previamente, actualiza el estado si puede y advierte que esa corrida podría
-  seguir activa. Si sólo falla la consulta final del estado, conserva el
-  resultado confirmado y pide recargar la página.
+- Si se pierde una consulta de avance, la pantalla sigue preguntando: la
+  corrida vive en el servidor. Pasados 15 minutos deja de esperar y dice que la
+  corrida sigue en curso, sin ofrecer iniciarla de nuevo. Si se pierde la
+  respuesta del inicio, advierte que la corrida podría estar activa. Si sólo
+  falla la consulta final del estado, conserva el resumen y pide recargar la
+  página. Los errores de cada mes pasan por `userFacingErrorText` antes de
+  mostrarse: una consulta SQL guardada como error no llega a la pantalla.
 - Los lotes del período que los informes ya no respaldan se **vacían** (totales
   en cero), sólo para las fuentes que la corrida sí pudo leer completas.
 - La evidencia TCT se marca `granularity = 'period_aggregate'` en el ledger: es

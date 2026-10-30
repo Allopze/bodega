@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { and, desc, eq, gte, inArray, isNotNull, lte, ne, notInArray, sql } from "drizzle-orm"
+import { and, asc, desc, eq, gte, inArray, isNotNull, lte, ne, notInArray, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { fuelConsumptionRecords, fuelImportBatches, fuelProviderSyncRuns, fuelProviderTransactions, fuelStorageLocations, systemSettings, users } from "@/db/schema"
 import { nanoid } from "@/lib/id"
@@ -1041,7 +1041,42 @@ export async function syncCopecReportPeriod(period: CopecSyncPeriod, importerId?
   }
 }
 
-export async function syncCopecReports(): Promise<{ from: string; to: string; imported: number; refreshed: number; received: number; pending: number; pendingPlates: string[]; reports: string[]; unavailable: string[]; unmappedCards: string[]; meterReadings: number }> {
+/**
+ * Meses que recorre una corrida, en orden. El mes en curso va PRIMERO aunque el
+ * plan no llegue a él. El plan parte del mes sin cobertura más antiguo y se
+ * detiene si no lo cierra; con el tope de períodos, un mes histórico atascado
+ * dejaba al mes en curso fuera de toda corrida, y los consumos de este mes
+ * dejaban de entrar. Refrescarlo no afecta la cobertura: un mes abierto nunca
+ * es terminal ni mueve el plan.
+ */
+export function copecSweepPeriods(planPeriods: CopecSyncPeriod[], todayIso = today()): CopecSyncPeriod[] {
+  const openPeriod = buildCopecSyncPeriods(firstDayOfMonth(todayIso), lastDayOfMonth(todayIso))[0]
+  return openPeriod && !planPeriods.some((period) => period.from === openPeriod.from)
+    ? [openPeriod, ...planPeriods]
+    : planPeriods
+}
+
+/** Lo que va a recorrer la próxima corrida, para mostrarlo antes de que termine. */
+export async function getCopecSweepPeriods(): Promise<CopecSyncPeriod[]> {
+  return copecSweepPeriods((await getCopecSyncPlan()).periods)
+}
+
+/** Corridas por mes que dejó un barrido iniciado en `since` (o después), en orden. */
+export async function listCopecSyncRunsSince(since: string) {
+  return db.query.fuelProviderSyncRuns.findMany({
+    where: and(eq(fuelProviderSyncRuns.provider, "copec"), gte(fuelProviderSyncRuns.startedAt, since)),
+    orderBy: [asc(fuelProviderSyncRuns.startedAt)],
+    columns: { requestedFrom: true, requestedTo: true, status: true, rowsReceived: true, rowsAccepted: true, rowsRejected: true, rowsPending: true, error: true },
+  })
+}
+
+/**
+ * El barrido completo: el mes en curso y los meses pendientes, en UNA sesión
+ * del portal. Lo corre el cron y también el botón «Sincronizar» (en segundo
+ * plano, ver `startCopecSyncAction`); `importerId` es el operador que lo pidió,
+ * y sin él la corrida queda a nombre de `COPEC_SYNC_IMPORTER_EMAIL`.
+ */
+export async function syncCopecReports(options: { importerId?: string } = {}): Promise<{ from: string; to: string; imported: number; refreshed: number; received: number; pending: number; pendingPlates: string[]; reports: string[]; unavailable: string[]; unmappedCards: string[]; meterReadings: number }> {
   const plan = await getCopecSyncPlan()
   let imported = 0
   let refreshed = 0
@@ -1054,15 +1089,7 @@ export async function syncCopecReports(): Promise<{ from: string; to: string; im
   // período parte de un set vacío, quedarse con el conteo del último mes
   // escondía las patentes sin vincular de todos los anteriores.
   const pendingPlates = new Set<string>()
-  // El mes en curso va PRIMERO aunque el plan no llegue a él. El plan parte del
-  // mes sin cobertura más antiguo y se detiene si no lo cierra; con el tope de
-  // períodos, un mes histórico atascado dejaba al mes en curso fuera de toda
-  // corrida, y los consumos de este mes dejaban de entrar. Refrescarlo no
-  // afecta la cobertura: un mes abierto nunca es terminal ni mueve el plan.
-  const openPeriod = buildCopecSyncPeriods(firstDayOfMonth(today()), lastDayOfMonth(today()))[0]
-  const periods = openPeriod && !plan.periods.some((period) => period.from === openPeriod.from)
-    ? [openPeriod, ...plan.periods]
-    : plan.periods
+  const periods = copecSweepPeriods(plan.periods)
   // Una sola sesión del portal para todo el barrido: cada login es un correo
   // con código, y el portal no deja retomar una sesión desde otra página.
   return withCopecPortalSession(async (portal) => {
@@ -1072,7 +1099,7 @@ export async function syncCopecReports(): Promise<{ from: string; to: string; im
       // un minuto (hasta cuatro exportaciones por canal). Pasado el
       // presupuesto no se empieza otro: lo que falte lo toma la corrida siguiente.
       if (index > 0 && Date.now() - startedAt > SWEEP_BUDGET_MS) break
-      const result = await syncCopecReportPeriod(period, undefined, portal)
+      const result = await syncCopecReportPeriod(period, options.importerId, portal)
       imported += result.imported
       refreshed += result.refreshed
       received += result.received

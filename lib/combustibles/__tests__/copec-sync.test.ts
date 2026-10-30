@@ -136,7 +136,7 @@ vi.mock("@/lib/combustibles/tae-receipts", async (importOriginal) => ({
   importTaeReceipts: (...args: unknown[]) => mockImportTaeReceipts(...args),
 }))
 
-const { buildCopecSyncPeriods, copecProjectionHash, copecSourceRowKey, getCopecSyncPlan, getCopecSyncStartOptions, setCopecSyncStartDate, syncCopecReportPeriod, syncCopecReports } = await import("../copec-sync")
+const { buildCopecSyncPeriods, copecProjectionHash, copecSourceRowKey, copecSweepPeriods, getCopecSyncPlan, getCopecSyncStartOptions, setCopecSyncStartDate, syncCopecReportPeriod, syncCopecReports } = await import("../copec-sync")
 const { AUTOMATED_SOURCES } = await import("../fuel-sources")
 const { collectStrings } = await import("./drizzle-filter")
 
@@ -187,6 +187,24 @@ describe("buildCopecSyncPeriods", () => {
 
   it("does not request a period when the cursor is already after the target date", () => {
     expect(buildCopecSyncPeriods("2026-02-05", "2026-02-04")).toEqual([])
+  })
+})
+
+// El cron y el botón «Sincronizar» recorren la misma lista: el mes en curso
+// primero, aunque el plan esté atascado en un mes histórico. Antes el botón sólo
+// pedía el mes pendiente más antiguo y el mes en curso nunca entraba a mano.
+describe("copecSweepPeriods", () => {
+  it("antepone el mes en curso a un plan atascado en un mes histórico", () => {
+    expect(copecSweepPeriods([{ from: "2025-01-01", to: "2025-01-31" }], "2026-10-29")).toEqual([
+      { from: "2026-10-01", to: "2026-10-31" },
+      { from: "2025-01-01", to: "2025-01-31" },
+    ])
+  })
+
+  it("no repite el mes en curso cuando el plan ya llegó a él", () => {
+    expect(copecSweepPeriods([{ from: "2026-10-01", to: "2026-10-31" }], "2026-10-29")).toEqual([
+      { from: "2026-10-01", to: "2026-10-31" },
+    ])
   })
 })
 
@@ -659,6 +677,24 @@ describe("syncCopecReportPeriod", () => {
       await withToday("2026-08-22T12:00:00.000Z", async () => {
         await expect(syncCopecReports()).resolves.toMatchObject({ imported: 0 })
       })
+    })
+
+    it("records the sweep under the operator who pressed «Sincronizar»", async () => {
+      // El botón corre el mismo barrido del cron: la corrida queda como manual y
+      // a nombre de quien la pidió, no del importador configurado para el cron.
+      const { beginFuelProviderSyncRun } = await import("@/lib/combustibles/fuel-provider-ledger")
+      vi.mocked(beginFuelProviderSyncRun).mockClear()
+      mockSettingFindFirst.mockResolvedValue({ value: JSON.stringify({ cursor: "2026-08-01", lastRunAt: null, pending: [] }) })
+      vi.stubEnv("COPEC_SYNC_START_DATE", "2026-08-01")
+      mockBatchFindFirst.mockResolvedValue(undefined)
+      mockDownloadCopecReports.mockResolvedValue([
+        { product: "diesel", unavailable: true },
+        { product: "bluemax", unavailable: true },
+      ])
+      await withToday("2026-08-22T12:00:00.000Z", async () => {
+        await syncCopecReports({ importerId: "operador-1" })
+      })
+      expect(beginFuelProviderSyncRun).toHaveBeenCalledWith(expect.objectContaining({ trigger: "manual", actorUserId: "operador-1", requestedFrom: "2026-08-01" }))
     })
 
     it("still fails loudly when a CLOSED month delivers no file", async () => {

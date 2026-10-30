@@ -400,7 +400,7 @@ export async function reconcileFuelProviderRun(runId: string): Promise<{ reconci
   if (transactions.length > 0 && orphanProviders.length > 0 && transactions.every((transaction) => transaction.supplierId === null)) {
     throw new Error(
       `No hay proveedor activo en el catálogo de combustibles para ${orphanProviders.join(", ")}: `
-      + "crea su ficha en Combustibles → Proveedores para que la conciliación pueda cruzar sus transacciones.",
+      + "crea su ficha en Administración › Catálogos de flota › Proveedores de combustible para que la conciliación pueda cruzar sus transacciones.",
     )
   }
 

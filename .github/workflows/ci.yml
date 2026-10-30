@@ -322,6 +322,14 @@ jobs:
           CODE_SEQUENCES_ALLOW_DESTRUCTIVE_RESET: "true"
         run: npx vitest run --no-file-parallelism --reporter=verbose lib/__tests__/code-sequences-postgres.test.ts 2>&1
 
+      # Necesita dos conexiones reales: en PGlite (una sola sesión) el lock de
+      # aviso se vuelve a tomar sin conflicto y la prueba pasaría por error.
+      - name: Background cron runs (real Postgres)
+        env:
+          CRON_LOCK_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
+          CRON_LOCK_ALLOW_DESTRUCTIVE_RESET: "true"
+        run: npx vitest run --no-file-parallelism --reporter=verbose lib/__tests__/cron-lock-background-postgres.test.ts 2>&1
+
       # No la captura ningún glob de arriba (no es *concurrency ni *scope ni
       # prevention-*): hasta el 2026-09-27 no corría en ningún gate.
       - name: PDTP accreditation year close (real Postgres)
