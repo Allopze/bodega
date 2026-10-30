@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache"
 import type { Session } from "next-auth"
 import { db } from "@/db"
 import { fuelEquipmentTypes, fuelProducts, fuelVehicleOperationalIntervals, fuelVehicleProducts, fuelVehicles } from "@/db/schema"
-import { and, eq, inArray } from "drizzle-orm"
+import { and, eq, inArray, ne } from "drizzle-orm"
 import { recordAudit } from "@/lib/audit"
 import { requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite, worksiteScopeSql } from "@/lib/auth/scope"
@@ -62,6 +62,7 @@ function vehicleFormData(formData: FormData, id?: string) {
     brand: formData.get("brand") || undefined,
     model: formData.get("model") || undefined,
     year: formData.get("year") || undefined,
+    serialNumber: formData.get("serialNumber") || undefined,
     worksiteId: formData.get("worksiteId") || undefined,
     responsibleUserId: formData.get("responsibleUserId") || undefined,
     operationalStatus: formData.get("operationalStatus") || undefined,
@@ -73,6 +74,18 @@ function vehicleFormData(formData: FormData, id?: string) {
     insuranceExpiresAt: formData.get("insuranceExpiresAt") || undefined,
     notes: formData.get("notes") || undefined,
   }
+}
+
+/** El índice único ya lo impide, pero su error llega como un mensaje genérico. */
+async function serialNumberTaken(serialNumber: string | undefined, exceptId?: string): Promise<ActionState | null> {
+  if (!serialNumber) return null
+  const other = await db.query.fuelVehicles.findFirst({
+    where: exceptId ? and(eq(fuelVehicles.serialNumber, serialNumber), ne(fuelVehicles.id, exceptId)) : eq(fuelVehicles.serialNumber, serialNumber),
+    columns: { plate: true, code: true },
+  })
+  if (!other) return null
+  const message = `Ese número de serie ya está en ${other.code ? `${other.code} · ${other.plate}` : other.plate}`
+  return { ok: false, message, fieldErrors: { serialNumber: [message] } }
 }
 
 function vehicleValues<T extends {
@@ -112,6 +125,8 @@ export async function createFuelVehicleAction(
   if (!canManageFuelVehicleWorksite(session, parsed.data.worksiteId)) {
     return { ok: false, message: "No puedes gestionar vehículos para esta faena" }
   }
+  const serialTaken = await serialNumberTaken(parsed.data.serialNumber)
+  if (serialTaken) return serialTaken
 
   try {
     const id = nanoid()
@@ -173,6 +188,8 @@ export async function updateFuelVehicleAction(
   if (parsed.data.worksiteId && !canManageFuelVehicleWorksite(session, parsed.data.worksiteId)) {
     return { ok: false, message: "No puedes gestionar vehículos para esta faena" }
   }
+  const serialTaken = await serialNumberTaken(parsed.data.serialNumber, id)
+  if (serialTaken) return serialTaken
 
   try {
     const equipmentTypeId = parsed.data.equipmentTypeId ?? existing.equipmentTypeId

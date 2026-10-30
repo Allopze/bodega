@@ -267,3 +267,36 @@ describe("toggleFuelVehicleActiveAction", () => {
     expect(mockUpdateSet).not.toHaveBeenCalled()
   })
 })
+
+describe("fuel vehicle serial number (llave de VisionLink)", () => {
+  it("saves the serial in uppercase so it matches the telemetry feed", async () => {
+    mockFindVehicle
+      .mockResolvedValueOnce({ id: "veh-1", worksiteId: "ws-1", equipmentTypeId: "fet-camioneta", operationalStatus: "operativo" })
+      .mockResolvedValueOnce(undefined)
+
+    const result = await updateFuelVehicleAction({ ok: false }, vehicleForm({ id: "veh-1", serialNumber: " dkj30153 " }))
+
+    expect(result.ok).toBe(true)
+    expect(mockUpdateSet).toHaveBeenCalledWith(expect.objectContaining({ serialNumber: "DKJ30153" }))
+  })
+
+  it("rejects a serial already assigned to another vehicle and names it", async () => {
+    mockFindVehicle
+      .mockResolvedValueOnce({ id: "veh-1", worksiteId: "ws-1", equipmentTypeId: "fet-camioneta", operationalStatus: "operativo" })
+      .mockResolvedValueOnce({ plate: "GR-10", code: "GR-10" })
+
+    const result = await updateFuelVehicleAction({ ok: false }, vehicleForm({ id: "veh-1", serialNumber: "DKJ30153" }))
+
+    expect(result.ok).toBe(false)
+    expect(result.fieldErrors?.serialNumber?.[0]).toMatch(/GR-10/)
+    expect(mockUpdateSet).not.toHaveBeenCalled()
+  })
+
+  it("rejects a serial with spaces or symbols in the middle", async () => {
+    const result = await createFuelVehicleAction({ ok: false }, vehicleForm({ serialNumber: "DKJ 30153" }))
+
+    expect(result.ok).toBe(false)
+    expect(result.fieldErrors?.serialNumber).toBeDefined()
+    expect(mockInsertValues).not.toHaveBeenCalled()
+  })
+})

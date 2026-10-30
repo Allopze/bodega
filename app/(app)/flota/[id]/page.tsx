@@ -60,6 +60,7 @@ export default async function FlotaVehiclePage({
           <CardContent className="space-y-3 text-sm">
             <Fact label="Faena" value={vehicle.worksite?.name ?? "Sin faena"} />
             <Fact label="Tipo" value={vehicle.equipmentType?.name ?? vehicle.type} />
+            <Fact label="N.º de serie" value={vehicle.serialNumber ?? "—"} />
             <Fact label="Rendimiento" value={vehicle.performanceUnit === "km_per_liter" ? "km/L" : vehicle.performanceUnit === "liters_per_hour" ? "L/h" : "No aplica"} />
             <Fact label="Capacidad" value={vehicle.tankCapacityLiters != null ? formatQty(Number(vehicle.tankCapacityLiters), "L") : "Sin información"} />
             <Fact label="Proveedor habitual" value={vehicle.usualFuelSupplier?.name ?? "No asignado"} />

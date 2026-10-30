@@ -38,6 +38,7 @@ export type VehicleForEdit = {
   brand: string | null
   model: string | null
   year: number | null
+  serialNumber: string | null
   worksiteId: string | null
   responsibleUserId: string | null
   operationalStatus: string
@@ -151,15 +152,19 @@ export function VehicleForm({ open, onClose, worksites, users, equipmentTypes, s
                     <Field label="Año" htmlFor="v-year">
                       <Input id="v-year" name="year" type="number" min="1990" max="2030" defaultValue={editVehicle?.year?.toString() ?? ""} />
                     </Field>
-                    <Field label="Faena asignada" htmlFor="v-worksite" required error={state.fieldErrors?.worksiteId?.[0]}>
-                      <Select name="worksiteId" defaultValue={editVehicle?.worksiteId ?? undefined}>
-                        <SelectTrigger id="v-worksite" error={!!state.fieldErrors?.worksiteId}><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
-                        <SelectContent>
-                          {worksites.map((w) => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
+                    <Field label="N.º de serie (PIN)" htmlFor="v-serial" hint="Vincula la telemetría de VisionLink" error={state.fieldErrors?.serialNumber?.[0]}>
+                      <Input id="v-serial" name="serialNumber" defaultValue={editVehicle?.serialNumber ?? ""} placeholder="Ej. DKJ30153" autoCapitalize="characters" error={!!state.fieldErrors?.serialNumber} />
                     </Field>
                   </div>
+
+                  <Field label="Faena asignada" htmlFor="v-worksite" required error={state.fieldErrors?.worksiteId?.[0]}>
+                    <Select name="worksiteId" defaultValue={editVehicle?.worksiteId ?? undefined}>
+                      <SelectTrigger id="v-worksite" error={!!state.fieldErrors?.worksiteId}><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
+                      <SelectContent>
+                        {worksites.map((w) => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </Field>
                 </FieldGroup>
               </TabsContent>
 
