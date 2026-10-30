@@ -1,12 +1,8 @@
 import { redirect } from "next/navigation"
-import Link from "next/link"
 import { eq } from "drizzle-orm"
 import { db } from "@/db"
 import { fuelProducts, fuelStorageLocations, worksites } from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
 import { PageContainer } from "@/components/ui/page-container"
-import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
-import { Button } from "@/components/ui/button"
-import { Plus } from "@phosphor-icons/react/dist/ssr"
 import { StorageCatalog } from "./storage-catalog"
-export default async function FuelStorageLocationsPage({ searchParams }: { searchParams: Promise<{ nuevo?: string }> }) { try { await requirePermission("admin:fleet_catalog") } catch { redirect("/forbidden") }; const [{ nuevo }, [rows, sites, products]] = await Promise.all([searchParams, Promise.all([db.query.fuelStorageLocations.findMany({ with: { worksite: { columns: { name: true } }, product: { columns: { name: true } } }, orderBy: [fuelStorageLocations.name] }), db.query.worksites.findMany({ orderBy: [worksites.name] }), db.query.fuelProducts.findMany({ where: eq(fuelProducts.isActive, true), orderBy: [fuelProducts.name] })])]); return <PageContainer><PageHeader title="Estanques de combustible" description="Mantén los puntos físicos disponibles para la operación y conciliación." breadcrumb={<Breadcrumbs items={[{ label: "Administración", href: "/admin" }, { label: "Flota y catálogos", href: "/admin/flota-catalogos" }, { label: "Estanques" }]} />} actions={<Button asChild size="sm"><Link href="?nuevo=1"><Plus size={16} />Nuevo estanque</Link></Button>} /><StorageCatalog rows={rows} worksites={sites} products={products} initialOpen={nuevo === "1"} /></PageContainer> }
+export default async function FuelStorageLocationsPage() { try { await requirePermission("admin:fleet_catalog") } catch { redirect("/forbidden") }; const [rows, sites, products] = await Promise.all([db.query.fuelStorageLocations.findMany({ with: { worksite: { columns: { name: true } }, product: { columns: { name: true } } }, orderBy: [fuelStorageLocations.name] }), db.query.worksites.findMany({ orderBy: [worksites.name] }), db.query.fuelProducts.findMany({ where: eq(fuelProducts.isActive, true), orderBy: [fuelProducts.name] })]); return <PageContainer><StorageCatalog rows={rows} worksites={sites} products={products} /></PageContainer> }

@@ -1,7 +1,9 @@
 "use client"
 
 import { useState } from "react"
-import { PencilSimple, ToggleLeft, ToggleRight } from "@phosphor-icons/react"
+import { PencilSimple, Plus, ToggleLeft, ToggleRight } from "@phosphor-icons/react"
+import { Button } from "@/components/ui/button"
+import { PageHeader } from "@/components/ui/page-header"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -13,9 +15,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRo
 type Row = { id: string; name: string; worksiteId: string; productId: string; capacityLiters: number | null; taeCardNumber: string | null; notes: string | null; isActive: boolean; worksite: { name: string }; product: { name: string } }
 type Option = { id: string; name: string }
 
-export function StorageCatalog({ rows, worksites, products, initialOpen = false }: { rows: Row[]; worksites: Option[]; products: Option[]; initialOpen?: boolean }) {
+export function StorageCatalog({ rows, worksites, products }: { rows: Row[]; worksites: Option[]; products: Option[] }) {
   const [selected, setSelected] = useState<Row | null>(null)
-  const [open, setOpen] = useState(initialOpen)
+  const [open, setOpen] = useState(false)
   const [worksiteId, setWorksiteId] = useState("")
   const [productId, setProductId] = useState("")
 
@@ -29,7 +31,11 @@ export function StorageCatalog({ rows, worksites, products, initialOpen = false 
     setOpen(true)
   }
 
+  // El botón abre la ficha por estado, no con `?nuevo=1`: ese parámetro sólo se
+  // leía al montar, y desde la misma página la navegación no remonta el
+  // componente, así que la URL cambiaba y la ficha no se abría.
   return <>
+    <PageHeader title="Estanques de combustible" description="Mantén los puntos físicos disponibles para la operación y conciliación." breadcrumb={[{ label: "Administración", href: "/admin" }, { label: "Flota y catálogos", href: "/admin/flota-catalogos" }, { label: "Estanques" }]} actions={<Button size="sm" onClick={() => edit(null)}><Plus size={16} />Nuevo estanque</Button>} />
     <div className="overflow-x-auto border border-[var(--color-border)]">
       <TableRoot>
       <Table className="min-w-[760px]">
