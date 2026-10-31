@@ -148,7 +148,8 @@ export default async function FuentesPage({ searchParams }: { searchParams: Prom
       {statuses ? (
         <>
           <p role="status" className="mb-4 max-w-4xl text-sm font-medium text-[var(--color-text)]">{describeFuelSources(statuses, period)}</p>
-          <div className="grid gap-3">
+          {/* `grid-cols-1` y no la columna automática: con ella una fila de contenido ancho estira la columna de todas. */}
+          <div className="grid grid-cols-1 gap-3">
             {statuses.map((source) => {
               if (source.key === "copec" && canSync && copecState && copecStart) {
                 return (

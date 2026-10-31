@@ -49,6 +49,14 @@ describe("SourceRow", () => {
     expect(screen.queryByRole("link")).toBeNull()
   })
 
+  it("la insignia de estado se parte en el celular: un período en rango da una etiqueta larga que no puede ensanchar la fila", () => {
+    const label = "5 cargas en el período del 1 de agosto al 31 de agosto"
+    render(<SourceRow source={base} status={{ status: "ok", statusLabel: label }} />)
+    const badge = screen.getByText(label)
+    expect(badge.className).toContain("whitespace-normal")
+    expect(badge.className).toContain("sm:whitespace-nowrap")
+  })
+
   it("el detalle técnico va plegado y sólo existe si hay algo que decir", () => {
     const { container, rerender } = render(<SourceRow source={base} status={{ status: "ok", statusLabel: "Al día" }} />)
     const details = container.querySelector("details")

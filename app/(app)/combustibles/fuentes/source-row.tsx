@@ -18,9 +18,13 @@ const SOURCE_ICONS: Record<FuelSourceKey, typeof Gauge> = {
 
 const BADGE_VARIANT = { ok: "success", pendiente: "signal", falla: "danger", sin_datos: "neutral" } as const
 
-/** El estado de una fuente: «Al día», «Hasta ayer», «Falló hoy a las 05:30». */
+/**
+ * El estado de una fuente: «Al día», «Hasta ayer», «Falló hoy a las 05:30». Con un período en rango dice cosas largas
+ * («5 cargas en el período del 1 de agosto al 31 de agosto»): en el celular la insignia se parte en líneas en vez de
+ * ensanchar la fila y, con ella, toda la página.
+ */
 export function SourceStatusBadge({ status, label }: { status: FuelSourceStatus["status"]; label: string }) {
-  return <MetaBadge meta={{ label, variant: BADGE_VARIANT[status] }} />
+  return <MetaBadge meta={{ label, variant: BADGE_VARIANT[status] }} className="max-w-[55%] whitespace-normal text-right sm:max-w-none sm:whitespace-nowrap" />
 }
 
 /**
@@ -47,7 +51,7 @@ export function SourceRow({
   const titleId = `fuente-${source.key}-titulo`
   const hasTechnical = source.technical.length > 0 || Boolean(children)
   return (
-    <article aria-labelledby={titleId} data-source={source.key} className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+    <article aria-labelledby={titleId} data-source={source.key} className="min-w-0 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
       <header className="flex items-start gap-3">
         <span aria-hidden className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius)] bg-[var(--color-surface-2)] text-[var(--color-text-muted)]">
           <Icon size={18} />
