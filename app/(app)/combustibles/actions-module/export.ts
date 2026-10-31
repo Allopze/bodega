@@ -7,7 +7,7 @@ import { desc } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
 import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
-import { buildFuelLoadsWhere } from "@/lib/combustibles/queries"
+import { buildInvoiceWhere } from "../pagos/invoice-query"
 import { addExportMetadataSheet } from "@/lib/combustibles/xlsx-utils"
 import { fuelLoadStatusLabel } from "@/lib/combustibles/labels"
 import { todayInChile } from "@/lib/utils"
@@ -22,6 +22,8 @@ export async function optionalNumber(value: FormDataEntryValue | null): Promise<
 }
 
 export async function exportFuelLoadsXlsxAction(filters?: {
+  /** Texto de la búsqueda de «Pagos › Facturas»: la exportación lleva lo mismo que la lista. */
+  q?: string
   month?: string
   startDate?: string
   endDate?: string
@@ -39,7 +41,7 @@ export async function exportFuelLoadsXlsxAction(filters?: {
   try { session = await requirePermission("combustibles:export_sensitive", FUEL_PATHS.pagos) }
   catch { return { ok: false as const, message: "Sin permisos para exportar datos con montos" } }
 
-  const where = buildFuelLoadsWhere(session, filters ?? {})
+  const where = buildInvoiceWhere(session, filters ?? {})
 
   const rows = await db.query.fuelLoads.findMany({
     where,

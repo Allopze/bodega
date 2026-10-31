@@ -4,7 +4,7 @@ const mockRequirePermission = vi.fn()
 const mockCanAccessWorksite = vi.fn()
 const mockFindLoad = vi.fn()
 const mockFindVehicle = vi.fn(async () => ({ id: "v-1", worksiteId: "ws-1", plate: "XX-XX-01", worksite: { name: "Faena Test" } }))
-// update/delete devuelven la fila escrita: la precondición "sin cuenta corriente"
+// update/delete devuelven la fila escrita: la precondición "sin estado de cuenta"
 // se reafirma en el WHERE, así que 0 filas significa que otro proceso la asignó.
 const mockDeleteReturning = vi.fn(async () => [{ id: "load-1" }])
 const mockDeleteWhere = vi.fn(() => ({ returning: mockDeleteReturning }))
@@ -154,7 +154,7 @@ describe("deleteFuelLoadAction", () => {
     expect(mockDeleteWhere).not.toHaveBeenCalled()
   })
 
-  it("falla si la carga fue asignada a una cuenta corriente entre la lectura y el DELETE", async () => {
+  it("falla si la carga pasó a un estado de cuenta entre la lectura y el DELETE", async () => {
     mockFindLoad.mockResolvedValue({ id: "load-1", worksiteId: "ws-mine", statementId: null, status: "registered" })
     mockCanAccessWorksite.mockReturnValue(true)
     mockDeleteReturning.mockResolvedValueOnce([])   // el WHERE guardado ya no calza
@@ -162,7 +162,7 @@ describe("deleteFuelLoadAction", () => {
     const result = await deleteFuelLoadAction("load-1")
 
     expect(result.ok).toBe(false)
-    expect(result.message).toMatch(/cuenta corriente/i)
+    expect(result.message).toMatch(/estado de cuenta/i)
     expect(mockRecordAudit).not.toHaveBeenCalled()
   })
 })
@@ -235,7 +235,7 @@ describe("updateFuelLoadAction — statement guard (H5)", () => {
     const result = await updateFuelLoadAction({ ok: false, message: "" }, fd)
 
     expect(result.ok).toBe(false)
-    expect(result.message).toMatch(/cuenta corriente|resumen/i)
+    expect(result.message).toMatch(/estado de cuenta/i)
     expect(mockUpdateWhere).not.toHaveBeenCalled()
   })
 
@@ -262,7 +262,7 @@ describe("updateFuelLoadAction — statement guard (H5)", () => {
     expect(mockReevaluateFuelLoadAnomalies).toHaveBeenCalledWith("load-1", "user-1")
   })
 
-  it("falla si la carga fue asignada a una cuenta corriente entre la lectura y el UPDATE", async () => {
+  it("falla si la carga pasó a un estado de cuenta entre la lectura y el UPDATE", async () => {
     mockFindLoad.mockResolvedValue({
       id: "load-1", worksiteId: "ws-1", statementId: null, status: "registered",
       loadDate: "2026-01-15", month: "2026-01", serviceType: "TCT",
@@ -282,7 +282,7 @@ describe("updateFuelLoadAction — statement guard (H5)", () => {
     const result = await updateFuelLoadAction({ ok: false, message: "" }, fd)
 
     expect(result.ok).toBe(false)
-    expect(result.message).toMatch(/cuenta corriente/i)
+    expect(result.message).toMatch(/estado de cuenta/i)
     expect(mockRecordAudit).not.toHaveBeenCalled()
     expect(mockNotifyAfterCommit).not.toHaveBeenCalled()
   })
@@ -381,7 +381,7 @@ describe("createFuelLoadAction — audit logging", () => {
     mockRecordAudit.mockResolvedValue(undefined)
   })
 
-  it("records an audit entry and redirects to /combustibles/facturas after successful create", async () => {
+  it("records an audit entry and redirects to /combustibles/pagos after successful create", async () => {
     const fd = new FormData()
     fd.set("loadDate", "2026-01-15")
     fd.set("serviceType", "TCT")
@@ -410,9 +410,9 @@ describe("createFuelLoadAction — audit logging", () => {
       expect.objectContaining({ action: "create", entityType: "fuel_load" }),
       expect.anything(),
     )
-    // Con el gate de costos, quien crea una carga siempre puede ver «Facturas y
-    // pagos»: es la pantalla natural, no «Consumo y rendimiento».
-    expect(mockRedirect).toHaveBeenCalledWith("/combustibles/facturas")
+    // Con el gate de costos, quien crea una carga siempre puede ver «Pagos ›
+    // Facturas»: es la pantalla natural, no «Consumo y rendimiento».
+    expect(mockRedirect).toHaveBeenCalledWith("/combustibles/pagos")
   })
 })
 
@@ -564,12 +564,12 @@ describe("COM-002 — declaración de medidor reemplazado", () => {
 })
 
 /**
- * Hueco de autorización de costos: `/combustibles/nueva` exigía sólo
- * `combustibles:create` y `/combustibles/[id]` sólo `combustibles:view`, pero las
+ * Hueco de autorización de costos: `/combustibles/nueva` (hoy `/combustibles/pagos/nueva`)
+ * exigía sólo `combustibles:create` y la ficha de la carga sólo `combustibles:view`, pero las
  * dos muestran y editan boleta, IEC, IVA y total. Y las acciones que invocan
  * (crear, editar, registrar, eliminar) sólo comprobaban su permiso propio, así
  * que un rol operativo sin `view_costs` —p. ej. jefe_mantencion, que sí tiene
- * `create`— podía grabar y borrar cifras que «Facturas y pagos» le oculta. La
+ * `create`— podía grabar y borrar cifras que «Pagos» le oculta. La
  * frontera es la acción, no la pantalla: cada una exige además el contrato
  * monetario de combustible (`view` + `view_costs`).
  */
@@ -695,7 +695,7 @@ describe("acciones de carga — contrato de costos", () => {
 
     const result = await correctFuelLoadMeterAction({ ok: false, message: "" }, fd)
 
-    // La ficha de la carga (`/combustibles/[id]`) se ofrece sin montos a quien no
+    // La ficha de la carga se ofrece sin montos a quien no
     // ve costos; esta corrección es lo único editable ahí.
     expect(result.ok).toBe(true)
     expect(mockUpdateSet).toHaveBeenCalledWith(expect.objectContaining({ odometerReading: 5_000 }))
