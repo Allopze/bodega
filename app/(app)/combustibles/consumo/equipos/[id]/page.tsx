@@ -17,6 +17,7 @@ import { can, requirePermission } from "@/lib/auth/can"
 import { PERFORMANCE_FAMILY_LABELS, PERFORMANCE_FAMILY_SLUGS, PERFORMANCE_UNIT_LABELS, PERFORMANCE_UNIT_TITLES, STAT_MISSING } from "@/lib/combustibles/control/contracts"
 import { WORSE_PERFORMANCE_THRESHOLD_PCT } from "@/lib/combustibles/control/view-helpers"
 import { getEquipmentFile } from "@/lib/combustibles/equipment/get-equipment-file"
+import { litersWindowLabel } from "@/lib/combustibles/equipment/liters-by-month"
 import type { EquipmentFile } from "@/lib/combustibles/equipment/types"
 import { resolveFuelPeriodForPage } from "@/lib/combustibles/period/server"
 import { FUEL_PATHS, fuelPerformanceHref } from "@/lib/combustibles/routes"
@@ -164,7 +165,7 @@ export default async function FichaEquipoPage({ params, searchParams }: { params
       {hasLitersHistory ? (
         <section id="litros" aria-labelledby="litros-title" className="mb-10 scroll-mt-4">
           <h2 id="litros-title" className="text-h2 text-[var(--color-text)]">Litros por mes</h2>
-          <p className="mb-3 mt-0.5 text-sub">Los últimos 12 meses; el período elegido en tono más fuerte.</p>
+          <p className="mb-3 mt-0.5 text-sub">{litersWindowLabel(period.to.slice(0, 7), period.status)}; el período elegido en tono más fuerte.</p>
           <EquipmentLitersChart months={litersByMonth} periodMonths={period.monthKeys} vehicleLabel={vehicle.label} />
         </section>
       ) : null}

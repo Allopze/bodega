@@ -1,4 +1,5 @@
-import { addMonths } from "@/lib/utils"
+import type { FuelPeriodStatus } from "@/lib/combustibles/period/types"
+import { MONTH_NAMES, addMonths } from "@/lib/utils"
 import type { EquipmentFileLitersMonth } from "./types"
 
 /** Cuántos meses muestra «Litros por mes» en la ficha del equipo: el del fin del período y los 11 anteriores. */
@@ -33,4 +34,15 @@ export function fillLitersByMonth(
     const row = byMonth.get(month)
     return { month, liters: row?.liters ?? 0, loads: row?.loads ?? 0 }
   })
+}
+
+/**
+ * Cómo se dice qué meses cubre el gráfico: con el período en curso son «los últimos 12 meses»; con uno pasado (o futuro) la
+ * ventana termina en el mes del período, y decir «los últimos» sería falso («Los 12 meses hasta agosto de 2026»).
+ */
+export function litersWindowLabel(endMonth: string, periodStatus: FuelPeriodStatus, count: number = LITERS_BY_MONTH_COUNT): string {
+  const [year, month] = endMonth.split("-")
+  const name = MONTH_NAMES[Number(month) - 1]
+  if (periodStatus === "en_curso" || !name) return `Los últimos ${count} meses`
+  return `Los ${count} meses hasta ${name} de ${year}`
 }

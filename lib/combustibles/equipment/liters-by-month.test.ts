@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { fillLitersByMonth, litersMonthKeys, LITERS_BY_MONTH_COUNT } from "./liters-by-month"
+import { fillLitersByMonth, litersMonthKeys, litersWindowLabel, LITERS_BY_MONTH_COUNT } from "./liters-by-month"
 
 describe("claves de los 12 meses de «Litros por mes»", () => {
   it("son 12, terminan en el mes pedido y van de la más antigua a la más reciente", () => {
@@ -97,5 +97,20 @@ describe("litros por mes con ceros", () => {
     expect(filled.map((month) => month.month).slice(-2)).toEqual(["2025-12", "2026-01"])
     expect(filled.slice(-2).map((month) => month.liters)).toEqual([50, 20])
     expect(filled[0]!.month).toBe("2025-02")
+  })
+})
+
+describe("litersWindowLabel", () => {
+  it("con el período en curso son «los últimos 12 meses»", () => {
+    expect(litersWindowLabel("2026-10", "en_curso")).toBe("Los últimos 12 meses")
+  })
+
+  it("con un período pasado o futuro dice dónde termina la ventana", () => {
+    expect(litersWindowLabel("2026-08", "cerrado")).toBe("Los 12 meses hasta agosto de 2026")
+    expect(litersWindowLabel("2027-01", "futuro")).toBe("Los 12 meses hasta enero de 2027")
+  })
+
+  it("un mes ilegible no inventa una fecha", () => {
+    expect(litersWindowLabel("", "cerrado")).toBe("Los últimos 12 meses")
   })
 })
