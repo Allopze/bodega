@@ -97,7 +97,7 @@ export async function exportWorksiteStatsAction(input: FamilyExportInput) {
   }
 }
 
-/** R-03 y R-06: una fila por equipo, con comparación contra su modelo y su histórico. */
+/** R-03 y R-06: una fila por equipo, con comparación contra su modelo y su historial, y si sus cargas son parejas o irregulares. */
 export async function exportEquipmentStatsAction(input: FamilyExportInput) {
   const ctx = await prepare(input)
   if ("error" in ctx) return { ok: false as const, message: ctx.error }
@@ -119,10 +119,12 @@ export async function exportEquipmentStatsAction(input: FamilyExportInput) {
         { header: "Cargas válidas", key: "n", width: 14 },
         { header: "Promedio", key: "mean", width: 12, numFmt: PERFORMANCE_FORMAT },
         { header: "Desviación estándar muestral", key: "sd", width: 28, numFmt: PERFORMANCE_FORMAT },
+        { header: "Coeficiente de variación", key: "cv", width: 24, numFmt: "0.0%" },
+        { header: "Carga a carga", key: "regularity", width: 18 },
         { header: "Promedio del modelo", key: "modelMean", width: 20, numFmt: PERFORMANCE_FORMAT },
         { header: "Δ vs modelo (%)", key: "deltaModel", width: 16, numFmt: PERFORMANCE_FORMAT },
-        { header: "Su histórico (12 meses previos)", key: "historyMean", width: 28, numFmt: PERFORMANCE_FORMAT },
-        { header: "Δ vs histórico (%)", key: "deltaHistory", width: 18, numFmt: PERFORMANCE_FORMAT },
+        { header: "Su historial (12 meses previos)", key: "historyMean", width: 28, numFmt: PERFORMANCE_FORMAT },
+        { header: "Δ vs historial (%)", key: "deltaHistory", width: 18, numFmt: PERFORMANCE_FORMAT },
         { header: "Rinde peor", key: "worse", width: 22 },
       ],
       rows.map((row) => ({
@@ -136,11 +138,13 @@ export async function exportEquipmentStatsAction(input: FamilyExportInput) {
         n: row.n,
         mean: row.mean,
         sd: row.sd,
+        cv: row.cv,
+        regularity: row.cv === null ? "Sin cálculo (menos de 2 cargas)" : row.cv > CV_ALERT_THRESHOLD ? "Irregular" : "Parejo",
         modelMean: row.modelMean,
         deltaModel: row.deltaModelPct,
         historyMean: row.historyMean,
         deltaHistory: row.deltaHistoryPct,
-        worse: [row.worseThanModel ? "vs modelo" : null, row.worseThanHistory ? "vs histórico" : null].filter(Boolean).join(" y ") || "",
+        worse: [row.worseThanModel ? "vs modelo" : null, row.worseThanHistory ? "vs historial" : null].filter(Boolean).join(" y ") || "",
       })),
     )
     return await finishExport({

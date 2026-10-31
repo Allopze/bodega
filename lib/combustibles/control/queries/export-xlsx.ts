@@ -1,5 +1,8 @@
 import type ExcelJS from "exceljs"
 import type { Session } from "next-auth"
+import { eq } from "drizzle-orm"
+import { db } from "@/db"
+import { fuelMandantes, fuelSupplyMedia, worksites } from "@/db/schema"
 import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { addExportMetadataSheet } from "@/lib/combustibles/xlsx-utils"
@@ -32,18 +35,45 @@ export function filtersFromParams(params: unknown, family?: PerformanceFamily): 
   return parseControlFilters(cleanExportParams(params), { family })
 }
 
-/** Filtros en lenguaje de usuario para la hoja de metadatos. */
-export function describeFilters(filters: ControlFilters): Record<string, unknown> {
+/** Nombres de lo que los filtros eligen por identificador, para que la hoja de metadatos hable en palabras. */
+export interface FilterNames {
+  worksite?: string
+  mandante?: string
+  medium?: string
+}
+
+/**
+ * Busca el nombre de la faena, el mandante y el medio de suministro elegidos.
+ * Un nombre que no se pueda resolver queda sin él (la hoja muestra el
+ * identificador): un metadato nunca debe tumbar una exportación.
+ */
+export async function resolveFilterNames(filters: ControlFilters): Promise<FilterNames> {
+  async function nameOf(lookup: () => Promise<Array<{ name: string }>>): Promise<string | undefined> {
+    try { return (await lookup())[0]?.name } catch { return undefined }
+  }
+  const [worksite, mandante, medium] = await Promise.all([
+    filters.worksiteId ? nameOf(() => db.select({ name: worksites.name }).from(worksites).where(eq(worksites.id, filters.worksiteId!)).limit(1)) : undefined,
+    filters.mandanteId ? nameOf(() => db.select({ name: fuelMandantes.name }).from(fuelMandantes).where(eq(fuelMandantes.id, filters.mandanteId!)).limit(1)) : undefined,
+    filters.supplyMediumId ? nameOf(() => db.select({ name: fuelSupplyMedia.name }).from(fuelSupplyMedia).where(eq(fuelSupplyMedia.id, filters.supplyMediumId!)).limit(1)) : undefined,
+  ])
+  return { worksite, mandante, medium }
+}
+
+/**
+ * Filtros en lenguaje de usuario para la hoja de metadatos. Con `names` muestra
+ * los nombres en vez de los identificadores; sin ellos, el identificador.
+ */
+export function describeFilters(filters: ControlFilters, names: FilterNames = {}): Record<string, unknown> {
   return {
     Año: filters.from || filters.to ? undefined : filters.year,
     Meses: filters.from || filters.to ? undefined : (filters.months.length ? filters.months.join(", ") : "Año completo"),
     Desde: filters.from,
     Hasta: filters.to,
-    Faena: filters.worksiteId,
-    Mandante: filters.mandanteId,
+    Faena: names.worksite ?? filters.worksiteId,
+    Mandante: names.mandante ?? filters.mandanteId,
     Familia: filters.family ? PERFORMANCE_FAMILY_LABELS[filters.family] : undefined,
     Unidad: filters.unit ? PERFORMANCE_UNIT_LABELS[filters.unit] : undefined,
-    "Medio de suministro": filters.supplyMediumId,
+    "Medio de suministro": names.medium ?? filters.supplyMediumId,
     Equipo: filters.equipment,
   }
 }
@@ -88,8 +118,9 @@ export async function finishExport(input: {
   truncated?: boolean
   rowLimit?: number
 }) {
+  const names = await resolveFilterNames(input.filters)
   addExportMetadataSheet(input.wb, input.session, {
-    filters: describeFilters(input.filters),
+    filters: describeFilters(input.filters, names),
     rowCount: input.rowCount,
     from: input.filters.from ?? null,
     to: input.filters.to ?? null,

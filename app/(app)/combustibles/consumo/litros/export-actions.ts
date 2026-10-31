@@ -26,6 +26,12 @@ export interface OverviewExportInput {
   params: ExportParams
   /** Solo para la tabla cruzada de una unidad. */
   unit?: PerformanceUnit
+  /**
+   * Filtros de las hojas «mes a mes» (litros por mes y series de medidor): la
+   * pantalla las dibuja con hasta 6 meses de historia, no con la ventana del
+   * período. Sin esto usan los mismos `params` que el resto del libro.
+   */
+  historyParams?: ExportParams
 }
 
 async function authorize() {
@@ -69,17 +75,18 @@ export async function exportCrosstabAction(input: OverviewExportInput) {
   }
 }
 
-/** Toda la vista general en un libro: litros por mes y medio, las dos tablas cruzadas y las dos series. */
+/** Toda la pantalla «Consumo» en un libro: litros por mes y medio, las dos tablas cruzadas y las dos series. */
 export async function exportOverviewAction(input: OverviewExportInput) {
   const session = await authorize()
   if (!session) return { ok: false as const, message: EXPORT_FAILURE_PERMISSION }
   const filters = filtersFromParams(input.params)
+  const historyFilters = input.historyParams ? filtersFromParams(input.historyParams) : filters
   try {
     const [monthly, km, hours, series] = await Promise.all([
-      getLitersByMonthAndMedium(session, filters),
+      getLitersByMonthAndMedium(session, historyFilters),
       getWorksiteMediumCrosstab(session, filters, "km_per_liter"),
       getWorksiteMediumCrosstab(session, filters, "liters_per_hour"),
-      getMeterSeries(session, filters),
+      getMeterSeries(session, historyFilters),
     ])
     const ExcelJS = await import("exceljs")
     const wb = new ExcelJS.Workbook()

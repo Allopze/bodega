@@ -5,19 +5,22 @@ const requirePermission = vi.hoisted(() => vi.fn())
 const can = vi.hoisted(() => vi.fn())
 const getLoadDetail = vi.hoisted(() => vi.fn())
 const getWorksiteStats = vi.hoisted(() => vi.fn())
+const getEquipmentStats = vi.hoisted(() => vi.fn())
 const recordAudit = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/auth/can", () => ({ requirePermission, can }))
 vi.mock("@/lib/combustibles/control/queries/performance", () => ({
   EXPORT_ROW_LIMIT: 10_000,
   getWorksiteStats,
-  getEquipmentStats: vi.fn(),
+  getEquipmentStats,
 }))
 vi.mock("@/lib/combustibles/control/queries/performance-detail", () => ({ getLoadDetail }))
 vi.mock("@/lib/audit", () => ({ recordAudit }))
+// `finishExport` busca los nombres de faena, mandante y medio para la hoja de metadatos.
+vi.mock("@/db", () => ({ db: { select: () => ({ from: () => ({ where: () => ({ limit: async () => [{ name: "Faena Norte" }] }) }) }) } }))
 vi.mock("@/lib/logger", () => ({ logger: { error: vi.fn() } }))
 
-const { exportLoadDetailAction, exportWorksiteStatsAction } = await import("./export-actions")
+const { exportEquipmentStatsAction, exportLoadDetailAction, exportWorksiteStatsAction } = await import("./export-actions")
 
 const session = { user: { id: "u1", email: "a@b.cl", isGlobal: true, worksiteIds: [], permissions: [] } }
 const detailRow = {
@@ -86,5 +89,35 @@ describe("exportaciones de rendimiento", () => {
     const text = JSON.stringify(meta.getSheetValues())
     expect(text).toContain("km/L")
     expect(text).toContain("Camiones y tracto camiones")
+  })
+
+  it("por equipo: agrega «parejo» o «irregular» y dice contra qué rinde peor, con las mismas cifras de la pantalla", async () => {
+    const base = { worksiteName: "Faena A", brand: "Volvo", model: "FH", equipmentType: "Camión", unit: "km_per_liter", n: 4, mean: 4, sd: 1, modelMean: 5, historyMean: 6 }
+    getEquipmentStats.mockResolvedValue({
+      pagination: { totalItems: 3 },
+      rows: [
+        { ...base, vehicleId: "v1", code: "KA-01", plate: "AB1234", cv: 0.07, deltaModelPct: -20, deltaHistoryPct: -33.3, worseThanModel: true, worseThanHistory: true },
+        { ...base, vehicleId: "v2", code: "KA-02", plate: "CD5678", cv: 0.4, deltaModelPct: 5, deltaHistoryPct: 5, worseThanModel: false, worseThanHistory: false },
+        { ...base, vehicleId: "v3", code: null, plate: "EF9012", n: 1, sd: null, cv: null, deltaModelPct: null, deltaHistoryPct: null, worseThanModel: false, worseThanHistory: false },
+      ],
+    })
+    const result = await exportEquipmentStatsAction({ familia: "camiones", params: { anio: "2026" } })
+    expect(getEquipmentStats.mock.calls[0]![2]).toMatchObject({ all: true })
+    const { headers, ws } = await headersOf((result as { data: { base64: string } }).data.base64, "Rendimiento por equipo")
+    expect(headers).toEqual(expect.arrayContaining(["Carga a carga", "Coeficiente de variación", "Su historial (12 meses previos)", "Rinde peor"]))
+    const col = (name: string) => headers.indexOf(name) + 1
+    expect(ws.getRow(2).getCell(col("Carga a carga")).value).toBe("Parejo")
+    expect(ws.getRow(3).getCell(col("Carga a carga")).value).toBe("Irregular")
+    expect(ws.getRow(4).getCell(col("Carga a carga")).value).toBe("Sin cálculo (menos de 2 cargas)")
+    expect(ws.getRow(2).getCell(col("Rinde peor")).value).toBe("vs modelo y vs historial")
+  })
+
+  it("la hoja de metadatos muestra el nombre de la faena y no su identificador", async () => {
+    getWorksiteStats.mockResolvedValue([])
+    const result = await exportWorksiteStatsAction({ familia: "camiones", params: { anio: "2026", faena: "ws-interno-123" } })
+    const { wb } = await headersOf((result as { data: { base64: string } }).data.base64, "Rendimiento por faena")
+    const text = JSON.stringify(wb.getWorksheet("Metadatos")!.getSheetValues())
+    expect(text).toContain("Faena Norte")
+    expect(text).not.toContain("ws-interno-123")
   })
 })

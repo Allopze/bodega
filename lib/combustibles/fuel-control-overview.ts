@@ -127,7 +127,8 @@ async function getTaeOverview(
       pendingReview: sql<number>`count(*) filter (where ${fuelTaeSubmissions.status} = 'submitted')`,
       observed: sql<number>`count(*) filter (where ${fuelTaeSubmissions.status} = 'observed')`,
       missingSeals: sql<number>`count(*) filter (where ${fuelTaeSubmissions.removedSealNumber} is null or btrim(${fuelTaeSubmissions.removedSealNumber}) = '' or ${fuelTaeSubmissions.installedSealNumber} is null or btrim(${fuelTaeSubmissions.installedSealNumber}) = '')`,
-      missingEvidence: sql<number>`count(*) filter (where (select count(distinct ${fuelTaeEvidence.kind}) from ${fuelTaeEvidence} where ${fuelTaeEvidence.submissionId} = ${fuelTaeSubmissions.id}) < 4)`,
+      // Una carga registrada después desde la oficina (`backdated`) tiene las fotos opcionales: no es una carga incompleta.
+      missingEvidence: sql<number>`count(*) filter (where ${fuelTaeSubmissions.loadedAtSource} <> 'backdated' and (select count(distinct ${fuelTaeEvidence.kind}) from ${fuelTaeEvidence} where ${fuelTaeEvidence.submissionId} = ${fuelTaeSubmissions.id}) < 4)`,
     }).from(fuelTaeSubmissions).where(currentWhere),
     db.select({ liters: sql<number>`coalesce(sum(${fuelTaeSubmissions.liters}), 0)` })
       .from(fuelTaeSubmissions).where(previousWhere),

@@ -4,7 +4,7 @@
  */
 
 import type { Session } from "next-auth"
-import { sql, eq, desc } from "drizzle-orm"
+import { sql, eq, desc, isNotNull, and } from "drizzle-orm"
 import { db } from "@/db"
 import { fuelConsumptionRecords } from "@/db/schema"
 import { buildConsumptionWhere, type ConsumptionFilters } from "./consumption-queries"
@@ -13,6 +13,7 @@ import { flagOutliers as flagOutliersGeneric } from "./performance-statistics"
 import { previousPeriod, dateOnly, daysAgo } from "@/lib/services/analytics-module/helpers"
 import { fuelVehicles, fuelEquipmentTypes, worksites } from "@/db/schema"
 import { can } from "@/lib/auth/can"
+import { worksiteScopeSql } from "@/lib/auth/scope"
 
 export interface ConsumptionAlert {
   type: string
@@ -38,6 +39,8 @@ export interface RendimientoRow {
   patente: string
   /** Patente real para filtrar, cuando el rótulo visible incluye el código del equipo. */
   filterPatente?: string
+  /** Equipo de la flota al que corresponde la patente, para abrir su ficha; `null` si no está vinculada. */
+  vehicleId?: string | null
   rendimiento: number
   cantidad: number
   atipico: boolean
@@ -206,7 +209,7 @@ export async function getConsumptionDashboard(session: Session, rawFilters: Cons
     : []
   const transaccionesPorPatente = [...byPatente].sort((a, b) => b.transacciones - a.transacciones).slice(0, TOP_PATENTES_LIMIT)
 
-  const rendimientosRaw = byPatenteRaw.map((r) => ({ patente: r.patente, rendimiento: Number(r.rendimiento), cantidad: Number(r.cantidad) }))
+  const rendimientosRaw = byPatenteRaw.map((r) => ({ patente: r.patente, vehicleId: r.vehicleId, rendimiento: Number(r.rendimiento), cantidad: Number(r.cantidad) }))
   const rendimientoPorPatente = flagOutliersGeneric(rendimientosRaw, (r) => r.rendimiento)
 
   const alerts = buildConsumptionAlerts({
@@ -435,4 +438,16 @@ function buildConsumptionAlerts(input: {
   }
 
   return alerts
+}
+
+/**
+ * Fuentes que informan consumo por tarjeta (Copec, Aramco…) dentro del alcance
+ * de faena de quien consulta, para el filtro «Fuente». Antes la lista salía de
+ * toda la tabla sin acotar por faena.
+ */
+export async function getConsumptionSources(session: Session): Promise<string[]> {
+  const rows = await db.selectDistinct({ fuente: fuelConsumptionRecords.fuente })
+    .from(fuelConsumptionRecords)
+    .where(and(isNotNull(fuelConsumptionRecords.fuente), worksiteScopeSql(session, fuelConsumptionRecords.worksiteId)))
+  return rows.map((row) => row.fuente).filter((fuente): fuente is string => !!fuente).sort()
 }

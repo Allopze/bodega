@@ -3,7 +3,7 @@ import { PERFORMANCE_UNIT_TITLES } from "@/lib/combustibles/control/contracts"
 import type { LitersPerHourComparisonRow } from "@/lib/combustibles/control/queries/idle-comparison"
 import type { IdleTopDay } from "@/lib/combustibles/control/queries/idle"
 import { formatDate } from "@/lib/utils"
-import { monthText, numberText, pctText } from "../sellos/format"
+import { monthText, numberText, pctText } from "../../control/_components/format"
 
 const lph = (value: number | null) => (value === null ? "—" : `${numberText(value, 2)} L/h`)
 
@@ -52,13 +52,13 @@ export function TopIdleDaysTable({ rows }: { rows: IdleTopDay[] }) {
     return <p className="text-sm text-[var(--color-text-muted)]">Ningún día del período tiene al menos 1 hora de funcionamiento.</p>
   }
   return (
-    <TableRoot aria-label="Días con mayor porcentaje en vacío">
+    <TableRoot aria-label="Días con mayor porcentaje de motor en vacío">
       <Table>
         <TableHeader>
           <TableRow>
             <TableHead>Fecha</TableHead>
             <TableHead>Equipo</TableHead>
-            <TableHead className="text-right">Horas func.</TableHead>
+            <TableHead className="text-right">Horas de motor</TableHead>
             <TableHead className="text-right" title="Horas en vacío ÷ horas de funcionamiento del día">% en vacío</TableHead>
           </TableRow>
         </TableHeader>

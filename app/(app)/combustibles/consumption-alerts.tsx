@@ -1,59 +1,57 @@
-"use client"
-
 import Link from "next/link"
-import { useSearchParams } from "next/navigation"
-import { Warning } from "@phosphor-icons/react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { SeverityBadge, EmptyText } from "@/app/(app)/analitica/analytics-ranking-table"
-import type { ConsumptionAlert } from "@/lib/combustibles/consumption-dashboard"
-import { buildConsumptionHref } from "./consumption-url"
+import { CaretRight } from "@phosphor-icons/react/dist/ssr"
+import { SeverityBadge } from "@/app/(app)/analitica/analytics-ranking-table"
+import type { WatchItem } from "@/lib/combustibles/consumption-watch"
 
-export function ConsumptionAlerts({ alerts }: { alerts: ConsumptionAlert[] }) {
-  const searchParams = useSearchParams()
-
-  function alertHref(linkQuery: string) {
-    const target = new URLSearchParams(linkQuery)
-    return buildConsumptionHref(
-      searchParams.toString(),
-      Object.fromEntries(target.entries()),
-    )
+/**
+ * «Patentes para mirar»: las alertas de consumo (consumo alto, muchas
+ * transacciones, rendimiento cero, patentes sin vincular, variación fuerte) y a
+ * dónde lleva cada una. Un clic abre la ficha del equipo, que es donde se
+ * decide si hay algo que hacer; las patentes que no son un equipo filtran el
+ * análisis de tarjetas y las sin vincular van a «Por revisar».
+ *
+ * Server-safe: los destinos ya vienen armados (con el período y la faena).
+ */
+export function ConsumptionWatchList({ items }: { items: WatchItem[] }) {
+  if (items.length === 0) {
+    return <p className="text-sm text-[var(--color-text-muted)]">Ninguna patente se sale de lo habitual con estos filtros.</p>
   }
-
   return (
-    <Card className="mb-6">
-      <CardHeader>
-        <CardTitle>Alertas e interpretación</CardTitle>
-      </CardHeader>
-      <CardContent>
-        {alerts.length > 0 ? (
-          <div className="grid gap-3 md:grid-cols-2">
-            {alerts.slice(0, 12).map((alert, index) => {
-              const content = (
-                <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 h-full">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <SeverityBadge severity={alert.severity} />
-                      <p className="mt-2 text-sm font-semibold text-[var(--color-text)]">{alert.entityLabel}</p>
-                      <p className="mt-1 text-xs leading-5 text-[var(--color-text-muted)]">{alert.reason}</p>
-                    </div>
-                    <Warning size={17} className="mt-1 shrink-0 text-[var(--color-signal-ink)]" />
-                  </div>
-                  <p className="mt-2 text-xs font-medium text-[var(--color-text)]">{alert.action}</p>
-                </div>
-              )
-              return alert.linkQuery ? (
-                <Link key={`${alert.type}-${alert.entityLabel}-${index}`} href={alertHref(alert.linkQuery)} className="block rounded-[var(--radius-lg)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]">
-                  {content}
-                </Link>
-              ) : (
-                <div key={`${alert.type}-${alert.entityLabel}-${index}`}>{content}</div>
-              )
-            })}
-          </div>
-        ) : (
-          <EmptyText text="No hay alertas para los filtros actuales." />
-        )}
-      </CardContent>
-    </Card>
+    <ul aria-label="Patentes para mirar" className="grid gap-2 md:grid-cols-2">
+      {items.map((item) => {
+        const body = (
+          <>
+            <span className="flex items-start justify-between gap-3">
+              <span className="min-w-0">
+                <span className="block text-sm font-semibold text-[var(--color-text)]">{item.label}</span>
+                <span className="mt-0.5 block text-xs leading-5 text-[var(--color-text-muted)]">{item.reason}</span>
+              </span>
+              <SeverityBadge severity={item.severity} />
+            </span>
+            <span className="mt-2 flex items-center justify-between gap-2 text-xs">
+              <span className="font-medium text-[var(--color-text)]">{item.action}</span>
+              {item.href && item.hrefLabel ? (
+                <span className="inline-flex shrink-0 items-center gap-0.5 font-medium text-[var(--color-primary-ink)]">
+                  {item.hrefLabel}
+                  <CaretRight size={12} weight="bold" aria-hidden />
+                </span>
+              ) : null}
+            </span>
+          </>
+        )
+        const rowClass = "block h-full rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3"
+        return (
+          <li key={item.key}>
+            {item.href ? (
+              <Link href={item.href} className={`${rowClass} transition-colors hover:border-[var(--color-border-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]`}>
+                {body}
+              </Link>
+            ) : (
+              <div className={rowClass}>{body}</div>
+            )}
+          </li>
+        )
+      })}
+    </ul>
   )
 }

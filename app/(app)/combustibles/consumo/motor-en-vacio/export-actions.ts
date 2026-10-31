@@ -6,6 +6,7 @@ import { nanoid } from "@/lib/id"
 import { parseControlFilters } from "@/lib/combustibles/control/filters"
 import { getIdleEquipmentMonths, getIdleTopDays } from "@/lib/combustibles/control/queries/idle"
 import { getLitersPerHourComparison } from "@/lib/combustibles/control/queries/idle-comparison"
+import { describeFilters, resolveFilterNames } from "@/lib/combustibles/control/queries/export-xlsx"
 import { addTableSheet, type SheetRow } from "@/lib/combustibles/control/queries/xlsx-sheet"
 import { addExportMetadataSheet } from "@/lib/combustibles/xlsx-utils"
 import { xlsxToBase64 } from "@/lib/reports/export-module/excel-builder"
@@ -13,7 +14,7 @@ import { formatDate, todayInChile } from "@/lib/utils"
 import type { ExportActionResult } from "@/components/ui/export-button"
 import { FUEL_PATHS } from "@/lib/combustibles/routes"
 
-/** Exporta las tablas de ralentí (V-01..V-05, V-08 y V-09) con los mismos filtros de la vista. */
+/** Exporta las tablas de motor en vacío (V-01..V-05, V-08 y V-09) con los mismos filtros de la vista. */
 export async function exportIdleXlsxAction(input: { query: string }): Promise<ExportActionResult> {
   let session
   try {
@@ -45,7 +46,7 @@ export async function exportIdleXlsxAction(input: { query: string }): Promise<Ex
     operating: stats.operatingHours, idlePct: stats.idlePct, dailyAvg: stats.dailyAvgPct, dailyMax: stats.dailyMaxPct, dailyMin: stats.dailyMinPct,
     workPerDay: stats.avgWorkingPerDay, idlePerDay: stats.avgIdlePerDay, litersWorking: stats.litersWorking, litersIdle: stats.litersIdle,
   })
-  addTableSheet(wb, "Ralentí equipo y mes", [
+  addTableSheet(wb, "Motor en vacío por equipo y mes", [
     { header: "Equipo", key: "equipment", width: 24 },
     { header: "Mes", key: "month", width: 10 },
     ...statColumns,
@@ -62,14 +63,14 @@ export async function exportIdleXlsxAction(input: { query: string }): Promise<Ex
     equipment: row.equipment, month: row.month, telemetry: row.telemetryLph,
     loads: row.loadsLph ?? "Sin cargas en el mes", count: row.loadCount, diff: row.differencePct,
   })))
-  addTableSheet(wb, "Días con más ralentí", [
+  addTableSheet(wb, "Días con más motor en vacío", [
     { header: "Fecha", key: "day", width: 12 },
     { header: "Equipo", key: "equipment", width: 24 },
     { header: "Horas de funcionamiento", key: "operating", width: 14, numFmt: "#,##0.0" },
     { header: "Horas en vacío", key: "idle", width: 14, numFmt: "#,##0.0" },
     { header: "% en vacío", key: "pct", width: 12, numFmt: "#,##0.0" },
   ], topDays.map((row) => ({ day: formatDate(row.day), equipment: row.equipment, operating: row.operatingHours, idle: row.idleHours, pct: row.idlePct })))
-  addExportMetadataSheet(wb, session, { filters, rowCount: months.rows.length, from: filters.from, to: filters.to })
+  addExportMetadataSheet(wb, session, { filters: describeFilters(filters, await resolveFilterNames(filters)), rowCount: months.rows.length, from: filters.from, to: filters.to })
 
   const base64 = await xlsxToBase64(wb)
   await recordAudit({
@@ -77,5 +78,5 @@ export async function exportIdleXlsxAction(input: { query: string }): Promise<Ex
     entityType: "fuel_control_idle_export", entityId: nanoid(),
     newState: { rowCount: months.rows.length, filters: filters as unknown as Record<string, unknown> },
   })
-  return { ok: true, data: { base64, filename: `control_ralenti_${todayInChile()}.xlsx` } }
+  return { ok: true, data: { base64, filename: `consumo_motor_en_vacio_${todayInChile()}.xlsx` } }
 }

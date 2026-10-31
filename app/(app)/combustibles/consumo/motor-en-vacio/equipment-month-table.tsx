@@ -2,7 +2,7 @@ import { ServerPagination } from "@/components/ui/server-pagination"
 import { Table, TableBody, TableCell, TableCellNum, TableFooter, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import type { IdleEquipmentMonthRow, IdleStats } from "@/lib/combustibles/control/queries/idle"
 import type { PaginationState } from "@/lib/pagination"
-import { litersText, monthText, numberText, pctText } from "../sellos/format"
+import { litersText, monthText, numberText, pctText } from "../../control/_components/format"
 
 const hours = (value: number | null) => (value === null ? "—" : `${numberText(value)} h`)
 
@@ -27,16 +27,16 @@ interface Props { rows: IdleEquipmentMonthRow[]; total: IdleStats | null; pagina
 /** V-01..V-05: una fila por equipo y mes, con el total general al pie. */
 export function EquipmentMonthTable({ rows, total, pagination, hrefForPage }: Props) {
   if (rows.length === 0) {
-    return <p className="text-sm text-[var(--color-text-muted)]">No hay telemetría en este período. Prueba con otro mes o importa el archivo de telemetría de los equipos.</p>
+    return <p className="text-sm text-[var(--color-text-muted)]">No hay telemetría en este período. Prueba con otro período o agrega la telemetría de los equipos.</p>
   }
   return (
-    <TableRoot aria-label="Ralentí por equipo y mes">
+    <TableRoot aria-label="Motor en vacío por equipo y mes">
       <Table>
         <TableHeader>
           <TableRow>
             <TableHead>Equipo</TableHead>
             <TableHead>Mes</TableHead>
-            <TableHead className="text-right" title="Horas de funcionamiento del motor en el mes">Horas func.</TableHead>
+            <TableHead className="text-right" title="Horas de funcionamiento del motor en el mes">Horas de motor</TableHead>
             <TableHead className="text-right" title="Horas en vacío ÷ horas de funcionamiento del mes">% en vacío</TableHead>
             <TableHead className="text-right" title="Promedio de los porcentajes en vacío de cada día">Prom. diario</TableHead>
             <TableHead className="text-right" title="Mayor porcentaje en vacío de un día del mes">Máx. diario</TableHead>

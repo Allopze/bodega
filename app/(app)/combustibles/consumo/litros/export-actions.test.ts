@@ -4,18 +4,22 @@ import { buildCrosstab } from "@/lib/combustibles/control/view-helpers"
 
 const requirePermission = vi.hoisted(() => vi.fn())
 const getWorksiteMediumCrosstab = vi.hoisted(() => vi.fn())
+const getLitersByMonthAndMedium = vi.hoisted(() => vi.fn())
+const getMeterSeries = vi.hoisted(() => vi.fn())
 const recordAudit = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/auth/can", () => ({ requirePermission, can: vi.fn() }))
 vi.mock("@/lib/combustibles/control/queries/overview", () => ({
   getWorksiteMediumCrosstab,
-  getLitersByMonthAndMedium: vi.fn(),
-  getMeterSeries: vi.fn(),
+  getLitersByMonthAndMedium,
+  getMeterSeries,
 }))
 vi.mock("@/lib/audit", () => ({ recordAudit }))
+// `finishExport` busca los nombres de faena, mandante y medio para la hoja de metadatos.
+vi.mock("@/db", () => ({ db: { select: () => ({ from: () => ({ where: () => ({ limit: async () => [{ name: "Faena Norte" }] }) }) }) } }))
 vi.mock("@/lib/logger", () => ({ logger: { error: vi.fn() } }))
 
-const { exportCrosstabAction } = await import("./export-overview-actions")
+const { exportCrosstabAction, exportOverviewAction } = await import("./export-actions")
 
 const session = { user: { id: "u1", email: "a@b.cl", isGlobal: true, worksiteIds: [], permissions: [] } }
 
@@ -53,5 +57,38 @@ describe("exportCrosstabAction", () => {
   it("una unidad inválida cae a km/L, nunca a un valor sin validar", async () => {
     await exportCrosstabAction({ params: {}, unit: "otra" as never })
     expect(getWorksiteMediumCrosstab.mock.calls[0]![2]).toBe("km_per_liter")
+  })
+})
+
+describe("exportOverviewAction", () => {
+  beforeEach(() => {
+    getLitersByMonthAndMedium.mockResolvedValue([])
+    getMeterSeries.mockResolvedValue({
+      km_per_liter: { unit: "km_per_liter", points: [], totalMeasure: 0, totalLiters: 0, ratio: null },
+      liters_per_hour: { unit: "liters_per_hour", points: [], totalMeasure: 0, totalLiters: 0, ratio: null },
+    })
+  })
+
+  it("las hojas mes a mes usan la ventana de historia de la pantalla y las tablas cruzadas, la del período", async () => {
+    const result = await exportOverviewAction({
+      params: { anio: "2026", meses: "10" },
+      historyParams: { desde: "2026-05-01", hasta: "2026-10-31" },
+    })
+    expect(result.ok).toBe(true)
+    expect(getLitersByMonthAndMedium.mock.calls[0]![1]).toMatchObject({ from: "2026-05-01", to: "2026-10-31" })
+    expect(getMeterSeries.mock.calls[0]![1]).toMatchObject({ from: "2026-05-01", to: "2026-10-31" })
+    expect(getWorksiteMediumCrosstab.mock.calls[0]![1]).toMatchObject({ year: 2026, months: [10] })
+    expect(getWorksiteMediumCrosstab.mock.calls[0]![1].from).toBeUndefined()
+  })
+
+  it("sin ventana propia, todo el libro usa los mismos filtros", async () => {
+    await exportOverviewAction({ params: { anio: "2026", meses: "10" } })
+    expect(getLitersByMonthAndMedium.mock.calls[0]![1]).toMatchObject({ year: 2026, months: [10] })
+  })
+
+  it("sin permiso de exportar no consulta nada", async () => {
+    requirePermission.mockRejectedValue(new Error("Forbidden"))
+    expect((await exportOverviewAction({ params: {} })).ok).toBe(false)
+    expect(getLitersByMonthAndMedium).not.toHaveBeenCalled()
   })
 })

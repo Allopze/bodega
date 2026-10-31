@@ -8,16 +8,19 @@ import * as schema from "@/db/schema"
 import type { DB } from "@/db"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import { parseControlFilters } from "@/lib/combustibles/control/filters"
+import { describeFuelPeriod } from "@/lib/combustibles/period/parse"
 
 const pg = new PGlite()
 const testDb = drizzle(pg, { schema }) as unknown as DB
 const g = globalThis as typeof globalThis & { __db?: DB }
 g.__db = testDb
 vi.mock("@/db", () => ({ get db() { return g.__db } }))
+vi.mock("server-only", () => ({}))
 
 const overview = await import("./overview")
 const performance = await import("./performance")
 const detail = await import("./performance-detail")
+const { countEquipmentWorseThanModel } = await import("./worse-than-model")
 
 const globalSession = { user: { id: "u1", isGlobal: true, worksiteIds: [], permissions: [] } } as unknown as Session
 const faenaASession = { user: { id: "u2", isGlobal: false, worksiteIds: ["w-a"], permissions: [] } } as unknown as Session
@@ -237,6 +240,8 @@ describe("rendimiento por familia", () => {
     expect(masked.rows.every((row) => row.supervisor === null)).toBe(true)
     expect(masked.rows.map((row) => row.reviewStatus)).toContain("rejected")
     expect(masked.rows.some((row) => row.liters === 50)).toBe(false)
+    // Cada fila enlaza a la ficha de su carga según su origen (aquí, la planilla).
+    expect(masked.rows.every((row) => /^\/combustibles\/cargas\/planilla\/rec-\d+$/.test(row.href ?? ""))).toBe(true)
     const withPersonal = await detail.getLoadDetail(globalSession, camiones, { includePersonal: true })
     expect(withPersonal.rows.find((row) => row.supervisor)?.supervisor).toBe("Sup Uno")
   })
@@ -244,6 +249,69 @@ describe("rendimiento por familia", () => {
   it("opciones de equipo: solo la familia y el alcance del usuario", async () => {
     expect((await detail.getFamilyVehicleOptions(faenaASession, "camiones")).map((option) => option.code)).toEqual(["KA-01", "KA-02"])
     expect((await detail.getFamilyVehicleOptions(globalSession, "maquinaria")).map((option) => option.code)).toEqual(["EX-01"])
+  })
+
+  it("rinde peor, en SQL y sin paginar: cuenta contra el modelo O contra el historial y trae los peores primero", async () => {
+    const summary = await performance.getEquipmentWorseSummary(globalSession, parseControlFilters({ anio: "2026", meses: "3" }, { family: "camiones" }))
+    // KA-01 (−20 % contra su modelo, −33 % contra su historial), KA-02 (mejor que su modelo) y KA-03 (sin comparación).
+    expect(summary).toMatchObject({ total: 3, worse: 1, worseThanModel: 1, worseThanHistory: 1 })
+    expect(summary.examples).toHaveLength(1)
+    expect(summary.examples[0]).toMatchObject({ vehicleId: "v1", code: "KA-01", unit: "km_per_liter", against: "history", family: "camiones" })
+    expect(summary.examples[0]!.deltaPct).toBeCloseTo(-100 / 3, 6)
+  })
+
+  it("rinde peor: el conteo no depende del tamaño de página y respeta el límite de ejemplos", async () => {
+    const filters = parseControlFilters({ anio: "2026", meses: "3" }, { family: "camiones" })
+    expect((await performance.getEquipmentWorseSummary(globalSession, filters, 0)).examples).toEqual([])
+    const page = await performance.getEquipmentStats(globalSession, filters, { page: 1, pageSize: 1 })
+    expect(page.rows).toHaveLength(1)
+    expect((await performance.getEquipmentWorseSummary(globalSession, filters)).worse).toBe(1)
+  })
+
+  it("rinde peor: la lista y el conteo coinciden con las marcas de cada fila", async () => {
+    const filters = parseControlFilters({ anio: "2026", meses: "3" }, { family: "camiones" })
+    const { rows } = await performance.getEquipmentStats(globalSession, filters, { all: true })
+    const summary = await performance.getEquipmentWorseSummary(globalSession, filters)
+    expect(summary.worse).toBe(rows.filter((row) => row.worseThanModel || row.worseThanHistory).length)
+    expect(summary.total).toBe(rows.length)
+  })
+
+  it("countEquipmentWorseThanModel: contrato del Panel con el período de la cabecera, todas las familias", async () => {
+    const march = describeFuelPeriod({ kind: "month", year: 2026, month: 3 }, "url", "2026-04-15")
+    const result = await countEquipmentWorseThanModel(globalSession, march, 3)
+    expect(result.count).toBe(1)
+    expect(result.examples).toEqual([expect.objectContaining({ vehicleId: "v1", code: "KA-01", familyLabel: "Camiones y tracto camiones" })])
+    expect(result.examples[0]!.deltaPct).toBeCloseTo(-100 / 3, 6)
+  })
+
+  it("countEquipmentWorseThanModel: el alcance de faena y el filtro de faena acotan el conteo", async () => {
+    const march = describeFuelPeriod({ kind: "month", year: 2026, month: 3 }, "url", "2026-04-15")
+    expect((await countEquipmentWorseThanModel(faenaASession, march)).count).toBe(1)
+    // El usuario de la faena A no ve la B aunque la pida: cero filas, no las de esa faena.
+    expect((await countEquipmentWorseThanModel(faenaASession, march, 3, { worksiteId: "w-b" })).count).toBe(0)
+    expect((await countEquipmentWorseThanModel(globalSession, march, 3, { worksiteId: "w-b" })).count).toBe(0)
+  })
+
+  it("countEquipmentWorseThanModel: un período sin cargas da cero, no un error", async () => {
+    const empty = describeFuelPeriod({ kind: "month", year: 2024, month: 1 }, "url", "2026-04-15")
+    expect(await countEquipmentWorseThanModel(globalSession, empty)).toEqual({ count: 0, examples: [] })
+  })
+
+  it("en L/h más es peor: un equipo que rinde 10 % más litros por hora que su modelo se cuenta", async () => {
+    // EX-01 (v4) promedia 21 L/h; su único par de modelo no existe todavía. Se le suma un Cat 320 más eficiente.
+    await testDb.insert(schema.fuelVehicles).values({
+      id: "v5", plate: "P-EX-02", code: "EX-02", type: "excavadora", equipmentTypeId: (await testDb.select({ id: schema.fuelEquipmentTypes.id }).from(schema.fuelEquipmentTypes).where(eq(schema.fuelEquipmentTypes.slug, "excavadora")))[0]!.id,
+      worksiteId: "w-a", performanceUnit: "liters_per_hour", meterType: "hour_meter", brand: "Cat", model: "320",
+    })
+    await addLoad({ vehicle: "v5", worksite: "w-a", medium: "fsm-cmpc", liters: 90, perf: 18, delta: 5 })
+    const summary = await performance.getEquipmentWorseSummary(globalSession, parseControlFilters({ anio: "2026", meses: "3" }, { family: "maquinaria" }))
+    // v4: 21 contra 18 del modelo = +16,7 % (peor en L/h). v5: 18 contra 21 = −14,3 % (mejor).
+    expect(summary).toMatchObject({ total: 2, worse: 1, worseThanModel: 1 })
+    expect(summary.examples[0]).toMatchObject({ vehicleId: "v4", unit: "liters_per_hour", against: "model" })
+    expect(summary.examples[0]!.deltaPct).toBeCloseTo((21 - 18) / 18 * 100, 6)
+    await testDb.delete(schema.fuelEquipmentLoads).where(eq(schema.fuelEquipmentLoads.vehicleId, "v5"))
+    await testDb.delete(schema.fuelOperationRecords).where(eq(schema.fuelOperationRecords.vehicleId, "v5"))
+    await testDb.delete(schema.fuelVehicles).where(eq(schema.fuelVehicles.id, "v5"))
   })
 
   it("las cargas válidas de un equipo recién aprobado entran al promedio", async () => {

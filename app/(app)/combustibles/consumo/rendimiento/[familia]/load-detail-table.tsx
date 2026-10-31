@@ -1,3 +1,4 @@
+import Link from "next/link"
 import { MetaBadge, metaFor, type StateMetaInput } from "@/components/states/state-badge"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Table, TableBody, TableCell, TableCellNum, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
@@ -28,7 +29,7 @@ function meterText(row: LoadDetailRow) {
   return `${formatQty(row.meterReading, undefined, { maximumFractionDigits: 1 })} ${suffix}`.trim()
 }
 
-/** R-05: cada carga de la familia, con su lectura, su rendimiento calculado (nunca el declarado) y su estado de revisión. */
+/** R-05: cada carga de la familia, con su lectura, su rendimiento calculado (nunca el declarado) y su estado de revisión. La fecha abre la ficha de la carga. */
 export function LoadDetailTable({ rows, canViewPersonal }: { rows: LoadDetailRow[]; canViewPersonal: boolean }) {
   if (rows.length === 0) {
     return <EmptyState compact title="Sin cargas para mostrar" description="No hay cargas de esta familia con estos filtros. Amplía el período o quita la faena, el medio o el equipo elegido." />
@@ -52,7 +53,13 @@ export function LoadDetailTable({ rows, canViewPersonal }: { rows: LoadDetailRow
         <TableBody>
           {rows.map((row) => (
             <TableRow key={row.id}>
-              <TableCell className="whitespace-nowrap tabular-nums">{formatDateTime(row.occurredAt)}</TableCell>
+              <TableCell className="whitespace-nowrap tabular-nums">
+                {row.href ? (
+                  <Link href={row.href} className="underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]" title="Abrir la ficha de la carga">
+                    {formatDateTime(row.occurredAt)}
+                  </Link>
+                ) : formatDateTime(row.occurredAt)}
+              </TableCell>
               <TableCell>
                 <span className="font-medium whitespace-nowrap">{row.code ?? row.plate ?? STAT_MISSING}</span>
                 <span className="block text-xs text-[var(--color-text-muted)]">{row.worksiteName}</span>

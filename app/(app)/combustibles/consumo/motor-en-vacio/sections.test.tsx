@@ -4,6 +4,7 @@ import type { IdleEquipmentMonthRow, IdleStats } from "@/lib/combustibles/contro
 import { resolvePagination } from "@/lib/pagination"
 import { LitersPerHourTable, TopIdleDaysTable } from "./comparison-sections"
 import { EquipmentMonthTable } from "./equipment-month-table"
+import { IdleTopEquipmentTable } from "./top-equipment-table"
 
 const stats: IdleStats = {
   operatingHours: 100, idleHours: 25, workingHours: 75, activeDays: 10, idlePct: 25, dailyAvgPct: 24, dailyMaxPct: 60, dailyMinPct: 5,
@@ -26,7 +27,7 @@ describe("EquipmentMonthTable", () => {
 
   it("sin telemetría en el período explica qué hacer", () => {
     const pagination = resolvePagination({ pageParam: "1", totalItems: 0, pageSize: 50 })
-    expect(renderToStaticMarkup(<EquipmentMonthTable rows={[]} total={null} pagination={pagination} hrefForPage={() => "?"} />)).toContain("importa el archivo de telemetría")
+    expect(renderToStaticMarkup(<EquipmentMonthTable rows={[]} total={null} pagination={pagination} hrefForPage={() => "?"} />)).toContain("agrega la telemetría de los equipos")
   })
 })
 
@@ -44,5 +45,35 @@ describe("LitersPerHourTable y TopIdleDaysTable", () => {
     const html = renderToStaticMarkup(<TopIdleDaysTable rows={[{ day: "2026-03-02", equipment: "KA-1", operatingHours: 10.5, idleHours: 8, idlePct: 76.2 }]} />)
     expect(html).toContain("02-03-2026")
     expect(html).toContain("76,2 %")
+  })
+})
+
+describe("IdleTopEquipmentTable", () => {
+  const summary = (vehicleId: string, equipment: string, idleHours: number) => ({
+    vehicleId, equipment, operatingHours: 200, idleHours, idlePct: (idleHours / 200) * 100, dailyMaxPct: 34, litersIdle: null,
+  })
+
+  it("muestra horas, % en vacío y máximo diario, con «—» en los litros que la telemetría no informa, y el código abre la ficha", () => {
+    const html = renderToStaticMarkup(<IdleTopEquipmentTable rows={[summary("v1", "KA-1 · AA-0001", 38)]} equipmentHref={(id) => `/combustibles/consumo/equipos/${id}?periodo=2026-03`} />)
+    expect(html).toContain('href="/combustibles/consumo/equipos/v1?periodo=2026-03"')
+    expect(html).toContain("200 h")
+    expect(html).toContain("19 %")
+    expect(html).toContain("34 %")
+    expect(html).toContain("—")
+  })
+
+  it("con más equipos que el límite dice cuántos se muestran y dónde está la tabla completa", () => {
+    const rows = Array.from({ length: 12 }, (_, index) => summary(`v${index}`, `EQ-${index}`, 100 - index))
+    const html = renderToStaticMarkup(<IdleTopEquipmentTable rows={rows} limit={10} />)
+    expect(html).toContain("Se muestran los 10 equipos")
+    expect(html).toContain("de 12")
+    expect(html).toContain("Por equipo y mes")
+    expect(html).not.toContain("EQ-11")
+  })
+
+  it("sin telemetría explica qué hacer en vez de una tabla vacía", () => {
+    const html = renderToStaticMarkup(<IdleTopEquipmentTable rows={[]} />)
+    expect(html).toContain("agrega la telemetría")
+    expect(html).not.toContain("<table")
   })
 })

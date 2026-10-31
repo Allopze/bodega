@@ -1,6 +1,7 @@
 import { SegmentedControl } from "@/components/ui/segmented-control"
 import { PERFORMANCE_FAMILIES, PERFORMANCE_FAMILY_SLUGS, type PerformanceFamily } from "@/lib/combustibles/control/contracts"
-import { CONTROL_CARRY_PARAMS } from "@/lib/combustibles/section-nav"
+import { FUEL_CARRY_PARAMS } from "@/lib/combustibles/period/types"
+import { fuelPerformanceHref } from "@/lib/combustibles/routes"
 
 /** Nombre corto de cada familia para el selector (los rótulos completos están en `PERFORMANCE_FAMILY_LABELS`). */
 export const FAMILY_SWITCH_LABELS: Record<PerformanceFamily, string> = {
@@ -10,13 +11,13 @@ export const FAMILY_SWITCH_LABELS: Record<PerformanceFamily, string> = {
 }
 
 /**
- * Lo que viaja al cambiar de familia: el período, la faena y el mandante
- * (`CONTROL_CARRY_PARAMS`), más el rango de fechas y el medio de suministro,
- * que valen igual para cualquier familia. Quedan fuera `equipo` (pertenece a una
- * familia), `unidad` (km/L o L/h depende de qué miden los equipos de la familia
- * y dejaría la vista en blanco) y las páginas de las tablas.
+ * Lo que viaja al cambiar de familia: el período (o su rango de fechas) y la faena
+ * (`FUEL_CARRY_PARAMS`), más el mandante y el medio de suministro, que valen
+ * igual para cualquier familia. Quedan fuera `equipo` (pertenece a una familia),
+ * `unidad` (km/L o L/h depende de qué miden los equipos de la familia y dejaría
+ * la vista en blanco) y las páginas de las tablas (`pagina`, `cargas`).
  */
-const FAMILY_CARRY_PARAMS = [...CONTROL_CARRY_PARAMS, "desde", "hasta", "medio"] as const
+const FAMILY_CARRY_PARAMS = [...FUEL_CARRY_PARAMS, "mandante", "medio"] as const
 
 type SearchParams = Record<string, string | string[] | undefined>
 
@@ -28,13 +29,14 @@ export function familySwitchHref(sp: SearchParams, family: PerformanceFamily): s
     if (value) params.set(key, value)
   }
   const query = params.toString()
-  return `/combustibles/control/rendimiento/${PERFORMANCE_FAMILY_SLUGS[family]}${query ? `?${query}` : ""}`
+  const path = fuelPerformanceHref(PERFORMANCE_FAMILY_SLUGS[family])
+  return query ? `${path}?${query}` : path
 }
 
 /**
- * Selector de familia del rendimiento. Eran pestañas de `ControlNav`; ahora la
- * barra de sección tiene una sola pestaña «Rendimiento» y la familia se elige
- * aquí, con enlaces que conservan el contexto.
+ * Selector de familia del rendimiento. La barra de sección tiene una sola
+ * pestaña «Rendimiento» y la familia se elige aquí, con enlaces que conservan
+ * el contexto.
  */
 export function FamilySwitch({ active, searchParams }: { active: PerformanceFamily; searchParams: SearchParams }) {
   return (
