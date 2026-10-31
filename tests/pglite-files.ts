@@ -171,6 +171,15 @@ export const pgliteTestFiles = [
   "lib/__tests__/fuel-control-catalogs-pglite.test.ts",
   "lib/__tests__/fuel-control-review-queue.test.ts",
   "lib/__tests__/fuel-log-personal.test.ts",
+  // Rediseño de Combustible (2026-10-31): una suite por línea que toca base.
+  "lib/__tests__/fuel-panel-pglite.test.ts",
+  "lib/__tests__/fuel-review-marks-request-pglite.test.ts",
+  "lib/__tests__/fuel-past-load-pglite.test.ts",
+  "lib/__tests__/fuel-inbox-pglite.test.ts",
+  "lib/__tests__/fuel-review-reopen-pglite.test.ts",
+  "lib/__tests__/equipment-file-pglite.test.ts",
+  "lib/__tests__/fuel-statements-preview-pglite.test.ts",
+  "lib/__tests__/fuel-sources-status-pglite.test.ts",
   // Faltaba desde que se escribió: instancia PGlite y migra, igual que las de
   // arriba con el mismo comentario.
   "lib/__tests__/anomaly-detection-integration.test.ts",

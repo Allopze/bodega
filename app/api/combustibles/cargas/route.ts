@@ -7,10 +7,12 @@ import { resolveTrustedClientIp } from "@/lib/security/login-rate-limit-ip"
 import { consumeFixedWindowLimit } from "@/lib/services/rate-limit"
 import { createInternalFieldLoad } from "@/lib/services/fuel-tae"
 import { isTaeSubmissionRejected } from "@/lib/services/fuel-tae/errors"
-import { parseFieldLoadRequest } from "@/lib/services/fuel-tae/request"
+import { parseInternalFieldLoadRequest } from "@/lib/services/fuel-tae/request"
 import { isRouteOperational } from "@/lib/services/module-toggles"
 import { safeActionMessage } from "@/lib/action-error"
 import { logger } from "@/lib/logger"
+import { FUEL_PATHS } from "@/lib/combustibles/routes"
+import { isPastLoadNotAllowed, isPossibleDuplicateLoad } from "@/lib/combustibles/field-load-rules"
 
 export const runtime = "nodejs"
 
@@ -19,6 +21,10 @@ export const runtime = "nodejs"
  * pasos que la PWA, mismas reglas del servicio). La autorización es de este
  * handler: sesión, permiso y alcance de la faena elegida; ocultar el botón no
  * es control de acceso.
+ *
+ * A diferencia de la vía pública, acepta `pastLoad` (una carga de otro día, con
+ * `combustibles:register_past_load`) y `acknowledgeDuplicate` (registrar igual
+ * una carga que se parece a otra del mismo equipo).
  */
 export async function POST(request: Request) {
   const session = await auth()
@@ -26,7 +32,7 @@ export async function POST(request: Request) {
   if (!can(session, "combustibles:register_load")) {
     return NextResponse.json({ ok: false, message: "No tienes permiso para registrar cargas." }, { status: 403 })
   }
-  if (!await isRouteOperational("/combustibles/control/registrar")) {
+  if (!await isRouteOperational(FUEL_PATHS.registrar)) {
     return NextResponse.json({ ok: false, message: "El registro de cargas está temporalmente inactivo." }, { status: 503 })
   }
   const limit = await consumeFixedWindowLimit(`combustibles:cargas:user:${session.user.id}`, { maxAttempts: 120, lockMs: 15 * 60 * 1000 })
@@ -35,12 +41,17 @@ export async function POST(request: Request) {
   }
 
   try {
-    const parsedRequest = await parseFieldLoadRequest(await request.formData())
+    const parsedRequest = await parseInternalFieldLoadRequest(await request.formData())
     if (!parsedRequest.ok) return NextResponse.json(parsedRequest.body, { status: parsedRequest.status })
     // El alcance se comprueba con la faena que el usuario eligió, antes de
     // tocar nada más: una faena ajena no debe ni revelar si el equipo existe.
     if (!canAccessWorksite(session, parsedRequest.input.worksiteId)) {
       return NextResponse.json({ ok: false, message: "No tienes acceso a esta faena." }, { status: 403 })
+    }
+    // La fecha de la carga la pone una persona sólo con este permiso; el servicio lo vuelve a exigir.
+    const allowPastLoad = can(session, "combustibles:register_past_load")
+    if (parsedRequest.input.pastLoad && !allowPastLoad) {
+      return NextResponse.json({ ok: false, message: "No tienes permiso para registrar cargas con fecha pasada." }, { status: 403 })
     }
     const result = await createInternalFieldLoad({
       userId: session.user.id,
@@ -48,9 +59,17 @@ export async function POST(request: Request) {
       evidence: parsedRequest.evidence,
       ocrResult: parsedRequest.ocrResult,
       ipAddress: resolveTrustedClientIp(await headers()),
+      allowPastLoad,
     })
     return NextResponse.json({ ok: true, data: result }, { status: result.duplicate ? 200 : 201 })
   } catch (error) {
+    if (isPastLoadNotAllowed(error)) {
+      return NextResponse.json({ ok: false, message: error.message }, { status: 403 })
+    }
+    if (isPossibleDuplicateLoad(error)) {
+      // 422 con la otra carga: el formulario la muestra y deja seguir con `acknowledgeDuplicate`.
+      return NextResponse.json({ ok: false, code: error.code, message: error.message, duplicateOf: error.duplicateOf }, { status: 422 })
+    }
     if (isTaeSubmissionRejected(error)) {
       return NextResponse.json({ ok: false, code: error.code, field: error.field, message: error.message }, { status: 422 })
     }

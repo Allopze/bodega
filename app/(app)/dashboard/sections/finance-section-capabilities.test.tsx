@@ -382,7 +382,7 @@ describe("FinanceSection: rediseño (gráficos primero, seis tiles, sin duplicar
       expect(tile("Gasto en OC").props.trend).toBeNull()
       expect(tile("Ticket medio por OC").props.empty).toEqual({ message: "Sin OC para promediar" })
       expect(tile("Costo de combustible").props.empty).toEqual({ message: "Sin cargas facturadas en 6 meses", actionLabel: "Ver cargas" })
-      expect(tile("Costo de combustible").props.href).toBe("/combustibles")
+      expect(tile("Costo de combustible").props.href).toBe("/combustibles/pagos")
       // Cero deuda es buena noticia, no ausencia de datos.
       expect(tile("Deuda vencida").props.empty).toBeUndefined()
       expect(tile("Deuda vencida").props.value).toBe("$0")
@@ -414,7 +414,7 @@ describe("FinanceSection: rediseño (gráficos primero, seis tiles, sin duplicar
         ["Sin facturas emitidas en el mes en curso", "Ver pendientes de facturar", "/facturacion/pendientes"],
         ["Sin pagos confirmados", "Ver cobranza", "/facturacion/cobranza"],
         ["Sin OC emitidas en el mes en curso", "Emitir una OC", "/compras/nueva"],
-        ["Sin cargas facturadas en 6 meses", "Ver cargas", "/combustibles"],
+        ["Sin cargas facturadas en 6 meses", "Ver cargas", "/combustibles/pagos"],
       ] as const) {
         expect(screen.getByText(mensaje)).toBeDefined()
         expect(screen.getByText(accion).closest("a")?.getAttribute("href"), accion).toBe(href)

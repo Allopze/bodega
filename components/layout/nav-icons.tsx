@@ -23,7 +23,7 @@ import {
   Desktop, Laptop, UserCirclePlus, Ticket, Key, Archive, DeviceMobile,
   Mountains,
   UserCircle, FileText, EnvelopeSimple, ToggleLeft, HardDrives, ShippingContainer, Briefcase, WarningCircle,
-  ListChecks,
+  ListChecks, Tray, Database,
 } from "@phosphor-icons/react"
 
 export type IconCmp = React.ComponentType<{ size?: number; weight?: IconWeight; className?: string }>
@@ -52,5 +52,5 @@ export const NAV_ICONS: Record<string, IconCmp> = {
   Desktop, Laptop, UserCirclePlus, Ticket, Key, Archive, DeviceMobile,
   Mountains,
   UserCircle, FileText, EnvelopeSimple, ToggleLeft, HardDrives, ShippingContainer, Briefcase, WarningCircle,
-  ListChecks,
+  ListChecks, Tray, Database,
 }

@@ -46,7 +46,7 @@ export function ImportPreviewStep({ preview, pending, message, onBack, onConfirm
 
       {blocked ? (
         <Callout tone="danger" role="alert" icon={<WarningCircle size={16} />} title="Este archivo ya fue importado">
-          El contenido es idéntico al del lote {preview.alreadyImported!.batchId}. No se importa dos veces: si fue un error, revierte ese lote desde el historial y vuelve a subirlo.
+          El contenido es idéntico al de un archivo ya importado (código {preview.alreadyImported!.batchId}). No se importa dos veces: si fue un error, revierte ese archivo desde «Archivos importados» y vuelve a subirlo.
         </Callout>
       ) : null}
       {!blocked && preview.toUpdate > 0 ? (
@@ -107,7 +107,7 @@ export function ImportDone({ kind, result, onAnother, onClose }: {
 }) {
   return (
     <div className="flex flex-col gap-4">
-      <Callout tone="success" icon={<CheckCircle size={16} />} title={`${CONTROL_IMPORT_KIND_LABELS[kind]}: lote ${result.batchId}`}>
+      <Callout tone="success" icon={<CheckCircle size={16} />} title={`${CONTROL_IMPORT_KIND_LABELS[kind]}: archivo importado`}>
         {formatQty(result.inserted)} {result.inserted === 1 ? "fila nueva" : "filas nuevas"}, {formatQty(result.updated)} {result.updated === 1 ? "actualizada" : "actualizadas"}
         {result.rejectedCount > 0 ? `, ${formatQty(result.rejectedCount)} rechazadas` : ""}.
       </Callout>
@@ -117,7 +117,7 @@ export function ImportDone({ kind, result, onAnother, onClose }: {
         title={`${formatQty(result.rejectedCount)} filas rechazadas:`}
         maxVisible={20}
       />
-      <p className="text-xs text-[var(--color-text-muted)]">Las filas rechazadas quedan guardadas con su motivo: puedes descargarlas desde el historial.</p>
+      <p className="text-xs text-[var(--color-text-muted)]">Las filas rechazadas quedan guardadas con su motivo: puedes descargarlas desde «Archivos importados».</p>
       <DialogFooter>
         <Button variant="secondary" onClick={onAnother}>Importar otro archivo</Button>
         <Button onClick={onClose}>Cerrar</Button>

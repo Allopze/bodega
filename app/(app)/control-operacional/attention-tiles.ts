@@ -2,6 +2,7 @@ import { FLEET_STOPPED_FILTER } from "@/lib/fleet-overview-filters"
 import { MAINTENANCE_OPEN_FILTER } from "@/lib/validation/maintenance"
 import { countOf } from "@/lib/utils"
 import type { OperationalAttention } from "@/lib/services/operational-control"
+import { FUEL_PATHS } from "@/lib/combustibles/routes"
 
 /**
  * Los cuatro tiles de «Requiere atención». Cada uno es un enlace a **su
@@ -27,7 +28,7 @@ export const ATTENTION_HREFS: Record<AttentionTileKey, string> = {
   stopped: `/flota?estado=${FLEET_STOPPED_FILTER}`,
   workOrders: `/mantenciones?status=${MAINTENANCE_OPEN_FILTER}`,
   documents: "/flota?vencimiento=vencidos",
-  fuel: "/combustibles/revision",
+  fuel: FUEL_PATHS.revisar,
 }
 
 export const NOT_COMPUTED = "No se pudo calcular"

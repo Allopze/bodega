@@ -53,6 +53,10 @@ const status = {
   coverage: [],
   source: "ws" as const,
 }
+const source = {
+  key: "copec" as const, name: "Copec", description: "Tarjetas de equipos y abastecimiento de estanques", status: "ok" as const, statusLabel: "Al día",
+  lastUpdateAt: null, facts: [], feeds: ["Cargas › Tarjetas"], problem: null, technical: [], completeUntil: null,
+}
 const startOptions = { currentStart: "2025-01-01", minimumStart: "2020-01-01", maximumStart: "2026-10-01", latestImportedUntil: null }
 
 const PLANNED = [{ from: "2026-10-01", to: "2026-10-31" }, { from: "2025-01-01", to: "2025-01-31" }]
@@ -60,13 +64,13 @@ const octoberDone = { from: "2026-10-01", status: "success", rowsReceived: 120, 
 const januaryPartial = { from: "2025-01-01", status: "partial", rowsReceived: 190, rowsAccepted: 0, rowsRejected: 0, rowsPending: 190, error: "TAE Diesel: No hay un proveedor Copec activo en el catálogo de combustibles." }
 
 function renderPanel() {
-  render(<Boundary><CopecSyncStatus initialStatus={status} initialStartOptions={startOptions} /></Boundary>)
+  render(<Boundary><CopecSyncStatus source={source} initialStatus={status} initialStartOptions={startOptions} /></Boundary>)
 }
 
 /** Clic y avance del reloj: la pantalla consulta el avance cada 4 s. */
 async function clickSyncAndAdvance(ms: number) {
   await act(async () => {
-    fireEvent.click(screen.getByRole("button", { name: "Sincronizar meses TCT" }))
+    fireEvent.click(screen.getByRole("button", { name: "Actualizar ahora" }))
     await vi.advanceTimersByTimeAsync(ms)
   })
 }
@@ -75,9 +79,40 @@ describe("aviso de cargas pendientes", () => {
   afterEach(() => cleanup())
 
   it("habla de cargas y de su mes, no de patentes", () => {
-    render(<CopecSyncStatus initialStatus={{ ...status, pending: 566, lastRunMonth: "2025-01-01" }} initialStartOptions={startOptions} />)
+    render(<CopecSyncStatus source={source} initialStatus={{ ...status, pending: 566, lastRunMonth: "2025-01-01" }} initialStartOptions={startOptions} />)
     expect(screen.getByText(/566 carga\(s\) de enero de 2025 quedaron pendientes/)).toBeInTheDocument()
     expect(screen.queryByText(/patente\(s\) sin vehículo/)).not.toBeInTheDocument()
+  })
+})
+
+describe("fila de Copec en «Fuentes de datos»", () => {
+  afterEach(() => cleanup())
+
+  it("muestra el estado de la fuente y «Actualizar ahora» a la vista; el detalle técnico queda plegado", () => {
+    const { container } = render(<CopecSyncStatus source={{ ...source, statusLabel: "Hasta ayer", facts: [{ label: "Última actualización", value: "ayer a las 05:31" }] }} initialStatus={status} initialStartOptions={startOptions} />)
+    expect(screen.getByRole("heading", { name: "Copec" })).toBeInTheDocument()
+    expect(screen.getByText("Hasta ayer")).toBeInTheDocument()
+    expect(screen.getByText("ayer a las 05:31")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Actualizar ahora" })).toBeEnabled()
+    expect(container.querySelector("details")).not.toHaveAttribute("open")
+  })
+
+  it("habla de «Tarjeta de equipos» y «Abastecimiento de estanques», no de TCT ni TAE", () => {
+    render(<CopecSyncStatus source={source} initialStatus={{ ...status, coverage: [{ channel: "TCT", product: "diesel", status: "complete", canConfirmEmpty: false }, { channel: "TAE", product: "bluemax", status: "unknown", canConfirmEmpty: true }] }} initialStartOptions={startOptions} />)
+    expect(screen.getByText("Tarjeta de equipos · Diésel")).toBeInTheDocument()
+    expect(screen.getByText("Abastecimiento de estanques · BlueMax")).toBeInTheDocument()
+    expect(screen.queryByText(/\bTCT\b|\bTAE\b/)).not.toBeInTheDocument()
+  })
+
+  it("con cargas pendientes ofrece ir a vincular las patentes en «Por revisar»", () => {
+    render(<CopecSyncStatus source={source} initialStatus={{ ...status, pending: 28, lastRunMonth: "2026-10-01" }} initialStartOptions={startOptions} />)
+    expect(screen.getByRole("link", { name: "Ver patentes sin vincular" })).toHaveAttribute("href", "/combustibles/revisar?tipo=patente")
+  })
+
+  it("sin pendientes no ofrece ese enlace, y el botón de exportar sólo aparece si se le pasa", () => {
+    render(<CopecSyncStatus source={source} initialStatus={status} initialStartOptions={startOptions} qualityExport={<button type="button">Exportar pendientes y rechazos</button>} />)
+    expect(screen.queryByRole("link", { name: "Ver patentes sin vincular" })).toBeNull()
+    expect(screen.getByRole("button", { name: "Exportar pendientes y rechazos" })).toBeInTheDocument()
   })
 })
 
@@ -85,13 +120,13 @@ describe("descripción de la fuente", () => {
   afterEach(() => cleanup())
 
   it("con los web services no describe el recorrido del portal", () => {
-    render(<CopecSyncStatus initialStatus={status} initialStartOptions={startOptions} />)
+    render(<CopecSyncStatus source={source} initialStatus={status} initialStartOptions={startOptions} />)
     expect(screen.getByText(/consulta los web services de Copec/)).toBeInTheDocument()
     expect(screen.queryByText(/Informes de Consumos/)).not.toBeInTheDocument()
   })
 
   it("con el portal de respaldo sigue describiendo su recorrido", () => {
-    render(<CopecSyncStatus initialStatus={{ ...status, source: "portal" }} initialStartOptions={startOptions} />)
+    render(<CopecSyncStatus source={source} initialStatus={{ ...status, source: "portal" }} initialStartOptions={startOptions} />)
     expect(screen.getByText(/Informes de Consumos/)).toBeInTheDocument()
   })
 })
@@ -129,7 +164,7 @@ describe("sincronización Copec en segundo plano", () => {
     expect(mocks.toastWarning).toHaveBeenCalledWith(expect.stringMatching(/con observaciones/))
     expect(mocks.getStatus).toHaveBeenCalledOnce()
     expect(mocks.refresh).toHaveBeenCalledOnce()
-    expect(screen.getByRole("button", { name: "Sincronizar meses TCT" })).toBeEnabled()
+    expect(screen.getByRole("button", { name: "Actualizar ahora" })).toBeEnabled()
   })
 
   it("felicita sólo cuando todos los meses quedaron limpios", async () => {
@@ -146,7 +181,7 @@ describe("sincronización Copec en segundo plano", () => {
     await clickSyncAndAdvance(10_000)
     expect(mocks.toastError).toHaveBeenCalledWith(expect.stringMatching(/Ya hay una sincronización de Copec en curso/))
     expect(mocks.progress).not.toHaveBeenCalled()
-    expect(screen.getByRole("button", { name: "Sincronizar meses TCT" })).toBeEnabled()
+    expect(screen.getByRole("button", { name: "Actualizar ahora" })).toBeEnabled()
   })
 
   it("advierte que podría estar en curso si se pierde la respuesta del inicio, sin romper la pantalla", async () => {
@@ -157,7 +192,7 @@ describe("sincronización Copec en segundo plano", () => {
     expect(mocks.reportError).toHaveBeenCalledWith(expect.objectContaining({ message: "Failed to fetch" }))
     expect(screen.queryByText("Error al cargar combustibles")).not.toBeInTheDocument()
     expect(mocks.progress).not.toHaveBeenCalled()
-    expect(screen.getByRole("button", { name: "Sincronizar meses TCT" })).toBeEnabled()
+    expect(screen.getByRole("button", { name: "Actualizar ahora" })).toBeEnabled()
   })
 
   it("una consulta de avance perdida no corta la espera", async () => {
@@ -176,7 +211,7 @@ describe("sincronización Copec en segundo plano", () => {
     await clickSyncAndAdvance(15 * 60_000 + 4_001)
     expect(screen.getByText(/sigue en curso en el servidor/i)).toBeInTheDocument()
     expect(mocks.toastWarning).toHaveBeenCalledWith(expect.stringMatching(/sigue en curso/))
-    expect(screen.getByRole("button", { name: "Sincronizar meses TCT" })).toBeEnabled()
+    expect(screen.getByRole("button", { name: "Actualizar ahora" })).toBeEnabled()
   })
 
   it("conserva el resumen si falla la actualización final del estado", async () => {
@@ -196,6 +231,6 @@ describe("sincronización Copec en segundo plano", () => {
     expect(screen.getByText(/Meses sincronizados: octubre de 2026/)).toBeInTheDocument()
     await act(async () => { await vi.advanceTimersByTimeAsync(10_001) })
     expect(screen.getByText(/no se pudo actualizar el estado/i)).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Sincronizar meses TCT" })).toBeEnabled()
+    expect(screen.getByRole("button", { name: "Actualizar ahora" })).toBeEnabled()
   })
 })

@@ -36,17 +36,17 @@ describe("normalizeFlagReasons", () => {
 })
 
 describe("originHrefFor", () => {
-  it("enlaza las cargas en terreno y el histórico al detalle TAE", () => {
-    expect(originHrefFor({ source: "field", taeSubmissionId: "t1", operationBatchId: null })).toBe("/combustibles/tae/t1")
-    expect(originHrefFor({ source: "legacy_tae", taeSubmissionId: "t2", operationBatchId: null })).toBe("/combustibles/tae/t2")
+  it("enlaza las cargas en terreno y el histórico a la ficha de terreno", () => {
+    expect(originHrefFor({ source: "field", taeSubmissionId: "t1", operationRecordId: null })).toBe("/combustibles/cargas/terreno/t1")
+    expect(originHrefFor({ source: "legacy_tae", taeSubmissionId: "t2", operationRecordId: null })).toBe("/combustibles/cargas/terreno/t2")
   })
 
-  it("enlaza la planilla de cargas a su lote", () => {
-    expect(originHrefFor({ source: "operations_import", taeSubmissionId: null, operationBatchId: "b1" })).toBe("/combustibles/importar/operaciones/b1")
+  it("enlaza la fila de la planilla de cargas a su propia ficha", () => {
+    expect(originHrefFor({ source: "operations_import", taeSubmissionId: null, operationRecordId: "r1" })).toBe("/combustibles/cargas/planilla/r1")
   })
 
   it("devuelve null si falta el origen", () => {
-    expect(originHrefFor({ source: "operations_import", taeSubmissionId: null, operationBatchId: null })).toBeNull()
+    expect(originHrefFor({ source: "operations_import", taeSubmissionId: null, operationRecordId: null })).toBeNull()
   })
 })
 

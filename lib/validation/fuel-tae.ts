@@ -50,6 +50,41 @@ export const taePublicSubmissionSchema = z.object({
 
 export type TaePublicSubmissionInput = z.infer<typeof taePublicSubmissionSchema>
 
+/** Largo del motivo de una carga de otro día (se pide en palabras, no un «ok»). */
+export const PAST_LOAD_REASON_MIN = 10
+export const PAST_LOAD_REASON_MAX = 500
+
+/** Fecha y hora local de Chile, tal como las entrega `<input type="datetime-local">`: `2026-10-12T14:30`. */
+export const CHILE_LOCAL_DATE_TIME_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/
+
+/**
+ * Carga de otro día (rediseño 2026-10-31): sólo la acepta la vía interna y sólo
+ * de quien tiene `combustibles:register_past_load`. `loadedAt` es la hora de
+ * pared de Chile; la ventana y el futuro los decide `resolveLoadedAt`.
+ */
+export const pastLoadSchema = z.object({
+  loadedAt: z.string().trim().regex(CHILE_LOCAL_DATE_TIME_PATTERN, "Indica la fecha y la hora de la carga"),
+  reason: z.string().trim()
+    .min(PAST_LOAD_REASON_MIN, `Cuenta por qué se registra después (al menos ${PAST_LOAD_REASON_MIN} caracteres)`)
+    .max(PAST_LOAD_REASON_MAX, `Usa como máximo ${PAST_LOAD_REASON_MAX} caracteres en el motivo`),
+})
+
+export type PastLoadInput = z.infer<typeof pastLoadSchema>
+
+/**
+ * Lo que acepta la vía interna (la app): el esquema público más `pastLoad` y
+ * `acknowledgeDuplicate`. La vía pública usa `taePublicSubmissionSchema`, que
+ * descarta ambos campos aunque lleguen: una carga por QR nunca puede traer
+ * fecha propia.
+ */
+export const internalFieldLoadSchema = taePublicSubmissionSchema.extend({
+  pastLoad: pastLoadSchema.optional().nullable(),
+  /** El operador ya vio la posible carga duplicada y quiere registrar igual. */
+  acknowledgeDuplicate: z.boolean().optional().default(false),
+})
+
+export type InternalFieldLoadInput = z.infer<typeof internalFieldLoadSchema>
+
 export const taeSubmissionStatusSchema = z.enum(["submitted", "observed", "validated", "voided"])
 export type TaeSubmissionStatus = z.infer<typeof taeSubmissionStatusSchema>
 

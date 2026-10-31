@@ -47,7 +47,7 @@ export function TaeImportReportForm() {
   }
 
   async function handleGenerate() {
-    if (!file) { toast.error("Selecciona el archivo Excel del histórico TAE"); return }
+    if (!file) { toast.error("Selecciona el archivo Excel del histórico de sellos"); return }
     dispatch({ type: "loading", value: true })
     try {
       const formData = new FormData()
@@ -96,7 +96,7 @@ export function TaeImportReportForm() {
       <div>
         <p className="text-eyebrow">Reporte de mapeo sugerido</p>
         <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-          Sube el Excel del control manual TAE. Se genera un Excel de solo lectura con la faena, equipo, conductor y
+          Sube el Excel de la planilla antigua del formulario de sellos. Se genera un Excel de solo lectura con la faena, equipo, conductor y
           supervisor sugeridos para cada fila (con nivel de confianza), más observaciones de continuidad de sello y
           lecturas. Descarga y revisa ese reporte antes de habilitar la importación definitiva.
         </p>
@@ -119,7 +119,7 @@ export function TaeImportReportForm() {
               rechazadas" de abajo, que sí cuenta las rechazadas por faena. Las
               filas que efectivamente se van a importar (validadas + observadas)
               y sus litros ya están en `planned`, y el propio componente los usa
-              más abajo en la comparación dry-run → definitiva. */}
+              más abajo en la comparación entre la revisión previa y la importación. */}
           <PreviewMetric label="Filas a importar" value={preview.planned.validatedRows + preview.planned.observedRows} />
           <PreviewMetric label="Litros a importar" value={`${preview.planned.totalLiters.toLocaleString("es-CL")} L`} />
           <PreviewMetric label="Sello observadas" value={preview.sealObservations} />
@@ -128,7 +128,7 @@ export function TaeImportReportForm() {
         <div>
           <h2 id="tae-preview-title" className="text-sm font-semibold">Revisión previa a la importación</h2>
           <p className="mt-1 text-sm text-(--color-text-muted)">
-            El dry-run dejó {preview.reviewItems.length.toLocaleString("es-CL")} identidades ambiguas. Cada una debe quedar asignada a su catálogo o marcada explícitamente como “Sin equivalente”.
+            La revisión previa dejó {preview.reviewItems.length.toLocaleString("es-CL")} identidades dudosas. Cada una debe quedar asignada a su catálogo o marcada explícitamente como “Sin equivalente”.
           </p>
         </div>
         {preview.reviewItems.length > 0 && <ul className="space-y-2" aria-label="Identidades históricas pendientes de mapeo">
@@ -165,7 +165,7 @@ export function TaeImportReportForm() {
           <Button className="mt-3" variant="destructive" onClick={handleImport} disabled={loading || !confirmed || pendingDecisions > 0}>{loading ? "Importando…" : "Importar histórico definitivamente"}</Button>
         </div>
       </section>}
-      {result && <section aria-live="polite" className="border border-[var(--color-success-line)] bg-[var(--color-success-tint)] p-4 text-sm text-[var(--color-success-ink)]"><p className="font-medium">Importación completada</p><p className="mt-1">{result.importedRows.toLocaleString("es-CL")} filas · {result.validatedRows.toLocaleString("es-CL")} validadas · {result.observedRows.toLocaleString("es-CL")} observadas · {result.invalidRows.toLocaleString("es-CL")} no importadas · {Number(result.totalLiters).toLocaleString("es-CL")} L</p>{preview && <div className="mt-3 border-t border-current/20 pt-3"><p className="font-medium">Comparación dry-run → definitiva</p><p className="mt-1">Validadas: {preview.planned.validatedRows.toLocaleString("es-CL")} → {result.validatedRows.toLocaleString("es-CL")} · Observadas: {preview.planned.observedRows.toLocaleString("es-CL")} → {result.observedRows.toLocaleString("es-CL")} · Rechazadas: {preview.planned.rejectedRows.toLocaleString("es-CL")} → {result.invalidRows.toLocaleString("es-CL")}</p></div>}</section>}
+      {result && <section aria-live="polite" className="border border-[var(--color-success-line)] bg-[var(--color-success-tint)] p-4 text-sm text-[var(--color-success-ink)]"><p className="font-medium">Importación completada</p><p className="mt-1">{result.importedRows.toLocaleString("es-CL")} filas · {result.validatedRows.toLocaleString("es-CL")} validadas · {result.observedRows.toLocaleString("es-CL")} observadas · {result.invalidRows.toLocaleString("es-CL")} no importadas · {Number(result.totalLiters).toLocaleString("es-CL")} L</p>{preview && <div className="mt-3 border-t border-current/20 pt-3"><p className="font-medium">Comparación entre la revisión previa y la importación</p><p className="mt-1">Validadas: {preview.planned.validatedRows.toLocaleString("es-CL")} → {result.validatedRows.toLocaleString("es-CL")} · Observadas: {preview.planned.observedRows.toLocaleString("es-CL")} → {result.observedRows.toLocaleString("es-CL")} · Rechazadas: {preview.planned.rejectedRows.toLocaleString("es-CL")} → {result.invalidRows.toLocaleString("es-CL")}</p></div>}</section>}
     </div>
   )
 }

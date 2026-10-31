@@ -1,20 +1,9 @@
-import type { Metadata } from "next"
-import { redirect } from "next/navigation"
-import { requirePermission } from "@/lib/auth/can"
-import { loadRevisionCounts } from "@/lib/combustibles/revision-counts"
-import { revisionLandingHref } from "./landing"
+import { permanentRedirect } from "next/navigation"
+import { legacyFuelRedirect } from "@/lib/combustibles/legacy-redirects"
 
-export const metadata: Metadata = { title: "Revisión" }
+type SearchParams = Record<string, string | string[] | undefined>
 
-/**
- * Entrada del ítem «Revisión» del menú. No pinta nada: manda a la cola que
- * tiene trabajo (`revisionLandingHref`). Las dos colas llevan la misma barra de
- * pestañas, así que la otra queda a un clic.
- */
-export default async function RevisionLandingPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  let session
-  try { session = await requirePermission("combustibles:view") } catch { redirect("/forbidden") }
-
-  const [counts, raw] = await Promise.all([loadRevisionCounts(session), searchParams])
-  redirect(revisionLandingHref(counts, raw.faena))
+/** Ruta anterior al rediseño de Combustible (2026-10-31): página puente permanente. */
+export default async function LegacyFuelBridge({ searchParams }: { searchParams: Promise<SearchParams> }) {
+  permanentRedirect(legacyFuelRedirect("revision", {}, await searchParams))
 }

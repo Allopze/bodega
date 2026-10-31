@@ -73,9 +73,9 @@ export type ReviewStatus = "ok" | "flagged" | "approved" | "rejected"
 
 export const REVIEW_STATUS_LABELS: Record<ReviewStatus, string> = {
   ok: "Sin observaciones",
-  flagged: "En revisión",
-  approved: "Aprobada",
-  rejected: "Rechazada",
+  flagged: "Por decidir",
+  approved: "Cuenta",
+  rejected: "No cuenta",
 }
 
 export const FLAG_REASONS = [
@@ -86,6 +86,8 @@ export const FLAG_REASONS = [
   "filler_value",
   "duplicate",
   "unknown_vehicle",
+  // Se agrega al final: las marcas se guardan como texto en `flag_reasons` (jsonb).
+  "late_entry",
 ] as const
 export type FlagReason = (typeof FLAG_REASONS)[number]
 
@@ -97,6 +99,23 @@ export const FLAG_REASON_LABELS: Record<FlagReason, string> = {
   filler_value: "Valor de relleno (sello o fecha inventados)",
   duplicate: "Posible carga duplicada",
   unknown_vehicle: "Equipo sin ficha en el catálogo",
+  late_entry: "Registrada después (fecha pasada)",
+}
+
+/**
+ * Rótulos de la decisión según el motivo (bandeja «Por revisar»): el botón dice
+ * lo que pasa al apretarlo. `yes` aprueba la carga (`approved`) y `no` la
+ * rechaza (`rejected`); en una duplicada, aprobar significa «no es duplicada».
+ */
+export const FLAG_DECISION_COPY: Record<FlagReason, { yes: string; no: string; yesEffect: string; noEffect: string }> = {
+  outlier: { yes: "Es correcta", no: "No cuenta", yesEffect: "Entra al promedio del equipo.", noEffect: "Deja de sumar sus litros; no se borra." },
+  implausible: { yes: "Es correcta", no: "No cuenta", yesEffect: "Entra al promedio del equipo.", noEffect: "Deja de sumar sus litros; no se borra." },
+  meter_regression: { yes: "Cuenta", no: "No cuenta", yesEffect: "La lectura está bien (por ejemplo, se cambió el tablero).", noEffect: "Deja de sumar sus litros; no se borra." },
+  over_capacity: { yes: "Cuenta", no: "No cuenta", yesEffect: "Los litros son correctos.", noEffect: "Fue un error de digitación: deja de sumar sus litros." },
+  filler_value: { yes: "Cuenta", no: "No cuenta", yesEffect: "Vuelve a la serie del equipo.", noEffect: "Queda fuera de la serie; no se borra." },
+  duplicate: { yes: "Son dos cargas distintas", no: "Es la misma carga", yesEffect: "Las dos cuentan.", noEffect: "Esta deja de contar; la otra se mantiene." },
+  unknown_vehicle: { yes: "Cuenta", no: "No cuenta", yesEffect: "Después de vincularla a un equipo.", noEffect: "No es una carga real." },
+  late_entry: { yes: "Cuenta", no: "No cuenta", yesEffect: "La fecha declarada es correcta.", noEffect: "Deja de sumar sus litros; no se borra." },
 }
 
 /** Lugar de carga (tipo de punto). `tae` y `other` son legados. */

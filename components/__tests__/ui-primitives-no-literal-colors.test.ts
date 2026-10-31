@@ -47,11 +47,9 @@ const FROZEN_DEBT: Record<string, number> = {
   "components/layout/nav-rows.tsx": 19,
   "components/layout/sidebar-user-profile.tsx": 5,
   "components/layout/desktop-nav-areas.tsx": 5,
-  "app/(app)/combustibles/bitacora/bitacora-table.tsx": 8,
   "app/(app)/admin/inventario-faena/inventory-list.tsx": 4,
   "app/(app)/combustibles/import-fuel-modal-upload.tsx": 4,
   "app/(app)/admin/inventario-faena/[id]/page.tsx": 3,
-  "app/(app)/combustibles/cuenta-corriente/[id]/statement-detail.tsx": 2,
   "app/(app)/admin/contenedores/[id]/page.tsx": 2,
   "app/(app)/modulo-inactivo/page.tsx": 1,
 }

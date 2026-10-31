@@ -1,47 +1,9 @@
-import { redirect } from "next/navigation"
-import { db } from "@/db"
-import { fuelMonthlyStatements, fuelSuppliers } from "@/db/schema"
-import { desc } from "drizzle-orm"
-import { can, requirePermission } from "@/lib/auth/can"
-import { assertFuelCostAccess } from "@/lib/operational-control/capabilities"
-import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
-import { PageContainer } from "@/components/ui/page-container"
-import { SectionNav } from "@/components/ui/section-nav"
-import { facturasNavItems } from "@/lib/combustibles/section-nav"
-import { StatementsTable } from "./statements-table"
-import { NewStatementDialog } from "./new-statement-dialog"
-import { todayInChile } from "@/lib/utils"
+import { permanentRedirect } from "next/navigation"
+import { legacyFuelRedirect } from "@/lib/combustibles/legacy-redirects"
 
-export default async function CuentaCorrientePage() {
-  let session
-  try {
-    session = await requirePermission("combustibles:view")
-    assertFuelCostAccess(session, { global: true })
-  }
-  catch { redirect("/forbidden") }
+type SearchParams = Record<string, string | string[] | undefined>
 
-  const [statements, suppliersList] = await Promise.all([
-    db.query.fuelMonthlyStatements.findMany({
-      with: { supplier: true, payments: true },
-      orderBy: [desc(fuelMonthlyStatements.month)],
-    }),
-    db.query.fuelSuppliers.findMany({ orderBy: [fuelSuppliers.name] }),
-  ])
-
-  return (
-    <PageContainer>
-      <PageHeader
-        title="Cuenta corriente de combustible"
-        description="Resúmenes mensuales por proveedor y control de pagos"
-        breadcrumb={<Breadcrumbs items={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Facturas y pagos", href: "/combustibles/facturas" }, { label: "Cuenta corriente" }]} />}
-        actions={can(session, "combustibles:manage_statements") ? (
-          <div className="flex gap-2">
-            <NewStatementDialog suppliers={suppliersList.map(s => ({ id: s.id, name: s.name }))} />
-          </div>
-        ) : undefined}
-      />
-      <SectionNav items={facturasNavItems(session)} activeKey="cuenta-corriente" ariaLabel="Facturas y pagos" />
-      <StatementsTable statements={statements} today={todayInChile()} />
-    </PageContainer>
-  )
+/** Ruta anterior al rediseño de Combustible (2026-10-31): página puente permanente. */
+export default async function LegacyFuelBridge({ searchParams }: { searchParams: Promise<SearchParams> }) {
+  permanentRedirect(legacyFuelRedirect("cuenta-corriente", {}, await searchParams))
 }

@@ -7,7 +7,7 @@ describe("AnomalyEmptyState", () => {
   it("con filtros dice que ninguno coincide y ofrece quitarlos", () => {
     render(<AnomalyEmptyState filtered canManageRules />)
     expect(screen.getByRole("heading", { name: "Ningún caso coincide con los filtros" })).toBeInTheDocument()
-    expect(screen.getByRole("link", { name: "Limpiar filtros" })).toHaveAttribute("href", "/combustibles/anomalias")
+    expect(screen.getByRole("link", { name: "Limpiar filtros" })).toHaveAttribute("href", "/combustibles/revisar?tipo=caso")
     expect(screen.queryByRole("link", { name: "Ver reglas" })).toBeNull()
   })
 
@@ -15,13 +15,13 @@ describe("AnomalyEmptyState", () => {
     render(<AnomalyEmptyState filtered={false} canManageRules />)
     expect(screen.getByRole("heading", { name: "Aún no hay anomalías de combustible" })).toBeInTheDocument()
     expect(screen.getByText(/rompe una regla de control/)).toBeInTheDocument()
-    expect(screen.getByRole("link", { name: "Ver reglas" })).toHaveAttribute("href", "/combustibles/anomalias/reglas")
+    expect(screen.getByRole("link", { name: "Ver reglas" })).toHaveAttribute("href", "/combustibles/ajustes/reglas")
   })
 
   it("sin permiso para administrar reglas no manda a una pantalla que lo rechazaría: lleva a las cargas", () => {
     render(<AnomalyEmptyState filtered={false} canManageRules={false} />)
     expect(screen.queryByRole("link", { name: "Ver reglas" })).toBeNull()
-    expect(screen.getByRole("link", { name: "Ver cargas" })).toHaveAttribute("href", "/combustibles/bitacora")
+    expect(screen.getByRole("link", { name: "Ver cargas" })).toHaveAttribute("href", "/combustibles/cargas")
   })
 
   it("nunca deja el vacío sin una acción real (A4)", () => {

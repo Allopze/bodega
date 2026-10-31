@@ -20,6 +20,8 @@ import { toNumber as num } from "./shared"
 export interface OverviewHeader {
   totalLiters: number
   loadCount: number
+  /** Equipos distintos con alguna carga contable en el período. */
+  equipmentCount: number
   /** km/L global (Σkm ÷ Σlitros de los tramos calculados); null sin tramos. */
   kmPerLiter: number | null
   /** L/h global (Σlitros ÷ Σhoras de los tramos calculados); null sin tramos. */
@@ -39,6 +41,7 @@ export async function getOverviewHeader(session: Session, filters: ControlFilter
   const [row] = await db.select({
     totalLiters: sql<number>`coalesce(sum(${fuelEquipmentLoads.liters}) filter (where ${countableLoadSql}), 0)::float8`,
     loadCount: sql<number>`(count(*) filter (where ${countableLoadSql}))::int`,
+    equipmentCount: sql<number>`(count(distinct ${fuelEquipmentLoads.vehicleId}) filter (where ${countableLoadSql}))::int`,
     kmSum: sql<number>`coalesce(sum(${fuelEquipmentLoads.meterDelta}) filter (where ${statisticallyValidLoadSql} and ${km}), 0)::float8`,
     kmLiters: sql<number>`coalesce(sum(${fuelEquipmentLoads.accumulatedLiters}) filter (where ${statisticallyValidLoadSql} and ${km}), 0)::float8`,
     hourSum: sql<number>`coalesce(sum(${fuelEquipmentLoads.meterDelta}) filter (where ${statisticallyValidLoadSql} and ${hours}), 0)::float8`,
@@ -52,6 +55,7 @@ export async function getOverviewHeader(session: Session, filters: ControlFilter
   return {
     totalLiters: num(row?.totalLiters),
     loadCount: num(row?.loadCount),
+    equipmentCount: num(row?.equipmentCount),
     kmPerLiter: globalRatio("km_per_liter", num(row?.kmSum), num(row?.kmLiters)),
     litersPerHour: globalRatio("liters_per_hour", num(row?.hourSum), num(row?.hourLiters)),
     flaggedCount: num(row?.flaggedCount),

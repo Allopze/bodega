@@ -19,9 +19,10 @@ export interface ControlContext {
  * del usuario, mandantes y años con datos. La navegación entre vistas ya no
  * viaja aquí: la pintan `SectionNav` y `lib/combustibles/section-nav.ts`.
  * Cada consulta cae a un valor seguro si falla (`settle`): un selector vacío
- * no debe tumbar la vista.
+ * no debe tumbar la vista. Con `{ years: false }` no consulta los años con
+ * datos (`years` queda vacío): las vistas de Consumo ya no los usan.
  */
-export async function loadControlContext(session: Session): Promise<ControlContext> {
+export async function loadControlContext(session: Session, options: { years?: boolean } = {}): Promise<ControlContext> {
   const scope = resolveWorksiteScope(session)
   const current = codeYear()
 
@@ -39,12 +40,15 @@ export async function loadControlContext(session: Session): Promise<ControlConte
       [] as Array<{ id: string; name: string }>,
       "control-mandantes",
     ),
-    settle(
-      db.selectDistinct({ year: sql<number>`substring(${fuelEquipmentLoads.month}, 1, 4)::int` }).from(fuelEquipmentLoads)
-        .where(worksiteScopeSql(session, fuelEquipmentLoads.worksiteId)),
-      [] as Array<{ year: number }>,
-      "control-years",
-    ),
+    // El período vive en la cabecera: casi ninguna vista necesita ya los años con datos.
+    options.years === false
+      ? Promise.resolve([] as Array<{ year: number }>)
+      : settle(
+        db.selectDistinct({ year: sql<number>`substring(${fuelEquipmentLoads.month}, 1, 4)::int` }).from(fuelEquipmentLoads)
+          .where(worksiteScopeSql(session, fuelEquipmentLoads.worksiteId)),
+        [] as Array<{ year: number }>,
+        "control-years",
+      ),
   ])
 
   const years = [...new Set([current, ...yearRows.map((row) => Number(row.year))])]

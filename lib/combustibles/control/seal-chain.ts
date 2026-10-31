@@ -36,3 +36,30 @@ export function evaluateSealChain(
   }
   return { status: "ok", expected: null }
 }
+
+/**
+ * Una carga registrada entre dos que ya existían (una carga de otro día, o un
+ * reenvío desde la cola sin conexión) pasa a ser la «carga anterior» de la
+ * siguiente: el sello que esa siguiente retiró ya no se compara con el de la
+ * carga de antes, sino con el que esta instaló.
+ *
+ * Devuelve la cadena que le corresponde a la siguiente y si cambió respecto de
+ * la que tenía guardada; quien llama persiste sólo cuando `changed` es true.
+ */
+export function reevaluateNextSealChain(
+  next: {
+    removedSeal: string | null
+    installedSeal: string | null
+    noSealReason: string | null
+    sealChainStatus: string
+    sealChainExpected: string | null
+  },
+  insertedInstalledSeal: string | null,
+): { changed: boolean; status: SealChainStatus; expected: string | null } {
+  const chain = evaluateSealChain(
+    { removedSeal: next.removedSeal, installedSeal: next.installedSeal, noSealReason: next.noSealReason },
+    insertedInstalledSeal,
+  )
+  const changed = chain.status !== next.sealChainStatus || (chain.expected ?? null) !== (next.sealChainExpected ?? null)
+  return { changed, status: chain.status, expected: chain.expected }
+}

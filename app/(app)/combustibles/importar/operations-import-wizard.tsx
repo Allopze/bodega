@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/field"
@@ -17,6 +18,7 @@ import {
   type OperationsPreviewData,
   type OperationsImportResultSummary,
 } from "../actions-operaciones"
+import { fuelBatchHref } from "@/lib/combustibles/routes"
 import { Stat } from "@/lib/combustibles/wizard-helpers"
 import { ImportDuplicateConfirmation, ImportErrorList, ImportFileDropzone } from "./import-wizard-primitives"
 
@@ -115,20 +117,20 @@ export function OperationsImportWizard() {
           <CheckCircle className="h-12 w-12 mx-auto text-[var(--color-success)]" />
           <div>
             <p className="text-2xl font-bold">{result.imported}</p>
-            <p className="text-[var(--color-text-muted)]">registros de log operacional importados exitosamente</p>
+            <p className="text-[var(--color-text-muted)]">cargas de la planilla importadas exitosamente</p>
             {result.duplicateRows > 0 && (
-              <p className="mt-1 text-xs text-[var(--color-text-muted)]">{result.duplicateRows} {result.duplicateRows === 1 ? "fila ya estaba" : "filas ya estaban"} importada{result.duplicateRows === 1 ? "" : "s"} de un lote anterior y se omitieron.</p>
+              <p className="mt-1 text-xs text-[var(--color-text-muted)]">{result.duplicateRows} {result.duplicateRows === 1 ? "fila ya estaba" : "filas ya estaban"} importada{result.duplicateRows === 1 ? "" : "s"} en un archivo anterior y se omitieron.</p>
             )}
           </div>
           {result.rejected > 0 && (
             <p className="text-sm text-[var(--color-text-muted)]">
-              {result.rejected} {result.rejected === 1 ? "fila fue rechazada" : "filas fueron rechazadas"} y quedó guardada con su motivo. En el detalle del lote puedes descargarlas en Excel, corregirlas y volver a subirlas.
+              {result.rejected} {result.rejected === 1 ? "fila fue rechazada" : "filas fueron rechazadas"} y quedó guardada con su motivo. En el detalle del archivo puedes descargarlas en Excel, corregirlas y volver a subirlas.
             </p>
           )}
           <ImportErrorList errors={result.errors} filename="errores-operaciones.xlsx" title={`${result.errors.length} filas omitidas por errores:`} maxVisible={20} />
           <div className="flex justify-center gap-3">
             <Button variant="secondary" onClick={reset}>Importar otro archivo</Button>
-            <Button asChild><a href={`/combustibles/importar/operaciones/${result.batchId}`}>Ver lote y filas rechazadas</a></Button>
+            <Button asChild><Link href={fuelBatchHref("planilla", result.batchId)}>Ver archivo y filas rechazadas</Link></Button>
           </div>
         </CardContent>
       </Card>
@@ -160,19 +162,19 @@ export function OperationsImportWizard() {
 
           {preview.faenasSinMatch.length > 0 && (
             <div className="p-3 bg-[var(--color-warning-tint)] rounded-md text-sm">
-              <p className="font-medium mb-1">Faenas sin match ({preview.faenasSinMatch.length}). Se podrán vincular manualmente después:</p>
+              <p className="font-medium mb-1">Faenas sin asociar ({preview.faenasSinMatch.length}). Se podrán vincular después, desde el detalle del archivo:</p>
               <p className="text-[var(--color-text-muted)]">{preview.faenasSinMatch.join(", ")}</p>
             </div>
           )}
           {preview.proveedoresSinMatch.length > 0 && (
             <div className="p-3 bg-[var(--color-warning-tint)] rounded-md text-sm">
-              <p className="font-medium mb-1">Proveedores sin match ({preview.proveedoresSinMatch.length}):</p>
+              <p className="font-medium mb-1">Proveedores sin asociar ({preview.proveedoresSinMatch.length}):</p>
               <p className="text-[var(--color-text-muted)]">{preview.proveedoresSinMatch.join(", ")}</p>
             </div>
           )}
 
           <p className="text-xs text-[var(--color-text-muted)]">
-            Se rechazan las filas con fecha vacía o de relleno (30-12-1899), litros en cero y sellos de relleno. Las demás se importan: lo que no cuadre (lectura menor que la anterior, proveedor desconocido, rendimiento raro) queda marcado en Control › Revisión.
+            Se rechazan las filas con fecha vacía o de relleno (30-12-1899), litros en cero y sellos de relleno. Las demás se importan: lo que no cuadre (lectura menor que la anterior, proveedor desconocido, rendimiento raro) queda en «Por revisar».
           </p>
           <ImportErrorList errors={preview.errores} filename="errores-preview-operaciones.xlsx" />
 
@@ -190,7 +192,7 @@ export function OperationsImportWizard() {
           {preview.duplicateRows > 0 && (
             <div className="flex items-start gap-2 p-3 rounded-md bg-[var(--color-surface-2)] text-sm">
               <WarningCircle className="h-4 w-4 mt-0.5 shrink-0 text-[var(--color-text-muted)]" />
-              <p>{preview.duplicateRows} de {preview.totales.totalFilas} filas ya están importadas en un lote vigente y se omitirán automáticamente al confirmar.</p>
+              <p>{preview.duplicateRows} de {preview.totales.totalFilas} filas ya están importadas en un archivo vigente y se omitirán automáticamente al confirmar.</p>
             </div>
           )}
 
@@ -213,12 +215,12 @@ export function OperationsImportWizard() {
 
   return (
     <Card>
-      <CardHeader><CardTitle>Nueva importación de log operacional</CardTitle></CardHeader>
+      <CardHeader><CardTitle>Subir la planilla de cargas</CardTitle></CardHeader>
       <CardContent className="space-y-4">
         <p className="text-sm text-[var(--color-text-muted)]">
           Carga el consolidado de cargas de combustible por transacción (fecha, horómetro,
           operador, proveedor y rendimiento por carga). A diferencia del reporte de
-          consumos por patente, este archivo abarca varias faenas y periodos a la vez:
+          tarjeta por patente, este archivo abarca varias faenas y períodos a la vez:
           se detectan automáticamente desde las columnas FECHA y FAENA de cada fila.
         </p>
         <div className="grid gap-3 sm:grid-cols-1 max-w-sm">

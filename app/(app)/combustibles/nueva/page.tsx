@@ -1,55 +1,9 @@
-import { redirect } from "next/navigation"
-import { and, eq } from "drizzle-orm"
-import { db } from "@/db"
-import { fuelVehicles, fuelSuppliers, worksites } from "@/db/schema"
-import { requirePermission } from "@/lib/auth/can"
-import { worksiteScopeSql } from "@/lib/auth/scope"
-import { assertFuelCostAccess } from "@/lib/operational-control/capabilities"
-import { getFuelIecRates } from "@/lib/services/system-settings"
-import { PageContainer } from "@/components/ui/page-container"
-import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
-import { NewFuelLoadForm } from "./new-fuel-load-form"
+import { permanentRedirect } from "next/navigation"
+import { legacyFuelRedirect } from "@/lib/combustibles/legacy-redirects"
 
-export default async function NuevaCargaPage() {
-  let session
-  try {
-    // El formulario captura y calcula boleta, IEC e IVA, y el menú lo cuelga de
-    // «Facturas y pagos» (`view_costs`): crear exige además ver costos. La acción
-    // `createFuelLoadAction` aplica el mismo contrato; esta guarda sólo evita
-    // mostrar un formulario que el servidor rechazaría.
-    session = await requirePermission("combustibles:create")
-    assertFuelCostAccess(session)
-  }
-  catch { redirect("/forbidden") }
+type SearchParams = Record<string, string | string[] | undefined>
 
-  // Antes ofrecía vehículos/proveedores DESACTIVADOS y faenas fuera del
-  // alcance del usuario — registrar una carga contra cualquiera de esos tres
-  // igual se guardaba (el servidor no lo rechaza). Los equipos también estaban
-  // sin acotar: el desplegable publicaba la flota completa de todas las faenas.
-  const [vehicles, suppliers, worksitesList, rates] = await Promise.all([
-    db.query.fuelVehicles.findMany({
-      where: and(eq(fuelVehicles.isActive, true), worksiteScopeSql(session, fuelVehicles.worksiteId)),
-      orderBy: [fuelVehicles.plate],
-    }),
-    db.query.fuelSuppliers.findMany({ where: eq(fuelSuppliers.isActive, true), orderBy: [fuelSuppliers.name] }),
-    db.query.worksites.findMany({ where: worksiteScopeSql(session, worksites.id), orderBy: [worksites.name] }),
-    getFuelIecRates(),
-  ])
-
-  return (
-    <PageContainer>
-      <PageHeader
-        title="Nueva carga de combustible"
-        breadcrumb={<Breadcrumbs items={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Facturas y pagos", href: "/combustibles/facturas" }, { label: "Nueva carga" }]} />}
-      />
-      <NewFuelLoadForm
-        data={{
-          vehicles: vehicles.map(v => ({ id: v.id, plate: v.plate, type: v.type })),
-          suppliers: suppliers.map(s => ({ id: s.id, name: s.name })),
-          worksites: worksitesList.map(w => ({ id: w.id, name: w.name })),
-        }}
-        rates={rates}
-      />
-    </PageContainer>
-  )
+/** Ruta anterior al rediseño de Combustible (2026-10-31): página puente permanente. */
+export default async function LegacyFuelBridge({ searchParams }: { searchParams: Promise<SearchParams> }) {
+  permanentRedirect(legacyFuelRedirect("nueva", {}, await searchParams))
 }

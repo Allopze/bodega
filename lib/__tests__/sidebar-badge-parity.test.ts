@@ -9,6 +9,7 @@ import { registry } from "@/modules/registry"
  */
 const BADGE_KEYS_COMPUTED_BY_LAYOUT = [
   "/solicitudes", "/aprobaciones", "/compras", "/recepcion", "/bodega/guias", "/pendientes",
+  "/combustibles/revisar",
 ]
 
 describe("badges del sidebar", () => {

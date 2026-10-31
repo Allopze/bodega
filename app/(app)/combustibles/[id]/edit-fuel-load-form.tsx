@@ -18,6 +18,8 @@ import { toast } from "@/lib/toast"
 import { deleteFuelLoadAction, registerFuelLoadAction } from "../actions"
 import { formatCLP } from "@/lib/utils"
 import { FUEL_LOAD_STATUS_LABELS } from "@/lib/combustibles/labels"
+import { FUEL_PATHS } from "@/lib/combustibles/routes"
+import { SERVICE_TYPE_LABELS } from "../pagos/invoice-params"
 
 interface LoadData {
   id: string
@@ -80,7 +82,7 @@ export function EditFuelLoadForm({ load, showCosts, canWrite, vehicles, supplier
   useEffect(() => {
     if (state.ok) {
       toast.success(state.message)
-      router.push("/combustibles/facturas")
+      router.push(FUEL_PATHS.pagos)
     } else if (state.message && !state.ok) {
       toast.error(state.message)
     }
@@ -103,7 +105,7 @@ export function EditFuelLoadForm({ load, showCosts, canWrite, vehicles, supplier
     const result = await deleteFuelLoadAction(load.id)
     if (result.ok) {
       toast.success(result.message)
-      router.push("/combustibles/facturas")
+      router.push(FUEL_PATHS.pagos)
     } else {
       toast.error(result.message)
     }
@@ -195,53 +197,53 @@ export function EditFuelLoadForm({ load, showCosts, canWrite, vehicles, supplier
         )}
 
         <Card>
-          <CardHeader><CardTitle>Datos de la carga</CardTitle></CardHeader>
+          <CardHeader><CardTitle>Editar la carga</CardTitle></CardHeader>
           <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <div className="space-y-2">
-              <Label>Fecha *</Label>
-              <DatePicker name="loadDate" defaultValue={load.loadDate} disabled={!isEditable} />
+              <Label htmlFor="edit-load-date">Fecha *</Label>
+              <DatePicker id="edit-load-date" name="loadDate" defaultValue={load.loadDate} disabled={!isEditable} />
             </div>
             <div className="space-y-2">
-              <Label>Servicio *</Label>
+              <Label htmlFor="edit-load-service">Servicio *</Label>
               <Select name="serviceType" defaultValue={load.serviceType} disabled={!isEditable}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger id="edit-load-service"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="TCT">TCT</SelectItem>
-                  <SelectItem value="TAE">TAE</SelectItem>
+                  <SelectItem value="TCT">{SERVICE_TYPE_LABELS.TCT}</SelectItem>
+                  <SelectItem value="TAE">{SERVICE_TYPE_LABELS.TAE}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Vehículo *</Label>
+              <Label htmlFor="edit-load-vehicle">Vehículo *</Label>
               <Select name="vehicleId" defaultValue={load.vehicleId} disabled={!isEditable}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger id="edit-load-vehicle"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {vehicles.map(v => <SelectItem key={v.id} value={v.id}>{v.plate} ({v.type})</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Proveedor *</Label>
+              <Label htmlFor="edit-load-supplier">Proveedor *</Label>
               <Select name="fuelSupplierId" defaultValue={load.fuelSupplierId} disabled={!isEditable}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger id="edit-load-supplier"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {suppliers.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Faena *</Label>
+              <Label htmlFor="edit-load-worksite">Faena *</Label>
               <Select name="worksiteId" defaultValue={load.worksiteId} disabled={!isEditable}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger id="edit-load-worksite"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {worksites.map(w => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Producto *</Label>
+              <Label htmlFor="edit-load-product">Producto *</Label>
               <Select name="product" defaultValue={load.product} disabled={!isEditable}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger id="edit-load-product"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="PETROLEO DIESEL">Petróleo Diésel</SelectItem>
                   <SelectItem value="BLUEMAX">BlueMax</SelectItem>
@@ -249,17 +251,17 @@ export function EditFuelLoadForm({ load, showCosts, canWrite, vehicles, supplier
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Nro Factura/Boleta</Label>
-              <Input name="receiptNumber" defaultValue={load.receiptNumber ?? ""} disabled={!isEditable} />
+              <Label htmlFor="edit-load-receipt">Nro Factura/Boleta</Label>
+              <Input id="edit-load-receipt" name="receiptNumber" defaultValue={load.receiptNumber ?? ""} disabled={!isEditable} />
             </div>
             <div className="space-y-2">
-              <Label>Kilometraje</Label>
-              <Input name="odometerReading" type="number" step="0.01" min="0" inputMode="decimal" defaultValue={load.odometerReading ?? ""} disabled={!isEditable} />
+              <Label htmlFor="edit-load-odometer">Kilometraje</Label>
+              <Input id="edit-load-odometer" name="odometerReading" type="number" step="0.01" min="0" inputMode="decimal" defaultValue={load.odometerReading ?? ""} disabled={!isEditable} />
               {state.fieldErrors?.odometerReading && <p className="text-sm text-[var(--color-danger-ink)]">{state.fieldErrors.odometerReading[0]}</p>}
             </div>
             <div className="space-y-2">
-              <Label>Horómetro</Label>
-              <Input name="hourMeterReading" type="number" step="0.01" min="0" inputMode="decimal" defaultValue={load.hourMeterReading ?? ""} disabled={!isEditable} />
+              <Label htmlFor="edit-load-hourmeter">Horómetro</Label>
+              <Input id="edit-load-hourmeter" name="hourMeterReading" type="number" step="0.01" min="0" inputMode="decimal" defaultValue={load.hourMeterReading ?? ""} disabled={!isEditable} />
               {state.fieldErrors?.hourMeterReading && <p className="text-sm text-[var(--color-danger-ink)]">{state.fieldErrors.hourMeterReading[0]}</p>}
             </div>
             {isEditable && (
@@ -286,32 +288,32 @@ export function EditFuelLoadForm({ load, showCosts, canWrite, vehicles, supplier
           <CardHeader><CardTitle>{showCosts ? "Montos" : "Consumo"}</CardTitle></CardHeader>
           <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <div className="space-y-2">
-              <Label>Litros *</Label>
-              <Input name="liters" type="number" step="0.01" min="0" required
+              <Label htmlFor="edit-load-liters">Litros *</Label>
+              <Input id="edit-load-liters" name="liters" type="number" step="0.01" min="0" required
                 value={liters} onChange={(e) => setLiters(Number(e.target.value))} disabled={!isEditable} />
             </div>
             {showCosts && (
               <>
                 <div className="space-y-2">
-                  <Label>Base Afecta (CLP) *</Label>
-                  <Input name="baseAmount" type="number" step="0.01" min="0" required
+                  <Label htmlFor="edit-load-base">Base Afecta (CLP) *</Label>
+                  <Input id="edit-load-base" name="baseAmount" type="number" step="0.01" min="0" required
                     value={baseAmount} onChange={(e) => setBaseAmount(Number(e.target.value))} disabled={!isEditable} />
                 </div>
                 <div className="space-y-2">
-                  <Label>IEC Fijo</Label>
-                  <Input value={formatCLP(iecFixed)} disabled className="bg-[var(--color-surface-2)]" />
+                  <Label htmlFor="edit-load-iec-fixed">IEC Fijo</Label>
+                  <Input id="edit-load-iec-fixed" value={formatCLP(iecFixed)} disabled className="bg-[var(--color-surface-2)]" />
                 </div>
                 <div className="space-y-2">
-                  <Label>IEC Variable</Label>
-                  <Input value={formatCLP(iecVariable)} disabled className="bg-[var(--color-surface-2)]" />
+                  <Label htmlFor="edit-load-iec-variable">IEC Variable</Label>
+                  <Input id="edit-load-iec-variable" value={formatCLP(iecVariable)} disabled className="bg-[var(--color-surface-2)]" />
                 </div>
                 <div className="space-y-2">
-                  <Label>IVA (19%)</Label>
-                  <Input value={formatCLP(ivaAmount)} disabled className="bg-[var(--color-surface-2)]" />
+                  <Label htmlFor="edit-load-iva">IVA (19%)</Label>
+                  <Input id="edit-load-iva" value={formatCLP(ivaAmount)} disabled className="bg-[var(--color-surface-2)]" />
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-lg font-semibold">Total</Label>
-                  <Input value={formatCLP(totalAmount)} disabled className="bg-[var(--color-surface-2)] text-lg font-bold" />
+                  <Label htmlFor="edit-load-total" className="text-lg font-semibold">Total</Label>
+                  <Input id="edit-load-total" value={formatCLP(totalAmount)} disabled className="bg-[var(--color-surface-2)] text-lg font-bold" />
                 </div>
                 {litersChanged && (
                   <p className="sm:col-span-2 text-xs text-[var(--color-warning-ink)]">
@@ -326,7 +328,7 @@ export function EditFuelLoadForm({ load, showCosts, canWrite, vehicles, supplier
         <Card>
           <CardHeader><CardTitle>Notas</CardTitle></CardHeader>
           <CardContent>
-            <Textarea name="notes" defaultValue={load.notes ?? ""} disabled={!isEditable} rows={3} />
+            <Textarea name="notes" aria-label="Notas" defaultValue={load.notes ?? ""} disabled={!isEditable} rows={3} />
           </CardContent>
         </Card>
 

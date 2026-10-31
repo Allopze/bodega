@@ -17,6 +17,7 @@ import { safeActionMessage } from "@/lib/action-error"
 import { verifyCronSecret } from '@/lib/security/cron-auth'
 import { withCronLock } from '@/lib/services/cron-lock'
 import { isRouteOperational } from '@/lib/services/module-toggles'
+import { FUEL_PATHS } from "@/lib/combustibles/routes"
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -34,7 +35,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   if (!verifyCronSecret(authHeader, secret)) {
     return respond(fuelCronContractFor({ unauthorized: true }))
   }
-  if (!await isRouteOperational('/combustibles/cuenta-corriente')) {
+  if (!await isRouteOperational(FUEL_PATHS.estados)) {
     return respond(fuelCronContractFor({ disabled: true }))
   }
 

@@ -1,6 +1,5 @@
 "use server"
 
-import { revalidatePath } from "next/cache"
 import ExcelJS from "exceljs"
 import { guardPermission } from "@/lib/auth/can"
 import { MimeType, validateFileBuffer } from "@/lib/file-validation"
@@ -18,8 +17,10 @@ import {
   type ControlImportResult,
 } from "@/lib/combustibles/control/imports/service"
 import { buildControlImportTemplateBase64, templateFilename } from "@/lib/combustibles/control/imports/templates"
+import { revalidateFuel } from "@/lib/combustibles/revalidate"
+import { FUEL_PATHS } from "@/lib/combustibles/routes"
 
-const PATH = "/combustibles/control/importar"
+const PATH = FUEL_PATHS.fuentes
 
 export type PreviewResponse = { ok: true; data: ControlImportPreview } | { ok: false; message: string }
 export type ConfirmResponse = { ok: true; data: ControlImportResult } | { ok: false; message: string }
@@ -67,8 +68,7 @@ export async function confirmControlImportAction(formData: FormData): Promise<Co
   if (!form.ok) return form
   const result = await commitControlImport(guard.session, form.kind, form)
   if (result.ok) {
-    revalidatePath(PATH)
-    revalidatePath("/combustibles/control", "layout")
+    revalidateFuel()
   }
   return result
 }
@@ -80,9 +80,8 @@ export async function revertControlImportBatchAction(input: { batchId: string })
   if (!batchId) return { ok: false, message: "Lote requerido" }
   const result = await revertControlImportBatch(guard.session, batchId)
   if (!result.ok) return result
-  revalidatePath(PATH)
-  revalidatePath("/combustibles/control", "layout")
-  return { ok: true, message: `Lote revertido: se eliminaron ${result.deletedRows} registros que ese lote había creado` }
+  revalidateFuel()
+  return { ok: true, message: `Archivo revertido: se eliminaron ${result.deletedRows} registros que ese archivo había creado` }
 }
 
 type DownloadResult = { ok: boolean; data?: { base64: string; filename: string }; message?: string }

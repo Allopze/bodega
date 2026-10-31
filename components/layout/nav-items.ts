@@ -227,7 +227,14 @@ export interface NavTarget {
   label:     string
   href:      string
   areaLabel: string
+  /** Grupo del menú dentro del área («Combustible», «Mantención»): distingue rótulos repetidos como «Panel». */
+  groupLabel?: string
   iconName:  string
+}
+
+/** «Control operacional · Combustible», o sólo el área cuando el ítem no tiene grupo. */
+export function navTargetContext(target: Pick<NavTarget, "areaLabel" | "groupLabel">): string {
+  return target.groupLabel ? `${target.areaLabel} · ${target.groupLabel}` : target.areaLabel
 }
 
 /** Lista plana de destinos navegables para la paleta ⌘K (filtrada por permiso y toggles). */
@@ -241,9 +248,9 @@ export function flattenNavTargets(
   ]
   for (const area of getVisibleAreas(session, enabledModuleIds, disabledSubmoduleHrefs)) {
     for (const item of area.items) {
-      targets.push({ label: item.label, href: item.href, areaLabel: area.label, iconName: item.iconName })
+      targets.push({ label: item.label, href: item.href, areaLabel: area.label, groupLabel: item.group, iconName: item.iconName })
       for (const child of item.children ?? []) {
-        targets.push({ label: child.label, href: child.href, areaLabel: area.label, iconName: item.iconName })
+        targets.push({ label: child.label, href: child.href, areaLabel: area.label, groupLabel: item.group, iconName: item.iconName })
       }
     }
   }

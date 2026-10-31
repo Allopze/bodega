@@ -8,7 +8,8 @@ export type AnomalySeverity = "low" | "medium" | "high" | "critical"
 
 export const ANOMALY_STATUS_LABELS: Record<AnomalyCaseStatus, string> = {
   open: "Abierto",
-  in_review: "En revisión",
+  // «Tomada»: alguien es responsable. «En revisión» se confundía con las cargas por decidir.
+  in_review: "Tomada",
   resolved: "Resuelto",
   dismissed: "Descartado",
   reopened: "Reabierto",

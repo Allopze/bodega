@@ -1,48 +1,9 @@
-import { redirect, notFound } from "next/navigation"
-import Link from "next/link"
-import { and, desc, eq } from "drizzle-orm"
-import { db } from "@/db"
-import { fuelTaeSubmissions, statusHistory, users } from "@/db/schema"
-import { can, requirePermission } from "@/lib/auth/can"
-import { canAccessWorksite } from "@/lib/auth/scope"
-import { getTaeSubmissionContext } from "@/lib/services/fuel-tae"
-import { PageContainer } from "@/components/ui/page-container"
-import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
-import { ReviewControls } from "./review-controls"
-import { MeterCorrectionDialog } from "./meter-correction-dialog"
-import { EvidenceThumbnail } from "./evidence-thumbnail"
-import { formatDateTime } from "@/lib/utils"
-import { taeStatusLabel } from "@/lib/combustibles/labels"
-import { PERSONAL_DATA_LABEL } from "@/lib/combustibles/fuel-log-shared"
+import { permanentRedirect } from "next/navigation"
+import { legacyFuelRedirect } from "@/lib/combustibles/legacy-redirects"
 
-export default async function TaeDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  let session
-  try { session = await requirePermission("combustibles:tae_view") } catch { redirect(`/forbidden?desde=${encodeURIComponent("/combustibles/tae")}`) }
-  const { id } = await params
-  const submission = await db.query.fuelTaeSubmissions.findFirst({ where: eq(fuelTaeSubmissions.id, id), with: { worksite: { columns: { name: true } }, loadingPoint: { columns: { name: true } }, product: { columns: { name: true, unit: true } }, evidence: true } })
-  if (!submission || !canAccessWorksite(session, submission.worksiteId)) notFound()
-  const canReview = can(session, "combustibles:tae_review")
-  // D-10 / P-01: nombres y fotos solo con `combustibles:view_personal` (la ruta de evidencia lo exige igual).
-  const canViewPersonal = can(session, "combustibles:view_personal")
-  const reserved = <span className="text-[var(--color-text-muted)]" title="Requiere el permiso para ver datos personales">{PERSONAL_DATA_LABEL}</span>
-  const [{ previous, next, alerts }, history] = await Promise.all([
-    getTaeSubmissionContext(submission),
-    db.select({ id: statusHistory.id, fromStatus: statusHistory.fromStatus, toStatus: statusHistory.toStatus, reason: statusHistory.reason, changedAt: statusHistory.changedAt, changedByName: users.name })
-      .from(statusHistory)
-      .leftJoin(users, eq(statusHistory.changedBy, users.id))
-      .where(and(eq(statusHistory.entityType, "fuel_tae_submission"), eq(statusHistory.entityId, submission.id)))
-      .orderBy(desc(statusHistory.changedAt)),
-  ])
-  const alertsActive = submission.status === "submitted" || submission.status === "observed"
-  return <PageContainer width="workbench"><PageHeader title={`Carga TAE · ${submission.equipmentCodeSnapshot}`} description={`${submission.worksite?.name ?? "—"} · ${Number(submission.liters).toLocaleString("es-CL")} L`} breadcrumb={<Breadcrumbs items={[{ label: "Control operacional", href: "/control-operacional" }, { label: "TAE y sellos", href: "/combustibles/tae" }, { label: submission.equipmentCodeSnapshot }]} />} /><div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]"><section className="space-y-5">
-    {alerts.length > 0 && <section className={alertsActive ? "border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] p-4" : "border border-(--color-border) bg-(--color-surface-2) p-4 opacity-75"}><p className={alertsActive ? "text-eyebrow text-[var(--color-warning-ink)]" : "text-eyebrow"}>{alertsActive ? "Alertas por resolver" : submission.status === "validated" ? "Alertas revisadas" : "Alertas archivadas"}</p><ul className={alertsActive ? "mt-2 space-y-1 text-sm text-[var(--color-warning-ink)]" : "mt-2 space-y-1 text-sm text-(--color-text-muted)"}>{alerts.map((alert) => <li key={alert.code}>{alert.message}</li>)}</ul></section>}
-    <div className="grid gap-px border border-(--color-border) bg-(--color-border) sm:grid-cols-4"><div className="bg-(--color-surface) p-4"><p className="text-eyebrow">Estado</p><p className="mt-1">{taeStatusLabel(submission.status)}</p></div><div className="bg-(--color-surface) p-4"><p className="text-eyebrow">Producto</p><p className="mt-1 text-sm">{submission.product?.name ?? "—"}</p></div><div className="bg-(--color-surface) p-4"><p className="text-eyebrow">Fecha de carga</p><p className="mt-1 text-sm">{formatDateTime(submission.loadedAt)}</p></div><div className="bg-(--color-surface) p-4"><p className="text-eyebrow">Recepción sistema</p><p className="mt-1 text-sm">{formatDateTime(submission.createdAt)}</p><p className="mt-1 text-xs text-(--color-text-muted)">{submission.source === "public_pwa" ? "Formulario público TAE" : "Importación histórica"}</p></div></div>
-    <div className="grid gap-px border border-(--color-border) bg-(--color-border) sm:grid-cols-2"><div className="bg-(--color-surface) p-4"><p className="text-eyebrow">Supervisor</p><p className="mt-1">{canViewPersonal ? submission.supervisorNameSnapshot : reserved}</p></div><div className="bg-(--color-surface) p-4"><p className="text-eyebrow">Conductor</p><p className="mt-1">{canViewPersonal ? submission.driverNameSnapshot : reserved}</p></div><div className="bg-(--color-surface) p-4"><p className="text-eyebrow">Lectura</p><p className="mt-1 font-mono">{submission.meterReading != null ? <>{String(submission.meterReading)} {submission.meterType === "hour_meter" ? "h" : "km"}</> : "—"}</p>{submission.meterReadingSource === "ocr" && <p className="mt-1 text-xs text-[var(--color-text-muted)]">OCR aplicado · {submission.ocrConfidence != null ? `${Math.round(Number(submission.ocrConfidence) * 100)}% confianza` : ""}</p>}{submission.meterReadingSource === "manual" && <p className="mt-1 text-xs text-[var(--color-text-muted)]">Ingreso manual</p>}{submission.ocrSuggestedReading != null && submission.meterReadingSource == null && <p className="mt-1 text-xs text-[var(--color-warning-ink)]">OCR por confirmar: {String(submission.ocrSuggestedReading)} {submission.meterType === "hour_meter" ? "h" : "km"} · {submission.ocrConfidence != null ? `${Math.round(Number(submission.ocrConfidence) * 100)}% confianza` : ""}</p>}{canReview && <div className="mt-2"><MeterCorrectionDialog key={`${submission.id}:${submission.updatedAt}`} submissionId={submission.id} currentMeterType={submission.meterType} currentMeterReading={submission.meterReading} suggestedMeterReading={submission.ocrSuggestedReading} currentStatus={submission.status as "submitted" | "observed" | "validated" | "voided"} /></div>}</div><div className="bg-(--color-surface) p-4"><p className="text-eyebrow">Sellos</p><p className="mt-1 font-mono text-sm">{submission.removedSealNumber ?? "—"} → {submission.installedSealNumber ?? "—"}</p></div></div>
-    <section><p className="text-eyebrow">Carga anterior / siguiente del equipo</p><div className="mt-3 grid gap-3 sm:grid-cols-2">
-      {previous ? <Link href={`/combustibles/tae/${previous.id}`} className="border border-(--color-border) bg-(--color-surface-2) p-3 text-sm hover:border-(--color-primary-line)"><span className="block text-xs text-[var(--color-text-muted)]">Anterior · {formatDateTime(previous.loadedAt)}</span><span className="mt-1 block">{Number(previous.liters).toLocaleString("es-CL")} L · sello {previous.installedSealNumber ?? "—"}</span></Link> : <div className="border border-dashed border-(--color-border) p-3 text-sm text-[var(--color-text-muted)]">Sin carga anterior registrada</div>}
-      {next ? <Link href={`/combustibles/tae/${next.id}`} className="border border-(--color-border) bg-(--color-surface-2) p-3 text-sm hover:border-(--color-primary-line)"><span className="block text-xs text-[var(--color-text-muted)]">Siguiente · {formatDateTime(next.loadedAt)}</span><span className="mt-1 block">{Number(next.liters).toLocaleString("es-CL")} L · sello {next.installedSealNumber ?? "—"}</span></Link> : <div className="border border-dashed border-(--color-border) p-3 text-sm text-[var(--color-text-muted)]">Sin carga posterior registrada</div>}
-    </div></section>
-    <section id="evidencia" className="scroll-mt-24"><p className="text-eyebrow">Evidencias</p>{!canViewPersonal ? <p className="mt-3 border border-dashed border-(--color-border) p-4 text-sm text-(--color-text-muted)">Las fotografías de esta carga están reservadas. Solicita el permiso para ver datos personales si necesitas revisarlas.</p> : submission.evidence.length === 0 ? <p className="mt-3 border border-dashed border-(--color-border) p-4 text-sm text-(--color-text-muted)">Este registro histórico no contiene fotografías.</p> : <div className="mt-3 grid grid-cols-2 gap-3">{submission.evidence.map((evidence) => <EvidenceThumbnail key={evidence.id} evidence={evidence} />)}</div>}</section>
-    <section><p className="text-eyebrow">Historial de estado</p><ol className="mt-3 space-y-2">{history.map((entry) => <li key={entry.id} className="border-l-2 border-(--color-border) py-1 pl-3 text-sm"><p>{entry.fromStatus ? `${taeStatusLabel(entry.fromStatus)} → ` : ""}<strong>{taeStatusLabel(entry.toStatus)}</strong></p><p className="text-xs text-(--color-text-muted)">{formatDateTime(entry.changedAt)} · {entry.changedByName ?? "Sistema / formulario público"}</p>{entry.reason && <p className="mt-1 text-(--color-text-muted)">{entry.reason}</p>}</li>)}</ol>{can(session, "combustibles:view_audit") && <Link href={`/combustibles/bitacora/historial/fuel_tae_submission/${submission.id}`} className="mt-3 inline-block text-xs text-(--color-primary) hover:underline">Ver auditoría completa (valor anterior/nuevo por campo)</Link>}</section>
-    </section><aside>{canReview && <ReviewControls id={submission.id} status={submission.status} />}</aside></div></PageContainer>
+type SearchParams = Record<string, string | string[] | undefined>
+
+/** Ruta anterior al rediseño de Combustible (2026-10-31): página puente permanente. */
+export default async function LegacyFuelBridge({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<SearchParams> }) {
+  permanentRedirect(legacyFuelRedirect("tae-detalle", await params, await searchParams))
 }

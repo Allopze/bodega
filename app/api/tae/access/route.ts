@@ -4,11 +4,12 @@ import { resolveTrustedClientIp } from "@/lib/security/login-rate-limit-ip"
 import { checkRateLimit, recordFailure, recordSuccessForTelemetry } from "@/lib/services/rate-limit"
 import { getTaeAccessConfig } from "@/lib/services/fuel-tae"
 import { isRouteOperational } from "@/lib/services/module-toggles"
+import { FUEL_PATHS } from "@/lib/combustibles/routes"
 
 export const runtime = "nodejs"
 
 export async function POST(request: Request) {
-  if (!await isRouteOperational("/combustibles/tae")) {
+  if (!await isRouteOperational(FUEL_PATHS.cargas)) {
     return NextResponse.json({ ok: false, message: "Control TAE temporalmente inactivo" }, { status: 503 })
   }
   const requestHeaders = await headers()

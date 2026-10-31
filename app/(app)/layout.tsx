@@ -21,6 +21,7 @@ import { registry } from "@/modules/registry"
 import { getOperationalWorkCount } from "@/lib/services/operational-work-queue"
 import { badgeCountsTags } from "@/lib/services/operational-cache"
 import { countPendingPurchaseRequests } from "@/lib/services/purchasing-module/pending-purchase-queue"
+import { countFuelInboxPending } from "@/lib/combustibles/inbox/queries"
 import { RECEIVABLE_ORDER_STATUSES } from "@/lib/work-queue-labels"
 import type { Session } from "next-auth"
 
@@ -34,7 +35,7 @@ import type { Session } from "next-auth"
 // request porque `unstable_cache` fija sus `tags` al crearse; la clave sigue
 // saliendo de `keyParts` + argumentos, así que la entrada es la misma.
 const badgeCountsLoader = (tags: string[]) => unstable_cache(
-  async (userId: string, isGlobal: boolean, wsIds: string[], canViewAllRequests: boolean) => {
+  async (userId: string, isGlobal: boolean, wsIds: string[], canViewAllRequests: boolean, canViewFuel: boolean) => {
     // Predicado compartido con /aprobaciones (lib/approvals-queue.ts). Antes
     // estaba duplicado aquí y derivó: excluía sólo 'repuestos', mientras la
     // página excluía también 'servicios', así que el badge contaba solicitudes
@@ -85,13 +86,15 @@ const badgeCountsLoader = (tags: string[]) => unstable_cache(
       canViewAllRequests ? undefined : eq(purchaseRequests.requesterId, userId),
     )
 
-    const [[approvalRow], [purchaseRow], [receivingRow], [requestRow], [guideRow], pendingPurchaseRequests] = await Promise.all([
+    const [[approvalRow], [purchaseRow], [receivingRow], [requestRow], [guideRow], pendingPurchaseRequests, fuelInboxCount] = await Promise.all([
       db.select({ n: count() }).from(purchaseRequests).where(approvalFilter),
       db.select({ n: count() }).from(purchaseOrders).where(purchaseFilter),
       db.select({ n: count() }).from(purchaseOrders).where(receivingFilter),
       db.select({ n: count() }).from(purchaseRequests).where(requestFilter),
       db.select({ n: count() }).from(dispatchGuides).where(guideFilter),
       countPendingPurchaseRequests(purchaseRequestScope),
+      // «Por revisar» de Combustible: lo que espera a una persona, dentro de su alcance de faenas.
+      canViewFuel ? countFuelInboxPending(isGlobal ? "all" : wsIds) : Promise.resolve(0),
     ])
 
     return {
@@ -101,6 +104,7 @@ const badgeCountsLoader = (tags: string[]) => unstable_cache(
       "/compras":      (purchaseRow?.n ?? 0) + pendingPurchaseRequests,
       "/recepcion":    receivingRow?.n ?? 0,
       "/bodega/guias": guideRow?.n ?? 0,
+      "/combustibles/revisar": fuelInboxCount,
     }
   },
   ["badge-counts"],
@@ -150,13 +154,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const canViewReceiving = can(session, "receiving:view")
   const canReceiveGuides = can(session, "warehouse:receive_guide")
   const canViewOperations = can(session, "operations:view_work")
+  const canViewFuel = can(session, "combustibles:view")
   const badgeTags = badgeCountsTags({ isGlobal, worksiteIds: session.user.worksiteIds ?? [] })
 
   const [ws, rawBadgeCounts, operationalWorkCount] = await Promise.all([
     session.user.primaryWorksiteId
       ? db.query.worksites.findFirst({ where: eq(worksites.id, session.user.primaryWorksiteId) })
       : Promise.resolve(undefined),
-    badgeCountsLoader(badgeTags)(session.user.id, isGlobal, wsIds, canViewAllRequests),
+    badgeCountsLoader(badgeTags)(session.user.id, isGlobal, wsIds, canViewAllRequests, canViewFuel),
     canViewOperations
       ? operationalWorkCountLoader(badgeTags)(session.user.id, session.user.roles, session.user.permissions, wsIds, isGlobal)
       : Promise.resolve(0),
@@ -170,6 +175,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     "/recepcion":    canViewReceiving ? rawBadgeCounts["/recepcion"] : 0,
     // Sólo quien puede confirmar la recepción de una guía ve que le toca hacerlo.
     "/bodega/guias": canReceiveGuides ? rawBadgeCounts["/bodega/guias"] : 0,
+    "/combustibles/revisar": canViewFuel ? rawBadgeCounts["/combustibles/revisar"] : 0,
     "/pendientes":   canViewOperations ? operationalWorkCount : 0,
   }
 

@@ -345,7 +345,7 @@ export async function stopVehicleForFindingAction(input: unknown): Promise<Actio
   const guard = await guardPermission("combustibles:manage_vehicles")
   if (guard.error) return guard.error
   const state = await run(accessFromSession(guard.session), (access) => stopVehicleForFinding(input, access))
-  if (state.ok) revalidateOperationalViews(["/flota", "/combustibles/vehiculos"])
+  if (state.ok) revalidateOperationalViews(["/flota", "/combustibles"])
   return state
 }
 

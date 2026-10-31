@@ -72,6 +72,7 @@ export async function readTaeFacts(tx: Tx, submissionIds: string[]): Promise<Pro
     vehicleId: fuelTaeSubmissions.vehicleId,
     vehicleMeterType: fuelVehicles.meterType,
     loadedAt: fuelTaeSubmissions.loadedAt,
+    loadedAtSource: fuelTaeSubmissions.loadedAtSource,
     liters: fuelTaeSubmissions.liters,
     meterReading: fuelTaeSubmissions.meterReading,
     driverWorkerId: fuelTaeSubmissions.driverWorkerId,
@@ -99,6 +100,8 @@ export async function readTaeFacts(tx: Tx, submissionIds: string[]): Promise<Pro
     const fillerSeal = [row.removedSeal, row.installedSeal].some((seal) => seal != null && isFillerSealNumber(seal))
     if (fillerSeal || isFillerDate(day)) flags.push("filler_value")
     if (!row.vehicleId) flags.push("unknown_vehicle")
+    // Una carga de otro día no pasa por la serie como si fuera de hoy: llega a «Por revisar» con su motivo.
+    if (row.loadedAtSource === "backdated") flags.push("late_entry")
     return {
       source: row.source === "legacy_xlsx" ? "legacy_tae" : "field",
       taeSubmissionId: row.id,

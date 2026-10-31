@@ -7,15 +7,16 @@ import { requirePermission } from "@/lib/auth/can"
 import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { todayInChile } from "@/lib/utils"
-import { addExportMetadataSheet } from "@/lib/combustibles/xlsx-utils"
+import { addExportMetadataSheet } from "@/lib/reports/export-metadata"
 import { buildFuelProviderQualityWorkbook, type FuelProviderQualityExportRow } from "@/lib/combustibles/fuel-provider-quality-export"
+import { FUEL_PATHS } from "@/lib/combustibles/routes"
 
 const MAX_EXPORT_ROWS = 10_000
 
 /** Exporta sólo el estado operativo; nunca incluye el payload crudo del portal. */
 export async function exportFuelProviderQualityAction() {
   let session
-  try { session = await requirePermission("combustibles:export", "/combustibles/importar") }
+  try { session = await requirePermission("combustibles:export", FUEL_PATHS.fuentes) }
   catch { return { ok: false as const, message: "Sin permisos para exportar calidad de integración" } }
 
   const [pending, rejections] = await Promise.all([
@@ -62,7 +63,7 @@ export async function exportFuelProviderQualityAction() {
   const truncated = rows.length > MAX_EXPORT_ROWS
   const exportRows = truncated ? rows.slice(0, MAX_EXPORT_ROWS) : rows
   const workbook = await buildFuelProviderQualityWorkbook(exportRows)
-  addExportMetadataSheet(workbook, session, { rowCount: exportRows.length })
+  await addExportMetadataSheet(workbook, session, { rowCount: exportRows.length })
   const buffer = await workbook.xlsx.writeBuffer()
   await recordAudit({
     userId: session.user.id,

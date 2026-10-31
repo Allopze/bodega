@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest"
-import { calculateFuelAmounts, calculateStatementTotals } from "../calculations"
+import {
+  calculateFuelAmounts,
+  calculateStatementTotals,
+  describeStatementStatus,
+  fuelMonthLabel,
+  getStatementDisplayStatus,
+  statementPendingAmount,
+} from "../calculations"
 
 describe("calculateFuelAmounts", () => {
   it("calculates with both IEC rates configured", () => {
@@ -83,5 +90,65 @@ describe("calculateStatementTotals", () => {
     const result = calculateStatementTotals([])
     expect(result.totalLiters).toBe(0)
     expect(result.totalAmount).toBe(0)
+  })
+})
+
+describe("fuelMonthLabel", () => {
+  it("dice el mes en palabras, en español y con mayúscula", () => {
+    expect(fuelMonthLabel("2026-09")).toBe("Septiembre 2026")
+    expect(fuelMonthLabel("2026-01")).toBe("Enero 2026")
+    expect(fuelMonthLabel("2026-12")).toBe("Diciembre 2026")
+  })
+
+  it("devuelve tal cual lo que no es un mes, en vez de inventar uno", () => {
+    expect(fuelMonthLabel("septiembre")).toBe("septiembre")
+    expect(fuelMonthLabel("2026-13")).toBe("2026-13")
+  })
+})
+
+describe("statementPendingAmount", () => {
+  it("es lo que falta por pagar y nunca baja de cero", () => {
+    expect(statementPendingAmount({ totalAmount: 1_000, paidAmount: 400 })).toBe(600)
+    expect(statementPendingAmount({ totalAmount: 1_000, paidAmount: 1_000 })).toBe(0)
+    expect(statementPendingAmount({ totalAmount: 1_000, paidAmount: 1_500 })).toBe(0)
+  })
+
+  it("no arrastra el ruido de los decimales", () => {
+    expect(statementPendingAmount({ totalAmount: 0.3, paidAmount: 0.1 })).toBe(0.2)
+  })
+})
+
+describe("describeStatementStatus: el estado de cuenta dicho en una frase", () => {
+  const today = "2026-10-20"
+  const base = { status: "open", dueDate: "2026-11-05", totalAmount: 14_230_000, paidAmount: 0 }
+
+  it("sin pagos: lo que se debe y cuándo vence, en fecha legible", () => {
+    const text = describeStatementStatus(base, today)
+    expect(text).toMatch(/^Sin pagos registrados\./)
+    expect(text).toContain("05-11-2026")
+    expect(text).toContain("en 16 días")
+    expect(text).not.toMatch(/\bopen\b/)
+  })
+
+  it("con pago parcial: cuánto se pagó, cuánto falta y para cuándo", () => {
+    const text = describeStatementStatus({ ...base, status: "partial", paidAmount: 5_830_000 }, today)
+    expect(text).toMatch(/^Se pagó el 41/)
+    expect(text).toContain("05-11-2026")
+    expect(getStatementDisplayStatus({ ...base, status: "partial", paidAmount: 5_830_000 }, today)).toBe("partial")
+  })
+
+  it("vencido: dice desde cuándo y cuánto falta, aunque la fila siga guardada como abierta", () => {
+    const text = describeStatementStatus({ ...base, dueDate: "2026-10-10", paidAmount: 4_000_000 }, today)
+    expect(text).toMatch(/^Venció el 10-10-2026 \(hace 10 días\)/)
+    expect(getStatementDisplayStatus({ ...base, dueDate: "2026-10-10" }, today)).toBe("overdue")
+  })
+
+  it("pagado y anulado no hablan de fechas", () => {
+    expect(describeStatementStatus({ ...base, status: "paid", paidAmount: 14_230_000 }, today)).toMatch(/^Pagado por completo/)
+    expect(describeStatementStatus({ ...base, status: "cancelled" }, today)).toBe("Este estado de cuenta está anulado.")
+  })
+
+  it("sin fecha de vencimiento lo dice, en vez de dejar un hueco", () => {
+    expect(describeStatementStatus({ ...base, dueDate: null }, today)).toContain("sin fecha de vencimiento")
   })
 })

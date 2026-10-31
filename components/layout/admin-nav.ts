@@ -34,14 +34,11 @@ export const ADMIN_AREAS: AreaNode[] = [
         ],
       },
       {
-        // Vive en el árbol de combustibles, pero es configuración: salió de las
-        // pestañas del control para no mezclarse con el trabajo diario. El padre
-        // pasa al primer hijo visible para quien solo administra reglas.
-        label: "Configuración de combustible", href: "/combustibles/control/configuracion", iconName: "GasPump", permissions: ["combustibles:manage_control"],
-        children: [
-          { label: "Control de combustible", href: "/combustibles/control/configuracion", permissions: ["combustibles:manage_control"] },
-          { label: "Reglas de anomalías",    href: "/combustibles/anomalias/reglas",      permissions: ["combustibles:manage_anomaly_rules"] },
-        ],
+        // Los ajustes viven dentro del módulo de Combustible (`/combustibles/ajustes`),
+        // donde los ve quien los usa; desde Administración se llega al mismo lugar.
+        // La página abre en la primera sección que el permiso permite.
+        label: "Ajustes de combustible", href: "/combustibles/ajustes", iconName: "GasPump",
+        permissions: ["combustibles:manage_control", "combustibles:manage_anomaly_rules", "combustibles:tae_manage_config", "combustibles:manage_integrations"],
       },
       { label: "Tipos de activo TI",    href: "/admin/tipos-activo",        iconName: "Laptop",            permissions: ["admin:it_asset_types"] },
       { label: "Tipos de documento SST", href: "/admin/taxonomia-sst",      iconName: "FileText",          permissions: ["admin:document_taxonomy"] },

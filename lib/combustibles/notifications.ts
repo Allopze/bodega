@@ -1,10 +1,9 @@
 /**
- * Notifications for the Combustibles module.
- *
- * Checks for:
- * - Monthly statements due soon (within 5 days)
- * - Overdue monthly statements
- * - Unassigned fuel loads (loads without a statement after month end)
+ * Avisos del módulo de Combustible, con el vocabulario del rediseño
+ * («estado de cuenta», no «cartola» ni «cuenta corriente»):
+ * - estados de cuenta que vencen pronto (dentro de 5 días);
+ * - estados de cuenta vencidos;
+ * - cargas del mes pasado que todavía no están en ningún estado de cuenta.
  */
 
 import { db } from "@/db"
@@ -13,7 +12,10 @@ import { eq, and, sql, lte } from "drizzle-orm"
 import { notifyManyUser } from "@/lib/services/notifications"
 import { getGlobalUserIdsWithAllPermissions } from "@/lib/services/notification-targeting"
 import { logger } from "@/lib/logger"
-import { chileDateParts, todayInChile, addDaysToPlainDate } from "@/lib/utils"
+import { chileDateParts, todayInChile, addDaysToPlainDate, formatCLP, formatDate } from "@/lib/utils"
+import { FUEL_PATHS, fuelStatementHref } from "@/lib/combustibles/routes"
+import { accountableFuelLoadsWhere } from "@/lib/combustibles/load-status"
+import { fuelMonthLabel, statementPendingAmount } from "@/lib/combustibles/calculations"
 
 /**
  * Mes anterior a `year`-`month` (mes 1-based) como "YYYY-MM".
@@ -33,7 +35,7 @@ export function previousMonth(year: number, month: number): string {
 export async function checkFuelStatementNotifications(): Promise<void> {
   try {
     // Fecha civil chilena, no UTC: entre las 21:00 y la medianoche de Chile
-    // `toISOString()` ya está en el día siguiente y un resumen que vence hoy
+    // `toISOString()` ya está en el día siguiente y un estado de cuenta que vence hoy
     // se notificaba VENCIDO con horas de anticipación.
     const today = todayInChile()
     const fiveDaysFromNow = addDaysToPlainDate(today, 5)
@@ -56,7 +58,7 @@ export async function checkFuelStatementNotifications(): Promise<void> {
       with: { supplier: true },
     })
 
-    // La notificación lleva monto y deep link a una cuenta corriente global:
+    // La notificación lleva monto y enlace a un estado de cuenta global:
     // su audiencia replica exactamente el guard de la pantalla destino.
     const adminUserIds = await getGlobalUserIdsWithAllPermissions(
       "combustibles:view",
@@ -66,53 +68,58 @@ export async function checkFuelStatementNotifications(): Promise<void> {
     // Notify about due soon
     for (const stmt of dueSoon) {
       const supplierName = stmt.supplier?.name ?? "Proveedor"
-      const pending = (stmt.totalAmount ?? 0) - (stmt.paidAmount ?? 0)
+      const pending = statementPendingAmount(stmt)
       if (pending <= 0) continue
 
       await notifyManyUser(adminUserIds, {
         type: "fuel_statement_due_soon",
-        title: `Resumen ${supplierName} ${stmt.month} vence pronto`,
-        body: `Pendiente: $${pending.toLocaleString("es-CL")} · Vence: ${stmt.dueDate}`,
+        title: `El estado de cuenta de ${supplierName} de ${fuelMonthLabel(stmt.month)} vence pronto`,
+        body: `Por pagar: ${formatCLP(pending)} · Vence el ${formatDate(stmt.dueDate ?? "")}`,
         entityType: "fuel_monthly_statement",
         entityId: stmt.id,
-        entityHref: `/combustibles/cuenta-corriente/${stmt.id}`,
+        entityHref: fuelStatementHref(stmt.id),
       })
     }
 
     // Notify about overdue
     for (const stmt of overdue) {
       const supplierName = stmt.supplier?.name ?? "Proveedor"
-      const pending = (stmt.totalAmount ?? 0) - (stmt.paidAmount ?? 0)
+      const pending = statementPendingAmount(stmt)
       if (pending <= 0) continue
 
       await notifyManyUser(adminUserIds, {
         type: "fuel_statement_overdue",
-        title: `⚠️ Resumen ${supplierName} ${stmt.month} VENCIDO`,
-        body: `Pendiente: $${pending.toLocaleString("es-CL")} · Venció: ${stmt.dueDate}`,
+        title: `El estado de cuenta de ${supplierName} de ${fuelMonthLabel(stmt.month)} está vencido`,
+        body: `Por pagar: ${formatCLP(pending)} · Venció el ${formatDate(stmt.dueDate ?? "")}`,
         entityType: "fuel_monthly_statement",
         entityId: stmt.id,
-        entityHref: `/combustibles/cuenta-corriente/${stmt.id}`,
+        entityHref: fuelStatementHref(stmt.id),
       })
     }
 
-    // Check for unassigned loads (loads from previous months without a statement)
+    // Cargas del mes pasado que todavía no están en un estado de cuenta. Sólo
+    // las contabilizables: un borrador o una carga anulada no entra nunca a un
+    // estado de cuenta, así que contarlas avisaba para siempre de algo que no
+    // se puede resolver.
     const { year, month } = chileDateParts()
     const prevMonthStr = previousMonth(year, month)
 
     const unassignedCount = await db.select({ count: sql<number>`count(*)` })
       .from(fuelLoads)
       .where(and(
+        accountableFuelLoadsWhere(),
         eq(fuelLoads.month, prevMonthStr),
         sql`${fuelLoads.statementId} IS NULL`,
       ))
 
-    const count = unassignedCount[0]?.count ?? 0
+    const count = Number(unassignedCount[0]?.count ?? 0)
     if (count > 0) {
       await notifyManyUser(adminUserIds, {
         type: "fuel_loads_unassigned",
-        title: `${count} cargas de ${prevMonthStr} sin resumen`,
-        body: "Hay cargas de combustible del mes pasado que no están asignadas a una cuenta corriente mensual.",
-        entityHref: "/combustibles",
+        title: `${count} ${count === 1 ? "carga" : "cargas"} de ${fuelMonthLabel(prevMonthStr)} sin estado de cuenta`,
+        body: "Hay cargas del mes pasado que todavía no están en un estado de cuenta. Créalo para dejar el mes cerrado.",
+        // Abre el mes pasado, que es donde está el botón «Crear».
+        entityHref: `${FUEL_PATHS.estados}?periodo=${prevMonthStr}`,
       })
     }
   } catch (err) {

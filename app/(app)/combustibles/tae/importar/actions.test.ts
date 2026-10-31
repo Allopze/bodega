@@ -91,7 +91,9 @@ describe("revertTaeImportBatchAction", () => {
       fromStatus: "imported",
       toStatus: "reverted",
     }), tx)
-    expect(mockRevalidatePath).toHaveBeenCalledWith("/combustibles/tae/importar/historial")
+    // Una sola invalidación de todo `/combustibles` (Archivos importados, Cargas, Cuadratura…), no rutas sueltas.
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/combustibles", "layout")
+    expect(mockRevalidatePath).not.toHaveBeenCalledWith(expect.stringContaining("/tae/importar"))
     // Movimientos de sello borrados ANTES de las cargas — sin CASCADE en la FK,
     // el orden inverso revienta con violación de FK apenas una carga del lote
     // llegó a validarse (ver el comentario en actions.ts).

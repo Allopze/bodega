@@ -12,7 +12,7 @@ vi.mock("@/lib/combustibles/anomaly-cases", () => ({
   addAnomalyComment: mockComment,
 }))
 vi.mock("@/lib/logger", () => ({ logger: { error: vi.fn() } }))
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 
 const { updateAnomalyStatusAction, assignAnomalyAction, commentAnomalyAction } = await import("./actions")
 
@@ -31,7 +31,7 @@ describe("updateAnomalyStatusAction — permiso según el estado destino", () =>
   it("in_review pide combustibles:review_anomalies, no resolve_anomalies", async () => {
     mockGuardPermission.mockResolvedValueOnce(denied)
     const res = await updateAnomalyStatusAction({ caseId: "c-1", expectedStatus: "open", status: "in_review" })
-    expect(mockGuardPermission).toHaveBeenCalledWith("combustibles:review_anomalies", "/combustibles")
+    expect(mockGuardPermission).toHaveBeenCalledWith("combustibles:review_anomalies", "/combustibles/revisar")
     expect(res).toEqual(denied.error)
     expect(mockUpdateStatus).not.toHaveBeenCalled()
   })
@@ -39,7 +39,7 @@ describe("updateAnomalyStatusAction — permiso según el estado destino", () =>
   it("resolved pide combustibles:resolve_anomalies, no review_anomalies", async () => {
     mockGuardPermission.mockResolvedValueOnce(denied)
     const res = await updateAnomalyStatusAction({ caseId: "c-1", expectedStatus: "in_review", status: "resolved", resolution: "motivo" })
-    expect(mockGuardPermission).toHaveBeenCalledWith("combustibles:resolve_anomalies", "/combustibles")
+    expect(mockGuardPermission).toHaveBeenCalledWith("combustibles:resolve_anomalies", "/combustibles/revisar")
     expect(res).toEqual(denied.error)
     expect(mockUpdateStatus).not.toHaveBeenCalled()
   })
@@ -47,7 +47,7 @@ describe("updateAnomalyStatusAction — permiso según el estado destino", () =>
   it("dismissed también pide combustibles:resolve_anomalies", async () => {
     mockGuardPermission.mockResolvedValueOnce(denied)
     await updateAnomalyStatusAction({ caseId: "c-1", expectedStatus: "open", status: "dismissed", resolution: "motivo" })
-    expect(mockGuardPermission).toHaveBeenCalledWith("combustibles:resolve_anomalies", "/combustibles")
+    expect(mockGuardPermission).toHaveBeenCalledWith("combustibles:resolve_anomalies", "/combustibles/revisar")
   })
 
   it("con el permiso correcto, actualiza y no bloquea", async () => {
@@ -72,7 +72,7 @@ describe("assignAnomalyAction / commentAnomalyAction — combustibles:review_ano
   it("assignAnomalyAction bloquea sin el permiso", async () => {
     mockGuardPermission.mockResolvedValueOnce(denied)
     const res = await assignAnomalyAction({ caseId: "c-1", expectedAssigneeId: null, assigneeId: "user-2" })
-    expect(mockGuardPermission).toHaveBeenCalledWith("combustibles:review_anomalies", "/combustibles")
+    expect(mockGuardPermission).toHaveBeenCalledWith("combustibles:review_anomalies", "/combustibles/revisar")
     expect(res).toEqual(denied.error)
     expect(mockAssign).not.toHaveBeenCalled()
   })

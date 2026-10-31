@@ -104,6 +104,8 @@ async function maskedKeyMap(session: Session | null, filters: ControlFilters): P
 
 export interface SealDetailRow {
   id: string
+  /** Equipo de la ficha (`fuel_vehicles.id`); `null` si la carga no se pudo asociar a uno. */
+  vehicleId: string | null
   loadedAt: string
   loadedAtSource: string
   equipment: string
@@ -138,6 +140,7 @@ export async function listSealDetail(
   const [rows, totals] = await Promise.all([
     db.select({
       id: fuelTaeSubmissions.id,
+      vehicleId: fuelTaeSubmissions.vehicleId,
       loadedAt: fuelTaeSubmissions.loadedAt,
       loadedAtSource: fuelTaeSubmissions.loadedAtSource,
       equipment: sql<string>`coalesce(${fuelVehicles.code}, ${fuelTaeSubmissions.equipmentCodeSnapshot})`,

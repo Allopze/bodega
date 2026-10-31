@@ -401,6 +401,9 @@ Se aplican solos: `scripts/deploy-prod.sh` corre el servicio `sync-rbac` en cada
 
 ## 11. Navegación (2026-10-22)
 
+> **Reemplazada por la §12** (rediseño del 2026-10-31). Se conserva como registro de
+> la organización anterior; todas sus rutas son hoy páginas puente.
+
 Rama `feat/control-operacional-orden`. El área «Control operacional» se ordenó por
 **tarea** (qué viene a hacer la persona) y no por fuente del dato (TCT, TAE,
 control de cargas). El cambio es de organización: el menú y qué pantallas se
@@ -456,3 +459,68 @@ Cada ítem y cada pestaña se muestran con el mismo permiso que exige su pantall
 menú no es una frontera de seguridad). «Facturas y pagos» exige `combustibles:view_costs`;
 «TAE y sellos» exige `combustibles:tae_view`, salvo el historial de sellos, que sólo pide
 `combustibles:view`; la cuenta corriente es global y monetaria.
+
+## 12. Rediseño «El mes como hilo» (2026-10-31)
+
+Rama `feat/combustibles-rediseno`. El módulo dejó de ordenarse por el origen del dato
+(TCT, TAE, log operacional, control) y pasó a ordenarse por la tarea del mes: llegan
+los datos, se revisa lo dudoso, se cuadra, se mira el consumo y se paga. Ocho ítems
+de menú con nombre de tarea, un Panel según el rol con un período elegible, una sola
+bandeja, una ficha única de carga, una ficha de equipo y vocabulario sin siglas
+(glosario «¿Qué significa?», `lib/combustibles/glossary.ts`).
+
+**Fuentes de verdad.** Rutas: `lib/combustibles/routes.ts` (`FUEL_PATHS` y los
+`fuel*Href`). Menú: `modules/combustibles/manifest.ts`. Pestañas por sección:
+`lib/combustibles/section-nav.ts`. Destinos de las URL anteriores:
+`lib/combustibles/legacy-redirects.ts` (una prueba por fila). Período:
+`lib/combustibles/period/` (token `periodo=2026-10 | 2026-T4 | 2026 | 2026-S44` o
+`desde`/`hasta`; precedencia URL → parámetros antiguos → cookie `chome_fuel_periodo`
+→ valor por rol), control `components/combustibles/fuel-period-control.tsx` en la
+cabecera de cada pantalla.
+
+| Ítem del menú | Ruta | Pestañas o secciones | Acceso |
+|---|---|---|---|
+| Panel | `/combustibles` | Variante por rol: jefatura (5 pasos del período, lo que vence primero, tres cifras), terreno y contrato, consulta | `view` |
+| Cargas | `/combustibles/cargas` | Cargas a equipos · Tarjetas (`/cargas/tarjetas`) · Registrar (`/cargas/registrar`) · ficha `/cargas/{terreno,planilla,factura}/[id]` (+`/historial`) | `view`; registrar `register_load`; carga pasada `register_past_load`; historial `view_audit` |
+| Por revisar | `/combustibles/revisar` | Pendientes · Decididas; tipos carga, caso, patente, pedido | `view`; decidir y deshacer `approve_flagged` |
+| Cuadratura | `/combustibles/cuadratura` | Por mandante · Proveedor y terreno · Tarjeta y terreno · Estanques · Sellos | `tae_view` (estanques y el historial de sellos: `view`) |
+| Consumo | `/combustibles/consumo` | Rendimiento (`/rendimiento/[familia]`) · Consumo (`/litros`) · Motor en vacío · ficha `/consumo/equipos/[id]` | `view` |
+| Pagos | `/combustibles/pagos` | Facturas · Estados de cuenta (`/pagos/estados`) · Nueva factura | `view_costs` + `assertFuelCostAccess`; estados, rol global |
+| Fuentes de datos | `/combustibles/fuentes` | Estado por fuente · Archivos importados · asistentes `/fuentes/agregar/{tarjeta,planilla,sellos}` | `import`, `tae_import` o `sync_integrations` |
+| Ajustes | `/combustibles/ajustes` | Mandantes y tolerancias · Medios · Familias · Umbrales · Reglas · Puntos de carga y QR · Integraciones | el `manage_*` de cada sección |
+
+Administración › Catálogos de flota conserva un solo acceso, «Ajustes de combustible».
+
+**Rutas retiradas.** Las 31 rutas anteriores (`/bitacora`, `/tae`, `/revision`,
+`/anomalias`, `/control/*`, `/ciclo`, `/sellos`, `/facturas`, `/nueva`,
+`/cuenta-corriente`, `/importar`, `/analisis`, `/reportes` y sus detalles) son páginas
+puente permanentes que traducen también los filtros antiguos de período (`anio`/`meses`,
+`from`/`to`, `month`, `startDate`/`endDate`). `/combustibles?vista=…` resuelve sus
+vistas viejas antes de pintar el Panel. Los `entity_href` guardados en notificaciones
+no se reescriben: los resuelven los puentes. Pública: `/tae/acceso/[token]` →
+`/tae/access/[token]`, para los QR ya impresos.
+
+**Interruptores.** La migración `0365` movió las claves
+`submodule.enabled:combustibles:*` a los hrefs nuevos: `/combustibles` →
+`/combustibles/consumo` (la clave vieja se borra porque ahora es el Panel),
+`/bitacora` → `/cargas` y `/fuentes`, `/revision` → `/revisar`, `/tae` →
+`/cuadratura`, `/facturas` → `/pagos`. Panel y Ajustes arrancan encendidos.
+
+**Esquema (0365).** `fuel_review_marks` gana ciclo de vida (`status`
+open/resolved/withdrawn, `worksite_id`, resolución con nota; índice único parcial
+sobre las abiertas): pedir revisión ya no borra la marca anterior. `fuel_tae_submissions`
+admite `loaded_at_source = 'backdated'` con `backdate_reason` obligatorio.
+
+**Carga pasada (D-4, S-5).** Registrar una carga con fecha pasada ya no depende de la
+hora del dispositivo ni de la cola sin conexión: es un registro explícito desde la app
+(hasta 62 días atrás, con motivo, fotos opcionales) que queda marcado `late_entry` y
+llega a «Por revisar». La lectura no puede superar la de la carga siguiente, la posible
+duplicada del mismo origen pide confirmación, se reevalúa la cadena de sellos de la
+carga siguiente y las decisiones posteriores cuya serie cambió vuelven a «por decidir»
+con auditoría.
+
+**Deshacer una decisión.** Desde «Decididas» o la ficha: la carga vuelve a la serie con
+una nota auditada y la serie se recalcula (si el motivo persiste, vuelve a marcarse).
+
+**Sin cambio (decisión del 2026-10-30).** Mes cerrado con bloqueo, correo por fuera de
+tolerancia y edición de facturas registradas siguen como estaban.

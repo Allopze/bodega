@@ -1,18 +1,21 @@
 /**
- * Bitácora general unificada: une TAE (PWA), facturación (TCT/TAE) y el log
- * operacional importado en una sola consulta paginada en servidor.
+ * Lista unificada de «Cargas a equipos» (antes «bitácora»): une los registros en
+ * terreno (formulario por QR, app, histórico de sellos), las facturas y la
+ * planilla de cargas en una sola consulta paginada en servidor.
  *
- * No es un contrato de conciliación — cada fuente conserva su origen (`source`)
- * y su vocabulario de estado propio. No sumar litros entre fuentes sin el
- * contrato aprobado en `docs/combustibles/CONTROL_COMBUSTIBLE_INTEGRADO.md`.
- * No se exponen montos: no existe todavía el permiso "ver costos" (sección 14).
+ * No es un contrato de conciliación — cada fuente conserva su origen (`source`
+ * y `origin`) y su vocabulario de estado propio. No sumar litros entre fuentes
+ * sin el contrato aprobado en `docs/combustibles/CONTROL_COMBUSTIBLE_INTEGRADO.md`.
+ * No se exponen montos: la lista no lleva dinero (el monto de una factura vive en
+ * su ficha, con `view_costs`).
  */
 
 import type { Session } from "next-auth"
-import { and, asc, desc, eq, gte, ilike, inArray, lte, or, sql } from "drizzle-orm"
+import { and, asc, desc, eq, gte, ilike, inArray, lte, or, sql, type SQL } from "drizzle-orm"
 import { unionAll } from "drizzle-orm/pg-core"
 import { db } from "@/db"
 import {
+  fuelEquipmentLoads,
   fuelEquipmentTypes,
   fuelLoads,
   fuelOperationBatches,
@@ -27,7 +30,8 @@ import {
 } from "@/db/schema"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 
-import type { FuelLogSource, FuelLogRow, FuelLogFilters } from "./fuel-log-shared"
+import { FUEL_LOAD_ORIGIN_LABEL, FUEL_LOAD_STATE_LABEL, FUEL_LOAD_STATE_SLUGS, fuelLogBranchesFor, type FuelLogSource, type FuelLogRow, type FuelLogFilters, type FuelLoadOriginSlug } from "./fuel-log-shared"
+import { fuelLoadHref } from "@/lib/combustibles/routes"
 export type { FuelLogSource, FuelLogRow, FuelLogFilters }
 export { FUEL_LOG_SOURCE_LABEL } from "./fuel-log-shared"
 
@@ -56,9 +60,9 @@ export function operationPerformanceUnitCode(unit: string): string {
 
 /** Ruta de detalle en el sistema fuente de cada fila. */
 export function fuelLogDetailHref(row: Pick<FuelLogRow, "source" | "detailId">): string {
-  if (row.source === "tae_pwa") return `/combustibles/tae/${row.detailId}`
-  if (row.source === "invoiced") return `/combustibles/${row.detailId}`
-  return `/combustibles/importar/operaciones/${row.detailId}` // sin página propia por fila: abre el lote
+  if (row.source === "tae_pwa") return fuelLoadHref({ origen: "terreno", id: row.detailId })
+  if (row.source === "invoiced") return fuelLoadHref({ origen: "factura", id: row.detailId })
+  return fuelLoadHref({ origen: "planilla", id: row.detailId })
 }
 
 /**
@@ -76,12 +80,17 @@ function anomalyCountSql(referenceEntityType: string, idColumn: unknown) {
   return sql<number | null>`(select count(*)::int from fuel_anomaly_cases ac where ac.reference_entity_type = ${referenceEntityType} and ac.reference_entity_id = ${idColumn} and ac.status IN ('open', 'in_review', 'reopened'))`.as("anomalyCount")
 }
 
-/** Subquery de marca de revisión, reutilizada por las 3 ramas con su propio `entityType`. */
+/**
+ * Subqueries del pedido de revisión («Pedir que la revisen»). Sólo cuenta el
+ * pedido ABIERTO: uno resuelto o retirado queda en el historial de la carga pero
+ * ya no marca la fila. Hay a lo sumo uno abierto por carga (índice único parcial).
+ */
 function reviewMarkSql(entityType: string, idColumn: unknown) {
   return sql<boolean | null>`(
     select true from fuel_review_marks rm
     where rm.entity_type = ${entityType}
       and rm.entity_id = ${idColumn}
+      and rm.status = 'open'
   )`.as("reviewMark")
 }
 
@@ -90,6 +99,7 @@ function reviewMarkNotesSql(entityType: string, idColumn: unknown) {
     select rm.notes from fuel_review_marks rm
     where rm.entity_type = ${entityType}
       and rm.entity_id = ${idColumn}
+      and rm.status = 'open'
   )`.as("reviewMarkNotes")
 }
 
@@ -98,10 +108,37 @@ function reviewMarkIdSql(entityType: string, idColumn: unknown) {
     select rm.id from fuel_review_marks rm
     where rm.entity_type = ${entityType}
       and rm.entity_id = ${idColumn}
+      and rm.status = 'open'
   )`.as("reviewMarkId")
 }
 
+/** Quién pidió la revisión abierta (para decidir si la sesión puede retirarla). */
+function reviewMarkedBySql(entityType: string, idColumn: unknown) {
+  return sql<string | null>`(
+    select rm.marked_by from fuel_review_marks rm
+    where rm.entity_type = ${entityType}
+      and rm.entity_id = ${idColumn}
+      and rm.status = 'open'
+  )`.as("reviewMarkedBy")
+}
+
+/** `exists` de un pedido de revisión abierto sobre la carga. */
+function openReviewMarkExistsSql(entityType: string, idColumn: unknown) {
+  return sql`exists (select 1 from fuel_review_marks rm where rm.entity_type = ${entityType} and rm.entity_id = ${idColumn} and rm.status = 'open')`
+}
+
+/** Fuentes de `fuel_tae_submissions.source` que corresponden a los orígenes pedidos en `como`. */
+function taeSourcesForOrigins(origins: readonly FuelLoadOriginSlug[]): string[] {
+  const bySource: Record<string, FuelLoadOriginSlug> = { public_pwa: "qr", internal_app: "app", legacy_xlsx: "historico" }
+  return Object.entries(bySource).filter(([, origin]) => origins.includes(origin)).map(([source]) => source)
+}
+
 /** Filtro EXISTS sobre `fuel_anomaly_cases`, reutilizado por las 3 ramas. `undefined` si no hay ningún filtro de anomalía activo. */
+/** Un caso de anomalía abierto, en revisión o reabierto sobre la fila: cuenta como pendiente. */
+function openCaseExistsSql(referenceEntityType: string, idColumn: unknown) {
+  return sql`exists (select 1 from fuel_anomaly_cases ac where ac.reference_entity_type = ${referenceEntityType} and ac.reference_entity_id = ${idColumn} and ac.status IN ('open', 'in_review', 'reopened'))`
+}
+
 function anomalyFilterSql(referenceEntityType: string, idColumn: unknown, filters: FuelLogFilters) {
   if (!filters.hasAnomaly && !filters.anomalyRuleCode && !filters.anomalySeverity && !filters.anomalyAssigneeId) return undefined
   return sql`exists (
@@ -129,7 +166,7 @@ export function fuelLogAuditEntity(row: Pick<FuelLogRow, "source" | "id">): { en
   return null // el log operacional se audita a nivel de lote, no de fila individual
 }
 
-function buildTaeBranch(session: Session, filters: FuelLogFilters, searchPattern: string | null, ids?: string[]) {
+function buildTaeBranch(session: Session, filters: FuelLogFilters, searchPattern: string | null, ids?: string[], forceEmpty = false) {
   const personal = canViewFuelPersonalData(session)
   return db
     .select({
@@ -185,8 +222,17 @@ function buildTaeBranch(session: Session, filters: FuelLogFilters, searchPattern
       reviewMark: reviewMarkSql("fuel_tae_submission", fuelTaeSubmissions.id),
       reviewMarkNotes: reviewMarkNotesSql("fuel_tae_submission", fuelTaeSubmissions.id),
       reviewMarkId: reviewMarkIdSql("fuel_tae_submission", fuelTaeSubmissions.id),
+      reviewMarkedBy: reviewMarkedBySql("fuel_tae_submission", fuelTaeSubmissions.id),
+      origin: sql<FuelLoadOriginSlug>`case ${fuelTaeSubmissions.source} when 'internal_app' then 'app' when 'legacy_xlsx' then 'historico' else 'qr' end`.as("origin"),
+      worksiteId: sql<string | null>`${fuelTaeSubmissions.worksiteId}`.as("worksiteId"),
+      vehicleId: sql<string | null>`${fuelTaeSubmissions.vehicleId}`.as("vehicleId"),
+      equipmentLoadId: sql<string | null>`${fuelEquipmentLoads.id}`.as("equipmentLoadId"),
+      reviewFlagged: sql<boolean | null>`(${fuelEquipmentLoads.reviewStatus} = 'flagged')`.as("reviewFlagged"),
+      reviewFlagReason: sql<string | null>`(${fuelEquipmentLoads.flagReasons} ->> 0)`.as("reviewFlagReason"),
     })
     .from(fuelTaeSubmissions)
+    // Una carga proyectada tiene a lo sumo una fila (índice único por `tae_submission_id`).
+    .leftJoin(fuelEquipmentLoads, eq(fuelEquipmentLoads.taeSubmissionId, fuelTaeSubmissions.id))
     .leftJoin(worksites, eq(fuelTaeSubmissions.worksiteId, worksites.id))
     .leftJoin(fuelTaeLoadingPoints, eq(fuelTaeSubmissions.loadingPointId, fuelTaeLoadingPoints.id))
     .leftJoin(fuelVehicles, eq(fuelTaeSubmissions.vehicleId, fuelVehicles.id))
@@ -194,6 +240,7 @@ function buildTaeBranch(session: Session, filters: FuelLogFilters, searchPattern
     .leftJoin(fuelProducts, eq(fuelTaeSubmissions.productId, fuelProducts.id))
     .leftJoin(users, eq(fuelTaeSubmissions.reviewedBy, users.id))
     .where(and(
+      forceEmpty ? sql`false` : undefined,
       worksiteScopeSql(session, fuelTaeSubmissions.worksiteId),
       filters.worksiteId ? eq(fuelTaeSubmissions.worksiteId, filters.worksiteId) : undefined,
       filters.from ? sql`(${fuelTaeSubmissions.loadedAt} at time zone 'America/Santiago')::date >= ${filters.from}::date` : undefined,
@@ -222,7 +269,15 @@ function buildTaeBranch(session: Session, filters: FuelLogFilters, searchPattern
       filters.sealInstalled ? ilike(fuelTaeSubmissions.installedSealNumber, `%${filters.sealInstalled}%`) : undefined,
       filters.evidenceKind ? sql`exists (select 1 from fuel_tae_evidence e where e.submission_id = ${fuelTaeSubmissions.id} and e.kind = ${filters.evidenceKind})` : undefined,
       anomalyFilterSql("fuel_tae_submission", fuelTaeSubmissions.id, filters),
-      filters.hasReviewMark ? sql`exists (select 1 from fuel_review_marks rm where rm.entity_type = 'fuel_tae_submission' and rm.entity_id = ${fuelTaeSubmissions.id})` : undefined,
+      filters.hasReviewMark ? openReviewMarkExistsSql("fuel_tae_submission", fuelTaeSubmissions.id) : undefined,
+      filters.origins?.length ? inArray(fuelTaeSubmissions.source, taeSourcesForOrigins(filters.origins)) : undefined,
+      filters.stateSlug ? taeStateSql(filters.stateSlug) : undefined,
+      filters.vehicleId ? eq(fuelTaeSubmissions.vehicleId, filters.vehicleId) : undefined,
+      filters.registeredBy ? eq(fuelTaeSubmissions.registeredBy, filters.registeredBy) : undefined,
+      filters.sealIncomplete ? sql`(${fuelTaeSubmissions.removedSealNumber} is null or btrim(${fuelTaeSubmissions.removedSealNumber}) = '' or ${fuelTaeSubmissions.installedSealNumber} is null or btrim(${fuelTaeSubmissions.installedSealNumber}) = '')` : undefined,
+      // Una carga registrada después (fecha pasada) tiene las fotos opcionales: no cuenta como «le faltan fotos».
+      filters.photosIncomplete ? sql`(${fuelTaeSubmissions.loadedAtSource} <> 'backdated' and (select count(distinct e.kind) from fuel_tae_evidence e where e.submission_id = ${fuelTaeSubmissions.id}) < 4)` : undefined,
+      filters.onlyPending ? sql`(${fuelEquipmentLoads.reviewStatus} = 'flagged' or ${fuelTaeSubmissions.status} = 'observed' or ${openReviewMarkExistsSql("fuel_tae_submission", fuelTaeSubmissions.id)} or ${openCaseExistsSql("fuel_tae_submission", fuelTaeSubmissions.id)})` : undefined,
     ))
 }
 
@@ -264,6 +319,14 @@ function buildInvoicedBranch(session: Session, filters: FuelLogFilters, searchPa
       reviewMark: reviewMarkSql("fuel_load", fuelLoads.id),
       reviewMarkNotes: reviewMarkNotesSql("fuel_load", fuelLoads.id),
       reviewMarkId: reviewMarkIdSql("fuel_load", fuelLoads.id),
+      reviewMarkedBy: reviewMarkedBySql("fuel_load", fuelLoads.id),
+      origin: sql<FuelLoadOriginSlug>`'factura'`.as("origin"),
+      worksiteId: sql<string | null>`${fuelLoads.worksiteId}`.as("worksiteId"),
+      vehicleId: sql<string | null>`${fuelLoads.vehicleId}`.as("vehicleId"),
+      // Una factura no pasa por la proyección de cargas a equipos: nada que decidir en la bandeja.
+      equipmentLoadId: sql<string | null>`NULL::text`.as("equipmentLoadId"),
+      reviewFlagged: sql<boolean | null>`NULL::boolean`.as("reviewFlagged"),
+      reviewFlagReason: sql<string | null>`NULL::text`.as("reviewFlagReason"),
     })
     .from(fuelLoads)
     .leftJoin(worksites, eq(fuelLoads.worksiteId, worksites.id))
@@ -301,7 +364,16 @@ function buildInvoicedBranch(session: Session, filters: FuelLogFilters, searchPa
       filters.sealInstalled ? sql`false` : undefined,
       filters.evidenceKind ? sql`false` : undefined,
       anomalyFilterSql("fuel_load", fuelLoads.id, filters),
-      filters.hasReviewMark ? sql`exists (select 1 from fuel_review_marks rm where rm.entity_type = 'fuel_load' and rm.entity_id = ${fuelLoads.id})` : undefined,
+      filters.hasReviewMark ? openReviewMarkExistsSql("fuel_load", fuelLoads.id) : undefined,
+      // `como=factura` es la única que lo acepta: `buildUnified` ya descarta la rama en las demás combinaciones.
+      filters.stateSlug ? invoicedStateSql(filters.stateSlug) : undefined,
+      filters.vehicleId ? eq(fuelLoads.vehicleId, filters.vehicleId) : undefined,
+      // Una factura no es «de» nadie: con `mias=si` no aporta filas (`buildUnified` ya descarta la rama).
+      filters.registeredBy ? sql`false` : undefined,
+      // Sellos y fotos sólo existen en los registros en terreno.
+      filters.sealIncomplete ? sql`false` : undefined,
+      filters.photosIncomplete ? sql`false` : undefined,
+      filters.onlyPending ? sql`(${openReviewMarkExistsSql("fuel_load", fuelLoads.id)} or ${openCaseExistsSql("fuel_load", fuelLoads.id)})` : undefined,
     ))
 }
 
@@ -310,7 +382,7 @@ function buildOperationBranch(session: Session, filters: FuelLogFilters, searchP
   return db
     .select({
       id: sql<string>`${fuelOperationRecords.id}`.as("id"),
-      detailId: sql<string>`${fuelOperationRecords.batchId}`.as("detailId"), // sin página de detalle por fila: se abre el lote que la contiene
+      detailId: sql<string>`${fuelOperationRecords.id}`.as("detailId"), // cada fila de la planilla tiene su ficha (/combustibles/cargas/planilla/<id>)
       source: sql<FuelLogSource>`'operation_manual'`.as("source"),
       occurredAt: fuelOperationOccurredAtSql().as("occurredAt"),
       worksiteName: sql<string | null>`${worksites.name}`.as("worksiteName"),
@@ -344,9 +416,17 @@ function buildOperationBranch(session: Session, filters: FuelLogFilters, searchP
       reviewMark: reviewMarkSql("fuel_operation_record", fuelOperationRecords.id),
       reviewMarkNotes: reviewMarkNotesSql("fuel_operation_record", fuelOperationRecords.id),
       reviewMarkId: reviewMarkIdSql("fuel_operation_record", fuelOperationRecords.id),
+      reviewMarkedBy: reviewMarkedBySql("fuel_operation_record", fuelOperationRecords.id),
+      origin: sql<FuelLoadOriginSlug>`'planilla'`.as("origin"),
+      worksiteId: sql<string | null>`${fuelOperationRecords.worksiteId}`.as("worksiteId"),
+      vehicleId: sql<string | null>`${fuelOperationRecords.vehicleId}`.as("vehicleId"),
+      equipmentLoadId: sql<string | null>`${fuelEquipmentLoads.id}`.as("equipmentLoadId"),
+      reviewFlagged: sql<boolean | null>`(${fuelEquipmentLoads.reviewStatus} = 'flagged')`.as("reviewFlagged"),
+      reviewFlagReason: sql<string | null>`(${fuelEquipmentLoads.flagReasons} ->> 0)`.as("reviewFlagReason"),
     })
     .from(fuelOperationRecords)
     .innerJoin(fuelOperationBatches, eq(fuelOperationRecords.batchId, fuelOperationBatches.id))
+    .leftJoin(fuelEquipmentLoads, eq(fuelEquipmentLoads.operationRecordId, fuelOperationRecords.id))
     .leftJoin(worksites, eq(fuelOperationRecords.worksiteId, worksites.id))
     .leftJoin(fuelSuppliers, eq(fuelOperationRecords.fuelSupplierId, fuelSuppliers.id))
     .leftJoin(fuelVehicles, eq(fuelOperationRecords.vehicleId, fuelVehicles.id))
@@ -383,18 +463,51 @@ function buildOperationBranch(session: Session, filters: FuelLogFilters, searchP
       filters.sealInstalled ? sql`false` : undefined,
       filters.evidenceKind ? sql`false` : undefined,
       anomalyFilterSql("fuel_operation_record", fuelOperationRecords.id, filters),
-      filters.hasReviewMark ? sql`exists (select 1 from fuel_review_marks rm where rm.entity_type = 'fuel_operation_record' and rm.entity_id = ${fuelOperationRecords.id})` : undefined,
+      filters.hasReviewMark ? openReviewMarkExistsSql("fuel_operation_record", fuelOperationRecords.id) : undefined,
+      // La planilla no tiene estado propio (sólo «importada»): con un estado pedido no aporta filas.
+      filters.stateSlug ? sql`false` : undefined,
+      filters.vehicleId ? eq(fuelOperationRecords.vehicleId, filters.vehicleId) : undefined,
+      filters.registeredBy ? sql`false` : undefined,
+      filters.sealIncomplete ? sql`false` : undefined,
+      filters.photosIncomplete ? sql`false` : undefined,
+      filters.onlyPending ? sql`(${fuelEquipmentLoads.reviewStatus} = 'flagged' or ${openReviewMarkExistsSql("fuel_operation_record", fuelOperationRecords.id)} or ${openCaseExistsSql("fuel_operation_record", fuelOperationRecords.id)})` : undefined,
     ))
+}
+
+/** `estado=` de un registro en terreno → su `status`; `false` cuando ese estado sólo existe en facturas. */
+function taeStateSql(slug: keyof typeof FUEL_LOAD_STATE_SLUGS): SQL {
+  const states = FUEL_LOAD_STATE_SLUGS[slug] as { tae?: string }
+  return states.tae ? sql`${fuelTaeSubmissions.status} = ${states.tae}` : sql`false`
+}
+
+/** `estado=` de una factura → su `status`; `false` cuando ese estado sólo existe en registros en terreno. */
+function invoicedStateSql(slug: keyof typeof FUEL_LOAD_STATE_SLUGS): SQL {
+  const states = FUEL_LOAD_STATE_SLUGS[slug] as { invoiced?: string }
+  return states.invoiced ? sql`${fuelLoads.status} = ${states.invoiced}` : sql`false`
 }
 
 function buildUnified(session: Session, filters: FuelLogFilters) {
   const q = filters.q?.trim().slice(0, 120)
   const searchPattern = q ? `%${q}%` : null
+  const branches = fuelLogBranchesFor(filters)
 
-  if (filters.source === "tae_pwa") return buildTaeBranch(session, filters, searchPattern)
-  if (filters.source === "invoiced") return buildInvoicedBranch(session, filters, searchPattern)
-  if (filters.source === "operation_manual") return buildOperationBranch(session, filters, searchPattern)
-
+  // Ninguna rama (p. ej. `como=planilla&estado=validada`): la rama de terreno con
+  // un predicado imposible, que devuelve el mismo esquema y cero filas.
+  if (!branches.tae && !branches.invoiced && !branches.operation) {
+    return buildTaeBranch(session, { ...filters, origins: undefined, stateSlug: undefined }, searchPattern, undefined, true)
+  }
+  if (branches.tae && !branches.invoiced && !branches.operation) return buildTaeBranch(session, filters, searchPattern)
+  if (!branches.tae && branches.invoiced && !branches.operation) return buildInvoicedBranch(session, filters, searchPattern)
+  if (!branches.tae && !branches.invoiced && branches.operation) return buildOperationBranch(session, filters, searchPattern)
+  if (branches.tae && branches.invoiced && !branches.operation) {
+    return unionAll(buildTaeBranch(session, filters, searchPattern), buildInvoicedBranch(session, filters, searchPattern))
+  }
+  if (branches.tae && !branches.invoiced && branches.operation) {
+    return unionAll(buildTaeBranch(session, filters, searchPattern), buildOperationBranch(session, filters, searchPattern))
+  }
+  if (!branches.tae && branches.invoiced && branches.operation) {
+    return unionAll(buildInvoicedBranch(session, filters, searchPattern), buildOperationBranch(session, filters, searchPattern))
+  }
   return unionAll(
     buildTaeBranch(session, filters, searchPattern),
     buildInvoicedBranch(session, filters, searchPattern),
@@ -463,4 +576,54 @@ export async function getFuelLogRowsBySelection(session: Session, selections: Ar
     buildOperationBranch(session, {}, null, idsBySource.operation_manual),
   )
   return (await unified) as FuelLogRow[]
+}
+
+/**
+ * Los filtros de una exportación en palabras, para la hoja de metadatos: el
+ * archivo lo lee una persona, y «faena: 8f3k2…» no le dice nada. Sólo trae los
+ * filtros activos; los nombres salen de las tablas de origen.
+ */
+export async function describeFuelLogFilters(filters: FuelLogFilters): Promise<Record<string, string>> {
+  const out: Record<string, string> = {}
+  if (filters.q) out["Búsqueda"] = filters.q
+  if (filters.worksiteId) {
+    const row = await db.query.worksites.findFirst({ where: eq(worksites.id, filters.worksiteId), columns: { name: true } })
+    out["Faena"] = row?.name ?? "(faena no encontrada)"
+  }
+  if (filters.origins?.length) out["Cómo llegó"] = filters.origins.map((slug) => FUEL_LOAD_ORIGIN_LABEL[slug]).join(", ")
+  if (filters.stateSlug) out["Estado"] = FUEL_LOAD_STATE_LABEL[filters.stateSlug]
+  if (filters.onlyPending) out["Sólo con algo pendiente"] = "Sí"
+  if (filters.registeredBy) out["Registradas por"] = "Quien exporta"
+  if (filters.vehicleId) {
+    const row = await db.query.fuelVehicles.findFirst({ where: eq(fuelVehicles.id, filters.vehicleId), columns: { code: true, plate: true } })
+    out["Equipo"] = row ? [row.code, row.plate].filter(Boolean).join(" · ") : "(equipo no encontrado)"
+  }
+  if (filters.supplierId) {
+    const row = await db.query.fuelSuppliers.findFirst({ where: eq(fuelSuppliers.id, filters.supplierId), columns: { name: true } })
+    out["Proveedor"] = row?.name ?? "(proveedor no encontrado)"
+  }
+  if (filters.productId) {
+    const row = await db.query.fuelProducts.findFirst({ where: eq(fuelProducts.id, filters.productId), columns: { name: true } })
+    out["Producto"] = row?.name ?? "(producto no encontrado)"
+  }
+  if (filters.equipmentTypeId) {
+    const row = await db.query.fuelEquipmentTypes.findFirst({ where: eq(fuelEquipmentTypes.id, filters.equipmentTypeId), columns: { name: true } })
+    out["Tipo de equipo"] = row?.name ?? "(tipo no encontrado)"
+  }
+  if (filters.loadingPointId) {
+    const row = await db.query.fuelTaeLoadingPoints.findFirst({ where: eq(fuelTaeLoadingPoints.id, filters.loadingPointId), columns: { name: true } })
+    out["Punto de carga"] = row?.name ?? "(punto no encontrado)"
+  }
+  if (filters.brand) out["Marca"] = filters.brand
+  if (filters.model) out["Modelo"] = filters.model
+  if (filters.driverName) out["Conductor"] = filters.driverName
+  if (filters.supervisorName) out["Supervisor"] = filters.supervisorName
+  if (filters.sealRemoved) out["Sello retirado"] = filters.sealRemoved
+  if (filters.sealInstalled) out["Sello instalado"] = filters.sealInstalled
+  if (filters.sealIncomplete) out["Sello incompleto"] = "Sí"
+  if (filters.photosIncomplete) out["Menos de 4 fotos"] = "Sí"
+  if (filters.hasNotes) out["Con observaciones"] = "Sí"
+  if (filters.hasAnomaly) out["Con casos abiertos"] = "Sí"
+  if (filters.hasReviewMark) out["Con pedido de revisión abierto"] = "Sí"
+  return out
 }

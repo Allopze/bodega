@@ -155,7 +155,9 @@ describe("UX-002 — el alcance de la auditoría no puede volver a ser una lista
   it("cubre los módulos que la lista fija dejaba fuera", () => {
     const covered = accessibilityTargets().map((target) => target.pattern)
     for (const route of [
-      "/combustibles/cuenta-corriente", "/flota", "/mantenciones",
+      // Rutas vigentes del rediseño de Combustible (2026-10-31), no las páginas puente de las URL de antes.
+      "/combustibles/cargas", "/combustibles/revisar", "/combustibles/pagos/estados", "/combustibles/fuentes",
+      "/flota", "/mantenciones",
       "/facturacion", "/ti/activos", "/recepcion", "/trazabilidad",
     ]) {
       expect(covered).toContain(route)

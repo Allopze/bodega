@@ -8,6 +8,7 @@ import { logger } from "@/lib/logger"
 import { withCronLock } from "@/lib/services/cron-lock"
 import { isRouteOperational } from "@/lib/services/module-toggles"
 import { consumeFixedWindowLimit } from "@/lib/services/rate-limit"
+import { FUEL_PATHS } from "@/lib/combustibles/routes"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -35,7 +36,7 @@ export async function GET(request: NextRequest) {
   if (!secret || (!authorizedBySource && !authorizedInternally)) {
     return respond(fuelCronContractFor({ unauthorized: true }))
   }
-  if (!await isRouteOperational("/combustibles/control")) {
+  if (!await isRouteOperational(FUEL_PATHS.fuentes)) {
     return respond(fuelCronContractFor({ disabled: true }))
   }
 

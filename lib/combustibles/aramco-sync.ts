@@ -259,7 +259,7 @@ export interface SyncAramcoOptions {
 export async function syncAramco(options: SyncAramcoOptions = {}): Promise<AramcoSyncResult> {
   const config = await readAramcoConfig()
   if (!config.hasCredentials) {
-    throw new Error("Faltan las credenciales de Aramco. Configúralas en Combustibles → Importar.")
+    throw new Error("Faltan las credenciales de Aramco. Configúralas en Combustible › Ajustes › Integraciones.")
   }
   const importerId = await resolveImporterId(options.importerId)
 

@@ -26,6 +26,7 @@ import {
 
 import type { DomainSectionsProps } from "./shared"
 import { plusDays, todayInChile } from "./shared"
+import { FUEL_PATHS } from "@/lib/combustibles/routes"
 
 // ── Flota y combustible ──────────────────────────────────────────────────────
 
@@ -133,7 +134,7 @@ export async function FleetSection({ session, scope }: DomainSectionsProps) {
         links={[
           // Mismos nombres que el menú del área (CO-IA, 2026-10-22).
           ...(canViewOperationalControl(session) ? [{ label: "Panel operacional", href: "/control-operacional" }] : []),
-          ...(canViewFuel ? [{ label: "Consumo y rendimiento", href: "/combustibles" }] : []),
+          ...(canViewFuel ? [{ label: "Consumo y rendimiento", href: FUEL_PATHS.consumo }] : []),
           ...(canViewFleet ? [{ label: "Vehículos", href: "/flota" }] : []),
           ...(canViewMaintenance ? [{ label: "Mantenciones", href: "/mantenciones" }] : []),
           ...(canViewFuel && canSeeCosts ? [{ label: "Finanzas", href: "/dashboard?vista=finanzas" }] : []),
@@ -150,7 +151,7 @@ export async function FleetSection({ session, scope }: DomainSectionsProps) {
                 contradecía directamente su propio valor (CO-038). */}
             {canViewFuel && <KpiCard {...DASHBOARD_KPI} icon={<Gauge size={16} />} label={`Litros (${TREND_MONTHS} meses)`}
               value={`${formatQty(totalLiters)} L`}
-              detail="Cargas registradas · ahora" href="/combustibles"
+              detail="Cargas registradas · ahora" href={FUEL_PATHS.cargas}
               empty={totalLiters === 0 && !degradedSources.includes("fuelTrend")
                 ? { message: `Sin cargas registradas en ${TREND_MONTHS} meses`, actionLabel: "Ir a combustibles" }
                 : undefined} />}
@@ -169,7 +170,7 @@ export async function FleetSection({ session, scope }: DomainSectionsProps) {
             label: "Brecha tarjeta TAE vs. facturado",
             value: fuelControl?.tae ? `${formatQty(Math.abs(Math.round(fuelControl.tae.liters - fuelControl.billed.liters)))} L` : "—",
             secondary: fuelControl?.tae ? `${fuelControl.tae.pendingReview} por revisar · ${periodo}` : "Sin control de tarjeta TAE",
-            href: "/combustibles/tae/conciliacion",
+            href: FUEL_PATHS.cuadraturaTarjetaTerreno,
           }] : []),
           ...(pendingFuelCreditNotes !== null ? [{
             key: "dte-nc-pendientes",

@@ -191,8 +191,15 @@ describe("exportFuelLoadsXlsxAction", () => {
     expect(res.message).toContain("Sin permisos para exportar datos con montos")
   })
 
+  it("exige además ver costos: export_sensitive solo no alcanza para exportar montos", async () => {
+    mockRequirePermission.mockResolvedValueOnce(makeSession(["combustibles:export_sensitive", "combustibles:view"]))
+    const res = await exportFuelLoadsXlsxAction()
+    expect(res.ok).toBe(false)
+    expect(res.message).toContain("Sin permisos para exportar datos con montos")
+  })
+
   it("audita la exportación con recordAudit al generarla (sección 19: auditoría de exportaciones)", async () => {
-    mockRequirePermission.mockResolvedValueOnce(makeSession(["combustibles:export_sensitive"]))
+    mockRequirePermission.mockResolvedValueOnce(makeSession(["combustibles:export_sensitive", "combustibles:view", "combustibles:view_costs"]))
     const res = await exportFuelLoadsXlsxAction()
     expect(res.ok).toBe(true)
     expect(recordAudit).toHaveBeenCalledWith(

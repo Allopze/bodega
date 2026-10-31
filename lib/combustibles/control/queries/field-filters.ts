@@ -2,6 +2,7 @@ import type { Session } from "next-auth"
 import { and, eq, inArray, ne, sql, type AnyColumn, type SQL } from "drizzle-orm"
 import { fuelTaeSubmissions } from "@/db/schema"
 import { worksiteScopeSql } from "@/lib/auth/scope"
+import type { ResolvedFuelPeriod } from "@/lib/combustibles/period/types"
 import { mandanteWorksitesSql, selectedMonthKeys, type ControlFilters } from "../filters"
 
 /**
@@ -65,4 +66,28 @@ export function submissionWhere(session: Session | null, filters: ControlFilters
     timestampPeriodSql(filters, fuelTaeSubmissions.loadedAt),
     options.withEquipment && filters.equipment ? eq(fuelTaeSubmissions.vehicleId, filters.equipment) : undefined,
   ) ?? sql`true`
+}
+
+/**
+ * Rango de días de una pantalla de cuadratura. La cuadratura se mide por mes
+ * completo (las entradas del proveedor y los totales de la tarjeta llegan por
+ * mes): con una semana o un rango, el período se ensancha a los meses completos
+ * que toca. Mes, trimestre y año ya son meses completos y quedan como están.
+ */
+export function wholeMonthRange(period: Pick<ResolvedFuelPeriod, "from" | "to" | "monthKeys" | "isWholeMonths">): { from: string; to: string } {
+  if (period.isWholeMonths) return { from: period.from, to: period.to }
+  const firstKey = period.monthKeys[0]
+  const lastKey = period.monthKeys[period.monthKeys.length - 1]
+  if (!firstKey || !lastKey) return { from: period.from, to: period.to }
+  const [lastYear = 0, lastMonth = 1] = lastKey.split("-").map(Number)
+  const lastDay = new Date(Date.UTC(lastYear, lastMonth, 0)).getUTCDate()
+  return { from: `${firstKey}-01`, to: `${lastKey}-${String(lastDay).padStart(2, "0")}` }
+}
+
+/** `ControlFilters` sobre un rango de días civiles (el período de la cabecera); `year` y `months` no se usan cuando hay rango. */
+export function controlFiltersForRange(
+  range: { from: string; to: string },
+  extra: Partial<Omit<ControlFilters, "from" | "to" | "year" | "months">> = {},
+): ControlFilters {
+  return { year: Number(range.from.slice(0, 4)), months: [], page: 1, ...extra, from: range.from, to: range.to }
 }

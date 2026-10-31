@@ -12,9 +12,10 @@ vi.mock("@/lib/auth/auth", () => ({ auth: mockAuth }))
 vi.mock("@/lib/services/module-toggles", () => ({ isRouteOperational: mockIsRouteOperational }))
 vi.mock("@/lib/services/rate-limit", () => ({ consumeFixedWindowLimit: mockConsumeFixedWindowLimit }))
 vi.mock("@/lib/services/fuel-tae", () => ({ createInternalFieldLoad: mockCreateInternalFieldLoad }))
-vi.mock("@/lib/services/fuel-tae/request", () => ({ parseFieldLoadRequest: mockParseRequest }))
+vi.mock("@/lib/services/fuel-tae/request", () => ({ parseInternalFieldLoadRequest: mockParseRequest }))
 
 const { TaeSubmissionRejected } = await import("@/lib/services/fuel-tae/errors")
+const { PastLoadNotAllowed, PossibleDuplicateLoad } = await import("@/lib/combustibles/field-load-rules")
 const { POST } = await import("./route")
 
 function session(overrides: { permissions?: string[]; isGlobal?: boolean; worksiteIds?: string[] } = {}) {
@@ -99,5 +100,67 @@ describe("POST /api/combustibles/cargas", () => {
     const response = await POST(request())
     expect(response.status).toBe(400)
     expect(mockCreateInternalFieldLoad).not.toHaveBeenCalled()
+  })
+
+  describe("carga de otro día y posible duplicada (vía interna)", () => {
+    const PAST = { loadedAt: "2026-10-12T14:30", reason: "Se anotó en papel y no se ingresó" }
+
+    it("403 si trae pastLoad y el usuario no tiene register_past_load: el servicio ni se llama", async () => {
+      mockAuth.mockResolvedValue(session({ permissions: ["combustibles:register_load"] }))
+      mockParseRequest.mockResolvedValue({ ok: true, input: { worksiteId: "ws-1", pastLoad: PAST }, evidence: [], ocrResult: undefined })
+      const response = await POST(request())
+      expect(response.status).toBe(403)
+      expect(await response.json()).toMatchObject({ ok: false, message: "No tienes permiso para registrar cargas con fecha pasada." })
+      expect(mockCreateInternalFieldLoad).not.toHaveBeenCalled()
+    })
+
+    it("201 con register_past_load: pasa pastLoad y le dice al servicio que la fecha está permitida", async () => {
+      mockAuth.mockResolvedValue(session({ permissions: ["combustibles:register_load", "combustibles:register_past_load"] }))
+      mockParseRequest.mockResolvedValue({ ok: true, input: { worksiteId: "ws-1", pastLoad: PAST }, evidence: [], ocrResult: undefined })
+      const response = await POST(request())
+      expect(response.status).toBe(201)
+      expect(mockCreateInternalFieldLoad).toHaveBeenCalledWith(expect.objectContaining({
+        userId: "user-1",
+        allowPastLoad: true,
+        input: expect.objectContaining({ pastLoad: PAST }),
+      }))
+    })
+
+    it("una carga de hoy no necesita el permiso y el servicio recibe allowPastLoad en falso", async () => {
+      mockAuth.mockResolvedValue(session({ permissions: ["combustibles:register_load"] }))
+      const response = await POST(request())
+      expect(response.status).toBe(201)
+      expect(mockCreateInternalFieldLoad).toHaveBeenCalledWith(expect.objectContaining({ allowPastLoad: false }))
+    })
+
+    it("el servicio es la última barrera: si rechaza la fecha pasada, responde 403", async () => {
+      mockAuth.mockResolvedValue(session({ permissions: ["combustibles:register_load", "combustibles:register_past_load"] }))
+      mockParseRequest.mockResolvedValue({ ok: true, input: { worksiteId: "ws-1", pastLoad: PAST }, evidence: [], ocrResult: undefined })
+      mockCreateInternalFieldLoad.mockRejectedValue(new PastLoadNotAllowed())
+      expect((await POST(request())).status).toBe(403)
+    })
+
+    it("422 possible_duplicate trae la otra carga para mostrarla", async () => {
+      mockAuth.mockResolvedValue(session({ permissions: ["combustibles:register_load", "combustibles:register_past_load"] }))
+      const other = { id: "sub-9", loadedAt: "2026-10-12T17:25:00.000Z", liters: 120, equipment: "CA-14", href: "/combustibles/cargas/terreno/sub-9" }
+      mockCreateInternalFieldLoad.mockRejectedValue(new PossibleDuplicateLoad(other))
+      const response = await POST(request())
+      expect(response.status).toBe(422)
+      expect(await response.json()).toMatchObject({ ok: false, code: "possible_duplicate", duplicateOf: other })
+    })
+
+    it("acknowledgeDuplicate viaja hasta el servicio para registrar igual", async () => {
+      mockAuth.mockResolvedValue(session())
+      mockParseRequest.mockResolvedValue({ ok: true, input: { worksiteId: "ws-1", acknowledgeDuplicate: true }, evidence: [], ocrResult: undefined })
+      await POST(request())
+      expect(mockCreateInternalFieldLoad).toHaveBeenCalledWith(expect.objectContaining({ input: expect.objectContaining({ acknowledgeDuplicate: true }) }))
+    })
+
+    it("la respuesta incluye cómo quedó la carga en el control", async () => {
+      mockAuth.mockResolvedValue(session())
+      const review = { loadId: "load-1", status: "flagged", flagReasons: ["late_entry"] }
+      mockCreateInternalFieldLoad.mockResolvedValue({ id: "sub-1", publicResultToken: "tok", duplicate: false, review })
+      expect(await (await POST(request())).json()).toMatchObject({ ok: true, data: { id: "sub-1", review } })
+    })
   })
 })

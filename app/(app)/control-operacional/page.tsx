@@ -39,6 +39,7 @@ import {
 import { OperationalAssetsTable } from "./operational-assets-table"
 import { OperationalExportButton } from "./operational-export-button"
 import { buildPerformanceGlossary, buildPerformanceStats } from "./performance-stats"
+import { fuelBatchHref } from "@/lib/combustibles/routes"
 
 export const metadata: Metadata = { title: "Panel operacional" }
 
@@ -268,7 +269,7 @@ export default async function OperationalControlPage({
                     </p>
                     {source.lastBatchId && can(session, "combustibles:import") && (
                       <Button asChild variant="link" size="sm" className="mt-1 h-auto p-0 text-xs">
-                        <Link href={`/combustibles/importar/${source.lastBatchId}`}>
+                        <Link href={fuelBatchHref("tarjeta", source.lastBatchId)}>
                           Ver detalle
                           <ArrowRight size={12} className="ml-1" />
                         </Link>

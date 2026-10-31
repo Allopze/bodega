@@ -1,6 +1,5 @@
 "use server"
 
-import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 import { db } from "@/db"
 import { dteDocuments, fuelLoads, fuelVehicles } from "@/db/schema"
@@ -31,17 +30,18 @@ import { fuelProductIdForLegacy } from "@/lib/combustibles/fuel-products"
 import { reevaluateFuelLoadAnomalies, resolveCorrectedMeterCases } from "@/lib/combustibles/fuel-load-anomaly-reevaluation"
 import { meterReadingFieldErrors, meterReplacementDeclarationError, readMeterReplacementDeclaration } from "@/lib/combustibles/meter-readings"
 import { notifyAfterCommit } from "@/lib/services/notifications"
+import { FUEL_PATHS } from "@/lib/combustibles/routes"
+import { revalidateFuel } from "@/lib/combustibles/revalidate"
 
-const REVALIDATE = "/combustibles"
 
 /**
- * Destino tras crear una carga: su pantalla natural es «Facturas y pagos», no
+ * Destino tras crear una carga: su pantalla natural es «Pagos › Facturas», no
  * «Consumo y rendimiento». Desde que alta y edición exigen `view_costs`
  * (`requireFuelLoadSession`), el usuario que llega aquí siempre puede ver esa
  * lista; antes caía en `/combustibles`, que ni siquiera lista cargas
  * facturadas. El cliente (`[id]/edit-fuel-load-form.tsx`) navega a la misma ruta.
  */
-const AFTER_SAVE = "/combustibles/facturas"
+const AFTER_SAVE = FUEL_PATHS.pagos
 
 const CONN_MSG = "Sin conexión al servidor. Verifica tu conexión a internet e inténtalo nuevamente."
 
@@ -87,9 +87,9 @@ function dteReference(doc: { tipoDte: string; folio: number }): string {
  *
  * Crear, editar, registrar y eliminar una carga leen, reciben o regeneran sus
  * montos (boleta, IEC, IVA, total), y la pantalla que las dispara
- * (`/combustibles/nueva`, `/combustibles/[id]`) los muestra. Con sólo `create`
- * o `delete`, un rol sin acceso a costos podía grabar y borrar cifras que la
- * propia plataforma le oculta en «Facturas y pagos». Las páginas aplican el
+ * (`/combustibles/pagos/nueva` y la ficha de la carga) los muestra. Con sólo
+ * `create` o `delete`, un rol sin acceso a costos podía grabar y borrar cifras
+ * que la propia plataforma le oculta en «Pagos». Las páginas aplican el
  * mismo gate, pero ocultar una pantalla no es autorización: la frontera es ésta.
  *
  * `correctFuelLoadMeterAction` queda fuera a propósito: sólo toca el odómetro y
@@ -97,7 +97,7 @@ function dteReference(doc: { tipoDte: string; folio: number }): string {
  * también a quien no ve costos.
  */
 async function requireFuelLoadSession(permission: "combustibles:create" | "combustibles:delete") {
-  const session = await requirePermission(permission, "/combustibles")
+  const session = await requirePermission(permission, FUEL_PATHS.pagos)
   assertFuelCostAccess(session)
   return session
 }
@@ -246,11 +246,11 @@ export async function createFuelLoadAction(
   // error. Se navega server-side en vez de que el cliente haga router.push
   // tras leer el estado: revalidar y redirigir viajan en la misma respuesta.
   // Hasta 2026-09-24 era además obligatorio: la acción vive en
-  // /combustibles/nueva, cualquier revalidatePath re-renderiza la ruta ACTUAL
+  // /combustibles/pagos/nueva, cualquier revalidatePath re-renderiza la ruta ACTUAL
   // en la misma respuesta, y ese re-render volvía a montar la plataforma
   // entera (AppShell exportado como objeto memo) antes de que el useEffect
   // llegara a disparar el push.
-  revalidatePath(REVALIDATE)
+  revalidateFuel()
   redirect(AFTER_SAVE)
 }
 
@@ -274,7 +274,7 @@ export async function updateFuelLoadAction(
   }
 
   if (existing.statementId) {
-    return { ok: false, message: "No se puede editar una carga asignada a una cuenta corriente" }
+    return { ok: false, message: "No se puede editar una carga que ya está en un estado de cuenta" }
   }
   if (!canAccessWorksite(session, existing.worksiteId)) {
     return { ok: false, message: "Sin acceso a la faena de esta carga" }
@@ -309,7 +309,7 @@ export async function updateFuelLoadAction(
 
   // El IEC es CLP por LITRO: al cambiar los litros hay que recalcularlo. El
   // formulario de edición no conoce las tasas y reenvía el IEC congelado de la
-  // carga, así que sin esto el total quedaba subestimado (y la cuenta corriente
+  // carga, así que sin esto el total quedaba subestimado (y el estado de cuenta
   // con él). Sólo se recalcula si el usuario NO tocó el IEC a mano: si lo
   // cambió, manda su valor.
   let iecFixed = Number(formData.get("iecFixed") ?? existing.iecFixed)
@@ -408,9 +408,9 @@ export async function updateFuelLoadAction(
 
   try {
     // El gate de :172 lee una fila que puede quedar obsoleta: createMonthlyStatementAction
-    // toma FOR UPDATE sobre las cargas sin resumen y las asigna. Repetir la precondición
+    // toma FOR UPDATE sobre las cargas sin estado de cuenta y las asigna. Repetir la precondición
     // en el WHERE hace que, al despertar del lock, la fila ya no calce y no se pise el
-    // total congelado del resumen.
+    // total congelado del estado de cuenta.
     // Auditoría dentro de la misma transacción que el update (CO-025): antes se
     // llamaba después de que la conexión ya había hecho commit del UPDATE.
     const updated = await db.transaction(async (tx) => {
@@ -447,11 +447,11 @@ export async function updateFuelLoadAction(
       return row
     })
     if (!updated) {
-      return { ok: false, message: "La carga cambió en otra sesión: se concilió, se anuló o quedó asignada a una cuenta corriente. Recarga antes de continuar." }
+      return { ok: false, message: "La carga cambió en otra sesión: se concilió, se anuló o pasó a un estado de cuenta. Recarga antes de continuar." }
     }
 
-    revalidatePath(REVALIDATE)
-    revalidatePath("/combustibles/anomalias")
+    revalidateFuel()
+    revalidateFuel()
     notifyAfterCommit(() => reevaluateFuelLoadAnomalies(id, session.user.id))
     notifyAfterCommit(() => resolveCorrectedMeterCases(id, session.user.id))
     return { ok: true, message: "Carga actualizada" }
@@ -468,7 +468,7 @@ export async function deleteFuelLoadAction(id: string): Promise<ActionState> {
   const existing = await db.query.fuelLoads.findFirst({ where: eq(fuelLoads.id, id) })
   if (!existing) return { ok: false, message: "Carga no encontrada" }
   if (existing.statementId) {
-    return { ok: false, message: "No se puede eliminar una carga asignada a una cuenta corriente" }
+    return { ok: false, message: "No se puede eliminar una carga que ya está en un estado de cuenta" }
   }
   if (!canAccessWorksite(session, existing.worksiteId)) {
     return { ok: false, message: "Sin acceso a la faena de esta carga" }
@@ -489,7 +489,7 @@ export async function deleteFuelLoadAction(id: string): Promise<ActionState> {
 
   try {
     // Misma carrera que en la edición: sin FK que frene el DELETE, una carga
-    // recién asignada a un resumen desaparecería del detalle sin salir del total.
+    // recién asignada a un estado de cuenta desaparecería del detalle sin salir del total.
     // Auditoría dentro de la misma transacción que el delete (CO-025).
     const deleted = await db.transaction(async (tx) => {
       const [row] = await tx.delete(fuelLoads)
@@ -512,10 +512,10 @@ export async function deleteFuelLoadAction(id: string): Promise<ActionState> {
       return row
     })
     if (!deleted) {
-      return { ok: false, message: "La carga cambió en otra sesión: se concilió o quedó asignada a una cuenta corriente. Recarga antes de continuar." }
+      return { ok: false, message: "La carga cambió en otra sesión: se concilió o pasó a un estado de cuenta. Recarga antes de continuar." }
     }
 
-    revalidatePath(REVALIDATE)
+    revalidateFuel()
     return { ok: true, message: "Carga eliminada" }
   } catch (e) {
     return { ok: false, message: await dbErrMsg(e, "Error al eliminar") }
@@ -558,7 +558,7 @@ export async function registerFuelLoadAction(id: string): Promise<ActionState> {
       return row
     })
     if (!registered) return { ok: false, message: "La carga ya no está en borrador. Recarga antes de continuar." }
-    revalidatePath(REVALIDATE)
+    revalidateFuel()
     return { ok: true, message: "Carga registrada" }
   } catch (e) {
     return { ok: false, message: await dbErrMsg(e, "Error al registrar") }
@@ -579,7 +579,7 @@ export async function correctFuelLoadMeterAction(
   formData: FormData,
 ): Promise<ActionState> {
   let session
-  try { session = await requirePermission("combustibles:create", "/combustibles") }
+  try { session = await requirePermission("combustibles:create", FUEL_PATHS.pagos) }
   catch { return { ok: false, message: "Sin permisos" } }
 
   const id = String(formData.get("id") ?? "")
@@ -654,8 +654,8 @@ export async function correctFuelLoadMeterAction(
     return { ok: false, message: await dbErrMsg(e, "No se pudo corregir la lectura") }
   }
 
-  revalidatePath(REVALIDATE)
-  revalidatePath("/combustibles/anomalias")
+  revalidateFuel()
+  revalidateFuel()
   notifyAfterCommit(() => resolveCorrectedMeterCases(id, session.user.id))
   return { ok: true, message: "Lectura corregida" }
 }

@@ -34,10 +34,13 @@ export const FUEL_STATEMENT_STATUS_LABELS: Record<string, FuelLabelMeta> = {
   cancelled: { label: "Anulado",     variant: "danger" },
 }
 
-/** "Recibida" es el canónico — es el que usa el filtro de /combustibles/tae. */
+/**
+ * «Por validar» reemplazó a «Recibida» en el rediseño (2026-10-31): el estado
+ * dice qué falta, y es el mismo rótulo en la lista, el filtro y la ficha.
+ */
 export const TAE_STATUS_LABELS: Record<string, FuelLabelMeta> = {
-  submitted: { label: "Recibida",  variant: "primary" },
-  observed:  { label: "Observada", variant: "warning" },
+  submitted: { label: "Por validar", variant: "primary" },
+  observed:  { label: "Con observación", variant: "warning" },
   validated: { label: "Validada",  variant: "success" },
   voided:    { label: "Anulada",   variant: "danger" },
 }

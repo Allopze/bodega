@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import { TaePwaRegister } from "@/components/pwa/tae-pwa-register"
 import { isRouteOperational } from "@/lib/services/module-toggles"
+import { FUEL_PATHS } from "@/lib/combustibles/routes"
 
 export const metadata: Metadata = {
   title: "Control TAE",
@@ -10,7 +11,7 @@ export const metadata: Metadata = {
 }
 
 export default async function TaeLayout({ children }: { children: React.ReactNode }) {
-  const enabled = await isRouteOperational("/combustibles/tae")
+  const enabled = await isRouteOperational(FUEL_PATHS.cargas)
   if (!enabled) {
     return (
       <main className="mx-auto flex min-h-screen max-w-lg items-center px-5 py-12">

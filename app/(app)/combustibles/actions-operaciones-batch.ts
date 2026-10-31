@@ -1,6 +1,5 @@
 "use server"
 
-import { revalidatePath } from "next/cache"
 import { and, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
 import { fuelAnomalyCases, fuelOperationBatches, fuelOperationRecords, fuelVehicles, worksites } from "@/db/schema"
@@ -11,6 +10,8 @@ import { auditResetDecisions } from "@/lib/combustibles/projection-audit"
 import { projectOperationRecords, removeProjectionsForOperationBatch } from "@/lib/combustibles/control/projection"
 import { requireGlobalImportSession } from "@/lib/combustibles/operations-import-shared"
 import type { ActionState } from "@/lib/validation/masters"
+import { FUEL_PATHS } from "@/lib/combustibles/routes"
+import { revalidateFuel } from "@/lib/combustibles/revalidate"
 
 export async function revertBatchOperationsAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   let session
@@ -67,15 +68,13 @@ export async function revertBatchOperationsAction(_prev: ActionState, formData: 
     newState: { estado: "revertido" },
   })
 
-  revalidatePath("/combustibles")
-  revalidatePath("/combustibles/importar")
-  revalidatePath(`/combustibles/importar/operaciones/${batchId}`)
-  return { ok: true, message: "Lote revertido: sus registros fueron eliminados del dashboard" }
+  revalidateFuel()
+  return { ok: true, message: "Archivo revertido: sus cargas ya no cuentan y el rendimiento de los equipos se recalculó" }
 }
 
 export async function linkOperationVehicleAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   let session
-  try { session = await requirePermission("combustibles:manage_vehicles", "/combustibles/importar") }
+  try { session = await requirePermission("combustibles:manage_vehicles", FUEL_PATHS.fuentes) }
   catch { return { ok: false, message: "Sin permisos" } }
   // Los lotes de operaciones son multi-faena: se restringe a roles globales,
   // igual que el resto del flujo (import/preview/confirm/revert/detalle). Sin
@@ -114,14 +113,13 @@ export async function linkOperationVehicleAction(_prev: ActionState, formData: F
     newState: { plate, vehicleId, count: updated.length },
   })
 
-  revalidatePath(`/combustibles/importar/operaciones/${batchId}`)
-  revalidatePath("/combustibles")
+  revalidateFuel()
   return { ok: true, message: `${updated.length} registro(s) vinculados a la patente ${vehicle.plate}` }
 }
 
 export async function linkOperationWorksiteAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   let session
-  try { session = await requirePermission("combustibles:manage_vehicles", "/combustibles/importar") }
+  try { session = await requirePermission("combustibles:manage_vehicles", FUEL_PATHS.fuentes) }
   catch { return { ok: false, message: "Sin permisos" } }
   // Lote multi-faena: restringido a roles globales (ver linkOperationVehicleAction).
   if (!isGlobalRole(session)) return { ok: false, message: "Requiere acceso global a todas las faenas" }
@@ -155,7 +153,6 @@ export async function linkOperationWorksiteAction(_prev: ActionState, formData: 
     newState: { faenaNombre, worksiteId, count: updated.length },
   })
 
-  revalidatePath(`/combustibles/importar/operaciones/${batchId}`)
-  revalidatePath("/combustibles")
+  revalidateFuel()
   return { ok: true, message: `${updated.length} registro(s) vinculados a la faena ${worksite.name}` }
 }

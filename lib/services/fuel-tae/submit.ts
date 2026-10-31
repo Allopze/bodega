@@ -2,6 +2,7 @@ import { createHash } from "node:crypto"
 import { and, eq, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
+  fuelEquipmentLoads,
   fuelSupplyMedia,
   fuelTaeEvidence,
   fuelTaeLoadingPoints,
@@ -14,7 +15,7 @@ import { nanoid } from "@/lib/id"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { mkdirp, removeFile, writeBuffer } from "@/lib/storage/helpers"
 import { createFuelTaeEvidencePath, resolveFuelTaeEvidenceDir, resolveStorageFile } from "@/lib/storage/config"
-import { taeEvidenceKinds, type TaePublicSubmissionInput } from "@/lib/validation/fuel-tae"
+import { taeEvidenceKinds, type InternalFieldLoadInput, type PastLoadInput, type TaePublicSubmissionInput } from "@/lib/validation/fuel-tae"
 import type { OcrMeterResult } from "@/lib/services/tae-ocr"
 import { getUserIdsWithPermissionForWorksite, notifyAfterCommit, notifyManyUser } from "@/lib/services/notifications"
 import {
@@ -22,17 +23,29 @@ import {
   checkSealInputs,
   trimSeal,
   missingEvidenceMessage,
+  PastLoadNotAllowed,
+  PossibleDuplicateLoad,
   requiredEvidenceKinds,
   resolveLoadedAt,
 } from "@/lib/combustibles/field-load-rules"
 import { evaluateSealChain } from "@/lib/combustibles/control/seal-chain"
 import { auditResetDecisions } from "@/lib/combustibles/projection-audit"
 import { projectTaeSubmissions } from "@/lib/combustibles/control/projection"
+import { resetStaleDecisionsAfter, snapshotDecidedLoadsAfter } from "@/lib/combustibles/control/stale-decisions"
+import { loadPerformanceControlContext } from "@/lib/combustibles/control/settings"
+import type { FlagReason, ReviewStatus } from "@/lib/combustibles/control/contracts"
 import { getActiveLink } from "./access"
 import { getTaeSubmissionContext } from "./context"
 import { TaeSubmissionRejected } from "./errors"
-import { assertMeterNotRegressing, findPreviousSubmission } from "./submit-rules"
+import {
+  assertMeterBelowNext,
+  assertMeterNotRegressing,
+  findPossibleDuplicate,
+  findPreviousSubmission,
+  reevaluateNextSubmissionSealChain,
+} from "./submit-rules"
 import type { TaeEvidenceKind, TaeEvidenceUpload } from "./types"
+import { fuelLoadHref } from "@/lib/combustibles/routes"
 
 function extensionForMime(mimeType: string) {
   return mimeType === "image/png" ? "png" : "jpg"
@@ -47,13 +60,30 @@ export interface FieldLoadContext {
   ipAddress?: string
 }
 
+/** Cómo quedó la carga en el control: «por decidir» (con sus motivos) o sin observaciones. */
+export interface FieldLoadReview {
+  /** Id de la carga en la serie del equipo (`fuel_equipment_loads`): el de la bandeja «Por revisar». */
+  loadId: string
+  status: ReviewStatus
+  flagReasons: FlagReason[]
+}
+
 export interface FieldLoadResult {
   id: string
   publicResultToken: string
   duplicate: boolean
+  /** Sólo la vía interna lo devuelve: la pública no muestra el estado del control. */
+  review?: FieldLoadReview | null
 }
 
-function assertEvidence(input: TaePublicSubmissionInput, evidence: TaeEvidenceUpload[]) {
+/** Lo que sólo la vía interna puede traer: la carga de otro día y la confirmación de una posible duplicada. */
+export interface FieldLoadOptions {
+  pastLoad?: PastLoadInput | null
+  acknowledgeDuplicate?: boolean
+}
+
+/** Con una carga de otro día las fotos son opcionales: se valida su forma, pero no se exige ninguna. */
+function assertEvidence(input: TaePublicSubmissionInput, evidence: TaeEvidenceUpload[], options: { optional?: boolean } = {}) {
   const present = new Set<TaeEvidenceKind>()
   for (const item of evidence) {
     if (!(taeEvidenceKinds as readonly string[]).includes(item.kind) || present.has(item.kind)) {
@@ -61,6 +91,7 @@ function assertEvidence(input: TaePublicSubmissionInput, evidence: TaeEvidenceUp
     }
     present.add(item.kind)
   }
+  if (options.optional) return
   const missing = requiredEvidenceKinds(input).filter((kind) => !present.has(kind))
   if (missing.length > 0) throw new TaeSubmissionRejected(missingEvidenceMessage(missing), "evidence_missing")
 }
@@ -75,19 +106,24 @@ export async function registerFieldLoad({
   input,
   evidence,
   ocrResult,
+  options = {},
 }: {
   context: FieldLoadContext
   input: TaePublicSubmissionInput
   evidence: TaeEvidenceUpload[]
   ocrResult?: OcrMeterResult
+  options?: FieldLoadOptions
 }): Promise<FieldLoadResult> {
-  const timing = resolveLoadedAt(input)
+  // Una carga por QR nunca trae fecha propia: `pastLoad` sólo existe en la vía interna.
+  if (options.pastLoad && context.source !== "internal_app") throw new PastLoadNotAllowed()
+  const timing = resolveLoadedAt({ offline: input.offline, capturedAt: input.capturedAt, pastLoad: options.pastLoad })
   if (!timing.ok) throw new TaeSubmissionRejected(timing.issue.message, "invalid_time", timing.issue.field)
   const { loadedAt, source: loadedAtSource } = timing
+  const backdated = loadedAtSource === "backdated"
 
   const sealIssue = checkSealInputs(input)
   if (sealIssue) throw new TaeSubmissionRejected(sealIssue.message, sealIssue.field === "noSealReason" ? "seal_reason_required" : "filler_seal", sealIssue.field)
-  assertEvidence(input, evidence)
+  assertEvidence(input, evidence, { optional: backdated })
 
   const [vehicle, productCompatibility, driver, supervisor, point, medium] = await Promise.all([
     db.query.fuelVehicles.findFirst({ where: and(eq(fuelVehicles.id, input.vehicleId), eq(fuelVehicles.isActive, true)) }),
@@ -126,6 +162,7 @@ export async function registerFieldLoad({
   if (litersIssue) throw new TaeSubmissionRejected(litersIssue.message, litersIssue.field === "liters" && input.liters > 0 ? "over_capacity" : "invalid_liters", "liters")
   // Rechazo temprano, antes de escribir las fotos; se repite bajo el candado del equipo.
   await assertMeterNotRegressing(db, vehicle.id, meterType, reading, loadedAt)
+  if (backdated) await assertMeterBelowNext(db, vehicle.id, meterType, reading, loadedAt)
 
   const id = nanoid()
   const publicResultToken = nanoid(32)
@@ -163,6 +200,15 @@ export async function registerFieldLoad({
       if (already) return { ...already, duplicate: true }
 
       await assertMeterNotRegressing(tx, vehicle.id, meterType, reading, loadedAt)
+      if (backdated) {
+        await assertMeterBelowNext(tx, vehicle.id, meterType, reading, loadedAt)
+        // Después del reintento idempotente: reenviar la misma carga no puede toparse consigo misma.
+        if (!options.acknowledgeDuplicate) {
+          const { settings } = await loadPerformanceControlContext(tx)
+          const similar = await findPossibleDuplicate(tx, vehicle.id, loadedAt, input.liters, settings)
+          if (similar) throw new PossibleDuplicateLoad(similar)
+        }
+      }
       const previous = await findPreviousSubmission(tx, vehicle.id, loadedAt)
       const chain = evaluateSealChain(
         { removedSeal, installedSeal, noSealReason: (input.noSealReason ?? "").trim() || null },
@@ -183,6 +229,7 @@ export async function registerFieldLoad({
         plateSnapshot: vehicle.plate,
         loadedAt,
         loadedAtSource,
+        backdateReason: timing.backdateReason ?? null,
         submittedAt: now,
         registeredBy: context.registeredBy,
         driverWorkerId: driver?.id ?? null,
@@ -225,7 +272,8 @@ export async function registerFieldLoad({
         return { ...existing, duplicate: true }
       }
 
-      await tx.insert(fuelTaeEvidence).values(storedFiles.map((file) => ({
+      // Una carga de otro día puede no traer fotos: no hay nada que insertar.
+      if (storedFiles.length > 0) await tx.insert(fuelTaeEvidence).values(storedFiles.map((file) => ({
         id: nanoid(),
         submissionId: inserted.id,
         kind: file.upload.kind,
@@ -248,11 +296,19 @@ export async function registerFieldLoad({
           worksiteId: context.worksiteId,
           liters: input.liters,
           loadedAtSource,
+          ...(backdated ? { loadedAt, backdateReason: timing.backdateReason } : {}),
           sealChainStatus: chain.status,
           ...(chain.status === "mismatch" ? { sealChainExpected: chain.expected } : {}),
         },
         worksiteId: context.worksiteId,
-        ...(chain.status === "mismatch" ? { reason: `Cadena de sellos rota: se esperaba ${chain.expected ?? "(sin sello)"}` } : {}),
+        ...(backdated || chain.status === "mismatch"
+          ? {
+              reason: [
+                backdated ? `Carga de otro día: ${timing.backdateReason}` : null,
+                chain.status === "mismatch" ? `Cadena de sellos rota: se esperaba ${chain.expected ?? "(sin sello)"}` : null,
+              ].filter(Boolean).join(". "),
+            }
+          : {}),
         ipAddress: context.ipAddress,
       }, tx)
       await recordStatusChange({
@@ -262,14 +318,25 @@ export async function registerFieldLoad({
         toStatus: "submitted",
         changedBy: context.registeredBy,
       }, tx)
+      // Si esta carga quedó antes de otras del equipo (una carga de otro día, o un
+      // reenvío desde la cola sin conexión), las decisiones ya tomadas sobre las
+      // posteriores se miran contra la serie de antes y la de después.
+      const decidedLater = await snapshotDecidedLoadsAfter(tx, vehicle.id, loadedAt)
       const projection = await projectTaeSubmissions(tx, [inserted.id])
       await auditResetDecisions(tx, projection.resetLoadIds, { userId: context.registeredBy }, context.worksiteId)
+      await resetStaleDecisionsAfter(tx, decidedLater, { userId: context.registeredBy })
+      await reevaluateNextSubmissionSealChain(tx, {
+        vehicleId: vehicle.id,
+        loadedAt,
+        installedSeal,
+        actorId: context.registeredBy,
+      })
       return { ...inserted, duplicate: false }
     })
 
     if (submission.duplicate) {
       await Promise.allSettled(storedFiles.map((file) => removeFile(file.absolutePath)))
-      return submission
+      return { ...submission, review: await readLoadReview(submission.id) }
     }
   } catch (error) {
     await Promise.allSettled(storedFiles.map((file) => removeFile(file.absolutePath)))
@@ -277,7 +344,22 @@ export async function registerFieldLoad({
   }
 
   await notifyReviewersIfAlerts(id)
-  return { id, publicResultToken, duplicate: false }
+  return { id, publicResultToken, duplicate: false, review: await readLoadReview(id) }
+}
+
+/** Cómo quedó la carga en la serie del equipo; `null` si no se proyectó (no debería ocurrir) o no se pudo leer. */
+async function readLoadReview(submissionId: string): Promise<FieldLoadReview | null> {
+  try {
+    const [row] = await db.select({
+      loadId: fuelEquipmentLoads.id,
+      status: fuelEquipmentLoads.reviewStatus,
+      flagReasons: fuelEquipmentLoads.flagReasons,
+    }).from(fuelEquipmentLoads).where(eq(fuelEquipmentLoads.taeSubmissionId, submissionId)).limit(1)
+    return row ? { loadId: row.loadId, status: row.status as ReviewStatus, flagReasons: (row.flagReasons ?? []) as FlagReason[] } : null
+  } catch {
+    // La carga ya quedó registrada: no leer su estado no debe convertir el éxito en error.
+    return null
+  }
 }
 
 async function notifyReviewersIfAlerts(id: string) {
@@ -293,7 +375,7 @@ async function notifyReviewersIfAlerts(id: string) {
       body: `${saved.equipmentCodeSnapshot} · ${Number(saved.liters).toLocaleString("es-CL")} L · ${alerts.map((alert) => alert.message).join("; ")}`,
       entityType: "fuel_tae_submission",
       entityId: id,
-      entityHref: `/combustibles/tae/${id}`,
+      entityHref: fuelLoadHref({ origen: "terreno", id }),
       dedupeKey: `tae-alert:${id}`,
     })
   })
@@ -316,32 +398,44 @@ export async function createTaeSubmission({
   const link = await getActiveLink(accessToken)
   if (input.worksiteId !== link.worksiteId) throw new Error("La faena no corresponde al enlace")
   if (!link.loadingPointId || input.loadingPointId !== link.loadingPointId) throw new Error("El punto de carga no corresponde al enlace")
-  return registerFieldLoad({
+  const { id, publicResultToken, duplicate } = await registerFieldLoad({
     context: { source: "public_pwa", worksiteId: link.worksiteId, loadingPointId: link.loadingPointId, registeredBy: null, ipAddress },
     input,
     evidence,
     ocrResult,
   })
+  // La respuesta pública no incluye cómo quedó la carga en el control.
+  return { id, publicResultToken, duplicate }
 }
 
-/** Carga registrada por un usuario autenticado; el llamador ya comprobó permiso y alcance de faena. */
+/**
+ * Carga registrada por un usuario autenticado; el llamador ya comprobó permiso y
+ * alcance de faena. La carga de otro día (`pastLoad`) además exige
+ * `allowPastLoad`, que el llamador decide con `combustibles:register_past_load`:
+ * sin él se rechaza aquí mismo, para que ninguna vía pueda saltarse el permiso.
+ */
 export async function createInternalFieldLoad({
   userId,
   input,
   evidence,
   ipAddress,
   ocrResult,
+  allowPastLoad = false,
 }: {
   userId: string
-  input: TaePublicSubmissionInput
+  input: InternalFieldLoadInput
   evidence: TaeEvidenceUpload[]
   ipAddress?: string
   ocrResult?: OcrMeterResult
+  allowPastLoad?: boolean
 }): Promise<FieldLoadResult> {
+  const { pastLoad, acknowledgeDuplicate, ...base } = input
+  if (pastLoad && !allowPastLoad) throw new PastLoadNotAllowed()
   return registerFieldLoad({
-    context: { source: "internal_app", worksiteId: input.worksiteId, loadingPointId: input.loadingPointId, registeredBy: userId, ipAddress },
-    input,
+    context: { source: "internal_app", worksiteId: base.worksiteId, loadingPointId: base.loadingPointId, registeredBy: userId, ipAddress },
+    input: base,
     evidence,
     ocrResult,
+    options: { pastLoad, acknowledgeDuplicate },
   })
 }

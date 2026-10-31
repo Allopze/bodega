@@ -5,6 +5,7 @@ import { fuelEquipmentLoads, fuelEquipmentTypes, fuelSupplyMedia, fuelVehicles, 
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import type { PerformanceFamily, PerformanceUnit } from "@/lib/combustibles/control/contracts"
 import { buildLoadWhere, type ControlFilters } from "@/lib/combustibles/control/filters"
+import { fuelLoadHrefFromEquipmentLoad } from "@/lib/combustibles/routes"
 import { resolvePagination, type PaginationState } from "@/lib/pagination"
 import { DETAIL_PAGE_SIZE, EXPORT_ROW_LIMIT } from "./performance"
 import { toNullableNumber, toNumber } from "./shared"
@@ -31,6 +32,8 @@ export interface LoadDetailRow {
   reviewStatus: string
   source: string
   mediumName: string | null
+  /** Ficha de la carga (`fuelLoadHref`); `null` si la fila no apunta a un registro de origen. */
+  href: string | null
 }
 
 export interface LoadDetailPage {
@@ -55,6 +58,8 @@ export async function getLoadDetail(
   const rows = await db.select({
     id: fuelEquipmentLoads.id,
     occurredAt: fuelEquipmentLoads.occurredAt,
+    taeSubmissionId: fuelEquipmentLoads.taeSubmissionId,
+    operationRecordId: fuelEquipmentLoads.operationRecordId,
     worksiteName: worksites.name,
     code: fuelVehicles.code,
     plate: fuelVehicles.plate,
@@ -98,6 +103,7 @@ export async function getLoadDetail(
       reviewStatus: row.reviewStatus,
       source: row.source,
       mediumName: row.mediumName,
+      href: fuelLoadHrefFromEquipmentLoad({ source: row.source, taeSubmissionId: row.taeSubmissionId, operationRecordId: row.operationRecordId }),
     })),
   }
 }

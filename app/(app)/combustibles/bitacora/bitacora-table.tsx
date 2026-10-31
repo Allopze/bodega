@@ -2,26 +2,40 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { ArrowSquareOut, Camera, ClockCounterClockwise, Flag, GearSix } from "@phosphor-icons/react"
+import { Camera, ClockCounterClockwise, GearSix, Truck } from "@phosphor-icons/react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { MetaBadge, StateBadge } from "@/components/states/state-badge"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { CrossFilterCell } from "@/components/ui/cross-filter-cell"
-import { FUEL_LOG_SOURCE_LABEL, PERSONAL_DATA_LABEL, type FuelLogRow, type FuelLogSource } from "@/lib/combustibles/fuel-log-shared"
+import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui/responsive-data-list"
+import { ReviewRequestControl } from "@/components/combustibles/load-detail/review-request-control"
+import { FUEL_LOAD_ORIGIN_LABEL, PERSONAL_DATA_LABEL, fuelLogPending, type FuelLogRow } from "@/lib/combustibles/fuel-log-shared"
+import { useLocalStorageState } from "@/lib/hooks/use-local-storage-state"
 import { formatDateTime } from "@/lib/utils"
-import { toast } from "@/lib/toast"
-import { BitacoraSelectionExport } from "./export-button"
-import { toggleReviewMarkAction } from "./actions"
 
-type EnrichedRow = FuelLogRow & { detailHref: string; auditEntity: { entityType: string; entityId: string } | null }
-
-const SOURCE_BADGE: Record<FuelLogSource, "primary" | "info" | "default"> = {
-  tae_pwa: "primary",
-  invoiced: "info",
-  operation_manual: "default",
+/** Enlaces ya armados por la página (con el período y la faena de la pantalla): la tabla no construye URL. */
+export interface CargaRowHrefs {
+  /** Ficha de la carga. */
+  detail: string
+  /** Ficha del equipo; `null` cuando la patente no está vinculada. */
+  equipment: string | null
+  /** Historial de la carga; `null` sin `view_audit`. */
+  history: string | null
+  /** Fotos de la carga (ancla de la ficha); `null` sin `view_personal` o sin fotos. */
+  evidence: string | null
+  /** La carga en la bandeja «Por revisar»; `null` si no está por decidir. */
+  decide: string | null
+  /** El pedido de revisión en la bandeja. */
+  requested: string
+  /** Los casos de anomalía en la bandeja. */
+  cases: string
 }
+
+export type EnrichedRow = FuelLogRow & { hrefs: CargaRowHrefs }
+
+type PendingKind = ReturnType<typeof fuelLogPending>[number]["kind"]
 
 interface ColumnDef {
   key: string
@@ -39,120 +53,160 @@ function personalCell(value: string | null, canViewPersonal: boolean): React.Rea
   return value ?? "—"
 }
 
+/** Unidad del medidor según cómo lo rotula cada origen («Odómetro», «Horómetro», «Medidor (km)»). */
+function meterUnit(label: string | null): string {
+  if (!label) return ""
+  const text = label.toLowerCase()
+  if (text.includes("odómetro") || text.includes("(km)")) return "km"
+  if (text.includes("horómetro") || text.includes("(hora)")) return "h"
+  return ""
+}
+
+function PendingCell({ row }: { row: EnrichedRow }) {
+  const pending = fuelLogPending(row)
+  if (pending.length === 0) return <span className="text-[var(--color-text-subtle)]">—</span>
+  const hrefFor = (kind: PendingKind) => (kind === "decide" ? row.hrefs.decide : kind === "requested" ? row.hrefs.requested : kind === "case" ? row.hrefs.cases : row.hrefs.detail)
+  return (
+    <span className="flex flex-wrap gap-1">
+      {pending.map((item) => {
+        const href = hrefFor(item.kind)
+        // Un motivo largo («Rendimiento fuera de rango físico») se parte en dos líneas: en la tarjeta del
+        // celular la columna mide la mitad del ancho y el badge, que no corta por defecto, se salía de ella.
+        const badge = <MetaBadge meta={{ label: item.label, variant: "signal" }} size="sm" className="max-w-full whitespace-normal text-left" />
+        return href ? <Link key={item.kind} href={href} className="max-w-full rounded-full focus-visible:outline-2 focus-visible:outline-[var(--color-primary)]">{badge}</Link> : <span key={item.kind} className="max-w-full">{badge}</span>
+      })}
+    </span>
+  )
+}
+
+function StateCell({ row }: { row: EnrichedRow }) {
+  // La planilla no tiene un estado propio: llega importada y se queda así.
+  if (row.source === "operation_manual") return <Badge variant="default" size="sm">Importada</Badge>
+  return row.statusLabel ? <StateBadge state={row.statusLabel} entity="fuel_log" size="sm" /> : <>—</>
+}
+
+function EquipmentCell({ row }: { row: EnrichedRow }) {
+  const code = row.equipmentCode ?? row.plate ?? "Equipo sin identificar"
+  const detail = [row.equipmentTypeName, row.plate && row.equipmentCode ? row.plate : null].filter(Boolean).join(" · ")
+  return (
+    <span className="flex flex-col">
+      <Link href={row.hrefs.detail} className="font-medium text-[var(--color-primary-ink)] hover:underline" aria-label={`Abrir la carga de ${code}`}>{code}</Link>
+      {detail ? <span className="text-xs text-[var(--color-text-subtle)]">{detail}</span> : null}
+    </span>
+  )
+}
+
 const COLUMNS: ColumnDef[] = [
-  { key: "occurredAt", label: "Fecha y hora", defaultVisible: true, render: (r) => <span className="font-mono text-xs">{formatDateTime(r.occurredAt)}</span> },
-  { key: "source", label: "Fuente", defaultVisible: true, render: (r) => <MetaBadge meta={{ label: `${FUEL_LOG_SOURCE_LABEL[r.source]}`, variant: SOURCE_BADGE[r.source] }} /> },
+  { key: "occurredAt", label: "Fecha y hora", defaultVisible: true, render: (r) => <span className="font-mono text-xs tabular-nums">{formatDateTime(r.occurredAt)}</span> },
+  { key: "equipment", label: "Equipo", defaultVisible: true, render: (r) => <EquipmentCell row={r} /> },
   { key: "worksiteName", label: "Faena", defaultVisible: true, render: (r) => r.worksiteName ?? "—" },
-  {
-    key: "equipment", label: "Equipo", defaultVisible: true,
-    render: (r) => r.plate
-      ? <CrossFilterCell value={`${r.equipmentCode ?? "—"} · ${r.plate}`} paramKey="q" paramValue={r.plate} />
-      : <span>{r.equipmentCode ?? "—"}</span>,
-  },
-  {
-    key: "equipmentTypeName", label: "Tipo de equipo", defaultVisible: false,
-    render: (r) => r.equipmentTypeId
-      ? <CrossFilterCell value={r.equipmentTypeName} paramKey="tipo" paramValue={r.equipmentTypeId} />
-      : (r.equipmentTypeName ?? "—"),
-  },
-  { key: "driverName", label: "Conductor", defaultVisible: true, render: (r, personal) => personalCell(r.driverName, personal) },
-  { key: "supervisorName", label: "Supervisor", defaultVisible: true, render: (r, personal) => personalCell(r.supervisorName, personal) },
-  {
-    key: "supplierName", label: "Proveedor", defaultVisible: false,
-    render: (r) => r.supplierId
-      ? <CrossFilterCell value={r.supplierName} paramKey="proveedor" paramValue={r.supplierId} />
-      : (r.supplierName ?? "—"),
-  },
-  { key: "loadingPointName", label: "Lugar de carga", defaultVisible: false, render: (r) => r.loadingPointName ?? "—" },
-  { key: "productName", label: "Producto", defaultVisible: true, render: (r) => r.productName ?? "—" },
   { key: "liters", label: "Litros", defaultVisible: true, numeric: true, render: (r) => `${Number(r.liters).toLocaleString("es-CL")} L` },
-  { key: "meterReading", label: "Medidor", defaultVisible: false, render: (r) => r.meterReading == null ? "—" : <span>{Number(r.meterReading).toLocaleString("es-CL")}<span className="ml-1 text-[var(--color-text-muted)]">{r.meterLabel ?? ""}</span></span> },
-  { key: "performance", label: "Rendimiento", defaultVisible: false, render: (r) => r.performanceValue == null ? "—" : <span>{Number(r.performanceValue).toLocaleString("es-CL")}<span className="ml-1 text-[var(--color-text-muted)]">{r.performanceUnit === "km_lt" ? "km/L" : r.performanceUnit === "lt_hr" ? "L/h" : ""}</span></span> },
+  {
+    key: "meterReading", label: "Lectura", defaultVisible: true, numeric: true,
+    render: (r) => r.meterReading == null
+      ? "—"
+      : <span>{Number(r.meterReading).toLocaleString("es-CL")}<span className="ml-1 text-[var(--color-text-muted)]">{meterUnit(r.meterLabel)}</span></span>,
+  },
+  { key: "origin", label: "Cómo llegó", defaultVisible: true, render: (r) => <Badge variant="outline" size="sm">{FUEL_LOAD_ORIGIN_LABEL[r.origin]}</Badge> },
+  { key: "statusLabel", label: "Estado", defaultVisible: true, render: (r) => <StateCell row={r} /> },
+  { key: "pending", label: "Pendiente", defaultVisible: true, render: (r) => <PendingCell row={r} /> },
+  { key: "equipmentTypeName", label: "Tipo de equipo", defaultVisible: false, render: (r) => r.equipmentTypeName ?? "—" },
+  { key: "driverName", label: "Conductor", defaultVisible: false, render: (r, personal) => personalCell(r.driverName, personal) },
+  { key: "supervisorName", label: "Supervisor", defaultVisible: false, render: (r, personal) => personalCell(r.supervisorName, personal) },
+  { key: "supplierName", label: "Proveedor", defaultVisible: false, render: (r) => r.supplierName ?? "—" },
+  { key: "loadingPointName", label: "Lugar de carga", defaultVisible: false, render: (r) => r.loadingPointName ?? "—" },
+  { key: "productName", label: "Combustible", defaultVisible: false, render: (r) => r.productName ?? "—" },
+  { key: "performance", label: "Rendimiento", defaultVisible: false, numeric: true, render: (r) => r.performanceValue == null ? "—" : <span>{Number(r.performanceValue).toLocaleString("es-CL")}<span className="ml-1 text-[var(--color-text-muted)]">{r.performanceUnit === "km_lt" ? "km/L" : r.performanceUnit === "lt_hr" ? "L/h" : ""}</span></span> },
   { key: "seals", label: "Sellos", defaultVisible: false, render: (r) => (r.sealRemoved || r.sealInstalled) ? `${r.sealRemoved ?? "—"} → ${r.sealInstalled ?? "—"}` : "—" },
-  { key: "evidenceCount", label: "Evidencias", defaultVisible: false, render: (r) => r.evidenceCount == null ? "—" : `${r.evidenceCount}/4` },
+  { key: "evidenceCount", label: "Fotos", defaultVisible: false, numeric: true, render: (r) => r.evidenceCount == null ? "—" : `${r.evidenceCount} de 4` },
   { key: "notes", label: "Observaciones", defaultVisible: false, render: (r) => <span className="line-clamp-2 max-w-[220px]">{r.notes ?? "—"}</span> },
-  { key: "statusLabel", label: "Estado", defaultVisible: true, render: (r) => r.statusLabel ? <StateBadge state={r.statusLabel} entity="fuel_log" size="sm" /> : "—" },
   { key: "createdByName", label: "Creado por", defaultVisible: false, render: (r) => r.createdByName ?? "—" },
   { key: "updatedByName", label: "Modificado por", defaultVisible: false, render: (r) => r.updatedByName ?? "—" },
-  { key: "anomalyCount", label: "Anomalías", defaultVisible: true, render: (r) => r.anomalyCount != null && r.anomalyCount > 0 ? <Link href={`/combustibles/anomalias?ref=${r.source}:${r.id}`}><MetaBadge meta={{ label: String(r.anomalyCount), variant: "danger" }} /></Link> : <span className="text-[var(--color-text-muted)]">—</span> },
-  { key: "reviewMark", label: "Revisión", defaultVisible: true, render: (r) => r.reviewMark ? <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400" title={r.reviewMarkNotes ?? "Marcado para revisión"}><Flag size={14} weight="fill" />{r.reviewMarkNotes ? <span className="text-xs max-w-[120px] truncate">{r.reviewMarkNotes}</span> : null}</span> : null },
   { key: "createdAt", label: "Creado", defaultVisible: false, render: (r) => r.createdAt ? formatDateTime(r.createdAt) : "—" },
   { key: "updatedAt", label: "Modificado", defaultVisible: false, render: (r) => r.updatedAt ? formatDateTime(r.updatedAt) : "—" },
 ]
 
-/** Botón de toggle para marcar/desmarcar una fila para revisión. */
-function ReviewToggle({ row }: { row: EnrichedRow }) {
-  const [busy, setBusy] = React.useState(false)
-  const [marked, setMarked] = React.useState(row.reviewMark)
+const DEFAULT_COLUMN_KEYS = COLUMNS.filter((column) => column.defaultVisible).map((column) => column.key)
+const COLUMNS_STORAGE_KEY = "chome:combustibles:cargas:columnas"
+const VALID_COLUMN_KEYS = new Set(COLUMNS.map((column) => column.key))
 
-  async function handleClick() {
-    setBusy(true)
-    try {
-      const res = await toggleReviewMarkAction(row.source, row.id)
-      if (res.ok) {
-        setMarked(res.marked)
-        toast.success(res.marked ? "Marcado para revisión" : "Marca de revisión eliminada")
-      } else {
-        toast.error(res.message)
-      }
-    } catch {
-      toast.error("Error al cambiar marca de revisión")
-    } finally {
-      setBusy(false)
-    }
+function parseColumnKeys(stored: string): string[] | null {
+  try {
+    const parsed: unknown = JSON.parse(stored)
+    if (!Array.isArray(parsed)) return null
+    const keys = parsed.filter((key): key is string => typeof key === "string" && VALID_COLUMN_KEYS.has(key))
+    return keys.length > 0 ? keys : null
+  } catch {
+    return null
   }
-
-  return (
-    <button
-      type="button"
-      onClick={handleClick}
-      disabled={busy}
-      className={`inline-flex items-center gap-1 text-xs transition-colors hover:opacity-80 ${marked ? "text-amber-600 dark:text-amber-400" : "text-[var(--color-text-muted)] hover:text-amber-600 dark:hover:text-amber-400"}`}
-      // `title` era el único nombre de un botón que sólo muestra un icono: el
-      // más débil de la cadena de nombres accesibles, y nulo al tacto.
-      aria-label={marked ? "Quitar marca de revisión" : "Marcar para revisión"}
-      aria-pressed={Boolean(marked)}
-    >
-      <Flag size={14} weight={marked ? "fill" : "regular"} />
-    </button>
-  )
 }
 
-const rowKey = (row: EnrichedRow) => `${row.source}:${row.id}`
+const serializeColumnKeys = (keys: string[]) => JSON.stringify(keys)
 
-export function BitacoraTable({ rows, canViewPersonal }: { rows: EnrichedRow[]; canViewPersonal: boolean }) {
-  const [visible, setVisible] = React.useState<Set<string>>(() => new Set(COLUMNS.filter((c) => c.defaultVisible).map((c) => c.key)))
-  const [selected, setSelected] = React.useState<Set<string>>(new Set())
-  const columns = COLUMNS.filter((c) => visible.has(c.key))
+export const rowKey = (row: Pick<FuelLogRow, "source" | "id">) => `${row.source}:${row.id}`
+
+/**
+ * La tabla de «Cargas a equipos». El selector de columnas recuerda la elección
+ * de la persona; la selección de filas vive en quien la usa (el cabezal de la
+ * pantalla, que muestra «Exportar (N seleccionadas)»). Bajo `md` las filas se
+ * muestran como tarjetas, con lo que decide: equipo, estado, lo pendiente y la
+ * acción de abrir.
+ */
+export function BitacoraTable({
+  rows,
+  canViewPersonal,
+  selectedKeys,
+  onSelectedKeysChange,
+  currentUserId,
+  canWithdrawOthers = false,
+  initialColumnKeys,
+}: {
+  rows: EnrichedRow[]
+  canViewPersonal: boolean
+  selectedKeys?: ReadonlySet<string>
+  onSelectedKeysChange?: (next: Set<string>) => void
+  /** Quien mira la tabla: puede retirar el pedido de revisión que pidió. */
+  currentUserId?: string
+  /** `approve_flagged` o `tae_review`: puede retirar pedidos de otras personas. */
+  canWithdrawOthers?: boolean
+  /** Sólo para pruebas: columnas iniciales sin leer lo guardado. */
+  initialColumnKeys?: string[]
+}) {
+  const [storedKeys, setStoredKeys] = useLocalStorageState<string[]>(COLUMNS_STORAGE_KEY, initialColumnKeys ?? DEFAULT_COLUMN_KEYS, parseColumnKeys, serializeColumnKeys)
+  const visible = new Set(storedKeys)
+  const columns = COLUMNS.filter((column) => visible.has(column.key))
+  const selectable = Boolean(onSelectedKeysChange)
+  const selected = selectedKeys ?? new Set<string>()
   const allSelected = rows.length > 0 && rows.every((row) => selected.has(rowKey(row)))
 
   function toggleColumn(key: string) {
-    setVisible((prev) => {
-      const next = new Set(prev)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
-      return next
-    })
+    const next = new Set(visible)
+    if (next.has(key)) next.delete(key)
+    else next.add(key)
+    // El orden es el del catálogo, no el del clic.
+    setStoredKeys(COLUMNS.filter((column) => next.has(column.key)).map((column) => column.key))
   }
 
   function toggleRow(key: string) {
-    setSelected((prev) => {
-      const next = new Set(prev)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
-      return next
-    })
+    if (!onSelectedKeysChange) return
+    const next = new Set(selected)
+    if (next.has(key)) next.delete(key)
+    else next.add(key)
+    onSelectedKeysChange(next)
   }
 
   function toggleAll() {
-    setSelected(allSelected ? new Set() : new Set(rows.map(rowKey)))
+    if (!onSelectedKeysChange) return
+    onSelectedKeysChange(allSelected ? new Set() : new Set(rows.map(rowKey)))
   }
 
-  const selection = rows.filter((row) => selected.has(rowKey(row))).map((row) => ({ source: row.source, id: row.id }))
+  const canWithdraw = (row: EnrichedRow) => Boolean(row.reviewMark && (row.reviewMarkedBy === currentUserId || canWithdrawOthers))
+  const requestSummary = (row: EnrichedRow) => row.reviewMark ? { id: row.reviewMarkId ?? "", note: row.reviewMarkNotes, markedByName: null } : null
+  const label = (row: EnrichedRow) => row.equipmentCode ?? row.plate ?? "equipo sin identificar"
 
   return (
     <div>
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+      <div className="mb-2 hidden items-center justify-between gap-2 md:flex">
         <DropdownMenu>
           <DropdownMenuTrigger asChild><Button type="button" variant="ghost" size="sm"><GearSix size={14} className="mr-1" />Columnas</Button></DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="max-h-80 overflow-y-auto p-2">
@@ -163,40 +217,37 @@ export function BitacoraTable({ rows, canViewPersonal }: { rows: EnrichedRow[]; 
             </div>
           </DropdownMenuContent>
         </DropdownMenu>
-        {selection.length > 0 && (
-          <div className="flex items-center gap-2 text-xs text-[var(--color-text-muted)]">
-            <span>{selection.length} seleccionadas</span>
-            <BitacoraSelectionExport selection={selection} />
-          </div>
-        )}
       </div>
 
-      <div className="overflow-x-auto border border-[var(--color-border)]">
-        <Table className="min-w-[1100px] text-sm">
+      {/* Escritorio: la tabla. */}
+      <div className="hidden overflow-x-auto rounded-[var(--radius-2xl)] border border-[var(--color-border)] md:block">
+        <Table className="min-w-[1000px] text-sm">
           <TableHeader>
             <TableRow>
-              <TableHead className="w-10"><Checkbox id="select-all" label="" checked={allSelected} onChange={toggleAll} aria-label="Seleccionar todas las filas" /></TableHead>
+              {selectable && <TableHead className="w-10"><Checkbox id="select-all" label="Seleccionar todas las filas" labelHidden checked={allSelected} onChange={toggleAll} /></TableHead>}
               {columns.map((column) => <TableHead key={column.key} className={column.numeric ? "text-right" : ""}>{column.label}</TableHead>)}
-              <TableHead className="w-28">Acciones</TableHead>
+              <TableHead className="w-36">Acciones</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {rows.length === 0 && <TableRow><TableCell colSpan={columns.length + 2} className="py-10 text-center text-[var(--color-text-muted)]">Sin registros para este filtro.</TableCell></TableRow>}
+            {rows.length === 0 && <TableRow><TableCell colSpan={columns.length + (selectable ? 2 : 1)} className="py-10 text-center text-[var(--color-text-muted)]">Sin cargas para este filtro.</TableCell></TableRow>}
             {rows.map((row) => {
               const key = rowKey(row)
               return (
-                <TableRow key={key} className={row.reviewMark ? "bg-amber-50/40 dark:bg-amber-900/10" : ""}>
-                  <TableCell><Checkbox id={`select-${key}`} label="" checked={selected.has(key)} onChange={() => toggleRow(key)} aria-label={`Seleccionar fila ${key}`} /></TableCell>
-                  {columns.map((column) => <TableCell key={column.key} className={column.numeric ? "text-right font-mono" : ""}>{column.render(row, canViewPersonal)}</TableCell>)}
+                <TableRow key={key}>
+                  {selectable && <TableCell><Checkbox id={`select-${key}`} label={`Seleccionar la carga de ${label(row)}`} labelHidden checked={selected.has(key)} onChange={() => toggleRow(key)} /></TableCell>}
+                  {columns.map((column) => <TableCell key={column.key} className={column.numeric ? "text-right font-mono tabular-nums" : ""}>{column.render(row, canViewPersonal)}</TableCell>)}
                   <TableCell>
                     <div className="flex items-center gap-1">
-                      <ReviewToggle row={row} />
-                      <Link href={row.detailHref} className="inline-flex items-center gap-1 text-xs text-[var(--color-primary-ink)] hover:underline" title="Abrir detalle"><ArrowSquareOut size={14} /></Link>
-                      {canViewPersonal && row.source === "tae_pwa" && (row.evidenceCount ?? 0) > 0 && (
-                        <Link href={`${row.detailHref}#evidencia`} className="inline-flex items-center gap-1 text-xs text-[var(--color-primary-ink)] hover:underline" title="Ver evidencias"><Camera size={14} /></Link>
+                      <ReviewRequestControl source={row.source} entityId={row.id} openRequest={requestSummary(row)} canWithdraw={canWithdraw(row)} variant="icon" equipmentLabel={label(row)} />
+                      {row.hrefs.equipment && (
+                        <Link href={row.hrefs.equipment} className="inline-flex h-8 w-8 items-center justify-center rounded-[var(--radius)] text-[var(--color-primary-ink)] hover:bg-[var(--color-surface-2)]" aria-label={`Ver la ficha del equipo ${label(row)}`} title="Ficha del equipo"><Truck size={14} aria-hidden /></Link>
                       )}
-                      {row.auditEntity && (
-                        <Link href={`/combustibles/bitacora/historial/${row.auditEntity.entityType}/${row.auditEntity.entityId}`} className="inline-flex items-center gap-1 text-xs text-[var(--color-primary-ink)] hover:underline" title="Historial de cambios"><ClockCounterClockwise size={14} /></Link>
+                      {row.hrefs.evidence && (
+                        <Link href={row.hrefs.evidence} className="inline-flex h-8 w-8 items-center justify-center rounded-[var(--radius)] text-[var(--color-primary-ink)] hover:bg-[var(--color-surface-2)]" aria-label={`Ver las fotos de la carga de ${label(row)}`} title="Ver fotos"><Camera size={14} aria-hidden /></Link>
+                      )}
+                      {row.hrefs.history && (
+                        <Link href={row.hrefs.history} className="inline-flex h-8 w-8 items-center justify-center rounded-[var(--radius)] text-[var(--color-primary-ink)] hover:bg-[var(--color-surface-2)]" aria-label={`Ver el historial de la carga de ${label(row)}`} title="Historial de cambios"><ClockCounterClockwise size={14} aria-hidden /></Link>
                       )}
                     </div>
                   </TableCell>
@@ -205,6 +256,30 @@ export function BitacoraTable({ rows, canViewPersonal }: { rows: EnrichedRow[]; 
             })}
           </TableBody>
         </Table>
+      </div>
+
+      {/* Celular: una tarjeta por carga. */}
+      <div className="space-y-3 md:hidden">
+        {rows.length === 0 && <p className="py-8 text-center text-sm text-[var(--color-text-muted)]">Sin cargas para este filtro.</p>}
+        {rows.map((row) => (
+          <ResponsiveDataListCard
+            key={`card:${rowKey(row)}`}
+            title={<Link href={row.hrefs.detail}>{row.equipmentCode ?? row.plate ?? "Equipo sin identificar"}</Link>}
+            description={`${formatDateTime(row.occurredAt)} · ${row.worksiteName ?? "Sin faena"}`}
+            status={<StateCell row={row} />}
+            actions={
+              <>
+                <ReviewRequestControl source={row.source} entityId={row.id} openRequest={requestSummary(row)} canWithdraw={canWithdraw(row)} variant="icon" equipmentLabel={label(row)} />
+                <Button asChild size="sm" variant="secondary"><Link href={row.hrefs.detail}>Abrir</Link></Button>
+              </>
+            }
+          >
+            <ResponsiveDataListField label="Litros"><span className="font-mono tabular-nums">{Number(row.liters).toLocaleString("es-CL")} L</span></ResponsiveDataListField>
+            <ResponsiveDataListField label="Lectura">{row.meterReading == null ? "—" : <span className="font-mono tabular-nums">{Number(row.meterReading).toLocaleString("es-CL")} {meterUnit(row.meterLabel)}</span>}</ResponsiveDataListField>
+            <ResponsiveDataListField label="Cómo llegó">{FUEL_LOAD_ORIGIN_LABEL[row.origin]}</ResponsiveDataListField>
+            <ResponsiveDataListField label="Pendiente"><PendingCell row={row} /></ResponsiveDataListField>
+          </ResponsiveDataListCard>
+        ))}
       </div>
     </div>
   )

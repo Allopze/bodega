@@ -1,5 +1,5 @@
 import type { Session } from "next-auth"
-import { and, eq, gte, inArray, lte, ne, sql, type SQL } from "drizzle-orm"
+import { and, desc, eq, gte, inArray, lt, lte, ne, sql, type SQL } from "drizzle-orm"
 import type { AnyPgColumn } from "drizzle-orm/pg-core"
 import { z } from "zod"
 import { db } from "@/db"
@@ -34,7 +34,7 @@ export const fuelCycleMovementSchema = z.object({
 }).superRefine((value, ctx) => {
   const issue = (path: "supplierId" | "sourceLocationId" | "targetLocationId" | "vehicleId", message: string) => ctx.addIssue({ code: "custom", path: [path], message })
   if (value.eventType === "received" && (!value.supplierId || !value.targetLocationId)) issue(!value.supplierId ? "supplierId" : "targetLocationId", "La recepción requiere proveedor y estanque destino")
-  if (value.eventType === "transfer" && (!value.sourceLocationId || !value.targetLocationId || value.sourceLocationId === value.targetLocationId)) issue("targetLocationId", "La transferencia requiere dos estanques distintos")
+  if (value.eventType === "transfer" && (!value.sourceLocationId || !value.targetLocationId || value.sourceLocationId === value.targetLocationId)) issue("targetLocationId", "El traspaso requiere dos estanques distintos")
   if (value.eventType === "tank_delivery" && (!value.sourceLocationId || !value.vehicleId)) issue(!value.sourceLocationId ? "sourceLocationId" : "vehicleId", "La entrega desde estanque requiere origen y equipo")
   if (value.eventType === "direct_delivery" && (!value.supplierId || !value.vehicleId)) issue(!value.supplierId ? "supplierId" : "vehicleId", "La entrega directa requiere proveedor y equipo")
 })
@@ -127,7 +127,9 @@ export async function getFuelCycleComparison(session: Session, filters: { worksi
   const sources = [sum.get("tank_delivery"), sum.get("direct_delivery"), taeRows[0] && Number(taeRows[0].records) > 0 ? { liters: Number(taeRows[0].liters), records: Number(taeRows[0].records) } : undefined].filter(Boolean) as CycleAmount[]
   const delivered = sources.length ? { liters: sources.reduce((total, source) => total + source.liters, 0), records: sources.reduce((total, source) => total + source.records, 0) } : null
   const registered = registeredRows[0] ? { liters: Number(registeredRows[0].liters), records: Number(registeredRows[0].records) } : null
-  return { received, registered, delivered, consumed: null, differences: { receivedVsRegistered: compareCycleAmounts(received, registered), receivedVsDelivered: compareCycleAmounts(received, delivered) } }
+  // Sin etapa «Consumido»: ninguna fuente lo mide de verdad (lo que cargó cada equipo no es lo que gastó),
+  // y mostrarla siempre en blanco insinuaba una medición que no existe.
+  return { received, registered, delivered, differences: { receivedVsRegistered: compareCycleAmounts(received, registered), receivedVsDelivered: compareCycleAmounts(received, delivered) } }
 }
 
 export interface FuelStorageBalance {
@@ -262,4 +264,53 @@ export async function getFuelStorageBalances(session: Session, filters: { worksi
       balanceLiters: opening.netLiters + period.netLiters,
     }
   })
+}
+
+export type CycleStage = "received" | "delivered"
+
+export interface FuelCycleMovementFilters {
+  /** Instante de inicio (incluido) y de fin (excluido) del período en hora de Chile: `toChileInstantRange`. */
+  start: string
+  endExclusive: string
+  worksiteId?: string
+  productId?: string
+  stage?: CycleStage
+  limit?: number
+}
+
+/**
+ * Movimientos del ciclo (la lista bajo el nivel por estanque). La ventana es de
+ * **instantes** —`occurredAt` es un `timestamptz`—, así que quien llama la arma
+ * con `toChileInstantRange`: anclar los extremos en «Z» o en la zona del proceso
+ * recortaba una ventana UTC (incluía las últimas horas del día chileno anterior y
+ * perdía las del día final) y la tabla dejaba de cuadrar con los totales.
+ * Devuelve también cuántos hay en total para decir «los últimos N de M».
+ */
+export async function listFuelCycleMovements(session: Session, filters: FuelCycleMovementFilters) {
+  const stageTypes = filters.stage === "received" ? ["received"] : filters.stage === "delivered" ? ["tank_delivery", "direct_delivery"] : undefined
+  const where = and(
+    gte(fuelCycleMovements.occurredAt, filters.start),
+    lt(fuelCycleMovements.occurredAt, filters.endExclusive),
+    worksiteScopeSql(session, fuelCycleMovements.worksiteId),
+    filters.worksiteId ? eq(fuelCycleMovements.worksiteId, filters.worksiteId) : undefined,
+    filters.productId ? eq(fuelCycleMovements.productId, filters.productId) : undefined,
+    stageTypes ? inArray(fuelCycleMovements.eventType, stageTypes) : undefined,
+  )
+  const [rows, totals] = await Promise.all([
+    db.query.fuelCycleMovements.findMany({
+      where,
+      with: {
+        worksite: { columns: { name: true } },
+        product: { columns: { name: true } },
+        sourceLocation: { columns: { name: true } },
+        targetLocation: { columns: { name: true } },
+        vehicle: { columns: { id: true, plate: true, code: true } },
+        supplier: { columns: { name: true } },
+      },
+      orderBy: [desc(fuelCycleMovements.occurredAt), desc(fuelCycleMovements.id)],
+      limit: filters.limit ?? 100,
+    }),
+    db.select({ total: sql<number>`count(*)::int` }).from(fuelCycleMovements).where(where),
+  ])
+  return { rows, total: totals[0]?.total ?? 0 }
 }

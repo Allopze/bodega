@@ -52,10 +52,19 @@ export const EMPTY_DRAFT: FieldLoadDraft = {
 export type FieldLoadPhotos = Partial<Record<TaeEvidenceKind, File>>
 
 export type SubmitOutcome =
-  | { kind: "sent"; href?: string }
+  /** `detail` es lo que el anfitrión quiera mostrar en su pantalla final (`renderSent`); el formulario no lo mira. */
+  | { kind: "sent"; href?: string; detail?: unknown }
   | { kind: "queued" }
   | { kind: "rejected"; message: string; field?: string }
+  /** El servidor pide confirmar antes de registrar (p. ej. una posible carga duplicada): se muestra el aviso y se puede seguir. */
+  | { kind: "confirm"; message: string; link?: { href: string; label: string } }
   | { kind: "failed"; message: string }
+
+/** Carga de otro día, tal como viaja en el payload: hora de pared de Chile (`2026-10-12T14:30`) y motivo. */
+export interface FieldLoadPastLoad {
+  loadedAt: string
+  reason: string
+}
 
 /** Envía (o encola) una carga ya armada. La PWA pública usa la cola sin conexión; el registro autenticado envía directo. */
 export type FieldLoadSubmitter = (payload: Record<string, unknown>, evidence: QueuedTaeEvidence[]) => Promise<SubmitOutcome>

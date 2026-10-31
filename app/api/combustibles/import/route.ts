@@ -12,6 +12,7 @@ import { fuelProductIdForLegacy } from "@/lib/combustibles/fuel-products"
 import { fuelEquipmentTypeIdForLegacy, fuelMetricDefaultsForLegacy } from "@/lib/combustibles/validation"
 import { isRouteOperational } from "@/lib/services/module-toggles"
 import { ensurePreventionProgramSlotsForWorksiteTx } from "@/lib/services/prevention-program-slots"
+import { FUEL_PATHS } from "@/lib/combustibles/routes"
 
 const CREATE_FAENA = "__create__"
 const SKIP_FAENA = "__skip__"
@@ -79,7 +80,7 @@ export async function POST(req: NextRequest) {
     assertFuelCostAccess(session)
   }
   catch { return NextResponse.json({ ok: false, message: "Sin permisos" }, { status: 403 }) }
-  if (!await isRouteOperational("/combustibles/importar")) {
+  if (!await isRouteOperational(FUEL_PATHS.fuentes)) {
     return NextResponse.json({ ok: false, message: "Importación de combustibles inactiva" }, { status: 503 })
   }
 

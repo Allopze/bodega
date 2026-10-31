@@ -89,8 +89,8 @@ test.describe("Shell — el scroll vive en el pozo, no en el documento", () => {
   })
 
   test("activar un ancla desplaza el pozo, no el documento", async ({ page }) => {
-    // `/combustibles/ciclo` enlaza a su propio ancla (`cycleQuery`) y la sección
-    // lleva `scroll-mt-24` (6rem = 96px).
+    // `/combustibles/cuadratura/estanques` (antes `/combustibles/ciclo`) enlaza a su propio
+    // ancla —`#movimientos`, el bloque «Movimientos»— y lo lleva con `scroll-mt-24` (6rem = 96px).
     //
     // El ancla NO se pide en el `goto`: con el hash en la URL inicial el
     // desplazamiento nativo del fragmento compite con la hidratación y el
@@ -99,8 +99,8 @@ test.describe("Shell — el scroll vive en el pozo, no en el documento", () => {
     // preexistente y ajena a lo que esta prueba afirma; lo que aquí se verifica
     // es que el offset de `scroll-mt` resuelve contra el pozo, así que el ancla
     // se activa con la página ya asentada.
-    await page.goto("/combustibles/ciclo")
-    const seccion = page.locator("#movimientos-ciclo")
+    await page.goto("/combustibles/cuadratura/estanques")
+    const seccion = page.locator("#movimientos")
     await expect(seccion).toBeVisible({ timeout: 30_000 })
     await page.waitForLoadState("networkidle").catch(() => undefined)
 
@@ -108,7 +108,7 @@ test.describe("Shell — el scroll vive en el pozo, no en el documento", () => {
     expect(inicial.scrollHeight, "el pozo debería desbordar en esta ruta").toBeGreaterThan(inicial.clientHeight)
     expect(inicial.scrollTop).toBe(0)
 
-    await page.evaluate(() => { window.location.hash = "#movimientos-ciclo" })
+    await page.evaluate(() => { window.location.hash = "#movimientos" })
     await expect.poll(async () => (await metricasDelPozo(page)).scrollTop).toBeGreaterThan(0)
 
     const finales = await metricasDelPozo(page)
@@ -117,6 +117,8 @@ test.describe("Shell — el scroll vive en el pozo, no en el documento", () => {
     // sección pueda subir hasta los 96px, así que el offset medible depende de
     // cuánto contenido siembre la base por debajo. Lo que sí es invariante —y
     // es lo que esta prueba protege— es QUIÉN se desplazó.
+    // VERIFICAR: «Movimientos» es el último bloque de Estanques; si la base E2E sembrara tantos movimientos que
+    // la sección superara la altura del pozo, el scroll ya no llegaría al tope y esta igualdad dejaría de cumplirse.
     expect(finales.scrollTop).toBe(finales.scrollHeight - finales.clientHeight)
     expect(finales.ventanaScrollY).toBe(0)
     expect(finales.documentoScrollTop).toBe(0)

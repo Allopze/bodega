@@ -24,6 +24,8 @@ vi.mock("@/db", () => ({
 }))
 
 vi.mock("@/lib/audit", () => ({ recordAudit: vi.fn() }))
+// El contrato de costos tiene su propia prueba (`combustibles-actions-extra`): aquí se mide el tope de filas.
+vi.mock("@/lib/operational-control/capabilities", () => ({ assertFuelCostAccess: vi.fn() }))
 vi.mock("@/lib/id", () => ({ nanoid: () => "id-new" }))
 vi.mock("@/lib/logger", () => ({ logger: { error: vi.fn() } }))
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
@@ -61,7 +63,7 @@ describe("exportFuelLoadsXlsxAction", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockRequirePermission.mockResolvedValue({
-      user: { id: "u-1", permissions: ["combustibles:export"], isGlobal: true, worksiteIds: [] },
+      user: { id: "u-1", permissions: ["combustibles:export", "combustibles:export_sensitive", "combustibles:view", "combustibles:view_costs"], isGlobal: true, worksiteIds: [] },
     })
   })
 

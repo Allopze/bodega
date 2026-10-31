@@ -2,7 +2,6 @@
 
 import { safeActionMessage } from "@/lib/action-error"
 
-import { revalidatePath } from "next/cache"
 import { and, desc, eq, inArray } from "drizzle-orm"
 import { z } from "zod"
 import { db } from "@/db"
@@ -14,6 +13,8 @@ import { ARAMCO_SOURCES } from "@/lib/combustibles/fuel-sources"
 import { syncAramco } from "@/lib/combustibles/aramco-sync"
 import { withCronLock } from "@/lib/services/cron-lock"
 import { AramcoTwoFactorRequiredError } from "@/lib/combustibles/aramco-client"
+import { FUEL_PATHS } from "@/lib/combustibles/routes"
+import { revalidateFuel } from "@/lib/combustibles/revalidate"
 import {
   AramcoSettingsError,
   clearAramcoSettings,
@@ -23,7 +24,9 @@ import {
   type AramcoAdminStatus,
 } from "@/lib/combustibles/aramco-settings"
 
-const PAGE = "/combustibles/importar"
+const PAGE = FUEL_PATHS.fuentes
+/** `manage_integrations` pertenece a Ajustes › Integraciones: su ruta operativa no es «Fuentes de datos». */
+const SETTINGS_PAGE = FUEL_PATHS.ajustesIntegraciones
 const SYNC_PERMISSION = "combustibles:sync_integrations"
 const MANAGE_PERMISSION = "combustibles:manage_integrations"
 
@@ -127,7 +130,7 @@ export async function runAramcoSyncAction(range: { from?: string; to?: string } 
       return { ok: false, message: "La sincronización automática de Aramco está corriendo en este momento. Espera a que termine e inténtalo nuevamente." }
     }
     const result = outcome
-    revalidatePath(PAGE)
+    revalidateFuel()
     return {
       ok: true,
       imported: result.imported,
@@ -157,7 +160,7 @@ export async function saveAramcoSettingsAction(input: {
   password?: string
   syncEnabled: boolean
 }): Promise<{ ok: true; message: string } | { ok: false; message: string }> {
-  const guard = await guardPermission(MANAGE_PERMISSION, PAGE)
+  const guard = await guardPermission(MANAGE_PERMISSION, SETTINGS_PAGE)
   if (guard.error) return guard.error
   const session = guard.session
 
@@ -171,7 +174,7 @@ export async function saveAramcoSettingsAction(input: {
       userId: session.user.id,
       userEmail: session.user.email ?? undefined,
     })
-    revalidatePath(PAGE)
+    revalidateFuel()
 
     // Activar la automatización sin credenciales usables no es un error de
     // guardado, pero sí una corrida fallida cada día. Se avisa acá en vez de
@@ -197,12 +200,12 @@ export async function saveAramcoSettingsAction(input: {
 
 /** Borra lo persistido y devuelve el mando al `.env` del servidor. */
 export async function clearAramcoSettingsAction(): Promise<{ ok: true } | { ok: false; message: string }> {
-  const guard = await guardPermission(MANAGE_PERMISSION, PAGE)
+  const guard = await guardPermission(MANAGE_PERMISSION, SETTINGS_PAGE)
   if (guard.error) return guard.error
   const session = guard.session
   try {
     await clearAramcoSettings({ userId: session.user.id, userEmail: session.user.email ?? undefined })
-    revalidatePath(PAGE)
+    revalidateFuel()
     return { ok: true }
   } catch (error) {
     logger.error("[combustibles/clearAramcoSettings]", error)

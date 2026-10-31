@@ -140,6 +140,7 @@ export async function getOperationsSummary(session: Session, filters: Operations
   const rendimientosRaw = byEquipoRaw.map((r, i) => ({
     patente: byEquipo[i]!.patente,
     filterPatente: r.plate,
+    vehicleId: r.vehicleId,
     rendimiento: Number(r.rendimiento),
     cantidad: Number(r.cantidad),
     unidad: r.unidad,

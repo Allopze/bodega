@@ -9,7 +9,12 @@ import { isTaeReviewTransitionAllowed } from "@/lib/validation/fuel-tae"
 import { MIN_ACCEPTED_OCR_CONFIDENCE } from "@/lib/services/tae-ocr"
 import { detectTaeAnomaliesInTx } from "./anomalies"
 
-export async function reviewTaeSubmission({ id, expectedStatus, status, reviewNote, userId }: { id: string; expectedStatus: "submitted" | "observed" | "validated" | "voided"; status: "observed" | "validated" | "voided"; reviewNote: string; userId: string }) {
+/**
+ * `reviewNote` es obligatoria para observar y anular (la acción lo exige); validar una
+ * carga que está bien no pide explicación (rediseño 2026-10-31, «Confirmar sólo lo que
+ * no se deshace»), así que llega `null` y la carga queda sin nota de revisión.
+ */
+export async function reviewTaeSubmission({ id, expectedStatus, status, reviewNote, userId }: { id: string; expectedStatus: "submitted" | "observed" | "validated" | "voided"; status: "observed" | "validated" | "voided"; reviewNote?: string | null; userId: string }) {
   const current = await db.query.fuelTaeSubmissions.findFirst({ where: eq(fuelTaeSubmissions.id, id) })
   if (!current) throw new Error("Carga TAE no encontrada")
   if (current.status !== expectedStatus) throw new Error("La carga cambió mientras la revisabas. Actualiza la página e inténtalo nuevamente.")
@@ -21,15 +26,17 @@ export async function reviewTaeSubmission({ id, expectedStatus, status, reviewNo
   if (status === "validated" && requiresMeterConfirmation) {
     throw new Error("Confirma o corrige manualmente la lectura sugerida por OCR antes de validar la carga")
   }
+  const note = reviewNote?.trim() || null
+  if (!note && status !== "validated") throw new Error("Indica el motivo o resolución")
   const now = new Date().toISOString()
   await db.transaction(async (tx) => {
     const updated = await tx.update(fuelTaeSubmissions)
-      .set({ status, reviewNote, reviewedBy: userId, reviewedAt: now, updatedAt: now })
+      .set({ status, reviewNote: note, reviewedBy: userId, reviewedAt: now, updatedAt: now })
       .where(and(eq(fuelTaeSubmissions.id, id), eq(fuelTaeSubmissions.status, expectedStatus)))
       .returning({ id: fuelTaeSubmissions.id })
     if (updated.length === 0) throw new Error("La carga cambió mientras la revisabas. Actualiza la página e inténtalo nuevamente.")
-    await recordAudit({ userId, action: "status_change", entityType: "fuel_tae_submission", entityId: id, oldState: { status: current.status }, newState: { status }, reason: reviewNote }, tx)
-    await recordStatusChange({ entityType: "fuel_tae_submission", entityId: id, fromStatus: current.status, toStatus: status, changedBy: userId, reason: reviewNote }, tx)
+    await recordAudit({ userId, action: "status_change", entityType: "fuel_tae_submission", entityId: id, oldState: { status: current.status }, newState: { status }, reason: note ?? undefined }, tx)
+    await recordStatusChange({ entityType: "fuel_tae_submission", entityId: id, fromStatus: current.status, toStatus: status, changedBy: userId, reason: note ?? undefined }, tx)
 
     // Auto-detección de anomalías durante la revisión (sección 11)
     await detectTaeAnomaliesInTx(current, tx, userId, status)

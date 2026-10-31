@@ -20,6 +20,7 @@ import { ChartFrame } from "../charts/chart-frame"
 import { DebtAgingChart } from "../charts/debt-aging-chart"
 import { ORDERS_ISSUED_METRIC, ORDERS_SPEND_METRIC, ORDERS_SPEND_TREND_POLARITY, spendVariationPct } from "../dashboard-metric-definitions"
 import { analyticsFilters, type DomainSectionsProps } from "./shared"
+import { FUEL_PATHS } from "@/lib/combustibles/routes"
 
 /**
  * Finanzas: **toda la plata**, en las dos direcciones.
@@ -225,13 +226,13 @@ export async function FinanceSection({ session, scope }: DomainSectionsProps) {
             // La ventana de este tile son los últimos 6 meses, no el período del
             // tablero: el mensaje la nombra para no prometer "este mes".
             <KpiCard {...DASHBOARD_KPI} icon={<Gauge size={16} />} label="Costo de combustible" value={formatCLP(fuelCost)}
-              detail="Cargas facturadas · últimos 6 meses" href="/combustibles"
+              detail="Cargas facturadas · últimos 6 meses" href={FUEL_PATHS.pagos}
               empty={fuelCost === 0 ? { message: "Sin cargas facturadas en 6 meses", actionLabel: "Ver cargas" } : undefined} />
           )}
           {canSeeFuelDebt && (
             <KpiCard {...DASHBOARD_KPI} icon={<Warning size={16} />} label="Deuda vencida" value={formatCLP(debt.amount)}
               detail={debt.statements > 0 ? `${debt.statements} cuenta(s) · hoy` : "Sin cuentas vencidas, hoy"}
-              tone={debt.amount > 0 ? "signal" : "neutral"} href="/combustibles/cuenta-corriente" />
+              tone={debt.amount > 0 ? "signal" : "neutral"} href={FUEL_PATHS.estados} />
           )}
         </>
       ),

@@ -1,15 +1,9 @@
-import { redirect } from "next/navigation"
-import { legacyAnalysisTarget } from "./redirect-target"
+import { permanentRedirect } from "next/navigation"
+import { legacyFuelRedirect } from "@/lib/combustibles/legacy-redirects"
 
-/**
- * Vista retirada: el análisis de rendimiento por familia (R-01 a R-06) se
- * implementó en `/combustibles/control/rendimiento/[familia]` y esta pantalla
- * quedó superada. Se conserva sólo la ruta para los enlaces y favoritos antiguos.
- */
-export default async function AnalisisRedirectPage({
-  searchParams,
-}: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>
-}) {
-  redirect(legacyAnalysisTarget(await searchParams))
+type SearchParams = Record<string, string | string[] | undefined>
+
+/** Ruta anterior al rediseño de Combustible (2026-10-31): página puente permanente. */
+export default async function LegacyFuelBridge({ searchParams }: { searchParams: Promise<SearchParams> }) {
+  permanentRedirect(legacyFuelRedirect("analisis", {}, await searchParams))
 }

@@ -15,7 +15,7 @@ export {
   revokeTaePublicLink,
 } from "./access"
 export { createInternalFieldLoad, createTaeSubmission, registerFieldLoad } from "./submit"
-export type { FieldLoadContext, FieldLoadResult } from "./submit"
+export type { FieldLoadContext, FieldLoadOptions, FieldLoadResult, FieldLoadReview } from "./submit"
 export { isOutsideOperatingSchedule } from "./anomalies"
 export { reviewTaeSubmission } from "./review"
 export { getTaeSubmissionContext } from "./context"

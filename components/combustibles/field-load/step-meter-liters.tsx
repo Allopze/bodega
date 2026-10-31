@@ -6,7 +6,7 @@ import { vehicleOf } from "./validate"
 import type { StepViewProps } from "./step-props"
 
 /** Paso 2: lo que marca el tablero, escrito por la persona (la foto es respaldo). */
-export function StepMeter({ config, draft, photos, errors, patch, selectPhoto, compressing }: StepViewProps) {
+export function StepMeter({ config, draft, photos, errors, patch, selectPhoto, compressing, photosOptional }: StepViewProps) {
   const vehicle = vehicleOf(config, draft)
   const meterLabel = vehicle?.meterType === "hour_meter" ? "Horómetro (horas)" : "Odómetro (kilómetros)"
   return (
@@ -18,20 +18,20 @@ export function StepMeter({ config, draft, photos, errors, patch, selectPhoto, c
           <BigNumberInput id="tae-meter-reading" name="meterReading" value={draft.meterReading} onChange={(event) => patch({ meterReading: event.target.value })} error={Boolean(errors.meterReading)} aria-describedby="tae-meter-reading-hint" />
         </BigField>
       )}
-      <PhotoTile kind="odometer" label="Tomar foto del tablero" help="Que se vea el número del medidor." file={photos.odometer} compressing={Boolean(compressing.odometer)} error={errors.odometer} onSelect={(file) => selectPhoto("odometer", file)} />
+      <PhotoTile kind="odometer" label="Tomar foto del tablero" help="Que se vea el número del medidor." file={photos.odometer} compressing={Boolean(compressing.odometer)} error={errors.odometer} onSelect={(file) => selectPhoto("odometer", file)} optional={photosOptional} />
     </div>
   )
 }
 
 /** Paso 3: cuántos litros entregó el surtidor, con la foto del medidor. */
-export function StepLiters({ config, draft, photos, errors, patch, selectPhoto, compressing }: StepViewProps) {
+export function StepLiters({ config, draft, photos, errors, patch, selectPhoto, compressing, photosOptional }: StepViewProps) {
   const capacity = vehicleOf(config, draft)?.tankCapacityLiters
   return (
     <div className="space-y-6">
       <BigField id="tae-liters" label="Litros cargados" hint={capacity ? `Estanque del equipo: ${capacity.toLocaleString("es-CL")} L. Si tiene decimales, usa coma.` : "Si tiene decimales, usa coma."} error={errors.liters}>
         <BigNumberInput id="tae-liters" name="liters" value={draft.liters} onChange={(event) => patch({ liters: event.target.value })} error={Boolean(errors.liters)} aria-describedby="tae-liters-hint" />
       </BigField>
-      <PhotoTile kind="liter_meter" label="Tomar foto del medidor de litros" help="Que se vean los litros que marca el surtidor." file={photos.liter_meter} compressing={Boolean(compressing.liter_meter)} error={errors.liter_meter} onSelect={(file) => selectPhoto("liter_meter", file)} />
+      <PhotoTile kind="liter_meter" label="Tomar foto del medidor de litros" help="Que se vean los litros que marca el surtidor." file={photos.liter_meter} compressing={Boolean(compressing.liter_meter)} error={errors.liter_meter} onSelect={(file) => selectPhoto("liter_meter", file)} optional={photosOptional} />
     </div>
   )
 }

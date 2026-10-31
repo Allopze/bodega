@@ -297,18 +297,19 @@ describe("module-toggles service", () => {
 
   describe("toggle lifecycle", () => {
     it("niega rutas y permisos del módulo, y sólo la ruta del submódulo apagado", async () => {
-      await setSubmoduleToggle("combustibles", "/combustibles/tae", false, ACTOR)
+      await setSubmoduleToggle("combustibles", "/combustibles/cuadratura", false, ACTOR)
       let state = await getNavigationToggleState()
-      expect(resolveModuleRoute("/combustibles/tae/importar/historial")).toEqual({
+      // Una URL anterior al rediseño queda con el dueño de su destino.
+      expect(resolveModuleRoute("/combustibles/tae/conciliacion")).toEqual({
         moduleId: "combustibles",
-        submoduleHref: "/combustibles/tae",
+        submoduleHref: "/combustibles/cuadratura",
       })
-      expect(routeIsEnabled("/combustibles/tae/importar", state)).toBe(false)
-      expect(routeIsEnabled("/combustibles/bitacora", state)).toBe(true)
+      expect(routeIsEnabled("/combustibles/cuadratura/sellos", state)).toBe(false)
+      expect(routeIsEnabled("/combustibles/cargas", state)).toBe(true)
 
       await setModuleToggle("combustibles", false, ACTOR)
       state = await getNavigationToggleState()
-      expect(routeIsEnabled("/combustibles/bitacora", state)).toBe(false)
+      expect(routeIsEnabled("/combustibles/cargas", state)).toBe(false)
       await expect(assertPermissionModuleEnabled("combustibles:view")).rejects.toThrow(/módulo inactivo/i)
       await expect(assertPermissionModuleEnabled("admin:module_management")).resolves.toBeUndefined()
     })
@@ -354,12 +355,12 @@ describe("module-toggles service", () => {
     })
 
     it("bloquea el submódulo aunque la ruta canónica del permiso apunte a otro", async () => {
-      // El permiso resuelve a /combustibles; la operación se despachó desde el
-      // submódulo Bitácora. Apagar cualquiera de los dos debe cerrar la acción.
-      await setSubmoduleToggle("combustibles", "/combustibles/bitacora", false, ACTOR)
+      // El permiso resuelve a «Por revisar»; la operación se despachó desde
+      // Cargas. Apagar cualquiera de los dos debe cerrar la acción.
+      await setSubmoduleToggle("combustibles", "/combustibles/cargas", false, ACTOR)
       await expect(assertPermissionModuleEnabled(
         "combustibles:review_anomalies",
-        "/combustibles/bitacora",
+        "/combustibles/cargas",
       )).rejects.toThrow(/submódulo inactivo/i)
     })
 
@@ -397,20 +398,21 @@ describe("module-toggles service", () => {
       expect(missingApis).toEqual([])
     })
 
-    it("no permite despachar una Server Action TAE desde un submódulo hermano", async () => {
-      await setSubmoduleToggle("combustibles", "/combustibles/tae", false, ACTOR)
+    it("no permite despachar una Server Action de Ajustes desde un submódulo hermano", async () => {
+      await setSubmoduleToggle("combustibles", "/combustibles/ajustes", false, ACTOR)
       await expect(assertPermissionModuleEnabled(
         "combustibles:tae_manage_config",
-        "/combustibles/bitacora",
+        "/combustibles/cargas",
       )).rejects.toThrow(/submódulo inactivo/i)
     })
 
     it("respeta el destino explícito de una Server Action con permiso ambiguo", async () => {
-      await setSubmoduleToggle("combustibles", "/combustibles", false, ACTOR)
+      // `export` no tiene un único dueño: la acción dice a qué sección pertenece.
+      await setSubmoduleToggle("combustibles", "/combustibles/consumo", false, ACTOR)
       await expect(assertPermissionModuleEnabled(
-        "combustibles:review_anomalies",
-        "/combustibles/bitacora",
-        "/combustibles",
+        "combustibles:export",
+        "/combustibles/cargas",
+        "/combustibles/consumo",
       )).rejects.toThrow(/submódulo inactivo/i)
     })
 

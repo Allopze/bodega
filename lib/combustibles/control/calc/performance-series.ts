@@ -59,7 +59,7 @@ export interface SeriesResult {
 }
 
 /** Marcas que pone la proyección según el origen; el recálculo las conserva. */
-export const SOURCE_FLAGS: readonly FlagReason[] = ["filler_value", "unknown_vehicle"]
+export const SOURCE_FLAGS: readonly FlagReason[] = ["filler_value", "unknown_vehicle", "late_entry"]
 
 const round = (value: number, digits: number) => {
   const factor = 10 ** digits

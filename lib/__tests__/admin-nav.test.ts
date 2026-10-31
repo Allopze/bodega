@@ -112,7 +112,7 @@ describe("getAdminAreas", () => {
       "Desviaciones",
       "Catálogos PDTP",
       "Catálogos de flota",
-      "Configuración de combustible",
+      "Ajustes de combustible",
       "Tipos de activo TI",
       "Tipos de documento SST",
       "Escenarios de emergencia",

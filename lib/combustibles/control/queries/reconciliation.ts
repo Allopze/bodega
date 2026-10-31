@@ -108,6 +108,32 @@ function totalsFor(input: number, direct: number, viaTank: number, tolerancePct:
 
 const ASSUMED_DIRECT_TYPES = new Set<string | null>(["tae", "other", null])
 
+interface MonthBucket { input: number; direct: number; viaTank: number }
+
+function bucketFor(byMonth: Map<string, MonthBucket>, month: string): MonthBucket {
+  let entry = byMonth.get(month)
+  if (!entry) { entry = { input: 0, direct: 0, viaTank: 0 }; byMonth.set(month, entry) }
+  return entry
+}
+
+/** Suma una entrega de terreno al mes que le toca; devuelve los litros que se contaron como directos por suposición (S-3). */
+function addDelivery(entry: MonthBucket, type: string | null, liters: number): number {
+  if (deliveryModeFor(type as LoadingPointType | null) === "via_tank") { entry.viaTank += liters; return 0 }
+  entry.direct += liters
+  return ASSUMED_DIRECT_TYPES.has(type) ? liters : 0
+}
+
+function buildFlow(byMonth: Map<string, MonthBucket>, assumedDirectLiters: number, tolerancePct: number | null): ReconciliationFlow {
+  const months = [...byMonth.entries()].sort(([left], [right]) => left.localeCompare(right))
+    .map(([month, entry]) => ({ month, ...totalsFor(entry.input, entry.direct, entry.viaTank, tolerancePct) }))
+  const sum = (pick: (entry: MonthBucket) => number) => [...byMonth.values()].reduce((total, entry) => total + pick(entry), 0)
+  return {
+    totals: totalsFor(sum((entry) => entry.input), sum((entry) => entry.direct), sum((entry) => entry.viaTank), tolerancePct),
+    months,
+    assumedDirectLiters,
+  }
+}
+
 /** C-02: entrada → directo / vía estanque → diferencia, total y por mes. `tolerancePct` nulo = sin mandante elegido. */
 export async function getReconciliationFlow(session: Session | null, filters: ControlFilters, tolerancePct: number | null): Promise<ReconciliationFlow> {
   const t = fuelProviderTransactions
@@ -121,32 +147,56 @@ export async function getReconciliationFlow(session: Session | null, filters: Co
       .where(submissionWhere(session, filters)).groupBy(chileMonthSql(fuelTaeSubmissions.loadedAt), fuelTaeLoadingPoints.type),
   ])
 
-  const byMonth = new Map<string, { input: number; direct: number; viaTank: number }>()
-  const bucket = (month: string) => {
-    let entry = byMonth.get(month)
-    if (!entry) { entry = { input: 0, direct: 0, viaTank: 0 }; byMonth.set(month, entry) }
+  const byMonth = new Map<string, MonthBucket>()
+  for (const row of inputRows) bucketFor(byMonth, row.month).input += row.liters
+  for (const row of providerRows) bucketFor(byMonth, row.month).input += row.liters
+  let assumedDirectLiters = 0
+  for (const row of deliveryRows) assumedDirectLiters += addDelivery(bucketFor(byMonth, row.month), row.type, row.liters)
+  return buildFlow(byMonth, assumedDirectLiters, tolerancePct)
+}
+
+/**
+ * La misma cuadratura de `getReconciliationFlow`, para todos los mandantes de una
+ * vez: tres consultas agrupadas por mandante en vez de tres por cada uno. Una
+ * faena pertenece a un solo mandante (`fuel_mandante_worksites.worksite_id` es la
+ * llave primaria), así que nada se cuenta dos veces. `filters.mandanteId` se
+ * ignora; cada mandante se mide contra su propia tolerancia. Los mandantes sin
+ * movimiento no aparecen en el resultado.
+ */
+export async function getReconciliationFlowsByMandante(
+  session: Session | null,
+  filters: ControlFilters,
+  tolerances: ReadonlyMap<string, number>,
+): Promise<Map<string, ReconciliationFlow>> {
+  const t = fuelProviderTransactions
+  const mw = fuelMandanteWorksites
+  const open: ControlFilters = { ...filters, mandanteId: undefined }
+  const [inputRows, providerRows, deliveryRows] = await Promise.all([
+    db.select({ mandanteId: mw.mandanteId, month: fuelSupplyInputs.month, liters: sql<number>`coalesce(sum(${fuelSupplyInputs.liters}), 0)::float8` })
+      .from(fuelSupplyInputs).innerJoin(mw, eq(mw.worksiteId, fuelSupplyInputs.worksiteId))
+      .where(inputsWhere(session, open)).groupBy(mw.mandanteId, fuelSupplyInputs.month),
+    db.select({ mandanteId: mw.mandanteId, month: sql<string>`left(${t.occurredAt}, 7)`, liters: sql<number>`coalesce(sum(${t.quantity}), 0)::float8` })
+      .from(t).innerJoin(fuelSupplyMedia, providerMediumOn).innerJoin(mw, eq(mw.worksiteId, t.worksiteId))
+      .where(providerWhere(session, open)).groupBy(mw.mandanteId, sql`left(${t.occurredAt}, 7)`),
+    db.select({ mandanteId: mw.mandanteId, month: chileMonthSql(fuelTaeSubmissions.loadedAt), type: fuelTaeLoadingPoints.type, liters: sql<number>`coalesce(sum(${fuelTaeSubmissions.liters}), 0)::float8` })
+      .from(fuelTaeSubmissions).innerJoin(mw, eq(mw.worksiteId, fuelTaeSubmissions.worksiteId))
+      .leftJoin(fuelTaeLoadingPoints, eq(fuelTaeLoadingPoints.id, fuelTaeSubmissions.loadingPointId))
+      .where(submissionWhere(session, open)).groupBy(mw.mandanteId, chileMonthSql(fuelTaeSubmissions.loadedAt), fuelTaeLoadingPoints.type),
+  ])
+
+  const perMandante = new Map<string, { byMonth: Map<string, MonthBucket>; assumed: number }>()
+  const entryFor = (mandanteId: string) => {
+    let entry = perMandante.get(mandanteId)
+    if (!entry) { entry = { byMonth: new Map(), assumed: 0 }; perMandante.set(mandanteId, entry) }
     return entry
   }
-  for (const row of inputRows) bucket(row.month).input += row.liters
-  for (const row of providerRows) bucket(row.month).input += row.liters
-  let assumedDirectLiters = 0
+  for (const row of inputRows) bucketFor(entryFor(row.mandanteId).byMonth, row.month).input += row.liters
+  for (const row of providerRows) bucketFor(entryFor(row.mandanteId).byMonth, row.month).input += row.liters
   for (const row of deliveryRows) {
-    const entry = bucket(row.month)
-    if (deliveryModeFor(row.type as LoadingPointType | null) === "via_tank") entry.viaTank += row.liters
-    else {
-      entry.direct += row.liters
-      if (ASSUMED_DIRECT_TYPES.has(row.type)) assumedDirectLiters += row.liters
-    }
+    const entry = entryFor(row.mandanteId)
+    entry.assumed += addDelivery(bucketFor(entry.byMonth, row.month), row.type, row.liters)
   }
-
-  const months = [...byMonth.entries()].sort(([left], [right]) => left.localeCompare(right))
-    .map(([month, entry]) => ({ month, ...totalsFor(entry.input, entry.direct, entry.viaTank, tolerancePct) }))
-  const sum = (pick: (entry: { input: number; direct: number; viaTank: number }) => number) => [...byMonth.values()].reduce((total, entry) => total + pick(entry), 0)
-  return {
-    totals: totalsFor(sum((entry) => entry.input), sum((entry) => entry.direct), sum((entry) => entry.viaTank), tolerancePct),
-    months,
-    assumedDirectLiters,
-  }
+  return new Map([...perMandante.entries()].map(([mandanteId, entry]) => [mandanteId, buildFlow(entry.byMonth, entry.assumed, tolerances.get(mandanteId) ?? null)]))
 }
 
 export interface MediumCrossRow {

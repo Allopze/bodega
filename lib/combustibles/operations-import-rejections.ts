@@ -8,7 +8,7 @@ import ExcelJS from "exceljs"
 import { db, type Tx } from "@/db"
 import { fuelControlImportRejections } from "@/db/schema"
 import { nanoid } from "@/lib/id"
-import { addExportMetadataSheet } from "@/lib/combustibles/xlsx-utils"
+import { addExportMetadataSheet } from "@/lib/reports/export-metadata"
 import { xlsxToBase64 } from "@/lib/reports/export-module/excel-builder"
 import type { Session } from "next-auth"
 
@@ -71,6 +71,6 @@ export async function buildOperationRejectionsXlsx(batchId: string, fileLabel: s
     sheet.addRow(values)
   }
   sheet.views = [{ state: "frozen", ySplit: 1 }]
-  addExportMetadataSheet(workbook, session, { filters: { lote: batchId, archivo: fileLabel }, rowCount: rows.length })
+  await addExportMetadataSheet(workbook, session, { filters: { lote: batchId, archivo: fileLabel }, rowCount: rows.length })
   return { base64: await xlsxToBase64(workbook), rowCount: rows.length }
 }

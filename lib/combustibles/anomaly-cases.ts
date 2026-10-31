@@ -8,7 +8,7 @@
  */
 
 import type { Session } from "next-auth"
-import { and, desc, eq, inArray, sql, type SQL } from "drizzle-orm"
+import { and, desc, eq, gte, inArray, lt, sql, type SQL } from "drizzle-orm"
 import { db, type DB, type Tx } from "@/db"
 import { fuelAnomalyCases, fuelAnomalyComments, fuelAnomalyRules, fuelVehicles, worksites, users } from "@/db/schema"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
@@ -89,6 +89,8 @@ export interface CreateAnomalyCaseInput {
 }
 
 export interface AnomalyCasesFilters {
+  /** Sólo estos casos (la bandeja «Por revisar» elige la página por su orden y pide el detalle por id). */
+  ids?: string[]
   worksiteId?: string
   status?: AnomalyCaseStatus | AnomalyCaseStatus[]
   severity?: AnomalySeverity
@@ -97,6 +99,15 @@ export interface AnomalyCasesFilters {
   /** Filtrar por el registro fuente exacto (referenceEntityType + referenceEntityId), p. ej. desde "Abrir el caso relacionado" en la bitácora. */
   referenceEntityType?: string
   referenceEntityId?: string
+  /**
+   * Casos detectados dentro de un rango de instantes: `detectedFrom` inclusivo y
+   * `detectedTo` exclusivo. Respetan el período elegido en la cabecera del módulo.
+   */
+  detectedFrom?: string
+  detectedTo?: string
+  /** Lo mismo para la fecha de cierre (resuelto o descartado). */
+  resolvedFrom?: string
+  resolvedTo?: string
   limit?: number
   offset?: number
 }
@@ -170,6 +181,11 @@ export async function getAnomalyCases(filters: AnomalyCasesFilters, session: Ses
   if (filters.assigneeId) where.push(eq(fuelAnomalyCases.assigneeId, filters.assigneeId))
   if (filters.referenceEntityType) where.push(eq(fuelAnomalyCases.referenceEntityType, filters.referenceEntityType))
   if (filters.referenceEntityId) where.push(eq(fuelAnomalyCases.referenceEntityId, filters.referenceEntityId))
+  if (filters.ids) where.push(filters.ids.length > 0 ? inArray(fuelAnomalyCases.id, filters.ids) : sql`false`)
+  if (filters.detectedFrom) where.push(gte(fuelAnomalyCases.detectedAt, filters.detectedFrom))
+  if (filters.detectedTo) where.push(lt(fuelAnomalyCases.detectedAt, filters.detectedTo))
+  if (filters.resolvedFrom) where.push(gte(fuelAnomalyCases.resolvedAt, filters.resolvedFrom))
+  if (filters.resolvedTo) where.push(lt(fuelAnomalyCases.resolvedAt, filters.resolvedTo))
   const condition = where.length > 0 ? and(...where) : undefined
 
   const [rows, totalResult] = await Promise.all([
@@ -297,6 +313,70 @@ export async function assignAnomalyCase(
       oldState: { assigneeId: current.assigneeId },
       newState: { assigneeId },
       reason: "Asignación de responsable",
+    }, tx)
+    return next
+  })
+  return await enrichAnomalyCase(updated)
+}
+
+/**
+ * «Tomar el caso»: la persona queda como responsable y el caso pasa a `in_review`
+ * («Tomada») en un solo paso y una sola transacción. Antes eran dos acciones
+ * —asignar y cambiar de estado— y entre una y otra el caso podía quedar con
+ * responsable y todavía «Abierto».
+ *
+ * Sirve para un caso `open` o `reopened`, o uno `in_review` que nadie tomó. Un
+ * caso que ya tiene responsable se reasigna con `assignAnomalyCase`.
+ */
+export async function takeAnomalyCase(
+  session: Session,
+  caseId: string,
+  expected: { status: AnomalyCaseStatus; assigneeId: string | null },
+): Promise<AnomalyCaseRow> {
+  const updated = await db.transaction(async (tx) => {
+    const scope = worksiteScopeSql(session, fuelAnomalyCases.worksiteId)
+    const [current] = await tx.select().from(fuelAnomalyCases)
+      .where(and(eq(fuelAnomalyCases.id, caseId), scope))
+      .for("update")
+      .limit(1)
+    if (!current) throw new Error("Caso de anomalía no encontrado")
+    if (current.status !== expected.status || current.assigneeId !== expected.assigneeId) {
+      throw new Error("El caso cambió; actualiza la página antes de continuar")
+    }
+    const from = current.status as AnomalyCaseStatus
+    if (from !== "in_review" && !canTransitionAnomalyCase(from, "in_review")) {
+      throw new Error("Un caso cerrado no se puede tomar: reábrelo primero")
+    }
+    if (current.assigneeId && current.assigneeId !== session.user.id) {
+      throw new Error("Otra persona ya es responsable de este caso")
+    }
+    const now = new Date().toISOString()
+    const [next] = await tx.update(fuelAnomalyCases)
+      .set({ status: "in_review", assigneeId: session.user.id, updatedAt: now })
+      .where(and(eq(fuelAnomalyCases.id, caseId), eq(fuelAnomalyCases.status, expected.status)))
+      .returning()
+    if (!next) throw new Error("El caso cambió; actualiza la página antes de continuar")
+
+    if (from !== "in_review") {
+      await recordStatusChange({
+        entityType: "fuel_anomaly_case",
+        entityId: caseId,
+        fromStatus: from,
+        toStatus: "in_review",
+        changedBy: session.user.id,
+        reason: "Caso tomado",
+      }, tx)
+    }
+    await recordAudit({
+      userId: session.user.id,
+      userEmail: session.user.email ?? undefined,
+      action: "status_change",
+      entityType: "fuel_anomaly_case",
+      entityId: caseId,
+      oldState: { status: from, assigneeId: current.assigneeId },
+      newState: { status: "in_review", assigneeId: session.user.id },
+      reason: "Caso tomado",
+      worksiteId: current.worksiteId,
     }, tx)
     return next
   })

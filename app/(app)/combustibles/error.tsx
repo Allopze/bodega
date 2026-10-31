@@ -27,10 +27,10 @@ export default function CombustiblesError({
       <EmptyState
         as="h1"
         icon={isNetwork ? <WifiSlash size={24} /> : <GasPump size={24} />}
-        title={isNetwork ? "Error de conexión" : "Error al cargar combustibles"}
+        title={isNetwork ? "Error de conexión" : "No se pudo cargar esta pantalla de combustible"}
         description={isNetwork
           ? "No se pudo conectar con el servidor. Verifica tu conexión a internet y que el servicio esté disponible, luego intenta nuevamente."
-          : "No se pudieron cargar las cargas de combustible. Revisa la conexión e intenta nuevamente, o reporta el error."
+          : "Algo falló al leer los datos de combustible. Intenta de nuevo; si sigue pasando, reporta el error y dinos qué estabas mirando."
         }
         action={
           <div className="flex flex-wrap gap-2">

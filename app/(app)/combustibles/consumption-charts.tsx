@@ -9,7 +9,8 @@ import {
 } from "recharts"
 import { ChartLineUp } from "@phosphor-icons/react"
 import type { PeriodoRow, PatenteRankingRow, RendimientoRow } from "@/lib/combustibles/consumption-dashboard"
-import { buildConsumptionHref } from "./consumption-url"
+import { fuelEquipmentHref, withFuelContext } from "@/lib/combustibles/routes"
+import { buildLitrosHref } from "./consumption-url"
 import { formatCompactCLP, formatCompactQty, formatPricePerLiter } from "@/lib/utils"
 
 const MONTO_COLOR = "var(--color-info)"
@@ -60,14 +61,29 @@ function TooltipPanel({
   )
 }
 
+/**
+ * Un clic en una barra abre la ficha del equipo (con el período y la faena que
+ * se están mirando); una patente que no es un equipo de la flota no tiene
+ * ficha, así que filtra el análisis de tarjetas por ella.
+ */
 function usePatenteDrilldown() {
   const router = useRouter()
   const searchParams = useSearchParams()
 
-  return (patente: string | undefined) => {
-    if (!patente) return
-    router.push(buildConsumptionHref(searchParams.toString(), { patente }))
+  return (target: { vehicleId?: string | null; patente?: string } | undefined) => {
+    if (target?.vehicleId) {
+      router.push(withFuelContext(fuelEquipmentHref(target.vehicleId), searchParams))
+      return
+    }
+    // Filtrar es un cambio de vista, no una navegación: sin historial nuevo ni salto de scroll.
+    if (target?.patente) router.replace(buildLitrosHref(searchParams.toString(), { patente: target.patente }), { scroll: false })
   }
+}
+
+type BarClickPayload = { payload?: { filterPatente?: string; vehicleId?: string | null } }
+function drilldownTarget(entry: unknown) {
+  const payload = (entry as BarClickPayload).payload
+  return payload ? { vehicleId: payload.vehicleId, patente: payload.filterPatente } : undefined
 }
 
 function chartAxisProps() {
@@ -198,6 +214,7 @@ export function PatenteRankingChart({
   const chartData = data.slice(0, 8).map((row) => ({
     name: truncate(row.patente, 16),
     filterPatente: row.filterPatente ?? row.patente,
+    vehicleId: row.vehicleId,
     value: row[metric] ?? 0,
     sinAsociar: row.vehicleId == null,
   }))
@@ -209,7 +226,7 @@ export function PatenteRankingChart({
           data={chartData}
           layout="vertical"
           margin={{ top: 4, right: 12, left: 0, bottom: 2 }}
-          title={`Ranking de patentes por ${metric}. Selecciona una barra para ver su detalle.`}
+          title={`Ranking de patentes por ${metric}. Selecciona una barra para abrir la ficha del equipo.`}
         >
           <CartesianGrid horizontal={false} stroke={GRID_COLOR} strokeDasharray="2 5" />
           <XAxis type="number" tickFormatter={formatter} {...chartAxisProps()} />
@@ -224,7 +241,7 @@ export function PatenteRankingChart({
             name="Valor"
             barSize={17}
             style={{ cursor: "pointer" }}
-            onClick={(entry) => openPatente((entry as unknown as { payload?: { filterPatente?: string } }).payload?.filterPatente)}
+            onClick={(entry) => openPatente(drilldownTarget(entry))}
             animationDuration={420}
             animationEasing="ease-out"
           >
@@ -250,6 +267,7 @@ export function RendimientoChart({ data, unitLabel }: { data: RendimientoRow[]; 
   const chartData = data.slice(0, 12).map((row) => ({
     name: truncate(row.patente, 12),
     filterPatente: row.filterPatente ?? row.patente,
+    vehicleId: row.vehicleId,
     rendimiento: row.rendimiento,
     atipico: row.atipico,
   }))
@@ -276,7 +294,7 @@ export function RendimientoChart({ data, unitLabel }: { data: RendimientoRow[]; 
             name="Rendimiento"
             maxBarSize={34}
             style={{ cursor: "pointer" }}
-            onClick={(entry) => openPatente((entry as unknown as { payload?: { filterPatente?: string } }).payload?.filterPatente)}
+            onClick={(entry) => openPatente(drilldownTarget(entry))}
             animationDuration={420}
             animationEasing="ease-out"
           >

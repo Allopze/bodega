@@ -1,10 +1,10 @@
 "use server"
 
-import { revalidatePath } from "next/cache"
 import { db } from "@/db"
 import { fuelLoads, fuelMonthlyStatements, fuelPayments } from "@/db/schema"
 import { eq, and, sql, inArray } from "drizzle-orm"
-import { requirePermission } from "@/lib/auth/can"
+import { z } from "zod"
+import { guardPermission } from "@/lib/auth/can"
 import { assertFuelCostAccess } from "@/lib/operational-control/capabilities"
 import { nanoid } from "@/lib/id"
 import {
@@ -12,24 +12,45 @@ import {
   addPaymentSchema,
 } from "@/lib/combustibles/validation"
 import { calculateStatementTotals } from "@/lib/combustibles/calculations"
+import { STATEMENT_MONTH_RE, previewMonthlyStatement, statementCandidateLoadsWhere, type StatementPreview } from "@/lib/combustibles/statements-preview"
 import { recordAudit } from "@/lib/audit"
 import type { ActionState } from "@/lib/validation/masters"
 import { dbErrMsg } from "./loads"
-import { accountableFuelLoadsWhere } from "@/lib/combustibles/load-status"
+import { FUEL_PATHS } from "@/lib/combustibles/routes"
+import { revalidateFuel } from "@/lib/combustibles/revalidate"
+import { formatCLP } from "@/lib/utils"
 
-async function requireGlobalStatementSession() {
-  const session = await requirePermission("combustibles:manage_statements", "/combustibles")
-  assertFuelCostAccess(session, { global: true })
-  return session
+const NO_PERMISSION = { ok: false as const, message: "No tienes permisos para administrar los estados de cuenta" }
+
+/**
+ * Crear un estado de cuenta, registrar un pago y ver la vista previa exigen lo
+ * mismo: `manage_statements` en el submódulo de Pagos (`guardPermission` dice si
+ * el módulo está apagado en vez de fingir que faltan permisos) más el contrato
+ * monetario global (`assertFuelCostAccess`: ver costos y rol global).
+ */
+async function guardGlobalStatementSession() {
+  const guard = await guardPermission("combustibles:manage_statements", FUEL_PATHS.pagos)
+  if (guard.error) return guard
+  try {
+    assertFuelCostAccess(guard.session, { global: true })
+  } catch {
+    return { session: null, error: NO_PERMISSION }
+  }
+  return guard
+}
+
+function optionalFormNumber(value: FormDataEntryValue | null): number | null {
+  if (typeof value !== "string" || value.trim() === "") return null
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
 }
 
 export async function createMonthlyStatementAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  let session
-  try { session = await requireGlobalStatementSession() }
-  catch { return { ok: false, message: "Sin permisos para administrar la cuenta corriente" } }
+  const { session, error } = await guardGlobalStatementSession()
+  if (error) return error
 
   const parsed = createMonthlyStatementSchema.safeParse({
     month: formData.get("month"),
@@ -42,6 +63,13 @@ export async function createMonthlyStatementAction(
     return { ok: false, message: "Revisa los datos", fieldErrors: parsed.error.flatten().fieldErrors }
   }
 
+  // Lo que la persona vio en la vista previa. Si entre la vista previa y el
+  // clic cambió el conjunto de cargas (alguien registró o anuló una), se pide
+  // revisar de nuevo en vez de guardar un total distinto del que confirmó.
+  // Opcionales: un envío sin vista previa (otro cliente) se crea como siempre.
+  const expectedLoads = optionalFormNumber(formData.get("expectedLoadCount"))
+  const expectedTotal = optionalFormNumber(formData.get("expectedTotalAmount"))
+
   try {
     const result = await db.transaction(async (tx) => {
       const existing = await tx.query.fuelMonthlyStatements.findFirst({
@@ -50,24 +78,26 @@ export async function createMonthlyStatementAction(
           eq(fuelMonthlyStatements.fuelSupplierId, parsed.data.fuelSupplierId),
         ),
       })
-      if (existing) return { ok: false as const, message: "Ya existe un resumen para este mes y proveedor" }
+      if (existing) return { ok: false as const, message: "Ya existe un estado de cuenta para este mes y proveedor" }
 
+      // Un estado de cuenta cobra consumo real: sin borradores ni anuladas. El
+      // predicado es el mismo de la vista previa (`statementCandidateLoadsWhere`).
       const loads = await tx
         .select()
         .from(fuelLoads)
-        .where(and(
-          // Un estado de cuenta cobra consumo real: sin esto arrastraba
-          // borradores a medio capturar y cargas anuladas.
-          accountableFuelLoadsWhere(),
-          eq(fuelLoads.month, parsed.data.month),
-          eq(fuelLoads.fuelSupplierId, parsed.data.fuelSupplierId),
-          sql`${fuelLoads.statementId} IS NULL`,
-        ))
+        .where(statementCandidateLoadsWhere({ month: parsed.data.month, fuelSupplierId: parsed.data.fuelSupplierId }))
         .for("update")
 
-      if (loads.length === 0) return { ok: false as const, message: "No hay cargas sin asignar para este mes y proveedor" }
+      if (loads.length === 0) return { ok: false as const, message: "No hay cargas sin estado de cuenta para este mes y proveedor" }
 
       const totals = calculateStatementTotals(loads)
+
+      const changed =
+        (expectedLoads !== null && expectedLoads !== loads.length) ||
+        (expectedTotal !== null && Math.abs(expectedTotal - totals.totalAmount) > 0.005)
+      if (changed) {
+        return { ok: false as const, message: "Las cargas de este mes cambiaron mientras revisabas. Mira la vista previa de nuevo antes de crear el estado de cuenta." }
+      }
 
       const id = nanoid()
       await tx.insert(fuelMonthlyStatements).values({
@@ -89,13 +119,13 @@ export async function createMonthlyStatementAction(
         newState: { month: parsed.data.month, fuelSupplierId: parsed.data.fuelSupplierId, ...totals },
       }, tx)
 
-      return { ok: true as const, message: `Resumen creado con ${loads.length} cargas`, data: { id } }
+      return { ok: true as const, message: `Estado de cuenta creado con ${loads.length} ${loads.length === 1 ? "carga" : "cargas"}`, data: { id } }
     })
 
-    if (result.ok) revalidatePath("/combustibles/cuenta-corriente")
+    if (result.ok) revalidateFuel()
     return result
   } catch (e) {
-    return { ok: false, message: await dbErrMsg(e, "Error al crear resumen") }
+    return { ok: false, message: await dbErrMsg(e, "Error al crear el estado de cuenta") }
   }
 }
 
@@ -103,9 +133,8 @@ export async function addPaymentAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  let session
-  try { session = await requireGlobalStatementSession() }
-  catch { return { ok: false, message: "Sin permisos para administrar la cuenta corriente" } }
+  const { session, error } = await guardGlobalStatementSession()
+  if (error) return error
 
   const parsed = addPaymentSchema.safeParse({
     statementId: formData.get("statementId"),
@@ -128,14 +157,14 @@ export async function addPaymentAction(
         .where(eq(fuelMonthlyStatements.id, parsed.data.statementId))
         .for("update")
 
-      if (!statement) return { ok: false as const, message: "Resumen no encontrado" }
+      if (!statement) return { ok: false as const, message: "Estado de cuenta no encontrado" }
       if (statement.status === "paid" || statement.status === "cancelled") {
-        return { ok: false as const, message: "No se pueden agregar pagos a este resumen" }
+        return { ok: false as const, message: "No se pueden agregar pagos a este estado de cuenta" }
       }
 
       const pending = (statement.totalAmount ?? 0) - (statement.paidAmount ?? 0)
       if (parsed.data.amount > pending) {
-        return { ok: false as const, message: `El pago excede el saldo pendiente ($${pending.toLocaleString("es-CL")})` }
+        return { ok: false as const, message: `El pago excede lo que falta por pagar (${formatCLP(pending)})` }
       }
 
       const paymentId = nanoid()
@@ -170,9 +199,35 @@ export async function addPaymentAction(
       return { ok: true as const, message: "Pago registrado" }
     })
 
-    if (result.ok) revalidatePath("/combustibles/cuenta-corriente")
+    if (result.ok) revalidateFuel()
     return result
   } catch (e) {
     return { ok: false, message: await dbErrMsg(e, "Error al registrar pago") }
+  }
+}
+
+const previewInputSchema = z.object({
+  month: z.string().regex(STATEMENT_MONTH_RE, "Elige un mes"),
+  fuelSupplierId: z.string().min(1, "Elige un proveedor"),
+})
+
+/**
+ * Vista previa de «Crear estado de cuenta»: de sólo lectura, pero con el mismo
+ * permiso de la acción que confirma (`manage_statements` + costos + alcance
+ * global). Lo que muestra es lo que `createMonthlyStatementAction` guardaría.
+ */
+export async function previewMonthlyStatementAction(
+  input: { month: string; fuelSupplierId: string },
+): Promise<{ ok: true; data: { preview: StatementPreview } } | { ok: false; message: string }> {
+  const { session, error } = await guardGlobalStatementSession()
+  if (error) return error
+
+  const parsed = previewInputSchema.safeParse(input)
+  if (!parsed.success) return { ok: false, message: parsed.error.issues[0]?.message ?? "Revisa los datos" }
+
+  try {
+    return { ok: true, data: { preview: await previewMonthlyStatement(session, parsed.data) } }
+  } catch (e) {
+    return { ok: false, message: await dbErrMsg(e, "No se pudo armar la vista previa") }
   }
 }

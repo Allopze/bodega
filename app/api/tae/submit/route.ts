@@ -9,11 +9,12 @@ import { parseFieldLoadRequest } from "@/lib/services/fuel-tae/request"
 import { isRouteOperational } from "@/lib/services/module-toggles"
 import { safeActionMessage } from "@/lib/action-error"
 import { logger } from "@/lib/logger"
+import { FUEL_PATHS } from "@/lib/combustibles/routes"
 
 export const runtime = "nodejs"
 
 export async function POST(request: Request) {
-  if (!await isRouteOperational("/combustibles/tae")) {
+  if (!await isRouteOperational(FUEL_PATHS.cargas)) {
     return NextResponse.json({ ok: false, message: "Control TAE temporalmente inactivo" }, { status: 503 })
   }
   const requestHeaders = await headers()

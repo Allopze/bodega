@@ -2,7 +2,7 @@
 
 import { safeActionMessage } from "@/lib/action-error"
 
-import { revalidatePath } from "next/cache"
+import { z } from "zod"
 import { xlsxToBase64 } from "@/lib/reports/export-module/excel-builder"
 import { and, desc, eq, ilike, or, sql } from "drizzle-orm"
 import { isNetworkError } from "@/lib/network-error"
@@ -18,14 +18,25 @@ import { taeMeterCorrectionSchema, taeReviewSchema } from "@/lib/validation/fuel
 import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { logger } from "@/lib/logger"
 import { nanoid } from "@/lib/id"
-import { addExportMetadataSheet } from "@/lib/combustibles/xlsx-utils"
+import { addExportMetadataSheet } from "@/lib/reports/export-metadata"
+import { resolveExportFilterNames } from "@/lib/combustibles/export-filter-names"
 import { taeStatusLabel, taeMeterSourceLabel } from "@/lib/combustibles/labels"
 import { formatDateTime, todayInChile} from "@/lib/utils"
+import { FUEL_PATHS } from "@/lib/combustibles/routes"
+import { revalidateFuel } from "@/lib/combustibles/revalidate"
 
 const MAX_TAE_EXPORT_ROWS = 10_000
 
+/**
+ * Validar una carga que está bien no pide explicación: «Confirmar sólo lo que no se
+ * deshace». Observar y anular sí piden motivo (el esquema compartido pide 4 o más).
+ */
+const reviewActionSchema = taeReviewSchema
+  .extend({ reviewNote: z.string().trim().max(1000).optional().default("") })
+  .refine((value) => value.status === "validated" || value.reviewNote.length >= 4, { message: "Indica el motivo o resolución", path: ["reviewNote"] })
+
 export async function createTaePublicLinkAction(input: { worksiteId: string; loadingPointId: string; label: string }) {
-  const guard = await guardPermission("combustibles:tae_manage_config", "/combustibles/tae")
+  const guard = await guardPermission("combustibles:tae_manage_config", FUEL_PATHS.ajustesPuntos)
   if (guard.error) return guard.error
   if (!canAccessWorksite(guard.session, input.worksiteId)) return { ok: false, message: "No tienes acceso a esta faena" }
   try {
@@ -35,7 +46,7 @@ export async function createTaePublicLinkAction(input: { worksiteId: string; loa
       label: input.label.trim() || "Acceso TAE",
       createdBy: guard.session.user.id,
     })
-    revalidatePath("/combustibles/tae")
+    revalidateFuel()
     return { ok: true, data: link }
   } catch (error) {
     logger.error("[createTaePublicLinkAction]", error)
@@ -45,17 +56,17 @@ export async function createTaePublicLinkAction(input: { worksiteId: string; loa
 }
 
 export async function revokeTaePublicLinkAction(id: string) {
-  const guard = await guardPermission("combustibles:tae_manage_config", "/combustibles/tae")
+  const guard = await guardPermission("combustibles:tae_manage_config", FUEL_PATHS.ajustesPuntos)
   if (guard.error) return guard.error
   const link = await db.query.fuelTaePublicLinks.findFirst({ where: eq(fuelTaePublicLinks.id, id) })
   if (!link || !canAccessWorksite(guard.session, link.worksiteId)) return { ok: false, message: "Enlace no encontrado" }
   await revokeTaePublicLink(id, guard.session.user.id)
-  revalidatePath("/combustibles/tae")
+  revalidateFuel()
   return { ok: true, message: "Enlace revocado" }
 }
 
 export async function createTaeLoadingPointAction(input: { worksiteId: string; name: string; type: string; storageLocationId?: string | null }) {
-  const guard = await guardPermission("combustibles:tae_manage_config", "/combustibles/tae")
+  const guard = await guardPermission("combustibles:tae_manage_config", FUEL_PATHS.ajustesPuntos)
   if (guard.error) return guard.error
   if (!canAccessWorksite(guard.session, input.worksiteId)) return { ok: false, message: "No tienes acceso a esta faena" }
   const name = input.name.trim()
@@ -77,7 +88,7 @@ export async function createTaeLoadingPointAction(input: { worksiteId: string; n
       }
       await tx.insert(fuelTaeLoadingPoints).values({ id: nanoid(), worksiteId: input.worksiteId, name, type: input.type, storageLocationId: input.storageLocationId || null })
     })
-    revalidatePath("/combustibles/tae")
+    revalidateFuel()
     return { ok: true, message: "Punto de carga creado" }
   } catch (error) {
     // El motivo real importa: antes cualquier fallo se reportaba como nombre
@@ -91,7 +102,7 @@ export async function createTaeLoadingPointAction(input: { worksiteId: string; n
  *  Sin este enlace, lo que la PWA entrega no se descuenta del saldo de ninguna
  *  vasija concreta: `getFuelStorageBalances` sólo cuenta puntos enlazados. */
 export async function setTaeLoadingPointStorageAction(id: string, storageLocationId: string | null) {
-  const guard = await guardPermission("combustibles:tae_manage_config", "/combustibles/tae")
+  const guard = await guardPermission("combustibles:tae_manage_config", FUEL_PATHS.ajustesPuntos)
   if (guard.error) return guard.error
   const point = await db.query.fuelTaeLoadingPoints.findFirst({ where: eq(fuelTaeLoadingPoints.id, id) })
   if (!point || !canAccessWorksite(guard.session, point.worksiteId)) return { ok: false, message: "Punto de carga no encontrado" }
@@ -103,22 +114,22 @@ export async function setTaeLoadingPointStorageAction(id: string, storageLocatio
   }
   await db.update(fuelTaeLoadingPoints).set({ storageLocationId, updatedAt: new Date().toISOString() }).where(eq(fuelTaeLoadingPoints.id, id))
   await recordAudit({ userId: guard.session.user.id, userEmail: guard.session.user.email ?? undefined, action: "update", entityType: "fuel_tae_loading_point", entityId: id, oldState: { storageLocationId: point.storageLocationId }, newState: { storageLocationId } })
-  revalidatePath("/combustibles/tae")
-  revalidatePath("/combustibles/ciclo")
+  revalidateFuel()
   return { ok: true, message: storageLocationId ? "Vasija asignada" : "Vasija desvinculada" }
 }
 
-export async function reviewTaeSubmissionAction(input: { id: string; expectedStatus: "submitted" | "observed" | "validated" | "voided"; status: "observed" | "validated" | "voided"; reviewNote: string }) {
-  const guard = await guardPermission("combustibles:tae_review", "/combustibles/tae")
+export async function reviewTaeSubmissionAction(input: { id: string; expectedStatus: "submitted" | "observed" | "validated" | "voided"; status: "observed" | "validated" | "voided"; reviewNote?: string }) {
+  const guard = await guardPermission("combustibles:tae_review", FUEL_PATHS.cargas)
   if (guard.error) return guard.error
-  const parsed = taeReviewSchema.safeParse(input)
+  const parsed = reviewActionSchema.safeParse(input)
   if (!parsed.success) return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos inválidos" }
   const submission = await db.query.fuelTaeSubmissions.findFirst({ where: eq(fuelTaeSubmissions.id, parsed.data.id) })
   if (!submission || !canAccessWorksite(guard.session, submission.worksiteId)) return { ok: false, message: "Carga no encontrada" }
   try {
-    await reviewTaeSubmission({ ...parsed.data, userId: guard.session.user.id })
-    revalidatePath("/combustibles/tae")
-    return { ok: true, message: "Carga TAE actualizada" }
+    await reviewTaeSubmission({ ...parsed.data, reviewNote: parsed.data.reviewNote || null, userId: guard.session.user.id })
+    revalidateFuel()
+    const message = parsed.data.status === "validated" ? "Carga validada" : parsed.data.status === "observed" ? "Carga con observación" : "Carga anulada"
+    return { ok: true, message }
   } catch (error) {
     logger.error("[reviewTaeSubmissionAction]", error)
     const msg = error instanceof Error && isNetworkError(error) ? "Sin conexión al servidor. Verifica tu conexión a internet e inténtalo nuevamente." : safeActionMessage(error, "No se pudo actualizar la carga")
@@ -135,7 +146,7 @@ export async function updateTaeMeterReadingAction(input: {
   /** Cambio de tablero o de equipo: la lectura inicia una serie nueva. */
   meterReset?: boolean
 }) {
-  const guard = await guardPermission("combustibles:tae_review", "/combustibles/tae")
+  const guard = await guardPermission("combustibles:tae_review", FUEL_PATHS.cargas)
   if (guard.error) return guard.error
   const parsed = taeMeterCorrectionSchema.safeParse(input)
   if (!parsed.success) return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos inválidos" }
@@ -191,8 +202,7 @@ export async function updateTaeMeterReadingAction(input: {
     return { ok: false, message: msg }
   }
 
-  revalidatePath("/combustibles/tae")
-  revalidatePath(`/combustibles/tae/${parsed.data.id}`)
+  revalidateFuel()
   return { ok: true, message: nextStatus === "observed" && submission.status === "validated" ? "Lectura actualizada; la carga volvió a observada" : "Lectura actualizada" }
 }
 
@@ -200,7 +210,7 @@ export type TaeExportFilters = { q?: string; from?: string; to?: string; worksit
 
 export async function exportTaeSubmissionsXlsxAction(filters: TaeExportFilters = {}) {
   let session
-  try { session = await requirePermission("combustibles:tae_export", "/combustibles/tae") }
+  try { session = await requirePermission("combustibles:tae_export", FUEL_PATHS.cargas) }
   catch { return { ok: false as const, message: "Sin permisos" } }
 
   // P-01: nombres de conductor y supervisor solo con `view_personal`. Sin él ni
@@ -214,7 +224,8 @@ export async function exportTaeSubmissionsXlsxAction(filters: TaeExportFilters =
     filters.loadingPointId ? eq(fuelTaeSubmissions.loadingPointId, filters.loadingPointId) : undefined,
     status ? eq(fuelTaeSubmissions.status, status) : undefined,
     filters.seal === "missing" ? sql`(${fuelTaeSubmissions.removedSealNumber} is null or btrim(${fuelTaeSubmissions.removedSealNumber}) = '' or ${fuelTaeSubmissions.installedSealNumber} is null or btrim(${fuelTaeSubmissions.installedSealNumber}) = '')` : undefined,
-    filters.evidence === "missing" ? sql`(select count(distinct ${fuelTaeEvidence.kind}) from ${fuelTaeEvidence} where ${fuelTaeEvidence.submissionId} = ${fuelTaeSubmissions.id}) < 4` : undefined,
+    // Una carga registrada después (fecha pasada) tiene las fotos opcionales: «sin fotos» no es un defecto en ella.
+    filters.evidence === "missing" ? sql`(${fuelTaeSubmissions.loadedAtSource} <> 'backdated' and (select count(distinct ${fuelTaeEvidence.kind}) from ${fuelTaeEvidence} where ${fuelTaeEvidence.submissionId} = ${fuelTaeSubmissions.id}) < 4)` : undefined,
     /^\d{4}-\d{2}-\d{2}$/.test(filters.from ?? "") ? sql`(${fuelTaeSubmissions.loadedAt} at time zone 'America/Santiago')::date >= ${filters.from}::date` : undefined,
     /^\d{4}-\d{2}-\d{2}$/.test(filters.to ?? "") ? sql`(${fuelTaeSubmissions.loadedAt} at time zone 'America/Santiago')::date <= ${filters.to}::date` : undefined,
     q ? or(
@@ -234,7 +245,7 @@ export async function exportTaeSubmissionsXlsxAction(filters: TaeExportFilters =
 
   const ExcelJS = await import("exceljs")
   const wb = new ExcelJS.Workbook()
-  const ws = wb.addWorksheet("Control TAE")
+  const ws = wb.addWorksheet("Cargas en terreno")
 
   ws.columns = [
     { header: "Fecha carga", key: "loadedAt", width: 20 },
@@ -281,7 +292,20 @@ export async function exportTaeSubmissionsXlsxAction(filters: TaeExportFilters =
   }
   ws.getColumn("liters").numFmt = "#,##0.000"
   ws.views = [{ state: "frozen", ySplit: 1 }]
-  addExportMetadataSheet(wb, session, { filters, rowCount: exportRows.length, from: filters.from, to: filters.to })
+  const names = await resolveExportFilterNames({ worksiteId: filters.worksiteId, loadingPointId: filters.loadingPointId })
+  await addExportMetadataSheet(wb, session, {
+    filters: {
+      Búsqueda: q || undefined,
+      Faena: filters.worksiteId ? (names.worksiteId ?? filters.worksiteId) : undefined,
+      "Punto de carga": filters.loadingPointId ? (names.loadingPointId ?? filters.loadingPointId) : undefined,
+      Estado: status ? taeStatusLabel(status) : undefined,
+      Sello: filters.seal === "missing" ? "Sello incompleto" : undefined,
+      Fotos: filters.evidence === "missing" ? "Le faltan fotos" : undefined,
+    },
+    rowCount: exportRows.length,
+    from: filters.from,
+    to: filters.to,
+  })
 
   const base64 = await xlsxToBase64(wb)
   await recordAudit({
@@ -293,7 +317,7 @@ export async function exportTaeSubmissionsXlsxAction(filters: TaeExportFilters =
     ok: true as const,
     data: {
       base64,
-      filename: `control_tae_${todayInChile()}.xlsx`,
+      filename: `cargas_en_terreno_${todayInChile()}.xlsx`,
       truncated,
       rowLimit: MAX_TAE_EXPORT_ROWS,
     },

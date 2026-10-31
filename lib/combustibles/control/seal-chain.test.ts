@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { evaluateSealChain } from "./seal-chain"
+import { evaluateSealChain, reevaluateNextSealChain } from "./seal-chain"
 import { isFillerDate, isFillerSealNumber, normalizeSeal } from "./validation"
 
 const seals = (removedSeal: string | null, installedSeal: string | null, noSealReason: string | null = null) =>
@@ -58,5 +58,38 @@ describe("valores de relleno", () => {
     expect(normalizeSeal("0000")).toBe("0")
     expect(normalizeSeal("   ")).toBeNull()
     expect(normalizeSeal(null)).toBeNull()
+  })
+})
+
+describe("reevaluateNextSealChain", () => {
+  const next = (overrides: Partial<Parameters<typeof reevaluateNextSealChain>[0]> = {}) => ({
+    removedSeal: "0507",
+    installedSeal: "0510",
+    noSealReason: null,
+    sealChainStatus: "ok",
+    sealChainExpected: null,
+    ...overrides,
+  })
+
+  it("sin cambios cuando la carga intercalada instaló el mismo sello que esperaba la siguiente", () => {
+    expect(reevaluateNextSealChain(next(), "0507")).toEqual({ changed: false, status: "ok", expected: null })
+  })
+
+  it("una carga intercalada con otro sello instalado rompe la cadena de la siguiente", () => {
+    expect(reevaluateNextSealChain(next(), "0600")).toEqual({ changed: true, status: "mismatch", expected: "0600" })
+  })
+
+  it("repara la cadena cuando la intercalada completa el eslabón que faltaba", () => {
+    const broken = next({ sealChainStatus: "mismatch", sealChainExpected: "0504" })
+    expect(reevaluateNextSealChain(broken, "0507")).toEqual({ changed: true, status: "ok", expected: null })
+  })
+
+  it("una siguiente sin sellos y con motivo sigue en no_seal sin marcar cambio", () => {
+    const none = next({ removedSeal: null, installedSeal: null, noSealReason: "Sin tapa sellable", sealChainStatus: "no_seal" })
+    expect(reevaluateNextSealChain(none, "0507")).toEqual({ changed: false, status: "no_seal", expected: null })
+  })
+
+  it("si la intercalada no instaló sello, la siguiente no tiene qué esperar", () => {
+    expect(reevaluateNextSealChain(next(), null)).toEqual({ changed: false, status: "ok", expected: null })
   })
 })

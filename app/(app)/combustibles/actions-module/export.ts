@@ -7,10 +7,14 @@ import { desc } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
 import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
-import { buildFuelLoadsWhere } from "@/lib/combustibles/queries"
-import { addExportMetadataSheet } from "@/lib/combustibles/xlsx-utils"
+import { buildInvoiceWhere } from "../pagos/invoice-query"
+import { addExportMetadataSheet } from "@/lib/reports/export-metadata"
+import { resolveExportFilterNames } from "@/lib/combustibles/export-filter-names"
+import { SERVICE_TYPE_LABELS } from "../pagos/invoice-params"
 import { fuelLoadStatusLabel } from "@/lib/combustibles/labels"
 import { todayInChile } from "@/lib/utils"
+import { FUEL_PATHS } from "@/lib/combustibles/routes"
+import { assertFuelCostAccess } from "@/lib/operational-control/capabilities"
 
 const MAX_FUEL_EXPORT_ROWS = 10_000
 
@@ -21,6 +25,8 @@ export async function optionalNumber(value: FormDataEntryValue | null): Promise<
 }
 
 export async function exportFuelLoadsXlsxAction(filters?: {
+  /** Texto de la búsqueda de «Pagos › Facturas»: la exportación lleva lo mismo que la lista. */
+  q?: string
   month?: string
   startDate?: string
   endDate?: string
@@ -34,11 +40,16 @@ export async function exportFuelLoadsXlsxAction(filters?: {
 }) {
   let session
   // Incluye montos (IEC, IVA, total): requiere el permiso de exportación
-  // sensible además del genérico, no sólo "combustibles:export".
-  try { session = await requirePermission("combustibles:export_sensitive", "/combustibles") }
+  // sensible además del genérico, no sólo "combustibles:export", y el mismo
+  // contrato de costos que la pantalla de Pagos: exportar no puede mostrar más
+  // de lo que la persona ve.
+  try {
+    session = await requirePermission("combustibles:export_sensitive", FUEL_PATHS.pagos)
+    assertFuelCostAccess(session)
+  }
   catch { return { ok: false as const, message: "Sin permisos para exportar datos con montos" } }
 
-  const where = buildFuelLoadsWhere(session, filters ?? {})
+  const where = buildInvoiceWhere(session, filters ?? {})
 
   const rows = await db.query.fuelLoads.findMany({
     where,
@@ -105,7 +116,23 @@ export async function exportFuelLoadsXlsxAction(filters?: {
     ws.getColumn(col).numFmt = "#,##0"
   }
   ws.getColumn("liters").numFmt = "#,##0.00"
-  addExportMetadataSheet(wb, session, { filters: filters ?? null, rowCount: exportRows.length, from: filters?.startDate, to: filters?.endDate })
+  const f = filters ?? {}
+  const names = await resolveExportFilterNames(f)
+  await addExportMetadataSheet(wb, session, {
+    filters: {
+      Búsqueda: f.q || undefined,
+      Mes: f.month,
+      "Tipo de servicio": f.serviceType ? (SERVICE_TYPE_LABELS[f.serviceType] ?? f.serviceType) : undefined,
+      Equipo: f.vehicleId ? (names.vehicleId ?? f.vehicleId) : undefined,
+      Faena: f.worksiteId ? (names.worksiteId ?? f.worksiteId) : undefined,
+      Proveedor: f.fuelSupplierId ? (names.fuelSupplierId ?? f.fuelSupplierId) : undefined,
+      Producto: f.productId ? (names.productId ?? f.productId) : f.product,
+      Estado: f.status ? fuelLoadStatusLabel(f.status) : undefined,
+    },
+    rowCount: exportRows.length,
+    from: f.startDate,
+    to: f.endDate,
+  })
 
   const base64 = await xlsxToBase64(wb)
   // Esta exportación incluye montos (IEC, IVA, total) — auditarla es más

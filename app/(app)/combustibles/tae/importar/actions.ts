@@ -2,7 +2,6 @@
 
 import { safeActionMessage } from "@/lib/action-error"
 
-import { revalidatePath } from "next/cache"
 import { and, eq, inArray } from "drizzle-orm"
 import { isNetworkError } from "@/lib/network-error"
 import { db } from "@/db"
@@ -16,6 +15,8 @@ import { nanoid } from "@/lib/id"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { logger } from "@/lib/logger"
 import { todayInChile } from "@/lib/utils"
+import { FUEL_PATHS } from "@/lib/combustibles/routes"
+import { revalidateFuel } from "@/lib/combustibles/revalidate"
 
 const MAX_IMPORT_FILE_BYTES = 20 * 1024 * 1024
 
@@ -39,12 +40,12 @@ function parseManualMappings(value: FormDataEntryValue | null): TaeImportMapping
 }
 
 export async function generateTaeImportReportAction(formData: FormData) {
-  const guard = await guardPermission("combustibles:tae_import", "/combustibles/tae")
+  const guard = await guardPermission("combustibles:tae_import", FUEL_PATHS.fuentes)
   if (guard.error) return guard.error
 
   const file = formData.get("file")
   if (!(file instanceof File) || file.size === 0) {
-    return { ok: false, message: "Selecciona el archivo Excel del histórico TAE" }
+    return { ok: false, message: "Selecciona el archivo Excel del histórico de sellos" }
   }
   if (file.size > MAX_IMPORT_FILE_BYTES) {
     return { ok: false, message: "El archivo supera el máximo de 20 MB" }
@@ -74,11 +75,11 @@ export async function generateTaeImportReportAction(formData: FormData) {
 }
 
 export async function importTaeHistoryAction(formData: FormData) {
-  const guard = await guardPermission("combustibles:tae_import", "/combustibles/tae")
+  const guard = await guardPermission("combustibles:tae_import", FUEL_PATHS.fuentes)
   if (guard.error) return guard.error
   if (formData.get("confirmation") !== "IMPORTAR") return { ok: false, message: "Debes confirmar que revisaste el reporte de mapeo" }
   const file = formData.get("file")
-  if (!(file instanceof File) || file.size === 0) return { ok: false, message: "Selecciona el archivo Excel del histórico TAE" }
+  if (!(file instanceof File) || file.size === 0) return { ok: false, message: "Selecciona el archivo Excel del histórico de sellos" }
   if (file.size > MAX_IMPORT_FILE_BYTES) return { ok: false, message: "El archivo supera el máximo de 20 MB" }
   try {
     const manualMappings = parseManualMappings(formData.get("manualMappings"))
@@ -90,29 +91,21 @@ export async function importTaeHistoryAction(formData: FormData) {
       allowedWorksiteIds: scope.mode === "all" ? undefined : new Set(scope.mode === "some" ? scope.ids : []),
       manualMappings,
     })
-    // Rutas HERMANAS, nunca "/combustibles/tae/importar": es la ruta donde
-    // vive este mismo formulario (tae-import-report-form.tsx, montado desde
-    // tae/importar/page.tsx). Se excluyó porque revalidar borraba el resumen
-    // de importación antes de que el usuario lo viera; la causa real era que
-    // hasta 2026-09-24 cualquier revalidación volvía a montar la plataforma
-    // entera (AppShell exportado como objeto memo), y ya no ocurre — ver
-    // `confirmOperationsImportAction` en actions-operaciones.ts. El detalle
-    // del lote recién creado es una ruta que el usuario aún no visitó, así que
-    // sí conviene dejarla fresca para cuando navegue a "Ver detalle".
-    revalidatePath("/combustibles")
-    revalidatePath("/combustibles/tae")
-    revalidatePath("/combustibles/tae/importar/historial")
-    revalidatePath(`/combustibles/tae/importar/${result.batchId}`)
+    // `revalidateFuel()` invalida todo `/combustibles`, también la pantalla donde vive este formulario
+    // (`/fuentes/agregar/sellos`) y la ficha del archivo recién creado. Es seguro desde que la plataforma ya no
+    // se vuelve a montar entera en cada revalidación (hasta 2026-09-24 `AppShell` se exportaba como objeto memo y
+    // el resumen de importación se perdía; ver `confirmOperationsImportAction` en actions-operaciones.ts).
+    revalidateFuel()
     return { ok: true as const, data: result, message: `${result.importedRows} cargas históricas importadas` }
   } catch (error) {
     logger.error("[importTaeHistoryAction]", error)
-    const msg = error instanceof Error && isNetworkError(error) ? "Sin conexión al servidor. Verifica tu conexión a internet e inténtalo nuevamente." : safeActionMessage(error, "No se pudo importar el histórico TAE")
+    const msg = error instanceof Error && isNetworkError(error) ? "Sin conexión al servidor. Verifica tu conexión a internet e inténtalo nuevamente." : safeActionMessage(error, "No se pudo importar el histórico de sellos")
     return { ok: false, message: msg }
   }
 }
 
 export async function revertTaeImportBatchAction(batchId: string) {
-  const guard = await guardPermission("combustibles:tae_import", "/combustibles/tae")
+  const guard = await guardPermission("combustibles:tae_import", FUEL_PATHS.fuentes)
   if (guard.error) return guard.error
   if (!can(guard.session, "combustibles:revert")) {
     return { ok: false as const, message: "No tienes permiso para revertir lotes" }
@@ -196,21 +189,17 @@ export async function revertTaeImportBatchAction(batchId: string) {
       return { removed: removed.length }
     })
 
-    revalidatePath("/combustibles")
-    revalidatePath("/combustibles/tae")
-    revalidatePath("/combustibles/tae/importar")
-    revalidatePath("/combustibles/tae/importar/historial")
-    revalidatePath(`/combustibles/tae/importar/${batchId}`)
-    return { ok: true as const, message: `Lote revertido: ${result.removed} cargas eliminadas`, data: result }
+    revalidateFuel()
+    return { ok: true as const, message: `Archivo revertido: ${result.removed} cargas eliminadas`, data: result }
   } catch (error) {
     logger.error("[revertTaeImportBatchAction]", error)
-    const msg = error instanceof Error && isNetworkError(error) ? "Sin conexión al servidor. Verifica tu conexión a internet e inténtalo nuevamente." : safeActionMessage(error, "No se pudo revertir el lote")
+    const msg = error instanceof Error && isNetworkError(error) ? "Sin conexión al servidor. Verifica tu conexión a internet e inténtalo nuevamente." : safeActionMessage(error, "No se pudo revertir el archivo")
     return { ok: false as const, message: msg }
   }
 }
 
 export async function reprocessTaeImportBatchAction(batchId: string) {
-  const guard = await guardPermission("combustibles:tae_import", "/combustibles/tae")
+  const guard = await guardPermission("combustibles:tae_import", FUEL_PATHS.fuentes)
   if (guard.error) return guard.error
   if (!batchId) return { ok: false as const, message: "Lote requerido" }
 
@@ -221,10 +210,7 @@ export async function reprocessTaeImportBatchAction(batchId: string) {
       userId: guard.session.user.id,
       allowedWorksiteIds: scope.mode === "all" ? undefined : new Set(scope.mode === "some" ? scope.ids : []),
     })
-    revalidatePath("/combustibles")
-    revalidatePath("/combustibles/tae")
-    revalidatePath("/combustibles/tae/importar")
-    revalidatePath(`/combustibles/tae/importar/${batchId}`)
+    revalidateFuel()
     return { ok: true as const, data: result, message: result.reprocessedRows ? `Se reprocesaron ${result.reprocessedRows} filas rechazadas` : "No hubo filas rechazadas listas para reprocesar" }
   } catch (error) {
     logger.error("[reprocessTaeImportBatchAction]", error)
@@ -240,7 +226,7 @@ export async function reprocessTaeImportBatchAction(batchId: string) {
  * marcarlo como observado por el mismo motivo.
  */
 export async function saveTaeVehicleMappingAction(input: { worksiteId: string; legacyCode: string; vehicleId: string | null }) {
-  const guard = await guardPermission("combustibles:tae_import", "/combustibles/tae")
+  const guard = await guardPermission("combustibles:tae_import", FUEL_PATHS.fuentes)
   if (guard.error) return guard.error
   if (!canAccessWorksite(guard.session, input.worksiteId)) return { ok: false, message: "No tienes acceso a esta faena" }
   const legacyCode = input.legacyCode.trim()
@@ -253,12 +239,12 @@ export async function saveTaeVehicleMappingAction(input: { worksiteId: string; l
     .values({ id: nanoid(), worksiteId: input.worksiteId, legacyCode, vehicleId: input.vehicleId, decidedBy: guard.session.user.id })
     .onConflictDoUpdate({ target: [fuelTaeVehicleMappings.worksiteId, fuelTaeVehicleMappings.legacyCode], set: { vehicleId: input.vehicleId, decidedBy: guard.session.user.id, decidedAt: new Date().toISOString() } })
   await recordAudit({ userId: guard.session.user.id, userEmail: guard.session.user.email ?? undefined, action: "update", entityType: "fuel_tae_vehicle_mapping", entityId: `${input.worksiteId}:${legacyCode}`, newState: { vehicleId: input.vehicleId } })
-  revalidatePath("/combustibles/tae/importar/historial")
+  revalidateFuel()
   return { ok: true, message: input.vehicleId ? "Equipo asignado para futuras importaciones" : "Marcado sin equivalente" }
 }
 
 export async function saveTaeWorkerMappingAction(input: { worksiteId: string; role: "driver" | "supervisor"; legacyName: string; workerId: string | null }) {
-  const guard = await guardPermission("combustibles:tae_import", "/combustibles/tae")
+  const guard = await guardPermission("combustibles:tae_import", FUEL_PATHS.fuentes)
   if (guard.error) return guard.error
   if (!canAccessWorksite(guard.session, input.worksiteId)) return { ok: false, message: "No tienes acceso a esta faena" }
   const legacyName = input.legacyName.trim()
@@ -271,6 +257,6 @@ export async function saveTaeWorkerMappingAction(input: { worksiteId: string; ro
     .values({ id: nanoid(), worksiteId: input.worksiteId, role: input.role, legacyName, workerId: input.workerId, decidedBy: guard.session.user.id })
     .onConflictDoUpdate({ target: [fuelTaeWorkerMappings.worksiteId, fuelTaeWorkerMappings.role, fuelTaeWorkerMappings.legacyName], set: { workerId: input.workerId, decidedBy: guard.session.user.id, decidedAt: new Date().toISOString() } })
   await recordAudit({ userId: guard.session.user.id, userEmail: guard.session.user.email ?? undefined, action: "update", entityType: "fuel_tae_worker_mapping", entityId: `${input.worksiteId}:${input.role}:${legacyName}`, newState: { workerId: input.workerId } })
-  revalidatePath("/combustibles/tae/importar/historial")
+  revalidateFuel()
   return { ok: true, message: input.workerId ? "Persona asignada para futuras importaciones" : "Marcado sin equivalente" }
 }

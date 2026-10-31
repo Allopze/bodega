@@ -1,7 +1,7 @@
 import { parseFieldNumber } from "@/lib/combustibles/field-load-number"
 import { TAE_ALWAYS_REQUIRED_EVIDENCE, taeEvidenceKinds, type TaeEvidenceKind } from "@/lib/validation/fuel-tae"
 import type { QueuedTaeEvidence } from "@/lib/pwa/tae-offline-queue"
-import { EMPTY_DRAFT, type FieldLoadConfig, type FieldLoadDraft, type FieldLoadPhotos } from "./types"
+import { EMPTY_DRAFT, type FieldLoadConfig, type FieldLoadDraft, type FieldLoadPastLoad, type FieldLoadPhotos } from "./types"
 import { effectiveSeals, vehicleOf } from "./validate"
 import type { FieldIdentity } from "./use-field-identity"
 
@@ -16,6 +16,9 @@ export function buildPayload(input: {
   driver: FieldIdentity
   supervisor: FieldIdentity
   clientSubmissionId: string
+  /** Sólo el registro autenticado: la carga de otro día y la confirmación de una posible duplicada. */
+  pastLoad?: FieldLoadPastLoad | null
+  acknowledgeDuplicate?: boolean
 }): Record<string, unknown> {
   const { config, draft, driver, supervisor } = input
   const vehicle = vehicleOf(config, draft)!
@@ -43,6 +46,8 @@ export function buildPayload(input: {
     installedSealNumber: seals.installedSealNumber,
     noSealReason: draft.noRemovedSeal || draft.noInstalledSeal ? draft.noSealReason.trim() : "",
     notes: draft.notes.trim(),
+    ...(input.pastLoad ? { pastLoad: { loadedAt: input.pastLoad.loadedAt, reason: input.pastLoad.reason.trim() } } : {}),
+    ...(input.acknowledgeDuplicate ? { acknowledgeDuplicate: true } : {}),
   }
 }
 

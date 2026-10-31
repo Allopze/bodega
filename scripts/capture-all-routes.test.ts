@@ -262,9 +262,9 @@ describe("capture-all-routes route inventory", () => {
     const tiFixtures = getCaptureSeedCoverage().find((area) => area.section === "ti")?.fixtures
 
     expect(routes).toEqual(expect.arrayContaining([
-      expect.objectContaining({ slug: "combustibles-importar-detalle", path: "/combustibles/importar/fuel-import-audit-1" }),
-      expect.objectContaining({ slug: "combustibles-importar-operaciones-detalle", path: "/combustibles/importar/operaciones/fuel-op-audit-1" }),
-      expect.objectContaining({ slug: "combustibles-tae-importar-detalle", path: "/combustibles/tae/importar/tae-import-audit-1" }),
+      expect.objectContaining({ slug: "combustibles-archivo-tarjeta", path: "/combustibles/fuentes/archivos/tarjeta/fuel-import-audit-1" }),
+      expect.objectContaining({ slug: "combustibles-archivo-planilla", path: "/combustibles/fuentes/archivos/planilla/fuel-op-audit-1" }),
+      expect.objectContaining({ slug: "combustibles-archivo-sellos", path: "/combustibles/fuentes/archivos/sellos/tae-import-audit-1" }),
       expect.objectContaining({ slug: "admin-productos-importar", path: "/admin/productos/importar/batch-audit-1" }),
       expect.objectContaining({ slug: "soporte-detalle", path: "/soporte/sop-audit-1" }),
       expect.objectContaining({ slug: "prevencion-capa-detalle", path: "/prevencion/capa/capa-audit-1" }),

@@ -4,59 +4,11 @@ import { useActionState, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ConfirmDialog } from "@/components/ui/confirm-dialog"
-import { Trash } from "@phosphor-icons/react"
 import { toast } from "@/lib/toast"
-import { revertBatchAction, linkConsumptionPlateAction } from "../actions-consumos"
+import { linkConsumptionPlateAction } from "../actions-consumos"
 import type { ActionState } from "@/lib/validation/masters"
 
 const INITIAL_STATE: ActionState = { ok: true }
-
-export function RevertBatchButton({ batchId, canRevert }: { batchId: string; canRevert: boolean }) {
-  const router = useRouter()
-  const [open, setOpen] = useState(false)
-  const [loading, setLoading] = useState(false)
-
-  if (!canRevert) return null
-
-  async function handleConfirm() {
-    setLoading(true)
-    const fd = new FormData()
-    fd.set("batchId", batchId)
-    try {
-      const res = await revertBatchAction(INITIAL_STATE, fd)
-      setOpen(false)
-      if (res.ok) {
-        toast.success(res.message ?? "Lote revertido")
-        router.refresh()
-      } else {
-        toast.error(res.message ?? "No se pudo revertir el lote")
-      }
-    } finally {
-      // En `finally`: si la acción rechaza, el botón quedaba deshabilitado
-      // para siempre. El diálogo sigue abierto para poder reintentar.
-      setLoading(false)
-    }
-  }
-
-  return (
-    <>
-      <Button variant="destructive" size="sm" onClick={() => setOpen(true)}>
-        <Trash className="h-4 w-4 mr-1.5" /> Revertir lote
-      </Button>
-      <ConfirmDialog
-        open={open}
-        onOpenChange={setOpen}
-        title="¿Revertir este lote?"
-        description="Se eliminarán todos los registros de consumo de este lote del dashboard. El archivo original y el historial del lote se conservan para trazabilidad. Esta acción no se puede deshacer."
-        variant="destructive"
-        confirmLabel="Revertir"
-        onConfirm={handleConfirm}
-        loading={loading}
-      />
-    </>
-  )
-}
 
 export function LinkPlateForm({
   batchId, patente, vehicles,

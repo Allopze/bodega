@@ -87,7 +87,7 @@ export async function GET(request: NextRequest) {
     styleHeader(annual)
 
     // ── Hoja 3: Metadatos ────────────────────────────────────────────
-    addExportMetadataSheet(workbook, session, {
+    await addExportMetadataSheet(workbook, session, {
       rowCount: groups.length * 12,
       from: `Enero ${year}`,
       to: `Diciembre ${year}`,

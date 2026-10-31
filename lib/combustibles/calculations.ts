@@ -1,3 +1,5 @@
+import { MONTH_NAMES, formatCLP, formatDate, formatDateRelative, formatPercent } from "@/lib/utils"
+
 /**
  * Cálculos de impuestos para combustibles (Chile).
  *
@@ -49,7 +51,11 @@ function roundCLP(value: number): number {
 }
 
 /**
- * Calcula totales para una cuenta corriente mensual a partir de las cargas.
+ * Calcula totales de un estado de cuenta mensual a partir de las cargas.
+ *
+ * La vista previa de «Pagos › Estados de cuenta» y la acción que lo crea
+ * llaman a esta misma función: lo que se ve antes de confirmar es lo que se
+ * guarda, redondeo incluido.
  */
 export function calculateStatementTotals(
   loads: Array<{
@@ -95,4 +101,48 @@ export function getStatementDisplayStatus(
   if (pending <= 0) return "paid"
   if (statement.dueDate && statement.dueDate < today) return "overdue"
   return statement.status === "partial" ? "partial" : "open"
+}
+
+/** Lo que falta pagar de un estado de cuenta; nunca negativo. */
+export function statementPendingAmount(statement: { totalAmount: number; paidAmount: number }): number {
+  return Math.max(0, roundCLP(statement.totalAmount - statement.paidAmount))
+}
+
+/** "2026-09" → "Septiembre 2026". Una clave que no es un mes se devuelve tal cual. */
+export function fuelMonthLabel(month: string): string {
+  const [year, monthNumber] = month.split("-").map(Number)
+  const name = monthNumber ? MONTH_NAMES[monthNumber - 1] : undefined
+  if (!year || !name) return month
+  return `${name.charAt(0).toUpperCase()}${name.slice(1)} ${year}`
+}
+
+/**
+ * El estado de un estado de cuenta dicho en una frase, para que quien abre el
+ * detalle no tenga que deducirlo de cuatro cifras: cuánto se pagó, cuánto falta
+ * y para cuándo. `today` es la fecha civil de Chile (`todayInChile()`).
+ */
+export function describeStatementStatus(
+  statement: { status: string; dueDate: string | null; totalAmount: number; paidAmount: number },
+  today: string,
+): string {
+  const display = getStatementDisplayStatus(statement, today)
+  const pending = statementPendingAmount(statement)
+  const due = statement.dueDate
+  switch (display) {
+    case "cancelled":
+      return "Este estado de cuenta está anulado."
+    case "paid":
+      return `Pagado por completo: ${formatCLP(statement.totalAmount)}.`
+    case "overdue":
+      return `Venció el ${formatDate(due ?? "")} (${formatDateRelative(due, today)}) y faltan ${formatCLP(pending)} por pagar.`
+    case "partial": {
+      const share = statement.totalAmount > 0 ? (statement.paidAmount / statement.totalAmount) * 100 : 0
+      const when = due ? ` y vence el ${formatDate(due)} (${formatDateRelative(due, today)})` : ""
+      return `Se pagó el ${formatPercent(share, 0)} (${formatCLP(statement.paidAmount)} de ${formatCLP(statement.totalAmount)}). Faltan ${formatCLP(pending)}${when}.`
+    }
+    default: {
+      const when = due ? `; vence el ${formatDate(due)} (${formatDateRelative(due, today)})` : " (sin fecha de vencimiento)"
+      return `Sin pagos registrados. Se debe ${formatCLP(pending)}${when}.`
+    }
+  }
 }

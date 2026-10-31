@@ -41,10 +41,35 @@ export const ROUTE_OWNER_ALIASES: RouteOwnerRule[] = [
   // sea una de las dos anteriores pertenece igualmente a Prevención y nunca
   // debe quedar fuera del inventario.
   { moduleId: "prevention", prefix: "/acuse" },
-  { moduleId: "combustibles", submoduleHref: "/combustibles/tae", prefix: "/tae" },
-  { moduleId: "combustibles", submoduleHref: "/combustibles/tae", prefix: "/api/tae" },
-  { moduleId: "combustibles", submoduleHref: "/combustibles/importar", prefix: "/api/combustibles/import" },
-  { moduleId: "combustibles", submoduleHref: "/combustibles/control", prefix: "/api/combustibles/cargas" },
+  // Formulario en terreno por QR (PWA pública) y su API: se registran cargas,
+  // así que apagar «Cargas» también apaga el formulario.
+  { moduleId: "combustibles", submoduleHref: "/combustibles/cargas", prefix: "/tae" },
+  { moduleId: "combustibles", submoduleHref: "/combustibles/cargas", prefix: "/api/tae" },
+  { moduleId: "combustibles", submoduleHref: "/combustibles/fuentes", prefix: "/api/combustibles/import" },
+  { moduleId: "combustibles", submoduleHref: "/combustibles/cargas", prefix: "/api/combustibles/cargas" },
+  // URL de antes del rediseño (2026-10-31): sus páginas puente redirigen, y su
+  // interruptor es el de la sección a la que llegan.
+  { moduleId: "combustibles", submoduleHref: "/combustibles/cargas", prefix: "/combustibles/bitacora" },
+  { moduleId: "combustibles", submoduleHref: "/combustibles/cargas", prefix: "/combustibles/tae" },
+  { moduleId: "combustibles", submoduleHref: "/combustibles/cargas", prefix: "/combustibles/control/registrar" },
+  { moduleId: "combustibles", submoduleHref: "/combustibles/cuadratura", prefix: "/combustibles/tae/conciliacion" },
+  { moduleId: "combustibles", submoduleHref: "/combustibles/cuadratura", prefix: "/combustibles/control/sellos" },
+  { moduleId: "combustibles", submoduleHref: "/combustibles/cuadratura", prefix: "/combustibles/ciclo" },
+  { moduleId: "combustibles", submoduleHref: "/combustibles/cuadratura", prefix: "/combustibles/sellos" },
+  { moduleId: "combustibles", submoduleHref: "/combustibles/fuentes", prefix: "/combustibles/tae/importar" },
+  { moduleId: "combustibles", submoduleHref: "/combustibles/fuentes", prefix: "/combustibles/importar" },
+  { moduleId: "combustibles", submoduleHref: "/combustibles/fuentes", prefix: "/combustibles/control/importar" },
+  { moduleId: "combustibles", submoduleHref: "/combustibles/consumo", prefix: "/combustibles/control" },
+  { moduleId: "combustibles", submoduleHref: "/combustibles/consumo", prefix: "/combustibles/analisis" },
+  { moduleId: "combustibles", submoduleHref: "/combustibles/consumo", prefix: "/combustibles/reportes" },
+  { moduleId: "combustibles", submoduleHref: "/combustibles/revisar", prefix: "/combustibles/revision" },
+  { moduleId: "combustibles", submoduleHref: "/combustibles/revisar", prefix: "/combustibles/anomalias" },
+  { moduleId: "combustibles", submoduleHref: "/combustibles/revisar", prefix: "/combustibles/control/revision" },
+  { moduleId: "combustibles", submoduleHref: "/combustibles/ajustes", prefix: "/combustibles/anomalias/reglas" },
+  { moduleId: "combustibles", submoduleHref: "/combustibles/ajustes", prefix: "/combustibles/control/configuracion" },
+  { moduleId: "combustibles", submoduleHref: "/combustibles/pagos", prefix: "/combustibles/facturas" },
+  { moduleId: "combustibles", submoduleHref: "/combustibles/pagos", prefix: "/combustibles/cuenta-corriente" },
+  { moduleId: "combustibles", submoduleHref: "/combustibles/pagos", prefix: "/combustibles/nueva" },
   { moduleId: "flota", submoduleHref: "/flota", prefix: "/api/flota" },
   { moduleId: "mantenciones", submoduleHref: "/mantenciones", prefix: "/api/mantenciones" },
   // Mantención de equipos: la app del mecánico (PWA) y sus APIs, incluidas las
@@ -140,12 +165,12 @@ export const ROUTE_OWNER_ALIASES: RouteOwnerRule[] = [
   { moduleId: "billing", submoduleHref: "/facturacion/sincronizacion", prefix: "/api/cron/chipax-sync" },
   { moduleId: "admin", submoduleHref: "/admin", prefix: "/api/cron/dte-portal-sync" },
   { moduleId: "admin", submoduleHref: "/admin", prefix: "/api/cron/dte-sync-health" },
-  { moduleId: "combustibles", submoduleHref: "/combustibles", prefix: "/api/cron/fuel-anomaly-detection" },
-  { moduleId: "combustibles", submoduleHref: "/combustibles/importar", prefix: "/api/cron/fuel-copec-sync" },
-  { moduleId: "combustibles", submoduleHref: "/combustibles/importar", prefix: "/api/cron/fuel-aramco-sync" },
-  // Telemetría VisionLink: alimenta el ralentí de Control, no la importación de consumos.
-  { moduleId: "combustibles", submoduleHref: "/combustibles/control", prefix: "/api/cron/fuel-visionlink-sync" },
-  { moduleId: "combustibles", submoduleHref: "/combustibles", prefix: "/api/cron/fuel-statement-notifications" },
+  { moduleId: "combustibles", submoduleHref: "/combustibles/revisar", prefix: "/api/cron/fuel-anomaly-detection" },
+  { moduleId: "combustibles", submoduleHref: "/combustibles/fuentes", prefix: "/api/cron/fuel-copec-sync" },
+  { moduleId: "combustibles", submoduleHref: "/combustibles/fuentes", prefix: "/api/cron/fuel-aramco-sync" },
+  // Telemetría VisionLink: es una fuente de datos más (motor en vacío de Consumo).
+  { moduleId: "combustibles", submoduleHref: "/combustibles/fuentes", prefix: "/api/cron/fuel-visionlink-sync" },
+  { moduleId: "combustibles", submoduleHref: "/combustibles/pagos", prefix: "/api/cron/fuel-statement-notifications" },
   { moduleId: "feedback", submoduleHref: "/soporte", prefix: "/api/cron/feedback-sla-reminders" },
   { moduleId: "flota", submoduleHref: "/flota/monitoreo", prefix: "/api/cron/fleet-onway-retention" },
   { moduleId: "flota", submoduleHref: "/flota/monitoreo", prefix: "/api/cron/fleet-onway-sync" },
@@ -185,9 +210,13 @@ export const ROUTE_OWNER_ALIASES: RouteOwnerRule[] = [
 ]
 
 export const PERMISSION_TARGET_OVERRIDES: Array<{ test: (permission: string) => boolean; href: string }> = [
-  { test: (permission) => permission.startsWith("combustibles:tae_"), href: "/combustibles/tae" },
-  { test: (permission) => permission === "combustibles:import" || permission === "combustibles:revert", href: "/combustibles/importar" },
-  { test: (permission) => ["combustibles:register_load", "combustibles:approve_flagged", "combustibles:manage_control"].includes(permission), href: "/combustibles/control" },
+  // Combustible: sólo permisos de escritura con un único dueño. `tae_view` no
+  // lleva override: lo leen Cargas y Cuadratura, y apagar una no debe romper la otra.
+  { test: (permission) => ["combustibles:tae_review", "combustibles:tae_export", "combustibles:register_load", "combustibles:register_past_load"].includes(permission), href: "/combustibles/cargas" },
+  { test: (permission) => ["combustibles:tae_manage_config", "combustibles:manage_control", "combustibles:manage_anomaly_rules", "combustibles:manage_integrations"].includes(permission), href: "/combustibles/ajustes" },
+  { test: (permission) => ["combustibles:tae_import", "combustibles:import", "combustibles:revert", "combustibles:sync_integrations"].includes(permission), href: "/combustibles/fuentes" },
+  { test: (permission) => ["combustibles:approve_flagged", "combustibles:review_anomalies", "combustibles:resolve_anomalies"].includes(permission), href: "/combustibles/revisar" },
+  { test: (permission) => permission === "combustibles:manage_statements", href: "/combustibles/pagos" },
   { test: (permission) => permission.startsWith("sst:"), href: "/prevencion/evaluaciones" },
   { test: (permission) => permission.startsWith("ppa:"), href: "/prevencion/ppa" },
   { test: (permission) => permission.startsWith("prevention:pdtp:"), href: "/prevencion/pdtp" },

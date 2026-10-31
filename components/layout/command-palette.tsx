@@ -10,7 +10,7 @@ import { VisuallyHidden } from "@radix-ui/react-visually-hidden"
 import { MagnifyingGlass, ArrowElbowDownLeft } from "@phosphor-icons/react"
 import { cn } from "@/lib/utils"
 import { NAV_ICONS } from "./nav-icons"
-import { flattenNavTargets, type NavTarget } from "./nav-items"
+import { flattenNavTargets, navTargetContext, type NavTarget } from "./nav-items"
 
 const OPEN_EVENT = "open-command-palette"
 
@@ -65,7 +65,7 @@ export function CommandPalette({ session, enabledModuleIds, disabledSubmoduleHre
     const raw = query.trim()
     const q = normalize(raw)
     const navResults = q
-      ? targets.filter((t) => normalize(t.label).includes(q) || normalize(t.areaLabel).includes(q))
+      ? targets.filter((t) => normalize(t.label).includes(q) || normalize(navTargetContext(t)).includes(q))
       : targets
 
     if (!raw) return navResults
@@ -163,7 +163,7 @@ export function CommandPalette({ session, enabledModuleIds, disabledSubmoduleHre
                     >
                       {Icon && <Icon size={18} className={cn("shrink-0", isActive ? "text-(--color-primary)" : "text-(--color-text-muted)")} />}
                       <span title={t.label} className="flex-1 truncate text-sm font-medium text-(--color-text)">{t.label}</span>
-                      <span className="shrink-0 text-xs text-(--color-text-subtle)">{t.areaLabel}</span>
+                      <span className="shrink-0 text-xs text-(--color-text-subtle)">{navTargetContext(t)}</span>
                       {isActive && <ArrowElbowDownLeft size={14} className="shrink-0 text-(--color-text-faint)" />}
                     </button>
                   </li>

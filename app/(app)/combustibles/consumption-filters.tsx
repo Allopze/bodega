@@ -1,39 +1,34 @@
 "use client"
 
-import { useWorksiteFilterPresence } from "@/components/layout/header-context"
 import { useMemo, useState, useTransition } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { ArrowCounterClockwise, FunnelSimple, SpinnerGap, X } from "@phosphor-icons/react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/field"
+import { ArrowCounterClockwise, SpinnerGap, X } from "@phosphor-icons/react"
 import { Badge } from "@/components/ui/badge"
-import { DatePicker } from "@/components/ui/date-picker"
+import { Button } from "@/components/ui/button"
+import { Label } from "@/components/ui/field"
+import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { buildConsumptionHref } from "./consumption-url"
+import { buildLitrosHref } from "./consumption-url"
 
 interface ConsumptionFiltersProps {
-  worksites: Array<{ id: string; name: string }>
+  /** Sección de «Consumo» donde vive la barra: los cambios se quedan en ella. La planilla de cargas no tiene «fuente». */
+  section: "tarjetas" | "planilla"
   fuentes: string[]
   currentFilters: {
-    fromDate: string
-    toDate: string
-    worksiteId?: string
     fuente?: string
     patente?: string
     associated?: "yes" | "no"
   }
-  hasExplicitDateRange: boolean
-  /** Filtro de proveedor: sólo alimenta el log operacional (no es parte de `ConsumptionFilters`), pero se muestra y retira desde aquí igual que el resto. */
+  /** Filtro de proveedor: sólo alimenta la planilla de cargas (no es parte de `ConsumptionFilters`), pero se muestra y retira desde aquí igual que el resto. */
   proveedor?: string
 }
 
 interface FilterChip { key: string; label: string }
 
-function buildChips(filters: ConsumptionFiltersProps["currentFilters"], hasExplicitDateRange: boolean, proveedor: string | undefined, worksites: Array<{ id: string; name: string }>): FilterChip[] {
+const FILTER_KEYS = ["fuente", "patente", "asociacion", "proveedor"] as const
+
+function buildChips(filters: ConsumptionFiltersProps["currentFilters"], proveedor: string | undefined): FilterChip[] {
   const chips: Array<FilterChip | null> = [
-    hasExplicitDateRange ? { key: "desde", label: `Período: ${filters.fromDate} a ${filters.toDate}` } : null,
-    filters.worksiteId ? { key: "faena", label: `Faena: ${worksites.find((w) => w.id === filters.worksiteId)?.name ?? filters.worksiteId}` } : null,
     filters.fuente ? { key: "fuente", label: `Fuente: ${filters.fuente}` } : null,
     filters.patente ? { key: "patente", label: `Patente: ${filters.patente}` } : null,
     filters.associated ? { key: "asociacion", label: filters.associated === "yes" ? "Con vehículo asociado" : "Sin vehículo asociado" } : null,
@@ -42,22 +37,19 @@ function buildChips(filters: ConsumptionFiltersProps["currentFilters"], hasExpli
   return chips.filter((chip): chip is FilterChip => chip !== null)
 }
 
-export function ConsumptionFiltersBar({
-  worksites,
-  fuentes,
-  currentFilters,
-  hasExplicitDateRange,
-  proveedor,
-}: ConsumptionFiltersProps) {
-  useWorksiteFilterPresence()
+/**
+ * Filtros de los análisis de «Consumo»: fuente (sólo tarjetas), patente y
+ * asociación, más el proveedor, que se fija desde el gráfico de la planilla. El período ya no se
+ * elige aquí —vive en la cabecera— y la faena es la de toda la pantalla. Cada
+ * filtro activo queda como chip removible (A2). Todo en la URL, con
+ * `router.replace` y sin mover el scroll.
+ */
+export function ConsumptionFiltersBar({ section, fuentes, currentFilters, proveedor }: ConsumptionFiltersProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [isPending, startTransition] = useTransition()
   const [patenteDraft, setPatenteDraft] = useState(currentFilters.patente ?? "")
-  const chips = useMemo(
-    () => buildChips(currentFilters, hasExplicitDateRange, proveedor, worksites),
-    [currentFilters, hasExplicitDateRange, proveedor, worksites],
-  )
+  const chips = useMemo(() => buildChips(currentFilters, proveedor), [currentFilters, proveedor])
 
   // Resincroniza el input cuando la patente cambia en la URL (p. ej. al quitar
   // un chip). Ajustar durante el render en vez de en un efecto evita que el
@@ -68,104 +60,41 @@ export function ConsumptionFiltersBar({
     setPatenteDraft(currentFilters.patente ?? "")
   }
 
-  function setFilter(key: string, value: string) {
-    const href = buildConsumptionHref(searchParams.toString(), { [key]: value })
-    startTransition(() => router.replace(href, { scroll: false }))
+  function go(changes: Record<string, string | null>) {
+    startTransition(() => router.replace(buildLitrosHref(searchParams.toString(), changes, { section }), { scroll: false }))
   }
 
   function applyPatente() {
-    setFilter("patente", patenteDraft.trim().toUpperCase())
-  }
-
-  function removeChip(key: string) {
-    const changes = key === "desde" ? { desde: "", hasta: "" } : { [key]: "" }
-    const href = buildConsumptionHref(searchParams.toString(), changes)
-    startTransition(() => router.replace(href, { scroll: false }))
+    const next = patenteDraft.trim().toUpperCase()
+    if (next !== (currentFilters.patente ?? "")) go({ patente: next })
   }
 
   function clearFilters() {
-    // `vista` no es un filtro: descartarla devolvía al usuario a la pestaña
-    // Resumen cada vez que limpiaba desde Análisis o Registros.
-    const vista = searchParams.get("vista")
-    startTransition(() => router.replace(vista ? `/combustibles?vista=${vista}` : "/combustibles", { scroll: false }))
+    go(Object.fromEntries(FILTER_KEYS.map((key) => [key, null])))
   }
 
   return (
-    <section className="mb-7 border border-[var(--color-border)] bg-[var(--color-surface)]" aria-labelledby="consumption-filters-title">
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--color-border)] px-4 py-3 md:px-5">
-        <div className="flex min-w-0 items-start gap-2.5">
-          <FunnelSimple size={18} weight="bold" className="mt-0.5 shrink-0 text-[var(--color-primary)]" aria-hidden />
-          <div>
-            <p className="text-eyebrow">Contexto de análisis</p>
-            <h2 id="consumption-filters-title" className="text-base font-semibold text-[var(--color-text)]">Filtros de consumo</h2>
-            <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">La tabla, los indicadores y los gráficos se actualizan con esta selección.</p>
+    <section className="mb-6" aria-labelledby="consumption-filters-title" aria-busy={isPending || undefined}>
+      <h3 id="consumption-filters-title" className="sr-only">Filtros del análisis de tarjetas</h3>
+      <div className="flex flex-wrap items-end gap-3">
+        {section === "tarjetas" ? (
+          <div className="flex min-w-0 flex-col gap-1">
+            <Label id="consumo-fuente-label" className="text-xs">Fuente</Label>
+            <Select value={currentFilters.fuente ?? "all"} onValueChange={(value) => go({ fuente: value === "all" ? null : value })}>
+              <SelectTrigger aria-labelledby="consumo-fuente-label" className="w-48"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todas las fuentes</SelectItem>
+                {fuentes.map((fuente) => <SelectItem key={fuente} value={fuente}>{fuente}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button type="button" variant="ghost" size="sm" onClick={clearFilters} disabled={isPending}>
-            <ArrowCounterClockwise className="mr-1.5 h-4 w-4" />Limpiar
-          </Button>
-        </div>
-      </div>
-
-      {chips.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 border-b border-[var(--color-border)] px-4 py-2.5 md:px-5">
-          {chips.map((chip) => (
-            <button key={chip.key} type="button" onClick={() => removeChip(chip.key)} disabled={isPending}>
-              <Badge variant="outline" size="sm" className="inline-flex items-center gap-1 hover:bg-[var(--color-surface-2)]">{chip.label}<X size={10} /></Badge>
-            </button>
-          ))}
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 gap-x-4 gap-y-3 px-4 py-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 md:px-5">
-        <div className="flex min-w-0 flex-col gap-1">
-          <Label htmlFor="consumo-desde" className="text-xs">Desde</Label>
-          <DatePicker
-            id="consumo-desde"
-            value={currentFilters.fromDate}
-            max={currentFilters.toDate}
-            onChange={(value) => setFilter("desde", value)}
-          />
-        </div>
-
-        <div className="flex min-w-0 flex-col gap-1">
-          <Label htmlFor="consumo-hasta" className="text-xs">Hasta</Label>
-          <DatePicker
-            id="consumo-hasta"
-            value={currentFilters.toDate}
-            min={currentFilters.fromDate}
-            onChange={(value) => setFilter("hasta", value)}
-          />
-        </div>
-
-        <div className="flex min-w-0 flex-col gap-1">
-          <Label id="consumo-faena-label" className="text-xs">Faena</Label>
-          <Select value={currentFilters.worksiteId ?? "all"} onValueChange={(value) => setFilter("faena", value === "all" ? "" : value)}>
-            <SelectTrigger aria-labelledby="consumo-faena-label"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todas las faenas</SelectItem>
-              {worksites.map((worksite) => <SelectItem key={worksite.id} value={worksite.id}>{worksite.name}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="flex min-w-0 flex-col gap-1">
-          <Label id="consumo-fuente-label" className="text-xs">Fuente</Label>
-          <Select value={currentFilters.fuente ?? "all"} onValueChange={(value) => setFilter("fuente", value === "all" ? "" : value)}>
-            <SelectTrigger aria-labelledby="consumo-fuente-label"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todas las fuentes</SelectItem>
-              {fuentes.map((fuente) => <SelectItem key={fuente} value={fuente}>{fuente}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </div>
+        ) : null}
 
         <div className="flex min-w-0 flex-col gap-1">
           <Label htmlFor="consumo-patente" className="text-xs">Patente</Label>
           <Input
             id="consumo-patente"
-            className="uppercase"
+            className="w-40 uppercase"
             placeholder="ABCD12"
             value={patenteDraft}
             onChange={(event) => setPatenteDraft(event.target.value.toUpperCase())}
@@ -181,8 +110,8 @@ export function ConsumptionFiltersBar({
 
         <div className="flex min-w-0 flex-col gap-1">
           <Label id="consumo-asociacion-label" className="text-xs">Asociación</Label>
-          <Select value={currentFilters.associated ?? "all"} onValueChange={(value) => setFilter("asociacion", value === "all" ? "" : value)}>
-            <SelectTrigger aria-labelledby="consumo-asociacion-label"><SelectValue /></SelectTrigger>
+          <Select value={currentFilters.associated ?? "all"} onValueChange={(value) => go({ asociacion: value === "all" ? null : value })}>
+            <SelectTrigger aria-labelledby="consumo-asociacion-label" className="w-52"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todas las patentes</SelectItem>
               <SelectItem value="yes">Con vehículo asociado</SelectItem>
@@ -190,12 +119,25 @@ export function ConsumptionFiltersBar({
             </SelectContent>
           </Select>
         </div>
+
+        {chips.length > 0 ? (
+          <Button type="button" variant="ghost" size="sm" onClick={clearFilters} disabled={isPending} className="min-h-10">
+            <ArrowCounterClockwise className="mr-1.5 h-4 w-4" aria-hidden />Limpiar filtros
+          </Button>
+        ) : null}
+        {isPending ? <SpinnerGap size={16} className="mb-2.5 animate-spin text-[var(--color-primary)]" aria-label="Actualizando análisis" /> : null}
       </div>
 
-      <p className="flex min-h-8 items-center gap-1.5 border-t border-[var(--color-border)] px-4 py-2 text-xs text-[var(--color-text-muted)] md:px-5" aria-live="polite">
-        {isPending && <SpinnerGap size={14} className="animate-spin text-[var(--color-primary)]" aria-hidden />}
-        {isPending ? "Actualizando análisis…" : `Período efectivo: ${currentFilters.fromDate} a ${currentFilters.toDate}.`}
-      </p>
+      {chips.length > 0 ? (
+        <div className="mt-3 flex flex-wrap items-center gap-1.5">
+          <span className="text-xs font-medium text-[var(--color-text-subtle)]">Filtros activos:</span>
+          {chips.map((chip) => (
+            <button key={chip.key} type="button" onClick={() => go({ [chip.key]: null })} disabled={isPending} aria-label={`Quitar el filtro ${chip.label}`}>
+              <Badge variant="outline" size="sm" className="inline-flex items-center gap-1 hover:bg-[var(--color-surface-2)]">{chip.label}<X size={10} aria-hidden /></Badge>
+            </button>
+          ))}
+        </div>
+      ) : null}
     </section>
   )
 }

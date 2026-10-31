@@ -29,6 +29,7 @@ export const combustiblesModule = {
     "combustibles:approve_flagged",
     "combustibles:view_personal",
     "combustibles:manage_control",
+    "combustibles:register_past_load",
   ] as const,
 
   permissionMeta: {
@@ -63,55 +64,33 @@ export const combustiblesModule = {
     "combustibles:approve_flagged":      { id: "p-fuel-approve-flagged", description: "Aprobar o rechazar cargas marcadas para revisión (atípicas, retroceso de medidor, duplicadas)" },
     "combustibles:view_personal":        { id: "p-fuel-view-personal", description: "Ver nombres de conductores y supervisores y las fotos de las cargas" },
     "combustibles:manage_control":       { id: "p-fuel-manage-control", description: "Administrar mandantes, medios de suministro, familias de equipos y umbrales del control" },
+    // Rediseño del módulo (2026-10-31): desde la oficina se puede registrar una
+    // carga con fecha y hora pasadas, con motivo; queda marcada «Registrada
+    // después» y llega a Por revisar.
+    "combustibles:register_past_load":   { id: "p-fuel-register-past-load", description: "Registrar cargas con fecha y hora pasadas desde la plataforma, con motivo" },
   },
   nav: [
     {
       areaId: "control-operacional",
-      // Ordenado por lo que la persona viene a hacer, no por la fuente del dato:
-      // TCT, TAE y el control de cargas comparten un solo análisis; importar,
-      // revisar y facturar son una entrada cada uno (CO-IA, 2026-10-22).
+      // Ordenado por lo que la persona viene a hacer (rediseño «El mes como hilo»,
+      // 2026-10-31). Las URL de antes redirigen desde `lib/combustibles/legacy-redirects.ts`,
+      // así que no hacen falta alias: cada pantalla vive bajo el href de su ítem.
+      // «Panel» y «Consumo» repiten rótulos de Mantención en la misma área; la regla
+      // de unicidad y ⌘K distinguen por grupo.
       items: [
+        { label: "Panel", href: "/combustibles", iconName: "Gauge", permissions: ["combustibles:view"], group: "Combustible" },
+        { label: "Cargas", href: "/combustibles/cargas", iconName: "GasPump", permissions: ["combustibles:view"], group: "Combustible" },
+        { label: "Por revisar", href: "/combustibles/revisar", iconName: "Tray", permissions: ["combustibles:view"], group: "Combustible", badge: "count" as const },
+        { label: "Cuadratura", href: "/combustibles/cuadratura", iconName: "Scales", permissions: ["combustibles:view"], group: "Combustible" },
+        { label: "Consumo", href: "/combustibles/consumo", iconName: "ChartLineUp", permissions: ["combustibles:view"], group: "Combustible" },
+        { label: "Pagos", href: "/combustibles/pagos", iconName: "Receipt", permissions: ["combustibles:view_costs"], group: "Combustible" },
         {
-          // La página se titula «Consumo y rendimiento», pero activo (font-semibold)
-          // el rótulo completo no cabe en el sidebar de escritorio (158 px de texto
-          // en 156 px) y se truncaba; el grupo «Combustible» ya da el contexto.
-          label: "Consumo",
-          href: "/combustibles",
-          iconName: "GasPump",
-          permissions: ["combustibles:view"],
-          group: "Combustible",
+          label: "Fuentes de datos", href: "/combustibles/fuentes", iconName: "Database", group: "Combustible",
+          permissions: ["combustibles:import", "combustibles:tae_import", "combustibles:sync_integrations"],
         },
         {
-          label: "Cargas",
-          href: "/combustibles/bitacora",
-          iconName: "Books",
-          permissions: ["combustibles:view"],
-          group: "Combustible",
-          aliases: ["/combustibles/control/registrar", "/combustibles/importar", "/combustibles/control/importar"],
-        },
-        {
-          label: "Revisión",
-          href: "/combustibles/revision",
-          iconName: "WarningDiamond",
-          permissions: ["combustibles:view"],
-          group: "Combustible",
-          aliases: ["/combustibles/control/revision", "/combustibles/anomalias"],
-        },
-        {
-          label: "TAE y sellos",
-          href: "/combustibles/tae",
-          iconName: "QrCode",
-          permissions: ["combustibles:tae_view"],
-          group: "Combustible",
-          aliases: ["/combustibles/control/sellos", "/combustibles/sellos"],
-        },
-        {
-          label: "Facturas y pagos",
-          href: "/combustibles/facturas",
-          iconName: "Receipt",
-          permissions: ["combustibles:view_costs"],
-          group: "Combustible",
-          aliases: ["/combustibles/cuenta-corriente", "/combustibles/nueva"],
+          label: "Ajustes", href: "/combustibles/ajustes", iconName: "GearSix", group: "Combustible",
+          permissions: ["combustibles:manage_control", "combustibles:manage_anomaly_rules", "combustibles:tae_manage_config", "combustibles:manage_integrations"],
         },
       ],
     },
@@ -143,6 +122,7 @@ export const combustiblesModule = {
     { roleSlug: "administrador",  permission: "combustibles:approve_flagged" },
     { roleSlug: "administrador",  permission: "combustibles:view_personal" },
     { roleSlug: "administrador",  permission: "combustibles:manage_control" },
+    { roleSlug: "administrador",  permission: "combustibles:register_past_load" },
     { roleSlug: "jefa_chome",     permission: "combustibles:view" },
     { roleSlug: "jefa_chome",     permission: "combustibles:create" },
     { roleSlug: "jefa_chome",     permission: "combustibles:import" },
@@ -164,6 +144,7 @@ export const combustiblesModule = {
     { roleSlug: "jefa_chome",     permission: "combustibles:register_load" },
     { roleSlug: "jefa_chome",     permission: "combustibles:approve_flagged" },
     { roleSlug: "jefa_chome",     permission: "combustibles:view_personal" },
+    { roleSlug: "jefa_chome",     permission: "combustibles:register_past_load" },
     { roleSlug: "jefe_mantencion", permission: "combustibles:view" },
     { roleSlug: "jefe_mantencion", permission: "combustibles:create" },
     { roleSlug: "jefe_mantencion", permission: "combustibles:export" },
@@ -178,5 +159,6 @@ export const combustiblesModule = {
     { roleSlug: "admin_contrato", permission: "combustibles:revert" },
     { roleSlug: "admin_contrato", permission: "combustibles:manage_vehicles" },
     { roleSlug: "admin_contrato", permission: "combustibles:register_load" },
+    { roleSlug: "admin_contrato", permission: "combustibles:register_past_load" },
   ],
 } as const satisfies ModuleManifest

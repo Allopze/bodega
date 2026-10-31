@@ -1,18 +1,24 @@
 "use client"
 
-import { useActionState, useState } from "react"
+import { useActionState, useState, type ReactNode } from "react"
+import Link from "next/link"
+import { Plus } from "@phosphor-icons/react"
 import { addPaymentAction } from "../../actions"
 import type { ActionState } from "@/lib/validation/masters"
+import { FuelTerm } from "@/components/combustibles/fuel-glossary"
+import { MetaBadge, metaFor } from "@/components/states/state-badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { DatePicker } from "@/components/ui/date-picker"
-import { Label } from "@/components/ui/field"
+import { Field } from "@/components/ui/field"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Plus } from "@phosphor-icons/react"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { describeStatementStatus, getStatementDisplayStatus, statementPendingAmount } from "@/lib/combustibles/calculations"
+import { FUEL_STATEMENT_STATUS_LABELS } from "@/lib/combustibles/labels"
+import { fuelLoadHref } from "@/lib/combustibles/routes"
 import { toast } from "@/lib/toast"
-import { formatCLP, formatQty } from "@/lib/utils"
+import { formatCLP, formatDate, formatQty, todayInChile } from "@/lib/utils"
 
 interface StatementData {
   id: string
@@ -36,121 +42,118 @@ interface StatementData {
   loads: Array<{
     id: string
     loadDate: string
-    serviceType: string
     product: string
     receiptNumber: string | null
     liters: number
     totalAmount: number
-    vehicle: { plate: string } | null
+    vehicle: { plate: string; code?: string | null } | null
     worksite: { name: string } | null
   }>
 }
 
+const CARD_TITLE = "text-base"
 
-export function StatementDetail({ statement, canManage }: { statement: StatementData; canManage: boolean }) {
-  const pending = statement.totalAmount - statement.paidAmount
-  const isPayable = statement.status !== "paid" && statement.status !== "cancelled"
+/**
+ * Detalle de un estado de cuenta: el estado dicho en una frase (cuánto se pagó,
+ * cuánto falta y para cuándo), el desglose, los pagos y las cargas que lo forman.
+ * «Registrar pago» no está aquí sino en la cabecera de la página (`AddPaymentDialog`).
+ * `today` es la fecha civil de Chile que calcula el servidor (`todayInChile()`).
+ */
+export function StatementDetail({ statement, today }: { statement: StatementData; today: string }) {
+  const pending = statementPendingAmount(statement)
+  const display = getStatementDisplayStatus(statement, today)
+  const status = metaFor(FUEL_STATEMENT_STATUS_LABELS, display)
+  const loads = statement.loads ?? []
 
   return (
     <div className="space-y-6">
-      {/* Summary cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <Card>
+        <CardContent className="space-y-4 pt-6">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <MetaBadge meta={status} />
+            <p className="text-sm text-[var(--color-text)]">{describeStatementStatus(statement, today)}</p>
+          </div>
+          <dl className="grid grid-cols-2 gap-4 md:grid-cols-4">
+            <SummaryFigure label="Total a pagar" value={formatCLP(statement.totalAmount)} />
+            <SummaryFigure label="Pagado" value={formatCLP(statement.paidAmount)} tone="success" />
+            <SummaryFigure label="Por pagar" value={formatCLP(pending)} tone={pending > 0 ? "warning" : undefined} />
+            <SummaryFigure label="Vence" value={statement.dueDate ? formatDate(statement.dueDate) : "Sin fecha"} />
+          </dl>
+        </CardContent>
+      </Card>
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card>
-          <CardContent className="pt-6">
-            <p className="text-sm text-[var(--color-text-muted)]">Total litros</p>
-            <p className="text-2xl font-bold">{formatQty(statement.totalLiters)}</p>
+          <CardHeader><CardTitle as="h2" className={CARD_TITLE}>Pagos registrados</CardTitle></CardHeader>
+          <CardContent>
+            {statement.payments.length === 0 ? (
+              <p className="text-sm text-[var(--color-text-muted)]">
+                Todavía no se registra ningún pago. Cuando pagues, anótalo con «Registrar pago», arriba.
+              </p>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Fecha</TableHead>
+                    <TableHead className="text-right">Monto</TableHead>
+                    <TableHead>Método</TableHead>
+                    <TableHead>Comprobante</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {statement.payments.map((p) => (
+                    <TableRow key={p.id}>
+                      <TableCell className="font-mono text-sm">{formatDate(p.paymentDate)}</TableCell>
+                      <TableCell className="text-right font-mono">{formatCLP(p.amount)}</TableCell>
+                      <TableCell>{p.paymentMethod ?? "—"}</TableCell>
+                      <TableCell className="font-mono text-sm">{p.reference ?? "—"}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
           </CardContent>
         </Card>
+
         <Card>
-          <CardContent className="pt-6">
-            <p className="text-sm text-[var(--color-text-muted)]">Total a pagar</p>
-            <p className="text-2xl font-bold">{formatCLP(statement.totalAmount)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-sm text-[var(--color-text-muted)]">Pagado</p>
-            <p className="text-2xl font-bold text-green-600">{formatCLP(statement.paidAmount)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-sm text-[var(--color-text-muted)]">Pendiente</p>
-            <p className="text-2xl font-bold text-amber-600">{formatCLP(pending > 0 ? pending : 0)}</p>
+          <CardHeader><CardTitle as="h2" className={CARD_TITLE}>Desglose</CardTitle></CardHeader>
+          <CardContent>
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+              <SummaryFigure label="Litros" value={`${formatQty(statement.totalLiters)} L`} />
+              <SummaryFigure label="Neto" value={formatCLP(statement.totalBaseAmount)} />
+              <SummaryFigure label={<FuelTerm term="IEC">IEC</FuelTerm>} value={formatCLP(statement.totalIec)} />
+              <SummaryFigure label={<FuelTerm term="IVA">IVA</FuelTerm>} value={formatCLP(statement.totalIva)} />
+            </dl>
           </CardContent>
         </Card>
       </div>
 
-      {/* Breakdown */}
       <Card>
-        <CardHeader><CardTitle>Desglose</CardTitle></CardHeader>
-        <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-          <div><span className="text-[var(--color-text-muted)]">Base afecta:</span> {formatCLP(statement.totalBaseAmount)}</div>
-          <div><span className="text-[var(--color-text-muted)]">IEC total:</span> {formatCLP(statement.totalIec)}</div>
-          <div><span className="text-[var(--color-text-muted)]">IVA:</span> {formatCLP(statement.totalIva)}</div>
-          <div><span className="text-[var(--color-text-muted)]">Vencimiento:</span> {statement.dueDate ?? "—"}</div>
-        </CardContent>
-      </Card>
-
-      {/* Payments */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Pagos registrados</CardTitle>
-          {canManage && isPayable && <AddPaymentDialog statementId={statement.id} pendingAmount={pending} />}
-        </CardHeader>
+        <CardHeader><CardTitle as="h2" className={CARD_TITLE}>Cargas del estado de cuenta ({loads.length})</CardTitle></CardHeader>
         <CardContent>
-          {statement.payments.length === 0 ? (
-            <p className="text-[var(--color-text-muted)] text-sm">No hay pagos registrados</p>
-          ) : (
-            <Table>
+          <div className="-mx-4 overflow-x-auto rounded-lg border px-4 sm:mx-0 sm:px-0">
+            <Table className="min-w-[760px]">
               <TableHeader>
                 <TableRow>
                   <TableHead>Fecha</TableHead>
-                  <TableHead className="text-right">Monto</TableHead>
-                  <TableHead>Método</TableHead>
-                  <TableHead>Referencia</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {statement.payments.map((p) => (
-                  <TableRow key={p.id}>
-                    <TableCell className="font-mono text-sm">{p.paymentDate}</TableCell>
-                    <TableCell className="text-right font-mono">{formatCLP(p.amount)}</TableCell>
-                    <TableCell>{p.paymentMethod ?? "—"}</TableCell>
-                    <TableCell className="font-mono text-sm">{p.reference ?? "—"}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Loads */}
-      <Card>
-        <CardHeader><CardTitle>Cargas asociadas ({statement.loads?.length ?? 0})</CardTitle></CardHeader>
-        <CardContent>
-          <div className="border rounded-lg overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
-            <Table className="min-w-[700px]">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Fecha</TableHead>
-                  <TableHead>Servicio</TableHead>
-                  <TableHead>Vehículo</TableHead>
+                  <TableHead>Equipo</TableHead>
                   <TableHead>Faena</TableHead>
                   <TableHead>Producto</TableHead>
+                  <TableHead>N.º factura</TableHead>
                   <TableHead className="text-right">Litros</TableHead>
                   <TableHead className="text-right">Total</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {(statement.loads ?? []).map((l) => (
+                {loads.map((l) => (
                   <TableRow key={l.id}>
-                    <TableCell className="font-mono text-sm">{l.loadDate}</TableCell>
-                    <TableCell>{l.serviceType}</TableCell>
-                    <TableCell>{l.vehicle?.plate ?? "—"}</TableCell>
+                    <TableCell className="font-mono text-sm">
+                      <Link href={fuelLoadHref({ origen: "factura", id: l.id })} className="underline-offset-2 hover:underline">{formatDate(l.loadDate)}</Link>
+                    </TableCell>
+                    <TableCell>{l.vehicle ? (l.vehicle.code ? `${l.vehicle.code} · ${l.vehicle.plate}` : l.vehicle.plate) : "—"}</TableCell>
                     <TableCell className="max-w-40 truncate">{l.worksite?.name ?? "—"}</TableCell>
                     <TableCell>{l.product}</TableCell>
+                    <TableCell className="font-mono text-sm">{l.receiptNumber ?? "—"}</TableCell>
                     <TableCell className="text-right font-mono">{formatQty(l.liters)}</TableCell>
                     <TableCell className="text-right font-mono">{formatCLP(l.totalAmount)}</TableCell>
                   </TableRow>
@@ -164,48 +167,62 @@ export function StatementDetail({ statement, canManage }: { statement: Statement
   )
 }
 
-function AddPaymentDialog({ statementId, pendingAmount }: { statementId: string; pendingAmount: number }) {
-  const [open, setOpen] = useState(false)
-  const [state, formAction, isPending] = useActionState<ActionState, FormData>(addPaymentAction, { ok: false, message: "" })
+function SummaryFigure({ label, value, tone }: { label: ReactNode; value: string; tone?: "success" | "warning" }) {
+  const color = tone === "success" ? "text-[var(--color-success-ink)]" : tone === "warning" ? "text-[var(--color-warning-ink)]" : "text-[var(--color-text)]"
+  return (
+    <div>
+      <dt className="text-sm text-[var(--color-text-muted)]">{label}</dt>
+      <dd className={`mt-0.5 font-mono text-xl font-semibold tabular-nums ${color}`}>{value}</dd>
+    </div>
+  )
+}
 
-  if (state.ok && open) {
-    toast.success(state.message)
-    setOpen(false)
-  }
+/**
+ * «Registrar pago». Vive en la cabecera de la página del detalle (acciones de
+ * página, A3); la acción rechaza un monto mayor que lo que falta por pagar.
+ */
+export function AddPaymentDialog({ statementId, pendingAmount }: { statementId: string; pendingAmount: number }) {
+  const [open, setOpen] = useState(false)
+  const [state, formAction, isPending] = useActionState<ActionState, FormData>(async (previous, formData) => {
+    const result = await addPaymentAction(previous, formData)
+    if (result.ok) {
+      toast.success(result.message ?? "Pago registrado")
+      setOpen(false)
+    }
+    return result
+  }, { ok: false, message: "" })
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button size="sm"><Plus className="h-4 w-4 mr-1" /> Registrar pago</Button>
+        <Button size="sm" variant="primary"><Plus aria-hidden="true" />Registrar pago</Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Registrar pago</DialogTitle>
+          <DialogDescription>
+            Por pagar: <span className="font-mono tabular-nums">{formatCLP(pendingAmount)}</span>. Al registrar el pago, el estado de cuenta se actualiza solo.
+          </DialogDescription>
         </DialogHeader>
         <form action={formAction} className="space-y-4">
           <input type="hidden" name="statementId" value={statementId} />
-          <p className="text-sm text-[var(--color-text-muted)]">Pendiente: {formatCLP(pendingAmount)}</p>
-          <div className="space-y-2">
-            <Label>Fecha de pago *</Label>
-            <DatePicker name="paymentDate" />
-          </div>
-          <div className="space-y-2">
-            <Label>Monto (CLP) *</Label>
-            <Input name="amount" type="number" step="0.01" min="0.01" required />
-          </div>
-          <div className="space-y-2">
-            <Label>Método de pago</Label>
-            <Input name="paymentMethod" placeholder="Transferencia, cheque..." />
-          </div>
-          <div className="space-y-2">
-            <Label>Nro comprobante</Label>
-            <Input name="reference" />
-          </div>
-          {state.message && !state.ok && <p className="text-sm text-[var(--color-danger-ink)]">{state.message}</p>}
-          <div className="flex justify-end gap-3">
+          <Field label="Fecha de pago" htmlFor="payment-date" required error={state.fieldErrors?.paymentDate?.[0]}>
+            <DatePicker id="payment-date" name="paymentDate" defaultValue={todayInChile()} />
+          </Field>
+          <Field label="Monto (en pesos)" htmlFor="payment-amount" required error={state.fieldErrors?.amount?.[0]}>
+            <Input id="payment-amount" name="amount" type="number" step="0.01" min="0.01" max={pendingAmount} inputMode="decimal" required />
+          </Field>
+          <Field label="Método de pago" htmlFor="payment-method" hint="Transferencia, cheque…">
+            <Input id="payment-method" name="paymentMethod" />
+          </Field>
+          <Field label="N.º de comprobante" htmlFor="payment-reference">
+            <Input id="payment-reference" name="reference" />
+          </Field>
+          {state.message && !state.ok && <p role="alert" className="text-sm text-[var(--color-danger-ink)]">{state.message}</p>}
+          <DialogFooter>
             <Button type="button" variant="secondary" onClick={() => setOpen(false)}>Cancelar</Button>
-            <Button type="submit" disabled={isPending}>{isPending ? "Registrando..." : "Registrar pago"}</Button>
-          </div>
+            <Button type="submit" variant="primary" disabled={isPending}>{isPending ? "Registrando…" : "Registrar pago"}</Button>
+          </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
