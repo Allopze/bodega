@@ -479,11 +479,11 @@ test.describe("Control operacional — rutas retiradas", () => {
 
   test("/combustibles/reportes con una fecha inválida no rompe la pantalla de destino y conserva la válida", async ({ page }) => {
     await page.goto("/combustibles/reportes?desde=basura&hasta=2026-07-31")
-    // VERIFICAR: la puente (`legacyFuelRedirect("reportes")`) copia `desde`/`hasta` sin validarlos, así que
-    // `desde=basura` puede viajar a la URL nueva; la pantalla de destino lo ignora (`resolveFuelPeriod`).
-    // Antes de la fusión la redirección lo descartaba. Aquí sólo se exige que llegue, que cargue y que la fecha válida viaje.
+    // La puente descarta la fecha inválida y conserva la válida (`legacyFuelRedirect`).
     await expect(page).toHaveURL((url) => url.pathname === "/combustibles/consumo/litros" && url.searchParams.get("seccion") === "tarjetas")
-    expect(new URL(page.url()).searchParams.get("hasta")).toBe("2026-07-31")
+    const url = new URL(page.url())
+    expect(url.searchParams.get("hasta")).toBe("2026-07-31")
+    expect(url.searchParams.get("desde")).not.toBe("basura")
     await expectPageTitle(page, "Consumo y rendimiento")
     await expect(barraDe(page, BARRAS.consumo).locator('[aria-current="page"]')).toHaveText("Consumo")
   })

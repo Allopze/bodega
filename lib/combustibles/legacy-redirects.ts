@@ -1,5 +1,5 @@
 import { PERFORMANCE_FAMILIES, PERFORMANCE_FAMILY_SLUGS, type PerformanceFamily } from "@/lib/combustibles/control/contracts"
-import { fuelPeriodSearchParams, legacyFuelPeriodFromParams, parseFuelPeriodToken } from "@/lib/combustibles/period/parse"
+import { currentMonthPeriod, fuelPeriodSearchParams, resolveFuelPeriod } from "@/lib/combustibles/period/parse"
 import { FUEL_PATHS, fuelBatchHref, fuelLoadHref, fuelPerformanceHref, fuelStatementHref, type FuelLoadOrigin } from "@/lib/combustibles/routes"
 
 /**
@@ -27,20 +27,25 @@ function first(sp: SearchParams, key: string): string | undefined {
   return value || undefined
 }
 
-/** Período canónico (`periodo` o `desde`/`hasta`) a partir de lo que traiga la URL vieja. */
+function isPlainDate(value: string | undefined): boolean {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  const [y = 0, m = 0, d = 0] = value.split("-").map(Number)
+  const date = new Date(Date.UTC(y, m - 1, d))
+  return date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d
+}
+
+/**
+ * Período canónico (`periodo` o `desde`/`hasta`) a partir de lo que traiga la
+ * URL vieja, con la misma precedencia y la misma validación que las pantallas:
+ * una fecha inválida no viaja al destino.
+ */
 function periodParams(sp: SearchParams): Record<string, string> {
-  const token = parseFuelPeriodToken(first(sp, "periodo"))
-  if (token) return fuelPeriodSearchParams(token)
-  const desde = first(sp, "desde")
-  const hasta = first(sp, "hasta")
-  if (desde || hasta) {
-    const out: Record<string, string> = {}
-    if (desde) out.desde = desde
-    if (hasta) out.hasta = hasta
-    return out
-  }
-  const legacy = legacyFuelPeriodFromParams(sp)
-  return legacy ? fuelPeriodSearchParams(legacy) : {}
+  // Como hacía la redirección antigua: una fecha inválida se descarta sola y la
+  // válida se conserva (el resolutor completa el otro extremo).
+  const clean: SearchParams = { ...sp }
+  for (const key of ["desde", "hasta"]) if (!isPlainDate(first(sp, key))) delete clean[key]
+  const resolved = resolveFuelPeriod({ searchParams: clean, cookieValue: null, fallback: currentMonthPeriod() })
+  return resolved.source === "default" ? {} : fuelPeriodSearchParams(resolved.period)
 }
 
 const PERIOD_KEYS = new Set(["periodo", "desde", "hasta", "anio", "meses", "from", "to", "month", "startDate", "endDate"])

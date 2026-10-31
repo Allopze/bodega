@@ -7,6 +7,9 @@ const ROWS: Row[] = [
   ["analisis", {}, { preset: "heavy", faena: "ws1", desde: "2026-10-01", hasta: "2026-10-15" }, "/combustibles/consumo/rendimiento/maquinaria?faena=ws1&desde=2026-10-01&hasta=2026-10-15"],
   ["analisis", {}, {}, "/combustibles/consumo/rendimiento/camiones"],
   ["reportes", {}, { desde: "2026-09-01", hasta: "2026-09-30" }, "/combustibles/consumo/litros?seccion=tarjetas&desde=2026-09-01&hasta=2026-09-30"],
+  // Una fecha inválida no viaja; la válida se conserva y el resolutor completa el otro extremo.
+  ["reportes", {}, { desde: "basura", hasta: "2026-09-30" }, "/combustibles/consumo/litros?seccion=tarjetas&desde=2026-09-01&hasta=2026-09-30"],
+  ["reportes", {}, { desde: "2026-02-30", hasta: "nunca" }, "/combustibles/consumo/litros?seccion=tarjetas"],
   ["revision", {}, { faena: "ws1" }, "/combustibles/revisar?faena=ws1"],
   ["anomalias", {}, { estado: "vigentes", severidad: "high", page: "2" }, "/combustibles/revisar?tipo=caso&severidad=high&pagina=2"],
   ["anomalias", {}, { estado: "dismissed", ref: "tae_pwa:t1" }, "/combustibles/revisar?tipo=caso&vista=decididas&ref=tae_pwa%3At1"],
