@@ -175,7 +175,7 @@ export async function GET(request: NextRequest) {
       indicators.addRow({ code: "Versión", label: safe(report.versionLabel), formula: "Cubre las semanas de esta versión: desde su activación hasta la de la versión que la reemplazó." })
     }
 
-    addExportMetadataSheet(workbook, session, {
+    await addExportMetadataSheet(workbook, session, {
       rowCount: report.activities.length,
       filters: { ...filters, programId, worksiteId },
     })

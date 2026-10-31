@@ -34,7 +34,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     // La huella del libro vivo no es la de la versión sellada: en modo vivo se
     // registra la del estado que se exportó, para que la traza sea verificable.
     const snapshotSha256 = liveState && liveSnapshot ? snapshotSha(liveSnapshot) : detail.version.snapshotSha256
-    addExportMetadataSheet(workbook, session, { filters: { worksiteId: detail.worksiteId, versionId: detail.version.id, versionNumber: detail.version.versionNumber, estado: liveState ? "vivo" : "sellado", snapshotSha256 }, rowCount: entryCount })
+    await addExportMetadataSheet(workbook, session, { filters: { worksiteId: detail.worksiteId, versionId: detail.version.id, versionNumber: detail.version.versionNumber, estado: liveState ? "vivo" : "sellado", snapshotSha256 }, rowCount: entryCount })
     await recordAudit({
       userId: session.user.id,
       userEmail: session.user.email ?? undefined,

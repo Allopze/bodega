@@ -63,7 +63,7 @@ export async function exportFuelProviderQualityAction() {
   const truncated = rows.length > MAX_EXPORT_ROWS
   const exportRows = truncated ? rows.slice(0, MAX_EXPORT_ROWS) : rows
   const workbook = await buildFuelProviderQualityWorkbook(exportRows)
-  addExportMetadataSheet(workbook, session, { rowCount: exportRows.length })
+  await addExportMetadataSheet(workbook, session, { rowCount: exportRows.length })
   const buffer = await workbook.xlsx.writeBuffer()
   await recordAudit({
     userId: session.user.id,

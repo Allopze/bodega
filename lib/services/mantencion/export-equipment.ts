@@ -110,7 +110,7 @@ export async function exportEquipment(
     if (column.numeric) target.numFmt = column.key === "year" ? "0" : "#,##0"
   }
   styleHeaderRow(sheet, COLUMNS.length)
-  addExportMetadataSheet(workbook, session, { filters: input.filters, rowCount: rows.length })
+  await addExportMetadataSheet(workbook, session, { filters: input.filters, rowCount: rows.length })
 
   await recordAudit({
     userId: session.user.id,

@@ -119,7 +119,7 @@ export async function finishExport(input: {
   rowLimit?: number
 }) {
   const names = await resolveFilterNames(input.filters)
-  addExportMetadataSheet(input.wb, input.session, {
+  await addExportMetadataSheet(input.wb, input.session, {
     filters: describeFilters(input.filters, names),
     rowCount: input.rowCount,
     from: input.filters.from ?? null,

@@ -159,7 +159,7 @@ export async function GET(request: NextRequest) {
     }))
     styleHeader(snapshots)
 
-    addExportMetadataSheet(workbook, session, { rowCount: groups.length * 12, from: `Enero ${year}`, to: `Diciembre ${year}` })
+    await addExportMetadataSheet(workbook, session, { rowCount: groups.length * 12, from: `Enero ${year}`, to: `Diciembre ${year}` })
     await recordAudit({
       userId: session.user.id,
       userEmail: session.user.email ?? undefined,

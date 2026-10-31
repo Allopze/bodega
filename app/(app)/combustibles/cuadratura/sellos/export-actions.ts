@@ -91,7 +91,7 @@ export async function exportSealsXlsxAction(input: { query: string }): Promise<E
     chain: SEAL_CHAIN_STATUS_LABELS[row.sealChainStatus],
     notes: [row.noSealReason ? `Sin sello: ${row.noSealReason}` : null, row.notes].filter(Boolean).join(" · ") || null,
   })))
-  addExportMetadataSheet(wb, session, { filters, rowCount: detailRows.length, from: filters.from, to: filters.to })
+  await addExportMetadataSheet(wb, session, { filters, rowCount: detailRows.length, from: filters.from, to: filters.to })
 
   const base64 = await xlsxToBase64(wb)
   await recordAudit({

@@ -186,7 +186,7 @@ export async function exportFleetXlsxAction(filters: FleetOverviewFilters = {}) 
   for (const key of ["fuelCost", "maintenanceCost", "operationalCost"]) {
     if (sheet.getColumn(key).number > 0) sheet.getColumn(key).numFmt = "$#,##0"
   }
-  addExportMetadataSheet(workbook, session, { filters, rowCount: exportRows.length })
+  await addExportMetadataSheet(workbook, session, { filters, rowCount: exportRows.length })
   const base64 = await xlsxToBase64(workbook)
   await recordAudit({
     userId: session.user.id,

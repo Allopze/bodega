@@ -225,7 +225,7 @@ export async function GET(request: NextRequest) {
     })
     styleHeader(batches)
 
-    addExportMetadataSheet(workbook, session, {
+    await addExportMetadataSheet(workbook, session, {
       rowCount: dossier.executions.length + dossier.sourceLinks.length + dossier.obligations.length + dossier.actions.length,
       filters: { programId, worksiteId },
     })

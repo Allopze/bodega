@@ -71,6 +71,6 @@ export async function buildOperationRejectionsXlsx(batchId: string, fileLabel: s
     sheet.addRow(values)
   }
   sheet.views = [{ state: "frozen", ySplit: 1 }]
-  addExportMetadataSheet(workbook, session, { filters: { lote: batchId, archivo: fileLabel }, rowCount: rows.length })
+  await addExportMetadataSheet(workbook, session, { filters: { lote: batchId, archivo: fileLabel }, rowCount: rows.length })
   return { base64: await xlsxToBase64(workbook), rowCount: rows.length }
 }

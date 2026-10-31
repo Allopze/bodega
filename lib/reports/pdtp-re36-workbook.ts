@@ -239,7 +239,7 @@ export async function renderPdtpRe36Buffer(
 
   if (options?.session) {
     const rowCount = doc.sheets.reduce((total, sheet) => total + sheet.rows.length, 0)
-    addExportMetadataSheet(workbook, options.session, {
+    await addExportMetadataSheet(workbook, options.session, {
       filters: { programId: doc.program.id, worksiteId: doc.worksite.id, year: doc.program.year },
       rowCount,
       from: null,

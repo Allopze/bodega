@@ -55,7 +55,7 @@ export async function exportOperationalControlXlsxAction(filters: Partial<Operat
     indicators.getColumn(2).width = 22
     indicators.getRow(1).font = { bold: true }
 
-    addExportMetadataSheet(workbook, session, { filters: period, rowCount: data.assets.length })
+    await addExportMetadataSheet(workbook, session, { filters: period, rowCount: data.assets.length })
     const base64 = await xlsxToBase64(workbook)
     await recordAudit({ userId: session.user.id, action: "export", entityType: "operational_control_report", entityId: nanoid(), newState: { period, rowCount: data.assets.length, includesCosts: showCost } })
     return { ok: true as const, data: { base64, filename: `control_operacional_${period.from}_${period.to}.xlsx` } }

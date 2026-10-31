@@ -114,7 +114,7 @@ export async function exportFuelLoadsXlsxAction(filters?: {
     ws.getColumn(col).numFmt = "#,##0"
   }
   ws.getColumn("liters").numFmt = "#,##0.00"
-  addExportMetadataSheet(wb, session, { filters: filters ?? null, rowCount: exportRows.length, from: filters?.startDate, to: filters?.endDate })
+  await addExportMetadataSheet(wb, session, { filters: filters ?? null, rowCount: exportRows.length, from: filters?.startDate, to: filters?.endDate })
 
   const base64 = await xlsxToBase64(wb)
   // Esta exportación incluye montos (IEC, IVA, total) — auditarla es más

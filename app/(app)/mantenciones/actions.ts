@@ -382,7 +382,7 @@ export async function exportMaintenanceXlsxAction(filters: {
   if (canViewCosts) {
     for (const key of ["net", "tax", "total"]) sheet.getColumn(key).numFmt = "$#,##0"
   }
-  addExportMetadataSheet(workbook, session, { filters, rowCount: data.records.length })
+  await addExportMetadataSheet(workbook, session, { filters, rowCount: data.records.length })
   const base64 = await xlsxToBase64(workbook)
   await recordAudit({
     userId: session.user.id,

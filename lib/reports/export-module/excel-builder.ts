@@ -64,7 +64,7 @@ export async function buildXlsxBuffer(report: ReportData, context?: XlsxBuildCon
   // filtros. Ocho rutas ya lo adjuntaban por su cuenta; el centro de reportes
   // era el único que no.
   if (context?.session) {
-    addExportMetadataSheet(workbook, context.session, {
+    await addExportMetadataSheet(workbook, context.session, {
       filters: context.filters ?? null,
       rowCount: sheets.reduce((total, sheet) => total + sheet.rows.length, 0),
       from: context.from ?? null,

@@ -136,7 +136,7 @@ export async function exportFuelLogAction(rawFilters: FuelLogFilters) {
 
   const { rows, truncated } = await getFuelLogExportRows(session, filters)
   const wb = await buildWorkbook(rows, canViewFuelPersonalData(session))
-  addExportMetadataSheet(wb, session, { filters: await describeFuelLogFilters(filters), rowCount: rows.length, from: filters.from, to: filters.to })
+  await addExportMetadataSheet(wb, session, { filters: await describeFuelLogFilters(filters), rowCount: rows.length, from: filters.from, to: filters.to })
   const base64 = await xlsxToBase64(wb)
   await recordAudit({
     userId: session.user.id, userEmail: session.user.email ?? undefined, action: "export",
@@ -161,7 +161,7 @@ export async function exportFuelLogSelectionAction(selection: Array<{ source: Fu
 
   const rows = await getFuelLogRowsBySelection(session, selection)
   const wb = await buildWorkbook(rows, canViewFuelPersonalData(session))
-  addExportMetadataSheet(wb, session, { rowCount: rows.length })
+  await addExportMetadataSheet(wb, session, { rowCount: rows.length })
   const base64 = await xlsxToBase64(wb)
   await recordAudit({
     userId: session.user.id, userEmail: session.user.email ?? undefined, action: "export",

@@ -41,7 +41,7 @@ export async function exportTaeCopecReconciliationAction(filters: TaeCopecFilter
   sheet.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF2563EB" } }
   for (const key of ["tae", "diesel", "bluemax", "total"]) sheet.getColumn(key).numFmt = "#,##0.000"
   sheet.views = [{ state: "frozen", ySplit: 1 }]
-  addExportMetadataSheet(workbook, session, { filters, rowCount: rows.length, from: filters.from, to: filters.to })
+  await addExportMetadataSheet(workbook, session, { filters, rowCount: rows.length, from: filters.from, to: filters.to })
   const base64 = await xlsxToBase64(workbook)
   await recordAudit({
     userId: session.user.id, userEmail: session.user.email ?? undefined, action: "export",

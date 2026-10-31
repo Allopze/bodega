@@ -70,7 +70,7 @@ export async function exportIdleXlsxAction(input: { query: string }): Promise<Ex
     { header: "Horas en vacío", key: "idle", width: 14, numFmt: "#,##0.0" },
     { header: "% en vacío", key: "pct", width: 12, numFmt: "#,##0.0" },
   ], topDays.map((row) => ({ day: formatDate(row.day), equipment: row.equipment, operating: row.operatingHours, idle: row.idleHours, pct: row.idlePct })))
-  addExportMetadataSheet(wb, session, { filters: describeFilters(filters, await resolveFilterNames(filters)), rowCount: months.rows.length, from: filters.from, to: filters.to })
+  await addExportMetadataSheet(wb, session, { filters: describeFilters(filters, await resolveFilterNames(filters)), rowCount: months.rows.length, from: filters.from, to: filters.to })
 
   const base64 = await xlsxToBase64(wb)
   await recordAudit({

@@ -291,7 +291,7 @@ export async function exportTaeSubmissionsXlsxAction(filters: TaeExportFilters =
   }
   ws.getColumn("liters").numFmt = "#,##0.000"
   ws.views = [{ state: "frozen", ySplit: 1 }]
-  addExportMetadataSheet(wb, session, { filters, rowCount: exportRows.length, from: filters.from, to: filters.to })
+  await addExportMetadataSheet(wb, session, { filters, rowCount: exportRows.length, from: filters.from, to: filters.to })
 
   const base64 = await xlsxToBase64(wb)
   await recordAudit({

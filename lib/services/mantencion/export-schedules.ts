@@ -62,7 +62,7 @@ export async function exportSchedules(
     writeSchedule(sheet, model)
     rowCount += model.groups.reduce((sum, group) => sum + group.items.length, 0)
   }
-  addExportMetadataSheet(workbook, session, { filters: { pautas: wanted.map((schedule) => schedule.name).join(", ") }, rowCount })
+  await addExportMetadataSheet(workbook, session, { filters: { pautas: wanted.map((schedule) => schedule.name).join(", ") }, rowCount })
   await recordAudit({
     userId: session.user.id,
     userEmail: session.user.email ?? undefined,
