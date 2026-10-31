@@ -3,13 +3,12 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
-import { ANOMALY_SEVERITY_LABELS, anomalySeverityVariant } from "@/lib/combustibles/anomaly-labels"
 import type { FuelInboxRow } from "@/lib/combustibles/inbox/types"
 import { cn, formatDate, todayInChile } from "@/lib/utils"
 import { BulkDecideBar } from "./bulk-decide-bar"
+import { InboxRowBadges } from "./inbox-row-badges"
 import { useInboxSeen } from "./use-inbox-seen"
 
 const DAY_MS = 86_400_000
@@ -120,12 +119,7 @@ export function InboxList({ rows, view, userId, today }: { rows: FuelInboxRow[];
                 ) : null}
 
                 <div className="min-w-0">
-                  <div className="mb-1 flex flex-wrap items-center gap-1.5">
-                    {fresh ? <span className="inline-block size-2 rounded-full bg-[var(--color-accent)]" role="img" aria-label="Nuevo" /> : null}
-                    <MetaBadge meta={{ label: row.title, variant: row.kind === "caso" ? "danger" : row.kind === "patente" ? "info" : "signal" }} size="sm" className="whitespace-normal normal-case tracking-normal font-sans" />
-                    {row.severity ? <MetaBadge meta={{ label: ANOMALY_SEVERITY_LABELS[row.severity], variant: anomalySeverityVariant(row.severity) }} size="sm" /> : null}
-                    {row.decided ? <MetaBadge meta={{ label: row.decided.outcome, variant: row.decided.outcome === "No cuenta" || row.decided.outcome === "Descartado" ? "danger" : "success" }} size="sm" /> : null}
-                  </div>
+                  <InboxRowBadges className="mb-1" label={row.title} kind={row.kind} severity={row.severity} decided={row.decided} fresh={fresh} />
                   <p className="truncate text-sm font-semibold text-[var(--color-text)]">{row.equipmentLabel}</p>
                   {row.worksiteName ? <p className="truncate text-xs text-[var(--color-text-muted)]">{row.worksiteName}</p> : null}
                 </div>

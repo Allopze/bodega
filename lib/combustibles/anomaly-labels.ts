@@ -15,6 +15,18 @@ export const ANOMALY_STATUS_LABELS: Record<AnomalyCaseStatus, string> = {
   reopened: "Reabierto",
 }
 
+/**
+ * Los estados de un caso que siguen pidiendo a una persona: los que lista «Por
+ * revisar» y los que la ficha de una carga cuenta como «abiertos». `resolved` y
+ * `dismissed` son los cerrados (viven en «Decididas»).
+ */
+export const OPEN_ANOMALY_CASE_STATUSES = ["open", "in_review", "reopened"] as const
+export type OpenAnomalyCaseStatus = (typeof OPEN_ANOMALY_CASE_STATUSES)[number]
+
+export function isOpenAnomalyCaseStatus(value: string | null | undefined): value is OpenAnomalyCaseStatus {
+  return (OPEN_ANOMALY_CASE_STATUSES as readonly string[]).includes(value ?? "")
+}
+
 export const ANOMALY_SEVERITY_LABELS: Record<AnomalySeverity, string> = {
   low: "Baja",
   medium: "Media",
