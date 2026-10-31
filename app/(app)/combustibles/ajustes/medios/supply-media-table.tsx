@@ -15,9 +15,9 @@ import { PROVIDER_MAPPINGS, PROVIDER_MAPPING_LABELS, SUPPLY_MEDIUM_KINDS, type P
 import { SUPPLY_MEDIUM_KIND_LABELS, type SupplyMediumKind } from "@/lib/combustibles/control/contracts"
 import { useOperation } from "@/lib/hooks/use-operation"
 import { toast } from "@/lib/toast"
-import { saveSupplyMediumAction, setSupplyMediumActiveAction } from "./actions"
-import { ActiveBadge, ConfigSection } from "./config-section"
-import type { Option, SupplyMediumRow } from "./config-types"
+import { saveSupplyMediumAction, setSupplyMediumActiveAction } from "../actions"
+import { ActiveBadge } from "../active-badge"
+import type { Option, SupplyMediumRow } from "../config-types"
 
 const NO_SUPPLIER = "_none"
 
@@ -25,24 +25,37 @@ function kindLabel(kind: string): string {
   return SUPPLY_MEDIUM_KIND_LABELS[kind as SupplyMediumKind] ?? "Otro"
 }
 
-export function SupplyMediaSection({ media, suppliers }: { media: SupplyMediumRow[]; suppliers: Option[] }) {
-  const [editing, setEditing] = React.useState<SupplyMediumRow | "new" | null>(null)
+/** «Nuevo medio» para `PageHeader.actions` (y el estado vacío); lleva su propio diálogo. */
+export function NewSupplyMediumButton({ suppliers, label = "Nuevo medio", variant = "primary", withIcon = true }: {
+  suppliers: Option[]
+  label?: string
+  variant?: "primary" | "secondary"
+  withIcon?: boolean
+}) {
+  const [open, setOpen] = React.useState(false)
+  return (
+    <>
+      <Button size="sm" variant={variant} onClick={() => setOpen(true)}>
+        {withIcon ? <Plus className="h-4 w-4" aria-hidden /> : null}{label}
+      </Button>
+      {open ? <SupplyMediumDialog medium={null} suppliers={suppliers} onClose={() => setOpen(false)} /> : null}
+    </>
+  )
+}
+
+export function SupplyMediaTable({ media, suppliers, emptyAction }: { media: SupplyMediumRow[]; suppliers: Option[]; emptyAction?: React.ReactNode }) {
+  const [editing, setEditing] = React.useState<SupplyMediumRow | null>(null)
   const toggle = useOperation({ feedback: "toast" })
 
   return (
-    <ConfigSection
-      id="medios"
-      title="Medios de suministro"
-      description="Por dónde llega el combustible: tarjetas, estaciones, surtidores del mandante, estanques propios. El mapeo al proveedor permite leer sus transacciones sin importar archivos."
-      action={<Button size="sm" onClick={() => setEditing("new")}><Plus className="h-4 w-4" aria-hidden />Nuevo medio</Button>}
-    >
+    <>
       {media.length === 0 ? (
         <EmptyState
           compact
           align="start"
           title="Aún no hay medios de suministro"
-          description="Los importadores de entradas y las cargas en terreno necesitan al menos un medio para saber de dónde viene el combustible."
-          action={<Button size="sm" onClick={() => setEditing("new")}>Crear el primer medio</Button>}
+          description="El formulario en terreno y los importadores necesitan al menos un medio para saber por dónde llegó el combustible. Crea el primero."
+          action={emptyAction}
         />
       ) : (
         <TableRoot aria-label="Medios de suministro">
@@ -51,7 +64,7 @@ export function SupplyMediaSection({ media, suppliers }: { media: SupplyMediumRo
               <TableRow>
                 <TableHead>Medio</TableHead>
                 <TableHead>Tipo</TableHead>
-                <TableHead>Lectura del proveedor</TableHead>
+                <TableHead>Se actualiza solo</TableHead>
                 <TableHead>Alias en planillas</TableHead>
                 <TableHead className="text-right">Orden</TableHead>
                 <TableHead>Estado</TableHead>
@@ -68,7 +81,7 @@ export function SupplyMediaSection({ media, suppliers }: { media: SupplyMediumRo
                   <TableCell>{kindLabel(medium.kind)}</TableCell>
                   <TableCell>{PROVIDER_MAPPING_LABELS[medium.providerMapping]}</TableCell>
                   <TableCell className="max-w-xs text-[var(--color-text-muted)]">{medium.aliases.length ? medium.aliases.join(", ") : "—"}</TableCell>
-                  <TableCell className="text-right tabular-nums">{medium.sortOrder}</TableCell>
+                  <TableCell className="text-right font-mono tabular-nums">{medium.sortOrder}</TableCell>
                   <TableCell><ActiveBadge active={medium.isActive} /></TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
@@ -90,10 +103,8 @@ export function SupplyMediaSection({ media, suppliers }: { media: SupplyMediumRo
           </Table>
         </TableRoot>
       )}
-      {editing ? (
-        <SupplyMediumDialog key={editing === "new" ? "new" : editing.id} medium={editing === "new" ? null : editing} suppliers={suppliers} onClose={() => setEditing(null)} />
-      ) : null}
-    </ConfigSection>
+      {editing ? <SupplyMediumDialog key={editing.id} medium={editing} suppliers={suppliers} onClose={() => setEditing(null)} /> : null}
+    </>
   )
 }
 
@@ -156,7 +167,7 @@ function SupplyMediumDialog({ medium, suppliers, onClose }: { medium: SupplyMedi
                 </Select>
               </Field>
             </div>
-            <Field label="Lectura automática del proveedor" htmlFor="medium-mapping" helper="Si el medio coincide con una integración, sus transacciones se leen del libro de proveedores. Si no, déjalo sin lectura y usa el importador de entradas.">
+            <Field label="Se actualiza solo" htmlFor="medium-mapping" helper="Si el medio corresponde a una integración (Copec o Aramco), sus cargas se leen solas cada mañana. Si no, déjalo sin lectura automática y súbelas en Fuentes de datos.">
               <Select value={mapping} onValueChange={(value) => setMapping(value as ProviderMapping)}>
                 <SelectTrigger id="medium-mapping"><SelectValue /></SelectTrigger>
                 <SelectContent>{PROVIDER_MAPPINGS.map((item) => <SelectItem key={item} value={item}>{PROVIDER_MAPPING_LABELS[item]}</SelectItem>)}</SelectContent>

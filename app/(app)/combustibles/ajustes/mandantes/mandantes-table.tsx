@@ -14,31 +14,55 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRo
 import { useOperation } from "@/lib/hooks/use-operation"
 import { toast } from "@/lib/toast"
 import { formatQty } from "@/lib/utils"
-import { saveMandanteAction, setMandanteActiveAction } from "./actions"
-import { ActiveBadge, ConfigSection } from "./config-section"
-import type { MandanteRow, Option, WorksiteOption } from "./config-types"
+import { saveMandanteAction, setMandanteActiveAction } from "../actions"
+import { ActiveBadge } from "../active-badge"
+import type { MandanteRow, Option, WorksiteOption } from "../config-types"
 
 const NO_CLIENT = "_none"
 
-export function MandantesSection({ mandantes, worksites, clients }: { mandantes: MandanteRow[]; worksites: WorksiteOption[]; clients: Option[] }) {
-  const [editing, setEditing] = React.useState<MandanteRow | "new" | null>(null)
+/**
+ * «Nuevo mandante» para `PageHeader.actions` (y para el estado vacío): el botón
+ * lleva su propio diálogo, así la acción de alta vive en la cabecera y no se
+ * pierde al desplazar la lista.
+ */
+export function NewMandanteButton({ worksites, clients, label = "Nuevo mandante", variant = "primary", withIcon = true }: {
+  worksites: WorksiteOption[]
+  clients: Option[]
+  label?: string
+  variant?: "primary" | "secondary"
+  withIcon?: boolean
+}) {
+  const [open, setOpen] = React.useState(false)
+  return (
+    <>
+      <Button size="sm" variant={variant} onClick={() => setOpen(true)}>
+        {withIcon ? <Plus className="h-4 w-4" aria-hidden /> : null}{label}
+      </Button>
+      {open ? <MandanteDialog mandante={null} worksites={worksites} clients={clients} onClose={() => setOpen(false)} /> : null}
+    </>
+  )
+}
+
+export function MandantesTable({ mandantes, worksites, clients, emptyAction }: {
+  mandantes: MandanteRow[]
+  worksites: WorksiteOption[]
+  clients: Option[]
+  /** Botón del estado vacío (el mismo «Nuevo mandante» de la cabecera). */
+  emptyAction?: React.ReactNode
+}) {
+  const [editing, setEditing] = React.useState<MandanteRow | null>(null)
   const toggle = useOperation({ feedback: "toast" })
   const worksiteNames = new Map(worksites.map((worksite) => [worksite.id, worksite.name]))
 
   return (
-    <ConfigSection
-      id="mandantes"
-      title="Mandantes"
-      description="Un mandante agrupa faenas para conciliar lo que recibe con lo que se entrega, con su propia tolerancia. Una faena pertenece a un solo mandante."
-      action={<Button size="sm" onClick={() => setEditing("new")}><Plus className="h-4 w-4" aria-hidden />Nuevo mandante</Button>}
-    >
+    <>
       {mandantes.length === 0 ? (
         <EmptyState
           compact
           align="start"
           title="Aún no hay mandantes"
-          description="Sin mandantes no hay conciliación por mandante ni el filtro «Mandante» en las vistas. Crea el primero y asígnale sus faenas."
-          action={<Button size="sm" onClick={() => setEditing("new")}>Crear el primer mandante</Button>}
+          description="Sin mandantes no hay cuadratura por mandante ni el filtro «Mandante» en las pantallas. Crea el primero y asígnale sus faenas."
+          action={emptyAction}
         />
       ) : (
         <TableRoot aria-label="Mandantes">
@@ -47,7 +71,7 @@ export function MandantesSection({ mandantes, worksites, clients }: { mandantes:
               <TableRow>
                 <TableHead>Mandante</TableHead>
                 <TableHead>Faenas</TableHead>
-                <TableHead className="text-right" title="Diferencia de conciliación tolerada, en % de la entrada">Tolerancia</TableHead>
+                <TableHead className="text-right" title="Diferencia aceptada entre lo que entró y lo que se entregó, en % de lo que entró">Tolerancia</TableHead>
                 <TableHead>Estado</TableHead>
                 <TableHead className="text-right"><span className="sr-only">Acciones</span></TableHead>
               </TableRow>
@@ -64,7 +88,7 @@ export function MandantesSection({ mandantes, worksites, clients }: { mandantes:
                       ? "Sin faenas asignadas"
                       : mandante.worksiteIds.map((id) => worksiteNames.get(id) ?? id).join(", ")}
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">{formatQty(mandante.tolerancePct, undefined, { maximumFractionDigits: 2 })} %</TableCell>
+                  <TableCell className="text-right font-mono tabular-nums">{formatQty(mandante.tolerancePct, undefined, { maximumFractionDigits: 2 })} %</TableCell>
                   <TableCell><ActiveBadge active={mandante.isActive} /></TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
@@ -87,15 +111,9 @@ export function MandantesSection({ mandantes, worksites, clients }: { mandantes:
         </TableRoot>
       )}
       {editing ? (
-        <MandanteDialog
-          key={editing === "new" ? "new" : editing.id}
-          mandante={editing === "new" ? null : editing}
-          worksites={worksites}
-          clients={clients}
-          onClose={() => setEditing(null)}
-        />
+        <MandanteDialog key={editing.id} mandante={editing} worksites={worksites} clients={clients} onClose={() => setEditing(null)} />
       ) : null}
-    </ConfigSection>
+    </>
   )
 }
 

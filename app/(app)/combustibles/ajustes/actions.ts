@@ -28,8 +28,8 @@ import {
 } from "@/lib/combustibles/control/catalogs"
 
 /**
- * Configuración del control: mandantes, medios de suministro y familias de
- * equipos. TODA acción exige `combustibles:manage_control`, valida con zod en el
+ * Ajustes del control: mandantes, medios de suministro y familias de equipos.
+ * TODA acción exige `combustibles:manage_control`, valida con zod en el
  * servidor y audita con estado anterior y nuevo dentro de la misma transacción.
  * Los umbrales y el recálculo están en `actions-thresholds.ts`.
  */
@@ -43,9 +43,8 @@ export interface ConfigResult {
 
 const PERMISSION = "combustibles:manage_control" as const
 
+/** Mandantes, medios y familias alimentan los filtros y vistas de todo el módulo: se invalida entero. */
 function refresh() {
-  revalidateFuel()
-  // Mandantes, medios y familias alimentan los filtros y vistas de todo el control.
   revalidateFuel()
 }
 

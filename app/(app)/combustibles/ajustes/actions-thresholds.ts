@@ -1,17 +1,19 @@
 "use server"
 
-import { and, asc, gt, sql } from "drizzle-orm"
-import { db } from "@/db"
-import { fuelVehicles } from "@/db/schema"
+import { and, asc, gt, inArray, sql } from "drizzle-orm"
+import { db, type Tx } from "@/db"
+import { fuelEquipmentLoads, fuelVehicles } from "@/db/schema"
 import { recordAudit } from "@/lib/audit"
 import { guardPermission } from "@/lib/auth/can"
 import { serviceWorksiteScope, worksiteScopeSqlFor } from "@/lib/auth/scope"
 import { actionErrorResult } from "@/lib/actions/action-error-result"
 import { parseZ } from "@/lib/actions/parse-z"
 import {
+  diffMarkSnapshots,
   performanceThresholdsSchema,
   RECOMPUTE_BATCH_SIZE,
   recomputeInputSchema,
+  type MarkSnapshot,
   type PerformanceThresholdsInput,
 } from "@/lib/combustibles/control/catalogs"
 import { getPerformanceControlSettings, savePerformanceControlSettings } from "@/lib/combustibles/control/settings"
@@ -23,11 +25,15 @@ import { revalidateFuel } from "@/lib/combustibles/revalidate"
 const PERMISSION = "combustibles:manage_control" as const
 const RECOMPUTE_LOCK = "fuel_control_recompute_series"
 
+/** Parte editable de los umbrales, tal como queda guardada. */
+const EDITABLE_KEYS = ["minSamples", "maxKmPerLiter", "maxLitersPerHour", "duplicateWindowMinutes", "duplicateLitersTolerance"] as const
+
 /**
  * Guarda los umbrales editables. `thresholdStdDevs` no se toma del formulario:
  * viene de la regla `rendimiento_fuera_historico` y se conserva tal cual.
- * No recalcula nada en la petición: los valores rigen para cargas nuevas y para
- * las que se recalculen con `recomputeSeriesBatchAction`.
+ * No recalcula nada en la petición (una serie larga no cabe en una solicitud
+ * corta): responde `data.changed` y la pantalla encadena `recomputeSeriesBatchAction`
+ * por lotes, con avance y el conteo de cargas que cambiaron.
  * `savePerformanceControlSettings` audita por sí misma.
  */
 export async function savePerformanceThresholdsAction(input: PerformanceThresholdsInput): Promise<ConfigResult> {
@@ -38,11 +44,16 @@ export async function savePerformanceThresholdsAction(input: PerformanceThreshol
   if (!parsed.ok) return parsed
   try {
     const current = await getPerformanceControlSettings()
+    const changed = EDITABLE_KEYS.some((key) => current[key] !== parsed.data[key])
     await db.transaction(async (tx) => {
       await savePerformanceControlSettings(tx, { ...current, ...parsed.data }, { userId: session.user.id, userEmail: session.user.email ?? undefined })
     })
     revalidateFuel()
-    return { ok: true, message: "Umbrales guardados. Rigen para las cargas nuevas y las que se recalculen." }
+    return {
+      ok: true,
+      message: changed ? "Umbrales guardados." : "Los umbrales ya estaban así: no hay nada que recalcular.",
+      data: { changed },
+    }
   } catch (error) {
     return actionErrorResult(error, "No se pudieron guardar los umbrales")
   }
@@ -56,6 +67,28 @@ export interface RecomputeProgress {
   /** Último equipo procesado: se reenvía para continuar. `null` si no quedó ninguno. */
   nextCursor: string | null
   done: boolean
+  /** Cargas de este lote cuya marca de revisión o estado de rendimiento cambió. */
+  changedLoads: number
+  /** De ellas, las que pasaron a «Por decidir». */
+  flagged: number
+  /** De ellas, las que dejaron de estar «Por decidir». */
+  released: number
+}
+
+/**
+ * Foto de las marcas de las cargas de un lote de equipos: estado de revisión
+ * y una firma de lo que el recálculo puede mover (motivos, duplicada de,
+ * estado de rendimiento). Antes y después del recálculo, la diferencia dice
+ * cuántas cargas cambiaron sin que `recomputeVehicleSeries` tenga que contarlas.
+ */
+async function snapshotMarks(tx: Tx, vehicleIds: string[]): Promise<MarkSnapshot> {
+  if (vehicleIds.length === 0) return new Map()
+  const rows = await tx.select({
+    id: fuelEquipmentLoads.id,
+    reviewStatus: fuelEquipmentLoads.reviewStatus,
+    signature: sql<string>`md5(concat_ws('|', ${fuelEquipmentLoads.reviewStatus}, ${fuelEquipmentLoads.flagReasons}::text, coalesce(${fuelEquipmentLoads.duplicateOfId}, ''), ${fuelEquipmentLoads.performanceStatus}))`,
+  }).from(fuelEquipmentLoads).where(inArray(fuelEquipmentLoads.vehicleId, vehicleIds))
+  return new Map(rows.map((row) => [row.id, { reviewStatus: row.reviewStatus, signature: row.signature }]))
 }
 
 /**
@@ -90,7 +123,10 @@ export async function recomputeSeriesBatchAction(input: { cursor: string | null 
         .orderBy(asc(fuelVehicles.id))
         .limit(RECOMPUTE_BATCH_SIZE)
 
-      await recomputeVehicles(tx, batch.map((vehicle) => vehicle.id))
+      const batchIds = batch.map((vehicle) => vehicle.id)
+      const before = await snapshotMarks(tx, batchIds)
+      await recomputeVehicles(tx, batchIds)
+      const changes = diffMarkSnapshots(before, await snapshotMarks(tx, batchIds))
 
       const nextCursor = batch.length ? batch[batch.length - 1]!.id : null
       const done = batch.length < RECOMPUTE_BATCH_SIZE
@@ -102,10 +138,10 @@ export async function recomputeSeriesBatchAction(input: { cursor: string | null 
           entityType: "fuel_control_series_recompute",
           entityId: nextCursor!,
           reason: "Recálculo manual de series de rendimiento",
-          newState: { vehicles: batch.length, firstVehicleId: batch[0]!.id, lastVehicleId: nextCursor },
+          newState: { vehicles: batch.length, firstVehicleId: batch[0]!.id, lastVehicleId: nextCursor, ...changes },
         }, tx)
       }
-      return { ok: true, message: done ? "Recálculo terminado" : undefined, data: { processed: batch.length, total, nextCursor, done } }
+      return { ok: true, message: done ? "Recálculo terminado" : undefined, data: { processed: batch.length, total, nextCursor, done, ...changes } }
     })
     if (result.ok && result.data?.done) {
       revalidateFuel()

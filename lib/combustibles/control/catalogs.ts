@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { KNOWN_RULE_CODES } from "@/lib/combustibles/validation"
 import { PERFORMANCE_FAMILIES, type PerformanceFamily, type SupplyMediumKind } from "./contracts"
 
 /**
@@ -88,9 +89,9 @@ export const PROVIDER_MAPPINGS = ["none", "copec_tct", "copec_tae", "aramco"] as
 export type ProviderMapping = (typeof PROVIDER_MAPPINGS)[number]
 
 export const PROVIDER_MAPPING_LABELS: Record<ProviderMapping, string> = {
-  none: "Sin lectura automática",
-  copec_tct: "Copec · tarjeta TCT",
-  copec_tae: "Copec · TAE",
+  none: "No: se importa por archivo",
+  copec_tct: "Copec · tarjeta de equipos",
+  copec_tae: "Copec · tarjeta de abastecimiento",
   aramco: "Aramco",
 }
 
@@ -206,7 +207,261 @@ export const recomputeInputSchema = z.object({
   cursor: z.string().min(1).nullable().default(null),
 })
 
+/** Estado de las marcas de las cargas de un lote de equipos: revisión y una firma de lo que el recálculo puede mover. */
+export type MarkSnapshot = Map<string, { reviewStatus: string; signature: string }>
+
+/**
+ * Cuenta qué cambió entre la foto de marcas de antes y la de después de recalcular:
+ * cargas que cambiaron, las que pasaron a «Por decidir» y las que dejaron de estarlo.
+ */
+export function diffMarkSnapshots(before: MarkSnapshot, after: MarkSnapshot): { changedLoads: number; flagged: number; released: number } {
+  let changedLoads = 0
+  let flagged = 0
+  let released = 0
+  for (const [id, next] of after) {
+    const previous = before.get(id)
+    if (!previous || previous.signature === next.signature) continue
+    changedLoads += 1
+    if (previous.reviewStatus !== "flagged" && next.reviewStatus === "flagged") flagged += 1
+    if (previous.reviewStatus === "flagged" && next.reviewStatus !== "flagged") released += 1
+  }
+  return { changedLoads, flagged, released }
+}
+
 /** Texto de progreso: «50 de 130 equipos». */
 export function recomputeProgressLabel(processed: number, total: number): string {
   return `${processed} de ${total} ${total === 1 ? "equipo" : "equipos"}`
+}
+
+// ── Reglas de detección: parámetros en palabras ──────────────────────────────
+
+/**
+ * Cada regla de detección guarda sus umbrales en un JSON (`config`). Para que
+ * quien administra no tenga que escribirlo a mano, los parámetros que el motor
+ * entiende se ofrecen como campos con su unidad y se describen en una frase
+ * («Avisa si un equipo carga 3 veces o más en 2 horas»). El JSON completo sigue
+ * disponible en «Avanzado» para lo que no tiene campo (p. ej. las excepciones
+ * por tipo de equipo).
+ *
+ * Todo es puro: lo usan la tabla, el formulario, la acción del servidor y las
+ * pruebas. Las claves y los valores por omisión replican los lectores de
+ * `lib/combustibles/anomaly-detector.ts` (`thresholdStdDevsOf`, `marginOf`, …).
+ */
+
+export interface RuleParameter {
+  /** Clave en el JSON de configuración de la regla. */
+  key: string
+  /** Rótulo del campo, con su unidad cuando no se deduce: «Margen sobre la capacidad (%)». */
+  label: string
+  /** Valor que aplica el motor cuando la regla no lo define (en la unidad mostrada). */
+  defaultValue: number
+  min: number
+  max: number
+  step: number
+  integer?: boolean
+  /**
+   * El JSON guarda `mostrado / displayFactor`: el margen sobre la capacidad se
+   * guarda como 0,05 y se escribe como 5 %.
+   */
+  displayFactor?: number
+  helper: string
+}
+
+const PARAM_STD_DEVS: RuleParameter = {
+  key: "thresholdStdDevs", label: "Veces su variación normal", defaultValue: 2, min: 0.5, max: 10, step: 0.5,
+  helper: "Entre 0,5 y 10. Más alto avisa menos. En «Rendimiento fuera del historial» es el mismo valor que usa el control de cargas.",
+}
+const PARAM_MIN_SAMPLE: RuleParameter = {
+  key: "minSample", label: "Cargas previas mínimas", defaultValue: 5, min: 3, max: 1000, step: 1, integer: true,
+  helper: "Con menos cargas, la regla no compara contra el historial. Mínimo 3.",
+}
+
+export const RULE_PARAMETERS: Readonly<Record<string, readonly RuleParameter[]>> = {
+  rendimiento_fuera_historico: [PARAM_STD_DEVS, PARAM_MIN_SAMPLE],
+  rendimiento_fuera_grupo: [
+    { ...PARAM_STD_DEVS, helper: "Entre 0,5 y 10. Más alto avisa menos." },
+    PARAM_MIN_SAMPLE,
+  ],
+  litros_supera_capacidad: [
+    { key: "margin", label: "Margen sobre la capacidad (%)", defaultValue: 5, min: 0, max: 100, step: 1, displayFactor: 100, helper: "Cuántos litros de más se toleran antes de avisar (de 0 a 100 %)." },
+  ],
+  variacion_brusca_consumo: [
+    { key: "thresholdPct", label: "Variación del consumo (%)", defaultValue: 50, min: 1, max: 1000, step: 1, helper: "Cuánto debe cambiar el consumo del período respecto del anterior (desde 1 %)." },
+  ],
+  exceso_cargas_ventana: [
+    { key: "maxLoads", label: "Cargas dentro de la ventana", defaultValue: 3, min: 1, max: 50, step: 1, integer: true, helper: "Con esta cantidad de cargas o más dentro de la ventana, se avisa." },
+    { key: "windowHours", label: "Ventana de tiempo (horas)", defaultValue: 2, min: 1, max: 720, step: 1, integer: true, helper: "Horas hacia atrás que se miran (desde 1)." },
+  ],
+  salto_medidor_implausible: [
+    { key: "maxKmPerDay", label: "Avance máximo del odómetro (km por día)", defaultValue: 1500, min: 1, max: 100000, step: 100, integer: true, helper: "Sobre esto entre dos cargas, la lectura es implausible." },
+    { key: "maxHoursPerDay", label: "Avance máximo del horómetro (horas por día)", defaultValue: 24, min: 1, max: 24, step: 1, helper: "Un motor no acumula más de 24 horas por día." },
+  ],
+}
+
+/** Reglas que el motor evalúa por lotes y que admiten acotar las filas por corrida (`batchRowLimit`). */
+export const BATCH_RULE_CODES = [
+  "litros_supera_capacidad", "variacion_brusca_consumo", "consumo_durante_inactividad", "evidencia_duplicada",
+  "evidencia_ilegible", "proveedor_no_habitual", "rendimiento_fuera_historico", "rendimiento_fuera_grupo",
+  "kilometraje_regresivo", "horometro_regresivo", "salto_medidor_implausible",
+] as const
+
+export const BATCH_ROW_LIMIT_PARAMETER: RuleParameter = {
+  key: "batchRowLimit", label: "Filas que se revisan por corrida", defaultValue: 50000, min: 100, max: 1_000_000, step: 100, integer: true,
+  helper: "Freno técnico del escaneo diario. Mínimo 100; déjalo vacío para usar el valor del sistema.",
+}
+
+export function isBatchRuleCode(code: string): boolean {
+  return (BATCH_RULE_CODES as readonly string[]).includes(code)
+}
+
+const NO_PARAMETERS: readonly RuleParameter[] = []
+
+/** Parámetros con campo propio para una regla (vacío si no tiene o el código no es del catálogo). */
+export function ruleParametersFor(code: string): readonly RuleParameter[] {
+  return RULE_PARAMETERS[code] ?? NO_PARAMETERS
+}
+
+/** Lee el JSON de una regla. `null` si no es JSON o no es un objeto: nunca se reemplaza en silencio por `{}`. */
+export function parseRuleConfig(raw: string | null | undefined): Record<string, unknown> | null {
+  if (raw === null || raw === undefined || !raw.trim()) return {}
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null
+  } catch {
+    return null
+  }
+}
+
+const roundDisplay = (value: number) => Math.round(value * 1e6) / 1e6
+
+/**
+ * Número entero escrito a la chilena: «1.500» son mil quinientos, no uno coma
+ * cinco. `parseDecimalInput` toma el punto sin coma como decimal, lo que en un
+ * campo de enteros (filas por corrida, km por día) divide el valor por mil.
+ */
+function parseWholeNumberInput(text: string): number | null {
+  const cleaned = text.trim().replace(/\s/g, "")
+  if (/^\d{1,3}(\.\d{3})+$/.test(cleaned)) return Number(cleaned.replace(/\./g, ""))
+  return parseDecimalInput(cleaned)
+}
+
+/** Valor de un parámetro en la unidad que se muestra, o `undefined` si la regla no lo define. */
+export function ruleParameterValue(parameter: RuleParameter, config: Record<string, unknown>): number | undefined {
+  const stored = config[parameter.key]
+  if (typeof stored !== "number" || !Number.isFinite(stored)) return undefined
+  return roundDisplay(stored * (parameter.displayFactor ?? 1))
+}
+
+/**
+ * Aplica los valores escritos en los campos sobre el JSON de la regla. Un campo
+ * vacío quita la clave (vuelve al valor del sistema). Devuelve los errores por
+ * clave de parámetro y deja intacto todo lo que el formulario no conoce
+ * (excepciones por tipo de equipo, claves propias).
+ */
+export function mergeRuleParameters(
+  parameters: readonly RuleParameter[],
+  base: Record<string, unknown>,
+  raw: Readonly<Record<string, string | null | undefined>>,
+): { config: Record<string, unknown>; errors: Record<string, string> } {
+  const config = { ...base }
+  const errors: Record<string, string> = {}
+  for (const parameter of parameters) {
+    const text = raw[parameter.key]
+    if (text === undefined || text === null) continue
+    if (!text.trim()) { delete config[parameter.key]; continue }
+    const value = parameter.integer ? parseWholeNumberInput(text) : parseDecimalInput(text)
+    if (value === null) { errors[parameter.key] = `${parameter.label}: escribe un número`; continue }
+    if (parameter.integer && !Number.isInteger(value)) { errors[parameter.key] = `${parameter.label}: usa un número entero`; continue }
+    if (value < parameter.min || value > parameter.max) {
+      errors[parameter.key] = `${parameter.label}: debe estar entre ${formatRuleNumber(parameter.min)} y ${formatRuleNumber(parameter.max)}`
+      continue
+    }
+    config[parameter.key] = roundDisplay(value / (parameter.displayFactor ?? 1))
+  }
+  return { config, errors }
+}
+
+const ruleNumberFormat = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 2 })
+const formatRuleNumber = (value: number) => ruleNumberFormat.format(value)
+
+const EVIDENCE_KIND_WORDS: Record<string, string> = {
+  odometer: "el tablero (odómetro u horómetro)",
+  liter_meter: "el contador de litros",
+  removed_seal: "el sello retirado",
+  installed_seal: "el sello instalado",
+}
+
+const plural = (count: number, one: string, many: string) => `${formatRuleNumber(count)} ${count === 1 ? one : many}`
+
+/**
+ * «Cuándo se activa» una regla, en una frase. Para una regla sin parámetros
+ * dice que salta cada vez que ocurre; para una con parámetros usa el valor
+ * configurado o, si no lo define, el que aplica el motor.
+ */
+export function describeRuleTrigger(code: string, rawConfig: string | null | undefined): string {
+  const config = parseRuleConfig(rawConfig)
+  if (config === null) return "La configuración no se puede leer: revisa el JSON en «Avanzado»."
+  const value = (key: string) => {
+    const parameter = ruleParametersFor(code).find((item) => item.key === key)
+    if (!parameter) return 0
+    return ruleParameterValue(parameter, config) ?? parameter.defaultValue
+  }
+  const typeOverrides = config["equipmentTypes"]
+  const exceptions = typeOverrides && typeof typeOverrides === "object" && !Array.isArray(typeOverrides) ? Object.keys(typeOverrides).length : 0
+  const suffix = exceptions > 0 ? ` Con excepciones para ${plural(exceptions, "tipo de equipo", "tipos de equipo")}.` : ""
+
+  switch (code) {
+    case "rendimiento_fuera_historico":
+      return `Avisa si el rendimiento se aleja más de ${formatRuleNumber(value("thresholdStdDevs"))} veces su variación normal, con al menos ${plural(value("minSample"), "carga previa", "cargas previas")} del equipo.${suffix}`
+    case "rendimiento_fuera_grupo":
+      return `Avisa si el rendimiento se aleja más de ${formatRuleNumber(value("thresholdStdDevs"))} veces la variación normal de los equipos comparables, con al menos ${plural(value("minSample"), "carga", "cargas")}.${suffix}`
+    case "litros_supera_capacidad":
+      return `Avisa si una carga supera la capacidad del estanque en más de ${formatRuleNumber(value("margin"))} %.${suffix}`
+    case "variacion_brusca_consumo":
+      return `Avisa si el consumo del período varía más de ${formatRuleNumber(value("thresholdPct"))} % respecto del anterior.${suffix}`
+    case "exceso_cargas_ventana":
+      return `Avisa si un equipo carga ${plural(value("maxLoads"), "vez", "veces")} o más en ${plural(value("windowHours"), "hora", "horas")}.${suffix}`
+    case "salto_medidor_implausible":
+      return `Avisa si el medidor avanza más de ${formatRuleNumber(value("maxKmPerDay"))} km (o ${formatRuleNumber(value("maxHoursPerDay"))} horas) por día entre dos cargas.${suffix}`
+    case "evidencia_faltante": {
+      const kinds = Array.isArray(config["requiredKinds"]) ? config["requiredKinds"].filter((kind): kind is string => typeof kind === "string") : []
+      if (kinds.length === 0) return "Avisa si la carga en terreno no trae todas las fotos exigidas."
+      return `Avisa si la carga en terreno no trae la foto de ${kinds.map((kind) => EVIDENCE_KIND_WORDS[kind] ?? kind).join(", ")}.`
+    }
+    case "carga_fuera_horario":
+      return "Según el horario de operación de la ficha de cada equipo."
+    default:
+      return KNOWN_RULE_CODE_SET.has(code) ? "Siempre que ocurre." : "Código desconocido para el motor: la regla no se evalúa."
+  }
+}
+
+const KNOWN_RULE_CODE_SET: ReadonlySet<string> = new Set<string>(KNOWN_RULE_CODES)
+
+/** ¿El motor de detección reconoce este código? Una regla con otro código queda inerte. */
+export function isKnownRuleCode(code: string): boolean {
+  return KNOWN_RULE_CODE_SET.has(code)
+}
+
+/** Lo que dejó un recálculo de series: equipos recorridos y cargas que cambiaron. */
+export interface RecomputeSummary {
+  equipment: number
+  changedLoads: number
+  flagged: number
+  released: number
+  /** El recálculo se detuvo antes de recorrer todos los equipos. */
+  stopped: boolean
+}
+
+const countFormat = new Intl.NumberFormat("es-CL")
+
+/** «Se recalcularon 130 equipos. 12 cargas cambiaron: 9 pasaron a «Por decidir» y 3 dejaron de estarlo.» */
+export function recomputeSummaryText(summary: RecomputeSummary): string {
+  const equipment = `${countFormat.format(summary.equipment)} ${summary.equipment === 1 ? "equipo" : "equipos"}`
+  const head = summary.stopped ? `Recálculo detenido tras ${equipment}.` : `Se recalcularon ${equipment}.`
+  if (summary.changedLoads === 0) return `${head} Ninguna carga cambió.`
+  const loads = `${countFormat.format(summary.changedLoads)} ${summary.changedLoads === 1 ? "carga cambió" : "cargas cambiaron"}`
+  const parts: string[] = []
+  if (summary.flagged > 0) parts.push(`${countFormat.format(summary.flagged)} ${summary.flagged === 1 ? "pasó" : "pasaron"} a «Por decidir»`)
+  if (summary.released > 0) parts.push(`${countFormat.format(summary.released)} ${summary.released === 1 ? "dejó" : "dejaron"} de estarlo`)
+  return `${head} ${loads}${parts.length ? `: ${parts.join(" y ")}` : ""}.`
 }

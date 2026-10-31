@@ -4,7 +4,8 @@ import { eq } from "drizzle-orm"
 import path from "node:path"
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 import * as schema from "@/db/schema"
-import type { DB } from "@/db"
+import type { DB, Tx } from "@/db"
+import { projectOperationRecords } from "@/lib/combustibles/control/projection"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 
 const pg = new PGlite()
@@ -33,7 +34,8 @@ const scopedSession: TestSession = { user: { id: userId, email: "config@chome.cl
 
 const {
   saveMandanteAction, setMandanteActiveAction, saveSupplyMediumAction, setSupplyMediumActiveAction, setEquipmentTypeFamilyAction,
-} = await import("@/app/(app)/combustibles/control/configuracion/actions")
+} = await import("@/app/(app)/combustibles/ajustes/actions")
+const { savePerformanceThresholdsAction, recomputeSeriesBatchAction } = await import("@/app/(app)/combustibles/ajustes/actions-thresholds")
 
 async function audits(entityType: string) {
   return testDb.select().from(schema.auditLog).where(eq(schema.auditLog.entityType, entityType))
@@ -187,5 +189,80 @@ describe("familias de equipos", () => {
   it("un tipo inexistente se informa", async () => {
     const result = await setEquipmentTypeFamilyAction({ equipmentTypeId: "no-existe", family: "camiones" })
     expect(result.ok).toBe(false)
+  })
+})
+
+describe("umbrales y recálculo de series", () => {
+  const thresholds = (maxLitersPerHour: string) => ({
+    minSamples: "5", maxKmPerLiter: "25", maxLitersPerHour, duplicateWindowMinutes: "15", duplicateLitersTolerance: "0,5",
+  })
+  const loadsOf = () => testDb.select().from(schema.fuelEquipmentLoads)
+    .where(eq(schema.fuelEquipmentLoads.vehicleId, "veh-cfg-1"))
+    .orderBy(schema.fuelEquipmentLoads.occurredAt)
+
+  beforeAll(async () => {
+    await testDb.insert(schema.fuelEquipmentTypes).values({ id: "fet-cfg", slug: "camion-cfg", name: "Camión de prueba" }).onConflictDoNothing()
+    await testDb.insert(schema.fuelVehicles).values({
+      id: "veh-cfg-1", plate: "CFGA11", type: "camion", equipmentTypeId: "fet-cfg", worksiteId: "ws-cfg-a", meterType: "hour_meter", performanceUnit: "liters_per_hour",
+    })
+    await testDb.insert(schema.fuelOperationBatches).values({
+      id: "batch-cfg", archivoNombre: "consolidado.xlsx", hashArchivo: "h-cfg", periodoDesde: "2026-01-01", periodoHasta: "2026-03-31", importadoPor: userId,
+    })
+    for (const [id, fecha, horometro, liters] of [["rec-cfg-1", "2026-02-01", 100, 50], ["rec-cfg-2", "2026-02-02", 110, 500]] as const) {
+      await testDb.insert(schema.fuelOperationRecords).values({
+        id, batchId: "batch-cfg", worksiteId: "ws-cfg-a", vehicleId: "veh-cfg-1", plate: "CFGA11", fecha, horaCarga: "08:30", horometro, liters,
+      })
+    }
+    await projectOperationRecords(testDb as unknown as Tx, ["rec-cfg-1", "rec-cfg-2"])
+  })
+
+  it("guardar los mismos valores no pide recalcular; uno distinto sí, y queda auditado", async () => {
+    const same = await savePerformanceThresholdsAction(thresholds("80"))
+    expect(same.ok).toBe(true)
+    expect(same.data?.changed).toBe(false)
+
+    const different = await savePerformanceThresholdsAction(thresholds("10"))
+    expect(different.ok).toBe(true)
+    expect(different.data?.changed).toBe(true)
+    const log = (await audits("fuel_control_settings")).find((entry) => JSON.parse(entry.newState!).maxLitersPerHour === 10)
+    expect(log).toBeDefined()
+  })
+
+  it("el recálculo dice cuántas cargas cambiaron: pasan a por decidir con un umbral más bajo y vuelven con el original", async () => {
+    await savePerformanceThresholdsAction(thresholds("10"))
+    const lowered = await recomputeSeriesBatchAction({ cursor: null })
+    expect(lowered.ok).toBe(true)
+    expect(lowered.data).toMatchObject({ processed: 1, total: 1, done: true, changedLoads: 1, flagged: 1, released: 0 })
+    const [, second] = await loadsOf()
+    expect(second).toMatchObject({ reviewStatus: "flagged" })
+    expect(second?.flagReasons).toContain("implausible")
+
+    await savePerformanceThresholdsAction(thresholds("80"))
+    const restored = await recomputeSeriesBatchAction({ cursor: null })
+    expect(restored.data).toMatchObject({ changedLoads: 1, flagged: 0, released: 1 })
+    expect((await loadsOf())[1]).toMatchObject({ reviewStatus: "ok" })
+
+    // Sin ningún cambio de umbral, volver a recalcular no mueve nada.
+    const idle = await recomputeSeriesBatchAction({ cursor: null })
+    expect(idle.data).toMatchObject({ changedLoads: 0, flagged: 0, released: 0 })
+
+    const recompute = (await audits("fuel_control_series_recompute")).map((entry) => JSON.parse(entry.newState!))
+    expect(recompute.some((state) => state.changedLoads === 1 && state.flagged === 1)).toBe(true)
+  })
+
+  it("un equipo fuera del alcance de quien recalcula no se toca", async () => {
+    await savePerformanceThresholdsAction(thresholds("10"))
+    currentSession = { user: { id: userId, email: "config@chome.cl", isGlobal: false, roles: ["admin_contrato"], worksiteIds: ["ws-cfg-b"] } }
+    const scoped = await recomputeSeriesBatchAction({ cursor: null })
+    expect(scoped.ok).toBe(true)
+    expect(scoped.data).toMatchObject({ processed: 0, total: 0, done: true, changedLoads: 0 })
+    expect((await loadsOf())[1]).toMatchObject({ reviewStatus: "ok" })
+    await savePerformanceThresholdsAction(thresholds("80"))
+  })
+
+  it("sin permiso no guarda ni recalcula", async () => {
+    currentSession = null
+    expect((await savePerformanceThresholdsAction(thresholds("10"))).ok).toBe(false)
+    expect((await recomputeSeriesBatchAction({ cursor: null })).ok).toBe(false)
   })
 })
