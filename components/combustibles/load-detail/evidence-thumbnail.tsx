@@ -32,9 +32,9 @@ export function EvidenceThumbnail({ evidence }: Props) {
         className="group block w-full overflow-hidden border border-(--color-border) bg-(--color-surface-2) text-left text-sm hover:border-(--color-primary-line)"
       >
         {evidence.filePath ? (
-          <Image unoptimized src={`/api/tae/evidence/${evidence.id}`} alt={EVIDENCE_LABELS[evidence.kind] ?? "Evidencia TAE"} width={640} height={420} className="aspect-[4/3] w-full object-cover" />
+          <Image unoptimized src={`/api/tae/evidence/${evidence.id}`} alt={EVIDENCE_LABELS[evidence.kind] ?? "Foto de la carga"} width={640} height={420} className="aspect-[4/3] w-full object-cover" />
         ) : (
-          <div className="flex aspect-[4/3] items-center justify-center p-4 text-center text-(--color-text-muted)">Abrir evidencia histórica</div>
+          <div className="flex aspect-[4/3] items-center justify-center p-4 text-center text-(--color-text-muted)">Abrir el registro histórico</div>
         )}
         <span className="block p-3">
           <span className="block text-xs text-[var(--color-text-muted)]">{EVIDENCE_LABELS[evidence.kind] ?? evidence.kind}</span>
@@ -48,7 +48,7 @@ export function EvidenceThumbnail({ evidence }: Props) {
           <button
             type="button"
             onClick={() => setOpen(false)}
-            aria-label="Cerrar evidencia"
+            aria-label="Cerrar la foto"
             className="absolute top-4 right-4 z-10 flex h-11 w-11 sm:h-8 sm:w-8 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
           >
             <X size={18} />
@@ -56,7 +56,7 @@ export function EvidenceThumbnail({ evidence }: Props) {
 
           <div className="relative max-h-[90vh] max-w-[90vw]" onClick={(e) => e.stopPropagation()}>
             {evidence.filePath ? (
-              <Image unoptimized src={`/api/tae/evidence/${evidence.id}`} alt={EVIDENCE_LABELS[evidence.kind] ?? "Evidencia"} width={1200} height={800} className="max-h-[85vh] w-auto rounded object-contain" />
+              <Image unoptimized src={`/api/tae/evidence/${evidence.id}`} alt={EVIDENCE_LABELS[evidence.kind] ?? "Foto de la carga"} width={1200} height={800} className="max-h-[85vh] w-auto rounded object-contain" />
             ) : (
               <div className="flex h-64 w-96 items-center justify-center bg-(--color-surface) text-(--color-text-muted)">Sin imagen disponible</div>
             )}

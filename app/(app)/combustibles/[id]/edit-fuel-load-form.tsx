@@ -18,6 +18,7 @@ import { toast } from "@/lib/toast"
 import { deleteFuelLoadAction, registerFuelLoadAction } from "../actions"
 import { formatCLP } from "@/lib/utils"
 import { FUEL_LOAD_STATUS_LABELS } from "@/lib/combustibles/labels"
+import { FUEL_PATHS } from "@/lib/combustibles/routes"
 
 interface LoadData {
   id: string
@@ -80,7 +81,7 @@ export function EditFuelLoadForm({ load, showCosts, canWrite, vehicles, supplier
   useEffect(() => {
     if (state.ok) {
       toast.success(state.message)
-      router.push("/combustibles/facturas")
+      router.push(FUEL_PATHS.pagos)
     } else if (state.message && !state.ok) {
       toast.error(state.message)
     }
@@ -103,7 +104,7 @@ export function EditFuelLoadForm({ load, showCosts, canWrite, vehicles, supplier
     const result = await deleteFuelLoadAction(load.id)
     if (result.ok) {
       toast.success(result.message)
-      router.push("/combustibles/facturas")
+      router.push(FUEL_PATHS.pagos)
     } else {
       toast.error(result.message)
     }

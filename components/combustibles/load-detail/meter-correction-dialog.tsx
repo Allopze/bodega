@@ -17,7 +17,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { updateTaeMeterReadingAction } from "../actions"
+import { updateTaeMeterReadingAction } from "@/app/(app)/combustibles/tae/actions"
 
 export function MeterCorrectionDialog({
   submissionId,
@@ -78,7 +78,7 @@ export function MeterCorrectionDialog({
         <DialogHeader>
           <DialogTitle>Corregir lectura del medidor</DialogTitle>
           <DialogDescription>
-            Confirma o corrige la lectura y deja el motivo. Si existe una sugerencia OCR, no se aplica hasta guardar esta confirmación.
+            Confirma o corrige la lectura y deja el motivo. Si la foto trae una lectura sugerida automáticamente, no se aplica hasta que guardes esta corrección.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">

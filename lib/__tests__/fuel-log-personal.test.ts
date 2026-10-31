@@ -20,10 +20,18 @@ vi.mock("@/db", () => ({
   },
 }))
 
+// Los cargadores de la ficha miran permisos con `can`; la sesión de la prueba ya trae los suyos.
+vi.mock("@/lib/auth/can", async () => {
+  const scope = await import("@/lib/auth/scope")
+  const has = (session: Session | null, permission: string) => session?.user?.permissions?.includes(permission) ?? false
+  return { can: has, canAny: (session: Session | null, ...permissions: string[]) => permissions.some((permission) => has(session, permission)), isGlobalRole: scope.isGlobalRole }
+})
+
 await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
 const { getFuelLogRows, getFuelLogTotal, getFuelLogRowsBySelection, operationPerformanceUnitCode } = await import("@/lib/combustibles/fuel-log")
 const { getTaeGroupedTotals } = await import("@/lib/combustibles/tae-dashboard")
+const { loadTerrenoDetail, loadPlanillaDetail, loadFacturaDetail, loadHistory } = await import("@/lib/combustibles/fuel-log-detail")
 
 /**
  * D-10 (datos personales) y D-11 (filtro de unidad de rendimiento) de la
@@ -144,6 +152,194 @@ describe("bitácora: datos personales y unidad de rendimiento (PostgreSQL)", () 
 
     it("en la vista unificada el filtro conserva las filas del log operacional", async () => {
       expect(await getFuelLogTotal(withPersonal(), { performanceUnit: "km_per_liter" })).toBeGreaterThanOrEqual(1)
+    })
+  })
+})
+
+/**
+ * La ficha única de una carga (`/combustibles/cargas/[origen]/[id]`): lo que lee
+ * cada cargador respeta el alcance de faena y los permisos de datos personales,
+ * costos y auditoría ANTES de llegar a la pantalla (D-10, P-01): lo que no se
+ * puede ver no sale de la consulta.
+ */
+describe("ficha de una carga: alcance y datos sensibles (PostgreSQL)", () => {
+  const worksiteId = nanoid()
+  const otherWorksiteId = nanoid()
+  const userId = nanoid()
+  const auditorId = nanoid()
+  const productId = nanoid()
+  const supplierId = nanoid()
+  const equipmentTypeId = nanoid()
+  const vehicleId = nanoid()
+  const batchId = nanoid()
+  const taeId = nanoid()
+  const recordId = nanoid()
+  const recordNoWorksiteId = nanoid()
+  const invoiceId = nanoid()
+  const equipmentLoadId = nanoid()
+  const markId = nanoid()
+
+  const sessionFor = (permissions: string[], options: { global?: boolean; worksiteIds?: string[] } = {}): Session => ({
+    user: {
+      id: userId, name: "U", email: "u@example.com", roles: [], permissions: ["combustibles:view", ...permissions],
+      worksiteIds: options.worksiteIds ?? [worksiteId], primaryWorksiteId: null, avatarColor: null, isActive: true, isGlobal: options.global ?? false,
+    },
+    expires: "2099-01-01T00:00:00.000Z",
+  } as unknown as Session)
+
+  beforeAll(async () => {
+    await inMemoryDb.insert(schema.worksites).values([
+      { id: worksiteId, name: "Faena Ficha", code: `FF-${nanoid().slice(0, 8)}`, isActive: true },
+      { id: otherWorksiteId, name: "Faena Ajena", code: `FX-${nanoid().slice(0, 8)}`, isActive: true },
+    ])
+    await inMemoryDb.insert(schema.users).values([
+      { id: userId, name: "Ana Revisora", email: `ana-${nanoid()}@example.com`, hashedPassword: "x", isActive: true },
+      { id: auditorId, name: "Luis Auditor", email: `luis-${nanoid()}@example.com`, hashedPassword: "x", isActive: true },
+    ])
+    await inMemoryDb.insert(schema.fuelProducts).values({ id: productId, code: `D-${nanoid().slice(0, 6)}`, name: "Diésel", category: "diesel", unit: "liter" })
+    await inMemoryDb.insert(schema.fuelSuppliers).values({ id: supplierId, name: `Copec ${nanoid().slice(0, 4)}` })
+    await inMemoryDb.insert(schema.fuelEquipmentTypes).values({ id: equipmentTypeId, slug: `cam-${nanoid().slice(0, 6)}`, name: "Camión" })
+    await inMemoryDb.insert(schema.fuelVehicles).values({ id: vehicleId, plate: `FI${nanoid().slice(0, 4).toUpperCase()}`, code: "CA-14", type: "camion", equipmentTypeId, worksiteId, isActive: true })
+    await inMemoryDb.insert(schema.fuelTaeSubmissions).values({
+      id: taeId, clientSubmissionId: nanoid(), source: "internal_app", publicResultToken: nanoid(32), registeredBy: userId,
+      worksiteId, vehicleId, productId, equipmentCodeSnapshot: "CA-14", loadedAt: "2026-10-05T12:00:00.000Z", submittedAt: "2026-10-05T12:00:00.000Z",
+      driverNameSnapshot: "Marcelo Conductor", supervisorNameSnapshot: "Rodrigo Supervisor", meterType: "odometer", meterReading: 182310, liters: 185, status: "observed", reviewNote: "Falta la foto",
+    })
+    await inMemoryDb.insert(schema.fuelTaeEvidence).values([
+      { id: nanoid(), submissionId: taeId, kind: "odometer", fileName: "tablero.jpg" },
+      { id: nanoid(), submissionId: taeId, kind: "liter_meter", fileName: "medidor.jpg" },
+    ])
+    await inMemoryDb.insert(schema.fuelEquipmentLoads).values({
+      id: equipmentLoadId, source: "field", taeSubmissionId: taeId, vehicleId, worksiteId, occurredAt: "2026-10-05T12:00:00.000Z", month: "2026-10", liters: 185,
+      reviewStatus: "flagged", flagReasons: ["meter_regression"],
+    })
+    await inMemoryDb.insert(schema.statusHistory).values([
+      { id: nanoid(), entityType: "fuel_tae_submission", entityId: taeId, fromStatus: null, toStatus: "submitted", changedBy: null },
+      { id: nanoid(), entityType: "fuel_tae_submission", entityId: taeId, fromStatus: "submitted", toStatus: "observed", changedBy: userId, reason: "Falta la foto" },
+    ])
+    await inMemoryDb.insert(schema.fuelReviewMarks).values({ id: markId, entityType: "fuel_tae_submission", entityId: taeId, worksiteId, markedBy: auditorId, notes: "Revisar los litros", status: "open" })
+    await inMemoryDb.insert(schema.auditLog).values([
+      { id: nanoid(), userId, userEmail: "u@example.com", action: "update", entityType: "fuel_tae_submission", entityId: taeId, oldState: '{"meterReading":1000}', newState: '{"meterReading":182310}', reason: "Corrección" },
+      { id: nanoid(), userId, userEmail: "u@example.com", action: "update", entityType: "fuel_load", entityId: invoiceId, oldState: '{"liters":100,"totalAmount":119000}', newState: '{"liters":120,"totalAmount":142800}' },
+    ])
+    await inMemoryDb.insert(schema.fuelOperationBatches).values({
+      id: batchId, archivoNombre: "consolidado.xlsx", hashArchivo: nanoid(), estado: "importado",
+      periodoDesde: "2026-10-01", periodoHasta: "2026-10-31", importadoPor: userId, totalFilas: 10, filasInvalidas: 2,
+    })
+    await inMemoryDb.insert(schema.fuelOperationRecords).values([
+      {
+        id: recordId, batchId, worksiteId, vehicleId, plate: "OPKM11", code: "CA-14", fecha: "2026-10-10", horaCarga: "08:30", liters: 50, operador: "Pedro Operador", supervisor: "Marta Jefa",
+        monto: 55000, precioLitro: 1100, proveedorNombre: "Copec", rendimiento: 3.1, tipoRendimiento: "km_lt", horometro: 5000, medidoPor: "km",
+        rawRow: { FECHA: "2026-10-10", OPERADOR: "Pedro Operador", "MONTO TOTAL": 55000, PATENTE: "OPKM11" },
+      },
+      { id: recordNoWorksiteId, batchId, worksiteId: null, plate: "OPSIN1", fecha: "2026-10-11", liters: 30 },
+    ])
+    await inMemoryDb.insert(schema.fuelLoads).values({
+      id: invoiceId, loadDate: "2026-10-08", month: "2026-10", serviceType: "TCT", vehicleId, fuelSupplierId: supplierId, worksiteId,
+      product: "PETROLEO DIESEL", productId, liters: 120, baseAmount: 1000, totalAmount: 1190, createdBy: userId,
+    })
+  })
+
+  describe("registro en terreno", () => {
+    it("con view_personal trae los nombres y las fotos; la revisión de la plataforma y el pedido abierto", async () => {
+      const detail = await loadTerrenoDetail(sessionFor(["combustibles:view_personal", "combustibles:tae_view"]), taeId)
+      expect(detail).not.toBeNull()
+      expect(detail).toMatchObject({ origen: "terreno", worksiteName: "Faena Ficha", driverName: "Marcelo Conductor", supervisorName: "Rodrigo Supervisor", evidenceCount: 2, registeredByName: "Ana Revisora" })
+      expect(detail!.evidence.map((item) => item.kind).sort()).toEqual(["liter_meter", "odometer"])
+      expect(detail!.review).toMatchObject({ equipmentLoadId, reviewStatus: "flagged", flagReasons: ["meter_regression"] })
+      expect(detail!.openRequest).toMatchObject({ id: markId, note: "Revisar los litros", markedByName: "Luis Auditor" })
+      expect(detail!.equipmentLabel).toContain("CA-14")
+    })
+
+    it("sin view_personal los nombres y las fotos ni salen de la consulta (el conteo sí)", async () => {
+      const detail = await loadTerrenoDetail(sessionFor(["combustibles:tae_view"]), taeId)
+      expect(detail!.driverName).toBeNull()
+      expect(detail!.supervisorName).toBeNull()
+      expect(detail!.evidence).toEqual([])
+      expect(detail!.evidenceCount).toBe(2)
+      expect(JSON.stringify(detail)).not.toMatch(/Marcelo|Rodrigo|tablero\.jpg/)
+    })
+
+    it("una carga fuera del alcance de faenas, o que no existe, es nula (404), igual en los dos casos", async () => {
+      expect(await loadTerrenoDetail(sessionFor([], { worksiteIds: [otherWorksiteId] }), taeId)).toBeNull()
+      expect(await loadTerrenoDetail(sessionFor([]), "no-existe")).toBeNull()
+      expect(await loadTerrenoDetail(sessionFor([], { global: true, worksiteIds: [] }), taeId)).not.toBeNull()
+    })
+
+    it("la línea de tiempo cuenta el alta, el pedido y el estado sin repetir el estado inicial; la auditoría sólo con view_audit", async () => {
+      const without = await loadTerrenoDetail(sessionFor(["combustibles:tae_view"]), taeId)
+      const texts = without!.timeline.map((event) => event.text)
+      expect(texts).toContain("Ana Revisora registró la carga desde la app")
+      expect(texts).toContain("Ana Revisora dejó la carga con observación")
+      expect(texts).toContain("Luis Auditor pidió que la revisen")
+      expect(texts).toContain("La plataforma la dejó por decidir: lectura de medidor menor a la anterior")
+      expect(texts.filter((text) => /por validar/i.test(text))).toEqual([])
+      expect(texts.some((text) => text.includes("corrigió la lectura"))).toBe(false)
+
+      const withAudit = await loadTerrenoDetail(sessionFor(["combustibles:tae_view", "combustibles:view_audit"]), taeId)
+      expect(withAudit!.timeline.map((event) => event.text)).toContain("Ana Revisora corrigió la lectura del medidor de 1.000 a 182.310")
+    })
+  })
+
+  describe("fila de la planilla", () => {
+    it("trae el archivo, los campos de la planilla y oculta personas y montos sin permiso", async () => {
+      const detail = await loadPlanillaDetail(sessionFor([]), recordId)
+      expect(detail).toMatchObject({ origen: "planilla", canViewPersonal: false, operador: null, supervisor: null, costs: null })
+      expect(detail!.batch).toMatchObject({ fileName: "consolidado.xlsx", importedByName: "Ana Revisora", totalFilas: 10, filasInvalidas: 2 })
+      expect(detail!.record).toMatchObject({ fecha: "2026-10-10", horaCarga: "08:30", liters: 50, horometro: 5000, medidoPor: "km", tipoRendimiento: "km_lt" })
+      const raw = JSON.stringify(detail!.rawRow)
+      expect(raw).not.toMatch(/Pedro|55000|OPERADOR|MONTO/)
+      expect(raw).toContain("PATENTE")
+    })
+
+    it("con view_personal y view_costs trae los nombres y los montos", async () => {
+      const detail = await loadPlanillaDetail(sessionFor(["combustibles:view_personal", "combustibles:view_costs"]), recordId)
+      expect(detail).toMatchObject({ canViewPersonal: true, operador: "Pedro Operador", supervisor: "Marta Jefa", costs: { precioLitro: 1100, monto: 55000 } })
+      expect(JSON.stringify(detail!.rawRow)).toContain("Pedro Operador")
+    })
+
+    it("una fila sin faena vinculada sólo la ve un rol global; una de otra faena no la ve quien no la tiene", async () => {
+      expect(await loadPlanillaDetail(sessionFor([]), recordNoWorksiteId)).toBeNull()
+      expect(await loadPlanillaDetail(sessionFor([], { global: true, worksiteIds: [] }), recordNoWorksiteId)).not.toBeNull()
+      expect(await loadPlanillaDetail(sessionFor([], { worksiteIds: [otherWorksiteId] }), recordId)).toBeNull()
+    })
+  })
+
+  describe("factura", () => {
+    it("sin view_costs queda en lectura y la línea de tiempo no menciona montos", async () => {
+      const detail = await loadFacturaDetail(sessionFor(["combustibles:view_audit"]), invoiceId)
+      expect(detail).toMatchObject({ origen: "factura", canViewCosts: false, supplierName: expect.stringContaining("Copec") })
+      expect(detail!.load).toMatchObject({ baseAmount: 0, iecTotal: 0, ivaAmount: 0, totalAmount: 0, liters: 120 })
+      const modified = detail!.timeline.find((event) => event.text.includes("modificó"))
+      expect(modified?.text).toBe("Ana Revisora modificó los litros (de 100 a 120)")
+    })
+
+    it("con view_costs y view_audit la línea de tiempo suma los montos", async () => {
+      const detail = await loadFacturaDetail(sessionFor(["combustibles:view_costs", "combustibles:view_audit"]), invoiceId)
+      expect(detail!.canViewCosts).toBe(true)
+      expect(detail!.load.totalAmount).toBe(1190)
+      expect(detail!.timeline.find((event) => event.text.includes("modificó"))?.text).toBe("Ana Revisora modificó los litros (de 100 a 120) y los montos")
+    })
+
+    it("fuera de la faena, 404", async () => {
+      expect(await loadFacturaDetail(sessionFor([], { worksiteIds: [otherWorksiteId] }), invoiceId)).toBeNull()
+    })
+  })
+
+  describe("historial campo a campo", () => {
+    it("trae la auditoría de la carga, sin montos para quien no los ve", async () => {
+      const hidden = await loadHistory(sessionFor(["combustibles:view_audit"]), "factura", invoiceId)
+      expect(hidden!.audit).toHaveLength(1)
+      expect(hidden!.audit[0]!.newState).not.toContain("totalAmount")
+      expect(hidden!.audit[0]!.newState).toContain("liters")
+      const visible = await loadHistory(sessionFor(["combustibles:view_audit", "combustibles:view_costs"]), "factura", invoiceId)
+      expect(visible!.audit[0]!.newState).toContain("totalAmount")
+    })
+
+    it("incluye la auditoría de la fila proyectada y respeta el alcance", async () => {
+      const history = await loadHistory(sessionFor(["combustibles:view_audit", "combustibles:tae_view"]), "terreno", taeId)
+      expect(history!.audit.map((row) => row.entityType)).toContain("fuel_tae_submission")
+      expect(await loadHistory(sessionFor(["combustibles:view_audit"], { worksiteIds: [otherWorksiteId] }), "terreno", taeId)).toBeNull()
     })
   })
 })

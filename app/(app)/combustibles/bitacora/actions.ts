@@ -1,160 +1,69 @@
 "use server"
 
-import { eq, sql } from "drizzle-orm"
 import { xlsxToBase64 } from "@/lib/reports/export-module/excel-builder"
-import { db } from "@/db"
-import {
-  fuelLoads,
-  fuelOperationRecords,
-  fuelTaeSubmissions,
-  worksites,
-} from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
-import { canAccessWorksite } from "@/lib/auth/scope"
 import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
-import { logger } from "@/lib/logger"
 import {
-  getUserIdsWithPermissionForWorksite,
-  notifyAfterCommit,
-  notifyManyUser,
-} from "@/lib/services/notifications"
-import { canViewFuelPersonalData, getFuelLogExportRows, getFuelLogRowsBySelection, FUEL_LOG_SOURCE_LABEL, fuelLogEntityType, type FuelLogFilters, type FuelLogRow, type FuelLogSource } from "@/lib/combustibles/fuel-log"
+  canViewFuelPersonalData,
+  describeFuelLogFilters,
+  getFuelLogExportRows,
+  getFuelLogRowsBySelection,
+  type FuelLogFilters,
+  type FuelLogRow,
+  type FuelLogSource,
+} from "@/lib/combustibles/fuel-log"
+import { FUEL_LOAD_ORIGIN_LABEL, fuelLogPending } from "@/lib/combustibles/fuel-log-shared"
+import { sanitizeFuelLogFilters } from "@/lib/combustibles/fuel-log-params"
+import {
+  requestLoadReview,
+  resolveFuelLogEntity,
+  withdrawLoadReviewRequest,
+  type FuelLogEntityContext,
+} from "@/lib/combustibles/fuel-log-review-request"
+import { FUEL_LOAD_STATUS_LABELS, TAE_STATUS_LABELS } from "@/lib/combustibles/labels"
 import { addExportMetadataSheet } from "@/lib/combustibles/xlsx-utils"
 import { todayInChile } from "@/lib/utils"
 import { FUEL_PATHS } from "@/lib/combustibles/routes"
-import { fuelInboxHref } from "@/lib/combustibles/routes"
+import { revalidateFuel } from "@/lib/combustibles/revalidate"
 
-/** Resuelve el worksiteId y un label descriptivo para una entidad de la bitácora.
- *  Exportada: también la usa el historial de auditoría para acotar por faena. */
+/** Resuelve la faena y un rótulo legible de una entidad de Cargas. Delega en `lib/`: este archivo sólo puede exportar acciones. */
 export async function resolveEntityWorksite(
   entityType: string,
   entityId: string,
 ): Promise<{ worksiteId: string; worksiteName: string | null; label: string } | null> {
-  if (entityType === "fuel_tae_submission") {
-    const row = await db.query.fuelTaeSubmissions.findFirst({
-      where: eq(fuelTaeSubmissions.id, entityId),
-      columns: { worksiteId: true, equipmentCodeSnapshot: true, plateSnapshot: true, liters: true },
-    })
-    if (!row) return null
-    const ws = await db.query.worksites.findFirst({
-      where: eq(worksites.id, row.worksiteId),
-      columns: { name: true },
-    })
-    return {
-      worksiteId: row.worksiteId,
-      worksiteName: ws?.name ?? null,
-      label: `${row.equipmentCodeSnapshot ?? row.plateSnapshot} · ${Number(row.liters).toLocaleString("es-CL")} L`,
-    }
-  }
-  if (entityType === "fuel_load") {
-    const row = await db.query.fuelLoads.findFirst({
-      where: eq(fuelLoads.id, entityId),
-      columns: { worksiteId: true, liters: true },
-      with: { vehicle: { columns: { code: true, plate: true } } },
-    })
-    if (!row) return null
-    const ws = await db.query.worksites.findFirst({
-      where: eq(worksites.id, row.worksiteId),
-      columns: { name: true },
-    })
-    const vehicleLabel = row.vehicle ? (row.vehicle.code ?? row.vehicle.plate) : "—"
-    return {
-      worksiteId: row.worksiteId,
-      worksiteName: ws?.name ?? null,
-      label: `${vehicleLabel} · ${Number(row.liters).toLocaleString("es-CL")} L`,
-    }
-  }
-  if (entityType === "fuel_operation_record") {
-    const row = await db.query.fuelOperationRecords.findFirst({
-      where: eq(fuelOperationRecords.id, entityId),
-      columns: { worksiteId: true, plate: true, code: true, liters: true },
-    })
-    if (!row?.worksiteId) return null
-    const ws = await db.query.worksites.findFirst({
-      where: eq(worksites.id, row.worksiteId),
-      columns: { name: true },
-    })
-    return {
-      worksiteId: row.worksiteId,
-      worksiteName: ws?.name ?? null,
-      label: `${row.code ?? row.plate} · ${Number(row.liters).toLocaleString("es-CL")} L`,
-    }
-  }
-  return null
+  const ctx: FuelLogEntityContext | null = await resolveFuelLogEntity(entityType, entityId)
+  return ctx && ctx.worksiteId ? { worksiteId: ctx.worksiteId, worksiteName: ctx.worksiteName, label: ctx.label } : null
 }
 
+type RequestReviewResult = { ok: true; markId: string } | { ok: false; message: string }
+
 /**
- * Agrega o quita una marca de revisión en una fila de la bitácora.
- * Si ya existe una marca con esa `entityType`+`entityId`, se elimina; si no, se crea.
+ * «Pedir que la revisen»: abre un pedido de revisión con nota (10 a 500
+ * caracteres) sobre una carga. Llega a la bandeja «Por revisar». Un pedido ya
+ * abierto no se duplica; para volver a pedir, primero se retira o se resuelve.
  */
-export async function toggleReviewMarkAction(source: FuelLogSource, entityId: string) {
+export async function requestReviewAction(source: FuelLogSource, entityId: string, note: string): Promise<RequestReviewResult> {
   let session
   try { session = await requirePermission("combustibles:view", FUEL_PATHS.cargas) }
-  catch { return { ok: false as const, message: "Sin permisos" } }
+  catch { return { ok: false, message: "No tienes permiso para pedir revisiones." } }
 
-  const entityType = fuelLogEntityType(source)
+  const result = await requestLoadReview(session, { source, entityId, note })
+  if (!result.ok) return { ok: false, message: result.message }
+  revalidateFuel()
+  return { ok: true, markId: result.markId }
+}
 
-  // `combustibles:view` no acota por faena: sin esto, cualquier usuario con
-  // el permiso podía marcar/desmarcar (y disparar la notificación de) un
-  // registro de una faena fuera de su alcance con sólo conocer su id.
-  const entityCtx = await resolveEntityWorksite(entityType, entityId)
-  if (!entityCtx) return { ok: false as const, message: "Registro no encontrado" }
-  if (!canAccessWorksite(session, entityCtx.worksiteId)) return { ok: false as const, message: "No tienes acceso a esta faena" }
+/** Retira un pedido de revisión abierto. Lo puede hacer quien lo pidió o quien decide sobre las cargas. */
+export async function withdrawReviewRequestAction(markId: string): Promise<RequestReviewResult> {
+  let session
+  try { session = await requirePermission("combustibles:view", FUEL_PATHS.cargas) }
+  catch { return { ok: false, message: "No tienes permiso para retirar pedidos de revisión." } }
 
-  // Buscar si existe una marca para esta entidad
-  const [existingRow] = await db.execute(sql`
-    select id from fuel_review_marks
-    where entity_type = ${entityType} and entity_id = ${entityId}
-    limit 1
-  `)
-
-  if (existingRow && (existingRow as { id: string }).id) {
-    // Ya existe → eliminar (toggle off)
-    await db.execute(sql`
-      delete from fuel_review_marks
-      where entity_type = ${entityType} and entity_id = ${entityId}
-    `)
-    await recordAudit({
-      userId: session.user.id, userEmail: session.user.email ?? undefined,
-      action: "delete", entityType, entityId,
-    })
-    return { ok: true as const, marked: false as const }
-  }
-
-  // No existe → insertar (toggle on)
-  const id = nanoid()
-  await db.execute(sql`
-    insert into fuel_review_marks (id, entity_type, entity_id, marked_by, created_at)
-    values (${id}, ${entityType}, ${entityId}, ${session.user.id}, now())
-  `)
-  await recordAudit({
-    userId: session.user.id, userEmail: session.user.email ?? undefined,
-    action: "create", entityType, entityId,
-  })
-
-  // Notificar al responsable de la faena cuando se marca un registro
-  // (ya resuelto arriba para el chequeo de alcance — se reutiliza).
-  notifyAfterCommit(async () => {
-    try {
-      const targetIds = await getUserIdsWithPermissionForWorksite("combustibles:tae_review", entityCtx.worksiteId)
-      if (targetIds.length === 0) return
-
-      await notifyManyUser(targetIds, {
-        type: "system_alert",
-        title: "Registro marcado para revisión",
-        body: `${entityCtx.label} · ${entityCtx.worksiteName ?? "Faena sin nombre"}`,
-        entityType,
-        entityId,
-        entityHref: fuelInboxHref({ tipo: "pedido" }),
-        dedupeKey: `review-mark:${entityId}`,
-      })
-    } catch (err) {
-      logger.error("[review-mark] notification failed", err)
-    }
-  })
-
-  return { ok: true as const, marked: true as const, markId: id }
+  const result = await withdrawLoadReviewRequest(session, markId)
+  if (!result.ok) return { ok: false, message: result.message }
+  revalidateFuel()
+  return { ok: true, markId: result.markId }
 }
 
 async function buildWorkbook(rows: FuelLogRow[], includePersonal: boolean) {
@@ -163,7 +72,7 @@ async function buildWorkbook(rows: FuelLogRow[], includePersonal: boolean) {
   const ws = wb.addWorksheet("Cargas de combustible")
   ws.columns = [
     { header: "Fecha y hora", key: "occurredAt", width: 20 },
-    { header: "Fuente", key: "source", width: 16 },
+    { header: "Cómo llegó", key: "origin", width: 26 },
     { header: "Faena", key: "worksiteName", width: 20 },
     { header: "Proveedor", key: "supplierName", width: 18 },
     { header: "Lugar de carga", key: "loadingPointName", width: 20 },
@@ -184,10 +93,10 @@ async function buildWorkbook(rows: FuelLogRow[], includePersonal: boolean) {
     { header: "Sello retirado", key: "sealRemoved", width: 14 },
     { header: "Sello instalado", key: "sealInstalled", width: 14 },
     { header: "Evidencias", key: "evidenceCount", width: 12 },
-    { header: "Marcado revisión", key: "reviewMark", width: 14 },
-    { header: "Nota de revisión", key: "reviewMarkNotes", width: 24 },
+    { header: "Pendiente", key: "pending", width: 26 },
+    { header: "Nota del pedido de revisión", key: "reviewMarkNotes", width: 30 },
     { header: "Observaciones", key: "notes", width: 30 },
-    { header: "Estado", key: "statusLabel", width: 14 },
+    { header: "Estado", key: "statusLabel", width: 16 },
     { header: "Creado por", key: "createdByName", width: 18 },
     { header: "Modificado por", key: "updatedByName", width: 18 },
     { header: "Creado", key: "createdAt", width: 20 },
@@ -197,7 +106,9 @@ async function buildWorkbook(rows: FuelLogRow[], includePersonal: boolean) {
   for (const row of rows) {
     ws.addRow({
       ...row,
-      source: FUEL_LOG_SOURCE_LABEL[row.source],
+      origin: FUEL_LOAD_ORIGIN_LABEL[row.origin],
+      pending: fuelLogPending(row).map((item) => item.label).join(" · "),
+      statusLabel: exportStatusLabel(row),
       liters: Number(row.liters),
       meterReading: row.meterReading == null ? null : Number(row.meterReading),
       performanceValue: row.performanceValue == null ? null : Number(row.performanceValue),
@@ -206,18 +117,26 @@ async function buildWorkbook(rows: FuelLogRow[], includePersonal: boolean) {
   return wb
 }
 
+/** El estado en palabras (el crudo, `submitted` o `importado`, no se exporta). */
+function exportStatusLabel(row: FuelLogRow): string {
+  if (row.source === "operation_manual") return "Importada"
+  const meta = row.source === "tae_pwa" ? TAE_STATUS_LABELS[row.statusLabel ?? ""] : FUEL_LOAD_STATUS_LABELS[row.statusLabel ?? ""]
+  return meta?.label ?? row.statusLabel ?? ""
+}
+
 function exportFileName(prefix: string) {
   return `${prefix}_${todayInChile()}.xlsx`
 }
 
-export async function exportFuelLogAction(filters: FuelLogFilters) {
+export async function exportFuelLogAction(rawFilters: FuelLogFilters) {
   let session
   try { session = await requirePermission("combustibles:export", FUEL_PATHS.cargas) }
   catch { return { ok: false as const, message: "Sin permisos para exportar" } }
+  const filters = sanitizeFuelLogFilters(rawFilters)
 
   const { rows, truncated } = await getFuelLogExportRows(session, filters)
   const wb = await buildWorkbook(rows, canViewFuelPersonalData(session))
-  addExportMetadataSheet(wb, session, { filters, rowCount: rows.length, from: filters.from, to: filters.to })
+  addExportMetadataSheet(wb, session, { filters: await describeFuelLogFilters(filters), rowCount: rows.length, from: filters.from, to: filters.to })
   const base64 = await xlsxToBase64(wb)
   await recordAudit({
     userId: session.user.id, userEmail: session.user.email ?? undefined, action: "export",

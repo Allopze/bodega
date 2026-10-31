@@ -2,7 +2,7 @@
 
 import { safeActionMessage } from "@/lib/action-error"
 
-import { revalidatePath } from "next/cache"
+import { z } from "zod"
 import { xlsxToBase64 } from "@/lib/reports/export-module/excel-builder"
 import { and, desc, eq, ilike, or, sql } from "drizzle-orm"
 import { isNetworkError } from "@/lib/network-error"
@@ -25,6 +25,14 @@ import { FUEL_PATHS } from "@/lib/combustibles/routes"
 import { revalidateFuel } from "@/lib/combustibles/revalidate"
 
 const MAX_TAE_EXPORT_ROWS = 10_000
+
+/**
+ * Validar una carga que está bien no pide explicación: «Confirmar sólo lo que no se
+ * deshace». Observar y anular sí piden motivo (el esquema compartido pide 4 o más).
+ */
+const reviewActionSchema = taeReviewSchema
+  .extend({ reviewNote: z.string().trim().max(1000).optional().default("") })
+  .refine((value) => value.status === "validated" || value.reviewNote.length >= 4, { message: "Indica el motivo o resolución", path: ["reviewNote"] })
 
 export async function createTaePublicLinkAction(input: { worksiteId: string; loadingPointId: string; label: string }) {
   const guard = await guardPermission("combustibles:tae_manage_config", FUEL_PATHS.ajustesPuntos)
@@ -109,17 +117,18 @@ export async function setTaeLoadingPointStorageAction(id: string, storageLocatio
   return { ok: true, message: storageLocationId ? "Vasija asignada" : "Vasija desvinculada" }
 }
 
-export async function reviewTaeSubmissionAction(input: { id: string; expectedStatus: "submitted" | "observed" | "validated" | "voided"; status: "observed" | "validated" | "voided"; reviewNote: string }) {
+export async function reviewTaeSubmissionAction(input: { id: string; expectedStatus: "submitted" | "observed" | "validated" | "voided"; status: "observed" | "validated" | "voided"; reviewNote?: string }) {
   const guard = await guardPermission("combustibles:tae_review", FUEL_PATHS.cargas)
   if (guard.error) return guard.error
-  const parsed = taeReviewSchema.safeParse(input)
+  const parsed = reviewActionSchema.safeParse(input)
   if (!parsed.success) return { ok: false, message: parsed.error.issues[0]?.message ?? "Datos inválidos" }
   const submission = await db.query.fuelTaeSubmissions.findFirst({ where: eq(fuelTaeSubmissions.id, parsed.data.id) })
   if (!submission || !canAccessWorksite(guard.session, submission.worksiteId)) return { ok: false, message: "Carga no encontrada" }
   try {
-    await reviewTaeSubmission({ ...parsed.data, userId: guard.session.user.id })
+    await reviewTaeSubmission({ ...parsed.data, reviewNote: parsed.data.reviewNote || null, userId: guard.session.user.id })
     revalidateFuel()
-    return { ok: true, message: "Carga TAE actualizada" }
+    const message = parsed.data.status === "validated" ? "Carga validada" : parsed.data.status === "observed" ? "Carga con observación" : "Carga anulada"
+    return { ok: true, message }
   } catch (error) {
     logger.error("[reviewTaeSubmissionAction]", error)
     const msg = error instanceof Error && isNetworkError(error) ? "Sin conexión al servidor. Verifica tu conexión a internet e inténtalo nuevamente." : safeActionMessage(error, "No se pudo actualizar la carga")
@@ -193,7 +202,6 @@ export async function updateTaeMeterReadingAction(input: {
   }
 
   revalidateFuel()
-  revalidatePath(`/combustibles/tae/${parsed.data.id}`)
   return { ok: true, message: nextStatus === "observed" && submission.status === "validated" ? "Lectura actualizada; la carga volvió a observada" : "Lectura actualizada" }
 }
 
@@ -215,7 +223,8 @@ export async function exportTaeSubmissionsXlsxAction(filters: TaeExportFilters =
     filters.loadingPointId ? eq(fuelTaeSubmissions.loadingPointId, filters.loadingPointId) : undefined,
     status ? eq(fuelTaeSubmissions.status, status) : undefined,
     filters.seal === "missing" ? sql`(${fuelTaeSubmissions.removedSealNumber} is null or btrim(${fuelTaeSubmissions.removedSealNumber}) = '' or ${fuelTaeSubmissions.installedSealNumber} is null or btrim(${fuelTaeSubmissions.installedSealNumber}) = '')` : undefined,
-    filters.evidence === "missing" ? sql`(select count(distinct ${fuelTaeEvidence.kind}) from ${fuelTaeEvidence} where ${fuelTaeEvidence.submissionId} = ${fuelTaeSubmissions.id}) < 4` : undefined,
+    // Una carga registrada después (fecha pasada) tiene las fotos opcionales: «sin fotos» no es un defecto en ella.
+    filters.evidence === "missing" ? sql`(${fuelTaeSubmissions.loadedAtSource} <> 'backdated' and (select count(distinct ${fuelTaeEvidence.kind}) from ${fuelTaeEvidence} where ${fuelTaeEvidence.submissionId} = ${fuelTaeSubmissions.id}) < 4)` : undefined,
     /^\d{4}-\d{2}-\d{2}$/.test(filters.from ?? "") ? sql`(${fuelTaeSubmissions.loadedAt} at time zone 'America/Santiago')::date >= ${filters.from}::date` : undefined,
     /^\d{4}-\d{2}-\d{2}$/.test(filters.to ?? "") ? sql`(${fuelTaeSubmissions.loadedAt} at time zone 'America/Santiago')::date <= ${filters.to}::date` : undefined,
     q ? or(
@@ -235,7 +244,7 @@ export async function exportTaeSubmissionsXlsxAction(filters: TaeExportFilters =
 
   const ExcelJS = await import("exceljs")
   const wb = new ExcelJS.Workbook()
-  const ws = wb.addWorksheet("Control TAE")
+  const ws = wb.addWorksheet("Cargas en terreno")
 
   ws.columns = [
     { header: "Fecha carga", key: "loadedAt", width: 20 },
@@ -294,7 +303,7 @@ export async function exportTaeSubmissionsXlsxAction(filters: TaeExportFilters =
     ok: true as const,
     data: {
       base64,
-      filename: `control_tae_${todayInChile()}.xlsx`,
+      filename: `cargas_en_terreno_${todayInChile()}.xlsx`,
       truncated,
       rowLimit: MAX_TAE_EXPORT_ROWS,
     },
