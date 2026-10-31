@@ -1,7 +1,14 @@
 import sharp from "sharp"
+import type { z } from "zod"
 import { validateFileBuffer, MimeType } from "@/lib/file-validation"
 import { extractMeterReading, type OcrMeterResult } from "@/lib/services/tae-ocr"
-import { taeEvidenceKinds, taePublicSubmissionSchema, type TaePublicSubmissionInput } from "@/lib/validation/fuel-tae"
+import {
+  internalFieldLoadSchema,
+  taeEvidenceKinds,
+  taePublicSubmissionSchema,
+  type InternalFieldLoadInput,
+  type TaePublicSubmissionInput,
+} from "@/lib/validation/fuel-tae"
 import type { TaeEvidenceKind, TaeEvidenceUpload } from "./types"
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024
@@ -20,8 +27,8 @@ async function validateImageDimensions(buffer: Buffer) {
   }
 }
 
-export type ParsedFieldLoadRequest =
-  | { ok: true; input: TaePublicSubmissionInput; evidence: TaeEvidenceUpload[]; ocrResult?: OcrMeterResult }
+export type ParsedFieldLoadRequest<Input = TaePublicSubmissionInput> =
+  | { ok: true; input: Input; evidence: TaeEvidenceUpload[]; ocrResult?: OcrMeterResult }
   | { ok: false; status: 400; body: { ok: false; message: string; fieldErrors?: Record<string, string[] | undefined> } }
 
 /**
@@ -34,17 +41,27 @@ export type ParsedFieldLoadRequest =
  * validado.
  */
 export async function parseFieldLoadRequest(formData: FormData): Promise<ParsedFieldLoadRequest> {
+  // El esquema público descarta `pastLoad` y `acknowledgeDuplicate` aunque lleguen: un QR no fecha cargas.
+  return parseRequest(formData, taePublicSubmissionSchema)
+}
+
+/** Igual que `parseFieldLoadRequest`, para la app autenticada: además acepta `pastLoad` y `acknowledgeDuplicate`. */
+export async function parseInternalFieldLoadRequest(formData: FormData): Promise<ParsedFieldLoadRequest<InternalFieldLoadInput>> {
+  return parseRequest(formData, internalFieldLoadSchema)
+}
+
+async function parseRequest<Schema extends z.ZodType>(formData: FormData, schema: Schema): Promise<ParsedFieldLoadRequest<z.infer<Schema>>> {
   const rawPayload = String(formData.get("payload") ?? "")
   let payload: unknown
   try { payload = JSON.parse(rawPayload) } catch {
     return { ok: false, status: 400, body: { ok: false, message: "Datos del formulario inválidos" } }
   }
-  const parsed = taePublicSubmissionSchema.safeParse(payload)
+  const parsed = schema.safeParse(payload)
   if (!parsed.success) {
     return {
       ok: false,
       status: 400,
-      body: { ok: false, message: parsed.error.issues[0]?.message ?? "Revisa los campos del formulario", fieldErrors: parsed.error.flatten().fieldErrors },
+      body: { ok: false, message: parsed.error.issues[0]?.message ?? "Revisa los campos del formulario", fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[] | undefined> },
     }
   }
 

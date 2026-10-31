@@ -12,14 +12,25 @@ import { effectiveSeals, vehicleOf } from "./validate"
 import type { StepViewProps } from "./step-props"
 import type { FieldLoadStep } from "./types"
 
+/** Un dato más del resumen que pone quien aloja el formulario (p. ej. la faena y el punto de carga). */
+export interface ReviewExtraRow {
+  label: string
+  value: React.ReactNode
+  onEdit: () => void
+}
+
 function Row({ label, value, step, onEdit }: { label: string; value: React.ReactNode; step: FieldLoadStep; onEdit: (step: FieldLoadStep) => void }) {
+  return <EditableRow label={label} value={value} onEdit={() => onEdit(step)} />
+}
+
+function EditableRow({ label, value, onEdit }: { label: string; value: React.ReactNode; onEdit: () => void }) {
   return (
     <div className="flex items-start justify-between gap-3 border-b border-[var(--color-border)] py-3">
       <div className="min-w-0">
         <dt className="text-sm text-[var(--color-text-muted)]">{label}</dt>
         <dd className="text-lg font-semibold break-words">{value}</dd>
       </div>
-      <button type="button" className="min-h-14 shrink-0 px-2 text-base font-semibold text-[var(--color-primary-ink)] underline" onClick={() => onEdit(step)}>
+      <button type="button" className="min-h-14 shrink-0 px-2 text-base font-semibold text-[var(--color-primary-ink)] underline" onClick={onEdit}>
         Cambiar<span className="sr-only"> {label.toLocaleLowerCase("es-CL")}</span>
       </button>
     </div>
@@ -42,7 +53,25 @@ function PhotoThumb({ kind, file }: { kind: TaeEvidenceKind; file: File }) {
 }
 
 /** Paso 6: todo lo contestado en una pantalla, cada dato con su «Cambiar», antes de «Enviar carga». */
-export function StepReview({ config, draft, photos, driver, supervisor, patch, goTo, loadingPointName }: StepViewProps & { goTo: (step: FieldLoadStep) => void; loadingPointName: string | null }) {
+export function StepReview({
+  config,
+  draft,
+  photos,
+  driver,
+  supervisor,
+  patch,
+  goTo,
+  loadingPointName,
+  extraRows = [],
+  timingNote = "Al enviar, la plataforma registra la fecha y la hora. Sin conexión se usa la hora del teléfono.",
+}: StepViewProps & {
+  goTo: (step: FieldLoadStep) => void
+  loadingPointName: string | null
+  /** Filas que el anfitrión suma arriba del resumen, cada una con su «Cambiar». */
+  extraRows?: ReviewExtraRow[]
+  /** Lo que se dice al pie sobre la fecha y la hora con que queda registrada la carga. */
+  timingNote?: string
+}) {
   const vehicle = vehicleOf(config, draft)
   const product = vehicle?.products.find((item) => item.id === draft.productId)
   const medium = config.supplyMedia.find((item) => item.id === draft.supplyMediumId)
@@ -57,6 +86,7 @@ export function StepReview({ config, draft, photos, driver, supervisor, patch, g
     <div className="space-y-5">
       <p className="text-base text-[var(--color-text-muted)]">Revisa que todo esté bien. Si algo no coincide, toca «Cambiar».</p>
       <dl>
+        {extraRows.map((row) => <EditableRow key={row.label} label={row.label} value={row.value} onEdit={row.onEdit} />)}
         <Row label="Equipo" value={vehicle ? `${vehicle.code ?? vehicle.plate} · ${vehicle.plate}` : "—"} step="vehicle" onEdit={goTo} />
         <Row label="Combustible y medio" value={`${product?.name ?? "—"} · ${medium?.name ?? "—"}`} step="vehicle" onEdit={goTo} />
         <Row label={vehicle?.meterType === "hour_meter" ? "Horómetro" : "Odómetro"} value={vehicle?.meterType === "none" ? "Sin medidor" : reading != null ? formatQty(reading) : "—"} step="meter" onEdit={goTo} />
@@ -76,7 +106,7 @@ export function StepReview({ config, draft, photos, driver, supervisor, patch, g
       <BigField id="tae-notes" label="Observaciones (opcional)">
         <Textarea id="tae-notes" name="notes" rows={3} value={draft.notes} onChange={(event) => patch({ notes: event.target.value })} className="text-base" />
       </BigField>
-      <p className="text-sm text-[var(--color-text-muted)]">Al enviar, la plataforma registra la fecha y la hora. Sin conexión se usa la hora del teléfono.</p>
+      <p className="text-sm text-[var(--color-text-muted)]">{timingNote}</p>
     </div>
   )
 }

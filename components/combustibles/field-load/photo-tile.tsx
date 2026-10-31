@@ -19,6 +19,7 @@ export function PhotoTile({
   compressing,
   error,
   onSelect,
+  optional = false,
 }: {
   kind: TaeEvidenceKind
   label: string
@@ -27,6 +28,8 @@ export function PhotoTile({
   compressing: boolean
   error?: string | null
   onSelect: (file?: File) => void
+  /** La foto no se exige (carga de otro día): el rótulo lo dice. */
+  optional?: boolean
 }) {
   const [preview, setPreview] = React.useState<string | null>(null)
   React.useEffect(() => {
@@ -51,7 +54,7 @@ export function PhotoTile({
           : <Camera className="mx-auto mb-10 text-[var(--color-text-muted)]" size={40} aria-hidden="true" />}
         <span className={cn("relative flex items-center justify-center gap-2 px-3 py-3 text-base font-semibold", preview ? "bg-black/70 text-white" : "text-[var(--color-text)]")}>
           {file && !compressing && <CheckCircle size={20} weight="fill" aria-hidden="true" />}
-          {compressing ? "Optimizando foto…" : file ? "Repetir foto" : label}
+          {compressing ? "Optimizando foto…" : file ? "Repetir foto" : optional ? `${label} (opcional)` : label}
         </span>
         <input
           id={`tae-evidence-${kind}`}

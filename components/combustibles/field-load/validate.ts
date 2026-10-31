@@ -12,6 +12,8 @@ export interface ValidationContext {
   photos: FieldLoadPhotos
   driver: FieldIdentity
   supervisor: FieldIdentity
+  /** Las fotos no se exigen (carga de otro día): los pasos las ofrecen como opcionales. */
+  photosOptional?: boolean
 }
 
 export function vehicleOf(config: FieldLoadConfig, draft: FieldLoadDraft) {
@@ -27,7 +29,7 @@ export function effectiveSeals(draft: FieldLoadDraft) {
 }
 
 export function validateStep(step: FieldLoadStep, context: ValidationContext): StepErrors {
-  const { config, draft, photos, driver, supervisor } = context
+  const { config, draft, photos, driver, supervisor, photosOptional = false } = context
   const errors: StepErrors = {}
   const vehicle = vehicleOf(config, draft)
   if (step === "vehicle") {
@@ -43,7 +45,7 @@ export function validateStep(step: FieldLoadStep, context: ValidationContext): S
       else if (reading < 0) errors.meterReading = "La lectura no puede ser negativa."
       else if (reading > METER_READING_MAX) errors.meterReading = "La lectura no puede superar 9.999.999. Revisa que no tenga dígitos de más."
     }
-    if (!photos.odometer) errors.odometer = "Falta la foto del tablero con la lectura."
+    if (!photos.odometer && !photosOptional) errors.odometer = "Falta la foto del tablero con la lectura."
   }
   if (step === "liters") {
     const liters = parseFieldNumber(draft.liters)
@@ -52,7 +54,7 @@ export function validateStep(step: FieldLoadStep, context: ValidationContext): S
       const issue = checkLiters(liters, vehicle?.tankCapacityLiters)
       if (issue) errors.liters = issue.message
     }
-    if (!photos.liter_meter) errors.liter_meter = "Falta la foto del medidor de litros."
+    if (!photos.liter_meter && !photosOptional) errors.liter_meter = "Falta la foto del medidor de litros."
   }
   if (step === "seals") {
     const seals = effectiveSeals(draft)
@@ -62,8 +64,8 @@ export function validateStep(step: FieldLoadStep, context: ValidationContext): S
       const issue = checkSealInputs({ ...seals, noSealReason: draft.noSealReason })
       if (issue) errors[issue.field === "noSealReason" ? "noSealReason" : issue.field] = issue.message
     }
-    if (seals.removedSealNumber && !photos.removed_seal) errors.removed_seal = "Falta la foto del sello que sacaste."
-    if (seals.installedSealNumber && !photos.installed_seal) errors.installed_seal = "Falta la foto del sello nuevo."
+    if (seals.removedSealNumber && !photos.removed_seal && !photosOptional) errors.removed_seal = "Falta la foto del sello que sacaste."
+    if (seals.installedSealNumber && !photos.installed_seal && !photosOptional) errors.installed_seal = "Falta la foto del sello nuevo."
   }
   if (step === "people") {
     if (!driver.matched && draft.driverName.trim().length < 2) errors.driverName = "Verifica el RUT del conductor o escribe su nombre."

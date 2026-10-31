@@ -14,7 +14,7 @@ const SIDES: Record<SealSide, { numberKey: "removedSealNumber" | "installedSealN
 
 /** Paso 4: los dos sellos. El número se exige con su foto; sin sello, hay que decir por qué. */
 export function StepSeals(props: StepViewProps) {
-  const { draft, photos, errors, patch, selectPhoto, compressing } = props
+  const { draft, photos, errors, patch, selectPhoto, compressing, photosOptional } = props
   const anyMissing = draft.noRemovedSeal || draft.noInstalledSeal
   return (
     <div className="space-y-8">
@@ -32,7 +32,7 @@ export function StepSeals(props: StepViewProps) {
                 <BigInput id={`tae-${side === "removed" ? "removed" : "installed"}`} name={spec.numberKey} value={draft[spec.numberKey]} autoComplete="off" autoCapitalize="characters" onChange={(event) => patch({ [spec.numberKey]: event.target.value } as Partial<FieldLoadDraft>)} error={Boolean(errors[spec.numberKey])} />
               </BigField>
             )}
-            {hasNumber && <PhotoTile kind={spec.kind} label={spec.photo} file={photos[spec.kind]} compressing={Boolean(compressing[spec.kind])} error={errors[spec.kind]} onSelect={(file) => selectPhoto(spec.kind, file)} />}
+            {hasNumber && <PhotoTile kind={spec.kind} label={spec.photo} file={photos[spec.kind]} compressing={Boolean(compressing[spec.kind])} error={errors[spec.kind]} onSelect={(file) => selectPhoto(spec.kind, file)} optional={photosOptional} />}
             <BigButton type="button" variant="secondary" aria-pressed={none} onClick={() => patch({ [spec.noKey]: !none } as Partial<FieldLoadDraft>)}>
               {none ? "Sí hay sello: escribir el número" : `No hay sello (${spec.none.toLocaleLowerCase("es-CL")})`}
             </BigButton>
