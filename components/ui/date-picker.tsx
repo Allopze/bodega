@@ -2,7 +2,9 @@
 
 import * as React from "react"
 import { DayPicker } from "react-day-picker"
-import { es } from "date-fns/locale"
+// El locale de react-day-picker trae el de date-fns más las etiquetas accesibles
+// de la navegación; el de date-fns solo dejaba las flechas en inglés.
+import { es } from "react-day-picker/locale"
 import { CalendarBlank, CaretLeft, CaretRight } from "@phosphor-icons/react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { cn, todayInChile } from "@/lib/utils"
