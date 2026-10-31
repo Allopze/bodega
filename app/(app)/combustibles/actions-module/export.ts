@@ -12,6 +12,7 @@ import { addExportMetadataSheet } from "@/lib/combustibles/xlsx-utils"
 import { fuelLoadStatusLabel } from "@/lib/combustibles/labels"
 import { todayInChile } from "@/lib/utils"
 import { FUEL_PATHS } from "@/lib/combustibles/routes"
+import { assertFuelCostAccess } from "@/lib/operational-control/capabilities"
 
 const MAX_FUEL_EXPORT_ROWS = 10_000
 
@@ -37,8 +38,13 @@ export async function exportFuelLoadsXlsxAction(filters?: {
 }) {
   let session
   // Incluye montos (IEC, IVA, total): requiere el permiso de exportación
-  // sensible además del genérico, no sólo "combustibles:export".
-  try { session = await requirePermission("combustibles:export_sensitive", FUEL_PATHS.pagos) }
+  // sensible además del genérico, no sólo "combustibles:export", y el mismo
+  // contrato de costos que la pantalla de Pagos: exportar no puede mostrar más
+  // de lo que la persona ve.
+  try {
+    session = await requirePermission("combustibles:export_sensitive", FUEL_PATHS.pagos)
+    assertFuelCostAccess(session)
+  }
   catch { return { ok: false as const, message: "Sin permisos para exportar datos con montos" } }
 
   const where = buildInvoiceWhere(session, filters ?? {})

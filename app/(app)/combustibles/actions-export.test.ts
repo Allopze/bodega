@@ -61,7 +61,7 @@ describe("exportFuelLoadsXlsxAction", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockRequirePermission.mockResolvedValue({
-      user: { id: "u-1", permissions: ["combustibles:export"], isGlobal: true, worksiteIds: [] },
+      user: { id: "u-1", permissions: ["combustibles:export", "combustibles:export_sensitive", "combustibles:view", "combustibles:view_costs"], isGlobal: true, worksiteIds: [] },
     })
   })
 
