@@ -311,6 +311,8 @@ ENV_WHITELIST=(
   # queda sin forma de volver a sincronizar.
   ARAMCO_DOCUMENT_NUMBER ARAMCO_PASSWORD ARAMCO_SYNC_ENABLED ARAMCO_SYNC_IMPORTER_EMAIL
   ONWAY_USERNAME ONWAY_PASSWORD ONWAY_SYNC_ENABLED
+  # VisionLink (telemetría): credenciales sólo de entorno, sin copia en la base.
+  VISIONLINK_CLIENT_ID VISIONLINK_CLIENT_SECRET VISIONLINK_SCOPE VISIONLINK_SYNC_ENABLED
   # Cloudreve (storage de documentos SST): la URL y el backend son configuración
   # funcional; las credenciales son el respaldo del .env del servidor (las
   # cifradas viven en system_settings y viajan en el dump PG). Mismo caso que
