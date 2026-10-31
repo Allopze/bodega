@@ -7,7 +7,7 @@ import { requirePermission } from "@/lib/auth/can"
 import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { todayInChile } from "@/lib/utils"
-import { addExportMetadataSheet } from "@/lib/combustibles/xlsx-utils"
+import { addExportMetadataSheet } from "@/lib/reports/export-metadata"
 import { buildFuelProviderQualityWorkbook, type FuelProviderQualityExportRow } from "@/lib/combustibles/fuel-provider-quality-export"
 import { FUEL_PATHS } from "@/lib/combustibles/routes"
 

@@ -7,7 +7,8 @@ import { parseControlFilters } from "@/lib/combustibles/control/filters"
 import { getSealJustifications, getSupervisorSealSummary, listSealDetail } from "@/lib/combustibles/control/queries/seals"
 import { addTableSheet } from "@/lib/combustibles/control/queries/xlsx-sheet"
 import { LOADING_POINT_TYPE_LABELS, SEAL_CHAIN_STATUS_LABELS } from "@/lib/combustibles/control/contracts"
-import { addExportMetadataSheet } from "@/lib/combustibles/xlsx-utils"
+import { addExportMetadataSheet } from "@/lib/reports/export-metadata"
+import { describeFilters, resolveFilterNames } from "@/lib/combustibles/control/queries/export-xlsx"
 import { xlsxToBase64 } from "@/lib/reports/export-module/excel-builder"
 import { formatDateTime, todayInChile } from "@/lib/utils"
 import type { ExportActionResult } from "@/components/ui/export-button"
@@ -91,7 +92,7 @@ export async function exportSealsXlsxAction(input: { query: string }): Promise<E
     chain: SEAL_CHAIN_STATUS_LABELS[row.sealChainStatus],
     notes: [row.noSealReason ? `Sin sello: ${row.noSealReason}` : null, row.notes].filter(Boolean).join(" · ") || null,
   })))
-  await addExportMetadataSheet(wb, session, { filters, rowCount: detailRows.length, from: filters.from, to: filters.to })
+  await addExportMetadataSheet(wb, session, { filters: describeFilters(filters, await resolveFilterNames(filters)), rowCount: detailRows.length, from: filters.from, to: filters.to })
 
   const base64 = await xlsxToBase64(wb)
   await recordAudit({

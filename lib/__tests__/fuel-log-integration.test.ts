@@ -1,5 +1,6 @@
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
+import { eq } from "drizzle-orm"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import { describe, it, expect, beforeAll, vi } from "vitest"
 import path from "node:path"
@@ -272,6 +273,25 @@ describe("fuel-log: cómo llegó, estado y pendiente (PostgreSQL integration)", 
     expect(rows.map((row) => row.id).sort()).toEqual([taeQr, taeApp, invoiceDraft].sort())
     expect(rows.map((row) => row.id)).not.toContain(taeHistorico)
     expect(await getFuelLogTotal(globalSession(), { ...FILTER, onlyPending: true })).toBe(3)
+  })
+
+  it("«sólo con algo pendiente» también trae la fila con un caso de anomalía abierto, y la columna lo cuenta", async () => {
+    const ruleId = nanoid()
+    const caseId = nanoid()
+    await inMemoryDb.insert(schema.fuelAnomalyRules).values({ id: ruleId, code: `regla-${ruleId}`, name: "Regla de prueba" })
+    await inMemoryDb.insert(schema.fuelAnomalyCases).values({
+      id: caseId, ruleId, ruleCode: `regla-${ruleId}`, description: "Caso abierto de prueba",
+      referenceEntityType: "fuel_operation_record", referenceEntityId: operationRecord, status: "open",
+    })
+    try {
+      const rows = await getFuelLogRows(globalSession(), { ...FILTER, onlyPending: true }, PAGE)
+      expect(rows.map((row) => row.id).sort()).toEqual([taeQr, taeApp, invoiceDraft, operationRecord].sort())
+      expect(rows.find((row) => row.id === operationRecord)?.anomalyCount).toBe(1)
+      expect(await getFuelLogTotal(globalSession(), { ...FILTER, onlyPending: true })).toBe(4)
+    } finally {
+      await inMemoryDb.delete(schema.fuelAnomalyCases).where(eq(schema.fuelAnomalyCases.id, caseId))
+      await inMemoryDb.delete(schema.fuelAnomalyRules).where(eq(schema.fuelAnomalyRules.id, ruleId))
+    }
   })
 
   it("trae la fila proyectada y su motivo, y sólo marca el pedido abierto", async () => {

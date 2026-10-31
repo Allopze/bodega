@@ -149,6 +149,8 @@ describe("columna «Pendiente»", () => {
 
   it("dice el motivo de la marca en palabras, no su código", () => {
     expect(fuelLogPending({ ...base, reviewFlagged: true, reviewFlagReason: "duplicate" })).toEqual([{ kind: "decide", label: "Posible carga duplicada" }])
+    expect(fuelLogPending({ ...base, anomalyCount: 1 })).toEqual([{ kind: "case", label: "Caso abierto" }])
+    expect(fuelLogPending({ ...base, anomalyCount: 3 })).toEqual([{ kind: "case", label: "3 casos abiertos" }])
     expect(fuelLogPending({ ...base, reviewFlagged: true, reviewFlagReason: "late_entry" })[0]?.label).toBe("Registrada después (fecha pasada)")
     expect(fuelLogPending({ ...base, reviewFlagged: true, reviewFlagReason: null })[0]?.label).toBe("Por decidir")
   })

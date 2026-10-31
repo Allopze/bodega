@@ -22,7 +22,7 @@ import {
   type FuelLogEntityContext,
 } from "@/lib/combustibles/fuel-log-review-request"
 import { FUEL_LOAD_STATUS_LABELS, TAE_STATUS_LABELS } from "@/lib/combustibles/labels"
-import { addExportMetadataSheet } from "@/lib/combustibles/xlsx-utils"
+import { addExportMetadataSheet } from "@/lib/reports/export-metadata"
 import { todayInChile } from "@/lib/utils"
 import { FUEL_PATHS } from "@/lib/combustibles/routes"
 import { revalidateFuel } from "@/lib/combustibles/revalidate"

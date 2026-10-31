@@ -18,7 +18,8 @@ import { taeMeterCorrectionSchema, taeReviewSchema } from "@/lib/validation/fuel
 import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { logger } from "@/lib/logger"
 import { nanoid } from "@/lib/id"
-import { addExportMetadataSheet } from "@/lib/combustibles/xlsx-utils"
+import { addExportMetadataSheet } from "@/lib/reports/export-metadata"
+import { resolveExportFilterNames } from "@/lib/combustibles/export-filter-names"
 import { taeStatusLabel, taeMeterSourceLabel } from "@/lib/combustibles/labels"
 import { formatDateTime, todayInChile} from "@/lib/utils"
 import { FUEL_PATHS } from "@/lib/combustibles/routes"
@@ -291,7 +292,20 @@ export async function exportTaeSubmissionsXlsxAction(filters: TaeExportFilters =
   }
   ws.getColumn("liters").numFmt = "#,##0.000"
   ws.views = [{ state: "frozen", ySplit: 1 }]
-  await addExportMetadataSheet(wb, session, { filters, rowCount: exportRows.length, from: filters.from, to: filters.to })
+  const names = await resolveExportFilterNames({ worksiteId: filters.worksiteId, loadingPointId: filters.loadingPointId })
+  await addExportMetadataSheet(wb, session, {
+    filters: {
+      Búsqueda: q || undefined,
+      Faena: filters.worksiteId ? (names.worksiteId ?? filters.worksiteId) : undefined,
+      "Punto de carga": filters.loadingPointId ? (names.loadingPointId ?? filters.loadingPointId) : undefined,
+      Estado: status ? taeStatusLabel(status) : undefined,
+      Sello: filters.seal === "missing" ? "Sello incompleto" : undefined,
+      Fotos: filters.evidence === "missing" ? "Le faltan fotos" : undefined,
+    },
+    rowCount: exportRows.length,
+    from: filters.from,
+    to: filters.to,
+  })
 
   const base64 = await xlsxToBase64(wb)
   await recordAudit({

@@ -5,7 +5,8 @@ import { xlsxToBase64 } from "@/lib/reports/export-module/excel-builder"
 import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { getTaeCopecReconciliation, type TaeCopecFilters } from "@/lib/combustibles/tae-copec-reconciliation"
-import { addExportMetadataSheet } from "@/lib/combustibles/xlsx-utils"
+import { addExportMetadataSheet } from "@/lib/reports/export-metadata"
+import { resolveExportFilterNames } from "@/lib/combustibles/export-filter-names"
 import { todayInChile } from "@/lib/utils"
 import { FUEL_PATHS } from "@/lib/combustibles/routes"
 
@@ -41,7 +42,13 @@ export async function exportTaeCopecReconciliationAction(filters: TaeCopecFilter
   sheet.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF2563EB" } }
   for (const key of ["tae", "diesel", "bluemax", "total"]) sheet.getColumn(key).numFmt = "#,##0.000"
   sheet.views = [{ state: "frozen", ySplit: 1 }]
-  await addExportMetadataSheet(workbook, session, { filters, rowCount: rows.length, from: filters.from, to: filters.to })
+  const names = await resolveExportFilterNames({ worksiteId: filters.worksiteId })
+  await addExportMetadataSheet(workbook, session, {
+    filters: { Faena: filters.worksiteId ? (names.worksiteId ?? filters.worksiteId) : undefined },
+    rowCount: rows.length,
+    from: filters.from,
+    to: filters.to,
+  })
   const base64 = await xlsxToBase64(workbook)
   await recordAudit({
     userId: session.user.id, userEmail: session.user.email ?? undefined, action: "export",

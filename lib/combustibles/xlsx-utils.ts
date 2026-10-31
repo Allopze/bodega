@@ -1,11 +1,10 @@
 /**
  * Helpers Excel compartidos del módulo combustibles: parsers de importación
- * (facturas — `import.ts` — y consumos por patente — `consumption-import.ts`)
- * y la hoja de metadatos que llevan las 4 exportaciones del módulo.
+ * (facturas — `import.ts` — y consumos por patente — `consumption-import.ts`).
+ * La hoja de metadatos vive en `lib/reports/export-metadata` (lee la base: no se reexporta aquí, que también usa el cliente).
  */
 
 import ExcelJS from "exceljs"
-export { addExportMetadataSheet } from "@/lib/reports/export-metadata"
 
 /** Normaliza un encabezado de columna: colapsa espacios/saltos de línea,
  *  recorta y pasa a minúsculas, para comparar de forma tolerante. */

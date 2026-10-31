@@ -114,8 +114,8 @@ test.describe.serial("Control de combustible — registro, revisión y conciliac
     await page.goto("/combustibles/cargas/registrar")
     // Paso 1 de 7, «Dónde»: la faena y el punto de carga van antes del formulario por pasos.
     await expect(page.getByText("Paso 1 de 7")).toBeVisible({ timeout: 20_000 })
-    await pickSelect(page, "registrar-faena", WORKSITE_NAME)
-    await expect(page).toHaveURL(/faena=ws-e2e/)
+    // Es la única faena con puntos de carga activos: queda elegida sin preguntar.
+    await expect(page.locator("#registrar-faena")).toContainText(WORKSITE_NAME)
     // Con un solo punto activo en la faena queda elegido solo; con más, se elige.
     if (!/punto=ctl-point-e2e/.test(page.url())) await pickSelect(page, "registrar-punto", POINT_NAME)
     await expect(page).toHaveURL(/punto=ctl-point-e2e/)

@@ -28,6 +28,7 @@ function row(overrides: Partial<EnrichedRow> = {}): EnrichedRow {
       evidence: "/combustibles/cargas/terreno/tae-1#evidencia",
       decide: null,
       requested: "/combustibles/revisar?tipo=pedido",
+      cases: "/combustibles/revisar?tipo=caso",
     },
     ...overrides,
   } as EnrichedRow

@@ -118,6 +118,7 @@ export default async function CargasPage({ searchParams }: { searchParams: Promi
         evidence: canViewPersonal && row.source === "tae_pwa" && (row.evidenceCount ?? 0) > 0 ? `${detail}#evidencia` : null,
         decide: row.reviewFlagged && row.equipmentLoadId ? context(fuelInboxHref({ tipo: "carga", item: inboxRowKey("carga", row.equipmentLoadId) })) : null,
         requested: context(fuelInboxHref({ tipo: "pedido" })),
+        cases: context(fuelInboxHref({ tipo: "caso" })),
       },
     }
   })

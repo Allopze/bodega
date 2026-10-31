@@ -8,7 +8,7 @@ import { getIdleEquipmentMonths, getIdleTopDays } from "@/lib/combustibles/contr
 import { getLitersPerHourComparison } from "@/lib/combustibles/control/queries/idle-comparison"
 import { describeFilters, resolveFilterNames } from "@/lib/combustibles/control/queries/export-xlsx"
 import { addTableSheet, type SheetRow } from "@/lib/combustibles/control/queries/xlsx-sheet"
-import { addExportMetadataSheet } from "@/lib/combustibles/xlsx-utils"
+import { addExportMetadataSheet } from "@/lib/reports/export-metadata"
 import { xlsxToBase64 } from "@/lib/reports/export-module/excel-builder"
 import { formatDate, todayInChile } from "@/lib/utils"
 import type { ExportActionResult } from "@/components/ui/export-button"

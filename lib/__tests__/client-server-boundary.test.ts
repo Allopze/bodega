@@ -34,6 +34,11 @@ const BANNED_SPECIFIERS = [
   // `@/lib/prevention/inspection-wiring`, que es la que el catálogo de
   // inspecciones importa.
   "@/lib/services/pdtp-adapters/inspection-templates-2026",
+  // La hoja de metadatos de las exportaciones lee los nombres de faena con
+  // `@/db`. Por eso `lib/combustibles/xlsx-utils`, que también usa el cliente,
+  // ya no la reexporta.
+  "@/lib/reports/export-metadata",
+  "@/lib/reports/export",
 ]
 
 function findSourceFiles(dir: string): string[] {

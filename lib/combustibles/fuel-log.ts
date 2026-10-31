@@ -134,6 +134,11 @@ function taeSourcesForOrigins(origins: readonly FuelLoadOriginSlug[]): string[] 
 }
 
 /** Filtro EXISTS sobre `fuel_anomaly_cases`, reutilizado por las 3 ramas. `undefined` si no hay ningún filtro de anomalía activo. */
+/** Un caso de anomalía abierto, en revisión o reabierto sobre la fila: cuenta como pendiente. */
+function openCaseExistsSql(referenceEntityType: string, idColumn: unknown) {
+  return sql`exists (select 1 from fuel_anomaly_cases ac where ac.reference_entity_type = ${referenceEntityType} and ac.reference_entity_id = ${idColumn} and ac.status IN ('open', 'in_review', 'reopened'))`
+}
+
 function anomalyFilterSql(referenceEntityType: string, idColumn: unknown, filters: FuelLogFilters) {
   if (!filters.hasAnomaly && !filters.anomalyRuleCode && !filters.anomalySeverity && !filters.anomalyAssigneeId) return undefined
   return sql`exists (
@@ -272,7 +277,7 @@ function buildTaeBranch(session: Session, filters: FuelLogFilters, searchPattern
       filters.sealIncomplete ? sql`(${fuelTaeSubmissions.removedSealNumber} is null or btrim(${fuelTaeSubmissions.removedSealNumber}) = '' or ${fuelTaeSubmissions.installedSealNumber} is null or btrim(${fuelTaeSubmissions.installedSealNumber}) = '')` : undefined,
       // Una carga registrada después (fecha pasada) tiene las fotos opcionales: no cuenta como «le faltan fotos».
       filters.photosIncomplete ? sql`(${fuelTaeSubmissions.loadedAtSource} <> 'backdated' and (select count(distinct e.kind) from fuel_tae_evidence e where e.submission_id = ${fuelTaeSubmissions.id}) < 4)` : undefined,
-      filters.onlyPending ? sql`(${fuelEquipmentLoads.reviewStatus} = 'flagged' or ${fuelTaeSubmissions.status} = 'observed' or ${openReviewMarkExistsSql("fuel_tae_submission", fuelTaeSubmissions.id)})` : undefined,
+      filters.onlyPending ? sql`(${fuelEquipmentLoads.reviewStatus} = 'flagged' or ${fuelTaeSubmissions.status} = 'observed' or ${openReviewMarkExistsSql("fuel_tae_submission", fuelTaeSubmissions.id)} or ${openCaseExistsSql("fuel_tae_submission", fuelTaeSubmissions.id)})` : undefined,
     ))
 }
 
@@ -368,7 +373,7 @@ function buildInvoicedBranch(session: Session, filters: FuelLogFilters, searchPa
       // Sellos y fotos sólo existen en los registros en terreno.
       filters.sealIncomplete ? sql`false` : undefined,
       filters.photosIncomplete ? sql`false` : undefined,
-      filters.onlyPending ? openReviewMarkExistsSql("fuel_load", fuelLoads.id) : undefined,
+      filters.onlyPending ? sql`(${openReviewMarkExistsSql("fuel_load", fuelLoads.id)} or ${openCaseExistsSql("fuel_load", fuelLoads.id)})` : undefined,
     ))
 }
 
@@ -465,7 +470,7 @@ function buildOperationBranch(session: Session, filters: FuelLogFilters, searchP
       filters.registeredBy ? sql`false` : undefined,
       filters.sealIncomplete ? sql`false` : undefined,
       filters.photosIncomplete ? sql`false` : undefined,
-      filters.onlyPending ? sql`(${fuelEquipmentLoads.reviewStatus} = 'flagged' or ${openReviewMarkExistsSql("fuel_operation_record", fuelOperationRecords.id)})` : undefined,
+      filters.onlyPending ? sql`(${fuelEquipmentLoads.reviewStatus} = 'flagged' or ${openReviewMarkExistsSql("fuel_operation_record", fuelOperationRecords.id)} or ${openCaseExistsSql("fuel_operation_record", fuelOperationRecords.id)})` : undefined,
     ))
 }
 

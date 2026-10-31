@@ -8,7 +8,10 @@ import { requirePermission } from "@/lib/auth/can"
 import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { buildInvoiceWhere } from "../pagos/invoice-query"
-import { addExportMetadataSheet } from "@/lib/combustibles/xlsx-utils"
+import { addExportMetadataSheet } from "@/lib/reports/export-metadata"
+import { resolveExportFilterNames } from "@/lib/combustibles/export-filter-names"
+import { fuelLoadStatusLabel } from "@/lib/combustibles/labels"
+import { SERVICE_TYPE_LABELS } from "../pagos/invoice-params"
 import { fuelLoadStatusLabel } from "@/lib/combustibles/labels"
 import { todayInChile } from "@/lib/utils"
 import { FUEL_PATHS } from "@/lib/combustibles/routes"
@@ -114,7 +117,23 @@ export async function exportFuelLoadsXlsxAction(filters?: {
     ws.getColumn(col).numFmt = "#,##0"
   }
   ws.getColumn("liters").numFmt = "#,##0.00"
-  await addExportMetadataSheet(wb, session, { filters: filters ?? null, rowCount: exportRows.length, from: filters?.startDate, to: filters?.endDate })
+  const f = filters ?? {}
+  const names = await resolveExportFilterNames(f)
+  await addExportMetadataSheet(wb, session, {
+    filters: {
+      Búsqueda: f.q || undefined,
+      Mes: f.month,
+      "Tipo de servicio": f.serviceType ? (SERVICE_TYPE_LABELS[f.serviceType] ?? f.serviceType) : undefined,
+      Equipo: f.vehicleId ? (names.vehicleId ?? f.vehicleId) : undefined,
+      Faena: f.worksiteId ? (names.worksiteId ?? f.worksiteId) : undefined,
+      Proveedor: f.fuelSupplierId ? (names.fuelSupplierId ?? f.fuelSupplierId) : undefined,
+      Producto: f.productId ? (names.productId ?? f.productId) : f.product,
+      Estado: f.status ? fuelLoadStatusLabel(f.status) : undefined,
+    },
+    rowCount: exportRows.length,
+    from: f.startDate,
+    to: f.endDate,
+  })
 
   const base64 = await xlsxToBase64(wb)
   // Esta exportación incluye montos (IEC, IVA, total) — auditarla es más

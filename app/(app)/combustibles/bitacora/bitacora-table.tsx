@@ -29,6 +29,8 @@ export interface CargaRowHrefs {
   decide: string | null
   /** El pedido de revisión en la bandeja. */
   requested: string
+  /** Los casos de anomalía en la bandeja. */
+  cases: string
 }
 
 export type EnrichedRow = FuelLogRow & { hrefs: CargaRowHrefs }
@@ -63,7 +65,7 @@ function meterUnit(label: string | null): string {
 function PendingCell({ row }: { row: EnrichedRow }) {
   const pending = fuelLogPending(row)
   if (pending.length === 0) return <span className="text-[var(--color-text-subtle)]">—</span>
-  const hrefFor = (kind: PendingKind) => (kind === "decide" ? row.hrefs.decide : kind === "requested" ? row.hrefs.requested : row.hrefs.detail)
+  const hrefFor = (kind: PendingKind) => (kind === "decide" ? row.hrefs.decide : kind === "requested" ? row.hrefs.requested : kind === "case" ? row.hrefs.cases : row.hrefs.detail)
   return (
     <span className="flex flex-wrap gap-1">
       {pending.map((item) => {

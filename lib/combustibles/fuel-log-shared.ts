@@ -116,12 +116,13 @@ export function fuelLogBranchesFor(filters: Pick<FuelLogFilters, "source" | "ori
 }
 
 /** Lo que espera una decisión en una fila de Cargas: «Pendiente» en la lista. */
-export type FuelLogPendingKind = "decide" | "observed" | "requested"
+export type FuelLogPendingKind = "decide" | "observed" | "requested" | "case"
 
 export const FUEL_LOG_PENDING_LABEL: Record<FuelLogPendingKind, string> = {
   decide: "Por decidir",
   observed: "Con observación",
   requested: "Revisión pedida",
+  case: "Caso abierto",
 }
 
 /**
@@ -195,7 +196,7 @@ export interface FuelLogRow {
  * decidir, una con observación y un pedido de revisión abierto. Vacío = nada
  * pendiente. `label` ya está en palabras (el motivo de la marca, no su código).
  */
-export function fuelLogPending(row: Pick<FuelLogRow, "source" | "statusLabel" | "reviewMark" | "reviewFlagged" | "reviewFlagReason">): Array<{ kind: FuelLogPendingKind; label: string }> {
+export function fuelLogPending(row: Pick<FuelLogRow, "source" | "statusLabel" | "reviewMark" | "reviewFlagged" | "reviewFlagReason"> & { anomalyCount?: number | null }): Array<{ kind: FuelLogPendingKind; label: string }> {
   const out: Array<{ kind: FuelLogPendingKind; label: string }> = []
   if (row.reviewFlagged) {
     const reason = row.reviewFlagReason && Object.hasOwn(FLAG_REASON_LABELS, row.reviewFlagReason) ? FLAG_REASON_LABELS[row.reviewFlagReason as FlagReason] : null
@@ -203,6 +204,9 @@ export function fuelLogPending(row: Pick<FuelLogRow, "source" | "statusLabel" | 
   }
   if (row.source === "tae_pwa" && row.statusLabel === "observed") out.push({ kind: "observed", label: FUEL_LOG_PENDING_LABEL.observed })
   if (row.reviewMark) out.push({ kind: "requested", label: FUEL_LOG_PENDING_LABEL.requested })
+  // Un caso de anomalía abierto también espera a una persona (se decide en «Por revisar»).
+  const cases = row.anomalyCount ?? 0
+  if (cases > 0) out.push({ kind: "case", label: cases === 1 ? FUEL_LOG_PENDING_LABEL.case : `${cases} casos abiertos` })
   return out
 }
 

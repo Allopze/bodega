@@ -18,6 +18,8 @@
 import { createHash } from "node:crypto"
 import { expect, test, type Locator, type Page } from "@playwright/test"
 import postgres from "postgres"
+import AxeBuilder from "@axe-core/playwright"
+import { AXE_DISABLED_RULES, AXE_TAGS } from "./accessibility-targets"
 import { expectPageTitle, login, textoVisible } from "./helpers"
 import {
   WORKSITE_ID,
@@ -148,8 +150,9 @@ function chileDay(offsetDays: number): string {
  */
 const REV_POINT_ID = "rev-point-e2e"
 const REV_POINT_NAME = "Surtidor revisión E2E"
-const REV_VEHICLES = [1, 2, 3, 4].map((n) => ({ id: `fuel-veh-rev-e2e-${n}`, code: `REV-E2E-${n}`, plate: `REVE2${n}` }))
-const [REV_UI, REV_API_A, REV_API_B, REV_NOTIFICATIONS] = REV_VEHICLES as [typeof REV_VEHICLES[number], typeof REV_VEHICLES[number], typeof REV_VEHICLES[number], typeof REV_VEHICLES[number]]
+const REV_VEHICLES = [1, 2, 3, 4, 5].map((n) => ({ id: `fuel-veh-rev-e2e-${n}`, code: `REV-E2E-${n}`, plate: `REVE2${n}` }))
+type RevVehicle = typeof REV_VEHICLES[number]
+const [REV_UI, REV_API_A, REV_API_B, REV_NOTIFICATIONS, REV_AXE] = REV_VEHICLES as [RevVehicle, RevVehicle, RevVehicle, RevVehicle, RevVehicle]
 const revTarget = (vehicle: typeof REV_VEHICLES[number]): PostLoadTarget => ({ vehicle, pointId: REV_POINT_ID })
 /** «CA-14 · KPRT·14»: así se rotula el equipo en «Por revisar» (`equipmentLabelOf`: código y patente). */
 const equipmentLabel = (vehicle: typeof REV_VEHICLES[number]) => `${vehicle.code} · ${vehicle.plate}`
@@ -219,8 +222,8 @@ test.describe.serial("Combustible — Por revisar: cargas de otro día, decidir,
     await login(page)
     await page.goto("/combustibles/cargas/registrar")
     await expect(page.getByText("Paso 1 de 7")).toBeVisible({ timeout: 20_000 })
-    await pickSelect(page, "registrar-faena", WORKSITE_NAME)
-    await expect(page).toHaveURL(/faena=ws-e2e/)
+    // Es la única faena con puntos de carga activos: queda elegida sin preguntar.
+    await expect(page.locator("#registrar-faena")).toContainText(WORKSITE_NAME)
     if (!new RegExp(`punto=${REV_POINT_ID}`).test(page.url())) await pickSelect(page, "registrar-punto", REV_POINT_NAME)
     await expect(page).toHaveURL(new RegExp(`punto=${REV_POINT_ID}`))
 
@@ -484,6 +487,59 @@ test.describe.serial("Combustible — enlaces guardados en las notificaciones", 
 
       await expect.soft(page, `${enlace.href} debe terminar en ${enlace.destino}`).toHaveURL((url) => url.pathname === enlace.destino, { timeout: 30_000 })
       await expectPageTitle(page, enlace.ficha)
+    }
+  })
+})
+
+/**
+ * Las fichas dinámicas del rediseño no entran al recorrido de `accessibility.spec.ts`: su
+ * `ROUTE_URL_OVERRIDES` sólo admite ids del sembrado, y sembrar una carga, un estado de cuenta o
+ * un archivo en `setup-db.ts` cambiaría los estados vacíos que verifican otras especificaciones.
+ * Se auditan aquí, con datos propios y las mismas reglas.
+ */
+const AXE_LOAD_ID = "fuel-load-rediseno-axe-e2e"
+const AXE_STATEMENT_ID = "fuel-stmt-rediseno-axe-e2e"
+const AXE_BATCH_ID = "fuel-batch-rediseno-axe-e2e"
+
+test.describe.serial("Combustible — accesibilidad de las fichas (axe)", () => {
+  test.beforeAll(async () => {
+    await seedRevisionVehicles()
+    await withSql(async (sql) => {
+      await sql`
+        insert into fuel_loads (id, load_date, month, service_type, vehicle_id, fuel_supplier_id, worksite_id, product, product_id, receipt_number, liters, base_amount, iva_amount, total_amount, status, created_by)
+        values (${AXE_LOAD_ID}, '2026-02-15', '2026-02', 'TCT', 'fuel-veh-e2e', 'fuel-sup-e2e', ${WORKSITE_ID}, 'PETROLEO DIESEL', 'fuel-diesel', 'QA_E2E-AXE', 100, 100000, 19000, 119000, 'draft', 'user-admin-e2e')
+        on conflict (id) do nothing
+      `
+      await sql`
+        insert into fuel_monthly_statements (id, month, fuel_supplier_id, status, created_by)
+        values (${AXE_STATEMENT_ID}, '2026-02', 'fuel-sup-e2e', 'open', 'user-admin-e2e')
+        on conflict (id) do nothing
+      `
+      await sql`
+        insert into fuel_import_batches (id, worksite_id, fuente, periodo_desde, periodo_hasta, archivo_nombre, hash_archivo, importado_por)
+        values (${AXE_BATCH_ID}, ${WORKSITE_ID}, 'Copec TCT Diesel', '2026-02-01', '2026-02-28', 'QA_E2E-axe.xlsx', 'qa-e2e-axe-hash', 'user-admin-e2e')
+        on conflict (id) do nothing
+      `
+    })
+  })
+
+  test("ficha de carga (terreno y factura), estado de cuenta y archivo importado sin violaciones", async ({ page }) => {
+    test.setTimeout(150_000)
+    await login(page)
+    const submissionId = await expectCreated(await postLoad(page, { reading: 50_000, removed: "REV-5000", installed: "REV-5001" }, { target: revTarget(REV_AXE) }))
+
+    const fichas = [
+      `/combustibles/cargas/terreno/${submissionId}`,
+      `/combustibles/cargas/factura/${AXE_LOAD_ID}`,
+      `/combustibles/pagos/estados/${AXE_STATEMENT_ID}`,
+      `/combustibles/fuentes/archivos/tarjeta/${AXE_BATCH_ID}`,
+    ]
+    for (const ficha of fichas) {
+      await page.goto(ficha)
+      await page.waitForLoadState("networkidle")
+      expect.soft(new URL(page.url()).pathname, `${ficha} no debe redirigir`).toBe(ficha)
+      const results = await new AxeBuilder({ page }).withTags([...AXE_TAGS]).disableRules([...AXE_DISABLED_RULES]).analyze()
+      expect.soft(results.violations.map((violation) => `${violation.id}: ${violation.nodes.map((node) => node.target.join(" ")).join(" | ")}`), ficha).toEqual([])
     }
   })
 })
