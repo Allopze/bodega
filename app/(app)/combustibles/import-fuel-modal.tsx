@@ -24,9 +24,9 @@ import type { ParsedFuelLoad, ImportError } from "@/lib/combustibles/import"
 /**
  * Importador de cargas facturadas desde Excel (`POST /api/combustibles/import`).
  *
- * Se abre desde la opción «Cargas facturadas (Excel)» del único botón
- * «Importar» (`fuel-import-button.tsx`), que controla `open`. Sin `open` conserva
- * su propio botón, por compatibilidad: así se usaba antes de unificar la entrada.
+ * Se abre desde la opción «Tengo facturas en Excel» de «Agregar datos»
+ * (`?agregar=facturas` en «Fuentes de datos», vía `fuentes/add-data-launcher.tsx`),
+ * que controla `open`. Sin `open` conserva su propio botón, por compatibilidad.
  */
 export function ImportFuelLoadsModal({
   worksites,

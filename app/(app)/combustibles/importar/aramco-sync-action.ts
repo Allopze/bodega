@@ -25,6 +25,8 @@ import {
 } from "@/lib/combustibles/aramco-settings"
 
 const PAGE = FUEL_PATHS.fuentes
+/** `manage_integrations` pertenece a Ajustes › Integraciones: su ruta operativa no es «Fuentes de datos». */
+const SETTINGS_PAGE = FUEL_PATHS.ajustesIntegraciones
 const SYNC_PERMISSION = "combustibles:sync_integrations"
 const MANAGE_PERMISSION = "combustibles:manage_integrations"
 
@@ -158,7 +160,7 @@ export async function saveAramcoSettingsAction(input: {
   password?: string
   syncEnabled: boolean
 }): Promise<{ ok: true; message: string } | { ok: false; message: string }> {
-  const guard = await guardPermission(MANAGE_PERMISSION, PAGE)
+  const guard = await guardPermission(MANAGE_PERMISSION, SETTINGS_PAGE)
   if (guard.error) return guard.error
   const session = guard.session
 
@@ -198,7 +200,7 @@ export async function saveAramcoSettingsAction(input: {
 
 /** Borra lo persistido y devuelve el mando al `.env` del servidor. */
 export async function clearAramcoSettingsAction(): Promise<{ ok: true } | { ok: false; message: string }> {
-  const guard = await guardPermission(MANAGE_PERMISSION, PAGE)
+  const guard = await guardPermission(MANAGE_PERMISSION, SETTINGS_PAGE)
   if (guard.error) return guard.error
   const session = guard.session
   try {

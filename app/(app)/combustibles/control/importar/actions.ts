@@ -69,7 +69,6 @@ export async function confirmControlImportAction(formData: FormData): Promise<Co
   const result = await commitControlImport(guard.session, form.kind, form)
   if (result.ok) {
     revalidateFuel()
-    revalidateFuel()
   }
   return result
 }
@@ -82,8 +81,7 @@ export async function revertControlImportBatchAction(input: { batchId: string })
   const result = await revertControlImportBatch(guard.session, batchId)
   if (!result.ok) return result
   revalidateFuel()
-  revalidateFuel()
-  return { ok: true, message: `Lote revertido: se eliminaron ${result.deletedRows} registros que ese lote había creado` }
+  return { ok: true, message: `Archivo revertido: se eliminaron ${result.deletedRows} registros que ese archivo había creado` }
 }
 
 type DownloadResult = { ok: boolean; data?: { base64: string; filename: string }; message?: string }

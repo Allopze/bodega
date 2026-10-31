@@ -1,6 +1,5 @@
 "use server"
 
-import { revalidatePath } from "next/cache"
 import { and, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
 import { fuelAnomalyCases, fuelOperationBatches, fuelOperationRecords, fuelVehicles, worksites } from "@/db/schema"
@@ -70,8 +69,7 @@ export async function revertBatchOperationsAction(_prev: ActionState, formData: 
   })
 
   revalidateFuel()
-  revalidatePath(`/combustibles/importar/operaciones/${batchId}`)
-  return { ok: true, message: "Lote revertido: sus registros fueron eliminados del dashboard" }
+  return { ok: true, message: "Archivo revertido: sus cargas ya no cuentan y el rendimiento de los equipos se recalculó" }
 }
 
 export async function linkOperationVehicleAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
@@ -115,7 +113,6 @@ export async function linkOperationVehicleAction(_prev: ActionState, formData: F
     newState: { plate, vehicleId, count: updated.length },
   })
 
-  revalidatePath(`/combustibles/importar/operaciones/${batchId}`)
   revalidateFuel()
   return { ok: true, message: `${updated.length} registro(s) vinculados a la patente ${vehicle.plate}` }
 }
@@ -156,7 +153,6 @@ export async function linkOperationWorksiteAction(_prev: ActionState, formData: 
     newState: { faenaNombre, worksiteId, count: updated.length },
   })
 
-  revalidatePath(`/combustibles/importar/operaciones/${batchId}`)
   revalidateFuel()
   return { ok: true, message: `${updated.length} registro(s) vinculados a la faena ${worksite.name}` }
 }

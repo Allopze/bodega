@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/field"
@@ -11,6 +12,7 @@ import { FileText, WarningCircle, CheckCircle, ArrowLeft, ArrowDown, ArrowUp } f
 import { toast } from "@/lib/toast"
 import { formatCLP, formatQty } from "@/lib/utils"
 import { previewConsumptionImportAction, confirmConsumptionImportAction, type ConsumptionPreviewData, type ConsumptionImportResult } from "../actions-consumos"
+import { fuelBatchHref } from "@/lib/combustibles/routes"
 import { Stat } from "@/lib/combustibles/wizard-helpers"
 import { ImportDuplicateConfirmation, ImportErrorList, ImportFileDropzone } from "./import-wizard-primitives"
 
@@ -144,7 +146,7 @@ export function ImportWizard({ worksites, canImportAllWorksites }: { worksites: 
           <ImportErrorList errors={result.errors} filename="errores-importacion.xlsx" title={`${result.errors.length} filas omitidas por errores:`} maxVisible={20} />
           <div className="flex justify-center gap-3">
             <Button variant="secondary" onClick={reset}>Importar otro archivo</Button>
-            <Button asChild><a href={`/combustibles/importar/${result.batchId}`}>Ver lote</a></Button>
+            <Button asChild><Link href={fuelBatchHref("tarjeta", result.batchId)}>Ver archivo</Link></Button>
           </div>
         </CardContent>
       </Card>
@@ -186,7 +188,7 @@ export function ImportWizard({ worksites, canImportAllWorksites }: { worksites: 
           {hasDuplicateWarning && <ImportDuplicateConfirmation
             messages={[
               ...(preview.archivoDuplicado ? ["Este archivo ya fue importado antes."] : []),
-              ...(preview.loteDuplicado ? ["Ya existe un lote para esta faena, período y fuente."] : []),
+              ...(preview.loteDuplicado ? ["Ya existe un archivo importado para esta faena, período y fuente."] : []),
             ]}
             checked={confirmDuplicates}
             onCheckedChange={setConfirmDuplicates}

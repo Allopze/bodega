@@ -2,7 +2,6 @@
 
 import { safeActionMessage } from "@/lib/action-error"
 
-import { revalidatePath } from "next/cache"
 import { and, eq, inArray } from "drizzle-orm"
 import { isNetworkError } from "@/lib/network-error"
 import { db } from "@/db"
@@ -46,7 +45,7 @@ export async function generateTaeImportReportAction(formData: FormData) {
 
   const file = formData.get("file")
   if (!(file instanceof File) || file.size === 0) {
-    return { ok: false, message: "Selecciona el archivo Excel del histórico TAE" }
+    return { ok: false, message: "Selecciona el archivo Excel del histórico de sellos" }
   }
   if (file.size > MAX_IMPORT_FILE_BYTES) {
     return { ok: false, message: "El archivo supera el máximo de 20 MB" }
@@ -80,7 +79,7 @@ export async function importTaeHistoryAction(formData: FormData) {
   if (guard.error) return guard.error
   if (formData.get("confirmation") !== "IMPORTAR") return { ok: false, message: "Debes confirmar que revisaste el reporte de mapeo" }
   const file = formData.get("file")
-  if (!(file instanceof File) || file.size === 0) return { ok: false, message: "Selecciona el archivo Excel del histórico TAE" }
+  if (!(file instanceof File) || file.size === 0) return { ok: false, message: "Selecciona el archivo Excel del histórico de sellos" }
   if (file.size > MAX_IMPORT_FILE_BYTES) return { ok: false, message: "El archivo supera el máximo de 20 MB" }
   try {
     const manualMappings = parseManualMappings(formData.get("manualMappings"))
@@ -92,21 +91,15 @@ export async function importTaeHistoryAction(formData: FormData) {
       allowedWorksiteIds: scope.mode === "all" ? undefined : new Set(scope.mode === "some" ? scope.ids : []),
       manualMappings,
     })
-    // Rutas HERMANAS, nunca "/combustibles/tae/importar": es la ruta donde
-    // vive este mismo formulario (tae-import-report-form.tsx, montado desde
-    // tae/importar/page.tsx). Se excluyó porque revalidar borraba el resumen
-    // de importación antes de que el usuario lo viera; la causa real era que
-    // hasta 2026-09-24 cualquier revalidación volvía a montar la plataforma
-    // entera (AppShell exportado como objeto memo), y ya no ocurre — ver
-    // `confirmOperationsImportAction` en actions-operaciones.ts. El detalle
-    // del lote recién creado es una ruta que el usuario aún no visitó, así que
-    // sí conviene dejarla fresca para cuando navegue a "Ver detalle".
+    // `revalidateFuel()` invalida todo `/combustibles`, también la pantalla donde vive este formulario
+    // (`/fuentes/agregar/sellos`) y la ficha del archivo recién creado. Es seguro desde que la plataforma ya no
+    // se vuelve a montar entera en cada revalidación (hasta 2026-09-24 `AppShell` se exportaba como objeto memo y
+    // el resumen de importación se perdía; ver `confirmOperationsImportAction` en actions-operaciones.ts).
     revalidateFuel()
-    revalidatePath(`/combustibles/tae/importar/${result.batchId}`)
     return { ok: true as const, data: result, message: `${result.importedRows} cargas históricas importadas` }
   } catch (error) {
     logger.error("[importTaeHistoryAction]", error)
-    const msg = error instanceof Error && isNetworkError(error) ? "Sin conexión al servidor. Verifica tu conexión a internet e inténtalo nuevamente." : safeActionMessage(error, "No se pudo importar el histórico TAE")
+    const msg = error instanceof Error && isNetworkError(error) ? "Sin conexión al servidor. Verifica tu conexión a internet e inténtalo nuevamente." : safeActionMessage(error, "No se pudo importar el histórico de sellos")
     return { ok: false, message: msg }
   }
 }
@@ -197,11 +190,10 @@ export async function revertTaeImportBatchAction(batchId: string) {
     })
 
     revalidateFuel()
-    revalidatePath(`/combustibles/tae/importar/${batchId}`)
-    return { ok: true as const, message: `Lote revertido: ${result.removed} cargas eliminadas`, data: result }
+    return { ok: true as const, message: `Archivo revertido: ${result.removed} cargas eliminadas`, data: result }
   } catch (error) {
     logger.error("[revertTaeImportBatchAction]", error)
-    const msg = error instanceof Error && isNetworkError(error) ? "Sin conexión al servidor. Verifica tu conexión a internet e inténtalo nuevamente." : safeActionMessage(error, "No se pudo revertir el lote")
+    const msg = error instanceof Error && isNetworkError(error) ? "Sin conexión al servidor. Verifica tu conexión a internet e inténtalo nuevamente." : safeActionMessage(error, "No se pudo revertir el archivo")
     return { ok: false as const, message: msg }
   }
 }
@@ -219,7 +211,6 @@ export async function reprocessTaeImportBatchAction(batchId: string) {
       allowedWorksiteIds: scope.mode === "all" ? undefined : new Set(scope.mode === "some" ? scope.ids : []),
     })
     revalidateFuel()
-    revalidatePath(`/combustibles/tae/importar/${batchId}`)
     return { ok: true as const, data: result, message: result.reprocessedRows ? `Se reprocesaron ${result.reprocessedRows} filas rechazadas` : "No hubo filas rechazadas listas para reprocesar" }
   } catch (error) {
     logger.error("[reprocessTaeImportBatchAction]", error)

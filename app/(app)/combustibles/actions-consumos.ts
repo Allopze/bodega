@@ -1,7 +1,6 @@
 "use server"
 
 import { createHash } from "node:crypto"
-import { revalidatePath } from "next/cache"
 import { and, desc, eq, isNull, ne, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { fuelConsumptionRecords, fuelImportBatches, fuelProviderMappings, fuelProviderTransactions, fuelVehicles } from "@/db/schema"
@@ -357,14 +356,10 @@ export async function confirmConsumptionImportAction(
     throw error
   }
 
-  // Sin revalidar "/combustibles/importar": es la ruta donde vive ESTE wizard
-  // (import-wizard.tsx, renderizado desde importar/page.tsx). Se excluyó porque
-  // revalidar borraba el paso "done" antes de que el usuario viera el resumen;
-  // la causa real era que hasta 2026-09-24 cualquier revalidación volvía a
-  // montar la plataforma entera (AppShell exportado como objeto memo), y ya no
-  // ocurre — ver `confirmOperationsImportAction` en actions-operaciones.ts.
-  // Basta con la ruta hermana: el historial de lotes se sirve fresco en la
-  // próxima visita real (dinámica, depende de sesión).
+  // `revalidateFuel()` invalida todo `/combustibles`, incluida la pantalla donde vive este asistente
+  // (`/fuentes/agregar/tarjeta`). Es seguro desde que la plataforma ya no se vuelve a montar entera en cada
+  // revalidación (hasta 2026-09-24 `AppShell` se exportaba como objeto memo y el paso «listo» se perdía; ver
+  // `confirmOperationsImportAction` en actions-operaciones.ts).
   revalidateFuel()
 
   return { ok: true, data: { batchId: batchIds[0]!, imported: [...rowsByWorksite.values()].flat().length, errors: [...parsed.errors, ...unmatchedErrors] } }
@@ -399,8 +394,7 @@ export async function revertBatchAction(_prev: ActionState, formData: FormData):
   })
 
   revalidateFuel()
-  revalidatePath(`/combustibles/importar/${batchId}`)
-  return { ok: true, message: "Lote revertido: sus registros fueron eliminados del dashboard" }
+  return { ok: true, message: "Archivo revertido: sus registros ya no cuentan en Cargas ni en la cuadratura" }
 }
 
 export async function linkConsumptionPlateAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
@@ -527,7 +521,6 @@ export async function linkConsumptionPlateAction(_prev: ActionState, formData: F
     newState: { patente, vehicleId, count: updated.length },
   })
 
-  revalidatePath(`/combustibles/importar/${batchId}`)
   revalidateFuel()
   return { ok: true, message: `${updated.length} registro(s) vinculados a la patente ${vehicle.plate}` }
 }
