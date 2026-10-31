@@ -44,6 +44,6 @@ export function assertFuelCostAccess(session: Session, options: { global?: boole
     throw new Error("Se requiere acceso operacional y de costos de combustible")
   }
   if (options.global && !isGlobalRole(session)) {
-    throw new Error("La cuenta corriente requiere acceso global")
+    throw new Error("Los estados de cuenta requieren acceso global")
   }
 }

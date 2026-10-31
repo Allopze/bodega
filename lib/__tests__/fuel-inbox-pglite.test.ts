@@ -44,7 +44,7 @@ import { linkInboxPlateAction, resolveReviewRequestAction, takeAnomalyCaseAction
 import { decideFlaggedLoad } from "@/lib/combustibles/control/review"
 import { countFuelInboxDecided, countFuelInboxPending, getFuelInbox, getFuelInboxItem, getLastDetectionRun, summarizeFuelInbox } from "@/lib/combustibles/inbox/queries"
 import { resolveFuelPeriod } from "@/lib/combustibles/period/parse"
-import type { FuelInboxFilters } from "@/lib/combustibles/inbox/types"
+import type { FuelInboxQueryFilters } from "@/lib/combustibles/inbox/detail-types"
 
 const tx = inMemoryDb as unknown as Tx
 const MARCH = resolveFuelPeriod({ searchParams: { periodo: "2026-03" }, fallback: { kind: "month", year: 2026, month: 3 }, today: "2026-10-31" })
@@ -70,8 +70,8 @@ function scopedSession(worksiteIds: string[], permissions: string[] = ALL_PERMIS
   } as Session
 }
 
-const pending = (overrides: Partial<FuelInboxFilters> = {}): FuelInboxFilters => ({ view: "pendientes", page: 1, ...overrides })
-const decided = (overrides: Partial<FuelInboxFilters> = {}): FuelInboxFilters => ({ view: "decididas", page: 1, ...overrides })
+const pending = (overrides: Partial<FuelInboxQueryFilters> = {}): FuelInboxQueryFilters => ({ view: "pendientes", page: 1, ...overrides })
+const decided = (overrides: Partial<FuelInboxQueryFilters> = {}): FuelInboxQueryFilters => ({ view: "decididas", page: 1, ...overrides })
 
 let seq = 0
 async function submission(vehicleId: string | null, loadedAt: string, meterReading: number, liters = 50, extra: Partial<typeof schema.fuelTaeSubmissions.$inferInsert> = {}) {

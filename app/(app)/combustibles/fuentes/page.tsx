@@ -41,8 +41,8 @@ type SearchParams = Record<string, string | string[] | undefined>
 const FAILED = Symbol("failed")
 
 export default async function FuentesPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
-  let session
-  try { session = await requireAnyPermission(["combustibles:import", "combustibles:tae_import", "combustibles:sync_integrations"], FUEL_PATHS.fuentes) } catch { redirect("/forbidden") }
+  const session = await requireAnyPermission(["combustibles:import", "combustibles:tae_import", "combustibles:sync_integrations"], FUEL_PATHS.fuentes)
+    .catch(() => redirect("/forbidden"))
 
   const sp = await searchParams
   const period = await resolveFuelPeriodForPage(session, sp)

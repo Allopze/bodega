@@ -39,7 +39,7 @@ export function sealsAnswer(rows: Array<Pick<SupervisorSealRow, "loads" | "witho
     total.chain > 0 ? `${total.chain === 1 ? "una tiene" : `${total.chain} tienen`} la cadena de sellos rota` : null,
   ].filter((item): item is string => item !== null)
   if (problems.length === 0) return `${lead} Todas tienen sus sellos y la cadena está completa.`
-  const text = problems.length === 1 ? problems[0] : `${problems.slice(0, -1).join(", ")} y ${problems[problems.length - 1]}`
+  const text = (problems.length === 1 ? problems[0] : `${problems.slice(0, -1).join(", ")} y ${problems[problems.length - 1]}`) ?? ""
   return `${lead} ${text.charAt(0).toUpperCase()}${text.slice(1)}.`
 }
 

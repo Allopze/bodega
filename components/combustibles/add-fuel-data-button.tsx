@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { CaretRight, CloudArrowDown, Drop, FileXls, Gauge, Lock, Receipt, SealCheck, UploadSimple } from "@phosphor-icons/react"
+import { CaretRight, CloudArrowDown, Drop, FileXls, Gauge, GasPump, Lock, Receipt, SealCheck, UploadSimple } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import type { FuelAddDataKind, FuelAddDataOption } from "@/lib/combustibles/section-nav"
@@ -14,6 +14,7 @@ const ICONS: Record<FuelAddDataKind, typeof Gauge> = {
   telemetria: Gauge,
   surtidor: Drop,
   sellos: SealCheck,
+  registrar: GasPump,
 }
 
 const OPTION_CLASS = "flex w-full items-center gap-3 rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) p-4 text-left"
@@ -50,7 +51,8 @@ function OptionBody({ option, allowed }: { option: FuelAddDataOption; allowed: b
  */
 export function AddFuelDataButton({ options }: { options: FuelAddDataOption[] }) {
   const [open, setOpen] = React.useState(false)
-  if (!options.some((option) => option.allowed)) return null
+  // Registrar a mano no es importar: sin ningún importador, el botón sobra.
+  if (!options.some((option) => option.allowed && option.kind !== "registrar")) return null
 
   return (
     <>

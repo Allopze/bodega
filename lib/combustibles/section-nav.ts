@@ -14,10 +14,6 @@ import type { SectionNavItem } from "@/components/ui/section-nav"
  */
 
 export { FUEL_CARRY_PARAMS }
-/** @deprecated Usar `FUEL_CARRY_PARAMS`; se conserva para los componentes que aún no migran. */
-export const CONSUMO_CARRY_PARAMS = FUEL_CARRY_PARAMS
-/** @deprecated Usar `FUEL_CARRY_PARAMS`. */
-export const CONTROL_CARRY_PARAMS = FUEL_CARRY_PARAMS
 
 export const FIRST_PERFORMANCE_HREF = fuelPerformanceHref(PERFORMANCE_FAMILY_SLUGS[PERFORMANCE_FAMILIES[0]])
 
@@ -112,7 +108,7 @@ export function firstAllowedAjustesHref(session: Session): string | null {
   return ajustesNavItems(session).find((item) => !item.external)?.href ?? null
 }
 
-export type FuelAddDataKind = "tarjeta" | "planilla" | "telemetria" | "surtidor" | "sellos" | "facturas"
+export type FuelAddDataKind = "tarjeta" | "planilla" | "telemetria" | "surtidor" | "sellos" | "facturas" | "registrar"
 
 export interface FuelAddDataOption {
   kind: FuelAddDataKind
@@ -125,7 +121,9 @@ export interface FuelAddDataOption {
 /**
  * «Agregar datos»: un solo botón que pregunta qué tiene la persona en la mano.
  * Cada opción conserva el permiso de su importador. Las que no puede usar se
- * muestran deshabilitadas, para que se sepa que existen.
+ * muestran deshabilitadas, para que se sepa que existen. «Registrar una carga a
+ * mano» va al final y no basta por sí sola para mostrar el botón: quien sólo
+ * registra ya tiene «Registrar carga» a la vista.
  */
 export function fuelAddDataOptions(session: Session): FuelAddDataOption[] {
   const canImport = can(session, "combustibles:import")
@@ -136,26 +134,6 @@ export function fuelAddDataOptions(session: Session): FuelAddDataOption[] {
     { kind: "telemetria", label: "Tengo telemetría de equipos", description: "Horas de motor y en vacío por día (VisionLink u otra).", href: `${FUEL_PATHS.fuentes}?agregar=telemetria`, allowed: canImport },
     { kind: "surtidor", label: "Tengo despachos de un surtidor", description: "De un surtidor sin integración, como el de CMPC.", href: `${FUEL_PATHS.fuentes}?agregar=surtidor`, allowed: canImport },
     { kind: "sellos", label: "Tengo el histórico de sellos", description: "La planilla antigua del formulario de sellos.", href: `${FUEL_PATHS.fuentes}/agregar/sellos`, allowed: can(session, "combustibles:tae_import") },
+    { kind: "registrar", label: "Quiero registrar una carga a mano", description: "Una carga que no viene en ningún archivo: equipo, medidor, litros y sellos.", href: FUEL_PATHS.registrar, allowed: can(session, "combustibles:register_load") },
   ]
-}
-
-/** @deprecated Forma anterior de `fuelAddDataOptions`, para `fuel-import-button.tsx` mientras migra. */
-export interface FuelImportAvailability {
-  tct: boolean
-  operaciones: boolean
-  control: boolean
-  tae: boolean
-  facturas: boolean
-}
-
-/** @deprecated Usar `fuelAddDataOptions`. */
-export function fuelImportAvailability(session: Session): FuelImportAvailability {
-  const canImport = can(session, "combustibles:import")
-  return {
-    tct: canImport,
-    operaciones: canImport && isGlobalRole(session),
-    control: canImport,
-    tae: can(session, "combustibles:tae_import"),
-    facturas: canImport && can(session, "combustibles:view") && can(session, "combustibles:view_costs"),
-  }
 }

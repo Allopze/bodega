@@ -42,6 +42,7 @@ import {
   inboxRowKey,
   parseInboxRowKey,
   type FuelInboxEvidence,
+  type FuelInboxItemDetail,
   type FuelInboxKind,
   type FuelInboxPage,
   type FuelInboxRow,
@@ -974,7 +975,7 @@ export async function getFuelInboxItem(session: Session, key: string): Promise<F
     type: "text",
     text: ref?.liters != null ? `La carga de ${row.equipmentLabel} es de ${fmt(ref.liters)} L, de ${monthName(raw.month)}.` : "El registro de la carga ya no está disponible.",
   }]
-  const history = [{ at: iso(raw.createdAt), byName: raw.requestedByName, text: raw.notes?.trim() || "Pidió que la revisen, sin nota." }]
+  const history: FuelInboxItemDetail["history"] = [{ at: iso(raw.createdAt), byName: raw.requestedByName, text: raw.notes?.trim() || "Pidió que la revisen, sin nota." }]
   if (raw.status === "resolved") history.push({ at: iso(raw.resolvedAt ?? raw.createdAt), byName: raw.resolvedByName, text: raw.resolutionNote ?? "Revisado." })
   return {
     row,
