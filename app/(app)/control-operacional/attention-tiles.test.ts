@@ -7,7 +7,11 @@ import {
   fuelReviewTile,
   stoppedTile,
   workOrdersTile,
+  type FuelPendingCounts,
 } from "./attention-tiles"
+
+/** Las cuatro colas de «Por revisar»; lo que no se nombra está en cero. */
+const fuelCounts = (overrides: Partial<FuelPendingCounts> = {}): FuelPendingCounts => ({ carga: 0, caso: 0, patente: 0, pedido: 0, ...overrides })
 
 describe("destinos de los tiles", () => {
   it("cada tile enlaza a su subconjunto con la sintaxis exacta de la lista", () => {
@@ -117,38 +121,65 @@ describe("documentsTile", () => {
 })
 
 describe("fuelReviewTile", () => {
-  it("suma las dos colas y las detalla", () => {
-    expect(fuelReviewTile({ flagged: 3, anomalies: 2 })).toMatchObject({
-      value: "5",
-      detail: "3 cargas marcadas · 2 anomalías",
+  it("suma las cuatro colas de «Por revisar» y las detalla", () => {
+    expect(fuelReviewTile(fuelCounts({ carga: 3, caso: 2, patente: 1, pedido: 1 }))).toMatchObject({
+      value: "7",
+      detail: "3 cargas por decidir · 2 casos · 1 patente sin vincular · 1 pedido de revisión",
       tone: "signal",
+      href: "/combustibles/revisar",
     })
   })
 
-  it("concuerda en singular", () => {
-    expect(fuelReviewTile({ flagged: 1, anomalies: 1 }).detail).toBe("1 carga marcada · 1 anomalía")
+  it("no nombra las partes en cero", () => {
+    expect(fuelReviewTile(fuelCounts({ caso: 2, pedido: 5 }))).toMatchObject({ value: "7", detail: "2 casos · 5 pedidos de revisión" })
+    expect(fuelReviewTile(fuelCounts({ patente: 3 }))).toMatchObject({ value: "3", detail: "3 patentes sin vincular" })
   })
 
-  it("con las dos colas vacías dice «Al día»", () => {
-    expect(fuelReviewTile({ flagged: 0, anomalies: 0 })).toMatchObject({
+  it("concuerda en singular y en plural", () => {
+    expect(fuelReviewTile(fuelCounts({ carga: 1, caso: 1, patente: 1, pedido: 1 })).detail)
+      .toBe("1 carga por decidir · 1 caso · 1 patente sin vincular · 1 pedido de revisión")
+    expect(fuelReviewTile(fuelCounts({ carga: 2, caso: 2, patente: 2, pedido: 2 })).detail)
+      .toBe("2 cargas por decidir · 2 casos · 2 patentes sin vincular · 2 pedidos de revisión")
+  })
+
+  it("separa los miles como el resto de la plataforma", () => {
+    expect(fuelReviewTile(fuelCounts({ carga: 1234, caso: 6 }))).toMatchObject({ value: "1.240", detail: "1.234 cargas por decidir · 6 casos" })
+  })
+
+  it("con las cuatro colas vacías dice «Al día»", () => {
+    expect(fuelReviewTile(fuelCounts())).toMatchObject({
       value: "Al día",
-      detail: "Sin cargas marcadas ni anomalías",
+      detail: "Nada espera a una persona",
       tone: "neutral",
+      href: "/combustibles/revisar",
     })
   })
 
-  it("si un conteo falló, no pinta un total parcial: nombra lo que falló", () => {
-    const tile = fuelReviewTile({ flagged: 4, anomalies: null })
+  it("si un tipo falló, no pinta un total parcial: nombra lo que falló y lo que sí se contó", () => {
+    const tile = fuelReviewTile(fuelCounts({ carga: 4, caso: null, pedido: 1 }))
     expect(tile.value).toBe("Sin dato")
-    expect(tile.detail).toBe("4 cargas marcadas · anomalías: no se pudo calcular")
+    expect(tile.detail).toBe("4 cargas por decidir · Casos: no se pudo calcular · 1 pedido de revisión")
+    expect(tile.tone).toBe("neutral")
 
-    const other = fuelReviewTile({ flagged: null, anomalies: 2 })
+    const other = fuelReviewTile(fuelCounts({ carga: null, patente: 2 }))
     expect(other.value).toBe("Sin dato")
-    expect(other.detail).toBe("Cargas marcadas: no se pudo calcular · 2 anomalías")
+    expect(other.detail).toBe("Cargas por decidir: no se pudo calcular · 2 patentes sin vincular")
   })
 
-  it("si fallaron los dos, lo dice", () => {
-    expect(fuelReviewTile({ flagged: null, anomalies: null })).toMatchObject({ value: "Sin dato", detail: "No se pudo calcular" })
+  it("un tipo caído no se esconde aunque lo demás esté en cero", () => {
+    expect(fuelReviewTile(fuelCounts({ pedido: null }))).toMatchObject({ value: "Sin dato", detail: "Pedidos de revisión: no se pudo calcular" })
+    expect(fuelReviewTile(fuelCounts({ patente: null, pedido: null })).detail)
+      .toBe("Patentes sin vincular: no se pudo calcular · Pedidos de revisión: no se pudo calcular")
+  })
+
+  it("si fallaron las cuatro, lo dice", () => {
+    expect(fuelReviewTile({ carga: null, caso: null, patente: null, pedido: null })).toMatchObject({ value: "Sin dato", detail: "No se pudo calcular" })
+  })
+
+  it("sigue enlazando a «Por revisar»: la cifra y la lista que abre cuentan lo mismo", () => {
+    for (const counts of [fuelCounts({ carga: 1 }), fuelCounts(), fuelCounts({ caso: null })]) {
+      expect(fuelReviewTile(counts).href).toBe(ATTENTION_HREFS.fuel)
+    }
   })
 })
 
@@ -159,11 +190,13 @@ describe("A1: ningún tile pinta un 0 pelado", () => {
       stoppedTile({ total: 0, inMaintenance: 0, outOfService: 0 }, 0),
       workOrdersTile(0),
       documentsTile({ expired: 0, expiringSoon: 0, warningDays: 30 }),
-      fuelReviewTile({ flagged: 0, anomalies: 0 }),
+      fuelReviewTile(fuelCounts()),
       stoppedTile(null, 0),
       workOrdersTile(null),
       documentsTile(null),
-      fuelReviewTile({ flagged: null, anomalies: null }),
+      fuelReviewTile({ carga: null, caso: null, patente: null, pedido: null }),
+      // Un tipo caído tampoco deja un 0: el valor es «Sin dato».
+      fuelReviewTile(fuelCounts({ carga: null })),
     ]
     for (const tile of empties) {
       expect(tile.value).not.toMatch(/^(0|—)$/)

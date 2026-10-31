@@ -753,11 +753,16 @@ export async function countFuelInboxDecided(session: Session, period: ResolvedFu
 }
 
 /**
- * Pendientes de toda la bandeja, sin período, para el contador del menú
- * (`app/(app)/layout.tsx`). Es el mismo criterio de «Pendientes» sin tope de
- * mes: lo que existe no tiene un mes del dato futuro.
+ * Pendientes de toda la bandeja por tipo, sin período. Es el mismo criterio de
+ * «Pendientes» sin tope de mes: lo que existe no tiene un mes del dato futuro.
+ * De aquí salen el contador del menú (`countFuelInboxPending`) y el tile
+ * «Combustible por revisar» del Panel operacional, para que las dos cifras
+ * cuenten lo mismo.
+ *
+ * El valor de un tipo cuya consulta falló es `null`, nunca cero: quien lo pinta
+ * decide qué hacer con un dato que falta.
  */
-export async function countFuelInboxPending(scope: Scope): Promise<number> {
+export async function getFuelInboxPendingByKind(scope: Scope): Promise<Record<FuelInboxKind, number | null>> {
   const ctx: Ctx = {
     session: { user: { permissions: [], worksiteIds: scope === "all" ? [] : scope } } as unknown as Session,
     scope,
@@ -766,7 +771,22 @@ export async function countFuelInboxPending(scope: Scope): Promise<number> {
     filters: { view: "pendientes", page: 1 },
   }
   const counts = await countByKind(ctx, "pendientes")
-  return FUEL_INBOX_KINDS.reduce((sum, kind) => sum + (counts[kind].n ?? 0), 0)
+  return Object.fromEntries(FUEL_INBOX_KINDS.map((kind) => [kind, counts[kind].n])) as Record<FuelInboxKind, number | null>
+}
+
+/** Lo mismo dentro de las faenas que ve la sesión (`serviceWorksiteScope`): quien tiene la sesión no repite cómo se deriva el alcance. */
+export async function getFuelInboxPendingForSession(session: Session): Promise<Record<FuelInboxKind, number | null>> {
+  return getFuelInboxPendingByKind(serviceWorksiteScope(session))
+}
+
+/**
+ * Pendientes de toda la bandeja, sin período, para el contador del menú
+ * (`app/(app)/layout.tsx`). Un tipo cuya consulta falló suma 0: el menú no se
+ * cae por eso (el tile del Panel, en cambio, dice «Sin dato»).
+ */
+export async function countFuelInboxPending(scope: Scope): Promise<number> {
+  const byKind = await getFuelInboxPendingByKind(scope)
+  return FUEL_INBOX_KINDS.reduce((sum, kind) => sum + (byKind[kind] ?? 0), 0)
 }
 
 /* ──────────────────────────────── Pie de la bandeja ──────────────────────────── */

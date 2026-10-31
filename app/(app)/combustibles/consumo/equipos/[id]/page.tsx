@@ -23,6 +23,7 @@ import { FUEL_PATHS, fuelPerformanceHref } from "@/lib/combustibles/routes"
 import { formatDate, formatDateTime, formatQty } from "@/lib/utils"
 import { hrefInContext } from "../../../control/_components/page-links"
 import { RegularityBadge } from "../../rendimiento/[familia]/stats-tables"
+import { EquipmentLitersChart } from "./equipment-liters-chart-lazy"
 import { EquipmentLoadsTable } from "./equipment-loads-table"
 import { EquipmentPerformanceChart } from "./equipment-performance-chart-lazy"
 
@@ -51,7 +52,9 @@ export default async function FichaEquipoPage({ params, searchParams }: { params
   const file = await getEquipmentFile(session, id, period)
   if (!file) notFound()
 
-  const { vehicle, loads, performance, idle, seals, cases, degraded, sourceCount } = file
+  const { vehicle, loads, performance, litersByMonth, idle, seals, cases, degraded, sourceCount } = file
+  // Sin cargas en ninguno de los 12 meses (o con la consulta caída, que `degraded` ya avisa) la sección no se pinta.
+  const hasLitersHistory = litersByMonth.some((month) => month.liters > 0)
   const unitLabel = vehicle.unit ? PERFORMANCE_UNIT_LABELS[vehicle.unit] : null
   const inContext = (href: string) => hrefInContext(href, period)
   const canSeeFlota = can(session, "flota:view")
@@ -157,6 +160,14 @@ export default async function FichaEquipoPage({ params, searchParams }: { params
           </Card>
         </div>
       </div>
+
+      {hasLitersHistory ? (
+        <section id="litros" aria-labelledby="litros-title" className="mb-10 scroll-mt-4">
+          <h2 id="litros-title" className="text-h2 text-[var(--color-text)]">Litros por mes</h2>
+          <p className="mb-3 mt-0.5 text-sub">Los últimos 12 meses; el período elegido en tono más fuerte.</p>
+          <EquipmentLitersChart months={litersByMonth} periodMonths={period.monthKeys} vehicleLabel={vehicle.label} />
+        </section>
+      ) : null}
 
       <section id="cargas" aria-labelledby="cargas-title" className="mb-10 scroll-mt-4">
         <div className="mb-3 flex flex-wrap items-end justify-between gap-2">

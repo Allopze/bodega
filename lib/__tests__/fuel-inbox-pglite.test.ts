@@ -42,8 +42,9 @@ import { projectTaeSubmissions } from "@/lib/combustibles/control/projection"
 import { resolveReviewRequest } from "@/lib/combustibles/control/review"
 import { linkInboxPlateAction, resolveReviewRequestAction, takeAnomalyCaseAction } from "@/app/(app)/combustibles/revisar/actions"
 import { decideFlaggedLoad } from "@/lib/combustibles/control/review"
-import { countFuelInboxDecided, countFuelInboxPending, getFuelInbox, getFuelInboxItem, getLastDetectionRun, summarizeFuelInbox } from "@/lib/combustibles/inbox/queries"
-import { resolveFuelPeriod } from "@/lib/combustibles/period/parse"
+import { countFuelInboxDecided, countFuelInboxPending, getFuelInbox, getFuelInboxItem, getFuelInboxPendingByKind, getFuelInboxPendingForSession, getLastDetectionRun, summarizeFuelInbox } from "@/lib/combustibles/inbox/queries"
+import { describeFuelPeriod, resolveFuelPeriod } from "@/lib/combustibles/period/parse"
+import { fuelReviewTile } from "@/app/(app)/control-operacional/attention-tiles"
 import type { FuelInboxQueryFilters } from "@/lib/combustibles/inbox/detail-types"
 
 const tx = inMemoryDb as unknown as Tx
@@ -355,6 +356,76 @@ describe("bandeja Por revisar", () => {
     expect(inA).toBeGreaterThan((await summarizeFuelInbox(scopedSession(["ws-a"]), MARCH)).total!)
     // Lo que no tiene faena sólo lo cuentan los roles globales.
     expect(all).toBe(inA + inB + 1)
+  })
+
+  describe("pendientes por tipo: el menú y el tile del Panel cuentan lo mismo que la bandeja", () => {
+    const sum = (counts: Record<string, number | null>) => Object.values(counts).reduce<number>((total, n) => total + (n ?? 0), 0)
+    const NONE = { carga: 0, caso: 0, patente: 0, pedido: 0 }
+
+    it("por tipo es lo que cuenta la bandeja sin tope de mes, y su suma es el contador del menú en cada alcance", async () => {
+      // Un período que termina en 2030: «Pendientes» sin un tope de mes que recorte algo.
+      const far = describeFuelPeriod({ kind: "year", year: 2030 }, "url", "2026-10-31")
+      const all = await getFuelInboxPendingByKind("all")
+      expect(all).toEqual((await summarizeFuelInbox(globalSession(), far)).byKind)
+      const scopes: Array<string[] | "all"> = ["all", ["ws-a"], ["ws-b"], []]
+      for (const scope of scopes) {
+        expect(sum(await getFuelInboxPendingByKind(scope))).toBe(await countFuelInboxPending(scope))
+      }
+    })
+
+    it("con el alcance acotado a otra faena sólo ve lo de esa faena; lo que no tiene faena lo suma sólo el alcance global", async () => {
+      const all = await getFuelInboxPendingByKind("all")
+      const inA = await getFuelInboxPendingByKind(["ws-a"])
+      const inB = await getFuelInboxPendingByKind(["ws-b"])
+      expect(inB).toEqual({ carga: 1, caso: 1, patente: 1, pedido: 1 })
+      expect(inA.carga).toBeGreaterThan(inB.carga!)
+      expect(all.carga).toBe(inA.carga! + inB.carga!)
+      expect(all.caso).toBe(inA.caso! + inB.caso!)
+      expect(all.patente).toBe(inA.patente! + inB.patente!)
+      // El pedido de la marca antigua («mark-sin-faena») no tiene faena.
+      expect(all.pedido).toBe(inA.pedido! + inB.pedido! + 1)
+      // Sin ninguna faena a la vista no hay nada: cero, no un tipo caído.
+      expect(await getFuelInboxPendingByKind([])).toEqual(NONE)
+    })
+
+    it("el envoltorio de sesión deriva el alcance de la sesión, y el tile pinta la misma cifra que el menú", async () => {
+      expect(await getFuelInboxPendingForSession(globalSession())).toEqual(await getFuelInboxPendingByKind("all"))
+      // Una sesión de la faena B no ve lo de la A, por más que se lo pida: el alcance sale de la sesión.
+      const inB = await getFuelInboxPendingForSession(scopedSession(["ws-b"]))
+      expect(inB).toEqual({ carga: 1, caso: 1, patente: 1, pedido: 1 })
+      expect(fuelReviewTile(inB)).toMatchObject({
+        value: "4",
+        detail: "1 carga por decidir · 1 caso · 1 patente sin vincular · 1 pedido de revisión",
+        tone: "signal",
+      })
+      const sessions: Array<[Session, string[] | "all"]> = [[globalSession(), "all"], [scopedSession(["ws-a"]), ["ws-a"]], [scopedSession(["ws-b"]), ["ws-b"]]]
+      for (const [session, scope] of sessions) {
+        const tile = fuelReviewTile(await getFuelInboxPendingForSession(session))
+        expect(Number(tile.value.replace(/\./g, ""))).toBe(await countFuelInboxPending(scope))
+      }
+      // Sin ninguna faena a la vista el valor es «Al día», nunca un 0 pelado.
+      expect(await getFuelInboxPendingForSession(scopedSession([]))).toEqual(NONE)
+      expect(fuelReviewTile(await getFuelInboxPendingForSession(scopedSession([])))).toMatchObject({ value: "Al día", detail: "Nada espera a una persona", tone: "neutral" })
+    })
+
+    it("un tipo que no se pudo contar es null, no cero: el menú lo suma como 0 y el tile dice «Sin dato»", async () => {
+      const logged = vi.spyOn(console, "error").mockImplementation(() => {})
+      const healthy = await getFuelInboxPendingByKind("all")
+      // Se tumba la tabla de los pedidos de revisión; el resto de la bandeja sigue contando.
+      await pg.exec("alter table fuel_review_marks rename to fuel_review_marks_fuera")
+      try {
+        const broken = await getFuelInboxPendingByKind("all")
+        expect(broken).toEqual({ ...healthy, pedido: null })
+        expect(logged.mock.calls.some(([line]) => String(line).includes("conteo de «pedido» falló"))).toBe(true)
+        expect(await countFuelInboxPending("all")).toBe(healthy.carga! + healthy.caso! + healthy.patente!)
+        expect(fuelReviewTile(broken)).toMatchObject({ value: "Sin dato", tone: "neutral" })
+        expect(fuelReviewTile(broken).detail).toContain("Pedidos de revisión: no se pudo calcular")
+      } finally {
+        await pg.exec("alter table fuel_review_marks_fuera rename to fuel_review_marks")
+        logged.mockRestore()
+      }
+      expect(await getFuelInboxPendingByKind("all")).toEqual(healthy)
+    })
   })
 
   it("el pie dice cuándo corrió por última vez la revisión automática", async () => {
