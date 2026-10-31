@@ -6,15 +6,16 @@ import { actionErrorResult } from "@/lib/actions/action-error-result"
 import { guardPermission } from "@/lib/auth/can"
 import { assignEquipment, type AssignSummary } from "@/lib/services/mantencion/schedule-assign"
 import {
-  addScheduleInterval, addScheduleItem, clearIntervalReview, renameSchedule, setScheduleBrandRule, setScheduleCell,
-  setScheduleIntervalActive, setScheduleItemActive, type ScheduleEditResult,
+  addScheduleInterval, addScheduleItem, clearIntervalReview, discardScheduleDraft, publishSchedule, renameSchedule,
+  setScheduleBrandRule, setScheduleCell, setScheduleIntervalActive, setScheduleItemActive, type ScheduleEditResult,
 } from "@/lib/services/mantencion/schedule-editor"
 
 /**
  * Ediciones del editor de pautas. Cada una pide `mant:schedules:manage` en el
- * servidor, valida la forma de lo que llega y delega en el servicio, que cierra
- * la edición publicando una versión (regla 15). Todas devuelven el resultado del
- * servicio tal cual (ya redactado en español) y revalidan la pauta y la lista.
+ * servidor, valida la forma de lo que llega y delega en el servicio. Las ediciones
+ * quedan en el borrador; sólo `publishScheduleAction` sube la versión (regla 15).
+ * Todas devuelven el resultado del servicio tal cual (ya redactado en español) y
+ * revalidan la pauta y la lista.
  */
 
 const PATH = "/mantencion/pautas"
@@ -86,6 +87,16 @@ export async function setBrandRuleAction(input: { scheduleId: string; activity: 
     input,
     (d, who) => setScheduleBrandRule(who, d),
   )
+}
+
+/** Publica el borrador como la versión N+1; el teléfono, el panel y los equipos pasan a ver lo nuevo. */
+export async function publishScheduleAction(input: { scheduleId: string }) {
+  return edit(z.object({ scheduleId: id }), input, (d, who) => publishSchedule(who, d.scheduleId), ["/mantencion/equipos", "/mantencion/panel"])
+}
+
+/** Descarta los cambios sin publicar: la pauta vuelve a la versión vigente. */
+export async function discardScheduleDraftAction(input: { scheduleId: string }) {
+  return edit(z.object({ scheduleId: id }), input, (d, who) => discardScheduleDraft(who, d.scheduleId))
 }
 
 /** Deja `vehicleIds` como el conjunto de equipos con esta pauta; el servidor recalcula el resumen. */

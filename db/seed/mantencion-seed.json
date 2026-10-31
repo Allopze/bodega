@@ -194,7 +194,7 @@
     80000,
     160000
    ],
-   "origen": "Planilla «Diferencias actividades por equipo».",
+   "origen": "Mantención preventiva por kilometraje de camiones y tractos, según la planilla de actividades de la jefatura.",
    "grupos": [
     {
      "nombre": "Motor",
@@ -884,7 +884,7 @@
     900,
     1200
    ],
-   "origen": "Formulario «PAUTA MANTENCION PREVENTIVA MAQUINARIA». Falta definir qué ítems van en cada intervalo: por ahora todos aparecen en todos.",
+   "origen": "Mantención preventiva por horas de la maquinaria pesada, según el formulario de la jefatura. Mientras no se defina qué ítems van en cada intervalo, todos aparecen en todos.",
    "grupos": [
     {
      "nombre": "General y estructura",

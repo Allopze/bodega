@@ -688,6 +688,27 @@ services:
       - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
     command: ["node", "scripts/seed-mantencion.cjs"]
 
+  # One-shot: correcciones de datos de mantención del 2026-10-31 (descripción de
+  # las pautas sembradas; correcciones P3 de equipos sólo las aprobadas en el
+  # script). Primero sin `--apply` (dry-run) y revisar el resumen:
+  #
+  #   docker compose run --rm apply-mantencion-correcciones --actor-email <correo>
+  #   docker compose run --rm apply-mantencion-correcciones --actor-email <correo> --apply
+  apply-mantencion-correcciones:
+    build:
+      context: .
+      target: prod
+    image: ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}
+    restart: "no"
+    profiles: ["oneshot"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
+    entrypoint: ["node", "scripts/apply-mantencion-correcciones.cjs"]
+
   # One-shot: da de baja las variantes que son la misma talla física escrita de
   # dos formas (`N41` junto a `T41`, `L` junto a `T/L`) o duplicadas de plano.
   # Desactiva con `is_active = false`, nunca borra, y sólo toca variantes sin

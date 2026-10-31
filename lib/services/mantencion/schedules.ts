@@ -13,14 +13,15 @@ import type { MantBrandRuleValue, MantUnit } from "@/lib/mantencion/types"
 import { formatDate, todayInChile } from "@/lib/utils"
 import type { MantActionResult } from "./result"
 import { writeEquipmentHistory, type MantActor } from "./equipment-history"
+import { listDirtyScheduleIds, scheduleDraftDiff } from "./schedule-draft"
 import { publishScheduleVersion } from "./schedule-versions"
 
 /**
  * Pautas (§10): lectura para la lista y el editor, alta (vacía o copia de otra)
  * y eliminación. Las ediciones finas —celdas, ítems, intervalos, reglas— están
  * en `schedule-editor.ts`; la asignación de equipos, en `schedule-assign.ts`.
- * Todo cambio de pauta termina publicando una versión (regla 15) en la misma
- * transacción; el permiso `mant:schedules:manage` lo exige la acción.
+ * Crear una pauta publica su versión 1; las ediciones quedan en el borrador y las
+ * publica `publishSchedule` (regla 15). El permiso `mant:schedules:manage` lo exige la acción.
  */
 
 export const MAX_SCHEDULE_INTERVALS = 12
@@ -33,7 +34,10 @@ export interface ScheduleListRow {
   itemCount: number
   equipmentCount: number
   hasBrandRules: boolean
+  /** Versión publicada (la que ven el teléfono y los equipos). */
   version: number
+  /** El borrador tiene cambios sin publicar. */
+  dirty: boolean
 }
 
 /** Lista de pautas vivas con lo que muestra la tabla: intervalos, ítems, equipos y reglas por marca. */
@@ -41,7 +45,7 @@ export async function listSchedules(): Promise<ScheduleListRow[]> {
   const schedules = await db.select().from(mantSchedules).where(isNull(mantSchedules.deletedAt)).orderBy(asc(mantSchedules.name))
   if (schedules.length === 0) return []
   const ids = schedules.map((schedule) => schedule.id)
-  const [intervals, items, equipment, rules] = await Promise.all([
+  const [intervals, items, equipment, rules, dirtyIds] = await Promise.all([
     db.select({ scheduleId: mantScheduleIntervals.scheduleId, value: mantScheduleIntervals.value })
       .from(mantScheduleIntervals)
       .where(and(inArray(mantScheduleIntervals.scheduleId, ids), eq(mantScheduleIntervals.isActive, true)))
@@ -58,6 +62,7 @@ export async function listSchedules(): Promise<ScheduleListRow[]> {
     db.selectDistinct({ scheduleId: mantScheduleBrandRules.scheduleId })
       .from(mantScheduleBrandRules)
       .where(inArray(mantScheduleBrandRules.scheduleId, ids)),
+    listDirtyScheduleIds(ids),
   ])
   const itemCount = new Map(items.map((row) => [row.scheduleId, row.n]))
   const equipmentCount = new Map(equipment.map((row) => [row.scheduleId ?? "", row.n]))
@@ -71,6 +76,7 @@ export async function listSchedules(): Promise<ScheduleListRow[]> {
     equipmentCount: equipmentCount.get(schedule.id) ?? 0,
     hasBrandRules: withRules.has(schedule.id),
     version: schedule.version,
+    dirty: dirtyIds.has(schedule.id),
   }))
 }
 
@@ -97,8 +103,11 @@ export interface ScheduleEditorModel {
   id: string
   name: string
   unit: MantUnit
+  /** Versión publicada: la que ven el teléfono, el panel y los equipos. */
   version: number
   origin: string | null
+  /** Cambios del borrador (las tablas vivas) respecto de la versión publicada. */
+  draft: { dirty: boolean; changes: string[] }
   intervals: EditorInterval[]
   groups: EditorGroup[]
   brandRules: { brands: Array<{ id: string; name: string }>; rows: EditorBrandRuleRow[] }
@@ -110,7 +119,7 @@ export async function loadScheduleEditor(scheduleId: string): Promise<ScheduleEd
   const [schedule] = await db.select().from(mantSchedules)
     .where(and(eq(mantSchedules.id, scheduleId), isNull(mantSchedules.deletedAt))).limit(1)
   if (!schedule) return null
-  const [intervals, groups, items, rules, equipment] = await Promise.all([
+  const [intervals, groups, items, rules, equipment, draft] = await Promise.all([
     db.select().from(mantScheduleIntervals)
       .where(and(eq(mantScheduleIntervals.scheduleId, scheduleId), eq(mantScheduleIntervals.isActive, true)))
       .orderBy(asc(mantScheduleIntervals.value)),
@@ -133,6 +142,7 @@ export async function loadScheduleEditor(scheduleId: string): Promise<ScheduleEd
       .innerJoin(worksites, eq(worksites.id, fuelVehicles.worksiteId))
       .where(eq(mantEquipmentProfiles.scheduleId, scheduleId))
       .groupBy(worksites.id, worksites.name),
+    scheduleDraftDiff(scheduleId),
   ])
   const itemIds = items.map((item) => item.id)
   const cells = itemIds.length
@@ -160,6 +170,7 @@ export async function loadScheduleEditor(scheduleId: string): Promise<ScheduleEd
     unit: schedule.unit as MantUnit,
     version: schedule.version,
     origin: schedule.origin,
+    draft: { dirty: draft.dirty, changes: draft.changes },
     intervals: intervals.map((interval) => ({ id: interval.id, value: interval.value, needsReview: interval.needsReview })),
     groups: groups
       .map((group) => ({

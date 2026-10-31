@@ -8,10 +8,11 @@ import { nameKey } from "@/lib/mantencion/normalize"
 import type { MantUnit } from "@/lib/mantencion/types"
 import type { EditorGroup, EditorInterval, EditorItem } from "@/lib/services/mantencion/schedules"
 import { toast } from "@/lib/toast"
+import { cn } from "@/lib/utils"
 import { addScheduleItemAction, setScheduleCellAction, setScheduleItemActiveAction } from "@/app/(app)/mantencion/pautas/[id]/actions"
 import { SectionCard } from "../shared/section-card"
 import { ScheduleAddSystem } from "./schedule-add-system"
-import { REMOVE_COLUMN, ScheduleMatrixGroup } from "./schedule-matrix-group"
+import { addRowId, FIRST_COLUMN_CLASS, REMOVE_COLUMN, ScheduleMatrixGroup, toggleRowId } from "./schedule-matrix-group"
 import { useGridNavigation } from "./use-grid-navigation"
 import { toastWithUndo, useScheduleEdit } from "./use-schedule-edit"
 
@@ -24,14 +25,17 @@ const cellKey = (itemId: string, intervalId: string) => `${itemId}:${intervalId}
  * al instante: se pinta de inmediato (`useOptimistic`) y vuelve atrás sola si el
  * servidor la rechaza. Quitar un ítem lo inactiva y ofrece «Deshacer». El filtro
  * de la barra superior busca ítems por nombre. Para el teclado la matriz es una
- * sola parada de Tab (casillas y «Quitar» incluidos) y las flechas se mueven por
- * ella (`useGridNavigation`).
+ * sola parada de Tab (casillas, «Quitar», plegar sistema y «+ Agregar ítem»
+ * incluidos) y las flechas se mueven por ella (`useGridNavigation`). En móvil la
+ * columna «Actividad» queda fija a la izquierda al desplazar los intervalos.
  */
-export function ScheduleMatrix({ scheduleId, unit, intervals, groups }: {
+export function ScheduleMatrix({ scheduleId, unit, intervals, groups, headerTop = "top-0" }: {
   scheduleId: string
   unit: MantUnit
   intervals: EditorInterval[]
   groups: EditorGroup[]
+  /** Clase `top-*` del encabezado fijo: más abajo cuando la barra de borrador está pegada arriba. */
+  headerTop?: string
 }) {
   const { searchQuery } = useSafeShellHeader()
   const [collapsed, setCollapsed] = React.useState<Set<string>>(new Set())
@@ -53,12 +57,25 @@ export function ScheduleMatrix({ scheduleId, unit, intervals, groups }: {
   )
 
   // Filas que se ven (no plegadas ni filtradas) y columnas: una por intervalo y la de «Quitar».
-  const rowIds = React.useMemo(
-    () => visibleGroups.flatMap((group) => (!needle && collapsed.has(group.id) ? [] : group.items.map((item) => item.id))),
-    [visibleGroups, collapsed, needle],
-  )
+  // Cada sistema aporta su botón de plegar, sus ítems y, si se puede agregar, «+ Agregar ítem»: filas de un solo botón.
+  const { rowIds, singleRows } = React.useMemo(() => {
+    const ids: string[] = []
+    const single = new Set<string>()
+    for (const group of visibleGroups) {
+      const folded = !needle && collapsed.has(group.id)
+      ids.push(toggleRowId(group.id))
+      single.add(toggleRowId(group.id))
+      if (folded) continue
+      for (const item of group.items) ids.push(item.id)
+      if (!needle && addingTo !== group.id) {
+        ids.push(addRowId(group.id))
+        single.add(addRowId(group.id))
+      }
+    }
+    return { rowIds: ids, singleRows: single as ReadonlySet<string> }
+  }, [visibleGroups, collapsed, needle, addingTo])
   const colIds = React.useMemo(() => [...intervals.map((interval) => interval.id), REMOVE_COLUMN], [intervals])
-  const grid = useGridNavigation(rowIds, colIds)
+  const grid = useGridNavigation(rowIds, colIds, singleRows)
   const hintId = React.useId()
 
   function toggleCell(item: EditorItem, interval: EditorInterval, applies: boolean) {
@@ -108,18 +125,18 @@ export function ScheduleMatrix({ scheduleId, unit, intervals, groups }: {
             <caption className="sr-only">Actividades de la pauta por intervalo</caption>
             <thead>
               <tr>
-                <th scope="col" className="sticky top-0 z-10 min-w-40 border-y border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-[var(--color-text-subtle)]">Actividad</th>
+                <th scope="col" className={cn(FIRST_COLUMN_CLASS, "sticky z-[15] min-w-40 border-y border-[var(--color-border)] px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-[var(--color-text-subtle)]", headerTop)}>Actividad</th>
                 {intervals.map((interval) => (
                   <th
                     key={interval.id}
                     scope="col"
-                    className="sticky top-0 z-10 w-24 whitespace-nowrap border-y border-[var(--color-border)] bg-[var(--color-surface)] px-1 py-2 text-center font-mono text-xs font-semibold text-[var(--color-text)]"
+                    className={cn("sticky z-10 w-24 whitespace-nowrap border-y border-[var(--color-border)] bg-[var(--color-surface)] px-1 py-2 text-center font-mono text-xs font-semibold text-[var(--color-text)]", headerTop)}
                   >
                     {formatReading(interval.value, unit)}
                     {interval.needsReview && <>{" "}<span className="mt-0.5 block font-sans text-[10px] font-semibold uppercase tracking-wider text-[var(--color-warning-ink)]">Por revisar</span></>}
                   </th>
                 ))}
-                <th scope="col" className="sticky top-0 z-10 w-24 border-y border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-2"><span className="sr-only">Acciones</span></th>
+                <th scope="col" className={cn("sticky z-10 w-24 border-y border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-2", headerTop)}><span className="sr-only">Acciones</span></th>
               </tr>
             </thead>
             {visibleGroups.map((group) => (
@@ -147,7 +164,7 @@ export function ScheduleMatrix({ scheduleId, unit, intervals, groups }: {
             )}
             <tfoot>
               <tr className="bg-[var(--color-surface-2)] font-semibold">
-                <th scope="row" className="px-3 py-2 text-left">Actividades en el intervalo</th>
+                <th scope="row" className={cn(FIRST_COLUMN_CLASS, "sticky z-[5] bg-[var(--color-surface-2)] px-3 py-2 text-left")}>Actividades en el intervalo</th>
                 {counts.map((count, index) => <td key={intervals[index]!.id} className="px-1 py-2 text-center font-mono tabular-nums">{count}</td>)}
                 <td />
               </tr>

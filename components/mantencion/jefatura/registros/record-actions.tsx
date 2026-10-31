@@ -3,17 +3,18 @@
 import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { CheckCircle, ChatCircleText, FilePdf } from "@phosphor-icons/react"
+import { CaretDown, CheckCircle, ChatCircleText, FilePdf, FileXls } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { useXlsxExport } from "@/components/ui/export-button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Field } from "@/components/ui/field"
 import { Textarea } from "@/components/ui/textarea"
 import { useOperation } from "@/lib/hooks/use-operation"
 import { toast } from "@/lib/toast"
 import type { MantRecordStatus, MantReview } from "@/lib/mantencion/types"
-import { markRecordReviewedAction, observeRecordAction, voidRecordAction } from "@/app/(app)/mantencion/registros/[id]/actions"
-import { RecordExportButton } from "@/app/(app)/mantencion/registros/[id]/record-export-button"
+import { exportRecordAction, markRecordReviewedAction, observeRecordAction, voidRecordAction } from "@/app/(app)/mantencion/registros/[id]/actions"
 
 export interface RecordActionsProps {
   recordId: string
@@ -38,7 +39,7 @@ export interface RecordActionsProps {
  * Acciones del detalle (§10), todas según permiso. Van en `PageHeader.actions`
  * (regla 5 de AGENTS.md) y se leen por peso: UNA acción principal («Marcar
  * revisado», que en una lista sigue con el siguiente registro), «Observar» como
- * secundaria, las descargas ligeras y «Anular» al final y en rojo suave. Los
+ * secundaria, «Exportar ▾» (PDF y Excel) y «Anular» al final y en rojo suave. Los
  * permisos que llegan aquí sólo deciden qué botones se dibujan: el servidor
  * vuelve a pedirlos en cada acción.
  *
@@ -55,6 +56,7 @@ export function RecordActions({ recordId, folio, status, review, canExport, canO
   const observe = useOperation()
   const reviewOp = useOperation()
   const voidOp = useOperation()
+  const exportExcel = useXlsxExport(React.useCallback(() => exportRecordAction({ recordId }), [recordId]))
   const active = status === "vigente"
   const label = folio ?? "el registro"
 
@@ -107,14 +109,27 @@ export function RecordActions({ recordId, folio, status, review, canExport, canO
         </Button>
       )}
       {canExport && (
-        <Button asChild variant="ghost" size="sm">
-          <a href={`/api/mantencion/registros/${recordId}/pdf`} download aria-label="Descargar PDF">
-            <FilePdf className="h-4 w-4 shrink-0" aria-hidden />
-            PDF
-          </a>
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="sm" loading={exportExcel.loading}>
+              Exportar
+              <CaretDown className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem asChild>
+              <a href={`/api/mantencion/registros/${recordId}/pdf`} download className="flex items-center gap-2">
+                <FilePdf className="h-4 w-4 shrink-0" aria-hidden />
+                PDF
+              </a>
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => void exportExcel.run()} className="flex items-center gap-2">
+              <FileXls className="h-4 w-4 shrink-0" aria-hidden />
+              Excel
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       )}
-      {canExport && <RecordExportButton recordId={recordId} />}
       {active && canVoid && (
         <Button variant="ghost-danger" size="sm" onClick={() => { voidOp.setMessage(""); setVoidOpen(true) }}>
           Anular

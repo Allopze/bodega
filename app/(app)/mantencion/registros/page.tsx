@@ -1,5 +1,6 @@
 import type { Metadata } from "next"
 import Link from "next/link"
+import { Suspense } from "react"
 import { redirect } from "next/navigation"
 import { CheckCircle, Truck, Warning, Wrench } from "@phosphor-icons/react/dist/ssr"
 import { Button } from "@/components/ui/button"
@@ -7,8 +8,8 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { PageContainer } from "@/components/ui/page-container"
 import { PageHeader } from "@/components/ui/page-header"
 import { ServerPagination } from "@/components/ui/server-pagination"
+import { StageTabs, type StageTab } from "@/components/ui/stage-tabs"
 import { SummaryBar, type SummaryStat } from "@/components/ui/summary-bar"
-import { RecordReviewTabs } from "@/components/mantencion/jefatura/registros/record-review-tabs"
 import { RecordsFilters } from "@/components/mantencion/jefatura/registros/records-filters"
 import { RecordsTable } from "@/components/mantencion/jefatura/registros/records-table"
 import { can, requireAnyPermission } from "@/lib/auth/can"
@@ -48,6 +49,16 @@ function hrefWith(current: Record<string, string>, overrides: Record<string, str
   }
   const query = params.toString()
   return query ? `${PATHNAME}?${query}` : PATHNAME
+}
+
+/** Pestañas de revisión: la única representación de la revisión (regla A5). «Todos» = sin parámetro. */
+function buildReviewTabs(counts: Record<MantReview, number>): StageTab[] {
+  return [
+    { value: "pendiente", label: "Por revisar", count: counts.pendiente, countTone: "signal" },
+    { value: "observado", label: "Observados", count: counts.observado },
+    { value: "revisado", label: "Revisados", count: counts.revisado },
+    { value: "", label: "Todos" },
+  ]
 }
 
 /** Lo que dice una pestaña sin registros: qué significa y qué hacer, sin jerga (regla A4). */
@@ -90,6 +101,7 @@ export default async function RecordsPage({ searchParams }: { searchParams: Prom
     loadRecordReviewCounts(viewer, query.filters),
   ])
 
+  const reviewTabs = buildReviewTabs(reviewCounts)
   const pagination = resolvePagination({ pageParam: String(list.page), totalItems: list.total, pageSize: RECORDS_PAGE_SIZE })
   // La pestaña de revisión no es un «filtro» para el aviso de lista vacía: vaciarla es una buena noticia, no un error de filtros.
   const filtered = hasRecordFilters({ ...query.filters, review: undefined })
@@ -155,7 +167,11 @@ export default async function RecordsPage({ searchParams }: { searchParams: Prom
         <SummaryBar stats={stats} />
       </section>
 
-      <RecordReviewTabs counts={reviewCounts} current={query.filters.review ?? null} hrefFor={(value) => hrefWith(params, { revision: value })} />
+      <div className="mb-3">
+        <Suspense fallback={<div className="h-11 border-b border-[var(--color-border)] sm:h-9" aria-hidden />}>
+          <StageTabs tabs={reviewTabs} ariaLabel="Revisión de los registros" param="revision" />
+        </Suspense>
+      </div>
 
       <RecordsFilters options={options} />
 

@@ -65,10 +65,14 @@ async function parsePdf(buffer: Buffer) {
   }
 }
 
-async function download(page: Page, button: string) {
+/** `menu` = el botón abre un menú «Exportar» y se elige `item` (el Excel de un solo registro). */
+async function download(page: Page, button: string, menu?: { trigger: string; item: string }) {
+  if (menu) await page.getByRole("button", { name: menu.trigger, exact: true }).click()
   const [file] = await Promise.all([
     page.waitForEvent("download"),
-    page.getByRole("button", { name: button, exact: true }).click(),
+    menu
+      ? page.getByRole("menuitem", { name: menu.item, exact: true }).click()
+      : page.getByRole("button", { name: button, exact: true }).click(),
   ])
   const workbook = new ExcelJS.Workbook()
   await workbook.xlsx.readFile((await file.path()) as string)
@@ -451,7 +455,7 @@ test("PDF: páginas, folio, firma de jefatura pendiente y el mismo archivo en la
 test("Excel de un solo registro desde su detalle", async ({ page }) => {
   await login(page, JEFE)
   await page.goto(`/mantencion/registros/${rec.D.id}`)
-  const { workbook, filename } = await download(page, "Exportar a Excel")
+  const { workbook, filename } = await download(page, "", { trigger: "Exportar", item: "Excel" })
   expect(filename).toContain(rec.D.folio)
   expect(workbook.getWorksheet("Registros")!.rowCount).toBe(2)
 })

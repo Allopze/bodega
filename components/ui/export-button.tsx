@@ -40,18 +40,17 @@ export function downloadBase64Xlsx(base64: string, filename: string) {
   link.click()
 }
 
-export function ExportButton<TFilters = undefined>({
-  action,
-  filters,
-  label = "Exportar Excel",
-  ariaLabel,
-  variant = "secondary",
-  size = "sm",
-  className,
-}: ExportButtonProps<TFilters>) {
+/**
+ * Descarga de un Excel desde una acción de servidor: `loading` mientras exporta y un aviso al
+ * terminar. Lo usan `ExportButton` y los menús «Exportar» que no son un botón directo.
+ */
+export function useXlsxExport<TFilters = undefined>(
+  action: (filters: TFilters) => Promise<ExportActionResult>,
+  filters?: TFilters,
+) {
   const [loading, setLoading] = React.useState(false)
 
-  async function handleExport() {
+  const run = React.useCallback(async () => {
     setLoading(true)
     try {
       const result = await action(filters as TFilters)
@@ -71,13 +70,27 @@ export function ExportButton<TFilters = undefined>({
     } finally {
       setLoading(false)
     }
-  }
+  }, [action, filters])
+
+  return { run, loading }
+}
+
+export function ExportButton<TFilters = undefined>({
+  action,
+  filters,
+  label = "Exportar Excel",
+  ariaLabel,
+  variant = "secondary",
+  size = "sm",
+  className,
+}: ExportButtonProps<TFilters>) {
+  const { run, loading } = useXlsxExport(action, filters)
 
   return (
     <Button
       variant={variant}
       size={size}
-      onClick={handleExport}
+      onClick={run}
       loading={loading}
       className={className}
       aria-label={ariaLabel}

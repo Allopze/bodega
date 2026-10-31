@@ -10,8 +10,9 @@ import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import { getScheduleSnapshot } from "@/lib/services/mantencion/schedule-versions"
 
 /*
- * Pautas (§10, regla 15) contra Postgres de verdad: cada edición sube la
- * versión y guarda su snapshot sin tocar el de las versiones anteriores; un
+ * Pautas (§10, regla 15) contra Postgres de verdad: editar sólo cambia el
+ * borrador (las tablas vivas); publicar sube la versión y guarda su snapshot sin
+ * tocar el de las versiones anteriores; descartar vuelve a lo publicado; un
  * intervalo nuevo hereda la columna y queda por revisar; quitar es inactivar y
  * deshacer lo restituye; la asignación resume y registra su historial; eliminar
  * deja a los equipos sin pauta.
@@ -33,8 +34,10 @@ const {
 } = await import("@/lib/services/mantencion/schedules")
 const {
   renameSchedule, setScheduleCell, addScheduleItem, setScheduleItemActive, addScheduleInterval,
-  setScheduleIntervalActive, clearIntervalReview, setScheduleBrandRule,
+  setScheduleIntervalActive, clearIntervalReview, setScheduleBrandRule, publishSchedule, discardScheduleDraft, scheduleDraftDiff,
 } = await import("@/lib/services/mantencion/schedule-editor")
+const { getCurrentScheduleSnapshots } = await import("@/lib/services/mantencion/schedule-versions")
+const { loadFleet } = await import("@/lib/services/mantencion/fleet")
 const { assignEquipment, listAssignCandidates } = await import("@/lib/services/mantencion/schedule-assign")
 const { listEquipmentHistory } = await import("@/lib/services/mantencion/equipment-history")
 const { exportSchedules } = await import("@/lib/services/mantencion/export-schedules")
@@ -59,6 +62,15 @@ async function versionRows(scheduleId: string) {
 function ok<T extends { ok: boolean }>(result: T): Extract<T, { ok: true }> {
   if (!result.ok) throw new Error(`Se esperaba éxito: ${(result as { message?: string }).message}`)
   return result as Extract<T, { ok: true }>
+}
+
+/** Publica el borrador de `scheduleId` y devuelve la versión nueva. */
+async function publish(scheduleId = sourceId): Promise<number> {
+  return ok(await publishSchedule(actor, scheduleId)).data.version
+}
+
+async function currentVersion(scheduleId = sourceId): Promise<number> {
+  return (await testDb.select().from(schema.mantSchedules).where(eq(schema.mantSchedules.id, scheduleId)))[0]!.version
 }
 
 /** Id del ítem que acaba de agregar `addScheduleItem` (el servicio lo devuelve en `data`). */
@@ -121,23 +133,30 @@ describe("crear", () => {
   })
 })
 
-describe("ediciones: versión y snapshot (regla 15)", () => {
+describe("ediciones: borrador, publicar y snapshot (regla 15)", () => {
   let itemId = ""
   let groupId = ""
-  it("agregar un ítem sube la versión y crea el sistema; el snapshot nuevo lo trae y el anterior queda intacto", async () => {
+  it("agregar un ítem queda en el borrador; al publicar sube la versión y el snapshot nuevo lo trae sin tocar el anterior", async () => {
     const before = await getScheduleSnapshot(sourceId, 1)
     const added = ok(await addScheduleItem(actor, { scheduleId: sourceId, groupName: "Motor", name: "Inspección visual" }))
     if (!added.data) throw new Error("La edición del ítem no devolvió sus identificadores")
     itemId = added.data.itemId
     groupId = added.data.groupId
-    expect(added.version).toBe(2)
+    expect(added.draft).toBe(true)
+    // Editar no publica: la versión vigente y su snapshot siguen siendo los de antes.
+    expect(await currentVersion()).toBe(1)
+    expect(await getScheduleSnapshot(sourceId, 2)).toBeNull()
+    expect(await getCurrentScheduleSnapshots([sourceId])).toEqual([before])
+    expect(await scheduleDraftDiff(sourceId)).toEqual({ dirty: true, publishedVersion: 1, changes: ["Ítem agregado en Motor: «Inspección visual»"] })
+    expect(await publish()).toBe(2)
     const v2 = await getScheduleSnapshot(sourceId, 2)
     expect(v2?.groups).toEqual([{ name: "Motor", items: [{ key: expect.stringMatching(/^x/), name: "Inspección visual", applies: [true, true, true] }] }])
     expect(await getScheduleSnapshot(sourceId, 1)).toEqual(before)
     expect(before?.groups).toEqual([])
     const versions = await versionRows(sourceId)
     expect(versions.map((row) => row.version).sort()).toEqual([1, 2])
-    expect((await testDb.select().from(schema.mantSchedules).where(eq(schema.mantSchedules.id, sourceId)))[0]?.version).toBe(2)
+    expect(await currentVersion()).toBe(2)
+    expect(await scheduleDraftDiff(sourceId)).toEqual({ dirty: false, publishedVersion: 2, changes: [] })
   })
 
   it("rechaza un ítem repetido en el mismo sistema", async () => {
@@ -146,18 +165,20 @@ describe("ediciones: versión y snapshot (regla 15)", () => {
     expect(model?.version).toBe(2)
   })
 
-  it("marcar una celda sube la versión y sólo cambia esa columna", async () => {
+  it("marcar una celda y publicar sube la versión y sólo cambia esa columna", async () => {
     const model = (await loadScheduleEditor(sourceId))!
     const interval = model.intervals.find((item) => item.value === 20000)!
     const result = ok(await setScheduleCell(actor, { scheduleId: sourceId, itemId, intervalId: interval.id, applies: false }))
-    expect(result.version).toBe(3)
+    expect(result.draft).toBe(true)
+    expect(await publish()).toBe(3)
     expect((await getScheduleSnapshot(sourceId, 3))?.groups[0]?.items[0]?.applies).toEqual([true, false, true])
     expect((await getScheduleSnapshot(sourceId, 2))?.groups[0]?.items[0]?.applies).toEqual([true, true, true])
   })
 
   it("quitar un ítem lo inactiva (no lo borra) y deshacer lo restituye con su columna", async () => {
     const removed = ok(await setScheduleItemActive(actor, { scheduleId: sourceId, itemId, active: false }))
-    expect(removed.version).toBe(4)
+    expect(removed.draft).toBe(true)
+    expect(await publish()).toBe(4)
     expect((await getScheduleSnapshot(sourceId, 4))?.groups).toEqual([])
     const [row] = await testDb.select().from(schema.mantScheduleItems).where(eq(schema.mantScheduleItems.id, itemId))
     expect(row?.isActive).toBe(false)
@@ -166,17 +187,25 @@ describe("ediciones: versión y snapshot (regla 15)", () => {
     expect((await getScheduleSnapshot(sourceId, 3))?.groups[0]?.items).toHaveLength(1)
 
     const restored = ok(await setScheduleItemActive(actor, { scheduleId: sourceId, itemId, active: true }))
-    expect(restored.version).toBe(5)
+    expect(restored.draft).toBe(true)
+    expect(await publish()).toBe(5)
     expect((await getScheduleSnapshot(sourceId, 5))?.groups[0]?.items[0]?.applies).toEqual([true, false, true])
   })
 
-  it("cambiar el nombre sube la versión y respeta la unicidad", async () => {
+  it("cambiar el nombre y publicar sube la versión; respeta la unicidad y repetir el nombre no cambia nada", async () => {
     await createSchedule(actor, { name: "Otra pauta km", unit: "km", intervals: [5000], copyFromId: null })
     expect(await renameSchedule(actor, sourceId, "otra PAUTA km")).toMatchObject({ ok: false, field: "name" })
     const renamed = ok(await renameSchedule(actor, sourceId, "Camiones y tractos"))
-    expect(renamed.version).toBe(6)
+    expect(renamed.draft).toBe(true)
+    expect((await getCurrentScheduleSnapshots([sourceId]))[0]?.name).toBe("Camiones base")
+    expect(await publish()).toBe(6)
     expect((await getScheduleSnapshot(sourceId, 6))?.name).toBe("Camiones y tractos")
     expect((await getScheduleSnapshot(sourceId, 5))?.name).toBe("Camiones base")
+    // Mismo nombre: no hay cambio, ni auditoría, ni nada por publicar.
+    const auditsBefore = (await audits("mant_schedule")).length
+    ok(await renameSchedule(actor, sourceId, "Camiones y tractos"))
+    expect((await audits("mant_schedule")).length).toBe(auditsBefore)
+    expect(await publishSchedule(actor, sourceId)).toEqual({ ok: false, message: "No hay cambios por publicar." })
   })
 })
 
@@ -184,7 +213,8 @@ describe("intervalos (regla 15)", () => {
   it("un intervalo nuevo hereda la columna del mayor que lo divide y queda por revisar", async () => {
     const before = (await loadScheduleEditor(sourceId))!
     const added = ok(await addScheduleInterval(actor, { scheduleId: sourceId, value: 80000 }))
-    expect(added.version).toBe(7)
+    expect(added.draft).toBe(true)
+    expect(await publish()).toBe(7)
     const model = (await loadScheduleEditor(sourceId))!
     expect(model.intervals.map((item) => item.value)).toEqual([10000, 20000, 40000, 80000])
     expect(model.intervals.find((item) => item.value === 80000)?.needsReview).toBe(true)
@@ -220,12 +250,14 @@ describe("intervalos (regla 15)", () => {
   it("quitar un intervalo lo inactiva, deshacer lo restituye y la pauta conserva al menos uno", async () => {
     const model = (await loadScheduleEditor(sourceId))!
     const sixty = model.intervals.find((item) => item.value === 60000)!
-    const version = (await testDb.select().from(schema.mantSchedules).where(eq(schema.mantSchedules.id, sourceId)))[0]!.version
-    const removed = ok(await setScheduleIntervalActive(actor, { scheduleId: sourceId, intervalId: sixty.id, active: false }))
-    expect(removed.version).toBe(version + 1)
-    expect((await getScheduleSnapshot(sourceId, removed.version))?.intervals).toEqual([10000, 20000, 40000, 80000])
-    const restored = ok(await setScheduleIntervalActive(actor, { scheduleId: sourceId, intervalId: sixty.id, active: true }))
-    expect((await getScheduleSnapshot(sourceId, restored.version))?.intervals).toEqual([10000, 20000, 40000, 60000, 80000])
+    await publish() // las pruebas anteriores dejaron el intervalo de 60.000 sólo en el borrador
+    const version = await currentVersion()
+    ok(await setScheduleIntervalActive(actor, { scheduleId: sourceId, intervalId: sixty.id, active: false }))
+    const removedVersion = await publish()
+    expect(removedVersion).toBe(version + 1)
+    expect((await getScheduleSnapshot(sourceId, removedVersion))?.intervals).toEqual([10000, 20000, 40000, 80000])
+    ok(await setScheduleIntervalActive(actor, { scheduleId: sourceId, intervalId: sixty.id, active: true }))
+    expect((await getScheduleSnapshot(sourceId, await publish()))?.intervals).toEqual([10000, 20000, 40000, 60000, 80000])
 
     const single = ok(await createSchedule(actor, { name: "Un solo intervalo", unit: "h", intervals: [250], copyFromId: null }))
     const only = (await loadScheduleEditor(single.data.id))!.intervals[0]!
@@ -264,7 +296,7 @@ describe("intervalos (regla 15)", () => {
     const cellsAfter = await testDb.select().from(schema.mantScheduleItemIntervals).where(eq(schema.mantScheduleItemIntervals.intervalId, eighty.id))
     expect(cellsAfter).toEqual(cellsBefore)
     expect((await loadScheduleEditor(sourceId))!.groups[0]!.items[0]!.applies[eighty.id]).toBe(false)
-    const snapshot = await getScheduleSnapshot(sourceId, restored.version)
+    const snapshot = await getScheduleSnapshot(sourceId, await publish())
     expect(snapshot?.intervals).toEqual([10000, 20000, 40000, 60000, 80000])
     expect(snapshot?.groups[0]?.items[0]?.applies).toEqual([true, false, true, expect.any(Boolean), false])
     // Sin ítems nuevos entre medio no hay nada que heredar: la columna no queda por revisar.
@@ -325,13 +357,14 @@ describe("copia y reglas por marca", () => {
     expect(await createSchedule(actor, { name: "Mal copia", unit: "km", intervals: [10000], copyFromId: horas.data.id })).toMatchObject({ ok: false, field: "copyFromId" })
   })
 
-  it("la regla por marca se edita por celda y sube la versión", async () => {
+  it("la regla por marca se edita por celda y, al publicar, sube la versión", async () => {
     const model = (await loadScheduleEditor(sourceId))!
     const item = model.groups[0]!.items[0]!
     await testDb.insert(schema.mantScheduleBrandRules).values({ id: "rule-1", scheduleId: sourceId, itemId: item.id, sheetActivity: "Inspección visual", brandId: BRAND.scania, value: "A" })
     await testDb.insert(schema.mantScheduleBrandRules).values({ id: "rule-2", scheduleId: sourceId, itemId: item.id, sheetActivity: "Inspección visual", brandId: BRAND.volvo, value: "A" })
     const result = ok(await setScheduleBrandRule(actor, { scheduleId: sourceId, activity: "Inspección visual", brandId: BRAND.scania, value: "X" }))
-    const snapshot = await getScheduleSnapshot(sourceId, result.version)
+    expect(result.draft).toBe(true)
+    const snapshot = await getScheduleSnapshot(sourceId, await publish())
     expect(snapshot?.brandRules).toEqual(expect.arrayContaining([{ itemKey: item.key, brandId: BRAND.scania, value: "X" }, { itemKey: item.key, brandId: BRAND.volvo, value: "A" }]))
     const reloaded = (await loadScheduleEditor(sourceId))!
     expect(reloaded.brandRules.rows[0]).toMatchObject({ activity: "Inspección visual", inSchedule: true, values: { [BRAND.scania]: "X", [BRAND.volvo]: "A" } })
@@ -341,8 +374,93 @@ describe("copia y reglas por marca", () => {
   it("lista las pautas con intervalos, ítems, equipos y si tienen reglas por marca", async () => {
     const rows = await listSchedules()
     const main = rows.find((row) => row.id === sourceId)
-    expect(main).toMatchObject({ name: "Camiones y tractos", unit: "km", itemCount: 1, hasBrandRules: true })
+    expect(main).toMatchObject({ name: "Camiones y tractos", unit: "km", itemCount: 1, hasBrandRules: true, dirty: false })
     expect(main?.intervals).toEqual([10000, 20000, 40000, 60000, 80000])
+  })
+})
+
+describe("borrador: publicar, descartar y lo que ve el resto del módulo", () => {
+  let draftId = ""
+
+  it("editar no cambia el catálogo, el nombre ni los intervalos que usan los equipos hasta publicar", async () => {
+    draftId = ok(await createSchedule(actor, { name: "Pauta borrador", unit: "km", intervals: [10000, 20000], copyFromId: sourceId })).data.id
+    await testDb.update(schema.mantEquipmentProfiles).set({ scheduleId: draftId }).where(eq(schema.mantEquipmentProfiles.vehicleId, "v-2"))
+    const publishedSnapshots = await getCurrentScheduleSnapshots([draftId])
+    const fleetBefore = (await loadFleet({ scope: "all" })).find((row) => row.vehicleId === "v-2")!
+    expect(fleetBefore).toMatchObject({ scheduleName: "Pauta borrador", intervals: [10000, 20000] })
+
+    ok(await renameSchedule(actor, draftId, "Pauta borrador renombrada"))
+    ok(await addScheduleInterval(actor, { scheduleId: draftId, value: 5000 }))
+    ok(await setScheduleBrandRule(actor, { scheduleId: draftId, activity: "Inspección visual", brandId: BRAND.scania, value: "W" }))
+
+    expect(await getCurrentScheduleSnapshots([draftId])).toEqual(publishedSnapshots)
+    const fleetDraft = (await loadFleet({ scope: "all" })).find((row) => row.vehicleId === "v-2")!
+    expect(fleetDraft).toMatchObject({ scheduleName: "Pauta borrador", intervals: [10000, 20000], status: fleetBefore.status })
+    // La lista y el editor sí muestran el borrador, y marcan que hay cambios sin publicar.
+    expect((await listSchedules()).find((row) => row.id === draftId)).toMatchObject({ name: "Pauta borrador renombrada", version: 1, dirty: true })
+    expect((await loadScheduleEditor(draftId))!.draft.dirty).toBe(true)
+  })
+
+  it("el diff lista los cambios en español, con tope y «y N cambios más»", async () => {
+    const diff = await scheduleDraftDiff(draftId)
+    expect(diff.dirty).toBe(true)
+    expect(diff.publishedVersion).toBe(1)
+    expect(diff.changes).toEqual([
+      "Nombre: «Pauta borrador» → «Pauta borrador renombrada»",
+      "Intervalo agregado: 5.000 km",
+      "Regla por marca: «Inspección visual» en Scania → revisar con el fabricante",
+    ])
+    const model = (await loadScheduleEditor(draftId))!
+    for (let n = 1; n <= 24; n += 1) ok(await addScheduleItem(actor, { scheduleId: draftId, groupId: model.groups[0]!.id, name: `Ítem de prueba ${n}` }))
+    const long = await scheduleDraftDiff(draftId)
+    expect(long.changes).toHaveLength(20)
+    expect(long.changes[19]).toMatch(/^y \d+ cambios más$/)
+  })
+
+  it("descartar devuelve las tablas vivas a lo publicado: nombre, intervalos, ítems y reglas", async () => {
+    const result = ok(await discardScheduleDraft(actor, draftId))
+    expect(result.message).toBe("Cambios descartados. La pauta volvió a la versión 1.")
+    expect(await scheduleDraftDiff(draftId)).toEqual({ dirty: false, publishedVersion: 1, changes: [] })
+    const model = (await loadScheduleEditor(draftId))!
+    expect(model.name).toBe("Pauta borrador")
+    expect(model.intervals.map((interval) => interval.value)).toEqual([10000, 20000])
+    expect(model.groups[0]!.items.map((item) => item.name)).toEqual(["Inspección visual"])
+    const rules = await testDb.select().from(schema.mantScheduleBrandRules).where(eq(schema.mantScheduleBrandRules.scheduleId, draftId))
+    expect(rules.find((rule) => rule.brandId === BRAND.scania)?.value).toBe("X")
+    expect(await currentVersion(draftId)).toBe(1)
+    expect(await discardScheduleDraft(actor, draftId)).toEqual({ ok: false, message: "No hay cambios por descartar." })
+  })
+
+  it("descartar reactiva lo que se quitó y restaura las celdas marcadas", async () => {
+    const model = (await loadScheduleEditor(draftId))!
+    const item = model.groups[0]!.items[0]!
+    const interval = model.intervals[0]!
+    ok(await setScheduleCell(actor, { scheduleId: draftId, itemId: item.id, intervalId: interval.id, applies: !item.applies[interval.id] }))
+    ok(await setScheduleIntervalActive(actor, { scheduleId: draftId, intervalId: model.intervals[1]!.id, active: false }))
+    ok(await setScheduleItemActive(actor, { scheduleId: draftId, itemId: item.id, active: false }))
+    expect((await scheduleDraftDiff(draftId)).changes).toEqual(expect.arrayContaining(["Ítem quitado: «Inspección visual»", "Intervalo quitado: 20.000 km"]))
+    ok(await discardScheduleDraft(actor, draftId))
+    const restored = (await loadScheduleEditor(draftId))!
+    expect(restored.intervals.map((value) => value.value)).toEqual([10000, 20000])
+    expect(restored.groups[0]!.items[0]!.applies).toEqual(item.applies)
+  })
+
+  it("publicar sube la versión, lo ve el catálogo y el estado de los equipos, y sin cambios no hace nada", async () => {
+    expect(await publishSchedule(actor, draftId)).toEqual({ ok: false, message: "No hay cambios por publicar." })
+    ok(await renameSchedule(actor, draftId, "Pauta borrador publicada"))
+    ok(await addScheduleInterval(actor, { scheduleId: draftId, value: 5000 }))
+    const published = ok(await publishSchedule(actor, draftId))
+    expect(published.data).toEqual({
+      version: 2,
+      changes: ["Nombre: «Pauta borrador» → «Pauta borrador publicada»", "Intervalo agregado: 5.000 km"],
+    })
+    expect((await getCurrentScheduleSnapshots([draftId]))[0]).toMatchObject({ version: 2, name: "Pauta borrador publicada", intervals: [5000, 10000, 20000] })
+    expect((await versionRows(draftId)).find((row) => row.version === 2)?.summary).toBe("Nombre: «Pauta borrador» → «Pauta borrador publicada» · Intervalo agregado: 5.000 km")
+    const fleet = (await loadFleet({ scope: "all" })).find((row) => row.vehicleId === "v-2")!
+    expect(fleet).toMatchObject({ scheduleName: "Pauta borrador publicada", intervals: [5000, 10000, 20000] })
+    expect((await listSchedules()).find((row) => row.id === draftId)).toMatchObject({ version: 2, dirty: false })
+    expect(await publishSchedule(actor, "no-existe")).toMatchObject({ ok: false })
+    await testDb.update(schema.mantEquipmentProfiles).set({ scheduleId: null }).where(eq(schema.mantEquipmentProfiles.vehicleId, "v-2"))
   })
 })
 

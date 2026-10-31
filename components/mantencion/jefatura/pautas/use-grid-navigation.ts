@@ -11,6 +11,12 @@ import * as React from "react"
  * los sistemas que se pliegan o la búsqueda de la barra superior cambian qué
  * filas existen sin que el cursor apunte a una que ya no se ve.
  *
+ * Algunas filas no son de casillas sino de UN solo botón (el de plegar un sistema,
+ * «+ Agregar ítem»): se declaran en `singleRows`, ocupan la columna 0 y las flechas
+ * izquierda/derecha no hacen nada ahí. Al subir o bajar desde ellas, el foco vuelve
+ * a la columna donde se estaba. Así cada botón de la matriz es alcanzable con
+ * flechas y el resto de la página no queda atrás de cientos de Tab.
+ *
  * Teclas: flechas, Inicio/Fin (extremos de la fila), Ctrl+Inicio/Ctrl+Fin
  * (esquinas de la matriz) y Re Pág/Av Pág (10 filas). Enter y espacio siguen
  * siendo del botón.
@@ -38,8 +44,10 @@ export interface GridCellProps {
   onKeyDown: (event: React.KeyboardEvent<HTMLElement>) => void
 }
 
-export function useGridNavigation(rowIds: readonly string[], colIds: readonly string[]) {
+export function useGridNavigation(rowIds: readonly string[], colIds: readonly string[], singleRows?: ReadonlySet<string>) {
   const [cursor, setCursor] = React.useState<Cursor | null>(null)
+  // Columna donde se estaba al pasar por una fila de un solo botón (el cursor allí vive en la columna 0).
+  const memoryCol = React.useRef(0)
   const cells = React.useRef(new Map<string, HTMLElement>())
   const restoreUntil = React.useRef(0)
 
@@ -50,10 +58,15 @@ export function useGridNavigation(rowIds: readonly string[], colIds: readonly st
   const stopRowId = stopRow >= 0 ? rowIds[stopRow] : undefined
   const stopColId = stopCol >= 0 ? colIds[stopCol] : undefined
 
-  function focusAt(rowIndex: number, colIndex: number) {
+  const isSingle = (row: string) => singleRows?.has(row) ?? false
+
+  function focusAt(rowIndex: number, wantedCol: number) {
     const row = rowIds[rowIndex]
+    if (row === undefined) return
+    const colIndex = isSingle(row) ? 0 : wantedCol
     const col = colIds[colIndex]
-    if (row === undefined || col === undefined) return
+    if (col === undefined) return
+    if (!isSingle(row)) memoryCol.current = colIndex
     setCursor({ row, col, rowIndex, colIndex })
     cells.current.get(cellKey(row, col))?.focus()
   }
@@ -61,23 +74,40 @@ export function useGridNavigation(rowIds: readonly string[], colIds: readonly st
   function onKeyDown(event: React.KeyboardEvent<HTMLElement>, row: string, col: string) {
     if (event.altKey || event.metaKey) return
     const r = rowIds.indexOf(row)
-    const c = colIds.indexOf(col)
-    if (r < 0 || c < 0) return
+    const own = colIds.indexOf(col)
+    if (r < 0 || own < 0) return
+    const lone = isSingle(row)
+    // En una fila de un solo botón se «viaja» con la columna recordada; izquierda/derecha no se mueven.
+    const c = lone ? Math.min(memoryCol.current, lastCol) : own
     let nextRow = r
     let nextCol = c
     switch (event.key) {
-      case "ArrowRight": nextCol = Math.min(c + 1, lastCol); break
-      case "ArrowLeft": nextCol = Math.max(c - 1, 0); break
+      case "ArrowRight": if (lone) { event.preventDefault(); return } nextCol = Math.min(c + 1, lastCol); break
+      case "ArrowLeft": if (lone) { event.preventDefault(); return } nextCol = Math.max(c - 1, 0); break
       case "ArrowDown": nextRow = Math.min(r + 1, lastRow); break
       case "ArrowUp": nextRow = Math.max(r - 1, 0); break
       case "PageDown": nextRow = Math.min(r + PAGE_STEP, lastRow); break
       case "PageUp": nextRow = Math.max(r - PAGE_STEP, 0); break
-      case "Home": nextCol = 0; if (event.ctrlKey) nextRow = 0; break
-      case "End": nextCol = lastCol; if (event.ctrlKey) nextRow = lastRow; break
+      case "Home": if (!lone) nextCol = 0; if (event.ctrlKey) nextRow = 0; break
+      case "End": if (!lone) nextCol = lastCol; if (event.ctrlKey) nextRow = lastRow; break
       default: return
     }
     event.preventDefault()
     if (nextRow !== r || nextCol !== c) focusAt(nextRow, nextCol)
+  }
+
+  /** Props del botón único de una fila de `singleRows`: vive en la columna 0. */
+  function single(row: string): GridCellProps {
+    const col = colIds[0] ?? ""
+    return {
+      ref: (node) => {
+        if (node) cells.current.set(cellKey(row, col), node)
+        else cells.current.delete(cellKey(row, col))
+      },
+      tabIndex: row === stopRowId && col === stopColId ? 0 : -1,
+      onFocus: () => setCursor({ row, col, rowIndex: rowIds.indexOf(row), colIndex: 0 }),
+      onKeyDown: (event) => onKeyDown(event, row, col),
+    }
   }
 
   /** Props de una celda: `ref`, `tabIndex` (0 sólo en la celda del cursor), `onFocus` y `onKeyDown`. */
@@ -88,7 +118,11 @@ export function useGridNavigation(rowIds: readonly string[], colIds: readonly st
         else cells.current.delete(cellKey(row, col))
       },
       tabIndex: row === stopRowId && col === stopColId ? 0 : -1,
-      onFocus: () => setCursor({ row, col, rowIndex: rowIds.indexOf(row), colIndex: colIds.indexOf(col) }),
+      onFocus: () => {
+        const colIndex = colIds.indexOf(col)
+        memoryCol.current = colIndex
+        setCursor({ row, col, rowIndex: rowIds.indexOf(row), colIndex })
+      },
       onKeyDown: (event) => onKeyDown(event, row, col),
     }
   }
@@ -113,7 +147,7 @@ export function useGridNavigation(rowIds: readonly string[], colIds: readonly st
     if (node) { node.focus(); restoreUntil.current = 0 }
   })
 
-  return { cell, keepFocus }
+  return { cell, single, keepFocus }
 }
 
 export type GridNavigation = ReturnType<typeof useGridNavigation>
