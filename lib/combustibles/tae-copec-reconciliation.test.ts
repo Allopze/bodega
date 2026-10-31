@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { mergeTaeCopecChannels, type TaeCopecChannelRow } from "./tae-copec-reconciliation"
+import { mergeTaeCopecChannels, summarizeCardFieldCoverage, type TaeCopecChannelRow } from "./tae-copec-reconciliation"
 
 function channel(overrides: Partial<TaeCopecChannelRow> = {}): TaeCopecChannelRow {
   return {
@@ -77,5 +77,30 @@ describe("mergeTaeCopecChannels", () => {
     )
     expect(rows).toHaveLength(1)
     expect(rows[0]?.tctPartial).toBe(true)
+  })
+})
+
+describe("summarizeCardFieldCoverage", () => {
+  it("de lo que informó la tarjeta, cuánto quedó registrado en terreno (equipos y litros)", () => {
+    const rows = mergeTaeCopecChannels(
+      [
+        channel({ vehicleId: "ambos", taeLiters: 100, taeLoads: 2 }),
+        channel({ vehicleId: "solo-terreno", taeLiters: 40, taeLoads: 1 }),
+      ],
+      [
+        channel({ vehicleId: "ambos", tctDieselLiters: 300, tctRecords: 1 }),
+        channel({ vehicleId: "solo-tarjeta", tctDieselLiters: 100, tctBlueMaxLiters: 10, tctRecords: 2 }),
+      ],
+    )
+    const coverage = summarizeCardFieldCoverage(rows)
+    expect(coverage).toMatchObject({ cardRows: 2, both: 1, cardOnly: 1, fieldOnly: 1, cardLiters: 410, coveredCardLiters: 300 })
+    expect(coverage.coveragePct).toBe(50)
+    expect(coverage.coveredLitersPct).toBeCloseTo((300 / 410) * 100, 6)
+  })
+
+  it("si la tarjeta no informó nada no hay porcentaje (no es un 0 %)", () => {
+    const coverage = summarizeCardFieldCoverage(mergeTaeCopecChannels([channel({ taeLiters: 40, taeLoads: 1 })], []))
+    expect(coverage).toMatchObject({ cardRows: 0, both: 0, cardOnly: 0, fieldOnly: 1, cardLiters: 0, coveragePct: null, coveredLitersPct: null })
+    expect(summarizeCardFieldCoverage([])).toMatchObject({ cardRows: 0, coveragePct: null })
   })
 })

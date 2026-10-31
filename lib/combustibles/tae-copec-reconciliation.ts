@@ -180,3 +180,41 @@ async function getUnmappedTct(session: Session, filters: TaeCopecFilters) {
   const [row] = await db.select({ records: sql<number>`count(*)`, liters: sql<number>`coalesce(sum(${fuelConsumptionRecords.cantidadUnidad}), 0)` }).from(fuelConsumptionRecords).where(where)
   return row ?? { records: 0, liters: 0 }
 }
+
+/**
+ * Cobertura de la tarjeta en terreno (Cuadratura › Tarjeta y terreno): de lo que
+ * informó la tarjeta, cuánto quedó registrado en terreno. Cada fila es un equipo
+ * en un mes; «ambos» es que el equipo tiene litros en la tarjeta y cargas en
+ * terreno el mismo mes. No es una diferencia contable —la tarjeta y el formulario
+ * son canales distintos—: la diferencia de litros se mide por mandante.
+ */
+export interface CardFieldCoverage {
+  /** Equipos por mes que informó la tarjeta (los que están en ambos y los que sólo están en la tarjeta). */
+  cardRows: number
+  both: number
+  cardOnly: number
+  fieldOnly: number
+  /** `both / cardRows`, en %; `null` si la tarjeta no informó nada. */
+  coveragePct: number | null
+  cardLiters: number
+  /** Litros de la tarjeta de los equipos que también registraron cargas en terreno. */
+  coveredCardLiters: number
+  /** `coveredCardLiters / cardLiters`, en %; `null` si la tarjeta no informó litros. */
+  coveredLitersPct: number | null
+}
+
+export function summarizeCardFieldCoverage(rows: Array<Pick<TaeCopecReconciliationRow, "coverage" | "tctLiters">>): CardFieldCoverage {
+  let both = 0, cardOnly = 0, fieldOnly = 0, cardLiters = 0, coveredCardLiters = 0
+  for (const row of rows) {
+    if (row.coverage === "both_channels") { both += 1; cardLiters += row.tctLiters; coveredCardLiters += row.tctLiters }
+    else if (row.coverage === "tct_only") { cardOnly += 1; cardLiters += row.tctLiters }
+    else fieldOnly += 1
+  }
+  const cardRows = both + cardOnly
+  return {
+    cardRows, both, cardOnly, fieldOnly,
+    coveragePct: cardRows > 0 ? (both / cardRows) * 100 : null,
+    cardLiters, coveredCardLiters,
+    coveredLitersPct: cardLiters > 0 ? (coveredCardLiters / cardLiters) * 100 : null,
+  }
+}

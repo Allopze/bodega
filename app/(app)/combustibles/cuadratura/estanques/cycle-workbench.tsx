@@ -3,6 +3,7 @@
 import { useActionState, useMemo, useState } from "react"
 import { Plus, WarningCircle } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
+import { DateTimePicker } from "@/components/ui/date-time-picker"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -45,9 +46,9 @@ export function CycleWorkbench({ worksites, products, suppliers, locations, vehi
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <p className="text-eyebrow">Ciclo físico</p>
+            <p className="text-eyebrow">Estanques</p>
             <DialogTitle>Registrar movimiento</DialogTitle>
-            <DialogDescription>El registro queda auditado y alimenta la conciliación del período.</DialogDescription>
+            <DialogDescription>El registro queda auditado y entra en la cuadratura del período.</DialogDescription>
           </DialogHeader>
           <form action={action} className="space-y-5">
             {state.message && !state.ok && <p className="flex gap-2 text-sm text-[var(--color-danger)]"><WarningCircle size={18} />{state.message}</p>}
@@ -57,7 +58,7 @@ export function CycleWorkbench({ worksites, products, suppliers, locations, vehi
                   <SelectTrigger id="eventType"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="received">Recepción en estanque</SelectItem>
-                    <SelectItem value="transfer">Transferencia entre estanques</SelectItem>
+                    <SelectItem value="transfer">Traspaso entre estanques</SelectItem>
                     <SelectItem value="tank_delivery">Entrega desde estanque</SelectItem>
                     <SelectItem value="direct_delivery">Entrega directa</SelectItem>
                   </SelectContent>
@@ -65,7 +66,7 @@ export function CycleWorkbench({ worksites, products, suppliers, locations, vehi
                 <input type="hidden" name="eventType" value={type} />
               </Field>
               <Field label="Fecha y hora" htmlFor="occurredAt" required>
-                <Input id="occurredAt" name="occurredAt" type="datetime-local" required defaultValue={toLocalInputValue(new Date())} />
+                <DateTimePicker id="occurredAt" name="occurredAt" defaultValue={toLocalInputValue(new Date())} />
               </Field>
               <Field label="Faena" htmlFor="worksiteId">
                 <Select value={worksiteId} onValueChange={(v) => { setWorksiteId(v); setSourceLocationId(""); setTargetLocationId(""); setVehicleId("") }}>
@@ -88,7 +89,7 @@ export function CycleWorkbench({ worksites, products, suppliers, locations, vehi
               <Field label="Litros" htmlFor="quantity" required>
                 <Input id="quantity" name="quantity" type="number" min="0.01" step="0.01" required />
               </Field>
-              <Field label="Documento / guía" htmlFor="documentNumber">
+              <Field label="Documento o guía" htmlFor="documentNumber">
                 <Input id="documentNumber" name="documentNumber" maxLength={120} />
               </Field>
               {(type === "received" || type === "direct_delivery") && <Field label="Proveedor" htmlFor="supplierId">

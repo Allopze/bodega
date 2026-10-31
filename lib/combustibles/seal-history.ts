@@ -6,13 +6,15 @@
  */
 
 import type { Session } from "next-auth"
-import { and, eq, gte, inArray, isNotNull, lte, or, sql } from "drizzle-orm"
+import { and, eq, gte, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { fuelTaeSubmissions, fuelTaeLoadingPoints, worksites, fuelVehicles, fuelProducts } from "@/db/schema"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 
 export interface SealMovement {
   submissionId: string
+  /** Equipo de la ficha (`fuel_vehicles.id`); `null` si la carga no se asoció a uno. */
+  vehicleId: string | null
   loadedAt: string
   worksiteName: string | null
   loadingPointName: string | null
@@ -30,9 +32,13 @@ export interface SealMovement {
   nextRemovedAt: string | null
   /** `true` si este número de sello instalado aparece como instalado más de una vez. */
   installedRepeated: boolean
-  /** `true` si este número de sello instalado ya aparecía como instalado en otra carga
-   *  sin aparecer como retirado en las del medio (falta de continuidad). */
+  /** `true` si el equipo volvió a cargar después de instalar este sello y ninguna carga
+   *  lo retiró (falta de continuidad). El último sello de un equipo NO es un problema:
+   *  todavía no hay carga siguiente que lo retire, y ahí `continuityBroken` es `false`. */
   continuityBroken: boolean
+  /** `true` si ésta es la última carga validada del equipo: su sello instalado es el vigente
+   *  y no tiene por qué tener un retiro posterior todavía. */
+  isLatestForEquipment: boolean
 }
 
 export interface SealHistoryFilters {
@@ -53,6 +59,7 @@ export const SEAL_HISTORY_MAX_ROWS = 2000
 export async function getSealHistory(session: Session, filters: SealHistoryFilters = {}): Promise<SealMovement[]> {
   const rows = await db.select({
     submissionId: fuelTaeSubmissions.id,
+    vehicleId: fuelTaeSubmissions.vehicleId,
     loadedAt: sql<string>`to_char(${fuelTaeSubmissions.loadedAt} at time zone 'America/Santiago', 'YYYY-MM-DD HH24:MI')`,
     worksiteName: worksites.name,
     loadingPointName: fuelTaeLoadingPoints.name,
@@ -86,6 +93,7 @@ export async function getSealHistory(session: Session, filters: SealHistoryFilte
 
   const movements: SealMovement[] = rows.map((r) => ({
     submissionId: r.submissionId,
+    vehicleId: r.vehicleId,
     loadedAt: r.loadedAt,
     worksiteName: r.worksiteName,
     loadingPointName: r.loadingPointName,
@@ -99,6 +107,7 @@ export async function getSealHistory(session: Session, filters: SealHistoryFilte
     nextRemovedAt: null,
     installedRepeated: false,
     continuityBroken: false,
+    isLatestForEquipment: false,
   }))
 
   // Detectar sellos repetidos: mismo installedSealNumber aparece 2+ veces.
@@ -185,5 +194,62 @@ export async function getSealHistory(session: Session, filters: SealHistoryFilte
     }
   }
 
+  await clearLatestSealOfEachEquipment(session, movements)
+
   return movements
+}
+
+/** Llave del equipo de un movimiento: su id, o la patente si la carga no se asoció a un equipo. */
+const equipmentKey = (vehicleId: string | null, plate: string | null) => vehicleId ? `v:${vehicleId}` : plate ? `p:${plate}` : null
+
+/**
+ * El último sello de cada equipo no es un problema. Un sello instalado «sin
+ * siguiente» sólo está roto si el equipo **volvió a cargar** después y esa carga
+ * no lo retiró; si no hay carga posterior, el sello sigue puesto y todavía no
+ * tiene quién lo retire (ése era el aviso falso que ensuciaba el historial: cada
+ * equipo tiene, por definición, uno así).
+ *
+ * Se mira la última carga validada del equipo sobre toda la base y no sobre las
+ * filas de la página: con el filtro de un mes, la «siguiente carga» puede caer
+ * fuera del recorte y no por eso el sello deja de estar vigente.
+ */
+async function clearLatestSealOfEachEquipment(session: Session, movements: SealMovement[]) {
+  const pending = movements.filter((m) => m.continuityBroken && m.installedSeal)
+  if (pending.length === 0) return
+  const vehicleIds = [...new Set(pending.flatMap((m) => m.vehicleId ? [m.vehicleId] : []))]
+  const plates = [...new Set(pending.flatMap((m) => !m.vehicleId && m.plate ? [m.plate] : []))]
+
+  const latestRows = await db.select({
+    vehicleId: fuelTaeSubmissions.vehicleId,
+    plate: fuelTaeSubmissions.plateSnapshot,
+    latest: sql<string>`to_char(max(${fuelTaeSubmissions.loadedAt}) at time zone 'America/Santiago', 'YYYY-MM-DD HH24:MI')`,
+  })
+    .from(fuelTaeSubmissions)
+    .where(and(
+      worksiteScopeSql(session, fuelTaeSubmissions.worksiteId),
+      eq(fuelTaeSubmissions.status, "validated"),
+      or(
+        vehicleIds.length > 0 ? inArray(fuelTaeSubmissions.vehicleId, vehicleIds) : undefined,
+        plates.length > 0 ? and(isNull(fuelTaeSubmissions.vehicleId), inArray(fuelTaeSubmissions.plateSnapshot, plates)) : undefined,
+      ),
+    ))
+    .groupBy(fuelTaeSubmissions.vehicleId, fuelTaeSubmissions.plateSnapshot)
+
+  const latestByEquipment = new Map<string, string>()
+  for (const row of latestRows) {
+    const key = equipmentKey(row.vehicleId, row.plate)
+    if (!key) continue
+    const current = latestByEquipment.get(key)
+    if (!current || row.latest > current) latestByEquipment.set(key, row.latest)
+  }
+
+  for (const m of pending) {
+    const key = equipmentKey(m.vehicleId, m.plate)
+    const latest = key ? latestByEquipment.get(key) : undefined
+    // Sin carga posterior del mismo equipo (o sin poder identificarlo), es su sello vigente.
+    if (!key || !latest || latest <= m.loadedAt) {
+      m.continuityBroken = false
+      m.isLatestForEquipment = true
+    }
+  }
 }

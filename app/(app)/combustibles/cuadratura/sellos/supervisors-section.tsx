@@ -1,8 +1,11 @@
+import Link from "next/link"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { EmptyState } from "@/components/ui/empty-state"
 import { Table, TableBody, TableCell, TableCellNum, TableFooter, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import type { SealJustificationRow, SupervisorSealRow } from "@/lib/combustibles/control/queries/seals"
 import { formatDateTime } from "@/lib/utils"
-import { litersText } from "./format"
+import { litersText } from "../_components/format"
 
 const MISSING_LABEL = { removed: "Sin sello retirado", installed: "Sin sello nuevo", both: "Sin ningún sello" } as const
 
@@ -17,10 +20,40 @@ function Alert({ value, label }: { value: number; label: string }) {
   return <span className="font-semibold text-[var(--color-danger-ink)]" aria-label={`${value} ${label}`}>{value}</span>
 }
 
+/** «1 carga» / «5 cargas». */
+const cargas = (count: number) => `${count} ${count === 1 ? "carga" : "cargas"}`
+
+/**
+ * La frase que abre la vista: cuántas cargas se registraron y a cuántas les
+ * faltó un sello o se les cortó la cadena. `periodPhrase` es «en octubre».
+ */
+export function sealsAnswer(rows: Array<Pick<SupervisorSealRow, "loads" | "withoutRemovedSeal" | "withoutInstalledSeal" | "chainBreaks">>, periodPhrase: string): string {
+  const total = rows.reduce((acc, row) => ({
+    loads: acc.loads + row.loads, removed: acc.removed + row.withoutRemovedSeal, installed: acc.installed + row.withoutInstalledSeal, chain: acc.chain + row.chainBreaks,
+  }), { loads: 0, removed: 0, installed: 0, chain: 0 })
+  if (total.loads === 0) return `No hay cargas en terreno ${periodPhrase}.`
+  const lead = `${periodPhrase.charAt(0).toUpperCase()}${periodPhrase.slice(1)} se registraron ${cargas(total.loads)} en terreno.`
+  const problems = [
+    total.removed > 0 ? `a ${cargas(total.removed)} les faltó el sello retirado` : null,
+    total.installed > 0 ? `a ${cargas(total.installed)} les faltó el sello nuevo` : null,
+    total.chain > 0 ? `${total.chain === 1 ? "una tiene" : `${total.chain} tienen`} la cadena de sellos rota` : null,
+  ].filter((item): item is string => item !== null)
+  if (problems.length === 0) return `${lead} Todas tienen sus sellos y la cadena está completa.`
+  const text = problems.length === 1 ? problems[0] : `${problems.slice(0, -1).join(", ")} y ${problems[problems.length - 1]}`
+  return `${lead} ${text.charAt(0).toUpperCase()}${text.slice(1)}.`
+}
+
 /** C-04, C-05 y C-06 en una tabla; debajo, las justificaciones por supervisor. */
-export function SupervisorsSection({ rows, justifications }: { rows: SupervisorSealRow[]; justifications: SealJustificationRow[] }) {
+export function SupervisorsSection({ rows, justifications, cargasHref }: { rows: SupervisorSealRow[]; justifications: SealJustificationRow[]; cargasHref?: string }) {
   if (rows.length === 0) {
-    return <p className="text-sm text-[var(--color-text-muted)]">No hay cargas en terreno en este período. Cuando los supervisores registren cargas aparecerán aquí con sus sellos faltantes.</p>
+    return (
+      <EmptyState
+        compact
+        title="No hay cargas en terreno en este período"
+        description="Cuando los supervisores registren cargas, aparecerán aquí con los sellos que les faltaron y las cadenas que se cortaron."
+        action={cargasHref ? <Button asChild variant="secondary" size="sm"><Link href={cargasHref}>Ver las cargas del período</Link></Button> : undefined}
+      />
+    )
   }
   const total = rows.reduce((acc, row) => ({
     loads: acc.loads + row.loads, liters: acc.liters + row.liters,
@@ -67,6 +100,7 @@ export function SupervisorsSection({ rows, justifications }: { rows: SupervisorS
             </TableRow>
           </TableFooter>
         </Table>
+        <p className="border-t border-[var(--color-border)] px-4 py-2 text-xs text-[var(--color-text-muted)]">El último sello de cada equipo no cuenta como cadena rota: todavía no hay una carga siguiente que lo retire.</p>
       </TableRoot>
 
       {withReasons.length > 0 ? (

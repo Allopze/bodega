@@ -15,7 +15,7 @@ import { FUEL_PATHS } from "@/lib/combustibles/routes"
 
 const MAX_ROWS = 20_000
 const MISSING_LABEL = { removed: "Sin sello retirado", installed: "Sin sello nuevo", both: "Sin ningún sello" } as const
-const LOADED_AT_SOURCE_LABELS: Record<string, string> = { server: "Servidor", device: "Dispositivo", device_offline: "Dispositivo (sin conexión)", import: "Planilla" }
+const LOADED_AT_SOURCE_LABELS: Record<string, string> = { server: "Servidor", device: "Dispositivo", device_offline: "Dispositivo (sin conexión)", import: "Planilla", backdated: "Registrada después" }
 
 /**
  * Exporta las cargas en terreno y los sellos con los mismos filtros de la vista
@@ -25,7 +25,7 @@ const LOADED_AT_SOURCE_LABELS: Record<string, string> = { server: "Servidor", de
 export async function exportSealsXlsxAction(input: { query: string }): Promise<ExportActionResult> {
   let session
   try {
-    session = await requirePermission("combustibles:tae_export", FUEL_PATHS.cuadratura)
+    session = await requirePermission("combustibles:tae_export", FUEL_PATHS.cuadraturaSellos)
     if (!can(session, "combustibles:tae_view")) return { ok: false, message: "Sin permisos" }
   } catch { return { ok: false, message: "Sin permisos" } }
 

@@ -22,7 +22,9 @@ vi.mock("@/db", () => ({
 
 await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
-const { getFuelCycleComparison, getFuelStorageBalances } = await import("@/lib/combustibles/fuel-cycle")
+const { getFuelCycleComparison, getFuelStorageBalances, listFuelCycleMovements } = await import("@/lib/combustibles/fuel-cycle")
+const { describeFuelPeriod } = await import("@/lib/combustibles/period/parse")
+const { toChileInstantRange } = await import("@/lib/combustibles/period/adapters")
 
 /**
  * Prueba de integración PostgreSQL del read model del ciclo físico (sección 1,
@@ -225,5 +227,57 @@ describe("fuel cycle read model (PostgreSQL integration)", () => {
 
     expect(result.received).toBeNull()
     expect(result.differences.receivedVsRegistered).toEqual({ status: "unavailable", absolute: null, percent: null })
+  })
+  it("sin etapa «Consumido»: ninguna fuente la mide y el resultado no la declara", async () => {
+    const result = await getFuelCycleComparison(globalSession(), { worksiteId: worksiteA, from, to })
+    expect(Object.keys(result).sort()).toEqual(["delivered", "differences", "received", "registered"])
+  })
+
+  it("el período en días civiles (como lo pasa la pantalla) cuenta igual que los instantes ISO", async () => {
+    const june = await getFuelCycleComparison(globalSession(), { worksiteId: worksiteC, from: "2026-06-01", to: "2026-06-30" })
+    expect(june.received).toEqual({ liters: 20000, records: 1 })
+    const july = await getFuelCycleComparison(globalSession(), { worksiteId: worksiteC, from: "2026-07-01", to: "2026-07-31" })
+    expect(july.received).toBeNull()
+    const [balance] = await getFuelStorageBalances(globalSession(), { worksiteId: worksiteC, from: "2026-06-01", to: "2026-06-30" })
+    expect(balance).toMatchObject({ receivedLiters: 20000, openingLiters: 0 })
+  })
+
+  describe("lista de movimientos con la ventana en instantes de Chile", () => {
+    const monthWindow = (token: string) => {
+      const [year, month] = token.split("-").map(Number)
+      return toChileInstantRange(describeFuelPeriod({ kind: "month", year: year!, month: month! }, "url", "2026-08-15"))
+    }
+
+    it("la recepción nocturna del 30 de junio (01:30 UTC del 1 de julio) es de junio y no de julio", async () => {
+      const june = await listFuelCycleMovements(globalSession(), { ...monthWindow("2026-06"), worksiteId: worksiteC })
+      expect(june.rows).toHaveLength(1)
+      expect(june.rows[0]).toMatchObject({ eventType: "received", quantity: 20000 })
+      const july = await listFuelCycleMovements(globalSession(), { ...monthWindow("2026-07"), worksiteId: worksiteC })
+      expect(july).toEqual({ rows: [], total: 0 })
+      // La ventana anclada en «Z» (el defecto de la página anterior) la dejaba fuera de junio y la colaba en julio.
+      const naiveJune = await listFuelCycleMovements(globalSession(), { start: "2026-06-01T00:00:00.000Z", endExclusive: "2026-06-30T23:59:59.999Z", worksiteId: worksiteC })
+      expect(naiveJune.rows).toHaveLength(0)
+    })
+
+    it("ordena del más reciente al más antiguo, filtra por etapa y dice cuántos hay en total", async () => {
+      const all = await listFuelCycleMovements(globalSession(), { ...monthWindow("2026-06"), worksiteId: worksiteA })
+      expect(all.total).toBe(2)
+      expect(all.rows.map((row) => row.eventType)).toEqual(["tank_delivery", "received"])
+      expect(all.rows[0]?.vehicle).toMatchObject({ id: vehicleId })
+      expect(all.rows[1]?.targetLocation).toEqual({ name: "Camión estanque 1" })
+      expect((await listFuelCycleMovements(globalSession(), { ...monthWindow("2026-06"), worksiteId: worksiteA, stage: "received" })).rows.map((row) => row.eventType)).toEqual(["received"])
+      expect((await listFuelCycleMovements(globalSession(), { ...monthWindow("2026-06"), worksiteId: worksiteA, stage: "delivered" })).rows.map((row) => row.eventType)).toEqual(["tank_delivery"])
+      const limited = await listFuelCycleMovements(globalSession(), { ...monthWindow("2026-06"), worksiteId: worksiteA, limit: 1 })
+      expect(limited.rows).toHaveLength(1)
+      expect(limited.total).toBe(2)
+    })
+
+    it("respeta el alcance de faena", async () => {
+      const outside = await listFuelCycleMovements(scopedSession([worksiteB]), { ...monthWindow("2026-06"), worksiteId: worksiteA })
+      expect(outside).toEqual({ rows: [], total: 0 })
+      const own = await listFuelCycleMovements(scopedSession([worksiteA]), { ...monthWindow("2026-06") })
+      expect(own.rows.every((row) => row.worksite.name === "Faena A")).toBe(true)
+      expect(own.total).toBe(2)
+    })
   })
 })

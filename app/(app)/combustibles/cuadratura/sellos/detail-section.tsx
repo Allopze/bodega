@@ -1,18 +1,22 @@
 import Link from "next/link"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { EmptyState } from "@/components/ui/empty-state"
 import { ServerPagination } from "@/components/ui/server-pagination"
 import { Table, TableBody, TableCell, TableCellNum, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import { LOADING_POINT_TYPE_LABELS, SEAL_CHAIN_STATUS_LABELS } from "@/lib/combustibles/control/contracts"
 import type { SealDetailRow } from "@/lib/combustibles/control/queries/seals"
 import type { PaginationState } from "@/lib/pagination"
+import { fuelEquipmentHref, fuelLoadHref } from "@/lib/combustibles/routes"
 import { formatDateTime } from "@/lib/utils"
-import { litersText, numberText } from "./format"
+import { litersText, numberText } from "../_components/format"
 
 const LOADED_AT_SOURCE_LABELS: Record<string, string> = {
   server: "Hora del servidor",
   device: "Hora del dispositivo",
   device_offline: "Hora del dispositivo (sin conexión)",
   import: "Hora de la planilla",
+  backdated: "Registrada después, con fecha pasada",
 }
 
 interface Props {
@@ -21,11 +25,20 @@ interface Props {
   hrefForPage: (page: number) => string
   /** Solo con `combustibles:view_personal`: las fotos son datos personales. */
   canViewPhotos: boolean
+  /** Para quitar el equipo elegido cuando no hay filas. */
+  clearHref?: string
 }
 
-export function DetailSection({ rows, pagination, hrefForPage, canViewPhotos }: Props) {
+export function DetailSection({ rows, pagination, hrefForPage, canViewPhotos, clearHref }: Props) {
   if (rows.length === 0) {
-    return <p className="text-sm text-[var(--color-text-muted)]">No hay cargas en terreno con estos filtros. Prueba con otro mes, quita el equipo elegido o revisa el mandante.</p>
+    return (
+      <EmptyState
+        compact
+        title="No hay cargas en terreno con estos filtros"
+        description="Prueba con otro período, quita el equipo elegido o revisa la faena."
+        action={clearHref ? <Button asChild variant="secondary" size="sm"><Link href={clearHref}>Quitar el equipo</Link></Button> : undefined}
+      />
+    )
   }
   return (
     <TableRoot aria-label="Cargas en terreno por equipo">
@@ -42,7 +55,7 @@ export function DetailSection({ rows, pagination, hrefForPage, canViewPhotos }: 
             <TableHead>Supervisor</TableHead>
             <TableHead>Sello retirado</TableHead>
             <TableHead>Sello nuevo</TableHead>
-            <TableHead>Cadena de sellos</TableHead>
+            <TableHead title="El sello que se retira debe ser el que se instaló en la carga anterior del mismo equipo">Cadena de sellos</TableHead>
             <TableHead>Observaciones</TableHead>
             {canViewPhotos ? <TableHead>Fotos</TableHead> : null}
           </TableRow>
@@ -55,7 +68,9 @@ export function DetailSection({ rows, pagination, hrefForPage, canViewPhotos }: 
                 <span className="block text-xs text-[var(--color-text-muted)]">{LOADED_AT_SOURCE_LABELS[row.loadedAtSource] ?? row.loadedAtSource}</span>
               </TableCell>
               <TableCell className="whitespace-nowrap">
-                <span className="font-medium">{row.equipment}</span>
+                {row.vehicleId
+                  ? <Link href={fuelEquipmentHref(row.vehicleId)} className="font-medium text-[var(--color-text)] underline-offset-4 hover:underline">{row.equipment}</Link>
+                  : <span className="font-medium">{row.equipment}</span>}
                 {row.plate ? <span className="block text-xs text-[var(--color-text-muted)]">{row.plate}</span> : null}
               </TableCell>
               <TableCell>{row.loadingPointType ? LOADING_POINT_TYPE_LABELS[row.loadingPointType] : "—"}</TableCell>
@@ -80,7 +95,7 @@ export function DetailSection({ rows, pagination, hrefForPage, canViewPhotos }: 
               {canViewPhotos ? (
                 <TableCell className="whitespace-nowrap">
                   {row.evidenceCount > 0
-                    ? <Link href={`/combustibles/tae/${row.id}#evidencia`} className="text-[var(--color-primary-ink)] underline-offset-4 hover:underline">Ver fotos</Link>
+                    ? <Link href={`${fuelLoadHref({ origen: "terreno", id: row.id })}#evidencia`} className="text-[var(--color-primary-ink)] underline-offset-4 hover:underline">Ver fotos</Link>
                     : <span className="text-[var(--color-text-muted)]">Sin fotos</span>}
                 </TableCell>
               ) : null}

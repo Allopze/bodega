@@ -16,22 +16,22 @@ export interface CycleStagePoint {
   records: number | null
 }
 /**
- * Barras en el orden recibido → registrado → entregado → consumido: leídas de
- * izquierda a derecha, la caída de una barra a la siguiente ES el flujo físico
- * (satisface a la vez "diferencias entre etapas" y "flujo del ciclo" — un solo
- * gráfico, una sola pregunta: ¿dónde se pierde combustible entre etapas?).
+ * Barras en el orden recibido → registrado → entregado: leídas de izquierda a
+ * derecha, la caída de una barra a la siguiente ES el flujo físico (una sola
+ * pregunta: ¿dónde se pierde combustible entre etapas?). No tiene etapa
+ * «Consumido»: ninguna fuente la mide de verdad.
  */
 export function CycleStageChart({ stages }: { stages: CycleStagePoint[] }) {
   const hasAnyData = stages.some((s) => s.liters != null)
-  if (!hasAnyData) return <ChartEmpty icon={<ChartLineUp size={24} className="mb-2 text-[var(--color-text-subtle)]" aria-hidden />} className="border-[var(--color-border-strong)]" label="No hay ninguna etapa con fuente disponible en este filtro." />
+  if (!hasAnyData) return <ChartEmpty icon={<ChartLineUp size={24} className="mb-2 text-[var(--color-text-subtle)]" aria-hidden />} className="border-[var(--color-border-strong)]" label="No hay ninguna etapa con registros en este período." />
 
   const chartData = stages.map((s) => ({ ...s, value: s.liters ?? 0 }))
 
   return (
     <>
-    <div className="h-64" aria-label="Litros por etapa del ciclo físico, en orden recibido → registrado → entregado → consumido">
+    <div className="h-64" aria-label="Litros por etapa del ciclo físico, en orden recibido → registrado → entregado">
       <ResponsiveContainer width="100%" height="100%" debounce={80}>
-        <BarChart data={chartData} margin={{ top: 20, right: 12, left: 4, bottom: 4 }} title="Litros por etapa del ciclo. Una caída entre barras es la diferencia entre esas dos etapas.">
+        <BarChart data={chartData} margin={{ top: 20, right: 12, left: 4, bottom: 4 }} title="Litros por etapa: recibido, registrado y entregado. Una caída entre barras es la diferencia entre esas dos etapas.">
           <CartesianGrid vertical={false} stroke={GRID_COLOR} strokeDasharray="2 5" />
           <XAxis dataKey="stage" axisLine={false} tickLine={false} tick={{ fill: "var(--color-text-muted)", fontSize: 12 }} />
           <YAxis hide />

@@ -11,6 +11,7 @@ import { FUEL_PATHS } from "@/lib/combustibles/routes"
 
 const MAX_EXPORT_ROWS = 10_000
 
+/** Exporta la cobertura tarjeta-terreno (una fila por equipo y mes) con los mismos filtros de la pantalla. */
 export async function exportTaeCopecReconciliationAction(filters: TaeCopecFilters) {
   let session
   try { session = await requirePermission("combustibles:tae_export", FUEL_PATHS.cuadratura) }
@@ -19,23 +20,23 @@ export async function exportTaeCopecReconciliationAction(filters: TaeCopecFilter
   const rows = result.rows.slice(0, MAX_EXPORT_ROWS)
   const ExcelJS = await import("exceljs")
   const workbook = new ExcelJS.Workbook()
-  const sheet = workbook.addWorksheet("Conciliación por canal")
+  const sheet = workbook.addWorksheet("Tarjeta y terreno")
   sheet.columns = [
     { header: "Mes", key: "month", width: 12 },
     { header: "Faena", key: "worksite", width: 22 },
     { header: "Equipo", key: "equipment", width: 16 },
     { header: "Patente", key: "plate", width: 14 },
-    { header: "TAE litros", key: "tae", width: 14 },
-    { header: "TAE cargas", key: "taeLoads", width: 12 },
-    { header: "TCT Diésel litros", key: "diesel", width: 18 },
-    { header: "TCT BlueMax litros", key: "bluemax", width: 20 },
-    { header: "TCT registros", key: "tctRecords", width: 14 },
+    { header: "Terreno litros", key: "tae", width: 14 },
+    { header: "Terreno cargas", key: "taeLoads", width: 14 },
+    { header: "Tarjeta diésel litros", key: "diesel", width: 20 },
+    { header: "Tarjeta BlueMax litros", key: "bluemax", width: 22 },
+    { header: "Registros de la tarjeta", key: "tctRecords", width: 20 },
     { header: "Total litros", key: "total", width: 14 },
-    { header: "Cobertura", key: "coverage", width: 18 },
-    { header: "TCT parcial", key: "tctPartial", width: 14 },
+    { header: "Aparece en", key: "coverage", width: 18 },
+    { header: "Tarjeta parcial", key: "tctPartial", width: 16 },
   ]
-  const coverageLabels = { both_channels: "Ambos canales", tae_only: "Solo TAE", tct_only: "Solo TCT" }
-  for (const row of rows) sheet.addRow({ month: row.month, worksite: row.worksiteName, equipment: row.equipment, plate: row.plate, tae: row.taeLiters, taeLoads: row.taeLoads, diesel: row.tctDieselLiters, bluemax: row.tctBlueMaxLiters, tctRecords: row.tctRecords, total: row.totalLiters, coverage: coverageLabels[row.coverage], tctPartial: row.tctPartial ? "Sí — período fuera del rango excluido del total" : "" })
+  const coverageLabels = { both_channels: "Ambos", tae_only: "Sólo terreno", tct_only: "Sólo tarjeta" }
+  for (const row of rows) sheet.addRow({ month: row.month, worksite: row.worksiteName, equipment: row.equipment, plate: row.plate, tae: row.taeLiters, taeLoads: row.taeLoads, diesel: row.tctDieselLiters, bluemax: row.tctBlueMaxLiters, tctRecords: row.tctRecords, total: row.totalLiters, coverage: coverageLabels[row.coverage], tctPartial: row.tctPartial ? "Sí — hay un registro de la tarjeta que se extiende más allá del rango y no entra en el total" : "" })
   sheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } }
   sheet.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF2563EB" } }
   for (const key of ["tae", "diesel", "bluemax", "total"]) sheet.getColumn(key).numFmt = "#,##0.000"
@@ -47,5 +48,5 @@ export async function exportTaeCopecReconciliationAction(filters: TaeCopecFilter
     entityType: "fuel_reconciliation_export", entityId: nanoid(),
     newState: { rowCount: rows.length, truncated: result.rows.length > MAX_EXPORT_ROWS, filters: filters as Record<string, unknown> },
   })
-  return { ok: true as const, data: { base64, filename: `conciliacion_tae_tct_${todayInChile()}.xlsx`, truncated: result.rows.length > MAX_EXPORT_ROWS } }
+  return { ok: true as const, data: { base64, filename: `tarjeta_y_terreno_${todayInChile()}.xlsx`, truncated: result.rows.length > MAX_EXPORT_ROWS } }
 }

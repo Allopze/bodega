@@ -4,6 +4,7 @@ import { safeActionMessage } from "@/lib/action-error"
 
 import { isNetworkError } from "@/lib/network-error"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
+import { chileLocalDateTimeToUtc } from "@/lib/utils"
 import { createFuelCycleMovement, fuelCycleMovementSchema } from "@/lib/combustibles/fuel-cycle"
 import { logger } from "@/lib/logger"
 import type { ActionState } from "@/lib/validation/masters"
@@ -13,20 +14,20 @@ import { revalidateFuel } from "@/lib/combustibles/revalidate"
 function empty(value: FormDataEntryValue | null) { const text = String(value ?? "").trim(); return text || undefined }
 
 /**
- * `datetime-local` entrega hora de pared sin zona ("2026-08-07T21:30"). Pegarle
- * una "Z" la declaraba UTC y corría el movimiento 3–4 horas (y de día en las
- * cargas nocturnas). `new Date(valor)` sin offset se interpreta en la zona del
- * proceso, que en este despliegue es America/Santiago (docker-compose.yml).
+ * `DateTimePicker` entrega hora de pared sin zona ("2026-08-07T21:30"): es hora
+ * de Chile, no del proceso ni UTC. Pegarle una "Z" corría el movimiento 3–4
+ * horas (y de día en las cargas nocturnas); `new Date(valor)` la interpretaba en
+ * la zona del servidor. `chileLocalDateTimeToUtc` aplica el desfase real de
+ * Chile, horario de verano incluido.
  */
 function toInstant(value: string | undefined) {
   if (!value || /[zZ]|[+-]\d{2}:\d{2}$/.test(value)) return value
-  const parsed = new Date(value)
-  return Number.isNaN(parsed.getTime()) ? value : parsed.toISOString()
+  try { return chileLocalDateTimeToUtc(value) } catch { return value }
 }
 
 export async function createFuelCycleMovementAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   let session
-  try { session = await requirePermission("combustibles:create", FUEL_PATHS.cuadratura) } catch { return { ok: false, message: "No tienes permisos para registrar movimientos" } }
+  try { session = await requirePermission("combustibles:create", FUEL_PATHS.cuadraturaEstanques) } catch { return { ok: false, message: "No tienes permisos para registrar movimientos" } }
   const raw = {
     eventType: empty(formData.get("eventType")), worksiteId: empty(formData.get("worksiteId")), productId: empty(formData.get("productId")),
     quantity: empty(formData.get("quantity")), occurredAt: toInstant(empty(formData.get("occurredAt"))), supplierId: empty(formData.get("supplierId")),
@@ -38,7 +39,7 @@ export async function createFuelCycleMovementAction(_prev: ActionState, formData
   if (!canAccessWorksite(session, parsed.data.worksiteId)) return { ok: false, message: "No puedes operar esta faena" }
   try {
     await createFuelCycleMovement(parsed.data, { userId: session.user.id, userEmail: session.user.email ?? undefined })
-    revalidateFuel(); revalidateFuel()
+    revalidateFuel()
     return { ok: true, message: "Movimiento físico registrado" }
   } catch (error) {
     logger.error("[createFuelCycleMovementAction]", error)
