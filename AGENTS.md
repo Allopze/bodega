@@ -674,8 +674,9 @@ duplicate inputs and broken filtering.
 The `TopBar` (`components/layout/top-bar.tsx`) renders a search input
 ("Filtrar en esta página...") that writes to `searchQuery` in
 `ShellHeaderContext`. This input is visible on **every route** except those
-listed in `ROUTES_WITH_OWN_SEARCH` (`/solicitudes`, `/aprobaciones`,
-`/compras`, `/recepcion`, `/prevencion/ppa`).
+listed in `ROUTES_WITH_OWN_SEARCH` (among others `/solicitudes`, `/aprobaciones`,
+`/compras`, `/recepcion`, `/prevencion/ppa` and the whole `/combustibles` module,
+whose lists each carry their own labelled search; the full list is in `top-bar.tsx`).
 
 ## DataTable auto-connects to TopBar
 
