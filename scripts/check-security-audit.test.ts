@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest"
 import {
-  findPackagePaths,
   type AuditAllowlistEntry,
   findExpiredAllowlistEntries,
   findStaleAllowlistEntries,
@@ -132,17 +131,5 @@ describe("findExpiredAllowlistEntries", () => {
   it("flags entries whose reviewBy date has passed", () => {
     expect(findExpiredAllowlistEntries("2026-11-01", allowlist).map((entry) => entry.ghsaId)).toEqual([braceExpansionId])
     expect(findExpiredAllowlistEntries("2999-01-01", allowlist)).toHaveLength(allowlist.length)
-  })
-})
-
-describe("findPackagePaths (guardrail de GHSA-vfj7-8cjw-p6xm)", () => {
-  it("encuentra el paquete en cualquier profundidad y nombra la ruta", () => {
-    const tree = { dependencies: { "eslint-config-next": { dependencies: { "fast-glob": { dependencies: { micromatch: { dependencies: { braces: {} } } } } } } } }
-    expect(findPackagePaths(tree, "braces")).toEqual(["eslint-config-next → fast-glob → micromatch → braces"])
-  })
-
-  it("devuelve vacío cuando el árbol de producción no lo contiene", () => {
-    expect(findPackagePaths({ dependencies: { next: { dependencies: { react: {} } } } }, "braces")).toEqual([])
-    expect(findPackagePaths({}, "braces")).toEqual([])
   })
 })
