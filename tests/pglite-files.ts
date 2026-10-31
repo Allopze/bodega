@@ -171,6 +171,8 @@ export const pgliteTestFiles = [
   "lib/__tests__/fuel-control-catalogs-pglite.test.ts",
   "lib/__tests__/fuel-control-review-queue.test.ts",
   "lib/__tests__/fuel-log-personal.test.ts",
+  // Combustible, tercera pasada: los casos abiertos que lista la ficha de una carga.
+  "lib/__tests__/fuel-log-detail-cases-pglite.test.ts",
   // Rediseño de Combustible (2026-10-31): una suite por línea que toca base.
   "lib/__tests__/fuel-panel-pglite.test.ts",
   "lib/__tests__/fuel-review-marks-request-pglite.test.ts",

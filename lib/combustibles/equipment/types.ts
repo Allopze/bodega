@@ -142,11 +142,26 @@ export interface EquipmentFileCaseItem {
   href: string
 }
 
+export interface EquipmentFileLitersMonth {
+  /** Mes "YYYY-MM" en hora de Chile (la columna `month` de la carga). */
+  month: string
+  /** Litros de las cargas que cuentan ese mes; 0 si no hubo ninguna. */
+  liters: number
+  /** Cuántas cargas que cuentan hubo ese mes; 0 si no hubo ninguna. */
+  loads: number
+}
+
 export interface EquipmentFile {
   vehicle: EquipmentFileVehicle
   loads: EquipmentFileLoads
   /** `null` cuando el equipo no mide rendimiento o no tuvo cargas contables en el período. */
   performance: EquipmentFilePerformance | null
+  /**
+   * Litros de los 12 meses que terminan en el del fin del período, del más antiguo al más
+   * reciente y con ceros donde no hubo cargas que cuenten. No depende del período elegido
+   * más que por el mes en que termina. `[]` si la consulta falló (`degraded` lo dice).
+   */
+  litersByMonth: EquipmentFileLitersMonth[]
   /** `null` cuando el equipo no tiene telemetría en el período. */
   idle: EquipmentFileIdle | null
   /** `null` cuando quien consulta no tiene `combustibles:tae_view` (los sellos son un dato de terreno). */

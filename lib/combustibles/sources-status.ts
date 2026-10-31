@@ -21,6 +21,7 @@ import { listCopecPeriodCoverage } from "@/lib/combustibles/copec-coverage-store
 import { ARAMCO_SOURCES } from "@/lib/combustibles/fuel-sources"
 import { toChileInstantRange } from "@/lib/combustibles/period/adapters"
 import type { ResolvedFuelPeriod } from "@/lib/combustibles/period/types"
+import { FUEL_PATHS } from "@/lib/combustibles/routes"
 import { listTaeImportBatches } from "@/lib/combustibles/tae-import-ledger"
 import { readVisionLinkConfig } from "@/lib/integrations/visionlink/visionlink-settings"
 import { logger } from "@/lib/logger"
@@ -38,6 +39,15 @@ import { addDaysToPlainDate, formatDate, formatQty, todayInChile } from "@/lib/u
  */
 export type FuelSourceKey = "copec" | "aramco" | "planilla" | "telemetria" | "surtidor" | "terreno" | "historico-sellos" | "facturas"
 
+/** Un dato de la fila de una fuente («Última actualización: ayer»), con un enlace opcional a donde se cambia. */
+export interface FuelSourceFact {
+  label: string
+  value: string
+  /** A dónde lleva «cambiarlo»; sólo se pone para quien tiene permiso de hacerlo. */
+  href?: string
+  hrefLabel?: string
+}
+
 export interface FuelSourceStatus {
   key: FuelSourceKey
   name: string
@@ -47,7 +57,7 @@ export interface FuelSourceStatus {
   /** «Al día», «Hasta ayer», «Importada el 28 oct», «Falló hoy a las 05:30». */
   statusLabel: string
   lastUpdateAt: string | null
-  facts: { label: string; value: string }[]
+  facts: FuelSourceFact[]
   /** Pantallas que usan esta fuente. */
   feeds: string[]
   /** Lo que falta resolver, en una frase, o `null`. */
@@ -201,7 +211,7 @@ async function providerSource(provider: "copec" | "aramco", ctx: Ctx): Promise<F
   const lastGoodDay = lastGoodAt ? todayInChile(lastGoodAt) : null
 
   const technical: string[] = []
-  const facts: { label: string; value: string }[] = []
+  const facts: FuelSourceFact[] = []
   let problem: string | null = null
   let status: FuelSourceStatus["status"] = "ok"
   let statusLabel = "Al día"
@@ -297,7 +307,13 @@ async function providerSource(provider: "copec" | "aramco", ctx: Ctx): Promise<F
   }
 
   if (!isCopec && config) {
-    facts.push({ label: "Sincronización automática", value: config.hasCredentials ? (config.syncEnabled ? "Activada" : "Apagada") : "Sin credenciales" })
+    facts.push({
+      label: "Sincronización automática",
+      value: config.hasCredentials ? (config.syncEnabled ? "Activada" : "Apagada") : "Sin credenciales",
+      // El interruptor vive en Ajustes › Integraciones (otro permiso): quien puede cambiarlo lo tiene junto al estado. Sin
+      // credenciales no hay nada que activar y la fila ya manda a configurarlas.
+      ...(config.hasCredentials && ctx.has("combustibles:manage_integrations") ? { href: FUEL_PATHS.ajustesIntegraciones, hrefLabel: "Cambiar en Ajustes" } : {}),
+    })
     if (!config.hasCredentials) problem ??= "Faltan las credenciales de Aramco. Se configuran en Ajustes › Integraciones."
   }
   if (batch) facts.push({ label: "Último lote", value: `hasta el ${formatDate(batch.periodoHasta)}` })

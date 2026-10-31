@@ -3,16 +3,15 @@
 import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { ArrowSquareOut, Lock } from "@phosphor-icons/react"
-import { MetaBadge } from "@/components/states/state-badge"
 import { Callout } from "@/components/ui/callout"
 import { Sheet, SheetBody, SheetCloseButton, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
-import { ANOMALY_SEVERITY_LABELS, ANOMALY_STATUS_LABELS, anomalySeverityVariant } from "@/lib/combustibles/anomaly-labels"
 import type { FuelInboxItem } from "@/lib/combustibles/inbox/detail-types"
 import { fuelEquipmentHref } from "@/lib/combustibles/routes"
 import { formatDateTime } from "@/lib/utils"
 import { CaseActions } from "./case-actions"
 import { DecideLoadButtons } from "./decide-load-buttons"
 import { InboxEvidence } from "./inbox-evidence"
+import { InboxRowBadges } from "./inbox-row-badges"
 import { LinkPlateForm } from "./link-plate-form"
 import { ReopenDecisionButton } from "./reopen-decision-button"
 import { ResolveRequestForm } from "./resolve-request-form"
@@ -61,12 +60,15 @@ export function InboxDetailSheet({ item, canReviewCases, canResolveCases }: { it
       <SheetContent stableHeight className="sm:max-w-xl">
         <SheetHeader>
           <div className="min-w-0">
-            <div className="mb-2 flex flex-wrap items-center gap-1.5">
-              <MetaBadge meta={{ label: row.kind === "caso" ? row.reasonLabel : row.title, variant: row.kind === "caso" ? "danger" : row.kind === "patente" ? "info" : "signal" }} size="sm" className="whitespace-normal normal-case tracking-normal font-sans" />
-              {row.severity ? <MetaBadge meta={{ label: ANOMALY_SEVERITY_LABELS[row.severity], variant: anomalySeverityVariant(row.severity) }} size="sm" /> : null}
-              {kindCase ? <MetaBadge meta={{ label: ANOMALY_STATUS_LABELS[kindCase.status], variant: "outline" }} size="sm" /> : null}
-              {decided ? <MetaBadge meta={{ label: decided.outcome, variant: decided.outcome === "No cuenta" || decided.outcome === "Descartado" ? "danger" : "success" }} size="sm" /> : null}
-            </div>
+            {/* Un caso cerrado dice su desenlace («Descartado») y no repite su estado al lado. */}
+            <InboxRowBadges
+              className="mb-2"
+              label={row.kind === "caso" ? row.reasonLabel : row.title}
+              kind={row.kind}
+              severity={row.severity}
+              caseStatus={kindCase?.status}
+              decided={decided}
+            />
             <SheetTitle>{row.equipmentLabel}{row.worksiteName ? ` · ${row.worksiteName}` : ""}</SheetTitle>
             <SheetDescription>{QUESTION[row.kind]}</SheetDescription>
           </div>

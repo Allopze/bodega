@@ -18,6 +18,7 @@ import {
   LoadStatusBadge,
   LoadTimeline,
   NeighborLoads,
+  OpenCasesNotice,
   OpenRequestNotice,
   ReservedValue,
   type LoadFact,
@@ -145,6 +146,7 @@ export function TerrenoLoadDetail({
         <div className="space-y-3">
           <LoadReviewStatus review={detail.review} search={search} canDecide={canDecide} equipmentLabel={detail.equipmentLabel} />
           {detail.openRequest && <OpenRequestNotice request={detail.openRequest} search={search} />}
+          <OpenCasesNotice cases={detail.openCases} search={search} />
         </div>
       </LoadSection>
 

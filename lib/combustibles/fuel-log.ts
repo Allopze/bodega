@@ -30,10 +30,9 @@ import {
 } from "@/db/schema"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 
-import { FUEL_LOAD_ORIGIN_LABEL, FUEL_LOAD_STATE_LABEL, FUEL_LOAD_STATE_SLUGS, fuelLogBranchesFor, type FuelLogSource, type FuelLogRow, type FuelLogFilters, type FuelLoadOriginSlug } from "./fuel-log-shared"
-import { fuelLoadHref } from "@/lib/combustibles/routes"
-export type { FuelLogSource, FuelLogRow, FuelLogFilters }
-export { FUEL_LOG_SOURCE_LABEL } from "./fuel-log-shared"
+import { FUEL_LOAD_ORIGIN_LABEL, FUEL_LOAD_STATE_LABEL, FUEL_LOAD_STATE_SLUGS, fuelLogBranchesFor, type FieldLoadAttention, type FuelLogSource, type FuelLogRow, type FuelLogFilters, type FuelLoadOriginSlug } from "./fuel-log-shared"
+export type { FuelLogSource, FuelLogRow, FuelLogFilters, FieldLoadAttention }
+export { FUEL_LOG_SOURCE_LABEL, fuelLogDetailHref } from "./fuel-log-shared"
 
 /**
  * Datos personales (D-10, P-01): nombres de conductor y supervisor. Se decide
@@ -56,13 +55,6 @@ const OPERATION_PERFORMANCE_UNIT: Record<string, string> = { km_per_liter: "km_l
 
 export function operationPerformanceUnitCode(unit: string): string {
   return OPERATION_PERFORMANCE_UNIT[unit] ?? unit
-}
-
-/** Ruta de detalle en el sistema fuente de cada fila. */
-export function fuelLogDetailHref(row: Pick<FuelLogRow, "source" | "detailId">): string {
-  if (row.source === "tae_pwa") return fuelLoadHref({ origen: "terreno", id: row.detailId })
-  if (row.source === "invoiced") return fuelLoadHref({ origen: "factura", id: row.detailId })
-  return fuelLoadHref({ origen: "planilla", id: row.detailId })
 }
 
 /**
@@ -166,6 +158,80 @@ export function fuelLogAuditEntity(row: Pick<FuelLogRow, "source" | "id">): { en
   return null // el log operacional se audita a nivel de lote, no de fila individual
 }
 
+/**
+ * «Sello incompleto» de un registro en terreno: el sello retirado o el instalado sin
+ * informar (nulo o en blanco). Una sola definición para el filtro `sello=faltante` de la
+ * lista y para la cifra de la tira de Cargas: si cada uno tuviera la suya, el número y las
+ * filas que abre al hacer clic podrían dejar de coincidir sin que nada lo avisara.
+ */
+const TAE_SEAL_INCOMPLETE_SQL = sql`(${fuelTaeSubmissions.removedSealNumber} is null or btrim(${fuelTaeSubmissions.removedSealNumber}) = '' or ${fuelTaeSubmissions.installedSealNumber} is null or btrim(${fuelTaeSubmissions.installedSealNumber}) = '')`
+
+/**
+ * «Menos de 4 fotos» de un registro en terreno (menos de 4 tipos distintos de evidencia).
+ * Una carga registrada después (fecha pasada, `loaded_at_source = 'backdated'`) tiene las
+ * fotos opcionales: no cuenta como «le faltan fotos». Compartida por el filtro
+ * `evidencia=faltante` y por la tira de Cargas, por la misma razón que el sello.
+ */
+const TAE_PHOTOS_INCOMPLETE_SQL = sql`(${fuelTaeSubmissions.loadedAtSource} <> 'backdated' and (select count(distinct e.kind) from fuel_tae_evidence e where e.submission_id = ${fuelTaeSubmissions.id}) < 4)`
+
+/** `%texto%` de la búsqueda libre, recortada igual en la lista y en la tira de Cargas; `null` sin búsqueda. */
+function searchPatternOf(filters: FuelLogFilters): string | null {
+  const q = filters.q?.trim().slice(0, 120)
+  return q ? `%${q}%` : null
+}
+
+/**
+ * Las condiciones de la rama de registros en terreno, aparte de la consulta que las usa:
+ * `buildTaeBranch` arma con ellas las filas de la lista y `getFieldLoadAttention` las cuenta,
+ * así una cifra de la tira de Cargas es el número de filas de su filtro y no una aproximación
+ * hecha por otro camino. Alcance por faena y datos personales se resuelven aquí, en el servidor.
+ *
+ * Referencia las tablas `fuel_equipment_loads`, `fuel_tae_loading_points`, `fuel_vehicles` y
+ * `fuel_equipment_types`: quien la use debe unirlas, como hacen las dos consultas de arriba.
+ */
+function taeConditions(session: Session, filters: FuelLogFilters, searchPattern: string | null, ids?: string[], forceEmpty = false): Array<SQL | undefined> {
+  const personal = canViewFuelPersonalData(session)
+  return [
+    forceEmpty ? sql`false` : undefined,
+    worksiteScopeSql(session, fuelTaeSubmissions.worksiteId),
+    filters.worksiteId ? eq(fuelTaeSubmissions.worksiteId, filters.worksiteId) : undefined,
+    filters.from ? sql`(${fuelTaeSubmissions.loadedAt} at time zone 'America/Santiago')::date >= ${filters.from}::date` : undefined,
+    filters.to ? sql`(${fuelTaeSubmissions.loadedAt} at time zone 'America/Santiago')::date <= ${filters.to}::date` : undefined,
+    searchPattern ? or(
+      ilike(fuelTaeSubmissions.equipmentCodeSnapshot, searchPattern),
+      ilike(fuelTaeSubmissions.plateSnapshot, searchPattern),
+      personal ? ilike(fuelTaeSubmissions.driverNameSnapshot, searchPattern) : undefined,
+      personal ? ilike(fuelTaeSubmissions.supervisorNameSnapshot, searchPattern) : undefined,
+    ) : undefined,
+    ids ? inArray(fuelTaeSubmissions.id, ids) : undefined,
+    // TAE no tiene proveedor: filtrar por proveedor excluye toda esta rama.
+    filters.supplierId ? sql`false` : undefined,
+    filters.productId ? eq(fuelTaeSubmissions.productId, filters.productId) : undefined,
+    filters.equipmentTypeId ? eq(fuelEquipmentTypes.id, filters.equipmentTypeId) : undefined,
+    filters.hasNotes ? sql`${fuelTaeSubmissions.notes} is not null and btrim(${fuelTaeSubmissions.notes}) <> ''` : undefined,
+    // Marca/modelo: TAE se asocia vía fuelVehicles.
+    filters.brand ? ilike(fuelVehicles.brand, `%${filters.brand}%`) : undefined,
+    filters.model ? ilike(fuelVehicles.model, `%${filters.model}%`) : undefined,
+    personal && filters.driverName ? ilike(fuelTaeSubmissions.driverNameSnapshot, `%${filters.driverName}%`) : undefined,
+    personal && filters.supervisorName ? ilike(fuelTaeSubmissions.supervisorNameSnapshot, `%${filters.supervisorName}%`) : undefined,
+    filters.loadingPointId ? eq(fuelTaeLoadingPoints.id, filters.loadingPointId) : undefined,
+    filters.performanceUnit ? eq(fuelVehicles.performanceUnit, filters.performanceUnit) : undefined,
+    filters.operationalStatus ? eq(fuelVehicles.operationalStatus, filters.operationalStatus) : undefined,
+    filters.sealRemoved ? ilike(fuelTaeSubmissions.removedSealNumber, `%${filters.sealRemoved}%`) : undefined,
+    filters.sealInstalled ? ilike(fuelTaeSubmissions.installedSealNumber, `%${filters.sealInstalled}%`) : undefined,
+    filters.evidenceKind ? sql`exists (select 1 from fuel_tae_evidence e where e.submission_id = ${fuelTaeSubmissions.id} and e.kind = ${filters.evidenceKind})` : undefined,
+    anomalyFilterSql("fuel_tae_submission", fuelTaeSubmissions.id, filters),
+    filters.hasReviewMark ? openReviewMarkExistsSql("fuel_tae_submission", fuelTaeSubmissions.id) : undefined,
+    filters.origins?.length ? inArray(fuelTaeSubmissions.source, taeSourcesForOrigins(filters.origins)) : undefined,
+    filters.stateSlug ? taeStateSql(filters.stateSlug) : undefined,
+    filters.vehicleId ? eq(fuelTaeSubmissions.vehicleId, filters.vehicleId) : undefined,
+    filters.registeredBy ? eq(fuelTaeSubmissions.registeredBy, filters.registeredBy) : undefined,
+    filters.sealIncomplete ? TAE_SEAL_INCOMPLETE_SQL : undefined,
+    filters.photosIncomplete ? TAE_PHOTOS_INCOMPLETE_SQL : undefined,
+    filters.onlyPending ? sql`(${fuelEquipmentLoads.reviewStatus} = 'flagged' or ${fuelTaeSubmissions.status} = 'observed' or ${openReviewMarkExistsSql("fuel_tae_submission", fuelTaeSubmissions.id)} or ${openCaseExistsSql("fuel_tae_submission", fuelTaeSubmissions.id)})` : undefined,
+  ]
+}
+
 function buildTaeBranch(session: Session, filters: FuelLogFilters, searchPattern: string | null, ids?: string[], forceEmpty = false) {
   const personal = canViewFuelPersonalData(session)
   return db
@@ -239,46 +305,7 @@ function buildTaeBranch(session: Session, filters: FuelLogFilters, searchPattern
     .leftJoin(fuelEquipmentTypes, eq(fuelVehicles.equipmentTypeId, fuelEquipmentTypes.id))
     .leftJoin(fuelProducts, eq(fuelTaeSubmissions.productId, fuelProducts.id))
     .leftJoin(users, eq(fuelTaeSubmissions.reviewedBy, users.id))
-    .where(and(
-      forceEmpty ? sql`false` : undefined,
-      worksiteScopeSql(session, fuelTaeSubmissions.worksiteId),
-      filters.worksiteId ? eq(fuelTaeSubmissions.worksiteId, filters.worksiteId) : undefined,
-      filters.from ? sql`(${fuelTaeSubmissions.loadedAt} at time zone 'America/Santiago')::date >= ${filters.from}::date` : undefined,
-      filters.to ? sql`(${fuelTaeSubmissions.loadedAt} at time zone 'America/Santiago')::date <= ${filters.to}::date` : undefined,
-      searchPattern ? or(
-        ilike(fuelTaeSubmissions.equipmentCodeSnapshot, searchPattern),
-        ilike(fuelTaeSubmissions.plateSnapshot, searchPattern),
-        personal ? ilike(fuelTaeSubmissions.driverNameSnapshot, searchPattern) : undefined,
-        personal ? ilike(fuelTaeSubmissions.supervisorNameSnapshot, searchPattern) : undefined,
-      ) : undefined,
-      ids ? inArray(fuelTaeSubmissions.id, ids) : undefined,
-      // TAE no tiene proveedor: filtrar por proveedor excluye toda esta rama.
-      filters.supplierId ? sql`false` : undefined,
-      filters.productId ? eq(fuelTaeSubmissions.productId, filters.productId) : undefined,
-      filters.equipmentTypeId ? eq(fuelEquipmentTypes.id, filters.equipmentTypeId) : undefined,
-      filters.hasNotes ? sql`${fuelTaeSubmissions.notes} is not null and btrim(${fuelTaeSubmissions.notes}) <> ''` : undefined,
-      // Marca/modelo: TAE se asocia vía fuelVehicles.
-      filters.brand ? ilike(fuelVehicles.brand, `%${filters.brand}%`) : undefined,
-      filters.model ? ilike(fuelVehicles.model, `%${filters.model}%`) : undefined,
-      personal && filters.driverName ? ilike(fuelTaeSubmissions.driverNameSnapshot, `%${filters.driverName}%`) : undefined,
-      personal && filters.supervisorName ? ilike(fuelTaeSubmissions.supervisorNameSnapshot, `%${filters.supervisorName}%`) : undefined,
-      filters.loadingPointId ? eq(fuelTaeLoadingPoints.id, filters.loadingPointId) : undefined,
-      filters.performanceUnit ? eq(fuelVehicles.performanceUnit, filters.performanceUnit) : undefined,
-      filters.operationalStatus ? eq(fuelVehicles.operationalStatus, filters.operationalStatus) : undefined,
-      filters.sealRemoved ? ilike(fuelTaeSubmissions.removedSealNumber, `%${filters.sealRemoved}%`) : undefined,
-      filters.sealInstalled ? ilike(fuelTaeSubmissions.installedSealNumber, `%${filters.sealInstalled}%`) : undefined,
-      filters.evidenceKind ? sql`exists (select 1 from fuel_tae_evidence e where e.submission_id = ${fuelTaeSubmissions.id} and e.kind = ${filters.evidenceKind})` : undefined,
-      anomalyFilterSql("fuel_tae_submission", fuelTaeSubmissions.id, filters),
-      filters.hasReviewMark ? openReviewMarkExistsSql("fuel_tae_submission", fuelTaeSubmissions.id) : undefined,
-      filters.origins?.length ? inArray(fuelTaeSubmissions.source, taeSourcesForOrigins(filters.origins)) : undefined,
-      filters.stateSlug ? taeStateSql(filters.stateSlug) : undefined,
-      filters.vehicleId ? eq(fuelTaeSubmissions.vehicleId, filters.vehicleId) : undefined,
-      filters.registeredBy ? eq(fuelTaeSubmissions.registeredBy, filters.registeredBy) : undefined,
-      filters.sealIncomplete ? sql`(${fuelTaeSubmissions.removedSealNumber} is null or btrim(${fuelTaeSubmissions.removedSealNumber}) = '' or ${fuelTaeSubmissions.installedSealNumber} is null or btrim(${fuelTaeSubmissions.installedSealNumber}) = '')` : undefined,
-      // Una carga registrada después (fecha pasada) tiene las fotos opcionales: no cuenta como «le faltan fotos».
-      filters.photosIncomplete ? sql`(${fuelTaeSubmissions.loadedAtSource} <> 'backdated' and (select count(distinct e.kind) from fuel_tae_evidence e where e.submission_id = ${fuelTaeSubmissions.id}) < 4)` : undefined,
-      filters.onlyPending ? sql`(${fuelEquipmentLoads.reviewStatus} = 'flagged' or ${fuelTaeSubmissions.status} = 'observed' or ${openReviewMarkExistsSql("fuel_tae_submission", fuelTaeSubmissions.id)} or ${openCaseExistsSql("fuel_tae_submission", fuelTaeSubmissions.id)})` : undefined,
-    ))
+    .where(and(...taeConditions(session, filters, searchPattern, ids, forceEmpty)))
 }
 
 function buildInvoicedBranch(session: Session, filters: FuelLogFilters, searchPattern: string | null, ids?: string[]) {
@@ -487,8 +514,7 @@ function invoicedStateSql(slug: keyof typeof FUEL_LOAD_STATE_SLUGS): SQL {
 }
 
 function buildUnified(session: Session, filters: FuelLogFilters) {
-  const q = filters.q?.trim().slice(0, 120)
-  const searchPattern = q ? `%${q}%` : null
+  const searchPattern = searchPatternOf(filters)
   const branches = fuelLogBranchesFor(filters)
 
   // Ninguna rama (p. ej. `como=planilla&estado=validada`): la rama de terreno con
@@ -549,6 +575,51 @@ export async function getFuelLogPage(session: Session, filters: FuelLogFilters, 
     getFuelLogTotal(session, filters),
   ])
   return { rows, total }
+}
+
+/**
+ * Las cuatro cifras de la tira de Cargas: cuántos registros en terreno están por validar,
+ * con observación, con el sello incompleto y con menos de 4 fotos.
+ *
+ * Es UNA consulta agregada (`count(*) filter`) que usa las mismas condiciones y los mismos
+ * predicados que la lista (`taeConditions`, `taeStateSql`, `TAE_SEAL_INCOMPLETE_SQL`,
+ * `TAE_PHOTOS_INCOMPLETE_SQL`): cada cifra es, por construcción, el número de filas que
+ * muestra su filtro, no una aproximación hecha por otro camino. El alcance por faena y los
+ * datos personales se resuelven aquí, igual que en la lista.
+ *
+ * Los cuatro filtros de atención (`estado`, `sello`, `evidencia` y «sólo con algo pendiente»)
+ * se ignoran al contar: si no, al activar uno las otras tres cifras caerían a cero y la tira
+ * dejaría de servir justo para pasar de una a otra. Todo lo demás (período, faena, cómo llegó,
+ * búsqueda, tipo de equipo, «las que registré yo»…) se respeta.
+ *
+ * `null` cuando la combinación de filtros no puede traer registros en terreno (por ejemplo,
+ * sólo facturas): no hay nada que contar y la tira no se pinta.
+ */
+export async function getFieldLoadAttention(session: Session, filters: FuelLogFilters): Promise<FieldLoadAttention | null> {
+  const neutral: FuelLogFilters = { ...filters, stateSlug: undefined, sealIncomplete: undefined, photosIncomplete: undefined, onlyPending: undefined }
+  if (!fuelLogBranchesFor(neutral).tae) return null
+
+  const [row] = await db
+    .select({
+      toValidate: sql<number>`(count(*) filter (where ${taeStateSql("por-validar")}))::int`,
+      observed: sql<number>`(count(*) filter (where ${taeStateSql("con-observacion")}))::int`,
+      sealIncomplete: sql<number>`(count(*) filter (where ${TAE_SEAL_INCOMPLETE_SQL}))::int`,
+      photosIncomplete: sql<number>`(count(*) filter (where ${TAE_PHOTOS_INCOMPLETE_SQL}))::int`,
+    })
+    .from(fuelTaeSubmissions)
+    // Las tablas que `taeConditions` puede referenciar, unidas como en la rama de la lista.
+    .leftJoin(fuelEquipmentLoads, eq(fuelEquipmentLoads.taeSubmissionId, fuelTaeSubmissions.id))
+    .leftJoin(fuelTaeLoadingPoints, eq(fuelTaeSubmissions.loadingPointId, fuelTaeLoadingPoints.id))
+    .leftJoin(fuelVehicles, eq(fuelTaeSubmissions.vehicleId, fuelVehicles.id))
+    .leftJoin(fuelEquipmentTypes, eq(fuelVehicles.equipmentTypeId, fuelEquipmentTypes.id))
+    .where(and(...taeConditions(session, neutral, searchPatternOf(neutral))))
+
+  return {
+    toValidate: row?.toValidate ?? 0,
+    observed: row?.observed ?? 0,
+    sealIncomplete: row?.sealIncomplete ?? 0,
+    photosIncomplete: row?.photosIncomplete ?? 0,
+  }
 }
 
 export const FUEL_LOG_MAX_EXPORT_ROWS = 10_000

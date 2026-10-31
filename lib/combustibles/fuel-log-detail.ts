@@ -7,7 +7,7 @@
  * base; sin `view_personal` los nombres y las fotos no se consultan.
  */
 import type { Session } from "next-auth"
-import { and, asc, desc, eq, inArray, or, type SQL } from "drizzle-orm"
+import { and, asc, desc, eq, inArray, or, sql, type SQL } from "drizzle-orm"
 import { db } from "@/db"
 import {
   auditLog,
@@ -24,7 +24,15 @@ import {
   users,
 } from "@/db/schema"
 import { can } from "@/lib/auth/can"
-import { canAccessWorksite, isGlobalRole } from "@/lib/auth/scope"
+import { canAccessWorksite, isGlobalRole, worksiteScopeSql } from "@/lib/auth/scope"
+import {
+  ANOMALY_SEVERITY_LABELS,
+  isOpenAnomalyCaseStatus,
+  OPEN_ANOMALY_CASE_STATUSES,
+  type AnomalySeverity,
+  type OpenAnomalyCaseStatus,
+} from "@/lib/combustibles/anomaly-labels"
+import { ANOMALY_RULE_CATALOG } from "@/lib/combustibles/anomaly-rule-catalog"
 import { assertFuelCostAccess } from "@/lib/operational-control/capabilities"
 import { getTaeSubmissionContext } from "@/lib/services/fuel-tae/context"
 import type { TaeAlert, TaeSubmissionRow } from "@/lib/services/fuel-tae/types"
@@ -70,6 +78,20 @@ export interface LoadVehicle {
   meterType: string
 }
 
+/**
+ * Un caso de anomalía abierto sobre la carga: lo que la ficha lista y enlaza a
+ * «Por revisar». Sin nombres de personas (quién lo tomó o lo cerró se ve en el
+ * caso, no en la ficha de la carga).
+ */
+export interface LoadOpenCase {
+  id: string
+  ruleCode: string
+  ruleName: string
+  severity: AnomalySeverity
+  status: OpenAnomalyCaseStatus
+  detectedAt: string
+}
+
 export interface LoadCommon {
   origen: FuelLoadOrigin
   id: string
@@ -80,10 +102,60 @@ export interface LoadCommon {
   equipmentLabel: string
   review: LoadReviewState | null
   openRequest: OpenReviewRequest | null
+  /** Casos abiertos sobre esta carga, de más a menos graves (ver `loadOpenCases`). */
+  openCases: LoadOpenCase[]
   timeline: LoadTimelineEvent[]
 }
 
 type EntityType = "fuel_tae_submission" | "fuel_load" | "fuel_operation_record"
+
+/** Tope de la lista de casos abiertos de una ficha: una carga rara vez junta más de un par. */
+const OPEN_CASES_LIMIT = 20
+/** Nombre de la regla cuando la fila de `fuel_anomaly_rules` no lo trae (misma salida que la ficha del equipo). */
+const RULE_NAMES: Record<string, string> = Object.fromEntries(ANOMALY_RULE_CATALOG.map((rule) => [rule.code, rule.name]))
+/** Crítica primero; una gravedad desconocida cae al final. */
+const SEVERITY_RANK = sql`case ${fuelAnomalyCases.severity} when 'critical' then 0 when 'high' then 1 when 'medium' then 2 else 3 end`
+
+/**
+ * Los casos abiertos (`open`, `in_review`, `reopened`) que apuntan a ESTA carga:
+ * por tipo e id de la entidad que referencian. Los más graves primero y, a igual
+ * gravedad, el que lleva más tiempo esperando; con tope. Además del alcance de la
+ * carga (que cada cargador comprueba antes de llegar acá), el caso mismo se acota
+ * por faena: es la misma regla con que la bandeja lo lista, así que un enlace de
+ * la ficha nunca cae en «no está en tus faenas».
+ */
+async function loadOpenCases(session: Session, entityType: EntityType, entityId: string): Promise<LoadOpenCase[]> {
+  const rows = await db.select({
+    id: fuelAnomalyCases.id,
+    ruleCode: fuelAnomalyCases.ruleCode,
+    ruleName: fuelAnomalyRules.name,
+    severity: fuelAnomalyCases.severity,
+    status: fuelAnomalyCases.status,
+    detectedAt: fuelAnomalyCases.detectedAt,
+  }).from(fuelAnomalyCases)
+    .leftJoin(fuelAnomalyRules, eq(fuelAnomalyRules.id, fuelAnomalyCases.ruleId))
+    .where(and(
+      eq(fuelAnomalyCases.referenceEntityType, entityType),
+      eq(fuelAnomalyCases.referenceEntityId, entityId),
+      inArray(fuelAnomalyCases.status, [...OPEN_ANOMALY_CASE_STATUSES]),
+      worksiteScopeSql(session, fuelAnomalyCases.worksiteId),
+    ))
+    .orderBy(SEVERITY_RANK, asc(fuelAnomalyCases.detectedAt), asc(fuelAnomalyCases.id))
+    .limit(OPEN_CASES_LIMIT)
+
+  return rows.flatMap((row): LoadOpenCase[] => {
+    // El filtro de la consulta ya lo asegura; la guarda deja el tipo exacto sin un `as`.
+    if (!isOpenAnomalyCaseStatus(row.status)) return []
+    return [{
+      id: row.id,
+      ruleCode: row.ruleCode,
+      ruleName: row.ruleName ?? RULE_NAMES[row.ruleCode] ?? "Caso abierto",
+      severity: Object.hasOwn(ANOMALY_SEVERITY_LABELS, row.severity) ? (row.severity as AnomalySeverity) : "medium",
+      status: row.status,
+      detectedAt: row.detectedAt,
+    }]
+  })
+}
 
 /** Nombres de usuario por id, en una sola consulta. */
 async function userNames(ids: Array<string | null | undefined>): Promise<Map<string, string>> {
@@ -112,8 +184,10 @@ function vehicleLabel(vehicle: LoadVehicle | null, snapshotCode?: string | null,
 
 /**
  * Lo que comparten las tres fichas: estado de revisión de la plataforma, pedidos
- * de revisión, casos y la línea de tiempo. La auditoría sólo entra a la línea de
- * tiempo con `view_audit` (el historial campo a campo es de quien audita).
+ * de revisión, casos (abiertos, y todos en la línea de tiempo) y la línea de
+ * tiempo. La auditoría sólo entra a la línea de tiempo con `view_audit` (el
+ * historial campo a campo es de quien audita). Cada cargador lo llama DESPUÉS de
+ * comprobar el alcance de la carga: una carga ajena devuelve `null` sin leer nada de esto.
  */
 async function loadSharedContext(
   session: Session,
@@ -124,7 +198,7 @@ async function loadSharedContext(
     equipmentLoadWhere: SQL | undefined
     timelineBase: Omit<LoadTimelineInput, "audit" | "statuses" | "marks" | "cases" | "flagged" | "canViewCosts">
   },
-): Promise<{ review: LoadReviewState | null; openRequest: OpenReviewRequest | null; timeline: LoadTimelineEvent[]; audit: TimelineAuditRow[] }> {
+): Promise<{ review: LoadReviewState | null; openRequest: OpenReviewRequest | null; openCases: LoadOpenCase[]; timeline: LoadTimelineEvent[]; audit: TimelineAuditRow[] }> {
   const { origen, entityType, entityId } = args
   const canAudit = can(session, "combustibles:view_audit")
   const canViewCosts = (() => { try { assertFuelCostAccess(session); return true } catch { return false } })()
@@ -133,7 +207,7 @@ async function loadSharedContext(
     ? await db.query.fuelEquipmentLoads.findFirst({ where: args.equipmentLoadWhere })
     : undefined
 
-  const [marksRaw, casesRaw, statusRaw, auditRaw, equipmentAuditRaw] = await Promise.all([
+  const [marksRaw, casesRaw, statusRaw, auditRaw, equipmentAuditRaw, openCases] = await Promise.all([
     db.select().from(fuelReviewMarks).where(and(eq(fuelReviewMarks.entityType, entityType), eq(fuelReviewMarks.entityId, entityId))).orderBy(asc(fuelReviewMarks.createdAt)),
     db.select({
       id: fuelAnomalyCases.id,
@@ -157,6 +231,7 @@ async function loadSharedContext(
     canAudit && equipmentLoad
       ? db.select().from(auditLog).where(and(eq(auditLog.entityType, "fuel_equipment_load"), eq(auditLog.entityId, equipmentLoad.id))).orderBy(asc(auditLog.createdAt))
       : Promise.resolve([] as Array<typeof auditLog.$inferSelect>),
+    loadOpenCases(session, entityType, entityId),
   ])
 
   const names = await userNames([
@@ -236,7 +311,7 @@ async function loadSharedContext(
     cases,
   })
 
-  return { review, openRequest, timeline, audit }
+  return { review, openRequest, openCases, timeline, audit }
 }
 
 /* ── Registro en terreno ─────────────────────────────────────────────────── */
@@ -344,6 +419,7 @@ export async function loadTerrenoDetail(session: Session, id: string): Promise<T
     equipmentLabel: vehicleLabel(vehicle, submission.equipmentCodeSnapshot, submission.plateSnapshot),
     review: shared.review,
     openRequest: shared.openRequest,
+    openCases: shared.openCases,
     timeline: shared.timeline,
     submission: visibleSubmission(submission),
     loadingPointName: submission.loadingPoint?.name ?? null,
@@ -449,6 +525,7 @@ export async function loadPlanillaDetail(session: Session, id: string): Promise<
     equipmentLabel: vehicleLabel(vehicle, record.code, record.plate),
     review: shared.review,
     openRequest: shared.openRequest,
+    openCases: shared.openCases,
     timeline: shared.timeline,
     record: {
       fecha: record.fecha,
@@ -528,6 +605,7 @@ export async function loadFacturaDetail(session: Session, id: string): Promise<F
     equipmentLabel: vehicleLabel(vehicle),
     review: shared.review,
     openRequest: shared.openRequest,
+    openCases: shared.openCases,
     timeline: shared.timeline,
     // Sin `view_costs` los montos salen en 0 de la consulta misma: la ficha ni los recibe.
     load: canViewCosts ? load : { ...load, iecFixed: 0, iecVariable: 0, baseAmount: 0, iecTotal: 0, ivaAmount: 0, totalAmount: 0 },

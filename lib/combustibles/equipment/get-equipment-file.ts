@@ -41,11 +41,13 @@ import { fuelInboxHref, fuelLoadHrefFromEquipmentLoad } from "@/lib/combustibles
 import { inboxRowKey } from "@/lib/combustibles/inbox/types"
 import { logger } from "@/lib/logger"
 import { formatQty } from "@/lib/utils"
+import { fillLitersByMonth, litersMonthKeys } from "./liters-by-month"
 import { computeNormalRange, isOutOfRange, outOfRangeRun, regularityOf } from "./normal-range"
 import type {
   EquipmentFile,
   EquipmentFileCaseItem,
   EquipmentFileIdle,
+  EquipmentFileLitersMonth,
   EquipmentFileLoad,
   EquipmentFileLoads,
   EquipmentFilePerformance,
@@ -121,10 +123,11 @@ export async function getEquipmentVehicle(session: Session, vehicleId: string): 
 
 /**
  * La ficha de un equipo en un período: sus cargas, su rendimiento contra su
- * modelo y contra sus 12 meses, el motor en vacío, la cadena de sellos y lo que
- * está pendiente. `null` si el equipo no existe o queda fuera del alcance de
- * faena de la sesión. Cada sección se consulta aparte: si una falla, la ficha
- * sigue y `degraded` dice cuál (nunca un cero falso).
+ * modelo y contra sus 12 meses, los litros de cada uno de esos meses, el motor
+ * en vacío, la cadena de sellos y lo que está pendiente. `null` si el equipo no
+ * existe o queda fuera del alcance de faena de la sesión. Cada sección se
+ * consulta aparte: si una falla, la ficha sigue y `degraded` dice cuál (nunca
+ * un cero falso).
  *
  * Los sellos son un dato de terreno: sólo con `combustibles:tae_view`. No
  * lleva nombres de personas ni montos.
@@ -147,15 +150,16 @@ export async function getEquipmentFile(session: Session, vehicleId: string, peri
   }
 
   const canSeeField = can(session, "combustibles:tae_view")
-  const [loads, performance, idle, seals, cases] = await Promise.all([
+  const [loads, performance, litersByMonth, idle, seals, cases] = await Promise.all([
     track("cargas del período", () => getLoads(session, vehicle, period), emptyLoads()),
     vehicle.unit ? track("rendimiento", () => getPerformance(session, vehicle, vehicle.unit!, period), null) : Promise.resolve(null),
+    track("litros por mes", () => getLitersByMonth(session, vehicle, period), [] as EquipmentFileLitersMonth[]),
     track("motor en vacío", () => getIdle(session, vehicle, period), null),
     canSeeField ? track("cadena de sellos", () => getSeals(session, vehicle, period), null) : Promise.resolve(null),
     track("pendientes del equipo", () => getCases(session, vehicle, period), [] as EquipmentFileCaseItem[]),
   ])
 
-  return { vehicle, loads, performance, idle, seals, cases, degraded, sourceCount }
+  return { vehicle, loads, performance, litersByMonth, idle, seals, cases, degraded, sourceCount }
 }
 
 function emptyLoads(): EquipmentFileLoads {
@@ -295,6 +299,33 @@ async function getPerformance(session: Session, vehicle: EquipmentFileVehicle, u
     outOfRangeSince: outOfRangeRun(series),
     excludedInReview,
   }
+}
+
+/* ── Litros por mes ──────────────────────────────────────────────────────── */
+
+/**
+ * Litros de las cargas que cuentan (sin anuladas, duplicadas ni rechazadas; las
+ * por decidir suman: el combustible se cargó) en cada uno de los 12 meses que
+ * terminan en el del fin del período. Agrupa por la columna `month` (hora de
+ * Chile) y rellena con ceros los meses sin cargas. No usa el rango de días del
+ * período: es el historial para ver la evolución, y el período sólo fija dónde
+ * termina.
+ */
+async function getLitersByMonth(session: Session, vehicle: EquipmentFileVehicle, period: ResolvedFuelPeriod): Promise<EquipmentFileLitersMonth[]> {
+  const endMonth = period.to.slice(0, 7)
+  const rows = await db.select({
+    month: fuelEquipmentLoads.month,
+    liters: sql<number>`coalesce(sum(${fuelEquipmentLoads.liters}), 0)::float8`,
+    loads: sql<number>`count(*)::int`,
+  }).from(fuelEquipmentLoads)
+    .where(and(
+      eq(fuelEquipmentLoads.vehicleId, vehicle.id),
+      worksiteScopeSql(session, fuelEquipmentLoads.worksiteId),
+      countableLoadSql,
+      inArray(fuelEquipmentLoads.month, litersMonthKeys(endMonth)),
+    ))
+    .groupBy(fuelEquipmentLoads.month)
+  return fillLitersByMonth(endMonth, rows.map((row) => ({ month: row.month, liters: toNumber(row.liters), loads: toNumber(row.loads) })))
 }
 
 /* ── Motor en vacío ──────────────────────────────────────────────────────── */

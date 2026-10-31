@@ -44,6 +44,11 @@ const PANTALLAS = [
   { path: "/admin/pdtp-catalogos", name: "Catálogos PDTP" },
   { path: "/control-operacional", name: "Panel operacional" },
   { path: "/mantenciones", name: "Mantenciones" },
+  // Con un período en rango la insignia de estado de una fuente dice una frase larga
+  // («5 cargas en el período del 1 de agosto al 31 de agosto»). Sin salto de línea ensanchaba
+  // la columna automática de la grilla y el pozo recortaba la página a 390 px. Los demás
+  // períodos dicen «en agosto» y no lo mostraban.
+  { path: "/combustibles/fuentes?desde=2026-08-01&hasta=2026-08-31", name: "Fuentes de datos con rango" },
 ] as const
 
 /**

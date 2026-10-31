@@ -11,27 +11,13 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui/responsive-data-list"
 import { ReviewRequestControl } from "@/components/combustibles/load-detail/review-request-control"
+import type { CargaRowHrefs } from "@/lib/combustibles/cargas-hrefs"
 import { FUEL_LOAD_ORIGIN_LABEL, PERSONAL_DATA_LABEL, fuelLogPending, type FuelLogRow } from "@/lib/combustibles/fuel-log-shared"
 import { useLocalStorageState } from "@/lib/hooks/use-local-storage-state"
 import { formatDateTime } from "@/lib/utils"
 
-/** Enlaces ya armados por la página (con el período y la faena de la pantalla): la tabla no construye URL. */
-export interface CargaRowHrefs {
-  /** Ficha de la carga. */
-  detail: string
-  /** Ficha del equipo; `null` cuando la patente no está vinculada. */
-  equipment: string | null
-  /** Historial de la carga; `null` sin `view_audit`. */
-  history: string | null
-  /** Fotos de la carga (ancla de la ficha); `null` sin `view_personal` o sin fotos. */
-  evidence: string | null
-  /** La carga en la bandeja «Por revisar»; `null` si no está por decidir. */
-  decide: string | null
-  /** El pedido de revisión en la bandeja. */
-  requested: string
-  /** Los casos de anomalía en la bandeja. */
-  cases: string
-}
+// Los enlaces los arma `buildCargaRowHrefs` (módulo puro, probado); la tabla sólo los pinta.
+export type { CargaRowHrefs }
 
 export type EnrichedRow = FuelLogRow & { hrefs: CargaRowHrefs }
 

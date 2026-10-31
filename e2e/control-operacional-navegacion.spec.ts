@@ -41,6 +41,7 @@
  * patentes y pedidos), así que ya no hay que aceptar «cualquiera de las dos colas».
  */
 import { expect, test, type Locator, type Page } from "@playwright/test"
+import { WORKSITE_ID, withSql } from "./combustibles-control-helpers"
 import { expectPageTitle, login } from "./helpers"
 
 /**
@@ -550,6 +551,32 @@ test.describe("Control operacional — tiles del panel", () => {
   test("«Combustible por revisar» abre «Por revisar» en sus pendientes", async ({ page }) => {
     await tileHacia(page, TILE.combustiblePorRevisar).click()
     await expectPorRevisar(page)
+  })
+
+  test("«Combustible por revisar» cuenta las cuatro colas, la misma cifra que dice la bandeja", async ({ page }) => {
+    // Un pedido de revisión abierto: el tile anterior (sólo cargas marcadas y casos) no lo veía y quedaba por debajo.
+    const pedidoId = "qa-e2e-tile-pedido"
+    await withSql(async (sql) => {
+      await sql`delete from fuel_review_marks where id = ${pedidoId}`
+      await sql`
+        insert into fuel_review_marks (id, entity_type, entity_id, marked_by, notes, worksite_id, status)
+        values (${pedidoId}, 'fuel_tae_submission', 'qa-e2e-tile-sin-registro', 'user-admin-e2e', 'QA_E2E pedido para el tile', ${WORKSITE_ID}, 'open')
+      `
+    })
+    try {
+      await page.goto("/control-operacional")
+      const tile = tileHacia(page, TILE.combustiblePorRevisar)
+      await expect(tile).toContainText("Combustible por revisar")
+      await expect(tile.locator("span.line-clamp-2")).toContainText(/\d+ pedidos? de revisión/)
+      const total = Number((await tile.locator("p.font-mono").innerText()).replace(/\./g, ""))
+      expect(total).toBeGreaterThanOrEqual(1)
+
+      await tile.click()
+      await expectPorRevisar(page)
+      await expect(page.getByText(total === 1 ? "1 cosa espera a una persona." : `${total} cosas esperan a una persona.`)).toBeVisible()
+    } finally {
+      await withSql(async (sql) => { await sql`delete from fuel_review_marks where id = ${pedidoId}` })
+    }
   })
 })
 

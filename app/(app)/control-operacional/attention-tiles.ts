@@ -2,6 +2,7 @@ import { FLEET_STOPPED_FILTER } from "@/lib/fleet-overview-filters"
 import { MAINTENANCE_OPEN_FILTER } from "@/lib/validation/maintenance"
 import { countOf } from "@/lib/utils"
 import type { OperationalAttention } from "@/lib/services/operational-control"
+import { FUEL_INBOX_KINDS, type FuelInboxKind } from "@/lib/combustibles/inbox/types"
 import { FUEL_PATHS } from "@/lib/combustibles/routes"
 
 /**
@@ -96,31 +97,44 @@ export function documentsTile(documents: OperationalAttention["fleetDocuments"])
   }
 }
 
-const flaggedLoads = (n: number) => countOf(n, "carga marcada", "cargas marcadas")
-const anomalies = (n: number) => countOf(n, "anomalía", "anomalías")
+/** Lo que espera en «Por revisar» (`getFuelInboxPendingByKind`); `null` si la consulta de ese tipo falló. */
+export type FuelPendingCounts = Record<FuelInboxKind, number | null>
 
-/** Las dos colas de «Revisión». Un conteo que falló se dice, no se pinta como 0. */
-export function fuelReviewTile(counts: { flagged: number | null; anomalies: number | null }): AttentionTile {
+/** Cada tipo de pendiente contado en una frase («3 cargas por decidir») y, si su consulta falló, nombrado («Cargas por decidir: no se pudo calcular»). */
+const FUEL_KIND_PHRASES: Record<FuelInboxKind, { singular: string; plural: string; label: string }> = {
+  carga: { singular: "carga por decidir", plural: "cargas por decidir", label: "Cargas por decidir" },
+  caso: { singular: "caso", plural: "casos", label: "Casos" },
+  patente: { singular: "patente sin vincular", plural: "patentes sin vincular", label: "Patentes sin vincular" },
+  pedido: { singular: "pedido de revisión", plural: "pedidos de revisión", label: "Pedidos de revisión" },
+}
+
+/**
+ * Lo que espera a una persona en «Por revisar»: las cuatro colas, sin período, la
+ * misma cifra del menú (y la del «Todo» de la bandeja mientras su período llegue
+ * al último mes con datos). Un tipo cuya consulta falló se dice, no se suma como
+ * 0: con uno caído el valor es «Sin dato», nunca un total parcial.
+ */
+export function fuelReviewTile(counts: FuelPendingCounts): AttentionTile {
   const label = "Combustible por revisar"
-  const { flagged, anomalies: open } = counts
-  if (flagged === null && open === null) return unavailable("fuel", label)
-  if (flagged === null || open === null) {
-    return unavailable(
-      "fuel",
-      label,
-      flagged === null
-        ? `Cargas marcadas: ${NOT_COMPUTED.toLowerCase()} · ${anomalies(open!)}`
-        : `${flaggedLoads(flagged)} · anomalías: ${NOT_COMPUTED.toLowerCase()}`,
-    )
-  }
-  if (flagged + open === 0) {
-    return { key: "fuel", label, value: "Al día", detail: "Sin cargas marcadas ni anomalías", tone: "neutral", href: ATTENTION_HREFS.fuel }
+  const failed = FUEL_INBOX_KINDS.filter((kind) => counts[kind] === null)
+  if (failed.length === FUEL_INBOX_KINDS.length) return unavailable("fuel", label)
+
+  // Las partes en cero no se nombran; las que fallaron, sí.
+  const parts = FUEL_INBOX_KINDS.flatMap((kind) => {
+    const n = counts[kind]
+    const phrase = FUEL_KIND_PHRASES[kind]
+    if (n === null) return [`${phrase.label}: ${NOT_COMPUTED.toLowerCase()}`]
+    return n > 0 ? [countOf(n, phrase.singular, phrase.plural)] : []
+  })
+  if (failed.length > 0) return unavailable("fuel", label, parts.join(" · "))
+  if (parts.length === 0) {
+    return { key: "fuel", label, value: "Al día", detail: "Nada espera a una persona", tone: "neutral", href: ATTENTION_HREFS.fuel }
   }
   return {
     key: "fuel",
     label,
-    value: count(flagged + open),
-    detail: `${flaggedLoads(flagged)} · ${anomalies(open)}`,
+    value: count(FUEL_INBOX_KINDS.reduce((sum, kind) => sum + (counts[kind] ?? 0), 0)),
+    detail: parts.join(" · "),
     tone: "signal",
     href: ATTENTION_HREFS.fuel,
   }

@@ -6,9 +6,10 @@ import { Callout } from "@/components/ui/callout"
 import { Card } from "@/components/ui/card"
 import { DetailItem } from "@/components/ui/detail-item"
 import { MetaBadge, StateBadge } from "@/components/states/state-badge"
+import { ANOMALY_SEVERITY_LABELS, ANOMALY_STATUS_LABELS, anomalySeverityVariant } from "@/lib/combustibles/anomaly-labels"
 import { FLAG_REASON_LABELS, REVIEW_STATUS_LABELS, type FlagReason, type ReviewStatus } from "@/lib/combustibles/control/contracts"
 import { FUEL_LOAD_ORIGIN_LABEL, PERSONAL_DATA_LABEL, type FuelLoadOriginSlug } from "@/lib/combustibles/fuel-log-shared"
-import type { LoadReviewState } from "@/lib/combustibles/fuel-log-detail"
+import type { LoadOpenCase, LoadReviewState } from "@/lib/combustibles/fuel-log-detail"
 import type { LoadTimelineEvent, TimelineTone } from "@/lib/combustibles/fuel-log-timeline"
 import { fuelInboxHref, fuelLoadHref, withFuelContext } from "@/lib/combustibles/routes"
 import { inboxRowKey } from "@/lib/combustibles/inbox/types"
@@ -209,6 +210,44 @@ export function OpenRequestNotice({
           Verlo en «Por revisar» <ArrowRight size={12} aria-hidden />
         </Link>
       </p>
+    </Callout>
+  )
+}
+
+/**
+ * Los casos de anomalía abiertos sobre la carga, en el cuerpo de la ficha: cada uno
+ * con su gravedad y su estado, y un enlace a su hoja en «Por revisar», donde se
+ * toma, se resuelve o se descarta. Sin casos no pinta nada.
+ */
+export function OpenCasesNotice({
+  cases,
+  search,
+}: {
+  cases: LoadOpenCase[]
+  search?: Record<string, string | string[] | undefined>
+}) {
+  if (cases.length === 0) return null
+  return (
+    <Callout
+      tone="warning"
+      role="status"
+      icon={<Warning size={16} />}
+      title={cases.length === 1 ? "Hay 1 caso abierto sobre esta carga" : `Hay ${cases.length} casos abiertos sobre esta carga`}
+    >
+      <ul className="space-y-1.5">
+        {cases.map((item) => (
+          <li key={item.id} className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <Link
+              href={withFuelContext(fuelInboxHref({ tipo: "caso", item: inboxRowKey("caso", item.id) }), search ?? {})}
+              className="inline-flex items-center gap-1 font-medium underline underline-offset-2"
+            >
+              {item.ruleName} <ArrowRight size={12} aria-hidden />
+            </Link>
+            <MetaBadge meta={{ label: ANOMALY_SEVERITY_LABELS[item.severity], variant: anomalySeverityVariant(item.severity) }} size="sm" />
+            <MetaBadge meta={{ label: ANOMALY_STATUS_LABELS[item.status], variant: "outline" }} size="sm" />
+          </li>
+        ))}
+      </ul>
     </Callout>
   )
 }

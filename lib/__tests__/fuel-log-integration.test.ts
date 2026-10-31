@@ -7,10 +7,13 @@ import path from "node:path"
 import type { Session } from "next-auth"
 import * as schema from "@/db/schema"
 import { nanoid } from "@/lib/id"
+import type { FieldLoadAttention, FuelLogFilters } from "@/lib/combustibles/fuel-log-shared"
 
 // ── In-memory PostgreSQL database & migrations ────────────────────────────
 const pg = new PGlite()
-const inMemoryDb = drizzle(pg, { schema })
+// Cada sentencia que corre queda anotada: la tira de Cargas promete ser UNA sola consulta.
+const executedQueries: string[] = []
+const inMemoryDb = drizzle(pg, { schema, logger: { logQuery: (query) => { executedQueries.push(query) } } })
 const testGlobal = globalThis as typeof globalThis & { __db?: typeof inMemoryDb }
 // @ts-expect-error — PGlite es estructuralmente compatible en runtime; postgres-js difiere sólo en el tipo HKT del resultado.
 testGlobal.__db = inMemoryDb
@@ -23,7 +26,7 @@ vi.mock("@/db", () => ({
 
 await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
-const { getFuelLogTotal, getFuelLogRows, getFuelLogRowsBySelection } = await import("@/lib/combustibles/fuel-log")
+const { getFuelLogTotal, getFuelLogRows, getFuelLogRowsBySelection, getFieldLoadAttention } = await import("@/lib/combustibles/fuel-log")
 
 /**
  * Prueba de integración PostgreSQL del read model de la bitácora general
@@ -364,5 +367,248 @@ describe("fuel-log: cómo llegó, estado y pendiente (PostgreSQL integration)", 
     // …pero sí aparece en la lista normal, con su origen.
     const all = await getFuelLogRows(globalSession(), { ...FILTER, origins: ["app"] }, PAGE)
     expect(all.map((row) => row.id)).toContain(backdated)
+  })
+})
+
+/**
+ * La tira de señales de terreno sobre la lista de Cargas (`getFieldLoadAttention`): por
+ * validar, con observación, con el sello incompleto y con menos de 4 fotos. Lo que se
+ * protege es que cada cifra sea EL NÚMERO DE FILAS que muestra su filtro en la lista
+ * (`getFuelLogTotal` con `estado=…`, `sello=faltante`, `evidencia=faltante`) y que no se
+ * desplome al activar uno de esos filtros. Datos propios en una faena aparte: los conteos
+ * de arriba no cambian, y todo conteo de una sesión global se acota a esa faena.
+ */
+describe("fuel-log: señales de terreno de la tira de Cargas (PostgreSQL integration)", () => {
+  const worksiteD = nanoid()
+  const worksiteE = nanoid()
+  const userId = nanoid()
+  const productId = nanoid()
+  const truckTypeId = nanoid()
+  const excavatorTypeId = nanoid()
+  const vehicleA = nanoid() // camión
+  const vehicleB = nanoid() // excavadora
+  const supplierId = nanoid()
+  const batchId = nanoid()
+  const taeQrOk = nanoid()           // QR · por validar · sellos y 4 fotos completos
+  const taeAppIncomplete = nanoid()  // app · por validar · sello nuevo sin informar · 3 fotos · la registró `userId`
+  const taeQrObserved = nanoid()     // QR · con observación · sello retirado en blanco · sin fotos
+  const taeHistorico = nanoid()      // histórico · validada · todo completo
+  const taeBackdated = nanoid()      // app · por validar · registrada después, sin fotos · la registró `userId`
+  const taeSeptember = nanoid()      // QR · con observación · 2 fotos · de septiembre (fuera del período)
+  const taeOtherWorksite = nanoid()  // faena E · por validar · sello incompleto · sin fotos
+  const invoice = nanoid()
+  const operationRecord = nanoid()
+  const PERIOD = { from: "2026-10-01", to: "2026-10-31" }
+  const FILTER: FuelLogFilters = { worksiteId: worksiteD, ...PERIOD }
+
+  const personalSession = (): Session => {
+    const base = globalSession()
+    return { ...base, user: { ...base.user, permissions: ["combustibles:view", "combustibles:view_personal"] } }
+  }
+
+  function tae(id: string, source: "public_pwa" | "internal_app" | "legacy_xlsx", status: string, loadedAt: string, extra: Record<string, unknown> = {}) {
+    return {
+      id, clientSubmissionId: nanoid(), source, publicResultToken: nanoid(32),
+      worksiteId: worksiteD, vehicleId: vehicleA, productId, equipmentCodeSnapshot: "AT-01",
+      loadedAt, submittedAt: loadedAt, driverNameSnapshot: "Conductor", supervisorNameSnapshot: "Supervisor",
+      meterType: "odometer", liters: 40, status, removedSealNumber: "10", installedSealNumber: "11", ...extra,
+    }
+  }
+
+  function evidence(submissionId: string, kinds: Array<"odometer" | "liter_meter" | "removed_seal" | "installed_seal">) {
+    return kinds.map((kind) => ({ id: nanoid(), submissionId, kind, fileName: `${kind}.jpg` }))
+  }
+
+  /** Lo que muestra cada filtro de la lista para los mismos filtros neutros: la vara con que se miden las cifras. */
+  async function listCounts(session: Session, filters: FuelLogFilters): Promise<FieldLoadAttention> {
+    const neutral: FuelLogFilters = { ...filters, stateSlug: undefined, sealIncomplete: undefined, photosIncomplete: undefined, onlyPending: undefined }
+    return {
+      toValidate: await getFuelLogTotal(session, { ...neutral, stateSlug: "por-validar" }),
+      observed: await getFuelLogTotal(session, { ...neutral, stateSlug: "con-observacion" }),
+      sealIncomplete: await getFuelLogTotal(session, { ...neutral, sealIncomplete: true }),
+      photosIncomplete: await getFuelLogTotal(session, { ...neutral, photosIncomplete: true }),
+    }
+  }
+
+  beforeAll(async () => {
+    await inMemoryDb.insert(schema.worksites).values([
+      { id: worksiteD, name: "Faena D", code: `FD-${nanoid().slice(0, 8)}`, isActive: true },
+      { id: worksiteE, name: "Faena E", code: `FE-${nanoid().slice(0, 8)}`, isActive: true },
+    ])
+    await inMemoryDb.insert(schema.users).values({ id: userId, name: "Ana", email: `ana-${nanoid()}@example.com`, hashedPassword: "x", isActive: true })
+    await inMemoryDb.insert(schema.fuelProducts).values({ id: productId, code: `D-${nanoid().slice(0, 6)}`, name: "Diésel", category: "diesel", unit: "liter" })
+    await inMemoryDb.insert(schema.fuelEquipmentTypes).values([
+      { id: truckTypeId, slug: `camion-${nanoid().slice(0, 6)}`, name: "Camión" },
+      { id: excavatorTypeId, slug: `excavadora-${nanoid().slice(0, 6)}`, name: "Excavadora" },
+    ])
+    await inMemoryDb.insert(schema.fuelSuppliers).values({ id: supplierId, name: `Copec ${nanoid().slice(0, 4)}` })
+    await inMemoryDb.insert(schema.fuelVehicles).values([
+      { id: vehicleA, plate: `AA${nanoid().slice(0, 4).toUpperCase()}`, code: "AT-01", type: "camion", equipmentTypeId: truckTypeId, worksiteId: worksiteD, isActive: true },
+      { id: vehicleB, plate: `AB${nanoid().slice(0, 4).toUpperCase()}`, code: "AT-02", type: "excavadora", equipmentTypeId: excavatorTypeId, worksiteId: worksiteD, isActive: true },
+    ])
+    await inMemoryDb.insert(schema.fuelTaeSubmissions).values([
+      tae(taeQrOk, "public_pwa", "submitted", "2026-10-05T12:00:00.000Z"),
+      tae(taeAppIncomplete, "internal_app", "submitted", "2026-10-06T12:00:00.000Z", {
+        registeredBy: userId, driverNameSnapshot: "Marta Terreno", installedSealNumber: null,
+      }),
+      tae(taeQrObserved, "public_pwa", "observed", "2026-10-07T12:00:00.000Z", {
+        vehicleId: vehicleB, equipmentCodeSnapshot: "AT-02", removedSealNumber: "   ",
+      }),
+      tae(taeHistorico, "legacy_xlsx", "validated", "2026-10-08T12:00:00.000Z", { vehicleId: vehicleB, equipmentCodeSnapshot: "AT-02" }),
+      tae(taeBackdated, "internal_app", "submitted", "2026-10-02T12:00:00.000Z", {
+        registeredBy: userId, loadedAtSource: "backdated", backdateReason: "Se olvidó registrarla ese día",
+      }),
+      tae(taeSeptember, "public_pwa", "observed", "2026-09-15T12:00:00.000Z"),
+      { ...tae(taeOtherWorksite, "public_pwa", "submitted", "2026-10-09T12:00:00.000Z", { removedSealNumber: null }), worksiteId: worksiteE },
+    ])
+    await inMemoryDb.insert(schema.fuelTaeEvidence).values([
+      ...evidence(taeQrOk, ["odometer", "liter_meter", "removed_seal", "installed_seal"]),
+      ...evidence(taeAppIncomplete, ["odometer", "liter_meter", "removed_seal"]),
+      ...evidence(taeHistorico, ["odometer", "liter_meter", "removed_seal", "installed_seal"]),
+      ...evidence(taeSeptember, ["odometer", "liter_meter"]),
+    ])
+    // Una factura y una fila de planilla en la misma faena: no son registros en terreno y no suman a ninguna cifra.
+    await inMemoryDb.insert(schema.fuelLoads).values({
+      id: invoice, loadDate: "2026-10-08", month: "2026-10", serviceType: "TCT", vehicleId: vehicleA, fuelSupplierId: supplierId, worksiteId: worksiteD,
+      product: "PETROLEO DIESEL", productId, liters: 100, baseAmount: 1000, totalAmount: 1190, status: "draft", createdBy: userId,
+    })
+    await inMemoryDb.insert(schema.fuelOperationBatches).values({
+      id: batchId, archivoNombre: "consolidado.xlsx", hashArchivo: nanoid(), estado: "importado",
+      periodoDesde: "2026-10-01", periodoHasta: "2026-10-31", importadoPor: userId,
+    })
+    await inMemoryDb.insert(schema.fuelOperationRecords).values({
+      id: operationRecord, batchId, worksiteId: worksiteD, vehicleId: vehicleA, plate: "OPKM99", fecha: "2026-10-10", liters: 50,
+    })
+  })
+
+  it("cuenta los registros en terreno de cada señal del período, y sólo ésos", async () => {
+    const attention = await getFieldLoadAttention(globalSession(), FILTER)
+    expect(attention).toEqual({ toValidate: 3, observed: 1, sealIncomplete: 2, photosIncomplete: 2 })
+  })
+
+  it("cada cifra ES el número de filas de su filtro en la lista", async () => {
+    const attention = await getFieldLoadAttention(globalSession(), FILTER)
+    expect(attention).toEqual(await listCounts(globalSession(), FILTER))
+  })
+
+  it("y las filas de cada filtro son las que se esperan: por validar, observada, con el sello incompleto, con menos de 4 fotos", async () => {
+    const ids = async (extra: FuelLogFilters) => (await getFuelLogRows(globalSession(), { ...FILTER, ...extra }, { limit: 50, offset: 0, sort: "desc" })).map((row) => row.id).sort()
+    expect(await ids({ stateSlug: "por-validar" })).toEqual([taeQrOk, taeAppIncomplete, taeBackdated].sort())
+    expect(await ids({ stateSlug: "con-observacion" })).toEqual([taeQrObserved])
+    expect(await ids({ sealIncomplete: true })).toEqual([taeAppIncomplete, taeQrObserved].sort())
+    expect(await ids({ photosIncomplete: true })).toEqual([taeAppIncomplete, taeQrObserved].sort())
+  })
+
+  it("un sello en blanco cuenta como sin informar, igual que uno nulo", async () => {
+    // `taeQrObserved` trae el retirado como «   » y `taeAppIncomplete` el instalado en NULL: las dos suman.
+    expect((await getFieldLoadAttention(globalSession(), FILTER))?.sealIncomplete).toBe(2)
+  })
+
+  it("una carga registrada después (fecha pasada) tiene las fotos opcionales: está por validar pero no cuenta como «menos de 4 fotos»", async () => {
+    const attention = await getFieldLoadAttention(globalSession(), FILTER)
+    // Sin fotos y por validar: suma a «por validar» (3 con `taeQrOk` y `taeAppIncomplete`) pero no a las fotos (2: `taeAppIncomplete` y `taeQrObserved`).
+    expect(attention?.toValidate).toBe(3)
+    expect(attention?.photosIncomplete).toBe(2)
+    const photoRows = await getFuelLogRows(globalSession(), { ...FILTER, photosIncomplete: true }, { limit: 50, offset: 0, sort: "desc" })
+    expect(photoRows.map((row) => row.id)).not.toContain(taeBackdated)
+  })
+
+  it("el período acota las cifras: lo de septiembre no cuenta en octubre y sí sin período", async () => {
+    expect(await getFieldLoadAttention(globalSession(), { worksiteId: worksiteD, from: "2026-09-01", to: "2026-09-30" }))
+      .toEqual({ toValidate: 0, observed: 1, sealIncomplete: 0, photosIncomplete: 1 })
+    const sinPeriodo = await getFieldLoadAttention(globalSession(), { worksiteId: worksiteD })
+    expect(sinPeriodo).toEqual({ toValidate: 3, observed: 2, sealIncomplete: 2, photosIncomplete: 3 })
+    expect(sinPeriodo).toEqual(await listCounts(globalSession(), { worksiteId: worksiteD }))
+  })
+
+  it("las cifras no se desploman al activar uno de los cuatro filtros de atención", async () => {
+    const base = await getFieldLoadAttention(globalSession(), FILTER)
+    expect(base).toEqual({ toValidate: 3, observed: 1, sealIncomplete: 2, photosIncomplete: 2 })
+    const activated: FuelLogFilters[] = [
+      { stateSlug: "por-validar" },
+      { stateSlug: "con-observacion" },
+      { stateSlug: "validada" },
+      { sealIncomplete: true },
+      { photosIncomplete: true },
+      { onlyPending: true },
+      { stateSlug: "por-validar", sealIncomplete: true, photosIncomplete: true, onlyPending: true },
+    ]
+    for (const extra of activated) {
+      expect(await getFieldLoadAttention(globalSession(), { ...FILTER, ...extra }), JSON.stringify(extra)).toEqual(base)
+    }
+  })
+
+  it("respeta el resto de los filtros, y en cada uno la cifra sigue siendo el número de filas de su filtro", async () => {
+    const cases: Array<[string, FuelLogFilters, FieldLoadAttention]> = [
+      ["cómo llegó: sólo QR", { ...FILTER, origins: ["qr"] }, { toValidate: 1, observed: 1, sealIncomplete: 1, photosIncomplete: 1 }],
+      ["cómo llegó: sólo la app", { ...FILTER, origins: ["app"] }, { toValidate: 2, observed: 0, sealIncomplete: 1, photosIncomplete: 1 }],
+      ["cómo llegó: sólo el histórico", { ...FILTER, origins: ["historico"] }, { toValidate: 0, observed: 0, sealIncomplete: 0, photosIncomplete: 0 }],
+      ["el equipo", { ...FILTER, vehicleId: vehicleB }, { toValidate: 0, observed: 1, sealIncomplete: 1, photosIncomplete: 1 }],
+      ["el tipo de equipo", { ...FILTER, equipmentTypeId: truckTypeId }, { toValidate: 3, observed: 0, sealIncomplete: 1, photosIncomplete: 1 }],
+      ["«las que registré yo»", { ...FILTER, registeredBy: userId }, { toValidate: 2, observed: 0, sealIncomplete: 1, photosIncomplete: 1 }],
+      ["la búsqueda por código de equipo", { ...FILTER, q: "AT-02" }, { toValidate: 0, observed: 1, sealIncomplete: 1, photosIncomplete: 1 }],
+      ["con el filtro de sello retirado", { ...FILTER, sealRemoved: "10" }, { toValidate: 3, observed: 0, sealIncomplete: 1, photosIncomplete: 1 }],
+    ]
+    for (const [name, filters, expected] of cases) {
+      const attention = await getFieldLoadAttention(globalSession(), filters)
+      expect(attention, name).toEqual(expected)
+      expect(attention, `${name} · igual a la lista`).toEqual(await listCounts(globalSession(), filters))
+    }
+  })
+
+  it("cuenta por el alcance de faena de la sesión: una acotada a otra faena ve ceros, no los datos de ésta", async () => {
+    expect(await getFieldLoadAttention(scopedSession([nanoid()]), FILTER)).toEqual({ toValidate: 0, observed: 0, sealIncomplete: 0, photosIncomplete: 0 })
+    // Aunque pida la faena D por filtro, el techo es su alcance.
+    expect(await getFieldLoadAttention(scopedSession([worksiteE]), FILTER)).toEqual({ toValidate: 0, observed: 0, sealIncomplete: 0, photosIncomplete: 0 })
+    // Sin faena en el filtro, una sesión acotada cuenta sólo la suya.
+    expect(await getFieldLoadAttention(scopedSession([worksiteD]), PERIOD)).toEqual({ toValidate: 3, observed: 1, sealIncomplete: 2, photosIncomplete: 2 })
+    expect(await getFieldLoadAttention(scopedSession([worksiteE]), PERIOD)).toEqual({ toValidate: 1, observed: 0, sealIncomplete: 1, photosIncomplete: 1 })
+    expect(await getFieldLoadAttention(scopedSession([worksiteE]), PERIOD)).toEqual(await listCounts(scopedSession([worksiteE]), PERIOD))
+  })
+
+  it("una faena sin registros en terreno da ceros (no `null`): sí hay lista de terreno que contar", async () => {
+    expect(await getFieldLoadAttention(globalSession(), { worksiteId: nanoid(), ...PERIOD })).toEqual({ toValidate: 0, observed: 0, sealIncomplete: 0, photosIncomplete: 0 })
+  })
+
+  it("datos personales: buscar por el nombre de quien cargó sólo cuenta con `view_personal`", async () => {
+    const withName: FuelLogFilters = { ...FILTER, q: "Marta" }
+    // Sin el permiso la búsqueda no mira conductor ni supervisor: la tira no puede servir de oráculo para adivinar quién cargó.
+    expect(await getFieldLoadAttention(globalSession(), withName)).toEqual({ toValidate: 0, observed: 0, sealIncomplete: 0, photosIncomplete: 0 })
+    expect(await getFieldLoadAttention(personalSession(), withName)).toEqual({ toValidate: 1, observed: 0, sealIncomplete: 1, photosIncomplete: 1 })
+    expect(await getFieldLoadAttention(personalSession(), withName)).toEqual(await listCounts(personalSession(), withName))
+    // El filtro por nombre de conductor tampoco filtra sin el permiso: se ignora, como en la lista.
+    const byDriver: FuelLogFilters = { ...FILTER, driverName: "Marta" }
+    expect(await getFieldLoadAttention(globalSession(), byDriver)).toEqual(await getFieldLoadAttention(globalSession(), FILTER))
+    expect(await getFieldLoadAttention(personalSession(), byDriver)).toEqual({ toValidate: 1, observed: 0, sealIncomplete: 1, photosIncomplete: 1 })
+  })
+
+  it("sin registros en terreno posibles no hay nada que contar: `null` con sólo facturas o sólo planilla", async () => {
+    expect(await getFieldLoadAttention(globalSession(), { ...FILTER, origins: ["factura"] })).toBeNull()
+    expect(await getFieldLoadAttention(globalSession(), { ...FILTER, origins: ["planilla"] })).toBeNull()
+    expect(await getFieldLoadAttention(globalSession(), { ...FILTER, origins: ["factura", "planilla"] })).toBeNull()
+    expect(await getFieldLoadAttention(globalSession(), { ...FILTER, source: "invoiced" })).toBeNull()
+    expect(await getFieldLoadAttention(globalSession(), { ...FILTER, source: "operation_manual" })).toBeNull()
+  })
+
+  it("si el filtro deja alguna rama de terreno, hay cifras aunque pida también facturas", async () => {
+    const attention = await getFieldLoadAttention(globalSession(), { ...FILTER, origins: ["factura", "qr"] })
+    expect(attention).toEqual({ toValidate: 1, observed: 1, sealIncomplete: 1, photosIncomplete: 1 })
+    expect(attention).toEqual(await listCounts(globalSession(), { ...FILTER, origins: ["factura", "qr"] }))
+  })
+
+  it("«las que registré yo» no deja ver las de otra persona", async () => {
+    expect(await getFieldLoadAttention(globalSession(), { ...FILTER, registeredBy: "otra-persona" })).toEqual({ toValidate: 0, observed: 0, sealIncomplete: 0, photosIncomplete: 0 })
+  })
+
+  it("es UNA sola consulta agregada sobre los registros en terreno", async () => {
+    executedQueries.length = 0
+    await getFieldLoadAttention(globalSession(), FILTER)
+    expect(executedQueries).toHaveLength(1)
+    expect(executedQueries[0]).toMatch(/count\(\*\) filter/i)
+    expect(executedQueries[0]).toContain('from "fuel_tae_submissions"')
+    // Cuando no hay nada que contar, ni siquiera consulta.
+    executedQueries.length = 0
+    await getFieldLoadAttention(globalSession(), { ...FILTER, origins: ["factura"] })
+    expect(executedQueries).toHaveLength(0)
   })
 })

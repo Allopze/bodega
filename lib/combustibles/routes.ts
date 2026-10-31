@@ -86,11 +86,26 @@ export function fuelPerformanceHref(familySlug: string): string {
 
 export type FuelInboxKindParam = "carga" | "caso" | "patente" | "pedido"
 
-export function fuelInboxHref(options: { tipo?: FuelInboxKindParam; item?: string; faena?: string } = {}): string {
+/** Estados de un caso que siguen pidiendo una decisión (`estado=` de la bandeja, sólo con `tipo=caso`). */
+export type FuelInboxCaseStateParam = "open" | "in_review" | "reopened"
+
+/** Fuente de la carga a la que apuntan los casos (`ref=<fuente>:<id>`); es la misma `source` de una fila de Cargas. */
+export type FuelInboxRefSource = "tae_pwa" | "invoiced" | "operation_manual"
+
+/** El `ref` de la bandeja para «los casos de esta carga»: `fuente:id` (la bandeja lo traduce al tipo de entidad). */
+export function fuelInboxRef(source: FuelInboxRefSource, id: string): string {
+  return `${source}:${id}`
+}
+
+export function fuelInboxHref(
+  options: { tipo?: FuelInboxKindParam; item?: string; faena?: string; estado?: FuelInboxCaseStateParam; ref?: string } = {},
+): string {
   const params = new URLSearchParams()
   if (options.tipo) params.set("tipo", options.tipo)
   if (options.faena) params.set("faena", options.faena)
   if (options.item) params.set("item", options.item)
+  if (options.estado) params.set("estado", options.estado)
+  if (options.ref) params.set("ref", options.ref)
   const query = params.toString()
   return query ? `${FUEL_PATHS.revisar}?${query}` : FUEL_PATHS.revisar
 }

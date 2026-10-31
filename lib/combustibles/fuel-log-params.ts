@@ -10,6 +10,7 @@
  */
 import { ANOMALY_RULE_SEVERITIES, FUEL_VEHICLE_STATUSES } from "@/lib/combustibles/validation"
 import { parseFuelLoadOrigins, parseFuelLoadState, type FuelLogFilters, type FuelLogSource } from "@/lib/combustibles/fuel-log-shared"
+import { FUEL_PATHS } from "@/lib/combustibles/routes"
 
 export type CargasSearchParams = Record<string, string | string[] | undefined>
 
@@ -94,6 +95,35 @@ export function parseCargasSearchParams(
     sort: first(sp, "orden") === "asc" ? "asc" : "desc",
     page: Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1,
   }
+}
+
+/** Parámetros de paginación de Cargas (`pagina`, y `page` de la lista de antes del rediseño). */
+const CARGAS_PAGE_PARAMS = ["pagina", "page"] as const
+
+/**
+ * `/combustibles/cargas?…` con los parámetros de la URL actual y `patch` encima: un valor
+ * lo fija; `null`, `undefined` o vacío lo quita. Siempre suelta la página: al cambiar lo que
+ * se filtra, la página 3 de antes ya no existe. Es lo que usan los atajos que aplican un
+ * filtro desde fuera de la barra de filtros (las cifras de la tira de señales de terreno),
+ * para que el período, la faena y los demás filtros sigan donde estaban.
+ */
+export function withCargasParams(searchParams: CargasSearchParams, patch: Record<string, string | null | undefined>): string {
+  const params = new URLSearchParams()
+  for (const [key, value] of Object.entries(searchParams)) {
+    if (value === undefined) continue
+    if (Array.isArray(value)) {
+      for (const item of value) params.append(key, item)
+    } else {
+      params.set(key, value)
+    }
+  }
+  for (const [key, value] of Object.entries(patch)) {
+    if (value) params.set(key, value)
+    else params.delete(key)
+  }
+  for (const key of CARGAS_PAGE_PARAMS) params.delete(key)
+  const query = params.toString()
+  return query ? `${FUEL_PATHS.cargas}?${query}` : FUEL_PATHS.cargas
 }
 
 /** ¿Cuántos filtros de «Más filtros» hay activos? (Los que no corresponden al permiso no cuentan.) */

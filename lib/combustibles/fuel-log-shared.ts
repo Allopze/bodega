@@ -7,6 +7,7 @@
  */
 
 import { FLAG_REASON_LABELS, type FlagReason } from "@/lib/combustibles/control/contracts"
+import { fuelLoadHref, type FuelLoadOrigin } from "@/lib/combustibles/routes"
 
 export type FuelLogSource = "tae_pwa" | "invoiced" | "operation_manual"
 
@@ -191,6 +192,22 @@ export interface FuelLogRow {
   reviewFlagReason: string | null
 }
 
+/** `origen` de la URL de la ficha en que abre cada fuente de una fila de Cargas. */
+export const FUEL_LOG_LOAD_ORIGIN: Record<FuelLogSource, FuelLoadOrigin> = {
+  tae_pwa: "terreno",
+  invoiced: "factura",
+  operation_manual: "planilla",
+}
+
+/**
+ * Ruta de detalle en el sistema fuente de cada fila. Vive aquí y no en `fuel-log.ts`
+ * (que lo reexporta) para que quien arma enlaces sin tocar la base de datos —los de
+ * cada fila de la lista, por ejemplo— no arrastre el módulo `db`.
+ */
+export function fuelLogDetailHref(row: Pick<FuelLogRow, "source" | "detailId">): string {
+  return fuelLoadHref({ origen: FUEL_LOG_LOAD_ORIGIN[row.source], id: row.detailId })
+}
+
 /**
  * Qué espera una decisión en esta fila, en orden de importancia: una carga por
  * decidir, una con observación y un pedido de revisión abierto. Vacío = nada
@@ -267,4 +284,18 @@ export interface FuelLogFilters {
   sealIncomplete?: boolean
   /** Sólo registros en terreno con menos de las 4 fotos. */
   photosIncomplete?: boolean
+}
+
+/**
+ * Las cuatro cifras de la tira que va sobre la lista de Cargas: cuántos registros en
+ * terreno están por validar, con observación, con el sello sin informar y con menos de
+ * las 4 fotos. Cada una es el número de filas de su filtro de la lista (`estado=por-validar`,
+ * `estado=con-observacion`, `sello=faltante`, `evidencia=faltante`) contado sobre el resto
+ * de los filtros de la pantalla: ver `getFieldLoadAttention`.
+ */
+export interface FieldLoadAttention {
+  toValidate: number
+  observed: number
+  sealIncomplete: number
+  photosIncomplete: number
 }

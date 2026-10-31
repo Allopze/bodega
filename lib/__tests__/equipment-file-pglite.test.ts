@@ -9,6 +9,7 @@ import type { DB } from "@/db"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import { describeFuelPeriod } from "@/lib/combustibles/period/parse"
 import { IDS, seedControlFixtures, submission } from "@/lib/combustibles/control/queries/test-fixtures"
+import { fillLitersByMonth } from "@/lib/combustibles/equipment/liters-by-month"
 
 const pg = new PGlite()
 const testDb = drizzle(pg, { schema }) as unknown as DB
@@ -16,6 +17,11 @@ const g = globalThis as typeof globalThis & { __db?: DB }
 g.__db = testDb
 vi.mock("@/db", () => ({ get db() { return g.__db } }))
 vi.mock("server-only", () => ({}))
+// Pasa derecho al original; sólo deja a una prueba hacer fallar la sección «litros por mes».
+vi.mock("@/lib/combustibles/equipment/liters-by-month", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/combustibles/equipment/liters-by-month")>()
+  return { ...actual, fillLitersByMonth: vi.fn(actual.fillLitersByMonth) }
+})
 
 const { getEquipmentFile, getEquipmentVehicle } = await import("@/lib/combustibles/equipment/get-equipment-file")
 
@@ -197,6 +203,131 @@ describe("ficha de equipo: rendimiento contra su modelo y su historial", () => {
   it("un equipo sin cargas ni historial no tiene sección de rendimiento", async () => {
     const { performance } = (await getEquipmentFile(session(), IDS.vC, MARCH))!
     expect(performance).toBeNull()
+  })
+})
+
+describe("ficha de equipo: litros por mes", () => {
+  // Un equipo propio de esta sección, para no mover las cifras de A y B que miden las demás.
+  const LIT = "eqf-veh-lit"
+  const APRIL = describeFuelPeriod({ kind: "month", year: 2026, month: 4 }, "url", "2026-04-15")
+  /** `mes → [litros, cargas]`: lo que muestra el gráfico, sin los meses en cero. */
+  const withLoads = (file: { litersByMonth: Array<{ month: string; liters: number; loads: number }> }) =>
+    Object.fromEntries(file.litersByMonth.filter((month) => month.loads > 0).map((month) => [month.month, [month.liters, month.loads]]))
+
+  beforeAll(async () => {
+    await testDb.insert(schema.fuelVehicles).values({
+      id: LIT, plate: "LT-0001", code: "KL-1", type: "x", equipmentTypeId: IDS.eqType, meterType: "hour_meter", performanceUnit: "liters_per_hour", worksiteId: IDS.wsA,
+    })
+    const load = (at: string, liters: number, extra: { review?: "ok" | "flagged" | "approved" | "rejected"; voided?: boolean; worksite?: string } = {}) =>
+      addLoad({ vehicle: LIT, worksite: extra.worksite ?? IDS.wsA, at, perf: null, liters, review: extra.review, voided: extra.voided })
+
+    // Junio de 2025: dos cargas que cuentan (200 L) y tres que no: rechazada, anulada y duplicada de la primera.
+    const original = await load("2025-06-10T15:00:00.000Z", 120)
+    await load("2025-06-20T15:00:00.000Z", 80)
+    await load("2025-06-25T15:00:00.000Z", 500, { review: "rejected" })
+    await load("2025-06-26T15:00:00.000Z", 700, { voided: true })
+    const duplicate = await load("2025-06-27T15:00:00.000Z", 900)
+    await testDb.update(schema.fuelEquipmentLoads).set({ duplicateOfId: original.loadId }).where(eq(schema.fuelEquipmentLoads.id, duplicate.loadId))
+    // La por decidir suma (el combustible se cargó), la aprobada también.
+    await load("2025-09-15T15:00:00.000Z", 60, { review: "flagged" })
+    await load("2025-12-15T15:00:00.000Z", 40, { review: "approved" })
+    // Una carga del mismo equipo registrada en otra faena: un usuario sólo de la faena A no la ve.
+    await load("2026-02-18T15:00:00.000Z", 77, { worksite: IDS.wsB })
+    await load("2026-03-12T15:00:00.000Z", 250)
+    // Fuera de la ventana de marzo: un mes antes del primero (marzo de 2025) y uno después del último (abril de 2026).
+    await load("2025-03-20T15:00:00.000Z", 1000)
+    await load("2026-04-10T15:00:00.000Z", 333)
+  }, 60_000)
+
+  it("trae los 12 meses que terminan en el del período, del más antiguo al más reciente, con ceros donde no hubo cargas", async () => {
+    const { litersByMonth } = (await getEquipmentFile(session(), LIT, MARCH))!
+    expect(litersByMonth.map((month) => month.month)).toEqual([
+      "2025-04", "2025-05", "2025-06", "2025-07", "2025-08", "2025-09",
+      "2025-10", "2025-11", "2025-12", "2026-01", "2026-02", "2026-03",
+    ])
+    // Los meses sin cargas son ceros explícitos, no huecos.
+    expect(litersByMonth.find((month) => month.month === "2026-01")).toEqual({ month: "2026-01", liters: 0, loads: 0 })
+    expect(litersByMonth.filter((month) => month.loads === 0)).toHaveLength(7)
+  })
+
+  it("suma sólo las cargas que cuentan: la rechazada, la anulada y la duplicada no entran, la por decidir sí", async () => {
+    const file = (await getEquipmentFile(session(), LIT, MARCH))!
+    expect(withLoads(file)).toEqual({
+      "2025-06": [200, 2],
+      "2025-09": [60, 1],
+      "2025-12": [40, 1],
+      "2026-02": [77, 1],
+      "2026-03": [250, 1],
+    })
+    expect(file.degraded).toEqual([])
+  })
+
+  it("la ventana no incluye lo anterior a sus 12 meses ni lo posterior al mes del fin del período", async () => {
+    const months = (await getEquipmentFile(session(), LIT, MARCH))!.litersByMonth.map((month) => month.month)
+    expect(months).not.toContain("2025-03")
+    expect(months).not.toContain("2026-04")
+    // Con abril como período, la ventana corre un mes: entra abril de 2026 y sale abril de 2025.
+    const april = (await getEquipmentFile(session(), LIT, APRIL))!
+    expect(april.litersByMonth).toHaveLength(12)
+    expect(april.litersByMonth[0]!.month).toBe("2025-05")
+    expect(withLoads(april)).toEqual({
+      "2025-06": [200, 2], "2025-09": [60, 1], "2025-12": [40, 1], "2026-02": [77, 1], "2026-03": [250, 1], "2026-04": [333, 1],
+    })
+  })
+
+  it("termina en el mes del fin del período sea cual sea su forma: un rango entre febrero y marzo cierra en marzo", async () => {
+    const range = describeFuelPeriod({ kind: "range", from: "2026-02-10", to: "2026-03-05" }, "url", "2026-04-15")
+    const file = (await getEquipmentFile(session(), LIT, range))!
+    expect(file.litersByMonth.at(-1)!.month).toBe("2026-03")
+    expect(file.litersByMonth[0]!.month).toBe("2025-04")
+    // El rango sólo fija dónde termina: los meses anteriores al rango siguen con sus litros.
+    expect(withLoads(file)["2025-06"]).toEqual([200, 2])
+  })
+
+  it("el mes de un período completo coincide con los litros de «Cargas del período»", async () => {
+    const a = (await getEquipmentFile(session(), IDS.vA, MARCH))!
+    expect(a.litersByMonth.at(-1)).toEqual({ month: "2026-03", liters: a.loads.liters, loads: a.loads.count })
+    // Y es del equipo: las cargas de B no se mezclan (cada barra sale de las cargas del equipo, no de la faena).
+    expect(withLoads(a)).toEqual({
+      "2025-08": [100, 1], "2025-09": [100, 1], "2025-10": [100, 1], "2025-11": [100, 1], "2025-12": [100, 1], "2026-01": [100, 1], "2026-03": [300, 3],
+    })
+  })
+
+  it("un equipo sin cargas en los 12 meses trae 12 ceros", async () => {
+    const { litersByMonth } = (await getEquipmentFile(session(), IDS.vC, MARCH))!
+    expect(litersByMonth).toHaveLength(12)
+    expect(litersByMonth.every((month) => month.liters === 0 && month.loads === 0)).toBe(true)
+  })
+
+  it("respeta el alcance: de la faena A sólo ve lo cargado en A, y de otra faena la ficha no existe", async () => {
+    // Global ve la carga que se registró en B (77 L en febrero); quien sólo tiene la faena A, no.
+    const global = (await getEquipmentFile(session(), LIT, MARCH))!
+    const scopedA = (await getEquipmentFile(session({ global: false, worksiteIds: [IDS.wsA] }), LIT, MARCH))!
+    expect(global.litersByMonth.find((month) => month.month === "2026-02")).toEqual({ month: "2026-02", liters: 77, loads: 1 })
+    expect(scopedA.litersByMonth.find((month) => month.month === "2026-02")).toEqual({ month: "2026-02", liters: 0, loads: 0 })
+    expect(withLoads(scopedA)).toEqual({ "2025-06": [200, 2], "2025-09": [60, 1], "2025-12": [40, 1], "2026-03": [250, 1] })
+    // Una sesión de otra faena no recibe ni la ficha: tampoco se filtran sus litros por mes.
+    expect(await getEquipmentFile(session({ global: false, worksiteIds: [IDS.wsB] }), LIT, MARCH)).toBeNull()
+    expect(await getEquipmentFile(session({ global: false, worksiteIds: [IDS.wsC] }), LIT, MARCH)).toBeNull()
+  })
+
+  it("si la sección falla, la ficha sigue: lista vacía, el aviso dice cuál y se sigue contando como fuente", async () => {
+    const healthy = (await getEquipmentFile(session(), LIT, MARCH))!
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {})
+    vi.mocked(fillLitersByMonth).mockImplementationOnce(() => { throw new Error("falla simulada") })
+    try {
+      const broken = (await getEquipmentFile(session(), LIT, MARCH))!
+      expect(broken.litersByMonth).toEqual([])
+      expect(broken.degraded).toEqual(["litros por mes"])
+      expect(broken.sourceCount).toBe(healthy.sourceCount)
+      // Lo demás de la ficha sigue ahí.
+      expect(broken.vehicle.id).toBe(LIT)
+      expect(broken.loads).toEqual(healthy.loads)
+      expect(logged.mock.calls.some(([line]) => String(line).includes("litros por mes falló"))).toBe(true)
+    } finally {
+      logged.mockRestore()
+    }
+    expect((await getEquipmentFile(session(), LIT, MARCH))!.degraded).toEqual([])
   })
 })
 

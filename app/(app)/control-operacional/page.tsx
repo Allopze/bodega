@@ -20,7 +20,7 @@ import { MetaBadge } from "@/components/states/state-badge"
 import { KpiCard } from "@/components/ui/kpi-card"
 import { SummaryBar } from "@/components/ui/summary-bar"
 import { can, requireAuth } from "@/lib/auth/can"
-import { loadRevisionCounts, type RevisionCounts } from "@/lib/combustibles/revision-counts"
+import { getFuelInboxPendingForSession } from "@/lib/combustibles/inbox/queries"
 import {
   getOperationalControlHub,
   resolveOperationalControlPeriod,
@@ -35,6 +35,7 @@ import {
   workOrdersTile,
   type AttentionTile,
   type AttentionTileKey,
+  type FuelPendingCounts,
 } from "./attention-tiles"
 import { OperationalAssetsTable } from "./operational-assets-table"
 import { OperationalExportButton } from "./operational-export-button"
@@ -42,6 +43,9 @@ import { buildPerformanceGlossary, buildPerformanceStats } from "./performance-s
 import { fuelBatchHref } from "@/lib/combustibles/routes"
 
 export const metadata: Metadata = { title: "Panel operacional" }
+
+/** Ninguna de las cuatro colas de «Por revisar» se pudo contar: el tile lo dice en vez de pintar 0. */
+const NO_FUEL_COUNTS: FuelPendingCounts = { carga: null, caso: null, patente: null, pedido: null }
 
 const ATTENTION_ICONS: Record<AttentionTileKey, ReactNode> = {
   stopped: <Truck size={16} weight="duotone" />,
@@ -87,12 +91,13 @@ export default async function OperationalControlPage({
   }
 
   const canViewFuel = can(session, "combustibles:view")
-  const [data, revisionCounts] = await Promise.all([
+  const [data, fuelPending] = await Promise.all([
     getOperationalControlHub(session, period),
-    // Las dos colas de «Revisión»: cada conteo cae a null por separado y el
-    // tile lo dice. El `catch` es sólo una red: `loadRevisionCounts` ya los atrapa.
+    // Las cuatro colas de «Por revisar», las mismas que cuenta el menú y la
+    // bandeja: cada tipo cae a null por separado y el tile lo dice. El `catch`
+    // es sólo una red: `getFuelInboxPendingByKind` ya atrapa cada uno.
     canViewFuel
-      ? loadRevisionCounts(session).catch((): RevisionCounts => ({ flagged: null, anomalies: null }))
+      ? getFuelInboxPendingForSession(session).catch((): FuelPendingCounts => NO_FUEL_COUNTS)
       : Promise.resolve(null),
   ])
 
@@ -113,7 +118,7 @@ export default async function OperationalControlPage({
     ...(canViewFleet ? [stoppedTile(data.attention.stoppedVehicles, fleetSize)] : []),
     ...(canViewMaintenance ? [workOrdersTile(data.attention.openWorkOrders)] : []),
     ...(canViewFleet ? [documentsTile(data.attention.fleetDocuments)] : []),
-    ...(revisionCounts ? [fuelReviewTile(revisionCounts)] : []),
+    ...(fuelPending ? [fuelReviewTile(fuelPending)] : []),
   ]
 
   const performanceStats = buildPerformanceStats(data.metrics, { canViewFleet, canViewMaintenance, canViewCosts })

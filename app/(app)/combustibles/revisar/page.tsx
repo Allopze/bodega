@@ -20,7 +20,12 @@ import { ServerPagination } from "@/components/ui/server-pagination"
 import { settle } from "@/lib/async-settle"
 import { can, requirePermission } from "@/lib/auth/can"
 import { getAnomalyDistribution } from "@/lib/combustibles/anomaly-cases"
-import { ANOMALY_SEVERITY_LABELS } from "@/lib/combustibles/anomaly-labels"
+import {
+  ANOMALY_SEVERITY_LABELS,
+  ANOMALY_STATUS_LABELS,
+  isOpenAnomalyCaseStatus,
+  OPEN_ANOMALY_CASE_STATUSES,
+} from "@/lib/combustibles/anomaly-labels"
 import {
   FUEL_INBOX_DECISION_LABELS,
   FUEL_INBOX_DECISIONS,
@@ -55,8 +60,6 @@ const EMPTY_SUMMARY: FuelInboxSummary = { total: null, byKind: { carga: null, ca
 const NO_COUNTS: Record<FuelInboxKind, number | null> = { carga: null, caso: null, patente: null, pedido: null }
 const NO_DISTRIBUTION = { total: 0, byStatus: [], bySeverity: [], byRuleCode: [] }
 const SEVERITIES = ["low", "medium", "high", "critical"] as const
-const CASE_STATES = ["open", "in_review", "reopened"] as const
-const CASE_STATE_LABELS = { open: "Abierto", in_review: "Tomada", reopened: "Reabierto" } as const
 /** `?ref=<fuente>:<id>` (de «Abrir el caso relacionado» en Cargas) → tipo de entidad que referencian los casos. */
 const SOURCE_TO_REFERENCE_TYPE: Record<string, string> = {
   tae_pwa: "fuel_tae_submission",
@@ -89,10 +92,12 @@ export default async function PorRevisarPage({ searchParams }: { searchParams: P
   const worksiteId = first(raw.faena)
   const decisionParam = first(raw.decision)
   const decision = view === "decididas" && isFuelInboxDecision(decisionParam) ? decisionParam : undefined
-  // Gravedad, estado y registro de origen sólo existen para los casos (llegan de enlaces de «Anomalías»).
+  // Gravedad, estado y registro de origen sólo existen para los casos: la gravedad y el estado se eligen en la
+  // barra de filtros; el registro de origen llega de enlaces (la ficha de una carga, «Anomalías»).
   const caseOnly = kind === "caso"
   const caseSeverity = caseOnly ? oneOf(first(raw.severidad), SEVERITIES) : undefined
-  const caseState = caseOnly && view === "pendientes" ? oneOf(first(raw.estado), CASE_STATES) : undefined
+  const caseStateParam = first(raw.estado)
+  const caseState = caseOnly && view === "pendientes" && isOpenAnomalyCaseStatus(caseStateParam) ? caseStateParam : undefined
   const [refSource, ...refIdParts] = (caseOnly ? first(raw.ref) ?? "" : "").split(":")
   const refType = refSource ? SOURCE_TO_REFERENCE_TYPE[refSource] : undefined
   const caseReference = refType && refIdParts.length > 0 ? { type: refType, id: refIdParts.join(":") } : undefined
@@ -122,7 +127,7 @@ export default async function PorRevisarPage({ searchParams }: { searchParams: P
     itemKey ? tracked(getFuelInboxItem(session, itemKey), null, "el detalle") : Promise.resolve(null),
     // El reparto de los casos sólo se pide donde puede mostrarse.
     view === "pendientes" && (kind === undefined || kind === "caso")
-      ? tracked(getAnomalyDistribution({ worksiteId, status: ["open", "in_review", "reopened"] }, session), NO_DISTRIBUTION, "el reparto de casos")
+      ? tracked(getAnomalyDistribution({ worksiteId, status: [...OPEN_ANOMALY_CASE_STATUSES] }, session), NO_DISTRIBUTION, "el reparto de casos")
       : Promise.resolve(null),
   ])
 
@@ -161,8 +166,8 @@ export default async function PorRevisarPage({ searchParams }: { searchParams: P
   const worksiteName = worksiteId ? worksites.find((worksite) => worksite.id === worksiteId)?.name : undefined
   if (worksiteId) chips.push({ key: "faena", label: "Faena", value: worksiteId, displayValue: worksiteName ?? "Otra faena" })
   if (caseSeverity) chips.push({ key: "severidad", label: "Gravedad", value: caseSeverity, displayValue: ANOMALY_SEVERITY_LABELS[caseSeverity] })
-  if (caseState) chips.push({ key: "estado", label: "Estado", value: caseState, displayValue: CASE_STATE_LABELS[caseState] })
-  if (caseReference) chips.push({ key: "ref", label: "Registro de origen", value: first(raw.ref) ?? "", displayValue: "Sólo los casos de una carga" })
+  if (caseState) chips.push({ key: "estado", label: "Estado", value: caseState, displayValue: ANOMALY_STATUS_LABELS[caseState] })
+  if (caseReference) chips.push({ key: "ref", label: "Carga", value: first(raw.ref) ?? "", displayValue: "Sólo los casos de la carga elegida" })
   const filtered = chips.length > 0
 
   const pagination = resolvePagination({ pageParam: String(inbox.page), totalItems: inbox.total, pageSize: inbox.pageSize })
@@ -219,7 +224,7 @@ export default async function PorRevisarPage({ searchParams }: { searchParams: P
         ) : null}
       </div>
 
-      <InboxFilterBar worksites={worksites} showSeverity={caseOnly && view === "pendientes"} chips={chips} />
+      <InboxFilterBar worksites={worksites} showSeverity={caseOnly && view === "pendientes"} showState={caseOnly && view === "pendientes"} chips={chips} />
 
       {inbox.rows.length === 0 ? (
         degradedList ? null : caseOnly && !filtered && view === "pendientes" ? (
