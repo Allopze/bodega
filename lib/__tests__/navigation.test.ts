@@ -265,29 +265,32 @@ describe("sidebar navigation", () => {
       },
     } satisfies Session
     const enabled = new Set(["combustibles"])
-    const disabled = new Set(["/combustibles/tae"])
+    const disabled = new Set(["/combustibles/cuadratura"])
     const hrefs = getVisibleAreas(session, enabled, disabled)
       .flatMap((area) => area.items.map((item) => item.href))
     const targets = flattenNavTargets(session, enabled, disabled).map((target) => target.href)
 
     expect(hrefs).toContain("/combustibles")
-    expect(hrefs).toContain("/combustibles/bitacora")
-    expect(hrefs).not.toContain("/combustibles/tae")
-    expect(targets).not.toContain("/combustibles/tae")
+    expect(hrefs).toContain("/combustibles/cargas")
+    expect(hrefs).toContain("/combustibles/fuentes")
+    expect(hrefs).not.toContain("/combustibles/cuadratura")
+    expect(targets).not.toContain("/combustibles/cuadratura")
   })
 
-  it("marks the owning item for routes declared as aliases in another route tree", () => {
-    // «Revisión» agrupa la cola del control y la de anomalías.
-    expect(isHrefActive("/combustibles/revision", "/combustibles/control/revision")).toBe(true)
-    expect(isHrefActive("/combustibles/revision", "/combustibles/anomalias/reglas")).toBe(true)
-    expect(isHrefActive("/combustibles", "/combustibles/control/revision")).toBe(false)
-    // El resto del control sigue siendo «Consumo y rendimiento».
-    expect(isHrefActive("/combustibles", "/combustibles/control/ralenti")).toBe(true)
-    expect(isHrefActive("/combustibles/tae", "/combustibles/control/sellos")).toBe(true)
-    expect(isHrefActive("/combustibles/bitacora", "/combustibles/control/registrar")).toBe(true)
-    // El histórico TAE se queda en TAE aunque sea un importador.
-    expect(isHrefActive("/combustibles/tae", "/combustibles/tae/importar")).toBe(true)
-    expect(isHrefActive("/combustibles/bitacora", "/combustibles/tae/importar")).toBe(false)
+  it("marks the fuel section that owns each subroute", () => {
+    // El Panel es `/combustibles`, padre de todo el módulo: sólo se marca en su
+    // propia URL, no en las secciones que cuelgan de él.
+    expect(isHrefActive("/combustibles", "/combustibles")).toBe(true)
+    expect(isHrefActive("/combustibles", "/combustibles/cargas")).toBe(false)
+    expect(isHrefActive("/combustibles", "/combustibles/revisar")).toBe(false)
+    // Las fichas y los asistentes quedan dentro de su sección.
+    expect(isHrefActive("/combustibles/cargas", "/combustibles/cargas/registrar")).toBe(true)
+    expect(isHrefActive("/combustibles/cargas", "/combustibles/cargas/terreno/s1/historial")).toBe(true)
+    expect(isHrefActive("/combustibles/consumo", "/combustibles/consumo/equipos/v1")).toBe(true)
+    expect(isHrefActive("/combustibles/pagos", "/combustibles/pagos/estados/st1")).toBe(true)
+    expect(isHrefActive("/combustibles/fuentes", "/combustibles/fuentes/archivos/planilla/b1")).toBe(true)
+    expect(isHrefActive("/combustibles/ajustes", "/combustibles/ajustes/puntos-de-carga")).toBe(true)
+    expect(isHrefActive("/combustibles/cuadratura", "/combustibles/cuadratura/sellos")).toBe(true)
   })
 
   it("groups Control operacional as Seguimiento, then Flota, then Mantención, then Combustible", () => {
@@ -302,11 +305,14 @@ describe("sidebar navigation", () => {
       ["Mantención", "Equipos"],
       ["Mantención", "Pautas"],
       ["Mantención", "Dispositivos"],
-      ["Combustible", "Consumo"],
+      ["Combustible", "Panel"],
       ["Combustible", "Cargas"],
-      ["Combustible", "Revisión"],
-      ["Combustible", "TAE y sellos"],
-      ["Combustible", "Facturas y pagos"],
+      ["Combustible", "Por revisar"],
+      ["Combustible", "Cuadratura"],
+      ["Combustible", "Consumo"],
+      ["Combustible", "Pagos"],
+      ["Combustible", "Fuentes de datos"],
+      ["Combustible", "Ajustes"],
     ])
   })
 

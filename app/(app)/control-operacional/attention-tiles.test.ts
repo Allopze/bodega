@@ -15,7 +15,7 @@ describe("destinos de los tiles", () => {
       stopped: "/flota?estado=detenidos",
       workOrders: "/mantenciones?status=abiertas",
       documents: "/flota?vencimiento=vencidos",
-      fuel: "/combustibles/revision",
+      fuel: "/combustibles/revisar",
     })
   })
 

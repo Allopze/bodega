@@ -55,7 +55,7 @@ describe("GET /api/cron/fuel-visionlink-sync", () => {
   it("respeta el interruptor del submódulo de control", async () => {
     mocks.isRouteOperational.mockResolvedValue(false)
     expect(await (await GET(request())).json()).toMatchObject({ outcome: "disabled" })
-    expect(mocks.isRouteOperational).toHaveBeenCalledWith("/combustibles/control")
+    expect(mocks.isRouteOperational).toHaveBeenCalledWith("/combustibles/fuentes")
     expect(mocks.syncVisionLink).not.toHaveBeenCalled()
   })
 

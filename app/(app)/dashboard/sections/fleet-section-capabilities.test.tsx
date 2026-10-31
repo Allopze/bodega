@@ -85,7 +85,7 @@ describe("FleetSection capability matrix", () => {
     expect(getExpiringFleetDocuments).not.toHaveBeenCalled()
     expect(getMaintenanceMonthlyTrend).not.toHaveBeenCalled()
     expect(getUsageMaintenanceAlerts).not.toHaveBeenCalled()
-    expect(domainSectionOf(section).props.links.map((link) => link.href)).toEqual(["/combustibles"])
+    expect(domainSectionOf(section).props.links.map((link) => link.href)).toEqual(["/combustibles/consumo"])
   })
 
   it("cost and purchasing permissions alone do not query fuel credit-note data", async () => {
