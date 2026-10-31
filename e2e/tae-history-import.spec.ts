@@ -2,7 +2,7 @@ import fs from "node:fs"
 import path from "node:path"
 import { expect, test } from "@playwright/test"
 import postgres from "postgres"
-import { login } from "./helpers"
+import { expectPageTitle, login } from "./helpers"
 
 const workbookPath = path.resolve(process.cwd(), "CONTROL_MANUAL_COMBUSTIBLES_UNIFICADO.xlsx")
 const hasRealWorkbook = fs.existsSync(workbookPath)
@@ -15,7 +15,7 @@ async function resolvePendingMappings(page: import("@playwright/test").Page) {
   }
 }
 
-test.describe("TAE — importación histórica real", () => {
+test.describe("Histórico de sellos — importación histórica real", () => {
   test.beforeAll(async () => {
     const databaseUrl = process.env.E2E_DATABASE_URL ?? process.env.DATABASE_URL
     if (!databaseUrl) throw new Error("E2E_DATABASE_URL es requerido")
@@ -37,8 +37,9 @@ test.describe("TAE — importación histórica real", () => {
     test.skip(!hasRealWorkbook, "Requiere CONTROL_MANUAL_COMBUSTIBLES_UNIFICADO.xlsx real en la raíz del repo (dato operacional, no se commitea)")
     test.setTimeout(180_000)
     await login(page)
-    await page.goto("/combustibles/tae/importar")
-    await expect(page.getByRole("heading", { name: "Importar histórico TAE" })).toBeVisible()
+    // Rediseño de Combustible: el importador vive en «Fuentes de datos › Agregar histórico de sellos».
+    await page.goto("/combustibles/fuentes/agregar/sellos")
+    await expectPageTitle(page, "Agregar histórico de sellos")
 
     const fileInput = page.locator('input[type="file"]')
     await fileInput.setInputFiles(workbookPath)

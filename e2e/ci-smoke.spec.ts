@@ -8,6 +8,10 @@ const CRITICAL_ROUTES = [
   "/compras",
   "/recepcion",
   "/combustibles",
+  "/combustibles/cargas",
+  "/combustibles/revisar",
+  "/combustibles/pagos",
+  "/combustibles/fuentes",
   "/admin/trabajadores",
   "/admin/roles",
 ]

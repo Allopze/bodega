@@ -23,24 +23,36 @@ import {
   litersText,
   average,
   withSql,
-  parseLiters,
   postLoad,
   expectCreated,
   submissionRow,
   equipmentLoad,
   equipmentRow,
+  equipmentStatisticsRow,
+  escapeRegExp,
+  meanCellPattern,
   pickSelect,
+  openInboxItem,
   fillFieldLoad,
   buildSupplyWorkbook,
   openSupplyImportPreview,
-  flowFigure,
+  parseLitersOrZero,
+  mandanteRowCell,
+  mediumCrossRow,
 } from "./combustibles-control-helpers"
 
 /**
  * Control de combustible, de punta a punta y con estado: registrar en terreno
- * (UI y API autenticada), cadena de sellos, rendimiento con atípico, revisión
- * humana que lo devuelve al promedio, importación de entradas del proveedor con
- * su conciliación por mandante, y autorización de la API sin pasar por la UI.
+ * (UI y API autenticada), cadena de sellos, rendimiento con atípico, decisión en
+ * «Por revisar» que lo devuelve al promedio, importación de entradas del
+ * proveedor (Fuentes de datos › Agregar datos) con su cuadratura por mandante y
+ * por medio, y autorización de la API sin pasar por la UI.
+ *
+ * Rediseño de Combustible (2026-10-31): el registro vive en
+ * `/combustibles/cargas/registrar` (con el paso «Dónde» antes del formulario), el
+ * tablero de camiones en `/combustibles/consumo/rendimiento/camiones`, la cola de
+ * cargas marcadas en `/combustibles/revisar` y la cuadratura en
+ * `/combustibles/cuadratura/{mandante,proveedor}`.
  *
  * Todo cuelga de un equipo propio (`fuel-veh-ctl-e2e`) en `ws-e2e`: así ningún
  * otro spec mueve sus promedios, y este spec no mueve los de nadie. Las cifras
@@ -99,14 +111,18 @@ test.describe.serial("Control de combustible — registro, revisión y conciliac
   test("1 · registra una carga con sellos desde la app", async ({ page }) => {
     test.setTimeout(150_000)
     await login(page)
-    await page.goto("/combustibles/control/registrar")
+    await page.goto("/combustibles/cargas/registrar")
+    // Paso 1 de 7, «Dónde»: la faena y el punto de carga van antes del formulario por pasos.
+    await expect(page.getByText("Paso 1 de 7")).toBeVisible({ timeout: 20_000 })
     await pickSelect(page, "registrar-faena", WORKSITE_NAME)
     await expect(page).toHaveURL(/faena=ws-e2e/)
-    // Con un solo lugar activo en la faena queda elegido solo; con más, se elige.
-    if (!/lugar=ctl-point-e2e/.test(page.url())) await pickSelect(page, "registrar-lugar", POINT_NAME)
-    await expect(page).toHaveURL(/lugar=ctl-point-e2e/)
+    // Con un solo punto activo en la faena queda elegido solo; con más, se elige.
+    if (!/punto=ctl-point-e2e/.test(page.url())) await pickSelect(page, "registrar-punto", POINT_NAME)
+    await expect(page).toHaveURL(/punto=ctl-point-e2e/)
+    // Con el config de la faena cargado el botón se habilita; el formulario por pasos sigue oculto hasta entonces.
+    await page.getByRole("button", { name: "Siguiente", exact: true }).click()
 
-    await fillFieldLoad(page, R0, "CTL-1000", "CTL-1001")
+    await fillFieldLoad(page, R0, "CTL-1000", "CTL-1001", { stepsBefore: 1 })
     await page.getByRole("button", { name: "Enviar carga" }).click()
     await expect(page.getByRole("heading", { name: "Carga registrada" })).toBeVisible({ timeout: 45_000 })
 
@@ -186,40 +202,48 @@ test.describe.serial("Control de combustible — registro, revisión y conciliac
 
   test("4 · el tablero de camiones muestra el equipo y deja la atípica fuera del promedio", async ({ page }) => {
     await login(page)
-    await page.goto(`/combustibles/control/rendimiento/camiones?equipo=${VEHICLE_PLATE}`)
+    await page.goto(`/combustibles/consumo/rendimiento/camiones?equipo=${VEHICLE_PLATE}`)
     const row = equipmentRow(page)
     await expect(row).toHaveCount(1, { timeout: 20_000 })
     const cells = row.getByRole("cell")
-    await expect(cells.nth(1)).toHaveText(VEHICLE_CODE)
-    await expect(cells.nth(2)).toHaveText(VEHICLE_PLATE)
-    // Cargas válidas: las cinco del historial; la primera no rinde y la atípica espera revisión.
-    await expect(cells.nth(7)).toHaveText(String(HISTORY_KM_PER_LITER.length))
-    const mean = (await cells.nth(8).innerText()).trim()
-    expect(mean).toBe(twoDecimals.format(average(HISTORY_KM_PER_LITER)))
+    // Columna 0: el código y, debajo, la patente.
+    await expect(cells.nth(0)).toContainText(VEHICLE_CODE)
+    await expect(cells.nth(0)).toContainText(VEHICLE_PLATE)
+    // Rendimiento (columna 3): el promedio de las cargas válidas y su unidad; la primera carga no rinde y la atípica espera decisión.
+    const mean = twoDecimals.format(average(HISTORY_KM_PER_LITER))
+    await expect(cells.nth(3)).toHaveText(meanCellPattern(mean))
     state.meanBeforeApproval = mean
-    await expect(textoVisible(page, /1 carga en revisión no entra al promedio/).first()).toBeVisible()
+    // Las cargas válidas se cuentan en «Ver datos estadísticos»: las cinco del historial.
+    const statistics = await equipmentStatisticsRow(page)
+    await expect(statistics.getByRole("cell").nth(4)).toHaveText(String(HISTORY_KM_PER_LITER.length))
+    await expect(statistics.getByRole("cell").nth(5)).toHaveText(mean)
+    await expect(textoVisible(page, /1 carga por decidir no entra al promedio/)).toBeVisible()
   })
 
-  test("5 · aprobar la atípica la devuelve al promedio y queda auditada", async ({ page }) => {
+  test("5 · decidir la atípica en «Por revisar» la devuelve al promedio y queda auditada", async ({ page }) => {
     expect(state.outlierSubmissionId, "depende de la prueba 3").toBeTruthy()
     const load = await equipmentLoad(state.outlierSubmissionId!)
     await login(page)
-    await page.goto("/combustibles/control/revision")
+    await page.goto("/combustibles/revisar?tipo=carga&faena=ws-e2e")
 
-    const approve = page.getByRole("button", { name: new RegExp(`^Aprobar carga de ${VEHICLE_CODE}`) })
-    await expect(approve).toHaveCount(1, { timeout: 20_000 })
-    const queueRow = page.getByRole("row").filter({ has: approve })
+    // El botón de la fila se nombra «Decidir: <qué pasó>, <equipo>»; ver `InboxList`.
+    const decide = page.getByRole("button", { name: new RegExp(`^Decidir: .+, ${escapeRegExp(`${VEHICLE_CODE} · ${VEHICLE_PLATE}`)}$`) })
+    await expect(decide).toHaveCount(1, { timeout: 20_000 })
+    const queueRow = page.getByRole("listitem").filter({ has: decide })
     await expect(queueRow).toContainText("Rendimiento atípico para el equipo")
+    // El dato que explica el motivo: lo que rindió el equipo en esa carga.
+    await expect(queueRow).toContainText(`${OUTLIER_KM_PER_LITER} km/L`)
 
-    await expect(async () => {
-      await approve.click()
-      await expect(page.getByRole("dialog", { name: "Aprobar carga" })).toBeVisible({ timeout: 2_000 })
-    }).toPass({ timeout: 20_000 })
-    const dialog = page.getByRole("dialog", { name: "Aprobar carga" })
-    await dialog.getByRole("textbox").fill("Ruta larga en carretera, verificado con GPS (E2E).")
-    await dialog.getByRole("button", { name: "Aprobar carga", exact: true }).click()
-    await expect(dialog).toBeHidden({ timeout: 20_000 })
-    await expect(approve).toHaveCount(0, { timeout: 20_000 })
+    // La hoja se abre con `?item=` y se nombra con el equipo y la faena.
+    const sheet = page.getByRole("dialog", { name: `${VEHICLE_CODE} · ${VEHICLE_PLATE} · ${WORKSITE_NAME}` })
+    await openInboxItem(page, decide, sheet)
+    // En una atípica los botones dicen lo que pasa: «Es correcta» entra al promedio, «No cuenta» lo deja fuera.
+    await sheet.getByRole("radio", { name: "Es correcta" }).click()
+    await sheet.getByRole("textbox", { name: "Nota de la decisión" }).fill("Ruta larga en carretera, verificado con GPS (E2E).")
+    // Sin diálogo de confirmación: decidir es rutina y se puede deshacer desde «Decididas».
+    await sheet.getByRole("button", { name: "Confirmar decisión" }).click()
+    await expect(sheet).toBeHidden({ timeout: 20_000 })
+    await expect(decide).toHaveCount(0, { timeout: 20_000 })
 
     const decided = await withSql((sql) => sql<Array<{ review_status: string; review_note: string | null; reviewed_by: string | null }>>`
       select review_status, review_note, reviewed_by from fuel_equipment_loads where id = ${load!.id}
@@ -233,23 +257,27 @@ test.describe.serial("Control de combustible — registro, revisión y conciliac
     expect(audit[0]).toMatchObject({ action: "status_change", user_id: "user-admin-e2e" })
     expect(audit[0]!.reason).toContain("verificado con GPS")
 
-    await page.goto(`/combustibles/control/rendimiento/camiones?equipo=${VEHICLE_PLATE}`)
-    const cells = equipmentRow(page).getByRole("cell")
-    await expect(cells.nth(7)).toHaveText(String(HISTORY_KM_PER_LITER.length + 1), { timeout: 20_000 })
+    await page.goto(`/combustibles/consumo/rendimiento/camiones?equipo=${VEHICLE_PLATE}`)
     const expectedMean = twoDecimals.format(average([...HISTORY_KM_PER_LITER, OUTLIER_KM_PER_LITER]))
-    await expect(cells.nth(8)).toHaveText(expectedMean)
+    await expect(equipmentRow(page).getByRole("cell").nth(3)).toHaveText(meanCellPattern(expectedMean), { timeout: 20_000 })
     expect(expectedMean).not.toBe(state.meanBeforeApproval)
-    await expect(textoVisible(page, "Ninguna carga en revisión queda fuera del promedio.").first()).toBeVisible()
+    const statistics = await equipmentStatisticsRow(page)
+    await expect(statistics.getByRole("cell").nth(4)).toHaveText(String(HISTORY_KM_PER_LITER.length + 1))
+    await expect(statistics.getByRole("cell").nth(5)).toHaveText(expectedMean)
+    await expect(textoVisible(page, "Ninguna carga por decidir queda fuera del promedio.")).toBeVisible()
   })
 
-  test("6 · importa las entradas del proveedor y la conciliación por mandante las refleja", async ({ page }) => {
+  test("6 · importa las entradas del proveedor y la cuadratura por mandante y por medio las refleja", async ({ page }) => {
     test.setTimeout(150_000)
     await login(page)
-    const sellosUrl = `/combustibles/control/sellos?mandante=${MANDANTE_ID}`
+    // La cuadratura mide por mes completo: el de hoy es el período por defecto de la jefatura.
+    const mandanteUrl = `/combustibles/cuadratura/mandante?mandante=${MANDANTE_ID}`
+    const mediumUrl = `/combustibles/cuadratura/proveedor?mandante=${MANDANTE_ID}`
 
-    await page.goto(sellosUrl)
-    await expect(textoVisible(page, "Mandante CTL E2E").first()).toBeVisible({ timeout: 20_000 })
-    const inputBefore = parseLiters(await flowFigure(page, "Entrada").innerText())
+    await page.goto(mandanteUrl)
+    const entro = mandanteRowCell(page, "Mandante CTL E2E", 1)
+    await expect(entro).toBeVisible({ timeout: 20_000 })
+    const inputBefore = parseLitersOrZero(await entro.innerText())
 
     const file = await buildSupplyWorkbook()
     const preview = await openSupplyImportPreview(page, file)
@@ -270,30 +298,32 @@ test.describe.serial("Control de combustible — registro, revisión y conciliac
     expect(inputs[0]).toMatchObject({ worksite_id: WORKSITE_ID, supply_medium_id: MEDIUM_ID })
     expect(Number(inputs[0]!.liters)).toBe(1000)
 
-    await page.goto(sellosUrl)
-    const entrada = flowFigure(page, "Entrada")
-    await expect(entrada).toBeVisible({ timeout: 20_000 })
-    expect(parseLiters(await entrada.innerText()) - inputBefore).toBe(1000)
-    await expect(flowFigure(page, "Diferencia")).toHaveText(/^[−-]?[\d.]+(,\d)? L$/)
+    // «Por mandante»: lo que entró sube exactamente lo importado, y la diferencia («−300 L · −3,1 %») sigue siendo una cifra.
+    await page.goto(mandanteUrl)
+    const entroDespues = mandanteRowCell(page, "Mandante CTL E2E", 1)
+    await expect(entroDespues).toBeVisible({ timeout: 20_000 })
+    expect(parseLitersOrZero(await entroDespues.innerText()) - inputBefore).toBe(1000)
+    await expect(mandanteRowCell(page, "Mandante CTL E2E", 4)).toHaveText(/^[−-]?[\d.]+(,\d)? L · [−-]?[\d.]+(,\d)? %$/)
 
-    // C-03: el medio informa 1.000 L contra lo registrado en terreno con ese medio.
+    // C-03, ahora en «Proveedor y terreno»: el medio informa 1.000 L contra lo registrado en terreno con ese medio este mes.
+    await page.goto(mediumUrl)
     const fieldLiters = await withSql(async (sql) => {
       const [row] = await sql<Array<{ liters: number }>>`
         select coalesce(sum(liters), 0)::float8 as liters from fuel_tae_submissions
         where worksite_id = ${WORKSITE_ID} and supply_medium_id = ${MEDIUM_ID} and status <> 'voided'
-          and extract(year from loaded_at at time zone 'America/Santiago') = extract(year from now() at time zone 'America/Santiago')
+          and to_char(loaded_at at time zone 'America/Santiago', 'YYYY-MM') = to_char(now() at time zone 'America/Santiago', 'YYYY-MM')
       `
       return row!.liters
     })
     expect(fieldLiters).toBeGreaterThanOrEqual(7 * LITERS)
-    const mediumRow = page.locator('div[role="region"][aria-label="Cruce por medio de suministro"]').getByRole("row").filter({ hasText: MEDIUM_NAME })
-    await expect(mediumRow).toHaveCount(1)
+    const mediumRow = mediumCrossRow(page, MEDIUM_NAME)
+    await expect(mediumRow).toHaveCount(1, { timeout: 20_000 })
     const mediumCells = mediumRow.getByRole("cell")
     await expect(mediumCells.nth(1)).toContainText(litersText(fieldLiters))
     await expect(mediumCells.nth(2)).toHaveText(litersText(1000))
     await expect(mediumCells.nth(3)).toHaveText(litersText(1000 - fieldLiters))
 
-    // Reimportar el mismo archivo se bloquea: el contenido ya entró en un lote vigente.
+    // Reimportar el mismo archivo se bloquea: el contenido ya entró en un archivo vigente.
     const again = await openSupplyImportPreview(page, file)
     await expect(again.getByRole("alert").filter({ hasText: "Este archivo ya fue importado" })).toBeVisible()
     await expect(again.getByRole("button", { name: /Confirmar importación/ })).toBeDisabled()

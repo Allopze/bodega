@@ -223,7 +223,7 @@ test.describe("Densidad — todo KPI de subconjunto llega a su subconjunto", () 
     { dominio: "Equipos detenidos", destino: "/flota?estado=detenidos" },
     { dominio: "OT abiertas", destino: "/mantenciones?status=abiertas" },
     { dominio: "Documentos vencidos", destino: "/flota?vencimiento=vencidos" },
-    { dominio: "Combustible por revisar", destino: "/combustibles/revision" },
+    { dominio: "Combustible por revisar", destino: "/combustibles/revisar" },
   ]
 
   test("los tiles del panel operacional enlazan a su subconjunto, no al total", async ({ page }) => {

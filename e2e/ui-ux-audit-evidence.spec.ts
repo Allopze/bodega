@@ -11,7 +11,7 @@ const ROUTES = [
   { slug: "dashboard", path: "/dashboard" },
   { slug: "solicitudes", path: "/solicitudes" },
   { slug: "prevencion-pdtp", path: "/prevencion/pdtp" },
-  { slug: "combustibles-bitacora", path: "/combustibles/bitacora" },
+  { slug: "combustibles-cargas", path: "/combustibles/cargas" },
   { slug: "admin-usuarios", path: "/admin/usuarios" },
 ] as const
 

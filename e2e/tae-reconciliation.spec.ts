@@ -1,8 +1,8 @@
 import { expect, test } from "@playwright/test"
 import postgres from "postgres"
-import { login } from "./helpers"
+import { expectPageTitle, login } from "./helpers"
 
-test.describe("TAE — conciliación con Copec TCT", () => {
+test.describe("Cuadratura — tarjeta y terreno (Copec TCT)", () => {
   test.beforeAll(async () => {
     const databaseUrl = process.env.E2E_DATABASE_URL ?? process.env.DATABASE_URL
     if (!databaseUrl) throw new Error("E2E_DATABASE_URL es requerido")
@@ -57,19 +57,25 @@ test.describe("TAE — conciliación con Copec TCT", () => {
 
   test("presenta ambos canales por producto y exporta Excel", async ({ page }) => {
     await login(page)
-    await page.goto("/combustibles/tae/conciliacion?desde=2026-07-01&hasta=2026-07-31&faena=ws-e2e")
+    // «Conciliación TAE–Copec TCT» pasó a «Cuadratura › Tarjeta y terreno»: la tarjeta informa totales por
+    // patente y mes, y la vista dice cuánto de eso quedó registrado en terreno.
+    await page.goto("/combustibles/cuadratura/tarjeta-y-terreno?desde=2026-07-01&hasta=2026-07-31&faena=ws-e2e")
 
-    await expect(page.getByRole("heading", { name: "Conciliación TAE–Copec TCT" })).toBeVisible()
+    await expectPageTitle(page, "Tarjeta y terreno")
+    // El equipo aparece en las dos fuentes, y la fila lo dice con litros por canal y producto.
     const equipmentRow = page.getByRole("row").filter({ hasText: "E2E-90" })
+    await expect(equipmentRow).toHaveCount(1)
     await expect(equipmentRow).toContainText("120 L")
+    await expect(equipmentRow).toContainText("1 carga")
     await expect(equipmentRow).toContainText("80 L")
     await expect(equipmentRow).toContainText("15 L")
-    await expect(equipmentRow).toContainText("215 L")
-    await expect(equipmentRow).toContainText("Ambos")
+    await expect(equipmentRow).toContainText("En ambos")
+    // La frase que abre la vista cuenta la cobertura: de los equipos que informó la tarjeta, cuántos también están en terreno.
+    await expect(page.getByTestId("coverage-answer")).toContainText(/también tienen? cargas registradas en terreno/)
 
     const downloadPromise = page.waitForEvent("download")
     await page.getByRole("button", { name: "Exportar Excel" }).click()
     const download = await downloadPromise
-    expect(download.suggestedFilename()).toMatch(/^conciliacion_tae_tct_.*\.xlsx$/)
+    expect(download.suggestedFilename()).toMatch(/^tarjeta_y_terreno_.*\.xlsx$/)
   })
 })
