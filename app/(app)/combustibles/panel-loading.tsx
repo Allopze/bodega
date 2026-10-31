@@ -4,13 +4,13 @@ import { PageHeader } from "@/components/ui/page-header"
 import { Skeleton } from "@/components/ui/skeleton"
 
 /**
- * Esqueleto de carga de Combustible. Es el `loading` de la carpeta padre de todo
- * el módulo: lo ve cualquier pantalla que no tenga el suyo, así que no afirma
- * qué contenido viene (ni título de pantalla, ni pasos, ni cifras). Sólo dibuja
- * la forma común: la cabecera, una franja de avance, una fila de bloques y dos
- * bloques de contenido, a la altura que ocupará el Panel.
+ * Esqueleto del Panel mientras llegan sus datos. No es un `loading.tsx` a
+ * propósito: un `loading` en `/combustibles` envolvería en Suspense a todo el
+ * módulo, y entonces las páginas puente de las URL viejas redirigían dentro del
+ * streaming (meta refresh + navegación del router, en carrera) en vez de
+ * responder un 308. Cada sección tiene su propio `loading.tsx`.
  */
-export default function Loading() {
+export function PanelLoading() {
   return (
     <PageContainer>
       <PageHeader title="Combustible" breadcrumb={<FuelBreadcrumbs />} />

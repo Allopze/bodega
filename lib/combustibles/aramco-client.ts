@@ -275,7 +275,7 @@ interface TokenResponse {
 /** Autentica y deja lista la sesión con el prefijo de recurso ya resuelto. */
 export async function authenticateAramco(documentNumber: string, password: string): Promise<AramcoSession> {
   if (!documentNumber || !password) {
-    throw new AramcoAuthError("Faltan las credenciales de Aramco: configúralas en Combustibles → Importar")
+    throw new AramcoAuthError("Faltan las credenciales de Aramco: configúralas en Combustible › Ajustes › Integraciones")
   }
 
   const accounts = await request(

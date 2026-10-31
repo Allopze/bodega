@@ -94,11 +94,11 @@ export function AramcoSyncStatus({ source, initialStatus, credentialsHref }: {
         </Button>
       ) : null}
       {!status.hasCredentials ? (
+        // Qué falta ya lo dice la fila («Falta»); aquí va sólo cómo resolverlo.
         <p className="basis-full text-xs text-[var(--color-warning-ink)]">
-          Faltan las credenciales de Aramco para poder sincronizar.{" "}
           {credentialsHref
             ? <Link href={credentialsHref} className="font-medium underline">Configúralas en Ajustes › Integraciones</Link>
-            : "Pídele a un administrador que las configure en Ajustes › Integraciones."}
+            : "Pídele a un administrador que configure las credenciales en Ajustes › Integraciones."}
         </p>
       ) : null}
       {historyOpen ? (

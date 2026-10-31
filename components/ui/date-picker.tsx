@@ -5,7 +5,7 @@ import { DayPicker } from "react-day-picker"
 import { es } from "date-fns/locale"
 import { CalendarBlank, CaretLeft, CaretRight } from "@phosphor-icons/react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { cn } from "@/lib/utils"
+import { cn, todayInChile } from "@/lib/utils"
 import { formatDate } from "@/lib/utils"
 import { parseLocalDate, localDateToISO } from "@/lib/sst/date"
 
@@ -67,6 +67,12 @@ export function DatePicker({
   const selected: Date | undefined = iso ? parseLocalDate(iso) : undefined
   const fromDate: Date | undefined = min  ? parseLocalDate(min)  : undefined
   const toDate:   Date | undefined = max  ? parseLocalDate(max)  : undefined
+  // Sin valor, el calendario abre en el mes de hoy (acotado al rango). Abrir en
+  // el mes del mínimo dejaba a la vista un mes casi entero deshabilitado cuando
+  // el mínimo queda lejos, como en una carga de otro día con 62 días de margen.
+  const today = parseLocalDate(todayInChile())
+  const initialMonth = selected
+    ?? (fromDate && today < fromDate ? fromDate : toDate && today > toDate ? toDate : today)
 
   function handleSelect(date: Date | undefined) {
     if (!date) return
@@ -137,7 +143,7 @@ export function DatePicker({
               ...(fromDate ? [{ before: fromDate }] : []),
               ...(toDate   ? [{ after:  toDate   }] : []),
             ]}
-            defaultMonth={selected ?? (fromDate ?? toDate)}
+            defaultMonth={initialMonth}
             showOutsideDays
             fixedWeeks
             classNames={{

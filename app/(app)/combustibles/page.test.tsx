@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import type { ReactNode } from "react"
+import type { ComponentProps, ReactElement, ReactNode } from "react"
 import { render, screen, within } from "@testing-library/react"
 import type { Session } from "next-auth"
 import { beforeEach, describe, expect, it, vi } from "vitest"
@@ -42,6 +42,7 @@ vi.mock("@/components/combustibles/add-fuel-data-button", () => ({
 }))
 
 import PanelPage from "./page"
+import { PanelContent } from "./panel-content"
 
 const TODAY = "2026-10-31"
 const period = describeFuelPeriod({ kind: "month", year: 2026, month: 10 }, "url", TODAY)
@@ -65,7 +66,10 @@ const jefatura: PanelData = {
 }
 
 async function renderPage(sp: Record<string, string | string[] | undefined> = {}) {
-  render(await PanelPage({ searchParams: Promise.resolve(sp) }))
+  // La página resuelve permiso y URL viejas y entrega el contenido dentro de un
+  // Suspense: se renderiza ese contenido (un componente async) ya resuelto.
+  const page = await PanelPage({ searchParams: Promise.resolve(sp) }) as ReactElement<{ children: ReactElement<ComponentProps<typeof PanelContent>> }>
+  render(await PanelContent(page.props.children.props))
 }
 
 describe("página del Panel de combustible", () => {

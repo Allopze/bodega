@@ -191,17 +191,16 @@ function inboxSheet(page: Page, vehicle: typeof REV_VEHICLES[number]): Locator {
 
 /**
  * Elige un día en el calendario del bloque «¿Es una carga de otro día?». El calendario abre en el
- * mes más antiguo que permite la ventana (62 días atrás), así que se avanza hasta ver el día.
+ * mes de hoy (`DatePicker`), así que un día pasado está en ese mes o en uno anterior.
  */
 async function pickPastDay(page: Page, trigger: Locator, isoDay: string) {
   await trigger.click()
-  // Con el calendario ya pintado (una celda cualquiera), «el día pedido no está» quiere decir «está en otro mes».
-  await expect(page.locator("[data-day]").first()).toBeVisible()
-  const cell = page.locator(`[data-day="${isoDay}"]:not([data-outside]) button`)
-  // VERIFICAR: las flechas del calendario son los botones de su `<nav>` (react-day-picker v9, sin `aria-label` en español);
-  // el último es «mes siguiente». `pickCurrentMonthDate` (helpers.ts) usa el mismo supuesto con el primero.
-  const nextMonth = page.locator('[role="dialog"]').getByRole("navigation").getByRole("button").last()
-  for (let attempt = 0; attempt < 4 && (await cell.count()) === 0; attempt += 1) await nextMonth.click()
+  const calendar = page.getByRole("dialog").filter({ has: page.getByRole("grid") })
+  await expect(calendar.getByRole("grid")).toBeVisible()
+  const cell = calendar.locator(`[data-day="${isoDay}"]:not([data-outside]) button`)
+  // La flecha «mes anterior» es el primer botón de la navegación del calendario.
+  const previousMonth = calendar.getByRole("navigation").getByRole("button").first()
+  for (let attempt = 0; attempt < 3 && (await cell.count()) === 0; attempt += 1) await previousMonth.click()
   await cell.click()
 }
 

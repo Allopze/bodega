@@ -108,7 +108,7 @@ test.describe("Combustibles module", () => {
     await expect(fuente).toBeVisible()
     // El entorno e2e no configura credenciales de Aramco: sin ellas no se puede
     // sincronizar, y la fila tiene que decirlo en vez de fallar al pulsar.
-    await expect(fuente.getByText(/Faltan las credenciales de Aramco/)).toBeVisible()
+    await expect(fuente.getByText("Faltan las credenciales de Aramco. Se configuran en Ajustes › Integraciones.", { exact: true })).toBeVisible()
     await expect(fuente.getByRole("link", { name: /Configúralas en Ajustes › Integraciones/ })).toHaveAttribute("href", "/combustibles/ajustes/integraciones")
     await expect(fuente.getByRole("button", { name: /Actualizar ahora/ })).toBeDisabled()
     await expect(fuente.getByRole("button", { name: /Traer meses anteriores/ })).toBeDisabled()
@@ -199,7 +199,7 @@ test.describe("Combustibles module", () => {
     await expect(page.getByText(/cargas de la planilla importadas exitosamente/)).toBeVisible({ timeout: 30_000 })
 
     // «Ver lote» pasó a «Ver archivo»: cada archivo importado tiene su ficha bajo Fuentes de datos.
-    const batchHref = await page.getByRole("link", { name: /^Ver archivo/ }).getAttribute("href", { timeout: 30_000 })
+    const batchHref = await page.getByRole("link", { name: "Ver archivo y filas rechazadas", exact: true }).getAttribute("href", { timeout: 30_000 })
     expect(batchHref).toMatch(/\/combustibles\/fuentes\/archivos\/planilla\//)
     await page.goto(batchHref!)
     await expectPageTitle(page, "Planilla de cargas")
