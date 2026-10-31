@@ -100,7 +100,7 @@ export function withFuelContext(
   href: string,
   current: URLSearchParams | Record<string, string | string[] | undefined>,
 ): string {
-  const [path, query = ""] = href.split("?")
+  const [path = href, query = ""] = href.split("?")
   const params = new URLSearchParams(query)
   for (const key of FUEL_CARRY_PARAMS) {
     if (params.has(key)) continue

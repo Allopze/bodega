@@ -10,11 +10,12 @@ import {
 import { validateRut } from "@/lib/rut"
 import { findTaeWorkerByRut, getTaeLinkWorksiteId } from "@/lib/services/fuel-tae"
 import { isRouteOperational } from "@/lib/services/module-toggles"
+import { FUEL_PATHS } from "@/lib/combustibles/routes"
 
 export const runtime = "nodejs"
 
 export async function POST(request: Request) {
-  if (!await isRouteOperational("/combustibles/tae")) {
+  if (!await isRouteOperational(FUEL_PATHS.cargas)) {
     return NextResponse.json({ ok: false, message: "Control TAE temporalmente inactivo" }, { status: 503 })
   }
   const requestHeaders = await headers()

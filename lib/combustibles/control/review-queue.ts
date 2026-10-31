@@ -4,6 +4,7 @@ import { db } from "@/db"
 import { fuelEquipmentLoads, fuelEquipmentTypes, fuelOperationRecords, fuelVehicles, users, worksites } from "@/db/schema"
 import { statisticallyValidLoadSql, buildLoadWhere, type ControlFilters } from "./filters"
 import { FLAG_REASONS, type FlagReason, type LoadSource, type PerformanceUnit, type ReviewStatus } from "./contracts"
+import { fuelLoadHrefFromEquipmentLoad } from "@/lib/combustibles/routes"
 
 /** Tamaño de página de la cola de revisión (regla del brief: 50 filas). */
 export const REVIEW_PAGE_SIZE = 50
@@ -61,9 +62,8 @@ export interface ReviewQueueResult {
 }
 
 /** Ruta de origen de una carga; `null` si la fila no tiene a qué enlazar. */
-export function originHrefFor(row: { source: string; taeSubmissionId: string | null; operationBatchId: string | null }): string | null {
-  if (row.source === "operations_import") return row.operationBatchId ? `/combustibles/importar/operaciones/${row.operationBatchId}` : null
-  return row.taeSubmissionId ? `/combustibles/tae/${row.taeSubmissionId}` : null
+export function originHrefFor(row: { source: string; taeSubmissionId: string | null; operationRecordId: string | null }): string | null {
+  return fuelLoadHrefFromEquipmentLoad(row)
 }
 
 /**
@@ -113,6 +113,7 @@ export async function getReviewQueue(
       source: fuelEquipmentLoads.source,
       taeSubmissionId: fuelEquipmentLoads.taeSubmissionId,
       operationBatchId: fuelOperationRecords.batchId,
+      operationRecordId: fuelEquipmentLoads.operationRecordId,
       reviewStatus: fuelEquipmentLoads.reviewStatus,
       reviewNote: fuelEquipmentLoads.reviewNote,
       reviewerName: users.name,

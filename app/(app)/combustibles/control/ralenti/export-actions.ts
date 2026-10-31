@@ -11,12 +11,13 @@ import { addExportMetadataSheet } from "@/lib/combustibles/xlsx-utils"
 import { xlsxToBase64 } from "@/lib/reports/export-module/excel-builder"
 import { formatDate, todayInChile } from "@/lib/utils"
 import type { ExportActionResult } from "@/components/ui/export-button"
+import { FUEL_PATHS } from "@/lib/combustibles/routes"
 
 /** Exporta las tablas de ralentí (V-01..V-05, V-08 y V-09) con los mismos filtros de la vista. */
 export async function exportIdleXlsxAction(input: { query: string }): Promise<ExportActionResult> {
   let session
   try {
-    session = await requirePermission("combustibles:export", "/combustibles/control/ralenti")
+    session = await requirePermission("combustibles:export", FUEL_PATHS.consumo)
     if (!can(session, "combustibles:view")) return { ok: false, message: "Sin permisos" }
   } catch { return { ok: false, message: "Sin permisos" } }
 

@@ -1,6 +1,5 @@
 "use server"
 
-import { revalidatePath } from "next/cache"
 import { and, asc, gt, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { fuelVehicles } from "@/db/schema"
@@ -18,6 +17,8 @@ import {
 import { getPerformanceControlSettings, savePerformanceControlSettings } from "@/lib/combustibles/control/settings"
 import { recomputeVehicles } from "@/lib/combustibles/control/projection-series"
 import type { ConfigResult } from "./actions"
+import { FUEL_PATHS } from "@/lib/combustibles/routes"
+import { revalidateFuel } from "@/lib/combustibles/revalidate"
 
 const PERMISSION = "combustibles:manage_control" as const
 const RECOMPUTE_LOCK = "fuel_control_recompute_series"
@@ -30,7 +31,7 @@ const RECOMPUTE_LOCK = "fuel_control_recompute_series"
  * `savePerformanceControlSettings` audita por sí misma.
  */
 export async function savePerformanceThresholdsAction(input: PerformanceThresholdsInput): Promise<ConfigResult> {
-  const guard = await guardPermission(PERMISSION, "/combustibles/control/configuracion")
+  const guard = await guardPermission(PERMISSION, FUEL_PATHS.ajustes)
   if (guard.error) return guard.error
   const session = guard.session
   const parsed = parseZ(performanceThresholdsSchema, input)
@@ -40,7 +41,7 @@ export async function savePerformanceThresholdsAction(input: PerformanceThreshol
     await db.transaction(async (tx) => {
       await savePerformanceControlSettings(tx, { ...current, ...parsed.data }, { userId: session.user.id, userEmail: session.user.email ?? undefined })
     })
-    revalidatePath("/combustibles/control/configuracion")
+    revalidateFuel()
     return { ok: true, message: "Umbrales guardados. Rigen para las cargas nuevas y las que se recalculen." }
   } catch (error) {
     return actionErrorResult(error, "No se pudieron guardar los umbrales")
@@ -65,7 +66,7 @@ export interface RecomputeProgress {
  * usuario. Un candado de transacción impide dos lotes simultáneos.
  */
 export async function recomputeSeriesBatchAction(input: { cursor: string | null }): Promise<ConfigResult & { data?: RecomputeProgress }> {
-  const guard = await guardPermission(PERMISSION, "/combustibles/control/configuracion")
+  const guard = await guardPermission(PERMISSION, FUEL_PATHS.ajustes)
   if (guard.error) return guard.error
   const session = guard.session
   const parsed = parseZ(recomputeInputSchema, input)
@@ -107,7 +108,7 @@ export async function recomputeSeriesBatchAction(input: { cursor: string | null 
       return { ok: true, message: done ? "Recálculo terminado" : undefined, data: { processed: batch.length, total, nextCursor, done } }
     })
     if (result.ok && result.data?.done) {
-      revalidatePath("/combustibles/control", "layout")
+      revalidateFuel()
     }
     return result
   } catch (error) {

@@ -33,6 +33,7 @@ import { getTaeSubmissionContext } from "./context"
 import { TaeSubmissionRejected } from "./errors"
 import { assertMeterNotRegressing, findPreviousSubmission } from "./submit-rules"
 import type { TaeEvidenceKind, TaeEvidenceUpload } from "./types"
+import { fuelLoadHref } from "@/lib/combustibles/routes"
 
 function extensionForMime(mimeType: string) {
   return mimeType === "image/png" ? "png" : "jpg"
@@ -293,7 +294,7 @@ async function notifyReviewersIfAlerts(id: string) {
       body: `${saved.equipmentCodeSnapshot} · ${Number(saved.liters).toLocaleString("es-CL")} L · ${alerts.map((alert) => alert.message).join("; ")}`,
       entityType: "fuel_tae_submission",
       entityId: id,
-      entityHref: `/combustibles/tae/${id}`,
+      entityHref: fuelLoadHref({ origen: "terreno", id }),
       dedupeKey: `tae-alert:${id}`,
     })
   })

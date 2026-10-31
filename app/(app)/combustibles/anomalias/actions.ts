@@ -2,11 +2,12 @@
 
 import { safeActionMessage } from "@/lib/action-error"
 
-import { revalidatePath } from "next/cache"
 import { isNetworkError } from "@/lib/network-error"
 import { guardPermission } from "@/lib/auth/can"
 import { updateAnomalyCaseStatus, assignAnomalyCase, addAnomalyComment, METER_RESOLUTION_KINDS, type AnomalyCaseStatus, type MeterResolutionKind } from "@/lib/combustibles/anomaly-cases"
 import { logger } from "@/lib/logger"
+import { FUEL_PATHS } from "@/lib/combustibles/routes"
+import { revalidateFuel } from "@/lib/combustibles/revalidate"
 
 /** in_review/reopened son parte de la revisión; resolved/dismissed cierran el caso y requieren el permiso de resolución. */
 const RESOLVING_STATUSES = new Set(["resolved", "dismissed"])
@@ -30,11 +31,11 @@ export async function updateAnomalyStatusAction(input: { caseId: string; expecte
     return { ok: false, message: "Tipo de resolución inválido" }
   }
   const permission = RESOLVING_STATUSES.has(input.status) ? "combustibles:resolve_anomalies" : "combustibles:review_anomalies"
-  const guard = await guardPermission(permission, "/combustibles")
+  const guard = await guardPermission(permission, FUEL_PATHS.revisar)
   if (guard.error) return guard.error
   try {
     await updateAnomalyCaseStatus(guard.session, input.caseId, input.expectedStatus, input.status as "in_review" | "resolved" | "dismissed" | "reopened", input.resolution, input.resolutionKind as MeterResolutionKind | undefined)
-    revalidatePath("/combustibles/anomalias")
+    revalidateFuel()
     return { ok: true, message: "Estado actualizado" }
   } catch (error) {
     logger.error("[updateAnomalyStatusAction]", error)
@@ -44,11 +45,11 @@ export async function updateAnomalyStatusAction(input: { caseId: string; expecte
 }
 
 export async function assignAnomalyAction(input: { caseId: string; expectedAssigneeId: string | null; assigneeId: string | null }) {
-  const guard = await guardPermission("combustibles:review_anomalies", "/combustibles")
+  const guard = await guardPermission("combustibles:review_anomalies", FUEL_PATHS.revisar)
   if (guard.error) return guard.error
   try {
     await assignAnomalyCase(guard.session, input.caseId, input.expectedAssigneeId, input.assigneeId)
-    revalidatePath("/combustibles/anomalias")
+    revalidateFuel()
     return { ok: true, message: "Asignado correctamente" }
   } catch (error) {
     logger.error("[assignAnomalyAction]", error)
@@ -58,11 +59,11 @@ export async function assignAnomalyAction(input: { caseId: string; expectedAssig
 }
 
 export async function commentAnomalyAction(input: { caseId: string; body: string }) {
-  const guard = await guardPermission("combustibles:review_anomalies", "/combustibles")
+  const guard = await guardPermission("combustibles:review_anomalies", FUEL_PATHS.revisar)
   if (guard.error) return guard.error
   try {
     await addAnomalyComment(guard.session, input.caseId, input.body)
-    revalidatePath("/combustibles/anomalias")
+    revalidateFuel()
     return { ok: true, message: "Comentario añadido" }
   } catch (error) {
     logger.error("[commentAnomalyAction]", error)

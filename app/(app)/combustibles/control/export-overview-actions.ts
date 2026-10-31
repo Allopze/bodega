@@ -14,6 +14,7 @@ import {
 } from "@/lib/combustibles/control/queries/export-xlsx"
 import { monthFullLabel, pivotMonthlyByMedium, type Crosstab } from "@/lib/combustibles/control/view-helpers"
 import { logger } from "@/lib/logger"
+import { FUEL_PATHS } from "@/lib/combustibles/routes"
 
 /**
  * Exportaciones de la vista general. Cada acción reconstruye los datos con los
@@ -29,7 +30,7 @@ export interface OverviewExportInput {
 
 async function authorize() {
   try {
-    return await requirePermission("combustibles:export", "/combustibles/control")
+    return await requirePermission("combustibles:export", FUEL_PATHS.consumo)
   } catch {
     return null
   }

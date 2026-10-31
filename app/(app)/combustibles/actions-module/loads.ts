@@ -1,6 +1,5 @@
 "use server"
 
-import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 import { db } from "@/db"
 import { dteDocuments, fuelLoads, fuelVehicles } from "@/db/schema"
@@ -31,8 +30,9 @@ import { fuelProductIdForLegacy } from "@/lib/combustibles/fuel-products"
 import { reevaluateFuelLoadAnomalies, resolveCorrectedMeterCases } from "@/lib/combustibles/fuel-load-anomaly-reevaluation"
 import { meterReadingFieldErrors, meterReplacementDeclarationError, readMeterReplacementDeclaration } from "@/lib/combustibles/meter-readings"
 import { notifyAfterCommit } from "@/lib/services/notifications"
+import { FUEL_PATHS } from "@/lib/combustibles/routes"
+import { revalidateFuel } from "@/lib/combustibles/revalidate"
 
-const REVALIDATE = "/combustibles"
 
 /**
  * Destino tras crear una carga: su pantalla natural es «Facturas y pagos», no
@@ -41,7 +41,7 @@ const REVALIDATE = "/combustibles"
  * lista; antes caía en `/combustibles`, que ni siquiera lista cargas
  * facturadas. El cliente (`[id]/edit-fuel-load-form.tsx`) navega a la misma ruta.
  */
-const AFTER_SAVE = "/combustibles/facturas"
+const AFTER_SAVE = FUEL_PATHS.pagos
 
 const CONN_MSG = "Sin conexión al servidor. Verifica tu conexión a internet e inténtalo nuevamente."
 
@@ -97,7 +97,7 @@ function dteReference(doc: { tipoDte: string; folio: number }): string {
  * también a quien no ve costos.
  */
 async function requireFuelLoadSession(permission: "combustibles:create" | "combustibles:delete") {
-  const session = await requirePermission(permission, "/combustibles")
+  const session = await requirePermission(permission, FUEL_PATHS.pagos)
   assertFuelCostAccess(session)
   return session
 }
@@ -250,7 +250,7 @@ export async function createFuelLoadAction(
   // en la misma respuesta, y ese re-render volvía a montar la plataforma
   // entera (AppShell exportado como objeto memo) antes de que el useEffect
   // llegara a disparar el push.
-  revalidatePath(REVALIDATE)
+  revalidateFuel()
   redirect(AFTER_SAVE)
 }
 
@@ -450,8 +450,8 @@ export async function updateFuelLoadAction(
       return { ok: false, message: "La carga cambió en otra sesión: se concilió, se anuló o quedó asignada a una cuenta corriente. Recarga antes de continuar." }
     }
 
-    revalidatePath(REVALIDATE)
-    revalidatePath("/combustibles/anomalias")
+    revalidateFuel()
+    revalidateFuel()
     notifyAfterCommit(() => reevaluateFuelLoadAnomalies(id, session.user.id))
     notifyAfterCommit(() => resolveCorrectedMeterCases(id, session.user.id))
     return { ok: true, message: "Carga actualizada" }
@@ -515,7 +515,7 @@ export async function deleteFuelLoadAction(id: string): Promise<ActionState> {
       return { ok: false, message: "La carga cambió en otra sesión: se concilió o quedó asignada a una cuenta corriente. Recarga antes de continuar." }
     }
 
-    revalidatePath(REVALIDATE)
+    revalidateFuel()
     return { ok: true, message: "Carga eliminada" }
   } catch (e) {
     return { ok: false, message: await dbErrMsg(e, "Error al eliminar") }
@@ -558,7 +558,7 @@ export async function registerFuelLoadAction(id: string): Promise<ActionState> {
       return row
     })
     if (!registered) return { ok: false, message: "La carga ya no está en borrador. Recarga antes de continuar." }
-    revalidatePath(REVALIDATE)
+    revalidateFuel()
     return { ok: true, message: "Carga registrada" }
   } catch (e) {
     return { ok: false, message: await dbErrMsg(e, "Error al registrar") }
@@ -579,7 +579,7 @@ export async function correctFuelLoadMeterAction(
   formData: FormData,
 ): Promise<ActionState> {
   let session
-  try { session = await requirePermission("combustibles:create", "/combustibles") }
+  try { session = await requirePermission("combustibles:create", FUEL_PATHS.pagos) }
   catch { return { ok: false, message: "Sin permisos" } }
 
   const id = String(formData.get("id") ?? "")
@@ -654,8 +654,8 @@ export async function correctFuelLoadMeterAction(
     return { ok: false, message: await dbErrMsg(e, "No se pudo corregir la lectura") }
   }
 
-  revalidatePath(REVALIDATE)
-  revalidatePath("/combustibles/anomalias")
+  revalidateFuel()
+  revalidateFuel()
   notifyAfterCommit(() => resolveCorrectedMeterCases(id, session.user.id))
   return { ok: true, message: "Lectura corregida" }
 }

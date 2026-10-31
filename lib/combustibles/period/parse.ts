@@ -32,9 +32,15 @@ function pad(n: number): string {
   return String(n).padStart(2, "0")
 }
 
+/** "YYYY-MM-DD" en sus tres números (la forma ya viene validada por quien llama). */
+function dateParts(plainDate: string): [number, number, number] {
+  const [y = 0, m = 1, d = 1] = plainDate.split("-").map(Number)
+  return [y, m, d]
+}
+
 function isValidPlainDate(value: string | undefined): value is string {
   if (!value || !PLAIN_DATE.test(value)) return false
-  const [y, m, d] = value.split("-").map(Number)
+  const [y, m, d] = dateParts(value)
   const date = new Date(Date.UTC(y, m - 1, d))
   return date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d
 }
@@ -123,7 +129,7 @@ export function formatFuelPeriodCookie(period: FuelPeriod): string {
 export function parseFuelPeriodCookie(value: string | undefined | null): FuelPeriod | null {
   if (!value) return null
   const range = COOKIE_RANGE.exec(value)
-  if (range) return normalizeRange(range[1], range[2])
+  if (range?.[1] && range[2]) return normalizeRange(range[1], range[2])
   return parseFuelPeriodToken(value)
 }
 
@@ -206,7 +212,11 @@ export function shiftFuelPeriod(period: FuelPeriod, direction: -1 | 1): FuelPeri
 /** Los `count` períodos que terminan en `period` (incluido), del más antiguo al más reciente. */
 export function previousFuelPeriods(period: FuelPeriod, count: number): FuelPeriod[] {
   const out: FuelPeriod[] = [period]
-  while (out.length < count) out.unshift(shiftFuelPeriod(out[0], -1))
+  let oldest = period
+  while (out.length < count) {
+    oldest = shiftFuelPeriod(oldest, -1)
+    out.unshift(oldest)
+  }
   return out
 }
 
@@ -216,12 +226,12 @@ const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 const ordinal = (q: number) => (q === 1 || q === 3 ? `${q}.er` : `${q}.º`)
 
 function shortDate(plainDate: string, withYear: boolean): string {
-  const [y, m, d] = plainDate.split("-").map(Number)
-  return `${d} ${MONTH_LABELS[m - 1].toLowerCase()}${withYear ? ` ${y}` : ""}`
+  const [y, m, d] = dateParts(plainDate)
+  return `${d} ${(MONTH_LABELS[m - 1] ?? "").toLowerCase()}${withYear ? ` ${y}` : ""}`
 }
 
 function longDate(plainDate: string, withYear: boolean): string {
-  const [y, m, d] = plainDate.split("-").map(Number)
+  const [y, m, d] = dateParts(plainDate)
   return `${d} de ${MONTH_NAMES[m - 1]}${withYear ? ` de ${y}` : ""}`
 }
 
@@ -234,7 +244,7 @@ export function fuelPeriodLabels(period: FuelPeriod, today = todayInChile()): { 
       return { label: `Semana del ${shortDate(from, otherYear)}`, inLabel: `la semana del ${longDate(from, otherYear)}` }
     }
     case "month": {
-      const name = MONTH_NAMES[period.month - 1]
+      const name = MONTH_NAMES[period.month - 1] ?? ""
       return { label: `${capitalize(name)} ${period.year}`, inLabel: period.year === currentYear ? name : `${name} de ${period.year}` }
     }
     case "quarter":
@@ -302,12 +312,14 @@ export function legacyFuelPeriodFromParams(sp: ParamSource): FuelPeriod | null {
       .split(",").map((m) => Number(m.trim())).filter((m) => Number.isInteger(m) && m >= 1 && m <= 12)
       .sort((a, b) => a - b)
     const unique = [...new Set(months)]
-    if (unique.length === 0) return { kind: "year", year }
-    if (unique.length === 1) return { kind: "month", year, month: unique[0] }
-    const contiguous = unique.every((m, i) => i === 0 || m === unique[i - 1] + 1)
-    if (unique.length === 3 && contiguous && unique[0] % 3 === 1) return { kind: "quarter", year, quarter: (unique[0] + 2) / 3 }
+    const firstMonth = unique[0]
+    const lastMonth = unique[unique.length - 1]
+    if (firstMonth === undefined || lastMonth === undefined) return { kind: "year", year }
+    if (unique.length === 1) return { kind: "month", year, month: firstMonth }
+    const contiguous = unique.every((m, i) => i === 0 || m === (unique[i - 1] ?? 0) + 1)
+    if (unique.length === 3 && contiguous && firstMonth % 3 === 1) return { kind: "quarter", year, quarter: (firstMonth + 2) / 3 }
     // Meses no correlativos: el rango que los cubre es la mejor aproximación.
-    return { kind: "range", from: `${year}-${pad(unique[0])}-01`, to: lastDayOfMonth(year, unique[unique.length - 1]) }
+    return { kind: "range", from: `${year}-${pad(firstMonth)}-01`, to: lastDayOfMonth(year, lastMonth) }
   }
   return null
 }

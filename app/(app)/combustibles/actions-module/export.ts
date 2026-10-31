@@ -11,6 +11,7 @@ import { buildFuelLoadsWhere } from "@/lib/combustibles/queries"
 import { addExportMetadataSheet } from "@/lib/combustibles/xlsx-utils"
 import { fuelLoadStatusLabel } from "@/lib/combustibles/labels"
 import { todayInChile } from "@/lib/utils"
+import { FUEL_PATHS } from "@/lib/combustibles/routes"
 
 const MAX_FUEL_EXPORT_ROWS = 10_000
 
@@ -35,7 +36,7 @@ export async function exportFuelLoadsXlsxAction(filters?: {
   let session
   // Incluye montos (IEC, IVA, total): requiere el permiso de exportación
   // sensible además del genérico, no sólo "combustibles:export".
-  try { session = await requirePermission("combustibles:export_sensitive", "/combustibles") }
+  try { session = await requirePermission("combustibles:export_sensitive", FUEL_PATHS.pagos) }
   catch { return { ok: false as const, message: "Sin permisos para exportar datos con montos" } }
 
   const where = buildFuelLoadsWhere(session, filters ?? {})

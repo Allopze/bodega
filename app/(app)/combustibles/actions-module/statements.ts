@@ -1,6 +1,5 @@
 "use server"
 
-import { revalidatePath } from "next/cache"
 import { db } from "@/db"
 import { fuelLoads, fuelMonthlyStatements, fuelPayments } from "@/db/schema"
 import { eq, and, sql, inArray } from "drizzle-orm"
@@ -16,9 +15,11 @@ import { recordAudit } from "@/lib/audit"
 import type { ActionState } from "@/lib/validation/masters"
 import { dbErrMsg } from "./loads"
 import { accountableFuelLoadsWhere } from "@/lib/combustibles/load-status"
+import { FUEL_PATHS } from "@/lib/combustibles/routes"
+import { revalidateFuel } from "@/lib/combustibles/revalidate"
 
 async function requireGlobalStatementSession() {
-  const session = await requirePermission("combustibles:manage_statements", "/combustibles")
+  const session = await requirePermission("combustibles:manage_statements", FUEL_PATHS.pagos)
   assertFuelCostAccess(session, { global: true })
   return session
 }
@@ -92,7 +93,7 @@ export async function createMonthlyStatementAction(
       return { ok: true as const, message: `Resumen creado con ${loads.length} cargas`, data: { id } }
     })
 
-    if (result.ok) revalidatePath("/combustibles/cuenta-corriente")
+    if (result.ok) revalidateFuel()
     return result
   } catch (e) {
     return { ok: false, message: await dbErrMsg(e, "Error al crear resumen") }
@@ -170,7 +171,7 @@ export async function addPaymentAction(
       return { ok: true as const, message: "Pago registrado" }
     })
 
-    if (result.ok) revalidatePath("/combustibles/cuenta-corriente")
+    if (result.ok) revalidateFuel()
     return result
   } catch (e) {
     return { ok: false, message: await dbErrMsg(e, "Error al registrar pago") }

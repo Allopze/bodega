@@ -28,6 +28,7 @@ import {
 import { worksiteScopeSql } from "@/lib/auth/scope"
 
 import type { FuelLogSource, FuelLogRow, FuelLogFilters } from "./fuel-log-shared"
+import { fuelLoadHref } from "@/lib/combustibles/routes"
 export type { FuelLogSource, FuelLogRow, FuelLogFilters }
 export { FUEL_LOG_SOURCE_LABEL } from "./fuel-log-shared"
 
@@ -56,9 +57,9 @@ export function operationPerformanceUnitCode(unit: string): string {
 
 /** Ruta de detalle en el sistema fuente de cada fila. */
 export function fuelLogDetailHref(row: Pick<FuelLogRow, "source" | "detailId">): string {
-  if (row.source === "tae_pwa") return `/combustibles/tae/${row.detailId}`
-  if (row.source === "invoiced") return `/combustibles/${row.detailId}`
-  return `/combustibles/importar/operaciones/${row.detailId}` // sin página propia por fila: abre el lote
+  if (row.source === "tae_pwa") return fuelLoadHref({ origen: "terreno", id: row.detailId })
+  if (row.source === "invoiced") return fuelLoadHref({ origen: "factura", id: row.detailId })
+  return fuelLoadHref({ origen: "planilla", id: row.detailId })
 }
 
 /**
@@ -310,7 +311,7 @@ function buildOperationBranch(session: Session, filters: FuelLogFilters, searchP
   return db
     .select({
       id: sql<string>`${fuelOperationRecords.id}`.as("id"),
-      detailId: sql<string>`${fuelOperationRecords.batchId}`.as("detailId"), // sin página de detalle por fila: se abre el lote que la contiene
+      detailId: sql<string>`${fuelOperationRecords.id}`.as("detailId"), // cada fila de la planilla tiene su ficha (/combustibles/cargas/planilla/<id>)
       source: sql<FuelLogSource>`'operation_manual'`.as("source"),
       occurredAt: fuelOperationOccurredAtSql().as("occurredAt"),
       worksiteName: sql<string | null>`${worksites.name}`.as("worksiteName"),

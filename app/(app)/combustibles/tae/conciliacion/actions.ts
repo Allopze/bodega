@@ -7,12 +7,13 @@ import { nanoid } from "@/lib/id"
 import { getTaeCopecReconciliation, type TaeCopecFilters } from "@/lib/combustibles/tae-copec-reconciliation"
 import { addExportMetadataSheet } from "@/lib/combustibles/xlsx-utils"
 import { todayInChile } from "@/lib/utils"
+import { FUEL_PATHS } from "@/lib/combustibles/routes"
 
 const MAX_EXPORT_ROWS = 10_000
 
 export async function exportTaeCopecReconciliationAction(filters: TaeCopecFilters) {
   let session
-  try { session = await requirePermission("combustibles:tae_export", "/combustibles/tae") }
+  try { session = await requirePermission("combustibles:tae_export", FUEL_PATHS.cuadratura) }
   catch { return { ok: false as const, message: "Sin permisos para exportar" } }
   const result = await getTaeCopecReconciliation(session, filters)
   const rows = result.rows.slice(0, MAX_EXPORT_ROWS)

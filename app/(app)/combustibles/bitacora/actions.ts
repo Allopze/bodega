@@ -22,6 +22,8 @@ import {
 import { canViewFuelPersonalData, getFuelLogExportRows, getFuelLogRowsBySelection, FUEL_LOG_SOURCE_LABEL, fuelLogEntityType, type FuelLogFilters, type FuelLogRow, type FuelLogSource } from "@/lib/combustibles/fuel-log"
 import { addExportMetadataSheet } from "@/lib/combustibles/xlsx-utils"
 import { todayInChile } from "@/lib/utils"
+import { FUEL_PATHS } from "@/lib/combustibles/routes"
+import { fuelInboxHref } from "@/lib/combustibles/routes"
 
 /** Resuelve el worksiteId y un label descriptivo para una entidad de la bitácora.
  *  Exportada: también la usa el historial de auditoría para acotar por faena. */
@@ -88,7 +90,7 @@ export async function resolveEntityWorksite(
  */
 export async function toggleReviewMarkAction(source: FuelLogSource, entityId: string) {
   let session
-  try { session = await requirePermission("combustibles:view", "/combustibles/bitacora") }
+  try { session = await requirePermission("combustibles:view", FUEL_PATHS.cargas) }
   catch { return { ok: false as const, message: "Sin permisos" } }
 
   const entityType = fuelLogEntityType(source)
@@ -144,7 +146,7 @@ export async function toggleReviewMarkAction(source: FuelLogSource, entityId: st
         body: `${entityCtx.label} · ${entityCtx.worksiteName ?? "Faena sin nombre"}`,
         entityType,
         entityId,
-        entityHref: `/combustibles/bitacora`,
+        entityHref: fuelInboxHref({ tipo: "pedido" }),
         dedupeKey: `review-mark:${entityId}`,
       })
     } catch (err) {
@@ -210,7 +212,7 @@ function exportFileName(prefix: string) {
 
 export async function exportFuelLogAction(filters: FuelLogFilters) {
   let session
-  try { session = await requirePermission("combustibles:export", "/combustibles/bitacora") }
+  try { session = await requirePermission("combustibles:export", FUEL_PATHS.cargas) }
   catch { return { ok: false as const, message: "Sin permisos para exportar" } }
 
   const { rows, truncated } = await getFuelLogExportRows(session, filters)
@@ -234,7 +236,7 @@ export async function exportFuelLogAction(filters: FuelLogFilters) {
 
 export async function exportFuelLogSelectionAction(selection: Array<{ source: FuelLogSource; id: string }>) {
   let session
-  try { session = await requirePermission("combustibles:export", "/combustibles/bitacora") }
+  try { session = await requirePermission("combustibles:export", FUEL_PATHS.cargas) }
   catch { return { ok: false as const, message: "Sin permisos para exportar" } }
   if (!selection.length) return { ok: false as const, message: "No hay filas seleccionadas" }
 

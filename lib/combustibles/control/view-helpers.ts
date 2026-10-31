@@ -1,6 +1,7 @@
 import { MONTH_LABELS } from "@/lib/utils"
 import type { PerformanceUnit } from "./contracts"
 import { CONTROL_FILTER_PARAMS, controlFiltersToParams, type ControlFilters } from "./filters"
+import { FUEL_PATHS } from "@/lib/combustibles/routes"
 
 /**
  * Funciones puras de las vistas G y R: ordenan en tablas cruzadas lo que SQL ya
@@ -210,5 +211,5 @@ export function pickControlParams(sp: SearchParams): Record<string, string> {
 export function revisionHref(filters: ControlFilters): string {
   const params = controlFiltersToParams({ ...filters, page: 1 })
   if (filters.family) params.set("familia", filters.family)
-  return `/combustibles/control/revision?${params.toString()}`
+  return `${FUEL_PATHS.revisar}?tipo=carga&${params.toString()}`
 }

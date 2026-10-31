@@ -10,6 +10,8 @@ import { serviceWorksiteScope } from "@/lib/auth/scope"
 import { actionErrorResult } from "@/lib/actions/action-error-result"
 import { parseZ } from "@/lib/actions/parse-z"
 import { nanoid } from "@/lib/id"
+import { FUEL_PATHS } from "@/lib/combustibles/routes"
+import { revalidateFuel } from "@/lib/combustibles/revalidate"
 import {
   equipmentFamilyInputSchema,
   findAliasConflicts,
@@ -42,15 +44,15 @@ export interface ConfigResult {
 const PERMISSION = "combustibles:manage_control" as const
 
 function refresh() {
-  revalidatePath("/combustibles/control/configuracion")
+  revalidateFuel()
   // Mandantes, medios y familias alimentan los filtros y vistas de todo el control.
-  revalidatePath("/combustibles/control", "layout")
+  revalidateFuel()
 }
 
 // ── Mandantes ────────────────────────────────────────────────────────────────
 
 export async function saveMandanteAction(input: MandanteInput): Promise<ConfigResult> {
-  const guard = await guardPermission(PERMISSION, "/combustibles/control/configuracion")
+  const guard = await guardPermission(PERMISSION, FUEL_PATHS.ajustes)
   if (guard.error) return guard.error
   const session = guard.session
   const parsed = parseZ(mandanteInputSchema, input)
@@ -131,7 +133,7 @@ export async function saveMandanteAction(input: MandanteInput): Promise<ConfigRe
 }
 
 export async function setMandanteActiveAction(input: { id: string; isActive: boolean }): Promise<ConfigResult> {
-  const guard = await guardPermission(PERMISSION, "/combustibles/control/configuracion")
+  const guard = await guardPermission(PERMISSION, FUEL_PATHS.ajustes)
   if (guard.error) return guard.error
   const session = guard.session
   const parsed = parseZ(toggleActiveSchema, input)
@@ -162,7 +164,7 @@ export async function setMandanteActiveAction(input: { id: string; isActive: boo
 // ── Medios de suministro ─────────────────────────────────────────────────────
 
 export async function saveSupplyMediumAction(input: SupplyMediumInput): Promise<ConfigResult> {
-  const guard = await guardPermission(PERMISSION, "/combustibles/control/configuracion")
+  const guard = await guardPermission(PERMISSION, FUEL_PATHS.ajustes)
   if (guard.error) return guard.error
   const session = guard.session
   const parsed = parseZ(supplyMediumInputSchema, input)
@@ -226,7 +228,7 @@ export async function saveSupplyMediumAction(input: SupplyMediumInput): Promise<
 }
 
 export async function setSupplyMediumActiveAction(input: { id: string; isActive: boolean }): Promise<ConfigResult> {
-  const guard = await guardPermission(PERMISSION, "/combustibles/control/configuracion")
+  const guard = await guardPermission(PERMISSION, FUEL_PATHS.ajustes)
   if (guard.error) return guard.error
   const session = guard.session
   const parsed = parseZ(toggleActiveSchema, input)
@@ -257,7 +259,7 @@ export async function setSupplyMediumActiveAction(input: { id: string; isActive:
 // ── Familias de equipos ──────────────────────────────────────────────────────
 
 export async function setEquipmentTypeFamilyAction(input: EquipmentFamilyInput): Promise<ConfigResult> {
-  const guard = await guardPermission(PERMISSION, "/combustibles/control/configuracion")
+  const guard = await guardPermission(PERMISSION, FUEL_PATHS.ajustes)
   if (guard.error) return guard.error
   const session = guard.session
   const parsed = parseZ(equipmentFamilyInputSchema, input)

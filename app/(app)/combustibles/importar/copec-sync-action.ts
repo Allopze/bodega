@@ -12,6 +12,7 @@ import { getCronRunSince, isCronJobRunning, startCronJobInBackground } from "@/l
 import { userFacingErrorText } from "@/lib/user-facing-error"
 import { isOpenPeriod } from "@/lib/combustibles/open-period"
 import { z } from "zod"
+import { FUEL_PATHS } from "@/lib/combustibles/routes"
 
 const copecPeriodSchema = civilDateRange({ required: true, message: "El período de Copec no es válido" })
 const copecStartDateSchema = z.object({
@@ -38,7 +39,7 @@ export async function getCopecSyncStatusAction(): Promise<
   | { ok: true; data: CopecSyncStatus }
   | { ok: false; message: string }
 > {
-  const guard = await guardPermission("combustibles:sync_integrations", "/combustibles/importar")
+  const guard = await guardPermission("combustibles:sync_integrations", FUEL_PATHS.fuentes)
   if (guard.error) return guard.error
   try {
     return { ok: true, data: await getCopecSyncState() }
@@ -76,7 +77,7 @@ export async function startCopecSyncAction(): Promise<
   | { ok: true; since: string; periods: Array<{ from: string; to: string }> }
   | { ok: false; message: string }
 > {
-  const guard = await guardPermission("combustibles:sync_integrations", "/combustibles/importar")
+  const guard = await guardPermission("combustibles:sync_integrations", FUEL_PATHS.fuentes)
   if (guard.error) return guard.error
   if (!copecSyncAvailability().hasCredentials) {
     return { ok: false, message: "Faltan las credenciales de Copec en el servidor (COPEC_USERNAME y COPEC_PASSWORD)." }
@@ -100,7 +101,7 @@ export async function getCopecSyncProgressAction(input: { since: string }): Prom
   | { ok: true; running: boolean; outcome: string | null; detail: string | null; runs: CopecSweepRunView[] }
   | { ok: false; message: string }
 > {
-  const guard = await guardPermission("combustibles:sync_integrations", "/combustibles/importar")
+  const guard = await guardPermission("combustibles:sync_integrations", FUEL_PATHS.fuentes)
   if (guard.error) return guard.error
   const parsed = z.object({ since: z.iso.datetime() }).safeParse(input)
   if (!parsed.success) return { ok: false, message: "La consulta de avance no es válida" }
@@ -135,7 +136,7 @@ export async function getCopecCoverageRangeAction(range: { from: string; to: str
   | { ok: true; data: Awaited<ReturnType<typeof listCopecPeriodCoverage>> }
   | { ok: false; message: string }
 > {
-  const guard = await guardPermission("combustibles:view_costs", "/combustibles")
+  const guard = await guardPermission("combustibles:view_costs", FUEL_PATHS.fuentes)
   if (guard.error) return guard.error
   try {
     const parsed = copecPeriodSchema.safeParse(range)
@@ -155,7 +156,7 @@ export async function confirmCopecPeriodEmptyAction(input: {
   | { ok: true; data: CopecSyncStatus }
   | { ok: false; message: string }
 > {
-  const guard = await guardPermission("combustibles:sync_integrations", "/combustibles/importar")
+  const guard = await guardPermission("combustibles:sync_integrations", FUEL_PATHS.fuentes)
   if (guard.error) return guard.error
   try {
     const parsed = copecEmptyCoverageSchema.safeParse(input)
@@ -192,7 +193,7 @@ export async function updateCopecSyncStartAction(input: { startDate: string; exp
   | { ok: true; data: CopecSyncStartOptions }
   | { ok: false; message: string }
 > {
-  const guard = await guardPermission("combustibles:sync_integrations", "/combustibles/importar")
+  const guard = await guardPermission("combustibles:sync_integrations", FUEL_PATHS.fuentes)
   if (guard.error) return guard.error
   try {
     const parsed = copecStartDateSchema.safeParse(input)

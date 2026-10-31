@@ -26,6 +26,7 @@ import {
 import { CV_ALERT_THRESHOLD } from "@/lib/combustibles/control/view-helpers"
 import { logger } from "@/lib/logger"
 import { formatDateTime } from "@/lib/utils"
+import { FUEL_PATHS } from "@/lib/combustibles/routes"
 
 /**
  * Exportaciones de las vistas de rendimiento por familia. La familia viene del
@@ -43,7 +44,7 @@ export interface FamilyExportInput {
 async function prepare(input: FamilyExportInput) {
   let session
   try {
-    session = await requirePermission("combustibles:export", "/combustibles/control")
+    session = await requirePermission("combustibles:export", FUEL_PATHS.consumo)
   } catch {
     return { error: EXPORT_FAILURE_PERMISSION } as const
   }

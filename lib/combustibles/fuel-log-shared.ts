@@ -9,10 +9,44 @@
 export type FuelLogSource = "tae_pwa" | "invoiced" | "operation_manual"
 
 export const FUEL_LOG_SOURCE_LABEL: Record<FuelLogSource, string> = {
-  tae_pwa: "TAE (PWA)",
-  invoiced: "Facturación",
-  operation_manual: "Log operacional",
+  tae_pwa: "Registro en terreno",
+  invoiced: "Factura",
+  operation_manual: "Planilla de cargas",
 }
+
+/**
+ * «Cómo llegó» una carga, en palabras (rediseño 2026-10-31). `tae_pwa` se abre
+ * en tres según `fuel_tae_submissions.source`, que antes salían todas como
+ * «TAE (PWA)». La clave es el valor del filtro `como` en la URL.
+ */
+export const FUEL_LOAD_ORIGIN_LABEL = {
+  qr: "Formulario en terreno (QR)",
+  app: "Registrada en la app",
+  historico: "Histórico de sellos",
+  planilla: "Planilla de cargas",
+  factura: "Factura",
+} as const
+export type FuelLoadOriginSlug = keyof typeof FUEL_LOAD_ORIGIN_LABEL
+export const FUEL_LOAD_ORIGIN_SLUGS = Object.keys(FUEL_LOAD_ORIGIN_LABEL) as FuelLoadOriginSlug[]
+
+/** `fuel_tae_submissions.source` → origen visible. */
+export const TAE_SUBMISSION_SOURCE_TO_ORIGIN: Record<string, FuelLoadOriginSlug> = {
+  public_pwa: "qr",
+  internal_app: "app",
+  legacy_xlsx: "historico",
+}
+
+/** Estado de una carga en la URL (`estado=`) → valor guardado, por tabla de origen. */
+export const FUEL_LOAD_STATE_SLUGS = {
+  "por-validar": { tae: "submitted" },
+  "con-observacion": { tae: "observed" },
+  validada: { tae: "validated" },
+  anulada: { tae: "voided", invoiced: "cancelled" },
+  borrador: { invoiced: "draft" },
+  registrada: { invoiced: "registered" },
+  conciliada: { invoiced: "reconciled" },
+} as const satisfies Record<string, { tae?: string; invoiced?: string }>
+export type FuelLoadStateSlug = keyof typeof FUEL_LOAD_STATE_SLUGS
 
 /**
  * Lo que ve en lugar del nombre de una persona quien no tiene

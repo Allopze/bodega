@@ -4,7 +4,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { MagnifyingGlass, ArrowRight } from "@phosphor-icons/react"
 import { NAV_ICONS } from "@/components/layout/nav-icons"
-import type { NavTarget } from "@/components/layout/nav-items"
+import { navTargetContext, type NavTarget } from "@/components/layout/nav-items"
 import { Button } from "@/components/ui/button"
 import { resolveNotFound } from "@/lib/routing/not-found-suggestion"
 
@@ -69,7 +69,7 @@ export function NotFoundPanel({ targets }: { targets: NavTarget[] }) {
                   <span className="block text-sm font-medium text-[var(--color-text)]">{target.label}</span>
                   {/* Un módulo que es su propia área ("Mis pendientes") no se repite a sí mismo. */}
                   {target.areaLabel !== target.label && (
-                    <span className="block truncate text-xs text-[var(--color-text-subtle)]">{target.areaLabel}</span>
+                    <span className="block truncate text-xs text-[var(--color-text-subtle)]">{navTargetContext(target)}</span>
                   )}
                 </span>
                 <ArrowRight size={15} className="shrink-0 text-[var(--color-text-faint)] transition-colors duration-[var(--duration-fast)] group-hover:text-[var(--color-primary)]" />

@@ -96,11 +96,13 @@ describe("destinos de navegación", () => {
     expect(faltantes, `destinos del PDTP sin página: ${faltantes.join(", ")}`).toEqual([])
   })
 
-  it("ninguna etiqueta se repite dentro de su área", () => {
+  it("ninguna etiqueta se repite dentro de su grupo", () => {
     // Dos entradas con el mismo texto en el mismo grupo son indistinguibles a
-    // 1280 px, que es justo lo que TASK-UI-005 prohíbe.
+    // 1280 px, que es justo lo que TASK-UI-005 prohíbe. Entre grupos del mismo
+    // área sí se repiten («Panel» de Mantención y de Combustible): el encabezado
+    // del grupo las distingue en el menú y ⌘K muestra «área · grupo».
     for (const area of AREA_TREE) {
-      const labels = area.items.map((item) => item.label)
+      const labels = area.items.map((item) => `${item.group ?? ""}\u0000${item.label}`)
       expect(new Set(labels).size, `área "${area.label}"`).toBe(labels.length)
 
       for (const item of area.items) {

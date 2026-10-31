@@ -1,30 +1,9 @@
-import type { Metadata } from "next"
-import { redirect } from "next/navigation"
-import { db } from "@/db"
-import { fuelAnomalyRules } from "@/db/schema/fuel-anomalies"
-import { requirePermission } from "@/lib/auth/can"
-import { PageContainer } from "@/components/ui/page-container"
-import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
-import { AnomalyRuleCatalog } from "./rule-catalog"
-import { NewAnomalyRuleButton } from "./new-rule-button"
+import { permanentRedirect } from "next/navigation"
+import { legacyFuelRedirect } from "@/lib/combustibles/legacy-redirects"
 
-export const metadata: Metadata = { title: "Reglas de anomalías" }
+type SearchParams = Record<string, string | string[] | undefined>
 
-export default async function AnomalyRulesPage() {
-  try { await requirePermission("combustibles:manage_anomaly_rules") }
-  catch { redirect("/forbidden") }
-
-  const rows = await db.select().from(fuelAnomalyRules).orderBy(fuelAnomalyRules.name)
-
-  return (
-    <PageContainer>
-      <PageHeader
-        title="Reglas de anomalías"
-        description="Activa, desactiva y ajusta los parámetros de las reglas de detección de combustible."
-        breadcrumb={<Breadcrumbs items={[{ label: "Administración", href: "/admin" }, { label: "Configuración de combustible" }, { label: "Reglas de anomalías" }]} />}
-        actions={<NewAnomalyRuleButton />}
-      />
-      <AnomalyRuleCatalog rows={rows} />
-    </PageContainer>
-  )
+/** Ruta anterior al rediseño de Combustible (2026-10-31): página puente permanente. */
+export default async function LegacyFuelBridge({ searchParams }: { searchParams: Promise<SearchParams> }) {
+  permanentRedirect(legacyFuelRedirect("anomalias-reglas", {}, await searchParams))
 }

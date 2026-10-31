@@ -16,6 +16,8 @@ import { parseConsumptionExcel, type ImportError } from "@/lib/combustibles/cons
 import { computeBatchTotals, type BatchTotals } from "@/lib/combustibles/consumption-calculations"
 import type { ActionState } from "@/lib/validation/masters"
 import { plateMatchKey } from "@/lib/combustibles/xlsx-utils"
+import { FUEL_PATHS } from "@/lib/combustibles/routes"
+import { revalidateFuel } from "@/lib/combustibles/revalidate"
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024
 
@@ -119,7 +121,7 @@ export async function previewConsumptionImportAction(
   formData: FormData,
 ): Promise<{ ok: true; data: ConsumptionPreviewData } | { ok: false; message: string }> {
   let session
-  try { session = await requirePermission("combustibles:import", "/combustibles/importar") }
+  try { session = await requirePermission("combustibles:import", FUEL_PATHS.fuentes) }
   catch { return { ok: false, message: "Sin permisos" } }
 
   const form = await readImportForm(formData)
@@ -184,7 +186,7 @@ export async function confirmConsumptionImportAction(
   formData: FormData,
 ): Promise<{ ok: true; data: ConsumptionImportResult } | { ok: false; message: string }> {
   let session
-  try { session = await requirePermission("combustibles:import", "/combustibles/importar") }
+  try { session = await requirePermission("combustibles:import", FUEL_PATHS.fuentes) }
   catch { return { ok: false, message: "Sin permisos" } }
 
   const form = await readImportForm(formData)
@@ -363,14 +365,14 @@ export async function confirmConsumptionImportAction(
   // ocurre — ver `confirmOperationsImportAction` en actions-operaciones.ts.
   // Basta con la ruta hermana: el historial de lotes se sirve fresco en la
   // próxima visita real (dinámica, depende de sesión).
-  revalidatePath("/combustibles")
+  revalidateFuel()
 
   return { ok: true, data: { batchId: batchIds[0]!, imported: [...rowsByWorksite.values()].flat().length, errors: [...parsed.errors, ...unmatchedErrors] } }
 }
 
 export async function revertBatchAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   let session
-  try { session = await requirePermission("combustibles:revert", "/combustibles/importar") }
+  try { session = await requirePermission("combustibles:revert", FUEL_PATHS.fuentes) }
   catch { return { ok: false, message: "Sin permisos" } }
 
   const batchId = String(formData.get("batchId") ?? "")
@@ -396,15 +398,14 @@ export async function revertBatchAction(_prev: ActionState, formData: FormData):
     newState: { estado: "revertido" },
   })
 
-  revalidatePath("/combustibles")
-  revalidatePath("/combustibles/importar")
+  revalidateFuel()
   revalidatePath(`/combustibles/importar/${batchId}`)
   return { ok: true, message: "Lote revertido: sus registros fueron eliminados del dashboard" }
 }
 
 export async function linkConsumptionPlateAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   let session
-  try { session = await requirePermission("combustibles:manage_vehicles", "/combustibles/importar") }
+  try { session = await requirePermission("combustibles:manage_vehicles", FUEL_PATHS.fuentes) }
   catch { return { ok: false, message: "Sin permisos" } }
 
   const batchId = String(formData.get("batchId") ?? "")
@@ -527,6 +528,6 @@ export async function linkConsumptionPlateAction(_prev: ActionState, formData: F
   })
 
   revalidatePath(`/combustibles/importar/${batchId}`)
-  revalidatePath("/combustibles")
+  revalidateFuel()
   return { ok: true, message: `${updated.length} registro(s) vinculados a la patente ${vehicle.plate}` }
 }

@@ -2,12 +2,13 @@
 
 import { safeActionMessage } from "@/lib/action-error"
 
-import { revalidatePath } from "next/cache"
 import { isNetworkError } from "@/lib/network-error"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { createFuelCycleMovement, fuelCycleMovementSchema } from "@/lib/combustibles/fuel-cycle"
 import { logger } from "@/lib/logger"
 import type { ActionState } from "@/lib/validation/masters"
+import { FUEL_PATHS } from "@/lib/combustibles/routes"
+import { revalidateFuel } from "@/lib/combustibles/revalidate"
 
 function empty(value: FormDataEntryValue | null) { const text = String(value ?? "").trim(); return text || undefined }
 
@@ -25,7 +26,7 @@ function toInstant(value: string | undefined) {
 
 export async function createFuelCycleMovementAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   let session
-  try { session = await requirePermission("combustibles:create", "/combustibles") } catch { return { ok: false, message: "No tienes permisos para registrar movimientos" } }
+  try { session = await requirePermission("combustibles:create", FUEL_PATHS.cuadratura) } catch { return { ok: false, message: "No tienes permisos para registrar movimientos" } }
   const raw = {
     eventType: empty(formData.get("eventType")), worksiteId: empty(formData.get("worksiteId")), productId: empty(formData.get("productId")),
     quantity: empty(formData.get("quantity")), occurredAt: toInstant(empty(formData.get("occurredAt"))), supplierId: empty(formData.get("supplierId")),
@@ -37,7 +38,7 @@ export async function createFuelCycleMovementAction(_prev: ActionState, formData
   if (!canAccessWorksite(session, parsed.data.worksiteId)) return { ok: false, message: "No puedes operar esta faena" }
   try {
     await createFuelCycleMovement(parsed.data, { userId: session.user.id, userEmail: session.user.email ?? undefined })
-    revalidatePath("/combustibles/ciclo"); revalidatePath("/combustibles")
+    revalidateFuel(); revalidateFuel()
     return { ok: true, message: "Movimiento físico registrado" }
   } catch (error) {
     logger.error("[createFuelCycleMovementAction]", error)

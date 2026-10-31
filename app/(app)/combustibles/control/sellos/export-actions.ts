@@ -11,6 +11,7 @@ import { addExportMetadataSheet } from "@/lib/combustibles/xlsx-utils"
 import { xlsxToBase64 } from "@/lib/reports/export-module/excel-builder"
 import { formatDateTime, todayInChile } from "@/lib/utils"
 import type { ExportActionResult } from "@/components/ui/export-button"
+import { FUEL_PATHS } from "@/lib/combustibles/routes"
 
 const MAX_ROWS = 20_000
 const MISSING_LABEL = { removed: "Sin sello retirado", installed: "Sin sello nuevo", both: "Sin ningún sello" } as const
@@ -24,7 +25,7 @@ const LOADED_AT_SOURCE_LABELS: Record<string, string> = { server: "Servidor", de
 export async function exportSealsXlsxAction(input: { query: string }): Promise<ExportActionResult> {
   let session
   try {
-    session = await requirePermission("combustibles:tae_export", "/combustibles/control/sellos")
+    session = await requirePermission("combustibles:tae_export", FUEL_PATHS.cuadratura)
     if (!can(session, "combustibles:tae_view")) return { ok: false, message: "Sin permisos" }
   } catch { return { ok: false, message: "Sin permisos" } }
 

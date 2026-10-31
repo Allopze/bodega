@@ -14,6 +14,7 @@ import { notifyManyUser } from "@/lib/services/notifications"
 import { getGlobalUserIdsWithAllPermissions } from "@/lib/services/notification-targeting"
 import { logger } from "@/lib/logger"
 import { chileDateParts, todayInChile, addDaysToPlainDate } from "@/lib/utils"
+import { FUEL_PATHS, fuelStatementHref } from "@/lib/combustibles/routes"
 
 /**
  * Mes anterior a `year`-`month` (mes 1-based) como "YYYY-MM".
@@ -75,7 +76,7 @@ export async function checkFuelStatementNotifications(): Promise<void> {
         body: `Pendiente: $${pending.toLocaleString("es-CL")} · Vence: ${stmt.dueDate}`,
         entityType: "fuel_monthly_statement",
         entityId: stmt.id,
-        entityHref: `/combustibles/cuenta-corriente/${stmt.id}`,
+        entityHref: fuelStatementHref(stmt.id),
       })
     }
 
@@ -91,7 +92,7 @@ export async function checkFuelStatementNotifications(): Promise<void> {
         body: `Pendiente: $${pending.toLocaleString("es-CL")} · Venció: ${stmt.dueDate}`,
         entityType: "fuel_monthly_statement",
         entityId: stmt.id,
-        entityHref: `/combustibles/cuenta-corriente/${stmt.id}`,
+        entityHref: fuelStatementHref(stmt.id),
       })
     }
 
@@ -112,7 +113,7 @@ export async function checkFuelStatementNotifications(): Promise<void> {
         type: "fuel_loads_unassigned",
         title: `${count} cargas de ${prevMonthStr} sin resumen`,
         body: "Hay cargas de combustible del mes pasado que no están asignadas a una cuenta corriente mensual.",
-        entityHref: "/combustibles",
+        entityHref: FUEL_PATHS.estados,
       })
     }
   } catch (err) {

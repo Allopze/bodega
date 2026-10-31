@@ -9,6 +9,7 @@ import { recordAudit } from "@/lib/audit"
 import { requirePermission as requireAuth } from "@/lib/auth/can"
 import { nanoid } from "@/lib/id"
 import type { ActionState } from "@/lib/validation/masters"
+import { revalidateFuel } from "@/lib/combustibles/revalidate"
 
 const PATH = "/admin/flota-catalogos/estanques-combustible"
 const locationSchema = z.object({ worksiteId: z.string().min(1, "Selecciona una faena"), productId: z.string().min(1, "Selecciona un producto"), name: z.string().trim().min(2, "Indica un nombre").max(120), capacityLiters: z.coerce.number().positive("La capacidad debe ser mayor a cero").optional(), taeCardNumber: z.string().trim().max(60).nullish(), notes: z.string().trim().max(1000).optional() })
@@ -25,7 +26,7 @@ export async function createFuelStorageLocationAction(_prev: ActionState, formDa
       await recordAudit({ userId: session.user.id, userEmail: session.user.email ?? undefined, action: "create", entityType: "fuel_storage_location", entityId: id, newState: parsed.data }, tx)
     })
     revalidatePath(PATH)
-    revalidatePath("/combustibles/ciclo")
+    revalidateFuel()
     return { ok: true, message: "Estanque creado" }
   } catch {
     return { ok: false, message: "No se pudo crear: ya existe un estanque con ese nombre en la faena, o esa tarjeta TAE ya está asociada a otro estanque del mismo producto" }
@@ -47,7 +48,7 @@ export async function updateFuelStorageLocationAction(_prev: ActionState, formDa
       await recordAudit({ userId: session.user.id, userEmail: session.user.email ?? undefined, action: "update", entityType: "fuel_storage_location", entityId: id, oldState: current, newState: next }, tx)
     })
     revalidatePath(PATH)
-    revalidatePath("/combustibles/ciclo")
+    revalidateFuel()
     return { ok: true, message: "Estanque actualizado" }
   } catch {
     return { ok: false, message: "No se pudo actualizar el estanque" }
@@ -65,7 +66,7 @@ export async function setFuelStorageLocationStatusAction(id: string, isActive: b
       await recordAudit({ userId: session.user.id, userEmail: session.user.email ?? undefined, action: "update", entityType: "fuel_storage_location", entityId: id, oldState: { isActive: current.isActive }, newState: { isActive } }, tx)
     })
     revalidatePath(PATH)
-    revalidatePath("/combustibles/ciclo")
+    revalidateFuel()
     return { ok: true, message: isActive ? "Estanque activado" : "Estanque desactivado" }
   } catch {
     return { ok: false, message: "No se pudo actualizar el estado" }

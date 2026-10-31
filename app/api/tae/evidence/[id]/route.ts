@@ -10,6 +10,7 @@ import { readBuffer } from "@/lib/storage/helpers"
 import { logEvidenceAccess } from "@/lib/combustibles/evidence-management"
 import { isAllowedTaeEvidenceHost } from "@/lib/combustibles/tae-evidence-hosts"
 import { isRouteOperational } from "@/lib/services/module-toggles"
+import { FUEL_PATHS } from "@/lib/combustibles/routes"
 
 export const runtime = "nodejs"
 
@@ -20,7 +21,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   // quien además tiene `view_personal`. Se corta antes de tocar la base: ni siquiera
   // confirma que la evidencia exista.
   if (!can(session, "combustibles:view_personal")) return new NextResponse("Forbidden", { status: 403 })
-  if (!await isRouteOperational("/combustibles/tae")) {
+  if (!await isRouteOperational(FUEL_PATHS.cargas)) {
     return new NextResponse("Service unavailable", { status: 503 })
   }
   const { id } = await params

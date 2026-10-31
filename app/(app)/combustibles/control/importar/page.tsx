@@ -1,70 +1,9 @@
-import type { Metadata } from "next"
-import { redirect } from "next/navigation"
-import { UploadSimple } from "@phosphor-icons/react/dist/ssr"
-import { asc, eq } from "drizzle-orm"
-import { db } from "@/db"
-import { fuelSupplyMedia } from "@/db/schema"
-import { settle } from "@/lib/async-settle"
-import { can, requirePermission } from "@/lib/auth/can"
-import { listControlImportBatches, type ControlImportBatchRow } from "@/lib/combustibles/control/imports/service"
-import { DegradedDataBanner } from "@/components/ui/degraded-data-banner"
-import { EmptyState } from "@/components/ui/empty-state"
-import { PageContainer } from "@/components/ui/page-container"
-import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
-import { ConfigSection } from "../configuracion/config-section"
-import { ImportHistory } from "./import-history"
-import { ImportLauncher } from "./import-launcher"
-import type { MediumOption } from "./import-types"
+import { permanentRedirect } from "next/navigation"
+import { legacyFuelRedirect } from "@/lib/combustibles/legacy-redirects"
 
-export const metadata: Metadata = { title: "Importar telemetría y suministro" }
+type SearchParams = Record<string, string | string[] | undefined>
 
-export default async function ControlImportPage() {
-  let session
-  try { session = await requirePermission("combustibles:import") } catch { redirect("/forbidden") }
-
-  const failed = Symbol("failed")
-  const [batchesResult, mediaResult] = await Promise.all([
-    settle<ControlImportBatchRow[] | typeof failed>(listControlImportBatches(session), failed, "control-import-batches"),
-    settle<MediumOption[] | typeof failed>(
-      db.select({ id: fuelSupplyMedia.id, name: fuelSupplyMedia.name }).from(fuelSupplyMedia)
-        .where(eq(fuelSupplyMedia.isActive, true)).orderBy(asc(fuelSupplyMedia.sortOrder), asc(fuelSupplyMedia.name)),
-      failed,
-      "control-import-media",
-    ),
-  ])
-  const batches = batchesResult === failed ? [] : batchesResult
-  const media = mediaResult === failed ? [] : mediaResult
-  const degraded = [batchesResult === failed ? "historial de importaciones" : null, mediaResult === failed ? "medios de suministro" : null].filter((label): label is string => label !== null)
-  const canRevert = can(session, "combustibles:revert")
-
-  return (
-    <PageContainer>
-      <PageHeader
-        title="Importar telemetría y suministro"
-        description="Telemetría diaria y entradas de surtidor o tarjeta, con revisión antes de guardar"
-        breadcrumb={<Breadcrumbs items={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Cargas", href: "/combustibles/bitacora" }, { label: "Importar telemetría y suministro" }]} />}
-        actions={<ImportLauncher media={media} />}
-      />
-      <DegradedDataBanner degraded={degraded} total={2} />
-
-      <ConfigSection
-        id="historial"
-        title="Historial de importaciones"
-        description="Quién importó qué y cuántas filas entraron, se actualizaron o se rechazaron. Reimportar el mismo archivo se bloquea; reimportar datos que se superponen actualiza sin duplicar."
-      >
-        {batchesResult !== failed && batches.length === 0 ? (
-          <EmptyState
-            compact
-            align="start"
-            icon={<UploadSimple size={20} />}
-            title="Aún no hay importaciones"
-            description="Importa la telemetría diaria del equipo (VisionLink u otra fuente) para ver el ralentí, o las entradas de un surtidor o tarjeta sin integración para conciliar por mandante. Cada archivo se revisa antes de guardarse."
-            action={<ImportLauncher media={media} label="Importar un archivo" />}
-          />
-        ) : (
-          <ImportHistory batches={batches} canRevert={canRevert} />
-        )}
-      </ConfigSection>
-    </PageContainer>
-  )
+/** Ruta anterior al rediseño de Combustible (2026-10-31): página puente permanente. */
+export default async function LegacyFuelBridge({ searchParams }: { searchParams: Promise<SearchParams> }) {
+  permanentRedirect(legacyFuelRedirect("control-importar", {}, await searchParams))
 }

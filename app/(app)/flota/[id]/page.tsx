@@ -12,6 +12,7 @@ import { formatFuelVehicleStatus } from "@/lib/combustibles/validation"
 import { MAINTENANCE_STATUS_LABELS, MAINTENANCE_STATUS_VARIANTS, type MaintenanceStatus } from "@/lib/validation/maintenance"
 import { formatDate, formatDateTime, formatQty } from "@/lib/utils"
 import { FleetDocumentsPanel } from "./fleet-documents-panel"
+import { fuelEquipmentHref } from "@/lib/combustibles/routes"
 
 export const metadata: Metadata = { title: "Detalle de vehículo" }
 
@@ -45,7 +46,7 @@ export default async function FlotaVehiclePage({
         actions={
           <div className="flex justify-end gap-2">
             {can(session, "combustibles:view") && <Button asChild size="sm" variant="secondary">
-              <Link href={`/combustibles?patente=${encodeURIComponent(vehicle.plate)}`}>Combustible</Link>
+              <Link href={fuelEquipmentHref(vehicle.id)}>Combustible</Link>
             </Button>}
             {can(session, "mantenciones:view") && <Button asChild size="sm" variant="secondary">
               <Link href={`/mantenciones?vehicle=${vehicle.id}`}>Mantenciones</Link>

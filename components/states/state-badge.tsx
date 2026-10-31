@@ -198,8 +198,9 @@ const PPA_STATE_META: Record<string, StateMeta> = {
 
 /* ── Combustibles states ─────────────────────────────────────────────────── */
 const FUEL_STATE_META: Record<string, StateMeta> = {
-  submitted:   { label: "Recibida",    variant: "info",    family: "info"    },
-  observed:    { label: "Observada",   variant: "warning", family: "warning" },
+  // Rediseño 2026-10-31: «Recibida» pasó a «Por validar» (el estado dice lo que falta).
+  submitted:   { label: "Por validar",     variant: "info",    family: "info"    },
+  observed:    { label: "Con observación", variant: "warning", family: "warning" },
   validated:   { label: "Validada",    variant: "success", family: "success" },
   voided:      { label: "Anulada",     variant: "danger",  family: "danger"  },
   draft:       { label: "Borrador",    variant: "default", family: "neutral" },

@@ -22,6 +22,7 @@ import { ModuleSpendChart, MonthlySpendChart, RankingBarChart } from "./analytic
 import { KpiCard } from "./analytics-kpi-card"
 import { RankingTable, SeverityBadge, EmptyText } from "./analytics-ranking-table"
 import { getFilterOptions, getParam } from "./analytics-page.helpers"
+import { FUEL_PATHS } from "@/lib/combustibles/routes"
 
 export const metadata: Metadata = { title: "Analítica" }
 
@@ -125,7 +126,7 @@ export default async function AnaliticaPage({
             label="Combustible"
             value={formatCLP(data.vehicleCosts.reduce((sum, row) => sum + row.totalFuelAmount, 0))}
             detail={`${formatQty(data.kpis.fuelLiters, "L")} · ${data.kpis.fuelLoadCount} cargas`}
-            href="/combustibles"
+            href={FUEL_PATHS.consumoLitros}
             glossary="Gasto total en combustible durante el período. Incluye todas las cargas registradas de todos los vehículos visibles para tu alcance."
           />}
           {canViewFuel && !canViewFuelCosts && <KpiCard
@@ -133,7 +134,7 @@ export default async function AnaliticaPage({
             label="Combustible"
             value={formatQty(data.kpis.fuelLiters, "L")}
             detail={`${data.kpis.fuelLoadCount} cargas · monto restringido`}
-            href="/combustibles"
+            href={FUEL_PATHS.consumoLitros}
             glossary="Volumen de combustible registrado durante el período. Los montos requieren el permiso de costos."
           />}
           <KpiCard
@@ -240,7 +241,7 @@ export default async function AnaliticaPage({
           headers={["Proveedor", "Módulo", "Eventos", "Monto"]}
           rows={data.topSuppliers.map((row) => {
             const href = row.module === "Combustible"
-              ? canViewFuel ? `/combustibles?proveedor=${row.id}` : null
+              ? canViewFuel ? `${FUEL_PATHS.consumoLitros}?seccion=tarjetas&proveedor=${row.id}` : null
               : canViewPurchasing ? `/compras?proveedor=${row.id}` : null
             return [
             href ? <Link key={row.id} href={href} className="font-medium text-[var(--color-primary)] hover:underline">{row.name}</Link> : row.name,

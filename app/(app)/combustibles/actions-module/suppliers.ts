@@ -14,6 +14,7 @@ import {
 } from "@/lib/combustibles/validation"
 import type { ActionState } from "@/lib/validation/masters"
 import { dbErrMsg } from "./loads"
+import { FUEL_PATHS } from "@/lib/combustibles/routes"
 
 const REVALIDATE = "/admin/flota-catalogos/proveedores-combustible"
 
@@ -108,7 +109,7 @@ function parseUpdateInput(formData: FormData, id: string) {
 
 export async function createFuelSupplierAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   let session
-  try { session = await requirePermission("combustibles:manage_suppliers", "/combustibles") }
+  try { session = await requirePermission("combustibles:manage_suppliers", FUEL_PATHS.panel) }
   catch { return { ok: false, message: "Sin permisos" } }
 
   const parsed = parseCreateInput(formData)
@@ -150,7 +151,7 @@ export async function createFuelSupplierAction(_prev: ActionState, formData: For
 
 export async function updateFuelSupplierAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   let session
-  try { session = await requirePermission("combustibles:manage_suppliers", "/combustibles") }
+  try { session = await requirePermission("combustibles:manage_suppliers", FUEL_PATHS.panel) }
   catch { return { ok: false, message: "Sin permisos" } }
 
   const id = String(formData.get("id") ?? "")
@@ -206,7 +207,7 @@ export async function updateFuelSupplierAction(_prev: ActionState, formData: For
 
 export async function toggleFuelSupplierActive(_prev: ActionState, formData: FormData): Promise<ActionState> {
   let session
-  try { session = await requirePermission("combustibles:manage_suppliers", "/combustibles") }
+  try { session = await requirePermission("combustibles:manage_suppliers", FUEL_PATHS.panel) }
   catch { return { ok: false, message: "Sin permisos" } }
 
   const id = String(formData.get("id") ?? "")

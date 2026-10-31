@@ -1,6 +1,5 @@
 "use server"
 
-import { revalidatePath } from "next/cache"
 import { eq } from "drizzle-orm"
 import { db } from "@/db"
 import { fuelAnomalyRules } from "@/db/schema/fuel-anomalies"
@@ -11,8 +10,9 @@ import { requirePermission } from "@/lib/auth/can"
 import { anomalyRuleSchema } from "@/lib/combustibles/validation"
 import { nanoid } from "@/lib/id"
 import type { ActionState } from "@/lib/validation/masters"
+import { FUEL_PATHS } from "@/lib/combustibles/routes"
+import { revalidateFuel } from "@/lib/combustibles/revalidate"
 
-const PATH = "/combustibles/anomalias/reglas"
 
 function input(formData: FormData) {
   // Leer config base desde el textarea JSON
@@ -49,7 +49,7 @@ function input(formData: FormData) {
 
 export async function createAnomalyRuleAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   let session
-  try { session = await requirePermission("combustibles:manage_anomaly_rules", "/combustibles") }
+  try { session = await requirePermission("combustibles:manage_anomaly_rules", FUEL_PATHS.ajustesReglas) }
   catch { return { ok: false, message: "Sin permisos" } }
 
   const parsed = anomalyRuleSchema.safeParse(input(formData))
@@ -69,7 +69,7 @@ export async function createAnomalyRuleAction(_prev: ActionState, formData: Form
       await tx.insert(fuelAnomalyRules).values(values)
       await recordAudit({ userId: session.user.id, userEmail: session.user.email ?? undefined, action: "create", entityType: "fuel_anomaly_rule", entityId: id, entityCode: values.code, newState: values }, tx)
     })
-    revalidatePath(PATH)
+    revalidateFuel()
     return { ok: true, message: "Regla creada", data: { id } }
   } catch (error) {
     logger.error("[createAnomalyRuleAction]", error)
@@ -79,7 +79,7 @@ export async function createAnomalyRuleAction(_prev: ActionState, formData: Form
 
 export async function updateAnomalyRuleAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   let session
-  try { session = await requirePermission("combustibles:manage_anomaly_rules", "/combustibles") }
+  try { session = await requirePermission("combustibles:manage_anomaly_rules", FUEL_PATHS.ajustesReglas) }
   catch { return { ok: false, message: "Sin permisos" } }
 
   const id = String(formData.get("id") ?? "")
@@ -108,7 +108,7 @@ export async function updateAnomalyRuleAction(_prev: ActionState, formData: Form
         newState: nextState,
       }, tx)
     })
-    revalidatePath(PATH)
+    revalidateFuel()
     return { ok: true, message: "Regla actualizada" }
   } catch (error) {
     logger.error("[updateAnomalyRuleAction]", error)
@@ -118,7 +118,7 @@ export async function updateAnomalyRuleAction(_prev: ActionState, formData: Form
 
 export async function setAnomalyRuleStatusAction(id: string, isActive: boolean): Promise<ActionState> {
   let session
-  try { session = await requirePermission("combustibles:manage_anomaly_rules", "/combustibles") }
+  try { session = await requirePermission("combustibles:manage_anomaly_rules", FUEL_PATHS.ajustesReglas) }
   catch { return { ok: false, message: "Sin permisos" } }
   const existing = await db.query.fuelAnomalyRules.findFirst({ where: eq(fuelAnomalyRules.id, id) })
   if (!existing) return { ok: false, message: "Regla no encontrada" }
@@ -128,7 +128,7 @@ export async function setAnomalyRuleStatusAction(id: string, isActive: boolean):
       await tx.update(fuelAnomalyRules).set(nextState).where(eq(fuelAnomalyRules.id, id))
       await recordAudit({ userId: session.user.id, userEmail: session.user.email ?? undefined, action: "update", entityType: "fuel_anomaly_rule", entityId: id, entityCode: existing.code, oldState: { isActive: existing.isActive }, newState: { isActive } }, tx)
     })
-    revalidatePath(PATH)
+    revalidateFuel()
     return { ok: true, message: isActive ? "Regla activada" : "Regla desactivada" }
   } catch (error) {
     logger.error("[setAnomalyRuleStatusAction]", error)

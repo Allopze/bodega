@@ -110,8 +110,14 @@ export const fuelTaeSubmissions = pgTable("fuel_tae_submissions", {
   rawRow:                jsonb("raw_row"),
   /** Medio con que se surtió esta carga (control por mandante, C-02/C-03). */
   supplyMediumId:        text("supply_medium_id").references(() => fuelSupplyMedia.id, { onDelete: "set null" }),
-  /** Quién puso la hora: el servidor al recibir, el dispositivo (envío encolado sin conexión) o la planilla. */
+  /**
+   * Quién puso la hora: el servidor al recibir, el dispositivo (envío encolado
+   * sin conexión), la planilla, o una persona desde la oficina que registra una
+   * carga pasada (`backdated`, con `backdateReason`; rediseño 2026-10-31).
+   */
   loadedAtSource:        text("loaded_at_source").notNull().default("device"),
+  /** Motivo de una carga registrada con fecha pasada; obligatorio sólo cuando `loadedAtSource='backdated'`. */
+  backdateReason:        text("backdate_reason"),
   /** Usuario autenticado que registró la carga desde la app (nulo en la PWA pública). */
   registeredBy:          text("registered_by").references(() => users.id),
   /** Cadena de sellos evaluada al registrar: el sello retirado debe ser el instalado en la carga anterior. */
@@ -121,7 +127,8 @@ export const fuelTaeSubmissions = pgTable("fuel_tae_submissions", {
   updatedAt:             timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   check("fuel_tae_submissions_source_valid", sql`${table.source} IN ('public_pwa', 'internal_app', 'legacy_xlsx')`),
-  check("fuel_tae_submissions_loaded_at_source_valid", sql`${table.loadedAtSource} IN ('server', 'device', 'device_offline', 'import')`),
+  check("fuel_tae_submissions_loaded_at_source_valid", sql`${table.loadedAtSource} IN ('server', 'device', 'device_offline', 'import', 'backdated')`),
+  check("fuel_tae_submissions_backdate_reason_valid", sql`(${table.loadedAtSource} = 'backdated') = (${table.backdateReason} IS NOT NULL)`),
   check("fuel_tae_submissions_seal_chain_valid", sql`${table.sealChainStatus} IN ('not_evaluated', 'ok', 'mismatch', 'no_previous', 'no_seal')`),
   check("fuel_tae_submissions_meter_type_valid", sql`${table.meterType} IN ('odometer', 'hour_meter')`),
   check("fuel_tae_submissions_meter_reading_source_valid", sql`${table.meterReadingSource} IN ('ocr', 'manual', 'import')`),
