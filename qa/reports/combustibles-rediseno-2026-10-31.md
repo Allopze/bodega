@@ -1,6 +1,6 @@
 # Rediseño de Combustible «El mes como hilo» — verificación de la rama (2026-10-31)
 
-Rama `feat/combustibles-rediseno` (worktree `bodega-wt/combustibles-rediseno`), sobre `main` 946a80249. **Sin merge a `main`, sin push y sin deploy.**
+Rama `feat/combustibles-rediseno` (worktree `bodega-wt/combustibles-rediseno`), sobre `main` 946a80249. Escrito al verificar la rama; después se mergeó a `main` y se subió a `origin` (primera y segunda pasada, `9dc14d724`) y la tercera pasada, de abajo, se integró desde `feat/combustibles-pendientes`. **Sin deploy.**
 
 Entorno del recorrido:
 
@@ -193,9 +193,94 @@ La tabla está en `combustibles-rediseno-2026-10-31-funciones.md`: 92 OK, 8 parc
 
 ### Siguen abiertos
 
+*Estado al cierre de la segunda pasada: la tercera cerró casi todo; ver «Qué pasó con lo que dejaba abierto la segunda pasada».*
+
 - «De dónde salió: TAE»: es un dato del catálogo, se renombra en Ajustes › Medios.
 - La hoja de un caso descartado muestra el estado dos veces: un badge «Descartado» y otro «DESCARTADO».
 - La lista de parciales de arriba.
 - Producción: hay que leer los interruptores `submodule.enabled:combustibles:%`, en modo sólo lectura y con autorización, y correr `sync-rbac` para `combustibles:register_past_load` antes del deploy.
 - Sin recorrer todavía: Safari (falta WebKit en este equipo), los roles distintos de administrador en las pantallas de esta pasada, y datos de producción.
 
+## Tercera pasada: mejoras y detalles menores (2026-10-31, noche)
+
+Plan aprobado por el usuario para cerrar las cuatro mejoras (M1–M4) y los cuatro detalles (D1–D4) que quedaban abiertos. Sin migraciones, sin permisos nuevos y sin rutas nuevas. Decisiones del usuario:
+
+- las cargas por validar se ven sólo en la lista de Cargas: «Por revisar» y el Panel de jefatura no las incluyen;
+- «TCT» y «TAE» del catálogo de medios **no se renombran** (D2): el dato queda como está y el glosario ya traduce TAE como «Tarjeta Copec de abastecimiento»;
+- el interruptor de la sincronización diaria de Aramco se queda en Ajustes › Integraciones, y Fuentes muestra su estado con un enlace;
+- entrega: rama, verificación, merge a `main` y push. El deploy va aparte.
+
+### Qué cambió
+
+| Id | Cambio | Dónde |
+|---|---|---|
+| M1 | Tira de cuatro cifras sobre la lista de Cargas: «Por validar», «Con observación», «Sello incompleto» y «Menos de 4 fotos». Cada una aplica su filtro; en cero dice «Ninguna» y no enlaza | `lib/combustibles/cargas-attention.ts`, `getFieldLoadAttention` en `lib/combustibles/fuel-log.ts`, `components/ui/filter-summary-bar.tsx` |
+| D3 | El buscador de Cargas dice lo que busca: «Buscar equipo, patente o proveedor…», y con `view_personal` suma «o persona» | `cargas/cargas-filters.tsx` |
+| M2 | Selector «Filtrar por estado del caso» (Abierto, Tomada, Reabierto) en «Por revisar». La insignia «Caso abierto» de Cargas lleva a los casos de esa carga, con el chip «Carga: …». La ficha de la carga lista sus casos abiertos (terreno, planilla y factura) | `inbox-filter-bar.tsx`, `lib/combustibles/cargas-hrefs.ts`, `loadOpenCases` en `fuel-log-detail.ts`, `OpenCasesNotice` |
+| D1 | La hoja de un caso cerrado muestra su estado una sola vez | `inbox-row-badges.tsx` |
+| M3 | El tile «Combustible por revisar» del Panel operacional suma los cuatro tipos con la misma consulta que el menú y su detalle los nombra. «Al día» pasa a «Nada espera a una persona» | `getFuelInboxPendingByKind` en `lib/combustibles/inbox/queries.ts`, `attention-tiles.ts` |
+| M4 | «Litros por mes» en la ficha del equipo: 12 meses que terminan en el mes del período elegido, ceros en los meses sin cargas y el período elegido en tono pleno | `lib/combustibles/equipment/liters-by-month.ts`, `equipment-liters-chart.tsx` |
+| D4 | La fila de Aramco en Fuentes muestra «Sincronización automática: Activada, Apagada o Sin credenciales» y, a quien puede cambiarla, «Cambiar en Ajustes» | `lib/combustibles/sources-status.ts`, `fuentes/source-row.tsx` |
+| D2 | Sin cambio: decisión del usuario | |
+
+### Puertas, sobre el último commit de código (`eb602748a`)
+
+| Puerta | Resultado |
+|---|---|
+| `typecheck`, `lint` | OK |
+| `test:fast` | 1.116 archivos, 16.771 pruebas OK |
+| `test:pglite` | 300/300 suites, 3.766 pruebas OK (1 omitida) |
+| `db:verify-migrations`, `check:secrets` | OK. 366 entradas hasta la 0365: esta pasada no agrega migraciones |
+| `db:generate` | «No schema changes, nothing to migrate»; no creó archivos |
+| `check:security-audit` | OK, sin hallazgos altos ni críticos y con el allowlist vacío |
+| `doctor` (React Doctor) | 66/100. Tres errores, los de siempre, en `components/mantencion/app/*`, que esta rama no toca. Una advertencia de rendimiento más: `prefer-dynamic-import` sobre el gráfico de litros, un falso positivo, porque se carga con `dynamic` desde `equipment-liters-chart-lazy.ts`, igual que el gráfico de rendimiento |
+| `build` + `check:bundle-budget` | OK: 292 rutas, peor caso `/combustibles/fuentes/agregar/planilla` con 2,59 MB (tope 3,00 MB) |
+| E2E de 13 especificaciones (`chromium`) | 137 OK y 1 omitida, en 10 min. Incluye las pruebas nuevas de la tira, los casos de una carga, el tile y los litros por mes, y la guarda de reflow de Fuentes con rango |
+| axe de `/combustibles/**` (`accessibility.spec.ts -g combustibles`) | 56/56 OK |
+| `tae-public-flow` en `mobile-chrome` | OK (el proyecto sólo existe con `E2E_MOBILE_BROWSERS=1`) |
+| `tae-public-flow` en `mobile-safari` | **No ejecutable en este equipo**: WebKit necesita bibliotecas del sistema (`libgtk-4`, `libevent`, `libavif`, `libmanette`, `libenchant`, `libsecret`) |
+
+Los commits posteriores a `eb602748a` sólo tocan estos informes.
+
+### Defectos corregidos durante la verificación (fuera del plan)
+
+1. **Carga ya enviada que volvía como «carga a medias».** La E2E `tae-public-flow` (`:71`) falló en el segundo llenado: la página mostraba «Recuperamos la carga que dejaste a medias». `useFieldDraft` guarda el borrador con un retardo de 400 ms y `discard()` no cancelaba ese guardado pendiente, así que un borrador recién descartado resucitaba. Es un defecto de producto, no de la prueba: ocurre si se empieza otra carga antes de 400 ms. Corregido en `d4e6b9f78`, con una prueba que falla sobre el código anterior.
+2. **Fuentes ensanchaba la página a 390 px** cuando el período es un rango (`?desde=…&hasta=…`): la insignia de estado decía «5 cargas en el período del 1 de agosto al 31 de agosto» sin partirse, y estiraba la columna de todas las filas. La insignia se parte en pantallas chicas, la grilla pasa a `grid-cols-1` y la pantalla con rango entra a `reflow-anchos.spec.ts` (320, 390, 768 y 1024 px).
+3. **El estado de Aramco (D4) quedó invisible.** La primera versión lo puso en una frase dentro del detalle plegado de la fila; en el recorrido nadie lo veía. Pasó a ser un dato visible de la fuente, con su enlace al lado.
+4. **El subtítulo de «Litros por mes» decía «Los últimos 12 meses»** aunque el período elegido fuera uno pasado. Ahora dice «Los 12 meses hasta agosto de 2026» salvo en el período en curso.
+
+### Recorrido en el navegador (build de producción en :3105, base E2E)
+
+Administrador a 1440 y 390 px; el rol sin costos y el de terreno, sólo a 1440 px, en las pantallas que les corresponden.
+
+- **Tira de Cargas:** muestra sus cuatro cifras; al hacer clic en «Por validar» quedan las 3 filas esperadas y la URL conserva `q`, `faena`, `desde` y `hasta`; con otro mes las cuatro dicen «Ninguna»; con el origen «Factura» (`como=factura`), que excluye las cargas en terreno, la tira no aparece; el buscador cambia de rótulo según el permiso.
+- **Casos de una carga:** la ficha de la carga lista sus 3 casos abiertos y cada uno abre su hoja; el selector de estado cambia la lista; la hoja de un caso descartado dice «Descartado» una vez.
+- **Panel operacional:** el tile dice «5 · 5 casos», igual que el «Todo · N» de la bandeja. Con el rol sin costos el Panel responde `/forbidden`, como corresponde a su permiso.
+- **Ficha del equipo:** el gráfico dice, en su nombre accesible, el rango y el mes con más litros; el tooltip distingue el período elegido.
+- **Fuentes:** «Apagada · Cambiar en Ajustes» con un solo enlace a 1440 y 390 px, sin desborde con rango.
+- **En todas:** sin errores de consola y sin respuestas 5xx.
+
+### Cómo leer las cifras nuevas (límites conocidos)
+
+- «Sello incompleto» y «Menos de 4 fotos» cuentan también las cargas anuladas, igual que sus filtros: la cifra es el número de filas que deja el filtro.
+- El tile del Panel no depende del período: sólo coincide con el «Todo · N» de la bandeja en el período por defecto y sin `?faena`. El contador del menú se cachea 30 s.
+- El detalle del tile usa `line-clamp-2`: con los cuatro tipos y nombres largos puede quedar recortado.
+- El gráfico de litros por mes no expone el valor de cada barra con el teclado (`accessibilityLayer={false}` evita una violación de axe `nested-interactive`): su nombre accesible resume el rango y el mes máximo.
+- `Cell` está en desuso en Recharts 3.9. El gráfico nuevo lo usa igual que otros 20 sitios del repo, y conviene reemplazarlos todos juntos.
+
+### Qué pasó con lo que dejaba abierto la segunda pasada
+
+| Pendiente | Estado |
+|---|---|
+| 8 filas parciales y 1 dudosa de las 101 funciones | Cerradas: ver el anexo (101 OK, tres por decisión del usuario) |
+| La hoja de un caso descartado muestra el estado dos veces | Corregido (D1) |
+| «De dónde salió: TAE» | Decisión del usuario: no se renombra (D2) |
+| Interruptores de producción y `sync-rbac` | Siguen pendientes: ver abajo |
+| Roles distintos de administrador | Recorridos sin costos y terreno en las pantallas de esta pasada; los demás roles no |
+
+### Siguen abiertos
+
+- **Deploy (pendiente desde la primera pasada, requiere autorización explícita):** leer en producción, en modo sólo lectura, las filas `submodule.enabled:combustibles:%`; correr `sync-rbac` para `combustibles:register_past_load`; y la migración 0365 va por el servicio `migrate`. Esta pasada no agrega migraciones.
+- **Sin recorrer:** Safari (WebKit no corre en este equipo: faltan `libgtk-4`, `libevent`, `libavif`, `libmanette`, `libenchant` y `libsecret`), los roles que no son administrador, sin costos ni terreno, y datos de producción.
+- **Seguimientos opcionales:** reemplazar las dos copias locales del enlace de `SummaryBar` en MIPER (`miper-home.tsx` y `[id]/resumen-panel.tsx`) por `FilterSummaryBar`, y reemplazar `Cell` en los gráficos.
+- **Entorno:** el `node_modules` del checkout principal sigue con zod y undici viejos: conviene un `npm install` ahí antes de reiniciar el dev de :3001.
