@@ -63,10 +63,20 @@ export function useFieldDraft({
     return () => { active = false }
   }, [scopeKey])
 
+  // El guardado diferido que está esperando su turno, para que `discard` pueda cancelarlo.
+  const pendingSaveRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+
   React.useEffect(() => {
     if (!scopeKey || !ready || !enabled) return
-    const timer = setTimeout(() => { void saveTaeDraft(scopeKey, { draft, step }) }, 400)
-    return () => clearTimeout(timer)
+    const timer = setTimeout(() => {
+      pendingSaveRef.current = null
+      void saveTaeDraft(scopeKey, { draft, step })
+    }, 400)
+    pendingSaveRef.current = timer
+    return () => {
+      clearTimeout(timer)
+      if (pendingSaveRef.current === timer) pendingSaveRef.current = null
+    }
   }, [scopeKey, ready, enabled, draft, step])
 
   React.useEffect(() => {
@@ -80,6 +90,12 @@ export function useFieldDraft({
 
   const discard = React.useCallback(() => {
     setRestored(false)
+    // Con un envío rápido el guardado diferido de la carga que se acaba de mandar todavía no corrió: si se deja,
+    // llega después del borrado y la devuelve como «carga a medias» al abrir el formulario otra vez (y se puede enviar dos veces).
+    if (pendingSaveRef.current) {
+      clearTimeout(pendingSaveRef.current)
+      pendingSaveRef.current = null
+    }
     if (scopeKey) void clearTaeDraft(scopeKey)
   }, [scopeKey])
 
