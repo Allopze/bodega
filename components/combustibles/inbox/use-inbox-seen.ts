@@ -44,11 +44,15 @@ export function useInboxSeen(userId: string) {
   const markSeen = React.useCallback((key: string) => {
     setState((current) => {
       if (!current || current.keys.includes(key)) return current
-      const next = { since: current.since, keys: [...current.keys, key].slice(-MAX_KEYS) }
-      try { window.localStorage.setItem(storageKey(userId), JSON.stringify(next)) } catch { /* sin almacenamiento: el punto vuelve */ }
-      return next
+      return { since: current.since, keys: [...current.keys, key].slice(-MAX_KEYS) }
     })
-  }, [userId])
+  }, [])
+
+  // Se persiste fuera del actualizador, que React puede llamar más de una vez.
+  React.useEffect(() => {
+    if (!state) return
+    try { window.localStorage.setItem(storageKey(userId), JSON.stringify(state)) } catch { /* sin almacenamiento: el punto vuelve */ }
+  }, [state, userId])
 
   /** Antes de leer el almacenamiento no se marca nada, para que el punto no parpadee al hidratar. */
   const isNew = React.useCallback(
