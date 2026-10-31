@@ -22,9 +22,9 @@ Corrida final, sobre el último commit de la rama, después de todas las correcc
 | Migración 0365 sobre una copia de `bodega_dev` | OK (detalle abajo). La copia se borró |
 | `db:generate` | «No schema changes»; `db/schema` no cambió después de la Fase 0 |
 | `npm run build` | OK |
-| `npm run check:bundle-budget` | **No ejecutable** (ver «Huecos de cobertura») |
+| `npm run check:bundle-budget` | OK desde la segunda pasada: 292 rutas, peor caso `/combustibles/fuentes/agregar/planilla` = 2,60 MB (tope 3 MB) |
 | `npm run check:secrets` | OK |
-| `npm run check:security-audit` | **Falla, también en `main`**: `undici` y `zod` traen avisos nuevos, y la excepción documentada de `braces` dejó de valer. Esta rama no toca dependencias |
+| `npm run check:security-audit` | OK desde la segunda pasada: undici 7.30.1 y zod 4.6.7; el allowlist queda vacío (la excepción de `braces` ya no correspondía a ningún hallazgo) |
 | `npm run doctor` | 3 errores, los mismos de `main` (`components/mantencion/app/{install-prompt,pin-pad}.tsx`). Puntaje 66 (`main` 67), por 49 avisos más de código nuevo |
 | E2E (12 especificaciones de combustible y vecinas, `chromium`) | 115 OK, 1 omitida (`tae-public-flow` sin conexión, que se omite cuando el navegador no puede releer un `Blob`). Las 12: `combustibles-rediseno`, `combustibles`, `combustibles-control`, `control-operacional-navegacion`, `tae-history-import`, `tae-reconciliation`, `tae-public-flow`, `densidad-kpi`, `keyboard-navigation`, `ui-ux-audit-evidence`, `shell-scroll`, `ci-smoke` |
 
@@ -105,7 +105,7 @@ Se abrieron 35 pantallas por rol: las 8 secciones con todas sus vistas, las fich
 
 ## Huecos de cobertura
 
-- **`check:bundle-budget`:** no se pudo ejecutar. Next sólo escribe `.next/diagnostics/route-bundle-stats.json` con Turbopack, y `npm run build` usa `--webpack` desde f73cd83c3. Le pasa igual a `main` y al CI.
+- **`check:bundle-budget`:** resuelto en la segunda pasada (ahora mide los manifiestos de webpack).
 - **Lo que no se recorrió en el navegador**:
   - el contenido de Ajustes más allá de su carga (sólo E2E de Integraciones);
   - Cuadratura › Sellos y Estanques a fondo;
@@ -123,3 +123,79 @@ Se abrieron 35 pantallas por rol: las 8 secciones con todas sus vistas, las fich
 2. Decidir el criterio del paso «Fuentes de datos» del Panel.
 3. Agregar fixtures para las fichas dinámicas a `accessibility-targets.ts` y correr axe sobre el módulo.
 4. Traducir las etiquetas de navegación del calendario compartido.
+
+## Segunda pasada: cierre de pendientes (2026-10-31, tarde)
+
+Plan aprobado por el usuario para cerrar lo que este informe dejaba abierto. Decisiones del usuario:
+
+- el paso «Fuentes de datos» del Panel queda pendiente si una fuente activa no trajo datos de un período cerrado;
+- Sellos mantiene `tae_view`;
+- la duplicada y el medidor siguiente siguen sólo en la carga pasada.
+
+### Puertas, sobre el último commit
+
+| Puerta | Resultado |
+|---|---|
+| `typecheck`, `lint` | OK |
+| `test:fast` | 1.103 archivos, 16.653 pruebas OK |
+| `test:pglite` | 299/299 suites, 3.725 pruebas OK. `miper-bulk` se ajustó por un cambio de zod 4.6: un objeto estricto informa además su `refine` después de una clave desconocida |
+| `db:verify-migrations`, `check:secrets` | OK |
+| `check:security-audit` | OK, sin hallazgos altos y con el allowlist vacío |
+| `build` + `check:bundle-budget` | OK, 2,60 MB de peor caso |
+| E2E de las 12 especificaciones (`chromium`) | Primera corrida: 109 OK y una falla de la propia prueba (esperaba la URL, cuando el punto ya venía elegido). Se ajustó, y la segunda corrida de `combustibles-control` y `combustibles-rediseno` dio 17/17 OK |
+| Auditoría axe de `/combustibles/**` (`accessibility.spec.ts -g combustibles`) | 56/56 OK, después de corregir la tabla de Tarjetas |
+| axe de las fichas dinámicas (`combustibles-rediseno.spec.ts`) | OK, después de corregir el formulario de edición de factura |
+| `tae-public-flow` en `mobile-chrome` | OK |
+| `tae-public-flow` en `mobile-safari` | **No ejecutable en este equipo**: WebKit necesita bibliotecas del sistema (`libgtk-4`, `libevent`, `libavif`, `libmanette`, `libenchant`, `libsecret`) |
+
+Una corrida intermedia falló con `42703` (columna `fuel_review_marks.status` inexistente). Fue a mitad de corrida y la base E2E es compartida: otra sesión la reinició desde `main`, que no tiene la 0365. Al repetir la corrida sin nadie más en la base, no apareció ningún `42703`.
+
+### Defectos corregidos
+
+1. **Panel › Fuentes de datos (decisión del usuario).**
+   - En un período cerrado, una fuente activa sin datos queda pendiente y se nombra.
+   - En el período en curso sólo se avisa.
+   - Las fuentes que nunca trajeron nada se cuentan como «todavía no se usan».
+   - Los rótulos por período dicen «en …»: antes decían «Sin cargas octubre».
+2. **Calendario compartido:** las flechas se anunciaban en inglés. Ahora usa el locale de `react-day-picker`.
+3. **Exportaciones de todos los módulos:** la hoja «Metadatos» mostraba identificadores de faena a quien tiene alcance acotado. Ahora muestra los nombres, y si la consulta falla vuelve a los identificadores.
+4. **Registrar:** ofrecía faenas sin punto de carga activo, y por eso no preseleccionaba la única faena operable.
+5. **Reporte de tarjeta:** la subida manual se guarda siempre como Copec, y el texto ofrecía «Copec o Aramco». Ahora dice lo que acepta.
+6. **Cargas › «Pendiente»:** los casos de anomalía abiertos no se veían, aunque el conteo se consultaba. Ahora se ven y entran al filtro «sólo con algo pendiente».
+7. **Metadatos de Facturas, Sellos, Tarjeta y terreno y terreno:** escribían los filtros como JSON con ids. Ahora van en palabras y con nombres.
+8. **axe:**
+   - el formulario de edición de factura tenía selects sin nombre e inputs sin etiqueta;
+   - la tabla de Tarjetas tenía un scroll sin foco, y pasó a `TableRoot`.
+9. **Build:** `lib/combustibles/xlsx-utils.ts`, que también usa el cliente, reexportaba la hoja de metadatos, que ahora lee la base. Se quitó la reexportación, y la prueba de frontera prohíbe el módulo en el cliente.
+
+### Recorrido en el navegador (build de producción en :3105, base E2E, `admin@`, 1440 px)
+
+- **Pantallas:** Ajustes por dentro (mandantes, medios, familias, umbrales, reglas, puntos de carga y QR, integraciones), Sellos con su historial, Estanques, Tarjetas, y los asistentes de telemetría, surtidor y facturas. Todas devuelven 200 con su título, sin errores de consola, sin 5xx y sin desborde.
+- **Acciones destructivas,** con registros `QA_`. En las cuatro aparece la confirmación, el resultado queda en la base y se escribe la auditoría:
+
+| Acción | Confirmación | Resultado | Auditoría |
+|---|---|---|---|
+| Anular una carga de terreno | «Anular la carga», con motivo | `voided`; la ficha queda «Anulada» con la nota | `status_change` con el motivo |
+| Revertir un archivo | «¿Revertir este archivo?» | `revertido`; aviso «Archivo revertido…» | `delete` |
+| Revocar un enlace QR | «Revocar enlace» | `revoked_at` registrado; aviso «Enlace revocado» | `update` |
+| Descartar un caso | «¿Descartar este caso?», con motivo | `dismissed`; la hoja queda «Descartado» con «Reabrir el caso» | `status_change` con el motivo |
+
+### Las 101 funciones del prototipo
+
+La tabla está en `combustibles-rediseno-2026-10-31-funciones.md`: 92 OK, 8 parciales, 1 en duda y ninguna falta. Esta pasada corrigió dos parciales: la 35 (casos en «Pendiente») y la 27 (metadatos en palabras). Quedan documentadas:
+
+- **3 y 74:** las señales de calidad en terreno (por validar, observadas, sello incompleto, sin 4 fotos) existen como filtros de Cargas, pero no tienen un conteo agregado ni cifras de litros en la lista. «Por revisar» no incluye las cargas por validar.
+- **9:** la ficha de equipo muestra el rendimiento carga a carga, pero no la evolución de litros, que está en Consumo.
+- **29:** el buscador de Cargas dice «Buscar patente o equipo…». También busca proveedor y, con `view_personal`, personas.
+- **48:** el interruptor de la sincronización diaria de Aramco está en Ajustes › Integraciones. Fuentes sólo enlaza ahí.
+- **64:** en «Por revisar», los casos sólo se filtran por faena y gravedad. El estado y el registro de origen llegan sólo por URL.
+- **73 (duda):** el tile «Combustible por revisar» de Control operacional suma cargas marcadas y casos, sin patentes ni pedidos, y no depende del período. Puede no coincidir con el «Todo · N» de la bandeja.
+
+### Siguen abiertos
+
+- «De dónde salió: TAE»: es un dato del catálogo, se renombra en Ajustes › Medios.
+- La hoja de un caso descartado muestra el estado dos veces: un badge «Descartado» y otro «DESCARTADO».
+- La lista de parciales de arriba.
+- Producción: hay que leer los interruptores `submodule.enabled:combustibles:%`, en modo sólo lectura y con autorización, y correr `sync-rbac` para `combustibles:register_past_load` antes del deploy.
+- Sin recorrer todavía: Safari (falta WebKit en este equipo), los roles distintos de administrador en las pantallas de esta pasada, y datos de producción.
+
