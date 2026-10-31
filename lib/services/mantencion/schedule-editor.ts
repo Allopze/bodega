@@ -13,25 +13,31 @@ import { inheritedIntervalFor } from "@/lib/mantencion/schedule"
 import type { MantBrandRuleValue, MantUnit } from "@/lib/mantencion/types"
 import type { MantActor } from "./equipment-history"
 import { checkScheduleName, MAX_SCHEDULE_INTERVALS } from "./schedules"
-import { publishScheduleVersion } from "./schedule-versions"
+import { restoreDraft, scheduleDraftDiff } from "./schedule-draft"
+import { getScheduleSnapshot, publishScheduleVersion } from "./schedule-versions"
 
 /**
- * Ediciones finas de una pauta (§10, regla 15). Cada operación corre en UNA
- * transacción que bloquea la pauta (`FOR UPDATE`, así dos ediciones simultáneas
- * se serializan) y termina con `publishScheduleVersion` —sube la versión y
- * guarda el snapshot que descarga la app— y `recordAudit`. Quitar un ítem o un
- * intervalo lo inactiva (nunca se borra): por eso «Deshacer» lo restituye con su
- * columna intacta. El permiso `mant:schedules:manage` lo exige la acción.
+ * Ediciones finas de una pauta (§10, regla 15), con el modelo «borrador + publicar».
+ * Las tablas vivas son el BORRADOR: cada edición corre en UNA transacción que
+ * bloquea la pauta (`FOR UPDATE`, así dos ediciones simultáneas se serializan),
+ * cambia las tablas y deja auditoría, pero NO publica: el teléfono, el panel y los
+ * equipos siguen viendo el snapshot de la versión vigente. `publishSchedule` sube
+ * la versión y guarda el snapshot; `discardScheduleDraft` devuelve las tablas a lo
+ * publicado. Quitar un ítem o un intervalo lo inactiva (nunca se borra): por eso
+ * «Deshacer» lo restituye con su columna intacta. El permiso `mant:schedules:manage`
+ * lo exige la acción.
  */
 
 type ScheduleRow = typeof mantSchedules.$inferSelect
 
+/** `draft: true` marca una edición que quedó en el borrador (sin versión nueva). */
 export type ScheduleEditResult<T> =
-  | { ok: true; message?: string; version: number; data: T }
+  | { ok: true; message?: string; data: T; draft?: true }
   | { ok: false; message: string; field?: string }
 
+/** `summary: null` = no hubo cambio real: no se audita. */
 type Outcome<T> =
-  | { ok: true; summary: string; message?: string; data: T }
+  | { ok: true; summary: string | null; message?: string; data: T }
   | { ok: false; message: string; field?: string }
 
 async function editSchedule<T>(
@@ -46,13 +52,14 @@ async function editSchedule<T>(
       if (!schedule) return { ok: false as const, message: "Esa pauta ya no existe." }
       const outcome = await operation(tx, schedule)
       if (!outcome.ok) return outcome
-      const version = await publishScheduleVersion(tx, { scheduleId, userId: actor.userId, summary: outcome.summary })
-      await recordAudit({
-        userId: actor.userId, userEmail: actor.email ?? undefined, action: "update",
-        entityType: "mant_schedule", entityId: scheduleId, entityCode: schedule.name,
-        newState: { version, change: outcome.summary },
-      }, tx)
-      return { ok: true as const, message: outcome.message, version, data: outcome.data }
+      if (outcome.summary) {
+        await recordAudit({
+          userId: actor.userId, userEmail: actor.email ?? undefined, action: "update",
+          entityType: "mant_schedule", entityId: scheduleId, entityCode: schedule.name,
+          newState: { draft: true, change: outcome.summary },
+        }, tx)
+      }
+      return { ok: true as const, message: outcome.message, data: outcome.data, draft: true as const }
     })
   } catch (error) {
     if (isUniqueViolation(error)) return { ok: false, message: "Ese cambio choca con algo que ya existe en la pauta." }
@@ -60,13 +67,63 @@ async function editSchedule<T>(
   }
 }
 
+/**
+ * Publica el borrador como la versión N+1: sube `version` y guarda el snapshot que
+ * descarga la app. Sin cambios respecto a lo publicado no hace nada.
+ */
+export async function publishSchedule(actor: MantActor, scheduleId: string): Promise<ScheduleEditResult<{ version: number; changes: string[] }>> {
+  return db.transaction(async (tx) => {
+    const [schedule] = await tx.select().from(mantSchedules)
+      .where(and(eq(mantSchedules.id, scheduleId), isNull(mantSchedules.deletedAt))).for("update").limit(1)
+    if (!schedule) return { ok: false as const, message: "Esa pauta ya no existe." }
+    const diff = await scheduleDraftDiff(scheduleId, tx)
+    if (!diff.dirty) return { ok: false as const, message: "No hay cambios por publicar." }
+    const version = await publishScheduleVersion(tx, { scheduleId, userId: actor.userId, summary: diff.changes.join(" · ") })
+    await recordAudit({
+      userId: actor.userId, userEmail: actor.email ?? undefined, action: "update",
+      entityType: "mant_schedule", entityId: scheduleId, entityCode: schedule.name,
+      oldState: { version: schedule.version }, newState: { version, published: true, changes: diff.changes },
+    }, tx)
+    return { ok: true as const, message: `Versión ${version} publicada.`, data: { version, changes: diff.changes } }
+  })
+}
+
+/** Descarta el borrador: las tablas vivas vuelven a lo publicado en la versión vigente. */
+export async function discardScheduleDraft(actor: MantActor, scheduleId: string): Promise<ScheduleEditResult<null>> {
+  try {
+    return await db.transaction(async (tx) => {
+      const [schedule] = await tx.select().from(mantSchedules)
+        .where(and(eq(mantSchedules.id, scheduleId), isNull(mantSchedules.deletedAt))).for("update").limit(1)
+      if (!schedule) return { ok: false as const, message: "Esa pauta ya no existe." }
+      const diff = await scheduleDraftDiff(scheduleId, tx)
+      if (!diff.dirty) return { ok: false as const, message: "No hay cambios por descartar." }
+      const published = await getScheduleSnapshot(scheduleId, schedule.version, tx)
+      if (!published) return { ok: false as const, message: "La pauta no tiene una versión publicada a la que volver." }
+      await restoreDraft(tx, scheduleId, published)
+      const after = await scheduleDraftDiff(scheduleId, tx)
+      if (after.dirty) throw new Error(`Descartar el borrador de la pauta ${scheduleId} no dejó el estado publicado: ${after.changes.join("; ")}`)
+      await recordAudit({
+        userId: actor.userId, userEmail: actor.email ?? undefined, action: "update",
+        entityType: "mant_schedule", entityId: scheduleId, entityCode: schedule.name,
+        newState: { discardedDraft: true, version: schedule.version, changes: diff.changes },
+      }, tx)
+      return { ok: true as const, message: `Cambios descartados. La pauta volvió a la versión ${schedule.version}.`, data: null }
+    })
+  } catch (error) {
+    if (isUniqueViolation(error)) return { ok: false, message: "No se pudo volver al nombre publicado: otra pauta ya lo usa." }
+    throw error
+  }
+}
+
+export { scheduleDraftDiff }
+
 const unitOf = (schedule: ScheduleRow) => schedule.unit as MantUnit
 
 export async function renameSchedule(actor: MantActor, scheduleId: string, rawName: string) {
   return editSchedule(actor, scheduleId, async (tx, schedule) => {
     const named = await checkScheduleName(tx, rawName, scheduleId)
     if (!named.ok) return named
-    if (named.name === schedule.name) return { ok: true, summary: "Sin cambios de nombre", data: { name: named.name } }
+    if (named.name === schedule.name) return { ok: true, summary: null, data: { name: named.name } }
     await tx.update(mantSchedules).set({ name: named.name, nameKey: named.key, updatedAt: new Date().toISOString() }).where(eq(mantSchedules.id, scheduleId))
     return { ok: true, summary: `Nombre cambiado: «${schedule.name}» → «${named.name}»`, message: "Nombre guardado.", data: { name: named.name } }
   })

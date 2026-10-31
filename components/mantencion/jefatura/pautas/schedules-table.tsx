@@ -35,6 +35,7 @@ export function SchedulesTable({ rows }: { rows: ScheduleListRow[] }) {
           <TableRow key={row.id}>
             <TableCell>
               <Link href={`/mantencion/pautas/${row.id}`} className="font-semibold text-[var(--color-primary-ink)] underline-offset-2 hover:underline focus-visible:underline">{row.name}</Link>
+              {row.dirty && <Badge variant="warning" size="sm" className="ml-2 align-middle">Cambios sin publicar</Badge>}
             </TableCell>
             <TableCell>{unitName(row.unit)}</TableCell>
             <TableCell className="font-mono text-[13px]">{row.intervals.map(formatNumber).join(" · ")}</TableCell>
@@ -48,7 +49,10 @@ export function SchedulesTable({ rows }: { rows: ScheduleListRow[] }) {
         const row = raw as Row
         return (
           <Link key={row.id} href={`/mantencion/pautas/${row.id}`} className="block rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 hover:bg-[var(--color-surface-2)]">
-            <p className="font-semibold text-[var(--color-primary-ink)]">{row.name}</p>
+            <p className="font-semibold text-[var(--color-primary-ink)]">
+              {row.name}
+              {row.dirty && <Badge variant="warning" size="sm" className="ml-2 align-middle">Cambios sin publicar</Badge>}
+            </p>
             <p className="mt-1 text-xs text-[var(--color-text-muted)]">
               {unitName(row.unit)} · {row.intervals.map(formatNumber).join(" · ")} · {plural(row.itemCount, "actividad", "actividades")} · {plural(row.equipmentCount, "equipo", "equipos")}
             </p>

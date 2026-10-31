@@ -2,9 +2,10 @@ import { and, asc, desc, eq, inArray, isNull, lte, sql, type SQL } from "drizzle
 import { db } from "@/db"
 import {
   fuelEquipmentTypes, fuelVehicles, mantBrands, mantEquipmentProfiles, mantRecordCorrectives, mantRecords,
-  mantScheduleIntervals, mantSchedules, mantWorkshopUpdates, worksites,
+  mantSchedules, mantWorkshopUpdates, worksites,
 } from "@/db/schema"
 import { todayInChile } from "@/lib/utils"
+import { getCurrentScheduleSnapshots } from "./schedule-versions"
 import { equipmentStatus, workshopState, type WorkshopState } from "@/lib/mantencion/status"
 import type { MantEquipmentStatus, MantReading, MantUnit } from "@/lib/mantencion/types"
 
@@ -111,19 +112,16 @@ export async function loadFleet(options: LoadFleetOptions): Promise<FleetRow[]> 
   if (vehicleIds.length === 0) return []
   const scheduleIds = [...new Set(base.map((row) => row.scheduleId).filter((value): value is string => !!value))]
 
-  const [intervalRows, readingRows, preventiveRows, workshopRows] = await Promise.all([
-    scheduleIds.length
-      ? db.select({ scheduleId: mantScheduleIntervals.scheduleId, value: mantScheduleIntervals.value })
-        .from(mantScheduleIntervals)
-        .where(and(inArray(mantScheduleIntervals.scheduleId, scheduleIds), eq(mantScheduleIntervals.isActive, true)))
-        .orderBy(asc(mantScheduleIntervals.value))
-      : Promise.resolve([]),
+  // Nombre e intervalos salen del snapshot VIGENTE de cada pauta, no de las tablas vivas: lo que
+  // la jefatura edita en el borrador no cambia el estado de los equipos hasta que lo publica.
+  const [snapshots, readingRows, preventiveRows, workshopRows] = await Promise.all([
+    getCurrentScheduleSnapshots(scheduleIds),
     recentRecords(vehicleIds, perEquipment, false),
     recentRecords(vehicleIds, 5, true),
     openWorkshopRecords(vehicleIds),
   ])
 
-  const intervalsBySchedule = groupBy(intervalRows, (row) => row.scheduleId)
+  const snapshotBySchedule = new Map(snapshots.map((snapshot) => [snapshot.id, snapshot]))
   const readingsByVehicle = groupBy(readingRows, (row) => row.vehicleId)
   const preventivesByVehicle = groupBy(preventiveRows, (row) => row.vehicleId)
   const workshopByVehicle = new Map<string, FleetRow["workshop"]>()
@@ -144,7 +142,8 @@ export async function loadFleet(options: LoadFleetOptions): Promise<FleetRow[]> 
   for (const row of base) {
     const unit = unitFromMeter(row.meterType)
     if (!unit) continue
-    const intervals = row.scheduleId ? (intervalsBySchedule.get(row.scheduleId) ?? []).map((item) => item.value) : []
+    const published = row.scheduleId ? snapshotBySchedule.get(row.scheduleId) : undefined
+    const intervals = published?.intervals ?? []
     const readings: MantReading[] = (readingsByVehicle.get(row.vehicleId) ?? [])
       .map((item) => ({ value: item.reading, date: item.workDate, source: item.folio ?? "Registro sin folio" }))
     const initial = row.initialReading != null && row.initialReadingDate
@@ -168,7 +167,7 @@ export async function loadFleet(options: LoadFleetOptions): Promise<FleetRow[]> 
       worksiteId: row.worksiteId,
       worksiteName: row.worksiteName,
       scheduleId: row.scheduleId,
-      scheduleName: row.scheduleName,
+      scheduleName: published?.name ?? row.scheduleName,
       intervals,
       retired: !row.isActive,
       retiredReason: row.retiredReason,

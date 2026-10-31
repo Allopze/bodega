@@ -47,7 +47,7 @@ test("un mecánico no entra a las vistas de jefatura por URL", async ({ page }) 
   }
   // La app del mecánico no está en el menú de la plataforma: es una PWA aparte.
   await page.goto("/mantencion/registros")
-  await expect(page.getByRole("link", { name: "App del mecánico" })).toHaveCount(0)
+  await expect(page.getByRole("link", { name: "App del mecánico", exact: true })).toHaveCount(0)
   await page.goto("/m/mantencion")
   await expect(page).toHaveURL(/\/m\/mantencion/)
   await cerrarSesion(page)

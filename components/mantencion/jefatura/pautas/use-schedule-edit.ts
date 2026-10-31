@@ -5,7 +5,7 @@ import { toast } from "@/lib/toast"
 
 /** Lo que devuelven las acciones del editor: el resultado del servicio, ya en español. */
 export type EditOutcome<T = unknown> =
-  | { ok: true; message?: string; version?: number; data?: T }
+  | { ok: true; message?: string; version?: number; data?: T; draft?: boolean }
   | { ok: false; message: string; field?: string }
 
 /**

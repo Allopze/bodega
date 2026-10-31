@@ -11,15 +11,16 @@ import type { MantBrandRuleValue, MantScheduleSnapshot, MantUnit } from "@/lib/m
  *
  * INVARIANTE del módulo: toda pauta viva tiene una fila en
  * `mant_schedule_versions` con `version = mant_schedules.version` y el snapshot
- * de su estado actual. Quien edita una pauta (editor, asignación no, seed sí)
- * termina su transacción con `publishScheduleVersion`, que sube la versión y
- * escribe el snapshot. La app del mecánico descarga ese snapshot y el servidor
+ * de la versión PUBLICADA. Las tablas vivas son el borrador: el editor las cambia
+ * sin publicar, y `publishSchedule` (o el alta y el seed, con la versión inicial)
+ * llama a `publishScheduleVersion`, que sube la versión y escribe el snapshot.
+ * La app del mecánico, el panel y los equipos leen ese snapshot, y el servidor
  * revalida cada preventiva contra la versión con que se firmó.
  */
 
 type Reader = Pick<Tx, "select">
 
-/** Arma el snapshot del estado ACTUAL de la pauta (sólo intervalos e ítems activos). */
+/** Arma el snapshot del estado VIVO (el borrador) de la pauta (sólo intervalos e ítems activos). */
 export async function buildScheduleSnapshot(client: Reader, scheduleId: string, version: number): Promise<MantScheduleSnapshot> {
   const [schedule] = await client.select().from(mantSchedules).where(eq(mantSchedules.id, scheduleId)).limit(1)
   if (!schedule) throw new Error(`Pauta ${scheduleId} no existe`)

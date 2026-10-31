@@ -28,6 +28,7 @@ const { ScheduleMatrix } = await import("@/components/mantencion/jefatura/pautas
 const { ScheduleBrandRules } = await import("@/components/mantencion/jefatura/pautas/schedule-brand-rules")
 const { ScheduleIntervalsCard } = await import("@/components/mantencion/jefatura/pautas/schedule-intervals-card")
 const { ScheduleNameCard } = await import("@/components/mantencion/jefatura/pautas/schedule-name-card")
+const { ScheduleDraftBar, draftChangeCount } = await import("@/components/mantencion/jefatura/pautas/schedule-draft-bar")
 const { ShellHeaderProvider } = await import("@/components/layout/header-context")
 
 import type { EditorGroup, EditorInterval } from "@/lib/services/mantencion/schedules"
@@ -49,8 +50,8 @@ const GROUPS: EditorGroup[] = [
 
 beforeEach(() => { vi.clearAllMocks() })
 
-/** Casillas y «Quitar» de la matriz: lo que forma la rejilla (no los botones de sistema ni «Agregar ítem»). */
-const gridButtons = (root: HTMLElement) => within(root).getAllByRole("button").filter((button) => button.hasAttribute("aria-pressed") || /^Quitar .* de la pauta$/.test(button.getAttribute("aria-label") ?? ""))
+/** Todo lo accionable de la matriz forma la rejilla: casillas, «Quitar», plegar sistema y «+ Agregar ítem». */
+const gridButtons = (root: HTMLElement) => within(root).getAllByRole("button")
 const tabStops = (buttons: HTMLElement[]) => buttons.filter((button) => button.getAttribute("tabindex") === "0")
 
 describe("ScheduleMatrix: teclado", () => {
@@ -61,13 +62,35 @@ describe("ScheduleMatrix: teclado", () => {
   )
   const cell = (item: string, interval: string) => screen.getByRole("button", { name: `${item} en ${interval}` })
 
-  it("la matriz entera es una sola parada de Tab, en la primera casilla", () => {
+  const toggle = (system: string) => screen.getByRole("button", { name: new RegExp(`^${system}`) })
+  const addItem = (system: string) => screen.getByRole("button", { name: `+ Agregar ítem en ${system}` })
+
+  it("la matriz entera es una sola parada de Tab, con los botones de sistema y «+ Agregar ítem» dentro", () => {
     renderMatrix()
     const table = screen.getByRole("table", { name: /Actividades de la pauta por intervalo/ })
     const buttons = gridButtons(table)
-    // 3 ítems × (3 intervalos + «Quitar»).
-    expect(buttons).toHaveLength(12)
-    expect(tabStops(buttons)).toEqual([cell("Inspección visual", "10.000 km")])
+    // 3 ítems × (3 intervalos + «Quitar») + 2 de plegar sistema + 2 de «+ Agregar ítem».
+    expect(buttons).toHaveLength(16)
+    expect(tabStops(buttons)).toEqual([toggle("Motor")])
+  })
+
+  it("las flechas llegan a plegar sistema y a «+ Agregar ítem»; izquierda y derecha no los mueven y la columna se recuerda", () => {
+    renderMatrix()
+    const start = cell("Inspección visual", "40.000 km")
+    start.focus()
+    fireEvent.keyDown(start, { key: "ArrowUp" })
+    expect(document.activeElement).toBe(toggle("Motor"))
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowRight" })
+    fireEvent.keyDown(document.activeElement!, { key: "End" })
+    expect(document.activeElement).toBe(toggle("Motor"))
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowDown" })
+    // Vuelve a la columna donde se estaba antes de subir al botón del sistema.
+    expect(document.activeElement).toBe(cell("Inspección visual", "40.000 km"))
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowDown" })
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowDown" })
+    expect(document.activeElement).toBe(addItem("Motor"))
+    const table = screen.getByRole("table", { name: /Actividades de la pauta por intervalo/ })
+    expect(tabStops(gridButtons(table))).toEqual([addItem("Motor")])
   })
 
   it("las flechas mueven el foco y el cursor; Inicio/Fin van a los extremos de la fila", () => {
@@ -96,11 +119,15 @@ describe("ScheduleMatrix: teclado", () => {
     const last = cell("Escaneo electrónico", "40.000 km")
     last.focus()
     fireEvent.keyDown(last, { key: "ArrowDown" })
+    expect(document.activeElement).toBe(addItem("Motor"))
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowDown" })
+    expect(document.activeElement).toBe(toggle("Frenos"))
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowDown" })
     expect(document.activeElement).toBe(cell("Pastillas", "40.000 km"))
     fireEvent.keyDown(document.activeElement!, { key: "Home", ctrlKey: true })
-    expect(document.activeElement).toBe(cell("Inspección visual", "10.000 km"))
+    expect(document.activeElement).toBe(toggle("Motor"))
     fireEvent.keyDown(document.activeElement!, { key: "End", ctrlKey: true })
-    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Quitar Pastillas de la pauta" }))
+    expect(document.activeElement).toBe(addItem("Frenos"))
   })
 
   it("enter y espacio siguen siendo del botón: marcar una casilla la guarda", async () => {
@@ -114,7 +141,7 @@ describe("ScheduleMatrix: teclado", () => {
     renderMatrix()
     const last = cell("Pastillas", "10.000 km")
     last.focus()
-    fireEvent.click(screen.getByRole("button", { name: /^Frenos/ }))
+    fireEvent.click(toggle("Frenos"))
     const table = screen.getByRole("table", { name: /Actividades de la pauta por intervalo/ })
     const stops = tabStops(gridButtons(table))
     expect(stops).toHaveLength(1)
@@ -225,5 +252,22 @@ describe("ScheduleNameCard: guardado en línea", () => {
     await act(async () => { fireEvent.blur(screen.getByRole("textbox", { name: "Nombre de la pauta" })) })
     expect(actions.renameScheduleAction).not.toHaveBeenCalled()
     expect(screen.getByRole("status").textContent).toBe("")
+  })
+})
+
+describe("ScheduleDraftBar: cambios sin publicar", () => {
+  it("cuenta los cambios (también el «y N cambios más»), los lista al pedirlo y ofrece descartar", () => {
+    expect(draftChangeCount(["a", "b"])).toBe(2)
+    expect(draftChangeCount(["a", "y 7 cambios más"])).toBe(8)
+    const onDiscard = vi.fn()
+    render(<ScheduleDraftBar version={3} changes={["Intervalo agregado: 5.000 km", "Ítem quitado: «Frenos»"]} pending={false} onDiscard={onDiscard} />)
+    const bar = screen.getByRole("region", { name: "Cambios sin publicar" })
+    expect(bar.textContent).toContain("2 cambios sin publicar")
+    expect(bar.textContent).toContain("versión 3")
+    expect(screen.queryByText("Ítem quitado: «Frenos»")).toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: "Ver cambios" }))
+    expect(screen.getByText("Ítem quitado: «Frenos»")).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Descartar cambios" }))
+    expect(onDiscard).toHaveBeenCalledTimes(1)
   })
 })

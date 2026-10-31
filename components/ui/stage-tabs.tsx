@@ -6,15 +6,17 @@ import { usePathname, useSearchParams } from "next/navigation"
 import { cn } from "@/lib/utils"
 
 export interface StageTab {
-  /** Valor del parámetro `estado`; vacío = todas. Admite lista separada por comas. */
+  /** Valor del parámetro de la pestaña (`estado` por defecto); vacío = todas. Admite lista separada por comas. */
   value: string
   label: string
   count?: number
   tone?: "default" | "signal"
+  /** Tono de señal sólo en el contador (trabajo pendiente), sin teñir la pestaña activa. */
+  countTone?: "signal"
 }
 
 /**
- * Tabs por etapa del pipeline, sincronizadas con el parámetro `estado` de la URL.
+ * Tabs por etapa del pipeline, sincronizadas con un parámetro de la URL (`estado` por defecto; `param`).
  *
  * Regla A5: el estado es *una* dimensión, así que se representa una sola vez.
  * Donde hay estas tabs no va además un select de estado en `ServerListFilters`.
@@ -22,16 +24,28 @@ export interface StageTab {
  * Son `<Link>` y no botones a propósito: navegan desde el primer pintado, sin
  * esperar hidratación (misma razón que el chip de "Sin factura").
  */
-export function StageTabs({ tabs, ariaLabel }: { tabs: StageTab[]; ariaLabel: string }) {
+export function StageTabs({
+  tabs,
+  ariaLabel,
+  param = "estado",
+  pageParam = "page",
+}: {
+  tabs: StageTab[]
+  ariaLabel: string
+  /** Parámetro de la URL que lleva la pestaña activa. */
+  param?: string
+  /** Parámetro de paginación de la lista: se quita al cambiar de pestaña. */
+  pageParam?: string
+}) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
-  const current = searchParams.get("estado") ?? ""
+  const current = searchParams.get(param) ?? ""
 
   function hrefFor(value: string) {
     const params = new URLSearchParams(Array.from(searchParams.entries()))
-    if (value) params.set("estado", value)
-    else params.delete("estado")
-    params.delete("page")
+    if (value) params.set(param, value)
+    else params.delete(param)
+    params.delete(pageParam)
     const qs = params.toString()
     return qs ? `${pathname}?${qs}` : pathname
   }
@@ -50,8 +64,9 @@ export function StageTabs({ tabs, ariaLabel }: { tabs: StageTab[]; ariaLabel: st
             scroll={false}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "-mb-px shrink-0 whitespace-nowrap px-3.5 pb-2.5 pt-1 text-sm font-medium",
-              "border-b-2 transition-[color,border-color] duration-[var(--duration-fast)] ease-[var(--ease-out)]",
+              "-mb-px inline-flex min-h-11 shrink-0 items-center whitespace-nowrap border-b-2 px-3.5 text-sm font-medium sm:min-h-9",
+              "transition-[color,border-color] duration-[var(--duration-fast)] ease-[var(--ease-out)]",
+              "focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-primary)]",
               active
                 ? tab.tone === "signal"
                   ? "border-[var(--color-signal)] text-[var(--color-signal-ink)]"
@@ -63,9 +78,12 @@ export function StageTabs({ tabs, ariaLabel }: { tabs: StageTab[]; ariaLabel: st
             {tab.count !== undefined && (
               <span className={cn(
                 "ml-1.5 font-mono text-xs tabular-nums",
-                active ? "opacity-80" : "text-[var(--color-text-faint)]",
+                tab.countTone === "signal" && tab.count > 0
+                  ? "font-semibold text-[var(--color-signal-ink)]"
+                  : active ? "opacity-80" : "text-[var(--color-text-faint)]",
               )}>
-                {tab.count}
+                {/* El espacio es del nombre accesible («Por revisar 3»); la separación visual es el margen. */}
+                {" "}{tab.count}
               </span>
             )}
           </Link>

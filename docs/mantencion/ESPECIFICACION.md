@@ -69,7 +69,7 @@ texto con cantidad), costos.
 12. **Folio**: `M{P|C}-{CODFAENA}-{0000}` por faena y tipo, asignado por el servidor al recibir. En el teléfono, «Folio pendiente» hasta sincronizar.
 13. **Anulación**: sólo jefatura, motivo obligatorio; sigue visible, marcado; se excluye de lecturas, estados y KPI; al anular se ofrece crear el registro corregido.
 14. **Observación**: supervisor o jefatura comentan → `observado`; el mecánico lo ve en su inicio («1 registro observado») y responde (queda en la bitácora); jefatura puede marcar `revisado`.
-15. **Cambios en pauta**: cada edición sube `version`; los firmados conservan su snapshot; quitar un ítem lo inactiva; un intervalo nuevo **hereda** la columna del mayor intervalo existente que lo divide (o la base) y queda resaltado «por revisar».
+15. **Cambios en pauta (borrador + publicar)**: las ediciones (celdas, ítems, intervalos, reglas por marca, nombre) quedan en un **borrador** —las tablas vivas— y NO suben `version`; el teléfono, el panel y los equipos leen el snapshot de la versión publicada. «Publicar versión N+1» sube `version`, guarda el snapshot y registra la lista de cambios como resumen; «Descartar cambios» devuelve las tablas vivas al snapshot publicado. Los registros firmados conservan su snapshot; quitar un ítem lo inactiva; un intervalo nuevo **hereda** la columna del mayor intervalo existente que lo divide (o la base) y queda resaltado «por revisar». Crear una pauta (o copiarla) publica la versión 1.
 16. **Patente**: mayúsculas, sin espacios ni puntos, guion antes de los números; formatos `^[A-Z]{2}-?\d{4}$`, `^[BCDFGHJKLPRSTVWXYZ]{4}-?\d{2}$` y especiales del inventario; «Sin patente» explícito → la patente se muestra igual al código.
 17. **Faena nueva**: si el nombre coincide normalizado con una existente («cholguán»/«Cholguan»), se usa la existente.
 
@@ -161,7 +161,11 @@ estilo de seleccionado (verde #1e6e3e, texto blanco); mensajes cortos en españo
 - **Pautas**: lista (unidad, intervalos, ítems, equipos, si tiene reglas por marca); «Nueva pauta» (vacía o
   copia) con nombre, unidad e intervalos. **Editor**: matriz ítem × intervalo con **encabezado fijo**; sistemas
   plegables; «+ Agregar ítem en {sistema}» y «Agregar sistema»; «Quitar» visible al hover/foco, separado de las
-  casillas, con **Deshacer**; intervalos en fichas con Quitar y Deshacer; cambio de nombre en línea; tabla de
+  casillas, con **Deshacer**; intervalos en fichas con Quitar y Deshacer; cambio de nombre en línea; **barra de
+  borrador** fija arriba con la lista de «cambios sin publicar» y «Descartar cambios» (pide confirmar), y
+  «Publicar versión N+1» como acción principal del encabezado; la lista de pautas marca «Cambios sin publicar»;
+  en móvil la columna «Actividad» queda fija y la matriz entera (casillas, Quitar, plegar sistema y «+ Agregar
+  ítem») es una sola parada de Tab; tabla de
   **reglas por marca con símbolo en cada celda** (✓ / ! / —) y leyenda. Equipos que usan la pauta por faena +
   «Ver en Equipos». Eliminar pauta: diálogo que dice cuántos equipos quedan sin pauta. **Asignar equipos**
   (modal): filtros; lista **agrupada por faena** con casilla por grupo (incl. parcial); cada fila dice «Se
@@ -240,7 +244,7 @@ Suite completa (no filtrar por nombre). E2E **con estado y secuenciales**.
   jefatura; (5) jefatura: panel y KPI, filtros, detalle con visor, Excel con fechas reales (abrirlo con una
   librería), PDF con páginas y folio, observar y anular (desaparece de cálculos); (6) equipos: alta, edición
   con faena nueva normalizada, importación con preview y baja; (7) pautas: copia, intervalo e ítem, quitar con
-  Deshacer, asignar con resumen y la app usa la pauta nueva; (8) permisos UI y API.
+  Deshacer, el catálogo del teléfono no ve el borrador, publicar, descartar, asignar con resumen y la app usa la pauta nueva; (8) permisos UI y API.
 - Consola de E2E sin errores.
 
 ## 17. Restricciones de código

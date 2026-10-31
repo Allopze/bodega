@@ -467,6 +467,17 @@ RUN ./node_modules/.bin/esbuild scripts/seed-mantencion.ts \
     --external:drizzle-orm/* \
     --external:postgres \
     --outfile=/tmp/seed-mantencion.cjs
+# One-shot de correcciones de datos de mantención (2026-10-31): descripción de
+# las pautas sembradas y, cuando jefatura las apruebe, las correcciones P3 de
+# equipos. Dry-run por defecto; `--apply` explícito.
+RUN ./node_modules/.bin/esbuild scripts/apply-mantencion-correcciones-2026-10-31.ts \
+    --bundle \
+    --platform=node \
+    --format=cjs \
+    --external:drizzle-orm \
+    --external:drizzle-orm/* \
+    --external:postgres \
+    --outfile=/tmp/apply-mantencion-correcciones.cjs
 
 # Materializa las casillas del programa preventivo de las faenas ya existentes.
 # Las migraciones 0314/0316 crearon esas tablas vacías y sólo el alta de faena
@@ -673,6 +684,7 @@ COPY --from=build /tmp/normalize-epp-skus.mjs ./scripts/normalize-epp-skus.mjs
 COPY --from=build /tmp/reconcile-request-status.mjs ./scripts/reconcile-request-status.mjs
 COPY --from=build /tmp/seed-size-catalog.mjs ./scripts/seed-size-catalog.mjs
 COPY --from=build /tmp/seed-mantencion.cjs ./scripts/seed-mantencion.cjs
+COPY --from=build /tmp/apply-mantencion-correcciones.cjs ./scripts/apply-mantencion-correcciones.cjs
 COPY --from=build /tmp/ensure-prevention-program-slots.mjs ./scripts/ensure-prevention-program-slots.mjs
 COPY --from=build /tmp/backfill-cphs-mandatory-sessions.mjs ./scripts/backfill-cphs-mandatory-sessions.mjs
 COPY --from=build /tmp/backfill-re20-statements.mjs ./scripts/backfill-re20-statements.mjs

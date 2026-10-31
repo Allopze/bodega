@@ -21,8 +21,8 @@ import { toastWithUndo, useScheduleEdit } from "./use-schedule-edit"
  * Intervalos de la pauta como fichas con «Quitar» y «Deshacer». El menor es la
  * base. Agregar uno hereda la columna del mayor intervalo que lo divide (regla
  * 15) y lo deja «por revisar» hasta que alguien toque esa columna o use el botón.
- * Quitar uno pide confirmar y dice a cuántos equipos alcanza: la edición es en
- * vivo (sube la versión que descarga la app), así que no puede ser un clic suelto.
+ * Quitar uno pide confirmar y dice a cuántos equipos alcanza cuando se publique:
+ * cambia la columna entera de la matriz, así que no puede ser un clic suelto.
  */
 export function ScheduleIntervalsCard({ scheduleId, unit, intervals, equipmentCount }: {
   scheduleId: string

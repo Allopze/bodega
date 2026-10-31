@@ -21,7 +21,7 @@ const clone = (): MantSeedData => structuredClone(data)
 // que está fuera de git junto con las planillas y notas del cliente: en un
 // checkout limpio —el CI— no existe. Su sha256 fija la copia de `db/seed` en
 // cualquier checkout; la comparación directa corre donde el archivo está.
-const VALIDATED_REFERENCE_SHA256 = "5b905cb2b3ebc1ea31acb75de910176d5040a639df78aceb5dc18ed2fe3eed60"
+const VALIDATED_REFERENCE_SHA256 = "4ac6a80db9793576628e0ae7ed112f58985ef2cbd4d6fb0dcb20151f88e3278f"
 const REFERENCE = path.resolve(process.cwd(), "docs/mantencion/referencias/seed-mantencion.json")
 
 describe("db/seed/mantencion-seed.json (§13)", () => {

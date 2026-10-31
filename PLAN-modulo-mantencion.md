@@ -95,7 +95,7 @@ sigue en taller, preventiva completa, nota/fecha de actualización de taller).
 - `lib/mantencion/contracts.ts` — payloads y respuestas de `/api/mantencion/sync/*` y del catálogo.
 - `lib/services/mantencion/fleet.ts` — `loadFleet({ scope, includeRetired, vehicleIds })`: única fuente del estado de equipo.
 - `lib/services/mantencion/access.ts` — `viewerFromSession`, `recordVisibility`, `recordVisibilitySql`, `canSeeRecord`, `equipmentScope`, `canObserveRecord`.
-- `lib/services/mantencion/schedule-versions.ts` — `buildScheduleSnapshot`, `publishScheduleVersion` (toda edición de pauta termina aquí), `getScheduleSnapshot`, `getCurrentScheduleSnapshots`.
+- `lib/services/mantencion/schedule-versions.ts` — `buildScheduleSnapshot`, `publishScheduleVersion` (sólo publicar, crear y el seed terminan aquí; las ediciones quedan en el borrador, ver D15), `getScheduleSnapshot`, `getCurrentScheduleSnapshots`.
 - `lib/storage/config.ts` — `resolveMantencionDir`, `createMantencionFilePath`, `resolveMantencionFile` (`storage/mantencion/`).
 
 ## 6. Líneas de trabajo (ejecución en paralelo, archivos sin cruces)
@@ -129,6 +129,7 @@ entradas, con `Edit` puntual), `package.json` (sólo L1: script `db:seed:mantenc
 | D11 | Cada fase cierra con typecheck + pruebas del módulo; la suite completa y las E2E corren al cierre. | Preferencia registrada del usuario para trabajos largos; las E2E borran `.next` y se corren en worktree desechable. |
 | D13 | El seed lee `db/seed/mantencion-seed.json` (copia byte a byte de `docs/mantencion/referencias/seed-mantencion.json`). | `/docs/**` es lista blanca de `.md`/`.svg` en `.gitignore` (evita versionar documentos con datos personales), así que la referencia no llegaría a la imagen de producción. Las planillas y PDF de referencia quedan locales, sin versionar. |
 | D12 | Conductores en `mant_drivers` con vínculo opcional a `workers`. | La planilla trae «APELLIDO APELLIDO NOMBRE» sin RUT; vincular a ciegas con `workers` podría equivocar a la persona. |
+| D15 | (2026-10-31) El editor de pautas pasó de «en vivo» a **borrador + «Publicar versión N»**, sin migración: el borrador son las tablas vivas y lo publicado es el snapshot de `mant_schedule_versions` con la versión vigente. `editSchedule` ya no publica; `publishSchedule`, `scheduleDraftDiff` y `discardScheduleDraft` (`schedule-editor.ts` / `schedule-draft.ts`) cierran el ciclo, y `fleet.ts` lee nombre e intervalos del snapshot vigente. | Un cambio a medias (un intervalo agregado antes de revisar su columna) llegaba al teléfono y al estado de los equipos al instante. La versión vigente sólo cambia al publicar, así que la advertencia `schedule_outdated` sigue comparando con `mant_schedules.version`. |
 | D14 | La serie correctiva del gráfico semanal usa `#c96a00` en vez del naranjo de marca `#f39200`. | El naranjo de marca da 2,4:1 sobre blanco y no cumple el 3:1 de WCAG 1.4.11 para elementos gráficos; el naranjo de marca se conserva en elementos no gráficos. |
 
 ## 8. Decisiones abiertas aplicadas (§19)

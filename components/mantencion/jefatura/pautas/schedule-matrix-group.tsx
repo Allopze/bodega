@@ -14,6 +14,19 @@ import type { GridNavigation } from "./use-grid-navigation"
 /** Id de la última «columna» de la matriz, la de «Quitar»: forma parte del recorrido con flechas. */
 export const REMOVE_COLUMN = "__quitar__"
 
+/** Ids de las filas de un solo botón de cada sistema en la rejilla de teclado. */
+export const toggleRowId = (groupId: string) => `g:${groupId}`
+export const addRowId = (groupId: string) => `a:${groupId}`
+
+/**
+ * Primera columna («Actividad»): fija a la izquierda cuando la tabla se desplaza en
+ * horizontal (móvil), con una línea a la derecha para separarla de las casillas que pasan por debajo.
+ */
+export const FIRST_COLUMN_CLASS = "left-0 bg-[var(--color-surface)] max-md:shadow-[1px_0_0_0_var(--color-border)]"
+
+/** Ancho de lo que va dentro de una fila que abarca toda la tabla: cabe en la pantalla y se queda fijo al desplazar. */
+const PINNED_WIDTH = "sticky left-0 w-[min(100%,calc(100vw-2rem))]"
+
 /**
  * «Quitar» aparece al pasar el mouse o al enfocar la fila; con pantalla táctil (sin hover) queda siempre visible.
  * En móvil mide 44 px de alto y de ancho; desde `sm` vuelve a su tamaño compacto.
@@ -81,7 +94,7 @@ function AddItemRow({ group, colSpan, busy, onAdd, onClose }: {
   return (
     <tr>
       <td colSpan={colSpan} className="px-3 py-2">
-        <form className="flex flex-wrap items-center gap-2" onSubmit={(event) => { event.preventDefault(); void submit() }}>
+        <form className={cn(PINNED_WIDTH, "flex flex-wrap items-center gap-2")} onSubmit={(event) => { event.preventDefault(); void submit() }}>
           <label className="sr-only" htmlFor={`add-item-${group.id}`}>Nuevo ítem en {group.name}</label>
           <Input
             ref={inputRef}
@@ -127,9 +140,10 @@ export function ScheduleMatrixGroup({ group, intervals, unit, cells, grid, colla
         <th scope="rowgroup" colSpan={colSpan} className="px-2 py-1 text-left font-normal">
           <button
             type="button"
+            {...grid.single(toggleRowId(group.id))}
             aria-expanded={!collapsed}
             onClick={onToggleGroup}
-            className="flex min-h-11 w-full items-center gap-2 rounded-md px-1 text-left hover:bg-[var(--color-chrome-hover)] focus-visible:outline-2 focus-visible:outline-[var(--color-primary)] sm:min-h-9"
+            className={cn(PINNED_WIDTH, "flex min-h-11 items-center gap-2 rounded-md px-1 text-left hover:bg-[var(--color-chrome-hover)] focus-visible:outline-2 focus-visible:outline-[var(--color-primary)] sm:min-h-9")}
           >
             <Caret size={14} weight="bold" aria-hidden />
             <span className="text-sm font-semibold text-[var(--color-text)]">{group.name}</span>
@@ -139,7 +153,7 @@ export function ScheduleMatrixGroup({ group, intervals, unit, cells, grid, colla
       </tr>
       {!collapsed && group.items.map((item) => (
         <tr key={item.id} className="group/row border-b border-[var(--color-border)] hover:bg-[var(--color-surface-2)]/60">
-          <th scope="row" className="px-3 py-1.5 text-left text-sm font-normal text-[var(--color-text)]">
+          <th scope="row" className={cn(FIRST_COLUMN_CLASS, "sticky z-[5] px-3 py-1.5 text-left text-sm font-normal text-[var(--color-text)] group-hover/row:bg-[var(--color-surface-2)]")}>
             {item.name}
             {item.note && <Badge variant="signal" size="sm" className="ml-2 align-middle">{item.note}</Badge>}
           </th>
@@ -166,7 +180,7 @@ export function ScheduleMatrixGroup({ group, intervals, unit, cells, grid, colla
         : (
           <tr>
             <td colSpan={colSpan} className="px-3 py-1">
-              <button type="button" onClick={onStartAdd} className="min-h-11 rounded-md px-2 text-sm font-medium text-[var(--color-primary-ink)] hover:underline focus-visible:outline-2 focus-visible:outline-[var(--color-primary)] sm:min-h-9">
+              <button type="button" {...grid.single(addRowId(group.id))} onClick={onStartAdd} className="sticky left-0 min-h-11 rounded-md px-2 text-sm font-medium text-[var(--color-primary-ink)] hover:underline focus-visible:outline-2 focus-visible:outline-[var(--color-primary)] sm:min-h-9">
                 + Agregar ítem en {group.name}
               </button>
             </td>

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { expect, test } from "@playwright/test"
+import { expect, test, type Browser } from "@playwright/test"
 import { expectPageTitle, login, selectRadixById } from "./helpers"
 import { MECANICO, SCHEDULE, ITEM, asJefe, trackConsole, withSql, fichaValue, idFromPath, scheduleState } from "./mantencion-3-helpers"
 import type { MantCatalog } from "../lib/mantencion/contracts"
@@ -16,8 +16,9 @@ import type { MantCatalog } from "../lib/mantencion/contracts"
  * E2E 6 (equipos): alta con faena nueva escrita con otra tilde (se reutiliza la
  * existente), edición, importación con vista previa (filas válidas y con error) y baja.
  * E2E 7 (pautas): crear copiando otra, agregar un intervalo y un ítem, quitar con
- * «Deshacer», asignar equipos con el resumen de cambios, y comprobar que la app del
- * mecánico recibe la pauta nueva; por último eliminarla.
+ * «Deshacer», comprobar que la app del mecánico NO ve el borrador, publicar la versión,
+ * asignar equipos con el resumen de cambios, y comprobar que la app del mecánico recibe
+ * la pauta nueva; por último eliminarla.
  *
  * Los locators siguen «Locators in this repository» de AGENTS.md: `getByRole`
  * (ignora los nodos ocultos de las vistas duplicadas) y `exact: true` cuando un
@@ -42,6 +43,23 @@ test.beforeAll(async () => {
   ids.im1 = byCode.get("QA-IM1") ?? ""
   expect(ids.eq1 && ids.eq2 && ids.im1, "la spec de equipos debe haber creado QA-EQ1, QA-EQ2 y QA-IM1").toBeTruthy()
 })
+
+/** El catálogo que descarga el teléfono de un mecánico, pedido desde una sesión aparte. */
+async function mechanicCatalog(browser: Browser, label: string): Promise<MantCatalog> {
+  const context = await browser.newContext()
+  try {
+    const page = await context.newPage()
+    await login(page, MECANICO)
+    const credential = await page.request.post("/api/mantencion/dispositivo", { data: { deviceId: randomUUID(), label } })
+    expect(credential.status()).toBe(200)
+    const { token } = await credential.json() as { token: string }
+    const response = await page.request.get("/api/mantencion/sync/catalogo", { headers: { authorization: `Bearer ${token}` } })
+    expect(response.status()).toBe(200)
+    return await response.json() as MantCatalog
+  } finally {
+    await context.close()
+  }
+}
 
 test.describe("E2E 7 · Pautas", () => {
   test("crea una pauta copiando otra: sus ítems y reglas por marca vienen, el intervalo nuevo queda por revisar", async ({ page }) => {
@@ -108,7 +126,9 @@ test.describe("E2E 7 · Pautas", () => {
     await page.getByRole("button", { name: "Agregar intervalo", exact: true }).click()
     const intervals = page.getByRole("list", { name: "Intervalos de la pauta" })
     await expect(intervals.getByRole("listitem").filter({ hasText: "50.000 km" })).toContainText("Por revisar")
-    expect((await scheduleState(SCHEDULE))!.version).toBe(before + 1)
+    // Es borrador: no sube la versión (se publica aparte) y la barra de borrador lo avisa.
+    expect((await scheduleState(SCHEDULE))!.version).toBe(before)
+    await expect(page.getByRole("region", { name: "Cambios sin publicar" })).toContainText("sin publicar")
 
     // Tocar una celda de esa columna la da por revisada. Mientras está por revisar, el nombre de sus casillas lo dice.
     await page.getByRole("button", { name: "Inspección visual general en 50.000 km (columna por revisar)", exact: true }).click()
@@ -157,15 +177,16 @@ test.describe("E2E 7 · Pautas", () => {
     expect(errors).toEqual([])
   })
 
-  test("con teclado la matriz es una sola parada de Tab y las flechas recorren sus casillas", async ({ page }) => {
+  test("con teclado la matriz es una sola parada de Tab y las flechas recorren casillas, «Quitar», plegar sistema y «+ Agregar ítem»", async ({ page }) => {
     await asJefe(page)
     await page.goto(`/mantencion/pautas/${ids.schedule}`)
     const matrix = page.getByRole("table", { name: "Actividades de la pauta por intervalo" })
-    const gridButtons = matrix.locator('button[aria-pressed], button[aria-label^="Quitar "]')
+    const gridButtons = matrix.getByRole("button")
     // `count()` no espera: sin esto cuenta antes de que la matriz se dibuje.
     await expect(gridButtons.first()).toBeVisible()
     expect(await gridButtons.count()).toBeGreaterThan(20)
-    await expect(matrix.locator('button[aria-pressed][tabindex="0"], button[aria-label^="Quitar "][tabindex="0"]')).toHaveCount(1)
+    // Todos los botones de la matriz (también plegar sistema y «+ Agregar ítem») comparten UNA parada de Tab.
+    await expect(matrix.locator('button[tabindex="0"]')).toHaveCount(1)
 
     const first = page.getByRole("button", { name: "Inspección visual general en 10.000 km", exact: true })
     await first.focus()
@@ -180,12 +201,42 @@ test.describe("E2E 7 · Pautas", () => {
     await expect.poll(focusedLabel).toMatch(/^Quitar .* de la pauta$/)
     await page.keyboard.press("Home")
     await expect.poll(focusedLabel).toMatch(/ en 10\.000 km/)
-    // Tab sale de la matriz: el foco no sigue en una de sus casillas.
+
+    // Ctrl+Inicio llega al botón de plegar el primer sistema (sin etiqueta propia: tiene aria-expanded).
+    await page.keyboard.press("Control+Home")
+    await expect.poll(() => page.evaluate(() => document.activeElement?.getAttribute("aria-expanded") ?? "")).toBe("true")
+    await expect(page.locator(':focus')).toContainText("Motor")
+    // Desde ahí, Enter pliega y las flechas siguen funcionando sobre las filas que quedan.
+    await page.keyboard.press("Enter")
+    await expect(page.getByRole("button", { name: /^Motor/ })).toHaveAttribute("aria-expanded", "false")
+    await expect(matrix.locator('button[tabindex="0"]')).toHaveCount(1)
+    await page.keyboard.press("Enter")
+    await expect(page.getByRole("button", { name: /^Motor/ })).toHaveAttribute("aria-expanded", "true")
+    // Ctrl+Fin llega a «+ Agregar ítem» del último sistema.
+    await page.keyboard.press("Control+End")
+    await expect(page.locator(":focus")).toHaveText(/^\+ Agregar ítem en /)
+
+    // Tab sale de la matriz: el foco no sigue dentro de ella.
     await page.keyboard.press("Tab")
-    expect(await page.evaluate(() => {
-      const active = document.activeElement
-      return !!active && (active.hasAttribute("aria-pressed") || (active.getAttribute("aria-label") ?? "").startsWith("Quitar "))
-    })).toBe(false)
+    expect(await matrix.evaluate((node) => node.contains(document.activeElement))).toBe(false)
+  })
+
+  test("en móvil la columna «Actividad» queda fija a la izquierda al desplazar los intervalos", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await asJefe(page)
+    await page.goto(`/mantencion/pautas/${ids.schedule}`)
+    const matrix = page.getByRole("table", { name: "Actividades de la pauta por intervalo" })
+    const rowHeader = matrix.getByRole("rowheader", { name: "Inspección visual general" })
+    await expect(rowHeader).toBeVisible()
+    const scroller = matrix.locator("xpath=..")
+    expect(await scroller.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(true)
+    const before = (await rowHeader.boundingBox())!.x
+    await scroller.evaluate((node) => { node.scrollLeft = 120 })
+    await expect.poll(async () => Math.abs((await rowHeader.boundingBox())!.x - before)).toBeLessThan(2)
+    // Una casilla de intervalo sí se movió con el desplazamiento.
+    const cellX = (await matrix.getByRole("button", { name: /^Inspección visual general en 30\.000 km/ }).boundingBox())!.x
+    await scroller.evaluate((node) => { node.scrollLeft = 0 })
+    await expect.poll(async () => (await matrix.getByRole("button", { name: /^Inspección visual general en 30\.000 km/ }).boundingBox())!.x).toBeGreaterThan(cellX + 50)
   })
 
   test("en móvil las casillas, «Quitar» y «Quitar el intervalo» miden al menos 44 px", async ({ page }) => {
@@ -226,7 +277,7 @@ test.describe("E2E 7 · Pautas", () => {
     expect(errors).toEqual([])
   })
 
-  test("agrega un ítem en un sistema, lo quita con «Deshacer» y cada edición sube la versión sin tocar las anteriores", async ({ page }) => {
+  test("agrega un ítem, lo quita con «Deshacer»; el teléfono no ve el borrador hasta «Publicar versión» y la versión anterior queda intacta", async ({ page, browser }) => {
     const errors = trackConsole(page)
     await asJefe(page)
     await page.goto(`/mantencion/pautas/${ids.schedule}`)
@@ -245,12 +296,58 @@ test.describe("E2E 7 · Pautas", () => {
     await page.getByRole("button", { name: "Deshacer", exact: true }).click()
     await expect(page.getByRole("rowheader", { name: ITEM })).toBeVisible()
 
+    // Editar no publica: la versión es la misma, la lista de pautas marca el borrador y el catálogo del teléfono no cambia.
+    expect((await scheduleState(SCHEDULE))!.version).toBe(first.version)
+    const bar = page.getByRole("region", { name: "Cambios sin publicar" })
+    await expect(bar).toBeVisible()
+    // Los toasts salen arriba a la derecha y tapan un momento la barra fija; con el
+    // mouse encima (quedó ahí tras «Deshacer») Sonner no los cierra.
+    await page.mouse.move(10, 600)
+    await expect(page.locator("[data-sonner-toast]")).toHaveCount(0, { timeout: 15_000 })
+    await bar.getByRole("button", { name: "Ver cambios", exact: true }).click()
+    await expect(bar.getByText(`Ítem agregado en Motor: «${ITEM}»`)).toBeVisible()
+    const draftCatalog = (await mechanicCatalog(browser, "E2E borrador de pautas")).schedules.find((item) => item.id === ids.schedule)
+    expect(draftCatalog?.version).toBe(first.version)
+    expect(draftCatalog?.intervals).toEqual([10000, 30000])
+    expect(draftCatalog?.groups.flatMap((group) => group.items.map((item) => item.name))).not.toContain(ITEM)
+    await page.goto("/mantencion/pautas")
+    await expect(page.getByRole("row", { name: new RegExp(SCHEDULE) })).toContainText("Cambios sin publicar")
+
+    // Publicar sube la versión una sola vez y el catálogo trae el contenido nuevo.
+    await page.goto(`/mantencion/pautas/${ids.schedule}`)
+    await page.getByRole("button", { name: `Publicar versión ${first.version + 1}`, exact: true }).click()
+    await expect(page.getByText(`Versión ${first.version + 1} publicada.`)).toBeVisible()
+    await expect(page.getByRole("region", { name: "Cambios sin publicar" })).toHaveCount(0)
     const after = (await scheduleState(SCHEDULE))!
-    expect(after.version).toBeGreaterThan(first.version + 2) // agregar, quitar y deshacer
-    const snapshots = after.versions.map((row) => ({ version: row.version as number, snapshot: row.snapshot as { groups: Array<{ items: Array<{ name: string }> }> } }))
-    const hasItem = (version: number) => snapshots.find((row) => row.version === version)?.snapshot.groups.some((group) => group.items.some((item) => item.name === ITEM))
+    expect(after.version).toBe(first.version + 1)
+    const snapshots = after.versions.map((item) => ({ version: item.version as number, snapshot: item.snapshot as { groups: Array<{ items: Array<{ name: string }> }> } }))
+    const hasItem = (version: number) => snapshots.find((item) => item.version === version)?.snapshot.groups.some((group) => group.items.some((entry) => entry.name === ITEM))
     expect(hasItem(first.version)).toBe(false) // la versión anterior queda intacta
     expect(hasItem(after.version)).toBe(true)
+    const publishedCatalog = (await mechanicCatalog(browser, "E2E pautas publicadas")).schedules.find((item) => item.id === ids.schedule)
+    expect(publishedCatalog?.version).toBe(after.version)
+    expect(publishedCatalog?.intervals).toEqual([10000, 30000, 50000])
+    expect(publishedCatalog?.groups.flatMap((group) => group.items.map((item) => item.name))).toContain(ITEM)
+    expect(errors).toEqual([])
+  })
+
+  test("«Descartar cambios» pide confirmar y devuelve la pauta a la versión publicada", async ({ page }) => {
+    const errors = trackConsole(page)
+    await asJefe(page)
+    await page.goto(`/mantencion/pautas/${ids.schedule}`)
+    const version = (await scheduleState(SCHEDULE))!.version
+    await page.getByRole("textbox", { name: "Nuevo intervalo (km)", exact: true }).fill("70000")
+    await page.getByRole("button", { name: "Agregar intervalo", exact: true }).click()
+    const intervals = page.getByRole("list", { name: "Intervalos de la pauta" })
+    await expect(intervals.getByRole("listitem").filter({ hasText: "70.000 km" })).toBeVisible()
+    const bar = page.getByRole("region", { name: "Cambios sin publicar" })
+    await bar.getByRole("button", { name: "Descartar cambios", exact: true }).click()
+    const dialog = page.getByRole("dialog")
+    await expect(dialog.getByRole("heading", { name: "¿Descartar los cambios sin publicar?" })).toBeVisible()
+    await dialog.getByRole("button", { name: "Descartar cambios", exact: true }).click()
+    await expect(intervals.getByRole("listitem").filter({ hasText: "70.000 km" })).toHaveCount(0)
+    await expect(bar).toHaveCount(0)
+    expect((await scheduleState(SCHEDULE))!.version).toBe(version)
     expect(errors).toEqual([])
   })
 
