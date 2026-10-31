@@ -170,7 +170,9 @@ describe("acciones masivas de la MIPER (Fase D)", () => {
     // La faena ya tiene la actividad escrita de otra forma: se reutiliza, como en el editor.
     await entries.saveMiperEntry({ matrixId, values: { activity: "Bodega de químicos", task: "Recepción" } }, author)
     await expect(bulk.bulkPatchMiperEntries({ matrixId, items, values: { probability: 4 } }, author))
-      .rejects.toMatchObject({ issues: [{ code: "unrecognized_keys", keys: ["probability"], path: ["values"] }] })
+      // Desde zod 4.6 un objeto estricto sigue con sus `refine` tras la clave desconocida: lo que
+      // importa es que P×C se rechace, no que sea el único problema informado.
+      .rejects.toMatchObject({ issues: expect.arrayContaining([expect.objectContaining({ code: "unrecognized_keys", keys: ["probability"], path: ["values"] })]) })
     const result = await bulk.bulkPatchMiperEntries({ matrixId, items, values: { activity: "BODEGA DE QUIMICOS", task: "Trasvasije de solventes", position: "Bodeguero" } }, author)
     expect(result.entries).toEqual(items.map((item) => ({ id: item.entryId, version: 2 })))
     const snapshot = (await buildMiperSnapshot(testDb, matrixId)).entries.filter((entry) => entry.id.startsWith("contexto-"))
