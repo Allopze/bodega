@@ -48,7 +48,8 @@ export async function PanelContent({ session, searchParams: sp }: { session: Ses
         actions={
           <FuelHeaderActions period={period}>
             {addDataOptions.some((option) => option.allowed) ? <AddFuelDataButton options={addDataOptions} /> : null}
-            {canRegister ? (
+            {/* En terreno y contrato el bloque «Registrar una carga» ya es la acción principal. */}
+            {canRegister && variant === "jefatura" ? (
               <Button asChild size="sm">
                 <Link href={FUEL_PATHS.registrar}>Registrar carga</Link>
               </Button>

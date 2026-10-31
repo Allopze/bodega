@@ -68,8 +68,10 @@ function PendingCell({ row }: { row: EnrichedRow }) {
     <span className="flex flex-wrap gap-1">
       {pending.map((item) => {
         const href = hrefFor(item.kind)
-        const badge = <MetaBadge meta={{ label: item.label, variant: "signal" }} size="sm" />
-        return href ? <Link key={item.kind} href={href} className="rounded-full focus-visible:outline-2 focus-visible:outline-[var(--color-primary)]">{badge}</Link> : <span key={item.kind}>{badge}</span>
+        // Un motivo largo («Rendimiento fuera de rango físico») se parte en dos líneas: en la tarjeta del
+        // celular la columna mide la mitad del ancho y el badge, que no corta por defecto, se salía de ella.
+        const badge = <MetaBadge meta={{ label: item.label, variant: "signal" }} size="sm" className="max-w-full whitespace-normal text-left" />
+        return href ? <Link key={item.kind} href={href} className="max-w-full rounded-full focus-visible:outline-2 focus-visible:outline-[var(--color-primary)]">{badge}</Link> : <span key={item.kind} className="max-w-full">{badge}</span>
       })}
     </span>
   )

@@ -19,6 +19,7 @@ import { deleteFuelLoadAction, registerFuelLoadAction } from "../actions"
 import { formatCLP } from "@/lib/utils"
 import { FUEL_LOAD_STATUS_LABELS } from "@/lib/combustibles/labels"
 import { FUEL_PATHS } from "@/lib/combustibles/routes"
+import { SERVICE_TYPE_LABELS } from "../pagos/invoice-params"
 
 interface LoadData {
   id: string
@@ -196,7 +197,7 @@ export function EditFuelLoadForm({ load, showCosts, canWrite, vehicles, supplier
         )}
 
         <Card>
-          <CardHeader><CardTitle>Datos de la carga</CardTitle></CardHeader>
+          <CardHeader><CardTitle>Editar la carga</CardTitle></CardHeader>
           <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <div className="space-y-2">
               <Label>Fecha *</Label>
@@ -207,8 +208,8 @@ export function EditFuelLoadForm({ load, showCosts, canWrite, vehicles, supplier
               <Select name="serviceType" defaultValue={load.serviceType} disabled={!isEditable}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="TCT">TCT</SelectItem>
-                  <SelectItem value="TAE">TAE</SelectItem>
+                  <SelectItem value="TCT">{SERVICE_TYPE_LABELS.TCT}</SelectItem>
+                  <SelectItem value="TAE">{SERVICE_TYPE_LABELS.TAE}</SelectItem>
                 </SelectContent>
               </Select>
             </div>

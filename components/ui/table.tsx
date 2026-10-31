@@ -146,14 +146,16 @@ const TableCell = React.forwardRef<HTMLTableCellElement, React.TdHTMLAttributes<
 )
 TableCell.displayName = "TableCell"
 
-/** Numeric table cell — monospace, right-aligned for quantities/money */
+/** Numeric table cell — monospace, right-aligned for quantities/money. Una
+ *  cifra nunca se parte en dos líneas («1.000» arriba y «L» abajo): la tabla
+ *  ya vive en un contenedor con scroll horizontal. */
 const TableCellNum = React.forwardRef<HTMLTableCellElement, React.TdHTMLAttributes<HTMLTableCellElement>>(
   ({ className, ...props }, ref) => (
     <td
       ref={ref}
       className={cn(
         "px-4 py-3 text-sm text-[var(--color-text)] text-right align-middle",
-        "font-mono tabular-nums",
+        "font-mono tabular-nums whitespace-nowrap",
         className,
       )}
       {...props}

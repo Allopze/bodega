@@ -860,7 +860,7 @@ async function cargaEvidence(raw: CargaRaw, ranges: Map<string, RangeInfo>, row:
       }
       case "implausible":
         if (raw.performanceValue !== null && perfUnit) {
-          evidence.push({ type: "text", text: `El rendimiento calculado es ${fmt(raw.performanceValue, 2)} ${PERFORMANCE_UNIT_LABELS[perfUnit]} (${PERFORMANCE_UNIT_TITLES[perfUnit].toLowerCase()}). Está fuera de lo que un equipo así puede rendir; casi siempre es una lectura o unos litros mal anotados.` })
+          evidence.push({ type: "text", text: `El rendimiento calculado es ${fmt(raw.performanceValue, 2)} ${PERFORMANCE_UNIT_LABELS[perfUnit]}: ${PERFORMANCE_UNIT_TITLES[perfUnit].toLowerCase()}. Está fuera de lo que un equipo así puede rendir; casi siempre es una lectura o unos litros mal anotados.` })
         }
         break
       case "late_entry":
