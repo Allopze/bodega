@@ -129,7 +129,7 @@ export function fuelAddDataOptions(session: Session): FuelAddDataOption[] {
   const canImport = can(session, "combustibles:import")
   return [
     { kind: "planilla", label: "Tengo una planilla de cargas", description: "El consolidado con una fila por carga. Se revisa antes de guardar.", href: `${FUEL_PATHS.fuentes}/agregar/planilla`, allowed: canImport && isGlobalRole(session) },
-    { kind: "tarjeta", label: "Tengo un reporte de tarjeta Copec o Aramco", description: "Totales por patente y mes. Normalmente llegan solos cada mañana.", href: `${FUEL_PATHS.fuentes}/agregar/tarjeta`, allowed: canImport },
+    { kind: "tarjeta", label: "Tengo un reporte de tarjeta Copec", description: "Totales por patente y mes. Normalmente llegan solos cada mañana; Aramco llega sólo por su sincronización.", href: `${FUEL_PATHS.fuentes}/agregar/tarjeta`, allowed: canImport },
     { kind: "facturas", label: "Tengo facturas en Excel", description: "La planilla «Control de facturas de combustible».", href: `${FUEL_PATHS.fuentes}?agregar=facturas`, allowed: canImport && can(session, "combustibles:view") && can(session, "combustibles:view_costs") },
     { kind: "telemetria", label: "Tengo telemetría de equipos", description: "Horas de motor y en vacío por día (VisionLink u otra).", href: `${FUEL_PATHS.fuentes}?agregar=telemetria`, allowed: canImport },
     { kind: "surtidor", label: "Tengo despachos de un surtidor", description: "De un surtidor sin integración, como el de CMPC.", href: `${FUEL_PATHS.fuentes}?agregar=surtidor`, allowed: canImport },

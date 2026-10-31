@@ -59,6 +59,14 @@ export interface FuelSourceStatus {
    * `null` si no se sabe. Nunca pasa del fin del período ni de hoy.
    */
   completeUntil?: string | null
+  /**
+   * Si trajo datos del período: `true`/`false` cuando la fuente lo sabe de
+   * primera mano (cargas o facturas contadas en el período), `null` cuando no
+   * es periódica (el histórico de sellos). Sin valor, se deduce de `completeUntil`.
+   */
+  dataInPeriod?: boolean | null
+  /** Fuente activa que no trajo nada del período en curso: el Panel la nombra. */
+  missingInPeriod?: boolean
 }
 
 const JOB = { copec: "fuel-copec-sync", aramco: "fuel-aramco-sync", visionlink: "fuel-visionlink-sync" } as const
@@ -483,10 +491,11 @@ async function terrenoSource(ctx: Ctx): Promise<FuelSourceStatus | null> {
   return {
     ...base,
     status: "ok",
-    statusLabel: received > 0 ? `${plural(received, "carga", "cargas")} ${ctx.period.inLabel}` : `Sin cargas ${ctx.period.inLabel}`,
+    statusLabel: received > 0 ? `${plural(received, "carga", "cargas")} en ${ctx.period.inLabel}` : `Sin cargas en ${ctx.period.inLabel}`,
     lastUpdateAt: lastAt,
     facts,
     completeUntil: clipToPeriod(todayInChile(lastAt), ctx),
+    dataInPeriod: received > 0,
   }
 }
 
@@ -503,6 +512,7 @@ async function historicoSellosSource(ctx: Ctx): Promise<FuelSourceStatus | null>
     statusLabel: `Importado ${onDayLabel(latest.createdAt, ctx.today)}`,
     lastUpdateAt: latest.createdAt,
     facts: [{ label: "Último archivo", value: `${latest.fileName} · ${plural(latest.validRows + latest.observedRows, "fila", "filas")}` }],
+    dataInPeriod: null,
     technical: ["Antes de importar se genera un reporte de equivalencias en Excel y se decide cada identidad dudosa."],
   }
 }
@@ -523,8 +533,9 @@ async function facturasSource(ctx: Ctx): Promise<FuelSourceStatus | null> {
   return {
     ...base,
     status: "ok",
-    statusLabel: received > 0 ? `${plural(received, "factura", "facturas")} ${ctx.period.inLabel}` : `Sin facturas ${ctx.period.inLabel}`,
+    statusLabel: received > 0 ? `${plural(received, "factura", "facturas")} en ${ctx.period.inLabel}` : `Sin facturas en ${ctx.period.inLabel}`,
     lastUpdateAt: lastAt,
+    dataInPeriod: received > 0,
     facts: [{ label: "Última carga de facturas", value: onDayLabel(lastAt, ctx.today) }],
     technical: ["Este importador no deja un lote: lo importado se corrige o se anula desde Pagos › Facturas."],
   }
@@ -568,7 +579,37 @@ export async function getFuelSourceStatuses(session: Session, period: ResolvedFu
       problem: `No se pudo consultar el estado de ${builder.name}. Vuelve a cargar la página.`,
     })
   })
-  return out
+  return applyPeriodCoverage(out, period)
+}
+
+/**
+ * Una fuente activa (que ya trajo datos alguna vez) sin nada del período: en un
+ * período cerrado queda pendiente —el mes se cerró sin esos datos—; en el
+ * período en curso sólo se avisa, porque todavía pueden llegar. Una fuente que
+ * nunca trajo nada (`sin_datos`) no está en uso y no cuenta.
+ */
+export function applyPeriodCoverage(
+  statuses: readonly FuelSourceStatus[],
+  period: Pick<ResolvedFuelPeriod, "from" | "status" | "inLabel">,
+): FuelSourceStatus[] {
+  return statuses.map((source) => {
+    if (source.status !== "ok" || period.status === "futuro") return source
+    const inPeriod = source.dataInPeriod !== undefined
+      ? source.dataInPeriod
+      : source.completeUntil != null ? source.completeUntil >= period.from : null
+    if (inPeriod !== false) return source
+    if (period.status === "cerrado") {
+      return {
+        ...source,
+        status: "pendiente",
+        statusLabel: `Sin datos en ${period.inLabel}`,
+        problem: source.problem ?? `No trajo datos en ${period.inLabel}.`,
+      }
+    }
+    // Terreno y facturas ya dicen «Sin cargas/facturas en …» en su rótulo.
+    const statusLabel = source.dataInPeriod === false ? source.statusLabel : `Todavía sin datos en ${period.inLabel}`
+    return { ...source, statusLabel, missingInPeriod: true }
+  })
 }
 
 /** Resumen para el Panel: listo si ninguna fuente está pendiente ni falló. */
@@ -583,5 +624,5 @@ export function describeFuelSources(statuses: readonly FuelSourceStatus[], perio
   const problems = statuses.flatMap((status) => (status.problem ? [status.problem] : []))
   if (problems.length > 0) return `Falta resolver: ${problems.join(" ")}`
   if (statuses.some((status) => status.status === "falla" || status.status === "pendiente")) return "Hay fuentes que no se actualizaron a tiempo."
-  return `Todo llegó a tiempo ${period.inLabel}.`
+  return `Todo llegó a tiempo en ${period.inLabel}.`
 }

@@ -18,6 +18,7 @@ import { PageContainer } from "@/components/ui/page-container"
 import { PageHeader } from "@/components/ui/page-header"
 import { FuelBreadcrumbs } from "@/components/combustibles/fuel-breadcrumbs"
 import { FuelHeaderActions } from "@/components/combustibles/fuel-header-actions"
+import { resolveRegistrarSelection } from "./registrar-selection"
 import { RegistrarForm } from "./registrar-form"
 
 export const metadata: Metadata = { title: "Registrar carga" }
@@ -60,15 +61,16 @@ export default async function RegistrarCargaPage({ searchParams }: { searchParam
   const degraded = [worksitesResult === null ? "faenas" : null, pointsResult === null ? "puntos de carga" : null].filter((item): item is string => item !== null)
 
   // La faena y el punto vienen de la URL, pero sólo valen si el usuario puede operar la faena y el
-  // punto es de ella: el alcance se decide aquí, no en el selector. Una faena sola, o un único punto
-  // en la faena, quedan elegidos sin preguntar.
-  let worksiteId = first(raw.faena)
-  if (!worksiteId || !canAccessWorksite(session, worksiteId) || !worksiteOptions.some((worksite) => worksite.id === worksiteId)) {
-    worksiteId = worksiteOptions.length === 1 ? worksiteOptions[0]!.id : ""
-  }
-  const worksitePoints = points.filter((point) => point.worksiteId === worksiteId)
-  let pointId = first(raw.punto)
-  if (!worksitePoints.some((point) => point.id === pointId)) pointId = worksitePoints.length === 1 ? worksitePoints[0]!.id : ""
+  // punto es de ella: el alcance se decide aquí, no en el selector.
+  const requestedWorksiteId = first(raw.faena)
+  const selection = resolveRegistrarSelection({
+    worksites: worksiteOptions,
+    points,
+    requestedWorksiteId: requestedWorksiteId && canAccessWorksite(session, requestedWorksiteId) ? requestedWorksiteId : "",
+    requestedPointId: first(raw.punto),
+    pointsKnown: pointsResult !== null,
+  })
+  const { worksiteId, pointId } = selection
 
   const config = worksiteId && pointId
     ? await settle(buildFieldLoadConfig(worksiteId, pointId), null, "registrar-config")
@@ -105,7 +107,7 @@ export default async function RegistrarCargaPage({ searchParams }: { searchParam
         />
       ) : (
         <RegistrarForm
-          worksites={worksiteOptions}
+          worksites={selection.worksites}
           points={points.map((point) => ({ id: point.id, name: point.name, worksiteId: point.worksiteId }))}
           worksiteId={worksiteId}
           pointId={pointId}

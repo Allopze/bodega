@@ -6,7 +6,7 @@ import type { FuelSourceStatus } from "@/lib/combustibles/sources-status"
 import { buildPanelSteps, type PanelStep, type PanelStepsInput } from "./steps"
 
 vi.mock("server-only", () => ({}))
-const { summarizeFuelSources } = await import("@/lib/combustibles/sources-status")
+const { applyPeriodCoverage, summarizeFuelSources } = await import("@/lib/combustibles/sources-status")
 
 const TODAY = "2026-10-31"
 
@@ -181,6 +181,43 @@ describe("tira de cinco pasos del Panel", () => {
     it("en un período cerrado dice qué quedó pendiente de ese período", () => {
       const step = stepOf(allGood({ period: closed, sources: sourcesOf(source({ status: "pendiente", problem: "falta el archivo de septiembre" })) }), "fuentes")
       expect(step.phrase).toBe("En septiembre quedó pendiente. Copec: falta el archivo de septiembre.")
+    })
+
+    describe("una fuente activa sin datos del período", () => {
+      const periodOf = (status: "en_curso" | "cerrado" | "futuro", inLabel: string) => ({ from: "2026-09-01", status, inLabel })
+      // La planilla trajo datos por última vez en agosto; Copec cubre el período.
+      const statuses = () => [
+        source({ completeUntil: "2026-09-30" }),
+        source({ key: "planilla", name: "Planilla de cargas", statusLabel: "Importada el 28 ago", completeUntil: "2026-08-28" }),
+        source({ key: "telemetria", name: "Telemetría de equipos", status: "sin_datos", statusLabel: "Sin datos" }),
+      ]
+
+      it("en un período cerrado deja el paso pendiente y nombra la fuente que no llegó", () => {
+        const covered = applyPeriodCoverage(statuses(), periodOf("cerrado", "septiembre"))
+        expect(covered[1]).toMatchObject({ status: "pendiente", statusLabel: "Sin datos en septiembre", problem: "No trajo datos en septiembre." })
+        const step = stepOf(allGood({ period: closed, sources: sourcesOf(...covered) }), "fuentes")
+        expect(step).toMatchObject({ status: "pendiente", figure: "1", figureNote: "fuente por revisar" })
+        expect(step.phrase).toBe("En septiembre quedó pendiente. Planilla de cargas: No trajo datos en septiembre.")
+      })
+
+      it("en el período en curso sólo lo avisa, y las fuentes que nunca se usaron no cuentan como faltantes", () => {
+        const covered = applyPeriodCoverage(statuses(), periodOf("en_curso", "septiembre"))
+        expect(covered[1]).toMatchObject({ status: "ok", statusLabel: "Todavía sin datos en septiembre", missingInPeriod: true })
+        const step = stepOf(allGood({ sources: sourcesOf(...covered) }), "fuentes")
+        expect(step).toMatchObject({ status: "ok", figure: "Al día" })
+        expect(step.phrase).toBe("2 fuentes al día. Planilla de cargas todavía no trae datos en octubre. 1 fuente todavía no se usa.")
+      })
+
+      it("terreno y facturas cuentan lo del período; el histórico de sellos no es periódico; un período futuro no exige nada", () => {
+        const sinCargas = source({ key: "terreno", name: "Formulario en terreno", statusLabel: "Sin cargas en septiembre", completeUntil: "2026-09-30", dataInPeriod: false })
+        const historico = source({ key: "historico-sellos", name: "Histórico de sellos", dataInPeriod: null })
+        const [terreno, sellos] = applyPeriodCoverage([sinCargas, historico], periodOf("cerrado", "septiembre"))
+        expect(terreno).toMatchObject({ status: "pendiente", statusLabel: "Sin datos en septiembre" })
+        expect(sellos).toEqual(historico)
+        const [enCurso] = applyPeriodCoverage([sinCargas], periodOf("en_curso", "septiembre"))
+        expect(enCurso).toMatchObject({ status: "ok", statusLabel: "Sin cargas en septiembre", missingInPeriod: true })
+        expect(applyPeriodCoverage(statuses(), periodOf("futuro", "noviembre"))).toEqual(statuses())
+      })
     })
   })
 

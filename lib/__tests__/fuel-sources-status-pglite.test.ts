@@ -233,6 +233,22 @@ describe("estado de las fuentes de datos (PostgreSQL)", () => {
     expect(byKey(await getFuelSourceStatuses(scoped, monthPeriod), "planilla")).toBeUndefined()
   })
 
+  it("una fuente activa sin datos de un período cerrado queda pendiente; en el período en curso sólo se avisa", async () => {
+    const older = describeFuelPeriod(shiftFuelPeriod(shiftFuelPeriod(currentMonthPeriod(), -1), -1), "url")
+    await inMemoryDb.insert(schema.fuelOperationBatches).values({
+      id: nanoid(), archivoNombre: "consolidado_viejo.xlsx", hashArchivo: nanoid(), estado: "importado", periodoDesde: older.from, periodoHasta: older.to,
+      totalFilas: 10, filasValidas: 10, filasInvalidas: 0, totalEquipos: 2, importadoPor: userId,
+    })
+
+    const closed = byKey(await getFuelSourceStatuses(global(), pastPeriod), "planilla")!
+    expect(closed).toMatchObject({ status: "pendiente", statusLabel: `Sin datos en ${pastPeriod.inLabel}`, problem: `No trajo datos en ${pastPeriod.inLabel}.` })
+
+    const current = byKey(await getFuelSourceStatuses(global(), monthPeriod), "planilla")!
+    expect(current).toMatchObject({ status: "ok", statusLabel: `Todavía sin datos en ${monthPeriod.inLabel}`, missingInPeriod: true })
+    // Una fuente que nunca trajo nada no está en uso: no se marca como faltante.
+    expect(byKey(await getFuelSourceStatuses(global(), pastPeriod), "telemetria")).toMatchObject({ status: "sin_datos" })
+  })
+
   it("un lote revertido no cuenta como la última planilla", async () => {
     await inMemoryDb.insert(schema.fuelOperationBatches).values({
       id: nanoid(), archivoNombre: "revertido.xlsx", hashArchivo: nanoid(), estado: "revertido", periodoDesde: "2026-10-01", periodoHasta: "2026-10-28", importadoPor: userId,

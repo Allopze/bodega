@@ -124,7 +124,7 @@ function sourcesStep(input: PanelStepsInput, link: (href: string) => string, pas
   if (pending.length > 0) {
     const failed = pending.filter((status) => status.status === "falla")
     const first = failed[0] ?? pending[0]
-    const detail = first ? `${first.name}: ${first.status === "falla" ? first.statusLabel : (first.problem ?? first.statusLabel)}.` : ""
+    const detail = first ? `${first.name}: ${(first.status === "falla" ? first.statusLabel : (first.problem ?? first.statusLabel)).replace(/\.$/, "")}.` : ""
     const rest = pending.length - 1
     const more = rest > 0 ? ` Y ${rest} ${pluralize(rest, "fuente")} más por revisar.` : ""
     return finish({
@@ -135,8 +135,12 @@ function sourcesStep(input: PanelStepsInput, link: (href: string) => string, pas
       phrase: `${past ? `En ${input.period.inLabel} quedó pendiente. ` : ""}${detail}${more}`.trim(),
     })
   }
-  const withoutData = sources.statuses.length - known.length
-  const tail = withoutData > 0 ? ` ${count(withoutData)} ${pluralize(withoutData, "fuente")} sin datos todavía.` : ""
+  // Las que nunca trajeron nada no están en uso; las activas sin datos del período en curso se nombran.
+  const unused = sources.statuses.length - known.length
+  const missing = known.filter((status) => status.missingInPeriod).map((status) => status.name)
+  const missingNote = missing.length > 0 ? ` ${listOf(missing)} todavía no ${missing.length === 1 ? "trae" : "traen"} datos en ${input.period.inLabel}.` : ""
+  const unusedNote = unused > 0 ? ` ${count(unused)} ${pluralize(unused, "fuente")} todavía no se ${unused === 1 ? "usa" : "usan"}.` : ""
+  const tail = `${missingNote}${unusedNote}`
   return finish({
     ...base,
     status: "ok",
