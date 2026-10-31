@@ -26,6 +26,14 @@ import { ANOMALY_RULE_SEVERITIES, ANOMALY_RULE_SEVERITY_LABELS, FUEL_VEHICLE_STA
 const ALL = "_all"
 const PAGE_KEYS = ["pagina", "page"]
 
+/**
+ * Lo que busca el cuadro de búsqueda (`fuel-log.ts`): código de equipo, patente y, en las
+ * facturas, el proveedor; conductor y supervisor sólo con `combustibles:view_personal`. El
+ * rótulo dice lo mismo que la consulta, sin ofrecer buscar personas a quien no puede.
+ */
+const SEARCH_LABEL = "Buscar equipo, patente o proveedor"
+const SEARCH_LABEL_WITH_PERSONAL = "Buscar equipo, patente, proveedor o persona"
+
 export interface CargasFilterOption {
   value: string
   label: string
@@ -146,6 +154,7 @@ export function CargasFilters({ lookups, canViewPersonal }: { lookups: CargasFil
   const origins = parseFuelLoadOrigins(get("como"))
   const stateSlug = parseFuelLoadState(get("estado"))
   const pendingOnly = get("pendiente") === "si"
+  const searchLabel = canViewPersonal ? SEARCH_LABEL_WITH_PERSONAL : SEARCH_LABEL
 
   const advancedKeys = CARGAS_ADVANCED_FILTER_KEYS.filter((key) => canViewPersonal || (key !== "conductor" && key !== "supervisor"))
   const advancedActive = advancedKeys.filter((key) => Boolean(get(key)))
@@ -257,12 +266,13 @@ export function CargasFilters({ lookups, canViewPersonal }: { lookups: CargasFil
         overflowTitle="Más filtros"
         overflowDescription="Equipo, personas, sellos y fotos, y casos. Cada filtro activo aparece como un chip bajo la barra."
       >
+        {/* `sm:w-80` y no `sm:w-64`: con «… o persona…» el placeholder mide ~240 px a 12 px y en 256 px de campo sólo caben ~212. */}
         <FilterSearchInput
           param="q"
-          placeholder="Buscar patente o equipo…"
-          ariaLabel="Buscar patente o equipo"
+          placeholder={`${searchLabel}…`}
+          ariaLabel={searchLabel}
           pageKeys={PAGE_KEYS}
-          className="h-11 w-full pl-8 text-xs sm:h-8 sm:w-64"
+          className="h-11 w-full pl-8 text-xs sm:h-8 sm:w-80"
         />
         <SelectFilter value={get("faena")} onValue={(next) => setFilter("faena", next)} allLabel="Todas tus faenas" ariaLabel="Filtrar por faena" options={lookups.worksites} />
         <OriginFilter selected={origins} onChange={(next) => setFilter("como", next.length > 0 ? next.join(",") : null)} />

@@ -8,17 +8,19 @@ import { can, requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope, worksiteScopeSql } from "@/lib/auth/scope"
 import { logger } from "@/lib/logger"
 import { DegradedDataBanner } from "@/components/ui/degraded-data-banner"
+import { FilterSummaryBar } from "@/components/ui/filter-summary-bar"
 import { PageContainer } from "@/components/ui/page-container"
 import { SectionNav } from "@/components/ui/section-nav"
 import { ServerPagination } from "@/components/ui/server-pagination"
-import { canViewFuelPersonalData, fuelLogDetailHref, getFuelLogRows, getFuelLogTotal } from "@/lib/combustibles/fuel-log"
+import { buildFieldAttentionStats } from "@/lib/combustibles/cargas-attention"
+import { buildCargaRowHrefs } from "@/lib/combustibles/cargas-hrefs"
+import { canViewFuelPersonalData, getFieldLoadAttention, getFuelLogRows, getFuelLogTotal } from "@/lib/combustibles/fuel-log"
 import { CARGAS_PAGE_SIZE, countActiveAdvancedFilters, parseCargasSearchParams } from "@/lib/combustibles/fuel-log-params"
 import { canWithdrawOthersReviewRequest } from "@/lib/combustibles/fuel-log-review-request"
 import type { FuelLogRow } from "@/lib/combustibles/fuel-log-shared"
-import { inboxRowKey } from "@/lib/combustibles/inbox/types"
 import { FUEL_CARRY_PARAMS, toDateRange } from "@/lib/combustibles/period"
 import { resolveFuelPeriodForPage } from "@/lib/combustibles/period/server"
-import { FUEL_PATHS, fuelEquipmentHref, fuelInboxHref, fuelLoadHistoryHref, withFuelContext, type FuelLoadOrigin } from "@/lib/combustibles/routes"
+import { FUEL_PATHS, withFuelContext } from "@/lib/combustibles/routes"
 import { cargasNavItems, fuelAddDataOptions } from "@/lib/combustibles/section-nav"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { CargasWorkbench } from "./cargas-workbench"
@@ -29,8 +31,6 @@ import type { TaeExportFilters } from "../tae/actions"
 export const metadata: Metadata = { title: "Cargas" }
 
 type SearchParams = Record<string, string | string[] | undefined>
-
-const ORIGEN_BY_SOURCE: Record<FuelLogRow["source"], FuelLoadOrigin> = { tae_pwa: "terreno", invoiced: "factura", operation_manual: "planilla" }
 
 const options = (rows: Array<{ id: string; name: string }>): CargasFilterOption[] => rows.map((row) => ({ value: row.id, label: row.name }))
 
@@ -98,7 +98,13 @@ export default async function CargasPage({ searchParams }: { searchParams: Promi
   ])
 
   const pagination = resolvePagination({ pageParam: String(page), totalItems: total, pageSize: CARGAS_PAGE_SIZE })
-  const rows = await track(getFuelLogRows(session, filters, { limit: CARGAS_PAGE_SIZE, offset: pagination.offset, sort }), [] as FuelLogRow[], "filas")
+  // Las filas y las cuatro señales de terreno van juntas, en una segunda tanda: sumar la consulta de las señales a la primera dejaba
+  // diez consultas a la vez sobre un pool de diez. `null` si los filtros no pueden traer registros en terreno; con la consulta
+  // caída la tira no se pinta y el aviso de datos degradados lo dice.
+  const [rows, attention] = await Promise.all([
+    track(getFuelLogRows(session, filters, { limit: CARGAS_PAGE_SIZE, offset: pagination.offset, sort }), [] as FuelLogRow[], "filas"),
+    track(getFieldLoadAttention(session, filters), null, "señales de terreno"),
+  ])
 
   const canViewAudit = can(session, "combustibles:view_audit")
   const canExport = can(session, "combustibles:export")
@@ -106,22 +112,7 @@ export default async function CargasPage({ searchParams }: { searchParams: Promi
   const canRegister = can(session, "combustibles:register_load")
 
   const context = (href: string) => withFuelContext(href, sp)
-  const enriched: EnrichedRow[] = rows.map((row) => {
-    const origen = ORIGEN_BY_SOURCE[row.source]
-    const detail = context(fuelLogDetailHref(row))
-    return {
-      ...row,
-      hrefs: {
-        detail,
-        equipment: row.vehicleId ? context(fuelEquipmentHref(row.vehicleId)) : null,
-        history: canViewAudit ? context(fuelLoadHistoryHref({ origen, id: row.detailId })) : null,
-        evidence: canViewPersonal && row.source === "tae_pwa" && (row.evidenceCount ?? 0) > 0 ? `${detail}#evidencia` : null,
-        decide: row.reviewFlagged && row.equipmentLoadId ? context(fuelInboxHref({ tipo: "carga", item: inboxRowKey("carga", row.equipmentLoadId) })) : null,
-        requested: context(fuelInboxHref({ tipo: "pedido" })),
-        cases: context(fuelInboxHref({ tipo: "caso" })),
-      },
-    }
-  })
+  const enriched: EnrichedRow[] = rows.map((row) => ({ ...row, hrefs: buildCargaRowHrefs(row, { canViewAudit, canViewPersonal, context }) }))
 
   const filtered = Boolean(
     filters.q || filters.worksiteId || filters.origins?.length || filters.stateSlug || filters.onlyPending || filters.vehicleId
@@ -141,6 +132,8 @@ export default async function CargasPage({ searchParams }: { searchParams: Promi
         evidence: filters.photosIncomplete ? "missing" : undefined,
       }
     : undefined
+
+  const attentionStats = attention ? buildFieldAttentionStats(attention, sp) : null
 
   const hrefForPage = (target: number) => buildPaginationHref(FUEL_PATHS.cargas, { ...sp, page: undefined }, target, "pagina")
 
@@ -173,6 +166,11 @@ export default async function CargasPage({ searchParams }: { searchParams: Promi
           <>
             <SectionNav items={cargasNavItems()} activeKey="cargas" ariaLabel="Vistas de cargas" carryParams={FUEL_CARRY_PARAMS} />
             <DegradedDataBanner degraded={degraded} total={tracked} />
+            {attentionStats && (
+              <div role="group" aria-label="Cargas en terreno que piden atención">
+                <FilterSummaryBar stats={attentionStats} className="mb-4" />
+              </div>
+            )}
           </>
         }
         after={<ServerPagination pagination={pagination} hrefForPage={hrefForPage} className="mt-2" />}

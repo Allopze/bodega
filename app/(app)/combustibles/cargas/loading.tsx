@@ -4,12 +4,15 @@ import { Skeleton, SkeletonRow } from "@/components/ui/skeleton"
 import { SectionNavSkeleton } from "@/components/ui/section-nav-skeleton"
 import { FuelBreadcrumbs } from "@/components/combustibles/fuel-breadcrumbs"
 
-/** Esqueleto de «Cargas a equipos»: pestañas, barra de filtros y la tabla. */
+/** Esqueleto de «Cargas a equipos»: pestañas, la tira de señales de terreno, barra de filtros y la tabla. */
 export default function Loading() {
   return (
     <PageContainer>
       <PageHeader title="Cargas" breadcrumb={<FuelBreadcrumbs items={[{ label: "Cargas" }]} />} />
       <SectionNavSkeleton tabs={2} />
+      <div className="mb-4 grid grid-cols-2 gap-px overflow-hidden border-y border-[var(--color-border)] sm:grid-cols-4" aria-hidden>
+        {Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-[4.25rem] rounded-none" />)}
+      </div>
       <div className="mb-4 flex flex-wrap items-center gap-2" aria-hidden>
         <Skeleton className="h-8 w-64" />
         <Skeleton className="h-8 w-40" />

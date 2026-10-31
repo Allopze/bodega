@@ -61,6 +61,14 @@ describe("BitacoraTable: columna «Pendiente» y «Cómo llegó»", () => {
     expect(links[0]).toHaveAttribute("href", "/combustibles/revisar?tipo=carga&item=carga%3Ael-1")
   })
 
+  it("la insignia de un caso abierto enlaza al enlace que armó la página para ESA carga", () => {
+    const withCase = row({ anomalyCount: 1, hrefs: { ...row().hrefs, cases: "/combustibles/revisar?tipo=caso&ref=tae_pwa%3Atae-1" } })
+    render(<BitacoraTable rows={[withCase]} canViewPersonal />)
+    const links = screen.getAllByRole("link", { name: "Caso abierto" })
+    expect(links.length).toBeGreaterThan(0)
+    for (const link of links) expect(link).toHaveAttribute("href", "/combustibles/revisar?tipo=caso&ref=tae_pwa%3Atae-1")
+  })
+
   it("una carga con observación y un pedido abierto muestra los dos pendientes", () => {
     const pending = row({ statusLabel: "observed", reviewMark: true, reviewMarkId: "m-1", reviewMarkNotes: "Revisar los litros" })
     render(<BitacoraTable rows={[pending]} canViewPersonal />)
