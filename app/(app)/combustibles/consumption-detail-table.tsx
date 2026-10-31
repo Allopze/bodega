@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
 import { MetaBadge } from "@/components/states/state-badge"
 import { ServerPagination } from "@/components/ui/server-pagination"
@@ -66,7 +66,7 @@ export function ConsumptionDetailTable({
           : <><span className="font-mono tabular-nums">{pagination.totalItems.toLocaleString("es-CL")}</span> {pagination.totalItems === 1 ? "total encontrado" : "totales encontrados"}</>}
       </p>
 
-      <div className="-mx-4 overflow-x-auto rounded-[var(--radius-2xl)] border border-[var(--color-border)] px-4 sm:mx-0 sm:px-0">
+      <TableRoot aria-label="Totales por patente y mes" className="-mx-4 w-auto px-4 sm:mx-0 sm:w-full sm:px-0">
         <Table className="min-w-[960px]">
           <TableHeader>
             <TableRow>
@@ -115,7 +115,7 @@ export function ConsumptionDetailTable({
             )}
           </TableBody>
         </Table>
-      </div>
+      </TableRoot>
       <ServerPagination pagination={pagination} hrefForPage={hrefForPage} className="mt-3" />
     </div>
   )

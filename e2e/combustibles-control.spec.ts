@@ -117,8 +117,8 @@ test.describe.serial("Control de combustible — registro, revisión y conciliac
     // Es la única faena con puntos de carga activos: queda elegida sin preguntar.
     await expect(page.locator("#registrar-faena")).toContainText(WORKSITE_NAME)
     // Con un solo punto activo en la faena queda elegido solo; con más, se elige.
-    if (!/punto=ctl-point-e2e/.test(page.url())) await pickSelect(page, "registrar-punto", POINT_NAME)
-    await expect(page).toHaveURL(/punto=ctl-point-e2e/)
+    if (!(await page.locator("#registrar-punto").textContent())?.includes(POINT_NAME)) await pickSelect(page, "registrar-punto", POINT_NAME)
+    await expect(page.locator("#registrar-punto")).toContainText(POINT_NAME)
     // Con el config de la faena cargado el botón se habilita; el formulario por pasos sigue oculto hasta entonces.
     await page.getByRole("button", { name: "Siguiente", exact: true }).click()
 

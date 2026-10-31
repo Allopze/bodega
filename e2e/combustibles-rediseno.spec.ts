@@ -224,8 +224,8 @@ test.describe.serial("Combustible — Por revisar: cargas de otro día, decidir,
     await expect(page.getByText("Paso 1 de 7")).toBeVisible({ timeout: 20_000 })
     // Es la única faena con puntos de carga activos: queda elegida sin preguntar.
     await expect(page.locator("#registrar-faena")).toContainText(WORKSITE_NAME)
-    if (!new RegExp(`punto=${REV_POINT_ID}`).test(page.url())) await pickSelect(page, "registrar-punto", REV_POINT_NAME)
-    await expect(page).toHaveURL(new RegExp(`punto=${REV_POINT_ID}`))
+    if (!(await page.locator("#registrar-punto").textContent())?.includes(REV_POINT_NAME)) await pickSelect(page, "registrar-punto", REV_POINT_NAME)
+    await expect(page.locator("#registrar-punto")).toContainText(REV_POINT_NAME)
 
     // El administrador tiene `register_past_load`: el bloque plegado está en el paso «Dónde».
     const otroDia = page.getByRole("button", { name: /^¿Es una carga de otro día\?/ })
