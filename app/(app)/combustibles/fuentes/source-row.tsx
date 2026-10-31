@@ -73,7 +73,7 @@ export function SourceRow({
         ) : null}
         <div className={cn("min-w-0", source.problem ? "sm:col-span-2 lg:col-span-4" : undefined)}>
           <dt className="text-xs text-[var(--color-text-muted)]">Falta</dt>
-          <dd className={cn("font-medium", source.problem ? "text-[var(--color-warning-ink)]" : "text-[var(--color-text)]")}>{source.problem ?? (status.status === "sin_datos" ? "Todavía no hay datos de esta fuente" : "Nada")}</dd>
+          <dd className={cn("font-medium", source.problem ? "text-[var(--color-warning-ink)]" : "text-[var(--color-text)]")}>{source.problem ?? (status.status === "sin_datos" ? "Todavía no hay datos de este período" : "Nada")}</dd>
         </div>
       </dl>
 

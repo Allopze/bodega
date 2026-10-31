@@ -32,9 +32,9 @@ describe("SourceRow", () => {
     expect(screen.queryByText("Nada")).toBeNull()
   })
 
-  it("una fuente sin datos no dice «Nada»: dice que todavía no hay", () => {
+  it("una fuente sin datos del período no dice «Nada»: dice que todavía no hay", () => {
     render(<SourceRow source={{ ...base, facts: [] }} status={{ status: "sin_datos", statusLabel: "Sin archivos" }} />)
-    expect(screen.getByText("Todavía no hay datos de esta fuente")).toBeInTheDocument()
+    expect(screen.getByText("Todavía no hay datos de este período")).toBeInTheDocument()
   })
 
   it("el detalle técnico va plegado y sólo existe si hay algo que decir", () => {
