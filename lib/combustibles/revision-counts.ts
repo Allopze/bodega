@@ -8,7 +8,7 @@ import { logger } from "@/lib/logger"
 
 /** Estados de un caso de anomalía que todavía piden una decisión. */
 export const OPEN_ANOMALY_STATUSES = ["open", "in_review", "reopened"] as const
-/** Valor de `?estado=` en `/combustibles/anomalias` que lista exactamente esos estados. */
+/** Valor de `?estado=` de los enlaces de «Anomalías» (hoy una página puente hacia «Por revisar») que lista exactamente esos estados. */
 export const ANOMALY_OPEN_FILTER = "vigentes"
 export const ANOMALY_OPEN_FILTER_LABEL = "Vigentes (abiertos, en revisión o reabiertos)"
 
@@ -20,8 +20,10 @@ export interface RevisionCounts {
 }
 
 /**
- * Pendientes de las dos colas de «Revisión», dentro del alcance de faenas de la
- * sesión. Cada conteo cae a `null` por separado: un número que no se pudo
+ * Pendientes de las dos colas que antes se llamaban «Revisión», dentro del alcance
+ * de faenas de la sesión, sin período. La bandeja «Por revisar» cuenta con
+ * `summarizeFuelInbox` (por período) y el menú con `countFuelInboxPending`; esta
+ * función sigue sirviendo al tile del Panel operacional. Cada conteo cae a `null` por separado: un número que no se pudo
  * calcular no se pinta como cero.
  */
 export async function loadRevisionCounts(session: Session): Promise<RevisionCounts> {

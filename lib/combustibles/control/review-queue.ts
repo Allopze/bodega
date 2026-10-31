@@ -6,6 +6,12 @@ import { statisticallyValidLoadSql, buildLoadWhere, type ControlFilters } from "
 import { FLAG_REASONS, type FlagReason, type LoadSource, type PerformanceUnit, type ReviewStatus } from "./contracts"
 import { fuelLoadHrefFromEquipmentLoad } from "@/lib/combustibles/routes"
 
+/**
+ * Cola de cargas marcadas por estado (ControlFilters). La pantalla «Por revisar»
+ * (2026-10-31) lee las cargas por `getFuelInbox` y ya no usa `getReviewQueue`; se
+ * conserva por su contrato probado (pestañas, promedio del equipo, alcance).
+ */
+
 /** Tamaño de página de la cola de revisión (regla del brief: 50 filas). */
 export const REVIEW_PAGE_SIZE = 50
 

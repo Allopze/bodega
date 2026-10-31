@@ -5,7 +5,7 @@ import { safeActionMessage } from "@/lib/action-error"
 import { logger } from "@/lib/logger"
 import { decideFlaggedLoad } from "@/lib/combustibles/control/review"
 import { FUEL_PATHS } from "@/lib/combustibles/routes"
-import { revalidateFuel } from "@/lib/combustibles/revalidate"
+import { revalidateInbox } from "@/app/(app)/combustibles/revisar/revalidate-inbox"
 
 /**
  * Aprobar o rechazar una carga marcada. La autorización (permiso + alcance de
@@ -25,7 +25,7 @@ async function decide(input: DecisionInput, decision: "approve" | "reject"): Pro
   try {
     const result = await decideFlaggedLoad(guard.session, { loadId: input.loadId, decision, note: input.note })
     if (!result.ok) return result
-    revalidateFuel()
+    revalidateInbox()
     return { ok: true, message: decision === "approve" ? "Carga aprobada" : "Carga rechazada" }
   } catch (error) {
     logger.error("[decideFlaggedLoad]", error)

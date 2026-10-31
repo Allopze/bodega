@@ -32,7 +32,7 @@ vi.mock("@/lib/auth/auth", () => ({ auth: mockAuth }))
 await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
 import type { Tx } from "@/db"
-import { decideFlaggedLoad } from "@/lib/combustibles/control/review"
+import { decideFlaggedLoad, decideFlaggedLoads, MAX_BATCH_DECISION } from "@/lib/combustibles/control/review"
 import { projectTaeSubmissions } from "@/lib/combustibles/control/projection"
 import { approveFlaggedLoadAction, rejectFlaggedLoadAction } from "@/app/(app)/combustibles/control/revision/actions"
 
@@ -164,6 +164,82 @@ describe("revisión de cargas marcadas", () => {
     expect(after).toMatchObject({ reviewStatus: "approved", duplicateOfId: null, performanceStatus: "computed", performanceValue: 10 })
   })
 
+  /** Serie con una lectura que retrocede (2.ª carga) y, el mismo día, una posible duplicada (la última): dos cargas por decidir. */
+  async function seriesWithTwoFlagged() {
+    const ids = [
+      await submission("2026-03-01T12:00:00.000Z", 1000),
+      await submission("2026-03-02T12:00:00.000Z", 900, 30),
+      await submission("2026-03-03T12:00:00.000Z", 1500, 20),
+      await submission("2026-03-04T12:00:00.000Z", 1600, 50),
+      await submission("2026-03-04T12:05:00.000Z", 1700, 50, { source: "legacy_xlsx" }),
+    ]
+    await projectTaeSubmissions(tx, ids)
+    const rows = await loads()
+    const flagged = rows.filter((row) => row.reviewStatus === "flagged")
+    expect(flagged.map((row) => row.flagReasons)).toEqual([["meter_regression"], ["duplicate"]])
+    return flagged
+  }
+
+  it("en lote: una nota común, una auditoría por carga y la duplicada vuelve a la serie", async () => {
+    const [regression, duplicate] = await seriesWithTwoFlagged()
+    const result = await decideFlaggedLoads(session(["ws-a"]), { loadIds: [regression!.id, duplicate!.id], decision: "approve", note: "Revisadas con el supervisor" })
+    expect(result).toMatchObject({ ok: true, decided: 2, skipped: 0, worksiteIds: ["ws-a"] })
+
+    const after = await loads()
+    expect(after.filter((row) => row.reviewStatus === "approved")).toHaveLength(2)
+    expect(after.find((row) => row.id === duplicate!.id)).toMatchObject({ duplicateOfId: null, performanceStatus: "computed", reviewNote: "Revisadas con el supervisor", reviewedBy: "reviewer" })
+    const trail = await audits()
+    expect(trail).toHaveLength(2)
+    expect(trail.map((row) => row.entityId).sort()).toEqual([regression!.id, duplicate!.id].sort())
+    for (const row of trail) {
+      expect(row).toMatchObject({ action: "status_change", reason: "Revisadas con el supervisor", worksiteId: "ws-a", userId: "reviewer" })
+      expect(JSON.parse(row.oldState!)).toMatchObject({ reviewStatus: "flagged" })
+      expect(JSON.parse(row.newState!)).toMatchObject({ reviewStatus: "approved", batch: true })
+    }
+  })
+
+  it("en lote, rechazar saca a todas las seleccionadas de la serie", async () => {
+    const [regression, duplicate] = await seriesWithTwoFlagged()
+    const result = await decideFlaggedLoads(session(["ws-a"]), { loadIds: [regression!.id, duplicate!.id], decision: "reject", note: "Lecturas mal digitadas" })
+    expect(result).toMatchObject({ ok: true, decided: 2 })
+    const after = await loads()
+    expect(after.filter((row) => row.reviewStatus === "rejected")).toHaveLength(2)
+    expect(after.filter((row) => row.reviewStatus === "rejected").every((row) => row.performanceStatus === "excluded")).toBe(true)
+  })
+
+  it("en lote, una carga que otra persona ya decidió se omite y las demás se deciden", async () => {
+    const [regression, duplicate] = await seriesWithTwoFlagged()
+    await decideFlaggedLoad(session(["ws-a"]), { loadId: regression!.id, decision: "reject", note: "Decidida por otra persona" })
+    const result = await decideFlaggedLoads(session(["ws-a"]), { loadIds: [regression!.id, duplicate!.id], decision: "approve", note: "Son dos cargas distintas" })
+    expect(result).toMatchObject({ ok: true, decided: 1, skipped: 1 })
+    expect((await loads()).find((row) => row.id === regression!.id)!.reviewStatus).toBe("rejected")
+    expect(await audits()).toHaveLength(2)
+
+    const nothingLeft = await decideFlaggedLoads(session(["ws-a"]), { loadIds: [regression!.id], decision: "approve", note: "Otra vez la misma carga" })
+    expect(nothingLeft).toMatchObject({ ok: false })
+  })
+
+  it("en lote, una carga fuera de tu alcance o inexistente aborta todo: nada se escribe", async () => {
+    const [regression, duplicate] = await seriesWithTwoFlagged()
+    const outOfScope = await decideFlaggedLoads(session(["ws-b"]), { loadIds: [regression!.id, duplicate!.id], decision: "approve", note: "Intento fuera de alcance" })
+    expect(outOfScope).toEqual({ ok: false, message: "Alguna carga no existe o no está en tus faenas" })
+    const missing = await decideFlaggedLoads(session(["ws-a"]), { loadIds: [regression!.id, "no-existe"], decision: "approve", note: "Una de las dos no existe" })
+    expect(missing).toEqual({ ok: false, message: "Alguna carga no existe o no está en tus faenas" })
+    expect((await loads()).filter((row) => row.reviewStatus === "flagged")).toHaveLength(2)
+    expect(await audits()).toHaveLength(0)
+  })
+
+  it("en lote exige permiso, nota de 10 a 500 caracteres, al menos una carga y no más del tope", async () => {
+    const [regression] = await seriesWithTwoFlagged()
+    const input = { loadIds: [regression!.id], decision: "approve" as const, note: "Nota suficientemente larga" }
+    expect(await decideFlaggedLoads(session(["ws-a"], ["combustibles:view"]), input)).toEqual({ ok: false, message: "No tienes permisos para revisar cargas marcadas" })
+    expect(await decideFlaggedLoads(session(["ws-a"]), { ...input, note: "corta" })).toMatchObject({ ok: false })
+    expect(await decideFlaggedLoads(session(["ws-a"]), { ...input, note: "x".repeat(501) })).toMatchObject({ ok: false })
+    expect(await decideFlaggedLoads(session(["ws-a"]), { ...input, loadIds: [] })).toEqual({ ok: false, message: "Elige al menos una carga" })
+    expect(await decideFlaggedLoads(session(["ws-a"]), { ...input, loadIds: Array.from({ length: MAX_BATCH_DECISION + 1 }, (_, i) => `x-${i}`) })).toMatchObject({ ok: false })
+    expect(await audits()).toHaveLength(0)
+  })
+
   it("las server actions exigen el permiso y revalidan el submódulo", async () => {
     const [, flagged] = await seriesWithRegression()
     mockAuth.mockResolvedValue(session(["ws-a"], ["combustibles:view"]))
@@ -173,7 +249,7 @@ describe("revisión de cargas marcadas", () => {
     mockAuth.mockResolvedValue(session(["ws-a"]))
     const ok = await rejectFlaggedLoadAction({ loadId: flagged!.id, note: "Lectura mal digitada en terreno" })
     expect(ok).toEqual({ ok: true, message: "Carga rechazada" })
-    expect(revalidatePath).toHaveBeenCalledWith("/combustibles/control", "layout")
+    expect(revalidatePath).toHaveBeenCalledWith("/combustibles", "layout")
     const rows = await inMemoryDb.select().from(schema.fuelEquipmentLoads)
       .where(and(eq(schema.fuelEquipmentLoads.id, flagged!.id), eq(schema.fuelEquipmentLoads.reviewStatus, "rejected")))
     expect(rows).toHaveLength(1)

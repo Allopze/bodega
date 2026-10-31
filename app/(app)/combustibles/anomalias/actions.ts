@@ -7,7 +7,7 @@ import { guardPermission } from "@/lib/auth/can"
 import { updateAnomalyCaseStatus, assignAnomalyCase, addAnomalyComment, METER_RESOLUTION_KINDS, type AnomalyCaseStatus, type MeterResolutionKind } from "@/lib/combustibles/anomaly-cases"
 import { logger } from "@/lib/logger"
 import { FUEL_PATHS } from "@/lib/combustibles/routes"
-import { revalidateFuel } from "@/lib/combustibles/revalidate"
+import { revalidateInbox } from "@/app/(app)/combustibles/revisar/revalidate-inbox"
 
 /** in_review/reopened son parte de la revisión; resolved/dismissed cierran el caso y requieren el permiso de resolución. */
 const RESOLVING_STATUSES = new Set(["resolved", "dismissed"])
@@ -35,7 +35,7 @@ export async function updateAnomalyStatusAction(input: { caseId: string; expecte
   if (guard.error) return guard.error
   try {
     await updateAnomalyCaseStatus(guard.session, input.caseId, input.expectedStatus, input.status as "in_review" | "resolved" | "dismissed" | "reopened", input.resolution, input.resolutionKind as MeterResolutionKind | undefined)
-    revalidateFuel()
+    revalidateInbox()
     return { ok: true, message: "Estado actualizado" }
   } catch (error) {
     logger.error("[updateAnomalyStatusAction]", error)
@@ -49,7 +49,7 @@ export async function assignAnomalyAction(input: { caseId: string; expectedAssig
   if (guard.error) return guard.error
   try {
     await assignAnomalyCase(guard.session, input.caseId, input.expectedAssigneeId, input.assigneeId)
-    revalidateFuel()
+    revalidateInbox()
     return { ok: true, message: "Asignado correctamente" }
   } catch (error) {
     logger.error("[assignAnomalyAction]", error)
@@ -63,7 +63,7 @@ export async function commentAnomalyAction(input: { caseId: string; body: string
   if (guard.error) return guard.error
   try {
     await addAnomalyComment(guard.session, input.caseId, input.body)
-    revalidateFuel()
+    revalidateInbox()
     return { ok: true, message: "Comentario añadido" }
   } catch (error) {
     logger.error("[commentAnomalyAction]", error)

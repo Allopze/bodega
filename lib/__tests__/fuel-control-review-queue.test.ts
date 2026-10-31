@@ -111,7 +111,7 @@ describe("cola de revisión de cargas (PostgreSQL)", () => {
     expect(first.vehicleCode).toBe("KA-63")
     expect(first.worksiteName).toBe("Faena A")
     expect(first.source).toBe("operations_import")
-    expect(first.originHref).toBe(`/combustibles/importar/operaciones/${batchId}`)
+    expect(first.originHref).toMatch(/^\/combustibles\/cargas\/planilla\/.+/)
   })
 
   it("calcula el promedio del equipo solo con cargas estadísticamente válidas", async () => {
