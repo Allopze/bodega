@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { PublicFormQrDialog, type PublicFormQrOption } from "@/components/public-access/public-form-qr-dialog"
 import { createTaeLoadingPointAction, createTaePublicLinkAction, revokeTaePublicLinkAction, setTaeLoadingPointStorageAction } from "./actions"
 import { toast } from "@/lib/toast"
+import { taeAccessUrl } from "@/lib/combustibles/tae-access-url"
 import { LOADING_POINT_TYPE_LABELS, type LoadingPointType } from "@/lib/combustibles/control/contracts"
 
 interface Worksite { id: string; name: string }
@@ -42,7 +43,7 @@ export function TaeAccessPanel({ worksites, loadingPoints, storageLocations, exi
       const option: PublicFormQrOption = {
         id: result.data.id,
         label: `${worksite?.name ?? "Faena"}${point ? ` · ${point.name}` : ""}`,
-        url: `${window.location.origin}/tae/acceso/${result.data.accessToken}`,
+        url: taeAccessUrl(window.location.origin, result.data.accessToken),
         pdfTitle: worksite?.name ?? "Control TAE",
         pdfFileName: `tae-acceso-${result.data.id}.pdf`,
       }

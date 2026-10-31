@@ -12,9 +12,9 @@ vi.mock("@/lib/toast", () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 const option = {
   id: "tae-link-1",
   label: "Santa Fe · Surtidor principal",
-  url: "https://chome.test/tae/acceso/secret-token",
+  url: "https://chome.test/tae/access/secret-token",
   pdfTitle: "Santa Fe",
-  pdfFileName: "tae-acceso.pdf",
+  pdfFileName: "tae-access.pdf",
 }
 
 describe("PublicFormQrDialog", () => {

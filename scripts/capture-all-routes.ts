@@ -840,6 +840,7 @@ const routeTargets: RouteTarget[] = [
   { slug: "acuse-publico", path: "/acuse/capacitacion/capture-ack-target/capture-ack-token", auth: false },
   { slug: "tae-form", path: "/tae", auth: false },
   { slug: "tae-access", path: "/tae/access/capture-tae-token", auth: false },
+  { slug: "tae-acceso-legacy", path: "/tae/acceso/capture-tae-token", auth: false, allowedPaths: ["/tae/access/capture-tae-token"], captureView: false, notes: "Compatibilidad: los QR generados antes del 2026-10-30 apuntaban a /tae/acceso." },
   { slug: "tae-resultado", path: "/tae/resultado/capture-tae-result-token", auth: false },
   { slug: "prevencion-ppa", path: "/prevencion/ppa", auth: true },
   { slug: "prevencion-ppa-detalle", path: "/prevencion/ppa/ppa-audit-1", auth: true },
