@@ -37,6 +37,18 @@ describe("SourceRow", () => {
     expect(screen.getByText("Todavía no hay datos de este período")).toBeInTheDocument()
   })
 
+  it("un dato puede llevar su enlace «cambiarlo» junto al valor, sin abrir el detalle", () => {
+    const facts = [{ label: "Sincronización automática", value: "Activada", href: "/combustibles/ajustes/integraciones", hrefLabel: "Cambiar en Ajustes" }]
+    render(<SourceRow source={{ ...base, key: "aramco", name: "Aramco", facts, technical: [] }} status={{ status: "ok", statusLabel: "Al día" }} />)
+    expect(screen.getByText(/Activada/)).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "Cambiar en Ajustes" })).toHaveAttribute("href", "/combustibles/ajustes/integraciones")
+  })
+
+  it("un dato sin enlace no pinta ninguno", () => {
+    render(<SourceRow source={base} status={{ status: "ok", statusLabel: "Importada ayer" }} />)
+    expect(screen.queryByRole("link")).toBeNull()
+  })
+
   it("el detalle técnico va plegado y sólo existe si hay algo que decir", () => {
     const { container, rerender } = render(<SourceRow source={base} status={{ status: "ok", statusLabel: "Al día" }} />)
     const details = container.querySelector("details")

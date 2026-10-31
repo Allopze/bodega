@@ -134,6 +134,28 @@ describe("estado de las fuentes de datos (PostgreSQL)", () => {
     expect(summarizeFuelSources(statuses.filter((status) => ["copec", "aramco"].includes(status.key))).ready).toBe(true)
   })
 
+  it("Aramco lleva «Cambiar en Ajustes» junto a la sincronización automática sólo para quien administra integraciones y con credenciales", async () => {
+    await run("aramco", { startedAt: hoursAgo(1) })
+    const fact = (statuses: Awaited<ReturnType<typeof getFuelSourceStatuses>>) => byKey(statuses, "aramco")!.facts.find((item) => item.label === "Sincronización automática")!
+
+    // Con el permiso de administrar integraciones el estado trae su enlace a Ajustes.
+    const manager = session({ global: true, permissions: [...ALL_PERMISSIONS, "combustibles:manage_integrations"] })
+    expect(fact(await getFuelSourceStatuses(manager, monthPeriod))).toMatchObject({ value: "Apagada", href: "/combustibles/ajustes/integraciones", hrefLabel: "Cambiar en Ajustes" })
+
+    // Quien sólo sincroniza ve el estado, no un enlace a una pantalla que no puede abrir.
+    expect(fact(await getFuelSourceStatuses(global(), monthPeriod)).href).toBeUndefined()
+
+    // Sin credenciales no hay nada que activar: el estado lo dice y la fila ya manda a configurarlas.
+    const password = process.env.ARAMCO_PASSWORD
+    delete process.env.ARAMCO_PASSWORD
+    try {
+      expect(fact(await getFuelSourceStatuses(manager, monthPeriod))).toMatchObject({ value: "Sin credenciales" })
+      expect(fact(await getFuelSourceStatuses(manager, monthPeriod)).href).toBeUndefined()
+    } finally {
+      process.env.ARAMCO_PASSWORD = password
+    }
+  })
+
   it("una fuente sin corrida en dos días o más queda pendiente y lo dice en una frase", async () => {
     await run("copec", { startedAt: daysAgo(4) })
     await run("aramco", { startedAt: daysAgo(1) })

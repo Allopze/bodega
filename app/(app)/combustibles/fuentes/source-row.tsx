@@ -1,4 +1,5 @@
 import type { ReactNode } from "react"
+import Link from "next/link"
 import { CloudArrowDown, Drop, FileXls, Gauge, QrCode, Receipt, SealCheck } from "@phosphor-icons/react/dist/ssr"
 import { MetaBadge } from "@/components/states/state-badge"
 import { cn } from "@/lib/utils"
@@ -62,7 +63,10 @@ export function SourceRow({
         {source.facts.map((fact) => (
           <div key={fact.label} className="min-w-0">
             <dt className="text-xs text-[var(--color-text-muted)]">{fact.label}</dt>
-            <dd className="break-words font-medium text-[var(--color-text)]">{fact.value}</dd>
+            <dd className="break-words font-medium text-[var(--color-text)]">
+              {fact.value}
+              {fact.href ? <> · <Link href={fact.href} className="font-normal text-[var(--color-primary-ink)] underline underline-offset-2">{fact.hrefLabel ?? "Cambiar"}</Link></> : null}
+            </dd>
           </div>
         ))}
         {source.feeds.length > 0 ? (

@@ -45,8 +45,6 @@ export function AramcoSyncStatus({ source, initialStatus, credentialsHref }: {
   const [view, patch] = useReducer(reducer, { status: initialStatus, historyOpen: false, historyFrom: "", result: null, busy: false })
   const { status, historyOpen, historyFrom, result, busy } = view
   const isActive = busy || pending
-  // Mismo criterio que la fila de la fuente (`sources-status.ts`): sin credenciales la sincronización no puede correr.
-  const autoSyncLabel = !status.hasCredentials ? "Sin credenciales" : status.settings.syncEnabled ? "Activada" : "Apagada"
 
   const refreshStatus = useCallback(async () => {
     const next = await getAramcoSyncStatusAction()
@@ -129,7 +127,7 @@ export function AramcoSyncStatus({ source, initialStatus, credentialsHref }: {
         <p className="text-xs text-[var(--color-text-muted)]">{status.batches} lote(s) de Aramco vigentes; el último período cargado es {status.lastPeriod.replace(/\d{4}-\d{2}-\d{2}/g, (day) => formatDate(day))}.</p>
       ) : null}
       <p className="text-xs text-[var(--color-text-muted)]">
-        Sincronización automática diaria: <span className="font-medium text-[var(--color-text)]">{autoSyncLabel}</span>. Se cambia, junto con las credenciales, en{" "}
+        Las credenciales y la sincronización automática diaria se administran en{" "}
         {credentialsHref ? <Link href={credentialsHref} className="font-medium underline">Ajustes › Integraciones</Link> : "Ajustes › Integraciones"}.
       </p>
     </SourceRow>

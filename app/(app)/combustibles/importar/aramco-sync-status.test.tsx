@@ -57,21 +57,6 @@ describe("fila de Aramco en «Fuentes de datos»", () => {
     expect(mocks.refresh).toHaveBeenCalled()
   })
 
-  it("dice si la sincronización automática diaria está activada, apagada o sin credenciales", () => {
-    render(<AramcoSyncStatus source={source} initialStatus={status} credentialsHref={null} />)
-    expect(screen.getByText(/Sincronización automática diaria:/)).toHaveTextContent("Sincronización automática diaria: Activada.")
-    cleanup()
-
-    // El estado de la fila nace de `initialStatus` (no se actualiza con un re-render): otra fila, otro render.
-    render(<AramcoSyncStatus source={source} initialStatus={{ ...status, settings: { ...status.settings, syncEnabled: false } }} credentialsHref={null} />)
-    expect(screen.getByText(/Sincronización automática diaria:/)).toHaveTextContent("Sincronización automática diaria: Apagada.")
-  })
-
-  it("sin credenciales la sincronización automática figura «Sin credenciales», aunque el interruptor esté encendido", () => {
-    render(<AramcoSyncStatus source={source} initialStatus={{ ...status, hasCredentials: false }} credentialsHref="/combustibles/ajustes/integraciones" />)
-    expect(screen.getByText(/Sincronización automática diaria:/)).toHaveTextContent("Sincronización automática diaria: Sin credenciales.")
-  })
-
   it("con filas pendientes ofrece ir a vincular las patentes", () => {
     render(<AramcoSyncStatus source={source} initialStatus={{ ...status, rowsPending: 3 }} credentialsHref={null} />)
     expect(screen.getByRole("link", { name: "Ver patentes sin vincular" })).toHaveAttribute("href", "/combustibles/revisar?tipo=patente")
