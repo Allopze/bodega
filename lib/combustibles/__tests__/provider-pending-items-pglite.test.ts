@@ -72,4 +72,11 @@ describe("describeProviderPendingItems", () => {
     const items = ["AAAA11", "BBBB22", "CCCC33", "DDDD44", "EEEE55"].map((label) => ({ kind: "plate" as const, label, loads: 1 }))
     expect(describeProviderPendingItems(items)).toBe("patente AAAA11 (1 carga, sin vehículo o asignación), patente BBBB22 (1, sin vehículo o asignación), patente CCCC33 (1, sin vehículo o asignación) y 2 más")
   })
+
+  it("con una sola, no repite la cifra y dice qué le falta", () => {
+    expect(describeProviderPendingItems([{ kind: "tae_card", label: "1-242269-00258-9-8", loads: 8 }]))
+      .toBe("la tarjeta de abastecimiento 1-242269-00258-9-8 no tiene estanque activo")
+    expect(describeProviderPendingItems([{ kind: "plate", label: "AB-CD12", loads: 2 }]))
+      .toBe("la patente AB-CD12 no está en la flota o no tiene asignación para ese mes")
+  })
 })
