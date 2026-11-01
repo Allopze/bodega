@@ -60,3 +60,21 @@ base existente exige la limpieza auditada previa.
 La imagen standalone actual no incluye `tsx` ni este script. Ejecutarlo desde
 un entorno de mantenimiento que tenga el código y acceso explícito a la base;
 no imprimir ni copiar la cadena de conexión en informes o bitácoras.
+
+## Corte protegido en una base existente
+
+`scripts/aramco-cutover-cli.ts` combina el inventario, la limpieza auditada y
+el migrador Drizzle bajo `aramco-cutover-guard.mjs`. Exige PostgreSQL 16 primario,
+el nombre de la base, el identificador del clúster y el rol esperados; `--apply`
+además exige el hash del inventario, responsable, referencia de respaldo y
+`--services-stopped`. El operador debe verificar de forma independiente el
+respaldo recuperable y que los procesos de aplicación, cron y respaldo estén
+detenidos: las opciones son declaraciones, no sustituyen esas comprobaciones.
+
+El guard rechaza conexiones de negocio mientras dura el corte. Si se interrumpe
+o falla después de iniciarlo, puede dejar `ALLOW_CONNECTIONS` desactivado. No
+reiniciar la versión anterior ni restaurar un respaldo sobre escrituras nuevas:
+conectarse a la base administrativa `postgres`, revisar el estado de la
+auditoría y la migración, y reabrir la base solo después de resolver el fallo.
+El test del guard requiere una base PostgreSQL local desechable y vacía indicada
+en `ARAMCO_CUTOVER_TEST_DATABASE_URL`.
