@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react"
 
 const mocks = vi.hoisted(() => ({
   start: vi.fn(),
@@ -49,6 +49,7 @@ const status = {
   affectedAmount: 0,
   cursor: null,
   pending: 0,
+  pendingItems: [],
   coverageMonth: "2025-01-01",
   coverage: [],
 }
@@ -81,6 +82,28 @@ describe("aviso de cargas pendientes", () => {
     render(<CopecSyncStatus source={source} initialStatus={{ ...status, pending: 566, lastRunMonth: "2025-01-01" }} initialStartOptions={startOptions} />)
     expect(screen.getByText(/566 carga\(s\) de enero de 2025 quedaron pendientes/)).toBeInTheDocument()
     expect(screen.queryByText(/patente\(s\) sin vehículo/)).not.toBeInTheDocument()
+  })
+
+  it("nombra la tarjeta de estanque y las patentes que dejaron cargas pendientes, cada una con su arreglo", () => {
+    const pendingItems = [
+      { kind: "tae_card" as const, label: "1-242269-00258-9-8", loads: 8 },
+      { kind: "plate" as const, label: "AB-CD12", loads: 1 },
+    ]
+    render(<CopecSyncStatus source={source} initialStatus={{ ...status, pending: 9, lastRunMonth: "2026-01-01", pendingItems }} initialStartOptions={startOptions} />)
+    const list = screen.getByRole("list", { name: "Tarjetas y patentes con cargas pendientes" })
+    const items = within(list).getAllByRole("listitem").map((item) => item.textContent)
+    expect(items).toEqual([
+      "Tarjeta de abastecimiento 1-242269-00258-9-8 (8 cargas): ningún estanque activo tiene esta tarjeta.",
+      "Patente AB-CD12 (1 carga): no está en la flota o no tiene asignación para ese mes.",
+    ])
+  })
+
+  it("con muchas, nombra las primeras y resume el resto", () => {
+    const pendingItems = Array.from({ length: 9 }, (_, index) => ({ kind: "plate" as const, label: `AAAA${index}`, loads: 1 }))
+    render(<CopecSyncStatus source={source} initialStatus={{ ...status, pending: 9, lastRunMonth: "2026-01-01", pendingItems }} initialStartOptions={startOptions} />)
+    const list = screen.getByRole("list", { name: "Tarjetas y patentes con cargas pendientes" })
+    expect(within(list).getAllByRole("listitem")).toHaveLength(7)
+    expect(within(list).getByText("y 3 más.")).toBeInTheDocument()
   })
 })
 

@@ -24,6 +24,7 @@ import type { ResolvedFuelPeriod } from "@/lib/combustibles/period/types"
 import { FUEL_PATHS } from "@/lib/combustibles/routes"
 import { listTaeImportBatches } from "@/lib/combustibles/tae-import-ledger"
 import { readVisionLinkConfig } from "@/lib/integrations/visionlink/visionlink-settings"
+import { describeProviderPendingItems, listProviderPendingItems } from "@/lib/combustibles/provider-pending-items"
 import { logger } from "@/lib/logger"
 import { getCronJobHealth, type CronJobHealth } from "@/lib/services/cron-lock"
 import { userFacingErrorText } from "@/lib/user-facing-error"
@@ -298,7 +299,12 @@ async function providerSource(provider: "copec" | "aramco", ctx: Ctx): Promise<F
   const pendingRows = latest && latest.status !== "failed" ? latest.rowsPending : 0
   if (pendingRows > 0) {
     const where = isCopec && latest ? ` en ${monthName(latest.requestedFrom.slice(0, 7))}` : ""
-    const sentence = `${plural(pendingRows, "carga tiene", "cargas tienen")} una patente que no está en la flota o sin asignación${where}; no se importan hasta vincularla.`
+    // Nombra qué tarjetas y patentes son: con sólo la cantidad había que ir a la
+    // base para saber qué arreglar, y una tarjeta se arregla en otro lado que una patente.
+    const items = latest ? await listProviderPendingItems(latest.id) : []
+    const sentence = items.length
+      ? `${plural(pendingRows, "carga quedó pendiente", "cargas quedaron pendientes")}${where}: ${describeProviderPendingItems(items)}. No se importan hasta resolverlo.`
+      : `${plural(pendingRows, "carga tiene", "cargas tienen")} una patente que no está en la flota o sin asignación${where}; no se importan hasta vincularla.`
     problem = problem ? `${problem} ${sentence}` : sentence
     if (status === "ok") {
       status = "pendiente"

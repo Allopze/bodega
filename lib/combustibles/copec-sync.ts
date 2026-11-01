@@ -7,6 +7,7 @@ import { todayInChile, addDaysToPlainDate } from "@/lib/utils"
 import { parseCopecDetail, type ParsedConsumptionRow } from "@/lib/combustibles/consumption-import"
 import { computeBatchTotals } from "@/lib/combustibles/consumption-calculations"
 import { plateMatchKey } from "@/lib/combustibles/xlsx-utils"
+import { listProviderPendingItems, type ProviderPendingItem } from "@/lib/combustibles/provider-pending-items"
 import { loadVehicleResolver } from "@/lib/combustibles/plate-resolver"
 import { saveMeterReadings } from "@/lib/combustibles/meter-readings"
 import { AUTOMATED_SOURCES, copecTctSource } from "@/lib/combustibles/fuel-sources"
@@ -84,12 +85,13 @@ export interface CopecCoverageStatusView {
   canConfirmEmpty: boolean
 }
 
-export async function getCopecSyncState(): Promise<{ lastRunAt: string | null; lastRunStatus: string | null; lastRunMonth: string | null; rowsReceived: number; rowsAccepted: number; rowsRejected: number; rowsPending: number; affectedQuantity: number; affectedAmount: number; cursor: string | null; pending: number; coverageMonth: string; coverage: CopecCoverageStatusView[] }> {
+export async function getCopecSyncState(): Promise<{ lastRunAt: string | null; lastRunStatus: string | null; lastRunMonth: string | null; rowsReceived: number; rowsAccepted: number; rowsRejected: number; rowsPending: number; affectedQuantity: number; affectedAmount: number; cursor: string | null; pending: number; pendingItems: ProviderPendingItem[]; coverageMonth: string; coverage: CopecCoverageStatusView[] }> {
   const [s, latestRun, nextUncovered] = await Promise.all([
     state(),
     db.query.fuelProviderSyncRuns.findFirst({ where: eq(fuelProviderSyncRuns.provider, "copec"), orderBy: [desc(fuelProviderSyncRuns.startedAt)] }),
     firstUncoveredMonth(),
   ])
+  const pendingItems = latestRun && latestRun.rowsPending > 0 ? await listProviderPendingItems(latestRun.id) : []
   const coverageMonth = monthKey(nextUncovered)
   const persistedCoverage = await listCopecPeriodCoverage(coverageMonth, lastDayOfMonth(coverageMonth))
   const coverage = (["TCT", "TAE"] as const).flatMap((channel) => (["diesel", "bluemax"] as const).map((product) => {
@@ -114,6 +116,7 @@ export async function getCopecSyncState(): Promise<{ lastRunAt: string | null; l
     affectedAmount: latestRun?.affectedAmount ?? 0,
     cursor: s.cursor,
     pending: latestRun?.rowsPending ?? s.pending.length,
+    pendingItems,
     coverageMonth,
     coverage
   }

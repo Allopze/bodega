@@ -15,6 +15,40 @@ import { confirmCopecPeriodEmptyAction, getCopecSyncProgressAction, getCopecSync
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
+/** Cuántas tarjetas o patentes se nombran; el resto se resume en «y N más». */
+const PENDING_ITEMS_SHOWN = 6
+
+const PENDING_REASON: Record<CopecSyncStatus["pendingItems"][number]["kind"], { noun: string; reason: string }> = {
+  tae_card: { noun: "Tarjeta de abastecimiento", reason: "ningún estanque activo tiene esta tarjeta" },
+  plate: { noun: "Patente", reason: "no está en la flota o no tiene asignación para ese mes" },
+}
+
+/**
+ * Nombra qué tarjetas y patentes dejaron cargas pendientes. Con sólo la
+ * cantidad («8 carga(s) quedaron pendientes») había que ir a la base de datos
+ * para saber qué arreglar, y una tarjeta de estanque se arregla en otro lado
+ * que una patente.
+ */
+function PendingNotice({ pending, month, items }: { pending: number; month: string | null; items: CopecSyncStatus["pendingItems"] }) {
+  const shown = items.slice(0, PENDING_ITEMS_SHOWN)
+  const hidden = items.length - shown.length
+  return (
+    <div className="space-y-1 text-xs text-[var(--color-warning-ink)]">
+      <p>{pending} carga(s) de {month ? formatMonth(month) : "la última corrida"} quedaron pendientes. No se importan hasta resolverlo y volver a sincronizar ese mes.</p>
+      {shown.length ? (
+        <ul aria-label="Tarjetas y patentes con cargas pendientes" className="list-disc space-y-0.5 pl-5">
+          {shown.map((item) => (
+            <li key={`${item.kind}-${item.label}`}>
+              {PENDING_REASON[item.kind].noun} <span className="font-mono">{item.label}</span> ({item.loads} carga{item.loads === 1 ? "" : "s"}): {PENDING_REASON[item.kind].reason}.
+            </li>
+          ))}
+          {hidden > 0 ? <li>y {hidden} más.</li> : null}
+        </ul>
+      ) : null}
+    </div>
+  )
+}
+
 const MONTH_FORMATTER = new Intl.DateTimeFormat("es-CL", { month: "long", year: "numeric", timeZone: "UTC" })
 const COVERAGE_STATUS_LABEL: Record<CopecSyncStatus["coverage"][number]["status"], string> = {
   unknown: "Desconocido",
@@ -307,7 +341,7 @@ export function CopecSyncStatus({ source, initialStatus, initialStartOptions, qu
 
       {status.cursor ? <p className="text-xs text-[var(--color-text-muted)]">Próximo mes pendiente: {formatMonth(status.cursor)}.</p> : null}
       {/* Son FILAS de la última corrida, no patentes: antes decía «566 patente(s)» por 566 cargas de un mes ya fuera del plan. */}
-      {status.pending > 0 ? <p className="text-xs text-[var(--color-warning-ink)]">{status.pending} carga(s) de {status.lastRunMonth ? formatMonth(status.lastRunMonth) : "la última corrida"} quedaron pendientes: su patente no está en la flota o no tiene asignación para ese mes. No se importan hasta resolverlo y volver a sincronizar ese mes.</p> : null}
+      {status.pending > 0 ? <PendingNotice pending={status.pending} month={status.lastRunMonth} items={status.pendingItems} /> : null}
 
       <div aria-label={`Cobertura Copec para ${formatMonth(status.coverageMonth)}`}>
         <p className="mb-2 text-xs font-medium text-[var(--color-text)]">Cobertura de {formatMonth(status.coverageMonth)}</p>

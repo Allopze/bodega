@@ -95,6 +95,7 @@ describe("estado de las fuentes de datos (PostgreSQL)", () => {
 
   beforeEach(async () => {
     await inMemoryDb.delete(schema.fuelProviderPeriodCoverage)
+    await inMemoryDb.delete(schema.fuelProviderTransactions)
     await inMemoryDb.delete(schema.fuelProviderSyncRuns)
     await inMemoryDb.delete(schema.cronRuns)
     await inMemoryDb.delete(schema.fuelImportBatches)
@@ -111,11 +112,13 @@ describe("estado de las fuentes de datos (PostgreSQL)", () => {
 
   async function run(provider: "copec" | "aramco", options: { startedAt: string; status?: string; rowsPending?: number; error?: string; requestedFrom?: string }) {
     const startedAt = options.startedAt
+    const id = nanoid()
     await inMemoryDb.insert(schema.fuelProviderSyncRuns).values({
-      id: nanoid(), provider, trigger: "cron", requestedFrom: options.requestedFrom ?? monthPeriod.from, requestedTo: monthPeriod.to,
+      id, provider, trigger: "cron", requestedFrom: options.requestedFrom ?? monthPeriod.from, requestedTo: monthPeriod.to,
       status: options.status ?? "success", correlationId: nanoid(), startedAt, finishedAt: options.status === "running" ? null : startedAt,
       rowsReceived: 100, rowsAccepted: 100 - (options.rowsPending ?? 0), rowsPending: options.rowsPending ?? 0, error: options.error ?? null,
     })
+    return id
   }
 
   const byKey = (statuses: Awaited<ReturnType<typeof getFuelSourceStatuses>>, key: string) => statuses.find((status) => status.key === key)
@@ -198,6 +201,22 @@ describe("estado de las fuentes de datos (PostgreSQL)", () => {
     expect(copec.status).toBe("pendiente")
     expect(copec.statusLabel).toBe("Al día · 28 por vincular")
     expect(copec.problem).toMatch(/28 cargas tienen una patente que no está en la flota/)
+  })
+
+  it("con las filas pendientes en el ledger, el aviso nombra la tarjeta y la patente", async () => {
+    const runId = await run("copec", { startedAt: hoursAgo(1), rowsPending: 3, requestedFrom: "2026-01-01" })
+    const pending = (account: string, plate: string, day: string) => ({
+      id: nanoid(), syncRunId: runId, provider: "copec", sourceAccount: account, identityKey: nanoid(), fingerprint: nanoid(),
+      sourceRowKey: nanoid(), sourcePlate: plate, occurredAt: `2026-01-${day}T12:00:00.000Z`, quantity: 600, amount: 570000,
+      status: "pending", resolutionCode: "unresolved_mapping", payloadHash: nanoid(),
+    })
+    await inMemoryDb.insert(schema.fuelProviderTransactions).values([
+      pending("tae:diesel", "1-242269-00258-9-8", "02"),
+      pending("tae:diesel", "1-242269-00258-9-8", "09"),
+      pending("tct:diesel", "AB-CD12", "05"),
+    ])
+    const copec = byKey(await getFuelSourceStatuses(global(), monthPeriod), "copec")!
+    expect(copec.problem).toBe("3 cargas quedaron pendientes en enero: tarjeta de abastecimiento 1-242269-00258-9-8 (2 cargas, sin estanque activo) y patente AB-CD12 (1, sin vehículo o asignación). No se importan hasta resolverlo.")
   })
 
   it("en un período cerrado, un mes sin cobertura completa de Copec queda «Falta cerrar» y luego «Completa»", async () => {
