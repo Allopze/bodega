@@ -43,6 +43,7 @@ describe.each(ROUTES)("autenticación del scheduler interno en /api/cron/$name",
     vi.stubEnv("FUEL_CRON_INTERNAL_SECRET", "fuel-internal-secret")
     vi.stubEnv("COPEC_USERNAME", "usuario")
     vi.stubEnv("COPEC_PASSWORD", "clave")
+    vi.stubEnv("COPEC_CLIENT_RUT", "76123456-0")
     mocks.readAramcoConfig.mockResolvedValue({ hasCredentials: true, syncEnabled: true })
     mocks.syncCopecReports.mockResolvedValue({ imported: 0 })
     mocks.syncAramco.mockResolvedValue({ imported: 0 })

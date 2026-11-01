@@ -38,6 +38,7 @@ describe("GET /api/cron/fuel-copec-sync", () => {
     // abajo): los casos de corrida necesitan una integración configurada.
     process.env.COPEC_USERNAME = "usuario"
     process.env.COPEC_PASSWORD = "clave"
+    process.env.COPEC_CLIENT_RUT = "76123456-0"
     delete process.env.COPEC_SYNC_ENABLED
     vi.clearAllMocks()
     mocks.verifyCronSecret.mockReturnValue(true)
@@ -73,7 +74,7 @@ describe("GET /api/cron/fuel-copec-sync", () => {
     expect(body).toMatchObject({ ok: true, outcome: "success", code: "FUEL_CRON_SUCCESS", imported: 10 })
   })
 
-  it("reports failed when the portal never delivers a file for a period", async () => {
+  it("reports failed when Copec never delivers a file for a period", async () => {
     mocks.syncCopecReports.mockRejectedValue(new Error("Copec no entregó ningún archivo"))
     const response = await GET(request())
     expect(response.status).toBe(503)
@@ -100,6 +101,15 @@ describe("GET /api/cron/fuel-copec-sync", () => {
     // una alerta diaria por una integración que nadie configuró.
     delete process.env.COPEC_USERNAME
     delete process.env.COPEC_PASSWORD
+
+    const response = await GET(request())
+    expect(await response.json()).toMatchObject({ outcome: "disabled", reason: "sin credenciales" })
+    expect(mocks.syncCopecReports).not.toHaveBeenCalled()
+  })
+
+  it("sin RUT cliente también queda apagada: sin él no hay web service que consultar", async () => {
+    // Antes el RUT era opcional porque sin él se usaba el portal, que se retiró.
+    delete process.env.COPEC_CLIENT_RUT
 
     const response = await GET(request())
     expect(await response.json()).toMatchObject({ outcome: "disabled", reason: "sin credenciales" })

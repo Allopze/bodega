@@ -3,7 +3,7 @@ import { computeRutDv } from "@/lib/rut"
 import { parseCopecDetail } from "../consumption-import"
 import { parseTaeReceiptRecords } from "../tae-receipt-import"
 import { buildCopecTransactionRows } from "../copec-events"
-import { copecSource, copecStationLabel, copecWsItemToRecord, withCopecSourceSession, withCopecWebServiceSession } from "../copec-ws"
+import { copecStationLabel, copecWsItemToRecord, withCopecWebServiceSession } from "../copec-ws"
 import type { CopecReportDownloadResult } from "../copec-reports"
 
 // Datos inventados con la forma exacta de las respuestas reales del 2026-10-30
@@ -171,27 +171,6 @@ describe("copecStationLabel", () => {
     expect(copecStationLabel("0000123456", "ESTACION")).toBe("123456-ESTACION")
     expect(copecStationLabel("", "ESTACION")).toBe("ESTACION")
     expect(copecStationLabel(undefined, undefined)).toBeNull()
-  })
-})
-
-describe("copecSource", () => {
-  afterEach(() => vi.unstubAllEnvs())
-
-  it("usa el web service cuando hay RUT cliente y el portal cuando no", () => {
-    vi.stubEnv("COPEC_SOURCE", "")
-    vi.stubEnv("COPEC_CLIENT_RUT", "")
-    expect(copecSource()).toBe("portal")
-    vi.stubEnv("COPEC_CLIENT_RUT", RUT)
-    expect(copecSource()).toBe("ws")
-  })
-
-  it("COPEC_SOURCE manda sobre el RUT", () => {
-    vi.stubEnv("COPEC_CLIENT_RUT", RUT)
-    vi.stubEnv("COPEC_SOURCE", " Portal ")
-    expect(copecSource()).toBe("portal")
-    vi.stubEnv("COPEC_CLIENT_RUT", "")
-    vi.stubEnv("COPEC_SOURCE", "ws")
-    expect(copecSource()).toBe("ws")
   })
 })
 
@@ -424,17 +403,6 @@ describe("withCopecWebServiceSession", () => {
       const [result] = await download([{ product: "diesel", ...PERIOD }])
       expect(failureOf(result)).toMatchObject({ kind: "invalid_file", message: expect.stringContaining("formato de fecha u hora") })
     }
-  })
-
-  it("COPEC_SOURCE=ws despacha al web service, y un valor mal escrito detiene la corrida", async () => {
-    vi.stubEnv("COPEC_SOURCE", "ws")
-    fetchMock.mockResolvedValueOnce(xmlResponse(soapResponse({ items: [soapItem()] })))
-    const [result] = await withCopecSourceSession((session) => session.download([{ product: "diesel", ...PERIOD }], "TCT"))
-    expect(result).toMatchObject({ unavailable: false })
-    expect(fetchMock).toHaveBeenCalledOnce()
-
-    vi.stubEnv("COPEC_SOURCE", "portall")
-    await expect(withCopecSourceSession(async () => "no debería correr")).rejects.toThrow(/COPEC_SOURCE/)
   })
 
   it("no consulta más de 31 días por vez", async () => {

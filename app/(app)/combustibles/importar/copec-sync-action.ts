@@ -63,7 +63,7 @@ const COPEC_SYNC_JOB = "fuel-copec-sync"
 
 /**
  * Inicia la MISMA corrida del cron —el mes en curso y los meses pendientes, en
- * una sola sesión del portal— y responde apenas toma el lock, sin esperar a que
+ * una sola sesión Copec— y responde apenas toma el lock, sin esperar a que
  * termine: detrás de Cloudflare una petición de más de ~100 s se corta y la
  * pantalla daba por perdida una corrida que sí terminaba. El avance se lee con
  * `getCopecSyncProgressAction`.

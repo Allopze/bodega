@@ -9,9 +9,7 @@ const mockMappingsFindMany = vi.fn()
 const mockConsumptionFindMany = vi.fn()
 const mockDownloadCopecReports = vi.fn()
 const mockPortalSessions = vi.fn()
-const mockParseConsumptionExcel = vi.fn()
 const mockParseCopecDetail = vi.fn()
-const mockParseTaeReceiptExcel = vi.fn()
 const mockParseTaeReceiptRecords = vi.fn()
 const mockImportTaeReceipts = vi.fn()
 const mockSaveState = vi.fn()
@@ -117,23 +115,21 @@ vi.mock("@/lib/combustibles/fuel-provider-ledger", () => ({
 }))
 vi.mock("@/lib/combustibles/copec-ws", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/combustibles/copec-ws")>()),
-  // Una sesión Copec por corrida, sea web service o portal; cada `download` es
-  // lo que antes era una llamada a `downloadCopecReports`, así que las
-  // aserciones siguen igual. Sin esto, un `COPEC_CLIENT_RUT` en el entorno
-  // haría que la prueba consultara a Copec de verdad.
-  withCopecSourceSession: async (run: (session: unknown) => Promise<unknown>) => {
+  // Una sesión Copec por corrida; cada `download` es lo que antes era una
+  // llamada a `downloadCopecReports`, así que las aserciones siguen igual. Sin
+  // esto, un `COPEC_CLIENT_RUT` en el entorno haría que la prueba consultara a
+  // Copec de verdad.
+  withCopecWebServiceSession: async (run: (session: unknown) => Promise<unknown>) => {
     mockPortalSessions()
     return run({ download: (...args: unknown[]) => mockDownloadCopecReports(...args) })
   },
 }))
 vi.mock("@/lib/combustibles/consumption-import", () => ({
-  parseConsumptionExcel: (...args: unknown[]) => mockParseConsumptionExcel(...args),
   parseCopecDetail: (...args: unknown[]) => mockParseCopecDetail(...args),
 }))
 // El canal TAE (recepciones) tiene sus propias pruebas; aquí se aísla para que
 // estos casos sigan midiendo solo la importación TCT.
 vi.mock("@/lib/combustibles/tae-receipt-import", () => ({
-  parseTaeReceiptExcel: (...args: unknown[]) => mockParseTaeReceiptExcel(...args),
   parseTaeReceiptRecords: (...args: unknown[]) => mockParseTaeReceiptRecords(...args),
 }))
 vi.mock("@/lib/combustibles/tae-receipts", async (importOriginal) => ({
@@ -287,7 +283,7 @@ describe("syncCopecReportPeriod", () => {
     mockSettingFindFirst.mockResolvedValue(undefined)
     mockBatchFindFirst.mockResolvedValue(undefined)
     mockUserFindFirst.mockResolvedValue({ id: "user-1" })
-    mockParseTaeReceiptExcel.mockResolvedValue({ rows: [], errors: [] })
+    mockParseTaeReceiptRecords.mockReturnValue({ rows: [], errors: [] })
     mockImportTaeReceipts.mockResolvedValue({ inserted: 0, duplicates: 0, unmappedCards: [], unmappedLiters: 0 })
     mockSaveState.mockResolvedValue(undefined)
     mockSaveStateReturning.mockResolvedValue([{ key: "combustibles.copec.sync" }])
@@ -359,12 +355,12 @@ describe("syncCopecReportPeriod", () => {
     const { TaeSupplierMissingError } = await import("../tae-receipts")
     const row = (patente: string): unknown => ({ rowIndex: 1, patente, numeroTarjetas: 1, numeroTransacciones: 2, cantidadUnidad: 100, monto: 50000, rendimientoPromedio: 3, rawRow: {} })
     mockDownloadCopecReports.mockResolvedValue([
-      { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "informe.xlsx" } },
+      { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "informe.xlsx", records: [] } },
       { product: "bluemax", unavailable: true },
     ])
-    mockParseConsumptionExcel.mockResolvedValue({ rows: [row("AAA")], errors: [], duplicates: [], detail: []  })
+    mockParseCopecDetail.mockReturnValue({ rows: [row("AAA")], errors: [], duplicates: [], detail: []  })
     mockVehiclesFindMany.mockResolvedValue([{ id: "v-aaa", plate: "AAA", worksiteId: "W1" }])
-    mockParseTaeReceiptExcel.mockResolvedValue({ rows: [{ documentNumber: "G-1", cardNumber: "1", productId: "fuel-diesel", occurredAt: "2026-02-10T10:00:00.000Z", liters: 10, unitPrice: 1, amount: 10, assignment: "", station: "", rawRow: {} }], errors: [] })
+    mockParseTaeReceiptRecords.mockReturnValue({ rows: [{ documentNumber: "G-1", cardNumber: "1", productId: "fuel-diesel", occurredAt: "2026-02-10T10:00:00.000Z", liters: 10, unitPrice: 1, amount: 10, assignment: "", station: "", rawRow: {} }], errors: [] })
     mockImportTaeReceipts.mockRejectedValue(new TaeSupplierMissingError())
 
     const result = await syncCopecReportPeriod({ from: "2026-02-01", to: "2026-02-28" }, "operator-1")
@@ -387,14 +383,14 @@ describe("syncCopecReportPeriod", () => {
     const row = (patente: string): unknown => ({ rowIndex: 1, patente, numeroTarjetas: 1, numeroTransacciones: 2, cantidadUnidad: 100, monto: 50000, rendimientoPromedio: 3, rawRow: {} })
     mockDownloadCopecReports
       .mockResolvedValueOnce([
-        { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "tct-diesel.xlsx" } },
+        { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "tct-diesel.xlsx", records: [] } },
         { product: "bluemax", unavailable: true },
       ])
       .mockResolvedValueOnce([
         { product: "diesel", unavailable: true },
         { product: "bluemax", unavailable: true },
       ])
-    mockParseConsumptionExcel.mockResolvedValue({ rows: [row("AAA")], errors: [], duplicates: [], detail: []  })
+    mockParseCopecDetail.mockReturnValue({ rows: [row("AAA")], errors: [], duplicates: [], detail: []  })
     mockVehiclesFindMany.mockResolvedValue([{ id: "v-aaa", plate: "AAA", worksiteId: "W1" }])
 
     await syncCopecReportPeriod({ from: "2026-02-01", to: "2026-02-28" }, "operator-1")
@@ -407,10 +403,10 @@ describe("syncCopecReportPeriod", () => {
   it("conserva ambos cursores hasta cerrar cobertura de cada producto", async () => {
     const row = (patente: string): unknown => ({ rowIndex: 1, patente, numeroTarjetas: 1, numeroTransacciones: 2, cantidadUnidad: 100, monto: 50000, rendimientoPromedio: 3, rawRow: {} })
     mockDownloadCopecReports.mockResolvedValue([
-      { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "informe.xlsx" } },
+      { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "informe.xlsx", records: [] } },
       { product: "bluemax", unavailable: true },
     ])
-    mockParseConsumptionExcel.mockResolvedValue({ rows: [row("AAA")], errors: [], duplicates: [], detail: []  })
+    mockParseCopecDetail.mockReturnValue({ rows: [row("AAA")], errors: [], duplicates: [], detail: []  })
     mockVehiclesFindMany.mockResolvedValue([{ id: "v-aaa", plate: "AAA", worksiteId: "W1" }])
 
     await syncCopecReportPeriod({ from: "2026-02-01", to: "2026-02-28" }, "operator-1")
@@ -439,10 +435,10 @@ describe("syncCopecReportPeriod", () => {
     // CERO registros sin lanzar ningún error.
     const row = (patente: string): unknown => ({ rowIndex: 7, patente, numeroTarjetas: 1, numeroTransacciones: 2, cantidadUnidad: 100, monto: 50000, rendimientoPromedio: 3, rawRow: {} })
     mockDownloadCopecReports.mockResolvedValue([
-      { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "tct-diesel.xlsx" } },
+      { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "tct-diesel.xlsx", records: [] } },
       { product: "bluemax", unavailable: true },
     ])
-    mockParseConsumptionExcel.mockResolvedValue({ rows: [row("AB-CD12")], errors: [], duplicates: [], detail: []  })
+    mockParseCopecDetail.mockReturnValue({ rows: [row("AB-CD12")], errors: [], duplicates: [], detail: []  })
     mockVehiclesFindMany.mockResolvedValue([{ id: "v-1", plate: "ABCD12", worksiteId: "W1" }])
 
     const tx = makeTx()
@@ -460,10 +456,10 @@ describe("syncCopecReportPeriod", () => {
     // proyección que ya era confiable.
     const row = (patente: string): unknown => ({ rowIndex: 1, patente, numeroTarjetas: 1, numeroTransacciones: 2, cantidadUnidad: 100, monto: 50000, rendimientoPromedio: 3, rawRow: {} })
     mockDownloadCopecReports.mockResolvedValue([
-      { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "tct-diesel.xlsx" } },
+      { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "tct-diesel.xlsx", records: [] } },
       { product: "bluemax", unavailable: true },
     ])
-    mockParseConsumptionExcel.mockResolvedValue({
+    mockParseCopecDetail.mockReturnValue({
       rows: [row("AAA"), row("BBB")],
       errors: [{ rowIndex: 9, field: "Patente", message: "requerida" }, { rowIndex: 10, field: "Monto ($)", message: "requerido" }],
       duplicates: [],
@@ -487,10 +483,10 @@ describe("syncCopecReportPeriod", () => {
   it("deja intacto un lote existente cuando falla la validación del archivo", async () => {
     const row = (patente: string): unknown => ({ rowIndex: 1, patente, numeroTarjetas: 1, numeroTransacciones: 2, cantidadUnidad: 100, monto: 50000, rendimientoPromedio: 3, rawRow: {} })
     mockDownloadCopecReports.mockResolvedValue([
-      { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "tct-diesel.xlsx" } },
+      { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "tct-diesel.xlsx", records: [] } },
       { product: "bluemax", unavailable: true },
     ])
-    mockParseConsumptionExcel.mockResolvedValue({
+    mockParseCopecDetail.mockReturnValue({
       rows: [row("AAA"), row("BBB")],
       errors: [{ rowIndex: 9, field: "Patente", message: "requerida" }, { rowIndex: 10, field: "Monto ($)", message: "requerido" }],
       duplicates: [],
@@ -516,11 +512,11 @@ describe("syncCopecReportPeriod", () => {
   it("re-imports only the newly-linked plates into an existing batch (no duplicates)", async () => {
     const row = (patente: string): unknown => ({ rowIndex: 1, patente, numeroTarjetas: 1, numeroTransacciones: 2, cantidadUnidad: 100, monto: 50000, rendimientoPromedio: 3, rawRow: {} })
     mockDownloadCopecReports.mockResolvedValue([
-      { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "tct-diesel.xlsx" } },
+      { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "tct-diesel.xlsx", records: [] } },
       { product: "bluemax", unavailable: true },
     ])
     // El archivo trae AAA (ya importada antes) y BBB (recién vinculada a un vehículo).
-    mockParseConsumptionExcel.mockResolvedValue({ rows: [row("AAA"), row("BBB")], errors: [], duplicates: [], detail: []  })
+    mockParseCopecDetail.mockReturnValue({ rows: [row("AAA"), row("BBB")], errors: [], duplicates: [], detail: []  })
     mockVehiclesFindMany.mockResolvedValue([
       { id: "v-aaa", plate: "AAA", worksiteId: "W1" },
       { id: "v-bbb", plate: "BBB", worksiteId: "W1" },
@@ -546,10 +542,10 @@ describe("syncCopecReportPeriod", () => {
   it("skips a worksite already imported from another source instead of duplicating its consumption", async () => {
     const row = (patente: string): unknown => ({ rowIndex: 1, patente, numeroTarjetas: 1, numeroTransacciones: 2, cantidadUnidad: 100, monto: 50000, rendimientoPromedio: 3, rawRow: {} })
     mockDownloadCopecReports.mockResolvedValue([
-      { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "tct-diesel.xlsx" } },
+      { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "tct-diesel.xlsx", records: [] } },
       { product: "bluemax", unavailable: true },
     ])
-    mockParseConsumptionExcel.mockResolvedValue({ rows: [row("AAA")], errors: [], duplicates: [], detail: []  })
+    mockParseCopecDetail.mockReturnValue({ rows: [row("AAA")], errors: [], duplicates: [], detail: []  })
     mockVehiclesFindMany.mockResolvedValue([{ id: "v-aaa", plate: "AAA", worksiteId: "W1" }])
     // 1ª consulta: no hay lote propio (dedup por fuente exacta). 2ª: sí hay uno
     // importado a mano ('Copec') que cubre el mismo período de esa faena.
@@ -574,10 +570,10 @@ describe("syncCopecReportPeriod", () => {
     })
     const row = (patente: string): unknown => ({ rowIndex: 1, patente, numeroTarjetas: 1, numeroTransacciones: 2, cantidadUnidad: 100, monto: 50000, rendimientoPromedio: 3, rawRow: {} })
     mockDownloadCopecReports.mockResolvedValue([
-      { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "informe.xlsx" } },
+      { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "informe.xlsx", records: [] } },
       { product: "bluemax", unavailable: true },
     ])
-    mockParseConsumptionExcel.mockResolvedValue({ rows: [row("AAA"), row("SINVEHICULO")], errors: [], duplicates: [], detail: [] })
+    mockParseCopecDetail.mockReturnValue({ rows: [row("AAA"), row("SINVEHICULO")], errors: [], duplicates: [], detail: [] })
     mockVehiclesFindMany.mockResolvedValue([{ id: "v-aaa", plate: "AAA", worksiteId: "W1" }])
 
     const result = await syncCopecReportPeriod({ from: "2026-02-01", to: "2026-02-28" }, "operator-1")
@@ -606,10 +602,10 @@ describe("syncCopecReportPeriod", () => {
     function oneDieselRow() {
       const row = (patente: string): unknown => ({ rowIndex: 1, patente, numeroTarjetas: 1, numeroTransacciones: 2, cantidadUnidad: 100, monto: 50000, rendimientoPromedio: 3, rawRow: {} })
       mockDownloadCopecReports.mockResolvedValue([
-        { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "tct-diesel.xlsx" } },
+        { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "tct-diesel.xlsx", records: [] } },
         { product: "bluemax", unavailable: true },
       ])
-      mockParseConsumptionExcel.mockResolvedValue({ rows: [row("AAA")], errors: [], duplicates: [], detail: []  })
+      mockParseCopecDetail.mockReturnValue({ rows: [row("AAA")], errors: [], duplicates: [], detail: []  })
       mockVehiclesFindMany.mockResolvedValue([{ id: "v-aaa", plate: "AAA", worksiteId: "W1" }])
     }
 
@@ -719,39 +715,9 @@ describe("syncCopecReportPeriod", () => {
       })
     })
 
-    it("closes a CLOSED month as empty when the portal disables the product, with evidence and the importer as responsible", async () => {
-      // El portal deshabilita el producto que la cuenta no tuvo en el mes. Antes
-      // quedaba «desconocido» y el mes no avanzaba hasta confirmarlo a mano,
-      // todos los meses: TAE BlueMax casi nunca tiene cargas.
-      mockSettingFindFirst.mockResolvedValue({ value: JSON.stringify({ cursor: "2026-06-01", lastRunAt: null, pending: [] }) })
-      vi.stubEnv("COPEC_SYNC_START_DATE", "2026-06-01")
-      mockBatchFindFirst.mockResolvedValue(undefined)
-      mockDownloadCopecReports.mockResolvedValue([
-        { product: "diesel", unavailable: true, reason: "product_disabled" },
-        { product: "bluemax", unavailable: true, reason: "product_disabled" },
-      ])
-      mockRecordCopecCoverage.mockClear()
-      await withToday("2026-08-22T12:00:00.000Z", async () => {
-        await expect(syncCopecReports({ importerId: "operador-1" })).resolves.toMatchObject({ imported: 0 })
-      })
-      const observations = mockRecordCopecCoverage.mock.calls.map(([observation]) => observation)
-      const june = observations.filter((observation) => observation.month === "2026-06-01")
-      expect(june).toHaveLength(4)
-      expect(june).toEqual(Array.from({ length: 4 }, () => expect.objectContaining({
-        status: "legitimate_empty",
-        sourceAvailability: "available",
-        evidenceActorUserId: "operador-1",
-        evidence: expect.stringMatching(/deshabilitado para 2026-06/),
-      })))
-      // El mes en curso no se cierra así: el producto puede aparecer más adelante.
-      const august = observations.filter((observation) => observation.month === "2026-08-01")
-      expect(august.length).toBeGreaterThan(0)
-      expect(august.every((observation) => observation.status === "unknown")).toBe(true)
-    })
-
     it("closes a CLOSED month as empty when the web service answers «No hay registros»", async () => {
-      // Es la misma respuesta de Copec que el producto deshabilitado del portal,
-      // dicha en palabras. Un error con `ID_MENSAJE` 0 (rango excedido) llega
+      // Antes quedaba «desconocido» y el mes no avanzaba hasta confirmarlo a
+      // mano, todos los meses: TAE BlueMax casi nunca tiene cargas. Un error con `ID_MENSAJE` 0 (rango excedido) llega
       // como falla, no como `no_records`: eso lo cubre `copec-ws.test.ts`.
       mockSettingFindFirst.mockResolvedValue({ value: JSON.stringify({ cursor: "2026-06-01", lastRunAt: null, pending: [] }) })
       vi.stubEnv("COPEC_SYNC_START_DATE", "2026-06-01")
@@ -797,9 +763,7 @@ describe("syncCopecReportPeriod", () => {
 
     await syncCopecReportPeriod({ from: "2026-02-01", to: "2026-02-28" }, "operator-1")
 
-    expect(mockParseConsumptionExcel).not.toHaveBeenCalled()
     expect(mockParseCopecDetail).toHaveBeenCalledWith(records, { expectedProduct: "diesel", period: { from: "2026-02-01", to: "2026-02-28" } })
-    expect(mockParseTaeReceiptExcel).not.toHaveBeenCalled()
     expect(mockParseTaeReceiptRecords).toHaveBeenCalledWith(taeRecords, { from: "2026-02-01", to: "2026-02-28", expectedProduct: "diesel" })
     expect(vi.mocked(archiveCopecEvidence).mock.calls.map(([, , format]) => format)).toEqual(["xml", "xml"])
     const versions = mockRecordCopecCoverage.mock.calls.map(([observation]) => (observation as { parserVersion?: string }).parserVersion).filter(Boolean)
@@ -815,10 +779,10 @@ describe("syncCopecReportPeriod", () => {
   it("excludes every automated provider from the foreign-import guard, not just its own sources", async () => {
     const row = (patente: string): unknown => ({ rowIndex: 1, patente, numeroTarjetas: 1, numeroTransacciones: 2, cantidadUnidad: 100, monto: 50000, rendimientoPromedio: 3, rawRow: {} })
     mockDownloadCopecReports.mockResolvedValue([
-      { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "tct-diesel.xlsx" } },
+      { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "tct-diesel.xlsx", records: [] } },
       { product: "bluemax", unavailable: true },
     ])
-    mockParseConsumptionExcel.mockResolvedValue({ rows: [row("AAA")], errors: [], duplicates: [], detail: []  })
+    mockParseCopecDetail.mockReturnValue({ rows: [row("AAA")], errors: [], duplicates: [], detail: []  })
     mockVehiclesFindMany.mockResolvedValue([{ id: "v-aaa", plate: "AAA", worksiteId: "W1" }])
     // Se corta en el guard (como el caso de arriba) para no depender del insert:
     // el WHERE que nos interesa ya quedó construido igual.
@@ -839,10 +803,10 @@ describe("syncCopecReportPeriod", () => {
     vi.mocked(recordFuelProviderValidation).mockResolvedValueOnce({ accepted: 2, rejected: 0, pending: 1 } as never)
     const row = (patente: string): unknown => ({ rowIndex: 1, patente, numeroTarjetas: 1, numeroTransacciones: 2, cantidadUnidad: 100, monto: 50000, rendimientoPromedio: 3, rawRow: {} })
     mockDownloadCopecReports.mockResolvedValue([
-      { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "tct-diesel.xlsx" } },
+      { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "tct-diesel.xlsx", records: [] } },
       { product: "bluemax", unavailable: true },
     ])
-    mockParseConsumptionExcel.mockResolvedValue({ rows: [row("AAA"), row("SINVEHICULO")], errors: [], duplicates: [], detail: [] })
+    mockParseCopecDetail.mockReturnValue({ rows: [row("AAA"), row("SINVEHICULO")], errors: [], duplicates: [], detail: [] })
     mockVehiclesFindMany.mockResolvedValue([{ id: "v-aaa", plate: "AAA", worksiteId: "W1" }])
     const tx = makeTx()
     mockTransaction.mockImplementation(async (cb: (t: unknown) => unknown) => cb(tx))
@@ -864,10 +828,10 @@ describe("syncCopecReportPeriod", () => {
     mockDownloadCopecReports
       .mockResolvedValueOnce([{ product: "diesel", unavailable: true }, { product: "bluemax", unavailable: true }])
       .mockResolvedValueOnce([
-        { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "tae-diesel.xlsx" } },
+        { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "tae-diesel.xlsx", records: [] } },
         { product: "bluemax", unavailable: true },
       ])
-    mockParseTaeReceiptExcel.mockResolvedValue({ rows: [taeRow("G-1", 500), taeRow("G-2", -200)], errors: [] })
+    mockParseTaeReceiptRecords.mockReturnValue({ rows: [taeRow("G-1", 500), taeRow("G-2", -200)], errors: [] })
 
     await syncCopecReportPeriod({ from: "2026-02-01", to: "2026-02-28" }, "operator-1")
 
@@ -888,10 +852,10 @@ describe("syncCopecReportPeriod", () => {
     mockDownloadCopecReports
       .mockResolvedValueOnce([{ product: "diesel", unavailable: true }, { product: "bluemax", unavailable: true }])
       .mockResolvedValueOnce([
-        { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "tae-diesel.xlsx" } },
+        { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "tae-diesel.xlsx", records: [] } },
         { product: "bluemax", unavailable: true },
       ])
-    mockParseTaeReceiptExcel.mockResolvedValue({ rows: [{
+    mockParseTaeReceiptRecords.mockReturnValue({ rows: [{
       rowIndex: 1, documentNumber: "G-9", cardNumber: "1-242269-00230-9-1", productId: "fuel-diesel",
       sourceDate: "2026-02-10", occurredAt: "2026-02-10T13:00:00.000Z",
       liters: 500, unitPrice: 1000, amount: 500_000, assignment: "CHOLGUAN", station: "Copec Ruta 5", rawRow: {},
