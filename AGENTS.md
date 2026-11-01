@@ -120,7 +120,7 @@ This repository uses an AI-assisted browser QA pipeline built around Playwright 
 Las puertas deterministas que sí existen, y que son las que gobiernan una liberación:
 
 ```bash
-npm run typecheck
+npm run typecheck                # tsc sobre el código; no lee .next/** (tsconfig.typecheck.json)
 npm run lint
 npm run check:secrets            # archivos .env fuera de lugar
 npm run check:security-audit     # npm audit con allowlist documentado y con fecha de caducidad
@@ -133,6 +133,12 @@ npm run doctor                   # React Doctor
 
 `.github/workflows/ci.yml` corre exactamente estas puertas; si una falla ahí, falla la
 liberación. Para el alcance de cada una ver la tabla de más abajo.
+
+`npm run typecheck` usa `tsconfig.typecheck.json`, que no lee `.next/**` ni `next-env.d.ts`:
+su resultado no depende de qué `next dev` o `next build` corrió antes en ese checkout (el
+2026-10-31 un `.next` desfasado tumbó un deploy con 36 errores ajenos al código). Los
+validadores de rutas de Next (`.next/types/validator.ts`) los sigue cubriendo `next build`
+en el job de build del CI, no esta puerta.
 
 **Al agregar una migración** hay que registrar su checksum en
 `db/migrations/meta/_sql-checksums.json`:
