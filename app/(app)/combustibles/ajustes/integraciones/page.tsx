@@ -75,9 +75,7 @@ export default async function AjustesIntegracionesPage() {
             <IntegrationCard
               id="int-copec"
               title="Copec"
-              summary={data.copecSource === "ws"
-                ? "Se actualiza cada mañana hacia las 05:30, leyendo el servicio web de Copec."
-                : "Se actualiza cada mañana hacia las 05:30. Entra al portal de Copec y el código de acceso llega por correo."}
+              summary="Se actualiza cada mañana hacia las 05:30, leyendo el servicio web de Copec."
               run={data.runs.copec}
               runsFailed={data.runsFailed}
             >

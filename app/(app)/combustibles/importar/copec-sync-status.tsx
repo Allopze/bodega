@@ -303,9 +303,7 @@ export function CopecSyncStatus({ source, initialStatus, initialStartOptions, qu
 
   return (
     <SourceRow source={source} status={source} actions={actions}>
-      <p className="max-w-[75ch] text-xs text-[var(--color-text-muted)]">{status.source === "ws"
-        ? "Cada corrida consulta los web services de Copec y trae el detalle de Diésel y de BlueMax, carga por carga. Incluye el mes en curso, que se recalcula en cada corrida. El abastecimiento de estanques se consulta en el mismo ciclo y sus recepciones quedan listas para cuadrar con el estanque."
-        : "Cada corrida entra a Informes → Informes de Consumos, busca Diésel y BlueMax por separado y descarga el Detalle en Excel. Incluye el mes en curso, que se recalcula en cada corrida. El abastecimiento de estanques se consulta en el mismo ciclo y sus recepciones quedan listas para cuadrar con el estanque."}</p>
+      <p className="max-w-[75ch] text-xs text-[var(--color-text-muted)]">Cada corrida consulta los web services de Copec y trae el detalle de Diésel y de BlueMax, carga por carga. Incluye el mes en curso, que se recalcula en cada corrida. El abastecimiento de estanques se consulta en el mismo ciclo y sus recepciones quedan listas para cuadrar con el estanque.</p>
 
       {status.cursor ? <p className="text-xs text-[var(--color-text-muted)]">Próximo mes pendiente: {formatMonth(status.cursor)}.</p> : null}
       {/* Son FILAS de la última corrida, no patentes: antes decía «566 patente(s)» por 566 cargas de un mes ya fuera del plan. */}

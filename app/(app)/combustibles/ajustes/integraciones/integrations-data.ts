@@ -3,7 +3,6 @@ import { db } from "@/db"
 import { systemSettings } from "@/db/schema"
 import { settle } from "@/lib/async-settle"
 import { ARAMCO_SETTING_KEYS, readAramcoAdminStatus, type AramcoAdminStatus } from "@/lib/combustibles/aramco-settings"
-import { copecSource, type CopecSource } from "@/lib/combustibles/copec-ws"
 import { readVisionLinkConfig } from "@/lib/integrations/visionlink/visionlink-settings"
 import { getCronJobHealth } from "@/lib/services/cron-lock"
 import { INTEGRATION_JOBS, type IntegrationKey, type IntegrationRun } from "./integration-status"
@@ -12,7 +11,6 @@ export interface IntegrationsData {
   runs: Record<IntegrationKey, IntegrationRun | null>
   /** `null` si la lectura de corridas falló: la pantalla dice «no se pudo leer» en vez de «sin corridas». */
   runsFailed: boolean
-  copecSource: CopecSource
   aramco: AramcoAdminStatus
   /** Cuándo se guardaron las credenciales de Aramco en la aplicación (no cuáles son). */
   aramcoConfiguredAt: string | null
@@ -50,7 +48,6 @@ export async function loadIntegrationsData(): Promise<IntegrationsData> {
   return {
     runs: { copec: run("copec"), aramco: run("aramco"), visionlink: run("visionlink") },
     runsFailed: health === failed,
-    copecSource: copecSource(),
     aramco: aramco === failed ? EMPTY_ARAMCO : aramco,
     aramcoConfiguredAt: passwordRow === failed ? null : passwordRow[0]?.updatedAt ?? null,
     visionlink: { hasCredentials: vision.hasCredentials, syncEnabled: vision.syncEnabled },

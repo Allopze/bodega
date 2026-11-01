@@ -51,7 +51,6 @@ const status = {
   pending: 0,
   coverageMonth: "2025-01-01",
   coverage: [],
-  source: "ws" as const,
 }
 const source = {
   key: "copec" as const, name: "Copec", description: "Tarjetas de equipos y abastecimiento de estanques", status: "ok" as const, statusLabel: "Al día",
@@ -119,15 +118,10 @@ describe("fila de Copec en «Fuentes de datos»", () => {
 describe("descripción de la fuente", () => {
   afterEach(() => cleanup())
 
-  it("con los web services no describe el recorrido del portal", () => {
+  it("describe los web services, no el recorrido del portal retirado", () => {
     render(<CopecSyncStatus source={source} initialStatus={status} initialStartOptions={startOptions} />)
     expect(screen.getByText(/consulta los web services de Copec/)).toBeInTheDocument()
     expect(screen.queryByText(/Informes de Consumos/)).not.toBeInTheDocument()
-  })
-
-  it("con el portal de respaldo sigue describiendo su recorrido", () => {
-    render(<CopecSyncStatus source={source} initialStatus={{ ...status, source: "portal" }} initialStartOptions={startOptions} />)
-    expect(screen.getByText(/Informes de Consumos/)).toBeInTheDocument()
   })
 })
 

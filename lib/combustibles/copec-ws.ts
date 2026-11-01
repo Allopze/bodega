@@ -1,7 +1,8 @@
 /**
  * Web services de consulta de Copec (documento «Web Service TCT v2.1»): la
- * fuente de los informes de detalle sin navegador, sin código por correo y sin
- * una sesión de portal que cuidar.
+ * única fuente de los informes de detalle desde que se retiró el scraper del
+ * portal (2026-10-31). Sin navegador, sin código por correo y sin una sesión
+ * de portal que cuidar.
  *
  * La respuesta real no es la del PDF (verificado el 2026-10-30 contra ene-2026:
  * 505 cargas, las mismas del Excel del portal, sin una diferencia):
@@ -21,7 +22,7 @@
  * desde el Excel; si no, cada mes ya importado aparecería entero como
  * «corrección pendiente de revisión».
  *
- * Credenciales: las del portal (`COPEC_USERNAME`/`COPEC_PASSWORD`, usuario
+ * Credenciales: las de la cuenta del portal (`COPEC_USERNAME`/`COPEC_PASSWORD`, usuario
  * ADMINISTRADOR CLIENTE) más `COPEC_CLIENT_RUT`. BlueMax las exige en la query
  * string, así que ningún error de este módulo repite la URL ni el mensaje de
  * `fetch`, que la puede incluir.
@@ -33,9 +34,8 @@ import {
   CopecReportFailure,
   CopecReportTimeoutFailure,
   retryCopecRequest,
-  withCopecPortalSession,
   type CopecChannel,
-  type CopecPortalSession,
+  type CopecSession,
   type CopecProduct,
   type CopecReportDownloadResult,
   type CopecReportRequest,
@@ -60,31 +60,6 @@ const PRODUCT_LABEL: Record<CopecProduct, string> = { diesel: "Diésel", bluemax
 
 /** `CDEMARCTAE` → el «Tipo de Tarjeta» que escribe el Excel. */
 const CARD_TYPE: Record<string, string> = { "3": "TCT", "1": "TCT PREMIUM", "9": "TAE" }
-
-export type CopecSource = "ws" | "portal"
-
-/**
- * `COPEC_SOURCE` elige la fuente. Sin él, el web service se usa en cuanto hay
- * `COPEC_CLIENT_RUT`, y si no, el portal: un despliegue que todavía no tiene el
- * RUT sigue sincronizando como antes en vez de quedarse sin fuente.
- */
-export function copecSource(): CopecSource {
-  const explicit = process.env.COPEC_SOURCE?.trim().toLowerCase()
-  if (explicit === "ws" || explicit === "portal") return explicit
-  return process.env.COPEC_CLIENT_RUT?.trim() ? "ws" : "portal"
-}
-
-/**
- * `COPEC_SOURCE=portal` es la palanca para volver al portal: un valor mal
- * escrito («portall») no puede dejar la fuente en `ws` sin que nadie lo note.
- * Lo valida la corrida; la pantalla sólo describe y usa `copecSource`.
- */
-function assertCopecSourceSetting() {
-  const explicit = process.env.COPEC_SOURCE?.trim()
-  if (explicit && !["ws", "portal"].includes(explicit.toLowerCase())) {
-    throw new Error("COPEC_SOURCE debe ser «ws» o «portal» (o quedar vacío).")
-  }
-}
 
 interface CopecWsConfig {
   username: string
@@ -287,7 +262,6 @@ function readBluemaxEnvelope(body: Buffer, label: string): WsEnvelope {
  * Un rechazo de acceso (HTTP 401/403, o un mensaje de Copec sobre usuario,
  * clave o cliente) corta el resto de la sesión: con las credenciales del portal,
  * repetir el intento por cada producto, canal y mes podría bloquear la cuenta.
- * Es lo que hace el portal con `LOGIN_FAILURES`.
  */
 export class CopecWsAccessFailure extends CopecReportFailure {
   constructor(message: string) {
@@ -458,12 +432,11 @@ async function downloadDetail(state: WsSessionState, request: CopecReportRequest
 }
 
 /**
- * Misma forma que la sesión del portal, así que la sincronización no distingue
- * de dónde vino el informe. Cada producto se consulta por separado: una falla
- * de diésel no se lleva BlueMax, igual que en el portal. La excepción es un
+ * Una sesión por corrida. Cada producto se consulta por separado: una falla de
+ * diésel no se lleva BlueMax. La excepción es un
  * rechazo de acceso, que corta lo que queda de la sesión (`CopecWsAccessFailure`).
  */
-export async function withCopecWebServiceSession<T>(run: (session: CopecPortalSession) => Promise<T>): Promise<T> {
+export async function withCopecWebServiceSession<T>(run: (session: CopecSession) => Promise<T>): Promise<T> {
   const config = readCopecWsConfig()
   const state: WsSessionState = { config, redact: redactor(config), accessConfirmed: false, blocked: null }
   return run({
@@ -487,10 +460,4 @@ export async function withCopecWebServiceSession<T>(run: (session: CopecPortalSe
       return results
     },
   })
-}
-
-/** La sesión de la fuente configurada (`copecSource`): una por corrida, como la del portal. */
-export async function withCopecSourceSession<T>(run: (session: CopecPortalSession) => Promise<T>): Promise<T> {
-  assertCopecSourceSetting()
-  return copecSource() === "ws" ? withCopecWebServiceSession(run) : withCopecPortalSession(run)
 }

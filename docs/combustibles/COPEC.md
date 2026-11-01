@@ -1,17 +1,19 @@
 # Integraciones Copec TCT y TAE
 
-## Fuente: web services o portal
+## Fuente: web services
 
-Desde 2026-10-30 la sincronización puede leer de los **web services de
-consulta** de Copec (`lib/combustibles/copec-ws.ts`, documento «Web Service TCT
-v2.1»): sin navegador, sin código por correo y sin sesión. Basta definir
-`COPEC_CLIENT_RUT`; el portal queda de respaldo con `COPEC_SOURCE=portal`.
+La sincronización lee de los **web services de consulta** de Copec
+(`lib/combustibles/copec-ws.ts`, documento «Web Service TCT v2.1»): sin
+navegador, sin código por correo y sin sesión. Es la única fuente: el scraper
+del portal (Playwright + código por IMAP) se usó hasta 2026-10-30 y se retiró
+el 2026-10-31. Pedía un correo con código en cada login, el portal cerraba la
+sesión ante cualquier navegación por URL y desde 2026-10 «Descargar Detalle»
+llegó a mandar el informe por correo en vez de descargarlo.
 
 | Variable | Para qué |
 | --- | --- |
 | `COPEC_USERNAME` / `COPEC_PASSWORD` | Las mismas del portal. Para los web services el usuario tiene que ser **ADMINISTRADOR CLIENTE**. |
-| `COPEC_CLIENT_RUT` | RUT de la empresa cliente (78.023.530-6 para Servicios Industriales Chome; «TRANSPORTES CHOME LTDA.» es un departamento dentro de esa cuenta). Con él la fuente pasa a ser `ws`. |
-| `COPEC_SOURCE` | `ws` o `portal` para forzarla. Sin valor: `ws` si hay RUT, `portal` si no. |
+| `COPEC_CLIENT_RUT` | RUT de la empresa cliente (78.023.530-6 para Servicios Industriales Chome; «TRANSPORTES CHOME LTDA.» es un departamento dentro de esa cuenta). Sin él la sincronización queda apagada (`disabled`). |
 
 | Canal y producto | Servicio |
 | --- | --- |
@@ -61,7 +63,6 @@ Defensas del cliente, para lo que no se pudo probar contra Copec:
   toda en ceros es «sin guía».
 - El texto que devuelve Copec se guarda y se muestra con usuario y clave
   tachados, por si alguna vez los repite.
-- `COPEC_SOURCE` con un valor que no sea `ws` ni `portal` detiene la corrida.
 
 **Migración 0363 (lecturas de odómetro).** La identidad de `fuel_meter_readings`
 pasó de `(source, source_ref)` a `(source, source_ref, plate)`: Copec reutiliza
@@ -75,20 +76,19 @@ siguiente lo repone. Las lecturas que la clave vieja pisó no vuelven solas:
 `npm run db:backfill-fuel-meter-readings` las reconstruye desde `raw_row`.
 
 La evidencia que se archiva es la respuesta tal cual (`.xml` o `.json`, cifrada
-como el Excel) y la cobertura registra `parserVersion = copec-ws-v1`. Las
-secciones de abajo sobre OTP, sesión única y contextos de navegador sólo aplican
-con `COPEC_SOURCE=portal`.
+como el Excel lo era) y la cobertura registra `parserVersion = copec-ws-v1`. Los
+archivos y la cobertura de meses importados antes desde el portal conservan su
+`.xlsx` y `copec-xlsx-v1`.
 
 ## Contrato operativo
 
-Copec se consulta por período mensual y producto. Los dos canales se descargan
-con la opción "Descargar Detalle" del portal, o con los web services, y en los
-dos casos llega **una fila por transacción**: producto, tarjeta, patente, fecha
+Copec se consulta por período mensual y producto. Los dos canales llegan con
+**una fila por transacción**: producto, tarjeta, patente, fecha
 y hora, estación de servicio, guía de despacho, volumen, monto y **odómetro**.
 
 TCT se AGREGA por patente al proyectarlo (`fuel_consumption_records` guarda un
 consolidado mensual, y el detalle crudo queda en `raw_row`); la agregación es
-nuestra, no del portal. TAE entrega una fila por guía/tarjeta y se proyecta como
+nuestra, no de Copec. TAE entrega una fila por guía/tarjeta y se proyecta como
 recepción `received` del ciclo físico cuando la tarjeta tiene un estanque activo.
 Una fila externa no validable queda en el ledger como `pending` o `rejected`.
 
@@ -104,10 +104,10 @@ reglas de medidor regresivo y de salto implausible. Esa columna guarda
 **instantes UTC** para las tres fuentes (`copec_tct`, `aramco`, `gps_onway`):
 Aramco entrega hora de pared chilena y se convierte al importar. El histórico se reconstruye
 desde `raw_row` con `npm run db:backfill-fuel-meter-readings`, sin volver a
-consultar el portal.
+consultar a Copec.
 
 El TCT usa `tct:diesel` y `tct:bluemax` como cuentas lógicas. Como no existe un
-ID nativo estable en el Excel, la identidad fallback es período + producto +
+ID nativo estable en el detalle, la identidad fallback es período + producto +
 fila fuente; el fingerprint se conserva aparte para que una corrección de
 litros/monto actualice la misma evidencia.
 
@@ -143,45 +143,24 @@ corrida, con litros/monto cuando la fila los trae.
 - Reprocesar no exige retroceder el cursor: repetir un período usa identidad y
   hash; el cambio se aplica al ledger/proyección sin borrar mappings manuales.
 - Cada corrida planifica como máximo **4 meses** (`MAX_PERIODS_PER_RUN`), y
-  no empieza un mes nuevo pasados 150 s: cada período abre dos contextos de
-  navegador (TCT y TAE) y el cron corta a los 5 minutos. Lo que falte lo toma
-  la corrida siguiente.
-- **Verificación por correo (desde 2026-10).** Después de la clave, el portal
-  pide un código de 6 dígitos que envía a la casilla de la cuenta de plataforma.
-  `lib/combustibles/copec-otp.ts` lo lee por IMAP (`COPEC_OTP_IMAP_*`): sólo
-  correos de `info@copec.cl` no leídos y recibidos después del clic en
-  "Ingresar" (con un minuto de margen de reloj), el más nuevo primero, y lo
-  marca leído al usarlo. El campo del código nace `readonly` y se habilita con
-  un clic. El código nunca entra a un log: el call log de Playwright repite los
-  argumentos de `fill`, así que los errores de ese tramo se reescriben.
-- Cada login es un correo, así que la sesión se **reutiliza** entre productos,
-  canales y meses de la misma corrida (cookies en memoria, 15 minutos). Tras
-  una falla de acceso (`session_expired`, `mfa_timeout`, `mfa_mailbox`,
-  `mfa_rejected`) no se vuelve a intentar el login por 5 minutos: el resto de la
-  corrida falla con el mismo motivo en vez de disparar un correo por intento.
-- Sin `COPEC_USERNAME`/`COPEC_PASSWORD`, o con `COPEC_SYNC_ENABLED=false`, el
+  no empieza un mes nuevo pasados 150 s: el cron corta a los 5 minutos. Lo que
+  falte lo toma la corrida siguiente.
+- Sin `COPEC_USERNAME`/`COPEC_PASSWORD`/`COPEC_CLIENT_RUT`, o con `COPEC_SYNC_ENABLED=false`, el
   cron responde `disabled` y no corre. Antes fallaba dentro de la corrida y
   reportaba `failed` a diario por una integración que nadie configuró.
 - El botón «Sincronizar» corre **el mismo barrido** que el cron
   (`syncCopecReports`): el mes en curso primero y después los meses pendientes,
-  en una sola sesión del portal —un correo con código por clic— y a nombre del
-  operador. Toma el **mismo lock** (`fuel-copec-sync`): el portal es de sesión
-  única y dos corridas simultáneas se pelean la sesión y el cursor.
+  en una sola sesión y a nombre del operador. Toma el **mismo lock**
+  (`fuel-copec-sync`): dos corridas simultáneas se pelearían el cursor.
 - El botón **no espera** la corrida dentro de la petición:
   `startCopecSyncAction` vuelve apenas toma el lock (`startCronJobInBackground`,
   con `after()`), y la pantalla pregunta cada 4 s a
   `getCopecSyncProgressAction` si el lock sigue tomado y qué dejó cada mes.
-  Detrás de Cloudflare una petición de más de ~100 s se corta (524) y una
-  corrida tarda de 1,5 a 4 minutos. Hasta el 2026-10-29 el botón pedía un mes por
+  Detrás de Cloudflare una petición de más de ~100 s se corta (524), y una
+  corrida de varios meses puede pasar de ese tiempo. Hasta el 2026-10-29 el botón pedía un mes por
   petición, siempre el pendiente más antiguo: si ese mes quedaba incompleto el
   siguiente se rechazaba («ya no corresponde al siguiente tramo») y el mes en
   curso nunca se pedía.
-- La espera por un turno, la creación del contexto y la apertura de la página
-  tienen cada una un plazo de 30 segundos. Copec usa un proceso de navegador
-  aislado, compartiendo el límite de concurrencia con los PDF. Cuando termina la
-  importación se espera hasta 5 segundos por el cierre del contexto y se detiene
-  el proceso antes de devolver el turno o el lock; no se abandona una importación
-  que todavía pudiera escribir. Un turno vencido se retira de la cola.
 - Si se pierde una consulta de avance, la pantalla sigue preguntando: la
   corrida vive en el servidor. Pasados 15 minutos deja de esperar y dice que la
   corrida sigue en curso, sin ofrecer iniciarla de nuevo. Si se pierde la
@@ -189,14 +168,12 @@ corrida, con litros/monto cuando la fila los trae.
   falla la consulta final del estado, conserva el resumen y pide recargar la
   página. Los errores de cada mes pasan por `userFacingErrorText` antes de
   mostrarse: una consulta SQL guardada como error no llega a la pantalla.
-- **Producto deshabilitado = mes vacío.** El portal deshabilita el producto que
-  la cuenta no tuvo en el mes (`CopecUnavailableReason = "product_disabled"`).
-  En un mes cerrado eso se registra como vacío confirmado, con la evidencia
-  escrita y el importador como responsable. Una búsqueda que no mostró
-  resultados (`no_results`) no prueba nada y sigue desconocida. Antes ambos
-  casos quedaban «desconocido» y el mes no avanzaba hasta confirmarlo a mano,
-  todos los meses (TAE BlueMax casi nunca tiene cargas). Con los web services,
-  «No hay registros…» (`no_records`) pesa igual que el producto deshabilitado.
+- **«No hay registros» = mes vacío.** En un mes cerrado, «No hay registros…»
+  (`CopecUnavailableReason = "no_records"`) se registra como vacío confirmado,
+  con la evidencia escrita y el importador como responsable. La misma respuesta
+  antes de que la sesión haya leído cargas (`no_results`) no prueba nada y sigue
+  desconocida. Sin esto el mes no avanzaría hasta confirmarlo a mano, todos los
+  meses (TAE BlueMax casi nunca tiene cargas).
 - **Asignaciones con fecha.** Un mes cerrado sólo se atribuye con una
   asignación de `fuel_provider_mappings` vigente para ese mes; la faena es la
   guardada en la asignación, no la del vehículo. Por eso trasladar un vehículo
