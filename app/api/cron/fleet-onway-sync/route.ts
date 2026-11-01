@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { OnwayClientError } from "@/lib/integrations/onway/onway-client"
 import { onwayCronContractFor, type OnwayCronOutcome } from "@/lib/integrations/onway/onway-cron-contract"
 import { readOnwayConfig } from "@/lib/integrations/onway/onway-settings"
-import { syncOnway } from "@/lib/integrations/onway/onway-sync"
+import { hasStalledOnwayCronRun, syncOnway } from "@/lib/integrations/onway/onway-sync"
 import { logger } from "@/lib/logger"
 import { cronRequestSource, parseCronAllowedSources, verifyCronInternalRequest, verifyCronRequest } from "@/lib/security/cron-auth"
 import { withCronLock } from "@/lib/services/cron-lock"
@@ -52,7 +52,15 @@ export async function GET(request: NextRequest) {
 
   try {
     const result = await withCronLock("fleet-onway-sync", () => syncOnway({ trigger: "cron" }))
-    if ("skipped" in result) return respond("conflict")
+    if ("skipped" in result) {
+      // Una corrida que retiene el lock más de lo razonable es una falla, no
+      // un solapamiento: así se escondió el GPS detenido de oct-nov 2026.
+      if (await hasStalledOnwayCronRun().catch(() => false)) {
+        logger.error("[cron/fleet-onway-sync]", { code: "ONWAY_SYNC_STALLED" })
+        return respond("failed", { errorCode: "ONWAY_SYNC_STALLED" })
+      }
+      return respond("conflict")
+    }
     const hasIncompleteData = result.rejected > 0 || result.unmatched > 0 || result.warnings.length > 0
     return respond(hasIncompleteData ? "partial" : "success", {
       received: result.received,

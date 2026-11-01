@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   isRouteOperational: vi.fn(),
   readOnwayConfig: vi.fn(),
   syncOnway: vi.fn(),
+  hasStalledOnwayCronRun: vi.fn(async () => false),
   withCronLock: vi.fn(async (_job: string, run: () => Promise<unknown>) => run()),
   consumeFixedWindowLimit: vi.fn(async () => ({ allowed: true, remaining: 9 })),
 }))
@@ -21,7 +22,10 @@ vi.mock("@/lib/security/cron-auth", () => ({
 }))
 vi.mock("@/lib/services/module-toggles", () => ({ isRouteOperational: (...args: unknown[]) => Reflect.apply(mocks.isRouteOperational, null, args) }))
 vi.mock("@/lib/integrations/onway/onway-settings", () => ({ readOnwayConfig: (...args: unknown[]) => Reflect.apply(mocks.readOnwayConfig, null, args) }))
-vi.mock("@/lib/integrations/onway/onway-sync", () => ({ syncOnway: (...args: unknown[]) => Reflect.apply(mocks.syncOnway, null, args) }))
+vi.mock("@/lib/integrations/onway/onway-sync", () => ({
+  syncOnway: (...args: unknown[]) => Reflect.apply(mocks.syncOnway, null, args),
+  hasStalledOnwayCronRun: (...args: unknown[]) => Reflect.apply(mocks.hasStalledOnwayCronRun, null, args),
+}))
 vi.mock("@/lib/services/cron-lock", () => ({ withCronLock: (...args: [string, () => Promise<unknown>]) => Reflect.apply(mocks.withCronLock, null, args) }))
 vi.mock("@/lib/services/rate-limit", () => ({ consumeFixedWindowLimit: (...args: unknown[]) => Reflect.apply(mocks.consumeFixedWindowLimit, null, args) }))
 
@@ -43,6 +47,7 @@ describe("GET /api/cron/fleet-onway-sync", () => {
     mocks.isRouteOperational.mockResolvedValue(true)
     mocks.readOnwayConfig.mockResolvedValue({ username: "configured", password: "configured", syncEnabled: true, hasCredentials: true })
     mocks.withCronLock.mockImplementation(async (_job: string, run: () => Promise<unknown>) => run())
+    mocks.hasStalledOnwayCronRun.mockResolvedValue(false)
     // El mock tiene que devolver `SyncOnwayResult` COMPLETO: la ruta lee
     // `result.warnings.length` para decidir entre `success` y `partial`, y con
     // el mock incompleto reventaba con TypeError dentro del `try`, se
@@ -86,5 +91,13 @@ describe("GET /api/cron/fleet-onway-sync", () => {
     const response = await GET(request())
     expect(response.status).toBe(409)
     expect(await response.json()).toMatchObject({ outcome: "conflict", code: "FLEET_GPS_CRON_ACTIVE_RUN" })
+  })
+
+  it("reports a run that holds the lock past the threshold as failed, not as a healthy conflict", async () => {
+    mocks.withCronLock.mockResolvedValue({ skipped: true, reason: "locked" })
+    mocks.hasStalledOnwayCronRun.mockResolvedValue(true)
+    const response = await GET(request())
+    expect(response.status).toBe(503)
+    expect(await response.json()).toMatchObject({ outcome: "failed", health: "unhealthy", errorCode: "ONWAY_SYNC_STALLED" })
   })
 })

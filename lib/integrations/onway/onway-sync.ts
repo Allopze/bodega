@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm"
+import { desc, eq, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
   fleetGpsAlerts,
@@ -86,6 +86,24 @@ function safeErrorCode(error: unknown): string {
   if (error instanceof OnwayClientError) return error.code
   if (error instanceof Error && /^ONWAY_[A-Z_]+$/.test(error.message)) return error.message
   return "ONWAY_SYNC_FAILED"
+}
+
+/** Pasado este tiempo, una corrida con el lock tomado ya no es «la anterior todavía trabajando». */
+export const ONWAY_STALLED_RUN_MS = 15 * 60_000
+
+/**
+ * ¿La corrida que tiene el lock está colgada? Un disparo saltado no deja fila,
+ * así que la última corrida de cron es la que sostiene el lock. Sirve para que
+ * el 409 deje de verse sano cuando dura días.
+ */
+export async function hasStalledOnwayCronRun(now = new Date()): Promise<boolean> {
+  const [latest] = await db.select({ status: fleetGpsSyncRuns.status, startedAt: fleetGpsSyncRuns.startedAt })
+    .from(fleetGpsSyncRuns)
+    .where(eq(fleetGpsSyncRuns.trigger, "cron"))
+    .orderBy(desc(fleetGpsSyncRuns.startedAt))
+    .limit(1)
+  if (!latest || latest.status !== "running") return false
+  return now.getTime() - new Date(latest.startedAt).getTime() > ONWAY_STALLED_RUN_MS
 }
 
 export async function syncOnway(options: SyncOnwayOptions = {}): Promise<SyncOnwayResult> {

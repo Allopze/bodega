@@ -19,6 +19,16 @@ const SNAPSHOT_PATH = "/OnlineTracking/GetOnlineDevicesInfoByUserForMap/"
 const DEVICE_DETAIL_PATH = "/OnlineTracking/GetOnlineDeviceInfoByIdFromMap"
 const ALERTS_PATH = "/OnlineTracking/GetDevicesAlertsHistory/"
 const NAVIGATION_TIMEOUT_MS = 45_000
+/**
+ * Un `fetch` dentro de la página no tiene timeout propio y `page.evaluate`
+ * tampoco: una sola respuesta que el portal deja sin contestar colgaba la
+ * corrida para siempre con el lock del cron tomado (2026-10-29 → 2026-11-01,
+ * seis corridas en `running` y el GPS detenido hasta cada reinicio).
+ */
+const PORTAL_REQUEST_TIMEOUT_MS = 20_000
+/** Tope de toda la lectura del portal: menor que los 2 min del runner y que el intervalo de 5 min. */
+export const ONWAY_TELEMETRY_DEADLINE_MS = 110_000
+const BROWSER_CLOSE_TIMEOUT_MS = 10_000
 const MAX_RESPONSE_BYTES = 10 * 1024 * 1024
 const MAX_TELEMETRY_DEVICES = 500
 
@@ -132,6 +142,19 @@ async function hasInteractiveChallenge(page: Page): Promise<boolean> {
   ].join(", ")).count() > 0
 }
 
+/** Rechaza con `ONWAY_PORTAL_TIMEOUT` si `work` no termina en `ms`. No cancela `work`. */
+export async function withOnwayDeadline<T>(work: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new OnwayClientError("ONWAY_PORTAL_TIMEOUT")), ms)
+  })
+  try {
+    return await Promise.race([work, deadline])
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value)
 }
@@ -179,7 +202,8 @@ let browserSession: OnwayBrowserSession | null = null
 async function closeBrowserSession(): Promise<void> {
   const current = browserSession
   browserSession = null
-  await current?.browser.close().catch(() => undefined)
+  // Un navegador colgado puede no responder ni al cierre.
+  if (current) await withOnwayDeadline(current.browser.close(), BROWSER_CLOSE_TIMEOUT_MS).catch(() => undefined)
 }
 
 async function getBrowserSession(): Promise<OnwayBrowserSession> {
@@ -202,9 +226,10 @@ async function getBrowserSession(): Promise<OnwayBrowserSession> {
 
 async function portalJson(page: Page, path: string, init: { method?: "GET" | "POST"; body?: Record<string, unknown> } = {}): Promise<unknown> {
   try {
-    return await page.evaluate(async ({ path, method, body, maxBytes }) => {
+    return await withOnwayDeadline(page.evaluate(async ({ path, method, body, maxBytes, timeoutMs }) => {
       const response = await fetch(path, {
         method,
+        signal: AbortSignal.timeout(timeoutMs),
         credentials: "same-origin",
         headers: body ? { "content-type": "application/json" } : undefined,
         body: body ? JSON.stringify(body) : undefined,
@@ -214,7 +239,7 @@ async function portalJson(page: Page, path: string, init: { method?: "GET" | "PO
       const text = await response.text()
       if (text.length > maxBytes) throw new Error("ONWAY_RESPONSE_INVALID")
       return JSON.parse(text) as unknown
-    }, { path, method: init.method ?? "GET", body: init.body, maxBytes: MAX_RESPONSE_BYTES })
+    }, { path, method: init.method ?? "GET", body: init.body, maxBytes: MAX_RESPONSE_BYTES, timeoutMs: PORTAL_REQUEST_TIMEOUT_MS }), PORTAL_REQUEST_TIMEOUT_MS + 5_000)
   } catch {
     throw new OnwayClientError("ONWAY_RESPONSE_INVALID")
   }
@@ -357,7 +382,27 @@ export async function fetchOnwaySnapshot(input: OnwayCredentials): Promise<Onway
  * Reutiliza la sesión autenticada del scraper. IMEI y contexto de la página se
  * usan sólo durante esta función; lo que retorna ya pasó por contratos allowlist.
  */
-export async function fetchOnwayTelemetry(input: OnwayCredentials, options: { includeHistory?: boolean; historyFrom?: string; historyTo?: string } = {}): Promise<OnwayTelemetryBundle> {
+export async function fetchOnwayTelemetry(input: OnwayCredentials, options: OnwayTelemetryOptions = {}): Promise<OnwayTelemetryBundle> {
+  try {
+    return await withOnwayDeadline(collectTelemetry(input, options), options.deadlineMs ?? ONWAY_TELEMETRY_DEADLINE_MS)
+  } catch (error) {
+    // Cerrar el navegador hace fallar lo que quedó esperando en la página, y
+    // con eso se libera `inFlight`: si no, la próxima corrida reusaría la
+    // misma promesa colgada.
+    if (error instanceof OnwayClientError && error.code === "ONWAY_PORTAL_TIMEOUT") await closeBrowserSession()
+    throw error
+  }
+}
+
+interface OnwayTelemetryOptions {
+  includeHistory?: boolean
+  historyFrom?: string
+  historyTo?: string
+  /** Para pruebas; por defecto `ONWAY_TELEMETRY_DEADLINE_MS`. */
+  deadlineMs?: number
+}
+
+async function collectTelemetry(input: OnwayCredentials, options: OnwayTelemetryOptions): Promise<OnwayTelemetryBundle> {
   const credentials = validateOnwayCredentials(input)
   const portal = await scrapePortal(credentials)
   const { page } = await getBrowserSession()
