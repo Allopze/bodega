@@ -72,7 +72,7 @@ export function FuelSupplierForm({
           </Field>
 
           <Field label="Razón social" htmlFor="fuel-supplier-name" required error={state.fieldErrors?.name?.[0]}>
-            <Input id="fuel-supplier-name" name="name" defaultValue={editSupplier?.name ?? ""} placeholder="COPEC, ARAMCO..." error={!!state.fieldErrors?.name} />
+            <Input id="fuel-supplier-name" name="name" defaultValue={editSupplier?.name ?? ""} placeholder="Nombre del proveedor" error={!!state.fieldErrors?.name} />
           </Field>
           <Field label="RUT" htmlFor="fuel-supplier-rut" helper="Se usa para resolver identidades duplicadas." error={state.fieldErrors?.rut?.[0]}>
             <Input id="fuel-supplier-rut" name="rut" defaultValue={editSupplier?.rut ?? ""} placeholder="12.345.678-9" error={!!state.fieldErrors?.rut} />

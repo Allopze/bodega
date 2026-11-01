@@ -141,11 +141,11 @@ describe("mandantes", () => {
 })
 
 describe("medios de suministro", () => {
-  it("crea con slug único, alias en mayúsculas y mapeo Aramco sin canal", async () => {
-    const result = await saveSupplyMediumAction({ name: "CMPC", kind: "mandante_dispenser", providerMapping: "aramco", aliases: "cmpc norte, Surtidor norte", sortOrder: "35", isActive: true })
+  it("crea con slug único, alias en mayúsculas y mapeo Copec TCT", async () => {
+    const result = await saveSupplyMediumAction({ name: "CMPC", kind: "mandante_dispenser", providerMapping: "copec_tct", aliases: "cmpc norte, Surtidor norte", sortOrder: "35", isActive: true })
     expect(result.ok).toBe(true)
     const [row] = await testDb.select().from(schema.fuelSupplyMedia).where(eq(schema.fuelSupplyMedia.id, String(result.data?.id)))
-    expect(row).toMatchObject({ slug: "cmpc-2", providerCode: "aramco", providerChannel: null, aliases: ["CMPC NORTE", "SURTIDOR NORTE"], sortOrder: 35 })
+    expect(row).toMatchObject({ slug: "cmpc-2", providerCode: "copec", providerChannel: "TCT", aliases: ["CMPC NORTE", "SURTIDOR NORTE"], sortOrder: 35 })
     expect((await audits("fuel_supply_medium")).some((entry) => entry.entityId === row!.id && entry.action === "create")).toBe(true)
   })
 

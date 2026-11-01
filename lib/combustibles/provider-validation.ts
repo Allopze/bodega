@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto"
 import { plateMatchKey } from "@/lib/combustibles/xlsx-utils"
 
-export type FuelProvider = "copec" | "aramco"
+export type FuelProvider = "copec"
 
 /**
  * Qué representa una fila de la fuente.

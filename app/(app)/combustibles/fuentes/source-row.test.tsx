@@ -39,7 +39,7 @@ describe("SourceRow", () => {
 
   it("un dato puede llevar su enlace «cambiarlo» junto al valor, sin abrir el detalle", () => {
     const facts = [{ label: "Sincronización automática", value: "Activada", href: "/combustibles/ajustes/integraciones", hrefLabel: "Cambiar en Ajustes" }]
-    render(<SourceRow source={{ ...base, key: "aramco", name: "Aramco", facts, technical: [] }} status={{ status: "ok", statusLabel: "Al día" }} />)
+    render(<SourceRow source={{ ...base, key: "copec", name: "Copec", facts, technical: [] }} status={{ status: "ok", statusLabel: "Al día" }} />)
     expect(screen.getByText(/Activada/)).toBeInTheDocument()
     expect(screen.getByRole("link", { name: "Cambiar en Ajustes" })).toHaveAttribute("href", "/combustibles/ajustes/integraciones")
   })

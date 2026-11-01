@@ -1,7 +1,7 @@
 /**
  * Credenciales y configuración de Cloudreve (backend de storage de documentos SST).
  *
- * Mismo criterio que `lib/combustibles/aramco-settings.ts`: lo guardado en
+ * Lo guardado en
  * `system_settings` (cifrado) manda, y el `.env` del servidor queda como
  * respaldo solo mientras el keyring esté en modo `compat`. El AAD de cada sobre
  * es la key física del setting (settings-crypto), así que un ciphertext de

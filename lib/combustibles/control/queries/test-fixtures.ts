@@ -15,7 +15,7 @@ export const IDS = {
   vA: "veh-ctl-a", vB: "veh-ctl-b", vC: "veh-ctl-c",
   lpFixed: "lp-ctl-fixed", lpTank: "lp-ctl-tank", lpTae: "lp-ctl-tae",
   product: "prod-ctl", eqType: "fet-ctl", user: "user-ctl", run: "run-ctl",
-  mediumTct: "fsm-tct", mediumCmpc: "fsm-cmpc", mediumAramco: "fsm-aramco",
+  mediumTct: "fsm-tct", mediumCmpc: "fsm-cmpc", mediumTae: "fsm-tae",
 } as const
 
 export function globalSession(): Session {

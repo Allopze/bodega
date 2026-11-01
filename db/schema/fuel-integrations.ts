@@ -31,7 +31,7 @@ export const fuelProviderSyncRuns = pgTable("fuel_provider_sync_runs", {
   startedAt: timestamp("started_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   finishedAt: timestamp("finished_at", { withTimezone: true, mode: "string" }),
 }, (table) => [
-  check("fuel_provider_sync_runs_provider_valid", sql`${table.provider} IN ('copec', 'aramco')`),
+  check("fuel_provider_sync_runs_provider_valid", sql`${table.provider} IN ('copec')`),
   check("fuel_provider_sync_runs_trigger_valid", sql`${table.trigger} IN ('manual', 'cron', 'reprocess')`),
   check("fuel_provider_sync_runs_status_valid", sql`${table.status} IN ('running', 'success', 'partial', 'failed')`),
   check("fuel_provider_sync_runs_period_valid", sql`${table.requestedFrom} <= ${table.requestedTo}`),
@@ -87,7 +87,7 @@ export const fuelProviderTransactions = pgTable("fuel_provider_transactions", {
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
-  check("fuel_provider_transactions_provider_valid", sql`${table.provider} IN ('copec', 'aramco')`),
+  check("fuel_provider_transactions_provider_valid", sql`${table.provider} IN ('copec')`),
   // `excluded`: la patente no está en la flota (p. ej. un vehículo de otra empresa
   // en la misma cuenta del proveedor). No cuenta como consumo ni queda pendiente.
   check("fuel_provider_transactions_status_valid", sql`${table.status} IN ('accepted', 'rejected', 'pending', 'superseded', 'excluded')`),
@@ -129,7 +129,7 @@ export const fuelProviderRejections = pgTable("fuel_provider_rejections", {
   resolvedAt: timestamp("resolved_at", { withTimezone: true, mode: "string" }),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
-  check("fuel_provider_rejections_provider_valid", sql`${table.provider} IN ('copec', 'aramco')`),
+  check("fuel_provider_rejections_provider_valid", sql`${table.provider} IN ('copec')`),
   check("fuel_provider_rejections_status_valid", sql`${table.status} IN ('open', 'resolved', 'dismissed')`),
   uniqueIndex("fuel_provider_rejections_source_unique")
     .on(table.provider, table.sourceAccount, table.sourceRowKey, table.code),
@@ -155,7 +155,7 @@ export const fuelProviderMappings = pgTable("fuel_provider_mappings", {
   supersedesId: text("supersedes_id"),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
-  check("fuel_provider_mappings_provider_valid", sql`${table.provider} IN ('copec', 'aramco')`),
+  check("fuel_provider_mappings_provider_valid", sql`${table.provider} IN ('copec')`),
   uniqueIndex("fuel_provider_mappings_version_unique").on(table.provider, table.sourceAccount, table.externalKey, table.version),
   uniqueIndex("fuel_provider_mappings_active_unique")
     .on(table.provider, table.sourceAccount, table.externalKey)
@@ -191,7 +191,7 @@ export const fuelProviderFiles = pgTable("fuel_provider_files", {
   status: text("status").notNull().default("archived"),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
-  check("fuel_provider_files_provider_valid", sql`${table.provider} IN ('copec', 'aramco')`),
+  check("fuel_provider_files_provider_valid", sql`${table.provider} IN ('copec')`),
   check("fuel_provider_files_channel_valid", sql`${table.channel} IN ('TCT', 'TAE')`),
   check("fuel_provider_files_product_valid", sql`${table.product} IN ('diesel', 'bluemax')`),
   check("fuel_provider_files_status_valid", sql`${table.status} IN ('archived', 'processed', 'invalid')`),
@@ -225,7 +225,7 @@ export const fuelProviderPeriodCoverage = pgTable("fuel_provider_period_coverage
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
-  check("fuel_provider_coverage_provider_valid", sql`${table.provider} IN ('copec', 'aramco')`),
+  check("fuel_provider_coverage_provider_valid", sql`${table.provider} IN ('copec')`),
   check("fuel_provider_coverage_channel_valid", sql`${table.channel} IN ('TCT', 'TAE')`),
   check("fuel_provider_coverage_product_valid", sql`${table.product} IN ('diesel', 'bluemax')`),
   check("fuel_provider_coverage_status_valid", sql`${table.status} IN ('unknown', 'incomplete', 'failed', 'complete', 'legitimate_empty')`),

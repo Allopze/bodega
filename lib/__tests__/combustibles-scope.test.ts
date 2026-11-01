@@ -278,12 +278,12 @@ describe("combustibles — alcance de faena en mutaciones masivas y vinculación
       // sus transacciones: un vehículo que cambió de faena quedaba con sus cargas
       // viejas atribuidas a la nueva. La promoción sí es global a propósito: no
       // hay otro camino que resuelva una pendiente que el cursor ya pasó.
-      await seedBatch("ws-a", "Aramco Fleet Diesel")
+      await seedBatch("ws-a", "Copec TCT Diesel")
       const run = await inMemoryDb.insert(schema.fuelProviderSyncRuns).values({
-        id: "run-link", provider: "aramco", requestedFrom: "2026-01-01", requestedTo: "2026-06-30", correlationId: "corr-link",
+        id: "run-link", provider: "copec", requestedFrom: "2026-01-01", requestedTo: "2026-06-30", correlationId: "corr-link",
       }).returning({ id: schema.fuelProviderSyncRuns.id })
       const pending = (id: string, occurredAt: string) => ({
-        id, syncRunId: run[0]!.id, provider: "aramco", sourceAccount: "fleet",
+        id, syncRunId: run[0]!.id, provider: "copec", sourceAccount: "tct:diesel",
         identityKey: `external:${id}`, fingerprint: id, sourceRowKey: id,
         worksiteId: "ws-b", productId: "fuel-diesel", sourcePlate: "ZZ ZZ 99",
         occurredAt, status: "pending", resolutionCode: "unresolved_mapping", payloadHash: id,

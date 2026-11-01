@@ -70,7 +70,7 @@ describe("provider validation", () => {
   })
 
   it("uses the native external id when available and keeps the payload fingerprint separate", () => {
-    const input = row({ externalId: "aramco-123", provider: "aramco", accountKey: "operator-9" })
+    const input = row({ externalId: "aramco-123", provider: "copec", accountKey: "operator-9" })
     const result = validateProviderRows([input], window)
 
     expect(result.accepted[0]).toMatchObject({ identityKey: "external:aramco-123", externalId: "aramco-123" })

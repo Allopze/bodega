@@ -8,7 +8,6 @@ import { formatDateTime } from "@/lib/utils"
 
 export const INTEGRATION_JOBS = {
   copec: "fuel-copec-sync",
-  aramco: "fuel-aramco-sync",
   visionlink: "fuel-visionlink-sync",
 } as const
 
@@ -42,10 +41,4 @@ export function lastRunText(run: IntegrationRun | null | undefined): string {
     case "skipped": return `Última corrida: ${when} · se saltó porque había otra en curso.`
     default: return `Última corrida: ${when}.`
   }
-}
-
-export const ARAMCO_SOURCE_LABELS: Record<string, string> = {
-  system_settings: "guardada en la aplicación",
-  environment: "heredada del servidor",
-  missing: "sin configurar",
 }

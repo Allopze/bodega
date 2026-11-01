@@ -73,13 +73,14 @@ describe("rótulos del mapeo de proveedor", () => {
 
 describe("mapeo de proveedor", () => {
   it("ida y vuelta de cada opción", () => {
-    for (const mapping of ["none", "copec_tct", "copec_tae", "aramco"] as const) {
+    for (const mapping of ["none", "copec_tct", "copec_tae"] as const) {
       const { providerCode, providerChannel } = providerMappingToColumns(mapping)
       expect(providerMappingFromColumns(providerCode, providerChannel)).toBe(mapping)
     }
   })
-  it("Aramco no lleva canal", () => {
-    expect(providerMappingToColumns("aramco")).toEqual({ providerCode: "aramco", providerChannel: null })
+  it("rechaza el mapeo retirado de Aramco", () => {
+    expect(providerMappingFromColumns("aramco", null)).toBe("none")
+    expect(supplyMediumInputSchema.safeParse({ name: "Tarjeta", kind: "provider_station", providerMapping: "aramco" }).success).toBe(false)
   })
   it("un canal desconocido de Copec queda sin mapeo", () => {
     expect(providerMappingFromColumns("copec", null)).toBe("none")

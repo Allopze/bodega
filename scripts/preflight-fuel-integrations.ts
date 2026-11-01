@@ -152,7 +152,7 @@ export async function readFuelIntegrationsPreflight(sql: postgres.Sql): Promise<
     SELECT
       (SELECT COUNT(*)::int FROM split_tct_identities) AS split_tct_identities,
       (SELECT COUNT(*)::int FROM fuel_provider_transactions WHERE NULLIF(trim(identity_key), '') IS NULL) AS provider_transactions_without_identity,
-      (SELECT COUNT(*)::int FROM fuel_provider_transactions WHERE provider NOT IN ('copec', 'aramco')) AS unknown_provider_transactions,
+      (SELECT COUNT(*)::int FROM fuel_provider_transactions WHERE provider <> 'copec') AS unknown_provider_transactions,
       (SELECT COUNT(*)::int FROM fuel_provider_transactions WHERE status = 'pending') AS open_provider_pendings,
       (SELECT COUNT(*)::int FROM fuel_provider_rejections WHERE status = 'open') AS open_provider_rejections,
       (SELECT COUNT(*)::int FROM duplicate_active_batches) AS duplicate_active_batches,

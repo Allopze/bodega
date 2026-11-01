@@ -51,8 +51,8 @@ beforeAll(async () => {
     providerTx({ id: "ptx-det", quantity: 10, sourcePlate: "AA-0001", identityKey: "det", sourceRowKey: "det" }),
     // Agregado de abril SIN detalle: sí cuenta.
     providerTx({ id: "ptx-agg-apr", quantity: 60, granularity: "period_aggregate", occurredAt: "2026-04-01", sourcePlate: "AA-0001", identityKey: "agg-apr", sourceRowKey: "agg-apr", worksiteId: IDS.wsB }),
-    // Aramco no tiene canal: se mapea al medio Aramco.
-    providerTx({ provider: "aramco", sourceAccount: "aramco:diesel", quantity: 40, identityKey: "ar", sourceRowKey: "ar" }),
+    // La cuenta TAE se mapea al medio TAE.
+    providerTx({ provider: "copec", sourceAccount: "tae:diesel", quantity: 40, identityKey: "ar", sourceRowKey: "ar" }),
   ])
   await testDb.insert(schema.fuelTaeSubmissions).values([
     submission({ id: "d-fixed", loadingPointId: IDS.lpFixed, supplyMediumId: IDS.mediumCmpc, liters: 600 }),
@@ -74,7 +74,7 @@ describe("getMandante", () => {
 describe("getReconciliationFlow", () => {
   it("suma entradas importadas y del proveedor, separa directo de vía estanque y calcula la diferencia", async () => {
     const flow = await getReconciliationFlow(globalSession(), filtersFor({ mandante: IDS.m1 }), 2)
-    // Marzo: entradas 1000 + proveedor (500 + 80 + 10 + 40 aramco) = 1630. Abril: 400 + agregado 60 = 460.
+    // Marzo: entradas 1000 + proveedor (500 + 80 + 10 + 40 TAE) = 1630. Abril: 400 + agregado 60 = 460.
     const march = flow.months.find((month) => month.month === "2026-03")!
     expect(march.inputLiters).toBe(1630)
     expect(march.directLiters).toBe(720) // 600 fijo + 100 punto TAE + 20 sin lugar
@@ -126,8 +126,8 @@ describe("getMediumCross", () => {
     // TCT: terreno 550; informado = 500 + 80 + 10 (marzo) + 60 (agregado de abril sin detalle).
     const tct = byName.get("TCT")!
     expect(tct).toMatchObject({ fieldLiters: 550, reportedLiters: 650 })
-    // Aramco sin cargas en terreno: aparece con lo informado.
-    expect(byName.get("Aramco")).toMatchObject({ fieldLiters: 0, reportedLiters: 40 })
+    // TAE sin cargas en terreno: aparece con lo informado.
+    expect(byName.get("TAE")).toMatchObject({ fieldLiters: 0, reportedLiters: 40 })
     // Sin medio asignado: hay 20 L en terreno y no existe informe.
     expect(byName.get("Sin medio asignado")).toMatchObject({ fieldLiters: 20, reportedLiters: null, differenceLiters: null, differencePct: null })
   })

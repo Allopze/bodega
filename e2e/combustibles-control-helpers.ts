@@ -13,7 +13,7 @@ export const VEHICLE_PLATE = "CTLE21"
 export const WORKSITE_ID = "ws-e2e"
 export const WORKSITE_NAME = "Faena E2E"
 export const POINT_ID = "ctl-point-e2e"
-// Sin «TAE», «TCT», «CMPC», «Aramco» ni «Copec» en el nombre: el formulario no
+// Sin «TAE», «TCT», «CMPC» ni «Copec» en el nombre: el formulario no
 // preselecciona ningún medio y la prueba tiene que elegirlo, como el operador.
 export const POINT_NAME = "Surtidor control E2E"
 export const MANDANTE_ID = "fmd-ctl-e2e"

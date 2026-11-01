@@ -7,6 +7,12 @@ function jsonResponse(status: number, payload: unknown) {
 }
 
 describe("cron runner", () => {
+  it("rejects the retired Aramco job without making a request", async () => {
+    const fetchImpl = vi.fn()
+    expect(await runCronJob("fuel-aramco-sync", { secret: "test-secret", fetchImpl, log: vi.fn() })).toBe(1)
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
+
   it("maps the shared sync contract to the documented exit codes", async () => {
     const log = vi.fn()
     const conflict = await runCronJob("dte", {
@@ -141,8 +147,8 @@ describe("cron runner", () => {
     expect(regularFetch.mock.calls[0]?.[1]?.headers).not.toHaveProperty("X-Fleet-Gps-Cron-Secret")
   })
 
-  it("sends the fuel internal secret to the Copec and Aramco jobs", async () => {
-    for (const job of ["fuel-copec-sync", "fuel-aramco-sync"]) {
+  it("sends the fuel internal secret to the Copec and VisionLink jobs", async () => {
+    for (const job of ["fuel-copec-sync", "fuel-visionlink-sync"]) {
       const fuelFetch = vi.fn().mockResolvedValue(jsonResponse(200, { ok: true, outcome: "success", code: "FUEL_CRON_SUCCESS" }))
       await runCronJob(job, { secret: "cron-secret", internalSecret: "fuel-secret", log: vi.fn(), fetchImpl: fuelFetch })
       expect(fuelFetch.mock.calls[0]?.[1]?.headers).toMatchObject({

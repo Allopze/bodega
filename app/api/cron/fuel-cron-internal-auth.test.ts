@@ -8,25 +8,19 @@ import { NextRequest } from "next/server"
 const mocks = vi.hoisted(() => ({
   isRouteOperational: vi.fn(async () => true),
   syncCopecReports: vi.fn(),
-  syncAramco: vi.fn(),
-  readAramcoConfig: vi.fn(),
   withCronLock: vi.fn(async (_job: string, run: () => Promise<unknown>) => run()),
   consumeFixedWindowLimit: vi.fn(async () => ({ allowed: true, remaining: 9 })),
 }))
 
 vi.mock("@/lib/services/module-toggles", () => ({ isRouteOperational: (...args: unknown[]) => Reflect.apply(mocks.isRouteOperational, null, args) }))
 vi.mock("@/lib/combustibles/copec-sync", () => ({ syncCopecReports: (...args: unknown[]) => Reflect.apply(mocks.syncCopecReports, null, args) }))
-vi.mock("@/lib/combustibles/aramco-sync", () => ({ syncAramco: (...args: unknown[]) => Reflect.apply(mocks.syncAramco, null, args) }))
-vi.mock("@/lib/combustibles/aramco-settings", () => ({ readAramcoConfig: (...args: unknown[]) => Reflect.apply(mocks.readAramcoConfig, null, args) }))
 vi.mock("@/lib/services/cron-lock", () => ({ withCronLock: (...args: [string, () => Promise<unknown>]) => Reflect.apply(mocks.withCronLock, null, args) }))
 vi.mock("@/lib/services/rate-limit", () => ({ consumeFixedWindowLimit: (...args: unknown[]) => Reflect.apply(mocks.consumeFixedWindowLimit, null, args) }))
 
 const copecRoute = await import("./fuel-copec-sync/route")
-const aramcoRoute = await import("./fuel-aramco-sync/route")
 
 const ROUTES = [
   { name: "fuel-copec-sync", GET: copecRoute.GET, sync: mocks.syncCopecReports },
-  { name: "fuel-aramco-sync", GET: aramcoRoute.GET, sync: mocks.syncAramco },
 ] as const
 
 /** Lo que manda `scripts/cron-runner.mjs` desde el contenedor `cron`: sin cabeceras de proxy. */
@@ -44,9 +38,7 @@ describe.each(ROUTES)("autenticación del scheduler interno en /api/cron/$name",
     vi.stubEnv("COPEC_USERNAME", "usuario")
     vi.stubEnv("COPEC_PASSWORD", "clave")
     vi.stubEnv("COPEC_CLIENT_RUT", "76123456-0")
-    mocks.readAramcoConfig.mockResolvedValue({ hasCredentials: true, syncEnabled: true })
     mocks.syncCopecReports.mockResolvedValue({ imported: 0 })
-    mocks.syncAramco.mockResolvedValue({ imported: 0 })
   })
 
   afterEach(() => {

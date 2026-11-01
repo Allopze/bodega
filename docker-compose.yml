@@ -80,10 +80,6 @@ services:
       - COPEC_CLIENT_RUT=${COPEC_CLIENT_RUT:-}
       - COPEC_SYNC_START_DATE=${COPEC_SYNC_START_DATE:-2020-01-01}
       - COPEC_SYNC_IMPORTER_EMAIL=${COPEC_SYNC_IMPORTER_EMAIL:-}
-      - ARAMCO_DOCUMENT_NUMBER=${ARAMCO_DOCUMENT_NUMBER:-}
-      - ARAMCO_PASSWORD=${ARAMCO_PASSWORD:-}
-      - ARAMCO_SYNC_ENABLED=${ARAMCO_SYNC_ENABLED:-false}
-      - ARAMCO_SYNC_IMPORTER_EMAIL=${ARAMCO_SYNC_IMPORTER_EMAIL:-}
       # VisionLink (Cat Digital): telemetría diaria de horas y litros por equipo.
       - VISIONLINK_CLIENT_ID=${VISIONLINK_CLIENT_ID:-}
       - VISIONLINK_CLIENT_SECRET=${VISIONLINK_CLIENT_SECRET:-}
@@ -244,10 +240,6 @@ services:
       - COPEC_CLIENT_RUT=${COPEC_CLIENT_RUT:-}
       - COPEC_SYNC_START_DATE=${COPEC_SYNC_START_DATE:-2020-01-01}
       - COPEC_SYNC_IMPORTER_EMAIL=${COPEC_SYNC_IMPORTER_EMAIL:-}
-      - ARAMCO_DOCUMENT_NUMBER=${ARAMCO_DOCUMENT_NUMBER:-}
-      - ARAMCO_PASSWORD=${ARAMCO_PASSWORD:-}
-      - ARAMCO_SYNC_ENABLED=${ARAMCO_SYNC_ENABLED:-false}
-      - ARAMCO_SYNC_IMPORTER_EMAIL=${ARAMCO_SYNC_IMPORTER_EMAIL:-}
       # VisionLink (Cat Digital): telemetría diaria de horas y litros por equipo.
       - VISIONLINK_CLIENT_ID=${VISIONLINK_CLIENT_ID:-}
       - VISIONLINK_CLIENT_SECRET=${VISIONLINK_CLIENT_SECRET:-}
@@ -383,7 +375,6 @@ services:
         # por el mismo portal ni la misma ventana de I/O.
         0 5 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs fuel-anomaly-detection >/proc/1/fd/1 2>&1
         30 5 * * * CRON_SECRET="$$CRON_SECRET" FUEL_CRON_INTERNAL_SECRET="$$FUEL_CRON_INTERNAL_SECRET" node /app/scripts/cron-runner.mjs fuel-copec-sync >/proc/1/fd/1 2>&1
-        45 5 * * * CRON_SECRET="$$CRON_SECRET" FUEL_CRON_INTERNAL_SECRET="$$FUEL_CRON_INTERNAL_SECRET" node /app/scripts/cron-runner.mjs fuel-aramco-sync >/proc/1/fd/1 2>&1
         # VisionLink — telemetría de los últimos 14 días, ya cerrado el día anterior.
         0 6 * * * CRON_SECRET="$$CRON_SECRET" FUEL_CRON_INTERNAL_SECRET="$$FUEL_CRON_INTERNAL_SECRET" node /app/scripts/cron-runner.mjs fuel-visionlink-sync >/proc/1/fd/1 2>&1
         30 8 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs fuel-statement-notifications >/proc/1/fd/1 2>&1
@@ -1206,7 +1197,7 @@ services:
     command: ["node", "scripts/preflight-fuel-integrations.mjs"]
 
   # One-shot: reconstruye `fuel_meter_readings` desde el detalle por transacción
-  # que Copec y Aramco ya dejaron en `fuel_consumption_records.raw_row`. No sale
+  # que Copec ya dejó en `fuel_consumption_records.raw_row`. No sale
   # al portal ni consume cuota de proveedor. Idempotente por (fuente, guía).
   #
   #   docker compose run --rm backfill-fuel-meter-readings

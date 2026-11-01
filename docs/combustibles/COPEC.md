@@ -101,8 +101,7 @@ El odómetro de cada transacción se persiste aparte, en `fuel_meter_readings`
 (identidad: fuente, guía de despacho y patente, porque Copec reutiliza la guía
 entre vehículos), y de ahí salen el rendimiento calculado y las
 reglas de medidor regresivo y de salto implausible. Esa columna guarda
-**instantes UTC** para las tres fuentes (`copec_tct`, `aramco`, `gps_onway`):
-Aramco entrega hora de pared chilena y se convierte al importar. El histórico se reconstruye
+**instantes UTC** para las fuentes (`copec_tct`, `gps_onway`). El histórico se reconstruye
 desde `raw_row` con `npm run db:backfill-fuel-meter-readings`, sin volver a
 consultar a Copec.
 
@@ -181,7 +180,7 @@ corrida, con litros/monto cuando la fila los trae.
   la carga queda `excluded` (`not_in_fleet`, migración 0366): no entra al
   consumo, no queda pendiente y no deja el mes incompleto. Fuentes de datos las
   lista en el detalle técnico. Si después se agrega el vehículo a la flota, la
-  próxima sincronización del mes la reevalúa. Aramco sigue la misma regla.
+  próxima sincronización del mes la reevalúa.
 - **Asignaciones con fecha.** Un mes cerrado sólo se atribuye con una
   asignación de `fuel_provider_mappings` vigente para ese mes; la faena es la
   guardada en la asignación, no la del vehículo. Por eso trasladar un vehículo

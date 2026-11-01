@@ -37,7 +37,7 @@ function first(sp: SearchParams, key: string): string | undefined {
 }
 
 /**
- * Tarjetas (total por patente y mes): lo que informan Copec y Aramco, antes la
+ * Tarjetas (total por patente y mes): lo que informa Copec, antes la
  * vista «Registros» de la raíz del módulo. Cada fila es un total mensual por
  * patente, no una carga: por eso va aparte de «Cargas a equipos». El período es
  * en meses: con una semana o un rango se muestran los meses completos que toca.
@@ -155,7 +155,7 @@ export default async function CargasTarjetasPage({ searchParams }: { searchParam
     <PageContainer>
       <PageHeader
         title="Tarjetas (total por patente y mes)"
-        description="Lo que informan Copec y Aramco por patente y mes"
+        description="Lo que informa Copec por patente y mes"
         breadcrumb={<FuelBreadcrumbs items={[{ label: "Cargas", href: FUEL_PATHS.cargas }, { label: "Tarjetas" }]} />}
         actions={<FuelHeaderActions period={period} granularity="month" />}
       />
@@ -164,7 +164,7 @@ export default async function CargasTarjetasPage({ searchParams }: { searchParam
 
       <div className="mb-4 space-y-2">
         <Callout tone="info" role="status" title="Las tarjetas informan un total por patente y por mes, no cada carga">
-          Por eso van aparte de las cargas a equipos. Copec y Aramco se actualizan solos cada mañana.
+          Por eso van aparte de las cargas a equipos. Copec se actualiza automáticamente cada mañana.
           {granularityNote ? <span className="mt-1 block">{granularityNote}</span> : null}
         </Callout>
       </div>

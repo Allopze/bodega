@@ -16,7 +16,7 @@ import { formatExcelDateUTC, normKey, normalizePlate, parseChileanNumber, santia
 import { ACCOUNTABLE_FUEL_LOAD_STATUSES } from "./load-status"
 import { isValidReason, reasonRequiredMessage } from "@/lib/validation/reason-thresholds"
 
-export const METER_READING_SOURCES = ["copec_tct", "aramco", "gps_onway"] as const
+export const METER_READING_SOURCES = ["copec_tct", "gps_onway"] as const
 export type MeterReadingSource = (typeof METER_READING_SOURCES)[number]
 
 export interface ParsedMeterReading {
@@ -116,65 +116,6 @@ export function copecDetailReading(record: Record<string, unknown>): ParsedMeter
     cardNumber: text(get("Tarjeta")) || null,
     providerPerformance: providerPerformance > 0 ? providerPerformance : null,
     rawPayload: withoutPersonalData(record),
-  }
-}
-
-/**
- * Instante UTC de una fecha-hora de pared chilena sin zona (`2026-08-18T07:49:32`).
- *
- * `fuel_meter_readings.occurred_at` es la MISMA serie para las tres fuentes, y
- * `copec_tct` y `gps_onway` guardan instantes UTC reales. Aramco guardaba su
- * `transactionDate` tal cual —hora de pared, sin zona—, así que un mismo equipo
- * con cargas en los dos proveedores quedaba con la serie desordenada en ~4 h y,
- * como la columna es `text`, con dos formatos de distinta longitud que se
- * comparan lexicográficamente. Se normaliza al mismo instante UTC que el resto.
- *
- * Un valor que YA trae zona (`Z` u offset) se respeta: sólo se interpreta como
- * hora chilena lo que viene sin ella.
- */
-export function chileanWallClockToInstant(value: string): string | null {
-  const trimmed = value.trim()
-  if (!trimmed) return null
-  if (/(?:Z|[+-]\d{2}:?\d{2})$/.test(trimmed)) {
-    const zoned = new Date(trimmed)
-    return Number.isNaN(zoned.getTime()) ? null : zoned.toISOString()
-  }
-  // `Z` postizo para que los getters UTC devuelvan los componentes de pared tal
-  // como vinieron; `santiagoInstant` les aplica el desfase real de la fecha.
-  const wall = new Date(`${trimmed}${/T\d{2}:\d{2}/.test(trimmed) ? "" : "T00:00:00"}Z`)
-  if (Number.isNaN(wall.getTime())) return null
-  return santiagoInstant(wall, wall)
-}
-
-/**
- * Un movimiento de la API de Aramco. El portal entrega el odómetro como string y
- * a veces nulo, y `transactionId` es la clave estable de la transacción.
- */
-export function aramcoMovementReading(movement: Record<string, unknown>): ParsedMeterReading | null {
-  const plate = normalizePlate(text(movement["vehicleRegistrationPlate"]))
-  const sourceRef = text(movement["transactionId"])
-  const occurredAtRaw = text(movement["transactionDate"])
-  if (!plate || !sourceRef || !occurredAtRaw) return null
-  // `transactionDate` viene como hora de pared chilena sin zona: se convierte al
-  // mismo instante UTC que guardan `copec_tct` y `gps_onway`. La PROYECCIÓN
-  // mensual sigue usando la hora de pared cruda a propósito (ver `monthOf` en
-  // `aramco-sync`): ahí lo que importa es el mes civil, no el instante.
-  const occurredAt = chileanWallClockToInstant(occurredAtRaw)
-  if (!occurredAt) return null
-
-  const value = Number(movement["vehicleOdometer"] ?? Number.NaN)
-  const liters = Number(movement["quantity"] ?? 0)
-  return {
-    plate,
-    sourceRef,
-    occurredAt,
-    sourceDate: occurredAtRaw.slice(0, 10),
-    value: Number.isFinite(value) && value > 0 ? value : null,
-    liters: liters > 0 ? liters : null,
-    stationName: text(movement["serviceStationName"]) || null,
-    cardNumber: text(movement["cardNumber"]) || null,
-    providerPerformance: null,
-    rawPayload: movement,
   }
 }
 

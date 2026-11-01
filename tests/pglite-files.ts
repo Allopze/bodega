@@ -395,6 +395,7 @@ export const pgliteTestFiles = [
   // C07 sobre ocurrencias: "no aplica" y cancelación en revisión.
   "lib/__tests__/pdtp-scheduled-instance-outcome-review.test.ts",
   "scripts/__tests__/revert-pdtp-revoked-approvals.test.ts",
+  "scripts/__tests__/retire-aramco-pglite.test.ts",
   // Decisiones de catálogo EPP 2026-10-29: atributos faltantes, nombre del Evalight y color Piedra.
   "scripts/__tests__/apply-epp-catalog-decisions-2026-10-29.test.ts",
   "scripts/__tests__/apply-fleet-copec-decisions-2026-10-29.test.ts",

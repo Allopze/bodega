@@ -421,8 +421,6 @@ export async function linkConsumptionPlateAction(_prev: ActionState, formData: F
     ? { provider: "copec" as const, sourceAccount: "tct:diesel" }
     : batch.fuente?.startsWith("Copec TCT BlueMax")
     ? { provider: "copec" as const, sourceAccount: "tct:bluemax" }
-    : batch.fuente?.startsWith("Aramco Fleet")
-    ? { provider: "aramco" as const, sourceAccount: "fleet" }
     : null
   const normalizedValue = plateMatchKey(patente)
   const updated = await db.transaction(async (tx) => {
@@ -466,8 +464,7 @@ export async function linkConsumptionPlateAction(_prev: ActionState, formData: F
       //
       // La promoción NO se acota por período a propósito: no hay otro camino que
       // resuelva una pendiente vieja. El barrido automático sólo vuelve a pedir
-      // lo que su cursor alcanza (Copec, de su cursor hacia adelante; Aramco, los
-      // últimos meses), así que acotarla dejaría pendientes huérfanas para
+      // lo que su cursor alcanza, así que acotarla dejaría pendientes huérfanas para
       // siempre.
       const pendingByPlate = and(
         eq(fuelProviderTransactions.provider, providerMapping.provider),
@@ -494,7 +491,7 @@ export async function linkConsumptionPlateAction(_prev: ActionState, formData: F
       // marzo reescribía la faena de TODO su historial: un vehículo que cambió de
       // faena quedaba con sus cargas viejas atribuidas a la nueva.
       //
-      // `occurred_at` es texto y Aramco guarda hora de pared completa
+      // `occurred_at` es texto y puede guardar la hora completa
       // ("2026-07-31T08:00:00"), así que se compara el prefijo de 10 caracteres:
       // como string, '2026-07-31T08:00:00' <= '2026-07-31' es falso y se perdía
       // el último día de cada mes.

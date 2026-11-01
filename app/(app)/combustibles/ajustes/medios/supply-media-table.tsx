@@ -167,7 +167,7 @@ function SupplyMediumDialog({ medium, suppliers, onClose }: { medium: SupplyMedi
                 </Select>
               </Field>
             </div>
-            <Field label="Se actualiza solo" htmlFor="medium-mapping" helper="Si el medio corresponde a una integración (Copec o Aramco), sus cargas se leen solas cada mañana. Si no, déjalo sin lectura automática y súbelas en Fuentes de datos.">
+            <Field label="Se actualiza solo" htmlFor="medium-mapping" helper="Si el medio corresponde a una integración de Copec, sus cargas se leen solas cada mañana. Si no, déjalo sin lectura automática y súbelas en Fuentes de datos.">
               <Select value={mapping} onValueChange={(value) => setMapping(value as ProviderMapping)}>
                 <SelectTrigger id="medium-mapping"><SelectValue /></SelectTrigger>
                 <SelectContent>{PROVIDER_MAPPINGS.map((item) => <SelectItem key={item} value={item}>{PROVIDER_MAPPING_LABELS[item]}</SelectItem>)}</SelectContent>

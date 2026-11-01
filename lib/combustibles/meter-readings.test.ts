@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { aramcoMovementReading, copecDetailReading } from "./meter-readings"
+import { copecDetailReading } from "./meter-readings"
 
 /**
  * Fila del informe de detalle de Copec con el juego de columnas REAL, tomado de
@@ -73,40 +73,5 @@ describe("copecDetailReading", () => {
     }))!
     expect(reading.occurredAt).toBe("2020-01-31T20:24:00.000Z")
     expect(reading.value).toBe(562_580)
-  })
-})
-
-describe("aramcoMovementReading", () => {
-  const movement = {
-    transactionId: 90210,
-    transactionDate: "2026-08-18T07:49:32",
-    vehicleRegistrationPlate: "RW YH 93",
-    cardNumber: "  4455  ",
-    quantity: 120.5,
-    vehicleOdometer: "412300",
-    vehiclePreviousOdometer: "411800",
-    serviceStationName: "ESMAX LOS ANGELES",
-  }
-
-  it("normaliza la patente y lleva la hora de pared chilena al mismo instante UTC que Copec", () => {
-    // La columna `occurred_at` es UNA sola serie para las tres fuentes, y
-    // `copec_tct`/`gps_onway` guardan instantes UTC. Guardar la hora de pared
-    // cruda dejaba al mismo equipo con la serie desordenada en ~4 h.
-    const reading = aramcoMovementReading(movement)!
-    expect(reading.plate).toBe("RWYH93")
-    expect(reading.sourceRef).toBe("90210")
-    expect(reading.occurredAt).toBe("2026-08-18T11:49:32.000Z")
-    expect(reading.value).toBe(412_300)
-    expect(reading.liters).toBe(120.5)
-    expect(reading.cardNumber).toBe("4455")
-  })
-
-  it("deja la lectura en null cuando el portal no trae odómetro", () => {
-    expect(aramcoMovementReading({ ...movement, vehicleOdometer: null })!.value).toBeNull()
-  })
-
-  it("descarta el movimiento sin patente o sin fecha", () => {
-    expect(aramcoMovementReading({ ...movement, vehicleRegistrationPlate: null })).toBeNull()
-    expect(aramcoMovementReading({ ...movement, transactionDate: "" })).toBeNull()
   })
 })

@@ -17,13 +17,9 @@ import {
   fuelVehicles,
 } from "@/db/schema"
 import { isGlobalRole, worksiteScopeSql } from "@/lib/auth/scope"
-import { aramcoStoredErrorText } from "@/lib/combustibles/aramco-client"
-import { readAramcoConfig } from "@/lib/combustibles/aramco-settings"
 import { listCopecPeriodCoverage } from "@/lib/combustibles/copec-coverage-store"
-import { ARAMCO_SOURCES } from "@/lib/combustibles/fuel-sources"
 import { toChileInstantRange } from "@/lib/combustibles/period/adapters"
 import type { ResolvedFuelPeriod } from "@/lib/combustibles/period/types"
-import { FUEL_PATHS } from "@/lib/combustibles/routes"
 import { listTaeImportBatches } from "@/lib/combustibles/tae-import-ledger"
 import { readVisionLinkConfig } from "@/lib/integrations/visionlink/visionlink-settings"
 import { describeProviderPendingItems, listProviderPendingItems } from "@/lib/combustibles/provider-pending-items"
@@ -40,7 +36,7 @@ import { addDaysToPlainDate, formatDate, formatQty, todayInChile } from "@/lib/u
  * y la planilla de cargas son globales (un rol acotado no las ve), y los lotes
  * de tarjeta, telemetría, surtidor y sellos se acotan a las faenas del usuario.
  */
-export type FuelSourceKey = "copec" | "aramco" | "planilla" | "telemetria" | "surtidor" | "terreno" | "historico-sellos" | "facturas"
+export type FuelSourceKey = "copec" | "planilla" | "telemetria" | "surtidor" | "terreno" | "historico-sellos" | "facturas"
 
 /** Un dato de la fila de una fuente («Última actualización: ayer»), con un enlace opcional a donde se cambia. */
 export interface FuelSourceFact {
@@ -84,7 +80,7 @@ export interface FuelSourceStatus {
   missingInPeriod?: boolean
 }
 
-const JOB = { copec: "fuel-copec-sync", aramco: "fuel-aramco-sync", visionlink: "fuel-visionlink-sync" } as const
+const JOB = { copec: "fuel-copec-sync", visionlink: "fuel-visionlink-sync" } as const
 
 /** Una corrida «en curso» por más de esto se da por colgada. */
 const STUCK_RUN_MS = 3 * 60 * 60 * 1000
@@ -163,27 +159,24 @@ function clipToPeriod(day: string, ctx: Ctx): string {
   return minDay(minDay(day, ctx.period.to), ctx.today)
 }
 
-/* ── Copec y Aramco ─────────────────────────────────────────────────────── */
+/* ── Copec ─────────────────────────────────────────────────────── */
 
 const COPEC_COVERAGE_COMBOS = ["tct:diesel", "tct:bluemax", "tae:diesel", "tae:bluemax"] as const
 const COVERAGE_TERMINAL = new Set(["complete", "legitimate_empty"])
 
-async function providerSource(provider: "copec" | "aramco", ctx: Ctx): Promise<FuelSourceStatus | null> {
+async function providerSource(ctx: Ctx): Promise<FuelSourceStatus | null> {
   const { session, period, today, has } = ctx
   const canSync = has("combustibles:sync_integrations")
   // Quien sólo importa ve el estado de los reportes de sus faenas, no el de la integración.
   if (!canSync && !has("combustibles:import")) return null
 
-  const isCopec = provider === "copec"
-  const base = isCopec
-    ? emptyStatus("copec", "Copec", "Tarjetas de equipos y abastecimiento de estanques", ["Cargas › Tarjetas", "Cuadratura", "Equipos"])
-    : emptyStatus("aramco", "Aramco", "Tarjetas Aramco Fleet", ["Cargas › Tarjetas", "Cuadratura"])
-
-  const sourceFilter = isCopec ? like(fuelImportBatches.fuente, "Copec%") : inArray(fuelImportBatches.fuente, ARAMCO_SOURCES)
+  const provider = "copec"
+  const base = emptyStatus("copec", "Copec", "Tarjetas de equipos y abastecimiento de estanques", ["Cargas › Tarjetas", "Cuadratura", "Equipos"])
+  const sourceFilter = like(fuelImportBatches.fuente, "Copec%")
   const scope = worksiteScopeSql(session, fuelImportBatches.worksiteId)
   // La integración se administra con `sync_integrations`; quien no lo tiene ve sólo los reportes de sus faenas.
   const syncMode = canSync
-  const [lastBatch, runs, config] = await Promise.all([
+  const [lastBatch, runs] = await Promise.all([
     db.select({ createdAt: fuelImportBatches.createdAt, periodoHasta: fuelImportBatches.periodoHasta })
       .from(fuelImportBatches)
       .where(and(sourceFilter, eq(fuelImportBatches.estado, "importado"), scope))
@@ -192,7 +185,6 @@ async function providerSource(provider: "copec" | "aramco", ctx: Ctx): Promise<F
     syncMode
       ? db.select().from(fuelProviderSyncRuns).where(eq(fuelProviderSyncRuns.provider, provider)).orderBy(desc(fuelProviderSyncRuns.startedAt)).limit(25)
       : Promise.resolve<Array<typeof fuelProviderSyncRuns.$inferSelect>>([]),
-    syncMode && !isCopec ? readAramcoConfig() : Promise.resolve(null),
   ])
   const batch = lastBatch[0] ?? null
 
@@ -219,8 +211,7 @@ async function providerSource(provider: "copec" | "aramco", ctx: Ctx): Promise<F
   const facts: FuelSourceFact[] = []
   let problem: string | null = null
   let problemLink: FuelSourceStatus["problemLink"]
-  /** El error guardado de una corrida, sin el JSON del proveedor (Aramco lo guardaba crudo hasta 2026-09). */
-  const storedError = (error: string) => userFacingErrorText(isCopec ? error : aramcoStoredErrorText(error))
+  const storedError = (error: string) => userFacingErrorText(error)
   let status: FuelSourceStatus["status"] = "ok"
   let statusLabel = "Al día"
 
@@ -238,7 +229,6 @@ async function providerSource(provider: "copec" | "aramco", ctx: Ctx): Promise<F
   if (!latest && !cron?.lastStartedAt) {
     status = "sin_datos"
     statusLabel = "Sin sincronizar"
-    if (!isCopec && config && !config.hasCredentials) problem = "Faltan las credenciales de Aramco. Se configuran en Ajustes › Integraciones."
   } else if (cronFailedAfterLatest && cron?.lastStartedAt) {
     status = "falla"
     statusLabel = `Falló ${whenLabel(cron.lastStartedAt, today)}`
@@ -280,7 +270,7 @@ async function providerSource(provider: "copec" | "aramco", ctx: Ctx): Promise<F
   if (lastGoodAt) facts.push({ label: "Última actualización", value: whenLabel(lastGoodAt, today) })
 
   // Cobertura por mes (Copec): un mes cerrado del período sin cobertura terminal está incompleto.
-  if (isCopec) {
+  {
     const coverage = await listCopecPeriodCoverage(period.from, period.to)
     const missing: string[] = []
     for (const month of period.monthKeys) {
@@ -322,7 +312,7 @@ async function providerSource(provider: "copec" | "aramco", ctx: Ctx): Promise<F
 
   const pendingRows = latest && latest.status !== "failed" ? latest.rowsPending : 0
   if (pendingRows > 0) {
-    const where = isCopec && latest ? ` en ${monthName(latest.requestedFrom.slice(0, 7))}` : ""
+    const where = latest ? ` en ${monthName(latest.requestedFrom.slice(0, 7))}` : ""
     // Nombra qué tarjetas y patentes son: con sólo la cantidad había que ir a la
     // base para saber qué arreglar, y una tarjeta se arregla en otro lado que una patente.
     const items = latest ? await listProviderPendingItems(latest.id) : []
@@ -339,16 +329,6 @@ async function providerSource(provider: "copec" | "aramco", ctx: Ctx): Promise<F
     }
   }
 
-  if (!isCopec && config) {
-    facts.push({
-      label: "Sincronización automática",
-      value: config.hasCredentials ? (config.syncEnabled ? "Activada" : "Apagada") : "Sin credenciales",
-      // El interruptor vive en Ajustes › Integraciones (otro permiso): quien puede cambiarlo lo tiene junto al estado. Sin
-      // credenciales no hay nada que activar y la fila ya manda a configurarlas.
-      ...(config.hasCredentials && ctx.has("combustibles:manage_integrations") ? { href: FUEL_PATHS.ajustesIntegraciones, hrefLabel: "Cambiar en Ajustes" } : {}),
-    })
-    if (!config.hasCredentials) problem ??= "Faltan las credenciales de Aramco. Se configuran en Ajustes › Integraciones."
-  }
   if (batch) facts.push({ label: "Último lote", value: `hasta el ${formatDate(batch.periodoHasta)}` })
 
   return { ...base, status, statusLabel, lastUpdateAt: lastGoodAt, facts, problem, ...(problemLink ? { problemLink } : {}), technical, completeUntil }
@@ -592,7 +572,11 @@ async function facturasSource(ctx: Ctx): Promise<FuelSourceStatus | null> {
   }
 }
 
-export async function getFuelSourceStatuses(session: Session, period: ResolvedFuelPeriod): Promise<FuelSourceStatus[]> {
+export async function getFuelSourceStatuses(
+  session: Session,
+  period: ResolvedFuelPeriod,
+  options: { keys?: readonly FuelSourceKey[] } = {},
+): Promise<FuelSourceStatus[]> {
   const permissions = new Set<string>(session.user?.permissions ?? [])
   const cron = new Map<string, CronJobHealth>()
   try {
@@ -604,8 +588,7 @@ export async function getFuelSourceStatuses(session: Session, period: ResolvedFu
   const ctx: Ctx = { session, period, today: todayInChile(), global: isGlobalRole(session), has: (permission) => permissions.has(permission), cron }
 
   const builders: Array<{ key: FuelSourceKey; name: string; run: () => Promise<FuelSourceStatus | null> }> = [
-    { key: "copec", name: "Copec", run: () => providerSource("copec", ctx) },
-    { key: "aramco", name: "Aramco", run: () => providerSource("aramco", ctx) },
+    { key: "copec", name: "Copec", run: () => providerSource(ctx) },
     { key: "planilla", name: "Planilla de cargas", run: () => planillaSource(ctx) },
     { key: "telemetria", name: "Telemetría de equipos", run: () => telemetriaSource(ctx) },
     { key: "surtidor", name: "Surtidores sin integración", run: () => surtidorSource(ctx) },
@@ -613,10 +596,12 @@ export async function getFuelSourceStatuses(session: Session, period: ResolvedFu
     { key: "historico-sellos", name: "Histórico de sellos", run: () => historicoSellosSource(ctx) },
     { key: "facturas", name: "Facturas en Excel", run: () => facturasSource(ctx) },
   ]
-  const settled = await Promise.allSettled(builders.map((builder) => builder.run()))
+  const wanted = options.keys ? new Set(options.keys) : null
+  const selected = wanted ? builders.filter((builder) => wanted.has(builder.key)) : builders
+  const settled = await Promise.allSettled(selected.map((builder) => builder.run()))
   const out: FuelSourceStatus[] = []
   settled.forEach((result, index) => {
-    const builder = builders[index]!
+    const builder = selected[index]!
     if (result.status === "fulfilled") {
       if (result.value) out.push(result.value)
       return
@@ -673,7 +658,7 @@ export function summarizeFuelSources(statuses: readonly FuelSourceStatus[]): { r
 export function describeFuelSources(statuses: readonly FuelSourceStatus[], period: Pick<ResolvedFuelPeriod, "inLabel">): string {
   if (statuses.length === 0) return "Todavía no hay fuentes de datos que mostrar."
   // Cada problema se lista con su fuente en la página (`page.tsx`): en un
-  // solo párrafo no se veía dónde terminaba Copec y empezaba Aramco.
+  // solo párrafo no se veía la separación entre fuentes.
   const problems = statuses.filter((status) => status.problem).length
   if (problems > 0) return problems === 1 ? "Falta resolver en una fuente:" : `Falta resolver en ${problems} fuentes:`
   if (statuses.some((status) => status.status === "falla" || status.status === "pendiente")) return "Hay fuentes que no se actualizaron a tiempo."

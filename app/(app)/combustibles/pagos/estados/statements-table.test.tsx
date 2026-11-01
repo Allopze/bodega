@@ -42,7 +42,7 @@ const statement = {
   payments: [{ amount: 500_000 }],
 }
 
-const missing = { supplierId: "sup-9", supplierName: "Aramco", month: "2026-10", loads: 38, totalAmount: 58_400_000, monthClosed: false }
+const missing = { supplierId: "sup-9", supplierName: "Otro proveedor", month: "2026-10", loads: 38, totalAmount: 58_400_000, monthClosed: false }
 
 /** El bloque de tarjetas es el `md:hidden` que `DataTable` monta junto a la tabla. */
 function mobileCards(container: HTMLElement) {
@@ -85,7 +85,7 @@ describe("estados de cuenta de combustible — vista móvil (UX-003)", () => {
 describe("meses sin estado de cuenta", () => {
   it("los lista arriba, con su estado y un botón para crearlos, sólo a quien puede gestionarlos", () => {
     const { container, rerender } = render(
-      <StatementsTable statements={[statement]} missing={[missing]} suppliers={[{ id: "sup-9", name: "Aramco" }]} canManage today="2026-09-01" />,
+      <StatementsTable statements={[statement]} missing={[missing]} suppliers={[{ id: "sup-9", name: "Otro proveedor" }]} canManage today="2026-09-01" />,
     )
     const cards = mobileCards(container)!
 
@@ -93,7 +93,7 @@ describe("meses sin estado de cuenta", () => {
     expect(within(cards).getByText("Sin estado de cuenta")).toBeInTheDocument()
     expect(within(cards).getByRole("button", { name: /crear sup-9 2026-10/i })).toBeInTheDocument()
 
-    rerender(<StatementsTable statements={[statement]} missing={[missing]} suppliers={[{ id: "sup-9", name: "Aramco" }]} today="2026-09-01" />)
+    rerender(<StatementsTable statements={[statement]} missing={[missing]} suppliers={[{ id: "sup-9", name: "Otro proveedor" }]} today="2026-09-01" />)
     expect(within(mobileCards(container)!).queryByRole("button", { name: /crear/i })).toBeNull()
     // Sin permiso se sigue viendo qué falta, sólo que sin botón.
     expect(within(mobileCards(container)!).getByText("Sin estado de cuenta")).toBeInTheDocument()

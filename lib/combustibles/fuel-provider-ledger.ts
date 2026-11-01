@@ -13,14 +13,14 @@ import { fingerprintProviderRow, type ProviderValidationResult, type ProviderRow
 
 /** Una consulta por proveedor y por corrida: el catálogo puede cambiar entre
  *  corridas, así que no se cachea a nivel de módulo. */
-async function supplierIdsFor(providers: Iterable<"copec" | "aramco">) {
+async function supplierIdsFor(providers: Iterable<"copec">) {
   const resolved = new Map<string, string | null>()
   for (const provider of new Set(providers)) resolved.set(provider, await fuelSupplierIdForProvider(provider))
   return resolved
 }
 
 export interface FuelProviderSyncRunInput {
-  provider: "copec" | "aramco"
+  provider: "copec"
   trigger: "manual" | "cron" | "reprocess"
   requestedFrom: string
   requestedTo: string

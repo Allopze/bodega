@@ -100,7 +100,7 @@ export function createVehicleResolver(
 
 /** Loads vehicle and mapping evidence once for one provider account. */
 export async function loadVehicleResolver(
-  mapping: { provider: "copec" | "aramco"; sourceAccount: string },
+  mapping: { provider: "copec"; sourceAccount: string },
 ): Promise<VehicleResolver & { inFleet: FleetPlateCheck }> {
   const [vehicles, mappings] = await Promise.all([
     db.query.fuelVehicles.findMany({ columns: { id: true, plate: true, worksiteId: true, meterType: true } }),

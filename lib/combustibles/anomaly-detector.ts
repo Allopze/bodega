@@ -705,7 +705,7 @@ async function meterReadingRows(meterType: "km" | "hora", rowLimit: number) {
     .leftJoin(fuelEquipmentTypes, eq(fuelVehicles.equipmentTypeId, fuelEquipmentTypes.id))
     .where(eq(fuelMeterReadings.meterType, meterType === "hora" ? "hour_meter" : "odometer"))
     // La serie es por equipo Y por fuente: el odómetro que reporta Copec y el que
-    // reporta Aramco son el mismo medidor físico, pero cada portal arrastra su
+    // reporta GPS son el mismo medidor físico, pero cada fuente arrastra su
     // propio desfase, así que compararlos entre sí inventa saltos que no existen.
     .orderBy(fuelMeterReadings.vehicleId, fuelMeterReadings.source, fuelMeterReadings.occurredAt)
     .limit(rowLimit)

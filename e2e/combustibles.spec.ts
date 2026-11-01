@@ -14,7 +14,7 @@ import { openAddDataSelector } from "./combustibles-control-helpers"
  *   /combustibles/pagos/estados   → Estados de cuenta (antes /combustibles/cuenta-corriente)
  *   /combustibles/fuentes         → Fuentes de datos (antes /combustibles/importar y su historial)
  *   /combustibles/fuentes/agregar/{tarjeta,planilla,sellos} → los importadores con pantalla propia
- *   /combustibles/ajustes/integraciones → credenciales de Aramco
+ *   /combustibles/ajustes/integraciones → integraciones disponibles
  *
  * Las URL de antes siguen vivas como páginas puente; `combustibles-rediseno.spec.ts`
  * recorre una muestra de cada una.
@@ -88,7 +88,7 @@ test.describe("Combustibles module", () => {
     await page.goto("/combustibles/fuentes")
     await expectPageTitle(page, "Fuentes de datos")
     // Una ficha por fuente, nombrada por su título (`SourceRow`: <article aria-labelledby>).
-    for (const fuente of ["Copec", "Aramco", "Planilla de cargas", "Telemetría de equipos", "Surtidores sin integración", "Formulario en terreno", "Histórico de sellos", "Facturas en Excel"]) {
+    for (const fuente of ["Copec", "Planilla de cargas", "Telemetría de equipos", "Surtidores sin integración", "Formulario en terreno", "Histórico de sellos", "Facturas en Excel"]) {
       await expect.soft(page.getByRole("article", { name: fuente, exact: true }), `fuente «${fuente}»`).toBeVisible()
     }
     await expect(page.getByRole("heading", { name: "Archivos importados", level: 2 })).toBeVisible()
@@ -102,32 +102,12 @@ test.describe("Combustibles module", () => {
     await expect(page.getByRole("link", { name: "Ver archivos importados" })).toBeVisible()
   })
 
-  test("aramco muestra su estado y bloquea las acciones sin credenciales", async ({ page }) => {
+  test("Aramco no aparece en fuentes ni en integraciones", async ({ page }) => {
     await page.goto("/combustibles/fuentes")
-    const fuente = page.getByRole("article", { name: "Aramco", exact: true })
-    await expect(fuente).toBeVisible()
-    // El entorno e2e no configura credenciales de Aramco: sin ellas no se puede
-    // sincronizar, y la fila tiene que decirlo en vez de fallar al pulsar.
-    await expect(fuente.getByText("Faltan las credenciales de Aramco. Se configuran en Ajustes › Integraciones.", { exact: true })).toBeVisible()
-    await expect(fuente.getByRole("link", { name: /Configúralas en Ajustes › Integraciones/ })).toHaveAttribute("href", "/combustibles/ajustes/integraciones")
-    await expect(fuente.getByRole("button", { name: /Actualizar ahora/ })).toBeDisabled()
-    await expect(fuente.getByRole("button", { name: /Traer meses anteriores/ })).toBeDisabled()
-    // La explicación técnica va plegada en «Detalle técnico» (un <details> nativo: abre sin hidratar).
-    await fuente.locator("summary").filter({ hasText: "Detalle técnico" }).click()
-    await expect(fuente.getByText(/Incluye el mes en curso/)).toBeVisible()
-  })
-
-  test("las credenciales de aramco viven en Ajustes › Integraciones y no se guardan sin llave de cifrado", async ({ page }) => {
+    await expect(page.getByRole("article", { name: "Aramco", exact: true })).toHaveCount(0)
     await page.goto("/combustibles/ajustes/integraciones")
     await expectPageTitle(page, "Integraciones")
-    const panel = page.getByRole("region", { name: "Aramco", exact: true })
-    await expect(panel).toBeVisible()
-    // Sin credenciales guardadas el formulario se muestra de entrada (no hay «Reemplazar credenciales»).
-    await expect(panel.getByLabel(/RUT de la cuenta/)).toBeVisible()
-    await expect(panel.getByLabel(/^Clave/)).toBeVisible()
-    // Sin la llave de cifrado no se guarda: guardar en claro no es una opción.
-    await expect(panel.getByText(/no tiene la llave de cifrado/)).toBeVisible()
-    await expect(panel.getByRole("button", { name: "Guardar credenciales", exact: true })).toBeDisabled()
+    await expect(page.getByRole("region", { name: "Aramco", exact: true })).toHaveCount(0)
   })
 
   test("copec anuncia que la sincronización incluye el mes en curso", async ({ page }) => {

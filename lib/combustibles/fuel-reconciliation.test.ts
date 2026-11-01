@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import { decideCycleMovementMatch, decideFuelLoadMatch, decideTaeReceiptMatch, type CycleMovementCandidate, type FuelLoadCandidate, type ProviderEvidence, type TaeReceiptCandidate } from "./fuel-reconciliation"
 
 const evidence: ProviderEvidence = {
-  provider: "aramco",
+  provider: "copec",
   supplierId: "fs-aramco",
   productId: "fuel-diesel",
   worksiteId: "W1",

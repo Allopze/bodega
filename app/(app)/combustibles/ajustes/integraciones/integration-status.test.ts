@@ -22,6 +22,6 @@ describe("estado de las integraciones en palabras", () => {
   })
 
   it("los nombres de las corridas son los de los crons del módulo", () => {
-    expect(INTEGRATION_JOBS).toEqual({ copec: "fuel-copec-sync", aramco: "fuel-aramco-sync", visionlink: "fuel-visionlink-sync" })
+    expect(INTEGRATION_JOBS).toEqual({ copec: "fuel-copec-sync", visionlink: "fuel-visionlink-sync" })
   })
 })

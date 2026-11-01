@@ -302,18 +302,13 @@ ENV_WHITELIST=(
   # restore debe dejarlo igual (y no volver en silencio al modo de prueba).
   PDTP_EVIDENCE_GC_DELETE
   COPEC_USERNAME COPEC_PASSWORD COPEC_CLIENT_RUT COPEC_SYNC_START_DATE COPEC_SYNC_IMPORTER_EMAIL
-  # Aramco Fleet (Esmax): mismo caso que Copec. Lo normal es que las
-  # credenciales vivan cifradas en `system_settings`, pero estas variables son
-  # su respaldo, y sin ellas un dump restaurado en una máquina sin keyring se
-  # queda sin forma de volver a sincronizar.
-  ARAMCO_DOCUMENT_NUMBER ARAMCO_PASSWORD ARAMCO_SYNC_ENABLED ARAMCO_SYNC_IMPORTER_EMAIL
   ONWAY_USERNAME ONWAY_PASSWORD ONWAY_SYNC_ENABLED
   # VisionLink (telemetría): credenciales sólo de entorno, sin copia en la base.
   VISIONLINK_CLIENT_ID VISIONLINK_CLIENT_SECRET VISIONLINK_SCOPE VISIONLINK_SYNC_ENABLED
   # Cloudreve (storage de documentos SST): la URL y el backend son configuración
   # funcional; las credenciales son el respaldo del .env del servidor (las
   # cifradas viven en system_settings y viajan en el dump PG). Mismo caso que
-  # Aramco/Copec: sin ellas un restore se queda sin acceso al WebDAV.
+  # Copec: sin ellas un restore se queda sin acceso al WebDAV.
   SST_STORAGE_BACKEND CLOUDREVE_BASE_URL CLOUDREVE_USERNAME CLOUDREVE_PASSWORD
   CLOUDREVE_SST_PATH CLOUDREVE_REQUEST_TIMEOUT_MS
   # Llave que habilita archivar documentos generados en Cloudreve: un restore

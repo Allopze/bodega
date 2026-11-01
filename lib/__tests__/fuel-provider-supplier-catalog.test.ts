@@ -25,7 +25,7 @@ const { recordFuelProviderValidation, beginFuelProviderSyncRun } = await import(
 import type { ProviderValidationResult } from "@/lib/combustibles/provider-validation"
 
 /**
- * El id de `fuel_suppliers` estaba hardcodeado (`fs-aramco`, `fs-copec`) contra
+ * El id de `fuel_suppliers` estaba hardcodeado (`fs-copec`) contra
  * un seed que ningún entorno ejecuta, así que TODA fila de una corrida moría con
  * violación de FK. La prueba fija el contrato nuevo: el proveedor sale del
  * catálogo, y si no está la fila se guarda sin proveedor en vez de perder la
@@ -34,7 +34,7 @@ import type { ProviderValidationResult } from "@/lib/combustibles/provider-valid
 function acceptedRow(externalId: string): ProviderValidationResult {
   return {
     accepted: [{
-      provider: "aramco",
+      provider: "copec",
       accountKey: "fleet",
       sourceRowKey: externalId,
       externalId,
@@ -47,7 +47,7 @@ function acceptedRow(externalId: string): ProviderValidationResult {
       documentNumber: null,
       sourceDate: "2026-07-21",
       periodEnd: "2026-07-21",
-      sourceProduct: "Aramco ProForce Diesel B",
+      sourceProduct: "Diesel",
       product: "diesel",
       quantity: 37.4319,
       amount: 41207.44,
@@ -61,7 +61,7 @@ function acceptedRow(externalId: string): ProviderValidationResult {
 
 async function runFor(externalId: string) {
   const run = await beginFuelProviderSyncRun({
-    provider: "aramco",
+    provider: "copec",
     trigger: "manual",
     requestedFrom: "2026-07-01",
     requestedTo: "2026-07-31",
@@ -74,12 +74,12 @@ async function runFor(externalId: string) {
 }
 
 describe("proveedor de las transacciones de integración", () => {
-  const aramcoId = nanoid()
+  const copecId = nanoid()
 
   beforeAll(async () => {
     // El catálogo real trae los proveedores que creó operación, con ids que el
     // código no puede adivinar.
-    await inMemoryDb.insert(schema.fuelSuppliers).values({ id: nanoid(), name: "Copec", isActive: true })
+    await inMemoryDb.insert(schema.fuelSuppliers).values({ id: nanoid(), name: "Enex", isActive: true })
   })
 
   it("guarda la fila sin proveedor cuando el catálogo todavía no lo tiene", async () => {
@@ -87,24 +87,8 @@ describe("proveedor de las transacciones de integración", () => {
   })
 
   it("toma el id del catálogo, no una constante del código", async () => {
-    await inMemoryDb.insert(schema.fuelSuppliers).values({ id: aramcoId, name: "ARAMCO", isActive: true })
-    expect((await runFor("16044916"))?.supplierId).toBe(aramcoId)
-  })
-
-  it("reconoce la ficha bajo el nombre comercial real del operador", async () => {
-    // Aramco Fleet es la plataforma de Esmax (ex-Petrobras Chile): la ficha del
-    // catálogo casi nunca dice "Aramco". Buscar sólo esa palabra devolvía null
-    // en producción y dejaba TODA la conciliación de Aramco sin cruzar.
-    // Se desactiva en vez de borrarse: la ficha ya tiene transacciones
-    // apuntándola, y de paso queda cubierto que la búsqueda respeta `isActive`.
-    await inMemoryDb.update(schema.fuelSuppliers).set({ isActive: false }).where(eq(schema.fuelSuppliers.id, aramcoId))
-    const esmaxId = nanoid()
-    await inMemoryDb.insert(schema.fuelSuppliers).values({ id: esmaxId, name: "Esmax Distribución SpA", isActive: true })
-
-    expect((await runFor("16044917"))?.supplierId).toBe(esmaxId)
-
-    await inMemoryDb.update(schema.fuelSuppliers).set({ isActive: false }).where(eq(schema.fuelSuppliers.id, esmaxId))
-    await inMemoryDb.update(schema.fuelSuppliers).set({ isActive: true }).where(eq(schema.fuelSuppliers.id, aramcoId))
+    await inMemoryDb.insert(schema.fuelSuppliers).values({ id: copecId, name: "COPEC", isActive: true })
+    expect((await runFor("16044916"))?.supplierId).toBe(copecId)
   })
 
   it("un duplicado no degrada la fila aceptada que ya estaba en el ledger", async () => {
@@ -113,7 +97,7 @@ describe("proveedor de las transacciones de integración", () => {
     // de la respuesta externa— caía sobre la fila buena por el upsert y le
     // cambiaba el estado y los montos por los del duplicado.
     const externalId = "16044918"
-    const run = await beginFuelProviderSyncRun({ provider: "aramco", trigger: "manual", requestedFrom: "2026-07-01", requestedTo: "2026-07-31" })
+    const run = await beginFuelProviderSyncRun({ provider: "copec", trigger: "manual", requestedFrom: "2026-07-01", requestedTo: "2026-07-31" })
     const result = acceptedRow(externalId)
     const accepted = result.accepted[0]!
     result.rejected = [{
@@ -121,7 +105,7 @@ describe("proveedor de las transacciones de integración", () => {
       code: "duplicate_identity",
       message: `La identidad ${accepted.identityKey} se repite dentro de la respuesta externa`,
       input: {
-        provider: "aramco",
+        provider: "copec",
         accountKey: accepted.accountKey,
         sourceRowKey: accepted.sourceRowKey,
         externalId,
@@ -151,14 +135,14 @@ describe("proveedor de las transacciones de integración", () => {
   })
 
   it("ignora proveedores desactivados", async () => {
-    await inMemoryDb.update(schema.fuelSuppliers).set({ isActive: false }).where(eq(schema.fuelSuppliers.id, aramcoId))
+    await inMemoryDb.update(schema.fuelSuppliers).set({ isActive: false }).where(eq(schema.fuelSuppliers.id, copecId))
     expect((await runFor("16044917"))?.supplierId).toBeNull()
   })
 })
 
 describe("patente fuera de la flota", () => {
   it("queda «excluded» con su motivo, también en la revisión, y no cuenta como pendiente", async () => {
-    const run = await beginFuelProviderSyncRun({ provider: "aramco", trigger: "manual", requestedFrom: "2026-07-01", requestedTo: "2026-07-31" })
+    const run = await beginFuelProviderSyncRun({ provider: "copec", trigger: "manual", requestedFrom: "2026-07-01", requestedTo: "2026-07-31" })
     const counts = await recordFuelProviderValidation(run.id, acceptedRow("990001"), () => ({
       excluded: { code: "not_in_fleet", message: "La patente no está en la flota" },
     }))
@@ -173,7 +157,7 @@ describe("patente fuera de la flota", () => {
   })
 
   it("la misma carga vuelve a «pending» si la patente entra a la flota sin asignación", async () => {
-    const run = await beginFuelProviderSyncRun({ provider: "aramco", trigger: "manual", requestedFrom: "2026-07-01", requestedTo: "2026-07-31" })
+    const run = await beginFuelProviderSyncRun({ provider: "copec", trigger: "manual", requestedFrom: "2026-07-01", requestedTo: "2026-07-31" })
     await recordFuelProviderValidation(run.id, acceptedRow("990001"), () => ({}))
     const [row] = await inMemoryDb.select().from(schema.fuelProviderTransactions)
       .where(eq(schema.fuelProviderTransactions.identityKey, "external:990001"))

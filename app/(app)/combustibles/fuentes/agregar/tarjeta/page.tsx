@@ -33,7 +33,7 @@ export default async function AgregarTarjetaPage() {
     <PageContainer width="form">
       <PageHeader
         title="Agregar reporte de tarjeta"
-        description="Totales por patente y mes de Copec. Normalmente llegan solos cada mañana; sube un reporte sólo si falta alguno. Aramco no se sube a mano: llega por su sincronización"
+        description="Totales por patente y mes de Copec. Normalmente llegan solos cada mañana; sube un reporte sólo si falta alguno."
         breadcrumb={<FuelBreadcrumbs items={[{ label: "Fuentes de datos", href: FUEL_PATHS.fuentes }, { label: "Reporte de tarjeta" }]} />}
         actions={
           <FuelHeaderActions>

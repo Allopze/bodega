@@ -329,8 +329,7 @@ async function firstUncoveredMonth(current?: SyncState): Promise<string> {
  * cada descarga, así que su orden de filas no es parte del contenido: hashearlo
  * en orden de archivo hacía que un reordenamiento sin ningún cambio de datos
  * invalidara el hash y disparara un `replaceBatchRecords` completo, con
- * `updated_at` nuevo en todos los registros del lote. Es el mismo criterio que
- * `aramcoProjectionHash`, que ordena por `transactionId`. */
+ * `updated_at` nuevo en todos los registros del lote. */
 export function copecProjectionHash(rows: ParsedConsumptionRow[], invalidRows = 0): string {
   return createHash("sha256")
     .update(JSON.stringify({

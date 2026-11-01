@@ -4,22 +4,10 @@ import { fuelSuppliers } from "@/db/schema"
 import { logger } from "@/lib/logger"
 
 /**
- * Fuentes (`fuel_import_batches.fuente`) que escribe cada integración automática.
- *
- * Existe por el guard de "import ajeno" de las sincronizaciones: antes de crear un
- * lote, cada proveedor busca si ya hay uno para la misma faena y período solapado
- * con OTRA fuente, y si lo encuentra se salta la faena para no duplicar litros y
- * monto sobre una carga manual.
- *
- * Ese guard tiene que excluir a TODOS los proveedores automáticos, no sólo al
- * propio: dos proveedores distintos en la misma faena y mes es el caso normal
- * (una faena carga en Copec y en Aramco), no una duplicación. Cuando el guard
- * sólo conocía las fuentes de Copec, el primer lote de Aramco hacía que la
- * sincronización de Copec devolviera `imported: 0` y se saltara esa faena en
- * silencio.
- *
- * Al sumar un proveedor nuevo hay que agregar sus fuentes acá, o volverá a
- * aparecer el mismo bug con los papeles cambiados.
+ * Fuentes automáticas y etiquetas históricas para el guard de importación Copec.
+ * Las etiquetas de Aramco sólo reconocen lotes que aún no se hayan limpiado:
+ * sin esta exclusión, un lote antiguo bloquearía la sincronización de Copec.
+ * No habilitan importación ni sincronización del proveedor retirado.
  */
 
 /** Fuente por producto. Única definición: `copec-sync` construía la etiqueta con
@@ -46,56 +34,13 @@ export const ARAMCO_SOURCES = [
   "Aramco Fleet Otros",
 ]
 
-/**
- * Etiqueta de `fuente` para un producto de Aramco.
- *
- * `fuel_consumption_records` no tiene columna de producto: igual que en Copec, el
- * producto viaja en `fuente` y por eso hay un lote por (faena, período, producto).
- *
- * El catálogo `products/main` del portal NO es exhaustivo —el único producto que
- * esta cuenta transó, "Aramco ProForce Diesel B" (id 6), no aparece ahí—, así que
- * la clasificación va por nombre y no por id.
- *
- * Gasolina y kerosene tienen su propia fuente desde 2026-08-28. Antes compartían
- * el cajón "Otros", que además era inalcanzable: `canonicalProduct` no los
- * reconocía, así que la fila quedaba `pending` y nunca llegaba a agruparse.
- * Como `fuel_consumption_records` no tiene columna de producto y éste viaja en
- * `fuente`, meterlos en el mismo lote habría mezclado dos productos distintos en
- * un solo agregado. "Otros" queda como red de seguridad para lo que se acepte a
- * futuro sin fuente propia.
- *
- * El orden es el mismo que en `fuelProductIdForLegacy` y `canonicalProduct`: la
- * familia BLUE gana sobre DIESEL porque "Aditivo BlueMax Diesel" es aditivo.
- *
- * INVARIANTE: todo lo que devuelva esta función tiene que estar en
- * `ARAMCO_SOURCES`, o el guard de import ajeno vuelve a romperse.
- */
-export function aramcoSourceForProduct(productName: string | null | undefined): string {
-  const normalized = (productName ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase()
-  if (normalized.includes("BLUE") || normalized.includes("FLUA")) return "Aramco Fleet AdBlue"
-  if (normalized.includes("DIESEL")) return "Aramco Fleet Diesel"
-  if (normalized.includes("GASOLINA") || normalized.includes("BENCINA") || normalized.includes("GASOLINE")) return "Aramco Fleet Gasolina"
-  if (normalized.includes("KEROSEN") || normalized.includes("PARAFINA")) return "Aramco Fleet Kerosene"
-  return "Aramco Fleet Otros"
-}
-
 /** Unión de las fuentes de todos los proveedores automáticos. Lo que NO está acá
  *  se considera carga manual y sí debe bloquear una sincronización. */
 export const AUTOMATED_SOURCES = [...COPEC_TCT_SOURCES, ...ARAMCO_SOURCES]
 
-/**
- * Nombres bajo los que cada integración puede aparecer en `fuel_suppliers`.
- *
- * Aramco Fleet es la plataforma de **Esmax** (ex-Petrobras Chile), así que la
- * ficha del catálogo casi nunca se llama "Aramco": buscar sólo esa palabra
- * devolvía `null` en producción y, como `decideFuelLoadMatch` exige
- * `supplierId !== null` en su primer filtro, TODA transacción de Aramco quedaba
- * `unmatched` — no por descuadre sino por falta de ficha, con la métrica de
- * conciliación llena de ruido y sin ninguna señal de por qué.
- */
-const SUPPLIER_NAME_ALIASES: Record<"copec" | "aramco", string[]> = {
+/** Nombres del proveedor en el catálogo de combustible. */
+const SUPPLIER_NAME_ALIASES: Record<"copec", string[]> = {
   copec: ["copec"],
-  aramco: ["aramco", "esmax", "petrobras"],
 }
 
 /**
@@ -103,7 +48,7 @@ const SUPPLIER_NAME_ALIASES: Record<"copec" | "aramco", string[]> = {
  *
  * `fuel_suppliers` es catálogo del usuario, no una constante del código: la base
  * real trae los proveedores que creó operación (`seed-copec`, `seed-enex`), no
- * los `fs-copec`/`fs-aramco` que sembraba `db/seed-combustibles.ts` —un script
+ * los `fs-copec` que sembraba `db/seed-combustibles.ts` —un script
  * que no está enganchado a ningún `db:seed`—. Hardcodear el id hacía que cada
  * fila de la corrida reventara con violación de FK.
  *
@@ -117,7 +62,7 @@ const SUPPLIER_NAME_ALIASES: Record<"copec" | "aramco", string[]> = {
  * El desempate va por `name` y no por `id`: los ids son opacos, así que con dos
  * fichas candidatas el ganador era arbitrario y podía cambiar entre corridas.
  */
-export async function fuelSupplierIdForProvider(provider: "copec" | "aramco"): Promise<string | null> {
+export async function fuelSupplierIdForProvider(provider: "copec"): Promise<string | null> {
   const aliases = SUPPLIER_NAME_ALIASES[provider]
   const [row] = await db.select({ id: fuelSuppliers.id })
     .from(fuelSuppliers)

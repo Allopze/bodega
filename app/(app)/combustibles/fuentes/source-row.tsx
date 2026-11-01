@@ -7,7 +7,6 @@ import type { FuelSourceKey, FuelSourceStatus } from "@/lib/combustibles/sources
 
 const SOURCE_ICONS: Record<FuelSourceKey, typeof Gauge> = {
   copec: CloudArrowDown,
-  aramco: CloudArrowDown,
   planilla: FileXls,
   telemetria: Gauge,
   surtidor: Drop,

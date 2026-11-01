@@ -167,7 +167,6 @@ export const ROUTE_OWNER_ALIASES: RouteOwnerRule[] = [
   { moduleId: "admin", submoduleHref: "/admin", prefix: "/api/cron/dte-sync-health" },
   { moduleId: "combustibles", submoduleHref: "/combustibles/revisar", prefix: "/api/cron/fuel-anomaly-detection" },
   { moduleId: "combustibles", submoduleHref: "/combustibles/fuentes", prefix: "/api/cron/fuel-copec-sync" },
-  { moduleId: "combustibles", submoduleHref: "/combustibles/fuentes", prefix: "/api/cron/fuel-aramco-sync" },
   // Telemetría VisionLink: es una fuente de datos más (motor en vacío de Consumo).
   { moduleId: "combustibles", submoduleHref: "/combustibles/fuentes", prefix: "/api/cron/fuel-visionlink-sync" },
   { moduleId: "combustibles", submoduleHref: "/combustibles/pagos", prefix: "/api/cron/fuel-statement-notifications" },

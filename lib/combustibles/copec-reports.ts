@@ -94,8 +94,7 @@ export type CopecUnavailableReason = "no_results" | "no_records"
  * Existe para que el cron distinga "nadie configuró esto todavía" de "la
  * sincronización falló": sin credenciales la corrida lanzaba y la ruta
  * reportaba `failed`, o sea una alerta diaria por una integración que
- * simplemente no está en uso. Aramco ya hacía esta distinción con
- * `readAramcoConfig`.
+ * simplemente no está en uso.
  *
  * `COPEC_SYNC_ENABLED` sólo apaga si vale exactamente `"false"`: el default es
  * seguir corriendo, para no apagar la integración de nadie por omisión.

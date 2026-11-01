@@ -1,7 +1,7 @@
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 import path from "node:path"
 import type { Session } from "next-auth"
 import * as schema from "@/db/schema"
@@ -68,8 +68,6 @@ describe("estado de las fuentes de datos (PostgreSQL)", () => {
   const global = () => session({ global: true, permissions: ALL_PERMISSIONS })
 
   beforeAll(async () => {
-    process.env.ARAMCO_DOCUMENT_NUMBER = "11111111-1"
-    process.env.ARAMCO_PASSWORD = "1234"
     delete process.env.VISIONLINK_CLIENT_ID
     delete process.env.VISIONLINK_CLIENT_SECRET
     delete process.env.VISIONLINK_SYNC_ENABLED
@@ -88,10 +86,6 @@ describe("estado de las fuentes de datos (PostgreSQL)", () => {
     await inMemoryDb.insert(schema.fuelSuppliers).values({ id: supplierId, name: "Copec" })
   })
 
-  afterAll(() => {
-    delete process.env.ARAMCO_DOCUMENT_NUMBER
-    delete process.env.ARAMCO_PASSWORD
-  })
 
   beforeEach(async () => {
     await inMemoryDb.delete(schema.fuelProviderPeriodCoverage)
@@ -110,7 +104,7 @@ describe("estado de las fuentes de datos (PostgreSQL)", () => {
     await inMemoryDb.delete(schema.fuelTaeImportBatches)
   })
 
-  async function run(provider: "copec" | "aramco", options: { startedAt: string; status?: string; rowsPending?: number; error?: string; requestedFrom?: string }) {
+  async function run(provider: "copec", options: { startedAt: string; status?: string; rowsPending?: number; error?: string; requestedFrom?: string }) {
     const startedAt = options.startedAt
     const id = nanoid()
     await inMemoryDb.insert(schema.fuelProviderSyncRuns).values({
@@ -123,69 +117,32 @@ describe("estado de las fuentes de datos (PostgreSQL)", () => {
 
   const byKey = (statuses: Awaited<ReturnType<typeof getFuelSourceStatuses>>, key: string) => statuses.find((status) => status.key === key)
 
-  it("Copec y Aramco quedan «Al día» con una corrida de hoy y dicen hasta qué día llegan", async () => {
+  it("Copec queda «Al día» con una corrida de hoy y dicen hasta qué día llegan", async () => {
     await run("copec", { startedAt: hoursAgo(1) })
-    await run("aramco", { startedAt: hoursAgo(1) })
 
     const statuses = await getFuelSourceStatuses(global(), monthPeriod)
-    for (const key of ["copec", "aramco"]) {
+    for (const key of ["copec"]) {
       const source = byKey(statuses, key)!
       expect(source).toMatchObject({ status: "ok", statusLabel: "Al día", problem: null })
       expect(source.completeUntil).toBe(todayInChile())
       expect(source.lastUpdateAt).not.toBeNull()
     }
-    expect(summarizeFuelSources(statuses.filter((status) => ["copec", "aramco"].includes(status.key))).ready).toBe(true)
-  })
-
-  it("Aramco lleva «Cambiar en Ajustes» junto a la sincronización automática sólo para quien administra integraciones y con credenciales", async () => {
-    await run("aramco", { startedAt: hoursAgo(1) })
-    const fact = (statuses: Awaited<ReturnType<typeof getFuelSourceStatuses>>) => byKey(statuses, "aramco")!.facts.find((item) => item.label === "Sincronización automática")!
-
-    // Con el permiso de administrar integraciones el estado trae su enlace a Ajustes.
-    const manager = session({ global: true, permissions: [...ALL_PERMISSIONS, "combustibles:manage_integrations"] })
-    expect(fact(await getFuelSourceStatuses(manager, monthPeriod))).toMatchObject({ value: "Apagada", href: "/combustibles/ajustes/integraciones", hrefLabel: "Cambiar en Ajustes" })
-
-    // Quien sólo sincroniza ve el estado, no un enlace a una pantalla que no puede abrir.
-    expect(fact(await getFuelSourceStatuses(global(), monthPeriod)).href).toBeUndefined()
-
-    // Sin credenciales no hay nada que activar: el estado lo dice y la fila ya manda a configurarlas.
-    const password = process.env.ARAMCO_PASSWORD
-    delete process.env.ARAMCO_PASSWORD
-    try {
-      expect(fact(await getFuelSourceStatuses(manager, monthPeriod))).toMatchObject({ value: "Sin credenciales" })
-      expect(fact(await getFuelSourceStatuses(manager, monthPeriod)).href).toBeUndefined()
-    } finally {
-      process.env.ARAMCO_PASSWORD = password
-    }
+    expect(summarizeFuelSources(statuses.filter((status) => ["copec"].includes(status.key))).ready).toBe(true)
   })
 
   it("una fuente sin corrida en dos días o más queda pendiente y lo dice en una frase", async () => {
     await run("copec", { startedAt: daysAgo(4) })
-    await run("aramco", { startedAt: daysAgo(1) })
 
     const statuses = await getFuelSourceStatuses(global(), monthPeriod)
     const copec = byKey(statuses, "copec")!
     expect(copec.status).toBe("pendiente")
     expect(copec.statusLabel).toMatch(/^Sin actualizar desde el /)
     expect(copec.problem).toMatch(/Hace 4 días que no llegan datos de Copec/)
-    // Ayer todavía es «Hasta ayer»: el cron diario puede no haber corrido aún.
-    expect(byKey(statuses, "aramco")).toMatchObject({ status: "ok", statusLabel: "Hasta ayer" })
 
-    const { ready, pending } = summarizeFuelSources(statuses.filter((status) => ["copec", "aramco"].includes(status.key)))
+    const { ready, pending } = summarizeFuelSources(statuses.filter((status) => ["copec"].includes(status.key)))
     expect(ready).toBe(false)
     expect(pending.map((status) => status.key)).toEqual(["copec"])
     expect(describeFuelSources(statuses, monthPeriod)).toMatch(/^Falta resolver en (una fuente|\d+ fuentes):$/)
-  })
-
-  it("una corrida fallida es «falla» y conserva hasta cuándo llegan los datos buenos", async () => {
-    await run("aramco", { startedAt: daysAgo(1) })
-    await run("aramco", { startedAt: hoursAgo(2), status: "failed", error: "El portal de Aramco no respondió" })
-
-    const aramco = byKey(await getFuelSourceStatuses(global(), monthPeriod), "aramco")!
-    expect(aramco.status).toBe("falla")
-    expect(aramco.statusLabel).toMatch(/^Falló hoy a las \d{2}:\d{2}$/)
-    expect(aramco.problem).toMatch(/El portal de Aramco no respondió/)
-    expect(aramco.problem).toMatch(/Los datos llegan hasta ayer/)
   })
 
   it("no deja pasar a la pantalla una consulta SQL guardada como error de la corrida", async () => {
@@ -201,13 +158,6 @@ describe("estado de las fuentes de datos (PostgreSQL)", () => {
     expect(copec.status).toBe("pendiente")
     expect(copec.statusLabel).toBe("Al día · 28 por vincular")
     expect(copec.problem).toMatch(/28 cargas tienen una patente que no está en la flota/)
-  })
-
-  it("el 412 crudo que Aramco dejó guardado se muestra traducido y con su fecha", async () => {
-    await run("aramco", { startedAt: hoursAgo(1), status: "failed", error: 'Aramco respondió 412 en users/authenticatecredential: { "validations": [ { "type": "LimitAttemptsReached", "message": "Límite de intentos alcanzado. Usuario bloqueado." } ] }' })
-    const aramco = byKey(await getFuelSourceStatuses(global(), monthPeriod), "aramco")!
-    expect(aramco.problem).toMatch(/^Falló hoy a las \d\d:\d\d: La cuenta de Aramco está bloqueada por exceso de intentos\./)
-    expect(aramco.problem).not.toMatch(/validations|LimitAttemptsReached|412/)
   })
 
   it("las cargas de patentes fuera de la flota no son un problema, pero quedan en el detalle técnico", async () => {
@@ -325,7 +275,7 @@ describe("estado de las fuentes de datos (PostgreSQL)", () => {
   it("alcance: un rol acotado que sólo importa ve los reportes de su faena, sin el detalle de la integración", async () => {
     await inMemoryDb.insert(schema.fuelImportBatches).values([
       { id: nanoid(), worksiteId: worksiteA, fuente: "Copec", periodoDesde: "2026-10-01", periodoHasta: "2026-10-15", archivoNombre: "a.xlsx", hashArchivo: nanoid(), importadoPor: userId },
-      { id: nanoid(), worksiteId: worksiteB, fuente: "Aramco Fleet Diesel", periodoDesde: "2026-10-01", periodoHasta: "2026-10-20", archivoNombre: "b.xlsx", hashArchivo: nanoid(), importadoPor: userId },
+      { id: nanoid(), worksiteId: worksiteB, fuente: "Copec TCT BlueMax", periodoDesde: "2026-10-01", periodoHasta: "2026-10-20", archivoNombre: "b.xlsx", hashArchivo: nanoid(), importadoPor: userId },
     ])
     // La integración corrió hoy, pero esta persona no la administra.
     await run("copec", { startedAt: hoursAgo(1), rowsPending: 5 })
@@ -334,8 +284,7 @@ describe("estado de las fuentes de datos (PostgreSQL)", () => {
     const statuses = await getFuelSourceStatuses(scoped, monthPeriod)
     expect(byKey(statuses, "copec")).toMatchObject({ status: "ok", problem: null, technical: [] })
     expect(byKey(statuses, "copec")!.facts).toEqual([{ label: "Último reporte", value: "hasta el 15-10-2026" }])
-    // El único reporte de Aramco es de la otra faena.
-    expect(byKey(statuses, "aramco")).toMatchObject({ status: "sin_datos", statusLabel: "Sin reportes" })
+    expect(byKey(statuses, "aramco")).toBeUndefined()
     expect(byKey(statuses, "planilla")).toBeUndefined()
     expect(byKey(statuses, "terreno")).toBeUndefined()
     expect(byKey(statuses, "historico-sellos")).toBeUndefined()
@@ -465,7 +414,7 @@ describe("archivos importados (PostgreSQL)", () => {
 
     await inMemoryDb.insert(schema.fuelImportBatches).values([
       { id: "t-a", worksiteId: worksiteA, fuente: "Copec TCT Diesel", periodoDesde: "2026-10-01", periodoHasta: "2026-10-31", archivoNombre: "copec-a.xlsx", hashArchivo: "h1", importadoPor: ana, filasValidas: 30, filasInvalidas: 1, createdAt: "2026-10-30T09:00:00.000Z" },
-      { id: "t-b", worksiteId: worksiteB, fuente: "Aramco Fleet Diesel", periodoDesde: "2026-10-01", periodoHasta: "2026-10-31", archivoNombre: "aramco-b.xlsx", hashArchivo: "h2", importadoPor: beto, filasValidas: 12, estado: "revertido", createdAt: "2026-10-28T09:00:00.000Z" },
+      { id: "t-b", worksiteId: worksiteB, fuente: "Copec TCT BlueMax", periodoDesde: "2026-10-01", periodoHasta: "2026-10-31", archivoNombre: "copec-b.xlsx", hashArchivo: "h2", importadoPor: beto, filasValidas: 12, estado: "revertido", createdAt: "2026-10-28T09:00:00.000Z" },
     ])
     await inMemoryDb.insert(schema.fuelOperationBatches).values({
       id: "p-1", archivoNombre: "consolidado.xlsx", hashArchivo: "h3", periodoDesde: "2026-10-01", periodoHasta: "2026-10-28", importadoPor: ana, filasValidas: 1240, filasInvalidas: 12, createdAt: "2026-10-29T09:00:00.000Z",
@@ -492,7 +441,7 @@ describe("archivos importados (PostgreSQL)", () => {
   it("un rol global ve los cinco tipos en una lista, del más nuevo al más antiguo, con quién y cuánto trajo", async () => {
     const page = await listImportedFiles(globalSession(), { limit: 25 })
     expect(page.visibleKinds).toEqual(["tarjeta", "planilla", "telemetria", "surtidor", "sellos"])
-    expect(page.rows.map((row) => row.fileName)).toEqual(["copec-a.xlsx", "consolidado.xlsx", "aramco-b.xlsx", "visionlink.xlsx", "despachos.xlsx", "sellos-a.xlsx", "sellos-b.xlsx"])
+    expect(page.rows.map((row) => row.fileName)).toEqual(["copec-a.xlsx", "consolidado.xlsx", "copec-b.xlsx", "visionlink.xlsx", "despachos.xlsx", "sellos-a.xlsx", "sellos-b.xlsx"])
     expect(page.total).toBe(7)
     expect(page.counts).toEqual({ tarjeta: 2, planilla: 1, telemetria: 1, surtidor: 1, sellos: 2 })
 

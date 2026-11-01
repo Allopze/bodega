@@ -52,7 +52,7 @@ function allGood(overrides: Partial<PanelStepsInput> = {}): PanelStepsInput {
     period: open,
     today: TODAY,
     visible: { fuentes: true, cuadratura: true, pagos: true },
-    sources: sourcesOf(source(), source({ key: "aramco", name: "Aramco" })),
+    sources: sourcesOf(source(), source({ key: "telemetria", name: "Telemetría" })),
     inbox: inbox(0),
     reconciliation: { rows: [mandante({ overTolerance: false, differenceLiters: 80, differencePct: 0.4 })], monthKeys: ["2026-10"] },
     worse: { count: 0, examples: [] },
@@ -160,7 +160,7 @@ describe("tira de cinco pasos del Panel", () => {
         sources: sourcesOf(
           source({ status: "pendiente", statusLabel: "Con pendientes", problem: "1 patente sin vincular" }),
           source({ key: "planilla", name: "Planilla de cargas", status: "pendiente", statusLabel: "Con pendientes", problem: "12 filas rechazadas" }),
-          source({ key: "aramco", name: "Aramco" }),
+          source({ key: "telemetria", name: "Telemetría" }),
         ),
       }), "fuentes")
       expect(step).toMatchObject({ status: "pendiente", figure: "2", figureNote: "fuentes por revisar" })
@@ -171,11 +171,11 @@ describe("tira de cinco pasos del Panel", () => {
       const step = stepOf(allGood({
         sources: sourcesOf(
           source({ status: "pendiente", problem: "1 patente sin vincular" }),
-          source({ key: "aramco", name: "Aramco", status: "falla", statusLabel: "Falló hoy a las 05:30" }),
+          source({ key: "telemetria", name: "Telemetría", status: "falla", statusLabel: "Falló hoy a las 05:30" }),
         ),
       }), "fuentes")
       expect(step.status).toBe("pendiente")
-      expect(step.phrase.startsWith("Aramco: Falló hoy a las 05:30.")).toBe(true)
+      expect(step.phrase.startsWith("Telemetría: Falló hoy a las 05:30.")).toBe(true)
     })
 
     it("en un período cerrado dice qué quedó pendiente de ese período", () => {

@@ -85,27 +85,24 @@ export function normalizeAliases(raw: string | readonly string[]): string[] {
 
 // ── Mapeo al libro de proveedores ────────────────────────────────────────────
 
-export const PROVIDER_MAPPINGS = ["none", "copec_tct", "copec_tae", "aramco"] as const
+export const PROVIDER_MAPPINGS = ["none", "copec_tct", "copec_tae"] as const
 export type ProviderMapping = (typeof PROVIDER_MAPPINGS)[number]
 
 export const PROVIDER_MAPPING_LABELS: Record<ProviderMapping, string> = {
   none: "No: se importa por archivo",
   copec_tct: "Copec · tarjeta de equipos",
   copec_tae: "Copec · tarjeta de abastecimiento",
-  aramco: "Aramco",
 }
 
-export function providerMappingToColumns(mapping: ProviderMapping): { providerCode: "copec" | "aramco" | null; providerChannel: "TCT" | "TAE" | null } {
+export function providerMappingToColumns(mapping: ProviderMapping): { providerCode: "copec" | null; providerChannel: "TCT" | "TAE" | null } {
   switch (mapping) {
     case "copec_tct": return { providerCode: "copec", providerChannel: "TCT" }
     case "copec_tae": return { providerCode: "copec", providerChannel: "TAE" }
-    case "aramco": return { providerCode: "aramco", providerChannel: null }
     default: return { providerCode: null, providerChannel: null }
   }
 }
 
 export function providerMappingFromColumns(providerCode: string | null | undefined, providerChannel: string | null | undefined): ProviderMapping {
-  if (providerCode === "aramco") return "aramco"
   if (providerCode === "copec") return providerChannel === "TAE" ? "copec_tae" : providerChannel === "TCT" ? "copec_tct" : "none"
   return "none"
 }

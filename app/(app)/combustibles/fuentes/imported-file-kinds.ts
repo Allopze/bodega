@@ -31,7 +31,5 @@ export function cardSourceLabel(source: string | null): string | null {
   if (source === "Copec") return "Copec (reporte manual)"
   const copec = /^Copec TCT (Diesel|BlueMax)$/.exec(source)
   if (copec) return `Copec · ${copec[1] === "Diesel" ? "diésel" : "BlueMax"}`
-  const aramco = /^Aramco Fleet (.+)$/.exec(source)
-  if (aramco) return `Aramco · ${aramco[1] === "Diesel" ? "diésel" : aramco[1] === "AdBlue" ? "AdBlue" : aramco[1]!.toLowerCase()}`
   return source
 }

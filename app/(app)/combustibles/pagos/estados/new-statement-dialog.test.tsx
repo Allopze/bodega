@@ -21,18 +21,18 @@ vi.mock("@/lib/toast", () => ({ toast: mockToast }))
 import { NewStatementDialog } from "./new-statement-dialog"
 
 const preview = (overrides: Partial<StatementPreview> = {}): StatementPreview => ({
-  month: "2020-09", fuelSupplierId: "sup-1", supplierName: "Aramco",
+  month: "2020-09", fuelSupplierId: "sup-1", supplierName: "Otro proveedor",
   loads: 64, firstLoadDate: "2020-09-01", lastLoadDate: "2020-09-30", equipmentCount: 12,
   totals: { totalLiters: 9410, totalBaseAmount: 9_780_000, totalIec: 2_180_000, totalIva: 2_270_000, totalAmount: 14_230_000 },
   existing: null, excluded: { draft: 0, cancelled: 0, alreadyInStatement: 0 }, monthInProgress: false,
   ...overrides,
 })
 
-const suppliers = [{ id: "sup-1", name: "Aramco" }, { id: "sup-2", name: "Copec" }]
+const suppliers = [{ id: "sup-1", name: "Otro proveedor" }, { id: "sup-2", name: "Copec" }]
 
 async function openRowDialog() {
   render(<NewStatementDialog suppliers={suppliers} defaultMonth="2020-09" defaultSupplierId="sup-1" trigger="row" />)
-  fireEvent.click(screen.getByRole("button", { name: /crear el estado de cuenta de aramco de septiembre 2020/i }))
+  fireEvent.click(screen.getByRole("button", { name: /crear el estado de cuenta de otro proveedor de septiembre 2020/i }))
   return { dialog: await screen.findByRole("dialog", { name: "Crear estado de cuenta" }) }
 }
 

@@ -23,8 +23,6 @@ import { describeFuelSources, getFuelSourceStatuses, type FuelSourceStatus } fro
 import { downloadOperationsTemplateAction } from "../actions-operaciones"
 import { downloadImportTemplateAction } from "../control/importar/actions"
 import type { MediumOption } from "../control/importar/import-types"
-import { getAramcoSyncStatusAction } from "../importar/aramco-sync-action"
-import { AramcoSyncStatus } from "../importar/aramco-sync-status"
 import { CopecSyncStatus } from "../importar/copec-sync-status"
 import { FuelProviderQualityExportButton } from "../importar/fuel-provider-quality-export-button"
 import { AddDataLauncher } from "./add-data-launcher"
@@ -49,17 +47,15 @@ export default async function FuentesPage({ searchParams }: { searchParams: Prom
   const options = fuelAddDataOptions(session)
   const canSync = can(session, "combustibles:sync_integrations")
   const canImport = can(session, "combustibles:import")
-  const canManageIntegrations = can(session, "combustibles:manage_integrations")
   const canExportQuality = can(session, "combustibles:export")
   const addKind = resolveAddDataKind(sp.agregar, options)
 
   const scope = resolveWorksiteScope(session)
-  const [statusesResult, filesResult, copecResult, copecStartResult, aramcoResult, worksitesResult, mediaResult] = await Promise.all([
+  const [statusesResult, filesResult, copecResult, copecStartResult, worksitesResult, mediaResult] = await Promise.all([
     settle<FuelSourceStatus[] | typeof FAILED>(getFuelSourceStatuses(session, period), FAILED, "fuentes-estados"),
     settle<ImportedFilesPage | typeof FAILED>(listImportedFiles(session, { limit: 6 }), FAILED, "fuentes-archivos"),
     canSync ? settle<Awaited<ReturnType<typeof getCopecSyncState>> | typeof FAILED>(getCopecSyncState(), FAILED, "fuentes-copec") : Promise.resolve(null),
     canSync ? settle<Awaited<ReturnType<typeof getCopecSyncStartOptions>> | typeof FAILED>(getCopecSyncStartOptions(), FAILED, "fuentes-copec-inicio") : Promise.resolve(null),
-    canSync ? settle<Awaited<ReturnType<typeof getAramcoSyncStatusAction>> | typeof FAILED>(getAramcoSyncStatusAction(), FAILED, "fuentes-aramco") : Promise.resolve(null),
     // Las faenas sólo se necesitan para mapear las del Excel de facturas, y los medios para el archivo de surtidor.
     addKind === "facturas" && scope.mode !== "none"
       ? settle<Array<{ id: string; name: string }> | typeof FAILED>(
@@ -77,17 +73,14 @@ export default async function FuentesPage({ searchParams }: { searchParams: Prom
   const files = filesResult === FAILED ? null : filesResult
   const copecState = copecResult === FAILED ? null : copecResult
   const copecStart = copecStartResult === FAILED ? null : copecStartResult
-  const aramco = aramcoResult === FAILED || aramcoResult === null || !aramcoResult.ok ? null : aramcoResult.data
   const degraded = [
     statuses === null ? "estado de las fuentes" : null,
     files === null ? "archivos importados" : null,
     canSync && (copecState === null || copecStart === null) ? "sincronización de Copec" : null,
-    canSync && aramco === null ? "sincronización de Aramco" : null,
     worksitesResult === FAILED ? "faenas" : null,
     mediaResult === FAILED ? "medios de suministro" : null,
   ].filter((label): label is string => label !== null)
 
-  const credentialsHref = canManageIntegrations ? FUEL_PATHS.ajustesIntegraciones : null
   const importHref = (kind: "telemetria" | "surtidor" | "facturas") => `${FUEL_PATHS.fuentes}?agregar=${kind}`
   const secondary = (href: string, label: string) => <Button asChild variant="secondary" size="sm"><Link href={href}>{label}</Link></Button>
   const ghost = (href: string, label: string) => <Button asChild variant="ghost" size="sm"><Link href={href}>{label}</Link></Button>
@@ -96,7 +89,6 @@ export default async function FuentesPage({ searchParams }: { searchParams: Prom
     switch (source.key) {
       // Quien exporta pero no administra la integración no recibe la fila interactiva: conserva el botón de exportar.
       case "copec":
-      case "aramco":
         return canExportQuality ? <FuelProviderQualityExportButton /> : null
       case "planilla":
         return canImport ? (
@@ -143,7 +135,7 @@ export default async function FuentesPage({ searchParams }: { searchParams: Prom
         breadcrumb={<FuelBreadcrumbs items={[{ label: "Fuentes de datos" }]} />}
         actions={<FuelHeaderActions period={period}><AddFuelDataButton options={options} /></FuelHeaderActions>}
       />
-      <DegradedDataBanner degraded={degraded} total={4} />
+      <DegradedDataBanner degraded={degraded} total={2 + Number(canSync) + Number(addKind === "facturas" && scope.mode !== "none") + Number(addKind === "surtidor")} />
 
       {statuses ? (
         <>
@@ -170,9 +162,6 @@ export default async function FuentesPage({ searchParams }: { searchParams: Prom
                     qualityExport={canExportQuality ? <FuelProviderQualityExportButton /> : null}
                   />
                 )
-              }
-              if (source.key === "aramco" && canSync && aramco) {
-                return <AramcoSyncStatus key={source.key} source={source} initialStatus={aramco} credentialsHref={credentialsHref} />
               }
               return <SourceRow key={source.key} source={source} status={source} actions={actionsFor(source)} />
             })}

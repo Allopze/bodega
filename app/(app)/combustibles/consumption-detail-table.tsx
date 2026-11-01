@@ -38,7 +38,7 @@ export function consumptionPeriodLabel(desde: string, hasta: string): string {
 }
 
 /**
- * Totales de tarjeta (Copec, Aramco) por patente y mes. Cada fila es un total
+ * Totales de tarjeta de Copec por patente y mes. Cada fila es un total
  * informado por el proveedor, no una carga. Una patente sin equipo enlaza a
  * «Por revisar» (`unlinkedHref`), donde se vincula.
  */

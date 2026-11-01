@@ -27,7 +27,7 @@ const statement = {
   paidAmount: 5_830_000,
   dueDate: "2026-11-05",
   status: "partial",
-  supplier: { name: "Aramco" },
+  supplier: { name: "Otro proveedor" },
   payments: [{ id: "p-1", paymentDate: "2026-10-15", amount: 5_830_000, paymentMethod: "Transferencia", reference: "TRF-88120" }],
   loads: [
     { id: "load-1", loadDate: "2026-09-12", product: "PETROLEO DIESEL", receiptNumber: "F-55120", liters: 240, totalAmount: 428_760, vehicle: { plate: "AA-BB-11", code: "CA-09" }, worksite: { name: "Santa Fe" } },

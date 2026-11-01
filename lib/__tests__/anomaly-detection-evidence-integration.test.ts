@@ -275,10 +275,10 @@ describe("lecturas del detalle de proveedor (fuel_meter_readings)", () => {
     expect(cases.some((c) => c.vehicleId === vehSlowId)).toBe(false)
   })
 
-  it("no compara entre proveedores: cada portal arrastra su propio desfase", async () => {
+  it("no compara fuentes distintas: cada una puede arrastrar su propio desfase", async () => {
     await inMemoryDb.insert(schema.fuelMeterReadings).values([
       reading(vehMixId, { source: "copec_tct", occurredAt: "2026-06-01T12:00:00.000Z", value: 300_000 }),
-      reading(vehMixId, { source: "aramco", occurredAt: "2026-06-02T12:00:00.000Z", value: 5_000 }),
+      reading(vehMixId, { source: "gps_onway", occurredAt: "2026-06-02T12:00:00.000Z", value: 5_000 }),
     ])
 
     await runAllBatchRules()

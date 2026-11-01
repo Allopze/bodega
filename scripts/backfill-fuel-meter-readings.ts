@@ -1,14 +1,14 @@
 /**
  * Reconstruye `fuel_meter_readings` desde el detalle que ya está guardado.
  *
- * Los informes de Copec y las transacciones de Aramco se persisten enteros en
+ * Los informes de Copec se persisten enteros en
  * `fuel_consumption_records.raw_row->'detalle'` desde siempre: el odómetro, la
  * hora y la estación de servicio llevan años entrando y quedándose ahí sin que
  * nadie los lea. Este script los rescata SIN volver a salir al portal — no hay
  * login, ni navegador, ni cuota de proveedor que gastar.
  *
  * Idempotente: la identidad de una lectura es (fuente, guía de despacho) para
- * Copec y (fuente, transactionId) para Aramco, así que repetirlo sobre una base
+ * Copec, así que repetirlo sobre una base
  * al día no cambia ninguna fila.
  *
  * El vehículo se toma del que ya tiene resuelto la fila de consumo —ahí vive la
@@ -21,9 +21,8 @@ import { asc, gt, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { fuelConsumptionRecords, fuelMeterReadings } from "@/db/schema"
 import { plateMatchKey } from "@/lib/combustibles/xlsx-utils"
-import { ARAMCO_SOURCES, COPEC_TCT_SOURCES } from "@/lib/combustibles/fuel-sources"
+import { COPEC_TCT_SOURCES } from "@/lib/combustibles/fuel-sources"
 import {
-  aramcoMovementReading,
   copecDetailReading,
   saveMeterReadings,
   type MeterReadingSource,
@@ -35,7 +34,6 @@ const BATCH = 500
 function sourceFor(fuente: string | null): MeterReadingSource | null {
   if (!fuente) return null
   if (COPEC_TCT_SOURCES.includes(fuente)) return "copec_tct"
-  if (ARAMCO_SOURCES.includes(fuente)) return "aramco"
   return null
 }
 
@@ -85,7 +83,7 @@ async function main() {
       const readings = detalle.flatMap((entry): ParsedMeterReading[] => {
         if (!entry || typeof entry !== "object") return []
         const row = entry as Record<string, unknown>
-        const reading = source === "aramco" ? aramcoMovementReading(row) : copecDetailReading(row)
+        const reading = copecDetailReading(row)
         return reading ? [reading] : []
       })
       if (readings.length === 0) continue
