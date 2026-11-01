@@ -187,12 +187,17 @@ describe("syncAramco", () => {
     })
   })
 
-  it("leaves an unknown plate pending instead of dropping its consumption", async () => {
+  it("una patente que no está en la flota no cuenta ni queda pendiente", async () => {
+    // Antes quedaba pendiente para siempre: no hay a quién asignarle el consumo
+    // de un vehículo que no es de la empresa.
+    const { recordFuelProviderValidation } = await import("@/lib/combustibles/fuel-provider-ledger")
     mocks.vehiclesFindMany.mockResolvedValue([])
     const result = await syncAramco()
     expect(result.imported).toBe(0)
-    expect(result.pendingPlates).toEqual(["SZ GB 72"])
+    expect(result.pendingPlates).toEqual([])
     expect(insertedBatches).toHaveLength(0)
+    const resolve = vi.mocked(recordFuelProviderValidation).mock.calls.at(-1)![2]!
+    expect(resolve({ plate: "SZ GB 72", product: "Aramco ProForce Diesel B" } as never)).toEqual({ excluded: expect.objectContaining({ code: "not_in_fleet" }) })
   })
 
   it("splits diesel and AdBlue into separate batches", async () => {
@@ -333,7 +338,7 @@ describe("syncAramco", () => {
     // El ledger se escribe ANTES de armar la proyección. Cerrar la corrida con
     // ceros borraba de la bitácora el trabajo que sí quedó hecho.
     const { recordFuelProviderValidation, finishFuelProviderSyncRun } = await import("@/lib/combustibles/fuel-provider-ledger")
-    vi.mocked(recordFuelProviderValidation).mockResolvedValue({ accepted: 3, rejected: 1, pending: 2 })
+    vi.mocked(recordFuelProviderValidation).mockResolvedValue({ accepted: 3, rejected: 1, pending: 2, excluded: 0 })
     mocks.batchFindFirst.mockRejectedValue(new Error("la proyección explotó"))
 
     await expect(syncAramco()).rejects.toThrow("la proyección explotó")

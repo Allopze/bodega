@@ -210,6 +210,19 @@ describe("estado de las fuentes de datos (PostgreSQL)", () => {
     expect(aramco.problem).not.toMatch(/validations|LimitAttemptsReached|412/)
   })
 
+  it("las cargas de patentes fuera de la flota no son un problema, pero quedan en el detalle técnico", async () => {
+    const runId = await run("copec", { startedAt: hoursAgo(1) })
+    const excluded = (plate: string) => ({
+      id: nanoid(), syncRunId: runId, provider: "copec", sourceAccount: "tct:diesel", identityKey: nanoid(), fingerprint: nanoid(),
+      sourceRowKey: nanoid(), sourcePlate: plate, occurredAt: "2026-02-10T12:00:00.000Z", quantity: 300, amount: 290000,
+      status: "excluded", resolutionCode: "not_in_fleet", payloadHash: nanoid(),
+    })
+    await inMemoryDb.insert(schema.fuelProviderTransactions).values([excluded("CHHK-17"), excluded("CHHK-17"), excluded("BFPP-86")])
+    const copec = byKey(await getFuelSourceStatuses(global(), monthPeriod), "copec")!
+    expect(copec.problem).toBeNull()
+    expect(copec.technical).toContain("No se contaron 3 cargas de patentes que no están en la flota (BFPP-86 y CHHK-17). Si alguna es propia, agrégala a la flota y vuelve a sincronizar ese mes.")
+  })
+
   it("con las filas pendientes en el ledger, el aviso nombra la tarjeta y la patente", async () => {
     const runId = await run("copec", { startedAt: hoursAgo(1), rowsPending: 3, requestedFrom: "2026-01-01" })
     const pending = (account: string, plate: string, day: string) => ({

@@ -8,7 +8,7 @@ import { parseCopecDetail, type ParsedConsumptionRow } from "@/lib/combustibles/
 import { computeBatchTotals } from "@/lib/combustibles/consumption-calculations"
 import { plateMatchKey } from "@/lib/combustibles/xlsx-utils"
 import { listProviderPendingItems, type ProviderPendingItem } from "@/lib/combustibles/provider-pending-items"
-import { loadVehicleResolver } from "@/lib/combustibles/plate-resolver"
+import { loadVehicleResolver, NOT_IN_FLEET } from "@/lib/combustibles/plate-resolver"
 import { saveMeterReadings } from "@/lib/combustibles/meter-readings"
 import { AUTOMATED_SOURCES, copecTctSource } from "@/lib/combustibles/fuel-sources"
 import { fuelProductIdForLegacy } from "@/lib/combustibles/fuel-products"
@@ -595,12 +595,18 @@ async function importCopecPeriod(
     }
     const eventValidation = validateProviderRows(acceptedEventInputs, { from, to })
     const hasEventDetail = eventRows.length > 0
+    // Una patente que no está en la flota (p. ej. un vehículo de otra empresa en
+    // la misma cuenta Copec) no cuenta ni queda pendiente: no hay nada que
+    // asignar. Una patente de la flota sin asignación para el mes sí queda
+    // pendiente, porque ese consumo es propio y falta decidir a qué faena va.
     const persistedProjection = await recordFuelProviderValidation(runId, validation, (input) => {
       const vehicle = input.plate ? resolveVehicle(input.plate, input.sourceDate ?? from, input.periodEnd ?? input.sourceDate ?? to) : undefined
+      if (!vehicle && input.plate && !resolveVehicle.inFleet(input.plate)) return { excluded: NOT_IN_FLEET }
       return { worksiteId: vehicle?.worksiteId, vehicleId: vehicle?.id, productId: fuelProductIdForLegacy(input.product) }
     }, { sourceFileId })
     const persistedEvents = await recordFuelProviderValidation(runId, eventValidation, (input) => {
       const vehicle = input.plate ? resolveVehicle(input.plate, input.sourceDate ?? input.occurredAt ?? from) : undefined
+      if (!vehicle && input.plate && !resolveVehicle.inFleet(input.plate)) return { excluded: NOT_IN_FLEET }
       return { worksiteId: vehicle?.worksiteId, vehicleId: vehicle?.id, productId: fuelProductIdForLegacy(input.product) }
     }, { sourceFileId })
     const correctionIssues = correctionReviewRows.map((input) => ({
@@ -643,6 +649,8 @@ async function importCopecPeriod(
       const sourceRowKey = copecSourceRowKey(from, to, product, row.patente)
       if (!acceptedIdentityKeys.has(`row:copec:${accountKey}:${sourceRowKey}`)) continue
       const vehicle = resolveVehicle(row.patente, from, to)
+      // Fuera de la flota: no es consumo propio, así que no bloquea la limpieza.
+      if (!vehicle && !resolveVehicle.inFleet(row.patente)) continue
       if (!vehicle) { pending.add(row.patente); cleanupSafe = false; continue }
       const rows = groups.get(vehicle.worksiteId) ?? []
       rows.push(row); groups.set(vehicle.worksiteId, rows)

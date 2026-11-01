@@ -155,3 +155,28 @@ describe("proveedor de las transacciones de integración", () => {
     expect((await runFor("16044917"))?.supplierId).toBeNull()
   })
 })
+
+describe("patente fuera de la flota", () => {
+  it("queda «excluded» con su motivo, también en la revisión, y no cuenta como pendiente", async () => {
+    const run = await beginFuelProviderSyncRun({ provider: "aramco", trigger: "manual", requestedFrom: "2026-07-01", requestedTo: "2026-07-31" })
+    const counts = await recordFuelProviderValidation(run.id, acceptedRow("990001"), () => ({
+      excluded: { code: "not_in_fleet", message: "La patente no está en la flota" },
+    }))
+    expect(counts).toMatchObject({ accepted: 0, pending: 0, excluded: 1 })
+
+    const [row] = await inMemoryDb.select().from(schema.fuelProviderTransactions)
+      .where(eq(schema.fuelProviderTransactions.identityKey, "external:990001"))
+    expect(row).toMatchObject({ status: "excluded", resolutionCode: "not_in_fleet", vehicleId: null })
+    const [revision] = await inMemoryDb.select().from(schema.fuelProviderEventRevisions)
+      .where(eq(schema.fuelProviderEventRevisions.transactionId, row!.id))
+    expect(revision?.status).toBe("excluded")
+  })
+
+  it("la misma carga vuelve a «pending» si la patente entra a la flota sin asignación", async () => {
+    const run = await beginFuelProviderSyncRun({ provider: "aramco", trigger: "manual", requestedFrom: "2026-07-01", requestedTo: "2026-07-31" })
+    await recordFuelProviderValidation(run.id, acceptedRow("990001"), () => ({}))
+    const [row] = await inMemoryDb.select().from(schema.fuelProviderTransactions)
+      .where(eq(schema.fuelProviderTransactions.identityKey, "external:990001"))
+    expect(row).toMatchObject({ status: "pending", resolutionCode: "unresolved_mapping" })
+  })
+})

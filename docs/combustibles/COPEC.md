@@ -174,6 +174,14 @@ corrida, con litros/monto cuando la fila los trae.
   antes de que la sesión haya leído cargas (`no_results`) no prueba nada y sigue
   desconocida. Sin esto el mes no avanzaría hasta confirmarlo a mano, todos los
   meses (TAE BlueMax casi nunca tiene cargas).
+- **Patentes fuera de la flota no cuentan.** Una cuenta Copec puede traer
+  vehículos de otra empresa (el departamento «TRANSPORTES CHOME LTDA.» mezcla
+  propios y ajenos, así que no sirve para filtrar). Si la patente no es de un
+  vehículo de la flota, activo o dado de baja, ni está vinculada a mano a uno,
+  la carga queda `excluded` (`not_in_fleet`, migración 0366): no entra al
+  consumo, no queda pendiente y no deja el mes incompleto. Fuentes de datos las
+  lista en el detalle técnico. Si después se agrega el vehículo a la flota, la
+  próxima sincronización del mes la reevalúa. Aramco sigue la misma regla.
 - **Asignaciones con fecha.** Un mes cerrado sólo se atribuye con una
   asignación de `fuel_provider_mappings` vigente para ese mes; la faena es la
   guardada en la asignación, no la del vehículo. Por eso trasladar un vehículo

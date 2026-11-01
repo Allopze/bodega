@@ -88,7 +88,9 @@ export const fuelProviderTransactions = pgTable("fuel_provider_transactions", {
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   check("fuel_provider_transactions_provider_valid", sql`${table.provider} IN ('copec', 'aramco')`),
-  check("fuel_provider_transactions_status_valid", sql`${table.status} IN ('accepted', 'rejected', 'pending', 'superseded')`),
+  // `excluded`: la patente no está en la flota (p. ej. un vehículo de otra empresa
+  // en la misma cuenta del proveedor). No cuenta como consumo ni queda pendiente.
+  check("fuel_provider_transactions_status_valid", sql`${table.status} IN ('accepted', 'rejected', 'pending', 'superseded', 'excluded')`),
   check("fuel_provider_transactions_granularity_valid", sql`${table.granularity} IN ('transaction', 'period_aggregate')`),
   check("fuel_provider_transactions_amount_basis_valid", sql`${table.amountBasis} = 'reported'`),
   check("fuel_provider_transactions_values_valid", sql`
@@ -255,7 +257,7 @@ export const fuelProviderEventRevisions = pgTable("fuel_provider_event_revisions
   observedAt: timestamp("observed_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   check("fuel_provider_event_revisions_amount_basis_valid", sql`${table.amountBasis} = 'reported'`),
-  check("fuel_provider_event_revisions_status_valid", sql`${table.status} IN ('accepted', 'rejected', 'pending', 'superseded', 'correction_review')`),
+  check("fuel_provider_event_revisions_status_valid", sql`${table.status} IN ('accepted', 'rejected', 'pending', 'superseded', 'correction_review', 'excluded')`),
   foreignKey({ name: "fuel_provider_event_rev_transaction_fk", columns: [table.transactionId], foreignColumns: [fuelProviderTransactions.id] }),
   foreignKey({ name: "fuel_provider_event_rev_run_fk", columns: [table.syncRunId], foreignColumns: [fuelProviderSyncRuns.id] }),
   foreignKey({ name: "fuel_provider_event_rev_file_fk", columns: [table.sourceFileId], foreignColumns: [fuelProviderFiles.id] }),

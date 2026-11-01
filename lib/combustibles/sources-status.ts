@@ -9,6 +9,7 @@ import {
   fuelOperationBatches,
   fuelOperationRecords,
   fuelProviderSyncRuns,
+  fuelProviderTransactions,
   fuelSupplyInputs,
   fuelTaeLoadingPoints,
   fuelTaeSubmissions,
@@ -300,6 +301,22 @@ async function providerSource(provider: "copec" | "aramco", ctx: Ctx): Promise<F
       completeUntil = before < period.from ? null : minDay(before, completeUntil ?? before)
     } else {
       technical.push("Cobertura: todos los meses cerrados del período están completos; el mes en curso se recalcula en cada corrida.")
+    }
+  }
+
+  // Lo que no se contó por no ser de la flota no es un problema, pero tampoco
+  // desaparece en silencio: queda dicho en el detalle técnico, con las patentes.
+  if (latest) {
+    const excluded = await db
+      .select({ plate: fuelProviderTransactions.sourcePlate, loads: count() })
+      .from(fuelProviderTransactions)
+      .where(and(eq(fuelProviderTransactions.syncRunId, latest.id), eq(fuelProviderTransactions.status, "excluded")))
+      .groupBy(fuelProviderTransactions.sourcePlate)
+    const loads = excluded.reduce((total, row) => total + row.loads, 0)
+    if (loads > 0) {
+      const plates = excluded.map((row) => row.plate).filter((plate): plate is string => Boolean(plate)).sort()
+      const shown = plates.length > 5 ? `${plates.slice(0, 5).join(", ")} y ${plates.length - 5} más` : listJoin(plates)
+      technical.push(`No se contaron ${plural(loads, "carga", "cargas")} de patentes que no están en la flota (${shown}). Si alguna es propia, agrégala a la flota y vuelve a sincronizar ese mes.`)
     }
   }
 
