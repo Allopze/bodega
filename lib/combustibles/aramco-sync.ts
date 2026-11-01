@@ -28,7 +28,7 @@ import { nanoid } from "@/lib/id"
 import { todayInChile } from "@/lib/utils"
 import { calcPrecioPromedioUnidad, computeBatchTotals } from "@/lib/combustibles/consumption-calculations"
 import { normalizePlate } from "@/lib/combustibles/xlsx-utils"
-import { loadVehicleResolver } from "@/lib/combustibles/plate-resolver"
+import { loadVehicleResolver, NOT_IN_FLEET } from "@/lib/combustibles/plate-resolver"
 import { AUTOMATED_SOURCES, aramcoSourceForProduct } from "@/lib/combustibles/fuel-sources"
 import { fuelProductIdForLegacy } from "@/lib/combustibles/fuel-products"
 import { emptyUnbackedProviderBatches, providerBatchKey, replaceBatchRecords } from "@/lib/combustibles/open-period"
@@ -351,6 +351,8 @@ export async function syncAramco(options: SyncAramcoOptions = {}): Promise<Aramc
     const resolveVehicle = await loadVehicleResolver({ provider: "aramco", sourceAccount: accountKey })
     const persisted = await recordFuelProviderValidation(run.id, validation, (input) => {
       const vehicle = input.plate ? resolveVehicle(input.plate) : undefined
+      // Una patente que no es de la flota no cuenta ni queda pendiente.
+      if (!vehicle && input.plate && !resolveVehicle.inFleet(input.plate)) return { excluded: NOT_IN_FLEET }
       return {
         worksiteId: vehicle?.worksiteId,
         vehicleId: vehicle?.id,
@@ -385,7 +387,7 @@ export async function syncAramco(options: SyncAramcoOptions = {}): Promise<Aramc
       const plate = (movement.vehicleRegistrationPlate ?? "").trim()
       const vehicle = plate ? resolveVehicle(plate) : undefined
       if (!vehicle) {
-        if (plate) pendingPlates.add(plate)
+        if (plate && resolveVehicle.inFleet(plate)) pendingPlates.add(plate)
         continue
       }
       const key = `${monthOf(movement.transactionDate)}|${aramcoSourceForProduct(movement.productName)}`

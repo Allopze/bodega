@@ -173,6 +173,15 @@ function makeTx() {
   return tx
 }
 
+/** AAA asignada desde siempre; SINASIGNAR es de la flota pero su asignación empieza en junio. */
+function fleetWithUnassigned() {
+  mockVehiclesFindMany.mockResolvedValue([{ id: "v-aaa", plate: "AAA", worksiteId: "W1" }, { id: "v-sin", plate: "SINASIGNAR", worksiteId: "W1" }])
+  mockMappingsFindMany.mockResolvedValue([
+    { externalKey: "AAA", vehicleId: "v-aaa", worksiteId: "W1", effectiveFrom: "2020-01-01", effectiveTo: null, isActive: true, version: 1 },
+    { externalKey: "SINASIGNAR", vehicleId: "v-sin", worksiteId: "W1", effectiveFrom: "2026-06-01", effectiveTo: null, isActive: true, version: 1 },
+  ])
+}
+
 describe("buildCopecSyncPeriods", () => {
   it("divides an initial historical import into closed calendar months", () => {
     expect(buildCopecSyncPeriods("2026-01-01", "2026-02-28")).toEqual([
@@ -573,13 +582,13 @@ describe("syncCopecReportPeriod", () => {
       { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "informe.xlsx", records: [] } },
       { product: "bluemax", unavailable: true },
     ])
-    mockParseCopecDetail.mockReturnValue({ rows: [row("AAA"), row("SINVEHICULO")], errors: [], duplicates: [], detail: [] })
-    mockVehiclesFindMany.mockResolvedValue([{ id: "v-aaa", plate: "AAA", worksiteId: "W1" }])
+    mockParseCopecDetail.mockReturnValue({ rows: [row("AAA"), row("SINASIGNAR")], errors: [], duplicates: [], detail: [] })
+    fleetWithUnassigned()
 
     const result = await syncCopecReportPeriod({ from: "2026-02-01", to: "2026-02-28" }, "operator-1")
 
-    // Sólo la patente sin vehículo de ESTE período.
-    expect(result.pendingPlates).toEqual(["SINVEHICULO"])
+    // Sólo la patente sin asignación de ESTE período.
+    expect(result.pendingPlates).toEqual(["SINASIGNAR"])
     expect(result.pending).toBe(1)
     // Y no se suma al conteo del ledger: `recordFuelProviderValidation` ya la
     // contó como fila `pending` (el mock devuelve 0 aquí, así que el total
@@ -587,7 +596,7 @@ describe("syncCopecReportPeriod", () => {
     expect(result.rowsPending).toBe(0)
 
     const savedState = JSON.parse(mockSaveState.mock.calls[0]![0].set.value)
-    expect(savedState.pending).toEqual(["SINVEHICULO"])
+    expect(savedState.pending).toEqual(["SINASIGNAR"])
   })
 
   describe("open month", () => {
@@ -796,7 +805,7 @@ describe("syncCopecReportPeriod", () => {
     expect(AUTOMATED_SOURCES.filter((source) => !guardLiterals.includes(source))).toEqual([])
   })
 
-  it("importa las patentes vinculadas aunque otra del archivo no tenga vehículo", async () => {
+  it("importa las patentes vinculadas aunque otra de la flota no tenga asignación para el mes", async () => {
     // Antes una sola fila `pending` detenía el producto completo del mes: un
     // equipo nuevo dejaba sin consumos Diésel a todas las faenas.
     const { recordFuelProviderValidation } = await import("../fuel-provider-ledger")
@@ -806,7 +815,30 @@ describe("syncCopecReportPeriod", () => {
       { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "tct-diesel.xlsx", records: [] } },
       { product: "bluemax", unavailable: true },
     ])
-    mockParseCopecDetail.mockReturnValue({ rows: [row("AAA"), row("SINVEHICULO")], errors: [], duplicates: [], detail: [] })
+    mockParseCopecDetail.mockReturnValue({ rows: [row("AAA"), row("SINASIGNAR")], errors: [], duplicates: [], detail: [] })
+    fleetWithUnassigned()
+    const tx = makeTx()
+    mockTransaction.mockImplementation(async (cb: (t: unknown) => unknown) => cb(tx))
+
+    const result = await syncCopecReportPeriod({ from: "2026-02-01", to: "2026-02-28" }, "operator-1")
+
+    expect(tx._insertedRecords.map((record) => record.patente)).toEqual(["AAA"])
+    expect(result.pendingPlates).toEqual(["SINASIGNAR"])
+    expect(result.unavailable).toContain("Diesel: asignación histórica pendiente")
+    expect(mockCoverageRows.find((item) => item.channel === "TCT" && item.product === "diesel")?.status).toBe("incomplete")
+  })
+
+  it("una patente que no está en la flota no cuenta, no queda pendiente y no frena el mes", async () => {
+    // Una cuenta Copec puede traer vehículos de otra empresa (Transportes Chome:
+    // CHHK-17, BFPP-86). No hay nada que asignar: antes quedaban pendientes y el
+    // barrido se detenía en ese mes para siempre.
+    const { recordFuelProviderValidation } = await import("../fuel-provider-ledger")
+    const row = (patente: string): unknown => ({ rowIndex: 1, patente, numeroTarjetas: 1, numeroTransacciones: 2, cantidadUnidad: 100, monto: 50000, rendimientoPromedio: 3, rawRow: {} })
+    mockDownloadCopecReports.mockResolvedValue([
+      { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "tct-diesel.xlsx", records: [] } },
+      { product: "bluemax", unavailable: true },
+    ])
+    mockParseCopecDetail.mockReturnValue({ rows: [row("AAA"), row("CHHK-17")], errors: [], duplicates: [], detail: [] })
     mockVehiclesFindMany.mockResolvedValue([{ id: "v-aaa", plate: "AAA", worksiteId: "W1" }])
     const tx = makeTx()
     mockTransaction.mockImplementation(async (cb: (t: unknown) => unknown) => cb(tx))
@@ -814,9 +846,12 @@ describe("syncCopecReportPeriod", () => {
     const result = await syncCopecReportPeriod({ from: "2026-02-01", to: "2026-02-28" }, "operator-1")
 
     expect(tx._insertedRecords.map((record) => record.patente)).toEqual(["AAA"])
-    expect(result.pendingPlates).toEqual(["SINVEHICULO"])
-    expect(result.unavailable).toContain("Diesel: asignación histórica pendiente")
-    expect(mockCoverageRows.find((item) => item.channel === "TCT" && item.product === "diesel")?.status).toBe("incomplete")
+    expect(result.pendingPlates).toEqual([])
+    expect(result.unavailable).not.toContain("Diesel: asignación histórica pendiente")
+    // El ledger la recibe como excluida, con su motivo; la propia se resuelve normal.
+    const resolve = vi.mocked(recordFuelProviderValidation).mock.calls[0]![2]!
+    expect(resolve({ plate: "CHHK-17", product: "diesel" } as never)).toEqual({ excluded: expect.objectContaining({ code: "not_in_fleet" }) })
+    expect(resolve({ plate: "AAA", product: "diesel" } as never)).toMatchObject({ vehicleId: "v-aaa", worksiteId: "W1" })
   })
 
   it("no importa al ciclo físico una recepción TAE que el validador rechazó", async () => {

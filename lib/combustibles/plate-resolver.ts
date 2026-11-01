@@ -33,6 +33,28 @@ export interface DatedProviderVehicleMapping {
 
 export type VehicleResolver = (plate: string, effectiveFrom?: string, effectiveTo?: string) => ResolvedVehicle | undefined
 
+/**
+ * Si la patente es de la flota: un vehículo con esa patente (activo o dado de
+ * baja) o una patente del proveedor vinculada a mano a un vehículo. Separa
+ * «vehículo propio sin asignación para ese mes», que es trabajo pendiente, de
+ * «vehículo ajeno», que no cuenta.
+ */
+export type FleetPlateCheck = (plate: string) => boolean
+
+/** Motivo con que queda en el ledger una carga de una patente fuera de la flota. */
+export const NOT_IN_FLEET = {
+  code: "not_in_fleet",
+  message: "La patente no está en la flota: la carga no se cuenta. Si es un vehículo propio, agrégalo a la flota y vuelve a sincronizar ese mes.",
+} as const
+
+export function createFleetPlateCheck(vehicles: Pick<ResolvedVehicle, "plate">[], mappings: Pick<DatedProviderVehicleMapping, "externalKey" | "vehicleId">[]): FleetPlateCheck {
+  const keys = new Set([
+    ...vehicles.map((vehicle) => plateMatchKey(vehicle.plate)),
+    ...mappings.filter((mapping) => mapping.vehicleId).map((mapping) => plateMatchKey(mapping.externalKey)),
+  ])
+  return (plate) => keys.has(plateMatchKey(plate))
+}
+
 /** Pure resolver, exported so historical cutoffs can be regression tested. */
 export function createVehicleResolver(
   vehicles: ResolvedVehicle[],
@@ -79,7 +101,7 @@ export function createVehicleResolver(
 /** Loads vehicle and mapping evidence once for one provider account. */
 export async function loadVehicleResolver(
   mapping: { provider: "copec" | "aramco"; sourceAccount: string },
-): Promise<VehicleResolver> {
+): Promise<VehicleResolver & { inFleet: FleetPlateCheck }> {
   const [vehicles, mappings] = await Promise.all([
     db.query.fuelVehicles.findMany({ columns: { id: true, plate: true, worksiteId: true, meterType: true } }),
     db.query.fuelProviderMappings.findMany({
@@ -91,5 +113,5 @@ export async function loadVehicleResolver(
     }),
   ])
   const currentMonth = `${todayInChile().slice(0, 7)}-01`
-  return createVehicleResolver(vehicles, mappings, currentMonth)
+  return Object.assign(createVehicleResolver(vehicles, mappings, currentMonth), { inFleet: createFleetPlateCheck(vehicles, mappings) })
 }

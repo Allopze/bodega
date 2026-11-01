@@ -1,0 +1,4 @@
+ALTER TABLE "fuel_provider_event_revisions" DROP CONSTRAINT IF EXISTS "fuel_provider_event_revisions_status_valid";--> statement-breakpoint
+ALTER TABLE "fuel_provider_transactions" DROP CONSTRAINT IF EXISTS "fuel_provider_transactions_status_valid";--> statement-breakpoint
+ALTER TABLE "fuel_provider_event_revisions" ADD CONSTRAINT "fuel_provider_event_revisions_status_valid" CHECK ("fuel_provider_event_revisions"."status" IN ('accepted', 'rejected', 'pending', 'superseded', 'correction_review', 'excluded'));--> statement-breakpoint
+ALTER TABLE "fuel_provider_transactions" ADD CONSTRAINT "fuel_provider_transactions_status_valid" CHECK ("fuel_provider_transactions"."status" IN ('accepted', 'rejected', 'pending', 'superseded', 'excluded'));

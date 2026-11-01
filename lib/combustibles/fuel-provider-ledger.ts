@@ -166,6 +166,13 @@ export interface ProviderRowResolution {
   vehicleId?: string | null
   storageLocationId?: string | null
   productId?: string | null
+  /**
+   * La fila no es de esta empresa (p. ej. una patente que no está en la flota):
+   * queda `excluded`, con este motivo, y no cuenta como consumo ni como
+   * pendiente. Si después la patente entra a la flota, la próxima corrida del
+   * mes la reevalúa.
+   */
+  excluded?: { code: string; message: string }
 }
 
 /**
@@ -182,6 +189,7 @@ export async function recordFuelProviderValidation(
   let accepted = 0
   let pending = 0
   let rejected = 0
+  let excluded = 0
   const supplierIds = await supplierIdsFor([
     ...result.accepted.map((row) => row.provider),
     ...result.rejected.map((item) => item.input.provider),
@@ -208,7 +216,9 @@ export async function recordFuelProviderValidation(
     }
     const resolution = resolve(input)
     const mappedTaeReceipt = row.provider === "copec" && row.accountKey.startsWith("tae:") && resolution.worksiteId && resolution.storageLocationId && resolution.productId
-    const status = resolution.worksiteId && resolution.productId && (resolution.vehicleId || mappedTaeReceipt) ? "accepted" : "pending"
+    const status = resolution.excluded ? "excluded" : resolution.worksiteId && resolution.productId && (resolution.vehicleId || mappedTaeReceipt) ? "accepted" : "pending"
+    const resolutionCode = status === "accepted" ? null : resolution.excluded?.code ?? "unresolved_mapping"
+    const resolutionMessage = status === "accepted" ? null : resolution.excluded?.message ?? "La fila fue validada pero aún no tiene mapping completo"
     await db.insert(fuelProviderTransactions).values({
       id: nanoid(),
       syncRunId: runId,
@@ -232,8 +242,8 @@ export async function recordFuelProviderValidation(
       amount: row.amount,
       status,
       granularity: row.granularity,
-      resolutionCode: status === "accepted" ? null : "unresolved_mapping",
-      resolutionMessage: status === "accepted" ? null : "La fila fue validada pero aún no tiene mapping completo",
+      resolutionCode,
+      resolutionMessage,
       rawPayload: row.payload,
       payloadHash: jsonHash(row.payload),
       updatedAt: new Date().toISOString(),
@@ -256,8 +266,8 @@ export async function recordFuelProviderValidation(
         amount: row.amount,
         status,
         granularity: row.granularity,
-        resolutionCode: status === "accepted" ? null : "unresolved_mapping",
-        resolutionMessage: status === "accepted" ? null : "La fila fue validada pero aún no tiene mapping completo",
+        resolutionCode,
+        resolutionMessage,
         rawPayload: row.payload,
         payloadHash: jsonHash(row.payload),
         updatedAt: new Date().toISOString(),
@@ -288,6 +298,7 @@ export async function recordFuelProviderValidation(
       }).onConflictDoNothing()
     }
     if (status === "accepted") accepted++
+    else if (status === "excluded") excluded++
     else pending++
   }
 
@@ -300,7 +311,7 @@ export async function recordFuelProviderValidation(
     pending++
   }
 
-  return { accepted, rejected, pending }
+  return { accepted, rejected, pending, excluded }
 }
 
 export async function finishFuelProviderSyncRun(
