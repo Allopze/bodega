@@ -1,0 +1,26 @@
+{
+  // Puerta de tipos de `npm run typecheck` (la que corren `scripts/deploy-prod.sh` y el CI).
+  // Es `tsconfig.json` sin lo que Next genera: `.next/**` y `next-env.d.ts`. Son estado
+  // local, ignorado por git, que se desfasa cuando cambian las rutas sin un `next dev`
+  // corriendo: el 2026-10-31 seguían declarando seis `layout.tsx` ya borrados y el deploy
+  // murió con 36 errores que no eran del código. El CI parte de un checkout sin `.next`;
+  // así el resultado local es el mismo que ahí, sin importar qué se corrió antes.
+  // `exclude` reemplaza al de `tsconfig.json` en vez de sumarse: debe repetir los de aquel
+  // y sumar los generados (`scripts/typecheck-config.test.ts` lo verifica).
+  "extends": "./tsconfig.json",
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    "**/*.mts"
+  ],
+  "exclude": [
+    "node_modules",
+    "referencia",
+    "erpnext-develop",
+    "odoo-19.0",
+    "dashboards-referencia",
+    ".claude/worktrees",
+    ".next",
+    "next-env.d.ts"
+  ]
+}

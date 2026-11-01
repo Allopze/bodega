@@ -19,6 +19,7 @@ const filesToCopy = [
   'postcss.config.mjs',
   'proxy.ts',
   'tsconfig.json',
+  'tsconfig.typecheck.json',
   'app',
   'components',
   'db',
