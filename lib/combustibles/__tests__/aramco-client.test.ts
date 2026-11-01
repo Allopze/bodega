@@ -3,6 +3,7 @@ import {
   AramcoAuthError,
   AramcoPayloadValidationError,
   AramcoUpstreamError,
+  aramcoStoredErrorText,
   AramcoTwoFactorRequiredError,
   authenticateAramco,
   encodeAramcoLogin,
@@ -257,5 +258,17 @@ describe("fetchAramcoMovements", () => {
     const { movements, issues } = await fetchAramcoMovements(session, "2026-08-01", "2026-08-31")
     expect(movements).toHaveLength(1)
     expect(issues[0]).toMatchObject({ reason: "transactionId repetido con contenido distinto" })
+  })
+})
+
+describe("aramcoStoredErrorText", () => {
+  it("traduce el 412 crudo que guardaban las corridas viejas", () => {
+    const raw = 'Aramco respondió 412 en users/authenticatecredential: {\n "validations": [\n {\n "type": "LimitAttemptsReached",\n "message": "Límite de intentos alcanzado. Usuario bloqueado."\n }\n ]\n }'
+    expect(aramcoStoredErrorText(raw)).toMatch(/^La cuenta de Aramco está bloqueada por exceso de intentos\./)
+    expect(aramcoStoredErrorText('Aramco respondió 412 en movements: {"validations":[{"message":"Fecha inválida"}]}')).toBe("Aramco rechazó la solicitud: Fecha inválida")
+  })
+
+  it("deja igual un error que no reconoce", () => {
+    expect(aramcoStoredErrorText("Aramco rechazó las credenciales (401)")).toBe("Aramco rechazó las credenciales (401)")
   })
 })

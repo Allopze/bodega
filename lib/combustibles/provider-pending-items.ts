@@ -60,6 +60,14 @@ const SENTENCE_ITEMS = 3
  * resume el resto, para que el aviso quepa en una línea de estado.
  */
 export function describeProviderPendingItems(items: readonly ProviderPendingItem[]): string {
+  // Con una sola, la cifra ya la dice la frase que la rodea («8 cargas quedaron
+  // pendientes…»): repetirla entre paréntesis sólo agrega ruido.
+  if (items.length === 1) {
+    const [item] = items
+    return item!.kind === "tae_card"
+      ? `la tarjeta de abastecimiento ${item!.label} no tiene estanque activo`
+      : `la patente ${item!.label} no está en la flota o no tiene asignación para ese mes`
+  }
   const named = items.slice(0, SENTENCE_ITEMS).map((item, index) => {
     const loads = index === 0 ? `${item.loads} carga${item.loads === 1 ? "" : "s"}` : String(item.loads)
     return item.kind === "tae_card"

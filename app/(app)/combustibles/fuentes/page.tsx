@@ -147,7 +147,16 @@ export default async function FuentesPage({ searchParams }: { searchParams: Prom
 
       {statuses ? (
         <>
-          <p role="status" className="mb-4 max-w-4xl text-sm font-medium text-[var(--color-text)]">{describeFuelSources(statuses, period)}</p>
+          <div role="status" className="mb-4 max-w-4xl text-sm text-[var(--color-text)]">
+            <p className="font-medium">{describeFuelSources(statuses, period)}</p>
+            {statuses.some((source) => source.problem) ? (
+              <ul className="mt-1 list-disc space-y-0.5 pl-5">
+                {statuses.filter((source) => source.problem).map((source) => (
+                  <li key={source.key}><span className="font-medium">{source.name}:</span> {source.problem}</li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
           {/* `grid-cols-1` y no la columna automática: con ella una fila de contenido ancho estira la columna de todas. */}
           <div className="grid grid-cols-1 gap-3">
             {statuses.map((source) => {

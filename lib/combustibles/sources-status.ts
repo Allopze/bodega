@@ -16,6 +16,7 @@ import {
   fuelVehicles,
 } from "@/db/schema"
 import { isGlobalRole, worksiteScopeSql } from "@/lib/auth/scope"
+import { aramcoStoredErrorText } from "@/lib/combustibles/aramco-client"
 import { readAramcoConfig } from "@/lib/combustibles/aramco-settings"
 import { listCopecPeriodCoverage } from "@/lib/combustibles/copec-coverage-store"
 import { ARAMCO_SOURCES } from "@/lib/combustibles/fuel-sources"
@@ -63,6 +64,8 @@ export interface FuelSourceStatus {
   feeds: string[]
   /** Lo que falta resolver, en una frase, o `null`. */
   problem: string | null
+  /** Dónde se arregla `problem`, cuando hay un lugar concreto y la persona puede entrar. */
+  problemLink?: { href: string; label: string }
   /** Detalle técnico plegado (cobertura por mes, calidad de la corrida…). */
   technical: string[]
   /**
@@ -214,6 +217,9 @@ async function providerSource(provider: "copec" | "aramco", ctx: Ctx): Promise<F
   const technical: string[] = []
   const facts: FuelSourceFact[] = []
   let problem: string | null = null
+  let problemLink: FuelSourceStatus["problemLink"]
+  /** El error guardado de una corrida, sin el JSON del proveedor (Aramco lo guardaba crudo hasta 2026-09). */
+  const storedError = (error: string) => userFacingErrorText(isCopec ? error : aramcoStoredErrorText(error))
   let status: FuelSourceStatus["status"] = "ok"
   let statusLabel = "Al día"
 
@@ -235,11 +241,12 @@ async function providerSource(provider: "copec" | "aramco", ctx: Ctx): Promise<F
   } else if (cronFailedAfterLatest && cron?.lastStartedAt) {
     status = "falla"
     statusLabel = `Falló ${whenLabel(cron.lastStartedAt, today)}`
-    problem = (cron.lastDetail ? userFacingErrorText(cron.lastDetail) : null) ?? "La sincronización automática falló. Revisa el detalle técnico o vuelve a intentarlo."
+    // Con cuándo falló adelante: un error de hace meses se leía como un problema de hoy.
+    problem = `${statusLabel}: ${(cron.lastDetail ? storedError(cron.lastDetail) : null) ?? "la sincronización automática no terminó. Revisa el detalle técnico o vuelve a intentarlo."}`
   } else if (latest?.status === "failed") {
     status = "falla"
     statusLabel = `Falló ${whenLabel(latest.finishedAt ?? latest.startedAt, today)}`
-    problem = (latest.error ? userFacingErrorText(latest.error) : null) ?? "La última sincronización falló. Revisa el detalle técnico o vuelve a intentarlo."
+    problem = `${statusLabel}: ${(latest.error ? storedError(latest.error) : null) ?? "la sincronización no terminó. Revisa el detalle técnico o vuelve a intentarlo."}`
     if (lastGoodAt) problem += ` Los datos llegan hasta ${onDayLabel(lastGoodAt, today)}.`
   } else if (latest?.status === "running") {
     running = true
@@ -302,6 +309,9 @@ async function providerSource(provider: "copec" | "aramco", ctx: Ctx): Promise<F
     // Nombra qué tarjetas y patentes son: con sólo la cantidad había que ir a la
     // base para saber qué arreglar, y una tarjeta se arregla en otro lado que una patente.
     const items = latest ? await listProviderPendingItems(latest.id) : []
+    if (items.some((item) => item.kind === "tae_card") && ctx.has("admin:fleet_catalog")) {
+      problemLink = { href: "/admin/flota-catalogos/estanques-combustible", label: "Ir a Estanques de combustible" }
+    }
     const sentence = items.length
       ? `${plural(pendingRows, "carga quedó pendiente", "cargas quedaron pendientes")}${where}: ${describeProviderPendingItems(items)}. No se importan hasta resolverlo.`
       : `${plural(pendingRows, "carga tiene", "cargas tienen")} una patente que no está en la flota o sin asignación${where}; no se importan hasta vincularla.`
@@ -324,7 +334,7 @@ async function providerSource(provider: "copec" | "aramco", ctx: Ctx): Promise<F
   }
   if (batch) facts.push({ label: "Último lote", value: `hasta el ${formatDate(batch.periodoHasta)}` })
 
-  return { ...base, status, statusLabel, lastUpdateAt: lastGoodAt, facts, problem, technical, completeUntil }
+  return { ...base, status, statusLabel, lastUpdateAt: lastGoodAt, facts, problem, ...(problemLink ? { problemLink } : {}), technical, completeUntil }
 }
 
 /* ── Planilla de cargas ─────────────────────────────────────────────────── */
@@ -507,7 +517,9 @@ async function terrenoSource(ctx: Ctx): Promise<FuelSourceStatus | null> {
       ...base,
       statusLabel: activePoints > 0 ? "Sin cargas todavía" : "Sin puntos de carga",
       facts,
-      problem: activePoints > 0 ? null : "Aún no hay un punto de carga con su QR. Se crean en Ajustes › Puntos de carga y QR.",
+      // Sin puntos de carga no hay nada roto: es una forma de registrar cargas
+      // que la empresa puede no usar. Va como sugerencia, no en «Falta resolver».
+      technical: activePoints > 0 ? [] : ["Para registrar cargas por QR, crea un punto de carga en Ajustes › Puntos de carga y QR."],
     }
   }
   return {
@@ -643,8 +655,10 @@ export function summarizeFuelSources(statuses: readonly FuelSourceStatus[]): { r
 /** La respuesta de una frase de «Fuentes de datos»: qué llegó y qué falta. */
 export function describeFuelSources(statuses: readonly FuelSourceStatus[], period: Pick<ResolvedFuelPeriod, "inLabel">): string {
   if (statuses.length === 0) return "Todavía no hay fuentes de datos que mostrar."
-  const problems = statuses.flatMap((status) => (status.problem ? [status.problem] : []))
-  if (problems.length > 0) return `Falta resolver: ${problems.join(" ")}`
+  // Cada problema se lista con su fuente en la página (`page.tsx`): en un
+  // solo párrafo no se veía dónde terminaba Copec y empezaba Aramco.
+  const problems = statuses.filter((status) => status.problem).length
+  if (problems > 0) return problems === 1 ? "Falta resolver en una fuente:" : `Falta resolver en ${problems} fuentes:`
   if (statuses.some((status) => status.status === "falla" || status.status === "pendiente")) return "Hay fuentes que no se actualizaron a tiempo."
   return `Todo llegó a tiempo en ${period.inLabel}.`
 }

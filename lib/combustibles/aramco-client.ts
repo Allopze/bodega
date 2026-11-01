@@ -213,6 +213,21 @@ function aramcoValidationMessage(body: string): { locked: boolean; message: stri
   }
 }
 
+/**
+ * Lo que mostrar de un error de Aramco ya GUARDADO en una corrida. Hasta
+ * 2026-09 el cliente guardaba el 412 crudo («Aramco respondió 412 en
+ * users/authenticatecredential: {"validations": …}») y ese texto llegaba a la
+ * pantalla con el JSON del proveedor. Hoy `request` ya lo traduce al lanzar;
+ * esto cubre las corridas viejas. Devuelve el error tal cual si no lo reconoce.
+ */
+export function aramcoStoredErrorText(error: string): string {
+  const raw = /^Aramco respondió 412 en [^:]+: ([\s\S]*)$/.exec(error.trim())
+  if (!raw) return error
+  const validation = aramcoValidationMessage(raw[1]!)
+  if (validation?.locked) return validation.message
+  return validation ? `Aramco rechazó la solicitud: ${validation.message}` : "Aramco rechazó la solicitud (412). Revisa los datos antes de reintentar."
+}
+
 async function request(path: string, init: RequestInit & { token?: string } = {}): Promise<unknown> {
   const { token, ...rest } = init
   const response = await fetch(API_ROOT + path, {

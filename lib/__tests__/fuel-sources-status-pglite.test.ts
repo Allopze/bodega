@@ -174,7 +174,7 @@ describe("estado de las fuentes de datos (PostgreSQL)", () => {
     const { ready, pending } = summarizeFuelSources(statuses.filter((status) => ["copec", "aramco"].includes(status.key)))
     expect(ready).toBe(false)
     expect(pending.map((status) => status.key)).toEqual(["copec"])
-    expect(describeFuelSources(statuses, monthPeriod)).toMatch(/^Falta resolver: .*Copec/)
+    expect(describeFuelSources(statuses, monthPeriod)).toMatch(/^Falta resolver en (una fuente|\d+ fuentes):$/)
   })
 
   it("una corrida fallida es «falla» y conserva hasta cuándo llegan los datos buenos", async () => {
@@ -203,6 +203,13 @@ describe("estado de las fuentes de datos (PostgreSQL)", () => {
     expect(copec.problem).toMatch(/28 cargas tienen una patente que no está en la flota/)
   })
 
+  it("el 412 crudo que Aramco dejó guardado se muestra traducido y con su fecha", async () => {
+    await run("aramco", { startedAt: hoursAgo(1), status: "failed", error: 'Aramco respondió 412 en users/authenticatecredential: { "validations": [ { "type": "LimitAttemptsReached", "message": "Límite de intentos alcanzado. Usuario bloqueado." } ] }' })
+    const aramco = byKey(await getFuelSourceStatuses(global(), monthPeriod), "aramco")!
+    expect(aramco.problem).toMatch(/^Falló hoy a las \d\d:\d\d: La cuenta de Aramco está bloqueada por exceso de intentos\./)
+    expect(aramco.problem).not.toMatch(/validations|LimitAttemptsReached|412/)
+  })
+
   it("con las filas pendientes en el ledger, el aviso nombra la tarjeta y la patente", async () => {
     const runId = await run("copec", { startedAt: hoursAgo(1), rowsPending: 3, requestedFrom: "2026-01-01" })
     const pending = (account: string, plate: string, day: string) => ({
@@ -217,6 +224,10 @@ describe("estado de las fuentes de datos (PostgreSQL)", () => {
     ])
     const copec = byKey(await getFuelSourceStatuses(global(), monthPeriod), "copec")!
     expect(copec.problem).toBe("3 cargas quedaron pendientes en enero: tarjeta de abastecimiento 1-242269-00258-9-8 (2 cargas, sin estanque activo) y patente AB-CD12 (1, sin vehículo o asignación). No se importan hasta resolverlo.")
+    // El enlace a Estanques sólo para quien puede entrar ahí.
+    expect(copec.problemLink).toBeUndefined()
+    const admin = byKey(await getFuelSourceStatuses(session({ global: true, permissions: [...ALL_PERMISSIONS, "admin:fleet_catalog"] }), monthPeriod), "copec")!
+    expect(admin.problemLink).toEqual({ href: "/admin/flota-catalogos/estanques-combustible", label: "Ir a Estanques de combustible" })
   })
 
   it("en un período cerrado, un mes sin cobertura completa de Copec queda «Falta cerrar» y luego «Completa»", async () => {
@@ -248,7 +259,8 @@ describe("estado de las fuentes de datos (PostgreSQL)", () => {
     await inMemoryDb.insert(schema.cronRuns).values({ id: nanoid(), jobName: "fuel-copec-sync", startedAt: hoursAgo(1), outcome: "failed", detail: "Faltan las credenciales de Copec" })
     const copec = byKey(await getFuelSourceStatuses(global(), monthPeriod), "copec")!
     expect(copec.status).toBe("falla")
-    expect(copec.problem).toBe("Faltan las credenciales de Copec")
+    // Con cuándo falló adelante, para no leer un error viejo como de hoy.
+    expect(copec.problem).toBe("Falló hoy a las 12:00: Faltan las credenciales de Copec")
   })
 
   it("la planilla de cargas informa el último archivo y las patentes sin vincular, y sólo la ve un rol global", async () => {
