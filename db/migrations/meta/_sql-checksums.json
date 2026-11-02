@@ -367,5 +367,6 @@
   "0365_slow_sebastian_shaw": "20385066664a0ead308ecaf2ed562c8deae8f0765dbcba5f10f0711f282e6535",
   "0366_provider_tx_excluded": "0f86cc8df8da28058a650b6f8e239414bc4b01a7e36282af55dc9597f0f93660",
   "0367_overconfident_luminals": "e98d453a8deb2bb8b9f4eee2cda6e0b636d758c8d8d344fdca4251ba3f038bda",
-  "0368_drop_legacy_maintenance": "c2c3c07d58b44344ef6f96c867ab21b88ded579245e8804a8aae6060a1976949"
+  "0368_drop_legacy_maintenance": "c2c3c07d58b44344ef6f96c867ab21b88ded579245e8804a8aae6060a1976949",
+  "0369_mantencion_work_orders": "0b54e48839755ac49b791afc7403d0af3e3049539c45f0419434e3a3fc0cf840"
 }

@@ -5,6 +5,8 @@ import type { ModuleManifest } from "@/modules/manifest-types"
  *
  * El mecánico registra desde la PWA `/m/mantencion`, distribuida por QR desde
  * Equipos y Dispositivos; jefatura y supervisión revisan en `/mantencion/*`.
+ * Desde 2026-11 incluye las órdenes de trabajo (`/mantencion/ot`), que
+ * reemplazan al módulo antiguo `mantenciones`.
  * Los permisos se validan siempre en el servidor; la navegación sólo los refleja.
  */
 export const mantencionEquiposModule = {
@@ -21,6 +23,14 @@ export const mantencionEquiposModule = {
     "mant:schedules:manage",
     "mant:devices:manage",
     "mant:export",
+    // Órdenes de trabajo (2026-11-02), calcadas del talonario en papel.
+    "mant:ot:view_worksite",
+    "mant:ot:view_all",
+    "mant:ot:create",
+    "mant:ot:manage",
+    "mant:ot:execute",
+    "mant:ot:receive",
+    "mant:ot:conform",
   ] as const,
 
   permissionMeta: {
@@ -35,12 +45,28 @@ export const mantencionEquiposModule = {
     "mant:schedules:manage":      { id: "p-mant-schedules-manage", description: "Crear, editar y asignar pautas de mantención" },
     "mant:devices:manage":        { id: "p-mant-devices-manage", description: "Revocar credenciales de dispositivo de la app del mecánico" },
     "mant:export":                { id: "p-mant-export", description: "Exportar registros, equipos y pautas de mantención (Excel y PDF)" },
+    "mant:ot:view_worksite":      { id: "p-mant-ot-view-worksite", description: "Ver las órdenes de trabajo de sus faenas asignadas" },
+    "mant:ot:view_all":           { id: "p-mant-ot-view-all", description: "Ver las órdenes de trabajo de todas las faenas" },
+    "mant:ot:create":             { id: "p-mant-ot-create", description: "Crear órdenes de trabajo para equipos de sus faenas" },
+    "mant:ot:manage":             { id: "p-mant-ot-manage", description: "Asignar, reasignar, anular y reabrir órdenes de trabajo" },
+    "mant:ot:execute":            { id: "p-mant-ot-execute", description: "Tomar y ejecutar órdenes de trabajo de cualquier faena (ingreso y salida de taller)" },
+    "mant:ot:receive":            { id: "p-mant-ot-receive", description: "Registrar la recepción del equipo al salir del taller" },
+    "mant:ot:conform":            { id: "p-mant-ot-conform", description: "Registrar la recepción en faena (conformidad) y cerrar la orden de trabajo" },
   },
 
   nav: [
     {
       areaId: "control-operacional",
       items: [
+        {
+          // Las OT las ve también la administración de contrato, que no tiene los
+          // permisos de registros: por eso el ítem lleva sus propios permisos.
+          label: "Órdenes de trabajo",
+          href: "/mantencion/ot",
+          iconName: "Wrench",
+          permissions: ["mant:ot:view_worksite", "mant:ot:view_all"],
+          group: "Mantención",
+        },
         {
           label: "Panel",
           href: "/mantencion/panel",
@@ -108,5 +134,27 @@ export const mantencionEquiposModule = {
     { roleSlug: "jefa_chome", permission: "mant:records:view_all" },
     { roleSlug: "jefa_chome", permission: "mant:records:view_worksite" },
     { roleSlug: "jefa_chome", permission: "mant:export" },
+    // ── Órdenes de trabajo ──
+    // Administración de contrato: crea la OT, recibe el equipo y da la
+    // conformidad (recepción en faena) en sus faenas.
+    { roleSlug: "admin_contrato", permission: "mant:ot:view_worksite" },
+    { roleSlug: "admin_contrato", permission: "mant:ot:create" },
+    { roleSlug: "admin_contrato", permission: "mant:ot:receive" },
+    { roleSlug: "admin_contrato", permission: "mant:ot:conform" },
+    // Jefatura de mantención: recibe el aviso, asigna y gestiona. No da la
+    // conformidad: sería aprobar su propio trabajo.
+    { roleSlug: "jefe_mantencion", permission: "mant:ot:view_worksite" },
+    { roleSlug: "jefe_mantencion", permission: "mant:ot:view_all" },
+    { roleSlug: "jefe_mantencion", permission: "mant:ot:create" },
+    { roleSlug: "jefe_mantencion", permission: "mant:ot:manage" },
+    { roleSlug: "jefe_mantencion", permission: "mant:ot:execute" },
+    { roleSlug: "jefe_mantencion", permission: "mant:ot:receive" },
+    // Mecánicos y supervisión: ejecutan desde la app, en cualquier faena.
+    { roleSlug: "mecanico", permission: "mant:ot:execute" },
+    { roleSlug: "supervisor_mantencion", permission: "mant:ot:execute" },
+    { roleSlug: "supervisor_mantencion", permission: "mant:ot:view_worksite" },
+    // Jefatura general: lectura.
+    { roleSlug: "jefa_chome", permission: "mant:ot:view_worksite" },
+    { roleSlug: "jefa_chome", permission: "mant:ot:view_all" },
   ],
 } as const satisfies ModuleManifest

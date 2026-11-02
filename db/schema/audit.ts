@@ -134,6 +134,14 @@ export type NotificationType =
   | "miper_signature_overdue"    // firma pendiente > 5 días hábiles → revisor o firmante
   | "miper_occurrence_overdue"   // ocurrencia vencida por el barrido → responsable + prevencionista
   | "miper_occurrence_not_done"  // ocurrencia «No se hizo» → Jefa
+  // Órdenes de trabajo de mantención (2026-11). Destinatarios por permiso y
+  // faena; dedupe `mant-ot:<id>:<evento>:<versión>`.
+  | "mant_ot_created"            // OT nueva → jefatura de mantención (mant:ot:manage)
+  | "mant_ot_assigned"           // asignada → el mecánico
+  | "mant_ot_finished"           // salida de taller → quien solicitó + quienes reciben
+  | "mant_ot_received"           // recepcionada → quienes dan conformidad en la faena
+  | "mant_ot_rejected"           // devuelta a taller → jefatura + el mecánico
+  | "mant_ot_closed"             // conformidad → quien solicitó + jefatura
 
 export const notifications = pgTable("notifications", {
   id:           text("id").primaryKey(),

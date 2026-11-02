@@ -76,6 +76,10 @@ export const ROUTE_OWNER_ALIASES: RouteOwnerRule[] = [
   // La app del mecánico no está en el menú (es una PWA aparte): su ruta, su login
   // y su sincronización cuelgan del mismo submódulo que los Registros.
   { moduleId: "mantencion_equipos", submoduleHref: "/mantencion/registros", prefix: "/m/mantencion" },
+  // Órdenes de trabajo: sus operaciones desde el teléfono y el PDF dependen del
+  // submódulo de OT. Van antes de los prefijos genéricos de /api/mantencion.
+  { moduleId: "mantencion_equipos", submoduleHref: "/mantencion/ot", prefix: "/api/mantencion/sync/ot" },
+  { moduleId: "mantencion_equipos", submoduleHref: "/mantencion/ot", prefix: "/api/mantencion/ot" },
   { moduleId: "mantencion_equipos", submoduleHref: "/mantencion/registros", prefix: "/api/mantencion/sync" },
   { moduleId: "mantencion_equipos", submoduleHref: "/mantencion/registros", prefix: "/api/mantencion/dispositivo" },
   { moduleId: "mantencion_equipos", submoduleHref: "/mantencion/registros", prefix: "/api/mantencion" },
@@ -212,6 +216,9 @@ export const PERMISSION_TARGET_OVERRIDES: Array<{ test: (permission: string) => 
   { test: (permission) => ["combustibles:approve_flagged", "combustibles:review_anomalies", "combustibles:resolve_anomalies"].includes(permission), href: "/combustibles/revisar" },
   { test: (permission) => permission === "combustibles:manage_statements", href: "/combustibles/pagos" },
   { test: (permission) => permission.startsWith("sst:"), href: "/prevencion/evaluaciones" },
+  // Crear, asignar, ejecutar, recibir y dar conformidad no están en el menú;
+  // apagar el submódulo de OT también los apaga.
+  { test: (permission) => permission.startsWith("mant:ot:"), href: "/mantencion/ot" },
   { test: (permission) => permission.startsWith("ppa:"), href: "/prevencion/ppa" },
   { test: (permission) => permission.startsWith("prevention:pdtp:"), href: "/prevencion/pdtp" },
   { test: (permission) => permission.startsWith("prevention:risk:"), href: "/prevencion/miper" },

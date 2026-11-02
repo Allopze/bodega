@@ -2584,6 +2584,13 @@
       "when": 1793591559965,
       "tag": "0368_drop_legacy_maintenance",
       "breakpoints": true
+    },
+    {
+      "idx": 369,
+      "version": "7",
+      "when": 1793591893606,
+      "tag": "0369_mantencion_work_orders",
+      "breakpoints": true
     }
   ]
 }

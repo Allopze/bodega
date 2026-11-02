@@ -1,5 +1,6 @@
 import { z } from "zod"
 import type { MantEquipmentState, MantReview, MantRecordStatus, MantScheduleSnapshot, MantUnit } from "./types"
+import type { OtItemDone, OtItemKind, OtItemOrigin, OtStatus } from "./work-order-states"
 
 /**
  * Contrato de la sincronización entre la app del mecánico y el servidor
@@ -63,6 +64,11 @@ const recordBase = {
   duplicateConfirmed: z.boolean(),
   correctsRecordId: uuid.nullable(),
   photos: z.array(z.object({ id: uuid, kind: z.enum(["filtros", "sticker", "correctiva"]) })).min(1).max(3),
+  /**
+   * OT a la que pertenece el trabajo (2026-11). Opcional, no sólo nulo: hay
+   * colas en teléfonos que se armaron antes de que existiera.
+   */
+  workOrderId: id.nullable().optional(),
 }
 
 export const preventiveRecordSchema = z.object({
@@ -174,6 +180,97 @@ export const observationReplySchema = z.object({
 })
 export type ObservationReply = z.infer<typeof observationReplySchema>
 
+// ── Órdenes de trabajo: POST /api/mantencion/sync/ot ─────────────────────────
+//
+// Operaciones del mecánico sobre una OT. `id` es la clave de idempotencia (la
+// misma operación llega tres veces y queda un evento); el servidor no exige
+// versión: guarda el estado bajo bloqueo y rechaza lo que ya no corresponde.
+
+/** Datos de INGRESO A TALLER. La lectura que exige el servidor es la de la unidad del equipo. */
+export const workOrderEntrySchema = z.object({
+  workshopKind: z.enum(["interno", "externo"]),
+  /** Obligatorio si `externo` (catálogo de talleres). */
+  workshopId: id.nullable(),
+  workshopManagerName: z.string().trim().max(120).nullable(),
+  operatorDriverId: id.nullable(),
+  operatorName: z.string().trim().max(120).nullable(),
+  entryAt: isoDateTime,
+  odometer: z.number().finite().min(0).max(99_999_999).nullable(),
+  hourmeter: z.number().finite().min(0).max(99_999_999).nullable(),
+  estimatedDeliveryDate: isoDate,
+})
+export type WorkOrderEntryPayload = z.infer<typeof workOrderEntrySchema>
+
+const workOrderOpBase = { id: uuid, workOrderId: id, createdAt: isoDateTime, deviceId: uuid }
+
+export const workOrderOpSchema = z.discriminatedUnion("action", [
+  z.object({ ...workOrderOpBase, action: z.literal("take") }),
+  z.object({ ...workOrderOpBase, action: z.literal("start"), entry: workOrderEntrySchema }),
+  z.object({
+    ...workOrderOpBase,
+    action: z.literal("estimate"),
+    estimatedDeliveryDate: isoDate,
+    /** Obligatorio (≥ 5) al cambiar una fecha estimada que ya existía. */
+    reason: z.string().trim().max(500).nullable(),
+  }),
+  z.object({
+    ...workOrderOpBase,
+    action: z.literal("items"),
+    marks: z.array(z.object({ itemId: id, done: z.enum(["si", "no"]), note: z.string().trim().max(300).nullable() })).max(24),
+    added: z.array(z.object({ id: uuid, kind: z.enum(["anexo", "mantencion"]), description: z.string().trim().min(3).max(300) })).max(24),
+  }),
+  z.object({ ...workOrderOpBase, action: z.literal("finish"), exitAt: isoDateTime, note: z.string().trim().max(1000).nullable() }),
+])
+export type WorkOrderOpPayload = z.infer<typeof workOrderOpSchema>
+export type WorkOrderOpAction = WorkOrderOpPayload["action"]
+
+/** Misma semántica de HTTP que `SyncRecordResponse` (409/422 = rechazo definitivo). */
+export type SyncWorkOrderResponse =
+  | { ok: true; id: string; workOrderId: string; status: OtStatus; receivedAt: string; duplicate: boolean; warnings: SyncWarning[] }
+  | { ok: false; code: "rejected" | "invalid"; message: string; field?: string }
+
+// ── Catálogo: órdenes de trabajo ─────────────────────────────────────────────
+
+export interface CatalogWorkOrderItem {
+  id: string
+  kind: OtItemKind
+  origin: OtItemOrigin
+  description: string
+  done: OtItemDone | null
+  note: string | null
+}
+
+export interface CatalogWorkOrder {
+  id: string
+  folio: string
+  status: OtStatus
+  vehicleId: string
+  /** Resumen del equipo: la OT puede ser de un equipo que sólo está en el catálogo liviano. */
+  equipmentCode: string
+  equipmentPlate: string
+  equipmentType: string
+  unit: MantUnit
+  worksiteId: string
+  worksiteName: string
+  /** El equipo es de una faena que no es del mecánico (sólo un aviso; puede trabajarla igual). */
+  outOfWorksite: boolean
+  repair: boolean
+  maintenance: boolean
+  requestDate: string
+  requesterName: string
+  repairDescription: string | null
+  observations: string | null
+  assignedToUserId: string | null
+  assignedToName: string | null
+  entry: (Omit<WorkOrderEntryPayload, "workshopId" | "operatorDriverId"> & { workshopName: string | null }) | null
+  exitAt: string | null
+  items: CatalogWorkOrderItem[]
+  /** Último rechazo en recepción, para mostrar «Devuelta: <motivo>». */
+  lastRejection: { count: number; reason: string; at: string } | null
+  /** Registros firmados enlazados (correctivas o preventivas) desde el último rechazo. */
+  linkedRecords: Array<{ id: string; folio: string | null; kind: "P" | "C"; signedAt: string }>
+}
+
 // ── Catálogo: GET /api/mantencion/sync/catalogo[?alcance=todos] (ETag) ──────
 
 export interface CatalogEquipment {
@@ -246,6 +343,13 @@ export interface MantCatalog {
   mechanics: Array<{ id: string; name: string }>
   myRecords: CatalogOwnRecord[]
   observations: CatalogObservation[]
+  /**
+   * OT asignadas a mí (abiertas y las cerradas de los últimos 7 días). Opcional:
+   * un catálogo guardado antes de 2026-11 no lo trae y la app lo toma como `[]`.
+   */
+  workOrders?: CatalogWorkOrder[]
+  /** OT «por asignar» de todas las faenas (las mías primero, máx. 100): el mecánico puede tomarlas. */
+  availableWorkOrders?: CatalogWorkOrder[]
 }
 
 /** `alcance=todos`: el resto de los equipos activos, en versión liviana (sin historial). */
