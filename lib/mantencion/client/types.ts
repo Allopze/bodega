@@ -4,6 +4,7 @@ import type {
   ObservationReply,
   SyncRecord,
   SyncWarning,
+  WorkOrderOpPayload,
   WorkshopUpdatePayload,
 } from "../contracts"
 import type { MantPhotoKind, MantUnit } from "../types"
@@ -94,7 +95,14 @@ export interface QueueReplyItem extends QueueBase {
   summary: { folio: string | null; equipmentCode: string }
 }
 
-export type QueueItem = QueueRecordItem | QueueWorkshopItem | QueueReplyItem
+/** Una operación del mecánico sobre una OT (tomar, ingreso, fecha estimada, ítems, terminar). */
+export interface QueueWorkOrderItem extends QueueBase {
+  type: "ot"
+  payload: WorkOrderOpPayload
+  summary: { workOrderId: string; folio: string; equipmentCode: string; equipmentPlate: string }
+}
+
+export type QueueItem = QueueRecordItem | QueueWorkshopItem | QueueReplyItem | QueueWorkOrderItem
 
 export interface StoredPhoto {
   id: string

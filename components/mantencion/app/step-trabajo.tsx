@@ -4,6 +4,7 @@ import type { Dispatch } from "react"
 import type { FleetRow } from "@/lib/mantencion/client/fleet-view"
 import type { FlowAction } from "@/lib/mantencion/client/flow"
 import type { FlowDraft } from "@/lib/mantencion/client/flow-types"
+import { findWorkOrder } from "@/lib/mantencion/client/ot-model"
 import { todayInChile } from "@/lib/utils"
 import { useAppData } from "./app-context"
 import { EquipmentSummary } from "./step-lectura"
@@ -18,6 +19,8 @@ export function StepTrabajo({ draft, dispatch, row }: { draft: FlowDraft; dispat
   const { errors } = draft
   const mechanics = (catalog?.mechanics ?? []).filter((mechanic) => mechanic.id !== account.userId)
   const today = todayInChile()
+  // Con una OT, ella lleva el taller (ingreso y salida): no se pregunta «¿queda en taller?» ni se pide el Nº del papel.
+  const linked = draft.workOrderId ? (findWorkOrder(catalog, draft.workOrderId)?.folio ?? "Orden de trabajo") : null
 
   return (
     <>
@@ -72,14 +75,22 @@ export function StepTrabajo({ draft, dispatch, row }: { draft: FlowDraft; dispat
         <FieldError message={errors.description} />
       </div>
 
-      <div>
-        <label className="lbl" htmlFor="orden">Orden de trabajo <small>· si tiene</small></label>
-        <input id="orden" className="inp" value={draft.workOrder} maxLength={60} autoComplete="off" onChange={(event) => dispatch({ type: "patch", patch: { workOrder: event.target.value } })} />
-      </div>
+      {linked ? (
+        <div>
+          <div className="lbl" id="ot-chip-lbl">Orden de trabajo</div>
+          <div role="group" aria-labelledby="ot-chip-lbl"><span className="dtag p mono nw" style={{ fontSize: 14 }}>{linked}</span></div>
+          <p className="hint">Este trabajo queda enlazado a la OT. El ingreso y la salida de taller se registran en la OT.</p>
+        </div>
+      ) : (
+        <div>
+          <label className="lbl" htmlFor="orden">Nº de OT en papel <small>· si tiene</small></label>
+          <input id="orden" className="inp" value={draft.workOrder} maxLength={60} autoComplete="off" onChange={(event) => dispatch({ type: "patch", patch: { workOrder: event.target.value } })} />
+        </div>
+      )}
 
       <DriversField draft={draft} dispatch={dispatch} drivers={catalog?.drivers ?? []} />
 
-      <div className="card">
+      {linked ? null : <div className="card">
         <div className="lbl" id="taller-lbl">¿El equipo sigue en taller?</div>
         <div className="seg" role="group" aria-labelledby="taller-lbl" style={{ gridTemplateColumns: "1fr 1fr" }}>
           <button type="button" aria-pressed={draft.inWorkshop === true} onClick={() => dispatch({ type: "patch", patch: { inWorkshop: true } })}>Sí, sigue</button>
@@ -97,7 +108,7 @@ export function StepTrabajo({ draft, dispatch, row }: { draft: FlowDraft; dispat
           </>
         ) : null}
         <FieldError message={errors.workshop} />
-      </div>
+      </div>}
     </>
   )
 }

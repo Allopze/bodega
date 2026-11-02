@@ -6,6 +6,7 @@ import type { FleetRow } from "@/lib/mantencion/client/fleet-view"
 import type { FlowDraft } from "@/lib/mantencion/client/flow-types"
 import { partsFilled, parseQuantity } from "@/lib/mantencion/client/flow-validate"
 import { stepsFor, totalHours, type FlowStep } from "@/lib/mantencion/client/flow-types"
+import { findWorkOrder } from "@/lib/mantencion/client/ot-model"
 import { formatDate } from "@/lib/utils"
 import { useAppData } from "./app-context"
 import { EquipmentSummary } from "./step-lectura"
@@ -47,6 +48,7 @@ export function StepRevisar({ draft, row, onChange }: { draft: FlowDraft; row: F
         <EquipmentSummary row={row} />
         <dl className="dl">
           <dt>Tipo</dt><dd>Preventiva</dd>
+          {draft.workOrderId ? <><dt>Orden de trabajo</dt><dd><span className="mono nw" style={{ fontSize: 15 }}>{findWorkOrder(catalog, draft.workOrderId)?.folio ?? "Enlazada"}</span></dd></> : null}
           <Row label="Pauta" step={at("lectura")} onChange={onChange}>{draft.intervalValue ? formatReading(draft.intervalValue, unit) : "—"}{manual ? " (elegida a mano)" : ""}</Row>
           <Row label="Lectura" step={at("lectura")} onChange={onChange}><span className="mono" style={{ fontSize: 15 }}>{formatReading(reading, unit)}</span></Row>
           <Row label="Fecha" step={at("lectura")} onChange={onChange}>{formatDate(draft.workDate)}</Row>
@@ -97,7 +99,9 @@ export function StepRevisar({ draft, row, onChange }: { draft: FlowDraft; row: F
         <Row label="Detalle" step={at("trabajo")} onChange={onChange}>{draft.description}</Row>
         <Row label="Trabajos" step={at("trabajo")} onChange={onChange}>{jobLines.map((line) => <div key={line}>{line}</div>)}</Row>
         <Row label="Horas" step={at("trabajo")} onChange={onChange}>{formatHours(totalHours(draft.jobs))} en total</Row>
-        <Row label="En taller" step={at("trabajo")} onChange={onChange}>{draft.inWorkshop ? `Sí, desde ${formatDate(draft.workshopEntryDate)}. ${draft.workshopReason.trim()}` : "No"}</Row>
+        {draft.workOrderId
+          ? <><dt>Orden de trabajo</dt><dd><span className="mono nw" style={{ fontSize: 15 }}>{findWorkOrder(catalog, draft.workOrderId)?.folio ?? "Enlazada"}</span></dd></>
+          : <Row label="En taller" step={at("trabajo")} onChange={onChange}>{draft.inWorkshop ? `Sí, desde ${formatDate(draft.workshopEntryDate)}. ${draft.workshopReason.trim()}` : "No"}</Row>}
         <Row label="Conductores" step={at("trabajo")} onChange={onChange}>{names(draft.driverIds, catalog?.drivers ?? []).join(", ")}</Row>
         <Row label="Fotos" step={at("fotos")} onChange={onChange}>{draft.photos.correctiva.length}</Row>
       </dl>

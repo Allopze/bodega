@@ -1,6 +1,7 @@
 "use client"
 
 import type { QueueRecordItem } from "@/lib/mantencion/client/types"
+import { findWorkOrder } from "@/lib/mantencion/client/ot-model"
 import { useAppData } from "./app-context"
 import { IconAlert, IconCheckBig, IconClockBig } from "./icons"
 
@@ -10,7 +11,7 @@ export function DoneScreen({ itemId, onHome, onStartOther }: {
   onHome: () => void
   onStartOther: (kind: "P" | "C", vehicleId: string) => void
 }) {
-  const { queue } = useAppData()
+  const { queue, stored } = useAppData()
   const item = queue.find((entry): entry is QueueRecordItem => entry.type === "record" && entry.id === itemId)
   if (!item) {
     return (
@@ -21,6 +22,7 @@ export function DoneScreen({ itemId, onHome, onStartOther }: {
     )
   }
   const { summary } = item
+  const linkedOt = item.payload.workOrderId ? findWorkOrder(stored?.catalog, item.payload.workOrderId) : null
   const other = summary.kind === "P" ? "C" : "P"
   const sent = item.status === "sent"
   const rejected = item.status === "rejected"
@@ -41,11 +43,12 @@ export function DoneScreen({ itemId, onHome, onStartOther }: {
         <h1 className="h2">Registro guardado</h1>
         <div className="mono nw" style={{ fontSize: 15, fontWeight: 600 }}>{item.folio ?? "Folio pendiente"} · {summary.equipmentCode}</div>
         <p role="status">{message}</p>
+        {item.payload.workOrderId ? <p className="hint">Quedó enlazado a {linkedOt?.folio ?? "la orden de trabajo"}. Cuando termines todo, ciérrala desde «Órdenes de trabajo».</p> : null}
         {item.warnings.map((warning) => <p key={warning.code + (warning.recordId ?? "")} className="hint">{warning.message}</p>)}
       </div>
       <div className="foot" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         <button type="button" className="btnp" onClick={onHome}>Volver al inicio</button>
-        <button type="button" className="btns wide" onClick={() => onStartOther(other, summary.vehicleId)}>Registrar {other === "P" ? "preventiva" : "correctiva"} en {summary.equipmentCode}</button>
+        {item.payload.workOrderId ? null : <button type="button" className="btns wide" onClick={() => onStartOther(other, summary.vehicleId)}>Registrar {other === "P" ? "preventiva" : "correctiva"} en {summary.equipmentCode}</button>}
       </div>
     </div>
   )
