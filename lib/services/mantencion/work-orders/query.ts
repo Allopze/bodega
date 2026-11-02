@@ -16,7 +16,7 @@ import { unitFromMeter } from "../fleet"
 import {
   allowedTransitions, canEditExecution, canEditRequest, canSeeWorkOrder, workOrderVisibility, workOrderVisibilitySql,
 } from "./access"
-import { findAssignableMechanics, listAssignableMechanicsWithWorksites } from "./mechanics"
+import { findAssignableMechanics, findWorksiteMechanics, listAssignableMechanicsWithWorksites, type WorksiteMechanic } from "./mechanics"
 import type { WorkOrderDetail, WorkOrderListRow } from "./types"
 
 /**
@@ -247,6 +247,11 @@ export async function listWorkOrderEquipmentOptions(viewer: MantViewer): Promise
 /** Mecánicos asignables: activos con `mant:ot:execute`, de TODAS las faenas. */
 export async function listAssignableMechanics(): Promise<Array<{ id: string; name: string; worksiteNames: string[] }>> {
   return listAssignableMechanicsWithWorksites()
+}
+
+/** Mecánicos de las faenas de quien crea (el administrador de contrato): a quién queda asignada su OT. */
+export async function listWorksiteMechanics(viewer: MantViewer): Promise<WorksiteMechanic[]> {
+  return findWorksiteMechanics(db, viewer.isGlobal ? "all" : viewer.worksiteIds)
 }
 
 /** Talleres externos y conductores/operadores para el formulario de ingreso. */

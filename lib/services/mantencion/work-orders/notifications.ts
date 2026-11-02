@@ -61,7 +61,7 @@ const TITLE: Record<OtNotifyEvent, (folio: string) => string> = {
 
 const BODY: Record<OtNotifyEvent, string> = {
   created: "Está por asignar.",
-  assigned: "Entra a taller y registra el ingreso desde la app.",
+  assigned: "Entra a taller y registra el ingreso desde la app o el PC.",
   finished: "Falta registrar la recepción del equipo.",
   received: "Revisa el equipo y registra la recepción en faena (conformidad).",
   rejected: "Fue devuelta a «En taller».",
@@ -125,7 +125,9 @@ async function recipients(plan: NotificationPlan): Promise<string[]> {
 export async function sendWorkOrderNotification(plan: NotificationPlan): Promise<void> {
   const userIds = await recipients(plan)
   if (userIds.length === 0) return
-  const body = [plan.equipment, BODY[plan.event], plan.detail ? `Motivo: ${plan.detail}` : null].filter(Boolean).join(" · ")
+  // La OT del administrador de contrato nace asignada al mecánico de su faena: entonces no está «por asignar».
+  const text = plan.event === "created" && plan.assigneeUserId ? "Ya tiene mecánico asignado; puedes reasignarla." : BODY[plan.event]
+  const body = [plan.equipment, text, plan.detail ? `Motivo: ${plan.detail}` : null].filter(Boolean).join(" · ")
   await notifyManyUser(userIds, {
     type: TYPE[plan.event],
     title: TITLE[plan.event](plan.folio),

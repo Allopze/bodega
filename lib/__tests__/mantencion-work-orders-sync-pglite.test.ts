@@ -84,7 +84,8 @@ async function send(userId: string, payload: Record<string, unknown>) {
   return outcome
 }
 
-async function newOt(overrides: Record<string, unknown> = {}, creator: string = IDS.adminBio) {
+// La jefatura crea «por asignar» (la del administrador de contrato nace asignada al mecánico de su faena).
+async function newOt(overrides: Record<string, unknown> = {}, creator: string = IDS.jefe) {
   const result = await createWorkOrder(await actorOf(creator), createWorkOrderSchema.parse({
     clientRequestId: crypto.randomUUID(), vehicleId: IDS.truckBio, repair: true, maintenance: false, requestDate: today, requesterName: "Ana Contrato",
     repairDescription: "Fuga de aceite en el motor", observations: null, annexItems: ["Cambiar manguera de aire"], maintenanceItems: [],
@@ -338,7 +339,7 @@ describe("catálogo de la app con OT", () => {
   it("trae mis OT (con el equipo resumido y las listas) y las «por asignar» de todas las faenas, las de mi faena primero", async () => {
     const mine = await inWorkshop(IDS.mecBio)
     const free = await newOt()
-    const freeCho = await newOt({ vehicleId: IDS.truckCho }, IDS.adminCho)
+    const freeCho = await newOt({ vehicleId: IDS.truckCho })
     const { body } = await catalogOf(IDS.mecBio)
     expect(body?.workOrders?.map((order) => order.id)).toEqual([mine])
     const own = body!.workOrders![0]!

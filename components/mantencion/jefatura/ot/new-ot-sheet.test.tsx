@@ -45,6 +45,38 @@ describe("«Nueva OT»", () => {
     expect((await openSheet()).getByText("Mecánico (opcional)")).toBeTruthy()
   })
 
+  it("el administrador de contrato ve a quién queda asignada: el mecánico de la faena del equipo, a elegir si hay varios", async () => {
+    const worksiteMechanics = [
+      { id: "m-1", name: "Javier Roa", worksiteId: "ws-1" },
+      { id: "m-2", name: "Deivis González", worksiteId: "ws-1" },
+      { id: "m-3", name: "Pedro Fuentes", worksiteId: "ws-2" },
+    ]
+    render(<NewWorkOrderCta {...BASE} worksiteMechanics={worksiteMechanics} />)
+    const sheet = await openSheet()
+    const pick = async (name: RegExp) => {
+      fireEvent.focus(sheet.getByRole("combobox", { name: /Equipo/ }))
+      fireEvent.mouseDown(await screen.findByRole("option", { name }))
+    }
+    // Sin equipo todavía no se sabe la faena.
+    expect(sheet.queryByText(/Se asigna a/)).toBeNull()
+    // Santa Fe tiene un solo mecánico: se asigna sin preguntar.
+    await pick(/EX-04/)
+    expect(sheet.getByTestId("ot-mecanico-faena").textContent).toContain("Se asigna a Pedro Fuentes")
+    // Biodiversa tiene dos: hay que elegir, y sólo entre ellos.
+    await pick(/KA-135 · RBYD-98/)
+    expect(sheet.queryByTestId("ot-mecanico-faena")).toBeNull()
+    expect(sheet.getByText("Mecánico")).toBeTruthy()
+    expect(sheet.getByText(/Mecánicos de Biodiversa/)).toBeTruthy()
+  })
+
+  it("si la faena del equipo no tiene mecánico, avisa que queda por asignar", async () => {
+    render(<NewWorkOrderCta {...BASE} worksiteMechanics={[]} />)
+    const sheet = await openSheet()
+    fireEvent.focus(sheet.getByRole("combobox", { name: /Equipo/ }))
+    fireEvent.mouseDown(await screen.findByRole("option", { name: /EX-04/ }))
+    expect(sheet.getByTestId("ot-mecanico-faena").textContent).toContain("Santa Fe no tiene mecánico")
+  })
+
   it("las dos listas de ítems aparecen según el tipo y se detienen en 12 líneas", async () => {
     render(<NewWorkOrderCta {...BASE} />)
     const sheet = await openSheet()

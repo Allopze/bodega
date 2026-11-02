@@ -19,7 +19,7 @@ export const metadata: Metadata = { title: "Orden de trabajo" }
 export default async function WorkOrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   let session
   try {
-    session = await requireAnyPermission(["mant:ot:view_worksite", "mant:ot:view_all"], "/mantencion/ot")
+    session = await requireAnyPermission(["mant:ot:view_worksite", "mant:ot:view_all", "mant:ot:execute"], "/mantencion/ot")
   } catch {
     redirect("/forbidden")
   }

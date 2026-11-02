@@ -24,8 +24,14 @@ import { OtItemListEditor } from "./ot-item-list-editor"
 
 export interface NewOtSheetProps {
   equipment: WorkOrderEquipmentOption[]
-  /** Sólo con `mant:ot:manage`: asignar al crear. `null` oculta el selector. */
+  /** Sólo con `mant:ot:manage`: asignar al crear a cualquier mecánico (opcional). `null` oculta el selector. */
   mechanics: Array<{ id: string; name: string; worksiteNames: string[] }> | null
+  /**
+   * Sin `mant:ot:manage` (administrador de contrato): los mecánicos de sus
+   * faenas. La OT queda asignada al de la faena del equipo; si hay varios, se
+   * elige. El servidor aplica la misma regla.
+   */
+  worksiteMechanics?: Array<{ id: string; name: string; worksiteId: string }> | null
   /** Hoy en Chile (`todayInChile()` del servidor): fecha por defecto de la OT. */
   today: string
   /** Nombre de quien crea: SOLICITANTE por defecto, editable. */
@@ -124,6 +130,9 @@ export function NewWorkOrderCta(props: NewOtSheetProps) {
     value: mechanic.id,
     label: mechanic.worksiteNames.length ? `${mechanic.name} · ${mechanic.worksiteNames.join(", ")}` : mechanic.name,
   }))
+  const faenaMechanics = props.worksiteMechanics && chosen
+    ? props.worksiteMechanics.filter((mechanic) => mechanic.worksiteId === chosen.worksiteId)
+    : []
   const payload = JSON.stringify(buildCreatePayload(values, clientRequestId))
 
   return (
@@ -161,7 +170,11 @@ export function NewWorkOrderCta(props: NewOtSheetProps) {
                   id="ot-equipo"
                   options={equipmentOptions}
                   value={values.vehicleId}
-                  onChange={(value) => set("vehicleId", value)}
+                  onChange={(value) => {
+                    // El mecánico elegido es de la faena del equipo anterior: con otro equipo se vuelve a elegir.
+                    if (props.worksiteMechanics) setValues((current) => ({ ...current, vehicleId: value, assignedToUserId: "" }))
+                    else set("vehicleId", value)
+                  }}
                   placeholder="Busca por código o patente"
                 />
               </Field>
@@ -235,6 +248,26 @@ export function NewWorkOrderCta(props: NewOtSheetProps) {
                     onValueChange={(value) => set("assignedToUserId", value)}
                   />
                 </Field>
+              )}
+
+              {props.worksiteMechanics && chosen && (
+                faenaMechanics.length > 1 ? (
+                  <Field label="Mecánico" htmlFor="ot-mecanico" required error={fieldError("assignedToUserId")} helper={`Mecánicos de ${chosen.worksiteName}. La jefatura de mantención puede reasignarla.`}>
+                    <OptionSelect
+                      id="ot-mecanico"
+                      emptyLabel="Elige un mecánico"
+                      options={faenaMechanics.map((mechanic) => ({ value: mechanic.id, label: mechanic.name }))}
+                      value={values.assignedToUserId}
+                      onValueChange={(value) => set("assignedToUserId", value)}
+                    />
+                  </Field>
+                ) : (
+                  <p className="text-sm text-[var(--color-text-muted)]" data-testid="ot-mecanico-faena">
+                    {faenaMechanics.length === 1
+                      ? <>Se asigna a <strong className="font-semibold text-[var(--color-text)]">{faenaMechanics[0]!.name}</strong>, mecánico de {chosen.worksiteName}. La jefatura de mantención puede reasignarla.</>
+                      : `${chosen.worksiteName} no tiene mecánico: la OT queda por asignar y la jefatura de mantención la asigna.`}
+                  </p>
+                )
               )}
             </FieldGroup>
           </SheetBody>

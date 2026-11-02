@@ -77,6 +77,9 @@ function createInput(overrides: Record<string, unknown> = {}) {
   })
 }
 
+/** El administrador de Biodiversa elige entre sus dos mecánicos. */
+const adminInput = (overrides: Record<string, unknown> = {}) => createInput({ assignedToUserId: IDS.mecBio, ...overrides })
+
 function ok<T>(result: { ok: true; value: T } | { ok: false; message: string }): T {
   if (!result.ok) throw new Error(`Se esperaba éxito: ${result.message}`)
   return result.value
@@ -134,7 +137,8 @@ async function notificationsOf(type?: string) {
   return type ? rows.filter((notification) => notification.type === type) : rows
 }
 
-async function newOt(overrides: Record<string, unknown> = {}, creator: string = IDS.adminBio) {
+// La jefatura crea «por asignar»; el administrador de contrato deja la OT asignada al mecánico de su faena (ver «alta de la OT»).
+async function newOt(overrides: Record<string, unknown> = {}, creator: string = IDS.jefe) {
   return ok(await createWorkOrder(await actorOf(creator), createInput(overrides))).id
 }
 async function assigned(mechanic: string = IDS.mecBio, overrides: Record<string, unknown> = {}) {
@@ -185,20 +189,20 @@ beforeEach(async () => {
 
 describe("alta de la OT", () => {
   it("el administrador de contrato crea en su faena: folio por faena, ítems, historial, bitácora y aviso a la jefatura (no a quien la creó)", async () => {
-    const created = ok(await createWorkOrder(await actorOf(IDS.adminBio), createInput()))
-    expect(created).toMatchObject({ folio: "OT-BIO-0001", status: "solicitada", version: 1 })
+    const created = ok(await createWorkOrder(await actorOf(IDS.adminBio), adminInput()))
+    expect(created).toMatchObject({ folio: "OT-BIO-0001", status: "asignada", version: 1 })
 
     const ot = await row(created.id)
     expect(ot).toMatchObject({
       worksiteId: IDS.wsBio, vehicleId: IDS.truckBio, requestedByUserId: IDS.adminBio, repair: true, maintenance: true,
-      assignedToUserId: null, rejectionCount: 0,
+      assignedToUserId: IDS.mecBio, assignedByUserId: IDS.adminBio, rejectionCount: 0,
     })
     expect(ot.equipmentSnapshot).toMatchObject({ code: "KA-135", plate: "RBYD-98", worksite: "Biodiversa", unit: "km" })
     const items = await testDb.select().from(schema.mantWorkOrderItems).where(eq(schema.mantWorkOrderItems.workOrderId, created.id))
     expect(items.map((item) => [item.kind, item.origin, item.description]).sort()).toEqual([
       ["anexo", "solicitud", "Cambiar manguera de aire"], ["anexo", "solicitud", "Revisar sistema de frenos"], ["mantencion", "solicitud", "Mantención de 10.000 km"],
     ])
-    expect((await eventsOf(created.id)).map((event) => event.type)).toEqual(["created"])
+    expect((await eventsOf(created.id)).map((event) => event.type)).toEqual(["created", "assigned"])
     const [audit] = await testDb.select().from(schema.auditLog).where(and(eq(schema.auditLog.entityType, "mant_work_order"), eq(schema.auditLog.entityId, created.id)))
     expect(audit).toMatchObject({ action: "create", entityCode: "OT-BIO-0001", userId: IDS.adminBio, worksiteId: IDS.wsBio })
 
@@ -208,7 +212,7 @@ describe("alta de la OT", () => {
   })
 
   it("un administrador de contrato no crea para el equipo de otra faena; el de esa faena sí, y el folio es independiente por faena", async () => {
-    const denied = refused(await createWorkOrder(await actorOf(IDS.adminBio), createInput({ vehicleId: IDS.truckCho })))
+    const denied = refused(await createWorkOrder(await actorOf(IDS.adminBio), adminInput({ vehicleId: IDS.truckCho })))
     expect(denied).toMatchObject({ code: "forbidden", field: "vehicleId" })
     expect(denied.message).toContain("Cholguán")
     expect(await testDb.select().from(schema.mantWorkOrders)).toHaveLength(0)
@@ -219,24 +223,55 @@ describe("alta de la OT", () => {
     expect(ok(await createWorkOrder(await actorOf(IDS.jefe), createInput({ vehicleId: IDS.truckAra }))).folio).toBe("OT-ARA-0001")
   })
 
-  it("rechaza quien no tiene `mant:ot:create`, equipos dados de baja o fuera del módulo, y asignar sin `manage`", async () => {
+  it("rechaza quien no tiene `mant:ot:create` y equipos dados de baja o fuera del módulo", async () => {
     expect(refused(await createWorkOrder(await actorOf(IDS.mecBio), createInput())).code).toBe("forbidden")
     expect(refused(await createWorkOrder(await actorOf(IDS.jefe), createInput({ vehicleId: IDS.retired }))).message).toContain("dado de baja")
     expect(refused(await createWorkOrder(await actorOf(IDS.jefe), createInput({ vehicleId: "no-existe" }))).field).toBe("vehicleId")
-    const assign = refused(await createWorkOrder(await actorOf(IDS.adminBio), createInput({ assignedToUserId: IDS.mecBio })))
-    expect(assign).toMatchObject({ code: "forbidden", field: "assignedToUserId" })
-    // La jefatura sí puede asignar al crear: nace «asignada» y avisa al mecánico.
+    // La jefatura asigna al crear a cualquier mecánico, de cualquier faena: nace «asignada» y avisa al mecánico.
     const withMechanic = ok(await createWorkOrder(await actorOf(IDS.jefe), createInput({ assignedToUserId: IDS.mecCho })))
     expect(withMechanic.status).toBe("asignada")
     expect((await eventsOf(withMechanic.id)).map((event) => event.type)).toEqual(["created", "assigned"])
     await vi.waitFor(async () => expect((await notificationsOf("mant_ot_assigned")).map((notice) => notice.userId)).toEqual([IDS.mecCho]))
   })
 
+  it("la OT del administrador de contrato queda asignada al mecánico de su faena; con varios, elige; sin ninguno, queda por asignar", async () => {
+    // Cholguán tiene un solo mecánico: se asigna sin preguntar.
+    const cho = ok(await createWorkOrder(await actorOf(IDS.adminCho), createInput({ vehicleId: IDS.truckCho })))
+    expect(cho.status).toBe("asignada")
+    expect(await row(cho.id)).toMatchObject({ assignedToUserId: IDS.mecCho, assignedByUserId: IDS.adminCho })
+    await vi.waitFor(async () => expect((await notificationsOf("mant_ot_assigned")).map((notice) => notice.userId)).toEqual([IDS.mecCho]))
+    // La jefatura recibe el aviso de OT nueva, que ya no dice «por asignar».
+    await vi.waitFor(async () => expect((await notificationsOf("mant_ot_created"))[0]?.body).toContain("Ya tiene mecánico asignado"))
+
+    // Biodiversa tiene dos: hay que elegir, y sólo entre los de esa faena.
+    const admin = await actorOf(IDS.adminBio)
+    const unchosen = refused(await createWorkOrder(admin, createInput()))
+    expect(unchosen).toMatchObject({ code: "invalid", field: "assignedToUserId" })
+    expect(unchosen.message).toContain("Biodiversa")
+    expect(refused(await createWorkOrder(admin, createInput({ assignedToUserId: IDS.mecCho })))).toMatchObject({ code: "invalid", field: "assignedToUserId" })
+    expect(refused(await createWorkOrder(admin, createInput({ assignedToUserId: IDS.supBio })))).toMatchObject({ code: "invalid", field: "assignedToUserId" })
+    expect((await row(ok(await createWorkOrder(admin, createInput({ assignedToUserId: IDS.mecBio2 }))).id)).assignedToUserId).toBe(IDS.mecBio2)
+
+    // La jefatura reasigna a quien quiera.
+    ok(await transitions.assignWorkOrder(await actorOf(IDS.jefe), { workOrderId: cho.id, assignedToUserId: IDS.mecBio }))
+    expect((await row(cho.id)).assignedToUserId).toBe(IDS.mecBio)
+
+    // Sin mecánico activo en la faena, queda por asignar para la jefatura.
+    await testDb.update(schema.users).set({ isActive: false }).where(eq(schema.users.id, IDS.mecCho))
+    try {
+      const orphan = ok(await createWorkOrder(await actorOf(IDS.adminCho), createInput({ vehicleId: IDS.truckCho })))
+      expect(orphan.status).toBe("solicitada")
+      expect((await row(orphan.id)).assignedToUserId).toBeNull()
+    } finally {
+      await testDb.update(schema.users).set({ isActive: true }).where(eq(schema.users.id, IDS.mecCho))
+    }
+  })
+
   it("folios correlativos, también con altas simultáneas, sin huecos ni repetidos", async () => {
     const actor = await actorOf(IDS.adminBio)
-    const sequential = [ok(await createWorkOrder(actor, createInput())), ok(await createWorkOrder(actor, createInput()))]
+    const sequential = [ok(await createWorkOrder(actor, adminInput())), ok(await createWorkOrder(actor, adminInput()))]
     expect(sequential.map((created) => created.folio)).toEqual(["OT-BIO-0001", "OT-BIO-0002"])
-    const burst = await Promise.all(Array.from({ length: 5 }, () => createWorkOrder(actor, createInput())))
+    const burst = await Promise.all(Array.from({ length: 5 }, () => createWorkOrder(actor, adminInput())))
     const folios = burst.map((result) => ok(result).folio).sort()
     expect(folios).toEqual(["OT-BIO-0003", "OT-BIO-0004", "OT-BIO-0005", "OT-BIO-0006", "OT-BIO-0007"])
     const [counter] = await testDb.select().from(schema.mantFolioCounters).where(and(eq(schema.mantFolioCounters.worksiteId, IDS.wsBio), eq(schema.mantFolioCounters.kind, "OT")))
@@ -245,13 +280,13 @@ describe("alta de la OT", () => {
 
   it("idempotente por `client_request_id`: reenviar devuelve la misma OT; otra persona con el mismo id recibe un conflicto", async () => {
     const actor = await actorOf(IDS.adminBio)
-    const input = createInput()
+    const input = adminInput()
     const first = ok(await createWorkOrder(actor, input))
     const second = ok(await createWorkOrder(actor, input))
     expect(second.id).toBe(first.id)
     expect(await testDb.select().from(schema.mantWorkOrders)).toHaveLength(1)
     // Envíos idénticos a la vez: una sola OT.
-    const again = createInput()
+    const again = adminInput()
     const twins = await Promise.all([createWorkOrder(actor, again), createWorkOrder(actor, again), createWorkOrder(actor, again)])
     expect(new Set(twins.map((result) => ok(result).id)).size).toBe(1)
     expect(await testDb.select().from(schema.mantWorkOrders)).toHaveLength(2)
@@ -260,10 +295,10 @@ describe("alta de la OT", () => {
 
   it("las reglas de la solicitud: tipo, descripción de la reparación y máximo de ítems", async () => {
     const actor = await actorOf(IDS.adminBio)
-    const tooMany = refused(await createWorkOrder(actor, { ...createInput(), annexItems: Array.from({ length: 13 }, (_, index) => `Ítem número ${index}`) }))
+    const tooMany = refused(await createWorkOrder(actor, { ...adminInput(), annexItems: Array.from({ length: 13 }, (_, index) => `Ítem número ${index}`) }))
     expect(tooMany.field).toBe("items")
-    expect(refused(await createWorkOrder(actor, { ...createInput(), repair: false, maintenance: false })).field).toBe("repair")
-    expect(refused(await createWorkOrder(actor, { ...createInput(), repairDescription: "mal" })).field).toBe("repairDescription")
+    expect(refused(await createWorkOrder(actor, { ...adminInput(), repair: false, maintenance: false })).field).toBe("repair")
+    expect(refused(await createWorkOrder(actor, { ...adminInput(), repairDescription: "mal" })).field).toBe("repairDescription")
     // Nada quedó a medias: ni OT ni folio gastado.
     expect(await testDb.select().from(schema.mantWorkOrders)).toHaveLength(0)
     expect(await testDb.select().from(schema.mantFolioCounters)).toHaveLength(0)
@@ -575,7 +610,9 @@ describe("recepciones, rechazo y conformidad", () => {
 
 describe("anular y reabrir", () => {
   it("quien la creó puede anularla mientras está por asignar; después sólo la jefatura, siempre con motivo", async () => {
-    const id = await newOt()
+    // La del administrador nace asignada: la jefatura la devuelve a «por asignar».
+    const id = await newOt({ assignedToUserId: IDS.mecBio }, IDS.adminBio)
+    ok(await transitions.unassignWorkOrder(await actorOf(IDS.jefe), { workOrderId: id }))
     const admin = await actorOf(IDS.adminBio)
     expect(refused(await transitions.voidWorkOrder(admin, { workOrderId: id, reason: "corto" })).field).toBe("reason")
     ok(await transitions.voidWorkOrder(admin, { workOrderId: id, reason: "Se pidió el equipo equivocado" }))
@@ -751,7 +788,7 @@ describe("avisos: sólo después del commit", () => {
 describe("lectura: lista, detalle, filtros y Excel", () => {
   it("la lista respeta el alcance: el administrador de contrato ve las de su faena, el mecánico las suyas y las por asignar", async () => {
     const bio = await newOt()
-    const cho = await newOt({ vehicleId: IDS.truckCho }, IDS.adminCho)
+    const cho = await newOt({ vehicleId: IDS.truckCho })
     const filters = { tab: "abiertas" as const, page: 1, pageSize: 50 }
     const adminBio = await listWorkOrders(await viewerOf(IDS.adminBio), filters)
     expect(adminBio.rows.map((item) => item.id)).toEqual([bio])
@@ -788,7 +825,7 @@ describe("lectura: lista, detalle, filtros y Excel", () => {
     const id = await finished()
     const jefe = await loadWorkOrderDetail(await viewerOf(IDS.jefe), id)
     expect(jefe).toMatchObject({
-      folio: "OT-BIO-0001", status: "trabajo_terminado", unit: "km", requestedByName: "Ana Contrato Biodiversa", assignedToName: "Javier Roa",
+      folio: "OT-BIO-0001", status: "trabajo_terminado", unit: "km", requestedByName: "Alexis Morales", assignedToName: "Javier Roa",
       assignedByName: "Alexis Morales", worksiteName: "Biodiversa", equipmentCode: "KA-135",
     })
     expect(jefe?.allowedTransitions.sort()).toEqual(["receive", "reject_receipt"])
@@ -819,7 +856,7 @@ describe("lectura: lista, detalle, filtros y Excel", () => {
   })
 
   it("editar la solicitud: sólo mientras no está en taller; la jefatura o quien la creó; reemplaza los ítems pedidos", async () => {
-    const id = await newOt()
+    const id = await newOt({ assignedToUserId: IDS.mecBio }, IDS.adminBio)
     const admin = await actorOf(IDS.adminBio)
     const edit = (version: number, overrides: Record<string, unknown> = {}) => transitions.editWorkOrderRequest(admin, {
       workOrderId: id, expectedVersion: version, repair: true, maintenance: false, requestDate: today, requesterName: "Ana Contrato",

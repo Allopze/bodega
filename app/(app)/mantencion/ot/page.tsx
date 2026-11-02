@@ -17,7 +17,7 @@ import { can, requireAnyPermission } from "@/lib/auth/can"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { viewerFromSession } from "@/lib/services/mantencion/access"
 import {
-  listAssignableMechanics, listWorkOrderEquipmentOptions, listWorkOrders, loadWorkOrderFilterOptions, type WorkOrderTab,
+  listAssignableMechanics, listWorkOrderEquipmentOptions, listWorkOrders, listWorksiteMechanics, loadWorkOrderFilterOptions, type WorkOrderTab,
 } from "@/lib/services/mantencion/work-orders/query"
 import { todayInChile } from "@/lib/utils"
 import { OtExportButton } from "./ot-export-button"
@@ -45,7 +45,8 @@ function emptyCopy(tab: WorkOrderTab, filtered: boolean): { title: string; descr
 export default async function WorkOrdersPage({ searchParams }: { searchParams: Promise<RawSearchParams> }) {
   let session
   try {
-    session = await requireAnyPermission(["mant:ot:view_worksite", "mant:ot:view_all"], "/mantencion/ot")
+    // El mecánico (`execute`) entra para ver y trabajar sus OT y las por asignar desde el PC.
+    session = await requireAnyPermission(["mant:ot:view_worksite", "mant:ot:view_all", "mant:ot:execute"], "/mantencion/ot")
   } catch {
     redirect("/forbidden")
   }
@@ -55,11 +56,13 @@ export default async function WorkOrdersPage({ searchParams }: { searchParams: P
   const canCreate = can(session, "mant:ot:create")
   const canManage = can(session, "mant:ot:manage")
 
-  const [options, list, equipment, mechanics] = await Promise.all([
+  const [options, list, equipment, mechanics, worksiteMechanics] = await Promise.all([
     loadWorkOrderFilterOptions(viewer),
     listWorkOrders(viewer, filters),
     listWorkOrderEquipmentOptions(viewer),
     canCreate && canManage ? listAssignableMechanics() : Promise.resolve(null),
+    // Sin jefatura, la OT queda asignada al mecánico de la faena del equipo.
+    canCreate && !canManage ? listWorksiteMechanics(viewer) : Promise.resolve(null),
   ])
 
   const pagination = resolvePagination({ pageParam: String(filters.page), totalItems: list.total, pageSize: filters.pageSize })
@@ -77,6 +80,7 @@ export default async function WorkOrdersPage({ searchParams }: { searchParams: P
   const cta = {
     equipment,
     mechanics,
+    worksiteMechanics,
     today: todayInChile(),
     defaultRequesterName: session.user.name ?? "",
   }

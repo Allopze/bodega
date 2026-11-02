@@ -6,8 +6,9 @@ import { chileDay, fichaValue, withSql } from "./mantencion-3-helpers"
 /**
  * §9 E2E · Orden de trabajo (OT) de punta a punta, con la interfaz real.
  *
- *   administrador de contrato crea → jefatura ve el aviso y asigna a un mecánico
- *   de OTRA faena → el mecánico, desde la app, registra el ingreso a taller,
+ *   administrador de contrato crea y la OT queda asignada a un mecánico de su
+ *   faena → jefatura ve el aviso y la reasigna a un mecánico de OTRA faena → el
+ *   mecánico la ve desde el PC → desde la app registra el ingreso a taller,
  *   marca los ítems, registra la correctiva enlazada y termina → recepción →
  *   el administrador de contrato RECHAZA en la conformidad (con motivo) → el
  *   mecánico ve «Devuelta», registra una correctiva NUEVA y termina otra vez →
@@ -31,6 +32,8 @@ const ADMIN_CHO = "admin.contrato.cho@e2e.chome.cl"
 const JEFE = "jefe.mant@e2e.chome.cl"
 const MECANICO = "mecanico.cho@e2e.chome.cl"
 const NOMBRE_MECANICO = "Mecánico Cholguan E2E"
+/** Biodiversa tiene dos mecánicos: el administrador de contrato elige uno. */
+const NOMBRE_MECANICO_BIO = "Mecánico Uno E2E"
 const PIN = "4321"
 const MOTIVO_RECHAZO = "QA_ Falta apretar las mangueras y limpiar el equipo"
 const ITEM_ANEXO = "QA_ Cambiar pastillas de freno"
@@ -184,13 +187,15 @@ test.describe("Orden de trabajo (OT)", () => {
     await page.getByRole("button", { name: "Nueva OT", exact: true }).click()
     const hoja = page.getByRole("dialog", { name: "Nueva orden de trabajo" })
     await expect(hoja).toBeVisible()
-    // El administrador de contrato no asigna al crear: ese selector es de la jefatura.
+    // El selector abierto (cualquier mecánico, opcional) es de la jefatura.
     await expect(hoja.getByLabel("Mecánico (opcional)")).toHaveCount(0)
 
     await hoja.locator("#ot-equipo").click()
     await hoja.locator("#ot-equipo").fill(equipo.code)
     await page.getByRole("option", { name: new RegExp(equipo.code) }).first().click()
     await expect(hoja.getByText(/Faena: Biodiversa\. La OT queda en la faena del equipo\./)).toBeVisible()
+    // La OT queda asignada al mecánico de su faena; con dos en Biodiversa, se elige entre ellos.
+    await selectRadixById(page, "ot-mecanico", NOMBRE_MECANICO_BIO)
 
     // REPARACIÓN viene marcada; se agrega MANTENCIÓN y una línea en cada lista.
     await hoja.getByRole("checkbox", { name: "Mantención", exact: true }).check()
@@ -207,22 +212,26 @@ test.describe("Orden de trabajo (OT)", () => {
     folio = /OT-BIO-\d{4}/.exec(titulo)?.[0] ?? ""
     expect(folio, "el título de la OT lleva su folio").toMatch(/^OT-BIO-\d{4}$/)
     await expect(page.getByRole("heading", { level: 1, name: new RegExp(`^${folio} · ${equipo.code}`) })).toBeVisible()
-    await expectEstadoEnFicha(page, "Por asignar")
+    await expectEstadoEnFicha(page, "Asignada")
+    await expect(textoVisible(page, new RegExp(`${NOMBRE_MECANICO_BIO}.*desde`))).toBeVisible()
     await expect(textoVisible(page, ITEM_ANEXO)).toBeVisible()
     await expect(textoVisible(page, ITEM_MANTENCION)).toBeVisible()
     await expect(page.getByRole("list", { name: "Historial de la orden de trabajo" }).getByText("OT solicitada")).toBeVisible()
-    // El administrador de contrato no asigna ni anula la de otro: no ve «Asignar».
-    await expect(page.getByRole("button", { name: "Asignar", exact: true })).toHaveCount(0)
+    await expect(page.getByRole("list", { name: "Historial de la orden de trabajo" }).getByText("Mecánico asignado")).toBeVisible()
+    // Reasignar es de la jefatura: el administrador de contrato no lo ve.
+    await page.getByRole("button", { name: /^Más acciones/ }).click()
+    await expect(page.getByRole("menuitem", { name: "Reasignar", exact: true })).toHaveCount(0)
+    await page.keyboard.press("Escape")
 
-    // La lista la muestra «Por asignar».
+    // La lista la muestra «Asignada».
     await page.goto("/mantencion/ot")
-    await page.getByRole("navigation", { name: "Estado de las órdenes de trabajo" }).getByRole("link", { name: /^Por asignar/ }).click()
+    await page.getByRole("navigation", { name: "Estado de las órdenes de trabajo" }).getByRole("link", { name: /^Asignada/ }).click()
     await expect(page.getByRole("link", { name: `Ver la OT ${folio}` })).toBeVisible()
     expect(errores).toEqual([])
     await cerrarSesion(page)
   })
 
-  test("b · la jefatura ve el aviso y asigna a un mecánico de otra faena", async ({ page }) => {
+  test("b · la jefatura ve el aviso y reasigna a un mecánico de otra faena", async ({ page }) => {
     const errores = vigilarConsola(page)
     await entrarPlataforma(page, JEFE)
     await page.goto("/mantencion/ot")
@@ -231,22 +240,35 @@ test.describe("Orden de trabajo (OT)", () => {
     await page.getByRole("button", { name: /^Notificaciones/ }).click()
     const aviso = page.getByRole("link", { name: new RegExp(`Nueva orden de trabajo ${folio}`) }).first()
     await expect(aviso).toBeVisible({ timeout: 30_000 })
-    await expect(aviso).toContainText("Está por asignar")
+    await expect(aviso).toContainText("Ya tiene mecánico asignado")
     await aviso.click()
     await expect(page).toHaveURL(new RegExp(`/mantencion/ot/${otId}$`))
-    await expectEstadoEnFicha(page, "Por asignar")
+    await expectEstadoEnFicha(page, "Asignada")
 
-    await page.getByRole("button", { name: "Asignar", exact: true }).click()
+    // Ya asignada, «Reasignar» está en «Más acciones».
+    await page.getByRole("button", { name: /^Más acciones/ }).click()
+    await page.getByRole("menuitem", { name: "Reasignar", exact: true }).click()
     await selectRadixById(page, "ot-assign-mechanic", new RegExp(NOMBRE_MECANICO))
-    await dialogo(page).getByRole("button", { name: "Asignar", exact: true }).click()
+    await dialogo(page).getByRole("button", { name: /^(Asignar|Reasignar)$/ }).click()
     await expect(dialogo(page)).toHaveCount(0)
     await expectEstadoEnFicha(page, "Asignada")
     await expect(textoVisible(page, new RegExp(`${NOMBRE_MECANICO}.*desde`))).toBeVisible()
-    await expect(page.getByRole("list", { name: "Historial de la orden de trabajo" }).getByText("Mecánico asignado")).toBeVisible()
-    // Ya asignada, «Reasignar» pasa a «Más acciones».
-    await page.getByRole("button", { name: /^Más acciones/ }).click()
-    await expect(page.getByRole("menuitem", { name: "Reasignar", exact: true })).toBeVisible()
-    await page.keyboard.press("Escape")
+    expect(errores).toEqual([])
+    await cerrarSesion(page)
+  })
+
+  test("b2 · el mecánico ve y puede trabajar su OT desde el PC", async ({ page }) => {
+    const errores = vigilarConsola(page)
+    await entrarPlataforma(page, MECANICO)
+    await page.goto("/mantencion/ot")
+    await expect(page.getByRole("heading", { level: 1, name: "Órdenes de trabajo" })).toBeVisible()
+    // El mecánico no crea OT.
+    await expect(page.getByRole("button", { name: "Nueva OT", exact: true })).toHaveCount(0)
+    await page.getByRole("link", { name: `Ver la OT ${folio}` }).click()
+    await expect(page).toHaveURL(new RegExp(`/mantencion/ot/${otId}$`))
+    await expectEstadoEnFicha(page, "Asignada")
+    // Es el asignado: la acción de la etapa está a su alcance (el ingreso se registra en «c», desde la app).
+    await expect(page.getByRole("button", { name: "Registrar ingreso", exact: true })).toBeVisible()
     expect(errores).toEqual([])
     await cerrarSesion(page)
   })

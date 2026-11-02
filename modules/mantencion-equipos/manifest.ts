@@ -60,11 +60,12 @@ export const mantencionEquiposModule = {
       items: [
         {
           // Las OT las ve también la administración de contrato, que no tiene los
-          // permisos de registros: por eso el ítem lleva sus propios permisos.
+          // permisos de registros: por eso el ítem lleva sus propios permisos. El
+          // mecánico (`execute`) las trabaja también desde el PC.
           label: "Órdenes de trabajo",
           href: "/mantencion/ot",
           iconName: "Wrench",
-          permissions: ["mant:ot:view_worksite", "mant:ot:view_all"],
+          permissions: ["mant:ot:view_worksite", "mant:ot:view_all", "mant:ot:execute"],
           group: "Mantención",
         },
         {
@@ -149,7 +150,7 @@ export const mantencionEquiposModule = {
     { roleSlug: "jefe_mantencion", permission: "mant:ot:manage" },
     { roleSlug: "jefe_mantencion", permission: "mant:ot:execute" },
     { roleSlug: "jefe_mantencion", permission: "mant:ot:receive" },
-    // Mecánicos y supervisión: ejecutan desde la app, en cualquier faena.
+    // Mecánicos y supervisión: ejecutan desde la app o el PC, en cualquier faena.
     { roleSlug: "mecanico", permission: "mant:ot:execute" },
     { roleSlug: "supervisor_mantencion", permission: "mant:ot:execute" },
     { roleSlug: "supervisor_mantencion", permission: "mant:ot:view_worksite" },

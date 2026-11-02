@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray } from "drizzle-orm"
+import { and, asc, eq, inArray, sql } from "drizzle-orm"
 import { db, type Tx } from "@/db"
 import { users, worksites, worksiteUsers } from "@/db/schema"
 import { isTemporaryAccountExpired } from "@/lib/auth/temporary-account"
@@ -38,6 +38,34 @@ export async function findAssignableMechanics(client: Reader, filter: { ids?: st
 export async function findAssignableMechanic(client: Reader, id: string): Promise<AssignableMechanic | null> {
   const [mechanic] = await findAssignableMechanics(client, { ids: [id] })
   return mechanic ?? null
+}
+
+export interface WorksiteMechanic extends AssignableMechanic {
+  worksiteId: string
+}
+
+/**
+ * Mecánicos (rol `mecanico`, activos) de esas faenas. Es a quien queda asignada
+ * la OT que crea el administrador de contrato: el mecánico de la faena del
+ * equipo, que es la suya. La jefatura y la supervisión también ejecutan OT, pero
+ * no son «el mecánico de la faena».
+ */
+export async function findWorksiteMechanics(client: Reader, worksiteIds: readonly string[] | "all"): Promise<WorksiteMechanic[]> {
+  if (worksiteIds !== "all" && worksiteIds.length === 0) return []
+  const rows = await client
+    .select({ id: users.id, name: users.name, isTemporary: users.isTemporary, validUntil: users.validUntil, worksiteId: worksiteUsers.worksiteId })
+    .from(users)
+    .innerJoin(worksiteUsers, eq(worksiteUsers.userId, users.id))
+    .where(and(
+      eq(users.isActive, true),
+      worksiteIds === "all" ? undefined : inArray(worksiteUsers.worksiteId, [...worksiteIds]),
+      sql`exists (select 1 from user_roles ur join roles r on r.id = ur.role_id where ur.user_id = ${users.id} and r.name = 'mecanico')`,
+      userHasPermissionSql(OT_PERMISSIONS.execute),
+    ))
+    .orderBy(asc(users.name))
+  return rows
+    .filter((row) => !isTemporaryAccountExpired(row))
+    .map((row) => ({ id: row.id, name: row.name, worksiteId: row.worksiteId }))
 }
 
 /** Para el selector de asignación: cada mecánico con las faenas que tiene asignadas (información, no restricción). */
