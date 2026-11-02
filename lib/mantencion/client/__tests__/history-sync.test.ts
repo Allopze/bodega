@@ -17,7 +17,7 @@ const HISTORY: AppHistory = {
   version: "h1", generatedAt: "2026-11-02T12:00:00.000Z",
   byVehicle: { "veh-1": [{
     id: UUID(1), folio: "MP-BIO-0001", kind: "P", vehicleId: "veh-1", worksiteName: "Biodiversa", workDate: "2026-10-28", reading: 40_000, unit: "km",
-    executorKind: "mechanic", executorName: "Javier Roa", workOrderFolio: null, notes: null, schedule: { name: "Camiones", intervalValue: 40_000 },
+    executorKind: "yo", executorName: "Javier Roa", workOrderFolio: null, notes: null, schedule: { name: "Camiones", intervalValue: 40_000 },
     itemsDone: 4, itemsFlagged: [], corrective: null, photos: [{ id: UUID(50), kind: "filtros", width: 1600, height: 1200 }],
   }] },
 }
