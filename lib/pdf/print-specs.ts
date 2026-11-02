@@ -9,7 +9,7 @@
  */
 import { a4PdfOptions, type PdfMargin } from "./page-options"
 
-export type PrintDocumentId = "entrega" | "inspeccion" | "sst" | "re20" | "mantencion"
+export type PrintDocumentId = "entrega" | "inspeccion" | "sst" | "re20" | "mantencion" | "mantencion_ot"
 
 export interface PrintDocumentSpec {
   id: PrintDocumentId
@@ -64,6 +64,17 @@ export const PRINT_DOCUMENT_SPECS: Record<PrintDocumentId, PrintDocumentSpec> = 
     waitUntil: "domcontentloaded",
     // El PDF lleva las fotos con su sello: sin esperarlas saldría con cuadros vacíos.
     waitForImages: true,
+  },
+  /**
+   * Orden de trabajo del taller. A diferencia de `mantencion`, NO se archiva: la
+   * OT cambia (ingreso, salida, recepciones), así que la ruta de descarga la
+   * imprime al vuelo cada vez. El talonario no lleva fotos.
+   */
+  mantencion_ot: {
+    id: "mantencion_ot",
+    path: (id) => `/mantencion/ot/${encodeURIComponent(id)}/print`,
+    waitUntil: "domcontentloaded",
+    waitForImages: false,
   },
 }
 

@@ -2,12 +2,14 @@ import { and, asc, desc, eq, inArray, ne, sql, type SQL } from "drizzle-orm"
 import { alias } from "drizzle-orm/pg-core"
 import { db } from "@/db"
 import {
-  fleetVehicleDocuments, fuelVehicles, mantRecordCorrectives, mantRecordVoids, mantRecords, mantWorkshopUpdates, users, worksites,
+  fleetVehicleDocuments, fuelVehicles, mantRecordCorrectives, mantRecordVoids, mantRecords, mantWorkOrders, mantWorkshopUpdates, users, worksites,
 } from "@/db/schema"
 import { daysBetween } from "@/lib/mantencion/readings"
 import { workshopState } from "@/lib/mantencion/status"
 import type { MantExecutorKind, MantRecordKind, MantRecordStatus, MantReview, MantUnit } from "@/lib/mantencion/types"
+import type { OtStatus } from "@/lib/mantencion/work-order-states"
 import { todayInChile } from "@/lib/utils"
+import type { MantViewer } from "./access"
 
 /**
  * Hoja de vida del equipo: el historial COMPLETO de mantenciones (preventivas y
@@ -208,5 +210,77 @@ export async function loadEquipmentInsurance(vehicleId: string): Promise<Equipme
     days,
     documents: docs.map((doc) => ({ id: doc.id, fileName: doc.fileName, expiresAt: doc.expiresAt, current: doc.status === "current" })),
     hasData: !!(policyNumber || effective || docs.length),
+  }
+}
+
+// ── Órdenes de trabajo ───────────────────────────────────────────────────────
+
+export interface LifeWorkOrderRow {
+  id: string
+  folio: string
+  status: OtStatus
+  repair: boolean
+  maintenance: boolean
+  requestDate: string
+  workshopEntryAt: string | null
+  workshopExitAt: string | null
+  /** Días en taller (ingreso → salida, o hasta hoy si sigue allí); `null` si aún no ingresa. */
+  daysInWorkshop: number | null
+}
+
+export interface LifeWorkOrders {
+  rows: LifeWorkOrderRow[]
+  /** Cuántas OT (no anuladas) tiene el equipo dentro del alcance de quien mira. */
+  total: number
+}
+
+/**
+ * Faenas de OT que el usuario puede ver: `view_all` ve todas; `view_worksite` las
+ * suyas (un rol global, todas). Sin ninguno de los dos permisos devuelve `null` y
+ * la hoja de vida no muestra la sección. Es el mismo criterio de `otVisibility`
+ * del servicio de OT, repetido aquí a propósito: este archivo sólo lee la tabla.
+ */
+function workOrderWorksiteScope(viewer: MantViewer): "all" | string[] | null {
+  if (viewer.permissions.includes("mant:ot:view_all")) return "all"
+  if (viewer.permissions.includes("mant:ot:view_worksite")) return viewer.isGlobal ? "all" : [...viewer.worksiteIds]
+  return null
+}
+
+/**
+ * Las OT del equipo para su hoja de vida, de la más reciente a la más antigua.
+ * Las anuladas no se listan (no ocurrieron) y no cuentan en el total. `null` =
+ * el usuario no tiene permiso de OT: la sección no se dibuja.
+ */
+export async function loadEquipmentWorkOrders(vehicleId: string, viewer: MantViewer, opts: { limit?: number } = {}): Promise<LifeWorkOrders | null> {
+  const scope = workOrderWorksiteScope(viewer)
+  if (scope === null) return null
+  const where = and(
+    eq(mantWorkOrders.vehicleId, vehicleId),
+    ne(mantWorkOrders.status, "anulada"),
+    scope === "all" ? undefined : scope.length ? inArray(mantWorkOrders.worksiteId, scope) : sql`false`,
+  )
+  const limit = opts.limit ?? 10
+  const [rows, [count]] = await Promise.all([
+    db.select({
+      id: mantWorkOrders.id, folio: mantWorkOrders.folio, status: mantWorkOrders.status, repair: mantWorkOrders.repair,
+      maintenance: mantWorkOrders.maintenance, requestDate: mantWorkOrders.requestDate,
+      workshopEntryAt: mantWorkOrders.workshopEntryAt, workshopExitAt: mantWorkOrders.workshopExitAt,
+    })
+      .from(mantWorkOrders)
+      .where(where)
+      .orderBy(desc(mantWorkOrders.createdAt), asc(mantWorkOrders.id))
+      .limit(limit),
+    db.select({ total: sql<number>`count(*)::int` }).from(mantWorkOrders).where(where),
+  ])
+  const today = todayInChile()
+  return {
+    total: count?.total ?? rows.length,
+    rows: rows.map((row) => ({
+      ...row,
+      status: row.status as OtStatus,
+      daysInWorkshop: row.workshopEntryAt
+        ? Math.max(0, daysBetween(todayInChile(row.workshopEntryAt), row.workshopExitAt ? todayInChile(row.workshopExitAt) : today))
+        : null,
+    })),
   }
 }

@@ -3,8 +3,10 @@ import { Badge } from "@/components/ui/badge"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import { executorText, formatHours, formatNumber, formatReading, plural, recordKindText } from "@/lib/mantencion/format"
-import type { LifeRow, LifeTotals } from "@/lib/services/mantencion/equipment-life"
-import { formatDate } from "@/lib/utils"
+import type { LifeRow, LifeTotals, LifeWorkOrders } from "@/lib/services/mantencion/equipment-life"
+import { formatDate, formatDateTime } from "@/lib/utils"
+import { MetaBadge } from "@/components/states/state-badge"
+import { OT_STATE_META, workOrderTypeText } from "../ot/ot-labels"
 import { RecordStatusBadges } from "../shared/record-badges"
 import { SectionCard } from "../shared/section-card"
 
@@ -14,6 +16,8 @@ export interface EquipmentLifeData {
   hasMore: boolean
   /** Cuántas filas se piden hoy; «Mostrar más» agrega otra tanda. */
   limit: number
+  /** Órdenes de trabajo del equipo. `null` (o ausente) = sin permiso de OT: la sección no se dibuja. */
+  workOrders?: LifeWorkOrders | null
 }
 
 export const LIFE_PAGE_SIZE = 20
@@ -53,7 +57,7 @@ function LifeStatus({ row }: { row: LifeRow }) {
  * marcadas), dentro del alcance de lectura de quien mira. Reemplaza a «Registros
  * recientes»: es la misma lista, completa y con más columnas.
  */
-export function EquipmentLifeSection({ life, code }: { life: EquipmentLifeData; code: string }) {
+function MaintenanceLifeSection({ life, code }: { life: EquipmentLifeData; code: string }) {
   const { rows, totals, hasMore, limit } = life
   return (
     <SectionCard title="Hoja de vida" description={rows.length ? totalsText(totals) : "Historial de mantenciones del equipo"}>
@@ -118,5 +122,86 @@ export function EquipmentLifeSection({ life, code }: { life: EquipmentLifeData; 
         </>
       )}
     </SectionCard>
+  )
+}
+
+function stayText(row: LifeWorkOrders["rows"][number]): string {
+  if (row.daysInWorkshop == null) return "—"
+  return row.daysInWorkshop === 0 ? "Desde hoy" : plural(row.daysInWorkshop, "día", "días")
+}
+
+/**
+ * «Órdenes de trabajo» de la hoja de vida: folio (enlace), estado, ingreso →
+ * salida y días en taller. Va debajo de la hoja de mantenciones: ésta es la
+ * historia del taller; aquélla, de lo que se firmó. Sólo se dibuja para quien
+ * tiene permiso de OT (`null` = sin permiso).
+ */
+function EquipmentWorkOrdersSection({ workOrders, code }: { workOrders: LifeWorkOrders | null; code: string }) {
+  if (!workOrders) return null
+  const { rows, total } = workOrders
+  return (
+    <SectionCard
+      title="Órdenes de trabajo"
+      description={rows.length ? `${plural(total, "orden", "órdenes")} de reparación o mantención en taller` : "Reparaciones y mantenciones pedidas al taller"}
+      action={total > rows.length ? (
+        <Link href={`/mantencion/ot?q=${encodeURIComponent(code)}`} className="inline-flex min-h-11 items-center text-sm font-semibold text-[var(--color-primary-ink)] hover:underline sm:min-h-0">
+          Ver todas en la lista de órdenes
+        </Link>
+      ) : undefined}
+    >
+      {rows.length === 0 ? (
+        <EmptyState
+          compact
+          title="Este equipo aún no tiene órdenes de trabajo"
+          description="Aparecen aquí cuando se pide una reparación o una mantención en el taller para este equipo."
+        />
+      ) : (
+        <TableRoot aria-label={`Órdenes de trabajo del equipo ${code}`} className="-mx-5 w-auto rounded-none border-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Folio</TableHead>
+                <TableHead>Tipo</TableHead>
+                <TableHead>Estado</TableHead>
+                <TableHead>Ingreso → salida</TableHead>
+                <TableHead>Días en taller</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((row) => (
+                <TableRow key={row.id}>
+                  <TableCell className="whitespace-nowrap">
+                    <Link href={`/mantencion/ot/${row.id}`} className="inline-flex min-h-11 items-center font-mono text-xs font-semibold text-[var(--color-primary-ink)] underline-offset-2 hover:underline sm:min-h-0">
+                      {row.folio}
+                    </Link>
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-xs">{workOrderTypeText(row)}</TableCell>
+                  <TableCell><MetaBadge meta={OT_STATE_META[row.status]} size="sm" /></TableCell>
+                  <TableCell className="whitespace-nowrap font-mono text-xs tabular-nums">
+                    {row.workshopEntryAt
+                      ? `${formatDateTime(row.workshopEntryAt)} → ${row.workshopExitAt ? formatDateTime(row.workshopExitAt) : "sigue en taller"}`
+                      : <span className="text-[var(--color-text-muted)]">Pedida el {formatDate(row.requestDate)}</span>}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-xs">{stayText(row)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableRoot>
+      )}
+    </SectionCard>
+  )
+}
+
+/**
+ * Hoja de vida del equipo: las mantenciones firmadas y, debajo, las órdenes de
+ * trabajo del taller (sólo para quien tiene permiso de OT).
+ */
+export function EquipmentLifeSection({ life, code }: { life: EquipmentLifeData; code: string }) {
+  return (
+    <div className="flex flex-col gap-5">
+      <MaintenanceLifeSection life={life} code={code} />
+      <EquipmentWorkOrdersSection workOrders={life.workOrders ?? null} code={code} />
+    </div>
   )
 }

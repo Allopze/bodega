@@ -130,3 +130,40 @@ describe("«Hoja de vida»", () => {
     expect(screen.getByRole("link", { name: "Mostrar más" }).className).toContain("min-h-11")
   })
 })
+
+describe("«Órdenes de trabajo» de la hoja de vida", () => {
+  const workOrders = (overrides: Partial<NonNullable<EquipmentDetailData["life"]["workOrders"]>> = {}) => ({
+    total: 2,
+    rows: [
+      { id: "ot-1", folio: "OT-SAN-0001", status: "en_ejecucion" as const, repair: true, maintenance: false, requestDate: "2026-10-30", workshopEntryAt: "2026-10-31T13:00:00.000Z", workshopExitAt: null, daysInWorkshop: 2 },
+      { id: "ot-2", folio: "OT-SAN-0002", status: "cerrada" as const, repair: false, maintenance: true, requestDate: "2026-09-10", workshopEntryAt: null, workshopExitAt: null, daysInWorkshop: null },
+    ],
+    ...overrides,
+  })
+  const life = (workOrders: EquipmentDetailData["life"]["workOrders"]) => ({ ...data().life, workOrders })
+
+  it("lista folio (enlace), estado, ingreso → salida y días en taller", () => {
+    render(<EquipmentLifeSection life={life(workOrders())} code="KA-107" />)
+    const t = within(screen.getByRole("region", { name: "Órdenes de trabajo del equipo KA-107" }))
+    expect(t.getByRole("link", { name: "OT-SAN-0001" }).getAttribute("href")).toBe("/mantencion/ot/ot-1")
+    expect(t.getByText("En taller")).toBeTruthy()
+    expect(t.getByText(/→ sigue en taller/)).toBeTruthy()
+    expect(t.getByText("2 días")).toBeTruthy()
+    // Una OT que aún no ingresa dice cuándo se pidió.
+    expect(t.getByText("Pedida el 10-09-2026")).toBeTruthy()
+  })
+
+  it("sin permiso de OT (null o ausente) la sección no se dibuja", () => {
+    const { rerender } = render(<EquipmentLifeSection life={life(null)} code="KA-107" />)
+    expect(screen.queryByRole("heading", { name: "Órdenes de trabajo" })).toBeNull()
+    rerender(<EquipmentLifeSection life={data().life} code="KA-107" />)
+    expect(screen.queryByRole("heading", { name: "Órdenes de trabajo" })).toBeNull()
+  })
+
+  it("con permiso pero sin órdenes dice qué significa; si hay más de las que caben, enlaza a la lista", () => {
+    const { rerender } = render(<EquipmentLifeSection life={life({ rows: [], total: 0 })} code="KA-107" />)
+    expect(screen.getByText("Este equipo aún no tiene órdenes de trabajo")).toBeTruthy()
+    rerender(<EquipmentLifeSection life={life(workOrders({ total: 14 }))} code="KA-107" />)
+    expect(screen.getByRole("link", { name: "Ver todas en la lista de órdenes" }).getAttribute("href")).toBe("/mantencion/ot?q=KA-107")
+  })
+})
