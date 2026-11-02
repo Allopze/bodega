@@ -7,6 +7,7 @@ import {
   Certificate,
   GasPump,
   Truck,
+  Wrench,
 } from "@phosphor-icons/react/dist/ssr"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
@@ -33,6 +34,7 @@ import {
   documentsTile,
   fuelReviewTile,
   stoppedTile,
+  workOrdersTile,
   type AttentionTile,
   type AttentionTileKey,
   type FuelPendingCounts,
@@ -48,6 +50,7 @@ const NO_FUEL_COUNTS: FuelPendingCounts = { carga: null, caso: null, patente: nu
 
 const ATTENTION_ICONS: Record<AttentionTileKey, ReactNode> = {
   stopped: <Truck size={16} weight="duotone" />,
+  workOrders: <Wrench size={16} weight="duotone" />,
   documents: <Certificate size={16} weight="duotone" />,
   fuel: <GasPump size={16} weight="duotone" />,
 }
@@ -120,26 +123,28 @@ export default async function OperationalControlPage({
   const periodLabel = `${formatDate(period.from)} – ${formatDate(period.to)}`
   const headerDescription = `Qué requiere atención hoy en flota y combustible, y el desempeño de los activos entre ${formatDate(period.from)} y ${formatDate(period.to)}.`
 
-  const { canViewFleet, canViewInspections, canViewCapa, canViewCosts, canViewServiceEquipment } = data.permissions
+  const { canViewFleet, canViewInspections, canViewCapa, canViewCosts, canViewServiceEquipment, canViewWorkOrders } = data.permissions
   const operationalAssets = data.assets.filter((asset) => asset.kind === "vehicle")
   const fleetSize = operationalAssets.length
   const stateMismatchCount = operationalAssets.filter((asset) => asset.stateMismatch).length
   const serviceEquipmentCount = data.assets.filter((asset) => asset.kind === "service_equipment").length
 
-  // Orden de lectura: lo que está parado, los papeles y, al final, el combustible. Cada tile existe sólo con la capacidad de su dominio.
+  // Orden de lectura: lo que está parado y el trabajo que lo atiende, los papeles y, al final, el combustible. Cada tile existe sólo con la capacidad de su dominio.
   const attentionTiles: AttentionTile[] = [
     ...(canViewFleet ? [stoppedTile(data.attention.stoppedVehicles, fleetSize)] : []),
+    ...(canViewWorkOrders ? [workOrdersTile(data.attention.workOrders)] : []),
     ...(canViewFleet ? [documentsTile(data.attention.fleetDocuments)] : []),
     ...(fuelPending ? [fuelReviewTile(fuelPending)] : []),
   ]
 
-  const performanceStats = buildPerformanceStats(data.metrics, { canViewFleet })
+  const performanceStats = buildPerformanceStats(data.metrics, { canViewFleet, canViewWorkOrders })
   const glossary = buildPerformanceGlossary({
     canViewFleet,
     canViewInspections,
     canViewCapa,
     canViewFuel,
     canViewCosts,
+    canViewWorkOrders,
   })
 
   return (
@@ -160,7 +165,7 @@ export default async function OperationalControlPage({
 
       {data.degradedSources.length > 0 && (
         <div className="mb-4">
-          <DegradedDataBanner degraded={data.degradedSources} total={3} />
+          <DegradedDataBanner degraded={data.degradedSources} total={4} />
         </div>
       )}
 
@@ -275,6 +280,7 @@ export default async function OperationalControlPage({
               canViewCapa={canViewCapa}
               canViewFuel={canViewFuel}
               canViewFleet={canViewFleet}
+              canViewWorkOrders={canViewWorkOrders}
             />
             {canViewServiceEquipment && serviceEquipmentCount > 0 && (
               <p className="mt-3 text-xs text-[var(--color-text-muted)]">

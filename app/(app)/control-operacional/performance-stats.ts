@@ -12,10 +12,16 @@ import type { SummaryStat } from "@/components/ui/summary-bar"
 export interface PerformanceMetrics {
   availabilityPercent: number | null
   stateCoveragePercent: number | null
+  /** Horas en taller del período; `null` si no se pudo calcular. Sólo se pinta con `canViewWorkOrders`. */
+  workshopHours?: number | null
+  /** Horas en taller de las reparaciones cerradas ÷ cuántas son; `null` sin reparaciones cerradas. */
+  mttrHours?: number | null
 }
 
 export interface PerformancePermissions {
   canViewFleet: boolean
+  /** `mant:ot:view_*`: sin ella no se pintan las cifras de órdenes de trabajo. */
+  canViewWorkOrders?: boolean
 }
 
 export function formatKpi(value: number | null, suffix = "", precision = 1): string {
@@ -42,7 +48,7 @@ export const AVAILABILITY_THRESHOLDS = { danger: 80, warning: 90 }
 /** Disponibilidad y cobertura son indicadores de Flota: sin `flota:view` no se pintan. */
 export function buildPerformanceStats(metrics: PerformanceMetrics, permissions: PerformancePermissions): SummaryStat[] {
   const stats: SummaryStat[] = []
-  const { canViewFleet } = permissions
+  const { canViewFleet, canViewWorkOrders = false } = permissions
 
   if (canViewFleet) {
     const hasData = metrics.availabilityPercent != null
@@ -66,6 +72,25 @@ export function buildPerformanceStats(metrics: PerformanceMetrics, permissions: 
     })
   }
 
+  if (canViewWorkOrders) {
+    const workshopHours = metrics.workshopHours ?? null
+    stats.push({
+      key: "workshop-hours",
+      label: "Horas en taller",
+      value: formatKpi(workshopHours, " h", 0),
+      valueKind: workshopHours == null ? "text" : "number",
+      secondary: workshopHours == null ? "No se pudo calcular" : "Ingreso a salida de taller, dentro del período",
+    })
+    const mttrHours = metrics.mttrHours ?? null
+    stats.push({
+      key: "mttr",
+      label: "Tiempo de reparación (MTTR)",
+      value: formatKpi(mttrHours, " h", 1),
+      valueKind: mttrHours == null ? "text" : "number",
+      secondary: mttrHours == null ? "Sin reparaciones cerradas en el período" : "Horas en taller por reparación cerrada",
+    })
+  }
+
   return stats
 }
 
@@ -86,6 +111,7 @@ export function buildPerformanceGlossary(permissions: {
   canViewCapa?: boolean
   canViewFuel?: boolean
   canViewCosts?: boolean
+  canViewWorkOrders?: boolean
 }): GlossaryEntry[] {
   const entries: GlossaryEntry[] = []
   if (permissions.canViewFleet) {
@@ -101,6 +127,22 @@ export function buildPerformanceGlossary(permissions: {
         term: "Cobertura de estado",
         definition:
           "Parte del calendario de los equipos activos que cubre el historial de estado. Una disponibilidad alta sobre una cobertura baja no representa al período completo; por eso se muestran las dos cifras.",
+      },
+    )
+  }
+  if (permissions.canViewWorkOrders) {
+    entries.push(
+      {
+        key: "workshop-hours",
+        term: "Horas en taller",
+        definition:
+          "Horas que los equipos pasaron en el taller dentro del período, desde el ingreso a taller de cada orden de trabajo hasta su salida (o hasta ahora, si siguen dentro). Una orden que cruza el límite del período cuenta sólo la parte que cae dentro. No incluye las anuladas.",
+      },
+      {
+        key: "mttr",
+        term: "MTTR · tiempo medio de reparación (Mean Time To Repair)",
+        definition:
+          "Promedio de horas en taller, del ingreso a la salida, de las órdenes de reparación cerradas (con conformidad de la faena) dentro del período. Sin ninguna reparación cerrada no hay qué promediar y se muestra «Sin datos». Una cifra alta sugiere repuestos, mano de obra o aprobaciones frenando el retorno del equipo.",
       },
     )
   }

@@ -5,6 +5,7 @@ import {
   documentsTile,
   fuelReviewTile,
   stoppedTile,
+  workOrdersTile,
   type FuelPendingCounts,
 } from "./attention-tiles"
 
@@ -15,6 +16,7 @@ describe("destinos de los tiles", () => {
   it("cada tile enlaza a su subconjunto con la sintaxis exacta de la lista", () => {
     expect(ATTENTION_HREFS).toEqual({
       stopped: "/flota?estado=detenidos",
+      workOrders: "/mantencion/ot?estado=abiertas",
       documents: "/flota?vencimiento=vencidos",
       fuel: "/combustibles/revisar",
     })
@@ -35,6 +37,45 @@ describe("destinos de los tiles", () => {
 
     const vencimiento = new URL(ATTENTION_HREFS.documents, "http://x").searchParams.get("vencimiento")
     expect(vencimiento).toBe("vencidos")
+  })
+})
+
+describe("workOrdersTile", () => {
+  it("cuenta las abiertas y dice cuántas esperan mecánico", () => {
+    expect(workOrdersTile({ openCount: 7, unassignedOpen: 3, estimateOverdue: 0 })).toMatchObject({
+      key: "workOrders",
+      label: "OT abiertas",
+      value: "7",
+      detail: "3 sin asignar",
+      tone: "signal",
+      href: "/mantencion/ot?estado=abiertas",
+    })
+  })
+
+  it("agrega las de entrega vencida al detalle", () => {
+    expect(workOrdersTile({ openCount: 7, unassignedOpen: 0, estimateOverdue: 2 })).toMatchObject({
+      detail: "Todas con mecánico · 2 con entrega vencida",
+      tone: "signal",
+    })
+  })
+
+  it("todas asignadas y a tiempo: el tile queda neutro", () => {
+    expect(workOrdersTile({ openCount: 4, unassignedOpen: 0, estimateOverdue: 0 })).toMatchObject({
+      value: "4",
+      detail: "Todas con mecánico",
+      tone: "neutral",
+    })
+  })
+
+  it("sin abiertas dice «Ninguna», no 0", () => {
+    expect(workOrdersTile({ openCount: 0, unassignedOpen: 0, estimateOverdue: 0 })).toMatchObject({
+      value: "Ninguna",
+      tone: "neutral",
+    })
+  })
+
+  it("si la consulta falló dice «Sin dato», nunca 0", () => {
+    expect(workOrdersTile(null)).toMatchObject({ value: "Sin dato", detail: "No se pudo calcular", tone: "neutral" })
   })
 })
 

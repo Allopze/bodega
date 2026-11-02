@@ -495,6 +495,7 @@ test.describe("Control operacional — rutas retiradas", () => {
 /** Destino de cada tile (`ATTENTION_HREFS` de `control-operacional/attention-tiles.ts`). */
 const TILE = {
   detenidos: "/flota?estado=detenidos",
+  ordenesAbiertas: "/mantencion/ot?estado=abiertas",
   documentosVencidos: "/flota?vencimiento=vencidos",
   combustiblePorRevisar: "/combustibles/revisar",
 } as const
@@ -511,7 +512,7 @@ test.describe("Control operacional — tiles del panel", () => {
   })
 
   test("cada tile visible enlaza a su subconjunto y no hay más de cuatro", async ({ page }) => {
-    // El administrador del seed tiene flota y combustible, así que están los tres.
+    // El administrador del seed tiene flota, combustible y las vistas de OT (`mant:ot:view_*`), así que están los cuatro.
     for (const [nombre, href] of Object.entries(TILE)) {
       await expect.soft(tileHacia(page, href), `tile ${nombre}`).toHaveCount(1)
     }

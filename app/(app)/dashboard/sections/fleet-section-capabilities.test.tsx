@@ -7,6 +7,7 @@ const getExpiringFleetDocuments = vi.hoisted(() => vi.fn())
 const getFleetOverview = vi.hoisted(() => vi.fn())
 const countPendingFuelCreditNotes = vi.hoisted(() => vi.fn())
 const readDtePortalConfig = vi.hoisted(() => vi.fn())
+const getWorkOrderGlobalMetrics = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/combustibles/fuel-control-overview", () => ({ getFuelControlOverview }))
 vi.mock("@/lib/services/dashboard-fuel", () => ({ getFuelMonthlyTrend }))
@@ -14,6 +15,11 @@ vi.mock("@/lib/services/dashboard-domains-data", () => ({ getExpiringFleetDocume
 vi.mock("@/lib/services/fleet", () => ({ getFleetOverview, FLEET_OVERVIEW_LOOKBACK_MONTHS: 12 }))
 vi.mock("@/lib/services/dte-portal/reconciliation", () => ({ countPendingFuelCreditNotes }))
 vi.mock("@/lib/services/dte-portal/config", () => ({ readDtePortalConfig }))
+// Sólo se simula la consulta; `workOrderMetricsScope` es el real, para que la capacidad sea la de verdad.
+vi.mock("@/lib/services/mantencion/work-orders/metrics", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/services/mantencion/work-orders/metrics")>()),
+  getWorkOrderGlobalMetrics,
+}))
 
 import { ChartSlot } from "@/components/ui/dashboard-panel"
 import { KpiCard } from "@/components/ui/kpi-card"
@@ -53,6 +59,7 @@ beforeEach(() => {
   getFleetOverview.mockResolvedValue([])
   countPendingFuelCreditNotes.mockResolvedValue(0)
   readDtePortalConfig.mockResolvedValue({ credentials: { codEmp: "empresa" } })
+  getWorkOrderGlobalMetrics.mockResolvedValue({ openCount: 5, unassignedOpen: 2, estimateOverdue: 1 })
 })
 
 describe("FleetSection capability matrix", () => {
@@ -75,7 +82,7 @@ describe("FleetSection capability matrix", () => {
     expect(getFuelMonthlyTrend).toHaveBeenCalledOnce()
     expect(getFleetOverview).not.toHaveBeenCalled()
     expect(getExpiringFleetDocuments).not.toHaveBeenCalled()
-    expect(domainSectionOf(section).props.links.map((link) => link.href)).toEqual(["/combustibles/consumo"])
+    expect(domainSectionOf(section).props.links.map((link) => link.href)).toEqual(["/control-operacional", "/combustibles/consumo"])
   })
 
   it("cost and purchasing permissions alone do not query fuel credit-note data", async () => {
@@ -142,6 +149,35 @@ describe("FleetSection · panel del tablero", () => {
 
     expect(tiles).toHaveLength(3)
     for (const tile of tiles) expect(tile.props).toMatchObject({ numerals: "sans", surface: "flat" })
+  })
+
+  it("«OT abiertas» sólo existe con mant:ot:view_*, enlaza a la pestaña «abiertas» y dice cuántas esperan mecánico", async () => {
+    const withoutCapability = sectionOf(await FleetSection(props("flota:view", "combustibles:view")))
+    expect(find(withoutCapability.kpis, (element) => element.type === KpiCard && element.props.label === "OT abiertas")).toHaveLength(0)
+    expect(getWorkOrderGlobalMetrics).not.toHaveBeenCalled()
+
+    const { kpis } = sectionOf(await FleetSection(props("flota:view", "combustibles:view", "mant:ot:view_worksite")))
+    const tiles = find(kpis, (element) => element.type === KpiCard)
+    const tile = tiles.find((element) => element.props.label === "OT abiertas")!
+    expect(tiles).toHaveLength(4)
+    expect(tile.props).toMatchObject({
+      value: "5",
+      detail: "2 sin asignar · 1 con entrega vencida · ahora",
+      tone: "signal",
+      href: "/mantencion/ot?estado=abiertas",
+      numerals: "sans",
+      surface: "flat",
+    })
+    expect(getWorkOrderGlobalMetrics).toHaveBeenCalledOnce()
+  })
+
+  it("si la consulta de OT falla, el tile dice «Sin dato» y la sección lo marca como degradada", async () => {
+    getWorkOrderGlobalMetrics.mockRejectedValue(new Error("boom"))
+    const section = await FleetSection(props("flota:view", "mant:ot:view_all"))
+    const tile = find(sectionOf(section).kpis, (element) => element.type === KpiCard && element.props.label === "OT abiertas")[0]!
+
+    expect(tile.props).toMatchObject({ value: "Sin dato", detail: "No se pudo calcular" })
+    expect(bannerOf(section).props.degraded).toContain("workOrders")
   })
 
   it("sin vehículos ni cargas los tiles dicen qué falta; si la fuente falló conservan la cifra", async () => {

@@ -16,6 +16,8 @@ type VehicleRow = Awaited<ReturnType<typeof getFleetOverview>>[number]
 const formatNumber = (value: number) => formatQty(value, undefined, { maximumFractionDigits: 1 })
 
 export function FleetTable({ vehicles, hasAnyVehicle, canViewCosts, canViewFuel }: { vehicles: VehicleRow[]; hasAnyVehicle: boolean; canViewCosts: boolean; canViewFuel: boolean }) {
+  // `openWorkOrders` es null sin `mant:ot:view_*`: sin la capacidad no hay columna, no un 0 engañoso.
+  const showWorkOrders = vehicles.some((v) => v.openWorkOrders != null)
   const showMeterReading = canViewFuel && vehicles.some((v) => v.lastOdometerReading != null || v.lastHourMeterReading != null)
 
   const columns = React.useMemo(() => [
@@ -25,8 +27,9 @@ export function FleetTable({ vehicles, hasAnyVehicle, canViewCosts, canViewFuel 
     { key: "responsibleName", label: "Responsable", sortable: true },
     { key: "nextExpiryDate", label: "Próximo vencimiento", sortable: true },
     ...(canViewCosts && canViewFuel ? [{ key: "totalFuelAmount", label: "Combustible", sortable: true, numeric: true }] : []),
+    ...(showWorkOrders ? [{ key: "openWorkOrders", label: "OT abiertas", sortable: true, numeric: true }] : []),
     ...(showMeterReading ? [{ key: "_meterReading", label: "Km/Hr", sortable: false, numeric: true }] : []),
-  ], [canViewCosts, canViewFuel, showMeterReading])
+  ], [canViewCosts, canViewFuel, showWorkOrders, showMeterReading])
 
   return (
     <DataTable
@@ -54,6 +57,7 @@ export function FleetTable({ vehicles, hasAnyVehicle, canViewCosts, canViewFuel 
             <div><dt className="text-[var(--color-text-subtle)]">Faena</dt><dd>{vehicle.worksiteName}</dd></div>
             <div><dt className="text-[var(--color-text-subtle)]">Responsable</dt><dd>{vehicle.responsibleName ?? "—"}</dd></div>
             <div><dt className="text-[var(--color-text-subtle)]">Vencimiento</dt><dd>{vehicle.nextExpiryDate ? formatDate(vehicle.nextExpiryDate) : "—"}</dd></div>
+            {vehicle.openWorkOrders != null && <div><dt className="text-[var(--color-text-subtle)]">OT abiertas</dt><dd>{vehicle.openWorkOrders}{vehicle.inWorkshopNow ? " · en taller" : ""}</dd></div>}
           </dl>
           <Button asChild size="sm" variant="secondary" className="mt-3 w-full">
             <Link href={`/flota/${vehicle.id}`}>Ver ficha del equipo</Link>
@@ -76,6 +80,10 @@ export function FleetTable({ vehicles, hasAnyVehicle, canViewCosts, canViewFuel 
             <TableCell>{vehicle.responsibleName ?? "—"}</TableCell>
             <TableCell>{vehicle.nextExpiryDate ? formatDate(vehicle.nextExpiryDate) : "—"}</TableCell>
             {canViewCosts && canViewFuel && <TableCell className="text-right font-mono">{formatCLP(vehicle.totalFuelAmount ?? 0)}</TableCell>}
+            {showWorkOrders && <TableCell className="text-right font-mono">
+              {vehicle.openWorkOrders ?? 0}
+              {vehicle.inWorkshopNow && <span className="ml-1 font-sans text-xs text-[var(--color-warning-ink)]">en taller</span>}
+            </TableCell>}
             {showMeterReading && <TableCell className="text-right font-mono">
               {vehicle.lastOdometerReading != null
                 ? `${formatNumber(vehicle.lastOdometerReading)} km`

@@ -27,10 +27,37 @@ describe("buildPerformanceStats", () => {
   })
 
   it("no pinta cifras del módulo de mantenciones retirado", () => {
-    const stats = keys(buildPerformanceStats(METRICS, ALL))
-    for (const key of ["mtbf", "mttr", "preventive", "plan-adherence", "downtime", "overdue-sla", "unassigned", "period-backlog", "cost"]) {
+    const stats = keys(buildPerformanceStats(METRICS, { ...ALL, canViewWorkOrders: true }))
+    for (const key of ["mtbf", "preventive", "plan-adherence", "downtime", "overdue-sla", "unassigned", "period-backlog", "cost"]) {
       expect(stats).not.toContain(key)
     }
+  })
+
+  it("las cifras de OT (horas en taller y MTTR) sólo se pintan con la capacidad de OT, sin depender de flota", () => {
+    const withMetrics = { ...METRICS, workshopHours: 120.4, mttrHours: 36.25 }
+    expect(keys(buildPerformanceStats(withMetrics, ALL))).not.toContain("workshop-hours")
+    expect(keys(buildPerformanceStats(withMetrics, { canViewFleet: true, canViewWorkOrders: true })))
+      .toEqual(["availability", "state-coverage", "workshop-hours", "mttr"])
+    expect(keys(buildPerformanceStats(withMetrics, { canViewFleet: false, canViewWorkOrders: true })))
+      .toEqual(["workshop-hours", "mttr"])
+  })
+
+  it("formatea horas en taller y MTTR; 0 h es un dato y el MTTR sin reparaciones cerradas es «Sin datos»", () => {
+    const stats = buildPerformanceStats({ ...METRICS, workshopHours: 0, mttrHours: null }, { canViewFleet: false, canViewWorkOrders: true })
+    expect(stats.find((s) => s.key === "workshop-hours")).toMatchObject({ value: "0 h", valueKind: "number" })
+    expect(stats.find((s) => s.key === "mttr")).toMatchObject({
+      value: "Sin datos",
+      valueKind: "text",
+      secondary: "Sin reparaciones cerradas en el período",
+    })
+    const measured = buildPerformanceStats({ ...METRICS, workshopHours: 120.4, mttrHours: 36.25 }, { canViewFleet: false, canViewWorkOrders: true })
+    expect(measured.find((s) => s.key === "workshop-hours")).toMatchObject({ value: "120 h" })
+    expect(measured.find((s) => s.key === "mttr")).toMatchObject({ value: "36,3 h", valueKind: "number" })
+  })
+
+  it("si no se pudo calcular el taller, dice «Sin datos» en vez de 0 h", () => {
+    const stats = buildPerformanceStats({ ...METRICS, workshopHours: null, mttrHours: null }, { canViewFleet: false, canViewWorkOrders: true })
+    expect(stats.find((s) => s.key === "workshop-hours")).toMatchObject({ value: "Sin datos", secondary: "No se pudo calcular" })
   })
 
   it("sin datos pinta «Sin datos» como texto, no 0", () => {
@@ -94,9 +121,16 @@ describe("buildPerformanceGlossary", () => {
   })
 
   it("no trae definiciones de mantenciones retiradas", () => {
-    const keys = buildPerformanceGlossary({ canViewFleet: true, canViewInspections: true, canViewCapa: true, canViewFuel: true, canViewCosts: true }).map((e) => e.key)
-    for (const key of ["mtbf", "mttr", "preventive", "plan-adherence", "overdue-sla", "unassigned", "maintenance-cost"]) {
+    const keys = buildPerformanceGlossary({ canViewFleet: true, canViewInspections: true, canViewCapa: true, canViewFuel: true, canViewCosts: true, canViewWorkOrders: true }).map((e) => e.key)
+    for (const key of ["mtbf", "preventive", "plan-adherence", "overdue-sla", "unassigned", "maintenance-cost"]) {
       expect(keys).not.toContain(key)
     }
+  })
+
+  it("define horas en taller y MTTR sólo con la capacidad de OT", () => {
+    expect(buildPerformanceGlossary(ALL).map((e) => e.key)).not.toContain("mttr")
+    const entries = buildPerformanceGlossary({ canViewFleet: false, canViewWorkOrders: true })
+    expect(entries.map((e) => e.key)).toEqual(["workshop-hours", "mttr"])
+    expect(entries[1]!.definition).toContain("reparación cerradas")
   })
 })

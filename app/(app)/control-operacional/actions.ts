@@ -19,7 +19,7 @@ export async function exportOperationalControlXlsxAction(filters: Partial<Operat
     const period = resolveOperationalControlPeriod(filters)
     // El Excel lleva activos e indicadores; los conteos de «Requiere atención» son del panel.
     const data = await getOperationalControlHub(session, period, { includeAttention: false })
-    const { canViewFleet, canViewInspections, canViewCapa, canViewFuel, canViewCosts } = data.permissions
+    const { canViewFleet, canViewInspections, canViewCapa, canViewFuel, canViewCosts, canViewWorkOrders } = data.permissions
     const showFuelCost = canViewFuel && canViewCosts
     // Los instrumentos de servicio no tienen combustible modelado; no se
     // exportan como activos operacionales para no pintar filas inertes.
@@ -27,9 +27,9 @@ export async function exportOperationalControlXlsxAction(filters: Partial<Operat
     const ExcelJS = await import("exceljs")
     const workbook = new ExcelJS.Workbook()
     const sheet = workbook.addWorksheet("Activos")
-    sheet.columns = buildOperationalAssetExportColumns(canViewInspections, canViewCosts, canViewFuel, canViewCapa, canViewFleet)
+    sheet.columns = buildOperationalAssetExportColumns(canViewInspections, canViewCosts, canViewFuel, canViewCapa, canViewFleet, canViewWorkOrders)
     for (const asset of operationalAssets) {
-      sheet.addRow(buildOperationalAssetExportRow(asset, canViewInspections, canViewCosts, canViewFuel, canViewCapa, canViewFleet))
+      sheet.addRow(buildOperationalAssetExportRow(asset, canViewInspections, canViewCosts, canViewFuel, canViewCapa, canViewFleet, canViewWorkOrders))
     }
     sheet.getRow(1).font = { bold: true }
     sheet.views = [{ state: "frozen", ySplit: 1 }]
@@ -52,6 +52,16 @@ export async function exportOperationalControlXlsxAction(filters: Partial<Operat
       indicatorRows.push(
         ["Hallazgos abiertos", operationalAssets.reduce((sum, asset) => sum + (asset.openFindings ?? 0), 0)],
         ["Hallazgos críticos", operationalAssets.reduce((sum, asset) => sum + (asset.criticalOpenFindings ?? 0), 0)],
+      )
+    }
+    if (canViewWorkOrders) {
+      indicatorRows.push(
+        // Sin ninguna cifra por equipo (la consulta de OT falló) no es un 0: va vacío.
+        ["OT abiertas", operationalAssets.some((asset) => asset.openWorkOrders != null)
+          ? operationalAssets.reduce((sum, asset) => sum + (asset.openWorkOrders ?? 0), 0)
+          : null],
+        ["Horas en taller (período)", data.metrics.workshopHours == null ? null : Math.round(data.metrics.workshopHours * 10) / 10],
+        ["Tiempo medio de reparación (h)", data.metrics.mttrHours == null ? null : Math.round(data.metrics.mttrHours * 10) / 10],
       )
     }
     if (canViewInspections && canViewCapa) {

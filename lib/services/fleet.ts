@@ -8,6 +8,7 @@ import {
   fuelOperationRecords,
   fuelVehicleOperationalIntervals,
   fuelVehicles,
+  mantWorkOrders,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
@@ -18,6 +19,11 @@ import { fuelOperationOccurredAtSql } from "@/lib/combustibles/fuel-log"
 import { fleetDocumentMetadataSchema, resolveNextExpiryDate } from "@/lib/validation/fleet-documents"
 import { filterFleetOverviewRows, type FleetOverviewFilters } from "@/lib/fleet-overview-filters"
 import { isValidReason, reasonRequiredMessage } from "@/lib/validation/reason-thresholds"
+import {
+  getVehicleWorkOrderMetrics,
+  listRecentVehicleWorkOrders,
+  workOrderMetricsScope,
+} from "@/lib/services/mantencion/work-orders/metrics"
 
 /**
  * Equipos de una faena, para poblar selectores.
@@ -75,8 +81,23 @@ export function vehicleLabel(vehicle: { plate: string; code: string | null }) {
  *  y arriesgar que diverja del servicio (CO-038). */
 export const FLEET_OVERVIEW_LOOKBACK_MONTHS = 12
 
-export async function getFleetOverview(session: Session, worksiteId?: string, vehicleIds?: readonly string[]) {
+export interface FleetOverviewOptions {
+  /**
+   * Suma las OT abiertas de cada equipo (`openWorkOrders`, `inWorkshopNow`).
+   * Opt-in: el tablero sólo cuenta vehículos y no debe pagar esta consulta. Sin
+   * `mant:ot:view_*` la consulta no corre y los campos quedan en `null`.
+   */
+  workOrders?: boolean
+}
+
+export async function getFleetOverview(
+  session: Session,
+  worksiteId?: string,
+  vehicleIds?: readonly string[],
+  options: FleetOverviewOptions = {},
+) {
   if (vehicleIds?.length === 0) return []
+  const workOrderScope = options.workOrders ? workOrderMetricsScope(session) : null
   const canViewFuel = can(session, "combustibles:view")
   const canViewCosts = can(session, "flota:view") && can(session, "combustibles:view_costs")
   const vehicleScope = and(
@@ -125,7 +146,7 @@ export async function getFleetOverview(session: Session, worksiteId?: string, ve
       AND ${fuelAnomalyCases.resolutionKind} = 'reset_medidor'
   )`
 
-  const [vehicles, fuelRows, firstReadingRows, lastReadingRows, documentExpiryRows] = await Promise.all([
+  const [vehicles, fuelRows, firstReadingRows, lastReadingRows, documentExpiryRows, workOrderMetrics] = await Promise.all([
     db.query.fuelVehicles.findMany({
       where: vehicleScope,
       with: { worksite: true, responsibleUser: true, equipmentType: true, usualFuelSupplier: true },
@@ -181,6 +202,12 @@ export async function getFleetOverview(session: Session, worksiteId?: string, ve
         eq(fleetVehicleDocuments.status, "current"),
         vehicleScope,
       )),
+    // OT abiertas por equipo, con el alcance de OT de la sesión (no el de flota:
+    // son capacidades distintas). Se acota a los equipos pedidos para no contar
+    // OT de equipos que la página ni lista.
+    workOrderScope
+      ? getVehicleWorkOrderMetrics(workOrderScope, { worksiteId, vehicleIds })
+      : Promise.resolve(null),
   ])
 
   const fuelByVehicle = new Map(fuelRows.map((row) => [row.vehicleId, row]))
@@ -236,6 +263,8 @@ export async function getFleetOverview(session: Session, worksiteId?: string, ve
       lastHourMeterReading: canViewFuel ? lastHourMeter : null,
       kmDriven,
       hoursRun,
+      openWorkOrders: workOrderMetrics ? (workOrderMetrics.get(vehicle.id)?.openCount ?? 0) : null,
+      inWorkshopNow: workOrderMetrics ? (workOrderMetrics.get(vehicle.id)?.inWorkshopNow ?? false) : null,
     }
   })
 }
@@ -301,7 +330,7 @@ export async function getFleetOverviewPage(
   sinceDate.setMonth(sinceDate.getMonth() - FLEET_OVERVIEW_LOOKBACK_MONTHS)
   const since = sinceDate.toISOString().slice(0, 10)
   const [rows, fuelSummaryRows] = await Promise.all([
-    getFleetOverview(session, worksiteId, pageIds),
+    getFleetOverview(session, worksiteId, pageIds, { workOrders: true }),
     canViewFuel && matchingIds.length > 0 ? db.select({
       totalAmount: canViewCosts ? sql<number>`COALESCE(SUM(${fuelLoads.totalAmount}), 0)` : sql<null>`null`,
       totalLiters: sql<number>`COALESCE(SUM(${fuelLoads.liters}), 0)`,
@@ -329,8 +358,12 @@ export async function getFleetOverviewPage(
   }
 }
 
+/** Ventana (días) del antes/después del rendimiento alrededor de la salida de taller. */
+export const WORK_ORDER_IMPACT_WINDOW_DAYS = 30
+
 export async function getFleetVehicleDetail(session: Session, id: string) {
   const canViewFuel = can(session, "combustibles:view")
+  const workOrderScope = workOrderMetricsScope(session)
   const scopedWorksites = isGlobalRole(session) ? null : visibleWorksiteIds(session)
   const vehicle = await db.query.fuelVehicles.findFirst({
     where: eq(fuelVehicles.id, id),
@@ -341,7 +374,7 @@ export async function getFleetVehicleDetail(session: Session, id: string) {
     return null
   }
 
-  const [documents, recentOperations, operatorCounts, operationalIntervals] = await Promise.all([
+  const [documents, recentOperations, operatorCounts, operationalIntervals, recentWorkOrders] = await Promise.all([
     db.query.fleetVehicleDocuments.findMany({
       // FLO-003: la ficha muestra el historial de versiones, no las anuladas.
       // Una anulación es un error corregido, no una versión del documento.
@@ -388,11 +421,39 @@ export async function getFleetVehicleDetail(session: Session, id: string) {
       orderBy: [desc(fuelVehicleOperationalIntervals.startedAt)],
       limit: 25,
     }),
+    // Últimas 10 OT del equipo; `null` (no `[]`) sin la capacidad, para que la
+    // ficha no pinte «sin órdenes de trabajo» a quien no puede verlas.
+    workOrderScope ? listRecentVehicleWorkOrders(workOrderScope, id, 10) : Promise.resolve(null),
   ])
+
+  // Rendimiento promedio del log operacional ±30 días alrededor de la salida de
+  // taller de cada OT cerrada de la lista. Una sola agregación para todas (sin
+  // una consulta por fila, CO-042). La fecha de salida se lee en hora de Chile:
+  // `fecha` del log es un día civil chileno.
+  const closedWithExit = (recentWorkOrders ?? []).filter((workOrder) => workOrder.status === "cerrada" && workOrder.workshopExitAt)
+  const exitDate = sql`(${mantWorkOrders.workshopExitAt} AT TIME ZONE 'America/Santiago')::date`
+  const workOrderConsumptionImpact = canViewFuel && closedWithExit.length > 0
+    ? (await db.select({
+        workOrderId: mantWorkOrders.id,
+        avgBefore: sql<number | null>`avg(${fuelOperationRecords.rendimiento}) filter (where ${fuelOperationRecords.fecha} < to_char(${exitDate}, 'YYYY-MM-DD'))`,
+        avgAfter: sql<number | null>`avg(${fuelOperationRecords.rendimiento}) filter (where ${fuelOperationRecords.fecha} > to_char(${exitDate}, 'YYYY-MM-DD'))`,
+      }).from(mantWorkOrders).leftJoin(fuelOperationRecords, and(
+        eq(fuelOperationRecords.vehicleId, mantWorkOrders.vehicleId),
+        isNotNull(fuelOperationRecords.rendimiento),
+        // `fecha` es texto «YYYY-MM-DD»: se compara contra `to_char`, que
+        // devuelve el mismo formato, para que ambos extremos queden inclusivos.
+        sql`${fuelOperationRecords.fecha} >= to_char(${exitDate} - (${WORK_ORDER_IMPACT_WINDOW_DAYS} * INTERVAL '1 day'), 'YYYY-MM-DD')`,
+        sql`${fuelOperationRecords.fecha} <= to_char(${exitDate} + (${WORK_ORDER_IMPACT_WINDOW_DAYS} * INTERVAL '1 day'), 'YYYY-MM-DD')`,
+      )).where(inArray(mantWorkOrders.id, closedWithExit.map((workOrder) => workOrder.id)))
+      .groupBy(mantWorkOrders.id))
+      .map((row) => ({ ...row, avgBefore: row.avgBefore == null ? null : Number(row.avgBefore), avgAfter: row.avgAfter == null ? null : Number(row.avgAfter) }))
+    : []
 
   return {
     vehicle,
     documents,
+    recentWorkOrders,
+    workOrderConsumptionImpact,
     // Última lectura de horómetro/odómetro con fecha real, y los operadores
     // más frecuentes — derivados del log operacional de combustible.
     currentReading: recentOperations[0] ?? null,

@@ -18,6 +18,7 @@ export function buildOperationalAssetExportColumns(
   canViewFuel = false,
   canViewCapa = false,
   canViewFleet = false,
+  canViewWorkOrders = false,
 ): OperationalExportColumn[] {
   const showFuelCost = canViewFuel && canViewCosts
   const showCapa = canViewCapa && canViewInspections
@@ -58,6 +59,13 @@ export function buildOperationalAssetExportColumns(
         ]
       : []),
     ...(showCapa ? [{ header: "CAPA vencidas", key: "overdueCapa", width: 14 }] : []),
+    ...(canViewWorkOrders
+      ? [
+          { header: "OT abiertas", key: "openWorkOrders", width: 14 },
+          { header: "En taller", key: "inWorkshop", width: 12 },
+          { header: "Horas en taller (período)", key: "workshopHours", width: 22 },
+        ]
+      : []),
     ...(showFuelCost ? [{ header: "Costo combustible", key: "fuelCost", width: 20 }] : []),
   ]
 }
@@ -84,6 +92,7 @@ export function buildOperationalAssetExportRow(
   canViewFuel = false,
   canViewCapa = false,
   canViewFleet = false,
+  canViewWorkOrders = false,
 ): Record<string, string | number | null> {
   const showFuelCost = canViewFuel && canViewCosts
   const showCapa = canViewCapa && canViewInspections
@@ -124,6 +133,13 @@ export function buildOperationalAssetExportRow(
         }
       : {}),
     ...(showCapa ? { overdueCapa: asset.overdueCapa } : {}),
+    ...(canViewWorkOrders
+      ? {
+          openWorkOrders: asset.openWorkOrders,
+          inWorkshop: asset.inWorkshop == null ? null : asset.inWorkshop ? "Sí" : "No",
+          workshopHours: asset.workshopHours == null ? null : Math.round(asset.workshopHours * 10) / 10,
+        }
+      : {}),
     ...(showFuelCost ? { fuelCost: asset.fuelBilledAmount } : {}),
   }
 }

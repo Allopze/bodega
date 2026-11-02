@@ -19,6 +19,21 @@ export function canViewOperationalControl(session: Session): boolean {
 }
 
 /**
+ * Las cifras de órdenes de trabajo (OT abiertas, horas en taller, MTTR) se ven
+ * con la capacidad de OT del módulo de mantención, no con las de flota,
+ * inspección o combustible: entrar al panel no las habilita, y tenerlas no abre
+ * el panel (el gate de entrada es `canViewOperationalControl`).
+ */
+export function canViewWorkOrders(session: Session): boolean {
+  return can(session, "mant:ot:view_all") || can(session, "mant:ot:view_worksite")
+}
+
+/** `mant:ot:view_all`: ve las OT de todas las faenas, no sólo las de su alcance. */
+export function canViewAllWorkOrders(session: Session): boolean {
+  return can(session, "mant:ot:view_all")
+}
+
+/**
  * Capacidades independientes del centro de control operacional.
  *
  * No se debe usar la visibilidad del dominio Flota del dashboard como permiso
@@ -31,6 +46,7 @@ export function operationalControlCapabilities(session: Session) {
     canViewTae: can(session, "combustibles:tae_view"),
     canViewFleet: can(session, "flota:view"),
     canViewCosts: can(session, "combustibles:view_costs"),
+    canViewWorkOrders: canViewWorkOrders(session),
   } as const
 }
 
