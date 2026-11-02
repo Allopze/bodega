@@ -18,20 +18,20 @@ const hasMantPermission = (viewer: AccessViewer, permission: string) => viewer.p
  * - `mant:ot:view_all` → todas;
  * - `mant:ot:view_worksite` (o `manage`) con rol global → todas; sin rol global,
  *   las de sus faenas asignadas;
- * - lo propio: las que creó y las que tiene asignadas;
- * - quien ejecuta (`mant:ot:execute`) ve además las «por asignar» de cualquier
- *   faena, porque puede tomarlas.
+ * - lo propio: las que creó y las que tiene asignadas. El mecánico no toma
+ *   OT: se las asigna el administrador de contrato al crearla o la jefatura,
+ *   así que no ve las «por asignar».
  *
  * Quién actúa: `canActOnWorkOrder` aplica `OT_TRANSITIONS` (permiso + regla de
- * actor) más el alcance de faena que corresponde. Ejecutar, tomar y ser el
- * asignado NO se acotan por faena: cualquier mecánico trabaja en cualquier
+ * actor) más el alcance de faena que corresponde. Ejecutar y ser el asignado
+ * NO se acotan por faena: la jefatura puede asignar a un mecánico de otra
  * faena. Ocultar un botón no es control de acceso: las acciones y los servicios
  * llaman a esto.
  */
 
 export type WorkOrderVisibility =
   | { kind: "all" }
-  | { kind: "scoped"; worksiteIds: string[]; userId: string | null; takeable: boolean }
+  | { kind: "scoped"; worksiteIds: string[]; userId: string | null }
 
 const hasAnyOtPermission = (viewer: AccessViewer) => Object.values(OT_PERMISSIONS).some((permission) => hasMantPermission(viewer, permission))
 
@@ -43,7 +43,6 @@ export function workOrderVisibility(viewer: AccessViewer): WorkOrderVisibility {
     kind: "scoped",
     worksiteIds: wideRead ? [...viewer.worksiteIds] : [],
     userId: hasAnyOtPermission(viewer) ? viewer.userId : null,
-    takeable: hasMantPermission(viewer, OT_PERMISSIONS.execute),
   }
 }
 
@@ -56,7 +55,6 @@ export function workOrderVisibilitySql(visibility: WorkOrderVisibility): SQL {
     parts.push(eq(mantWorkOrders.requestedByUserId, visibility.userId))
     parts.push(eq(mantWorkOrders.assignedToUserId, visibility.userId))
   }
-  if (visibility.takeable) parts.push(eq(mantWorkOrders.status, "solicitada"))
   return parts.length ? or(...parts)! : sql`false`
 }
 
@@ -72,8 +70,7 @@ export interface WorkOrderAccessFacts {
 export function canSeeWorkOrder(visibility: WorkOrderVisibility, ot: WorkOrderAccessFacts): boolean {
   if (visibility.kind === "all") return true
   if (visibility.worksiteIds.includes(ot.worksiteId)) return true
-  if (visibility.userId && (ot.requestedByUserId === visibility.userId || ot.assignedToUserId === visibility.userId)) return true
-  return visibility.takeable && ot.status === "solicitada"
+  return !!visibility.userId && (ot.requestedByUserId === visibility.userId || ot.assignedToUserId === visibility.userId)
 }
 
 /** La faena de la OT está en el alcance del usuario (un rol global las tiene todas). */

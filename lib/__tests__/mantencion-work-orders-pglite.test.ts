@@ -310,7 +310,7 @@ describe("permisos por estado (rol × transición)", () => {
   const MATRIX: Record<string, Partial<Record<OtStatus, OtTransition[]>>> = {
     // La jefatura asigna y gestiona; ejecuta también (tiene `execute`); no da la conformidad.
     [IDS.jefe]: {
-      solicitada: ["assign", "take", "void"], asignada: ["assign", "unassign", "start", "void"], en_ejecucion: ["assign", "finish", "void"],
+      solicitada: ["assign", "void"], asignada: ["assign", "unassign", "start", "void"], en_ejecucion: ["assign", "finish", "void"],
       trabajo_terminado: ["receive", "reject_receipt"], recepcionada: [], cerrada: ["reopen"], anulada: [],
     },
     // El administrador de contrato de la faena: anula lo suyo sólo mientras está por asignar; recibe y da la conformidad.
@@ -320,9 +320,9 @@ describe("permisos por estado (rol × transición)", () => {
     },
     // El de otra faena no recibe ni da la conformidad de equipos ajenos.
     [IDS.adminCho]: { solicitada: [], asignada: [], en_ejecucion: [], trabajo_terminado: [], recepcionada: [], cerrada: [], anulada: [] },
-    // El mecánico asignado ejecuta; cualquiera con `execute` puede tomar una por asignar, de cualquier faena.
-    [IDS.mecBio]: { solicitada: ["take"], asignada: ["start"], en_ejecucion: ["finish"], trabajo_terminado: [], recepcionada: [], cerrada: [], anulada: [] },
-    [IDS.mecCho]: { solicitada: ["take"], asignada: [], en_ejecucion: [], trabajo_terminado: [], recepcionada: [], cerrada: [], anulada: [] },
+    // El mecánico asignado ejecuta. Nadie toma una OT por asignar: la asigna la jefatura.
+    [IDS.mecBio]: { solicitada: [], asignada: ["start"], en_ejecucion: ["finish"], trabajo_terminado: [], recepcionada: [], cerrada: [], anulada: [] },
+    [IDS.mecCho]: { solicitada: [], asignada: [], en_ejecucion: [], trabajo_terminado: [], recepcionada: [], cerrada: [], anulada: [] },
   }
 
   for (const [userId, byStatus] of Object.entries(MATRIX)) {
@@ -377,33 +377,10 @@ describe("asignación y concurrencia", () => {
     await vi.waitFor(async () => expect((await notificationsOf("mant_ot_assigned")).map((notice) => notice.userId).sort()).toEqual([IDS.mecBio, IDS.mecCho]))
   })
 
-  it("dos «tomar» simultáneos: gana uno solo y el otro recibe que ya la tomaron", async () => {
-    const id = await newOt()
-    const results = await Promise.all([
-      transitions.takeWorkOrder(await actorOf(IDS.mecBio), { workOrderId: id }),
-      transitions.takeWorkOrder(await actorOf(IDS.mecBio2), { workOrderId: id }),
-    ])
-    expect(results.filter((result) => result.ok)).toHaveLength(1)
-    const loser = refused(results.find((result) => !result.ok)!)
-    expect(loser.code).toBe("conflict")
-    expect(loser.message).toContain("ya no está por asignar")
-    const winner = results.findIndex((result) => result.ok) === 0 ? IDS.mecBio : IDS.mecBio2
-    expect(await row(id)).toMatchObject({ status: "asignada", assignedToUserId: winner })
-    expect((await eventsOf(id)).filter((event) => event.type === "taken")).toHaveLength(1)
-  })
-
-  it("un mecánico de OTRA faena puede tomarla y trabajarla: sólo queda marcada como fuera de faena", async () => {
-    const id = await newOt()
-    const cholguan = await actorOf(IDS.mecCho)
-    ok(await transitions.takeWorkOrder(cholguan, { workOrderId: id }))
-    const taken = (await eventsOf(id)).find((event) => event.type === "taken")
-    expect(taken?.changeSet).toMatchObject({ outOfWorksite: true })
-    ok(await transitions.startWorkOrder(cholguan, { workOrderId: id, entry: entry() }))
+  it("la jefatura puede asignar a un mecánico de OTRA faena y él la trabaja", async () => {
+    const id = await assigned(IDS.mecCho)
+    ok(await transitions.startWorkOrder(await actorOf(IDS.mecCho), { workOrderId: id, entry: entry() }))
     expect((await row(id)).status).toBe("en_ejecucion")
-    // Quien la toma en su propia faena no queda marcado.
-    const own = await newOt()
-    ok(await transitions.takeWorkOrder(await actorOf(IDS.mecBio), { workOrderId: own }))
-    expect((await eventsOf(own)).find((event) => event.type === "taken")?.changeSet).toMatchObject({ outOfWorksite: false })
   })
 })
 
@@ -794,11 +771,12 @@ describe("lectura: lista, detalle, filtros y Excel", () => {
     expect(adminBio.rows.map((item) => item.id)).toEqual([bio])
     expect(adminBio.counts).toMatchObject({ abiertas: 1, solicitada: 1, cerrada: 0 })
     expect((await listWorkOrders(await viewerOf(IDS.jefe), filters)).rows.map((item) => item.id).sort()).toEqual([bio, cho].sort())
-    // El mecánico ve las «por asignar» de cualquier faena (puede tomarlas)…
-    expect((await listWorkOrders(await viewerOf(IDS.mecBio), filters)).total).toBe(2)
-    // …pero cuando otra persona la toma deja de verla.
-    ok(await transitions.takeWorkOrder(await actorOf(IDS.mecCho), { workOrderId: bio }))
+    // El mecánico no ve las «por asignar» (no las toma); sólo las que se le asignan, aunque sean de otra faena.
+    expect((await listWorkOrders(await viewerOf(IDS.mecBio), filters)).total).toBe(0)
+    expect(await loadWorkOrderDetail(await viewerOf(IDS.mecBio), bio)).toBeNull()
+    ok(await transitions.assignWorkOrder(await actorOf(IDS.jefe), { workOrderId: cho, assignedToUserId: IDS.mecBio }))
     expect((await listWorkOrders(await viewerOf(IDS.mecBio), filters)).rows.map((item) => item.id)).toEqual([cho])
+    expect((await loadWorkOrderDetail(await viewerOf(IDS.mecBio), cho))?.id).toBe(cho)
     expect((await listWorkOrders(await viewerOf(IDS.plain), filters)).total).toBe(0)
   })
 

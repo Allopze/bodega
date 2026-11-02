@@ -1,5 +1,5 @@
 import { IDBFactory } from "fake-indexeddb"
-import type { CatalogEquipment, CatalogWorkOrder, MantCatalog, SyncCorrectiveRecord, SyncPreventiveRecord, WorkOrderOpPayload } from "../../contracts"
+import type { CatalogEquipment, CatalogWorkOrder, MantCatalog, SyncCorrectiveRecord, SyncPreventiveRecord, WorkOrderOpPayload, WorkOrderOpRequest } from "../../contracts"
 import type { MantScheduleSnapshot } from "../../types"
 import { resetDbConnectionForTests } from "../db"
 import { resetSignalForTests } from "../signal"
@@ -147,4 +147,11 @@ export function otOpItem(n: number, body: OtOpBody, overrides: { workOrderId?: s
     payload: { ...body, id: UUID(500 + n), workOrderId, createdAt, deviceId: UUID(900) } as WorkOrderOpPayload,
     summary: { workOrderId, folio: "OT-BIO-0001", equipmentCode: "KA-140", equipmentPlate: "SGCP-84" },
   }, createdAt)
+}
+
+/** Un «tomar» que quedó en la cola de un teléfono antes de que se retirara (2026-11). */
+export function legacyTakeItem(n: number, overrides: { workOrderId?: string; authorUserId?: string; createdAt?: string } = {}): QueueWorkOrderItem {
+  const item = otOpItem(n, { action: "estimate", estimatedDeliveryDate: "2026-10-30", reason: null }, overrides)
+  const { id, workOrderId, createdAt, deviceId } = item.payload
+  return { ...item, payload: { id, workOrderId, createdAt, deviceId, action: "take" } satisfies WorkOrderOpRequest }
 }

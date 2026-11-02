@@ -7,7 +7,7 @@ import type {
   SyncRecord,
   SyncRecordResponse,
   SyncWarning,
-  WorkOrderOpPayload,
+  WorkOrderOpRequest,
   WorkshopUpdatePayload,
 } from "../contracts"
 import type { StoredPhoto } from "./types"
@@ -235,5 +235,5 @@ export const postObservationReply = (token: string, payload: ObservationReply, f
   postSimple("/api/mantencion/sync/observaciones", token, payload, fetchImpl, "La plataforma rechazó la respuesta.")
 
 /** `POST /api/mantencion/sync/ot`: 409/422 es un rechazo definitivo con su motivo (la OT ya no admite esa operación). */
-export const postWorkOrderOp = (token: string, payload: WorkOrderOpPayload, fetchImpl: FetchFn = fetch) =>
+export const postWorkOrderOp = (token: string, payload: WorkOrderOpRequest, fetchImpl: FetchFn = fetch) =>
   postSimple("/api/mantencion/sync/ot", token, payload, fetchImpl, "La plataforma rechazó la operación de la orden de trabajo.")

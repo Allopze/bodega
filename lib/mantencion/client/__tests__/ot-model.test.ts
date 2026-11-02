@@ -4,7 +4,7 @@ import { buildRows } from "../fleet-view"
 import { applyOp, buildOtViews, equipmentFromWorkOrder, findWorkOrder } from "../ot-model"
 import { newRecordItem } from "../queue"
 import type { QueueItem } from "../types"
-import { ENTRY, UUID, catalog, correctivePayload, otOpItem, storedCatalog, workOrder } from "./fixtures"
+import { ENTRY, UUID, catalog, correctivePayload, legacyTakeItem, otOpItem, storedCatalog, workOrder } from "./fixtures"
 
 const USER = { id: "u-1", name: "Javier Roa" }
 const WITH = (extra: Partial<MantCatalog>): MantCatalog => ({ ...catalog(), ...extra })
@@ -19,25 +19,18 @@ const linkedRecord = (n: number, signedAt = "2026-10-28T16:00:00.000Z"): QueueIt
 describe("ot-model: catálogo sin los campos de OT", () => {
   it("un catálogo guardado antes de las OT se toma como sin órdenes", () => {
     const views = buildOtViews(catalog(), [], USER)
-    expect(views).toEqual({ mine: [], available: [] })
+    expect(views).toEqual({ mine: [] })
     expect(findWorkOrder(catalog(), "ot-1")).toBeNull()
   })
 })
 
 describe("ot-model: catálogo + cola", () => {
-  it("«tomar» pendiente pasa la OT de disponibles a Mis OT, asignada a mí", () => {
-    const available = workOrder({ status: "solicitada", assignedToUserId: null, assignedToName: null })
-    const base = WITH({ availableWorkOrders: [available], workOrders: [] })
-    const before = buildOtViews(base, [], USER)
-    expect(before.available).toHaveLength(1)
-    expect(before.available[0]?.flags).toMatchObject({ canTake: true, canStart: false })
-
-    const after = buildOtViews(base, [otOpItem(1, { action: "take" })], USER)
-    expect(after.available).toHaveLength(0)
-    expect(after.mine).toHaveLength(1)
-    expect(after.mine[0]?.ot).toMatchObject({ status: "asignada", assignedToUserId: "u-1", assignedToName: "Javier Roa" })
-    expect(after.mine[0]?.flags).toMatchObject({ canTake: false, canStart: true })
-    expect(after.mine[0]?.pending).toBe(true)
+  it("un «tomar» viejo de la cola no cambia nada: el mecánico sólo ve las OT que tiene asignadas", () => {
+    const base = WITH({ workOrders: [workOrder()] })
+    const [view] = buildOtViews(base, [legacyTakeItem(1)], USER).mine
+    expect(view?.ot).toMatchObject({ status: "asignada", assignedToUserId: "u-1" })
+    expect(view?.flags).toMatchObject({ canStart: true })
+    expect(view?.flags).not.toHaveProperty("canTake")
   })
 
   it("ingreso pendiente deja la OT en taller con su ingreso, el nombre del taller y los permisos de trabajo", () => {
@@ -150,8 +143,8 @@ describe("ot-model: catálogo + cola", () => {
 
 describe("equipo de una OT de otra faena", () => {
   it("se arma desde el resumen de la OT y el teléfono puede registrar trabajo aunque el catálogo liviano no se haya bajado", () => {
-    const outside = workOrder({ vehicleId: "veh-9", equipmentCode: "CP-12", equipmentPlate: "CP-12", worksiteId: "ws-ch", worksiteName: "Cholguan", outOfWorksite: true, status: "solicitada", assignedToUserId: null })
-    const stored = { ...storedCatalog("u-1"), catalog: { ...catalog(), availableWorkOrders: [outside] } }
+    const outside = workOrder({ vehicleId: "veh-9", equipmentCode: "CP-12", equipmentPlate: "CP-12", worksiteId: "ws-ch", worksiteName: "Cholguan", outOfWorksite: true })
+    const stored = { ...storedCatalog("u-1"), catalog: { ...catalog(), workOrders: [outside] } }
     const rows = buildRows(stored, [])
     const row = rows.find((entry) => entry.eq.id === "veh-9")
     expect(row).toBeTruthy()
@@ -163,7 +156,7 @@ describe("equipo de una OT de otra faena", () => {
   it("si el catálogo liviano ya trae el equipo, manda ese (con sus lecturas) y no se duplica", () => {
     const outside = workOrder({ vehicleId: "veh-9", equipmentCode: "CP-12", worksiteId: "ws-ch" })
     const light = { ...storedCatalog("u-1").catalog.equipment[0]!, id: "veh-9", code: "CP-12", worksiteId: "ws-ch", recentPreventives: [] as [], workshop: null }
-    const stored = { ...storedCatalog("u-1"), catalog: { ...catalog(), availableWorkOrders: [outside] }, others: { etag: null, version: "o1", equipment: [light], fetchedAt: "2026-10-28T12:00:00.000Z" } }
+    const stored = { ...storedCatalog("u-1"), catalog: { ...catalog(), workOrders: [outside] }, others: { etag: null, version: "o1", equipment: [light], fetchedAt: "2026-10-28T12:00:00.000Z" } }
     const matches = buildRows(stored, []).filter((entry) => entry.eq.id === "veh-9")
     expect(matches).toHaveLength(1)
     expect(matches[0]?.eq.readings.length).toBeGreaterThan(0)

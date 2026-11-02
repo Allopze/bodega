@@ -61,7 +61,7 @@ test("la sincronización exige credencial de dispositivo", async ({ request }) =
   expect(forged.status()).toBe(401)
   const post = await request.post("/api/mantencion/sync/registros", { data: {} })
   expect(post.status()).toBe(401)
-  // Las operaciones de las órdenes de trabajo (tomar, ingreso, ítems, terminar) tampoco aceptan a un anónimo.
+  // Las operaciones de las órdenes de trabajo (ingreso, ítems, terminar) tampoco aceptan a un anónimo.
   const otPost = await request.post("/api/mantencion/sync/ot", { data: {} })
   expect(otPost.status()).toBe(401)
 })

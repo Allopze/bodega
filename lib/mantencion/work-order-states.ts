@@ -108,7 +108,6 @@ export type OtPermission = (typeof OT_PERMISSIONS)[keyof typeof OT_PERMISSIONS]
 export type OtTransition =
   | "assign"
   | "unassign"
-  | "take"
   | "start"
   | "finish"
   | "receive"
@@ -131,7 +130,6 @@ export const OT_TRANSITIONS: Record<OtTransition, OtTransitionRule> = {
   // Reasignar dentro de en_ejecucion conserva el estado.
   assign:            { from: ["solicitada", "asignada", "en_ejecucion"], to: "same", permission: OT_PERMISSIONS.manage, actor: "any", requiresReason: false },
   unassign:          { from: ["asignada"], to: "solicitada", permission: OT_PERMISSIONS.manage, actor: "any", requiresReason: false },
-  take:              { from: ["solicitada"], to: "asignada", permission: OT_PERMISSIONS.execute, actor: "any", requiresReason: false },
   start:             { from: ["asignada"], to: "en_ejecucion", permission: OT_PERMISSIONS.execute, actor: "assignee_or_manage", requiresReason: false },
   finish:            { from: ["en_ejecucion"], to: "trabajo_terminado", permission: OT_PERMISSIONS.execute, actor: "assignee_or_manage", requiresReason: false },
   receive:           { from: ["trabajo_terminado"], to: "recepcionada", permission: OT_PERMISSIONS.receive, actor: "any", requiresReason: false },

@@ -60,21 +60,18 @@ function Fold({ id, label, count, defaultOpen = false, children }: { id: string;
 }
 
 /**
- * «Órdenes de trabajo»: las mías (lo que pide acción primero), las disponibles
- * para tomar (plegadas) y las cerradas recientes (plegadas). Sin OT de ninguna
- * clase no ocupa lugar en el inicio.
+ * «Órdenes de trabajo»: las asignadas a mí (lo que pide acción primero) y las
+ * cerradas recientes (plegadas). Sin OT no ocupa lugar en el inicio. El
+ * mecánico no toma OT: se las asignan.
  */
 export function OtSection({ views, onOpen }: { views: OtViews; onOpen: (view: OtView) => void }) {
   const open = views.mine.filter((view) => !isClosedStatus(view.ot.status))
   const closed = views.mine.filter((view) => isClosedStatus(view.ot.status))
-  if (views.mine.length === 0 && views.available.length === 0) return null
+  if (views.mine.length === 0) return null
   return (
     <section className="sect" aria-labelledby="h-ot">
       <div className="cap" id="h-ot">Órdenes de trabajo</div>
-      {open.length === 0 ? <p className="empty">No tienes órdenes de trabajo asignadas.{views.available.length > 0 ? " Puedes tomar una de las disponibles." : ""}</p> : open.map((view) => <OtCard key={view.ot.id} view={view} onOpen={onOpen} />)}
-      <Fold id="ot-disponibles" label="OT disponibles" count={views.available.length} defaultOpen={open.length === 0}>
-        {views.available.map((view) => <OtCard key={view.ot.id} view={view} onOpen={onOpen} />)}
-      </Fold>
+      {open.length === 0 ? <p className="empty">No tienes órdenes de trabajo abiertas.</p> : open.map((view) => <OtCard key={view.ot.id} view={view} onOpen={onOpen} />)}
       <Fold id="ot-cerradas" label="Cerradas recientes" count={closed.length}>
         {closed.map((view) => <OtCard key={view.ot.id} view={view} onOpen={onOpen} />)}
       </Fold>

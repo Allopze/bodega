@@ -94,7 +94,7 @@ export function HomeScreen({ onStart, onResume, onFix, onNeedLogin, onOtherAccou
     for (const records of Object.values(fleetHistory.byVehicle ?? {})) for (const record of records) byId.set(record.id, record)
     return byId
   }, [fleetHistory.byVehicle])
-  const openOtView = openOt ? [...otViews.mine, ...otViews.available].find((view) => view.ot.id === openOt) ?? null : null
+  const openOtView = openOt ? otViews.mine.find((view) => view.ot.id === openOt) ?? null : null
   const equipmentOf = (vehicleId: string | null) => {
     const row = rows.find((entry) => entry.eq.id === vehicleId)
     return row ? equipmentLabel(row.eq) : null

@@ -15,10 +15,10 @@ import { OtSheet } from "../ot-sheet"
 const USER = { id: "u-1", name: "Javier Roa" }
 const actions = (): AppActions => ({ syncNow: vi.fn(), refreshCatalog: vi.fn(async () => "unchanged" as const), toast: vi.fn() })
 
-function stored(workOrders: CatalogWorkOrder[], available: CatalogWorkOrder[] = []): StoredCatalog {
+function stored(workOrders: CatalogWorkOrder[]): StoredCatalog {
   return {
     userId: "u-1", etag: '"v1"', fetchedAt: "2026-10-28T12:00:00.000Z",
-    catalog: { ...catalog("u-1", [equipment()]), workOrders, availableWorkOrders: available }, others: null,
+    catalog: { ...catalog("u-1", [equipment()]), workOrders }, others: null,
   }
 }
 
@@ -68,17 +68,11 @@ describe("inicio: «Órdenes de trabajo»", () => {
     expect(within(section).getByRole("button", { name: /OT-BIO-0008/ }).textContent).toContain("Asignada")
   })
 
-  it("«OT disponibles (N)» está plegada y se abre; el equipo de otra faena lleva un aviso suave", () => {
-    const mine = workOrder()
-    const free = workOrder({ id: "c", folio: "OT-CHO-0002", status: "solicitada", assignedToUserId: null, assignedToName: null, outOfWorksite: true, worksiteName: "Cholguan" })
-    render(<OtSection views={views(stored([mine], [free]))} onOpen={() => {}} />)
-    expect(screen.queryByRole("button", { name: /OT-CHO-0002/ })).toBeNull()
-    const toggle = screen.getByRole("button", { name: "OT disponibles (1)" })
-    expect(toggle.getAttribute("aria-expanded")).toBe("false")
-    fireEvent.click(toggle)
-    const card = screen.getByRole("button", { name: /OT-CHO-0002/ })
-    expect(card.textContent).toContain("Por asignar")
-    expect(card.textContent).toContain("Equipo de otra faena · Cholguan")
+  it("sin «OT disponibles»: el mecánico no toma OT; una asignada de otra faena lleva un aviso suave", () => {
+    const outside = workOrder({ id: "c", folio: "OT-CHO-0002", outOfWorksite: true, worksiteName: "Cholguan" })
+    render(<OtSection views={views(stored([outside]))} onOpen={() => {}} />)
+    expect(screen.queryByRole("button", { name: /OT disponibles/ })).toBeNull()
+    expect(screen.getByRole("button", { name: /OT-CHO-0002/ }).textContent).toContain("Equipo de otra faena · Cholguan")
   })
 
   it("sin OT en el catálogo (o con un catálogo anterior a las OT) la sección no ocupa lugar", () => {
@@ -96,16 +90,10 @@ describe("inicio: «Órdenes de trabajo»", () => {
 })
 
 describe("hoja de la OT", () => {
-  it("tomar una OT disponible la guarda en la cola, avisa y manda sincronizar (sin diálogo de confirmación)", async () => {
-    const free = workOrder({ status: "solicitada", assignedToUserId: null, assignedToName: null })
-    const base = stored([], [free])
-    const { bag } = renderSheet(views(base).available[0]!, base)
-    click("Tomar esta OT")
-    await waitFor(async () => expect(await queued()).toHaveLength(1))
-    expect((await queued())[0]?.payload).toMatchObject({ action: "take", workOrderId: "ot-1", deviceId: UUID(900) })
-    expect(bag.toast).toHaveBeenCalledWith(expect.stringContaining("Tomaste la OT"))
-    expect(bag.syncNow).toHaveBeenCalled()
-    expect(screen.queryByRole("alertdialog")).toBeNull()
+  it("no ofrece «Tomar esta OT»: las OT las asigna la jefatura", () => {
+    const base = stored([workOrder()])
+    renderSheet(views(base).mine[0]!, base)
+    expect(screen.queryByRole("button", { name: "Tomar esta OT" })).toBeNull()
   })
 
   it("registrar el ingreso: pide lo que falta con su motivo y luego guarda el ingreso completo", async () => {

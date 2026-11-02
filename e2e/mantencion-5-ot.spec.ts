@@ -262,8 +262,9 @@ test.describe("Orden de trabajo (OT)", () => {
     await entrarPlataforma(page, MECANICO)
     await page.goto("/mantencion/ot")
     await expect(page.getByRole("heading", { level: 1, name: "Órdenes de trabajo" })).toBeVisible()
-    // El mecánico no crea OT.
+    // El mecánico no crea OT ni las toma: no hay «Nueva OT» ni pestaña «Por asignar».
     await expect(page.getByRole("button", { name: "Nueva OT", exact: true })).toHaveCount(0)
+    await expect(page.getByRole("navigation", { name: "Estado de las órdenes de trabajo" }).getByRole("link", { name: /^Por asignar/ })).toHaveCount(0)
     await page.getByRole("link", { name: `Ver la OT ${folio}` }).click()
     await expect(page).toHaveURL(new RegExp(`/mantencion/ot/${otId}$`))
     await expectEstadoEnFicha(page, "Asignada")

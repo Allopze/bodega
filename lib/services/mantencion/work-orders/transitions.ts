@@ -89,27 +89,6 @@ export async function unassignWorkOrder(actor: WorkOrderActor, input: Base): Pro
   })
 }
 
-/**
- * El mecánico toma una OT «por asignar» de CUALQUIER faena. Bajo `FOR UPDATE`
- * decide quién gana: dos «tomar» simultáneos dejan uno solo. Una faena distinta
- * a la suya sólo queda marcada (`outOfWorksite`) en el evento.
- */
-export async function takeWorkOrder(actor: WorkOrderActor, input: Base): Promise<LockedResult> {
-  return runLocked(actor, input, async (ctx) => {
-    if (ctx.ot.status !== "solicitada" && actor.permissions.includes(OT_TRANSITIONS.take.permission)) {
-      refuse("Esta OT ya no está por asignar: alguien la tomó o la asignó antes que tú.", "conflict")
-    }
-    assertAct(canActOnWorkOrder(actor, ctx.ot, "take"))
-    const row = await applyChange(ctx, {
-      status: "asignada",
-      assignedToUserId: actor.userId,
-      assignedByUserId: actor.userId,
-      assignedAt: nowIso(),
-    }, [{ type: "taken", changeSet: { outOfWorksite: !inWorksiteScope(actor, ctx.ot.worksiteId) }, clientOpId: input.clientOpId }])
-    return { row }
-  })
-}
-
 // ── Ingreso a taller ────────────────────────────────────────────────────────
 
 interface EntryFields {

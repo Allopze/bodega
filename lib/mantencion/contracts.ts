@@ -203,8 +203,8 @@ export type WorkOrderEntryPayload = z.infer<typeof workOrderEntrySchema>
 
 const workOrderOpBase = { id: uuid, workOrderId: id, createdAt: isoDateTime, deviceId: uuid }
 
+/** Lo que la app puede enviar. «Tomar» se retiró (2026-11): las OT las asigna la jefatura o el administrador de contrato. */
 export const workOrderOpSchema = z.discriminatedUnion("action", [
-  z.object({ ...workOrderOpBase, action: z.literal("take") }),
   z.object({ ...workOrderOpBase, action: z.literal("start"), entry: workOrderEntrySchema }),
   z.object({
     ...workOrderOpBase,
@@ -223,6 +223,15 @@ export const workOrderOpSchema = z.discriminatedUnion("action", [
 ])
 export type WorkOrderOpPayload = z.infer<typeof workOrderOpSchema>
 export type WorkOrderOpAction = WorkOrderOpPayload["action"]
+
+/**
+ * Un «tomar» que un teléfono dejó en su cola antes de que se retirara. El
+ * servidor lo sigue aceptando sólo para rechazarlo con un motivo legible (o
+ * responder el duplicado si ya se había aplicado), no con un error de esquema.
+ */
+export const legacyTakeOpSchema = z.object({ ...workOrderOpBase, action: z.literal("take") })
+export const workOrderOpRequestSchema = z.discriminatedUnion("action", [legacyTakeOpSchema, ...workOrderOpSchema.options])
+export type WorkOrderOpRequest = z.infer<typeof workOrderOpRequestSchema>
 
 /** Misma semántica de HTTP que `SyncRecordResponse` (409/422 = rechazo definitivo). */
 export type SyncWorkOrderResponse =
@@ -348,8 +357,6 @@ export interface MantCatalog {
    * un catálogo guardado antes de 2026-11 no lo trae y la app lo toma como `[]`.
    */
   workOrders?: CatalogWorkOrder[]
-  /** OT «por asignar» de todas las faenas (las mías primero, máx. 100): el mecánico puede tomarlas. */
-  availableWorkOrders?: CatalogWorkOrder[]
 }
 
 /** `alcance=todos`: el resto de los equipos activos, en versión liviana (sin historial). */

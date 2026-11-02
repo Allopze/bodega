@@ -239,7 +239,7 @@ export function NewWorkOrderCta(props: NewOtSheetProps) {
               </Field>
 
               {props.mechanics && (
-                <Field label="Mecánico (opcional)" htmlFor="ot-mecanico" error={fieldError("assignedToUserId")} helper="Si lo dejas vacío, la OT queda por asignar y cualquier mecánico puede tomarla.">
+                <Field label="Mecánico (opcional)" htmlFor="ot-mecanico" error={fieldError("assignedToUserId")} helper="Si lo dejas vacío, la OT queda por asignar hasta que la asignes.">
                   <OptionSelect
                     id="ot-mecanico"
                     emptyLabel="Dejar por asignar"
