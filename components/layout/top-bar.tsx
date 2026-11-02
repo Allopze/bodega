@@ -42,7 +42,7 @@ interface TopBarProps {
 // `recordVisibilitySql` y sus filtros viven en la URL, así que el input de la shell
 // sólo filtraría las 25 filas de la página. `/mantencion/panel` es una portada de
 // indicadores sin colección que filtrar (mismo criterio que `/dashboard`).
-const ROUTES_WITH_OWN_SEARCH = ["/solicitudes", "/aprobaciones", "/compras", "/recepcion", "/pendientes", "/entregas", "/bodega", "/flota", "/soporte", "/prevencion/ppa", "/prevencion/inspecciones", "/prevencion/pdtp/obligaciones", "/facturacion/facturas", "/seguimiento", "/ti/accesos", "/ti/tickets", "/admin/taxonomia-sst", "/combustibles", "/mantencion/registros", "/mantencion/panel"]
+const ROUTES_WITH_OWN_SEARCH = ["/solicitudes", "/aprobaciones", "/compras", "/recepcion", "/pendientes", "/entregas", "/bodega", "/flota", "/soporte", "/prevencion/ppa", "/prevencion/inspecciones", "/prevencion/pdtp/obligaciones", "/facturacion/facturas", "/seguimiento", "/ti/accesos", "/ti/tickets", "/admin/taxonomia-sst", "/combustibles", "/mantencion/registros", "/mantencion/panel", "/mantencion/ot"]
 
 /** Formularios de alta/edición: no hay lista que filtrar, así que el input de
  *  la shell prometería un filtrado inexistente. Ninguna ruta bajo estos
