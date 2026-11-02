@@ -78,9 +78,12 @@ export function CapaDialog({ finding, assignees, subjectIsVehicle = false, open,
       immediateMeasure: immediateMeasure || null,
     }), (result) => {
       const folio = result.data?.workOrderFolio
+      const skipped = result.data?.workOrderSkipped
       toast.success(typeof folio === "string"
         ? `Hallazgo derivado a CAPA. Se creó la OT ${folio} en Mantención.`
-        : "Hallazgo derivado a CAPA.")
+        : typeof skipped === "string"
+          ? `Hallazgo derivado a CAPA. ${skipped}`
+          : "Hallazgo derivado a CAPA.")
       changeOpen(false)
     })
   }

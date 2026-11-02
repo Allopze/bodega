@@ -695,6 +695,8 @@ const routeTargets: RouteTarget[] = [
   { slug: "mantencion-registros", path: "/mantencion/registros", auth: true },
   { slug: "mantencion-registro-detalle", path: "/mantencion/registros/mant-record-audit-1", auth: true },
   { slug: "mantencion-registro-print", path: "/mantencion/registros/mant-record-audit-1/print", auth: true },
+  { slug: "mantencion-ot-detalle", path: "/mantencion/ot/mant-ot-audit-1", auth: true },
+  { slug: "mantencion-ot-print", path: "/mantencion/ot/mant-ot-audit-1/print", auth: true },
   { slug: "mantencion-equipos", path: "/mantencion/equipos", auth: true },
   { slug: "mantencion-equipo-detalle", path: "/mantencion/equipos/fuel-veh-audit-1", auth: true },
   { slug: "mantencion-equipo-nuevo", path: "/mantencion/equipos/nuevo", auth: true },
@@ -5851,6 +5853,40 @@ async function prepareDatabase(captureDbUrl: string) {
   await db.insert(schema.mantRecordItems).values({
     id: "mant-record-item-audit-1", recordId: "mant-record-audit-1", itemKey: "motor-audit-1",
     groupName: "Motor", itemName: "Revisión de aceite y filtros", sortOrder: 0, value: "R",
+  }).onConflictDoNothing()
+  // Orden de trabajo en taller, para el detalle y su impresión.
+  await db.insert(schema.mantWorkOrders).values({
+    id: "mant-ot-audit-1",
+    folio: "OT-AUD-0001",
+    vehicleId: "fuel-veh-audit-1",
+    worksiteId,
+    equipmentSnapshot: {
+      code: "FD-71-22", plate: "FD-71-22", noPlate: false, type: "Camioneta",
+      brand: "Toyota", model: "Hilux 4x4", year: 2023, worksite: "Faena Mininco", unit: "km",
+    },
+    repair: true,
+    requestDate: "2026-06-08",
+    requestedByUserId: userId,
+    requesterName: "Admin E2E",
+    repairDescription: "Ruido en el tren delantero al frenar",
+    status: "en_ejecucion",
+    assignedToUserId: userId,
+    assignedByUserId: userId,
+    assignedAt: now,
+    workshopKind: "interno",
+    workshopName: "Taller interno",
+    workshopManagerName: "Encargado de captura",
+    workshopEntryAt: now,
+    entryOdometer: 10_060,
+    estimatedDeliveryDate: "2026-06-12",
+    startedByUserId: userId,
+    startedAt: now,
+    createdAt: now,
+    updatedAt: now,
+  }).onConflictDoNothing()
+  await db.insert(schema.mantWorkOrderItems).values({
+    id: "mant-ot-item-audit-1", workOrderId: "mant-ot-audit-1", kind: "anexo", description: "Revisar pastillas y discos",
+    createdByUserId: userId, createdAt: now,
   }).onConflictDoNothing()
   await db.insert(schema.mantDeviceCredentials).values({
     id: "mant-dev-audit-1", userId, deviceId: "00000000-0000-4000-8000-000000000001",

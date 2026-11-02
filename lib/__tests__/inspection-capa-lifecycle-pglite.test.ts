@@ -74,6 +74,9 @@ async function seedFinding() {
     meterType: "odometer",
     worksiteId: WORKSITE_ID,
   })
+  // La OT vive en el módulo de mantención: el equipo necesita su ficha ahí.
+  await testDb.insert(schema.mantBrands).values({ id: "inspection-maintenance-brand", name: "Marca prueba", nameKey: "marca prueba" }).onConflictDoNothing()
+  await testDb.insert(schema.mantEquipmentProfiles).values({ vehicleId: VEHICLE_ID, brandId: "inspection-maintenance-brand" })
   await testDb.insert(schema.preventionInspectionTemplates).values({
     id: "inspection-maintenance-template",
     code: "inspection_maintenance_template",
@@ -160,11 +163,9 @@ async function ordersOf(findingId: string) {
 }
 
 describe("derivación de hallazgos de inspección a CAPA", () => {
-  // Los casos marcados «requiere L1» llaman a `createWorkOrderWithClient`, que
-  // en la fase 0 es un stub que lanza: pasan cuando se integra la línea de
-  // servidor de OT. No se simula el servicio a propósito: lo que se prueba es
-  // justamente la integración (transacción compartida, folio, índice único).
-  it("(requiere L1) un hallazgo de equipo crea exactamente una OT de reparación ligada al hallazgo", async () => {
+  // No se simula `createWorkOrderWithClient` a propósito: lo que se prueba es
+  // la integración (transacción compartida, folio, índice único).
+  it("un hallazgo de equipo crea exactamente una OT de reparación ligada al hallazgo", async () => {
     const result = await deriveFinding()
 
     expect(result.capaId).toBeTruthy()
@@ -187,7 +188,7 @@ describe("derivación de hallazgos de inspección a CAPA", () => {
     expect(orders[0]!.observations).toContain("INS-IMT-001")
   })
 
-  it("(requiere L1) derivar de nuevo no crea otra CAPA ni otra OT", async () => {
+  it("derivar de nuevo no crea otra CAPA ni otra OT", async () => {
     await deriveFinding()
     await expect(deriveFinding()).rejects.toThrow(/ya tiene una acción CAPA/)
 
@@ -217,6 +218,18 @@ describe("derivación de hallazgos de inspección a CAPA", () => {
 
     expect(result.workOrder).toEqual({ id: "inspection-maintenance-existing-ot", folio: "OT-PRE-0001", created: false })
     expect(await ordersOf(FINDING_ID)).toHaveLength(1)
+  })
+
+  it("un equipo que no está en el módulo de mantención deriva la CAPA igual, sin OT, y dice por qué", async () => {
+    await testDb.delete(schema.mantEquipmentProfiles).where(eq(schema.mantEquipmentProfiles.vehicleId, VEHICLE_ID))
+
+    const result = await deriveFinding()
+
+    expect(result.capaId).toBeTruthy()
+    expect(result.finding).toMatchObject({ status: "capa_linked" })
+    expect(result.workOrder).toBeNull()
+    expect(result.workOrderSkipped).toMatch(/no está en el módulo de mantención/)
+    expect(await ordersOf(FINDING_ID)).toHaveLength(0)
   })
 
   it("un hallazgo de una inspección sin equipo crea la CAPA y ninguna OT", async () => {

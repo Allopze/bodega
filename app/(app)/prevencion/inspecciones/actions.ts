@@ -105,8 +105,11 @@ async function run(
 
 /** Folio de la OT que abrió la derivación (hallazgos de equipo), para confirmarlo al usuario. */
 function workOrderOf(result: unknown): ActionState["data"] {
-  const workOrder = (result as { workOrder?: { id?: unknown; folio?: unknown } | null } | null)?.workOrder
-  if (!workOrder || typeof workOrder.id !== "string" || typeof workOrder.folio !== "string") return undefined
+  const value = result as { workOrder?: { id?: unknown; folio?: unknown } | null; workOrderSkipped?: unknown } | null
+  const workOrder = value?.workOrder
+  if (!workOrder || typeof workOrder.id !== "string" || typeof workOrder.folio !== "string") {
+    return typeof value?.workOrderSkipped === "string" ? { workOrderSkipped: value.workOrderSkipped } : undefined
+  }
   return { workOrderId: workOrder.id, workOrderFolio: workOrder.folio }
 }
 

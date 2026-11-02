@@ -11,6 +11,7 @@ import {
   preventionInspectionTemplates,
   preventionEmergencyResources,
   fuelVehicles,
+  mantEquipmentProfiles,
   mantWorkOrders,
   users,
 } from "@/db/schema"
@@ -916,9 +917,13 @@ export async function createFindingCapa(input: unknown, access: InspectionAccess
     // (queda cerrada), Mantención acredita la CAPA y cierra el hallazgo
     // (`work-orders/capa-link.ts`, por `inspection_finding_id`).
     let workOrder: { id: string; folio: string; created: boolean } | null = null
+    // Por qué un equipo no recibió OT (fuera del módulo de mantención o de baja).
+    let workOrderSkipped: string | null = null
     if (row.run.subjectVehicleId) {
-      const [vehicle] = await tx.select({ meterType: fuelVehicles.meterType, worksiteId: fuelVehicles.worksiteId })
-        .from(fuelVehicles).where(eq(fuelVehicles.id, row.run.subjectVehicleId)).limit(1)
+      const [vehicle] = await tx.select({ meterType: fuelVehicles.meterType, worksiteId: fuelVehicles.worksiteId, isActive: fuelVehicles.isActive, hasProfile: mantEquipmentProfiles.vehicleId })
+        .from(fuelVehicles)
+        .leftJoin(mantEquipmentProfiles, eq(mantEquipmentProfiles.vehicleId, fuelVehicles.id))
+        .where(eq(fuelVehicles.id, row.run.subjectVehicleId)).limit(1)
       // El permiso se validó contra la faena de la inspección, pero la OT se
       // escribe en la faena del equipo. Si el equipo ya fue trasladado, derivar
       // crearía una orden en una faena que este actor no autorizó.
@@ -936,6 +941,13 @@ export async function createFindingCapa(input: unknown, access: InspectionAccess
         .limit(1)
       if (existing) {
         workOrder = { ...existing, created: false }
+      } else if (!vehicle.hasProfile || !vehicle.isActive) {
+        // La OT vive en el módulo de mantención y necesita la ficha del equipo
+        // ahí. Un equipo que aún no está cargado (o dado de baja) no puede
+        // impedir que Prevención derive su CAPA: se deriva igual y se avisa.
+        workOrderSkipped = !vehicle.isActive
+          ? "El equipo está dado de baja: no se abrió orden de trabajo."
+          : "El equipo no está en el módulo de mantención: no se abrió orden de trabajo. Cárgalo en Mantención › Equipos y créala desde Órdenes de trabajo."
       } else {
         const meter = await readMeterFromRun(tx, row.run.id)
         const [actor] = await tx.select({ name: users.name }).from(users).where(eq(users.id, access.userId)).limit(1)
@@ -960,7 +972,7 @@ export async function createFindingCapa(input: unknown, access: InspectionAccess
       }
     }
 
-    return { finding: updated, capaId: capa.id, workOrder, run: row.run, criticality: row.finding.criticality }
+    return { finding: updated, capaId: capa.id, workOrder, workOrderSkipped, run: row.run, criticality: row.finding.criticality }
   })
 
   // Aviso «OT nueva» a la jefatura de mantención: post-commit y sin propagar el

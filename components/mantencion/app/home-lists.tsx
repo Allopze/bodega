@@ -33,18 +33,25 @@ export function WorkshopSection({ entries, onUpdate }: { entries: WorkshopEntry[
   return (
     <section className="sect" aria-labelledby="h-taller">
       <div className="cap" id="h-taller">{entries.length === 1 ? "Equipo en taller" : "Equipos en taller"}</div>
-      {entries.map((entry) => (
-        <div key={entry.recordId} className={entry.stale ? "trow stale" : "trow"}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="mono nw" style={{ fontWeight: 600, fontSize: 15 }}>{equipmentLabel({ code: entry.equipmentCode, plate: entry.equipmentPlate })}</div>
-            <div style={{ fontSize: 15, color: "var(--gr)", marginTop: 3 }}>
-              {daysInWorkshopText(entry.daysStopped)}
-              {entry.stale ? <>. <strong style={{ color: "var(--ink)" }}>Toca actualizar.</strong></> : null}
+      {entries.map((entry) => {
+        // En taller por una orden de trabajo: el ingreso y la salida se registran
+        // en la OT, no con «Sigue en taller» / «Ya salió» (que son de la correctiva).
+        const viaWorkOrder = entry.folio?.startsWith("OT-") ?? false
+        const stale = entry.stale && !viaWorkOrder
+        return (
+          <div key={entry.recordId} className={stale ? "trow stale" : "trow"}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="mono nw" style={{ fontWeight: 600, fontSize: 15 }}>{equipmentLabel({ code: entry.equipmentCode, plate: entry.equipmentPlate })}</div>
+              <div style={{ fontSize: 15, color: "var(--gr)", marginTop: 3 }}>
+                {daysInWorkshopText(entry.daysStopped)}
+                {viaWorkOrder ? <> · {entry.folio}</> : null}
+                {stale ? <>. <strong style={{ color: "var(--ink)" }}>Toca actualizar.</strong></> : null}
+              </div>
             </div>
+            {viaWorkOrder ? null : <button type="button" className="obtn" onClick={() => onUpdate(entry)} aria-label={`Actualizar estado de ${entry.equipmentCode}`}>Actualizar estado</button>}
           </div>
-          <button type="button" className="obtn" onClick={() => onUpdate(entry)} aria-label={`Actualizar estado de ${entry.equipmentCode}`}>Actualizar estado</button>
-        </div>
-      ))}
+        )
+      })}
     </section>
   )
 }

@@ -299,6 +299,7 @@ describe("sidebar navigation", () => {
       ["Seguimiento", "Panel operacional"],
       ["Flota", "Vehículos"],
       ["Flota", "Monitoreo GPS"],
+      ["Mantención", "Órdenes de trabajo"],
       ["Mantención", "Panel"],
       ["Mantención", "Registros"],
       ["Mantención", "Equipos"],
