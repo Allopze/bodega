@@ -38,14 +38,17 @@ async function bearerGet<T>(request: APIRequestContext, token: string, path: str
   return { status: response.status(), body: response.status() === 200 ? await response.json() as T : null }
 }
 
-test("un mecánico no entra a las vistas de jefatura por URL", async ({ page }) => {
+test("un mecánico no entra a las vistas de jefatura por URL (sí a sus órdenes de trabajo)", async ({ page }) => {
   await login(page, "mecanico1@e2e.chome.cl")
-  for (const url of ["/mantencion/panel", "/mantencion/equipos", "/mantencion/equipos/nuevo", "/mantencion/pautas", "/mantencion/dispositivos", "/mantencion/ot"]) {
+  for (const url of ["/mantencion/panel", "/mantencion/equipos", "/mantencion/equipos/nuevo", "/mantencion/pautas", "/mantencion/dispositivos"]) {
     // La página redirige a /forbidden desde el servidor, pero en una navegación ya en curso
     // la URL cambia después de que `goto` resuelve: lo que se verifica es lo que ve el mecánico.
     await page.goto(url)
     await expect(page.getByRole("heading", { name: "Sin permisos suficientes", level: 1 }), `${url} debe quedar bloqueada para un mecánico`).toBeVisible()
   }
+  // Las órdenes de trabajo sí: el mecánico trabaja desde el PC las que tiene asignadas.
+  await page.goto("/mantencion/ot")
+  await expect(page.getByRole("heading", { level: 1, name: "Órdenes de trabajo" })).toBeVisible()
   // La app del mecánico no está en el menú de la plataforma: es una PWA aparte.
   await page.goto("/mantencion/registros")
   await expect(page.getByRole("link", { name: "App del mecánico", exact: true })).toHaveCount(0)
