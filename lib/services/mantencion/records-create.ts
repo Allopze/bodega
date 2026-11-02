@@ -1,7 +1,8 @@
-import { eq } from "drizzle-orm"
+import { eq, sql } from "drizzle-orm"
 import { db, type Tx } from "@/db"
 import {
   mantRecordCorrectives, mantRecordDrivers, mantRecordItems, mantRecordJobs, mantRecordParts, mantRecordPhotos, mantRecords,
+  mantWorkOrderEvents, mantWorkOrders,
   type MantEquipmentSnapshot,
 } from "@/db/schema"
 import { recordAudit } from "@/lib/audit"
@@ -12,6 +13,7 @@ import { canSeeRecord, recordVisibility, type MantViewer } from "./access"
 import { nextFolio } from "./folio"
 import { lockAndLoadVehicle } from "./records-create-context"
 import { reject, type Author, type RecordFailure, type RecordPlan } from "./records-create-types"
+import { OT_PERMISSIONS } from "@/lib/mantencion/work-order-states"
 import { validateRecord } from "./records-create-validate"
 import type { SyncContext } from "./sync-auth"
 
@@ -75,10 +77,13 @@ export async function createRecord(input: SyncRecord, context: SyncContext): Pro
       if (!validated.ok) return failureOutcome(validated)
       const correction = await checkCorrection(tx, input, context.viewer)
       if (correction) return failureOutcome(correction)
+      // Enlace con la OT: se bloquea DESPUÉS del equipo (orden único equipo → OT, el mismo de las transiciones de la OT).
+      const link = await checkWorkOrderLink(tx, input, author)
+      if (!link.ok) return failureOutcome(link)
 
       const plan = validated.value
       const folio = await nextFolio(tx, plan.vehicle.worksiteId, input.kind)
-      const receivedAt = await insertRecord(tx, input, plan, author, context.deviceId, folio)
+      const receivedAt = await insertRecord(tx, input, plan, author, context.deviceId, folio, link.workOrder)
       return { status: 200, body: { ok: true, id: input.id, folio, receivedAt: toIso(receivedAt), duplicate: false, warnings: plan.warnings } }
     })
   } catch (error) {
@@ -111,6 +116,42 @@ async function checkCorrection(tx: Tx, input: SyncRecord, viewer: MantViewer): P
   return null
 }
 
+type LinkedWorkOrder = { id: string; folio: string }
+
+/**
+ * Enlace del registro con su orden de trabajo (`workOrderId`, opcional: hay
+ * teléfonos con colas armadas antes de que existiera). La OT se bloquea y debe
+ * ser del mismo equipo, estar «en taller», y el registro lo firma el mecánico
+ * asignado —o alguien que ella nombró como ejecutor—, salvo la jefatura. La OT
+ * manda sobre el taller: un registro enlazado no puede declarar «queda en taller».
+ */
+async function checkWorkOrderLink(
+  tx: Tx,
+  input: SyncRecord,
+  author: Author,
+): Promise<{ ok: true; workOrder: LinkedWorkOrder | null } | RecordFailure> {
+  if (!input.workOrderId) return { ok: true, workOrder: null }
+  const [ot] = await tx
+    .select({ id: mantWorkOrders.id, folio: mantWorkOrders.folio, vehicleId: mantWorkOrders.vehicleId, status: mantWorkOrders.status, assignedToUserId: mantWorkOrders.assignedToUserId })
+    .from(mantWorkOrders)
+    .where(eq(mantWorkOrders.id, input.workOrderId))
+    .for("update")
+    .limit(1)
+  if (!ot) return reject("Esa orden de trabajo no existe.", "workOrderId")
+  if (ot.vehicleId !== input.vehicleId) return reject(`La orden ${ot.folio} es de otro equipo.`, "workOrderId")
+  if (ot.status !== "en_ejecucion") return reject(`La orden ${ot.folio} no está en taller: sólo se registra trabajo mientras está «En taller».`, "workOrderId")
+  if (input.kind === "C" && input.inWorkshop) {
+    return reject("La orden de trabajo ya lleva el estado de taller: este registro no puede marcar «queda en taller».", "inWorkshop")
+  }
+  const manages = author.viewer.permissions.includes(OT_PERMISSIONS.manage)
+  const namedExecutor = input.kind === "C" && input.executor.kind === "otro_mecanico" ? input.executor.userId : null
+  const mayWork = manages || ot.assignedToUserId === author.userId || (namedExecutor !== null && namedExecutor === ot.assignedToUserId)
+  if (!mayWork) {
+    return { ok: false, status: 409, code: "rejected", message: `La orden ${ot.folio} está asignada a otra persona.`, field: "workOrderId" }
+  }
+  return { ok: true, workOrder: { id: ot.id, folio: ot.folio } }
+}
+
 async function insertRecord(
   tx: Tx,
   input: SyncRecord,
@@ -118,6 +159,7 @@ async function insertRecord(
   author: Author,
   deviceId: string,
   folio: string,
+  workOrder: LinkedWorkOrder | null,
 ): Promise<string> {
   const { vehicle, preventive, corrective } = plan
   const snapshot: MantEquipmentSnapshot = {
@@ -156,6 +198,7 @@ async function insertRecord(
     duplicateOfRecordId: preventive?.duplicateOf?.id ?? null,
     duplicateConfirmed: input.duplicateConfirmed,
     correctsRecordId: input.correctsRecordId,
+    workOrderId: workOrder?.id ?? null,
     scheduleId: preventive?.scheduleId ?? null,
     scheduleVersion: preventive?.scheduleVersion ?? null,
     scheduleNameSnapshot: preventive?.scheduleName ?? null,
@@ -207,6 +250,18 @@ async function insertRecord(
       recordId: input.id, driverId: driver.id, driverName: driver.name,
     })))
   }
+  if (workOrder) {
+    await tx.insert(mantWorkOrderEvents).values({
+      id: nanoid(),
+      workOrderId: workOrder.id,
+      type: "record_linked",
+      changeSet: { recordId: input.id, folio, kind: input.kind },
+      actorUserId: author.userId,
+      deviceId,
+    })
+    // El catálogo del teléfono lista los registros enlazados de la OT: su marca de tiempo tiene que moverse. La versión no, para no invalidar lo que la web tiene abierto.
+    await tx.update(mantWorkOrders).set({ updatedAt: sql`now()` }).where(eq(mantWorkOrders.id, workOrder.id))
+  }
   // Las fotos subidas antes quedan ancladas a este registro.
   for (const [index, photo] of plan.photos.entries()) {
     await tx.update(mantRecordPhotos).set({ recordId: input.id, sortOrder: index }).where(eq(mantRecordPhotos.id, photo.id))
@@ -234,6 +289,7 @@ async function insertRecord(
       duplicateOfRecordId: preventive?.duplicateOf?.id ?? null,
       photos: plan.photos.length,
       deviceId,
+      workOrder: workOrder?.folio ?? null,
     },
   }, tx)
   return created.receivedAt

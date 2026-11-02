@@ -2,8 +2,9 @@ import { and, asc, desc, eq, inArray, isNull, lte, sql, type SQL } from "drizzle
 import { db } from "@/db"
 import {
   fuelEquipmentTypes, fuelVehicles, mantBrands, mantEquipmentProfiles, mantRecordCorrectives, mantRecords,
-  mantSchedules, mantWorkshopUpdates, worksites,
+  mantSchedules, mantWorkOrders, mantWorkshopUpdates, worksites,
 } from "@/db/schema"
+import { daysBetween } from "@/lib/mantencion/readings"
 import { todayInChile } from "@/lib/utils"
 import { getCurrentScheduleSnapshots } from "./schedule-versions"
 import { equipmentStatus, workshopState, type WorkshopState } from "@/lib/mantencion/status"
@@ -46,8 +47,12 @@ export interface FleetRow {
   readings: MantReading[]
   recentPreventives: Array<{ id: string; folio: string | null; reading: number; date: string; intervalValue: number }>
   status: MantEquipmentStatus
-  /** Correctiva abierta con el equipo en taller, si hay. */
-  workshop: (WorkshopState & { recordId: string; folio: string | null; entryDate: string | null; hours: number }) | null
+  /**
+   * Equipo en taller: por una OT en ejecución (la OT manda y gana) o por una correctiva abierta.
+   * Con una OT, `recordId` es el id de la OT, `folio` el `OT-…` y `workOrderId` viene fijo: no es un
+   * registro, así que «Sigue en taller» / «Ya salió» (que apuntan a un registro) no le aplican.
+   */
+  workshop: (WorkshopState & { recordId: string; folio: string | null; entryDate: string | null; hours: number; workOrderId?: string }) | null
 }
 
 export interface LoadFleetOptions {
@@ -114,11 +119,12 @@ export async function loadFleet(options: LoadFleetOptions): Promise<FleetRow[]> 
 
   // Nombre e intervalos salen del snapshot VIGENTE de cada pauta, no de las tablas vivas: lo que
   // la jefatura edita en el borrador no cambia el estado de los equipos hasta que lo publica.
-  const [snapshots, readingRows, preventiveRows, workshopRows] = await Promise.all([
+  const [snapshots, readingRows, preventiveRows, workshopRows, workOrderRows] = await Promise.all([
     getCurrentScheduleSnapshots(scheduleIds),
     recentRecords(vehicleIds, perEquipment, false),
     recentRecords(vehicleIds, 5, true),
     openWorkshopRecords(vehicleIds),
+    openWorkshopOrders(vehicleIds),
   ])
 
   const snapshotBySchedule = new Map(snapshots.map((snapshot) => [snapshot.id, snapshot]))
@@ -136,6 +142,23 @@ export async function loadFleet(options: LoadFleetOptions): Promise<FleetRow[]> 
     if (state.inWorkshop) {
       workshopByVehicle.set(row.vehicleId, { ...state, recordId: row.recordId, folio: row.folio, entryDate: row.entryDate, hours: row.hours })
     }
+  }
+
+  // Una OT en ejecución (con ingreso y sin salida) es la fuente del taller y reemplaza a la correctiva.
+  for (const row of workOrderRows) {
+    const entryDate = todayInChile(row.entryAt)
+    workshopByVehicle.set(row.vehicleId, {
+      inWorkshop: true,
+      stale: false,
+      lastActivityDate: todayInChile(row.updatedAt),
+      exitDate: null,
+      daysStopped: Math.max(0, daysBetween(entryDate, today)),
+      recordId: row.id,
+      folio: row.folio,
+      entryDate,
+      hours: 0,
+      workOrderId: row.id,
+    })
   }
 
   const rows: FleetRow[] = []
@@ -248,6 +271,26 @@ async function openWorkshopRecords(vehicleIds: string[]) {
       exitDate: update.exitDate,
     })),
   }))
+}
+
+/** OT en taller: en ejecución, con ingreso registrado. Una por equipo (la más antigua manda). */
+async function openWorkshopOrders(vehicleIds: string[]) {
+  const rows = await db
+    .select({
+      id: mantWorkOrders.id,
+      folio: mantWorkOrders.folio,
+      vehicleId: mantWorkOrders.vehicleId,
+      entryAt: mantWorkOrders.workshopEntryAt,
+      updatedAt: mantWorkOrders.updatedAt,
+    })
+    .from(mantWorkOrders)
+    .where(and(
+      inArray(mantWorkOrders.vehicleId, vehicleIds),
+      eq(mantWorkOrders.status, "en_ejecucion"),
+      sql`${mantWorkOrders.workshopEntryAt} is not null`,
+    ))
+    .orderBy(desc(mantWorkOrders.workshopEntryAt))
+  return rows.flatMap((row) => (row.entryAt ? [{ ...row, entryAt: row.entryAt }] : []))
 }
 
 function groupBy<T>(items: readonly T[], key: (item: T) => string): Map<string, T[]> {

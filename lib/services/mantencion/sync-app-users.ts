@@ -19,21 +19,24 @@ export interface AppUser {
   name: string
 }
 
-function hasAppPermissionSql(): SQL {
+/** Predicado SQL «el usuario tiene el permiso», por rol o por concesión directa. */
+export function userHasPermissionSql(permission: string): SQL {
   return sql`(
     exists (
       select 1 from user_roles ur
       join role_permissions rp on rp.role_id = ur.role_id
       join permissions p on p.id = rp.permission_id
-      where ur.user_id = ${users.id} and p.name = ${APP_PERMISSION}
+      where ur.user_id = ${users.id} and p.name = ${permission}
     )
     or exists (
       select 1 from user_permissions up
       join permissions p on p.id = up.permission_id
-      where up.user_id = ${users.id} and p.name = ${APP_PERMISSION}
+      where up.user_id = ${users.id} and p.name = ${permission}
     )
   )`
 }
+
+const hasAppPermissionSql = (): SQL => userHasPermissionSql(APP_PERMISSION)
 
 /**
  * Usuarios activos con la app. `ids` acota a esas personas; `worksiteIds`

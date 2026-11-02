@@ -12,6 +12,9 @@ import { getCurrentScheduleSnapshots } from "./schedule-versions"
 import { findAppUsers } from "./sync-app-users"
 import type { SyncContext } from "./sync-auth"
 import { catalogVersion } from "./sync-catalog-version"
+import { OT_PERMISSIONS } from "@/lib/mantencion/work-order-states"
+import { isRouteOperational } from "@/lib/services/module-toggles"
+import { loadCatalogWorkOrders } from "./work-orders/catalog-items"
 
 /**
  * Catálogo que descarga la app del mecánico (`GET …/sync/catalogo`): todo lo que
@@ -160,13 +163,16 @@ export async function buildCatalog(
   const { viewer } = context
   const version = knownVersion ?? await catalogVersion(viewer, "mias")
   const places = await resolveWorksites(viewer)
-  const [fleet, catalogs, scheduleRows, mechanics, myRecords, observations] = await Promise.all([
+  // Las OT sólo viajan al mecánico que las ejecuta y mientras el submódulo está activo.
+  const withWorkOrders = viewer.permissions.includes(OT_PERMISSIONS.execute) && await isRouteOperational("/mantencion/ot")
+  const [fleet, catalogs, scheduleRows, mechanics, myRecords, observations, workOrderLists] = await Promise.all([
     loadFleet({ scope: places.scope, includeRetired: false }),
     listMantCatalogs(),
     db.select({ id: mantSchedules.id }).from(mantSchedules).where(isNull(mantSchedules.deletedAt)),
     findAppUsers(db, places.scope === "all" ? {} : { worksiteIds: places.mine.map((row) => row.id) }),
     loadOwnRecords(viewer.userId),
     loadObservations(viewer.userId),
+    withWorkOrders ? loadCatalogWorkOrders(viewer) : Promise.resolve(null),
   ])
   // Todas las pautas vivas, no sólo las asignadas: «Elegir otra pauta» y los equipos de otras faenas las necesitan.
   const schedules = await getCurrentScheduleSnapshots(scheduleRows.map((row) => row.id))
@@ -187,6 +193,7 @@ export async function buildCatalog(
     mechanics: mechanics.filter((mechanic) => mechanic.id !== viewer.userId),
     myRecords,
     observations,
+    ...(workOrderLists ?? {}),
   }
 }
 
