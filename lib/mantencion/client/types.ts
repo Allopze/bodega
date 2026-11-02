@@ -1,4 +1,5 @@
 import type {
+  AppHistory,
   CatalogOtherEquipment,
   MantCatalog,
   ObservationReply,
@@ -40,6 +41,23 @@ export interface StoredCatalog {
   catalog: MantCatalog
   fetchedAt: string
   others: StoredOthers | null
+}
+
+/** Historial de mantenciones de la flota de una cuenta (`sync/historial`), con su ETag. */
+export interface StoredHistory {
+  userId: string
+  etag: string | null
+  data: AppHistory
+  /** Última vez que la plataforma confirmó que esta copia está al día (200 o 304). */
+  fetchedAt: string
+}
+
+/** Foto del historial ya vista, guardada para verla sin señal. */
+export interface CachedPhoto {
+  photoId: string
+  blob: Blob
+  size: number
+  lastUsedAt: number
 }
 
 export type QueueStatus = "pending" | "sending" | "sent" | "rejected" | "needs_login"

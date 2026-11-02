@@ -29,6 +29,8 @@ const NOMBRE_MEC1 = "Mecánico Uno E2E"
 const NOMBRE_MEC2 = "Mecánico Dos E2E"
 const PIN_MEC1 = "1111"
 const PIN_MEC2 = "2222"
+/** Equipo de la correctiva del escenario 2 (mecánico 1): el escenario 6 lo consulta como mecánico 2. */
+let equipoCorrectivaMec1 = ""
 const CAMBIOS_EXPECTED = /ERR_INTERNET_DISCONNECTED|Failed to load resource|net::ERR_/
 
 /** Errores de consola y de página (§16: la consola de las E2E no debe traer errores). Sin señal el navegador avisa de las cargas que no pudo hacer: no son de la app. */
@@ -239,6 +241,7 @@ test.describe("App del mecánico", () => {
     await telefono.setOffline(true)
 
     codigoCorrectiva = await registrarCorrectiva(pagina, { descripcion: "QA_ Cambio de manguera sin señal", fotos: 3, enTaller: true })
+    equipoCorrectivaMec1 = codigoCorrectiva
     await expect(pagina.getByText("Folio pendiente · " + codigoCorrectiva)).toBeVisible()
     await expect(pagina.getByText(/Está guardado en el teléfono\. Se enviará solo/)).toBeVisible()
     await pagina.getByRole("button", { name: "Volver al inicio", exact: true }).click()
@@ -321,6 +324,51 @@ test.describe("App del mecánico", () => {
       await jefatura.close()
     }
     expect(errores).toEqual([])
+  })
+})
+
+test.describe("Historial del equipo", () => {
+  test("6 · otro mecánico ve el historial del equipo y el detalle con fotos; sin señal sigue viéndolo", async ({ browser }) => {
+    test.skip(!equipoCorrectivaMec1, "Depende de la correctiva del escenario 2")
+    const telefono = await nuevoContexto(browser, { width: 390, height: 844 })
+    const pagina = await telefono.newPage()
+    const errores = vigilarConsola(pagina)
+    try {
+      await entrar(pagina, MEC2)
+      await definirPin(pagina, PIN_MEC2)
+      await esperarSwListo(pagina)
+
+      const abrirHistorial = async () => {
+        await pagina.getByRole("button", { name: "Historial de un equipo", exact: true }).click()
+        const buscador = pagina.getByRole("dialog", { name: "Historial de un equipo" })
+        await buscador.getByRole("searchbox").fill(equipoCorrectivaMec1)
+        await buscador.getByRole("group", { name: "Equipos" }).getByRole("button", { name: new RegExp(equipoCorrectivaMec1) }).first().click()
+        return pagina.getByRole("dialog", { name: "Historial del equipo" })
+      }
+
+      // Con señal: el trabajo de OTRO mecánico aparece, con su autor.
+      const hoja = await abrirHistorial()
+      const fila = hoja.getByRole("button", { name: /QA_ Cambio de manguera sin señal/ })
+      await expect(fila).toBeVisible({ timeout: 30_000 })
+      await expect(fila).toContainText(NOMBRE_MEC1)
+      await fila.click()
+      const detalle = pagina.getByRole("dialog", { name: /^MC-BIO-\d{4}$/ })
+      await expect(detalle.getByText(NOMBRE_MEC1)).toBeVisible()
+      await expect(detalle.getByRole("region", { name: "Fotos del registro" }).getByRole("img")).toHaveCount(3, { timeout: 30_000 })
+      await detalle.getByRole("button", { name: "Cerrar", exact: true }).click()
+
+      // Sin señal y tras recargar: el historial y las fotos ya vistas siguen en el teléfono.
+      await telefono.setOffline(true)
+      await pagina.reload()
+      await expect(pagina.getByRole("heading", { name: /^Hola, / })).toBeVisible({ timeout: 30_000 })
+      const hojaSinSenal = await abrirHistorial()
+      await hojaSinSenal.getByRole("button", { name: /QA_ Cambio de manguera sin señal/ }).click()
+      await expect(pagina.getByRole("dialog", { name: /^MC-BIO-\d{4}$/ }).getByRole("region", { name: "Fotos del registro" }).getByRole("img")).toHaveCount(3)
+      await telefono.setOffline(false)
+      expect(errores).toEqual([])
+    } finally {
+      await telefono.close()
+    }
   })
 })
 

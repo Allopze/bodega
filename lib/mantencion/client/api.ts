@@ -1,4 +1,5 @@
 import type {
+  AppHistory,
   DeviceCredentialResponse,
   MantCatalog,
   MantCatalogOthers,
@@ -132,6 +133,39 @@ export const fetchCatalog = (token: string, etag: string | null, fetchImpl: Fetc
 
 export const fetchCatalogOthers = (token: string, etag: string | null, fetchImpl: FetchFn = fetch) =>
   getCatalog<MantCatalogOthers>(token, etag, "todos", fetchImpl)
+
+/** Rutas del historial de la flota: se centralizan aquí para ajustarlas en un solo lugar. */
+export const HISTORY_URL = "/api/mantencion/sync/historial"
+/** La miniatura (480 px): la galería del historial no necesita la original y así gasta menos datos y espacio. */
+export const historyPhotoUrl = (photoId: string) => `/api/mantencion/sync/fotos/${encodeURIComponent(photoId)}?v=thumb`
+
+/** `GET /api/mantencion/sync/historial`: 304 si el ETag sigue vigente. */
+export async function getHistory(token: string, etag: string | null, fetchImpl: FetchFn = fetch): Promise<ApiResult<CatalogFetch<AppHistory>>> {
+  const headers: Record<string, string> = { ...(bearer(token) as Record<string, string>) }
+  if (etag) headers["If-None-Match"] = etag
+  const response = await send(fetchImpl, HISTORY_URL, { method: "GET", headers, credentials: "omit" }, DEFAULT_TIMEOUT_MS)
+  if (isFailure(response)) return response
+  if (response.status === 304) return { kind: "ok", value: { notModified: true } }
+  if (!response.ok) return failureFrom(response, "No pudimos actualizar el historial.")
+  const body = (await readJson(response)) as AppHistory | null
+  if (!body?.version || !body.byVehicle || typeof body.byVehicle !== "object") return { kind: "retry", message: "La plataforma respondió algo inesperado.", retryAfterMs: null, network: false }
+  return { kind: "ok", value: { notModified: false, etag: response.headers.get("etag") ?? `"${body.version}"`, body } }
+}
+
+/** `GET /api/mantencion/sync/fotos/{id}`: la imagen de un registro del historial. */
+export async function getPhoto(token: string, photoId: string, fetchImpl: FetchFn = fetch): Promise<ApiResult<Blob>> {
+  const response = await send(fetchImpl, historyPhotoUrl(photoId), { method: "GET", headers: bearer(token), credentials: "omit" }, PHOTO_TIMEOUT_MS)
+  if (isFailure(response)) return response
+  if (!response.ok) return failureFrom(response, "No pudimos bajar la foto.")
+  try {
+    const blob = await response.blob()
+    if (blob.size === 0) return { kind: "retry", message: "La plataforma respondió algo inesperado.", retryAfterMs: null, network: false }
+    return { kind: "ok", value: blob }
+  } catch {
+    // Se cortó la descarga a medias: es falla de red.
+    return { kind: "retry", message: NETWORK_MESSAGE, retryAfterMs: null, network: true }
+  }
+}
 
 /** `PUT /api/mantencion/sync/fotos/{id}`: idempotente por id y sha256. */
 export async function uploadPhoto(token: string, photo: StoredPhoto, fetchImpl: FetchFn = fetch): Promise<ApiResult<null>> {

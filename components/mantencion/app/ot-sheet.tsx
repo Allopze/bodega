@@ -123,7 +123,13 @@ function FinishForm({ view, saving, error, onSubmit, onBack }: { view: OtView; s
  * trabajo con la correctiva o preventiva de siempre, y terminar. Todo se guarda
  * en el teléfono y se envía solo; sin confirmaciones en lo rutinario.
  */
-export function OtSheet({ view, onClose, onRegister }: { view: OtView; onClose: () => void; onRegister: (kind: "P" | "C", view: OtView) => void }) {
+export function OtSheet({ view, onClose, onRegister, onHistory }: {
+  view: OtView
+  onClose: () => void
+  onRegister: (kind: "P" | "C", view: OtView) => void
+  /** Abre el historial del equipo de la OT (quien lo pasa cierra la OT y la reabre al volver). */
+  onHistory?: (vehicleId: string) => void
+}) {
   const [mode, setMode] = useState<Mode>("main")
   const { ot, flags } = view
   const op = useOtOp(view)
@@ -150,6 +156,7 @@ export function OtSheet({ view, onClose, onRegister }: { view: OtView; onClose: 
           <div>
             <div className="mono" style={{ fontWeight: 600 }}>{eq}</div>
             <p className="hint">{OT_STATUS_LABELS[ot.status]}{ot.assignedToName && !mine ? ` · ${ot.assignedToName}` : ""}{view.pending ? " · hay cambios sin enviar" : ""}</p>
+            {onHistory ? <button type="button" className="lnk" style={{ marginTop: 4 }} onClick={() => onHistory(ot.vehicleId)}>Historial del equipo</button> : null}
             {ot.outOfWorksite ? <p className="hint">Equipo de otra faena ({ot.worksiteName}). Puedes trabajarla igual.</p> : null}
           </div>
           {view.returnedReason ? <Banner><strong>Devuelta: {view.returnedReason}</strong><div>Corrige lo que falta, registra el trabajo de nuevo y termina otra vez.</div></Banner> : null}
