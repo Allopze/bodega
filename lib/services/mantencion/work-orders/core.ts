@@ -1,6 +1,6 @@
-import { eq, sql } from "drizzle-orm"
+import { and, desc, eq, inArray, sql } from "drizzle-orm"
 import { db, type Tx } from "@/db"
-import { fuelVehicles, mantWorkOrderEvents, mantWorkOrders, type MantEquipmentSnapshot } from "@/db/schema"
+import { fuelVehicles, mantRecords, mantWorkOrderEvents, mantWorkOrders, type MantEquipmentSnapshot } from "@/db/schema"
 import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import type { OtEventType, OtStatus } from "@/lib/mantencion/work-order-states"
@@ -204,4 +204,37 @@ export function planFor(row: OtRow, event: OtNotifyEvent, actor: Pick<WorkOrderA
     equipment: equipmentLabel(row.equipmentSnapshot),
     detail: detail ?? null,
   }
+}
+
+type Reader = Pick<Tx, "select">
+
+/** Último momento en que la OT volvió a ejecución (rechazo o reapertura): lo firmado desde ahí cuenta para terminar. */
+export async function lastReturnToExecution(client: Reader, workOrderId: string): Promise<string | null> {
+  const [row] = await client
+    .select({ createdAt: mantWorkOrderEvents.createdAt })
+    .from(mantWorkOrderEvents)
+    .where(and(eq(mantWorkOrderEvents.workOrderId, workOrderId), inArray(mantWorkOrderEvents.type, ["rejected", "reopened"])))
+    .orderBy(desc(mantWorkOrderEvents.createdAt))
+    .limit(1)
+  return row?.createdAt ?? null
+}
+
+/**
+ * ¿La OT ya tiene el trabajo que exige «terminar»? Un registro VIGENTE enlazado
+ * y firmado después de la última devolución a ejecución (sin devolución basta
+ * cualquiera). La misma regla la usan `finishWorkOrder` (bajo bloqueo) y la
+ * ficha, que con ella decide si «Registrar trabajo» es la acción de la etapa.
+ */
+export async function linkedRecordState(client: Reader, workOrderId: string): Promise<{ since: string | null; linked: boolean }> {
+  const since = await lastReturnToExecution(client, workOrderId)
+  const [linked] = await client
+    .select({ id: mantRecords.id })
+    .from(mantRecords)
+    .where(and(
+      eq(mantRecords.workOrderId, workOrderId),
+      eq(mantRecords.status, "vigente"),
+      since ? sql`${mantRecords.signedAt} > ${since}::timestamptz` : undefined,
+    ))
+    .limit(1)
+  return { since, linked: !!linked }
 }

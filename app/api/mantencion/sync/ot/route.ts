@@ -1,14 +1,14 @@
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 
-import { workOrderOpSchema } from "@/lib/mantencion/contracts"
+import { workOrderOpRequestSchema } from "@/lib/mantencion/contracts"
 import { authenticateSyncRequest, syncErrorResponse, syncFailureResponse } from "@/lib/services/mantencion/sync-auth"
 import { issueResponse, jsonResponse, readJsonBody } from "@/lib/services/mantencion/sync-http"
 import { applyWorkOrderOp } from "@/lib/services/mantencion/work-orders/sync-ops"
 
 /**
  * POST /api/mantencion/sync/ot — operación del mecánico sobre una orden de
- * trabajo (tomar, ingreso, fecha estimada, ítems SÍ/NO, terminar), idempotente
+ * trabajo (ingreso, fecha estimada, ítems SÍ/NO, terminar; un «tomar» antiguo se rechaza), idempotente
  * por `id`. Autenticación: sólo `Authorization: Bearer`; exige `mant:ot:execute`.
  */
 export async function POST(request: Request) {
@@ -17,7 +17,7 @@ export async function POST(request: Request) {
 
   const body = await readJsonBody(request)
   if (!body.ok) return body.response
-  const parsed = workOrderOpSchema.safeParse(body.body)
+  const parsed = workOrderOpRequestSchema.safeParse(body.body)
   if (!parsed.success) return issueResponse(parsed.error)
 
   try {

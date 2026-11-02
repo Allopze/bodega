@@ -116,6 +116,14 @@ export interface WorkOrderDetail extends WorkOrderListRow {
   allowedTransitions: OtTransition[]
   canEditRequest: boolean
   canEditExecution: boolean
+  /** Quien mira puede registrar desde la ficha la correctiva o preventiva enlazada (`canRegisterWorkOrderRecord`). */
+  canRegisterRecord: boolean
+  /**
+   * En taller y todavía sin el trabajo que exige «terminar»: ningún registro
+   * vigente enlazado desde la última devolución. La ficha lo usa para poner
+   * «Registrar trabajo» como la acción de la etapa.
+   */
+  needsLinkedRecord: boolean
 }
 
 /**

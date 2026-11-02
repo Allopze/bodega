@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import type { z } from "zod"
-import { guardAnyPermission } from "@/lib/auth/can"
+import { canAny, guardAnyPermission } from "@/lib/auth/can"
 import { actionErrorResult } from "@/lib/actions/action-error-result"
 import { parseZ } from "@/lib/actions/parse-z"
 import {
@@ -19,6 +19,7 @@ import {
   receiveWorkOrder, rejectWorkOrder, reopenWorkOrder, startWorkOrder, unassignWorkOrder, updateWorkOrderEntry, voidWorkOrder,
 } from "@/lib/services/mantencion/work-orders/transitions"
 import type { WorkOrderActor } from "@/lib/services/mantencion/work-orders/types"
+import { registerWorkOrderRecordFromWeb, webSyncContext } from "@/lib/services/mantencion/web-record"
 import type { Permission } from "@/modules/permissions"
 
 /**
@@ -104,4 +105,40 @@ export async function voidWorkOrderAction(input: unknown): Promise<WorkOrderActi
 }
 export async function reopenWorkOrderAction(input: unknown): Promise<WorkOrderActionState> {
   return run(input, reopenWorkOrderSchema, MANAGE, "No se pudo reabrir la orden de trabajo.", (actor, data) => reopenWorkOrder(actor, data))
+}
+
+export interface WorkOrderRecordActionState {
+  ok: boolean
+  message?: string
+  fieldErrors?: Record<string, string[]>
+  data?: { recordId: string; folio: string; duplicate: boolean; warnings: string[] }
+}
+
+/**
+ * Registrar desde la ficha la correctiva o preventiva enlazada a la OT. Recibe
+ * `FormData` (el registro en JSON y sus fotos) porque lleva archivos. Exige la
+ * app del mecánico y, además, ejecutar o gestionar OT; quién puede sobre ESTA OT
+ * (el asignado o la jefatura, en taller) lo decide el servicio, antes de guardar
+ * las fotos. Reenviar lo mismo devuelve el mismo folio (`duplicate`).
+ */
+export async function registerWorkOrderRecordAction(formData: FormData): Promise<WorkOrderRecordActionState> {
+  const guard = await guardAnyPermission(["mant:app:use"], PATH)
+  if (guard.error) return guard.error
+  if (!canAny(guard.session, "mant:ot:execute", "mant:ot:manage")) return { ok: false, message: "No tienes permisos para realizar esta acción" }
+  try {
+    const result = await registerWorkOrderRecordFromWeb(webSyncContext(guard.session), formData)
+    if (!result.ok) return { ok: false, message: result.message, ...(result.field ? { fieldErrors: { [result.field]: [result.message] } } : {}) }
+    revalidatePath(PATH)
+    revalidatePath(`${PATH}/${result.workOrderId}`)
+    revalidatePath(`/mantencion/equipos/${result.vehicleId}`)
+    revalidatePath("/mantencion/registros")
+    revalidatePath("/mantencion/panel")
+    return {
+      ok: true,
+      message: result.duplicate ? `El registro ${result.folio} ya estaba guardado.` : `Registro ${result.folio} guardado y enlazado a la OT.`,
+      data: { recordId: result.id, folio: result.folio, duplicate: result.duplicate, warnings: result.warnings.map((warning) => warning.message) },
+    }
+  } catch (error) {
+    return actionErrorResult(error, "No se pudo guardar el registro.")
+  }
 }

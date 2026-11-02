@@ -108,7 +108,7 @@ export function AssignDialog({
         <form onSubmit={submit}>
           <DialogHeader>
             <DialogTitle>{reassigning ? "Reasignar" : "Asignar"} {folio}</DialogTitle>
-            <DialogDescription>Cualquier mecánico puede tomar la orden, de cualquier faena. Le avisamos por la app.</DialogDescription>
+            <DialogDescription>Puedes asignarla a un mecánico de cualquier faena. Le avisamos por la app.</DialogDescription>
           </DialogHeader>
           <Field label="Mecánico" htmlFor="ot-assign-mechanic" required>
             <OptionSelect id="ot-assign-mechanic" placeholder="Elige un mecánico" options={options} value={mechanicId} onValueChange={setMechanicId} />

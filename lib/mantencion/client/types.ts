@@ -5,7 +5,7 @@ import type {
   ObservationReply,
   SyncRecord,
   SyncWarning,
-  WorkOrderOpPayload,
+  WorkOrderOpRequest,
   WorkshopUpdatePayload,
 } from "../contracts"
 import type { MantPhotoKind, MantUnit } from "../types"
@@ -116,7 +116,8 @@ export interface QueueReplyItem extends QueueBase {
 /** Una operación del mecánico sobre una OT (tomar, ingreso, fecha estimada, ítems, terminar). */
 export interface QueueWorkOrderItem extends QueueBase {
   type: "ot"
-  payload: WorkOrderOpPayload
+  /** Puede ser un «take» viejo (retirado en 2026-11) que el teléfono todavía guarda; lo nuevo es `WorkOrderOpPayload`. */
+  payload: WorkOrderOpRequest
   summary: { workOrderId: string; folio: string; equipmentCode: string; equipmentPlate: string }
 }
 

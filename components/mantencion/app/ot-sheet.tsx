@@ -7,7 +7,7 @@ import { discardRejectedOtOp } from "@/lib/mantencion/client/queue"
 import { equipmentLabel } from "@/lib/mantencion/client/fleet-view"
 import type { OtView } from "@/lib/mantencion/client/ot-model"
 import { OT_ITEM_KIND_LABELS, OT_STATUS_LABELS, type OtItemKind } from "@/lib/mantencion/work-order-states"
-import type { WorkOrderOpAction } from "@/lib/mantencion/contracts"
+import type { WorkOrderOpRequest } from "@/lib/mantencion/contracts"
 import { formatDate, formatDateTime, toLocalInputValue, todayInChile } from "@/lib/utils"
 import { useAppData } from "./app-context"
 import { Sheet } from "./dialog"
@@ -19,7 +19,8 @@ import { Banner, FieldError, Label } from "./ui"
 
 type Mode = "main" | "entry" | "estimate" | "items" | "finish"
 
-const ACTION_LABEL: Record<WorkOrderOpAction, string> = {
+// «take» sigue rotulado: un «tomar» viejo de la cola (retirado en 2026-11) se muestra rechazado.
+const ACTION_LABEL: Record<WorkOrderOpRequest["action"], string> = {
   take: "Tomar la OT",
   start: "Ingreso a taller",
   estimate: "Fecha estimada de entrega",
@@ -118,8 +119,8 @@ function FinishForm({ view, saving, error, onSubmit, onBack }: { view: OtView; s
 
 /**
  * Una OT en la mano del mecánico. Lo que puede hacer depende del estado
- * (`view.flags`, las mismas guardias del servidor): tomarla, registrar el
- * ingreso a taller, marcar los ítems, cambiar la fecha de entrega, registrar el
+ * (`view.flags`, las mismas guardias del servidor): registrar el ingreso a
+ * taller, marcar los ítems, cambiar la fecha de entrega, registrar el
  * trabajo con la correctiva o preventiva de siempre, y terminar. Todo se guarda
  * en el teléfono y se envía solo; sin confirmaciones en lo rutinario.
  */
@@ -221,7 +222,6 @@ export function OtSheet({ view, onClose, onRegister, onHistory }: {
             </div>
           ) : null}
 
-          {flags.canTake ? <button type="button" className="btnp" disabled={op.saving} onClick={() => { void run({ action: "take" }, "Tomaste la OT. Quedó en «Mis OT».") }}>Tomar esta OT</button> : null}
           {flags.canStart ? <button type="button" className="btnp" onClick={() => go("entry")}>Registrar ingreso a taller</button> : null}
           {flags.canWork ? (
             <>

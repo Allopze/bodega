@@ -48,6 +48,21 @@ export const photoMetaSchema = z.object({
 })
 export type PhotoMeta = z.infer<typeof photoMetaSchema>
 
+// ── Registro desde el PC (formulario web de la OT) ──────────────────────────
+
+/**
+ * Dispositivo y versión con los que queda un registro firmado desde el PC (la
+ * ficha de la OT) y no desde la app: así se distingue en la bitácora y en la
+ * fila. El servidor los impone; lo que mande el navegador no cuenta.
+ */
+export const MANT_WEB_DEVICE_ID = "00000000-0000-4000-8000-00000000c0de"
+export const MANT_WEB_APP_VERSION = "web"
+/** Lo que Chrome de escritorio decodifica sin ayuda: HEIC (iPhone) no, y por eso no se acepta. */
+export const MANT_WEB_PHOTO_TYPES = ["image/jpeg", "image/png"] as const
+/** Campos del `FormData` del registro web: `record` (JSON del contrato) y, por foto, el archivo y su `meta` en JSON. */
+export const webPhotoField = (id: string) => `photo:${id}`
+export const webMetaField = (id: string) => `meta:${id}`
+
 // ── Registros: POST /api/mantencion/sync/registros ───────────────────────────
 
 const recordBase = {
@@ -203,8 +218,8 @@ export type WorkOrderEntryPayload = z.infer<typeof workOrderEntrySchema>
 
 const workOrderOpBase = { id: uuid, workOrderId: id, createdAt: isoDateTime, deviceId: uuid }
 
+/** Lo que la app puede enviar. «Tomar» se retiró (2026-11): las OT las asigna la jefatura o el administrador de contrato. */
 export const workOrderOpSchema = z.discriminatedUnion("action", [
-  z.object({ ...workOrderOpBase, action: z.literal("take") }),
   z.object({ ...workOrderOpBase, action: z.literal("start"), entry: workOrderEntrySchema }),
   z.object({
     ...workOrderOpBase,
@@ -223,6 +238,15 @@ export const workOrderOpSchema = z.discriminatedUnion("action", [
 ])
 export type WorkOrderOpPayload = z.infer<typeof workOrderOpSchema>
 export type WorkOrderOpAction = WorkOrderOpPayload["action"]
+
+/**
+ * Un «tomar» que un teléfono dejó en su cola antes de que se retirara. El
+ * servidor lo sigue aceptando sólo para rechazarlo con un motivo legible (o
+ * responder el duplicado si ya se había aplicado), no con un error de esquema.
+ */
+export const legacyTakeOpSchema = z.object({ ...workOrderOpBase, action: z.literal("take") })
+export const workOrderOpRequestSchema = z.discriminatedUnion("action", [legacyTakeOpSchema, ...workOrderOpSchema.options])
+export type WorkOrderOpRequest = z.infer<typeof workOrderOpRequestSchema>
 
 /** Misma semántica de HTTP que `SyncRecordResponse` (409/422 = rechazo definitivo). */
 export type SyncWorkOrderResponse =
@@ -348,8 +372,6 @@ export interface MantCatalog {
    * un catálogo guardado antes de 2026-11 no lo trae y la app lo toma como `[]`.
    */
   workOrders?: CatalogWorkOrder[]
-  /** OT «por asignar» de todas las faenas (las mías primero, máx. 100): el mecánico puede tomarlas. */
-  availableWorkOrders?: CatalogWorkOrder[]
 }
 
 /** `alcance=todos`: el resto de los equipos activos, en versión liviana (sin historial). */

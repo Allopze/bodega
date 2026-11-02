@@ -52,7 +52,7 @@ async function resolveWorksites(viewer: MantViewer): Promise<ViewerWorksites> {
   return viewer.isGlobal ? { scope: "all", all, mine: all } : { scope: [], all, mine: [] }
 }
 
-function toCatalogEquipment(row: FleetRow): CatalogEquipment {
+export function toCatalogEquipment(row: FleetRow): CatalogEquipment {
   const readings = row.readings.map((reading) => ({ value: reading.value, date: reading.date, source: reading.source }))
   // La lectura inicial va al final: valida (regla 2) igual que una lectura de registro.
   if (row.initialReading) readings.push({ value: row.initialReading.value, date: row.initialReading.date, source: "Lectura inicial" })

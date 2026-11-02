@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, or, sql } from "drizzle-orm"
+import { and, asc, desc, eq, gte, inArray, or } from "drizzle-orm"
 import { db } from "@/db"
 import { mantRecords, mantWorkOrderEvents, mantWorkOrderItems, mantWorkOrders, users, worksites } from "@/db/schema"
 import type { CatalogWorkOrder } from "@/lib/mantencion/contracts"
@@ -6,13 +6,12 @@ import type { OtItemDone, OtItemKind, OtItemOrigin, OtStatus, OtWorkshopKind } f
 import type { MantViewer } from "../access"
 
 /**
- * Órdenes de trabajo del catálogo de la app: las MÍAS (abiertas y las cerradas
- * de los últimos 7 días) y las «por asignar» de todas las faenas que puedo
- * tomar (las de mis faenas primero, máx. 100). Cada una trae el resumen del
- * equipo, porque puede ser de una faena cuyo equipo no está en mi catálogo.
+ * Órdenes de trabajo del catálogo de la app: las asignadas a mí (abiertas y las
+ * cerradas de los últimos 7 días). El mecánico no toma OT: se las asignan.
+ * Cada una trae el resumen del equipo, porque puede ser de una faena cuyo
+ * equipo no está en mi catálogo.
  */
 
-const AVAILABLE_LIMIT = 100
 const CLOSED_WINDOW_DAYS = 7
 const OPEN_FOR_ME = ["asignada", "en_ejecucion", "trabajo_terminado", "recepcionada"] as const
 
@@ -89,36 +88,19 @@ async function hydrate(viewer: MantViewer, rows: Array<{ ot: typeof mantWorkOrde
   })
 }
 
-export async function loadCatalogWorkOrders(viewer: MantViewer): Promise<{ workOrders: CatalogWorkOrder[]; availableWorkOrders: CatalogWorkOrder[] }> {
+export async function loadCatalogWorkOrders(viewer: MantViewer): Promise<{ workOrders: CatalogWorkOrder[] }> {
   const closedSince = new Date(Date.now() - CLOSED_WINDOW_DAYS * 86_400_000).toISOString()
   const assignee = users
-  const columns = { ot: mantWorkOrders, worksiteName: worksites.name, assignedToName: assignee.name }
-  const [mine, available] = await Promise.all([
-    db.select(columns).from(mantWorkOrders)
-      .innerJoin(worksites, eq(worksites.id, mantWorkOrders.worksiteId))
-      .leftJoin(assignee, eq(assignee.id, mantWorkOrders.assignedToUserId))
-      .where(and(
-        eq(mantWorkOrders.assignedToUserId, viewer.userId),
-        or(
-          inArray(mantWorkOrders.status, [...OPEN_FOR_ME]),
-          and(eq(mantWorkOrders.status, "cerrada"), gte(mantWorkOrders.closedAt, closedSince)),
-        ),
-      ))
-      .orderBy(asc(mantWorkOrders.createdAt), asc(mantWorkOrders.id)),
-    db.select(columns).from(mantWorkOrders)
-      .innerJoin(worksites, eq(worksites.id, mantWorkOrders.worksiteId))
-      .leftJoin(assignee, eq(assignee.id, mantWorkOrders.assignedToUserId))
-      .where(eq(mantWorkOrders.status, "solicitada"))
-      .orderBy(
-        // Las de mis faenas primero (un rol global no tiene «propias»: las ve en orden de antigüedad).
-        viewer.worksiteIds.length
-          ? sql`case when ${inArray(mantWorkOrders.worksiteId, [...viewer.worksiteIds])} then 0 else 1 end`
-          : sql`(0)::int`,
-        asc(mantWorkOrders.createdAt),
-        asc(mantWorkOrders.id),
-      )
-      .limit(AVAILABLE_LIMIT),
-  ])
-  const [workOrders, availableWorkOrders] = await Promise.all([hydrate(viewer, mine), hydrate(viewer, available)])
-  return { workOrders, availableWorkOrders }
+  const mine = await db.select({ ot: mantWorkOrders, worksiteName: worksites.name, assignedToName: assignee.name }).from(mantWorkOrders)
+    .innerJoin(worksites, eq(worksites.id, mantWorkOrders.worksiteId))
+    .leftJoin(assignee, eq(assignee.id, mantWorkOrders.assignedToUserId))
+    .where(and(
+      eq(mantWorkOrders.assignedToUserId, viewer.userId),
+      or(
+        inArray(mantWorkOrders.status, [...OPEN_FOR_ME]),
+        and(eq(mantWorkOrders.status, "cerrada"), gte(mantWorkOrders.closedAt, closedSince)),
+      ),
+    ))
+    .orderBy(asc(mantWorkOrders.createdAt), asc(mantWorkOrders.id))
+  return { workOrders: await hydrate(viewer, mine) }
 }

@@ -17,7 +17,7 @@ import { can, requireAnyPermission } from "@/lib/auth/can"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { viewerFromSession } from "@/lib/services/mantencion/access"
 import {
-  listAssignableMechanics, listWorkOrderEquipmentOptions, listWorkOrders, loadWorkOrderFilterOptions, type WorkOrderTab,
+  listAssignableMechanics, listWorkOrderEquipmentOptions, listWorkOrders, listWorksiteMechanics, loadWorkOrderFilterOptions, type WorkOrderTab,
 } from "@/lib/services/mantencion/work-orders/query"
 import { todayInChile } from "@/lib/utils"
 import { OtExportButton } from "./ot-export-button"
@@ -31,7 +31,7 @@ const PATHNAME = "/mantencion/ot"
 function emptyCopy(tab: WorkOrderTab, filtered: boolean): { title: string; description: string } {
   if (filtered) return { title: "Ninguna orden coincide con estos filtros", description: "Prueba con otro período o quita algún filtro." }
   switch (tab) {
-    case "solicitada": return { title: "No hay órdenes por asignar", description: "Las órdenes nuevas esperan aquí hasta que se asigna un mecánico o uno la toma desde la app." }
+    case "solicitada": return { title: "No hay órdenes por asignar", description: "Las órdenes nuevas esperan aquí hasta que la jefatura les asigna un mecánico." }
     case "asignada": return { title: "No hay órdenes asignadas", description: "Aquí quedan las órdenes con mecánico que aún no ingresan el equipo al taller." }
     case "en_ejecucion": return { title: "No hay equipos en taller", description: "Cuando un mecánico registra el ingreso de un equipo, la orden aparece aquí hasta su salida." }
     case "trabajo_terminado": return { title: "No hay equipos por recibir", description: "Aquí aparecen las órdenes con el trabajo terminado, a la espera de quien retira el equipo del taller." }
@@ -45,7 +45,8 @@ function emptyCopy(tab: WorkOrderTab, filtered: boolean): { title: string; descr
 export default async function WorkOrdersPage({ searchParams }: { searchParams: Promise<RawSearchParams> }) {
   let session
   try {
-    session = await requireAnyPermission(["mant:ot:view_worksite", "mant:ot:view_all"], "/mantencion/ot")
+    // El mecánico (`execute`) entra para ver y trabajar desde el PC las OT que tiene asignadas.
+    session = await requireAnyPermission(["mant:ot:view_worksite", "mant:ot:view_all", "mant:ot:execute"], "/mantencion/ot")
   } catch {
     redirect("/forbidden")
   }
@@ -54,12 +55,16 @@ export default async function WorkOrdersPage({ searchParams }: { searchParams: P
   const filters = parseWorkOrderQuery(raw)
   const canCreate = can(session, "mant:ot:create")
   const canManage = can(session, "mant:ot:manage")
+  // Quien sólo ejecuta ve únicamente sus OT asignadas: «Por asignar» siempre estaría vacía.
+  const onlyExecutes = !canManage && !can(session, "mant:ot:view_worksite") && !can(session, "mant:ot:view_all")
 
-  const [options, list, equipment, mechanics] = await Promise.all([
+  const [options, list, equipment, mechanics, worksiteMechanics] = await Promise.all([
     loadWorkOrderFilterOptions(viewer),
     listWorkOrders(viewer, filters),
     listWorkOrderEquipmentOptions(viewer),
     canCreate && canManage ? listAssignableMechanics() : Promise.resolve(null),
+    // Sin jefatura, la OT queda asignada al mecánico de la faena del equipo.
+    canCreate && !canManage ? listWorksiteMechanics(viewer) : Promise.resolve(null),
   ])
 
   const pagination = resolvePagination({ pageParam: String(filters.page), totalItems: list.total, pageSize: filters.pageSize })
@@ -77,6 +82,7 @@ export default async function WorkOrdersPage({ searchParams }: { searchParams: P
   const cta = {
     equipment,
     mechanics,
+    worksiteMechanics,
     today: todayInChile(),
     defaultRequesterName: session.user.name ?? "",
   }
@@ -97,7 +103,7 @@ export default async function WorkOrdersPage({ searchParams }: { searchParams: P
 
       <div className="mb-3">
         <Suspense fallback={<div className="h-11 border-b border-[var(--color-border)] sm:h-9" aria-hidden />}>
-          <StageTabs tabs={buildOtTabs(list.counts)} ariaLabel="Estado de las órdenes de trabajo" pageParam="pagina" />
+          <StageTabs tabs={buildOtTabs(list.counts, { hide: onlyExecutes ? ["solicitada"] : [] })} ariaLabel="Estado de las órdenes de trabajo" pageParam="pagina" />
         </Suspense>
       </div>
 

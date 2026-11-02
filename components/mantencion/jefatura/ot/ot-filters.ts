@@ -68,8 +68,9 @@ export const OT_TAB_LABELS: Record<WorkOrderTab, string> = {
   anulada: "Anuladas",
 }
 
-export function buildOtTabs(counts: Record<WorkOrderTab, number>): StageTab[] {
-  return (Object.keys(OT_TAB_LABELS) as WorkOrderTab[]).map((tab) => ({
+/** `hide`: pestañas que no aplican a quien mira (p. ej. «Por asignar» para el mecánico, que no ve OT sin asignar). */
+export function buildOtTabs(counts: Record<WorkOrderTab, number>, options: { hide?: readonly WorkOrderTab[] } = {}): StageTab[] {
+  return (Object.keys(OT_TAB_LABELS) as WorkOrderTab[]).filter((tab) => !options.hide?.includes(tab)).map((tab) => ({
     value: tab === "abiertas" ? "" : tab,
     label: OT_TAB_LABELS[tab],
     count: counts[tab],

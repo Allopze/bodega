@@ -11,6 +11,7 @@ import {
 } from "@/components/mantencion/jefatura/ot/ot-sections"
 import { requireAnyPermission } from "@/lib/auth/can"
 import { viewerFromSession } from "@/lib/services/mantencion/access"
+import { loadWorkOrderRecordForm } from "@/lib/services/mantencion/web-record"
 import { listAssignableMechanics, loadWorkOrderDetail, loadWorkOrderEntryCatalogs } from "@/lib/services/mantencion/work-orders/query"
 
 export const dynamic = "force-dynamic"
@@ -19,21 +20,23 @@ export const metadata: Metadata = { title: "Orden de trabajo" }
 export default async function WorkOrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   let session
   try {
-    session = await requireAnyPermission(["mant:ot:view_worksite", "mant:ot:view_all"], "/mantencion/ot")
+    session = await requireAnyPermission(["mant:ot:view_worksite", "mant:ot:view_all", "mant:ot:execute"], "/mantencion/ot")
   } catch {
     redirect("/forbidden")
   }
   const { id } = await params
   // `null` cubre «no existe» y «fuera de tu alcance»: el mismo 404, sin confirmar que el id existe.
-  const detail = await loadWorkOrderDetail(viewerFromSession(session), id)
+  const viewer = viewerFromSession(session)
+  const detail = await loadWorkOrderDetail(viewer, id)
   if (!detail) notFound()
 
   const allowed = new Set(detail.allowedTransitions)
   const needsEntryCatalogs = allowed.has("start") || (detail.canEditExecution && !!detail.entry)
   // Los catálogos sólo se consultan cuando el usuario puede usarlos.
-  const [mechanics, entryCatalogs] = await Promise.all([
+  const [mechanics, entryCatalogs, recordForm] = await Promise.all([
     allowed.has("assign") ? listAssignableMechanics() : Promise.resolve(null),
     needsEntryCatalogs ? loadWorkOrderEntryCatalogs() : Promise.resolve(null),
+    detail.canRegisterRecord ? loadWorkOrderRecordForm(viewer, detail) : Promise.resolve(null),
   ])
 
   return (
@@ -63,7 +66,12 @@ export default async function WorkOrderDetailPage({ params }: { params: Promise<
             mechanics={mechanics}
             entryCatalogs={entryCatalogs}
             actorName={session.user.name ?? ""}
+            actorUserId={session.user.id}
             pdfHref={`/api/mantencion/ot/${detail.id}/pdf`}
+            repair={detail.repair}
+            maintenance={detail.maintenance}
+            needsLinkedRecord={detail.needsLinkedRecord}
+            recordForm={recordForm}
           />
         )}
       />

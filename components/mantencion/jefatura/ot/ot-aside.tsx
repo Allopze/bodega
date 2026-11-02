@@ -79,7 +79,7 @@ export function OtLinks({ detail }: { detail: WorkOrderDetail }) {
         <div>
           <h3 className="mb-1.5 text-sm font-semibold text-[var(--color-text)]">Registros de mantención</h3>
           {records.length === 0 ? (
-            <p className="text-sm text-[var(--color-text-muted)]">Todavía no hay registros enlazados. El mecánico los firma desde su app.</p>
+            <p className="text-sm text-[var(--color-text-muted)]">Todavía no hay registros enlazados. El mecánico los firma desde su app o desde esta página.</p>
           ) : (
             <ul className="divide-y divide-[var(--color-border)]">
               {records.map((record) => {

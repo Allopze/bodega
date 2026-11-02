@@ -10,7 +10,7 @@ import { todayInChile } from "@/lib/utils"
 import { nextFolio } from "../folio"
 import { inWorksiteScope } from "./access"
 import { equipmentLabel, failureOf, lockVehicle, OtRefusal, refuse, snapshotOf, type OtRow } from "./core"
-import { findAssignableMechanic } from "./mechanics"
+import { findAssignableMechanic, findWorksiteMechanics } from "./mechanics"
 import { dispatchWorkOrderNotifications, sendWorkOrderNotification, type NotificationPlan } from "./notifications"
 import type { SystemWorkOrderInput, WorkOrderActor, WorkOrderResult } from "./types"
 
@@ -207,16 +207,36 @@ function existingResult(existing: NonNullable<Awaited<ReturnType<typeof findByCl
 }
 
 /**
+ * A quién queda asignada la OT que crea quien NO es jefatura (el administrador
+ * de contrato): al mecánico de la faena del equipo, que es la suya. Con uno
+ * solo, se asigna sin preguntar; con varios, quien crea elige entre ellos; sin
+ * ninguno, queda por asignar para la jefatura. La jefatura puede reasignar
+ * después.
+ */
+async function worksiteAssignee(tx: Tx, input: CreateWorkOrderInput, worksite: { id: string; name: string }): Promise<string | null> {
+  const mechanics = await findWorksiteMechanics(tx, [worksite.id])
+  if (input.assignedToUserId) {
+    if (!mechanics.some((mechanic) => mechanic.id === input.assignedToUserId)) {
+      refuse(`Elige un mecánico de ${worksite.name}, la faena del equipo.`, "invalid", "assignedToUserId")
+    }
+    return input.assignedToUserId
+  }
+  if (mechanics.length === 1) return mechanics[0]!.id
+  if (mechanics.length > 1) refuse(`Elige el mecánico de ${worksite.name} que hará la OT.`, "invalid", "assignedToUserId")
+  return null
+}
+
+/**
  * Alta web de una OT. Idempotente por `clientRequestId` (el formulario lo genera
  * al abrirse): reenviar el mismo formulario devuelve la OT ya creada. Exige
- * `mant:ot:create`, que la faena del equipo esté en el alcance de quien crea
- * (un rol global, todas) y `mant:ot:manage` para asignar al crear.
+ * `mant:ot:create` y que la faena del equipo esté en el alcance de quien crea
+ * (un rol global, todas). La jefatura (`mant:ot:manage`) asigna a quien quiera
+ * o la deja por asignar; para el resto, la OT queda asignada al mecánico de la
+ * faena (`worksiteAssignee`).
  */
 export async function createWorkOrder(actor: WorkOrderActor, input: CreateWorkOrderInput): Promise<WorkOrderResult<Created>> {
   if (!actor.permissions.includes(OT_PERMISSIONS.create)) return { ok: false, message: "No tienes permiso para crear órdenes de trabajo.", code: "forbidden" }
-  if (input.assignedToUserId && !actor.permissions.includes(OT_PERMISSIONS.manage)) {
-    return { ok: false, message: "Sólo la jefatura de mantención puede asignar al crear la OT.", code: "forbidden", field: "assignedToUserId" }
-  }
+  const manage = actor.permissions.includes(OT_PERMISSIONS.manage)
 
   const already = await findByClientRequest(db, input.clientRequestId)
   if (already) return existingResult(already, actor.userId)
@@ -236,9 +256,12 @@ export async function createWorkOrder(actor: WorkOrderActor, input: CreateWorkOr
 
       checkRequestFields(input)
       const items = normalizeItems(input.annexItems, input.maintenanceItems)
-      if (input.assignedToUserId && !(await findAssignableMechanic(tx, input.assignedToUserId))) {
+      if (manage && input.assignedToUserId && !(await findAssignableMechanic(tx, input.assignedToUserId))) {
         refuse("Ese mecánico no existe, está inactivo o no puede ejecutar órdenes de trabajo.", "invalid", "assignedToUserId")
       }
+      const assignedToUserId = manage
+        ? input.assignedToUserId
+        : await worksiteAssignee(tx, input, { id: vehicle.worksiteId, name: vehicle.worksiteName })
       const created = await insertLocked(tx, {
         vehicleId: input.vehicleId,
         repair: input.repair,
@@ -250,7 +273,7 @@ export async function createWorkOrder(actor: WorkOrderActor, input: CreateWorkOr
         items,
         inspectionFindingId: null,
         clientRequestId: input.clientRequestId,
-        assignedToUserId: input.assignedToUserId,
+        assignedToUserId,
       }, actor, vehicle)
       return { created }
     })

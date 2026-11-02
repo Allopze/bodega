@@ -1,6 +1,7 @@
 import type { RecordAccepted } from "./api"
 import { STORE, idbGet, idbGetAll, req, runTx } from "./db"
 import { emit } from "./events"
+import type { WorkOrderOpPayload } from "../contracts"
 import type { QueueItem, QueueRecordItem, QueueReplyItem, QueueStatus, QueueWorkOrderItem, QueueWorkshopItem } from "./types"
 
 /**
@@ -51,7 +52,8 @@ export function newWorkshopItem(input: Pick<QueueWorkshopItem, "payload" | "summ
 }
 
 /** Operación sobre una OT: el id de la operación (uuid del cliente) es también el de la cola. */
-export function newWorkOrderItem(input: Pick<QueueWorkOrderItem, "payload" | "summary"> & { authorUserId: string }, now = new Date().toISOString()): QueueWorkOrderItem {
+/** Lo nuevo nunca es un «take» (retirado): sólo `WorkOrderOpPayload`. */
+export function newWorkOrderItem(input: Pick<QueueWorkOrderItem, "summary"> & { payload: WorkOrderOpPayload; authorUserId: string }, now = new Date().toISOString()): QueueWorkOrderItem {
   return { ...base(input.payload.id, input.authorUserId, now), type: "ot", payload: input.payload, summary: input.summary }
 }
 

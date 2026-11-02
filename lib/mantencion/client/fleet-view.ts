@@ -51,7 +51,7 @@ export function allEquipment(stored: StoredCatalog | null): CatalogEquipment[] {
   for (const eq of others) seen.add(eq.id)
   // Equipos que sólo conocemos por una OT (de otra faena, con el catálogo liviano aún sin bajar): se puede registrar trabajo igual.
   const fromOrders: CatalogEquipment[] = []
-  for (const ot of [...(stored.catalog.workOrders ?? []), ...(stored.catalog.availableWorkOrders ?? [])]) {
+  for (const ot of stored.catalog.workOrders ?? []) {
     if (seen.has(ot.vehicleId)) continue
     seen.add(ot.vehicleId)
     fromOrders.push(equipmentFromWorkOrder(ot))

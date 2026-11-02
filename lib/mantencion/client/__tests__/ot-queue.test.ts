@@ -7,11 +7,12 @@ import { waitsForDependency } from "../queue-order"
 import { runSync } from "../sync-engine"
 import { putPhoto } from "../photo-store"
 import type { QueueItem } from "../types"
-import { ENTRY, UUID, account, correctivePayload, freshDb, json, otOpItem, photo } from "./fixtures"
+import { ENTRY, UUID, account, correctivePayload, freshDb, json, legacyTakeItem, otOpItem, photo } from "./fixtures"
 
 const ENTRY_BODY = { ...ENTRY, workshopId: null, operatorDriverId: null }
 const START = (n = 2) => otOpItem(n, { action: "start", entry: ENTRY_BODY })
-const TAKE = (n = 1) => otOpItem(n, { action: "take" })
+/** Un «tomar» viejo de la cola: la cola lo sigue enviando (el servidor lo rechaza) y respeta su orden. */
+const TAKE = (n = 1) => legacyTakeItem(n)
 const FINISH = (n = 5) => otOpItem(n, { action: "finish", exitAt: "2026-10-29T12:00:00.000Z", note: null })
 
 function linkedRecord(n: number, createdAt: string, workOrderId: string | null = "ot-1") {
@@ -167,7 +168,7 @@ describe("waitsForDependency (puro)", () => {
     expect(waitsForDependency(start, [{ ...take, status: "sent" }, start])).toBe(false)
     expect(waitsForDependency(start, [{ ...take, status: "rejected" }, start])).toBe(false)
     // Otra OT no cuenta.
-    expect(waitsForDependency(start, [otOpItem(1, { action: "take" }, { workOrderId: "ot-2" }), start])).toBe(false)
+    expect(waitsForDependency(start, [legacyTakeItem(1, { workOrderId: "ot-2" }), start])).toBe(false)
   })
 
   it("dos elementos con la misma hora no se esperan entre sí", () => {

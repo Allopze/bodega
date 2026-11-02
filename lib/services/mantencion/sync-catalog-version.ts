@@ -26,14 +26,14 @@ import type { MantViewer } from "./access"
  */
 
 /** Súbelo cuando cambie la FORMA de la respuesta del catálogo: invalida las cachés de los teléfonos. */
-export const CATALOG_FORMAT = 2
+export const CATALOG_FORMAT = 3
 
 type Source = readonly [AnyPgTable, readonly AnyPgColumn[]]
 
 const SOURCES: readonly Source[] = [
   [mantRecords, [mantRecords.receivedAt, mantRecords.updatedAt]],
   [mantWorkshopUpdates, [mantWorkshopUpdates.receivedAt]],
-  // Órdenes de trabajo (2026-11): lo que el mecánico ve de sus OT y de las que puede tomar.
+  // Órdenes de trabajo (2026-11): lo que el mecánico ve de sus OT. Formato 3: sin las «por asignar» (ya no se toman).
   [mantWorkOrders, [mantWorkOrders.updatedAt]],
   [mantWorkOrderItems, [mantWorkOrderItems.markedAt, mantWorkOrderItems.createdAt]],
   [mantWorkOrderEvents, [mantWorkOrderEvents.createdAt]],

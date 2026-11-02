@@ -65,7 +65,7 @@ const exportFiltersSchema = z.object({
 
 /** Excel con los mismos filtros de la lista. Mismo contrato que `ExportButton` (base64). */
 export async function exportWorkOrdersAction(filters: Omit<WorkOrderListFilters, "page" | "pageSize">): Promise<ExportActionResult> {
-  const guard = await guardAnyPermission(["mant:ot:view_worksite", "mant:ot:view_all"], PATH)
+  const guard = await guardAnyPermission(["mant:ot:view_worksite", "mant:ot:view_all", "mant:ot:execute"], PATH)
   if (guard.error) return guard.error
   const parsed = exportFiltersSchema.safeParse(filters)
   if (!parsed.success) return { ok: false, message: "Los filtros de la exportación no son válidos." }

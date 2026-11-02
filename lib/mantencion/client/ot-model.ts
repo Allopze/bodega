@@ -3,22 +3,23 @@ import type {
   CatalogWorkOrder,
   CatalogWorkOrderItem,
   MantCatalog,
-  WorkOrderOpAction,
-  WorkOrderOpPayload,
+  WorkOrderOpRequest,
 } from "../contracts"
 import { OT_ITEM_MAX_PER_KIND, type OtItemKind, type OtStatus } from "../work-order-states"
 import type { QueueItem, QueueRecordItem, QueueWorkOrderItem } from "./types"
 
 /**
  * La OT tal como la ve el mecánico: lo que el servidor dijo en el catálogo más
- * lo que el propio teléfono ya hizo y todavía no llegó (tomó la OT, registró el
- * ingreso, marcó ítems, terminó…). Todo puro, sin red ni IndexedDB.
+ * lo que el propio teléfono ya hizo y todavía no llegó (registró el ingreso,
+ * marcó ítems, terminó…). Todo puro, sin red ni IndexedDB. El mecánico sólo ve
+ * las OT que tiene asignadas: ya no las toma (2026-11).
  *
  * Reglas:
  *  - Una operación pendiente (o enviándose, o esperando que su autor entre de
  *    nuevo) se aplica siempre, SI el estado de la OT todavía la admite. Las
- *    mismas guardias que el servidor: tomar sólo «por asignar», ingresar sólo
- *    «asignada», lo demás sólo «en taller».
+ *    mismas guardias que el servidor: ingresar sólo «asignada», lo demás sólo
+ *    «en taller». Un «tomar» que quedó en la cola de antes no cambia nada: el
+ *    servidor lo rechaza.
  *  - Una operación ya enviada sólo se aplica mientras el catálogo guardado sea
  *    más viejo que el envío: después el catálogo ya la trae y reaplicarla podría
  *    pisar un cambio posterior (p. ej. dejar «por recibir» una OT que la
@@ -28,12 +29,13 @@ import type { QueueItem, QueueRecordItem, QueueWorkOrderItem } from "./types"
  *    menos un registro enlazado posterior a la última devolución.
  */
 
-export type OtSource = "mine" | "available"
+export type OtSource = "mine"
 
 export interface OtRejectedOp {
   /** Id de la operación en la cola. */
   id: string
-  action: WorkOrderOpAction
+  /** Incluye «take»: un «tomar» viejo de la cola se muestra rechazado. */
+  action: WorkOrderOpRequest["action"]
   message: string
 }
 
@@ -47,7 +49,6 @@ export interface OtLinkedRecord {
 }
 
 export interface OtFlags {
-  canTake: boolean
   canStart: boolean
   /** Fecha estimada, ítems SÍ/NO y registros: sólo con la OT «en taller». */
   canWork: boolean
@@ -72,7 +73,6 @@ export interface OtView {
 
 export interface OtViews {
   mine: OtView[]
-  available: OtView[]
 }
 
 /** Operaciones que cuentan sobre el catálogo guardado (ver arriba). */
@@ -88,10 +88,11 @@ function describeUnmarked(count: number): string {
 }
 
 /** Aplica una operación a la OT si su estado todavía la admite; si no, la deja igual. */
-export function applyOp(ot: CatalogWorkOrder, op: WorkOrderOpPayload, context: { userId: string; userName: string; workshops: ReadonlyArray<{ id: string; name: string }> }): CatalogWorkOrder {
+export function applyOp(ot: CatalogWorkOrder, op: WorkOrderOpRequest, context: { userId: string; userName: string; workshops: ReadonlyArray<{ id: string; name: string }> }): CatalogWorkOrder {
   switch (op.action) {
     case "take":
-      return ot.status === "solicitada" ? { ...ot, status: "asignada", assignedToUserId: context.userId, assignedToName: context.userName } : ot
+      // Retirado: el servidor lo rechaza; no se adelanta nada.
+      return ot
     case "start": {
       if (ot.status !== "asignada") return ot
       const { workshopId, operatorDriverId, ...entry } = op.entry
@@ -168,7 +169,6 @@ function viewOf(base: CatalogWorkOrder, source: OtSource, queue: readonly QueueI
     unmarked,
     returnedReason: executing && ot.lastRejection ? ot.lastRejection.reason : null,
     flags: {
-      canTake: ot.status === "solicitada",
       canStart: ot.status === "asignada",
       canWork: executing,
       canFinish: executing && finishBlockers.length === 0,
@@ -188,8 +188,7 @@ export function isClosedStatus(status: OtStatus): boolean {
 
 /**
  * Catálogo + cola → las OT del mecánico. Un catálogo de antes de las OT no trae
- * las listas y se toma como vacío. «Tomar» mueve la OT de «disponibles» a «mías»
- * sin esperar al servidor.
+ * la lista y se toma como vacía.
  */
 export function buildOtViews(catalog: MantCatalog | null | undefined, queue: readonly QueueItem[], user: { id: string; name: string }, catalogGeneratedAt?: string): OtViews {
   const context = { userId: user.id, userName: user.name, workshops: catalog?.workshops ?? [] }
@@ -198,17 +197,7 @@ export function buildOtViews(catalog: MantCatalog | null | undefined, queue: rea
     .filter((item): item is QueueWorkOrderItem => item.type === "ot" && item.authorUserId === user.id && appliesOver(item, generatedAt))
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
 
-  const mineIds = new Set((catalog?.workOrders ?? []).map((ot) => ot.id))
-  const mineBase: Array<[CatalogWorkOrder, OtSource]> = (catalog?.workOrders ?? []).map((ot) => [ot, "mine"])
-  const available: OtView[] = []
-  const mine = mineBase.map(([ot, source]) => viewOf(ot, source, queue, ops, context))
-  for (const ot of catalog?.availableWorkOrders ?? []) {
-    if (mineIds.has(ot.id)) continue
-    const view = viewOf(ot, "available", queue, ops, context)
-    // Si el teléfono la tomó (y esa operación sigue vigente), ya es «mía» aunque el catálogo no lo sepa todavía.
-    if (view.ot.status === "solicitada") available.push(view)
-    else mine.push({ ...view, source: "mine" })
-  }
+  const mine = (catalog?.workOrders ?? []).map((ot) => viewOf(ot, "mine", queue, ops, context))
   mine.sort((a, b) => {
     const rank = STATUS_RANK[a.ot.status] - STATUS_RANK[b.ot.status]
     if (rank !== 0) return rank
@@ -217,12 +206,12 @@ export function buildOtViews(catalog: MantCatalog | null | undefined, queue: rea
     const db = b.ot.entry?.estimatedDeliveryDate ?? "9999-99-99"
     return da === db ? a.ot.folio.localeCompare(b.ot.folio) : da.localeCompare(db)
   })
-  return { mine, available }
+  return { mine }
 }
 
 /** La OT con ese id, del catálogo guardado (sin aplicar la cola). */
 export function findWorkOrder(catalog: MantCatalog | null | undefined, workOrderId: string): CatalogWorkOrder | null {
-  return catalog?.workOrders?.find((ot) => ot.id === workOrderId) ?? catalog?.availableWorkOrders?.find((ot) => ot.id === workOrderId) ?? null
+  return catalog?.workOrders?.find((ot) => ot.id === workOrderId) ?? null
 }
 
 /**
