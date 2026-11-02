@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { eq } from "drizzle-orm"
+import { and, eq } from "drizzle-orm"
 import sharp from "sharp"
 import { db } from "@/db"
 import { mantRecordPhotos, mantRecords } from "@/db/schema"
@@ -181,4 +181,53 @@ export async function loadPhotoFile(photoId: string, viewer: MantViewer): Promis
   } catch {
     return null
   }
+}
+
+/** Ancho de la miniatura (`?v=thumb`): basta para la tarjeta del historial y pesa una fracción del original. */
+export const PHOTO_THUMB_WIDTH = 480
+
+/**
+ * Foto para la app del mecánico (`GET /api/mantencion/sync/fotos/[id]`, con
+ * Bearer). El historial de la flota es de lectura abierta a toda la app, así que
+ * la regla no es el alcance de faena sino el estado: sólo se entrega una foto
+ * anclada a un registro VIGENTE (cualquier faena, cualquier autor). Una huérfana
+ * o la de un registro anulado contestan igual que una que no existe.
+ *
+ * `variant: "thumb"` devuelve una miniatura JPEG; si no se puede generar, cae al original.
+ */
+export async function loadSyncPhotoFile(photoId: string, variant: "full" | "thumb" = "full"): Promise<PhotoFile | null> {
+  if (!PHOTO_ID_PATTERN.test(photoId)) return null
+  const [row] = await db
+    .select({
+      id: mantRecordPhotos.id, kind: mantRecordPhotos.kind, storageKey: mantRecordPhotos.storageKey,
+      mimeType: mantRecordPhotos.mimeType, folio: mantRecords.folio,
+    })
+    .from(mantRecordPhotos)
+    .innerJoin(mantRecords, and(eq(mantRecords.id, mantRecordPhotos.recordId), eq(mantRecords.status, "vigente")))
+    .where(eq(mantRecordPhotos.id, photoId))
+    .limit(1)
+  if (!row) return null
+
+  const absolutePath = resolveMantencionFile(row.storageKey)
+  if (!absolutePath) return null
+  let buffer: Buffer
+  try {
+    buffer = await readBuffer(absolutePath)
+  } catch {
+    return null
+  }
+  const base = row.folio ?? row.id
+  if (variant === "thumb") {
+    try {
+      const thumb = await sharp(buffer, { failOn: "error" })
+        .rotate()
+        .resize({ width: PHOTO_THUMB_WIDTH, withoutEnlargement: true })
+        .jpeg({ quality: 70 })
+        .toBuffer()
+      return { buffer: thumb, mimeType: "image/jpeg", fileName: `${base}-${row.kind}-thumb.jpg` }
+    } catch {
+      // Sin miniatura se sirve el original: más pesado, pero la foto no se pierde.
+    }
+  }
+  return { buffer, mimeType: row.mimeType, fileName: `${base}-${row.kind}.${EXTENSION_BY_MIME[row.mimeType] ?? "jpg"}` }
 }

@@ -1,4 +1,4 @@
-import { STORE, idbDelete, idbGet, idbGetAll, idbPut } from "./db"
+import { STORE, idbGet, idbGetAll, idbPut, req, runTx } from "./db"
 import { requestCredential, type ApiFailure } from "./api"
 import { emit } from "./events"
 import { getDeviceId, getMeta, setMeta } from "./meta"
@@ -26,9 +26,18 @@ export async function saveAccount(account: DeviceAccount): Promise<void> {
   emit("accounts")
 }
 
+/**
+ * Quita la cuenta del teléfono junto con su historial de flota (misma transacción).
+ * La caché de fotos no es de nadie en particular: sólo se vacía al irse la última cuenta.
+ */
 export async function removeAccount(userId: string): Promise<void> {
-  await idbDelete(STORE.accounts, userId)
+  await runTx([STORE.accounts, STORE.history, STORE.photoCache], "readwrite", async (s) => {
+    await req(s.accounts.delete(userId))
+    await req(s.history.delete(userId))
+    if ((await req(s.accounts.count())) === 0) await req(s.photoCache.clear())
+  })
   emit("accounts")
+  emit("history")
 }
 
 export function credentialExpired(account: Pick<DeviceAccount, "expiresAt">, now = Date.now()): boolean {

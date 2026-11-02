@@ -9,7 +9,12 @@
  */
 
 const DB_NAME = "mant-offline"
-const DB_VERSION = 1
+/**
+ * v2: `history` (historial de la flota por cuenta) y `photoCache` (fotos de ese
+ * historial ya vistas). Una migración sólo agrega: nunca toca los stores de v1
+ * (cola, borradores y fotos pendientes no pueden perderse).
+ */
+const DB_VERSION = 2
 
 export const STORE = {
   meta: "meta",
@@ -18,6 +23,8 @@ export const STORE = {
   drafts: "drafts",
   queue: "queue",
   photos: "photos",
+  history: "history",
+  photoCache: "photoCache",
 } as const
 export type StoreName = (typeof STORE)[keyof typeof STORE]
 
@@ -75,6 +82,9 @@ export function openDb(): Promise<IDBDatabase> {
         queue.createIndex("status", "status", { unique: false })
       }
       if (!db.objectStoreNames.contains(STORE.photos)) db.createObjectStore(STORE.photos, { keyPath: "id" })
+      // v2. `contains` hace idempotente la creación: una base v1 sólo gana lo que le falta.
+      if (!db.objectStoreNames.contains(STORE.history)) db.createObjectStore(STORE.history, { keyPath: "userId" })
+      if (!db.objectStoreNames.contains(STORE.photoCache)) db.createObjectStore(STORE.photoCache, { keyPath: "photoId" })
     }
     request.onsuccess = () => {
       const db = request.result

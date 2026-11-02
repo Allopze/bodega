@@ -1,17 +1,19 @@
 "use client"
 
-import type { Dispatch } from "react"
+import { useState, type Dispatch } from "react"
 import { formatReading } from "@/lib/mantencion/format"
 import type { FleetRow } from "@/lib/mantencion/client/fleet-view"
 import type { FlowAction } from "@/lib/mantencion/client/flow"
 import type { FlowDraft } from "@/lib/mantencion/client/flow-types"
 import type { LectureAnalysis } from "@/lib/mantencion/client/flow-validate"
 import { formatDate } from "@/lib/utils"
+import { EquipmentHistorySheet } from "./equipment-history-sheet"
 import { FieldError } from "./ui"
 
 /** Recuadro «Pauta que corresponde»: qué toca según la lectura y, si hace falta, otra pauta con su motivo. */
 export function PautaBox({ draft, dispatch, row, analysis }: { draft: FlowDraft; dispatch: Dispatch<FlowAction>; row: FleetRow; analysis: LectureAnalysis }) {
   const { schedule, suggestion, intervalValue, manual, value } = analysis
+  const [historyOpen, setHistoryOpen] = useState(false)
   const unit = row.eq.unit
   if (!schedule || schedule.intervals.length === 0) {
     return (
@@ -46,6 +48,9 @@ export function PautaBox({ draft, dispatch, row, analysis }: { draft: FlowDraft;
         <div className="hint" style={{ margin: 0 }}>{analysis.items.length} ítems</div>
       </div>
       <p className="hint">{why}</p>
+      {/* La hoja se abre encima del registro: el borrador no se toca. */}
+      <button type="button" className="lnk" style={{ marginTop: 2 }} aria-haspopup="dialog" aria-label="Ver historial del equipo" onClick={() => setHistoryOpen(true)}>Ver historial</button>
+      {historyOpen ? <EquipmentHistorySheet vehicleId={row.eq.id} onClose={() => setHistoryOpen(false)} /> : null}
       {open ? (
         <>
           <div className="ivchips" role="group" aria-label="Pauta a usar">

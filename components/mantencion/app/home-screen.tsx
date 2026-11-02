@@ -1,6 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
+import type { AppHistoryRecord } from "@/lib/mantencion/contracts"
 import { plural } from "@/lib/mantencion/format"
 import { discardDraft } from "@/lib/mantencion/client/drafts"
 import { dueRows, equipmentLabel, workshopEntries, type WorkshopEntry } from "@/lib/mantencion/client/fleet-view"
@@ -13,12 +14,16 @@ import { formatDateTime } from "@/lib/utils"
 import { AccountSheet } from "./account-sheet"
 import { useAppActions, useAppData } from "./app-context"
 import { ConfirmDialog } from "./dialog"
+import { EquipmentHistorySheet } from "./equipment-history-sheet"
+import { HistorySearchSheet } from "./history-search-sheet"
 import { DraftBanners, DueSection, ObservationBanner, RecentSection, RejectedSection, WorkshopSection } from "./home-lists"
 import { IconChevronDown, IconChevronRight, IconChevronUp, IconWifi, IconWifiOff } from "./icons"
 import { ObservationSheet } from "./observation-sheet"
 import { OtSection } from "./ot-lists"
 import { OtSheet } from "./ot-sheet"
+import { RecordDetailSheet } from "./record-detail-sheet"
 import { useDrafts } from "./use-drafts"
+import { useFleetHistory } from "./use-history"
 import { Banner, firstName, initials } from "./ui"
 import { WorkshopSheet } from "./workshop-sheet"
 import { InstallPrompt } from "./install-prompt"
@@ -67,6 +72,11 @@ export function HomeScreen({ onStart, onResume, onFix, onNeedLogin, onOtherAccou
   const [discarding, setDiscarding] = useState<FlowDraft | null>(null)
   const [askStart, setAskStart] = useState<{ kind: "P" | "C"; vehicleId: string | null; workOrderId: string | null; existing: FlowDraft } | null>(null)
   const [openOt, setOpenOt] = useState<string | null>(null)
+  const [searchingHistory, setSearchingHistory] = useState(false)
+  /** Historial de un equipo; `backToOt` = la OT desde la que se abrió, a la que se vuelve al cerrarlo. */
+  const [history, setHistory] = useState<{ vehicleId: string; backToOt: string | null } | null>(null)
+  const [openRecord, setOpenRecord] = useState<AppHistoryRecord | null>(null)
+  const fleetHistory = useFleetHistory()
 
   const stats = queueStats(queue, account.userId, now)
   const sending = queue.some((item) => item.authorUserId === account.userId && item.status === "sending")
@@ -79,6 +89,11 @@ export function HomeScreen({ onStart, onResume, onFix, onNeedLogin, onOtherAccou
   const worksites = (stored?.catalog.worksites ?? []).filter((site) => stored?.catalog.user.worksiteIds.includes(site.id)).map((site) => site.name)
   const sites = worksiteSummary(worksites)
   const otViews = useMemo(() => buildOtViews(stored?.catalog, queue, { id: account.userId, name: account.name }), [stored, queue, account.userId, account.name])
+  const historyById = useMemo(() => {
+    const byId = new Map<string, AppHistoryRecord>()
+    for (const records of Object.values(fleetHistory.byVehicle ?? {})) for (const record of records) byId.set(record.id, record)
+    return byId
+  }, [fleetHistory.byVehicle])
   const openOtView = openOt ? [...otViews.mine, ...otViews.available].find((view) => view.ot.id === openOt) ?? null : null
   const equipmentOf = (vehicleId: string | null) => {
     const row = rows.find((entry) => entry.eq.id === vehicleId)
@@ -150,8 +165,12 @@ export function HomeScreen({ onStart, onResume, onFix, onNeedLogin, onOtherAccou
           <button type="button" className="bigbtn alt" onClick={() => start("C")}>Mantención correctiva<IconChevronRight /></button>
         </section>
 
+        <section className="sect">
+          <button type="button" className="btns wide" aria-haspopup="dialog" onClick={() => setSearchingHistory(true)}>Historial de un equipo</button>
+        </section>
+
         <WorkshopSection entries={inWorkshop} onUpdate={setWorkshop} />
-        <RecentSection rows={recent} now={now} />
+        <RecentSection rows={recent} now={now} records={historyById} onOpen={setOpenRecord} />
         {stored ? (
           <div className="stamp">
             Equipos al <span className="mono">{formatDateTime(stored.fetchedAt)}</span>
@@ -170,7 +189,10 @@ export function HomeScreen({ onStart, onResume, onFix, onNeedLogin, onOtherAccou
       ) : null}
       {observationsOpen ? <ObservationSheet observations={observations} onClose={() => setObservationsOpen(false)} /> : null}
       {workshop ? <WorkshopSheet entry={workshop} onClose={() => setWorkshop(null)} /> : null}
-      {openOtView ? <OtSheet view={openOtView} onClose={() => setOpenOt(null)} onRegister={registerFromOt} /> : null}
+      {openOtView ? <OtSheet view={openOtView} onClose={() => setOpenOt(null)} onRegister={registerFromOt} onHistory={(vehicleId) => { setOpenOt(null); setHistory({ vehicleId, backToOt: openOtView.ot.id }) }} /> : null}
+      {searchingHistory ? <HistorySearchSheet onClose={() => setSearchingHistory(false)} onPick={(vehicleId) => { setSearchingHistory(false); setHistory({ vehicleId, backToOt: null }) }} /> : null}
+      {history ? <EquipmentHistorySheet vehicleId={history.vehicleId} onClose={() => { const back = history.backToOt; setHistory(null); if (back) setOpenOt(back) }} /> : null}
+      {openRecord ? <RecordDetailSheet record={openRecord} onClose={() => setOpenRecord(null)} /> : null}
       {discarding ? (
         <ConfirmDialog
           title="¿Descartar lo que ingresaste?"

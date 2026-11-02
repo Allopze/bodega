@@ -417,6 +417,8 @@ export const pgliteTestFiles = [
   "lib/__tests__/mantencion-sync-pglite.test.ts",
   "lib/__tests__/mantencion-sync-http-pglite.test.ts",
   "lib/__tests__/mantencion-sync-catalog-pglite.test.ts",
+  // Historial de la flota para la app: tope por equipo, privacidad, versión (ETag) y la foto con Bearer.
+  "lib/__tests__/mantencion-app-history-pglite.test.ts",
   // Órdenes de trabajo (2026-11): alta, transiciones por rol, concurrencia, rechazo, CAPA y avisos; y la sincronización del teléfono.
   "lib/__tests__/mantencion-work-orders-pglite.test.ts",
   "lib/__tests__/mantencion-work-orders-sync-pglite.test.ts",

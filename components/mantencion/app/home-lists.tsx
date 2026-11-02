@@ -3,7 +3,7 @@
 import { dueText, plural } from "@/lib/mantencion/format"
 import { daysInWorkshopText, observedRecordCount, RECENT_STATE_LABEL, shortWhen, type RecentRow } from "@/lib/mantencion/client/home-model"
 import { equipmentLabel, type FleetRow, type WorkshopEntry } from "@/lib/mantencion/client/fleet-view"
-import type { CatalogObservation } from "@/lib/mantencion/contracts"
+import type { AppHistoryRecord, CatalogObservation } from "@/lib/mantencion/contracts"
 import type { FlowDraft } from "@/lib/mantencion/client/flow-types"
 import type { QueueRecordItem } from "@/lib/mantencion/client/types"
 import { IconCheck, IconChevronRight } from "./icons"
@@ -64,21 +64,40 @@ function PillFor({ row }: { row: RecentRow }) {
   return <span className="pill pend">{RECENT_STATE_LABEL[row.state]}</span>
 }
 
-export function RecentSection({ rows, now }: { rows: RecentRow[]; now: number }) {
+/**
+ * «Mis últimos registros». Si el registro está en el historial bajado al teléfono
+ * (`records`, por id), la fila se toca y abre su detalle; si no, queda como
+ * siempre: sólo informa (un registro sin enviar o muy antiguo no tiene detalle).
+ */
+export function RecentSection({ rows, now, records, onOpen }: {
+  rows: RecentRow[]
+  now: number
+  records?: ReadonlyMap<string, AppHistoryRecord>
+  onOpen?: (record: AppHistoryRecord) => void
+}) {
   return (
     <section className="sect tight" aria-labelledby="h-mios">
       <div className="cap" id="h-mios" style={{ marginBottom: 4 }}>Mis últimos registros</div>
-      {rows.length === 0 ? <p className="empty">Aún no tienes registros.</p> : rows.map((row) => (
-        <div key={row.id} className="rrow">
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="c">{equipmentLabel({ code: row.equipmentCode, plate: row.equipmentPlate })}</div>
-            <div className="d">
-              {row.title} · {shortWhen(row.when, now)} · <span className="mono nw" style={{ fontSize: 14 }}>{row.folio ?? "Folio pendiente"}</span>
+      {rows.length === 0 ? <p className="empty">Aún no tienes registros.</p> : rows.map((row) => {
+        const record = onOpen ? records?.get(row.id) : undefined
+        const content = (
+          <>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="c">{equipmentLabel({ code: row.equipmentCode, plate: row.equipmentPlate })}</div>
+              <div className="d">
+                {row.title} · {shortWhen(row.when, now)} · <span className="mono nw" style={{ fontSize: 14 }}>{row.folio ?? "Folio pendiente"}</span>
+              </div>
             </div>
-          </div>
-          <PillFor row={row} />
-        </div>
-      ))}
+            <PillFor row={row} />
+          </>
+        )
+        return record && onOpen ? (
+          <button key={row.id} type="button" className="rrow" style={{ width: "100%", minHeight: 64, background: "transparent", borderTop: 0, borderInline: 0, textAlign: "left", color: "inherit" }} onClick={() => onOpen(record)}>
+            {content}
+            <IconChevronRight />
+          </button>
+        ) : <div key={row.id} className="rrow">{content}</div>
+      })}
     </section>
   )
 }

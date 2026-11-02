@@ -33,6 +33,7 @@ export const PUBLIC_PATHS = [
   // resto de /api/mantencion exige sesión en el proxy.
   "/api/mantencion/sync/catalogo", "/api/mantencion/sync/fotos", "/api/mantencion/sync/registros",
   "/api/mantencion/sync/taller", "/api/mantencion/sync/observaciones", "/api/mantencion/sync/ot",
+  "/api/mantencion/sync/historial",
   // Login propio de la app del mecánico: la app instalada en el teléfono entra
   // por aquí y no por el login de escritorio. Sólo el formulario, sin datos.
   "/m/mantencion/entrar",

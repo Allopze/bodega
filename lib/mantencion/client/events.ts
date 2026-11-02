@@ -1,9 +1,9 @@
 /**
- * Avisos internos de la app: la cola, las cuentas y el catálogo cambian desde
- * varios lugares (pantallas, motor de sincronización, service worker) y la
+ * Avisos internos de la app: la cola, las cuentas, el catálogo y el historial de la
+ * flota cambian desde varios lugares (pantallas, motor de sincronización, service worker) y la
  * interfaz se vuelve a leer de IndexedDB cuando alguno avisa.
  */
-export type MantTopic = "queue" | "accounts" | "catalog" | "drafts" | "signal"
+export type MantTopic = "queue" | "accounts" | "catalog" | "drafts" | "signal" | "history"
 
 type Listener = () => void
 
