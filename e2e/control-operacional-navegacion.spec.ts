@@ -206,6 +206,16 @@ test.describe("Control operacional — menú del área", () => {
 
     for (const [ruta, activo] of rutas) {
       await page.goto(ruta)
+      // `/combustibles/control/importar` llega a Fuentes con el diálogo de
+      // telemetría abierto. El modal vuelve inerte el resto de la página, así
+      // que el sidebar no es visible para el árbol de accesibilidad hasta
+      // cerrarlo. La ruta legacy sí llegó a su destino; se comprueba abajo.
+      if (ruta === "/combustibles/control/importar") {
+        const dialog = page.getByRole("dialog")
+        await expect(dialog).toBeVisible()
+        await dialog.getByRole("button", { name: "Cerrar", exact: true }).click()
+        await expect(dialog).toBeHidden()
+      }
       await expect.soft(page, `${ruta} no debe mandar a /forbidden`).not.toHaveURL(/\/forbidden|\/login/)
       await expect.soft(menuDelArea(page).locator('[aria-current="page"]'), `${ruta}: un solo ítem activo`).toHaveCount(1)
       await expect.soft(itemDelMenu(page, activo), `${ruta}: debe dejar activo a ${activo}`).toHaveAttribute("aria-current", "page")
@@ -646,17 +656,17 @@ test.describe("Control operacional — roles acotados", () => {
 
     await page.goto("/combustibles/cargas")
     await expect(page).toHaveURL(/\/combustibles\/cargas$/)
-    // `menuDelArea` se ancla en el Panel operacional, que este rol no ve (su gate no incluye
-    // `combustibles:view`): el área se ubica por su ítem de Cargas.
+    // El área se ubica por su ítem de Cargas; el panel también es visible
+    // porque `combustibles:view` es uno de sus cuatro permisos de entrada.
     const menu = page
       .getByRole("navigation", { name: "Navegación", exact: true })
       .locator("ul")
       .filter({ has: page.locator('a[href="/combustibles/cargas"]') })
-    for (const href of ["/combustibles", "/combustibles/cargas", "/combustibles/revisar", "/combustibles/cuadratura", "/combustibles/consumo"]) {
+    for (const href of ["/control-operacional", "/combustibles", "/combustibles/cargas", "/combustibles/revisar", "/combustibles/cuadratura", "/combustibles/consumo"]) {
       await expect(menu.locator(`a[href="${href}"]`)).toBeVisible()
     }
-    // Panel operacional (flota/mantención/inspecciones), Pagos (`view_costs`), Fuentes (importar/sincronizar) y Ajustes (administrar): ninguno está.
-    for (const href of ["/control-operacional", "/combustibles/pagos", "/combustibles/fuentes", "/combustibles/ajustes"]) {
+    // Pagos (`view_costs`), Fuentes (importar/sincronizar) y Ajustes (administrar): ninguno está.
+    for (const href of ["/combustibles/pagos", "/combustibles/fuentes", "/combustibles/ajustes"]) {
       await expect(menu.locator(`a[href="${href}"]`)).toHaveCount(0)
     }
 
@@ -666,12 +676,27 @@ test.describe("Control operacional — roles acotados", () => {
       await expect.soft(page, `${ruta} debe mandar a /forbidden`).toHaveURL(/\/forbidden/)
     }
     // Lo que sí ofrece el menú abre; «Cuadratura» abre su primera vista sin permiso TAE: Estanques.
-    for (const ruta of ["/combustibles", "/combustibles/consumo/motor-en-vacio", "/combustibles/revisar", "/combustibles/cuadratura/estanques"]) {
+    for (const ruta of ["/control-operacional", "/combustibles", "/combustibles/consumo/motor-en-vacio", "/combustibles/revisar", "/combustibles/cuadratura/estanques"]) {
       await page.goto(ruta)
       await expect.soft(page, `${ruta} debe abrir`).not.toHaveURL(/\/forbidden/)
     }
     await page.goto("/combustibles/cuadratura")
     await expect.soft(page, "«Cuadratura» abre Estanques").toHaveURL((url) => url.pathname === "/combustibles/cuadratura/estanques")
+
+    // El panel abre, pero sólo con las columnas de combustible: sin flota,
+    // mantención, inspecciones ni costos.
+    await page.goto("/control-operacional")
+    await expect(page).toHaveURL(/\/control-operacional$/)
+    await expectPageTitle(page, "Panel operacional")
+    const table = page.getByRole("table", { name: "Activos operacionales" })
+    await expect(table).toBeVisible()
+    // Las columnas ordenables se anuncian como «Ordenar por …».
+    const header = (label: string) =>
+      table.getByRole("columnheader", { name: new RegExp(`^(?:Ordenar por )?${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`) })
+    await expect(header("Litros")).toBeVisible()
+    await expect(header("OT abiertas (período)")).toHaveCount(0)
+    await expect(header("Inspecciones")).toHaveCount(0)
+    await expect(header("Costo aprobado")).toHaveCount(0)
   })
 
   test("quien sólo tiene inspecciones ve el panel y ningún otro destino del área", async ({ page }) => {

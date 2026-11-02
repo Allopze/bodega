@@ -181,6 +181,21 @@ export const pgliteTestFiles = [
   "lib/__tests__/fuel-inbox-pglite.test.ts",
   "lib/__tests__/fuel-review-reopen-pglite.test.ts",
   "lib/__tests__/equipment-file-pglite.test.ts",
+  // Panel operacional: agregado batch de combustible por activo (litros,
+  // rendimiento, casos y costo facturado) con alcance y permisos.
+  "lib/__tests__/operational-control-fuel-pglite.test.ts",
+  // Panel operacional: inspecciones → hallazgos → CAPA vencidas por activo,
+  // con runs canceladas y gating por prevention:capa:view.
+  "lib/__tests__/operational-control-inspections-pglite.test.ts",
+  // Panel operacional: detención recortada al período, disponibilidad sin
+  // inactivos, cobertura de estado y desajuste ficha ↔ intervalo abierto.
+  "lib/__tests__/operational-control-state-pglite.test.ts",
+  // Panel operacional: costo aprobado vs comprometido, SLA, asignación y
+  // adherencia a los planes preventivos.
+  "lib/__tests__/operational-control-maintenance-pglite.test.ts",
+  // Panel operacional: vencimientos documentales con la columna canónica y
+  // última telemetría GPS por vehículo.
+  "lib/__tests__/operational-control-documents-gps-pglite.test.ts",
   "lib/__tests__/fuel-statements-preview-pglite.test.ts",
   "lib/__tests__/fuel-sources-status-pglite.test.ts",
   // Faltaba desde que se escribió: instancia PGlite y migra, igual que las de

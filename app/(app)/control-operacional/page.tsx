@@ -14,6 +14,7 @@ import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Callout } from "@/components/ui/callout"
+import { DegradedDataBanner } from "@/components/ui/degraded-data-banner"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Field } from "@/components/ui/field"
 import { MetaBadge } from "@/components/states/state-badge"
@@ -26,6 +27,7 @@ import {
   resolveOperationalControlPeriod,
   type OperationalControlPeriod,
 } from "@/lib/services/operational-control"
+import { getOperationalSourceHealth, type OperationalReconciliationHealth } from "@/lib/services/operational-control-sources"
 import { canViewOperationalControl } from "@/lib/operational-control/capabilities"
 import { formatDate, formatDateTime } from "@/lib/utils"
 import {
@@ -40,7 +42,6 @@ import {
 import { OperationalAssetsTable } from "./operational-assets-table"
 import { OperationalExportButton } from "./operational-export-button"
 import { buildPerformanceGlossary, buildPerformanceStats } from "./performance-stats"
-import { fuelBatchHref } from "@/lib/combustibles/routes"
 
 export const metadata: Metadata = { title: "Panel operacional" }
 
@@ -54,10 +55,14 @@ const ATTENTION_ICONS: Record<AttentionTileKey, ReactNode> = {
   fuel: <GasPump size={16} weight="duotone" />,
 }
 
-function sourceHealthVariant(status: string): "success" | "signal" | "outline" {
-  if (status === "importado") return "success"
-  if (status === "revertido") return "signal"
-  return "outline"
+/** Una frase para la conciliación: no pinta un cero ni omite una excepción aceptada. */
+function reconciliationText(reconciliation: OperationalReconciliationHealth): string {
+  const parts: string[] = []
+  if (reconciliation.unmatched > 0) parts.push(reconciliation.unmatched === 1 ? "1 sin resolver" : `${reconciliation.unmatched} sin resolver`)
+  if (reconciliation.ambiguous > 0) parts.push(reconciliation.ambiguous === 1 ? "1 ambiguo" : `${reconciliation.ambiguous} ambiguos`)
+  if (reconciliation.openRejections > 0) parts.push(reconciliation.openRejections === 1 ? "1 rechazo abierto" : `${reconciliation.openRejections} rechazos abiertos`)
+  if (reconciliation.acceptedExceptions > 0) parts.push(reconciliation.acceptedExceptions === 1 ? "1 excepción aceptada" : `${reconciliation.acceptedExceptions} excepciones aceptadas`)
+  return parts.length === 0 ? "Conciliación al día (hoy)." : `Conciliación (hoy): ${parts.join(" · ")}.`
 }
 
 export default async function OperationalControlPage({
@@ -91,13 +96,22 @@ export default async function OperationalControlPage({
   }
 
   const canViewFuel = can(session, "combustibles:view")
-  const [data, fuelPending] = await Promise.all([
+  // La pantalla de Fuentes exige poder importar o sincronizar; sin eso, la
+  // tarjeta resume pero no ofrece un enlace que terminaría en /forbidden.
+  const canViewFuelSources = can(session, "combustibles:import")
+    || can(session, "combustibles:tae_import")
+    || can(session, "combustibles:sync_integrations")
+  const [data, fuelPending, sourceHealth] = await Promise.all([
     getOperationalControlHub(session, period),
     // Las cuatro colas de «Por revisar», las mismas que cuenta el menú y la
     // bandeja: cada tipo cae a null por separado y el tile lo dice. El `catch`
     // es sólo una red: `getFuelInboxPendingByKind` ya atrapa cada uno.
     canViewFuel
       ? getFuelInboxPendingForSession(session).catch((): FuelPendingCounts => NO_FUEL_COUNTS)
+      : Promise.resolve(null),
+    // La tarjeta de fuentes reutiliza el mismo read model de /combustibles/fuentes.
+    canViewFuel
+      ? getOperationalSourceHealth(session, period).catch(() => null)
       : Promise.resolve(null),
   ])
 
@@ -109,8 +123,11 @@ export default async function OperationalControlPage({
   const periodLabel = `${formatDate(period.from)} – ${formatDate(period.to)}`
   const headerDescription = `Qué requiere atención hoy en flota, mantención y combustible, y el desempeño de los activos entre ${formatDate(period.from)} y ${formatDate(period.to)}.`
 
-  const { canViewFleet, canViewMaintenance, canViewInspections, canViewCosts } = data.permissions
-  const fleetSize = data.assets.filter((asset) => asset.kind === "vehicle").length
+  const { canViewFleet, canViewMaintenance, canViewInspections, canViewCapa, canViewCosts, canViewServiceEquipment } = data.permissions
+  const operationalAssets = data.assets.filter((asset) => asset.kind === "vehicle")
+  const fleetSize = operationalAssets.length
+  const stateMismatchCount = operationalAssets.filter((asset) => asset.stateMismatch).length
+  const serviceEquipmentCount = data.assets.filter((asset) => asset.kind === "service_equipment").length
 
   // Orden de lectura: lo que está parado, el trabajo abierto, los papeles y, al
   // final, el combustible. Cada tile existe sólo con la capacidad de su dominio.
@@ -122,7 +139,14 @@ export default async function OperationalControlPage({
   ]
 
   const performanceStats = buildPerformanceStats(data.metrics, { canViewFleet, canViewMaintenance, canViewCosts })
-  const glossary = buildPerformanceGlossary({ canViewFleet, canViewMaintenance })
+  const glossary = buildPerformanceGlossary({
+    canViewFleet,
+    canViewMaintenance,
+    canViewInspections,
+    canViewCapa,
+    canViewFuel,
+    canViewCosts,
+  })
 
   return (
     <PageContainer>
@@ -147,6 +171,12 @@ export default async function OperationalControlPage({
         }
       />
 
+      {data.degradedSources.length > 0 && (
+        <div className="mb-4">
+          <DegradedDataBanner degraded={data.degradedSources} total={4} />
+        </div>
+      )}
+
       {attentionTiles.length > 0 && (
         <section aria-labelledby="atencion-ahora" className="mb-5">
           <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5">
@@ -169,6 +199,16 @@ export default async function OperationalControlPage({
             ))}
           </div>
         </section>
+      )}
+
+      {canViewFleet && stateMismatchCount > 0 && (
+        <div className="mb-4">
+          <Callout tone="warning">
+            {stateMismatchCount === 1 ? "1 equipo tiene" : `${stateMismatchCount} equipos tienen`} un estado distinto
+            entre su ficha y el último intervalo operacional.{" "}
+            <Link href="/flota" className="underline underline-offset-4">Revisar en Vehículos</Link>.
+          </Callout>
+        </div>
       )}
 
       <section aria-labelledby="desempeno-periodo" className="mb-4 space-y-3">
@@ -242,47 +282,105 @@ export default async function OperationalControlPage({
           </CardHeader>
           <CardContent>
             <OperationalAssetsTable
-              assets={data.assets}
+              assets={operationalAssets}
               canViewCosts={canViewCosts}
               canViewMaintenance={canViewMaintenance}
               canViewInspections={canViewInspections}
+              canViewCapa={canViewCapa}
+              canViewFuel={canViewFuel}
+              canViewFleet={canViewFleet}
             />
+            {canViewServiceEquipment && serviceEquipmentCount > 0 && (
+              <p className="mt-3 text-xs text-[var(--color-text-muted)]">
+                Instrumentos de servicio: {serviceEquipmentCount}.{" "}
+                <Link href="/admin/equipos" className="text-[var(--color-primary-ink)] underline-offset-4 hover:underline">
+                  Ver en Administración
+                </Link>
+              </p>
+            )}
           </CardContent>
         </Card>
-        {data.permissions.canViewFuelImport && (
+        {sourceHealth && (
           <Card>
             <CardHeader>
-              {/* B-02: el card listaba una sola fuente (`fuel_import`) pero su
-                  título decía "Salud de fuentes" (plural), lo que sugería
-                  también mantención e inspecciones. Ahora el título describe
-                  fielmente el contenido. */}
-              <CardTitle as="h2">Última importación de combustible</CardTitle>
+              <CardTitle as="h2">Fuentes de combustible</CardTitle>
             </CardHeader>
-            <CardContent>
-              <ul className="space-y-3">
-                {data.sourceHealth.map((source) => (
-                  <li key={source.key} className="rounded-lg border border-[var(--color-border)] p-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm font-medium">{source.label}</span>
-                      <MetaBadge meta={{ label: `${source.statusLabel}`, variant: sourceHealthVariant(source.status) }} />
-                    </div>
-                    <p className="mt-1 text-xs text-[var(--color-text-muted)]">{source.detail}</p>
-                    <p className="mt-1 text-xs text-[var(--color-text-subtle)]">
-                      {source.lastRunAt
-                        ? `Última corrida: ${formatDateTime(source.lastRunAt)}`
-                        : "Sin ejecución visible"}
-                    </p>
-                    {source.lastBatchId && can(session, "combustibles:import") && (
-                      <Button asChild variant="link" size="sm" className="mt-1 h-auto p-0 text-xs">
-                        <Link href={fuelBatchHref("tarjeta", source.lastBatchId)}>
-                          Ver detalle
-                          <ArrowRight size={12} className="ml-1" />
+            <CardContent className="space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm font-medium">
+                  {sourceHealth.pending.length > 0
+                    ? `${sourceHealth.pending.length} de ${Math.max(sourceHealth.total, sourceHealth.pending.length)} con pendientes`
+                    : sourceHealth.total === 0
+                      ? "Sin fuentes visibles"
+                      : sourceHealth.ready
+                        ? "Al día"
+                        : "Sin datos"}
+                </span>
+                <MetaBadge meta={{
+                  label: sourceHealth.ready ? "Al día" : sourceHealth.pending.length > 0 ? "Revisar" : "Sin datos",
+                  variant: sourceHealth.ready ? "success" : sourceHealth.pending.length > 0 ? "signal" : "neutral",
+                }} />
+              </div>
+
+              {sourceHealth.lastUpdateAt && (
+                <p className="text-xs text-[var(--color-text-subtle)]">
+                  Última actualización:{" "}
+                  <span className="font-mono">{formatDateTime(sourceHealth.lastUpdateAt)}</span>
+                </p>
+              )}
+
+              {sourceHealth.pending.length > 0 && (
+                <ul className="space-y-2 text-xs">
+                  {sourceHealth.pending.slice(0, 3).map((source) => (
+                    <li key={source.key}>
+                      <p className="font-medium text-[var(--color-text)]">{source.name}</p>
+                      <p className="text-[var(--color-text-muted)]">{source.problem ?? source.statusLabel}</p>
+                      {source.problemLink && (
+                        <Link
+                          href={source.problemLink.href}
+                          className="text-[var(--color-primary-ink)] underline-offset-4 hover:underline"
+                        >
+                          {source.problemLink.label}
                         </Link>
-                      </Button>
-                    )}
-                  </li>
-                ))}
-              </ul>
+                      )}
+                    </li>
+                  ))}
+                  {sourceHealth.pending.length > 3 && (
+                    <li className="text-[var(--color-text-subtle)]">
+                      También: {sourceHealth.pending.slice(3).map((source) => source.name).join(", ")}.
+                    </li>
+                  )}
+                </ul>
+              )}
+
+              {sourceHealth.reconciliation ? (
+                <p className={
+                  sourceHealth.reconciliation.unmatched + sourceHealth.reconciliation.ambiguous + sourceHealth.reconciliation.openRejections > 0
+                    ? "text-xs text-[var(--color-signal-ink)]"
+                    : "text-xs text-[var(--color-text-muted)]"
+                }>
+                  {reconciliationText(sourceHealth.reconciliation)}
+                </p>
+              ) : (
+                <p className="text-xs text-[var(--color-text-subtle)]">Conciliación: sin dato.</p>
+              )}
+
+              <div className="flex flex-wrap gap-x-4 gap-y-1">
+                {canViewFuelSources && (
+                  <Button asChild variant="link" size="sm" className="h-auto p-0 text-xs">
+                    <Link href={`/combustibles/fuentes?desde=${period.from}&hasta=${period.to}`}>
+                      Ver todas las fuentes
+                      <ArrowRight size={12} className="ml-1" />
+                    </Link>
+                  </Button>
+                )}
+                <Button asChild variant="link" size="sm" className="h-auto p-0 text-xs">
+                  <Link href={`/combustibles/cuadratura?desde=${period.from}&hasta=${period.to}`}>
+                    Ver conciliación
+                    <ArrowRight size={12} className="ml-1" />
+                  </Link>
+                </Button>
+              </div>
             </CardContent>
           </Card>
         )}
