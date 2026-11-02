@@ -8,12 +8,17 @@ import {
 
 const METRICS: PerformanceMetrics = {
   availabilityPercent: 95.5,
+  stateCoveragePercent: 98.5,
   mtbfHours: 450,
   mttrHours: 20.25,
   preventiveCompliancePercent: 92,
   downtimeHours: 140,
   backlog: 3,
   maintenanceCost: 500_000,
+  maintenanceCostApproved: 350_000,
+  planAdherencePercent: 80,
+  overdueSla: 2,
+  unassignedOpen: 1,
 }
 
 const ALL = { canViewFleet: true, canViewMaintenance: true, canViewCosts: true }
@@ -25,16 +30,18 @@ function keys(stats: ReturnType<typeof buildPerformanceStats>) {
 describe("buildPerformanceStats", () => {
   it("conserva todas las cifras que el panel mostraba antes, con las tres capacidades", () => {
     expect(keys(buildPerformanceStats(METRICS, ALL))).toEqual([
-      "availability", "mtbf", "mttr", "preventive", "downtime", "period-backlog", "cost",
+      "availability", "state-coverage", "mtbf", "mttr", "preventive", "plan-adherence", "downtime", "overdue-sla", "unassigned", "period-backlog", "cost",
     ])
   })
 
   it("la disponibilidad es de Flota: sin flota:view no aparece", () => {
-    expect(keys(buildPerformanceStats(METRICS, { ...ALL, canViewFleet: false }))).not.toContain("availability")
+    const stats = keys(buildPerformanceStats(METRICS, { ...ALL, canViewFleet: false }))
+    expect(stats).not.toContain("availability")
+    expect(stats).not.toContain("state-coverage")
   })
 
   it("las cifras de mantención exigen mantenciones:view", () => {
-    expect(keys(buildPerformanceStats(METRICS, { canViewFleet: true, canViewMaintenance: false, canViewCosts: true }))).toEqual(["availability"])
+    expect(keys(buildPerformanceStats(METRICS, { canViewFleet: true, canViewMaintenance: false, canViewCosts: true }))).toEqual(["availability", "state-coverage"])
   })
 
   it("el costo exige además combustibles:view_costs", () => {
@@ -55,10 +62,10 @@ describe("buildPerformanceStats", () => {
 
   it("sin datos pinta «Sin datos» como texto, no 0", () => {
     const stats = buildPerformanceStats(
-      { ...METRICS, availabilityPercent: null, mtbfHours: null, mttrHours: null, preventiveCompliancePercent: null },
+      { ...METRICS, availabilityPercent: null, stateCoveragePercent: null, mtbfHours: null, mttrHours: null, preventiveCompliancePercent: null, planAdherencePercent: null },
       ALL,
     )
-    for (const key of ["availability", "mtbf", "mttr", "preventive"]) {
+    for (const key of ["availability", "state-coverage", "mtbf", "mttr", "preventive", "plan-adherence"]) {
       const stat = stats.find((s) => s.key === key)!
       expect(stat.value).toBe("Sin datos")
       expect(stat.valueKind).toBe("text")
@@ -123,8 +130,10 @@ describe("formatKpi", () => {
 
 describe("buildPerformanceGlossary", () => {
   it("trae las definiciones de las cifras visibles y nada más", () => {
-    expect(buildPerformanceGlossary(ALL).map((e) => e.key)).toEqual(["availability", "mtbf", "mttr", "preventive"])
-    expect(buildPerformanceGlossary({ canViewFleet: true, canViewMaintenance: false }).map((e) => e.key)).toEqual(["availability"])
+    expect(buildPerformanceGlossary(ALL).map((e) => e.key)).toEqual([
+      "availability", "state-coverage", "mtbf", "mttr", "preventive", "plan-adherence", "overdue-sla", "unassigned", "maintenance-cost",
+    ])
+    expect(buildPerformanceGlossary({ canViewFleet: true, canViewMaintenance: false }).map((e) => e.key)).toEqual(["availability", "state-coverage"])
     expect(buildPerformanceGlossary({ canViewFleet: false, canViewMaintenance: false })).toEqual([])
   })
 

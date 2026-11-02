@@ -70,6 +70,37 @@ export function resolveExpiryCandidates(
   return candidates
 }
 
+const CANONICAL_FIELD_LABEL: Record<CanonicalExpiryField, string> = {
+  soapExpiresAt: "SOAP",
+  technicalReviewExpiresAt: "Revisión técnica",
+  circulationPermitExpiresAt: "Permiso de circulación",
+  insuranceExpiresAt: "Seguro",
+}
+
+/**
+ * Tipos documentales vencidos de un equipo, con la misma precedencia que
+ * `resolveExpiryCandidates`: la columna declarada manda y el documento vigente
+ * sólo aporta cuando esa columna está vacía.
+ */
+export function expiredDocumentTypes(
+  declared: Partial<Record<CanonicalExpiryField, string | null>>,
+  currentDocuments: Array<{ documentType: string; expiresAt: string | null }>,
+  today: string,
+): string[] {
+  const out = new Set<string>()
+  for (const [field, label] of Object.entries(CANONICAL_FIELD_LABEL) as Array<[CanonicalExpiryField, string]>) {
+    const value = declared[field]
+    if (value && value < today) out.add(label)
+  }
+  for (const document of currentDocuments) {
+    if (!document.expiresAt || document.expiresAt >= today) continue
+    const field = DOCUMENT_TYPE_CANONICAL_FIELD[document.documentType as keyof typeof DOCUMENT_TYPE_CANONICAL_FIELD]
+    if (field && declared[field]) continue
+    out.add(document.documentType)
+  }
+  return [...out].sort((a, b) => a.localeCompare(b))
+}
+
 /**
  * Próximo vencimiento de un equipo: la menor de sus fechas vigentes
  * (`resolveExpiryCandidates`), o `null` si no tiene ninguna.

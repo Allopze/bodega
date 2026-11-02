@@ -23,28 +23,30 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/db", async () => {
   const { getTableName } = await import("drizzle-orm")
+  const select = (projection: Record<string, unknown>) => {
+    let key = ""
+    const chain: Record<string, unknown> = {}
+    chain.from = (table: Parameters<typeof getTableName>[0]) => {
+      const name = getTableName(table)
+      // `maintenance_records` se consulta dos veces: el agregado por
+      // vehículo del período y el conteo de OT abiertas (sin `vehicleId`).
+      key = name === "maintenance_records" && !("vehicleId" in projection) ? "maintenance_records:abiertas" : name
+      mocks.issued.push(key)
+      return chain
+    }
+    for (const method of ["innerJoin", "leftJoin", "where", "orderBy", "groupBy", "limit"]) {
+      chain[method] = () => chain
+    }
+    chain.then = (resolve: (value: unknown[]) => unknown, reject?: (error: unknown) => unknown) =>
+      mocks.failing.has(key)
+        ? Promise.reject(new Error(`falla simulada: ${key}`)).then(resolve, reject)
+        : Promise.resolve(mocks.rowsByQuery.get(key) ?? []).then(resolve, reject)
+    return chain
+  }
   return {
     db: {
-      select: (projection: Record<string, unknown>) => {
-        let key = ""
-        const chain: Record<string, unknown> = {}
-        chain.from = (table: Parameters<typeof getTableName>[0]) => {
-          const name = getTableName(table)
-          // `maintenance_records` se consulta dos veces: el agregado por
-          // vehículo del período y el conteo de OT abiertas (sin `vehicleId`).
-          key = name === "maintenance_records" && !("vehicleId" in projection) ? "maintenance_records:abiertas" : name
-          mocks.issued.push(key)
-          return chain
-        }
-        for (const method of ["innerJoin", "leftJoin", "where", "orderBy", "groupBy", "limit"]) {
-          chain[method] = () => chain
-        }
-        chain.then = (resolve: (value: unknown[]) => unknown, reject?: (error: unknown) => unknown) =>
-          mocks.failing.has(key)
-            ? Promise.reject(new Error(`falla simulada: ${key}`)).then(resolve, reject)
-            : Promise.resolve(mocks.rowsByQuery.get(key) ?? []).then(resolve, reject)
-        return chain
-      },
+      select,
+      selectDistinctOn: (_distinct: unknown[], projection: Record<string, unknown>) => select(projection),
     },
   }
 })
@@ -131,7 +133,7 @@ describe("getOperationalControlHub · atención", () => {
     expect(mocks.issued).toContain("maintenance_records:abiertas")
   })
 
-  it("includeAttention: false (la exportación) no consulta atención y conserva activos y métricas", async () => {
+  it("includeAttention: false (la exportación) no consulta ajustes ni OT abiertas, pero sí los documentos del activo", async () => {
     const hub = await getOperationalControlHub(
       session("flota:view", "mantenciones:view"),
       {},
@@ -139,7 +141,8 @@ describe("getOperationalControlHub · atención", () => {
     )
 
     expect(hub.attention).toEqual({ stoppedVehicles: null, fleetDocuments: null, openWorkOrders: null })
-    expect(mocks.issued).not.toContain("fleet_vehicle_documents")
+    // Los documentos alimentan el próximo vencimiento de la fila, no sólo el tile.
+    expect(mocks.issued).toContain("fleet_vehicle_documents")
     expect(mocks.issued).not.toContain("maintenance_records:abiertas")
     expect(mocks.fleetSettings).not.toHaveBeenCalled()
     // Lo que la exportación sí usa sigue llegando.
@@ -172,6 +175,7 @@ describe("getOperationalControlHub · atención", () => {
     expect(hub.attention.openWorkOrders).toBeNull()
     expect(hub.attention.stoppedVehicles?.total).toBe(3)
     expect(hub.assets).toHaveLength(5)
+    expect(hub.degradedSources).toEqual(expect.arrayContaining(["documentos de flota", "OT abiertas"]))
     expect(mocks.logError).toHaveBeenCalledTimes(2)
   })
 

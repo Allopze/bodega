@@ -2,22 +2,25 @@ import { test, expect, type Page } from "@playwright/test"
 import { login } from "./helpers"
 
 /**
- * Reflow en 320, 390, 768 y 1024 px (TASK-UI-004 y 014).
+ * Reflow en 320, 375, 390, 768, 1024 y 1440 px (TASK-UI-004 y 014).
  *
  * La auditoría certificó 1920 y 390 con el capturador —cero scroll horizontal—
- * y dejó pendientes los otros tres. No era una omisión menor: 320 es donde el
+ * y dejó pendientes los otros. No era una omisión menor: 320 es donde el
  * reflow falla primero, 768 es el ancho en el que las listas cambian de tarjeta
- * a tabla, y 1024 es el que decide si el panel lateral cabe. Ninguno se había
- * ejercitado nunca en ningún viewport de la suite.
+ * a tabla, y 1024/1440 deciden si el panel lateral y las tablas anchas caben.
+ * 375 es el ancho de referencia del teléfono; se agregó junto con 1440 al
+ * revisar el panel operacional, cuya tabla creció en columnas.
  *
  * WCAG 1.4.10 exige contenido sin scroll horizontal a 320 px de ancho
  * equivalente; el resto de anchos hereda el mismo contrato.
  */
 const ANCHOS = [
   { name: "320", width: 320, height: 568 },
+  { name: "375", width: 375, height: 812 },
   { name: "390", width: 390, height: 844 },
   { name: "768", width: 768, height: 1024 },
   { name: "1024", width: 1024, height: 768 },
+  { name: "1440", width: 1440, height: 900 },
 ] as const
 
 /** Las mismas superficies densas que ya vigila la prueba de zoom 200 %. */
