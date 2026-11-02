@@ -1,7 +1,7 @@
 import type { RecordAccepted } from "./api"
 import { STORE, idbGet, idbGetAll, req, runTx } from "./db"
 import { emit } from "./events"
-import type { QueueItem, QueueRecordItem, QueueReplyItem, QueueStatus, QueueWorkshopItem } from "./types"
+import type { QueueItem, QueueRecordItem, QueueReplyItem, QueueStatus, QueueWorkOrderItem, QueueWorkshopItem } from "./types"
 
 /**
  * Cola de envío. Cada elemento lleva su autor y se manda con la credencial de ESE
@@ -41,13 +41,18 @@ export function newRecordItem(input: Pick<QueueRecordItem, "payload" | "summary"
   return { ...base(input.payload.id, input.authorUserId, now), type: "record", payload: input.payload, summary: input.summary, photoIds: input.photoIds, folio: null, receivedAt: null, warnings: [], rejection: null }
 }
 
-export async function enqueueSimple(item: QueueWorkshopItem | QueueReplyItem): Promise<void> {
+export async function enqueueSimple(item: QueueWorkshopItem | QueueReplyItem | QueueWorkOrderItem): Promise<void> {
   await runTx([STORE.queue], "readwrite", async (s) => { await req(s.queue.put(item)) })
   emit("queue")
 }
 
 export function newWorkshopItem(input: Pick<QueueWorkshopItem, "payload" | "summary"> & { authorUserId: string }, now = new Date().toISOString()): QueueWorkshopItem {
   return { ...base(input.payload.id, input.authorUserId, now), type: "workshop", payload: input.payload, summary: input.summary }
+}
+
+/** Operación sobre una OT: el id de la operación (uuid del cliente) es también el de la cola. */
+export function newWorkOrderItem(input: Pick<QueueWorkOrderItem, "payload" | "summary"> & { authorUserId: string }, now = new Date().toISOString()): QueueWorkOrderItem {
+  return { ...base(input.payload.id, input.authorUserId, now), type: "ot", payload: input.payload, summary: input.summary }
 }
 
 export function newReplyItem(input: Pick<QueueReplyItem, "payload" | "summary"> & { authorUserId: string }, id: string, now = new Date().toISOString()): QueueReplyItem {
@@ -106,6 +111,15 @@ export async function markRejected(id: string, message: string, field: string | 
   await updateItem(id, (item) => item.type === "record"
     ? { ...item, status: "rejected", lastError: message, rejection: { message, field } }
     : { ...item, status: "rejected", lastError: message })
+}
+
+/** Quita de la cola un elemento rechazado que el mecánico ya leyó (sólo operaciones de OT: un registro rechazado se corrige, no se descarta). */
+export async function discardRejectedOtOp(id: string): Promise<void> {
+  await runTx([STORE.queue], "readwrite", async (s) => {
+    const current = (await req(s.queue.get(id))) as QueueItem | undefined
+    if (current?.type === "ot" && current.status === "rejected") await req(s.queue.delete(id))
+  })
+  emit("queue")
 }
 
 /** Falla pasajera (red, 408, 429, 5xx): vuelve a `pending` con su espera. */

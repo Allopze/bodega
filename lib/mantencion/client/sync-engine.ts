@@ -1,11 +1,12 @@
 import { canSync, getAccount, markAccountNeedsLogin } from "./accounts"
-import { postObservationReply, postRecord, postWorkshopUpdate, uploadPhoto, type ApiFailure } from "./api"
+import { postObservationReply, postRecord, postWorkOrderOp, postWorkshopUpdate, uploadPhoto, type ApiFailure } from "./api"
 import { refreshCatalog } from "./catalog-sync"
 import { emit } from "./events"
 import { getPhotos, resetUploaded, setPhotoUploaded } from "./photo-store"
 import {
   backoffMs, claimForSending, listQueue, markAuthorNeedsLogin, markRecordSent, markRejected, markRetry, markSimpleSent, pruneSent,
 } from "./queue"
+import { waitsForDependency } from "./queue-order"
 import { reportReachable } from "./signal"
 import type { DeviceAccount, QueueItem, QueueRecordItem } from "./types"
 
@@ -15,7 +16,8 @@ import type { DeviceAccount, QueueItem, QueueRecordItem } from "./types"
  * credencial de SU autor, en el orden en que se creó:
  *
  *   registro → sube cada foto (PUT idempotente) y luego el POST con su id;
- *   taller / respuesta → un POST (el de taller espera a que su registro llegue).
+ *   taller / respuesta / OT → un POST (el de taller espera a que su registro llegue;
+ *   los de OT y los registros enlazados a una OT guardan su orden: ver queue-order.ts).
  *
  * Lo que decide cada respuesta está en `lib/mantencion/contracts.ts`
  * (`SyncRecordResponse`): 401/403 pide entrar de nuevo; 409/422 es un rechazo
@@ -132,19 +134,15 @@ async function sendOne(item: QueueItem, account: DeviceAccount, deps: SyncDeps, 
   if (item.type === "record") return sendRecord(item, account, deps, now)
   const result = item.type === "workshop"
     ? await postWorkshopUpdate(account.token, item.payload, deps.fetchImpl)
-    : await postObservationReply(account.token, item.payload, deps.fetchImpl)
+    : item.type === "ot"
+      ? await postWorkOrderOp(account.token, item.payload, deps.fetchImpl)
+      : await postObservationReply(account.token, item.payload, deps.fetchImpl)
   if (result.kind === "ok") {
     reportReachable(true)
     await markSimpleSent(item.id)
     return "sent"
   }
   return settleFailure(item, result, account, now)
-}
-
-/** Una actualización de taller sólo puede llegar después de su registro. */
-function waitsForItsRecord(item: QueueItem, queue: readonly QueueItem[]): boolean {
-  if (item.type !== "workshop") return false
-  return queue.some((other) => other.type === "record" && other.id === item.payload.recordId && other.status !== "sent")
 }
 
 async function syncPass(deps: SyncDeps): Promise<SyncReport> {
@@ -156,7 +154,7 @@ async function syncPass(deps: SyncDeps): Promise<SyncReport> {
 
   for (const item of queue) {
     if (item.status !== "pending" || item.nextAttemptAt > now || blocked.has(item.authorUserId)) continue
-    if (waitsForItsRecord(item, queue)) continue
+    if (waitsForDependency(item, queue)) continue
 
     const account = await getAccount(item.authorUserId)
     if (!account || !canSync(account, now)) {
@@ -187,7 +185,7 @@ async function syncPass(deps: SyncDeps): Promise<SyncReport> {
   }
   const remaining = (await listQueue()).filter((item) => item.status === "pending")
   const delayed = remaining.filter((item) => item.nextAttemptAt > now).map((item) => item.nextAttemptAt)
-  // Si algo llegó, lo que quedaba esperándolo (una actualización de taller tras su registro) sale enseguida.
+  // Si algo llegó, lo que quedaba esperándolo (una actualización de taller tras su registro, una operación de OT tras la anterior) sale enseguida.
   if (report.sent > 0 && remaining.length > 0) report.nextAttemptAt = now + 1_000
   else report.nextAttemptAt = delayed.length > 0 ? Math.min(...delayed) : null
   return report

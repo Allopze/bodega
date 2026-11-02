@@ -143,7 +143,7 @@ export function MantApp({ sessionUser, appVersion, renderedAt }: MantAppProps) {
       <DoneScreen itemId={screen.itemId} onHome={() => setScreen({ name: "home" })} onStartOther={(kind, vehicleId) => startFlow(kind, vehicleId)} />
     ) : (
       <HomeScreen
-        onStart={(kind, vehicleId) => startFlow(kind, vehicleId ?? null)}
+        onStart={(kind, vehicleId, workOrderId) => startFlow(kind, vehicleId ?? null, workOrderId ? { workOrderId } : {})}
         onResume={(draft) => setScreen({ name: "flow", draft: { ...draft, errors: {} } })}
         onFix={fixRejected}
         onNeedLogin={needLogin}

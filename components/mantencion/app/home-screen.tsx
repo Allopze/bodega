@@ -6,6 +6,7 @@ import { discardDraft } from "@/lib/mantencion/client/drafts"
 import { dueRows, equipmentLabel, workshopEntries, type WorkshopEntry } from "@/lib/mantencion/client/fleet-view"
 import { draftHasContent, type FlowDraft } from "@/lib/mantencion/client/flow-types"
 import { buildRecent, openObservations, rejectedRecords, worksiteSummary } from "@/lib/mantencion/client/home-model"
+import { buildOtViews, type OtView } from "@/lib/mantencion/client/ot-model"
 import { queueStats, STALE_PENDING_MS } from "@/lib/mantencion/client/queue"
 import type { DeviceAccount, QueueRecordItem } from "@/lib/mantencion/client/types"
 import { formatDateTime } from "@/lib/utils"
@@ -15,13 +16,16 @@ import { ConfirmDialog } from "./dialog"
 import { DraftBanners, DueSection, ObservationBanner, RecentSection, RejectedSection, WorkshopSection } from "./home-lists"
 import { IconChevronDown, IconChevronRight, IconChevronUp, IconWifi, IconWifiOff } from "./icons"
 import { ObservationSheet } from "./observation-sheet"
+import { OtSection } from "./ot-lists"
+import { OtSheet } from "./ot-sheet"
 import { useDrafts } from "./use-drafts"
 import { Banner, firstName, initials } from "./ui"
 import { WorkshopSheet } from "./workshop-sheet"
 import { InstallPrompt } from "./install-prompt"
 
 export interface HomeProps {
-  onStart: (kind: "P" | "C", vehicleId?: string | null) => void
+  /** Con `workOrderId`, el registro sale de esa OT: el equipo queda fijo y el trabajo viaja enlazado a ella. */
+  onStart: (kind: "P" | "C", vehicleId?: string | null, workOrderId?: string | null) => void
   onResume: (draft: FlowDraft) => void
   onFix: (item: QueueRecordItem) => void
   onNeedLogin: () => void
@@ -61,7 +65,8 @@ export function HomeScreen({ onStart, onResume, onFix, onNeedLogin, onOtherAccou
   const [sitesOpen, setSitesOpen] = useState(false)
   const [workshop, setWorkshop] = useState<WorkshopEntry | null>(null)
   const [discarding, setDiscarding] = useState<FlowDraft | null>(null)
-  const [askStart, setAskStart] = useState<{ kind: "P" | "C"; vehicleId: string | null; existing: FlowDraft } | null>(null)
+  const [askStart, setAskStart] = useState<{ kind: "P" | "C"; vehicleId: string | null; workOrderId: string | null; existing: FlowDraft } | null>(null)
+  const [openOt, setOpenOt] = useState<string | null>(null)
 
   const stats = queueStats(queue, account.userId, now)
   const sending = queue.some((item) => item.authorUserId === account.userId && item.status === "sending")
@@ -73,15 +78,25 @@ export function HomeScreen({ onStart, onResume, onFix, onNeedLogin, onOtherAccou
   const observations = useMemo(() => openObservations(stored?.catalog, queue), [stored, queue])
   const worksites = (stored?.catalog.worksites ?? []).filter((site) => stored?.catalog.user.worksiteIds.includes(site.id)).map((site) => site.name)
   const sites = worksiteSummary(worksites)
+  const otViews = useMemo(() => buildOtViews(stored?.catalog, queue, { id: account.userId, name: account.name }), [stored, queue, account.userId, account.name])
+  const openOtView = openOt ? [...otViews.mine, ...otViews.available].find((view) => view.ot.id === openOt) ?? null : null
   const equipmentOf = (vehicleId: string | null) => {
     const row = rows.find((entry) => entry.eq.id === vehicleId)
     return row ? equipmentLabel(row.eq) : null
   }
 
-  const start = (kind: "P" | "C", vehicleId: string | null = null) => {
-    const existing = drafts.find((draft) => draft.kind === kind && draftHasContent(draft) && draft.vehicleId !== vehicleId)
-    if (existing) setAskStart({ kind, vehicleId, existing })
-    else onStart(kind, vehicleId)
+  const start = (kind: "P" | "C", vehicleId: string | null = null, workOrderId: string | null = null) => {
+    // Registrar de nuevo desde la misma OT retoma el avance que ya hay, no lo pisa.
+    const same = workOrderId ? drafts.find((draft) => draft.kind === kind && draftHasContent(draft) && draft.workOrderId === workOrderId) : undefined
+    if (same) { onResume(same); return }
+    const existing = drafts.find((draft) => draft.kind === kind && draftHasContent(draft) && (draft.vehicleId !== vehicleId || draft.workOrderId !== workOrderId))
+    if (existing) setAskStart({ kind, vehicleId, workOrderId, existing })
+    else onStart(kind, vehicleId, workOrderId)
+  }
+  /** «Registrar correctiva / preventiva» desde una OT: el equipo es el de la OT. */
+  const registerFromOt = (kind: "P" | "C", view: OtView) => {
+    setOpenOt(null)
+    start(kind, view.ot.vehicleId, view.ot.id)
   }
 
   return (
@@ -127,6 +142,8 @@ export function HomeScreen({ onStart, onResume, onFix, onNeedLogin, onOtherAccou
         ) : null}
         <DueSection rows={due} onPick={(row) => start("P", row.eq.id)} />
 
+        <OtSection views={otViews} onOpen={(view) => setOpenOt(view.ot.id)} />
+
         <section className="sect" aria-labelledby="h-nuevo">
           <div className="cap" id="h-nuevo">Nuevo registro</div>
           <button type="button" className="bigbtn" onClick={() => start("P")}>Mantención preventiva<IconChevronRight /></button>
@@ -153,6 +170,7 @@ export function HomeScreen({ onStart, onResume, onFix, onNeedLogin, onOtherAccou
       ) : null}
       {observationsOpen ? <ObservationSheet observations={observations} onClose={() => setObservationsOpen(false)} /> : null}
       {workshop ? <WorkshopSheet entry={workshop} onClose={() => setWorkshop(null)} /> : null}
+      {openOtView ? <OtSheet view={openOtView} onClose={() => setOpenOt(null)} onRegister={registerFromOt} /> : null}
       {discarding ? (
         <ConfirmDialog
           title="¿Descartar lo que ingresaste?"
@@ -172,7 +190,7 @@ export function HomeScreen({ onStart, onResume, onFix, onNeedLogin, onOtherAccou
           cancelLabel="Seguir con esa"
           danger
           onCancel={() => { const existing = askStart.existing; setAskStart(null); onResume(existing) }}
-          onConfirm={() => { const target = askStart; setAskStart(null); void discardDraft(target.existing).then(() => onStart(target.kind, target.vehicleId)) }}
+          onConfirm={() => { const target = askStart; setAskStart(null); void discardDraft(target.existing).then(() => onStart(target.kind, target.vehicleId, target.workOrderId)) }}
         >
           <p>Si empiezas de cero, se pierde lo que ingresaste{equipmentOf(askStart.existing.vehicleId) ? ` de ${equipmentOf(askStart.existing.vehicleId)}` : ""}.</p>
         </ConfirmDialog>

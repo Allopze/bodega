@@ -128,6 +128,8 @@ function validateTrabajo(draft: FlowDraft, ctx: FlowCtx, errors: FlowErrors): vo
   if (!draft.noOilChange && draft.oilIds.length === 0) errors.oil = "Marca qué aceite se cambió, o «No se cambió aceite»."
   if (draft.description.trim().length < MIN_DESCRIPTION) errors.description = "Describe el trabajo realizado."
   if (draft.driverIds.length === 0) errors.drivers = "Agrega al menos un conductor."
+  // Con una OT, el taller lo lleva la OT (ingreso y salida): no se pregunta de nuevo.
+  if (draft.workOrderId) return
   if (draft.inWorkshop === null) errors.workshop = "Indica si el equipo sigue en taller."
   else if (draft.inWorkshop) {
     if (!draft.workshopEntryDate) errors.workshop = "Indica cuándo entró a taller."

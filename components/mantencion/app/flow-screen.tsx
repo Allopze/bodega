@@ -6,7 +6,7 @@ import { StorageFullError } from "@/lib/mantencion/client/db"
 import { flowReducer } from "@/lib/mantencion/client/flow"
 import { buildFlowEnv } from "@/lib/mantencion/client/flow-env"
 import { buildRecord } from "@/lib/mantencion/client/flow-record"
-import { draftHasContent, draftKey, stepsFor, type FlowDraft } from "@/lib/mantencion/client/flow-types"
+import { draftHasContent, draftKey, firstStepIndex, stepsFor, type FlowDraft } from "@/lib/mantencion/client/flow-types"
 import { checklistCounts, faltaText, validateAll } from "@/lib/mantencion/client/flow-validate"
 import { commitRecord, newRecordItem } from "@/lib/mantencion/client/queue"
 import { getOfflineSince } from "@/lib/mantencion/client/signal"
@@ -98,7 +98,7 @@ export function FlowScreen({ initial, onExit, onSigned }: { initial: FlowDraft; 
   const closeExit = () => { setConfirmExit(false); setExitError(null) }
   // Sin equipo ni fotos no hay nada que guardar: se sale sin preguntar.
   const requestExit = () => { if (draftHasContent(draft)) setConfirmExit(true); else void discardAndExit() }
-  const back = () => { if (draft.step === 0) requestExit(); else dispatch({ type: "back" }) }
+  const back = () => { if (draft.step <= firstStepIndex(draft)) requestExit(); else dispatch({ type: "back" }) }
   const next = () => dispatch({ type: "next", env })
   const confirmAnd = (patch: Partial<FlowDraft>) => { dispatch({ type: "patch", patch }); dispatch({ type: "next", env }) }
 
@@ -154,7 +154,7 @@ export function FlowScreen({ initial, onExit, onSigned }: { initial: FlowDraft; 
     <div className="scr">
       <div className="top">
         <div className="toprow">
-          <button type="button" className="ibtn" onClick={back} aria-label={draft.step ? "Paso anterior" : "Volver al inicio"}><IconBack /></button>
+          <button type="button" className="ibtn" onClick={back} aria-label={draft.step > firstStepIndex(draft) ? "Paso anterior" : "Volver al inicio"}><IconBack /></button>
           <div className="ttl">{title}</div>
           <div className="stepn">PASO {draft.step + 1}/{steps.length}</div>
           <button type="button" className="exitb" onClick={requestExit} aria-label="Salir del registro">Salir</button>
@@ -169,10 +169,12 @@ export function FlowScreen({ initial, onExit, onSigned }: { initial: FlowDraft; 
         {name === "equipo" ? <StepEquipo draft={draft} dispatch={dispatch} /> : !row ? (
           <>
             <p className="hint">Este equipo ya no está en la lista del teléfono.</p>
-            <button type="button" className="btns wide" onClick={() => dispatch({ type: "goStep", step: 0, backToReview: false })}>Elegir otro equipo</button>
+            {draft.workOrderId
+              ? <button type="button" className="btns wide" onClick={requestExit}>Volver al inicio</button>
+              : <button type="button" className="btns wide" onClick={() => dispatch({ type: "goStep", step: 0, backToReview: false })}>Elegir otro equipo</button>}
           </>
         ) : name === "lectura" ? (
-          <StepLectura draft={draft} dispatch={dispatch} row={row} onChangeEquipment={() => dispatch({ type: "goStep", step: 0, backToReview: false })} onConfirm={confirmAnd} />
+          <StepLectura draft={draft} dispatch={dispatch} row={row} onChangeEquipment={draft.workOrderId ? undefined : () => dispatch({ type: "goStep", step: 0, backToReview: false })} onConfirm={confirmAnd} />
         ) : name === "pauta" ? <StepPauta draft={draft} dispatch={dispatch} />
           : name === "fotos" ? <StepFotos draft={draft} dispatch={dispatch} row={row} deviceId={deviceId} />
             : name === "trabajo" ? <StepTrabajo draft={draft} dispatch={dispatch} row={row} />
