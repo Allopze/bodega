@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm"
 import type { Tx } from "@/db"
-import { mantDrivers, mantRecords, mantWorkOrderEvents, mantWorkOrderItems, mantWorkOrders, mantWorkshops } from "@/db/schema"
+import { mantDrivers, mantRecords, mantWorkOrderEvents, mantWorkOrderItems, mantWorkshops } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import type { WorkOrderEntryPayload } from "@/lib/mantencion/contracts"
 import {
@@ -10,7 +10,7 @@ import type { EditWorkOrderInput } from "@/lib/mantencion/work-order-schemas"
 import { REASON_MIN_LENGTH } from "@/lib/validation/reason-thresholds"
 import { todayInChile } from "@/lib/utils"
 import {
-  canActOnWorkOrder, canEditExecution, canEditRequest, inWorksiteScope, type AccessCheck,
+  canActOnWorkOrder, canEditExecution, canEditRequest, type AccessCheck,
 } from "./access"
 import { activateWorkOrderCapaEvidence, supersedeWorkOrderCapaEvidence } from "./capa-link"
 import { applyChange, assertNotFuture, planFor, refuse, runLocked, type LockedResult, type OtRow } from "./core"
