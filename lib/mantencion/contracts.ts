@@ -1,5 +1,5 @@
 import { z } from "zod"
-import type { MantEquipmentState, MantReview, MantRecordStatus, MantScheduleSnapshot, MantUnit } from "./types"
+import type { MantEquipmentState, MantExecutorKind, MantItemValue, MantPhotoKind, MantRecordKind, MantReview, MantRecordStatus, MantScheduleSnapshot, MantUnit } from "./types"
 import type { OtItemDone, OtItemKind, OtItemOrigin, OtStatus } from "./work-order-states"
 
 /**
@@ -358,4 +358,66 @@ export type CatalogOtherEquipment = Omit<CatalogEquipment, "recentPreventives" |
 export interface MantCatalogOthers {
   version: string
   equipment: CatalogOtherEquipment[]
+}
+
+/**
+ * Historial de la flota para la app (`GET /api/mantencion/sync/historial`).
+ * Va por un canal propio, con su ETag, para no engordar el catálogo: los
+ * últimos `HISTORY_PER_EQUIPMENT` registros vigentes de cada equipo activo de
+ * TODAS las faenas, de cualquier mecánico. Sólo texto; las fotos se piden una
+ * a una (`GET /api/mantencion/sync/fotos/<id>`) y la app guarda las ya vistas.
+ *
+ * No viaja: anulados, observaciones de supervisión, `review`, datos de la
+ * anulación, anomalías de sello ni quién recibió el registro.
+ */
+export const HISTORY_PER_EQUIPMENT = 10
+
+export interface AppHistoryPhoto {
+  id: string
+  kind: MantPhotoKind
+  width: number
+  height: number
+}
+
+export interface AppHistoryRecord {
+  id: string
+  folio: string | null
+  kind: MantRecordKind
+  vehicleId: string
+  worksiteName: string
+  /** Fecha del trabajo (`YYYY-MM-DD`). */
+  workDate: string
+  reading: number
+  unit: MantUnit
+  executorKind: MantExecutorKind
+  /** Mecánico, «otro mecánico» o taller externo, ya resuelto a un nombre. */
+  executorName: string
+  /** Folio de la OT enlazada, si la hay. */
+  workOrderFolio: string | null
+  notes: string | null
+  /** Preventiva: pauta usada. */
+  schedule: { name: string; intervalValue: number } | null
+  /** Preventiva: cuántos ítems quedaron «R» (realizados) y los demás con su motivo. */
+  itemsDone: number
+  itemsFlagged: Array<{ group: string; name: string; value: Exclude<MantItemValue, "R">; reason: string | null }>
+  /** Correctiva. */
+  corrective: {
+    description: string
+    hours: number
+    workTypes: string[]
+    jobs: Array<{ workTypeName: string; hours: number; parts: Array<{ quantity: number; description: string }> }>
+    workshopEntryDate: string | null
+    /** Fecha de salida del taller; `null` si sigue en taller o no entró. */
+    workshopExitDate: string | null
+    stillInWorkshop: boolean
+  } | null
+  photos: AppHistoryPhoto[]
+}
+
+export interface AppHistory {
+  /** Igual al ETag de la respuesta. */
+  version: string
+  generatedAt: string
+  /** Por `vehicleId`, del más reciente al más antiguo (máx. `HISTORY_PER_EQUIPMENT`). */
+  byVehicle: Record<string, AppHistoryRecord[]>
 }
