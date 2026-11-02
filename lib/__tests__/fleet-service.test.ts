@@ -131,6 +131,47 @@ describe("getFleetOverview", () => {
     expect("allocationCount" in vehicle).toBe(false)
   })
 
+  describe("OT abiertas por equipo", () => {
+    const vehicle = (id: string) => ({
+      id, plate: `PL-${id}`, type: "camioneta", brand: null, model: null, year: null, isActive: true, operationalStatus: "operativo",
+      soapExpiresAt: null, technicalReviewExpiresAt: null, circulationPermitExpiresAt: null, insuranceExpiresAt: null,
+      worksite: { name: "Faena Uno" }, responsibleUser: null,
+    })
+    const withOt = (...permissions: string[]) =>
+      ({ user: { id: "user-ot", isGlobal: true, worksiteIds: [], permissions: ["flota:view", ...permissions] } }) as unknown as Session
+
+    it("es opt-in: sin la opción no consulta OT y el campo queda en null", async () => {
+      findManyVehicles.mockResolvedValue([vehicle("v1")])
+      const [row] = await getFleetOverview(withOt("mant:ot:view_all"))
+
+      expect(row!.openWorkOrders).toBeNull()
+      expect(row!.inWorkshopNow).toBeNull()
+      // Sólo la consulta de documentos de vencimiento: ninguna toca `mant_work_orders`.
+      expect(selectCallCount).toBe(1)
+    })
+
+    it("sin mant:ot:view_* no consulta OT aunque se pida, y el campo no es un 0 engañoso", async () => {
+      findManyVehicles.mockResolvedValue([vehicle("v1")])
+      const [row] = await getFleetOverview(withOt(), undefined, undefined, { workOrders: true })
+
+      expect(row!.openWorkOrders).toBeNull()
+      expect(selectCallCount).toBe(1)
+    })
+
+    it("con la capacidad trae las abiertas y si está en taller; un equipo sin OT tiene 0", async () => {
+      findManyVehicles.mockResolvedValue([vehicle("v1"), vehicle("v2")])
+      // Sin `combustibles:view` quedan sólo documentos (1.ª consulta) y OT (2.ª).
+      selectResults.push(
+        { data: [] },
+        { data: [{ vehicleId: "v1", openCount: 2, unassignedOpen: 1, inWorkshopNow: 1, closedInPeriod: 0, workshopHoursInPeriod: 0, repairClosedInPeriod: 0, repairClosedWorkshopHours: 0, lastExitAt: null, lastClosedWorkOrderId: null }] },
+      )
+      const rows = await getFleetOverview(withOt("mant:ot:view_worksite"), undefined, undefined, { workOrders: true })
+
+      expect(rows.find((row) => row.id === "v1")).toMatchObject({ openWorkOrders: 2, inWorkshopNow: true })
+      expect(rows.find((row) => row.id === "v2")).toMatchObject({ openWorkOrders: 0, inWorkshopNow: false })
+    })
+  })
+
   it("returns no rows when a scoped user has no visible vehicles", async () => {
     const withoutWorksites = { user: { id: "user-3", isGlobal: false, worksiteIds: [] } } as unknown as Session
     findManyVehicles.mockResolvedValue([])
@@ -231,5 +272,26 @@ describe("getFleetVehicleDetail", () => {
     expect(detail).not.toBeNull()
     expect(findManyOperations).not.toHaveBeenCalled()
     expect(selectProjections).toHaveLength(0)
+    // Sin `mant:ot:view_*` la ficha no sabe de OT: `null`, no «sin órdenes de trabajo».
+    expect(detail!.recentWorkOrders).toBeNull()
+    expect(detail!.workOrderConsumptionImpact).toEqual([])
+  })
+
+  it("con mant:ot:view_* trae las últimas OT del equipo; el antes/después de rendimiento exige combustible y una OT cerrada", async () => {
+    const withOt = { user: { id: "ot", isGlobal: true, worksiteIds: [], permissions: ["flota:view", "mant:ot:view_all"] } } as unknown as Session
+    findFirstVehicle.mockResolvedValue({ id: "veh-1", worksiteId: "ws-1", plate: "AA-BB-11" })
+    findManyDocuments.mockResolvedValue([])
+    findManyIntervals.mockResolvedValue([])
+    selectResults.push({ data: [
+      { id: "ot-2", folio: "OT-BIO-0002", status: "en_ejecucion", repair: true, maintenance: false, requestDate: "2026-10-30", workshopEntryAt: "2026-10-31T12:00:00Z", workshopExitAt: null },
+      { id: "ot-1", folio: "OT-BIO-0001", status: "cerrada", repair: true, maintenance: true, requestDate: "2026-10-01", workshopEntryAt: "2026-10-02T12:00:00Z", workshopExitAt: "2026-10-05T12:00:00Z" },
+    ] })
+
+    const detail = await getFleetVehicleDetail(withOt, "veh-1")
+
+    expect(detail!.recentWorkOrders?.map((workOrder) => workOrder.folio)).toEqual(["OT-BIO-0002", "OT-BIO-0001"])
+    // Sin `combustibles:view` no hay log de rendimiento que comparar.
+    expect(detail!.workOrderConsumptionImpact).toEqual([])
+    expect(selectProjections).toHaveLength(1)
   })
 })

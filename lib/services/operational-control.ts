@@ -19,6 +19,15 @@ import { expiredDocumentTypes, resolveNextExpiryDate } from "@/lib/validation/fl
 import { getAssetFuelSummary, type AssetFuelSummary } from "@/lib/combustibles/control/queries/asset-fuel-summary"
 import { logger } from "@/lib/logger"
 import { getFleetAdminSettings } from "@/lib/services/system-settings"
+import {
+  getVehicleWorkOrderMetrics,
+  getWorkOrderGlobalMetrics,
+  meanTimeToRepairHours,
+  workOrderMetricsScope,
+  type VehicleWorkOrderMetrics,
+  type WorkOrderGlobalMetrics,
+} from "@/lib/services/mantencion/work-orders/metrics"
+import { canViewWorkOrders as sessionCanViewWorkOrders } from "@/lib/operational-control/capabilities"
 import { addDaysToPlainDate, todayInChile } from "@/lib/utils"
 import { civilDate } from "@/lib/validation/dates"
 import {
@@ -88,6 +97,12 @@ export type OperationalAsset = {
   litersIdle: number | null
   /** La lectura de la carga y la telemetría discrepan para el mismo medidor. */
   meterMismatch: boolean
+  /** OT abiertas del equipo (no dependen del período); `null` sin `mant:ot:view_*`. */
+  openWorkOrders: number | null
+  /** El equipo está hoy en el taller: OT en ejecución con ingreso y sin salida. */
+  inWorkshop: boolean | null
+  /** Horas en taller dentro del período (ingreso → salida recortado al período). */
+  workshopHours: number | null
 }
 
 export interface OperationalControlPeriod {
@@ -110,6 +125,8 @@ export interface OperationalControlPeriod {
 export interface OperationalAttention {
   stoppedVehicles: StoppedVehicles | null
   fleetDocuments: (FleetDocumentExpiry & { warningDays: number }) | null
+  /** OT abiertas hoy, con las sin asignar y las de entrega vencida; `null` sin la capacidad de OT o si falló. */
+  workOrders: WorkOrderGlobalMetrics | null
 }
 
 /** Una consulta de atención que falla se registra y se vuelve `null`; no rechaza el panel entero. */
@@ -176,6 +193,10 @@ export async function getOperationalControlHub(
   const canViewCosts = can(session, "combustibles:view_costs")
   const canViewFuel = can(session, "combustibles:view")
   const canViewServiceEquipment = can(session, "admin:service_equipment")
+  // Las OT se ven con `mant:ot:view_*`; no abren el hub (el gate de abajo sigue
+  // siendo flota, inspecciones o combustible) y su alcance es el de las OT.
+  const canViewWorkOrders = sessionCanViewWorkOrders(session)
+  const workOrderScope = canViewWorkOrders ? workOrderMetricsScope(session) : null
   if (!canViewFleet && !canViewInspections && !canViewFuel) throw new Error("Sin permisos para Control operacional")
   const vehicleScope = worksiteScopeSql(session, fuelVehicles.worksiteId)
   const serviceScope = worksiteScopeSql(session, serviceEquipment.worksiteId)
@@ -184,7 +205,7 @@ export async function getOperationalControlHub(
   // mostrar un vacío indistinguible de «no hay datos».
   const degradedSources: string[] = []
 
-  const [vehicles, instruments, inspectionAgg, findingsAgg, capaAgg, availabilityRows, documents, fleetSettings, gpsRows] = await Promise.all([
+  const [vehicles, instruments, inspectionAgg, findingsAgg, capaAgg, availabilityRows, documents, fleetSettings, gpsRows, workOrders] = await Promise.all([
     canViewFleet || canViewInspections || canViewFuel
       ? db.select({ id: fuelVehicles.id, code: fuelVehicles.code, plate: fuelVehicles.plate, type: fuelVehicles.type, typeName: fuelEquipmentTypes.name, performanceUnit: fuelVehicles.performanceUnit, meterType: fuelVehicles.meterType, worksiteId: fuelVehicles.worksiteId, worksiteName: worksites.name, operationalStatus: fuelVehicles.operationalStatus, intervalStatus: fuelVehicleOperationalIntervals.status, isActive: fuelVehicles.isActive, soapExpiresAt: fuelVehicles.soapExpiresAt, technicalReviewExpiresAt: fuelVehicles.technicalReviewExpiresAt, circulationPermitExpiresAt: fuelVehicles.circulationPermitExpiresAt, insuranceExpiresAt: fuelVehicles.insuranceExpiresAt })
           .from(fuelVehicles)
@@ -283,6 +304,16 @@ export async function getOperationalControlHub(
       .innerJoin(fuelVehicles, eq(fuelVehicles.id, fleetGpsLatestPositions.vehicleId))
       .where(vehicleScope)
       .orderBy(fleetGpsLatestPositions.vehicleId, desc(fleetGpsLatestPositions.observedAt)), degradedSources) : [],
+    // Cifras de OT: por equipo (columna y horas en taller del período) y, sólo
+    // para el panel, las globales del tile. Una sola sección degradable: si
+    // falla, el resto del panel sigue y las cifras de OT quedan en null.
+    workOrderScope ? settleAttention("órdenes de trabajo", async () => {
+      const [byVehicle, global] = await Promise.all([
+        getVehicleWorkOrderMetrics(workOrderScope, { period }),
+        includeAttention ? getWorkOrderGlobalMetrics(workOrderScope, { today }) : Promise.resolve(null),
+      ])
+      return { byVehicle, global }
+    }, degradedSources) : null,
   ])
 
   // El agregado de combustible se pide después de conocer los vehículos del
@@ -301,6 +332,7 @@ export async function getOperationalControlHub(
     if (list) list.push({ documentType: document.documentType, expiresAt: document.expiresAt })
     else documentsByVehicle.set(document.vehicleId, [{ documentType: document.documentType, expiresAt: document.expiresAt }])
   }
+  const workOrdersByVehicle: Map<string, VehicleWorkOrderMetrics> | null = workOrders?.byVehicle ?? null
   const gpsByVehicle = new Map((gpsRows ?? []).filter((row) => row.vehicleId).map((row) => [row.vehicleId!, row]))
   const vehicleAssets: OperationalAsset[] = vehicles.map((vehicle) => {
     const inspections = inspectionsByVehicle.get(vehicle.id)
@@ -309,6 +341,7 @@ export async function getOperationalControlHub(
     const fuel = fuelSummary.get(vehicle.id)
     const vehicleDocuments = documentsByVehicle.get(vehicle.id) ?? []
     const gps = gpsByVehicle.get(vehicle.id)
+    const workOrder = workOrdersByVehicle?.get(vehicle.id)
     const declaredExpiry = {
       soapExpiresAt: vehicle.soapExpiresAt,
       technicalReviewExpiresAt: vehicle.technicalReviewExpiresAt,
@@ -376,6 +409,9 @@ export async function getOperationalControlHub(
       idlePct: canViewFuel ? (fuel?.idlePct ?? null) : null,
       litersIdle: canViewFuel ? (fuel?.litersIdle ?? null) : null,
       meterMismatch,
+      openWorkOrders: workOrdersByVehicle ? (workOrder?.openCount ?? 0) : null,
+      inWorkshop: workOrdersByVehicle ? (workOrder?.inWorkshopNow ?? false) : null,
+      workshopHours: workOrdersByVehicle ? (workOrder?.workshopHoursInPeriod ?? 0) : null,
     }
   })
   const serviceAssets: OperationalAsset[] = instruments.map((instrument) => ({
@@ -418,6 +454,10 @@ export async function getOperationalControlHub(
     idlePct: null,
     litersIdle: null,
     meterMismatch: false,
+    // Los instrumentos de servicio no son `fuel_vehicles`: no tienen OT.
+    openWorkOrders: null,
+    inWorkshop: null,
+    workshopHours: null,
   }))
 
   const totalIntervalHours = availabilityRows.reduce((sum, row) => sum + Number(row.totalHours), 0)
@@ -426,6 +466,18 @@ export async function getOperationalControlHub(
     (Date.parse(`${period.to}T00:00:00Z`) - Date.parse(`${period.from}T00:00:00Z`)) / 86_400_000,
   ) + 1
   const calendarHours = vehicles.filter((vehicle) => vehicle.isActive).length * periodDays * 24
+  // Horas en taller y MTTR: sobre los equipos del alcance de la sesión que
+  // listan los activos (un equipo con OT de otra faena no suma al panel que no lo muestra).
+  const assetIds = new Set(vehicles.map((vehicle) => vehicle.id))
+  let workshopHours = 0
+  let repairClosed = 0
+  let repairWorkshopHours = 0
+  for (const [vehicleId, metrics] of workOrdersByVehicle ?? []) {
+    if (!assetIds.has(vehicleId)) continue
+    workshopHours += metrics.workshopHoursInPeriod
+    repairClosed += metrics.repairClosedInPeriod
+    repairWorkshopHours += metrics.repairClosedWorkshopHours
+  }
   const attention: OperationalAttention = {
     stoppedVehicles: includeAttention && canViewFleet ? countStoppedVehicles(vehicles) : null,
     fleetDocuments: fleetSettings && documents
@@ -437,17 +489,24 @@ export async function getOperationalControlHub(
           }),
         }
       : null,
+    workOrders: includeAttention ? (workOrders?.global ?? null) : null,
   }
   return {
     period,
     attention,
     degradedSources,
     assets: [...vehicleAssets, ...serviceAssets],
-    metrics: calculateOperationalControlMetrics({
-      totalIntervalHours,
-      calendarHours,
-      operativeHours,
-    }),
-    permissions: { canViewFleet, canViewInspections, canViewCapa, canViewFuel, canViewCosts, canViewServiceEquipment },
+    metrics: {
+      ...calculateOperationalControlMetrics({
+        totalIntervalHours,
+        calendarHours,
+        operativeHours,
+      }),
+      // `null` sin la capacidad de OT o si su consulta falló; 0 h es un dato válido (nadie ingresó al taller).
+      workshopHours: workOrdersByVehicle ? workshopHours : null,
+      // MTTR = horas en taller de las OT de reparación cerradas ÷ cuántas son. Sin ninguna cerrada no hay qué promediar.
+      mttrHours: workOrdersByVehicle ? meanTimeToRepairHours(repairClosed, repairWorkshopHours) : null,
+    },
+    permissions: { canViewFleet, canViewInspections, canViewCapa, canViewFuel, canViewCosts, canViewServiceEquipment, canViewWorkOrders },
   }
 }

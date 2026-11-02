@@ -32,7 +32,7 @@ function formatPerformance(asset: OperationalAsset): string | null {
   return `${value} ${asset.fuelPerformanceUnit === "km_per_liter" ? "km/L" : "L/h"}`
 }
 
-const COLUMNS = (canViewCosts: boolean, canViewInspections: boolean, canViewFuel: boolean, canViewCapa: boolean, canViewFleet: boolean) => {
+const COLUMNS = (canViewCosts: boolean, canViewInspections: boolean, canViewFuel: boolean, canViewCapa: boolean, canViewFleet: boolean, canViewWorkOrders: boolean) => {
   const showFuelCost = canViewFuel && canViewCosts
   const showCapa = canViewCapa && canViewInspections
   return [
@@ -66,6 +66,12 @@ const COLUMNS = (canViewCosts: boolean, canViewInspections: boolean, canViewFuel
     ...(showCapa
       ? [{ key: "overdueCapa", label: "CAPA vencidas", sortable: true, numeric: true }]
       : []),
+    ...(canViewWorkOrders
+      ? [
+          { key: "openWorkOrders", label: "OT abiertas", sortable: true, numeric: true },
+          { key: "workshopHours", label: "Horas en taller", sortable: true, numeric: true, defaultVisible: false },
+        ]
+      : []),
     ...(showFuelCost
       ? [{ key: "fuelBilledAmount", label: "Costo combustible", sortable: true, numeric: true }]
       : []),
@@ -86,6 +92,7 @@ export function OperationalAssetsTable({
   canViewCapa,
   canViewFuel,
   canViewFleet,
+  canViewWorkOrders = false,
 }: {
   assets: OperationalAsset[]
   canViewCosts: boolean
@@ -93,6 +100,7 @@ export function OperationalAssetsTable({
   canViewCapa: boolean
   canViewFuel: boolean
   canViewFleet: boolean
+  canViewWorkOrders?: boolean
 }) {
   const showFuelCost = canViewFuel && canViewCosts
   const showCapa = canViewCapa && canViewInspections
@@ -210,6 +218,15 @@ export function OperationalAssetsTable({
             <dd>{asset.overdueCapa ?? 0}</dd>
           </div>
         )}
+        {canViewWorkOrders && asset.kind === "vehicle" && (
+          <div>
+            <dt className="text-[var(--color-text-subtle)]">OT abiertas</dt>
+            <dd>
+              {asset.openWorkOrders ?? "—"}
+              {asset.inWorkshop && " · en taller"}
+            </dd>
+          </div>
+        )}
       </dl>
       <div className="mt-3 flex gap-2">
         {canViewFuel && asset.kind === "vehicle" && (
@@ -316,6 +333,25 @@ export function OperationalAssetsTable({
           {asset.kind === "service_equipment" ? "—" : (asset.overdueCapa ?? 0)}
         </TableCell>
       )}
+      {canViewWorkOrders && (
+        <>
+          <TableCell className="text-right font-mono">
+            {asset.kind === "service_equipment" || asset.openWorkOrders == null ? "—" : (
+              <>
+                {asset.openWorkOrders}
+                {asset.inWorkshop && (
+                  <span className="ml-1 font-sans text-xs text-[var(--color-warning-ink)]">en taller</span>
+                )}
+              </>
+            )}
+          </TableCell>
+          <TableCell className="text-right font-mono">
+            {asset.kind === "service_equipment" || asset.workshopHours == null
+              ? "—"
+              : asset.workshopHours.toLocaleString("es-CL", { maximumFractionDigits: 1 })}
+          </TableCell>
+        </>
+      )}
       {showFuelCost && (
         <TableCell className="text-right font-mono">
           {asset.kind === "service_equipment" || asset.fuelBilledAmount == null
@@ -341,7 +377,7 @@ export function OperationalAssetsTable({
   return (
     <DataTable
       caption="Activos operacionales"
-      columns={COLUMNS(canViewCosts, canViewInspections, canViewFuel, canViewCapa, canViewFleet)}
+      columns={COLUMNS(canViewCosts, canViewInspections, canViewFuel, canViewCapa, canViewFleet, canViewWorkOrders)}
       rows={assets}
       enableColumnToggle
       stickyFirstColumn

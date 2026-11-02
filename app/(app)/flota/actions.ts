@@ -124,7 +124,7 @@ export async function exportFleetXlsxAction(filters: FleetOverviewFilters = {}) 
   try { session = await requirePermission("flota:view", "/flota") }
   catch { return { ok: false as const, message: "Sin permisos para exportar la flota" } }
 
-  const [rows, settings] = await Promise.all([getFleetOverview(session), getFleetAdminSettings()])
+  const [rows, settings] = await Promise.all([getFleetOverview(session, undefined, undefined, { workOrders: true }), getFleetAdminSettings()])
   const today = todayInChile()
   const filtered = filterFleetOverviewRows(rows, filters, {
     today,
@@ -134,6 +134,8 @@ export async function exportFleetXlsxAction(filters: FleetOverviewFilters = {}) 
   const exportRows = filtered.slice(0, FLEET_EXPORT_LIMIT)
   const canViewCosts = can(session, "combustibles:view_costs")
   const canViewFuel = can(session, "combustibles:view")
+  // La columna de OT sólo existe con la capacidad (la fila trae `null` si no).
+  const canViewWorkOrders = exportRows.some((row) => row.openWorkOrders != null)
   const ExcelJS = await import("exceljs")
   const workbook = new ExcelJS.Workbook()
   const sheet = workbook.addWorksheet("Flota")
@@ -151,6 +153,7 @@ export async function exportFleetXlsxAction(filters: FleetOverviewFilters = {}) 
       { header: "Litros (12 meses)", key: "liters", width: 18 },
       { header: "Cargas (12 meses)", key: "loads", width: 18 },
     ] : []),
+    ...(canViewWorkOrders ? [{ header: "OT abiertas", key: "openWorkOrders", width: 14 }] : []),
     ...(canViewCosts && canViewFuel ? [{ header: "Costo combustible", key: "fuelCost", width: 18 }] : []),
   ]
   for (const row of exportRows) {
@@ -166,6 +169,7 @@ export async function exportFleetXlsxAction(filters: FleetOverviewFilters = {}) 
       expiry: row.nextExpiryDate ?? "",
       liters: row.totalLiters,
       loads: row.loadCount,
+      openWorkOrders: row.openWorkOrders,
       fuelCost: row.totalFuelAmount,
     })
   }

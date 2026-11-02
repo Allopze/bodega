@@ -1,4 +1,4 @@
-import { Certificate, Gauge, Truck } from "@phosphor-icons/react/dist/ssr"
+import { Certificate, Gauge, Truck, Wrench } from "@phosphor-icons/react/dist/ssr"
 import { formatQty } from "@/lib/utils"
 import { ChartSlot } from "@/components/ui/dashboard-panel"
 import { KpiCard } from "@/components/ui/kpi-card"
@@ -10,6 +10,7 @@ import { getOperationalCalendarBounds } from "@/lib/services/operational-period-
 import { getExpiringFleetDocuments } from "@/lib/services/dashboard-domains-data"
 import { getFuelMonthlyTrend } from "@/lib/services/dashboard-fuel"
 import { getFleetOverview } from "@/lib/services/fleet"
+import { getWorkOrderGlobalMetrics, workOrderMetricsScope } from "@/lib/services/mantencion/work-orders/metrics"
 import { canViewOperationalControl, operationalControlCapabilities } from "@/lib/operational-control/capabilities"
 import { countPendingFuelCreditNotes } from "@/lib/services/dte-portal/reconciliation"
 import { readDtePortalConfig } from "@/lib/services/dte-portal/config"
@@ -43,6 +44,10 @@ export async function FleetSection({ session, scope }: DomainSectionsProps) {
     canViewCosts: canSeeCosts,
   } = operationalControlCapabilities(session)
 
+  // «OT abiertas» se ve con `mant:ot:view_*` (no con flota ni combustible) y con
+  // el alcance de faena de las OT. Sin la capacidad no se consulta ni se pinta.
+  const workOrderScope = workOrderMetricsScope(session)
+
   const bounds = getOperationalCalendarBounds(new Date(), scope.period)
   // El tile de NC es de Compras: sin `purchasing:view` no se consulta ni se
   // pinta, y su destino (/compras/dte) responde 403 a quien no lo tiene.
@@ -71,7 +76,7 @@ export async function FleetSection({ session, scope }: DomainSectionsProps) {
   // 6 meses fijos para las dos tendencias — no depende de `scope.period`
   // (CO-038): ambos gráficos rotulan la ventana con este mismo número.
   const TREND_MONTHS = 6
-  const [fuelControl, fuelTrend, docs, fleet, pendingFuelCreditNotes] = await Promise.all([
+  const [fuelControl, fuelTrend, docs, fleet, pendingFuelCreditNotes, workOrders] = await Promise.all([
     canViewFuel ? track(getFuelControlOverview(session, {
       includeTae: canViewTae,
       filters: { fromDate: bounds.currentStart.slice(0, 10), toDate: bounds.currentEnd.slice(0, 10), ...(worksiteId ? { worksiteId } : {}) },
@@ -83,6 +88,7 @@ export async function FleetSection({ session, scope }: DomainSectionsProps) {
     // por empresa/período tributario — no por faena, igual que la deuda arriba).
     // "Mes calendario actual", no `scope.period` — ver el rótulo en el summary.
     dteCodEmp ? track(countPendingFuelCreditNotes(today.slice(0, 7), dteCodEmp), null, "pendingCreditNotes") : Promise.resolve(null),
+    workOrderScope ? track(getWorkOrderGlobalMetrics(workOrderScope, { worksiteId, today }), null, "workOrders") : Promise.resolve(null),
   ])
 
   const periodo = periodScopeLabel(scope.period).toLocaleLowerCase("es-CL")
@@ -125,6 +131,18 @@ export async function FleetSection({ session, scope }: DomainSectionsProps) {
               empty={totalLiters === 0 && !degradedSources.includes("fuelTrend")
                 ? { message: `Sin cargas registradas en ${TREND_MONTHS} meses`, actionLabel: "Ir a combustibles" }
                 : undefined} />}
+            {/* Foto de hoy, como «Vehículos activos»: no depende del período del tablero. El
+                destino es la pestaña «abiertas» de la lista, que cuenta lo mismo. A5: ésta es
+                la única vista del tablero con la cifra. */}
+            {workOrderScope && <KpiCard {...DASHBOARD_KPI} icon={<Wrench size={16} />} label="OT abiertas"
+              value={workOrders ? String(workOrders.openCount) : "Sin dato"}
+              detail={workOrders
+                ? workOrders.openCount === 0
+                  ? "Sin órdenes de trabajo abiertas · ahora"
+                  : `${workOrders.unassignedOpen > 0 ? `${workOrders.unassignedOpen} sin asignar` : "Todas con mecánico"}${workOrders.estimateOverdue > 0 ? ` · ${workOrders.estimateOverdue} con entrega vencida` : ""} · ahora`
+                : "No se pudo calcular"}
+              tone={workOrders && (workOrders.unassignedOpen > 0 || workOrders.estimateOverdue > 0) ? "signal" : "neutral"}
+              href="/mantencion/ot?estado=abiertas" />}
             {canViewFleet && <KpiCard {...DASHBOARD_KPI} icon={<Certificate size={16} />} label="Documentos por vencer" value={String(docs.within30)}
               detail={docs.expired > 0 ? `${docs.expired} ya vencido(s) · próximos 30 días` : "Próximos 30 días"}
               tone={docs.within30 + docs.expired > 0 ? "signal" : "neutral"} href="/flota" />}

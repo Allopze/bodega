@@ -10,6 +10,7 @@ import { can, requirePermission } from "@/lib/auth/can"
 import { getFleetVehicleDetail } from "@/lib/services/fleet"
 import { formatFuelVehicleStatus } from "@/lib/combustibles/validation"
 import { formatDate, formatDateTime, formatQty } from "@/lib/utils"
+import { OT_STATUS_LABELS, OT_STATUS_TONES } from "@/lib/mantencion/work-order-states"
 import { FleetDocumentsPanel } from "./fleet-documents-panel"
 import { fuelEquipmentHref } from "@/lib/combustibles/routes"
 
@@ -46,6 +47,9 @@ export default async function FlotaVehiclePage({
           <div className="flex justify-end gap-2">
             {can(session, "combustibles:view") && <Button asChild size="sm" variant="secondary">
               <Link href={fuelEquipmentHref(vehicle.id)}>Combustible</Link>
+            </Button>}
+            {detail.recentWorkOrders && <Button asChild size="sm" variant="secondary">
+              <Link href={`/mantencion/ot?equipo=${vehicle.id}`}>Ver órdenes de trabajo</Link>
             </Button>}
           </div>
         }
@@ -149,6 +153,57 @@ export default async function FlotaVehiclePage({
           )}
         </CardContent>
       </Card>
+
+      {detail.recentWorkOrders && (
+        <Card>
+          <CardHeader><CardTitle as="h2" className="text-base">Órdenes de trabajo y su efecto en el rendimiento</CardTitle></CardHeader>
+          <CardContent>
+            {detail.recentWorkOrders.length === 0 ? (
+              <p className="text-sm text-[var(--color-text-muted)]">
+                Este equipo aún no tiene órdenes de trabajo. Se piden desde{" "}
+                <Link href={`/mantencion/ot?equipo=${vehicle.id}`} className="text-[var(--color-primary-ink)] underline-offset-4 hover:underline">Órdenes de trabajo</Link>.
+              </p>
+            ) : (
+              <>
+                {detail.workOrderConsumptionImpact.length > 0 && (
+                  <p className="mb-3 text-xs text-[var(--color-text-muted)]">
+                    En las órdenes cerradas: rendimiento promedio del log operacional 30 días antes vs. 30 días después de la salida de taller.
+                  </p>
+                )}
+                <ol className="divide-y divide-[var(--color-border)]">
+                  {detail.recentWorkOrders.map((workOrder) => {
+                    const impact = detail.workOrderConsumptionImpact.find((item) => item.workOrderId === workOrder.id)
+                    const kind = [workOrder.repair ? "Reparación" : null, workOrder.maintenance ? "Mantención" : null].filter(Boolean).join(" y ")
+                    return (
+                      <li key={workOrder.id} className="grid gap-1 py-3 text-sm sm:grid-cols-[10rem_1fr_auto] sm:items-center sm:gap-4">
+                        <Link href={`/mantencion/ot/${workOrder.id}`} className="font-mono text-[var(--color-primary-ink)] underline-offset-4 hover:underline">
+                          {workOrder.folio}
+                        </Link>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <MetaBadge meta={{ label: OT_STATUS_LABELS[workOrder.status], variant: OT_STATUS_TONES[workOrder.status] }} />
+                          <span className="text-xs text-[var(--color-text-muted)]">{kind}</span>
+                        </div>
+                        <p className="text-xs text-[var(--color-text-muted)] sm:text-right">
+                          Pedida el {formatDate(workOrder.requestDate)}
+                          {workOrder.workshopEntryAt && (
+                            <span className="block">
+                              Taller: {formatDateTime(workOrder.workshopEntryAt)}
+                              {workOrder.workshopExitAt ? ` → ${formatDateTime(workOrder.workshopExitAt)}` : " → sigue en taller"}
+                            </span>
+                          )}
+                          {impact && (impact.avgBefore != null || impact.avgAfter != null) && (
+                            <span className="block font-mono">{impact.avgBefore?.toFixed(2) ?? "—"} → {impact.avgAfter?.toFixed(2) ?? "—"}</span>
+                          )}
+                        </p>
+                      </li>
+                    )
+                  })}
+                </ol>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader><CardTitle as="h2" className="text-base">Documentos del vehículo</CardTitle></CardHeader>

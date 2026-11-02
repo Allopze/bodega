@@ -13,7 +13,7 @@ import { FUEL_PATHS } from "@/lib/combustibles/routes"
  * Es un módulo de datos puro: la página sólo le pone ícono y `KpiCard`.
  */
 
-export type AttentionTileKey = "stopped" | "documents" | "fuel"
+export type AttentionTileKey = "stopped" | "workOrders" | "documents" | "fuel"
 
 export interface AttentionTile {
   key: AttentionTileKey
@@ -26,6 +26,7 @@ export interface AttentionTile {
 
 export const ATTENTION_HREFS: Record<AttentionTileKey, string> = {
   stopped: `/flota?estado=${FLEET_STOPPED_FILTER}`,
+  workOrders: "/mantencion/ot?estado=abiertas",
   documents: "/flota?vencimiento=vencidos",
   fuel: FUEL_PATHS.revisar,
 }
@@ -56,6 +57,31 @@ export function stoppedTile(stopped: OperationalAttention["stoppedVehicles"], fl
     detail: `${count(stopped.inMaintenance)} en mantención · ${count(stopped.outOfService)} fuera de servicio`,
     tone: "signal",
     href: ATTENTION_HREFS.stopped,
+  }
+}
+
+/**
+ * Órdenes de trabajo abiertas (todo lo no cerrado ni anulado). El tile enlaza a
+ * la lista con la pestaña «abiertas»: la cifra y las filas cuentan lo mismo.
+ * El detalle dice cuántas esperan mecánico, que es lo que alguien tiene que hacer.
+ */
+export function workOrdersTile(workOrders: OperationalAttention["workOrders"]): AttentionTile {
+  const label = "OT abiertas"
+  if (!workOrders) return unavailable("workOrders", label)
+  if (workOrders.openCount === 0) {
+    return { key: "workOrders", label, value: "Ninguna", detail: "Sin órdenes de trabajo abiertas", tone: "neutral", href: ATTENTION_HREFS.workOrders }
+  }
+  const parts = [
+    workOrders.unassignedOpen > 0 ? `${count(workOrders.unassignedOpen)} sin asignar` : "Todas con mecánico",
+    ...(workOrders.estimateOverdue > 0 ? [`${count(workOrders.estimateOverdue)} con entrega vencida`] : []),
+  ]
+  return {
+    key: "workOrders",
+    label,
+    value: count(workOrders.openCount),
+    detail: parts.join(" · "),
+    tone: workOrders.unassignedOpen > 0 || workOrders.estimateOverdue > 0 ? "signal" : "neutral",
+    href: ATTENTION_HREFS.workOrders,
   }
 }
 
