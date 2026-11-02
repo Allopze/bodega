@@ -27,10 +27,11 @@ vi.mock("playwright", () => {
   }
   return {
     chromium: {
-      launch: async () => {
+      launchServer: async () => {
         browser.launches++
-        return { isConnected: () => true, close: browser.close, newContext: async () => ({ newPage: async () => page }) }
+        return { wsEndpoint: () => "ws://127.0.0.1/onway", close: async () => undefined, kill: async () => undefined }
       },
+      connect: async () => ({ isConnected: () => true, close: browser.close, newContext: async () => ({ newPage: async () => page }) }),
     },
   }
 })
