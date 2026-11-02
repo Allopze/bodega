@@ -99,6 +99,7 @@ const MENU_DEL_AREA: ReadonlyArray<{ grupo: string; destinos: readonly DestinoDe
   {
     grupo: "Mantención",
     destinos: [
+      { href: "/mantencion/ot", nombre: "Órdenes de trabajo" },
       { href: "/mantencion/panel", nombre: "Panel" },
       { href: "/mantencion/registros", nombre: "Registros" },
       { href: "/mantencion/equipos", nombre: "Equipos" },
@@ -130,7 +131,7 @@ test.describe("Control operacional — menú del área", () => {
     await login(page)
   })
 
-  test("agrupa el área en Seguimiento, Flota, Mantención y Combustible con sus dieciséis destinos en orden", async ({ page }) => {
+  test("agrupa el área en Seguimiento, Flota, Mantención y Combustible con sus diecisiete destinos en orden", async ({ page }) => {
     await page.goto("/control-operacional")
 
     const area = page
