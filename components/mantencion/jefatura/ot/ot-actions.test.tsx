@@ -42,39 +42,50 @@ function props(overrides: Partial<Props> = {}): Props {
   }
 }
 
-const NAMES = ["Registrar ingreso", "Registrar salida", "Recepcionar", "Dar conformidad", "Asignar", "Reasignar", "Desasignar", "Marcar ítems", "Cambiar entrega estimada", "Rechazar", "Reabrir", "Anular"]
+const BUTTONS = ["Registrar ingreso", "Registrar salida", "Recepcionar", "Dar conformidad", "Asignar", "Marcar ítems", "Rechazar", "Reabrir"]
+const MENU = ["Reasignar", "Desasignar", "Cambiar entrega estimada", "Corregir ingreso", "Descargar PDF", "Anular"]
 
-function visible() {
-  return NAMES.filter((name) => screen.queryByRole("button", { name: new RegExp(`^${name}$`) }))
+function visibleButtons() {
+  return BUTTONS.filter((name) => screen.queryByRole("button", { name: new RegExp(`^${name}$`) }))
+}
+
+/** Abre «Más acciones» (Radix abre con pointerdown) y devuelve sus ítems, en orden. */
+function openMenu() {
+  fireEvent.pointerDown(screen.getByRole("button", { name: /^Más acciones/ }), { button: 0, ctrlKey: false })
+  return MENU.filter((name) => screen.queryByRole("menuitem", { name: new RegExp(`^${name}$`) }))
 }
 
 describe("OtActions: sólo se dibuja lo que allowedTransitions permite", () => {
   beforeEach(() => vi.clearAllMocks())
   afterEach(cleanup)
 
-  const cases: Array<[string, Partial<Props>, string[]]> = [
-    ["sin transiciones: sólo el PDF", { allowedTransitions: [] }, []],
-    ["solicitada con jefatura: asignar y anular", { status: "solicitada", assignedToUserId: null, allowedTransitions: ["assign", "void"] }, ["Asignar", "Anular"]],
-    ["asignada: ingreso, reasignar, desasignar", { status: "asignada", allowedTransitions: ["assign", "unassign", "start", "void"] }, ["Registrar ingreso", "Reasignar", "Desasignar", "Anular"]],
-    ["en taller con jefatura: salida, reasignar, ítems, fecha y anular", { allowedTransitions: ["assign", "finish", "void"], canEditExecution: true }, ["Registrar salida", "Reasignar", "Marcar ítems", "Cambiar entrega estimada", "Anular"]],
-    ["en taller sin permiso de edición: no marca ítems ni cambia la fecha", { allowedTransitions: ["finish"], canEditExecution: false }, ["Registrar salida"]],
-    ["por recibir: recepcionar y rechazar", { status: "trabajo_terminado", allowedTransitions: ["receive", "reject_receipt"] }, ["Recepcionar", "Rechazar"]],
-    ["por conformidad: conformidad y rechazar", { status: "recepcionada", allowedTransitions: ["conform", "reject_conformity"] }, ["Dar conformidad", "Rechazar"]],
-    ["cerrada: reabrir", { status: "cerrada", allowedTransitions: ["reopen"] }, ["Reabrir"]],
+  // [caso, props, botones a la vista, ítems de «Más acciones»]
+  const cases: Array<[string, Partial<Props>, string[], string[]]> = [
+    ["sin transiciones: sólo el PDF", { allowedTransitions: [] }, [], ["Descargar PDF"]],
+    ["solicitada con jefatura: asignar a la vista, anular en el menú", { status: "solicitada", assignedToUserId: null, allowedTransitions: ["assign", "void"] }, ["Asignar"], ["Descargar PDF", "Anular"]],
+    ["asignada: ingreso a la vista; reasignar, desasignar y anular en el menú", { status: "asignada", allowedTransitions: ["assign", "unassign", "start", "void"] }, ["Registrar ingreso"], ["Reasignar", "Desasignar", "Descargar PDF", "Anular"]],
+    ["en taller con jefatura: salida e ítems a la vista; el resto en el menú", { allowedTransitions: ["assign", "finish", "void"], canEditExecution: true }, ["Registrar salida", "Marcar ítems"], ["Reasignar", "Cambiar entrega estimada", "Corregir ingreso", "Descargar PDF", "Anular"]],
+    ["en taller sin permiso de edición: no marca ítems ni cambia la fecha", { allowedTransitions: ["finish"], canEditExecution: false }, ["Registrar salida"], ["Descargar PDF"]],
+    ["por recibir: recepcionar y rechazar", { status: "trabajo_terminado", allowedTransitions: ["receive", "reject_receipt"] }, ["Recepcionar", "Rechazar"], ["Descargar PDF"]],
+    ["por conformidad: conformidad y rechazar", { status: "recepcionada", allowedTransitions: ["conform", "reject_conformity"] }, ["Dar conformidad", "Rechazar"], ["Descargar PDF"]],
+    ["cerrada: reabrir", { status: "cerrada", allowedTransitions: ["reopen"] }, ["Reabrir"], ["Descargar PDF"]],
   ]
 
-  it.each(cases)("%s", (_name, overrides, expected) => {
+  it.each(cases)("%s", (_name, overrides, buttons, menu) => {
     render(<OtActions {...props(overrides)} />)
-    expect(visible()).toEqual(NAMES.filter((name) => expected.includes(name)))
-    expect(screen.getByRole("link", { name: /Descargar PDF/ }).getAttribute("href")).toBe("/api/mantencion/ot/ot-1/pdf")
+    expect(visibleButtons()).toEqual(buttons)
+    // Nunca más de tres acciones sueltas además de «Más acciones».
+    expect(buttons.length).toBeLessThanOrEqual(3)
+    expect(openMenu()).toEqual(menu)
+    expect(screen.getByRole("menuitem", { name: /Descargar PDF/ }).getAttribute("href")).toBe("/api/mantencion/ot/ot-1/pdf")
   })
 
-  it("«Asignar» se vuelve «Reasignar» cuando ya hay mecánico", () => {
+  it("en el menú, «Reasignar» dice «Asignar» si todavía no hay mecánico", () => {
+    render(<OtActions {...props({ status: "en_ejecucion", allowedTransitions: ["assign"] })} />)
+    expect(openMenu()).toContain("Reasignar")
+    cleanup()
     render(<OtActions {...props({ status: "solicitada", assignedToUserId: null, allowedTransitions: ["assign"] })} />)
     expect(screen.getByRole("button", { name: "Asignar" })).toBeTruthy()
-    cleanup()
-    render(<OtActions {...props({ allowedTransitions: ["assign"] })} />)
-    expect(screen.getByRole("button", { name: "Reasignar" })).toBeTruthy()
   })
 })
 
@@ -150,7 +161,8 @@ describe("OtActions: diálogos y envío con expectedVersion", () => {
   it("anular usa ConfirmDialog con motivo y envía el motivo escrito", async () => {
     actions.voidWorkOrderAction.mockResolvedValue({ ok: true, data: { version: 5, status: "anulada" } })
     render(<OtActions {...props({ status: "solicitada", assignedToUserId: null, allowedTransitions: ["assign", "void"] })} />)
-    fireEvent.click(screen.getByRole("button", { name: "Anular" }))
+    openMenu()
+    fireEvent.click(screen.getByRole("menuitem", { name: "Anular" }))
     const dialog = within(await screen.findByRole("dialog"))
     fireEvent.change(dialog.getByRole("textbox"), { target: { value: "Se pidió para el equipo equivocado" } })
     fireEvent.click(dialog.getByRole("button", { name: "Anular orden" }))
@@ -160,7 +172,8 @@ describe("OtActions: diálogos y envío con expectedVersion", () => {
   it("desasignar es rutina: sin confirmación", async () => {
     actions.unassignWorkOrderAction.mockResolvedValue({ ok: true, data: { version: 5, status: "solicitada" } })
     render(<OtActions {...props({ status: "asignada", allowedTransitions: ["unassign"] as OtTransition[] })} />)
-    fireEvent.click(screen.getByRole("button", { name: "Desasignar" }))
+    openMenu()
+    fireEvent.click(screen.getByRole("menuitem", { name: "Desasignar" }))
     await waitFor(() => expect(actions.unassignWorkOrderAction).toHaveBeenCalledWith({ workOrderId: "ot-1", expectedVersion: 4 }))
     expect(screen.queryByRole("dialog")).toBeNull()
     expect(screen.queryByRole("dialog")).toBeNull()

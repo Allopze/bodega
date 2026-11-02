@@ -2,10 +2,11 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
-import { ArrowsClockwise, CheckCircle, FilePdf, ListChecks, Truck, UserPlus } from "@phosphor-icons/react"
+import { ArrowsClockwise, CaretDown, CheckCircle, FilePdf, ListChecks, Truck, UserPlus } from "@phosphor-icons/react"
 import { unassignWorkOrderAction, voidWorkOrderAction } from "@/app/(app)/mantencion/ot/[id]/actions"
 import { Button } from "@/components/ui/button"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { useOperation } from "@/lib/hooks/use-operation"
 import type { MantUnit } from "@/lib/mantencion/types"
 import type { OtStatus, OtTransition } from "@/lib/mantencion/work-order-states"
@@ -53,6 +54,12 @@ type DialogName = "assign" | "entry" | "estimate" | "items" | "finish" | "receiv
  * Es rutina: no pide confirmación. Sólo «Anular» usa `ConfirmDialog` (destructiva);
  * rechazar, reabrir y los cambios de fecha piden un motivo escrito porque quedan
  * en el historial.
+ *
+ * A la vista quedan la acción de la etapa (ingreso, salida, recepción,
+ * conformidad), asignar una OT por asignar, marcar ítems, rechazar y reabrir.
+ * El resto (reasignar, desasignar, cambiar la fecha estimada, corregir el
+ * ingreso, el PDF y anular) va en «Más acciones»: con todo a la vista, una OT en
+ * taller llegaba a siete botones y apretaba el título en la barra superior.
  */
 export function OtActions(props: OtActionsProps) {
   const router = useRouter()
@@ -94,24 +101,15 @@ export function OtActions(props: OtActionsProps) {
         </Button>
       )}
 
-      {allowed.has("assign") && (
-        <Button variant={props.status === "solicitada" ? "primary" : "secondary"} size="sm" onClick={() => setDialog("assign")}>
+      {allowed.has("assign") && props.status === "solicitada" && (
+        <Button variant="primary" size="sm" onClick={() => setDialog("assign")}>
           <UserPlus className="h-4 w-4 shrink-0" aria-hidden /> {props.assignedToUserId ? "Reasignar" : "Asignar"}
         </Button>
-      )}
-      {allowed.has("unassign") && (
-        <Button variant="secondary" size="sm" loading={unassignOp.pending} onClick={unassign}>Desasignar</Button>
       )}
       {editExecution && (
         <Button variant="secondary" size="sm" onClick={() => setDialog("items")}>
           <ListChecks className="h-4 w-4 shrink-0" aria-hidden /> Marcar ítems
         </Button>
-      )}
-      {editExecution && (
-        <Button variant="secondary" size="sm" onClick={() => setDialog("estimate")}>Cambiar entrega estimada</Button>
-      )}
-      {editExecution && props.entry && props.entryCatalogs && (
-        <Button variant="ghost" size="sm" onClick={() => setDialog("entry")}>Corregir ingreso</Button>
       )}
       {canReject && (
         <Button variant="secondary" size="sm" onClick={() => setDialog("reject")}>Rechazar</Button>
@@ -121,12 +119,40 @@ export function OtActions(props: OtActionsProps) {
           <ArrowsClockwise className="h-4 w-4 shrink-0" aria-hidden /> Reabrir
         </Button>
       )}
-      <Button asChild variant="ghost" size="sm">
-        <a href={props.pdfHref} download><FilePdf className="h-4 w-4 shrink-0" aria-hidden /> Descargar PDF</a>
-      </Button>
-      {allowed.has("void") && (
-        <Button variant="ghost-danger" size="sm" onClick={() => { voidOp.setMessage(""); setDialog("void") }}>Anular</Button>
-      )}
+
+      {/* No modal: los ítems abren diálogos. Un menú modal deja `pointer-events: none`
+          en el body justo cuando monta el diálogo, y la página quedaba sin responder. */}
+      <DropdownMenu modal={false}>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="sm" loading={unassignOp.pending}>
+            Más acciones
+            <CaretDown className="h-3.5 w-3.5 shrink-0" aria-hidden />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          {allowed.has("assign") && props.status !== "solicitada" && (
+            <DropdownMenuItem onSelect={() => setDialog("assign")}>{props.assignedToUserId ? "Reasignar" : "Asignar"}</DropdownMenuItem>
+          )}
+          {allowed.has("unassign") && <DropdownMenuItem onSelect={unassign}>Desasignar</DropdownMenuItem>}
+          {editExecution && <DropdownMenuItem onSelect={() => setDialog("estimate")}>Cambiar entrega estimada</DropdownMenuItem>}
+          {editExecution && props.entry && props.entryCatalogs && (
+            <DropdownMenuItem onSelect={() => setDialog("entry")}>Corregir ingreso</DropdownMenuItem>
+          )}
+          <DropdownMenuItem asChild>
+            <a href={props.pdfHref} download className="flex items-center gap-2">
+              <FilePdf className="h-4 w-4 shrink-0" aria-hidden /> Descargar PDF
+            </a>
+          </DropdownMenuItem>
+          {allowed.has("void") && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem className="text-[var(--color-danger-ink)]" onSelect={() => { voidOp.setMessage(""); setDialog("void") }}>
+                Anular
+              </DropdownMenuItem>
+            </>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
 
       {unassignOp.message && <p role="alert" className="basis-full text-sm text-[var(--color-danger-ink)]">{unassignOp.message}</p>}
 

@@ -44,6 +44,7 @@ const { listWorkOrders, loadWorkOrderDetail, listAssignableMechanics } = await i
 const { exportWorkOrders } = await import("@/lib/services/mantencion/work-orders/export")
 const { createRecord } = await import("@/lib/services/mantencion/records-create")
 const { getUserRbacById } = await import("@/lib/auth/rbac")
+const { sendWorkOrderNotification } = await import("@/lib/services/mantencion/work-orders/notifications")
 
 const today = todayInChile()
 
@@ -857,3 +858,50 @@ describe("lectura: lista, detalle, filtros y Excel", () => {
     expect(empty.ok).toBe(false)
   })
 })
+
+describe("avisos y el rol administrador", () => {
+  const ADMIN = "u-admin-plataforma"
+
+  /** Un administrador de plataforma: rol global con los permisos de OT (el rol real los recibe todos). */
+  async function withPlatformAdmin(run: () => Promise<void>) {
+    const { SYSTEM_ROLES, SYSTEM_ROLE_PERMISSIONS } = await import("@/lib/auth/system-rbac")
+    const role = SYSTEM_ROLES.find((candidate) => candidate.name === "administrador")!
+    await testDb.insert(schema.roles).values(role).onConflictDoNothing()
+    const seeded = new Set((await testDb.select({ id: schema.permissions.id }).from(schema.permissions)).map((row) => row.id))
+    const grants = SYSTEM_ROLE_PERMISSIONS.filter((grant) => grant.roleId === role.id && seeded.has(grant.permissionId))
+    if (grants.length) await testDb.insert(schema.rolePermissions).values(grants).onConflictDoNothing()
+    const now = new Date().toISOString()
+    await testDb.insert(schema.users).values({ id: ADMIN, name: "Admin Plataforma", email: "admin.plataforma@test.cl", hashedPassword: "x", isActive: true, createdAt: now, updatedAt: now })
+    await testDb.insert(schema.userRoles).values({ userId: ADMIN, roleId: role.id })
+    try {
+      await run()
+    } finally {
+      await testDb.delete(schema.notifications).where(eq(schema.notifications.userId, ADMIN))
+      await testDb.delete(schema.userRoles).where(eq(schema.userRoles.userId, ADMIN))
+      await testDb.delete(schema.users).where(eq(schema.users.id, ADMIN))
+    }
+  }
+
+  const plan = (overrides: Partial<Parameters<typeof sendWorkOrderNotification>[0]>) => ({
+    event: "created" as const, workOrderId: "ot-x", folio: "OT-BIO-0099", worksiteId: IDS.wsBio, version: 1,
+    actorUserId: IDS.adminBio, requestedByUserId: IDS.adminBio, assigneeUserId: null, equipment: "KA-135 · Camión", ...overrides,
+  })
+
+  it("no le llega el aviso al administrador cuando la faena tiene un responsable", async () => {
+    await withPlatformAdmin(async () => {
+      await sendWorkOrderNotification(plan({ event: "created" }))
+      expect((await notificationsOf("mant_ot_created")).map((notice) => notice.userId)).toEqual([IDS.jefe])
+      await sendWorkOrderNotification(plan({ event: "received", version: 6, actorUserId: IDS.jefe }))
+      expect((await notificationsOf("mant_ot_received")).map((notice) => notice.userId)).toEqual([IDS.adminBio])
+    })
+  })
+
+  it("si en la faena no queda otro responsable, el aviso llega al administrador para no perderse", async () => {
+    await withPlatformAdmin(async () => {
+      // Arauco no tiene administrador de contrato: nadie más da conformidad ahí.
+      await sendWorkOrderNotification(plan({ event: "received", worksiteId: IDS.wsAra, version: 6, actorUserId: IDS.jefe }))
+      expect((await notificationsOf("mant_ot_received")).map((notice) => notice.userId)).toEqual([ADMIN])
+    })
+  })
+})
+

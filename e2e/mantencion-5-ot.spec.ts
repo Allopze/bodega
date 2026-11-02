@@ -243,7 +243,10 @@ test.describe("Orden de trabajo (OT)", () => {
     await expectEstadoEnFicha(page, "Asignada")
     await expect(textoVisible(page, new RegExp(`${NOMBRE_MECANICO}.*desde`))).toBeVisible()
     await expect(page.getByRole("list", { name: "Historial de la orden de trabajo" }).getByText("Mecánico asignado")).toBeVisible()
-    await expect(page.getByRole("button", { name: "Reasignar", exact: true })).toBeVisible()
+    // Ya asignada, «Reasignar» pasa a «Más acciones».
+    await page.getByRole("button", { name: /^Más acciones/ }).click()
+    await expect(page.getByRole("menuitem", { name: "Reasignar", exact: true })).toBeVisible()
+    await page.keyboard.press("Escape")
     expect(errores).toEqual([])
     await cerrarSesion(page)
   })
@@ -394,7 +397,8 @@ test.describe("Orden de trabajo (OT)", () => {
 
     // PDF: el botón descarga un PDF de verdad.
     const descarga = page.waitForEvent("download", { timeout: 90_000 })
-    await page.getByRole("link", { name: "Descargar PDF" }).click()
+    await page.getByRole("button", { name: /^Más acciones/ }).click()
+    await page.getByRole("menuitem", { name: "Descargar PDF" }).click()
     const archivo = await descarga
     expect(archivo.suggestedFilename()).toMatch(/\.pdf$/i)
     const respuesta = await page.request.get(`/api/mantencion/ot/${otId}/pdf`)

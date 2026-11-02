@@ -1,3 +1,6 @@
+import { and, eq, inArray, ne } from "drizzle-orm"
+import { db } from "@/db"
+import { permissions, rolePermissions, roles, userPermissions, userRoles } from "@/db/schema"
 import type { NotificationType } from "@/db/schema/audit"
 import { OT_PERMISSIONS } from "@/lib/mantencion/work-order-states"
 import { notifyAfterCommit, notifyManyUser } from "@/lib/services/notification-create"
@@ -10,6 +13,12 @@ import { getUserIdsWithPermissionForWorksite } from "@/lib/services/notification
  * transacción se revirtiera. Los destinatarios se resuelven recién al enviar,
  * por permiso + faena (ningún usuario va fijo en el código), y el actor nunca se
  * avisa a sí mismo.
+ *
+ * El rol `administrador` recibe todos los permisos de la plataforma, así que por
+ * permiso le llegaría cada aviso de cada OT. Los avisos por permiso van a quien
+ * lo tiene por otro rol (jefatura de mantención, administración de contrato) o
+ * por un permiso directo; a los administradores sólo si no queda nadie más, para
+ * que el aviso no se pierda en una faena sin responsable.
  */
 
 export type OtNotifyEvent = "created" | "assigned" | "finished" | "received" | "rejected" | "reopened" | "closed"
@@ -60,8 +69,33 @@ const BODY: Record<OtNotifyEvent, string> = {
   closed: "Tiene la conformidad de la faena.",
 }
 
+const ADMIN_ROLE = "administrador"
+
+/** De `userIds`, los que tienen `permission` por un rol que no es `administrador` o por un permiso directo. */
+async function holdersBeyondAdmin(userIds: readonly string[], permission: string): Promise<Set<string>> {
+  if (userIds.length === 0) return new Set()
+  const [viaRole, direct] = await Promise.all([
+    db.select({ userId: userRoles.userId })
+      .from(userRoles)
+      .innerJoin(roles, eq(roles.id, userRoles.roleId))
+      .innerJoin(rolePermissions, eq(rolePermissions.roleId, roles.id))
+      .innerJoin(permissions, eq(permissions.id, rolePermissions.permissionId))
+      .where(and(inArray(userRoles.userId, [...userIds]), eq(permissions.name, permission), ne(roles.name, ADMIN_ROLE))),
+    db.select({ userId: userPermissions.userId })
+      .from(userPermissions)
+      .innerJoin(permissions, eq(permissions.id, userPermissions.permissionId))
+      .where(and(inArray(userPermissions.userId, [...userIds]), eq(permissions.name, permission))),
+  ])
+  return new Set([...viaRole, ...direct].map((row) => row.userId))
+}
+
 async function recipients(plan: NotificationPlan): Promise<string[]> {
-  const forPermission = (permission: string) => getUserIdsWithPermissionForWorksite(permission, plan.worksiteId)
+  const forPermission = async (permission: string) => {
+    const candidates = (await getUserIdsWithPermissionForWorksite(permission, plan.worksiteId))
+      .filter((id) => id !== plan.actorUserId)
+    const responsible = await holdersBeyondAdmin(candidates, permission)
+    return responsible.size > 0 ? candidates.filter((id) => responsible.has(id)) : candidates
+  }
   const ids: string[] = []
   switch (plan.event) {
     case "created":
