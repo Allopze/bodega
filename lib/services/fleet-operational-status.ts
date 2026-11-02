@@ -7,7 +7,7 @@ import { nanoid } from "@/lib/id"
  * Cambia el estado operativo de un activo y conserva el intervalo histórico.
  *
  * No valida permisos: cada caso de uso debe comprobarlos antes de entrar. Vive
- * fuera del agregado de Flota para que Inspecciones y Mantenciones reutilicen
+ * fuera del agregado de Flota para que Inspecciones y Combustibles reutilicen
  * esta operación transaccional sin formar ciclos de imports.
  */
 export async function setVehicleOperationalStatus(

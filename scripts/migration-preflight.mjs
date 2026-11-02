@@ -20,6 +20,15 @@ export const LEGACY_ACTION_TABLES = Object.freeze([
   // la huella firmada del programa.
   "pdtp_execution_checklists",
   "pdtp_execution_checklist_responses",
+  // Módulo antiguo «Mantenciones», retirado en 2026-11 (migración 0368). En
+  // producción estaban en cero; si apareciera una fila, el DROP no corre.
+  "maintenance_document_policies",
+  "maintenance_documents",
+  "maintenance_labor",
+  "maintenance_parts",
+  "maintenance_tasks",
+  "maintenance_records",
+  "maintenance_plans",
 ])
 
 /**

@@ -231,13 +231,13 @@ test.describe("Inspecciones — revisión independiente y cierre", () => {
 
 /**
  * El puente con flota: el sujeto de la inspección es un equipo del padrón, así
- * que la falla puede abrir su mantención correctiva y, si quien administra la
- * flota lo confirma, sacarlo de servicio. Detener el equipo es un permiso
+ * que la falla puede derivarse a CAPA y, si quien administra la flota lo
+ * confirma, sacarlo de servicio. Detener el equipo es un permiso
  * distinto (`combustibles:manage_vehicles`) porque quien digita el reporte
  * detecta la falla, pero parar una máquina para la faena lo decide flota.
  */
 test.describe("Inspecciones — falla de un equipo de flota", () => {
-  test("derivar la falla abre la mantención del equipo y permite sacarlo de servicio", async ({ page }) => {
+  test("derivar la falla crea CAPA y permite sacar el equipo de servicio", async ({ page }) => {
     await login(page)
     await abrir(page, "insp-e2e-equipo", "INSP-E2E-0008")
     await expect(page.getByText("E2E-INSP-1").first()).toBeVisible()
@@ -248,18 +248,11 @@ test.describe("Inspecciones — falla de un equipo de flota", () => {
     await dialog.locator('textarea[name="actionDescription"]').fill("Reparar el sistema y verificar en taller.")
     await dialog.getByLabel("Responsable de la CAPA").click()
     await page.getByRole("option", { name: "Admin E2E", exact: true }).click()
-    await expect(dialog.getByText(/Se abrirá automáticamente una OT correctiva/)).toBeVisible()
     await dialog.getByRole("button", { name: "Derivar" }).click()
     await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 30_000 })
 
     await page.reload()
     await expect(hallazgo.getByText("Con CAPA")).toBeVisible({ timeout: 15_000 })
-
-    // La mantención nace programada para el mismo plazo que la CAPA: taller y
-    // Prevención no pueden llevar dos calendarios distintos.
-    await page.goto("/mantenciones")
-    await expect(page.getByRole("row").filter({ hasText: "E2E-INSP-1" }).first())
-      .toBeVisible({ timeout: 30_000 })
 
     await abrir(page, "insp-e2e-equipo", "INSP-E2E-0008")
     await hallazgo.getByRole("button", { name: "Sacar de servicio" }).click()

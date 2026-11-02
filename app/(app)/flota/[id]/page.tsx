@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/button"
 import { can, requirePermission } from "@/lib/auth/can"
 import { getFleetVehicleDetail } from "@/lib/services/fleet"
 import { formatFuelVehicleStatus } from "@/lib/combustibles/validation"
-import { MAINTENANCE_STATUS_LABELS, MAINTENANCE_STATUS_VARIANTS, type MaintenanceStatus } from "@/lib/validation/maintenance"
 import { formatDate, formatDateTime, formatQty } from "@/lib/utils"
 import { FleetDocumentsPanel } from "./fleet-documents-panel"
 import { fuelEquipmentHref } from "@/lib/combustibles/routes"
@@ -47,9 +46,6 @@ export default async function FlotaVehiclePage({
           <div className="flex justify-end gap-2">
             {can(session, "combustibles:view") && <Button asChild size="sm" variant="secondary">
               <Link href={fuelEquipmentHref(vehicle.id)}>Combustible</Link>
-            </Button>}
-            {can(session, "mantenciones:view") && <Button asChild size="sm" variant="secondary">
-              <Link href={`/mantenciones?vehicle=${vehicle.id}`}>Mantenciones</Link>
             </Button>}
           </div>
         }
@@ -153,34 +149,6 @@ export default async function FlotaVehiclePage({
           )}
         </CardContent>
       </Card>
-
-      {detail.recentMaintenance.length > 0 && (
-        <Card>
-          <CardHeader><CardTitle as="h2" className="text-base">Mantenciones y su efecto en el rendimiento</CardTitle></CardHeader>
-          <CardContent>
-            <p className="mb-3 text-xs text-[var(--color-text-muted)]">Rendimiento promedio del log operacional 30 días antes vs. 30 días después de cada mantención.</p>
-            <ol className="divide-y divide-[var(--color-border)]">
-              {detail.recentMaintenance.map((m) => {
-                const impact = detail.maintenanceConsumptionImpact.find((i) => i.maintenanceId === m.id)
-                return (
-                  <li key={m.id} className="grid gap-1 py-3 text-sm sm:grid-cols-[10rem_1fr_auto] sm:items-center sm:gap-4">
-                    <span className="capitalize">{m.maintenanceType}</span>
-                    <MetaBadge meta={{ label: `${MAINTENANCE_STATUS_LABELS[m.status as MaintenanceStatus] ?? m.status}`, variant: MAINTENANCE_STATUS_VARIANTS[m.status as MaintenanceStatus] ?? "default" }} />
-                    <p className="text-xs text-[var(--color-text-muted)] sm:text-right">
-                      {formatDate(m.maintenanceDate)}
-                      {impact && (impact.avgBefore != null || impact.avgAfter != null) ? (
-                        <span className="block font-mono">{impact.avgBefore?.toFixed(2) ?? "—"} → {impact.avgAfter?.toFixed(2) ?? "—"}</span>
-                      ) : (
-                        <span className="block">Sin datos de rendimiento en la ventana de 30 días</span>
-                      )}
-                    </p>
-                  </li>
-                )
-              })}
-            </ol>
-          </CardContent>
-        </Card>
-      )}
 
       <Card>
         <CardHeader><CardTitle as="h2" className="text-base">Documentos del vehículo</CardTitle></CardHeader>

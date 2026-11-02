@@ -96,8 +96,6 @@ export type NotificationType =
   | "fuel_loads_unassigned"
   | "sst_document_expiring"
   | "sst_document_expired"
-  | "maintenance_due_soon"
-  | "maintenance_overdue"
   // Patrón P3 (auditoría 2026-09-14): tres vencimientos con consecuencia legal
   // que hasta entonces sólo se veían abriendo su pantalla.
   | "fleet_document_due_soon"

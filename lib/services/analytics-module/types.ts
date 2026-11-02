@@ -27,8 +27,7 @@ export interface WorksiteSpendRow {
 
 export interface VehicleCostRow {
   id: string; plate: string; type: string
-  totalFuelAmount: number; totalServiceAmount: number; totalOperationalCost: number
-  totalLiters: number; loadCount: number; maintenanceCount: number
+  totalFuelAmount: number; totalLiters: number; loadCount: number
   lastOdometerReading: number | null; lastHourMeterReading: number | null
 }
 

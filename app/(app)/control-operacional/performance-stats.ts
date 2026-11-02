@@ -1,36 +1,21 @@
 import type { SummaryStat } from "@/components/ui/summary-bar"
-import { formatCLP } from "@/lib/utils"
 
 /**
  * Desempeño del período del Panel operacional: la tira editorial bajo los
  * tiles de atención y el glosario que la explica. Datos puros; la página los
  * pinta con `SummaryBar`.
  *
- * Lo que sólo mide el período (disponibilidad, MTBF, MTTR, cumplimiento
- * preventivo, horas de detención, costo, OT abiertas con fecha en el rango) vive
- * aquí. Lo que está pasando hoy vive en los tiles de «Requiere atención».
+ * Lo que sólo mide el período (disponibilidad y cobertura del historial de
+ * estado) vive aquí. Lo que está pasando hoy vive en los tiles de «Requiere atención».
  */
 
 export interface PerformanceMetrics {
   availabilityPercent: number | null
   stateCoveragePercent: number | null
-  mtbfHours: number | null
-  mttrHours: number | null
-  preventiveCompliancePercent: number | null
-  downtimeHours: number
-  backlog: number
-  maintenanceCost: number | null
-  maintenanceCostApproved: number | null
-  planAdherencePercent: number | null
-  overdueSla: number
-  unassignedOpen: number
 }
 
 export interface PerformancePermissions {
   canViewFleet: boolean
-  canViewMaintenance: boolean
-  canViewCosts: boolean
-  canViewFuel?: boolean
 }
 
 export function formatKpi(value: number | null, suffix = "", precision = 1): string {
@@ -53,12 +38,11 @@ function belowThreshold(value: number | null, thresholds: { danger: number; warn
 }
 
 export const AVAILABILITY_THRESHOLDS = { danger: 80, warning: 90 }
-export const PREVENTIVE_THRESHOLDS = { danger: 70, warning: 90 }
 
-/** Cada cifra conserva su gating: disponibilidad es de Flota; el resto, de Mantenciones; el costo, además de costos. */
+/** Disponibilidad y cobertura son indicadores de Flota: sin `flota:view` no se pintan. */
 export function buildPerformanceStats(metrics: PerformanceMetrics, permissions: PerformancePermissions): SummaryStat[] {
   const stats: SummaryStat[] = []
-  const { canViewFleet, canViewMaintenance, canViewCosts } = permissions
+  const { canViewFleet } = permissions
 
   if (canViewFleet) {
     const hasData = metrics.availabilityPercent != null
@@ -82,75 +66,6 @@ export function buildPerformanceStats(metrics: PerformanceMetrics, permissions: 
     })
   }
 
-  if (canViewMaintenance) {
-    stats.push(
-      {
-        key: "mtbf",
-        label: "Tiempo entre fallas (MTBF)",
-        value: formatKpi(metrics.mtbfHours, " h", 0),
-        valueKind: metrics.mtbfHours == null ? "text" : "number",
-        secondary: "Flota: horas operativas / correctivas completadas",
-      },
-      {
-        key: "mttr",
-        label: "Tiempo de reparación (MTTR)",
-        value: formatKpi(metrics.mttrHours, " h", 1),
-        valueKind: metrics.mttrHours == null ? "text" : "number",
-        secondary: "Detención promedio por correctiva",
-      },
-      {
-        key: "preventive",
-        label: "Cumplimiento preventivo",
-        value: formatKpi(metrics.preventiveCompliancePercent, "%"),
-        valueKind: metrics.preventiveCompliancePercent == null ? "text" : "number",
-        secondary: "OT preventivas completadas / programadas",
-        ...belowThreshold(metrics.preventiveCompliancePercent, PREVENTIVE_THRESHOLDS),
-      },
-      {
-        key: "plan-adherence",
-        label: "Adherencia al plan",
-        value: formatKpi(metrics.planAdherencePercent, "%"),
-        valueKind: metrics.planAdherencePercent == null ? "text" : "number",
-        secondary: "Planes con OT / planes del período",
-      },
-      {
-        key: "downtime",
-        label: "Horas de detención",
-        value: formatKpi(metrics.downtimeHours, " h", 0),
-        secondary: "Por mantenciones del período",
-      },
-      {
-        key: "overdue-sla",
-        label: "OT fuera de SLA",
-        value: metrics.overdueSla.toLocaleString("es-CL"),
-        secondary: "Programadas o en curso con SLA vencido",
-      },
-      {
-        key: "unassigned",
-        label: "OT sin responsable",
-        value: metrics.unassignedOpen.toLocaleString("es-CL"),
-        secondary: "Programadas o en curso sin asignar",
-      },
-      {
-        // B-04: sólo cuenta OT de vehículos (los instrumentos de servicio aún no
-        // modelan OT) con fecha dentro del período. No es la cifra de «OT
-        // abiertas» de los tiles, que cuenta todas las de hoy sin importar la fecha.
-        key: "period-backlog",
-        label: "OT abiertas del período",
-        value: metrics.backlog.toLocaleString("es-CL"),
-        secondary: "OT de vehículos con fecha en el período",
-      },
-    )
-    if (canViewCosts) {
-      stats.push({
-        key: "cost",
-        label: "Costo aprobado",
-        value: formatCLP(metrics.maintenanceCostApproved ?? 0),
-        secondary: `Comprometido: ${formatCLP(metrics.maintenanceCost ?? 0)}`,
-      })
-    }
-  }
-
   return stats
 }
 
@@ -167,7 +82,6 @@ export interface GlossaryEntry {
  */
 export function buildPerformanceGlossary(permissions: {
   canViewFleet: boolean
-  canViewMaintenance: boolean
   canViewInspections?: boolean
   canViewCapa?: boolean
   canViewFuel?: boolean
@@ -189,54 +103,6 @@ export function buildPerformanceGlossary(permissions: {
           "Parte del calendario de los equipos activos que cubre el historial de estado. Una disponibilidad alta sobre una cobertura baja no representa al período completo; por eso se muestran las dos cifras.",
       },
     )
-  }
-  if (permissions.canViewMaintenance) {
-    entries.push(
-      {
-        key: "mtbf",
-        term: "MTBF · tiempo medio entre fallas (Mean Time Between Failures)",
-        definition:
-          "Horas operativas promedio entre dos mantenciones correctivas completadas dentro del período. Útil para comparar con la cadencia objetivo por equipo.",
-      },
-      {
-        key: "mttr",
-        term: "MTTR · tiempo medio de reparación (Mean Time To Repair)",
-        definition:
-          "Horas promedio de detención por mantención correctiva completada en el período. Una cifra alta sugiere piezas, mano de obra o aprobaciones que están frenando el retorno a operación.",
-      },
-      {
-        key: "preventive",
-        term: "Cumplimiento preventivo",
-        definition:
-          "Porcentaje de mantenciones preventivas no canceladas que se cerraron como completadas dentro del período. Bajo 70% abre una alerta para revisar capacidad del equipo de planificación.",
-      },
-      {
-        key: "plan-adherence",
-        term: "Adherencia al plan",
-        definition:
-          "Planes preventivos activos que vencen en el período y que tienen al menos una OT no cancelada, sobre el total de planes que vencen. Mide el plan, no sólo las OT que ya existen.",
-      },
-      {
-        key: "overdue-sla",
-        term: "OT fuera de SLA",
-        definition:
-          "OT programadas o en curso cuya fecha límite de atención ya pasó. No incluye las completadas ni las canceladas.",
-      },
-      {
-        key: "unassigned",
-        term: "OT sin responsable",
-        definition:
-          "OT programadas o en curso que todavía no tienen una persona asignada. Una OT sin responsable no tiene a quién escalar.",
-      },
-    )
-  }
-  if (permissions.canViewMaintenance && permissions.canViewCosts) {
-    entries.push({
-      key: "maintenance-cost",
-      term: "Costo aprobado y comprometido",
-      definition:
-        "El costo aprobado suma las OT completadas con costo aprobado o que no requerían aprobación. El comprometido suma todas las OT no canceladas, incluidas las programadas y las pendientes de aprobación; no son la misma cifra.",
-    })
   }
   if (permissions.canViewInspections) {
     entries.push(

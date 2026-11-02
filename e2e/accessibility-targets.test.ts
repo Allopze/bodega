@@ -144,7 +144,7 @@ describe("UX-001 — la paleta declarada aprueba el contraste que la regla exige
 describe("UX-002 — el alcance de la auditoría no puede volver a ser una lista fija", () => {
   /**
    * Antes: 20 páginas declaradas a mano sobre 207. Módulos completos
-   * (combustibles, flota, mantenciones, facturación, TI, recepción,
+   * (combustibles, flota, mantención de equipos, facturación, TI, recepción,
    * trazabilidad) quedaban fuera, y una pantalla nueva nacía fuera del alcance
    * sin que nada avisara.
    */
@@ -157,7 +157,7 @@ describe("UX-002 — el alcance de la auditoría no puede volver a ser una lista
     for (const route of [
       // Rutas vigentes del rediseño de Combustible (2026-10-31), no las páginas puente de las URL de antes.
       "/combustibles/cargas", "/combustibles/revisar", "/combustibles/pagos/estados", "/combustibles/fuentes",
-      "/flota", "/mantenciones",
+      "/flota", "/mantencion/panel",
       "/facturacion", "/ti/activos", "/recepcion", "/trazabilidad",
     ]) {
       expect(covered).toContain(route)

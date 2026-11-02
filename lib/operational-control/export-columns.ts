@@ -8,24 +8,18 @@ export interface OperationalExportColumn {
 
 /**
  * Columnas de la hoja "Activos" del reporte, condicionadas por capacidad: las
- * superficies derivadas de mantención, inspección o costos no se incluyen
- * cuando el usuario no tiene el permiso del subdominio (no se exportan ceros
- * engañosos en lugar de "sin datos").
+ * superficies derivadas de flota, combustible, inspección o costos no se
+ * incluyen cuando el usuario no tiene el permiso del subdominio (no se exportan
+ * ceros engañosos en lugar de "sin datos").
  */
 export function buildOperationalAssetExportColumns(
-  canViewMaintenance: boolean,
   canViewInspections: boolean,
   canViewCosts: boolean,
   canViewFuel = false,
   canViewCapa = false,
   canViewFleet = false,
 ): OperationalExportColumn[] {
-  // El costo de mantención es un dato derivado de las OT: sin `mantenciones:view`
-  // la consulta no carga registros y el costo colapsa a 0. Exigir ambos permisos
-  // evita exportar "$0" para quien puede ver costos pero no mantenciones.
-  const showMaintenanceCost = canViewMaintenance && canViewCosts
   const showFuelCost = canViewFuel && canViewCosts
-  const showOperationalCost = showMaintenanceCost && showFuelCost
   const showCapa = canViewCapa && canViewInspections
   return [
     { header: "Contrato", key: "key", width: 34 },
@@ -55,15 +49,6 @@ export function buildOperationalAssetExportColumns(
           { header: "Litros en vacío", key: "litersIdle", width: 16 },
         ]
       : []),
-    ...(canViewMaintenance
-      ? [
-          { header: "Mantenciones", key: "maintenance", width: 16 },
-          { header: "Backlog", key: "backlog", width: 12 },
-          { header: "SLA vencido", key: "openSlaOverdue", width: 14 },
-          { header: "Sin responsable", key: "unassignedOpen", width: 16 },
-          { header: "Próximo plan", key: "nextPlanDue", width: 16 },
-        ]
-      : []),
     ...(canViewInspections
       ? [
           { header: "Inspecciones", key: "inspections", width: 16 },
@@ -73,15 +58,7 @@ export function buildOperationalAssetExportColumns(
         ]
       : []),
     ...(showCapa ? [{ header: "CAPA vencidas", key: "overdueCapa", width: 14 }] : []),
-    ...(canViewMaintenance ? [{ header: "Downtime (h)", key: "downtime", width: 16 }] : []),
     ...(showFuelCost ? [{ header: "Costo combustible", key: "fuelCost", width: 20 }] : []),
-    ...(showMaintenanceCost
-      ? [
-          { header: "Costo aprobado", key: "approvedCost", width: 20 },
-          { header: "Costo comprometido", key: "committedCost", width: 20 },
-        ]
-      : []),
-    ...(showOperationalCost ? [{ header: "Costo operacional total", key: "operationalCost", width: 22 }] : []),
   ]
 }
 
@@ -102,16 +79,13 @@ function formatPerformance(
 
 export function buildOperationalAssetExportRow(
   asset: OperationalAsset,
-  canViewMaintenance: boolean,
   canViewInspections: boolean,
   canViewCosts: boolean,
   canViewFuel = false,
   canViewCapa = false,
   canViewFleet = false,
 ): Record<string, string | number | null> {
-  const showMaintenanceCost = canViewMaintenance && canViewCosts
   const showFuelCost = canViewFuel && canViewCosts
-  const showOperationalCost = showMaintenanceCost && showFuelCost
   const showCapa = canViewCapa && canViewInspections
   return {
     key: asset.key,
@@ -141,15 +115,6 @@ export function buildOperationalAssetExportRow(
           litersIdle: asset.litersIdle,
         }
       : {}),
-    ...(canViewMaintenance
-      ? {
-          maintenance: asset.maintenanceCount,
-          backlog: asset.openMaintenanceCount,
-          openSlaOverdue: asset.openSlaOverdue,
-          unassignedOpen: asset.unassignedOpen,
-          nextPlanDue: asset.nextPlanDue,
-        }
-      : {}),
     ...(canViewInspections
       ? {
           inspections: asset.inspectionCount,
@@ -159,20 +124,6 @@ export function buildOperationalAssetExportRow(
         }
       : {}),
     ...(showCapa ? { overdueCapa: asset.overdueCapa } : {}),
-    ...(canViewMaintenance ? { downtime: asset.downtimeHours } : {}),
     ...(showFuelCost ? { fuelCost: asset.fuelBilledAmount } : {}),
-    ...(showMaintenanceCost
-      ? {
-          approvedCost: asset.maintenanceCostApproved,
-          committedCost: asset.maintenanceCost,
-        }
-      : {}),
-    ...(showOperationalCost
-      ? {
-          operationalCost: asset.fuelBilledAmount != null && asset.maintenanceCostApproved != null
-            ? asset.fuelBilledAmount + asset.maintenanceCostApproved
-            : null,
-        }
-      : {}),
   }
 }

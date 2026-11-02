@@ -110,7 +110,6 @@ const CODE_SERIES_TABLES: Record<string, string> = {
   DES: "stock_adjustments",
   DEV: "stock_returns",
   CON: "physical_inventory_counts",
-  OT:  "maintenance_records",
   PF:  "billing_proposals",
   ACT: "it_asset_assignments",
   INC: "it_tickets",

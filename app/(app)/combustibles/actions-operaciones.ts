@@ -339,7 +339,7 @@ export async function confirmOperationsImportAction(
     // plataforma entera (AppShell exportado como objeto memo) y perdía el
     // estado local del wizard (paso "done"); ya no ocurre.
     // Ver node_modules/next/dist/docs/01-app/02-guides/server-actions.md.
-    // Las páginas afectadas (dashboard, vehículos, flota, mantenciones) son
+    // Las páginas afectadas (dashboard, vehículos, flota y mantención de equipos) son
     // dinámicas (usan sesión/cookies) y se renderizan frescas en cada visita
     // real, así que no necesitan revalidación explícita aquí.
 

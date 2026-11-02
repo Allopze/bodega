@@ -44,7 +44,6 @@ const routes: RouteTarget[] = [
   { slug: "servicios-detalle", path: "/servicios/srv-audit-1", auth: true },
   { slug: "analitica", path: "/analitica", auth: true },
   { slug: "flota", path: "/flota", auth: true },
-  { slug: "mantenciones", path: "/mantenciones", auth: true },
   { slug: "prevencion", path: "/prevencion", auth: true },
   { slug: "prevencion-nueva", path: "/prevencion/nueva", auth: true },
   { slug: "prevencion-detalle", path: "/prevencion/sst-audit-1", auth: true },

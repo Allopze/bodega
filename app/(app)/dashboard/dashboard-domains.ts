@@ -21,7 +21,7 @@ import type { Permission } from "@/modules/permissions"
  *                  |                            | Nombre descriptivo propio.
  *   adquisiciones  | Adquisiciones              | Adquisiciones (mismo nombre)
  *   flota          | Control operacional        | Control operacional: Flota,
- *                  |                            | Combustibles y Mantenciones
+ *                  |                            | Combustibles y mantención de equipos
  *   bodega         | Bodega                     | Bodega (incluye Entregas)
  *   prevencion     | Prevención                 | Prevención (PDTP, incidentes, CAPA,
  *                  |                            | indicadores, requisitos legales)
@@ -110,9 +110,9 @@ export const DASHBOARD_DOMAINS: Record<DashboardDomainKey, DashboardDomain> = {
     key: "flota",
     title: "Control operacional",
     shortTitle: "Control operacional",
-    description: "Flota, combustible y mantenciones.",
+    description: "Flota y combustible.",
     anchor: "dominio-flota",
-    permissions: ["combustibles:view", "flota:view", "mantenciones:view"],
+    permissions: ["combustibles:view", "flota:view"],
   },
   terreno: {
     key: "terreno",

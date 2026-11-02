@@ -19,6 +19,10 @@
 > §2 a esos archivos describen el estado previo; lo que cubría la vista de
 > análisis (R-01 a R-06) vive en `/combustibles/control/rendimiento/[familia]`
 > (§9). El nuevo orden del menú está en §11.
+>
+> **Estado 2026-10-31:** este análisis conserva el inventario del 2026-10-21. El
+> módulo plural `/mantenciones` que aparece en las rutas históricas fue retirado;
+> la mantención vigente de equipos vive en `/mantencion/*`.
 
 ## 0. Stack detectado
 

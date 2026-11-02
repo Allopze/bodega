@@ -1,28 +1,22 @@
-import { Certificate, Gauge, Truck, Wrench } from "@phosphor-icons/react/dist/ssr"
+import { Certificate, Gauge, Truck } from "@phosphor-icons/react/dist/ssr"
 import { formatQty } from "@/lib/utils"
 import { ChartSlot } from "@/components/ui/dashboard-panel"
 import { KpiCard } from "@/components/ui/kpi-card"
-import { RankedList } from "@/components/ui/ranked-list"
 import { SummaryBar } from "@/components/ui/summary-bar"
 import { DegradedDataBanner } from "@/components/ui/degraded-data-banner"
 import { logger } from "@/lib/logger"
 import { getFuelControlOverview } from "@/lib/combustibles/fuel-control-overview"
 import { getOperationalCalendarBounds } from "@/lib/services/operational-period-metrics"
 import { getExpiringFleetDocuments } from "@/lib/services/dashboard-domains-data"
-import { getFuelMonthlyTrend, getMaintenanceMonthlyTrend } from "@/lib/services/dashboard-fleet-maintenance"
-import { FLEET_OVERVIEW_LOOKBACK_MONTHS, getFleetOverview } from "@/lib/services/fleet"
-import { getUsageMaintenanceAlerts } from "@/lib/services/maintenance"
+import { getFuelMonthlyTrend } from "@/lib/services/dashboard-fuel"
+import { getFleetOverview } from "@/lib/services/fleet"
 import { canViewOperationalControl, operationalControlCapabilities } from "@/lib/operational-control/capabilities"
 import { countPendingFuelCreditNotes } from "@/lib/services/dte-portal/reconciliation"
 import { readDtePortalConfig } from "@/lib/services/dte-portal/config"
 import { DASHBOARD_DOMAINS } from "../dashboard-domains"
 import { DASHBOARD_KPI, DomainSection } from "../dashboard-domain-shell"
 import { periodScopeLabel, scopedWorksiteId } from "../dashboard-scope"
-import { ChartFrame } from "../charts/chart-frame"
-import {
-  FuelConsumptionChart,
-  MaintenanceTrendChart,
-} from "../dashboard-domain-charts"
+import { FuelConsumptionChart } from "../dashboard-domain-charts"
 
 import type { DomainSectionsProps } from "./shared"
 import { plusDays, todayInChile } from "./shared"
@@ -46,7 +40,6 @@ export async function FleetSection({ session, scope }: DomainSectionsProps) {
     canViewFuel,
     canViewTae,
     canViewFleet,
-    canViewMaintenance,
     canViewCosts: canSeeCosts,
   } = operationalControlCapabilities(session)
 
@@ -78,16 +71,14 @@ export async function FleetSection({ session, scope }: DomainSectionsProps) {
   // 6 meses fijos para las dos tendencias — no depende de `scope.period`
   // (CO-038): ambos gráficos rotulan la ventana con este mismo número.
   const TREND_MONTHS = 6
-  const [fuelControl, fuelTrend, maintenanceTrend, docs, fleet, usageAlerts, pendingFuelCreditNotes] = await Promise.all([
+  const [fuelControl, fuelTrend, docs, fleet, pendingFuelCreditNotes] = await Promise.all([
     canViewFuel ? track(getFuelControlOverview(session, {
       includeTae: canViewTae,
       filters: { fromDate: bounds.currentStart.slice(0, 10), toDate: bounds.currentEnd.slice(0, 10), ...(worksiteId ? { worksiteId } : {}) },
     }), null, "fuelControl") : Promise.resolve(null),
     canViewFuel ? track(getFuelMonthlyTrend(session, TREND_MONTHS, worksiteId), [], "fuelTrend") : Promise.resolve([]),
-    canViewMaintenance ? track(getMaintenanceMonthlyTrend(session, TREND_MONTHS, worksiteId), [], "maintenanceTrend") : Promise.resolve([]),
     canViewFleet ? track(getExpiringFleetDocuments(session, today, plusDays(today, 30), worksiteId), { within30: 0, expired: 0 }, "expiringDocs") : Promise.resolve({ within30: 0, expired: 0 }),
     canViewFleet ? track(getFleetOverview(session, worksiteId), [], "fleetOverview") : Promise.resolve([]),
-    canViewMaintenance ? track(getUsageMaintenanceAlerts(session, worksiteId), [], "usageAlerts") : Promise.resolve([]),
     // Notas de crédito de combustible sin aplicar (rutEmisor de fuelSuppliers,
     // por empresa/período tributario — no por faena, igual que la deuda arriba).
     // "Mes calendario actual", no `scope.period` — ver el rótulo en el summary.
@@ -95,22 +86,6 @@ export async function FleetSection({ session, scope }: DomainSectionsProps) {
   ])
 
   const periodo = periodScopeLabel(scope.period).toLocaleLowerCase("es-CL")
-
-  /*
-   * `costPerKm`/`costPerHour` los calcula `getFleetOverview` desde hace tiempo y
-   * nadie los leía. Sólo existen con la unidad canónica del equipo y con dos
-   * lecturas distintas en el período — con una sola carga no hay recorrido que
-   * dividir—, así que la lista se filtra en vez de inventar ceros.
-   */
-  const costPerUse = canSeeCosts ? fleet
-    .filter((vehicle) => vehicle.costPerKm !== null || vehicle.costPerHour !== null)
-    .map((vehicle) => ({
-      key: vehicle.id,
-      label: vehicle.plate ?? vehicle.id,
-      value: Math.round(vehicle.costPerKm ?? vehicle.costPerHour ?? 0),
-      detail: vehicle.costPerKm !== null ? "$ por km" : "$ por hora",
-      href: `/flota/${vehicle.id}`,
-    })) : []
 
   /*
    * Un "0" en estos dos tiles es un estado sin configurar, no una buena noticia
@@ -122,10 +97,6 @@ export async function FleetSection({ session, scope }: DomainSectionsProps) {
   const totalLiters = Math.round(fuelTrend.reduce((sum, point) => sum + point.liters, 0))
   const canRegisterVehicles = permissions.includes("admin:fleet_vehicles")
 
-  // Los posibles resets de medidor no son "uso vencido" — son una lectura que
-  // necesita verificación. Se excluyen de este KPI (siguen visibles en /mantenciones).
-  const overdueUsageAlerts = usageAlerts.filter((a) => !a.possibleMeterReset)
-
   return (
     <>
       <DegradedDataBanner degraded={degradedSources} total={trackedCount} />
@@ -136,7 +107,6 @@ export async function FleetSection({ session, scope }: DomainSectionsProps) {
           ...(canViewOperationalControl(session) ? [{ label: "Panel operacional", href: "/control-operacional" }] : []),
           ...(canViewFuel ? [{ label: "Consumo y rendimiento", href: FUEL_PATHS.consumo }] : []),
           ...(canViewFleet ? [{ label: "Vehículos", href: "/flota" }] : []),
-          ...(canViewMaintenance ? [{ label: "Mantenciones", href: "/mantenciones" }] : []),
           ...(canViewFuel && canSeeCosts ? [{ label: "Finanzas", href: "/dashboard?vista=finanzas" }] : []),
         ]}
         kpis={
@@ -158,9 +128,6 @@ export async function FleetSection({ session, scope }: DomainSectionsProps) {
             {canViewFleet && <KpiCard {...DASHBOARD_KPI} icon={<Certificate size={16} />} label="Documentos por vencer" value={String(docs.within30)}
               detail={docs.expired > 0 ? `${docs.expired} ya vencido(s) · próximos 30 días` : "Próximos 30 días"}
               tone={docs.within30 + docs.expired > 0 ? "signal" : "neutral"} href="/flota" />}
-            {canViewMaintenance && <KpiCard {...DASHBOARD_KPI} icon={<Wrench size={16} />} label="Mantención vencida por uso" value={String(overdueUsageAlerts.length)}
-              detail={overdueUsageAlerts.length > 0 ? `${overdueUsageAlerts[0]!.plate} lleva ${Math.round(overdueUsageAlerts[0]!.usageSinceLastMaintenance)} ${overdueUsageAlerts[0]!.medidoPor} · ahora` : "Ninguna pasada de intervalo"}
-              tone={overdueUsageAlerts.length > 0 ? "signal" : "neutral"} href="/mantenciones" />}
           </>
         }
         summary={<SummaryBar numerals="sans" stats={[
@@ -183,33 +150,9 @@ export async function FleetSection({ session, scope }: DomainSectionsProps) {
             href: "/compras/dte?tipo=61",
           }] : []),
         ]} />}
-        /*
-         * Bento de 3 columnas (2xl) y 2 (xl) sin huecos: el consumo comparte fila
-         * con el ranking de costo (2 + 1) y la mantención cierra la suya completa.
-         * Sin ranking —sin permiso de costos o sin tasas calculables— el consumo
-         * toma la fila entera en vez de dejar una columna vacía a su lado. En xl
-         * el ranking, solo en su fila, ocupa las dos columnas.
-         */
         charts={
           <>
-            {canViewFuel && <ChartSlot span={costPerUse.length > 0 ? "wide" : "full"}><FuelConsumptionChart data={fuelTrend} showCosts={canSeeCosts} periodLabel={`últimos ${TREND_MONTHS} meses`} /></ChartSlot>}
-            {costPerUse.length > 0 && (
-              <ChartSlot className="xl:col-span-2 2xl:col-span-1">
-                <ChartFrame
-                  title="Costo operacional por unidad de uso"
-                  description={`Combustible + mantención por km o por hora (últimos ${FLEET_OVERVIEW_LOOKBACK_MONTHS} meses)`}
-                >
-                  {/* Sin % del total: las tasas son $/km para unos equipos y $/hora
-                      para otros, y su suma no mide nada. Es una comparación de
-                      tasas, no un reparto. */}
-                  <RankedList
-                    items={costPerUse} format="clp" mode="share" showShare={false} moreHref="/flota"
-                    ariaLabel="Costo operacional por unidad de uso, por vehículo"
-                  />
-                </ChartFrame>
-              </ChartSlot>
-            )}
-            {canViewMaintenance && <ChartSlot span="full"><MaintenanceTrendChart data={maintenanceTrend} showCosts={canSeeCosts} periodLabel={`últimos ${TREND_MONTHS} meses`} /></ChartSlot>}
+            {canViewFuel && <ChartSlot span="full"><FuelConsumptionChart data={fuelTrend} showCosts={canSeeCosts} periodLabel={`últimos ${TREND_MONTHS} meses`} /></ChartSlot>}
           </>
         }
       />

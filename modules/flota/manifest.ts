@@ -26,9 +26,9 @@ export const flotaModule = {
           label:    "Panel operacional",
           href:     "/control-operacional",
           iconName: "ChartLineUp",
-          // Paridad con el gate de la página: cualquiera de los cuatro permisos
-          // abre el centro, así que la navegación debe ofrecerlo a los cuatro.
-          permissions: ["flota:view", "mantenciones:view", "prevention:inspections:view", "combustibles:view"],
+          // Paridad con el gate de la página: cualquiera de los tres permisos
+          // abre el centro, así que la navegación debe ofrecerlo a los tres.
+          permissions: ["flota:view", "prevention:inspections:view", "combustibles:view"],
           // Mismo encabezado que abre TI con su resumen: un área agrupa todos
           // sus ítems o ninguno (navigation.test.ts).
           group:    "Seguimiento",

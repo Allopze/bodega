@@ -944,7 +944,6 @@ Esta sección documenta los cambios realizados para corregir el problema:
 | Componente | Cambio |
 |------------|--------|
 | `flota/fleet-filters.tsx` | `router.push` → `router.replace` + `scroll: false` |
-| `mantenciones/maintenance-filters.tsx` | `router.push` → `router.replace` + `scroll: false` |
 | `bodega/guias/guide-filters.tsx` | `router.push` → `router.replace` + `scroll: false` |
 | `analitica/analytics-filters.tsx` | `router.push` → `router.replace` + `scroll: false` |
 | `facturacion/facturas/invoice-filters.tsx` | `startTransition(() => router.push)` → `router.replace` + `scroll: false` |

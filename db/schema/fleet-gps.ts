@@ -38,7 +38,7 @@ export const fleetGpsAlertRules = pgTable("fleet_gps_alert_rules", {
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   check("fleet_gps_alert_rules_provider_valid", sql`${table.provider} IN ('onway')`),
-  check("fleet_gps_alert_rules_destination_valid", sql`${table.destination} IN ('none', 'maintenance', 'capa')`),
+  check("fleet_gps_alert_rules_destination_valid", sql`${table.destination} IN ('none', 'capa')`),
   check("fleet_gps_alert_rules_cooldown_valid", sql`${table.cooldownMinutes} BETWEEN 1 AND 10080`),
   index("fleet_gps_alert_rules_worksite_idx").on(table.worksiteId, table.isEnabled),
   index("fleet_gps_alert_rules_alert_type_idx").on(table.provider, table.alertType),
@@ -239,7 +239,7 @@ export const fleetGpsAlerts = pgTable("fleet_gps_alerts", {
   check("fleet_gps_alerts_coordinates_valid", sql`(${table.latitude} IS NULL AND ${table.longitude} IS NULL) OR (${table.latitude} BETWEEN -90 AND 90 AND ${table.longitude} BETWEEN -180 AND 180)`),
   check("fleet_gps_alerts_speed_valid", sql`${table.speedKph} IS NULL OR ${table.speedKph} BETWEEN 0 AND 400`),
   check("fleet_gps_alerts_status_valid", sql`${table.processingStatus} IN ('new', 'actioned', 'ignored', 'blocked')`),
-  check("fleet_gps_alerts_link_valid", sql`(${table.linkedEntityType} IS NULL AND ${table.linkedEntityId} IS NULL) OR (${table.linkedEntityType} IN ('maintenance', 'capa') AND ${table.linkedEntityId} IS NOT NULL)`),
+  check("fleet_gps_alerts_link_valid", sql`(${table.linkedEntityType} IS NULL AND ${table.linkedEntityId} IS NULL) OR (${table.linkedEntityType} = 'capa' AND ${table.linkedEntityId} IS NOT NULL)`),
   uniqueIndex("fleet_gps_alerts_external_unique").on(table.provider, table.externalDeviceId, table.externalEventKey),
   index("fleet_gps_alerts_worksite_status_idx").on(table.worksiteId, table.processingStatus, table.occurredAt),
   index("fleet_gps_alerts_vehicle_occurred_idx").on(table.vehicleId, table.occurredAt),

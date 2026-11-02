@@ -242,7 +242,6 @@ const MODULE_LABELS: Record<string, string> = {
   feedback:        "Soporte",
   combustibles:    "Combustibles",
   flota:           "Flota",
-  mantenciones:    "Mantenciones",
   mantencion_equipos: "Mantención de equipos",
   prevention:      "Prevención",
   operations:      "Pendientes operacionales",

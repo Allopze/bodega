@@ -71,7 +71,6 @@ export const ROUTE_OWNER_ALIASES: RouteOwnerRule[] = [
   { moduleId: "combustibles", submoduleHref: "/combustibles/pagos", prefix: "/combustibles/cuenta-corriente" },
   { moduleId: "combustibles", submoduleHref: "/combustibles/pagos", prefix: "/combustibles/nueva" },
   { moduleId: "flota", submoduleHref: "/flota", prefix: "/api/flota" },
-  { moduleId: "mantenciones", submoduleHref: "/mantenciones", prefix: "/api/mantenciones" },
   // Mantención de equipos: la app del mecánico (PWA) y sus APIs, incluidas las
   // de sincronización que autentican con credencial de dispositivo.
   // La app del mecánico no está en el menú (es una PWA aparte): su ruta, su login
@@ -173,10 +172,6 @@ export const ROUTE_OWNER_ALIASES: RouteOwnerRule[] = [
   { moduleId: "feedback", submoduleHref: "/soporte", prefix: "/api/cron/feedback-sla-reminders" },
   { moduleId: "flota", submoduleHref: "/flota/monitoreo", prefix: "/api/cron/fleet-onway-retention" },
   { moduleId: "flota", submoduleHref: "/flota/monitoreo", prefix: "/api/cron/fleet-onway-sync" },
-  { moduleId: "mantenciones", submoduleHref: "/mantenciones", prefix: "/api/cron/maintenance-reminders" },
-  // MNT-001: materializar el plan preventivo es del mismo módulo que su
-  // recordatorio, y el prefijo más largo gana, así que no se pisan.
-  { moduleId: "mantenciones", submoduleHref: "/mantenciones", prefix: "/api/cron/maintenance-plan-materialization" },
   { moduleId: "warehouse", submoduleHref: "/seguimiento", prefix: "/api/cron/operational-integrity-scan" },
   // TRZ-001: el segundo libro de integridad, el que cubre entregas contra
   // recepción en faena.

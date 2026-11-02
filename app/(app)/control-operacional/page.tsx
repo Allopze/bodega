@@ -7,7 +7,6 @@ import {
   Certificate,
   GasPump,
   Truck,
-  Wrench,
 } from "@phosphor-icons/react/dist/ssr"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
@@ -34,7 +33,6 @@ import {
   documentsTile,
   fuelReviewTile,
   stoppedTile,
-  workOrdersTile,
   type AttentionTile,
   type AttentionTileKey,
   type FuelPendingCounts,
@@ -50,7 +48,6 @@ const NO_FUEL_COUNTS: FuelPendingCounts = { carga: null, caso: null, patente: nu
 
 const ATTENTION_ICONS: Record<AttentionTileKey, ReactNode> = {
   stopped: <Truck size={16} weight="duotone" />,
-  workOrders: <Wrench size={16} weight="duotone" />,
   documents: <Certificate size={16} weight="duotone" />,
   fuel: <GasPump size={16} weight="duotone" />,
 }
@@ -121,27 +118,24 @@ export default async function OperationalControlPage({
   const defaultPeriod = resolveOperationalControlPeriod()
   const isDefaultPeriod = period.from === defaultPeriod.from && period.to === defaultPeriod.to
   const periodLabel = `${formatDate(period.from)} – ${formatDate(period.to)}`
-  const headerDescription = `Qué requiere atención hoy en flota, mantención y combustible, y el desempeño de los activos entre ${formatDate(period.from)} y ${formatDate(period.to)}.`
+  const headerDescription = `Qué requiere atención hoy en flota y combustible, y el desempeño de los activos entre ${formatDate(period.from)} y ${formatDate(period.to)}.`
 
-  const { canViewFleet, canViewMaintenance, canViewInspections, canViewCapa, canViewCosts, canViewServiceEquipment } = data.permissions
+  const { canViewFleet, canViewInspections, canViewCapa, canViewCosts, canViewServiceEquipment } = data.permissions
   const operationalAssets = data.assets.filter((asset) => asset.kind === "vehicle")
   const fleetSize = operationalAssets.length
   const stateMismatchCount = operationalAssets.filter((asset) => asset.stateMismatch).length
   const serviceEquipmentCount = data.assets.filter((asset) => asset.kind === "service_equipment").length
 
-  // Orden de lectura: lo que está parado, el trabajo abierto, los papeles y, al
-  // final, el combustible. Cada tile existe sólo con la capacidad de su dominio.
+  // Orden de lectura: lo que está parado, los papeles y, al final, el combustible. Cada tile existe sólo con la capacidad de su dominio.
   const attentionTiles: AttentionTile[] = [
     ...(canViewFleet ? [stoppedTile(data.attention.stoppedVehicles, fleetSize)] : []),
-    ...(canViewMaintenance ? [workOrdersTile(data.attention.openWorkOrders)] : []),
     ...(canViewFleet ? [documentsTile(data.attention.fleetDocuments)] : []),
     ...(fuelPending ? [fuelReviewTile(fuelPending)] : []),
   ]
 
-  const performanceStats = buildPerformanceStats(data.metrics, { canViewFleet, canViewMaintenance, canViewCosts })
+  const performanceStats = buildPerformanceStats(data.metrics, { canViewFleet })
   const glossary = buildPerformanceGlossary({
     canViewFleet,
-    canViewMaintenance,
     canViewInspections,
     canViewCapa,
     canViewFuel,
@@ -160,20 +154,13 @@ export default async function OperationalControlPage({
           ]} />
         }
         actions={
-          <>
-            <OperationalExportButton period={period} />
-            {canViewMaintenance && (
-              <Button asChild>
-                <Link href="/mantenciones">Gestionar OT</Link>
-              </Button>
-            )}
-          </>
+          <OperationalExportButton period={period} />
         }
       />
 
       {data.degradedSources.length > 0 && (
         <div className="mb-4">
-          <DegradedDataBanner degraded={data.degradedSources} total={4} />
+          <DegradedDataBanner degraded={data.degradedSources} total={3} />
         </div>
       )}
 
@@ -278,13 +265,12 @@ export default async function OperationalControlPage({
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
         <Card>
           <CardHeader>
-            <CardTitle as="h2">Activos y trabajo del período</CardTitle>
+            <CardTitle as="h2">Activos y estado operacional</CardTitle>
           </CardHeader>
           <CardContent>
             <OperationalAssetsTable
               assets={operationalAssets}
               canViewCosts={canViewCosts}
-              canViewMaintenance={canViewMaintenance}
               canViewInspections={canViewInspections}
               canViewCapa={canViewCapa}
               canViewFuel={canViewFuel}

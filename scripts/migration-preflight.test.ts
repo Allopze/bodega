@@ -29,6 +29,8 @@ describe("migration preflight", () => {
     "pdtp_action_plan_followups",
     "sst_action_plan",
     "ppa_corrective_actions",
+    "maintenance_records",
+    "maintenance_plans",
   ] as const)("bloquea el retiro de %s cuando conserva historia", (table) => {
     const report = cleanReport()
     report.legacyActionRows[table] = 1

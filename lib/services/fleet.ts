@@ -8,7 +8,6 @@ import {
   fuelOperationRecords,
   fuelVehicleOperationalIntervals,
   fuelVehicles,
-  maintenanceRecords,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
@@ -17,7 +16,6 @@ import { can } from "@/lib/auth/can"
 import { accountableFuelLoadsWhere } from "@/lib/combustibles/load-status"
 import { fuelOperationOccurredAtSql } from "@/lib/combustibles/fuel-log"
 import { fleetDocumentMetadataSchema, resolveNextExpiryDate } from "@/lib/validation/fleet-documents"
-import { isCivilDate } from "@/lib/validation/dates"
 import { filterFleetOverviewRows, type FleetOverviewFilters } from "@/lib/fleet-overview-filters"
 import { isValidReason, reasonRequiredMessage } from "@/lib/validation/reason-thresholds"
 
@@ -31,9 +29,8 @@ import { isValidReason, reasonRequiredMessage } from "@/lib/validation/reason-th
  * misma faena antes de llegar aquí. Bridgear ambas cuesta más código que la
  * consulta misma.
  *
- * Existía inlineada en ~8 sitios (`lib/services/maintenance.ts`,
- * `app/(app)/combustibles/…`, la ejecución de PDTP); acá queda extraída para
- * los nuevos. Migrar los demás se hace cuando se toquen, no ahora.
+ * Existía inlineada en ~8 sitios (`app/(app)/combustibles/…`, Inspecciones y
+ * ejecución del PDTP); acá queda extraída para los nuevos consumidores.
  */
 export async function listWorksiteVehicles(args: { worksiteId: string; activeOnly?: boolean }) {
   const conditions = [eq(fuelVehicles.worksiteId, args.worksiteId)]
@@ -81,7 +78,6 @@ export const FLEET_OVERVIEW_LOOKBACK_MONTHS = 12
 export async function getFleetOverview(session: Session, worksiteId?: string, vehicleIds?: readonly string[]) {
   if (vehicleIds?.length === 0) return []
   const canViewFuel = can(session, "combustibles:view")
-  const canViewMaintenance = can(session, "mantenciones:view")
   const canViewCosts = can(session, "flota:view") && can(session, "combustibles:view_costs")
   const vehicleScope = and(
     worksiteScopeSql(session, fuelVehicles.worksiteId, worksiteId),
@@ -129,7 +125,7 @@ export async function getFleetOverview(session: Session, worksiteId?: string, ve
       AND ${fuelAnomalyCases.resolutionKind} = 'reset_medidor'
   )`
 
-  const [vehicles, fuelRows, firstReadingRows, lastReadingRows, maintenanceRows, documentExpiryRows] = await Promise.all([
+  const [vehicles, fuelRows, firstReadingRows, lastReadingRows, documentExpiryRows] = await Promise.all([
     db.query.fuelVehicles.findMany({
       where: vehicleScope,
       with: { worksite: true, responsibleUser: true, equipmentType: true, usualFuelSupplier: true },
@@ -165,21 +161,6 @@ export async function getFleetOverview(session: Session, worksiteId?: string, ve
       .from(fuelLoads)
       .where(and(fuelLoadWhere, hasReading))
       .orderBy(fuelLoads.vehicleId, desc(fuelLoads.loadDate), desc(fuelLoads.createdAt)) : Promise.resolve([]),
-    canViewMaintenance ? db
-      .select({
-        vehicleId: maintenanceRecords.vehicleId,
-        totalMaintenanceAmount: canViewCosts ? sql<number>`COALESCE(SUM(${maintenanceRecords.totalAmount}), 0)` : sql<null>`null`,
-        maintenanceCount: sql<number>`COUNT(*)`,
-        lastMaintenanceDate: sql<string>`MAX(${maintenanceRecords.maintenanceDate})`,
-      })
-      .from(maintenanceRecords)
-      .where(and(
-        sql`${maintenanceRecords.maintenanceDate} >= ${since.slice(0, 10)}`,
-        sql`${maintenanceRecords.status} <> 'cancelled'`,
-        worksiteScopeSql(session, maintenanceRecords.worksiteId, worksiteId),
-        vehicleIds ? inArray(maintenanceRecords.vehicleId, [...vehicleIds]) : undefined,
-      ))
-      .groupBy(maintenanceRecords.vehicleId) : Promise.resolve([]),
     // El detalle del vehículo incluye los documentos subidos en su "próximo
     // vencimiento" (ver `getFleetVehicleDetail`); el listado los ignoraba, así
     // que un seguro cargado como documento no aparecía ni en la columna ni en
@@ -205,7 +186,6 @@ export async function getFleetOverview(session: Session, worksiteId?: string, ve
   const fuelByVehicle = new Map(fuelRows.map((row) => [row.vehicleId, row]))
   const firstReadingByVehicle = new Map(firstReadingRows.map((row) => [row.vehicleId, row]))
   const lastReadingByVehicle = new Map(lastReadingRows.map((row) => [row.vehicleId, row]))
-  const maintenanceByVehicle = new Map(maintenanceRows.map((row) => [row.vehicleId, row]))
   const currentDocumentsByVehicle = new Map<string, Array<{ documentType: string; expiresAt: string | null }>>()
   for (const row of documentExpiryRows) {
     currentDocumentsByVehicle.set(row.vehicleId, [
@@ -216,21 +196,13 @@ export async function getFleetOverview(session: Session, worksiteId?: string, ve
 
   return vehicles.map((vehicle) => {
     const fuel = fuelByVehicle.get(vehicle.id)
-    const maintenance = maintenanceByVehicle.get(vehicle.id)
     const totalFuelAmount = canViewFuel && canViewCosts ? Number(fuel?.totalFuelAmount ?? 0) : null
-    const totalMaintenanceAmount = canViewMaintenance && canViewCosts ? Number(maintenance?.totalMaintenanceAmount ?? 0) : null
-    const totalOperationalCost = totalFuelAmount != null && totalMaintenanceAmount != null
-      ? totalFuelAmount + totalMaintenanceAmount
-      : null
     const firstReading = firstReadingByVehicle.get(vehicle.id)
     const lastReading = lastReadingByVehicle.get(vehicle.id)
     const firstOdometer = firstReading?.odometerReading == null ? null : Number(firstReading.odometerReading)
     const lastOdometer = lastReading?.odometerReading == null ? null : Number(lastReading.odometerReading)
     const firstHourMeter = firstReading?.hourMeterReading == null ? null : Number(firstReading.hourMeterReading)
     const lastHourMeter = lastReading?.hourMeterReading == null ? null : Number(lastReading.hourMeterReading)
-    // Costo operacional (combustible + mantención) por unidad de uso, sólo con la unidad
-    // canónica del equipo (sección 2) y al menos dos lecturas distintas en el período —
-    // con una sola carga no hay recorrido/uso que dividir.
     const kmDriven = vehicle.performanceUnit === "km_per_liter" && firstOdometer != null && lastOdometer != null && lastOdometer > firstOdometer
       ? lastOdometer - firstOdometer : null
     const hoursRun = vehicle.performanceUnit === "liters_per_hour" && firstHourMeter != null && lastHourMeter != null && lastHourMeter > firstHourMeter
@@ -258,18 +230,12 @@ export async function getFleetOverview(session: Session, worksiteId?: string, ve
         insuranceExpiresAt: vehicle.insuranceExpiresAt,
       }, currentDocumentsByVehicle.get(vehicle.id) ?? []),
       totalFuelAmount,
-      totalMaintenanceAmount,
-      totalOperationalCost,
       totalLiters: canViewFuel ? Number(fuel?.totalLiters ?? 0) : null,
       loadCount: canViewFuel ? Number(fuel?.loadCount ?? 0) : null,
-      maintenanceCount: canViewMaintenance ? Number(maintenance?.maintenanceCount ?? 0) : null,
-      lastMaintenanceDate: canViewMaintenance ? maintenance?.lastMaintenanceDate ?? null : null,
       lastOdometerReading: canViewFuel ? lastOdometer : null,
       lastHourMeterReading: canViewFuel ? lastHourMeter : null,
       kmDriven,
       hoursRun,
-      costPerKm: kmDriven && totalOperationalCost != null ? totalOperationalCost / kmDriven : null,
-      costPerHour: hoursRun && totalOperationalCost != null ? totalOperationalCost / hoursRun : null,
     }
   })
 }
@@ -282,7 +248,6 @@ export async function getFleetOverviewPage(
   worksiteId?: string,
 ) {
   const canViewFuel = can(session, "combustibles:view")
-  const canViewMaintenance = can(session, "mantenciones:view")
   const canViewCosts = can(session, "flota:view") && can(session, "combustibles:view_costs")
   const vehicleScope = worksiteScopeSql(session, fuelVehicles.worksiteId, worksiteId)
   const [vehicles, documentExpiryRows] = await Promise.all([
@@ -335,7 +300,7 @@ export async function getFleetOverviewPage(
   const sinceDate = new Date()
   sinceDate.setMonth(sinceDate.getMonth() - FLEET_OVERVIEW_LOOKBACK_MONTHS)
   const since = sinceDate.toISOString().slice(0, 10)
-  const [rows, fuelSummaryRows, maintenanceSummaryRows] = await Promise.all([
+  const [rows, fuelSummaryRows] = await Promise.all([
     getFleetOverview(session, worksiteId, pageIds),
     canViewFuel && matchingIds.length > 0 ? db.select({
       totalAmount: canViewCosts ? sql<number>`COALESCE(SUM(${fuelLoads.totalAmount}), 0)` : sql<null>`null`,
@@ -346,20 +311,9 @@ export async function getFleetOverviewPage(
       worksiteScopeSql(session, fuelLoads.worksiteId, worksiteId),
       inArray(fuelLoads.vehicleId, matchingIds),
     )) : Promise.resolve([]),
-    canViewMaintenance && matchingIds.length > 0 ? db.select({
-      totalAmount: canViewCosts ? sql<number>`COALESCE(SUM(${maintenanceRecords.totalAmount}), 0)` : sql<null>`null`,
-      count: sql<number>`COUNT(*)`,
-    }).from(maintenanceRecords).where(and(
-      sql`${maintenanceRecords.maintenanceDate} >= ${since}`,
-      sql`${maintenanceRecords.status} <> 'cancelled'`,
-      worksiteScopeSql(session, maintenanceRecords.worksiteId, worksiteId),
-      inArray(maintenanceRecords.vehicleId, matchingIds),
-    )) : Promise.resolve([]),
   ])
   const fuelSummary = fuelSummaryRows[0]
-  const maintenanceSummary = maintenanceSummaryRows[0]
   const totalFuelAmount = canViewFuel && canViewCosts ? Number(fuelSummary?.totalAmount ?? 0) : null
-  const totalMaintenanceAmount = canViewMaintenance && canViewCosts ? Number(maintenanceSummary?.totalAmount ?? 0) : null
   return {
     rows,
     total: matching.length,
@@ -369,18 +323,14 @@ export async function getFleetOverviewPage(
     matching,
     summary: {
       active: matching.filter((vehicle) => vehicle.isActive).length,
-      totalOperationalCost: totalFuelAmount != null && totalMaintenanceAmount != null
-        ? totalFuelAmount + totalMaintenanceAmount
-        : null,
+      totalFuelAmount,
       totalLiters: canViewFuel ? Number(fuelSummary?.totalLiters ?? 0) : null,
-      maintenanceCount: canViewMaintenance ? Number(maintenanceSummary?.count ?? 0) : null,
     },
   }
 }
 
 export async function getFleetVehicleDetail(session: Session, id: string) {
   const canViewFuel = can(session, "combustibles:view")
-  const canViewMaintenance = can(session, "mantenciones:view")
   const scopedWorksites = isGlobalRole(session) ? null : visibleWorksiteIds(session)
   const vehicle = await db.query.fuelVehicles.findFirst({
     where: eq(fuelVehicles.id, id),
@@ -391,7 +341,7 @@ export async function getFleetVehicleDetail(session: Session, id: string) {
     return null
   }
 
-  const [documents, recentMaintenance, recentOperations, operatorCounts, operationalIntervals] = await Promise.all([
+  const [documents, recentOperations, operatorCounts, operationalIntervals] = await Promise.all([
     db.query.fleetVehicleDocuments.findMany({
       // FLO-003: la ficha muestra el historial de versiones, no las anuladas.
       // Una anulación es un error corregido, no una versión del documento.
@@ -406,22 +356,6 @@ export async function getFleetVehicleDetail(session: Session, id: string) {
       // de lo que este comentario promete.
       orderBy: [asc(fleetVehicleDocuments.status), fleetVehicleDocuments.expiresAt],
     }),
-    // De la más reciente a la más antigua: con `limit: 10` el orden ascendente
-    // devolvía el tramo más viejo del historial y la última mantención del
-    // vehículo quedaba fuera de la tarjeta. `maintenance_date` es sólo fecha,
-    // así que se desempata por `createdAt` igual que el listado de mantenciones.
-    canViewMaintenance ? db.query.maintenanceRecords.findMany({
-      where: eq(maintenanceRecords.vehicleId, id),
-      columns: {
-        id: true,
-        maintenanceDate: true,
-        maintenanceType: true,
-        status: true,
-        createdAt: true,
-      },
-      orderBy: [desc(maintenanceRecords.maintenanceDate), desc(maintenanceRecords.createdAt)],
-      limit: 10,
-    }) : Promise.resolve([]),
     // Log operacional de combustible: fecha real por carga (a diferencia de
     // fuelLoads, que solo trae odómetro/horómetro cuando se digitó a mano).
     // Orden por instante real (fecha+hora), no sólo `fecha`: dos cargas del
@@ -456,39 +390,9 @@ export async function getFleetVehicleDetail(session: Session, id: string) {
     }),
   ])
 
-  // Una sola agregación para todas las mantenciones visibles. El join limita
-  // cada lectura a la ventana ±30 días de su OT; así se conserva la cobertura
-  // histórica sin ejecutar una consulta adicional por fila (CO-042).
-  const comparableMaintenance = recentMaintenance.filter((m) => m.status !== "cancelled" && isCivilDate(m.maintenanceDate))
-  const maintenanceConsumptionImpact = canViewFuel && canViewMaintenance && comparableMaintenance.length > 0
-    ? (await db.select({
-        maintenanceId: maintenanceRecords.id,
-        maintenanceDate: maintenanceRecords.maintenanceDate,
-        maintenanceType: maintenanceRecords.maintenanceType,
-        avgBefore: sql<number | null>`avg(${fuelOperationRecords.rendimiento}) filter (where ${fuelOperationRecords.fecha} < ${maintenanceRecords.maintenanceDate})`,
-        avgAfter: sql<number | null>`avg(${fuelOperationRecords.rendimiento}) filter (where ${fuelOperationRecords.fecha} > ${maintenanceRecords.maintenanceDate})`,
-      }).from(maintenanceRecords).leftJoin(fuelOperationRecords, and(
-        eq(fuelOperationRecords.vehicleId, maintenanceRecords.vehicleId),
-        isNotNull(fuelOperationRecords.rendimiento),
-        // `fecha` es texto "YYYY-MM-DD": compararlo contra el resultado de
-        // `::date ± interval` (que agrega hora, "YYYY-MM-DD 00:00:00") dejaba
-        // fuera el día M-30 y sesgaba la ventana "antes" a 29 días. `to_char`
-        // devuelve el mismo formato que la columna y mantiene ambos extremos
-        // inclusivos.
-        sql`${fuelOperationRecords.fecha} >= to_char(${maintenanceRecords.maintenanceDate}::date - interval '30 days', 'YYYY-MM-DD')`,
-        sql`${fuelOperationRecords.fecha} <= to_char(${maintenanceRecords.maintenanceDate}::date + interval '30 days', 'YYYY-MM-DD')`,
-      )).where(and(
-        eq(maintenanceRecords.vehicleId, id),
-        inArray(maintenanceRecords.id, comparableMaintenance.map((record) => record.id)),
-      )).groupBy(maintenanceRecords.id, maintenanceRecords.maintenanceDate, maintenanceRecords.maintenanceType))
-      .map((row) => ({ ...row, avgBefore: row.avgBefore == null ? null : Number(row.avgBefore), avgAfter: row.avgAfter == null ? null : Number(row.avgAfter) }))
-    : []
-
   return {
     vehicle,
     documents,
-    recentMaintenance,
-    maintenanceConsumptionImpact,
     // Última lectura de horómetro/odómetro con fecha real, y los operadores
     // más frecuentes — derivados del log operacional de combustible.
     currentReading: recentOperations[0] ?? null,

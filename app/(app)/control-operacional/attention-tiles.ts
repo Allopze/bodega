@@ -1,12 +1,11 @@
 import { FLEET_STOPPED_FILTER } from "@/lib/fleet-overview-filters"
-import { MAINTENANCE_OPEN_FILTER } from "@/lib/validation/maintenance"
 import { countOf } from "@/lib/utils"
 import type { OperationalAttention } from "@/lib/services/operational-control"
 import { FUEL_INBOX_KINDS, type FuelInboxKind } from "@/lib/combustibles/inbox/types"
 import { FUEL_PATHS } from "@/lib/combustibles/routes"
 
 /**
- * Los cuatro tiles de «Requiere atención». Cada uno es un enlace a **su
+ * Los tiles de «Requiere atención». Cada uno es un enlace a **su
  * subconjunto**, no al total (A1): la cifra del tile y las filas de la lista que
  * abre cuentan lo mismo. Los destinos viven aquí, junto al texto, para que quien
  * cambie uno vea el otro.
@@ -14,7 +13,7 @@ import { FUEL_PATHS } from "@/lib/combustibles/routes"
  * Es un módulo de datos puro: la página sólo le pone ícono y `KpiCard`.
  */
 
-export type AttentionTileKey = "stopped" | "workOrders" | "documents" | "fuel"
+export type AttentionTileKey = "stopped" | "documents" | "fuel"
 
 export interface AttentionTile {
   key: AttentionTileKey
@@ -27,7 +26,6 @@ export interface AttentionTile {
 
 export const ATTENTION_HREFS: Record<AttentionTileKey, string> = {
   stopped: `/flota?estado=${FLEET_STOPPED_FILTER}`,
-  workOrders: `/mantenciones?status=${MAINTENANCE_OPEN_FILTER}`,
   documents: "/flota?vencimiento=vencidos",
   fuel: FUEL_PATHS.revisar,
 }
@@ -59,16 +57,6 @@ export function stoppedTile(stopped: OperationalAttention["stoppedVehicles"], fl
     tone: "signal",
     href: ATTENTION_HREFS.stopped,
   }
-}
-
-/** OT programadas o en curso, de todas las fechas: es «ahora», no el backlog del período. */
-export function workOrdersTile(openWorkOrders: OperationalAttention["openWorkOrders"]): AttentionTile {
-  const label = "OT abiertas"
-  if (openWorkOrders === null) return unavailable("workOrders", label)
-  if (openWorkOrders === 0) {
-    return { key: "workOrders", label, value: "Ninguna", detail: "Sin OT programadas ni en curso", tone: "neutral", href: ATTENTION_HREFS.workOrders }
-  }
-  return { key: "workOrders", label, value: count(openWorkOrders), detail: "Programadas o en curso", tone: "neutral", href: ATTENTION_HREFS.workOrders }
 }
 
 /** Equipos con algún documento vencido; el detalle dice cuántos más vencen dentro de la ventana de aviso de Flota. */

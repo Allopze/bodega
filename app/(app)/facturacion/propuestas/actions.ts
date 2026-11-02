@@ -105,8 +105,8 @@ export async function saveProposalAction(input: unknown): Promise<ActionResult> 
   try {
     const proposalId = await db.transaction(async (tx) => {
       let id = data.id
-      // Mismo contrato que Mantenciones: el centro de costo debe existir, estar
-      // vigente y no pertenecer a otra faena que la del hecho imputado.
+      // El centro de costo debe existir, estar vigente y no pertenecer a otra
+      // faena que la del hecho imputado.
       if (data.costCenterId) await assertCostCenterAllowed(tx, data.costCenterId, data.worksiteId ?? null)
 
       if (id) {
