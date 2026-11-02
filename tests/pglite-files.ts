@@ -417,6 +417,9 @@ export const pgliteTestFiles = [
   "lib/__tests__/mantencion-sync-pglite.test.ts",
   "lib/__tests__/mantencion-sync-http-pglite.test.ts",
   "lib/__tests__/mantencion-sync-catalog-pglite.test.ts",
+  // Órdenes de trabajo (2026-11): alta, transiciones por rol, concurrencia, rechazo, CAPA y avisos; y la sincronización del teléfono.
+  "lib/__tests__/mantencion-work-orders-pglite.test.ts",
+  "lib/__tests__/mantencion-work-orders-sync-pglite.test.ts",
   // Mantención de equipos: alta, incorporación, patente, faena nueva, baja e importación (L4).
   "lib/__tests__/mantencion-equipment-pglite.test.ts",
   // Mantención de equipos: edición de pautas con versión y snapshot, copia, asignación y baja (L4).

@@ -4,9 +4,11 @@ import type { AnyPgColumn, AnyPgTable } from "drizzle-orm/pg-core"
 import { db } from "@/db"
 import {
   fuelEquipmentTypes, fuelVehicles, mantBrands, mantDrivers, mantEquipmentProfiles, mantOils, mantRecordObservations,
-  mantRecords, mantSchedules, mantScheduleVersions, mantWorkshops, mantWorkshopUpdates, mantWorkTypes, rolePermissions,
-  userPermissions, userRoles, users, worksites, worksiteUsers,
+  mantRecords, mantSchedules, mantScheduleVersions, mantWorkOrderEvents, mantWorkOrderItems, mantWorkOrders, mantWorkshops,
+  mantWorkshopUpdates, mantWorkTypes, rolePermissions, userPermissions, userRoles, users, worksites, worksiteUsers,
 } from "@/db/schema"
+import { OT_PERMISSIONS } from "@/lib/mantencion/work-order-states"
+import { isRouteOperational } from "@/lib/services/module-toggles"
 import { todayInChile } from "@/lib/utils"
 import type { MantViewer } from "./access"
 
@@ -24,13 +26,17 @@ import type { MantViewer } from "./access"
  */
 
 /** Súbelo cuando cambie la FORMA de la respuesta del catálogo: invalida las cachés de los teléfonos. */
-export const CATALOG_FORMAT = 1
+export const CATALOG_FORMAT = 2
 
 type Source = readonly [AnyPgTable, readonly AnyPgColumn[]]
 
 const SOURCES: readonly Source[] = [
   [mantRecords, [mantRecords.receivedAt, mantRecords.updatedAt]],
   [mantWorkshopUpdates, [mantWorkshopUpdates.receivedAt]],
+  // Órdenes de trabajo (2026-11): lo que el mecánico ve de sus OT y de las que puede tomar.
+  [mantWorkOrders, [mantWorkOrders.updatedAt]],
+  [mantWorkOrderItems, [mantWorkOrderItems.markedAt, mantWorkOrderItems.createdAt]],
+  [mantWorkOrderEvents, [mantWorkOrderEvents.createdAt]],
   [mantRecordObservations, [mantRecordObservations.createdAt, mantRecordObservations.respondedAt]],
   [mantEquipmentProfiles, [mantEquipmentProfiles.updatedAt]],
   [fuelVehicles, [fuelVehicles.updatedAt]],
@@ -65,8 +71,11 @@ export type CatalogScope = "mias" | "todos"
 export async function catalogVersion(viewer: MantViewer, scope: CatalogScope): Promise<string> {
   const result = await db.execute(sql`select ${sql.join(SOURCES.map(aggregate), sql` || '#' || `)} as fingerprint`)
   const fingerprint = driverRows<{ fingerprint: string }>(result)[0]?.fingerprint ?? ""
+  // Apagar el submódulo de OT cambia lo que el catálogo trae sin tocar ninguna fila.
+  const otEnabled = viewer.permissions.includes(OT_PERMISSIONS.execute) && await isRouteOperational("/mantencion/ot")
   const own = [
     CATALOG_FORMAT,
+    otEnabled ? "ot" : "sin-ot",
     scope,
     viewer.userId,
     viewer.isGlobal ? "global" : "faena",
