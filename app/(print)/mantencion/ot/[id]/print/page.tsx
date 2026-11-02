@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import { notFound, redirect } from "next/navigation"
 import { requireAnyPermission } from "@/lib/auth/can"
 import { viewerFromSession } from "@/lib/services/mantencion/access"
+import { loadWorkOrderLinkedWork } from "@/lib/services/mantencion/work-orders/linked-work"
 import { loadWorkOrderDetail } from "@/lib/services/mantencion/work-orders/query"
 import { OtDocument } from "./ot-document"
 import { OT_PRINT_STYLES } from "./ot-print-styles"
@@ -26,11 +27,13 @@ export default async function WorkOrderPrintPage({ params }: { params: Promise<{
   const { id } = await params
   const detail = await loadWorkOrderDetail(viewerFromSession(session), id)
   if (!detail) notFound()
+  // Después de validar el alcance sobre la OT: ver la OT incluye ver lo que se hizo en ella.
+  const linkedWork = await loadWorkOrderLinkedWork(detail.id)
 
   return (
     <>
       <style>{OT_PRINT_STYLES}</style>
-      <OtDocument detail={detail} logoSrc="/chome_logo.svg" />
+      <OtDocument detail={detail} linkedWork={linkedWork} logoSrc="/chome_logo.svg" />
     </>
   )
 }
