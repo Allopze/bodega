@@ -1135,8 +1135,11 @@ export const preventionModule = {
     { roleSlug: "prevencionista",       permission: "prevention:inspections:export" },
     { roleSlug: "cphs",                 permission: "prevention:inspections:view" },
     // La CAPA y el seguimiento de acciones correctivas de equipos quedan en
-    // Prevención. La jefatura de mantención puede consultar las inspecciones
-    // del taller, sin crear órdenes en este módulo.
+    // Prevención. Derivar un hallazgo de un equipo crea además su OT en
+    // Mantención (`createFindingCapa`, con `prevention:inspections:execute`);
+    // la conformidad de esa OT acredita la CAPA y cierra el hallazgo. La
+    // jefatura de mantención sólo consulta las inspecciones del taller: trabaja
+    // la OT con sus permisos `mant:ot:*`, no con éstos.
     { roleSlug: "jefe_mantencion",      permission: "prevention:inspections:view" },
     /* Responsable declarado de la n=83 (plan de emergencia) y la n=84
      * (simulacros) y sin `emergency:view`: Emergencias no le aparecía en el

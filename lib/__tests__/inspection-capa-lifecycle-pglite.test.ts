@@ -128,15 +128,124 @@ afterAll(async () => {
   await pg.close()
 })
 
+const NON_VEHICLE_RUN_ID = "inspection-maintenance-run-general"
+const NON_VEHICLE_FINDING_ID = "inspection-maintenance-finding-general"
+
+/** Inspección de una zona (sin equipo como sujeto) con un hallazgo abierto. */
+async function seedNonVehicleFinding() {
+  await testDb.insert(schema.preventionInspectionRuns).values({
+    id: NON_VEHICLE_RUN_ID,
+    code: "INS-IMT-002",
+    templateId: "inspection-maintenance-template",
+    worksiteId: WORKSITE_ID,
+    subjectLabel: "Bodega central",
+    status: "completed",
+    executedByUserId: USER_ID,
+    executedAt: "2026-08-31T12:00:00.000Z",
+    createdByUserId: USER_ID,
+  })
+  await testDb.insert(schema.preventionInspectionFindings).values({
+    id: NON_VEHICLE_FINDING_ID,
+    runId: NON_VEHICLE_RUN_ID,
+    description: "Pasillo de la bodega obstruido con material",
+    danoPotencial: "moderado",
+    criticality: "medium",
+    status: "open",
+  })
+}
+
+async function ordersOf(findingId: string) {
+  return testDb.select().from(schema.mantWorkOrders)
+    .where(eq(schema.mantWorkOrders.inspectionFindingId, findingId))
+}
+
 describe("derivación de hallazgos de inspección a CAPA", () => {
-  it("crea la CAPA sin crear ni devolver una OT del módulo retirado", async () => {
+  // Los casos marcados «requiere L1» llaman a `createWorkOrderWithClient`, que
+  // en la fase 0 es un stub que lanza: pasan cuando se integra la línea de
+  // servidor de OT. No se simula el servicio a propósito: lo que se prueba es
+  // justamente la integración (transacción compartida, folio, índice único).
+  it("(requiere L1) un hallazgo de equipo crea exactamente una OT de reparación ligada al hallazgo", async () => {
     const result = await deriveFinding()
 
-    expect(result).not.toHaveProperty("maintenanceId")
     expect(result.capaId).toBeTruthy()
     expect(result.finding).toMatchObject({ id: FINDING_ID, status: "capa_linked" })
-    const [capa] = await testDb.select().from(schema.preventionCapaActions)
-      .where(eq(schema.preventionCapaActions.id, result.capaId))
-    expect(capa).toBeTruthy()
+    expect(result.workOrder).toMatchObject({ created: true })
+    expect(result.workOrder?.folio).toBeTruthy()
+
+    const orders = await ordersOf(FINDING_ID)
+    expect(orders).toHaveLength(1)
+    expect(orders[0]).toMatchObject({
+      id: result.workOrder!.id,
+      vehicleId: VEHICLE_ID,
+      worksiteId: WORKSITE_ID,
+      repair: true,
+      maintenance: false,
+      status: "solicitada",
+      inspectionFindingId: FINDING_ID,
+      repairDescription: "El camión presenta falla en el sistema de frenos",
+    })
+    expect(orders[0]!.observations).toContain("INS-IMT-001")
+  })
+
+  it("(requiere L1) derivar de nuevo no crea otra CAPA ni otra OT", async () => {
+    await deriveFinding()
+    await expect(deriveFinding()).rejects.toThrow(/ya tiene una acción CAPA/)
+
+    expect(await ordersOf(FINDING_ID)).toHaveLength(1)
+    const capas = await testDb.select().from(schema.preventionCapaActions)
+    expect(capas).toHaveLength(1)
+  })
+
+  it("si el hallazgo ya tiene una OT viva la reutiliza en vez de chocar con el índice único", async () => {
+    // Sin pasar por `createWorkOrderWithClient`: la fila se inserta a mano para
+    // que este caso pruebe sólo la reutilización de `createFindingCapa`.
+    await testDb.insert(schema.mantWorkOrders).values({
+      id: "inspection-maintenance-existing-ot",
+      folio: "OT-PRE-0001",
+      vehicleId: VEHICLE_ID,
+      worksiteId: WORKSITE_ID,
+      equipmentSnapshot: {} as never,
+      repair: true,
+      requestDate: "2026-08-31",
+      requestedByUserId: USER_ID,
+      requesterName: "Responsable Mantención",
+      repairDescription: "OT previa del mismo hallazgo",
+      inspectionFindingId: FINDING_ID,
+    })
+
+    const result = await deriveFinding()
+
+    expect(result.workOrder).toEqual({ id: "inspection-maintenance-existing-ot", folio: "OT-PRE-0001", created: false })
+    expect(await ordersOf(FINDING_ID)).toHaveLength(1)
+  })
+
+  it("un hallazgo de una inspección sin equipo crea la CAPA y ninguna OT", async () => {
+    await seedNonVehicleFinding()
+    const { createFindingCapa } = await import("@/lib/services/prevention-inspections")
+
+    const result = await createFindingCapa({
+      findingId: NON_VEHICLE_FINDING_ID,
+      actionDescription: "Despejar el pasillo y demarcar la zona de tránsito.",
+      responsibleUserId: USER_ID,
+    }, inspectionAccess)
+
+    expect(result.workOrder).toBeNull()
+    expect(result.finding).toMatchObject({ status: "capa_linked" })
+    expect(await testDb.select().from(schema.mantWorkOrders)).toHaveLength(0)
+  })
+
+  it("no deriva si el equipo ya fue trasladado a otra faena, y no deja CAPA a medias", async () => {
+    await testDb.insert(schema.worksites).values({ id: "inspection-maintenance-other-worksite", code: "IM2", name: "Otra faena" })
+    await testDb.update(schema.fuelVehicles)
+      .set({ worksiteId: "inspection-maintenance-other-worksite" })
+      .where(eq(schema.fuelVehicles.id, VEHICLE_ID))
+
+    await expect(deriveFinding()).rejects.toThrow(/pertenece a otra faena/)
+
+    expect(await testDb.select().from(schema.preventionCapaActions)).toHaveLength(0)
+    expect(await testDb.select().from(schema.mantWorkOrders)).toHaveLength(0)
+    const [finding] = await testDb.select().from(schema.preventionInspectionFindings)
+      .where(eq(schema.preventionInspectionFindings.id, FINDING_ID))
+    expect(finding).toMatchObject({ status: "open", capaActionId: null })
   })
 })

@@ -37,9 +37,11 @@ import type { FindingInfo } from "./types"
  * revisión: ahí hay un solo `CapaDialog` y no uno por fila o por bloqueo, y el
  * de la revisión vive fuera del `<form>` de la revisión.
  */
-export function CapaDialog({ finding, assignees, open, onOpenChange, trigger }: {
+export function CapaDialog({ finding, assignees, subjectIsVehicle = false, open, onOpenChange, trigger }: {
   finding: FindingInfo
   assignees: { id: string; name: string }[]
+  /** El sujeto de la inspección es un equipo: derivar abre además una OT en Mantención. */
+  subjectIsVehicle?: boolean
   open?: boolean
   onOpenChange?: (open: boolean) => void
   /** Botón que lo abre. `null` no pinta ninguno (modo controlado). */
@@ -74,8 +76,11 @@ export function CapaDialog({ finding, assignees, open, onOpenChange, trigger }: 
       actionDescription: form.get("actionDescription"),
       responsibleUserId,
       immediateMeasure: immediateMeasure || null,
-    }), () => {
-      toast.success("Hallazgo derivado a CAPA.")
+    }), (result) => {
+      const folio = result.data?.workOrderFolio
+      toast.success(typeof folio === "string"
+        ? `Hallazgo derivado a CAPA. Se creó la OT ${folio} en Mantención.`
+        : "Hallazgo derivado a CAPA.")
       changeOpen(false)
     })
   }
@@ -97,6 +102,11 @@ export function CapaDialog({ finding, assignees, open, onOpenChange, trigger }: 
                 política según gravedad, no un dato libre; se mantiene no editable. */}
             <div><span className="block text-xs text-[var(--color-text-subtle)]">Plazo según gravedad</span><span className="mt-1 block font-semibold">{capaRule.dueInDays} días · {formatDate(targetDate)}</span></div>
             {capaRule.requiresImmediateStop && <p className="col-span-2 text-xs font-medium text-[var(--color-danger-ink)]">La criticidad exige detener de inmediato la tarea o el equipo afectado.</p>}
+            {subjectIsVehicle && (
+              <p className="col-span-2 text-xs text-[var(--color-text-muted)]">
+                Se creará una orden de trabajo de reparación para este equipo en Mantención. Cuando Mantención registre la conformidad de la OT, se cerrará el hallazgo y la acción quedará con su evidencia para verificar.
+              </p>
+            )}
           </div>
           <Field label="Acción correctiva" hint="Mínimo 10 caracteres." error={operation.fieldError("actionDescription")}>
             <Textarea name="actionDescription" required minLength={10} maxLength={3000} />

@@ -116,6 +116,12 @@ test.describe("Inspecciones — revisión independiente y cierre", () => {
 
     await page.reload()
     await expect(hallazgo.getByText("Con CAPA")).toBeVisible({ timeout: 15_000 })
+
+    // La OT quedó creada en Mantención para el equipo de la inspección. (Este
+    // paso depende de la implementación de las OT; antes la derivación abría una
+    // mantención en `/mantenciones`, módulo retirado.)
+    await page.goto("/mantencion/ot")
+    await expect(textoVisible(page, "E2E-INSP-1").first()).toBeVisible({ timeout: 30_000 })
     // B-06: con CAPA enlazada ya no se cierra a mano; se cierra con su acción.
     await expect(hallazgo.getByRole("button", { name: "Derivar a CAPA" })).toHaveCount(0)
     await expect(hallazgo.getByRole("button", { name: "Cerrar hallazgo", exact: true })).toHaveCount(0)
@@ -230,14 +236,15 @@ test.describe("Inspecciones — revisión independiente y cierre", () => {
 })
 
 /**
- * El puente con flota: el sujeto de la inspección es un equipo del padrón, así
- * que la falla puede derivarse a CAPA y, si quien administra la flota lo
- * confirma, sacarlo de servicio. Detener el equipo es un permiso
+ * El puente con flota y con Mantención: el sujeto de la inspección es un equipo
+ * del padrón, así que derivar la falla a CAPA abre además su OT de reparación en
+ * Mantención (la conformidad de esa OT acredita la CAPA y cierra el hallazgo) y,
+ * si quien administra la flota lo confirma, permite sacarlo de servicio. Detener el equipo es un permiso
  * distinto (`combustibles:manage_vehicles`) porque quien digita el reporte
  * detecta la falla, pero parar una máquina para la faena lo decide flota.
  */
 test.describe("Inspecciones — falla de un equipo de flota", () => {
-  test("derivar la falla crea CAPA y permite sacar el equipo de servicio", async ({ page }) => {
+  test("derivar la falla crea CAPA y la OT del equipo, y permite sacarlo de servicio", async ({ page }) => {
     await login(page)
     await abrir(page, "insp-e2e-equipo", "INSP-E2E-0008")
     await expect(page.getByText("E2E-INSP-1").first()).toBeVisible()
@@ -245,6 +252,8 @@ test.describe("Inspecciones — falla de un equipo de flota", () => {
     const hallazgo = page.getByRole("row").filter({ hasText: "Manómetro: aguja en zona verde." })
     await hallazgo.getByRole("button", { name: "Derivar a CAPA" }).click()
     const dialog = page.getByRole("dialog", { name: "Derivar hallazgo a CAPA" })
+    // El diálogo avisa que la derivación también abre una OT en Mantención.
+    await expect(dialog.getByText(/orden de trabajo de reparación para este equipo en Mantención/)).toBeVisible()
     await dialog.locator('textarea[name="actionDescription"]').fill("Reparar el sistema y verificar en taller.")
     await dialog.getByLabel("Responsable de la CAPA").click()
     await page.getByRole("option", { name: "Admin E2E", exact: true }).click()

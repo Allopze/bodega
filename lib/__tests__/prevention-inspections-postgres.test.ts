@@ -718,7 +718,8 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
     }, AUTHOR)
     expect(linked.finding).toMatchObject({ status: "capa_linked" })
     expect(linked.finding.capaActionId).toBeTruthy()
-    expect(linked).not.toHaveProperty("maintenanceId")
+    // El sujeto no es un equipo: no hay OT que abrir en Mantención.
+    expect(linked.workOrder).toBeNull()
 
     const capa = await getDb().select().from(schema.preventionCapaActions)
       .where(eq(schema.preventionCapaActions.sourceType, "inspection"))
@@ -1221,7 +1222,7 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
       }, AUTHOR)).rejects.toThrow(/separador de miles/i)
     })
 
-    it("deriva la falla crítica a CAPA sin crear una OT antigua", async () => {
+    it("deriva la falla crítica a CAPA y abre la OT del equipo en Mantención (requiere L1)", async () => {
       const service = await import("@/lib/services/prevention-inspections")
       const [template] = await getDb().select().from(schema.preventionInspectionTemplates)
         .where(eq(schema.preventionInspectionTemplates.id, reporteTemplateId))
@@ -1245,7 +1246,12 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
         actionDescription: "Cambiar cilindro maestro y purgar el sistema de frenos.",
         responsibleUserId: AUTHOR.userId,
       }, AUTHOR)
-      expect(linked).not.toHaveProperty("maintenanceId")
+      // Requiere `createWorkOrderWithClient` real (L1): una OT por hallazgo, ligada a él.
+      expect(linked.workOrder).toMatchObject({ created: true })
+      const orders = await getDb().select().from(schema.mantWorkOrders)
+        .where(eq(schema.mantWorkOrders.inspectionFindingId, finding!.id))
+      expect(orders).toHaveLength(1)
+      expect(orders[0]).toMatchObject({ id: linked.workOrder!.id, folio: linked.workOrder!.folio, repair: true })
       const [capa] = await getDb().select().from(schema.preventionCapaActions)
         .where(eq(schema.preventionCapaActions.id, linked.capaId))
       expect(capa).toMatchObject({ priority: "critical", requiresImmediateStop: true })
