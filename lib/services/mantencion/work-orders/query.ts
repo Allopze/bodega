@@ -14,8 +14,9 @@ import { canSeeRecord, recordVisibility, type MantViewer } from "../access"
 import { listMantCatalogs } from "../catalogs"
 import { unitFromMeter } from "../fleet"
 import {
-  allowedTransitions, canEditExecution, canEditRequest, canSeeWorkOrder, workOrderVisibility, workOrderVisibilitySql,
+  allowedTransitions, canEditExecution, canEditRequest, canRegisterWorkOrderRecord, canSeeWorkOrder, workOrderVisibility, workOrderVisibilitySql,
 } from "./access"
+import { linkedRecordState } from "./core"
 import { findAssignableMechanics, findWorksiteMechanics, listAssignableMechanicsWithWorksites, type WorksiteMechanic } from "./mechanics"
 import type { WorkOrderDetail, WorkOrderListRow } from "./types"
 
@@ -275,7 +276,7 @@ export async function loadWorkOrderDetail(viewer: MantViewer, id: string): Promi
   const facts = { status, worksiteId: ot.worksiteId, requestedByUserId: ot.requestedByUserId, assignedToUserId: ot.assignedToUserId }
   if (!canSeeWorkOrder(workOrderVisibility(viewer), facts)) return null
 
-  const [itemRows, eventRows, recordRows, findingRows] = await Promise.all([
+  const [itemRows, eventRows, recordRows, findingRows, recordState] = await Promise.all([
     db.select().from(mantWorkOrderItems).where(eq(mantWorkOrderItems.workOrderId, id))
       .orderBy(asc(mantWorkOrderItems.kind), asc(mantWorkOrderItems.sortOrder), asc(mantWorkOrderItems.createdAt)),
     db.select().from(mantWorkOrderEvents).where(eq(mantWorkOrderEvents.workOrderId, id)).orderBy(asc(mantWorkOrderEvents.createdAt), asc(mantWorkOrderEvents.id)),
@@ -287,6 +288,8 @@ export async function loadWorkOrderDetail(viewer: MantViewer, id: string): Promi
       ? db.select({ id: preventionInspectionFindings.id, runId: preventionInspectionFindings.runId, capaActionId: preventionInspectionFindings.capaActionId })
         .from(preventionInspectionFindings).where(eq(preventionInspectionFindings.id, ot.inspectionFindingId)).limit(1)
       : Promise.resolve([]),
+    // Sólo en taller importa si ya está el trabajo que exige «terminar».
+    status === "en_ejecucion" ? linkedRecordState(db, id) : Promise.resolve(null),
   ])
 
   const userIds = [...new Set([
@@ -369,6 +372,8 @@ export async function loadWorkOrderDetail(viewer: MantViewer, id: string): Promi
     allowedTransitions: allowedTransitions(viewer, facts),
     canEditRequest: canEditRequest(viewer, facts).ok,
     canEditExecution: canEditExecution(viewer, facts).ok,
+    canRegisterRecord: canRegisterWorkOrderRecord(viewer, facts).ok,
+    needsLinkedRecord: recordState !== null && !recordState.linked,
   }
 }
 

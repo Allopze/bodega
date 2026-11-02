@@ -48,6 +48,21 @@ export const photoMetaSchema = z.object({
 })
 export type PhotoMeta = z.infer<typeof photoMetaSchema>
 
+// ── Registro desde el PC (formulario web de la OT) ──────────────────────────
+
+/**
+ * Dispositivo y versión con los que queda un registro firmado desde el PC (la
+ * ficha de la OT) y no desde la app: así se distingue en la bitácora y en la
+ * fila. El servidor los impone; lo que mande el navegador no cuenta.
+ */
+export const MANT_WEB_DEVICE_ID = "00000000-0000-4000-8000-00000000c0de"
+export const MANT_WEB_APP_VERSION = "web"
+/** Lo que Chrome de escritorio decodifica sin ayuda: HEIC (iPhone) no, y por eso no se acepta. */
+export const MANT_WEB_PHOTO_TYPES = ["image/jpeg", "image/png"] as const
+/** Campos del `FormData` del registro web: `record` (JSON del contrato) y, por foto, el archivo y su `meta` en JSON. */
+export const webPhotoField = (id: string) => `photo:${id}`
+export const webMetaField = (id: string) => `meta:${id}`
+
 // ── Registros: POST /api/mantencion/sync/registros ───────────────────────────
 
 const recordBase = {

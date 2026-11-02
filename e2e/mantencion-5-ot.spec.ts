@@ -11,7 +11,8 @@ import { chileDay, fichaValue, withSql } from "./mantencion-3-helpers"
  *   mecánico la ve desde el PC → desde la app registra el ingreso a taller,
  *   marca los ítems, registra la correctiva enlazada y termina → recepción →
  *   el administrador de contrato RECHAZA en la conformidad (con motivo) → el
- *   mecánico ve «Devuelta», registra una correctiva NUEVA y termina otra vez →
+ *   mecánico, ahora desde el PC (formulario de la ficha), registra una
+ *   correctiva NUEVA con su foto y registra la salida otra vez →
  *   recepción → conformidad → «Cerrada», con el rechazo en el historial y el PDF.
  *
  * Con estado y en orden, pero autocontenida: no depende de lo que dejaron
@@ -356,35 +357,58 @@ test.describe("Orden de trabajo (OT)", () => {
     await cerrarSesion(page)
   })
 
-  test("e · la app muestra «Devuelta», exige una correctiva nueva y termina otra vez", async () => {
-    await app.getByRole("button", { name: "Actualizar", exact: true }).click()
-    const tarjeta = app.getByRole("region", { name: "Órdenes de trabajo" }).getByRole("button", { name: new RegExp(folio) })
-    await expect(tarjeta.getByText(`Devuelta: ${MOTIVO_RECHAZO}`)).toBeVisible({ timeout: 60_000 })
-    await expect(tarjeta.getByText("En taller", { exact: true })).toBeVisible()
+  test("e · tras la devolución, el mecánico registra la correctiva nueva desde el PC y registra la salida", async ({ page }) => {
+    const errores = vigilarConsola(page)
+    await entrarPlataforma(page, MECANICO)
+    await page.goto(`/mantencion/ot/${otId}`)
+    await expectEstadoEnFicha(page, "En taller")
+    // Tras un rechazo, la salida exige un registro firmado DESPUÉS de él: «Registrar trabajo» es la acción de la etapa.
+    await page.getByRole("button", { name: "Registrar trabajo", exact: true }).click()
+    // La OT es de reparación y mantención: se elige qué registrar.
+    await page.getByRole("menuitem", { name: "Correctiva", exact: true }).click()
+    const hoja = page.getByRole("dialog", { name: `Registrar correctiva · ${folio}` })
+    await expect(hoja).toBeVisible()
+    // El equipo es el de la OT: no hay paso «Equipo».
+    await expect(hoja.getByText("Paso 1 de 4 · Lectura y fecha")).toBeVisible()
+    await expect(hoja.getByText(new RegExp(equipo.code)).first()).toBeVisible()
+    const ultima = hoja.getByText(/Última lectura registrada: [\d.]+/)
+    const anterior = await ultima.count() ? Number(/registrada: ([\d.]+)/.exec(await ultima.innerText())?.[1]?.replace(/\./g, "")) : 0
+    lectura = Math.max(lectura, anterior) + 10
+    await hoja.getByLabel("Odómetro actual").fill(String(lectura))
+    await hoja.getByRole("button", { name: "Continuar", exact: true }).click()
 
-    await tarjeta.click()
-    const hoja = app.getByRole("dialog")
-    await expect(hoja.getByText(`Devuelta: ${MOTIVO_RECHAZO}`)).toBeVisible()
+    await expect(hoja.getByText("Paso 2 de 4 · Trabajo")).toBeVisible()
+    await hoja.getByRole("group", { name: "Agregar trabajo" }).getByRole("button").first().click()
+    await expect(hoja.getByText(/^Total: /)).toBeVisible()
+    await hoja.getByRole("checkbox", { name: "No se usaron repuestos", exact: true }).check()
+    await hoja.getByRole("checkbox", { name: "No se cambió aceite", exact: true }).check()
+    await hoja.getByLabel("Trabajo realizado").fill("QA_ Se apretaron las mangueras y se limpió el equipo")
+    await hoja.getByRole("combobox", { name: /Conductores de las últimas 24 h/ }).fill("a")
+    await page.getByRole("option").first().click()
+    await expect(hoja.getByRole("list", { name: "Conductores elegidos" }).getByRole("button")).toHaveCount(1)
+    // Con una OT, ella lleva el taller: no se pregunta si el equipo sigue en taller.
+    await expect(hoja.getByText("¿El equipo sigue en taller?")).toHaveCount(0)
+    await hoja.getByRole("button", { name: "Continuar a fotos", exact: true }).click()
 
-    // Tras un rechazo, terminar exige una correctiva firmada DESPUÉS de él: la del primer turno no cuenta.
-    await hoja.getByRole("button", { name: /^Terminar \(salida de taller\)/ }).click()
-    await expect(hoja.getByText("Antes de terminar")).toBeVisible()
-    await expect(hoja.getByText("Registra una correctiva o preventiva nueva, después de la devolución")).toBeVisible()
-    await hoja.getByRole("button", { name: "Volver", exact: true }).click()
-    // La hoja ya no lista el trabajo de antes de la devolución.
-    await expect(hoja.getByText("Trabajo registrado")).toHaveCount(0)
-
-    await registrarCorrectivaDesdeOt("QA_ Se apretaron las mangueras y se limpió el equipo")
-    await abrirOtEnApp()
-    // Sólo cuenta el trabajo posterior a la devolución: el de antes sigue en el servidor, pero ya no se lista aquí.
-    await expect(app.getByRole("dialog").getByText(/Correctiva · MC-BIO-\d{4}/)).toHaveCount(1)
-    await terminarEnApp()
-    await app.getByRole("dialog").getByRole("button", { name: "Cerrar", exact: true }).click()
-    const lista = app.getByRole("region", { name: "Órdenes de trabajo" }).getByRole("button", { name: new RegExp(folio) })
-    await expect(lista.getByText("Por recibir")).toBeVisible({ timeout: 30_000 })
-    await expect(lista.getByText(/Devuelta:/)).toHaveCount(0)
+    await expect(hoja.getByText("Paso 3 de 4 · Fotos")).toBeVisible()
+    await hoja.getByLabel("Agregar foto del trabajo").setInputFiles(await jpeg(page, `${equipo.code} OT PC`))
+    await expect(hoja.getByRole("img", { name: "Foto 1 del trabajo" })).toBeVisible({ timeout: 30_000 })
+    await hoja.getByRole("button", { name: "Revisar registro", exact: true }).click()
+    await expect(hoja.getByText("Paso 4 de 4 · Revisar y firmar")).toBeVisible()
+    await hoja.getByRole("button", { name: "Firmar y guardar", exact: true }).click()
+    await expect(textoVisible(page, /Registro MC-BIO-\d{4} guardado y enlazado a la OT\./)).toBeVisible({ timeout: 60_000 })
+    await expect(hoja).toHaveCount(0)
     expect((await estadoOt(folio))?.linked).toBe(2)
-    expect(erroresApp).toEqual([])
+
+    // Con el registro nuevo, la salida vuelve a ser la acción principal.
+    await expect(page.getByRole("button", { name: "Registrar trabajo", exact: true })).toHaveCount(0)
+    await page.getByRole("button", { name: "Registrar salida", exact: true }).click()
+    await dialogo(page).getByRole("button", { name: "Registrar salida", exact: true }).click()
+    await expect(dialogo(page)).toHaveCount(0)
+    await expectEstadoEnFicha(page, "Por recibir")
+    await esperarEstado(folio, "trabajo_terminado")
+    expect(errores).toEqual([])
+    await cerrarSesion(page)
   })
 
   test("f · recepción de nuevo, conformidad, OT cerrada, historial con el rechazo y PDF", async ({ page }) => {

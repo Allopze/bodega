@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
-import { ArrowsClockwise, CaretDown, CheckCircle, FilePdf, ListChecks, Truck, UserPlus } from "@phosphor-icons/react"
+import { ArrowsClockwise, CaretDown, CheckCircle, FilePdf, ListChecks, NotePencil, Truck, UserPlus } from "@phosphor-icons/react"
 import { unassignWorkOrderAction, voidWorkOrderAction } from "@/app/(app)/mantencion/ot/[id]/actions"
 import { Button } from "@/components/ui/button"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
@@ -10,11 +10,13 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { useOperation } from "@/lib/hooks/use-operation"
 import type { MantUnit } from "@/lib/mantencion/types"
 import type { OtStatus, OtTransition } from "@/lib/mantencion/work-order-states"
+import type { WorkOrderRecordForm } from "@/lib/services/mantencion/web-record"
 import type { WorkOrderDetail, WorkOrderItemDetail } from "@/lib/services/mantencion/work-orders/types"
 import { toast } from "@/lib/toast"
 import {
   AssignDialog, EntryDialog, EstimateDialog, FinishDialog, ItemsDialog, ReasonDialog, ReceiptDialog, type OtBase,
 } from "./ot-action-dialogs"
+import { OtRecordSheet, type RecordKind } from "./record/ot-record-sheet"
 
 /**
  * Lo que las acciones necesitan de la OT. Es un subconjunto de `WorkOrderDetail`
@@ -39,7 +41,32 @@ export interface OtActionsProps {
   /** Quien actúa: «Sr.» por defecto al recepcionar. */
   actorName: string
   pdfHref: string
+  /** Tipo de la OT: qué registro se ofrece (reparación → correctiva, mantención → preventiva). */
+  repair: boolean
+  maintenance: boolean
+  /** En taller y sin el registro que exige la salida: «Registrar trabajo» pasa a ser la acción de la etapa. */
+  needsLinkedRecord: boolean
+  /** Equipo y catálogos del formulario de registro; sólo se carga si quien mira puede registrar (`canRegisterRecord`). */
+  recordForm: WorkOrderRecordForm | null
+  actorUserId: string
 }
+
+type RecordOption = { kind: RecordKind; disabled: boolean }
+
+/**
+ * Qué registros ofrece la OT: correctiva si pide reparación, preventiva si pide
+ * mantención (las dos si no dice). La preventiva exige pauta; si es lo único que
+ * pide y el equipo no la tiene, igual se ofrece la correctiva.
+ */
+export function recordOptions(input: { repair: boolean; maintenance: boolean; hasSchedule: boolean }): RecordOption[] {
+  const kinds: RecordKind[] = []
+  if (input.repair || !input.maintenance) kinds.push("C")
+  if (input.maintenance || !input.repair) kinds.push("P")
+  const options = kinds.map((kind) => ({ kind, disabled: kind === "P" && !input.hasSchedule }))
+  return options.every((option) => option.disabled) ? [{ kind: "C", disabled: false }, ...options] : options
+}
+
+const KIND_TEXT: Record<RecordKind, string> = { C: "Correctiva", P: "Preventiva" }
 
 type DialogName = "assign" | "entry" | "estimate" | "items" | "finish" | "receive" | "conform" | "reject" | "reopen" | "void" | null
 
@@ -57,6 +84,9 @@ type DialogName = "assign" | "entry" | "estimate" | "items" | "finish" | "receiv
  *
  * A la vista quedan la acción de la etapa (ingreso, salida, recepción,
  * conformidad), asignar una OT por asignar, marcar ítems, rechazar y reabrir.
+ * En taller, mientras falta el registro que exige la salida, la acción de la
+ * etapa es «Registrar trabajo» (correctiva o preventiva, desde el PC) y la
+ * salida queda secundaria; con el registro hecho, «Registrar otra…» pasa al menú.
  * El resto (reasignar, desasignar, cambiar la fecha estimada, corregir el
  * ingreso, el PDF y anular) va en «Más acciones»: con todo a la vista, una OT en
  * taller llegaba a siete botones y apretaba el título en la barra superior.
@@ -71,6 +101,13 @@ export function OtActions(props: OtActionsProps) {
   const dialogProps = { open: true, onOpenChange: (open: boolean) => { if (!open) setDialog(null) }, base, folio: props.folio }
   const editExecution = props.canEditExecution && props.status === "en_ejecucion"
   const canReject = allowed.has("reject_receipt") || allowed.has("reject_conformity")
+  const [recordKind, setRecordKind] = React.useState<RecordKind | null>(null)
+  const recordForm = props.status === "en_ejecucion" ? props.recordForm : null
+  const options = recordForm
+    ? recordOptions({ repair: props.repair, maintenance: props.maintenance, hasSchedule: (recordForm.schedule?.intervals.length ?? 0) > 0 })
+    : []
+  const recordFirst = !!recordForm && props.needsLinkedRecord
+  const direct = options.length === 1 && !options[0]?.disabled ? options[0] : null
 
   function unassign() {
     unassignOp.run(
@@ -87,8 +124,29 @@ export function OtActions(props: OtActionsProps) {
           <Truck className="h-4 w-4 shrink-0" aria-hidden /> Registrar ingreso
         </Button>
       )}
+      {recordFirst && (direct ? (
+        <Button variant="primary" size="sm" onClick={() => setRecordKind(direct.kind)}>
+          <NotePencil className="h-4 w-4 shrink-0" aria-hidden /> Registrar trabajo
+        </Button>
+      ) : (
+        <DropdownMenu modal={false}>
+          <DropdownMenuTrigger asChild>
+            <Button variant="primary" size="sm">
+              <NotePencil className="h-4 w-4 shrink-0" aria-hidden /> Registrar trabajo
+              <CaretDown className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {options.map((option) => (
+              <DropdownMenuItem key={option.kind} disabled={option.disabled} onSelect={() => setRecordKind(option.kind)}>
+                {option.disabled ? `${KIND_TEXT[option.kind]} · el equipo no tiene pauta` : KIND_TEXT[option.kind]}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ))}
       {allowed.has("finish") && (
-        <Button variant="primary" size="sm" onClick={() => setDialog("finish")}>
+        <Button variant={recordFirst ? "secondary" : "primary"} size="sm" onClick={() => setDialog("finish")}>
           <CheckCircle className="h-4 w-4 shrink-0" weight="bold" aria-hidden /> Registrar salida
         </Button>
       )}
@@ -138,6 +196,9 @@ export function OtActions(props: OtActionsProps) {
           {editExecution && props.entry && props.entryCatalogs && (
             <DropdownMenuItem onSelect={() => setDialog("entry")}>Corregir ingreso</DropdownMenuItem>
           )}
+          {!!recordForm && !recordFirst && options.filter((option) => !option.disabled).map((option) => (
+            <DropdownMenuItem key={option.kind} onSelect={() => setRecordKind(option.kind)}>Registrar otra {KIND_TEXT[option.kind].toLowerCase()}</DropdownMenuItem>
+          ))}
           <DropdownMenuItem asChild>
             <a href={props.pdfHref} download className="flex items-center gap-2">
               <FilePdf className="h-4 w-4 shrink-0" aria-hidden /> Descargar PDF
@@ -169,6 +230,17 @@ export function OtActions(props: OtActionsProps) {
       {dialog === "conform" && <ReceiptDialog {...dialogProps} mode="conform" defaultName={props.actorName} />}
       {dialog === "reject" && <ReasonDialog {...dialogProps} mode="reject" />}
       {dialog === "reopen" && <ReasonDialog {...dialogProps} mode="reopen" />}
+      {recordKind && recordForm && (
+        <OtRecordSheet
+          kind={recordKind}
+          workOrderId={props.workOrderId}
+          folio={props.folio}
+          userId={props.actorUserId}
+          userName={props.actorName}
+          form={recordForm}
+          onClose={() => setRecordKind(null)}
+        />
+      )}
 
       <ConfirmDialog
         open={dialog === "void"}

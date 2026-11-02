@@ -1,6 +1,6 @@
-import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm"
+import { and, eq, inArray, isNull, sql } from "drizzle-orm"
 import type { Tx } from "@/db"
-import { mantDrivers, mantRecords, mantWorkOrderEvents, mantWorkOrderItems, mantWorkshops } from "@/db/schema"
+import { mantDrivers, mantWorkOrderItems, mantWorkshops } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import type { WorkOrderEntryPayload } from "@/lib/mantencion/contracts"
 import {
@@ -13,7 +13,7 @@ import {
   canActOnWorkOrder, canEditExecution, canEditRequest, type AccessCheck,
 } from "./access"
 import { activateWorkOrderCapaEvidence, supersedeWorkOrderCapaEvidence } from "./capa-link"
-import { applyChange, assertNotFuture, planFor, refuse, runLocked, type LockedResult, type OtRow } from "./core"
+import { applyChange, assertNotFuture, linkedRecordState, planFor, refuse, runLocked, type LockedResult, type OtRow } from "./core"
 import { checkRequestFields, itemRows, normalizeItems } from "./create"
 import { findAssignableMechanic } from "./mechanics"
 import { markVehicleInWorkshop, markVehicleOutOfWorkshop } from "./vehicle-status"
@@ -290,17 +290,6 @@ export async function markWorkOrderItems(actor: WorkOrderActor, input: MarkItems
 
 // ── Salida de taller ────────────────────────────────────────────────────────
 
-/** Último momento en que la OT volvió a ejecución (rechazo o reapertura): lo firmado desde ahí cuenta para terminar. */
-async function lastReturnToExecution(tx: Tx, workOrderId: string): Promise<string | null> {
-  const [row] = await tx
-    .select({ createdAt: mantWorkOrderEvents.createdAt })
-    .from(mantWorkOrderEvents)
-    .where(and(eq(mantWorkOrderEvents.workOrderId, workOrderId), inArray(mantWorkOrderEvents.type, ["rejected", "reopened"])))
-    .orderBy(desc(mantWorkOrderEvents.createdAt))
-    .limit(1)
-  return row?.createdAt ?? null
-}
-
 /**
  * «Salida taller»: en_ejecucion → trabajo_terminado. Exige todos los ítems
  * marcados y al menos un registro VIGENTE enlazado y firmado después de la
@@ -317,16 +306,7 @@ export async function finishWorkOrder(actor: WorkOrderActor, input: Base & { exi
     if ((pending?.count ?? 0) > 0) {
       refuse(`Marca SÍ o NO en todos los ítems antes de terminar (faltan ${pending?.count}).`, "invalid", "items")
     }
-    const since = await lastReturnToExecution(ctx.tx, ctx.ot.id)
-    const [linked] = await ctx.tx
-      .select({ id: mantRecords.id })
-      .from(mantRecords)
-      .where(and(
-        eq(mantRecords.workOrderId, ctx.ot.id),
-        eq(mantRecords.status, "vigente"),
-        since ? sql`${mantRecords.signedAt} > ${since}::timestamptz` : undefined,
-      ))
-      .limit(1)
+    const { since, linked } = await linkedRecordState(ctx.tx, ctx.ot.id)
     if (!linked) {
       refuse(
         since

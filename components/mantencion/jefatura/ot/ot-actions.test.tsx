@@ -20,6 +20,7 @@ const actions = {
   rejectWorkOrderAction: vi.fn(),
   voidWorkOrderAction: vi.fn(),
   reopenWorkOrderAction: vi.fn(),
+  registerWorkOrderRecordAction: vi.fn(),
 }
 const toastSuccess = vi.fn()
 
@@ -28,7 +29,7 @@ vi.mock("@/app/(app)/mantencion/ot/[id]/actions", () => actions)
 vi.mock("@/lib/toast", () => ({ toast: { success: (...args: unknown[]) => toastSuccess(...args), error: vi.fn(), warning: vi.fn() } }))
 
 const { OtActions } = await import("./ot-actions")
-const { otDetail } = await import("./ot-fixtures")
+const { otDetail, otRecordForm } = await import("./ot-fixtures")
 
 type Props = React.ComponentProps<typeof OtActions>
 
@@ -38,12 +39,13 @@ function props(overrides: Partial<Props> = {}): Props {
     workOrderId: detail.id, folio: detail.folio, version: 4, status: "en_ejecucion", allowedTransitions: [], canEditExecution: false, unit: "km",
     entry: detail.entry, estimatedDeliveryDate: "2026-11-05", items: detail.items, assignedToUserId: "u-mec",
     mechanics: [{ id: "u-mec", name: "Javier Roa", worksiteNames: ["Biodiversa"] }, { id: "u-2", name: "Marta Lillo", worksiteNames: ["Santa Fe", "Mininco"] }],
-    entryCatalogs: { workshops: [{ id: "w-1", name: "Taller Los Aromos" }], drivers: [] }, actorName: "Ana Pérez", pdfHref: "/api/mantencion/ot/ot-1/pdf", ...overrides,
+    entryCatalogs: { workshops: [{ id: "w-1", name: "Taller Los Aromos" }], drivers: [] }, actorName: "Ana Pérez", pdfHref: "/api/mantencion/ot/ot-1/pdf",
+    repair: true, maintenance: false, needsLinkedRecord: false, recordForm: null, actorUserId: "u-mec", ...overrides,
   }
 }
 
-const BUTTONS = ["Registrar ingreso", "Registrar salida", "Recepcionar", "Dar conformidad", "Asignar", "Marcar ítems", "Rechazar", "Reabrir"]
-const MENU = ["Reasignar", "Desasignar", "Cambiar entrega estimada", "Corregir ingreso", "Descargar PDF", "Anular"]
+const BUTTONS = ["Registrar ingreso", "Registrar trabajo", "Registrar salida", "Recepcionar", "Dar conformidad", "Asignar", "Marcar ítems", "Rechazar", "Reabrir"]
+const MENU = ["Reasignar", "Desasignar", "Cambiar entrega estimada", "Corregir ingreso", "Registrar otra correctiva", "Registrar otra preventiva", "Descargar PDF", "Anular"]
 
 function visibleButtons() {
   return BUTTONS.filter((name) => screen.queryByRole("button", { name: new RegExp(`^${name}$`) }))
@@ -194,5 +196,53 @@ describe("OtActions: diálogos y envío con expectedVersion", () => {
     await waitFor(() => expect(actions.markWorkOrderItemsAction).toHaveBeenCalledWith({
       workOrderId: "ot-1", expectedVersion: 4, marks: [{ itemId: "i2", done: "si", note: null }], added: [],
     }))
+  })
+})
+
+describe("OtActions: registrar el trabajo de la OT desde el PC", () => {
+  beforeEach(() => vi.clearAllMocks())
+  afterEach(cleanup)
+
+  const variantOf = (name: string) => screen.getByRole("button", { name: new RegExp(`^${name}$`) }).className
+
+  it("sin el registro que exige la salida, «Registrar trabajo» es la acción de la etapa y la salida queda secundaria", async () => {
+    render(<OtActions {...props({ allowedTransitions: ["finish"], canEditExecution: true, needsLinkedRecord: true, recordForm: otRecordForm() })} />)
+    expect(visibleButtons()).toEqual(["Registrar trabajo", "Registrar salida", "Marcar ítems"])
+    expect(variantOf("Registrar trabajo")).not.toEqual(variantOf("Registrar salida"))
+    expect(openMenu()).not.toContain("Registrar otra correctiva")
+    // OT sólo de reparación: abre la correctiva directo.
+    fireEvent.click(screen.getByRole("button", { name: "Registrar trabajo" }))
+    const sheet = within(await screen.findByRole("dialog"))
+    expect(sheet.getByText("Registrar correctiva · OT-BIO-0001")).toBeTruthy()
+    expect(sheet.getByText("Paso 1 de 4 · Lectura y fecha")).toBeTruthy()
+  })
+
+  it("una OT de reparación y mantención pregunta qué registrar; sin pauta, la preventiva queda deshabilitada", async () => {
+    render(<OtActions {...props({ allowedTransitions: ["finish"], maintenance: true, needsLinkedRecord: true, recordForm: otRecordForm({ schedule: null }) })} />)
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Registrar trabajo" }), { button: 0, ctrlKey: false })
+    expect(screen.getByRole("menuitem", { name: "Correctiva" }).getAttribute("aria-disabled")).toBeNull()
+    expect(screen.getByRole("menuitem", { name: "Preventiva · el equipo no tiene pauta" }).getAttribute("aria-disabled")).toBe("true")
+  })
+
+  it("con pauta, elegir «Preventiva» abre el registro de la preventiva", async () => {
+    render(<OtActions {...props({ allowedTransitions: ["finish"], maintenance: true, needsLinkedRecord: true, recordForm: otRecordForm() })} />)
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Registrar trabajo" }), { button: 0, ctrlKey: false })
+    fireEvent.click(screen.getByRole("menuitem", { name: "Preventiva" }))
+    expect(within(await screen.findByRole("dialog")).getByText("Registrar preventiva · OT-BIO-0001")).toBeTruthy()
+  })
+
+  it("con el registro ya hecho, la salida vuelve a ser la acción principal y «Registrar otra…» pasa al menú", () => {
+    render(<OtActions {...props({ allowedTransitions: ["finish"], maintenance: true, needsLinkedRecord: false, recordForm: otRecordForm() })} />)
+    expect(visibleButtons()).toEqual(["Registrar salida"])
+    expect(openMenu()).toEqual(["Registrar otra correctiva", "Registrar otra preventiva", "Descargar PDF"])
+  })
+
+  it("sin el formulario (no puede registrar) o fuera de taller, no se ofrece registrar", () => {
+    render(<OtActions {...props({ allowedTransitions: ["finish"], needsLinkedRecord: true, recordForm: null })} />)
+    expect(visibleButtons()).toEqual(["Registrar salida"])
+    cleanup()
+    render(<OtActions {...props({ status: "trabajo_terminado", allowedTransitions: [], needsLinkedRecord: true, recordForm: otRecordForm() })} />)
+    expect(visibleButtons()).toEqual([])
+    expect(openMenu()).toEqual(["Descargar PDF"])
   })
 })

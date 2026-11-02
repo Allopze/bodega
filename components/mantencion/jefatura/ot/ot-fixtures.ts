@@ -1,3 +1,4 @@
+import type { WorkOrderRecordForm } from "@/lib/services/mantencion/web-record"
 import type { WorkOrderDetail, WorkOrderListRow } from "@/lib/services/mantencion/work-orders/types"
 
 /** Datos de prueba de las pantallas de OT (no se importa desde código de producción). */
@@ -48,6 +49,33 @@ export function otDetail(overrides: Partial<WorkOrderDetail> = {}): WorkOrderDet
     allowedTransitions: [],
     canEditRequest: false,
     canEditExecution: false,
+    canRegisterRecord: false,
+    needsLinkedRecord: false,
+    ...overrides,
+  }
+}
+
+/** Formulario de registro desde la ficha: el camión de la OT (con pauta km) y catálogos mínimos. */
+export function otRecordForm(overrides: Partial<WorkOrderRecordForm> = {}): WorkOrderRecordForm {
+  return {
+    equipment: {
+      id: "veh-1", code: "KA-135", plate: "RBYD-98", noPlate: false, typeName: "Camión", unit: "km",
+      brandId: "b-scania", brandName: "Scania", model: "R450", worksiteId: "ws-1", worksiteName: "Biodiversa",
+      scheduleId: "sch-km", readings: [{ value: 120_000, date: "2026-10-01", source: "MC-BIO-0006" }],
+      initialReading: { value: 100_000, date: "2026-01-01" }, state: "al_dia", nextReading: 130_000, remaining: 10_000,
+      nextIntervalValue: 10_000, lastPreventive: null, recentPreventives: [], workshop: null,
+    },
+    schedule: {
+      id: "sch-km", name: "Camiones y tractos", unit: "km", version: 1, intervals: [10_000, 20_000],
+      groups: [{ name: "Motor", items: [{ key: "k1", name: "Revisión aceite motor", applies: [true, true] }] }],
+      brandRules: [],
+    },
+    worksiteIds: ["ws-1"],
+    workTypes: [{ id: "wt-mec", name: "Mecánico" }, { id: "wt-sold", name: "Soldadura" }],
+    oils: [{ id: "oil-motor", name: "Motor" }],
+    drivers: [{ id: "dr-1", name: "AEDO POLANCO JOSE A." }],
+    workshops: [{ id: "w-1", name: "Taller Los Aromos" }],
+    mechanics: [{ id: "u-2", name: "Marta Lillo" }],
     ...overrides,
   }
 }

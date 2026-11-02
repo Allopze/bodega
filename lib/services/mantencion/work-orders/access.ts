@@ -127,6 +127,25 @@ export function canEditExecution(viewer: AccessViewer, ot: WorkOrderAccessFacts)
   return allow
 }
 
+/** Firmar registros (correctivas y preventivas) es de quien tiene la app del mecánico, también desde el PC. */
+const APP_PERMISSION = "mant:app:use"
+
+/**
+ * Registrar desde la ficha (PC) la correctiva o preventiva enlazada a la OT:
+ * mientras está en taller, el mecánico asignado o la jefatura, y en los dos
+ * casos con la app del mecánico (es el mismo registro que firma el teléfono).
+ * `createRecord` vuelve a aplicar la regla de enlace bajo bloqueo.
+ */
+export function canRegisterWorkOrderRecord(viewer: AccessViewer, ot: WorkOrderAccessFacts): AccessCheck {
+  if (ot.status !== "en_ejecucion") {
+    return { ok: false, code: "conflict", message: `La OT está «${statusLabel(ot.status)}»: sólo se registra trabajo mientras está «En taller».` }
+  }
+  if (!hasMantPermission(viewer, APP_PERMISSION)) return forbidden("Tu cuenta no puede firmar registros de mantención.")
+  const assignee = ot.assignedToUserId === viewer.userId && hasMantPermission(viewer, OT_PERMISSIONS.execute)
+  if (!assignee && !hasMantPermission(viewer, OT_PERMISSIONS.manage)) return forbidden("Sólo el mecánico asignado o la jefatura de mantención pueden registrar trabajo en esta OT.")
+  return allow
+}
+
 /** Editar la solicitud: la jefatura, o quien la creó (con permiso de crear y su faena en alcance), mientras no está en taller. */
 export function canEditRequest(viewer: AccessViewer, ot: WorkOrderAccessFacts): AccessCheck {
   if (!isOtStatus(ot.status) || !OT_REQUEST_EDITABLE.includes(ot.status)) {

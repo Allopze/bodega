@@ -64,8 +64,8 @@ const BODY: Record<OtNotifyEvent, string> = {
   assigned: "Entra a taller y registra el ingreso desde la app o el PC.",
   finished: "Falta registrar la recepción del equipo.",
   received: "Revisa el equipo y registra la recepción en faena (conformidad).",
-  rejected: "Fue devuelta a «En taller».",
-  reopened: "Fue reabierta y vuelve a «En taller».",
+  rejected: "Fue devuelta a «En taller». Registra el trabajo nuevo desde la app o desde la OT en el PC.",
+  reopened: "Fue reabierta y vuelve a «En taller». Registra el trabajo nuevo desde la app o desde la OT en el PC.",
   closed: "Tiene la conformidad de la faena.",
 }
 
