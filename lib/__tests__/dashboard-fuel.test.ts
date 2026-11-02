@@ -22,7 +22,7 @@ vi.mock("@/db", () => ({ db: { select: (projection: Record<string, unknown>) => 
   return createChain()
 } } }))
 
-import { getFuelMonthlyTrend, getMaintenanceDashboardSummary, getMaintenanceMonthlyTrend } from "@/lib/services/dashboard-fleet-maintenance"
+import { getFuelMonthlyTrend } from "@/lib/services/dashboard-fuel"
 
 /** Trozos literales y parámetros de un predicado de Drizzle. */
 function sqlChunks(node: unknown, out: string[] = []): string[] {
@@ -53,37 +53,13 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-describe("cost capability in operational trends", () => {
-  it("does not project fuel or maintenance amounts without view_costs", async () => {
-    const session = { user: { id: "operator", permissions: ["combustibles:view", "mantenciones:view"], isGlobal: true, worksiteIds: [] } } as unknown as Session
+describe("getFuelMonthlyTrend", () => {
+  it("does not project fuel amounts without view_costs", async () => {
+    const session = { user: { id: "operator", permissions: ["combustibles:view"], isGlobal: true, worksiteIds: [] } } as unknown as Session
 
-    const [fuel, maintenance] = await Promise.all([
-      getFuelMonthlyTrend(session, 1),
-      getMaintenanceMonthlyTrend(session, 1),
-    ])
+    const fuel = await getFuelMonthlyTrend(session, 1)
 
     expect(fuel[0]?.amount).toBeNull()
-    expect(maintenance[0]?.amount).toBeNull()
     expect(sqlChunks(selectProjections[0]!.amount).join(" ").toLowerCase()).not.toContain("total_amount")
-    expect(sqlChunks(selectProjections[1]!.amount).join(" ").toLowerCase()).not.toContain("total_amount")
-  })
-})
-
-describe("getMaintenanceDashboardSummary", () => {
-  // HALLAZGO 34: 2026-08-08T01:30Z son las 21:30 del 07-08 en Chile (UTC−4).
-  // Con `toISOString()` las mantenciones de hoy sumaban a "vencidas".
-  it("separa programadas de vencidas por el día chileno, no por el UTC", async () => {
-    vi.useFakeTimers()
-    vi.setSystemTime(new Date("2026-08-08T01:30:00Z"))
-    const session = { user: { id: "user-1", isGlobal: true, worksiteIds: [] } } as unknown as Session
-
-    await getMaintenanceDashboardSummary(session)
-
-    // Las dos primeras consultas son scheduledCount (>= hoy) y overdueCount (< hoy).
-    for (const chain of selectChains.slice(0, 2)) {
-      const where = sqlChunks(chain.where!.mock.calls[0]![0])
-      expect(where).toContain("2026-08-07")
-      expect(where).not.toContain("2026-08-08")
-    }
   })
 })

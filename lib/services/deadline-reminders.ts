@@ -15,8 +15,7 @@
  *    plazo legal y dependía de que alguien lo escribiera a mano y después se
  *    acordara de mirar.
  *
- * El contraejemplo estaba dentro del repositorio: mantenciones avisa por SLA,
- * CAPA por vencimiento, capacitación con 60 días de anticipación. La
+ * CAPA avisa por vencimiento y capacitación con 60 días de anticipación. La
  * infraestructura de recordatorios existe y funciona en cinco dominios; estos
  * tres no la usaban.
  *

@@ -45,7 +45,6 @@ const BARRAS = {
   revision: "Colas de revisión",
   tae: "Vistas de TAE y sellos",
   facturas: "Facturas y pagos",
-  mantenciones: "Secciones de mantenciones",
 } as const
 
 /** El panel del área en el sidebar: el `<ul>` que contiene al ítem «Panel operacional». */
@@ -86,7 +85,6 @@ const MENU_DEL_AREA: ReadonlyArray<{ grupo: string; destinos: readonly DestinoDe
     destinos: [
       { href: "/flota", nombre: "Vehículos" },
       { href: "/flota/monitoreo", nombre: "Monitoreo GPS" },
-      { href: "/mantenciones", nombre: "Mantenciones" },
     ],
   },
   {
@@ -119,7 +117,7 @@ test.describe("Control operacional — menú del área", () => {
     await login(page)
   })
 
-  test("agrupa el área en Seguimiento, Flota, Mantención y Combustible con sus catorce destinos en orden", async ({ page }) => {
+  test("agrupa el área en Seguimiento, Flota, Mantención y Combustible con sus trece destinos en orden", async ({ page }) => {
     await page.goto("/control-operacional")
 
     const area = page
@@ -181,7 +179,6 @@ test.describe("Control operacional — menú del área", () => {
       ["/combustibles/control", "/combustibles"],
       ["/combustibles/control/rendimiento/camiones", "/combustibles"],
       ["/combustibles/ciclo", "/combustibles"],
-      ["/mantenciones/planes", "/mantenciones"],
     ]
 
     for (const [ruta, activo] of rutas) {
@@ -235,15 +232,6 @@ const PESTANAS_POR_SECCION = [
     pantallas: [
       { ruta: "/combustibles/facturas", activa: "Facturas" },
       { ruta: "/combustibles/cuenta-corriente", activa: "Cuenta corriente" },
-    ],
-  },
-  {
-    seccion: "Mantenciones",
-    barra: BARRAS.mantenciones,
-    pantallas: [
-      { ruta: "/mantenciones", activa: "Órdenes de trabajo" },
-      { ruta: "/mantenciones/planes", activa: "Planes preventivos" },
-      { ruta: "/mantenciones/politicas-documentales", activa: "Políticas documentales" },
     ],
   },
 ] as const
@@ -457,7 +445,6 @@ test.describe("Control operacional — rutas retiradas", () => {
 /** Destino de cada tile (`ATTENTION_HREFS` de `control-operacional/attention-tiles.ts`). */
 const TILE = {
   detenidos: "/flota?estado=detenidos",
-  otAbiertas: "/mantenciones?status=abiertas",
   documentosVencidos: "/flota?vencimiento=vencidos",
   combustiblePorRevisar: "/combustibles/revision",
 } as const
@@ -490,16 +477,6 @@ test.describe("Control operacional — tiles del panel", () => {
     await expect(page.getByRole("combobox", { name: "Estado operacional", exact: true })).toContainText("Detenidos")
   })
 
-  test("«OT abiertas» abre Mantenciones con «Abiertas» seleccionado en Estado", async ({ page }) => {
-    await tileHacia(page, TILE.otAbiertas).click()
-    await expect(page).toHaveURL(/\/mantenciones\?status=abiertas$/)
-
-    // Si el filtro pasa a mostrarse como chip, el criterio es el mismo: la
-    // pantalla tiene que decir que el listado está acotado a las abiertas.
-    await expect(page.getByRole("combobox", { name: "Estado", exact: true })).toContainText("Abiertas")
-    await expect(barraDe(page, BARRAS.mantenciones).locator('[aria-current="page"]')).toHaveText("Órdenes de trabajo")
-  })
-
   test("«Documentos vencidos» abre Vehículos con el vencimiento ya aplicado", async ({ page }) => {
     await tileHacia(page, TILE.documentosVencidos).click()
     await expect(page).toHaveURL(/\/flota\?vencimiento=vencidos$/)
@@ -522,7 +499,7 @@ test.describe("Control operacional — tiles del panel", () => {
  * Lo que el seed deja probar sin inventar datos:
  *
  *   - `scoped@e2e.chome.cl` (`solicitante_faena`, `e2e/setup-db.ts:301-315` y `:356-368`): no
- *     tiene `flota:*`, `mantenciones:*`, `combustibles:*` ni
+ *     tiene `flota:*`, `mant:records:view_worksite`, `combustibles:*` ni
  *     `prevention:inspections:view`, así que el área entera desaparece del menú
  *     y ninguna de sus rutas debe abrirse a mano.
  *   - `jefe.faena@e2e.chome.cl` (`jefe_terreno`, `e2e/setup-db.ts:105-143`): sólo
@@ -538,7 +515,7 @@ const RUTAS_DEL_AREA = [
   "/control-operacional",
   "/flota",
   "/flota/monitoreo",
-  "/mantenciones",
+  "/mantencion/panel",
   "/combustibles",
   "/combustibles/bitacora",
   "/combustibles/revision",

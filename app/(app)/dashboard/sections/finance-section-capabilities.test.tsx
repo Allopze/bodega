@@ -15,7 +15,7 @@ const getOperationalPeriodMetrics = vi.hoisted(() => vi.fn())
 vi.mock("@/lib/services/billing/queries", () => ({ getBillingSummary }))
 vi.mock("@/lib/services/analytics-module/dashboard", () => ({ getPurchasingFinancialSummary }))
 vi.mock("@/lib/services/dashboard", () => ({ getDashboardData }))
-vi.mock("@/lib/services/dashboard-fleet-maintenance", () => ({ getFuelMonthlyTrend }))
+vi.mock("@/lib/services/dashboard-fuel", () => ({ getFuelMonthlyTrend }))
 vi.mock("@/lib/services/dashboard-domains-data", () => ({ getOverdueFuelDebt }))
 // `getOperationalCalendarBounds` es puro y la sección lo usa: se conserva el real.
 vi.mock("@/lib/services/operational-period-metrics", async (importOriginal) => ({

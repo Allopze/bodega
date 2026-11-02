@@ -219,9 +219,8 @@ export async function updateAnomalyCaseStatus(
     if (isResolved && !(resolution ?? "").trim()) {
       throw new Error("Debes indicar el motivo para resolver o descartar un caso")
     }
-    // Cerrar un caso de medidor decide si la serie del equipo se corta acá:
-    // Flota y Mantenciones tratan como reinicio SÓLO `reset_medidor`. Sin la
-    // elección explícita, un error de tipeo corregido cortaría la serie igual.
+    // Cerrar un caso de medidor decide si la serie del equipo se corta acá.
+    // Sin esta elección explícita, un error de tipeo corregido cortaría la serie.
     const needsKind = isResolved && requiresMeterResolutionKind(current.ruleCode)
     if (needsKind && !METER_RESOLUTION_KINDS.includes(resolutionKind as MeterResolutionKind)) {
       throw new Error("Indica si la lectura se corrigió o si el medidor fue reemplazado")

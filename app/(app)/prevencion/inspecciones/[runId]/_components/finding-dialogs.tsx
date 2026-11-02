@@ -37,10 +37,9 @@ import type { FindingInfo } from "./types"
  * revisión: ahí hay un solo `CapaDialog` y no uno por fila o por bloqueo, y el
  * de la revisión vive fuera del `<form>` de la revisión.
  */
-export function CapaDialog({ finding, assignees, hasVehicle, open, onOpenChange, trigger }: {
+export function CapaDialog({ finding, assignees, open, onOpenChange, trigger }: {
   finding: FindingInfo
   assignees: { id: string; name: string }[]
-  hasVehicle: boolean
   open?: boolean
   onOpenChange?: (open: boolean) => void
   /** Botón que lo abre. `null` no pinta ninguno (modo controlado). */
@@ -110,11 +109,6 @@ export function CapaDialog({ finding, assignees, hasVehicle, open, onOpenChange,
           <Field label="Medida inmediata" hint="Opcional." error={operation.fieldError("immediateMeasure")}>
             <Textarea name="immediateMeasure" maxLength={3000} />
           </Field>
-          {hasVehicle && (
-            <p className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-sm text-[var(--color-text-subtle)]">
-              Se abrirá automáticamente una OT correctiva para este equipo con el mismo plazo de la CAPA. Al completarla, se cerrará el hallazgo y la acción quedará pendiente de verificación.
-            </p>
-          )}
           {operation.messageTone === "error" && operation.message && <Callout tone="danger" role="alert">{operation.message}</Callout>}
           <DialogFooter><Button type="submit" loading={operation.pending} disabled={!responsibleUserId}>Derivar con responsable</Button></DialogFooter>
         </form>

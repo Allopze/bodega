@@ -36,9 +36,7 @@ export const ANOMALY_STATUS_COLORS: Record<AnomalyCaseStatus, string> = {
 }
 
 /**
- * Reglas cuyo cierre aguas abajo significa "la serie del medidor se reinició
- * acá": Flota deja de usar la lectura anterior como inicio del período y
- * Mantenciones deja de comparar contra una mantención previa al corte.
+ * Reglas cuyo cierre significa que la serie del medidor se reinició acá.
  */
 export const METER_RESET_RULE_CODES = ["kilometraje_regresivo", "horometro_regresivo"] as const
 

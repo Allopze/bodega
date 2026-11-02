@@ -10,7 +10,7 @@ import { cabecera, irAPaso, type PasoDelRiesgo } from "./miper-helpers"
  * Antes: una lista `CRITICAL_PAGES` escrita a mano con ~20 rutas sobre 207, y
  * `.disableRules(["color-contrast"])` en las dos suites. Es decir, la
  * auditoría automática dejaba fuera módulos completos —combustibles, flota,
- * mantenciones, facturación, TI, recepción, trazabilidad— y renunciaba al
+ * mantención de equipos, facturación, TI, recepción, trazabilidad— y renunciaba al
  * único criterio que más se rompe al cambiar estilos.
  *
  * Ahora el alcance sale del inventario de rutas (el mismo que alimenta las

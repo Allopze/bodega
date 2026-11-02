@@ -1,5 +1,10 @@
 # Plan · Módulo de mantención de equipos (preventiva y correctiva)
 
+> Estado 2026-10-31: el módulo antiguo plural `/mantenciones` y su esquema
+> `maintenance_*` fueron retirados. Este plan conserva el reconocimiento
+> original; sus instrucciones de preservarlo ya no aplican. El módulo descrito
+> aquí (`/mantencion/*`, `/m/mantencion`, `mant_*`) sigue vigente.
+
 Rama: `feat/mantencion-equipos` · Inicio: 28-10-2026 · Especificación: prompt del 28-10-2026 +
 prototipo `docs/mantencion/referencias/mantencion-chome-prototipo.html` + `seed-mantencion.json`.
 
@@ -16,7 +21,7 @@ prototipo `docs/mantencion/referencias/mantencion-chome-prototipo.html` + `seed-
 | 7 | Auditoría | `audit_log` vía `recordAudit({ action, entityType, entityId, entityCode, oldState, newState, reason, worksiteId })` (IP resuelta sola). Acción `export` disponible. | `lib/audit.ts`, `db/schema/audit.ts` |
 | 8 | PDF y Excel | Excel: `exceljs` + `buildXlsxBuffer` / `sanitizeCell` / hoja de metadatos (`addExportMetadataSheet`) / `EXCEL_DATETIME_FORMAT`; descarga con `ExportButton` (base64). PDF: página `app/(print)/…` impresa con Chromium (`renderPrintPage`, `browser-pool`). | `lib/reports/export-module/excel-builder.ts`, `lib/reports/excel-dates.ts`, `components/ui/export-button.tsx`, `lib/pdf/render-print-page.ts` |
 | 9 | Pruebas | Unitarias: `npm run test:fast` (Vitest, jsdom). BD: `npm run test:pglite` (Postgres WASM con migraciones completas; los archivos se registran en `tests/pglite-files.ts`). E2E: `npm run test:e2e` (Playwright, servidor propio :3100, `e2e/setup-db.ts` recrea el esquema; **borra `.next`** → correr en worktree desechable). Helpers: `e2e/helpers.ts` (`login`, `textoVisible`, `listRecord`). | `vitest*.config.ts`, `tests/pglite-files.ts`, `playwright.config.ts`, `e2e/` |
-| 10 | Mantención antigua | Módulo `mantenciones`: rutas `/mantenciones/*`, `/api/mantenciones/*`; tablas `maintenance_plans`, `maintenance_records`, `maintenance_tasks`, `maintenance_parts`, `maintenance_labor`, `maintenance_documents`, `maintenance_document_policies`; permisos `mantenciones:view|create|edit|approve_costs`; storage `storage/mantenciones/`. **No se toca.** | `modules/mantenciones/manifest.ts`, `db/schema/maintenance.ts`, `app/(app)/mantenciones/` |
+| 10 | Mantención antigua | El módulo plural se retiró el 2026-10-31; sus rutas responden 404 y sus tablas se eliminan mediante una migración nueva. | `/mantenciones/*`, `maintenance_*` (histórico) |
 | — | PWA existentes | TAE (`/tae`, pública, SW `public/tae-sw.js`, cola IndexedDB `lib/pwa/tae-offline-queue.ts`), PPA (`public/sw.js`), RE-20 (`public/re20-sw.js`, sólo shell sin datos). Compresión: `lib/pwa/image-compress.ts`. `fake-indexeddb` ya es devDependency. | `public/*.js`, `lib/pwa/` |
 | — | Proxy | Exige sesión en todo lo no público, **incluido `/api`**, y verifica origen en mutaciones `/api`. Lo público se lista en `PUBLIC_PATHS` y se autentica dentro del handler. | `proxy.ts`, `lib/security/public-paths.ts`, `lib/security/same-origin.ts` |
 | — | Interruptores de módulo | Rutas → módulo por navegación + `ROUTE_OWNER_ALIASES`; permiso → módulo por registry. Nombre visible en `MODULE_LABELS`. | `lib/services/module-toggles*.ts` |
@@ -40,7 +45,7 @@ prototipo `docs/mantencion/referencias/mantencion-chome-prototipo.html` + `seed-
    `mant:equipment:manage`, `mant:schedules:manage`, `mant:devices:manage`, `mant:export`.
 6. **Rutas**: app del mecánico `/m/mantencion` (grupo `app/(mecanico)`, pantalla completa, sin AppShell);
    jefatura `/mantencion/{panel,registros,registros/[id],equipos,equipos/[id],equipos/nuevo,equipos/importar,pautas,pautas/[id],dispositivos}`;
-   APIs `/api/mantencion/*`. Ninguna choca con `/mantenciones`.
+   APIs `/api/mantencion/*`. El módulo antiguo plural `/mantenciones` fue retirado el 2026-10-31.
 7. **Sincronización con credencial de dispositivo.** `POST /api/mantencion/dispositivo` (con sesión) emite
    un token de 30 días por (usuario, dispositivo); en BD sólo su SHA-256. Las rutas `/api/mantencion/sync/*`
    están en `PUBLIC_PATHS` y **autentican sólo con `Authorization: Bearer`** dentro del handler (recargan
@@ -151,8 +156,8 @@ entradas, con `Edit` puntual), `package.json` (sólo L1: script `db:seed:mantenc
 
 ## 9. Riesgos y seguimiento
 
-- El menú de Control operacional mostrará «Mantenciones» (módulo antiguo) y el grupo «Mantención» (nuevo).
-  Se recomienda apagar el antiguo con su interruptor cuando el nuevo esté en uso.
+- El módulo antiguo plural `/mantenciones` se retiró el 2026-10-31; Control operacional conserva el grupo
+  «Mantención» para las rutas del módulo vigente.
 - El seed toca la flota compartida (`fuel_vehicles`): concilia por código y luego por patente, nunca duplica,
   y reporta diferencias sin sobrescribir datos de flota existentes (salvo marca nula).
 - Verificación en `bodega_dev` (28-10-2026): 120 equipos del seed quedaron en 119 perfiles porque `KA-71`
@@ -192,7 +197,7 @@ producción.
 | P2 | Asignar el rol **Supervisor de faena (mantención)** a Francisco Amestica (Biodiversa) y confirmar que Alexis Morales tiene **Jefe de mantención** | Administración | Los roles nuevos los crea `sync-rbac` en el deploy. |
 | P3 | Revisar datos del seed con jefatura | Alexis | `KA-71` (patente `CBJY-18`) coincide con la patente de `KA-91` en la flota: en `bodega_dev` quedó sin perfil. Seis equipos traen la patente igual al código y se cargan «Sin patente», pero `CPSG-30`, `DLFZ-34`, `XX-7493`, `RT-5367` y `SX-2728` parecen patentes reales. `LC-1315` (Nissan CPC 14 BTLT, 1993) está como Camión en km y parece una grúa horquilla. |
 | P4 | Autorizar y correr el seed en producción | Usuario | Después del deploy (migración 0361 + `sync-rbac`): `docker compose run --rm seed-mantencion` (opcional `--correos /app/correos.json`, fuera del repo). Es idempotente y no corre en el deploy automático. |
-| P5 | Decidir cuándo apagar el módulo antiguo «Mantenciones» | Usuario / Alexis | Hasta entonces Control operacional muestra «Mantenciones» (OT con costos) y el grupo «Mantención». Se apaga desde Administración › Módulos, sin borrar datos. |
+| P5 | Retirar el módulo antiguo «Mantenciones» | Completado · 2026-10-31 | Rutas, permisos, cron y consumidores retirados; las tablas se eliminarán con una migración nueva después de confirmar producción vacía. |
 | P6 | Confirmar las decisiones abiertas de §8 (§19 del prompt) | Alexis / Francisco | En especial: `*`/`**` de la planilla (1), mapeo de reglas por marca (2), intervalos de los 37 ítems de maquinaria (3), tope de horas (6), tablet compartida con PIN (7) y «Orden de trabajo» opcional (8). |
 | P7 | Contraste de la serie «Correctiva» del gráfico | Diseño | #f39200 sobre blanco ≈ 2,4:1, bajo el 3:1 de WCAG 1.4.11 para elementos gráficos. Lo compensan la leyenda con texto, el tooltip y la tabla «Ver datos»; si se exige el 3:1, oscurecer a ≈ #c06f00. |
 | P8 | Hallazgos de `check:security-audit` (undici, zod) y avisos de `doctor` | Plataforma | Preexistentes: la rama no cambia `package-lock.json`. No se tocan en este módulo. |

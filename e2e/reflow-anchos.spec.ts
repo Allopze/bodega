@@ -43,7 +43,7 @@ const PANTALLAS = [
   { path: "/prevencion/higiene", name: "Higiene" },
   { path: "/admin/pdtp-catalogos", name: "Catálogos PDTP" },
   { path: "/control-operacional", name: "Panel operacional" },
-  { path: "/mantenciones", name: "Mantenciones" },
+  { path: "/mantencion/panel", name: "Panel de mantención" },
 ] as const
 
 /**

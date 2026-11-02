@@ -1134,11 +1134,9 @@ export const preventionModule = {
     { roleSlug: "prevencionista",       permission: "prevention:inspections:review" },
     { roleSlug: "prevencionista",       permission: "prevention:inspections:export" },
     { roleSlug: "cphs",                 permission: "prevention:inspections:view" },
-    // Taller. Nadie del taller tiene cuenta: el reporte llega por foto y las
-    // acciones correctivas de equipos las gestiona Prevención, que ya tiene
-    // `capa:complete`. El jefe de mantención sólo mira lo que su taller va a
-    // recibir — cerrar la mantención, que es lo que acredita la evidencia de
-    // la CAPA, ya lo habilita `mantenciones:edit`.
+    // La CAPA y el seguimiento de acciones correctivas de equipos quedan en
+    // Prevención. La jefatura de mantención puede consultar las inspecciones
+    // del taller, sin crear órdenes en este módulo.
     { roleSlug: "jefe_mantencion",      permission: "prevention:inspections:view" },
     /* Responsable declarado de la n=83 (plan de emergencia) y la n=84
      * (simulacros) y sin `emergency:view`: Emergencias no le aparecía en el

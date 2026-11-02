@@ -52,7 +52,7 @@ function makeSession(overrides?: Partial<Session["user"]>): Session {
       id: "user-1",
       name: "Test User",
       email: "test@example.com",
-      permissions: ["analytics:view", "combustibles:view", "combustibles:view_costs", "mantenciones:view"],
+      permissions: ["analytics:view", "combustibles:view", "combustibles:view_costs"],
       roles: ["administrador"],
       worksiteIds: ["ws-1"],
       ...overrides,
@@ -99,29 +99,26 @@ describe("normalizeAnalyticsFilters", () => {
   })
 })
 
-describe("buildDataGaps capability semantics", () => {
+describe("buildDataGaps", () => {
   const vehicle = {
     id: "veh-1",
     plate: "AA-BB-11",
     type: "camioneta",
     totalFuelAmount: 100_000,
-    totalServiceAmount: 0,
-    totalOperationalCost: 100_000,
     totalLiters: 80,
     loadCount: 2,
-    maintenanceCount: 0,
     lastOdometerReading: 10_000,
     lastHourMeterReading: null,
   }
 
-  it("no convierte mantenciones no autorizadas en una brecha falsa", () => {
-    expect(buildDataGaps([vehicle])).not.toContain("No hay imputaciones de repuestos, servicios o mantenciones para los vehículos del período.")
-    expect(buildDataGaps([vehicle], { includeMaintenanceCosts: true })).toContain("No hay imputaciones de repuestos, servicios o mantenciones para los vehículos del período.")
+  it("identifica lecturas de medidor faltantes", () => {
+    expect(buildDataGaps([vehicle])).toEqual([])
+    expect(buildDataGaps([{ ...vehicle, lastOdometerReading: null }])).toContain("No hay lecturas de kilometraje u horómetro en las cargas de combustible del período.")
   })
 })
 
 describe("getAnalyticsDashboard", () => {
-  it("does not query fuel or maintenance cost aggregates for an analytics-only custom role", async () => {
+  it("does not query fuel cost aggregates for an analytics-only custom role", async () => {
     const data = await getAnalyticsDashboard(makeSession({ permissions: ["analytics:view"] }), {
       fromDate: "2026-06-01",
       toDate: "2026-06-30",
@@ -192,7 +189,7 @@ describe("getAnalyticsDashboard", () => {
     ])
     expect(data.topSuppliers[0]).toMatchObject({ name: "Proveedor A", totalAmount: 1_200_000 })
     expect(data.topWorksites[0]).toMatchObject({ name: "Faena Norte", totalAmount: 1_620_000 })
-    expect(data.vehicleCosts[0]).toMatchObject({ plate: "AA-BB-11", totalOperationalCost: 420_000 })
+    expect(data.vehicleCosts[0]).toMatchObject({ plate: "AA-BB-11", totalFuelAmount: 420_000 })
     expect(data.alerts).toEqual(expect.arrayContaining([
       expect.objectContaining({
         type: "proveedor_concentrado",
@@ -205,7 +202,7 @@ describe("getAnalyticsDashboard", () => {
     expect(data).not.toHaveProperty("stockRisks")
   })
 
-  it("adds maintenance costs and meter readings to vehicle operational analytics", async () => {
+  it("adds fuel costs and meter readings to vehicle analytics", async () => {
     selectResults.push(
       { data: [{ totalAmount: 0, orderCount: 0, averageOrderAmount: 0 }] },
       { data: [{ totalAmount: 0 }] },
@@ -236,7 +233,6 @@ describe("getAnalyticsDashboard", () => {
       { data: [] },
       { data: [] },
       { data: [] },
-      { data: [{ vehicleId: "veh-1", totalMaintenanceAmount: 250_000, maintenanceCount: 1 }] },
     )
 
     const data = await getAnalyticsDashboard(makeSession(), {
@@ -248,14 +244,11 @@ describe("getAnalyticsDashboard", () => {
     expect(data.vehicleCosts[0]).toMatchObject({
       plate: "AA-BB-11",
       totalFuelAmount: 100_000,
-      totalServiceAmount: 250_000,
-      totalOperationalCost: 350_000,
       totalLiters: 80,
       loadCount: 2,
       lastOdometerReading: 12_500,
       lastHourMeterReading: 440,
     })
-    expect(data.dataGaps.join(" ")).not.toContain("mantenciones no tienen tablas operativas")
     expect(data.dataGaps.join(" ")).not.toContain("no registran kilometraje")
   })
 

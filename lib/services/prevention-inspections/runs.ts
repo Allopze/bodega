@@ -10,7 +10,6 @@ import {
   preventionInspectionRuns,
   preventionInspectionTemplates,
   preventionEmergencyResources,
-  fuelVehicles,
   users,
 } from "@/db/schema"
 import {
@@ -19,7 +18,6 @@ import {
   nowIso,
   requireAccess,
   scopeAllows,
-  type Client,
   type InspectionAccess,
 } from "@/lib/services/prevention-inspections-access"
 import { nanoid } from "@/lib/id"
@@ -43,7 +41,6 @@ import {
   type InspectionItemSpec,
 } from "@/lib/prevention/inspections"
 import { setVehicleOperationalStatus } from "@/lib/services/fleet"
-import { createMaintenanceRecordWithClient } from "@/lib/services/maintenance"
 import { createCapaActionWithClient } from "@/lib/services/prevention-capa"
 import type { ChecklistDefinition } from "@/lib/sst/types"
 import { onInspectionCompleted } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
@@ -816,35 +813,6 @@ async function notifySafely(label: string, send: () => Promise<void>) {
   }
 }
 
-/**
- * Ítem del que se lee la lectura del medidor al derivar una mantención.
- *
- * Acopla el motor genérico a un `itemId` de una plantilla concreta, y eso es
- * deliberado: es el único checklist del catálogo que captura el horómetro, y
- * una plantilla que no lo declare simplemente deriva la mantención sin lectura
- * (`null`), no falla. La alternativa —declarar el rol del ítem en
- * `ChecklistItem`— es un campo nuevo en las 13 definiciones para un solo caso.
- * Si aparece un segundo checklist con medidor, ése es el momento de moverlo.
- */
-const METER_ITEM_ID = "horometro_inicio"
-
-/**
- * Lectura declarada en el run para el ítem de horómetro/odómetro, si la
- * plantilla lo pide. Viaja a la mantención derivada, que es lo que después
- * cruza `getUsageMaintenanceAlerts` contra los umbrales por uso.
- */
-async function readMeterFromRun(client: Client, runId: string): Promise<number | null> {
-  const [answer] = await client.select({ value: preventionInspectionAnswers.value })
-    .from(preventionInspectionAnswers)
-    .where(and(
-      eq(preventionInspectionAnswers.runId, runId),
-      eq(preventionInspectionAnswers.itemId, METER_ITEM_ID),
-    )).limit(1)
-  if (!answer?.value) return null
-  const parsed = Number(answer.value.replace(",", "."))
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null
-}
-
 /** Deriva un hallazgo a CAPA común con prioridad y plazo según su criticidad. */
 export async function createFindingCapa(input: unknown, access: InspectionAccess) {
   const data = z.object({
@@ -902,45 +870,7 @@ export async function createFindingCapa(input: unknown, access: InspectionAccess
     if (!updated) throw new Error("No se pudo enlazar la acción CAPA.")
     await history(tx, { entityType: "finding", entityId: data.findingId, worksiteId: row.run.worksiteId, changeType: "capa_linked", reason: data.actionDescription, actorUserId: access.userId })
 
-    // Mantención correctiva automática. Se engancha acá y no en `completeInspectionRun`
-    // porque completar borra y recrea los hallazgos abiertos sin CAPA: colgarlo
-    // de ahí dejaría órdenes huérfanas cada vez que alguien reabre y vuelve a
-    // cerrar. Derivar, en cambio, es el acto deliberado que confirma el hallazgo
-    // y, cuando el sujeto es un equipo, debe abrir siempre su trabajo correctivo.
-    let maintenanceId: string | null = null
-    if (row.run.subjectVehicleId) {
-      const meter = await readMeterFromRun(tx, row.run.id)
-      const [vehicle] = await tx.select({ meterType: fuelVehicles.meterType, worksiteId: fuelVehicles.worksiteId })
-        .from(fuelVehicles).where(eq(fuelVehicles.id, row.run.subjectVehicleId)).limit(1)
-      // El permiso se validó contra la faena de la inspección, pero la mantención
-      // se escribe en la faena del equipo. Si el equipo ya fue trasladado, derivar
-      // crearía una orden en una faena que este actor no autorizó.
-      if (!vehicle) throw new Error("El equipo de la inspección ya no existe.")
-      if (vehicle.worksiteId !== row.run.worksiteId) {
-        throw new Error("El equipo pertenece a otra faena; actualiza la inspección antes de derivar la mantención.")
-      }
-      maintenanceId = await createMaintenanceRecordWithClient(tx, {
-        vehicleId: row.run.subjectVehicleId,
-        supplierId: "",
-        costCenterId: "",
-        // El plazo de la CAPA manda: la reparación y su acción correctiva
-        // vencen el mismo día, o el taller y Prevención llevan dos calendarios.
-        maintenanceDate: capa.targetDate,
-        maintenanceType: "correctiva",
-        status: "scheduled",
-        odometerReading: vehicle.meterType === "odometer" ? meter : null,
-        hourMeterReading: vehicle.meterType === "hour_meter" ? meter : null,
-        netAmount: 0,
-        taxAmount: 0,
-        totalAmount: 0,
-        documentNumber: "",
-        documentName: "",
-        notes: `Deriva de ${row.run.code} · ${row.finding.description}`,
-        inspectionFindingId: data.findingId,
-      }, { actorUserId: access.userId, vehicle })
-    }
-
-    return { finding: updated, capaId: capa.id, maintenanceId, run: row.run, criticality: row.finding.criticality }
+    return { finding: updated, capaId: capa.id, run: row.run, criticality: row.finding.criticality }
   })
 
   // Propuesta de fuera de servicio: se avisa, no se escribe. Bloquear el equipo

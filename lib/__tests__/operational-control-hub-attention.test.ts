@@ -25,14 +25,12 @@ vi.mock("@/db", async () => {
   const { getTableName } = await import("drizzle-orm")
   return {
     db: {
-      select: (projection: Record<string, unknown>) => {
+      select: () => {
         let key = ""
         const chain: Record<string, unknown> = {}
         chain.from = (table: Parameters<typeof getTableName>[0]) => {
           const name = getTableName(table)
-          // `maintenance_records` se consulta dos veces: el agregado por
-          // vehículo del período y el conteo de OT abiertas (sin `vehicleId`).
-          key = name === "maintenance_records" && !("vehicleId" in projection) ? "maintenance_records:abiertas" : name
+          key = name
           mocks.issued.push(key)
           return chain
         }
@@ -106,7 +104,6 @@ beforeEach(() => {
   mocks.rowsByQuery.set("fleet_vehicle_documents", [
     { vehicleId: "solo-documento", documentType: "Seguro", expiresAt: "2026-09-30" },
   ])
-  mocks.rowsByQuery.set("maintenance_records:abiertas", [{ count: 7 }])
 })
 
 afterEach(() => {
@@ -114,8 +111,8 @@ afterEach(() => {
 })
 
 describe("getOperationalControlHub · atención", () => {
-  it("entrega los tres conteos con la sesión que ve flota y mantenciones", async () => {
-    const hub = await getOperationalControlHub(session("flota:view", "mantenciones:view"))
+  it("entrega los conteos de flota y documentos", async () => {
+    const hub = await getOperationalControlHub(session("flota:view"))
 
     expect(hub.attention.stoppedVehicles).toEqual({ total: 3, inMaintenance: 2, outOfService: 1 })
     expect(hub.attention.fleetDocuments).toEqual({
@@ -125,22 +122,20 @@ describe("getOperationalControlHub · atención", () => {
       expired: 2,
       expiringSoon: 1,
     })
-    expect(hub.attention.openWorkOrders).toBe(7)
     // Por defecto (la página) las consultas de atención sí se emiten.
     expect(mocks.issued).toContain("fleet_vehicle_documents")
-    expect(mocks.issued).toContain("maintenance_records:abiertas")
+    expect(mocks.issued).not.toContain("maintenance_records")
   })
 
   it("includeAttention: false (la exportación) no consulta atención y conserva activos y métricas", async () => {
     const hub = await getOperationalControlHub(
-      session("flota:view", "mantenciones:view"),
+      session("flota:view"),
       {},
       { includeAttention: false },
     )
 
-    expect(hub.attention).toEqual({ stoppedVehicles: null, fleetDocuments: null, openWorkOrders: null })
+    expect(hub.attention).toEqual({ stoppedVehicles: null, fleetDocuments: null })
     expect(mocks.issued).not.toContain("fleet_vehicle_documents")
-    expect(mocks.issued).not.toContain("maintenance_records:abiertas")
     expect(mocks.fleetSettings).not.toHaveBeenCalled()
     // Lo que la exportación sí usa sigue llegando.
     expect(mocks.issued).toContain("fuel_vehicles")
@@ -148,43 +143,31 @@ describe("getOperationalControlHub · atención", () => {
     expect(hub.metrics).toBeDefined()
   })
 
-  it("no consulta ni devuelve lo que la sesión no puede ver", async () => {
-    const maintenanceOnly = await getOperationalControlHub(session("mantenciones:view"))
-    expect(maintenanceOnly.attention.stoppedVehicles).toBeNull()
-    expect(maintenanceOnly.attention.fleetDocuments).toBeNull()
-    expect(maintenanceOnly.attention.openWorkOrders).toBe(7)
-    expect(mocks.issued).not.toContain("fleet_vehicle_documents")
+  it("el permiso retirado ya no abre el centro de control", async () => {
+    await expect(getOperationalControlHub(session("mantenciones:view"))).rejects.toThrow("Sin permisos para Control operacional")
+    expect(mocks.issued).toEqual([])
+  })
 
-    mocks.issued.length = 0
+  it("un usuario de inspecciones no recibe capacidades de flota", async () => {
+    const inspectionOnly = await getOperationalControlHub(session("prevention:inspections:view"))
+    expect(inspectionOnly.attention).toEqual({ stoppedVehicles: null, fleetDocuments: null })
+    expect(mocks.issued).toContain("prevention_inspection_runs")
+    expect(mocks.issued).not.toContain("fleet_vehicle_documents")
+  })
+
+  it("un usuario de flota no consulta tablas retiradas", async () => {
     const fleetOnly = await getOperationalControlHub(session("flota:view"))
-    expect(fleetOnly.attention.openWorkOrders).toBeNull()
     expect(fleetOnly.attention.stoppedVehicles?.total).toBe(3)
-    expect(mocks.issued).not.toContain("maintenance_records:abiertas")
+    expect(mocks.issued).not.toContain("maintenance_records")
   })
 
   it("un conteo que falla queda en null y no tumba el panel ni los demás conteos", async () => {
     mocks.failing.add("fleet_vehicle_documents")
-    mocks.failing.add("maintenance_records:abiertas")
-
-    const hub = await getOperationalControlHub(session("flota:view", "mantenciones:view"))
+    const hub = await getOperationalControlHub(session("flota:view"))
 
     expect(hub.attention.fleetDocuments).toBeNull()
-    expect(hub.attention.openWorkOrders).toBeNull()
     expect(hub.attention.stoppedVehicles?.total).toBe(3)
     expect(hub.assets).toHaveLength(5)
-    expect(mocks.logError).toHaveBeenCalledTimes(2)
-  })
-
-  it("el backlog del período no es el conteo de OT abiertas de ahora", async () => {
-    // El agregado del período sólo ve las OT fechadas en el rango (aquí, 2); el
-    // tile cuenta todas las abiertas (7) porque `/mantenciones?status=abiertas` no filtra por fecha.
-    mocks.rowsByQuery.set("maintenance_records", [
-      { vehicleId: "operativo", count: 2, openCount: 2, completedCorrective: 0, downtimeHours: 0, correctiveDowntimeHours: 0, cost: 0, preventiveCompleted: 0, preventiveDue: 0 },
-    ])
-
-    const hub = await getOperationalControlHub(session("flota:view", "mantenciones:view"))
-
-    expect(hub.metrics.backlog).toBe(2)
-    expect(hub.attention.openWorkOrders).toBe(7)
+    expect(mocks.logError).toHaveBeenCalledOnce()
   })
 })

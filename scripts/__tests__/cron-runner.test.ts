@@ -7,6 +7,18 @@ function jsonResponse(status: number, payload: unknown) {
 }
 
 describe("cron runner", () => {
+  it("does not call the retired maintenance reminders job", async () => {
+    const fetchImpl = vi.fn()
+    const exitCode = await runCronJob("maintenance-reminders", {
+      secret: "cron-secret",
+      log: vi.fn(),
+      fetchImpl,
+    })
+
+    expect(exitCode).toBe(1)
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
+
   it("maps the shared sync contract to the documented exit codes", async () => {
     const log = vi.fn()
     const conflict = await runCronJob("dte", {
@@ -191,12 +203,7 @@ describe("cron runner", () => {
   })
 })
 
-/*
- * Cada ruta que llama el runner declara `ok` en sus respuestas. `ti-alerts` y
- * `maintenance-reminders` no lo hacían y el runner daba por fallida cada
- * corrida (DTE_CRON_RUNNER_CONTRACT) aunque el trabajo se hubiera hecho: en el
- * log del scheduler una falla real no se distinguía de una corrida buena.
- */
+/* Cada ruta que llama el runner declara `ok` en sus respuestas. */
 describe("rutas de cron que llama el runner", () => {
   it("toda respuesta con `outcome` declara también `ok`", async () => {
     const { readFileSync } = await import("node:fs")

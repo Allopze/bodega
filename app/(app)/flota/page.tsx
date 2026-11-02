@@ -32,7 +32,6 @@ export default async function FlotaPage({
   catch { redirect("/forbidden") }
   const canViewCosts = can(session, "combustibles:view_costs")
   const canViewFuel = can(session, "combustibles:view")
-  const canViewMaintenance = can(session, "mantenciones:view")
 
   const fleetSettings = await getFleetAdminSettings()
   const sp = await searchParams
@@ -77,9 +76,8 @@ export default async function FlotaPage({
   // Sobre el conjunto filtrado, no sobre el total: con un filtro activo la fila
   // de cifras contradecía a la tabla que tiene debajo.
   const active = pageData.summary.active
-  const totalCost = pageData.summary.totalOperationalCost
+  const totalFuelAmount = pageData.summary.totalFuelAmount
   const totalLiters = pageData.summary.totalLiters
-  const maintenanceCount = pageData.summary.maintenanceCount
 
   const expiredVehicles = pageData.matching.filter((vehicle) => vehicle.nextExpiryDate && vehicle.nextExpiryDate < today)
   const expiringSoon = pageData.matching.filter((vehicle) =>
@@ -87,21 +85,18 @@ export default async function FlotaPage({
     vehicle.nextExpiryDate >= today &&
     vehicle.nextExpiryDate <= warningWindowEnd,
   )
-  // El servicio agrega combustible y mantenciones de los últimos 12 meses
-  // (lib/services/fleet.ts): la etiqueta lo dice para que la cifra no se lea
-  // como el histórico completo del vehículo.
+  // El servicio agrega combustible de los últimos 12 meses.
   const summaryStats: SummaryStat[] = [
     { key: "active", label: "Vehículos activos", value: active },
-    ...(totalCost != null ? [{ key: "cost", label: "Costo operacional (12 meses)", value: formatCLP(totalCost) }] : []),
+    ...(totalFuelAmount != null ? [{ key: "fuelCost", label: "Costo combustible (12 meses)", value: formatCLP(totalFuelAmount) }] : []),
     ...(totalLiters != null ? [{ key: "liters", label: "Litros registrados (12 meses)", value: formatNumber(totalLiters) }] : []),
-    ...(maintenanceCount != null ? [{ key: "maintenance", label: "Mantenciones (12 meses)", value: maintenanceCount }] : []),
   ]
 
   return (
     <PageContainer>
       <PageHeader
         title="Vehículos"
-        description={canViewCosts && (canViewFuel || canViewMaintenance) ? "Catálogo operativo de vehículos con costos autorizados, mantenciones, lecturas y vencimientos." : "Catálogo operativo de vehículos, mantenciones, lecturas y vencimientos."}
+        description={canViewCosts && canViewFuel ? "Catálogo operativo de vehículos con costos de combustible autorizados, lecturas y vencimientos." : "Catálogo operativo de vehículos, lecturas y vencimientos."}
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Control operacional", href: "/control-operacional" },
@@ -158,7 +153,7 @@ export default async function FlotaPage({
           <CardTitle className="text-base">Vehículos</CardTitle>
         </CardHeader>
         <CardContent className="overflow-x-auto">
-          <FleetTable vehicles={pageData.rows} hasAnyVehicle={pageData.index.length > 0} canViewCosts={canViewCosts} canViewFuel={canViewFuel} canViewMaintenance={canViewMaintenance} />
+          <FleetTable vehicles={pageData.rows} hasAnyVehicle={pageData.index.length > 0} canViewCosts={canViewCosts} canViewFuel={canViewFuel} />
         </CardContent>
         <ServerPagination pagination={pagination} hrefForPage={pageHref} />
       </Card>

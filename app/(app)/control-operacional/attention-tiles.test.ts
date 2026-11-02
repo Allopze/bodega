@@ -1,19 +1,16 @@
 import { describe, expect, it } from "vitest"
 import { FLEET_STOPPED_STATUSES, filterFleetOverviewRows } from "@/lib/fleet-overview-filters"
-import { MAINTENANCE_OPEN_STATUSES, resolveMaintenanceStatusFilter } from "@/lib/validation/maintenance"
 import {
   ATTENTION_HREFS,
   documentsTile,
   fuelReviewTile,
   stoppedTile,
-  workOrdersTile,
 } from "./attention-tiles"
 
 describe("destinos de los tiles", () => {
   it("cada tile enlaza a su subconjunto con la sintaxis exacta de la lista", () => {
     expect(ATTENTION_HREFS).toEqual({
       stopped: "/flota?estado=detenidos",
-      workOrders: "/mantenciones?status=abiertas",
       documents: "/flota?vencimiento=vencidos",
       fuel: "/combustibles/revision",
     })
@@ -31,9 +28,6 @@ describe("destinos de los tiles", () => {
       dates,
     )
     expect(accepted.map((r) => r.operationalStatus)).toEqual([...FLEET_STOPPED_STATUSES])
-
-    const status = new URL(ATTENTION_HREFS.workOrders, "http://x").searchParams.get("status")
-    expect(resolveMaintenanceStatusFilter(status)).toEqual(MAINTENANCE_OPEN_STATUSES)
 
     const vencimiento = new URL(ATTENTION_HREFS.documents, "http://x").searchParams.get("vencimiento")
     expect(vencimiento).toBe("vencidos")
@@ -65,20 +59,6 @@ describe("stoppedTile", () => {
 
   it("si no se pudo calcular lo dice en vez de pintar 0", () => {
     expect(stoppedTile(null, 10)).toMatchObject({ value: "Sin dato", detail: "No se pudo calcular", tone: "neutral" })
-  })
-})
-
-describe("workOrdersTile", () => {
-  it("muestra el total abierto", () => {
-    expect(workOrdersTile(12)).toMatchObject({ value: "12", detail: "Programadas o en curso", tone: "neutral" })
-  })
-
-  it("sin OT abiertas lo dice en lenguaje de usuario", () => {
-    expect(workOrdersTile(0)).toMatchObject({ value: "Ninguna", detail: "Sin OT programadas ni en curso" })
-  })
-
-  it("si no se pudo calcular lo dice", () => {
-    expect(workOrdersTile(null)).toMatchObject({ value: "Sin dato", detail: "No se pudo calcular" })
   })
 })
 
@@ -157,11 +137,9 @@ describe("A1: ningún tile pinta un 0 pelado", () => {
     const empties = [
       stoppedTile({ total: 0, inMaintenance: 0, outOfService: 0 }, 5),
       stoppedTile({ total: 0, inMaintenance: 0, outOfService: 0 }, 0),
-      workOrdersTile(0),
       documentsTile({ expired: 0, expiringSoon: 0, warningDays: 30 }),
       fuelReviewTile({ flagged: 0, anomalies: 0 }),
       stoppedTile(null, 0),
-      workOrdersTile(null),
       documentsTile(null),
       fuelReviewTile({ flagged: null, anomalies: null }),
     ]

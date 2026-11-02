@@ -35,7 +35,6 @@ export default async function AnaliticaPage({
   catch { redirect("/forbidden") }
   const canViewFuel = can(session, "combustibles:view")
   const canViewFuelCosts = canViewFuel && can(session, "combustibles:view_costs")
-  const canViewMaintenanceCosts = canViewFuelCosts && can(session, "mantenciones:view")
   const canViewPurchasing = can(session, "purchasing:view")
   const canViewDeliveries = can(session, "deliveries:view")
   const canViewReports = can(session, "reports:view")
@@ -179,10 +178,10 @@ export default async function AnaliticaPage({
           </Card>
           {canViewFuelCosts && <Card>
             <CardHeader>
-              <CardTitle>{canViewMaintenanceCosts ? "Vehículos con mayor costo operacional" : "Vehículos con mayor gasto de combustible"}</CardTitle>
+              <CardTitle>Vehículos con mayor gasto de combustible</CardTitle>
             </CardHeader>
             <CardContent>
-              <RankingBarChart data={data.vehicleCosts} labelKey="plate" valueKey={canViewMaintenanceCosts ? "totalOperationalCost" : "totalFuelAmount"} emptyLabel="Sin cargas de combustible por vehículo en el período." />
+              <RankingBarChart data={data.vehicleCosts} labelKey="plate" valueKey="totalFuelAmount" emptyLabel="Sin cargas de combustible por vehículo en el período." />
             </CardContent>
           </Card>}
         </section>

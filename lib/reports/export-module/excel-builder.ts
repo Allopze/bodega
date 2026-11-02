@@ -144,7 +144,7 @@ export function sanitizeCell(value: unknown): string | number | boolean {
  * Serializa el workbook a base64 aplicando `sanitizeCell` a cada celda.
  *
  * Las acciones de exportación que arman su workbook a mano (flota,
- * mantenciones, control operacional, bitácora/TAE de combustibles) pasaban las
+ * mantención de equipos, control operacional, bitácora/TAE de combustibles) pasaban las
  * celdas sin sanitizar y repetían el par `writeBuffer` → `Buffer.from(...).
  * toString("base64")` en cada archivo. Este es el punto único de salida.
  */

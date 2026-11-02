@@ -12,68 +12,29 @@ const asset: OperationalAsset = {
   worksiteName: "Faena Norte",
   operationalStatus: "mantencion",
   operationalStatusLabel: "En mantención",
-  capabilities: ["fuel", "inspections", "maintenance"],
-  maintenanceCount: 3,
-  openMaintenanceCount: 1,
+  capabilities: ["fuel", "inspections"],
   inspectionCount: 2,
-  downtimeHours: 5.5,
-  maintenanceCost: 120000,
 }
 
 function keys(cols: ReturnType<typeof buildOperationalAssetExportColumns>) {
-  return cols.map((c) => c.key)
+  return cols.map((column) => column.key)
 }
 
-describe("buildOperationalAssetExportColumns", () => {
-  it("incluye todas las columnas con las tres capacidades", () => {
-    expect(keys(buildOperationalAssetExportColumns(true, true, true))).toEqual([
-      "key", "kind", "code", "name", "worksite", "status",
-      "maintenance", "backlog", "inspections", "downtime", "cost",
+describe("operational-control export", () => {
+  it("exports only fleet fields and permitted inspection counts", () => {
+    expect(keys(buildOperationalAssetExportColumns(true))).toEqual([
+      "key", "kind", "code", "name", "worksite", "status", "inspections",
     ])
-  })
-
-  it("deja sólo las columnas base sin capacidades", () => {
-    expect(keys(buildOperationalAssetExportColumns(false, false, false))).toEqual([
+    expect(keys(buildOperationalAssetExportColumns(false))).toEqual([
       "key", "kind", "code", "name", "worksite", "status",
     ])
   })
 
-  it("incluye inspecciones sin mantención ni costos", () => {
-    expect(keys(buildOperationalAssetExportColumns(false, true, false))).toEqual([
-      "key", "kind", "code", "name", "worksite", "status", "inspections",
-    ])
-  })
-
-  it("oculta el costo de mantención sin vista de mantención, aunque tenga permiso de costos", () => {
-    expect(keys(buildOperationalAssetExportColumns(false, true, true))).toEqual([
-      "key", "kind", "code", "name", "worksite", "status", "inspections",
-    ])
-  })
-})
-
-describe("buildOperationalAssetExportRow", () => {
-  it("exporta el estado con etiqueta humana, no el enum crudo", () => {
-    const row = buildOperationalAssetExportRow(asset, true, true, true)
-    expect(row.status).toBe("En mantención")
-  })
-
-  it("omite claves de mantención, inspección y costo sin capacidad", () => {
-    const row = buildOperationalAssetExportRow(asset, false, false, false)
-    expect(row).not.toHaveProperty("maintenance")
-    expect(row).not.toHaveProperty("backlog")
-    expect(row).not.toHaveProperty("inspections")
-    expect(row).not.toHaveProperty("downtime")
-    expect(row).not.toHaveProperty("cost")
-  })
-
-  it("omite la clave de costo sin vista de mantención, aunque tenga permiso de costos", () => {
-    const row = buildOperationalAssetExportRow(asset, false, true, true)
-    expect(row).not.toHaveProperty("cost")
-  })
-
-  it("incluye costo null para equipos de servicio", () => {
-    const equipment: OperationalAsset = { ...asset, kind: "service_equipment", key: "service_equipment:e1", maintenanceCost: null }
-    const row = buildOperationalAssetExportRow(equipment, true, true, true)
-    expect(row.cost).toBeNull()
+  it("exports the human status label and omits inspection data without access", () => {
+    expect(buildOperationalAssetExportRow(asset, true)).toMatchObject({
+      status: "En mantención",
+      inspections: 2,
+    })
+    expect(buildOperationalAssetExportRow(asset, false)).not.toHaveProperty("inspections")
   })
 })

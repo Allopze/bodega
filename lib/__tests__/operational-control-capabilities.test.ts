@@ -12,7 +12,6 @@ describe("operationalControlCapabilities", () => {
       canViewFuel: false,
       canViewTae: false,
       canViewFleet: true,
-      canViewMaintenance: false,
       canViewCosts: false,
     })
   })

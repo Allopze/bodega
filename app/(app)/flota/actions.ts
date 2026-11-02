@@ -134,7 +134,6 @@ export async function exportFleetXlsxAction(filters: FleetOverviewFilters = {}) 
   const exportRows = filtered.slice(0, FLEET_EXPORT_LIMIT)
   const canViewCosts = can(session, "combustibles:view_costs")
   const canViewFuel = can(session, "combustibles:view")
-  const canViewMaintenance = can(session, "mantenciones:view")
   const ExcelJS = await import("exceljs")
   const workbook = new ExcelJS.Workbook()
   const sheet = workbook.addWorksheet("Flota")
@@ -152,13 +151,7 @@ export async function exportFleetXlsxAction(filters: FleetOverviewFilters = {}) 
       { header: "Litros (12 meses)", key: "liters", width: 18 },
       { header: "Cargas (12 meses)", key: "loads", width: 18 },
     ] : []),
-    ...(canViewMaintenance ? [
-      { header: "Mantenciones (12 meses)", key: "maintenanceCount", width: 22 },
-      { header: "Última mantención", key: "lastMaintenance", width: 18 },
-    ] : []),
     ...(canViewCosts && canViewFuel ? [{ header: "Costo combustible", key: "fuelCost", width: 18 }] : []),
-    ...(canViewCosts && canViewMaintenance ? [{ header: "Costo mantenciones", key: "maintenanceCost", width: 20 }] : []),
-    ...(canViewCosts && canViewFuel && canViewMaintenance ? [{ header: "Costo operacional", key: "operationalCost", width: 20 }] : []),
   ]
   for (const row of exportRows) {
     sheet.addRow({
@@ -173,17 +166,13 @@ export async function exportFleetXlsxAction(filters: FleetOverviewFilters = {}) 
       expiry: row.nextExpiryDate ?? "",
       liters: row.totalLiters,
       loads: row.loadCount,
-      maintenanceCount: row.maintenanceCount,
-      lastMaintenance: row.lastMaintenanceDate,
       fuelCost: row.totalFuelAmount,
-      maintenanceCost: row.totalMaintenanceAmount,
-      operationalCost: row.totalOperationalCost,
     })
   }
   sheet.getRow(1).font = { bold: true }
   sheet.views = [{ state: "frozen", ySplit: 1 }]
   sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: sheet.columns.length } }
-  for (const key of ["fuelCost", "maintenanceCost", "operationalCost"]) {
+  for (const key of ["fuelCost"]) {
     if (sheet.getColumn(key).number > 0) sheet.getColumn(key).numFmt = "$#,##0"
   }
   addExportMetadataSheet(workbook, session, { filters, rowCount: exportRows.length })

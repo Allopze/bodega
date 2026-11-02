@@ -22,22 +22,10 @@ describe("resolveOperationalControlPeriod", () => {
 })
 
 describe("calculateOperationalControlMetrics", () => {
-  it("calcula MTTR sólo con la detención de correctivas completadas", () => {
+  it("calcula disponibilidad con las horas operativas sobre las registradas", () => {
     expect(calculateOperationalControlMetrics({
       totalIntervalHours: 1_000,
       operativeHours: 900,
-      downtimeHours: 140,
-      correctiveDowntimeHours: 40,
-      completedCorrective: 2,
-      preventiveCompleted: 8,
-      preventiveDue: 10,
-      backlog: 3,
-      maintenanceCost: 500_000,
-      canViewCosts: true,
-    })).toMatchObject({
-      mttrHours: 20,
-      mtbfHours: 450,
-      downtimeHours: 140,
-    })
+    })).toEqual({ availabilityPercent: 90 })
   })
 })

@@ -314,9 +314,6 @@ export const pgliteTestFiles = [
   "lib/__tests__/stock-export.test.ts",
   "lib/__tests__/stock-availability-pglite.test.ts",
   "lib/__tests__/stock-service.test.ts",
-  // MNT-002: el egreso del repuesto consumido en una OT se prueba contra
-  // Postgres real porque lo que hay que demostrar es el saldo resultante.
-  "lib/__tests__/maintenance-part-stock.test.ts",
   "lib/__tests__/worker-stock-delivery.test.ts",
   "lib/__tests__/worker-position-backfill-pglite.test.ts",
   "lib/__tests__/worker-positions-service.test.ts",
@@ -369,7 +366,8 @@ export const pgliteTestFiles = [
   "lib/combustibles/__tests__/copec-coverage-store.test.ts",
   "lib/combustibles/__tests__/provider-mappings.test.ts",
   "lib/combustibles/__tests__/tae-receipts-card.test.ts",
-  "lib/__tests__/inspection-maintenance-lifecycle-pglite.test.ts",
+  "lib/__tests__/inspection-capa-lifecycle-pglite.test.ts",
+  "lib/__tests__/retired-mantenciones-pglite.test.ts",
   "lib/__tests__/report-export-solicitudes-scope.test.ts",
   "lib/__tests__/substitutions.test.ts",
   // T4 (evidencia e historial): bitácora de envíos, sha256 y segregación.

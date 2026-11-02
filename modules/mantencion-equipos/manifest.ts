@@ -3,12 +3,9 @@ import type { ModuleManifest } from "@/modules/manifest-types"
 /**
  * Mantención de equipos (preventiva y correctiva), 2026-10-28.
  *
- * Independiente del módulo `mantenciones` (órdenes de trabajo con costos): no
- * comparte rutas, tablas ni permisos con él. El mecánico registra desde la app
- * `/m/mantencion`, una PWA que se instala en el teléfono y NO está en el menú de
- * la plataforma (se reparte por QR desde Equipos y Dispositivos); jefatura y
- * supervisión revisan en `/mantencion/*`. Los permisos se validan siempre en el servidor; la
- * navegación sólo los refleja.
+ * El mecánico registra desde la PWA `/m/mantencion`, distribuida por QR desde
+ * Equipos y Dispositivos; jefatura y supervisión revisan en `/mantencion/*`.
+ * Los permisos se validan siempre en el servidor; la navegación sólo los refleja.
  */
 export const mantencionEquiposModule = {
   id: "mantencion_equipos",

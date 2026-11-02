@@ -15,10 +15,8 @@ type VehicleRow = Awaited<ReturnType<typeof getFleetOverview>>[number]
 
 const formatNumber = (value: number) => formatQty(value, undefined, { maximumFractionDigits: 1 })
 
-export function FleetTable({ vehicles, hasAnyVehicle, canViewCosts, canViewFuel, canViewMaintenance }: { vehicles: VehicleRow[]; hasAnyVehicle: boolean; canViewCosts: boolean; canViewFuel: boolean; canViewMaintenance: boolean }) {
-  const showCostPerDistance = canViewCosts && canViewFuel && canViewMaintenance && vehicles.some((v) => v.costPerKm != null || v.costPerHour != null)
+export function FleetTable({ vehicles, hasAnyVehicle, canViewCosts, canViewFuel }: { vehicles: VehicleRow[]; hasAnyVehicle: boolean; canViewCosts: boolean; canViewFuel: boolean }) {
   const showMeterReading = canViewFuel && vehicles.some((v) => v.lastOdometerReading != null || v.lastHourMeterReading != null)
-  const showLastMaintenance = canViewMaintenance && vehicles.some((v) => v.lastMaintenanceDate != null)
 
   const columns = React.useMemo(() => [
     { key: "plate", label: "Vehículo", sortable: true },
@@ -27,12 +25,8 @@ export function FleetTable({ vehicles, hasAnyVehicle, canViewCosts, canViewFuel,
     { key: "responsibleName", label: "Responsable", sortable: true },
     { key: "nextExpiryDate", label: "Próximo vencimiento", sortable: true },
     ...(canViewCosts && canViewFuel ? [{ key: "totalFuelAmount", label: "Combustible", sortable: true, numeric: true }] : []),
-    ...(canViewCosts && canViewMaintenance ? [{ key: "totalMaintenanceAmount", label: "Mantenciones", sortable: true, numeric: true }] : []),
-    ...(canViewCosts && canViewFuel && canViewMaintenance ? [{ key: "totalOperationalCost", label: "Total", sortable: true, numeric: true }] : []),
-    ...(showCostPerDistance ? [{ key: "_costPerDistance", label: "$/km·h", sortable: false, numeric: true }] : []),
     ...(showMeterReading ? [{ key: "_meterReading", label: "Km/Hr", sortable: false, numeric: true }] : []),
-    ...(showLastMaintenance ? [{ key: "lastMaintenanceDate", label: "Última mantención", sortable: true }] : []),
-  ], [canViewCosts, canViewFuel, canViewMaintenance, showCostPerDistance, showMeterReading, showLastMaintenance])
+  ], [canViewCosts, canViewFuel, showMeterReading])
 
   return (
     <DataTable
@@ -60,7 +54,6 @@ export function FleetTable({ vehicles, hasAnyVehicle, canViewCosts, canViewFuel,
             <div><dt className="text-[var(--color-text-subtle)]">Faena</dt><dd>{vehicle.worksiteName}</dd></div>
             <div><dt className="text-[var(--color-text-subtle)]">Responsable</dt><dd>{vehicle.responsibleName ?? "—"}</dd></div>
             <div><dt className="text-[var(--color-text-subtle)]">Vencimiento</dt><dd>{vehicle.nextExpiryDate ? formatDate(vehicle.nextExpiryDate) : "—"}</dd></div>
-            {canViewMaintenance && <div><dt className="text-[var(--color-text-subtle)]">Última mantención</dt><dd>{vehicle.lastMaintenanceDate ? formatDate(vehicle.lastMaintenanceDate) : "—"}</dd></div>}
           </dl>
           <Button asChild size="sm" variant="secondary" className="mt-3 w-full">
             <Link href={`/flota/${vehicle.id}`}>Ver ficha del equipo</Link>
@@ -83,15 +76,6 @@ export function FleetTable({ vehicles, hasAnyVehicle, canViewCosts, canViewFuel,
             <TableCell>{vehicle.responsibleName ?? "—"}</TableCell>
             <TableCell>{vehicle.nextExpiryDate ? formatDate(vehicle.nextExpiryDate) : "—"}</TableCell>
             {canViewCosts && canViewFuel && <TableCell className="text-right font-mono">{formatCLP(vehicle.totalFuelAmount ?? 0)}</TableCell>}
-            {canViewCosts && canViewMaintenance && <TableCell className="text-right font-mono">{formatCLP(vehicle.totalMaintenanceAmount ?? 0)}</TableCell>}
-            {canViewCosts && canViewFuel && canViewMaintenance && <TableCell className="text-right font-mono font-semibold">{formatCLP(vehicle.totalOperationalCost ?? 0)}</TableCell>}
-            {showCostPerDistance && <TableCell className="text-right font-mono text-xs text-[var(--color-text-muted)]">
-              {vehicle.costPerKm != null
-                ? `${formatCLP(vehicle.costPerKm)}/km`
-                : vehicle.costPerHour != null
-                  ? `${formatCLP(vehicle.costPerHour)}/h`
-                  : "—"}
-            </TableCell>}
             {showMeterReading && <TableCell className="text-right font-mono">
               {vehicle.lastOdometerReading != null
                 ? `${formatNumber(vehicle.lastOdometerReading)} km`
@@ -99,7 +83,6 @@ export function FleetTable({ vehicles, hasAnyVehicle, canViewCosts, canViewFuel,
                   ? `${formatNumber(vehicle.lastHourMeterReading)} h`
                   : "—"}
             </TableCell>}
-            {showLastMaintenance && <TableCell>{vehicle.lastMaintenanceDate ? formatDate(vehicle.lastMaintenanceDate) : "—"}</TableCell>}
           </FleetTableRow>
         )
       }}

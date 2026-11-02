@@ -729,7 +729,7 @@ function NewRunForm({ templates, worksites, assignees, subjectsByWorksite, initi
             ? "Elige primero la faena."
             : requiresContainer
               ? "Obligatorio: se inspecciona por contenedor del catálogo."
-              : "Opcional. Un equipo del inventario permite derivar una falla a mantención."}
+              : "Opcional. Vincula la inspección a un equipo del inventario."}
         />
         {/* El texto libre sólo existe con «Otro»: con un sujeto del inventario o
             sin faena elegida eran dos campos que no aplicaban y que había que

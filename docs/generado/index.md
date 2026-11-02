@@ -33,7 +33,6 @@ activos.
 | [Prevención y SG-SST](./prevention/prevencion.md) | `/prevencion` | ✅ Completo (76/76 — 60 con captura, 16 desde esquema) |
 | [Control operacional](./flota/control-operacional.md) | `/control-operacional` | ✅ Completo |
 | [Flota](./flota/flota.md) | `/flota` | ✅ Completo (4/4) |
-| [Mantenciones](./mantenciones/mantenciones.md) | `/mantenciones` | ✅ Completo (4/4 — 1 desde esquema) |
 | Repuestos | — | ➖ Sin páginas propias (panel embebido en Solicitudes y Compras) |
 | [Combustibles](./combustibles/combustibles.md) | `/combustibles` | ✅ Completo (28/28 — 6 desde esquema) |
 | Servicios | — | ➖ Sin páginas propias (panel embebido en Solicitudes y Compras) |

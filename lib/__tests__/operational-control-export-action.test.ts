@@ -43,23 +43,13 @@ beforeEach(() => {
   mocks.hub.mockResolvedValue({
     period: { from: "2026-07-25", to: "2026-10-22" },
     // Sin consultas de atención, el hub deja sus campos en null.
-    attention: { stoppedVehicles: null, fleetDocuments: null, openWorkOrders: null },
+    attention: { stoppedVehicles: null, fleetDocuments: null },
     assets: [],
-    metrics: {
-      availabilityPercent: null,
-      mttrHours: null,
-      mtbfHours: null,
-      preventiveCompliancePercent: null,
-      downtimeHours: 0,
-      backlog: 0,
-      maintenanceCost: null,
-    },
+    metrics: { availabilityPercent: null },
     sourceHealth: [],
     permissions: {
       canViewFleet: true,
-      canViewMaintenance: false,
       canViewInspections: false,
-      canViewCosts: false,
       canViewFuelImport: false,
       canViewServiceEquipment: false,
     },

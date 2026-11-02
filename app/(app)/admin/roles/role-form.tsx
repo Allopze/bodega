@@ -55,7 +55,6 @@ const MODULE_LABELS: Record<string, string> = {
   warehouse: "Bodega",
   combustibles: "Combustibles",
   flota: "Flota",
-  mantenciones: "Mantenciones",
   prevention: "Prevención",
   sst: "SST",
   pdtp: "PDTP",

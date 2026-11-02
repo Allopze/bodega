@@ -5,7 +5,6 @@ import { DataTable } from "@/components/ui/data-table"
 import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { TableCell, TableRow } from "@/components/ui/table"
-import { formatCLP } from "@/lib/utils"
 import type { OperationalAsset } from "@/lib/services/operational-control"
 
 type Variant = "success" | "signal" | "warning" | "neutral" | "outline"
@@ -24,27 +23,14 @@ function statusVariant(label: string): Variant {
   return "neutral"
 }
 
-const COLUMNS = (canViewCosts: boolean, canViewMaintenance: boolean, canViewInspections: boolean) => {
-  // El costo de mantención requiere ver las OT (`mantenciones:view`) además del
-  // permiso de costos; sin el primero la consulta no carga registros y la
-  // columna mostraría "$0" para todos los activos.
-  const showCost = canViewMaintenance && canViewCosts
+const COLUMNS = (canViewInspections: boolean) => {
   return [
     { key: "code", label: "Código", sortable: true },
     { key: "name", label: "Activo", sortable: true },
     { key: "worksiteName", label: "Faena", sortable: true },
     { key: "operationalStatusLabel", label: "Estado", sortable: true },
-    ...(canViewMaintenance
-      ? [{ key: "openMaintenanceCount", label: "OT abiertas (período)", sortable: true, numeric: true }]
-      : []),
     ...(canViewInspections
       ? [{ key: "inspectionCount", label: "Inspecciones", sortable: true, numeric: true }]
-      : []),
-    ...(canViewMaintenance
-      ? [{ key: "downtimeHours", label: "Detención (h)", sortable: true, numeric: true }]
-      : []),
-    ...(showCost
-      ? [{ key: "maintenanceCost", label: "Costo mantenciones", sortable: true, numeric: true }]
       : []),
     { key: "_action", label: "", sortable: false, numeric: true },
   ]
@@ -58,17 +44,11 @@ function assetHref(asset: OperationalAsset): string {
 
 export function OperationalAssetsTable({
   assets,
-  canViewCosts,
-  canViewMaintenance,
   canViewInspections,
 }: {
   assets: OperationalAsset[]
-  canViewCosts: boolean
-  canViewMaintenance: boolean
   canViewInspections: boolean
 }) {
-  const showCost = canViewMaintenance && canViewCosts
-
   const renderMobileCard = (asset: OperationalAsset) => (
     <article className="rounded-2xl border border-[var(--color-border)] bg-white p-4">
       <div className="flex justify-between gap-3">
@@ -79,22 +59,10 @@ export function OperationalAssetsTable({
         <MetaBadge meta={{ label: asset.operationalStatusLabel, variant: statusVariant(asset.operationalStatusLabel) }} />
       </div>
       <dl className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs">
-        {canViewMaintenance && (
-          <div>
-            <dt className="text-[var(--color-text-subtle)]">OT abiertas del período</dt>
-            <dd>{asset.openMaintenanceCount}</dd>
-          </div>
-        )}
         {canViewInspections && (
           <div>
             <dt className="text-[var(--color-text-subtle)]">Inspecciones</dt>
             <dd>{asset.inspectionCount}</dd>
-          </div>
-        )}
-        {canViewMaintenance && (
-          <div>
-            <dt className="text-[var(--color-text-subtle)]">Detención</dt>
-            <dd>{asset.downtimeHours.toLocaleString("es-CL", { maximumFractionDigits: 1 })} h</dd>
           </div>
         )}
       </dl>
@@ -117,28 +85,8 @@ export function OperationalAssetsTable({
       <TableCell>
         <MetaBadge meta={{ label: asset.operationalStatusLabel, variant: statusVariant(asset.operationalStatusLabel) }} />
       </TableCell>
-      {canViewMaintenance && (
-        <TableCell className="text-right font-mono">{asset.openMaintenanceCount}</TableCell>
-      )}
       {canViewInspections && (
         <TableCell className="text-right font-mono">{asset.inspectionCount}</TableCell>
-      )}
-      {canViewMaintenance && (
-        <TableCell className="text-right font-mono">
-          {asset.downtimeHours.toLocaleString("es-CL", { maximumFractionDigits: 1 })} h
-        </TableCell>
-      )}
-      {showCost && (
-        <TableCell className="text-right font-mono">
-          {/*
-           * B-05: los instrumentos de servicio no modelan costo. Pintar "$0"
-           * es engañoso en una columna contable. Si el modelo no devolvió
-           * cifra, mostramos "—".
-           */}
-          {asset.kind === "service_equipment" || asset.maintenanceCost == null
-            ? "—"
-            : formatCLP(asset.maintenanceCost)}
-        </TableCell>
       )}
       <TableCell className="text-right">
         <Button asChild size="sm" variant="ghost">
@@ -151,7 +99,7 @@ export function OperationalAssetsTable({
   return (
     <DataTable
       caption="Activos operacionales"
-      columns={COLUMNS(canViewCosts, canViewMaintenance, canViewInspections)}
+      columns={COLUMNS(canViewInspections)}
       rows={assets}
       // M-06: el `searchKeys` apunta a la etiqueta humana del estado
       // (`operationalStatusLabel`) para que la búsqueda del TopBar encuentre

@@ -4,20 +4,18 @@ export function buildAlerts(input: {
   vehicleCosts: VehicleCostRow[]
   topSuppliers: RankingRow[]; eppDeliveries: EppDeliveryRow[]
   totalSpend: number; thresholds: { vehicleMonthlyAnomalyAmount: number; supplierConcentrationPct: number; eppRecurringDeliveryCount: number }
-  detectedAt: string; noData: boolean; includeMaintenanceCosts?: boolean
+  detectedAt: string; noData: boolean
 }): AnalyticsAlert[] {
   const alerts: AnalyticsAlert[] = []
 
-  for (const row of input.vehicleCosts.filter((v) => v.totalOperationalCost >= input.thresholds.vehicleMonthlyAnomalyAmount).slice(0, 3)) {
+  for (const row of input.vehicleCosts.filter((v) => v.totalFuelAmount >= input.thresholds.vehicleMonthlyAnomalyAmount).slice(0, 3)) {
     alerts.push({
       type: "gasto_vehiculo_anomalo",
       severity: "high",
       module: "Vehículos",
       entityLabel: row.plate,
-      reason: `${input.includeMaintenanceCosts ? "Costo operacional" : "Gasto de combustible"} ${row.totalOperationalCost} supera el umbral configurado ${input.thresholds.vehicleMonthlyAnomalyAmount}.`,
-      action: input.includeMaintenanceCosts
-        ? "Revisar combustible, mantenciones e imputaciones asociadas al vehículo."
-        : "Revisar cargas y consumo de combustible asociados al vehículo.",
+      reason: `Gasto de combustible ${row.totalFuelAmount} supera el umbral configurado ${input.thresholds.vehicleMonthlyAnomalyAmount}.`,
+      action: "Revisar cargas y consumo de combustible asociados al vehículo.",
       detectedAt: input.detectedAt,
     })
   }

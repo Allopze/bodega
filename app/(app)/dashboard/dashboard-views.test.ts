@@ -18,7 +18,7 @@ const JEFATURA = [
   "requests:view_all", "purchasing:view", "approvals:approve", "receiving:view",
   "warehouse:view_stock", "deliveries:view", "operations:view_work",
   "prevention:pdtp:view", "prevention:incidents:view", "prevention:capa:view",
-  "combustibles:view", "flota:view", "mantenciones:view",
+  "combustibles:view", "flota:view",
   "prevention:docs:view", "ppa:view",
 ]
 

@@ -23,7 +23,7 @@ export default async function FleetCatalogsPage() {
     <PageContainer width="wide">
       <PageHeader
         title="Catálogos de flota"
-        description="Concentra los catálogos administrativos de vehículos, combustible y mantenciones, y define parámetros por defecto."
+        description="Concentra los catálogos administrativos de vehículos y combustible, y define parámetros por defecto."
         breadcrumb={[
           { label: "Inicio", href: "/dashboard" },
           { label: "Administración", href: "/admin" },

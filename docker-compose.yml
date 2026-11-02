@@ -403,8 +403,6 @@ services:
         */5 * * * * CRON_SECRET="$$CRON_SECRET" FLEET_GPS_CRON_INTERNAL_SECRET="$$FLEET_GPS_CRON_INTERNAL_SECRET" node /app/scripts/cron-runner.mjs fleet-onway-sync >/proc/1/fd/1 2>&1
         # GPS OnWay — retención diaria de puntos y coordenadas detalladas.
         20 4 * * * CRON_SECRET="$$CRON_SECRET" FLEET_GPS_CRON_INTERNAL_SECRET="$$FLEET_GPS_CRON_INTERNAL_SECRET" node /app/scripts/cron-runner.mjs fleet-onway-retention >/proc/1/fd/1 2>&1
-        # Mantenciones — SLA y escalamiento antes del inicio de la jornada.
-        0 6 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs maintenance-reminders >/proc/1/fd/1 2>&1
         # Soporte — alerta diaria a gestores por tickets próximos a vencer o fuera de SLA.
         15 6 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs feedback-sla-reminders >/proc/1/fd/1 2>&1
         # TI — alertas diarias: garantías por vencer, licencias por renovar,

@@ -405,8 +405,8 @@ export function validateAnswerRow(
     const raw = answer.value?.trim() ?? ""
     // "134.122" en el papel son ciento treinta y cuatro mil, no 134,122.
     // `Number()` lo acepta en silencio y el horómetro entra mil veces menor,
-    // que después viaja a `maintenance_records.hourMeterReading`. Se rechaza
-    // el patrón de separador de miles en vez de adivinar cuál quiso decir.
+    // que después puede reutilizarse como lectura de equipo. Se rechaza el
+    // patrón de separador de miles en vez de adivinar cuál quiso decir.
     if (/^\d{1,3}(\.\d{3})+$/.test(raw)) {
       return `"${item.label}": escribe el número sin separador de miles (${raw.replace(/\./g, "")}).`
     }

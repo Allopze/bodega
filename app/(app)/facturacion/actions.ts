@@ -620,8 +620,7 @@ export async function saveContractAction(input: unknown): Promise<ActionResult> 
   }
 
   try {
-    // Mismo contrato que Mantenciones: un centro de costo de otra faena imputa
-    // el contrato a una estructura ajena.
+    // El centro de costo debe pertenecer a la misma faena que el contrato.
     if (data.costCenterId) await assertCostCenterAllowed(db, data.costCenterId, data.worksiteId ?? null)
     const now = new Date().toISOString()
     const values = {

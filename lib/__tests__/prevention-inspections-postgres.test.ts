@@ -7,7 +7,6 @@ import { drizzle } from "drizzle-orm/postgres-js"
 import { migrate } from "drizzle-orm/postgres-js/migrator"
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
 import * as schema from "@/db/schema"
-import type { Session } from "next-auth"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { fieldKindIsScorable, type InspectionItemSpec } from "@/lib/prevention/inspections"
 import { officialInspectionSourceFor } from "@/lib/sst/official-inspection-sources"
@@ -40,11 +39,6 @@ const CATALOGER = { ...AUTHOR, permissions: [...AUTHOR.permissions, "admin:devia
 const APPROVER = { userId: "in-approver", scope: scopeA, permissions: ALL }
 const REVIEWER = { userId: "in-reviewer", scope: scopeA, permissions: ["prevention:inspections:view", "prevention:inspections:review"] }
 const OUTSIDER = { userId: "in-outsider", scope: { mode: "some", ids: ["ws-in-b"] } as WorksiteScope, permissions: ALL }
-/** Mantenciones resuelve alcance con `Session`, no con `InspectionAccess`. */
-const MAINT_SESSION = {
-  user: { id: "in-author", isGlobal: false, worksiteIds: ["ws-in-a"], roles: [], permissions: ["mantenciones:edit"] },
-} as unknown as Session
-
 function getDb() {
   if (!testDb) throw new Error("Test database not initialised")
   return testDb
@@ -724,9 +718,7 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
     }, AUTHOR)
     expect(linked.finding).toMatchObject({ status: "capa_linked" })
     expect(linked.finding.capaActionId).toBeTruthy()
-    // Un hallazgo sin equipo sigue sólo en CAPA: no existe un activo sobre el
-    // cual abrir una orden de taller.
-    expect(linked.maintenanceId).toBeNull()
+    expect(linked).not.toHaveProperty("maintenanceId")
 
     const capa = await getDb().select().from(schema.preventionCapaActions)
       .where(eq(schema.preventionCapaActions.sourceType, "inspection"))
@@ -1153,7 +1145,7 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
     expect(saved[0]).toMatchObject({ actorUserId: "in-author", worksiteId: "ws-in-a" })
   })
 
-  /* ── Taller: equipo de flota como sujeto, hallazgo → CAPA → mantención ──── */
+  /* ── Taller: equipo de flota como sujeto, hallazgo → CAPA ───────────────── */
   describe("Reporte de equipos y derivación al taller", () => {
     let reporteTemplateId = ""
     let reporteRunId = ""
@@ -1229,7 +1221,7 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
       }, AUTHOR)).rejects.toThrow(/separador de miles/i)
     })
 
-    it("deriva la falla de frenos a CAPA crítica y abre la mantención del equipo", async () => {
+    it("deriva la falla crítica a CAPA sin crear una OT antigua", async () => {
       const service = await import("@/lib/services/prevention-inspections")
       const [template] = await getDb().select().from(schema.preventionInspectionTemplates)
         .where(eq(schema.preventionInspectionTemplates.id, reporteTemplateId))
@@ -1253,132 +1245,13 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
         actionDescription: "Cambiar cilindro maestro y purgar el sistema de frenos.",
         responsibleUserId: AUTHOR.userId,
       }, AUTHOR)
-      expect(linked.maintenanceId).toBeTruthy()
-
-      const [record] = await getDb().select().from(schema.maintenanceRecords)
-        .where(eq(schema.maintenanceRecords.inspectionFindingId, finding!.id))
-      expect(record).toMatchObject({
-        vehicleId: "veh-a", worksiteId: "ws-in-a", status: "scheduled", maintenanceType: "correctiva",
-        // El camión mide por horómetro, así que la lectura va a esa columna.
-        hourMeterReading: 134122, odometerReading: null,
-      })
-      // El plazo del taller y el de la acción correctiva son el mismo día.
+      expect(linked).not.toHaveProperty("maintenanceId")
       const [capa] = await getDb().select().from(schema.preventionCapaActions)
         .where(eq(schema.preventionCapaActions.id, linked.capaId))
-      expect(record!.maintenanceDate).toBe(capa!.targetDate)
       expect(capa).toMatchObject({ priority: "critical", requiresImmediateStop: true })
     })
 
-    it("completar, reabrir, recompletar concurrentemente y cancelar mantiene una sola evidencia CAPA coherente", async () => {
-      const maintenance = await import("@/lib/services/maintenance")
-      const [finding] = await getDb().select().from(schema.preventionInspectionFindings)
-        .where(eq(schema.preventionInspectionFindings.runId, reporteRunId))
-      const [record] = await getDb().select().from(schema.maintenanceRecords)
-        .where(eq(schema.maintenanceRecords.inspectionFindingId, finding!.id))
-
-      const before = await getDb().select().from(schema.preventionCapaEvidence)
-        .where(eq(schema.preventionCapaEvidence.actionId, finding!.capaActionId!))
-      expect(before).toHaveLength(0)
-
-      // Simula una colisión histórica previa a la reserva del namespace. El
-      // cierre debe canonicalizarla como documento, no dejar una nota activa
-      // que CAPA no cuenta como evidencia verificable.
-      await getDb().insert(schema.preventionCapaEvidence).values({
-        id: "legacy-maintenance-reference-collision",
-        actionId: finding!.capaActionId!,
-        kind: "note",
-        reference: `mantencion:${record!.id}`,
-        description: "Referencia histórica mal tipada",
-        uploadedByUserId: "in-author",
-        createdAt: new Date().toISOString(),
-      })
-
-      await maintenance.transitionMaintenanceRecord(MAINT_SESSION, {
-        id: record!.id,
-        expectedStatus: "scheduled",
-        transition: "complete",
-        reason: "Frenos reparados y verificados",
-      })
-
-      const completed = await getDb().select().from(schema.preventionCapaEvidence)
-        .where(eq(schema.preventionCapaEvidence.actionId, finding!.capaActionId!))
-      expect(completed).toHaveLength(1)
-      expect(completed[0]).toMatchObject({
-        id: "legacy-maintenance-reference-collision",
-        kind: "document",
-        reference: `mantencion:${record!.id}`,
-        status: "active",
-        checksumSha256: null,
-      })
-      const [closedFinding] = await getDb().select().from(schema.preventionInspectionFindings)
-        .where(eq(schema.preventionInspectionFindings.id, finding!.id))
-      expect(closedFinding).toMatchObject({
-        status: "closed",
-        closedByUserId: MAINT_SESSION.user.id,
-      })
-      expect(closedFinding!.closedAt).toBeTruthy()
-      const [pendingVerification] = await getDb().select().from(schema.preventionCapaActions)
-        .where(eq(schema.preventionCapaActions.id, finding!.capaActionId!))
-      expect(pendingVerification).toMatchObject({
-        status: "pending_verification",
-        completedByUserId: MAINT_SESSION.user.id,
-      })
-      expect(pendingVerification!.completedAt).toBeTruthy()
-
-      await maintenance.transitionMaintenanceRecord(MAINT_SESSION, {
-        id: record!.id,
-        expectedStatus: "completed",
-        transition: "reopen",
-        reason: "Persistió vibración en prueba de ruta",
-      })
-      const [superseded] = await getDb().select().from(schema.preventionCapaEvidence)
-        .where(eq(schema.preventionCapaEvidence.id, completed[0]!.id))
-      expect(superseded).toMatchObject({
-        status: "superseded",
-        supersessionReason: "Persistió vibración en prueba de ruta",
-        description: `Evidencia automática de la mantención correctiva programada para el ${record!.maintenanceDate}.`,
-      })
-      expect(superseded!.description).not.toMatch(/estado vigente/i)
-      const [reopenedFinding] = await getDb().select().from(schema.preventionInspectionFindings)
-        .where(eq(schema.preventionInspectionFindings.id, finding!.id))
-      expect(reopenedFinding).toMatchObject({
-        status: "capa_linked",
-        closedByUserId: null,
-        closedAt: null,
-      })
-      const [reopenedCapa] = await getDb().select().from(schema.preventionCapaActions)
-        .where(eq(schema.preventionCapaActions.id, finding!.capaActionId!))
-      expect(reopenedCapa).toMatchObject({ status: "reopened" })
-
-      const attempts = await Promise.allSettled([
-        maintenance.transitionMaintenanceRecord(MAINT_SESSION, {
-          id: record!.id, expectedStatus: "in_progress", transition: "complete", reason: "Segunda reparación verificada",
-        }),
-        maintenance.transitionMaintenanceRecord(MAINT_SESSION, {
-          id: record!.id, expectedStatus: "in_progress", transition: "complete", reason: "Cierre concurrente duplicado",
-        }),
-      ])
-      expect(attempts.filter((attempt) => attempt.status === "fulfilled")).toHaveLength(1)
-      expect(attempts.filter((attempt) => attempt.status === "rejected")).toHaveLength(1)
-
-      const recompleted = await getDb().select().from(schema.preventionCapaEvidence)
-        .where(eq(schema.preventionCapaEvidence.actionId, finding!.capaActionId!))
-      expect(recompleted).toHaveLength(1)
-      expect(recompleted[0]).toMatchObject({ id: completed[0]!.id, status: "active" })
-
-      await maintenance.transitionMaintenanceRecord(MAINT_SESSION, {
-        id: record!.id,
-        expectedStatus: "completed",
-        transition: "cancel",
-        reason: "Orden invalidada por diagnóstico incorrecto",
-      })
-      const [cancelled] = await getDb().select().from(schema.preventionCapaEvidence)
-        .where(eq(schema.preventionCapaEvidence.id, completed[0]!.id))
-      expect(cancelled).toMatchObject({ status: "superseded", supersessionReason: "Orden invalidada por diagnóstico incorrecto" })
-      expect(cancelled!.description).not.toMatch(/estado vigente/i)
-    })
-
-    it("no abre una segunda mantención para el mismo hallazgo", async () => {
+    it("no abre una segunda CAPA para el mismo hallazgo", async () => {
       const service = await import("@/lib/services/prevention-inspections")
       const [finding] = await getDb().select().from(schema.preventionInspectionFindings)
         .where(eq(schema.preventionInspectionFindings.runId, reporteRunId))
@@ -1420,7 +1293,7 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
       }, OUTSIDER)).rejects.toThrow()
     })
 
-    it("reabrir la inspección conserva el hallazgo derivado y su mantención", async () => {
+    it("reabrir la inspección conserva el hallazgo y la CAPA derivada", async () => {
       const service = await import("@/lib/services/prevention-inspections")
       await service.transitionInspectionRun({
         runId: reporteRunId, expectedVersion: await currentRunVersion(reporteRunId),
@@ -1430,11 +1303,11 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
       const findings = await getDb().select().from(schema.preventionInspectionFindings)
         .where(eq(schema.preventionInspectionFindings.runId, reporteRunId))
       // El hallazgo ya tiene CAPA: `completeInspectionRun` sólo borra los
-      // abiertos sin acción, así que la orden de taller no queda huérfana.
+      // abiertos sin acción, así que la acción correctiva no queda huérfana.
       expect(findings).toHaveLength(1)
-      const records = await getDb().select().from(schema.maintenanceRecords)
-        .where(eq(schema.maintenanceRecords.inspectionFindingId, findings[0]!.id))
-      expect(records).toHaveLength(1)
+      const capas = await getDb().select().from(schema.preventionCapaActions)
+        .where(eq(schema.preventionCapaActions.id, findings[0]!.capaActionId!))
+      expect(capas).toHaveLength(1)
     })
   })
 
@@ -2154,7 +2027,7 @@ async function seedFixture(database: ReturnType<typeof drizzle<typeof schema>>) 
     { id: "in-reviewer", name: "Revisor", email: "in-reviewer@local.invalid", hashedPassword: "hash", createdAt: now, updatedAt: now },
     { id: "in-outsider", name: "Ajeno", email: "in-outsider@local.invalid", hashedPassword: "hash", createdAt: now, updatedAt: now },
   ])
-  // Padrón de flota: sujeto del Reporte de Equipos y destino de la mantención.
+  // Padrón de flota: sujeto del Reporte de Equipos.
   // Slug propio: las migraciones ya siembran la taxonomía real (`camion`, …) y
   // `fuel_equipment_types_slug_unique` no admite repetirlo.
   await database.insert(schema.fuelEquipmentTypes).values([
