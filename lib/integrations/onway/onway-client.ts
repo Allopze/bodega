@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs"
 import type { Browser, Page, Response } from "playwright"
+import { logger } from "@/lib/logger"
 import { parseOnwaySnapshot, type OnwaySnapshotResult } from "./onway-contract"
 import {
   parseOnwayAlertRows,
@@ -133,13 +134,17 @@ async function openAuthentication(page: Page): Promise<void> {
 }
 
 async function hasInteractiveChallenge(page: Page): Promise<boolean> {
-  return await page.locator([
-    'input[name="otp"]',
-    'input[autocomplete="one-time-code"]',
-    'iframe[src*="captcha" i]',
-    'iframe[title*="captcha" i]',
-    '[data-captcha]',
-  ].join(", ")).count() > 0
+  // OTP y captcha comparten código de error, pero piden remedios distintos
+  // (cuenta de servicio sin segundo factor vs. IP marcada): el log los separa.
+  const [otp, captcha] = await Promise.all([
+    page.locator('input[name="otp"], input[autocomplete="one-time-code"]').count(),
+    page.locator('iframe[src*="captcha" i], iframe[title*="captcha" i], [data-captcha]').count(),
+  ])
+  if (otp === 0 && captcha === 0) return false
+  let path = ""
+  try { path = new URL(page.url()).pathname } catch { /* sin ruta */ }
+  logger.warn("[flota/onway] Auth0 pidió verificación interactiva", { challenge: otp > 0 ? "otp" : "captcha", path })
+  return true
 }
 
 /** Rechaza con `ONWAY_PORTAL_TIMEOUT` si `work` no termina en `ms`. No cancela `work`. */
@@ -197,17 +202,33 @@ async function readSnapshotResponse(response: Response): Promise<OnwayPortalSnap
   }
 }
 
-let browserSession: OnwayBrowserSession | null = null
+/**
+ * Next empaqueta este módulo dos veces (la ruta del cron y la página de
+ * Monitoreo): con estado de módulo cada copia tenía su navegador y su
+ * `inFlight`, y el del cron quedó trabado sin que la sincronización manual lo
+ * viera (2026-11-01 → 11-02). `globalThis` es uno por proceso.
+ */
+interface OnwayClientState {
+  browserSession: OnwayBrowserSession | null
+  inFlight: Promise<OnwayPortalSnapshot> | null
+}
+
+declare global {
+  var __onwayClient: OnwayClientState | undefined
+}
+
+const state: OnwayClientState = globalThis.__onwayClient ??= { browserSession: null, inFlight: null }
 
 async function closeBrowserSession(): Promise<void> {
-  const current = browserSession
-  browserSession = null
+  const current = state.browserSession
+  state.browserSession = null
   // Un navegador colgado puede no responder ni al cierre.
   if (current) await withOnwayDeadline(current.browser.close(), BROWSER_CLOSE_TIMEOUT_MS).catch(() => undefined)
 }
 
 async function getBrowserSession(): Promise<OnwayBrowserSession> {
-  if (browserSession?.browser.isConnected() && !browserSession.page.isClosed()) return browserSession
+  const current = state.browserSession
+  if (current?.browser.isConnected() && !current.page.isClosed()) return current
   await closeBrowserSession()
 
   const { chromium } = await import("playwright")
@@ -220,8 +241,8 @@ async function getBrowserSession(): Promise<OnwayBrowserSession> {
     serviceWorkers: "block",
   })
   const page = await context.newPage()
-  browserSession = { browser, page }
-  return browserSession
+  state.browserSession = { browser, page }
+  return state.browserSession
 }
 
 async function portalJson(page: Page, path: string, init: { method?: "GET" | "POST"; body?: Record<string, unknown> } = {}): Promise<unknown> {
@@ -364,12 +385,25 @@ async function scrapeWithSession(credentials: OnwayCredentials): Promise<OnwayPo
   }
 }
 
-let inFlight: Promise<OnwayPortalSnapshot> | null = null
-
 async function scrapePortal(credentials: OnwayCredentials): Promise<OnwayPortalSnapshot> {
-  if (inFlight) return inFlight
-  inFlight = scrapeWithSession(credentials).finally(() => { inFlight = null })
-  return inFlight
+  if (state.inFlight) return state.inFlight
+  const current = scrapeWithSession(credentials).finally(() => {
+    if (state.inFlight === current) state.inFlight = null
+  })
+  state.inFlight = current
+  return current
+}
+
+/**
+ * Suelta la lectura en curso aunque no haya terminado. Si un `close()` del
+ * navegador se cuelga, el `finally` de `scrapePortal` no corre nunca y todas
+ * las corridas siguientes se sumaban a esa promesa muerta sin volver a abrir
+ * el portal: 110 s de espera y `ONWAY_PORTAL_TIMEOUT`, una tras otra.
+ */
+function abandonBrowserSession(): void {
+  state.inFlight = null
+  // Acotado por BROWSER_CLOSE_TIMEOUT_MS; no hace falta que el llamador lo espere.
+  void closeBrowserSession()
 }
 
 /** One in-memory Auth0 session per process; concurrent callers share the same scrape. */
@@ -386,10 +420,9 @@ export async function fetchOnwayTelemetry(input: OnwayCredentials, options: Onwa
   try {
     return await withOnwayDeadline(collectTelemetry(input, options), options.deadlineMs ?? ONWAY_TELEMETRY_DEADLINE_MS)
   } catch (error) {
-    // Cerrar el navegador hace fallar lo que quedó esperando en la página, y
-    // con eso se libera `inFlight`: si no, la próxima corrida reusaría la
-    // misma promesa colgada.
-    if (error instanceof OnwayClientError && error.code === "ONWAY_PORTAL_TIMEOUT") await closeBrowserSession()
+    // No basta con cerrar el navegador para liberar `inFlight`: si el cierre
+    // también se cuelga, la próxima corrida reusaría la misma promesa colgada.
+    if (error instanceof OnwayClientError && error.code === "ONWAY_PORTAL_TIMEOUT") abandonBrowserSession()
     throw error
   }
 }
