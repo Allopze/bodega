@@ -31,6 +31,8 @@ services:
     build:
       context: .
       target: prod
+      args:
+        NEXT_PUBLIC_MAP_STYLE_URL: ${NEXT_PUBLIC_MAP_STYLE_URL:-}
     image: ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}
     restart: unless-stopped
     depends_on:

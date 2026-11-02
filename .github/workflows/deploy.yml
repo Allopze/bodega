@@ -120,6 +120,10 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # NEXT_PUBLIC_* queda fijada en el bundle por next build. El valor
+          # público de Actions puede cambiarse con la variable del repositorio.
+          build-args: |
+            NEXT_PUBLIC_MAP_STYLE_URL=${{ vars.NEXT_PUBLIC_MAP_STYLE_URL || 'https://tiles.openfreemap.org/styles/liberty' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

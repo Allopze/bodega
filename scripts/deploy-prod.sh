@@ -214,8 +214,8 @@ prod_env_keys() {
 }
 
 # El valor de UNA variable del .env de prod. Sólo se usa con nombres de este
-# script (POSTGRES_USER / POSTGRES_DB / NEXT_PUBLIC_SENTRY_DSN), nunca con
-# entrada del operador.
+# script (POSTGRES_USER / POSTGRES_DB / NEXT_PUBLIC_SENTRY_DSN /
+# NEXT_PUBLIC_MAP_STYLE_URL), nunca con entrada del operador.
 prod_env_value() {
   prod_sh "grep -E '^[[:space:]]*(export[[:space:]]+)?$1=' $(printf '%q' "$PROD_DIR/.env") 2>/dev/null | tail -1" \
     | tr -d '\r' | sed -E "s/^[[:space:]]*(export[[:space:]]+)?$1=//" | sed -E 's/^"(.*)"$/\1/; s/^'"'"'(.*)'"'"'$/\1/'
@@ -371,10 +371,15 @@ PROD_SENTRY_PUBLIC_DSN="$(prod_env_value NEXT_PUBLIC_SENTRY_DSN)"
 if [ -z "$PROD_SENTRY_PUBLIC_DSN" ]; then
   echo "    AVISO: NEXT_PUBLIC_SENTRY_DSN no está en $PROD_DIR/.env; la imagen no reportará errores del navegador."
 fi
+PROD_MAP_STYLE_URL="$(prod_env_value NEXT_PUBLIC_MAP_STYLE_URL)"
+if [ -z "$PROD_MAP_STYLE_URL" ]; then
+  echo "    AVISO: NEXT_PUBLIC_MAP_STYLE_URL no está en $PROD_DIR/.env; el mapa GPS no se mostrará en producción."
+fi
 
 run_timed "Building image from $(pwd) (main)" docker buildx build --builder "$BUILDER" --target prod --tag "$IMAGE" --load --progress=plain \
   --build-arg BODEGA_BUILD_SKIP_TYPECHECK=1 \
-  --build-arg NEXT_PUBLIC_SENTRY_DSN="$PROD_SENTRY_PUBLIC_DSN" .
+  --build-arg NEXT_PUBLIC_SENTRY_DSN="$PROD_SENTRY_PUBLIC_DSN" \
+  --build-arg NEXT_PUBLIC_MAP_STYLE_URL="$PROD_MAP_STYLE_URL" .
 
 # Prod dejó de compartir el daemon Docker con este checkout, así que la imagen
 # recién construida tiene que viajar.

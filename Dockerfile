@@ -45,10 +45,14 @@ ARG BODEGA_BUILD_SKIP_TYPECHECK=
 # CSP (connect-src) durante el build, así que tiene que llegar aquí y no en
 # runtime. Vacío = imagen sin telemetría de cliente. Lo pasa deploy-prod.sh.
 ARG NEXT_PUBLIC_SENTRY_DSN=
+# El estilo del mapa GPS también se inlinea en el bundle cliente durante el
+# build. La URL es pública; sólo usar claves públicas restringidas por dominio.
+ARG NEXT_PUBLIC_MAP_STYLE_URL=
 RUN --mount=type=cache,id=chome-next,target=/app/.next/cache,sharing=locked \
     NODE_OPTIONS=--max-old-space-size=8192 \
     BODEGA_BUILD_SKIP_TYPECHECK="$BODEGA_BUILD_SKIP_TYPECHECK" \
     NEXT_PUBLIC_SENTRY_DSN="$NEXT_PUBLIC_SENTRY_DSN" \
+    NEXT_PUBLIC_MAP_STYLE_URL="$NEXT_PUBLIC_MAP_STYLE_URL" \
     DATABASE_URL=postgres://build:build@localhost:5432/build npm run build
 
 # Bundle the RBAC synchronizer while its TypeScript sources, path aliases and
