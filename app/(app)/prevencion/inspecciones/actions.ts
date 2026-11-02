@@ -103,6 +103,13 @@ async function run(
   }
 }
 
+/** Folio de la OT que abrió la derivación (hallazgos de equipo), para confirmarlo al usuario. */
+function workOrderOf(result: unknown): ActionState["data"] {
+  const workOrder = (result as { workOrder?: { id?: unknown; folio?: unknown } | null } | null)?.workOrder
+  if (!workOrder || typeof workOrder.id !== "string" || typeof workOrder.folio !== "string") return undefined
+  return { workOrderId: workOrder.id, workOrderFolio: workOrder.folio }
+}
+
 /** Versión del run devuelta por el servicio, para refrescar el CAS del cliente. */
 function versionOf(result: unknown): ActionState["data"] {
   const version = (result as { version?: number; run?: { version?: number } } | null)?.version
@@ -331,7 +338,18 @@ export async function completeInspectionRunAction(input: unknown): Promise<Actio
 export async function createFindingCapaAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:inspections:execute")
   if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => createFindingCapa(input, access))
+  const state = await run(
+    accessFromSession(guard.session),
+    (access) => createFindingCapa(input, access),
+    workOrderOf,
+  )
+  // Con un equipo como sujeto la derivación abrió una OT: la lista de
+  // Mantención (y su panel) tiene que verla sin esperar al siguiente refresco.
+  if (state.ok && state.data?.workOrderId) {
+    revalidatePath("/mantencion/ot")
+    revalidatePath("/mantencion/panel")
+  }
+  return state
 }
 
 /**
