@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs"
-import type { Browser, Page, Response } from "playwright"
+import type { Browser, BrowserServer, Page, Response } from "playwright"
 import { logger } from "@/lib/logger"
 import { parseOnwaySnapshot, type OnwaySnapshotResult } from "./onway-contract"
 import {
@@ -34,6 +34,7 @@ const MAX_RESPONSE_BYTES = 10 * 1024 * 1024
 const MAX_TELEMETRY_DEVICES = 500
 
 interface OnwayBrowserSession {
+  server: BrowserServer
   browser: Browser
   page: Page
 }
@@ -222,8 +223,15 @@ const state: OnwayClientState = globalThis.__onwayClient ??= { browserSession: n
 async function closeBrowserSession(): Promise<void> {
   const current = state.browserSession
   state.browserSession = null
-  // Un navegador colgado puede no responder ni al cierre.
-  if (current) await withOnwayDeadline(current.browser.close(), BROWSER_CLOSE_TIMEOUT_MS).catch(() => undefined)
+  if (!current) return
+  try {
+    // Con `connect`, `browser.close()` sólo desconecta: el proceso lo cierra el servidor.
+    await withOnwayDeadline(current.browser.close().then(() => current.server.close()), BROWSER_CLOSE_TIMEOUT_MS)
+  } catch {
+    // Un navegador colgado puede no responder ni al cierre. Sin el kill quedaba
+    // vivo (con sus renderers) hasta reiniciar el contenedor.
+    await withOnwayDeadline(current.server.kill(), BROWSER_CLOSE_TIMEOUT_MS).catch(() => undefined)
+  }
 }
 
 async function getBrowserSession(): Promise<OnwayBrowserSession> {
@@ -234,15 +242,23 @@ async function getBrowserSession(): Promise<OnwayBrowserSession> {
   const { chromium } = await import("playwright")
   const configuredPath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?.trim()
   const launchPath = configuredPath && existsSync(configuredPath) ? configuredPath : undefined
-  const browser = await chromium.launch(resolveOnwayLaunchOptions(launchPath))
-  const context = await browser.newContext({
-    locale: "es-CL",
-    timezoneId: "America/Santiago",
-    serviceWorkers: "block",
-  })
-  const page = await context.newPage()
-  state.browserSession = { browser, page }
-  return state.browserSession
+  // `launchServer` en vez de `launch`: sólo el servidor expone `kill()`, que
+  // termina el grupo de procesos aunque el navegador no conteste.
+  const server = await chromium.launchServer(resolveOnwayLaunchOptions(launchPath))
+  try {
+    const browser = await chromium.connect(server.wsEndpoint())
+    const context = await browser.newContext({
+      locale: "es-CL",
+      timezoneId: "America/Santiago",
+      serviceWorkers: "block",
+    })
+    const page = await context.newPage()
+    state.browserSession = { server, browser, page }
+    return state.browserSession
+  } catch (error) {
+    await withOnwayDeadline(server.kill(), BROWSER_CLOSE_TIMEOUT_MS).catch(() => undefined)
+    throw error
+  }
 }
 
 async function portalJson(page: Page, path: string, init: { method?: "GET" | "POST"; body?: Record<string, unknown> } = {}): Promise<unknown> {
