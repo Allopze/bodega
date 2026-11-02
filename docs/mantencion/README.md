@@ -1,7 +1,9 @@
 # Mantención de equipos
 
-Módulo de mantención preventiva y correctiva, independiente del módulo antiguo
-`mantenciones` (órdenes de trabajo con costos). Especificación completa en
+Módulo vigente de mantención preventiva y correctiva. El módulo antiguo de
+órdenes de trabajo `/mantenciones` fue retirado; este módulo conserva sus rutas
+`/mantencion/*`, PWA `/m/mantencion`, tablas `mant_*` y archivos
+`storage/mantencion/`. Especificación completa en
 [`ESPECIFICACION.md`](./ESPECIFICACION.md) y decisiones en
 [`PLAN-modulo-mantencion.md`](../../PLAN-modulo-mantencion.md).
 

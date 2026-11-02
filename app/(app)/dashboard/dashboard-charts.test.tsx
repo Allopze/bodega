@@ -12,7 +12,6 @@ import {
   BillingFlowChart,
   CompositionDonutChart,
   FuelConsumptionChart,
-  MaintenanceTrendChart,
   MaterialEnvironmentalChart,
   OperationalTrendChart,
   SstAccidentChart,
@@ -198,18 +197,8 @@ describe("gráficos SST y de flota", () => {
     expect(screen.queryByRole("button", { name: /Costo/ })).toBeNull()
   })
 
-  it("mantención: cifra grande = completadas del período", () => {
-    render(<MaintenanceTrendChart data={[
-      { month: "Sep", completed: 3, scheduled: 5, amount: 100_000 },
-      { month: "Oct", completed: 4, scheduled: 2, amount: null },
-    ]} />)
-    expect(screen.getByText("7")).toBeDefined()
-    expect(screen.getByText("mantenciones completadas en el período")).toBeDefined()
-  })
-
-  it("combustible y mantención devuelven null sin datos", () => {
+  it("combustible devuelve null sin datos", () => {
     expect(render(<FuelConsumptionChart data={[{ month: "Ene", liters: 0, amount: 0, loads: 0 }]} />).container.firstChild).toBeNull()
-    expect(render(<MaintenanceTrendChart data={[]} />).container.firstChild).toBeNull()
   })
 })
 

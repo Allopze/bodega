@@ -6,6 +6,8 @@
 
 export type MantUnit = "km" | "h"
 export type MantRecordKind = "P" | "C"
+/** Contadores de folio por faena: registros (`P`, `C`) y órdenes de trabajo (`OT`). */
+export type MantFolioKind = MantRecordKind | "OT"
 export type MantItemValue = "R" | "NR" | "NA"
 export type MantBrandRuleValue = "A" | "W" | "X"
 export type MantRecordStatus = "vigente" | "anulado"

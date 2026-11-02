@@ -46,7 +46,7 @@ import { expectPageTitle, login } from "./helpers"
 
 /**
  * `aria-label` de cada barra de pestañas, tal como lo pasa cada página a `SectionNav`
- * (`lib/combustibles/section-nav.ts` arma los ítems; `maintenance-section-nav.tsx`, los de Mantenciones).
+ * (`lib/combustibles/section-nav.ts` arma los ítems).
  */
 const BARRAS = {
   cargas: "Vistas de cargas",
@@ -54,7 +54,6 @@ const BARRAS = {
   cuadratura: "Vistas de cuadratura",
   consumo: "Vistas de consumo y rendimiento",
   pagos: "Pagos",
-  mantenciones: "Secciones de mantenciones",
 } as const
 
 /** El panel del área en el sidebar: el `<ul>` que contiene al ítem «Panel operacional». */
@@ -95,12 +94,12 @@ const MENU_DEL_AREA: ReadonlyArray<{ grupo: string; destinos: readonly DestinoDe
     destinos: [
       { href: "/flota", nombre: "Vehículos" },
       { href: "/flota/monitoreo", nombre: "Monitoreo GPS" },
-      { href: "/mantenciones", nombre: "Mantenciones" },
     ],
   },
   {
     grupo: "Mantención",
     destinos: [
+      { href: "/mantencion/ot", nombre: "Órdenes de trabajo" },
       { href: "/mantencion/panel", nombre: "Panel" },
       { href: "/mantencion/registros", nombre: "Registros" },
       { href: "/mantencion/equipos", nombre: "Equipos" },
@@ -201,7 +200,6 @@ test.describe("Control operacional — menú del área", () => {
       ["/combustibles/tae/importar", "/combustibles/fuentes"],
       ["/combustibles/control/configuracion", "/combustibles/ajustes"],
       ["/combustibles/anomalias/reglas", "/combustibles/ajustes"],
-      ["/mantenciones/planes", "/mantenciones"],
     ]
 
     for (const [ruta, activo] of rutas) {
@@ -271,15 +269,6 @@ const PESTANAS_POR_SECCION = [
     pantallas: [
       { ruta: "/combustibles/pagos", activa: "Facturas" },
       { ruta: "/combustibles/pagos/estados", activa: "Estados de cuenta" },
-    ],
-  },
-  {
-    seccion: "Mantenciones",
-    barra: BARRAS.mantenciones,
-    pantallas: [
-      { ruta: "/mantenciones", activa: "Órdenes de trabajo" },
-      { ruta: "/mantenciones/planes", activa: "Planes preventivos" },
-      { ruta: "/mantenciones/politicas-documentales", activa: "Políticas documentales" },
     ],
   },
 ] as const
@@ -507,7 +496,7 @@ test.describe("Control operacional — rutas retiradas", () => {
 /** Destino de cada tile (`ATTENTION_HREFS` de `control-operacional/attention-tiles.ts`). */
 const TILE = {
   detenidos: "/flota?estado=detenidos",
-  otAbiertas: "/mantenciones?status=abiertas",
+  ordenesAbiertas: "/mantencion/ot?estado=abiertas",
   documentosVencidos: "/flota?vencimiento=vencidos",
   combustiblePorRevisar: "/combustibles/revisar",
 } as const
@@ -524,7 +513,7 @@ test.describe("Control operacional — tiles del panel", () => {
   })
 
   test("cada tile visible enlaza a su subconjunto y no hay más de cuatro", async ({ page }) => {
-    // El administrador del seed tiene los cuatro dominios, así que están los cuatro.
+    // El administrador del seed tiene flota, combustible y las vistas de OT (`mant:ot:view_*`), así que están los cuatro.
     for (const [nombre, href] of Object.entries(TILE)) {
       await expect.soft(tileHacia(page, href), `tile ${nombre}`).toHaveCount(1)
     }
@@ -538,16 +527,6 @@ test.describe("Control operacional — tiles del panel", () => {
     // El filtro activo se anuncia de dos maneras y se puede quitar: chip + selector.
     await expect(page.getByRole("button", { name: "Eliminar filtro Estado", exact: true })).toBeVisible()
     await expect(page.getByRole("combobox", { name: "Estado operacional", exact: true })).toContainText("Detenidos")
-  })
-
-  test("«OT abiertas» abre Mantenciones con «Abiertas» seleccionado en Estado", async ({ page }) => {
-    await tileHacia(page, TILE.otAbiertas).click()
-    await expect(page).toHaveURL(/\/mantenciones\?status=abiertas$/)
-
-    // Si el filtro pasa a mostrarse como chip, el criterio es el mismo: la
-    // pantalla tiene que decir que el listado está acotado a las abiertas.
-    await expect(page.getByRole("combobox", { name: "Estado", exact: true })).toContainText("Abiertas")
-    await expect(barraDe(page, BARRAS.mantenciones).locator('[aria-current="page"]')).toHaveText("Órdenes de trabajo")
   })
 
   test("«Documentos vencidos» abre Vehículos con el vencimiento ya aplicado", async ({ page }) => {
@@ -598,7 +577,7 @@ test.describe("Control operacional — tiles del panel", () => {
  * Lo que el seed deja probar sin inventar datos:
  *
  *   - `scoped@e2e.chome.cl` (`solicitante_faena`, `e2e/setup-db.ts:301-315` y `:356-368`): no
- *     tiene `flota:*`, `mantenciones:*`, `combustibles:*` ni
+ *     tiene `flota:*`, `mant:records:view_worksite`, `combustibles:*` ni
  *     `prevention:inspections:view`, así que el área entera desaparece del menú
  *     y ninguna de sus rutas debe abrirse a mano.
  *   - `jefe.faena@e2e.chome.cl` (`jefe_terreno`, `e2e/setup-db.ts:105-143`): sólo
@@ -615,7 +594,7 @@ const RUTAS_DEL_AREA = [
   "/control-operacional",
   "/flota",
   "/flota/monitoreo",
-  "/mantenciones",
+  "/mantencion/panel",
   "/combustibles",
   "/combustibles/cargas",
   "/combustibles/cargas/registrar",
@@ -657,7 +636,7 @@ test.describe("Control operacional — roles acotados", () => {
     await page.goto("/combustibles/cargas")
     await expect(page).toHaveURL(/\/combustibles\/cargas$/)
     // El área se ubica por su ítem de Cargas; el panel también es visible
-    // porque `combustibles:view` es uno de sus cuatro permisos de entrada.
+    // porque `combustibles:view` es uno de sus tres permisos de entrada.
     const menu = page
       .getByRole("navigation", { name: "Navegación", exact: true })
       .locator("ul")
@@ -684,7 +663,7 @@ test.describe("Control operacional — roles acotados", () => {
     await expect.soft(page, "«Cuadratura» abre Estanques").toHaveURL((url) => url.pathname === "/combustibles/cuadratura/estanques")
 
     // El panel abre, pero sólo con las columnas de combustible: sin flota,
-    // mantención, inspecciones ni costos.
+    // inspecciones ni costos de otros dominios.
     await page.goto("/control-operacional")
     await expect(page).toHaveURL(/\/control-operacional$/)
     await expectPageTitle(page, "Panel operacional")
@@ -694,7 +673,6 @@ test.describe("Control operacional — roles acotados", () => {
     const header = (label: string) =>
       table.getByRole("columnheader", { name: new RegExp(`^(?:Ordenar por )?${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`) })
     await expect(header("Litros")).toBeVisible()
-    await expect(header("OT abiertas (período)")).toHaveCount(0)
     await expect(header("Inspecciones")).toHaveCount(0)
     await expect(header("Costo aprobado")).toHaveCount(0)
   })
@@ -706,7 +684,7 @@ test.describe("Control operacional — roles acotados", () => {
     await expect(page).toHaveURL(/\/control-operacional$/)
     await expectPageTitle(page, "Panel operacional")
 
-    // El menú del área ofrece sólo el panel: ni Vehículos, ni Mantenciones, ni nada de Combustible.
+    // El menú del área ofrece sólo el panel: ni Vehículos, ni Mantención, ni nada de Combustible.
     const menu = menuDelArea(page)
     await expect(menu.getByRole("link")).toHaveCount(1)
     await expect(itemDelMenu(page, "/control-operacional")).toHaveAttribute("aria-current", "page")

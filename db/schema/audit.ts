@@ -96,8 +96,6 @@ export type NotificationType =
   | "fuel_loads_unassigned"
   | "sst_document_expiring"
   | "sst_document_expired"
-  | "maintenance_due_soon"
-  | "maintenance_overdue"
   // Patrón P3 (auditoría 2026-09-14): tres vencimientos con consecuencia legal
   // que hasta entonces sólo se veían abriendo su pantalla.
   | "fleet_document_due_soon"
@@ -136,6 +134,14 @@ export type NotificationType =
   | "miper_signature_overdue"    // firma pendiente > 5 días hábiles → revisor o firmante
   | "miper_occurrence_overdue"   // ocurrencia vencida por el barrido → responsable + prevencionista
   | "miper_occurrence_not_done"  // ocurrencia «No se hizo» → Jefa
+  // Órdenes de trabajo de mantención (2026-11). Destinatarios por permiso y
+  // faena; dedupe `mant-ot:<id>:<evento>:<versión>`.
+  | "mant_ot_created"            // OT nueva → jefatura de mantención (mant:ot:manage)
+  | "mant_ot_assigned"           // asignada → el mecánico
+  | "mant_ot_finished"           // salida de taller → quien solicitó + quienes reciben
+  | "mant_ot_received"           // recepcionada → quienes dan conformidad en la faena
+  | "mant_ot_rejected"           // devuelta a taller → jefatura + el mecánico
+  | "mant_ot_closed"             // conformidad → quien solicitó + jefatura
 
 export const notifications = pgTable("notifications", {
   id:           text("id").primaryKey(),

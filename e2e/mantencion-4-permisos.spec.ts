@@ -9,7 +9,8 @@ import type { MantCatalog, MantCatalogOthers } from "../lib/mantencion/contracts
  *
  * Corre después de las otras tres specs del módulo (`mantencion-1…3`), sobre el
  * estado que dejaron. Lo que prueba es que la frontera es el servidor:
- * - un mecánico no entra a las vistas de jefatura escribiendo la URL;
+ * - un mecánico no entra a las vistas de jefatura (ni a las órdenes de trabajo de la
+ *   plataforma, que son del administrador de contrato y la jefatura) escribiendo la URL;
  * - la sincronización sin credencial, o con una revocada, se rechaza;
  * - el catálogo de un mecánico sólo trae los equipos de sus faenas;
  * - un registro en otra faena queda «fuera de faena» y el supervisor de
@@ -39,7 +40,7 @@ async function bearerGet<T>(request: APIRequestContext, token: string, path: str
 
 test("un mecánico no entra a las vistas de jefatura por URL", async ({ page }) => {
   await login(page, "mecanico1@e2e.chome.cl")
-  for (const url of ["/mantencion/panel", "/mantencion/equipos", "/mantencion/equipos/nuevo", "/mantencion/pautas", "/mantencion/dispositivos"]) {
+  for (const url of ["/mantencion/panel", "/mantencion/equipos", "/mantencion/equipos/nuevo", "/mantencion/pautas", "/mantencion/dispositivos", "/mantencion/ot"]) {
     // La página redirige a /forbidden desde el servidor, pero en una navegación ya en curso
     // la URL cambia después de que `goto` resuelve: lo que se verifica es lo que ve el mecánico.
     await page.goto(url)
@@ -60,6 +61,9 @@ test("la sincronización exige credencial de dispositivo", async ({ request }) =
   expect(forged.status()).toBe(401)
   const post = await request.post("/api/mantencion/sync/registros", { data: {} })
   expect(post.status()).toBe(401)
+  // Las operaciones de las órdenes de trabajo (tomar, ingreso, ítems, terminar) tampoco aceptan a un anónimo.
+  const otPost = await request.post("/api/mantencion/sync/ot", { data: {} })
+  expect(otPost.status()).toBe(401)
 })
 
 test("el catálogo del mecánico trae sólo sus faenas y un registro ajeno queda fuera de faena", async ({ page }) => {

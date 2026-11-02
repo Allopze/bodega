@@ -284,7 +284,7 @@ export async function updateFuelLoadAction(
   const newVehicleId = String(formData.get("vehicleId") ?? existing.vehicleId)
   const newWorksiteId = String(formData.get("worksiteId") ?? existing.worksiteId)
   // Hay dos faenas en juego: la actual y la propuesta. Ambas necesitan alcance,
-  // igual que updateFuelVehicleAction (vehicles.ts:161) y updateMaintenanceRecord.
+  // igual que al cambiar el vínculo de faena de un vehículo.
   if (!canAccessWorksite(session, newWorksiteId)) {
     return { ok: false, message: "No puedes mover cargas a esta faena" }
   }

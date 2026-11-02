@@ -138,11 +138,8 @@ function positiveNumber(value: string | undefined, fallback: number) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
 }
 
-export function buildDataGaps(vehicleCosts: VehicleCostRow[], options: { includeMaintenanceCosts?: boolean } = {}) {
+export function buildDataGaps(vehicleCosts: VehicleCostRow[]) {
   const gaps: string[] = []
-  if (options.includeMaintenanceCosts && vehicleCosts.length > 0 && vehicleCosts.every((r) => r.totalServiceAmount === 0)) {
-    gaps.push("No hay imputaciones de repuestos, servicios o mantenciones para los vehículos del período.")
-  }
   if (vehicleCosts.length > 0 && vehicleCosts.every((r) => r.lastOdometerReading == null && r.lastHourMeterReading == null)) {
     gaps.push("No hay lecturas de kilometraje u horómetro en las cargas de combustible del período.")
   }

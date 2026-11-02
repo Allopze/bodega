@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import type { Session } from "next-auth"
-import { assertFuelCostAccess, operationalControlCapabilities } from "@/lib/operational-control/capabilities"
+import { assertFuelCostAccess, canViewOperationalControl, operationalControlCapabilities } from "@/lib/operational-control/capabilities"
 
 function sessionWith(...permissions: string[]) {
   return { user: { id: "custom-role", permissions } } as unknown as Session
@@ -12,9 +12,17 @@ describe("operationalControlCapabilities", () => {
       canViewFuel: false,
       canViewTae: false,
       canViewFleet: true,
-      canViewMaintenance: false,
       canViewCosts: false,
+      canViewWorkOrders: false,
     })
+  })
+
+  it("las cifras de OT las abre mant:ot:view_*, no flota ni inspecciones", () => {
+    expect(operationalControlCapabilities(sessionWith("mant:ot:view_worksite")).canViewWorkOrders).toBe(true)
+    expect(operationalControlCapabilities(sessionWith("mant:ot:view_all")).canViewWorkOrders).toBe(true)
+    expect(operationalControlCapabilities(sessionWith("flota:view", "prevention:inspections:view", "combustibles:view")).canViewWorkOrders).toBe(false)
+    // Tener OT no abre el panel: el gate de entrada sigue siendo flota/inspecciones/combustible.
+    expect(canViewOperationalControl(sessionWith("mant:ot:view_all"))).toBe(false)
   })
 
   it("trata costos y TAE como capacidades independientes de combustible", () => {

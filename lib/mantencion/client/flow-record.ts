@@ -54,6 +54,8 @@ export function buildRecord(draft: FlowDraft, input: SignInput): BuiltRecord {
     duplicateConfirmed: analysis.duplicate !== null && draft.ackDuplicate === analysis.duplicate.id,
     correctsRecordId: draft.correctsRecordId,
     photos: photoList(draft),
+    // Sólo cuando hay OT: un registro común conserva exactamente la forma de antes.
+    ...(draft.workOrderId ? { workOrderId: draft.workOrderId } : {}),
   }
 
   let candidate: SyncPreventiveRecord | SyncCorrectiveRecord
@@ -75,7 +77,9 @@ export function buildRecord(draft: FlowDraft, input: SignInput): BuiltRecord {
       notes: draft.notes.trim(),
     }
   } else {
-    const inWorkshop = draft.inWorkshop === true
+    // Con OT manda la OT: nunca «queda en taller» ni Nº de OT en papel (el servidor rechaza esa mezcla con 422).
+    const linked = draft.workOrderId !== null
+    const inWorkshop = !linked && draft.inWorkshop === true
     candidate = {
       ...common,
       kind: "C",
@@ -96,7 +100,7 @@ export function buildRecord(draft: FlowDraft, input: SignInput): BuiltRecord {
       inWorkshop,
       workshopEntryDate: inWorkshop ? draft.workshopEntryDate : null,
       workshopReason: inWorkshop ? draft.workshopReason.trim() : null,
-      workOrder: draft.workOrder.trim() || null,
+      workOrder: linked ? null : draft.workOrder.trim() || null,
       driverIds: draft.driverIds,
     }
   }
@@ -145,6 +149,7 @@ export function draftFromRejected(item: QueueRecordItem, row: FleetRow, now: Dat
     readingText: String(payload.reading),
     workDate: payload.workDate,
     correctsRecordId: payload.correctsRecordId,
+    workOrderId: payload.workOrderId ?? null,
     replacesQueueId: item.id,
     ackJump: payload.readingJumpConfirmed ? { reading: payload.reading, workDate: payload.workDate } : null,
   }
@@ -197,7 +202,7 @@ export function draftFromRejected(item: QueueRecordItem, row: FleetRow, now: Dat
     executorWorkshopId: payload.executor.kind === "externo" ? payload.executor.workshopId : "",
     description: payload.description,
     workOrder: payload.workOrder ?? "",
-    inWorkshop: payload.inWorkshop,
+    inWorkshop: payload.workOrderId ? null : payload.inWorkshop,
     workshopReason: payload.workshopReason ?? "",
     workshopEntryDate: payload.workshopEntryDate ?? draft.workshopEntryDate,
     driverIds: payload.driverIds,

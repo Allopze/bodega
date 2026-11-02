@@ -1154,7 +1154,7 @@ modules:
   priority: 16
   tier: 5
   tier_label: Control operacional
-  reason: Flota, combustibles y mantenciones comparten el área /control-operacional y se acoplan entre sí (vehículos, equipos, consumo).
+  reason: Flota y combustibles comparten el área /control-operacional y se acoplan entre sí (vehículos, equipos, consumo).
   knowledge_path: docs/.knowledge/modules/combustibles/
   # 2026-10-22: /combustibles/analisis y /combustibles/reportes se retiraron y salen del plan
   # (28 -> 26 páginas). Hoy son sólo redirecciones: análisis a /combustibles/control/rendimiento/<familia>
@@ -1309,7 +1309,7 @@ modules:
   priority: 17
   tier: 5
   tier_label: Control operacional
-  reason: Flota, combustibles y mantenciones comparten el área /control-operacional y se acoplan entre sí (vehículos, equipos, consumo).
+  reason: Flota y combustibles comparten el área /control-operacional y se acoplan entre sí (vehículos, equipos, consumo).
   knowledge_path: docs/.knowledge/modules/flota/
   pages_count: 4
   document:
@@ -1345,47 +1345,6 @@ modules:
   status: complete
   completed_at: "2026-09-15T14:00:00.000Z"
   completion_notes: "4/4 páginas capturadas."
--
-  name: mantenciones
-  priority: 18
-  tier: 5
-  tier_label: Control operacional
-  reason: Flota, combustibles y mantenciones comparten el área /control-operacional y se acoplan entre sí (vehículos, equipos, consumo).
-  knowledge_path: docs/.knowledge/modules/mantenciones/
-  pages_count: 4
-  document:
-    pages: true
-    include_permissions: true
-    include_errors: true
-    flows: []
-  output:
-    directory: docs/generado/mantenciones/
-    images_directory: docs/generado/mantenciones/images/
-    files:
-      - mantenciones.md
-      - mantenciones-detalle.md
-      - mantenciones-planes.md
-      - mantenciones-politicas-documentales.md
-  pages:
-    -
-      route: /mantenciones
-      dynamic: false
-      file: mantenciones.md
-    -
-      route: /mantenciones/[id]
-      dynamic: true
-      file: mantenciones-detalle.md
-    -
-      route: /mantenciones/planes
-      dynamic: false
-      file: mantenciones-planes.md
-    -
-      route: /mantenciones/politicas-documentales
-      dynamic: false
-      file: mantenciones-politicas-documentales.md
-  status: complete
-  completed_at: "2026-09-15T14:00:00.000Z"
-  completion_notes: "4/4 páginas: 3 capturadas, 1 (/mantenciones/[id]) documentada desde el esquema (maintenance_records sin registros en esta BD local)."
 -
   name: ti
   priority: 19

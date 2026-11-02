@@ -221,7 +221,7 @@ test.describe("Densidad — todo KPI de subconjunto llega a su subconjunto", () 
    */
   const TILES_DEL_PANEL = [
     { dominio: "Equipos detenidos", destino: "/flota?estado=detenidos" },
-    { dominio: "OT abiertas", destino: "/mantenciones?status=abiertas" },
+    { dominio: "OT abiertas", destino: "/mantencion/ot?estado=abiertas" },
     { dominio: "Documentos vencidos", destino: "/flota?vencimiento=vencidos" },
     { dominio: "Combustible por revisar", destino: "/combustibles/revisar" },
   ]

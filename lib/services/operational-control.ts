@@ -7,8 +7,6 @@ import {
   fuelEquipmentTypes,
   fuelVehicleOperationalIntervals,
   fuelVehicles,
-  maintenancePlans,
-  maintenanceRecords,
   preventionCapaActions,
   preventionInspectionFindings,
   preventionInspectionRuns,
@@ -21,9 +19,17 @@ import { expiredDocumentTypes, resolveNextExpiryDate } from "@/lib/validation/fl
 import { getAssetFuelSummary, type AssetFuelSummary } from "@/lib/combustibles/control/queries/asset-fuel-summary"
 import { logger } from "@/lib/logger"
 import { getFleetAdminSettings } from "@/lib/services/system-settings"
+import {
+  getVehicleWorkOrderMetrics,
+  getWorkOrderGlobalMetrics,
+  meanTimeToRepairHours,
+  workOrderMetricsScope,
+  type VehicleWorkOrderMetrics,
+  type WorkOrderGlobalMetrics,
+} from "@/lib/services/mantencion/work-orders/metrics"
+import { canViewWorkOrders as sessionCanViewWorkOrders } from "@/lib/operational-control/capabilities"
 import { addDaysToPlainDate, todayInChile } from "@/lib/utils"
 import { civilDate } from "@/lib/validation/dates"
-import { MAINTENANCE_OPEN_STATUSES } from "@/lib/validation/maintenance"
 import {
   countFleetDocumentExpiry,
   countStoppedVehicles,
@@ -49,9 +55,7 @@ export type OperationalAsset = {
   operationalStatusLabel: string
   /** El estado de la ficha no coincide con el intervalo operacional abierto. */
   stateMismatch: boolean
-  capabilities: readonly ("fuel" | "inspections" | "maintenance" | "service_requests")[]
-  maintenanceCount: number
-  openMaintenanceCount: number
+  capabilities: readonly ("fuel" | "inspections" | "service_requests")[]
   inspectionCount: number
   /** Promedio de cumplimiento de las inspecciones del período; `null` sin dato. */
   inspectionCompliancePercent: number | null
@@ -63,14 +67,6 @@ export type OperationalAsset = {
   criticalOpenFindings: number | null
   /** CAPA vencidas vinculadas a hallazgos de inspección; sólo con `prevention:capa:view`. */
   overdueCapa: number | null
-  /** Costo de OT completadas y aprobadas (o que no requieren aprobación). */
-  maintenanceCostApproved: number | null
-  /** OT abiertas con SLA vencido. */
-  openSlaOverdue: number | null
-  /** OT abiertas sin responsable asignado. */
-  unassignedOpen: number | null
-  /** Próximo vencimiento de un plan preventivo activo. */
-  nextPlanDue: string | null
   /** Próximo vencimiento documental del activo, con el criterio de Flota. */
   nextExpiryDate: string | null
   /** Tipos documentales vencidos; vacío si no hay ninguno. */
@@ -79,8 +75,6 @@ export type OperationalAsset = {
   gpsHourMeter: number | null
   gpsObservedAt: string | null
   gpsFuelLevel: number | null
-  downtimeHours: number
-  maintenanceCost: number | null
   /** Litros de la serie operacional (`fuel_equipment_loads`) que cuentan en el período. */
   fuelLiters: number | null
   fuelLoadCount: number | null
@@ -103,6 +97,12 @@ export type OperationalAsset = {
   litersIdle: number | null
   /** La lectura de la carga y la telemetría discrepan para el mismo medidor. */
   meterMismatch: boolean
+  /** OT abiertas del equipo (no dependen del período); `null` sin `mant:ot:view_*`. */
+  openWorkOrders: number | null
+  /** El equipo está hoy en el taller: OT en ejecución con ingreso y sin salida. */
+  inWorkshop: boolean | null
+  /** Horas en taller dentro del período (ingreso → salida recortado al período). */
+  workshopHours: number | null
 }
 
 export interface OperationalControlPeriod {
@@ -120,13 +120,13 @@ export interface OperationalControlPeriod {
  *
  * Cada cifra se mide con el criterio de la lista a la que enlaza su tile:
  * detenidos y documentos con `filterFleetOverviewRows` sobre todos los
- * vehículos del alcance (activos e inactivos, como `/flota`), y OT abiertas
- * sobre todas las OT del alcance de la propia OT, sin fecha (como `/mantenciones`).
+ * vehículos del alcance (activos e inactivos, como `/flota`).
  */
 export interface OperationalAttention {
   stoppedVehicles: StoppedVehicles | null
   fleetDocuments: (FleetDocumentExpiry & { warningDays: number }) | null
-  openWorkOrders: number | null
+  /** OT abiertas hoy, con las sin asignar y las de entrega vencida; `null` sin la capacidad de OT o si falló. */
+  workOrders: WorkOrderGlobalMetrics | null
 }
 
 /** Una consulta de atención que falla se registra y se vuelve `null`; no rechaza el panel entero. */
@@ -145,19 +145,6 @@ export interface OperationalControlMetricInputs {
   /** Horas calendario de los equipos activos en el período. */
   calendarHours: number
   operativeHours: number
-  downtimeHours: number
-  correctiveDowntimeHours: number
-  completedCorrective: number
-  preventiveCompleted: number
-  preventiveDue: number
-  backlog: number
-  maintenanceCost: number
-  maintenanceCostApproved: number
-  plansDue: number
-  plansWithRecord: number
-  overdueSla: number
-  unassignedOpen: number
-  canViewCosts: boolean
 }
 
 export function calculateOperationalControlMetrics(input: OperationalControlMetricInputs) {
@@ -172,16 +159,6 @@ export function calculateOperationalControlMetrics(input: OperationalControlMetr
     stateCoveragePercent: input.totalIntervalHours > 0 && input.calendarHours > 0
       ? Math.min(100, (input.totalIntervalHours / input.calendarHours) * 100)
       : null,
-    mttrHours: input.completedCorrective > 0 ? input.correctiveDowntimeHours / input.completedCorrective : null,
-    mtbfHours: input.completedCorrective > 0 ? input.operativeHours / input.completedCorrective : null,
-    preventiveCompliancePercent: input.preventiveDue > 0 ? (input.preventiveCompleted / input.preventiveDue) * 100 : null,
-    downtimeHours: input.downtimeHours,
-    backlog: input.backlog,
-    maintenanceCost: input.canViewCosts ? input.maintenanceCost : null,
-    maintenanceCostApproved: input.canViewCosts ? input.maintenanceCostApproved : null,
-    planAdherencePercent: input.plansDue > 0 ? (input.plansWithRecord / input.plansDue) * 100 : null,
-    overdueSla: input.overdueSla,
-    unassignedOpen: input.unassignedOpen,
   }
 }
 
@@ -196,7 +173,7 @@ export interface OperationalControlHubOptions {
   /**
    * Calcula los conteos de «Requiere atención» (por defecto `true`, que es lo que
    * pinta la página). La exportación a Excel no los usa: con `false` no se
-   * emiten sus consultas (documentos de flota, ajustes de aviso, OT abiertas) ni
+   * emiten sus consultas (documentos de flota y ajustes de aviso) ni
    * se cuentan los detenidos, y `attention` queda con todos sus campos en `null`.
    */
   includeAttention?: boolean
@@ -211,13 +188,16 @@ export async function getOperationalControlHub(
   const includeAttention = options.includeAttention !== false
   const period = resolveOperationalControlPeriod(input)
   const canViewFleet = can(session, "flota:view")
-  const canViewMaintenance = can(session, "mantenciones:view")
   const canViewInspections = can(session, "prevention:inspections:view")
   const canViewCapa = can(session, "prevention:capa:view")
   const canViewCosts = can(session, "combustibles:view_costs")
   const canViewFuel = can(session, "combustibles:view")
   const canViewServiceEquipment = can(session, "admin:service_equipment")
-  if (!canViewFleet && !canViewMaintenance && !canViewInspections && !canViewFuel) throw new Error("Sin permisos para Control operacional")
+  // Las OT se ven con `mant:ot:view_*`; no abren el hub (el gate de abajo sigue
+  // siendo flota, inspecciones o combustible) y su alcance es el de las OT.
+  const canViewWorkOrders = sessionCanViewWorkOrders(session)
+  const workOrderScope = canViewWorkOrders ? workOrderMetricsScope(session) : null
+  if (!canViewFleet && !canViewInspections && !canViewFuel) throw new Error("Sin permisos para Control operacional")
   const vehicleScope = worksiteScopeSql(session, fuelVehicles.worksiteId)
   const serviceScope = worksiteScopeSql(session, serviceEquipment.worksiteId)
   const today = todayInChile()
@@ -225,8 +205,8 @@ export async function getOperationalControlHub(
   // mostrar un vacío indistinguible de «no hay datos».
   const degradedSources: string[] = []
 
-  const [vehicles, instruments, maintenanceAgg, planAgg, inspectionAgg, findingsAgg, capaAgg, availabilityRows, documents, fleetSettings, gpsRows, openWorkOrders] = await Promise.all([
-    canViewFleet || canViewMaintenance || canViewInspections || canViewFuel
+  const [vehicles, instruments, inspectionAgg, findingsAgg, capaAgg, availabilityRows, documents, fleetSettings, gpsRows, workOrders] = await Promise.all([
+    canViewFleet || canViewInspections || canViewFuel
       ? db.select({ id: fuelVehicles.id, code: fuelVehicles.code, plate: fuelVehicles.plate, type: fuelVehicles.type, typeName: fuelEquipmentTypes.name, performanceUnit: fuelVehicles.performanceUnit, meterType: fuelVehicles.meterType, worksiteId: fuelVehicles.worksiteId, worksiteName: worksites.name, operationalStatus: fuelVehicles.operationalStatus, intervalStatus: fuelVehicleOperationalIntervals.status, isActive: fuelVehicles.isActive, soapExpiresAt: fuelVehicles.soapExpiresAt, technicalReviewExpiresAt: fuelVehicles.technicalReviewExpiresAt, circulationPermitExpiresAt: fuelVehicles.circulationPermitExpiresAt, insuranceExpiresAt: fuelVehicles.insuranceExpiresAt })
           .from(fuelVehicles)
           .innerJoin(worksites, eq(worksites.id, fuelVehicles.worksiteId))
@@ -242,49 +222,6 @@ export async function getOperationalControlHub(
       ? db.select({ id: serviceEquipment.id, code: serviceEquipment.code, name: serviceEquipment.name, kind: serviceEquipment.kind, worksiteId: serviceEquipment.worksiteId, worksiteName: worksites.name, isActive: serviceEquipment.isActive })
           .from(serviceEquipment).innerJoin(worksites, eq(worksites.id, serviceEquipment.worksiteId)).where(serviceScope).orderBy(serviceEquipment.code)
       : [],
-    canViewMaintenance ? db.select({
-      vehicleId: maintenanceRecords.vehicleId,
-      count: sql<number>`COUNT(*)`,
-      openCount: sql<number>`COUNT(*) FILTER (WHERE ${maintenanceRecords.status} IN ('scheduled', 'in_progress'))`,
-      completedCorrective: sql<number>`COUNT(*) FILTER (WHERE ${maintenanceRecords.status} = 'completed' AND ${maintenanceRecords.maintenanceType} = 'correctiva')`,
-      // Detención recortada al período: una OT que empieza en febrero o termina
-      // en abril no puede sumar horas de febrero/abril al período que se mira.
-      downtimeHours: sql<number>`COALESCE(SUM(EXTRACT(EPOCH FROM (LEAST(COALESCE(${maintenanceRecords.downtimeEndedAt}, (${period.to}::date + INTERVAL '1 day')), (${period.to}::date + INTERVAL '1 day')) - GREATEST(${maintenanceRecords.downtimeStartedAt}, ${period.from}::date))) / 3600) FILTER (WHERE ${maintenanceRecords.status} <> 'cancelled' AND ${maintenanceRecords.downtimeStartedAt} IS NOT NULL AND ${maintenanceRecords.downtimeStartedAt} < (${period.to}::date + INTERVAL '1 day') AND COALESCE(${maintenanceRecords.downtimeEndedAt}, (${period.to}::date + INTERVAL '1 day')) > ${period.from}::date), 0)`,
-      correctiveDowntimeHours: sql<number>`COALESCE(SUM(EXTRACT(EPOCH FROM (LEAST(COALESCE(${maintenanceRecords.downtimeEndedAt}, (${period.to}::date + INTERVAL '1 day')), (${period.to}::date + INTERVAL '1 day')) - GREATEST(${maintenanceRecords.downtimeStartedAt}, ${period.from}::date))) / 3600) FILTER (WHERE ${maintenanceRecords.status} = 'completed' AND ${maintenanceRecords.maintenanceType} = 'correctiva' AND ${maintenanceRecords.downtimeStartedAt} IS NOT NULL AND ${maintenanceRecords.downtimeStartedAt} < (${period.to}::date + INTERVAL '1 day') AND COALESCE(${maintenanceRecords.downtimeEndedAt}, (${period.to}::date + INTERVAL '1 day')) > ${period.from}::date), 0)`,
-      // Sin permiso de costos el monto no se recupera en absoluto: proyectar
-      // `null` evita traer el dato del driver para descartarlo después.
-      cost: canViewCosts
-        ? sql<number>`COALESCE(SUM(${maintenanceRecords.totalAmount}) FILTER (WHERE ${maintenanceRecords.status} <> 'cancelled'), 0)`
-        : sql<null>`null`,
-      approvedCost: canViewCosts
-        ? sql<number>`COALESCE(SUM(${maintenanceRecords.totalAmount}) FILTER (WHERE ${maintenanceRecords.status} = 'completed' AND ${maintenanceRecords.costApprovalStatus} IN ('approved', 'not_required')), 0)`
-        : sql<null>`null`,
-      overdueSla: sql<number>`(COUNT(*) FILTER (WHERE ${maintenanceRecords.status} IN ('scheduled', 'in_progress') AND ${maintenanceRecords.slaDueAt} < now()))::int`,
-      unassignedOpen: sql<number>`(COUNT(*) FILTER (WHERE ${maintenanceRecords.status} IN ('scheduled', 'in_progress') AND ${maintenanceRecords.assignedToUserId} IS NULL))::int`,
-      preventiveCompleted: sql<number>`COUNT(*) FILTER (WHERE ${maintenanceRecords.status} = 'completed' AND ${maintenanceRecords.maintenanceType} = 'preventiva')`,
-      preventiveDue: sql<number>`COUNT(*) FILTER (WHERE ${maintenanceRecords.maintenanceType} = 'preventiva' AND ${maintenanceRecords.status} <> 'cancelled')`,
-    }).from(maintenanceRecords).innerJoin(fuelVehicles, eq(fuelVehicles.id, maintenanceRecords.vehicleId)).where(and(
-      vehicleScope,
-      sql`${maintenanceRecords.maintenanceDate} BETWEEN ${period.from} AND ${period.to}`,
-    )).groupBy(maintenanceRecords.vehicleId) : [],
-    // Adherencia al plan: planes activos que vencen en el período y cuántos de
-    // ellos tienen al menos una OT no cancelada. `nextPlanDue` no se recorta al
-    // período: sirve para ver el próximo vencimiento del activo.
-    canViewMaintenance ? db.select({
-      vehicleId: maintenancePlans.vehicleId,
-      plansDue: sql<number>`(COUNT(DISTINCT ${maintenancePlans.id}) FILTER (WHERE ${maintenancePlans.nextDueDate} BETWEEN ${period.from} AND ${period.to}))::int`,
-      plansWithRecord: sql<number>`(COUNT(DISTINCT ${maintenancePlans.id}) FILTER (WHERE ${maintenancePlans.nextDueDate} BETWEEN ${period.from} AND ${period.to} AND ${maintenanceRecords.id} IS NOT NULL))::int`,
-      nextPlanDue: sql<string | null>`MIN(${maintenancePlans.nextDueDate})`,
-    })
-      .from(maintenancePlans)
-      .leftJoin(maintenanceRecords, and(
-        eq(maintenanceRecords.planId, maintenancePlans.id),
-        sql`${maintenanceRecords.maintenanceDate} BETWEEN ${period.from} AND ${period.to}`,
-        sql`${maintenanceRecords.status} <> 'cancelled'`,
-      ))
-      .innerJoin(fuelVehicles, eq(fuelVehicles.id, maintenancePlans.vehicleId))
-      .where(and(vehicleScope, eq(maintenancePlans.isActive, true)))
-      .groupBy(maintenancePlans.vehicleId) : [],
     canViewInspections ? db.select({
       vehicleId: preventionInspectionRuns.subjectVehicleId,
       count: sql<number>`COUNT(*) FILTER (WHERE ${preventionInspectionRuns.status} <> 'cancelled')`,
@@ -333,7 +270,7 @@ export async function getOperationalControlHub(
       ))
       .groupBy(preventionInspectionRuns.subjectVehicleId) : [],
     // La disponibilidad es un indicador de Flota: se consulta sólo con
-    // `flota:view`. Entrar al hub por mantención o inspección no habilita este
+    // `flota:view`. Entrar al hub por inspección o combustible no habilita este
     // subdominio.
     canViewFleet ? db.select({
       vehicleId: fuelVehicleOperationalIntervals.vehicleId,
@@ -367,15 +304,15 @@ export async function getOperationalControlHub(
       .innerJoin(fuelVehicles, eq(fuelVehicles.id, fleetGpsLatestPositions.vehicleId))
       .where(vehicleScope)
       .orderBy(fleetGpsLatestPositions.vehicleId, desc(fleetGpsLatestPositions.observedAt)), degradedSources) : [],
-    // Las OT abiertas que cuenta `/mantenciones?status=abiertas`: todas las del
-    // alcance de la OT (no del vehículo), sin ventana de fechas. No es el
-    // `backlog` de las métricas, que sólo ve las OT fechadas dentro del período.
-    includeAttention && canViewMaintenance ? settleAttention("OT abiertas", async () => {
-      const [row] = await db.select({ count: sql<number>`COUNT(*)::int` }).from(maintenanceRecords).where(and(
-        worksiteScopeSql(session, maintenanceRecords.worksiteId),
-        inArray(maintenanceRecords.status, [...MAINTENANCE_OPEN_STATUSES]),
-      ))
-      return Number(row?.count ?? 0)
+    // Cifras de OT: por equipo (columna y horas en taller del período) y, sólo
+    // para el panel, las globales del tile. Una sola sección degradable: si
+    // falla, el resto del panel sigue y las cifras de OT quedan en null.
+    workOrderScope ? settleAttention("órdenes de trabajo", async () => {
+      const [byVehicle, global] = await Promise.all([
+        getVehicleWorkOrderMetrics(workOrderScope, { period }),
+        includeAttention ? getWorkOrderGlobalMetrics(workOrderScope, { today }) : Promise.resolve(null),
+      ])
+      return { byVehicle, global }
     }, degradedSources) : null,
   ])
 
@@ -386,8 +323,6 @@ export async function getOperationalControlHub(
     ? await getAssetFuelSummary(session, period, vehicles.map((vehicle) => vehicle.id))
     : new Map<string, AssetFuelSummary>()
 
-  const maintenanceByVehicle = new Map(maintenanceAgg.map((row) => [row.vehicleId, row]))
-  const planByVehicle = new Map(planAgg.map((row) => [row.vehicleId, row]))
   const inspectionsByVehicle = new Map(inspectionAgg.filter((row) => row.vehicleId).map((row) => [row.vehicleId!, row]))
   const findingsByVehicle = new Map(findingsAgg.filter((row) => row.vehicleId).map((row) => [row.vehicleId!, row]))
   const capaByVehicle = new Map(capaAgg.filter((row) => row.vehicleId).map((row) => [row.vehicleId!, row]))
@@ -397,16 +332,16 @@ export async function getOperationalControlHub(
     if (list) list.push({ documentType: document.documentType, expiresAt: document.expiresAt })
     else documentsByVehicle.set(document.vehicleId, [{ documentType: document.documentType, expiresAt: document.expiresAt }])
   }
+  const workOrdersByVehicle: Map<string, VehicleWorkOrderMetrics> | null = workOrders?.byVehicle ?? null
   const gpsByVehicle = new Map((gpsRows ?? []).filter((row) => row.vehicleId).map((row) => [row.vehicleId!, row]))
   const vehicleAssets: OperationalAsset[] = vehicles.map((vehicle) => {
-    const maintenance = maintenanceByVehicle.get(vehicle.id)
-    const plan = planByVehicle.get(vehicle.id)
     const inspections = inspectionsByVehicle.get(vehicle.id)
     const findings = findingsByVehicle.get(vehicle.id)
     const capa = capaByVehicle.get(vehicle.id)
     const fuel = fuelSummary.get(vehicle.id)
     const vehicleDocuments = documentsByVehicle.get(vehicle.id) ?? []
     const gps = gpsByVehicle.get(vehicle.id)
+    const workOrder = workOrdersByVehicle?.get(vehicle.id)
     const declaredExpiry = {
       soapExpiresAt: vehicle.soapExpiresAt,
       technicalReviewExpiresAt: vehicle.technicalReviewExpiresAt,
@@ -445,9 +380,7 @@ export async function getOperationalControlHub(
       stateMismatch: vehicle.isActive
         && vehicle.intervalStatus != null
         && vehicle.intervalStatus !== vehicle.operationalStatus,
-      capabilities: ["fuel", "inspections", "maintenance"] as const,
-      maintenanceCount: Number(maintenance?.count ?? 0),
-      openMaintenanceCount: Number(maintenance?.openCount ?? 0),
+      capabilities: ["fuel", "inspections"] as const,
       inspectionCount: Number(inspections?.count ?? 0),
       inspectionCompliancePercent: canViewInspections
         ? (inspections?.compliance == null ? null : Number(inspections.compliance))
@@ -457,12 +390,6 @@ export async function getOperationalControlHub(
       openFindings: canViewInspections ? Number(findings?.openFindings ?? 0) : null,
       criticalOpenFindings: canViewInspections ? Number(findings?.criticalOpenFindings ?? 0) : null,
       overdueCapa: canViewInspections && canViewCapa ? Number(capa?.overdueCapa ?? 0) : null,
-      downtimeHours: Number(maintenance?.downtimeHours ?? 0),
-      maintenanceCost: canViewCosts ? Number(maintenance?.cost ?? 0) : null,
-      maintenanceCostApproved: canViewCosts ? Number(maintenance?.approvedCost ?? 0) : null,
-      openSlaOverdue: canViewMaintenance ? Number(maintenance?.overdueSla ?? 0) : null,
-      unassignedOpen: canViewMaintenance ? Number(maintenance?.unassignedOpen ?? 0) : null,
-      nextPlanDue: canViewMaintenance ? (plan?.nextPlanDue ?? null) : null,
       nextExpiryDate: canViewFleet ? resolveNextExpiryDate(declaredExpiry, vehicleDocuments) : null,
       expiredDocumentTypes: canViewFleet ? expiredDocumentTypes(declaredExpiry, vehicleDocuments, today) : [],
       gpsOdometer: canViewFleet ? (gps?.odometer == null ? null : Number(gps.odometer)) : null,
@@ -482,6 +409,9 @@ export async function getOperationalControlHub(
       idlePct: canViewFuel ? (fuel?.idlePct ?? null) : null,
       litersIdle: canViewFuel ? (fuel?.litersIdle ?? null) : null,
       meterMismatch,
+      openWorkOrders: workOrdersByVehicle ? (workOrder?.openCount ?? 0) : null,
+      inWorkshop: workOrdersByVehicle ? (workOrder?.inWorkshopNow ?? false) : null,
+      workshopHours: workOrdersByVehicle ? (workOrder?.workshopHoursInPeriod ?? 0) : null,
     }
   })
   const serviceAssets: OperationalAsset[] = instruments.map((instrument) => ({
@@ -496,8 +426,6 @@ export async function getOperationalControlHub(
     operationalStatusLabel: instrument.isActive ? "Operativo" : "Inactivo",
     stateMismatch: false,
     capabilities: ["service_requests"] as const,
-    maintenanceCount: 0,
-    openMaintenanceCount: 0,
     inspectionCount: 0,
     inspectionCompliancePercent: null,
     inspectionNonConforming: null,
@@ -505,22 +433,12 @@ export async function getOperationalControlHub(
     openFindings: null,
     criticalOpenFindings: null,
     overdueCapa: null,
-    maintenanceCostApproved: null,
-    openSlaOverdue: null,
-    unassignedOpen: null,
-    nextPlanDue: null,
     nextExpiryDate: null,
     expiredDocumentTypes: [],
     gpsOdometer: null,
     gpsHourMeter: null,
     gpsObservedAt: null,
     gpsFuelLevel: null,
-    downtimeHours: 0,
-    // Los instrumentos de servicio no tienen costo de mantención modelado
-    // todavía; devolver null (no 0) fuerza a la UI a pintar "—" en vez de
-    // "$0" — bug B-05. Cuando el módulo `service_requests` se conecte, esto
-    // será un cálculo real.
-    maintenanceCost: null,
     // Tampoco tienen serie de combustible: no son `fuel_vehicles` y no
     // aparecen en las cargas. Null, no 0, para no simular un historial vacío.
     fuelLiters: null,
@@ -536,6 +454,10 @@ export async function getOperationalControlHub(
     idlePct: null,
     litersIdle: null,
     meterMismatch: false,
+    // Los instrumentos de servicio no son `fuel_vehicles`: no tienen OT.
+    openWorkOrders: null,
+    inWorkshop: null,
+    workshopHours: null,
   }))
 
   const totalIntervalHours = availabilityRows.reduce((sum, row) => sum + Number(row.totalHours), 0)
@@ -544,11 +466,18 @@ export async function getOperationalControlHub(
     (Date.parse(`${period.to}T00:00:00Z`) - Date.parse(`${period.from}T00:00:00Z`)) / 86_400_000,
   ) + 1
   const calendarHours = vehicles.filter((vehicle) => vehicle.isActive).length * periodDays * 24
-  const totalDowntime = maintenanceAgg.reduce((sum, row) => sum + Number(row.downtimeHours), 0)
-  const correctiveDowntimeHours = maintenanceAgg.reduce((sum, row) => sum + Number(row.correctiveDowntimeHours), 0)
-  const completedCorrective = maintenanceAgg.reduce((sum, row) => sum + Number(row.completedCorrective), 0)
-  const preventiveCompleted = maintenanceAgg.reduce((sum, row) => sum + Number(row.preventiveCompleted), 0)
-  const preventiveDue = maintenanceAgg.reduce((sum, row) => sum + Number(row.preventiveDue), 0)
+  // Horas en taller y MTTR: sobre los equipos del alcance de la sesión que
+  // listan los activos (un equipo con OT de otra faena no suma al panel que no lo muestra).
+  const assetIds = new Set(vehicles.map((vehicle) => vehicle.id))
+  let workshopHours = 0
+  let repairClosed = 0
+  let repairWorkshopHours = 0
+  for (const [vehicleId, metrics] of workOrdersByVehicle ?? []) {
+    if (!assetIds.has(vehicleId)) continue
+    workshopHours += metrics.workshopHoursInPeriod
+    repairClosed += metrics.repairClosedInPeriod
+    repairWorkshopHours += metrics.repairClosedWorkshopHours
+  }
   const attention: OperationalAttention = {
     stoppedVehicles: includeAttention && canViewFleet ? countStoppedVehicles(vehicles) : null,
     fleetDocuments: fleetSettings && documents
@@ -560,31 +489,24 @@ export async function getOperationalControlHub(
           }),
         }
       : null,
-    openWorkOrders,
+    workOrders: includeAttention ? (workOrders?.global ?? null) : null,
   }
   return {
     period,
     attention,
     degradedSources,
     assets: [...vehicleAssets, ...serviceAssets],
-    metrics: calculateOperationalControlMetrics({
-      totalIntervalHours,
-      calendarHours,
-      operativeHours,
-      downtimeHours: totalDowntime,
-      correctiveDowntimeHours,
-      completedCorrective,
-      preventiveCompleted,
-      preventiveDue,
-      backlog: vehicleAssets.reduce((sum, asset) => sum + asset.openMaintenanceCount, 0),
-      maintenanceCost: maintenanceAgg.reduce((sum, row) => sum + Number(row.cost ?? 0), 0),
-      maintenanceCostApproved: maintenanceAgg.reduce((sum, row) => sum + Number(row.approvedCost ?? 0), 0),
-      plansDue: planAgg.reduce((sum, row) => sum + Number(row.plansDue ?? 0), 0),
-      plansWithRecord: planAgg.reduce((sum, row) => sum + Number(row.plansWithRecord ?? 0), 0),
-      overdueSla: maintenanceAgg.reduce((sum, row) => sum + Number(row.overdueSla ?? 0), 0),
-      unassignedOpen: maintenanceAgg.reduce((sum, row) => sum + Number(row.unassignedOpen ?? 0), 0),
-      canViewCosts,
-    }),
-    permissions: { canViewFleet, canViewMaintenance, canViewInspections, canViewCapa, canViewFuel, canViewCosts, canViewServiceEquipment },
+    metrics: {
+      ...calculateOperationalControlMetrics({
+        totalIntervalHours,
+        calendarHours,
+        operativeHours,
+      }),
+      // `null` sin la capacidad de OT o si su consulta falló; 0 h es un dato válido (nadie ingresó al taller).
+      workshopHours: workOrdersByVehicle ? workshopHours : null,
+      // MTTR = horas en taller de las OT de reparación cerradas ÷ cuántas son. Sin ninguna cerrada no hay qué promediar.
+      mttrHours: workOrdersByVehicle ? meanTimeToRepairHours(repairClosed, repairWorkshopHours) : null,
+    },
+    permissions: { canViewFleet, canViewInspections, canViewCapa, canViewFuel, canViewCosts, canViewServiceEquipment, canViewWorkOrders },
   }
 }

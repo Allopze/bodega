@@ -69,7 +69,7 @@ import {
  *   slug para capturar solo un submódulo. Prefijos disponibles:
  *     combustibles, prevencion, admin, solicitudes, compras, recepcion,
  *     bodega, entregas, trazabilidad, reportes, analitica, flota,
- *     mantenciones, repuestos, servicios, soporte, ti, facturacion
+ *     mantencion, repuestos, servicios, soporte, ti, facturacion
  *
  *   Las rutas públicas (login, etc.) siempre se incluyen para permitir
  *   la autenticación.
@@ -689,16 +689,14 @@ const routeTargets: RouteTarget[] = [
   { slug: "flota-detalle", path: "/flota/fuel-veh-audit-1", auth: true },
   { slug: "flota-monitoreo", path: "/flota/monitoreo", auth: true, notes: "Monitoreo GPS Entel OnWay: vehículos vinculados, alertas, último run y dispositivos sin match." },
   { slug: "control-operacional", path: "/control-operacional", auth: true },
-  { slug: "mantenciones", path: "/mantenciones", auth: true },
-  { slug: "mantenciones-detalle", path: "/mantenciones/maint-audit-1", auth: true },
-  { slug: "mantenciones-planes", path: "/mantenciones/planes", auth: true },
-  { slug: "mantenciones-politicas-documentales", path: "/mantenciones/politicas-documentales", auth: true },
   // Mantención de equipos (módulo nuevo): fixtures propios para que las capturas
   // muestren el panel, un registro con su PDF y el editor de pautas con datos.
   { slug: "mantencion-panel", path: "/mantencion/panel", auth: true },
   { slug: "mantencion-registros", path: "/mantencion/registros", auth: true },
   { slug: "mantencion-registro-detalle", path: "/mantencion/registros/mant-record-audit-1", auth: true },
   { slug: "mantencion-registro-print", path: "/mantencion/registros/mant-record-audit-1/print", auth: true },
+  { slug: "mantencion-ot-detalle", path: "/mantencion/ot/mant-ot-audit-1", auth: true },
+  { slug: "mantencion-ot-print", path: "/mantencion/ot/mant-ot-audit-1/print", auth: true },
   { slug: "mantencion-equipos", path: "/mantencion/equipos", auth: true },
   { slug: "mantencion-equipo-detalle", path: "/mantencion/equipos/fuel-veh-audit-1", auth: true },
   { slug: "mantencion-equipo-nuevo", path: "/mantencion/equipos/nuevo", auth: true },
@@ -990,8 +988,7 @@ const seedCoverage: CaptureSeedArea[] = [
   { section: "facturacion", fixtures: ["cliente con contrato mensual y contacto de cobranza", "factura parcialmente pagada con compromiso de pago", "factura pagada", "factura vencida con gestión sin respuesta", "nota de crédito con total negativo", "factura sin vínculo a cliente", "factura de compra", "par candidato a duplicado entre dos fuentes", "propuesta en revisión", "propuesta aprobada con antecedente faltante", "corrida de sincronización exitosa y una fallida"] },
   { section: "dte", fixtures: ["documento conciliado con factura de OC", "documento sin vínculo interno", "nota de crédito recibida", "corrida de sincronización con conciliación parcial"] },
   { section: "analitica", fixtures: ["compras", "combustible", "flota", "EPP"] },
-  { section: "flota", fixtures: ["vehículos activos", "cargas de combustible", "mantenciones"] },
-  { section: "mantenciones", fixtures: ["vehículos", "proveedores", "mantenciones registradas"] },
+  { section: "flota", fixtures: ["vehículos activos", "cargas de combustible"] },
   { section: "mantencion", fixtures: ["panel con indicadores", "registro preventivo con su PDF", "equipo con perfil y pauta", "pauta con matriz", "credencial de dispositivo"] },
   { section: "ti", fixtures: ["activo asignado con acta de custodia", "ticket TI abierto asociado a activo", "activo disponible con garantía vigente", "activo con garantía vencida y reparación costosa", "garantía por vencer dentro de 30 días", "licencia con asignaciones a trabajador y equipo", "mantención correctiva con costo alto", "mantención preventiva", "baja de activo autorizada", "sistemas de acceso con trabajador activo y suspendido", "checklist de alta con tareas pendientes", "proveedor TI con vínculo de reparación y de venta"] },
   { section: "combustibles", fixtures: ["cargas de combustible", "lote de consumos con registros asociados y sin asociar", "lote de log operacional con faena pendiente de asociar", "carga TAE con resultado público", "lote TAE histórico con carga observada y rechazo", "vehículos de combustible", "proveedores de combustible", "cuentas corrientes", "reportes mensuales"] },
@@ -1826,7 +1823,7 @@ async function prepareDatabase(captureDbUrl: string) {
     // El RBAC real (modules/purchasing/manifest.ts) no concede create_order ni
     // send_order a jefa_chome; el seed de capturas los tenía de más, mostrando
     // un acceso a compras que producción no da.
-    "rol-jefa": ["requests:view_all", "approvals:approve", "purchasing:view", "receiving:view", "reports:view", "analytics:view", "analytics:export", "flota:view", "mantenciones:view", "mantenciones:create", "repuestos:view_all", "repuestos:approve", "servicios:view_all", "servicios:approve"],
+    "rol-jefa": ["requests:view_all", "approvals:approve", "purchasing:view", "receiving:view", "reports:view", "analytics:view", "analytics:export", "flota:view", "repuestos:view_all", "repuestos:approve", "servicios:view_all", "servicios:approve"],
     // `requests:submit` se retiró del registro (lib/auth/bootstrap.ts): EPP/otro
     // se crean y envían en un solo paso con `requests:create`.
     "rol-prevencion": ["requests:create", "requests:view_own", "repuestos:create", "repuestos:view_own", "repuestos:submit", "servicios:create", "servicios:view_own", "servicios:submit", "sst:view", "sst:create", "sst:close", "sst:manage"],
@@ -4236,25 +4233,6 @@ async function prepareDatabase(captureDbUrl: string) {
     },
   ])
 
-  await db.insert(schema.maintenanceRecords).values({
-    id: "maint-audit-1",
-    code: "OT-2026-0001",
-    vehicleId: "fuel-veh-audit-1",
-    worksiteId,
-    maintenanceDate: "2026-06-20",
-    maintenanceType: "preventiva",
-    status: "scheduled",
-    priority: "normal",
-    operationalImpact: "maintenance",
-    netAmount: 180_000,
-    taxAmount: 34_200,
-    totalAmount: 214_200,
-    notes: "Mantención preventiva de referencia para captura.",
-    createdBy: userId,
-    createdAt: now,
-    updatedAt: now,
-  })
-
   await db.insert(schema.fuelImportBatches).values({
     id: "fuel-import-audit-1",
     worksiteId,
@@ -5875,6 +5853,40 @@ async function prepareDatabase(captureDbUrl: string) {
   await db.insert(schema.mantRecordItems).values({
     id: "mant-record-item-audit-1", recordId: "mant-record-audit-1", itemKey: "motor-audit-1",
     groupName: "Motor", itemName: "Revisión de aceite y filtros", sortOrder: 0, value: "R",
+  }).onConflictDoNothing()
+  // Orden de trabajo en taller, para el detalle y su impresión.
+  await db.insert(schema.mantWorkOrders).values({
+    id: "mant-ot-audit-1",
+    folio: "OT-AUD-0001",
+    vehicleId: "fuel-veh-audit-1",
+    worksiteId,
+    equipmentSnapshot: {
+      code: "FD-71-22", plate: "FD-71-22", noPlate: false, type: "Camioneta",
+      brand: "Toyota", model: "Hilux 4x4", year: 2023, worksite: "Faena Mininco", unit: "km",
+    },
+    repair: true,
+    requestDate: "2026-06-08",
+    requestedByUserId: userId,
+    requesterName: "Admin E2E",
+    repairDescription: "Ruido en el tren delantero al frenar",
+    status: "en_ejecucion",
+    assignedToUserId: userId,
+    assignedByUserId: userId,
+    assignedAt: now,
+    workshopKind: "interno",
+    workshopName: "Taller interno",
+    workshopManagerName: "Encargado de captura",
+    workshopEntryAt: now,
+    entryOdometer: 10_060,
+    estimatedDeliveryDate: "2026-06-12",
+    startedByUserId: userId,
+    startedAt: now,
+    createdAt: now,
+    updatedAt: now,
+  }).onConflictDoNothing()
+  await db.insert(schema.mantWorkOrderItems).values({
+    id: "mant-ot-item-audit-1", workOrderId: "mant-ot-audit-1", kind: "anexo", description: "Revisar pastillas y discos",
+    createdByUserId: userId, createdAt: now,
   }).onConflictDoNothing()
   await db.insert(schema.mantDeviceCredentials).values({
     id: "mant-dev-audit-1", userId, deviceId: "00000000-0000-4000-8000-000000000001",

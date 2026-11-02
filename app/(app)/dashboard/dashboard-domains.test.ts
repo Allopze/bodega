@@ -13,7 +13,7 @@ const JEFATURA = [
   "prevention:pdtp:view", "prevention:incidents:view", "prevention:capa:view",
   "prevention:indicadores:view", "prevention:legal:view",
   "prevention:docs:view", "prevention:training:view", "ppa:view",
-  "combustibles:view", "flota:view", "mantenciones:view",
+  "combustibles:view", "flota:view",
   "prevention:inspections:view", "prevention:permits:view", "prevention:cphs:view",
 ]
 
@@ -99,7 +99,7 @@ describe("nombres de las vistas por área", () => {
 
 describe("domainIsVisible", () => {
   it("basta un permiso del dominio", () => {
-    expect(domainIsVisible(DASHBOARD_DOMAINS.flota, ["mantenciones:view"])).toBe(true)
+    expect(domainIsVisible(DASHBOARD_DOMAINS.flota, ["flota:view"])).toBe(true)
     expect(domainIsVisible(DASHBOARD_DOMAINS.flota, ["requests:view_own"])).toBe(false)
   })
 

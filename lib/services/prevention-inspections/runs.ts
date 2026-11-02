@@ -11,6 +11,8 @@ import {
   preventionInspectionTemplates,
   preventionEmergencyResources,
   fuelVehicles,
+  mantEquipmentProfiles,
+  mantWorkOrders,
   users,
 } from "@/db/schema"
 import {
@@ -43,8 +45,8 @@ import {
   type InspectionItemSpec,
 } from "@/lib/prevention/inspections"
 import { setVehicleOperationalStatus } from "@/lib/services/fleet"
-import { createMaintenanceRecordWithClient } from "@/lib/services/maintenance"
 import { createCapaActionWithClient } from "@/lib/services/prevention-capa"
+import { createWorkOrderWithClient, notifyWorkOrderCreated } from "@/lib/services/mantencion/work-orders/create"
 import type { ChecklistDefinition } from "@/lib/sst/types"
 import { onInspectionCompleted } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
 import { resolvePdtpAccreditationTarget } from "@/lib/services/pdtp/accreditation-bindings"
@@ -817,11 +819,11 @@ async function notifySafely(label: string, send: () => Promise<void>) {
 }
 
 /**
- * Ítem del que se lee la lectura del medidor al derivar una mantención.
+ * Ítem del que se lee la lectura del medidor al derivar una OT.
  *
  * Acopla el motor genérico a un `itemId` de una plantilla concreta, y eso es
  * deliberado: es el único checklist del catálogo que captura el horómetro, y
- * una plantilla que no lo declare simplemente deriva la mantención sin lectura
+ * una plantilla que no lo declare simplemente deriva la OT sin lectura
  * (`null`), no falla. La alternativa —declarar el rol del ítem en
  * `ChecklistItem`— es un campo nuevo en las 13 definiciones para un solo caso.
  * Si aparece un segundo checklist con medidor, ése es el momento de moverlo.
@@ -830,8 +832,8 @@ const METER_ITEM_ID = "horometro_inicio"
 
 /**
  * Lectura declarada en el run para el ítem de horómetro/odómetro, si la
- * plantilla lo pide. Viaja a la mantención derivada, que es lo que después
- * cruza `getUsageMaintenanceAlerts` contra los umbrales por uso.
+ * plantilla lo pide. Viaja en las observaciones de la OT derivada: el ingreso
+ * a taller registra su propia lectura, pero esta es la que había al inspeccionar.
  */
 async function readMeterFromRun(client: Client, runId: string): Promise<number | null> {
   const [answer] = await client.select({ value: preventionInspectionAnswers.value })
@@ -844,6 +846,10 @@ async function readMeterFromRun(client: Client, runId: string): Promise<number |
   const parsed = Number(answer.value.replace(",", "."))
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : null
 }
+
+/** Mínimo que exige el contrato de la OT para describir la reparación. */
+const WORK_ORDER_REPAIR_MIN = 5
+const WORK_ORDER_TEXT_MAX = 2000
 
 /** Deriva un hallazgo a CAPA común con prioridad y plazo según su criticidad. */
 export async function createFindingCapa(input: unknown, access: InspectionAccess) {
@@ -864,7 +870,7 @@ export async function createFindingCapa(input: unknown, access: InspectionAccess
     if (!row) throw new Error(NOT_FOUND)
     requireAccess(access, "prevention:inspections:execute", row.run.worksiteId)
     if (row.finding.capaActionId) throw new Error("El hallazgo ya tiene una acción CAPA enlazada.")
-    // #20: derivar abre trabajo correctivo (y, con equipo, una mantención). Sobre
+    // #20: derivar abre trabajo correctivo (y, con equipo, una OT de Mantención). Sobre
     // un hallazgo ya cerrado o un run que el registro da por terminado, esa
     // acción nacería sin nada vivo que corregir. Reabrir la inspección es el
     // camino para rectificar un run revisado.
@@ -902,46 +908,80 @@ export async function createFindingCapa(input: unknown, access: InspectionAccess
     if (!updated) throw new Error("No se pudo enlazar la acción CAPA.")
     await history(tx, { entityType: "finding", entityId: data.findingId, worksiteId: row.run.worksiteId, changeType: "capa_linked", reason: data.actionDescription, actorUserId: access.userId })
 
-    // Mantención correctiva automática. Se engancha acá y no en `completeInspectionRun`
-    // porque completar borra y recrea los hallazgos abiertos sin CAPA: colgarlo
-    // de ahí dejaría órdenes huérfanas cada vez que alguien reabre y vuelve a
-    // cerrar. Derivar, en cambio, es el acto deliberado que confirma el hallazgo
-    // y, cuando el sujeto es un equipo, debe abrir siempre su trabajo correctivo.
-    let maintenanceId: string | null = null
+    // OT correctiva automática en Mantención. Se engancha acá y no en
+    // `completeInspectionRun` porque completar borra y recrea los hallazgos
+    // abiertos sin CAPA: colgarlo de ahí dejaría OT huérfanas cada vez que
+    // alguien reabre y vuelve a cerrar. Derivar, en cambio, es el acto
+    // deliberado que confirma el hallazgo y, cuando el sujeto es un equipo, debe
+    // abrir siempre su trabajo correctivo. Cuando la OT recibe conformidad
+    // (queda cerrada), Mantención acredita la CAPA y cierra el hallazgo
+    // (`work-orders/capa-link.ts`, por `inspection_finding_id`).
+    let workOrder: { id: string; folio: string; created: boolean } | null = null
+    // Por qué un equipo no recibió OT (fuera del módulo de mantención o de baja).
+    let workOrderSkipped: string | null = null
     if (row.run.subjectVehicleId) {
-      const meter = await readMeterFromRun(tx, row.run.id)
-      const [vehicle] = await tx.select({ meterType: fuelVehicles.meterType, worksiteId: fuelVehicles.worksiteId })
-        .from(fuelVehicles).where(eq(fuelVehicles.id, row.run.subjectVehicleId)).limit(1)
-      // El permiso se validó contra la faena de la inspección, pero la mantención
-      // se escribe en la faena del equipo. Si el equipo ya fue trasladado, derivar
+      const [vehicle] = await tx.select({ meterType: fuelVehicles.meterType, worksiteId: fuelVehicles.worksiteId, isActive: fuelVehicles.isActive, hasProfile: mantEquipmentProfiles.vehicleId })
+        .from(fuelVehicles)
+        .leftJoin(mantEquipmentProfiles, eq(mantEquipmentProfiles.vehicleId, fuelVehicles.id))
+        .where(eq(fuelVehicles.id, row.run.subjectVehicleId)).limit(1)
+      // El permiso se validó contra la faena de la inspección, pero la OT se
+      // escribe en la faena del equipo. Si el equipo ya fue trasladado, derivar
       // crearía una orden en una faena que este actor no autorizó.
       if (!vehicle) throw new Error("El equipo de la inspección ya no existe.")
       if (vehicle.worksiteId !== row.run.worksiteId) {
-        throw new Error("El equipo pertenece a otra faena; actualiza la inspección antes de derivar la mantención.")
+        throw new Error("El equipo pertenece a otra faena; actualiza la inspección antes de derivar la OT.")
       }
-      maintenanceId = await createMaintenanceRecordWithClient(tx, {
-        vehicleId: row.run.subjectVehicleId,
-        supplierId: "",
-        costCenterId: "",
-        // El plazo de la CAPA manda: la reparación y su acción correctiva
-        // vencen el mismo día, o el taller y Prevención llevan dos calendarios.
-        maintenanceDate: capa.targetDate,
-        maintenanceType: "correctiva",
-        status: "scheduled",
-        odometerReading: vehicle.meterType === "odometer" ? meter : null,
-        hourMeterReading: vehicle.meterType === "hour_meter" ? meter : null,
-        netAmount: 0,
-        taxAmount: 0,
-        totalAmount: 0,
-        documentNumber: "",
-        documentName: "",
-        notes: `Deriva de ${row.run.code} · ${row.finding.description}`,
-        inspectionFindingId: data.findingId,
-      }, { actorUserId: access.userId, vehicle })
+
+      // Idempotencia: un hallazgo tiene a lo más una OT viva (índice único
+      // parcial). Si ya existe —p. ej. una derivación anterior que no llegó a
+      // enlazar la CAPA—, se reutiliza en vez de chocar con el índice.
+      const [existing] = await tx.select({ id: mantWorkOrders.id, folio: mantWorkOrders.folio })
+        .from(mantWorkOrders)
+        .where(and(eq(mantWorkOrders.inspectionFindingId, data.findingId), ne(mantWorkOrders.status, "anulada")))
+        .limit(1)
+      if (existing) {
+        workOrder = { ...existing, created: false }
+      } else if (!vehicle.hasProfile || !vehicle.isActive) {
+        // La OT vive en el módulo de mantención y necesita la ficha del equipo
+        // ahí. Un equipo que aún no está cargado (o dado de baja) no puede
+        // impedir que Prevención derive su CAPA: se deriva igual y se avisa.
+        workOrderSkipped = !vehicle.isActive
+          ? "El equipo está dado de baja: no se abrió orden de trabajo."
+          : "El equipo no está en el módulo de mantención: no se abrió orden de trabajo. Cárgalo en Mantención › Equipos y créala desde Órdenes de trabajo."
+      } else {
+        const meter = await readMeterFromRun(tx, row.run.id)
+        const [actor] = await tx.select({ name: users.name }).from(users).where(eq(users.id, access.userId)).limit(1)
+        const meterUnit = vehicle.meterType === "hour_meter" ? "h" : "km"
+        const observations = [
+          `Deriva de la inspección ${row.run.code} (${row.run.subjectLabel ?? "equipo"}).`,
+          meter !== null && vehicle.meterType !== "none" ? `Lectura del medidor al inspeccionar: ${meter} ${meterUnit}.` : null,
+          `Acción correctiva: ${data.actionDescription}`,
+        ].filter(Boolean).join(" ").slice(0, WORK_ORDER_TEXT_MAX)
+        const description = row.finding.description.trim()
+        const created = await createWorkOrderWithClient(tx, {
+          vehicleId: row.run.subjectVehicleId,
+          inspectionFindingId: data.findingId,
+          repair: true,
+          maintenance: false,
+          repairDescription: (description.length >= WORK_ORDER_REPAIR_MIN ? description : `Hallazgo de inspección: ${description}`)
+            .slice(0, WORK_ORDER_TEXT_MAX),
+          observations,
+          requesterName: actor?.name ?? "Inspección",
+        }, { userId: access.userId, name: actor?.name ?? "Inspección" })
+        workOrder = { id: created.id, folio: created.folio, created: true }
+      }
     }
 
-    return { finding: updated, capaId: capa.id, maintenanceId, run: row.run, criticality: row.finding.criticality }
+    return { finding: updated, capaId: capa.id, workOrder, workOrderSkipped, run: row.run, criticality: row.finding.criticality }
   })
+
+  // Aviso «OT nueva» a la jefatura de mantención: post-commit y sin propagar el
+  // error, como el resto. Una notificación caída no puede revertir una
+  // derivación ya confirmada.
+  if (result.workOrder?.created) {
+    const workOrderId = result.workOrder.id
+    await notifySafely("OT nueva", () => notifyWorkOrderCreated(workOrderId))
+  }
 
   // Propuesta de fuera de servicio: se avisa, no se escribe. Bloquear el equipo
   // solo pararía la faena por un error de digitación, y quien decide sacarlo de

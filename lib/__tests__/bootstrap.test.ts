@@ -86,6 +86,43 @@ describe("auth bootstrap service", () => {
     expect((await inMemoryDb.select().from(schema.userPermissions)).some((grant) => grant.permissionId === retiredPermission.id)).toBe(false)
   })
 
+  it("retires every legacy fleet-maintenance permission and its grants", async () => {
+    const retired = [
+      { id: "p-legacy-maint-view", name: "mantenciones:view" },
+      { id: "p-legacy-maint-create", name: "mantenciones:create" },
+      { id: "p-legacy-maint-edit", name: "mantenciones:edit" },
+      { id: "p-legacy-maint-approve", name: "mantenciones:approve_costs" },
+    ]
+    await inMemoryDb.insert(schema.permissions).values(retired.map(({ id, name }) => ({
+      id,
+      name,
+      module: "mantenciones",
+      description: "Permiso retirado",
+    })))
+    await inMemoryDb.insert(schema.rolePermissions).values(retired.map(({ id }) => ({
+      roleId: "rol-prev",
+      permissionId: id,
+    })))
+    await inMemoryDb.insert(schema.users).values({
+      id: "user-legacy-maint-permissions",
+      name: "Permisos antiguos",
+      email: "legacy-maint-permissions@example.com",
+      hashedPassword: "password_hash",
+      isActive: true,
+    })
+    await inMemoryDb.insert(schema.userPermissions).values(retired.map(({ id }) => ({
+      userId: "user-legacy-maint-permissions",
+      permissionId: id,
+    })))
+
+    await ensureSystemRbac()
+
+    const retiredIds = new Set(retired.map(({ id }) => id))
+    expect((await inMemoryDb.select().from(schema.permissions)).some(({ id }) => retiredIds.has(id))).toBe(false)
+    expect((await inMemoryDb.select().from(schema.rolePermissions)).some(({ permissionId }) => retiredIds.has(permissionId))).toBe(false)
+    expect((await inMemoryDb.select().from(schema.userPermissions)).some(({ permissionId }) => retiredIds.has(permissionId))).toBe(false)
+  })
+
   it("conserva los permisos que un administrador ajustó por la UI", async () => {
     // El caso que motiva todo: `deploy:prod` corre `sync-rbac` en cada deploy.
     // Antes borraba y reinsertaba los grants de los 15 roles del sistema, así

@@ -25,8 +25,8 @@ export const dynamic = "force-dynamic"
  * administración de respaldos y en el log del servidor. No había notificación
  * ni correo, de modo que —sumado a `BCK-001`, que devolvía 200 con el último
  * respaldo fallido— la ausencia de respaldos era invisible salvo que alguien
- * entrara a mirar. El resto de la plataforma sí notifica: mantenciones por SLA,
- * CAPA por vencimiento, capacitación por competencias que caducan.
+ * entrara a mirar. El resto de la plataforma sí notifica por CAPA y por
+ * capacitación con competencias que caducan.
  *
  * La llave de deduplicación lleva el día: se avisa una vez al día mientras el
  * problema dure, no en cada corrida. Un fallo al notificar no cambia el

@@ -6,7 +6,6 @@ const selectResults: Array<{ data: unknown[] }> = []
 const findManyVehicles = vi.fn()
 const findFirstVehicle = vi.fn()
 const findManyDocuments = vi.fn()
-const findManyMaintenance = vi.fn()
 const findManyOperations = vi.fn()
 const findManyIntervals = vi.fn()
 
@@ -35,7 +34,6 @@ vi.mock("@/db", () => ({
         findFirst: (...args: unknown[]) => findFirstVehicle(...args),
       },
       fleetVehicleDocuments: { findMany: (...args: unknown[]) => findManyDocuments(...args) },
-      maintenanceRecords: { findMany: (...args: unknown[]) => findManyMaintenance(...args) },
       fuelOperationRecords: { findMany: (...args: unknown[]) => findManyOperations(...args) },
       fuelVehicleOperationalIntervals: { findMany: (...args: unknown[]) => findManyIntervals(...args) },
     },
@@ -80,8 +78,8 @@ function sqlChunks(node: unknown, out: string[] = []): string[] {
   return out
 }
 
-const globalSession = { user: { id: "user-1", isGlobal: true, worksiteIds: [], permissions: ["flota:view", "combustibles:view", "mantenciones:view", "combustibles:view_costs"] } } as unknown as Session
-const scopedSession = { user: { id: "user-2", isGlobal: false, worksiteIds: ["ws-1", "ws-2"], permissions: ["flota:view", "combustibles:view", "mantenciones:view"] } } as unknown as Session
+const globalSession = { user: { id: "user-1", isGlobal: true, worksiteIds: [], permissions: ["flota:view", "combustibles:view", "combustibles:view_costs"] } } as unknown as Session
+const scopedSession = { user: { id: "user-2", isGlobal: false, worksiteIds: ["ws-1", "ws-2"], permissions: ["flota:view", "combustibles:view"] } } as unknown as Session
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -92,7 +90,7 @@ beforeEach(() => {
 })
 
 describe("getFleetOverview", () => {
-  it("operational cost = fuel + maintenance (no allocations)", async () => {
+  it("returns fuel totals and readings without legacy maintenance costs", async () => {
     findManyVehicles.mockResolvedValue([
       {
         id: "veh-1",
@@ -115,7 +113,6 @@ describe("getFleetOverview", () => {
       { data: [{ vehicleId: "veh-1", totalFuelAmount: 100_000, totalLiters: 80, loadCount: 2 }] },
       { data: [{ vehicleId: "veh-1", odometerReading: 10_000, hourMeterReading: null }] },
       { data: [{ vehicleId: "veh-1", odometerReading: 12_500, hourMeterReading: null }] },
-      { data: [{ vehicleId: "veh-1", totalMaintenanceAmount: 250_000, maintenanceCount: 1, lastMaintenanceDate: "2026-06-01" }] },
       { data: [] },
     )
 
@@ -124,14 +121,55 @@ describe("getFleetOverview", () => {
     expect(overview).toHaveLength(1)
     const vehicle = overview[0]!
     expect(vehicle.totalFuelAmount).toBe(100_000)
-    expect(vehicle.totalMaintenanceAmount).toBe(250_000)
-    expect(vehicle.totalOperationalCost).toBe(350_000)
+    expect(vehicle).not.toHaveProperty("totalMaintenanceAmount")
+    expect(vehicle).not.toHaveProperty("totalOperationalCost")
     expect(vehicle.responsibleName).toBe("Jefe Mantención")
     expect(vehicle.operationalStatus).toBe("operativo")
     expect(vehicle.nextExpiryDate).toBe("2026-07-20")
     // La imputación de costos fue retirada: no debe existir ese campo.
     expect("totalAllocatedAmount" in vehicle).toBe(false)
     expect("allocationCount" in vehicle).toBe(false)
+  })
+
+  describe("OT abiertas por equipo", () => {
+    const vehicle = (id: string) => ({
+      id, plate: `PL-${id}`, type: "camioneta", brand: null, model: null, year: null, isActive: true, operationalStatus: "operativo",
+      soapExpiresAt: null, technicalReviewExpiresAt: null, circulationPermitExpiresAt: null, insuranceExpiresAt: null,
+      worksite: { name: "Faena Uno" }, responsibleUser: null,
+    })
+    const withOt = (...permissions: string[]) =>
+      ({ user: { id: "user-ot", isGlobal: true, worksiteIds: [], permissions: ["flota:view", ...permissions] } }) as unknown as Session
+
+    it("es opt-in: sin la opción no consulta OT y el campo queda en null", async () => {
+      findManyVehicles.mockResolvedValue([vehicle("v1")])
+      const [row] = await getFleetOverview(withOt("mant:ot:view_all"))
+
+      expect(row!.openWorkOrders).toBeNull()
+      expect(row!.inWorkshopNow).toBeNull()
+      // Sólo la consulta de documentos de vencimiento: ninguna toca `mant_work_orders`.
+      expect(selectCallCount).toBe(1)
+    })
+
+    it("sin mant:ot:view_* no consulta OT aunque se pida, y el campo no es un 0 engañoso", async () => {
+      findManyVehicles.mockResolvedValue([vehicle("v1")])
+      const [row] = await getFleetOverview(withOt(), undefined, undefined, { workOrders: true })
+
+      expect(row!.openWorkOrders).toBeNull()
+      expect(selectCallCount).toBe(1)
+    })
+
+    it("con la capacidad trae las abiertas y si está en taller; un equipo sin OT tiene 0", async () => {
+      findManyVehicles.mockResolvedValue([vehicle("v1"), vehicle("v2")])
+      // Sin `combustibles:view` quedan sólo documentos (1.ª consulta) y OT (2.ª).
+      selectResults.push(
+        { data: [] },
+        { data: [{ vehicleId: "v1", openCount: 2, unassignedOpen: 1, inWorkshopNow: 1, closedInPeriod: 0, workshopHoursInPeriod: 0, repairClosedInPeriod: 0, repairClosedWorkshopHours: 0, lastExitAt: null, lastClosedWorkOrderId: null }] },
+      )
+      const rows = await getFleetOverview(withOt("mant:ot:view_worksite"), undefined, undefined, { workOrders: true })
+
+      expect(rows.find((row) => row.id === "v1")).toMatchObject({ openWorkOrders: 2, inWorkshopNow: true })
+      expect(rows.find((row) => row.id === "v2")).toMatchObject({ openWorkOrders: 0, inWorkshopNow: false })
+    })
   })
 
   it("returns no rows when a scoped user has no visible vehicles", async () => {
@@ -144,25 +182,23 @@ describe("getFleetOverview", () => {
   })
 
   it("redacta costos y no referencia columnas monetarias sin view_costs", async () => {
-    const noCostsSession = { user: { id: "user-no-costs", isGlobal: true, worksiteIds: [], permissions: ["flota:view", "combustibles:view", "mantenciones:view"] } } as unknown as Session
+    const noCostsSession = { user: { id: "user-no-costs", isGlobal: true, worksiteIds: [], permissions: ["flota:view", "combustibles:view"] } } as unknown as Session
     findManyVehicles.mockResolvedValue([{ id: "veh-1", plate: "AA-BB-11", type: "camioneta", isActive: true, operationalStatus: "operativo", worksite: { name: "Faena" }, equipmentType: null, responsibleUser: null }])
     selectResults.push(
       { data: [{ vehicleId: "veh-1", totalFuelAmount: null, totalLiters: 80, loadCount: 2 }] },
       { data: [] },
       { data: [] },
-      { data: [{ vehicleId: "veh-1", totalMaintenanceAmount: null, maintenanceCount: 1 }] },
       { data: [] },
     )
 
     const [vehicle] = await getFleetOverview(noCostsSession)
 
-    expect(vehicle).toMatchObject({ totalFuelAmount: null, totalMaintenanceAmount: null, totalOperationalCost: null, costPerKm: null, costPerHour: null })
-    // Orden real: fuelRows(0), firstReadingRows(1), lastReadingRows(2), maintenanceRows(3), documentExpiryRows(4).
+    expect(vehicle).toMatchObject({ totalFuelAmount: null, totalLiters: 80 })
+    // Orden real: fuelRows(0), firstReadingRows(1), lastReadingRows(2), documentExpiryRows(3).
     expect(sqlChunks((selectProjections[0] as { totalFuelAmount: unknown }).totalFuelAmount).join(" ").toLowerCase()).not.toContain("total_amount")
-    expect(sqlChunks((selectProjections[3] as { totalMaintenanceAmount: unknown }).totalMaintenanceAmount).join(" ").toLowerCase()).not.toContain("total_amount")
   })
 
-  it("no consulta datasets de combustible ni mantención con flota:view solamente", async () => {
+  it("no consulta datasets de combustible con flota:view solamente", async () => {
     const fleetOnlySession = { user: { id: "fleet-only", isGlobal: true, worksiteIds: [], permissions: ["flota:view"] } } as unknown as Session
     findManyVehicles.mockResolvedValue([])
 
@@ -179,17 +215,15 @@ describe("getFleetOverview", () => {
   // consultas, no sólo el alcance del rol.
   it("acota las tres consultas a la faena elegida en el tablero", async () => {
     findManyVehicles.mockResolvedValue([])
-    selectResults.push({ data: [] }, { data: [] }, { data: [] }, { data: [] }, { data: [] })
+    selectResults.push({ data: [] }, { data: [] }, { data: [] }, { data: [] })
 
     await getFleetOverview(scopedSession, "ws-1")
 
     // La sesión ve ws-1 y ws-2; al elegir ws-1 en el tablero, ws-2 no puede
-    // seguir apareciendo en ninguna de las tres consultas. Orden real:
-    // fuelRows(0), firstReadingRows(1), lastReadingRows(2), maintenanceRows(3).
+    // seguir apareciendo en ninguna consulta de combustible ni documentos.
     for (const where of [
       findManyVehicles.mock.calls[0]![0].where,
-      selectChains[0]!.where!.mock.calls[0]![0],
-      selectChains[3]!.where!.mock.calls[0]![0],
+      ...selectChains.map((chain) => chain.where!.mock.calls[0]![0]),
     ]) {
       expect(sqlChunks(where)).toContain("ws-1")
       expect(sqlChunks(where)).not.toContain("ws-2")
@@ -210,30 +244,24 @@ describe("getFleetOverview", () => {
 })
 
 describe("getFleetVehicleDetail", () => {
-  // HALLAZGO 20: con `limit: 10` el orden ascendente devolvía las mantenciones
-  // más antiguas y la última del vehículo era inalcanzable.
-  it("pide las mantenciones de la más reciente a la más antigua", async () => {
+  it("loads the latest fuel operations and no legacy maintenance history", async () => {
     findFirstVehicle.mockResolvedValue({ id: "veh-1", worksiteId: "ws-1", plate: "AA-BB-11" })
     findManyDocuments.mockResolvedValue([])
-    findManyMaintenance.mockResolvedValue([])
     findManyOperations.mockResolvedValue([])
     findManyIntervals.mockResolvedValue([])
     selectResults.push({ data: [] })
 
     await getFleetVehicleDetail(globalSession, "veh-1")
 
-    const orderBy = findManyMaintenance.mock.calls[0]![0].orderBy as unknown[]
+    const orderBy = findManyOperations.mock.calls[0]![0].orderBy as unknown[]
     expect(sqlChunks(orderBy[0]).join("")).toContain("desc")
-    // Desempate por createdAt: `maintenance_date` es sólo fecha.
     expect(orderBy).toHaveLength(2)
     expect(sqlChunks(orderBy[1]).join("")).toContain("desc")
-    expect(findManyMaintenance.mock.calls[0]![0].columns).not.toHaveProperty("totalAmount")
-    expect(findManyMaintenance.mock.calls[0]![0].columns).not.toHaveProperty("netAmount")
     expect(findManyOperations.mock.calls[0]![0].columns).not.toHaveProperty("monto")
     expect(findManyOperations.mock.calls[0]![0].columns).not.toHaveProperty("precioLitro")
   })
 
-  it("no consulta historial de combustible ni mantención con flota:view solamente", async () => {
+  it("no consulta historial de combustible con flota:view solamente", async () => {
     const fleetOnlySession = { user: { id: "fleet-only", isGlobal: true, worksiteIds: [], permissions: ["flota:view"] } } as unknown as Session
     findFirstVehicle.mockResolvedValue({ id: "veh-1", worksiteId: "ws-1", plate: "AA-BB-11" })
     findManyDocuments.mockResolvedValue([])
@@ -242,8 +270,28 @@ describe("getFleetVehicleDetail", () => {
     const detail = await getFleetVehicleDetail(fleetOnlySession, "veh-1")
 
     expect(detail).not.toBeNull()
-    expect(findManyMaintenance).not.toHaveBeenCalled()
     expect(findManyOperations).not.toHaveBeenCalled()
     expect(selectProjections).toHaveLength(0)
+    // Sin `mant:ot:view_*` la ficha no sabe de OT: `null`, no «sin órdenes de trabajo».
+    expect(detail!.recentWorkOrders).toBeNull()
+    expect(detail!.workOrderConsumptionImpact).toEqual([])
+  })
+
+  it("con mant:ot:view_* trae las últimas OT del equipo; el antes/después de rendimiento exige combustible y una OT cerrada", async () => {
+    const withOt = { user: { id: "ot", isGlobal: true, worksiteIds: [], permissions: ["flota:view", "mant:ot:view_all"] } } as unknown as Session
+    findFirstVehicle.mockResolvedValue({ id: "veh-1", worksiteId: "ws-1", plate: "AA-BB-11" })
+    findManyDocuments.mockResolvedValue([])
+    findManyIntervals.mockResolvedValue([])
+    selectResults.push({ data: [
+      { id: "ot-2", folio: "OT-BIO-0002", status: "en_ejecucion", repair: true, maintenance: false, requestDate: "2026-10-30", workshopEntryAt: "2026-10-31T12:00:00Z", workshopExitAt: null },
+      { id: "ot-1", folio: "OT-BIO-0001", status: "cerrada", repair: true, maintenance: true, requestDate: "2026-10-01", workshopEntryAt: "2026-10-02T12:00:00Z", workshopExitAt: "2026-10-05T12:00:00Z" },
+    ] })
+
+    const detail = await getFleetVehicleDetail(withOt, "veh-1")
+
+    expect(detail!.recentWorkOrders?.map((workOrder) => workOrder.folio)).toEqual(["OT-BIO-0002", "OT-BIO-0001"])
+    // Sin `combustibles:view` no hay log de rendimiento que comparar.
+    expect(detail!.workOrderConsumptionImpact).toEqual([])
+    expect(selectProjections).toHaveLength(1)
   })
 })

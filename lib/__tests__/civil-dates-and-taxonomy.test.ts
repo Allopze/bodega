@@ -1,39 +1,12 @@
 /**
- * CO-020 / CO-024 / CO-036 / CO-041: cuatro entradas que pasaban validación y
- * después rompían o mentían aguas abajo — una fecha inexistente que revienta
- * `::date`, filtros con valores fuera del enum de la columna, tipos documentales
- * inventados y el día UTC usado como si fuera el chileno.
+ * CO-024 / CO-036 / CO-041: entradas que pasaban validación y después rompían
+ * o mentían aguas abajo — filtros con valores fuera del enum de la columna,
+ * tipos documentales inventados y el día UTC usado como si fuera el chileno.
  */
 import { describe, expect, it } from "vitest"
-import { createMaintenanceRecordSchema } from "@/lib/validation/maintenance"
 import { fleetDocumentMetadataSchema, FLEET_DOCUMENT_TYPES } from "@/lib/validation/fleet-documents"
 import { FUEL_VEHICLE_STATUSES } from "@/lib/combustibles/validation"
 import { addDaysToPlainDate, todayInChile } from "@/lib/utils"
-
-const maintenance = (maintenanceDate: string) => createMaintenanceRecordSchema.safeParse({
-  vehicleId: "veh-1",
-  maintenanceDate,
-  maintenanceType: "preventiva",
-  status: "scheduled",
-  netAmount: 0,
-  taxAmount: 0,
-  totalAmount: 0,
-})
-
-describe("fecha civil real en mantenciones (CO-020)", () => {
-  it("acepta una fecha que existe", () => {
-    expect(maintenance("2026-02-28").success).toBe(true)
-  })
-
-  it("rechaza un día que no existe en el mes", () => {
-    // La regex la aceptaba y el string llegaba crudo a `${fecha}::date`.
-    expect(maintenance("2026-02-31").success).toBe(false)
-  })
-
-  it("rechaza un mes fuera de rango", () => {
-    expect(maintenance("2026-13-01").success).toBe(false)
-  })
-})
 
 describe("metadatos de documentos de flota (CO-036)", () => {
   it("acepta un tipo del catálogo y un vencimiento real", () => {

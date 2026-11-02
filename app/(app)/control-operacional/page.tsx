@@ -121,31 +121,30 @@ export default async function OperationalControlPage({
   const defaultPeriod = resolveOperationalControlPeriod()
   const isDefaultPeriod = period.from === defaultPeriod.from && period.to === defaultPeriod.to
   const periodLabel = `${formatDate(period.from)} – ${formatDate(period.to)}`
-  const headerDescription = `Qué requiere atención hoy en flota, mantención y combustible, y el desempeño de los activos entre ${formatDate(period.from)} y ${formatDate(period.to)}.`
+  const headerDescription = `Qué requiere atención hoy en flota y combustible, y el desempeño de los activos entre ${formatDate(period.from)} y ${formatDate(period.to)}.`
 
-  const { canViewFleet, canViewMaintenance, canViewInspections, canViewCapa, canViewCosts, canViewServiceEquipment } = data.permissions
+  const { canViewFleet, canViewInspections, canViewCapa, canViewCosts, canViewServiceEquipment, canViewWorkOrders } = data.permissions
   const operationalAssets = data.assets.filter((asset) => asset.kind === "vehicle")
   const fleetSize = operationalAssets.length
   const stateMismatchCount = operationalAssets.filter((asset) => asset.stateMismatch).length
   const serviceEquipmentCount = data.assets.filter((asset) => asset.kind === "service_equipment").length
 
-  // Orden de lectura: lo que está parado, el trabajo abierto, los papeles y, al
-  // final, el combustible. Cada tile existe sólo con la capacidad de su dominio.
+  // Orden de lectura: lo que está parado y el trabajo que lo atiende, los papeles y, al final, el combustible. Cada tile existe sólo con la capacidad de su dominio.
   const attentionTiles: AttentionTile[] = [
     ...(canViewFleet ? [stoppedTile(data.attention.stoppedVehicles, fleetSize)] : []),
-    ...(canViewMaintenance ? [workOrdersTile(data.attention.openWorkOrders)] : []),
+    ...(canViewWorkOrders ? [workOrdersTile(data.attention.workOrders)] : []),
     ...(canViewFleet ? [documentsTile(data.attention.fleetDocuments)] : []),
     ...(fuelPending ? [fuelReviewTile(fuelPending)] : []),
   ]
 
-  const performanceStats = buildPerformanceStats(data.metrics, { canViewFleet, canViewMaintenance, canViewCosts })
+  const performanceStats = buildPerformanceStats(data.metrics, { canViewFleet, canViewWorkOrders })
   const glossary = buildPerformanceGlossary({
     canViewFleet,
-    canViewMaintenance,
     canViewInspections,
     canViewCapa,
     canViewFuel,
     canViewCosts,
+    canViewWorkOrders,
   })
 
   return (
@@ -160,14 +159,7 @@ export default async function OperationalControlPage({
           ]} />
         }
         actions={
-          <>
-            <OperationalExportButton period={period} />
-            {canViewMaintenance && (
-              <Button asChild>
-                <Link href="/mantenciones">Gestionar OT</Link>
-              </Button>
-            )}
-          </>
+          <OperationalExportButton period={period} />
         }
       />
 
@@ -278,17 +270,17 @@ export default async function OperationalControlPage({
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
         <Card>
           <CardHeader>
-            <CardTitle as="h2">Activos y trabajo del período</CardTitle>
+            <CardTitle as="h2">Activos y estado operacional</CardTitle>
           </CardHeader>
           <CardContent>
             <OperationalAssetsTable
               assets={operationalAssets}
               canViewCosts={canViewCosts}
-              canViewMaintenance={canViewMaintenance}
               canViewInspections={canViewInspections}
               canViewCapa={canViewCapa}
               canViewFuel={canViewFuel}
               canViewFleet={canViewFleet}
+              canViewWorkOrders={canViewWorkOrders}
             />
             {canViewServiceEquipment && serviceEquipmentCount > 0 && (
               <p className="mt-3 text-xs text-[var(--color-text-muted)]">

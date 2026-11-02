@@ -214,7 +214,7 @@ describe("capture-all-routes route inventory", () => {
       "trazabilidad",
       "reportes",
       "flota",
-      "mantenciones",
+      "mantencion",
       "combustibles",
       "repuestos",
       "servicios",

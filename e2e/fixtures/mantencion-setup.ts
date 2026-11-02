@@ -17,7 +17,11 @@ import { seedMantencion } from "../../lib/services/mantencion/seed"
  *   servicio que usa producción.
  * - Usuarios (contraseña `chome2026`):
  *   `mecanico1@e2e.chome.cl` y `mecanico2@e2e.chome.cl` (Biodiversa),
- *   `supervisor@e2e.chome.cl` (Biodiversa), `jefe.mant@e2e.chome.cl` (global).
+ *   `supervisor@e2e.chome.cl` (Biodiversa), `jefe.mant@e2e.chome.cl` (global);
+ *   para las órdenes de trabajo (`mantencion-5-ot.spec.ts`): `admin.contrato@e2e.chome.cl`
+ *   (administrador de contrato de Biodiversa), `admin.contrato.cho@e2e.chome.cl` (el de
+ *   Cholguan, que prueba el alcance) y `mecanico.cho@e2e.chome.cl` (mecánico de Cholguan,
+ *   que prueba que una OT de Biodiversa se ejecuta desde otra faena).
  * - Lecturas iniciales que dejan tres equipos de Biodiversa medidos en km
  *   «Próximos» (39.900 km → toca la de 40.000), para que «Le toca mantención»
  *   tenga qué mostrar sin depender de registros previos.
@@ -28,9 +32,12 @@ export const MANT_E2E_USERS = {
   mecanico2: { id: "user-mant-mec2-e2e", email: "mecanico2@e2e.chome.cl", name: "Mecánico Dos E2E", role: "mecanico" },
   supervisor: { id: "user-mant-sup-e2e", email: "supervisor@e2e.chome.cl", name: "Supervisor Biodiversa E2E", role: "supervisor_mantencion" },
   jefe: { id: "user-mant-jefe-e2e", email: "jefe.mant@e2e.chome.cl", name: "Jefatura Mantención E2E", role: "jefe_mantencion" },
+  adminContrato: { id: "user-mant-admc-e2e", email: "admin.contrato@e2e.chome.cl", name: "Admin Contrato Biodiversa E2E", role: "admin_contrato" },
+  adminContratoCho: { id: "user-mant-admc-cho-e2e", email: "admin.contrato.cho@e2e.chome.cl", name: "Admin Contrato Cholguan E2E", role: "admin_contrato", worksite: "Cholguan" },
+  mecanicoCho: { id: "user-mant-mec-cho-e2e", email: "mecanico.cho@e2e.chome.cl", name: "Mecánico Cholguan E2E", role: "mecanico", worksite: "Cholguan" },
 } as const
 
-const MODULE_ROLES = ["mecanico", "supervisor_mantencion", "jefe_mantencion"] as const
+const MODULE_ROLES = ["mecanico", "supervisor_mantencion", "jefe_mantencion", "admin_contrato"] as const
 
 export async function seedMantencionE2E(db: DB, options: { hashedPassword: string; now: string }) {
   // Roles del módulo con los grants derivados de los manifests.
@@ -66,6 +73,11 @@ export async function seedMantencionE2E(db: DB, options: { hashedPassword: strin
     .where(eq(schema.worksites.name, "Biodiversa")).limit(1)
   if (!biodiversa) throw new Error("La carga inicial no creó la faena Biodiversa")
 
+  const [cholguana] = await db.select({ id: schema.worksites.id }).from(schema.worksites)
+    .where(eq(schema.worksites.name, "Cholguan")).limit(1)
+  if (!cholguana) throw new Error("La carga inicial no creó la faena Cholguan")
+  const worksiteIdByName = new Map([["Biodiversa", biodiversa.id], ["Cholguan", cholguana.id]])
+
   const roleIdByName = new Map(roleRows.map((role) => [role.name, role.id]))
   for (const user of Object.values(MANT_E2E_USERS)) {
     await db.insert(schema.users).values({
@@ -74,7 +86,8 @@ export async function seedMantencionE2E(db: DB, options: { hashedPassword: strin
     })
     await db.insert(schema.userRoles).values({ userId: user.id, roleId: roleIdByName.get(user.role)! })
     if (user.role !== "jefe_mantencion") {
-      await db.insert(schema.worksiteUsers).values({ userId: user.id, worksiteId: biodiversa.id, isPrimary: true })
+      const worksiteName = "worksite" in user ? user.worksite : "Biodiversa"
+      await db.insert(schema.worksiteUsers).values({ userId: user.id, worksiteId: worksiteIdByName.get(worksiteName)!, isPrimary: true })
     }
   }
 

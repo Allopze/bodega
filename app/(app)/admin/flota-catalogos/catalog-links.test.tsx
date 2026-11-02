@@ -36,12 +36,6 @@ describe("CatalogLinks", () => {
     expect(screen.queryByText("Vehículos")).not.toBeInTheDocument()
   })
 
-  it("shows the maintenance link under the real mantenciones:view permission", () => {
-    render(<CatalogLinks permissions={["mantenciones:view"]} />)
-
-    expect(screen.getByText("Mantenciones")).toBeInTheDocument()
-  })
-
   it("exposes the configurable equipment taxonomy to fleet administrators", () => {
     render(<CatalogLinks permissions={["admin:fleet_catalog"]} />)
 

@@ -63,7 +63,7 @@ const id = (prefix: string) => `demo-${prefix}-${(++counter).toString(36).padSta
 const TABLAS_DEMO = [
   "purchase_requests", "purchase_orders", "receipts", "deliveries",
   "worksite_stock", "approval_decisions", "inventory_movements",
-  "fuel_loads", "maintenance_records", "fleet_vehicle_documents", "fuel_vehicles",
+  "fuel_loads", "fleet_vehicle_documents", "fuel_vehicles",
   "prevention_incidents", "prevention_capa_actions", "safety_indicators",
   "sst_documents", "prevention_inspection_runs", "prevention_work_permits",
   "prevention_emergency_drills", "prevention_committees", "prevention_change_requests",
@@ -531,7 +531,6 @@ async function main() {
   await db.insert(schema.fleetVehicleDocuments).values(vehicleDocs)
 
   const fuelLoads: (typeof schema.fuelLoads.$inferInsert)[] = []
-  const maintenances: (typeof schema.maintenanceRecords.$inferInsert)[] = []
   const odometros = new Map(vehicles.map((v) => [v.id!, int(20_000, 90_000)]))
 
   for (let d = 180; d >= 0; d--) {
@@ -565,30 +564,9 @@ async function main() {
         updatedAt: iso(fecha),
       })
     }
-    if (chance(0.12)) {
-      const veh = pick(vehicles)
-      const neto = int(80, 900) * 1000
-      const completada = d > 10
-      maintenances.push({
-        id: id("mant"),
-        vehicleId: veh.id!,
-        worksiteId: veh.worksiteId!,
-        maintenanceDate: day(fecha),
-        maintenanceType: pick(["Preventiva", "Correctiva", "Cambio de aceite"] as const),
-        status: completada ? "completed" : "scheduled",
-        odometerReading: odometros.get(veh.id!) ?? null,
-        netAmount: neto,
-        taxAmount: Math.round(neto * 0.19),
-        totalAmount: Math.round(neto * 1.19),
-        createdBy: admin,
-        createdAt: iso(fecha),
-        updatedAt: iso(fecha),
-      })
-    }
   }
   await db.insert(schema.fuelLoads).values(fuelLoads)
-  await db.insert(schema.maintenanceRecords).values(maintenances)
-  console.log(`  Flota: ${vehicles.length} equipos · ${vehicleDocs.length} documentos · ${fuelLoads.length} cargas · ${maintenances.length} mantenciones`)
+  console.log(`  Flota: ${vehicles.length} equipos · ${vehicleDocs.length} documentos · ${fuelLoads.length} cargas`)
 
 
   // ── Prevención: incidentes, CAPA e indicadores SST ───────────────────────

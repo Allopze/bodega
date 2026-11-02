@@ -56,7 +56,7 @@ function session(): Session {
   return {
     user: {
       id: userId, name: "Gerencia", email: "gerencia@example.com", roles: ["administrador"],
-      permissions: ["combustibles:view", "combustibles:view_costs", "flota:view", "mantenciones:view"],
+      permissions: ["combustibles:view", "combustibles:view_costs", "flota:view"],
       worksiteIds: [], primaryWorksiteId: null, avatarColor: null, isActive: true, isGlobal: true,
     },
     expires: "2099-01-01T00:00:00.000Z",
@@ -123,7 +123,7 @@ describe("getFleetOverview corta la ventana de comparación en un reset aceptado
     return {
       user: {
         id: userId2, name: "Gerencia", email: "gerencia2@example.com", roles: ["administrador"],
-        permissions: ["combustibles:view", "combustibles:view_costs", "flota:view", "mantenciones:view"],
+        permissions: ["combustibles:view", "combustibles:view_costs", "flota:view"],
         worksiteIds: [], primaryWorksiteId: null, avatarColor: null, isActive: true, isGlobal: true,
       },
       expires: "2099-01-01T00:00:00.000Z",
@@ -209,7 +209,7 @@ describe("getFleetVehicleDetail desempata dos lecturas del mismo día por hora",
     return {
       user: {
         id: userId3, name: "Gerencia", email: "gerencia3@example.com", roles: ["administrador"],
-        permissions: ["combustibles:view", "combustibles:view_costs", "flota:view", "mantenciones:view"],
+        permissions: ["combustibles:view", "combustibles:view_costs", "flota:view"],
         worksiteIds: [], primaryWorksiteId: null, avatarColor: null, isActive: true, isGlobal: true,
       },
       expires: "2099-01-01T00:00:00.000Z",

@@ -5,12 +5,11 @@ import { can, canAny, isGlobalRole } from "@/lib/auth/can"
 /**
  * Permisos que abren el centro de control operacional. Única fuente para el
  * gate de página, la navegación y la exportación: un usuario con cualquiera de
- * los cuatro puede entrar, y las superficies derivadas de flota, mantención,
- * inspección o combustible se condicionan aparte por su propia capacidad.
+ * ellos puede entrar, y las superficies derivadas de flota, inspección o
+ * combustible se condicionan aparte por su propia capacidad.
  */
 export const OPERATIONAL_CONTROL_VIEW_PERMISSIONS: Permission[] = [
   "flota:view",
-  "mantenciones:view",
   "prevention:inspections:view",
   "combustibles:view",
 ]
@@ -20,20 +19,34 @@ export function canViewOperationalControl(session: Session): boolean {
 }
 
 /**
+ * Las cifras de órdenes de trabajo (OT abiertas, horas en taller, MTTR) se ven
+ * con la capacidad de OT del módulo de mantención, no con las de flota,
+ * inspección o combustible: entrar al panel no las habilita, y tenerlas no abre
+ * el panel (el gate de entrada es `canViewOperationalControl`).
+ */
+export function canViewWorkOrders(session: Session): boolean {
+  return can(session, "mant:ot:view_all") || can(session, "mant:ot:view_worksite")
+}
+
+/** `mant:ot:view_all`: ve las OT de todas las faenas, no sólo las de su alcance. */
+export function canViewAllWorkOrders(session: Session): boolean {
+  return can(session, "mant:ot:view_all")
+}
+
+/**
  * Capacidades independientes del centro de control operacional.
  *
  * No se debe usar la visibilidad del dominio Flota del dashboard como permiso
- * transitivo: cada consulta, enlace y dato sensible se decide con la capacidad
- * de su propio subdominio. En particular, `canViewCosts` protege montos tanto
- * de combustible como de mantención y costos unitarios de flota.
+ * transitivo: cada consulta y dato sensible se decide con la capacidad de su
+ * propio subdominio. `canViewCosts` protege montos de combustible.
  */
 export function operationalControlCapabilities(session: Session) {
   return {
     canViewFuel: can(session, "combustibles:view"),
     canViewTae: can(session, "combustibles:tae_view"),
     canViewFleet: can(session, "flota:view"),
-    canViewMaintenance: can(session, "mantenciones:view"),
     canViewCosts: can(session, "combustibles:view_costs"),
+    canViewWorkOrders: canViewWorkOrders(session),
   } as const
 }
 

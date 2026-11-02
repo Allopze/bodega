@@ -136,7 +136,7 @@ export function ReviewDialog({ run, findings, currentUserId, version, assignees,
             key={capaFinding.id}
             finding={capaFinding}
             assignees={assignees}
-            hasVehicle={!!run.subjectVehicleId}
+            subjectIsVehicle={!!run.subjectVehicleId}
             open
             onOpenChange={(next) => { if (!next) setCapaFindingId(null) }}
             trigger={null}

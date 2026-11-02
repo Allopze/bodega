@@ -4,7 +4,7 @@ import { webcrypto } from "node:crypto"
 import { Blob as NodeBlob } from "node:buffer"
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { catalog, equipment, freshDb } from "@/lib/mantencion/client/__tests__/fixtures"
+import { ENTRY, catalog, equipment, freshDb, workOrder } from "@/lib/mantencion/client/__tests__/fixtures"
 import { MantApp, resetBootForTests } from "../mant-app"
 
 // El Blob de Node no entra a un FormData de jsdom: la subida de la foto se hace con una petición simple (la forma real del multipart se prueba en catalog-api.test.ts).
@@ -27,19 +27,23 @@ vi.mock("@/lib/mantencion/client/photo-capture", async (importOriginal) => ({
 
 const USER = { id: "u-1", name: "Javier Roa", email: "javier@e2e.chome.cl" }
 const CATALOG = catalog("u-1", [equipment({ readings: [{ value: 39_900, date: "2026-10-01", source: "MP-BIO-0001" }], state: "proxima", remaining: 100, nextReading: 40_000 })])
-const calls: Array<{ method: string; url: string; auth: string | null }> = []
+const calls: Array<{ method: string; url: string; auth: string | null; body?: unknown }> = []
 
 function installServer(options: { online: boolean; catalog?: typeof CATALOG }) {
   Object.defineProperty(navigator, "onLine", { value: options.online, configurable: true })
   vi.stubGlobal("fetch", vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
     const path = String(url)
     const method = init?.method ?? "GET"
-    calls.push({ method, url: path, auth: (init?.headers as Record<string, string> | undefined)?.Authorization ?? null })
+    calls.push({ method, url: path, auth: (init?.headers as Record<string, string> | undefined)?.Authorization ?? null, body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined })
     if (!navigator.onLine) throw new TypeError("Failed to fetch")
     const json = (body: unknown, status = 200, headers: Record<string, string> = {}) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } })
     if (path.endsWith("/api/mantencion/dispositivo")) return json({ token: "token-u-1", expiresAt: new Date(Date.now() + 30 * 86_400_000).toISOString(), user: USER })
     if (path.includes("/sync/catalogo")) return path.includes("alcance=todos") ? json({ version: "o1", equipment: [] }, 200, { etag: '"o1"' }) : json(options.catalog ?? CATALOG, 200, { etag: '"v1"' })
     if (method === "PUT") return new Response(null, { status: 200 })
+    if (method === "POST" && path.endsWith("/sync/ot")) {
+      const body = JSON.parse(String(init?.body)) as { id: string; workOrderId: string }
+      return json({ ok: true, id: body.id, workOrderId: body.workOrderId, status: "trabajo_terminado", receivedAt: new Date().toISOString(), duplicate: false, warnings: [] })
+    }
     if (method === "POST" && path.endsWith("/sync/registros")) {
       const body = JSON.parse(String(init?.body)) as { id: string }
       return json({ ok: true, id: body.id, folio: "MP-BIO-0042", receivedAt: new Date().toISOString(), duplicate: false, warnings: [] })
@@ -286,5 +290,57 @@ describe("App del mecánico (arranque, PIN, preventiva completa y envío)", () =
     // El chip del paso «Equipo» también se resume: «Mis 3 faenas», no los tres nombres en tres líneas.
     click(/^Mantención correctiva/)
     expect(await screen.findByRole("button", { name: "Mis 3 faenas" })).toBeTruthy()
+  })
+
+  it("desde una OT en taller: el equipo queda fijo, no pregunta por el taller, el registro viaja enlazado y «Terminar» sale después", async () => {
+    const withOt = catalog("u-1", [equipment({ readings: [{ value: 39_900, date: "2026-10-01", source: "MP-BIO-0001" }], state: "proxima", remaining: 100, nextReading: 40_000 })])
+    withOt.workOrders = [workOrder({ status: "en_ejecucion", entry: ENTRY, items: workOrder().items.map((item) => ({ ...item, done: "si" as const })) })]
+    installServer({ online: true, catalog: withOt })
+    await openAndDefinePin()
+
+    const section = screen.getByRole("region", { name: "Órdenes de trabajo" })
+    fireEvent.click(within(section).getByRole("button", { name: /OT-BIO-0001/ }))
+    click("Registrar correctiva")
+
+    // Equipo fijo: parte en «Lectura», sin «Cambiar equipo», y «Volver» sale del registro.
+    expect(await screen.findByText("PASO 2/5")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Cambiar equipo" })).toBeNull()
+    fireEvent.change(screen.getByLabelText("Odómetro actual"), { target: { value: "40100" } })
+    click("Continuar")
+
+    // Trabajo: un chip con la OT reemplaza al Nº de papel y a «¿queda en taller?».
+    expect(await screen.findByText("PASO 3/5")).toBeTruthy()
+    expect(screen.getByText("OT-BIO-0001")).toBeTruthy()
+    expect(screen.queryByText("¿El equipo sigue en taller?")).toBeNull()
+    expect(screen.queryByLabelText(/Nº de OT en papel/)).toBeNull()
+    fireEvent.click(within(screen.getByRole("group", { name: "Agregar trabajo" })).getAllByRole("button")[0]!)
+    click("No se cambió aceite")
+    fireEvent.change(screen.getByLabelText("Trabajo realizado"), { target: { value: "Cambio de manguera" } })
+    fireEvent.click(screen.getByRole("checkbox", { name: "No se usaron repuestos" }))
+    fireEvent.change(screen.getByLabelText(/Conductores de las últimas 24 h/), { target: { value: "a" } })
+    fireEvent.click(within(await screen.findByRole("group", { name: "Conductores encontrados" })).getAllByRole("button")[0]!)
+    click("Continuar a fotos")
+    expect(await screen.findByText("PASO 4/5")).toBeTruthy()
+    fireEvent.change(screen.getByLabelText("Agregar foto del trabajo"), { target: { files: [new File(["x"], "foto.jpg", { type: "image/jpeg" })] } })
+    expect(await screen.findByRole("img", { name: "Foto 1 del trabajo" })).toBeTruthy()
+    click("Revisar registro")
+    expect(await screen.findByText("PASO 5/5")).toBeTruthy()
+    expect(screen.getByText("Orden de trabajo")).toBeTruthy()
+    click("Firmar y guardar")
+
+    // Sin «Registrar otra»: lo enlazado vuelve al inicio y la OT.
+    expect(await screen.findByRole("heading", { name: "Registro guardado" })).toBeTruthy()
+    expect(screen.queryByRole("button", { name: /^Registrar preventiva en/ })).toBeNull()
+    await waitFor(() => expect(calls.filter((call) => call.method === "POST" && call.url.endsWith("/sync/registros"))).toHaveLength(1), { timeout: 5_000 })
+    expect(calls.find((call) => call.method === "POST" && call.url.endsWith("/sync/registros"))?.body).toMatchObject({ kind: "C", workOrderId: "ot-1", inWorkshop: false, workshopReason: null, workOrder: null })
+
+    // Con el registro del teléfono ya cuenta como trabajo registrado: «Terminar» se puede guardar.
+    click("Volver al inicio")
+    fireEvent.click(within(await screen.findByRole("region", { name: "Órdenes de trabajo" })).getByRole("button", { name: /OT-BIO-0001/ }))
+    click(/Terminar \(salida de taller\)/)
+    expect(screen.getByText("Todo listo: ítems marcados y trabajo registrado.")).toBeTruthy()
+    click("Terminar y avisar")
+    await waitFor(() => expect(calls.filter((call) => call.method === "POST" && call.url.endsWith("/sync/ot"))).toHaveLength(1), { timeout: 5_000 })
+    expect(calls.find((call) => call.url.endsWith("/sync/ot"))?.body).toMatchObject({ action: "finish", workOrderId: "ot-1" })
   })
 })

@@ -1,12 +1,11 @@
 import { FLEET_STOPPED_FILTER } from "@/lib/fleet-overview-filters"
-import { MAINTENANCE_OPEN_FILTER } from "@/lib/validation/maintenance"
 import { countOf } from "@/lib/utils"
 import type { OperationalAttention } from "@/lib/services/operational-control"
 import { FUEL_INBOX_KINDS, type FuelInboxKind } from "@/lib/combustibles/inbox/types"
 import { FUEL_PATHS } from "@/lib/combustibles/routes"
 
 /**
- * Los cuatro tiles de «Requiere atención». Cada uno es un enlace a **su
+ * Los tiles de «Requiere atención». Cada uno es un enlace a **su
  * subconjunto**, no al total (A1): la cifra del tile y las filas de la lista que
  * abre cuentan lo mismo. Los destinos viven aquí, junto al texto, para que quien
  * cambie uno vea el otro.
@@ -27,7 +26,7 @@ export interface AttentionTile {
 
 export const ATTENTION_HREFS: Record<AttentionTileKey, string> = {
   stopped: `/flota?estado=${FLEET_STOPPED_FILTER}`,
-  workOrders: `/mantenciones?status=${MAINTENANCE_OPEN_FILTER}`,
+  workOrders: "/mantencion/ot?estado=abiertas",
   documents: "/flota?vencimiento=vencidos",
   fuel: FUEL_PATHS.revisar,
 }
@@ -61,14 +60,29 @@ export function stoppedTile(stopped: OperationalAttention["stoppedVehicles"], fl
   }
 }
 
-/** OT programadas o en curso, de todas las fechas: es «ahora», no el backlog del período. */
-export function workOrdersTile(openWorkOrders: OperationalAttention["openWorkOrders"]): AttentionTile {
+/**
+ * Órdenes de trabajo abiertas (todo lo no cerrado ni anulado). El tile enlaza a
+ * la lista con la pestaña «abiertas»: la cifra y las filas cuentan lo mismo.
+ * El detalle dice cuántas esperan mecánico, que es lo que alguien tiene que hacer.
+ */
+export function workOrdersTile(workOrders: OperationalAttention["workOrders"]): AttentionTile {
   const label = "OT abiertas"
-  if (openWorkOrders === null) return unavailable("workOrders", label)
-  if (openWorkOrders === 0) {
-    return { key: "workOrders", label, value: "Ninguna", detail: "Sin OT programadas ni en curso", tone: "neutral", href: ATTENTION_HREFS.workOrders }
+  if (!workOrders) return unavailable("workOrders", label)
+  if (workOrders.openCount === 0) {
+    return { key: "workOrders", label, value: "Ninguna", detail: "Sin órdenes de trabajo abiertas", tone: "neutral", href: ATTENTION_HREFS.workOrders }
   }
-  return { key: "workOrders", label, value: count(openWorkOrders), detail: "Programadas o en curso", tone: "neutral", href: ATTENTION_HREFS.workOrders }
+  const parts = [
+    workOrders.unassignedOpen > 0 ? `${count(workOrders.unassignedOpen)} sin asignar` : "Todas con mecánico",
+    ...(workOrders.estimateOverdue > 0 ? [`${count(workOrders.estimateOverdue)} con entrega vencida`] : []),
+  ]
+  return {
+    key: "workOrders",
+    label,
+    value: count(workOrders.openCount),
+    detail: parts.join(" · "),
+    tone: workOrders.unassignedOpen > 0 || workOrders.estimateOverdue > 0 ? "signal" : "neutral",
+    href: ATTENTION_HREFS.workOrders,
+  }
 }
 
 /** Equipos con algún documento vencido; el detalle dice cuántos más vencen dentro de la ventana de aviso de Flota. */

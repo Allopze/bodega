@@ -9,7 +9,7 @@
  *
  * #20 — `createFindingCapa` sólo miraba si el hallazgo ya tenía CAPA. Derivaba
  * igual desde un run cancelado o ya revisado, y desde un hallazgo cerrado,
- * abriendo una acción correctiva (y a veces una mantención) sobre algo que el
+ * abriendo una acción correctiva (y a veces una orden de trabajo) sobre algo que el
  * registro ya da por terminado.
  */
 import path from "node:path"

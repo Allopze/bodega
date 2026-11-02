@@ -187,7 +187,7 @@ describe("Panel operacional: inspecciones, hallazgos y CAPA", () => {
   })
 
   it("sin prevention:inspections:view no consulta ni devuelve inspecciones, hallazgos ni CAPA, aunque tenga CAPA", async () => {
-    const hub = await getOperationalControlHub(session(["mantenciones:view", "prevention:capa:view"]), MARCH)
+    const hub = await getOperationalControlHub(session(["flota:view", "prevention:capa:view"]), MARCH)
     const a = hub.assets.find((asset) => asset.id === IDS.vA)!
 
     expect(a.inspectionCompliancePercent).toBeNull()

@@ -187,12 +187,9 @@ export const pgliteTestFiles = [
   // Panel operacional: inspecciones → hallazgos → CAPA vencidas por activo,
   // con runs canceladas y gating por prevention:capa:view.
   "lib/__tests__/operational-control-inspections-pglite.test.ts",
-  // Panel operacional: detención recortada al período, disponibilidad sin
-  // inactivos, cobertura de estado y desajuste ficha ↔ intervalo abierto.
+  // Panel operacional: disponibilidad sin inactivos, cobertura de estado y
+  // desajuste ficha ↔ intervalo abierto.
   "lib/__tests__/operational-control-state-pglite.test.ts",
-  // Panel operacional: costo aprobado vs comprometido, SLA, asignación y
-  // adherencia a los planes preventivos.
-  "lib/__tests__/operational-control-maintenance-pglite.test.ts",
   // Panel operacional: vencimientos documentales con la columna canónica y
   // última telemetría GPS por vehículo.
   "lib/__tests__/operational-control-documents-gps-pglite.test.ts",
@@ -341,9 +338,6 @@ export const pgliteTestFiles = [
   "lib/__tests__/stock-export.test.ts",
   "lib/__tests__/stock-availability-pglite.test.ts",
   "lib/__tests__/stock-service.test.ts",
-  // MNT-002: el egreso del repuesto consumido en una OT se prueba contra
-  // Postgres real porque lo que hay que demostrar es el saldo resultante.
-  "lib/__tests__/maintenance-part-stock.test.ts",
   "lib/__tests__/worker-stock-delivery.test.ts",
   "lib/__tests__/worker-position-backfill-pglite.test.ts",
   "lib/__tests__/worker-positions-service.test.ts",
@@ -396,7 +390,8 @@ export const pgliteTestFiles = [
   "lib/combustibles/__tests__/copec-coverage-store.test.ts",
   "lib/combustibles/__tests__/provider-mappings.test.ts",
   "lib/combustibles/__tests__/tae-receipts-card.test.ts",
-  "lib/__tests__/inspection-maintenance-lifecycle-pglite.test.ts",
+  "lib/__tests__/inspection-capa-lifecycle-pglite.test.ts",
+  "lib/__tests__/retired-mantenciones-pglite.test.ts",
   "lib/__tests__/report-export-solicitudes-scope.test.ts",
   "lib/__tests__/substitutions.test.ts",
   // T4 (evidencia e historial): bitácora de envíos, sha256 y segregación.
@@ -422,6 +417,10 @@ export const pgliteTestFiles = [
   "lib/__tests__/mantencion-sync-pglite.test.ts",
   "lib/__tests__/mantencion-sync-http-pglite.test.ts",
   "lib/__tests__/mantencion-sync-catalog-pglite.test.ts",
+  // Órdenes de trabajo (2026-11): alta, transiciones por rol, concurrencia, rechazo, CAPA y avisos; y la sincronización del teléfono.
+  "lib/__tests__/mantencion-work-orders-pglite.test.ts",
+  "lib/__tests__/mantencion-work-orders-sync-pglite.test.ts",
+  "lib/__tests__/mantencion-work-orders-metrics-pglite.test.ts",
   // Mantención de equipos: alta, incorporación, patente, faena nueva, baja e importación (L4).
   "lib/__tests__/mantencion-equipment-pglite.test.ts",
   // Mantención de equipos: edición de pautas con versión y snapshot, copia, asignación y baja (L4).

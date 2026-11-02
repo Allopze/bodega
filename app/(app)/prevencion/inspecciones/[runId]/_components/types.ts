@@ -8,7 +8,7 @@ export interface RunInfo {
   subjectType: string | null
   subjectLabel: string | null
   subjectResourceId: string | null
-  /** Equipo de flota inspeccionado; habilita derivar a mantención. */
+  /** Equipo de flota inspeccionado; habilita consultar la ficha y detenerlo si corresponde. */
   subjectVehicleId: string | null
   scheduledFor: string | null
   executedAt: string | null

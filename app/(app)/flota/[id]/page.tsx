@@ -9,8 +9,8 @@ import { Button } from "@/components/ui/button"
 import { can, requirePermission } from "@/lib/auth/can"
 import { getFleetVehicleDetail } from "@/lib/services/fleet"
 import { formatFuelVehicleStatus } from "@/lib/combustibles/validation"
-import { MAINTENANCE_STATUS_LABELS, MAINTENANCE_STATUS_VARIANTS, type MaintenanceStatus } from "@/lib/validation/maintenance"
 import { formatDate, formatDateTime, formatQty } from "@/lib/utils"
+import { OT_STATUS_LABELS, OT_STATUS_TONES } from "@/lib/mantencion/work-order-states"
 import { FleetDocumentsPanel } from "./fleet-documents-panel"
 import { fuelEquipmentHref } from "@/lib/combustibles/routes"
 
@@ -48,8 +48,8 @@ export default async function FlotaVehiclePage({
             {can(session, "combustibles:view") && <Button asChild size="sm" variant="secondary">
               <Link href={fuelEquipmentHref(vehicle.id)}>Combustible</Link>
             </Button>}
-            {can(session, "mantenciones:view") && <Button asChild size="sm" variant="secondary">
-              <Link href={`/mantenciones?vehicle=${vehicle.id}`}>Mantenciones</Link>
+            {detail.recentWorkOrders && <Button asChild size="sm" variant="secondary">
+              <Link href={`/mantencion/ot?equipo=${vehicle.id}`}>Ver órdenes de trabajo</Link>
             </Button>}
           </div>
         }
@@ -154,30 +154,53 @@ export default async function FlotaVehiclePage({
         </CardContent>
       </Card>
 
-      {detail.recentMaintenance.length > 0 && (
+      {detail.recentWorkOrders && (
         <Card>
-          <CardHeader><CardTitle as="h2" className="text-base">Mantenciones y su efecto en el rendimiento</CardTitle></CardHeader>
+          <CardHeader><CardTitle as="h2" className="text-base">Órdenes de trabajo y su efecto en el rendimiento</CardTitle></CardHeader>
           <CardContent>
-            <p className="mb-3 text-xs text-[var(--color-text-muted)]">Rendimiento promedio del log operacional 30 días antes vs. 30 días después de cada mantención.</p>
-            <ol className="divide-y divide-[var(--color-border)]">
-              {detail.recentMaintenance.map((m) => {
-                const impact = detail.maintenanceConsumptionImpact.find((i) => i.maintenanceId === m.id)
-                return (
-                  <li key={m.id} className="grid gap-1 py-3 text-sm sm:grid-cols-[10rem_1fr_auto] sm:items-center sm:gap-4">
-                    <span className="capitalize">{m.maintenanceType}</span>
-                    <MetaBadge meta={{ label: `${MAINTENANCE_STATUS_LABELS[m.status as MaintenanceStatus] ?? m.status}`, variant: MAINTENANCE_STATUS_VARIANTS[m.status as MaintenanceStatus] ?? "default" }} />
-                    <p className="text-xs text-[var(--color-text-muted)] sm:text-right">
-                      {formatDate(m.maintenanceDate)}
-                      {impact && (impact.avgBefore != null || impact.avgAfter != null) ? (
-                        <span className="block font-mono">{impact.avgBefore?.toFixed(2) ?? "—"} → {impact.avgAfter?.toFixed(2) ?? "—"}</span>
-                      ) : (
-                        <span className="block">Sin datos de rendimiento en la ventana de 30 días</span>
-                      )}
-                    </p>
-                  </li>
-                )
-              })}
-            </ol>
+            {detail.recentWorkOrders.length === 0 ? (
+              <p className="text-sm text-[var(--color-text-muted)]">
+                Este equipo aún no tiene órdenes de trabajo. Se piden desde{" "}
+                <Link href={`/mantencion/ot?equipo=${vehicle.id}`} className="text-[var(--color-primary-ink)] underline-offset-4 hover:underline">Órdenes de trabajo</Link>.
+              </p>
+            ) : (
+              <>
+                {detail.workOrderConsumptionImpact.length > 0 && (
+                  <p className="mb-3 text-xs text-[var(--color-text-muted)]">
+                    En las órdenes cerradas: rendimiento promedio del log operacional 30 días antes vs. 30 días después de la salida de taller.
+                  </p>
+                )}
+                <ol className="divide-y divide-[var(--color-border)]">
+                  {detail.recentWorkOrders.map((workOrder) => {
+                    const impact = detail.workOrderConsumptionImpact.find((item) => item.workOrderId === workOrder.id)
+                    const kind = [workOrder.repair ? "Reparación" : null, workOrder.maintenance ? "Mantención" : null].filter(Boolean).join(" y ")
+                    return (
+                      <li key={workOrder.id} className="grid gap-1 py-3 text-sm sm:grid-cols-[10rem_1fr_auto] sm:items-center sm:gap-4">
+                        <Link href={`/mantencion/ot/${workOrder.id}`} className="font-mono text-[var(--color-primary-ink)] underline-offset-4 hover:underline">
+                          {workOrder.folio}
+                        </Link>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <MetaBadge meta={{ label: OT_STATUS_LABELS[workOrder.status], variant: OT_STATUS_TONES[workOrder.status] }} />
+                          <span className="text-xs text-[var(--color-text-muted)]">{kind}</span>
+                        </div>
+                        <p className="text-xs text-[var(--color-text-muted)] sm:text-right">
+                          Pedida el {formatDate(workOrder.requestDate)}
+                          {workOrder.workshopEntryAt && (
+                            <span className="block">
+                              Taller: {formatDateTime(workOrder.workshopEntryAt)}
+                              {workOrder.workshopExitAt ? ` → ${formatDateTime(workOrder.workshopExitAt)}` : " → sigue en taller"}
+                            </span>
+                          )}
+                          {impact && (impact.avgBefore != null || impact.avgAfter != null) && (
+                            <span className="block font-mono">{impact.avgBefore?.toFixed(2) ?? "—"} → {impact.avgAfter?.toFixed(2) ?? "—"}</span>
+                          )}
+                        </p>
+                      </li>
+                    )
+                  })}
+                </ol>
+              </>
+            )}
           </CardContent>
         </Card>
       )}

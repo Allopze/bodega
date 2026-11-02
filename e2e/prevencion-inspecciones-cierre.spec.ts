@@ -1,5 +1,6 @@
 import { test, expect, type Locator, type Page } from "@playwright/test"
 import { login, textoVisible } from "./helpers"
+import { withSql } from "./mantencion-3-helpers"
 
 /**
  * E2E: hallazgos, CAPA y cierre de una inspección.
@@ -116,6 +117,7 @@ test.describe("Inspecciones — revisión independiente y cierre", () => {
 
     await page.reload()
     await expect(hallazgo.getByText("Con CAPA")).toBeVisible({ timeout: 15_000 })
+
     // B-06: con CAPA enlazada ya no se cierra a mano; se cierra con su acción.
     await expect(hallazgo.getByRole("button", { name: "Derivar a CAPA" })).toHaveCount(0)
     await expect(hallazgo.getByRole("button", { name: "Cerrar hallazgo", exact: true })).toHaveCount(0)
@@ -230,14 +232,31 @@ test.describe("Inspecciones — revisión independiente y cierre", () => {
 })
 
 /**
- * El puente con flota: el sujeto de la inspección es un equipo del padrón, así
- * que la falla puede abrir su mantención correctiva y, si quien administra la
- * flota lo confirma, sacarlo de servicio. Detener el equipo es un permiso
+ * El puente con flota y con Mantención: el sujeto de la inspección es un equipo
+ * del padrón, así que derivar la falla a CAPA abre además su OT de reparación en
+ * Mantención (la conformidad de esa OT acredita la CAPA y cierra el hallazgo) y,
+ * si quien administra la flota lo confirma, permite sacarlo de servicio. Detener el equipo es un permiso
  * distinto (`combustibles:manage_vehicles`) porque quien digita el reporte
  * detecta la falla, pero parar una máquina para la faena lo decide flota.
  */
 test.describe("Inspecciones — falla de un equipo de flota", () => {
-  test("derivar la falla abre la mantención del equipo y permite sacarlo de servicio", async ({ page }) => {
+  // La OT vive en el módulo de mantención y exige que el equipo tenga ficha ahí
+  // (`mant_equipment_profiles`): sin ella derivar crea la CAPA igual, pero avisa
+  // «no se abrió orden de trabajo». El equipo de este escenario es de Flota y no la
+  // trae, así que se le da una ficha sólo mientras dura el escenario: dejarla sumaría
+  // un equipo a las listas de Mantención que otras specs cuentan.
+  test.beforeAll(async () => {
+    await withSql(async (sql) => {
+      await sql`insert into mant_equipment_profiles (vehicle_id, brand_id)
+        select 'fuel-veh-insp-e2e', id from mant_brands order by id limit 1
+        on conflict (vehicle_id) do nothing`
+    })
+  })
+  test.afterAll(async () => {
+    await withSql(async (sql) => { await sql`delete from mant_equipment_profiles where vehicle_id = 'fuel-veh-insp-e2e'` })
+  })
+
+  test("derivar la falla crea CAPA y la OT del equipo, y permite sacarlo de servicio", async ({ page }) => {
     await login(page)
     await abrir(page, "insp-e2e-equipo", "INSP-E2E-0008")
     await expect(page.getByText("E2E-INSP-1").first()).toBeVisible()
@@ -245,21 +264,28 @@ test.describe("Inspecciones — falla de un equipo de flota", () => {
     const hallazgo = page.getByRole("row").filter({ hasText: "Manómetro: aguja en zona verde." })
     await hallazgo.getByRole("button", { name: "Derivar a CAPA" }).click()
     const dialog = page.getByRole("dialog", { name: "Derivar hallazgo a CAPA" })
+    // El diálogo avisa que la derivación también abre una OT en Mantención.
+    await expect(dialog.getByText(/orden de trabajo de reparación para este equipo en Mantención/)).toBeVisible()
     await dialog.locator('textarea[name="actionDescription"]').fill("Reparar el sistema y verificar en taller.")
     await dialog.getByLabel("Responsable de la CAPA").click()
     await page.getByRole("option", { name: "Admin E2E", exact: true }).click()
-    await expect(dialog.getByText(/Se abrirá automáticamente una OT correctiva/)).toBeVisible()
     await dialog.getByRole("button", { name: "Derivar" }).click()
     await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 30_000 })
 
     await page.reload()
     await expect(hallazgo.getByText("Con CAPA")).toBeVisible({ timeout: 15_000 })
 
-    // La mantención nace programada para el mismo plazo que la CAPA: taller y
-    // Prevención no pueden llevar dos calendarios distintos.
-    await page.goto("/mantenciones")
-    await expect(page.getByRole("row").filter({ hasText: "E2E-INSP-1" }).first())
-      .toBeVisible({ timeout: 30_000 })
+    // La OT quedó creada en Mantención, «Por asignar», para el equipo de la inspección y con el
+    // hallazgo como origen (antes la derivación abría una mantención en `/mantenciones`, módulo
+    // retirado). Un hallazgo que no es de un equipo (el extintor del escenario anterior) no abre OT.
+    await page.goto("/mantencion/ot")
+    const filaDelEquipo = page.getByRole("row").filter({ hasText: "E2E-INSP-1" })
+    await expect(filaDelEquipo.getByText("Por asignar")).toBeVisible({ timeout: 30_000 })
+    await filaDelEquipo.getByRole("link", { name: /^Ver la OT OT-/ }).click()
+    await expect(page).toHaveURL(/\/mantencion\/ot\/[^/?]+$/, { timeout: 30_000 })
+    await expect(page.getByRole("heading", { level: 1 }).first()).toContainText("E2E-INSP-1")
+    await expect(textoVisible(page, "Manómetro: aguja en zona verde.").first()).toBeVisible()
+    await expect(page.getByRole("link", { name: "Ver la inspección de origen" })).toBeVisible()
 
     await abrir(page, "insp-e2e-equipo", "INSP-E2E-0008")
     await hallazgo.getByRole("button", { name: "Sacar de servicio" }).click()

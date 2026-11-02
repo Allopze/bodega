@@ -13,8 +13,10 @@
 - Acuerdos 27-10-2026: (1) todos los campos y fotos son **obligatorios**; (2) la **firma de jefatura queda
   para una segunda etapa** (sólo el espacio para firmar a mano en el PDF; la pantalla no lo muestra porque ahí no hace nada); (3) módulo dentro de la plataforma,
   mecánicos con **cuenta propia**; (4) funciona **sin conexión** y sincroniza solo; (5) reportes **PDF y Excel**.
-- Módulo **independiente** del de mantención antiguo (no modificarlo). Navegación: **Control operacional →
-  Mantención** con **Panel, Registros, Equipos y Pautas**.
+- El borrador original pedía mantener separado el módulo anterior. Ese módulo
+  plural (`/mantenciones`) se retiró el 2026-10-31; esta especificación sigue
+  describiendo el módulo vigente en **Control operacional → Mantención** con
+  **Panel, Registros, Equipos y Pautas**.
 
 ## 4. Alcance
 

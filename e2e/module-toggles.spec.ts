@@ -19,8 +19,8 @@ import { login } from "./helpers"
 
 test.describe("Module toggles", () => {
   function flotaModuleSection(page: import("@playwright/test").Page) {
-    // Varias tarjetas mencionan "Flota" (Combustibles y Mantenciones enlazan
-    // catálogos de flota), así que filtrar por texto elige la sección
+    // Varias tarjetas mencionan "Flota" (Combustibles y Mantención enlazan
+    // catálogos de equipos), así que filtrar por texto elige la sección
     // equivocada. El identificador del módulo dejó de pintarse en la interfaz
     // —era jerga— y vive ahora en `data-module-id`, que sigue siendo único.
     return page.locator("section[data-module-id='flota']").first()

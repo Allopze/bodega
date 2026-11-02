@@ -13,9 +13,7 @@ const asset: OperationalAsset = {
   operationalStatus: "mantencion",
   operationalStatusLabel: "En mantención",
   stateMismatch: false,
-  capabilities: ["fuel", "inspections", "maintenance"],
-  maintenanceCount: 3,
-  openMaintenanceCount: 1,
+  capabilities: ["fuel", "inspections"],
   inspectionCount: 2,
   inspectionCompliancePercent: 85,
   inspectionNonConforming: 2,
@@ -23,12 +21,6 @@ const asset: OperationalAsset = {
   openFindings: 2,
   criticalOpenFindings: 1,
   overdueCapa: 1,
-  downtimeHours: 5.5,
-  maintenanceCost: 120000,
-  maintenanceCostApproved: 90000,
-  openSlaOverdue: 1,
-  unassignedOpen: 2,
-  nextPlanDue: "2026-11-15",
   nextExpiryDate: "2026-12-31",
   expiredDocumentTypes: ["SOAP"],
   gpsOdometer: 123456,
@@ -48,134 +40,102 @@ const asset: OperationalAsset = {
   idlePct: 22.5,
   litersIdle: 180,
   meterMismatch: true,
+  openWorkOrders: 2,
+  inWorkshop: true,
+  workshopHours: 52.46,
 }
 
 function keys(cols: ReturnType<typeof buildOperationalAssetExportColumns>) {
   return cols.map((c) => c.key)
 }
 
+const BASE = ["key", "kind", "code", "name", "worksite", "status"]
+const INSPECTION_KEYS = ["inspections", "inspectionCompliance", "openFindings", "criticalOpenFindings"]
+const FUEL_KEYS = ["fuelLiters", "fuelPerformance", "flaggedLoads", "openAnomalyCases", "idlePct", "litersIdle"]
+const WORK_ORDER_KEYS = ["openWorkOrders", "inWorkshop", "workshopHours"]
+const FLEET_KEYS = ["nextExpiryDate", "expiredDocuments", "gpsOdometer", "gpsHourMeter", "gpsObservedAt", "gpsFuelLevel", "meterMismatch"]
+
 describe("buildOperationalAssetExportColumns", () => {
-  it("incluye todas las columnas con las tres capacidades", () => {
-    expect(keys(buildOperationalAssetExportColumns(true, true, true))).toEqual([
-      "key", "kind", "code", "name", "worksite", "status",
-      "maintenance", "backlog", "openSlaOverdue", "unassignedOpen", "nextPlanDue", "inspections", "inspectionCompliance", "openFindings", "criticalOpenFindings", "downtime", "approvedCost", "committedCost",
+  it("incluye todas las columnas con todas las capacidades", () => {
+    expect(keys(buildOperationalAssetExportColumns(true, true, true, true, true))).toEqual([
+      ...BASE, ...FLEET_KEYS, ...FUEL_KEYS, ...INSPECTION_KEYS, "overdueCapa", "fuelCost",
     ])
+  })
+
+  it("las columnas de OT sólo salen con la capacidad de OT, antes del costo de combustible", () => {
+    expect(keys(buildOperationalAssetExportColumns(true, true, true, true, true, true))).toEqual([
+      ...BASE, ...FLEET_KEYS, ...FUEL_KEYS, ...INSPECTION_KEYS, "overdueCapa", ...WORK_ORDER_KEYS, "fuelCost",
+    ])
+    expect(keys(buildOperationalAssetExportColumns(false, false, false, false, false, true))).toEqual([...BASE, ...WORK_ORDER_KEYS])
   })
 
   it("deja sólo las columnas base sin capacidades", () => {
-    expect(keys(buildOperationalAssetExportColumns(false, false, false))).toEqual([
-      "key", "kind", "code", "name", "worksite", "status",
-    ])
+    expect(keys(buildOperationalAssetExportColumns(false, false))).toEqual(BASE)
   })
 
-  it("incluye inspecciones sin mantención ni costos", () => {
-    expect(keys(buildOperationalAssetExportColumns(false, true, false))).toEqual([
-      "key", "kind", "code", "name", "worksite", "status",
-      "inspections", "inspectionCompliance", "openFindings", "criticalOpenFindings",
-    ])
+  it("incluye inspecciones sin costos", () => {
+    expect(keys(buildOperationalAssetExportColumns(true, false))).toEqual([...BASE, ...INSPECTION_KEYS])
   })
 
-  it("oculta el costo de mantención sin vista de mantención, aunque tenga permiso de costos", () => {
-    expect(keys(buildOperationalAssetExportColumns(false, true, true))).toEqual([
-      "key", "kind", "code", "name", "worksite", "status",
-      "inspections", "inspectionCompliance", "openFindings", "criticalOpenFindings",
-    ])
+  it("oculta el costo de combustible sin vista de combustible, aunque tenga permiso de costos", () => {
+    expect(keys(buildOperationalAssetExportColumns(true, true))).toEqual([...BASE, ...INSPECTION_KEYS])
   })
 
-  it("incluye las columnas de combustible y sus costos con las cuatro capacidades", () => {
-    expect(keys(buildOperationalAssetExportColumns(true, true, true, true))).toEqual([
-      "key", "kind", "code", "name", "worksite", "status",
-      "fuelLiters", "fuelPerformance", "flaggedLoads", "openAnomalyCases", "idlePct", "litersIdle",
-      "maintenance", "backlog", "openSlaOverdue", "unassignedOpen", "nextPlanDue", "inspections", "inspectionCompliance", "openFindings", "criticalOpenFindings", "downtime",
-      "fuelCost", "approvedCost", "committedCost", "operationalCost",
+  it("incluye las columnas de combustible y su costo con ambas capacidades", () => {
+    expect(keys(buildOperationalAssetExportColumns(true, true, true))).toEqual([
+      ...BASE, ...FUEL_KEYS, ...INSPECTION_KEYS, "fuelCost",
     ])
   })
 
   it("incluye CAPA vencidas sólo con su capacidad", () => {
-    expect(keys(buildOperationalAssetExportColumns(true, true, true, false, true))).toEqual([
-      "key", "kind", "code", "name", "worksite", "status",
-      "maintenance", "backlog", "openSlaOverdue", "unassignedOpen", "nextPlanDue", "inspections", "inspectionCompliance", "openFindings", "criticalOpenFindings", "overdueCapa", "downtime", "approvedCost", "committedCost",
+    expect(keys(buildOperationalAssetExportColumns(true, false, false, true))).toEqual([
+      ...BASE, ...INSPECTION_KEYS, "overdueCapa",
     ])
   })
 
   it("no incluye CAPA si falta la vista de inspecciones", () => {
-    expect(keys(buildOperationalAssetExportColumns(true, false, true, false, true))).toEqual([
-      "key", "kind", "code", "name", "worksite", "status",
-      "maintenance", "backlog", "openSlaOverdue", "unassignedOpen", "nextPlanDue", "downtime", "approvedCost", "committedCost",
-    ])
+    expect(keys(buildOperationalAssetExportColumns(false, false, false, true))).toEqual(BASE)
   })
 
   it("incluye combustible sin costos", () => {
-    expect(keys(buildOperationalAssetExportColumns(false, false, false, true))).toEqual([
-      "key", "kind", "code", "name", "worksite", "status",
-      "fuelLiters", "fuelPerformance", "flaggedLoads", "openAnomalyCases", "idlePct", "litersIdle",
-    ])
+    expect(keys(buildOperationalAssetExportColumns(false, false, true))).toEqual([...BASE, ...FUEL_KEYS])
   })
 
   it("incluye vencimiento y telemetría con flota:view", () => {
-    expect(keys(buildOperationalAssetExportColumns(true, false, true, false, false, true))).toEqual([
-      "key", "kind", "code", "name", "worksite", "status",
-      "nextExpiryDate", "expiredDocuments", "gpsOdometer", "gpsHourMeter", "gpsObservedAt", "gpsFuelLevel", "meterMismatch",
-      "maintenance", "backlog", "openSlaOverdue", "unassignedOpen", "nextPlanDue", "downtime", "approvedCost", "committedCost",
-    ])
+    expect(keys(buildOperationalAssetExportColumns(false, false, false, false, true))).toEqual([...BASE, ...FLEET_KEYS])
   })
 })
 
 describe("buildOperationalAssetExportRow", () => {
   it("exporta el estado con etiqueta humana, no el enum crudo", () => {
-    const row = buildOperationalAssetExportRow(asset, true, true, true)
+    const row = buildOperationalAssetExportRow(asset, true, true)
     expect(row.status).toBe("En mantención")
   })
 
-  it("omite claves de mantención, inspección y costo sin capacidad", () => {
-    const row = buildOperationalAssetExportRow(asset, false, false, false)
-    expect(row).not.toHaveProperty("maintenance")
-    expect(row).not.toHaveProperty("backlog")
+  it("omite claves de inspección y costo sin capacidad", () => {
+    const row = buildOperationalAssetExportRow(asset, false, false)
     expect(row).not.toHaveProperty("inspections")
     expect(row).not.toHaveProperty("inspectionCompliance")
     expect(row).not.toHaveProperty("openFindings")
     expect(row).not.toHaveProperty("criticalOpenFindings")
     expect(row).not.toHaveProperty("overdueCapa")
-    expect(row).not.toHaveProperty("openSlaOverdue")
-    expect(row).not.toHaveProperty("unassignedOpen")
-    expect(row).not.toHaveProperty("nextPlanDue")
-    expect(row).not.toHaveProperty("downtime")
-    expect(row).not.toHaveProperty("approvedCost")
-    expect(row).not.toHaveProperty("committedCost")
+    expect(row).not.toHaveProperty("fuelCost")
   })
 
-  it("omite las claves de costo sin vista de mantención, aunque tenga permiso de costos", () => {
-    const row = buildOperationalAssetExportRow(asset, false, true, true)
-    expect(row).not.toHaveProperty("approvedCost")
-    expect(row).not.toHaveProperty("committedCost")
-  })
-
-  it("incluye costo null para equipos de servicio", () => {
-    const equipment: OperationalAsset = {
-      ...asset,
-      kind: "service_equipment",
-      key: "service_equipment:e1",
-      maintenanceCost: null,
-      maintenanceCostApproved: null,
+  it("no exporta claves del módulo de mantenciones retirado", () => {
+    const row = buildOperationalAssetExportRow(asset, true, true, true, true, true)
+    for (const key of ["maintenance", "backlog", "openSlaOverdue", "unassignedOpen", "nextPlanDue", "downtime", "approvedCost", "committedCost", "operationalCost"]) {
+      expect(row).not.toHaveProperty(key)
     }
-    const row = buildOperationalAssetExportRow(equipment, true, true, true)
-    expect(row.approvedCost).toBeNull()
-    expect(row.committedCost).toBeNull()
   })
 
-  it("exporta SLA, responsable y próximo plan", () => {
-    const row = buildOperationalAssetExportRow(asset, true, false, true)
-    expect(row).toMatchObject({
-      openSlaOverdue: 1,
-      unassignedOpen: 2,
-      nextPlanDue: "2026-11-15",
-      approvedCost: 90000,
-      committedCost: 120000,
-    })
+  it("omite el costo de combustible sin vista de combustible, aunque tenga permiso de costos", () => {
+    const row = buildOperationalAssetExportRow(asset, true, true)
+    expect(row).not.toHaveProperty("fuelCost")
   })
 
-  it("exporta litros, rendimiento y costos de combustible", () => {
-    const row = buildOperationalAssetExportRow(asset, true, true, true, true)
+  it("exporta litros, rendimiento y costo de combustible", () => {
+    const row = buildOperationalAssetExportRow(asset, true, true, true)
     expect(row).toMatchObject({
       fuelLiters: 1200,
       fuelPerformance: "12,5 km/L",
@@ -184,14 +144,11 @@ describe("buildOperationalAssetExportRow", () => {
       idlePct: 22.5,
       litersIdle: 180,
       fuelCost: 800000,
-      approvedCost: 90000,
-      committedCost: 120000,
-      operationalCost: 890000,
     })
   })
 
   it("omite las claves de combustible sin capacidad", () => {
-    const row = buildOperationalAssetExportRow(asset, false, false, false, false)
+    const row = buildOperationalAssetExportRow(asset, false, false, false)
     expect(row).not.toHaveProperty("fuelLiters")
     expect(row).not.toHaveProperty("fuelPerformance")
     expect(row).not.toHaveProperty("flaggedLoads")
@@ -200,11 +157,10 @@ describe("buildOperationalAssetExportRow", () => {
     expect(row).not.toHaveProperty("litersIdle")
     expect(row).not.toHaveProperty("meterMismatch")
     expect(row).not.toHaveProperty("fuelCost")
-    expect(row).not.toHaveProperty("operationalCost")
   })
 
   it("exporta cumplimiento, hallazgos y CAPA vencidas con sus capacidades", () => {
-    const row = buildOperationalAssetExportRow(asset, false, true, false, false, true)
+    const row = buildOperationalAssetExportRow(asset, true, false, false, true)
     expect(row).toMatchObject({
       inspections: 2,
       inspectionCompliance: 85,
@@ -215,19 +171,19 @@ describe("buildOperationalAssetExportRow", () => {
   })
 
   it("omite CAPA vencidas sin la capacidad de CAPA, pero conserva los hallazgos", () => {
-    const row = buildOperationalAssetExportRow(asset, false, true, false, false, false)
+    const row = buildOperationalAssetExportRow(asset, true, false, false, false)
     expect(row).not.toHaveProperty("overdueCapa")
     expect(row.openFindings).toBe(2)
     expect(row.criticalOpenFindings).toBe(1)
   })
 
   it("omite CAPA vencidas si falta la vista de inspecciones", () => {
-    const row = buildOperationalAssetExportRow(asset, false, false, false, false, true)
+    const row = buildOperationalAssetExportRow(asset, false, false, false, true)
     expect(row).not.toHaveProperty("overdueCapa")
   })
 
   it("exporta vencimiento y telemetría con flota:view", () => {
-    const row = buildOperationalAssetExportRow(asset, true, false, true, false, false, true)
+    const row = buildOperationalAssetExportRow(asset, false, false, false, false, true)
     expect(row).toMatchObject({
       nextExpiryDate: "2026-12-31",
       expiredDocuments: "SOAP",
@@ -239,8 +195,25 @@ describe("buildOperationalAssetExportRow", () => {
     })
   })
 
+  it("exporta OT abiertas, si está en taller y las horas del período con la capacidad de OT", () => {
+    const row = buildOperationalAssetExportRow(asset, false, false, false, false, false, true)
+    expect(row).toMatchObject({ openWorkOrders: 2, inWorkshop: "Sí", workshopHours: 52.5 })
+    expect(buildOperationalAssetExportRow({ ...asset, inWorkshop: false, workshopHours: 0 }, false, false, false, false, false, true))
+      .toMatchObject({ inWorkshop: "No", workshopHours: 0 })
+  })
+
+  it("una consulta de OT que falló exporta vacío, no 0", () => {
+    const row = buildOperationalAssetExportRow({ ...asset, openWorkOrders: null, inWorkshop: null, workshopHours: null }, false, false, false, false, false, true)
+    expect(row).toMatchObject({ openWorkOrders: null, inWorkshop: null, workshopHours: null })
+  })
+
+  it("omite las claves de OT sin la capacidad", () => {
+    const row = buildOperationalAssetExportRow(asset, true, true, true, true, true)
+    for (const key of WORK_ORDER_KEYS) expect(row).not.toHaveProperty(key)
+  })
+
   it("omite vencimiento y telemetría sin flota:view", () => {
-    const row = buildOperationalAssetExportRow(asset, true, false, true)
+    const row = buildOperationalAssetExportRow(asset, false, false)
     expect(row).not.toHaveProperty("nextExpiryDate")
     expect(row).not.toHaveProperty("gpsOdometer")
   })

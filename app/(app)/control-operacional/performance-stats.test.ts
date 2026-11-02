@@ -9,63 +9,63 @@ import {
 const METRICS: PerformanceMetrics = {
   availabilityPercent: 95.5,
   stateCoveragePercent: 98.5,
-  mtbfHours: 450,
-  mttrHours: 20.25,
-  preventiveCompliancePercent: 92,
-  downtimeHours: 140,
-  backlog: 3,
-  maintenanceCost: 500_000,
-  maintenanceCostApproved: 350_000,
-  planAdherencePercent: 80,
-  overdueSla: 2,
-  unassignedOpen: 1,
 }
 
-const ALL = { canViewFleet: true, canViewMaintenance: true, canViewCosts: true }
+const ALL = { canViewFleet: true }
 
 function keys(stats: ReturnType<typeof buildPerformanceStats>) {
   return stats.map((stat) => stat.key)
 }
 
 describe("buildPerformanceStats", () => {
-  it("conserva todas las cifras que el panel mostraba antes, con las tres capacidades", () => {
-    expect(keys(buildPerformanceStats(METRICS, ALL))).toEqual([
-      "availability", "state-coverage", "mtbf", "mttr", "preventive", "plan-adherence", "downtime", "overdue-sla", "unassigned", "period-backlog", "cost",
-    ])
+  it("muestra disponibilidad y cobertura de estado con flota:view", () => {
+    expect(keys(buildPerformanceStats(METRICS, ALL))).toEqual(["availability", "state-coverage"])
   })
 
   it("la disponibilidad es de Flota: sin flota:view no aparece", () => {
-    const stats = keys(buildPerformanceStats(METRICS, { ...ALL, canViewFleet: false }))
-    expect(stats).not.toContain("availability")
-    expect(stats).not.toContain("state-coverage")
+    expect(buildPerformanceStats(METRICS, { canViewFleet: false })).toEqual([])
   })
 
-  it("las cifras de mantención exigen mantenciones:view", () => {
-    expect(keys(buildPerformanceStats(METRICS, { canViewFleet: true, canViewMaintenance: false, canViewCosts: true }))).toEqual(["availability", "state-coverage"])
+  it("no pinta cifras del módulo de mantenciones retirado", () => {
+    const stats = keys(buildPerformanceStats(METRICS, { ...ALL, canViewWorkOrders: true }))
+    for (const key of ["mtbf", "preventive", "plan-adherence", "downtime", "overdue-sla", "unassigned", "period-backlog", "cost"]) {
+      expect(stats).not.toContain(key)
+    }
   })
 
-  it("el costo exige además combustibles:view_costs", () => {
-    expect(keys(buildPerformanceStats(METRICS, { ...ALL, canViewCosts: false }))).not.toContain("cost")
+  it("las cifras de OT (horas en taller y MTTR) sólo se pintan con la capacidad de OT, sin depender de flota", () => {
+    const withMetrics = { ...METRICS, workshopHours: 120.4, mttrHours: 36.25 }
+    expect(keys(buildPerformanceStats(withMetrics, ALL))).not.toContain("workshop-hours")
+    expect(keys(buildPerformanceStats(withMetrics, { canViewFleet: true, canViewWorkOrders: true })))
+      .toEqual(["availability", "state-coverage", "workshop-hours", "mttr"])
+    expect(keys(buildPerformanceStats(withMetrics, { canViewFleet: false, canViewWorkOrders: true })))
+      .toEqual(["workshop-hours", "mttr"])
   })
 
-  it("expande MTBF y MTTR en la etiqueta (A6)", () => {
-    const stats = buildPerformanceStats(METRICS, ALL)
-    expect(stats.find((s) => s.key === "mtbf")?.label).toContain("Tiempo entre fallas")
-    expect(stats.find((s) => s.key === "mttr")?.label).toContain("Tiempo de reparación")
+  it("formatea horas en taller y MTTR; 0 h es un dato y el MTTR sin reparaciones cerradas es «Sin datos»", () => {
+    const stats = buildPerformanceStats({ ...METRICS, workshopHours: 0, mttrHours: null }, { canViewFleet: false, canViewWorkOrders: true })
+    expect(stats.find((s) => s.key === "workshop-hours")).toMatchObject({ value: "0 h", valueKind: "number" })
+    expect(stats.find((s) => s.key === "mttr")).toMatchObject({
+      value: "Sin datos",
+      valueKind: "text",
+      secondary: "Sin reparaciones cerradas en el período",
+    })
+    const measured = buildPerformanceStats({ ...METRICS, workshopHours: 120.4, mttrHours: 36.25 }, { canViewFleet: false, canViewWorkOrders: true })
+    expect(measured.find((s) => s.key === "workshop-hours")).toMatchObject({ value: "120 h" })
+    expect(measured.find((s) => s.key === "mttr")).toMatchObject({ value: "36,3 h", valueKind: "number" })
   })
 
-  it("rotula el backlog como del período para no confundirlo con el tile de OT abiertas de hoy", () => {
-    const backlog = buildPerformanceStats(METRICS, ALL).find((s) => s.key === "period-backlog")
-    expect(backlog?.label).toBe("OT abiertas del período")
-    expect(backlog?.value).toBe("3")
+  it("si no se pudo calcular el taller, dice «Sin datos» en vez de 0 h", () => {
+    const stats = buildPerformanceStats({ ...METRICS, workshopHours: null, mttrHours: null }, { canViewFleet: false, canViewWorkOrders: true })
+    expect(stats.find((s) => s.key === "workshop-hours")).toMatchObject({ value: "Sin datos", secondary: "No se pudo calcular" })
   })
 
   it("sin datos pinta «Sin datos» como texto, no 0", () => {
     const stats = buildPerformanceStats(
-      { ...METRICS, availabilityPercent: null, stateCoveragePercent: null, mtbfHours: null, mttrHours: null, preventiveCompliancePercent: null, planAdherencePercent: null },
+      { availabilityPercent: null, stateCoveragePercent: null },
       ALL,
     )
-    for (const key of ["availability", "state-coverage", "mtbf", "mttr", "preventive", "plan-adherence"]) {
+    for (const key of ["availability", "state-coverage"]) {
       const stat = stats.find((s) => s.key === key)!
       expect(stat.value).toBe("Sin datos")
       expect(stat.valueKind).toBe("text")
@@ -89,32 +89,18 @@ describe("buildPerformanceStats", () => {
   })
 
   it("el tono se pide también para el 0 %, que es el caso más grave y no debe quedar atenuado", () => {
-    const stats = buildPerformanceStats({ ...METRICS, availabilityPercent: 0, preventiveCompliancePercent: 0 }, ALL)
-    for (const key of ["availability", "preventive"]) {
-      expect(stats.find((s) => s.key === key)).toMatchObject({ tone: "danger", toneWhenZero: true })
-    }
+    const stats = buildPerformanceStats({ ...METRICS, availabilityPercent: 0 }, ALL)
+    expect(stats.find((s) => s.key === "availability")).toMatchObject({ tone: "danger", toneWhenZero: true })
   })
 
   it("una cifra sana no pide tono ni lo pide para el cero", () => {
     const stats = buildPerformanceStats(METRICS, ALL)
-    for (const key of ["availability", "preventive"]) {
-      expect(stats.find((s) => s.key === key)).not.toHaveProperty("toneWhenZero")
-    }
-  })
-
-  it("el cumplimiento preventivo usa sus propios umbrales (70 y 90)", () => {
-    const at = (preventiveCompliancePercent: number) =>
-      buildPerformanceStats({ ...METRICS, preventiveCompliancePercent }, ALL).find((s) => s.key === "preventive")!
-    expect(at(95)).not.toHaveProperty("hint")
-    expect(at(80)).toMatchObject({ tone: "signal", hint: "Bajo 90%" })
-    expect(at(69.9)).toMatchObject({ tone: "danger", hint: "Bajo 70%" })
-    expect(at(0)).toMatchObject({ tone: "danger", hint: "Bajo 70%" })
+    expect(stats.find((s) => s.key === "availability")).not.toHaveProperty("toneWhenZero")
   })
 
   it("un umbral exacto no alerta", () => {
-    const stats = buildPerformanceStats({ ...METRICS, availabilityPercent: 90, preventiveCompliancePercent: 90 }, ALL)
+    const stats = buildPerformanceStats({ ...METRICS, availabilityPercent: 90 }, ALL)
     expect(stats.find((s) => s.key === "availability")).not.toHaveProperty("hint")
-    expect(stats.find((s) => s.key === "preventive")).not.toHaveProperty("hint")
   })
 })
 
@@ -130,16 +116,21 @@ describe("formatKpi", () => {
 
 describe("buildPerformanceGlossary", () => {
   it("trae las definiciones de las cifras visibles y nada más", () => {
-    expect(buildPerformanceGlossary(ALL).map((e) => e.key)).toEqual([
-      "availability", "state-coverage", "mtbf", "mttr", "preventive", "plan-adherence", "overdue-sla", "unassigned", "maintenance-cost",
-    ])
-    expect(buildPerformanceGlossary({ canViewFleet: true, canViewMaintenance: false }).map((e) => e.key)).toEqual(["availability", "state-coverage"])
-    expect(buildPerformanceGlossary({ canViewFleet: false, canViewMaintenance: false })).toEqual([])
+    expect(buildPerformanceGlossary(ALL).map((e) => e.key)).toEqual(["availability", "state-coverage"])
+    expect(buildPerformanceGlossary({ canViewFleet: false })).toEqual([])
   })
 
-  it("expande las siglas en el término", () => {
-    const terms = buildPerformanceGlossary(ALL).map((e) => e.term).join(" | ")
-    expect(terms).toContain("Mean Time Between Failures")
-    expect(terms).toContain("Mean Time To Repair")
+  it("no trae definiciones de mantenciones retiradas", () => {
+    const keys = buildPerformanceGlossary({ canViewFleet: true, canViewInspections: true, canViewCapa: true, canViewFuel: true, canViewCosts: true, canViewWorkOrders: true }).map((e) => e.key)
+    for (const key of ["mtbf", "preventive", "plan-adherence", "overdue-sla", "unassigned", "maintenance-cost"]) {
+      expect(keys).not.toContain(key)
+    }
+  })
+
+  it("define horas en taller y MTTR sólo con la capacidad de OT", () => {
+    expect(buildPerformanceGlossary(ALL).map((e) => e.key)).not.toContain("mttr")
+    const entries = buildPerformanceGlossary({ canViewFleet: false, canViewWorkOrders: true })
+    expect(entries.map((e) => e.key)).toEqual(["workshop-hours", "mttr"])
+    expect(entries[1]!.definition).toContain("reparación cerradas")
   })
 })

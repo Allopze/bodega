@@ -98,6 +98,11 @@ export interface FlowDraft {
   driverQuery: string
 
   correctsRecordId: string | null
+  /**
+   * OT desde la que se registra el trabajo (2026-11). Con ella el equipo queda fijo, la correctiva no
+   * pregunta «¿queda en taller?» (la OT manda) ni pide el Nº de OT en papel, y el registro viaja enlazado.
+   */
+  workOrderId: string | null
   /** Registro rechazado que este borrador corrige: al firmar, el rechazado sale de la cola. */
   replacesQueueId: string | null
 
@@ -108,7 +113,7 @@ export function draftKey(userId: string, kind: "P" | "C"): string {
   return `${userId}:${kind}`
 }
 
-export function newDraft(input: { userId: string; kind: "P" | "C"; vehicleId?: string | null; schedule?: MantScheduleSnapshot | null; id?: string; now?: Date }): FlowDraft {
+export function newDraft(input: { userId: string; kind: "P" | "C"; vehicleId?: string | null; schedule?: MantScheduleSnapshot | null; id?: string; now?: Date; workOrderId?: string | null }): FlowDraft {
   const now = input.now ?? new Date()
   const today = todayInChile(now)
   return {
@@ -153,9 +158,15 @@ export function newDraft(input: { userId: string; kind: "P" | "C"; vehicleId?: s
     driverIds: [],
     driverQuery: "",
     correctsRecordId: null,
+    workOrderId: input.workOrderId ?? null,
     replacesQueueId: null,
     errors: {},
   }
+}
+
+/** Primer paso al que se puede volver: con una OT el equipo queda fijo y el paso «Equipo» no existe para el mecánico. */
+export function firstStepIndex(draft: Pick<FlowDraft, "workOrderId">): number {
+  return draft.workOrderId ? 1 : 0
 }
 
 /** Todas las fotos que el borrador referencia. */
@@ -205,5 +216,6 @@ function migrateSteps(draft: FlowDraft): FlowDraft {
     if (ret !== null && ret >= 3) ret += 1
   }
   const last = stepsFor(draft.kind).length - 1
-  return { ...draft, stepsVersion: STEPS_VERSION, step: clamp(step, 0, last), ret: ret === null ? null : clamp(ret, 0, last) }
+  // Un borrador de antes de las OT no trae `workOrderId`: se lee como «sin OT».
+  return { ...draft, workOrderId: draft.workOrderId ?? null, stepsVersion: STEPS_VERSION, step: clamp(step, 0, last), ret: ret === null ? null : clamp(ret, 0, last) }
 }

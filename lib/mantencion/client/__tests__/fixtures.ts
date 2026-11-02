@@ -1,10 +1,10 @@
 import { IDBFactory } from "fake-indexeddb"
-import type { CatalogEquipment, MantCatalog, SyncCorrectiveRecord, SyncPreventiveRecord } from "../../contracts"
+import type { CatalogEquipment, CatalogWorkOrder, MantCatalog, SyncCorrectiveRecord, SyncPreventiveRecord, WorkOrderOpPayload } from "../../contracts"
 import type { MantScheduleSnapshot } from "../../types"
 import { resetDbConnectionForTests } from "../db"
 import { resetSignalForTests } from "../signal"
-import { newRecordItem } from "../queue"
-import type { DeviceAccount, QueueRecordItem, StoredCatalog, StoredPhoto } from "../types"
+import { newRecordItem, newWorkOrderItem } from "../queue"
+import type { DeviceAccount, QueueRecordItem, QueueWorkOrderItem, StoredCatalog, StoredPhoto } from "../types"
 
 /** Base limpia entre pruebas: cierra la conexión y entrega un IndexedDB nuevo. */
 export async function freshDb(): Promise<void> {
@@ -113,4 +113,38 @@ export function recordItem(id: string, authorUserId: string, photoIds: [string, 
 
 export function json(status: number, body: unknown, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } })
+}
+
+/** Una OT del catálogo: por defecto «asignada» a u-1, con un ítem pedido de cada lista. */
+export function workOrder(overrides: Partial<CatalogWorkOrder> = {}): CatalogWorkOrder {
+  return {
+    id: "ot-1", folio: "OT-BIO-0001", status: "asignada", vehicleId: "veh-1", equipmentCode: "KA-140", equipmentPlate: "SGCP-84", equipmentType: "Camión", unit: "km",
+    worksiteId: "ws-bio", worksiteName: "Biodiversa", outOfWorksite: false, repair: true, maintenance: true, requestDate: "2026-10-27", requesterName: "Marcela Soto",
+    repairDescription: "Fuga de aceite en el cárter", observations: null, assignedToUserId: "u-1", assignedToName: "Javier Roa", entry: null, exitAt: null,
+    items: [
+      { id: "it-1", kind: "anexo", origin: "solicitud", description: "Cambiar manguera de freno", done: null, note: null },
+      { id: "it-2", kind: "mantencion", origin: "solicitud", description: "Cambio de aceite", done: null, note: null },
+    ],
+    lastRejection: null, linkedRecords: [],
+    ...overrides,
+  }
+}
+
+export const ENTRY = {
+  workshopKind: "interno" as const, workshopName: null, workshopManagerName: "Pedro Silva", operatorName: "José Aedo", entryAt: "2026-10-28T13:00:00.000Z",
+  odometer: 40_400, hourmeter: null, estimatedDeliveryDate: "2026-10-30",
+}
+
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never
+export type OtOpBody = DistributiveOmit<WorkOrderOpPayload, "id" | "workOrderId" | "createdAt" | "deviceId">
+
+/** Una operación de OT lista para la cola (el id de la operación es el de la cola; `n` ordena por hora de creación). */
+export function otOpItem(n: number, body: OtOpBody, overrides: { workOrderId?: string; authorUserId?: string; createdAt?: string } = {}): QueueWorkOrderItem {
+  const createdAt = overrides.createdAt ?? `2026-10-28T15:0${n}:00.000Z`
+  const workOrderId = overrides.workOrderId ?? "ot-1"
+  return newWorkOrderItem({
+    authorUserId: overrides.authorUserId ?? "u-1",
+    payload: { ...body, id: UUID(500 + n), workOrderId, createdAt, deviceId: UUID(900) } as WorkOrderOpPayload,
+    summary: { workOrderId, folio: "OT-BIO-0001", equipmentCode: "KA-140", equipmentPlate: "SGCP-84" },
+  }, createdAt)
 }

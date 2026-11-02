@@ -2,7 +2,6 @@ import Link from "next/link"
 import {
   Truck,
   GasPump,
-  Wrench,
   TreeStructure,
   Drop,
   ArrowRight,
@@ -51,13 +50,6 @@ const LINKS = [
     href:        "/flota",
     icon:        Truck,
     permission:  "combustibles:view" satisfies Permission,
-  },
-  {
-    title:       "Mantenciones",
-    description: "Programa y rastrea las mantenciones de vehículos y equipos.",
-    href:        "/mantenciones",
-    icon:        Wrench,
-    permission:  "mantenciones:view" satisfies Permission,
   },
 ] as const
 

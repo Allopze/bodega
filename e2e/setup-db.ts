@@ -2038,25 +2038,6 @@ async function main() {
     reason: "Fixture QA de integridad operacional",
   })
 
-  // Maintenance fixture — for mantenciones E2E spec
-  await db.insert(schema.maintenanceRecords).values({
-    id: "mant-e2e",
-    vehicleId: "fuel-veh-e2e",
-    supplierId: "sup-e2e",
-    worksiteId: "ws-e2e",
-    maintenanceDate: "2026-07-15",
-    maintenanceType: "preventiva",
-    status: "scheduled",
-    odometerReading: 50000,
-    netAmount: 100000,
-    taxAmount: 19000,
-    totalAmount: 119000,
-    notes: "Fixture E2E para mantenciones",
-    createdBy: "user-admin-e2e",
-    createdAt: now,
-    updatedAt: now,
-  })
-
   // Fleet document fixture — for flota E2E spec
   await db.insert(schema.fleetVehicleDocuments).values({
     id: "fleet-doc-e2e",

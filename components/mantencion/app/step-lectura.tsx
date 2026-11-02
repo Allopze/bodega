@@ -12,7 +12,7 @@ import { IconExternal } from "./icons"
 import { PautaBox } from "./pauta-box"
 import { FieldError } from "./ui"
 
-export function EquipmentSummary({ row, onChange }: { row: FleetRow; onChange?: () => void }) {
+export function EquipmentSummary({ row, onChange }: { row: FleetRow; onChange?: (() => void) | undefined }) {
   return (
     <div className="eqsum">
       <div style={{ minWidth: 0 }}>
@@ -33,7 +33,8 @@ export function StepLectura({ draft, dispatch, row, onChangeEquipment, onConfirm
   draft: FlowDraft
   dispatch: Dispatch<FlowAction>
   row: FleetRow
-  onChangeEquipment: () => void
+  /** Sin él (registro desde una OT) el equipo queda fijo y no hay «Cambiar». */
+  onChangeEquipment?: (() => void) | undefined
   /** Aplica el cambio y sigue al paso siguiente en un solo gesto. */
   onConfirm: (patch: Partial<FlowDraft>) => void
 }) {

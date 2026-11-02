@@ -15,6 +15,8 @@ import { todayInChile } from "@/lib/utils"
 export const IDS = {
   wsBio: "ws-bio", wsCho: "ws-cho", wsAra: "ws-ara",
   mecBio: "u-mec-bio", mecBio2: "u-mec-bio2", mecCho: "u-mec-cho", supBio: "u-sup-bio", jefe: "u-jefe", plain: "u-plain", inactive: "u-inactive",
+  /** Administración de contrato (órdenes de trabajo): una por faena, sin acceso a la app del mecánico. */
+  adminBio: "u-admin-bio", adminCho: "u-admin-cho",
   truckBio: "v-ka135", truckCho: "v-ka200", machineBio: "v-mq01", retired: "v-ka999", truckAra: "v-ka300",
   schKm: "sch-km", schH: "sch-h",
   brandScania: "b-scania", brandVolvo: "b-volvo",
@@ -26,7 +28,7 @@ export function daysAgo(days: number): string {
 }
 
 const MANT_PERMISSIONS = SYSTEM_PERMISSIONS.filter((permission) => permission.module === "mantencion_equipos")
-const MANT_ROLE_SLUGS = ["mecanico", "supervisor_mantencion", "jefe_mantencion"]
+const MANT_ROLE_SLUGS = ["mecanico", "supervisor_mantencion", "jefe_mantencion", "admin_contrato"]
 
 export async function seedMantFixtures(db: DB): Promise<void> {
   const now = new Date().toISOString()
@@ -47,12 +49,14 @@ export async function seedMantFixtures(db: DB): Promise<void> {
   await db.insert(schema.users).values([
     person(IDS.mecBio, "Javier Roa"), person(IDS.mecBio2, "Deivis González"), person(IDS.mecCho, "Pedro Cholguán"),
     person(IDS.supBio, "Francisco Amestica"), person(IDS.jefe, "Alexis Morales"), person(IDS.plain, "Sin Permiso"),
+    person(IDS.adminBio, "Ana Contrato Biodiversa"), person(IDS.adminCho, "Carlos Contrato Cholguán"),
     person(IDS.inactive, "Mecánico Inactivo", { isActive: false }),
   ])
   await db.insert(schema.userRoles).values([
     { userId: IDS.mecBio, roleId: "rol-mecanico" }, { userId: IDS.mecBio2, roleId: "rol-mecanico" }, { userId: IDS.mecCho, roleId: "rol-mecanico" },
     { userId: IDS.supBio, roleId: "rol-sup-mantencion" }, { userId: IDS.jefe, roleId: "rol-jefe-mant" },
     { userId: IDS.plain, roleId: "rol-test-plain" }, { userId: IDS.inactive, roleId: "rol-mecanico" },
+    { userId: IDS.adminBio, roleId: "rol-admin-contrato" }, { userId: IDS.adminCho, roleId: "rol-admin-contrato" },
   ])
 
   await db.insert(schema.worksites).values([
@@ -66,6 +70,7 @@ export async function seedMantFixtures(db: DB): Promise<void> {
     { userId: IDS.mecBio, worksiteId: IDS.wsBio, isPrimary: true }, { userId: IDS.mecBio2, worksiteId: IDS.wsBio, isPrimary: true },
     { userId: IDS.mecCho, worksiteId: IDS.wsCho, isPrimary: true }, { userId: IDS.supBio, worksiteId: IDS.wsBio, isPrimary: true },
     { userId: IDS.inactive, worksiteId: IDS.wsBio, isPrimary: true },
+    { userId: IDS.adminBio, worksiteId: IDS.wsBio, isPrimary: true }, { userId: IDS.adminCho, worksiteId: IDS.wsCho, isPrimary: true },
   ])
 
   const catalog = (id: string, name: string) => ({ id, name, nameKey: nameKey(name) })

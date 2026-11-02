@@ -4,6 +4,7 @@ import { currentReading, daysBetween } from "../readings"
 import { equipmentStatus, WORKSHOP_UPDATE_DAYS, type PreventiveRef } from "../status"
 import type { MantEquipmentStatus, MantReading, MantScheduleSnapshot } from "../types"
 import { todayInChile } from "@/lib/utils"
+import { equipmentFromWorkOrder } from "./ot-model"
 import type { QueueItem, QueueRecordItem, StoredCatalog } from "./types"
 
 /**
@@ -46,7 +47,16 @@ export function allEquipment(stored: StoredCatalog | null): CatalogEquipment[] {
   if (!stored) return []
   const mine = stored.catalog.equipment
   const seen = new Set(mine.map((eq) => eq.id))
-  return [...mine, ...(stored.others?.equipment ?? []).filter((eq) => !seen.has(eq.id))]
+  const others = (stored.others?.equipment ?? []).filter((eq) => !seen.has(eq.id))
+  for (const eq of others) seen.add(eq.id)
+  // Equipos que sólo conocemos por una OT (de otra faena, con el catálogo liviano aún sin bajar): se puede registrar trabajo igual.
+  const fromOrders: CatalogEquipment[] = []
+  for (const ot of [...(stored.catalog.workOrders ?? []), ...(stored.catalog.availableWorkOrders ?? [])]) {
+    if (seen.has(ot.vehicleId)) continue
+    seen.add(ot.vehicleId)
+    fromOrders.push(equipmentFromWorkOrder(ot))
+  }
+  return [...mine, ...others, ...fromOrders]
 }
 
 export function schedulesById(catalog: MantCatalog | null | undefined): Map<string, MantScheduleSnapshot> {

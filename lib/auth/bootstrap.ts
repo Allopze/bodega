@@ -32,6 +32,10 @@ const RETIRED_PERMISSION_NAMES = [
    * explícita que el repo tiene para esto. */
   "prevention:risk:approve",
   "prevention:risk:publish",
+  "mantenciones:view",
+  "mantenciones:create",
+  "mantenciones:edit",
+  "mantenciones:approve_costs",
 ] as const
 
 /**

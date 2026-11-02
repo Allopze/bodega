@@ -285,7 +285,7 @@ describe("CapaDialog y StopVehicleDialog — el submit no sube al formulario que
     const outerSubmit = vi.fn((event: FormEvent) => event.preventDefault())
     render(
       <form onSubmit={outerSubmit}>
-        <CapaDialog finding={finding()} assignees={[]} hasVehicle={false} />
+        <CapaDialog finding={finding()} assignees={[]} />
       </form>,
     )
 

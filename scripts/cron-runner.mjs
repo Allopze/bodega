@@ -81,12 +81,6 @@ const JOBS = Object.freeze({
     internalSecretEnv: "FLEET_GPS_CRON_INTERNAL_SECRET",
     internalSecretHeader: "X-Fleet-Gps-Cron-Secret",
   },
-  "maintenance-reminders": {
-    url: "http://app:3000/api/cron/maintenance-reminders",
-    timeoutMs: 5 * 60 * 1_000,
-    kind: "sync",
-    codePrefix: "MAINTENANCE_CRON_",
-  },
   "feedback-sla-reminders": {
     url: "http://app:3000/api/cron/feedback-sla-reminders",
     timeoutMs: 5 * 60 * 1_000,

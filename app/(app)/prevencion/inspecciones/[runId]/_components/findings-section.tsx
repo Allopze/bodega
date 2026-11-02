@@ -186,7 +186,7 @@ export function FindingsSection({ model }: { model: FindingsSectionModel }) {
           key={capaFinding.id}
           finding={capaFinding}
           assignees={assignees}
-          hasVehicle={!!run.subjectVehicleId}
+          subjectIsVehicle={!!run.subjectVehicleId}
           open
           onOpenChange={(next) => { if (!next) setCapaId(null) }}
           trigger={null}

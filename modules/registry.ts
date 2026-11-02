@@ -26,7 +26,6 @@ import { ppaModule }         from "@/modules/ppa/manifest"
 import { feedbackModule }    from "@/modules/feedback/manifest"
 import { combustiblesModule } from "@/modules/combustibles/manifest"
 import { flotaModule }         from "@/modules/flota/manifest"
-import { mantencionesModule }  from "@/modules/mantenciones/manifest"
 import { mantencionEquiposModule } from "@/modules/mantencion-equipos/manifest"
 import { preventionModule }    from "@/modules/prevention/manifest"
 import { operationsModule }    from "@/modules/operations/manifest"
@@ -63,7 +62,6 @@ export const registry = [
   combustiblesModule,
   // ── Control operacional ─────────────────────────────────────────────────
   flotaModule,
-  mantencionesModule,
   mantencionEquiposModule,
   // ── Prevención ampliada: IPER, incidentes, capacitaciones ────────────────
   preventionModule,

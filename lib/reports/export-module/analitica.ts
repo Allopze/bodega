@@ -22,7 +22,6 @@ export async function analiticaResumen(session: Session | null, filters: ExportF
   }))
   const canViewFuel = can(session, "combustibles:view")
   const canViewFuelCosts = canViewFuel && can(session, "combustibles:view_costs")
-  const canViewMaintenanceCosts = canViewFuelCosts && can(session, "mantenciones:view")
 
   const rows: ReportCell[][] = [
     ["KPI", "Gasto total", `${data.filters.fromDate} a ${data.filters.toDate}`, data.kpis.totalSpend],
@@ -60,7 +59,7 @@ export async function analiticaResumen(session: Session | null, filters: ExportF
       "Vehículos",
       row.plate,
       `${row.type} · ${row.totalLiters} L · ${row.loadCount} cargas`,
-      canViewMaintenanceCosts ? row.totalOperationalCost : row.totalFuelAmount,
+      row.totalFuelAmount,
     ]) : []),
     ...data.eppDeliveries.map((row) => [
       "EPP",
@@ -114,12 +113,8 @@ export async function analiticaResumen(session: Session | null, filters: ExportF
     },
     ...(canViewFuelCosts ? [{
       worksheetName: "Vehículos",
-      headers: canViewMaintenanceCosts
-        ? ["Patente", "Tipo", "Combustible", "Servicios/Mantenciones", "Total", "Litros", "Cargas", "Km", "Horómetro"]
-        : ["Patente", "Tipo", "Combustible", "Litros", "Cargas", "Km", "Horómetro"],
-      rows: data.vehicleCosts.map((row) => canViewMaintenanceCosts
-        ? [row.plate, row.type, row.totalFuelAmount, row.totalServiceAmount, row.totalOperationalCost, row.totalLiters, row.loadCount, row.lastOdometerReading, row.lastHourMeterReading]
-        : [row.plate, row.type, row.totalFuelAmount, row.totalLiters, row.loadCount, row.lastOdometerReading, row.lastHourMeterReading]),
+      headers: ["Patente", "Tipo", "Combustible", "Litros", "Cargas", "Km", "Horómetro"],
+      rows: data.vehicleCosts.map((row) => [row.plate, row.type, row.totalFuelAmount, row.totalLiters, row.loadCount, row.lastOdometerReading, row.lastHourMeterReading]),
     } satisfies ReportSheet] : []),
     {
       worksheetName: "EPP",

@@ -196,7 +196,7 @@ describe("Panel operacional: vencimientos y telemetría por activo", () => {
   })
 
   it("sin flota:view no devuelve vencimientos ni telemetría", async () => {
-    const hub = await getOperationalControlHub(session(["mantenciones:view"]), MARCH, { includeAttention: false })
+    const hub = await getOperationalControlHub(session(["prevention:inspections:view"]), MARCH, { includeAttention: false })
     const a = hub.assets.find((asset) => asset.id === IDS.vA)!
 
     expect(a.nextExpiryDate).toBeNull()

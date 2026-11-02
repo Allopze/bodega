@@ -1,7 +1,7 @@
 import type { MantItemValue, MantScheduleSnapshot } from "../types"
 import { groupChecklist } from "../schedule"
 import { groupDone, HOURS_MAX, HOURS_MIN } from "./flow-validate"
-import { newJob, stepsFor, type FlowDraft, type FlowErrors, type FlowJob, type FlowStep } from "./flow-types"
+import { firstStepIndex, newJob, stepsFor, type FlowDraft, type FlowErrors, type FlowJob, type FlowStep } from "./flow-types"
 
 /**
  * Reductor puro del flujo de registro. No toca red, ni IndexedDB, ni el reloj:
@@ -130,6 +130,7 @@ export function flowReducer(draft: FlowDraft, action: FlowAction): FlowDraft {
       return patched(draft, action.patch)
 
     case "pickEquipment": {
+      if (draft.workOrderId) return draft
       if (draft.vehicleId === action.vehicleId) return patched(draft, { schedule: draft.schedule ?? action.schedule })
       return patched(draft, {
         vehicleId: action.vehicleId, schedule: action.schedule,
@@ -236,10 +237,11 @@ export function flowReducer(draft: FlowDraft, action: FlowAction): FlowDraft {
       })
 
     case "back":
-      return draft.step === 0 ? draft : { ...draft, step: draft.step - 1, ret: null, errors: {} }
+      return draft.step <= firstStepIndex(draft) ? draft : { ...draft, step: draft.step - 1, ret: null, errors: {} }
 
     case "goStep":
-      return { ...draft, step: action.step, errors: {}, ret: action.backToReview ? stepsFor(draft.kind).length - 1 : null }
+      // Con una OT el equipo está fijo: «Cambiar equipo» no lleva al paso 0.
+      return { ...draft, step: Math.max(action.step, firstStepIndex(draft)), errors: {}, ret: action.backToReview ? stepsFor(draft.kind).length - 1 : null }
 
     case "next":
       return advance(draft, action.env)

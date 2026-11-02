@@ -32,11 +32,7 @@ function formatPerformance(asset: OperationalAsset): string | null {
   return `${value} ${asset.fuelPerformanceUnit === "km_per_liter" ? "km/L" : "L/h"}`
 }
 
-const COLUMNS = (canViewCosts: boolean, canViewMaintenance: boolean, canViewInspections: boolean, canViewFuel: boolean, canViewCapa: boolean, canViewFleet: boolean) => {
-  // El costo de mantención requiere ver las OT (`mantenciones:view`) además del
-  // permiso de costos; sin el primero la consulta no carga registros y la
-  // columna mostraría "$0" para todos los activos.
-  const showCost = canViewMaintenance && canViewCosts
+const COLUMNS = (canViewCosts: boolean, canViewInspections: boolean, canViewFuel: boolean, canViewCapa: boolean, canViewFleet: boolean, canViewWorkOrders: boolean) => {
   const showFuelCost = canViewFuel && canViewCosts
   const showCapa = canViewCapa && canViewInspections
   return [
@@ -60,14 +56,6 @@ const COLUMNS = (canViewCosts: boolean, canViewMaintenance: boolean, canViewInsp
           { key: "litersIdle", label: "Litros en vacío", sortable: true, numeric: true, defaultVisible: false },
         ]
       : []),
-    ...(canViewMaintenance
-      ? [
-          { key: "openMaintenanceCount", label: "OT abiertas (período)", sortable: true, numeric: true },
-          { key: "openSlaOverdue", label: "SLA vencido", sortable: true, numeric: true },
-          { key: "unassignedOpen", label: "Sin responsable", sortable: true, numeric: true, defaultVisible: false },
-          { key: "nextPlanDue", label: "Próximo plan", sortable: true, defaultVisible: false },
-        ]
-      : []),
     ...(canViewInspections
       ? [
           { key: "inspectionCount", label: "Inspecciones", sortable: true, numeric: true, defaultVisible: false },
@@ -78,14 +66,14 @@ const COLUMNS = (canViewCosts: boolean, canViewMaintenance: boolean, canViewInsp
     ...(showCapa
       ? [{ key: "overdueCapa", label: "CAPA vencidas", sortable: true, numeric: true }]
       : []),
-    ...(canViewMaintenance
-      ? [{ key: "downtimeHours", label: "Detención (h)", sortable: true, numeric: true, defaultVisible: false }]
+    ...(canViewWorkOrders
+      ? [
+          { key: "openWorkOrders", label: "OT abiertas", sortable: true, numeric: true },
+          { key: "workshopHours", label: "Horas en taller", sortable: true, numeric: true, defaultVisible: false },
+        ]
       : []),
     ...(showFuelCost
       ? [{ key: "fuelBilledAmount", label: "Costo combustible", sortable: true, numeric: true }]
-      : []),
-    ...(showCost
-      ? [{ key: "maintenanceCostApproved", label: "Costo aprobado", sortable: true, numeric: true }]
       : []),
     { key: "_action", label: "", sortable: false, numeric: true },
   ]
@@ -100,21 +88,20 @@ function assetHref(asset: OperationalAsset): string {
 export function OperationalAssetsTable({
   assets,
   canViewCosts,
-  canViewMaintenance,
   canViewInspections,
   canViewCapa,
   canViewFuel,
   canViewFleet,
+  canViewWorkOrders = false,
 }: {
   assets: OperationalAsset[]
   canViewCosts: boolean
-  canViewMaintenance: boolean
   canViewInspections: boolean
   canViewCapa: boolean
   canViewFuel: boolean
   canViewFleet: boolean
+  canViewWorkOrders?: boolean
 }) {
-  const showCost = canViewMaintenance && canViewCosts
   const showFuelCost = canViewFuel && canViewCosts
   const showCapa = canViewCapa && canViewInspections
 
@@ -202,38 +189,6 @@ export function OperationalAssetsTable({
             )}
           </>
         )}
-        {canViewMaintenance && (
-          <>
-            <div>
-              <dt className="text-[var(--color-text-subtle)]">OT abiertas del período</dt>
-              <dd>{asset.openMaintenanceCount}</dd>
-            </div>
-            <div>
-              <dt className="text-[var(--color-text-subtle)]">SLA vencido</dt>
-              <dd>{asset.openSlaOverdue ?? 0}</dd>
-            </div>
-            <div>
-              <dt className="text-[var(--color-text-subtle)]">Sin responsable</dt>
-              <dd>{asset.unassignedOpen ?? 0}</dd>
-            </div>
-            <div>
-              <dt className="text-[var(--color-text-subtle)]">Próximo plan</dt>
-              <dd>{asset.nextPlanDue ? formatDate(asset.nextPlanDue) : "—"}</dd>
-            </div>
-            {showCost && (
-              <>
-                <div>
-                  <dt className="text-[var(--color-text-subtle)]">Costo aprobado</dt>
-                  <dd>{formatCLP(asset.maintenanceCostApproved ?? 0)}</dd>
-                </div>
-                <div>
-                  <dt className="text-[var(--color-text-subtle)]">Costo comprometido</dt>
-                  <dd>{formatCLP(asset.maintenanceCost ?? 0)}</dd>
-                </div>
-              </>
-            )}
-          </>
-        )}
         {canViewInspections && asset.kind === "vehicle" && (
           <>
             <div>
@@ -263,10 +218,13 @@ export function OperationalAssetsTable({
             <dd>{asset.overdueCapa ?? 0}</dd>
           </div>
         )}
-        {canViewMaintenance && (
+        {canViewWorkOrders && asset.kind === "vehicle" && (
           <div>
-            <dt className="text-[var(--color-text-subtle)]">Detención</dt>
-            <dd>{asset.downtimeHours.toLocaleString("es-CL", { maximumFractionDigits: 1 })} h</dd>
+            <dt className="text-[var(--color-text-subtle)]">OT abiertas</dt>
+            <dd>
+              {asset.openWorkOrders ?? "—"}
+              {asset.inWorkshop && " · en taller"}
+            </dd>
           </div>
         )}
       </dl>
@@ -341,20 +299,6 @@ export function OperationalAssetsTable({
           </TableCell>
         </>
       )}
-      {canViewMaintenance && (
-        <>
-          <TableCell className="text-right font-mono">{asset.openMaintenanceCount}</TableCell>
-          <TableCell className="text-right font-mono">
-            {asset.kind === "service_equipment" ? "—" : (asset.openSlaOverdue ?? 0)}
-          </TableCell>
-          <TableCell className="text-right font-mono">
-            {asset.kind === "service_equipment" ? "—" : (asset.unassignedOpen ?? 0)}
-          </TableCell>
-          <TableCell className="text-right font-mono">
-            {asset.kind === "service_equipment" || !asset.nextPlanDue ? "—" : formatDate(asset.nextPlanDue)}
-          </TableCell>
-        </>
-      )}
       {canViewInspections && (
         <>
           <TableCell className="text-right font-mono">
@@ -389,28 +333,30 @@ export function OperationalAssetsTable({
           {asset.kind === "service_equipment" ? "—" : (asset.overdueCapa ?? 0)}
         </TableCell>
       )}
-      {canViewMaintenance && (
-        <TableCell className="text-right font-mono">
-          {asset.downtimeHours.toLocaleString("es-CL", { maximumFractionDigits: 1 })} h
-        </TableCell>
+      {canViewWorkOrders && (
+        <>
+          <TableCell className="text-right font-mono">
+            {asset.kind === "service_equipment" || asset.openWorkOrders == null ? "—" : (
+              <>
+                {asset.openWorkOrders}
+                {asset.inWorkshop && (
+                  <span className="ml-1 font-sans text-xs text-[var(--color-warning-ink)]">en taller</span>
+                )}
+              </>
+            )}
+          </TableCell>
+          <TableCell className="text-right font-mono">
+            {asset.kind === "service_equipment" || asset.workshopHours == null
+              ? "—"
+              : asset.workshopHours.toLocaleString("es-CL", { maximumFractionDigits: 1 })}
+          </TableCell>
+        </>
       )}
       {showFuelCost && (
         <TableCell className="text-right font-mono">
           {asset.kind === "service_equipment" || asset.fuelBilledAmount == null
             ? "—"
             : formatCLP(asset.fuelBilledAmount)}
-        </TableCell>
-      )}
-      {showCost && (
-        <TableCell className="text-right font-mono">
-          {/*
-           * B-05: los instrumentos de servicio no modelan costo. Pintar "$0"
-           * es engañoso en una columna contable. Si el modelo no devolvió
-           * cifra, mostramos "—".
-           */}
-          {asset.kind === "service_equipment" || asset.maintenanceCostApproved == null
-            ? "—"
-            : formatCLP(asset.maintenanceCostApproved)}
         </TableCell>
       )}
       <TableCell className="text-right">
@@ -431,7 +377,7 @@ export function OperationalAssetsTable({
   return (
     <DataTable
       caption="Activos operacionales"
-      columns={COLUMNS(canViewCosts, canViewMaintenance, canViewInspections, canViewFuel, canViewCapa, canViewFleet)}
+      columns={COLUMNS(canViewCosts, canViewInspections, canViewFuel, canViewCapa, canViewFleet, canViewWorkOrders)}
       rows={assets}
       enableColumnToggle
       stickyFirstColumn

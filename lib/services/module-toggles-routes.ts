@@ -71,12 +71,15 @@ export const ROUTE_OWNER_ALIASES: RouteOwnerRule[] = [
   { moduleId: "combustibles", submoduleHref: "/combustibles/pagos", prefix: "/combustibles/cuenta-corriente" },
   { moduleId: "combustibles", submoduleHref: "/combustibles/pagos", prefix: "/combustibles/nueva" },
   { moduleId: "flota", submoduleHref: "/flota", prefix: "/api/flota" },
-  { moduleId: "mantenciones", submoduleHref: "/mantenciones", prefix: "/api/mantenciones" },
   // Mantención de equipos: la app del mecánico (PWA) y sus APIs, incluidas las
   // de sincronización que autentican con credencial de dispositivo.
   // La app del mecánico no está en el menú (es una PWA aparte): su ruta, su login
   // y su sincronización cuelgan del mismo submódulo que los Registros.
   { moduleId: "mantencion_equipos", submoduleHref: "/mantencion/registros", prefix: "/m/mantencion" },
+  // Órdenes de trabajo: sus operaciones desde el teléfono y el PDF dependen del
+  // submódulo de OT. Van antes de los prefijos genéricos de /api/mantencion.
+  { moduleId: "mantencion_equipos", submoduleHref: "/mantencion/ot", prefix: "/api/mantencion/sync/ot" },
+  { moduleId: "mantencion_equipos", submoduleHref: "/mantencion/ot", prefix: "/api/mantencion/ot" },
   { moduleId: "mantencion_equipos", submoduleHref: "/mantencion/registros", prefix: "/api/mantencion/sync" },
   { moduleId: "mantencion_equipos", submoduleHref: "/mantencion/registros", prefix: "/api/mantencion/dispositivo" },
   { moduleId: "mantencion_equipos", submoduleHref: "/mantencion/registros", prefix: "/api/mantencion" },
@@ -173,10 +176,6 @@ export const ROUTE_OWNER_ALIASES: RouteOwnerRule[] = [
   { moduleId: "feedback", submoduleHref: "/soporte", prefix: "/api/cron/feedback-sla-reminders" },
   { moduleId: "flota", submoduleHref: "/flota/monitoreo", prefix: "/api/cron/fleet-onway-retention" },
   { moduleId: "flota", submoduleHref: "/flota/monitoreo", prefix: "/api/cron/fleet-onway-sync" },
-  { moduleId: "mantenciones", submoduleHref: "/mantenciones", prefix: "/api/cron/maintenance-reminders" },
-  // MNT-001: materializar el plan preventivo es del mismo módulo que su
-  // recordatorio, y el prefijo más largo gana, así que no se pisan.
-  { moduleId: "mantenciones", submoduleHref: "/mantenciones", prefix: "/api/cron/maintenance-plan-materialization" },
   { moduleId: "warehouse", submoduleHref: "/seguimiento", prefix: "/api/cron/operational-integrity-scan" },
   // TRZ-001: el segundo libro de integridad, el que cubre entregas contra
   // recepción en faena.
@@ -217,6 +216,9 @@ export const PERMISSION_TARGET_OVERRIDES: Array<{ test: (permission: string) => 
   { test: (permission) => ["combustibles:approve_flagged", "combustibles:review_anomalies", "combustibles:resolve_anomalies"].includes(permission), href: "/combustibles/revisar" },
   { test: (permission) => permission === "combustibles:manage_statements", href: "/combustibles/pagos" },
   { test: (permission) => permission.startsWith("sst:"), href: "/prevencion/evaluaciones" },
+  // Crear, asignar, ejecutar, recibir y dar conformidad no están en el menú;
+  // apagar el submódulo de OT también los apaga.
+  { test: (permission) => permission.startsWith("mant:ot:"), href: "/mantencion/ot" },
   { test: (permission) => permission.startsWith("ppa:"), href: "/prevencion/ppa" },
   { test: (permission) => permission.startsWith("prevention:pdtp:"), href: "/prevencion/pdtp" },
   { test: (permission) => permission.startsWith("prevention:risk:"), href: "/prevencion/miper" },

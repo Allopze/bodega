@@ -5,6 +5,7 @@ import { users } from "./users"
 import { worksites } from "./worksites"
 import { mantDrivers, mantWorkTypes, mantWorkshops } from "./mantencion-catalogs"
 import { mantSchedules } from "./mantencion-schedules"
+import { mantWorkOrders } from "./mantencion-work-orders"
 
 /** El equipo tal como era al firmar. Editar la ficha después no cambia el documento. */
 export interface MantEquipmentSnapshot {
@@ -58,6 +59,8 @@ export const mantRecords = pgTable("mant_records", {
   duplicateConfirmed:     boolean("duplicate_confirmed").notNull().default(false),
   /** Registro anulado que éste corrige (regla 13). */
   correctsRecordId:       text("corrects_record_id").references((): AnyPgColumn => mantRecords.id, { onDelete: "set null" }),
+  /** OT a la que pertenece este trabajo (2026-11-02). Nulo: registro suelto, como antes. */
+  workOrderId:            text("work_order_id").references((): AnyPgColumn => mantWorkOrders.id, { onDelete: "restrict" }),
   // ── Sólo preventiva ──
   scheduleId:             text("schedule_id").references(() => mantSchedules.id, { onDelete: "set null" }),
   scheduleVersion:        integer("schedule_version"),
@@ -79,6 +82,7 @@ export const mantRecords = pgTable("mant_records", {
   index("mant_records_executor_idx").on(table.executorUserId),
   index("mant_records_status_idx").on(table.status),
   index("mant_records_review_idx").on(table.review),
+  index("mant_records_work_order_idx").on(table.workOrderId),
   check("mant_records_kind_valid", sql`${table.kind} IN ('P', 'C')`),
   check("mant_records_unit_valid", sql`${table.unit} IN ('km', 'h')`),
   check("mant_records_reading_valid", sql`${table.reading} >= 0`),
@@ -262,7 +266,7 @@ export const mantRecordObservations = pgTable("mant_record_observations", {
   `),
 ])
 
-/** Correlativo por faena y tipo. Se incrementa con `INSERT … ON CONFLICT DO UPDATE … RETURNING`. */
+/** Correlativo por faena y tipo (`P`, `C` y, desde 2026-11, `OT`). Se incrementa con `INSERT … ON CONFLICT DO UPDATE … RETURNING`. */
 export const mantFolioCounters = pgTable("mant_folio_counters", {
   worksiteId: text("worksite_id").notNull().references(() => worksites.id, { onDelete: "restrict" }),
   kind:       text("kind").notNull(),
@@ -270,7 +274,7 @@ export const mantFolioCounters = pgTable("mant_folio_counters", {
   updatedAt:  timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   primaryKey({ columns: [table.worksiteId, table.kind], name: "mant_folio_counters_pk" }),
-  check("mant_folio_counters_kind_valid", sql`${table.kind} IN ('P', 'C')`),
+  check("mant_folio_counters_kind_valid", sql`${table.kind} IN ('P', 'C', 'OT')`),
 ])
 
 export const mantRecordsRelations = relations(mantRecords, ({ one, many }) => ({
@@ -280,6 +284,7 @@ export const mantRecordsRelations = relations(mantRecords, ({ one, many }) => ({
   executorUser:     one(users, { fields: [mantRecords.executorUserId], references: [users.id], relationName: "mant_record_executor" }),
   executorWorkshop: one(mantWorkshops, { fields: [mantRecords.executorWorkshopId], references: [mantWorkshops.id] }),
   schedule:         one(mantSchedules, { fields: [mantRecords.scheduleId], references: [mantSchedules.id] }),
+  workOrder:        one(mantWorkOrders, { fields: [mantRecords.workOrderId], references: [mantWorkOrders.id] }),
   corrective:       one(mantRecordCorrectives, { fields: [mantRecords.id], references: [mantRecordCorrectives.recordId] }),
   items:            many(mantRecordItems),
   jobs:             many(mantRecordJobs),
