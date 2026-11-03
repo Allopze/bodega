@@ -196,12 +196,13 @@ describe("getFleetOverview", () => {
       { data: [] },
       { data: [] },
       { data: [] },
+      { data: [] },
     )
 
     const [vehicle] = await getFleetOverview(noCostsSession)
 
     expect(vehicle).toMatchObject({ totalFuelAmount: null, totalLiters: 80 })
-    // Orden real: fuelRows(0), meterRows(1), jumpRules(2), documentExpiryRows(3).
+    // Orden real: fuelRows(0), meterRows(1), objectionRows(2), jumpRules(3), documentExpiryRows(4).
     expect(sqlChunks((selectProjections[0] as { totalFuelAmount: unknown }).totalFuelAmount).join(" ").toLowerCase()).not.toContain("total_amount")
   })
 
@@ -222,22 +223,24 @@ describe("getFleetOverview", () => {
   // combustible, de lecturas de medidor y de documentos, no sólo el alcance del rol.
   it("acota las consultas con alcance a la faena elegida en el tablero", async () => {
     findManyVehicles.mockResolvedValue([])
-    selectResults.push({ data: [] }, { data: [] }, { data: [] }, { data: [] })
+    selectResults.push({ data: [] }, { data: [] }, { data: [] }, { data: [] }, { data: [] })
 
     await getFleetOverview(scopedSession, "ws-1")
 
-    // Orden real: combustible(0), lecturas de medidor(1), regla de salto(2), documentos(3). La regla
-    // `salto_medidor_implausible` es una configuración global, sin faena: no entra al reencuadre.
-    expect(selectChains).toHaveLength(4)
-    const scopedWheres = selectChains.filter((_, index) => index !== 2).map((chain) => chain.where!.mock.calls[0]![0])
+    // Orden real: combustible(0), lecturas de medidor(1), casos abiertos sobre esas lecturas(2), regla de
+    // salto(3), documentos(4). La regla `salto_medidor_implausible` es una configuración global, sin faena:
+    // no entra al reencuadre.
+    expect(selectChains).toHaveLength(5)
+    const scopedWheres = selectChains.filter((_, index) => index !== 3).map((chain) => chain.where!.mock.calls[0]![0])
     // La sesión ve ws-1 y ws-2; al elegir ws-1 en el tablero, ws-2 no puede
     // seguir apareciendo en ninguna consulta de combustible ni documentos.
     for (const where of [findManyVehicles.mock.calls[0]![0].where, ...scopedWheres]) {
       expect(sqlChunks(where)).toContain("ws-1")
       expect(sqlChunks(where)).not.toContain("ws-2")
     }
-    // Y las lecturas vienen sólo del detalle de Copec.
+    // Y las lecturas vienen sólo del detalle de Copec, también las que un caso abierto objeta.
     expect(sqlChunks(selectChains[1]!.where!.mock.calls[0]![0])).toContain("copec_tct")
+    expect(sqlChunks(selectChains[2]!.where!.mock.calls[0]![0])).toContain("copec_tct")
   })
 
   it("no devuelve filas de una faena fuera del alcance del rol", async () => {

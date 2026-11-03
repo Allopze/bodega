@@ -17,7 +17,7 @@ import { recordAudit } from "@/lib/audit"
 import { isGlobalRole, visibleWorksiteIds, worksiteScopeSql } from "@/lib/auth/scope"
 import { can } from "@/lib/auth/can"
 import { accountableProviderTransactionsWhere, providerLoadCountSql } from "@/lib/combustibles/load-status"
-import { METER_RESET_RULE_CODES } from "@/lib/combustibles/anomaly-labels"
+import { METER_RESET_RULE_CODES, OPEN_ANOMALY_CASE_STATUSES } from "@/lib/combustibles/anomaly-labels"
 import { monthsWithoutProviderData } from "@/lib/combustibles/copec-coverage"
 import { listCopecPeriodCoverage } from "@/lib/combustibles/copec-coverage-store"
 import { maxMeterRatePerDayOf, meterSeriesAdvance, type MeterSeriesPoint } from "@/lib/combustibles/meter-series"
@@ -150,7 +150,7 @@ export async function getFleetOverview(
       AND ${fuelAnomalyCases.resolutionKind} = 'reset_medidor'
   )`
 
-  const [vehicles, fuelRows, meterRows, jumpRules, documentExpiryRows, workOrderMetrics] = await Promise.all([
+  const [vehicles, fuelRows, meterRows, objectionRows, jumpRules, documentExpiryRows, workOrderMetrics] = await Promise.all([
     db.query.fuelVehicles.findMany({
       where: vehicleScope,
       with: { worksite: true, responsibleUser: true, equipmentType: true, usualFuelSupplier: true },
@@ -191,6 +191,32 @@ export async function getFleetOverview(
         vehicleScope,
       ))
       .orderBy(fuelMeterReadings.vehicleId, fuelMeterReadings.meterType, fuelMeterReadings.occurredAt, fuelMeterReadings.id) : Promise.resolve([]),
+    // Casos del detector que siguen ABIERTOS (`open`, `in_review`, `reopened`: los mismos que lista «Por
+    // revisar») sobre lecturas de esa misma ventana. Un caso cerrado, sea resuelto o descartado y con la
+    // resolución que sea, ya no pide a nadie que mire la lectura y no entra. Mismo alcance que la lectura
+    // (el equipo) y, además, el del propio caso —con la faena del tablero, como las transacciones del
+    // proveedor de arriba—: es el que aplica la bandeja al abrirlo, y un enlace que ésta rechazaría sería
+    // peor que no avisar. Orden fijo —el más antiguo primero— para que una lectura con dos
+    // casos abiertos (regresiva y salto) muestre siempre el mismo.
+    canViewFuel ? db
+      .select({
+        readingId: fuelAnomalyCases.referenceEntityId,
+        caseId: fuelAnomalyCases.id,
+        ruleLabel: fuelAnomalyRules.name,
+      })
+      .from(fuelAnomalyCases)
+      .innerJoin(fuelAnomalyRules, eq(fuelAnomalyRules.id, fuelAnomalyCases.ruleId))
+      .innerJoin(fuelMeterReadings, eq(fuelMeterReadings.id, fuelAnomalyCases.referenceEntityId))
+      .innerJoin(fuelVehicles, eq(fuelVehicles.id, fuelMeterReadings.vehicleId))
+      .where(and(
+        eq(fuelAnomalyCases.referenceEntityType, "fuel_meter_reading"),
+        inArray(fuelAnomalyCases.status, [...OPEN_ANOMALY_CASE_STATUSES]),
+        eq(fuelMeterReadings.source, "copec_tct"),
+        sql`left(${fuelMeterReadings.occurredAt}, 10) >= ${since}`,
+        vehicleScope,
+        worksiteScopeSql(session, fuelAnomalyCases.worksiteId, worksiteId),
+      ))
+      .orderBy(fuelAnomalyCases.detectedAt, fuelAnomalyCases.id) : Promise.resolve([]),
     // Cota de avance diario de la regla `salto_medidor_implausible` (con su override por tipo de
     // equipo): el recorrido no suma lo que esa regla marca como imposible.
     canViewFuel ? db
@@ -229,12 +255,23 @@ export async function getFleetOverview(
   const fuelByVehicle = new Map(fuelRows.map((row) => [row.vehicleId, row]))
   // Series de lecturas por equipo y tipo de medidor (la consulta ya las trae ordenadas).
   const meterSeriesByVehicle = new Map<string, { odometer: MeterSeriesPoint[]; hour_meter: MeterSeriesPoint[] }>()
+  // Id de la última lectura de cada serie (la consulta ya las trae en orden): es la que Flota muestra y
+  // sobre la que se busca un caso abierto.
+  const lastReadingIdBySeries = new Map<string, string>()
   for (const row of meterRows) {
     if (!row.vehicleId) continue
     const series = meterSeriesByVehicle.get(row.vehicleId) ?? { odometer: [], hour_meter: [] }
     const target = row.meterType === "hour_meter" ? series.hour_meter : series.odometer
     target.push({ value: Number(row.value), occurredAt: row.occurredAt, acceptedReset: row.acceptedReset })
     meterSeriesByVehicle.set(row.vehicleId, series)
+    lastReadingIdBySeries.set(`${row.vehicleId}:${row.meterType === "hour_meter" ? "hour_meter" : "odometer"}`, row.id)
+  }
+  // Primer caso abierto de cada lectura (la consulta viene ordenada: gana el más antiguo).
+  const openObjectionByReading = new Map<string, { caseId: string; ruleLabel: string }>()
+  for (const row of objectionRows) {
+    if (row.readingId && !openObjectionByReading.has(row.readingId)) {
+      openObjectionByReading.set(row.readingId, { caseId: row.caseId, ruleLabel: row.ruleLabel })
+    }
   }
   const jumpRule = { config: jumpRules[0]?.config ?? null }
 
@@ -252,6 +289,11 @@ export async function getFleetOverview(
     const series = meterSeriesByVehicle.get(vehicle.id)
     const lastOdometer = series?.odometer.at(-1)?.value ?? null
     const lastHourMeter = series?.hour_meter.at(-1)?.value ?? null
+    // La marca va sobre la lectura que la columna «Km/Hr» muestra (odómetro y, a falta de éste, horómetro:
+    // `app/(app)/flota/fleet-table.tsx`), no sobre la otra serie del equipo, que nadie ve en esa fila.
+    const shownReadingId = lastOdometer != null
+      ? lastReadingIdBySeries.get(`${vehicle.id}:odometer`)
+      : lastHourMeter != null ? lastReadingIdBySeries.get(`${vehicle.id}:hour_meter`) : undefined
     // El recorrido se informa en la unidad de rendimiento del equipo (km/L → km; L/h → horas) y
     // sólo con pares que el detector de anomalías no objetaría: un retroceso sin reset aceptado
     // no se suma, así que nunca sale negativo ni absurdo. `meterSeriesIncomplete` avisa que hubo
@@ -289,6 +331,8 @@ export async function getFleetOverview(
       loadCount: canViewFuel ? Number(fuel?.loadCount ?? 0) : null,
       lastOdometerReading: canViewFuel ? lastOdometer : null,
       lastHourMeterReading: canViewFuel ? lastHourMeter : null,
+      /** Caso del detector aún abierto sobre la lectura que se muestra; `null` si no hay (o sin `combustibles:view`). */
+      lastReadingObjection: canViewFuel && shownReadingId ? (openObjectionByReading.get(shownReadingId) ?? null) : null,
       kmDriven: km?.advance ?? null,
       hoursRun: hours?.advance ?? null,
       meterSeriesIncomplete: canViewFuel ? (km?.discardedPairs ?? 0) + (hours?.discardedPairs ?? 0) > 0 : null,

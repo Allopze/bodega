@@ -6,14 +6,13 @@ import { DataTable } from "@/components/ui/data-table"
 import { TableCell } from "@/components/ui/table"
 import { MetaBadge } from "@/components/states/state-badge"
 import { formatFuelVehicleStatus } from "@/lib/combustibles/validation"
-import { formatCLP, formatDate, formatQty } from "@/lib/utils"
+import { formatCLP, formatDate } from "@/lib/utils"
 import type { getFleetOverview } from "@/lib/services/fleet"
+import { FleetMeterReading } from "./fleet-meter-reading"
 import { FleetTableRow } from "./fleet-table-row"
 import { Button } from "@/components/ui/button"
 
 type VehicleRow = Awaited<ReturnType<typeof getFleetOverview>>[number]
-
-const formatNumber = (value: number) => formatQty(value, undefined, { maximumFractionDigits: 1 })
 
 export function FleetTable({ vehicles, hasAnyVehicle, canViewCosts, canViewFuel }: { vehicles: VehicleRow[]; hasAnyVehicle: boolean; canViewCosts: boolean; canViewFuel: boolean }) {
   // `openWorkOrders` es null sin `mant:ot:view_*`: sin la capacidad no hay columna, no un 0 engañoso.
@@ -84,13 +83,7 @@ export function FleetTable({ vehicles, hasAnyVehicle, canViewCosts, canViewFuel 
               {vehicle.openWorkOrders ?? 0}
               {vehicle.inWorkshopNow && <span className="ml-1 font-sans text-xs text-[var(--color-warning-ink)]">en taller</span>}
             </TableCell>}
-            {showMeterReading && <TableCell className="text-right font-mono">
-              {vehicle.lastOdometerReading != null
-                ? `${formatNumber(vehicle.lastOdometerReading)} km`
-                : vehicle.lastHourMeterReading != null
-                  ? `${formatNumber(vehicle.lastHourMeterReading)} h`
-                  : "—"}
-            </TableCell>}
+            {showMeterReading && <TableCell className="text-right font-mono"><FleetMeterReading vehicle={vehicle} /></TableCell>}
           </FleetTableRow>
         )
       }}

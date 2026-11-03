@@ -353,3 +353,135 @@ describe("getFleetOverview · permisos y alcance de las lecturas", () => {
     expect(rows[0]).toMatchObject({ lastOdometerReading: 4_200, kmDriven: 200 })
   })
 })
+
+/**
+ * Flota muestra la última lectura tal cual, pero la marca cuando el detector de anomalías la
+ * objeta y nadie ha decidido todavía: un caso ABIERTO (`open`, `in_review` o `reopened`) sobre
+ * esa misma lectura. Cualquier cierre —`resuelto` o `descartado`, con la resolución que sea—
+ * apaga la marca: lo decidido ya no pide a nadie que la mire.
+ */
+describe("getFleetOverview · lectura objetada (caso abierto sobre la última lectura)", () => {
+  const objectionOf = async (id: string, s: Session = session()) => rowOf(await getFleetOverview(s), id).lastReadingObjection
+
+  /** Un equipo con tres lecturas; devuelve sus ids en orden (la tercera es la última). */
+  async function vehicleWithReadings(overrides: Partial<typeof schema.fuelVehicles.$inferInsert> = {}) {
+    const vehicleId = await addVehicle(overrides)
+    const readingIds = await addReadings(vehicleId, [
+      { value: 10_000, at: at(1) },
+      { value: 10_300, at: at(3) },
+      { value: 1_030, at: at(5) },
+    ])
+    return { vehicleId, readingIds }
+  }
+  const openCase = (readingId: string, vehicleId: string, overrides: Partial<typeof schema.fuelAnomalyCases.$inferInsert> = {}) =>
+    addResetCase(readingId, vehicleId, { status: "open", resolutionKind: null, worksiteId: IDS.wsA, ...overrides })
+
+  it("un caso abierto sobre la última lectura la marca, con el id del caso y el nombre de la regla", async () => {
+    const { vehicleId, readingIds } = await vehicleWithReadings()
+    const caseId = await openCase(readingIds[2]!, vehicleId)
+
+    const row = rowOf(await getFleetOverview(session()), vehicleId)
+
+    // La lectura se sigue mostrando tal cual (1.030 km): la marca es un aviso, no una corrección.
+    expect(row).toMatchObject({ lastOdometerReading: 1_030, lastReadingObjection: { caseId, ruleLabel: "Kilometraje regresivo" } })
+  })
+
+  it.each(["in_review", "reopened"] as const)("un caso «%s» también cuenta como abierto", async (status) => {
+    const { vehicleId, readingIds } = await vehicleWithReadings()
+    const caseId = await openCase(readingIds[2]!, vehicleId, { status })
+
+    expect(await objectionOf(vehicleId)).toEqual({ caseId, ruleLabel: "Kilometraje regresivo" })
+  })
+
+  it.each([
+    ["resolved", "reset_medidor"],
+    ["resolved", "lectura_corregida"],
+    ["resolved", null],
+    ["dismissed", "reset_medidor"],
+    ["dismissed", null],
+  ] as const)("un caso %s (resolución %s) apaga la marca", async (status, resolutionKind) => {
+    const { vehicleId, readingIds } = await vehicleWithReadings()
+    await openCase(readingIds[2]!, vehicleId, { status, resolutionKind })
+
+    expect(await objectionOf(vehicleId)).toBeNull()
+  })
+
+  it("un caso abierto sobre una lectura anterior no marca la última", async () => {
+    const { vehicleId, readingIds } = await vehicleWithReadings()
+    await openCase(readingIds[1]!, vehicleId)
+
+    expect(await objectionOf(vehicleId)).toBeNull()
+  })
+
+  it("sin ningún caso, la marca es null (no undefined ni un objeto vacío)", async () => {
+    const { vehicleId } = await vehicleWithReadings()
+
+    expect(await objectionOf(vehicleId)).toBeNull()
+  })
+
+  it("un caso sobre otro tipo de registro con el mismo id no marca la lectura", async () => {
+    const { vehicleId, readingIds } = await vehicleWithReadings()
+    await openCase(readingIds[2]!, vehicleId, { referenceEntityType: "fuel_load" })
+
+    expect(await objectionOf(vehicleId)).toBeNull()
+  })
+
+  it("un equipo con horómetro: el caso del horómetro regresivo marca su última lectura en horas", async () => {
+    const vehicleId = await addVehicle({ meterType: "hour_meter", performanceUnit: "liters_per_hour" })
+    const readingIds = await addReadings(vehicleId, [
+      { value: 100, at: at(1), meterType: "hour_meter" },
+      { value: 120, at: at(4), meterType: "hour_meter" },
+      { value: 90, at: at(6), meterType: "hour_meter" },
+    ])
+    const caseId = await openCase(readingIds[2]!, vehicleId, { ruleId: IDS.ruleHora, ruleCode: "horometro_regresivo" })
+
+    expect(rowOf(await getFleetOverview(session()), vehicleId)).toMatchObject({
+      lastHourMeterReading: 90, lastReadingObjection: { caseId, ruleLabel: "Horómetro regresivo" },
+    })
+  })
+
+  it("con dos casos abiertos sobre la misma lectura gana el más antiguo, siempre el mismo", async () => {
+    const { vehicleId, readingIds } = await vehicleWithReadings()
+    const newer = await openCase(readingIds[2]!, vehicleId, { ruleId: IDS.ruleSalto, ruleCode: "salto_medidor_implausible", detectedAt: "2026-01-02T10:00:00.000Z" })
+    const older = await openCase(readingIds[2]!, vehicleId, { detectedAt: "2026-01-01T10:00:00.000Z" })
+
+    const objection = await objectionOf(vehicleId)
+
+    expect(objection).toEqual({ caseId: older, ruleLabel: "Kilometraje regresivo" })
+    expect(objection?.caseId).not.toBe(newer)
+  })
+
+  it("un equipo sin lecturas en la ventana no tiene marca", async () => {
+    const vehicleId = await addVehicle()
+    const [oldReading] = await addReadings(vehicleId, [{ value: 50_000, at: OLD }])
+    await openCase(oldReading!, vehicleId)
+
+    expect(await objectionOf(vehicleId)).toBeNull()
+  })
+
+  it("sin combustibles:view la marca es null: es la misma puerta que la lectura", async () => {
+    const { vehicleId, readingIds } = await vehicleWithReadings()
+    await openCase(readingIds[2]!, vehicleId)
+
+    expect(await objectionOf(vehicleId, session({ permissions: ["flota:view"] }))).toBeNull()
+  })
+
+  it("un alcance de faena sólo ve la marca de sus propios equipos; el de otra faena ni aparece", async () => {
+    const inside = await vehicleWithReadings({ worksiteId: IDS.wsA })
+    const outside = await vehicleWithReadings({ worksiteId: IDS.wsB })
+    const insideCase = await openCase(inside.readingIds[2]!, inside.vehicleId, { worksiteId: IDS.wsA })
+    await openCase(outside.readingIds[2]!, outside.vehicleId, { worksiteId: IDS.wsB })
+
+    const rows = await getFleetOverview(session({ isGlobal: false, worksiteIds: [IDS.wsA] }))
+
+    expect(rows.map((row) => row.id)).not.toContain(outside.vehicleId)
+    expect(rowOf(rows, inside.vehicleId).lastReadingObjection).toEqual({ caseId: insideCase, ruleLabel: "Kilometraje regresivo" })
+  })
+
+  it("no ofrece un caso que la bandeja le rechazaría: el caso es de una faena fuera de su alcance", async () => {
+    const { vehicleId, readingIds } = await vehicleWithReadings({ worksiteId: IDS.wsA })
+    await openCase(readingIds[2]!, vehicleId, { worksiteId: IDS.wsB })
+
+    expect(await objectionOf(vehicleId, session({ isGlobal: false, worksiteIds: [IDS.wsA] }))).toBeNull()
+  })
+})

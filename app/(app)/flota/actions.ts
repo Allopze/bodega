@@ -157,6 +157,9 @@ export async function exportFleetXlsxAction(filters: FleetOverviewFilters = {}) 
     ...(canViewFuel ? [
       { header: "Litros (12 meses)", key: "liters", width: 18 },
       { header: "Cargas (12 meses)", key: "loads", width: 18 },
+      // Misma marca que el aviso de la columna «Km/Hr» de la lista: hay un caso del detector aún abierto
+      // sobre la última lectura del equipo.
+      { header: "Lectura objetada", key: "objectedReading", width: 18 },
     ] : []),
     ...(canViewWorkOrders ? [{ header: "OT abiertas", key: "openWorkOrders", width: 14 }] : []),
     ...(canViewCosts && canViewFuel ? [{ header: "Costo combustible", key: "fuelCost", width: 18 }] : []),
@@ -174,6 +177,8 @@ export async function exportFleetXlsxAction(filters: FleetOverviewFilters = {}) 
       expiry: row.nextExpiryDate ?? "",
       liters: row.totalLiters,
       loads: row.loadCount,
+      // Vacía sin lectura: ahí no hay nada que objetar, y «No» afirmaría que la lectura está bien.
+      objectedReading: row.lastOdometerReading == null && row.lastHourMeterReading == null ? "" : row.lastReadingObjection ? "Sí" : "No",
       openWorkOrders: row.openWorkOrders,
       fuelCost: row.totalFuelAmount,
     })
@@ -181,9 +186,11 @@ export async function exportFleetXlsxAction(filters: FleetOverviewFilters = {}) 
   sheet.getRow(1).font = { bold: true }
   sheet.views = [{ state: "frozen", ySplit: 1 }]
   sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: sheet.columns.length } }
-  for (const key of ["fuelCost"]) {
-    if (sheet.getColumn(key).number > 0) sheet.getColumn(key).numFmt = "$#,##0"
-  }
+  // La columna de costo sólo existe con `combustibles:view_costs`: `getColumn("fuelCost")` sobre una hoja
+  // sin ella no devuelve nada, lanza («Out of bounds»), y la exportación entera fallaba para quien no
+  // ve costos.
+  const fuelCostColumn = sheet.columns.find((column) => column.key === "fuelCost")
+  if (fuelCostColumn) fuelCostColumn.numFmt = "$#,##0"
   // Las cifras de combustible (12 meses) no incluyen los meses sin datos del proveedor: la hoja
   // «Metadatos» es lo que viaja con el archivo, así que la advertencia va ahí (C-4).
   const providerGapNotice = fleetProviderGapNotice(providerGapMonths, FLEET_OVERVIEW_LOOKBACK_MONTHS)
