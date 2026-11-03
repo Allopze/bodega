@@ -557,6 +557,9 @@ it("resuelve el mes de referencias nuevas y legadas de consumo y desglosa produc
     ["case-new-variation", "2026-01"],
     ["case-legacy-variation", "2026-02"],
   ])
+  expect(rows.rows.find((row) => row.id === "case-legacy-variation")?.datum).toContain("Histórico sin producto atribuible")
+  const legacyDetail = await getFuelInboxItem(globalSession(), "caso:case-legacy-variation")
+  expect(legacyDetail?.evidence[0]).toMatchObject({ type: "text", text: expect.stringContaining("Histórico sin producto atribuible") })
 
   const summary = await summarizeFuelInbox(globalSession(), MARCH)
   expect(summary.caseBreakdown).toEqual(expect.arrayContaining([

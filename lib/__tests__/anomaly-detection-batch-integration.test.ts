@@ -390,6 +390,47 @@ describe("variacion_brusca_consumo (batch — sharp consumption change)", () => 
     expect(repeatedCases.filter((anomaly) => anomaly.vehicleId === mixedVehicleId)).toHaveLength(1)
   })
 
+  it("omite y cuenta una serie con más de una fila del mismo producto y período", async () => {
+    const duplicateVehicleId = nanoid()
+    await inMemoryDb.insert(schema.fuelVehicles).values({
+      id: duplicateVehicleId, plate: `DUP${nanoid().slice(0, 4).toUpperCase()}`, type: "camion",
+      equipmentTypeId: eqTypeId, worksiteId: wsId, isActive: true,
+    })
+    await inMemoryDb.insert(schema.fuelConsumptionRecords).values([
+      {
+        id: "duplicate-period-june", batchId: importBatchId, worksiteId: wsId, vehicleId: duplicateVehicleId,
+        patente: "DUP", cantidadUnidad: 100, monto: 50000, numeroTransacciones: 2, numeroTarjetas: 1,
+        periodoDesde: "2026-06-01", periodoHasta: "2026-06-30", rendimientoPromedio: 10,
+        fuente: "Copec TCT Diesel", createdAt: "2026-06-01T00:00:00.000Z", updatedAt: "2026-06-01T00:00:00.000Z",
+      },
+      {
+        id: "duplicate-period-july-a", batchId: importBatchId, worksiteId: wsId, vehicleId: duplicateVehicleId,
+        patente: "DUP", cantidadUnidad: 1_000, monto: 500000, numeroTransacciones: 20, numeroTarjetas: 1,
+        periodoDesde: "2026-07-01", periodoHasta: "2026-07-31", rendimientoPromedio: 10,
+        fuente: "Copec TCT Diesel", createdAt: "2026-07-02T00:00:00.000Z", updatedAt: "2026-07-02T00:00:00.000Z",
+      },
+      {
+        id: "duplicate-period-july-b", batchId: importBatchId, worksiteId: wsId, vehicleId: duplicateVehicleId,
+        patente: "DUP", cantidadUnidad: 110, monto: 55000, numeroTransacciones: 2, numeroTarjetas: 1,
+        periodoDesde: "2026-07-01", periodoHasta: "2026-07-31", rendimientoPromedio: 10,
+        fuente: "Copec TCT Diesel", createdAt: "2026-07-02T00:00:00.000Z", updatedAt: "2026-07-02T00:00:00.000Z",
+      },
+      {
+        id: "duplicate-period-august", batchId: importBatchId, worksiteId: wsId, vehicleId: duplicateVehicleId,
+        patente: "DUP", cantidadUnidad: 100, monto: 50000, numeroTransacciones: 2, numeroTarjetas: 1,
+        periodoDesde: "2026-08-01", periodoHasta: "2026-08-31", rendimientoPromedio: 10,
+        fuente: "Copec TCT Diesel", createdAt: "2026-08-02T00:00:00.000Z", updatedAt: "2026-08-02T00:00:00.000Z",
+      },
+    ])
+
+    const results = await runAllBatchRules()
+    const variation = results.find((result) => result.ruleCode === "variacion_brusca_consumo")
+    expect(variation).toHaveProperty("details.ambiguousPeriods", 1)
+
+    const { cases } = await getAnomalyCases({ ruleCode: "variacion_brusca_consumo" }, TEST_SESSION)
+    expect(cases.filter((anomaly) => anomaly.vehicleId === duplicateVehicleId)).toHaveLength(0)
+  })
+
   it("no crea variaciones si el corte está ausente o no es una fecha válida", async () => {
     const cutoffVehicleId = nanoid()
     await inMemoryDb.insert(schema.fuelVehicles).values({

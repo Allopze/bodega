@@ -46,7 +46,11 @@ function productOf(source: string | null): FuelVariationProduct | null {
 export function buildFuelVariationCandidates(
   records: readonly FuelVariationRecord[],
   thresholdFor: (equipmentTypeSlug: string | null) => number,
-): { candidates: FuelVariationCandidate[]; unclassifiedRecords: number } {
+): {
+  candidates: FuelVariationCandidate[]
+  unclassifiedRecords: number
+  ambiguousPeriods: { vehicleId: string; periodoDesde: string }[]
+} {
   const bySeries = new Map<string, { product: FuelVariationProduct; rows: FuelVariationRecord[] }>()
   let unclassifiedRecords = 0
   for (const row of records) {
@@ -62,20 +66,37 @@ export function buildFuelVariationCandidates(
   }
 
   const candidates: FuelVariationCandidate[] = []
+  const ambiguousPeriods: { vehicleId: string; periodoDesde: string }[] = []
   for (const { product, rows } of bySeries.values()) {
-    rows.sort((a, b) => a.periodoDesde.localeCompare(b.periodoDesde) || a.id.localeCompare(b.id))
+    const byPeriod = new Map<string, FuelVariationRecord[]>()
+    for (const row of rows) {
+      const periodRows = byPeriod.get(row.periodoDesde)
+      if (periodRows) periodRows.push(row)
+      else byPeriod.set(row.periodoDesde, [row])
+    }
+
     const thresholdPct = thresholdFor(rows[0]?.equipmentTypeSlug ?? null)
-    for (let index = 1; index < rows.length; index++) {
-      const previous = rows[index - 1]!
-      const current = rows[index]!
-      // Si una fuente entrega más de una fila para el mismo vehículo, producto
-      // y período, no hay un período anterior que comparar en ese borde.
-      if (previous.periodoDesde === current.periodoDesde || previous.cantidad <= 0) continue
-      const changePct = Math.abs((current.cantidad - previous.cantidad) / previous.cantidad * 100)
-      if (changePct >= thresholdPct) candidates.push({ previous, current, product, changePct, thresholdPct })
+    let previous: FuelVariationRecord | null = null
+    for (const [periodoDesde, periodRows] of [...byPeriod.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+      if (periodRows.length > 1) {
+        ambiguousPeriods.push({ vehicleId: periodRows[0]!.vehicleId, periodoDesde })
+        // El modelo no da una clave de negocio que permita sumar estas filas y
+        // probar que no representan un lote duplicado. El período ambiguo corta
+        // la serie para que ninguna fila se elija por el orden de su id.
+        previous = null
+        continue
+      }
+
+      const current = periodRows[0]!
+      if (previous && previous.cantidad > 0) {
+        const changePct = Math.abs((current.cantidad - previous.cantidad) / previous.cantidad * 100)
+        if (changePct >= thresholdPct) candidates.push({ previous, current, product, changePct, thresholdPct })
+      }
+      previous = current
     }
   }
-  return { candidates, unclassifiedRecords }
+  ambiguousPeriods.sort((a, b) => a.vehicleId.localeCompare(b.vehicleId) || a.periodoDesde.localeCompare(b.periodoDesde))
+  return { candidates, unclassifiedRecords, ambiguousPeriods }
 }
 
 export function candidateTouchesCutoff(candidate: FuelVariationCandidate, cutoffMs: number): boolean {
@@ -215,7 +236,7 @@ export function reconcileLegacyVariationCases(
   records: readonly FuelVariationRecord[],
   thresholdFor: (equipmentTypeSlug: string | null) => number,
 ): LegacyFuelVariationReconciliation {
-  const { candidates } = buildFuelVariationCandidates(records, thresholdFor)
+  const { candidates, ambiguousPeriods } = buildFuelVariationCandidates(records, thresholdFor)
   const counts: LegacyFuelVariationReconciliation = {
     sameProductMatch: 0,
     crossProductCandidate: 0,
@@ -227,6 +248,10 @@ export function reconcileLegacyVariationCases(
   for (const anomaly of cases) {
     const target = legacyTarget(anomaly)
     if (!target) {
+      counts.ambiguous++
+      continue
+    }
+    if (ambiguousPeriods.some((period) => period.vehicleId === target.vehicleId && period.periodoDesde === target.period)) {
       counts.ambiguous++
       continue
     }

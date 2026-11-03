@@ -451,7 +451,16 @@ const detectSharpConsumptionChange: DetectorFn = async (rule) => {
       if (outcome.wasCreated) created++; else skipped++
     } catch { skipped++ }
   }
-  return { created, skipped, scanned, details: { unclassifiedRecords, blockedByLegacyCases } }
+  return {
+    created,
+    skipped,
+    scanned,
+    details: {
+      unclassifiedRecords,
+      ambiguousPeriods: variation.ambiguousPeriods.length,
+      blockedByLegacyCases,
+    },
+  }
 }
 
 /**

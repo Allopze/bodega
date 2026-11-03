@@ -370,6 +370,9 @@ function casoToRow(row: AnomalyCaseRow, month: string, labels: Map<string, { cod
   const vehicle = row.vehicleId ? labels.get(row.vehicleId) : undefined
   const decided = row.status === "resolved" || row.status === "dismissed"
   const ruleLabel = row.ruleName ?? row.ruleCode
+  const datum = row.description || ruleLabel
+  const legacyFuelVariation = row.ruleCode === "variacion_brusca_consumo"
+    && isLegacyFuelConsumptionReference(row.referenceEntityType, row.referenceEntityId)
   return {
     key: inboxRowKey("caso", row.id),
     kind: "caso",
@@ -381,7 +384,7 @@ function casoToRow(row: AnomalyCaseRow, month: string, labels: Map<string, { cod
     title: `Caso · ${ruleLabel}`,
     reasonCodes: [row.ruleCode],
     reasonLabel: ruleLabel,
-    datum: row.description || ruleLabel,
+    datum: legacyFuelVariation ? `Histórico sin producto atribuible · ${datum}` : datum,
     dataMonth: month,
     dueDate: inboxDueDate(month),
     waitingSince: iso(row.detectedAt),
@@ -393,6 +396,11 @@ function casoToRow(row: AnomalyCaseRow, month: string, labels: Map<string, { cod
     href: hrefForEntity(row.referenceEntityType, row.referenceEntityId) ?? (row.vehicleId ? fuelEquipmentHref(row.vehicleId) : null),
     canAct: can(session, "combustibles:review_anomalies") || can(session, "combustibles:resolve_anomalies"),
   }
+}
+
+function isLegacyFuelConsumptionReference(referenceEntityType: string | null, referenceEntityId: string | null): boolean {
+  return referenceEntityType === "fuel_consumption_record"
+    && /^([^:]+):(\d{4}-\d{2}-\d{2})$/.test(referenceEntityId ?? "")
 }
 
 async function casoRows(ctx: Ctx, view: View, limit: number, offset: number): Promise<FuelInboxRow[]> {
@@ -423,7 +431,7 @@ async function casoCount(ctx: Ctx, view: View): Promise<{ n: number; oldest: str
 
 function caseProduct(row: { referenceEntityType: string | null; referenceEntityId: string | null; source: string | null }): FuelInboxCaseBreakdownItem["product"] {
   if (row.referenceEntityType !== "fuel_consumption_record") return "not_applicable"
-  if (row.referenceEntityId?.includes(":")) return "historical_unattributed"
+  if (isLegacyFuelConsumptionReference(row.referenceEntityType, row.referenceEntityId)) return "historical_unattributed"
   const productId = fuelProductIdForLegacy(row.source)
   if (productId === FUEL_PRODUCT_IDS.diesel) return "diesel"
   if (productId === FUEL_PRODUCT_IDS.bluemax) return "bluemax"
@@ -994,7 +1002,7 @@ export async function getFuelInboxItem(session: Session, key: string): Promise<F
     const [monthRow] = await db.select({ month: caseMonthSql() }).from(fuelAnomalyCases).where(eq(fuelAnomalyCases.id, found.id)).limit(1)
     const labels = await vehicleLabels(found.vehicleId ? [found.vehicleId] : [])
     const row = casoToRow(found, monthRow?.month ?? found.detectedAt.slice(0, 7), labels, session)
-    const text = [found.description, found.observedValue ? `Observado: ${found.observedValue}.` : null, found.expectedValue ? `Esperado: ${found.expectedValue}.` : null].filter(Boolean).join(" ")
+    const text = [row.datum, found.observedValue ? `Observado: ${found.observedValue}.` : null, found.expectedValue ? `Esperado: ${found.expectedValue}.` : null].filter(Boolean).join(" ")
     const evidence: FuelInboxEvidence[] = [{ type: "text", text }]
     if (found.resolution) evidence.push({ type: "text", text: `Motivo del cierre: ${found.resolution}` })
     const history = [

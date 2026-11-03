@@ -40,6 +40,18 @@ describe("serie y conciliación histórica de variaciones de combustible", () =>
     expect(result.candidates[0]?.product).toBe("diesel")
   })
 
+  it("omite y reporta períodos duplicados sin escoger una fila por id", () => {
+    const result = buildFuelVariationCandidates([
+      record({ id: "diesel-jun", vehicleId: "vehicle-1", periodoDesde: "2026-06-01", cantidad: 100, fuente: "Copec TCT Diesel" }),
+      record({ id: "diesel-jul-a", vehicleId: "vehicle-1", periodoDesde: "2026-07-01", cantidad: 1_000, fuente: "Copec TCT Diesel" }),
+      record({ id: "diesel-jul-b", vehicleId: "vehicle-1", periodoDesde: "2026-07-01", cantidad: 110, fuente: "Copec TCT Diesel" }),
+      record({ id: "diesel-aug", vehicleId: "vehicle-1", periodoDesde: "2026-08-01", cantidad: 100, fuente: "Copec TCT Diesel" }),
+    ], () => 50)
+
+    expect(result.candidates).toEqual([])
+    expect(result.ambiguousPeriods).toEqual([{ vehicleId: "vehicle-1", periodoDesde: "2026-07-01" }])
+  })
+
   it("incluye el borde si cualquiera de sus filas fue creada o actualizada desde el corte", () => {
     const previous = record({ id: "diesel-jun", vehicleId: "vehicle-1", periodoDesde: "2026-06-01", cantidad: 100, fuente: "Copec TCT Diesel" })
     const current = record({ id: "diesel-jul", vehicleId: "vehicle-1", periodoDesde: "2026-07-01", cantidad: 150, fuente: "Copec TCT Diesel" })
