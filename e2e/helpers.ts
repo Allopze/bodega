@@ -190,6 +190,25 @@ export async function pickCurrentMonthDate(
 }
 
 /**
+ * Fin del mes **en curso** (hora de Chile) en el año pedido, como «dd-mm-aaaa».
+ *
+ * Una definición anual cuya fecha programada por defecto es hoy vence a fin de
+ * este mes en cada año del período. Escribir «31-10-2026» en la prueba la ataba
+ * al mes en que se escribió: el 2026-11-01 las ocurrencias pasaron a vencer el
+ * 30-11 y las specs de MIPER dejaron de encontrarlas.
+ */
+export function finDeMesEnChile(year: number): string {
+  const [, month] = new Date().toLocaleDateString("en-CA", { timeZone: "America/Santiago" }).split("-").map(Number)
+  const last = new Date(Date.UTC(year, month!, 0)).getUTCDate()
+  return `${String(last).padStart(2, "0")}-${String(month).padStart(2, "0")}-${year}`
+}
+
+/** Año en curso en hora de Chile. */
+export function anioEnChile(): number {
+  return Number(new Date().toLocaleDateString("en-CA", { timeZone: "America/Santiago" }).slice(0, 4))
+}
+
+/**
  * Set the "Responsable principal" field of the PDTP guided activity form
  * (`guided-activity-form.tsx`). It renders a plain text Input while
  * `pdtpResponsibleCatalog` is empty, but becomes a Select once any row

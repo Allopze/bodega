@@ -43,9 +43,9 @@ import {
  * `prevencion-miper-programa.spec.ts` rompería la corrida completa: el que
  * llegue segundo no podría crear la suya. Con 2028 y una definición **anual**
  * cuya fecha programada por defecto es hoy (2026-10-01), el período genera
- * exactamente tres ocurrencias (31-10-2026, 31-10-2027 y 31-10-2028); los pasos
+ * exactamente tres ocurrencias (fin del mes de la corrida en 2026, 2027 y 2028); los pasos
  * 12 y 13 usan las dos primeras. Es la misma dependencia del mes de la corrida
- * que ya tiene F2 (que espera 31-10-2026/2027), no una nueva.
+ * que ya tiene F2 (que calcula esas fechas con `finDeMesEnChile`), no una nueva.
  *
  * **Sobre el «responsable de actividad» (§12, línea 8798).** El plan pide tres
  * personas «más un responsable». El sembrado no trae una cuarta persona con
@@ -381,7 +381,9 @@ test("paso 13: la otra ocurrencia se marca «No se hizo», queda Incumplida y no
   const page = await as(browser, "prev.faena@e2e.chome.cl")
   await page.goto(`${miperUrl}?tab=programa`)
   const sheet = await abrirActividad(page)
-  await page.getByRole("button", { name: "Registrar la ejecución del 31-10-2027" }).click()
+  // La primera ya se registró en el paso 12 y su botón desapareció: la que queda
+  // primera es la segunda del período (por orden, no por fecha literal).
+  await ocurrenciasDe(page).nth(0).click()
   const record = page.getByRole("dialog", { name: /Registrar la ejecución del / })
   await record.getByRole("combobox", { name: "Resultado de la ejecución" }).click()
   await page.getByRole("option", { name: "No se hizo", exact: true }).click()

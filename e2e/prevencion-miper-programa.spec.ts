@@ -1,5 +1,5 @@
 import { test, expect, request, type Browser, type BrowserContext, type Page } from "@playwright/test"
-import { expectPageTitle, login, pickCurrentMonthDate, textoVisible, MINIMAL_PNG } from "./helpers"
+import { anioEnChile, expectPageTitle, finDeMesEnChile, login, pickCurrentMonthDate, textoVisible, MINIMAL_PNG } from "./helpers"
 import {
   abrirGenerador, agregarMedida, cabecera, crearTarea, elegir, elegirOpcion, escribir, guardado, irAPaso, nivel, volverALaTarea,
 } from "./miper-helpers"
@@ -19,7 +19,8 @@ import {
  * El spec del flujo F1 (`prevencion-miper-flujo.spec.ts`) usa el período 2030 en
  * la misma faena; éste usa 2027 y una definición **anual** con fecha programada
  * de hoy, de modo que el período 2027 genera exactamente dos ocurrencias
- * (31-10-2026 y 31-10-2027): una para «Se hizo» y otra para «No se hizo».
+ * (fin de este mes, este año y el siguiente: `finDeMesEnChile`): una para «Se
+ * hizo» y otra para «No se hizo».
  *
  * Trazabilidad (§7.2 / §8.1): de la actividad al riesgo del MIPER con «Ver la
  * fila N en la MIPER», que abre el editor del riesgo; ahí, el paso «Medidas de
@@ -30,6 +31,9 @@ import {
 test.describe.configure({ mode: "serial" })
 
 const PERIOD = "2027"
+/** Las dos ocurrencias del programa anual: fin de este mes, este año y el siguiente. */
+const OCURRENCIA_1 = finDeMesEnChile(anioEnChile())
+const OCURRENCIA_2 = finDeMesEnChile(anioEnChile() + 1)
 const ACTIVITY_DESC = "Ejecutar las guardas de la correa transportadora"
 const MEASURE_1 = "Instalar guardas fijas en la correa transportadora"
 const MEASURE_2 = "Instalar guardas fijas en la correa de descarga"
@@ -236,8 +240,8 @@ test("Legal y RRHH aprueba y sella la v1 y las ocurrencias nacen con la versión
   await legal.goto(`${miperUrl}?tab=programa`)
   await expect(legal.getByRole("heading", { name: "Programa de Trabajo Preventivo RE-04.1" })).toBeVisible()
   const sheet = await abrirActividad(legal)
-  await expect(sheet.getByText("Vence el 31-10-2026")).toBeVisible()
-  await expect(sheet.getByText("Vence el 31-10-2027")).toBeVisible()
+  await expect(sheet.getByText(`Vence el ${OCURRENCIA_1}`)).toBeVisible()
+  await expect(sheet.getByText(`Vence el ${OCURRENCIA_2}`)).toBeVisible()
   await expect(sheet.getByText("Las ejecuciones se generan al aprobar la versión de la matriz.")).toHaveCount(0)
 })
 
@@ -248,8 +252,8 @@ test("sellada la v1, el responsable marca «Se hizo» con fecha efectiva y evide
   // Avance inicial: nada registrado, dos ocurrencias planificadas.
   await expect(page.getByText("0/2 · 0% realizado").first()).toBeVisible()
   const sheet = await abrirActividad(page)
-  await sheet.getByRole("button", { name: "Registrar la ejecución del 31-10-2026" }).click()
-  const record = page.getByRole("dialog", { name: "Registrar la ejecución del 31-10-2026" })
+  await sheet.getByRole("button", { name: `Registrar la ejecución del ${OCURRENCIA_1}` }).click()
+  const record = page.getByRole("dialog", { name: `Registrar la ejecución del ${OCURRENCIA_1}` })
   // La fecha efectiva NO viene prellenada con hoy aunque el diálogo declare ese
   // default (`OccurrenceDialog.handleOpenChange`): el diálogo se monta controlado
   // por `open`, así que Radix nunca dispara `onOpenChange(true)` y el estado
@@ -275,7 +279,7 @@ test("sellada la v1, el responsable marca «Se hizo» con fecha efectiva y evide
   // La ficha de evidencia nombra el archivo como lo vio la persona (hallazgo
   // H2-02 del informe): el rótulo es el nombre original que ella eligió y el
   // nombre interno de almacenamiento queda como dato secundario, nunca al revés.
-  await sheet.getByRole("button", { name: "Ver la evidencia de la ejecución del 31-10-2026" }).click()
+  await sheet.getByRole("button", { name: `Ver la evidencia de la ejecución del ${OCURRENCIA_1}` }).click()
   const evidencia = page.getByRole("dialog", { name: "Evidencia de la ocurrencia" })
   await expect(evidencia.getByText("e2e-ejecucion.png")).toBeVisible()
   await expect(evidencia.getByText(/^Archivo almacenado: [\w-]+\.png$/)).toBeVisible()
@@ -288,7 +292,7 @@ test("la evidencia se descarga con encabezados seguros", async ({ browser }) => 
   await page.goto(`${miperUrl}?tab=programa`)
   const detalle = await abrirActividad(page)
   await detalle.getByText(/Historial de ejecuciones/).click()
-  await detalle.getByRole("button", { name: "Ver la evidencia de la ejecución del 31-10-2026" }).click()
+  await detalle.getByRole("button", { name: `Ver la evidencia de la ejecución del ${OCURRENCIA_1}` }).click()
   const evidencia = page.getByRole("dialog", { name: "Evidencia de la ocurrencia" })
   const hrefDescarga = await evidencia.getByRole("link", { name: "Descargar e2e-ejecucion.png", exact: true }).getAttribute("href")
   const hrefAbrir = await evidencia.getByRole("link", { name: "Abrir e2e-ejecucion.png", exact: true }).getAttribute("href")
@@ -327,8 +331,8 @@ test("la otra ocurrencia se marca «No se hizo»: queda Incumplida y cuenta 0", 
   const page = await as(browser, "prev.faena@e2e.chome.cl")
   await page.goto(`${miperUrl}?tab=programa`)
   const sheet = await abrirActividad(page)
-  await sheet.getByRole("button", { name: "Registrar la ejecución del 31-10-2027" }).click()
-  const record = page.getByRole("dialog", { name: "Registrar la ejecución del 31-10-2027" })
+  await sheet.getByRole("button", { name: `Registrar la ejecución del ${OCURRENCIA_2}` }).click()
+  const record = page.getByRole("dialog", { name: `Registrar la ejecución del ${OCURRENCIA_2}` })
   await record.getByRole("combobox", { name: "Resultado de la ejecución" }).click()
   await page.getByRole("option", { name: "No se hizo", exact: true }).click()
   await record.getByLabel("Motivo", { exact: true }).fill("No se ejecutó por indisponibilidad de la guarda en bodega.")
