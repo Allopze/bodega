@@ -169,7 +169,7 @@ test.describe("Densidad — todo KPI de subconjunto llega a su subconjunto", () 
    * comprobar casi nada. La vista es parte del contrato, no un detalle.
    */
   const KPIS_DE_SUBCONJUNTO = [
-    { vista: "prevencion", label: "Incidentes abiertos", destino: "/prevencion/incidentes?quick=open" },
+    { vista: "prevencion", label: "Incidentes abiertos", destino: "/prevencion/incidentes?status=open" },
     { vista: "prevencion", label: "CAPA vencidas", destino: "/prevencion/capa?vista=overdue" },
     { vista: "prevencion", label: "Riesgos críticos sin control", destino: "/prevencion/miper?sincontrol=1" },
     { vista: "terreno", label: "Hallazgos críticos abiertos", destino: "/prevencion/inspecciones?vista=critical" },
@@ -258,9 +258,9 @@ test.describe("Densidad — todo KPI de subconjunto llega a su subconjunto", () 
     await page.waitForLoadState("networkidle").catch(() => undefined)
     await expect(page.locator("[aria-pressed='true']").first()).toBeVisible()
 
-    // El tablero publica `?quick=open` para «Incidentes abiertos». «Abiertos» dejó de ser una
+    // El tablero publica `?status=open` para «Incidentes abiertos». «Abiertos» dejó de ser una
     // tarjeta (A5: el estado son pestañas) y el enlace llega a su pestaña, ya marcada.
-    await page.goto("/prevencion/incidentes?quick=open")
+    await page.goto("/prevencion/incidentes?status=open")
     await page.waitForLoadState("networkidle").catch(() => undefined)
     await expect(page).toHaveURL(/status=open/)
     await expect(page.getByRole("navigation", { name: "Estado de los incidentes" }).getByRole("link", { name: /^Abiertos\s*\d+$/ }))
@@ -270,5 +270,21 @@ test.describe("Densidad — todo KPI de subconjunto llega a su subconjunto", () 
     await page.goto("/prevencion/miper?sincontrol=1")
     await page.waitForLoadState("networkidle").catch(() => undefined)
     await expect(page.getByRole("button", { name: "Eliminar filtro Riesgos críticos", exact: true })).toBeVisible()
+  })
+
+  /**
+   * Los enlaces guardados (favoritos, correos viejos) siguen con la forma anterior: el tablero ya
+   * no los publica, pero el servidor los redirige a la pestaña de estado que hoy los representa.
+   */
+  test("los enlaces viejos ?quick=open y ?vista=open siguen llegando a su pestaña", async ({ page }) => {
+    await login(page)
+
+    await page.goto("/prevencion/incidentes?quick=open")
+    await page.waitForLoadState("networkidle").catch(() => undefined)
+    await expect(page).toHaveURL(/\/prevencion\/incidentes\?status=open$/)
+
+    await page.goto("/prevencion/capa?vista=open")
+    await page.waitForLoadState("networkidle").catch(() => undefined)
+    await expect(page).toHaveURL(/\/prevencion\/capa\?status=open$/)
   })
 })

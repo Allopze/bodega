@@ -204,6 +204,24 @@ describe("PreventionSection · contrato del panel", () => {
   })
 })
 
+describe("PreventionSection · destino de los tiles de incidentes y CAPA", () => {
+  // «Abiertos» dejó de ser una tarjeta (A5: el estado son pestañas) y `?quick=open` sólo
+  // sobrevive como redirección en el servidor: el tablero publica la forma canónica.
+  it("«Incidentes abiertos» enlaza a la pestaña de estado, no al enlace viejo ?quick=open", async () => {
+    const { kpis } = sectionProps(await PreventionSection(props()))
+    const tile = find(kpis, ofType(KpiCard)).find((element) => element.props.label === "Incidentes abiertos")!
+
+    expect(tile.props.href).toBe("/prevencion/incidentes?status=open")
+  })
+
+  it("«CAPA vencidas» sigue enlazando a la condición ?vista=overdue (sigue siendo una tarjeta de CAPA)", async () => {
+    const { kpis } = sectionProps(await PreventionSection(props()))
+    const tile = find(kpis, ofType(KpiCard)).find((element) => element.props.label === "CAPA vencidas")!
+
+    expect(tile.props.href).toBe("/prevencion/capa?vista=overdue")
+  })
+})
+
 describe("PreventionSection · tiles y bloques sin dato", () => {
   it("sin programa PDTP el tile dice qué falta y lleva a crearlo si el rol puede gestionarlo", async () => {
     getPdtpComplianceIndicatorsForScope.mockResolvedValue(null)

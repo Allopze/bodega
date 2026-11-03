@@ -525,7 +525,7 @@ export function buildOperationalMetrics(input: {
       description: input.fatalOrSeriousIncidents > 0
         ? `${input.fatalOrSeriousIncidents} fatal${input.fatalOrSeriousIncidents === 1 ? "" : "es"} o grave${input.fatalOrSeriousIncidents === 1 ? "" : "s"}`
         : input.openIncidents > 0 ? "Ninguno fatal ni grave" : "Sin incidentes abiertos",
-      icon: "critical", href: "/prevencion/incidentes?quick=open",
+      icon: "critical", href: "/prevencion/incidentes?status=open",
       tone: input.fatalOrSeriousIncidents > 0 ? "danger" : input.openIncidents > 0 ? "signal" : "neutral",
     } : null,
     input.canViewCapa ? {

@@ -162,7 +162,7 @@ export async function PreventionSection({ session, worksiteScope, worksiteIds, c
           ))}
           <KpiCard {...DASHBOARD_KPI} icon={<Siren size={16} />} label="Incidentes abiertos" value={String(incidents.totalOpen)}
             detail={incidents.fatalOrSerious > 0 ? `${incidents.fatalOrSerious} fatal(es) o grave(s) · ahora` : "Ninguno fatal ni grave, ahora"}
-            tone={incidents.fatalOrSerious > 0 ? "signal" : "neutral"} href="/prevencion/incidentes?quick=open" />
+            tone={incidents.fatalOrSerious > 0 ? "signal" : "neutral"} href="/prevencion/incidentes?status=open" />
           <KpiCard {...DASHBOARD_KPI} icon={<ShieldWarning size={16} />} label="CAPA vencidas" glossary={DASHBOARD_GLOSSARY.CAPA} value={String(capa.overdue)}
             detail={`${capa.open} abierta${capa.open === 1 ? "" : "s"} en total · ahora`} tone={capa.overdue > 0 ? "signal" : "neutral"} href="/prevencion/capa?vista=overdue" />
           {risk && (

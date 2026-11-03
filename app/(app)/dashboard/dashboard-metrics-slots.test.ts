@@ -132,9 +132,12 @@ describe("buildOperationalMetrics — ranuras", () => {
     expect(spend?.href).toMatch(/^\/compras\?desde=\d{4}-\d{2}-\d{2}&hasta=\d{4}-\d{2}-\d{2}$/)
   })
 
-  it("los incidentes abiertos pre-filtran quick=open", () => {
+  // `?quick=open` ya no es un filtro: «Abiertos» es una pestaña de estado (`?status=open`) y
+  // el enlace viejo sólo se conserva como redirección. El tablero publica la forma canónica
+  // para que quien lo pulsa no pase por la redirección.
+  it("los incidentes abiertos llevan a la pestaña «Abiertos» (?status=open), no al enlace viejo", () => {
     const incidents = buildOperationalMetrics(jefatura).find((m) => m.key === "incidents")
-    expect(incidents?.href).toBe("/prevencion/incidentes?quick=open")
+    expect(incidents?.href).toBe("/prevencion/incidentes?status=open")
   })
 
   it("ya no ofrece el tile de stock crítico", () => {
