@@ -67,7 +67,12 @@ export async function seedMantencionE2E(db: DB, options: { hashedPassword: strin
       isActive: false, deactivatedAt: options.now, createdAt: options.now, updatedAt: options.now,
     })))
   }
-  await seedMantencion(db, data as Parameters<typeof seedMantencion>[1], { actorUserId: "user-admin-e2e" })
+  // La carga ya no crea faenas en silencio: las tres activas que usan estas specs se
+  // autorizan aquí; las demás ya existen (dadas de baja) y se reutilizan por nombre.
+  await seedMantencion(db, data as Parameters<typeof seedMantencion>[1], {
+    actorUserId: "user-admin-e2e",
+    faenas: { equivalencias: {}, crear: [...ACTIVE], crearDesactivadas: [] },
+  })
 
   const [biodiversa] = await db.select({ id: schema.worksites.id }).from(schema.worksites)
     .where(eq(schema.worksites.name, "Biodiversa")).limit(1)
