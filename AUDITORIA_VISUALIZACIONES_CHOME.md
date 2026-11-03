@@ -1980,7 +1980,10 @@ Son defectos verificados, no propuestas. Esfuerzo: ~1 día.
 - **Riesgo:** bajo.
 - **Criterio de aceptación:** pruebas unitarias por cifra y verificación en navegador de cada pantalla.
 
-**Estado al 2026-11-03.** Ninguna de las filas 0.1 a 0.9 se implementó: esperan autorización. Aparte, en la rama `fix/seed-faenas-y-defectos-sst` (sin commit) se corrigieron tres defectos que salieron a la luz en la revisión (ver Anexo C):
+**Estado al 2026-11-03.** Las filas 0.1 a 0.9 están **implementadas** en la rama `fix/fase0-cifras`, con pruebas de regresión y verificación en navegador. Dos interpretaciones quedaron registradas:
+
+- **0.4:** el % mensual se descartaba sin dibujarse. Ahora es nulo cuando no hay plan, y se dibuja en CHART-004.
+- **0.9:** el campo nunca fue una cifra, sino la unidad configurada. Ahora se rotula «Unidad de rendimiento». Aparte, en la rama `fix/seed-faenas-y-defectos-sst` (sin commit) se corrigieron tres defectos que salieron a la luz en la revisión (ver Anexo C):
 
 - la gravedad DS 44 que perdía días de licencia al cruzar de mes;
 - el cumplimiento de inspección sobre 100 % que impedía cerrar «Maquinaria Pesada»;
@@ -2263,4 +2266,5 @@ Salieron al poblar y recorrer la plataforma con datos. No son propuestas de visu
 | C-9 | **`/analitica` muestra combustible en $0 en producción.** Calcula el gasto desde `fuel_loads` (`lib/services/analytics-module/dashboard.ts:143-175`), que tiene 0 filas, mientras las 5.671 transacciones Copec con monto viven en `fuel_provider_transactions`. | Anexo B y lectura del servicio. En el clon, analítica muestra «Combustible $0 · 0 cargas». | Abierto. Antes de cualquier gráfico de gasto (CHART-033) hay que decidir de qué fuente sale el gasto en combustible. |
 | C-10 | **La «Tendencia mensual de gasto» de `/analitica` es un solo punto** con la ventana por defecto (últimos 30 días); además, un aumento de gasto de 133 % se pinta en verde. | Captura [a-analitica.png](qa/reports/2026-11-03-visualizaciones/a-analitica.png). | Abierto. La polaridad está en la Fase 0 (0.2); la ventana mínima de una serie mensual debería ser de 6 a 12 meses (CHART-033). |
 | C-11 | **El mapa de `/flota/monitoreo` no carga su estilo en desarrollo**: la CSP (`lib/security/csp.ts:54`, `connect-src 'self'`) bloquea `tiles.openfreemap.org`, el estilo por defecto fuera de producción (`fleet-gps-map.tsx:7`). La página no termina de cargar. | Error de consola en el recorrido de la revisión. | Abierto. En producción el estilo sale de `NEXT_PUBLIC_MAP_STYLE_URL`; **no se verificó** si la CSP de producción lo permite. |
+| C-12 | **El tile «Plazos atrasados» de incidentes siempre marcaba 0**, también en el tablero de inicio. En el `EXISTS` sobre las notificaciones, Drizzle emitía `"id"` sin calificar, y dentro de la subconsulta resolvía a la `id` de la propia notificación. | Prueba PGlite `prevention-incident-dashboard-counts.test.ts`. En el clon, el tile pasó de 0 a 1. | **Corregido** en `fix/fase0-cifras`, junto con 0.7 (los conteos usan el mismo `FROM` y filtros que la lista). |
 
