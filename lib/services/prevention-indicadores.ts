@@ -48,7 +48,7 @@ export interface IndicatorAccess {
   permissions: readonly string[]
 }
 
-interface CanonicalSourceRows {
+export interface CanonicalSourceRows {
   events: CanonicalIndicatorEvent[]
   cases: CanonicalIndicatorCase[]
   absenceAllocations: CanonicalAbsenceAllocation[]
@@ -364,17 +364,38 @@ export async function getCanonicalSafetyIndicatorYear(year: number, scope: Works
   const ids = worksitesVisible.map((item) => item.id)
   const effectiveScope: WorksiteScope = ids.length > 0 ? { mode: "some", ids } : { mode: "none", ids: [] }
   const source = await loadCanonicalSourceRows(db, year, effectiveScope)
+  const groups = buildCanonicalIndicatorGroups(year, worksitesVisible, source)
+  const [denominators, closedPeriods, snapshots] = await Promise.all([
+    db.select().from(safetyIndicatorDenominators).where(and(eq(safetyIndicatorDenominators.year, year), scopeCondition(effectiveScope, safetyIndicatorDenominators.worksiteId))).orderBy(asc(safetyIndicatorDenominators.month)),
+    getSafetyIndicatorPeriods(year, effectiveScope),
+    db.select().from(safetyIndicatorSnapshots).where(and(eq(safetyIndicatorSnapshots.year, year), scopeFilter(effectiveScope, safetyIndicatorSnapshots.worksiteId))).orderBy(asc(safetyIndicatorSnapshots.createdAt)),
+  ])
+  return { year, groups, denominators, closedPeriods, snapshots }
+}
 
-  // Pre-agrupar por worksiteId:month para evitar re-escanear los mismos arrays en cada calculateGroup
+/**
+ * Arma la vista mensual, semestral y anual por faena (y el total) a partir de
+ * las filas ya cargadas. Es pura: no consulta la base.
+ */
+export function buildCanonicalIndicatorGroups(
+  year: number,
+  worksitesVisible: Array<{ id: string; name: string }>,
+  source: CanonicalSourceRows,
+): CanonicalIndicatorGroup[] {
+  const ids = worksitesVisible.map((item) => item.id)
+
+  // Pre-agrupar para evitar re-escanear los mismos arrays en cada calculateGroup
   const key = (wsId: string, m: number) => `${wsId}:${m}`
   const eventsByWsMonth = new Map<string, typeof source.events>()
-  const casesByWsMonth = new Map<string, typeof source.cases>()
+  // Los casos se agrupan sólo por faena, no por mes: para imputar los días de
+  // reposo a su mes real (NORM-07) el cálculo necesita los casos de todo el
+  // año, aunque el accidente haya ocurrido fuera del período pedido.
+  const casesByWs = new Map<string, typeof source.cases>()
   const denomByWsMonth = new Map<string, typeof source.denominators>()
   for (const wsId of ids) {
     for (let m = 1; m <= 12; m++) {
       const k = key(wsId, m)
       eventsByWsMonth.set(k, [])
-      casesByWsMonth.set(k, [])
       denomByWsMonth.set(k, [])
     }
   }
@@ -382,10 +403,8 @@ export async function getCanonicalSafetyIndicatorYear(year: number, scope: Works
     const k = key(e.worksiteId, e.month)
     eventsByWsMonth.get(k)?.push(e)
   }
-  for (const c of source.cases) {
-    const k = key(c.worksiteId, c.month)
-    casesByWsMonth.get(k)?.push(c)
-  }
+  for (const wsId of ids) casesByWs.set(wsId, [])
+  for (const c of source.cases) casesByWs.get(c.worksiteId)?.push(c)
   for (const d of source.denominators) {
     const k = key(d.worksiteId, d.month)
     denomByWsMonth.get(k)?.push(d)
@@ -396,9 +415,9 @@ export async function getCanonicalSafetyIndicatorYear(year: number, scope: Works
     let cases: typeof source.cases = []
     let denominators: typeof source.denominators = []
     for (const wsId of worksiteIds) {
+      cases = cases.concat(casesByWs.get(wsId) ?? [])
       for (let m = startMonth; m <= endMonth; m++) {
         events = events.concat(eventsByWsMonth.get(key(wsId, m)) ?? [])
-        cases = cases.concat(casesByWsMonth.get(key(wsId, m)) ?? [])
         denominators = denominators.concat(denomByWsMonth.get(key(wsId, m)) ?? [])
       }
     }
@@ -450,12 +469,7 @@ export async function getCanonicalSafetyIndicatorYear(year: number, scope: Works
       annual: groupedCalculate(ids, 1, 12),
     })
   }
-  const [denominators, closedPeriods, snapshots] = await Promise.all([
-    db.select().from(safetyIndicatorDenominators).where(and(eq(safetyIndicatorDenominators.year, year), scopeCondition(effectiveScope, safetyIndicatorDenominators.worksiteId))).orderBy(asc(safetyIndicatorDenominators.month)),
-    getSafetyIndicatorPeriods(year, effectiveScope),
-    db.select().from(safetyIndicatorSnapshots).where(and(eq(safetyIndicatorSnapshots.year, year), scopeFilter(effectiveScope, safetyIndicatorSnapshots.worksiteId))).orderBy(asc(safetyIndicatorSnapshots.createdAt)),
-  ])
-  return { year, groups, denominators, closedPeriods, snapshots }
+  return groups
 }
 
 export async function upsertSafetyIndicatorMonth(
