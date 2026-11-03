@@ -512,6 +512,60 @@ describe("bandeja Por revisar", () => {
   }
 })
 
+describe("referencias de consumo en la bandeja", () => {
+  beforeAll(async () => {
+    await inMemoryDb.insert(schema.worksites).values({ id: "ws-variation-summary", name: "Faena resumen", code: "WS-VS" })
+    await inMemoryDb.insert(schema.users).values({ id: "user-variation-summary", name: "Resumen", email: "variation-summary@example.com", hashedPassword: "x" })
+    await inMemoryDb.insert(schema.fuelEquipmentTypes).values({ id: "type-variation-summary", slug: "truck-summary", name: "Camión resumen" })
+    await inMemoryDb.insert(schema.fuelVehicles).values({
+      id: "vehicle-variation-summary", plate: "VARSUM", code: "VAR-SUM", type: "camion", equipmentTypeId: "type-variation-summary", worksiteId: "ws-variation-summary",
+    })
+    await inMemoryDb.insert(schema.fuelImportBatches).values({
+      id: "batch-variation-summary", worksiteId: "ws-variation-summary", fuente: "Copec TCT Diesel",
+      periodoDesde: "2026-01-01", periodoHasta: "2026-02-28", archivoNombre: "summary.xlsx", hashArchivo: "hash-summary",
+      importadoPor: "user-variation-summary", estado: "importado",
+    })
+    await inMemoryDb.insert(schema.fuelAnomalyRules).values({
+      id: "rule-variation-summary", code: "variacion_brusca_consumo", name: "Variación brusca", severity: "medium",
+    })
+  })
+
+it("resuelve el mes de referencias nuevas y legadas de consumo y desglosa producto sin atribuir el histórico", async () => {
+  await inMemoryDb.insert(schema.fuelConsumptionRecords).values({
+    id: "record-new-variation", batchId: "batch-variation-summary", worksiteId: "ws-variation-summary", vehicleId: "vehicle-variation-summary",
+    patente: "VARSUM", cantidadUnidad: 200, monto: 100_000, numeroTransacciones: 2, numeroTarjetas: 1,
+    periodoDesde: "2026-01-01", periodoHasta: "2026-01-31", fuente: "Copec TCT Diesel",
+    createdAt: "2026-01-31T12:00:00.000Z", updatedAt: "2026-01-31T12:00:00.000Z",
+  })
+  await inMemoryDb.insert(schema.fuelAnomalyCases).values([
+    {
+      id: "case-new-variation", ruleId: "rule-variation-summary", ruleCode: "variacion_brusca_consumo", severity: "medium",
+      worksiteId: "ws-variation-summary", vehicleId: "vehicle-variation-summary", referenceEntityType: "fuel_consumption_record",
+      referenceEntityId: "record-new-variation", description: "Variación Diesel", status: "open",
+      detectedAt: "2026-05-01T12:00:00.000Z",
+    },
+    {
+      id: "case-legacy-variation", ruleId: "rule-variation-summary", ruleCode: "variacion_brusca_consumo", severity: "medium",
+      worksiteId: "ws-variation-summary", vehicleId: "vehicle-variation-summary", referenceEntityType: "fuel_consumption_record",
+      referenceEntityId: "vehicle-variation-summary:2026-02-01", description: "Variación histórica", status: "open",
+      detectedAt: "2026-05-02T12:00:00.000Z",
+    },
+  ])
+
+  const rows = await getFuelInbox(globalSession(), MARCH, pending({ kind: "caso", pageSize: 100 }))
+  expect(rows.rows.filter((row) => row.id === "case-new-variation" || row.id === "case-legacy-variation").map((row) => [row.id, row.dataMonth])).toEqual([
+    ["case-new-variation", "2026-01"],
+    ["case-legacy-variation", "2026-02"],
+  ])
+
+  const summary = await summarizeFuelInbox(globalSession(), MARCH)
+  expect(summary.caseBreakdown).toEqual(expect.arrayContaining([
+    { ruleCode: "variacion_brusca_consumo", product: "diesel", count: 1 },
+    { ruleCode: "variacion_brusca_consumo", product: "historical_unattributed", count: 1 },
+  ]))
+})
+})
+
 describe("escrituras de la bandeja", () => {
   beforeAll(async () => {
     const caseBase = { ruleId: "rule-1", ruleCode: "sello_repetido", severity: "medium", description: "Un caso para tomar" }

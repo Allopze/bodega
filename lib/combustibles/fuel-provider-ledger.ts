@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { and, eq, ne, sql } from "drizzle-orm"
+import { and, desc, eq, lte, ne, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
   fuelProviderRejections,
@@ -26,6 +26,40 @@ export interface FuelProviderSyncRunInput {
   requestedTo: string
   actorUserId?: string
   correlationId?: string
+}
+
+export interface CopecSyncDetectionEvidence {
+  status: string | null
+  startedAt: string | null
+  finishedAt: string | null
+  rowsAccepted: number
+  completedBeforeDetection: boolean
+}
+
+/**
+ * Corrida Copec más reciente del mismo día chileno que había empezado al
+ * iniciar la detección. No consulta ni modifica las filas importadas.
+ */
+export async function getCopecSyncDetectionEvidence(detectionStartedAt: string): Promise<CopecSyncDetectionEvidence> {
+  const latestRun = await db.query.fuelProviderSyncRuns.findFirst({
+    where: and(
+      eq(fuelProviderSyncRuns.provider, "copec"),
+      lte(fuelProviderSyncRuns.startedAt, detectionStartedAt),
+      sql`(${fuelProviderSyncRuns.startedAt} AT TIME ZONE 'America/Santiago')::date = (${detectionStartedAt}::timestamptz AT TIME ZONE 'America/Santiago')::date`,
+    ),
+    orderBy: [desc(fuelProviderSyncRuns.startedAt)],
+    columns: { status: true, startedAt: true, finishedAt: true, rowsAccepted: true },
+  })
+  const finishedAt = latestRun?.finishedAt ?? null
+  const startedAt = latestRun?.startedAt ?? null
+  const normalizedFinishedAt = finishedAt === null ? null : new Date(finishedAt).toISOString()
+  return {
+    status: latestRun?.status ?? null,
+    startedAt: startedAt === null ? null : new Date(startedAt).toISOString(),
+    finishedAt: normalizedFinishedAt,
+    rowsAccepted: latestRun?.rowsAccepted ?? 0,
+    completedBeforeDetection: normalizedFinishedAt !== null && new Date(normalizedFinishedAt).getTime() <= new Date(detectionStartedAt).getTime(),
+  }
 }
 
 export async function beginFuelProviderSyncRun(input: FuelProviderSyncRunInput) {

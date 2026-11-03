@@ -10,7 +10,7 @@ import { and, desc, eq, gt, inArray, isNotNull, isNull, ne, sql } from "drizzle-
 import { db } from "@/db"
 import {
   fuelAnomalyExecutions, fuelAnomalyRules,
-  fuelConsumptionRecords, fuelEquipmentTypes, fuelLoads, fuelMeterReadings, fuelOperationRecords,
+  fuelAnomalyCases, fuelConsumptionRecords, fuelEquipmentTypes, fuelLoads, fuelMeterReadings, fuelOperationRecords,
   fuelTaeSubmissions, fuelVehicleOperationalIntervals, fuelVehicles,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
@@ -20,6 +20,7 @@ import { detectCorruptEvidence, getReusedEvidence } from "./evidence-management"
 import { fuelOperationOccurredAtSql } from "./fuel-log"
 import { accountableFuelLoadsWhere } from "./load-status"
 import { DEFAULT_OUTLIER_THRESHOLD_STDDEVS, MIN_CONCLUSIVE_SAMPLE, flagOutliers } from "./performance-statistics"
+import { buildFuelVariationCandidates, candidateTouchesCutoff, fuelVariationProductLabel } from "./fuel-variation"
 
 /** Techo defensivo para los escaneos sin ventana de fecha (sección 18). No hay volumen de
  *  producción con el que calibrarlo todavía; el valor es deliberadamente alto — sólo debe
@@ -137,7 +138,14 @@ export interface BatchRuleResult {
    *  reglas hubieran fallado (CO-029/CO-039). `no_detector` es una regla activa
    *  sin detector batch registrado (config huérfana, no un fallo de ejecución). */
   status: "completed" | "failed" | "no_detector"
+  error?: string
+  details?: {
+    unclassifiedRecords?: number
+    blockedByLegacyCases?: number
+  }
 }
+
+const FUEL_VARIATION_SCAN_FROM_ERROR = "FUEL_VARIATION_SCAN_FROM es obligatoria y debe ser una fecha ISO válida; la regla de variaciones no creó casos."
 
 /** Ejecuta todas las reglas batch activas. Cada regla se ejecuta en secuencia,
  *  registrando la ejecución y los casos creados. */
@@ -159,23 +167,34 @@ export async function runAllBatchRules(): Promise<BatchRuleResult[]> {
         continue
       }
 
-      const { created, skipped, scanned } = await detector(rule)
+      const { created, skipped, scanned, details } = await detector(rule)
       await db.update(fuelAnomalyExecutions).set({
         status: "completed", completedAt: new Date().toISOString(),
         casesCreated: created, casesSkipped: skipped, totalScanned: scanned,
       }).where(eq(fuelAnomalyExecutions.id, execId))
-      results.push({ ruleCode: rule.code, created, skipped, status: "completed" })
+      results.push({ ruleCode: rule.code, created, skipped, status: "completed", ...(details ? { details } : {}) })
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      // Sólo el error de configuración es apto para salir en la respuesta del
+      // cron; los errores internos pueden contener SQL u otros datos sensibles.
+      const visibleError = rule.code === "variacion_brusca_consumo" && message === FUEL_VARIATION_SCAN_FROM_ERROR
+        ? message
+        : undefined
       await db.update(fuelAnomalyExecutions).set({
-        status: "failed", error: String(error), completedAt: new Date().toISOString(),
+        status: "failed", error: message, completedAt: new Date().toISOString(),
       }).where(eq(fuelAnomalyExecutions.id, execId))
-      results.push({ ruleCode: rule.code, created: 0, skipped: 0, status: "failed" })
+      results.push({ ruleCode: rule.code, created: 0, skipped: 0, status: "failed", ...(visibleError ? { error: visibleError } : {}) })
     }
   }
   return results
 }
 
-type DetectorFn = (rule: { id: string; code: string; config: string | null; severity?: string | null }) => Promise<{ created: number; skipped: number; scanned: number }>
+type DetectorFn = (rule: { id: string; code: string; config: string | null; severity?: string | null }) => Promise<{
+  created: number
+  skipped: number
+  scanned: number
+  details?: BatchRuleResult["details"]
+}>
 
 /**
  * La severidad configurada en la regla gobierna el caso.
@@ -346,7 +365,15 @@ const detectLitersExceedCapacity: DetectorFn = async (rule) => {
 /** Detectar variación brusca de consumo entre períodos consecutivos. */
 const detectSharpConsumptionChange: DetectorFn = async (rule) => {
   const rowLimit = batchRowLimitOf(rule, BATCH_SCAN_ROW_LIMIT)
+  const scanFromRaw = process.env.FUEL_VARIATION_SCAN_FROM
+  const scanFromMatch = scanFromRaw?.match(/^(\d{4}-\d{2}-\d{2})(?:T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2}))?$/)
+  const scanFromDate = scanFromMatch?.[1]
+  const scanFromMs = scanFromRaw ? Date.parse(scanFromRaw) : Number.NaN
+  if (!scanFromMatch || !scanFromDate || !Number.isFinite(scanFromMs) || new Date(`${scanFromDate}T00:00:00.000Z`).toISOString().slice(0, 10) !== scanFromDate) {
+    throw new Error(FUEL_VARIATION_SCAN_FROM_ERROR)
+  }
   let created = 0, skipped = 0, scanned = 0
+  let unclassifiedRecords = 0, blockedByLegacyCases = 0
 
   // Acotar por VEHÍCULO, no por fila cruda: un LIMIT plano sobre filas podía
   // partir la secuencia de un vehículo a la mitad (comparación de borde
@@ -362,9 +389,13 @@ const detectSharpConsumptionChange: DetectorFn = async (rule) => {
 
   // Escanear consumo TCT: comparar cada patente+período con el período anterior
   const periods = vehicleIdsToScan.length === 0 ? [] : await db.select({
+    id: fuelConsumptionRecords.id,
     vehicleId: fuelConsumptionRecords.vehicleId,
     periodoDesde: fuelConsumptionRecords.periodoDesde,
     cantidad: fuelConsumptionRecords.cantidadUnidad,
+    fuente: fuelConsumptionRecords.fuente,
+    createdAt: fuelConsumptionRecords.createdAt,
+    updatedAt: fuelConsumptionRecords.updatedAt,
     worksiteId: fuelConsumptionRecords.worksiteId,
     equipmentTypeSlug: fuelEquipmentTypes.slug,
   })
@@ -377,38 +408,50 @@ const detectSharpConsumptionChange: DetectorFn = async (rule) => {
     // junio=4.000L, julio=0,5L, agosto=3.900L comparaba junio contra agosto
     // como si fueran consecutivos y nunca detectaba ni la caída ni el rebote.
     .where(inArray(fuelConsumptionRecords.vehicleId, vehicleIdsToScan))
-    .orderBy(fuelConsumptionRecords.vehicleId, fuelConsumptionRecords.periodoDesde)
+    .orderBy(fuelConsumptionRecords.vehicleId, fuelConsumptionRecords.periodoDesde, fuelConsumptionRecords.id)
 
-  // Agrupar por vehicleId
-  const byVehicle = new Map<string, typeof periods>()
-  for (const row of periods) byVehicle.set(row.vehicleId!, [...(byVehicle.get(row.vehicleId!) ?? []), row])
+  const records = periods.filter((row): row is typeof row & { vehicleId: string } => Boolean(row.vehicleId)).map((row) => ({
+    ...row,
+    vehicleId: row.vehicleId,
+    cantidad: Number(row.cantidad),
+    createdAt: String(row.createdAt),
+    updatedAt: String(row.updatedAt),
+  }))
+  const variation = buildFuelVariationCandidates(records, (equipmentTypeSlug) => thresholdPctOf(rule, 50, equipmentTypeSlug ?? undefined))
+  unclassifiedRecords = variation.unclassifiedRecords
 
-  for (const [, rows] of byVehicle) {
-    const vehicleSlug = rows[0]?.equipmentTypeSlug ?? undefined
-    const perVehicleThreshold = thresholdPctOf(rule, 50, vehicleSlug)
-    for (let i = 1; i < rows.length; i++) {
-      const prev = rows[i - 1]!
-      const curr = rows[i]!
-      if (!prev || !curr || prev.cantidad <= 0) continue
-      const pct = Math.abs((curr.cantidad - prev.cantidad) / prev.cantidad * 100)
-      if (pct >= perVehicleThreshold) {
-        scanned++
-        try {
-          const outcome = await createAnomalyCase({
-            ruleId: rule.id, ruleCode: "variacion_brusca_consumo", severity: severityOf(rule, "medium"),
-            worksiteId: curr.worksiteId ?? undefined, vehicleId: curr.vehicleId ?? undefined,
-            // Singular, como los otros 5 detectores: en plural, `fuelLogEntityType()`
-            // (fuel-log.ts) nunca lo emite y el enlace "Abrir caso relacionado" no matcheaba.
-            referenceEntityType: "fuel_consumption_record", referenceEntityId: `${curr.vehicleId}:${curr.periodoDesde}`,
-            description: `Consumo varió ${Math.round(pct)}% respecto al período anterior (${Number(curr.cantidad).toLocaleString("es-CL")} L vs ${Number(prev.cantidad).toLocaleString("es-CL")} L).`,
-            observedValue: `+${Math.round(pct)}%`,            expectedValue: `< ${perVehicleThreshold}%`,
-          })
-          if (outcome.wasCreated) created++; else skipped++
-        } catch { skipped++ }
-      }
+  const activeLegacyCases = await db.select({ referenceEntityId: fuelAnomalyCases.referenceEntityId })
+    .from(fuelAnomalyCases)
+    .where(and(
+      eq(fuelAnomalyCases.ruleCode, "variacion_brusca_consumo"),
+      eq(fuelAnomalyCases.referenceEntityType, "fuel_consumption_record"),
+      inArray(fuelAnomalyCases.status, ["open", "in_review", "reopened"]),
+    ))
+  const activeLegacyReferences = new Set(activeLegacyCases.map((row) => row.referenceEntityId).filter((value): value is string => !!value))
+
+  for (const candidate of variation.candidates) {
+    const { previous: prev, current: curr, changePct: pct, thresholdPct, product } = candidate
+    if (!candidateTouchesCutoff(candidate, scanFromMs)) continue
+    scanned++
+    const legacyReference = `${curr.vehicleId}:${curr.periodoDesde}`
+    if (activeLegacyReferences.has(legacyReference)) {
+      skipped++
+      blockedByLegacyCases++
+      continue
     }
+    try {
+      const outcome = await createAnomalyCase({
+        ruleId: rule.id, ruleCode: "variacion_brusca_consumo", severity: severityOf(rule, "medium"),
+        worksiteId: curr.worksiteId ?? undefined, vehicleId: curr.vehicleId,
+        // Singular, como los otros detectores: `fuelLogEntityType()` no emite el plural.
+        referenceEntityType: "fuel_consumption_record", referenceEntityId: curr.id,
+        description: `Consumo de ${fuelVariationProductLabel(product)} varió ${Math.round(pct)}% respecto al período anterior (${Number(curr.cantidad).toLocaleString("es-CL")} L vs ${Number(prev.cantidad).toLocaleString("es-CL")} L).`,
+        observedValue: `+${Math.round(pct)}%`, expectedValue: `< ${thresholdPct}%`,
+      })
+      if (outcome.wasCreated) created++; else skipped++
+    } catch { skipped++ }
   }
-  return { created, skipped, scanned }
+  return { created, skipped, scanned, details: { unclassifiedRecords, blockedByLegacyCases } }
 }
 
 /**

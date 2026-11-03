@@ -298,6 +298,7 @@ ENV_WHITELIST=(
   STORAGE_PATH BACKUP_DIR BACKUP_SCRIPTS_PATH
   RETENTION_DAYS
   CRON_SECRET CRON_ALLOWED_SOURCES FLEET_GPS_CRON_INTERNAL_SECRET FUEL_CRON_INTERNAL_SECRET
+  FUEL_VARIATION_SCAN_FROM
   # W5-GC (D13): si el borrado real del GC de evidencia estaba encendido, un
   # restore debe dejarlo igual (y no volver en silencio al modo de prueba).
   PDTP_EVIDENCE_GC_DELETE

@@ -82,6 +82,8 @@ services:
       - COPEC_CLIENT_RUT=${COPEC_CLIENT_RUT:-}
       - COPEC_SYNC_START_DATE=${COPEC_SYNC_START_DATE:-2020-01-01}
       - COPEC_SYNC_IMPORTER_EMAIL=${COPEC_SYNC_IMPORTER_EMAIL:-}
+      # Corte de datos que puede originar casos nuevos de variación.
+      - FUEL_VARIATION_SCAN_FROM=${FUEL_VARIATION_SCAN_FROM:-}
       # VisionLink (Cat Digital): telemetría diaria de horas y litros por equipo.
       - VISIONLINK_CLIENT_ID=${VISIONLINK_CLIENT_ID:-}
       - VISIONLINK_CLIENT_SECRET=${VISIONLINK_CLIENT_SECRET:-}
@@ -236,6 +238,7 @@ services:
       - CRON_ALLOWED_SOURCES=${CRON_ALLOWED_SOURCES:-}
       - FLEET_GPS_CRON_INTERNAL_SECRET=${FLEET_GPS_CRON_INTERNAL_SECRET:-}
       - FUEL_CRON_INTERNAL_SECRET=${FUEL_CRON_INTERNAL_SECRET:-}
+      - FUEL_VARIATION_SCAN_FROM=${FUEL_VARIATION_SCAN_FROM:-}
       - PDTP_EVIDENCE_GC_DELETE=${PDTP_EVIDENCE_GC_DELETE:-}
       - COPEC_USERNAME=${COPEC_USERNAME:-}
       - COPEC_PASSWORD=${COPEC_PASSWORD:-}
@@ -375,10 +378,12 @@ services:
         # corrían en ningún lado (ni acá ni en GitHub Actions). Horarios
         # desfasados de los de DTE/ventas/Chipax de arriba para no competir
         # por el mismo portal ni la misma ventana de I/O.
-        0 5 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs fuel-anomaly-detection >/proc/1/fd/1 2>&1
         30 5 * * * CRON_SECRET="$$CRON_SECRET" FUEL_CRON_INTERNAL_SECRET="$$FUEL_CRON_INTERNAL_SECRET" node /app/scripts/cron-runner.mjs fuel-copec-sync >/proc/1/fd/1 2>&1
         # VisionLink — telemetría de los últimos 14 días, ya cerrado el día anterior.
         0 6 * * * CRON_SECRET="$$CRON_SECRET" FUEL_CRON_INTERNAL_SECRET="$$FUEL_CRON_INTERNAL_SECRET" node /app/scripts/cron-runner.mjs fuel-visionlink-sync >/proc/1/fd/1 2>&1
+        # Variaciones — después de las ventanas Copec (05:30, máx. 5 min) y
+        # VisionLink (06:00, máx. 2 min), para leer los datos del mismo ciclo.
+        30 6 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs fuel-anomaly-detection >/proc/1/fd/1 2>&1
         30 8 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs fuel-statement-notifications >/proc/1/fd/1 2>&1
         # Flota GPS — refresco cada 5 minutos. La app reutiliza una sesión
         # Auth0 en memoria para no autenticar contra OnWay en cada ejecución.

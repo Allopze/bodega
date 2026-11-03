@@ -20,6 +20,7 @@ import { verifyCronSecret } from "@/lib/security/cron-auth"
 import { withCronLock } from "@/lib/services/cron-lock"
 import { isRouteOperational } from "@/lib/services/module-toggles"
 import { FUEL_PATHS } from "@/lib/combustibles/routes"
+import { getCopecSyncDetectionEvidence } from "@/lib/combustibles/fuel-provider-ledger"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -44,7 +45,18 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
     const outcome = await withCronLock("fuel-anomaly-detection", async () => {
       await syncAnomalyRuleCatalog()
-      return runAllBatchRules()
+      const detectionStartedAt = new Date().toISOString()
+      const copecImport = await getCopecSyncDetectionEvidence(detectionStartedAt).catch((err: unknown) => {
+        logger.warn("[cron/fuel-anomaly-detection] No se pudo consultar el cierre de la importación Copec", err)
+        return null
+      })
+      if (copecImport?.completedBeforeDetection) {
+        logger.info("[cron/fuel-anomaly-detection] Importación Copec terminó antes de detectar", { copecImport })
+      } else {
+        logger.warn("[cron/fuel-anomaly-detection] Importación Copec no figura terminada antes de detectar", { copecImport })
+      }
+      const results = await runAllBatchRules()
+      return { results, copecImport }
     })
     if ("skipped" in outcome) {
       logger.warn("[cron/fuel-anomaly-detection] Skipped: otra corrida en curso")
@@ -54,9 +66,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     // Antes una regla sin detector (no_detector) y una que reventó (failed)
     // volvían el mismo {created:0, skipped:0} — el cron respondía 200 aunque
     // reglas reales fallaran. Ahora el resultado global distingue ambos casos.
-    const failed = outcome.filter((r) => r.status === "failed").length
-    logger.info("[cron/fuel-anomaly-detection] Completed", { results: outcome })
-    return respond(fuelCronContractFor({ failed, total: outcome.length }), { results: outcome })
+    const { results, copecImport } = outcome
+    const failed = results.filter((r) => r.status === "failed").length
+    logger.info("[cron/fuel-anomaly-detection] Completed", { results, copecImport })
+    return respond(fuelCronContractFor({ failed, total: results.length }), { results, copecImport })
   } catch (err) {
     logger.error("[cron/fuel-anomaly-detection] Fatal error", err)
     return respond(fuelCronContractFor({ failed: 1, total: 1 }), { error: safeActionMessage(err, "Unknown error") })

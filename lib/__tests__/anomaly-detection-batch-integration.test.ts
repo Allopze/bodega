@@ -1,7 +1,8 @@
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
+import { eq } from "drizzle-orm"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
-import { describe, it, expect, beforeAll, vi } from "vitest"
+import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from "vitest"
 import path from "node:path"
 import * as schema from "@/db/schema"
 import { nanoid } from "@/lib/id"
@@ -285,6 +286,14 @@ describe("variacion_brusca_consumo (batch — sharp consumption change)", () => 
   const importBatchId = nanoid()
   const testUserId = nanoid()
 
+  beforeEach(() => {
+    vi.stubEnv("FUEL_VARIATION_SCAN_FROM", "2026-07-01T00:00:00.000Z")
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
   beforeAll(async () => {
     await inMemoryDb.insert(schema.worksites).values({
       id: wsId, name: "Faena variación", code: `FV-${nanoid().slice(0, 6)}`, isActive: true,
@@ -314,14 +323,14 @@ describe("variacion_brusca_consumo (batch — sharp consumption change)", () => 
         patente: `VAR`, cantidadUnidad: 100, monto: 50000,
         numeroTransacciones: 2, numeroTarjetas: 1,
         periodoDesde: "2026-06-01", periodoHasta: "2026-06-30",
-        rendimientoPromedio: 10,
+        rendimientoPromedio: 10, fuente: "Copec TCT Diesel",
       },
       {
         id: nanoid(), batchId: importBatchId, worksiteId: wsId, vehicleId: vehId,
         patente: `VAR`, cantidadUnidad: 250, monto: 125000,
         numeroTransacciones: 4, numeroTarjetas: 1,
         periodoDesde: "2026-07-01", periodoHasta: "2026-07-31",
-        rendimientoPromedio: 10,
+        rendimientoPromedio: 10, fuente: "Copec TCT Diesel",
       },
     ])
 
@@ -329,6 +338,201 @@ describe("variacion_brusca_consumo (batch — sharp consumption change)", () => 
 
     const { cases } = await getAnomalyCases({ ruleCode: "variacion_brusca_consumo" }, TEST_SESSION)
     expect(cases.length).toBeGreaterThan(0)
+  })
+
+  it("compara Diesel y BlueMax como series separadas y referencia la fila que dispara el caso", async () => {
+    const mixedVehicleId = nanoid()
+    const dieselJuneId = nanoid()
+    const dieselJulyId = nanoid()
+    const bluemaxJuneId = nanoid()
+    const bluemaxJulyId = nanoid()
+    await inMemoryDb.insert(schema.fuelVehicles).values({
+      id: mixedVehicleId, plate: `MIX${nanoid().slice(0, 4).toUpperCase()}`, type: "camion",
+      equipmentTypeId: eqTypeId, worksiteId: wsId, isActive: true,
+    })
+    await inMemoryDb.insert(schema.fuelConsumptionRecords).values([
+      {
+        id: dieselJuneId, batchId: importBatchId, worksiteId: wsId, vehicleId: mixedVehicleId,
+        patente: "MIX", cantidadUnidad: 100, monto: 50000, numeroTransacciones: 2, numeroTarjetas: 1,
+        periodoDesde: "2026-06-01", periodoHasta: "2026-06-30", rendimientoPromedio: 10,
+        fuente: "Copec TCT Diesel", createdAt: "2026-06-01T00:00:00.000Z", updatedAt: "2026-06-01T00:00:00.000Z",
+      },
+      {
+        id: bluemaxJuneId, batchId: importBatchId, worksiteId: wsId, vehicleId: mixedVehicleId,
+        patente: "MIX", cantidadUnidad: 1000, monto: 50000, numeroTransacciones: 2, numeroTarjetas: 1,
+        periodoDesde: "2026-06-01", periodoHasta: "2026-06-30", rendimientoPromedio: 10,
+        fuente: "Copec TCT BlueMax", createdAt: "2026-06-01T00:00:00.000Z", updatedAt: "2026-06-01T00:00:00.000Z",
+      },
+      {
+        id: dieselJulyId, batchId: importBatchId, worksiteId: wsId, vehicleId: mixedVehicleId,
+        patente: "MIX", cantidadUnidad: 150, monto: 75000, numeroTransacciones: 3, numeroTarjetas: 1,
+        periodoDesde: "2026-07-01", periodoHasta: "2026-07-31", rendimientoPromedio: 10,
+        fuente: "Copec TCT Diesel", createdAt: "2026-07-02T00:00:00.000Z", updatedAt: "2026-07-02T00:00:00.000Z",
+      },
+      {
+        id: bluemaxJulyId, batchId: importBatchId, worksiteId: wsId, vehicleId: mixedVehicleId,
+        patente: "MIX", cantidadUnidad: 1100, monto: 55000, numeroTransacciones: 3, numeroTarjetas: 1,
+        periodoDesde: "2026-07-01", periodoHasta: "2026-07-31", rendimientoPromedio: 10,
+        fuente: "Copec TCT BlueMax", createdAt: "2026-07-02T00:00:00.000Z", updatedAt: "2026-07-02T00:00:00.000Z",
+      },
+    ])
+
+    await runAllBatchRules()
+
+    const { cases } = await getAnomalyCases({ ruleCode: "variacion_brusca_consumo" }, TEST_SESSION)
+    const mixedVehicleCases = cases.filter((anomaly) => anomaly.vehicleId === mixedVehicleId)
+    expect(mixedVehicleCases).toHaveLength(1)
+    expect(mixedVehicleCases[0]?.referenceEntityId).toBe(dieselJulyId)
+    expect(mixedVehicleCases[0]?.description).toContain("Diesel")
+
+    await runAllBatchRules()
+    const { cases: repeatedCases } = await getAnomalyCases({ ruleCode: "variacion_brusca_consumo" }, TEST_SESSION)
+    expect(repeatedCases.filter((anomaly) => anomaly.vehicleId === mixedVehicleId)).toHaveLength(1)
+  })
+
+  it("no crea variaciones si el corte está ausente o no es una fecha válida", async () => {
+    const cutoffVehicleId = nanoid()
+    await inMemoryDb.insert(schema.fuelVehicles).values({
+      id: cutoffVehicleId, plate: `CUT${nanoid().slice(0, 4).toUpperCase()}`, type: "camion",
+      equipmentTypeId: eqTypeId, worksiteId: wsId, isActive: true,
+    })
+    await inMemoryDb.insert(schema.fuelConsumptionRecords).values([
+      {
+        id: nanoid(), batchId: importBatchId, worksiteId: wsId, vehicleId: cutoffVehicleId,
+        patente: "CUT", cantidadUnidad: 100, monto: 50000, numeroTransacciones: 2, numeroTarjetas: 1,
+        periodoDesde: "2026-06-01", periodoHasta: "2026-06-30", rendimientoPromedio: 10,
+        fuente: "Copec TCT Diesel", createdAt: "2026-06-01T00:00:00.000Z", updatedAt: "2026-06-01T00:00:00.000Z",
+      },
+      {
+        id: nanoid(), batchId: importBatchId, worksiteId: wsId, vehicleId: cutoffVehicleId,
+        patente: "CUT", cantidadUnidad: 250, monto: 125000, numeroTransacciones: 4, numeroTarjetas: 1,
+        periodoDesde: "2026-07-01", periodoHasta: "2026-07-31", rendimientoPromedio: 10,
+        fuente: "Copec TCT Diesel", createdAt: "2026-07-02T00:00:00.000Z", updatedAt: "2026-07-02T00:00:00.000Z",
+      },
+    ])
+
+    for (const value of ["", "fecha-inválida"]) {
+      vi.stubEnv("FUEL_VARIATION_SCAN_FROM", value)
+      const results = await runAllBatchRules()
+      const variation = results.find((result) => result.ruleCode === "variacion_brusca_consumo")
+      expect(variation?.status).toBe("failed")
+      expect(variation).toHaveProperty("error", expect.stringContaining("FUEL_VARIATION_SCAN_FROM"))
+    }
+
+    const { cases } = await getAnomalyCases({ ruleCode: "variacion_brusca_consumo" }, TEST_SESSION)
+    expect(cases.filter((anomaly) => anomaly.vehicleId === cutoffVehicleId)).toHaveLength(0)
+  })
+
+  it("ignora series históricas intactas y detecta si el período anterior se actualizó después del corte", async () => {
+    const historicalVehicleId = nanoid()
+    const historicalPreviousId = nanoid()
+    await inMemoryDb.insert(schema.fuelVehicles).values({
+      id: historicalVehicleId, plate: `HIS${nanoid().slice(0, 4).toUpperCase()}`, type: "camion",
+      equipmentTypeId: eqTypeId, worksiteId: wsId, isActive: true,
+    })
+    await inMemoryDb.insert(schema.fuelConsumptionRecords).values([
+      {
+        id: historicalPreviousId, batchId: importBatchId, worksiteId: wsId, vehicleId: historicalVehicleId,
+        patente: "HIS", cantidadUnidad: 100, monto: 50000, numeroTransacciones: 2, numeroTarjetas: 1,
+        periodoDesde: "2026-06-01", periodoHasta: "2026-06-30", rendimientoPromedio: 10,
+        fuente: "Copec TCT Diesel", createdAt: "2026-06-01T00:00:00.000Z", updatedAt: "2026-06-01T00:00:00.000Z",
+      },
+      {
+        id: nanoid(), batchId: importBatchId, worksiteId: wsId, vehicleId: historicalVehicleId,
+        patente: "HIS", cantidadUnidad: 250, monto: 125000, numeroTransacciones: 4, numeroTarjetas: 1,
+        periodoDesde: "2026-07-01", periodoHasta: "2026-07-31", rendimientoPromedio: 10,
+        fuente: "Copec TCT Diesel", createdAt: "2026-06-02T00:00:00.000Z", updatedAt: "2026-06-02T00:00:00.000Z",
+      },
+    ])
+
+    await runAllBatchRules()
+    let { cases } = await getAnomalyCases({ ruleCode: "variacion_brusca_consumo" }, TEST_SESSION)
+    expect(cases.filter((anomaly) => anomaly.vehicleId === historicalVehicleId)).toHaveLength(0)
+
+    await inMemoryDb.update(schema.fuelConsumptionRecords)
+      .set({ updatedAt: "2026-07-02T00:00:00.000Z" })
+      .where(eq(schema.fuelConsumptionRecords.id, historicalPreviousId))
+    await runAllBatchRules()
+
+    ;({ cases } = await getAnomalyCases({ ruleCode: "variacion_brusca_consumo" }, TEST_SESSION))
+    expect(cases.filter((anomaly) => anomaly.vehicleId === historicalVehicleId)).toHaveLength(1)
+  })
+
+  it("bloquea duplicados de un caso legado activo hasta que una persona lo cierre", async () => {
+    const legacyVehicleId = nanoid()
+    const currentRecordId = nanoid()
+    await inMemoryDb.insert(schema.fuelVehicles).values({
+      id: legacyVehicleId, plate: `LEG${nanoid().slice(0, 4).toUpperCase()}`, type: "camion",
+      equipmentTypeId: eqTypeId, worksiteId: wsId, isActive: true,
+    })
+    await inMemoryDb.insert(schema.fuelConsumptionRecords).values([
+      {
+        id: nanoid(), batchId: importBatchId, worksiteId: wsId, vehicleId: legacyVehicleId,
+        patente: "LEG", cantidadUnidad: 100, monto: 50000, numeroTransacciones: 2, numeroTarjetas: 1,
+        periodoDesde: "2026-06-01", periodoHasta: "2026-06-30", rendimientoPromedio: 10,
+        fuente: "Copec TCT Diesel", createdAt: "2026-06-01T00:00:00.000Z", updatedAt: "2026-06-01T00:00:00.000Z",
+      },
+      {
+        id: currentRecordId, batchId: importBatchId, worksiteId: wsId, vehicleId: legacyVehicleId,
+        patente: "LEG", cantidadUnidad: 250, monto: 125000, numeroTransacciones: 4, numeroTarjetas: 1,
+        periodoDesde: "2026-07-01", periodoHasta: "2026-07-31", rendimientoPromedio: 10,
+        fuente: "Copec TCT Diesel", createdAt: "2026-07-02T00:00:00.000Z", updatedAt: "2026-07-02T00:00:00.000Z",
+      },
+    ])
+    const [rule] = await inMemoryDb.select({ id: schema.fuelAnomalyRules.id })
+      .from(schema.fuelAnomalyRules).where(eq(schema.fuelAnomalyRules.code, "variacion_brusca_consumo"))
+    expect(rule).toBeDefined()
+    const legacyCaseId = nanoid()
+    await inMemoryDb.insert(schema.fuelAnomalyCases).values({
+      id: legacyCaseId, ruleId: rule!.id, ruleCode: "variacion_brusca_consumo", severity: "medium",
+      worksiteId: wsId, vehicleId: legacyVehicleId, referenceEntityType: "fuel_consumption_record",
+      referenceEntityId: `${legacyVehicleId}:2026-07-01`, description: "Caso legado", status: "open",
+    })
+
+    await runAllBatchRules()
+
+    const [legacyCase] = await inMemoryDb.select({ status: schema.fuelAnomalyCases.status })
+      .from(schema.fuelAnomalyCases).where(eq(schema.fuelAnomalyCases.id, legacyCaseId))
+    const { cases: blockedCases } = await getAnomalyCases({ ruleCode: "variacion_brusca_consumo" }, TEST_SESSION)
+    expect(legacyCase?.status).toBe("open")
+    expect(blockedCases.filter((anomaly) => anomaly.vehicleId === legacyVehicleId)).toHaveLength(1)
+
+    await inMemoryDb.update(schema.fuelAnomalyCases).set({ status: "dismissed" })
+      .where(eq(schema.fuelAnomalyCases.id, legacyCaseId))
+    await runAllBatchRules()
+    const { cases: releasedCases } = await getAnomalyCases({ ruleCode: "variacion_brusca_consumo" }, TEST_SESSION)
+    expect(releasedCases.filter((anomaly) => anomaly.vehicleId === legacyVehicleId)).toHaveLength(2)
+    expect(releasedCases.find((anomaly) => anomaly.id === legacyCaseId)?.status).toBe("dismissed")
+    expect(releasedCases.some((anomaly) => anomaly.vehicleId === legacyVehicleId && anomaly.referenceEntityId === currentRecordId)).toBe(true)
+  })
+
+  it("omite y reporta la fuente que no permite atribuir producto", async () => {
+    const unknownVehicleId = nanoid()
+    await inMemoryDb.insert(schema.fuelVehicles).values({
+      id: unknownVehicleId, plate: `UNK${nanoid().slice(0, 4).toUpperCase()}`, type: "camion",
+      equipmentTypeId: eqTypeId, worksiteId: wsId, isActive: true,
+    })
+    await inMemoryDb.insert(schema.fuelConsumptionRecords).values([
+      {
+        id: nanoid(), batchId: importBatchId, worksiteId: wsId, vehicleId: unknownVehicleId,
+        patente: "UNK", cantidadUnidad: 100, monto: 50000, numeroTransacciones: 2, numeroTarjetas: 1,
+        periodoDesde: "2026-06-01", periodoHasta: "2026-06-30", rendimientoPromedio: 10,
+        fuente: "Proveedor sin producto", createdAt: "2026-06-01T00:00:00.000Z", updatedAt: "2026-06-01T00:00:00.000Z",
+      },
+      {
+        id: nanoid(), batchId: importBatchId, worksiteId: wsId, vehicleId: unknownVehicleId,
+        patente: "UNK", cantidadUnidad: 250, monto: 125000, numeroTransacciones: 4, numeroTarjetas: 1,
+        periodoDesde: "2026-07-01", periodoHasta: "2026-07-31", rendimientoPromedio: 10,
+        fuente: "Proveedor sin producto", createdAt: "2026-07-02T00:00:00.000Z", updatedAt: "2026-07-02T00:00:00.000Z",
+      },
+    ])
+
+    const results = await runAllBatchRules()
+
+    const variation = results.find((result) => result.ruleCode === "variacion_brusca_consumo")
+    expect(variation).toHaveProperty("details.unclassifiedRecords", 2)
+    const { cases } = await getAnomalyCases({ ruleCode: "variacion_brusca_consumo" }, TEST_SESSION)
+    expect(cases.filter((anomaly) => anomaly.vehicleId === unknownVehicleId)).toHaveLength(0)
   })
 })
 

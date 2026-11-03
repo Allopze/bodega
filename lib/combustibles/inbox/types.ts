@@ -83,6 +83,16 @@ export interface FuelInboxSummary {
   byKind: Record<FuelInboxKind, number | null>
   /** Instante ISO del pendiente más antiguo. */
   oldestWaitingSince: string | null
+  /** Conteo por regla y producto; `null` indica que no se pudo calcular. */
+  caseBreakdown?: FuelInboxCaseBreakdownItem[] | null
+}
+
+export type FuelInboxCaseProduct = "diesel" | "bluemax" | "gasoline" | "kerosene" | "historical_unattributed" | "unclassified" | "not_applicable"
+
+export interface FuelInboxCaseBreakdownItem {
+  ruleCode: string
+  product: FuelInboxCaseProduct
+  count: number
 }
 
 /** El dato que explica cada caso, para la hoja de decisión. */

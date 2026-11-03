@@ -163,6 +163,49 @@ function inboxParts(summary: FuelInboxSummary): string[] {
   return parts
 }
 
+function inboxCaseBreakdown(summary: FuelInboxSummary): string | null {
+  const breakdown = summary.caseBreakdown
+  if (!breakdown || breakdown.length === 0) return null
+  const countForRule = (ruleCode: string) => breakdown
+    .filter((item) => item.ruleCode === ruleCode)
+    .reduce((sum, item) => sum + item.count, 0)
+  const parts: string[] = []
+  const regressions = countForRule("kilometraje_regresivo")
+  const meterJumps = countForRule("salto_medidor_implausible")
+  if (regressions > 0) parts.push(`${count(regressions)} ${regressions === 1 ? "regresión de kilometraje" : "regresiones de kilometraje"}`)
+  if (meterJumps > 0) parts.push(`${count(meterJumps)} ${meterJumps === 1 ? "salto de medidor" : "saltos de medidor"}`)
+
+  const variation = breakdown.filter((item) => item.ruleCode === "variacion_brusca_consumo" && item.count > 0)
+  if (variation.length > 0) {
+    const order = ["diesel", "bluemax", "gasoline", "kerosene", "historical_unattributed", "unclassified", "not_applicable"]
+    const labels: Record<string, { singular: string; plural: string }> = {
+      diesel: { singular: "Diesel", plural: "Diesel" },
+      bluemax: { singular: "BlueMax", plural: "BlueMax" },
+      gasoline: { singular: "gasolina", plural: "gasolina" },
+      kerosene: { singular: "kerosene", plural: "kerosene" },
+      historical_unattributed: { singular: "histórico sin producto atribuible", plural: "históricos sin producto atribuible" },
+      unclassified: { singular: "sin producto identificado", plural: "sin producto identificado" },
+      not_applicable: { singular: "sin producto", plural: "sin producto" },
+    }
+    const productParts = [...variation]
+      .sort((a, b) => order.indexOf(a.product) - order.indexOf(b.product))
+      .map((item) => {
+        const label = labels[item.product] ?? { singular: item.product, plural: item.product }
+        return `${count(item.count)} ${item.count === 1 ? label.singular : label.plural}`
+      })
+    parts.push(`variación brusca: ${productParts.join(" · ")}`)
+  }
+
+  const knownRules = new Set(["kilometraje_regresivo", "salto_medidor_implausible", "variacion_brusca_consumo"])
+  const otherRules = new Map<string, number>()
+  for (const item of breakdown) {
+    if (knownRules.has(item.ruleCode)) continue
+    otherRules.set(item.ruleCode, (otherRules.get(item.ruleCode) ?? 0) + item.count)
+  }
+  for (const [ruleCode, total] of otherRules) parts.push(`${count(total)} ${total === 1 ? `caso de ${ruleCode}` : `casos de ${ruleCode}`}`)
+  return parts.length > 0 ? parts.join(" · ") : null
+}
+
 function reviewStep(input: PanelStepsInput, link: (href: string) => string, past: boolean, today: string): Omit<PanelStep, "number"> {
   const base = { key: "revisar", label: "Por revisar", heading: "Falta decidir" } as const
   const { inbox } = input
@@ -187,14 +230,18 @@ function reviewStep(input: PanelStepsInput, link: (href: string) => string, past
     })
   }
   const parts = inboxParts(inbox)
+  const onlyCases = inbox.byKind.caso === inbox.total && inbox.byKind.carga === 0 && inbox.byKind.patente === 0 && inbox.byKind.pedido === 0
+  const caseBreakdown = inboxCaseBreakdown(inbox)
   const oldest = inbox.oldestWaitingSince ? waitingPhrase(inbox.oldestWaitingSince, today) : null
-  const oldestText = oldest && oldest !== "Llegó hoy" ? ` Lo más antiguo: ${oldest.charAt(0).toLowerCase()}${oldest.slice(1)}.` : ""
+  const oldestText = oldest && oldest !== "Llegó hoy"
+    ? ` ${onlyCases ? "El caso pendiente más antiguo" : "Lo más antiguo por revisar"}: ${oldest.charAt(0).toLowerCase()}${oldest.slice(1)}.`
+    : ""
   return finish({
     ...base,
     status: "pendiente",
     figure: count(inbox.total),
-    figureNote: "por decidir",
-    phrase: `${past ? "Quedaron sin decidir: " : ""}${parts.length > 0 ? `${parts.join(", ")}.` : ""}${oldestText}`.trim(),
+    figureNote: onlyCases ? "casos por revisar" : "por decidir",
+    phrase: `${past ? "Quedaron sin decidir: " : ""}${parts.length > 0 ? `${parts.join(", ")}.` : ""}${caseBreakdown ? ` ${caseBreakdown}.` : ""}${oldestText}`.trim(),
     cta: "Revisar",
     href: link(FUEL_PATHS.revisar),
   })

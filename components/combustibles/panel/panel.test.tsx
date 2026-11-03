@@ -61,6 +61,7 @@ describe("tira de pasos", () => {
     expect(within(links[0]!).getAllByText("Sin datos")).toHaveLength(2)
     expect(screen.queryByText("Listo")).not.toBeInTheDocument()
     expect(screen.getByRole("heading", { level: 2, name: "Pasos para cerrar el período" })).toBeInTheDocument()
+    expect(within(links[1]!).getByText("Paso 2")).toBeInTheDocument()
     expect(within(links[1]!).getByRole("heading", { level: 3, name: "Falta decidir" })).toBeInTheDocument()
   })
 

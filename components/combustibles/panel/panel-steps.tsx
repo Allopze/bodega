@@ -70,7 +70,7 @@ export function PanelStepsStrip({ steps }: { steps: PanelStep[] }) {
                 <span aria-hidden className={cn("absolute inset-x-0 top-0 h-[3px]", style.bar)} />
                 <span className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-sm text-[var(--color-text-muted)]">
                   <span className="flex items-center gap-2">
-                    <span className="font-mono text-xs text-[var(--color-text-subtle)]">{step.number}</span>
+                    <span className="font-mono text-xs text-[var(--color-text-subtle)]">Paso {step.number}</span>
                     {step.label}
                   </span>
                   <Badge variant={style.badge} size="sm">{step.statusLabel}</Badge>

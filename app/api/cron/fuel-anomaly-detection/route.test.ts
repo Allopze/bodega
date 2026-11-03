@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   isRouteOperational: vi.fn(),
   syncAnomalyRuleCatalog: vi.fn(),
   runAllBatchRules: vi.fn(),
+  getCopecSyncDetectionEvidence: vi.fn(),
   withCronLock: vi.fn(async (_job: string, run: () => Promise<unknown>) => run()),
 }))
 
@@ -13,6 +14,7 @@ vi.mock("@/lib/security/cron-auth", () => ({ verifyCronSecret: (...args: unknown
 vi.mock("@/lib/services/module-toggles", () => ({ isRouteOperational: (...args: unknown[]) => mocks.isRouteOperational(...args) }))
 vi.mock("@/lib/combustibles/anomaly-cases", () => ({ syncAnomalyRuleCatalog: (...args: unknown[]) => mocks.syncAnomalyRuleCatalog(...args) }))
 vi.mock("@/lib/combustibles/anomaly-detector", () => ({ runAllBatchRules: (...args: unknown[]) => mocks.runAllBatchRules(...args) }))
+vi.mock("@/lib/combustibles/fuel-provider-ledger", () => ({ getCopecSyncDetectionEvidence: (...args: unknown[]) => mocks.getCopecSyncDetectionEvidence(...args) }))
 vi.mock("@/lib/services/cron-lock", () => ({ withCronLock: (...args: [string, () => Promise<unknown>]) => mocks.withCronLock(...args) }))
 
 const { GET } = await import("./route")
@@ -34,6 +36,7 @@ describe("GET /api/cron/fuel-anomaly-detection", () => {
       { ruleCode: "litros_supera_capacidad", created: 0, skipped: 0, status: "completed" },
       { ruleCode: "sello_repetido", created: 0, skipped: 0, status: "no_detector" },
     ])
+    mocks.getCopecSyncDetectionEvidence.mockResolvedValue({ status: "success", startedAt: "2026-11-02T05:30:00.000Z", finishedAt: "2026-11-02T05:35:00.000Z", rowsAccepted: 4, completedBeforeDetection: true })
   })
 
   it("rejects an unauthorized request without running anything", async () => {
@@ -58,6 +61,15 @@ describe("GET /api/cron/fuel-anomaly-detection", () => {
     const body = await response.json()
     expect(body).toMatchObject({ ok: true, outcome: "success", code: "FUEL_CRON_SUCCESS" })
     expect(body.results).toHaveLength(2)
+    expect(body.copecImport).toMatchObject({ status: "success", completedBeforeDetection: true })
+    expect(mocks.getCopecSyncDetectionEvidence).toHaveBeenCalledWith(expect.any(String))
+  })
+
+  it("registra cuando Copec aún no había terminado antes de detectar", async () => {
+    mocks.getCopecSyncDetectionEvidence.mockResolvedValue({ status: "running", startedAt: "2026-11-02T05:30:00.000Z", finishedAt: null, rowsAccepted: 0, completedBeforeDetection: false })
+    const response = await GET(request())
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ copecImport: { status: "running", completedBeforeDetection: false } })
   })
 
   // CO-029/CO-039: antes esto era indistinguible de un 200 sin novedad.

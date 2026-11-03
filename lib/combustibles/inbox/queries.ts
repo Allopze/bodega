@@ -42,12 +42,14 @@ import {
   inboxRowKey,
   parseInboxRowKey,
   type FuelInboxEvidence,
+  type FuelInboxCaseBreakdownItem,
   type FuelInboxItemDetail,
   type FuelInboxKind,
   type FuelInboxPage,
   type FuelInboxRow,
   type FuelInboxSummary,
 } from "./types"
+import { FUEL_PRODUCT_IDS, fuelProductIdForLegacy } from "@/lib/combustibles/fuel-products"
 
 /**
  * Lectura de la bandeja «Por revisar»: une cuatro tipos de pendiente en una lista.
@@ -126,6 +128,12 @@ function refMonthSql(typeColumn: AnyColumn, idColumn: AnyColumn, fallback: AnyCo
       when 'fuel_tae_submission' then (select to_char(s.loaded_at at time zone 'America/Santiago', 'YYYY-MM') from fuel_tae_submissions s where s.id = ${idColumn})
       when 'fuel_operation_record' then (select substr(o.fecha, 1, 7) from fuel_operation_records o where o.id = ${idColumn})
       when 'fuel_load' then (select l.month from fuel_loads l where l.id = ${idColumn})
+      when 'fuel_consumption_record' then (select substr(c.periodo_desde, 1, 7) from fuel_consumption_records c where c.id = ${idColumn})
+    end,
+    case
+      when ${typeColumn} = 'fuel_consumption_record'
+        and split_part(${idColumn}, ':', 2) ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+      then substr(split_part(${idColumn}, ':', 2), 1, 7)
     end,
     to_char(${fallback} at time zone 'America/Santiago', 'YYYY-MM')
   )`
@@ -411,6 +419,46 @@ async function casoCount(ctx: Ctx, view: View): Promise<{ n: number; oldest: str
     .from(fuelAnomalyCases)
     .where(casoWhere(ctx, view))
   return { n: row?.n ?? 0, oldest: row?.oldest ? iso(row.oldest) : null }
+}
+
+function caseProduct(row: { referenceEntityType: string | null; referenceEntityId: string | null; source: string | null }): FuelInboxCaseBreakdownItem["product"] {
+  if (row.referenceEntityType !== "fuel_consumption_record") return "not_applicable"
+  if (row.referenceEntityId?.includes(":")) return "historical_unattributed"
+  const productId = fuelProductIdForLegacy(row.source)
+  if (productId === FUEL_PRODUCT_IDS.diesel) return "diesel"
+  if (productId === FUEL_PRODUCT_IDS.bluemax) return "bluemax"
+  if (productId === FUEL_PRODUCT_IDS.gasoline) return "gasoline"
+  if (productId === FUEL_PRODUCT_IDS.kerosene) return "kerosene"
+  return "unclassified"
+}
+
+async function caseBreakdown(ctx: Ctx): Promise<FuelInboxCaseBreakdownItem[] | null> {
+  try {
+    const rows = await db.select({
+      ruleCode: fuelAnomalyCases.ruleCode,
+      referenceEntityType: fuelAnomalyCases.referenceEntityType,
+      referenceEntityId: fuelAnomalyCases.referenceEntityId,
+      source: fuelConsumptionRecords.fuente,
+    })
+      .from(fuelAnomalyCases)
+      .leftJoin(fuelConsumptionRecords, and(
+        eq(fuelAnomalyCases.referenceEntityType, "fuel_consumption_record"),
+        eq(fuelAnomalyCases.referenceEntityId, fuelConsumptionRecords.id),
+      ))
+      .where(casoWhere(ctx, "pendientes"))
+    const counts = new Map<string, FuelInboxCaseBreakdownItem>()
+    for (const row of rows) {
+      const product = caseProduct(row)
+      const key = `${row.ruleCode}\u0000${product}`
+      const existing = counts.get(key)
+      if (existing) existing.count++
+      else counts.set(key, { ruleCode: row.ruleCode, product, count: 1 })
+    }
+    return [...counts.values()].sort((a, b) => a.ruleCode.localeCompare(b.ruleCode) || a.product.localeCompare(b.product))
+  } catch (error) {
+    logger.error("[combustibles/inbox] desglose de casos falló", error)
+    return null
+  }
 }
 
 /* ──────────────────────────────── Patentes ───────────────────────────────────── */
@@ -741,7 +789,8 @@ export async function summarizeFuelInbox(session: Session, period: ResolvedFuelP
   const values = Object.values(byKind)
   const total = values.some((value) => value === null) ? null : values.reduce<number>((sum, value) => sum + (value ?? 0), 0)
   const oldest = FUEL_INBOX_KINDS.map((kind) => counts[kind].oldest).filter((value): value is string => Boolean(value)).sort()[0] ?? null
-  return { total, byKind, oldestWaitingSince: oldest }
+  const breakdown = counts.caso.n === null ? null : await caseBreakdown(ctx)
+  return { total, byKind, oldestWaitingSince: oldest, caseBreakdown: breakdown }
 }
 
 /** Conteos de «Decididas» por tipo, para los segmentos de esa vista (misma ventana y filtros que `getFuelInbox`). */
