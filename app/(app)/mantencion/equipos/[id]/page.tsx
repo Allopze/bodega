@@ -7,6 +7,7 @@ import { formatNumber } from "@/lib/mantencion/format"
 import { equipmentScope, recordVisibility, recordVisibilitySql, viewerFromSession } from "@/lib/services/mantencion/access"
 import { countEquipmentRecords } from "@/lib/services/mantencion/equipment"
 import { loadEquipmentInsurance, loadEquipmentWorkOrders, loadLifeRows, loadLifeTotals } from "@/lib/services/mantencion/equipment-life"
+import { listHistoricalRecords } from "@/lib/services/mantencion/historical-import"
 import { listEquipmentHistory } from "@/lib/services/mantencion/equipment-history"
 import { loadFleet } from "@/lib/services/mantencion/fleet"
 import { LIFE_PAGE_SIZE } from "@/components/mantencion/jefatura/equipos/equipment-life-section"
@@ -43,7 +44,7 @@ export default async function EquipmentDetailPage({
   const canManage = can(session, "mant:equipment:manage")
   // La hoja de vida y sus totales respetan el alcance de lectura: un supervisor sólo ve su faena y lo propio.
   const visibility = recordVisibilitySql(recordVisibility(viewer))
-  const [history, life, totals, insurance, recordCount, catalogs, workOrders] = await Promise.all([
+  const [history, life, totals, insurance, recordCount, catalogs, workOrders, historical] = await Promise.all([
     listEquipmentHistory(id),
     loadLifeRows(id, visibility, { limit: lifeLimit }),
     loadLifeTotals(id, visibility),
@@ -52,6 +53,7 @@ export default async function EquipmentDetailPage({
     canManage ? loadEquipmentFormCatalogs() : Promise.resolve(null),
     // Las OT tienen su propio alcance (`mant:ot:view_*`); sin permiso, `null` y la sección no se dibuja.
     loadEquipmentWorkOrders(id, viewer),
+    listHistoricalRecords(viewer, { vehicleId: id }),
   ])
 
   const { status, workshop } = row
@@ -80,7 +82,7 @@ export default async function EquipmentDetailPage({
     },
     workshop: workshop ? { entryDate: workshop.entryDate, daysStopped: workshop.daysStopped, stale: workshop.stale, lastActivityDate: workshop.lastActivityDate } : null,
     recordCount,
-    life: { rows: life.rows, totals, hasMore: life.hasMore, limit: lifeLimit, workOrders },
+    life: { rows: life.rows, totals, hasMore: life.hasMore, limit: lifeLimit, workOrders, historical: { total: historical.total, vehicleId: id } },
     insurance,
     canViewFleet: can(session, "flota:view"),
     history,

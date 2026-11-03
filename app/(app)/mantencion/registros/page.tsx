@@ -157,7 +157,14 @@ export default async function RecordsPage({ searchParams }: { searchParams: Prom
         title="Registros de mantención"
         description="Las mantenciones firmadas por los mecánicos. Un registro anulado sigue visible, marcado, pero no cuenta en los indicadores."
         breadcrumb={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Mantención" }, { label: "Registros" }]}
-        actions={canExport ? <RecordsExportButton params={params} /> : undefined}
+        actions={
+          <>
+            {(can(session, "mant:records:view_worksite") || can(session, "mant:records:view_all")) && (
+              <Button asChild variant="secondary"><Link href="/mantencion/registros/historicos">Historial anterior</Link></Button>
+            )}
+            {canExport && <RecordsExportButton params={params} />}
+          </>
+        }
       />
 
       <section aria-labelledby="registros-indicadores" className="mb-5">

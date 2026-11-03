@@ -441,4 +441,5 @@ export const pgliteTestFiles = [
   "lib/__tests__/mantencion-records-pglite.test.ts",
   // Mantención de equipos: hoja de vida de la ficha (alcance, anuladas, totales), seguro y Excel del historial.
   "lib/__tests__/mantencion-equipment-life-pglite.test.ts",
+  "lib/__tests__/mantencion-historical-import-pglite.test.ts",
 ]
