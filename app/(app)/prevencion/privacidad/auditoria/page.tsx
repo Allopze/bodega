@@ -11,6 +11,7 @@ import {
   listGeneralLibrarySensitiveAccess,
   listPreventionSensitiveAccessAudit,
 } from "@/lib/services/prevention-privacy"
+import { formatDateTime } from "@/lib/utils"
 
 export const metadata: Metadata = { title: "Auditoría sensible de Prevención" }
 
@@ -51,7 +52,7 @@ export default async function PreventionPrivacyAuditPage() {
             <TableBody>
               {domainAudit.map((entry) => (
                 <TableRow key={entry.id}>
-                  <TableCell className="text-xs">{entry.createdAt.slice(0, 16).replace("T", " ")}</TableCell>
+                  <TableCell className="text-xs">{formatDateTime(entry.createdAt)}</TableCell>
                   <TableCell className="font-mono text-xs">{entry.domain}</TableCell>
                   <TableCell className="font-mono text-xs">{entry.action}</TableCell>
                   <TableCell><MetaBadge meta={{ label: `${entry.outcome === "granted" ? "Permitido" : "Denegado"}`, variant: entry.outcome === "granted" ? "success" : "danger" }} /></TableCell>
@@ -75,7 +76,7 @@ export default async function PreventionPrivacyAuditPage() {
             <TableBody>
               {libraryAudit.map((entry) => (
                 <TableRow key={entry.auditId}>
-                  <TableCell className="text-xs">{entry.createdAt.slice(0, 16).replace("T", " ")}</TableCell>
+                  <TableCell className="text-xs">{formatDateTime(entry.createdAt)}</TableCell>
                   <TableCell>
                     <Link href={`/prevencion/documentacion/${entry.documentId}`} className="text-sm font-medium text-[var(--color-primary)] hover:underline">
                       {entry.documentTitle}

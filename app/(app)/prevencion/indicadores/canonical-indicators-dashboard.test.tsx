@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest"
 import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import type { PropsWithChildren } from "react"
 import type { CanonicalIndicatorResult } from "@/lib/prevention/safety-indicators-calc"
@@ -139,5 +139,47 @@ describe("CanonicalIndicatorsDashboard", () => {
     render(<CanonicalIndicatorsDashboard view={makeView()} currentYear={2026} canManage={false} canClose currentUserId="user-1" />)
 
     expect(screen.getAllByRole("button", { name: "Registrar" }).length).toBeGreaterThan(0)
+  })
+})
+
+/**
+ * Fase 0.6 (AUDITORIA_VISUALIZACIONES_CHOME): sin ningún mes con denominadores,
+ * el «mes vigente» salía de `new Date().getMonth()`, que mide en la zona de
+ * quien renderiza (UTC en el servidor, la del navegador en el cliente). El 31 de
+ * enero a las 23:00 de Chile ya es febrero en UTC: la tira mostraba «Febrero», y
+ * en Nochevieja «Enero» del año siguiente con el semestre equivocado.
+ */
+describe("CanonicalIndicatorsDashboard — mes vigente sin denominadores", () => {
+  let previousTz: string | undefined
+  beforeAll(() => {
+    previousTz = process.env.TZ
+    process.env.TZ = "UTC"
+  })
+  afterAll(() => {
+    if (previousTz === undefined) delete process.env.TZ
+    else process.env.TZ = previousTz
+  })
+  afterEach(() => vi.useRealTimers())
+
+  function viewWithoutDenominators(): CanonicalIndicatorYearView {
+    const view = makeView()
+    const group = view.groups[0]!
+    group.monthly = group.monthly.map((item) => ({ ...item, denominatorSlots: 0 }))
+    return view
+  }
+
+  it.each([
+    // Chile 2026-01-31 23:00 (UTC-3); en UTC ya es 1 de febrero.
+    ["2026-02-01T02:00:00Z", "Enero", "S1"],
+    // Chile 2026-12-31 23:00 (UTC-3); en UTC ya es 1 de enero de 2027.
+    ["2027-01-01T02:00:00Z", "Diciembre", "S2"],
+  ])("a las 23:00 de Chile (%s) muestra %s y el semestre %s", (instant, month, semester) => {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(new Date(instant))
+
+    render(<CanonicalIndicatorsDashboard view={viewWithoutDenominators()} currentYear={2026} canManage={false} canClose={false} currentUserId="user-1" />)
+
+    expect(screen.getByText(`Frecuencia · ${month}`)).toBeDefined()
+    expect(screen.getByText(`Gravedad · ${semester}`)).toBeDefined()
   })
 })

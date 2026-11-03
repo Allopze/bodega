@@ -30,10 +30,13 @@ export default async function CapaPage({ searchParams }: { searchParams: Promise
   const worksite = raw.worksite && raw.worksite !== "all" ? raw.worksite : undefined
   const quickFilter = isCapaQuickFilter(raw.vista) && raw.vista !== "all" ? raw.vista : undefined
 
+  // Lista y tarjetas comparten los filtros de servidor: el número de una tarjeta
+  // es lo que la lista muestra al activarla (la tarjeta `vista` es lo contado).
+  const listFilters = { status: status as CapaStatus, sourceType: source, worksiteId: worksite }
   const [{ rows: actions, total }, worksites, counts] = await Promise.all([
-    listCapaActionsPage({ ...access, status: status as CapaStatus, sourceType: source, worksiteId: worksite, quickFilter, limit: pageSize, offset: pagination.offset }),
+    listCapaActionsPage({ ...access, ...listFilters, quickFilter, limit: pageSize, offset: pagination.offset }),
     listCapaWorksites(access),
-    getCapaDashboardCounts(access),
+    getCapaDashboardCounts({ ...access, ...listFilters }),
   ])
 
   const resolvedPagination = resolvePagination({ pageParam: raw.page, totalItems: total, pageSize })

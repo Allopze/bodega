@@ -62,6 +62,38 @@ function capaQuickFilterWhere(filter: CapaQuickFilter | undefined) {
   )
 }
 
+/**
+ * Filtros que la lista de /prevencion/capa resuelve en el servidor. Las tarjetas
+ * de la pantalla (`getCapaDashboardCounts`) se construyen con ESTA misma
+ * cláusula y esta misma puerta de alcance: si cada una armara la suya, el número
+ * de una tarjeta y las filas que aparecen al activarla terminarían separándose.
+ */
+type CapaListFilters = {
+  scope: WorksiteScope
+  status?: CapaStatus
+  sourceType?: string
+  worksiteId?: string
+}
+
+/** Falso cuando el alcance no deja ver nada (o la faena pedida es ajena): lista y tarjetas van en vacío. */
+function capaListIsVisible(args: Pick<CapaListFilters, "scope" | "worksiteId">) {
+  if (args.scope.mode === "none") return false
+  return !args.worksiteId || scopeAllows(args.scope, args.worksiteId)
+}
+
+function capaListWhere(args: CapaListFilters) {
+  const scopeWhere = args.worksiteId
+    ? eq(preventionCapaActions.worksiteId, args.worksiteId)
+    : args.scope.mode === "some"
+      ? inArray(preventionCapaActions.worksiteId, args.scope.ids)
+      : undefined
+  return and(
+    scopeWhere,
+    args.status ? eq(preventionCapaActions.status, args.status) : undefined,
+    args.sourceType ? eq(preventionCapaActions.sourceType, args.sourceType) : undefined,
+  )
+}
+
 const capaCreateBaseSchema = z.object({
   sourceType: z.enum(["pdtp", "sst_evaluation", "ppa", "incident", "risk", "legal_requirement", "training", "work_permit", "inspection", "cphs", "emergency", "epp", "external_engagement", "cgrd", "gps_onway", "manual"]),
   sourceId: z.string().min(1).max(200),
@@ -937,21 +969,10 @@ export async function listCapaActionsPage(args: {
   offset?: number
 }) {
   requirePermission(args.permissions, "prevention:capa:view")
-  if (args.scope.mode === "none") return { rows: [], total: 0, limit: args.limit ?? 50, offset: args.offset ?? 0 }
-  if (args.worksiteId && !scopeAllows(args.scope, args.worksiteId)) return { rows: [], total: 0, limit: args.limit ?? 50, offset: args.offset ?? 0 }
+  if (!capaListIsVisible(args)) return { rows: [], total: 0, limit: args.limit ?? 50, offset: args.offset ?? 0 }
   const effectiveLimit = Math.min(args.limit ?? 50, 500)
   const effectiveOffset = args.offset ?? 0
-  const scopeWhere = args.worksiteId
-    ? eq(preventionCapaActions.worksiteId, args.worksiteId)
-    : args.scope.mode === "some"
-      ? inArray(preventionCapaActions.worksiteId, args.scope.ids)
-      : undefined
-  const where = and(
-    scopeWhere,
-    args.status ? eq(preventionCapaActions.status, args.status) : undefined,
-    args.sourceType ? eq(preventionCapaActions.sourceType, args.sourceType) : undefined,
-    capaQuickFilterWhere(args.quickFilter),
-  )
+  const where = and(capaListWhere(args), capaQuickFilterWhere(args.quickFilter))
   const [rows, [totalRow]] = await Promise.all([
     db.select().from(preventionCapaActions).where(where).orderBy(desc(preventionCapaActions.createdAt)).limit(effectiveLimit).offset(effectiveOffset),
     db.select({ count: sql<number>`count(*)::int` }).from(preventionCapaActions).where(where),
@@ -993,17 +1014,19 @@ export async function getCapaActionBundle(args: {
   return { action, transitions, followups, evidence }
 }
 
-export async function getCapaDashboardCounts(args: {
-  scope: WorksiteScope
+/**
+ * Tarjetas de /prevencion/capa. Honran los mismos filtros de servidor que
+ * `listCapaActionsPage` (faena, fuente, estado) y quedan sin filtro cuando se
+ * llaman sólo con el alcance —el tablero de inicio—. El filtro rápido (`vista`)
+ * no entra: es la tarjeta misma, lo que se está contando.
+ */
+export async function getCapaDashboardCounts(args: CapaListFilters & {
   permissions: readonly string[]
 }) {
   requirePermission(args.permissions, "prevention:capa:view")
-  if (args.scope.mode === "none") {
+  if (!capaListIsVisible(args)) {
     return { open: 0, overdue: 0, pendingVerification: 0, unreconciled: 0, immediateStop: 0 }
   }
-  const scopeWhere = args.scope.mode === "some"
-    ? inArray(preventionCapaActions.worksiteId, args.scope.ids)
-    : undefined
   const today = chileToday()
   const [row] = await db.select({
     open: sql<number>`count(*) filter (where ${preventionCapaActions.status} not in ('closed', 'cancelled'))::int`,
@@ -1011,7 +1034,7 @@ export async function getCapaDashboardCounts(args: {
     pendingVerification: sql<number>`count(*) filter (where ${preventionCapaActions.status} = 'pending_verification')::int`,
     unreconciled: sql<number>`count(*) filter (where ${preventionCapaActions.reconciliationStatus} <> 'reconciled')::int`,
     immediateStop: sql<number>`count(*) filter (where ${preventionCapaActions.requiresImmediateStop} = true and ${preventionCapaActions.status} not in ('closed', 'cancelled'))::int`,
-  }).from(preventionCapaActions).where(scopeWhere)
+  }).from(preventionCapaActions).where(capaListWhere(args))
   return {
     open: row?.open ?? 0,
     overdue: row?.overdue ?? 0,

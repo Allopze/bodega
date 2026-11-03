@@ -15,6 +15,7 @@ import { denominatorDialogLabel, IndicatorDenominatorDialog } from "./indicator-
 import { DENOMINATOR_STATUS_LABELS, labelOrRaw, RECONCILIATION_LABELS } from "./denominator-labels"
 import { IndicatorPeriodCloseButton } from "./indicator-period-close-button"
 import { personSexLabel } from "@/lib/person-sex"
+import { chileDateParts } from "@/lib/utils"
 
 const MONTHS = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
 
@@ -62,7 +63,8 @@ export function CanonicalIndicatorsDashboard({ view, currentYear, canManage, can
   const latestMonth = useMemo(() => {
     if (!group) return 1
     for (let month = 12; month >= 1; month--) if (group.monthly[month - 1]?.denominatorSlots) return month
-    return Math.min(new Date().getMonth() + 1, 12)
+    // Sin denominadores en ningún mes: el mes civil de Chile, no el de la zona de quien renderiza.
+    return chileDateParts().month
   }, [group])
   if (!group) return <EmptyState title="Sin faenas visibles" description="Asigna una faena al usuario para calcular indicadores dentro de su alcance." action={<Button asChild variant="secondary" size="sm"><Link href="/admin/usuarios">Gestionar asignaciones</Link></Button>} />
   const currentMonth = group.monthly[latestMonth - 1]!

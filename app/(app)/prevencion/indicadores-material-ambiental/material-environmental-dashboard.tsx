@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useState } from "react"
 import dynamic from "next/dynamic"
 import { useRouter } from "next/navigation"
 import { Siren, Wrench, Drop } from "@phosphor-icons/react/dist/ssr"
@@ -46,17 +46,12 @@ export function MaterialEnvironmentalDashboard({
   )
   const selectedData = eventData.find((item) => item.worksiteId === selectedWorksiteId)
 
-  const totals = useMemo(() => {
-    const result = { dangerousIncidents: 0, materialDamage: 0, environmentalSpills: 0, totalEvents: 0 }
-    for (const item of eventData) {
-      if (item.worksiteId === "total") continue
-      result.dangerousIncidents += item.annual.dangerousIncidents
-      result.materialDamage += item.annual.materialDamage
-      result.environmentalSpills += item.annual.environmentalSpills
-    }
-    result.totalEvents = result.dangerousIncidents + result.materialDamage + result.environmentalSpills
-    return result
-  }, [eventData])
+  // «Total eventos» sigue a la faena elegida, igual que las otras tres cifras de
+  // la tira. La entrada "total" ya trae la suma de todas las faenas visibles
+  // (`getMaterialEnvironmentalEvents`), así que elegirla da el total general.
+  const totalEvents = selectedData
+    ? selectedData.annual.dangerousIncidents + selectedData.annual.materialDamage + selectedData.annual.environmentalSpills
+    : 0
 
   const yearOptions = Array.from({ length: 6 }, (_, index) => currentYear - index)
   if (!yearOptions.includes(year)) yearOptions.push(year)
@@ -96,7 +91,7 @@ export function MaterialEnvironmentalDashboard({
       <div className="grid grid-cols-2 overflow-hidden border-y border-[var(--color-border)] lg:grid-cols-4">
         <div className="border-r border-[var(--color-border)] px-4 py-3">
           <span className="text-eyebrow">Total eventos</span>
-          <span className="mt-1 block font-mono text-xl font-semibold">{totals.totalEvents}</span>
+          <span className="mt-1 block font-mono text-xl font-semibold">{totalEvents}</span>
           <span className="text-xs text-[var(--color-text-subtle)]">Suma de todos los tipos</span>
         </div>
         <div className="border-r border-[var(--color-border)] px-4 py-3">

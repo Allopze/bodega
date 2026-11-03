@@ -8,6 +8,7 @@ import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { CanonicalIndicatorsDashboard } from "./canonical-indicators-dashboard"
 import { ExportIndicadoresButton } from "./indicadores-export-button"
 import { PdtpScheduledActivityPanelServer } from "@/components/prevention/pdtp-scheduled-activity-panel-server"
+import { codeYear } from "@/lib/utils"
 
 export const metadata: Metadata = { title: "Indicadores de seguridad y salud en el trabajo" }
 
@@ -24,7 +25,8 @@ export default async function IndicadoresPage({ searchParams }: IndicadoresPageP
   const canManage = can(session, "prevention:indicadores:manage")
   const hasClosePermission = can(session, "prevention:indicadores:close")
   const query = await searchParams
-  const currentYear = new Date().getFullYear()
+  // El año de Chile, no el del reloj del servidor (UTC en producción).
+  const currentYear = codeYear()
   const year = Number(query.year) || currentYear
 
   const canonicalView = await getCanonicalSafetyIndicatorYear(year, resolveWorksiteScope(session))

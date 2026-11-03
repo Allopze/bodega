@@ -154,7 +154,7 @@ OC-ejemplo-pdfcn.pdf
 # Worktrees de sesión (EnterWorktree) — scratch local, no código fuente
 .claude/worktrees/
 
-auditoria/
+/auditoria/
 # Documentation credentials (do not commit)
 docs/.auth
 

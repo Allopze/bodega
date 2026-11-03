@@ -22,7 +22,7 @@ const INDICATOR_LABELS: Record<string, string> = {
   pending: "pendientes",
 }
 
-export default async function IncidentsPage({ searchParams }: { searchParams: Promise<{ worksiteId?: string; year?: string; monthFrom?: string; monthTo?: string; indicator?: string }> }) {
+export default async function IncidentsPage({ searchParams }: { searchParams: Promise<{ worksiteId?: string; year?: string; monthFrom?: string; monthTo?: string; indicator?: string; status?: string; eventType?: string }> }) {
   let session
   try { session = await requirePermission("prevention:incidents:view") }
   catch { redirect("/forbidden") }
@@ -39,17 +39,26 @@ export default async function IncidentsPage({ searchParams }: { searchParams: Pr
   const monthTo = Number.isInteger(monthToRaw) && monthToRaw >= 1 && monthToRaw <= 12 ? monthToRaw : undefined
   const effectiveMonthFrom = monthFrom && monthTo && monthFrom > monthTo ? undefined : monthFrom
   const effectiveMonthTo = monthFrom && monthTo && monthFrom > monthTo ? undefined : monthTo
+  const listFilters = {
+    worksiteId: query.worksiteId || undefined,
+    year: Number.isInteger(year) && year >= 2024 && year <= 2100 ? year : undefined,
+    monthFrom: effectiveMonthFrom,
+    monthTo: effectiveMonthTo,
+    indicator,
+  }
+  // Estado y tipo de evento se filtran en el cliente sobre esta misma lista
+  // (viajan en la URL como `status` y `eventType`). Las tarjetas los respetan para
+  // que su número sea lo que la lista muestra al activarlas; el filtro rápido
+  // (`quick`) es la tarjeta misma y no entra.
+  const countFilters = {
+    ...listFilters,
+    status: query.status && query.status !== "all" ? query.status : undefined,
+    eventType: query.eventType && query.eventType !== "all" ? query.eventType : undefined,
+  }
   const [incidents, worksites, counts] = await Promise.all([
-    listPreventionIncidents({
-      access,
-      worksiteId: query.worksiteId || undefined,
-      year: Number.isInteger(year) && year >= 2024 && year <= 2100 ? year : undefined,
-      monthFrom: effectiveMonthFrom,
-      monthTo: effectiveMonthTo,
-      indicator,
-    }),
+    listPreventionIncidents({ access, ...listFilters }),
     listIncidentWorksites(access),
-    getIncidentDashboardCounts(access),
+    getIncidentDashboardCounts(access, countFilters),
   ])
   const canReport = can(session, "prevention:incidents:report")
   const canExport = can(session, "prevention:incidents:export")

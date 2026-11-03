@@ -904,31 +904,39 @@ export async function classifyIncidentPersonForIndicators(args: {
   return result
 }
 
-export async function listPreventionIncidents(args: {
-  access: IncidentAccess
-  status?: IncidentStatus
+/**
+ * Filtros de la lista de /prevencion/incidentes. Las tarjetas de la pantalla
+ * (`getIncidentDashboardCounts`) se construyen con ESTA misma cláusula y esta
+ * misma puerta de permiso y alcance: si cada una armara la suya, el número de una
+ * tarjeta y las filas que aparecen al activarla terminarían separándose.
+ */
+export type IncidentListFilters = {
+  status?: string
   worksiteId?: string
+  eventType?: string
   year?: number
   monthFrom?: number
   monthTo?: number
   indicator?: "accidentability" | "frequency" | "severity" | "pending"
-  limit?: number
-}) {
-  requireAccess(args.access, "prevention:incidents:view")
-  if (args.worksiteId) requireAccess(args.access, "prevention:incidents:view", args.worksiteId)
-  const conditions = [scopeCondition(args.access.scope)]
-  if (args.status) conditions.push(eq(preventionIncidents.status, args.status))
-  if (args.worksiteId) conditions.push(eq(preventionIncidents.worksiteId, args.worksiteId))
-  if (args.year) conditions.push(sql`extract(year from ${preventionIncidents.occurredAt} at time zone 'America/Santiago')::int = ${args.year}`)
-  if (args.monthFrom) conditions.push(sql`extract(month from ${preventionIncidents.occurredAt} at time zone 'America/Santiago')::int >= ${args.monthFrom}`)
-  if (args.monthTo) conditions.push(sql`extract(month from ${preventionIncidents.occurredAt} at time zone 'America/Santiago')::int <= ${args.monthTo}`)
-  if (args.indicator === "pending") {
+}
+
+function incidentListConditions(access: IncidentAccess, filters: IncidentListFilters) {
+  requireAccess(access, "prevention:incidents:view")
+  if (filters.worksiteId) requireAccess(access, "prevention:incidents:view", filters.worksiteId)
+  const conditions = [scopeCondition(access.scope)]
+  if (filters.status) conditions.push(eq(preventionIncidents.status, filters.status))
+  if (filters.worksiteId) conditions.push(eq(preventionIncidents.worksiteId, filters.worksiteId))
+  if (filters.eventType) conditions.push(eq(preventionIncidents.eventType, filters.eventType))
+  if (filters.year) conditions.push(sql`extract(year from ${preventionIncidents.occurredAt} at time zone 'America/Santiago')::int = ${filters.year}`)
+  if (filters.monthFrom) conditions.push(sql`extract(month from ${preventionIncidents.occurredAt} at time zone 'America/Santiago')::int >= ${filters.monthFrom}`)
+  if (filters.monthTo) conditions.push(sql`extract(month from ${preventionIncidents.occurredAt} at time zone 'America/Santiago')::int <= ${filters.monthTo}`)
+  if (filters.indicator === "pending") {
     conditions.push(sql`exists (
       select 1 from ${preventionIncidentPeople} indicator_person
       where indicator_person.incident_id = ${preventionIncidents.id}
         and indicator_person.indicator_inclusion_status = 'pending'
     )`)
-  } else if (args.indicator) {
+  } else if (filters.indicator) {
     conditions.push(eq(preventionIncidents.eventType, "work_accident"))
     conditions.push(sql`exists (
       select 1 from ${preventionIncidentPeople} indicator_person
@@ -937,6 +945,15 @@ export async function listPreventionIncidents(args: {
         and indicator_person.indicator_inclusion_status in ('pending', 'included')
     )`)
   }
+  return conditions
+}
+
+export async function listPreventionIncidents(args: IncidentListFilters & {
+  access: IncidentAccess
+  status?: IncidentStatus
+  limit?: number
+}) {
+  const conditions = incidentListConditions(args.access, args)
   return db.select({
     id: preventionIncidents.id,
     code: preventionIncidents.code,
@@ -1803,15 +1820,26 @@ export async function listIncidentWorksites(
     .from(worksites).where(condition).orderBy(asc(worksites.name))
 }
 
-export async function getIncidentDashboardCounts(access: IncidentAccess) {
-  requireAccess(access, "prevention:incidents:view")
-  const condition = scopeCondition(access.scope)
+/**
+ * Tarjetas de /prevencion/incidentes. Honran los mismos filtros que
+ * `listPreventionIncidents` (faena, período, indicador, tipo y estado) y quedan
+ * sin filtro cuando se llaman sólo con el alcance —el tablero de inicio—. El
+ * filtro rápido de la pantalla no entra: es la tarjeta misma, lo que se cuenta.
+ */
+export async function getIncidentDashboardCounts(access: IncidentAccess, filters: IncidentListFilters = {}) {
+  const conditions = incidentListConditions(access, filters)
   const [row] = await db.select({
     totalOpen: sql<number>`count(*) filter (where ${preventionIncidents.status} <> 'closed')::int`,
     overdueNotifications: sql<number>`count(distinct ${preventionIncidents.id}) filter (where exists (select 1 from ${preventionIncidentNotifications} n where n.incident_id = ${preventionIncidents.id} and n.status = 'overdue'))::int`,
     fatalOrSerious: sql<number>`count(*) filter (where ${preventionIncidents.isFatalOrSerious} = true and ${preventionIncidents.status} <> 'closed')::int`,
     pendingInvestigation: sql<number>`count(*) filter (where ${preventionIncidents.status} in ('immediate_measures', 'under_investigation'))::int`,
-  }).from(preventionIncidents).where(condition)
+  }).from(preventionIncidents)
+    // Mismo FROM que la lista. Con el join Drizzle califica las columnas
+    // ("prevention_incidents"."id"); en un FROM de una sola tabla las emitía sin
+    // calificar y, dentro del EXISTS, `"id"` resolvía a la `id` de la propia
+    // notificación: «Plazos atrasados» quedaba siempre en 0.
+    .innerJoin(worksites, eq(worksites.id, preventionIncidents.worksiteId))
+    .where(and(...conditions.filter(Boolean)))
   return row ?? { totalOpen: 0, overdueNotifications: 0, fatalOrSerious: 0, pendingInvestigation: 0 }
 }
 

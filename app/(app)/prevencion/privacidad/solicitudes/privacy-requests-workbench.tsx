@@ -23,6 +23,7 @@ import { MetaBadge, metaFor } from "@/components/states/state-badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
 import { PRIVACY_REQUEST_STATUS_META, PRIVACY_RIGHT_LABELS } from "@/lib/prevention/privacy-inventory"
+import { formatDate } from "@/lib/utils"
 
 interface PrivacyRequestRow {
   id: string
@@ -174,7 +175,7 @@ export function PrivacyRequestsWorkbench({ rows, canExport, canExportClinical, p
                 <TableCell><div className="font-medium">{row.subjectName}</div><div className="text-xs text-[var(--color-text-subtle)]">{row.subjectRut ?? "Sin RUT"} · {row.worksiteName}</div></TableCell>
                 <TableCell>{RIGHTS[row.rightType] ?? row.rightType}</TableCell>
                 <TableCell><MetaBadge meta={metaFor(STATUS, row.status)} /></TableCell>
-                <TableCell className="text-xs">{row.receivedAt.slice(0, 10)}{row.dueAt ? <div>Vence {row.dueAt.slice(0, 10)}</div> : null}</TableCell>
+                <TableCell className="text-xs">{formatDate(row.receivedAt)}{row.dueAt ? <div>Vence {formatDate(row.dueAt)}</div> : null}</TableCell>
                 <TableCell className="max-w-sm text-xs">{row.requestScope}</TableCell>
                 <TableCell><div className="flex justify-end gap-1.5">
                   <Button asChild type="button" size="sm" variant="ghost"><Link href={`/prevencion/privacidad/solicitudes/${row.id}`}>Gestionar</Link></Button>

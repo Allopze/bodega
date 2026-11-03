@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button"
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
 import { EmptyState } from "@/components/ui/empty-state"
 
-export type MonthlyTrendData = { monthName: string; scheduled: number; executed: number; compliancePercent: number }
+/** `compliancePercent` es `null` en un mes sin actividades programadas: «sin plan», no 0 %. */
+export type MonthlyTrendData = { monthName: string; scheduled: number; executed: number; compliancePercent: number | null }
 /** C-02: `percent` es `null` cuando no hay nada planificado, que no es un 0 % de cumplimiento. */
 export type WorksiteComplianceData = { name: string; percent: number | null; executed: number; scheduled: number }
 export type CategoryBreakdownData = { category: string; scheduled: number; executed: number; percent: number | null }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { buildPdtpActivitiesHref, buildPdtpProgramHref, resolvePdtpActivitiesReturnHref, resolvePdtpYear, resolveSelectedWorksiteId, withYearCloseDeactivatedWorksites } from "./pdtp-context"
+import { buildPdtpActivitiesHref, buildPdtpMonthlyTrend, buildPdtpProgramHref, resolvePdtpActivitiesReturnHref, resolvePdtpYear, resolveSelectedWorksiteId, withYearCloseDeactivatedWorksites } from "./pdtp-context"
 
 describe("PDTP context", () => {
   it("usa año calendario y descarta parámetros inválidos", () => {
@@ -48,5 +48,33 @@ describe("PDTP context", () => {
       .toEqual([{ id: "faena-1", name: "Faena 1", code: "F1" }, { id: "faena-baja", name: "Faena Baja (dada de baja)", code: "FB" }])
     expect(withYearCloseDeactivatedWorksites([{ id: "faena-1", name: "Faena 1", code: "F1" }], missing, "all")).toHaveLength(3)
     expect(withYearCloseDeactivatedWorksites([{ id: "faena-1", name: "Faena 1", code: "F1" }], null, "all")).toHaveLength(1)
+  })
+})
+
+/**
+ * Fase 0.4 (AUDITORIA_VISUALIZACIONES_CHOME, CHART-004): la página convertía el
+ * `null` del % mensual en 0, así que un mes sin plan se leía como «0 % de
+ * cumplimiento».
+ */
+describe("buildPdtpMonthlyTrend", () => {
+  const month = (m: number, planned: number, executed: number, percent: number | null) => ({ month: m, planned, executed, percent })
+
+  it("un mes sin actividades programadas queda en null, no en 0 %", () => {
+    const [sinPlan] = buildPdtpMonthlyTrend([month(1, 0, 0, null)])
+
+    expect(sinPlan).toEqual({ monthName: "Ene", scheduled: 0, executed: 0, compliancePercent: null })
+  })
+
+  it("distingue «sin plan» (null) de «con plan y 0 ejecutadas» (0 %)", () => {
+    const [sinPlan, conPlanSinEjecutar] = buildPdtpMonthlyTrend([month(2, 0, 0, null), month(3, 4, 0, 0)])
+
+    expect(sinPlan!.compliancePercent).toBeNull()
+    expect(conPlanSinEjecutar!.compliancePercent).toBe(0)
+  })
+
+  it("redondea la fracción del servicio a porcentaje entero y conserva plan y ejecutado", () => {
+    const [mes] = buildPdtpMonthlyTrend([month(4, 3, 2, 0.6667)])
+
+    expect(mes).toEqual({ monthName: "Abr", scheduled: 3, executed: 2, compliancePercent: 67 })
   })
 })

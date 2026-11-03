@@ -281,6 +281,8 @@ export const pgliteTestFiles = [
   "lib/__tests__/prevention-capa-manual-y-exencion.test.ts",
   "lib/__tests__/prevention-incident-public-reports.test.ts",
   "lib/__tests__/prevention-incidents-workflow-gaps.test.ts",
+  // Fase 0.7: las tarjetas de /prevencion/incidentes responden a los filtros de la lista.
+  "lib/__tests__/prevention-incident-dashboard-counts.test.ts",
   "lib/__tests__/prevention-cphs-program-persistence.test.ts",
   "lib/__tests__/prevention-cphs-certification-persistence.test.ts",
   "lib/__tests__/backfill-cphs-mandatory-sessions.test.ts",

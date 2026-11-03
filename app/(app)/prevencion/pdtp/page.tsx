@@ -27,7 +27,7 @@ import { Button } from "@/components/ui/button"
 import { KpiCard } from "@/components/ui/kpi-card"
 import { ChartBar, ListChecks, Plus, ShieldCheck, WarningCircle } from "@phosphor-icons/react/dist/ssr"
 import { countOf } from "@/lib/utils"
-import { resolvePdtpYear, resolveSelectedWorksiteId } from "./pdtp-context"
+import { buildPdtpMonthlyTrend, resolvePdtpYear, resolveSelectedWorksiteId } from "./pdtp-context"
 import { PdtpWorksitePicker, PdtpYearPicker } from "./pdtp-sheet-table-ui"
 import {
   type MonthlyTrendData,
@@ -46,10 +46,6 @@ type PdtpDashboardPageProps = {
   searchParams: Promise<{ faena?: string | string[]; anio?: string | string[] }>
 }
 
-const MONTH_NAMES = [
-  "Ene", "Feb", "Mar", "Abr", "May", "Jun",
-  "Jul", "Ago", "Sep", "Oct", "Nov", "Dic",
-]
 const one = (value?: string | string[]) => Array.isArray(value) ? value[0] : value
 const activitiesHref = (programId: string, year: number, worksiteId: string | undefined, view: "semana" | "anual", status?: string, period?: PdtpPeriod) => {
   const params = new URLSearchParams({ programa: programId, anio: String(year), vista: view })
@@ -162,12 +158,7 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
 
     // 1. Datos para gráfico de tendencia mensual
     if (indicators?.monthly) {
-      monthlyTrendData = indicators.monthly.map((m) => ({
-        monthName: MONTH_NAMES[m.month - 1] ?? `M${m.month}`,
-        scheduled: m.planned,
-        executed: m.executed,
-        compliancePercent: m.percent !== null ? Math.round(m.percent * 100) : 0,
-      }))
+      monthlyTrendData = buildPdtpMonthlyTrend(indicators.monthly)
     }
 
     // 2. Comparativa por faena — reusa el desglose que ya trajo el agregado.

@@ -1,4 +1,5 @@
 import { codeYear } from "@/lib/utils"
+import type { MonthlyTrendData } from "./pdtp-dashboard-charts"
 
 export interface PdtpListQuery {
   hoja?: string
@@ -82,4 +83,31 @@ export function withYearCloseDeactivatedWorksites<T extends { id: string; name: 
     .filter((row) => !worksites.some((worksite) => worksite.id === row.worksiteId))
     .map((row) => ({ id: row.worksiteId, name: `${row.worksiteName} (dada de baja)`, code: row.worksiteCode ?? "" }))
   return [...worksites, ...extra]
+}
+
+const MONTH_NAMES = [
+  "Ene", "Feb", "Mar", "Abr", "May", "Jun",
+  "Jul", "Ago", "Sep", "Oct", "Nov", "Dic",
+]
+
+/** Un mes de `PdtpComplianceIndicators.monthly` (fracción 0–1, `null` sin plan). */
+export interface PdtpMonthlyIndicator {
+  month: number
+  planned: number
+  executed: number
+  percent: number | null
+}
+
+/**
+ * Serie mensual del tablero. Un mes sin actividades programadas no tiene
+ * cumplimiento que medir: su % es `null` (un hueco, «sin plan»), no 0 %. Un 0 %
+ * dice «había plan y no se hizo nada», que es una acusación distinta.
+ */
+export function buildPdtpMonthlyTrend(monthly: readonly PdtpMonthlyIndicator[]): MonthlyTrendData[] {
+  return monthly.map((m) => ({
+    monthName: MONTH_NAMES[m.month - 1] ?? `M${m.month}`,
+    scheduled: m.planned,
+    executed: m.executed,
+    compliancePercent: m.percent !== null ? Math.round(m.percent * 100) : null,
+  }))
 }
