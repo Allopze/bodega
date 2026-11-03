@@ -476,6 +476,13 @@ export function summarizeCompliance(
   let nonConforming = 0
   let notApplicable = 0
   let scored = 0
+  // El numerador del porcentaje sale sólo de los ítems que puntúan, igual que
+  // `scored`. Los contadores de arriba siguen contando todas las respuestas:
+  // un «sí» en la reinstrucción del encabezado es conforme para el acta, pero
+  // sumarlo al numerador daba 23/22 = 104,55 % y la restricción de la base
+  // rechazaba el cierre.
+  let scoredConforming = 0
+  let scoredPartial = 0
 
   for (const answer of answers) {
     const item = spec.get(`${answer.sectionId}::${answer.itemId}`)
@@ -495,15 +502,17 @@ export function summarizeCompliance(
     if (!item?.countsForCompliance) continue
     if (isExcludedResult(answer.result) || answer.result === "recorded") continue
     scored += 1
+    if (answer.result === "conforming") scoredConforming += 1
+    else if (answer.result === "partial") scoredPartial += 1
   }
 
   const partialWeightBasisPoints = scoringPolicy?.normalized.partialWeightBasisPoints ?? 5_000
   const normalizedBasisPoints = scored === 0
     ? null
-    : Math.round(((conforming * 10_000) + (partial * partialWeightBasisPoints)) / scored)
+    : Math.round(((scoredConforming * 10_000) + (scoredPartial * partialWeightBasisPoints)) / scored)
   const official = scoringPolicy?.official
   const officialBasisPoints = official?.mode === "fixed_conforming_denominator"
-    ? Math.round((conforming * 10_000) / official.denominator)
+    ? Math.round((scoredConforming * 10_000) / official.denominator)
     : null
 
   return {

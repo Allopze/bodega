@@ -1,7 +1,7 @@
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
 import type { PgTable } from "drizzle-orm/pg-core"
-import { and, count, eq, isNull } from "drizzle-orm"
+import { and, count, eq, inArray, isNull } from "drizzle-orm"
 import { readFileSync } from "node:fs"
 import path from "node:path"
 import { beforeAll, describe, expect, it, vi } from "vitest"
@@ -29,6 +29,7 @@ vi.mock("@/db", () => ({
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
 
 const { parseMantSeedData, seedMantencion } = await import("@/lib/services/mantencion/seed")
+type FaenaDecisions = NonNullable<Parameters<typeof seedMantencion>[2]>["faenas"]
 type SeedReport = Awaited<ReturnType<typeof seedMantencion>>
 const { publishScheduleVersion } = await import("@/lib/services/mantencion/schedule-versions")
 const { ensureFolioCode, listMantWorksites, resolveOrCreateWorksite } = await import("@/lib/services/mantencion/worksites")
@@ -39,6 +40,16 @@ const EMAILS = {
   "Luis Campos": "LCampos@example.test",
   "Nelson Silva": "nsilva@example.test",
   "Emilio Padilla": "epadilla@example.test",
+}
+
+/**
+ * Decisiones de faena de esta prueba: las equivalencias son las de producción
+ * (db/seed/mantencion-faenas.json) y las que no existen en la base de prueba
+ * se crean de forma explícita.
+ */
+const FAENAS: FaenaDecisions = {
+  equivalencias: { Cholguan: "Cholguan - Arauco", Teno: "Teno - Arauco", "Fab. Puertas": "Fábrica de Puertas", Calymag: "Santa Fe" },
+  crear: ["Biodiversa", "Flor del Laja", "Servimar", "Sin ubicación", "Ecoservitran", "Panguipulli"],
 }
 
 const FAR_FUTURE = "2099-01-01T00:00:00.000Z"
@@ -91,6 +102,10 @@ beforeAll(async () => {
     { id: "ws-arauco", name: "Arauco", code: "FN-ARA" },
     { id: "ws-cabrero", name: "Cabrero", code: "FN-CAB" },
     { id: "ws-pacifico", name: "Pacifico", code: "FN-PAC" },
+    // Faenas ya unificadas en producción a las que apuntan las equivalencias.
+    { id: "ws-cholguan-arauco", name: "Cholguan - Arauco", code: "CHOLGUAN-ARAUCO" },
+    { id: "ws-teno-arauco", name: "Teno - Arauco", code: "TENO-ARAUCO" },
+    { id: "ws-fabrica-puertas", name: "Fábrica de Puertas", code: "FABRICA-DE-PUERTAS" },
   ])
   await testDb.insert(schema.mantWorksiteSettings).values({ worksiteId: "ws-santa-fe", folioCode: "SFE" })
 
@@ -129,12 +144,31 @@ beforeAll(async () => {
 }, 120_000)
 
 describe("una carga que falla no deja nada escrito", () => {
+  it("una faena sin equivalencia ni permiso para crearla bloquea la carga entera", async () => {
+    const before = await snapshotCounts()
+
+    const attempt = seedMantencion(testDb, data, { invitationEmails: EMAILS })
+    await expect(attempt).rejects.toThrow(/Servimar/)
+    await expect(attempt).rejects.toThrow(/mantencion-faenas\.json/)
+
+    expect(await snapshotCounts()).toEqual(before)
+  }, 120_000)
+
+  it("una equivalencia hacia una faena que no existe también la bloquea", async () => {
+    const before = await snapshotCounts()
+    const faenas = { ...FAENAS, equivalencias: { ...FAENAS.equivalencias, Cholguan: "Cholguán Norte" } }
+
+    await expect(seedMantencion(testDb, data, { faenas })).rejects.toThrow(/Cholguán Norte/)
+
+    expect(await snapshotCounts()).toEqual(before)
+  }, 120_000)
+
   it("revierte las faenas y los catálogos ya creados cuando una regla apunta a una marca sin catálogo", async () => {
     const before = await snapshotCounts()
     const broken = structuredClone(data)
     broken.pautas[0]!.reglasPorMarca!.marcas[0] = "Marca Fantasma"
 
-    await expect(seedMantencion(testDb, broken)).rejects.toThrow(/Marca Fantasma/)
+    await expect(seedMantencion(testDb, broken, { faenas: FAENAS })).rejects.toThrow(/Marca Fantasma/)
 
     expect(await snapshotCounts()).toEqual(before)
   }, 120_000)
@@ -142,7 +176,7 @@ describe("una carga que falla no deja nada escrito", () => {
 
 describe("primera carga", () => {
   beforeAll(async () => {
-    first = await seedMantencion(testDb, data, { invitationEmails: EMAILS })
+    first = await seedMantencion(testDb, data, { invitationEmails: EMAILS, faenas: FAENAS })
   }, 180_000)
 
   it("deja 120 equipos con perfil, sin duplicar la flota", async () => {
@@ -210,21 +244,35 @@ describe("primera carga", () => {
   })
 
   it("las faenas ya existentes se reutilizan aunque cambie la tilde, y cada una queda con folio de tres letras único", async () => {
-    // 14 faenas (10 del archivo + 4 que sólo traen los equipos); 4 ya existían.
-    expect(first.worksites).toMatchObject({ created: 10, existing: 4 })
+    // 14 faenas en la carga (10 del archivo + 4 que sólo traen los equipos):
+    // 4 ya existían, 4 son equivalencias y sólo las 6 autorizadas se crean.
+    expect(first.worksites).toMatchObject({ created: 6, existing: 8 })
     const worksites = await listMantWorksites({ includeInactive: true })
-    expect(worksites).toHaveLength(14)
+    expect(worksites).toHaveLength(13)
     expect(worksites.some((w) => w.name === "Pacífico")).toBe(false)
     expect(worksites.find((w) => w.name === "Pacifico")?.folioCode).toBe("PAC")
     const folios = worksites.map((w) => w.folioCode)
     expect(folios.every((f) => f && /^[A-Z]{3}$/.test(f))).toBe(true)
-    expect(new Set(folios).size).toBe(14)
+    expect(new Set(folios).size).toBe(13)
     expect(Object.fromEntries(worksites.map((w) => [w.name, w.folioCode]))).toMatchObject({
-      Biodiversa: "BIO", Cholguan: "CHO", "Flor del Laja": "FDL", "Sin ubicación": "SUB", Arauco: "ARA", Cabrero: "CAB",
-      // Las cuatro que sólo aparecen en los equipos: folio derivado del nombre.
-      Calymag: "CAL", Ecoservitran: "ECO", "Fab. Puertas": "FAB", Panguipulli: "PAN",
+      Biodiversa: "BIO", "Flor del Laja": "FDL", "Sin ubicación": "SUB", Arauco: "ARA", Cabrero: "CAB", Servimar: "SER",
+      // Las equivalencias reciben el folio del archivo si no tenían uno.
+      "Cholguan - Arauco": "CHO", "Teno - Arauco": "TEN", "Fábrica de Puertas": "FAB",
+      // Las que sólo aparecen en los equipos y se crean: folio derivado del nombre.
+      Ecoservitran: "ECO", Panguipulli: "PAN",
     })
-    expect(first.worksites.derivedFolio).toHaveLength(4)
+  })
+
+  it("una equivalencia ubica los equipos en la faena unificada y no crea un duplicado", async () => {
+    const names = (await testDb.select({ name: schema.worksites.name }).from(schema.worksites)).map((row) => row.name)
+    for (const duplicate of ["Cholguan", "Teno", "Fab. Puertas", "Calymag"]) expect(names).not.toContain(duplicate)
+    const cholguanArauco = await worksiteIdByName("Cholguan - Arauco")
+    const cholguanEquipment = data.equipos.filter((equipo) => equipo.faena === "Cholguan").map((equipo) => equipo.codigo.toUpperCase().replace(/\s+/g, ""))
+    const placed = await testDb.select({ code: schema.fuelVehicles.code, worksiteId: schema.fuelVehicles.worksiteId })
+      .from(schema.fuelVehicles).where(inArray(schema.fuelVehicles.code, cholguanEquipment))
+    expect(placed.length).toBeGreaterThan(0)
+    expect(placed.every((row) => row.worksiteId === cholguanArauco)).toBe(true)
+    expect(first.worksites.aliases).toEqual(expect.arrayContaining(["«Cholguan» → «Cholguan - Arauco»", "«Calymag» → «Santa Fe»"]))
   })
 
   it("respeta el código de folio que una faena ya tenía y lo reporta", async () => {
@@ -245,7 +293,8 @@ describe("primera carga", () => {
     expect(vehicle).toMatchObject({
       plate: "TO-37", type: "Bulldozer", equipmentTypeId: "fet-bulldozer", meterType: "hour_meter",
       performanceUnit: "liters_per_hour", brand: "Caterpillar", model: "D6 H", year: 2004, isActive: true,
-      worksiteId: await worksiteIdByName("Cholguan"),
+      // El archivo lo pone en «Cholguan», que equivale a la faena unificada.
+      worksiteId: await worksiteIdByName("Cholguan - Arauco"),
     })
     const [profile] = await testDb.select().from(schema.mantEquipmentProfiles).where(eq(schema.mantEquipmentProfiles.vehicleId, vehicle!.id))
     expect(profile?.noPlate).toBe(true)
@@ -321,7 +370,7 @@ describe("primera carga", () => {
 
   it("deja constancia en la bitácora de la creación de las faenas y de la carga", async () => {
     const worksiteAudit = await testDb.select().from(schema.auditLog).where(and(eq(schema.auditLog.entityType, "worksite"), eq(schema.auditLog.action, "create")))
-    expect(worksiteAudit).toHaveLength(10)
+    expect(worksiteAudit).toHaveLength(6)
     const seedAudit = await testDb.select().from(schema.auditLog).where(eq(schema.auditLog.entityType, "mant_seed"))
     expect(seedAudit).toHaveLength(1)
     expect(JSON.parse(seedAudit[0]!.newState ?? "{}")).toMatchObject({ vehicles: 118, profiles: 120, schedules: 2 })
@@ -333,7 +382,7 @@ describe("segunda carga", () => {
 
   beforeAll(async () => {
     before = await snapshotCounts()
-    second = await seedMantencion(testDb, data, { invitationEmails: EMAILS })
+    second = await seedMantencion(testDb, data, { invitationEmails: EMAILS, faenas: FAENAS })
   }, 180_000)
 
   it("no cambia nada: ninguna tabla gana ni pierde filas", async () => {
@@ -360,12 +409,12 @@ describe("segunda carga", () => {
 })
 
 describe("regla 17 · faena nueva no duplica", () => {
-  it("«cholguán» y «CHOLGUAN» devuelven la existente «Cholguan» sin crear nada", async () => {
-    const existing = await worksiteIdByName("Cholguan")
+  it("«pacífico» y «PACIFICO» devuelven la existente «Pacifico» sin crear nada", async () => {
+    const existing = await worksiteIdByName("Pacifico")
     const before = await total(schema.worksites)
-    for (const typed of ["cholguán", "  CHOLGUAN ", "Cholguán"]) {
+    for (const typed of ["pacífico", "  PACIFICO ", "Pacífico"]) {
       const result = await testDb.transaction((tx) => resolveOrCreateWorksite(tx, { typedName: typed, actor: { userId: "u-javier" } }))
-      expect(result, typed).toEqual({ id: existing, name: "Cholguan", created: false })
+      expect(result, typed).toEqual({ id: existing, name: "Pacifico", created: false })
     }
     expect(await total(schema.worksites)).toBe(before)
   })

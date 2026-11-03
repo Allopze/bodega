@@ -69,13 +69,39 @@ export const mantSeedDataSchema = z.object({
 })
 export type MantSeedData = z.infer<typeof mantSeedDataSchema>
 
+/**
+ * Decisiones sobre las faenas del archivo (db/seed/mantencion-faenas.json).
+ * Viven aparte porque `mantencion-seed.json` es copia exacta de la referencia
+ * validada con la jefatura y no se edita.
+ *
+ * - `equivalencias`: nombre del archivo → nombre de una faena que YA existe.
+ * - `crear`: nombres del archivo que pueden crearse como faena nueva.
+ *
+ * Una faena del archivo que no existe por su nombre ni figura en una de las dos
+ * listas detiene la carga: crearla en silencio duplicaba faenas ya unificadas
+ * (2026-11-02, «Cholguan» junto a «Cholguan - Arauco»).
+ */
+export const mantFaenaDecisionsSchema = z.object({
+  equivalencias: z.record(nonEmpty, nonEmpty),
+  crear: z.array(nonEmpty),
+})
+export type MantFaenaDecisions = z.infer<typeof mantFaenaDecisionsSchema>
+
+export function parseMantFaenaDecisions(raw: unknown): MantFaenaDecisions {
+  const decisions = mantFaenaDecisionsSchema.parse(raw)
+  const toCreate = new Set(decisions.crear.map(nameKey))
+  const both = Object.keys(decisions.equivalencias).filter((name) => toCreate.has(nameKey(name)))
+  if (both.length > 0) throw new Error(`Una faena no puede ser equivalencia y crearse a la vez: ${both.join(", ")}.`)
+  return decisions
+}
+
 /** Lo que la especificación (§13) dice que trae la carga; una desviación se avisa, no se bloquea. */
 const EXPECTED = { equipos: 120, talleres: 10, conductores: 27, mecanicos: 7, itemsPorPauta: { "p-camiones": 53, "p-maquinaria": 37 } } as const
 
 export interface CountPair { created: number; existing: number }
 
 export interface MantSeedReport {
-  worksites: CountPair & { folioNotes: string[]; derivedFolio: string[] }
+  worksites: CountPair & { folioNotes: string[]; aliases: string[] }
   equipmentTypes: CountPair & { problems: string[] }
   catalogs: Record<MantCatalogKey, CountPair>
   schedules: Array<{ name: string; unit: MantUnit; created: boolean; items: number; intervals: number; brandRules: number; version: number }>
@@ -103,6 +129,7 @@ export interface MantSeedReport {
 export interface SeedContext {
   tx: Tx
   data: MantSeedData
+  faenas: MantFaenaDecisions
   actorUserId: string | null
   report: MantSeedReport
 }
@@ -152,7 +179,7 @@ function validateSeedData(data: MantSeedData): string[] {
 function emptyReport(): MantSeedReport {
   const pair = (): CountPair => ({ created: 0, existing: 0 })
   return {
-    worksites: { ...pair(), folioNotes: [], derivedFolio: [] },
+    worksites: { ...pair(), folioNotes: [], aliases: [] },
     equipmentTypes: { ...pair(), problems: [] },
     catalogs: { brands: pair(), workshops: pair(), drivers: pair(), workTypes: pair(), oils: pair() },
     schedules: [],
@@ -167,12 +194,12 @@ function emptyReport(): MantSeedReport {
 export async function seedMantencion(
   client: DB,
   data: MantSeedData,
-  options: { invitationEmails?: Record<string, string>; actorUserId?: string | null } = {},
+  options: { invitationEmails?: Record<string, string>; actorUserId?: string | null; faenas?: MantFaenaDecisions } = {},
 ): Promise<MantSeedReport> {
   const actorUserId = options.actorUserId ?? null
   return client.transaction(async (tx) => {
     const report = emptyReport()
-    const ctx: SeedContext = { tx, data, actorUserId, report }
+    const ctx: SeedContext = { tx, data, faenas: options.faenas ?? { equivalencias: {}, crear: [] }, actorUserId, report }
     warnOnUnexpectedCounts(ctx)
 
     const worksiteMap = await seedWorksites(ctx)
@@ -213,31 +240,63 @@ function warnOnUnexpectedCounts({ data, report }: SeedContext) {
 
 /**
  * Faenas del archivo más las que sólo aparecen en equipos o mecánicos (la
- * planilla de inventario trae cuatro que la lista de faenas no): éstas reciben
- * un código de folio derivado del nombre. Las que ya existen (por nombre
- * normalizado: «cholguán» = «Cholguan») se respetan, y su código de folio
- * también: si ya tienen otro distinto del archivo, se reporta.
+ * planilla de inventario trae cuatro que la lista de faenas no). Cada nombre
+ * se resuelve a una faena que ya existe —por nombre normalizado, «cholguán» =
+ * «Cholguan», o por una equivalencia declarada— y sólo se crea si está en
+ * `crear`. Si queda alguno sin resolver, la carga se detiene antes de escribir
+ * equipos: la transacción revierte también lo que ya se hubiera hecho.
  */
 async function seedWorksites(ctx: SeedContext): Promise<WorksiteMap> {
-  const { tx, data, report, actorUserId } = ctx
+  const { tx, data, faenas, report, actorUserId } = ctx
   const wanted = new Map<string, { name: string; folio?: string }>()
   for (const faena of data.faenas) wanted.set(nameKey(faena.nombre), { name: cleanName(faena.nombre), folio: faena.codigoFolio })
   const referenced = [...data.equipos.map((equipo) => equipo.faena), ...data.mecanicos.map((mecanico) => mecanico.faena)]
   for (const name of referenced) if (!wanted.has(nameKey(name))) wanted.set(nameKey(name), { name: cleanName(name) })
 
+  const aliasOf = new Map(Object.entries(faenas.equivalencias).map(([from, to]) => [nameKey(from), cleanName(to)]))
+  const mayCreate = new Set(faenas.crear.map(nameKey))
+  for (const name of [...Object.keys(faenas.equivalencias), ...faenas.crear]) {
+    if (!wanted.has(nameKey(name))) report.warnings.push(`La decisión sobre «${name}» no corresponde a ninguna faena del archivo.`)
+  }
+
   const before = await tx.select({ id: worksites.id, name: worksites.name, isActive: worksites.isActive }).from(worksites)
   const byKey = new Map(before.map((row) => [nameKey(row.name), row]))
   const map: WorksiteMap = new Map()
-  for (const [key, want] of wanted) {
-    const existed = byKey.get(key)
-    const resolved = await resolveOrCreateWorksite(tx, { typedName: want.name, actor: { userId: actorUserId }, folioCode: want.folio })
-    map.set(key, { id: resolved.id, name: resolved.name })
-    if (resolved.created) report.worksites.created++
-    else report.worksites.existing++
-    const folio = await ensureFolioCode(tx, resolved.id)
-    if (!want.folio) report.worksites.derivedFolio.push(`«${resolved.name}»: ${folio} (derivado del nombre; no está en la lista de faenas del archivo)`)
-    else if (folio !== want.folio) report.worksites.folioNotes.push(`«${resolved.name}»: el archivo trae ${want.folio} pero queda ${folio} (${existed ? "ya tenía otro código" : "el código ya lo usa otra faena"}).`)
-    if (existed && !existed.isActive) report.warnings.push(`La faena «${existed.name}» existe pero está inactiva; se usó igual.`)
+  const unresolved: string[] = []
+  // Primero las que se llaman igual que una faena existente: así una
+  // equivalencia hacia esa misma faena (Calymag → Santa Fe) no le gana el folio.
+  const ordered = [...wanted].sort(([a], [b]) => Number(aliasOf.has(a)) - Number(aliasOf.has(b)))
+  for (const [key, want] of ordered) {
+    const alias = aliasOf.get(key)
+    const existed = byKey.get(nameKey(alias ?? want.name))
+    if (alias && !existed) {
+      unresolved.push(`«${want.name}» equivale a «${alias}», que no existe.`)
+      continue
+    }
+    if (!existed && !mayCreate.has(key)) {
+      unresolved.push(`«${want.name}» no existe: declara a qué faena equivale o autoriza crearla.`)
+      continue
+    }
+    if (existed) {
+      map.set(key, { id: existed.id, name: existed.name })
+      report.worksites.existing++
+      const folio = await ensureFolioCode(tx, existed.id, want.folio)
+      if (alias) report.worksites.aliases.push(`«${want.name}» → «${existed.name}»`)
+      else if (want.folio && folio !== want.folio) report.worksites.folioNotes.push(`«${existed.name}»: el archivo trae ${want.folio} pero queda ${folio} (ya tenía otro código).`)
+      if (!existed.isActive) report.warnings.push(`La faena «${existed.name}» existe pero está inactiva; se usó igual.`)
+      continue
+    }
+    const created = await resolveOrCreateWorksite(tx, { typedName: want.name, actor: { userId: actorUserId }, folioCode: want.folio })
+    map.set(key, { id: created.id, name: created.name })
+    report.worksites.created++
+    const folio = await ensureFolioCode(tx, created.id)
+    if (want.folio && folio !== want.folio) report.worksites.folioNotes.push(`«${created.name}»: el archivo trae ${want.folio} pero queda ${folio} (el código ya lo usa otra faena).`)
+  }
+  if (unresolved.length > 0) {
+    throw new Error(
+      `La carga no puede ubicar ${unresolved.length} faena(s) y no escribió nada:\n- ${unresolved.join("\n- ")}\n`
+      + "Decide cada una en db/seed/mantencion-faenas.json («equivalencias» hacia una faena existente, o «crear»).",
+    )
   }
   return map
 }

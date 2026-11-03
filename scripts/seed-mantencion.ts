@@ -24,9 +24,10 @@ import { readFileSync } from "node:fs"
 import path from "node:path"
 import { z } from "zod"
 import { db } from "@/db"
-import { parseMantSeedData, seedMantencion } from "@/lib/services/mantencion/seed"
+import { parseMantFaenaDecisions, parseMantSeedData, seedMantencion } from "@/lib/services/mantencion/seed"
 
 const SEED_FILE = path.resolve(__dirname, "../db/seed/mantencion-seed.json")
+const FAENAS_FILE = path.resolve(__dirname, "../db/seed/mantencion-faenas.json")
 
 function readEmails(): Record<string, string> {
   const at = process.argv.indexOf("--correos")
@@ -41,7 +42,8 @@ function readEmails(): Record<string, string> {
 
 async function main() {
   const data = parseMantSeedData(JSON.parse(readFileSync(SEED_FILE, "utf8")))
-  const report = await seedMantencion(db, data, { invitationEmails: readEmails() })
+  const faenas = parseMantFaenaDecisions(JSON.parse(readFileSync(FAENAS_FILE, "utf8")))
+  const report = await seedMantencion(db, data, { invitationEmails: readEmails(), faenas })
   console.log(report.changed ? "La carga escribió cambios." : "Nada que cambiar: la base ya estaba al día.")
   console.log(JSON.stringify(report, null, 2))
 }

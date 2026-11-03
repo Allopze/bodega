@@ -84,6 +84,26 @@ describe("cálculo de cumplimiento", () => {
     expect(summary.nonConforming).toBe(1)
   })
 
+  it("un «sí» en un ítem que no puntúa no infla el cumplimiento sobre 100 %", () => {
+    // Forma de «Observación de Seguridad: Maquinaria Pesada» v02: 22 ítems que
+    // puntúan y la pregunta de reinstrucción (sí/no) en el encabezado, que no.
+    const items = [
+      ...Array.from({ length: 22 }, (_, index) => item({ itemId: `i${index}` })),
+      item({ sectionId: "encabezado", itemId: "reinstruccion", countsForCompliance: false }),
+    ]
+    const answers = [
+      ...Array.from({ length: 22 }, (_, index) => answer({ itemId: `i${index}` })),
+      answer({ sectionId: "encabezado", itemId: "reinstruccion", result: "conforming" }),
+    ]
+    const summary = summarizeCompliance(items, answers, {
+      official: { mode: "fixed_conforming_denominator", denominator: 22 },
+      normalized: { mode: "weighted_applicable", partialWeightBasisPoints: 5_000 },
+    })
+    expect(summary.officialComplianceBasisPoints).toBe(10_000)
+    expect(summary.normalizedComplianceBasisPoints).toBe(10_000)
+    expect(summary.compliancePercent).toBe(100)
+  })
+
   it("sin ítems evaluables devuelve null, no cero", () => {
     const summary = summarizeCompliance(
       [item({ countsForCompliance: false })],
