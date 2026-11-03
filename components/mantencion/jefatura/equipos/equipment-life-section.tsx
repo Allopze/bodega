@@ -18,6 +18,7 @@ export interface EquipmentLifeData {
   limit: number
   /** Órdenes de trabajo del equipo. `null` (o ausente) = sin permiso de OT: la sección no se dibuja. */
   workOrders?: LifeWorkOrders | null
+  historical?: { total: number; vehicleId: string }
 }
 
 export const LIFE_PAGE_SIZE = 20
@@ -201,6 +202,9 @@ export function EquipmentLifeSection({ life, code }: { life: EquipmentLifeData; 
   return (
     <div className="flex flex-col gap-5">
       <MaintenanceLifeSection life={life} code={code} />
+      {!!life.historical?.total && <SectionCard title="Historial anterior" description={`${plural(life.historical.total, "trabajo registrado", "trabajos registrados")} en formularios anteriores`}>
+        <Link href={`/mantencion/registros/historicos?equipo=${encodeURIComponent(life.historical.vehicleId)}`} className="text-sm font-semibold text-[var(--color-primary-ink)] hover:underline">Ver antecedentes de este equipo</Link>
+      </SectionCard>}
       <EquipmentWorkOrdersSection workOrders={life.workOrders ?? null} code={code} />
     </div>
   )

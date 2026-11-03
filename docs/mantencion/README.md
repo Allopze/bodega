@@ -89,6 +89,41 @@ correos debe quedar fuera del repositorio.
 En producción, el seed se ejecuta **a mano**, después de migrar y sincronizar
 RBAC. No forma parte del servicio `migrate` ni del deploy automático.
 
+## Historial anterior
+
+En **Registros → Historial anterior**, la jefatura con permisos de lectura
+global y gestión de equipos puede subir el consolidado `.xlsx` de los
+formularios. La vista previa cuenta las respuestas nuevas y las ya importadas,
+señala los equipos y faenas pendientes y no escribe datos. Al confirmar, se
+vuelve a validar la planilla y se guarda la importación completa en una
+transacción con auditoría de quien la realizó.
+
+Cada trabajo conserva los datos útiles, el nombre del archivo, la hoja y la
+fila. De la marca de envío se guarda sólo la fecha, que es distinta de la fecha
+de ingreso a taller. Las columnas de fotos y stickers se omiten; tampoco son
+obligatorias. Las horas trabajadas sí se conservan.
+
+La identidad de origen permite volver a subir la misma respuesta sin duplicarla,
+incluso si falta o cambió la hora de envío de la misma fila. Si coincide con una
+respuesta anterior pero no se puede verificar que sea la misma, o si se editó
+su contenido, la carga se detiene para revisión; no sobrescribe el historial.
+Al volver a subir el archivo se intentan completar vínculos aún pendientes a
+partir de la flota y las faenas actuales.
+
+La asociación automática de equipo requiere que los identificadores disponibles
+concuerden. Lo que no coincida se conserva y puede buscarse mediante **Vínculos**.
+En el detalle, una jefatura autorizada puede asociar un equipo o faena pendiente;
+la decisión queda auditada. La lectura respeta el permiso y el alcance de faena:
+las filas sin faena vinculada sólo aparecen a quien tiene lectura global. El
+permiso de ver registros propios no permite ver un antecedente cuya autoría no
+se haya podido acreditar.
+
+Estos antecedentes no son registros firmados en la aplicación ni crean órdenes
+de trabajo, fotografías, lecturas iniciales o estados de taller. Tampoco
+alimentan los indicadores y alertas del módulo.
+La funcionalidad requiere aplicar la migración nueva y desplegar la aplicación
+antes de usarla en producción.
+
 ## Probar sin conexión
 
 1. Levantar la app y entrar a `/m/mantencion` con una cuenta con `mant:app:use`.

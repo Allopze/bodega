@@ -445,6 +445,7 @@ export const pgliteTestFiles = [
   "lib/__tests__/mantencion-records-pglite.test.ts",
   // Mantención de equipos: hoja de vida de la ficha (alcance, anuladas, totales), seguro y Excel del historial.
   "lib/__tests__/mantencion-equipment-life-pglite.test.ts",
+  "lib/__tests__/mantencion-historical-import-pglite.test.ts",
   // Aprobaciones (CHART-030): la edad de la cola en días civiles de Chile — fila, contadores y filtro `?antiguedad=` comparten una sola fórmula SQL.
   "app/(app)/aprobaciones/queue-age-pglite.test.ts",
   // Combustibles › Fuentes (CHART-022): mapa de cobertura por mes (Copec, telemetría, OnWay), alcance por permiso y faena, día civil de Chile.
