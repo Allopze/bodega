@@ -74,6 +74,9 @@ export const pgliteTestFiles = [
   "lib/__tests__/operational-integrity-ledger.test.ts",
   "lib/__tests__/pago-manual-idempotente.test.ts",
   "lib/__tests__/analytics-chile-day.test.ts",
+  // C-9 / C-10: gasto en combustible desde el libro del proveedor (regla canónica
+  // compartida con la conciliación) y tendencia mensual de 12 meses.
+  "lib/__tests__/analytics-fuel-provider.test.ts",
   "lib/__tests__/operational-integrity-watermark.test.ts",
   "scripts/verify-purchase-invoice-allocations.test.ts",
   // Los fixtures de `npm run ss` contra las migraciones reales: sin esto, una

@@ -61,6 +61,7 @@ beforeEach(() => {
       spendVariationPct: 0,
       purchaseOrderCount: 0,
       pendingApprovals: 0,
+      fuelAmount: 0,
       fuelLiters: 0,
       fuelLoadCount: 0,
       averageOrderAmount: 0,
@@ -139,5 +140,67 @@ describe("AnaliticaPage · polaridad de las variaciones (0.2)", () => {
     for (const tile of withTrend) {
       expect(tile.props.trendPolarity, `tile «${String(tile.props.label)}»`).toBeDefined()
     }
+  })
+})
+
+/*
+ * C-10 y «Alertas» (AUDITORIA_VISUALIZACIONES_CHOME.md, CHART-033, Anexo C).
+ * La tendencia mensual dice qué ventana dibuja —antes un solo punto sin
+ * explicación— y el tile «Alertas» lleva a la tarjeta «Alertas accionables» de
+ * la misma pantalla, no a /dashboard (que no muestra esas alertas).
+ */
+describe("AnaliticaPage · tendencia de 12 meses y tile «Alertas»", () => {
+  it("el subtítulo de la tendencia nombra la ventana real: 12 meses hasta el mes de `hasta`", async () => {
+    const page = await AnaliticaPage({ searchParams: Promise.resolve({}) })
+    const descriptions = collectElements(page)
+      .filter((element) => typeName(element.type) === "CardDescription")
+      .map((element) => String(element.props.children))
+
+    expect(descriptions).toContain("Últimos 12 meses hasta ago-2026")
+  })
+
+  it("avisa que el último mes es parcial cuando `hasta` no lo cierra", async () => {
+    const data = await getAnalyticsDashboard()
+    getAnalyticsDashboard.mockResolvedValue({
+      ...data,
+      spendByMonth: [
+        { month: "2026-07", purchasingAmount: 1, fuelAmount: 0, totalAmount: 1, partial: false },
+        { month: "2026-08", purchasingAmount: 1, fuelAmount: 0, totalAmount: 1, partial: true },
+      ],
+    })
+
+    const page = await AnaliticaPage({ searchParams: Promise.resolve({}) })
+    const descriptions = collectElements(page)
+      .filter((element) => typeName(element.type) === "CardDescription")
+      .map((element) => String(element.props.children))
+
+    expect(descriptions).toContain("Últimos 12 meses hasta ago-2026 · el último mes es parcial")
+  })
+
+  it("el tile «Alertas» enlaza a la tarjeta «Alertas accionables» de la misma página", async () => {
+    const page = await AnaliticaPage({ searchParams: Promise.resolve({}) })
+    const elements = collectElements(page)
+    const tile = elements.find((element) => typeName(element.type) === "KpiCard" && element.props.label === "Alertas")
+    const target = elements.find((element) => element.props.id === "alertas")
+
+    expect(tile, "el tile «Alertas» debe existir").toBeDefined()
+    expect(tile!.props.href).toBe("#alertas")
+    expect(target, "debe existir el destino con id=\"alertas\"").toBeDefined()
+    expect(typeName(target!.type)).toBe("Card")
+    // El destino es la tarjeta que se llama «Alertas accionables».
+    const titles = collectElements(target!.props.children)
+      .filter((element) => typeName(element.type) === "CardTitle")
+      .map((element) => element.props.children)
+    expect(titles).toContain("Alertas accionables")
+    // Enfocable por programa (el enlace de ancla mueve el foco al destino) y con margen
+    // de scroll, como las demás anclas del producto.
+    expect(target!.props.tabIndex).toBe(-1)
+    expect(String(target!.props.className)).toContain("scroll-mt-")
+  })
+
+  it("el id del destino es único en la página", async () => {
+    const page = await AnaliticaPage({ searchParams: Promise.resolve({}) })
+    const ids = collectElements(page).filter((element) => element.props.id === "alertas")
+    expect(ids).toHaveLength(1)
   })
 })

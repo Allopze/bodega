@@ -6,11 +6,23 @@ export interface AnalyticsFilters {
 export interface AnalyticsKpis {
   totalSpend: number; previousTotalSpend: number; spendVariationPct: number | null
   purchaseOrderCount: number; pendingApprovals: number
+  /**
+   * Gasto en combustible del período con impuestos incluidos (el monto «reportado»
+   * por Copec, la misma base que `totalAmount` de las OC). `0` sin
+   * `combustibles:view_costs`: el monto no se calcula, no sólo se oculta.
+   */
+  fuelAmount: number
   fuelLiters: number; fuelLoadCount: number; averageOrderAmount: number
 }
 
 export interface SpendByMonthRow {
   month: string; purchasingAmount: number; fuelAmount: number; totalAmount: number
+  /**
+   * El mes no está completo: `hasta` cae antes de su último día, o es el mes en
+   * curso. Su cifra es de menos días que la de los demás y no debe leerse como
+   * una caída.
+   */
+  partial: boolean
 }
 
 export interface SpendByModuleRow {

@@ -1,10 +1,11 @@
 import type { Session } from "next-auth"
-import { and, asc, eq, isNotNull, sql, type AnyColumn, type SQL } from "drizzle-orm"
+import { and, asc, eq, sql, type AnyColumn, type SQL } from "drizzle-orm"
 import { db } from "@/db"
 import { fuelMandanteWorksites, fuelMandantes, fuelProviderTransactions, fuelSupplyInputs, fuelSupplyMedia, fuelTaeLoadingPoints, fuelTaeSubmissions, worksites } from "@/db/schema"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import { reconcile } from "../calc/reconciliation"
 import { deliveryModeFor, type LoadingPointType } from "../contracts"
+import { accountableProviderTransactionsWhere } from "@/lib/combustibles/load-status"
 import { mandanteWorksitesSql, type ControlFilters } from "../filters"
 import { chileMonthSql, isoTextPeriodSql, submissionWhere, timestampPeriodSql } from "./field-filters"
 
@@ -47,25 +48,16 @@ function inputsWhere(session: Session | null, filters: ControlFilters): SQL {
 }
 
 /**
- * Transacciones del proveedor aceptadas y vigentes. Dos cuidados contra el doble
- * conteo: una fila reemplazada por otra aceptada no cuenta, y el agregado mensual
- * TCT (`period_aggregate`) solo cuenta si no hay transacciones detalladas de la
- * misma cuenta, patente y mes (el informe TCT trae ambos niveles del mismo litro).
+ * Transacciones del proveedor aceptadas y vigentes en el alcance y período. La
+ * regla de qué cuenta (aceptadas, no reemplazadas, sin doble conteo del agregado
+ * mensual TCT) es `accountableProviderTransactionsWhere`, compartida con Analítica.
  */
 function providerWhere(session: Session | null, filters: ControlFilters): SQL {
   const t = fuelProviderTransactions
   return and(
-    eq(t.status, "accepted"),
-    isNotNull(t.quantity),
+    accountableProviderTransactionsWhere(),
     scopeConditions(session, filters, t.worksiteId),
     isoTextPeriodSql(filters, t.occurredAt),
-    sql`not exists (select 1 from fuel_provider_transactions n where n.supersedes_id = ${t.id} and n.status = 'accepted')`,
-    sql`(${t.granularity} = 'transaction' or not exists (
-      select 1 from fuel_provider_transactions d
-      where d.provider = ${t.provider} and d.source_account = ${t.sourceAccount}
-        and d.source_plate is not distinct from ${t.sourcePlate}
-        and d.status = 'accepted' and d.granularity = 'transaction'
-        and left(d.occurred_at, 7) = left(${t.occurredAt}, 7)))`,
   ) ?? sql`true`
 }
 

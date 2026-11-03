@@ -1,7 +1,13 @@
 // @vitest-environment jsdom
 import { render, screen } from "@testing-library/react"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
+import type { ReactNode } from "react"
 import { KpiCard } from "./kpi-card"
+
+// Marca los enlaces de Next para distinguirlos de un `<a>` nativo en el DOM.
+vi.mock("next/link", () => ({
+  default: ({ href, children, ...rest }: { href: string; children: ReactNode }) => <a href={href} data-next-link="" {...rest}>{children}</a>,
+}))
 
 const base = { icon: null, label: "Solicitudes", value: "42", detail: "este mes" } as const
 
@@ -61,5 +67,22 @@ describe("KpiCard", () => {
   it("sin `trend` no hay Delta", () => {
     const { container } = render(<KpiCard {...base} />)
     expect(container.querySelector("[data-delta]")).toBeNull()
+  })
+
+  it("un `href` de ancla (#id) es un enlace nativo: el navegador mueve el foco al destino", () => {
+    // `next/link` intercepta el clic y sólo hace `scrollIntoView`: el foco se queda en el
+    // tile, y el siguiente Tab sigue desde ahí en vez de entrar en la sección saltada.
+    // Un `<a>` nativo deja que el navegador fije el punto de partida del foco en el destino.
+    render(<KpiCard {...base} href="#alertas" />)
+    const link = screen.getByRole("link")
+    expect(link).toHaveAttribute("href", "#alertas")
+    expect(link).not.toHaveAttribute("data-next-link")
+  })
+
+  it("un `href` de ruta sigue siendo un Link de Next (navegación cliente)", () => {
+    render(<KpiCard {...base} href="/solicitudes" />)
+    const link = screen.getByRole("link")
+    expect(link).toHaveAttribute("href", "/solicitudes")
+    expect(link).toHaveAttribute("data-next-link")
   })
 })

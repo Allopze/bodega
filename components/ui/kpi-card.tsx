@@ -182,7 +182,12 @@ export function KpiCard({
     </Card>
   )
   if (secondaryAction) return card
-  return href
-    ? <Link href={href} className={cn("block h-full", flat && "focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-primary)]")}>{card}</Link>
-    : card
+  if (!href) return card
+  const linkClassName = cn("block h-full", flat && "focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-primary)]")
+  // Un ancla de la misma página (`#alertas`) va como `<a>` nativo, no como `Link`: `next/link`
+  // intercepta el clic y sólo hace `scrollIntoView`, así que el foco se queda en el tile y el
+  // siguiente Tab sigue desde ahí en vez de entrar en la sección a la que se saltó. Con el
+  // enlace nativo el navegador fija el punto de partida del foco en el destino.
+  if (href.startsWith("#")) return <a href={href} className={linkClassName}>{card}</a>
+  return <Link href={href} className={linkClassName}>{card}</Link>
 }

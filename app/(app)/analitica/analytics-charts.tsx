@@ -15,6 +15,7 @@ import {
 import type { SpendByModuleRow, SpendByMonthRow, VehicleCostRow, WorksiteSpendRow } from "@/lib/services/analytics"
 import { formatCLP, formatCompactCLP } from "@/lib/utils"
 import { CHART_SERIES, chartTooltipStyle } from "@/lib/chart-palette"
+import { formatTrendMonth, formatTrendMonthShort } from "./analytics-trend"
 
 // Segunda de las tres paletas que coexistían (G-07). Ahora es la única del
 // producto, en `lib/chart-palette.ts`: sus hues están verificados para
@@ -23,7 +24,8 @@ import { CHART_SERIES, chartTooltipStyle } from "@/lib/chart-palette"
 const COLORS = CHART_SERIES
 
 export function MonthlySpendChart({ data }: { data: SpendByMonthRow[] }) {
-  if (data.length === 0) return <ChartEmpty label="Aún no hay gasto en el período" hint="No se registraron órdenes de compra ni cargas de combustible en las fechas y faenas seleccionadas. Prueba ampliar el rango o revisa que existan movimientos." ctaLabel="Ver compras" ctaHref="/compras" />
+  // La serie trae los 12 meses con ceros donde no hubo movimiento: «sin gasto» es que todos sean cero.
+  if (data.every((row) => row.totalAmount === 0)) return <ChartEmpty label="Aún no hay gasto en los últimos 12 meses" hint="No se registraron órdenes de compra ni combustible en las faenas seleccionadas durante esta ventana. Revisa los filtros o que existan movimientos." ctaLabel="Ver compras" ctaHref="/compras" />
 
   return (
     <>
@@ -31,10 +33,15 @@ export function MonthlySpendChart({ data }: { data: SpendByMonthRow[] }) {
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={data} margin={{ top: 10, right: 12, left: 0, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-          <XAxis dataKey="month" tick={{ fill: "var(--color-text-muted)", fontSize: 11 }} />
+          <XAxis dataKey="month" tickFormatter={formatTrendMonthShort} minTickGap={8} tick={{ fill: "var(--color-text-muted)", fontSize: 11 }} />
           <YAxis tickFormatter={formatCompactCLP} tick={{ fill: "var(--color-text-muted)", fontSize: 11 }} width={58} />
           <Tooltip
             contentStyle={chartTooltipStyle()}
+            // Un mes sin cerrar tiene menos días que los demás: se dice en el tooltip para que no se lea como una caída.
+            labelFormatter={(label) => {
+              const month = String(label)
+              return data.find((row) => row.month === month)?.partial ? `${formatTrendMonth(month)} (parcial)` : formatTrendMonth(month)
+            }}
             formatter={(value, name) => [formatCLP(Number(value)), name === "totalAmount" ? "Total" : String(name)]}
           />
           <Line type="monotone" dataKey="totalAmount" name="Total" stroke="var(--color-primary)" strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} />

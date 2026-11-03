@@ -75,8 +75,8 @@ export function worksiteFilter(session: Session | null, column: SQLWrapper) {
   return inArray(column, ids as never[])
 }
 
-export function mergeSpendByMonth(rows: Array<{ month: string; module: string; totalAmount: number }>): SpendByMonthRow[] {
-  const byMonth = new Map<string, SpendByMonthRow>()
+export function mergeSpendByMonth(rows: Array<{ month: string; module: string; totalAmount: number }>): Array<Omit<SpendByMonthRow, "partial">> {
+  const byMonth = new Map<string, Omit<SpendByMonthRow, "partial">>()
   for (const row of rows) {
     const current = byMonth.get(row.month) ?? { month: row.month, purchasingAmount: 0, fuelAmount: 0, totalAmount: 0 }
     if (row.module === "Combustible") current.fuelAmount += row.totalAmount
@@ -85,6 +85,61 @@ export function mergeSpendByMonth(rows: Array<{ month: string; module: string; t
     byMonth.set(row.month, current)
   }
   return [...byMonth.values()].sort((a, b) => a.month.localeCompare(b.month))
+}
+
+/** Meses que dibuja la «Tendencia mensual de gasto». */
+export const MONTHLY_TREND_MONTHS = 12
+
+function addMonthsToKey(monthKey: string, delta: number): string {
+  const [year = 1970, month = 1] = monthKey.split("-").map(Number)
+  const index = year * 12 + (month - 1) + delta
+  return `${Math.floor(index / 12)}-${pad2((index % 12) + 1)}`
+}
+
+function lastDayOfMonthKey(monthKey: string): string {
+  const [year = 1970, month = 1] = monthKey.split("-").map(Number)
+  return `${monthKey}-${pad2(new Date(Date.UTC(year, month, 0)).getUTCDate())}`
+}
+
+/**
+ * C-10: la ventana de la tendencia mensual son los 12 meses civiles que terminan
+ * en el mes de `toDate`, **sin importar `desde`**. Con el período por defecto (30
+ * días) la serie era uno o dos puntos y no mostraba tendencia alguna; los KPI
+ * siguen midiendo el período elegido. La ventana se corta en `toDate`, no en el
+ * fin de su mes: es lo mismo que el usuario eligió para el resto de la pantalla.
+ */
+export function monthlyTrendWindow(toDate: string): { fromDate: string; toDate: string; months: string[] } {
+  const lastMonth = toDate.slice(0, 7)
+  const months = Array.from({ length: MONTHLY_TREND_MONTHS }, (_, i) => addMonthsToKey(lastMonth, i - (MONTHLY_TREND_MONTHS - 1)))
+  return { fromDate: `${months[0]}-01`, toDate, months }
+}
+
+/**
+ * Serie mensual completa de la ventana: un punto por mes, con ceros donde no
+ * hubo movimiento (un eje con huecos uniría con una línea dos meses lejanos), y
+ * `partial` en el mes que no está completo. `today` es el día civil chileno de
+ * hoy: un `hasta` a fin de mes futuro tampoco hace completo al mes en curso.
+ */
+export function buildMonthlyTrend(
+  rows: Array<Omit<SpendByMonthRow, "partial">>,
+  toDate: string,
+  today: string,
+): SpendByMonthRow[] {
+  const { months } = monthlyTrendWindow(toDate)
+  const byMonth = new Map(rows.map((row) => [row.month, row]))
+  const effectiveEnd = toDate < today ? toDate : today
+  const cutMonth = effectiveEnd.slice(0, 7)
+  const cutIsPartial = effectiveEnd < lastDayOfMonthKey(cutMonth)
+  return months.map((month) => {
+    const row = byMonth.get(month)
+    return {
+      month,
+      purchasingAmount: row?.purchasingAmount ?? 0,
+      fuelAmount: row?.fuelAmount ?? 0,
+      totalAmount: row?.totalAmount ?? 0,
+      partial: month === cutMonth && cutIsPartial,
+    }
+  })
 }
 
 export function mergeWorksiteSpend(rows: Array<{ id: string; name: string; totalAmount: number }>): WorksiteSpendRow[] {

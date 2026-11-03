@@ -16,12 +16,13 @@ import { getCachedAnalyticsDashboard } from "@/lib/services/read-model-cache"
 import { formatCLP, formatDate, formatQty } from "@/lib/utils"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { AnalyticsFiltersBar } from "./analytics-filters"
 import { ModuleSpendChart, MonthlySpendChart, RankingBarChart } from "./analytics-charts-lazy"
 import { KpiCard } from "./analytics-kpi-card"
 import { RankingTable, SeverityBadge, EmptyText } from "./analytics-ranking-table"
 import { getFilterOptions, getParam } from "./analytics-page.helpers"
+import { monthlyTrendDescription } from "./analytics-trend"
 import { FUEL_PATHS } from "@/lib/combustibles/routes"
 
 export const metadata: Metadata = { title: "Analítica" }
@@ -112,7 +113,7 @@ export default async function AnaliticaPage({
             trendPolarity="up-bad"
             href={canViewPurchasing ? "/compras" : undefined}
             glossary={canViewFuelCosts
-              ? "Suma de órdenes de compra emitidas y cargas de combustible del período seleccionado. La variación compara el período anterior de igual duración."
+              ? "Suma de órdenes de compra y gasto en combustible (transacciones Copec aceptadas) del período seleccionado, ambos con impuestos incluidos. La variación compara el período anterior de igual duración."
               : "Suma de las órdenes de compra emitidas del período seleccionado. El costo de combustible requiere permisos adicionales."}
           />
           <KpiCard
@@ -126,10 +127,10 @@ export default async function AnaliticaPage({
           {canViewFuelCosts && <KpiCard
             icon={<GasPump size={18} />}
             label="Combustible"
-            value={formatCLP(data.vehicleCosts.reduce((sum, row) => sum + row.totalFuelAmount, 0))}
+            value={formatCLP(data.kpis.fuelAmount)}
             detail={`${formatQty(data.kpis.fuelLiters, "L")} · ${data.kpis.fuelLoadCount} cargas`}
             href={FUEL_PATHS.consumoLitros}
-            glossary="Gasto total en combustible durante el período. Incluye todas las cargas registradas de todos los vehículos visibles para tu alcance."
+            glossary="Gasto en combustible durante el período, con impuestos incluidos (IVA e IEC). Suma las transacciones de Copec aceptadas y vigentes de todos los vehículos y estanques visibles para tu alcance, sin duplicar el agregado mensual del informe TCT."
           />}
           {canViewFuel && !canViewFuelCosts && <KpiCard
             icon={<GasPump size={18} />}
@@ -147,7 +148,9 @@ export default async function AnaliticaPage({
             // Una alerta crítica es un problema, no un pendiente: el naranja
             // signal está reservado a pendientes (DESIGN.md).
             tone={data.alerts.some((alert) => alert.severity === "critical") ? "danger" : "neutral"}
-            href="/dashboard"
+            // La lista de alertas está en esta misma pantalla («Alertas accionables»);
+            // /dashboard no las muestra, así que el tile saltaba a un lugar sin ellas.
+            href="#alertas"
             glossary="Alertas accionables detectadas por el sistema: gasto anómalo por vehículo, concentración de gasto en un proveedor y entregas recurrentes de EPP a un mismo trabajador."
           />
         </section>
@@ -156,6 +159,8 @@ export default async function AnaliticaPage({
           <Card>
             <CardHeader>
               <CardTitle>Tendencia mensual de gasto</CardTitle>
+              {/* La serie no sigue el período elegido: son 12 meses que terminan en `hasta` (C-10). */}
+              <CardDescription>{monthlyTrendDescription(data.filters.toDate, data.spendByMonth.at(-1)?.partial === true)}</CardDescription>
             </CardHeader>
             <CardContent>
               <MonthlySpendChart data={data.spendByMonth} />
@@ -191,9 +196,17 @@ export default async function AnaliticaPage({
         </section>
 
         <section className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-          <Card>
+          {/* Destino del tile «Alertas». `tabIndex={-1}` deja que el salto de ancla mueva el foco
+              aquí; `scroll-mt-4` por convención de las demás anclas (la TopBar no es sticky). */}
+          <Card
+            id="alertas"
+            role="region"
+            aria-labelledby="alertas-titulo"
+            tabIndex={-1}
+            className="scroll-mt-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]"
+          >
             <CardHeader>
-              <CardTitle>Alertas accionables</CardTitle>
+              <CardTitle id="alertas-titulo">Alertas accionables</CardTitle>
             </CardHeader>
             <CardContent>
               {data.alerts.length > 0 ? (

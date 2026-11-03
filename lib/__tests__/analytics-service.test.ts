@@ -158,7 +158,6 @@ describe("getAnalyticsDashboard", () => {
       { data: [{ id: "ws-1", name: "Faena Norte", module: "Compras", totalAmount: 1_200_000 }] },
       { data: [{ id: "ws-1", name: "Faena Norte", module: "Combustible", totalAmount: 420_000 }] },
       { data: [{ id: "veh-1", plate: "AA-BB-11", type: "camioneta", totalFuelAmount: 420_000, totalLiters: 350, loadCount: 7 }] },
-      { data: [] },
       { data: [
         { productId: "prod-2", productName: "Casco", sku: "EPP-002", totalOut: 18, movementCount: 6 },
       ] },
@@ -184,9 +183,11 @@ describe("getAnalyticsDashboard", () => {
       { module: "Repuestos", totalAmount: 500_000 },
       { module: "Combustible", totalAmount: 420_000 },
     ])
-    expect(data.spendByMonth).toEqual([
-      { month: "2026-06", purchasingAmount: 1_200_000, fuelAmount: 420_000, totalAmount: 1_620_000 },
-    ])
+    // C-10: la tendencia siempre son 12 meses que terminan en el mes de `hasta`.
+    expect(data.spendByMonth).toHaveLength(12)
+    expect(data.spendByMonth[0]).toEqual({ month: "2025-07", purchasingAmount: 0, fuelAmount: 0, totalAmount: 0, partial: false })
+    expect(data.spendByMonth.at(-1)).toEqual({ month: "2026-06", purchasingAmount: 1_200_000, fuelAmount: 420_000, totalAmount: 1_620_000, partial: false })
+    expect(data.kpis.fuelAmount).toBe(420_000)
     expect(data.topSuppliers[0]).toMatchObject({ name: "Proveedor A", totalAmount: 1_200_000 })
     expect(data.topWorksites[0]).toMatchObject({ name: "Faena Norte", totalAmount: 1_620_000 })
     expect(data.vehicleCosts[0]).toMatchObject({ plate: "AA-BB-11", totalFuelAmount: 420_000 })
@@ -227,12 +228,15 @@ describe("getAnalyticsDashboard", () => {
           loadCount: 2,
         },
       ] },
+      { data: [] },
+      { data: [] },
+      { data: [] },
+      // Trabajadores con entrega de EPP; la última lectura de medidor se consulta después del lote.
+      { data: [] },
       { data: [
-        { vehicleId: "veh-1", odometerReading: 12_500, hourMeterReading: 440 },
+        { vehicleId: "veh-1", meterType: "odometer", value: 12_500 },
+        { vehicleId: "veh-1", meterType: "hour_meter", value: 440 },
       ] },
-      { data: [] },
-      { data: [] },
-      { data: [] },
     )
 
     const data = await getAnalyticsDashboard(makeSession(), {
