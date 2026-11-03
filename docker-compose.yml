@@ -39,7 +39,9 @@ services:
       migrate:
         condition: service_completed_successfully
     ports:
-      - "127.0.0.1:3000:3000"
+      # APP_PORT permite convivir con otra instancia en el mismo host; el
+      # contenedor siempre escucha en 3000.
+      - "127.0.0.1:${APP_PORT:-3000}:3000"
     environment:
       - NODE_ENV=production
       # node:22.13-alpine corre en UTC. `lib/sst/date.ts` construye fechas con la

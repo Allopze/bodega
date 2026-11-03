@@ -51,6 +51,13 @@ PROD_PUBLIC_URL="${PROD_PUBLIC_URL:-https://plataforma.portalchome.cl}"
 [ -n "${SKIP_PUBLIC_SMOKE:-}" ] && PROD_PUBLIC_URL=""
 # Nombre del entorno en los mensajes; deploy-dev.sh lo cambia.
 DEPLOY_LABEL="${DEPLOY_LABEL:-producción}"
+# Puerto del host donde se publica la app; el contenedor siempre escucha en 3000.
+# deploy-dev.sh lo fija en 3001 para convivir con producción en el mismo host.
+APP_HOST_PORT="${APP_HOST_PORT:-3000}"
+# deploy:dev permite ramas de prueba; producción sigue exigiendo main.
+ALLOW_NON_MAIN_BRANCH="${ALLOW_NON_MAIN_BRANCH:-}"
+# deploy:dev permite desplegar el árbol de trabajo sin commitear; producción no.
+ALLOW_DIRTY_TREE="${ALLOW_DIRTY_TREE:-}"
 DEPLOY_STARTED_SECONDS=$SECONDS
 
 format_duration() {
@@ -148,17 +155,29 @@ fi
 
 branch="$(git rev-parse --abbrev-ref HEAD)"
 if [ "$branch" != "main" ]; then
-  echo "ERROR: on branch '$branch', not 'main'. Switch to main before deploying."
-  exit 1
+  if [ -z "$ALLOW_NON_MAIN_BRANCH" ]; then
+    echo "ERROR: on branch '$branch', not 'main'. Switch to main before deploying."
+    exit 1
+  fi
+  echo "    AVISO: desplegando la rama '$branch' a $DEPLOY_LABEL (ALLOW_NON_MAIN_BRANCH)."
 fi
 
 if [ -n "$(git status --porcelain)" ]; then
-  echo "ERROR: working tree is dirty. Commit or stash before deploying."
-  exit 1
+  if [ -z "$ALLOW_DIRTY_TREE" ]; then
+    echo "ERROR: working tree is dirty. Commit or stash before deploying."
+    exit 1
+  fi
+  echo "    AVISO: árbol de trabajo con cambios sin commitear; la imagen no corresponde a un commit limpio."
+  echo "    $(git status --porcelain | wc -l | tr -d ' ') archivo(s) con cambios."
 fi
 
 echo "About to deploy $(git rev-parse --short HEAD) ($(git log -1 --format=%s)) to $DEPLOY_LABEL: $PROD_SSH:$PROD_DIR"
-read -p "Continue? [y/N] " confirm
+if [ "${DEPLOY_ASSUME_YES:-}" = "1" ]; then
+  echo "Continue? [y/N] y (DEPLOY_ASSUME_YES)"
+  confirm=y
+else
+  read -p "Continue? [y/N] " confirm
+fi
 if [ "$confirm" != "y" ]; then
   echo "Aborted."
   exit 1
@@ -341,7 +360,7 @@ rollback_release() {
     run_in_prod docker compose up -d --no-deps --force-recreate app
     run_in_prod docker compose up -d --no-deps --force-recreate cron
     sleep 5
-    if prod_run curl -sf http://127.0.0.1:3000/api/health; then
+    if prod_run curl -sf http://127.0.0.1:${APP_HOST_PORT}/api/health; then
       echo "    rollback restored $PREV_IMAGE"
     else
       echo "    rollback healthcheck also failed; manual intervention required."
@@ -600,8 +619,8 @@ run_timed "Recreating app container" run_in_prod docker compose up -d --no-deps 
 
 check_app_health() {
   sleep 5
-  # El 3000 está publicado sólo en el loopback de prod, así que el curl corre allá.
-  prod_run curl -sf http://127.0.0.1:3000/api/health
+  # El puerto del host está publicado sólo en loopback, así que el curl corre allá.
+  prod_run curl -sf http://127.0.0.1:${APP_HOST_PORT}/api/health
 }
 
 run_timed "Health check" check_app_health
