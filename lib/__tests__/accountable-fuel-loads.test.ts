@@ -10,7 +10,6 @@
 import path from "node:path"
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
-import { eq } from "drizzle-orm"
 import type { Session } from "next-auth"
 import { beforeAll, describe, expect, it, vi } from "vitest"
 import * as schema from "@/db/schema"
@@ -96,8 +95,8 @@ describe("predicado canónico de cargas contabilizables", () => {
   })
 
   // C-9: los litros, el costo y las cargas de Flota salen del libro del proveedor (Copec), no de la
-  // serie facturada `fuel_loads` —vacía en producción—; ver `fleet-fuel-provider.test.ts`. Flota sigue
-  // leyendo `fuel_loads` sólo para las lecturas de medidor, así que aquí queda fijado que ninguna carga
+  // serie facturada `fuel_loads` —vacía en producción—; ver `fleet-fuel-provider.test.ts`. Tampoco sus
+  // lecturas de medidor (`fleet-meter-readings.test.ts`), así que aquí queda fijado que ninguna carga
   // facturada, contable o no, se cuela en sus cifras de combustible.
   it("Flota no suma la serie facturada: sus cifras de combustible vienen del proveedor", async () => {
     const fleet = await getFleetOverview(session())
@@ -108,95 +107,12 @@ describe("predicado canónico de cargas contabilizables", () => {
   })
 })
 
-/**
- * CO-023, ítem 7 del plan: un reset de medidor sin validar no debe alterar el
- * cálculo (sigue siendo "posible reset, verifica"), pero uno YA aceptado
- * (caso resuelto/descartado) debe cortar la ventana de comparación en ese
- * punto — de lo contrario el recorrido calculado queda mal para siempre.
+/*
+ * CO-023, ítem 7 («un reset de medidor aceptado corta la ventana de comparación») vivía acá sobre
+ * `fuel_loads`. Flota dejó de leer lecturas de esa serie —vacía en producción— y las toma del
+ * detalle de Copec (`fuel_meter_readings`); el caso quedó cubierto, con el mismo escenario
+ * (abierto / lectura corregida / reset aceptado / descartado), en `fleet-meter-readings.test.ts`.
  */
-describe("getFleetOverview corta la ventana de comparación en un reset aceptado", () => {
-  const worksiteId2 = nanoid()
-  const equipmentTypeId2 = nanoid()
-  const vehicleId2 = nanoid()
-  const supplierId2 = nanoid()
-  const productId2 = nanoid()
-  const userId2 = nanoid()
-  const ruleId = nanoid()
-  const resetLoadId = nanoid()
-  let caseId: string
-
-  function session2(): Session {
-    return {
-      user: {
-        id: userId2, name: "Gerencia", email: "gerencia2@example.com", roles: ["administrador"],
-        permissions: ["combustibles:view", "combustibles:view_costs", "flota:view"],
-        worksiteIds: [], primaryWorksiteId: null, avatarColor: null, isActive: true, isGlobal: true,
-      },
-      expires: "2099-01-01T00:00:00.000Z",
-    } as unknown as Session
-  }
-
-  beforeAll(async () => {
-    await inMemoryDb.insert(schema.worksites).values({ id: worksiteId2, name: "Faena B", code: `FB-${nanoid().slice(0, 8)}`, isActive: true })
-    await inMemoryDb.insert(schema.users).values({ id: userId2, name: "Gerencia 2", email: `g2-${nanoid()}@example.com`, hashedPassword: "x", isActive: true })
-    await inMemoryDb.insert(schema.fuelProducts).values({ id: productId2, code: `DIESEL2-${nanoid().slice(0, 6)}`, name: "Diésel", category: "diesel", unit: "liter" })
-    await inMemoryDb.insert(schema.fuelSuppliers).values({ id: supplierId2, name: "Copec 2" })
-    await inMemoryDb.insert(schema.fuelEquipmentTypes).values({ id: equipmentTypeId2, slug: `camion2-${nanoid().slice(0, 6)}`, name: "Camión 2" })
-    await inMemoryDb.insert(schema.fuelVehicles).values({
-      id: vehicleId2, plate: `RS${nanoid().slice(0, 4).toUpperCase()}`, type: "camion",
-      equipmentTypeId: equipmentTypeId2, worksiteId: worksiteId2, isActive: true, performanceUnit: "km_per_liter",
-    })
-    await inMemoryDb.insert(schema.fuelAnomalyRules).values({
-      id: ruleId, code: "kilometraje_regresivo", name: "Kilometraje regresivo", severity: "high", isActive: true, config: "{}",
-    })
-    // Primera lectura antes del reset, la lectura del reset, y una tercera
-    // lectura posterior que ya vuelve a superar la primera — el escenario
-    // donde el bug se nota: sin cortar la ventana, "primera lectura" seguía
-    // siendo la de antes del reset y el recorrido salía muy por debajo del real.
-    await inMemoryDb.insert(schema.fuelLoads).values([
-      { id: nanoid(), loadDate: dayOf(1), month: MONTH, serviceType: "TCT", vehicleId: vehicleId2, fuelSupplierId: supplierId2, worksiteId: worksiteId2, product: "PETROLEO DIESEL", productId: productId2, liters: 50, baseAmount: 50_000, totalAmount: 50_000, status: "registered", createdBy: userId2, odometerReading: 10_000 },
-      { id: resetLoadId, loadDate: dayOf(5), month: MONTH, serviceType: "TCT", vehicleId: vehicleId2, fuelSupplierId: supplierId2, worksiteId: worksiteId2, product: "PETROLEO DIESEL", productId: productId2, liters: 50, baseAmount: 50_000, totalAmount: 50_000, status: "registered", createdBy: userId2, odometerReading: 1_000 },
-      { id: nanoid(), loadDate: dayOf(10), month: MONTH, serviceType: "TCT", vehicleId: vehicleId2, fuelSupplierId: supplierId2, worksiteId: worksiteId2, product: "PETROLEO DIESEL", productId: productId2, liters: 50, baseAmount: 50_000, totalAmount: 50_000, status: "registered", createdBy: userId2, odometerReading: 15_000 },
-    ])
-    caseId = nanoid()
-    await inMemoryDb.insert(schema.fuelAnomalyCases).values({
-      id: caseId, ruleId, ruleCode: "kilometraje_regresivo", severity: "high",
-      worksiteId: worksiteId2, vehicleId: vehicleId2,
-      referenceEntityType: "fuel_load", referenceEntityId: resetLoadId,
-      description: "Lectura de odómetro (1.000) menor que la carga anterior (10.000).",
-      status: "open",
-    })
-  })
-
-  it("mientras el caso está abierto, la primera lectura sigue siendo la de antes del reset", async () => {
-    const fleet = await getFleetOverview(session2())
-    const vehicle = fleet.find((row) => row.id === vehicleId2)
-    // 15.000 - 10.000: todavía sin cortar en el reset.
-    expect(vehicle?.kmDriven).toBe(5_000)
-  })
-
-  it("cerrar el caso como lectura corregida NO corta la ventana: fue un error de tipeo, no un medidor nuevo", async () => {
-    await inMemoryDb.update(schema.fuelAnomalyCases)
-      .set({ status: "resolved", resolutionKind: "lectura_corregida" })
-      .where(eq(schema.fuelAnomalyCases.id, caseId))
-
-    const fleet = await getFleetOverview(session2())
-    const vehicle = fleet.find((row) => row.id === vehicleId2)
-    // Igual que con el caso abierto: la serie del equipo sigue siendo una sola.
-    expect(vehicle?.kmDriven).toBe(5_000)
-  })
-
-  it("al aceptar el reset (caso resuelto), la ventana se corta ahí y el recorrido usa la lectura del reset como base", async () => {
-    await inMemoryDb.update(schema.fuelAnomalyCases)
-      .set({ status: "resolved", resolutionKind: "reset_medidor" })
-      .where(eq(schema.fuelAnomalyCases.id, caseId))
-
-    const fleet = await getFleetOverview(session2())
-    const vehicle = fleet.find((row) => row.id === vehicleId2)
-    // 15.000 - 1.000: la primera lectura pasó a ser la del reset aceptado.
-    expect(vehicle?.kmDriven).toBe(14_000)
-  })
-})
 
 /**
  * CO-023: dos cargas del mismo día devolvían un ganador arbitrario como

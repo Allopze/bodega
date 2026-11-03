@@ -21,31 +21,16 @@ import { fuelOperationOccurredAtSql } from "./fuel-log"
 import { accountableFuelLoadsWhere } from "./load-status"
 import { DEFAULT_OUTLIER_THRESHOLD_STDDEVS, MIN_CONCLUSIVE_SAMPLE, flagOutliers } from "./performance-statistics"
 import { buildFuelVariationCandidates, candidateTouchesCutoff, fuelVariationProductLabel } from "./fuel-variation"
+import { configOf, elapsedDays, maxMeterRatePerDayOf, readEqTypeOverride } from "./meter-series"
+
+/** Sigue exportada desde acá (la importa su prueba); la definición vive con las demás reglas puras de medidor. */
+export { configOf }
 
 /** Techo defensivo para los escaneos sin ventana de fecha (sección 18). No hay volumen de
  *  producción con el que calibrarlo todavía; el valor es deliberadamente alto — sólo debe
  *  actuar como freno de emergencia contra un table scan sin límite, no como paginación real.
  *  ponytail: recalibrar (o mover a ventana temporal por consulta) cuando exista medición real. */
 const BATCH_SCAN_ROW_LIMIT = 50_000
-
-export const configOf = (rule: { config: string | null }): Record<string, unknown> => {
-  try { return rule.config ? JSON.parse(rule.config) : {} } catch { return {} }
-}
-
-/** Buscar un override por tipo de equipo en `config.equipmentTypes[slug][key]`.
- *  Los detectores batch pueden definir umbrales distintos por tipo de equipo
- *  en el JSON de configuración de la regla, sin necesidad de crear una regla
- *  por cada combinación. Ejemplo de config:
- *  ```json
- *  { "thresholdPct": 50, "equipmentTypes": { "cargadora_frontal": { "thresholdPct": 30 } } }
- *  ``` */
-function readEqTypeOverride(cfg: Record<string, unknown>, slug: string, key: string): unknown {
-  const eqTypes = cfg["equipmentTypes"]
-  if (!eqTypes || typeof eqTypes !== "object") return undefined
-  const typeCfg = (eqTypes as Record<string, unknown>)[slug]
-  if (!typeCfg || typeof typeCfg !== "object") return undefined
-  return (typeCfg as Record<string, unknown>)[key]
-}
 
 /** Leer `minSample` del config de la regla, con fallback a la constante global. */
 function minSampleOf(rule: { config: string | null }, globalDefault: number): number {
@@ -811,34 +796,6 @@ const detectImplausibleMeterJump: DetectorFn = async (rule) => {
     }
   }
   return { created, skipped, scanned }
-}
-
-/** Días calendario entre dos instantes, con piso de 1: dos cargas del mismo día
- *  no dividen por cero, y un salto grande entre ellas sigue siendo implausible. */
-function elapsedDays(from: string, to: string): number {
-  const ms = new Date(to).getTime() - new Date(from).getTime()
-  if (!Number.isFinite(ms)) return 1
-  return Math.max(1, Math.round(ms / 86_400_000))
-}
-
-/**
- * Techo de avance diario del medidor. `maxKmPerDay` para odómetro y
- * `maxHoursPerDay` para horómetro, ambos con override por tipo de equipo.
- *
- * Los valores por omisión son cotas físicas, no metas de operación: 1.500 km en
- * un día es más de lo que rinde un camión conduciendo sin parar, y un motor no
- * puede acumular más de 24 horas por día.
- */
-function maxMeterRatePerDayOf(rule: { config: string | null }, meterType: "km" | "hora", equipmentTypeSlug?: string): number {
-  const key = meterType === "hora" ? "maxHoursPerDay" : "maxKmPerDay"
-  const fallback = meterType === "hora" ? 24 : 1_500
-  const cfg = configOf(rule)
-  if (equipmentTypeSlug) {
-    const override = readEqTypeOverride(cfg, equipmentTypeSlug, key)
-    if (typeof override === "number" && override > 0) return override
-  }
-  if (typeof cfg[key] === "number" && (cfg[key] as number) > 0) return cfg[key] as number
-  return fallback
 }
 
 const BATCH_DETECTORS: Record<string, DetectorFn> = {

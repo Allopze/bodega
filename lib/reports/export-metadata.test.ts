@@ -51,6 +51,29 @@ describe("addExportMetadataSheet", () => {
     expect(scopeCell(workbook)).toBe("Arauco, Mininco")
   })
 
+  it("las notas de la exportación (una advertencia sobre las cifras) van al final, una por fila", async () => {
+    const workbook = new ExcelJS.Workbook()
+    await addExportMetadataSheet(workbook, session, {
+      rowCount: 2,
+      notes: ["Sin datos del proveedor en sep-2026: los totales de 12 meses no incluyen ese mes.", "Otra salvedad."],
+    })
+    const rows = workbook.getWorksheet("Metadatos")!.getSheetValues().slice(1) as Array<[undefined, string, string]>
+
+    expect(rows.slice(-2).map(([, label, value]) => [label, value])).toEqual([
+      ["Nota", "Sin datos del proveedor en sep-2026: los totales de 12 meses no incluyen ese mes."],
+      ["Nota", "Otra salvedad."],
+    ])
+    // Lo que ya existía no se mueve de sitio: «Alcance de faena» sigue en la fila 3.
+    expect(scopeCell(workbook)).toBe("Todas las faenas (usuario global)")
+  })
+
+  it("sin notas la hoja queda exactamente igual que antes", async () => {
+    const workbook = new ExcelJS.Workbook()
+    await addExportMetadataSheet(workbook, session, { rowCount: 2, notes: [] })
+
+    expect(workbook.getWorksheet("Metadatos")!.rowCount).toBe(7)
+  })
+
   it("si no puede leer los nombres, cae a los identificadores sin romper la exportación", async () => {
     worksiteRows.fail = true
     const workbook = new ExcelJS.Workbook()

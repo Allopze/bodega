@@ -105,14 +105,19 @@ describe("getFleetOverview", () => {
         technicalReviewExpiresAt: "2026-08-15",
         circulationPermitExpiresAt: "2027-03-31",
         insuranceExpiresAt: "2026-07-20",
+        performanceUnit: "km_per_liter",
         worksite: { name: "Faena Uno" },
         responsibleUser: { name: "Jefe Mantención", email: "mantencion@chome.cl" },
       },
     ])
+    // Orden real: combustible, lecturas de medidor, regla de salto, documentos.
     selectResults.push(
       { data: [{ vehicleId: "veh-1", totalFuelAmount: 100_000, totalLiters: 80, loadCount: 2 }] },
-      { data: [{ vehicleId: "veh-1", odometerReading: 10_000, hourMeterReading: null }] },
-      { data: [{ vehicleId: "veh-1", odometerReading: 12_500, hourMeterReading: null }] },
+      { data: [
+        { id: "mr-1", vehicleId: "veh-1", meterType: "odometer", occurredAt: "2026-10-01T12:00:00.000Z", value: 10_000, acceptedReset: false },
+        { id: "mr-2", vehicleId: "veh-1", meterType: "odometer", occurredAt: "2026-10-05T12:00:00.000Z", value: 12_500, acceptedReset: false },
+      ] },
+      { data: [] },
       { data: [] },
     )
 
@@ -126,6 +131,8 @@ describe("getFleetOverview", () => {
     expect(vehicle.responsibleName).toBe("Jefe Mantención")
     expect(vehicle.operationalStatus).toBe("operativo")
     expect(vehicle.nextExpiryDate).toBe("2026-07-20")
+    // Las lecturas salen de `fuel_meter_readings` (Copec), no de `fuel_loads`.
+    expect(vehicle).toMatchObject({ lastOdometerReading: 12_500, lastHourMeterReading: null, kmDriven: 2_500, hoursRun: null, meterSeriesIncomplete: false })
     // La imputación de costos fue retirada: no debe existir ese campo.
     expect("totalAllocatedAmount" in vehicle).toBe(false)
     expect("allocationCount" in vehicle).toBe(false)
@@ -194,7 +201,7 @@ describe("getFleetOverview", () => {
     const [vehicle] = await getFleetOverview(noCostsSession)
 
     expect(vehicle).toMatchObject({ totalFuelAmount: null, totalLiters: 80 })
-    // Orden real: fuelRows(0), firstReadingRows(1), lastReadingRows(2), documentExpiryRows(3).
+    // Orden real: fuelRows(0), meterRows(1), jumpRules(2), documentExpiryRows(3).
     expect(sqlChunks((selectProjections[0] as { totalFuelAmount: unknown }).totalFuelAmount).join(" ").toLowerCase()).not.toContain("total_amount")
   })
 
@@ -211,23 +218,26 @@ describe("getFleetOverview", () => {
     expect(selectProjections[0]).toHaveProperty("expiresAt")
   })
 
-  // HALLAZGO 11: la faena elegida en el tablero tiene que reencuadrar las tres
-  // consultas, no sólo el alcance del rol.
-  it("acota las tres consultas a la faena elegida en el tablero", async () => {
+  // HALLAZGO 11: la faena elegida en el tablero tiene que reencuadrar las consultas de
+  // combustible, de lecturas de medidor y de documentos, no sólo el alcance del rol.
+  it("acota las consultas con alcance a la faena elegida en el tablero", async () => {
     findManyVehicles.mockResolvedValue([])
     selectResults.push({ data: [] }, { data: [] }, { data: [] }, { data: [] })
 
     await getFleetOverview(scopedSession, "ws-1")
 
+    // Orden real: combustible(0), lecturas de medidor(1), regla de salto(2), documentos(3). La regla
+    // `salto_medidor_implausible` es una configuración global, sin faena: no entra al reencuadre.
+    expect(selectChains).toHaveLength(4)
+    const scopedWheres = selectChains.filter((_, index) => index !== 2).map((chain) => chain.where!.mock.calls[0]![0])
     // La sesión ve ws-1 y ws-2; al elegir ws-1 en el tablero, ws-2 no puede
     // seguir apareciendo en ninguna consulta de combustible ni documentos.
-    for (const where of [
-      findManyVehicles.mock.calls[0]![0].where,
-      ...selectChains.map((chain) => chain.where!.mock.calls[0]![0]),
-    ]) {
+    for (const where of [findManyVehicles.mock.calls[0]![0].where, ...scopedWheres]) {
       expect(sqlChunks(where)).toContain("ws-1")
       expect(sqlChunks(where)).not.toContain("ws-2")
     }
+    // Y las lecturas vienen sólo del detalle de Copec.
+    expect(sqlChunks(selectChains[1]!.where!.mock.calls[0]![0])).toContain("copec_tct")
   })
 
   it("no devuelve filas de una faena fuera del alcance del rol", async () => {

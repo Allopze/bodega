@@ -9,6 +9,7 @@ import * as schema from "@/db/schema"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import { IDS, seedControlFixtures } from "@/lib/combustibles/control/queries/test-fixtures"
 import { chileDateParts } from "@/lib/utils"
+import { COPEC_COVERAGE_ACCOUNTS } from "@/lib/combustibles/copec-coverage"
 
 const pg = new PGlite()
 const db = drizzle(pg, { schema }) as unknown as DB
@@ -20,7 +21,7 @@ vi.mock("@/lib/auth/can", () => ({
   can: (session: Session | null, permission: string) => session?.user?.permissions?.includes(permission as never) ?? false,
 }))
 
-const { getFleetOverview, getFleetOverviewPage } = await import("@/lib/services/fleet")
+const { getFleetOverview, getFleetOverviewPage, getFleetProviderGapMonths } = await import("@/lib/services/fleet")
 const { accountableProviderTransactionsWhere } = await import("@/lib/combustibles/load-status")
 
 /**
@@ -195,5 +196,77 @@ describe("getFleetOverviewPage · resumen de la lista", () => {
     const page = await getFleetOverviewPage(session({ permissions: ["flota:view", "combustibles:view"] }), {}, dates, { offset: 0, limit: 50 })
 
     expect(page.summary).toMatchObject({ totalLiters: 265, totalFuelAmount: null })
+  })
+})
+
+/**
+ * C-4 en Flota: «Costo combustible (12 meses)», «Litros registrados (12 meses)» y las
+ * columnas por equipo suman lo que el proveedor trajo. Un mes de la ventana en que no
+ * trajo nada no es «no se cargó combustible»: esos meses se nombran, con la misma vara
+ * (`monthsWithoutProviderData`) con que Analítica y el tablero los dibujan como hueco.
+ */
+describe("getFleetProviderGapMonths · meses de la ventana de 12 meses sin datos del proveedor (C-4)", () => {
+  const monthKey = (offset: number) => new Date(Date.UTC(YEAR, MONTH_NUMBER - 1 + offset, 1)).toISOString().slice(0, 7)
+
+  async function coverMonth(month: string, status: "complete" | "legitimate_empty" | "incomplete" | "failed", rowsAccepted = 0, accounts = COPEC_COVERAGE_ACCOUNTS) {
+    await db.insert(schema.fuelProviderPeriodCoverage).values(accounts.map((account) => {
+      const [channel = "tct", product = "diesel"] = account.split(":")
+      return {
+        id: `cov-${month}-${account}`, provider: "copec", sourceAccount: account, channel: channel.toUpperCase(), product,
+        periodMonth: `${month}-01`, status, rowsAccepted, rowsReceived: rowsAccepted,
+        ...(status === "legitimate_empty" ? { sourceAvailability: "available", evidence: "Informe vacío revisado", evidenceActorUserId: IDS.user } : {}),
+      }
+    }))
+  }
+
+  it("sin cobertura, todo mes de la ventana sin transacciones es un hueco; el mes con filas no", async () => {
+    const gaps = await getFleetProviderGapMonths(session())
+
+    // 12 meses anteriores al actual (la ventana parte hace 12 meses): ninguno trajo datos ni cobertura.
+    expect(gaps).toEqual(Array.from({ length: 12 }, (_, i) => monthKey(i - 12)))
+    expect(gaps).not.toContain(MONTH)
+  })
+
+  it("un mes cerrado por la cobertura (completo o vacío certificado) o con filas aceptadas deja de ser hueco", async () => {
+    await coverMonth(monthKey(-1), "complete", 40)
+    await coverMonth(monthKey(-2), "legitimate_empty")
+    // Cobertura incompleta pero con filas: la cifra es parcial, no un cero inventado.
+    await coverMonth(monthKey(-3), "incomplete", 12, ["tct:diesel"])
+    // Una descarga fallida sin filas no dice nada del mes.
+    await coverMonth(monthKey(-4), "failed", 0, ["tct:diesel"])
+
+    const gaps = await getFleetProviderGapMonths(session())
+
+    expect(gaps).not.toContain(monthKey(-1))
+    expect(gaps).not.toContain(monthKey(-2))
+    expect(gaps).not.toContain(monthKey(-3))
+    expect(gaps).toContain(monthKey(-4))
+    expect(gaps).toContain(monthKey(-5))
+    expect(gaps).toEqual([...gaps].sort())
+  })
+
+  it("el mes de hace 14 meses (fuera de la ventana) no se informa aunque tenga una transacción", async () => {
+    const gaps = await getFleetProviderGapMonths(session())
+
+    expect(gaps).not.toContain(monthKey(-14))
+    expect(gaps).not.toContain(monthKey(-13))
+  })
+
+  it("sin combustibles:view no hay totales que advertir", async () => {
+    expect(await getFleetProviderGapMonths(session({ permissions: ["flota:view"] }))).toEqual([])
+  })
+
+  it("el resumen de la lista trae los mismos meses que la función, también con costos redactados", async () => {
+    const dates = { today: `${MONTH}-15`, warningWindowEnd: `${MONTH}-28` }
+    const expected = await getFleetProviderGapMonths(session())
+
+    const full = await getFleetOverviewPage(session(), {}, dates, { offset: 0, limit: 50 })
+    const noCosts = await getFleetOverviewPage(session({ permissions: ["flota:view", "combustibles:view"] }), {}, dates, { offset: 0, limit: 50 })
+    const noFuel = await getFleetOverviewPage(session({ permissions: ["flota:view"] }), {}, dates, { offset: 0, limit: 50 })
+
+    expect(expected.length).toBeGreaterThan(0)
+    expect(full.summary.providerGapMonths).toEqual(expected)
+    expect(noCosts.summary.providerGapMonths).toEqual(expected)
+    expect(noFuel.summary.providerGapMonths).toEqual([])
   })
 })

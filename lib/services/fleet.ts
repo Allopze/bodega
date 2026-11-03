@@ -1,10 +1,11 @@
 import type { Session } from "next-auth"
-import { and, asc, desc, eq, inArray, isNotNull, ne, or, sql } from "drizzle-orm"
+import { and, asc, desc, eq, inArray, isNotNull, ne, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
   fleetVehicleDocuments,
   fuelAnomalyCases,
-  fuelLoads,
+  fuelAnomalyRules,
+  fuelMeterReadings,
   fuelOperationRecords,
   fuelVehicleOperationalIntervals,
   fuelProviderTransactions,
@@ -15,11 +16,16 @@ import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { isGlobalRole, visibleWorksiteIds, worksiteScopeSql } from "@/lib/auth/scope"
 import { can } from "@/lib/auth/can"
-import { accountableFuelLoadsWhere, accountableProviderTransactionsWhere, providerLoadCountSql } from "@/lib/combustibles/load-status"
+import { accountableProviderTransactionsWhere, providerLoadCountSql } from "@/lib/combustibles/load-status"
+import { METER_RESET_RULE_CODES } from "@/lib/combustibles/anomaly-labels"
+import { monthsWithoutProviderData } from "@/lib/combustibles/copec-coverage"
+import { listCopecPeriodCoverage } from "@/lib/combustibles/copec-coverage-store"
+import { maxMeterRatePerDayOf, meterSeriesAdvance, type MeterSeriesPoint } from "@/lib/combustibles/meter-series"
 import { fuelOperationOccurredAtSql } from "@/lib/combustibles/fuel-log"
 import { fleetDocumentMetadataSchema, resolveNextExpiryDate } from "@/lib/validation/fleet-documents"
 import { filterFleetOverviewRows, type FleetOverviewFilters } from "@/lib/fleet-overview-filters"
 import { isValidReason, reasonRequiredMessage } from "@/lib/validation/reason-thresholds"
+import { addMonths, todayInChile } from "@/lib/utils"
 import {
   getVehicleWorkOrderMetrics,
   listRecentVehicleWorkOrders,
@@ -91,6 +97,16 @@ export interface FleetOverviewOptions {
   workOrders?: boolean
 }
 
+/**
+ * Primer día (`YYYY-MM-DD`, civil chileno) de la ventana de `FLEET_OVERVIEW_LOOKBACK_MONTHS`.
+ * Una sola definición para los litros y costos, las lecturas de medidor y el aviso de meses
+ * sin datos: si cada uno la calculara por su lado, el aviso describiría otra ventana que la
+ * de las cifras que advierte. `addMonths` recorta al último día del mes (29-feb no salta a marzo).
+ */
+function fleetOverviewSince(): string {
+  return addMonths(todayInChile(), -FLEET_OVERVIEW_LOOKBACK_MONTHS)
+}
+
 export async function getFleetOverview(
   session: Session,
   worksiteId?: string,
@@ -106,9 +122,7 @@ export async function getFleetOverview(
     vehicleIds ? inArray(fuelVehicles.id, [...vehicleIds]) : undefined,
   )
 
-  const sinceDate = new Date()
-  sinceDate.setMonth(sinceDate.getMonth() - FLEET_OVERVIEW_LOOKBACK_MONTHS)
-  const since = sinceDate.toISOString()
+  const since = fleetOverviewSince()
 
   // Litros, costo y cargas por vehículo salen del libro del proveedor (Copec) con la regla
   // canónica compartida con Analítica y la conciliación (C-9): `fuel_loads` —la serie
@@ -116,48 +130,27 @@ export async function getFleetOverview(
   // transacción.
   const providerWhere = and(
     accountableProviderTransactionsWhere(),
-    sql`left(${fuelProviderTransactions.occurredAt}, 10) >= ${since.slice(0, 10)}`,
+    sql`left(${fuelProviderTransactions.occurredAt}, 10) >= ${since}`,
     worksiteScopeSql(session, fuelProviderTransactions.worksiteId, worksiteId),
     vehicleIds ? inArray(fuelProviderTransactions.vehicleId, [...vehicleIds]) : undefined,
   )
-  // Predicado común a las dos consultas de `fuelLoads` de abajo (primera y última
-  // lectura del medidor): antes vivía inline y duplicado.
-  const fuelLoadWhere = and(
-    accountableFuelLoadsWhere(),
-    sql`${fuelLoads.loadDate} >= ${since.slice(0, 10)}`,
-    worksiteScopeSql(session, fuelLoads.worksiteId, worksiteId),
-    vehicleIds ? inArray(fuelLoads.vehicleId, [...vehicleIds]) : undefined,
-  )
-  // Sólo un campo de lectura está poblado por vehículo en la práctica (según
-  // `performanceUnit`, el consumidor sólo lee uno de los dos más abajo), así
-  // que basta una fila "primera"/"última" por vehículo con cualquiera de los
-  // dos no nulo — no hace falta resolverlos por separado.
-  const hasReading = or(isNotNull(fuelLoads.odometerReading), isNotNull(fuelLoads.hourMeterReading))
 
-  // Una carga con un reset de medidor ACEPTADO —caso regresivo cerrado
-  // explícitamente como `reset_medidor`, no como lectura corregida— no es parte
-  // de la misma serie
-  // que las cargas posteriores al reset: sin este filtro, la "primera lectura"
-  // seguía siendo la del medidor viejo y el recorrido calculado se inflaba
-  // (o salía negativo) para siempre, incluso después de validar el reset
-  // (CO-023, ítem 7). Sólo aplica a la PRIMERA lectura — la última siempre es
-  // la más reciente exista o no un reset de por medio.
-  // `reset_fl` es un alias de texto plano (no `alias()` de drizzle): interpolar
-  // una tabla con alias de drizzle dentro de un fragmento `sql` no emite el
-  // `AS` que la define, sólo la referencia — Postgres la ve como una tabla que
-  // no existe. Con SQL de texto para el alias, sin ambigüedad de nombres.
-  const noLaterAcceptedReset = sql`NOT EXISTS (
-    SELECT 1 FROM fuel_loads reset_fl
-    INNER JOIN ${fuelAnomalyCases} ON ${fuelAnomalyCases.referenceEntityId} = reset_fl.id
-    WHERE reset_fl.vehicle_id = ${fuelLoads.vehicleId}
-      AND reset_fl.load_date > ${fuelLoads.loadDate}
-      AND ${fuelAnomalyCases.referenceEntityType} = 'fuel_load'
-      AND ${fuelAnomalyCases.ruleCode} IN ('kilometraje_regresivo', 'horometro_regresivo')
+  // Un reset de medidor ACEPTADO —un caso de medidor regresivo sobre ESTA lectura, cerrado
+  // explícitamente como `reset_medidor` y no como lectura corregida— parte la serie en esa
+  // lectura (CO-023, ítem 7); lo demás sigue siendo "posible reset, verifica". Es la misma
+  // marca que lee la bandeja de anomalías (`fuel_anomaly_cases.resolution_kind`): el detector
+  // deja el caso sobre la lectura actual del par que retrocede, y `referenceEntityType`
+  // distingue la fuente (`fuel_meter_reading`, no una carga propia).
+  const acceptedResetSql = sql<boolean>`EXISTS (
+    SELECT 1 FROM ${fuelAnomalyCases}
+    WHERE ${fuelAnomalyCases.referenceEntityType} = 'fuel_meter_reading'
+      AND ${fuelAnomalyCases.referenceEntityId} = ${fuelMeterReadings.id}
+      AND ${fuelAnomalyCases.ruleCode} IN (${sql.join(METER_RESET_RULE_CODES.map((code) => sql`${code}`), sql`, `)})
       AND ${fuelAnomalyCases.status} IN ('resolved', 'dismissed')
       AND ${fuelAnomalyCases.resolutionKind} = 'reset_medidor'
   )`
 
-  const [vehicles, fuelRows, firstReadingRows, lastReadingRows, documentExpiryRows, workOrderMetrics] = await Promise.all([
+  const [vehicles, fuelRows, meterRows, jumpRules, documentExpiryRows, workOrderMetrics] = await Promise.all([
     db.query.fuelVehicles.findMany({
       where: vehicleScope,
       with: { worksite: true, responsibleUser: true, equipmentType: true, usualFuelSupplier: true },
@@ -174,26 +167,37 @@ export async function getFleetOverview(
       .from(fuelProviderTransactions)
       .where(and(providerWhere, isNotNull(fuelProviderTransactions.vehicleId)))
       .groupBy(fuelProviderTransactions.vehicleId) : Promise.resolve([]),
-    // Primera y última lectura CRONOLÓGICA del período (no el máximo/mínimo
-    // histórico): un medidor reemplazado dejaba el máximo antiguo pegado para
-    // siempre, y un reset bajaba el mínimo a un valor que infla el recorrido
-    // calculado (CO-023).
-    canViewFuel ? db.selectDistinctOn([fuelLoads.vehicleId], {
-        vehicleId: fuelLoads.vehicleId,
-        odometerReading: fuelLoads.odometerReading,
-        hourMeterReading: fuelLoads.hourMeterReading,
+    // Lecturas de medidor de la ventana, de la fuente canónica: el detalle por transacción de
+    // Copec en `fuel_meter_readings`, la misma que lee Analítica. `fuel_loads` tiene 0 filas en
+    // producción, así que la columna «Km/Hr» no existía y el recorrido valía `null` para todo
+    // equipo. Una serie por equipo y tipo de medidor, en orden cronológico: la primera y la
+    // última lectura ya no bastan —un retroceso sin reset las vuelve inservibles—, así que el
+    // recorrido se calcula con `meterSeriesAdvance`. El alcance es el del equipo (la lectura no
+    // lleva faena propia): la tabla ya lista sólo los equipos de la faena visible.
+    canViewFuel ? db
+      .select({
+        id: fuelMeterReadings.id,
+        vehicleId: fuelMeterReadings.vehicleId,
+        meterType: fuelMeterReadings.meterType,
+        occurredAt: fuelMeterReadings.occurredAt,
+        value: fuelMeterReadings.value,
+        acceptedReset: acceptedResetSql,
       })
-      .from(fuelLoads)
-      .where(and(fuelLoadWhere, hasReading, noLaterAcceptedReset))
-      .orderBy(fuelLoads.vehicleId, asc(fuelLoads.loadDate), asc(fuelLoads.createdAt)) : Promise.resolve([]),
-    canViewFuel ? db.selectDistinctOn([fuelLoads.vehicleId], {
-        vehicleId: fuelLoads.vehicleId,
-        odometerReading: fuelLoads.odometerReading,
-        hourMeterReading: fuelLoads.hourMeterReading,
-      })
-      .from(fuelLoads)
-      .where(and(fuelLoadWhere, hasReading))
-      .orderBy(fuelLoads.vehicleId, desc(fuelLoads.loadDate), desc(fuelLoads.createdAt)) : Promise.resolve([]),
+      .from(fuelMeterReadings)
+      .innerJoin(fuelVehicles, eq(fuelVehicles.id, fuelMeterReadings.vehicleId))
+      .where(and(
+        eq(fuelMeterReadings.source, "copec_tct"),
+        sql`left(${fuelMeterReadings.occurredAt}, 10) >= ${since}`,
+        vehicleScope,
+      ))
+      .orderBy(fuelMeterReadings.vehicleId, fuelMeterReadings.meterType, fuelMeterReadings.occurredAt, fuelMeterReadings.id) : Promise.resolve([]),
+    // Cota de avance diario de la regla `salto_medidor_implausible` (con su override por tipo de
+    // equipo): el recorrido no suma lo que esa regla marca como imposible.
+    canViewFuel ? db
+      .select({ config: fuelAnomalyRules.config })
+      .from(fuelAnomalyRules)
+      .where(eq(fuelAnomalyRules.code, "salto_medidor_implausible"))
+      .limit(1) : Promise.resolve([]),
     // El detalle del vehículo incluye los documentos subidos en su "próximo
     // vencimiento" (ver `getFleetVehicleDetail`); el listado los ignoraba, así
     // que un seguro cargado como documento no aparecía ni en la columna ni en
@@ -223,8 +227,17 @@ export async function getFleetOverview(
   ])
 
   const fuelByVehicle = new Map(fuelRows.map((row) => [row.vehicleId, row]))
-  const firstReadingByVehicle = new Map(firstReadingRows.map((row) => [row.vehicleId, row]))
-  const lastReadingByVehicle = new Map(lastReadingRows.map((row) => [row.vehicleId, row]))
+  // Series de lecturas por equipo y tipo de medidor (la consulta ya las trae ordenadas).
+  const meterSeriesByVehicle = new Map<string, { odometer: MeterSeriesPoint[]; hour_meter: MeterSeriesPoint[] }>()
+  for (const row of meterRows) {
+    if (!row.vehicleId) continue
+    const series = meterSeriesByVehicle.get(row.vehicleId) ?? { odometer: [], hour_meter: [] }
+    const target = row.meterType === "hour_meter" ? series.hour_meter : series.odometer
+    target.push({ value: Number(row.value), occurredAt: row.occurredAt, acceptedReset: row.acceptedReset })
+    meterSeriesByVehicle.set(row.vehicleId, series)
+  }
+  const jumpRule = { config: jumpRules[0]?.config ?? null }
+
   const currentDocumentsByVehicle = new Map<string, Array<{ documentType: string; expiresAt: string | null }>>()
   for (const row of documentExpiryRows) {
     currentDocumentsByVehicle.set(row.vehicleId, [
@@ -236,16 +249,19 @@ export async function getFleetOverview(
   return vehicles.map((vehicle) => {
     const fuel = fuelByVehicle.get(vehicle.id)
     const totalFuelAmount = canViewFuel && canViewCosts ? Number(fuel?.totalFuelAmount ?? 0) : null
-    const firstReading = firstReadingByVehicle.get(vehicle.id)
-    const lastReading = lastReadingByVehicle.get(vehicle.id)
-    const firstOdometer = firstReading?.odometerReading == null ? null : Number(firstReading.odometerReading)
-    const lastOdometer = lastReading?.odometerReading == null ? null : Number(lastReading.odometerReading)
-    const firstHourMeter = firstReading?.hourMeterReading == null ? null : Number(firstReading.hourMeterReading)
-    const lastHourMeter = lastReading?.hourMeterReading == null ? null : Number(lastReading.hourMeterReading)
-    const kmDriven = vehicle.performanceUnit === "km_per_liter" && firstOdometer != null && lastOdometer != null && lastOdometer > firstOdometer
-      ? lastOdometer - firstOdometer : null
-    const hoursRun = vehicle.performanceUnit === "liters_per_hour" && firstHourMeter != null && lastHourMeter != null && lastHourMeter > firstHourMeter
-      ? lastHourMeter - firstHourMeter : null
+    const series = meterSeriesByVehicle.get(vehicle.id)
+    const lastOdometer = series?.odometer.at(-1)?.value ?? null
+    const lastHourMeter = series?.hour_meter.at(-1)?.value ?? null
+    // El recorrido se informa en la unidad de rendimiento del equipo (km/L → km; L/h → horas) y
+    // sólo con pares que el detector de anomalías no objetaría: un retroceso sin reset aceptado
+    // no se suma, así que nunca sale negativo ni absurdo. `meterSeriesIncomplete` avisa que hubo
+    // pares descartados y la cifra es una cota inferior.
+    const km = vehicle.performanceUnit === "km_per_liter"
+      ? meterSeriesAdvance(series?.odometer ?? [], maxMeterRatePerDayOf(jumpRule, "km", vehicle.equipmentType?.slug))
+      : null
+    const hours = vehicle.performanceUnit === "liters_per_hour"
+      ? meterSeriesAdvance(series?.hour_meter ?? [], maxMeterRatePerDayOf(jumpRule, "hora", vehicle.equipmentType?.slug))
+      : null
     return {
       id: vehicle.id,
       plate: vehicle.plate,
@@ -273,8 +289,9 @@ export async function getFleetOverview(
       loadCount: canViewFuel ? Number(fuel?.loadCount ?? 0) : null,
       lastOdometerReading: canViewFuel ? lastOdometer : null,
       lastHourMeterReading: canViewFuel ? lastHourMeter : null,
-      kmDriven,
-      hoursRun,
+      kmDriven: km?.advance ?? null,
+      hoursRun: hours?.advance ?? null,
+      meterSeriesIncomplete: canViewFuel ? (km?.discardedPairs ?? 0) + (hours?.discardedPairs ?? 0) > 0 : null,
       openWorkOrders: workOrderMetrics ? (workOrderMetrics.get(vehicle.id)?.openCount ?? 0) : null,
       inWorkshopNow: workOrderMetrics ? (workOrderMetrics.get(vehicle.id)?.inWorkshopNow ?? false) : null,
     }
@@ -338,10 +355,8 @@ export async function getFleetOverviewPage(
   const offset = Math.max(0, pagination.offset)
   const matchingIds = matching.map((vehicle) => vehicle.id)
   const pageIds = matching.slice(offset, offset + limit).map((vehicle) => vehicle.id)
-  const sinceDate = new Date()
-  sinceDate.setMonth(sinceDate.getMonth() - FLEET_OVERVIEW_LOOKBACK_MONTHS)
-  const since = sinceDate.toISOString().slice(0, 10)
-  const [rows, fuelSummaryRows] = await Promise.all([
+  const since = fleetOverviewSince()
+  const [rows, fuelSummaryRows, providerGapMonths] = await Promise.all([
     getFleetOverview(session, worksiteId, pageIds, { workOrders: true }),
     // Mismo origen y misma regla que el detalle por vehículo de arriba (libro del proveedor, C-9).
     canViewFuel && matchingIds.length > 0 ? db.select({
@@ -353,6 +368,7 @@ export async function getFleetOverviewPage(
       worksiteScopeSql(session, fuelProviderTransactions.worksiteId, worksiteId),
       inArray(fuelProviderTransactions.vehicleId, matchingIds),
     )) : Promise.resolve([]),
+    getFleetProviderGapMonths(session, worksiteId),
   ])
   const fuelSummary = fuelSummaryRows[0]
   const totalFuelAmount = canViewFuel && canViewCosts ? Number(fuelSummary?.totalAmount ?? 0) : null
@@ -367,8 +383,43 @@ export async function getFleetOverviewPage(
       active: matching.filter((vehicle) => vehicle.isActive).length,
       totalFuelAmount,
       totalLiters: canViewFuel ? Number(fuelSummary?.totalLiters ?? 0) : null,
+      /** Meses (`YYYY-MM`) de la ventana de 12 meses sin datos del proveedor: los totales de arriba no los incluyen. */
+      providerGapMonths,
     },
   }
+}
+
+/**
+ * Meses (`YYYY-MM`, en orden) de la ventana de 12 meses de Flota sobre los que el libro del
+ * proveedor no puede decir «no se cargó combustible» (C-4): sin transacciones aceptadas ni una
+ * cobertura que los cierre. Es la misma vara con que Analítica y el tablero dibujan un hueco
+ * (`monthsWithoutProviderData`), aplicada a la ventana de las cifras de Flota; así «Costo
+ * combustible (12 meses)», los litros y las columnas por equipo se leen con su salvedad.
+ *
+ * Los meses con filas son los del alcance de faena de la sesión, no los de los equipos
+ * filtrados: la brecha es del proveedor, no de un equipo. Sin `combustibles:view` no hay
+ * totales que advertir y devuelve `[]`.
+ */
+export async function getFleetProviderGapMonths(session: Session, worksiteId?: string): Promise<string[]> {
+  if (!can(session, "combustibles:view")) return []
+  const since = fleetOverviewSince()
+  const lastMonth = todayInChile().slice(0, 7)
+  const months: string[] = []
+  for (let month = since.slice(0, 7); month <= lastMonth; month = addMonths(`${month}-01`, 1).slice(0, 7)) months.push(month)
+
+  const monthSql = sql<string>`left(${fuelProviderTransactions.occurredAt}, 7)`
+  const [monthsWithRows, coverage] = await Promise.all([
+    db.select({ month: monthSql })
+      .from(fuelProviderTransactions)
+      .where(and(
+        accountableProviderTransactionsWhere(),
+        sql`left(${fuelProviderTransactions.occurredAt}, 10) >= ${since}`,
+        worksiteScopeSql(session, fuelProviderTransactions.worksiteId, worksiteId),
+      ))
+      .groupBy(monthSql),
+    listCopecPeriodCoverage(`${months[0]}-01`, `${lastMonth}-01`),
+  ])
+  return [...monthsWithoutProviderData(months, coverage, new Set(monthsWithRows.map((row) => row.month)))].sort()
 }
 
 /** Ventana (días) del antes/después del rendimiento alrededor de la salida de taller. */

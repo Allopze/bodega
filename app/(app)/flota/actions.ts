@@ -9,7 +9,7 @@ import { can, requirePermission } from "@/lib/auth/can"
 import { serviceWorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
-import { uploadFleetDocument, deleteFleetDocument, getFleetOverview } from "@/lib/services/fleet"
+import { uploadFleetDocument, deleteFleetDocument, getFleetOverview, getFleetProviderGapMonths, FLEET_OVERVIEW_LOOKBACK_MONTHS } from "@/lib/services/fleet"
 import { getFleetAdminSettings } from "@/lib/services/system-settings"
 import { createFleetDocumentPath, resolveFleetDir, resolveStorageFile } from "@/lib/storage/config"
 import { validateFileBuffer, MimeType } from "@/lib/file-validation"
@@ -19,6 +19,7 @@ import { addDaysToPlainDate, todayInChile } from "@/lib/utils"
 import { filterFleetOverviewRows, type FleetOverviewFilters } from "@/lib/fleet-overview-filters"
 import { addExportMetadataSheet } from "@/lib/reports/export-metadata"
 import { recordAudit } from "@/lib/audit"
+import { fleetProviderGapNotice } from "./fleet-provider-gap"
 
 const FLEET_EXPORT_LIMIT = 10_000
 
@@ -124,7 +125,11 @@ export async function exportFleetXlsxAction(filters: FleetOverviewFilters = {}) 
   try { session = await requirePermission("flota:view", "/flota") }
   catch { return { ok: false as const, message: "Sin permisos para exportar la flota" } }
 
-  const [rows, settings] = await Promise.all([getFleetOverview(session, undefined, undefined, { workOrders: true }), getFleetAdminSettings()])
+  const [rows, settings, providerGapMonths] = await Promise.all([
+    getFleetOverview(session, undefined, undefined, { workOrders: true }),
+    getFleetAdminSettings(),
+    getFleetProviderGapMonths(session),
+  ])
   const today = todayInChile()
   const filtered = filterFleetOverviewRows(rows, filters, {
     today,
@@ -179,7 +184,10 @@ export async function exportFleetXlsxAction(filters: FleetOverviewFilters = {}) 
   for (const key of ["fuelCost"]) {
     if (sheet.getColumn(key).number > 0) sheet.getColumn(key).numFmt = "$#,##0"
   }
-  await addExportMetadataSheet(workbook, session, { filters, rowCount: exportRows.length })
+  // Las cifras de combustible (12 meses) no incluyen los meses sin datos del proveedor: la hoja
+  // «Metadatos» es lo que viaja con el archivo, así que la advertencia va ahí (C-4).
+  const providerGapNotice = fleetProviderGapNotice(providerGapMonths, FLEET_OVERVIEW_LOOKBACK_MONTHS)
+  await addExportMetadataSheet(workbook, session, { filters, rowCount: exportRows.length, notes: providerGapNotice ? [providerGapNotice] : [] })
   const base64 = await xlsxToBase64(workbook)
   await recordAudit({
     userId: session.user.id,

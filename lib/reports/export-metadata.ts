@@ -30,7 +30,18 @@ async function worksiteScopeLabel(session: Session): Promise<string> {
 export async function addExportMetadataSheet(
   wb: ExcelJS.Workbook,
   session: Session,
-  context: { filters?: object | null; rowCount: number; from?: string | null; to?: string | null },
+  context: {
+    filters?: object | null
+    rowCount: number
+    from?: string | null
+    to?: string | null
+    /**
+     * Salvedades sobre las cifras del libro (p. ej. «sin datos del proveedor en sep-2026»): una fila
+     * «Nota» por cada una, al final. Quien lee la hoja de datos por separado pierde la pantalla en que
+     * se mostraba el aviso, y esta hoja es lo que viaja con el archivo.
+     */
+    notes?: readonly string[]
+  },
 ) {
   const scope = await worksiteScopeLabel(session)
   const ws = wb.addWorksheet("Metadatos")
@@ -45,6 +56,7 @@ export async function addExportMetadataSheet(
     ["Período (hasta)", context.to ?? "Sin filtro"],
     ["Filtros aplicados", context.filters ? JSON.stringify(Object.fromEntries(Object.entries(context.filters).filter(([, value]) => value !== undefined))) : "Selección manual de filas"],
   ]
+  for (const note of context.notes ?? []) entries.push(["Nota", note])
   for (const [label, value] of entries) ws.addRow({ label, value })
   ws.getColumn("label").font = { bold: true }
 }

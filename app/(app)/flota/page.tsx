@@ -9,13 +9,14 @@ import { Callout } from "@/components/ui/callout"
 import { Button } from "@/components/ui/button"
 import { ServerPagination } from "@/components/ui/server-pagination"
 import { can, requirePermission } from "@/lib/auth/can"
-import { getFleetOverviewPage } from "@/lib/services/fleet"
+import { FLEET_OVERVIEW_LOOKBACK_MONTHS, getFleetOverviewPage } from "@/lib/services/fleet"
 import { getFleetAdminSettings } from "@/lib/services/system-settings"
 import { addDaysToPlainDate, formatCLP, todayInChile, formatQty } from "@/lib/utils"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { FleetFilters } from "./fleet-filters"
 import { FleetTable } from "./fleet-table"
 import { FleetExportButton } from "./fleet-export-button"
+import { fleetProviderGapNotice } from "./fleet-provider-gap"
 
 export const metadata: Metadata = { title: "Vehículos" }
 
@@ -85,6 +86,8 @@ export default async function FlotaPage({
     vehicle.nextExpiryDate >= today &&
     vehicle.nextExpiryDate <= warningWindowEnd,
   )
+  // Meses de la ventana en que Copec no trajo datos (C-4): los totales de arriba no los incluyen.
+  const providerGapNotice = fleetProviderGapNotice(pageData.summary.providerGapMonths, FLEET_OVERVIEW_LOOKBACK_MONTHS)
   // El servicio agrega combustible de los últimos 12 meses.
   const summaryStats: SummaryStat[] = [
     { key: "active", label: "Vehículos activos", value: active },
@@ -116,6 +119,8 @@ export default async function FlotaPage({
       />
 
       <SummaryBar stats={summaryStats} />
+
+      {providerGapNotice && <Callout tone="info" className="my-2">{providerGapNotice}</Callout>}
 
       {(expiredVehicles.length > 0 || expiringSoon.length > 0) && (
         <div className="flex flex-col gap-2">
