@@ -39,6 +39,9 @@ test.describe("Catálogos administrativos migrados", () => {
 
   test("vehículos mantienen edición, desactivación y reactivación", async ({ page }) => {
     await page.goto("/admin/flota-catalogos/vehiculos")
+    // La carga inicial de mantención siembra 120 equipos: la lista pagina de a 25
+    // y E2E-FUEL-1 no cae en la primera página. Se filtra como lo haría un usuario.
+    await page.getByRole("searchbox", { name: "Filtrar en esta página" }).fill("E2E-FUEL-1")
     await expect(page.getByRole("cell", { name: "E2E-FUEL-1", exact: true })).toBeVisible()
 
     await page.getByRole("button", { name: "Editar vehículo E2E-FUEL-1" }).click()

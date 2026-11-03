@@ -14,9 +14,9 @@ import { cn, pluralize } from "@/lib/utils"
  * recibido, que debe ser el del dominio (un ciclo de vida), no el del tamaño.
  *
  * El color nunca carga solo el significado: cada parte lleva su rótulo y su cifra
- * en la leyenda, que además es lo que entra al orden de tabulación. Los segmentos
- * de la barra enlazan igual para quien apunta con el mouse, pero se ocultan al
- * árbol de accesibilidad y al tabulador (serían el mismo enlace dos veces).
+ * en la leyenda, que es también el único lugar con enlaces. Los segmentos de la
+ * barra son sólo dibujo: un enlace dentro de `role="img"` es un control anidado
+ * (axe `nested-interactive`) aunque vaya oculto y fuera del tabulador.
  *
  * `StatusShareBar` del tablero no sirve para esto: vive dentro del `ChartFrame` de
  * `/dashboard`, no enlaza y es de cliente. Éste cuelga de `ChartSection`.
@@ -70,17 +70,18 @@ export function ShareBar({
         className="flex h-4 gap-0.5 overflow-hidden rounded-full bg-[var(--color-surface-2)] ring-1 ring-inset ring-[var(--color-border)]"
       >
         {shown.map((segment) => {
-          const common = {
-            "data-segment": segment.key,
-            title: `${segment.label}: ${segment.count} (${share(segment)} %)`,
-            style: { width: `${(segment.count / total) * 100}%`, background: segment.color },
-            // Una parte de 1 sobre 200 mide menos de un píxel y no se vería ni se podría apuntar.
-            className: cn("h-full min-w-[3px] shrink", anyActive && !segment.active && "opacity-40"),
-          }
-          return segment.href ? (
-            <Link key={segment.key} href={segment.href} {...linkProps} {...common} aria-hidden tabIndex={-1} />
-          ) : (
-            <div key={segment.key} {...common} />
+          // Los segmentos son sólo dibujo: un enlace dentro de `role="img"` es un
+          // control anidado (axe `nested-interactive`) aunque lleve aria-hidden y
+          // tabIndex -1. El filtro vive en la leyenda, que es lo que se enfoca.
+          return (
+            <div
+              key={segment.key}
+              data-segment={segment.key}
+              title={`${segment.label}: ${segment.count} (${share(segment)} %)`}
+              style={{ width: `${(segment.count / total) * 100}%`, background: segment.color }}
+              // Una parte de 1 sobre 200 mide menos de un píxel y no se vería.
+              className={cn("h-full min-w-[3px] shrink", anyActive && !segment.active && "opacity-40")}
+            />
           )
         })}
       </div>

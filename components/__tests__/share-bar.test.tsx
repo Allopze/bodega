@@ -36,13 +36,10 @@ describe("ShareBar", () => {
     expect(links.map((link) => link.getAttribute("href"))).toEqual(["/x?estado=a", "/x?estado=b", "/x?estado=c"])
     expect(links[0]!.textContent).toContain("Solicitado")
     expect(links[0]!.textContent).toContain("6")
-    // Los segmentos de la barra son el mismo enlace para quien apunta con el mouse:
-    // quedan fuera del árbol de accesibilidad y del tabulador para no duplicarlo.
-    for (const segment of container.querySelectorAll("a[data-segment]")) {
-      expect(segment.getAttribute("aria-hidden")).toBe("true")
-      expect(segment.getAttribute("tabindex")).toBe("-1")
-    }
-    expect(container.querySelectorAll("a[data-segment]").length).toBe(3)
+    // Los segmentos son sólo dibujo: un enlace dentro de role="img" es un control
+    // anidado (axe nested-interactive), aunque vaya oculto y fuera del tabulador.
+    expect(container.querySelectorAll("[data-segment]").length).toBe(3)
+    expect(container.querySelectorAll('[role="img"] a, [role="img"] [tabindex]').length).toBe(0)
   })
 
   it("marca la parte elegida y deja las demás en segundo plano", () => {
