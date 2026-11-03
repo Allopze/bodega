@@ -20,7 +20,13 @@ import { recordOperationalActivity } from "@/lib/services/operational-activity"
 import type { RequestContext } from "@/lib/services/prevention-documents/utils"
 import type { ReportData } from "@/lib/reports/export"
 import { sanitizeCell as excelSafe } from "@/lib/reports/export-module/excel-builder"
-import type { CapaQuickFilter } from "@/lib/prevention/capa-list-filters"
+import {
+  CAPA_OPEN_VIEW,
+  buildCapaStatusCounts,
+  type CapaQuickFilter,
+  type CapaStatusCounts,
+  type CapaStatusView,
+} from "@/lib/prevention/capa-list-filters"
 import { chileDateParts, codeYear, todayInChile} from "@/lib/utils"
 import { checkEvidence, describeEvidenceProblems } from "@/lib/validation/evidence-contract"
 import { assertPdtpEvidenceLinkable } from "@/lib/services/pdtp/evidence-references"
@@ -64,13 +70,15 @@ function capaQuickFilterWhere(filter: CapaQuickFilter | undefined) {
 
 /**
  * Filtros que la lista de /prevencion/capa resuelve en el servidor. Las tarjetas
- * de la pantalla (`getCapaDashboardCounts`) se construyen con ESTA misma
- * cláusula y esta misma puerta de alcance: si cada una armara la suya, el número
- * de una tarjeta y las filas que aparecen al activarla terminarían separándose.
+ * (`getCapaDashboardCounts`) y las pestañas de estado (`getCapaStatusCounts`) se
+ * construyen con ESTA misma cláusula y esta misma puerta de alcance: si cada una
+ * armara la suya, el número de una tarjeta o pestaña y las filas que aparecen al
+ * activarla terminarían separándose.
  */
 type CapaListFilters = {
   scope: WorksiteScope
-  status?: CapaStatus
+  /** Un estado guardado o `open` (ni cerradas ni canceladas: la pestaña «Abiertas»). */
+  status?: CapaStatusView
   sourceType?: string
   worksiteId?: string
 }
@@ -89,7 +97,9 @@ function capaListWhere(args: CapaListFilters) {
       : undefined
   return and(
     scopeWhere,
-    args.status ? eq(preventionCapaActions.status, args.status) : undefined,
+    args.status === CAPA_OPEN_VIEW
+      ? notInArray(preventionCapaActions.status, ["closed", "cancelled"])
+      : args.status ? eq(preventionCapaActions.status, args.status) : undefined,
     args.sourceType ? eq(preventionCapaActions.sourceType, args.sourceType) : undefined,
   )
 }
@@ -958,12 +968,8 @@ export async function listCapaActions(args: {
   )).orderBy(desc(preventionCapaActions.createdAt)).limit(effectiveLimit).offset(offset)
 }
 
-export async function listCapaActionsPage(args: {
-  scope: WorksiteScope
+export async function listCapaActionsPage(args: CapaListFilters & {
   permissions: readonly string[]
-  status?: CapaStatus
-  sourceType?: string
-  worksiteId?: string
   quickFilter?: CapaQuickFilter
   limit?: number
   offset?: number
@@ -1018,7 +1024,9 @@ export async function getCapaActionBundle(args: {
  * Tarjetas de /prevencion/capa. Honran los mismos filtros de servidor que
  * `listCapaActionsPage` (faena, fuente, estado) y quedan sin filtro cuando se
  * llaman sólo con el alcance —el tablero de inicio—. El filtro rápido (`vista`)
- * no entra: es la tarjeta misma, lo que se está contando.
+ * no entra: es la tarjeta misma, lo que se está contando. La pantalla sólo muestra
+ * «Vencidas», «Exigen detener la tarea» y «Por conciliar»; `open` y
+ * `pendingVerification` los sigue leyendo el tablero (en la pantalla son pestañas).
  */
 export async function getCapaDashboardCounts(args: CapaListFilters & {
   permissions: readonly string[]
@@ -1042,6 +1050,28 @@ export async function getCapaDashboardCounts(args: CapaListFilters & {
     unreconciled: row?.unreconciled ?? 0,
     immediateStop: row?.immediateStop ?? 0,
   }
+}
+
+/**
+ * Contadores de las pestañas de estado de /prevencion/capa. Cuentan con los mismos
+ * filtros que la lista —misma cláusula y misma puerta de alcance— pero SIN el de
+ * estado: cada pestaña dice cuántas filas mostraría. El filtro rápido (`vista`: una
+ * condición que cruza los estados) sí entra, porque sigue aplicado a la lista.
+ * Un `status` que llegue aquí se ignora a propósito.
+ */
+export async function getCapaStatusCounts(args: Omit<CapaListFilters, "status"> & {
+  permissions: readonly string[]
+  quickFilter?: CapaQuickFilter
+}): Promise<CapaStatusCounts> {
+  requirePermission(args.permissions, "prevention:capa:view")
+  if (!capaListIsVisible(args)) return buildCapaStatusCounts([])
+  const rows = await db.select({
+    status: preventionCapaActions.status,
+    total: sql<number>`count(*)::int`,
+  }).from(preventionCapaActions)
+    .where(and(capaListWhere({ ...args, status: undefined }), capaQuickFilterWhere(args.quickFilter)))
+    .groupBy(preventionCapaActions.status)
+  return buildCapaStatusCounts(rows)
 }
 
 /**

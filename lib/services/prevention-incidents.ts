@@ -1,6 +1,13 @@
-import { and, asc, desc, eq, inArray, like, lte, not, sql } from "drizzle-orm"
+import { and, asc, desc, eq, inArray, like, lte, ne, not, sql } from "drizzle-orm"
 import { automaticChargeDaysForSeverity } from "@/lib/prevention/charge-days"
 import { totalAbsenceDays } from "@/lib/prevention/absence-allocation"
+import {
+  INCIDENT_OPEN_VIEW,
+  buildIncidentStatusCounts,
+  type IncidentCondition,
+  type IncidentStatusCounts,
+  type IncidentStatusView,
+} from "@/lib/prevention/incident-list-filters"
 import { z } from "zod"
 import { db } from "@/db"
 import { resolveOwnWorkSigning } from "@/lib/services/prevention-signing"
@@ -905,13 +912,17 @@ export async function classifyIncidentPersonForIndicators(args: {
 }
 
 /**
- * Filtros de la lista de /prevencion/incidentes. Las tarjetas de la pantalla
- * (`getIncidentDashboardCounts`) se construyen con ESTA misma cláusula y esta
- * misma puerta de permiso y alcance: si cada una armara la suya, el número de una
- * tarjeta y las filas que aparecen al activarla terminarían separándose.
+ * Filtros de la lista de /prevencion/incidentes. Las tarjetas (`getIncidentDashboardCounts`)
+ * y las pestañas de estado (`getIncidentStatusCounts`) se construyen con ESTA misma
+ * cláusula y esta misma puerta de permiso y alcance: si cada una armara la suya, el
+ * número de una tarjeta o pestaña y las filas que aparecen al activarla terminarían
+ * separándose.
  */
 export type IncidentListFilters = {
-  status?: string
+  /** Un estado guardado o `open` (todo lo que no está cerrado: la pestaña «Abiertos»). */
+  status?: IncidentStatusView
+  /** Condición que cruza los estados: lo que cuentan las tarjetas «Plazos atrasados» y «Fatal o grave». */
+  condition?: IncidentCondition
   worksiteId?: string
   eventType?: string
   year?: number
@@ -924,7 +935,11 @@ function incidentListConditions(access: IncidentAccess, filters: IncidentListFil
   requireAccess(access, "prevention:incidents:view")
   if (filters.worksiteId) requireAccess(access, "prevention:incidents:view", filters.worksiteId)
   const conditions = [scopeCondition(access.scope)]
-  if (filters.status) conditions.push(eq(preventionIncidents.status, filters.status))
+  if (filters.status === INCIDENT_OPEN_VIEW) conditions.push(ne(preventionIncidents.status, "closed"))
+  else if (filters.status) conditions.push(eq(preventionIncidents.status, filters.status))
+  // Mismas reglas que las tarjetas: un grave ya cerrado no suspende la operación.
+  if (filters.condition === "overdue") conditions.push(sql`exists (select 1 from ${preventionIncidentNotifications} n where n.incident_id = ${preventionIncidents.id} and n.status = 'overdue')`)
+  if (filters.condition === "fatal") conditions.push(eq(preventionIncidents.isFatalOrSerious, true), ne(preventionIncidents.status, "closed"))
   if (filters.worksiteId) conditions.push(eq(preventionIncidents.worksiteId, filters.worksiteId))
   if (filters.eventType) conditions.push(eq(preventionIncidents.eventType, filters.eventType))
   if (filters.year) conditions.push(sql`extract(year from ${preventionIncidents.occurredAt} at time zone 'America/Santiago')::int = ${filters.year}`)
@@ -950,7 +965,6 @@ function incidentListConditions(access: IncidentAccess, filters: IncidentListFil
 
 export async function listPreventionIncidents(args: IncidentListFilters & {
   access: IncidentAccess
-  status?: IncidentStatus
   limit?: number
 }) {
   const conditions = incidentListConditions(args.access, args)
@@ -1823,8 +1837,10 @@ export async function listIncidentWorksites(
 /**
  * Tarjetas de /prevencion/incidentes. Honran los mismos filtros que
  * `listPreventionIncidents` (faena, período, indicador, tipo y estado) y quedan
- * sin filtro cuando se llaman sólo con el alcance —el tablero de inicio—. El
- * filtro rápido de la pantalla no entra: es la tarjeta misma, lo que se cuenta.
+ * sin filtro cuando se llaman sólo con el alcance —el tablero de inicio—. La
+ * condición (`condition`) no se le pasa desde la pantalla: es la tarjeta misma,
+ * lo que se cuenta. La pantalla sólo muestra «Plazos atrasados» y «Fatal o grave»;
+ * `totalOpen` y `pendingInvestigation` los sigue leyendo el tablero.
  */
 export async function getIncidentDashboardCounts(access: IncidentAccess, filters: IncidentListFilters = {}) {
   const conditions = incidentListConditions(access, filters)
@@ -1841,6 +1857,25 @@ export async function getIncidentDashboardCounts(access: IncidentAccess, filters
     .innerJoin(worksites, eq(worksites.id, preventionIncidents.worksiteId))
     .where(and(...conditions.filter(Boolean)))
   return row ?? { totalOpen: 0, overdueNotifications: 0, fatalOrSerious: 0, pendingInvestigation: 0 }
+}
+
+/**
+ * Contadores de las pestañas de estado de /prevencion/incidentes. Cuentan con los
+ * mismos filtros que la lista —misma cláusula, misma puerta de permiso y alcance— pero
+ * SIN el de estado: cada pestaña dice cuántas filas mostraría, no cuántas quedan dentro
+ * del estado ya elegido. Un `status` que llegue aquí se ignora a propósito.
+ */
+export async function getIncidentStatusCounts(access: IncidentAccess, filters: Omit<IncidentListFilters, "status"> = {}): Promise<IncidentStatusCounts> {
+  const conditions = incidentListConditions(access, { ...filters, status: undefined })
+  const rows = await db.select({
+    status: preventionIncidents.status,
+    total: sql<number>`count(*)::int`,
+  }).from(preventionIncidents)
+    // Mismo FROM que la lista y que las tarjetas (ver el comentario de arriba sobre el join).
+    .innerJoin(worksites, eq(worksites.id, preventionIncidents.worksiteId))
+    .where(and(...conditions.filter(Boolean)))
+    .groupBy(preventionIncidents.status)
+  return buildIncidentStatusCounts(rows)
 }
 
 export async function listIncidentNotificationResponsibles(access: IncidentAccess, worksiteId: string) {

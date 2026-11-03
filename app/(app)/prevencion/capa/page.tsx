@@ -6,10 +6,10 @@ import { resolvePagination } from "@/lib/pagination"
 import { Button } from "@/components/ui/button"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
-import { getCapaDashboardCounts, listCapaActionsPage, listCapaWorksites, type CapaStatus } from "@/lib/services/prevention-capa"
+import { getCapaDashboardCounts, getCapaStatusCounts, listCapaActionsPage, listCapaWorksites } from "@/lib/services/prevention-capa"
 import { CapaList } from "./capa-list"
 import { ManualCapaDialog } from "./manual-capa-dialog"
-import { isCapaQuickFilter } from "@/lib/prevention/capa-list-filters"
+import { capaLegacyVistaHref, parseCapaCondition, parseCapaStatusView } from "@/lib/prevention/capa-list-filters"
 
 export const metadata: Metadata = { title: "Acciones CAPA" }
 
@@ -22,21 +22,33 @@ export default async function CapaPage({ searchParams }: { searchParams: Promise
   const scope = resolveWorksiteScope(session)
   const access = { scope, permissions: session.user.permissions }
   const raw = await searchParams
+  // El tablero y los enlaces viejos publicaron `?vista=open` y `?vista=pending_verification`
+  // cuando eran tarjetas; hoy son pestañas de estado.
+  const legacyHref = capaLegacyVistaHref("/prevencion/capa", raw)
+  if (legacyHref) redirect(legacyHref)
   const pageSize = 50
-  const pagination = resolvePagination({ pageParam: raw.page, totalItems: 0, pageSize })
+  // `resolvePagination` con `totalItems: 0` recorta cualquier página a la 1 (aún no se
+  // sabe el total): el desplazamiento de la lista sale del parámetro tal cual y el total
+  // real se resuelve después, para el paginador.
+  const requestedPage = Number.parseInt(raw.page ?? "", 10)
+  const offset = Number.isFinite(requestedPage) && requestedPage > 1 ? (requestedPage - 1) * pageSize : 0
 
-  const status = raw.status && raw.status !== "all" ? raw.status : undefined
+  const status = parseCapaStatusView(raw.status)
   const source = raw.source && raw.source !== "all" ? raw.source : undefined
   const worksite = raw.worksite && raw.worksite !== "all" ? raw.worksite : undefined
-  const quickFilter = isCapaQuickFilter(raw.vista) && raw.vista !== "all" ? raw.vista : undefined
+  const quickFilter = parseCapaCondition(raw.vista)
 
-  // Lista y tarjetas comparten los filtros de servidor: el número de una tarjeta
-  // es lo que la lista muestra al activarla (la tarjeta `vista` es lo contado).
-  const listFilters = { status: status as CapaStatus, sourceType: source, worksiteId: worksite }
-  const [{ rows: actions, total }, worksites, counts] = await Promise.all([
-    listCapaActionsPage({ ...access, ...listFilters, quickFilter, limit: pageSize, offset: pagination.offset }),
+  // Regla A5: cada dimensión se representa una vez. El estado son pestañas y las
+  // tarjetas son condiciones que cruzan los estados (`vista`); cada contador se
+  // calcula con los filtros de la URL MENOS su propia dimensión, y la lista con
+  // todos, así que el número de una pestaña o tarjeta es lo que la lista muestra
+  // al activarla.
+  const shared = { sourceType: source, worksiteId: worksite }
+  const [{ rows: actions, total }, worksites, counts, statusCounts] = await Promise.all([
+    listCapaActionsPage({ ...access, ...shared, status, quickFilter, limit: pageSize, offset }),
     listCapaWorksites(access),
-    getCapaDashboardCounts({ ...access, ...listFilters }),
+    getCapaDashboardCounts({ ...access, ...shared, status }),
+    getCapaStatusCounts({ ...access, ...shared, quickFilter }),
   ])
 
   const resolvedPagination = resolvePagination({ pageParam: raw.page, totalItems: total, pageSize })
@@ -61,7 +73,7 @@ export default async function CapaPage({ searchParams }: { searchParams: Promise
           </div>
         }
       />
-      <CapaList actions={actions} worksites={worksites} counts={counts} pagination={resolvedPagination} />
+      <CapaList actions={actions} worksites={worksites} counts={counts} statusCounts={statusCounts} pagination={resolvedPagination} />
     </PageContainer>
   )
 }

@@ -5,7 +5,7 @@ import { login, expectPageTitle } from "./helpers"
  * E2E Spec: Ciclo de Vida Completo de Acciones Correctivas y Preventivas (CAPA).
  *
  * Cubre:
- *   • Carga del listado principal de CAPA con tarjetas de métricas y filtros por estado/origen.
+ *   • Carga del listado principal de CAPA con pestañas de estado con contador, tarjetas de condiciones y filtros por origen/faena.
  *   • Acceso al detalle de una acción CAPA (`/prevencion/capa/[id]`).
  *   • Registro de notas de seguimiento y avance porcentual.
  *   • Incorporación de evidencias documentales y fotográficas.
@@ -17,14 +17,24 @@ test.describe("Prevención — Ciclo de vida CAPA", () => {
     await login(page)
   })
 
-  test("la vista principal muestra KPIs y permite filtrar por estado", async ({ page }) => {
+  test("la vista principal muestra las pestañas de estado y las condiciones, y permite filtrar por estado", async ({ page }) => {
     await page.goto("/prevencion/capa")
     await expectPageTitle(page, /Acciones CAPA|Gestión CAPA/i)
 
-    // Verificación de tarjetas de KPI
-    await expect(page.getByText("Abiertas").first()).toBeVisible({ timeout: 30_000 })
+    // Regla A5: el estado es UNA representación —pestañas con contador—, sin Select de estado
+    // ni tarjetas por estado. Las tarjetas que quedan son condiciones que cruzan los estados.
+    const tabs = page.getByRole("navigation", { name: "Estado de las acciones CAPA" })
+    await expect(tabs).toBeVisible({ timeout: 30_000 })
+    await expect(tabs.getByRole("link", { name: /^Abiertas\s*\d+$/ })).toBeVisible()
+    await expect(tabs.getByRole("link", { name: /^Pendiente de verificación\s*\d+$/ })).toBeVisible()
+    await expect(page.getByRole("combobox", { name: "Estado CAPA" })).toHaveCount(0)
     await expect(page.getByText("Vencidas").first()).toBeVisible()
-    await expect(page.getByText("Por verificar").first()).toBeVisible()
+    await expect(page.getByText("Exigen detener la tarea").first()).toBeVisible()
+
+    // Elegir una pestaña filtra por estado en la URL y la deja marcada.
+    await tabs.getByRole("link", { name: /^Cerrada\s*\d+$/ }).click()
+    await expect(page).toHaveURL(/status=closed/)
+    await expect(tabs.getByRole("link", { name: /^Cerrada\s*\d+$/ })).toHaveAttribute("aria-current", "page")
   })
 
   test("seguimiento y registro de evidencia en una acción CAPA", async ({ page }) => {

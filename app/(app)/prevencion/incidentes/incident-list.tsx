@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
 import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui/responsive-data-list"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { StageTabs } from "@/components/ui/stage-tabs"
 import { TableCell, TableRow } from "@/components/ui/table"
 import { useUrlFilters } from "@/lib/hooks/use-url-filters"
 import { formatDateTime } from "@/lib/utils"
@@ -16,6 +17,13 @@ import {
   INCIDENT_STATUS_LABELS,
   incidentStatusBadgeVariant,
 } from "@/lib/prevention/incidents"
+import {
+  buildIncidentStatusTabs,
+  parseIncidentCondition,
+  parseIncidentStatusView,
+  type IncidentCondition,
+  type IncidentStatusCounts,
+} from "@/lib/prevention/incident-list-filters"
 import type { IncidentStatus } from "@/lib/services/prevention-incidents"
 
 type IncidentListItem = {
@@ -40,12 +48,13 @@ type IncidentListItem = {
 interface Props {
   incidents: IncidentListItem[]
   worksites: Array<{ id: string; name: string }>
-  counts: { totalOpen: number; overdueNotifications: number; fatalOrSerious: number; pendingInvestigation: number }
+  /** Condiciones que cruzan los estados; cuentan con el estado elegido (lo que la lista mostraría al activarlas). */
+  counts: { overdueNotifications: number; fatalOrSerious: number }
+  /** Contadores de las pestañas de estado: con los demás filtros aplicados y sin el de estado. */
+  statusCounts: IncidentStatusCounts
   canReport: boolean
   indicatorContext?: string
 }
-
-type QuickFilter = "all" | "open" | "overdue" | "fatal" | "investigation"
 
 const COLUMNS = [
   { key: "code", label: "Código / evento", sortable: true },
@@ -55,42 +64,33 @@ const COLUMNS = [
   { key: "status", label: "Estado", sortable: true },
 ]
 
-export function IncidentList({ incidents, worksites, counts, canReport, indicatorContext }: Props) {
+export function IncidentList({ incidents, worksites, counts, statusCounts, canReport, indicatorContext }: Props) {
   const { getFilter, setFilters, clearFilters: clearUrlFilters } = useUrlFilters()
-  const status = getFilter("status") || "all"
+  // Regla A5: el estado son las pestañas (`?status=`) y las tarjetas son condiciones que
+  // cruzan los estados (`?quick=overdue|fatal`, que sigue en la URL para que el tablero
+  // pueda aterrizar aquí). La página resuelve todos los filtros en el servidor: `incidents`
+  // llega ya recortado y la tabla sólo suma el buscador de la barra superior.
+  const status = parseIncidentStatusView(getFilter("status"))
+  const condition = parseIncidentCondition(getFilter("quick"))
   const eventType = getFilter("eventType") || "all"
   const worksiteId = getFilter("worksiteId") || "all"
-  // §3.3: el quick filter vive en la URL (`quick=open`) y no en estado local, para
-  // que un KPI del dashboard pueda aterrizar en la lista ya filtrada y la cifra
-  // tenga un camino hacia el detalle que la reproduce.
-  const quickFilter = (getFilter("quick") || "all") as QuickFilter
-  const filtered = incidents.filter((incident) => {
-    if (status !== "all" && incident.status !== status) return false
-    if (eventType !== "all" && incident.eventType !== eventType) return false
-    if (worksiteId !== "all" && incident.worksiteId !== worksiteId) return false
-    if (quickFilter === "open" && incident.status === "closed") return false
-    if (quickFilter === "overdue" && !incident.hasOverdueNotifications) return false
-    if (quickFilter === "fatal" && !incident.isFatalOrSerious) return false
-    if (quickFilter === "investigation" && !["immediate_measures", "under_investigation"].includes(incident.status)) return false
-    return true
-  })
-
-  const rows = filtered.map((incident) => ({
+  // «Sin filtros» se decide por la URL, no por el resultado: una lista vacía por un
+  // filtro no es «aún no hay incidentes».
+  const hayFiltroActivo = Boolean(status || condition || eventType !== "all" || worksiteId !== "all"
+    || ["year", "monthFrom", "monthTo", "indicator"].some((key) => getFilter(key)))
+  const sinDatos = incidents.length === 0 && !hayFiltroActivo
+  const rows = incidents.map((incident) => ({
     ...incident,
     eventTypeLabel: INCIDENT_EVENT_LABELS[incident.eventType] ?? incident.eventType,
   }))
 
-  const metrics: Array<{ key: QuickFilter; label: string; value: number; detail: string }> = [
-    { key: "open", label: "Abiertos", value: counts.totalOpen, detail: "Requieren gestión" },
+  const metrics: Array<{ key: IncidentCondition; label: string; value: number; detail: string }> = [
     { key: "overdue", label: "Plazos atrasados", value: counts.overdueNotifications, detail: "DIAT/DIEP/autoridad" },
     { key: "fatal", label: "Fatal o grave", value: counts.fatalOrSerious, detail: "Operación suspendida" },
-    { key: "investigation", label: "Por investigar", value: counts.pendingInvestigation, detail: "Causa aún abierta" },
   ]
 
-  const STATUS_LABELS = INCIDENT_STATUS_LABELS as Record<string, string>
   const EVENT_LABELS = INCIDENT_EVENT_LABELS as Record<string, string>
   const activeChips: ActiveFilterChip[] = []
-  if (status !== "all") activeChips.push({ key: "status", label: "Estado", value: status, displayValue: STATUS_LABELS[status] ?? status })
   if (eventType !== "all") activeChips.push({ key: "eventType", label: "Tipo de evento", value: eventType, displayValue: EVENT_LABELS[eventType] ?? eventType })
   if (worksiteId !== "all") {
     const ws = worksites.find((w) => w.id === worksiteId)
@@ -103,9 +103,9 @@ export function IncidentList({ incidents, worksites, counts, canReport, indicato
   return (
     <div className="space-y-4">
       {indicatorContext && <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--color-info-line)] bg-[var(--color-info-tint)] px-4 py-3 text-sm"><p><strong>Drill-down canónico:</strong> {indicatorContext}</p><Button asChild size="sm" variant="ghost"><Link href="/prevencion/incidentes">Quitar filtro</Link></Button></div>}
-      <div className="grid grid-cols-2 overflow-hidden border-y border-[var(--color-border)] lg:grid-cols-4">
+      <div className="grid grid-cols-2 overflow-hidden border-y border-[var(--color-border)]">
         {metrics.map((metric) => (
-          <button key={metric.key} type="button" onClick={() => setFilters({ quick: quickFilter === metric.key ? null : metric.key })} aria-pressed={quickFilter === metric.key} className="border-r border-[var(--color-border)] px-4 py-3 text-left hover:bg-[var(--color-surface-2)] aria-pressed:bg-[var(--color-primary-tint)]">
+          <button key={metric.key} type="button" onClick={() => setFilters({ quick: condition === metric.key ? null : metric.key })} aria-pressed={condition === metric.key} className="border-r border-[var(--color-border)] px-4 py-3 text-left hover:bg-[var(--color-surface-2)] aria-pressed:bg-[var(--color-primary-tint)]">
             <span className="text-eyebrow">{metric.label}</span>
             <span className="mt-1 block font-mono text-xl font-semibold tabular-nums">{metric.value}</span>
             <span className="text-xs text-[var(--color-text-subtle)]">{metric.detail}</span>
@@ -113,16 +113,15 @@ export function IncidentList({ incidents, worksites, counts, canReport, indicato
         ))}
       </div>
 
+      <StageTabs tabs={buildIncidentStatusTabs(statusCounts)} ariaLabel="Estado de los incidentes" param="status" />
+
       <FilterToolbar
         activeChips={activeChips}
         onRemoveChip={handleRemoveChip}
-        onClearAll={clearUrlFilters}
-        hasActiveFilters={status !== "all" || eventType !== "all" || worksiteId !== "all" || quickFilter !== "all"}
+        // El estado no es un filtro (son las pestañas): limpiar no cambia de pestaña.
+        onClearAll={() => clearUrlFilters(["status"])}
+        hasActiveFilters={eventType !== "all" || worksiteId !== "all" || Boolean(condition)}
       >
-        <Select value={status} onValueChange={(value) => { setFilters({ status: value === "all" ? null : value, quick: null }) }}>
-          <SelectTrigger className="w-52" aria-label="Estado del incidente"><SelectValue /></SelectTrigger>
-          <SelectContent><SelectItem value="all">Todos los estados</SelectItem>{Object.entries(INCIDENT_STATUS_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
-        </Select>
         <Select value={eventType} onValueChange={(value) => setFilters({ eventType: value === "all" ? null : value })}>
           <SelectTrigger className="w-64" aria-label="Tipo de evento"><SelectValue /></SelectTrigger>
           <SelectContent><SelectItem value="all">Todos los eventos</SelectItem>{Object.entries(INCIDENT_EVENT_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
@@ -138,9 +137,9 @@ export function IncidentList({ incidents, worksites, counts, canReport, indicato
         columns={COLUMNS}
         rows={rows}
         searchKeys={["code", "companyName", "worksiteName", "location", "eventTypeLabel"]}
-        emptyTitle={incidents.length === 0 ? "Aún no hay incidentes canónicos" : "No hay incidentes con estos filtros"}
-        emptyDescription={incidents.length === 0 ? "Registra aquí los eventos ocurridos en tus faenas: reporte, triage, investigación y CAPA quedan trazados desde el primer registro." : "Ajusta filtros o el buscador superior."}
-        emptyAction={incidents.length === 0 && canReport ? <Button asChild><Link href="/prevencion/incidentes/reportar">Reportar incidente</Link></Button> : <Button type="button" variant="secondary" onClick={() => clearUrlFilters()}>Ver todos</Button>}
+        emptyTitle={sinDatos ? "Aún no hay incidentes canónicos" : "No hay incidentes con estos filtros"}
+        emptyDescription={sinDatos ? "Registra aquí los eventos ocurridos en tus faenas: reporte, triage, investigación y CAPA quedan trazados desde el primer registro." : "Ajusta filtros o el buscador superior."}
+        emptyAction={sinDatos && canReport ? <Button asChild><Link href="/prevencion/incidentes/reportar">Reportar incidente</Link></Button> : <Button type="button" variant="secondary" onClick={() => clearUrlFilters()}>Ver todos</Button>}
         renderMobileCard={(incident) => {
           return (
             <ResponsiveDataListCard

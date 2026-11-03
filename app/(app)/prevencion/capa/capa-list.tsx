@@ -10,6 +10,7 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { Pagination } from "@/components/ui/pagination"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
+import { StageTabs } from "@/components/ui/stage-tabs"
 import { useUrlFilters } from "@/lib/hooks/use-url-filters"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ClipboardText } from "@phosphor-icons/react"
@@ -19,8 +20,12 @@ import type { PaginationState } from "@/lib/pagination"
 import { chileDateParts } from "@/lib/utils"
 import {
   CAPA_QUICK_FILTER_LABELS,
+  buildCapaStatusTabs,
   matchesCapaQuickFilter,
-  type CapaQuickFilter,
+  parseCapaCondition,
+  parseCapaStatusView,
+  type CapaCondition,
+  type CapaStatusCounts,
 } from "@/lib/prevention/capa-list-filters"
 
 interface CapaListItem {
@@ -46,7 +51,10 @@ interface CapaListItem {
 interface Props {
   actions: CapaListItem[]
   worksites: { id: string; name: string }[]
-  counts: { open: number; overdue: number; pendingVerification: number; unreconciled: number; immediateStop: number }
+  /** Condiciones que cruzan los estados; cuentan con el estado elegido (lo que la lista mostraría al activarlas). */
+  counts: { overdue: number; unreconciled: number; immediateStop: number }
+  /** Contadores de las pestañas de estado: con los demás filtros aplicados y sin el de estado. */
+  statusCounts: CapaStatusCounts
   pagination: PaginationState
 }
 
@@ -54,22 +62,21 @@ const PRIORITY_LABEL: Record<string, string> = {
   low: "Baja", medium: "Media", high: "Alta", critical: "Crítica",
 }
 
-export function CapaList({ actions, worksites, counts, pagination }: Props) {
+export function CapaList({ actions, worksites, counts, statusCounts, pagination }: Props) {
   const router = useRouter()
   const sp = useSearchParams()
   const { searchQuery } = useSafeShellHeader()
-  // status/source/worksite son filtros SERVER-SIDE (la página re-query por URL);
-  // por eso se conservan las claves exactas y se lee directo de la URL sin useState
-  // (evita el drift previo entre useState y searchParams). quickFilter es un toggle
-  // local de las métricas (no viaja al server).
+  // Regla A5: el estado son las pestañas (`?status=`) y las tarjetas son condiciones que
+  // cruzan los estados (`?vista=overdue|immediate_stop|unreconciled`, que sigue en la URL
+  // para que el tablero pueda aterrizar aquí). La página resuelve todos los filtros en el
+  // servidor y lee directo de la URL, sin useState (evita el drift previo entre useState
+  // y searchParams): `actions` llega ya recortado y la tabla sólo suma el buscador de la
+  // barra superior.
   const { getFilter, setFilters, clearFilters: clearUrlFilters } = useUrlFilters()
-  const status = getFilter("status") || "all"
+  const status = parseCapaStatusView(getFilter("status"))
   const source = getFilter("source") || "all"
   const worksite = getFilter("worksite") || "all"
-  const quickFilterValue = getFilter("vista")
-  const quickFilter = quickFilterValue === "open" || quickFilterValue === "overdue" || quickFilterValue === "pending_verification" || quickFilterValue === "unreconciled" || quickFilterValue === "immediate_stop"
-    ? quickFilterValue
-    : "all"
+  const condition = parseCapaCondition(getFilter("vista"))
   const worksiteName = React.useMemo(() => new Map(worksites.map((item) => [item.id, item.name])), [worksites])
   const today = React.useMemo(() => {
     const { year, month, day } = chileDateParts()
@@ -86,17 +93,14 @@ export function CapaList({ actions, worksites, counts, pagination }: Props) {
   }
 
   const filtered = actions.filter((item) => {
-    if (!matchesCapaQuickFilter(item, quickFilter, today)) return false
     if (!query) return true
     return [item.code, item.finding, item.actionDescription, item.responsibleName, item.responsibleSnapshot, worksiteName.get(item.worksiteId)]
       .filter(Boolean).some((value) => String(value).toLocaleLowerCase("es-CL").includes(query))
   })
 
-  const metrics: Array<{ key: CapaQuickFilter; label: string; value: number; detail: string }> = [
+  const metrics: Array<{ key: CapaCondition; label: string; value: number; detail: string }> = [
     { key: "immediate_stop", label: "Exigen detener la tarea", value: counts.immediateStop, detail: "Respuesta inmediata en terreno" },
-    { key: "open", label: "Abiertas", value: counts.open, detail: "Requieren gestión" },
     { key: "overdue", label: "Vencidas", value: counts.overdue, detail: "Plazo incumplido" },
-    { key: "pending_verification", label: "Por verificar", value: counts.pendingVerification, detail: "Esperan inspección" },
   ]
 
   // Estado y fuente se filtran en el servidor, así que `actions` **ya llega
@@ -104,19 +108,17 @@ export function CapaList({ actions, worksites, counts, pagination }: Props) {
   // sin datos" fallaba siempre en ese caso, y la pantalla anunciaba que no hay
   // acciones —sin ofrecer salida— cuando en realidad las había fuera del
   // filtro. La causa se decide por los filtros activos, no por el resultado.
-  const hayFiltroActivo = status !== "all" || source !== "all" || worksite !== "all" || quickFilter !== "all" || Boolean(query)
+  const hayFiltroActivo = Boolean(status) || source !== "all" || worksite !== "all" || Boolean(condition) || Boolean(query)
 
-  const STATUS_LABELS = CAPA_STATUS_LABELS as Record<string, string>
   const SOURCE_LABELS = CAPA_SOURCE_LABELS as Record<string, string>
   const activeChips: ActiveFilterChip[] = []
-  if (status !== "all") activeChips.push({ key: "status", label: "Estado", value: status, displayValue: STATUS_LABELS[status] ?? status })
   if (source !== "all") activeChips.push({ key: "source", label: "Fuente", value: source, displayValue: SOURCE_LABELS[source] ?? source })
   if (worksite !== "all") {
     const ws = worksites.find((w) => w.id === worksite)
     if (ws) activeChips.push({ key: "worksite", label: "Faena", value: worksite, displayValue: ws.name })
   }
-  if (quickFilter !== "all") {
-    activeChips.push({ key: "quick", label: "Vista", value: quickFilter, displayValue: CAPA_QUICK_FILTER_LABELS[quickFilter] })
+  if (condition) {
+    activeChips.push({ key: "quick", label: "Vista", value: condition, displayValue: CAPA_QUICK_FILTER_LABELS[condition] })
   }
   function handleRemoveChip(key: string) {
     if (key === "quick") {
@@ -125,19 +127,20 @@ export function CapaList({ actions, worksites, counts, pagination }: Props) {
     }
     setFilters({ [key]: null })
   }
+  // El estado no es un filtro (son las pestañas): limpiar no cambia de pestaña.
   function clearFilters() {
-    clearUrlFilters()
+    clearUrlFilters(["status"])
   }
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 overflow-hidden border-y border-[var(--color-border)] lg:grid-cols-4">
+      <div className="grid grid-cols-2 overflow-hidden border-y border-[var(--color-border)]">
         {metrics.map((metric) => (
           <button
             key={metric.key}
             type="button"
-            onClick={() => setFilters({ vista: quickFilter === metric.key ? null : metric.key })}
-            aria-pressed={quickFilter === metric.key}
+            onClick={() => setFilters({ vista: condition === metric.key ? null : metric.key })}
+            aria-pressed={condition === metric.key}
             className="border-r border-[var(--color-border)] px-4 py-3 text-left hover:bg-[var(--color-surface-2)] aria-pressed:bg-[var(--color-primary-tint)]"
           >
             <span className="text-eyebrow">{metric.label}</span>
@@ -147,31 +150,26 @@ export function CapaList({ actions, worksites, counts, pagination }: Props) {
         ))}
       </div>
 
+      <StageTabs tabs={buildCapaStatusTabs(statusCounts)} ariaLabel="Estado de las acciones CAPA" param="status" />
+
       <FilterToolbar
         activeChips={activeChips}
         onRemoveChip={handleRemoveChip}
         onClearAll={clearFilters}
-        hasActiveFilters={status !== "all" || source !== "all" || worksite !== "all" || quickFilter !== "all"}
-        activeCount={quickFilter === "unreconciled" ? 1 : 0}
+        hasActiveFilters={source !== "all" || worksite !== "all" || Boolean(condition)}
+        activeCount={condition === "unreconciled" ? 1 : 0}
         overflowFilters={
           <Button
             type="button"
-            variant={quickFilter === "unreconciled" ? "primary" : "secondary"}
-            onClick={() => setFilters({ vista: quickFilter === "unreconciled" ? null : "unreconciled" })}
-            aria-pressed={quickFilter === "unreconciled"}
+            variant={condition === "unreconciled" ? "primary" : "secondary"}
+            onClick={() => setFilters({ vista: condition === "unreconciled" ? null : "unreconciled" })}
+            aria-pressed={condition === "unreconciled"}
             className="w-full justify-start"
           >
             Por conciliar ({counts.unreconciled})
           </Button>
         }
       >
-        <Select value={status} onValueChange={(value) => setFilters({ status: value === "all" ? null : value })}>
-          <SelectTrigger className="w-48" aria-label="Estado CAPA"><SelectValue placeholder="Estado" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todos los estados</SelectItem>
-            {Object.entries(CAPA_STATUS_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
-          </SelectContent>
-        </Select>
         <Select value={source} onValueChange={(value) => setFilters({ source: value === "all" ? null : value })}>
           <SelectTrigger className="w-44" aria-label="Fuente CAPA"><SelectValue placeholder="Fuente" /></SelectTrigger>
           <SelectContent>
@@ -195,7 +193,7 @@ export function CapaList({ actions, worksites, counts, pagination }: Props) {
           description={hayFiltroActivo
             ? "Ajusta los filtros o el texto del buscador superior para volver a ver acciones."
             : "Las acciones aparecerán al registrar hallazgos desde PPA, PDTP, evaluaciones, incidentes o riesgos."}
-          action={hayFiltroActivo ? <Button type="button" variant="secondary" onClick={clearFilters}>Ver todas</Button> : undefined}
+          action={hayFiltroActivo ? <Button type="button" variant="secondary" onClick={() => clearUrlFilters()}>Ver todas</Button> : undefined}
         />
       ) : (
         <>

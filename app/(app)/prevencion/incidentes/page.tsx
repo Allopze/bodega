@@ -7,7 +7,8 @@ import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { Button } from "@/components/ui/button"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
-import { getIncidentDashboardCounts, listIncidentWorksites, listPreventionIncidents } from "@/lib/services/prevention-incidents"
+import { getIncidentDashboardCounts, getIncidentStatusCounts, listIncidentWorksites, listPreventionIncidents } from "@/lib/services/prevention-incidents"
+import { incidentLegacyQuickHref, parseIncidentCondition, parseIncidentStatusView } from "@/lib/prevention/incident-list-filters"
 import { IncidentList } from "./incident-list"
 import { PublicIncidentReportsPanel } from "./public-reports-panel"
 import { PdtpScheduledActivityPanelServer } from "@/components/prevention/pdtp-scheduled-activity-panel-server"
@@ -22,12 +23,15 @@ const INDICATOR_LABELS: Record<string, string> = {
   pending: "pendientes",
 }
 
-export default async function IncidentsPage({ searchParams }: { searchParams: Promise<{ worksiteId?: string; year?: string; monthFrom?: string; monthTo?: string; indicator?: string; status?: string; eventType?: string }> }) {
+export default async function IncidentsPage({ searchParams }: { searchParams: Promise<{ worksiteId?: string; year?: string; monthFrom?: string; monthTo?: string; indicator?: string; status?: string; eventType?: string; quick?: string }> }) {
   let session
   try { session = await requirePermission("prevention:incidents:view") }
   catch { redirect("/forbidden") }
   const access = { ctx: { userId: session.user.id }, scope: resolveWorksiteScope(session), permissions: session.user.permissions }
   const query = await searchParams
+  // El tablero publicó `?quick=open` cuando «Abiertos» era una tarjeta; hoy es una pestaña.
+  const legacyHref = incidentLegacyQuickHref("/prevencion/incidentes", query)
+  if (legacyHref) redirect(legacyHref)
   const indicator = ["accidentability", "frequency", "severity", "pending"].includes(query.indicator ?? "")
     ? query.indicator as "accidentability" | "frequency" | "severity" | "pending"
     : undefined
@@ -39,26 +43,26 @@ export default async function IncidentsPage({ searchParams }: { searchParams: Pr
   const monthTo = Number.isInteger(monthToRaw) && monthToRaw >= 1 && monthToRaw <= 12 ? monthToRaw : undefined
   const effectiveMonthFrom = monthFrom && monthTo && monthFrom > monthTo ? undefined : monthFrom
   const effectiveMonthTo = monthFrom && monthTo && monthFrom > monthTo ? undefined : monthTo
-  const listFilters = {
+  const eventType = query.eventType && query.eventType !== "all" ? query.eventType : undefined
+  // Regla A5: cada dimensión se representa una vez. El estado son pestañas y las
+  // tarjetas son condiciones que cruzan los estados; cada contador se calcula con
+  // los filtros de la URL MENOS su propia dimensión, y la lista con todos, así que el
+  // número de una pestaña o tarjeta es lo que la lista muestra al activarla.
+  const shared = {
     worksiteId: query.worksiteId || undefined,
     year: Number.isInteger(year) && year >= 2024 && year <= 2100 ? year : undefined,
     monthFrom: effectiveMonthFrom,
     monthTo: effectiveMonthTo,
     indicator,
+    eventType,
   }
-  // Estado y tipo de evento se filtran en el cliente sobre esta misma lista
-  // (viajan en la URL como `status` y `eventType`). Las tarjetas los respetan para
-  // que su número sea lo que la lista muestra al activarlas; el filtro rápido
-  // (`quick`) es la tarjeta misma y no entra.
-  const countFilters = {
-    ...listFilters,
-    status: query.status && query.status !== "all" ? query.status : undefined,
-    eventType: query.eventType && query.eventType !== "all" ? query.eventType : undefined,
-  }
-  const [incidents, worksites, counts] = await Promise.all([
-    listPreventionIncidents({ access, ...listFilters }),
+  const status = parseIncidentStatusView(query.status)
+  const condition = parseIncidentCondition(query.quick)
+  const [incidents, worksites, counts, statusCounts] = await Promise.all([
+    listPreventionIncidents({ access, ...shared, status, condition }),
     listIncidentWorksites(access),
-    getIncidentDashboardCounts(access, countFilters),
+    getIncidentDashboardCounts(access, { ...shared, status }),
+    getIncidentStatusCounts(access, { ...shared, condition }),
   ])
   const canReport = can(session, "prevention:incidents:report")
   const canExport = can(session, "prevention:incidents:export")
@@ -82,7 +86,7 @@ export default async function IncidentsPage({ searchParams }: { searchParams: Pr
       />
       {/* INC-001: lo que llega por el canal público del trabajador, donde se tría. */}
       {(canReport || canTriage) && <PublicIncidentReportsPanel scope={access.scope} canTriage={canTriage} canConvert={canTriage} />}
-      <IncidentList incidents={incidents} worksites={worksites} counts={counts} canReport={canReport} indicatorContext={indicatorLabel ? `Fuente del indicador de ${indicatorLabel} · ${effectiveMonthFrom ?? "—"}-${effectiveMonthTo ?? "—"}/${query.year ?? ""}` : undefined} />
+      <IncidentList incidents={incidents} worksites={worksites} counts={counts} statusCounts={statusCounts} canReport={canReport} indicatorContext={indicatorLabel ? `Fuente del indicador de ${indicatorLabel} · ${effectiveMonthFrom ?? "—"}-${effectiveMonthTo ?? "—"}/${query.year ?? ""}` : undefined} />
       <PdtpScheduledActivityPanelServer connectorKey="incidents" />
     </PageContainer>
   )

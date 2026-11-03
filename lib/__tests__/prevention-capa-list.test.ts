@@ -226,3 +226,101 @@ describe("CAPA tarjetas — responden a los mismos filtros que la lista", () => 
     expect(counts).toEqual({ open: 5, overdue: 1, pendingVerification: 1, unreconciled: 1, immediateStop: 1 })
   })
 })
+
+/**
+ * Regla A5 (una dimensión = una representación interactiva): el estado dejó de ser
+ * un `Select` más tarjetas por estado y es una fila de pestañas con contador; lo que
+ * queda como tarjeta son condiciones que cruzan los estados (vencidas, exigen
+ * detener la tarea, por conciliar). Los contadores de las pestañas se arman con la
+ * MISMA cláusula que la lista, quitándole sólo el estado.
+ */
+describe("CAPA pestañas de estado — cuentan con los demás filtros y sin el de estado", () => {
+  const BOTH_WORKSITES = {
+    scope: { mode: "some", ids: ["ws-capa-list", "ws-capa-outside"] } as WorksiteScope,
+    permissions: ["prevention:capa:view"],
+  }
+  const STATUS_ZERO = { pending: 0, in_progress: 0, pending_verification: 0, verified: 0, closed: 0, reopened: 0, cancelled: 0 }
+
+  beforeEach(async () => {
+    await inMemoryDb.insert(schema.preventionCapaActions).values([
+      capa("inspection-open", { createdAt: "2026-08-07T08:00:00.000Z", sourceType: "inspection" }),
+      capa("ws2-overdue", { createdAt: "2026-08-08T08:00:00.000Z", worksiteId: "ws-capa-outside", status: "in_progress", targetDate: "2020-01-01" }),
+    ])
+  })
+
+  type StatusCountArgs = Parameters<typeof import("@/lib/services/prevention-capa").getCapaStatusCounts>[0]
+
+  async function tabCounts(args: Partial<StatusCountArgs> = {}, base = VIEWER) {
+    const { getCapaStatusCounts } = await import("@/lib/services/prevention-capa")
+    return getCapaStatusCounts({ ...base, ...args } as StatusCountArgs)
+  }
+
+  /** Lo que la lista da al elegir esa pestaña, con los mismos filtros. */
+  async function rowsFor(status: string | undefined, args: Record<string, unknown>, base = VIEWER) {
+    const { listCapaActionsPage } = await import("@/lib/services/prevention-capa")
+    const page = await listCapaActionsPage({ ...base, ...args, status, limit: 500 } as Parameters<typeof listCapaActionsPage>[0])
+    return page.total
+  }
+
+  it("sin filtros cuenta cada estado del alcance del visor (sin la faena ajena)", async () => {
+    const counts = await tabCounts()
+
+    expect(counts.total).toBe(6)
+    // Abiertas = ni cerradas ni canceladas: la verificada sigue abierta.
+    expect(counts.open).toBe(5)
+    expect(counts.byStatus).toEqual({ ...STATUS_ZERO, pending: 2, in_progress: 1, pending_verification: 1, verified: 1, closed: 1 })
+  })
+
+  it("el estado elegido no cambia los contadores: cada pestaña dice cuántas filas mostraría", async () => {
+    const withoutStatus = await tabCounts({ sourceType: "manual" })
+    const withStatus = await tabCounts({ sourceType: "manual", status: "closed" } as Partial<StatusCountArgs>)
+
+    expect(withStatus).toEqual(withoutStatus)
+    expect(withoutStatus.byStatus.pending).toBe(1)
+  })
+
+  it("respeta faena y fuente igual que la lista", async () => {
+    expect((await tabCounts({ worksiteId: "ws-capa-outside" }, BOTH_WORKSITES)).byStatus).toEqual({ ...STATUS_ZERO, pending: 1, in_progress: 1 })
+    expect((await tabCounts({ sourceType: "inspection" })).byStatus).toEqual({ ...STATUS_ZERO, pending: 1 })
+  })
+
+  it("con una condición activa («Vencidas», «Exigen detener», «Por conciliar») cuenta sólo las filas que la cumplen", async () => {
+    // Vencida = no verificada, no cerrada y con plazo pasado; exige detener = marca activa y no cerrada.
+    expect((await tabCounts({ quickFilter: "overdue" })).byStatus).toEqual({ ...STATUS_ZERO, in_progress: 1 })
+    expect((await tabCounts({ quickFilter: "immediate_stop" })).byStatus).toEqual({ ...STATUS_ZERO, in_progress: 1 })
+    expect((await tabCounts({ quickFilter: "unreconciled" })).byStatus).toEqual({ ...STATUS_ZERO, in_progress: 1 })
+  })
+
+  it("cada pestaña es exactamente lo que la lista devuelve con ese estado (no pueden separarse)", async () => {
+    const casos: Array<[Record<string, unknown>, typeof VIEWER]> = [
+      [{}, VIEWER], [{}, BOTH_WORKSITES], [{ worksiteId: "ws-capa-outside" }, BOTH_WORKSITES], [{ sourceType: "inspection" }, VIEWER],
+      [{ quickFilter: "overdue" }, BOTH_WORKSITES], [{ quickFilter: "immediate_stop" }, VIEWER], [{ quickFilter: "unreconciled", sourceType: "manual" }, VIEWER],
+    ]
+    for (const [args, base] of casos) {
+      const counts = await tabCounts(args as Partial<StatusCountArgs>, base)
+      for (const [status, total] of Object.entries(counts.byStatus)) expect(await rowsFor(status, args, base), `${JSON.stringify(args)} · ${status}`).toBe(total)
+      expect(await rowsFor("open", args, base), `${JSON.stringify(args)} · open`).toBe(counts.open)
+      expect(await rowsFor(undefined, args, base), `${JSON.stringify(args)} · todas`).toBe(counts.total)
+    }
+  })
+
+  it("las tarjetas con una pestaña activa cuentan la intersección con ella: es lo que la lista mostraría", async () => {
+    const { getCapaDashboardCounts } = await import("@/lib/services/prevention-capa")
+
+    const closed = await getCapaDashboardCounts({ ...VIEWER, status: "closed" })
+    const open = await getCapaDashboardCounts({ ...VIEWER, status: "open" })
+
+    // «Cerrada» no tiene vencidas ni por detener (esas reglas excluyen lo cerrado).
+    expect(closed).toEqual({ open: 0, overdue: 0, pendingVerification: 0, unreconciled: 0, immediateStop: 0 })
+    expect(open).toEqual({ open: 5, overdue: 1, pendingVerification: 1, unreconciled: 1, immediateStop: 1 })
+    expect(await rowsFor("open", { quickFilter: "overdue" })).toBe(open.overdue)
+    expect(await rowsFor("open", { quickFilter: "immediate_stop" })).toBe(open.immediateStop)
+  })
+
+  it("una faena fuera del alcance o un usuario sin alcance ven ceros, y sin permiso falla", async () => {
+    expect(await tabCounts({ worksiteId: "ws-capa-outside" })).toEqual({ total: 0, open: 0, byStatus: STATUS_ZERO })
+    expect(await tabCounts({}, { scope: { mode: "none", ids: [] } as WorksiteScope, permissions: ["prevention:capa:view"] })).toEqual({ total: 0, open: 0, byStatus: STATUS_ZERO })
+
+    await expect(tabCounts({}, { ...VIEWER, permissions: [] })).rejects.toThrow()
+  })
+})

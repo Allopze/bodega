@@ -242,3 +242,124 @@ describe("tarjetas de incidentes — alcance y permiso intactos", () => {
     expect(counts).toEqual(fromList)
   })
 })
+
+/**
+ * Regla A5 (una dimensión = una representación interactiva): el estado dejó de ser
+ * un `Select` más tarjetas por estado y es una fila de pestañas con contador. Lo
+ * que queda como tarjeta son condiciones que cruzan los estados (plazos vencidos,
+ * fatal o grave). Los contadores de las pestañas se arman con la MISMA cláusula que
+ * la lista, quitándole sólo el estado, para que cada número sea las filas que esa
+ * pestaña mostraría.
+ */
+describe("pestañas de estado — cuentan con los demás filtros y sin el de estado", () => {
+  const STATUS_ZERO = { reported: 0, triage: 0, immediate_measures: 0, under_investigation: 0, pending_capa: 0, pending_verification: 0, closed: 0 }
+
+  async function tabCounts(filters: Parameters<typeof import("@/lib/services/prevention-incidents").getIncidentStatusCounts>[1] = {}, who: IncidentAccess = access()) {
+    const { getIncidentStatusCounts } = await import("@/lib/services/prevention-incidents")
+    return getIncidentStatusCounts(who, filters)
+  }
+
+  /** Lo que la lista da al elegir esa pestaña, con los mismos filtros. */
+  async function rowsFor(status: string | undefined, filters: Record<string, unknown> = {}, who: IncidentAccess = access()) {
+    const { listPreventionIncidents } = await import("@/lib/services/prevention-incidents")
+    return (await listPreventionIncidents({ access: who, ...filters, status } as Parameters<typeof listPreventionIncidents>[0])).length
+  }
+
+  it("sin filtros cuenta cada estado del alcance (sin la faena ajena)", async () => {
+    const counts = await tabCounts()
+
+    expect(counts.total).toBe(5)
+    expect(counts.open).toBe(4)
+    expect(counts.byStatus).toEqual({ ...STATUS_ZERO, reported: 2, immediate_measures: 1, under_investigation: 1, closed: 1 })
+  })
+
+  it("el estado elegido no cambia los contadores: cada pestaña dice cuántas filas mostraría", async () => {
+    const withoutStatus = await tabCounts({ worksiteId: WS_A })
+    // El tipo ya lo prohíbe (`Omit<…, "status">`); la URL podría colarlo igual, y se ignora.
+    const withStatus = await tabCounts({ worksiteId: WS_A, status: "closed" } as Parameters<typeof tabCounts>[0])
+
+    expect(withStatus).toEqual(withoutStatus)
+    expect(withoutStatus.byStatus).toEqual({ ...STATUS_ZERO, reported: 1, under_investigation: 1, closed: 1 })
+  })
+
+  it("respeta faena, tipo, período e indicador igual que la lista", async () => {
+    expect((await tabCounts({ worksiteId: WS_B })).byStatus).toEqual({ ...STATUS_ZERO, reported: 1, immediate_measures: 1 })
+    expect((await tabCounts({ eventType: "work_accident" })).byStatus).toEqual({ ...STATUS_ZERO, reported: 2, under_investigation: 1 })
+    expect((await tabCounts({ year: 2026, monthFrom: 5, monthTo: 5 })).byStatus).toEqual({ ...STATUS_ZERO, immediate_measures: 1, under_investigation: 1, closed: 1 })
+    expect((await tabCounts({ year: 2026, indicator: "pending" })).byStatus).toEqual({ ...STATUS_ZERO, reported: 1 })
+  })
+
+  it("con una condición activa («Plazos atrasados», «Fatal o grave») cuenta sólo las filas que la cumplen", async () => {
+    const overdue = await tabCounts({ condition: "overdue" })
+    const fatal = await tabCounts({ condition: "fatal" })
+
+    expect(overdue.total).toBe(1)
+    expect(overdue.byStatus).toEqual({ ...STATUS_ZERO, under_investigation: 1 })
+    expect(fatal.total).toBe(2)
+    expect(fatal.byStatus).toEqual({ ...STATUS_ZERO, immediate_measures: 1, under_investigation: 1 })
+  })
+
+  it("cada pestaña es exactamente lo que la lista devuelve con ese estado (no pueden separarse)", async () => {
+    const filtersList: Array<Record<string, unknown>> = [
+      {}, { worksiteId: WS_A }, { eventType: "work_accident" }, { year: 2026, monthFrom: 3, monthTo: 5 }, { condition: "fatal" }, { condition: "overdue", worksiteId: WS_A },
+    ]
+    for (const filters of filtersList) {
+      const counts = await tabCounts(filters as Parameters<typeof tabCounts>[0])
+      for (const [status, total] of Object.entries(counts.byStatus)) expect(await rowsFor(status, filters), `${JSON.stringify(filters)} · ${status}`).toBe(total)
+      expect(await rowsFor("open", filters), `${JSON.stringify(filters)} · open`).toBe(counts.open)
+      expect(await rowsFor(undefined, filters), `${JSON.stringify(filters)} · todos`).toBe(counts.total)
+    }
+  })
+
+  it("pedir una faena fuera del alcance falla, un usuario sin alcance ve ceros y sin permiso falla", async () => {
+    await expect(tabCounts({ worksiteId: WS_FOREIGN })).rejects.toThrow("fuera de alcance")
+    await expect(tabCounts({}, access({ permissions: [] }))).rejects.toThrow("fuera de alcance")
+
+    const none = await tabCounts({}, access({ scope: { mode: "none", ids: [] } }))
+    expect(none).toEqual({ total: 0, open: 0, byStatus: STATUS_ZERO })
+  })
+})
+
+describe("lista de incidentes — estado «abiertos» y condiciones resueltos en el servidor", () => {
+  beforeEach(async () => {
+    // Un grave ya cerrado: la tarjeta «Fatal o grave» nunca lo contó («Operación suspendida»),
+    // pero el filtro rápido de la lista —que corría en el navegador— sí lo mostraba.
+    const closedAt = "2026-04-10T15:30:00.000Z"
+    await inMemoryDb.insert(schema.preventionIncidents).values({
+      id: "a-grave-cerrado", code: "INC-a-grave-cerrado", clientSubmissionId: "sub-a-grave-cerrado", worksiteId: WS_A, companyName: "Empresa Test",
+      eventType: "work_accident", status: "closed", occurredAt: "2026-04-10T15:00:00.000Z", knownAt: closedAt, location: "Planta",
+      initialNarrative: "Evento grave ya cerrado.", reportedByUserId: USER_ID, isFatalOrSerious: true, createdAt: closedAt, updatedAt: closedAt,
+    })
+  })
+
+  it("«abiertos» es todo lo que no está cerrado y coincide con la tarjeta", async () => {
+    const { counts, fromList } = await tiles({ status: "open" })
+
+    expect(counts).toEqual({ totalOpen: 4, overdueNotifications: 1, fatalOrSerious: 2, pendingInvestigation: 2 })
+    expect(counts).toEqual(fromList)
+  })
+
+  it("«Fatal o grave» y «Plazos atrasados» filtran la lista a lo que cuentan (el grave cerrado no entra)", async () => {
+    const { listPreventionIncidents, getIncidentDashboardCounts } = await import("@/lib/services/prevention-incidents")
+    const counts = await getIncidentDashboardCounts(access())
+    const fatal = await listPreventionIncidents({ access: access(), condition: "fatal" })
+    const overdue = await listPreventionIncidents({ access: access(), condition: "overdue" })
+
+    expect(counts.fatalOrSerious).toBe(2)
+    expect(fatal.map((row) => row.id).sort()).toEqual(["a-investigando", "b-medidas"])
+    expect(overdue.map((row) => row.id)).toEqual(["a-investigando"])
+    expect(overdue).toHaveLength(counts.overdueNotifications)
+  })
+
+  it("la condición y el estado se combinan (intersección) en la lista y en las tarjetas", async () => {
+    const { listPreventionIncidents, getIncidentDashboardCounts } = await import("@/lib/services/prevention-incidents")
+    const fatalClosed = await listPreventionIncidents({ access: access(), condition: "fatal", status: "closed" })
+    const fatalUnderInvestigation = await listPreventionIncidents({ access: access(), condition: "fatal", status: "under_investigation" })
+    const cardsClosed = await getIncidentDashboardCounts(access(), { status: "closed" })
+
+    expect(fatalClosed).toHaveLength(0)
+    expect(fatalUnderInvestigation.map((row) => row.id)).toEqual(["a-investigando"])
+    // Con la pestaña «Cerrado» activa, «Fatal o grave» dice 0: es lo que mostraría al activarla.
+    expect(cardsClosed.fatalOrSerious).toBe(0)
+  })
+})

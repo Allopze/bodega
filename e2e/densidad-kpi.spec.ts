@@ -258,6 +258,14 @@ test.describe("Densidad — todo KPI de subconjunto llega a su subconjunto", () 
     await page.waitForLoadState("networkidle").catch(() => undefined)
     await expect(page.locator("[aria-pressed='true']").first()).toBeVisible()
 
+    // El tablero publica `?quick=open` para «Incidentes abiertos». «Abiertos» dejó de ser una
+    // tarjeta (A5: el estado son pestañas) y el enlace llega a su pestaña, ya marcada.
+    await page.goto("/prevencion/incidentes?quick=open")
+    await page.waitForLoadState("networkidle").catch(() => undefined)
+    await expect(page).toHaveURL(/status=open/)
+    await expect(page.getByRole("navigation", { name: "Estado de los incidentes" }).getByRole("link", { name: /^Abiertos\s*\d+$/ }))
+      .toHaveAttribute("aria-current", "page")
+
     // Fase B: la portada MIPER reconoce «sin control» con un chip que se puede quitar.
     await page.goto("/prevencion/miper?sincontrol=1")
     await page.waitForLoadState("networkidle").catch(() => undefined)
