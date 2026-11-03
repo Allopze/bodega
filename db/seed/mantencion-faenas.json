@@ -1,10 +1,18 @@
 {
-  "_nota": "Decisiones sobre las faenas de mantencion-seed.json, que es copia exacta de la referencia validada y no se edita. «equivalencias»: nombre del archivo → faena que ya existe. «crear»: nombres del archivo que pueden crearse como faena nueva. Un nombre que no existe y no está en ninguna de las dos listas detiene la carga. Las equivalencias siguen la unificación de faenas de producción (2026-10-31/11-01). Sin decidir (la carga se detiene hasta que se resuelvan): Arauco, Cabrero, Servimar, Sin ubicación, Ecoservitran, Panguipulli.",
+  "_nota": "Decisiones sobre las faenas de mantencion-seed.json, que es copia exacta de la referencia validada y no se edita. «equivalencias»: nombre del archivo → faena que ya existe. «crear»: nombres que pueden crearse como faena nueva. «crearDesactivadas»: nombres que se crean como faena nueva pero desactivada, para que sus equipos queden ubicados sin aparecer en el trabajo diario (decisión del usuario del 2026-11-03). Un nombre que no existe y no está en ninguna lista detiene la carga. Las equivalencias siguen la unificación de faenas de producción (2026-10-31/11-01).",
   "equivalencias": {
     "Cholguan": "Cholguan - Arauco",
     "Teno": "Teno - Arauco",
     "Fab. Puertas": "Fábrica de Puertas",
     "Calymag": "Santa Fe"
   },
-  "crear": []
+  "crear": [],
+  "crearDesactivadas": [
+    "Arauco",
+    "Cabrero",
+    "Servimar",
+    "Sin ubicación",
+    "Ecoservitran",
+    "Panguipulli"
+  ]
 }

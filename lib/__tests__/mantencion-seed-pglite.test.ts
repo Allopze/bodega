@@ -49,7 +49,8 @@ const EMAILS = {
  */
 const FAENAS: FaenaDecisions = {
   equivalencias: { Cholguan: "Cholguan - Arauco", Teno: "Teno - Arauco", "Fab. Puertas": "Fábrica de Puertas", Calymag: "Santa Fe" },
-  crear: ["Biodiversa", "Flor del Laja", "Servimar", "Sin ubicación", "Ecoservitran", "Panguipulli"],
+  crear: ["Biodiversa", "Flor del Laja"],
+  crearDesactivadas: ["Servimar", "Sin ubicación", "Ecoservitran", "Panguipulli"],
 }
 
 const FAR_FUTURE = "2099-01-01T00:00:00.000Z"
@@ -261,6 +262,22 @@ describe("primera carga", () => {
       // Las que sólo aparecen en los equipos y se crean: folio derivado del nombre.
       Ecoservitran: "ECO", Panguipulli: "PAN",
     })
+  })
+
+  it("las faenas de «crearDesactivadas» nacen desactivadas, sin casillas del programa preventivo, y sus equipos quedan en ellas", async () => {
+    const rows = await testDb.select({ name: schema.worksites.name, isActive: schema.worksites.isActive }).from(schema.worksites)
+      .where(inArray(schema.worksites.name, ["Servimar", "Sin ubicación", "Ecoservitran", "Panguipulli", "Biodiversa"]))
+    expect(Object.fromEntries(rows.map((row) => [row.name, row.isActive]))).toEqual({
+      Servimar: false, "Sin ubicación": false, Ecoservitran: false, Panguipulli: false, Biodiversa: true,
+    })
+    const servimar = await worksiteIdByName("Servimar")
+    const slots = await testDb.select({ total: count() }).from(schema.preventionTrainingOccurrences).where(eq(schema.preventionTrainingOccurrences.worksiteId, servimar))
+    expect(slots[0]?.total ?? 0).toBe(0)
+    const servimarEquipment = data.equipos.filter((equipo) => equipo.faena === "Servimar").map((equipo) => equipo.codigo.toUpperCase().replace(/\s+/g, ""))
+    const placed = await testDb.select({ worksiteId: schema.fuelVehicles.worksiteId }).from(schema.fuelVehicles).where(inArray(schema.fuelVehicles.code, servimarEquipment))
+    expect(placed.length).toBe(servimarEquipment.length)
+    expect(placed.every((row) => row.worksiteId === servimar)).toBe(true)
+    expect(first.worksites.createdInactive.sort()).toEqual(["Ecoservitran", "Panguipulli", "Servimar", "Sin ubicación"])
   })
 
   it("una equivalencia ubica los equipos en la faena unificada y no crea un duplicado", async () => {

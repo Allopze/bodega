@@ -76,6 +76,9 @@ export type MantSeedData = z.infer<typeof mantSeedDataSchema>
  *
  * - `equivalencias`: nombre del archivo → nombre de una faena que YA existe.
  * - `crear`: nombres del archivo que pueden crearse como faena nueva.
+ * - `crearDesactivadas`: nombres que se crean como faena nueva pero desactivada
+ *   (sin casillas del programa preventivo): sus equipos quedan ubicados sin que
+ *   la faena aparezca en los selectores de trabajo diario.
  *
  * Una faena del archivo que no existe por su nombre ni figura en una de las dos
  * listas detiene la carga: crearla en silencio duplicaba faenas ya unificadas
@@ -84,14 +87,23 @@ export type MantSeedData = z.infer<typeof mantSeedDataSchema>
 export const mantFaenaDecisionsSchema = z.object({
   equivalencias: z.record(nonEmpty, nonEmpty),
   crear: z.array(nonEmpty),
+  crearDesactivadas: z.array(nonEmpty).default([]),
 })
 export type MantFaenaDecisions = z.infer<typeof mantFaenaDecisionsSchema>
 
 export function parseMantFaenaDecisions(raw: unknown): MantFaenaDecisions {
   const decisions = mantFaenaDecisionsSchema.parse(raw)
-  const toCreate = new Set(decisions.crear.map(nameKey))
-  const both = Object.keys(decisions.equivalencias).filter((name) => toCreate.has(nameKey(name)))
-  if (both.length > 0) throw new Error(`Una faena no puede ser equivalencia y crearse a la vez: ${both.join(", ")}.`)
+  const lists = [Object.keys(decisions.equivalencias), decisions.crear, decisions.crearDesactivadas]
+  const seen = new Map<string, { list: number; name: string }>()
+  const repeated: string[] = []
+  lists.forEach((names, index) => {
+    for (const name of names) {
+      const owner = seen.get(nameKey(name))
+      if (owner && owner.list !== index) repeated.push(owner.name)
+      else seen.set(nameKey(name), { list: index, name })
+    }
+  })
+  if (repeated.length > 0) throw new Error(`Una faena sólo puede tener una decisión (equivalencia, crear o crear desactivada): ${repeated.join(", ")}.`)
   return decisions
 }
 
@@ -101,7 +113,7 @@ const EXPECTED = { equipos: 120, talleres: 10, conductores: 27, mecanicos: 7, it
 export interface CountPair { created: number; existing: number }
 
 export interface MantSeedReport {
-  worksites: CountPair & { folioNotes: string[]; aliases: string[] }
+  worksites: CountPair & { folioNotes: string[]; aliases: string[]; createdInactive: string[] }
   equipmentTypes: CountPair & { problems: string[] }
   catalogs: Record<MantCatalogKey, CountPair>
   schedules: Array<{ name: string; unit: MantUnit; created: boolean; items: number; intervals: number; brandRules: number; version: number }>
@@ -179,7 +191,7 @@ function validateSeedData(data: MantSeedData): string[] {
 function emptyReport(): MantSeedReport {
   const pair = (): CountPair => ({ created: 0, existing: 0 })
   return {
-    worksites: { ...pair(), folioNotes: [], aliases: [] },
+    worksites: { ...pair(), folioNotes: [], aliases: [], createdInactive: [] },
     equipmentTypes: { ...pair(), problems: [] },
     catalogs: { brands: pair(), workshops: pair(), drivers: pair(), workTypes: pair(), oils: pair() },
     schedules: [],
@@ -199,7 +211,7 @@ export async function seedMantencion(
   const actorUserId = options.actorUserId ?? null
   return client.transaction(async (tx) => {
     const report = emptyReport()
-    const ctx: SeedContext = { tx, data, faenas: options.faenas ?? { equivalencias: {}, crear: [] }, actorUserId, report }
+    const ctx: SeedContext = { tx, data, faenas: options.faenas ?? { equivalencias: {}, crear: [], crearDesactivadas: [] }, actorUserId, report }
     warnOnUnexpectedCounts(ctx)
 
     const worksiteMap = await seedWorksites(ctx)
@@ -255,7 +267,8 @@ async function seedWorksites(ctx: SeedContext): Promise<WorksiteMap> {
 
   const aliasOf = new Map(Object.entries(faenas.equivalencias).map(([from, to]) => [nameKey(from), cleanName(to)]))
   const mayCreate = new Set(faenas.crear.map(nameKey))
-  for (const name of [...Object.keys(faenas.equivalencias), ...faenas.crear]) {
+  const createInactive = new Set(faenas.crearDesactivadas.map(nameKey))
+  for (const name of [...Object.keys(faenas.equivalencias), ...faenas.crear, ...faenas.crearDesactivadas]) {
     if (!wanted.has(nameKey(name))) report.warnings.push(`La decisión sobre «${name}» no corresponde a ninguna faena del archivo.`)
   }
 
@@ -273,7 +286,7 @@ async function seedWorksites(ctx: SeedContext): Promise<WorksiteMap> {
       unresolved.push(`«${want.name}» equivale a «${alias}», que no existe.`)
       continue
     }
-    if (!existed && !mayCreate.has(key)) {
+    if (!existed && !mayCreate.has(key) && !createInactive.has(key)) {
       unresolved.push(`«${want.name}» no existe: declara a qué faena equivale o autoriza crearla.`)
       continue
     }
@@ -286,16 +299,18 @@ async function seedWorksites(ctx: SeedContext): Promise<WorksiteMap> {
       if (!existed.isActive) report.warnings.push(`La faena «${existed.name}» existe pero está inactiva; se usó igual.`)
       continue
     }
-    const created = await resolveOrCreateWorksite(tx, { typedName: want.name, actor: { userId: actorUserId }, folioCode: want.folio })
+    const isActive = !createInactive.has(key)
+    const created = await resolveOrCreateWorksite(tx, { typedName: want.name, actor: { userId: actorUserId }, folioCode: want.folio, isActive })
     map.set(key, { id: created.id, name: created.name })
     report.worksites.created++
+    if (!isActive) report.worksites.createdInactive.push(created.name)
     const folio = await ensureFolioCode(tx, created.id)
     if (want.folio && folio !== want.folio) report.worksites.folioNotes.push(`«${created.name}»: el archivo trae ${want.folio} pero queda ${folio} (el código ya lo usa otra faena).`)
   }
   if (unresolved.length > 0) {
     throw new Error(
       `La carga no puede ubicar ${unresolved.length} faena(s) y no escribió nada:\n- ${unresolved.join("\n- ")}\n`
-      + "Decide cada una en db/seed/mantencion-faenas.json («equivalencias» hacia una faena existente, o «crear»).",
+      + "Decide cada una en db/seed/mantencion-faenas.json («equivalencias» hacia una faena existente, «crear» o «crearDesactivadas»).",
     )
   }
   return map

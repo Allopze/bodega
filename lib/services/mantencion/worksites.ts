@@ -85,6 +85,8 @@ export async function resolveOrCreateWorksite(
     actor: { userId: string | null; email?: string | null }
     /** Código de folio preferido (la carga inicial lo trae de la planilla); si está tomado se deriva otro. */
     folioCode?: string
+    /** Sólo para una faena nueva: la carga inicial puede crearla desactivada. Por defecto, activa. */
+    isActive?: boolean
   },
 ): Promise<{ id: string; name: string; created: boolean }> {
   const typed = cleanName(input.typedName)
@@ -106,7 +108,7 @@ export async function resolveOrCreateWorksite(
   let code = `MANT-${folio}`
   for (let suffix = 2; usedCodes.has(code); suffix++) code = `MANT-${folio}-${suffix}`
 
-  const { id } = await createWorksiteTx(tx, { name: typed, code, isActive: true }, input.actor)
+  const { id } = await createWorksiteTx(tx, { name: typed, code, isActive: input.isActive ?? true }, input.actor)
   await ensureFolioCode(tx, id, folio)
   return { id, name: typed, created: true }
 }

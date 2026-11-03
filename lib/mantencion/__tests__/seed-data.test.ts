@@ -98,11 +98,19 @@ describe("db/seed/mantencion-seed.json (§13)", () => {
   it("db/seed/mantencion-faenas.json sólo decide sobre faenas que la carga usa", () => {
     const decisions = parseMantFaenaDecisions(JSON.parse(readFileSync(FAENAS_FILE, "utf8")))
     const used = new Set([...data.faenas.map((f) => f.nombre), ...data.equipos.map((e) => e.faena), ...data.mecanicos.map((m) => m.faena)].map(nameKey))
-    for (const name of [...Object.keys(decisions.equivalencias), ...decisions.crear]) expect(used.has(nameKey(name)), name).toBe(true)
+    for (const name of [...Object.keys(decisions.equivalencias), ...decisions.crear, ...decisions.crearDesactivadas]) expect(used.has(nameKey(name)), name).toBe(true)
   })
 
   it("una faena no puede ser equivalencia y crearse a la vez", () => {
-    expect(() => parseMantFaenaDecisions({ equivalencias: { Teno: "Teno - Arauco" }, crear: ["teno"] })).toThrow(/Teno/)
+    expect(() => parseMantFaenaDecisions({ equivalencias: { Teno: "Teno - Arauco" }, crear: ["teno"], crearDesactivadas: [] })).toThrow(/Teno/)
+    expect(() => parseMantFaenaDecisions({ equivalencias: { Teno: "Teno - Arauco" }, crear: [], crearDesactivadas: ["Teno"] })).toThrow(/Teno/)
+    expect(() => parseMantFaenaDecisions({ equivalencias: {}, crear: ["Servimar"], crearDesactivadas: ["servimar"] })).toThrow(/Servimar/)
+  })
+
+  it("las seis faenas sin equivalente se crean desactivadas (decisión del 2026-11-03)", () => {
+    const decisions = parseMantFaenaDecisions(JSON.parse(readFileSync(FAENAS_FILE, "utf8")))
+    expect([...decisions.crearDesactivadas].sort()).toEqual(["Arauco", "Cabrero", "Ecoservitran", "Panguipulli", "Servimar", "Sin ubicación"])
+    expect(decisions.crear).toEqual([])
   })
 
   it("los mecánicos trabajan en faenas de la lista", () => {
