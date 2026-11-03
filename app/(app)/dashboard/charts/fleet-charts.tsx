@@ -61,9 +61,19 @@ const COST_DOT = { r: 3, fill: SURFACE, strokeWidth: 2 } as const
 
 export interface FuelMonthlyChartPoint {
   month: string
-  liters: number
+  /** `null` en un mes sin datos del proveedor (`providerGap`): un hueco, no un cero. */
+  liters: number | null
   amount: number | null
-  loads: number
+  loads: number | null
+  /** El proveedor no tiene datos del mes (C-4): sin barra ni punto, y se dice en la descripción y el tooltip. */
+  providerGap?: boolean
+}
+
+/** «septiembre» o «agosto y septiembre»: los meses sin datos del proveedor, para el texto del gráfico. */
+function gapMonthsText(data: FuelMonthlyChartPoint[]): string | null {
+  const names = data.filter((point) => point.providerGap).map((point) => monthFullName(point.month))
+  if (names.length === 0) return null
+  return names.length === 1 ? names[0]! : `${names.slice(0, -1).join(", ")} y ${names[names.length - 1]}`
 }
 
 /**
@@ -84,12 +94,15 @@ export function FuelConsumptionChart({ data, showCosts = true, periodLabel }: { 
   const active = useActiveIndex()
   const focus = useSeriesFocus()
 
-  if (!data.length || !data.some((d) => d.liters > 0 || (showCosts && (d.amount ?? 0) > 0))) return null
+  if (!data.length || !data.some((d) => (d.liters ?? 0) > 0 || (showCosts && (d.amount ?? 0) > 0))) return null
 
   const at = active.activeIndex === null ? undefined : data[Math.min(active.activeIndex, data.length - 1)]
-  const liters = at ? at.liters : data.reduce((sum, point) => sum + point.liters, 0)
+  // Un mes sin datos del proveedor no es «0 litros»: la cifra grande dice «—» y la leyenda también.
+  const atGap = at?.providerGap === true
+  const liters = at ? at.liters : data.reduce((sum, point) => sum + (point.liters ?? 0), 0)
+  const gaps = gapMonthsText(data)
   const legend: LegendEntry[] = [
-    { key: "liters", label: "Litros", color: CHART_COLORS.signal, swatch: "box", value: at ? formatChartValue(at.liters, "liters") : undefined },
+    { key: "liters", label: "Litros", color: CHART_COLORS.signal, swatch: "box", value: at ? (at.liters == null ? "—" : formatChartValue(at.liters, "liters")) : undefined },
     ...(showCosts
       ? [{ key: "amount", label: "Costo", color: CHART_COLORS.brand, value: at ? (at.amount == null ? "—" : formatCompactCLP(at.amount)) : undefined } satisfies LegendEntry]
       : []),
@@ -98,11 +111,11 @@ export function FuelConsumptionChart({ data, showCosts = true, periodLabel }: { 
   return (
     <ChartFrame
       title="Consumo de Combustibles"
-      description={`${showCosts ? "Litros cargados y costo por mes" : "Litros cargados por mes"}${periodLabel ? ` · ${periodLabel}` : ""}`}
+      description={`${showCosts ? "Litros cargados y costo por mes" : "Litros cargados por mes"}${periodLabel ? ` · ${periodLabel}` : ""}${gaps ? ` · sin datos del proveedor en ${gaps}` : ""}`}
       headline={
         <>
-          <ChartHeadlineValue>{formatQty(liters, undefined, { maximumFractionDigits: 0 })}</ChartHeadlineValue>
-          <ChartHeadlineCaption>litros cargados en {at ? monthFullName(at.month) : "el período"}</ChartHeadlineCaption>
+          <ChartHeadlineValue>{liters == null ? "—" : formatQty(liters, undefined, { maximumFractionDigits: 0 })}</ChartHeadlineValue>
+          <ChartHeadlineCaption>{atGap ? `sin datos del proveedor en ${monthFullName(at!.month)}` : `litros cargados en ${at ? monthFullName(at.month) : "el período"}`}</ChartHeadlineCaption>
         </>
       }
     >
@@ -118,14 +131,17 @@ export function FuelConsumptionChart({ data, showCosts = true, periodLabel }: { 
           <ChartActiveSync labels={data.map((row) => row.month)} onIndex={active.setActiveIndex} />
           <YAxis yAxisId="liters" tickLine={false} axisLine={false} tickMargin={8} width={40} fontSize={11} tickFormatter={formatCompactQty} />
           {showCosts && <YAxis yAxisId="amount" orientation="right" tickLine={false} axisLine={false} tickMargin={4} width={52} fontSize={11} tickFormatter={formatCompactCLP} />}
+          {/* `filterNull={false}`: recharts omite las series nulas, y un mes sin datos del proveedor se quedaría sin tooltip. */}
           <ChartTooltip
             {...tooltip}
+            filterNull={false}
             cursor={<ColumnHoverCursor />}
             content={
               <ChartTooltipCard
                 formats={{ liters: "liters", amount: "clp" }}
                 labelFormatter={(label) => monthTitle(String(label))}
                 footer={(payload) => {
+                  if (payload[0]?.payload?.providerGap === true) return "Sin datos del proveedor este mes"
                   const loads = payload[0]?.payload?.loads
                   return typeof loads === "number" ? countOf(loads, "carga") : null
                 }}

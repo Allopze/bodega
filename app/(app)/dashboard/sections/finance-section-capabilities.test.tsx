@@ -381,8 +381,8 @@ describe("FinanceSection: rediseño (gráficos primero, seis tiles, sin duplicar
       expect(tile("Gasto en OC").props.href).toBe("/compras/nueva")
       expect(tile("Gasto en OC").props.trend).toBeNull()
       expect(tile("Ticket medio por OC").props.empty).toEqual({ message: "Sin OC para promediar" })
-      expect(tile("Costo de combustible").props.empty).toEqual({ message: "Sin cargas facturadas en 6 meses", actionLabel: "Ver cargas" })
-      expect(tile("Costo de combustible").props.href).toBe("/combustibles/pagos")
+      expect(tile("Costo de combustible").props.empty).toEqual({ message: "Sin gasto de combustible en 6 meses", actionLabel: "Ver consumo" })
+      expect(tile("Costo de combustible").props.href).toBe("/combustibles/consumo/litros")
       // Cero deuda es buena noticia, no ausencia de datos.
       expect(tile("Deuda vencida").props.empty).toBeUndefined()
       expect(tile("Deuda vencida").props.value).toBe("$0")
@@ -414,11 +414,34 @@ describe("FinanceSection: rediseño (gráficos primero, seis tiles, sin duplicar
         ["Sin facturas emitidas en el mes en curso", "Ver pendientes de facturar", "/facturacion/pendientes"],
         ["Sin pagos confirmados", "Ver cobranza", "/facturacion/cobranza"],
         ["Sin OC emitidas en el mes en curso", "Emitir una OC", "/compras/nueva"],
-        ["Sin cargas facturadas en 6 meses", "Ver cargas", "/combustibles/pagos"],
+        ["Sin gasto de combustible en 6 meses", "Ver consumo", "/combustibles/consumo/litros"],
       ] as const) {
         expect(screen.getByText(mensaje)).toBeDefined()
         expect(screen.getByText(accion).closest("a")?.getAttribute("href"), accion).toBe(href)
       }
+    })
+
+    // C-9 / C-4: el costo sale del libro del proveedor. Los meses sin datos del proveedor no suman,
+    // pero el tile los nombra: sin eso, 5 meses de gasto se leerían como los 6.
+    it("«Costo de combustible» suma los meses con datos y nombra los que no tienen datos del proveedor", async () => {
+      getFuelMonthlyTrend.mockResolvedValue([
+        { month: "Ago", monthKey: "2026-08", liters: 100, amount: 900_000, loads: 4, providerGap: false },
+        { month: "Sep", monthKey: "2026-09", liters: null, amount: null, loads: null, providerGap: true },
+        { month: "Oct", monthKey: "2026-10", liters: 200, amount: 1_100_000, loads: 6, providerGap: false },
+      ])
+      const tiles = tilesOf(await sectionProps(ALL))
+      const tile = tiles.find((entry) => entry.props.label === "Costo de combustible")!
+
+      expect(tile.props.value).toBe("$2.000.000")
+      expect(tile.props.detail).toBe("Copec · últimos 6 meses · sin datos de Sep")
+      expect(tile.props.empty).toBeUndefined()
+    })
+
+    it("«Costo de combustible» sin huecos no agrega avisos", async () => {
+      getFuelMonthlyTrend.mockResolvedValue([{ month: "Oct", monthKey: "2026-10", liters: 200, amount: 1_100_000, loads: 6, providerGap: false }])
+      const tile = tilesOf(await sectionProps(ALL)).find((entry) => entry.props.label === "Costo de combustible")!
+
+      expect(tile.props.detail).toBe("Copec · últimos 6 meses")
     })
 
     it("con OC emitidas no hay tiles vacíos", async () => {

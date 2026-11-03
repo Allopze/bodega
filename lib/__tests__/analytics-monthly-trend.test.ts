@@ -48,6 +48,26 @@ describe("buildMonthlyTrend", () => {
     expect(rows.find((row) => row.month === "2026-09")).toMatchObject(empty)
   })
 
+  it("C-4: los meses sin datos del proveedor llevan combustible null; las compras siguen en cero", () => {
+    const rows = buildMonthlyTrend(
+      [{ month: "2026-08", purchasingAmount: 100, fuelAmount: 50, totalAmount: 150 }, { month: "2026-09", purchasingAmount: 70, fuelAmount: 0, totalAmount: 70 }],
+      "2026-10-31",
+      "2026-11-03",
+      new Set(["2026-09", "2025-11"]),
+    )
+
+    // Un hueco no pisa lo comprado, y conserva su total (sólo compras): el combustible no vale cero, no se conoce.
+    expect(rows.find((row) => row.month === "2026-09")).toMatchObject({ purchasingAmount: 70, fuelAmount: null, totalAmount: 70 })
+    expect(rows.find((row) => row.month === "2025-11")).toMatchObject({ purchasingAmount: 0, fuelAmount: null, totalAmount: 0 })
+    // Un mes fuera del conjunto de huecos mantiene su cifra, y uno sin movimiento y sin hueco es un cero real.
+    expect(rows.find((row) => row.month === "2026-08")).toMatchObject({ fuelAmount: 50 })
+    expect(rows.find((row) => row.month === "2026-07")).toMatchObject({ fuelAmount: 0 })
+  })
+
+  it("sin conjunto de huecos nada cambia: todo mes sin movimiento es un cero", () => {
+    expect(buildMonthlyTrend([], "2026-10-31", "2026-11-03").every((row) => row.fuelAmount === 0)).toBe(true)
+  })
+
   it("descarta meses fuera de la ventana", () => {
     const rows = buildMonthlyTrend(
       [{ month: "2020-01", purchasingAmount: 1, fuelAmount: 1, totalAmount: 2 }],

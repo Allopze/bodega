@@ -2,9 +2,10 @@
  * CO-014: reportes, ciclo, Flota, analítica y estados de cuenta cerraban el
  * mismo mes con cifras distintas porque cada superficie decidía por su cuenta
  * qué estados contaban. Esta prueba fija el predicado canónico y comprueba que
- * ciclo y Flota lo comparten: una carga en borrador y una anulada no pueden
- * mover ninguna de ellas. (La pantalla de reportes se retiró junto con su
- * consulta, y con ella su caso aquí.)
+ * el ciclo lo usa: una carga en borrador y una anulada no pueden moverlo. (Flota
+ * dejó de leer `fuel_loads` para litros y costo en C-9: ahora suma el libro del
+ * proveedor con la regla canónica de `fleet-fuel-provider.test.ts`.) La pantalla
+ * de reportes se retiró junto con su consulta, y con ella su caso aquí.
  */
 import path from "node:path"
 import { PGlite } from "@electric-sql/pglite"
@@ -94,11 +95,16 @@ describe("predicado canónico de cargas contabilizables", () => {
     expect(cycle.registered).toMatchObject({ liters: 150, records: 2 })
   })
 
-  it("Flota acumula el mismo consumo por equipo", async () => {
+  // C-9: los litros, el costo y las cargas de Flota salen del libro del proveedor (Copec), no de la
+  // serie facturada `fuel_loads` —vacía en producción—; ver `fleet-fuel-provider.test.ts`. Flota sigue
+  // leyendo `fuel_loads` sólo para las lecturas de medidor, así que aquí queda fijado que ninguna carga
+  // facturada, contable o no, se cuela en sus cifras de combustible.
+  it("Flota no suma la serie facturada: sus cifras de combustible vienen del proveedor", async () => {
     const fleet = await getFleetOverview(session())
     const vehicle = fleet.find((row) => row.id === vehicleId)
-    expect(vehicle?.totalLiters).toBe(150)
-    expect(vehicle?.loadCount).toBe(2)
+    expect(vehicle?.totalLiters).toBe(0)
+    expect(vehicle?.totalFuelAmount).toBe(0)
+    expect(vehicle?.loadCount).toBe(0)
   })
 })
 

@@ -19,6 +19,8 @@ import { buildAlerts } from "./alerts"
 import { can } from "@/lib/auth/can"
 import { issuedOrderPredicate } from "@/lib/services/operational-period-metrics"
 import { accountableProviderTransactionsWhere, providerLoadCountSql } from "@/lib/combustibles/load-status"
+import { monthsWithoutProviderData } from "@/lib/combustibles/copec-coverage"
+import { listCopecPeriodCoverage } from "@/lib/combustibles/copec-coverage-store"
 import { controlFiltersForRange, isoTextPeriodSql } from "@/lib/combustibles/control/queries/field-filters"
 import { todayInChile } from "@/lib/utils"
 
@@ -171,7 +173,7 @@ export async function getAnalyticsDashboard(session: Session, rawFilters: Analyt
   const fuelLitersSql = sql<number>`COALESCE(SUM(${t.quantity}), 0)`
   const fuelMonthSql = sql<string>`left(${t.occurredAt}, 7)`
   const fuelLoadsSql = sql<number>`COALESCE(SUM(${providerLoadCountSql()}), 0)`
-  const [[purchaseSummary], [previousPurchaseSummary], [fuelSummary], [previousFuelSummary], [approvalSummary], purchaseMonths, fuelMonths, purchaseModules, fuelModules, purchaseSuppliers, fuelSupplierRows, purchaseWorksites, fuelWorksites, vehicleRows, rotationRows, eppRows, recentOrders, [eppWorkerSummary]] = await Promise.all([
+  const [[purchaseSummary], [previousPurchaseSummary], [fuelSummary], [previousFuelSummary], [approvalSummary], purchaseMonths, fuelMonths, purchaseModules, fuelModules, purchaseSuppliers, fuelSupplierRows, purchaseWorksites, fuelWorksites, vehicleRows, rotationRows, eppRows, recentOrders, [eppWorkerSummary], providerCoverage] = await Promise.all([
     db.select({ totalAmount: sql<number>`COALESCE(SUM(${purchaseOrders.totalAmount}), 0)`, orderCount: sql<number>`COUNT(*)`, averageOrderAmount: sql<number>`COALESCE(AVG(${purchaseOrders.totalAmount}), 0)` }).from(purchaseOrders).where(orderWhere),
     db.select({ totalAmount: sql<number>`COALESCE(SUM(${purchaseOrders.totalAmount}), 0)` }).from(purchaseOrders).where(previousOrderWhere),
     canViewFuel
@@ -207,6 +209,8 @@ export async function getAnalyticsDashboard(session: Session, rawFilters: Analyt
     // para contarlos: agrupa por trabajador × producto y trae sólo los 10 de más
     // cantidad, así que el tile del tablero nunca pasaba de 10.
     db.select({ workers: sql<number>`COUNT(DISTINCT COALESCE(${deliveries.workerId}::text, ${deliveries.receiverName}, 'sin-trabajador'))` }).from(deliveryItems).innerJoin(deliveries, eq(deliveryItems.deliveryId, deliveries.id)).leftJoin(products, eq(deliveryItems.productId, products.id)).leftJoin(productCategories, eq(products.categoryId, productCategories.id)).where(and(deliveryScope, filters.worksiteId ? eq(deliveries.worksiteId, filters.worksiteId) : undefined, chileDayRange(deliveries.deliveredAt, filters.fromDate, filters.toDate), sql`(${products.isEpp} = true OR ${productCategories.isEpp} = true)`)),
+    // C-4: qué dice la integración de cada mes de la ventana. Sólo con la serie de combustible.
+    canViewFuelCosts ? listCopecPeriodCoverage(trend.fromDate, trend.toDate) : Promise.resolve([]),
   ])
 
   const purchaseTotal = Number(purchaseSummary?.totalAmount ?? 0)
@@ -214,11 +218,17 @@ export async function getAnalyticsDashboard(session: Session, rawFilters: Analyt
   const previousTotal = Number(previousPurchaseSummary?.totalAmount ?? 0) + Number(previousFuelSummary?.totalAmount ?? 0)
   const totalSpend = purchaseTotal + fuelTotal
 
-  // Serie de 12 meses completa (ceros en los meses sin movimiento) y con el mes parcial marcado.
+  // Serie de 12 meses completa y con el mes parcial marcado. Las compras llevan ceros donde no hubo
+  // movimiento; el combustible va en `null` donde el proveedor no tiene datos del mes (C-4): sin
+  // transacciones y sin una cobertura que lo declare vacío no se compró «cero», no se sabe.
+  const fuelGapMonths = canViewFuelCosts
+    ? monthsWithoutProviderData(trend.months, providerCoverage, new Set(fuelMonths.map((r) => r.month)))
+    : new Set<string>()
   const spendByMonth = buildMonthlyTrend(
     mergeSpendByMonth([...purchaseMonths.map((r) => ({ month: r.month, module: r.module, totalAmount: Number(r.totalAmount ?? 0) })), ...fuelMonths.map((r) => ({ month: r.month, module: r.module, totalAmount: Number(r.totalAmount ?? 0) }))]),
     filters.toDate,
     todayInChile(),
+    fuelGapMonths,
   )
 
   const spendByModule = [...purchaseModules.map((r) => ({ module: moduleLabel(r.module), totalAmount: Number(r.totalAmount ?? 0) })), ...fuelModules.map((r) => ({ module: r.module ?? "Combustible", totalAmount: Number(r.totalAmount ?? 0) }))].filter((r) => r.totalAmount > 0).sort((a, b) => b.totalAmount - a.totalAmount)

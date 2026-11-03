@@ -61,6 +61,15 @@ function tx(overrides: Partial<typeof schema.fuelProviderTransactions.$inferInse
   }
 }
 
+/** Cobertura de un mes para las cuatro cuentas de Copec, como la deja la sincronización. */
+function coverageRows(month: string, status: string, rowsAccepted: number, sourceAvailability = "available"): Array<typeof schema.fuelProviderPeriodCoverage.$inferInsert> {
+  return ["tct:diesel", "tct:bluemax", "tae:diesel", "tae:bluemax"].map((account, index) => ({
+    id: `cov-${month}-${account}`, provider: "copec", sourceAccount: account, channel: account.slice(0, 3).toUpperCase(),
+    product: account.slice(4), periodMonth: `${month}-01`, status, sourceAvailability,
+    rowsReceived: index === 0 ? rowsAccepted : 0, rowsAccepted: index === 0 ? rowsAccepted : 0,
+  }))
+}
+
 beforeAll(async () => {
   await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
   // La sesión corre en UTC, como el despliegue.
@@ -103,6 +112,15 @@ beforeAll(async () => {
     tx({ id: "p-det-null", vehicleId: null, sourcePlate: null, quantity: 5, amount: 10, occurredAt: "2026-05-10T12:00:00.000Z" }),
     tx({ id: "p-agg-null", granularity: "period_aggregate", vehicleId: null, sourcePlate: null, quantity: 99, amount: 99, occurredAt: "2026-05-01" }),
     tx({ id: "p-agg-bluemax", granularity: "period_aggregate", sourceAccount: "tct:bluemax", vehicleId: null, sourcePlate: null, quantity: 20, amount: 20, occurredAt: "2026-05-01" }),
+  ])
+  // Cobertura (C-4/C-10): enero cerrado y VACÍO (un cero real); febrero a mayo con datos.
+  // Ningún otro mes tiene fila: el proveedor no dijo nada de él.
+  await db.insert(schema.fuelProviderPeriodCoverage).values([
+    ...coverageRows("2026-01", "complete", 0),
+    ...coverageRows("2026-02", "complete", 1),
+    ...coverageRows("2026-03", "complete", 6),
+    ...coverageRows("2026-04", "incomplete", 1),
+    ...coverageRows("2026-05", "complete", 3),
   ])
   await db.insert(schema.fuelMeterReadings).values([
     { id: "mr-1", vehicleId: IDS.vA, plate: PLATE_A, source: "copec_tct", sourceRef: "g-1", occurredAt: "2026-03-10T12:00:00.000Z", meterType: "odometer", value: 12_345 },
@@ -226,10 +244,11 @@ describe("getAnalyticsDashboard · tendencia mensual de 12 meses (C-10)", () => 
       "2025-10", "2025-11", "2025-12", "2026-01", "2026-02", "2026-03",
     ])
     // Compras de enero y combustible de febrero aparecen aunque el período sea de 6 días.
+    // Enero está cerrado y vacío en la cobertura: su combustible es un cero REAL.
     expect(data.spendByMonth.find((row) => row.month === "2026-01")).toMatchObject({ purchasingAmount: 500_000, fuelAmount: 0, totalAmount: 500_000 })
     expect(data.spendByMonth.find((row) => row.month === "2026-02")).toMatchObject({ purchasingAmount: 0, fuelAmount: 200_000, totalAmount: 200_000 })
-    // Los meses sin movimiento quedan en cero en vez de desaparecer del eje.
-    expect(data.spendByMonth.find((row) => row.month === "2025-07")).toMatchObject({ purchasingAmount: 0, fuelAmount: 0, totalAmount: 0 })
+    // Los meses sin movimiento no desaparecen del eje: las compras quedan en cero.
+    expect(data.spendByMonth.find((row) => row.month === "2025-07")).toMatchObject({ purchasingAmount: 0 })
   })
 
   it("los KPI siguen siendo del período elegido aunque la tendencia mire 12 meses", async () => {
@@ -261,5 +280,59 @@ describe("getAnalyticsDashboard · tendencia mensual de 12 meses (C-10)", () => 
 
     expect(data.spendByMonth.find((row) => row.month === "2026-03")?.fuelAmount).toBe(9_000)
     expect(data.spendByMonth.find((row) => row.month === "2026-02")?.fuelAmount).toBe(0)
+  })
+})
+
+describe("getAnalyticsDashboard · meses sin datos del proveedor en la tendencia (C-4 / C-10)", () => {
+  const TREND = { fromDate: "2026-03-20", toDate: "2026-03-25" }
+
+  it("un mes sin cobertura ni transacciones es un hueco (null), no un cero de combustible", async () => {
+    const data = await getAnalyticsDashboard(session(), TREND)
+
+    // 2025-04 a 2025-12: el proveedor no dijo nada. Las compras siguen en cero real.
+    for (const month of ["2025-04", "2025-07", "2025-12"]) {
+      expect(data.spendByMonth.find((row) => row.month === month), month).toMatchObject({ fuelAmount: null, purchasingAmount: 0 })
+    }
+  })
+
+  it("un cero certificado por la cobertura sigue siendo cero, y un mes con filas conserva su cifra", async () => {
+    const data = await getAnalyticsDashboard(session(), TREND)
+
+    expect(data.spendByMonth.find((row) => row.month === "2026-01")?.fuelAmount).toBe(0)
+    expect(data.spendByMonth.find((row) => row.month === "2026-02")?.fuelAmount).toBe(200_000)
+    // Marzo de la ventana (hasta el 25) sigue siendo la cifra de siempre.
+    expect(data.spendByMonth.find((row) => row.month === "2026-03")?.fuelAmount).toBe(1_369_000)
+  })
+
+  it("un mes con cobertura incompleta pero con filas no se oculta", async () => {
+    const data = await getAnalyticsDashboard(session(), { fromDate: "2026-04-01", toDate: "2026-04-30" })
+
+    expect(data.spendByMonth.at(-1)).toMatchObject({ month: "2026-04", fuelAmount: 80_000 })
+  })
+
+  it("con una faena filtrada, un mes con datos del proveedor para otra faena es un cero, no un hueco", async () => {
+    const data = await getAnalyticsDashboard(session(), { ...TREND, worksiteId: IDS.wsB })
+
+    expect(data.spendByMonth.find((row) => row.month === "2026-02")?.fuelAmount).toBe(0)
+    expect(data.spendByMonth.find((row) => row.month === "2025-07")?.fuelAmount).toBeNull()
+  })
+
+  it("el total de un mes con hueco es sólo lo comprado: no incluye un combustible que no se conoce", async () => {
+    const data = await getAnalyticsDashboard(session(), TREND)
+    const gap = data.spendByMonth.find((row) => row.month === "2025-07")!
+
+    expect(gap.totalAmount).toBe(gap.purchasingAmount)
+  })
+
+  it("sin combustibles:view_costs no se consulta la cobertura: la serie de combustible no existe y queda en cero", async () => {
+    const data = await getAnalyticsDashboard(session({ permissions: ["analytics:view", "combustibles:view"] }), TREND)
+
+    expect(data.spendByMonth.every((row) => row.fuelAmount === 0)).toBe(true)
+  })
+
+  it("los KPI del período no cambian: el hueco sólo afecta a la serie mensual", async () => {
+    const data = await getAnalyticsDashboard(session(), { fromDate: "2026-03-01", toDate: "2026-03-31" })
+
+    expect(data.kpis.fuelAmount).toBe(1_374_000)
   })
 })

@@ -60,6 +60,7 @@ describe("getFuelMonthlyTrend", () => {
     const fuel = await getFuelMonthlyTrend(session, 1)
 
     expect(fuel[0]?.amount).toBeNull()
-    expect(sqlChunks(selectProjections[0]!.amount).join(" ").toLowerCase()).not.toContain("total_amount")
+    // La proyección del monto es el literal `null`: la columna `amount` del proveedor ni se consulta.
+    expect(sqlChunks(selectProjections[0]!.amount).join("").trim().toLowerCase()).toBe("null")
   })
 })

@@ -16,7 +16,15 @@ export interface AnalyticsKpis {
 }
 
 export interface SpendByMonthRow {
-  month: string; purchasingAmount: number; fuelAmount: number; totalAmount: number
+  month: string; purchasingAmount: number
+  /**
+   * `null` = el libro del proveedor no tiene datos de ese mes (ni transacciones
+   * ni una cobertura que lo declare vacío): un hueco, no un $0 (C-4). Un `0` es
+   * un mes cubierto en que de verdad no se compró.
+   */
+  fuelAmount: number | null
+  /** Con `fuelAmount: null` es sólo lo comprado: el combustible no se conoce, no vale cero. */
+  totalAmount: number
   /**
    * El mes no está completo: `hasta` cae antes de su último día, o es el mes en
    * curso. Su cifra es de menos días que la de los demás y no debe leerse como

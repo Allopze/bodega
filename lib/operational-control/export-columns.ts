@@ -66,7 +66,7 @@ export function buildOperationalAssetExportColumns(
           { header: "Horas en taller (período)", key: "workshopHours", width: 22 },
         ]
       : []),
-    ...(showFuelCost ? [{ header: "Costo combustible", key: "fuelCost", width: 20 }] : []),
+    ...(showFuelCost ? [{ header: "Costo combustible facturado", key: "fuelCost", width: 24 }] : []),
   ]
 }
 

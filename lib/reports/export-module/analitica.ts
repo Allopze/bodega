@@ -3,6 +3,9 @@ import { getAnalyticsDashboard, normalizeAnalyticsFilters } from "@/lib/services
 import type { ReportCell, ReportData, ReportSheet, ExportFilters } from "./types"
 import { can } from "@/lib/auth/can"
 
+/** Un mes sin datos del proveedor no se exporta como 0: se dice (C-4). El total de ese mes sólo suma compras. */
+const NO_PROVIDER_DATA = "Sin datos del proveedor"
+
 export async function analiticaResumen(session: Session | null, filters: ExportFilters): Promise<ReportData> {
   if (!session) {
     return {
@@ -33,7 +36,7 @@ export async function analiticaResumen(session: Session | null, filters: ExportF
       "Tendencia mensual",
       row.month,
       canViewFuelCosts
-        ? `Compras: ${row.purchasingAmount} · Combustible: ${row.fuelAmount}`
+        ? `Compras: ${row.purchasingAmount} · Combustible: ${row.fuelAmount ?? NO_PROVIDER_DATA}`
         : `Compras: ${row.purchasingAmount}`,
       row.totalAmount,
     ]),
@@ -98,7 +101,7 @@ export async function analiticaResumen(session: Session | null, filters: ExportF
       worksheetName: "Gasto mensual",
       headers: canViewFuelCosts ? ["Mes", "Compras", "Combustible", "Total"] : ["Mes", "Compras", "Total"],
       rows: data.spendByMonth.map((row) => canViewFuelCosts
-        ? [row.month, row.purchasingAmount, row.fuelAmount, row.totalAmount]
+        ? [row.month, row.purchasingAmount, row.fuelAmount ?? NO_PROVIDER_DATA, row.totalAmount]
         : [row.month, row.purchasingAmount, row.totalAmount]),
     },
     {

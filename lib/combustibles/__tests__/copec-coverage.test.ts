@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { canConfirmCopecEmpty, findNextCopecCoverageMonth, type ProviderCoverageRow } from "../copec-coverage"
+import { canConfirmCopecEmpty, findNextCopecCoverageMonth, isCopecMonthClosed, monthsWithoutProviderData, type ProviderCoverageRow } from "../copec-coverage"
 
 const dimensions = ["TCT", "TAE"].flatMap((channel) => ["diesel", "bluemax"].map((product) => ({ channel, product })))
 const closedRows = (periodMonth: string, status = "complete"): ProviderCoverageRow[] => dimensions.map(({ channel, product }) => ({
@@ -52,5 +52,53 @@ describe("canConfirmCopecEmpty", () => {
     { status: "complete", sourceAvailability: "available", rowsReceived: 5 },
   ])("no permite declarar vacío $status/$sourceAvailability con $rowsReceived filas", (row) => {
     expect(canConfirmCopecEmpty(row)).toBe(false)
+  })
+})
+
+/**
+ * C-4 / C-10: un mes sin filas del proveedor no es «no se compró combustible»
+ * mientras la cobertura no lo certifique. `monthsWithoutProviderData` dice qué
+ * meses de una serie no tienen respaldo para dibujar un cero.
+ */
+describe("isCopecMonthClosed", () => {
+  const rowsOf = (periodMonth: string, status = "complete") => closedRows(periodMonth, status).map((row) => ({ ...row, rowsAccepted: 0 }))
+
+  it("sólo cierra el mes cuando las cuatro cuentas (TCT/TAE × diésel/BlueMax) son terminales", () => {
+    expect(isCopecMonthClosed(rowsOf("2026-01-01"))).toBe(true)
+    expect(isCopecMonthClosed(rowsOf("2026-01-01", "legitimate_empty"))).toBe(true)
+    expect(isCopecMonthClosed(rowsOf("2026-01-01").slice(1))).toBe(false)
+    expect(isCopecMonthClosed(rowsOf("2026-01-01", "incomplete"))).toBe(false)
+    expect(isCopecMonthClosed([])).toBe(false)
+  })
+})
+
+describe("monthsWithoutProviderData", () => {
+  const coverage = (periodMonth: string, status: string, rowsAccepted: number) =>
+    closedRows(periodMonth, status).map((row, index) => ({ ...row, rowsAccepted: index === 0 ? rowsAccepted : 0 }))
+  const months = ["2026-07", "2026-08", "2026-09", "2026-10"]
+
+  it("un mes sin fila de cobertura ni filas contables es un hueco, no un cero", () => {
+    const rows = [...coverage("2026-07-01", "complete", 10), ...coverage("2026-08-01", "complete", 10), ...coverage("2026-10-01", "incomplete", 5)]
+    expect([...monthsWithoutProviderData(months, rows)]).toEqual(["2026-09"])
+  })
+
+  it("un mes con filas aceptadas tiene datos aunque su cobertura siga incompleta", () => {
+    const rows = coverage("2026-10-01", "incomplete", 329)
+    expect(monthsWithoutProviderData(["2026-10"], rows).size).toBe(0)
+  })
+
+  it("un mes cerrado por la cobertura sin filas es un cero real", () => {
+    expect(monthsWithoutProviderData(["2026-03"], coverage("2026-03-01", "legitimate_empty", 0)).size).toBe(0)
+    expect(monthsWithoutProviderData(["2026-03"], coverage("2026-03-01", "complete", 0)).size).toBe(0)
+  })
+
+  it("una cobertura abierta y sin filas (failed/unknown/incomplete) sigue siendo un hueco", () => {
+    for (const status of ["failed", "unknown", "incomplete"]) {
+      expect([...monthsWithoutProviderData(["2026-03"], coverage("2026-03-01", status, 0))]).toEqual(["2026-03"])
+    }
+  })
+
+  it("las filas contables que la consulta ya vio cuentan como datos aunque no haya cobertura", () => {
+    expect([...monthsWithoutProviderData(months, [], new Set(["2026-08"]))]).toEqual(["2026-07", "2026-09", "2026-10"])
   })
 })

@@ -197,6 +197,37 @@ describe("gráficos SST y de flota", () => {
     expect(screen.queryByRole("button", { name: /Costo/ })).toBeNull()
   })
 
+  it("combustible: un mes sin datos del proveedor se nombra y no suma ni se lee como cero (C-4)", () => {
+    const data = [
+      { month: "Ago", liters: 1000, amount: 900_000, loads: 4, providerGap: false },
+      { month: "Sep", liters: null, amount: null, loads: null, providerGap: true },
+      { month: "Oct", liters: 2500, amount: 1_100_000, loads: 6, providerGap: false },
+    ]
+    render(<FuelConsumptionChart data={data} periodLabel="últimos 6 meses" />)
+
+    // La cifra grande sólo suma los meses con datos.
+    expect(screen.getByText("3.500")).toBeDefined()
+    // El hueco se dice en la descripción del gráfico: sin explicación se lee como un error de la línea.
+    expect(screen.getByText(/sin datos del proveedor en septiembre/)).toBeDefined()
+  })
+
+  it("combustible: dos meses sin datos se unen con «y»", () => {
+    const data = [
+      { month: "Jul", liters: 100, amount: 10, loads: 1, providerGap: false },
+      { month: "Ago", liters: null, amount: null, loads: null, providerGap: true },
+      { month: "Sep", liters: null, amount: null, loads: null, providerGap: true },
+    ]
+    render(<FuelConsumptionChart data={data} />)
+
+    expect(screen.getByText(/sin datos del proveedor en agosto y septiembre/)).toBeDefined()
+  })
+
+  it("combustible sin huecos no agrega ningún aviso", () => {
+    render(<FuelConsumptionChart data={[{ month: "Ago", liters: 1000, amount: 900_000, loads: 4, providerGap: false }]} />)
+
+    expect(screen.queryByText(/sin datos del proveedor/)).toBeNull()
+  })
+
   it("combustible devuelve null sin datos", () => {
     expect(render(<FuelConsumptionChart data={[{ month: "Ene", liters: 0, amount: 0, loads: 0 }]} />).container.firstChild).toBeNull()
   })

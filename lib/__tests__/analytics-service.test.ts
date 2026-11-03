@@ -185,7 +185,8 @@ describe("getAnalyticsDashboard", () => {
     ])
     // C-10: la tendencia siempre son 12 meses que terminan en el mes de `hasta`.
     expect(data.spendByMonth).toHaveLength(12)
-    expect(data.spendByMonth[0]).toEqual({ month: "2025-07", purchasingAmount: 0, fuelAmount: 0, totalAmount: 0, partial: false })
+    // C-4: sin transacciones ni cobertura del proveedor, un mes no tiene «0 combustible»: es un hueco (null).
+    expect(data.spendByMonth[0]).toEqual({ month: "2025-07", purchasingAmount: 0, fuelAmount: null, totalAmount: 0, partial: false })
     expect(data.spendByMonth.at(-1)).toEqual({ month: "2026-06", purchasingAmount: 1_200_000, fuelAmount: 420_000, totalAmount: 1_620_000, partial: false })
     expect(data.kpis.fuelAmount).toBe(420_000)
     expect(data.topSuppliers[0]).toMatchObject({ name: "Proveedor A", totalAmount: 1_200_000 })
@@ -231,7 +232,8 @@ describe("getAnalyticsDashboard", () => {
       { data: [] },
       { data: [] },
       { data: [] },
-      // Trabajadores con entrega de EPP; la última lectura de medidor se consulta después del lote.
+      // Trabajadores con entrega de EPP y cobertura del proveedor (C-4); la última lectura de medidor se consulta después del lote.
+      { data: [] },
       { data: [] },
       { data: [
         { vehicleId: "veh-1", meterType: "odometer", value: 12_500 },

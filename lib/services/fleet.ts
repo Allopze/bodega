@@ -7,6 +7,7 @@ import {
   fuelLoads,
   fuelOperationRecords,
   fuelVehicleOperationalIntervals,
+  fuelProviderTransactions,
   fuelVehicles,
   mantWorkOrders,
 } from "@/db/schema"
@@ -14,7 +15,7 @@ import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { isGlobalRole, visibleWorksiteIds, worksiteScopeSql } from "@/lib/auth/scope"
 import { can } from "@/lib/auth/can"
-import { accountableFuelLoadsWhere } from "@/lib/combustibles/load-status"
+import { accountableFuelLoadsWhere, accountableProviderTransactionsWhere, providerLoadCountSql } from "@/lib/combustibles/load-status"
 import { fuelOperationOccurredAtSql } from "@/lib/combustibles/fuel-log"
 import { fleetDocumentMetadataSchema, resolveNextExpiryDate } from "@/lib/validation/fleet-documents"
 import { filterFleetOverviewRows, type FleetOverviewFilters } from "@/lib/fleet-overview-filters"
@@ -109,8 +110,18 @@ export async function getFleetOverview(
   sinceDate.setMonth(sinceDate.getMonth() - FLEET_OVERVIEW_LOOKBACK_MONTHS)
   const since = sinceDate.toISOString()
 
-  // Predicado común a las tres consultas de `fuelLoads` de abajo (agregado +
-  // primera/última lectura): antes vivía inline y duplicado.
+  // Litros, costo y cargas por vehículo salen del libro del proveedor (Copec) con la regla
+  // canónica compartida con Analítica y la conciliación (C-9): `fuel_loads` —la serie
+  // facturada— tiene 0 filas en producción. El alcance es el de siempre, sobre la faena de la
+  // transacción.
+  const providerWhere = and(
+    accountableProviderTransactionsWhere(),
+    sql`left(${fuelProviderTransactions.occurredAt}, 10) >= ${since.slice(0, 10)}`,
+    worksiteScopeSql(session, fuelProviderTransactions.worksiteId, worksiteId),
+    vehicleIds ? inArray(fuelProviderTransactions.vehicleId, [...vehicleIds]) : undefined,
+  )
+  // Predicado común a las dos consultas de `fuelLoads` de abajo (primera y última
+  // lectura del medidor): antes vivía inline y duplicado.
   const fuelLoadWhere = and(
     accountableFuelLoadsWhere(),
     sql`${fuelLoads.loadDate} >= ${since.slice(0, 10)}`,
@@ -154,14 +165,15 @@ export async function getFleetOverview(
     }),
     canViewFuel ? db
       .select({
-        vehicleId: fuelLoads.vehicleId,
-        totalFuelAmount: canViewCosts ? sql<number>`COALESCE(SUM(${fuelLoads.totalAmount}), 0)` : sql<null>`null`,
-        totalLiters: sql<number>`COALESCE(SUM(${fuelLoads.liters}), 0)`,
-        loadCount: sql<number>`COUNT(*)`,
+        vehicleId: fuelProviderTransactions.vehicleId,
+        totalFuelAmount: canViewCosts ? sql<number>`COALESCE(SUM(${fuelProviderTransactions.amount}), 0)` : sql<null>`null`,
+        totalLiters: sql<number>`COALESCE(SUM(${fuelProviderTransactions.quantity}), 0)`,
+        // Un agregado mensual TCT vale las cargas de su `detalle`, no una.
+        loadCount: sql<number>`COALESCE(SUM(${providerLoadCountSql()}), 0)`,
       })
-      .from(fuelLoads)
-      .where(fuelLoadWhere)
-      .groupBy(fuelLoads.vehicleId) : Promise.resolve([]),
+      .from(fuelProviderTransactions)
+      .where(and(providerWhere, isNotNull(fuelProviderTransactions.vehicleId)))
+      .groupBy(fuelProviderTransactions.vehicleId) : Promise.resolve([]),
     // Primera y última lectura CRONOLÓGICA del período (no el máximo/mínimo
     // histórico): un medidor reemplazado dejaba el máximo antiguo pegado para
     // siempre, y un reset bajaba el mínimo a un valor que infla el recorrido
@@ -331,14 +343,15 @@ export async function getFleetOverviewPage(
   const since = sinceDate.toISOString().slice(0, 10)
   const [rows, fuelSummaryRows] = await Promise.all([
     getFleetOverview(session, worksiteId, pageIds, { workOrders: true }),
+    // Mismo origen y misma regla que el detalle por vehículo de arriba (libro del proveedor, C-9).
     canViewFuel && matchingIds.length > 0 ? db.select({
-      totalAmount: canViewCosts ? sql<number>`COALESCE(SUM(${fuelLoads.totalAmount}), 0)` : sql<null>`null`,
-      totalLiters: sql<number>`COALESCE(SUM(${fuelLoads.liters}), 0)`,
-    }).from(fuelLoads).where(and(
-      accountableFuelLoadsWhere(),
-      sql`${fuelLoads.loadDate} >= ${since}`,
-      worksiteScopeSql(session, fuelLoads.worksiteId, worksiteId),
-      inArray(fuelLoads.vehicleId, matchingIds),
+      totalAmount: canViewCosts ? sql<number>`COALESCE(SUM(${fuelProviderTransactions.amount}), 0)` : sql<null>`null`,
+      totalLiters: sql<number>`COALESCE(SUM(${fuelProviderTransactions.quantity}), 0)`,
+    }).from(fuelProviderTransactions).where(and(
+      accountableProviderTransactionsWhere(),
+      sql`left(${fuelProviderTransactions.occurredAt}, 10) >= ${since}`,
+      worksiteScopeSql(session, fuelProviderTransactions.worksiteId, worksiteId),
+      inArray(fuelProviderTransactions.vehicleId, matchingIds),
     )) : Promise.resolve([]),
   ])
   const fuelSummary = fuelSummaryRows[0]

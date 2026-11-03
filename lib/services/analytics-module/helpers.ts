@@ -75,8 +75,11 @@ export function worksiteFilter(session: Session | null, column: SQLWrapper) {
   return inArray(column, ids as never[])
 }
 
-export function mergeSpendByMonth(rows: Array<{ month: string; module: string; totalAmount: number }>): Array<Omit<SpendByMonthRow, "partial">> {
-  const byMonth = new Map<string, Omit<SpendByMonthRow, "partial">>()
+/** Gasto de un mes tal como sale de las consultas: sin huecos (eso lo decide `buildMonthlyTrend`) ni `partial`. */
+export interface MonthlySpend { month: string; purchasingAmount: number; fuelAmount: number; totalAmount: number }
+
+export function mergeSpendByMonth(rows: Array<{ month: string; module: string; totalAmount: number }>): MonthlySpend[] {
+  const byMonth = new Map<string, MonthlySpend>()
   for (const row of rows) {
     const current = byMonth.get(row.month) ?? { month: row.month, purchasingAmount: 0, fuelAmount: 0, totalAmount: 0 }
     if (row.module === "Combustible") current.fuelAmount += row.totalAmount
@@ -119,11 +122,17 @@ export function monthlyTrendWindow(toDate: string): { fromDate: string; toDate: 
  * hubo movimiento (un eje con huecos uniría con una línea dos meses lejanos), y
  * `partial` en el mes que no está completo. `today` es el día civil chileno de
  * hoy: un `hasta` a fin de mes futuro tampoco hace completo al mes en curso.
+ *
+ * Las compras se rellenan con ceros porque ahí un cero es real. El combustible
+ * no: en `fuelGapMonths` (meses sin datos del proveedor, ver
+ * `monthsWithoutProviderData`) su valor es `null`, para que no se lea como «no se
+ * compró combustible».
  */
 export function buildMonthlyTrend(
-  rows: Array<Omit<SpendByMonthRow, "partial">>,
+  rows: MonthlySpend[],
   toDate: string,
   today: string,
+  fuelGapMonths: ReadonlySet<string> = new Set(),
 ): SpendByMonthRow[] {
   const { months } = monthlyTrendWindow(toDate)
   const byMonth = new Map(rows.map((row) => [row.month, row]))
@@ -135,7 +144,7 @@ export function buildMonthlyTrend(
     return {
       month,
       purchasingAmount: row?.purchasingAmount ?? 0,
-      fuelAmount: row?.fuelAmount ?? 0,
+      fuelAmount: fuelGapMonths.has(month) ? null : row?.fuelAmount ?? 0,
       totalAmount: row?.totalAmount ?? 0,
       partial: month === cutMonth && cutIsPartial,
     }

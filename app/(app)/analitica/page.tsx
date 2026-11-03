@@ -22,7 +22,7 @@ import { ModuleSpendChart, MonthlySpendChart, RankingBarChart } from "./analytic
 import { KpiCard } from "./analytics-kpi-card"
 import { RankingTable, SeverityBadge, EmptyText } from "./analytics-ranking-table"
 import { getFilterOptions, getParam } from "./analytics-page.helpers"
-import { monthlyTrendDescription } from "./analytics-trend"
+import { fuelGapMonthKeys, monthlyTrendDescription } from "./analytics-trend"
 import { FUEL_PATHS } from "@/lib/combustibles/routes"
 
 export const metadata: Metadata = { title: "Analítica" }
@@ -160,7 +160,8 @@ export default async function AnaliticaPage({
             <CardHeader>
               <CardTitle>Tendencia mensual de gasto</CardTitle>
               {/* La serie no sigue el período elegido: son 12 meses que terminan en `hasta` (C-10). */}
-              <CardDescription>{monthlyTrendDescription(data.filters.toDate, data.spendByMonth.at(-1)?.partial === true)}</CardDescription>
+              {/* Los meses sin datos del proveedor van nombrados: el hueco de la línea de combustible no es un $0 (C-4). */}
+              <CardDescription>{monthlyTrendDescription(data.filters.toDate, data.spendByMonth.at(-1)?.partial === true, fuelGapMonthKeys(data.spendByMonth))}</CardDescription>
             </CardHeader>
             <CardContent>
               <MonthlySpendChart data={data.spendByMonth} />

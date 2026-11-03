@@ -268,6 +268,31 @@ describe("report export helpers", () => {
     expect(data.rows.some((row) => row[1] === "Stock crítico" || row[0] === "Stock crítico")).toBe(false)
   })
 
+  // C-4: un mes sin datos del proveedor no se exporta como $0 de combustible; se dice con palabras,
+  // y el total de ese mes sigue siendo sólo lo comprado (no hay combustible conocido que sumarle).
+  it("analitica_resumen exporta un mes sin datos del proveedor como texto, no como cero", async () => {
+    const dashboard = await mockGetAnalyticsDashboard()
+    mockGetAnalyticsDashboard.mockResolvedValue({
+      ...dashboard,
+      spendByMonth: [
+        { month: "2026-05", purchasingAmount: 100, fuelAmount: 50, totalAmount: 150, partial: false },
+        { month: "2026-06", purchasingAmount: 70, fuelAmount: null, totalAmount: 70, partial: false },
+      ],
+    })
+    const session = { user: { id: "user-1", email: "admin@test.com" } } as Session
+    const data = await getReportData("analitica_resumen", session, {})
+
+    expect(data.rows).toEqual(expect.arrayContaining([
+      ["Tendencia mensual", "2026-05", "Compras: 100 · Combustible: 50", 150],
+      ["Tendencia mensual", "2026-06", "Compras: 70 · Combustible: Sin datos del proveedor", 70],
+    ]))
+    const monthly = data.sheets?.find((sheet) => sheet.worksheetName === "Gasto mensual")
+    expect(monthly?.rows).toEqual([
+      ["2026-05", 100, 50, 150],
+      ["2026-06", 70, "Sin datos del proveedor", 70],
+    ])
+  })
+
   it("analitica_resumen returns separate sheets for operational sections", async () => {
     const session = { user: { id: "user-1", email: "admin@test.com" } } as Session
     const data = await getReportData("analitica_resumen", session, {})

@@ -100,7 +100,9 @@ export async function FleetSection({ session, scope }: DomainSectionsProps) {
    * avisa, así que ahí se conserva la cifra.
    */
   const activeVehicles = fleet.filter((vehicle) => vehicle.isActive).length
-  const totalLiters = Math.round(fuelTrend.reduce((sum, point) => sum + point.liters, 0))
+  const totalLiters = Math.round(fuelTrend.reduce((sum, point) => sum + (point.liters ?? 0), 0))
+  // Meses sin datos del proveedor (C-4): no suman, pero el tile los nombra para que la cifra no se lea completa.
+  const gapMonths = fuelTrend.filter((point) => point.providerGap).map((point) => point.month)
   const canRegisterVehicles = permissions.includes("admin:fleet_vehicles")
 
   return (
@@ -127,7 +129,8 @@ export async function FleetSection({ session, scope }: DomainSectionsProps) {
                 contradecía directamente su propio valor (CO-038). */}
             {canViewFuel && <KpiCard {...DASHBOARD_KPI} icon={<Gauge size={16} />} label={`Litros (${TREND_MONTHS} meses)`}
               value={`${formatQty(totalLiters)} L`}
-              detail="Cargas registradas · ahora" href={FUEL_PATHS.cargas}
+              detail={gapMonths.length > 0 ? `Sin datos de ${gapMonths.join(", ")} del proveedor · ahora` : "Copec (tarjetas y estanques) · ahora"}
+              href={FUEL_PATHS.consumoLitros}
               empty={totalLiters === 0 && !degradedSources.includes("fuelTrend")
                 ? { message: `Sin cargas registradas en ${TREND_MONTHS} meses`, actionLabel: "Ir a combustibles" }
                 : undefined} />}

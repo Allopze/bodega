@@ -15,7 +15,7 @@ import {
 import type { SpendByModuleRow, SpendByMonthRow, VehicleCostRow, WorksiteSpendRow } from "@/lib/services/analytics"
 import { formatCLP, formatCompactCLP } from "@/lib/utils"
 import { CHART_SERIES, chartTooltipStyle } from "@/lib/chart-palette"
-import { formatTrendMonth, formatTrendMonthShort } from "./analytics-trend"
+import { formatTrendMonth, formatTrendMonthShort, fuelGapMonthKeys, isIsolatedPoint, trendChartRows, trendTooltipEntry } from "./analytics-trend"
 
 // Segunda de las tres paletas que coexistían (G-07). Ahora es la única del
 // producto, en `lib/chart-palette.ts`: sus hues están verificados para
@@ -23,30 +23,55 @@ import { formatTrendMonth, formatTrendMonthShort } from "./analytics-trend"
 // no garantizaba (primary, success y warning son verde, verde y ámbar).
 const COLORS = CHART_SERIES
 
+/** Punto de una serie con huecos: sólo donde no habría línea (un valor entre dos huecos); el resto ya se ve en el trazo. */
+function isolatedDot(values: Array<number | null>, color: string) {
+  function IsolatedDot({ cx, cy, index }: { cx?: number; cy?: number; index?: number }) {
+    if (cx === undefined || cy === undefined || index === undefined || !isIsolatedPoint(values, index)) return <g />
+    return <circle cx={cx} cy={cy} r={3.5} fill={color} />
+  }
+  return IsolatedDot
+}
+
 export function MonthlySpendChart({ data }: { data: SpendByMonthRow[] }) {
+  const gaps = fuelGapMonthKeys(data)
   // La serie trae los 12 meses con ceros donde no hubo movimiento: «sin gasto» es que todos sean cero.
-  if (data.every((row) => row.totalAmount === 0)) return <ChartEmpty label="Aún no hay gasto en los últimos 12 meses" hint="No se registraron órdenes de compra ni combustible en las faenas seleccionadas durante esta ventana. Revisa los filtros o que existan movimientos." ctaLabel="Ver compras" ctaHref="/compras" />
+  // Un mes sin datos del proveedor no es un cero de combustible: si no hay compras, lo dice el aviso.
+  if (data.every((row) => row.totalAmount === 0)) {
+    return <ChartEmpty
+      label="Aún no hay gasto en los últimos 12 meses"
+      hint={`No se registraron órdenes de compra ni combustible en las faenas seleccionadas durante esta ventana. Revisa los filtros o que existan movimientos.${gaps.length > 0 ? " El proveedor de combustible no tiene datos de algunos de estos meses, así que su gasto no se conoce." : ""}`}
+      ctaLabel="Ver compras"
+      ctaHref="/compras"
+    />
+  }
+
+  // Combustible y total en `null` donde el proveedor no tiene datos: la línea se corta (sin `connectNulls`).
+  const rows = trendChartRows(data)
+  const totalColor = "var(--color-primary)"
+  const fuelColor = "var(--color-warning)"
 
   return (
     <>
     <div className="h-72">
       <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={data} margin={{ top: 10, right: 12, left: 0, bottom: 0 }}>
+        <LineChart data={rows} margin={{ top: 10, right: 12, left: 0, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
           <XAxis dataKey="month" tickFormatter={formatTrendMonthShort} minTickGap={8} tick={{ fill: "var(--color-text-muted)", fontSize: 11 }} />
           <YAxis tickFormatter={formatCompactCLP} tick={{ fill: "var(--color-text-muted)", fontSize: 11 }} width={58} />
+          {/* `filterNull={false}`: recharts omite del tooltip las series nulas, y el mes sin datos del proveedor perdería su aviso. */}
           <Tooltip
             contentStyle={chartTooltipStyle()}
+            filterNull={false}
             // Un mes sin cerrar tiene menos días que los demás: se dice en el tooltip para que no se lea como una caída.
             labelFormatter={(label) => {
               const month = String(label)
               return data.find((row) => row.month === month)?.partial ? `${formatTrendMonth(month)} (parcial)` : formatTrendMonth(month)
             }}
-            formatter={(value, name) => [formatCLP(Number(value)), name === "totalAmount" ? "Total" : String(name)]}
+            formatter={(value, name) => trendTooltipEntry(String(name), value == null ? null : Number(value), formatCLP)}
           />
-          <Line type="monotone" dataKey="totalAmount" name="Total" stroke="var(--color-primary)" strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} />
+          <Line type="monotone" dataKey="totalAmount" name="Total" stroke={totalColor} strokeWidth={2.5} dot={isolatedDot(rows.map((row) => row.totalAmount), totalColor)} activeDot={{ r: 4 }} />
           <Line type="monotone" dataKey="purchasingAmount" name="Compras" stroke="var(--color-info)" strokeWidth={1.8} dot={false} />
-          <Line type="monotone" dataKey="fuelAmount" name="Combustible" stroke="var(--color-warning)" strokeWidth={1.8} dot={false} />
+          <Line type="monotone" dataKey="fuelAmount" name="Combustible" stroke={fuelColor} strokeWidth={1.8} dot={isolatedDot(rows.map((row) => row.fuelAmount), fuelColor)} />
         </LineChart>
       </ResponsiveContainer>
     </div>

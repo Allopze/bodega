@@ -17,6 +17,7 @@ import {
   fuelVehicles,
 } from "@/db/schema"
 import { isGlobalRole, worksiteScopeSql } from "@/lib/auth/scope"
+import { isCopecMonthClosed } from "@/lib/combustibles/copec-coverage"
 import { listCopecPeriodCoverage } from "@/lib/combustibles/copec-coverage-store"
 import { toChileInstantRange } from "@/lib/combustibles/period/adapters"
 import type { ResolvedFuelPeriod } from "@/lib/combustibles/period/types"
@@ -161,9 +162,6 @@ function clipToPeriod(day: string, ctx: Ctx): string {
 
 /* ── Copec ─────────────────────────────────────────────────────── */
 
-const COPEC_COVERAGE_COMBOS = ["tct:diesel", "tct:bluemax", "tae:diesel", "tae:bluemax"] as const
-const COVERAGE_TERMINAL = new Set(["complete", "legitimate_empty"])
-
 async function providerSource(ctx: Ctx): Promise<FuelSourceStatus | null> {
   const { session, period, today, has } = ctx
   const canSync = has("combustibles:sync_integrations")
@@ -276,8 +274,7 @@ async function providerSource(ctx: Ctx): Promise<FuelSourceStatus | null> {
     for (const month of period.monthKeys) {
       if (lastDayOfMonthKey(month) >= today) continue
       const rows = coverage.filter((row) => row.periodMonth === `${month}-01`)
-      const done = COPEC_COVERAGE_COMBOS.every((combo) => rows.some((row) => row.sourceAccount === combo && COVERAGE_TERMINAL.has(row.status)))
-      if (!done) missing.push(month)
+      if (!isCopecMonthClosed(rows)) missing.push(month)
     }
     if (missing.length > 0) {
       const names = listJoin(missing.map(monthName))

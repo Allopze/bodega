@@ -180,6 +180,31 @@ describe("FleetSection · panel del tablero", () => {
     expect(bannerOf(section).props.degraded).toContain("workOrders")
   })
 
+  // C-9 / C-4: la serie viene del libro del proveedor. Un mes sin datos del proveedor no es «0 litros»:
+  // el tile suma los meses con datos, nombra el hueco y apunta a la pantalla donde esa cifra se explica.
+  it("«Litros (6 meses)» suma los meses con datos, nombra los huecos y apunta al consumo", async () => {
+    getFuelMonthlyTrend.mockResolvedValue([
+      { month: "Ago", monthKey: "2026-08", liters: 1000, amount: 900_000, loads: 4, providerGap: false },
+      { month: "Sep", monthKey: "2026-09", liters: null, amount: null, loads: null, providerGap: true },
+      { month: "Oct", monthKey: "2026-10", liters: 2500, amount: 1_100_000, loads: 6, providerGap: false },
+    ])
+    const section = sectionOf(await FleetSection(props("flota:view", "combustibles:view")))
+    const tile = find(section.kpis, (element) => element.type === KpiCard && element.props.label === "Litros (6 meses)")[0]!
+
+    expect(tile.props.value).toBe("3.500 L")
+    expect(tile.props.detail).toContain("Sin datos de Sep")
+    expect(tile.props.href).toBe("/combustibles/consumo/litros")
+    expect(tile.props.empty).toBeUndefined()
+  })
+
+  it("«Litros (6 meses)» sin huecos no agrega ningún aviso", async () => {
+    getFuelMonthlyTrend.mockResolvedValue([{ month: "Oct", monthKey: "2026-10", liters: 2500, amount: null, loads: 6, providerGap: false }])
+    const section = sectionOf(await FleetSection(props("flota:view", "combustibles:view")))
+    const tile = find(section.kpis, (element) => element.type === KpiCard && element.props.label === "Litros (6 meses)")[0]!
+
+    expect(String(tile.props.detail)).not.toContain("Sin datos")
+  })
+
   it("sin vehículos ni cargas los tiles dicen qué falta; si la fuente falló conservan la cifra", async () => {
     const empty = sectionOf(await FleetSection(props("flota:view", "combustibles:view")))
     const byLabel = (kpis: unknown, label: string) => find(kpis, (element) => element.type === KpiCard && element.props.label === label)[0]!

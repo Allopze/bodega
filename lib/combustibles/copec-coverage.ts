@@ -67,3 +67,51 @@ export function canConfirmCopecEmpty(row: { status: string; sourceAvailability: 
 export function isTerminalCopecCoverage(status: string): status is "complete" | "legitimate_empty" {
   return TERMINAL_STATUSES.has(status as CopecCoverageStatus)
 }
+
+/** Las cuatro cuentas de la integración (`tct:diesel`, `tct:bluemax`, `tae:diesel`, `tae:bluemax`). */
+export const COPEC_COVERAGE_ACCOUNTS: readonly string[] = CHANNELS.flatMap((channel) =>
+  PRODUCTS.map((product) => `${channel.toLowerCase()}:${product}`),
+)
+
+/**
+ * Un mes está **cerrado** cuando las cuatro cuentas tienen cobertura terminal
+ * (`complete` o `legitimate_empty`). Es la misma vara con que «Fuentes» decide
+ * si un mes cerrado del período está completo.
+ */
+export function isCopecMonthClosed(rows: ReadonlyArray<{ sourceAccount: string; status: string }>): boolean {
+  return COPEC_COVERAGE_ACCOUNTS.every((account) =>
+    rows.some((row) => row.sourceAccount === account && isTerminalCopecCoverage(row.status)),
+  )
+}
+
+/**
+ * Meses de una serie mensual (`YYYY-MM`) sobre los que el libro del proveedor no
+ * puede decir «no se compró combustible».
+ *
+ * Una serie de gasto que pinta $0 donde la integración no trajo nada (septiembre
+ * de 2026 en producción: ninguna transacción ni fila de cobertura; C-4) se lee
+ * como una compra que no ocurrió. Un mes tiene respaldo para mostrar su cifra,
+ * cero incluido, cuando:
+ * - trae filas aceptadas (la cobertura las cuenta en `rowsAccepted`, o la propia
+ *   consulta de la serie ya las vio en `monthsWithRows`) — aunque la cobertura
+ *   siga `incomplete`: la cifra es parcial, pero no un cero inventado; o
+ * - la cobertura lo cierra (cuatro cuentas terminales): un mes vacío certificado.
+ *
+ * Todo lo demás —sin fila de cobertura, o `unknown`/`failed`/`incomplete` sin
+ * filas— es un hueco.
+ */
+export function monthsWithoutProviderData(
+  monthKeys: readonly string[],
+  coverage: ReadonlyArray<{ sourceAccount: string; periodMonth: string; status: string; rowsAccepted: number }>,
+  monthsWithRows: ReadonlySet<string> = new Set(),
+): Set<string> {
+  const gaps = new Set<string>()
+  for (const month of monthKeys) {
+    if (monthsWithRows.has(month)) continue
+    const rows = coverage.filter((row) => row.periodMonth === `${month}-01`)
+    if (rows.some((row) => row.rowsAccepted > 0)) continue
+    if (isCopecMonthClosed(rows)) continue
+    gaps.add(month)
+  }
+  return gaps
+}

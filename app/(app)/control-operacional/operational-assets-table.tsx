@@ -73,7 +73,7 @@ const COLUMNS = (canViewCosts: boolean, canViewInspections: boolean, canViewFuel
         ]
       : []),
     ...(showFuelCost
-      ? [{ key: "fuelBilledAmount", label: "Costo combustible", sortable: true, numeric: true }]
+      ? [{ key: "fuelBilledAmount", label: "Costo combustible facturado", sortable: true, numeric: true }]
       : []),
     { key: "_action", label: "", sortable: false, numeric: true },
   ]
@@ -183,7 +183,7 @@ export function OperationalAssetsTable({
             </div>
             {showFuelCost && (
               <div>
-                <dt className="text-[var(--color-text-subtle)]">Costo combustible</dt>
+                <dt className="text-[var(--color-text-subtle)]">Costo combustible facturado</dt>
                 <dd>{asset.fuelBilledAmount == null ? "—" : formatCLP(asset.fuelBilledAmount)}</dd>
               </div>
             )}
