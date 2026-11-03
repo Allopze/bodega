@@ -8,7 +8,7 @@ import type { CardFieldCoverage, TaeCopecReconciliationRow } from "@/lib/combust
 import { resolvePagination } from "@/lib/pagination"
 import { plainChileDateTime } from "./_components/format"
 import { wholeMonthsNote, wholeMonthsPhrase } from "./_components/period-text"
-import { cycleAnswer, MovementsTable, movementSourceHref, StorageLevels } from "./estanques/estanques-sections"
+import { cycleAnswer, MovementsTable, movementSourceHref, StorageLevelBars, StorageLevels } from "./estanques/estanques-sections"
 import { MandanteMonths, MandantesTable, WhatToCheck, mandanteAnswer } from "./mandante/mandante-sections"
 import { MediumSection, mediumAnswer } from "./proveedor/medium-section"
 import { DetailSection } from "./sellos/detail-section"
@@ -203,6 +203,32 @@ describe("Cuadratura › Estanques", () => {
     expect(html).toContain("Sobre su capacidad")
     expect(html).toContain("Sin capacidad informada")
     expect(html).toContain("Al inicio")
+  })
+
+  it("CHART-020: una barra de nivel sobre capacidad por estanque, con la frase que lo responde y sin escala inventada", () => {
+    const tank = (storageLocationId: string, name: string, balanceLiters: number, capacityLiters: number | null) => ({
+      storageLocationId, worksiteId: "w1", name, productId: "p", capacityLiters, receivedLiters: 0, transferInLiters: 0, transferOutLiters: 0, deliveredLiters: 0, openingLiters: 0, periodNetLiters: 0, balanceLiters,
+    })
+    const html = renderToStaticMarkup(<StorageLevelBars balances={[
+      tank("s1", "Camión surtidor CS-02", 7_900, 5_000),
+      tank("s2", "Estanque base", 12_400, 20_000),
+      tank("s3", "Estanque sin dato", 800, null),
+    ]} />)
+    // Una figura con nombre y la frase que responde la pregunta.
+    expect(html).toContain("<figure")
+    expect(html).toContain("Nivel contra capacidad")
+    expect(html).toContain("1 de 3 estanques está sobre su capacidad. 1 no tiene capacidad informada, así que sólo se ve su nivel.")
+    // Los dos con capacidad son un `meter` accesible; el que no la tiene, no.
+    expect(html.match(/role="meter"/g)).toHaveLength(2)
+    expect(html).toContain('aria-label="Camión surtidor CS-02"')
+    expect(html).toContain("7.900 L de 5.000 L")
+    expect(html).toContain("Sobre su capacidad en 2.900 L")
+    expect(html).toContain("62 % de su capacidad")
+    expect(html).toContain("Estanque sin dato")
+    expect(html).toContain("Sin capacidad informada: no hay una escala contra la que comparar el nivel.")
+    // No hay punto de reposición en el catálogo: no se dibuja una marca que nadie declaró.
+    expect(html).not.toMatch(/reposici/i)
+    expect(renderToStaticMarkup(<StorageLevelBars balances={[]} />)).toBe("")
   })
 
   it("sin estanques es un estado vacío con salida solo para quien puede crearlos", () => {

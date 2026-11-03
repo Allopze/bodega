@@ -17,7 +17,8 @@
  * - `/prevencion/emergencias` lee `tab` y `vista`
  *   (`lib/prevention/emergency-list-filters.ts`); `vista=draft` sólo es válido
  *   con `tab=plans`.
- * - `/prevencion/capacitacion` lee `faena` y `year`, y nada más
+ * - `/prevencion/capacitacion` lee `faena`, `year` y `mes` (este último, desde
+ *   2026-11-03, lo escribe el calendario de cumplimiento) y nada más
  *   (`training-occurrence-list.tsx`). El enlace de capacitación va pelado desde
  *   que el catálogo de cursos dejó de existir (2026-09-19): antes apuntaba a
  *   `/prevencion/capacitacion/catalogo?tab=versions&q=<código>`.
@@ -47,7 +48,7 @@ export function inspectionTemplateLink(code: string): PdtpReadinessLink {
 /**
  * El control anual de capacitación.
  *
- * Va pelado, sin `q` ni `tab`: el destino sólo lee `faena` y `year`
+ * Va pelado, sin `q` ni `tab`: el destino sólo lee `faena`, `year` y `mes`
  * (`training-occurrence-list.tsx`), y un parámetro que nadie lee es
  * exactamente el defecto que este archivo existe para impedir. Tampoco lleva
  * `year`: sin él la página resuelve el catálogo vigente por su cuenta, que es

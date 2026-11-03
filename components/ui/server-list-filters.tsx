@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
 import { SavedViews } from "@/components/ui/saved-views"
 import { useUrlFilters } from "@/lib/hooks/use-url-filters"
+import { approvalAgeBucketLabel } from "@/lib/approvals-age"
 import { hasServerListFilters, SERVER_LIST_FILTER_PARAMS } from "./server-list-filter-params"
 
 export interface ServerListFilterOption {
@@ -85,10 +86,12 @@ const ServerListFiltersInner = React.memo(function ServerListFiltersInner({
     const solicitud = searchParams.get("solicitud")
     const desde = searchParams.get("desde")
     const hasta = searchParams.get("hasta")
+    const antiguedad = searchParams.get("antiguedad")
     const chips: ActiveFilterChip[] = []
     if (factura) chips.push(buildChip("factura", "Factura", factura, factura === "pendiente" ? "Sin factura" : factura))
     if (solicitud) chips.push(buildChip("solicitud", "Solicitud", solicitud, "Sólo una solicitud"))
     if (desde || hasta) chips.push(buildChip("periodo", "Período", `${desde ?? ""}|${hasta ?? ""}`, `${desde || "…"} → ${hasta || "…"}`))
+    if (antiguedad) chips.push(buildChip("antiguedad", "Antigüedad", antiguedad, approvalAgeBucketLabel(antiguedad) ?? antiguedad))
     return chips
   }, [searchParams])
 

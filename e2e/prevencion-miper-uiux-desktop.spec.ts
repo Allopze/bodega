@@ -7,11 +7,11 @@ test.describe("MIPER — recorrido inicial de escritorio", () => {
     await login(page)
   })
 
-  test("la portada explica el trabajo y prioriza faena, estado, pendiente y acción", async ({ page }) => {
+  test("la portada explica el trabajo y prioriza faena, estado, riesgos, pendiente y acción", async ({ page }) => {
     await page.goto("/prevencion/miper")
     await expectPageTitle(page, "Matriz de riesgos")
     const table = page.getByRole("table", { name: "MIPER por faena" })
-    await expect(table.getByRole("columnheader")).toHaveText(["Faena", "Estado", "Trabajo pendiente", "Acción"])
+    await expect(table.getByRole("columnheader")).toHaveText(["Faena", "Estado", "Riesgos", "Trabajo pendiente", "Acción"])
     await expect(page.getByRole("banner").getByRole("button", { name: "Crear matriz", exact: true })).toBeVisible()
     await expect(page.getByText("Identificar peligros → Evaluar riesgos → Definir medidas → Revisar y dar seguimiento.")).toBeHidden()
     await page.getByText("Cómo se trabaja aquí").click()

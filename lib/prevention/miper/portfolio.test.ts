@@ -77,7 +77,7 @@ const row = (overrides: Partial<MiperPortfolioRow>): MiperPortfolioRow => ({
   id: "ws", worksiteId: "ws", worksiteName: "Faena", worksiteActive: true,
   matrix: { id: "m", period: 2026, versionNumber: 1, label: "Vigente · v1", isLegacy: false }, vigente: null,
   status: "vigente", stateLabel: "Vigente · v1", headcount: 0, headcountSource: "ficha", updatedAt: "2026-10-01T00:00:00.000Z",
-  completeness: { complete: 1, total: 1 }, importantCount: 0, intolerableCount: 0, criticalWithoutControl: 0,
+  completeness: { complete: 1, total: 1 }, classificationCounts: { tolerable: 0, moderate: 0, important: 0, intolerable: 0 }, criticalWithoutControl: 0,
   requiresMyAction: false, myActions: [], submittedByName: null, programProgress: null,
   ...overrides,
 })

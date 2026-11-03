@@ -8,12 +8,13 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { EmptyState } from "@/components/ui/empty-state"
 import { Field } from "@/components/ui/field"
 import { FileInput } from "@/components/ui/file-input"
+import { FilterToolbar } from "@/components/ui/filter-toolbar"
 import { Input } from "@/components/ui/input"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { MONTH_LABELS } from "@/lib/services/pdtp/constants"
-import { formatDateTime } from "@/lib/utils"
+import { MONTH_NAMES, formatDateTime } from "@/lib/utils"
 import type {
   listAlcoholTestDispatches, listAlcoholTests, listAlcotestEquipment, listAlcotestWorkers,
 } from "@/lib/services/prevention-alcotest"
@@ -75,13 +76,15 @@ async function uploadAlcotestEvidence(slotId: string, file: File): Promise<{ ok:
 }
 
 export function AlcotestWorkbench({
-  worksites, selectedWorksiteId, slotRows, slotYear, activationPeriod,
-  initialTests, initialDispatches, workers, equipment, canRegister, canDispatch, scheduledPanel,
+  worksites, selectedWorksiteId, slotRows, slotYear, selectedMonth, activationPeriod,
+  initialTests, initialDispatches, workers, equipment, canRegister, canDispatch, complianceCalendar, scheduledPanel,
 }: {
   worksites: Worksite[]
   selectedWorksiteId: string | null
   slotRows: AlcotestSlotRow[]
   slotYear: number
+  /** El mes (1–12) que el calendario de cumplimiento filtra en las casillas, o `null` para ver el año. */
+  selectedMonth: number | null
   activationPeriod: PdtpPeriod | null
   initialTests: AlcoholTest[]
   initialDispatches: AlcoholTestDispatch[]
@@ -89,11 +92,32 @@ export function AlcotestWorkbench({
   equipment: Equipment[]
   canRegister: boolean
   canDispatch: boolean
+  /** El calendario faena × mes, ya armado por la página. Va justo encima del checklist que filtra. */
+  complianceCalendar?: React.ReactNode
   scheduledPanel?: React.ReactNode
 }) {
   const router = useRouter()
   const controlSlots = React.useMemo(() => slotRows.filter((row) => row.kind === "control"), [slotRows])
   const dispatchSlots = React.useMemo(() => slotRows.filter((row) => row.kind === "envio"), [slotRows])
+  // Sólo lo que se MUESTRA se acota por mes. Los diálogos de registro siguen
+  // recibiendo todas las casillas: registrar un control de otro mes sigue siendo válido.
+  const visibleControlSlots = React.useMemo(
+    () => (selectedMonth ? controlSlots.filter((row) => row.scheduledMonth === selectedMonth) : controlSlots),
+    [controlSlots, selectedMonth],
+  )
+  const visibleDispatchSlots = React.useMemo(
+    () => (selectedMonth ? dispatchSlots.filter((row) => row.scheduledMonth === selectedMonth) : dispatchSlots),
+    [dispatchSlots, selectedMonth],
+  )
+  /* Faena y mes son estado de la vista: `replace` + `scroll: false` (patrón de
+   * navegación de AGENTS.md), y se conservan entre sí y con el año. */
+  const slotsHref = (worksiteId: string | null, month: number | null) => {
+    const params = new URLSearchParams()
+    if (worksiteId) params.set("faena", worksiteId)
+    params.set("anio", String(slotYear))
+    if (month) params.set("mes", String(month))
+    return `/prevencion/alcotest?${params.toString()}`
+  }
   const [registerOpen, setRegisterOpen] = React.useState(false)
   const [dispatchOpen, setDispatchOpen] = React.useState(false)
   const worksiteName = React.useMemo(() => new Map(worksites.map((w) => [w.id, w.name])), [worksites])
@@ -168,16 +192,15 @@ export function AlcotestWorkbench({
       {/* El checklist del programa: qué esperaba el PDTP este año en esta faena.
         * Va antes del panel de actividades programadas porque es lo que el
         * operador viene a resolver; el panel es contexto. */}
+      {complianceCalendar}
+
       <section className="mt-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-sm font-semibold text-[var(--color-text)]">Casillas del programa {slotYear}</h2>
           {worksites.length > 1 && (
             <Select
               value={selectedWorksiteId ?? undefined}
-              onValueChange={(value) => router.replace(
-                `/prevencion/alcotest?faena=${encodeURIComponent(value)}`,
-                { scroll: false },
-              )}
+              onValueChange={(value) => router.replace(slotsHref(value, selectedMonth), { scroll: false })}
             >
               <SelectTrigger aria-label="Filtrar por faena" className="w-64"><SelectValue placeholder="Elige una faena" /></SelectTrigger>
               <SelectContent>
@@ -189,13 +212,28 @@ export function AlcotestWorkbench({
           )}
         </div>
 
+        {selectedMonth !== null && (
+          <FilterToolbar
+            className="mb-0 mt-2"
+            activeChips={[{
+              key: "mes",
+              label: "Mes",
+              value: String(selectedMonth),
+              displayValue: `${MONTH_NAMES[selectedMonth - 1]} ${slotYear}`,
+            }]}
+            onRemoveChip={() => router.replace(slotsHref(selectedWorksiteId, null), { scroll: false })}
+          />
+        )}
+
         <h3 className="mt-3 text-xs font-medium uppercase tracking-wide text-[var(--color-text-subtle)]">Controles</h3>
         <div className="mt-2">
           <ProgramSlotList
-            rows={controlSlots}
+            rows={visibleControlSlots}
             year={slotYear}
             canRecord={canRegister}
-            emptyHint="Esta faena todavía no tiene casillas del programa; se generan al activarla."
+            emptyHint={selectedMonth !== null && controlSlots.length > 0
+              ? `Esta faena no tiene casillas de control en ${MONTH_NAMES[selectedMonth - 1]}.`
+              : "Esta faena todavía no tiene casillas del programa; se generan al activarla."}
             activationPeriod={activationPeriod}
             onRecord={(input) => recordAlcotestSlotStatusAction(input)}
           />
@@ -204,10 +242,12 @@ export function AlcotestWorkbench({
         <h3 className="mt-5 text-xs font-medium uppercase tracking-wide text-[var(--color-text-subtle)]">Envíos de registros (DO-48)</h3>
         <div className="mt-2">
           <ProgramSlotList
-            rows={dispatchSlots}
+            rows={visibleDispatchSlots}
             year={slotYear}
             canRecord={canDispatch}
-            emptyHint="Esta faena todavía no tiene casillas de envío; se generan al activarla."
+            emptyHint={selectedMonth !== null && dispatchSlots.length > 0
+              ? `Esta faena no tiene casillas de envío en ${MONTH_NAMES[selectedMonth - 1]}.`
+              : "Esta faena todavía no tiene casillas de envío; se generan al activarla."}
             activationPeriod={activationPeriod}
             onRecord={(input) => recordAlcotestSlotStatusAction(input)}
           />

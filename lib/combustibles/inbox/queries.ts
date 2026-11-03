@@ -6,6 +6,7 @@ import { db } from "@/db"
 import {
   fuelAnomalyCases,
   fuelAnomalyExecutions,
+  fuelAnomalyRules,
   fuelConsumptionRecords,
   fuelEquipmentLoads,
   fuelEquipmentTypes,
@@ -34,6 +35,7 @@ import { logger } from "@/lib/logger"
 import { getUserIdsWithPermissionForWorksite } from "@/lib/services/notification-targeting"
 import { formatQty } from "@/lib/utils"
 import { decisionKindsFor, type FuelInboxItem, type FuelInboxItemExtras, type FuelInboxQueryFilters } from "./detail-types"
+import { ANOMALY_WEEKS_DEFAULT, anomalyWeekStarts, shapeAnomalyWeeks, type AnomalyWeek } from "./case-weeks"
 import { flagDatum, flagReasonsLabel, flagReasonTitle, knownFlagReasons, primaryFlagReason } from "./reasons"
 import {
   FUEL_INBOX_KINDS,
@@ -43,6 +45,7 @@ import {
   parseInboxRowKey,
   type FuelInboxEvidence,
   type FuelInboxCaseBreakdownItem,
+  type FuelInboxCaseRule,
   type FuelInboxItemDetail,
   type FuelInboxKind,
   type FuelInboxPage,
@@ -352,6 +355,7 @@ function casoWhere(ctx: Ctx, view: View): SQL | undefined {
     worksiteScopeSqlFor(ctx.scope, fuelAnomalyCases.worksiteId, ctx.worksiteId),
     inArray(fuelAnomalyCases.status, casoStatuses(ctx, view)),
     ctx.filters.caseSeverity ? eq(fuelAnomalyCases.severity, ctx.filters.caseSeverity) : undefined,
+    ctx.filters.caseRuleCode ? eq(fuelAnomalyCases.ruleCode, ctx.filters.caseRuleCode) : undefined,
     reference ? and(eq(fuelAnomalyCases.referenceEntityType, reference.type), eq(fuelAnomalyCases.referenceEntityId, reference.id)) : undefined,
     view === "pendientes"
       ? lte(caseMonthSql(), ctx.lastMonth)
@@ -799,6 +803,51 @@ export async function summarizeFuelInbox(session: Session, period: ResolvedFuelP
   const oldest = FUEL_INBOX_KINDS.map((kind) => counts[kind].oldest).filter((value): value is string => Boolean(value)).sort()[0] ?? null
   const breakdown = counts.caso.n === null ? null : await caseBreakdown(ctx)
   return { total, byKind, oldestWaitingSince: oldest, caseBreakdown: breakdown }
+}
+
+/**
+ * Lo pendiente de cada regla, de la más cargada a la menos: la lista «Pendientes por regla» de la
+ * bandeja. Cuenta con el mismo criterio de `getFuelInbox` en «Pendientes» (mes del dato ≤ fin del
+ * período, mismo alcance y faena), así que la cifra de una regla es la que se encuentra al abrirla
+ * con `?regla=`. `ruleName` es `null` si la regla ya no tiene ficha: la pantalla usa el código.
+ */
+export async function getFuelInboxCaseRules(session: Session, period: ResolvedFuelPeriod, options: { worksiteId?: string } = {}): Promise<FuelInboxCaseRule[]> {
+  const ctx = buildCtx(session, period, { view: "pendientes", page: 1, worksiteId: options.worksiteId })
+  const count = sql<number>`count(*)::int`
+  return db.select({ ruleCode: fuelAnomalyCases.ruleCode, ruleName: fuelAnomalyRules.name, count })
+    .from(fuelAnomalyCases)
+    .leftJoin(fuelAnomalyRules, eq(fuelAnomalyRules.code, fuelAnomalyCases.ruleCode))
+    .where(casoWhere(ctx, "pendientes"))
+    .groupBy(fuelAnomalyCases.ruleCode, fuelAnomalyRules.name)
+    .orderBy(desc(count), asc(fuelAnomalyCases.ruleCode))
+}
+
+/**
+ * Casos detectados por semana (lunes a domingo, hora de Chile) y gravedad, en las últimas
+ * `weeks` semanas, con la en curso al final y marcada parcial. Cuenta **todos** los estados:
+ * la pregunta es cuántos casos se detectan, y un caso descartado —el falso positivo que una
+ * regla repite— es justo el que no debe desaparecer de la serie.
+ *
+ * Acotada con el mismo alcance por faena que la bandeja (`worksiteScopeSqlFor`): la faena
+ * elegida se intersecta con el permiso y nunca lo ensancha.
+ */
+export async function getFuelInboxCaseWeeks(
+  session: Session,
+  options: { worksiteId?: string; weeks?: number; now?: Date } = {},
+): Promise<AnomalyWeek[]> {
+  const weeks = options.weeks ?? ANOMALY_WEEKS_DEFAULT
+  const now = options.now ?? new Date()
+  const firstWeek = anomalyWeekStarts(now, weeks)[0]!
+  const weekStart = sql<string>`to_char(date_trunc('week', ${fuelAnomalyCases.detectedAt} at time zone 'America/Santiago'), 'YYYY-MM-DD')`
+  const count = sql<number>`count(*)::int`
+  const rows = await db.select({ weekStart, severity: fuelAnomalyCases.severity, count })
+    .from(fuelAnomalyCases)
+    .where(and(
+      worksiteScopeSqlFor(serviceWorksiteScope(session), fuelAnomalyCases.worksiteId, options.worksiteId?.trim() || undefined),
+      gte(fuelAnomalyCases.detectedAt, sql`(${firstWeek}::timestamp at time zone 'America/Santiago')`),
+    ))
+    .groupBy(weekStart, fuelAnomalyCases.severity)
+  return shapeAnomalyWeeks(rows, { now, weeks })
 }
 
 /** Conteos de «Decididas» por tipo, para los segmentos de esa vista (misma ventana y filtros que `getFuelInbox`). */

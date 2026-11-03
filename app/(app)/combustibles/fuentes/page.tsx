@@ -16,6 +16,7 @@ import { AddFuelDataButton } from "@/components/combustibles/add-fuel-data-butto
 import { FuelBreadcrumbs } from "@/components/combustibles/fuel-breadcrumbs"
 import { FuelHeaderActions } from "@/components/combustibles/fuel-header-actions"
 import { getCopecSyncStartOptions, getCopecSyncState } from "@/lib/combustibles/copec-sync"
+import { getFuelCoverageMatrix, type FuelCoverageMatrix } from "@/lib/combustibles/coverage-matrix-data"
 import { resolveFuelPeriodForPage } from "@/lib/combustibles/period/server"
 import { FUEL_PATHS } from "@/lib/combustibles/routes"
 import { fuelAddDataOptions } from "@/lib/combustibles/section-nav"
@@ -26,6 +27,7 @@ import type { MediumOption } from "../control/importar/import-types"
 import { CopecSyncStatus } from "../importar/copec-sync-status"
 import { FuelProviderQualityExportButton } from "../importar/fuel-provider-quality-export-button"
 import { AddDataLauncher } from "./add-data-launcher"
+import { CoverageMap } from "./coverage-map"
 import { resolveAddDataKind } from "./add-data-kind"
 import { listImportedFiles, type ImportedFilesPage } from "./imported-files"
 import { ImportedFilesTable } from "./imported-files-table"
@@ -51,8 +53,9 @@ export default async function FuentesPage({ searchParams }: { searchParams: Prom
   const addKind = resolveAddDataKind(sp.agregar, options)
 
   const scope = resolveWorksiteScope(session)
-  const [statusesResult, filesResult, copecResult, copecStartResult, worksitesResult, mediaResult] = await Promise.all([
+  const [statusesResult, coverageResult, filesResult, copecResult, copecStartResult, worksitesResult, mediaResult] = await Promise.all([
     settle<FuelSourceStatus[] | typeof FAILED>(getFuelSourceStatuses(session, period), FAILED, "fuentes-estados"),
+    settle<FuelCoverageMatrix | typeof FAILED>(getFuelCoverageMatrix(session), FAILED, "fuentes-cobertura"),
     settle<ImportedFilesPage | typeof FAILED>(listImportedFiles(session, { limit: 6 }), FAILED, "fuentes-archivos"),
     canSync ? settle<Awaited<ReturnType<typeof getCopecSyncState>> | typeof FAILED>(getCopecSyncState(), FAILED, "fuentes-copec") : Promise.resolve(null),
     canSync ? settle<Awaited<ReturnType<typeof getCopecSyncStartOptions>> | typeof FAILED>(getCopecSyncStartOptions(), FAILED, "fuentes-copec-inicio") : Promise.resolve(null),
@@ -70,11 +73,13 @@ export default async function FuentesPage({ searchParams }: { searchParams: Prom
   ])
 
   const statuses = statusesResult === FAILED ? null : statusesResult
+  const coverage = coverageResult === FAILED ? null : coverageResult
   const files = filesResult === FAILED ? null : filesResult
   const copecState = copecResult === FAILED ? null : copecResult
   const copecStart = copecStartResult === FAILED ? null : copecStartResult
   const degraded = [
     statuses === null ? "estado de las fuentes" : null,
+    coverage === null ? "cobertura por mes" : null,
     files === null ? "archivos importados" : null,
     canSync && (copecState === null || copecStart === null) ? "sincronización de Copec" : null,
     worksitesResult === FAILED ? "faenas" : null,
@@ -135,7 +140,7 @@ export default async function FuentesPage({ searchParams }: { searchParams: Prom
         breadcrumb={<FuelBreadcrumbs items={[{ label: "Fuentes de datos" }]} />}
         actions={<FuelHeaderActions period={period}><AddFuelDataButton options={options} /></FuelHeaderActions>}
       />
-      <DegradedDataBanner degraded={degraded} total={2 + Number(canSync) + Number(addKind === "facturas" && scope.mode !== "none") + Number(addKind === "surtidor")} />
+      <DegradedDataBanner degraded={degraded} total={3 + Number(canSync) + Number(addKind === "facturas" && scope.mode !== "none") + Number(addKind === "surtidor")} />
 
       {statuses ? (
         <>
@@ -149,6 +154,7 @@ export default async function FuentesPage({ searchParams }: { searchParams: Prom
               </ul>
             ) : null}
           </div>
+          {coverage ? <CoverageMap matrix={coverage} /> : null}
           {/* `grid-cols-1` y no la columna automática: con ella una fila de contenido ancho estira la columna de todas. */}
           <div className="grid grid-cols-1 gap-3">
             {statuses.map((source) => {

@@ -10,7 +10,7 @@ import type { Session } from "next-auth"
 import {
   TRACEABILITY_DEFAULT_STATUS_FILTER,
   isTraceabilityStatusFilter,
-  type ConsolidatedFaenaKPIs,
+  type ComputedStatus,
   type ConsolidatedOrder,
   type ConsolidatedRequest,
   type ConsolidatedRow,
@@ -27,7 +27,9 @@ import {
   buildConsolidatedRows,
   applySecondaryFilters,
   applyAggregateFilters,
-  computeAggregateKPIs,
+  countRequestsByStatus,
+  mergeStatusCounts,
+  orderStatusDistribution,
   paginateAggregateRequests,
   type LinkedMaps,
 } from "./trazabilidad-consolidated-builder"
@@ -111,6 +113,12 @@ export interface CollectedConsolidatedRows {
   rows: ConsolidatedRow[]
   /** Solicitudes filtradas como unidad principal, todavía sin paginar. */
   requests: ConsolidatedRequest[]
+  /**
+   * Solicitudes por estado agregado con todos los filtros **menos el de estado**
+   * (la barra de distribución es también el selector de ese filtro). Ver
+   * `ConsolidatedTraceabilityResult.statusDistribution`.
+   */
+  statusCounts: Partial<Record<ComputedStatus, number>>
   /** OCs únicas dentro del alcance de las solicitudes filtradas. */
   orders: ConsolidatedOrder[]
   maps: LinkedMaps
@@ -151,6 +159,7 @@ export async function collectConsolidatedRows(
       itemRows: [],
       rows: [],
       requests: [],
+      statusCounts: {},
       orders: [],
       maps: emptyMaps,
       truncated: false,
@@ -238,15 +247,20 @@ export async function collectConsolidatedRows(
   })
 
   const aggregated = aggregateConsolidatedRows(consolidatedList, maps)
-  const requests = applyAggregateFilters(aggregated.requests, {
-    filterEstado: filters.estado,
+  const aggregateFilters = {
     filterCategoria: filters.categoria,
     filterProveedor: filters.proveedor,
     filterPendientes: filters.pendientes,
     filterOcPendiente: filters.ocPendiente,
     filterQ: filters.q,
     ocsByItem,
-  })
+  }
+  const requests = applyAggregateFilters(aggregated.requests, { ...aggregateFilters, filterEstado: filters.estado })
+  // La distribución por estado (CHART-031) ignora sólo el filtro de estado: es
+  // el selector de ese filtro y debe seguir mostrando las demás etapas.
+  const statusCounts = countRequestsByStatus(
+    applyAggregateFilters(aggregated.requests, { ...aggregateFilters, filterEstado: "todos" }),
+  )
   const orders = aggregateConsolidatedRows(
     requests.flatMap((request) => request.lines),
     maps,
@@ -256,6 +270,7 @@ export async function collectConsolidatedRows(
     itemRows,
     rows: itemRows,
     requests,
+    statusCounts,
     orders,
     maps,
     truncated,
@@ -279,16 +294,6 @@ export async function getConsolidatedTraceability(
   const filters = normalizeConsolidatedFilters(sp)
   const currentPage = Math.max(1, Number.parseInt(readParam(sp.page), 10) || 1)
 
-  const emptyKpis: ConsolidatedFaenaKPIs = {
-    openRequests: 0,
-    pendingPurchase: 0,
-    awaitingSupplier: 0,
-    inOffice: 0,
-    inFaena: 0,
-    partiallyDelivered: 0,
-    fullyDelivered: 0,
-  }
-
   const currentFilters = { faena: filterFaenaId, ...filters }
 
   if (!activeWorksite && !isAllWorksites) {
@@ -304,7 +309,7 @@ export async function getConsolidatedTraceability(
       categories: categoriesList,
       requesters: [],
       suppliers: suppliersList,
-      kpis: emptyKpis,
+      statusDistribution: [],
       filters: { ...currentFilters, faena: "" },
     }
   }
@@ -319,13 +324,15 @@ export async function getConsolidatedTraceability(
   ])
 
   /**
-   * 3. KPIs sobre lo filtrado, no sobre la faena completa.
+   * 3. La distribución por estado resume lo filtrado, no la faena completa
+   * (salvo el propio filtro de estado: ver `statusDistribution`).
    *
-   * Calcularlos antes de los filtros dejaba la pantalla contradiciéndose:
-   * "Sin resultados para los filtros seleccionados" encima de siete tarjetas
-   * con números. Los KPIs son el resumen de lo que se está mirando.
+   * Calcularla antes de los filtros dejaba la pantalla contradiciéndose:
+   * "Sin resultados para los filtros seleccionados" encima de cifras con números.
+   * Reemplazó a los siete KPIs de etapa, que no eran excluyentes y no sumaban el
+   * total (CHART-031).
    */
-  const kpis = computeAggregateKPIs(collected.requests, collected.orders)
+  const statusDistribution = orderStatusDistribution(collected.statusCounts)
   const page = paginateAggregateRequests(collected.requests, currentPage, collected.maps)
 
   // TR-O1 (plan 2026-09-05): el resultado de página exponía `orders` globales
@@ -343,7 +350,7 @@ export async function getConsolidatedTraceability(
     categories: categoriesList,
     requesters: requestersList,
     suppliers: suppliersList,
-    kpis,
+    statusDistribution,
     filters: currentFilters,
   }
 }
@@ -384,9 +391,11 @@ async function collectForWorksites(
   const orders = new Map<string, ConsolidatedOrder>()
   const itemRows: ConsolidatedRow[] = []
   const requests: ConsolidatedRequest[] = []
+  let statusCounts: Partial<Record<ComputedStatus, number>> = {}
   for (const part of parts) {
     itemRows.push(...part.itemRows)
     requests.push(...part.requests)
+    statusCounts = mergeStatusCounts(statusCounts, part.statusCounts)
     for (const order of part.orders) orders.set(order.orderId, order)
     for (const [key, value] of part.maps.approvalsByItem) maps.approvalsByItem.set(key, value)
     for (const [key, value] of part.maps.ocsByItem) maps.ocsByItem.set(key, value)
@@ -404,6 +413,7 @@ async function collectForWorksites(
     itemRows,
     rows: itemRows,
     requests,
+    statusCounts,
     orders: [...orders.values()],
     maps,
     truncated: parts.some((part) => part.truncated),

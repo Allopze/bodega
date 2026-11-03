@@ -13,7 +13,7 @@ import { useUrlFilters } from "@/lib/hooks/use-url-filters"
 
 const ALL = "_all"
 /** Parámetros que «Limpiar» quita: el período y el tipo no son filtros de esta barra. */
-const FILTER_KEYS = ["faena", "severidad", "estado", "ref"] as const
+const FILTER_KEYS = ["faena", "severidad", "regla", "estado", "ref"] as const
 
 /**
  * Filtros de la bandeja: faena (si la sesión ve más de una) y, cuando se mira sólo

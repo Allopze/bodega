@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { and, asc, eq, inArray, sql } from "drizzle-orm"
+import { and, asc, eq, inArray, or, sql } from "drizzle-orm"
 import type { AnyPgColumn } from "drizzle-orm/pg-core"
 import { z } from "zod"
 import { db, type DB, type Tx } from "@/db"
@@ -285,6 +285,83 @@ export async function listTrainingOccurrenceWorksites(access: TrainingOccurrence
     .orderBy(asc(worksites.name))
 }
 
+/**
+ * PRV-06: ¿el catálogo vigente todavía pide esta casilla? Una pendiente que ya
+ * no está en el catálogo no se ofrece (marcarla hecha acreditaría una celda sin
+ * plan); las que ya tienen estado se conservan, son historia. La comparten la
+ * lista y el calendario de cumplimiento: si cada una la reescribiera, el
+ * calendario podría pintar de rojo una casilla que la lista no muestra.
+ */
+function isOfferedOccurrence(
+  validSlots: ReadonlySet<string>,
+  row: { status: string; code: string; slotKey: string },
+): boolean {
+  return row.status !== "pending" || validSlots.has(`${row.code}:${row.slotKey}`)
+}
+
+/** Una casilla del programa de capacitación, sin evidencia ni títulos: lo que el calendario necesita. */
+export interface TrainingComplianceSlot {
+  worksiteId: string
+  worksiteName: string
+  scheduledMonth: number | null
+  scheduledWeek: number | null
+  status: TrainingOccurrenceStatus
+}
+
+/**
+ * Las casillas del año de TODAS las faenas del alcance, en su forma mínima,
+ * para el calendario de cumplimiento faena × mes.
+ *
+ * Existe aparte de `listTrainingOccurrences` porque el calendario debe mostrar
+ * todas las faenas aunque la lista esté filtrada a una, y porque no necesita
+ * evidencia (la consulta de la lista trae miles de filas con su evidencia). El
+ * alcance, el permiso, el catálogo vigente y las faenas activas son los mismos
+ * de la lista; `includeWorksiteId` suma una faena inactiva sólo si el usuario
+ * la eligió (historial de solo lectura), y siempre dentro de su alcance.
+ */
+export async function listTrainingComplianceSlots(
+  access: TrainingOccurrenceAccess,
+  filters: { year: number; includeWorksiteId?: string },
+): Promise<TrainingComplianceSlot[]> {
+  requireAccess(access, "prevention:training:view")
+  if (access.scope.mode === "none") return []
+
+  const year = filters.year
+  if (!isTrainingCatalogYear(year)) return []
+  const rows = await db.select({
+    worksiteId: preventionTrainingOccurrences.worksiteId,
+    worksiteName: worksites.name,
+    scheduledMonth: preventionTrainingOccurrences.scheduledMonth,
+    scheduledWeek: preventionTrainingOccurrences.scheduledWeek,
+    status: preventionTrainingOccurrences.status,
+    code: preventionTrainingCatalogItems.code,
+    slotKey: preventionTrainingOccurrences.slotKey,
+  })
+    .from(preventionTrainingOccurrences)
+    .innerJoin(preventionTrainingCatalogItems, eq(preventionTrainingOccurrences.catalogItemId, preventionTrainingCatalogItems.id))
+    .innerJoin(worksites, eq(preventionTrainingOccurrences.worksiteId, worksites.id))
+    .where(and(
+      eq(preventionTrainingOccurrences.year, year),
+      filters.includeWorksiteId
+        ? or(eq(worksites.isActive, true), eq(worksites.id, filters.includeWorksiteId))
+        : eq(worksites.isActive, true),
+      eq(preventionTrainingCatalogItems.catalogVersion, trainingCatalogVersionForYear(year)),
+      eq(preventionTrainingCatalogItems.isActive, true),
+      scopeCondition(access.scope, worksites.id),
+    ))
+
+  const validSlots = trainingCatalogSlotKeysForYear(year)
+  return rows
+    .filter((row) => isOfferedOccurrence(validSlots, row))
+    .map((row) => ({
+      worksiteId: row.worksiteId,
+      worksiteName: row.worksiteName,
+      scheduledMonth: row.scheduledMonth,
+      scheduledWeek: row.scheduledWeek,
+      status: row.status as TrainingOccurrenceStatus,
+    }))
+}
+
 export async function listTrainingOccurrences(
   access: TrainingOccurrenceAccess,
   filters: { year: number; worksiteId?: string; includeInactiveWorksites?: boolean },
@@ -325,7 +402,11 @@ export async function listTrainingOccurrences(
   // ofrece: marcarla hecha acreditaría una celda sin plan. Las que ya tienen
   // estado se conservan, son historia.
   const validSlots = trainingCatalogSlotKeysForYear(year)
-  const rows = allRows.filter((row) => row.occurrence.status !== "pending" || validSlots.has(`${row.catalog.code}:${row.occurrence.slotKey}`))
+  const rows = allRows.filter((row) => isOfferedOccurrence(validSlots, {
+    status: row.occurrence.status,
+    code: row.catalog.code,
+    slotKey: row.occurrence.slotKey,
+  }))
   if (rows.length === 0) return []
   const occurrenceIds = rows.map((row) => row.occurrence.id)
   const evidenceRows = await db.select().from(preventionTrainingOccurrenceEvidence)

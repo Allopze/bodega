@@ -20,7 +20,7 @@ import { listVisibleWorksites } from "@/lib/services/prevention-indicadores"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { getDocumentChainByCode } from "@/lib/services/document-chain"
 import { OperationalIntegrityWorkbench } from "./_components/operational-integrity-workbench"
-import { ConsolidatedKpis } from "./_components/consolidated-kpis"
+import { ConsolidatedStatusChart } from "./_components/consolidated-status-chart"
 import { ConsolidatedFilters } from "./_components/consolidated-filters"
 import { ConsolidatedTable } from "./_components/consolidated-table"
 import { ConsolidatedRequestsSummary } from "./_components/consolidated-requests-summary"
@@ -170,6 +170,20 @@ export default async function TrazabilidadPage({ searchParams }: PageProps) {
       consolidatedData.filters.pendientes),
   )
 
+  // Filtros que acotan lo que cuenta la distribución por estado (todos menos el
+  // de estado, que es el propio selector de la barra).
+  const distributionIsFiltered = Boolean(
+    consolidatedData &&
+    (consolidatedData.filters.q ||
+      consolidatedData.filters.categoria ||
+      consolidatedData.filters.proveedor ||
+      consolidatedData.filters.solicitante ||
+      consolidatedData.filters.desde ||
+      consolidatedData.filters.hasta ||
+      consolidatedData.filters.pendientes ||
+      consolidatedData.filters.ocPendiente),
+  )
+
   return (
     <PageContainer width="wide">
       <PageHeader
@@ -252,7 +266,7 @@ export default async function TrazabilidadPage({ searchParams }: PageProps) {
             </div>
           )}
 
-          {/* El selector de faena va ANTES de los KPIs que gobierna: debajo de ellos
+          {/* El selector de faena va ANTES de la distribución que gobierna: debajo
               quedaba bajo el pliegue en móvil y el usuario leía cifras sin saber
               de qué faena eran. */}
           <ConsolidatedFilters
@@ -263,11 +277,13 @@ export default async function TrazabilidadPage({ searchParams }: PageProps) {
             current={consolidatedData.filters}
           />
 
-          {/* Métricas / KPIs superiores */}
-          <ConsolidatedKpis
-            kpis={consolidatedData.kpis}
-            filters={consolidatedData.filters}
-            filtered={hasSecondaryFilters}
+          {/* CHART-031: una sola barra por estado en lugar de cuatro tiles y una
+              tira cuyas cifras no eran excluyentes. */}
+          <ConsolidatedStatusChart
+            distribution={consolidatedData.statusDistribution}
+            estado={consolidatedData.filters.estado}
+            searchParams={sp}
+            filtered={distributionIsFiltered}
           />
 
           {/* Tabla de resultados o estado vacío */}

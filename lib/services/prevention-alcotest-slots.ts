@@ -27,6 +27,7 @@ import {
   preventionAlcotestSlots,
 } from "@/db/schema"
 import { recordAudit, recordModuleHistory } from "@/lib/audit"
+import { worksiteScopeSqlFor } from "@/lib/auth/scope"
 import { validateFileBuffer, MimeType } from "@/lib/file-validation"
 import { nanoid } from "@/lib/id"
 import { generateStorageName } from "@/lib/services/prevention-documents/utils"
@@ -96,6 +97,46 @@ export async function listAlcotestSlotsForWorksite(
         ? a.slotKey.localeCompare(b.slotKey)
         : a.kind.localeCompare(b.kind)
     ))
+}
+
+/** Una casilla de alcotest en su forma mínima, para el calendario de cumplimiento. */
+export interface AlcotestCalendarSlot {
+  worksiteId: string
+  kind: AlcotestSlotKind
+  scheduledMonth: number
+  scheduledWeek: number
+  status: AlcotestSlotStatus
+}
+
+/**
+ * Las casillas del año de TODAS las faenas del alcance, sin evidencia, para el
+ * calendario faena × mes.
+ *
+ * `listAlcotestSlotsForWorksite` cuelga de UNA faena y trae su evidencia; el
+ * calendario necesita la foto de todas a la vez. El alcance se aplica en la
+ * consulta con el helper común (`worksiteScopeSqlFor`): una lista vacía son
+ * cero filas, nunca «sin filtro».
+ */
+export async function listAlcotestSlotsForCalendar(
+  scope: WorksiteScope,
+  year: number,
+  client: Client = db,
+): Promise<AlcotestCalendarSlot[]> {
+  const rows = await client.select({
+    worksiteId: preventionAlcotestSlots.worksiteId,
+    kind: preventionAlcotestSlots.kind,
+    scheduledMonth: preventionAlcotestSlots.scheduledMonth,
+    scheduledWeek: preventionAlcotestSlots.scheduledWeek,
+    status: preventionAlcotestSlots.status,
+  }).from(preventionAlcotestSlots).where(and(
+    eq(preventionAlcotestSlots.year, year),
+    worksiteScopeSqlFor(scope, preventionAlcotestSlots.worksiteId),
+  ))
+  return rows.map((row) => ({
+    ...row,
+    kind: row.kind as AlcotestSlotKind,
+    status: row.status as AlcotestSlotStatus,
+  }))
 }
 
 const slotStatusSchema = z.enum(["not_completed", "not_applicable"])

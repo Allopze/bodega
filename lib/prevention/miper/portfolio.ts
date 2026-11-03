@@ -5,6 +5,7 @@
  * franja. El servicio (`lib/services/miper/portfolio.ts`) arma las filas y la
  * portada (`app/(app)/prevencion/miper/miper-home.tsx`) las filtra con esto.
  */
+import type { RiskClassification } from "./methodology"
 import type { ProgramProgress } from "./progress"
 
 export const PORTFOLIO_PATH = "/prevencion/miper"
@@ -49,8 +50,13 @@ export type MiperPortfolioRow = {
   updatedAt: string | null
   /** Riesgos sin errores ÷ riesgos (la regla de «Completos x de y»). `null`: sin MIPER o metodología anterior. */
   completeness: { complete: number; total: number } | null
-  importantCount: number
-  intolerableCount: number
+  /**
+   * Riesgos de `matrix` por clasificación, las cuatro. Alimenta la barra apilada
+   * de la portada (CHART-007); antes sólo viajaban Importantes e Intolerables.
+   * Todo en cero si la faena no tiene MIPER o es de la metodología anterior
+   * (sin P × C no hay clasificación).
+   */
+  classificationCounts: Record<RiskClassification, number>
   /** De la vigente: Intolerables (o críticos legacy) sin control (`critical-control.ts`). */
   criticalWithoutControl: number
   requiresMyAction: boolean

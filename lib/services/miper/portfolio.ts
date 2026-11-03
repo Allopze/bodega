@@ -78,7 +78,8 @@ export async function listMiperPortfolio(access: MiperAccess): Promise<{ rows: M
         id: site.id, worksiteId: site.id, worksiteName: site.name, worksiteActive: site.isActive,
         matrix: null, vigente: null, status: "sin_miper", stateLabel: PORTFOLIO_STATUS_LABEL.sin_miper,
         headcount: activeWorkers.get(site.id) ?? 0, headcountSource: "trabajadores", updatedAt: null, completeness: null,
-        importantCount: 0, intolerableCount: 0, criticalWithoutControl: 0, requiresMyAction: false, myActions: [],
+        classificationCounts: { tolerable: 0, moderate: 0, important: 0, intolerable: 0 },
+        criticalWithoutControl: 0, requiresMyAction: false, myActions: [],
         submittedByName: null, programProgress: null,
       }
     }
@@ -100,8 +101,7 @@ export async function listMiperPortfolio(access: MiperAccess): Promise<{ rows: M
       headcountSource: matrix.headcountTotal === null ? "trabajadores" : "ficha",
       updatedAt: primary.updatedAt,
       completeness: snapshot ? completenessOf(snapshot, linked.get(primary.id)) : null,
-      importantCount: primary.classificationCounts.important,
-      intolerableCount: primary.classificationCounts.intolerable,
+      classificationCounts: { ...primary.classificationCounts },
       criticalWithoutControl: pick.published ? critical.get(pick.published.id) ?? 0 : 0,
       requiresMyAction: myActions.length > 0,
       myActions,

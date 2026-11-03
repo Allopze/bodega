@@ -1,5 +1,6 @@
 import Link from "next/link"
 import { ArrowSquareOut } from "@phosphor-icons/react/dist/ssr"
+import { MiniSparkline } from "@/components/ui/mini-sparkline"
 import { cn, formatDateTime, formatQty } from "@/lib/utils"
 import type { FuelInboxEvidence } from "@/lib/combustibles/inbox/types"
 
@@ -25,9 +26,17 @@ function EvidenceBlock({ item, loadHref }: { item: FuelInboxEvidence; loadHref?:
       const current = item.points.find((point) => point.current)
       const before = item.points.filter((point) => !point.current && current && point.at < current.at).at(-1)
       const drop = current && before ? before.reading - current.reading : 0
+      const currentIndex = item.points.findIndex((point) => point.current)
       return (
         <section aria-label="Últimas lecturas del medidor" className="space-y-2">
           <p className="text-sm text-[var(--color-text-muted)]">Últimas lecturas del equipo:</p>
+          {/* La forma de la serie, con la lectura de esta carga marcada. Es decoración: las tarjetas de abajo son su texto. */}
+          {item.points.length >= 2 ? (
+            <div aria-hidden className="max-w-sm space-y-1">
+              <MiniSparkline data={item.points.map((point) => point.reading)} markedIndex={currentIndex >= 0 ? currentIndex : undefined} className="h-14 w-full" />
+              {currentIndex >= 0 ? <p className="text-xs text-[var(--color-text-muted)]">El punto es la lectura de esta carga.</p> : null}
+            </div>
+          ) : null}
           <ol className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {item.points.map((point) => (
               <li

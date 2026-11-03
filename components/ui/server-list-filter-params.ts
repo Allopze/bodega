@@ -19,6 +19,8 @@
  */
 export const SERVER_LIST_FILTER_PARAMS = [
   "q", "estado", "urgencia", "faena", "proveedor", "factura", "desde", "hasta", "solicitud",
+  // Aprobaciones (CHART-030): el tramo de antigüedad que elige el gráfico.
+  "antiguedad",
 ] as const
 
 interface SearchParamsLike {

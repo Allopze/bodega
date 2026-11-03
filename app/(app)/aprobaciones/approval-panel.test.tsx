@@ -35,6 +35,7 @@ const request: ApprovalRequest = {
   requesterName: "Ana",
   requestUrgency: "normal",
   submittedAt: "2026-10-01T10:00:00.000Z",
+  ageDays: 3,
   deliveryMode: "via_oficina",
   pendingItems: [],
   pendingCount: 0,
@@ -51,6 +52,28 @@ describe("ApprovalPanel", () => {
     expect(link.getAttribute("href")).toBe("/solicitudes/req-1")
     // plegar es otro control
     expect(screen.getByRole("button", { name: /Contraer ítems de SOL-0001/ })).toBeTruthy()
+  })
+
+  it("cada solicitud dice cuánto lleva esperando, con cifras tabulares", () => {
+    render(<ApprovalPanel requests={[request]} canApproveEpp canSetDispatch={false} />)
+    const age = screen.getByText(/hace 3 días/)
+    expect(age.className).toContain("tabular-nums")
+    cleanup()
+
+    render(<ApprovalPanel requests={[{ ...request, ageDays: 0 }]} canApproveEpp canSetDispatch={false} />)
+    expect(screen.getByText(/hoy/)).toBeTruthy()
+    cleanup()
+
+    // Sin fecha de envío no se inventa una edad.
+    render(<ApprovalPanel requests={[{ ...request, submittedAt: null, ageDays: null }]} canApproveEpp canSetDispatch={false} />)
+    expect(screen.queryByText(/hace \d+ días/)).toBeNull()
+  })
+
+  it("muestra el gráfico de antigüedad que le entrega la página, antes de la lista", () => {
+    render(<ApprovalPanel requests={[request]} canApproveEpp canSetDispatch={false} ageChart={<div data-testid="grafico-antiguedad" />} />)
+    const chart = screen.getByTestId("grafico-antiguedad")
+    const group = screen.getByRole("link", { name: "Ver solicitud SOL-0001" })
+    expect(chart.compareDocumentPosition(group) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it("el modo de despacho no ofrece Guardar mientras no cambie", () => {

@@ -95,6 +95,13 @@ export interface FuelInboxCaseBreakdownItem {
   count: number
 }
 
+/** Casos pendientes de una regla: una fila de «Pendientes por regla». `ruleName` es `null` si la regla ya no tiene ficha. */
+export interface FuelInboxCaseRule {
+  ruleCode: string
+  ruleName: string | null
+  count: number
+}
+
 /** El dato que explica cada caso, para la hoja de decisión. */
 export type FuelInboxEvidence =
   | { type: "readings"; unit: "km" | "h"; points: { at: string; reading: number; current: boolean }[] }

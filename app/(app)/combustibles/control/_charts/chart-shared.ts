@@ -1,19 +1,11 @@
-import { CHART_COLORS } from "@/lib/chart-palette"
+import { CHART_COLORS, CHART_SERIES } from "@/lib/chart-palette"
 
 /**
  * Colores de los gráficos del control. Los medios de suministro son categorías
  * sin carga de alerta: se evita naranja/ámbar/rojo, reservados para fuera de
  * umbral, y «Sin medio informado» va en gris.
  */
-export const MEDIUM_COLORS = [
-  CHART_COLORS.brand,
-  CHART_COLORS.blue,
-  CHART_COLORS.violet,
-  CHART_COLORS.teal,
-  CHART_COLORS.indigo,
-  CHART_COLORS.sky,
-  CHART_COLORS.rose,
-] as const
+export const MEDIUM_COLORS = CHART_SERIES
 
 export const NO_MEDIUM_COLOR = CHART_COLORS.neutral
 

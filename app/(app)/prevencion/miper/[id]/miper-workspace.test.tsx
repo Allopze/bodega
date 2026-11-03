@@ -55,7 +55,7 @@ const programOf = (overrides: Partial<ProgramWorkspace> = {}): ProgramWorkspace 
 function workspaceOf(overrides: Partial<MiperWorkspace> = {}): MiperWorkspace {
   return {
     matrix: { id: "m1", version: 1, status: "draft", reviewState: "none", isLegacy: false, worksiteId: "ws1", worksiteName: "Planta", period: 2026 },
-    label: "Borrador", snapshot: { header, entries: [entry()] }, entryVersions: { e1: 1 }, controlVersions: {}, versions: [],
+    label: "Borrador", snapshot: { header, entries: [entry()] }, entryVersions: { e1: 1 }, residualLevels: {}, controlVersions: {}, versions: [],
     lastVersionSnapshot: null, openRound: null, reviewDiff: null, reviewBaselineSnapshot: null, pendingDiff: allAdded,
     observations: [], completeness: [],
     prefill: { companyName: "Chome", companyRut: "1-9", companyAddress: "Calle 1", economicActivity: "Servicios", adherentNumber: "", companyCommune: "Panguipulli", worksiteName: "Planta", siteRepresentativeUserId: null, siteRepresentativeName: "Ana", headcount: { total: 2, male: 1, female: 1, other: 0, unrecorded: 0 } },

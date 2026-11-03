@@ -8,7 +8,10 @@
  * recharts en un chunk diferido (UIUX-002) y los tests sigan importando desde
  * aquí.
  */
-export { OperationalTrendChart, BillingFlowChart, billingPeriodLabel } from "./charts/trend-charts"
+export { OperationalTrendChart } from "./charts/trend-charts"
+// Facturado y cobrado se reutiliza en `/facturacion`, así que vive en `components/charts/` (CHART-036).
+export { BillingFlowChart } from "@/components/charts/billing-flow-chart"
+export { billingPeriodLabel } from "@/lib/services/billing/summary-charts"
 export { SstTrendChart, SstAccidentChart, MaterialEnvironmentalChart } from "./charts/sst-charts"
 export type { SstMonthlyPoint, MaterialEnvironmentalPoint } from "./charts/sst-charts"
 export { FuelConsumptionChart } from "./charts/fleet-charts"

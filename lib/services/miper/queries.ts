@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm"
+import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
   auditLog, preventionRiskControls, preventionRiskEntries, preventionRiskFactors, preventionRiskMatrices, preventionRiskMatrixVersions,
@@ -33,6 +33,14 @@ export type MiperWorkspace = {
   label: string
   snapshot: MiperSnapshot
   entryVersions: Record<string, number>
+  /**
+   * `residual_level` de las filas que lo tienen (id de fila → nivel). No viaja en
+   * la foto (`MiperSnapshot` es el contrato sellado de cada ronda y versión) y el
+   * editor RE-04 no lo captura: en producción está vacío en todas las filas
+   * (2026-11-03), y entonces este mapa es `{}`. Lo lee el mapa de calor del
+   * Resumen para el lado «residual».
+   */
+  residualLevels: Record<string, string>
   controlVersions: Record<string, number>
   versions: Array<{ id: string; versionNumber: number; approvedAt: string; changeSummary: string; approverName: string; technicalReviewerName: string; elaboratedByName: string }>
   lastVersionSnapshot: MiperSnapshot | null
@@ -76,7 +84,7 @@ export async function getMiperWorkspace(matrixId: string, access: MiperAccess): 
   if (!row || !scopeAllows(access.scope, row.matrix.worksiteId)) throw new RiskLegalDomainError("MIPER no encontrada o fuera de alcance.")
   const matrix = row.matrix
 
-  const [snapshot, versionRows, round, observationRows, prefill, factorRows, dictionaryNames, suggestions, responsibleOptions, entryVersionRows, allRounds, program] = await Promise.all([
+  const [snapshot, versionRows, round, observationRows, prefill, factorRows, dictionaryNames, suggestions, responsibleOptions, entryVersionRows, allRounds, program, residualRows] = await Promise.all([
     buildMiperSnapshot(db, matrix.id),
     db.select().from(preventionRiskMatrixVersions).where(eq(preventionRiskMatrixVersions.matrixId, matrix.id)).orderBy(desc(preventionRiskMatrixVersions.versionNumber)),
     findOpenRound(db, matrix.id),
@@ -89,6 +97,8 @@ export async function getMiperWorkspace(matrixId: string, access: MiperAccess): 
     db.select({ id: preventionRiskEntries.id, version: preventionRiskEntries.version }).from(preventionRiskEntries).where(eq(preventionRiskEntries.matrixId, matrix.id)),
     db.select().from(preventionRiskReviewRounds).where(eq(preventionRiskReviewRounds.matrixId, matrix.id)).orderBy(desc(preventionRiskReviewRounds.roundNumber)),
     getProgramHeader(matrix.id),
+    db.select({ id: preventionRiskEntries.id, level: preventionRiskEntries.residualLevel }).from(preventionRiskEntries)
+      .where(and(eq(preventionRiskEntries.matrixId, matrix.id), isNotNull(preventionRiskEntries.residualLevel))),
   ])
   const controlVersionRows = entryVersionRows.length === 0 ? [] : await db.select({ id: preventionRiskControls.id, version: preventionRiskControls.version })
     .from(preventionRiskControls).where(inArray(preventionRiskControls.riskEntryId, entryVersionRows.map((entry) => entry.id)))
@@ -127,6 +137,7 @@ export async function getMiperWorkspace(matrixId: string, access: MiperAccess): 
     label: miperStatusLabel({ status: matrix.status, reviewState: matrix.reviewState, versionNumber: versionRows[0]?.versionNumber ?? null, hasUnsentChanges: hasUnsentChanges(matrix), roundOpened: Boolean(round?.openedAt), isLegacy: matrix.isLegacy }),
     snapshot,
     entryVersions: Object.fromEntries(entryVersionRows.map((entry) => [entry.id, entry.version])),
+    residualLevels: Object.fromEntries(residualRows.flatMap((entry) => (entry.level ? [[entry.id, entry.level] as const] : []))),
     controlVersions: Object.fromEntries(controlVersionRows.map((control) => [control.id, control.version])),
     versions: versionRows.map((version) => ({ id: version.id, versionNumber: version.versionNumber, approvedAt: version.approvedAt, changeSummary: version.changeSummary, approverName: version.approverName, technicalReviewerName: version.technicalReviewerName, elaboratedByName: version.elaboratedByName })),
     lastVersionSnapshot,

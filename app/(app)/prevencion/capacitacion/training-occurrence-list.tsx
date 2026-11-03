@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Field } from "@/components/ui/field"
+import { FilterToolbar } from "@/components/ui/filter-toolbar"
 import { FileInput } from "@/components/ui/file-input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
@@ -31,7 +32,7 @@ import type {
   TrainingOccurrenceListItem,
 } from "@/lib/services/prevention-training-occurrences"
 import { toast } from "@/lib/toast"
-import { cn, formatDateTime } from "@/lib/utils"
+import { MONTH_NAMES, cn, formatDateTime } from "@/lib/utils"
 import { recordTrainingOccurrenceStatusAction } from "./actions"
 
 interface Props {
@@ -39,17 +40,14 @@ interface Props {
   worksites: { id: string; name: string; isActive: boolean }[]
   selectedYear: number
   selectedWorksiteId: string
+  /** El mes que el calendario de cumplimiento filtra (1–12), o `null` si se ven todos. */
+  selectedMonth: number | null
   canRecord: boolean
   /** Desde cuándo exige el programa; `null` si no hay programa activo. */
   activationPeriod: PdtpPeriod | null
 }
 
 type StatusFilter = "all" | "pending" | "completed" | "not_completed" | "not_applicable"
-
-const MONTH_NAMES = [
-  "enero", "febrero", "marzo", "abril", "mayo", "junio",
-  "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
-]
 
 /* Las pestañas se arman iterando estas claves, así que agregar un estado acá
  * lo agrega también al filtro y a los contadores. */
@@ -112,16 +110,17 @@ function activeEvidenceCountLabel(row: TrainingOccurrenceListItem): string {
   return `${count} ${count === 1 ? "evidencia activa" : "evidencias activas"}`
 }
 
-function updateRoute(router: ReturnType<typeof useRouter>, pathname: string, worksiteId: string, year: number) {
+function updateRoute(router: ReturnType<typeof useRouter>, pathname: string, worksiteId: string, year: number, month: number | null) {
   const params = new URLSearchParams()
   if (worksiteId) params.set("faena", worksiteId)
   params.set("year", String(year))
+  if (month) params.set("mes", String(month))
   // Faena y año son estado de la vista: sin `scroll: false` cada cambio de filtro
   // devolvía al usuario al inicio de la página (patrón de AGENTS.md).
   router.replace(`${pathname}?${params.toString()}`, { scroll: false })
 }
 
-export function TrainingOccurrenceList({ rows, worksites, selectedYear, selectedWorksiteId, canRecord, activationPeriod }: Props) {
+export function TrainingOccurrenceList({ rows, worksites, selectedYear, selectedWorksiteId, selectedMonth, canRecord, activationPeriod }: Props) {
   useWorksiteFilterPresence()
   const router = useRouter()
   const pathname = usePathname()
@@ -129,23 +128,30 @@ export function TrainingOccurrenceList({ rows, worksites, selectedYear, selected
   const [statusFilter, setStatusFilter] = React.useState<StatusFilter>("all")
   const selectedInactiveWorksite = worksites.find((worksite) => worksite.id === selectedWorksiteId && !worksite.isActive)
 
+  // El mes llega por URL desde el calendario de cumplimiento. Los contadores de
+  // las pestañas cuentan lo que ese mes deja ver, no el año entero (regla A5).
+  const monthRows = React.useMemo(
+    () => (selectedMonth ? rows.filter((row) => row.scheduledMonth === selectedMonth) : rows),
+    [rows, selectedMonth],
+  )
+
   const counts = React.useMemo(() => ({
-    all: rows.length,
-    pending: rows.filter((row) => row.status === "pending").length,
-    completed: rows.filter((row) => row.status === "completed").length,
-    not_completed: rows.filter((row) => row.status === "not_completed").length,
-    not_applicable: rows.filter((row) => row.status === "not_applicable").length,
-  }), [rows])
+    all: monthRows.length,
+    pending: monthRows.filter((row) => row.status === "pending").length,
+    completed: monthRows.filter((row) => row.status === "completed").length,
+    not_completed: monthRows.filter((row) => row.status === "not_completed").length,
+    not_applicable: monthRows.filter((row) => row.status === "not_applicable").length,
+  }), [monthRows])
 
   const filteredRows = React.useMemo(() => {
     const query = searchQuery.trim().toLocaleLowerCase("es-CL")
-    return rows.filter((row) => {
+    return monthRows.filter((row) => {
       if (statusFilter !== "all" && row.status !== statusFilter) return false
       if (!query) return true
       return [row.code, row.title, row.worksiteName, row.audience]
         .some((value) => value.toLocaleLowerCase("es-CL").includes(query))
     })
-  }, [rows, searchQuery, statusFilter])
+  }, [monthRows, searchQuery, statusFilter])
 
   const clearSearch = () => setSearchQuery("")
 
@@ -155,7 +161,7 @@ export function TrainingOccurrenceList({ rows, worksites, selectedYear, selected
         <Field label="Faena" htmlFor="training-worksite-filter" className="min-w-[15rem] flex-1 sm:flex-none">
           <Select
             value={selectedWorksiteId || "all"}
-            onValueChange={(value) => updateRoute(router, pathname, value === "all" ? "" : value, selectedYear)}
+            onValueChange={(value) => updateRoute(router, pathname, value === "all" ? "" : value, selectedYear, selectedMonth)}
           >
             <SelectTrigger id="training-worksite-filter" aria-label="Filtrar por faena" className="h-9 text-sm">
               <SelectValue placeholder="Todas las faenas">
@@ -182,6 +188,19 @@ export function TrainingOccurrenceList({ rows, worksites, selectedYear, selected
           <span>Catálogo anual controlado · {rows[0]?.catalogVersion ?? "programa 2026"}</span>
         </div>
       </div>
+
+      {selectedMonth !== null && (
+        <FilterToolbar
+          className="mb-0"
+          activeChips={[{
+            key: "mes",
+            label: "Mes",
+            value: String(selectedMonth),
+            displayValue: `${MONTH_NAMES[selectedMonth - 1]} ${selectedYear}`,
+          }]}
+          onRemoveChip={() => updateRoute(router, pathname, selectedWorksiteId, selectedYear, null)}
+        />
+      )}
 
       <div className="flex flex-wrap items-center gap-1 border-b border-[var(--color-border)]" role="tablist" aria-label="Filtrar por estado">
         {(Object.keys(STATUS_LABELS) as StatusFilter[]).map((status) => {
@@ -213,13 +232,17 @@ export function TrainingOccurrenceList({ rows, worksites, selectedYear, selected
           title={rows.length === 0 ? "No hay ocurrencias para mostrar" : "Sin coincidencias"}
           description={rows.length === 0
             ? "El catálogo anual se genera para cada faena activa. Revisa que exista una faena activa y que el programa controlado esté cargado."
-            : "Prueba con otro estado o limpia el texto de búsqueda del encabezado."}
+            : "Prueba con otro estado, otro mes o limpia el texto de búsqueda del encabezado."}
           action={rows.length === 0 ? (
             <Button asChild variant="secondary">
               <Link href="/prevencion/faenas">Revisar faenas</Link>
             </Button>
           ) : (
-            <Button type="button" variant="secondary" onClick={() => { setStatusFilter("all"); clearSearch() }}>
+            <Button type="button" variant="secondary" onClick={() => {
+              setStatusFilter("all")
+              clearSearch()
+              if (selectedMonth) updateRoute(router, pathname, selectedWorksiteId, selectedYear, null)
+            }}>
               Limpiar filtros
             </Button>
           )}

@@ -52,10 +52,19 @@ describe("consultas MIPER", () => {
   it("fuera de alcance no se lee", async () => {
     await expect(q.getMiperWorkspace(matrixId, outsider)).rejects.toThrow(/fuera de alcance/)
   })
-  it("la portada cuenta los graves de la faena y respeta el alcance", async () => {
+  it("el espacio de trabajo trae el nivel residual sólo de las filas que lo tienen (producción: ninguna)", async () => {
+    expect((await q.getMiperWorkspace(matrixId, author)).residualLevels).toEqual({})
+    const [first] = (await q.getMiperWorkspace(matrixId, author)).snapshot.entries
+    const entry = eq(schema.preventionRiskEntries.id, first!.id)
+    await testDb.update(schema.preventionRiskEntries).set({ residualLevel: "medium" }).where(entry)
+    expect((await q.getMiperWorkspace(matrixId, author)).residualLevels).toEqual({ [first!.id]: "medium" })
+    await testDb.update(schema.preventionRiskEntries).set({ residualLevel: null }).where(entry)
+    expect((await q.getMiperWorkspace(matrixId, author)).residualLevels).toEqual({})
+  })
+  it("la portada cuenta los riesgos por clasificación y respeta el alcance", async () => {
     const { rows } = await listMiperPortfolio(author)
     expect(rows.map((row) => row.worksiteId)).toEqual(["ws-q"])
-    expect(rows[0]).toMatchObject({ matrix: { id: matrixId }, intolerableCount: 1, importantCount: 0, completeness: { total: 2 } })
+    expect(rows[0]).toMatchObject({ matrix: { id: matrixId }, classificationCounts: { tolerable: 1, moderate: 0, important: 0, intolerable: 1 }, completeness: { total: 2 } })
     // Quien no tiene la faena en su alcance ve sólo la suya, sin MIPER.
     expect((await listMiperPortfolio(outsider)).rows.map((row) => [row.worksiteId, row.matrix])).toEqual([["ws-other", null]])
   })

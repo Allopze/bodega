@@ -21,6 +21,7 @@ export function ApprovalPanel({
   worksiteOptions = [],
   quotationRequests = [],
   quotationTotal = 0,
+  ageChart,
 }: {
   requests:        ApprovalRequest[]
   canApproveEpp:   boolean
@@ -29,6 +30,12 @@ export function ApprovalPanel({
   /** ADQ-05 · repuestos/servicios que esperan que se elija una cotización. */
   quotationRequests?: QuotationPendingRequest[]
   quotationTotal?: number
+  /**
+   * CHART-030 · antigüedad de lo pendiente. Llega ya renderizado desde la página
+   * (sus contadores salen de una consulta propia) y va entre los filtros y la
+   * lista, que es lo que filtra.
+   */
+  ageChart?: React.ReactNode
 }) {
   // E-3: la selección vive aquí, no en cada grupo, para poder aprobar ítems de
   // varias solicitudes de una vez. La acción del servidor valida el alcance por
@@ -38,6 +45,8 @@ export function ApprovalPanel({
 
   const pathname = usePathname()
   const searchParams = useSearchParams()
+  // Incluye `antiguedad` (lo fija el gráfico): una cola vacía por ese filtro no
+  // debe decir «Todo al día» con ítems esperando en otro tramo.
   const hasActiveFilters = hasServerListFilters(searchParams)
 
   const toggleItem = React.useCallback((id: string) => {
@@ -76,6 +85,8 @@ export function ApprovalPanel({
         urgencyOptions={URGENCY_OPTIONS}
         worksiteOptions={worksiteOptions}
       />
+
+      {ageChart}
 
       {requests.length === 0 ? (
         // A4: "Todo al día" sólo es cierto si no queda NADA por decidir: ni

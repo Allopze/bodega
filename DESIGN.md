@@ -417,6 +417,60 @@ regiones; Finanzas abre con gráficos) en la regla 7 de `AGENTS.md`.
 
 ---
 
+
+## Gráficos
+
+Fase 1 de `AUDITORIA_VISUALIZACIONES_CHOME.md` (2026-11-03). Rigen en toda la
+plataforma; el tablero suma su excepción de superficie (regla 7 de AGENTS.md).
+
+### Paleta (`lib/chart-palette.ts`, tokens en `app/globals.css`)
+
+| Token | Valor | Uso |
+|---|---|---|
+| `--color-chart-1` | `oklch(0.415 0.098 166)` | Esmeralda (= primary). Primera categoría, serie protagonista |
+| `--color-chart-2` | `oklch(0.500 0.090 245)` | Azul tinta |
+| `--color-chart-3` | `oklch(0.580 0.115 68)` | Ocre |
+| `--color-chart-4` | `oklch(0.480 0.095 330)` | Ciruela |
+| `--color-chart-5` | `oklch(0.545 0.075 200)` | Verde azulado |
+| `--color-chart-6` | `oklch(0.400 0.020 250)` | Pizarra oscura |
+| `--color-chart-reference` | `oklch(0.640 0.010 250)` | Plan, meta, período anterior, «sin dato» |
+
+- Todos miden ≥3:1 sobre `surface` y `surface-2` (WCAG 1.4.11) y los seis se
+  separan entre sí por matiz o luminancia; lo comprueba
+  `components/__tests__/design-tokens-contrast.test.ts`. **No hay hex en los
+  gráficos.**
+- **Estado ≠ categoría.** Cumple/vencido/pendiente/grave usan los semánticos
+  (`success`, `warning`, `danger`, `signal`); la serie categórica es para faenas,
+  módulos, proveedores. Nunca un color que no codifica nada (una barra de cada
+  color en un ranking: usa `RankedList`).
+- **Más de seis categorías:** resalta una y el resto en `reference`, o parte en
+  small multiples. No se recicla el color.
+- **Secuencial** (antigüedad, severidad creciente): de `reference` a `danger`
+  interpolado en OKLCH (`agingColor` en `components/charts/aging-bar.tsx`).
+
+### Primitivas (`components/charts/`)
+
+| Primitiva | Para | Notas |
+|---|---|---|
+| `ChartSection` | Todo gráfico en una pantalla de módulo | `<figure>` con nombre = título, `summary` (la frase que responde), «Ver datos», estado vacío con CTA (A4), drill-down. En el tablero se usa `ChartFrame`. |
+| `ChartDataTable` | Alternativa textual | `<details>` «Ver datos»; server-safe. |
+| `BulletBar` | Medida contra capacidad/meta | `role="meter"`; marcas rotuladas; reemplaza radiales y barras sin contexto. |
+| `AgingBar` | Pendientes por antigüedad | Tramos en orden cronológico, color secuencial, cifra visible por tramo, cada tramo enlaza a su subconjunto. |
+| `ComplianceCalendar` | Filas × períodos con estado | `<table>` real; ícono + color + texto oculto por celda; contenedor desplazable con foco de teclado. `statusLabels` cambia los rótulos (Fuentes: Completo/Parcial/Sin datos); `selected` y `linkNavigation` para cuando filtra la misma pantalla. Adaptador de programas de Prevención: `ProgramComplianceSection`. |
+| `ShareBar` | Partes excluyentes de un total (estado de una solicitud) | Barra 100 % en el orden del dominio, color por token, leyenda con cifra y enlace por parte; segmentos fuera del tabulador. |
+| `RiskMatrix` / `ResidualBands` | Matriz P×C de la MIPER | Tabla 3×3 con conteo y clase por celda; clases discretas (`risk-bands.ts`), nunca interpolado. |
+| `RiskShareBar` | Mezcla de clasificaciones de riesgo en una celda de tabla | Versión compacta de `ShareBar` para las 4 bandas del RE-04. |
+| `DebtAgingChart`, `BillingFlowChart`, `ChartFrame` | Facturación y tablero | Movidos desde `dashboard/charts/` (quedan re-exports allí). |
+
+### Reglas
+
+- Cada gráfico tiene **nombre accesible** y una **alternativa en datos**.
+- La respuesta va antes que el dibujo: una frase con la cifra que importa.
+- Un gráfico sin datos no dibuja ejes en cero: explica el vacío y ofrece la acción.
+- Un mes en curso o sin datos del proveedor se marca (parcial / hueco), nunca
+  se dibuja como una caída.
+- Torta sólo para 2–3 partes de un todo; en cualquier otro caso, barra.
+
 ## Accesibilidad
 
 - Skip link "Saltar al contenido" (sr-only hasta foco).

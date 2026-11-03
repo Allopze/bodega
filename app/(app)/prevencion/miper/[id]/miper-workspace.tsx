@@ -202,7 +202,7 @@ export function MiperWorkspaceView({ workspace, history, mode, userId, program }
         )}
         <TabsContent value="resumen">
           <ResumenPanel matrixId={workspace.matrix.id} rows={rows} tree={fullTree} incomplete={incomplete} linkedControlIds={linkedControlIds} programProgress={program.progress}
-            editable={editable} onNewTask={() => setNewTaskOpen(true)} />
+            residualLevels={workspace.residualLevels} editable={editable} onNewTask={() => setNewTaskOpen(true)} />
         </TabsContent>
         <TabsContent value="matriz" className="space-y-3">
           {view.entryId ? (

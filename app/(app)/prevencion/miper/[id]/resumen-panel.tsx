@@ -11,6 +11,7 @@ import { progressPercent, type ProgramProgress } from "@/lib/prevention/miper/pr
 import type { MiperEntrySnapshot } from "@/lib/prevention/miper/snapshot"
 import { hrefToMatrixOnly, hrefToProgramOnly, hrefToTab } from "@/lib/prevention/miper/workspace-url"
 import { countOf } from "@/lib/utils"
+import { RiskConcentration } from "./risk-concentration"
 import { revealActivity } from "./workspace-memory"
 import { scrollToWhenReady, WorkspaceLink } from "./workspace-nav"
 
@@ -26,10 +27,13 @@ function ReplaceWorkspaceLink({ href, className, children, ...rest }: SummaryLin
  * - Cuatro cifras que llevan a su subconjunto (A1). Las tres de la matriz QUITAN
  *   los seis filtros antes de aplicar el suyo (`hrefToMatrixOnly`); si no, la
  *   cifra y lo que se ve al llegar no coinciden.
+ * - «Dónde se concentra el riesgo» (CHART-007): el mapa de calor
+ *   probabilidad × consecuencia, inherente y residual. No es un quinto tile (A1):
+ *   es el dibujo del mismo conjunto que cuenta «Importantes e Intolerables».
  * - La completitud por actividad, con cada barra enlazada a su tarjeta en la
  *   matriz. Si la tarjeta estaba plegada, se despliega.
  */
-export function ResumenPanel({ matrixId, rows, tree, incomplete, linkedControlIds, programProgress, editable, onNewTask }: {
+export function ResumenPanel({ matrixId, rows, tree, incomplete, linkedControlIds, programProgress, residualLevels, editable, onNewTask }: {
   matrixId: string
   rows: readonly MiperEntrySnapshot[]
   /** El árbol completo (sin filtros) de la matriz: el orden del RE-04 y la cuenta por actividad. */
@@ -39,6 +43,8 @@ export function ResumenPanel({ matrixId, rows, tree, incomplete, linkedControlId
   /** Ids de las medidas de la matriz que ya tienen una actividad en el Programa de Trabajo (informativo; no cambia ninguna regla de envío). */
   linkedControlIds: ReadonlySet<string>
   programProgress: ProgramProgress
+  /** `residual_level` por id de fila (`getMiperWorkspace`); ausente o vacío = ninguna fila lo tiene. */
+  residualLevels?: Readonly<Record<string, string>>
   editable: boolean
   onNewTask: () => void
 }) {
@@ -93,6 +99,7 @@ export function ResumenPanel({ matrixId, rows, tree, incomplete, linkedControlId
         <Button asChild size="sm" variant="secondary"><WorkspaceLink href={hrefToMatrixOnly(pathname, params)} replace>Ver riesgos</WorkspaceLink></Button>
       </div>
       <SummaryBar stats={stats} renderLink={ReplaceWorkspaceLink} />
+      <RiskConcentration rows={rows} residualLevels={residualLevels} uncontrolled={uncontrolled} />
       <section aria-labelledby="miper-resumen-actividades" className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
         <h2 id="miper-resumen-actividades" className="text-sm font-semibold">Datos completos por actividad</h2>
         {allComplete ? (

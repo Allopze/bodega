@@ -21,7 +21,7 @@ import { ANOMALY_RULE_CATALOG } from "./anomaly-rule-catalog"
 // Compatibilidad para consumidores server-side que todavía importan el
 // vocabulario desde el servicio. Los componentes client-side usan
 // `anomaly-labels.ts` directamente para no arrastrar Drizzle/DB al bundle.
-export { ANOMALY_SEVERITY_LABELS, ANOMALY_STATUS_COLORS, ANOMALY_STATUS_LABELS, anomalySeverityVariant,
+export { ANOMALY_SEVERITY_LABELS, ANOMALY_STATUS_LABELS, anomalySeverityVariant,
   METER_RESET_RULE_CODES, METER_RESOLUTION_KIND_LABELS, METER_RESOLUTION_KINDS, requiresMeterResolutionKind } from "./anomaly-labels"
 export type { MeterResolutionKind } from "./anomaly-labels"
 export type { AnomalyCaseStatus, AnomalySeverity } from "./anomaly-labels"
@@ -414,68 +414,6 @@ export async function addAnomalyComment(session: Session, caseId: string, body: 
     }, tx)
     return comment
   })
-}
-
-/** Agregar casos por estado, severidad y código de regla para el gráfico de distribución (sección 5). */
-export async function getAnomalyDistribution(filters: Pick<AnomalyCasesFilters, 'worksiteId' | 'status'>, session: Session | null): Promise<{
-  byStatus: Array<{ status: string; count: number }>
-  bySeverity: Array<{ severity: string; count: number }>
-  byRuleCode: Array<{ ruleCode: string; ruleName: string | null; count: number }>
-  total: number
-}> {
-  const where: SQL[] = []
-  const scope = worksiteScopeSql(session, fuelAnomalyCases.worksiteId, filters.worksiteId)
-  if (scope) where.push(scope)
-  if (filters.status) {
-    if (Array.isArray(filters.status)) where.push(inArray(fuelAnomalyCases.status, filters.status))
-    else where.push(eq(fuelAnomalyCases.status, filters.status))
-  }
-  const condition = where.length > 0 ? and(...where) : undefined
-
-  const [statusRows, severityRows, ruleRows, totalResult] = await Promise.all([
-    db.select({
-      status: fuelAnomalyCases.status,
-      count: sql<number>`count(*)::int`,
-    }).from(fuelAnomalyCases).where(condition).groupBy(fuelAnomalyCases.status)
-      .then(rows => rows.map(r => ({ status: r.status!, count: r.count! }))),
-
-    db.select({
-      severity: fuelAnomalyCases.severity,
-      count: sql<number>`count(*)::int`,
-    }).from(fuelAnomalyCases).where(condition).groupBy(fuelAnomalyCases.severity)
-      .then(rows => rows.map(r => ({ severity: r.severity!, count: r.count! }))),
-
-    db.select({
-      ruleCode: fuelAnomalyCases.ruleCode,
-      count: sql<number>`count(*)::int`,
-      // Sin ORDER BY, el LIMIT 10 recortaba un subconjunto arbitrario y el
-      // gráfico se titulaba "Top reglas" mostrando cualquier decena.
-    }).from(fuelAnomalyCases).where(condition).groupBy(fuelAnomalyCases.ruleCode).orderBy(desc(sql`count(*)`)).limit(10)
-      .then(async (rows) => {
-        // Enriquecer con nombres de regla
-        const codes = [...new Set(rows.map(r => r.ruleCode))]
-        const rules = codes.length > 0
-          ? await db.query.fuelAnomalyRules.findMany({ where: inArray(fuelAnomalyRules.code, codes), columns: { code: true, name: true } })
-          : []
-        const nameByCode = new Map(rules.map(r => [r.code, r.name]))
-        return rows.map(r => ({
-          ruleCode: r.ruleCode!,
-          ruleName: nameByCode.get(r.ruleCode!) ?? null,
-          count: r.count!,
-        }))
-      }),
-
-    condition
-      ? db.select({ count: sql<number>`count(*)::int` }).from(fuelAnomalyCases).where(condition)
-      : db.select({ count: sql<number>`count(*)::int` }).from(fuelAnomalyCases),
-  ])
-
-  return {
-    byStatus: statusRows,
-    bySeverity: severityRows,
-    byRuleCode: ruleRows,
-    total: totalResult[0]?.count ?? 0,
-  }
 }
 
 /**

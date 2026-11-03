@@ -5,8 +5,16 @@ import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { Button } from "@/components/ui/button"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
-import { listTrainingOccurrences, listTrainingOccurrenceWorksites, resolveTrainingOccurrenceYear } from "@/lib/services/prevention-training-occurrences"
-import { resolveProgramActivationPeriod } from "@/lib/services/prevention-program-slots"
+import {
+  listTrainingComplianceSlots,
+  listTrainingOccurrences,
+  listTrainingOccurrenceWorksites,
+  resolveTrainingOccurrenceYear,
+} from "@/lib/services/prevention-training-occurrences"
+import { resolveProgramActivationPeriod, resolveProgramActivationPeriods } from "@/lib/services/prevention-program-slots"
+import { currentPdtpPeriod } from "@/lib/services/pdtp/period"
+import { buildSlotCalendar, parseCalendarMonth } from "@/lib/prevention/slot-compliance-calendar"
+import { ProgramComplianceSection } from "@/components/prevention/program-compliance-section"
 import { TrainingOccurrenceList } from "./training-occurrence-list"
 import { PdtpScheduledActivityPanelServer } from "@/components/prevention/pdtp-scheduled-activity-panel-server"
 
@@ -37,9 +45,11 @@ export default async function CapacitacionPage({
       : Array.isArray(rawWorksiteId)
         ? (rawWorksiteId[0]?.trim() ?? "")
         : ""
+  // `?mes=` es el mes que el usuario eligió en el calendario de cumplimiento.
+  const month = parseCalendarMonth(params?.mes)
   const exportParams = new URLSearchParams({ year: String(year) })
   if (worksiteId) exportParams.set("faena", worksiteId)
-  const [occurrences, worksites, activationPeriod] = await Promise.all([
+  const [occurrences, worksites, activationPeriod, complianceSlots] = await Promise.all([
     listTrainingOccurrences(access, {
       year,
       worksiteId: worksiteId || undefined,
@@ -47,7 +57,30 @@ export default async function CapacitacionPage({
     }),
     listTrainingOccurrenceWorksites(access),
     resolveProgramActivationPeriod(worksiteId || undefined, year),
+    // El calendario muestra todas las faenas del alcance aunque la lista esté
+    // filtrada a una: por eso tiene su propia consulta.
+    listTrainingComplianceSlots(access, { year, includeWorksiteId: worksiteId || undefined }),
   ])
+  const calendarWorksites = [...new Map(complianceSlots.map((slot) => [slot.worksiteId, { id: slot.worksiteId, label: slot.worksiteName }])).values()]
+  const calendar = buildSlotCalendar({
+    year,
+    today: currentPdtpPeriod(),
+    rows: calendarWorksites,
+    slots: complianceSlots.map((slot) => ({
+      rowId: slot.worksiteId,
+      month: slot.scheduledMonth,
+      week: slot.scheduledWeek,
+      status: slot.status,
+    })),
+    activationByRow: await resolveProgramActivationPeriods(calendarWorksites.map((row) => row.id), year),
+  })
+  const viewHref = (view: { faena?: string; mes?: number | null }) => {
+    const query = new URLSearchParams()
+    if (view.faena) query.set("faena", view.faena)
+    query.set("year", String(year))
+    if (view.mes) query.set("mes", String(view.mes))
+    return `/prevencion/capacitacion?${query.toString()}`
+  }
 
   return (
     <PageContainer>
@@ -67,11 +100,24 @@ export default async function CapacitacionPage({
           ) : undefined
         }
       />
+      {/* Sin casillas el calendario no se dibuja ni explica nada: la lista de
+        * abajo ya dice qué falta y ofrece la salida, y repetirlo sería ruido. */}
+      <ProgramComplianceSection
+        title={`Cumplimiento del programa ${year}`}
+        caption={`Cumplimiento mensual de campañas y capacitaciones ${year}, por faena`}
+        calendar={calendar}
+        noun={{ singular: "faena", plural: "faenas" }}
+        hrefFor={(rowId, cellMonth) => viewHref({ faena: rowId, mes: cellMonth })}
+        clearHref={viewHref({ faena: worksiteId, mes: null })}
+        selected={worksiteId && month ? { rowId: worksiteId, month } : null}
+        className="mb-4"
+      />
       <TrainingOccurrenceList
         rows={occurrences}
         worksites={worksites}
         selectedYear={year}
         selectedWorksiteId={worksiteId}
+        selectedMonth={month}
         canRecord={session.user.permissions.includes("prevention:training:record")}
         activationPeriod={activationPeriod}
       />

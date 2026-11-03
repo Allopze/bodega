@@ -2,6 +2,7 @@
 
 import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
+import { RiskShareBar, RiskShareLegend } from "@/components/charts/risk-share-bar"
 import { useSafeShellHeader } from "@/components/layout/header-context"
 import { MetaBadge, metaFor, type StateMetaInput } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
@@ -37,6 +38,7 @@ const STATUS_META: Record<MiperPortfolioStatus, StateMetaInput> = {
 const COLUMNS = [
   { key: "worksiteName", label: "Faena", sortable: true },
   { key: "status", label: "Estado" },
+  { key: "risk", label: "Riesgos" },
   { key: "pending", label: "Trabajo pendiente" },
   { key: "action", label: "Acción" },
 ]
@@ -123,6 +125,17 @@ function Completeness({ row }: { row: MiperPortfolioRow }) {
     </span>
   )
 }
+
+/** Los riesgos de la MIPER de la fila, de Tolerable a Intolerable (CHART-007). Sin MIPER o con la metodología anterior no hay P × C que clasificar. */
+function RiskMix({ row }: { row: MiperPortfolioRow }) {
+  if (!row.matrix) return <span className="text-xs text-[var(--color-text-subtle)]">—</span>
+  if (row.matrix.isLegacy) return <span className="text-xs text-[var(--color-text-subtle)]">Metodología anterior</span>
+  return <RiskShareBar label={row.worksiteName} counts={row.classificationCounts} />
+}
+
+/** ¿Alguna faena a la vista tiene una barra que dibujar? Sólo entonces la leyenda tiene a quién explicar. */
+const hasRiskBars = (rows: readonly MiperPortfolioRow[]) =>
+  rows.some((row) => row.matrix && !row.matrix.isLegacy && Object.values(row.classificationCounts).some((count) => count > 0))
 
 function CriticalWithoutControl({ row }: { row: MiperPortfolioRow }) {
   if (row.criticalWithoutControl === 0) return null
@@ -267,6 +280,12 @@ export function MiperHome({ rows, creationWorksites, currentYear, permissions }:
             options={PORTFOLIO_STATUS_FILTER_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
             onValueChange={(value) => update({ estado: value || null })} />
         </FilterToolbar>
+        {hasRiskBars(visible) && (
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+            <p className="text-xs font-medium text-[var(--color-text)]">Clasificación de los riesgos</p>
+            <RiskShareLegend />
+          </div>
+        )}
         <DataTable
           caption="MIPER por faena"
           columns={COLUMNS}
@@ -283,6 +302,7 @@ export function MiperHome({ rows, creationWorksites, currentYear, permissions }:
             <TableRow key={row.id} data-worksite-id={row.worksiteId}>
               <TableCell><Worksite row={row} /></TableCell>
               <TableCell><State row={row} /></TableCell>
+              <TableCell><RiskMix row={row} /></TableCell>
               <TableCell><PendingWork row={row} /></TableCell>
               <TableCell>{actionsFor(row)}</TableCell>
             </TableRow>
@@ -294,9 +314,10 @@ export function MiperHome({ rows, creationWorksites, currentYear, permissions }:
                 <Worksite row={row} />
                 <State row={row} />
                 {actionsFor(row)}
+                {row.matrix && <RiskMix row={row} />}
                 <Completeness row={row} />
                 <p className="text-xs text-[var(--color-text-subtle)]">
-                  Dotación {row.headcount} · Importantes e Intolerables {row.importantCount + row.intolerableCount}
+                  Dotación {row.headcount}
                   {program && ` · ${row.programProgress?.planned === 0 ? program : `Programa ${program}`}`}
                 </p>
                 <CriticalWithoutControl row={row} />

@@ -40,12 +40,18 @@ export function anomalySeverityVariant(severity: AnomalySeverity): "danger" | "w
   return "info"
 }
 
-export const ANOMALY_STATUS_COLORS: Record<AnomalyCaseStatus, string> = {
-  open: "var(--color-danger)",
-  in_review: "var(--color-warning)",
-  resolved: "var(--color-success)",
-  dismissed: "var(--color-text-muted)",
-  reopened: "var(--color-signal)",
+/**
+ * Relleno de cada gravedad en los gráficos. Va de menos a más grave, en el mismo
+ * sentido que las insignias (`anomalySeverityVariant`: baja → neutro, media →
+ * ámbar, alta → rojo) y por luminancia creciente: «crítica» es el rojo más oscuro,
+ * no un tono nuevo. Sólo tokens; el color no es lo único que lo dice (cada capa
+ * tiene su rótulo y «Ver datos»).
+ */
+export const ANOMALY_SEVERITY_COLORS: Record<AnomalySeverity, string> = {
+  low: "var(--color-chart-reference)",
+  medium: "var(--color-warning)",
+  high: "var(--color-danger)",
+  critical: "var(--color-danger-ink)",
 }
 
 /**

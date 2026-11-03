@@ -44,6 +44,12 @@ export interface ApprovalRequest {
   requesterName:   string
   requestUrgency:  string
   submittedAt:     string | null
+  /**
+   * Días civiles (Chile) desde el envío, calculados en SQL con la misma fórmula
+   * que el gráfico de antigüedad y el filtro `?antiguedad=` (ver `queue-age.ts`).
+   * `null` si la solicitud no tiene fecha de envío.
+   */
+  ageDays:         number | null
   deliveryMode:    "via_oficina" | "directo_faena"
   pendingItems:    ApprovalItem[]
   pendingCount:    number

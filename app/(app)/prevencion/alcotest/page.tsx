@@ -9,8 +9,11 @@ import {
   listAlcotestEquipment,
   listAlcotestWorkers,
 } from "@/lib/services/prevention-alcotest"
-import { listAlcotestSlotsForWorksite, resolveAlcotestSlotFacts } from "@/lib/services/prevention-alcotest-slots"
-import { resolveProgramActivationPeriod } from "@/lib/services/prevention-program-slots"
+import { listAlcotestSlotsForCalendar, listAlcotestSlotsForWorksite, resolveAlcotestSlotFacts } from "@/lib/services/prevention-alcotest-slots"
+import { resolveProgramActivationPeriod, resolveProgramActivationPeriods } from "@/lib/services/prevention-program-slots"
+import { currentPdtpPeriod } from "@/lib/services/pdtp/period"
+import { buildSlotCalendar, parseCalendarMonth } from "@/lib/prevention/slot-compliance-calendar"
+import { ProgramComplianceSection } from "@/components/prevention/program-compliance-section"
 import { resolveProgramSlotYear } from "@/lib/prevention/program-slots-2026"
 import { getPdtpOperationalYears } from "@/lib/services/prevention-pdtp"
 import { formatDateTime } from "@/lib/utils"
@@ -26,7 +29,7 @@ function one(value: string | string[] | undefined) {
 export default async function AlcotestPage({
   searchParams,
 }: {
-  searchParams: Promise<{ faena?: string | string[]; anio?: string | string[] }>
+  searchParams: Promise<{ faena?: string | string[]; anio?: string | string[]; mes?: string | string[] }>
 }) {
   let session
   try { session = await requireAuth() }
@@ -52,11 +55,41 @@ export default async function AlcotestPage({
   // año operativo (en enero puede seguir siendo el anterior).
   const slotYear = resolveProgramSlotYear(one(query.anio), (await getPdtpOperationalYears()).primary)
 
+  // `?mes=` es el mes que el usuario eligió en el calendario de cumplimiento.
+  const month = parseCalendarMonth(query.mes)
+
   const slots = worksiteId
     ? await listAlcotestSlotsForWorksite(scope, worksiteId, slotYear)
     : []
   const facts = await resolveAlcotestSlotFacts(slots)
   const activationPeriod = await resolveProgramActivationPeriod(worksiteId, slotYear)
+
+  // El calendario mide TODAS las faenas del alcance, no sólo la elegida: por eso
+  // trae sus propias casillas, en forma mínima y sin evidencia.
+  const [calendarSlots, activationByWorksite] = await Promise.all([
+    listAlcotestSlotsForCalendar(scope, slotYear),
+    resolveProgramActivationPeriods(worksites.map((item) => item.id), slotYear),
+  ])
+  const calendar = buildSlotCalendar({
+    year: slotYear,
+    today: currentPdtpPeriod(),
+    rows: worksites.map((item) => ({ id: item.id, label: item.name })),
+    slots: calendarSlots.map((slot) => ({
+      rowId: slot.worksiteId,
+      month: slot.scheduledMonth,
+      week: slot.scheduledWeek,
+      status: slot.status,
+      group: slot.kind === "control" ? "Controles" : "Envíos",
+    })),
+    activationByRow: activationByWorksite,
+  })
+  const viewHref = (view: { faena?: string; mes?: number | null }) => {
+    const params = new URLSearchParams()
+    if (view.faena) params.set("faena", view.faena)
+    params.set("anio", String(slotYear))
+    if (view.mes) params.set("mes", String(view.mes))
+    return `/prevencion/alcotest?${params.toString()}`
+  }
 
   const slotRows = slots.map((slot) => ({
     id: slot.id,
@@ -88,6 +121,7 @@ export default async function AlcotestPage({
       selectedWorksiteId={worksiteId ?? null}
       slotRows={slotRows}
       slotYear={slotYear}
+      selectedMonth={month}
       activationPeriod={activationPeriod}
       initialTests={tests}
       initialDispatches={dispatches}
@@ -95,6 +129,18 @@ export default async function AlcotestPage({
       equipment={equipment}
       canRegister={can(session, "prevention:alcotest:register")}
       canDispatch={can(session, "prevention:alcotest:dispatch")}
+      complianceCalendar={(
+        <ProgramComplianceSection
+          title={`Cumplimiento del programa ${slotYear}`}
+          caption={`Cumplimiento mensual de controles de alcotest y envíos de registros ${slotYear}, por faena`}
+          calendar={calendar}
+          noun={{ singular: "faena", plural: "faenas" }}
+          hrefFor={(rowId, cellMonth) => viewHref({ faena: rowId, mes: cellMonth })}
+          clearHref={viewHref({ faena: worksiteId, mes: null })}
+          selected={worksiteId && month ? { rowId: worksiteId, month } : null}
+          className="mt-6"
+        />
+      )}
       scheduledPanel={<PdtpScheduledActivityPanelServer connectorKey="alcotest" />}
     />
   )

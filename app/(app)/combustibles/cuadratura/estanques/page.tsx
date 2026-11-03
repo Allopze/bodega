@@ -28,10 +28,8 @@ import { loadCuadraturaContext } from "../_components/context"
 import { firstParam, hrefWith, periodContext } from "../_components/params"
 import { ControlSection, SectionError } from "../_components/section"
 import { createSourceTracker } from "../_components/track"
-import { CycleStageChart } from "./cycle-stage-chart"
-import { LazyDetails } from "../_components/lazy-details"
 import { CycleWorkbench } from "./cycle-workbench"
-import { MovementsTable, StorageLevels, cycleAnswer, severityBadge, stageAmount, type CycleMovementRow } from "./estanques-sections"
+import { MovementsTable, StorageLevelBars, StorageLevels, cycleAnswer, severityBadge, stageAmount, type CycleMovementRow } from "./estanques-sections"
 import { UrlSelect } from "../_components/url-select"
 import { litersText } from "../_components/format"
 import { formatQty } from "@/lib/utils"
@@ -145,17 +143,13 @@ export default async function CuadraturaEstanquesPage({ searchParams }: { search
             />
           </section>
 
-          {/* Las mismas cifras de los tiles, en un gráfico plegado: se monta al abrirlo. */}
-          <LazyDetails summary="Ver el flujo en un gráfico" hint="¿Dónde se pierde combustible entre etapas? Cada caída entre barras es la diferencia entre esas dos etapas.">
-            <CycleStageChart stages={[
-              { stage: "Recibido", liters: data.received?.liters ?? null, records: data.received?.records ?? null },
-              { stage: "Registrado", liters: data.registered?.liters ?? null, records: data.registered?.records ?? null },
-              { stage: "Entregado", liters: data.delivered?.liters ?? null, records: data.delivered?.records ?? null },
-            ]} />
-          </LazyDetails>
-
           <ControlSection id="nivel" title="Nivel por estanque" question="¿Cuánto combustible quedó en cada estanque contra su capacidad?">
-            {balances.failed ? <SectionError what="el nivel por estanque" /> : <StorageLevels balances={balances.data} canCreateTank={canCreateTank} />}
+            {balances.failed ? <SectionError what="el nivel por estanque" /> : (
+              <div className="space-y-4">
+                <StorageLevelBars balances={balances.data} />
+                <StorageLevels balances={balances.data} canCreateTank={canCreateTank} />
+              </div>
+            )}
           </ControlSection>
 
           <div id="movimientos" className="scroll-mt-24">

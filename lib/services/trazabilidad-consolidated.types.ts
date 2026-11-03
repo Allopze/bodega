@@ -65,6 +65,42 @@ export const COMPUTED_STATUS_METAS: Record<ComputedStatus, StatusMeta> = {
   borrador: { label: "Borrador", color: "neutral" },
 }
 
+/**
+ * Orden en que una solicitud recorre su vida, de Borrador a Entregado, y al
+ * final los desenlaces que salen del camino (Rechazado, Cancelado).
+ *
+ * Es el orden de la barra de distribución de Seguimiento (CHART-031): un estado
+ * es una etapa, no una magnitud, así que ordenarlo por tamaño borraría lo que la
+ * barra cuenta. Las etapas físicas siguen la cadena proveedor → oficina →
+ * tránsito → faena → entrega; cada «parcial» va antes de su etapa completa.
+ * `trazabilidad-status-distribution.test.ts` exige que cubra todos los
+ * `ComputedStatus`, de modo que un estado nuevo no quede fuera de la barra.
+ */
+export const TRACEABILITY_STATUS_LIFECYCLE: readonly ComputedStatus[] = [
+  "borrador",
+  "solicitado",
+  "aprobado",
+  "pedido_proveedor",
+  "parcialmente_recibido_oficina",
+  "en_oficina",
+  "parcialmente_enviado_faena",
+  "enviado_faena",
+  "parcialmente_recibido_faena",
+  "en_faena",
+  "parcialmente_entregado",
+  "entregado",
+  "rechazado",
+  "cancelado",
+]
+
+/** Un estado y cuántas solicitudes lo tienen, ya con su rótulo y tono de insignia. */
+export interface StatusDistributionEntry {
+  status: ComputedStatus
+  label: string
+  color: StatusMeta["color"]
+  count: number
+}
+
 const TRACEABILITY_TERMINAL_STATUSES: ReadonlySet<ComputedStatus> = new Set([
   "entregado",
   "rechazado",
@@ -241,6 +277,12 @@ export interface ConsolidatedAggregateResult {
   orders: ConsolidatedOrder[]
 }
 
+/**
+ * Cifras de etapa **no excluyentes** (una solicitud puede estar en varias a la
+ * vez y «Esperando proveedor» cuenta OC, no solicitudes). Ya no alimentan la
+ * pantalla de Seguimiento, que muestra la distribución por estado
+ * (`StatusDistributionEntry`), la única que suma el total.
+ */
 export interface ConsolidatedFaenaKPIs {
   openRequests: number
   pendingPurchase: number
@@ -269,7 +311,15 @@ export interface ConsolidatedTraceabilityResult {
   categories: Array<{ id: string; name: string }>
   requesters: Array<{ id: string; name: string }>
   suppliers: Array<{ id: string; name: string }>
-  kpis: ConsolidatedFaenaKPIs
+  /**
+   * Distribución de las solicitudes por estado agregado, en orden de ciclo de
+   * vida. Excluyente: cada solicitud cuenta una vez, así que suma el total.
+   *
+   * Respeta todos los filtros **menos el de estado**: la barra es también el
+   * selector de ese filtro, y si lo respetara, elegir un estado la dejaría en un
+   * solo segmento y no habría cómo pasar a otro.
+   */
+  statusDistribution: StatusDistributionEntry[]
   filters: {
     faena: string
     estado: string

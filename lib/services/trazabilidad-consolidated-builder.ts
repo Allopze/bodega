@@ -2,10 +2,13 @@ import {
   COMPUTED_STATUS_METAS,
   TRACEABILITY_CONSOLIDATED_PAGE_SIZE,
   matchesTraceabilityStatusFilter,
+  TRACEABILITY_STATUS_LIFECYCLE,
+  type ComputedStatus,
   type ConsolidatedOrder,
   type ConsolidatedRequest,
   type ConsolidatedRow,
   type ConsolidatedFaenaKPIs,
+  type StatusDistributionEntry,
 } from "./trazabilidad-consolidated.types"
 import {
   computeItemStatus,
@@ -450,6 +453,66 @@ export function computeAggregateKPIs(
     partiallyDelivered: partiallyDelivered.size,
     fullyDelivered: fullyDelivered.size,
   }
+}
+
+/** Solicitudes por estado agregado. Cada una cuenta una vez, así que las cifras suman el total. */
+export function countRequestsByStatus(
+  requests: ReadonlyArray<Pick<ConsolidatedRequest, "status">>,
+): Partial<Record<ComputedStatus, number>> {
+  const counts: Partial<Record<ComputedStatus, number>> = {}
+  for (const request of requests) counts[request.status] = (counts[request.status] ?? 0) + 1
+  return counts
+}
+
+/** Suma las cuentas de dos conjuntos de solicitudes (p. ej. de dos faenas). No muta ninguno. */
+export function mergeStatusCounts(
+  left: Partial<Record<ComputedStatus, number>>,
+  right: Partial<Record<ComputedStatus, number>>,
+): Partial<Record<ComputedStatus, number>> {
+  const merged = { ...left }
+  for (const [status, count] of Object.entries(right) as Array<[ComputedStatus, number]>) {
+    merged[status] = (merged[status] ?? 0) + count
+  }
+  return merged
+}
+
+/**
+ * Pone las cuentas en orden de ciclo de vida (`TRACEABILITY_STATUS_LIFECYCLE`),
+ * con el rótulo y el tono de insignia de cada estado. Omite los que no tienen
+ * solicitudes.
+ */
+export function orderStatusDistribution(
+  counts: Partial<Record<ComputedStatus, number>>,
+): StatusDistributionEntry[] {
+  return TRACEABILITY_STATUS_LIFECYCLE.flatMap((status) => {
+    const count = counts[status] ?? 0
+    if (count <= 0) return []
+    const meta = COMPUTED_STATUS_METAS[status]
+    return [{ status, label: meta.label, color: meta.color, count }]
+  })
+}
+
+/** Cuenta y ordena por ciclo de vida en un paso. */
+export function computeStatusDistribution(
+  requests: ReadonlyArray<Pick<ConsolidatedRequest, "status">>,
+): StatusDistributionEntry[] {
+  return orderStatusDistribution(countRequestsByStatus(requests))
+}
+
+/**
+ * Total, en curso y cerradas. «Cerradas» son las entregadas, rechazadas o
+ * canceladas: el mismo corte que el filtro `en_curso` / `cerradas`.
+ */
+export function summarizeStatusDistribution(
+  entries: ReadonlyArray<StatusDistributionEntry>,
+): { total: number; open: number; closed: number } {
+  let open = 0
+  let closed = 0
+  for (const entry of entries) {
+    if (matchesTraceabilityStatusFilter(entry.status, "cerradas")) closed += entry.count
+    else open += entry.count
+  }
+  return { total: open + closed, open, closed }
 }
 
 export interface AggregateRequestPage {

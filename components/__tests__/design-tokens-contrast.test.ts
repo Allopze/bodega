@@ -132,6 +132,31 @@ describe("contraste de tokens de diseño", () => {
     })
   })
 
+  describe("paleta de gráficos — WCAG 1.4.11 (objetos gráficos, 3:1)", () => {
+    // Una serie, una barra o una celda que el lector necesita distinguir es un
+    // objeto gráfico: 3:1 contra la superficie donde se dibuja. Los gráficos
+    // viven sobre `surface` (tarjeta) y el tablero también sobre `surface-2`.
+    const CHART_TOKENS = ["chart-1", "chart-2", "chart-3", "chart-4", "chart-5", "chart-6", "chart-reference"].map((n) => `color-${n}`)
+    it.each(CHART_TOKENS.flatMap((token) => ["color-surface", "color-surface-2"].map((surface) => [token, surface])))(
+      "%s cumple 3:1 sobre %s",
+      (token, surface) => {
+        expect(contrast(token, surface)).toBeGreaterThanOrEqual(3)
+      },
+    )
+
+    it("las seis series categóricas se distinguen entre sí por luminancia o por matiz", () => {
+      const tokens = CHART_TOKENS.slice(0, 6)
+      const hues = tokens.map((token) => readToken(token)[2])
+      for (let i = 0; i < hues.length; i++) {
+        for (let j = i + 1; j < hues.length; j++) {
+          const hueGap = Math.min(Math.abs(hues[i]! - hues[j]!), 360 - Math.abs(hues[i]! - hues[j]!))
+          const lumGap = Math.abs(luminance(tokens[i]!) - luminance(tokens[j]!))
+          expect(hueGap >= 25 || lumGap >= 0.05, `${tokens[i]} vs ${tokens[j]}`).toBe(true)
+        }
+      }
+    })
+  })
+
   describe("texto blanco sobre rellenos sólidos — WCAG 1.4.3", () => {
     // Sólo las familias que efectivamente se usan como relleno con texto blanco.
     // signal/accent/warning NO se usan así (van como tint+ink); ver DESIGN.md.

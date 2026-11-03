@@ -9,6 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
 import { SubmitButton } from "@/components/ui/submit-button"
 import { formatDate } from "@/lib/utils"
+import { formatApprovalAge } from "@/lib/approvals-age"
 import { toast } from "@/lib/toast"
 import { REQUEST_TYPE_LABELS, REQUEST_TYPE_VARIANTS } from "./types"
 import type { ApprovalRequest } from "./types"
@@ -64,6 +65,7 @@ export function RequestGroup({
   const allSelected = groupItemIds.length > 0 && selectedInGroup === groupItemIds.length
   const allApproved = bulkState.ok === true
   const canApproveThisRequest = request.requestType !== "epp" || canApproveEpp
+  const ageText = formatApprovalAge(request.ageDays)
 
   return (
     <div className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] overflow-hidden">
@@ -112,6 +114,8 @@ export function RequestGroup({
           {request.submittedAt && (
             <span className="text-xs text-[var(--color-text-subtle)]">
               · {formatDate(request.submittedAt)}
+              {/* Cuánto lleva esperando: es lo que decide a quién se aprueba primero. */}
+              {ageText && <span className="tabular-nums"> · {ageText}</span>}
             </span>
           )}
           <span className="text-xs font-medium text-[var(--color-signal-ink)] bg-[var(--color-signal-tint)] rounded-full px-2 py-0.5">

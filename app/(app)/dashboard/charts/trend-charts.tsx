@@ -3,7 +3,6 @@
 import * as React from "react"
 import {
   Area,
-  Bar,
   CartesianGrid,
   ComposedChart,
   Line,
@@ -18,7 +17,6 @@ import {
 } from "@/components/ui/chart"
 import {
   ChartTooltipCard,
-  ColumnHoverCursor,
   seriesOpacity,
   useActiveIndex,
   useChartMotion,
@@ -28,7 +26,7 @@ import {
   GlowFilter,
 } from "@/components/ui/chart-interactions"
 import { Delta } from "@/components/ui/delta"
-import { MONTH_LABELS, formatCompactCLP, formatQty, formatPercent } from "@/lib/utils"
+import { formatQty } from "@/lib/utils"
 import { CHART_COLORS } from "@/lib/chart-palette"
 import { ChartFrame, ChartHeadlineCaption, ChartHeadlineValue } from "./chart-frame"
 import {
@@ -36,7 +34,6 @@ import {
   InteractiveLegend,
   SERIES_FADE_CLASS,
   activeDotFor,
-  dimmedBarShape,
   emphasizedTick,
   lastPointDot,
   monthFullName,
@@ -69,11 +66,6 @@ const trendChartConfig = {
   requests: { label: "Solicitudes", color: CHART_COLORS.brand },
   orders: { label: "OC emitidas", color: CHART_COLORS.blue },
   receipts: { label: "Recepciones", color: CHART_COLORS.neutral },
-} satisfies ChartConfig
-
-const billingFlowConfig = {
-  invoiced: { label: "Facturado", color: CHART_COLORS.neutral },
-  collected: { label: "Cobrado", color: CHART_COLORS.brand },
 } satisfies ChartConfig
 
 // ── 1. Tendencia operativa ───────────────────────────────────────────────────
@@ -248,201 +240,6 @@ export function OperationalTrendChart({ data }: { data: TrendPoint[] }) {
         </ComposedChart>
       </ChartContainer>
       <InteractiveLegend entries={legend} focus={focus} label="Series de la tendencia operativa" />
-    </ChartFrame>
-  )
-}
-
-// ── 12. Facturado y cobrado ──────────────────────────────────────────────────
-
-/**
- * "2026-07" → "Jul 2026". El eje mostraba la clave cruda del período, mientras
- * el resto de los gráficos del tablero rotula los meses en español (INI,
- * auditoría 2026-10-05). Una clave que no calza se deja tal cual.
- */
-export function billingPeriodLabel(period: string): string {
-  const match = /^(\d{4})-(\d{2})$/.exec(period)
-  const label = match ? MONTH_LABELS[Number(match[2]) - 1] : undefined
-  return match && label ? `${label} ${match[1]}` : period
-}
-
-/** Hasta esta cantidad de períodos se dibujan columnas pareadas; sobre ella, líneas. */
-const BILLING_MAX_BARS = 6
-
-type BillingRow = { period: string; invoiced: number; collected: number }
-
-/** "julio" o, si la ventana cruza de año, "julio de 2025". */
-function periodName(label: string, withYear: boolean): string {
-  const year = /\b(\d{4})\b/.exec(label)?.[1]
-  return withYear && year ? `${monthFullName(label)} de ${year}` : monthFullName(label)
-}
-
-/**
- * Facturado contra cobrado, mes a mes.
- *
- * Las dos series son dinero en la misma moneda y la misma escala, así que
- * comparten eje (A5b sólo prohíbe mezclar unidades distintas). La brecha entre
- * ambas **es** la lectura: lo emitido que todavía no entra en caja.
- *
- * Con pocos períodos las columnas pareadas se leen mejor; con muchos, las líneas
- * siguen siendo legibles. Cobrado se agrupa por mes de emisión de la factura
- * (`paidAmount` de las facturas emitidas ese mes), así que "% cobrado" tiene
- * sentido período a período.
- */
-export function BillingFlowChart({ data: rawData }: {
-  data: Array<{ period: string; invoiced: number; collected: number }>
-}) {
-  const motion = useChartMotion()
-  const tooltip = useTooltipProps()
-  const active = useActiveIndex()
-  const focus = useSeriesFocus()
-  const uid = useChartUid()
-
-  const data = React.useMemo<BillingRow[]>(
-    () => rawData.map((row) => ({ ...row, period: billingPeriodLabel(row.period) })),
-    [rawData],
-  )
-  // Todo-en-cero también se oculta: una rejilla vacía con conclusión absurda
-  // ("el mayor facturado se registró en Mar: $0") es peor que nada (I-03).
-  if (!data.some((row) => row.invoiced + row.collected > 0)) return null
-
-  const asBars = data.length <= BILLING_MAX_BARS
-  const lastIndex = data.length - 1
-  const hovering = active.activeIndex !== null
-  const focusedRow = hovering ? data[Math.min(active.activeIndex ?? 0, lastIndex)] : undefined
-
-  const totals = data.reduce((sum, row) => ({ invoiced: sum.invoiced + row.invoiced, collected: sum.collected + row.collected }), { invoiced: 0, collected: 0 })
-  const shown = focusedRow ?? totals
-
-  const years = new Set(data.map((row) => /\b(\d{4})\b/.exec(row.period)?.[1]).filter(Boolean))
-  const crossesYears = years.size > 1
-  const first = data[0]
-  const last = data[lastIndex]
-  const windowText = !first || !last || data.length === 1
-    ? `en ${periodName(first?.period ?? "", crossesYears)}`
-    : `entre ${periodName(first.period, crossesYears)} y ${periodName(last.period, crossesYears)}`
-  const scope = focusedRow ? `en ${periodName(focusedRow.period, crossesYears)}` : windowText
-
-  const invoicedGradient = `billing-invoiced-${uid}`
-  const collectedGradient = `billing-collected-${uid}`
-  const glowId = `billing-glow-${uid}`
-
-  const legend: LegendEntry[] = [
-    { key: "invoiced", label: "Facturado", color: CHART_COLORS.neutral, swatch: asBars ? "box" : "line", value: focusedRow ? formatCompactCLP(focusedRow.invoiced) : undefined },
-    { key: "collected", label: "Cobrado", color: CHART_COLORS.brand, swatch: asBars ? "box" : "line", value: focusedRow ? formatCompactCLP(focusedRow.collected) : undefined },
-  ]
-
-  return (
-    <ChartFrame
-      title="Facturado y cobrado"
-      description="Emisión contra pagos confirmados, por mes"
-      headline={
-        <>
-          <ChartHeadlineValue>{formatCompactCLP(shown.collected)}</ChartHeadlineValue>
-          <ChartHeadlineCaption>cobrado de {formatCompactCLP(shown.invoiced)} facturado {scope}</ChartHeadlineCaption>
-        </>
-      }
-    >
-      <ChartContainer
-        config={billingFlowConfig}
-        className={`h-56 w-full ${SERIES_FADE_CLASS}`}
-        data-chart-kind={asBars ? "bars" : "lines"}
-      >
-        <ComposedChart
-          accessibilityLayer
-          aria-label="Facturado y cobrado"
-          data={data}
-          margin={{ left: 0, right: 12, top: 12, bottom: 0 }}
-          barCategoryGap="28%"
-          barGap={8}
-        >
-          <defs>
-            <linearGradient id={invoicedGradient} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={CHART_COLORS.neutral} stopOpacity={1} />
-              <stop offset="100%" stopColor={CHART_COLORS.neutral} stopOpacity={0.5} />
-            </linearGradient>
-            <linearGradient id={collectedGradient} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={CHART_COLORS.brand} stopOpacity={1} />
-              <stop offset="100%" stopColor={CHART_COLORS.brand} stopOpacity={0.5} />
-            </linearGradient>
-            <GlowFilter id={glowId} />
-          </defs>
-          <CartesianGrid vertical={false} strokeDasharray="3 3" />
-          <XAxis dataKey="period" tickLine={false} axisLine={false} tickMargin={8} fontSize={11} tick={emphasizedTick(focusedRow?.period ?? last?.period)} />
-          <ChartActiveSync labels={data.map((row) => row.period)} onIndex={active.setActiveIndex} />
-          <YAxis tickLine={false} axisLine={false} width={56} fontSize={11} tickFormatter={formatCompactCLP} />
-          <ChartTooltip
-            {...tooltip}
-            cursor={asBars ? <ColumnHoverCursor /> : tooltip.cursor}
-            content={
-              <ChartTooltipCard
-                valueFormat="clp"
-                labelFormatter={(label) => monthTitle(String(label))}
-                footer={(payload) => {
-                  const row = payload[0]?.payload
-                  const invoiced = Number(row?.invoiced)
-                  const collected = Number(row?.collected)
-                  if (!Number.isFinite(invoiced) || !Number.isFinite(collected)) return null
-                  if (invoiced <= 0) return "Sin facturación en el mes"
-                  return `${formatPercent((collected / invoiced) * 100)} de lo facturado está cobrado`
-                }}
-              />
-            }
-          />
-          {asBars ? (
-            <>
-              <Bar
-                dataKey="invoiced"
-                name="Facturado"
-                fill={`url(#${invoicedGradient})`}
-                radius={[6, 6, 0, 0]}
-                maxBarSize={44}
-                minPointSize={3}
-                shape={dimmedBarShape("invoiced", active.activeIndex, focus.focusedKey)}
-                {...motion}
-              />
-              <Bar
-                dataKey="collected"
-                name="Cobrado"
-                fill={`url(#${collectedGradient})`}
-                radius={[6, 6, 0, 0]}
-                maxBarSize={44}
-                minPointSize={3}
-                shape={dimmedBarShape("collected", active.activeIndex, focus.focusedKey)}
-                {...motion}
-              />
-            </>
-          ) : (
-            <>
-              <Line
-                dataKey="invoiced"
-                name="Facturado"
-                type="monotone"
-                stroke={CHART_COLORS.neutral}
-                strokeWidth={1.7}
-                strokeLinecap="round"
-                strokeOpacity={seriesOpacity("invoiced", focus.focusedKey)}
-                dot={lastPointDot(CHART_COLORS.neutral, lastIndex, hovering, 3)}
-                activeDot={activeDotFor(CHART_COLORS.neutral, 4)}
-                {...motion}
-              />
-              <Line
-                dataKey="collected"
-                name="Cobrado"
-                type="monotone"
-                stroke={CHART_COLORS.brand}
-                strokeWidth={2.5}
-                strokeLinecap="round"
-                strokeOpacity={seriesOpacity("collected", focus.focusedKey)}
-                filter={`url(#${glowId})`}
-                dot={lastPointDot(CHART_COLORS.brand, lastIndex, hovering, 4)}
-                activeDot={activeDotFor(CHART_COLORS.brand, 5.5)}
-                {...motion}
-              />
-            </>
-          )}
-        </ComposedChart>
-      </ChartContainer>
-      <InteractiveLegend entries={legend} focus={focus} label="Series de facturado y cobrado" />
     </ChartFrame>
   )
 }

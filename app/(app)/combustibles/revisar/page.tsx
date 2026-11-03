@@ -4,10 +4,12 @@ import { redirect } from "next/navigation"
 import { Clock } from "@phosphor-icons/react/dist/ssr"
 import { FuelBreadcrumbs } from "@/components/combustibles/fuel-breadcrumbs"
 import { FuelHeaderActions } from "@/components/combustibles/fuel-header-actions"
+import { CaseWeeksChart } from "@/components/combustibles/inbox/case-weeks-chart-lazy"
 import { InboxDetailSheet } from "@/components/combustibles/inbox/inbox-detail-sheet"
 import { InboxEmptyState } from "@/components/combustibles/inbox/inbox-empty-state"
 import { InboxFilterBar } from "@/components/combustibles/inbox/inbox-filter-bar"
 import { InboxList } from "@/components/combustibles/inbox/inbox-list"
+import { ChartSection } from "@/components/charts/chart-section"
 import { Callout } from "@/components/ui/callout"
 import { DegradedDataBanner } from "@/components/ui/degraded-data-banner"
 import type { ActiveFilterChip } from "@/components/ui/filter-toolbar"
@@ -19,13 +21,13 @@ import { SegmentedControl } from "@/components/ui/segmented-control"
 import { ServerPagination } from "@/components/ui/server-pagination"
 import { settle } from "@/lib/async-settle"
 import { can, requirePermission } from "@/lib/auth/can"
-import { getAnomalyDistribution } from "@/lib/combustibles/anomaly-cases"
 import {
   ANOMALY_SEVERITY_LABELS,
   ANOMALY_STATUS_LABELS,
   isOpenAnomalyCaseStatus,
-  OPEN_ANOMALY_CASE_STATUSES,
 } from "@/lib/combustibles/anomaly-labels"
+import { anomalyWeekTable, summarizeAnomalyWeeks, type AnomalyWeek } from "@/lib/combustibles/inbox/case-weeks"
+import { caseRuleLabel, parseCaseRuleParam, summarizeCaseRules } from "@/lib/combustibles/inbox/case-rules"
 import {
   FUEL_INBOX_DECISION_LABELS,
   FUEL_INBOX_DECISIONS,
@@ -35,19 +37,20 @@ import {
 import {
   countFuelInboxDecided,
   getFuelInbox,
+  getFuelInboxCaseRules,
+  getFuelInboxCaseWeeks,
   getFuelInboxItem,
   getLastDetectionRun,
   listInboxWorksites,
   summarizeFuelInbox,
 } from "@/lib/combustibles/inbox/queries"
-import { FUEL_INBOX_KIND_LABELS, FUEL_INBOX_KINDS, type FuelInboxKind, type FuelInboxPage, type FuelInboxSummary } from "@/lib/combustibles/inbox/types"
+import { FUEL_INBOX_KIND_LABELS, FUEL_INBOX_KINDS, type FuelInboxCaseRule, type FuelInboxKind, type FuelInboxPage, type FuelInboxSummary } from "@/lib/combustibles/inbox/types"
 import { resolveFuelPeriodForPage } from "@/lib/combustibles/period/server"
 import { FUEL_CARRY_PARAMS } from "@/lib/combustibles/period/types"
 import { FUEL_PATHS } from "@/lib/combustibles/routes"
 import { revisarNavItems } from "@/lib/combustibles/section-nav"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { formatDateTime, parsePageParam, todayInChile } from "@/lib/utils"
-import { AnomalyDistributionChart } from "../anomalias/anomaly-charts-lazy"
 import { AnomalyEmptyState } from "../anomalias/anomaly-empty-state"
 
 export const metadata: Metadata = { title: "Por revisar" }
@@ -58,7 +61,8 @@ const PAGE_SIZE = 50
 const EMPTY_PAGE: FuelInboxPage = { rows: [], total: 0, page: 1, pageSize: PAGE_SIZE }
 const EMPTY_SUMMARY: FuelInboxSummary = { total: null, byKind: { carga: null, caso: null, patente: null, pedido: null }, oldestWaitingSince: null }
 const NO_COUNTS: Record<FuelInboxKind, number | null> = { carga: null, caso: null, patente: null, pedido: null }
-const NO_DISTRIBUTION = { total: 0, byStatus: [], bySeverity: [], byRuleCode: [] }
+const NO_CASE_RULES: FuelInboxCaseRule[] = []
+const NO_CASE_WEEKS: AnomalyWeek[] = []
 const SEVERITIES = ["low", "medium", "high", "critical"] as const
 /** `?ref=<fuente>:<id>` (de «Abrir el caso relacionado» en Cargas) → tipo de entidad que referencian los casos. */
 const SOURCE_TO_REFERENCE_TYPE: Record<string, string> = {
@@ -96,6 +100,7 @@ export default async function PorRevisarPage({ searchParams }: { searchParams: P
   // barra de filtros; el registro de origen llega de enlaces (la ficha de una carga, «Anomalías»).
   const caseOnly = kind === "caso"
   const caseSeverity = caseOnly ? oneOf(first(raw.severidad), SEVERITIES) : undefined
+  const caseRuleCode = caseOnly ? parseCaseRuleParam(first(raw.regla)) : undefined
   const caseStateParam = first(raw.estado)
   const caseState = caseOnly && view === "pendientes" && isOpenAnomalyCaseStatus(caseStateParam) ? caseStateParam : undefined
   const [refSource, ...refIdParts] = (caseOnly ? first(raw.ref) ?? "" : "").split(":")
@@ -105,7 +110,7 @@ export default async function PorRevisarPage({ searchParams }: { searchParams: P
 
   const filters: FuelInboxQueryFilters = {
     view, kind, worksiteId, decision, page: parsePageParam(raw.pagina), pageSize: PAGE_SIZE,
-    caseSeverity, caseState, caseReference,
+    caseSeverity, caseRuleCode, caseState, caseReference,
   }
 
   // Una consulta que cae a su fallback no puede leerse como «no hay nada»: se anota y el banner lo dice.
@@ -118,17 +123,17 @@ export default async function PorRevisarPage({ searchParams }: { searchParams: P
   const canResolveCases = can(session, "combustibles:resolve_anomalies")
   const canManageRules = can(session, "combustibles:manage_anomaly_rules")
 
-  const [inbox, summary, decidedCounts, worksites, lastRun, detail, distribution] = await Promise.all([
+  // Los gráficos de casos sólo se piden donde pueden mostrarse: pendientes, en «Todo» o en «Casos».
+  const showCaseCharts = view === "pendientes" && (kind === undefined || kind === "caso")
+  const [inbox, summary, decidedCounts, worksites, lastRun, detail, caseRules, caseWeeks] = await Promise.all([
     tracked(getFuelInbox(session, period, filters), EMPTY_PAGE, "la lista"),
     tracked(summarizeFuelInbox(session, period, { worksiteId }), EMPTY_SUMMARY, "los conteos"),
     view === "decididas" ? tracked(countFuelInboxDecided(session, period, filters), NO_COUNTS, "los conteos de lo decidido") : Promise.resolve(null),
     tracked(listInboxWorksites(session), [] as { id: string; name: string }[], "las faenas"),
     tracked(getLastDetectionRun(), null, "la última revisión automática"),
     itemKey ? tracked(getFuelInboxItem(session, itemKey), null, "el detalle") : Promise.resolve(null),
-    // El reparto de los casos sólo se pide donde puede mostrarse.
-    view === "pendientes" && (kind === undefined || kind === "caso")
-      ? tracked(getAnomalyDistribution({ worksiteId, status: [...OPEN_ANOMALY_CASE_STATUSES] }, session), NO_DISTRIBUTION, "el reparto de casos")
-      : Promise.resolve(null),
+    showCaseCharts ? tracked(getFuelInboxCaseRules(session, period, { worksiteId }), NO_CASE_RULES, "los casos por regla") : Promise.resolve(NO_CASE_RULES),
+    showCaseCharts ? tracked(getFuelInboxCaseWeeks(session, { worksiteId }), NO_CASE_WEEKS, "los casos por semana") : Promise.resolve(NO_CASE_WEEKS),
   ])
 
   const today = todayInChile()
@@ -150,7 +155,7 @@ export default async function PorRevisarPage({ searchParams }: { searchParams: P
     const query = params.toString()
     return query ? `${FUEL_PATHS.revisar}?${query}` : FUEL_PATHS.revisar
   }
-  const kindHref = (next: FuelInboxKind | undefined) => hrefWith({ tipo: next, decision: undefined, severidad: undefined, estado: undefined, ref: undefined })
+  const kindHref = (next: FuelInboxKind | undefined) => hrefWith({ tipo: next, decision: undefined, severidad: undefined, regla: undefined, estado: undefined, ref: undefined })
 
   const kindItems = [
     { key: "todo", label: `Todo${totalCount !== null ? ` · ${totalCount}` : ""}`, active: kind === undefined, href: kindHref(undefined) },
@@ -166,6 +171,10 @@ export default async function PorRevisarPage({ searchParams }: { searchParams: P
   const worksiteName = worksiteId ? worksites.find((worksite) => worksite.id === worksiteId)?.name : undefined
   if (worksiteId) chips.push({ key: "faena", label: "Faena", value: worksiteId, displayValue: worksiteName ?? "Otra faena" })
   if (caseSeverity) chips.push({ key: "severidad", label: "Gravedad", value: caseSeverity, displayValue: ANOMALY_SEVERITY_LABELS[caseSeverity] })
+  if (caseRuleCode) {
+    const rule = caseRules.find((candidate) => candidate.ruleCode === caseRuleCode)
+    chips.push({ key: "regla", label: "Regla", value: caseRuleCode, displayValue: rule ? caseRuleLabel(rule) : caseRuleCode })
+  }
   if (caseState) chips.push({ key: "estado", label: "Estado", value: caseState, displayValue: ANOMALY_STATUS_LABELS[caseState] })
   if (caseReference) chips.push({ key: "ref", label: "Carga", value: first(raw.ref) ?? "", displayValue: "Sólo los casos de la carga elegida" })
   const filtered = chips.length > 0
@@ -183,8 +192,13 @@ export default async function PorRevisarPage({ searchParams }: { searchParams: P
         : `${summary.total === 1 ? "1 cosa espera" : `${summary.total} cosas esperan`} a una persona.${oldestDays !== null && oldestDays > 0 ? ` La más antigua espera desde hace ${oldestDays === 1 ? "1 día" : `${oldestDays} días`}.` : ""}`
     : `Lo que se decidió ${period.inLabel}. Desde aquí se puede deshacer una decisión.`
 
-  const kindShares = FUEL_INBOX_KINDS.map((value) => ({ value, n: summary.byKind[value] ?? 0 }))
-  const showDistribution = view === "pendientes" && kindShares.some((entry) => entry.n > 0)
+  // Una sola representación por dimensión (A5): el conteo por tipo vive en las pestañas de arriba, no se repite en un gráfico.
+  // Una consulta caída no se dibuja como un vacío: el banner ya dijo que falló.
+  const rulesFailed = degraded.includes("los casos por regla")
+  const weeksFailed = degraded.includes("los casos por semana")
+  const caseWeeksSummary = weeksFailed ? null : summarizeAnomalyWeeks(caseWeeks)
+  const caseRulesSummary = rulesFailed ? null : summarizeCaseRules(caseRules)
+  const showCaseSection = showCaseCharts && (caseRulesSummary !== null || caseWeeksSummary !== null)
 
   return (
     <PageContainer>
@@ -194,7 +208,7 @@ export default async function PorRevisarPage({ searchParams }: { searchParams: P
         breadcrumb={<FuelBreadcrumbs items={[{ label: "Por revisar" }]} />}
         actions={<FuelHeaderActions period={period} />}
       />
-      <DegradedDataBanner degraded={degraded} total={7} />
+      <DegradedDataBanner degraded={degraded} total={8} />
       <SectionNav items={revisarNavItems({ pendientes: summary.total })} activeKey={view} ariaLabel="Por revisar" carryParams={FUEL_CARRY_PARAMS} />
 
       <p className="mb-4 text-sm font-medium text-[var(--color-text)]">{answer}</p>
@@ -234,9 +248,9 @@ export default async function PorRevisarPage({ searchParams }: { searchParams: P
             view={view}
             kind={kind}
             filtered={filtered}
-            clearHref={hrefWith({ faena: undefined, severidad: undefined, estado: undefined, ref: undefined })}
+            clearHref={hrefWith({ faena: undefined, severidad: undefined, regla: undefined, estado: undefined, ref: undefined })}
             allHref={kindHref(undefined)}
-            otherViewHref={hrefWith({ vista: view === "pendientes" ? "decididas" : undefined, tipo: undefined, decision: undefined, severidad: undefined, estado: undefined, ref: undefined })}
+            otherViewHref={hrefWith({ vista: view === "pendientes" ? "decididas" : undefined, tipo: undefined, decision: undefined, severidad: undefined, regla: undefined, estado: undefined, ref: undefined })}
             cargasHref={FUEL_PATHS.cargas}
           />
         )
@@ -247,20 +261,46 @@ export default async function PorRevisarPage({ searchParams }: { searchParams: P
         </>
       )}
 
-      {showDistribution ? (
+      {showCaseSection ? (
         <details className="mt-6 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
-          <summary className="cursor-pointer text-sm font-medium text-[var(--color-text)]">Cómo se reparte lo pendiente</summary>
-          <div className="mt-4 space-y-6">
-            <div className="max-w-xl">
-              <RankedList
-                ariaLabel="Pendientes por tipo"
-                format="count"
-                order="desc"
-                mode="share"
-                items={kindShares.map((entry) => ({ key: entry.value, label: FUEL_INBOX_KIND_LABELS[entry.value], value: entry.n, href: kindHref(entry.value) }))}
-              />
-            </div>
-            {distribution && distribution.total > 0 ? <AnomalyDistributionChart distribution={distribution} /> : null}
+          <summary className="cursor-pointer text-sm font-medium text-[var(--color-text)]">Casos por semana y por regla</summary>
+          <div className="mt-4 grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+            {weeksFailed ? null : (
+              <ChartSection
+                bare
+                title="Casos detectados por semana"
+                summary={caseWeeksSummary}
+                data={caseWeeksSummary ? anomalyWeekTable(caseWeeks) : undefined}
+                empty={caseWeeksSummary ? null : {
+                  label: `Ningún caso en las últimas ${caseWeeks.length} semanas`,
+                  hint: "Cada semana que la revisión automática detecte casos aparecerá aquí, por gravedad.",
+                  ...(canManageRules ? { ctaLabel: "Cómo se detecta cada cosa", ctaHref: FUEL_PATHS.ajustesReglas } : {}),
+                }}
+              >
+                <CaseWeeksChart weeks={caseWeeks} />
+              </ChartSection>
+            )}
+            {rulesFailed ? null : (
+              <ChartSection
+                bare
+                title="Pendientes por regla"
+                summary={caseRulesSummary}
+                empty={caseRulesSummary ? null : { label: "No hay casos pendientes", hint: "Cuando una regla deje un caso esperando a una persona, aparecerá aquí con su cifra." }}
+              >
+                <RankedList
+                  ariaLabel="Casos pendientes por regla"
+                  format="count"
+                  order="desc"
+                  mode="share"
+                  items={caseRules.map((rule) => ({
+                    key: rule.ruleCode,
+                    label: caseRuleLabel(rule),
+                    value: rule.count,
+                    href: hrefWith({ tipo: "caso", regla: rule.ruleCode, decision: undefined, severidad: undefined, estado: undefined, ref: undefined }),
+                  }))}
+                />
+              </ChartSection>
+            )}
           </div>
         </details>
       ) : null}

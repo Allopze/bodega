@@ -53,6 +53,22 @@
   --color-info-line:      oklch(0.892 0.020 240);
   --color-info-ink:       oklch(0.330 0.075 240);
 
+  /* ── Gráficos: series categóricas y referencia ──
+     Sólo para distinguir categorías que no tienen semántica (faenas, módulos,
+     proveedores). Un estado (cumple, vencido, pendiente) usa los semánticos
+     (success / warning / danger / signal), nunca estos. Todos ≥3:1 sobre
+     surface y surface-2 (WCAG 1.4.11); lo valida design-tokens-contrast.test.ts.
+     Orden de asignación = orden numérico; más de 6 series → resaltar una y el
+     resto en --color-chart-reference, o small multiples. */
+  --color-chart-1:        oklch(0.415 0.098 166);  /* esmeralda (= primary)  */
+  --color-chart-2:        oklch(0.500 0.090 245);  /* azul tinta              */
+  --color-chart-3:        oklch(0.580 0.115 68);   /* ocre                    */
+  --color-chart-4:        oklch(0.480 0.095 330);  /* ciruela                 */
+  --color-chart-5:        oklch(0.545 0.075 200);  /* verde azulado           */
+  --color-chart-6:        oklch(0.400 0.020 250);  /* pizarra (oscuro: se aparta del azul por luminancia y de la referencia) */
+  /* Serie de referencia (plan, meta, período anterior): la que se compara. */
+  --color-chart-reference: oklch(0.640 0.010 250);
+
   --color-success:        oklch(0.415 0.098 166);  /* alineado a verde esmeralda */
   --color-success-tint:   oklch(0.945 0.035 166);
   --color-success-line:   oklch(0.850 0.060 166);

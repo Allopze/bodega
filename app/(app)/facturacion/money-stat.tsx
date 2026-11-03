@@ -1,5 +1,6 @@
 import Link from "next/link"
 import { ArrowRight, Info } from "@phosphor-icons/react/dist/ssr"
+import { Delta, type DeltaPolarity } from "@/components/ui/delta"
 import { formatMoney, type MoneyAmount } from "@/lib/services/billing/money"
 import { cn } from "@/lib/utils"
 
@@ -17,6 +18,9 @@ import { cn } from "@/lib/utils"
  *    `e2e/densidad-kpi.spec.ts` para contar indicadores por pantalla. Sin él,
  *    una fila de cuatro `MoneyStat` era invisible para el tope de densidad —y
  *    la sección Finanzas del tablero está hecha de ellos.
+ * 5. **Compara sin inventar.** `comparison` trae una variación por moneda; con
+ *    `null` (sin mes anterior comparable) esa moneda no muestra ninguna, y sin
+ *    `comparison` el tile queda como siempre.
  */
 export function MoneyStat({
   label,
@@ -27,6 +31,7 @@ export function MoneyStat({
   href,
   surface = "card",
   emptyAction,
+  comparison,
 }: {
   label: string
   amounts: MoneyAmount[]
@@ -41,6 +46,12 @@ export function MoneyStat({
    * destino es `href`, así que sólo tiene efecto en un tile enlazado.
    */
   emptyAction?: { message: string; label: string }
+  /**
+   * Variación porcentual por moneda contra el período anterior (p. ej.
+   * `{ label: "vs. sep", changes: { CLP: 12.5 } }`). `polarity` dice si subir es
+   * bueno; el defecto, sí.
+   */
+  comparison?: { label: string; polarity?: DeltaPolarity; changes: Record<string, number | null> }
 }) {
   const content = (
     <>
@@ -69,11 +80,22 @@ export function MoneyStat({
               className={cn(
                 "text-xl font-semibold tabular-nums",
                 tone === "danger" ? "text-[var(--color-danger-ink)]" : "text-[var(--color-text)]",
+                comparison && "flex flex-wrap items-baseline gap-x-2 gap-y-0.5",
               )}
             >
-              {formatMoney(money.amount, money.currency)}
-              {amounts.length > 1 && (
-                <span className="ml-1 text-xs font-normal text-[var(--color-text-muted)]">{money.currency}</span>
+              <span>
+                {formatMoney(money.amount, money.currency)}
+                {amounts.length > 1 && (
+                  <span className="ml-1 text-xs font-normal text-[var(--color-text-muted)]">{money.currency}</span>
+                )}
+              </span>
+              {comparison && (
+                <Delta
+                  value={comparison.changes[money.currency] ?? null}
+                  format="percent"
+                  polarity={comparison.polarity ?? "up-good"}
+                  comparisonLabel={comparison.label}
+                />
               )}
             </p>
           ))

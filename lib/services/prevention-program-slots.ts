@@ -57,7 +57,7 @@ import {
 import { isTrainingCatalogYear } from "@/lib/prevention/training-occurrences-catalog"
 import { MINSAL_PROTOCOLS } from "@/lib/prevention/minsal-protocols"
 import { effectiveActivationFor, pdtpActivationPeriod, type PdtpPeriod } from "./pdtp/period"
-import { loadWorksiteAddedAt } from "./pdtp/helpers"
+import { loadWorksiteAddedAt, loadWorksiteAddedAtMap } from "./pdtp/helpers"
 import { listPdtpProgramOperatingWorksiteIds } from "./pdtp/worksites"
 import { legacyPdtpActivityNumberForCatalogId } from "./pdtp-adapters/catalog-activities-2026"
 import { ensurePreventionTrainingOccurrencesForWorksiteTx } from "./prevention-training-occurrences"
@@ -535,4 +535,27 @@ export async function resolveProgramActivationPeriod(worksiteId: string | undefi
     ? effectiveActivationFor(program.activatedAt, await loadWorksiteAddedAt(program.id, worksiteId))
     : program.activatedAt
   return pdtpActivationPeriod(cutoff ?? null)
+}
+
+/**
+ * `resolveProgramActivationPeriod` para varias faenas de una vez: la
+ * activación de CADA una (programa y fecha de incorporación, gana la más
+ * tardía) en dos consultas en vez de dos por faena. La usa el calendario de
+ * cumplimiento, que mide todas las faenas en una sola pantalla.
+ *
+ * Sin programa activo del año cada faena queda en `null`, igual que la versión
+ * de una sola faena: nada se exige antes de que el programa exista.
+ */
+export async function resolveProgramActivationPeriods(
+  worksiteIds: readonly string[],
+  year: number,
+): Promise<Map<string, PdtpPeriod | null>> {
+  const unique = [...new Set(worksiteIds)]
+  const program = await activeProgramOfYear(db, year)
+  if (!program || unique.length === 0) return new Map(unique.map((id) => [id, null]))
+  const addedAt = await loadWorksiteAddedAtMap(program.id, unique)
+  return new Map(unique.map((id) => [
+    id,
+    pdtpActivationPeriod(effectiveActivationFor(program.activatedAt, addedAt.get(id) ?? null) ?? null),
+  ]))
 }

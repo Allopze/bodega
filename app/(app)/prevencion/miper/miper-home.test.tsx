@@ -25,7 +25,7 @@ function row(overrides: Partial<MiperPortfolioRow>): MiperPortfolioRow {
     id: "ws-a", worksiteId: "ws-a", worksiteName: "Faena A", worksiteActive: true,
     matrix: { id: "m-a", period: 2026, versionNumber: 1, label: "Vigente · v1", isLegacy: false }, vigente: null,
     status: "vigente", stateLabel: "Vigente · v1", headcount: 12, headcountSource: "ficha", updatedAt: "2026-09-30T12:00:00.000Z",
-    completeness: { complete: 3, total: 4 }, importantCount: 1, intolerableCount: 1, criticalWithoutControl: 1,
+    completeness: { complete: 3, total: 4 }, classificationCounts: { tolerable: 5, moderate: 3, important: 2, intolerable: 1 }, criticalWithoutControl: 1,
     requiresMyAction: false, myActions: [], submittedByName: null, programProgress: progress,
     ...overrides,
   }
@@ -39,7 +39,7 @@ const ROWS = [
   }),
   row({
     id: "ws-c", worksiteId: "ws-c", worksiteName: "Faena C", matrix: null, status: "sin_miper", stateLabel: "Sin MIPER", headcount: 3,
-    headcountSource: "trabajadores", updatedAt: null, completeness: null, importantCount: 0, intolerableCount: 0, criticalWithoutControl: 0, programProgress: null,
+    headcountSource: "trabajadores", updatedAt: null, completeness: null, classificationCounts: { tolerable: 0, moderate: 0, important: 0, intolerable: 0 }, criticalWithoutControl: 0, programProgress: null,
   }),
 ]
 const CREATION = [{ id: "ws-c", name: "Faena C", vigenteId: null, vigentePeriod: null, vigenteIsLegacy: false, vigenteHasUnsentChanges: false }]
@@ -290,9 +290,9 @@ describe("MiperHome — filas", () => {
 })
 
 
-it("la portada desktop prioriza cuatro columnas y abrir una faena lleva a Inicio", () => {
+it("la portada desktop tiene cinco columnas, con «Riesgos» junto al estado, y abrir una faena lleva a Inicio", () => {
   show()
-  expect(tabla().getAllByRole("columnheader").map((cell) => cell.textContent?.trim())).toEqual(["Faena", "Estado", "Trabajo pendiente", "Acción"])
+  expect(tabla().getAllByRole("columnheader").map((cell) => cell.textContent?.trim())).toEqual(["Faena", "Estado", "Riesgos", "Trabajo pendiente", "Acción"])
   expect(tabla().getByRole("link", { name: "Faena A" })).toHaveAttribute("href", "/prevencion/miper/m-a?tab=resumen")
   expect(tabla().getByRole("link", { name: "Revisar · Faena B · 2026" })).toHaveAttribute("href", "/prevencion/miper/m-b?tab=revision")
 })
@@ -302,4 +302,38 @@ it("la creación por Excel conserva la faena elegida en la portada", () => {
   fireEvent.click(tabla().getByRole("button", { name: "Crear matriz" }))
   fireEvent.click(screen.getByRole("button", { name: /^Importar desde Excel/ }))
   expect(screen.getByRole("combobox", { name: "Faena" })).toHaveTextContent("Faena C")
+})
+
+describe("MiperHome — barra de riesgos por faena (CHART-007)", () => {
+  it("cada faena con MIPER trae las cuatro clasificaciones, de Tolerable a Intolerable, con su cifra en texto", () => {
+    show()
+    const lista = tabla().getByRole("list", { name: "Faena A: riesgos por clasificación" })
+    expect(within(lista).getAllByRole("listitem").map((item) => item.textContent)).toEqual(["Tolerable: 5", "Moderado: 3", "Importante: 2", "Intolerable: 1"])
+  })
+
+  it("la faena sin MIPER no dibuja una barra: no hay nada que clasificar", () => {
+    show()
+    expect(tabla().queryByRole("list", { name: /Faena C: riesgos/ })).toBeNull()
+  })
+
+  it("una MIPER sin riesgos evaluados lo dice en vez de dibujar una barra vacía", () => {
+    show("", [row({ classificationCounts: { tolerable: 0, moderate: 0, important: 0, intolerable: 0 } })])
+    expect(tabla().getByText("Sin riesgos evaluados")).toBeVisible()
+  })
+
+  it("la MIPER de la metodología anterior no tiene P × C: dice «Metodología anterior»", () => {
+    show("", [row({ matrix: { id: "m-a", period: 2024, versionNumber: null, label: "Vigente", isLegacy: true }, classificationCounts: { tolerable: 0, moderate: 0, important: 0, intolerable: 0 } })])
+    expect(tabla().queryByRole("list", { name: /riesgos por clasificación/ })).toBeNull()
+    expect(tabla().getAllByText("Metodología anterior").length).toBeGreaterThan(0)
+  })
+
+  it("la leyenda de las cuatro clasificaciones se pone una vez, sobre la tabla (no una por fila)", () => {
+    show()
+    expect(screen.getAllByRole("list", { name: "Clasificación del riesgo" })).toHaveLength(1)
+  })
+
+  it("sin ninguna barra que explicar, tampoco hay leyenda", () => {
+    show("", [ROWS[2]!])
+    expect(screen.queryByRole("list", { name: "Clasificación del riesgo" })).toBeNull()
+  })
 })

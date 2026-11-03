@@ -3,7 +3,7 @@
 import type { ComponentProps } from "react"
 import { fireEvent, render, screen, within } from "@testing-library/react"
 import { describe, expect, it } from "vitest"
-import { DebtAgingChart, type DebtAgingBucket } from "./debt-aging-chart"
+import { DebtAgingChart, type DebtAgingBucket } from "@/components/charts/debt-aging-chart"
 
 /** Los cinco tramos de `AGING_BUCKETS`, en el orden de los días. */
 const ORDEN = ["No vencida", "1–30 días", "31–60 días", "61–90 días", "Más de 90 días"]

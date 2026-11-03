@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from "@testing-library/react"
+import { fireEvent, render, screen, within } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { buildMatrixTree } from "@/lib/prevention/miper/matrix-tree"
 import type { MiperEntrySnapshot } from "@/lib/prevention/miper/snapshot"
@@ -36,6 +36,36 @@ afterEach(() => {
   sessionStorage.clear()
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
+})
+
+describe("ResumenPanel — dónde se concentra el riesgo (CHART-007)", () => {
+  it("dibuja el mapa de calor con P y C de las filas, bajo las cuatro cifras, sin sumar un quinto tile", () => {
+    show()
+    const figure = screen.getByRole("figure", { name: "Dónde se concentra el riesgo" })
+    const grid = within(figure).getByRole("table", { name: /^Riesgo inherente/ })
+    // ROWS: P2×C4 (Importante), P1×C2 (Tolerable) y P4×C4 (Intolerable), una por celda.
+    expect(within(grid).getAllByRole("cell").map((cell) => cell.textContent)).toEqual([
+      "0 riesgos, Moderado", "0 riesgos, Importante", "1 riesgo, Intolerable",
+      "0 riesgos, Tolerable", "0 riesgos, Moderado", "1 riesgo, Importante",
+      "0 riesgos, Tolerable", "1 riesgo, Tolerable", "0 riesgos, Moderado",
+    ])
+    // Las cuatro cifras de A1 siguen siendo cuatro enlaces de la franja.
+    expect(screen.getAllByRole("link", { name: /^(Riesgos completos|Importantes e Intolerables|No controlados|Avance del plan)/ })).toHaveLength(4)
+  })
+
+  it("el residual que trae el servidor llega al mapa (y sólo cuenta las filas de esta MIPER)", () => {
+    nav.query = ""
+    render(<ResumenPanel matrixId="m1" rows={ROWS} tree={treeOf(ROWS, INCOMPLETE)} incomplete={INCOMPLETE} linkedControlIds={new Set()} programProgress={PROGRESS}
+      residualLevels={{ e1: "low", e3: "medium" }} editable onNewTask={vi.fn()} />)
+    expect(screen.getByRole("table", { name: /^Riesgo residual/ })).toBeDefined()
+    expect(screen.getByText("Residual registrado en 2 de 3 riesgos.")).toBeDefined()
+  })
+
+  it("sin residual, el vacío lo dice y ofrece los riesgos no controlados", () => {
+    show()
+    expect(screen.getByText("Aún no se registra el efecto de las medidas")).toBeDefined()
+    expect(screen.getByRole("link", { name: /Ver riesgos no controlados/ })).toHaveAttribute("href", `${P}?controlado=no`)
+  })
 })
 
 describe("ResumenPanel — cuatro cifras que llevan a su subconjunto (A1)", () => {

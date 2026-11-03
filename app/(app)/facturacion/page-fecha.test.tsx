@@ -23,6 +23,7 @@ const summary = vi.hoisted(() => ({
   averageDaysToPay: null,
   topClients: [],
   byWorksite: [],
+  monthly: [],
   generatedAt: "2026-03-06T02:30:00.000Z",
 }))
 

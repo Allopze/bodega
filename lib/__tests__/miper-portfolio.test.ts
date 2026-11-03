@@ -178,7 +178,18 @@ describe("portada de la MIPER por faena (listMiperPortfolio)", () => {
     const a = await rowOf(prevencion, "ws-a")
     expect(a.matrix).toMatchObject({ id: borradorA, period: 2027, isLegacy: false })
     expect(a.vigente).toMatchObject({ id: vigenteA, period: 2026, isLegacy: false })
-    expect(a).toMatchObject({ status: "borrador", stateLabel: "Borrador", importantCount: 1, intolerableCount: 2, headcountSource: "ficha" })
+    expect(a).toMatchObject({ status: "borrador", stateLabel: "Borrador", headcountSource: "ficha" })
+  })
+
+  it("trae las cuatro clasificaciones de la MIPER de la fila (no sólo Importantes e Intolerables)", async () => {
+    // A: el borrador 2027 tiene un Importante (P2×C4) y dos Intolerables (P4×C4); la vigente 2026 no cuenta.
+    expect((await rowOf(prevencion, "ws-a")).classificationCounts).toEqual({ tolerable: 0, moderate: 0, important: 1, intolerable: 2 })
+    // B: un Moderado (P2×C2) y un Intolerable (P4×C4).
+    expect((await rowOf(prevencion, "ws-b")).classificationCounts).toEqual({ tolerable: 0, moderate: 1, important: 0, intolerable: 1 })
+    // Sin MIPER, y la de la metodología anterior (sin P×C): todo en cero, no ausente.
+    const zeros = { tolerable: 0, moderate: 0, important: 0, intolerable: 0 }
+    expect((await rowOf(prevencion, "ws-c")).classificationCounts).toEqual(zeros)
+    expect((await rowOf(prevencion, "ws-d")).classificationCounts).toEqual(zeros)
   })
 
   it("«sin control» y el avance del programa son de la vigente", async () => {

@@ -143,6 +143,8 @@ export const pgliteTestFiles = [
   "lib/__tests__/prevention-training-occurrences-migration.test.ts",
   "lib/__tests__/prevention-training-occurrences-pglite.test.ts",
   "lib/__tests__/prevention-program-slots-pglite.test.ts",
+  // CHART-008: lectores del calendario de cumplimiento faena × mes (alcance, paridad con la lista, activación por faena).
+  "lib/__tests__/prevention-compliance-calendar-pglite.test.ts",
   "lib/__tests__/worksite-deactivation-pdtp.test.ts",
   "lib/__tests__/code-sequences.test.ts",
   "lib/__tests__/dispatch-guides.test.ts",
@@ -186,6 +188,8 @@ export const pgliteTestFiles = [
   "lib/__tests__/fuel-review-marks-request-pglite.test.ts",
   "lib/__tests__/fuel-past-load-pglite.test.ts",
   "lib/__tests__/fuel-inbox-pglite.test.ts",
+  // «Por revisar» › casos (CHART-023): casos por semana y gravedad en hora de Chile, pendientes por regla y filtro `?regla=`.
+  "lib/__tests__/fuel-inbox-case-charts-pglite.test.ts",
   "lib/__tests__/fuel-review-reopen-pglite.test.ts",
   "lib/__tests__/equipment-file-pglite.test.ts",
   // Panel operacional: agregado batch de combustible por activo (litros,
@@ -441,4 +445,8 @@ export const pgliteTestFiles = [
   "lib/__tests__/mantencion-records-pglite.test.ts",
   // Mantención de equipos: hoja de vida de la ficha (alcance, anuladas, totales), seguro y Excel del historial.
   "lib/__tests__/mantencion-equipment-life-pglite.test.ts",
+  // Aprobaciones (CHART-030): la edad de la cola en días civiles de Chile — fila, contadores y filtro `?antiguedad=` comparten una sola fórmula SQL.
+  "app/(app)/aprobaciones/queue-age-pglite.test.ts",
+  // Combustibles › Fuentes (CHART-022): mapa de cobertura por mes (Copec, telemetría, OnWay), alcance por permiso y faena, día civil de Chile.
+  "lib/combustibles/__tests__/coverage-matrix-data-pglite.test.ts",
 ]

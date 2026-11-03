@@ -17,7 +17,7 @@ import { DASHBOARD_KPI, DomainSection, type DomainKpiGroup } from "../dashboard-
 import { periodComparisonShortLabel, periodScopeLabel, scopedWorksiteId } from "../dashboard-scope"
 import { BillingFlowChart, CompositionDonutChart } from "../dashboard-domain-charts"
 import { ChartFrame } from "../charts/chart-frame"
-import { DebtAgingChart } from "../charts/debt-aging-chart"
+import { DebtAgingChart } from "@/components/charts/debt-aging-chart"
 import { ORDERS_ISSUED_METRIC, ORDERS_SPEND_METRIC, ORDERS_SPEND_TREND_POLARITY, spendVariationPct } from "../dashboard-metric-definitions"
 import { analyticsFilters, type DomainSectionsProps } from "./shared"
 import { FUEL_PATHS } from "@/lib/combustibles/routes"

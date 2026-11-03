@@ -3,9 +3,12 @@ import { ArrowSquareOut, WarningCircle } from "@phosphor-icons/react/dist/ssr"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
+import { BulletBar } from "@/components/charts/bullet-bar"
+import { ChartSection } from "@/components/charts/chart-section"
 import { Table, TableBody, TableCell, TableCellNum, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import { differenceSeverity, type CycleAmount, type CycleDifference, type DifferenceSeverity, type FuelStorageBalance } from "@/lib/combustibles/fuel-cycle"
 import { fuelEquipmentHref, fuelLoadHref } from "@/lib/combustibles/routes"
+import { describeStorageLevel, summarizeStorageLevels } from "@/lib/combustibles/storage-level"
 import { formatDateTime, formatQty } from "@/lib/utils"
 import { litersText } from "../_components/format"
 
@@ -38,6 +41,50 @@ export function cycleAnswer(
   const absolute = difference.status === "available" ? Math.abs(difference.absolute) : 0
   const pct = difference.status === "available" && difference.percent !== null ? ` (${formatQty(Math.abs(difference.percent), undefined, { maximumFractionDigits: 1 })} %)` : ""
   return `En los estanques entraron ${litersText(received.liters)} y se entregaron ${litersText(delivered.liters)} a equipos ${periodPhrase}: la diferencia es ${litersText(absolute)}${pct}.`
+}
+
+/**
+ * CHART-020: «¿cuánto queda en cada estanque?» como una barra de nivel sobre
+ * capacidad por estanque, con la frase que lo responde arriba. Reemplaza al
+ * gráfico plegado que repetía las cifras de los tiles (A5): aquí el dibujo
+ * muestra lo que la tabla de abajo sólo enumeraba.
+ *
+ * No hay marca de reposición: el catálogo de estanques no registra un punto de
+ * reposición ni un mínimo, sólo la capacidad (ver `lib/combustibles/storage-level.ts`).
+ * Un estanque sin capacidad informada muestra su nivel como cifra, sin escala.
+ */
+export function StorageLevelBars({ balances }: { balances: FuelStorageBalance[] }) {
+  if (balances.length === 0) return null
+  return (
+    <ChartSection
+      title="Nivel contra capacidad"
+      headingLevel={3}
+      summary={summarizeStorageLevels(balances)}
+    >
+      <ul className="grid list-none gap-x-10 gap-y-5 p-0 md:grid-cols-2" data-testid="estanques-niveles">
+        {balances.map((balance) => {
+          const view = describeStorageLevel(balance)
+          return (
+            <li key={balance.storageLocationId} className="min-w-0">
+              {view.hasCapacity && balance.capacityLiters != null ? (
+                <BulletBar label={balance.name} value={balance.balanceLiters} max={balance.capacityLiters} valueText={view.valueText} tone={view.tone} note={view.note} />
+              ) : (
+                <div>
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span className="truncate text-sm font-medium text-[var(--color-text)]">{balance.name}</span>
+                    <span className="shrink-0 text-sm tabular-nums text-[var(--color-text)]">{view.valueText}</span>
+                  </div>
+                  <p className={`mt-1.5 text-xs ${view.problem ? "font-medium text-[var(--color-danger-ink)]" : "text-[var(--color-text-muted)]"}`}>
+                    {view.problem ? view.note : "Sin capacidad informada: no hay una escala contra la que comparar el nivel."}
+                  </p>
+                </div>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+    </ChartSection>
+  )
 }
 
 /** Nivel por estanque: lo que tenía al empezar, lo que recibió, lo que entregó y cómo quedó contra su capacidad. */

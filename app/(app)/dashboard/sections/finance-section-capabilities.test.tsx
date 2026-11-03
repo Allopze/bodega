@@ -27,7 +27,7 @@ import { KpiCard } from "@/components/ui/kpi-card"
 import { ChartSlot } from "@/components/ui/dashboard-panel"
 import { RankedList } from "@/components/ui/ranked-list"
 import { MoneyStat } from "@/app/(app)/facturacion/money-stat"
-import { DebtAgingChart } from "../charts/debt-aging-chart"
+import { DebtAgingChart } from "@/components/charts/debt-aging-chart"
 import { FinanceSection } from "./finance-section"
 import type { DomainSectionsProps } from "./shared"
 

@@ -10,6 +10,8 @@ import { FUEL_INBOX_KINDS, type FuelInboxEvidence, type FuelInboxFilters, type F
 /** Filtros propios de los casos que llegan de enlaces antiguos (`/anomalias?severidad=…&ref=…`). */
 export interface FuelInboxQueryFilters extends FuelInboxFilters {
   caseSeverity?: AnomalySeverity
+  /** Código de la regla que detectó el caso (`?regla=`), del enlace de «Pendientes por regla». */
+  caseRuleCode?: string
   /** Sólo `open`, `in_review` o `reopened`: una pestaña de «Pendientes» no lista casos cerrados. */
   caseState?: Extract<AnomalyCaseStatus, "open" | "in_review" | "reopened">
   /** Registro de origen de un caso: tipo y id de la entidad referenciada. */

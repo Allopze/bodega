@@ -15,7 +15,10 @@ import { ServerPagination } from "@/components/ui/server-pagination"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { parseListParams, textSearchSql, eqFilter, worksiteEqSql } from "@/lib/adquisiciones/list-query"
 import type { ServerListFilterOption } from "@/components/ui/server-list-filters"
+import { parseApprovalAgeParam } from "@/lib/approvals-age"
+import { ApprovalAgeChart } from "./approval-age-chart"
 import { ApprovalPanel } from "./approval-panel"
+import { approvalAgeDaysSql, approvalAgeFilterSql, loadApprovalAgeCounts } from "./queue-age"
 import { canApproveEpp, canSetDispatch } from "./roles"
 import type { ApprovalItem, ApprovalRequest, QuotationPendingRequest } from "./types"
 
@@ -35,7 +38,13 @@ export default async function AprobacionesPage({
   const listParams = parseListParams(sp)
   const selectedRequestId = typeof sp.solicitud === "string" ? sp.solicitud : ""
   const visibleWsIds = visibleWorksiteIds(session)
-  const requestFilter = and(
+  // CHART-030: una sola foto del instante para la lista, el gráfico y el filtro
+  // de antigüedad; medirlos contra relojes distintos haría discrepar a los tres.
+  const now = new Date()
+  const ageFilter = parseApprovalAgeParam(sp.antiguedad)
+  // Alcance de la cola SIN el tramo de antigüedad: es lo que cuenta el gráfico,
+  // que es a la vez el selector de ese filtro.
+  const queueScope = and(
     // Predicado base compartido con el badge del rail (lib/approvals-queue.ts).
     approvalQueueFilter({ isGlobal: isGlobalRole(session), worksiteIds: visibleWsIds }),
     selectedRequestId ? eq(purchaseRequests.id, selectedRequestId) : undefined,
@@ -44,6 +53,7 @@ export default async function AprobacionesPage({
     worksiteEqSql(purchaseRequests.worksiteId, listParams.faena),
     eqFilter(purchaseRequests.urgency, listParams.urgencia),
   )
+  const requestFilter = and(queueScope, approvalAgeFilterSql(ageFilter, now))
 
   // ADQ-05: repuestos y servicios no entran a la cola ítem-a-ítem; se aprueban
   // eligiendo una cotización en el detalle. Se listan aparte, sólo los tipos que
@@ -63,7 +73,7 @@ export default async function AprobacionesPage({
 
   // ARQ-10: ninguna depende de la otra — ambas cuelgan sólo del scope/filtro
   // ya resuelto arriba — así que van juntas en vez de en 2 round-trips.
-  const [[totalRequestsRow], worksiteOptionRows, quotationRows, [quotationTotalRow]] = await Promise.all([
+  const [[totalRequestsRow], worksiteOptionRows, quotationRows, [quotationTotalRow], ageCounts] = await Promise.all([
     db
       .select({ total: count() })
       .from(purchaseRequests)
@@ -98,6 +108,7 @@ export default async function AprobacionesPage({
     quotationTypes.length === 0
       ? Promise.resolve([{ total: 0 }])
       : db.select({ total: count() }).from(purchaseRequests).where(quotationFilter),
+    loadApprovalAgeCounts(db, queueScope, now),
   ])
   const quotationRequests: QuotationPendingRequest[] = quotationRows
   const quotationTotal = quotationTotalRow?.total ?? 0
@@ -108,6 +119,8 @@ export default async function AprobacionesPage({
   })
   const pageHref = (page: number) => buildPaginationHref("/aprobaciones", sp, page)
   const worksiteOptions: ServerListFilterOption[] = worksiteOptionRows.map((w) => ({ value: w.id, label: w.name }))
+  // Sin nada pendiente no se dibuja (el panel ya tiene su estado vacío).
+  const ageChart = <ApprovalAgeChart counts={ageCounts} active={ageFilter} searchParams={sp} />
 
   // Load only submitted/in-review requests in the approver's worksite scope.
   const visible = await db
@@ -121,6 +134,7 @@ export default async function AprobacionesPage({
       requesterId:  purchaseRequests.requesterId,
       submittedAt:  purchaseRequests.submittedAt,
       deliveryMode: purchaseRequests.deliveryMode,
+      ageDays:      approvalAgeDaysSql(now),
     })
     .from(purchaseRequests)
     .where(requestFilter)
@@ -148,6 +162,7 @@ export default async function AprobacionesPage({
           worksiteOptions={worksiteOptions}
           quotationRequests={quotationRequests}
           quotationTotal={quotationTotal}
+          ageChart={ageChart}
         />
         <ServerPagination pagination={pagination} hrefForPage={pageHref} />
       </PageContainer>
@@ -275,6 +290,7 @@ export default async function AprobacionesPage({
         requesterName:  userMap[r.requesterId] ?? r.requesterId,
         requestUrgency: r.urgency,
         submittedAt:    r.submittedAt,
+        ageDays:        r.ageDays === null ? null : Number(r.ageDays),
         deliveryMode:   r.deliveryMode as "via_oficina" | "directo_faena",
         pendingItems:   mappedItems,
         pendingCount:   mappedItems.length,
@@ -322,6 +338,7 @@ export default async function AprobacionesPage({
         worksiteOptions={worksiteOptions}
         quotationRequests={quotationRequests}
         quotationTotal={quotationTotal}
+        ageChart={ageChart}
       />
       <ServerPagination pagination={pagination} hrefForPage={pageHref} />
     </PageContainer>
