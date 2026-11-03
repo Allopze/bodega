@@ -107,6 +107,9 @@ export default async function AnaliticaPage({
             value={formatCLP(data.kpis.totalSpend)}
             detail={`Período ${data.filters.fromDate} a ${data.filters.toDate}`}
             trend={data.kpis.spendVariationPct}
+            // Dinero gastado: subir es mala noticia. Sin esto `KpiCard` usa
+            // `up-good` y pintaba de verde un alza del 133 % (Fase 0 · 0.2).
+            trendPolarity="up-bad"
             href={canViewPurchasing ? "/compras" : undefined}
             glossary={canViewFuelCosts
               ? "Suma de órdenes de compra emitidas y cargas de combustible del período seleccionado. La variación compara el período anterior de igual duración."

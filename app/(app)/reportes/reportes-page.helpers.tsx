@@ -62,8 +62,73 @@ export function BreakdownPanel({
   )
 }
 
-export function statusRows(rows: { status: string; total: number }[]) {
-  return rows.map((row) => [row.status, Number(row.total)] as [string, number]).sort((a, b) => b[1] - a[1])
+type StatusEntity = "request" | "item" | "oc"
+
+/**
+ * Orden de lectura de cada lista de estados: el ciclo de vida, de borrador a
+ * cierre, y los desenlaces que salen del flujo (rechazo, devolución, anulación)
+ * al final. Antes se ordenaba por cantidad, así que «Cerrada» (la más
+ * numerosa) abría la lista y el flujo se leía al revés.
+ *
+ * No existía una constante así en `lib/`: los enums (`ItemStatus`,
+ * `RequestStatus`, `OcStatus`) sólo dan el tipo, y el stepper de la solicitud
+ * (`STAGES`) agrupa por etapa, no por estado. El orden sigue las transiciones
+ * permitidas (`ALLOWED_TRANSITIONS`). `reportes-page.helpers.test.ts` exige que
+ * todo estado con rótulo en `*_STATE_META` figure aquí: un estado nuevo no puede
+ * quedar relegado al final sin que alguien lo decida.
+ */
+export const STATUS_LIFECYCLE: Record<StatusEntity, readonly string[]> = {
+  request: [
+    "draft", "submitted", "in_review", "partially_approved", "approved", "in_purchasing", "closed",
+    "rejected", "returned", "cancelled",
+  ],
+  item: [
+    "draft", "requested", "approved", "pending_purchase", "in_purchase_order", "purchased",
+    "partially_office_received", "office_received", "partially_received", "received",
+    "partially_delivered", "delivered",
+    "rejected", "returned", "postponed",
+  ],
+  oc: [
+    "draft", "issued", "sent", "supplier_confirmed", "partially_office_received", "office_received",
+    "partially_received", "received", "closed", "cancelled",
+  ],
+}
+
+/** Filas `[estado, cantidad]` en orden de ciclo de vida; un estado desconocido va al final. */
+export function statusRows(rows: { status: string; total: number }[], entity: StatusEntity) {
+  const order = STATUS_LIFECYCLE[entity]
+  const rank = (status: string) => {
+    const index = order.indexOf(status)
+    return index === -1 ? order.length : index
+  }
+  return rows
+    .map((row) => [row.status, Number(row.total)] as [string, number])
+    .sort((a, b) => rank(a[0]) - rank(b[0]) || a[0].localeCompare(b[0]))
+}
+
+/** Rótulo cuando el desglose trae una faena que el catálogo no conoce. */
+export const UNKNOWN_WORKSITE_LABEL = "Faena desconocida"
+
+/**
+ * Nombre legible de cada faena por id. Incluye las inactivas (con «(inactiva)»):
+ * los desgloses cuentan OC e ítems históricos y una faena dada de baja no puede
+ * aparecer como su UUID.
+ */
+export function worksiteLabels(rows: { id: string; name: string; isActive: boolean }[]): Record<string, string> {
+  return Object.fromEntries(rows.map((row) => [row.id, row.isActive ? row.name : `${row.name} (inactiva)`]))
+}
+
+/** Filas `{ label, value }` de un desglose por faena, de mayor a menor. Nunca muestra un id. */
+export function toBreakdownRows(
+  rows: { worksiteId: string | null; total: number }[],
+  labels: Record<string, string>,
+) {
+  return rows
+    .map((row) => ({
+      label: (row.worksiteId ? labels[row.worksiteId] : undefined) ?? UNKNOWN_WORKSITE_LABEL,
+      value: Number(row.total),
+    }))
+    .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label, "es"))
 }
 
 /** Map a raw DB status to its Spanish label, falling back to the raw value. */

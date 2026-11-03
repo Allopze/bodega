@@ -7,6 +7,7 @@ import { auth } from "@/lib/auth/auth"
 import { can } from "@/lib/auth/can"
 import { getBillingSummary, listUnlinkedInvoices, todayIso } from "@/lib/services/billing/queries"
 import { formatMoney } from "@/lib/services/billing/money"
+import { formatDate, todayInChile } from "@/lib/utils"
 import {
   formatDateTime,
   formatPeriod,
@@ -115,7 +116,7 @@ export default async function BillingSummaryPage({
             <MoneyStat
               label="Vencido"
               amounts={summary.overdueByCurrency}
-              detail={`${summary.overdueCount} ${summary.overdueCount === 1 ? "factura vencida" : "facturas vencidas"} al ${new Date().toLocaleDateString("es-CL", { timeZone: "America/Santiago" })}`}
+              detail={`${summary.overdueCount} ${summary.overdueCount === 1 ? "factura vencida" : "facturas vencidas"} al ${formatDate(todayInChile())}`}
               origin="Facturas con fecha de vencimiento anterior a hoy y saldo pendiente."
               tone={summary.overdueCount > 0 ? "danger" : "neutral"}
               href="/facturacion/facturas?vencidas=1"

@@ -99,3 +99,45 @@ describe("AnaliticaPage capability matrix", () => {
     expect(hrefs.some((href) => href.startsWith("/reportes"))).toBe(false)
   })
 })
+
+/*
+ * Fase 0 · 0.2 (AUDITORIA_VISUALIZACIONES_CHOME.md, CHART-033). «Gasto total» no
+ * pasaba `trendPolarity` y `KpiCard` cae en `"up-good"`: un alza de gasto del
+ * 133 % se pintaba en verde (éxito) y una baja del 100 % en rojo. Para dinero
+ * gastado subir es mala noticia, igual que en el tablero
+ * (`ORDERS_SPEND_TREND_POLARITY`).
+ */
+describe("AnaliticaPage · polaridad de las variaciones (0.2)", () => {
+  it("«Gasto total» declara que subir es malo", async () => {
+    const data = await getAnalyticsDashboard()
+    getAnalyticsDashboard.mockResolvedValue({
+      ...data,
+      kpis: { ...data.kpis, totalSpend: 233, previousTotalSpend: 100, spendVariationPct: 133 },
+    })
+
+    const page = await AnaliticaPage({ searchParams: Promise.resolve({}) })
+    const spend = collectElements(page).find(
+      (element) => typeName(element.type) === "KpiCard" && element.props.label === "Gasto total",
+    )
+
+    expect(spend, "el tile «Gasto total» debe existir").toBeDefined()
+    expect(spend!.props.trend).toBe(133)
+    // Sin esto el default `up-good` colorea de verde el alza de gasto.
+    expect(spend!.props.trendPolarity).toBe("up-bad")
+  })
+
+  it("ningún tile con variación depende del default `up-good`", async () => {
+    // Un tile que recibe `trend` sin declarar polaridad hereda "subir es bueno":
+    // hoy sólo «Gasto total» tiene variación, y esta guarda obliga a decidirlo
+    // explícitamente si otro tile suma una.
+    const page = await AnaliticaPage({ searchParams: Promise.resolve({}) })
+    const withTrend = collectElements(page).filter(
+      (element) => typeName(element.type) === "KpiCard" && element.props.trend !== undefined,
+    )
+
+    expect(withTrend.length).toBeGreaterThan(0)
+    for (const tile of withTrend) {
+      expect(tile.props.trendPolarity, `tile «${String(tile.props.label)}»`).toBeDefined()
+    }
+  })
+})

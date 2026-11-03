@@ -13,9 +13,9 @@ import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { MetaBadge } from "@/components/states/state-badge"
 import { formatCLP } from "@/lib/utils"
-import { and, count, eq, inArray, isNull, sql, sum, asc } from "drizzle-orm"
+import { and, count, eq, inArray, isNull, ne, sql, sum, asc } from "drizzle-orm"
 import { ChartBar, ShoppingCart, Truck } from "@phosphor-icons/react/dist/ssr"
-import { ReportMetric, BreakdownPanel, StatusGroup, statusRows } from "./reportes-page.helpers"
+import { ReportMetric, BreakdownPanel, StatusGroup, statusRows, toBreakdownRows, worksiteLabels } from "./reportes-page.helpers"
 import { ReportsExportMenu } from "./reports-export-menu"
 
 export const metadata: Metadata = { title: "Reportes" }
@@ -35,17 +35,27 @@ export default async function Page() {
     isGlobal ? undefined : (wsIds.length > 0 ? inArray(purchaseOrders.worksiteId, wsIds) : sql`false`),
   )
   // Un usuario scoped solo ve recepciones de sus faenas — nunca las de worksiteId NULL (B-6).
-  const receiptWsFilter = isGlobal
-    ? undefined
-    : (wsIds.length > 0
-        ? inArray(receipts.worksiteId, wsIds)
-        : sql`false`)
+  // Una recepción anulada (`voided`) no es una recepción registrada: Fase 0 · 0.3,
+  // «Recepciones» las contaba y la cifra sobraba por cada anulación.
+  const receiptWsFilter = and(
+    ne(receipts.status, "voided"),
+    isGlobal
+      ? undefined
+      : (wsIds.length > 0
+          ? inArray(receipts.worksiteId, wsIds)
+          : sql`false`),
+  )
 
-  const activeWorksites = await db
-    .select({ id: worksites.id, name: worksites.name })
+  // Todas las faenas, también las inactivas: los desgloses por faena cuentan
+  // OC e ítems históricos, y una faena dada de baja salía como su UUID. El
+  // selector de exportación sigue ofreciendo sólo las activas.
+  const allWorksites = await db
+    .select({ id: worksites.id, name: worksites.name, isActive: worksites.isActive })
     .from(worksites)
-    .where(eq(worksites.isActive, true))
     .orderBy(asc(worksites.name))
+  const activeWorksites = allWorksites
+    .filter((worksite) => worksite.isActive)
+    .map(({ id, name }) => ({ id, name }))
 
   const [
     requestSummary,
@@ -69,7 +79,6 @@ export default async function Page() {
       .select({
         total: count(),
         totalAmount: sql<number>`coalesce(${sum(purchaseOrders.totalAmount)}, 0)`,
-        pendingReceipt: sql<number>`count(*) filter (where ${purchaseOrders.status} in ('sent', 'partially_office_received', 'office_received', 'partially_received'))`,
       })
       .from(purchaseOrders)
       .where(orderWsFilter),
@@ -121,7 +130,9 @@ export default async function Page() {
   const requestTotals = requestSummary[0]
   const orderTotals = orderSummary[0]
   const receiptTotals = receiptSummary[0]
-  const pendingReceiptCount = Number(orderTotals?.pendingReceipt ?? 0)
+  // «OC pendientes de recepción» no es un tile: lo es el panel «OC pendientes
+  // por faena» de más abajo, que trae el total y su desglose. Antes salía tres
+  // veces (detalle de «Recepciones», tile propio y total del panel): A5.
   const metrics: ReportMetric[] = [
     {
       label: "Solicitudes",
@@ -138,25 +149,14 @@ export default async function Page() {
     {
       label: "Recepciones",
       value: Number(receiptTotals?.total ?? 0),
-      detail: `${pendingReceiptCount} OC pendientes de recepción`,
-      href: "/recepcion",
-    },
-    {
-      label: "OC pendientes",
-      value: pendingReceiptCount,
-      detail: "Órdenes enviadas pendientes de oficina o bodega/faena",
+      detail: "Registradas, sin contar anuladas",
       href: "/recepcion",
     },
   ]
 
-  const wsNameMap = Object.fromEntries(activeWorksites.map((w) => [w.id, w.name]))
-  const toBreakdown = (rows: { worksiteId: string; total: number }[]) =>
-    rows
-      .map((row) => ({ label: wsNameMap[row.worksiteId] ?? row.worksiteId, value: Number(row.total) }))
-      .sort((a, b) => b.value - a.value)
-
-  const itemsSinOcRows = toBreakdown(itemsSinOcByWorksite)
-  const ocPendingRows = toBreakdown(ocPendingByWorksite)
+  const wsLabels = worksiteLabels(allWorksites)
+  const itemsSinOcRows = toBreakdownRows(itemsSinOcByWorksite, wsLabels)
+  const ocPendingRows = toBreakdownRows(ocPendingByWorksite, wsLabels)
   const itemsSinOcTotal = itemsSinOcRows.reduce((sum, row) => sum + row.value, 0)
   const ocPendingTotal = ocPendingRows.reduce((sum, row) => sum + row.value, 0)
 
@@ -174,7 +174,7 @@ export default async function Page() {
         actions={<ReportsExportMenu worksites={activeWorksites} />}
       />
 
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-3 md:grid-cols-3">
         {metrics.map((metric) => (
           <Link key={metric.label} href={metric.href} className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] p-5 shadow-[var(--shadow-card)] transition-colors hover:bg-[var(--color-surface-2)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]">
             <div className="flex items-center justify-between gap-3">
@@ -192,9 +192,9 @@ export default async function Page() {
       <section className="mt-6 rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-5">
         <h2 className="text-h2">Estados principales</h2>
         <div className="mt-4 grid gap-4 md:grid-cols-3">
-          <StatusGroup title="Solicitudes" entity="request" rows={statusRows(requestStatusRows)} />
-          <StatusGroup title="Ítems" entity="item" rows={statusRows(itemStatusRows)} />
-          <StatusGroup title="OC" entity="oc" rows={statusRows(orderStatusRows)} />
+          <StatusGroup title="Solicitudes" entity="request" rows={statusRows(requestStatusRows, "request")} />
+          <StatusGroup title="Ítems" entity="item" rows={statusRows(itemStatusRows, "item")} />
+          <StatusGroup title="OC" entity="oc" rows={statusRows(orderStatusRows, "oc")} />
         </div>
       </section>
 
