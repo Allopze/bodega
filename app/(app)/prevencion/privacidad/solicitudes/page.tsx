@@ -26,9 +26,13 @@ export default async function PreventionPrivacyRequestsPage({ searchParams }: { 
   const scopeWhere = scope.mode === "some" ? inArray(workers.worksiteId, scope.ids) : undefined
   const raw = await searchParams
   const pageSize = 50
-  const pagination = resolvePagination({ pageParam: raw.page, totalItems: 0, pageSize })
+  // `resolvePagination` con `totalItems: 0` recorta cualquier página a la 1 (aún no se
+  // sabe el total): el desplazamiento de la lista sale del parámetro tal cual y el total
+  // real se resuelve después, para el paginador.
+  const requestedPage = Number.parseInt(raw.page ?? "", 10)
+  const offset = Number.isFinite(requestedPage) && requestedPage > 1 ? (requestedPage - 1) * pageSize : 0
   const [{ rows: requests, total }, workerRows] = await Promise.all([
-    listPreventionPrivacyRequestsPage(scope, { limit: pageSize, offset: pagination.offset }),
+    listPreventionPrivacyRequestsPage(scope, { limit: pageSize, offset }),
     scope.mode === "none"
       ? []
       : db.select({

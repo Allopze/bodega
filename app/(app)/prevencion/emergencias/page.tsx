@@ -34,16 +34,21 @@ export default async function EmergenciasPage({ searchParams }: { searchParams: 
   const raw = await searchParams
   const tab = isEmergencyListTab(raw.tab) ? raw.tab : "plans"
   const quickFilter = resolveEmergencyQuickFilter(tab, raw.vista)
-  const pagination = resolvePagination({ pageParam: raw.page, totalItems: 0, pageSize: 50 })
+  const pageSize = 50
+  // `resolvePagination` con `totalItems: 0` recorta cualquier página a la 1 (aún no se
+  // sabe el total): el desplazamiento de la lista sale del parámetro tal cual y el total
+  // real se resuelve después, para el paginador.
+  const requestedPage = Number.parseInt(raw.page ?? "", 10)
+  const offset = Number.isFinite(requestedPage) && requestedPage > 1 ? (requestedPage - 1) * pageSize : 0
 
   const [plansPage, drills, worksites, counts] = await Promise.all([
-    listEmergencyPlansPage(access, { limit: 50, offset: pagination.offset, quickFilter: tab === "plans" ? quickFilter : undefined }),
+    listEmergencyPlansPage(access, { limit: pageSize, offset, quickFilter: tab === "plans" ? quickFilter : undefined }),
     listEmergencyDrills(access, { quickFilter: tab === "drills" ? quickFilter : undefined }),
     canManage ? listEmergencyWorksites(access) : Promise.resolve([]),
     getEmergencyDashboardCounts(access),
   ])
 
-  const resolvedPagination = resolvePagination({ pageParam: raw.page, totalItems: plansPage.total, pageSize: 50 })
+  const resolvedPagination = resolvePagination({ pageParam: raw.page, totalItems: plansPage.total, pageSize })
 
   return (
     <PageContainer>
