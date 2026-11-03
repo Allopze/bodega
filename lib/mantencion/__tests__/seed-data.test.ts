@@ -10,9 +10,10 @@ import { checklistFor, inheritedIntervalFor } from "../schedule"
 import { deriveFolioCode, isValidPlate, nameKey, normalizeCode, normalizePlate } from "../normalize"
 import type { MantScheduleSnapshot } from "../types"
 import { cleanItemName } from "@/lib/services/mantencion/seed-schedules"
-import { parseMantSeedData, type MantSeedData } from "@/lib/services/mantencion/seed"
+import { parseMantFaenaDecisions, parseMantSeedData, type MantSeedData } from "@/lib/services/mantencion/seed"
 
 const FILE = path.resolve(process.cwd(), "db/seed/mantencion-seed.json")
+const FAENAS_FILE = path.resolve(process.cwd(), "db/seed/mantencion-faenas.json")
 const raw = (): unknown => JSON.parse(readFileSync(FILE, "utf8"))
 const data = parseMantSeedData(raw())
 const clone = (): MantSeedData => structuredClone(data)
@@ -84,7 +85,7 @@ describe("db/seed/mantencion-seed.json (§13)", () => {
     expect(new Set(data.equipos.map((e) => normalizeCode(e.patente))).size).toBe(120)
   })
 
-  it("cuatro faenas aparecen sólo en los equipos: la carga las crea con un folio derivado que no choca con los demás", () => {
+  it("cuatro faenas aparecen sólo en los equipos; si se autoriza crearlas, su folio derivado no choca con los demás", () => {
     const listed = new Set(data.faenas.map((f) => nameKey(f.nombre)))
     const extra = [...new Set(data.equipos.map((e) => e.faena))].filter((name) => !listed.has(nameKey(name))).sort()
     expect(extra).toEqual(["Calymag", "Ecoservitran", "Fab. Puertas", "Panguipulli"])
@@ -92,6 +93,16 @@ describe("db/seed/mantencion-seed.json (§13)", () => {
     expect(taken.size).toBe(10)
     const derived = extra.map((name) => { const code = deriveFolioCode(name, taken); taken.add(code); return code })
     expect(derived).toEqual(["CAL", "ECO", "FAB", "PAN"])
+  })
+
+  it("db/seed/mantencion-faenas.json sólo decide sobre faenas que la carga usa", () => {
+    const decisions = parseMantFaenaDecisions(JSON.parse(readFileSync(FAENAS_FILE, "utf8")))
+    const used = new Set([...data.faenas.map((f) => f.nombre), ...data.equipos.map((e) => e.faena), ...data.mecanicos.map((m) => m.faena)].map(nameKey))
+    for (const name of [...Object.keys(decisions.equivalencias), ...decisions.crear]) expect(used.has(nameKey(name)), name).toBe(true)
+  })
+
+  it("una faena no puede ser equivalencia y crearse a la vez", () => {
+    expect(() => parseMantFaenaDecisions({ equivalencias: { Teno: "Teno - Arauco" }, crear: ["teno"] })).toThrow(/Teno/)
   })
 
   it("los mecánicos trabajan en faenas de la lista", () => {
