@@ -71,11 +71,36 @@ describe("indicadores del panel (A1)", () => {
     expect(tile.textContent).not.toContain("Todas las pautas al día")
   })
 
-  it("si ningún equipo tiene pauta y lectura, el tile no afirma nada sobre las pautas", () => {
+  it("si ningún equipo tiene pauta y lectura, el tile no muestra un 0 que se lea como «todo al día»: dice por qué y qué hacer (A1)", () => {
     render(<PanelKpis data={panelData({ fleet: { active: 4, counts: { ...NO_COUNTS, sin_lecturas: 3, sin_pauta: 1 } } })} />)
     const tile = screen.getByRole("link", { name: /^Mantenciones vencidas/ })
-    expect(tile.textContent).toContain("Aún ningún equipo tiene pauta y lectura para evaluarse")
+    expect(within(tile).queryByText("0")).toBeNull()
+    expect(tile.textContent).toContain("Aún no hay equipos con pauta y lectura")
+    expect(tile.textContent).toContain("Asignar pautas")
     expect(tile.textContent).not.toContain("al día")
+    // La acción lleva a los equipos que hay que dejar evaluables, no a «vencidas» (vacío por construcción).
+    expect(tile.getAttribute("href")).toBe("/mantencion/equipos?estado=sin_pauta")
+  })
+
+  it("el tile vacío apunta a donde se resuelve: sin pauta, sin lecturas o sin equipos", () => {
+    const { unmount } = render(<PanelKpis data={panelData({ fleet: { active: 3, counts: { ...NO_COUNTS, sin_lecturas: 3 } }, filters: { period: "30", worksiteId: "ws-1" } })} />)
+    let tile = screen.getByRole("link", { name: /^Mantenciones vencidas/ })
+    expect(tile.textContent).toContain("Ver equipos sin lecturas")
+    expect(tile.getAttribute("href")).toBe("/mantencion/equipos?estado=sin_lecturas&faena=ws-1")
+    unmount()
+
+    render(<PanelKpis data={panelData({ fleet: { active: 0, counts: NO_COUNTS } })} />)
+    tile = screen.getByRole("link", { name: /^Mantenciones vencidas/ })
+    expect(tile.textContent).toContain("Ir a Equipos")
+    expect(tile.getAttribute("href")).toBe("/mantencion/equipos")
+  })
+
+  it("con algún equipo evaluable el tile conserva la cifra, aunque sea 0", () => {
+    render(<PanelKpis data={panelData({ fleet: { active: 119, counts: { ...NO_COUNTS, al_dia: 7, sin_lecturas: 112 } } })} />)
+    const tile = screen.getByRole("link", { name: /^Mantenciones vencidas/ })
+    expect(within(tile).getByText("0")).toBeTruthy()
+    expect(tile.textContent).not.toContain("Asignar pautas")
+    expect(tile.getAttribute("href")).toBe("/mantencion/equipos?estado=vencida")
   })
 
   it("sin registros en el período el tile ofrece ampliar el período", () => {

@@ -8,7 +8,7 @@ import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { can, requirePermission } from "@/lib/auth/can"
 import { getFleetVehicleDetail } from "@/lib/services/fleet"
-import { formatFuelVehicleStatus } from "@/lib/combustibles/validation"
+import { FUEL_PERFORMANCE_UNIT_LABELS, formatFuelVehicleStatus } from "@/lib/combustibles/validation"
 import { formatDate, formatDateTime, formatQty } from "@/lib/utils"
 import { OT_STATUS_LABELS, OT_STATUS_TONES } from "@/lib/mantencion/work-order-states"
 import { FleetDocumentsPanel } from "./fleet-documents-panel"
@@ -62,7 +62,8 @@ export default async function FlotaVehiclePage({
             <Fact label="Faena" value={vehicle.worksite?.name ?? "Sin faena"} />
             <Fact label="Tipo" value={vehicle.equipmentType?.name ?? vehicle.type} />
             <Fact label="N.º de serie" value={vehicle.serialNumber ?? "—"} />
-            <Fact label="Rendimiento" value={vehicle.performanceUnit === "km_per_liter" ? "km/L" : vehicle.performanceUnit === "liters_per_hour" ? "L/h" : "No aplica"} />
+            {/* Es la unidad del catálogo, no una medición: rotulada «Rendimiento» se leía como un valor sin cifra («km/L» a secas). */}
+            <Fact label="Unidad de rendimiento" value={FUEL_PERFORMANCE_UNIT_LABELS[vehicle.performanceUnit as keyof typeof FUEL_PERFORMANCE_UNIT_LABELS] ?? "No aplica"} />
             <Fact label="Capacidad" value={vehicle.tankCapacityLiters != null ? formatQty(Number(vehicle.tankCapacityLiters), "L") : "Sin información"} />
             <Fact label="Proveedor habitual" value={vehicle.usualFuelSupplier?.name ?? "No asignado"} />
             <Fact label="Responsable" value={vehicle.responsibleUser?.name ?? vehicle.responsibleUser?.email ?? "—"} />

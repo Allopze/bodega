@@ -3,7 +3,7 @@ import { CalendarX, ClipboardText, Truck, Warning } from "@phosphor-icons/react/
 import { KpiCard } from "@/components/ui/kpi-card"
 import { formatHours, plural } from "@/lib/mantencion/format"
 import type { PanelData } from "@/lib/services/mantencion/panel"
-import { overdueDetail } from "@/lib/services/mantencion/panel-coverage"
+import { fleetCoverage, overdueDetail, type FleetCoverage } from "@/lib/services/mantencion/panel-coverage"
 import { PANEL_PERIOD_PHRASE } from "@/lib/services/mantencion/panel-filters"
 
 /**
@@ -19,6 +19,8 @@ import { PANEL_PERIOD_PHRASE } from "@/lib/services/mantencion/panel-filters"
  *
  * «0 vencidas» no puede leerse como «todo al día» cuando casi nadie tiene
  * lectura: el detalle dice entre cuántos equipos se pudo evaluar (`overdueDetail`).
+ * Y si ninguno se puede evaluar, no hay cifra que mostrar: el tile pasa a su
+ * estado vacío (A1) con la acción que lo resuelve en vez de un «0» pelado.
  *
  * En teléfono son dos por fila (2×2) y no cuatro apilados: apilados se comían
  * ~540 px antes del primer contenido accionable.
@@ -29,6 +31,8 @@ export function PanelKpis({ data }: { data: PanelData }) {
   const worksite = filters.worksiteId ? `&faena=${encodeURIComponent(filters.worksiteId)}` : ""
   const since = from ? `&desde=${from}` : ""
   const overdue = fleet.counts.vencida
+  const coverage = fleetCoverage(fleet.counts)
+  const overdueEmpty = coverage.evaluable === 0 ? overdueEmptyState(coverage, worksite) : null
 
   return (
     <section
@@ -56,7 +60,9 @@ export function PanelKpis({ data }: { data: PanelData }) {
         value={String(overdue)}
         detail={overdueDetail(fleet.counts)}
         tone={overdue > 0 ? "danger" : "neutral"}
-        href={`/mantencion/equipos?estado=vencida${worksite}`}
+        // Sin equipos evaluables «vencida» está vacío por construcción: lo accionable es dejarlos evaluables.
+        href={overdueEmpty ? overdueEmpty.href : `/mantencion/equipos?estado=vencida${worksite}`}
+        empty={overdueEmpty ? { message: "Aún no hay equipos con pauta y lectura", actionLabel: overdueEmpty.actionLabel } : undefined}
       />
       <KpiCard
         icon={<Truck size={16} aria-hidden />}
@@ -77,6 +83,17 @@ export function PanelKpis({ data }: { data: PanelData }) {
       />
     </section>
   )
+}
+
+/**
+ * Adónde lleva el tile de vencidas cuando ningún equipo se puede evaluar: primero
+ * a quienes les falta la pauta (lo que sólo se resuelve asignándola), luego a
+ * quienes les faltan lecturas, y sin equipos al listado para agregarlos.
+ */
+function overdueEmptyState(coverage: FleetCoverage, worksite: string): { href: string; actionLabel: string } {
+  if (coverage.withoutSchedule > 0) return { href: `/mantencion/equipos?estado=sin_pauta${worksite}`, actionLabel: "Asignar pautas" }
+  if (coverage.withoutReadings > 0) return { href: `/mantencion/equipos?estado=sin_lecturas${worksite}`, actionLabel: "Ver equipos sin lecturas" }
+  return { href: `/mantencion/equipos${worksite ? `?${worksite.slice(1)}` : ""}`, actionLabel: "Ir a Equipos" }
 }
 
 /**

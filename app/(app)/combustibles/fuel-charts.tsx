@@ -12,8 +12,12 @@ interface ChartDataPoint {
   count?: number
 }
 
+// Trazos y rellenos con el token base; el texto de los ejes con su variante `-ink`
+// (AGENTS.md regla 8): el color base mide ~2,5:1 sobre blanco y no pasa AA como texto.
 const AMOUNT_COLOR = "var(--color-info)"
 const PRICE_COLOR = "var(--color-signal)"
+const AMOUNT_INK = "var(--color-info-ink)"
+const PRICE_INK = "var(--color-signal-ink)"
 
 /* ── Monthly Evolution (Area Chart) ──────────────────────────────────────── */
 export function MonthlyEvolutionChart({ data }: { data: ChartDataPoint[] }) {
@@ -23,8 +27,9 @@ export function MonthlyEvolutionChart({ data }: { data: ChartDataPoint[] }) {
     month: d.group ?? "?",
     litros: d.totalLiters,
     monto: d.totalAmount,
-    // Precio promedio del período (CLP/L). 0 si no hubo litros cargados.
-    precio: d.totalLiters > 0 ? d.totalAmount / d.totalLiters : 0,
+    // Precio promedio del período (CLP/L). Sin litros cargados no hay precio: `null`
+    // deja un hueco en la línea (un 0 la desplomaba como si el combustible fuera gratis).
+    precio: d.totalLiters > 0 ? d.totalAmount / d.totalLiters : null,
   }))
 
   return (
@@ -40,20 +45,23 @@ export function MonthlyEvolutionChart({ data }: { data: ChartDataPoint[] }) {
           <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
           <XAxis dataKey="month" className="text-xs" tick={{ fill: "var(--color-text-muted)" }} />
           {/* Eje izquierdo = Monto (cuánto se gastó); derecho = Precio $/L (por qué). */}
-          <YAxis yAxisId="amount" className="text-xs" tickFormatter={formatCompactCLP} tick={{ fill: AMOUNT_COLOR }} width={60} />
-          <YAxis yAxisId="price" orientation="right" className="text-xs" tickFormatter={(v) => formatPricePerLiter(Number(v))} tick={{ fill: PRICE_COLOR }} width={68} domain={[0, "auto"]} />
+          <YAxis yAxisId="amount" className="text-xs" tickFormatter={formatCompactCLP} tick={{ fill: AMOUNT_INK }} width={60} />
+          <YAxis yAxisId="price" orientation="right" className="text-xs" tickFormatter={(v) => formatPricePerLiter(Number(v))} tick={{ fill: PRICE_INK }} width={68} domain={[0, "auto"]} />
+          {/* `filterNull={false}`: recharts omite del tooltip las series nulas, y el mes sin litros perdería su fila de precio. */}
           <Tooltip
             contentStyle={chartTooltipStyle()}
+            filterNull={false}
             formatter={(value, name) => {
               const n = String(name).toLowerCase()
-              if (n === "precio") return [formatPricePerLiter(Number(value)), "Precio prom."]
+              if (n === "precio") return [value == null ? "Sin litros" : formatPricePerLiter(Number(value)), "Precio prom."]
               return [formatCompactCLP(Number(value)), "Monto CLP"]
             }}
           />
           <Legend iconType="plainline" />
           {/* Monto: área azul rellena (cuánto se gastó). */}
           <Area yAxisId="amount" type="monotone" dataKey="monto" stroke={AMOUNT_COLOR} fill="url(#gradAmount)" strokeWidth={2.5} name="Monto CLP" dot={false} activeDot={{ r: 4 }} />
-          {/* Precio promedio: línea punteada; revela si el gasto se mueve por volumen o por precio. */}
+          {/* Precio promedio: línea punteada; revela si el gasto se mueve por volumen o por precio.
+              Sin `connectNulls`: un mes sin litros queda como hueco, no unido a sus vecinos. */}
           <Area yAxisId="price" type="monotone" dataKey="precio" stroke={PRICE_COLOR} fill="none" strokeWidth={2} strokeDasharray="5 3" name="Precio" dot={false} activeDot={{ r: 4 }} />
         </AreaChart>
       </ResponsiveContainer>
