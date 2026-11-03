@@ -437,6 +437,18 @@ describe("FinanceSection: rediseño (gráficos primero, seis tiles, sin duplicar
       expect(tile.props.empty).toBeUndefined()
     })
 
+    it("«Costo de combustible» nombra el mes en curso como parcial: la suma lo incluye", async () => {
+      getFuelMonthlyTrend.mockResolvedValue([
+        { month: "Sep", monthKey: "2026-09", liters: null, amount: null, loads: null, providerGap: true, partial: false },
+        { month: "Oct", monthKey: "2026-10", liters: 200, amount: 1_100_000, loads: 6, providerGap: false, partial: false },
+        { month: "Nov", monthKey: "2026-11", liters: 5, amount: 20_000, loads: 1, providerGap: false, partial: true },
+      ])
+      const tile = tilesOf(await sectionProps(ALL)).find((entry) => entry.props.label === "Costo de combustible")!
+
+      expect(tile.props.value).toBe("$1.120.000")
+      expect(tile.props.detail).toBe("Copec · últimos 6 meses · sin datos de Sep · incluye Nov parcial")
+    })
+
     it("«Costo de combustible» sin huecos no agrega avisos", async () => {
       getFuelMonthlyTrend.mockResolvedValue([{ month: "Oct", monthKey: "2026-10", liters: 200, amount: 1_100_000, loads: 6, providerGap: false }])
       const tile = tilesOf(await sectionProps(ALL)).find((entry) => entry.props.label === "Costo de combustible")!

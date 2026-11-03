@@ -16,7 +16,7 @@ import type { Session } from "next-auth"
 import { db } from "@/db"
 import { fuelProviderTransactions } from "@/db/schema"
 import { worksiteScopeSql } from "@/lib/auth/scope"
-import { MONTH_LABELS } from "@/lib/utils"
+import { MONTH_LABELS, addDaysToPlainDate, todayInChile } from "@/lib/utils"
 import { can } from "@/lib/auth/can"
 import { accountableProviderTransactionsWhere, providerLoadCountSql } from "@/lib/combustibles/load-status"
 import { monthsWithoutProviderData } from "@/lib/combustibles/copec-coverage"
@@ -40,6 +40,12 @@ export interface FuelMonthlyPoint {
    * `0` en cambio es un mes cubierto en que de verdad no se cargó.
    */
   providerGap: boolean
+  /**
+   * El mes en curso: aún no termina, así que sus litros y su costo valen sólo los días
+   * transcurridos y, sin marca, el gráfico los dibuja como una caída del consumo. Es la
+   * misma regla de Analítica (`buildMonthlyTrend`); ver `isPartialMonth`.
+   */
+  partial: boolean
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -69,6 +75,16 @@ function getMonthBounds(months: number, now = new Date()): Array<{ label: string
   return result
 }
 
+/**
+ * `true` si `monthKey` (`YYYY-MM`) es el mes de `today` (`YYYY-MM-DD`, día civil chileno) y
+ * todavía no es su último día. Igual que `buildMonthlyTrend` de Analítica: el último día
+ * del mes ya no se llama parcial. `today` sale de `todayInChile()`, no de UTC: entre las
+ * 21:00 del último día del mes y la medianoche chilena, UTC ya está en el mes siguiente.
+ */
+export function isPartialMonth(monthKey: string, today: string): boolean {
+  return monthKey === today.slice(0, 7) && addDaysToPlainDate(today, 1).slice(0, 7) === monthKey
+}
+
 const fuelScope = (session: Session, worksiteId?: string) =>
   worksiteScopeSql(session, fuelProviderTransactions.worksiteId, worksiteId)
 
@@ -77,6 +93,7 @@ const fuelScope = (session: Session, worksiteId?: string) =>
 export async function getFuelMonthlyTrend(session: Session, months = 6, worksiteId?: string, now = new Date()): Promise<FuelMonthlyPoint[]> {
   const canViewCosts = can(session, "combustibles:view") && can(session, "combustibles:view_costs")
   const bounds = getMonthBounds(months, now)
+  const today = todayInChile(now)
   const scope = fuelScope(session, worksiteId)
   const t = fuelProviderTransactions
   // `occurred_at` es texto ISO: el mes son sus 7 primeros caracteres (como en Analítica y en el módulo de combustibles).
@@ -107,7 +124,7 @@ export async function getFuelMonthlyTrend(session: Session, months = 6, worksite
   return bounds.map((b) => {
     const row = byMonth.get(b.key)
     if (gaps.has(b.key)) {
-      return { month: b.label, monthKey: b.key, liters: null, amount: null, loads: null, providerGap: true }
+      return { month: b.label, monthKey: b.key, liters: null, amount: null, loads: null, providerGap: true, partial: isPartialMonth(b.key, today) }
     }
     return {
       month: b.label,
@@ -116,6 +133,7 @@ export async function getFuelMonthlyTrend(session: Session, months = 6, worksite
       amount: canViewCosts ? Number(row?.amount ?? 0) : null,
       loads: Number(row?.loads ?? 0),
       providerGap: false,
+      partial: isPartialMonth(b.key, today),
     }
   })
 }

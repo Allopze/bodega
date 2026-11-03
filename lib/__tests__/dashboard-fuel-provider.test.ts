@@ -117,6 +117,15 @@ describe("getFuelMonthlyTrend · libro del proveedor con la regla canónica (C-9
     expect(trend.map((point) => point.month)).toEqual(["Jun", "Jul", "Ago", "Sep", "Oct", "Nov"])
   })
 
+  it("marca como parcial sólo el mes en curso (3 de noviembre en Chile), también cuando el proveedor no tiene datos de él", async () => {
+    const trend = await getFuelMonthlyTrend(session(), 6, undefined, NOW)
+
+    expect(trend.filter((point) => point.partial).map((point) => point.monthKey)).toEqual(["2026-11"])
+    // Noviembre es además un hueco del proveedor: son dos hechos distintos y ninguno oculta al otro.
+    expect(trend.find((point) => point.monthKey === "2026-11")).toMatchObject({ providerGap: true, partial: true })
+    expect(trend.find((point) => point.monthKey === "2026-10")).toMatchObject({ providerGap: false, partial: false })
+  })
+
   it("suma litros, monto y cargas bajo la regla canónica: sin doble conteo del agregado TCT, reemplazadas ni no aceptadas", async () => {
     const trend = await getFuelMonthlyTrend(session(), 6, undefined, NOW)
     const byMonth = new Map(trend.map((point) => [point.monthKey, point]))

@@ -118,6 +118,7 @@ export async function FinanceSection({ session, scope }: DomainSectionsProps) {
   const fuelCost = fuelTrend.reduce((sum, point) => sum + (point.amount ?? 0), 0)
   // Meses sin datos del proveedor (C-4): no suman, pero el tile los nombra; si no, 5 meses de gasto se leen como los 6.
   const fuelGapMonths = fuelTrend.filter((point) => point.providerGap).map((point) => point.month)
+  const fuelPartialMonths = fuelTrend.filter((point) => point.partial).map((point) => point.month)
 
   /*
    * Los gráficos de ranking dibujan **una sola moneda**.
@@ -230,7 +231,7 @@ export async function FinanceSection({ session, scope }: DomainSectionsProps) {
             // libro del proveedor (Copec), como el de Analítica (C-9); la serie facturada
             // (`fuel_loads`, «Pagos › Facturas») es otro concepto y no se mezcla aquí.
             <KpiCard {...DASHBOARD_KPI} icon={<Gauge size={16} />} label="Costo de combustible" value={formatCLP(fuelCost)}
-              detail={`Copec · últimos 6 meses${fuelGapMonths.length > 0 ? ` · sin datos de ${fuelGapMonths.join(", ")}` : ""}`} href={FUEL_PATHS.consumoLitros}
+              detail={`Copec · últimos 6 meses${fuelGapMonths.length > 0 ? ` · sin datos de ${fuelGapMonths.join(", ")}` : ""}${fuelPartialMonths.length > 0 ? ` · incluye ${fuelPartialMonths.join(", ")} parcial` : ""}`} href={FUEL_PATHS.consumoLitros}
               empty={fuelCost === 0 ? { message: "Sin gasto de combustible en 6 meses", actionLabel: "Ver consumo" } : undefined} />
           )}
           {canSeeFuelDebt && (

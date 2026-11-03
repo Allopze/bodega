@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Rectangle, Text, type BarShapeProps } from "recharts"
+import { Curve, LineDrawShape, Rectangle, Text, type BarShapeProps, type LineDrawShapeProps } from "recharts"
 import {
   chartLegendButtonClass,
   seriesOpacity,
@@ -133,20 +133,58 @@ export function InteractiveLegend({ entries, focus, label }: {
 // ── Piezas dentro del gráfico ────────────────────────────────────────────────
 
 /**
+ * Mes parcial (el mes en curso, que aún no termina): se dibuja como una estimación y no como
+ * un dato cerrado, para que sus pocos días no se lean como una caída. Columna con relleno
+ * tenue y contorno punteado; el último tramo de una línea, punteado. Sólo opacidad y trazo
+ * del color de la propia serie: no hay color nuevo.
+ */
+const PARTIAL_FILL_OPACITY = 0.4
+const PARTIAL_DASH = "4 3"
+
+/**
  * Barra que se atenúa: la columna que no es la apuntada y la serie que no es la
  * enfocada en la leyenda bajan de opacidad. recharts llama a `shape` como función
  * (no la monta como componente), así que el `<Rectangle>` conserva su lugar en
  * el árbol entre renders y la transición CSS sí corre.
+ *
+ * `partialFrom` es el índice del primer mes parcial (los parciales son los últimos de la
+ * serie); sin él, o con `-1`, ninguna columna cambia.
  */
-export function dimmedBarShape(seriesKey: string, activeIndex: number | null, focusedKey: string | null) {
+export function dimmedBarShape(seriesKey: string, activeIndex: number | null, focusedKey: string | null, partialFrom = -1) {
   return function DimmedBar(props: BarShapeProps) {
-    const columnOpacity = activeIndex === null || activeIndex === props.index ? 1 : 0.35
+    // `index` cuenta sólo las columnas que se dibujan: con un mes nulo (sin datos del proveedor) antes,
+    // se corre un lugar y ya no coincide con el índice del tooltip ni con el de los datos.
+    const dataIndex = props.originalDataIndex ?? props.index
+    const columnOpacity = activeIndex === null || activeIndex === dataIndex ? 1 : 0.35
+    const partial = partialFrom >= 0 && dataIndex >= partialFrom
     return (
       <Rectangle
         {...props}
         opacity={columnOpacity * seriesOpacity(seriesKey, focusedKey)}
+        {...(partial ? { fillOpacity: PARTIAL_FILL_OPACITY, stroke: props.fill, strokeWidth: 1.5, strokeDasharray: PARTIAL_DASH } : {})}
         style={{ transition: "opacity 200ms ease" }}
       />
+    )
+  }
+}
+
+/**
+ * Forma de una serie de línea cuyo último tramo es parcial: sólida hasta el último mes
+ * completo y punteada desde ahí hasta el mes parcial (el tramo arranca en ese punto, así
+ * la línea no se corta). `partialFrom` es el índice del primer mes parcial; sin él, o con
+ * `-1`, se dibuja la forma por defecto de recharts. Va en `<Line shape={…}>`: con una
+ * forma propia recharts omite la animación de entrada por trazo.
+ */
+export function partialTailLineShape(partialFrom: number) {
+  return function PartialTailLine(props: LineDrawShapeProps) {
+    if (partialFrom < 0 || !props.points) return <LineDrawShape {...props} />
+    // La animación de entrada por trazo no aplica a una forma propia; esas props no son del `<path>`.
+    const { animationElapsedTime: _elapsed, isAnimating: _animating, isEntrance: _entrance, visibleLength: _visible, pathRef: _pathRef, strokeDasharray: _dash, ...curve } = props
+    return (
+      <>
+        <Curve {...curve} points={props.points.slice(0, partialFrom)} />
+        <Curve {...curve} points={props.points.slice(Math.max(partialFrom - 1, 0))} strokeDasharray={PARTIAL_DASH} />
+      </>
     )
   }
 }

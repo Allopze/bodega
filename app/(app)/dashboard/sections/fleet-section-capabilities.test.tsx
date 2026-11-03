@@ -205,6 +205,42 @@ describe("FleetSection · panel del tablero", () => {
     expect(String(tile.props.detail)).not.toContain("Sin datos")
   })
 
+  // La cifra suma 5 meses completos y el mes en curso a la fecha: «6 meses» sin más aviso se leería como seis meses completos.
+  it("«Litros (6 meses)» dice que incluye el mes en curso a la fecha, sin tocar la suma", async () => {
+    getFuelMonthlyTrend.mockResolvedValue([
+      { month: "Oct", monthKey: "2026-10", liters: 2500, amount: 1_100_000, loads: 6, providerGap: false, partial: false },
+      { month: "Nov", monthKey: "2026-11", liters: 90, amount: 40_000, loads: 1, providerGap: false, partial: true },
+    ])
+    const section = sectionOf(await FleetSection(props("flota:view", "combustibles:view")))
+    const tile = find(section.kpis, (element) => element.type === KpiCard && element.props.label === "Litros (6 meses)")[0]!
+
+    expect(tile.props.value).toBe("2.590 L")
+    expect(tile.props.detail).toBe("Copec (tarjetas y estanques) · incluye Nov parcial · ahora")
+  })
+
+  it("«Litros (6 meses)» con un hueco y un mes parcial dice ambos", async () => {
+    getFuelMonthlyTrend.mockResolvedValue([
+      { month: "Sep", monthKey: "2026-09", liters: null, amount: null, loads: null, providerGap: true, partial: false },
+      { month: "Oct", monthKey: "2026-10", liters: 2500, amount: 1_100_000, loads: 6, providerGap: false, partial: false },
+      { month: "Nov", monthKey: "2026-11", liters: 90, amount: 40_000, loads: 1, providerGap: false, partial: true },
+    ])
+    const section = sectionOf(await FleetSection(props("flota:view", "combustibles:view")))
+    const tile = find(section.kpis, (element) => element.type === KpiCard && element.props.label === "Litros (6 meses)")[0]!
+
+    expect(tile.props.detail).toBe("Sin datos de Sep del proveedor · incluye Nov parcial · ahora")
+  })
+
+  it("el gráfico de consumo recibe el mes parcial tal como lo entrega el servicio", async () => {
+    getFuelMonthlyTrend.mockResolvedValue([
+      { month: "Oct", monthKey: "2026-10", liters: 2500, amount: 1_100_000, loads: 6, providerGap: false, partial: false },
+      { month: "Nov", monthKey: "2026-11", liters: 90, amount: 40_000, loads: 1, providerGap: false, partial: true },
+    ])
+    const section = sectionOf(await FleetSection(props("flota:view", "combustibles:view")))
+    const chart = find(section.charts, (element) => element.props.periodLabel === "últimos 6 meses")[0]!
+
+    expect((chart.props.data as Array<{ partial: boolean }>).map((point) => point.partial)).toEqual([false, true])
+  })
+
   it("sin vehículos ni cargas los tiles dicen qué falta; si la fuente falló conservan la cifra", async () => {
     const empty = sectionOf(await FleetSection(props("flota:view", "combustibles:view")))
     const byLabel = (kpis: unknown, label: string) => find(kpis, (element) => element.type === KpiCard && element.props.label === label)[0]!

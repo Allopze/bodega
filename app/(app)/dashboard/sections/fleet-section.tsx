@@ -103,6 +103,13 @@ export async function FleetSection({ session, scope }: DomainSectionsProps) {
   const totalLiters = Math.round(fuelTrend.reduce((sum, point) => sum + (point.liters ?? 0), 0))
   // Meses sin datos del proveedor (C-4): no suman, pero el tile los nombra para que la cifra no se lea completa.
   const gapMonths = fuelTrend.filter((point) => point.providerGap).map((point) => point.month)
+  // La suma incluye el mes en curso a la fecha: «6 meses» sin este aviso se leería como seis meses completos.
+  const partialMonths = fuelTrend.filter((point) => point.partial).map((point) => point.month)
+  const litersDetail = [
+    gapMonths.length > 0 ? `Sin datos de ${gapMonths.join(", ")} del proveedor` : "Copec (tarjetas y estanques)",
+    ...(partialMonths.length > 0 ? [`incluye ${partialMonths.join(", ")} parcial`] : []),
+    "ahora",
+  ].join(" · ")
   const canRegisterVehicles = permissions.includes("admin:fleet_vehicles")
 
   return (
@@ -129,7 +136,7 @@ export async function FleetSection({ session, scope }: DomainSectionsProps) {
                 contradecía directamente su propio valor (CO-038). */}
             {canViewFuel && <KpiCard {...DASHBOARD_KPI} icon={<Gauge size={16} />} label={`Litros (${TREND_MONTHS} meses)`}
               value={`${formatQty(totalLiters)} L`}
-              detail={gapMonths.length > 0 ? `Sin datos de ${gapMonths.join(", ")} del proveedor · ahora` : "Copec (tarjetas y estanques) · ahora"}
+              detail={litersDetail}
               href={FUEL_PATHS.consumoLitros}
               empty={totalLiters === 0 && !degradedSources.includes("fuelTrend")
                 ? { message: `Sin cargas registradas en ${TREND_MONTHS} meses`, actionLabel: "Ir a combustibles" }

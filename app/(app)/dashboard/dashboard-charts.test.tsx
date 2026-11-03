@@ -19,6 +19,8 @@ import {
   StatusShareBar,
   billingPeriodLabel,
 } from "./dashboard-charts"
+import { dimmedBarShape, partialTailLineShape } from "./charts/chart-parts"
+import { fuelHeadlineCaption, fuelTooltipTitle } from "./charts/fleet-charts"
 
 describe("CompositionDonutChart (I-09)", () => {
   const slice = (key: string, value: number) => ({ key, label: key, value })
@@ -228,6 +230,48 @@ describe("gráficos SST y de flota", () => {
     expect(screen.queryByText(/sin datos del proveedor/)).toBeNull()
   })
 
+  // El mes en curso vale sólo los días transcurridos: sin aviso, su barra casi vacía se lee como un colapso del consumo.
+  it("combustible: el mes en curso se dice parcial en la descripción, igual que Analítica", () => {
+    const data = [
+      { month: "Sep", liters: 1000, amount: 900_000, loads: 4, providerGap: false, partial: false },
+      { month: "Oct", liters: 2500, amount: 1_100_000, loads: 6, providerGap: false, partial: false },
+      { month: "Nov", liters: 90, amount: 40_000, loads: 1, providerGap: false, partial: true },
+    ]
+    render(<FuelConsumptionChart data={data} periodLabel="últimos 6 meses" />)
+
+    expect(screen.getByText(/Litros cargados y costo por mes · últimos 6 meses · el último mes es parcial/)).toBeDefined()
+  })
+
+  it("combustible: el aviso de mes parcial convive con el de un mes sin datos del proveedor", () => {
+    const data = [
+      { month: "Oct", liters: 2500, amount: 1_100_000, loads: 6, providerGap: false, partial: false },
+      { month: "Nov", liters: null, amount: null, loads: null, providerGap: true, partial: true },
+    ]
+    render(<FuelConsumptionChart data={data} />)
+
+    expect(screen.getByText(/el último mes es parcial · sin datos del proveedor en noviembre/)).toBeDefined()
+  })
+
+  it("combustible sin mes parcial no agrega el aviso", () => {
+    render(<FuelConsumptionChart data={[{ month: "Oct", liters: 2500, amount: 1_100_000, loads: 6, providerGap: false, partial: false }]} />)
+
+    expect(screen.queryByText(/parcial/)).toBeNull()
+  })
+
+  it("combustible: el tooltip y la cifra grande rotulan «(parcial)» sólo en el mes parcial", () => {
+    const data = [
+      { month: "Oct", liters: 2500, amount: 1_100_000, loads: 6, providerGap: false, partial: false },
+      { month: "Nov", liters: 90, amount: 40_000, loads: 1, providerGap: false, partial: true },
+    ]
+
+    expect(fuelTooltipTitle("Nov", data)).toBe("Noviembre (parcial)")
+    expect(fuelTooltipTitle("Oct", data)).toBe("Octubre")
+    expect(fuelHeadlineCaption(data[1])).toBe("litros cargados en noviembre (parcial)")
+    expect(fuelHeadlineCaption(data[0])).toBe("litros cargados en octubre")
+    expect(fuelHeadlineCaption(undefined)).toBe("litros cargados en el período")
+    expect(fuelHeadlineCaption({ month: "Nov", liters: null, amount: null, loads: null, providerGap: true, partial: true })).toBe("sin datos del proveedor en noviembre")
+  })
+
   it("combustible devuelve null sin datos", () => {
     expect(render(<FuelConsumptionChart data={[{ month: "Ene", liters: 0, amount: 0, loads: 0 }]} />).container.firstChild).toBeNull()
   })
@@ -248,5 +292,77 @@ describe("StatusShareBar", () => {
   it("retorna null si todo está en cero", () => {
     const { container } = render(<StatusShareBar title="Estados" description="d" data={[{ key: "a", label: "Al día", value: 0 }]} />)
     expect(container.firstChild).toBeNull()
+  })
+})
+
+/**
+ * Los gráficos de series por mes dibujan el mes parcial distinto de los completos
+ * (columna tenue con contorno punteado; último tramo de la línea punteado). recharts
+ * no monta nada en jsdom (sin tamaño), así que se comprueban las formas que le
+ * entregamos al `shape` de `<Bar>` y de `<Line>`.
+ */
+describe("mes parcial en las series del tablero", () => {
+  const bar = (shape: ReturnType<typeof dimmedBarShape>, index: number) =>
+    render(<svg>{shape({ index, x: 10, y: 10, width: 20, height: 40, fill: "#0a0" } as never)}</svg>).container.querySelector("path")!
+
+  it("la columna parcial va tenue y con contorno punteado; las completas, llenas", () => {
+    const shape = dimmedBarShape("liters", null, null, 5)
+
+    const complete = bar(shape, 4)
+    expect(complete.getAttribute("stroke-dasharray")).toBeNull()
+    expect(complete.getAttribute("fill-opacity")).toBeNull()
+
+    const partial = bar(shape, 5)
+    expect(partial.getAttribute("stroke-dasharray")).toBeTruthy()
+    expect(partial.getAttribute("stroke")).toBe("#0a0")
+    expect(Number(partial.getAttribute("fill-opacity"))).toBeLessThan(0.6)
+  })
+
+  // En producción septiembre no tiene datos del proveedor: recharts no dibuja su columna y `index` se corre un lugar.
+  it("con un mes sin columna antes, el mes parcial se reconoce por el índice de los datos y no por el de las columnas dibujadas", () => {
+    const shape = dimmedBarShape("liters", null, null, 5)
+    const column = (index: number, originalDataIndex: number) =>
+      render(<svg>{shape({ index, originalDataIndex, x: 10, y: 10, width: 20, height: 40, fill: "#0a0" } as never)}</svg>).container.querySelector("path")!
+
+    // Octubre es la 4.ª columna dibujada (índice 3) pero el 5.º mes (índice de datos 4); noviembre, la 5.ª (4) y el 6.º mes (5).
+    expect(column(3, 4).getAttribute("stroke-dasharray")).toBeNull()
+    expect(column(4, 5).getAttribute("stroke-dasharray")).toBeTruthy()
+  })
+
+  it("la columna apuntada se reconoce por el índice de los datos, igual que en el tooltip", () => {
+    const shape = dimmedBarShape("liters", 4, null)
+    const opacity = (index: number, originalDataIndex: number) =>
+      Number(render(<svg>{shape({ index, originalDataIndex, x: 10, y: 10, width: 20, height: 40, fill: "#0a0" } as never)}</svg>).container.querySelector("path")!.getAttribute("opacity"))
+
+    expect(opacity(3, 4)).toBe(1)
+    expect(opacity(4, 5)).toBeLessThan(1)
+  })
+
+  it("sin mes parcial ninguna columna cambia", () => {
+    expect(bar(dimmedBarShape("liters", null, null), 5).getAttribute("stroke-dasharray")).toBeNull()
+  })
+
+  it("la línea es sólida hasta el último mes completo y su último tramo, punteado", () => {
+    const points = [{ x: 0, y: 40 }, { x: 40, y: 30 }, { x: 80, y: 35 }, { x: 120, y: 120 }]
+    const shape = partialTailLineShape(3)
+    const { container } = render(<svg>{shape({ points, type: "linear", stroke: "#00f", className: "recharts-line-curve", pathRef: { current: null } } as never)}</svg>)
+
+    const paths = Array.from(container.querySelectorAll("path.recharts-line-curve"))
+    expect(paths).toHaveLength(2)
+    expect(paths[0]!.getAttribute("stroke-dasharray")).toBeNull()
+    expect(paths[0]!.getAttribute("d")).toBe("M0,40L40,30L80,35")
+    // El tramo punteado arranca en el último punto completo: la línea no se corta.
+    expect(paths[1]!.getAttribute("stroke-dasharray")).toBeTruthy()
+    expect(paths[1]!.getAttribute("d")).toBe("M80,35L120,120")
+  })
+
+  it("sin mes parcial la línea se dibuja entera y sólida", () => {
+    const points = [{ x: 0, y: 40 }, { x: 40, y: 30 }, { x: 80, y: 35 }]
+    const { container } = render(<svg>{partialTailLineShape(-1)({ points, type: "linear", stroke: "#00f", className: "recharts-line-curve", pathRef: { current: null } } as never)}</svg>)
+
+    const paths = Array.from(container.querySelectorAll("path.recharts-line-curve"))
+    expect(paths).toHaveLength(1)
+    expect(paths[0]!.getAttribute("stroke-dasharray")).toBeNull()
+    expect(paths[0]!.getAttribute("d")).toBe("M0,40L40,30L80,35")
   })
 })
