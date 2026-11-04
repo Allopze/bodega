@@ -307,6 +307,8 @@ export function InspectionRunList({ runs, summary, page, pageSize, overdueProgra
               key={metric.id}
               type="button"
               disabled={inert}
+              // Marca estable para las E2E: la leyenda de la tendencia también usa `aria-pressed`.
+              data-kpi-tile=""
               // A5: una dimensión, un control. El tile elige la vista y suelta
               // el estado (si no, `estado=planned&vista=pending_review` era una
               // intersección siempre vacía) y la página (el total cambia).

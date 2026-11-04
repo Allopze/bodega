@@ -215,7 +215,7 @@ test.describe("Inspecciones — la bandeja a 1024, 1280 y en el teléfono", () =
   test("a 1024 px los cuatro tiles quedan alineados y la descripción del encabezado no se trunca", async ({ page }) => {
     await page.setViewportSize({ width: 1024, height: 800 })
     await page.goto("/prevencion/inspecciones")
-    const tiles = page.locator("main button[aria-pressed]")
+    const tiles = page.locator("main [data-kpi-tile]")
     await expect(tiles).toHaveCount(4, { timeout: 30_000 })
 
     // La cifra de cada tile, de arriba abajo: el rótulo más largo se parte en dos líneas a este ancho
@@ -253,7 +253,7 @@ test.describe("Inspecciones — la bandeja a 1024, 1280 y en el teléfono", () =
   test("en el teléfono los KPI van en una grilla de 2×2 y no en una tira con scroll", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 })
     await page.goto("/prevencion/inspecciones")
-    const tiles = page.locator("main button[aria-pressed]")
+    const tiles = page.locator("main [data-kpi-tile]")
     await expect(tiles).toHaveCount(4, { timeout: 30_000 })
     const cajas = await tiles.evaluateAll((nodos) => nodos.map((nodo) => {
       const caja = nodo.getBoundingClientRect()

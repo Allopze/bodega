@@ -171,7 +171,13 @@ test("el admin responde la observación y reenvía; la Jefa aprueba la revisión
   await admin.goto(`${REV}?tab=revision`)
   await admin.getByLabel("Tu respuesta").fill("La frecuencia de revisión es mensual y consta en la medida existente.")
   await admin.getByRole("button", { name: "Responder", exact: true }).click()
-  await cabecera(admin).getByRole("button", { name: "Reenviar a revisión", exact: true }).click()
+  // Reenviar exige todas las observaciones respondidas: un clic antes de que la respuesta
+  // quede guardada cae sobre el botón todavía inactivo y no envía nada (la traza del
+  // 2026-11-04 mostró una sola acción de servidor, la de «Responder»).
+  await expect(textoVisible(admin, /Respuesta de Admin E2E: La frecuencia de revisión es mensual/)).toBeVisible()
+  const reenviar = cabecera(admin).getByRole("button", { name: "Reenviar a revisión", exact: true })
+  await expect(reenviar).toBeEnabled()
+  await reenviar.click()
   await expect(estado(admin, /Enviado a revisión|En revisión por Prevención/)).toBeVisible()
 
   const jefa = await as(browser, "jefa.prevencion@e2e.chome.cl")
