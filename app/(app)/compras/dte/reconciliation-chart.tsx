@@ -17,6 +17,7 @@ import {
   type ReconciliationShape,
 } from "@/lib/purchasing/reconciliation-charts"
 import { MONTH_LABELS, formatCLP } from "@/lib/utils"
+import { useChartMotion } from "@/components/ui/chart-interactions"
 
 /**
  * OC emitidas por mes, apiladas por estado de conciliación (CHART-034a). El
@@ -48,6 +49,7 @@ function axisLabel(month: string, crossesYears: boolean): string {
 }
 
 export function ReconciliationChart({ shape }: { shape: ReconciliationShape }) {
+  const motion = useChartMotion()
   const crossesYears = new Set(shape.months.map((month) => month.month.slice(0, 4))).size > 1
   const data = shape.months.map((month) => ({ ...month, ...month.counts, axis: axisLabel(month.month, crossesYears) }))
   const hasPartial = shape.months.some((month) => month.partial)
@@ -68,14 +70,14 @@ export function ReconciliationChart({ shape }: { shape: ReconciliationShape }) {
   return (
     <div>
       <ChartContainer config={config} className="aspect-auto h-56 w-full">
-        <BarChart data={data} margin={MARGIN}>
+        <BarChart aria-label="Órdenes de compra por mes según su estado de conciliación con la factura" data={data} margin={MARGIN}>
           <CartesianGrid vertical={false} />
           <XAxis dataKey="axis" tickLine={false} axisLine={false} tickMargin={8} tick={{ fontSize: 11 }} interval={0} />
           <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={28} tick={{ fontSize: 11 }} />
           <ChartTooltip content={<ChartTooltipContent indicator="dot" labelFormatter={title} />} />
           <ChartLegend content={<ChartLegendContent />} />
           {RECONCILIATION_STATUS_ORDER.map((status) => (
-            <Bar key={status} dataKey={status} stackId="oc" fill={RECONCILIATION_STATUS_META[status].color} shape={MonthBar} />
+            <Bar key={status} dataKey={status} stackId="oc" fill={RECONCILIATION_STATUS_META[status].color} shape={MonthBar} {...motion} />
           ))}
         </BarChart>
       </ChartContainer>

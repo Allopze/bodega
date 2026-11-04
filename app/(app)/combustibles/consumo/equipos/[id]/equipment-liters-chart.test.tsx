@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from "react"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { fillLitersByMonth, litersMonthKeys } from "@/lib/combustibles/equipment/liters-by-month"
 
@@ -17,7 +17,31 @@ vi.mock("recharts", async (importOriginal) => {
 
 import { EquipmentLitersChart } from "./equipment-liters-chart"
 
-afterEach(() => cleanup())
+// `useChartMotion` anima la entrada salvo con «reducir movimiento». Estas pruebas leen el SVG ya
+// terminado (alturas, formas, rótulos), así que corren con esa preferencia activa: es el estado que
+// una animación de ≤ 200 ms alcanza de todos modos, sin esperar cuadros que jsdom no entrega.
+const originalMatchMedia = window.matchMedia
+beforeEach(() => {
+  Object.defineProperty(window, "matchMedia", {
+    writable: true,
+    configurable: true,
+    value: (query: string) => ({
+      matches: query.includes("prefers-reduced-motion"),
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    }),
+  })
+})
+
+afterEach(() => {
+  cleanup()
+  Object.defineProperty(window, "matchMedia", { writable: true, configurable: true, value: originalMatchMedia })
+})
 
 /** Los 12 meses que terminan en marzo de 2026: 300 L ese mes y 100 L de agosto a enero (5 meses sin cargas). */
 const MONTHS = fillLitersByMonth("2026-03", [
@@ -82,7 +106,7 @@ describe("EquipmentLitersChart", () => {
     expect(axisMonths(container)).toEqual(["Abr 25", "May 25", "Jun 25", "Jul 25", "Ago 25", "Sep 25", "Oct 25", "Nov 25", "Dic 25", "Ene 26", "Feb 26", "Mar 26"])
   })
 
-  it("dibuja las barras sin animación: la altura final ya está en el primer cuadro", () => {
+  it("con «reducir movimiento» dibuja las barras sin animación: la altura final ya está en el primer cuadro", () => {
     const { container } = render(<EquipmentLitersChart months={MONTHS} periodMonths={["2026-03"]} vehicleLabel="CAM-01" />)
     const heights = bars(container).map((bar) => Number(bar.getAttribute("height")))
     expect(heights.every((height) => height > 0)).toBe(true)

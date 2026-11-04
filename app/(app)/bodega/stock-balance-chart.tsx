@@ -13,6 +13,7 @@ import {
 import { CHART_SERIES } from "@/lib/chart-palette"
 import { balanceGranularityNote, balancePeriodLabel, type BalanceBucket, type BalanceSeries } from "@/lib/bodega/balance-series"
 import { formatQty } from "@/lib/utils"
+import { useChartMotion } from "@/components/ui/chart-interactions"
 
 /**
  * Saldo de un producto en una faena (CHART-035b): línea escalonada del saldo y
@@ -40,6 +41,7 @@ function BucketBar(props: BarShapeProps) {
 }
 
 export function StockBalanceChart({ series }: { series: BalanceSeries }) {
+  const motion = useChartMotion()
   const note = balanceGranularityNote(series)
   const title = (_label: unknown, payload: ChartTooltipItem[]) => {
     const bucket = payload[0]?.payload as BalanceBucket | undefined
@@ -49,7 +51,7 @@ export function StockBalanceChart({ series }: { series: BalanceSeries }) {
   return (
     <div>
       <ChartContainer config={config} className="aspect-auto h-56 w-full">
-        <ComposedChart data={series.buckets} margin={MARGIN}>
+        <ComposedChart aria-label="Saldo al cierre, ingresos y egresos del producto por período" data={series.buckets} margin={MARGIN}>
           <CartesianGrid vertical={false} />
           <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} tick={{ fontSize: 11 }} minTickGap={28} />
           <YAxis
@@ -62,9 +64,9 @@ export function StockBalanceChart({ series }: { series: BalanceSeries }) {
           />
           <ChartTooltip content={<ChartTooltipContent indicator="dot" labelFormatter={title} />} />
           <ChartLegend content={<ChartLegendContent />} />
-          <Bar dataKey="ingress" fill={CHART_SERIES[1]} maxBarSize={14} shape={BucketBar} />
-          <Bar dataKey="egress" fill={CHART_SERIES[2]} maxBarSize={14} shape={BucketBar} />
-          <Line dataKey="balance" type="stepAfter" stroke={CHART_SERIES[0]} strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+          <Bar dataKey="ingress" fill={CHART_SERIES[1]} maxBarSize={14} shape={BucketBar} {...motion} />
+          <Bar dataKey="egress" fill={CHART_SERIES[2]} maxBarSize={14} shape={BucketBar} {...motion} />
+          <Line dataKey="balance" type="stepAfter" stroke={CHART_SERIES[0]} strokeWidth={2} dot={false} activeDot={{ r: 4 }} {...motion} />
         </ComposedChart>
       </ChartContainer>
       {note ? <p className="mt-1 text-xs text-[var(--color-text-muted)]">{note}</p> : null}

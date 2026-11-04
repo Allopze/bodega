@@ -6,6 +6,7 @@ import {
 import { CHART_COLORS, chartTooltipStyle } from "@/lib/chart-palette"
 import { compactCLP, type MaintenanceMonthPoint } from "@/lib/services/ti/dashboard"
 import { formatCLP } from "@/lib/utils"
+import { useChartMotion } from "@/components/ui/chart-interactions"
 
 export interface WorksiteGroupRow {
   worksiteName: string
@@ -75,6 +76,7 @@ function DataTable({ caption, headers, rows }: { caption: string; headers: strin
 }
 
 function WorksiteChart({ data }: { data: WorksiteGroupRow[] }) {
+  const motion = useChartMotion()
   if (data.length === 0) return null
   const summary = data
     .map((r) => `${r.worksiteName}: ${r.inUse} en uso, ${r.available} disponibles, ${r.inRepair} en reparación, ${r.other} otros`)
@@ -95,7 +97,8 @@ function WorksiteChart({ data }: { data: WorksiteGroupRow[] }) {
             <Tooltip cursor={{ fill: "var(--color-surface-2)" }} contentStyle={chartTooltipStyle()} />
             {GROUPS.map((g) => (
               <Bar key={g.key} dataKey={g.key} name={g.label} stackId="s" fill={g.color}
-                stroke="var(--color-surface)" strokeWidth={2} />
+                stroke="var(--color-surface)" strokeWidth={2}
+                {...motion} />
             ))}
           </BarChart>
         </ResponsiveContainer>
@@ -114,6 +117,7 @@ function WorksiteChart({ data }: { data: WorksiteGroupRow[] }) {
  * regla A5b de AGENTS.md. El tick de dinero es compacto para que no se recorte.
  */
 function MaintenanceChart({ data }: { data: MaintenanceMonthPoint[] }) {
+  const motion = useChartMotion()
   if (data.every((p) => p.count === 0)) return null
   const summary = data.filter((p) => p.count > 0)
     .map((p) => `${p.label}: ${p.count} mantenciones, ${formatCLP(p.cost)}`).join(". ")
@@ -136,9 +140,10 @@ function MaintenanceChart({ data }: { data: MaintenanceMonthPoint[] }) {
               contentStyle={chartTooltipStyle()}
               formatter={(value, name) => (name === "Gasto" ? [formatCLP(Number(value ?? 0)), name] : [String(value ?? ""), name])}
             />
-            <Bar yAxisId="cost" dataKey="cost" name="Gasto" fill={CHART_COLORS.brand} radius={[4, 4, 0, 0]} maxBarSize={28} />
+            <Bar yAxisId="cost" dataKey="cost" name="Gasto" fill={CHART_COLORS.brand} radius={[4, 4, 0, 0]} maxBarSize={28} {...motion} />
             <Line yAxisId="count" type="monotone" dataKey="count" name="Cantidad" stroke={CHART_COLORS.blue}
-              strokeWidth={2} dot={{ r: 4, stroke: "var(--color-surface)", strokeWidth: 2 }} />
+              strokeWidth={2} dot={{ r: 4, stroke: "var(--color-surface)", strokeWidth: 2 }}
+              {...motion} />
           </ComposedChart>
         </ResponsiveContainer>
       </div>

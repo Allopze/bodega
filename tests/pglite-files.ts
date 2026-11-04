@@ -454,6 +454,8 @@ export const pgliteTestFiles = [
   "app/(app)/aprobaciones/queue-age-pglite.test.ts",
   // Combustibles › Fuentes (CHART-022): mapa de cobertura por mes (Copec, telemetría, OnWay), alcance por permiso y faena, día civil de Chile.
   "lib/combustibles/__tests__/coverage-matrix-data-pglite.test.ts",
+  // CHART-022 (Fase 4): meses sin datos del proveedor o parciales de la ventana de un gráfico de combustible, con alcance por faena.
+  "lib/combustibles/__tests__/coverage-notice-data-pglite.test.ts",
   // Prevención › Inspecciones (CHART-010): serie mensual de cumplimiento ponderada por ítems, alcance de faenas, mes civil de Chile.
   "lib/__tests__/prevention-inspection-trend-pglite.test.ts",
   // Prevención › Alcotest (CHART-010): serie mensual agregada en SQL (sólo conteos), alcance de faenas, mes civil de Chile, y la lista sin cargar la tabla entera.

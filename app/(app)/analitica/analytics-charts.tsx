@@ -13,7 +13,9 @@ import {
   XAxis,
   YAxis,
 } from "recharts"
+import { DenseChart } from "@/components/charts/dense-chart"
 import { ChartContainer, type ChartConfig } from "@/components/ui/chart"
+import { RankedList } from "@/components/ui/ranked-list"
 import { useChartMotion } from "@/components/ui/chart-interactions"
 import type { SpendByMonthRow } from "@/lib/services/analytics"
 import { formatCLP, formatCompactCLP, formatPercent, pluralize } from "@/lib/utils"
@@ -170,6 +172,10 @@ function ParetoTooltip({ active, payload }: { active?: boolean; payload?: Array<
  *
  * El clic en una barra abre la lista de OC del proveedor, pero es sólo una comodidad del puntero:
  * el camino por teclado y por lector de pantalla son los enlaces de «Ver datos».
+ *
+ * Bajo 360 px las etiquetas en diagonal de diez barras no se leen: `DenseChart` las reemplaza
+ * por el gasto de cada proveedor como `RankedList` (mismo orden, con su enlace a las OC); el
+ * % acumulado sigue en «Ver datos».
  */
 export function SupplierParetoChart({ rows, thresholdPct }: { rows: ParetoChartRow[]; thresholdPct: number }) {
   const motion = useChartMotion()
@@ -178,9 +184,18 @@ export function SupplierParetoChart({ rows, thresholdPct }: { rows: ParetoChartR
     amount: { label: "Gasto", color: PURCHASING_COLOR },
     cumulativePct: { label: "% acumulado", color: CUMULATIVE_COLOR },
   } satisfies ChartConfig
+  const ranking = (
+    <RankedList
+      ariaLabel="Gasto por proveedor, de mayor a menor"
+      format="clp"
+      order="input"
+      limit={rows.length}
+      items={rows.map((row) => ({ key: row.key, label: row.label, value: row.amount, href: row.href }))}
+    />
+  )
 
   return (
-    <>
+    <DenseChart fallback={ranking}>
       <ChartContainer config={config} className="aspect-auto h-80 w-full">
         <ComposedChart accessibilityLayer aria-label="Pareto de proveedores: gasto por proveedor y porcentaje acumulado" data={rows} margin={{ top: 12, right: 8, left: 0, bottom: 0 }}>
           <CartesianGrid vertical={false} strokeDasharray="3 3" />
@@ -250,6 +265,6 @@ export function SupplierParetoChart({ rows, thresholdPct }: { rows: ParetoChartR
         <li className="inline-flex items-center gap-1.5"><LegendSwatch color={CUMULATIVE_COLOR} />% acumulado del gasto total (eje derecho)</li>
         <li className="inline-flex items-center gap-1.5"><LegendSwatch color={REFERENCE_COLOR} />Otros proveedores</li>
       </ul>
-    </>
+    </DenseChart>
   )
 }

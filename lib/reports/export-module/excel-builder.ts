@@ -19,6 +19,8 @@ export interface XlsxBuildContext {
   to?: string | null
   /** Tope de filas aplicado por el llamador, para explicarlo en la advertencia. */
   rowLimit?: number
+  /** Salvedades sobre las cifras del libro: una fila «Nota» por cada una en la hoja «Metadatos». */
+  notes?: readonly string[]
 }
 
 export async function buildXlsxBuffer(report: ReportData, context?: XlsxBuildContext): Promise<ArrayBuffer> {
@@ -69,6 +71,7 @@ export async function buildXlsxBuffer(report: ReportData, context?: XlsxBuildCon
       rowCount: sheets.reduce((total, sheet) => total + sheet.rows.length, 0),
       from: context.from ?? null,
       to: context.to ?? null,
+      ...(context.notes ? { notes: context.notes } : {}),
     })
   }
 

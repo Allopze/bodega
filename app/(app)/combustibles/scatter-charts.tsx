@@ -2,8 +2,12 @@
 
 import { ScatterChart as ReScatter, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ZAxis } from "recharts"
 import { ChartLineUp } from "@phosphor-icons/react"
+import { DenseChart } from "@/components/charts/dense-chart"
 import { ChartEmpty } from "@/components/ui/chart-empty"
+import { RankedList } from "@/components/ui/ranked-list"
+import { formatQty } from "@/lib/utils"
 import type { ScatterPoint } from "@/lib/combustibles/operations-dashboard"
+import { useChartMotion } from "@/components/ui/chart-interactions"
 
 const DOT_COLOR = "var(--color-primary)"
 const DOT_OPACITY = 0.55
@@ -26,13 +30,33 @@ function MeterScatter({
   axisLabel: string
   ariaLabel: string
 }) {
+  const motion = useChartMotion()
   const data = points.map((p) => ({ x: p.meterReading, y: p.liters, plate: p.plate, code: p.equipmentCode, type: p.equipmentTypeName, worksite: p.worksiteName }))
 
+  // Bajo 360 px los puntos no se distinguen: se reemplazan por las cargas con más litros.
+  const biggestLoads = (
+    <RankedList
+      ariaLabel={`Cargas con más litros y su ${meterLabel.toLowerCase()}`}
+      format="count"
+      unit=" L"
+      order="input"
+      showShare={false}
+      items={[...data]
+        .sort((a, b) => b.y - a.y)
+        .map((point, index) => ({
+          key: `${point.plate}-${point.x}-${index}`,
+          label: `${point.code ? `${point.code} · ` : ""}${point.plate}`,
+          value: point.y,
+          detail: `${formatQty(point.x, undefined, { maximumFractionDigits: 0 })} ${meterUnit}`,
+        }))}
+    />
+  )
+
   return (
-    <>
-      <div className="h-80" aria-label={ariaLabel}>
+    <DenseChart fallback={biggestLoads}>
+      <div className="h-80">
         <ResponsiveContainer width="100%" height="100%" debounce={200}>
-          <ReScatter margin={{ top: 8, right: 12, left: 0, bottom: 36 }}>
+          <ReScatter aria-label={ariaLabel} margin={{ top: 8, right: 12, left: 0, bottom: 36 }}>
             <CartesianGrid stroke={GRID_COLOR} strokeDasharray="2 5" />
             <XAxis dataKey="x" name={meterLabel} unit={` ${meterUnit}`} type="number" {...chartAxisProps()} label={{ value: axisLabel, position: "bottom", offset: -4, fill: "var(--color-text-muted)", fontSize: 11 }} />
             <YAxis dataKey="y" name="Litros" unit=" L" width={48} type="number" {...chartAxisProps()} label={{ value: "Litros", angle: -90, position: "insideLeft", offset: -4, fill: "var(--color-text-muted)", fontSize: 11 }} />
@@ -52,11 +76,11 @@ function MeterScatter({
                 )
               }}
             />
-            <Scatter data={data} fill={DOT_COLOR} fillOpacity={DOT_OPACITY} />
+            <Scatter data={data} fill={DOT_COLOR} fillOpacity={DOT_OPACITY} {...motion} />
           </ReScatter>
         </ResponsiveContainer>
       </div>
-    </>
+    </DenseChart>
   )
 }
 

@@ -27,7 +27,7 @@ export async function analiticaResumen(session: Session | null, filters: ExportF
   const canViewFuelCosts = canViewFuel && can(session, "combustibles:view_costs")
 
   const rows: ReportCell[][] = [
-    ["KPI", "Gasto total", `${data.filters.fromDate} a ${data.filters.toDate}`, data.kpis.totalSpend],
+    ["KPI", "Gasto total (con IVA)", `${data.filters.fromDate} a ${data.filters.toDate}`, data.kpis.totalSpend],
     ["KPI", "Gasto período anterior", `${data.kpis.spendVariationPct ?? "sin base"}% variación`, data.kpis.previousTotalSpend],
     ["KPI", "Órdenes de compra", "Cantidad del período", data.kpis.purchaseOrderCount],
     ["KPI", "Aprobaciones pendientes", "Ítems solicitados pendientes", data.kpis.pendingApprovals],
@@ -41,7 +41,7 @@ export async function analiticaResumen(session: Session | null, filters: ExportF
       row.totalAmount,
     ]),
     ...data.spendByModule.map((row) => [
-      "Gasto por tipo",
+      "Gasto por tipo (con IVA)",
       row.module,
       "",
       row.totalAmount,
@@ -89,7 +89,7 @@ export async function analiticaResumen(session: Session | null, filters: ExportF
       worksheetName: "KPIs",
       headers: ["Indicador", "Detalle", "Valor"],
       rows: [
-        ["Gasto total", `${data.filters.fromDate} a ${data.filters.toDate}`, data.kpis.totalSpend],
+        ["Gasto total (con IVA)", `${data.filters.fromDate} a ${data.filters.toDate}`, data.kpis.totalSpend],
         ["Gasto período anterior", `${data.kpis.spendVariationPct ?? "sin base"}% variación`, data.kpis.previousTotalSpend],
         ["Órdenes de compra", "Cantidad del período", data.kpis.purchaseOrderCount],
         ["Aprobaciones pendientes", "Ítems solicitados pendientes", data.kpis.pendingApprovals],

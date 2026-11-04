@@ -1,3 +1,4 @@
+import type { ChartDataExcel } from "@/components/charts/chart-data-table"
 import { ChartSection } from "@/components/charts/chart-section"
 import { PERFORMANCE_UNIT_LABELS, type PerformanceUnit } from "@/lib/combustibles/control/contracts"
 import { describeMeterRate, type MeterRateSeries } from "@/lib/combustibles/meter-rate-series"
@@ -18,7 +19,7 @@ const TITLES: Record<PerformanceUnit, string> = {
  * Sólo se dibuja la unidad que tiene lecturas; si no hay de ninguna, un solo estado
  * vacío con el camino para llenarlo (A4) en vez de dos gráficos vacíos.
  */
-export function MeterRateSections({ series, sourcesHref }: { series: Record<PerformanceUnit, MeterRateSeries>; sourcesHref: string }) {
+export function MeterRateSections({ series, sourcesHref, excel }: { series: Record<PerformanceUnit, MeterRateSeries>; sourcesHref: string; excel?: ChartDataExcel }) {
   const units = (["km_per_liter", "liters_per_hour"] as const).filter((unit) => series[unit].status !== "empty")
 
   if (units.length === 0) {
@@ -47,7 +48,7 @@ export function MeterRateSections({ series, sourcesHref }: { series: Record<Perf
             headingLevel={3}
             title={TITLES[unit]}
             summary={describeMeterRate(data)}
-            data={{ caption: `Rendimiento mensual en ${PERFORMANCE_UNIT_LABELS[unit]}`, headers: table.headers, rows: table.rows }}
+            data={{ caption: `Rendimiento mensual en ${PERFORMANCE_UNIT_LABELS[unit]}`, headers: table.headers, rows: table.rows, excel }}
           >
             <MeterRateChart series={data} />
             <ul className="mt-2 grid gap-0.5 text-xs text-[var(--color-text-muted)]">

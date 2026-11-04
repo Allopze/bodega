@@ -2,13 +2,16 @@
 
 import Link from "next/link"
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts"
+import { DenseChart } from "@/components/charts/dense-chart"
 import { ChartContainer, ChartTooltip, type ChartConfig, type ChartTooltipItem } from "@/components/ui/chart"
+import { RankedList } from "@/components/ui/ranked-list"
 import { ChartEmpty } from "@/components/ui/chart-empty"
 import { CHART_COLORS } from "@/lib/chart-palette"
 import { fuelEquipmentHref } from "@/lib/combustibles/routes"
 import type { EvolutionPanel, EvolutionPanels } from "@/lib/combustibles/evolution-panels"
 import { MONTH_LABELS, formatQty } from "@/lib/utils"
 import { AXIS_TICK, compactNumber } from "./control/_charts/chart-shared"
+import { useChartMotion } from "@/components/ui/chart-interactions"
 
 /**
  * Evolución por equipo como *small multiples*: un panel por equipo, con el mismo
@@ -22,6 +25,10 @@ import { AXIS_TICK, compactNumber } from "./control/_charts/chart-shared"
  * dentro de una imagen no es accesible (axe `nested-interactive`).
  * Un período sin registro del equipo corta la línea (no es 0 L); con un punto
  * marcado en cada período con registro, un registro suelto también se ve.
+ *
+ * Bajo 360 px de pantalla ocho paneles de 130 px de alto son ocho gráficos que no se
+ * comparan a la vista: `DenseChart` los reemplaza por el ranking de litros por equipo,
+ * que sí cabe y conserva el enlace a cada ficha.
  */
 
 const config = { liters: { label: "Litros", color: CHART_COLORS.brand } } satisfies ChartConfig
@@ -63,6 +70,7 @@ function PanelTooltip({ active, payload }: { active?: boolean; payload?: ChartTo
 }
 
 function Panel({ panel, periods, axisMax }: { panel: EvolutionPanel; periods: string[]; axisMax: number }) {
+  const motion = useChartMotion()
   const monthly = periods.every((period) => period.endsWith("-01"))
   const first = panel.series.find((item) => item.liters !== null)
   const last = [...panel.series].reverse().find((item) => item.liters !== null)
@@ -90,8 +98,9 @@ function Panel({ panel, periods, axisMax }: { panel: EvolutionPanel; periods: st
           <YAxis domain={[0, axisMax]} tickLine={false} axisLine={false} width={34} tick={{ ...AXIS_TICK, fontSize: 10 }} tickCount={3} tickFormatter={compactNumber} />
           <ChartTooltip cursor={false} isAnimationActive={false} filterNull={false} content={<PanelTooltip />} />
           <Line
-            dataKey="liters" type="linear" stroke={CHART_COLORS.brand} strokeWidth={2} connectNulls={false} isAnimationActive={false}
+            dataKey="liters" type="linear" stroke={CHART_COLORS.brand} strokeWidth={2} connectNulls={false}
             dot={{ r: 2.5, fill: CHART_COLORS.brand, stroke: CHART_COLORS.brand }} activeDot={{ r: 4 }}
+            {...motion}
           />
         </LineChart>
       </ChartContainer>
@@ -106,9 +115,26 @@ export function EvolutionByVehicleChart({ view }: { view: EvolutionPanels }) {
   if (view.periods.length < 2) {
     return <ChartEmpty className="h-48" label="Hace falta más de un período para ver la evolución" hint="Los reportes de tarjeta traen un total por mes: amplía el período a varios meses para ver cómo cambia cada equipo." />
   }
+  const ranking = (
+    <RankedList
+      ariaLabel="Litros por equipo en el período"
+      format="count"
+      unit=" L"
+      order="input"
+      limit={view.panels.length}
+      items={view.panels.map((panel) => ({
+        key: panel.plate,
+        label: panel.label,
+        value: panel.total,
+        href: panel.vehicleId ? fuelEquipmentHref(panel.vehicleId) : undefined,
+      }))}
+    />
+  )
   return (
-    <div className="grid gap-x-6 gap-y-5 sm:grid-cols-2 xl:grid-cols-4">
-      {view.panels.map((panel) => <Panel key={panel.plate} panel={panel} periods={view.periods} axisMax={view.axisMax} />)}
-    </div>
+    <DenseChart fallback={ranking}>
+      <div className="grid gap-x-6 gap-y-5 sm:grid-cols-2 xl:grid-cols-4">
+        {view.panels.map((panel) => <Panel key={panel.plate} panel={panel} periods={view.periods} axisMax={view.axisMax} />)}
+      </div>
+    </DenseChart>
   )
 }

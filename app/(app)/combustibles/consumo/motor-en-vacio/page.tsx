@@ -7,6 +7,7 @@ import { DegradedDataBanner } from "@/components/ui/degraded-data-banner"
 import { EmptyState } from "@/components/ui/empty-state"
 import { PageContainer } from "@/components/ui/page-container"
 import { PageHeader } from "@/components/ui/page-header"
+import { CoverageNotice } from "@/components/charts/coverage-notice"
 import { FuelBreadcrumbs } from "@/components/combustibles/fuel-breadcrumbs"
 import { FuelHeaderActions } from "@/components/combustibles/fuel-header-actions"
 import { can, requirePermission } from "@/lib/auth/can"
@@ -14,6 +15,8 @@ import { getIdleDailySeries, getIdleEquipmentMonths, getIdleFleetMonths, getIdle
 import { getLitersPerHourComparison } from "@/lib/combustibles/control/queries/idle-comparison"
 import { summarizeIdleByEquipment } from "@/lib/combustibles/control/queries/idle-summary"
 import { controlFiltersFromPeriod, exportParamsFromFilters } from "@/lib/combustibles/control/queries/period-filters"
+import { coverageNoticeText, fuelSourcesHref } from "@/lib/combustibles/coverage-notice"
+import { getFuelProviderCoverageGaps } from "@/lib/combustibles/coverage-notice-data"
 import { resolveFuelPeriodForPage } from "@/lib/combustibles/period/server"
 import { idleDailyChartData } from "@/lib/combustibles/equipment/idle-daily"
 import { FUEL_PATHS, fuelEquipmentHref } from "@/lib/combustibles/routes"
@@ -75,12 +78,13 @@ export default async function MotorEnVacioPage({ searchParams }: { searchParams:
     )
   }
 
-  const [equipmentMonths, fleetMonths, vehicles, comparison, topDays] = await Promise.all([
+  const [equipmentMonths, fleetMonths, vehicles, comparison, topDays, coverage] = await Promise.all([
     track(getIdleEquipmentMonths(session, filters), { rows: [], total: null }, "motor en vacío por equipo"),
     track(getIdleFleetMonths(session, filters), [], "motor en vacío por mes"),
     track(listIdleVehicles(session, filters), [], "equipos con telemetría"),
     track(getLitersPerHourComparison(session, filters), [], "litros por hora"),
     track(getIdleTopDays(session, filters, 20), [], "días con más motor en vacío"),
+    track(getFuelProviderCoverageGaps(session, period.monthKeys, { worksiteId: filters.worksiteId }), { gapMonths: [], partialMonths: [] }, "cobertura del proveedor"),
   ])
   const selectedVehicle = vehicles.data.find((vehicle) => vehicle.id === filters.equipment) ?? vehicles.data[0]
   const daily = selectedVehicle ? await track(getIdleDailySeries(session, filters, selectedVehicle.id), [], "serie diaria") : null
@@ -91,6 +95,9 @@ export default async function MotorEnVacioPage({ searchParams }: { searchParams:
   const fleet = equipmentMonths.data.total
   const topEquipment = summarizeIdleByEquipment(equipmentMonths.data.rows)
   const equipmentHref = (vehicleId: string) => hrefInContext(fuelEquipmentHref(vehicleId), period)
+
+  const coverageInput = { gapMonths: coverage.data.gapMonths, partialMonths: coverage.data.partialMonths, subject: "las cargas de tarjeta Copec usadas en esta comparación" }
+  const coverageNote = coverageNoticeText(coverageInput)
 
   return (
     <PageContainer>
@@ -150,7 +157,9 @@ export default async function MotorEnVacioPage({ searchParams }: { searchParams:
           {vehicles.failed || daily?.failed ? <SectionError what="la serie diaria" /> : <IdleDailyChartLazy data={idleDailyChartData(daily?.data ?? [])} />}
         </Disclosure>
         <Disclosure title="Telemetría contra cargas" description="Un punto por equipo y mes: los litros por hora que mide la telemetría contra los que salen de las cargas. Los que se alejan de la diagonal llevan nombre.">
-          {comparison.failed ? <SectionError what="la comparación de litros por hora" /> : <LitersPerHourSection rows={comparison.data} equipmentHref={equipmentHref} cargasHref={hrefInContext(FUEL_PATHS.cargas, period)} />}
+          {/* La telemetría llega por equipo y día; el L/h «desde cargas» sí depende de lo que Copec informó: el aviso va aquí y no sobre las horas de motor. */}
+          <CoverageNotice {...coverageInput} className="mb-4" sourcesHref={fuelSourcesHref(session) ? hrefInContext(FUEL_PATHS.fuentes, period) : undefined} />
+          {comparison.failed ? <SectionError what="la comparación de litros por hora" /> : <LitersPerHourSection rows={comparison.data} equipmentHref={equipmentHref} cargasHref={hrefInContext(FUEL_PATHS.cargas, period)} excel={canExport ? { permission: "combustibles:export", notes: coverageNote ? [coverageNote] : [] } : undefined} />}
         </Disclosure>
         <Disclosure title="Los 20 días con más vacío" description="Sólo días con al menos 1 hora de motor: un día de minutos daría 100 % sin significar nada.">
           {topDays.failed ? <SectionError what="los días con más motor en vacío" /> : <TopIdleDaysTable rows={topDays.data} />}

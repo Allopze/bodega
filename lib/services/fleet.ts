@@ -19,8 +19,7 @@ import { can } from "@/lib/auth/can"
 import { accountableProviderTransactionsWhere, providerLoadCountSql } from "@/lib/combustibles/load-status"
 import { OPEN_ANOMALY_CASE_STATUSES } from "@/lib/combustibles/anomaly-labels"
 import { acceptedMeterResetSql } from "@/lib/combustibles/meter-reset-sql"
-import { monthsWithoutProviderData } from "@/lib/combustibles/copec-coverage"
-import { listCopecPeriodCoverage } from "@/lib/combustibles/copec-coverage-store"
+import { getFuelProviderCoverageGaps } from "@/lib/combustibles/coverage-notice-data"
 import { maxMeterRatePerDayOf, meterSeriesAdvance, type MeterSeriesPoint } from "@/lib/combustibles/meter-series"
 import { fuelOperationOccurredAtSql } from "@/lib/combustibles/fuel-log"
 import { fleetDocumentMetadataSchema, resolveNextExpiryDate } from "@/lib/validation/fleet-documents"
@@ -440,20 +439,10 @@ export async function getFleetProviderGapMonths(session: Session, worksiteId?: s
   const lastMonth = todayInChile().slice(0, 7)
   const months: string[] = []
   for (let month = since.slice(0, 7); month <= lastMonth; month = addMonths(`${month}-01`, 1).slice(0, 7)) months.push(month)
-
-  const monthSql = sql<string>`left(${fuelProviderTransactions.occurredAt}, 7)`
-  const [monthsWithRows, coverage] = await Promise.all([
-    db.select({ month: monthSql })
-      .from(fuelProviderTransactions)
-      .where(and(
-        accountableProviderTransactionsWhere(),
-        sql`left(${fuelProviderTransactions.occurredAt}, 10) >= ${since}`,
-        worksiteScopeSql(session, fuelProviderTransactions.worksiteId, worksiteId),
-      ))
-      .groupBy(monthSql),
-    listCopecPeriodCoverage(`${months[0]}-01`, `${lastMonth}-01`),
-  ])
-  return [...monthsWithoutProviderData(months, coverage, new Set(monthsWithRows.map((row) => row.month)))].sort()
+  // La consulta y la vara viven en `getFuelProviderCoverageGaps`, la misma que usan los avisos de cobertura de
+  // los gráficos de combustible: Flota no puede discrepar de ellos. `fromDate` conserva el día de corte de la ventana.
+  const { gapMonths } = await getFuelProviderCoverageGaps(session, months, { worksiteId, fromDate: since })
+  return gapMonths
 }
 
 /** Ventana (días) del antes/después del rendimiento alrededor de la salida de taller. */

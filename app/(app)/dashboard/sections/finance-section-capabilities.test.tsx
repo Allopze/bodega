@@ -23,6 +23,7 @@ vi.mock("@/lib/services/operational-period-metrics", async (importOriginal) => (
   getOperationalPeriodMetrics,
 }))
 
+import { CoverageNotice } from "@/components/charts/coverage-notice"
 import { KpiCard } from "@/components/ui/kpi-card"
 import { ChartSlot } from "@/components/ui/dashboard-panel"
 import { RankedList } from "@/components/ui/ranked-list"
@@ -90,6 +91,7 @@ type SectionProps = {
   kpiGroups: Array<{ key: string; label: string | null; content: ReactNode }>
   charts: ReactNode
   chartsFirst?: boolean
+  coverage?: { type: unknown; props: Record<string, unknown> }
 }
 
 const sectionProps = async (permissions: string[], isGlobal = true) =>
@@ -421,39 +423,46 @@ describe("FinanceSection: rediseño (gráficos primero, seis tiles, sin duplicar
       }
     })
 
-    // C-9 / C-4: el costo sale del libro del proveedor. Los meses sin datos del proveedor no suman,
-    // pero el tile los nombra: sin eso, 5 meses de gasto se leerían como los 6.
-    it("«Costo de combustible» suma los meses con datos y nombra los que no tienen datos del proveedor", async () => {
+    // C-9 / C-4: el costo sale del libro del proveedor. Los meses sin datos del proveedor no suman y los
+    // nombra el aviso de cobertura de la sección (una sola vez, no el detalle del tile): sin eso, 5 meses de
+    // gasto se leerían como los 6.
+    it("«Costo de combustible» suma los meses con datos y el aviso de cobertura nombra los que no tienen datos del proveedor", async () => {
       getFuelMonthlyTrend.mockResolvedValue([
         { month: "Ago", monthKey: "2026-08", liters: 100, amount: 900_000, loads: 4, providerGap: false },
         { month: "Sep", monthKey: "2026-09", liters: null, amount: null, loads: null, providerGap: true },
         { month: "Oct", monthKey: "2026-10", liters: 200, amount: 1_100_000, loads: 6, providerGap: false },
       ])
-      const tiles = tilesOf(await sectionProps(ALL))
-      const tile = tiles.find((entry) => entry.props.label === "Costo de combustible")!
+      const props = await sectionProps(ALL)
+      const tile = tilesOf(props).find((entry) => entry.props.label === "Costo de combustible")!
 
       expect(tile.props.value).toBe("$2.000.000")
-      expect(tile.props.detail).toBe("Copec · últimos 6 meses · sin datos de Sep")
+      expect(tile.props.detail).toBe("Copec · últimos 6 meses")
       expect(tile.props.empty).toBeUndefined()
+      expect(props.coverage?.type).toBe(CoverageNotice)
+      expect(props.coverage?.props).toMatchObject({ gapMonths: ["2026-09"], partialMonths: [], subject: "las cifras de combustible de los últimos 6 meses" })
     })
 
-    it("«Costo de combustible» nombra el mes en curso como parcial: la suma lo incluye", async () => {
+    it("«Costo de combustible» incluye el mes en curso: el aviso de cobertura lo dice como parcial", async () => {
       getFuelMonthlyTrend.mockResolvedValue([
         { month: "Sep", monthKey: "2026-09", liters: null, amount: null, loads: null, providerGap: true, partial: false },
         { month: "Oct", monthKey: "2026-10", liters: 200, amount: 1_100_000, loads: 6, providerGap: false, partial: false },
         { month: "Nov", monthKey: "2026-11", liters: 5, amount: 20_000, loads: 1, providerGap: false, partial: true },
       ])
-      const tile = tilesOf(await sectionProps(ALL)).find((entry) => entry.props.label === "Costo de combustible")!
+      const props = await sectionProps(ALL)
+      const tile = tilesOf(props).find((entry) => entry.props.label === "Costo de combustible")!
 
       expect(tile.props.value).toBe("$1.120.000")
-      expect(tile.props.detail).toBe("Copec · últimos 6 meses · sin datos de Sep · incluye Nov parcial")
+      expect(tile.props.detail).toBe("Copec · últimos 6 meses")
+      expect(props.coverage?.props).toMatchObject({ gapMonths: ["2026-09"], partialMonths: ["2026-11"] })
     })
 
     it("«Costo de combustible» sin huecos no agrega avisos", async () => {
       getFuelMonthlyTrend.mockResolvedValue([{ month: "Oct", monthKey: "2026-10", liters: 200, amount: 1_100_000, loads: 6, providerGap: false }])
-      const tile = tilesOf(await sectionProps(ALL)).find((entry) => entry.props.label === "Costo de combustible")!
+      const props = await sectionProps(ALL)
+      const tile = tilesOf(props).find((entry) => entry.props.label === "Costo de combustible")!
 
       expect(tile.props.detail).toBe("Copec · últimos 6 meses")
+      expect(props.coverage?.props).toMatchObject({ gapMonths: [], partialMonths: [] })
     })
 
     it("con OC emitidas no hay tiles vacíos", async () => {

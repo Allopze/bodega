@@ -1,4 +1,5 @@
 import Link from "next/link"
+import type { ChartDataExcel } from "@/components/charts/chart-data-table"
 import { ChartSection } from "@/components/charts/chart-section"
 import { Table, TableBody, TableCell, TableCellNum, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import { PERFORMANCE_UNIT_TITLES } from "@/lib/combustibles/control/contracts"
@@ -80,7 +81,7 @@ function comparisonNotes(view: LphComparisonView): string[] {
  * listan con un enlace a su ficha *fuera* del gráfico: un enlace dentro de una imagen
  * no es accesible (axe `nested-interactive`).
  */
-export function LitersPerHourSection({ rows, equipmentHref, cargasHref }: { rows: LitersPerHourComparisonRow[]; equipmentHref?: (vehicleId: string) => string; cargasHref?: string }) {
+export function LitersPerHourSection({ rows, equipmentHref, cargasHref, excel }: { rows: LitersPerHourComparisonRow[]; equipmentHref?: (vehicleId: string) => string; cargasHref?: string; excel?: ChartDataExcel }) {
   if (rows.length === 0) return <LitersPerHourTable rows={rows} />
   const view = buildLphComparison(rows)
   const summary = describeLphComparison(view)
@@ -99,6 +100,7 @@ export function LitersPerHourSection({ rows, equipmentHref, cargasHref }: { rows
           rows: [...view.points].sort((a, b) => Math.abs(b.differencePct) - Math.abs(a.differencePct)).map((point) => [
             point.equipment, monthText(point.month), numberText(point.y, 2), numberText(point.x, 2), pctText(point.differencePct),
           ]),
+          excel,
         } : undefined}
         empty={summary ? null : {
           label: "Ningún equipo tiene telemetría y cargas con L/h en el mismo mes",

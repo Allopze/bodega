@@ -7,6 +7,7 @@ import { ChartErrorBoundary } from "@/components/chart-error-boundary"
 import { CHART_COLORS } from "@/lib/chart-palette"
 import { PERFORMANCE_UNIT_LABELS, type PerformanceUnit } from "@/lib/combustibles/control/contracts"
 import { AXIS_TICK } from "./chart-shared"
+import { useChartMotion } from "@/components/ui/chart-interactions"
 
 export interface DispersionPoint {
   name: string
@@ -27,6 +28,7 @@ const fmt = (value: unknown, digits = 2) => (typeof value === "number" ? value.t
  * válida no tiene σ: su punto de línea queda sin dibujar, no en cero.
  */
 export function PerformanceDispersionChart({ unit, points }: { unit: PerformanceUnit; points: DispersionPoint[] }) {
+  const motion = useChartMotion()
   const unitLabel = PERFORMANCE_UNIT_LABELS[unit]
   if (points.length === 0) {
     return <ChartEmpty label={`Sin cargas con rendimiento calculado en ${unitLabel}.`} className="h-64" />
@@ -64,8 +66,8 @@ export function PerformanceDispersionChart({ unit, points }: { unit: Performance
             }
           />
           <Legend iconSize={9} wrapperStyle={{ fontSize: 12, paddingTop: 8 }} formatter={(value) => config[String(value)]?.label ?? String(value)} />
-          <Bar yAxisId="mean" dataKey="mean" fill={CHART_COLORS.brand} radius={[2, 2, 0, 0]} maxBarSize={40} isAnimationActive={false} />
-          <Line yAxisId="sd" dataKey="sd" type="monotone" stroke={CHART_COLORS.blue} strokeWidth={2} dot={{ r: 3 }} connectNulls={false} isAnimationActive={false} />
+          <Bar yAxisId="mean" dataKey="mean" fill={CHART_COLORS.brand} radius={[2, 2, 0, 0]} maxBarSize={40} {...motion} />
+          <Line yAxisId="sd" dataKey="sd" type="monotone" stroke={CHART_COLORS.blue} strokeWidth={2} dot={{ r: 3 }} connectNulls={false} {...motion} />
         </ComposedChart>
       </ChartContainer>
     </ChartErrorBoundary>

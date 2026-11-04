@@ -9,14 +9,18 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { DegradedDataBanner } from "@/components/ui/degraded-data-banner"
 import { EmptyState } from "@/components/ui/empty-state"
 import { ChartSection } from "@/components/charts/chart-section"
+import { CoverageNotice } from "@/components/charts/coverage-notice"
 import { PageContainer } from "@/components/ui/page-container"
 import { PageHeader } from "@/components/ui/page-header"
 import { SummaryBar, type SummaryStat } from "@/components/ui/summary-bar"
 import { FuelBreadcrumbs } from "@/components/combustibles/fuel-breadcrumbs"
 import { FuelHeaderActions } from "@/components/combustibles/fuel-header-actions"
+import { settle } from "@/lib/async-settle"
 import { can, requirePermission } from "@/lib/auth/can"
 import { PERFORMANCE_FAMILY_LABELS, PERFORMANCE_FAMILY_SLUGS, PERFORMANCE_UNIT_LABELS, PERFORMANCE_UNIT_TITLES, STAT_MISSING } from "@/lib/combustibles/control/contracts"
 import { WORSE_PERFORMANCE_THRESHOLD_PCT } from "@/lib/combustibles/control/view-helpers"
+import { fuelSourcesHref } from "@/lib/combustibles/coverage-notice"
+import { getFuelProviderCoverageGaps } from "@/lib/combustibles/coverage-notice-data"
 import { getEquipmentFile } from "@/lib/combustibles/equipment/get-equipment-file"
 import { describeIdleDaily, idleDailyChartData, idleDailyTable } from "@/lib/combustibles/equipment/idle-daily"
 import { litersWindowLabel } from "@/lib/combustibles/equipment/liters-by-month"
@@ -59,9 +63,15 @@ export default async function FichaEquipoPage({ params, searchParams }: { params
   const { vehicle, loads, performance, litersByMonth, idle, seals, cases, degraded, sourceCount } = file
   // Sin cargas en ninguno de los 12 meses (o con la consulta caída, que `degraded` ya avisa) la sección no se pinta.
   const hasLitersHistory = litersByMonth.some((month) => month.liters > 0)
+  // Los 12 meses de «Litros por mes»: los que Copec no informó no son «cero litros» (un mes sin cargas se dibuja en 0 y
+  // se lee como «no se cargó»). Sólo se consulta si el gráfico se va a pintar.
+  const coverage = hasLitersHistory
+    ? await settle(getFuelProviderCoverageGaps(session, litersByMonth.map((month) => month.month)), { gapMonths: [], partialMonths: [] }, "equipo-cobertura")
+    : null
   const unitLabel = vehicle.unit ? PERFORMANCE_UNIT_LABELS[vehicle.unit] : null
   const inContext = (href: string) => hrefInContext(href, period)
   const canSeeFlota = can(session, "flota:view")
+  const canExport = can(session, "combustibles:export")
   const description = [vehicle.typeName, [vehicle.brand, vehicle.model].filter(Boolean).join(" "), vehicle.worksiteName].filter(Boolean).join(" · ")
   const familyHref = vehicle.family ? inContext(fuelPerformanceHref(PERFORMANCE_FAMILY_SLUGS[vehicle.family])) : null
 
@@ -169,6 +179,15 @@ export default async function FichaEquipoPage({ params, searchParams }: { params
         <section id="litros" aria-labelledby="litros-title" className="mb-10 scroll-mt-4">
           <h2 id="litros-title" className="text-h2 text-[var(--color-text)]">Litros por mes</h2>
           <p className="mb-3 mt-0.5 text-sub">{litersWindowLabel(period.to.slice(0, 7), period.status)}; el período elegido en tono más fuerte.</p>
+          {coverage && (
+            <CoverageNotice
+              className="mb-3"
+              gapMonths={coverage.gapMonths}
+              partialMonths={coverage.partialMonths}
+              subject="los litros cargados con tarjeta Copec"
+              sourcesHref={fuelSourcesHref(session) ? inContext(FUEL_PATHS.fuentes) : undefined}
+            />
+          )}
           <EquipmentLitersChart months={litersByMonth} periodMonths={period.monthKeys} vehicleLabel={vehicle.label} />
         </section>
       ) : null}
@@ -209,7 +228,7 @@ export default async function FichaEquipoPage({ params, searchParams }: { params
             className="mt-4"
             title="Horas de motor y % en vacío, día a día"
             summary={describeIdleDaily(idle.daily) ?? undefined}
-            data={{ caption: `Horas de motor y porcentaje en vacío por día de ${vehicle.label}`, ...idleDailyTable(idle.daily) }}
+            data={{ caption: `Horas de motor y porcentaje en vacío por día de ${vehicle.label}`, ...idleDailyTable(idle.daily), ...(canExport ? { excel: { permission: "combustibles:export" as const } } : {}) }}
           >
             <IdleDailyChartLazy data={idleDailyChartData(idle.daily)} ariaLabel={`Horas de motor por día y porcentaje en vacío de ${vehicle.label}`} />
           </ChartSection>

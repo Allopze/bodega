@@ -5,6 +5,7 @@ import { CHART_COLORS } from "@/lib/chart-palette"
 import { formatPercent } from "@/lib/utils"
 import {
   PPA_RATE_MIN_SAMPLE,
+  insufficientCell,
   ppaMonthNote,
   ppaTrendDataTable,
   summarizePpaTrend,
@@ -60,8 +61,8 @@ export function PpaWorksiteRateSection({ ranking, className }: { ranking: PpaWor
 
   const insufficientNote = ranking.insufficient.length > 0 && (
     <p className="mt-3 text-xs text-[var(--color-text-muted)]">
-      Datos insuficientes (menos de {PPA_RATE_MIN_SAMPLE} PPA, sin tasa):{" "}
-      {ranking.insufficient.map((worksite) => `${worksite.label} (${worksite.n})`).join(", ")}.
+      Sin porcentaje, base demasiado chica (menos de {PPA_RATE_MIN_SAMPLE} PPA):{" "}
+      {ranking.insufficient.map((worksite) => `${worksite.label}, ${worksite.basis}`).join("; ")}.
     </p>
   )
 
@@ -72,7 +73,7 @@ export function PpaWorksiteRateSection({ ranking, className }: { ranking: PpaWor
         className={className}
         empty={{
           label: "Ninguna faena tiene PPA suficientes para comparar",
-          hint: `Una tasa necesita al menos ${PPA_RATE_MIN_SAMPLE} PPA por faena en los últimos 12 meses; con menos, un solo caso mueve la tasa más de ${Math.floor(100 / PPA_RATE_MIN_SAMPLE)} puntos. Hoy: ${ranking.insufficient.map((worksite) => `${worksite.label} ${worksite.n}`).join(", ")}.`,
+          hint: `Una tasa necesita al menos ${PPA_RATE_MIN_SAMPLE} PPA por faena en los últimos 12 meses; con menos, un solo caso mueve la tasa más de ${Math.floor(100 / PPA_RATE_MIN_SAMPLE)} puntos. Hoy: ${ranking.insufficient.map((worksite) => `${worksite.label}, ${worksite.basis}`).join("; ")}.`,
         }}
       />
     )
@@ -89,7 +90,7 @@ export function PpaWorksiteRateSection({ ranking, className }: { ranking: PpaWor
         headers: ["Faena", "Tasa de detención", "Base"],
         rows: [
           ...ranking.items.map((item) => [item.label, formatPercent(item.value, 1), item.detail] as Array<string | number>),
-          ...ranking.insufficient.map((worksite) => [worksite.label, "Datos insuficientes", `${worksite.n} PPA`] as Array<string | number>),
+          ...ranking.insufficient.map((worksite) => [worksite.label, insufficientCell(worksite.n), worksite.basis] as Array<string | number>),
         ],
       }}
       className={className}

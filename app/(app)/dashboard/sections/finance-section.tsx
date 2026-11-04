@@ -21,6 +21,8 @@ import { DebtAgingChart } from "@/components/charts/debt-aging-chart"
 import { ORDERS_ISSUED_METRIC, ORDERS_SPEND_METRIC, ORDERS_SPEND_TREND_POLARITY, spendVariationPct } from "../dashboard-metric-definitions"
 import { analyticsFilters, type DomainSectionsProps } from "./shared"
 import { FUEL_PATHS } from "@/lib/combustibles/routes"
+import { fuelSourcesHref } from "@/lib/combustibles/coverage-notice"
+import { CoverageNotice } from "@/components/charts/coverage-notice"
 
 /**
  * Finanzas: **toda la plata**, en las dos direcciones.
@@ -116,9 +118,10 @@ export async function FinanceSection({ session, scope }: DomainSectionsProps) {
 
   const periodo = periodScopeLabel(scope.period).toLocaleLowerCase("es-CL")
   const fuelCost = fuelTrend.reduce((sum, point) => sum + (point.amount ?? 0), 0)
-  // Meses sin datos del proveedor (C-4): no suman, pero el tile los nombra; si no, 5 meses de gasto se leen como los 6.
-  const fuelGapMonths = fuelTrend.filter((point) => point.providerGap).map((point) => point.month)
-  const fuelPartialMonths = fuelTrend.filter((point) => point.partial).map((point) => point.month)
+  // Meses sin datos del proveedor (C-4): no suman, y el aviso de cobertura de la sección los nombra (una sola vez,
+  // no en el detalle del tile); si no, 5 meses de gasto se leen como los 6.
+  const fuelGapMonths = fuelTrend.filter((point) => point.providerGap).map((point) => point.monthKey)
+  const fuelPartialMonths = fuelTrend.filter((point) => point.partial).map((point) => point.monthKey)
 
   /*
    * Los gráficos de ranking dibujan **una sola moneda**.
@@ -231,7 +234,7 @@ export async function FinanceSection({ session, scope }: DomainSectionsProps) {
             // libro del proveedor (Copec), como el de Analítica (C-9); la serie facturada
             // (`fuel_loads`, «Pagos › Facturas») es otro concepto y no se mezcla aquí.
             <KpiCard {...DASHBOARD_KPI} icon={<Gauge size={16} />} label="Costo de combustible" value={formatCLP(fuelCost)}
-              detail={`Copec · últimos 6 meses${fuelGapMonths.length > 0 ? ` · sin datos de ${fuelGapMonths.join(", ")}` : ""}${fuelPartialMonths.length > 0 ? ` · incluye ${fuelPartialMonths.join(", ")} parcial` : ""}`} href={FUEL_PATHS.consumoLitros}
+              detail="Copec · últimos 6 meses" href={FUEL_PATHS.consumoLitros}
               empty={fuelCost === 0 ? { message: "Sin gasto de combustible en 6 meses", actionLabel: "Ver consumo" } : undefined} />
           )}
           {canSeeFuelDebt && (
@@ -311,6 +314,14 @@ export async function FinanceSection({ session, scope }: DomainSectionsProps) {
       domain={DASHBOARD_DOMAINS.finanzas}
       chartsFirst
       note={notes.length > 0 ? notes.join(" ") : undefined}
+      coverage={canSeeFuelCosts ? (
+        <CoverageNotice
+          gapMonths={fuelGapMonths}
+          partialMonths={fuelPartialMonths}
+          subject="las cifras de combustible de los últimos 6 meses"
+          sourcesHref={fuelSourcesHref(session)}
+        />
+      ) : undefined}
       links={[
         ...(has("billing:view") ? [{ label: "Facturación", href: "/facturacion" }] : []),
         ...(canSeePurchasing ? [{ label: "Compras", href: "/compras" }] : []),

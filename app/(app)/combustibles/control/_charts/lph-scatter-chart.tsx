@@ -1,11 +1,14 @@
 "use client"
 
 import { CartesianGrid, LabelList, ReferenceLine, Scatter, ScatterChart, XAxis, YAxis, ZAxis } from "recharts"
+import { DenseChart } from "@/components/charts/dense-chart"
 import { ChartContainer, ChartTooltip, type ChartConfig, type ChartTooltipItem } from "@/components/ui/chart"
+import { RankedList } from "@/components/ui/ranked-list"
 import { CHART_COLORS } from "@/lib/chart-palette"
 import { LPH_BAND_PCT, type LphComparisonView, type LphPoint } from "@/lib/combustibles/control/calc/lph-comparison"
 import { MONTH_LABELS, countOf, formatQty } from "@/lib/utils"
 import { AXIS_TICK } from "./chart-shared"
+import { useChartMotion } from "@/components/ui/chart-interactions"
 
 /**
  * CHART-021: telemetría contra cargas, un punto por equipo y mes.
@@ -20,6 +23,10 @@ import { AXIS_TICK } from "./chart-shared"
  * Es una imagen (`role="img"`): nada dentro es interactivo, ni siquiera un enlace
  * (axe `nested-interactive`). Los enlaces a la ficha de cada equipo fuera de la
  * banda van en la lista de abajo, fuera de la imagen.
+ *
+ * Bajo 360 px de pantalla los puntos no se distinguen: `DenseChart` lo reemplaza por
+ * los equipos y meses con más diferencia, de mayor a menor. La diagonal y la banda
+ * se pierden, así que cada fila dice si cae dentro o fuera de ella.
  */
 
 const config = {
@@ -56,46 +63,65 @@ function LphTooltip({ active, payload }: { active?: boolean; payload?: ChartTool
 }
 
 export function LphScatterChart({ view }: { view: LphComparisonView }) {
+  const motion = useChartMotion()
   const max = view.axisMax
   const band = LPH_BAND_PCT / 100
   const inside: ChartPoint[] = view.points.filter((point) => !point.outside).map((point) => ({ ...point, label: pointLabel(point) }))
   const outside: ChartPoint[] = view.points.filter((point) => point.outside).map((point) => ({ ...point, label: pointLabel(point) }))
 
+  const byDifference = [...view.points].sort((a, b) => Math.abs(b.differencePct) - Math.abs(a.differencePct))
+  const narrowFallback = (
+    <RankedList
+      ariaLabel="Equipos y meses con más diferencia entre la telemetría y las cargas"
+      format="percent"
+      order="input"
+      showShare={false}
+      items={byDifference.map((point) => ({
+        key: point.key,
+        label: pointLabel(point),
+        value: Math.abs(point.differencePct),
+        detail: point.outside ? `fuera de la banda de ±${LPH_BAND_PCT} %` : "dentro de la banda",
+      }))}
+    />
+  )
+
   return (
-    <div>
-      <ChartContainer
-        config={config}
-        className="aspect-auto h-72 w-full"
-        role="img"
-        aria-label={`Litros por hora según la telemetría contra los que salen de las cargas, un punto por equipo y mes: ${view.points.length - view.outside.length} dentro de la banda de ±${LPH_BAND_PCT} % y ${view.outside.length} fuera`}
-      >
-        <ScatterChart margin={{ top: 12, right: 24, left: 4, bottom: 28 }} accessibilityLayer={false}>
-          <CartesianGrid strokeDasharray="2 5" />
-          <XAxis
-            type="number" dataKey="x" name="Cargas" domain={[0, max]} tickLine={false} axisLine={false} tick={AXIS_TICK} allowDecimals={false}
-            label={{ value: "L/h según las cargas", position: "insideBottom", offset: -14, fontSize: 11, fill: "var(--color-text-muted)" }}
-          />
-          <YAxis
-            type="number" dataKey="y" name="Telemetría" domain={[0, max]} tickLine={false} axisLine={false} width={44} tick={AXIS_TICK} allowDecimals={false}
-            label={{ value: "L/h según la telemetría", angle: -90, position: "insideLeft", offset: 8, fontSize: 11, fill: "var(--color-text-muted)" }}
-          />
-          <ZAxis range={[70, 70]} />
-          <ReferenceLine segment={[{ x: 0, y: 0 }, { x: max, y: max }]} stroke={CHART_COLORS.neutral} strokeWidth={1.5} ifOverflow="hidden" />
-          {/* La recta de arriba (y = 1,15·x) termina donde toca el tope del eje, para no salirse del área de trazado. */}
-          <ReferenceLine segment={[{ x: 0, y: 0 }, { x: max / (1 + band), y: max }]} stroke={CHART_COLORS.neutral} strokeDasharray="4 3" ifOverflow="hidden" />
-          <ReferenceLine segment={[{ x: 0, y: 0 }, { x: max, y: max * (1 - band) }]} stroke={CHART_COLORS.neutral} strokeDasharray="4 3" ifOverflow="hidden" />
-          <ChartTooltip cursor={false} isAnimationActive={false} content={<LphTooltip />} />
-          <Scatter name="Dentro de la banda" data={inside} fill={CHART_COLORS.brand} shape="circle" isAnimationActive={false} />
-          <Scatter name="Fuera de la banda" data={outside} fill={CHART_COLORS.danger} shape="diamond" isAnimationActive={false}>
-            <LabelList dataKey="label" position="top" offset={8} fontSize={11} fill="var(--color-text)" />
-          </Scatter>
-        </ScatterChart>
-      </ChartContainer>
-      <p className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--color-text-muted)]">
-        <span className="inline-flex items-center gap-1.5"><span aria-hidden className="inline-block size-2.5 rounded-full" style={{ background: CHART_COLORS.brand }} />Dentro de la banda</span>
-        <span className="inline-flex items-center gap-1.5"><span aria-hidden className="inline-block size-2.5 rotate-45" style={{ background: CHART_COLORS.danger }} />Fuera de la banda</span>
-        <span>La línea continua es la diagonal (telemetría = cargas); las punteadas, ±{LPH_BAND_PCT} %.</span>
-      </p>
-    </div>
+    <DenseChart fallback={narrowFallback}>
+      <div>
+        <ChartContainer
+          config={config}
+          className="aspect-auto h-72 w-full"
+          role="img"
+          aria-label={`Litros por hora según la telemetría contra los que salen de las cargas, un punto por equipo y mes: ${view.points.length - view.outside.length} dentro de la banda de ±${LPH_BAND_PCT} % y ${view.outside.length} fuera`}
+        >
+          <ScatterChart margin={{ top: 12, right: 24, left: 4, bottom: 28 }} accessibilityLayer={false}>
+            <CartesianGrid strokeDasharray="2 5" />
+            <XAxis
+              type="number" dataKey="x" name="Cargas" domain={[0, max]} tickLine={false} axisLine={false} tick={AXIS_TICK} allowDecimals={false}
+              label={{ value: "L/h según las cargas", position: "insideBottom", offset: -14, fontSize: 11, fill: "var(--color-text-muted)" }}
+            />
+            <YAxis
+              type="number" dataKey="y" name="Telemetría" domain={[0, max]} tickLine={false} axisLine={false} width={44} tick={AXIS_TICK} allowDecimals={false}
+              label={{ value: "L/h según la telemetría", angle: -90, position: "insideLeft", offset: 8, fontSize: 11, fill: "var(--color-text-muted)" }}
+            />
+            <ZAxis range={[70, 70]} />
+            <ReferenceLine segment={[{ x: 0, y: 0 }, { x: max, y: max }]} stroke={CHART_COLORS.neutral} strokeWidth={1.5} ifOverflow="hidden" />
+            {/* La recta de arriba (y = 1,15·x) termina donde toca el tope del eje, para no salirse del área de trazado. */}
+            <ReferenceLine segment={[{ x: 0, y: 0 }, { x: max / (1 + band), y: max }]} stroke={CHART_COLORS.neutral} strokeDasharray="4 3" ifOverflow="hidden" />
+            <ReferenceLine segment={[{ x: 0, y: 0 }, { x: max, y: max * (1 - band) }]} stroke={CHART_COLORS.neutral} strokeDasharray="4 3" ifOverflow="hidden" />
+            <ChartTooltip cursor={false} isAnimationActive={false} content={<LphTooltip />} />
+            <Scatter name="Dentro de la banda" data={inside} fill={CHART_COLORS.brand} shape="circle" {...motion} />
+            <Scatter name="Fuera de la banda" data={outside} fill={CHART_COLORS.danger} shape="diamond" {...motion}>
+              <LabelList dataKey="label" position="top" offset={8} fontSize={11} fill="var(--color-text)" />
+            </Scatter>
+          </ScatterChart>
+        </ChartContainer>
+        <p className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--color-text-muted)]">
+          <span className="inline-flex items-center gap-1.5"><span aria-hidden className="inline-block size-2.5 rounded-full" style={{ background: CHART_COLORS.brand }} />Dentro de la banda</span>
+          <span className="inline-flex items-center gap-1.5"><span aria-hidden className="inline-block size-2.5 rotate-45" style={{ background: CHART_COLORS.danger }} />Fuera de la banda</span>
+          <span>La línea continua es la diagonal (telemetría = cargas); las punteadas, ±{LPH_BAND_PCT} %.</span>
+        </p>
+      </div>
+    </DenseChart>
   )
 }

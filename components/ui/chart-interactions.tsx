@@ -31,12 +31,27 @@ export function formatChartValue(value: unknown, format: ChartValueFormat = "cou
   }
 }
 
-/** Animación de entrada de las series; se apaga con "reducir movimiento". */
+/** Tope de la entrada de una serie (DESIGN.md § Gráficos › Movimiento). */
+export const CHART_ENTRY_MS = 200
+
+/**
+ * Animación de entrada de las series: ≤ 200 ms y apagada con «reducir movimiento».
+ *
+ * Es **el único** lugar que decide el movimiento de un gráfico: cada serie
+ * (`Bar`, `Line`, `Area`, `Scatter`, `Pie`) esparce el resultado
+ * (`<Bar {...motion} />`) y `components/__tests__/chart-guard.test.ts` falla si un
+ * archivo de recharts dibuja una serie sin hacerlo. Un `isAnimationActive={false}`
+ * fijo deja a quien no pidió reducir el movimiento sin entrada; un
+ * `animationDuration` propio vuelve a repartir las decisiones (antes eran 900,
+ * 460 y 420 ms según la pantalla).
+ *
+ * El tooltip no entra en esto: `useTooltipProps` desliza la tarjeta entre puntos.
+ */
 export function useChartMotion() {
   const reduced = useReducedMotion()
   return {
     isAnimationActive: !reduced,
-    animationDuration: 900,
+    animationDuration: CHART_ENTRY_MS,
     animationEasing: "ease-out" as const,
   }
 }

@@ -87,13 +87,17 @@ export function meterRateTable(series: MeterRateSeries): { headers: string[]; ro
   return { headers: ["Mes", `Rendimiento (${unit})`, "Tramos (n)", "Equipos", measureHeader, "Litros", "Observación"], rows }
 }
 
-/** Avisos bajo el gráfico: qué es n, qué meses quedaron en blanco y por qué, y el alcance de la fuente. */
+/**
+ * Avisos bajo el gráfico: qué es n, los meses con datos insuficientes, los descartes y el alcance de la fuente.
+ *
+ * Los meses **sin datos del proveedor** no se dicen aquí: los nombra el aviso de cobertura de la pantalla
+ * (`CoverageNotice`), una sola vez (A5). El gráfico los marca como hueco y la tabla «Ver datos» los trae en la
+ * columna «Observación».
+ */
 export function meterRateNotes(series: MeterRateSeries): string[] {
-  const gaps = series.months.filter((month) => month.status === "gap").length
   const insufficient = series.months.filter((month) => month.status === "insufficient").length
   const discarded = series.months.reduce((sum, month) => sum + month.discarded, 0)
   const notes = [`n = tramos: pares de cargas consecutivas con lectura del medidor. Un mes necesita al menos ${MIN_RATE_SEGMENTS} para mostrar su rendimiento.`]
-  if (gaps > 0) notes.push(`${countOf(gaps, "mes sin datos del proveedor", "meses sin datos del proveedor")}: queda en blanco, no es un rendimiento de cero.`)
   if (insufficient > 0) notes.push(`${countOf(insufficient, "mes con datos insuficientes", "meses con datos insuficientes")}.`)
   if (discarded > 0) notes.push(`${countOf(discarded, "par de lecturas descartado", "pares de lecturas descartados")} por lectura dudosa, sin litros o sin datos entre medio.`)
   notes.push("Sólo cuenta lo cargado con tarjeta Copec: si el equipo también carga en otro lado, el rendimiento real es menor.")

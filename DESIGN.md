@@ -456,7 +456,8 @@ plataforma; el tablero suma su excepción de superficie (regla 7 de AGENTS.md).
 | Primitiva | Para | Notas |
 |---|---|---|
 | `ChartSection` | Todo gráfico en una pantalla de módulo | `<figure>` con nombre = título, `summary` (la frase que responde), «Ver datos», estado vacío con CTA (A4), drill-down. En el tablero se usa `ChartFrame`. |
-| `ChartDataTable` | Alternativa textual | `<details>` «Ver datos»; server-safe. |
+| `ChartDataTable` | Alternativa textual | `<details>` «Ver datos»; server-safe. Con `excel={{ permission }}` ofrece «Exportar Excel» (opt-in). Ver «Exportar a Excel». |
+| `CoverageNotice` | Aviso de cobertura de un gráfico de combustible o integraciones | Una línea: qué meses de la ventana no tienen datos del proveedor o están incompletos y qué cifras quedan cortas. Ver «Aviso de cobertura de datos». |
 | `BulletBar` | Medida contra capacidad/meta | `role="meter"`; marcas rotuladas; reemplaza radiales y barras sin contexto. |
 | `AgingBar` | Pendientes por antigüedad | Tramos en orden cronológico, color secuencial, cifra visible por tramo, cada tramo enlaza a su subconjunto. |
 | `ComplianceCalendar` | Filas × períodos con estado | `<table>` real; ícono + color + texto oculto por celda; contenedor desplazable con foco de teclado. `statusLabels` cambia los rótulos (Fuentes: Completo/Parcial/Sin datos); `selected` y `linkNavigation` para cuando filtra la misma pantalla. Adaptador de programas de Prevención: `ProgramComplianceSection` (casillas, cierres mensuales del PDTP, sesiones del CPHS; `wording`/`statusLabels`/`legend` cambian el vocabulario cuando la celda no es una «actividad hecha», y `hrefFor` puede devolver `undefined` para una celda sin a dónde llevar). |
@@ -467,6 +468,7 @@ plataforma; el tablero suma su excepción de superficie (regla 7 de AGENTS.md).
 | `DebtAgingChart`, `BillingFlowChart`, `ChartFrame` | Facturación y tablero | Movidos desde `dashboard/charts/` (quedan re-exports allí). |
 | `StageDurationBar` | Plazos por tramo de un proceso (solicitud → aprobación → OC → llegada → entrega) | Una barra apilada por grupo (todas las faenas, cada faena), un segmento por tramo con el largo de su **mediana** y una marca en el P90 del plazo total. Toda cifra va con su `n`; con menos de 5 ítems el tramo dice «datos insuficientes» y no dibuja (P90 desde 10). La barra suma medianas y el total se mide ítem por ítem: la nota al pie lo dice. Rampa de un matiz en OKLab, nunca OKLCH. Sólo ítems cerrados (sesgo de supervivencia declarado). Cálculo en `lib/services/analytics-module/lead-time-shape.ts`. |
 | `GroupedBarList` | Dos conteos de la **misma unidad** por categoría (ítems sin OC y OC por recibir, por faena) | Barras agrupadas como lista CSS: una fila por categoría, una barra y una cifra por serie, escala común. Si las series son de escala distinta no es este componente (A5b). |
+| `DenseChart` | Reemplazo de un gráfico denso bajo 360 px | `<DenseChart fallback={<RankedList …/>}>`; `when` lo deja cuando los datos no son densos (≤ 6 segmentos). Ver «Responsive». |
 
 ### Reglas
 
@@ -484,6 +486,176 @@ plataforma; el tablero suma su excepción de superficie (regla 7 de AGENTS.md).
 - **Una base de fecha por magnitud, dicha en pantalla.** El gasto en OC se fecha por
   **emisión** (`issuedAt` + `issuedOrderPredicate`) y con IVA en `/analitica`, `/reportes`
   y Finanzas del tablero; `lib/__tests__/analytics-finance-parity.test.ts` lo exige.
+
+### Drill-down: indicador → gráfico → desglose → registros
+
+Un gráfico no es un destino sino un paso: la regla J.3 de la auditoría («un gráfico
+que no lleva a una acción ni a un subconjunto no se agrega») se cumple encadenando
+cuatro niveles, cada uno con su primitiva y cada uno llevando al siguiente.
+
+| Nivel | Qué responde | Primitiva | Cómo avanza al siguiente |
+|---|---|---|---|
+| 1. Indicador | «¿Cuánto hay y es grave?» | `KpiCard href`, `MetricBar` (A1: accionable) | El tile enlaza al **subconjunto**, no al total (`/mantencion/ot?estado=abiertas`) |
+| 2. Gráfico | «¿Cómo se reparte o evoluciona?» | `ChartSection` (módulos) o `ChartFrame` (tablero) | `drillHref` a la lista que explica la cifra, o cada parte del gráfico es un enlace |
+| 3. Desglose | «¿Cuál tramo, estado, mes o regla?» | `AgingBar`, `ShareBar`, `ComplianceCalendar`, `RankedList`, `StockCoverageStrip` | Cada segmento, celda o fila lleva a su subconjunto (`href` por parte) |
+| 4. Registros | «¿Qué filas son?» | La tabla o lista de la **misma** pantalla (`DataTable`, bandeja) | Fin: la fila es la decisión (regla J.1: la tabla se queda) |
+
+**Una dimensión = un parámetro de URL**, y el segmento del gráfico *es* el selector de
+ese filtro (A5): no hay además un `Select` ni un tile con la misma cifra. Los nombres
+que ya usa el código, y que un gráfico nuevo debe reutilizar antes de inventar otro:
+
+| Parámetro | Filtra | Dónde está hoy |
+|---|---|---|
+| `?estado=` | Estado del dominio (ya en español, nunca el enum crudo) | `/mantencion/ot?estado=abiertas`, `/ti/activos?estado=disponible`, `/bodega/guias?estado=todos` |
+| `?antiguedad=` | Tramo de antigüedad de lo pendiente (No vencida → … → Más de 90 días, en orden cronológico) | `AgingBar` en `/aprobaciones`; `approvalAgeHref` en `lib/approvals-age.ts` |
+| `?regla=` | Regla de detección que originó un caso | Casos por regla de `/combustibles/revisar` |
+| `?cobertura=` | Banda de cobertura de stock | `StockCoverageStrip` (`ShareBar`) de `/bodega` |
+| `?mes=` (con `faena=`) | Una celda de un calendario de cumplimiento | `ComplianceCalendar` de `/prevencion/cgrd` (`hrefFor`, `clearHref`); la conciliación DTE usa `?periodo=YYYY-MM&vinculo=` (`dteListHref`) |
+
+Reglas de URL, todas ya vigentes en los componentes de arriba:
+
+- **El filtro de la misma pantalla reemplaza y no salta:** `replace: true, scroll: false`.
+  Las primitivas lo traen con `inPlace` (`AgingBar`, `ShareBar`) o
+  `linkNavigation={{ scroll: false, replace: true }}` (`ComplianceCalendar`); en un manejador es
+  `router.replace(url, { scroll: false })`. Es el patrón «Navigation and scroll preservation» de
+  `AGENTS.md`. Un enlace a **otra** pantalla (la lista del módulo) es un `Link` normal: ahí sí hay
+  entrada de historial.
+- **Elegir la parte vigente otra vez quita el filtro** (`approvalAgeHref(path, params, "")`,
+  `clearHref`). Un segmento sin elementos no enlaza, salvo que sea el activo.
+- **Se conserva el resto de los filtros y se descarta `page`:** al cambiar el conjunto, el número de
+  página deja de significar algo.
+- **El gráfico cuenta lo mismo que lista la tabla:** mismo alcance de permisos, mismos filtros, sin
+  ampliarlo. Si el usuario no puede abrir la lista de destino, el elemento no lleva `href` (el Pareto
+  de `/analitica` no enlaza a las OC de un proveedor sin permiso para abrirlas).
+- **Nunca un enlace dentro de `role="img"`** (axe `nested-interactive`): el dibujo es imagen y los
+  enlaces van en la leyenda, la lista o «Ver datos» que lo acompañan. El clic del puntero sobre una
+  barra es una comodidad; el camino por teclado y por lector de pantalla es siempre un enlace real.
+
+### Movimiento
+
+- **`useChartMotion()`** (`components/ui/chart-interactions.tsx`) es el único lugar que decide la
+  animación de entrada de un gráfico de recharts: **≤ 200 ms** (`CHART_ENTRY_MS`) y apagada con
+  `prefers-reduced-motion` (`useReducedMotion`; recharts anima por JS y no lee los tokens
+  `--duration-*`). Cada serie (`Bar`, `Line`, `Area`, `Scatter`, `Pie`) esparce el resultado:
+  `<Bar {...motion} />`.
+- **Prohibido** un `isAnimationActive={false}` fijo (deja sin entrada a quien no pidió reducir el
+  movimiento) y un `animationDuration` propio (eran 900, 460 y 420 ms según la pantalla).
+- El deslizamiento del tooltip entre puntos (`useTooltipProps`, 220 ms) no es una entrada y queda aparte.
+- Las pruebas que leen el SVG ya terminado (alturas, formas, rótulos) corren con la preferencia
+  «reducir movimiento» activa (`matchMedia` simulado): es el estado final al que llega la animación.
+- Los gráficos que no son de recharts (`RankedList`, `DebtAgingChart`, el medidor radial) animan con
+  `motion-safe:` en CSS y todavía no están alineados al tope de 200 ms.
+
+### Responsive: bajo 360 px los gráficos densos pasan a lista
+
+Bajo **360 px de ancho de pantalla** (un teléfono chico en vertical) un gráfico denso deja de leerse:
+los puntos de una dispersión miden 3 px, ocho paneles de una serie pequeña no se comparan a la vista y
+las etiquetas de veinte barras se cortan. Lo que no cabe **no se dibuja más chico: se reemplaza** por
+su equivalente textual.
+
+- **Un solo mecanismo:** `DenseChart` (`components/charts/dense-chart.tsx`).
+  `<DenseChart fallback={…}>gráfico</DenseChart>` monta el gráfico en pantallas de 360 px o más y,
+  en las más angostas, sólo el `fallback` con una línea que explica por qué. No renderiza las dos
+  versiones escondiendo una con CSS: un `ResponsiveContainer` dentro de un `display:none` mide 0 y
+  recharts avisa por consola.
+- **Es una consulta de pantalla, no de contenedor** (`NARROW_CHART_QUERY`, `max-width: 359.98px`, vía
+  `useMediaQuery`): la tarjeta que contiene el gráfico mide ~290 px incluso en un teléfono de 375 px,
+  y una regla por contenedor reemplazaría gráficos en casi todos los móviles.
+- **El reemplazo:** un `RankedList` cuando hay una medida que ordenar (litros por faena, gasto por
+  proveedor; conserva el `href` de cada fila), o una tabla cuando son pares de valores. Nunca un
+  gráfico más chico. Un gráfico que ya es una `<table>` (`ComplianceCalendar`, `RiskMatrix`) no se
+  reemplaza: ya es su propia alternativa.
+- **Qué es «denso»:**
+  - todo `ScatterChart` (lo exige la guarda);
+  - los *small multiples* (`EvolutionByVehicleChart`);
+  - los rankings de ~8 barras o más con etiqueta larga (patentes, faenas, proveedores);
+  - una columna apilada con **más de 6 segmentos** (`OverviewMonthlyChart` pasa
+    `when={series.length > 6}`: con 6 o menos el gráfico cabe y se queda).
+- Parte en «ancho» también en el servidor y en la hidratación: en una pantalla angosta el cambio llega
+  al montar.
+
+### Guarda: `components/__tests__/chart-guard.test.ts`
+
+Como `modal-alto-estable.test.ts` con los modales: un escaneo estático (sobre el AST, no sobre
+texto) de todo `.tsx` bajo `app/` o `components/` que importa un valor de `recharts`, en cada
+`npm run test:fast`. Falla con la ruta y la línea del gráfico que no cumple:
+
+1. **Sin literales de color** (hex, `rgb(`, `hsl(`, `oklch(`…) en cadenas; también en
+   `lib/chart-palette.ts` y en todo `components/charts/`. Usa `CHART_COLORS` / `CHART_SERIES` o
+   `var(--color-*)`.
+2. **Nombre accesible** en cada raíz (`BarChart`, `LineChart`, `AreaChart`, `ComposedChart`,
+   `PieChart`, `ScatterChart`…): `aria-label` / `aria-labelledby` / `title` en la propia raíz, un
+   ancestro con `role` + `aria-label` (el `ChartContainer role="img"`), o `ChartSection` /
+   `ChartFrame` **importados**. Un `<div aria-label>` sin rol no cuenta.
+3. **Movimiento:** `useChartMotion()` esparcido en cada serie.
+4. **Densos:** todo `ScatterChart` dentro de `<DenseChart>`, y los archivos de la lista `DENSAS` del
+   test (rankings, small multiples, apiladas) siguen usándolo.
+
+Las reglas se eligieron con el criterio de `scripts/migration-sql-checks.mjs`: entran sólo las
+objetivas y sin falsos positivos (el detector se prueba con muestras sintéticas en el mismo archivo).
+La deuda previa vive en listas `*_CONGELADO` con su razón: pueden conservarla, no sumar, y ningún
+archivo nuevo entra; el test avisa de las entradas ya limpias. Hoy hay una sola, los dos selectores
+`[stroke='#ccc']` de `components/ui/chart.tsx`, que apuntan al atributo por defecto de recharts para
+sobrescribirlo. Si una regla te bloquea, arregla el gráfico; ampliar una lista es la última salida.
+
+### Exportar a Excel («Ver datos»)
+
+La tabla de «Ver datos» se descarga como **`.xlsx`** (regla de exportación de `AGENTS.md`: nunca CSV)
+con el botón de siempre, `ExportButton`, sin un mecanismo de descarga propio.
+
+- **Opt-in y con el permiso de exportar del módulo.** `data={{ …, excel: { permission } }}` en
+  `ChartSection` (o `excel` en `ChartDataTable`). Quien ve una cifra no recibe por eso la descarga: cada
+  módulo separa `*:export` de `*:view`. Quien dibuja el gráfico pasa `excel` sólo si
+  `can(session, permission)`; sin `excel` no hay botón. Los permisos válidos son los de exportación
+  general (`CHART_EXPORT_PERMISSIONS` en `lib/reports/chart-data-export.ts`: `combustibles:export`,
+  `analytics:export`, `billing:export`, `mant:export`, `ti:export`, los `prevention:*:export`…), no
+  `combustibles:export_sensitive` ni los de datos personales.
+- **Lo que va a Excel es lo que se lee.** Las celdas son `ReactNode`: un enlace exporta su texto, un
+  número conserva su tipo y el texto sale con su formato de pantalla (`chartCellValue`,
+  `components/charts/chart-cell-text.ts`). Una celda cuyo texto lo produce un componente por dentro
+  (no está en sus `children`) sale vacía: entrega el texto como `children`.
+- **El servidor no recalcula nada.** `exportChartDataAction` (`app/(app)/chart-data-export-action.ts`)
+  recibe la tabla del navegador, exige `requirePermission(permission)`, valida forma y tamaño
+  (`chartDataExportSchema`: ≤ 2000 filas, ≤ 40 columnas) y arma el libro con el constructor común
+  (`buildXlsxBuffer`: encabezado en negrita, fila congelada, filtros, textos que empiezan como fórmula
+  neutralizados). Queda en la bitácora (`export`, `chart_data_export`).
+- **El libro dice que es una copia de la pantalla.** La hoja «Metadatos» (quién, cuándo, alcance de
+  faena) lleva una nota «Copia de la tabla «Ver datos»…, tal como se mostraba en pantalla», porque el
+  contenido lo trajo el navegador y el servidor no lo certifica. Las salvedades del gráfico (el aviso de
+  cobertura) viajan ahí con `excel.notes`: la hoja de datos se lee sin la pantalla que traía el aviso.
+- **Nombre del archivo:** el título del gráfico más el día (`todayInChile`), `litros_por_mes_2026-11-03.xlsx`
+  (`chartExportFilename`).
+
+### Aviso de cobertura de datos
+
+Antes de creer un gráfico de combustible hay que saber si el mes está completo (CHART-022). El mapa fuente
+× mes de «Fuentes de datos» lo dice; `CoverageNotice` (`components/charts/coverage-notice.tsx`) lo dice
+**donde se lee el número**, en una línea sobre el gráfico.
+
+- **Una sola representación (A5).** Es el único lugar de una pantalla que dice «sin datos del proveedor»:
+  no se repite en el subtítulo del gráfico, en el detalle de un tile ni en una nota al pie. El gráfico
+  *marca* el hueco (columna tenue, línea cortada, «—»); el aviso lo *nombra*. Un mes sin datos es un
+  hueco, **nunca un cero**: «el proveedor no informó» no es «no se cargó combustible».
+- **Una sola redacción** (`coverageNoticeText`, `lib/combustibles/coverage-notice.ts`), la misma de la
+  pantalla y de la hoja «Metadatos» de la exportación (`fleetProviderGapNotice` la reutiliza). «Sin datos
+  del proveedor en sep-2026: las cifras de combustible de los últimos 6 meses no incluyen ese mes. El mes
+  de nov-2026 todavía no está completo.» Un mes que es hueco y parcial a la vez se dice una vez, como
+  hueco.
+- **`subject` es obligatorio y dice qué cifras quedan cortas**, en plural y con la fuente a la vista
+  («los totales de 12 meses», «las cargas de tarjeta Copec usadas en esta comparación»). La frase tiene
+  que ser cierta de lo que *esa* pantalla muestra: un gráfico que mezcla terreno y tarjeta no puede decir
+  «los litros no incluyen ese mes», sólo los de tarjeta.
+- **De dónde salen los meses.** Hueco: `monthsWithoutProviderData` (sin transacciones aceptadas ni
+  cobertura que cierre el mes), la misma vara de Analítica, el tablero, Flota y el rendimiento por mes.
+  Parcial: el mes en curso (`isPartialMonth`). `getFuelProviderCoverageGaps`
+  (`lib/combustibles/coverage-notice-data.ts`) lo calcula para una ventana de meses con el alcance de
+  faena de la sesión; el tablero lo toma de `getFuelMonthlyTrend` (`providerGap`, `partial`).
+- **Sin meses, no hay aviso** (la ausencia es la buena noticia). El enlace «Ver cobertura de las
+  fuentes» sólo se ofrece a quien puede abrir «Fuentes de datos» (`fuelSourcesHref(session)`); a quien
+  no, el aviso queda sin enlace en vez de apuntar a `/forbidden`.
+- **Dónde va:** una vez por pantalla o por sección, sobre las cifras que advierte (`/flota`,
+  `DomainSection coverage` del tablero, `/combustibles/consumo/litros`, la comparación de motor en vacío,
+  la ficha del equipo). Los textos del aviso usan tokens `-ink` (regla 8) y el ícono es decorativo.
 
 ## Accesibilidad
 

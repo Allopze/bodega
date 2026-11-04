@@ -21,6 +21,7 @@ vi.mock("@/lib/services/mantencion/work-orders/metrics", async (importOriginal) 
   getWorkOrderGlobalMetrics,
 }))
 
+import { CoverageNotice } from "@/components/charts/coverage-notice"
 import { ChartSlot } from "@/components/ui/dashboard-panel"
 import { KpiCard } from "@/components/ui/kpi-card"
 import { FleetSection } from "./fleet-section"
@@ -129,7 +130,7 @@ function find(node: unknown, match: (element: Element) => boolean, result: Eleme
 }
 
 function sectionOf(section: unknown) {
-  return domainSectionOf(section).props as unknown as { kpis: unknown; charts: unknown }
+  return domainSectionOf(section).props as unknown as { kpis: unknown; charts: unknown; coverage?: Element }
 }
 
 const vehicle = (overrides: Record<string, unknown>) => ({ id: "v1", plate: "AA-11", isActive: true, ...overrides })
@@ -181,8 +182,9 @@ describe("FleetSection · panel del tablero", () => {
   })
 
   // C-9 / C-4: la serie viene del libro del proveedor. Un mes sin datos del proveedor no es «0 litros»:
-  // el tile suma los meses con datos, nombra el hueco y apunta a la pantalla donde esa cifra se explica.
-  it("«Litros (6 meses)» suma los meses con datos, nombra los huecos y apunta al consumo", async () => {
+  // el tile suma los meses con datos y apunta a la pantalla donde esa cifra se explica; el hueco lo
+  // nombra el aviso de cobertura de la sección, una sola vez (A5), no el detalle del tile.
+  it("«Litros (6 meses)» suma los meses con datos y apunta al consumo; el hueco lo nombra el aviso de cobertura", async () => {
     getFuelMonthlyTrend.mockResolvedValue([
       { month: "Ago", monthKey: "2026-08", liters: 1000, amount: 900_000, loads: 4, providerGap: false },
       { month: "Sep", monthKey: "2026-09", liters: null, amount: null, loads: null, providerGap: true },
@@ -192,21 +194,24 @@ describe("FleetSection · panel del tablero", () => {
     const tile = find(section.kpis, (element) => element.type === KpiCard && element.props.label === "Litros (6 meses)")[0]!
 
     expect(tile.props.value).toBe("3.500 L")
-    expect(tile.props.detail).toContain("Sin datos de Sep")
+    expect(tile.props.detail).toBe("Copec (tarjetas y estanques) · ahora")
     expect(tile.props.href).toBe("/combustibles/consumo/litros")
     expect(tile.props.empty).toBeUndefined()
+    expect(section.coverage?.type).toBe(CoverageNotice)
+    expect(section.coverage?.props).toMatchObject({ gapMonths: ["2026-09"], partialMonths: [], subject: "las cifras de combustible de los últimos 6 meses" })
   })
 
-  it("«Litros (6 meses)» sin huecos no agrega ningún aviso", async () => {
+  it("sin huecos el aviso de cobertura no tiene meses que decir y el tile no agrega nada", async () => {
     getFuelMonthlyTrend.mockResolvedValue([{ month: "Oct", monthKey: "2026-10", liters: 2500, amount: null, loads: 6, providerGap: false }])
     const section = sectionOf(await FleetSection(props("flota:view", "combustibles:view")))
     const tile = find(section.kpis, (element) => element.type === KpiCard && element.props.label === "Litros (6 meses)")[0]!
 
     expect(String(tile.props.detail)).not.toContain("Sin datos")
+    expect(section.coverage?.props).toMatchObject({ gapMonths: [], partialMonths: [] })
   })
 
   // La cifra suma 5 meses completos y el mes en curso a la fecha: «6 meses» sin más aviso se leería como seis meses completos.
-  it("«Litros (6 meses)» dice que incluye el mes en curso a la fecha, sin tocar la suma", async () => {
+  it("el mes en curso va al aviso de cobertura como parcial, sin tocar la suma", async () => {
     getFuelMonthlyTrend.mockResolvedValue([
       { month: "Oct", monthKey: "2026-10", liters: 2500, amount: 1_100_000, loads: 6, providerGap: false, partial: false },
       { month: "Nov", monthKey: "2026-11", liters: 90, amount: 40_000, loads: 1, providerGap: false, partial: true },
@@ -215,19 +220,25 @@ describe("FleetSection · panel del tablero", () => {
     const tile = find(section.kpis, (element) => element.type === KpiCard && element.props.label === "Litros (6 meses)")[0]!
 
     expect(tile.props.value).toBe("2.590 L")
-    expect(tile.props.detail).toBe("Copec (tarjetas y estanques) · incluye Nov parcial · ahora")
+    expect(tile.props.detail).toBe("Copec (tarjetas y estanques) · ahora")
+    expect(section.coverage?.props).toMatchObject({ gapMonths: [], partialMonths: ["2026-11"] })
   })
 
-  it("«Litros (6 meses)» con un hueco y un mes parcial dice ambos", async () => {
+  it("un hueco y un mes parcial llegan juntos al aviso de cobertura, que los dice en una sola línea", async () => {
     getFuelMonthlyTrend.mockResolvedValue([
       { month: "Sep", monthKey: "2026-09", liters: null, amount: null, loads: null, providerGap: true, partial: false },
       { month: "Oct", monthKey: "2026-10", liters: 2500, amount: 1_100_000, loads: 6, providerGap: false, partial: false },
       { month: "Nov", monthKey: "2026-11", liters: 90, amount: 40_000, loads: 1, providerGap: false, partial: true },
     ])
     const section = sectionOf(await FleetSection(props("flota:view", "combustibles:view")))
-    const tile = find(section.kpis, (element) => element.type === KpiCard && element.props.label === "Litros (6 meses)")[0]!
 
-    expect(tile.props.detail).toBe("Sin datos de Sep del proveedor · incluye Nov parcial · ahora")
+    expect(section.coverage?.props).toMatchObject({ gapMonths: ["2026-09"], partialMonths: ["2026-11"] })
+  })
+
+  it("sin combustibles:view no hay aviso de cobertura: no hay cifras de combustible que advertir", async () => {
+    const section = sectionOf(await FleetSection(props("flota:view")))
+
+    expect(section.coverage).toBeUndefined()
   })
 
   it("el gráfico de consumo recibe el mes parcial tal como lo entrega el servicio", async () => {

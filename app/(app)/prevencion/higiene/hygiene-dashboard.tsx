@@ -1,6 +1,5 @@
 "use client"
 import Link from "next/link"
-import type { ReactNode } from "react"
 import { Heartbeat } from "@phosphor-icons/react"
 import { ProtocolsPanel, type ApplicabilityRow, type MeasurementSlotRow } from "./protocols-panel"
 import type { PdtpPeriod } from "@/lib/services/pdtp/period"
@@ -27,6 +26,8 @@ import {
   type HygieneQuickFilter,
 } from "@/lib/prevention/hygiene-dashboard-filters"
 import { NewGroupDialog, NewProgramDialog } from "./hygiene-dialogs"
+import { N45StatusList } from "./n45-status-list"
+import { shapeN45Status } from "./n45-status"
 
 interface GroupItem {
   id: string
@@ -65,7 +66,7 @@ interface AgentOption {
 
 export function HygieneDashboard({
   groups, programs, summary, agents, worksites, protocolWorksites, applicabilities,
-  measurementSlots, slotYear, complianceCalendar, activationPeriods, canRecordMeasurementSlots, today, canAssess,
+  measurementSlots, slotYear, activationPeriods, canRecordMeasurementSlots, today, canAssess,
 }: {
   groups: GroupItem[]
   programs: ProgramItem[]
@@ -76,8 +77,6 @@ export function HygieneDashboard({
   applicabilities: ApplicabilityRow[]
   measurementSlots: MeasurementSlotRow[]
   slotYear: number
-  /** El calendario faena × mes de la evaluación cuantitativa (N°45), armado por la página. Va en la pestaña de protocolos. */
-  complianceCalendar?: ReactNode
   activationPeriods: Record<string, PdtpPeriod | null>
   canRecordMeasurementSlots: boolean
   today: string
@@ -153,7 +152,8 @@ export function HygieneDashboard({
         </div>
       </FilterToolbar>
 
-      {tab === "protocols" && complianceCalendar}
+      {/* La evaluación cuantitativa N°45 de cada faena: hecha o pendiente (era un calendario con una celda exigible de doce). */}
+      {tab === "protocols" && <N45StatusList model={shapeN45Status(protocolWorksites, measurementSlots)} year={slotYear} />}
 
       {tab === "protocols" && (
         <ProtocolsPanel

@@ -4,6 +4,7 @@ import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, R
 import type { MaterialEnvironmentalData } from "./material-environmental-dashboard"
 import { chartTooltipStyle } from "@/lib/chart-palette"
 import { MONTH_LABELS } from "@/lib/utils"
+import { useChartMotion } from "@/components/ui/chart-interactions"
 
 function ChartCard({ title, summary, children }: { title: string; summary?: React.ReactNode; children: React.ReactNode }) {
   return (
@@ -24,6 +25,7 @@ export default function MaterialEnvironmentalCharts({
   selectedData: MaterialEnvironmentalData
   eventData: MaterialEnvironmentalData[]
 }) {
+  const motion = useChartMotion()
   const monthlyData = selectedData.monthly.map((item) => ({
     month: MONTH_LABELS[item.month - 1],
     "Inc. peligrosos": item.dangerousIncidents,
@@ -43,54 +45,54 @@ export default function MaterialEnvironmentalCharts({
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
       <ChartCard title="Eventos por tipo · desglose mensual">
-        <BarChart data={monthlyData}>
+        <BarChart aria-label="Eventos por tipo y mes: incidentes peligrosos, daño material y daño ambiental" data={monthlyData}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
           <XAxis dataKey="month" tick={{ fontSize: 11, fill: "var(--color-text-subtle)" }} />
           <YAxis tick={{ fontSize: 11, fill: "var(--color-text-subtle)" }} allowDecimals={false} />
           <Tooltip contentStyle={chartTooltipStyle()} />
           <Legend />
-          <Bar dataKey="Inc. peligrosos" name="Inc. peligrosos" fill="var(--color-signal)" radius={[4, 4, 0, 0]} />
-          <Bar dataKey="Daño material" name="Daño material" fill="var(--color-warning)" radius={[4, 4, 0, 0]} />
-          <Bar dataKey="Daño ambiental" name="Daño ambiental" fill="var(--color-info)" radius={[4, 4, 0, 0]} />
+          <Bar dataKey="Inc. peligrosos" name="Inc. peligrosos" fill="var(--color-signal)" radius={[4, 4, 0, 0]} {...motion} />
+          <Bar dataKey="Daño material" name="Daño material" fill="var(--color-warning)" radius={[4, 4, 0, 0]} {...motion} />
+          <Bar dataKey="Daño ambiental" name="Daño ambiental" fill="var(--color-info)" radius={[4, 4, 0, 0]} {...motion} />
         </BarChart>
       </ChartCard>
 
       <ChartCard title="Tendencia mensual de eventos" summary={<p className="mb-3 text-xs text-[var(--color-text-muted)]">Redibuja como línea los mismos datos de &ldquo;Eventos por tipo&rdquo;; su tabla equivalente está en esa tarjeta.</p>}>
-        <LineChart data={monthlyData}>
+        <LineChart aria-label="Tendencia mensual de incidentes peligrosos, daño material y daño ambiental" data={monthlyData}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
           <XAxis dataKey="month" tick={{ fontSize: 11, fill: "var(--color-text-subtle)" }} />
           <YAxis tick={{ fontSize: 11, fill: "var(--color-text-subtle)" }} allowDecimals={false} />
           <Tooltip contentStyle={chartTooltipStyle()} />
           <Legend />
-          <Line type="monotone" dataKey="Inc. peligrosos" name="Inc. peligrosos" stroke="var(--color-signal)" strokeWidth={2} dot={{ r: 3 }} />
-          <Line type="monotone" dataKey="Daño material" name="Daño material" stroke="var(--color-warning)" strokeWidth={2} dot={{ r: 3 }} />
-          <Line type="monotone" dataKey="Daño ambiental" name="Daño ambiental" stroke="var(--color-info)" strokeWidth={2} dot={{ r: 3 }} />
+          <Line type="monotone" dataKey="Inc. peligrosos" name="Inc. peligrosos" stroke="var(--color-signal)" strokeWidth={2} dot={{ r: 3 }} {...motion} />
+          <Line type="monotone" dataKey="Daño material" name="Daño material" stroke="var(--color-warning)" strokeWidth={2} dot={{ r: 3 }} {...motion} />
+          <Line type="monotone" dataKey="Daño ambiental" name="Daño ambiental" stroke="var(--color-info)" strokeWidth={2} dot={{ r: 3 }} {...motion} />
         </LineChart>
       </ChartCard>
 
       <ChartCard title="Total eventos por faena (anual)">
-        <BarChart data={worksiteData} layout="vertical">
+        <BarChart aria-label="Total anual de eventos por faena y tipo, apilados" data={worksiteData} layout="vertical">
           <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
           <XAxis type="number" tick={{ fontSize: 11, fill: "var(--color-text-subtle)" }} allowDecimals={false} />
           <YAxis type="category" dataKey="name" tick={{ fontSize: 11, fill: "var(--color-text-subtle)" }} width={140} />
           <Tooltip contentStyle={chartTooltipStyle()} />
           <Legend />
-          <Bar dataKey="Inc. peligrosos" name="Inc. peligrosos" fill="var(--color-signal)" radius={[0, 4, 4, 0]} stackId="a" />
-          <Bar dataKey="Daño material" name="Daño material" fill="var(--color-warning)" radius={[0, 4, 4, 0]} stackId="a" />
-          <Bar dataKey="Daño ambiental" name="Daño ambiental" fill="var(--color-info)" radius={[0, 4, 4, 0]} stackId="a" />
+          <Bar dataKey="Inc. peligrosos" name="Inc. peligrosos" fill="var(--color-signal)" radius={[0, 4, 4, 0]} stackId="a" {...motion} />
+          <Bar dataKey="Daño material" name="Daño material" fill="var(--color-warning)" radius={[0, 4, 4, 0]} stackId="a" {...motion} />
+          <Bar dataKey="Daño ambiental" name="Daño ambiental" fill="var(--color-info)" radius={[0, 4, 4, 0]} stackId="a" {...motion} />
         </BarChart>
       </ChartCard>
 
       <ChartCard title="Distribución anual acumulada" summary={<p className="mb-3 text-xs text-[var(--color-text-muted)]">Combina barra y línea sobre los mismos datos de &ldquo;Eventos por tipo&rdquo;; su tabla equivalente está en esa tarjeta.</p>}>
-        <ComposedChart data={monthlyData}>
+        <ComposedChart aria-label="Distribución mensual de eventos: daño material en barras e incidentes y daño ambiental en líneas" data={monthlyData}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
           <XAxis dataKey="month" tick={{ fontSize: 11, fill: "var(--color-text-subtle)" }} />
           <YAxis tick={{ fontSize: 11, fill: "var(--color-text-subtle)" }} allowDecimals={false} />
           <Tooltip contentStyle={chartTooltipStyle()} />
           <Legend />
-          <Bar dataKey="Daño material" name="Daño material" fill="var(--color-warning)" radius={[4, 4, 0, 0]} opacity={0.6} />
-          <Line type="monotone" dataKey="Daño ambiental" name="Daño ambiental" stroke="var(--color-info)" strokeWidth={2} dot={{ r: 3 }} />
-          <Line type="monotone" dataKey="Inc. peligrosos" name="Inc. peligrosos" stroke="var(--color-signal)" strokeWidth={2} strokeDasharray="4 2" dot={{ r: 3 }} />
+          <Bar dataKey="Daño material" name="Daño material" fill="var(--color-warning)" radius={[4, 4, 0, 0]} opacity={0.6} {...motion} />
+          <Line type="monotone" dataKey="Daño ambiental" name="Daño ambiental" stroke="var(--color-info)" strokeWidth={2} dot={{ r: 3 }} {...motion} />
+          <Line type="monotone" dataKey="Inc. peligrosos" name="Inc. peligrosos" stroke="var(--color-signal)" strokeWidth={2} strokeDasharray="4 2" dot={{ r: 3 }} {...motion} />
         </ComposedChart>
       </ChartCard>
     </div>

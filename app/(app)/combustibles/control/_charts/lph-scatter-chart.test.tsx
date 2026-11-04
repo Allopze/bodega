@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from "react"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { cleanup, render, screen } from "@testing-library/react"
 import { buildLphComparison } from "@/lib/combustibles/control/calc/lph-comparison"
 import type { LitersPerHourComparisonRow } from "@/lib/combustibles/control/queries/idle-comparison"
@@ -16,7 +16,31 @@ vi.mock("recharts", async (importOriginal) => {
 
 import { LphScatterChart } from "./lph-scatter-chart"
 
-afterEach(() => cleanup())
+// `useChartMotion` anima la entrada salvo con «reducir movimiento». Estas pruebas leen el SVG ya
+// terminado (alturas, formas, rótulos), así que corren con esa preferencia activa: es el estado que
+// una animación de ≤ 200 ms alcanza de todos modos, sin esperar cuadros que jsdom no entrega.
+const originalMatchMedia = window.matchMedia
+beforeEach(() => {
+  Object.defineProperty(window, "matchMedia", {
+    writable: true,
+    configurable: true,
+    value: (query: string) => ({
+      matches: query.includes("prefers-reduced-motion"),
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    }),
+  })
+})
+
+afterEach(() => {
+  cleanup()
+  Object.defineProperty(window, "matchMedia", { writable: true, configurable: true, value: originalMatchMedia })
+})
 
 const row = (vehicleId: string, month: string, telemetryLph: number, loadsLph: number): LitersPerHourComparisonRow => ({
   vehicleId, equipment: `${vehicleId.toUpperCase()} · PL-${vehicleId}`, month, telemetryLph, loadsLph, loadCount: 2, differencePct: null,

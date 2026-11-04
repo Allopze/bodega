@@ -8,6 +8,7 @@ import { CHART_COLORS } from "@/lib/chart-palette"
 import { PERFORMANCE_UNIT_LABELS, type PerformanceUnit } from "@/lib/combustibles/control/contracts"
 import type { EquipmentNormalRange, EquipmentSeriesPoint } from "@/lib/combustibles/equipment/types"
 import { formatDate, formatQty } from "@/lib/utils"
+import { useChartMotion } from "@/components/ui/chart-interactions"
 
 const AXIS_TICK = { fill: "var(--color-text-muted)", fontSize: 11 } as const
 const fmt = (value: unknown, digits = 1) => (typeof value === "number" ? formatQty(value, undefined, { maximumFractionDigits: digits }) : "—")
@@ -21,6 +22,7 @@ const fmt = (value: unknown, digits = 1) => (typeof value === "number" ? formatQ
  * (km/L o L/h no se mezclan).
  */
 export function EquipmentPerformanceChart({ unit, points, range, vehicleLabel }: { unit: PerformanceUnit; points: EquipmentSeriesPoint[]; range: EquipmentNormalRange | null; vehicleLabel: string }) {
+  const motion = useChartMotion()
   const unitLabel = PERFORMANCE_UNIT_LABELS[unit]
   if (points.length === 0) {
     return <ChartEmpty label="Aún no hay cargas con rendimiento calculado" hint="Aparecen cuando el equipo tiene cargas consecutivas con lectura del medidor y sin decisión pendiente." className="h-56" />
@@ -64,13 +66,13 @@ export function EquipmentPerformanceChart({ unit, points, range, vehicleLabel }:
             type="monotone"
             stroke={CHART_COLORS.brand}
             strokeWidth={2}
-            isAnimationActive={false}
             dot={(props: { cx?: number; cy?: number; payload?: { outOfRange?: boolean } }) => {
               const { cx, cy, payload } = props
               if (cx === undefined || cy === undefined) return <g />
               const bad = payload?.outOfRange
               return <circle cx={cx} cy={cy} r={4} fill={bad ? CHART_COLORS.danger : "var(--color-surface)"} stroke={bad ? CHART_COLORS.danger : CHART_COLORS.brand} strokeWidth={2} />
             }}
+            {...motion}
           >
             <LabelList dataKey="value" position="top" offset={8} formatter={(value: unknown) => fmt(value)} className="fill-[var(--color-text)] text-[10px]" />
           </Line>

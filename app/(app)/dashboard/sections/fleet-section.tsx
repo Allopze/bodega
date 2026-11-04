@@ -22,6 +22,8 @@ import { FuelConsumptionChart } from "../dashboard-domain-charts"
 import type { DomainSectionsProps } from "./shared"
 import { plusDays, todayInChile } from "./shared"
 import { FUEL_PATHS } from "@/lib/combustibles/routes"
+import { fuelSourcesHref } from "@/lib/combustibles/coverage-notice"
+import { CoverageNotice } from "@/components/charts/coverage-notice"
 
 // ── Flota y combustible ──────────────────────────────────────────────────────
 
@@ -101,15 +103,12 @@ export async function FleetSection({ session, scope }: DomainSectionsProps) {
    */
   const activeVehicles = fleet.filter((vehicle) => vehicle.isActive).length
   const totalLiters = Math.round(fuelTrend.reduce((sum, point) => sum + (point.liters ?? 0), 0))
-  // Meses sin datos del proveedor (C-4): no suman, pero el tile los nombra para que la cifra no se lea completa.
-  const gapMonths = fuelTrend.filter((point) => point.providerGap).map((point) => point.month)
-  // La suma incluye el mes en curso a la fecha: «6 meses» sin este aviso se leería como seis meses completos.
-  const partialMonths = fuelTrend.filter((point) => point.partial).map((point) => point.month)
-  const litersDetail = [
-    gapMonths.length > 0 ? `Sin datos de ${gapMonths.join(", ")} del proveedor` : "Copec (tarjetas y estanques)",
-    ...(partialMonths.length > 0 ? [`incluye ${partialMonths.join(", ")} parcial`] : []),
-    "ahora",
-  ].join(" · ")
+  // Meses sin datos del proveedor (C-4): no suman, y el aviso de cobertura de la sección los nombra (una sola vez:
+  // ni este tile ni el gráfico lo repiten). La suma incluye el mes en curso a la fecha: «6 meses» sin ese aviso se
+  // leería como seis meses completos.
+  const gapMonths = fuelTrend.filter((point) => point.providerGap).map((point) => point.monthKey)
+  const partialMonths = fuelTrend.filter((point) => point.partial).map((point) => point.monthKey)
+  const litersDetail = "Copec (tarjetas y estanques) · ahora"
   const canRegisterVehicles = permissions.includes("admin:fleet_vehicles")
 
   return (
@@ -117,6 +116,14 @@ export async function FleetSection({ session, scope }: DomainSectionsProps) {
       <DegradedDataBanner degraded={degradedSources} total={trackedCount} />
       <DomainSection
         domain={DASHBOARD_DOMAINS.flota}
+        coverage={canViewFuel ? (
+          <CoverageNotice
+            gapMonths={gapMonths}
+            partialMonths={partialMonths}
+            subject={`las cifras de combustible de los últimos ${TREND_MONTHS} meses`}
+            sourcesHref={fuelSourcesHref(session)}
+          />
+        ) : undefined}
         links={[
           // Mismos nombres que el menú del área (CO-IA, 2026-10-22).
           ...(canViewOperationalControl(session) ? [{ label: "Panel operacional", href: "/control-operacional" }] : []),

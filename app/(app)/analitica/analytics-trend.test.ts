@@ -45,18 +45,9 @@ describe("monthlyTrendDescription", () => {
 })
 
 describe("monthlyTrendDescription · meses sin datos del proveedor (C-4)", () => {
-  it("nombra el mes sin datos del proveedor", () => {
-    expect(monthlyTrendDescription("2026-10-31", false, ["2026-09"])).toBe("Últimos 12 meses hasta oct-2026 · sin datos del proveedor de combustible en sep-2026")
-  })
-
-  it("lista varios meses y los une con «y»", () => {
-    expect(monthlyTrendDescription("2026-10-31", true, ["2025-11", "2025-12", "2026-09"])).toBe(
-      "Últimos 12 meses hasta oct-2026 · el último mes es parcial · sin datos del proveedor de combustible en nov-2025, dic-2025 y sep-2026",
-    )
-  })
-
-  it("sin huecos no agrega nada", () => {
-    expect(monthlyTrendDescription("2026-10-31", false, [])).toBe("Últimos 12 meses hasta oct-2026")
+  it("no los nombra: lo dice `CoverageNotice` bajo el gráfico, una sola vez (A5)", () => {
+    expect(monthlyTrendDescription("2026-10-31", false)).toBe("Últimos 12 meses hasta oct-2026")
+    expect(monthlyTrendDescription("2026-10-31", true)).toBe("Últimos 12 meses hasta oct-2026 · el último mes es parcial")
   })
 })
 
@@ -113,7 +104,7 @@ describe("monthlyTrendSummary", () => {
     const rows = [complete("2026-07", 100, 400), complete("2026-08", null, 9000)]
 
     expect(monthlyTrendSummary("2026-08-31", rows, money)).toBe(
-      "Últimos 12 meses hasta ago-2026 · sin datos del proveedor de combustible en ago-2026. Mayor gasto en un mes completo: jul-2026 ($500).",
+      "Últimos 12 meses hasta ago-2026. Mayor gasto en un mes completo: jul-2026 ($500).",
     )
   })
 
@@ -121,7 +112,7 @@ describe("monthlyTrendSummary", () => {
     const rows = [complete("2026-08", null, 9000)]
 
     expect(monthlyTrendSummary("2026-08-31", rows, money)).toBe(
-      "Últimos 12 meses hasta ago-2026 · sin datos del proveedor de combustible en ago-2026. Ningún mes completo tiene todos los datos para compararse.",
+      "Últimos 12 meses hasta ago-2026. Ningún mes completo tiene todos los datos para compararse.",
     )
   })
 

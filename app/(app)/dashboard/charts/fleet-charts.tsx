@@ -96,13 +96,6 @@ export function fuelHeadlineCaption(at: FuelMonthlyChartPoint | undefined): stri
   return at.partial === true ? `litros cargados en ${name} (parcial)` : `litros cargados en ${name}`
 }
 
-/** «septiembre» o «agosto y septiembre»: los meses sin datos del proveedor, para el texto del gráfico. */
-function gapMonthsText(data: FuelMonthlyChartPoint[]): string | null {
-  const names = data.filter((point) => point.providerGap).map((point) => monthFullName(point.month))
-  if (names.length === 0) return null
-  return names.length === 1 ? names[0]! : `${names.slice(0, -1).join(", ")} y ${names[names.length - 1]}`
-}
-
 /**
  * Litros (barra, eje izquierdo) y costo (línea, eje derecho).
  *
@@ -126,7 +119,6 @@ export function FuelConsumptionChart({ data, showCosts = true, periodLabel }: { 
   const at = active.activeIndex === null ? undefined : data[Math.min(active.activeIndex, data.length - 1)]
   // Un mes sin datos del proveedor no es «0 litros»: la cifra grande dice «—» y la leyenda también.
   const liters = at ? at.liters : data.reduce((sum, point) => sum + (point.liters ?? 0), 0)
-  const gaps = gapMonthsText(data)
   const partialFrom = firstPartialIndex(data)
   const legend: LegendEntry[] = [
     { key: "liters", label: "Litros", color: CHART_COLORS.signal, swatch: "box", value: at ? (at.liters == null ? "—" : formatChartValue(at.liters, "liters")) : undefined },
@@ -138,7 +130,7 @@ export function FuelConsumptionChart({ data, showCosts = true, periodLabel }: { 
   return (
     <ChartFrame
       title="Consumo de Combustibles"
-      description={`${showCosts ? "Litros cargados y costo por mes" : "Litros cargados por mes"}${periodLabel ? ` · ${periodLabel}` : ""}${partialFrom >= 0 ? " · el último mes es parcial" : ""}${gaps ? ` · sin datos del proveedor en ${gaps}` : ""}`}
+      description={`${showCosts ? "Litros cargados y costo por mes" : "Litros cargados por mes"}${periodLabel ? ` · ${periodLabel}` : ""}${partialFrom >= 0 ? " · el último mes es parcial" : ""}`}
       headline={
         <>
           <ChartHeadlineValue>{liters == null ? "—" : formatQty(liters, undefined, { maximumFractionDigits: 0 })}</ChartHeadlineValue>

@@ -33,8 +33,11 @@ export interface ApplicabilityRow {
   version: number
 }
 
-/** Casilla N°45 de una faena: la fila del checklist compartido, con su faena. */
-export type MeasurementSlotRow = ProgramSlotRow & { worksiteId: string }
+/**
+ * Casilla N°45 de una faena: la fila del checklist compartido, con su faena y, si está
+ * hecha, la fecha y el GES de la medición que la cumplió (los usa la lista por faena).
+ */
+export type MeasurementSlotRow = ProgramSlotRow & { worksiteId: string; measuredOn: string | null; groupCode: string | null }
 
 function statusVariant(status: ProtocolApplicabilityStatus): "success" | "outline" | "warning" {
   if (status === "applicable") return "success"

@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest"
 import {
   PPA_RATE_MIN_SAMPLE,
   detentionBasis,
+  detentionFigure,
   detentionRate,
+  insufficientCell,
+  insufficientNote,
   ppaMonthNote,
   ppaTrendDataTable,
   shapePpaMonthly,
@@ -31,6 +34,32 @@ describe("detentionRate", () => {
   })
 })
 
+describe("la base chica se dice con el conteo, nunca con un porcentaje", () => {
+  it("la nota dice que la base no alcanza y cuántos hay", () => {
+    expect(insufficientNote(11)).toBe("Base demasiado chica para un porcentaje (n = 11)")
+    expect(insufficientCell(4)).toBe("Sin porcentaje: base chica (n = 4)")
+  })
+
+  it("detentionFigure: con base suficiente es un porcentaje con su base", () => {
+    expect(detentionFigure(6, 22)).toEqual({ kind: "rate", value: "27,3%", percent: 27.3, basis: "6 de 22 PPA detenidos" })
+  })
+
+  it("detentionFigure: bajo el mínimo es el conteo («3 de 11») y la nota, no un porcentaje", () => {
+    const figure = detentionFigure(3, 11)
+    expect(figure).toEqual({
+      kind: "count",
+      value: "3 de 11",
+      basis: "3 de 11 PPA detenidos",
+      note: "Base demasiado chica para un porcentaje (n = 11)",
+    })
+    expect(JSON.stringify(figure)).not.toMatch(/\d\s?%/)
+  })
+
+  it("detentionFigure: sin PPA no hay cifra que mostrar", () => {
+    expect(detentionFigure(0, 0)).toEqual({ kind: "empty" })
+  })
+})
+
 describe("shapePpaMonthly", () => {
   it("rellena el mes sin PPA, marca el actual como parcial y corta la tasa bajo el mínimo", () => {
     const points = shapePpaMonthly(
@@ -52,7 +81,7 @@ describe("shapePpaMonthly", () => {
     )
     expect(ppaMonthNote(full!)).toBe("6 de 24 PPA detenidos")
     expect(ppaMonthNote(empty!)).toBe("Sin PPA en el mes")
-    expect(ppaMonthNote(few!)).toBe("Datos insuficientes: 4 PPA, se necesitan al menos 20 para una tasa")
+    expect(ppaMonthNote(few!)).toBe("1 de 4 PPA detenido. Base demasiado chica para un porcentaje (n = 4)")
   })
 })
 
@@ -68,7 +97,7 @@ describe("summarizePpaTrend", () => {
       { month: "2026-07", total: 2, detained: 1 },
       { month: "2026-10", total: 3, detained: 0 },
     ]))
-    expect(text).toBe("5 PPA entre julio y octubre, 1 detenido: datos insuficientes para una tasa de detención (se necesitan al menos 20).")
+    expect(text).toBe("1 de 5 PPA detenido entre julio y octubre. Base demasiado chica para un porcentaje (n = 5); se necesitan al menos 20 para una tasa de detención.")
     expect(text).not.toMatch(/\d\s?%/)
   })
 
@@ -77,9 +106,9 @@ describe("summarizePpaTrend", () => {
     expect(text).toBe("6 de 22 PPA detenidos en octubre: tasa de detención de 27,3%.")
   })
 
-  it("con los once PPA de hoy no da una tasa de detención: dice que son datos insuficientes", () => {
+  it("con los once PPA de hoy no da una tasa de detención: dice «3 de 11 PPA detenidos» y que la base no alcanza", () => {
     const text = summarizePpaTrend(shape([{ month: "2026-10", total: 11, detained: 3 }]))
-    expect(text).toBe("11 PPA en octubre, 3 detenidos: datos insuficientes para una tasa de detención (se necesitan al menos 20).")
+    expect(text).toBe("3 de 11 PPA detenidos en octubre. Base demasiado chica para un porcentaje (n = 11); se necesitan al menos 20 para una tasa de detención.")
     expect(text).not.toMatch(/\d\s?%/)
   })
 
@@ -110,9 +139,9 @@ describe("summarizePpaTrend", () => {
 })
 
 describe("ppaTrendDataTable", () => {
-  it("escribe «Datos insuficientes» en vez de un porcentaje sobre una base chica", () => {
+  it("escribe la base chica en vez de un porcentaje: conserva los conteos y dice n", () => {
     const table = ppaTrendDataTable(shapePpaMonthly([{ month: "2026-09", total: 4, detained: 1 }], "2026-10-05"))
-    expect(table.rows).toEqual([["Sep 2026", 4, 1, "Datos insuficientes"], ["Oct 2026 (en curso)", 0, 0, "—"]])
+    expect(table.rows).toEqual([["Sep 2026", 4, 1, "Sin porcentaje: base chica (n = 4)"], ["Oct 2026 (en curso)", 0, 0, "—"]])
   })
 })
 
@@ -137,9 +166,10 @@ describe("shapeWorksiteRanking", () => {
       { worksiteId: "d", worksiteName: "Sin PPA", total: 0, detained: 0 },
     ])
     expect(ranking.items.map((item) => item.label)).toEqual(["Faena A"])
+    // Se nombran con su conteo honesto («1 de 1 detenido»), no sólo con «datos insuficientes».
     expect(ranking.insufficient).toEqual([
-      { key: "c", label: "Faena C", n: 3 },
-      { key: "b", label: "Faena B", n: 1 },
+      { key: "c", label: "Faena C", n: 3, detained: 0, basis: "0 de 3 PPA detenidos" },
+      { key: "b", label: "Faena B", n: 1, detained: 1, basis: "1 de 1 PPA detenido" },
     ])
   })
 })

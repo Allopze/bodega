@@ -4,6 +4,7 @@ import { Bar, CartesianGrid, ComposedChart, Legend, Line, XAxis, YAxis } from "r
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
 import { ChartEmpty } from "@/components/ui/chart-empty"
 import { IDLE_COLORS, hoursTick, pctTick, tooltipRow } from "./idle-chart-parts"
+import { useChartMotion } from "@/components/ui/chart-interactions"
 
 export interface IdleMonthlyPoint { label: string; workingHours: number; idleHours: number; idlePct: number | null }
 
@@ -15,6 +16,7 @@ const config = {
 
 /** V-06: horas trabajando y en vacío apiladas (eje izquierdo, h) y % en vacío (eje derecho). */
 export function IdleMonthlyChart({ data }: { data: IdleMonthlyPoint[] }) {
+  const motion = useChartMotion()
   if (data.length === 0) return <ChartEmpty label="Sin telemetría en el período" hint="Cambia el período o importa el archivo de telemetría del equipo." />
   return (
     <ChartContainer config={config} className="aspect-auto h-72 w-full" role="img" aria-label="Horas trabajando y en vacío por mes, con el porcentaje en vacío">
@@ -25,9 +27,9 @@ export function IdleMonthlyChart({ data }: { data: IdleMonthlyPoint[] }) {
         <YAxis yAxisId="pct" orientation="right" domain={[0, 100]} tickLine={false} axisLine={false} width={44} tickFormatter={pctTick} tick={{ fontSize: 11 }} />
         <ChartTooltip content={<ChartTooltipContent formatter={(value, name, item) => tooltipRow(value, name, item, (series) => (series === "% en vacío" ? "%" : "h"))} />} />
         <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
-        <Bar yAxisId="hours" stackId="hours" dataKey="workingHours" name="Horas trabajando" fill={IDLE_COLORS.working} maxBarSize={44} />
-        <Bar yAxisId="hours" stackId="hours" dataKey="idleHours" name="Horas en vacío" fill={IDLE_COLORS.idle} maxBarSize={44} radius={[3, 3, 0, 0]} />
-        <Line yAxisId="pct" type="monotone" dataKey="idlePct" name="% en vacío" stroke={IDLE_COLORS.pct} strokeWidth={2} dot={{ r: 3 }} connectNulls={false} />
+        <Bar yAxisId="hours" stackId="hours" dataKey="workingHours" name="Horas trabajando" fill={IDLE_COLORS.working} maxBarSize={44} {...motion} />
+        <Bar yAxisId="hours" stackId="hours" dataKey="idleHours" name="Horas en vacío" fill={IDLE_COLORS.idle} maxBarSize={44} radius={[3, 3, 0, 0]} {...motion} />
+        <Line yAxisId="pct" type="monotone" dataKey="idlePct" name="% en vacío" stroke={IDLE_COLORS.pct} strokeWidth={2} dot={{ r: 3 }} connectNulls={false} {...motion} />
       </ComposedChart>
     </ChartContainer>
   )

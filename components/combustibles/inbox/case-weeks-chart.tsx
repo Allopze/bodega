@@ -4,6 +4,7 @@ import { Bar, BarChart, CartesianGrid, Rectangle, XAxis, YAxis, type BarShapePro
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent, type ChartConfig, type ChartTooltipItem } from "@/components/ui/chart"
 import { ANOMALY_SEVERITY_COLORS, ANOMALY_SEVERITY_LABELS } from "@/lib/combustibles/anomaly-labels"
 import { anomalyWeekRangeLabel, visibleSeverities, type AnomalyWeek } from "@/lib/combustibles/inbox/case-weeks"
+import { useChartMotion } from "@/components/ui/chart-interactions"
 
 /**
  * Casos de anomalía detectados por semana, apilados por gravedad (CHART-023b).
@@ -32,20 +33,21 @@ function weekTooltipTitle(_label: unknown, payload: ChartTooltipItem[]) {
 }
 
 export function CaseWeeksChart({ weeks }: { weeks: AnomalyWeek[] }) {
+  const motion = useChartMotion()
   const severities = visibleSeverities(weeks)
   const config = Object.fromEntries(severities.map((severity) => [severity, { label: ANOMALY_SEVERITY_LABELS[severity] }])) satisfies ChartConfig
   const hasPartial = weeks.some((week) => week.partial)
   return (
     <div>
       <ChartContainer config={config} className="aspect-auto h-56 w-full">
-        <BarChart data={weeks} margin={WEEK_MARGIN}>
+        <BarChart aria-label="Casos de anomalía por semana, apilados por gravedad" data={weeks} margin={WEEK_MARGIN}>
           <CartesianGrid vertical={false} />
           <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} tick={{ fontSize: 11 }} />
           <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={28} tick={{ fontSize: 11 }} />
           <ChartTooltip content={<ChartTooltipContent indicator="dot" labelFormatter={weekTooltipTitle} />} />
           <ChartLegend content={<ChartLegendContent />} />
           {severities.map((severity) => (
-            <Bar key={severity} dataKey={severity} stackId="semana" fill={ANOMALY_SEVERITY_COLORS[severity]} shape={WeekBar} />
+            <Bar key={severity} dataKey={severity} stackId="semana" fill={ANOMALY_SEVERITY_COLORS[severity]} shape={WeekBar} {...motion} />
           ))}
         </BarChart>
       </ChartContainer>

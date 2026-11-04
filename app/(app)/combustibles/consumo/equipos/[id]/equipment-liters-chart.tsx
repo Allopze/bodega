@@ -8,6 +8,7 @@ import { CHART_COLORS } from "@/lib/chart-palette"
 import type { EquipmentFileLitersMonth } from "@/lib/combustibles/equipment/types"
 import { MONTH_LABELS, MONTH_NAMES, countOf, formatQty } from "@/lib/utils"
 import { AXIS_TICK, compactNumber } from "../../../control/_charts/chart-shared"
+import { useChartMotion } from "@/components/ui/chart-interactions"
 
 /**
  * Opacidad de los meses fuera del período elegido. No baja de 0,6 porque una
@@ -47,6 +48,7 @@ function monthInSentence(month: string): string {
  * en el nombre; el detalle de cada mes, en el tooltip al apuntar.
  */
 export function EquipmentLitersChart({ months, periodMonths, vehicleLabel }: { months: EquipmentFileLitersMonth[]; periodMonths: string[]; vehicleLabel: string }) {
+  const motion = useChartMotion()
   if (months.every((point) => point.liters === 0)) {
     return <ChartEmpty label="Sin cargas en los últimos 12 meses" hint="Aparecen cuando el equipo tiene cargas que cuenten en alguno de esos meses." className="h-56" />
   }
@@ -98,7 +100,7 @@ export function EquipmentLitersChart({ months, periodMonths, vehicleLabel }: { m
               />
             }
           />
-          <Bar dataKey="liters" name="Litros" fill={CHART_COLORS.brand} radius={[2, 2, 0, 0]} maxBarSize={36} isAnimationActive={false}>
+          <Bar dataKey="liters" name="Litros" fill={CHART_COLORS.brand} radius={[2, 2, 0, 0]} maxBarSize={36} {...motion}>
             {data.map((point) => <Cell key={point.month} fillOpacity={dimmed(point) ? OUT_OF_PERIOD_OPACITY : 1} />)}
           </Bar>
         </BarChart>

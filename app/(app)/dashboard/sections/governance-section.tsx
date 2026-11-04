@@ -10,6 +10,7 @@ import { DASHBOARD_KPI, DomainSection } from "../dashboard-domain-shell"
 import { CHART_COLORS } from "@/lib/chart-palette"
 import { SST_DOCUMENT_STATUS_LABELS } from "@/lib/prevention/privacy-inventory"
 import { DASHBOARD_GLOSSARY } from "../dashboard-glossary"
+import { detentionFigure } from "@/lib/ppa/detention-rate"
 import { CompositionDonutChart, StatusShareBar } from "../dashboard-domain-charts"
 
 import type { DomainSectionsProps } from "./shared"
@@ -43,6 +44,12 @@ export async function GovernanceSection({ session, worksiteScope, worksiteIds }:
   const pendingTraining = occurrences.filter((row) => row.status === "pending").length
   const notDoneTraining = occurrences.filter((row) => row.status === "not_completed").length
 
+  /* Es la misma magnitud que la tira de /prevencion/ppa y sigue su misma regla
+   * (`detentionFigure`): bajo `PPA_RATE_MIN_SAMPLE` PPA no hay porcentaje, hay el
+   * conteo («3 de 11») y la nota de que la base es demasiado chica. Se arma acá y
+   * no en un componente aparte para que el tile siga a la vista del árbol. */
+  const ppaFigure = ppa ? detentionFigure(ppa.detenidos, ppa.total) : null
+
   return (
     <DomainSection
       domain={DASHBOARD_DOMAINS.gobernanza}
@@ -67,16 +74,16 @@ export async function GovernanceSection({ session, worksiteScope, worksiteIds }:
           {/* Sin `ppa:view` la cifra no existe: ni "—" ni un acceso a una pantalla
               que respondería 403. Con permiso y sin registros, un "0 %" de
               desviaciones sobre 0 PPA no mide nada; dice qué falta (A4). */}
-          {has("ppa:view") && (ppa && ppa.total > 0 ? (
-            <KpiCard {...DASHBOARD_KPI} icon={<Siren size={16} />} label="Desviaciones PPA"
-              value={`${Math.round(ppa.porcentajeDesviaciones)}%`}
+          {has("ppa:view") && (ppa && ppaFigure && ppaFigure.kind !== "empty" ? (
+            <KpiCard {...DASHBOARD_KPI} icon={<Siren size={16} />} label="Tasa de detención PPA"
+              value={ppaFigure.value}
               // Los PPA no se acotan por fecha (`getPpaStats` no recibe período): decir
               // "· mes" era falso, y es la razón por la que el selector no aplica acá (INI-05).
-              detail={`${ppa.detenidos} detenciones de ${ppa.total} · acumulado`}
+              detail={ppaFigure.kind === "rate" ? `${ppaFigure.basis} · acumulado` : `PPA detenidos. ${ppaFigure.note}`}
               glossary={DASHBOARD_GLOSSARY.PPA}
               tone={ppa.detenidos > 0 ? "signal" : "neutral"} href="/prevencion/ppa" />
           ) : (
-            <KpiCard {...DASHBOARD_KPI} icon={<Siren size={16} />} label="Desviaciones PPA"
+            <KpiCard {...DASHBOARD_KPI} icon={<Siren size={16} />} label="Tasa de detención PPA"
               value="—" detail="" glossary={DASHBOARD_GLOSSARY.PPA}
               empty={{ message: "Aún no hay registros PPA", actionLabel: "Ir al PPA" }} href="/prevencion/ppa" />
           ))}

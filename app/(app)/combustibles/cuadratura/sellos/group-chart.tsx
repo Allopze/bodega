@@ -7,6 +7,7 @@ import { ChartLineUp } from "@phosphor-icons/react"
 import type { TaeGroupRow } from "@/lib/combustibles/tae-dashboard"
 import { formatQty } from "@/lib/utils"
 import { buildTaeGroupDrilldownHref } from "./group-chart-url"
+import { useChartMotion } from "@/components/ui/chart-interactions"
 
 const BAR_COLOR = "var(--color-primary)"
 const GRID_COLOR = "var(--color-border)"
@@ -18,6 +19,7 @@ function truncate(label: string, max = 18) {
  *  barra abre Cargas filtrada por ese nombre — no hay una ruta de detalle
  *  dedicada para "todas las cargas de un conductor". */
 export function TaeGroupChart({ data, drilldownBaseHref }: { data: TaeGroupRow[]; drilldownBaseHref: string }) {
+  const motion = useChartMotion()
   const router = useRouter()
   if (data.length === 0) return <ChartEmpty icon={<ChartLineUp size={24} className="mb-2 text-[var(--color-text-subtle)]" aria-hidden />} className="border-[var(--color-border-strong)]" label="No hay cargas en terreno en este período." />
 
@@ -59,8 +61,7 @@ export function TaeGroupChart({ data, drilldownBaseHref }: { data: TaeGroupRow[]
               if (/^Reservado \d+$/.test(fullName)) return
               router.push(buildTaeGroupDrilldownHref(drilldownBaseHref, fullName))
             }}
-            animationDuration={420}
-            animationEasing="ease-out"
+            {...motion}
           />
         </BarChart>
       </ResponsiveContainer>

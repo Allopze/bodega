@@ -3,7 +3,7 @@ import { useId, type ReactNode } from "react"
 import { ArrowRight, CaretDown } from "@phosphor-icons/react/dist/ssr"
 import { Card } from "@/components/ui/card"
 import { ChartEmpty } from "@/components/ui/chart-empty"
-import { ChartDataTable } from "@/components/charts/chart-data-table"
+import { ChartDataTable, type ChartDataExcel } from "@/components/charts/chart-data-table"
 import { cn } from "@/lib/utils"
 
 /**
@@ -20,7 +20,9 @@ import { cn } from "@/lib/utils"
  *    pregunta del gráfico («12 de 40 personas tienen capacitaciones vencidas»).
  *    Se lee primero y es lo que anuncia el lector de pantalla.
  * 3. **«Ver datos».** Con `data`, los mismos números en una tabla a demanda
- *    (`ChartDataTable`): para quien no ve el gráfico y para quien quiere la cifra.
+ *    (`ChartDataTable`): para quien no ve el gráfico y para quien quiere la cifra. Con
+ *    `data.excel` (opt-in, con el permiso de exportar del módulo) la tabla se descarga en
+ *    Excel con `ExportButton`.
  * 4. **Estado vacío con salida.** Con `empty`, el gráfico no se dibuja y se
  *    explica qué falta y cómo llenarlo (regla A4), nunca un eje en cero.
  * 5. **Drill-down.** Con `drillHref`, un enlace a la lista que explica la cifra.
@@ -37,7 +39,7 @@ export interface ChartSectionProps {
   /** Control o enlace a la derecha del título (selector de período, leyenda). */
   aside?: ReactNode
   /** Datos para «Ver datos». La primera columna es el encabezado de fila. */
-  data?: { caption?: string; headers: string[]; rows: Array<Array<ReactNode>> }
+  data?: { caption?: string; headers: string[]; rows: Array<Array<ReactNode>>; excel?: ChartDataExcel }
   /** Si viene, reemplaza el gráfico: qué significa el vacío y qué hacer. */
   empty?: { label: string; hint?: string; ctaLabel?: string; ctaHref?: string } | null
   drillHref?: string
@@ -79,7 +81,7 @@ export function ChartSection({
       <div className="mt-4 min-w-0">{children}</div>
       {(data || drillHref) && (
         <div className="mt-1 flex flex-wrap items-start justify-between gap-x-4">
-          {data ? <ChartDataTable caption={data.caption ?? title} headers={data.headers} rows={data.rows} /> : <span />}
+          {data ? <ChartDataTable caption={data.caption ?? title} headers={data.headers} rows={data.rows} excel={data.excel} /> : <span />}
           {drillHref && (
             <Link
               href={drillHref}

@@ -4,6 +4,7 @@ import { ChartEmpty } from "@/components/ui/chart-empty"
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts"
 import { chartTooltipStyle } from "@/lib/chart-palette"
 import { formatCompactCLP, formatCompactQty, formatPricePerLiter } from "@/lib/utils"
+import { useChartMotion } from "@/components/ui/chart-interactions"
 
 interface ChartDataPoint {
   group: string | null
@@ -30,6 +31,7 @@ const TOOLTIP_ITEM_STYLE = { color: "var(--color-text)" }
 
 /* ── Monthly Evolution (Area Chart) ──────────────────────────────────────── */
 export function MonthlyEvolutionChart({ data }: { data: ChartDataPoint[] }) {
+  const motion = useChartMotion()
   if (data.length === 0) return <ChartEmpty className="h-64 px-6" label="Sin datos mensuales" />
 
   const chartData = data.map(d => ({
@@ -44,7 +46,7 @@ export function MonthlyEvolutionChart({ data }: { data: ChartDataPoint[] }) {
   return (
     <div className="h-72">
       <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={chartData} margin={{ top: 10, right: 12, left: 0, bottom: 0 }}>
+        <AreaChart aria-label="Monto gastado en combustible y precio promedio por litro, por período" data={chartData} margin={{ top: 10, right: 12, left: 0, bottom: 0 }}>
           <defs>
             <linearGradient id="gradAmount" x1="0" y1="0" x2="0" y2="1">
               <stop offset="5%" stopColor={AMOUNT_COLOR} stopOpacity={0.3} />
@@ -69,10 +71,10 @@ export function MonthlyEvolutionChart({ data }: { data: ChartDataPoint[] }) {
           />
           <Legend iconType="plainline" formatter={legendText} />
           {/* Monto: área azul rellena (cuánto se gastó). */}
-          <Area yAxisId="amount" type="monotone" dataKey="monto" stroke={AMOUNT_COLOR} fill="url(#gradAmount)" strokeWidth={2.5} name="Monto CLP" dot={false} activeDot={{ r: 4 }} />
+          <Area yAxisId="amount" type="monotone" dataKey="monto" stroke={AMOUNT_COLOR} fill="url(#gradAmount)" strokeWidth={2.5} name="Monto CLP" dot={false} activeDot={{ r: 4 }} {...motion} />
           {/* Precio promedio: línea punteada; revela si el gasto se mueve por volumen o por precio.
               Sin `connectNulls`: un mes sin litros queda como hueco, no unido a sus vecinos. */}
-          <Area yAxisId="price" type="monotone" dataKey="precio" stroke={PRICE_COLOR} fill="none" strokeWidth={2} strokeDasharray="5 3" name="Precio" dot={false} activeDot={{ r: 4 }} />
+          <Area yAxisId="price" type="monotone" dataKey="precio" stroke={PRICE_COLOR} fill="none" strokeWidth={2} strokeDasharray="5 3" name="Precio" dot={false} activeDot={{ r: 4 }} {...motion} />
         </AreaChart>
       </ResponsiveContainer>
     </div>
@@ -81,6 +83,7 @@ export function MonthlyEvolutionChart({ data }: { data: ChartDataPoint[] }) {
 
 /* ── By Category (Horizontal Bar Chart) ──────────────────────────────────── */
 export function CategoryBarChart({ data, title, onSelect, metric = "amount" }: { data: ChartDataPoint[]; title: string; onSelect?: (group: string) => void; metric?: "amount" | "liters" }) {
+  const motion = useChartMotion()
   if (data.length === 0) return <ChartEmpty className="h-64 px-6" label={`Sin datos de ${title.toLowerCase()}`} />
 
   const chartData = data.slice(0, 8).map(d => ({
@@ -114,6 +117,7 @@ export function CategoryBarChart({ data, title, onSelect, metric = "amount" }: {
             fill="var(--color-primary)"
             style={onSelect ? { cursor: "pointer" } : undefined}
             onClick={onSelect ? (entry) => onSelect((entry as unknown as { payload: { fullName: string } }).payload.fullName) : undefined}
+            {...motion}
           />
         </BarChart>
       </ResponsiveContainer>

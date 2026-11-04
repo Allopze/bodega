@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { fleetProviderGapNotice } from "./fleet-provider-gap"
+import { coverageNoticeText } from "@/lib/combustibles/coverage-notice"
+import { fleetProviderGapNotice, fleetProviderGapSubject } from "./fleet-provider-gap"
 
 /**
  * C-4 en Flota: el aviso de que un mes de la ventana de 12 meses no trae datos del proveedor.
@@ -23,5 +24,12 @@ describe("fleetProviderGapNotice", () => {
 
   it("la ventana sale del llamador: no repite el 12 a mano", () => {
     expect(fleetProviderGapNotice(["2026-09"], 6)).toBe("Sin datos del proveedor en sep-2026: los totales de 6 meses no incluyen ese mes.")
+  })
+
+  // La pantalla (`CoverageNotice`) y la hoja «Metadatos» salen de la misma frase compartida: si una cambia sin la otra, el archivo
+  // y la pantalla se contradicen.
+  it("es la frase del aviso compartido de cobertura con las cifras de Flota por sujeto", () => {
+    expect(fleetProviderGapSubject(12)).toBe("los totales de 12 meses")
+    expect(fleetProviderGapNotice(["2026-09"], 12)).toBe(coverageNoticeText({ gapMonths: ["2026-09"], subject: fleetProviderGapSubject(12) }))
   })
 })

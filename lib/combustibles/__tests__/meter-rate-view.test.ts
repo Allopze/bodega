@@ -86,7 +86,7 @@ describe("meterRateTable", () => {
 })
 
 describe("meterRateNotes", () => {
-  it("cuenta los meses en blanco y los descartes, y dice qué es n", () => {
+  it("cuenta los meses con datos insuficientes y los descartes, y dice qué es n", () => {
     const notes = meterRateNotes(series([
       month({ month: "2026-08", discarded: 2 }),
       month({ month: "2026-09", status: "gap", rate: null, segments: 0 }),
@@ -94,7 +94,8 @@ describe("meterRateNotes", () => {
     ]))
 
     expect(notes.join(" ")).toContain("n = tramos")
-    expect(notes.join(" ")).toContain("1 mes sin datos del proveedor")
+    // El mes sin datos del proveedor lo dice el aviso de cobertura de la pantalla, no esta lista (A5).
+    expect(notes.join(" ")).not.toContain("sin datos del proveedor")
     expect(notes.join(" ")).toContain("1 mes con datos insuficientes")
     expect(notes.join(" ")).toContain("3 pares de lecturas descartados")
   })

@@ -26,7 +26,9 @@ import { MonthlySpendChart, SupplierParetoChart } from "./analytics-charts-lazy"
 import { KpiCard } from "./analytics-kpi-card"
 import { RankingTable, SeverityBadge, EmptyText } from "./analytics-ranking-table"
 import { getFilterOptions, getParam } from "./analytics-page.helpers"
-import { monthlyTrendSummary, trendDataRows } from "./analytics-trend"
+import { fuelGapMonthKeys, monthlyTrendSummary, trendDataRows } from "./analytics-trend"
+import { CoverageNotice } from "@/components/charts/coverage-notice"
+import { fuelSourcesHref } from "@/lib/combustibles/coverage-notice"
 import { buildSupplierPareto, paretoSummary } from "./analytics-pareto"
 import { rankingItems, rankingLeaderSummary } from "./analytics-rankings"
 import { LeadTimeSection } from "./lead-time-section"
@@ -150,7 +152,7 @@ export default async function AnaliticaPage({
         <section aria-label="KPIs ejecutivos" className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
           <KpiCard
             icon={<ShoppingCart size={18} />}
-            label="Gasto total"
+            label="Gasto total (con IVA)"
             value={formatCLP(data.kpis.totalSpend)}
             detail={`Período ${data.filters.fromDate} a ${data.filters.toDate}`}
             trend={data.kpis.spendVariationPct}
@@ -166,7 +168,7 @@ export default async function AnaliticaPage({
             icon={<Package size={18} />}
             label="Órdenes de compra"
             value={formatQty(data.kpis.purchaseOrderCount)}
-            detail={`Promedio ${formatCLP(data.kpis.averageOrderAmount)}`}
+            detail={`Promedio con IVA ${formatCLP(data.kpis.averageOrderAmount)}`}
             href={canViewPurchasing ? "/compras" : undefined}
             glossary="Cantidad de órdenes de compra emitidas en el período, sin borradores, anuladas ni eliminadas. El promedio divide el gasto en OC (con impuestos) entre ese número."
           />
@@ -205,13 +207,13 @@ export default async function AnaliticaPage({
             discrepar sin motivo (CHART-033). */}
         <p className="text-xs leading-5 text-[var(--color-text-muted)] text-pretty">
           <strong className="font-semibold text-[var(--color-text)]">Base de las cifras.</strong>{" "}
-          Una orden de compra cuenta en el período en que se <strong className="font-semibold">emitió</strong> (no en el que se creó), con impuestos incluidos, y no cuenta borradores, anuladas ni eliminadas: es la misma definición de Finanzas en el tablero.
-          {canViewFuelCosts ? " El combustible suma las transacciones Copec aceptadas y vigentes, con impuestos." : ""}
+          Todo el gasto va <strong className="font-semibold">con IVA incluido</strong>. Una orden de compra cuenta en el período en que se <strong className="font-semibold">emitió</strong> (no en el que se creó), y no cuenta borradores, anuladas ni eliminadas: es la misma definición de Finanzas en el tablero.
+          {canViewFuelCosts ? " El combustible suma las transacciones Copec aceptadas y vigentes, con IVA e impuesto específico incluidos." : ""}
         </p>
 
         <section className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
           <ChartSection
-            title="Tendencia mensual de gasto"
+            title="Tendencia mensual de gasto (con IVA)"
             // La serie no sigue el período elegido: son 12 meses que terminan en `hasta` (C-10). La frase nombra la
             // ventana, el mes parcial y los meses sin datos del proveedor (C-4), y el mayor mes sólo entre los comparables.
             summary={monthlyTrendSummary(data.filters.toDate, data.spendByMonth, formatCLP)}
@@ -225,9 +227,17 @@ export default async function AnaliticaPage({
             <ChartErrorBoundary chartName="la tendencia mensual">
               <MonthlySpendChart data={data.spendByMonth} showFuel={canViewFuelCosts} />
             </ChartErrorBoundary>
+            {canViewFuelCosts && (
+              <CoverageNotice
+                className="mt-3"
+                gapMonths={fuelGapMonthKeys(data.spendByMonth)}
+                subject="el combustible y el total de la tendencia"
+                sourcesHref={fuelSourcesHref(session)}
+              />
+            )}
           </ChartSection>
           <ChartSection
-            title="Gasto por tipo"
+            title="Gasto por tipo (con IVA)"
             summary={rankingLeaderSummary(spendByTypeItems, formatCLP, { of: "del gasto" })}
             empty={spendByTypeItems.length === 0 ? {
               label: "Sin gasto para distribuir",
@@ -239,7 +249,7 @@ export default async function AnaliticaPage({
         </section>
 
         <ChartSection
-          title="Concentración del gasto por proveedor"
+          title="Concentración del gasto por proveedor (con IVA)"
           summary={paretoSummary(pareto, concentrationThreshold, canViewFuelCosts ? "del gasto" : "del gasto en compras")}
           data={{
             caption: "Gasto por proveedor y porcentaje acumulado del gasto total",
@@ -264,7 +274,7 @@ export default async function AnaliticaPage({
 
         <section className="grid grid-cols-1 gap-5 xl:grid-cols-2">
           <ChartSection
-            title="Faenas con mayor gasto"
+            title="Faenas con mayor gasto (con IVA)"
             summary={rankingLeaderSummary(worksiteItems, formatCLP)}
             empty={worksiteItems.length === 0 ? { label: "Sin gasto por faena para el filtro actual." } : null}
           >
@@ -272,7 +282,7 @@ export default async function AnaliticaPage({
           </ChartSection>
           {canViewFuelCosts && (
             <ChartSection
-              title="Vehículos con mayor gasto de combustible"
+              title="Vehículos con mayor gasto de combustible (con IVA)"
               summary={rankingLeaderSummary(vehicleItems, formatCLP, { gender: "o" })}
               empty={vehicleItems.length === 0 ? { label: "Sin cargas de combustible por vehículo en el período." } : null}
             >
@@ -366,7 +376,7 @@ export default async function AnaliticaPage({
 
         <RankingTable
           title="Órdenes de compra emitidas recientemente"
-          headers={["OC", "Faena", "Proveedor", "Emisión", "Monto"]}
+          headers={["OC", "Faena", "Proveedor", "Emisión", "Monto con IVA"]}
           rows={data.recentOrders.map((row) => [
             canViewPurchasing
               ? <Link key={row.id} href={`/compras/${row.id}`} className="font-medium text-[var(--color-primary)] hover:underline">{row.code}</Link>

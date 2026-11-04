@@ -40,7 +40,7 @@ export interface DomainKpiGroup {
   content: ReactNode
 }
 
-export function DomainSection({ domain, kpis, kpiGroups, summary, charts, links, note, chartsFirst = false }: {
+export function DomainSection({ domain, kpis, kpiGroups, summary, charts, links, note, coverage, chartsFirst = false }: {
   domain: DashboardDomain
   /** Una sola fila sin rótulo. Excluyente con `kpiGroups`. */
   kpis?: ReactNode
@@ -56,6 +56,12 @@ export function DomainSection({ domain, kpis, kpiGroups, summary, charts, links,
   links: Array<{ label: string; href: string }>
   /** Advertencia de alcance cuando alguna cifra no puede respetar el filtro. */
   note?: string
+  /**
+   * Aviso de cobertura de datos (`CoverageNotice`): qué meses no tienen datos del proveedor.
+   * Va bajo el encabezado, sobre las cifras que advierte, y es el único lugar de la sección que
+   * lo dice: ni el detalle de un tile ni el subtítulo de un gráfico lo repiten (A5).
+   */
+  coverage?: ReactNode
   /**
    * Gráficos antes que los KPIs. Sólo Finanzas: su pregunta es cómo evolucionan
    * la facturación y la deuda, y eso lo responden los gráficos; en las vistas
@@ -92,6 +98,8 @@ export function DomainSection({ domain, kpis, kpiGroups, summary, charts, links,
       </div>
 
       {note && <p className="mb-3 text-xs text-[var(--color-text-muted)]">{note}</p>}
+      {/* `empty:hidden`: un aviso sin meses no pinta nada y el contenedor no deja aire de más. */}
+      {coverage && <div data-domain-coverage="" className="mb-3 empty:hidden">{coverage}</div>}
 
       {/* Espaciado con `gap` y no con márgenes: un panel que se oculta (todos
           sus gráficos sin datos) queda `display: none` y en un flex no deja

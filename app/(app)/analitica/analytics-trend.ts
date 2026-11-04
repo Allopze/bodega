@@ -25,12 +25,6 @@ export function formatTrendMonthShort(monthKey: string): string {
   return label ? `${label.toLowerCase()}-${match[1]!.slice(2)}` : monthKey
 }
 
-/** `[2025-11, 2025-12, 2026-09]` → «nov-2025, dic-2025 y sep-2026»: los meses de un aviso, en una frase. */
-export function formatTrendMonthList(monthKeys: readonly string[]): string {
-  const names = monthKeys.map(formatTrendMonth)
-  return names.length <= 1 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} y ${names[names.length - 1]}`
-}
-
 /**
  * Subtítulo con la ventana real: la serie no sigue el período elegido sino los 12
  * meses que terminan en el mes de `hasta`, y el lector tiene que saberlo. Si ese
@@ -38,11 +32,11 @@ export function formatTrendMonthList(monthKeys: readonly string[]): string {
  * mes no tiene datos del proveedor de combustible también se nombra (C-4): el
  * hueco de la línea sin explicación se lee como un error del gráfico.
  */
-export function monthlyTrendDescription(toDate: string, partial: boolean, fuelGapMonths: readonly string[] = [], months = 12): string {
+export function monthlyTrendDescription(toDate: string, partial: boolean, months = 12): string {
+  // Los meses sin datos del proveedor los nombra `CoverageNotice` bajo el gráfico: es el
+  // único lugar de la plataforma que lo dice (A5), con la misma redacción que el Excel.
   const base = `Últimos ${months} meses hasta ${formatTrendMonth(toDate.slice(0, 7))}`
-  const withPartial = partial ? `${base} · el último mes es parcial` : base
-  if (fuelGapMonths.length === 0) return withPartial
-  return `${withPartial} · sin datos del proveedor de combustible en ${formatTrendMonthList(fuelGapMonths)}`
+  return partial ? `${base} · el último mes es parcial` : base
 }
 
 /** Meses de la serie sin datos del proveedor de combustible (`fuelAmount: null`), en orden. */
@@ -85,7 +79,7 @@ export function areaChartRows(rows: readonly SpendByMonthRow[], showFuel: boolea
  */
 export function monthlyTrendSummary(toDate: string, rows: readonly SpendByMonthRow[], formatMoney: (value: number) => string): string {
   if (rows.every((row) => row.totalAmount === 0)) return ""
-  const description = monthlyTrendDescription(toDate, rows.at(-1)?.partial === true, fuelGapMonthKeys(rows))
+  const description = monthlyTrendDescription(toDate, rows.at(-1)?.partial === true)
   const comparable = rows.filter((row) => !row.partial && row.fuelAmount !== null && row.totalAmount > 0)
   const peak = comparable.reduce<SpendByMonthRow | null>((top, row) => (top === null || row.totalAmount > top.totalAmount ? row : top), null)
   return peak

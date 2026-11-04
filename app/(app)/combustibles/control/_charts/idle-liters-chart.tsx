@@ -4,6 +4,7 @@ import { Bar, CartesianGrid, ComposedChart, Legend, Line, XAxis, YAxis } from "r
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
 import { ChartEmpty } from "@/components/ui/chart-empty"
 import { IDLE_COLORS, litersTick, pctTick, tooltipRow } from "./idle-chart-parts"
+import { useChartMotion } from "@/components/ui/chart-interactions"
 
 export interface IdleLitersPoint { label: string; litersIdle: number | null; idleLitersPct: number | null }
 
@@ -14,6 +15,7 @@ const config = {
 
 /** V-06 (segundo gráfico): litros gastados en vacío (eje izquierdo, L) y su % sobre los litros informados (eje derecho). */
 export function IdleLitersChart({ data }: { data: IdleLitersPoint[] }) {
+  const motion = useChartMotion()
   if (!data.some((point) => point.litersIdle !== null)) {
     return <ChartEmpty label="Sin litros informados" hint="El archivo de telemetría importado no trae litros en vacío para este período." />
   }
@@ -26,8 +28,8 @@ export function IdleLitersChart({ data }: { data: IdleLitersPoint[] }) {
         <YAxis yAxisId="pct" orientation="right" domain={[0, 100]} tickLine={false} axisLine={false} width={44} tickFormatter={pctTick} tick={{ fontSize: 11 }} />
         <ChartTooltip content={<ChartTooltipContent formatter={(value, name, item) => tooltipRow(value, name, item, (series) => (series === "Litros en vacío" ? "L" : "%"))} />} />
         <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
-        <Bar yAxisId="liters" dataKey="litersIdle" name="Litros en vacío" fill={IDLE_COLORS.idle} maxBarSize={44} radius={[3, 3, 0, 0]} />
-        <Line yAxisId="pct" type="monotone" dataKey="idleLitersPct" name="% de los litros" stroke={IDLE_COLORS.pct} strokeWidth={2} dot={{ r: 3 }} connectNulls={false} />
+        <Bar yAxisId="liters" dataKey="litersIdle" name="Litros en vacío" fill={IDLE_COLORS.idle} maxBarSize={44} radius={[3, 3, 0, 0]} {...motion} />
+        <Line yAxisId="pct" type="monotone" dataKey="idleLitersPct" name="% de los litros" stroke={IDLE_COLORS.pct} strokeWidth={2} dot={{ r: 3 }} connectNulls={false} {...motion} />
       </ComposedChart>
     </ChartContainer>
   )

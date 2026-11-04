@@ -1,5 +1,7 @@
 "use client"
 import { ChartEmpty } from "@/components/ui/chart-empty"
+import { DenseChart } from "@/components/charts/dense-chart"
+import { RankedList } from "@/components/ui/ranked-list"
 
 import { useRouter, useSearchParams } from "next/navigation"
 import {
@@ -12,6 +14,7 @@ import type { PeriodoRow, PatenteRankingRow, RendimientoRow } from "@/lib/combus
 import { fuelEquipmentHref, withFuelContext } from "@/lib/combustibles/routes"
 import { buildLitrosHref } from "./consumption-url"
 import { formatCompactCLP, formatCompactQty, formatPricePerLiter } from "@/lib/utils"
+import { useChartMotion } from "@/components/ui/chart-interactions"
 
 const MONTO_COLOR = "var(--color-info)"
 const CANTIDAD_COLOR = "var(--color-primary)"
@@ -96,6 +99,7 @@ function chartAxisProps() {
 
 /* ── Evolución: cantidad consumida + monto por período ─────────────────────── */
 export function EvolutionChart({ data, showCosts = true, emptyAction }: { data: PeriodoRow[]; showCosts?: boolean; emptyAction?: { label: string; href: string } }) {
+  const motion = useChartMotion()
   // A4: el vacío dice qué hacer y ofrece la acción real (importar), no sólo
   // que no hay datos. Sin permiso de importar, sugiere ampliar la selección.
   if (data.length === 0) return <ChartEmpty className="border-[var(--color-border-strong)]" label="Aún no hay períodos importados para esta selección." hint={emptyAction ? "Importa las cargas del proveedor o amplía el período y los filtros." : "Amplía el período o quita filtros para ver otros períodos."} ctaLabel={emptyAction?.label} ctaHref={emptyAction?.href} />
@@ -133,8 +137,7 @@ export function EvolutionChart({ data, showCosts = true, emptyAction }: { data: 
             name="Monto"
             dot={false}
             activeDot={{ r: 4, strokeWidth: 2, fill: "var(--color-surface)" }}
-            animationDuration={460}
-            animationEasing="ease-out"
+            {...motion}
           />}
           <Area
             yAxisId="cantidad"
@@ -147,8 +150,7 @@ export function EvolutionChart({ data, showCosts = true, emptyAction }: { data: 
             name="Consumo"
             dot={false}
             activeDot={{ r: 4, strokeWidth: 2, fill: "var(--color-surface)" }}
-            animationDuration={460}
-            animationEasing="ease-out"
+            {...motion}
           />
         </AreaChart>
       </ResponsiveContainer>
@@ -158,6 +160,7 @@ export function EvolutionChart({ data, showCosts = true, emptyAction }: { data: 
 
 /* ── Precio promedio por unidad, por período ─────────────────────────────── */
 export function PriceEvolutionChart({ data, emptyAction }: { data: PeriodoRow[]; emptyAction?: { label: string; href: string } }) {
+  const motion = useChartMotion()
   const chartData = data.filter((row) => row.precioPromedio != null)
   if (chartData.length === 0) return <ChartEmpty className="border-[var(--color-border-strong)]" label="No hay litros suficientes para calcular un precio promedio." hint="El precio por litro aparece cuando el período tiene cargas con monto." ctaLabel={emptyAction?.label} ctaHref={emptyAction?.href} />
 
@@ -184,8 +187,7 @@ export function PriceEvolutionChart({ data, emptyAction }: { data: PeriodoRow[];
             dot={{ r: 3, fill: "var(--color-surface)", strokeWidth: 2 }}
             activeDot={{ r: 4, fill: PRICE_COLOR, stroke: "var(--color-surface)", strokeWidth: 2 }}
             name="Precio promedio"
-            animationDuration={460}
-            animationEasing="ease-out"
+            {...motion}
           />
         </LineChart>
       </ResponsiveContainer>
@@ -207,7 +209,9 @@ export function PatenteRankingChart({
   data: PatenteRankingRow[]
   metric: "cantidad" | "monto" | "transacciones"
 }) {
+  const motion = useChartMotion()
   const openPatente = usePatenteDrilldown()
+  const searchParams = useSearchParams()
   if (data.length === 0) return <ChartEmpty icon={<ChartLineUp size={24} className="mb-2 text-[var(--color-text-subtle)]" aria-hidden />} className="border-[var(--color-border-strong)]" label="No hay patentes que comparar con esta selección." />
 
   const formatter = RANKING_FORMATTERS[metric]
@@ -219,37 +223,57 @@ export function PatenteRankingChart({
     sinAsociar: row.vehicleId == null,
   }))
 
+  // Bajo 360 px las ocho barras con sus etiquetas no caben: el ranking pasa a lista. Una patente que
+  // no es un equipo de la flota no tiene ficha, y filtrar por ella no es un enlace sino un clic del gráfico.
+  const ranking = (
+    <RankedList
+      ariaLabel={`Ranking de patentes por ${metric}`}
+      format={metric === "monto" ? "clp" : "count"}
+      unit={metric === "cantidad" ? " L" : undefined}
+      order="input"
+      showShare={metric !== "transacciones"}
+      items={data.map((row) => ({
+        key: row.filterPatente ?? row.patente,
+        label: row.patente,
+        value: row[metric] ?? 0,
+        detail: row.vehicleId == null ? "Sin ficha de equipo" : undefined,
+        href: row.vehicleId ? withFuelContext(fuelEquipmentHref(row.vehicleId), searchParams) : undefined,
+      }))}
+    />
+  )
+
   return (
-    <div className="h-64" aria-label={`Ranking de patentes por ${metric}`}>
-      <ResponsiveContainer width="100%" height="100%" debounce={80}>
-        <BarChart
-          data={chartData}
-          layout="vertical"
-          margin={{ top: 4, right: 12, left: 0, bottom: 2 }}
-          title={`Ranking de patentes por ${metric}. Selecciona una barra para abrir la ficha del equipo.`}
-        >
-          <CartesianGrid horizontal={false} stroke={GRID_COLOR} strokeDasharray="2 5" />
-          <XAxis type="number" tickFormatter={formatter} {...chartAxisProps()} />
-          <YAxis type="category" dataKey="name" width={96} {...chartAxisProps()} />
-          <Tooltip
-            cursor={{ fill: "var(--color-surface-2)" }}
-            content={<TooltipPanel formatValue={(value) => formatter(value)} />}
-          />
-          <Bar
-            dataKey="value"
-            radius={[0, 2, 2, 0]}
-            name="Valor"
-            barSize={17}
-            style={{ cursor: "pointer" }}
-            onClick={(entry) => openPatente(drilldownTarget(entry))}
-            animationDuration={420}
-            animationEasing="ease-out"
+    <DenseChart fallback={ranking}>
+      <div className="h-64" aria-label={`Ranking de patentes por ${metric}`}>
+        <ResponsiveContainer width="100%" height="100%" debounce={80}>
+          <BarChart
+            data={chartData}
+            layout="vertical"
+            margin={{ top: 4, right: 12, left: 0, bottom: 2 }}
+            title={`Ranking de patentes por ${metric}. Selecciona una barra para abrir la ficha del equipo.`}
           >
-            {chartData.map((row) => <Cell key={row.filterPatente} fill={row.sinAsociar ? "var(--color-warning)" : NORMAL_COLOR} />)}
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>
-    </div>
+            <CartesianGrid horizontal={false} stroke={GRID_COLOR} strokeDasharray="2 5" />
+            <XAxis type="number" tickFormatter={formatter} {...chartAxisProps()} />
+            <YAxis type="category" dataKey="name" width={96} {...chartAxisProps()} />
+            <Tooltip
+              cursor={{ fill: "var(--color-surface-2)" }}
+              content={<TooltipPanel formatValue={(value) => formatter(value)} />}
+            />
+            <Bar
+              dataKey="value"
+              radius={[0, 2, 2, 0]}
+              name="Valor"
+              barSize={17}
+              style={{ cursor: "pointer" }}
+              onClick={(entry) => openPatente(drilldownTarget(entry))}
+              {...motion}
+            >
+              {chartData.map((row) => <Cell key={row.filterPatente} fill={row.sinAsociar ? "var(--color-warning)" : NORMAL_COLOR} />)}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </DenseChart>
   )
 }
 
@@ -261,7 +285,9 @@ export function PatenteRankingChart({
  * quien pase filas de dos unidades debe llamar a este gráfico una vez por unidad.
  */
 export function RendimientoChart({ data, unitLabel }: { data: RendimientoRow[]; unitLabel?: string }) {
+  const motion = useChartMotion()
   const openPatente = usePatenteDrilldown()
+  const searchParams = useSearchParams()
   if (data.length === 0) return <ChartEmpty icon={<ChartLineUp size={24} className="mb-2 text-[var(--color-text-subtle)]" aria-hidden />} className="border-[var(--color-border-strong)]" label="No hay rendimiento informado para esta selección." />
 
   const chartData = data.slice(0, 12).map((row) => ({
@@ -273,35 +299,55 @@ export function RendimientoChart({ data, unitLabel }: { data: RendimientoRow[]; 
   }))
   const suffix = unitLabel ? ` ${unitLabel}` : ""
 
+  // Bajo 360 px las doce barras con las patentes en diagonal no se leen: pasan a una lista con el mismo orden.
+  const ranking = (
+    <RankedList
+      ariaLabel={`Rendimiento promedio por patente${unitLabel ? ` en ${unitLabel}` : ""}`}
+      format="count"
+      unit={suffix}
+      order="input"
+      showShare={false}
+      limit={12}
+      items={data.map((row) => ({
+        key: row.filterPatente ?? row.patente,
+        label: row.patente,
+        value: row.rendimiento,
+        detail: row.atipico ? "Valor atípico" : undefined,
+        href: row.vehicleId ? withFuelContext(fuelEquipmentHref(row.vehicleId), searchParams) : undefined,
+      }))}
+    />
+  )
+
   return (
-    <div className="h-64" aria-label={`Rendimiento promedio por patente${unitLabel ? ` en ${unitLabel}` : ""}`}>
-      <ResponsiveContainer width="100%" height="100%" debounce={80}>
-        <BarChart
-          data={chartData}
-          margin={{ top: 4, right: 4, left: -8, bottom: 4 }}
-          title={`Rendimiento promedio por patente${suffix}. Las barras ámbar son valores atípicos o sin rendimiento informado.`}
-        >
-          <CartesianGrid vertical={false} stroke={GRID_COLOR} strokeDasharray="2 5" />
-          <XAxis dataKey="name" interval={0} angle={-28} textAnchor="end" height={52} {...chartAxisProps()} />
-          <YAxis width={38} {...chartAxisProps()} />
-          <Tooltip
-            cursor={{ fill: "var(--color-surface-2)" }}
-            content={<TooltipPanel formatValue={(value) => `${value.toFixed(2)}${suffix}`} />}
-          />
-          <Bar
-            dataKey="rendimiento"
-            radius={[2, 2, 0, 0]}
-            name="Rendimiento"
-            maxBarSize={34}
-            style={{ cursor: "pointer" }}
-            onClick={(entry) => openPatente(drilldownTarget(entry))}
-            animationDuration={420}
-            animationEasing="ease-out"
+    <DenseChart fallback={ranking}>
+      <div className="h-64" aria-label={`Rendimiento promedio por patente${unitLabel ? ` en ${unitLabel}` : ""}`}>
+        <ResponsiveContainer width="100%" height="100%" debounce={80}>
+          <BarChart
+            data={chartData}
+            margin={{ top: 4, right: 4, left: -8, bottom: 4 }}
+            title={`Rendimiento promedio por patente${suffix}. Las barras ámbar son valores atípicos o sin rendimiento informado.`}
           >
-            {chartData.map((row) => <Cell key={row.filterPatente} fill={row.atipico ? ATIPICO_COLOR : NORMAL_COLOR} />)}
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>
-    </div>
+            <CartesianGrid vertical={false} stroke={GRID_COLOR} strokeDasharray="2 5" />
+            <XAxis dataKey="name" interval={0} angle={-28} textAnchor="end" height={52} {...chartAxisProps()} />
+            <YAxis width={38} {...chartAxisProps()} />
+            <Tooltip
+              cursor={{ fill: "var(--color-surface-2)" }}
+              content={<TooltipPanel formatValue={(value) => `${value.toFixed(2)}${suffix}`} />}
+            />
+            <Bar
+              dataKey="rendimiento"
+              radius={[2, 2, 0, 0]}
+              name="Rendimiento"
+              maxBarSize={34}
+              style={{ cursor: "pointer" }}
+              onClick={(entry) => openPatente(drilldownTarget(entry))}
+              {...motion}
+            >
+              {chartData.map((row) => <Cell key={row.filterPatente} fill={row.atipico ? ATIPICO_COLOR : NORMAL_COLOR} />)}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </DenseChart>
   )
 }

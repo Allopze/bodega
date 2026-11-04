@@ -7,6 +7,7 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { ExportButton } from "@/components/ui/export-button"
 import { PageContainer } from "@/components/ui/page-container"
 import { PageHeader } from "@/components/ui/page-header"
+import { CoverageNotice } from "@/components/charts/coverage-notice"
 import { FuelBreadcrumbs } from "@/components/combustibles/fuel-breadcrumbs"
 import { FuelHeaderActions } from "@/components/combustibles/fuel-header-actions"
 import { can, requirePermission } from "@/lib/auth/can"
@@ -21,6 +22,8 @@ import { pivotMonthlyByMedium } from "@/lib/combustibles/control/view-helpers"
 import { percentVariation } from "@/lib/combustibles/fuel-control-overview.helpers"
 import { getFuelControlOverview } from "@/lib/combustibles/fuel-control-overview"
 import { getOperationsSummary, getScatterObservations } from "@/lib/combustibles/operations-dashboard"
+import { coverageNoticeText, fuelSourcesHref } from "@/lib/combustibles/coverage-notice"
+import { getFuelProviderCoverageGaps } from "@/lib/combustibles/coverage-notice-data"
 import { monthlyGranularityNote } from "@/lib/combustibles/period/adapters"
 import { describeFuelPeriod } from "@/lib/combustibles/period/parse"
 import { resolveFuelPeriodForPage } from "@/lib/combustibles/period/server"
@@ -94,7 +97,7 @@ export default async function ConsumoLitrosPage({ searchParams }: { searchParams
   const cardConsumption = normalizeConsumptionFilters({ fromDate: period.from, toDate: period.to, worksiteId: filters.worksiteId, fuente, patente, associated })
 
   const { track, degraded, total } = createSourceTracker("combustibles/consumo/litros")
-  const [ctx, header, previousHeader, monthly, series, rates, origins, dashboard, anyLoads] = await Promise.all([
+  const [ctx, header, previousHeader, monthly, series, rates, origins, dashboard, anyLoads, coverage] = await Promise.all([
     loadControlContext(session, { years: false }),
     track(getOverviewHeader(session, filters), null, "litros del período"),
     previousFilters ? track(getOverviewHeader(session, previousFilters), null, "litros del período anterior") : Promise.resolve({ data: null, failed: false }),
@@ -104,6 +107,7 @@ export default async function ConsumoLitrosPage({ searchParams }: { searchParams
     track(getFuelControlOverview(session, { filters: baseConsumption, includeTae: canViewTae }), null, "origen de lo cargado"),
     track(getConsumptionDashboard(session, baseConsumption), null, "consumo por tarjeta"),
     track(hasAnyLoads(session), true, "cargas en el alcance"),
+    track(getFuelProviderCoverageGaps(session, chartWindow.monthKeys, { worksiteId: filters.worksiteId }), { gapMonths: [], partialMonths: [] }, "cobertura del proveedor"),
   ])
 
   const tarjetasOpen = section === "tarjetas"
@@ -144,6 +148,15 @@ export default async function ConsumoLitrosPage({ searchParams }: { searchParams
   const foldHref = (target: FoldSection | null) => searchWith(sp, { seccion: target, pagina: null, ...(target ? {} : { fuente: null, patente: null, asociacion: null, proveedor: null }) })
   const performanceHref = inContext(fuelPerformanceHref(PERFORMANCE_FAMILY_SLUGS[PERFORMANCE_FAMILIES[0]]))
   const reviewHref = hrefInContext(fuelInboxHref({ tipo: "carga", faena: filters.worksiteId }), period)
+  const coverageInput = {
+    gapMonths: [
+      ...coverage.data.gapMonths,
+      ...(rates.data ? Object.values(rates.data).flatMap((rate) => rate.months.filter((month) => month.status === "gap").map((month) => month.month)) : []),
+    ],
+    partialMonths: coverage.data.partialMonths,
+    subject: "los litros y el rendimiento informados por Copec",
+  }
+  const coverageNote = coverageNoticeText(coverageInput)
   const exportParams = exportParamsFromFilters(filters)
   const historyParams = exportParamsFromFilters(historyFilters)
 
@@ -208,6 +221,15 @@ export default async function ConsumoLitrosPage({ searchParams }: { searchParams
         <p className="mb-6 max-w-[78ch] text-base text-[var(--color-text-muted)]">En {period.inLabel} no hay cargas de equipos con estos filtros. Prueba con otro período o quita la faena.</p>
       )}
 
+      {/* Un solo aviso de cobertura para toda la pantalla (A5): los meses sin datos del proveedor del gráfico mensual y
+          los que el rendimiento deja en blanco —su prueba es más estricta: un mes sin lecturas de medidor también lo es—.
+          La misma frase viaja en «Metadatos» de lo que se exporta a Excel desde aquí. */}
+      <CoverageNotice
+        {...coverageInput}
+        className="mb-6"
+        sourcesHref={fuelSourcesHref(session) ? inContext(FUEL_PATHS.fuentes) : undefined}
+      />
+
       <div className="mb-10 grid gap-8 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
         <ViewSection id="litros-por-mes" title="Litros por mes, según de dónde salió" question={`¿Cuánto combustible se cargó cada mes y por qué medio llegó? ${chartCaption}`}>
           {monthly.data ? <OverviewMonthlyChart data={pivotMonthlyByMedium(monthly.data)} /> : <SectionError what="los litros por mes" />}
@@ -235,7 +257,7 @@ export default async function ConsumoLitrosPage({ searchParams }: { searchParams
       </div>
 
       <ViewSection id="rendimiento-mensual" title="Rendimiento por mes" question={`¿Los equipos rinden más o menos que antes? Con las lecturas de odómetro y horómetro de las cargas con tarjeta Copec. ${chartCaption}`}>
-        {rates.data ? <MeterRateSections series={rates.data} sourcesHref={inContext(FUEL_PATHS.fuentes)} /> : <SectionError what="el rendimiento por mes" />}
+        {rates.data ? <MeterRateSections series={rates.data} sourcesHref={inContext(FUEL_PATHS.fuentes)} excel={canExport ? { permission: "combustibles:export", notes: coverageNote ? [coverageNote] : [] } : undefined} /> : <SectionError what="el rendimiento por mes" />}
       </ViewSection>
 
       <div className="mb-10 grid gap-8 xl:grid-cols-2">

@@ -22,6 +22,7 @@ import {
   type DteLink,
 } from "@/lib/purchasing/reconciliation-charts"
 import { MONTH_LABELS, formatCLP, formatCompactCLP } from "@/lib/utils"
+import { useChartMotion } from "@/components/ui/chart-interactions"
 
 /**
  * DTE recibidos por período, apilados por vínculo (CHART-034b): a una factura de
@@ -55,6 +56,7 @@ function axisLabel(month: string, crossesYears: boolean): string {
 }
 
 export function DteCoverageChart({ shape }: { shape: DteCoverageShape }) {
+  const motion = useChartMotion()
   const router = useRouter()
   const [measure, setMeasure] = React.useState<Measure>("count")
   const crossesYears = new Set(shape.months.map((month) => month.month.slice(0, 4))).size > 1
@@ -97,7 +99,11 @@ export function DteCoverageChart({ shape }: { shape: DteCoverageShape }) {
         ]}
       />
       <ChartContainer config={config} className="aspect-auto h-56 w-full">
-        <BarChart data={data} margin={MARGIN}>
+        <BarChart
+          aria-label={`Documentos tributarios por mes según su vínculo con una orden de compra, en ${asAmount ? "monto" : "cantidad"}`}
+          data={data}
+          margin={MARGIN}
+        >
           <CartesianGrid vertical={false} />
           <XAxis dataKey="axis" tickLine={false} axisLine={false} tickMargin={8} tick={{ fontSize: 11 }} interval={0} />
           <YAxis
@@ -139,6 +145,7 @@ export function DteCoverageChart({ shape }: { shape: DteCoverageShape }) {
                 const month = (entry as { payload?: { month?: string } } | undefined)?.payload?.month
                 if (month) open(month, link)
               }}
+              {...motion}
             />
           ))}
         </BarChart>

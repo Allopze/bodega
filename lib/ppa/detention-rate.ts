@@ -9,8 +9,9 @@
  * PPA castiga o premia al azar. Por eso:
  *
  * - toda tasa viaja con su base (`n`) y con el conteo de detenidos;
- * - bajo `PPA_RATE_MIN_SAMPLE` PPA no hay tasa: es «datos insuficientes», y se
- *   dice cuántos hay. La línea del gráfico se corta en ese mes (no baja a cero);
+ * - bajo `PPA_RATE_MIN_SAMPLE` PPA no hay porcentaje: se dice el conteo honesto
+ *   («3 de 11 PPA detenidos») y que la base es demasiado chica (n = 11). La línea
+ *   del gráfico se corta en ese mes (no baja a cero);
  * - el ranking de faenas es por TASA, no por conteo absoluto: ordenar por
  *   detenidos castiga a la faena que más PPA llena (es la que mejor usa la
  *   herramienta).
@@ -49,9 +50,40 @@ export function detentionBasis(rate: DetentionRate): string {
   return `${rate.detained} de ${rate.n} PPA ${rate.detained === 1 ? "detenido" : "detenidos"}`
 }
 
-/** «Datos insuficientes (3 PPA)». Dice cuántos hay, no sólo que faltan. */
-export function insufficientText(n: number, minSample = PPA_RATE_MIN_SAMPLE): string {
-  return `Datos insuficientes: ${n === 1 ? "1 PPA" : `${n} PPA`}, se necesitan al menos ${minSample} para una tasa`
+/**
+ * «Base demasiado chica para un porcentaje (n = 11)». La nota que acompaña al conteo
+ * cuando no hay tasa: dice que la base no alcanza y de cuántos PPA se habla.
+ */
+export function insufficientNote(n: number): string {
+  return `Base demasiado chica para un porcentaje (n = ${n})`
+}
+
+/** La celda de «Tasa» de una tabla de datos cuando no hay porcentaje: «Sin porcentaje: base chica (n = 4)». */
+export function insufficientCell(n: number): string {
+  return `Sin porcentaje: base chica (n = ${n})`
+}
+
+/**
+ * La cifra de la tasa de detención para una tira de indicadores o un tile del tablero:
+ * una sola regla para todo lugar donde aparezca la misma magnitud.
+ *
+ * - con base suficiente: el porcentaje (`27,3%`) y su base («6 de 22 PPA detenidos»);
+ * - bajo el mínimo: el conteo («3 de 11») como cifra, la base completa y la nota de
+ *   que no alcanza para un porcentaje. Nunca un `%`;
+ * - sin PPA: no hay cifra (el llamador dice qué falta para dejar de estar vacío).
+ */
+export type DetentionFigure =
+  | { kind: "empty" }
+  | { kind: "rate"; value: string; percent: number; basis: string }
+  | { kind: "count"; value: string; basis: string; note: string }
+
+export function detentionFigure(detained: number, total: number, minSample = PPA_RATE_MIN_SAMPLE): DetentionFigure {
+  if (total <= 0) return { kind: "empty" }
+  const rate = detentionRate(detained, total, minSample)
+  if (rate.sufficient) {
+    return { kind: "rate", value: formatPercent(rate.percent, 1), percent: rate.percent, basis: detentionBasis(rate) }
+  }
+  return { kind: "count", value: `${detained} de ${total}`, basis: detentionBasis(rate), note: insufficientNote(total) }
 }
 
 /* ── Serie mensual ──────────────────────────────────────────────────────── */
@@ -84,17 +116,17 @@ export function shapePpaMonthly(rows: readonly PpaMonthRow[], today: string, min
   }))
 }
 
-/** Nota del tooltip de un mes: la base de la tasa o por qué no hay. */
-export function ppaMonthNote(point: PpaMonthPoint, minSample = PPA_RATE_MIN_SAMPLE): string {
+/** Nota del tooltip de un mes: la base de la tasa o, bajo el mínimo, el conteo y por qué no hay porcentaje. */
+export function ppaMonthNote(point: PpaMonthPoint): string {
   if (point.total === 0) return "Sin PPA en el mes"
-  return point.rate.sufficient ? detentionBasis(point.rate) : insufficientText(point.total, minSample)
+  return point.rate.sufficient ? detentionBasis(point.rate) : `${detentionBasis(point.rate)}. ${insufficientNote(point.total)}`
 }
 
 /**
  * La frase que responde «¿qué proporción de los PPA termina detenida?».
  *
  * Sin PPA no dice nada (la lista de abajo ya explica el vacío). Bajo el mínimo no
- * da una tasa: da los conteos y dice que no alcanzan. Con base suficiente da la
+ * da una tasa: da el conteo («3 de 11 PPA detenidos») y dice que la base no alcanza. Con base suficiente da la
  * tasa de la ventana con su `n`, y sólo compara dos meses si ambos son completos,
  * contiguos y con base suficiente.
  */
@@ -107,8 +139,7 @@ export function summarizePpaTrend(points: readonly PpaMonthPoint[], minSample = 
   const overall = detentionRate(detained, total, minSample)
 
   if (!overall.sufficient) {
-    return `${total === 1 ? "1 PPA" : `${total} PPA`} ${range}, ${detained === 0 ? "ninguno detenido" : `${detained} ${detained === 1 ? "detenido" : "detenidos"}`}: `
-      + `datos insuficientes para una tasa de detención (se necesitan al menos ${minSample}).`
+    return `${detentionBasis(overall)} ${range}. ${insufficientNote(total)}; se necesitan al menos ${minSample} para una tasa de detención.`
   }
 
   const base = `${detentionBasis(overall)} ${range}: tasa de detención de ${formatPercent(overall.percent, 1)}`
@@ -132,7 +163,7 @@ export function ppaTrendDataTable(points: readonly PpaMonthPoint[]): { headers: 
       point.partial ? `${monthPeriodLabel(point.month)} (en curso)` : monthPeriodLabel(point.month),
       point.total,
       point.detained,
-      point.total === 0 ? "—" : point.rate.sufficient ? formatPercent(point.rate.percent, 1) : "Datos insuficientes",
+      point.total === 0 ? "—" : point.rate.sufficient ? formatPercent(point.rate.percent, 1) : insufficientCell(point.total),
     ]),
   }
 }
@@ -149,8 +180,11 @@ export interface PpaWorksiteRow {
 export interface PpaWorksiteRanking {
   /** Faenas con base suficiente, como filas de `RankedList` (valor = tasa en %). */
   items: Array<{ key: string; label: string; value: number; detail: string }>
-  /** Faenas sin base suficiente, que no entran al ranking pero sí se nombran. */
-  insufficient: Array<{ key: string; label: string; n: number }>
+  /**
+   * Faenas sin base suficiente: no entran al ranking (sin porcentaje) pero se nombran
+   * con su conteo honesto (`basis`: «1 de 3 PPA detenido»).
+   */
+  insufficient: Array<{ key: string; label: string; n: number; detained: number; basis: string }>
 }
 
 export function shapeWorksiteRanking(rows: readonly PpaWorksiteRow[], minSample = PPA_RATE_MIN_SAMPLE): PpaWorksiteRanking {
@@ -162,7 +196,7 @@ export function shapeWorksiteRanking(rows: readonly PpaWorksiteRow[], minSample 
     if (rate.sufficient) {
       items.push({ key: row.worksiteId, label: row.worksiteName, value: rate.percent, detail: detentionBasis(rate) })
     } else {
-      insufficient.push({ key: row.worksiteId, label: row.worksiteName, n: row.total })
+      insufficient.push({ key: row.worksiteId, label: row.worksiteName, n: row.total, detained: row.detained, basis: detentionBasis(rate) })
     }
   }
   insufficient.sort((left, right) => right.n - left.n || left.label.localeCompare(right.label, "es-CL"))

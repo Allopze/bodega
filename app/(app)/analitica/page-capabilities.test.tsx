@@ -127,7 +127,7 @@ describe("AnaliticaPage capability matrix", () => {
  * (`ORDERS_SPEND_TREND_POLARITY`).
  */
 describe("AnaliticaPage · polaridad de las variaciones (0.2)", () => {
-  it("«Gasto total» declara que subir es malo", async () => {
+  it("«Gasto total (con IVA)» declara que subir es malo", async () => {
     const data = await getAnalyticsDashboard()
     getAnalyticsDashboard.mockResolvedValue({
       ...data,
@@ -136,10 +136,10 @@ describe("AnaliticaPage · polaridad de las variaciones (0.2)", () => {
 
     const page = await AnaliticaPage({ searchParams: Promise.resolve({}) })
     const spend = collectElements(page).find(
-      (element) => typeName(element.type) === "KpiCard" && element.props.label === "Gasto total",
+      (element) => typeName(element.type) === "KpiCard" && element.props.label === "Gasto total (con IVA)",
     )
 
-    expect(spend, "el tile «Gasto total» debe existir").toBeDefined()
+    expect(spend, "el tile «Gasto total (con IVA)» debe existir").toBeDefined()
     expect(spend!.props.trend).toBe(133)
     // Sin esto el default `up-good` colorea de verde el alza de gasto.
     expect(spend!.props.trendPolarity).toBe("up-bad")
@@ -181,7 +181,7 @@ describe("AnaliticaPage · tendencia de 12 meses y tile «Alertas»", () => {
     getAnalyticsDashboard.mockResolvedValue({ ...data, spendByMonth: spendMonths(false) })
 
     const page = await AnaliticaPage({ searchParams: Promise.resolve({}) })
-    const trend = section(page, "Tendencia mensual de gasto")
+    const trend = section(page, "Tendencia mensual de gasto (con IVA)")
 
     expect(String(trend?.props.summary)).toContain("Últimos 12 meses hasta ago-2026")
   })
@@ -192,12 +192,12 @@ describe("AnaliticaPage · tendencia de 12 meses y tile «Alertas»", () => {
 
     const page = await AnaliticaPage({ searchParams: Promise.resolve({}) })
 
-    expect(String(section(page, "Tendencia mensual de gasto")?.props.summary)).toContain("el último mes es parcial")
+    expect(String(section(page, "Tendencia mensual de gasto (con IVA)")?.props.summary)).toContain("el último mes es parcial")
   })
 
   it("sin gasto en la ventana la tarjeta explica el vacío en vez de dibujar ejes en cero", async () => {
     const page = await AnaliticaPage({ searchParams: Promise.resolve({}) })
-    const trend = section(page, "Tendencia mensual de gasto")
+    const trend = section(page, "Tendencia mensual de gasto (con IVA)")
 
     expect(trend?.props.empty).toMatchObject({ label: "Aún no hay gasto en los últimos 12 meses" })
   })
@@ -253,17 +253,17 @@ describe("AnaliticaPage · Pareto de proveedores, rankings y base de las cifras 
     const page = await renderWith({ topSuppliers: suppliers, kpis: { totalSpend: 1000, previousTotalSpend: 0, spendVariationPct: null, purchaseOrderCount: 4, pendingApprovals: 0, fuelAmount: 200, fuelLiters: 0, fuelLoadCount: 30, averageOrderAmount: 175 } })
     const elements = collectElements(page)
 
-    expect(section(page, "Concentración del gasto por proveedor")).toBeDefined()
+    expect(section(page, "Concentración del gasto por proveedor (con IVA)")).toBeDefined()
     const tableTitles = elements.filter((element) => typeName(element.type) === "RankingTable").map((element) => element.props.title)
     expect(tableTitles).not.toContain("Top proveedores")
-    expect(String(section(page, "Concentración del gasto por proveedor")?.props.summary)).toBe(
+    expect(String(section(page, "Concentración del gasto por proveedor (con IVA)")?.props.summary)).toBe(
       "Ferretería Sur concentra el 70% del gasto; los 2 mayores proveedores, el 90%. Supera el umbral de concentración (60%).",
     )
   })
 
   it("el enlace de cada proveedor lleva a SU lista y al MISMO período (la base de fecha es emisión)", async () => {
     const page = await renderWith({ topSuppliers: suppliers, kpis: { totalSpend: 1000, previousTotalSpend: 0, spendVariationPct: null, purchaseOrderCount: 4, pendingApprovals: 0, fuelAmount: 200, fuelLiters: 0, fuelLoadCount: 30, averageOrderAmount: 175 } })
-    const hrefs = collectElements((section(page, "Concentración del gasto por proveedor")?.props.data as { rows: unknown[] }).rows).flatMap((element) => typeof element.props.href === "string" ? [element.props.href] : [])
+    const hrefs = collectElements((section(page, "Concentración del gasto por proveedor (con IVA)")?.props.data as { rows: unknown[] }).rows).flatMap((element) => typeof element.props.href === "string" ? [element.props.href] : [])
 
     expect(hrefs).toContain("/compras?desde=2026-08-01&hasta=2026-08-31&proveedor=s-1")
     expect(hrefs.some((href) => href.startsWith("/combustibles/consumo/litros") && href.endsWith("proveedor=s-2"))).toBe(true)
@@ -275,13 +275,13 @@ describe("AnaliticaPage · Pareto de proveedores, rankings y base de las cifras 
       ["analytics:view", "purchasing:view"],
     )
 
-    expect(String(section(page, "Concentración del gasto por proveedor")?.props.summary)).toContain("del gasto en compras")
+    expect(String(section(page, "Concentración del gasto por proveedor (con IVA)")?.props.summary)).toContain("del gasto en compras")
   })
 
   it("con el filtro de proveedor activo el Pareto no se dibuja y dice por qué", async () => {
     const page = await renderWith({ topSuppliers: [suppliers[0]], filters: { fromDate: "2026-08-01", toDate: "2026-08-31", supplierId: "s-1" } })
 
-    expect(section(page, "Concentración del gasto por proveedor")?.props.empty).toMatchObject({ label: "El Pareto compara proveedores entre sí" })
+    expect(section(page, "Concentración del gasto por proveedor (con IVA)")?.props.empty).toMatchObject({ label: "El Pareto compara proveedores entre sí" })
   })
 
   it("dice cuál es la base de fecha del gasto: emisión, con impuestos, igual que el tablero", async () => {
@@ -289,7 +289,35 @@ describe("AnaliticaPage · Pareto de proveedores, rankings y base de las cifras 
     const text = allText(page)
 
     expect(text).toContain("emitió")
+    expect(text).toContain("con IVA incluido")
+    expect(text).toContain("con IVA e impuesto específico incluidos")
     expect(text).toContain("misma definición de Finanzas en el tablero")
+  })
+
+  it("la base con IVA se ve en el título de cada cifra de gasto, no sólo en la nota del pie", async () => {
+    const page = await renderWith({
+      kpis: { totalSpend: 1000, previousTotalSpend: 0, spendVariationPct: null, purchaseOrderCount: 4, pendingApprovals: 0, fuelAmount: 200, fuelLiters: 0, fuelLoadCount: 30, averageOrderAmount: 175 },
+      spendByModule: [{ module: "EPP", totalAmount: 700 }, { module: "Combustible", totalAmount: 200 }],
+      topWorksites: [{ id: "w-1", name: "Faena Norte", totalAmount: 600 }],
+      vehicleCosts: [{ id: "v-1", plate: "AA-BB-11", type: "camioneta", totalFuelAmount: 300, totalLiters: 100, loadCount: 3, lastOdometerReading: null, lastHourMeterReading: null }],
+    })
+    const elements = collectElements(page)
+    const chartTitles = elements.filter((element) => typeName(element.type) === "ChartSection").map((element) => String(element.props.title))
+    const kpiLabels = elements.filter((element) => typeName(element.type) === "KpiCard").map((element) => element.props.label)
+
+    expect(kpiLabels).toContain("Gasto total (con IVA)")
+    expect(chartTitles).toEqual(expect.arrayContaining([
+      "Tendencia mensual de gasto (con IVA)",
+      "Gasto por tipo (con IVA)",
+      "Concentración del gasto por proveedor (con IVA)",
+      "Faenas con mayor gasto (con IVA)",
+      "Vehículos con mayor gasto de combustible (con IVA)",
+    ]))
+    // El monto de la tabla de OC recientes también es con IVA.
+    const orders = elements.find((element) => typeName(element.type) === "RankingTable" && element.props.title === "Órdenes de compra emitidas recientemente")
+    expect(orders!.props.headers).toContain("Monto con IVA")
+    const averageTile = elements.find((element) => typeName(element.type) === "KpiCard" && element.props.label === "Órdenes de compra")
+    expect(String(averageTile!.props.detail)).toBe("Promedio con IVA $175")
   })
 
   it("faenas y vehículos son rankings de un tono, no gráficos con un color por barra", async () => {
@@ -300,7 +328,7 @@ describe("AnaliticaPage · Pareto de proveedores, rankings y base de las cifras 
     const ranked = collectElements(page).filter((element) => typeName(element.type) === "RankedList").map((element) => element.props.ariaLabel)
 
     expect(ranked).toEqual(expect.arrayContaining(["Faenas con mayor gasto", "Vehículos con mayor gasto de combustible", "Gasto por tipo"]))
-    expect(String(section(page, "Faenas con mayor gasto")?.props.summary)).toBe("Faena Norte lidera con $600: 60% de lo listado.")
+    expect(String(section(page, "Faenas con mayor gasto (con IVA)")?.props.summary)).toBe("Faena Norte lidera con $600: 60% de lo listado.")
   })
 
   it("el gráfico de plazos aparece con su n y, si la consulta falla, lo dice en vez de quedar vacío", async () => {

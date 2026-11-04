@@ -9,6 +9,7 @@ import { formatQty } from "@/lib/utils"
 import type { PerformanceUnit } from "@/lib/combustibles/control/contracts"
 import { fillMonthKeys, monthFullLabel, monthShortLabel } from "@/lib/combustibles/control/view-helpers"
 import { AXIS_TICK, compactNumber } from "./chart-shared"
+import { useChartMotion } from "@/components/ui/chart-interactions"
 
 export interface MeterChartPoint {
   month: string
@@ -27,6 +28,7 @@ const COPY: Record<PerformanceUnit, { measure: string; measureUnit: string; empt
  * barras para el medidor (izquierda), línea para los litros (derecha).
  */
 export function OverviewMeterChart({ unit, points }: { unit: PerformanceUnit; points: MeterChartPoint[] }) {
+  const motion = useChartMotion()
   const copy = COPY[unit]
   if (points.length === 0) {
     return <ChartEmpty label={copy.empty} hint="Aparecen cuando hay cargas consecutivas con lectura del medidor y sin revisión pendiente." className="h-64" />
@@ -69,8 +71,8 @@ export function OverviewMeterChart({ unit, points }: { unit: PerformanceUnit; po
             }
           />
           <Legend iconSize={9} wrapperStyle={{ fontSize: 12, paddingTop: 8 }} formatter={(value) => config[String(value)]?.label ?? String(value)} />
-          <Bar yAxisId="measure" dataKey="measure" fill={CHART_COLORS.brand} radius={[2, 2, 0, 0]} maxBarSize={36} isAnimationActive={false} />
-          <Line yAxisId="liters" dataKey="liters" type="monotone" stroke={CHART_COLORS.blue} strokeWidth={2} dot={{ r: 3 }} isAnimationActive={false} />
+          <Bar yAxisId="measure" dataKey="measure" fill={CHART_COLORS.brand} radius={[2, 2, 0, 0]} maxBarSize={36} {...motion} />
+          <Line yAxisId="liters" dataKey="liters" type="monotone" stroke={CHART_COLORS.blue} strokeWidth={2} dot={{ r: 3 }} {...motion} />
         </ComposedChart>
       </ChartContainer>
     </ChartErrorBoundary>

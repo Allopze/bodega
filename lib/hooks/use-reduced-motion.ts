@@ -1,20 +1,8 @@
 "use client"
 
-import * as React from "react"
+import { useMediaQuery } from "@/lib/hooks/use-media-query"
 
 const QUERY = "(prefers-reduced-motion: reduce)"
-
-function subscribe(onChange: () => void) {
-  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return () => {}
-  const media = window.matchMedia(QUERY)
-  media.addEventListener("change", onChange)
-  return () => media.removeEventListener("change", onChange)
-}
-
-function getSnapshot() {
-  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false
-  return window.matchMedia(QUERY).matches
-}
 
 /**
  * ¿El usuario pidió reducir el movimiento?
@@ -26,5 +14,5 @@ function getSnapshot() {
  * hidratación.
  */
 export function useReducedMotion(): boolean {
-  return React.useSyncExternalStore(subscribe, getSnapshot, () => false)
+  return useMediaQuery(QUERY)
 }

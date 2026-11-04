@@ -209,19 +209,9 @@ describe("gráficos SST y de flota", () => {
 
     // La cifra grande sólo suma los meses con datos.
     expect(screen.getByText("3.500")).toBeDefined()
-    // El hueco se dice en la descripción del gráfico: sin explicación se lee como un error de la línea.
-    expect(screen.getByText(/sin datos del proveedor en septiembre/)).toBeDefined()
-  })
-
-  it("combustible: dos meses sin datos se unen con «y»", () => {
-    const data = [
-      { month: "Jul", liters: 100, amount: 10, loads: 1, providerGap: false },
-      { month: "Ago", liters: null, amount: null, loads: null, providerGap: true },
-      { month: "Sep", liters: null, amount: null, loads: null, providerGap: true },
-    ]
-    render(<FuelConsumptionChart data={data} />)
-
-    expect(screen.getByText(/sin datos del proveedor en agosto y septiembre/)).toBeDefined()
+    // El hueco lo nombra el `CoverageNotice` de la sección (una sola vez, A5), no la
+    // descripción del gráfico: aquí sólo se verifica que no se repite.
+    expect(screen.queryByText(/sin datos del proveedor en septiembre/)).toBeNull()
   })
 
   it("combustible sin huecos no agrega ningún aviso", () => {
@@ -242,14 +232,15 @@ describe("gráficos SST y de flota", () => {
     expect(screen.getByText(/Litros cargados y costo por mes · últimos 6 meses · el último mes es parcial/)).toBeDefined()
   })
 
-  it("combustible: el aviso de mes parcial convive con el de un mes sin datos del proveedor", () => {
+  it("combustible: el mes parcial se dice aunque sea además un mes sin datos del proveedor", () => {
     const data = [
       { month: "Oct", liters: 2500, amount: 1_100_000, loads: 6, providerGap: false, partial: false },
       { month: "Nov", liters: null, amount: null, loads: null, providerGap: true, partial: true },
     ]
     render(<FuelConsumptionChart data={data} />)
 
-    expect(screen.getByText(/el último mes es parcial · sin datos del proveedor en noviembre/)).toBeDefined()
+    expect(screen.getByText(/el último mes es parcial/)).toBeDefined()
+    expect(screen.queryByText(/sin datos del proveedor en noviembre/)).toBeNull()
   })
 
   it("combustible sin mes parcial no agrega el aviso", () => {

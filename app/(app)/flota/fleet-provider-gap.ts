@@ -1,14 +1,23 @@
-import { formatTrendMonthList } from "@/app/(app)/analitica/analytics-trend"
+import { coverageNoticeText } from "@/lib/combustibles/coverage-notice"
+
+/**
+ * Cifras de Flota que suman lo que el proveedor informó: «Costo combustible (12 meses)», litros,
+ * cargas y las columnas por equipo. Lo dice el aviso de la pantalla (`CoverageNotice`) y la hoja
+ * «Metadatos» de la exportación con **la misma frase**.
+ */
+export function fleetProviderGapSubject(lookbackMonths: number): string {
+  return `los totales de ${lookbackMonths} meses`
+}
 
 /**
  * Aviso de que la ventana de cifras de Flota («Costo combustible (12 meses)», litros, cargas y
  * las columnas por equipo) tiene meses en que el proveedor no trajo datos (C-4): esas cifras
  * suman sólo lo que Copec informó, y un mes sin informe no es «no se cargó combustible».
  *
- * Una sola redacción para el resumen de la pantalla y la hoja «Metadatos» de la exportación.
- * `null` cuando no falta ningún mes. Los meses vienen de `getFleetProviderGapMonths`.
+ * Es el texto del aviso compartido de cobertura (`coverageNoticeText`) con las cifras de Flota
+ * por sujeto; la pantalla lo dibuja con `CoverageNotice` y la exportación lo lleva en
+ * «Metadatos». `null` cuando no falta ningún mes. Los meses vienen de `getFleetProviderGapMonths`.
  */
 export function fleetProviderGapNotice(gapMonths: readonly string[], lookbackMonths: number): string | null {
-  if (gapMonths.length === 0) return null
-  return `Sin datos del proveedor en ${formatTrendMonthList(gapMonths)}: los totales de ${lookbackMonths} meses no incluyen ${gapMonths.length === 1 ? "ese mes" : "esos meses"}.`
+  return coverageNoticeText({ gapMonths, subject: fleetProviderGapSubject(lookbackMonths) })
 }

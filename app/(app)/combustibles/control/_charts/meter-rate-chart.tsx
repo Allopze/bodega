@@ -9,6 +9,7 @@ import { MIN_RATE_SEGMENTS, type MeterRateSeries } from "@/lib/combustibles/mete
 import { RATE_BAND_PCT, meterRateChartData, rateAxisDomain, type MeterRateChartRow } from "@/lib/combustibles/meter-rate-view"
 import { countOf, formatQty } from "@/lib/utils"
 import { AXIS_TICK } from "./chart-shared"
+import { useChartMotion } from "@/components/ui/chart-interactions"
 
 /**
  * CHART-016: rendimiento por mes (km/L o L/h), una sola unidad por gráfico.
@@ -73,6 +74,7 @@ function RateTooltip({ unit, active, payload }: { unit: string; active?: boolean
 }
 
 export function MeterRateChart({ series }: { series: MeterRateSeries }) {
+  const motion = useChartMotion()
   const unit = PERFORMANCE_UNIT_LABELS[series.unit]
   const { data, partialFrom } = meterRateChartData(series)
   const global = series.rate
@@ -115,8 +117,8 @@ export function MeterRateChart({ series }: { series: MeterRateSeries }) {
           connectNulls={false}
           dot={{ r: 3.5, fill: SURFACE, stroke: CHART_COLORS.brand, strokeWidth: 2 }}
           activeDot={activeDotFor(CHART_COLORS.brand)}
-          isAnimationActive={false}
           {...(partialFrom >= 0 ? { shape: partialTailLineShape(partialFrom) } : {})}
+          {...motion}
         />
       </LineChart>
     </ChartContainer>
