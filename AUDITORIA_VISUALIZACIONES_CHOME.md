@@ -2228,22 +2228,10 @@ Las once mejoras de la primera lista se hicieron el 2026-11-04 (rama `feat/grafi
 | P-8 | Tablero sin recepciones anuladas, igual que `/reportes` | Hecho. Queda una diferencia: las recepciones de oficina se atribuyen a la faena de la OC en el tablero y a la oficina en `/reportes` |
 | P-9 | `/flota`: Km/Hr en la tarjeta móvil; «Última lectura» en el Excel | Hecho |
 | P-10 | Código muerto (`PdtpMetric`, tipo `"hygiene"`) | Hecho |
-| P-11 | Aprobaciones: barra de antigüedad con datos | Ver el informe del recorrido del 2026-11-04 |
+| P-11 | Aprobaciones: barra de antigüedad con datos | Verificado con 8 solicitudes `QA_` en `bodega_dev` (2 por tramo): `qa/reports/2026-11-04-recorrido-graficos-k5.md` |
 
 Además: la leyenda de conciliación de `/compras/dte` sólo lista estados con datos, y la tendencia de `/analitica` usa tramos rectos.
 
----|---|---|
-| P-1 | Animaciones CSS fuera del tope de 200 ms: `RankedList` (0,9 s), `DebtAgingChart` (700 ms), medidor radial (0,45 s) | Fase 4 |
-| P-2 | «Ver datos» → Excel está encendido sólo en combustible; activarlo pantalla por pantalla con su permiso `*:export` | Fase 4 |
-| P-3 | CHART-007: tooltip con los 3 peligros más frecuentes por celda y filtro P×C (hoy filtra por clasificación) | Fase 1 |
-| P-4 | CHART-010: hallazgos abiertos apilados por criticidad (hoy van en tooltip y «Ver datos») | Fase 3 |
-| P-5 | CHART-020: serie temporal del nivel de estanque (requiere backend) | Fase 1 |
-| P-6 | CHART-023: anotar en la serie las fechas de cambio de reglas | Fase 1 |
-| P-7 | CHART-029: carril por ítem, días por etapa en el stepper de la solicitud, filtros por tipo y proveedor, caché de 30 s | Fase 3 |
-| P-8 | Tablero: el conteo de recepciones de `operational-period-metrics` incluye anuladas; `/reportes` no | Fase 2 |
-| P-9 | `/flota`: Km/Hr en la tarjeta móvil y columna «Última lectura» en el Excel | Fase 0 |
-| P-10 | Código muerto: `PdtpMetric`, el tipo `"hygiene"` de `prevention-program-calendar.ts` | Fases 2–4 |
-| P-11 | CHART-030: la barra de antigüedad de Aprobaciones no se vio con datos (cola vacía en el clon) | Fase 1 |
 
 ---
 
