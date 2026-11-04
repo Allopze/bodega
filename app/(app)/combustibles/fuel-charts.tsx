@@ -19,6 +19,15 @@ const PRICE_COLOR = "var(--color-signal)"
 const AMOUNT_INK = "var(--color-info-ink)"
 const PRICE_INK = "var(--color-signal-ink)"
 
+/**
+ * Recharts pinta el texto de la leyenda y de cada fila del tooltip con el color de la serie: con
+ * `--color-signal` (≈2,5:1 sobre blanco) el texto no pasa AA. El trazo conserva el token base; el
+ * texto de la leyenda va en la variante `-ink` de la misma serie, igual que su eje.
+ */
+const LEGEND_INK: Record<string, string> = { "Monto CLP": AMOUNT_INK, Precio: PRICE_INK }
+const legendText = (value: string) => <span style={{ color: LEGEND_INK[value] ?? "var(--color-text-muted)" }}>{value}</span>
+const TOOLTIP_ITEM_STYLE = { color: "var(--color-text)" }
+
 /* ── Monthly Evolution (Area Chart) ──────────────────────────────────────── */
 export function MonthlyEvolutionChart({ data }: { data: ChartDataPoint[] }) {
   if (data.length === 0) return <ChartEmpty className="h-64 px-6" label="Sin datos mensuales" />
@@ -50,6 +59,7 @@ export function MonthlyEvolutionChart({ data }: { data: ChartDataPoint[] }) {
           {/* `filterNull={false}`: recharts omite del tooltip las series nulas, y el mes sin litros perdería su fila de precio. */}
           <Tooltip
             contentStyle={chartTooltipStyle()}
+            itemStyle={TOOLTIP_ITEM_STYLE}
             filterNull={false}
             formatter={(value, name) => {
               const n = String(name).toLowerCase()
@@ -57,7 +67,7 @@ export function MonthlyEvolutionChart({ data }: { data: ChartDataPoint[] }) {
               return [formatCompactCLP(Number(value)), "Monto CLP"]
             }}
           />
-          <Legend iconType="plainline" />
+          <Legend iconType="plainline" formatter={legendText} />
           {/* Monto: área azul rellena (cuánto se gastó). */}
           <Area yAxisId="amount" type="monotone" dataKey="monto" stroke={AMOUNT_COLOR} fill="url(#gradAmount)" strokeWidth={2.5} name="Monto CLP" dot={false} activeDot={{ r: 4 }} />
           {/* Precio promedio: línea punteada; revela si el gasto se mueve por volumen o por precio.
@@ -89,6 +99,7 @@ export function CategoryBarChart({ data, title, onSelect, metric = "amount" }: {
           <YAxis type="category" dataKey="name" width={120} className="text-xs" tick={{ fill: "var(--color-text-muted)", fontSize: 11 }} />
           <Tooltip
             contentStyle={chartTooltipStyle()}
+            itemStyle={TOOLTIP_ITEM_STYLE}
             formatter={(value, _name, item) => {
               const litros = (item?.payload as { litros?: number } | undefined)?.litros ?? 0
               return metric === "amount"

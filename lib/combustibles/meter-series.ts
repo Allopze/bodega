@@ -71,6 +71,61 @@ export interface MeterSeriesAdvance {
 }
 
 /**
+ * Qué pasó con un par de lecturas consecutivas:
+ * - `counted`: el avance es creíble y se suma;
+ * - `discarded`: el detector de anomalías lo objetaría (retroceso, salto imposible o base en duda);
+ * - `reset`: la lectura que lo cierra es un reset aceptado, así que la serie parte de nuevo ahí.
+ */
+export type MeterSegmentStatus = "counted" | "discarded" | "reset"
+
+export interface MeterSeriesSegment {
+  /** Lectura que abre el par y la que lo cierra (el avance se atribuye al instante de ésta). */
+  from: MeterSeriesPoint
+  to: MeterSeriesPoint
+  /** `to.value − from.value`. En un par `discarded` o `reset` es sólo informativo: no es recorrido. */
+  advance: number
+  status: MeterSegmentStatus
+}
+
+/**
+ * Cada par consecutivo de una serie ya ordenada por instante (de un solo equipo,
+ * medidor y fuente), con su veredicto. Es la regla de `meterSeriesAdvance` par por
+ * par; los gráficos que arman un mes con los pares que cierra (CHART-016) la
+ * necesitan así, y `meterSeriesAdvance` se calcula desde acá para que las dos
+ * cuentas no puedan discrepar. Ver `meterSeriesAdvance` para el detalle de las
+ * reglas.
+ */
+export function meterSeriesSegments(points: readonly MeterSeriesPoint[], maxPerDay: number): MeterSeriesSegment[] {
+  const segments: MeterSeriesSegment[] = []
+  // `false` justo después de un par objetado: la lectura que lo causó no es base fiable.
+  let baselineTrusted = true
+
+  for (let i = 1; i < points.length; i++) {
+    const from = points[i - 1]!
+    const to = points[i]!
+    const advance = to.value - from.value
+    if (to.acceptedReset) {
+      baselineTrusted = true
+      segments.push({ from, to, advance, status: "reset" })
+      continue
+    }
+    if (!baselineTrusted) {
+      baselineTrusted = true
+      segments.push({ from, to, advance, status: "discarded" })
+      continue
+    }
+    if (advance < 0 || advance / elapsedDays(from.occurredAt, to.occurredAt) > maxPerDay) {
+      baselineTrusted = false
+      segments.push({ from, to, advance, status: "discarded" })
+      continue
+    }
+    segments.push({ from, to, advance, status: "counted" })
+  }
+
+  return segments
+}
+
+/**
  * Recorrido de una serie de lecturas ya ordenada por instante (de un solo
  * equipo, medidor y fuente): suma de los avances entre lecturas consecutivas.
  *
@@ -98,30 +153,13 @@ export function meterSeriesAdvance(points: readonly MeterSeriesPoint[], maxPerDa
   let advance = 0
   let counted = 0
   let discardedPairs = 0
-  // `false` justo después de un par objetado: la lectura que lo causó no es base fiable.
-  let baselineTrusted = true
-
-  for (let i = 1; i < points.length; i++) {
-    const prev = points[i - 1]!
-    const curr = points[i]!
-    if (curr.acceptedReset) {
-      baselineTrusted = true
-      continue
-    }
-    if (!baselineTrusted) {
+  for (const segment of meterSeriesSegments(points, maxPerDay)) {
+    if (segment.status === "counted") {
+      advance += segment.advance
+      counted++
+    } else if (segment.status === "discarded") {
       discardedPairs++
-      baselineTrusted = true
-      continue
     }
-    const delta = curr.value - prev.value
-    if (delta < 0 || delta / elapsedDays(prev.occurredAt, curr.occurredAt) > maxPerDay) {
-      discardedPairs++
-      baselineTrusted = false
-      continue
-    }
-    advance += delta
-    counted++
   }
-
   return { advance: counted > 0 ? advance : null, discardedPairs }
 }

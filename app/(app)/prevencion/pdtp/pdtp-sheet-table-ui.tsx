@@ -115,83 +115,6 @@ export function PdtpResponsibleChips({ display }: { display: string }) {
 }
 
 // ---------------------------------------------------------------------------
-// PdtpProgressRing
-// ---------------------------------------------------------------------------
-
-export function PdtpProgressRing({
-  percent,
-  size = 56,
-  strokeWidth = 5,
-}: {
-  percent: number | null
-  size?: number
-  strokeWidth?: number
-}) {
-  const radius = (size - strokeWidth) / 2
-  const circumference = 2 * Math.PI * radius
-  const pct = percent === null ? 0 : Math.min(100, Math.max(0, percent))
-  const offset = circumference - (pct / 100) * circumference
-
-  const color =
-    percent === null ? "var(--color-border)"
-    : pct >= 80 ? "var(--color-success)"
-    : pct >= 50 ? "var(--color-warning-ink)"
-    : "var(--color-danger)"
-  const textColor =
-    percent === null ? "var(--color-text-faint)"
-    : pct >= 80 ? "var(--color-success-ink)"
-    : pct >= 50 ? "var(--color-warning-ink)"
-    : "var(--color-danger)"
-
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox={`0 0 ${size} ${size}`}
-      className="shrink-0"
-      aria-hidden
-    >
-      {/* Track */}
-      <circle
-        cx={size / 2}
-        cy={size / 2}
-        r={radius}
-        fill="none"
-        stroke="var(--color-surface-2)"
-        strokeWidth={strokeWidth}
-      />
-      {/* Progress */}
-      <circle
-        cx={size / 2}
-        cy={size / 2}
-        r={radius}
-        fill="none"
-        stroke={color}
-        strokeWidth={strokeWidth}
-        strokeLinecap="round"
-        strokeDasharray={circumference}
-        strokeDashoffset={offset}
-        transform={`rotate(-90 ${size / 2} ${size / 2})`}
-        style={{ transition: "stroke-dashoffset 0.6s ease, stroke 0.3s ease" }}
-      />
-      {/* Center text */}
-      <text
-        x={size / 2}
-        y={size / 2}
-        dominantBaseline="middle"
-        textAnchor="middle"
-        fontSize={size < 50 ? "10" : "11"}
-        fontFamily="var(--font-mono, monospace)"
-        fontWeight="600"
-        fill={textColor}
-      >
-        {percent === null ? "—" : `${Math.round(pct)}%`}
-      </text>
-    </svg>
-  )
-}
-
-// ---------------------------------------------------------------------------
 // PdtpMetric
 // ---------------------------------------------------------------------------
 
@@ -217,14 +140,12 @@ export function PdtpMetric({
   subtitle,
   icon,
   variant = "neutral",
-  ring,
 }: {
   label: string
   value: number | string
   subtitle?: string
   icon?: React.ReactNode
   variant?: MetricVariant
-  ring?: React.ReactNode
 }) {
   const isEmpty = value === "-" || value === "0%" || value === 0
 
@@ -260,7 +181,6 @@ export function PdtpMetric({
             <p className="mt-0.5 text-[10px] text-[var(--color-text-faint)]">{subtitle}</p>
           )}
         </div>
-        {ring && <div className="shrink-0">{ring}</div>}
       </div>
     </div>
   )

@@ -26,6 +26,37 @@ describe("ChartSection", () => {
     expect(screen.getByRole("heading", { level: 2, name: "Capacitaciones por persona" })).toBeDefined()
   })
 
+  it("plegable: el título y la frase quedan a la vista y el gráfico espera dentro de un <details> cerrado", () => {
+    const { container } = render(
+      <ChartSection title="Cumplimiento por mes" summary="Cumplimiento de 80% entre agosto y octubre" collapsible data={{ headers: ["Mes", "%"], rows: [["Ago", 80]] }}>
+        <div data-testid="grafico" />
+      </ChartSection>,
+    )
+    const details = container.querySelector("details")!
+    expect(details.open).toBe(false)
+    // Fuera del <details>: se lee sin abrir nada.
+    expect(details.contains(screen.getByRole("heading", { name: "Cumplimiento por mes" }))).toBe(false)
+    expect(details.contains(screen.getByText("Cumplimiento de 80% entre agosto y octubre"))).toBe(false)
+    // Dentro: el gráfico y «Ver datos» (otro <details>).
+    expect(details.contains(screen.getByTestId("grafico"))).toBe(true)
+    expect(details.contains(screen.getByText("Ver datos"))).toBe(true)
+    expect(within(details).getByText("Ver gráfico")).toBeDefined()
+  })
+
+  it("plegable con `defaultOpen` nace abierto, y sin `collapsible` no hay <details> propio", () => {
+    const open = render(<ChartSection title="A" collapsible defaultOpen><div /></ChartSection>)
+    expect(open.container.querySelector("details")!.open).toBe(true)
+    open.unmount()
+    const plain = render(<ChartSection title="B"><div /></ChartSection>)
+    expect(plain.container.querySelector("details")).toBeNull()
+  })
+
+  it("plegable con `empty` no se pliega: el vacío se explica abierto", () => {
+    const { container } = render(<ChartSection title="C" collapsible empty={{ label: "Sin datos" }} />)
+    expect(container.querySelector("details")).toBeNull()
+    expect(screen.getByText("Sin datos")).toBeDefined()
+  })
+
   it("con `empty` no dibuja el gráfico: explica el vacío y ofrece la salida", () => {
     render(
       <ChartSection title="Pendientes" empty={{ label: "No hay pendientes", ctaLabel: "Crear solicitud", ctaHref: "/solicitudes/nueva" }}>

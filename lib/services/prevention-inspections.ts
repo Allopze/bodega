@@ -69,6 +69,7 @@ export {
   getInspectionRunDetail,
   summarizeInspectionTimelyClosure,
   summarizeInspectionTrends,
+  summarizeInspectionComplianceTrend,
 } from "./prevention-inspections/queries"
 
 export { saveInspectionParticipants, registerInspectionPreventiveAction } from "./prevention-inspections/annexes"

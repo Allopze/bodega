@@ -151,6 +151,19 @@ export function buildMonthlyTrend(
   })
 }
 
+/**
+ * Gasto por tipo con una fila por rótulo. Dos claves distintas pueden compartir rótulo (una línea
+ * de OC sin solicitud y el tipo «otro» son ambos «Otros»): sin juntarlas la lista repetía la fila.
+ */
+export function mergeSpendByModule(rows: Array<{ module: string; totalAmount: number }>): Array<{ module: string; totalAmount: number }> {
+  const byModule = new Map<string, number>()
+  for (const row of rows) byModule.set(row.module, (byModule.get(row.module) ?? 0) + row.totalAmount)
+  return [...byModule.entries()]
+    .map(([module, totalAmount]) => ({ module, totalAmount }))
+    .filter((row) => row.totalAmount > 0)
+    .sort((a, b) => b.totalAmount - a.totalAmount)
+}
+
 export function mergeWorksiteSpend(rows: Array<{ id: string; name: string; totalAmount: number }>): WorksiteSpendRow[] {
   const byWorksite = new Map<string, WorksiteSpendRow>()
   for (const row of rows) {

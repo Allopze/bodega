@@ -27,6 +27,13 @@ vi.mock("@/lib/services/prevention-emergency", () => ({
   listEmergencyWorksites: mocks.worksites,
   getEmergencyDashboardCounts: mocks.counts,
 }))
+// El calendario de simulacros lee casillas y el año operativo: aquí sólo importa la paginación.
+vi.mock("@/lib/services/prevention-program-calendar", () => ({
+  loadProgramSlotCalendar: async () => ({ rows: [], unscheduled: 0 }),
+  listCurrentEmergencyPlanIds: async () => new Map<string, string>(),
+}))
+vi.mock("@/lib/services/prevention-pdtp", () => ({ getPdtpOperationalYears: async () => ({ primary: 2026 }) }))
+vi.mock("@/components/prevention/program-compliance-section", () => ({ ProgramComplianceSection: () => null }))
 vi.mock("@/components/ui/page-header", () => ({ PageHeader: () => null, Breadcrumbs: () => null }))
 vi.mock("./emergencias-dialogs", () => ({ NewPlanDialog: () => null }))
 vi.mock("./emergency-list", () => ({ EmergencyList: () => null }))

@@ -15,6 +15,7 @@ import { getLitersPerHourComparison } from "@/lib/combustibles/control/queries/i
 import { summarizeIdleByEquipment } from "@/lib/combustibles/control/queries/idle-summary"
 import { controlFiltersFromPeriod, exportParamsFromFilters } from "@/lib/combustibles/control/queries/period-filters"
 import { resolveFuelPeriodForPage } from "@/lib/combustibles/period/server"
+import { idleDailyChartData } from "@/lib/combustibles/equipment/idle-daily"
 import { FUEL_PATHS, fuelEquipmentHref } from "@/lib/combustibles/routes"
 import { fuelAddDataOptions } from "@/lib/combustibles/section-nav"
 import { resolvePagination } from "@/lib/pagination"
@@ -29,7 +30,7 @@ import { hrefInContext, searchWith } from "../../control/_components/page-links"
 import { createSourceTracker } from "../../control/_components/track-sources"
 import { ConsumoNav } from "../../consumo-nav"
 import { Disclosure } from "../_components/disclosure"
-import { LitersPerHourTable, TopIdleDaysTable } from "./comparison-sections"
+import { LitersPerHourSection, TopIdleDaysTable } from "./comparison-sections"
 import { EquipmentMonthTable } from "./equipment-month-table"
 import { IdleExportButton } from "./idle-export-button"
 import { IdleTopEquipmentTable } from "./top-equipment-table"
@@ -146,10 +147,10 @@ export default async function MotorEnVacioPage({ searchParams }: { searchParams:
           description="Horas de motor y porcentaje en vacío por día del equipo que elijas."
           actions={vehicles.failed || vehicles.data.length === 0 ? null : <EquipmentSelect options={vehicles.data} value={selectedVehicle?.id ?? ""} ariaLabel="Equipo del gráfico diario" />}
         >
-          {vehicles.failed || daily?.failed ? <SectionError what="la serie diaria" /> : <IdleDailyChartLazy data={(daily?.data ?? []).map((point) => ({ label: `${point.day.slice(8, 10)}/${point.day.slice(5, 7)}`, operatingHours: point.operatingHours, idlePct: point.idlePct }))} />}
+          {vehicles.failed || daily?.failed ? <SectionError what="la serie diaria" /> : <IdleDailyChartLazy data={idleDailyChartData(daily?.data ?? [])} />}
         </Disclosure>
-        <Disclosure title="Telemetría contra cargas" description="Compara los litros por hora que mide la telemetría con los que salen de las cargas del mismo equipo y mes.">
-          {comparison.failed ? <SectionError what="la comparación de litros por hora" /> : <LitersPerHourTable rows={comparison.data} />}
+        <Disclosure title="Telemetría contra cargas" description="Un punto por equipo y mes: los litros por hora que mide la telemetría contra los que salen de las cargas. Los que se alejan de la diagonal llevan nombre.">
+          {comparison.failed ? <SectionError what="la comparación de litros por hora" /> : <LitersPerHourSection rows={comparison.data} equipmentHref={equipmentHref} cargasHref={hrefInContext(FUEL_PATHS.cargas, period)} />}
         </Disclosure>
         <Disclosure title="Los 20 días con más vacío" description="Sólo días con al menos 1 hora de motor: un día de minutos daría 100 % sin significar nada.">
           {topDays.failed ? <SectionError what="los días con más motor en vacío" /> : <TopIdleDaysTable rows={topDays.data} />}

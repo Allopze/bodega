@@ -8,6 +8,7 @@ import {
   listAlcoholTests,
   listAlcotestEquipment,
   listAlcotestWorkers,
+  summarizeAlcoholTestsByMonth,
 } from "@/lib/services/prevention-alcotest"
 import { listAlcotestSlotsForCalendar, listAlcotestSlotsForWorksite, resolveAlcotestSlotFacts } from "@/lib/services/prevention-alcotest-slots"
 import { resolveProgramActivationPeriod, resolveProgramActivationPeriods } from "@/lib/services/prevention-program-slots"
@@ -16,11 +17,17 @@ import { buildSlotCalendar, parseCalendarMonth } from "@/lib/prevention/slot-com
 import { ProgramComplianceSection } from "@/components/prevention/program-compliance-section"
 import { resolveProgramSlotYear } from "@/lib/prevention/program-slots-2026"
 import { getPdtpOperationalYears } from "@/lib/services/prevention-pdtp"
-import { formatDateTime } from "@/lib/utils"
+import { shapeAlcotestTrend } from "@/lib/prevention/alcotest-trend"
+import { windowStartDay } from "@/lib/prevention/monthly-series"
+import { formatDateTime, todayInChile } from "@/lib/utils"
+import { AlcotestTrendSection } from "./alcotest-trend-section"
 import { AlcotestWorkbench } from "./alcotest-workbench"
 import { PdtpScheduledActivityPanelServer } from "@/components/prevention/pdtp-scheduled-activity-panel-server"
 
 export const metadata: Metadata = { title: "Alcotest" }
+
+/** Cuántos controles recientes lista la pantalla (el workbench también corta en 30). */
+const ALCOTEST_RECENT_LIMIT = 30
 
 function one(value: string | string[] | undefined) {
   return typeof value === "string" ? value.trim() : Array.isArray(value) ? value[0]?.trim() : undefined
@@ -38,9 +45,13 @@ export default async function AlcotestPage({
 
   const resolved = resolveWorksiteScope(session)
   const scope: string[] | "all" = resolved.mode === "all" ? "all" : resolved.mode === "some" ? resolved.ids : []
-  const [worksites, tests, dispatches, workers, equipment] = await Promise.all([
+  const today = todayInChile()
+  const [worksites, tests, trendRows, dispatches, workers, equipment] = await Promise.all([
     listScopedWorksites(scope),
-    listAlcoholTests(scope),
+    // La pantalla muestra los 30 últimos: el tope viaja al SQL en vez de traer la tabla entera.
+    listAlcoholTests(scope, undefined, { limit: ALCOTEST_RECENT_LIMIT }),
+    // CHART-010: la serie mensual sale agregada de la base (sólo conteos), no de las filas de arriba.
+    summarizeAlcoholTestsByMonth(scope, { since: windowStartDay(today) }),
     listAlcoholTestDispatches(scope),
     listAlcotestWorkers(scope),
     listAlcotestEquipment(scope),
@@ -124,6 +135,7 @@ export default async function AlcotestPage({
       selectedMonth={month}
       activationPeriod={activationPeriod}
       initialTests={tests}
+      trend={<AlcotestTrendSection points={shapeAlcotestTrend(trendRows, today)} />}
       initialDispatches={dispatches}
       workers={workers}
       equipment={equipment}

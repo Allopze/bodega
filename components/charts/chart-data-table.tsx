@@ -1,3 +1,5 @@
+import type { ReactNode } from "react"
+
 /**
  * Alternativa textual de un gráfico: los mismos datos en una tabla que se abre
  * a demanda («Ver datos»). Es la salida para quien no ve el gráfico y para quien
@@ -10,7 +12,8 @@ export function ChartDataTable({
 }: {
   caption: string
   headers: string[]
-  rows: Array<Array<string | number>>
+  /** Cada celda es texto o, cuando la fila lleva a una lista (un proveedor), un enlace. */
+  rows: Array<Array<ReactNode>>
 }) {
   return (
     <details className="mt-3 text-xs">

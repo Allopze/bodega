@@ -81,7 +81,9 @@ beforeAll(async () => {
   // Una OC de enero: el lado «compras» de la tendencia de 12 meses.
   await db.insert(schema.purchaseOrders).values({
     id: "ana-fuel-oc", code: "OC-ANA-FUEL", worksiteId: IDS.wsA, supplierId: "ana-fuel-supplier", createdBy: IDS.user,
-    status: "sent", totalAmount: 500_000, createdAt: "2026-01-15T15:00:00.000Z",
+    // CHART-033: el gasto en OC se fecha por emisión (`issuedAt`), como Finanzas del tablero; una OC `sent` sin
+    // fecha de emisión ya no es gasto.
+    status: "sent", totalAmount: 500_000, createdAt: "2026-01-15T15:00:00.000Z", issuedAt: "2026-01-15T15:00:00.000Z",
   })
   await db.insert(schema.fuelProviderTransactions).values([
     // Marzo, patente A: tres transacciones que sí cuentan.

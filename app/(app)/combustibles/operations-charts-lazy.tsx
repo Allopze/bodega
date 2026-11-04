@@ -4,10 +4,10 @@ import { Skeleton } from "@/components/ui/skeleton"
 import dynamic from "next/dynamic"
 import type { ComponentType } from "react"
 import type { ScatterPoint } from "@/lib/combustibles/operations-dashboard"
-import type { VehicleEvolutionPoint } from "@/lib/combustibles/consumption-dashboard"
+import type { EvolutionPanels } from "@/lib/combustibles/evolution-panels"
 
 type ScatterChartType = ComponentType<{ points: ScatterPoint[] }>
-type EvolutionByVehicleChartType = ComponentType<{ points: VehicleEvolutionPoint[]; maxSeries?: number }>
+type EvolutionByVehicleChartType = ComponentType<{ view: EvolutionPanels }>
 
 /** Mantiene la altura de los gráficos de operaciones mientras llega Recharts. */
 function OperationsChartSkeleton() {

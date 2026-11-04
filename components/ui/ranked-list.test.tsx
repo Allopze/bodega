@@ -219,6 +219,20 @@ describe("RankedList · medidor compacto (≤ 2 ítems, I-09)", () => {
     expect(Array.from(container.querySelectorAll<HTMLElement>("div.h-1\\.5 > div")).map((el) => el.style.width)).toEqual(["30%", "90%"])
   })
 
+  it("un porcentaje en share se mide sobre 100, no contra la suma ni el mayor de las otras filas", () => {
+    // Una tasa de 20 % sola no puede dibujar una barra llena, y dos tasas (20 % y 50 %)
+    // no son 29 % y 71 % de un total que no existe.
+    const solo = render(<RankedList ariaLabel="Una tasa" format="percent" showShare={false} items={[{ key: "x", label: "Faena A", value: 20, detail: "2 de 10 PPA detenidos" }]} />)
+    expect(solo.container.querySelector<HTMLElement>("div.h-1\\.5 > div")?.style.width).toBe("20%")
+    solo.unmount()
+    const dos = render(<RankedList ariaLabel="Dos tasas" format="percent" showShare={false} items={[{ key: "a", label: "A", value: 20 }, { key: "b", label: "B", value: 50 }]} />)
+    expect(Array.from(dos.container.querySelectorAll<HTMLElement>("div.h-1\\.5 > div")).map((el) => el.style.width)).toEqual(["50%", "20%"])
+    dos.unmount()
+    const tres = render(<RankedList ariaLabel="Tres tasas" format="percent" showShare={false} items={[{ key: "a", label: "A", value: 10 }, { key: "b", label: "B", value: 20 }, { key: "c", label: "C", value: 40 }]} />)
+    const fills = Array.from(tres.container.querySelectorAll<HTMLElement>("[data-rank-fill]")).map((el) => el.style.width)
+    expect(fills).toEqual(["40%", "20%", "10%"])
+  })
+
   it("con tres filas ya no es compacto", () => {
     const { container } = render(<RankedList ariaLabel="Tres" format="count" items={items} />)
     expect(container.querySelectorAll("[data-rank-fill]")).toHaveLength(3)

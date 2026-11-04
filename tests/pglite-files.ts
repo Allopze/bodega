@@ -77,6 +77,10 @@ export const pgliteTestFiles = [
   // C-9 / C-10: gasto en combustible desde el libro del proveedor (regla canónica
   // compartida con la conciliación) y tendencia mensual de 12 meses.
   "lib/__tests__/analytics-fuel-provider.test.ts",
+  // CHART-033: /analitica y Finanzas del tablero dan la misma cifra de gasto en OC (base de fecha única) y respetan la faena.
+  "lib/__tests__/analytics-finance-parity.test.ts",
+  // CHART-029: plazos del ciclo de abastecimiento (hitos, sólo cerrados, anuladas) y alcance por faena.
+  "lib/__tests__/analytics-lead-time.test.ts",
   "lib/__tests__/dashboard-fuel-provider.test.ts",
   "lib/__tests__/fleet-fuel-provider.test.ts",
   // C-9 (lecturas de medidor de Flota): recorrido y última lectura desde `fuel_meter_readings`.
@@ -450,4 +454,26 @@ export const pgliteTestFiles = [
   "app/(app)/aprobaciones/queue-age-pglite.test.ts",
   // Combustibles › Fuentes (CHART-022): mapa de cobertura por mes (Copec, telemetría, OnWay), alcance por permiso y faena, día civil de Chile.
   "lib/combustibles/__tests__/coverage-matrix-data-pglite.test.ts",
+  // Prevención › Inspecciones (CHART-010): serie mensual de cumplimiento ponderada por ítems, alcance de faenas, mes civil de Chile.
+  "lib/__tests__/prevention-inspection-trend-pglite.test.ts",
+  // Prevención › Alcotest (CHART-010): serie mensual agregada en SQL (sólo conteos), alcance de faenas, mes civil de Chile, y la lista sin cargar la tabla entera.
+  "lib/__tests__/prevention-alcotest-trend-pglite.test.ts",
+  // Prevención › PPA (CHART-011): serie mensual y ranking por faena de la tasa de detención — alcance, fecha de llenado (LEAST filled_at/created_at), mes civil de Chile.
+  "lib/__tests__/ppa-rate-series-pglite.test.ts",
+  // PDTP › Cierres (CHART-008): datos del calendario faena × mes — alcance, cierre de cualquier versión del año, reabierto no cuenta, baja de la faena, borrador sin activar.
+  "lib/__tests__/pdtp-closure-calendar-pglite.test.ts",
+  // CPHS (CHART-008): meses con acta cerrada por comité — alcance, mes civil de Chile, sólo cerradas.
+  "lib/__tests__/prevention-cphs-session-months-pglite.test.ts",
+  // Prevención (CHART-008): lector común del calendario de simulacros, CGRD e higiene — alcance, faenas inactivas, estado real, plan vigente.
+  "lib/__tests__/prevention-program-calendar-pglite.test.ts",
+  // Bodega (CHART-035): consumo de 90 días por faena y producto (efecto sobre el saldo, reverso de anulaciones) y movimientos del saldo; alcance de faenas, día civil de Chile.
+  "lib/__tests__/bodega-stock-coverage-pglite.test.ts",
+  // Compras › DTE (CHART-034): OC por mes y estado de conciliación con el monto por facturar, y cobertura de DTE por período; alcance de faenas.
+  "lib/__tests__/compras-dte-reconciliation-pglite.test.ts",
+  // Bodega › Guías (CHART-037): tiempo hasta confirmar por destino (mediana, P90, n) y antigüedad de las guías por confirmar; alcance de faenas.
+  "lib/__tests__/bodega-guide-transit-pglite.test.ts",
+  // Combustibles › Consumo (CHART-016): rendimiento por mes desde las lecturas de medidor de Copec, alcance por faena y mandante, hueco sin datos del proveedor, reset aceptado.
+  "lib/combustibles/control/queries/meter-rates.test.ts",
+  // Combustibles › Consumo (small multiples): evolución de litros por equipo y período, alcance por faena, ventana de meses y patente fuera de la flota.
+  "lib/combustibles/__tests__/evolution-by-vehicle-pglite.test.ts",
 ]

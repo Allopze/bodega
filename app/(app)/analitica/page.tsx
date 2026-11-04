@@ -13,16 +13,23 @@ import {
 import { can, requirePermission } from "@/lib/auth/can"
 import { normalizeAnalyticsFilters } from "@/lib/services/analytics"
 import { getCachedAnalyticsDashboard } from "@/lib/services/read-model-cache"
-import { formatCLP, formatDate, formatQty } from "@/lib/utils"
+import { formatCLP, formatDate, formatPercent, formatQty } from "@/lib/utils"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { ChartSection } from "@/components/charts/chart-section"
+import { ChartErrorBoundary } from "@/components/chart-error-boundary"
+import { RankedList } from "@/components/ui/ranked-list"
+import { getSupplyLeadTime } from "@/lib/services/analytics-module/lead-time"
 import { AnalyticsFiltersBar } from "./analytics-filters"
-import { ModuleSpendChart, MonthlySpendChart, RankingBarChart } from "./analytics-charts-lazy"
+import { MonthlySpendChart, SupplierParetoChart } from "./analytics-charts-lazy"
 import { KpiCard } from "./analytics-kpi-card"
 import { RankingTable, SeverityBadge, EmptyText } from "./analytics-ranking-table"
 import { getFilterOptions, getParam } from "./analytics-page.helpers"
-import { fuelGapMonthKeys, monthlyTrendDescription } from "./analytics-trend"
+import { monthlyTrendSummary, trendDataRows } from "./analytics-trend"
+import { buildSupplierPareto, paretoSummary } from "./analytics-pareto"
+import { rankingItems, rankingLeaderSummary } from "./analytics-rankings"
+import { LeadTimeSection } from "./lead-time-section"
 import { FUEL_PATHS } from "@/lib/combustibles/routes"
 
 export const metadata: Metadata = { title: "Analítica" }
@@ -50,12 +57,51 @@ export default async function AnaliticaPage({
     vehicleId: getParam(sp, "vehiculo"),
   })
 
-  const [data, options] = await Promise.all([
+  const [data, options, leadTime] = await Promise.all([
     // ANA-002/PER-T02: la pantalla lee por la entrada cacheada (30 s); el
     // servicio directo queda para la exportación, que necesita evidencia fresca.
     getCachedAnalyticsDashboard(session, filters),
     getFilterOptions(session),
+    // CHART-029: plazos del ciclo. Un fallo suyo no tumba el resto de la pantalla; se dice en su tarjeta.
+    getSupplyLeadTime(session, {
+      fromDate: filters.fromDate,
+      toDate: filters.toDate,
+      ...(filters.worksiteId ? { worksiteId: filters.worksiteId } : {}),
+    }).catch(() => null),
   ])
+
+  // Datos de los gráficos: la forma (qué se dibuja y qué dice la frase) vive en funciones puras con pruebas propias.
+  const spendByTypeItems = rankingItems(data.spendByModule.map((row) => ({ key: row.module, label: row.module, value: row.totalAmount })))
+  const worksiteItems = rankingItems(data.topWorksites.map((row) => ({ key: row.id, label: row.name, value: row.totalAmount })))
+  const vehicleItems = rankingItems(data.vehicleCosts.map((row) => ({
+    key: row.id,
+    label: row.plate,
+    value: row.totalFuelAmount,
+    detail: `${formatQty(row.totalLiters, "L")} · ${formatQty(row.loadCount)} ${row.loadCount === 1 ? "carga" : "cargas"}`,
+  })))
+  const concentrationThreshold = data.supplierConcentrationPct ?? 60
+  const pareto = buildSupplierPareto({ suppliers: data.topSuppliers, totalSpend: data.kpis.totalSpend })
+  // La lista que explica la barra: las OC del proveedor en el MISMO período (el filtro de Compras fecha por emisión, como el gasto) o sus cargas.
+  const supplierHref = (row: { key: string; module: string | null }) => {
+    if (row.module === "Combustible") return canViewFuel ? `${FUEL_PATHS.consumoLitros}?seccion=tarjetas&proveedor=${row.key}` : undefined
+    if (!canViewPurchasing) return undefined
+    const params = new URLSearchParams({ desde: data.filters.fromDate, hasta: data.filters.toDate, proveedor: row.key })
+    if (data.filters.worksiteId) params.set("faena", data.filters.worksiteId)
+    return `/compras?${params.toString()}`
+  }
+  const paretoRows = pareto.rows.map((row) => ({ ...row, href: row.isOther ? undefined : supplierHref(row) }))
+  const paretoEmpty = data.filters.supplierId
+    ? {
+        label: "El Pareto compara proveedores entre sí",
+        hint: "Con el filtro de proveedor activo queda uno solo y el resto sería combustible. Quita el filtro de proveedor para ver cómo se reparte el gasto.",
+      }
+    : pareto.rows.length === 0
+      ? {
+          label: "Sin proveedores con gasto en el período",
+          hint: "El Pareto aparece cuando hay órdenes de compra emitidas o compras de combustible en el período.",
+          ...(canViewPurchasing ? { ctaLabel: "Ver compras", ctaHref: "/compras" } : {}),
+        }
+      : null
 
   const exportParams = new URLSearchParams({ tipo: "analitica_resumen" })
   exportParams.set("from", data.filters.fromDate)
@@ -113,8 +159,8 @@ export default async function AnaliticaPage({
             trendPolarity="up-bad"
             href={canViewPurchasing ? "/compras" : undefined}
             glossary={canViewFuelCosts
-              ? "Suma de órdenes de compra y gasto en combustible (transacciones Copec aceptadas) del período seleccionado, ambos con impuestos incluidos. La variación compara el período anterior de igual duración."
-              : "Suma de las órdenes de compra emitidas del período seleccionado. El costo de combustible requiere permisos adicionales."}
+              ? "Suma de las órdenes de compra emitidas en el período (fechadas por su día de emisión) y del gasto en combustible (transacciones Copec aceptadas), ambos con impuestos incluidos. La variación compara el período anterior de igual duración."
+              : "Suma de las órdenes de compra emitidas en el período (fechadas por su día de emisión), con impuestos incluidos. El costo de combustible requiere permisos adicionales."}
           />
           <KpiCard
             icon={<Package size={18} />}
@@ -122,7 +168,7 @@ export default async function AnaliticaPage({
             value={formatQty(data.kpis.purchaseOrderCount)}
             detail={`Promedio ${formatCLP(data.kpis.averageOrderAmount)}`}
             href={canViewPurchasing ? "/compras" : undefined}
-            glossary="Cantidad de órdenes de compra emitidas en el período. El promedio se calcula dividiendo el gasto total de compras entre el número de OC."
+            glossary="Cantidad de órdenes de compra emitidas en el período, sin borradores, anuladas ni eliminadas. El promedio divide el gasto en OC (con impuestos) entre ese número."
           />
           {canViewFuelCosts && <KpiCard
             icon={<GasPump size={18} />}
@@ -155,45 +201,84 @@ export default async function AnaliticaPage({
           />
         </section>
 
+        {/* Una sola base para el dinero, dicha en pantalla: sin esto /analitica y el tablero parecían
+            discrepar sin motivo (CHART-033). */}
+        <p className="text-xs leading-5 text-[var(--color-text-muted)] text-pretty">
+          <strong className="font-semibold text-[var(--color-text)]">Base de las cifras.</strong>{" "}
+          Una orden de compra cuenta en el período en que se <strong className="font-semibold">emitió</strong> (no en el que se creó), con impuestos incluidos, y no cuenta borradores, anuladas ni eliminadas: es la misma definición de Finanzas en el tablero.
+          {canViewFuelCosts ? " El combustible suma las transacciones Copec aceptadas y vigentes, con impuestos." : ""}
+        </p>
+
         <section className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
-          <Card>
-            <CardHeader>
-              <CardTitle>Tendencia mensual de gasto</CardTitle>
-              {/* La serie no sigue el período elegido: son 12 meses que terminan en `hasta` (C-10). */}
-              {/* Los meses sin datos del proveedor van nombrados: el hueco de la línea de combustible no es un $0 (C-4). */}
-              <CardDescription>{monthlyTrendDescription(data.filters.toDate, data.spendByMonth.at(-1)?.partial === true, fuelGapMonthKeys(data.spendByMonth))}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <MonthlySpendChart data={data.spendByMonth} />
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle>Gasto por tipo</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ModuleSpendChart data={data.spendByModule} />
-            </CardContent>
-          </Card>
+          <ChartSection
+            title="Tendencia mensual de gasto"
+            // La serie no sigue el período elegido: son 12 meses que terminan en `hasta` (C-10). La frase nombra la
+            // ventana, el mes parcial y los meses sin datos del proveedor (C-4), y el mayor mes sólo entre los comparables.
+            summary={monthlyTrendSummary(data.filters.toDate, data.spendByMonth, formatCLP)}
+            data={{ caption: "Gasto mensual en compras y combustible", ...trendDataRows(data.spendByMonth, canViewFuelCosts, formatCLP) }}
+            empty={data.spendByMonth.every((row) => row.totalAmount === 0) ? {
+              label: "Aún no hay gasto en los últimos 12 meses",
+              hint: "No se registraron órdenes de compra emitidas ni combustible en las faenas seleccionadas durante esta ventana. Revisa los filtros o que existan movimientos.",
+              ...(canViewPurchasing ? { ctaLabel: "Ver compras", ctaHref: "/compras" } : {}),
+            } : null}
+          >
+            <ChartErrorBoundary chartName="la tendencia mensual">
+              <MonthlySpendChart data={data.spendByMonth} showFuel={canViewFuelCosts} />
+            </ChartErrorBoundary>
+          </ChartSection>
+          <ChartSection
+            title="Gasto por tipo"
+            summary={rankingLeaderSummary(spendByTypeItems, formatCLP, { of: "del gasto" })}
+            empty={spendByTypeItems.length === 0 ? {
+              label: "Sin gasto para distribuir",
+              hint: "La distribución por tipo aparece cuando hay compras o combustible registrados en el período.",
+            } : null}
+          >
+            <RankedList items={spendByTypeItems} format="clp" mode="share" order="input" limit={spendByTypeItems.length} ariaLabel="Gasto por tipo" />
+          </ChartSection>
         </section>
 
+        <ChartSection
+          title="Concentración del gasto por proveedor"
+          summary={paretoSummary(pareto, concentrationThreshold, canViewFuelCosts ? "del gasto" : "del gasto en compras")}
+          data={{
+            caption: "Gasto por proveedor y porcentaje acumulado del gasto total",
+            headers: ["Proveedor", "Módulo", "OC o cargas", "Gasto", "% del gasto", "% acumulado"],
+            rows: paretoRows.map((row) => [
+              row.href ? <Link key={row.key} href={row.href} className="font-medium text-[var(--color-primary-ink)] hover:underline">{row.label}</Link> : row.label,
+              row.module ?? "Varios",
+              row.isOther ? "—" : formatQty(row.count),
+              formatCLP(row.amount),
+              formatPercent(row.sharePct, 1),
+              formatPercent(row.cumulativePct, 1),
+            ]),
+          }}
+          empty={paretoEmpty}
+        >
+          <ChartErrorBoundary chartName="el Pareto de proveedores">
+            <SupplierParetoChart rows={paretoRows} thresholdPct={concentrationThreshold} />
+          </ChartErrorBoundary>
+        </ChartSection>
+
+        <LeadTimeSection report={leadTime} ignoresFilters={Boolean(data.filters.supplierId || data.filters.vehicleId)} />
+
         <section className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-          <Card>
-            <CardHeader>
-              <CardTitle>Faenas con mayor gasto</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <RankingBarChart data={data.topWorksites} labelKey="name" valueKey="totalAmount" emptyLabel="Sin gasto por faena para el filtro actual." />
-            </CardContent>
-          </Card>
-          {canViewFuelCosts && <Card>
-            <CardHeader>
-              <CardTitle>Vehículos con mayor gasto de combustible</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <RankingBarChart data={data.vehicleCosts} labelKey="plate" valueKey="totalFuelAmount" emptyLabel="Sin cargas de combustible por vehículo en el período." />
-            </CardContent>
-          </Card>}
+          <ChartSection
+            title="Faenas con mayor gasto"
+            summary={rankingLeaderSummary(worksiteItems, formatCLP)}
+            empty={worksiteItems.length === 0 ? { label: "Sin gasto por faena para el filtro actual." } : null}
+          >
+            <RankedList items={worksiteItems} format="clp" mode="share" order="input" limit={10} ariaLabel="Faenas con mayor gasto" />
+          </ChartSection>
+          {canViewFuelCosts && (
+            <ChartSection
+              title="Vehículos con mayor gasto de combustible"
+              summary={rankingLeaderSummary(vehicleItems, formatCLP, { gender: "o" })}
+              empty={vehicleItems.length === 0 ? { label: "Sin cargas de combustible por vehículo en el período." } : null}
+            >
+              <RankedList items={vehicleItems} format="clp" mode="share" order="input" limit={10} ariaLabel="Vehículos con mayor gasto de combustible" />
+            </ChartSection>
+          )}
         </section>
 
         <section className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
@@ -252,22 +337,6 @@ export default async function AnaliticaPage({
           </Card>
         </section>
 
-        <RankingTable
-          title="Top proveedores"
-          headers={["Proveedor", "Módulo", "Eventos", "Monto"]}
-          rows={data.topSuppliers.map((row) => {
-            const href = row.module === "Combustible"
-              ? canViewFuel ? `${FUEL_PATHS.consumoLitros}?seccion=tarjetas&proveedor=${row.id}` : null
-              : canViewPurchasing ? `/compras?proveedor=${row.id}` : null
-            return [
-            href ? <Link key={row.id} href={href} className="font-medium text-[var(--color-primary)] hover:underline">{row.name}</Link> : row.name,
-            row.module ?? "Compras",
-            formatQty(row.count),
-            formatCLP(row.totalAmount),
-          ]})}
-          empty="Sin proveedores con gasto para el período."
-        />
-
         <section className="grid grid-cols-1 gap-5 xl:grid-cols-2">
           <RankingTable
             title="Rotación de bodega"
@@ -296,15 +365,15 @@ export default async function AnaliticaPage({
         </section>
 
         <RankingTable
-          title="Órdenes recientes consideradas"
-          headers={["OC", "Faena", "Proveedor", "Fecha", "Monto"]}
+          title="Órdenes de compra emitidas recientemente"
+          headers={["OC", "Faena", "Proveedor", "Emisión", "Monto"]}
           rows={data.recentOrders.map((row) => [
             canViewPurchasing
               ? <Link key={row.id} href={`/compras/${row.id}`} className="font-medium text-[var(--color-primary)] hover:underline">{row.code}</Link>
               : row.code,
             row.worksiteName,
             row.supplierName,
-            formatDate(row.createdAt),
+            formatDate(row.issuedAt),
             formatCLP(row.totalAmount),
           ])}
           empty="Sin órdenes de compra para el filtro actual."

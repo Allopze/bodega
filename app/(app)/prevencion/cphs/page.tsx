@@ -9,6 +9,7 @@ import { Callout } from "@/components/ui/callout"
 import {
   listCommitteeAssignees,
   listCommitteeMeetings,
+  listCommitteeSessionMonths,
   listCommittees,
   listCommitteeWorksites,
   listManagementReviews,
@@ -17,7 +18,15 @@ import { listWorksiteOrganizations } from "@/lib/services/prevention-cphs-organi
 import { assessMeetingCadence, isMandateExpired } from "@/lib/prevention/cphs"
 import { CommitteeList } from "./committee-list"
 import { CphsCreateButton, NewCommitteeDialog } from "./cphs-dialogs"
-import { todayInChile } from "@/lib/utils"
+import { codeYear, todayInChile } from "@/lib/utils"
+import { currentPdtpPeriod } from "@/lib/services/pdtp/period"
+import { ProgramComplianceSection } from "@/components/prevention/program-compliance-section"
+import {
+  SESSION_CALENDAR_WORDING,
+  SESSION_LEGEND,
+  SESSION_STATUS_LABELS,
+  buildSessionCalendar,
+} from "@/lib/prevention/committee-session-calendar"
 import { PdtpScheduledActivityPanelServer } from "@/components/prevention/pdtp-scheduled-activity-panel-server"
 
 export const metadata: Metadata = { title: "CPHS y gobernanza" }
@@ -39,9 +48,12 @@ export default async function CphsPage({
   const canManage = session.user.permissions.includes("prevention:cphs:manage")
   const canReview = session.user.permissions.includes("prevention:governance:review")
 
-  const [committees, meetings, worksites, reviews, assignees, organizations] = await Promise.all([
+  const year = codeYear()
+  const [committees, meetings, sessionMonths, worksites, reviews, assignees, organizations] = await Promise.all([
     listCommittees(access),
     listCommitteeMeetings(access),
+    // CHART-008: qué meses sesionó cada comité, agregado en SQL (no sale de las 300 sesiones de arriba).
+    listCommitteeSessionMonths(access, year),
     canManage || canReview ? listCommitteeWorksites(access) : Promise.resolve([]),
     canReview ? listManagementReviews(access) : Promise.resolve([]),
     canManage || canReview ? listCommitteeAssignees(access) : Promise.resolve([]),
@@ -57,6 +69,24 @@ export default async function CphsPage({
     : undefined
   const today = todayInChile()
   const now = new Date().toISOString()
+  const heldMonths = new Map<string, Set<number>>()
+  for (const row of sessionMonths) {
+    const months = heldMonths.get(row.committeeId) ?? new Set<number>()
+    months.add(row.month)
+    heldMonths.set(row.committeeId, months)
+  }
+  const sessionCalendar = buildSessionCalendar({
+    year,
+    today: currentPdtpPeriod(),
+    committees: committees.map((row) => ({
+      id: row.committee.id,
+      // Un comité disuelto y su sucesor comparten faena: el rótulo los distingue.
+      label: row.committee.status === "dissolved" ? `${row.worksiteName} (disuelto)` : row.worksiteName,
+      constitutedOn: row.committee.constitutedOn,
+      dissolvedAt: row.committee.dissolvedAt,
+    })),
+    heldMonths,
+  })
 
   return (
     <PageContainer>
@@ -98,6 +128,22 @@ export default async function CphsPage({
           </ul>
         </Callout>
       )}
+      {/* Sin comités (o con todos constituidos después de este año) el calendario no se dibuja:
+        * la lista de abajo ya explica el vacío y ofrece constituir uno. */}
+      <ProgramComplianceSection
+        title={`Sesiones del comité ${year}`}
+        caption={`Sesiones mensuales de cada comité paritario en ${year}`}
+        calendar={sessionCalendar}
+        noun={{ singular: "comité", plural: "comités" }}
+        rowHeader="Comité (faena)"
+        wording={SESSION_CALENDAR_WORDING}
+        statusLabels={SESSION_STATUS_LABELS}
+        legend={[...SESSION_LEGEND]}
+        // La celda lleva a la ficha del comité, donde se convoca y se cierra la sesión del mes.
+        hrefFor={(committeeId) => `/prevencion/cphs/${committeeId}`}
+        linkNavigation={{}}
+        className="mb-4"
+      />
       <CommitteeList
         committees={committees.map((row) => ({
           id: row.committee.id,

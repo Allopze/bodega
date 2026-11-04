@@ -332,13 +332,18 @@ async function getLitersByMonth(session: Session, vehicle: EquipmentFileVehicle,
 
 async function getIdle(session: Session, vehicle: EquipmentFileVehicle, period: ResolvedFuelPeriod): Promise<EquipmentFileIdle | null> {
   const d = dailyTelemetry(session, controlFiltersFromPeriod(period))
-  const [row] = await db.select({
-    days: sql<number>`count(*)::int`,
-    operating: sql<number>`coalesce(sum(${d.operating}), 0)::float8`,
-    idle: sql<number>`coalesce(sum(${d.idle}), 0)::float8`,
-    litersIdle: sql<number | null>`sum(${d.litersIdle})::float8`,
-    activeDays: sql<number>`(count(*) filter (where ${d.operating} > 0))::int`,
-  }).from(d).where(eq(d.vehicleId, vehicle.id))
+  // Los totales y la serie salen del mismo `dailyTelemetry` (un registro por equipo y día, ya dentro del alcance de faena):
+  // el gráfico diario y las cifras de arriba no pueden discrepar.
+  const [[row], days] = await Promise.all([
+    db.select({
+      days: sql<number>`count(*)::int`,
+      operating: sql<number>`coalesce(sum(${d.operating}), 0)::float8`,
+      idle: sql<number>`coalesce(sum(${d.idle}), 0)::float8`,
+      litersIdle: sql<number | null>`sum(${d.litersIdle})::float8`,
+      activeDays: sql<number>`(count(*) filter (where ${d.operating} > 0))::int`,
+    }).from(d).where(eq(d.vehicleId, vehicle.id)),
+    db.select({ day: d.day, operating: d.operating, idle: d.idle }).from(d).where(eq(d.vehicleId, vehicle.id)).orderBy(d.day),
+  ])
   if (!row || toNumber(row.days) === 0) return null
   return {
     operatingHours: toNumber(row.operating),
@@ -346,6 +351,12 @@ async function getIdle(session: Session, vehicle: EquipmentFileVehicle, period: 
     idlePct: idlePct(toNumber(row.idle), toNumber(row.operating)),
     litersIdle: row.litersIdle === null ? null : toNumber(row.litersIdle),
     activeDays: toNumber(row.activeDays),
+    daily: days.map((point) => ({
+      day: point.day,
+      operatingHours: toNumber(point.operating),
+      idleHours: toNumber(point.idle),
+      idlePct: idlePct(toNumber(point.idle), toNumber(point.operating)),
+    })),
   }
 }
 

@@ -12,11 +12,14 @@ const config = {
   idlePct: { label: "% en vacío", color: IDLE_COLORS.pct },
 } satisfies ChartConfig
 
-/** V-07: un equipo, día a día. Barras = horas de funcionamiento (eje izquierdo), línea = % en vacío (eje derecho). */
-export function IdleDailyChart({ data }: { data: IdleDailyPoint[] }) {
+/**
+ * V-07: un equipo, día a día. Barras = horas de funcionamiento (eje izquierdo), línea = % en vacío (eje derecho).
+ * Un día con `idlePct: null` (sin horas, o con menos de 1 h de motor: ver `idleDailyChartData`) corta la línea, no la baja a cero.
+ */
+export function IdleDailyChart({ data, ariaLabel = "Horas de funcionamiento por día y porcentaje en vacío del equipo elegido" }: { data: IdleDailyPoint[]; ariaLabel?: string }) {
   if (data.length === 0) return <ChartEmpty label="Sin telemetría de este equipo en el período" hint="Elige otro equipo o cambia el período." />
   return (
-    <ChartContainer config={config} className="aspect-auto h-72 w-full" role="img" aria-label="Horas de funcionamiento por día y porcentaje en vacío del equipo elegido">
+    <ChartContainer config={config} className="aspect-auto h-72 w-full" role="img" aria-label={ariaLabel}>
       <ComposedChart data={data} margin={{ top: 8, right: 4, left: 0, bottom: 0 }}>
         <CartesianGrid vertical={false} strokeDasharray="3 3" />
         <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} tick={{ fontSize: 11 }} minTickGap={16} />

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { elapsedDays, maxMeterRatePerDayOf, meterSeriesAdvance, type MeterSeriesPoint } from "../meter-series"
+import { elapsedDays, maxMeterRatePerDayOf, meterSeriesAdvance, meterSeriesSegments, type MeterSeriesPoint } from "../meter-series"
 
 /**
  * El recorrido de un equipo en una ventana (Flota) se calcula con las mismas
@@ -125,5 +125,40 @@ describe("maxMeterRatePerDayOf", () => {
     expect(maxMeterRatePerDayOf(rule, "hora")).toBe(20)
     expect(maxMeterRatePerDayOf(rule, "km", "grua")).toBe(300)
     expect(maxMeterRatePerDayOf(rule, "km", "camion")).toBe(900)
+  })
+})
+
+/**
+ * Los gráficos de rendimiento por mes (CHART-016) necesitan saber **qué par** sumó cada avance, no sólo el
+ * total: un mes se arma con los pares que cierra. `meterSeriesSegments` es esa misma cuenta, par por par, y
+ * `meterSeriesAdvance` se calcula desde ella: si las dos tuvieran su propia vara, el recorrido de Flota y el
+ * del gráfico podrían contar pares distintos.
+ */
+describe("meterSeriesSegments", () => {
+  it("clasifica cada par: sumado, descartado (retroceso o salto imposible) o parte de un reset aceptado", () => {
+    const series = [at(10_000, 1), at(10_300, 3), at(1_030, 5), at(10_600, 8), at(10_900, 10), at(1_000, 12, true), at(1_200, 14)]
+    const segments = meterSeriesSegments(series, KM_CEILING)
+
+    expect(segments.map((segment) => segment.status)).toEqual(["counted", "discarded", "discarded", "counted", "reset", "counted"])
+    expect(segments.map((segment) => segment.to.occurredAt)).toEqual(series.slice(1).map((point) => point.occurredAt))
+    expect(segments[0]).toMatchObject({ advance: 300 })
+    // El par descartado conserva su avance (negativo) para quien quiera explicarlo; no es un recorrido.
+    expect(segments[1]!.advance).toBe(1_030 - 10_300)
+  })
+
+  it("el total de meterSeriesAdvance es exactamente la suma de los pares sumados", () => {
+    const series = [at(100_000, 1), at(100_200, 3), at(1_000_000, 5), at(100_500, 7), at(100_800, 9), at(500, 11, true), at(900, 13)]
+    const counted = meterSeriesSegments(series, KM_CEILING).filter((segment) => segment.status === "counted")
+    const discarded = meterSeriesSegments(series, KM_CEILING).filter((segment) => segment.status === "discarded")
+
+    expect(meterSeriesAdvance(series, KM_CEILING)).toEqual({
+      advance: counted.reduce((sum, segment) => sum + segment.advance, 0),
+      discardedPairs: discarded.length,
+    })
+  })
+
+  it("una serie de una lectura, o vacía, no tiene pares", () => {
+    expect(meterSeriesSegments([], KM_CEILING)).toEqual([])
+    expect(meterSeriesSegments([at(10_000, 1)], KM_CEILING)).toEqual([])
   })
 })

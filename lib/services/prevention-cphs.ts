@@ -1071,6 +1071,36 @@ export async function listCommittees(access: CphsAccess) {
     .orderBy(asc(worksites.name))
 }
 
+/**
+ * Qué meses de `year` tuvo cada comité al menos una sesión de acta cerrada
+ * (CHART-008, calendario de sesiones). Agregado en SQL: no trae las sesiones para
+ * contarlas, y `listCommitteeMeetings` no sirve para esto porque corta en 300
+ * filas ordenadas por fecha y un calendario no puede perder meses en silencio.
+ *
+ * - **Cerrada es realizada**: una convocada o cancelada no cuenta, y una cerrada
+ *   exige quórum (`closeCommitteeMeeting` no la cierra sin él).
+ * - **Mes civil chileno** de `held_at` (`AT TIME ZONE 'America/Santiago'`): una
+ *   sesión del 31 de agosto a las 22:00 es de agosto aunque en UTC ya sea septiembre.
+ * - **Alcance**: sólo comités de las faenas del usuario; con alcance vacío, ninguna.
+ */
+export async function listCommitteeSessionMonths(access: CphsAccess, year: number) {
+  requireAccess(access, "prevention:cphs:view")
+  const chileHeld = sql`(${preventionCommitteeMeetings.heldAt} AT TIME ZONE 'America/Santiago')`
+  return db.select({
+    committeeId: preventionCommitteeMeetings.committeeId,
+    month: sql<number>`EXTRACT(MONTH FROM ${chileHeld})::int`,
+  })
+    .from(preventionCommitteeMeetings)
+    .innerJoin(preventionCommittees, eq(preventionCommitteeMeetings.committeeId, preventionCommittees.id))
+    .where(and(
+      eq(preventionCommitteeMeetings.status, "closed"),
+      sql`${preventionCommitteeMeetings.heldAt} IS NOT NULL`,
+      sql`EXTRACT(YEAR FROM ${chileHeld})::int = ${year}`,
+      scopeCondition(access.scope, preventionCommittees.worksiteId),
+    ))
+    .groupBy(preventionCommitteeMeetings.committeeId, sql`EXTRACT(MONTH FROM ${chileHeld})::int`)
+}
+
 export async function listCommitteeMeetings(access: CphsAccess) {
   requireAccess(access, "prevention:cphs:view")
   return db.select({

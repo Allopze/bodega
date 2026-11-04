@@ -1,24 +1,54 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
-import { and, desc, eq, inArray, isNull, isNotNull, or } from "drizzle-orm"
+import { and, desc, eq, inArray, isNull, isNotNull, ne, or } from "drizzle-orm"
 import { Receipt } from "@phosphor-icons/react/dist/ssr"
 import { db } from "@/db"
 import { dteDocuments, purchaseOrderInvoices, fuelLoads } from "@/db/schema"
-import { requirePermission } from "@/lib/auth/can"
+import { can, requirePermission } from "@/lib/auth/can"
 import { requireDteCodEmp, DteCodEmpMissingError, DTE_COD_EMP_MISSING_MESSAGE } from "@/lib/services/dte-portal/require-cod-emp"
 import { dteTipoLabel, estadoPlataformaLabel } from "@/lib/services/dte-portal/labels"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { EmptyState } from "@/components/ui/empty-state"
 import { MetaBadge } from "@/components/states/state-badge"
-import { formatCLP } from "@/lib/utils"
+import { formatCLP, todayInChile } from "@/lib/utils"
+import { logger } from "@/lib/logger"
+import {
+  reconciliationMonths,
+  shapeDteCoverage,
+  shapeReconciliationMonths,
+} from "@/lib/purchasing/reconciliation-charts"
+import { getDteCoverageByPeriod, getOrderReconciliationByMonth } from "@/lib/services/purchasing-module/reconciliation-overview"
+import { DteCharts } from "./dte-charts"
 import { PeriodPicker } from "@/components/ui/period-picker"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
+import Link from "next/link"
 
 export const dynamic = "force-dynamic"
 export const metadata: Metadata = { title: "Documentos DTE" }
 
 const DISCREPANCY_TOLERANCE_CLP = 1
+/**
+ * Una consulta de los gráficos que puede fallar sin tumbar la lista: se anota y la
+ * página avisa. `value` queda `null` al fallar, igual que cuando el dato no aplica;
+ * `failed` es lo que los distingue.
+ */
+async function attempt<T>(promise: Promise<T>, label: string): Promise<{ value: T | null; failed: boolean }> {
+  try {
+    return { value: await promise, failed: false }
+  } catch (error) {
+    logger.error(`[compras/dte] No se pudo calcular ${label}`, error)
+    return { value: null, failed: true }
+  }
+}
+
+/** Rótulo del filtro `?vinculo=` que la lista deja a la vista (no hay otro control para quitarlo). */
+const VINCULO_LABELS: Record<string, string> = {
+  sin_oc: "los DTE sin vincular",
+  oc: "los DTE vinculados a una OC",
+  combustible: "los DTE vinculados a combustible",
+  discrepancia: "los DTE con discrepancia de monto",
+}
 /** Tope de filas en pantalla. Se pide una de más para saber si hubo recorte. */
 const ROW_LIMIT = 300
 
@@ -34,7 +64,8 @@ export default async function DteListPage({
 }: {
   searchParams: Promise<{ vinculo?: string; tipo?: string; periodo?: string }>
 }) {
-  try { await requirePermission("purchasing:view") }
+  let session
+  try { session = await requirePermission("purchasing:view") }
   catch { redirect(`/forbidden?desde=${encodeURIComponent("/compras")}`) }
 
   const { vinculo, tipo, periodo: periodoParam } = await searchParams
@@ -80,11 +111,36 @@ export default async function DteListPage({
   // quincena quedaban declarados inexistentes.
   if (vinculo === "sin_oc") {
     conditions.push(isNull(dteDocuments.purchaseOrderInvoiceId), isNull(dteDocuments.fuelLoadId))
+  } else if (vinculo === "oc") {
+    conditions.push(isNotNull(dteDocuments.purchaseOrderInvoiceId))
+  } else if (vinculo === "combustible") {
+    conditions.push(isNotNull(dteDocuments.fuelLoadId))
   } else if (vinculo === "discrepancia") {
     // La discrepancia sólo existe contra una entidad vinculada; el monto de
     // esa entidad se compara en memoria, pero el universo ya viene acotado.
     conditions.push(or(isNotNull(dteDocuments.purchaseOrderInvoiceId), isNotNull(dteDocuments.fuelLoadId))!)
   }
+
+  // Los tres vínculos son los de la cobertura del gráfico de arriba, que no cuenta los
+  // anulados en el SII: la lista a la que lleva una barra debe contar lo mismo.
+  if (vinculo === "sin_oc" || vinculo === "oc" || vinculo === "combustible") {
+    conditions.push(or(isNull(dteDocuments.estadoSii), ne(dteDocuments.estadoSii, "anulado"))!)
+  }
+
+  // Gráficos de cobertura (CHART-034). Una falla de sus consultas no tumba la lista:
+  // se avisa y la lista sigue siendo la fuente de verdad.
+  const chartsToday = todayInChile()
+  const chartMonths = reconciliationMonths(chartsToday)
+  const [orderResult, dteResult] = await Promise.all([
+    attempt(getOrderReconciliationByMonth(session, { today: chartsToday }), "conciliación de OC"),
+    attempt(getDteCoverageByPeriod(session, codEmp, { today: chartsToday }), "cobertura DTE"),
+  ])
+  const chartsFailed = orderResult.failed || dteResult.failed
+  const orderRows = orderResult.value
+  // `null` en la cobertura es «no la ve un rol acotado a faenas», no «falló».
+  const dteRows = dteResult.value
+  const orderShape = orderRows ? shapeReconciliationMonths(orderRows, chartMonths, chartsToday) : null
+  const dteShape = dteRows ? shapeDteCoverage(dteRows, chartMonths, chartsToday) : null
 
   const found = await db.query.dteDocuments.findMany({
     where: and(...conditions),
@@ -126,6 +182,8 @@ export default async function DteListPage({
     ? rows.filter((r) => r.discrepancy !== null && r.discrepancy > DISCREPANCY_TOLERANCE_CLP)
     : rows
 
+  const vinculoLabel = vinculo ? VINCULO_LABELS[vinculo] : undefined
+
   return (
     <PageContainer>
       <PageHeader
@@ -140,6 +198,34 @@ export default async function DteListPage({
         }
         actions={<PeriodPicker period={periodo} />}
       />
+
+      {orderShape && (
+        <DteCharts
+          orders={orderShape}
+          dte={dteShape}
+          periodo={periodo}
+          syncHref={can(session, "admin:dte_sync") ? "/admin/dte" : undefined}
+        />
+      )}
+      {chartsFailed && (
+        <p className="text-sm text-[var(--color-text-muted)]">
+          No se pudieron calcular los gráficos de conciliación. La lista de abajo no se ve afectada.
+        </p>
+      )}
+
+      {vinculoLabel && (
+        <p className="flex flex-wrap items-center gap-x-2 text-sm text-[var(--color-text-muted)]">
+          <span>Mostrando sólo <strong className="font-semibold text-[var(--color-text)]">{vinculoLabel}</strong> de {periodo}.</span>
+          <Link
+            href={`/compras/dte?periodo=${periodo}${tipo ? `&tipo=${encodeURIComponent(tipo)}` : ""}`}
+            replace
+            scroll={false}
+            className="inline-flex min-h-11 items-center font-semibold text-[var(--color-primary-ink)] hover:underline sm:min-h-8"
+          >
+            Quitar filtro
+          </Link>
+        </p>
+      )}
 
       {truncated && (
         <p className="text-sm text-[var(--color-text-muted)]">

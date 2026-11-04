@@ -117,6 +117,11 @@ beforeAll(async () => {
     { id: "eqf-tel-1", vehicleId: IDS.vA, source: "visionlink", day: "2026-03-02", month: "2026-03", operatingHours: 10, idleHours: 2, litersIdle: 12 },
     { id: "eqf-tel-2", vehicleId: IDS.vA, source: "visionlink", day: "2026-03-03", month: "2026-03", operatingHours: 8, idleHours: 4, litersIdle: 20 },
     { id: "eqf-tel-3", vehicleId: IDS.vB, source: "visionlink", day: "2026-03-02", month: "2026-03", operatingHours: 5, idleHours: 1 },
+    // CHART-024: un día de minutos con el motor andando (no dibuja porcentaje), una segunda fuente el mismo día (no se suma,
+    // manda la de más horas) y un día de febrero, fuera del período (abril sigue sin telemetría: el otro test lo exige).
+    { id: "eqf-tel-4", vehicleId: IDS.vA, source: "visionlink", day: "2026-03-04", month: "2026-03", operatingHours: 0.5, idleHours: 0.5 },
+    { id: "eqf-tel-5", vehicleId: IDS.vA, source: "otra", day: "2026-03-02", month: "2026-03", operatingHours: 3, idleHours: 3 },
+    { id: "eqf-tel-6", vehicleId: IDS.vA, source: "visionlink", day: "2026-02-27", month: "2026-02", operatingHours: 7, idleHours: 1 },
   ])
 
   // Un caso vigente y un pedido de revisión abierto de A; uno cerrado que no debe salir.
@@ -334,8 +339,29 @@ describe("ficha de equipo: litros por mes", () => {
 describe("ficha de equipo: motor en vacío", () => {
   it("suma las horas del equipo en el período y calcula el % desde las horas", async () => {
     const { idle } = (await getEquipmentFile(session(), IDS.vA, MARCH))!
-    expect(idle).toMatchObject({ operatingHours: 18, idleHours: 6, activeDays: 2, litersIdle: 32 })
-    expect(idle!.idlePct).toBeCloseTo(100 / 3, 6)
+    expect(idle).toMatchObject({ operatingHours: 18.5, idleHours: 6.5, activeDays: 3, litersIdle: 32 })
+    expect(idle!.idlePct).toBeCloseTo((6.5 / 18.5) * 100, 6)
+  })
+
+  it("CHART-024: trae la serie diaria del equipo, un registro por día y sólo del período", async () => {
+    const { idle } = (await getEquipmentFile(session(), IDS.vA, MARCH))!
+    // El 2 de marzo dos fuentes informan al equipo: no se suman, manda la de más horas (10 h, no 3 h). El 27 de febrero no entra.
+    expect(idle!.daily.map((point) => [point.day, point.operatingHours, point.idleHours])).toEqual([
+      ["2026-03-02", 10, 2], ["2026-03-03", 8, 4], ["2026-03-04", 0.5, 0.5],
+    ])
+    expect(idle!.daily[1]!.idlePct).toBeCloseTo(50, 6)
+    // La suma de la serie es la misma que los totales de la sección: el gráfico y las cifras no pueden discrepar.
+    expect(idle!.daily.reduce((sum, point) => sum + point.operatingHours, 0)).toBeCloseTo(idle!.operatingHours, 6)
+  })
+
+  it("CHART-024: la serie diaria respeta el alcance — un usuario de la faena B no ve ni la ficha de A, y la de B sólo trae lo suyo", async () => {
+    // De otra faena la ficha no existe: tampoco hay serie diaria que filtrar.
+    expect(await getEquipmentFile(session({ global: false, worksiteIds: [IDS.wsB] }), IDS.vA, MARCH)).toBeNull()
+    const own = (await getEquipmentFile(session({ global: false, worksiteIds: [IDS.wsB] }), IDS.vB, MARCH))!
+    expect(own.idle!.daily.map((point) => [point.day, point.operatingHours])).toEqual([["2026-03-02", 5]])
+    // Y con A en su alcance, ni una hora de B se cuela en la serie de A.
+    const forA = (await getEquipmentFile(session({ global: false, worksiteIds: [IDS.wsA] }), IDS.vA, MARCH))!
+    expect(forA.idle!.daily).toHaveLength(3)
   })
 
   it("sin telemetría no hay sección, no un 0 %", async () => {

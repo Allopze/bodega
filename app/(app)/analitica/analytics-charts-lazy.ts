@@ -2,28 +2,18 @@
 
 import dynamic from "next/dynamic"
 import type { ComponentType } from "react"
-import type { SpendByMonthRow, SpendByModuleRow, VehicleCostRow, WorksiteSpendRow } from "@/lib/services/analytics"
+import type { SpendByMonthRow } from "@/lib/services/analytics"
+import type { ParetoChartRow } from "./analytics-charts"
 
-type MonthlySpendChartType = ComponentType<{ data: SpendByMonthRow[] }>
-type ModuleSpendChartType = ComponentType<{ data: SpendByModuleRow[] }>
-type RankingBarChartType = ComponentType<{
-  data: Array<WorksiteSpendRow | VehicleCostRow>
-  labelKey: "name" | "plate"
-  valueKey: "totalAmount" | "totalOperationalCost" | "totalFuelAmount"
-  emptyLabel: string
-}>
+type MonthlySpendChartType = ComponentType<{ data: SpendByMonthRow[]; showFuel: boolean }>
+type SupplierParetoChartType = ComponentType<{ rows: ParetoChartRow[]; thresholdPct: number }>
 
 export const MonthlySpendChart = dynamic(
   () => import("./analytics-charts").then((m) => m.MonthlySpendChart),
   { ssr: false },
 ) as MonthlySpendChartType
 
-export const ModuleSpendChart = dynamic(
-  () => import("./analytics-charts").then((m) => m.ModuleSpendChart),
+export const SupplierParetoChart = dynamic(
+  () => import("./analytics-charts").then((m) => m.SupplierParetoChart),
   { ssr: false },
-) as ModuleSpendChartType
-
-export const RankingBarChart = dynamic(
-  () => import("./analytics-charts").then((m) => m.RankingBarChart),
-  { ssr: false },
-) as RankingBarChartType
+) as SupplierParetoChartType

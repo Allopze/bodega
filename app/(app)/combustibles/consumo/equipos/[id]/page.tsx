@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { DegradedDataBanner } from "@/components/ui/degraded-data-banner"
 import { EmptyState } from "@/components/ui/empty-state"
+import { ChartSection } from "@/components/charts/chart-section"
 import { PageContainer } from "@/components/ui/page-container"
 import { PageHeader } from "@/components/ui/page-header"
 import { SummaryBar, type SummaryStat } from "@/components/ui/summary-bar"
@@ -17,11 +18,13 @@ import { can, requirePermission } from "@/lib/auth/can"
 import { PERFORMANCE_FAMILY_LABELS, PERFORMANCE_FAMILY_SLUGS, PERFORMANCE_UNIT_LABELS, PERFORMANCE_UNIT_TITLES, STAT_MISSING } from "@/lib/combustibles/control/contracts"
 import { WORSE_PERFORMANCE_THRESHOLD_PCT } from "@/lib/combustibles/control/view-helpers"
 import { getEquipmentFile } from "@/lib/combustibles/equipment/get-equipment-file"
+import { describeIdleDaily, idleDailyChartData, idleDailyTable } from "@/lib/combustibles/equipment/idle-daily"
 import { litersWindowLabel } from "@/lib/combustibles/equipment/liters-by-month"
 import type { EquipmentFile } from "@/lib/combustibles/equipment/types"
 import { resolveFuelPeriodForPage } from "@/lib/combustibles/period/server"
 import { FUEL_PATHS, fuelPerformanceHref } from "@/lib/combustibles/routes"
 import { formatDate, formatDateTime, formatQty } from "@/lib/utils"
+import { IdleDailyChartLazy } from "../../../control/_charts/idle-charts-lazy"
 import { hrefInContext } from "../../../control/_components/page-links"
 import { RegularityBadge } from "../../rendimiento/[familia]/stats-tables"
 import { EquipmentLitersChart } from "./equipment-liters-chart-lazy"
@@ -200,6 +203,16 @@ export default async function FichaEquipoPage({ params, searchParams }: { params
             <Metric label="Días con actividad" value={formatQty(idle.activeDays)} />
             <Metric label="Litros en vacío" value={idle.litersIdle === null ? STAT_MISSING : `${formatQty(idle.litersIdle, undefined, { maximumFractionDigits: 1 })} L`} />
           </dl>
+          <ChartSection
+            bare
+            headingLevel={3}
+            className="mt-4"
+            title="Horas de motor y % en vacío, día a día"
+            summary={describeIdleDaily(idle.daily) ?? undefined}
+            data={{ caption: `Horas de motor y porcentaje en vacío por día de ${vehicle.label}`, ...idleDailyTable(idle.daily) }}
+          >
+            <IdleDailyChartLazy data={idleDailyChartData(idle.daily)} ariaLabel={`Horas de motor por día y porcentaje en vacío de ${vehicle.label}`} />
+          </ChartSection>
         </section>
       ) : null}
 

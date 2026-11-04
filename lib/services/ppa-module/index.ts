@@ -16,6 +16,8 @@ export {
   getPpa,
   type PpaStats,
   getPpaStats,
+  getPpaMonthlySeries,
+  getPpaDetentionByWorksite,
 } from "./calculos"
 
 export {

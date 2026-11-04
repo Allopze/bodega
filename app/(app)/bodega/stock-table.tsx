@@ -10,6 +10,13 @@ import { StockExportButton } from "./stock-export-button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import { Tooltip } from "@/components/ui/tooltip"
 import { StockRowMenu, productMovementsHref } from "./stock-row-menu"
+import {
+  COVERAGE_BANDS,
+  coverageBarFraction,
+  coverageCellDetail,
+  coverageCellLabel,
+  type StockCoverage,
+} from "@/lib/bodega/stock-coverage"
 
 export interface StockTableProps {
   worksites: Array<{
@@ -24,7 +31,7 @@ export interface StockTableProps {
 }
 
 type GroupBy = "faena" | "producto"
-type SortKey = "name" | "quantity" | "lastMovementAt"
+type SortKey = "name" | "quantity" | "lastMovementAt" | "coverage"
 type SortDir = "asc" | "desc"
 
 /** Una banda de la tabla: el encabezado del grupo y sus filas ya rotuladas. */
@@ -98,6 +105,16 @@ function sortRows(rows: StockGroup["rows"], key: SortKey, dir: SortDir): StockGr
     switch (key) {
       case "quantity":
         return (a.item.quantity - b.item.quantity) * factor
+      case "coverage": {
+        // Sin cifra de días (sin consumo, datos insuficientes, línea sin registro)
+        // va al final mire hacia donde mire el orden: no es ni lo más ni lo menos urgente.
+        const aDays = a.item.coverage?.days ?? null
+        const bDays = b.item.coverage?.days ?? null
+        if (aDays === null && bDays === null) return 0
+        if (aDays === null) return 1
+        if (bDays === null) return -1
+        return (aDays - bDays) * factor
+      }
       case "lastMovementAt": {
         // Sin movimiento va siempre al final, mire hacia donde mire el orden:
         // un "—" no es ni el más viejo ni el más nuevo.
@@ -281,9 +298,38 @@ function AvailabilityHeader({ label, definition }: { label: string; definition: 
   )
 }
 
+/**
+ * Cobertura de una línea: los días que alcanza el saldo, con una barra que se
+ * llena a los 60 días. La barra es sólo dibujo (`aria-hidden`): la cifra y su
+ * estado van en texto, así que el color nunca carga solo el significado. Sin cifra
+ * (sin consumo, datos insuficientes) no hay barra, y el n queda en el `title`.
+ */
+function CoverageCell({ coverage, align = "right" }: { coverage: StockCoverage | undefined; align?: "left" | "right" }) {
+  if (!coverage) return <span className="text-[var(--color-text-faint)]">—</span>
+  const meta = COVERAGE_BANDS[coverage.band]
+  const measured = coverage.days !== null
+  return (
+    <span
+      title={coverageCellDetail(coverage)}
+      className={cn("inline-flex items-center gap-2", align === "right" ? "justify-end" : "justify-start")}
+    >
+      {measured && (
+        <span aria-hidden className="h-1.5 w-14 shrink-0 overflow-hidden rounded-full bg-[var(--color-surface-2)]">
+          <span className="block h-full rounded-full" style={{ width: `${coverageBarFraction(coverage.days ?? 0) * 100}%`, background: meta.color }} />
+        </span>
+      )}
+      <span className={cn("tabular-nums", measured ? "font-semibold" : "text-xs", meta.textClass)}>
+        {coverageCellLabel(coverage)}
+      </span>
+    </span>
+  )
+}
+
 export function StockTable({ worksites, canExport, canDeliver = false, canAdjust = false }: StockTableProps) {
   const hasRowActions = canDeliver || canAdjust
   const allItems = worksites.flatMap((ws) => ws.items)
+  // La columna existe sólo si la página calculó la cobertura (CHART-035a).
+  const hasCoverage = allItems.some((item) => item.coverage !== undefined)
   const productCount = new Set(allItems.map((item) => item.productId)).size
   const incomingOnlyCount = allItems.filter((item) => item.quantity <= 0 && item.incoming > 0).length
   const [groupBy, setGroupBy] = useGroupBy()
@@ -406,6 +452,12 @@ export function StockTable({ worksites, canExport, canDeliver = false, canAdjust
                             {formatQty(s.incoming, unit)}
                           </dd>
                         </div>
+                        {hasCoverage && (
+                          <div>
+                            <dt className="text-[var(--color-text-subtle)]">Cobertura</dt>
+                            <dd className="mt-0.5 text-sm"><CoverageCell coverage={s.coverage} align="left" /></dd>
+                          </div>
+                        )}
                         <div>
                           <dt className="text-[var(--color-text-subtle)]">Último movimiento</dt>
                           <dd className="mt-0.5 tabular-nums text-[var(--color-text-muted)]">
@@ -433,8 +485,9 @@ export function StockTable({ worksites, canExport, canDeliver = false, canAdjust
                 Stock por producto, agrupado por {groupBy === "faena" ? "faena" : "producto"}
               </caption>
               <colgroup>
-                <col className="w-80" />
+                <col className={hasCoverage ? "w-72" : "w-80"} />
                 <col className="w-32" />
+                {hasCoverage && <col className="w-44" />}
                 <col className="w-36" />
                 <col className="w-44" />
                 {hasRowActions && <col className="w-14" />}
@@ -451,6 +504,13 @@ export function StockTable({ worksites, canExport, canDeliver = false, canAdjust
                     sortKey="quantity" active={sort.key === "quantity"} dir={sort.dir} onSort={handleSort}
                     className="px-5 py-2.5 text-right font-semibold"
                   />
+                  {hasCoverage && (
+                    <SortableHeader
+                      label="Cobertura"
+                      sortKey="coverage" active={sort.key === "coverage"} dir={sort.dir} onSort={handleSort}
+                      className="px-5 py-2.5 text-right font-semibold"
+                    />
+                  )}
                   <AvailabilityHeader label="Por recibir" definition={INCOMING_DEFINITION} />
                   <SortableHeader
                     label="Último movimiento"
@@ -474,7 +534,7 @@ export function StockTable({ worksites, canExport, canDeliver = false, canAdjust
                     <TableRow>
                       <TableHead
                         scope="rowgroup"
-                        colSpan={hasRowActions ? 5 : 4}
+                        colSpan={(hasRowActions ? 5 : 4) + (hasCoverage ? 1 : 0)}
                         className="bg-[var(--color-surface-2)] px-5 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]"
                       >
                         {/* Un <button> y no <details>: `details` no es válido
@@ -515,6 +575,9 @@ export function StockTable({ worksites, canExport, canDeliver = false, canAdjust
                             {formatQty(s.quantity)}
                           </span>
                         </TableCell>
+                        {hasCoverage && (
+                          <TableCell className="text-right"><CoverageCell coverage={s.coverage} /></TableCell>
+                        )}
                         <TableCell className="text-right font-mono text-sm tabular-nums">
                           {formatQty(s.incoming)}
                         </TableCell>

@@ -459,11 +459,14 @@ plataforma; el tablero suma su excepción de superficie (regla 7 de AGENTS.md).
 | `ChartDataTable` | Alternativa textual | `<details>` «Ver datos»; server-safe. |
 | `BulletBar` | Medida contra capacidad/meta | `role="meter"`; marcas rotuladas; reemplaza radiales y barras sin contexto. |
 | `AgingBar` | Pendientes por antigüedad | Tramos en orden cronológico, color secuencial, cifra visible por tramo, cada tramo enlaza a su subconjunto. |
-| `ComplianceCalendar` | Filas × períodos con estado | `<table>` real; ícono + color + texto oculto por celda; contenedor desplazable con foco de teclado. `statusLabels` cambia los rótulos (Fuentes: Completo/Parcial/Sin datos); `selected` y `linkNavigation` para cuando filtra la misma pantalla. Adaptador de programas de Prevención: `ProgramComplianceSection`. |
+| `ComplianceCalendar` | Filas × períodos con estado | `<table>` real; ícono + color + texto oculto por celda; contenedor desplazable con foco de teclado. `statusLabels` cambia los rótulos (Fuentes: Completo/Parcial/Sin datos); `selected` y `linkNavigation` para cuando filtra la misma pantalla. Adaptador de programas de Prevención: `ProgramComplianceSection` (casillas, cierres mensuales del PDTP, sesiones del CPHS; `wording`/`statusLabels`/`legend` cambian el vocabulario cuando la celda no es una «actividad hecha», y `hrefFor` puede devolver `undefined` para una celda sin a dónde llevar). |
+| `MonthlyTrendChart` | Serie mensual: conteos apilados + una línea de % opcional | Eje de conteos a la izquierda y de % (0–100) a la derecha (A5b). El mes en curso es parcial (columna tenue, tramo punteado) y la línea se corta donde `rate` es `null` (sin dato o datos insuficientes, nunca 0). Los meses vacíos entre dos con datos se rellenan (`fillMonthSeries`): un hueco se ve. Inspecciones, alcotest y PPA. |
 | `ShareBar` | Partes excluyentes de un total (estado de una solicitud) | Barra 100 % en el orden del dominio, color por token, leyenda con cifra y enlace por parte; segmentos fuera del tabulador. |
 | `RiskMatrix` / `ResidualBands` | Matriz P×C de la MIPER | Tabla 3×3 con conteo y clase por celda; clases discretas (`risk-bands.ts`), nunca interpolado. |
 | `RiskShareBar` | Mezcla de clasificaciones de riesgo en una celda de tabla | Versión compacta de `ShareBar` para las 4 bandas del RE-04. |
 | `DebtAgingChart`, `BillingFlowChart`, `ChartFrame` | Facturación y tablero | Movidos desde `dashboard/charts/` (quedan re-exports allí). |
+| `StageDurationBar` | Plazos por tramo de un proceso (solicitud → aprobación → OC → llegada → entrega) | Una barra apilada por grupo (todas las faenas, cada faena), un segmento por tramo con el largo de su **mediana** y una marca en el P90 del plazo total. Toda cifra va con su `n`; con menos de 5 ítems el tramo dice «datos insuficientes» y no dibuja (P90 desde 10). La barra suma medianas y el total se mide ítem por ítem: la nota al pie lo dice. Rampa de un matiz en OKLab, nunca OKLCH. Sólo ítems cerrados (sesgo de supervivencia declarado). Cálculo en `lib/services/analytics-module/lead-time-shape.ts`. |
+| `GroupedBarList` | Dos conteos de la **misma unidad** por categoría (ítems sin OC y OC por recibir, por faena) | Barras agrupadas como lista CSS: una fila por categoría, una barra y una cifra por serie, escala común. Si las series son de escala distinta no es este componente (A5b). |
 
 ### Reglas
 
@@ -473,6 +476,14 @@ plataforma; el tablero suma su excepción de superficie (regla 7 de AGENTS.md).
 - Un mes en curso o sin datos del proveedor se marca (parcial / hueco), nunca
   se dibuja como una caída.
 - Torta sólo para 2–3 partes de un todo; en cualquier otro caso, barra.
+- **Una tasa o un plazo nunca va sin su `n`** y, con muestra pequeña, dice «datos
+  insuficientes» en vez de un número. Una frase-resumen es verdadera de lo que el
+  gráfico muestra también en los estados parciales: el mes parcial y el mes sin datos
+  del proveedor no compiten por «el mayor», y sin permiso de costos la frase habla sólo
+  de lo que se ve («del gasto en compras»).
+- **Una base de fecha por magnitud, dicha en pantalla.** El gasto en OC se fecha por
+  **emisión** (`issuedAt` + `issuedOrderPredicate`) y con IVA en `/analitica`, `/reportes`
+  y Finanzas del tablero; `lib/__tests__/analytics-finance-parity.test.ts` lo exige.
 
 ## Accesibilidad
 

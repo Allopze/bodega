@@ -6,6 +6,16 @@ import { can, requireAuth } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { getPdtpProgram } from "@/lib/services/prevention-pdtp"
 import { listPdtpPeriodClosures } from "@/lib/services/pdtp/period-closures"
+import { getPdtpClosureCalendarData } from "@/lib/services/pdtp/closure-calendar"
+import { currentPdtpPeriod } from "@/lib/services/pdtp/period"
+import {
+  CLOSURE_CALENDAR_WORDING,
+  CLOSURE_LEGEND,
+  CLOSURE_STATUS_LABELS,
+  buildClosureCalendar,
+} from "@/lib/prevention/pdtp-closure-calendar"
+import { ProgramComplianceSection } from "@/components/prevention/program-compliance-section"
+import { buildPdtpProgramHref } from "../../pdtp-context"
 import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -43,7 +53,17 @@ export default async function PdtpPeriodClosuresPage({ params }: PageProps) {
 
   const scope = resolveWorksiteScope(session)
   const worksiteIds: string[] | "all" = scope.mode === "all" ? "all" : scope.mode === "some" ? scope.ids : []
-  const closures = await listPdtpPeriodClosures(programId, worksiteIds)
+  const [closures, calendarData] = await Promise.all([
+    listPdtpPeriodClosures(programId, worksiteIds),
+    // CHART-008: qué faena debe qué mes. La lista de abajo sólo muestra lo que SE cerró.
+    getPdtpClosureCalendarData(programId, worksiteIds),
+  ])
+  const calendar = buildClosureCalendar({
+    year: calendarData?.year ?? program.year,
+    today: currentPdtpPeriod(),
+    worksites: calendarData?.worksites ?? [],
+    closedMonths: calendarData?.closedMonths ?? new Map(),
+  })
   const canClose = can(session, "prevention:pdtp:close_period")
 
   return (
@@ -60,6 +80,24 @@ export default async function PdtpPeriodClosuresPage({ params }: PageProps) {
             { label: "Cierres mensuales" },
           ]} />
         }
+      />
+
+      {/* Sin faenas con meses exigibles (programa sin activar, o sin faenas en el alcance) el
+        * calendario no se dibuja: la lista de abajo ya explica que no hay cierres. */}
+      <ProgramComplianceSection
+        title={`Cierres mensuales ${program.year}`}
+        caption={`Cierre mensual del programa ${program.year}, por faena`}
+        calendar={calendar}
+        noun={{ singular: "faena", plural: "faenas" }}
+        rowHeader="Faena"
+        wording={CLOSURE_CALENDAR_WORDING}
+        statusLabels={CLOSURE_STATUS_LABELS}
+        legend={[...CLOSURE_LEGEND]}
+        // Un mes pendiente se cierra desde la vista del programa, eligiendo la faena: el clic
+        // lleva allí (es navegación a otra página, no un filtro de ésta).
+        hrefFor={(worksiteId) => buildPdtpProgramHref(programId, { faena: worksiteId })}
+        linkNavigation={{}}
+        className="mb-4"
       />
 
       {closures.length === 0 ? (

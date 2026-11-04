@@ -12,7 +12,7 @@
  * error que ya documentó la N°28 (cerrar inspecciones una por una en vez de
  * por el conjunto). `alcoholTestDispatches` es la entidad de ese lote.
  */
-import { and, asc, eq, gte, inArray, lt } from "drizzle-orm"
+import { and, asc, desc, eq, gte, inArray, lt, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { alcoholTestDispatches, alcoholTests, serviceEquipment, workers } from "@/db/schema"
 import { nanoid } from "@/lib/id"
@@ -226,14 +226,53 @@ export async function recordAlcoholTest(
   return created
 }
 
-export async function listAlcoholTests(scope: WorksiteScope, worksiteId?: string) {
+export async function listAlcoholTests(scope: WorksiteScope, worksiteId?: string, options: { limit?: number } = {}) {
   if (worksiteId) assertWorksiteAccess(worksiteId, scope)
   if (scope !== "all" && scope.length === 0) return []
-  const rows = await db.select().from(alcoholTests)
-  const scoped = worksiteId
-    ? rows.filter((row) => row.worksiteId === worksiteId)
-    : scope === "all" ? rows : rows.filter((row) => scope.includes(row.worksiteId))
-  return scoped.sort((a, b) => b.performedAt.localeCompare(a.performedAt))
+  // El alcance y el orden viajan al SQL. Antes la función hacía `select()` de la
+  // tabla ENTERA y filtraba y ordenaba en JavaScript: crecía con cada control de
+  // todas las faenas aunque la pantalla sólo muestre los 30 últimos de las suyas.
+  const query = db.select().from(alcoholTests)
+    .where(and(
+      worksiteId ? eq(alcoholTests.worksiteId, worksiteId) : undefined,
+      scope === "all" ? undefined : inArray(alcoholTests.worksiteId, scope),
+    ))
+    .orderBy(desc(alcoholTests.performedAt), desc(alcoholTests.id))
+  return options.limit === undefined ? await query : await query.limit(options.limit)
+}
+
+/**
+ * Los controles de alcotest por mes, agregados en SQL (CHART-010): cuántos hubo y
+ * cuántos dieron positivo. NO trae filas de controles —ni nombres— para contarlas
+ * después; devuelve una fila por mes.
+ *
+ * - **Alcance**: `scope` es el de la sesión. Con `worksiteId` se acota a una
+ *   faena, y pedir una fuera del alcance lanza, igual que `listAlcoholTests`. Un
+ *   alcance vacío no tiene serie.
+ * - **Mes civil chileno** (`AT TIME ZONE 'America/Santiago'`): un control del 31
+ *   de agosto a las 22:00 es de agosto aunque en UTC ya sea septiembre.
+ * - `since` (`YYYY-MM-DD`) acota la ventana en SQL.
+ */
+export async function summarizeAlcoholTestsByMonth(
+  scope: WorksiteScope,
+  options: { since: string; worksiteId?: string },
+): Promise<Array<{ month: string; total: number; positives: number }>> {
+  if (options.worksiteId) assertWorksiteAccess(options.worksiteId, scope)
+  if (scope !== "all" && scope.length === 0) return []
+  const month = sql`to_char(${alcoholTests.performedAt} AT TIME ZONE 'America/Santiago', 'YYYY-MM')`
+  return db.select({
+    month: sql<string>`${month}`,
+    total: sql<number>`COUNT(*)::int`,
+    positives: sql<number>`COUNT(*) FILTER (WHERE ${alcoholTests.result} = 'positivo')::int`,
+  })
+    .from(alcoholTests)
+    .where(and(
+      options.worksiteId ? eq(alcoholTests.worksiteId, options.worksiteId) : undefined,
+      scope === "all" ? undefined : inArray(alcoholTests.worksiteId, scope),
+      sql`(${alcoholTests.performedAt} AT TIME ZONE 'America/Santiago')::date >= ${options.since}`,
+    ))
+    .groupBy(month)
+    .orderBy(month)
 }
 
 export type RecordAlcoholTestDispatchInput = {

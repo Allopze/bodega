@@ -102,3 +102,46 @@ describe("ProgramComplianceSection", () => {
     expect(screen.queryByRole("table")).toBeNull()
   })
 })
+
+describe("ProgramComplianceSection — otros vocabularios y enlaces", () => {
+  const closureWording = {
+    unit: { singular: "cierre", plural: "cierres" },
+    done: { singular: "hecho", plural: "hechos" },
+    overdue: { singular: "vencido", plural: "vencidos" },
+    noneDue: "Todavía no hay cierres exigibles.",
+    naEmpty: "sin cierre exigible",
+    naBeforeActivation: "anterior a la activación del programa",
+  }
+
+  it("una frase de cierres habla de cierres, no de actividades", () => {
+    const calendar = buildSlotCalendar({
+      year: 2026, today: TODAY, wording: closureWording,
+      rows: [{ id: "a", label: "Faena Alfa" }],
+      slots: [{ rowId: "a", month: 2, week: 4, status: "pending" }],
+    })
+    renderSection({ calendar, wording: closureWording })
+    const figure = screen.getByRole("figure", { name: "Cumplimiento del programa 2026" })
+    expect(within(figure).getByText("1 de 1 faena tiene cierres vencidos sin cumplir; la más atrasada es Faena Alfa, con 1 cierre en 1 mes.")).toBeDefined()
+    expect(figure.textContent).not.toContain("actividad")
+    // «Ver datos» también usa el vocabulario: encabezados de cierres.
+    expect(within(figure).getByText("Cierres exigibles")).toBeDefined()
+    expect(within(figure).getByText("Vencidos sin hacer")).toBeDefined()
+  })
+
+  it("los rótulos de estado propios llegan a la leyenda y a cada celda", () => {
+    renderSection({ statusLabels: { ok: "Cerrado", missing: "Sin cerrar" } })
+    const table = screen.getByRole("table", { name: "Cumplimiento mensual 2026, por faena" })
+    expect(within(table).getByText("Cerrado, 1 de 1 hecha")).toBeDefined()
+    expect(within(table).getAllByText("Sin cerrar, 0 de 1 hecha").length).toBeGreaterThan(0)
+  })
+
+  it("una fila sin a dónde llevar deja la celda sin enlace en vez de un enlace roto", () => {
+    renderSection({ hrefFor: (rowId, month) => (rowId === "a" ? `/vista?faena=${rowId}&mes=${month}` : undefined), clearHref: undefined })
+    const table = screen.getByRole("table", { name: "Cumplimiento mensual 2026, por faena" })
+    expect(within(table).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual([
+      "/vista?faena=a&mes=1",
+      "/vista?faena=a&mes=2",
+    ])
+  })
+})
+

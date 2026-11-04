@@ -236,3 +236,69 @@ export async function getPpaStats(worksiteIds: string[] | "all"): Promise<PpaSta
     topFaenas:              topFaenasRows.map((r) => ({ worksiteName: r.worksiteName ?? "—", count: r.count })),
   }
 }
+
+/**
+ * Mes y día civiles chilenos en que se llenó el PPA.
+ *
+ * `LEAST(filled_at, created_at)`: `filled_at` lo manda el reloj del dispositivo
+ * (un envío encolado offline llega días después y el valor probatorio depende de
+ * cuándo se llenó, no de cuándo llegó), pero un reloj adelantado no puede fechar
+ * un PPA en un mes que todavía no ocurrió: el servidor lo recibió, así que nada
+ * se llenó después de `created_at`. `LEAST` ignora los NULL de `filled_at`, y
+ * ahí cae en `created_at`.
+ */
+const PPA_FILLED_AT = sql`LEAST(${ppaSubmissions.filledAt}, ${ppaSubmissions.createdAt})`
+const PPA_MONTH = sql`to_char(${PPA_FILLED_AT} AT TIME ZONE 'America/Santiago', 'YYYY-MM')`
+
+function ppaWindowConditions(worksiteIds: string[] | "all", since: string) {
+  return and(
+    worksiteIds !== "all" ? inArray(ppaSubmissions.worksiteId, worksiteIds) : undefined,
+    sql`(${PPA_FILLED_AT} AT TIME ZONE 'America/Santiago')::date >= ${since}`,
+  )
+}
+
+/**
+ * PPA y PPA detenidos por mes (CHART-011), agregados en SQL. Sólo sumas: la tasa
+ * y la regla de «datos insuficientes» viven en `lib/ppa/detention-rate.ts`.
+ * `since` (`YYYY-MM-DD`) acota la ventana en la consulta; `worksiteIds` es el
+ * alcance de la sesión (una lista vacía no tiene serie).
+ */
+export async function getPpaMonthlySeries(
+  worksiteIds: string[] | "all",
+  options: { since: string },
+): Promise<Array<{ month: string; total: number; detained: number }>> {
+  if (worksiteIds !== "all" && worksiteIds.length === 0) return []
+  return db.select({
+    month: sql<string>`${PPA_MONTH}`,
+    total: sql<number>`COUNT(*)::int`,
+    detained: sql<number>`COUNT(*) FILTER (WHERE ${ppaSubmissions.resultado} = 'detenido')::int`,
+  })
+    .from(ppaSubmissions)
+    .where(ppaWindowConditions(worksiteIds, options.since))
+    .groupBy(PPA_MONTH)
+    .orderBy(PPA_MONTH)
+}
+
+/**
+ * PPA y detenidos por faena en la misma ventana (CHART-011). Trae TODAS las
+ * faenas con PPA —no un top 5 por conteo— porque el ranking es por tasa y una
+ * faena con pocos PPA hay que nombrarla como «datos insuficientes», no omitirla.
+ */
+export async function getPpaDetentionByWorksite(
+  worksiteIds: string[] | "all",
+  options: { since: string },
+): Promise<Array<{ worksiteId: string; worksiteName: string; total: number; detained: number }>> {
+  if (worksiteIds !== "all" && worksiteIds.length === 0) return []
+  const rows = await db.select({
+    worksiteId: ppaSubmissions.worksiteId,
+    worksiteName: worksites.name,
+    total: sql<number>`COUNT(*)::int`,
+    detained: sql<number>`COUNT(*) FILTER (WHERE ${ppaSubmissions.resultado} = 'detenido')::int`,
+  })
+    .from(ppaSubmissions)
+    .innerJoin(worksites, eq(ppaSubmissions.worksiteId, worksites.id))
+    .where(ppaWindowConditions(worksiteIds, options.since))
+    .groupBy(ppaSubmissions.worksiteId, worksites.name)
+    .orderBy(worksites.name)
+  return rows
+}

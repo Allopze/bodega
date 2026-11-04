@@ -1,10 +1,14 @@
 import { renderToStaticMarkup } from "react-dom/server"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import type { IdleEquipmentMonthRow, IdleStats } from "@/lib/combustibles/control/queries/idle"
 import { resolvePagination } from "@/lib/pagination"
-import { LitersPerHourTable, TopIdleDaysTable } from "./comparison-sections"
+import { LitersPerHourSection, LitersPerHourTable, TopIdleDaysTable } from "./comparison-sections"
 import { EquipmentMonthTable } from "./equipment-month-table"
 import { IdleTopEquipmentTable } from "./top-equipment-table"
+
+vi.mock("next/link", () => ({ default: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => <a href={href} {...rest}>{children}</a> }))
+// Recharts sólo corre en el navegador: acá importa lo que la sección dice alrededor del gráfico.
+vi.mock("../../control/_charts/idle-charts-lazy", () => ({ LphScatterChartLazy: ({ view }: { view: { points: unknown[] } }) => <div data-testid="lph-chart">{view.points.length} puntos</div> }))
 
 const stats: IdleStats = {
   operatingHours: 100, idleHours: 25, workingHours: 75, activeDays: 10, idlePct: 25, dailyAvgPct: 24, dailyMaxPct: 60, dailyMinPct: 5,
@@ -75,5 +79,57 @@ describe("IdleTopEquipmentTable", () => {
     const html = renderToStaticMarkup(<IdleTopEquipmentTable rows={[]} />)
     expect(html).toContain("agrega la telemetría")
     expect(html).not.toContain("<table")
+  })
+})
+
+describe("LitersPerHourSection (CHART-021)", () => {
+  const row = (vehicleId: string, month: string, telemetryLph: number | null, loadsLph: number | null, loadCount = 2) => ({
+    vehicleId, equipment: `${vehicleId.toUpperCase()} · PL-${vehicleId}`, month, telemetryLph, loadsLph, loadCount, differencePct: null,
+  })
+  const render = (rows: ReturnType<typeof row>[]) => renderToStaticMarkup(<LitersPerHourSection rows={rows} equipmentHref={(id) => `/combustibles/consumo/equipos/${id}?periodo=2026-03`} cargasHref="/combustibles/cargas?periodo=2026-03" />)
+
+  it("sin telemetría cae a la tabla vacía de siempre, sin gráfico", () => {
+    const out = render([])
+
+    expect(out).toContain("No hay telemetría en este período para comparar con las cargas.")
+    expect(out).not.toContain('data-testid="lph-chart"')
+  })
+
+  it("con pares dibuja el gráfico, dice cuántos quedan fuera de la banda, lista los equipos con enlace a su ficha y conserva la tabla completa", () => {
+    const out = render([row("a", "2026-03", 10.2, 10), row("b", "2026-03", 16, 10), row("c", "2026-03", 5, 10)])
+
+    expect(out).toContain('data-testid="lph-chart"')
+    expect(out).toContain("De 3 pares equipo-mes con telemetría y cargas, 2 quedan fuera de la banda de ±15 %")
+    expect(out).toContain('href="/combustibles/consumo/equipos/b?periodo=2026-03"')
+    expect(out).toContain('href="/combustibles/consumo/equipos/c?periodo=2026-03"')
+    expect(out).not.toContain('href="/combustibles/consumo/equipos/a?periodo=2026-03"')
+    // La tabla de L/h por equipo y mes sigue debajo: «Ver datos» y la tabla no se reemplazan.
+    expect(out).toContain('aria-label="L/h de telemetría frente a L/h de cargas"')
+    expect(out).toContain("Ver datos")
+    // Pocos equipos: no se infiere una conclusión de flota.
+    expect(out).toContain("Son sólo 3 equipos")
+  })
+
+  it("un mes con telemetría pero sin cargas no aparece en el gráfico: se dice, y la tabla sigue diciendo «Sin cargas en el mes»", () => {
+    const out = render([row("a", "2026-03", 10.2, 10), row("a", "2026-04", 9, null, 0)])
+
+    expect(out).toContain("1 equipo-mes con telemetría no tiene cargas con L/h para comparar")
+    expect(out).toContain("Sin cargas en el mes")
+  })
+
+  it("si ninguna fila tiene los dos lados, explica el vacío con un enlace real a las cargas en vez de un gráfico en cero", () => {
+    const out = render([row("a", "2026-03", 10.2, null, 0)])
+
+    expect(out).not.toContain('data-testid="lph-chart"')
+    expect(out).toContain("Ningún equipo tiene telemetría y cargas con L/h en el mismo mes")
+    expect(out).toContain('href="/combustibles/cargas?periodo=2026-03"')
+  })
+
+  it("con más de 10 equipos fuera de la banda lista 10 y avisa que «Ver datos» trae todos", () => {
+    const rows = Array.from({ length: 12 }, (_, index) => row(`v${index}`, "2026-03", 20 + index, 10))
+    const out = render(rows)
+
+    expect(out).toContain("Se listan 10 de 12")
+    expect(out.match(/href="\/combustibles\/consumo\/equipos\/v\d+/g)).toHaveLength(10)
   })
 })

@@ -63,6 +63,8 @@ test.describe("Combustibles module", () => {
     for (const titulo of [
       "Litros por mes, según de dónde salió",
       "De dónde vino lo cargado",
+      // CHART-016: la tasa (km/L, L/h) mes a mes, de las lecturas de medidor de Copec; las barras de abajo siguen siendo las de cargas.
+      "Rendimiento por mes",
       "Kilómetros contra litros",
       "Horas contra litros",
       "Patentes para mirar",

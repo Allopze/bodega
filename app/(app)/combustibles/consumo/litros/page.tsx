@@ -14,6 +14,7 @@ import { getConsumptionByEquipmentType, getConsumptionDashboard, getConsumptionS
 import { buildWatchItems } from "@/lib/combustibles/consumption-watch"
 import { consumptionChartWindow } from "@/lib/combustibles/consumption-period"
 import { PERFORMANCE_FAMILIES, PERFORMANCE_FAMILY_SLUGS, PERFORMANCE_UNIT_LABELS } from "@/lib/combustibles/control/contracts"
+import { getMeterRateSeries } from "@/lib/combustibles/control/queries/meter-rates"
 import { getLitersByMonthAndMedium, getMeterSeries, getOverviewHeader, getWorksiteMediumCrosstab, hasAnyLoads } from "@/lib/combustibles/control/queries/overview"
 import { controlFiltersFromPeriod, exportParamsFromFilters } from "@/lib/combustibles/control/queries/period-filters"
 import { pivotMonthlyByMedium } from "@/lib/combustibles/control/view-helpers"
@@ -40,6 +41,7 @@ import { createSourceTracker } from "../../control/_components/track-sources"
 import { UrlFold } from "../_components/url-fold"
 import { CardsAnalysis } from "./cards-analysis"
 import { exportOverviewAction } from "./export-actions"
+import { MeterRateSections } from "./meter-rate-sections"
 import { PlanillaAnalysis } from "./planilla-analysis"
 import { WorksiteMedium } from "./worksite-medium"
 
@@ -92,12 +94,13 @@ export default async function ConsumoLitrosPage({ searchParams }: { searchParams
   const cardConsumption = normalizeConsumptionFilters({ fromDate: period.from, toDate: period.to, worksiteId: filters.worksiteId, fuente, patente, associated })
 
   const { track, degraded, total } = createSourceTracker("combustibles/consumo/litros")
-  const [ctx, header, previousHeader, monthly, series, origins, dashboard, anyLoads] = await Promise.all([
+  const [ctx, header, previousHeader, monthly, series, rates, origins, dashboard, anyLoads] = await Promise.all([
     loadControlContext(session, { years: false }),
     track(getOverviewHeader(session, filters), null, "litros del período"),
     previousFilters ? track(getOverviewHeader(session, previousFilters), null, "litros del período anterior") : Promise.resolve({ data: null, failed: false }),
     track(getLitersByMonthAndMedium(session, historyFilters), null, "litros por mes y medio"),
     track(getMeterSeries(session, historyFilters), null, "kilómetros y horas contra litros"),
+    track(getMeterRateSeries(session, filters, { from: chartWindow.from, to: chartWindow.to, monthKeys: chartWindow.monthKeys }), null, "rendimiento por mes"),
     track(getFuelControlOverview(session, { filters: baseConsumption, includeTae: canViewTae }), null, "origen de lo cargado"),
     track(getConsumptionDashboard(session, baseConsumption), null, "consumo por tarjeta"),
     track(hasAnyLoads(session), true, "cargas en el alcance"),
@@ -111,7 +114,9 @@ export default async function ConsumoLitrosPage({ searchParams }: { searchParams
       hasCardFilters ? track(getConsumptionDashboard(session, cardConsumption), null, "análisis de tarjetas") : Promise.resolve(dashboard),
       track(getConsumptionByEquipmentType(session, cardConsumption), [], "litros por tipo de equipo"),
       track(getScatterObservations(session, { fromDate: cardConsumption.fromDate, toDate: cardConsumption.toDate, worksiteId: cardConsumption.worksiteId, patente }), [], "litros contra medidor"),
-      track(getEvolutionByVehicle(session, cardConsumption), [], "evolución por equipo"),
+      // La evolución necesita varios períodos: con un mes de período sería un punto por equipo, así que usa la misma
+      // ventana de meses que los demás gráficos «mes a mes» (`consumptionChartWindow`). Mismo alcance de faena y filtros.
+      track(getEvolutionByVehicle(session, { ...cardConsumption, fromDate: chartWindow.from, toDate: chartWindow.to }), [], "evolución por equipo"),
       track(getWorksiteEquipmentMatrix(session, cardConsumption), [], "matriz faena por equipo"),
       track(getConsumptionSources(session), [], "fuentes de tarjeta"),
     ])
@@ -187,7 +192,7 @@ export default async function ConsumoLitrosPage({ searchParams }: { searchParams
               {loads.kmPerLiter !== null ? <strong className="font-semibold tabular-nums text-[var(--color-text)]">{formatQty(loads.kmPerLiter, undefined, { maximumFractionDigits: 2 })} {PERFORMANCE_UNIT_LABELS.km_per_liter}</strong> : null}
               {loads.kmPerLiter !== null && loads.litersPerHour !== null ? " y " : null}
               {loads.litersPerHour !== null ? <strong className="font-semibold tabular-nums text-[var(--color-text)]">{formatQty(loads.litersPerHour, undefined, { maximumFractionDigits: 2 })} {PERFORMANCE_UNIT_LABELS.liters_per_hour}</strong> : null}
-              {" "}(equipos con odómetro y con horómetro, por separado).{" "}
+              {" "}según las cargas de terreno y la planilla (equipos con odómetro y con horómetro, por separado).{" "}
               <Link href={performanceHref} className="font-medium text-[var(--color-primary-ink)] underline underline-offset-2 hover:no-underline">Ver qué equipos rinden peor</Link>
             </p>
           ) : null}
@@ -229,10 +234,14 @@ export default async function ConsumoLitrosPage({ searchParams }: { searchParams
         </div>
       </div>
 
+      <ViewSection id="rendimiento-mensual" title="Rendimiento por mes" question={`¿Los equipos rinden más o menos que antes? Con las lecturas de odómetro y horómetro de las cargas con tarjeta Copec. ${chartCaption}`}>
+        {rates.data ? <MeterRateSections series={rates.data} sourcesHref={inContext(FUEL_PATHS.fuentes)} /> : <SectionError what="el rendimiento por mes" />}
+      </ViewSection>
+
       <div className="mb-10 grid gap-8 xl:grid-cols-2">
         {([
-          { unit: "km_per_liter", id: "serie-km", title: "Kilómetros contra litros", question: "¿Cuántos kilómetros se recorrieron con los litros cargados, mes a mes? Equipos con odómetro.", measureUnit: "km", sums: "Σ km ÷ Σ litros" },
-          { unit: "liters_per_hour", id: "serie-horas", title: "Horas contra litros", question: "¿Cuántas horas de motor se trabajaron con los litros cargados, mes a mes? Equipos con horómetro.", measureUnit: "h", sums: "Σ litros ÷ Σ horas" },
+          { unit: "km_per_liter", id: "serie-km", title: "Kilómetros contra litros", question: "¿Cuántos kilómetros se recorrieron con los litros cargados, mes a mes? Equipos con odómetro, según las cargas de terreno y la planilla.", measureUnit: "km", sums: "Σ km ÷ Σ litros" },
+          { unit: "liters_per_hour", id: "serie-horas", title: "Horas contra litros", question: "¿Cuántas horas de motor se trabajaron con los litros cargados, mes a mes? Equipos con horómetro, según las cargas de terreno y la planilla.", measureUnit: "h", sums: "Σ litros ÷ Σ horas" },
         ] as const).map(({ unit, id, title, question, measureUnit, sums }) => {
           const data = series.data?.[unit]
           return (
@@ -284,6 +293,7 @@ export default async function ConsumoLitrosPage({ searchParams }: { searchParams
             canViewCosts={canViewCosts}
             emptyAction={emptyAction}
             periodLabel={period.label}
+            evolutionCaption={chartCaption}
           />
         </UrlFold>
 

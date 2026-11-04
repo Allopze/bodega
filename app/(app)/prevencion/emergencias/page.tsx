@@ -12,6 +12,9 @@ import {
   listEmergencyPlansPage,
   listEmergencyWorksites,
 } from "@/lib/services/prevention-emergency"
+import { loadProgramSlotCalendar, listCurrentEmergencyPlanIds } from "@/lib/services/prevention-program-calendar"
+import { getPdtpOperationalYears } from "@/lib/services/prevention-pdtp"
+import { ProgramComplianceSection } from "@/components/prevention/program-compliance-section"
 import { NewPlanDialog } from "./emergencias-dialogs"
 import { EmergencyList } from "./emergency-list"
 import { PdtpScheduledActivityPanelServer } from "@/components/prevention/pdtp-scheduled-activity-panel-server"
@@ -41,11 +44,17 @@ export default async function EmergenciasPage({ searchParams }: { searchParams: 
   const requestedPage = Number.parseInt(raw.page ?? "", 10)
   const offset = Number.isFinite(requestedPage) && requestedPage > 1 ? (requestedPage - 1) * pageSize : 0
 
-  const [plansPage, drills, worksites, counts] = await Promise.all([
+  // El calendario de simulacros mide TODAS las faenas del alcance, no sólo las de la página de planes.
+  const worksiteScope: string[] | "all" = access.scope.mode === "all" ? "all" : access.scope.mode === "some" ? access.scope.ids : []
+  const slotYear = (await getPdtpOperationalYears()).primary
+
+  const [plansPage, drills, worksites, counts, calendar, planIds] = await Promise.all([
     listEmergencyPlansPage(access, { limit: pageSize, offset, quickFilter: tab === "plans" ? quickFilter : undefined }),
     listEmergencyDrills(access, { quickFilter: tab === "drills" ? quickFilter : undefined }),
     canManage ? listEmergencyWorksites(access) : Promise.resolve([]),
     getEmergencyDashboardCounts(access),
+    loadProgramSlotCalendar("drills", worksiteScope, slotYear),
+    listCurrentEmergencyPlanIds(worksiteScope),
   ])
 
   const resolvedPagination = resolvePagination({ pageParam: raw.page, totalItems: plansPage.total, pageSize })
@@ -65,6 +74,22 @@ export default async function EmergenciasPage({ searchParams }: { searchParams: 
         // Planes. Crear un plan es acción de página: va en el header, en ambas
         // pestañas (un simulacro se programa desde el detalle del plan).
         actions={canManage && worksites.length > 0 ? <NewPlanDialog worksites={worksites} /> : undefined}
+      />
+      {/* Sin casillas de simulacro (programa sin activar o sin faenas en el alcance) no se dibuja:
+        * la lista de abajo ya explica el vacío. */}
+      <ProgramComplianceSection
+        title={`Simulacros del programa ${slotYear}`}
+        caption={`Cumplimiento mensual de simulacros de emergencia ${slotYear}, por faena`}
+        calendar={calendar}
+        noun={{ singular: "faena", plural: "faenas" }}
+        // La casilla se resuelve en el plan de la faena (ahí se registra el simulacro). Una faena sin plan
+        // vigente no tiene a dónde llevar: la celda queda sin enlace en vez de apuntar a la nada.
+        hrefFor={(worksiteId) => {
+          const planId = planIds.get(worksiteId)
+          return planId ? `/prevencion/emergencias/${planId}?anio=${slotYear}` : undefined
+        }}
+        linkNavigation={{}}
+        className="mb-4"
       />
       <EmergencyList
         plans={plansPage.rows.map((row) => ({

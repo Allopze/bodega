@@ -442,3 +442,56 @@ export async function summarizeInspectionTrends(access: InspectionAccess, filter
     .groupBy(sql`to_char(${preventionInspectionRuns.executedAt} AT TIME ZONE 'America/Santiago', 'YYYY-MM')`)
     .orderBy(sql`to_char(${preventionInspectionRuns.executedAt} AT TIME ZONE 'America/Santiago', 'YYYY-MM')`)
 }
+
+/**
+ * Serie mensual de CUMPLIMIENTO (CHART-010 de `AUDITORIA_VISUALIZACIONES_CHOME.md`),
+ * agregada en SQL: una fila por mes con sumas, nunca las ejecuciones para
+ * promediarlas en el cliente.
+ *
+ * Distinta de `summarizeInspectionTrends` (la del export) a propósito: ésa saca
+ * `AVG(compliance_percent)`, que trata igual a una pauta de 8 ítems y a una de
+ * 120. Acá cada ejecución aporta `compliance_percent × ítems evaluados` y el
+ * cociente se hace en `lib/prevention/inspection-trend.ts`, donde está
+ * documentado y probado.
+ *
+ * - **Universo = el de los KPI** (`baseFilterConditions`): alcance del usuario,
+ *   tipo, faena, responsable, rango y búsqueda. El estado y la vista rápida NO
+ *   acotan la serie (A5: una dimensión, un control). El alcance de faenas
+ *   (`access.scope`) siempre aplica: un usuario de la faena A no ve la B.
+ * - **Sólo ejecuciones cerradas** (`completed`/`reviewed`) con fecha de
+ *   ejecución: una planificada o en curso no tiene cumplimiento todavía.
+ * - **Mes civil chileno**: sin `AT TIME ZONE`, una inspección cerrada a las
+ *   21:30 del 31 de agosto caería en septiembre.
+ * - `since` (`YYYY-MM-DD`) acota la ventana en SQL: la serie no baja la
+ *   historia completa para recortarla después.
+ */
+export async function summarizeInspectionComplianceTrend(
+  access: InspectionAccess,
+  filter: InspectionListFilters = {},
+  options: { since: string },
+) {
+  requireAccess(access, "prevention:inspections:view")
+  const evaluated = sql`(${preventionInspectionRuns.conformingCount} + ${preventionInspectionRuns.partialCount} + ${preventionInspectionRuns.nonConformingCount})`
+  const scored = sql`(${preventionInspectionRuns.compliancePercent} IS NOT NULL AND ${evaluated} > 0)`
+  const month = sql`to_char(${preventionInspectionRuns.executedAt} AT TIME ZONE 'America/Santiago', 'YYYY-MM')`
+  return db.select({
+    month: sql<string>`${month}`,
+    runs: sql<number>`COUNT(*)::int`,
+    scoredRuns: sql<number>`COUNT(*) FILTER (WHERE ${scored})::int`,
+    scoredItems: sql<number>`COALESCE(SUM(${evaluated}) FILTER (WHERE ${scored}), 0)::int`,
+    weightedPoints: sql<number>`COALESCE(SUM(${preventionInspectionRuns.compliancePercent}::bigint * ${evaluated}) FILTER (WHERE ${scored}), 0)::int`,
+    openFindings: sql<number>`COALESCE(SUM(${OPEN_FINDINGS_SQL}), 0)::int`,
+    criticalOpenFindings: sql<number>`COALESCE(SUM(${CRITICAL_FINDINGS_SQL}), 0)::int`,
+  })
+    .from(preventionInspectionRuns)
+    .innerJoin(preventionInspectionTemplates, eq(preventionInspectionTemplates.id, preventionInspectionRuns.templateId))
+    .innerJoin(worksites, eq(worksites.id, preventionInspectionRuns.worksiteId))
+    .where(and(
+      ...baseFilterConditions(access, filter),
+      inArray(preventionInspectionRuns.status, ["completed", "reviewed"]),
+      isNotNull(preventionInspectionRuns.executedAt),
+      sql`(${preventionInspectionRuns.executedAt} AT TIME ZONE 'America/Santiago')::date >= ${options.since}`,
+    ))
+    .groupBy(month)
+    .orderBy(month)
+}

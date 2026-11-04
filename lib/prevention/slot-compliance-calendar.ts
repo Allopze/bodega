@@ -88,6 +88,39 @@ export interface SlotCalendar {
 
 const MONTHS = 12
 
+/**
+ * El vocabulario de un calendario: qué se llama «actividad», «hecha», «vencida».
+ *
+ * Nació con casillas de capacitación y alcotest, donde «actividad hecha» es
+ * exacto. Otros calendarios (sesiones del comité, cierres mensuales) miden otra
+ * cosa, y decir «0 de 1 hecha» de un cierre —o «vencidas» de un cierre— es un
+ * texto que no describe lo que la celda dibuja. Cada término lleva singular y
+ * plural porque el género cambia el adjetivo («sesión vencida», «cierre vencido»).
+ */
+export interface SlotCalendarWording {
+  /** Lo que exige cada casilla: «actividad». */
+  unit: { singular: string; plural: string }
+  /** Participio de lo cumplido: «hecha». */
+  done: { singular: string; plural: string }
+  /** Adjetivo de lo no cumplido a tiempo: «vencida». */
+  overdue: { singular: string; plural: string }
+  /** Frase cuando ninguna fila tiene nada exigible. */
+  noneDue: string
+  /** Detalle del mes sin casillas. */
+  naEmpty: string
+  /** Detalle del mes anterior a la activación. */
+  naBeforeActivation: string
+}
+
+export const DEFAULT_SLOT_CALENDAR_WORDING: SlotCalendarWording = {
+  unit: { singular: "actividad", plural: "actividades" },
+  done: { singular: "hecha", plural: "hechas" },
+  overdue: { singular: "vencida", plural: "vencidas" },
+  noneDue: "Todavía no hay actividades exigibles en el programa.",
+  naEmpty: "sin actividad programada",
+  naBeforeActivation: "anterior a la activación del programa",
+}
+
 /** Pasado / en curso / futuro de un mes del programa de `year`, mirado desde `today`. */
 export function monthPhase(year: number, month: number, today: PdtpPeriod): SlotCalendarPhase {
   const overdueThrough = pdtpOverdueCutoffMonth(year, today, today)
@@ -96,8 +129,8 @@ export function monthPhase(year: number, month: number, today: PdtpPeriod): Slot
   return "future"
 }
 
-function doneLabel(completed: number, exigible: number): string {
-  return `${completed} de ${exigible} ${pluralize(exigible, "hecha", "hechas")}`
+function doneLabel(completed: number, exigible: number, wording: SlotCalendarWording): string {
+  return `${completed} de ${exigible} ${pluralize(exigible, wording.done.singular, wording.done.plural)}`
 }
 
 /**
@@ -108,9 +141,10 @@ function doneLabel(completed: number, exigible: number): string {
  */
 export function deriveMonthCell(
   slots: readonly SlotCalendarSlot[],
-  context: { year: number; month: number; today: PdtpPeriod; activation: PdtpPeriod | null },
+  context: { year: number; month: number; today: PdtpPeriod; activation: PdtpPeriod | null; wording?: SlotCalendarWording },
 ): SlotCalendarCell {
   const { year, month, today, activation } = context
+  const wording = context.wording ?? DEFAULT_SLOT_CALENDAR_WORDING
   const phase = monthPhase(year, month, today)
 
   let completed = 0
@@ -150,8 +184,8 @@ export function deriveMonthCell(
 
   if (exigible === 0) {
     const detail = beforeActivation > 0
-      ? "anterior a la activación del programa"
-      : notApplicable > 0 ? "no aplica" : "sin actividad programada"
+      ? wording.naBeforeActivation
+      : notApplicable > 0 ? "no aplica" : wording.naEmpty
     return { month, status: "na", phase, exigible: 0, completed: 0, missed: 0, detail }
   }
 
@@ -163,7 +197,7 @@ export function deriveMonthCell(
 
   const base = byGroup.size > 1
     ? [...byGroup.entries()].map(([group, entry]) => `${group} ${entry.completed} de ${entry.exigible}`).join(" · ")
-    : doneLabel(completed, exigible)
+    : doneLabel(completed, exigible, wording)
   const detail = phase === "current" && status !== "ok" ? `${base} · mes en curso` : base
 
   return { month, status, phase, exigible, completed, missed, detail }
@@ -185,8 +219,9 @@ export function buildSlotCalendar(args: {
   rows: ReadonlyArray<{ id: string; label: string }>
   slots: readonly SlotCalendarSlot[]
   activationByRow?: ReadonlyMap<string, PdtpPeriod | null>
+  wording?: SlotCalendarWording
 }): SlotCalendar {
-  const { year, today, rows, slots, activationByRow } = args
+  const { year, today, rows, slots, activationByRow, wording } = args
   const byRow = new Map<string, SlotCalendarSlot[]>()
   for (const slot of slots) {
     const list = byRow.get(slot.rowId) ?? []
@@ -214,7 +249,7 @@ export function buildSlotCalendar(args: {
 
     const activation = activationByRow?.get(row.id) ?? null
     const cells = Array.from({ length: MONTHS }, (_, index) =>
-      deriveMonthCell(byMonth.get(index + 1) ?? [], { year, month: index + 1, today, activation }))
+      deriveMonthCell(byMonth.get(index + 1) ?? [], { year, month: index + 1, today, activation, wording }))
     built.push({
       id: row.id,
       label: row.label,
@@ -237,25 +272,27 @@ export function buildSlotCalendar(args: {
  */
 export function summarizeSlotCalendar(
   rows: readonly SlotCalendarRow[],
-  options: { noun: { singular: string; plural: string } },
+  options: { noun: { singular: string; plural: string }; wording?: SlotCalendarWording },
 ): string {
   if (rows.length === 0) return ""
   const { noun } = options
-  if (rows.every((row) => row.exigible === 0)) return "Todavía no hay actividades exigibles en el programa."
+  const wording = options.wording ?? DEFAULT_SLOT_CALENDAR_WORDING
+  if (rows.every((row) => row.exigible === 0)) return wording.noneDue
 
   // Se cuenta y se ordena por actividades vencidas, no por meses: un mes parcial
   // (algo hecho, algo vencido) es atraso, pero llamarlo «mes vencido» contradice
   // la celda ámbar que el usuario tiene al lado.
   const late = rows.filter((row) => row.missed > 0)
-  if (late.length === 0) return `Ninguna ${noun.singular} tiene actividades vencidas sin cumplir.`
+  const units = (count: number) => countOf(count, wording.unit.singular, wording.unit.plural)
+  if (late.length === 0) return `Ninguna ${noun.singular} tiene ${wording.unit.plural} ${wording.overdue.plural} sin cumplir.`
 
   const worst = Math.max(...late.map((row) => row.missed))
   const worstRows = late.filter((row) => row.missed === worst)
   const total = rows.length === 1 ? noun.singular : noun.plural
-  const subject = `${late.length} de ${rows.length} ${total} ${late.length === 1 ? "tiene" : "tienen"} actividades vencidas sin cumplir`
+  const subject = `${late.length} de ${rows.length} ${total} ${late.length === 1 ? "tiene" : "tienen"} ${wording.unit.plural} ${wording.overdue.plural} sin cumplir`
   const tail = worstRows.length === 1
-    ? `la más atrasada es ${worstRows[0]!.label}, con ${countOf(worst, "actividad", "actividades")} en ${countOf(worstRows[0]!.overdueMonths, "mes", "meses")}`
-    : `el mayor atraso es de ${countOf(worst, "actividad", "actividades")} y lo comparten ${worstRows.length} ${noun.plural}`
+    ? `la más atrasada es ${worstRows[0]!.label}, con ${units(worst)} en ${countOf(worstRows[0]!.overdueMonths, "mes", "meses")}`
+    : `el mayor atraso es de ${units(worst)} y lo comparten ${worstRows.length} ${noun.plural}`
   return `${subject}; ${tail}.`
 }
 
@@ -263,9 +300,17 @@ export function summarizeSlotCalendar(
 export function slotCalendarDataTable(
   rows: readonly SlotCalendarRow[],
   rowHeader: string,
+  wording: SlotCalendarWording = DEFAULT_SLOT_CALENDAR_WORDING,
 ): { headers: string[]; rows: Array<Array<string | number>> } {
+  const capitalized = (text: string) => text.charAt(0).toUpperCase() + text.slice(1)
   return {
-    headers: [rowHeader, "Actividades exigibles", "Hechas", "Vencidas sin hacer", "Meses con atraso"],
+    headers: [
+      rowHeader,
+      `${capitalized(wording.unit.plural)} exigibles`,
+      capitalized(wording.done.plural),
+      `${capitalized(wording.overdue.plural)} sin hacer`,
+      "Meses con atraso",
+    ],
     rows: rows.map((row) => [row.label, row.exigible, row.completed, row.missed, row.overdueMonths]),
   }
 }

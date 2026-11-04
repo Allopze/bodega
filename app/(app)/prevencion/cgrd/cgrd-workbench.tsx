@@ -11,6 +11,7 @@ import { ProgramSlotList, type ProgramSlotRow } from "@/components/prevention/pr
 import type { PdtpPeriod } from "@/lib/services/pdtp/period"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { EmptyState } from "@/components/ui/empty-state"
+import { FilterToolbar } from "@/components/ui/filter-toolbar"
 import { EvidenceField } from "@/components/prevention/evidence-field"
 import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
@@ -18,7 +19,7 @@ import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
-import { formatDateTime, toLocalInputValue } from "@/lib/utils"
+import { MONTH_NAMES, formatDateTime, toLocalInputValue } from "@/lib/utils"
 import {
   GRD_COMMITTEE_MIN_HEADCOUNT, GRD_MATRIX_STATUS_LABELS, GRD_STRUCTURE_LABELS,
 } from "@/lib/prevention/cgrd"
@@ -73,7 +74,7 @@ type ReasonRequest = {
 type FieldErrors = Record<string, string[] | undefined>
 
 export function CgrdWorkbench({
-  worksites, selectedWorksiteId, committee, structure, members, matrices, latestMatrixThreats, meetings, meetingSlots, slotYear, notApplicableSuggestion, activationPeriod, agreements, workerCandidates,
+  worksites, selectedWorksiteId, committee, structure, members, matrices, latestMatrixThreats, meetings, meetingSlots, slotYear, selectedMonth, complianceCalendar, notApplicableSuggestion, activationPeriod, agreements, workerCandidates,
   canManageCommittee, canEditMatrix, canPublishMatrix, canManageMeetings, scheduledPanel,
 }: {
   worksites: Worksite[]
@@ -86,6 +87,10 @@ export function CgrdWorkbench({
   meetings: Meeting[]
   meetingSlots: ProgramSlotRow[]
   slotYear: number
+  /** El mes (1–12) que el calendario de cumplimiento filtra en las casillas, o `null` para ver el año. */
+  selectedMonth: number | null
+  /** El calendario faena × mes, ya armado por la página. Va justo encima del checklist que filtra. */
+  complianceCalendar?: React.ReactNode
   notApplicableSuggestion: string | null
   activationPeriod: PdtpPeriod | null
   agreements: Agreement[]
@@ -125,6 +130,18 @@ export function CgrdWorkbench({
     router.refresh()
   }
 
+  /* Faena y mes son estado de la vista: `replace` + `scroll: false` (patrón de navegación de
+   * AGENTS.md), y se conservan entre sí y con el año. Registrar un acta de otro mes sigue siendo
+   * válido: el diálogo recibe todas las casillas, el filtro sólo acota la lista. */
+  const slotsHref = (worksiteId: string | null, month: number | null) => {
+    const params = new URLSearchParams()
+    if (worksiteId) params.set("faena", worksiteId)
+    params.set("anio", String(slotYear))
+    if (month) params.set("mes", String(month))
+    return `/prevencion/cgrd?${params.toString()}`
+  }
+  const visibleMeetingSlots = selectedMonth ? meetingSlots.filter((row) => row.scheduledMonth === selectedMonth) : meetingSlots
+
   const latestMatrix = matrices.length > 0 ? [...matrices].sort((a, b) => b.matrixVersion - a.matrixVersion)[0]! : null
   const hasDraft = matrices.some((matrix) => matrix.status === "draft")
 
@@ -137,7 +154,7 @@ export function CgrdWorkbench({
       />
 
       <div className="mt-4">
-        <Select value={selectedWorksiteId ?? ""} onValueChange={(value) => router.replace(`/prevencion/cgrd?faena=${value}`, { scroll: false })}>
+        <Select value={selectedWorksiteId ?? ""} onValueChange={(value) => router.replace(slotsHref(value, selectedMonth), { scroll: false })}>
           <SelectTrigger className="w-64" aria-label="Faena"><SelectValue /></SelectTrigger>
           <SelectContent>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent>
         </Select>
@@ -158,6 +175,8 @@ export function CgrdWorkbench({
 
       {scheduledPanel}
 
+      {complianceCalendar}
+
       {/* Fuera del bloque del comité, por el mismo motivo que la Matriz GRD: la
           N°81 se le planifica a la FAENA. Una faena de hasta 25 personas tiene
           coordinador y no comité, y es justamente ahí donde hay que poder
@@ -166,11 +185,25 @@ export function CgrdWorkbench({
       {selectedWorksiteId && (
         <section className="mt-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
           <h2 className="mb-2 text-sm font-semibold text-[var(--color-text)]">Sesiones que el programa espera</h2>
+          {selectedMonth !== null && (
+            <FilterToolbar
+              className="mb-2"
+              activeChips={[{
+                key: "mes",
+                label: "Mes",
+                value: String(selectedMonth),
+                displayValue: `${MONTH_NAMES[selectedMonth - 1]} ${slotYear}`,
+              }]}
+              onRemoveChip={() => router.replace(slotsHref(selectedWorksiteId, null), { scroll: false })}
+            />
+          )}
           <ProgramSlotList
-            rows={meetingSlots}
+            rows={visibleMeetingSlots}
             year={slotYear}
             canRecord={canManageMeetings}
-            emptyHint="Esta faena todavía no tiene casillas del programa; se generan al activarla."
+            emptyHint={selectedMonth !== null && meetingSlots.length > 0
+              ? `Esta faena no tiene sesiones del programa en ${MONTH_NAMES[selectedMonth - 1]}.`
+              : "Esta faena todavía no tiene casillas del programa; se generan al activarla."}
             notApplicableSuggestion={notApplicableSuggestion}
             activationPeriod={activationPeriod}
             onRecord={(input) => recordGrdMeetingSlotStatusAction(input)}

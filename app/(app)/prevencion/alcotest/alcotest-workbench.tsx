@@ -77,7 +77,7 @@ async function uploadAlcotestEvidence(slotId: string, file: File): Promise<{ ok:
 
 export function AlcotestWorkbench({
   worksites, selectedWorksiteId, slotRows, slotYear, selectedMonth, activationPeriod,
-  initialTests, initialDispatches, workers, equipment, canRegister, canDispatch, complianceCalendar, scheduledPanel,
+  initialTests, initialDispatches, workers, equipment, canRegister, canDispatch, complianceCalendar, scheduledPanel, trend,
 }: {
   worksites: Worksite[]
   selectedWorksiteId: string | null
@@ -95,6 +95,8 @@ export function AlcotestWorkbench({
   /** El calendario faena × mes, ya armado por la página. Va justo encima del checklist que filtra. */
   complianceCalendar?: React.ReactNode
   scheduledPanel?: React.ReactNode
+  /** Controles por mes (CHART-010), ya armado por la página. Va sobre «Controles recientes», que explica el vacío. */
+  trend?: React.ReactNode
 }) {
   const router = useRouter()
   const controlSlots = React.useMemo(() => slotRows.filter((row) => row.kind === "control"), [slotRows])
@@ -135,6 +137,8 @@ export function AlcotestWorkbench({
           </div>
         }
       />
+
+      {trend && <div className="mt-4">{trend}</div>}
 
       <section className="mt-4">
         <h2 className="text-sm font-semibold text-[var(--color-text)]">Controles recientes</h2>

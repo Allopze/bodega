@@ -20,11 +20,24 @@ import {
   OFFICE_ORIGIN_LABEL,
   type DispatchGuideStatus,
 } from "@/lib/services/dispatch-guides"
+import { addDays } from "@/lib/sst/date"
+import { todayInChile } from "@/lib/utils"
+import {
+  GUIDE_AGE_PARAM,
+  parseGuideAgeParam,
+  shapeGuideTransit,
+  transitWindowText,
+} from "@/lib/bodega/guide-transit"
+import { getGuideAgeCounts, getGuideTransitByDestination, guideAgeFilterSql } from "@/lib/services/dispatch-guide-transit"
 import { ownVisibleWorksiteId, resolveFaena } from "../faena-scope"
+import { GuideCharts } from "./guide-charts"
 import { GuideFilters } from "./guide-filters"
 import { DispatchGuidesTable } from "./guides-table"
 
 export const metadata: Metadata = { title: "Guías de despacho" }
+
+/** Meses que mide el tiempo hasta confirmar cuando no se eligió un período. */
+const TRANSIT_DEFAULT_MONTHS = 6
 
 const STATUSES: DispatchGuideStatus[] = ["draft", "dispatched", "partially_received", "received", "cancelled"]
 
@@ -43,12 +56,17 @@ export default async function DispatchGuidesPage({
 
   const sp = await searchParams
   const estadoParam = readParam(sp.estado)
-  const explicitStatus = STATUSES.includes(estadoParam as DispatchGuideStatus)
-    ? (estadoParam as DispatchGuideStatus)
-    : undefined
+  // Un tramo de antigüedad sólo existe para las despachadas: elegirlo fija el estado.
+  const ageFilter = parseGuideAgeParam(sp[GUIDE_AGE_PARAM])
+  const explicitStatus = ageFilter
+    ? "dispatched"
+    : STATUSES.includes(estadoParam as DispatchGuideStatus)
+      ? (estadoParam as DispatchGuideStatus)
+      : undefined
   const desde = readParam(sp.desde)
   const hasta = readParam(sp.hasta)
   const q = readParam(sp.q).trim()
+  const now = new Date()
   const scopeSql = worksiteScopeSql(session, dispatchGuides.destinationWorksiteId)
 
   // Mismas faenas visibles y misma faena por defecto que Stock, Movimientos y
@@ -83,7 +101,18 @@ export default async function DispatchGuidesPage({
     destinationWorksiteId: faena || undefined,
     from: desde || undefined,
     to: hasta || undefined,
+    dispatchedAgeSql: guideAgeFilterSql(ageFilter, now),
   }
+
+  // Gráficos (CHART-037): el tiempo hasta confirmar mide las guías emitidas en el período
+  // elegido —por defecto los últimos 6 meses— y la antigüedad es la foto de ahora, sin período.
+  const transitFrom = desde || addDays(todayInChile(), -Math.round(TRANSIT_DEFAULT_MONTHS * 30.4))
+  const [transitRows, ageCounts] = await Promise.all([
+    getGuideTransitByDestination({ scopeSql, destinationWorksiteId: faena || undefined, from: transitFrom, to: hasta || undefined }),
+    getGuideAgeCounts({ scopeSql, destinationWorksiteId: faena || undefined }, now),
+  ])
+  const transit = shapeGuideTransit(transitRows)
+  const transitWindow = transitWindowText({ from: transitFrom, to: hasta || undefined, chosen: Boolean(desde || hasta), months: TRANSIT_DEFAULT_MONTHS })
 
   const total = await countDispatchGuides(filters)
   const pagination = resolvePagination({ pageParam: sp.page, totalItems: total, pageSize: DEFAULT_PAGE_SIZE })
@@ -119,18 +148,28 @@ export default async function DispatchGuidesPage({
       <GuideFilters
         worksites={worksiteOptions}
         ownWorksiteId={ownWorksiteId}
-        current={{ estado: estado ?? "", estadoByDefault: defaultedToDispatched, faena, desde, hasta, q }}
+        current={{ estado: estado ?? "", estadoByDefault: defaultedToDispatched, faena, desde, hasta, q, antiguedad: ageFilter }}
+      />
+
+      <GuideCharts
+        transit={transit}
+        windowText={transitWindow}
+        from={transitFrom}
+        to={hasta || undefined}
+        ageCounts={ageCounts}
+        ageActive={ageFilter}
+        faena={faena}
       />
 
       {total === 0 ? (
         <div className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
           <EmptyState
             icon={<Truck size={24} />}
-            title={q || estado || desde || hasta || faena ? "Sin guías con estos filtros" : "Todavía no hay guías de despacho"}
-            description={q || estado || desde || hasta || faena
+            title={q || estado || desde || hasta || faena || ageFilter ? "Sin guías con estos filtros" : "Todavía no hay guías de despacho"}
+            description={q || estado || desde || hasta || faena || ageFilter
               ? "Ninguna guía coincide con lo que filtraste. Quita algún filtro para ver más."
               : "Las guías se crean automáticamente desde una recepción en oficina cuando hay bienes que deben continuar hacia una faena."}
-            action={q || estado || desde || hasta || faena ? (
+            action={q || estado || desde || hasta || faena || ageFilter ? (
               <Button asChild variant="secondary" size="sm">
                 <Link href="/bodega/guias?estado=todos&faena=todas">Ver todas las guías</Link>
               </Button>

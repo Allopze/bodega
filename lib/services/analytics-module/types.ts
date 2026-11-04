@@ -75,6 +75,15 @@ export interface AnalyticsDashboardData {
   productRotation: RotationRow[]; eppDeliveries: EppDeliveryRow[]
   /** Trabajadores distintos con entrega de EPP (`eppDeliveries` es un top 10 por trabajador × producto). */
   eppWorkerCount?: number
-  recentOrders: Array<{ id: string; code: string; worksiteName: string; supplierName: string; totalAmount: number; createdAt: string }>
+  /**
+   * Las OC emitidas más recientes del período, fechadas por **emisión** (`issuedAt`): la
+   * misma base que el gasto, los proveedores y el tablero. Antes salían por creación.
+   */
+  recentOrders: Array<{ id: string; code: string; worksiteName: string; supplierName: string; totalAmount: number; issuedAt: string }>
   alerts: AnalyticsAlert[]; dataGaps: string[]
+  /**
+   * Umbral de concentración de proveedores (% del gasto en un solo proveedor) con el que se
+   * evalúa la alerta; el Pareto lo dibuja como referencia.
+   */
+  supplierConcentrationPct?: number
 }

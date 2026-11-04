@@ -1,3 +1,5 @@
+import type { StockCoverage } from "@/lib/bodega/stock-coverage"
+
 export interface WorksiteStockWithProduct {
   id: string
   worksiteId: string
@@ -10,6 +12,8 @@ export interface WorksiteStockWithProduct {
   hasStockRecord: boolean
   lastMovementAt: string | null
   updatedAt: string
+  /** Cuántos días alcanza el saldo al ritmo de los últimos 90 días (CHART-035a). Sin él la tabla no dibuja la columna. */
+  coverage?: StockCoverage
   product: { name: string; sku: string | null; unitOfMeasure: string } | null
   worksite: { name: string } | null
 }

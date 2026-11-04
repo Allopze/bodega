@@ -1,11 +1,14 @@
 import { ChartSection } from "@/components/charts/chart-section"
 import { ComplianceCalendar, type ComplianceRow } from "@/components/charts/compliance-calendar"
 import {
+  DEFAULT_SLOT_CALENDAR_WORDING,
   SLOT_CALENDAR_COLUMNS,
   slotCalendarDataTable,
   summarizeSlotCalendar,
   type SlotCalendar,
+  type SlotCalendarWording,
 } from "@/lib/prevention/slot-compliance-calendar"
+import type { ComplianceStatus } from "@/components/charts/compliance-calendar"
 import { countOf } from "@/lib/utils"
 
 /**
@@ -19,6 +22,10 @@ import { countOf } from "@/lib/utils"
  * que un mes `na` no sea clicable, que la celda activa se marque y que volver a
  * hacerle clic quite el filtro (`clearHref`).
  *
+ * `wording` y `statusLabels` existen para los calendarios que no miden
+ * «actividades hechas» (cierres mensuales, sesiones del comité): sin ellos la
+ * frase y la leyenda hablarían de otra cosa que la celda dibuja.
+ *
  * Es server component: el calendario son enlaces, sin estado de cliente.
  */
 export function ProgramComplianceSection({
@@ -31,6 +38,10 @@ export function ProgramComplianceSection({
   clearHref,
   selected,
   empty,
+  wording = DEFAULT_SLOT_CALENDAR_WORDING,
+  statusLabels,
+  legend,
+  linkNavigation = { scroll: false, replace: true },
   className,
 }: {
   title: string
@@ -39,10 +50,14 @@ export function ProgramComplianceSection({
   calendar: SlotCalendar
   noun: { singular: string; plural: string }
   rowHeader?: string
-  /** Adónde lleva el clic en el mes `month` de la fila `rowId`. */
-  hrefFor: (rowId: string, month: number) => string
+  /**
+   * Adónde lleva el clic en el mes `month` de la fila `rowId`. `undefined` deja la
+   * celda sin enlace: la fila no tiene a dónde llevar (un simulacro sin plan
+   * donde registrarlo), y un enlace roto sería peor que ninguno.
+   */
+  hrefFor: (rowId: string, month: number) => string | undefined
   /** Adónde lleva el clic en la celda ya activa: la misma vista sin ese filtro. */
-  clearHref: string
+  clearHref?: string
   /** La celda que hoy filtra la lista de abajo, si hay una. */
   selected?: { rowId: string; month: number } | null
   /**
@@ -51,6 +66,18 @@ export function ProgramComplianceSection({
    * vacío en otro lado y repetirlo sería ruido.
    */
   empty?: { label: string; hint?: string; ctaLabel?: string; ctaHref?: string }
+  /** Vocabulario del calendario (qué se llama «actividad», «hecha», «vencida»). */
+  wording?: SlotCalendarWording
+  /** Rótulos propios de los estados de la leyenda y de cada celda. */
+  statusLabels?: Partial<Record<ComplianceStatus, string>>
+  /** Estados de la leyenda. Un calendario de una casilla por celda no puede estar «parcial»: no lo lista. */
+  legend?: ComplianceStatus[]
+  /**
+   * Cómo navegan los enlaces. Por defecto filtran la misma pantalla (`replace`,
+   * sin saltar al inicio). Cuando la celda lleva a OTRA página (el plan donde se
+   * registra el simulacro), pasa `{}`: ahí sí es navegación y debe quedar en el historial.
+   */
+  linkNavigation?: { scroll?: boolean; replace?: boolean }
   className?: string
 }) {
   if (calendar.rows.length === 0) {
@@ -67,7 +94,7 @@ export function ProgramComplianceSection({
         detail: cell.detail,
         selected: isSelected,
         // «No exigible» no filtra nada: no hay casillas que mostrar.
-        href: cell.status === "na" ? undefined : isSelected ? clearHref : hrefFor(row.id, cell.month),
+        href: cell.status === "na" ? undefined : isSelected && clearHref ? clearHref : hrefFor(row.id, cell.month),
       }
     }),
   }))
@@ -75,8 +102,8 @@ export function ProgramComplianceSection({
   return (
     <ChartSection
       title={title}
-      summary={summarizeSlotCalendar(calendar.rows, { noun })}
-      data={{ caption: `${caption}: cifras por ${noun.singular}`, ...slotCalendarDataTable(calendar.rows, rowHeader) }}
+      summary={summarizeSlotCalendar(calendar.rows, { noun, wording })}
+      data={{ caption: `${caption}: cifras por ${noun.singular}`, ...slotCalendarDataTable(calendar.rows, rowHeader, wording) }}
       className={className}
     >
       <ComplianceCalendar
@@ -84,11 +111,13 @@ export function ProgramComplianceSection({
         rowHeader={rowHeader}
         columns={[...SLOT_CALENDAR_COLUMNS]}
         rows={rows}
-        linkNavigation={{ scroll: false, replace: true }}
+        statusLabels={statusLabels}
+        legend={legend}
+        linkNavigation={linkNavigation}
       />
       {calendar.unscheduled > 0 && (
         <p className="mt-2 text-xs text-[var(--color-text-muted)]">
-          {countOf(calendar.unscheduled, "actividad exigible", "actividades exigibles")} no {calendar.unscheduled === 1 ? "tiene" : "tienen"} mes programado y no {calendar.unscheduled === 1 ? "aparece" : "aparecen"} en el calendario.
+          {countOf(calendar.unscheduled, `${wording.unit.singular} exigible`, `${wording.unit.plural} exigibles`)} no {calendar.unscheduled === 1 ? "tiene" : "tienen"} mes programado y no {calendar.unscheduled === 1 ? "aparece" : "aparecen"} en el calendario.
         </p>
       )}
     </ChartSection>

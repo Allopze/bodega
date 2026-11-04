@@ -19,6 +19,9 @@ import { db } from "@/db"
 import { listGrdMeetingSlots, resolveProgramActivationPeriod } from "@/lib/services/prevention-program-slots"
 import { resolveProgramSlotYear } from "@/lib/prevention/program-slots-2026"
 import { getPdtpOperationalYears } from "@/lib/services/prevention-pdtp"
+import { loadProgramSlotCalendar } from "@/lib/services/prevention-program-calendar"
+import { parseCalendarMonth } from "@/lib/prevention/slot-compliance-calendar"
+import { ProgramComplianceSection } from "@/components/prevention/program-compliance-section"
 import { CgrdWorkbench } from "./cgrd-workbench"
 import { PdtpScheduledActivityPanelServer } from "@/components/prevention/pdtp-scheduled-activity-panel-server"
 
@@ -29,7 +32,7 @@ const one = (value?: string | string[]) => Array.isArray(value) ? value[0] : val
 export default async function CgrdPage({
   searchParams,
 }: {
-  searchParams: Promise<{ faena?: string | string[]; anio?: string | string[] }>
+  searchParams: Promise<{ faena?: string | string[]; anio?: string | string[]; mes?: string | string[] }>
 }) {
   let session
   try { session = await requireAuth() }
@@ -78,6 +81,18 @@ export default async function CgrdPage({
     : null
   const activationPeriod = await resolveProgramActivationPeriod(worksiteId || undefined, slotYear)
 
+  // CHART-008: el calendario mide TODAS las faenas del alcance, no sólo la elegida. `?mes=` es el mes
+  // que el usuario eligió en él y filtra el checklist de abajo.
+  const month = parseCalendarMonth(query.mes)
+  const calendar = await loadProgramSlotCalendar("grd", scope, slotYear)
+  const viewHref = (view: { faena?: string; mes?: number | null }) => {
+    const params = new URLSearchParams()
+    if (view.faena) params.set("faena", view.faena)
+    params.set("anio", String(slotYear))
+    if (view.mes) params.set("mes", String(view.mes))
+    return `/prevencion/cgrd?${params.toString()}`
+  }
+
   const latestMatrix = matrices.length > 0
     ? [...matrices].sort((a, b) => b.matrixVersion - a.matrixVersion)[0]!
     : null
@@ -107,6 +122,19 @@ export default async function CgrdPage({
           : null,
       }))}
       slotYear={slotYear}
+      selectedMonth={month}
+      complianceCalendar={(
+        <ProgramComplianceSection
+          title={`Sesiones del CGRD ${slotYear}`}
+          caption={`Cumplimiento mensual de las actas del CGRD ${slotYear}, por faena`}
+          calendar={calendar}
+          noun={{ singular: "faena", plural: "faenas" }}
+          hrefFor={(rowId, cellMonth) => viewHref({ faena: rowId, mes: cellMonth })}
+          clearHref={viewHref({ faena: worksiteId, mes: null })}
+          selected={worksiteId && month ? { rowId: worksiteId, month } : null}
+          className="mt-4"
+        />
+      )}
       notApplicableSuggestion={notApplicableSuggestion}
       activationPeriod={activationPeriod}
       agreements={agreements}

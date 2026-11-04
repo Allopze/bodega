@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import type { ReactNode } from "react"
 import { redirect } from "next/navigation"
 import { db } from "@/db"
 import {
@@ -30,6 +31,18 @@ import { KARDEX_PAGE_SIZE } from "@/lib/constants"
 import { getProductAttributesByIds } from "@/lib/services/product-sizes"
 import { formatVariantProductName } from "@/lib/products/variant-grouping"
 import { getIncomingWithoutStock, getStockAvailability } from "@/lib/services/stock-availability"
+import { getProductBalanceMovements, getStockConsumption, stockConsumptionKey } from "@/lib/services/stock-coverage"
+import {
+  computeCoverage,
+  parseCoverageParam,
+  summarizeCoverage,
+  type CoverageBand,
+} from "@/lib/bodega/stock-coverage"
+import { shapeBalanceSeries } from "@/lib/bodega/balance-series"
+import { addDays } from "@/lib/sst/date"
+import { formatDate, todayInChile } from "@/lib/utils"
+import { StockCoverageStrip } from "./stock-coverage-strip"
+import { StockBalanceSection } from "./stock-balance-section"
 
 export const metadata: Metadata = { title: "Bodega" }
 
@@ -43,6 +56,9 @@ const STOCK_ROW_LIMIT = 2_000
 
 /** Ventana del KPI de movimientos. Un total histórico sólo crece y no informa. */
 const MOVEMENT_WINDOW_DAYS = 30
+
+/** Ventana por defecto del gráfico del saldo, en días (hoy incluido). */
+const BALANCE_WINDOW_DAYS = 90
 
 const VIEWS: BodegaView[] = ["stock", "kardex"]
 
@@ -84,6 +100,7 @@ export default async function BodegaPage({
   const canViewDeliveries    = can(session, "deliveries:view")
   const canCreateDeliveries  = can(session, "deliveries:create")
   const onlyDemand           = firstStr(sp.demanda) === "1"
+  const coverageFilter       = parseCoverageParam(sp.cobertura)
 
   const worksiteScope = worksiteScopeSql(session, worksites.id)
   const stockScope    = worksiteScopeSql(session, worksiteStock.worksiteId)
@@ -230,9 +247,13 @@ export default async function BodegaPage({
         .limit(STOCK_ROW_LIMIT)
     : []
 
-  const availabilityRows = view === "stock"
-    ? await getStockAvailability(session, { worksiteId: faena || undefined })
-    : []
+  const [availabilityRows, consumption] = view === "stock"
+    ? await Promise.all([
+        getStockAvailability(session, { worksiteId: faena || undefined }),
+        // Cobertura (CHART-035a): el consumo de 90 días por faena y producto, con el mismo alcance.
+        getStockConsumption(session, { worksiteId: faena || undefined }),
+      ])
+    : ([[], new Map()] as [Awaited<ReturnType<typeof getStockAvailability>>, Awaited<ReturnType<typeof getStockConsumption>>])
   // Lo pedido para productos que la faena nunca tuvo: no tienen registro de
   // stock, así que sin esto no aparecían en la tabla.
   const incomingOnlyRows = view === "stock"
@@ -322,6 +343,7 @@ export default async function BodegaPage({
   )
   for (const row of stockRows) {
     const availability = availabilityByKey.get(`${row.worksiteId}\u0000${row.productId}`)
+    const used = consumption.get(stockConsumptionKey(row.worksiteId, row.productId))
     const item: WorksiteStockWithProduct = {
       id: row.id,
       worksiteId: row.worksiteId,
@@ -331,6 +353,12 @@ export default async function BodegaPage({
       lastMovementAt: row.lastMovementAt,
       updatedAt: row.updatedAt,
       hasStockRecord: true,
+      coverage: computeCoverage({
+        quantity: row.quantity,
+        consumed: used?.consumed ?? 0,
+        events: used?.events ?? 0,
+        historyDays: used?.historyDays ?? null,
+      }),
       product: { name: sizedName(row.productId, row.productName), sku: row.productSku, unitOfMeasure: row.unitOfMeasure },
       worksite: { name: row.worksiteName },
     }
@@ -358,6 +386,23 @@ export default async function BodegaPage({
   if (onlyDemand) {
     for (const [worksiteId, items] of Object.entries(stockByWorksite)) {
       stockByWorksite[worksiteId] = items.filter((item) => item.quantity <= 0 && item.incoming > 0)
+    }
+  }
+
+  // La tira de cobertura cuenta lo mismo que lista la tabla —las líneas visibles con
+  // registro de stock— ANTES de aplicar su propio filtro, para seguir mostrando el
+  // reparto completo mientras una banda está elegida. Lo que sólo está por recibir
+  // no tiene historia de consumo en la faena y no entra a ninguna banda. El
+  // predicado de «visible» es el de `StockSection` (saldo o algo por recibir).
+  const coverageSummaryData = summarizeCoverage(
+    Object.values(stockByWorksite)
+      .flat()
+      .filter((item) => item.hasStockRecord && (item.quantity > 0 || item.incoming > 0))
+      .flatMap((item) => (item.coverage ? [item.coverage.band] : [])),
+  )
+  if (coverageFilter) {
+    for (const [worksiteId, items] of Object.entries(stockByWorksite)) {
+      stockByWorksite[worksiteId] = items.filter((item) => item.coverage?.band === coverageFilter)
     }
   }
 
@@ -391,7 +436,74 @@ export default async function BodegaPage({
   }))
 
   const faenaFiltered = Boolean(faena) && faena !== ownWorksiteId
-  const hasFilters = Boolean(filters.q || faenaFiltered || onlyDemand || tipo || producto || filters.desde || filters.hasta)
+  const hasFilters = Boolean(filters.q || faenaFiltered || onlyDemand || coverageFilter || tipo || producto || filters.desde || filters.hasta)
+
+  // Destino de cada banda de la tira: conserva el resto de los filtros de la URL
+  // (faena, búsqueda, demanda) y deja `cobertura` en lo elegido; `""` lo quita.
+  const coverageHref = (band: CoverageBand | "") => {
+    const params = new URLSearchParams()
+    for (const [key, value] of Object.entries(sp)) {
+      if (value === undefined || key === "cobertura") continue
+      if (Array.isArray(value)) { for (const v of value) params.append(key, v) }
+      else params.set(key, value)
+    }
+    if (band) params.set("cobertura", band)
+    const query = params.toString()
+    return query ? `/bodega?${query}` : "/bodega"
+  }
+  // Con varias faenas cada línea es un producto en una faena: el mismo producto en dos bodegas cuenta dos veces.
+  const coverageNoun = visibleWorksites.length === 1
+    ? "producto"
+    : { singular: "producto en faena", plural: "productos en faena" }
+
+  // Saldo en el tiempo (CHART-035b): sólo con un producto y una faena elegidos,
+  // porque el saldo de «todo» no es un número con sentido. La ventana es la del
+  // filtro de fechas del kardex o, sin él, los últimos 90 días.
+  let balanceSection: ReactNode = null
+  if (view === "kardex" && producto && faena) {
+    const to = filters.hasta || todayInChile()
+    const requestedFrom = filters.desde || addDays(to, -(BALANCE_WINDOW_DAYS - 1))
+    const balance = await getProductBalanceMovements(session, { worksiteId: faena, productId: producto, from: requestedFrom, to })
+    // Con el tope alcanzado la serie conserva lo más reciente: la ventana empieza
+    // donde empieza lo conservado, no donde se pidió, o diría fechas que no dibuja.
+    const firstKept = balance.movements[0]
+    const from = balance.truncated && firstKept ? todayInChile(firstKept.performedAt) : requestedFrom
+    const series = shapeBalanceSeries(balance.movements, { from, to })
+    const productLabel = sizedKardexProducts.find((item) => item.id === producto)?.name ?? "Producto"
+    const worksiteLabel = worksiteOptions.find((item) => item.id === faena)?.name ?? "la faena"
+    const dateParams = filters.desde || filters.hasta
+    const widerFrom = addDays(todayInChile(), -364)
+    const withDates = (patch: { desde?: string; hasta?: string }) => {
+      const params = new URLSearchParams()
+      for (const [key, value] of Object.entries(sp)) {
+        if (value === undefined || key === "desde" || key === "hasta" || key === "kardex_page") continue
+        if (Array.isArray(value)) { for (const v of value) params.append(key, v) }
+        else params.set(key, value)
+      }
+      if (patch.desde) params.set("desde", patch.desde)
+      if (patch.hasta) params.set("hasta", patch.hasta)
+      const query = params.toString()
+      return query ? `/bodega?${query}` : "/bodega"
+    }
+    balanceSection = (
+      <StockBalanceSection
+        series={series}
+        productName={productLabel}
+        worksiteName={worksiteLabel}
+        unit={balance.unit}
+        truncated={balance.truncated}
+        empty={{
+          label: `Sin movimientos de este producto entre el ${formatDate(from)} y el ${formatDate(to)}`,
+          hint: "Cuando entre o salga stock en este período, aquí verás cómo se movió el saldo.",
+          ctaLabel: dateParams ? "Quitar las fechas" : "Ver los últimos 12 meses",
+          ctaHref: dateParams ? withDates({}) : withDates({ desde: widerFrom }),
+        }}
+      />
+    )
+  }
+  const balanceHint = view === "kardex" && producto && !faena
+    ? "Elige una faena para ver cómo se movió el saldo de este producto en el tiempo."
+    : null
 
   const canUseMovementSheet = canAdjustStock || canCreateDeliveries || canViewGuides || canViewReceiving || canCreateGuide
 
@@ -434,24 +546,31 @@ export default async function BodegaPage({
       />
 
       {view === "stock" ? (
-        <StockSection
-          worksites={visibleWorksites}
-          stockByWorksite={stockByWorksite}
-          receivingHref={canViewReceiving ? "/recepcion" : undefined}
-          canExportStock={canExportStock}
-          canDeliver={canCreateDeliveries}
-          canAdjust={canAdjustStock}
-          hasFilters={hasFilters}
-          truncated={stockRows.length >= STOCK_ROW_LIMIT}
-        />
+        <>
+          <StockCoverageStrip summary={coverageSummaryData} noun={coverageNoun} active={coverageFilter} hrefFor={coverageHref} />
+          <StockSection
+            worksites={visibleWorksites}
+            stockByWorksite={stockByWorksite}
+            receivingHref={canViewReceiving ? "/recepcion" : undefined}
+            canExportStock={canExportStock}
+            canDeliver={canCreateDeliveries}
+            canAdjust={canAdjustStock}
+            hasFilters={hasFilters}
+            truncated={stockRows.length >= STOCK_ROW_LIMIT}
+          />
+        </>
       ) : (
-        <KardexSection
-          movements={kardexMovements}
-          worksites={worksiteOptions}
-          canExport={canExportStock}
-          pagination={kardexPagination}
-          searchParams={sp}
-        />
+        <>
+          {balanceSection}
+          {balanceHint && <p className="text-sm text-[var(--color-text-muted)]">{balanceHint}</p>}
+          <KardexSection
+            movements={kardexMovements}
+            worksites={worksiteOptions}
+            canExport={canExportStock}
+            pagination={kardexPagination}
+            searchParams={sp}
+          />
+        </>
       )}
 
       {canUseMovementSheet && (

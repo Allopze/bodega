@@ -50,22 +50,69 @@ export function fuelGapMonthKeys(rows: readonly SpendByMonthRow[]): string[] {
   return rows.filter((row) => row.fuelAmount === null).map((row) => row.month)
 }
 
-/** Fila del gráfico: el total y el combustible pueden ser `null` (un hueco en la línea). */
-export interface TrendChartRow {
+/** Fila del gráfico de áreas: el combustible es `null` donde el proveedor no tiene datos (la capa se corta). */
+export interface AreaChartRow {
   month: string
   purchasingAmount: number
   fuelAmount: number | null
-  totalAmount: number | null
   partial: boolean
 }
 
 /**
- * Filas del gráfico. En un mes sin datos del proveedor el total también es `null`:
- * es sólo lo comprado, y dibujarlo como «Total» pintaría una caída que no ocurrió
- * justo donde el combustible no se conoce.
+ * Filas de la «Tendencia mensual de gasto» (áreas apiladas de compras + combustible, sin una
+ * serie «Total»: es la suma de las dos capas y dibujarla repetía la cifra).
+ *
+ * Un mes sin datos del proveedor deja el combustible en `null` y no en 0: una capa que baja a
+ * cero se lee como «no se compró combustible» (C-4). Sin permiso de costos de combustible la
+ * serie no se mide, así que va en `null` para todos los meses y el gráfico no la dibuja.
  */
-export function trendChartRows(rows: readonly SpendByMonthRow[]): TrendChartRow[] {
-  return rows.map((row) => ({ ...row, totalAmount: row.fuelAmount === null ? null : row.totalAmount }))
+export function areaChartRows(rows: readonly SpendByMonthRow[], showFuel: boolean): AreaChartRow[] {
+  return rows.map((row) => ({
+    month: row.month,
+    purchasingAmount: row.purchasingAmount,
+    fuelAmount: showFuel ? row.fuelAmount : null,
+    partial: row.partial,
+  }))
+}
+
+/**
+ * La frase que responde el gráfico: la ventana real y el mes completo de mayor gasto.
+ *
+ * Sólo compiten los meses **completos y con todos los datos**: el mes parcial tiene menos días
+ * que los demás y un mes sin datos del proveedor suma únicamente las compras, así que cualquiera
+ * de los dos «ganaría» o «perdería» por razones que no son de gasto. Si no queda ninguno, lo dice
+ * en vez de elegir uno que no se puede comparar.
+ */
+export function monthlyTrendSummary(toDate: string, rows: readonly SpendByMonthRow[], formatMoney: (value: number) => string): string {
+  if (rows.every((row) => row.totalAmount === 0)) return ""
+  const description = monthlyTrendDescription(toDate, rows.at(-1)?.partial === true, fuelGapMonthKeys(rows))
+  const comparable = rows.filter((row) => !row.partial && row.fuelAmount !== null && row.totalAmount > 0)
+  const peak = comparable.reduce<SpendByMonthRow | null>((top, row) => (top === null || row.totalAmount > top.totalAmount ? row : top), null)
+  return peak
+    ? `${description}. Mayor gasto en un mes completo: ${formatTrendMonth(peak.month)} (${formatMoney(peak.totalAmount)}).`
+    : `${description}. Ningún mes completo tiene todos los datos para compararse.`
+}
+
+/** «Ver datos» de la tendencia: lo mismo que el gráfico, en una tabla. */
+export function trendDataRows(
+  rows: readonly SpendByMonthRow[],
+  showFuel: boolean,
+  formatMoney: (value: number) => string,
+): { headers: string[]; rows: string[][] } {
+  return {
+    headers: showFuel ? ["Mes", "Compras", "Combustible", "Total"] : ["Mes", "Compras"],
+    rows: rows.map((row) => {
+      const month = row.partial ? `${formatTrendMonth(row.month)} (parcial)` : formatTrendMonth(row.month)
+      if (!showFuel) return [month, formatMoney(row.purchasingAmount)]
+      return [
+        month,
+        formatMoney(row.purchasingAmount),
+        row.fuelAmount === null ? "Sin datos del proveedor" : formatMoney(row.fuelAmount),
+        // Sin el combustible no hay total: sería sólo lo comprado, y un «total» menor justo donde falta un dato.
+        row.fuelAmount === null ? "—" : formatMoney(row.totalAmount),
+      ]
+    }),
+  }
 }
 
 /**
@@ -74,20 +121,14 @@ export function trendChartRows(rows: readonly SpendByMonthRow[]): TrendChartRow[
  * justo lo que C-4 corrige.
  */
 export function trendTooltipEntry(name: string, value: number | null, formatMoney: (value: number) => string): [string, string] {
-  const label = name === "totalAmount" ? "Total" : name
-  if (value === null) {
-    if (label === "Combustible") return ["Sin datos del proveedor", label]
-    if (label === "Total") return ["Sin total: falta el combustible", label]
-    return ["—", label]
-  }
-  return [formatMoney(value), label]
+  if (value === null) return [name === "Combustible" ? "Sin datos del proveedor" : "—", name]
+  return [formatMoney(value), name]
 }
 
 /**
- * ¿El punto `index` tiene valor y sus dos vecinos no? Una línea sin `connectNulls`
- * no dibuja un tramo hacia un hueco, así que ese punto quedaría invisible (con
- * `dot={false}`): el último mes, tras un hueco, desaparecía. Una serie de un solo
- * punto no se marca: recharts ya lo dibuja.
+ * ¿El punto `index` tiene valor y sus dos vecinos no? Una serie sin `connectNulls` no dibuja un
+ * tramo hacia un hueco, así que ese punto quedaría invisible: el último mes, tras un hueco,
+ * desaparecía. Una serie de un solo punto no se marca: recharts ya lo dibuja.
  */
 export function isIsolatedPoint(values: ReadonlyArray<number | null>, index: number): boolean {
   if (values.length < 2 || values[index] == null) return false

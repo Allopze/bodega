@@ -1392,6 +1392,12 @@ export interface DispatchGuideListFilters {
   destinationWorksiteId?: string
   from?: string
   to?: string
+  /**
+   * Tramo de antigüedad de las guías despachadas (CHART-037), ya resuelto por el
+   * llamador con `guideAgeFilterSql`. Implica `status = 'dispatched'`: sólo ésas
+   * tienen una espera que medir.
+   */
+  dispatchedAgeSql?: SQL | undefined
   limit?: number
   offset?: number
 }
@@ -1421,6 +1427,7 @@ function listWhere(filters: DispatchGuideListFilters) {
     filters.destinationWorksiteId ? eq(dispatchGuides.destinationWorksiteId, filters.destinationWorksiteId) : undefined,
     filters.from ? gte(dispatchGuides.issuedAt, `${filters.from}T00:00:00.000Z`) : undefined,
     filters.to ? lte(dispatchGuides.issuedAt, `${filters.to}T23:59:59.999Z`) : undefined,
+    filters.dispatchedAgeSql,
   )
 }
 

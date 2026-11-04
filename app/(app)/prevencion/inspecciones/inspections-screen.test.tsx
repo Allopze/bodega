@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   subjects: vi.fn(),
   runs: vi.fn(),
   summary: vi.fn(),
+  trend: vi.fn(),
   overdue: vi.fn(),
   assignees: vi.fn(),
   panelProps: vi.fn(),
@@ -34,13 +35,14 @@ vi.mock("@/components/prevention/pdtp-scheduled-activity-panel-server", () => ({
 vi.mock("./inspection-run-list", () => ({
   // Pinta `activities` como lo hace la lista real: el nodo se crea en la pantalla del
   // servidor y la lista de cliente sólo decide dónde ponerlo.
-  InspectionRunList: (props: { activities?: React.ReactNode }) => { mocks.listProps(props); return <div data-testid="run-list">{props.activities}</div> },
+  InspectionRunList: (props: { activities?: React.ReactNode; trend?: React.ReactNode }) => { mocks.listProps(props); return <div data-testid="run-list">{props.trend}{props.activities}</div> },
   InspectionPageActions: (props: unknown) => { mocks.actionsProps(props); return null },
 }))
 vi.mock("@/lib/services/prevention-inspections", () => ({
   INSPECTION_PAGE_SIZE: 50,
   listInspectionRuns: mocks.runs,
   summarizeInspectionRuns: mocks.summary,
+  summarizeInspectionComplianceTrend: mocks.trend,
   // Sin `listInspectionPrograms` a propósito: la pantalla sólo necesita la cifra de las
   // vencidas y, si volviera a pedir todas las programaciones, este mock lanzaría.
   countOverdueInspectionPrograms: mocks.overdue,
@@ -65,6 +67,7 @@ const EXECUTE = "prevention:inspections:execute"
 beforeEach(() => {
   mocks.runs.mockResolvedValue([])
   mocks.summary.mockResolvedValue({ total: 0, pendingReview: 0, withOpenFindings: 0, withCriticalFindings: 0, overdueRuns: 0 })
+  mocks.trend.mockResolvedValue([])
   mocks.overdue.mockResolvedValue(0)
   mocks.assignees.mockResolvedValue([])
   mocks.worksites.mockResolvedValue(WORKSITES)
@@ -141,6 +144,20 @@ describe("bandeja de inspecciones — la pantalla del servidor", () => {
     const expectedFilter = { status: "planned", worksiteId: "ws-1" }
     expect(mocks.runs).toHaveBeenCalledWith(expect.anything(), expectedFilter, { offset: 50 })
     expect(mocks.summary).toHaveBeenCalledWith(expect.anything(), expectedFilter)
+  })
+
+  it("la serie de cumplimiento se pide con el mismo filtro que los KPI y una ventana de 12 meses (CHART-010)", async () => {
+    mocks.permissions = [VIEW, REVIEW]
+    render(await InspectionsScreen({ searchParams: { estado: "planned", faena: "ws-1" } }))
+
+    expect(mocks.trend).toHaveBeenCalledTimes(1)
+    expect(mocks.trend).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "u-lectura", scope: { mode: "some", ids: ["ws-1", "ws-2", "ws-3"] } }),
+      { status: "planned", worksiteId: "ws-1" },
+      // Primer día del mes, once meses antes del actual: el corte viaja a SQL.
+      { since: expect.stringMatching(/^\d{4}-\d{2}-01$/) },
+    )
+    expect((mocks.listProps.mock.calls.at(-1)![0] as Record<string, unknown>).trend).toBeTruthy()
   })
 
   it("el encabezado lleva una descripción corta, la que no se trunca a 1024 px", async () => {

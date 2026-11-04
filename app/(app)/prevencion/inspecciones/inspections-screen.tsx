@@ -13,10 +13,14 @@ import {
   listInspectionSubjectsByWorksite,
   listInspectionTemplates,
   listInspectionWorksites,
+  summarizeInspectionComplianceTrend,
   summarizeInspectionRuns,
   INSPECTION_PAGE_SIZE,
 } from "@/lib/services/prevention-inspections"
 import { InspectionPageActions, InspectionRunList } from "./inspection-run-list"
+import { InspectionTrendSection } from "./inspection-trend-section"
+import { shapeInspectionTrend } from "@/lib/prevention/inspection-trend"
+import { windowStartDay } from "@/lib/prevention/monthly-series"
 import type { InspectionSubjectOption } from "@/lib/prevention/inspection-list-query"
 import { todayInChile } from "@/lib/utils"
 import { buildInspectionExportQuery, parseInspectionListQuery } from "@/lib/prevention/inspection-list-query"
@@ -72,11 +76,16 @@ export async function InspectionsScreen({ searchParams }: {
 
   const { page, filter } = parseInspectionListQuery(searchParams ?? {})
   const exportQuery = buildInspectionExportQuery(filter)
+  const today = todayInChile()
 
-  const [runs, summary, overdueProgramCount, templates, worksites, assignees] = await Promise.all([
+  const [runs, summary, trendRows, overdueProgramCount, templates, worksites, assignees] = await Promise.all([
     listInspectionRuns(access, filter, { offset: (page - 1) * INSPECTION_PAGE_SIZE }),
     // KPIs sobre el universo completo, no sobre la página visible (C-09).
     summarizeInspectionRuns(access, filter),
+    // CHART-010: la serie mensual de cumplimiento, agregada en SQL sobre el mismo
+    // universo que los KPI (el estado y la vista rápida no la acotan) y acotada a
+    // los últimos 12 meses en la propia consulta.
+    summarizeInspectionComplianceTrend(access, filter, { since: windowStartDay(today) }),
     // Sólo se necesita la cifra del aviso de programaciones vencidas: se cuenta
     // en SQL en vez de traer todas las programaciones con sus joins.
     countOverdueInspectionPrograms(access, { kinds: filter.kinds }),
@@ -158,10 +167,11 @@ export async function InspectionsScreen({ searchParams }: {
           criticalFindings: row.criticalFindings,
         }))}
         summary={summary}
+        trend={<InspectionTrendSection points={shapeInspectionTrend(trendRows, today)} />}
         page={page}
         pageSize={INSPECTION_PAGE_SIZE}
         overdueProgramCount={overdueProgramCount}
-        today={todayInChile()}
+        today={today}
         canExecute={canExecute}
         canReview={canReview}
         templates={approvedTemplates}

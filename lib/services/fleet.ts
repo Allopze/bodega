@@ -17,7 +17,8 @@ import { recordAudit } from "@/lib/audit"
 import { isGlobalRole, visibleWorksiteIds, worksiteScopeSql } from "@/lib/auth/scope"
 import { can } from "@/lib/auth/can"
 import { accountableProviderTransactionsWhere, providerLoadCountSql } from "@/lib/combustibles/load-status"
-import { METER_RESET_RULE_CODES, OPEN_ANOMALY_CASE_STATUSES } from "@/lib/combustibles/anomaly-labels"
+import { OPEN_ANOMALY_CASE_STATUSES } from "@/lib/combustibles/anomaly-labels"
+import { acceptedMeterResetSql } from "@/lib/combustibles/meter-reset-sql"
 import { monthsWithoutProviderData } from "@/lib/combustibles/copec-coverage"
 import { listCopecPeriodCoverage } from "@/lib/combustibles/copec-coverage-store"
 import { maxMeterRatePerDayOf, meterSeriesAdvance, type MeterSeriesPoint } from "@/lib/combustibles/meter-series"
@@ -135,20 +136,9 @@ export async function getFleetOverview(
     vehicleIds ? inArray(fuelProviderTransactions.vehicleId, [...vehicleIds]) : undefined,
   )
 
-  // Un reset de medidor ACEPTADO —un caso de medidor regresivo sobre ESTA lectura, cerrado
-  // explícitamente como `reset_medidor` y no como lectura corregida— parte la serie en esa
-  // lectura (CO-023, ítem 7); lo demás sigue siendo "posible reset, verifica". Es la misma
-  // marca que lee la bandeja de anomalías (`fuel_anomaly_cases.resolution_kind`): el detector
-  // deja el caso sobre la lectura actual del par que retrocede, y `referenceEntityType`
-  // distingue la fuente (`fuel_meter_reading`, no una carga propia).
-  const acceptedResetSql = sql<boolean>`EXISTS (
-    SELECT 1 FROM ${fuelAnomalyCases}
-    WHERE ${fuelAnomalyCases.referenceEntityType} = 'fuel_meter_reading'
-      AND ${fuelAnomalyCases.referenceEntityId} = ${fuelMeterReadings.id}
-      AND ${fuelAnomalyCases.ruleCode} IN (${sql.join(METER_RESET_RULE_CODES.map((code) => sql`${code}`), sql`, `)})
-      AND ${fuelAnomalyCases.status} IN ('resolved', 'dismissed')
-      AND ${fuelAnomalyCases.resolutionKind} = 'reset_medidor'
-  )`
+  // Un reset de medidor ACEPTADO parte la serie en esa lectura (CO-023, ítem 7); la marca la comparte
+  // con el rendimiento por mes de Consumo (`acceptedMeterResetSql`).
+  const acceptedResetSql = acceptedMeterResetSql()
 
   const [vehicles, fuelRows, meterRows, objectionRows, jumpRules, documentExpiryRows, workOrderMetrics] = await Promise.all([
     db.query.fuelVehicles.findMany({

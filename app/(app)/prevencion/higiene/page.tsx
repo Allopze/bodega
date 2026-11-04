@@ -16,6 +16,8 @@ import {
 import { resolveProgramActivationPeriod } from "@/lib/services/prevention-program-slots"
 import { resolveProgramSlotYear } from "@/lib/prevention/program-slots-2026"
 import { getPdtpOperationalYears } from "@/lib/services/prevention-pdtp"
+import { loadProgramSlotCalendar } from "@/lib/services/prevention-program-calendar"
+import { ProgramComplianceSection } from "@/components/prevention/program-compliance-section"
 import { formatDate, todayInChile } from "@/lib/utils"
 import { HygieneDashboard } from "./hygiene-dashboard"
 import { HygieneCreateButton } from "./hygiene-dialogs"
@@ -46,7 +48,9 @@ export default async function HigienePage({ searchParams }: { searchParams: Prom
   const query = await searchParams
   const slotYear = resolveProgramSlotYear(Array.isArray(query.anio) ? query.anio[0] : query.anio, (await getPdtpOperationalYears()).primary)
 
-  const [groups, programs, summary, agents, worksites, applicabilities, measurementSlots] = await Promise.all([
+  const worksiteScope: string[] | "all" = access.scope.mode === "all" ? "all" : access.scope.mode === "some" ? access.scope.ids : []
+
+  const [groups, programs, summary, agents, worksites, applicabilities, measurementSlots, calendar] = await Promise.all([
     listExposureGroups(access),
     listSurveillancePrograms(access),
     getAnonymizedExposureSummary(access),
@@ -55,6 +59,9 @@ export default async function HigienePage({ searchParams }: { searchParams: Prom
     canManage || canAssess ? listHygieneWorksites(access) : Promise.resolve([]),
     listProtocolApplicabilities(access),
     listHygieneMeasurementSlots(access, slotYear),
+    // CHART-008: la evaluación cuantitativa (N°45) de TODAS las faenas del alcance en una sola vista;
+    // el panel de protocolos las muestra de a una.
+    loadProgramSlotCalendar("hygiene", worksiteScope, slotYear),
   ])
   // Desde cuándo exige el programa a cada faena: el checklist lo usa para no
   // pedir una casilla anterior a la incorporación de la faena al programa.
@@ -143,6 +150,17 @@ export default async function HigienePage({ searchParams }: { searchParams: Prom
             : null,
         }))}
         slotYear={slotYear}
+        complianceCalendar={(
+          <ProgramComplianceSection
+            title={`Evaluación cuantitativa ${slotYear}`}
+            caption={`Cumplimiento de la evaluación cuantitativa por mutual (N°45) ${slotYear}, por faena`}
+            calendar={calendar}
+            noun={{ singular: "faena", plural: "faenas" }}
+            // La casilla se resuelve en el panel de protocolos de la faena: el clic abre ese panel
+            // (la misma pantalla: filtra, no navega).
+            hrefFor={(worksiteId) => `/prevencion/higiene?tab=protocols&faena=${encodeURIComponent(worksiteId)}&anio=${slotYear}`}
+          />
+        )}
         activationPeriods={activationPeriods}
         canRecordMeasurementSlots={canRecordMeasurementSlots}
         today={todayInChile()}

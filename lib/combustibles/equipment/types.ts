@@ -107,6 +107,20 @@ export interface EquipmentFileIdle {
   /** `null` cuando la telemetría no informa litros. */
   litersIdle: number | null
   activeDays: number
+  /**
+   * Un registro por día del período, en orden (CHART-024). Si dos fuentes informan el mismo día
+   * manda la de más horas de motor (`dailyTelemetry`), así que sumarla da los totales de arriba.
+   */
+  daily: EquipmentFileIdleDay[]
+}
+
+export interface EquipmentFileIdleDay {
+  /** «YYYY-MM-DD». */
+  day: string
+  operatingHours: number
+  idleHours: number
+  /** Horas en vacío ÷ horas de funcionamiento del día; `null` sin horas. */
+  idlePct: number | null
 }
 
 export interface EquipmentFileSealIssue {

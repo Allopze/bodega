@@ -5,6 +5,7 @@ import { createElement, type ComponentType } from "react"
 import { Skeleton } from "@/components/ui/skeleton"
 import type { MonthlyMediumChartData } from "@/lib/combustibles/control/view-helpers"
 import type { PerformanceUnit } from "@/lib/combustibles/control/contracts"
+import type { MeterRateSeries } from "@/lib/combustibles/meter-rate-series"
 import type { MeterChartPoint } from "./overview-meter-chart"
 import type { RankingItem } from "./overview-ranking-chart"
 
@@ -28,6 +29,11 @@ export const OverviewMeterChart = dynamic(
   () => import("./overview-meter-chart").then((module) => module.OverviewMeterChart),
   { ssr: false, loading: chartSkeleton("h-64") },
 ) as ComponentType<{ unit: PerformanceUnit; points: MeterChartPoint[] }>
+
+export const MeterRateChart = dynamic(
+  () => import("./meter-rate-chart").then((module) => module.MeterRateChart),
+  { ssr: false, loading: chartSkeleton("h-64") },
+) as ComponentType<{ series: MeterRateSeries }>
 
 export const OverviewRankingChart = dynamic(
   () => import("./overview-ranking-chart").then((module) => module.OverviewRankingChart),

@@ -165,7 +165,7 @@ describe("getAnalyticsDashboard", () => {
         { productId: "prod-2", productName: "Casco", workerName: "Ada Lovelace", worksiteName: "Faena Norte", totalQty: 5, deliveryCount: 3 },
       ] },
       { data: [
-        { id: "oc-1", code: "OC-001", worksiteName: "Faena Norte", supplierName: "Proveedor A", totalAmount: 1_200_000, createdAt: "2026-06-01T00:00:00Z" },
+        { id: "oc-1", code: "OC-001", worksiteName: "Faena Norte", supplierName: "Proveedor A", totalAmount: 1_200_000, issuedAt: "2026-06-01T00:00:00Z" },
       ] },
     )
 

@@ -8,6 +8,7 @@ import { OptionSelect } from "@/components/ui/option-select"
 import { DatePicker } from "@/components/ui/date-picker"
 import { DISPATCH_GUIDE_STATE_META } from "@/components/states/state-badge"
 import { formatDate } from "@/lib/utils"
+import { guideAgeBucketLabel } from "@/lib/bodega/guide-transit"
 import { ALL_WORKSITES } from "../faena-scope"
 
 interface GuideFiltersProps {
@@ -23,6 +24,8 @@ interface GuideFiltersProps {
     desde?: string
     hasta?: string
     q?: string
+    /** Tramo de antigüedad de las despachadas (`?antiguedad=`), elegido desde el gráfico. */
+    antiguedad?: string
   }
 }
 
@@ -78,6 +81,14 @@ export function GuideFilters({ worksites, ownWorksiteId = "", current }: GuideFi
     else if (!faena && ownWorksiteId) {
       activeChips.push({ key: "faena", label: "Faena", value: ALL_WORKSITES, displayValue: "Todas las faenas" })
     }
+  }
+  if (current.antiguedad) {
+    activeChips.push({
+      key: "antiguedad",
+      label: "Antigüedad",
+      value: current.antiguedad,
+      displayValue: guideAgeBucketLabel(current.antiguedad) ?? current.antiguedad,
+    })
   }
   if (current.desde) {
     activeChips.push({ key: "desde", label: "Desde", value: current.desde, displayValue: formatDate(current.desde) })

@@ -1,5 +1,6 @@
 "use client"
 import Link from "next/link"
+import type { ReactNode } from "react"
 import { Heartbeat } from "@phosphor-icons/react"
 import { ProtocolsPanel, type ApplicabilityRow, type MeasurementSlotRow } from "./protocols-panel"
 import type { PdtpPeriod } from "@/lib/services/pdtp/period"
@@ -64,7 +65,7 @@ interface AgentOption {
 
 export function HygieneDashboard({
   groups, programs, summary, agents, worksites, protocolWorksites, applicabilities,
-  measurementSlots, slotYear, activationPeriods, canRecordMeasurementSlots, today, canAssess,
+  measurementSlots, slotYear, complianceCalendar, activationPeriods, canRecordMeasurementSlots, today, canAssess,
 }: {
   groups: GroupItem[]
   programs: ProgramItem[]
@@ -75,6 +76,8 @@ export function HygieneDashboard({
   applicabilities: ApplicabilityRow[]
   measurementSlots: MeasurementSlotRow[]
   slotYear: number
+  /** El calendario faena × mes de la evaluación cuantitativa (N°45), armado por la página. Va en la pestaña de protocolos. */
+  complianceCalendar?: ReactNode
   activationPeriods: Record<string, PdtpPeriod | null>
   canRecordMeasurementSlots: boolean
   today: string
@@ -149,6 +152,8 @@ export function HygieneDashboard({
           ))}
         </div>
       </FilterToolbar>
+
+      {tab === "protocols" && complianceCalendar}
 
       {tab === "protocols" && (
         <ProtocolsPanel

@@ -9,6 +9,7 @@ const captured = vi.hoisted(() => ({
   areas: {} as Record<string, Record<string, unknown>>,
   yAxes: {} as Record<string, Record<string, unknown>>,
   tooltip: {} as Record<string, unknown>,
+  legend: {} as Record<string, unknown>,
 }))
 
 vi.mock("recharts", () => ({
@@ -38,7 +39,10 @@ vi.mock("recharts", () => ({
     captured.tooltip = props
     return <div data-testid="tooltip" />
   },
-  Legend: () => <div data-testid="legend" />,
+  Legend: (props: Record<string, unknown>) => {
+    captured.legend = props
+    return <div data-testid="legend" />
+  },
 }))
 
 import { CategoryBarChart, MonthlyEvolutionChart } from "./fuel-charts"
@@ -64,6 +68,7 @@ describe("fuel charts", () => {
   })
 
   describe("evolución mensual", () => {
+    type LegendFormatter = (value: string) => React.ReactElement<{ style: { color: string }; children: React.ReactNode }>
     const MONTHS = [
       { group: "2026-08", totalLiters: 1_000, totalAmount: 1_100_000 },
       { group: "2026-09", totalLiters: 0, totalAmount: 0 },
@@ -97,6 +102,18 @@ describe("fuel charts", () => {
       expect((captured.yAxes.price!.tick as { fill: string }).fill).toBe("var(--color-signal-ink)")
       expect(captured.areas.monto!.stroke).toBe("var(--color-info)")
       expect(captured.areas.precio!.stroke).toBe("var(--color-signal)")
+    })
+
+    it("el texto de la leyenda y del tooltip también usa tokens -ink o neutros: recharts los pinta con el color de la serie, y el naranja base mide ~2,5:1", () => {
+      render(<MonthlyEvolutionChart data={MONTHS} />)
+      // La leyenda conserva el trazo con el color de la serie (el ícono) pero su texto va en la variante -ink de ese mismo matiz,
+      // el mismo que ya tiene su eje: así se relaciona cada serie con su eje.
+      const formatter = captured.legend.formatter as LegendFormatter
+      expect(formatter("Monto CLP").props.style.color).toBe("var(--color-info-ink)")
+      expect(formatter("Precio").props.style.color).toBe("var(--color-signal-ink)")
+      expect(formatter("Monto CLP").props.children).toBe("Monto CLP")
+      // El tooltip pinta cada fila con el color de su serie; una sola regla para todas, en el color del texto.
+      expect(captured.tooltip.itemStyle).toEqual({ color: "var(--color-text)" })
     })
   })
 })

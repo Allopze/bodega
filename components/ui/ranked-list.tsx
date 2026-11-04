@@ -129,7 +129,10 @@ export function RankedList({
 
   const toneOf = (item: RankedListItem): Tone => (isThreshold ? toneFor(item.value, limits) : "share")
   const fractionOf = (item: RankedListItem) => {
-    const raw = isThreshold ? item.value / 100 : compact ? (total > 0 ? item.value / total : 0) : item.value / max
+    // Un porcentaje ya es una proporción de 100: medirlo contra el mayor o contra la
+    // suma de las otras filas dibuja una barra llena para una tasa de 20 % cuando
+    // hay una sola fila (o dos tasas de 20 % y 50 % como 29 % y 71 %).
+    const raw = isThreshold || format === "percent" ? item.value / 100 : compact ? (total > 0 ? item.value / total : 0) : item.value / max
     return Math.min(1, Math.max(0, raw))
   }
   const shareOf = (item: RankedListItem) => (!isThreshold && showShare && total > 0 ? formatShare(Math.max(0, item.value) / total) : null)

@@ -1,6 +1,8 @@
 import type * as React from "react"
+import { ChartDataTable } from "@/components/charts/chart-data-table"
 import { ChartErrorBoundary } from "@/components/chart-error-boundary"
 import type { ConsumptionDashboardData, EquipmentTypeConsumptionRow, HeatmapCell, VehicleEvolutionPoint } from "@/lib/combustibles/consumption-dashboard"
+import { buildEvolutionPanels, describeEvolution, evolutionTable } from "@/lib/combustibles/evolution-panels"
 import type { ScatterPoint } from "@/lib/combustibles/operations-dashboard"
 import { ConsumptionAnalysisMetrics } from "../../consumption-kpis"
 import { EvolutionChart, PatenteRankingChart, PriceEvolutionChart, RendimientoChart } from "../../consumption-charts-lazy"
@@ -19,6 +21,8 @@ export interface CardsAnalysisProps {
   emptyAction?: { label: string; href: string }
   /** Etiqueta del período, para el gráfico de tendencia. */
   periodLabel: string
+  /** Qué meses cubre la evolución por equipo («Últimos 6 meses, hasta octubre de 2026.»): es una ventana, no el período. */
+  evolutionCaption?: string
 }
 
 function Block({ id, title, hint, children }: { id: string; title: string; hint?: string; children: React.ReactNode }) {
@@ -39,11 +43,14 @@ function Block({ id, title, hint, children }: { id: string; title: string; hint?
  * ficha del equipo). Los datos llegan ya filtrados por fuente, patente y
  * asociación.
  */
-export function CardsAnalysis({ dashboard, byEquipmentType, scatter, evolution, heatmap, canViewCosts, emptyAction, periodLabel }: CardsAnalysisProps) {
+export function CardsAnalysis({ dashboard, byEquipmentType, scatter, evolution, heatmap, canViewCosts, emptyAction, periodLabel, evolutionCaption }: CardsAnalysisProps) {
   const scatterKm = scatter.filter((point) => point.medidoPor === "km")
   const scatterHora = scatter.filter((point) => point.medidoPor === "hora")
   const hasAnything = byEquipmentType.length > 0 || scatterKm.length > 0 || scatterHora.length > 0 || evolution.length > 0 || heatmap.length > 0
     || (dashboard?.seriesPorPeriodo.length ?? 0) > 0
+
+  const evolutionView = buildEvolutionPanels(evolution)
+  const evolutionSummary = describeEvolution(evolutionView)
 
   if (!hasAnything) {
     return (
@@ -97,8 +104,9 @@ export function CardsAnalysis({ dashboard, byEquipmentType, scatter, evolution, 
       ) : null}
 
       {evolution.length > 0 ? (
-        <Block id="evolucion-equipo" title="Evolución por equipo" hint="Litros por período de los equipos que más consumen. Se muestran hasta 8 series.">
-          <ChartErrorBoundary chartName="Evolución por equipo"><EvolutionByVehicleChart points={evolution} /></ChartErrorBoundary>
+        <Block id="evolucion-equipo" title="Evolución por equipo" hint={[evolutionCaption, evolutionSummary, "Un panel por equipo, todos con la misma escala; se muestran hasta 8."].filter(Boolean).join(" ")}>
+          <ChartErrorBoundary chartName="Evolución por equipo"><EvolutionByVehicleChart view={evolutionView} /></ChartErrorBoundary>
+          {evolutionView.panels.length > 0 ? <ChartDataTable caption="Litros por equipo y período" {...evolutionTable(evolutionView)} /> : null}
         </Block>
       ) : null}
 

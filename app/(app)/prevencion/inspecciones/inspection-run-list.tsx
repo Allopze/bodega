@@ -105,6 +105,12 @@ interface Props {
    * puede importarlo. Antes iba al pie, bajo hasta 50 filas y la paginación.
    */
   activities?: React.ReactNode
+  /**
+   * La serie mensual de cumplimiento (CHART-010). Server component armado por la
+   * pantalla, como `activities`: va entre los tiles y los avisos, sobre la tabla
+   * a la que da contexto, y no la reemplaza.
+   */
+  trend?: React.ReactNode
 }
 
 /**
@@ -155,7 +161,7 @@ function runAction(status: string): string {
   return "Ver detalle"
 }
 
-export function InspectionRunList({ runs, summary, page, pageSize, overdueProgramCount, today, canExecute, canReview, templates, worksites, assignees, subjectsByWorksite, activities }: Props) {
+export function InspectionRunList({ runs, summary, page, pageSize, overdueProgramCount, today, canExecute, canReview, templates, worksites, assignees, subjectsByWorksite, activities, trend }: Props) {
   // Filtros client-side en la URL (shareables + sobreviven refresh) vía useUrlFilters.
   const { getFilter, setFilters, clearFilters: clearUrlFilters, isPending } = useUrlFilters()
   const status = getFilter("estado") || "all"
@@ -341,6 +347,8 @@ export function InspectionRunList({ runs, summary, page, pageSize, overdueProgra
           </p>
         </Callout>
       )}
+
+      {trend}
 
       {activities}
 

@@ -300,10 +300,12 @@ export async function getEvolutionByVehicle(session: Session, filters: Consumpti
     .leftJoin(fuelVehicles, eq(fuelConsumptionRecords.vehicleId, fuelVehicles.id))
     .where(where)
     .groupBy(fuelConsumptionRecords.periodoDesde, fuelConsumptionRecords.patente, fuelVehicles.code, fuelVehicles.id)
-    .orderBy(fuelConsumptionRecords.periodoDesde)
+    // El tope se aplica desde lo más reciente: ordenado ascendente, pasado el
+    // tope se perdían en silencio justo los últimos períodos. Se invierte al final.
+    .orderBy(desc(fuelConsumptionRecords.periodoDesde))
     .limit(3000)
 
-  return rows.map((r) => ({
+  return rows.reverse().map((r) => ({
     periodo: r.periodo,
     plate: r.plate,
     vehicleCode: r.vehicleCode,
