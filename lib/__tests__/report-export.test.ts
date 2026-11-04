@@ -259,8 +259,8 @@ describe("report export helpers", () => {
     expect(data.filenameBase).toBe("analitica-transversal")
     expect(data.headers).toEqual(["Sección", "Indicador", "Detalle", "Monto/Cantidad"])
     expect(data.rows).toEqual(expect.arrayContaining([
-      ["KPI", "Gasto total", "2026-06-01 a 2026-06-30", 1_620_000],
-      ["Gasto por tipo", "EPP", "", 700_000],
+      ["KPI", "Gasto total (con IVA)", "2026-06-01 a 2026-06-30", 1_620_000],
+      ["Gasto por tipo (con IVA)", "EPP", "", 700_000],
       ["Vehículos", "AA-BB-11", "camioneta · 350 L · 7 cargas", 420_000],
       ["Alertas", "Proveedores · Proveedor Uno", "Concentra 74% del gasto · Acción: Validar alternativas", "medium"],
     ]))

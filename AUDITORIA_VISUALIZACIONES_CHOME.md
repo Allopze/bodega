@@ -2,6 +2,9 @@
 
 **Fecha:** 2026-11-02 · **Revisión con datos de producción:** 2026-11-03 · **Rama auditada:** `main` @ `d29767f66` · **Tipo:** descubrimiento y diseño. **El informe no modificó código ni lógica de negocio**; las tres correcciones colaterales del Anexo C viven en una rama aparte.
 
+
+> **Estado al 2026-11-03:** las fases 0, 1, 2 y 4 y la parte construible de la 3 están en `main`. Lo que falta, con su motivo y su dueño, está en la sección **K. Estado de implementación y lo que falta**.
+
 ---
 
 ## Alcance, método y límites
@@ -1980,7 +1983,7 @@ Son defectos verificados, no propuestas. Esfuerzo: ~1 día.
 - **Riesgo:** bajo.
 - **Criterio de aceptación:** pruebas unitarias por cifra y verificación en navegador de cada pantalla.
 
-**Estado al 2026-11-03.** Las filas 0.1 a 0.9 están **implementadas** en la rama `fix/fase0-cifras`, con pruebas de regresión y verificación en navegador. Dos interpretaciones quedaron registradas:
+**Estado al 2026-11-03.** Las filas 0.1 a 0.9 están **implementadas** y en `main`, con pruebas de regresión y verificación en navegador. Dos interpretaciones quedaron registradas:
 
 - **0.4:** el % mensual se descartaba sin dibujarse. Ahora es nulo cuando no hay plan, y se dibuja en CHART-004.
 - **0.9:** el campo nunca fue una cifra, sino la unidad configurada. Ahora se rotula «Unidad de rendimiento». Aparte, en la rama `fix/seed-faenas-y-defectos-sst` (sin commit) se corrigieron tres defectos que salieron a la luz en la revisión (ver Anexo C):
@@ -2148,6 +2151,82 @@ No es trabajo de visualización, pero lo condiciona. Viene de comparar el catál
 1. Si la decisión es **sobre una fila**, la tabla se queda.
 2. Si la decisión es **sobre un patrón**, el gráfico va **encima** de la tabla, la filtra con un clic y nunca la elimina.
 3. Un gráfico que no lleva a una acción ni a un subconjunto **no se agrega**.
+
+---
+
+## K. Estado de implementación y lo que falta
+
+Actualizado el 2026-11-03 con `main` @ `2d02e4995`. Las secciones A a J son el diagnóstico original y no se reescriben; esta sección es la que se mantiene al día.
+
+### K.1 Hecho
+
+| Fase | Commit en `main` | Contenido |
+|---|---|---|
+| 0 — cifras | `2f8e85f53` … `2b90dec82` | 0.1–0.9; C-12, C-13, C-14; Copec canónico en analítica, tablero y `/flota`; huecos de cobertura; Km/Hr desde Copec; mes parcial; lecturas objetadas marcadas |
+| 1 — base y Top 10 | `858ab97a3` … `ecfe0ef93` | Tokens `--color-chart-*`, paleta sin hex, `components/charts/` (`ChartSection`, `ChartDataTable`, `BulletBar`, `AgingBar`, `ComplianceCalendar`, `ShareBar`, `RiskMatrix`); CHART-007, 008 (capacitación, alcotest), 020, 022, 023, 030, 031, 036 |
+| 2 — vistas analíticas | `6a4c970dd` | CHART-033 (una base de fecha: emisión, con IVA; paridad con Finanzas probada), 032, 016, 021, 024, small multiples por vehículo, `PdtpProgressRing` retirado |
+| 3 — lo construible | `6a4c970dd` | CHART-010, 011, 029 (lead time), 034, 035, 037; CHART-008 en cierres PDTP, CPHS, emergencias y CGRD |
+| 4 — consolidación | `2d02e4995` | `chart-guard.test.ts`, `useChartMotion` (200 ms, sin movimiento con *reduced motion*), `DenseChart` bajo 360 px, Excel desde «Ver datos», `CoverageNotice` único, drill-down documentado en `DESIGN.md` |
+
+Decisiones tomadas en el camino (con el usuario):
+
+- El gasto de `/analitica` y su Excel van **con IVA**; «Gasto por tipo» sube ≈19 % y ahora suma al total. Avisar a quien use la pantalla.
+- La tasa de detención PPA exige **20 envíos**; bajo eso se muestra la cuenta («3 de 11 PPA detenidos»), en `/prevencion/ppa` y en el tablero («Tasa de detención PPA»).
+- La cobertura de DTE (CHART-034) la ven sólo los roles globales.
+- Higiene muestra una lista de la evaluación N°45 por faena, no un calendario (1 celda exigible de 12).
+- Facturación: todas las facturas y pagos del clon de producción son CLP; los rankings ya separan por moneda si entra otra.
+
+### K.2 Verificación pendiente (sesión de desarrollo)
+
+| # | Qué | Estado |
+|---|---|---|
+| V-1 | Pasada final: typecheck, lint, test:fast, test:pglite y E2E completa sobre `2d02e4995` | En curso al escribir esto (typecheck OK). Corregir lo que falle |
+| V-2 | Recorrido en navegador de las pantallas de las fases 2–4 en escritorio, móvil y 320 px, con axe, e informe en `qa/reports/` | Pendiente. Incluye el reemplazo bajo 360 px, la entrada de 200 ms y la descarga real del Excel |
+| V-3 | Push de los commits de las fases 2–4 y deploy | Lo hace el usuario. Las fases 2–4 no traen migraciones |
+| V-4 | E2E nuevos de interacción (elegir un tramo o banda y verificar que la lista se filtra) | No hay; los gráficos sólo tienen pruebas unitarias y de PGlite |
+
+### K.3 Datos y operación (Fase 0b) — no es código
+
+| # | Falta | Desbloquea | Dueño |
+|---|---|---|---|
+| 0b.1 | Activar el PDTP 2026 (`draft`) y registrar ejecuciones | 004, 005 | Prevención |
+| 0b.2 | Horas hombre por faena y mes (0 filas) | 001 | Prevención con RR. HH. |
+| 0b.3 | Registrar incidentes y CAPA (1 y 0) | 001, 002, 003, 006, E1 | Prevención |
+| 0b.4 | Decidir las 6 faenas pendientes y correr la carga inicial de mantención | 018, 025, 026, 027, E3 | Jefatura de mantención |
+| 0b.5 | Cargas en terreno (0) | 017, 019; 021 queda vacío en producción | Combustible |
+| 0b.6 | Nivel residual de los riesgos MIPER (0 de 540) | mitad residual de 007 | Prevención |
+| 0b.7 | Reponer Copec de septiembre de 2026 o declararlo fuera de cobertura | todos los gráficos de combustible | Integraciones |
+| 0b.8 | **Nuevo:** cargar la capacidad de los 4 estanques | barras de CHART-020 | Combustible |
+| 0b.9 | **Nuevo:** confirmar si las 17 de 3.991 capacitaciones realizadas es real o falta registrar la ejecución | lectura correcta de CHART-008 en capacitación, que sale casi todo en rojo | Prevención |
+| 0b.10 | **Nuevo:** restablecer el sync de OnWay (caído desde 2026-10-30) | 028 y la fila OnWay de CHART-022 | Integraciones |
+
+### K.4 Visualizaciones que esperan datos (construir junto con la puesta en marcha)
+
+El criterio de la Fase 0b se mantiene: construirlas hoy da pantallas vacías.
+
+| Grupo | IDs | Espera |
+|---|---|---|
+| Siniestralidad | 001, 002, 003, 006, **E1** | 0b.2, 0b.3 |
+| PDTP | 004, 005, **E2** (calendario integral) | 0b.1 |
+| Mantención | 018, 025, 026, 027, **E3** | 0b.4 y 2–3 meses de OT |
+| Combustible | 017, 019 | 0b.5 |
+| Otros | 009 (exposición, 0 mediciones), 012 (`ExpiryHorizon`, 0 recursos), 013 (0 requisitos), 014 (0 permisos), 015, 028 (0b.10), 038 (TI en cero), 039 | datos de cada módulo |
+
+### K.5 Pendientes de código (menores)
+
+| # | Qué | Origen |
+|---|---|---|
+| P-1 | Animaciones CSS fuera del tope de 200 ms: `RankedList` (0,9 s), `DebtAgingChart` (700 ms), medidor radial (0,45 s) | Fase 4 |
+| P-2 | «Ver datos» → Excel está encendido sólo en combustible; activarlo pantalla por pantalla con su permiso `*:export` | Fase 4 |
+| P-3 | CHART-007: tooltip con los 3 peligros más frecuentes por celda y filtro P×C (hoy filtra por clasificación) | Fase 1 |
+| P-4 | CHART-010: hallazgos abiertos apilados por criticidad (hoy van en tooltip y «Ver datos») | Fase 3 |
+| P-5 | CHART-020: serie temporal del nivel de estanque (requiere backend) | Fase 1 |
+| P-6 | CHART-023: anotar en la serie las fechas de cambio de reglas | Fase 1 |
+| P-7 | CHART-029: carril por ítem, días por etapa en el stepper de la solicitud, filtros por tipo y proveedor, caché de 30 s | Fase 3 |
+| P-8 | Tablero: el conteo de recepciones de `operational-period-metrics` incluye anuladas; `/reportes` no | Fase 2 |
+| P-9 | `/flota`: Km/Hr en la tarjeta móvil y columna «Última lectura» en el Excel | Fase 0 |
+| P-10 | Código muerto: `PdtpMetric`, el tipo `"hygiene"` de `prevention-program-calendar.ts` | Fases 2–4 |
+| P-11 | CHART-030: la barra de antigüedad de Aprobaciones no se vio con datos (cola vacía en el clon) | Fase 1 |
 
 ---
 
