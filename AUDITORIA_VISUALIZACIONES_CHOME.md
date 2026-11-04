@@ -2180,8 +2180,8 @@ Decisiones tomadas en el camino (con el usuario):
 
 | # | Qué | Estado |
 |---|---|---|
-| V-1 | Pasada final: typecheck, lint, test:fast, test:pglite y E2E completa sobre `2d02e4995` | En curso al escribir esto (typecheck OK). Corregir lo que falle |
-| V-2 | Recorrido en navegador de las pantallas de las fases 2–4 en escritorio, móvil y 320 px, con axe, e informe en `qa/reports/` | Pendiente. Incluye el reemplazo bajo 360 px, la entrada de 200 ms y la descarga real del Excel |
+| V-1 | Pasada final: typecheck, lint, test:fast, test:pglite y E2E completa sobre `2d02e4995` | Hecha. 1.071 E2E OK; las 4 fallas se corrigieron en `bc8df84ad` (22/22) |
+| V-2 | Recorrido en navegador de las fases 2–4 en escritorio, móvil y 320 px, con axe | Hecho el 2026-11-04: 22 rutas, 0 violaciones axe; 8 hallazgos corregidos en `6fe3dc96c`. Informe: `qa/reports/2026-11-04-recorrido-graficos-fases-2-4.md` |
 | V-3 | Push de los commits de las fases 2–4 y deploy | Lo hace el usuario. Las fases 2–4 no traen migraciones |
 | V-4 | E2E nuevos de interacción (elegir un tramo o banda y verificar que la lista se filtra) | No hay; los gráficos sólo tienen pruebas unitarias y de PGlite |
 
