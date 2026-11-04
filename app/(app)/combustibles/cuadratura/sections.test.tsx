@@ -231,6 +231,18 @@ describe("Cuadratura › Estanques", () => {
     expect(renderToStaticMarkup(<StorageLevelBars balances={[]} />)).toBe("")
   })
 
+  it("si ningún estanque tiene capacidad no repite la tabla: dice qué falta y cómo cargarla", () => {
+    const sinCapacidad = [
+      { storageLocationId: "a", name: "Vasija Uno", balanceLiters: 1_000, capacityLiters: null },
+      { storageLocationId: "b", name: "Vasija Dos", balanceLiters: 2_000, capacityLiters: null },
+    ] as unknown as Parameters<typeof StorageLevelBars>[0]["balances"]
+    const html = renderToStaticMarkup(<StorageLevelBars balances={sinCapacidad} canEditTanks />)
+    expect(html).toContain("Ningún estanque tiene capacidad informada")
+    expect(html).toContain("/admin/flota-catalogos/estanques-combustible")
+    expect(html).not.toContain("Vasija Uno")
+    expect(renderToStaticMarkup(<StorageLevelBars balances={sinCapacidad} />)).not.toContain("/admin/flota-catalogos")
+  })
+
   it("sin estanques es un estado vacío con salida solo para quien puede crearlos", () => {
     expect(renderToStaticMarkup(<StorageLevels balances={[]} canCreateTank />)).toContain("/admin/flota-catalogos/estanques-combustible")
     expect(renderToStaticMarkup(<StorageLevels balances={[]} canCreateTank={false} />)).not.toContain("/admin/flota-catalogos")

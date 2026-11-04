@@ -20,7 +20,9 @@ import type { RiskClassification } from "@/lib/prevention/miper/methodology"
 export const RISK_BAND_FILL: Record<RiskClassification, string> = {
   tolerable: "var(--color-success)",
   moderate: "var(--color-warning)",
-  important: "var(--color-signal)",
+  // Naranjo cargado al rojo: `signal` puro quedaba a un paso del ocre de `moderate`,
+  // y ésa es justo la frontera que exige seguimiento (recorrido del 2026-11-03).
+  important: "color-mix(in oklab, var(--color-signal) 55%, var(--color-danger))",
   intolerable: "var(--color-danger)",
 }
 

@@ -446,7 +446,10 @@ plataforma; el tablero suma su excepción de superficie (regla 7 de AGENTS.md).
 - **Más de seis categorías:** resalta una y el resto en `reference`, o parte en
   small multiples. No se recicla el color.
 - **Secuencial** (antigüedad, severidad creciente): de `reference` a `danger`
-  interpolado en OKLCH (`agingColor` en `components/charts/aging-bar.tsx`).
+  interpolado en OKLab (`agingColor` en `components/charts/aging-bar.tsx`); en
+  OKLCH el matiz gira y la rampa deriva a violeta o rosa.
+- **Etapas de un ciclo de vida** (`/seguimiento`): rampa de un matiz, de clara a
+  oscura según el avance; los tonos de las insignias se repiten entre vecinas.
 
 ### Primitivas (`components/charts/`)
 

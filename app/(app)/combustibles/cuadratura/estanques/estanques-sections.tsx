@@ -53,8 +53,24 @@ export function cycleAnswer(
  * reposición ni un mínimo, sólo la capacidad (ver `lib/combustibles/storage-level.ts`).
  * Un estanque sin capacidad informada muestra su nivel como cifra, sin escala.
  */
-export function StorageLevelBars({ balances }: { balances: FuelStorageBalance[] }) {
+export function StorageLevelBars({ balances, canEditTanks = false }: { balances: FuelStorageBalance[]; canEditTanks?: boolean }) {
   if (balances.length === 0) return null
+  // Sin ninguna capacidad no hay barra que dibujar: listar los niveles sólo repetiría
+  // la tabla de abajo (A5). Salvo que un nivel esté mal, que eso sí hay que verlo.
+  const views = balances.map(describeStorageLevel)
+  if (views.every((view) => !view.hasCapacity && !view.problem)) {
+    return (
+      <ChartSection
+        title="Nivel contra capacidad"
+        headingLevel={3}
+        empty={{
+          label: "Ningún estanque tiene capacidad informada",
+          hint: "Con la capacidad cargada, acá se ve cuánto queda en cada uno. Por ahora el nivel está en la tabla de abajo.",
+          ...(canEditTanks ? { ctaLabel: "Cargar capacidades", ctaHref: "/admin/flota-catalogos/estanques-combustible" } : {}),
+        }}
+      />
+    )
+  }
   return (
     <ChartSection
       title="Nivel contra capacidad"

@@ -3,7 +3,7 @@
 import { cleanup, render, screen, within } from "@testing-library/react"
 import { afterEach, describe, expect, it } from "vitest"
 import { computeStatusDistribution, type ComputedStatus } from "@/lib/services/trazabilidad-consolidated"
-import { ConsolidatedStatusChart } from "./consolidated-status-chart"
+import { ConsolidatedStatusChart, lifecycleFills } from "./consolidated-status-chart"
 
 afterEach(() => cleanup())
 
@@ -50,16 +50,21 @@ describe("ConsolidatedStatusChart", () => {
     expect(screen.getByRole("link", { name: /Entregado/ }).getAttribute("aria-current")).toBeNull()
   })
 
-  it("usa los tonos de las insignias de estado, como tokens", () => {
-    const { container } = render(<ConsolidatedStatusChart distribution={MIXED} estado="en_curso" searchParams={{}} />)
-    const fills = Object.fromEntries([...container.querySelectorAll<HTMLElement>("[data-segment]")].map((el) => [el.dataset.segment, el.style.background]))
-    expect(fills).toEqual({
-      borrador: "var(--color-chart-reference)",
-      solicitado: "var(--color-chart-reference)",
-      en_faena: "var(--color-info)",
-      entregado: "var(--color-success)",
-      rechazado: "var(--color-danger)",
-    })
+  it("las etapas en curso van en una rampa de un matiz y los cierres en su semántico", () => {
+    expect(lifecycleFills(["borrador", "solicitado", "aprobado", "en_faena", "entregado", "rechazado"])).toEqual([
+      "var(--color-chart-reference)",
+      "color-mix(in oklab, var(--color-chart-2) 35%, var(--color-surface))",
+      "color-mix(in oklab, var(--color-chart-2) 68%, var(--color-surface))",
+      "var(--color-chart-2)",
+      "var(--color-success)",
+      "var(--color-danger)",
+    ])
+  })
+
+  it("dos etapas en curso vecinas nunca comparten color (recorrido 2026-11-03)", () => {
+    const open = ["aprobado", "pedido_proveedor", "en_oficina", "enviado_faena", "en_faena", "parcialmente_entregado"]
+    const fills = lifecycleFills(open)
+    for (let i = 1; i < fills.length; i++) expect(fills[i]).not.toBe(fills[i - 1])
   })
 
   it("avisa cuando la distribución cuenta lo filtrado y no la faena completa", () => {

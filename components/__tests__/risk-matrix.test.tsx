@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { RISK_BAND_FILL } from "@/components/charts/risk-bands"
 import type { ReactNode } from "react"
 import { describe, it, expect, vi } from "vitest"
 import { render, screen, within } from "@testing-library/react"
@@ -118,7 +119,11 @@ describe("RiskShareBar — barra apilada de las cuatro clasificaciones", () => {
     const segments = container.querySelectorAll<HTMLElement>("[data-band]")
     expect([...segments].map((segment) => segment.dataset.band)).toEqual(["tolerable", "important", "intolerable"])
     expect([...segments].map((segment) => segment.style.flexGrow)).toEqual(["4", "2", "1"])
-    for (const segment of segments) expect(segment.style.backgroundColor).toMatch(/^var\(--color-/)
+    // jsdom descarta `color-mix` del estilo en línea: el token se valida en la tabla.
+    for (const fill of Object.values(RISK_BAND_FILL)) {
+      expect(fill).toMatch(/var\(--color-/)
+      expect(fill).not.toMatch(/#[0-9a-f]{3,8}/i)
+    }
   })
 
   it("el conteo de las cuatro va en texto, con el rótulo para el lector de pantalla", () => {

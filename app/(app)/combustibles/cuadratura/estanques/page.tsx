@@ -146,7 +146,7 @@ export default async function CuadraturaEstanquesPage({ searchParams }: { search
           <ControlSection id="nivel" title="Nivel por estanque" question="¿Cuánto combustible quedó en cada estanque contra su capacidad?">
             {balances.failed ? <SectionError what="el nivel por estanque" /> : (
               <div className="space-y-4">
-                <StorageLevelBars balances={balances.data} />
+                <StorageLevelBars balances={balances.data} canEditTanks={canCreateTank} />
                 <StorageLevels balances={balances.data} canCreateTank={canCreateTank} />
               </div>
             )}

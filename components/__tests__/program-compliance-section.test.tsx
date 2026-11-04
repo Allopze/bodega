@@ -41,7 +41,7 @@ describe("ProgramComplianceSection", () => {
   it("responde la pregunta antes del dibujo: la frase resumen va en el encabezado de la figura", () => {
     renderSection()
     const figure = screen.getByRole("figure", { name: "Cumplimiento del programa 2026" })
-    expect(within(figure).getByText("2 de 2 faenas tienen meses vencidos sin cumplir; la más atrasada es Faena Beta con 2 meses.")).toBeDefined()
+    expect(within(figure).getByText("2 de 2 faenas tienen actividades vencidas sin cumplir; la más atrasada es Faena Beta, con 2 actividades en 2 meses.")).toBeDefined()
   })
 
   it("es una tabla de faenas × doce meses con el estado en texto", () => {

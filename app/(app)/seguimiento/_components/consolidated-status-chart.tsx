@@ -2,22 +2,38 @@ import { ShareBar, type ShareSegment } from "@/components/charts/share-bar"
 import { ChartSection } from "@/components/charts/chart-section"
 import { pluralize } from "@/lib/utils"
 import { summarizeStatusDistribution } from "@/lib/services/trazabilidad-consolidated-builder"
-import type { StatusDistributionEntry, StatusMeta } from "@/lib/services/trazabilidad-consolidated.types"
+import type { StatusDistributionEntry } from "@/lib/services/trazabilidad-consolidated.types"
 
 /**
- * El tono de la insignia de cada estado, como relleno de la barra. Es el mismo
- * vocabulario de color que ya muestra la tabla (`COMPUTED_STATUS_METAS`): un
- * estado usa los semánticos, no la serie categórica. Varios estados comparten
- * tono (las cinco etapas «info» van seguidas); por eso cada segmento va separado
- * por un hueco y la leyenda nombra y cuenta cada uno.
+ * Color de cada estado en la barra.
+ *
+ * La primera versión usaba el tono de la insignia de la tabla, pero esos tonos se
+ * repiten: «Pedido a proveedor», «Enviado a faena» y «En faena» salían del mismo
+ * azul y «Aprobado» y «En oficina» del mismo naranjo, uno al lado del otro, y la
+ * barra no dejaba ver dónde terminaba una etapa (recorrido del 2026-11-03).
+ *
+ * Lo que la barra cuenta es **cuánto avanzó** cada solicitud, así que las etapas
+ * en curso van en una rampa de un solo matiz, de clara (recién aprobada) a oscura
+ * (casi entregada), en el orden del ciclo de vida. Los cierres sí son estados con
+ * significado propio: entregado en `success`, rechazado en `danger`, cancelado y
+ * borrador en gris de referencia. La leyenda nombra y cuenta cada parte.
  */
-const TONE_FILL: Record<StatusMeta["color"], string> = {
-  success: "var(--color-success)",
-  warning: "var(--color-warning)",
-  info: "var(--color-info)",
-  signal: "var(--color-signal)",
-  danger: "var(--color-danger)",
-  neutral: "var(--color-chart-reference)",
+const CLOSED_FILL: Record<string, string> = {
+  entregado: "var(--color-success)",
+  rechazado: "var(--color-danger)",
+  cancelado: "var(--color-chart-reference)",
+  borrador: "var(--color-chart-reference)",
+}
+
+export function lifecycleFills(statuses: readonly string[]): string[] {
+  const open = statuses.filter((status) => !(status in CLOSED_FILL))
+  return statuses.map((status) => {
+    if (status in CLOSED_FILL) return CLOSED_FILL[status]!
+    const index = open.indexOf(status)
+    // De 35 % a 100 % de chart-2 sobre la superficie: OKLab y no OKLCH: la superficie no tiene matiz y OKLCH giraría hacia el rosa.
+    const share = open.length === 1 ? 100 : Math.round(35 + (65 * index) / (open.length - 1))
+    return share === 100 ? "var(--color-chart-2)" : `color-mix(in oklab, var(--color-chart-2) ${share}%, var(--color-surface))`
+  })
 }
 
 /** Cada segmento lleva a la lista de ese estado; el elegido, otra vez, es la salida. */
@@ -64,11 +80,13 @@ export function ConsolidatedStatusChart({
   const { total, open, closed } = summarizeStatusDistribution(distribution)
   if (total === 0) return null
 
-  const segments: ShareSegment[] = distribution.map((entry) => ({
+  const shown = distribution.filter((entry) => entry.count > 0)
+  const fills = lifecycleFills(shown.map((entry) => entry.status))
+  const segments: ShareSegment[] = shown.map((entry, index) => ({
     key: entry.status,
     label: entry.label,
     count: entry.count,
-    color: TONE_FILL[entry.color],
+    color: fills[index]!,
     active: estado === entry.status,
     href: estadoHref(searchParams, estado === entry.status ? "" : entry.status),
   }))

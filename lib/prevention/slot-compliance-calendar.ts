@@ -243,15 +243,19 @@ export function summarizeSlotCalendar(
   const { noun } = options
   if (rows.every((row) => row.exigible === 0)) return "Todavía no hay actividades exigibles en el programa."
 
-  const late = rows.filter((row) => row.overdueMonths > 0)
-  if (late.length === 0) return `Ninguna ${noun.singular} tiene meses vencidos sin cumplir.`
+  // Se cuenta y se ordena por actividades vencidas, no por meses: un mes parcial
+  // (algo hecho, algo vencido) es atraso, pero llamarlo «mes vencido» contradice
+  // la celda ámbar que el usuario tiene al lado.
+  const late = rows.filter((row) => row.missed > 0)
+  if (late.length === 0) return `Ninguna ${noun.singular} tiene actividades vencidas sin cumplir.`
 
-  const worst = Math.max(...late.map((row) => row.overdueMonths))
-  const worstRows = late.filter((row) => row.overdueMonths === worst)
-  const subject = `${late.length} de ${rows.length} ${noun.plural} ${late.length === 1 ? "tiene" : "tienen"} meses vencidos sin cumplir`
+  const worst = Math.max(...late.map((row) => row.missed))
+  const worstRows = late.filter((row) => row.missed === worst)
+  const total = rows.length === 1 ? noun.singular : noun.plural
+  const subject = `${late.length} de ${rows.length} ${total} ${late.length === 1 ? "tiene" : "tienen"} actividades vencidas sin cumplir`
   const tail = worstRows.length === 1
-    ? `la más atrasada es ${worstRows[0]!.label} con ${countOf(worst, "mes", "meses")}`
-    : `el mayor atraso es de ${countOf(worst, "mes", "meses")} y lo comparten ${worstRows.length} ${noun.plural}`
+    ? `la más atrasada es ${worstRows[0]!.label}, con ${countOf(worst, "actividad", "actividades")} en ${countOf(worstRows[0]!.overdueMonths, "mes", "meses")}`
+    : `el mayor atraso es de ${countOf(worst, "actividad", "actividades")} y lo comparten ${worstRows.length} ${noun.plural}`
   return `${subject}; ${tail}.`
 }
 

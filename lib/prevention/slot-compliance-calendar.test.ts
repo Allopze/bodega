@@ -262,7 +262,7 @@ describe("summarizeSlotCalendar", () => {
     slots,
   })
 
-  it("nombra la faena más atrasada y los meses que lleva", () => {
+  it("nombra la faena con más actividades vencidas y en cuántos meses caen", () => {
     const calendar = build([
       { rowId: "a", month: 1, week: 2, status: "pending" },
       { rowId: "b", month: 1, week: 2, status: "pending" },
@@ -271,7 +271,7 @@ describe("summarizeSlotCalendar", () => {
       { rowId: "c", month: 1, week: 2, status: "completed" },
     ], [["a", "Faena Alfa"], ["b", "Faena Beta"], ["c", "Faena Gamma"]])
     expect(summarizeSlotCalendar(calendar.rows, { noun })).toBe(
-      "2 de 3 faenas tienen meses vencidos sin cumplir; la más atrasada es Faena Beta con 3 meses.",
+      "2 de 3 faenas tienen actividades vencidas sin cumplir; la más atrasada es Faena Beta, con 3 actividades en 3 meses.",
     )
   })
 
@@ -281,7 +281,7 @@ describe("summarizeSlotCalendar", () => {
       { rowId: "b", month: 1, week: 2, status: "completed" },
     ], [["a", "Faena Alfa"], ["b", "Faena Beta"]])
     expect(summarizeSlotCalendar(calendar.rows, { noun })).toBe(
-      "1 de 2 faenas tiene meses vencidos sin cumplir; la más atrasada es Faena Alfa con 1 mes.",
+      "1 de 2 faenas tiene actividades vencidas sin cumplir; la más atrasada es Faena Alfa, con 1 actividad en 1 mes.",
     )
   })
 
@@ -294,7 +294,18 @@ describe("summarizeSlotCalendar", () => {
       { rowId: "c", month: 1, week: 2, status: "pending" },
     ], [["a", "Faena Alfa"], ["b", "Faena Beta"], ["c", "Faena Gamma"]])
     expect(summarizeSlotCalendar(calendar.rows, { noun })).toBe(
-      "3 de 3 faenas tienen meses vencidos sin cumplir; el mayor atraso es de 2 meses y lo comparten 2 faenas.",
+      "3 de 3 faenas tienen actividades vencidas sin cumplir; el mayor atraso es de 2 actividades y lo comparten 2 faenas.",
+    )
+  })
+
+  it("un mes parcial con algo vencido cuenta su actividad, no un «mes vencido»", () => {
+    const calendar = build([
+      { rowId: "a", month: 1, week: 1, status: "completed" },
+      { rowId: "a", month: 1, week: 2, status: "pending" },
+    ], [["a", "Faena Alfa"]])
+    expect(calendar.rows[0]!.cells[0]!.status).toBe("partial")
+    expect(summarizeSlotCalendar(calendar.rows, { noun })).toBe(
+      "1 de 1 faena tiene actividades vencidas sin cumplir; la más atrasada es Faena Alfa, con 1 actividad en 1 mes.",
     )
   })
 
@@ -303,7 +314,7 @@ describe("summarizeSlotCalendar", () => {
       { rowId: "a", month: 1, week: 2, status: "completed" },
       { rowId: "a", month: 9, week: 2, status: "pending" },
     ], [["a", "Faena Alfa"]])
-    expect(summarizeSlotCalendar(calendar.rows, { noun })).toBe("Ninguna faena tiene meses vencidos sin cumplir.")
+    expect(summarizeSlotCalendar(calendar.rows, { noun })).toBe("Ninguna faena tiene actividades vencidas sin cumplir.")
   })
 
   it("sin nada exigible no afirma un cumplimiento que no se midió", () => {

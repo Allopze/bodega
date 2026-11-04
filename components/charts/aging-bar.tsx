@@ -110,10 +110,11 @@ export function AgingBar({
 
 /**
  * Tono del tramo `index` de `count`: del gris de referencia (0) al rojo del
- * sistema (último), interpolado en OKLCH para que los pasos se vean parejos.
+ * sistema (último), interpolado en OKLab: en OKLCH el matiz giraría de azulado a
+ * rojo pasando por el violeta, y la rampa dejaría de leerse como «más grave».
  */
 export function agingColor(index: number, count: number): string {
   if (count <= 1) return "var(--color-chart-reference)"
   const share = Math.round((index / (count - 1)) * 100)
-  return `color-mix(in oklch, var(--color-danger) ${share}%, var(--color-chart-reference))`
+  return `color-mix(in oklab, var(--color-danger) ${share}%, var(--color-chart-reference))`
 }

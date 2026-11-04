@@ -134,7 +134,7 @@ export default async function BillingSummaryPage({
           }
         />
       ) : (
-        <>
+        <div className="space-y-4">
           {/* ── Indicadores principales ─────────────────────────────────── */}
           <section aria-labelledby="kpis-titulo" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <h2 id="kpis-titulo" className="sr-only">Indicadores del período</h2>
@@ -247,7 +247,7 @@ export default async function BillingSummaryPage({
             )}
           </div>
 
-          <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+          <div className="grid items-start gap-4 lg:grid-cols-2 xl:grid-cols-3">
             {/* ── Principales clientes ──────────────────────────────────── */}
             <RankingSection
               id="clientes"
@@ -357,7 +357,7 @@ export default async function BillingSummaryPage({
           <p className="text-xs text-[var(--color-text-subtle)]">
             Datos actualizados al {formatDateTime(summary.generatedAt)}.
           </p>
-        </>
+        </div>
       )}
     </PageContainer>
   )
