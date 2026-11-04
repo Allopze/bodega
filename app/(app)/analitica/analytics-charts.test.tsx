@@ -49,6 +49,15 @@ describe("MonthlySpendChart", () => {
     expect(container.textContent).not.toContain("Mes parcial")
   })
 
+  it("sin barra «Otros» (todos los proveedores listados) la leyenda no la nombra", () => {
+    const completo = buildSupplierPareto({
+      suppliers: [{ id: "s-1", name: "Copec", module: "Combustible", totalAmount: 1000, count: 30 }],
+      totalSpend: 1000,
+    })
+    const { container } = render(<SupplierParetoChart rows={completo.rows} thresholdPct={60} />)
+    expect(container.textContent ?? "").not.toContain("Otros proveedores")
+  })
+
   it("no usa ningún color fuera de los tokens", () => {
     const { container } = render(<MonthlySpendChart data={months} showFuel />)
 

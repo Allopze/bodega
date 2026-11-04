@@ -263,7 +263,10 @@ export function SupplierParetoChart({ rows, thresholdPct }: { rows: ParetoChartR
       <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--color-text-muted)]">
         <li className="inline-flex items-center gap-1.5"><LegendSwatch color={PURCHASING_COLOR} />Gasto por proveedor (eje izquierdo)</li>
         <li className="inline-flex items-center gap-1.5"><LegendSwatch color={CUMULATIVE_COLOR} />% acumulado del gasto total (eje derecho)</li>
-        <li className="inline-flex items-center gap-1.5"><LegendSwatch color={REFERENCE_COLOR} />Otros proveedores</li>
+        {/* Sólo si hay una barra «Otros»: con todos los proveedores listados la leyenda nombraría algo que no se dibuja. */}
+        {rows.some((row) => row.isOther) && (
+          <li className="inline-flex items-center gap-1.5"><LegendSwatch color={REFERENCE_COLOR} />Otros proveedores</li>
+        )}
       </ul>
     </DenseChart>
   )

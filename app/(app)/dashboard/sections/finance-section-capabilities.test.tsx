@@ -291,7 +291,24 @@ describe("FinanceSection: rediseño (gráficos primero, seis tiles, sin duplicar
     // Flujo, antigüedad, composición, proveedores, clientes y faenas.
     expect(drawn).toHaveLength(6)
     expect(drawn.every((child) => child.type === ChartSlot)).toBe(true)
-    expect(drawn.map((child) => (child as unknown as { props: { span?: string } }).props.span)).toEqual(["wide", undefined, undefined, undefined, undefined, "full"])
+    // Cuatro celdas simples: par, ninguna se estira.
+    expect(drawn.map((child) => (child as unknown as { props: { span?: string } }).props.span)).toEqual(["wide", "one", "one", "one", "one", "full"])
+  })
+
+  it("si la antigüedad queda sola en su fila, la ocupa entera (recorrido 2026-11-04)", async () => {
+    // Sin gasto por módulo ni proveedores ni clientes vinculados (como en el clon de
+    // producción): la antigüedad es la única celda simple.
+    getBillingSummary.mockResolvedValue(billingSummary({ topClients: [] }))
+    getPurchasingFinancialSummary.mockResolvedValue({
+      kpis: { totalSpend: 0, previousTotalSpend: 0, spendVariationPct: null, purchaseOrderCount: 0, averageOrderAmount: 0 },
+      spendByModule: [],
+      topSuppliers: [],
+    })
+    getDashboardData.mockResolvedValue({ metrics: {}, worksitesBreakdown: [] })
+    const section = await sectionProps(["billing:view"])
+    const slots = findAll(section.charts, ofType(ChartSlot))
+    const aging = slots.find((slot) => findAll(slot.props.children as ReactNode, ofType(DebtAgingChart)).length > 0)!
+    expect(aging.props.span).toBe("fillXl")
   })
 
   it("los rankings son listas en un solo tono con enlaces donde hay detalle", async () => {

@@ -229,6 +229,12 @@ export default async function FichaEquipoPage({ params, searchParams }: { params
             title="Horas de motor y % en vacío, día a día"
             summary={describeIdleDaily(idle.daily) ?? undefined}
             data={{ caption: `Horas de motor y porcentaje en vacío por día de ${vehicle.label}`, ...idleDailyTable(idle.daily), ...(canExport ? { excel: { permission: "combustibles:export" as const } } : {}) }}
+            // Sin ninguna hora de motor en el período no hay barra que dibujar: los ejes
+            // vacíos se leían como un gráfico roto (recorrido del 2026-11-04).
+            empty={idle.daily.some((day) => day.operatingHours > 0) ? null : {
+              label: "Sin horas de motor en este período",
+              hint: "La telemetría no registró funcionamiento en estos días. Elige un período anterior para ver el detalle por día.",
+            }}
           >
             <IdleDailyChartLazy data={idleDailyChartData(idle.daily)} ariaLabel={`Horas de motor por día y porcentaje en vacío de ${vehicle.label}`} />
           </ChartSection>

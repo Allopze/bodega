@@ -112,6 +112,16 @@ describe("summarizePpaTrend", () => {
     expect(text).not.toMatch(/\d\s?%/)
   })
 
+  it("una diferencia con decimales va con coma (es-CL), no con punto", () => {
+    const text = summarizePpaTrend(shape([
+      { month: "2026-08", total: 21, detained: 2 },
+      { month: "2026-09", total: 20, detained: 2 },
+    ], "2026-10-05"))
+    // 2/21 = 9,5 % y 2/20 = 10 %: 0,5 puntos sobre agosto.
+    expect(text).toContain("0,5 puntos sobre agosto")
+    expect(text).not.toMatch(/\d\.\d puntos/)
+  })
+
   it("compara dos meses completos, contiguos y con base suficiente", () => {
     const text = summarizePpaTrend(shape([
       { month: "2026-08", total: 20, detained: 4 },

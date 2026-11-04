@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tooltip } from "@/components/ui/tooltip"
 import type { PdtpActivityStatus, PdtpActivityStatusFilter } from "@/lib/services/pdtp/period"
 import { pdtpExecutionStatusLabel } from "@/lib/prevention/pdtp"
-import { countOf } from "@/lib/utils"
+import { countOf, formatQty } from "@/lib/utils"
 import { useLocalStorageState } from "@/lib/hooks/use-local-storage-state"
 import { MONTH_LABELS } from "@/lib/utils"
 
@@ -807,5 +807,5 @@ export function PdtpPeriodPicker({
 
 export function formatQuantity(value: number) {
   if (value === 0) return "-"
-  return Number.isInteger(value) ? String(value) : value.toFixed(2)
+  return formatQty(value, undefined, { maximumFractionDigits: 2 })
 }

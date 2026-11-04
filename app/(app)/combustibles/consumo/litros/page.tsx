@@ -167,8 +167,11 @@ export default async function ConsumoLitrosPage({ searchParams }: { searchParams
 
   const loads = header.data
   const excludedTotal = loads ? loads.excludedKm + loads.excludedHours : null
-  const litersPct = loads && previousHeader.data ? percentVariation(loads.totalLiters, previousHeader.data.totalLiters) : null
-  const change = previous ? variationPhrase(litersPct, previous.inLabel) : null
+  // Un período que incluye hoy no se compara con uno completo: el día 4 del mes daba
+  // «98 % menos que octubre», que se lee como un desplome (recorrido del 2026-11-04).
+  const inProgress = period.status === "en_curso"
+  const litersPct = !inProgress && loads && previousHeader.data ? percentVariation(loads.totalLiters, previousHeader.data.totalLiters) : null
+  const change = inProgress ? "el período sigue en curso, así que todavía no se compara" : previous ? variationPhrase(litersPct, previous.inLabel) : null
   const chartCaption = chartWindow.isHistory ? `Últimos ${chartWindow.monthKeys.length} meses, hasta ${period.inLabel}.` : `${period.label}.`
   const noteForOrigins = [
     monthlyGranularityNote(period),
@@ -238,6 +241,7 @@ export default async function ConsumoLitrosPage({ searchParams }: { searchParams
           {origins.data && dashboard.data ? (
             <FuelOriginSummary
               data={origins.data}
+              inProgress={inProgress}
               canViewCosts={canViewCosts}
               tct={{ liters: dashboard.data.kpis.totalCantidad, transactions: dashboard.data.kpis.totalTransacciones, vehicles: dashboard.data.kpis.patentesUnicas, cards: dashboard.data.kpis.totalTarjetas, variationLitersPct: dashboard.data.kpis.variacionCantidadPct }}
               hrefs={{

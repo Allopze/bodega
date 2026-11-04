@@ -19,7 +19,7 @@
  * Lógica pura, sin base de datos ni React.
  */
 
-import { formatPercent } from "@/lib/utils"
+import { formatPercent, formatQty } from "@/lib/utils"
 import { addMonths, fillMonthSeries, monthPeriodLabel, monthPeriodName, monthRangeText } from "@/lib/prevention/monthly-series"
 
 /**
@@ -152,7 +152,8 @@ export function summarizePpaTrend(points: readonly PpaMonthPoint[], minSample = 
   const abs = Math.abs(delta)
   const comparison = delta === 0
     ? `igual que en ${monthPeriodName(previous.month)}`
-    : `${abs} ${abs === 1 ? "punto" : "puntos"} ${delta > 0 ? "sobre" : "bajo"} ${monthPeriodName(previous.month)}`
+    // Coma decimal (es-CL): interpolar el número crudo daba «1.1 puntos».
+    : `${formatQty(abs, undefined, { maximumFractionDigits: 1 })} ${abs === 1 ? "punto" : "puntos"} ${delta > 0 ? "sobre" : "bajo"} ${monthPeriodName(previous.month)}`
   return `${base}. En ${monthPeriodName(latest.month)} fue de ${formatPercent(latest.rate.percent, 1)} (${latest.rate.n} PPA), ${comparison}.`
 }
 

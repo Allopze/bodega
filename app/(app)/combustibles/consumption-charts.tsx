@@ -13,7 +13,7 @@ import { ChartLineUp } from "@phosphor-icons/react"
 import type { PeriodoRow, PatenteRankingRow, RendimientoRow } from "@/lib/combustibles/consumption-dashboard"
 import { fuelEquipmentHref, withFuelContext } from "@/lib/combustibles/routes"
 import { buildLitrosHref } from "./consumption-url"
-import { formatCompactCLP, formatCompactQty, formatPricePerLiter } from "@/lib/utils"
+import { formatCompactCLP, formatCompactQty, formatPricePerLiter, formatQty } from "@/lib/utils"
 import { useChartMotion } from "@/components/ui/chart-interactions"
 
 const MONTO_COLOR = "var(--color-info)"
@@ -332,7 +332,7 @@ export function RendimientoChart({ data, unitLabel }: { data: RendimientoRow[]; 
             <YAxis width={38} {...chartAxisProps()} />
             <Tooltip
               cursor={{ fill: "var(--color-surface-2)" }}
-              content={<TooltipPanel formatValue={(value) => `${value.toFixed(2)}${suffix}`} />}
+              content={<TooltipPanel formatValue={(value) => `${formatQty(value, undefined, { maximumFractionDigits: 2 })}${suffix}`} />}
             />
             <Bar
               dataKey="rendimiento"

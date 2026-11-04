@@ -18,6 +18,11 @@ export interface FuelOriginSummaryProps {
     cards?: number
     variationLitersPct: number | null
   }
+  /**
+   * El período elegido incluye hoy: la variación compararía días transcurridos contra un
+   * período completo («↓98 %» el día 4 del mes) y se lee como un desplome. Sin variación.
+   */
+  inProgress?: boolean
   /** Destino del detalle de cada origen, ya con el período y la faena; `null` = sin enlace (sin permiso o sin destino). */
   hrefs: { terreno: string | null; tarjetas: string | null; facturas: string | null; cuadratura: string | null }
   /** Enlace que filtra la pantalla por una faena (un clic filtra esa faena). */
@@ -41,7 +46,7 @@ const CHANNEL_BAR_COLORS = {
  * algo distinto (la cobertura se revisa por equipo, en «Cuadratura»). Cada
  * cifra enlaza a su detalle; cada faena, al filtro de esta pantalla.
  */
-export function FuelOriginSummary({ data, canViewCosts, tct, hrefs, worksiteHref, emptyAction, tctNote }: FuelOriginSummaryProps) {
+export function FuelOriginSummary({ data, canViewCosts, tct, hrefs, worksiteHref, emptyAction, tctNote, inProgress = false }: FuelOriginSummaryProps) {
   const maxWorksiteVolume = Math.max(1, ...data.byWorksite.flatMap((row) => [row.billedLiters, data.tae ? row.taeLiters : 0, row.tctLiters]))
   const worksites = data.byWorksite.slice(0, 6)
 
@@ -65,7 +70,7 @@ export function FuelOriginSummary({ data, canViewCosts, tct, hrefs, worksiteHref
           label="Registrado en terreno"
           value={data.tae ? `${formatQty(Math.round(data.tae.liters))} L` : "Sin acceso"}
           detail={data.tae ? `${formatQty(data.tae.loads)} cargas · ${formatQty(data.tae.equipment)} equipos` : "Requiere el permiso de terreno"}
-          trend={data.tae?.variationLitersPct ?? null}
+          trend={inProgress ? null : data.tae?.variationLitersPct ?? null}
           href={data.tae ? hrefs.terreno : null}
         />
         <OriginFigure
@@ -73,7 +78,7 @@ export function FuelOriginSummary({ data, canViewCosts, tct, hrefs, worksiteHref
           label="Informado por tarjetas"
           value={`${formatQty(Math.round(tct.liters))} L`}
           detail={`${formatQty(tct.vehicles)} patentes${tct.cards != null ? ` · ${formatQty(tct.cards)} tarjetas` : ""}`}
-          trend={tct.variationLitersPct}
+          trend={inProgress ? null : tct.variationLitersPct}
           href={hrefs.tarjetas}
         />
         <OriginFigure
@@ -81,7 +86,7 @@ export function FuelOriginSummary({ data, canViewCosts, tct, hrefs, worksiteHref
           label="Facturado"
           value={`${formatQty(Math.round(data.billed.liters))} L`}
           detail={canViewCosts && data.billed.amount !== null ? `${formatQty(data.billed.records)} facturas · ${formatCLP(data.billed.amount)}` : `${formatQty(data.billed.records)} facturas`}
-          trend={data.billed.variationLitersPct}
+          trend={inProgress ? null : data.billed.variationLitersPct}
           href={canViewCosts ? hrefs.facturas : null}
         />
       </div>
@@ -140,10 +145,9 @@ function OriginFigure({ icon, label, value, detail, trend, href }: {
   const body = (
     <div className="flex h-full flex-col bg-[var(--color-surface)] p-4 transition-colors group-hover:bg-[var(--color-surface-2)]">
       <div className="flex items-center gap-2 text-[var(--color-text-muted)]">{icon}<span className="text-xs font-medium">{label}</span></div>
-      <div className="mt-3 flex flex-wrap items-baseline justify-between gap-2">
-        <span className="font-mono text-xl font-semibold tabular-nums text-[var(--color-text)]">{value}</span>
-        <Delta value={trend} format="percent" polarity="up-bad" comparisonLabel="vs. período anterior" />
-      </div>
+      <span className="mt-3 font-mono text-xl font-semibold tabular-nums text-[var(--color-text)]">{value}</span>
+      {/* En su propia línea y con quiebre: en una tarjeta de un tercio de ancho «vs. período anterior» se cortaba. */}
+      {trend !== null && <Delta value={trend} format="percent" polarity="up-bad" comparisonLabel="vs. período anterior" className="mt-1.5 flex-wrap whitespace-normal" />}
       <span className="mt-1 text-xs text-[var(--color-text-muted)]">{detail}</span>
     </div>
   )

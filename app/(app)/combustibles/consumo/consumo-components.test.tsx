@@ -75,6 +75,11 @@ describe("de dónde vino lo cargado", () => {
     expect(out).toContain("Ver la cuadratura")
   })
 
+  it("con el período en curso no compara contra el período anterior (2026-11-04: «↓98 %» el día 4)", () => {
+    expect(html(<FuelOriginSummary {...props} />)).toContain("vs. período anterior")
+    expect(html(<FuelOriginSummary {...props} inProgress />)).not.toContain("vs. período anterior")
+  })
+
   it("un clic en una faena filtra esa faena", () => {
     expect(html(<FuelOriginSummary {...props} />)).toContain('href="?faena=w1"')
   })

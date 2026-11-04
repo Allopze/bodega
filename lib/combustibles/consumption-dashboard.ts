@@ -5,6 +5,7 @@
 
 import type { Session } from "next-auth"
 import { sql, eq, desc, isNotNull, and } from "drizzle-orm"
+import { formatQty } from "@/lib/utils"
 import { db } from "@/db"
 import { fuelConsumptionRecords } from "@/db/schema"
 import { buildConsumptionWhere, type ConsumptionFilters } from "./consumption-queries"
@@ -392,7 +393,7 @@ function buildConsumptionAlerts(input: {
     if (row.monto != null && row.monto > montoMedio * MONTO_MEDIO_ALERT_MULTIPLIER && rend && rend.rendimiento > 0 && rend.atipico) {
       alerts.push({
         type: "gasto_rendimiento_bajo", severity: "high", entityLabel: row.patente,
-        reason: `Gasto de ${Math.round(row.monto).toLocaleString("es-CL")} CLP con rendimiento atípicamente bajo (${rend.rendimiento.toFixed(1)}).`,
+        reason: `Gasto de ${Math.round(row.monto).toLocaleString("es-CL")} CLP con rendimiento atípicamente bajo (${formatQty(rend.rendimiento, undefined, { maximumFractionDigits: 1 })}).`,
         action: "Revisar posibles fugas, mal uso o necesidad de mantención.",
         linkQuery: `patente=${encodeURIComponent(row.patente)}`,
       })

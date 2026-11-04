@@ -76,7 +76,7 @@ export function GuideCharts({
           <RankedList
             ariaLabel="Mediana de días hasta confirmar la recepción, por destino"
             format="count"
-            unit=" d"
+            unit=" días"
             mode="share"
             order="desc"
             showShare={false}
@@ -84,7 +84,8 @@ export function GuideCharts({
             items={transit.measured.map((destination) => ({
               key: destination.worksiteId,
               label: destination.worksiteName,
-              value: destination.median ?? 0,
+              // Un decimal, como la frase: «11,888 d» venía del formato de cantidades (3 decimales).
+              value: Math.round((destination.median ?? 0) * 10) / 10,
               detail: destination.p90 !== null
                 ? `P90 ${formatTransitDays(destination.p90)} · n = ${destination.confirmed}`
                 : `n = ${destination.confirmed} · P90 desde ${GUIDE_MIN_N_P90} guías`,

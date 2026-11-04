@@ -48,6 +48,12 @@ const BLOCK_SPAN = {
   wide: "xl:col-span-2",
   /** Fila completa del bento de gráficos. */
   full: "xl:col-span-2 2xl:col-span-3",
+  /**
+   * La última celda simple cuando quedan en número impar: en la grilla de 2
+   * columnas (xl) ocupa la fila para no dejar un hueco al lado; a 3 columnas
+   * (2xl) vuelve a una columna, donde la fila ya la completa la celda ancha.
+   */
+  fillXl: "xl:col-span-2 2xl:col-span-1",
 } as const
 
 const BLOCK_PADDING = {

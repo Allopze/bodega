@@ -309,6 +309,18 @@ export async function FinanceSection({ session, scope }: DomainSectionsProps) {
 
   const sumOf = (items: RankedItems) => items.reduce((sum, item) => sum + item.value, 0)
 
+  // Celdas de una columna que se dibujan, en orden. Con un número impar, la última
+  // quedaba sola en su fila a 2 columnas (xl) con un hueco al lado (recorrido del
+  // 2026-11-04: «Antigüedad de la deuda» sola cuando no hay donut ni rankings).
+  const singleSlots = [
+    billing ? "aging" : null,
+    analytics && analytics.spendByModule.some((row) => row.totalAmount > 0) ? "donut" : null,
+    supplierItems.length > 0 ? "suppliers" : null,
+    billing && salesCurrency && clientItems.length > 0 ? "clients" : null,
+  ].filter((slot): slot is string => slot !== null)
+  const singleSpan = (slot: string) =>
+    singleSlots.length % 2 === 1 && singleSlots[singleSlots.length - 1] === slot ? "fillXl" as const : "one" as const
+
   return (
     <DomainSection
       domain={DASHBOARD_DOMAINS.finanzas}
@@ -341,7 +353,7 @@ export async function FinanceSection({ session, scope }: DomainSectionsProps) {
             // Se dibuja también sin deuda: con los tiles «Pendiente de cobro» y
             // «Vencido» fuera, este es el único lugar donde dice «Sin saldo
             // pendiente». Los tramos van en el orden de `AGING_BUCKETS`.
-            <ChartSlot>
+            <ChartSlot span={singleSpan("aging")}>
               <DebtAgingChart
                 description={`Saldo pendiente por días desde el vencimiento${onlyCurrency(debtCurrency, billing.outstandingByCurrency)}`}
                 currency={debtCurrency ?? "CLP"}
@@ -364,7 +376,7 @@ export async function FinanceSection({ session, scope }: DomainSectionsProps) {
             </ChartSlot>
           )}
           {analytics && (
-            <ChartSlot>
+            <ChartSlot span={singleSpan("donut")}>
               <CompositionDonutChart
                 title="Gasto por módulo" description={`De qué se compone el gasto en ${periodo}`}
                 totalLabel="del período" format="clp"
@@ -373,14 +385,14 @@ export async function FinanceSection({ session, scope }: DomainSectionsProps) {
             </ChartSlot>
           )}
           {supplierItems.length > 0 && (
-            <ChartSlot>
+            <ChartSlot span={singleSpan("suppliers")}>
               <ChartFrame title="Proveedores por gasto" description="Concentración de compra en el período" aside={<RankingTotal value={sumOf(supplierItems)} />}>
                 <RankedList items={supplierItems} format="clp" mode="share" order="input" limit={supplierItems.length} ariaLabel="Proveedores por gasto" />
               </ChartFrame>
             </ChartSlot>
           )}
           {billing && salesCurrency && clientItems.length > 0 && (
-            <ChartSlot>
+            <ChartSlot span={singleSpan("clients")}>
               <ChartFrame
                 title="Principales clientes"
                 description={`Facturación del período atribuida a un cliente${onlyCurrency(salesCurrency, billing.invoicedByCurrency)}`}
