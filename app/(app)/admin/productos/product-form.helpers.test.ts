@@ -18,6 +18,8 @@ import {
   variantComboKey,
   filterNewVariantCombos,
   withLogoAxis,
+  splitEditColors,
+  buildExtraColorVariants,
 } from "./product-form.helpers"
 import type { SupplierRow, AttributeRow, AttributeMultiValues, WizardGeneralState, WizardCloseAction } from "./product-form.types"
 
@@ -578,5 +580,34 @@ describe("eje Logo del asistente", () => {
     const merged = mergeEditAttributes(original, wiz, [], polera)
     expect(merged).toHaveLength(1)
     expect(merged[0]).toMatchObject({ id: "a-modelo", name: "Logo", sortOrder: 3 })
+  })
+})
+
+describe("colores extra al editar", () => {
+  const talla: AttributeMultiValues = { name: "Talla", type: "select", values: ["L"], sizeFamily: "ropa" }
+
+  it("sin color o con un solo color no hay variantes extra", () => {
+    const attrs: AttributeMultiValues[] = [talla, { name: "Color", type: "select", values: ["Azul"] }]
+    expect(splitEditColors(attrs)).toEqual({ own: attrs, extraColors: [] })
+    expect(splitEditColors([talla])).toEqual({ own: [talla], extraColors: [] })
+  })
+
+  it("el primer color queda en el producto y el resto son variantes nuevas", () => {
+    const attrs: AttributeMultiValues[] = [talla, { name: "color", type: "select", values: ["Azul", "Rojo", "Negro"] }]
+    const { own, extraColors } = splitEditColors(attrs)
+    expect(own).toEqual([talla, { name: "color", type: "select", values: ["Azul"] }])
+    expect(extraColors).toEqual(["Rojo", "Negro"])
+  })
+
+  it("cada color extra conserva los demás ejes del producto y se nombra con la familia", () => {
+    const own: AttributeMultiValues[] = [talla, { name: "Color", type: "select", values: ["Azul"] }, { name: "Logo", type: "select", values: ["Con logo"] }]
+    const combos = buildExtraColorVariants("Polera Dryfresh", own, ["Rojo", "Negro"])
+    expect(combos.map((c) => c.name)).toEqual(["Polera Dryfresh L Rojo", "Polera Dryfresh L Negro"])
+    expect(combos[0]!.attributes).toEqual([
+      { name: "Talla", value: "L" },
+      { name: "Color", value: "Rojo" },
+      { name: "Logo", value: "Con logo" },
+    ])
+    expect(buildExtraColorVariants("Polera", own, [])).toEqual([])
   })
 })

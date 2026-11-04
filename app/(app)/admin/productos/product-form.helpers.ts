@@ -197,6 +197,43 @@ export function generateVariantCombos(
   })
 }
 
+// ── Colores extra al editar ──────────────────────────────────────────────────
+
+/** Nombre del eje de color que agrega el asistente («+ Color»). */
+export const COLOR_ATTRIBUTE_NAME = "Color"
+
+export function isColorAxis(attr: { name: string }): boolean {
+  return normalizeAttributeName(attr.name) === normalizeAttributeName(COLOR_ATTRIBUTE_NAME)
+}
+
+/**
+ * Al editar un producto, el eje Color admite varios valores: el primero
+ * marcado es el color del producto que se guarda, y cada uno de los demás se
+ * crea como una variante nueva de la misma familia (con su propio stock). Los
+ * demás ejes se editan con un solo valor, como siempre.
+ */
+export function splitEditColors(attrs: AttributeMultiValues[]): { own: AttributeMultiValues[]; extraColors: string[] } {
+  const color = attrs.find(isColorAxis)
+  if (!color || color.values.length <= 1) return { own: attrs, extraColors: [] }
+  return {
+    own: attrs.map((attr) => (attr === color ? { ...attr, values: color.values.slice(0, 1) } : attr)),
+    extraColors: color.values.slice(1),
+  }
+}
+
+/** Los ejes de las variantes nuevas: los del producto (talla, logo…) con los
+ *  colores extra en el eje Color. Son también los que se declaran al lote, que
+ *  rechaza una variante cuyo valor no esté entre las opciones declaradas. */
+export function extraColorAxes(own: AttributeMultiValues[], extraColors: string[]): AttributeMultiValues[] {
+  return own.map((attr) => (isColorAxis(attr) ? { ...attr, values: extraColors } : attr))
+}
+
+/** Las variantes que salen de los colores extra, nombradas con el nombre de la familia. */
+export function buildExtraColorVariants(familyName: string, own: AttributeMultiValues[], extraColors: string[]): VariantCombo[] {
+  if (extraColors.length === 0) return []
+  return generateVariantCombos(familyName, extraColorAxes(own, extraColors))
+}
+
 // ── Wizard step validation ───────────────────────────────────────────────────
 
 /**

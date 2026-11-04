@@ -165,10 +165,21 @@ describe("atributos que no son talla", () => {
     expect(props.onToggleAttr).toHaveBeenCalledWith(expect.objectContaining({ name: "Color" }))
   })
 
-  it("al editar una variante, elegir otro color reemplaza el anterior", () => {
+  it("al editar una variante, marcar otro color lo suma: los extra serán variantes nuevas", () => {
     const props = renderGenerator([{ name: "Color", type: "select", values: ["Azul"] }], { singleVariant: true })
     fireEvent.click(screen.getByRole("button", { name: "Negro" }))
-    expect(props.onUpdateAttrValues).toHaveBeenCalledWith("Color", ["Negro"])
+    expect(props.onUpdateAttrValues).toHaveBeenCalledWith("Color", ["Azul", "Negro"])
+  })
+
+  it("al editar con varios colores, dice cuál queda en el producto y cuáles se crean", () => {
+    renderGenerator([{ name: "Color", type: "select", values: ["Azul", "Negro", "Rojo"] }], { singleVariant: true })
+    expect(screen.getByRole("status")).toHaveTextContent("Este producto queda en Azul. Se crearán 2 variantes nuevas con los mismos demás atributos: Negro, Rojo.")
+  })
+
+  it("al editar, la talla sigue siendo de un solo valor", () => {
+    const props = renderGenerator([{ name: "Talla", type: "select", values: ["M"], sizeFamily: "ropa" }], { singleVariant: true })
+    fireEvent.click(screen.getByRole("button", { name: "XL" }))
+    expect(props.onUpdateAttrValues).toHaveBeenCalledWith("Talla", ["XL"])
   })
 })
 

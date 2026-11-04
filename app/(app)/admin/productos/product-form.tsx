@@ -14,7 +14,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { SubmitButton } from "@/components/ui/submit-button"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { INITIAL_STATE, type ActionState } from "@/lib/form-state"
-import { createProduct, updateProduct, createProductVariantBatch, type ProductVariantBatchInput } from "./actions"
+import { createProduct, updateProduct, createProductVariantBatch, prepareAddVariantForProduct, type ProductVariantBatchInput } from "./actions"
 import { StepIndicator } from "./epp-wizard-steps"
 import { VariantGenerator } from "./epp-variant-generator"
 import { requiresLogo } from "@/lib/products/epp-logo"
@@ -23,7 +23,7 @@ import {
   parseOptionsText, buildSingleVariantAttributes, generateVariantCombos, canAdvanceWizard, shouldShowConfirmClose, getStepAnimationClass,
   pickPrimarySupplier, otherSuppliers, buildSuppliersForSubmit, mergeEditAttributes, filterNewVariantCombos, withLogoAxis,
   ADVANCED_ATTRIBUTE_TYPES, blankAdvancedAttribute, setQuantityDriver, duplicateAttributeNames,
-  normalizeProductAttributeName, variantComboKey, type AdvancedAttributeType,
+  normalizeProductAttributeName, variantComboKey, splitEditColors, buildExtraColorVariants, extraColorAxes, type AdvancedAttributeType,
 } from "./product-form.helpers"
 import type { ProductFormProps, ProductFormMode, WizardStep, WizardGeneralState, WizardSupplierState, AttributeMultiValues, VariantCombo, SupplierRow, AttributeRow, SizeFamilyOption } from "./product-form.types"
 import { isSizeAttributeName } from "@/lib/products/product-size"
@@ -50,21 +50,6 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
   const isAddVariant = mode === "addVariant"
   const family = addVariantToFamily ?? null
   const action = isEdit ? updateProduct : createProduct
-
-  // ── Common form action state (for edit / single create) ────────────────────
-  const [state, formAction] = useActionState<ActionState, FormData>(
-    async (prev, formData) => {
-      const result = await action(prev, formData)
-      if (result.ok) {
-        toast.success(result.message ?? (isEdit ? "Producto actualizado" : "Producto creado"))
-        onClose()
-      } else if (result.message && !result.fieldErrors) {
-        toast.error(result.message)
-      }
-      return result
-    },
-    INITIAL_STATE,
-  )
 
   // ─── Dirty state tracking ────────────────────────────────────────────────
   const [isDirty, setIsDirty] = React.useState(false)
@@ -309,6 +294,84 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
         a.name.trim().length > 0 && a.type !== "select",
     ),
     [advAttrs],
+  )
+
+  // Al editar, el color admite varios valores: el primero es el del producto y
+  // los demás se crean como variantes nuevas al guardar (ver `splitEditColors`).
+  const editColors = isEdit ? splitEditColors(wizAttrs) : { own: wizAttrs, extraColors: [] as string[] }
+
+  /** Crea en la familia del producto una variante por cada color extra. Corre
+   *  después de guardar el producto, así que la familia ya lo ve con su color. */
+  async function createExtraColorVariants(productId: string): Promise<ActionState> {
+    try {
+      const target = await prepareAddVariantForProduct(productId)
+      if (!target) {
+        return { ok: false, message: "El producto se guardó, pero no pertenece a una familia de variantes: crea los otros colores con «Nuevo producto»." }
+      }
+      const combos = buildExtraColorVariants(target.canonicalName, editColors.own, editColors.extraColors)
+      const { kept, removed } = filterNewVariantCombos(combos, target.existingVariantKeys)
+      const skipped = removed.length > 0
+        ? `${removed.length} color${removed.length === 1 ? " ya existía" : "es ya existían"} en la familia`
+        : null
+      if (kept.length === 0) return { ok: true, message: skipped ?? undefined }
+      const created = await createProductVariantBatch({
+        categoryId: general.categoryId,
+        familyName: target.canonicalName,
+        description: general.description || undefined,
+        unitOfMeasure: general.unitOfMeasure,
+        isEpp: general.isEpp,
+        requiresPrevencion: general.requiresPrevencion,
+        isService: general.isService,
+        requiresWorker: general.requiresWorker,
+        equipmentKind: general.isService ? general.equipmentKind : "",
+        referencePrice: general.referencePrice ? parseFloat(general.referencePrice) : null,
+        notes: general.notes || undefined,
+        isActive: general.isActive,
+        attributes: extraColorAxes(editColors.own, editColors.extraColors).map((a, i) => ({
+          name: a.name, type: "select", options: JSON.stringify(a.values), sizeFamily: a.sizeFamily, sortOrder: i,
+        })),
+        advancedAttributes: submittableAdvAttrs.map((a, i) => ({
+          name: a.name, type: a.type, isRequired: a.isRequired,
+          drivesQuantity: a.drivesQuantity ?? false,
+          sortOrder: editColors.own.length + i,
+        })),
+        variants: kept.map((v) => ({ name: v.name, attributes: v.attributes })),
+        supplier: supplier.hasSupplier && supplier.supplierId
+          ? { supplierId: supplier.supplierId, unitPrice: supplier.unitPrice ? parseFloat(supplier.unitPrice) : null, notes: supplier.notes || undefined }
+          : undefined,
+        familyId: target.id,
+        existingVariantKeys: target.existingVariantKeys,
+      })
+      if (!created.ok) {
+        const detail = created.message ?? Object.values(created.fieldErrors ?? {}).flat().join(". ")
+        return { ok: false, message: `El producto se guardó, pero no se crearon los colores nuevos${detail ? `: ${detail}` : "."}` }
+      }
+      return { ok: true, message: [created.message, skipped].filter(Boolean).join("; ") }
+    } catch {
+      return { ok: false, message: "El producto se guardó, pero no se pudieron crear los colores nuevos. Revisa la conexión e inténtalo nuevamente." }
+    }
+  }
+
+  // ── Common form action state (for edit / single create) ────────────────────
+  const [state, formAction] = useActionState<ActionState, FormData>(
+    async (prev, formData) => {
+      const result = await action(prev, formData)
+      if (result.ok) {
+        // Colores extra marcados al editar: el producto ya quedó guardado con el
+        // primero, y los demás nacen como variantes de su familia.
+        const extra = isEdit && editColors.extraColors.length > 0 ? await createExtraColorVariants(editProduct!.id) : null
+        if (extra && !extra.ok) {
+          toast.error(extra.message ?? "No se pudieron crear los colores nuevos")
+          return extra
+        }
+        toast.success([result.message ?? (isEdit ? "Producto actualizado" : "Producto creado"), extra?.message].filter(Boolean).join(". "))
+        onClose()
+      } else if (result.message && !result.fieldErrors) {
+        toast.error(result.message)
+      }
+      return result
+    },
+    INITIAL_STATE,
   )
 
   function updateAdvAttr(index: number, patch: Partial<AttributeRow>) {
@@ -879,6 +942,9 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
               {variants.length > 1 && (
                 <p><span className="text-[var(--color-text-subtle)]">Variantes a crear:</span> <span className="font-medium">{variants.length}</span></p>
               )}
+              {editColors.extraColors.length > 0 && (
+                <p><span className="text-[var(--color-text-subtle)]">Colores nuevos a crear:</span> <span className="font-medium">{editColors.extraColors.join(", ")}</span></p>
+              )}
               {supplier.hasSupplier && supplier.supplierId && (
                 <p><span className="text-[var(--color-text-subtle)]">Proveedor:</span> <span className="font-medium">{allSuppliers.find((s) => s.id === supplier.supplierId)?.name ?? supplier.supplierId}</span></p>
               )}
@@ -945,7 +1011,7 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
             conservando id y sortOrder de los que ya existían. */}
         <input type="hidden" name="attributesJson" value={JSON.stringify(
           isEdit
-            ? mergeEditAttributes(editProduct!.attributes, wizAttrs, advAttrs, { name: general.name, isEpp: general.isEpp })
+            ? mergeEditAttributes(editProduct!.attributes, editColors.own, advAttrs, { name: general.name, isEpp: general.isEpp })
             : [
               ...buildSingleVariantAttributes(wizAttrs, variants[0]),
               ...submittableAdvAttrs.map((a, i) => ({ ...a, sortOrder: wizAttrs.length + i })),
@@ -994,7 +1060,12 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
         {isEdit ? (
           <>
             <Button type="button" variant="secondary" onClick={onClose}>Cancelar</Button>
-            <SubmitButton label="Guardar cambios" loadingLabel="Guardando..." />
+            <SubmitButton
+              label={editColors.extraColors.length > 0
+                ? `Guardar y crear ${editColors.extraColors.length} color${editColors.extraColors.length === 1 ? "" : "es"}`
+                : "Guardar cambios"}
+              loadingLabel="Guardando..."
+            />
           </>
         ) : step === 1 ? (
           <>

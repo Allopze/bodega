@@ -8,7 +8,7 @@ import { Tooltip } from "@/components/ui/tooltip"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import type { AttributeMultiValues, SizeFamilyOption } from "./product-form.types"
-import { isLogoAxis } from "./product-form.helpers"
+import { COLOR_ATTRIBUTE_NAME, isColorAxis, isLogoAxis } from "./product-form.helpers"
 import { defaultScaleCodes, resolveSizeScale, sizeScaleLabel, suggestSizeScale } from "./size-scale.helpers"
 
 /**
@@ -16,7 +16,7 @@ import { defaultScaleCodes, resolveSizeScale, sizeScaleLabel, suggestSizeScale }
  * fija. Las tallas llegan por props desde la base.
  */
 const COLOR_PRESET = {
-  name: "Color",
+  name: COLOR_ATTRIBUTE_NAME,
   options: ["Amarillo", "Azul", "Blanco", "Gris", "Negro", "Naranja", "Rojo", "Verde"],
 } as const
 
@@ -169,18 +169,22 @@ export function VariantGenerator({
   const otherAttrs = wizAttrs.filter((attr) => attr !== sizeAttr)
   const activeScale = sizeAttr ? resolveSizeScale(sizeAttr, productName, sizeFamilies) : null
   const suggested = suggestSizeScale(productName, sizeFamilies)
-  const hasColor = wizAttrs.some((a) => normalizeAttributeName(a.name) === normalizeAttributeName(COLOR_PRESET.name))
+  const hasColor = wizAttrs.some(isColorAxis)
 
   const existingFor = (attrName: string) => existingValuesByAttr?.[normalizeAttributeName(attrName)] ?? []
   const isExisting = (attrName: string, value: string) =>
     (blockedValuesByAttr?.[normalizeAttributeName(attrName)] ?? []).some((v) => sameValue(attrName, v, value))
+
+  /** Al editar, cada eje lleva un solo valor salvo el color: los colores extra
+   *  se crean como variantes nuevas (ver `splitEditColors`). */
+  const singleValue = (attr: AttributeMultiValues) => singleVariant && !isColorAxis(attr)
 
   function toggleValue(attr: AttributeMultiValues, option: string) {
     onMarkDirty()
     const selected = attr.values.includes(option)
     onUpdateAttrValues(attr.name, selected
       ? attr.values.filter((v) => v !== option)
-      : singleVariant ? [option] : [...attr.values, option])
+      : singleValue(attr) ? [option] : [...attr.values, option])
   }
 
   function addValue(attr: AttributeMultiValues, value: string) {
@@ -189,7 +193,7 @@ export function VariantGenerator({
     // ya está deshabilitado con ese aviso.
     if (isExisting(attr.name, value)) return
     onMarkDirty()
-    onUpdateAttrValues(attr.name, singleVariant ? [value] : [...attr.values, value])
+    onUpdateAttrValues(attr.name, singleValue(attr) ? [value] : [...attr.values, value])
   }
 
   /** Opciones de un eje: las de la escala/preset, las marcadas y las ya existentes. */
@@ -208,7 +212,7 @@ export function VariantGenerator({
     <div className="space-y-5">
       <p className="text-sm text-[var(--color-text-muted)]">
         {singleVariant
-          ? "Edita la talla y los atributos de este ítem. Para otra talla con stock propio, usa «Agregar tallas» en el listado."
+          ? "Edita la talla y los atributos de este ítem. Puedes marcar más de un color: cada color extra se crea como una variante nueva con su propio stock. Para otra talla, usa «Agregar tallas» en el listado."
           : "Marca las tallas y colores que existen. Cada combinación se crea como un producto con su propio stock."}
       </p>
 
@@ -323,7 +327,7 @@ export function VariantGenerator({
         </div>
 
         {otherAttrs.map((attr) => {
-          const isColor = normalizeAttributeName(attr.name) === normalizeAttributeName(COLOR_PRESET.name)
+          const isColor = isColorAxis(attr)
           // Un atributo que no es preset (viene de una plantilla de categoría)
           // trae sus opciones en `values`: sin este fallback se dibujaba una
           // caja sin chips y el paso quedaba muerto.
@@ -368,6 +372,13 @@ export function VariantGenerator({
                   />
                 ))}
               </div>
+              {singleVariant && isColor && attr.values.length > 1 && (
+                <p role="status" className="mt-2 text-xs text-[var(--color-text-muted)]">
+                  Este producto queda en <span className="font-medium text-[var(--color-text)]">{attr.values[0]}</span>.
+                  {" "}Se crear{attr.values.length === 2 ? "á 1 variante nueva" : `án ${attr.values.length - 1} variantes nuevas`} con los mismos demás atributos:
+                  {" "}<span className="font-medium text-[var(--color-text)]">{attr.values.slice(1).join(", ")}</span>.
+                </p>
+              )}
               <AddValueInput
                 label={`Agregar un valor a ${attr.name}`}
                 placeholder={`Otro valor de ${attr.name.toLocaleLowerCase("es-CL")}`}
