@@ -12,6 +12,8 @@
  * 4. **El mes civil chileno.** Una inspección del 31 de agosto a las 22:00 de
  *    Santiago es de agosto aunque en UTC ya sea septiembre.
  * 5. **El universo de los KPI.** El estado y la vista rápida no acotan la serie.
+ * 6. **Los hallazgos abiertos por gravedad (P-4).** Se agregan en la misma consulta
+ *    y con el mismo alcance: ni los cerrados ni los de otra faena cuentan.
  */
 import path from "node:path"
 import { PGlite } from "@electric-sql/pglite"
@@ -112,6 +114,14 @@ beforeAll(async () => {
   await seedFinding("find-trend-2", "run-trend-sep-larga", "medium")
   await seedFinding("find-trend-3", "run-trend-sep-larga", "critical", true)
   await seedFinding("find-trend-4", "run-trend-b", "critical")
+  // P-4: una por gravedad en septiembre (A), más un crítico abierto en octubre (A) y otro (B) que A no puede ver.
+  await seedFinding("find-trend-5", "run-trend-sep-corta", "high")
+  await seedFinding("find-trend-6", "run-trend-sep-corta", "low")
+  await seedFinding("find-trend-7", "run-trend-sep-corta", "low", true)
+  await seedFinding("find-trend-8", "run-trend-oct", "critical")
+  await seedFinding("find-trend-9", "run-trend-b", "low")
+  // Sin inspección cerrada no hay mes: el hallazgo de una ejecución planificada no entra en ninguno.
+  await seedFinding("find-trend-10", "run-trend-planned", "critical")
 })
 
 const byMonth = (rows: Awaited<ReturnType<typeof service.summarizeInspectionComplianceTrend>>) =>
@@ -186,11 +196,38 @@ describe("ponderación y qué entra", () => {
     expect(byMonth(rows)["2026-08"]).toMatchObject({ runs: 1, scoredItems: 8 })
   })
 
-  it("cuenta los hallazgos abiertos y, aparte, los altos o críticos; los cerrados no cuentan", async () => {
+  it("cuenta los hallazgos abiertos por gravedad; los cerrados no cuentan", async () => {
     const rows = await service.summarizeInspectionComplianceTrend(accessOf(ONLY_A), {}, { since: SINCE })
-    // alto + medio abiertos; el crítico está cerrado. El crítico de la faena B no es de este alcance.
-    expect(byMonth(rows)["2026-09"]).toMatchObject({ openFindings: 2, criticalOpenFindings: 1 })
-    expect(byMonth(rows)["2026-10"]).toMatchObject({ openFindings: 0, criticalOpenFindings: 0 })
+    // Septiembre (A): altos 2 (uno de la larga, uno de la corta), medio 1 y bajo 1 abiertos;
+    // el crítico de la larga y el bajo de la corta están cerrados.
+    expect(byMonth(rows)["2026-09"]).toMatchObject({ openCritical: 0, openHigh: 2, openMedium: 1, openLow: 1 })
+    expect(byMonth(rows)["2026-10"]).toMatchObject({ openCritical: 1, openHigh: 0, openMedium: 0, openLow: 0 })
+    expect(byMonth(rows)["2026-08"]).toMatchObject({ openCritical: 0, openHigh: 0, openMedium: 0, openLow: 0 })
+  })
+
+  it("las cuatro gravedades suman lo que hay: ningún hallazgo abierto queda fuera de la pila", async () => {
+    const rows = await service.summarizeInspectionComplianceTrend(accessOf(ALL), {}, { since: SINCE })
+    const stacked = rows.reduce((sum, row) => sum + row.openCritical + row.openHigh + row.openMedium + row.openLow, 0)
+    // Abiertos con inspección cerrada: 2 altos + 1 medio + 1 bajo (septiembre), crítico de A, crítico de B y bajo de B (octubre) = 7.
+    // El crítico de la planificada y los 2 cerrados (crítico y bajo) no entran.
+    expect(stacked).toBe(7)
+  })
+
+  it("los hallazgos de la faena B no se cuelan en el alcance de A, ni por gravedad", async () => {
+    const onlyA = await service.summarizeInspectionComplianceTrend(accessOf(ONLY_A), {}, { since: SINCE })
+    const all = await service.summarizeInspectionComplianceTrend(accessOf(ALL), {}, { since: SINCE })
+    // El crítico y el bajo de B sólo los ve quien tiene alcance total.
+    expect(byMonth(onlyA)["2026-10"]).toMatchObject({ openCritical: 1, openLow: 0 })
+    expect(byMonth(all)["2026-10"]).toMatchObject({ openCritical: 2, openLow: 1 })
+    // Y pedir la faena B con alcance A no devuelve ni siquiera esos hallazgos.
+    const forbidden = await service.summarizeInspectionComplianceTrend(accessOf(ONLY_A), { worksiteId: WS_B }, { since: SINCE })
+    expect(forbidden).toEqual([])
+  })
+
+  it("el filtro de faena con alcance total acota también la pila", async () => {
+    const onlyB = await service.summarizeInspectionComplianceTrend(accessOf(ALL), { worksiteId: WS_B }, { since: SINCE })
+    expect(onlyB).toHaveLength(1)
+    expect(onlyB[0]).toMatchObject({ month: "2026-10", openCritical: 1, openHigh: 0, openMedium: 0, openLow: 1 })
   })
 })
 

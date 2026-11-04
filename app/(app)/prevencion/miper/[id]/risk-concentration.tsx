@@ -5,17 +5,19 @@ import { usePathname, useSearchParams } from "next/navigation"
 import { ChartSection } from "@/components/charts/chart-section"
 import { ResidualBands, RiskMatrix, type RiskMatrixLinkProps } from "@/components/charts/risk-matrix"
 import { ChartEmpty } from "@/components/ui/chart-empty"
-import { buildRiskMatrix, riskMatrixSummary, summarizeResidual, type RiskMatrixCell } from "@/lib/prevention/miper/risk-matrix"
+import { parseMatrixFilters } from "@/lib/prevention/miper/matrix-filters"
+import { buildRiskMatrix, cellParam, riskMatrixSummary, summarizeResidual, type RiskMatrixCell } from "@/lib/prevention/miper/risk-matrix"
 import type { MiperEntrySnapshot } from "@/lib/prevention/miper/snapshot"
-import { hrefToMatrixOnly } from "@/lib/prevention/miper/workspace-url"
+import { hrefToMatrixOnly, hrefWithoutMatrixFilter } from "@/lib/prevention/miper/workspace-url"
 import { WorkspaceLink } from "./workspace-nav"
 
 /** Identidad estable para «sin residual»: un `{}` nuevo en cada render invalidaría el `useMemo`. */
 const NO_RESIDUAL: Readonly<Record<string, string>> = {}
 
 /** Una celda filtra la matriz con `replaceState`, como las cifras de Inicio: sin ida al servidor y sin entrada nueva en el historial. */
-function CellLink({ href, className, title, children }: RiskMatrixLinkProps) {
-  return <WorkspaceLink href={href} replace className={className} title={title}>{children}</WorkspaceLink>
+function CellLink(props: RiskMatrixLinkProps) {
+  // Esparce todo (ref, `aria-describedby`, manejadores): el tooltip de la celda cuelga de este enlace.
+  return <WorkspaceLink replace {...props} />
 }
 
 /**
@@ -28,8 +30,13 @@ function CellLink({ href, className, title, children }: RiskMatrixLinkProps) {
  *   en producción está vacío en todas las filas (2026-11-03). Sin datos no hay
  *   grilla en cero: se explica que el efecto de las medidas aún no se registra
  *   (A4). Con datos, se compara banda por banda con el inherente.
- * - **Clic.** No existe un filtro por P × C; la celda lleva a la clasificación
- *   que le corresponde (`hrefToMatrixOnly` con `clasificacion`), que sí existe.
+ * - **Clic.** Filtra la matriz por la celda exacta (`?celda=P4xC2`, ver
+ *   `matrix-filters.ts`): P4 × C2 y P2 × C4 comparten clasificación (8) pero no
+ *   son la misma celda. Elegir otra vez la celda vigente quita el filtro. El
+ *   resto de los filtros de la matriz se descarta, como en las cifras de Inicio,
+ *   para que lo que se ve al llegar coincida con la cifra de la celda.
+ * - **Hover y foco.** Cada celda con riesgos dice sus 3 peligros más frecuentes
+ *   (`RiskMatrix`, P-3).
  */
 export function RiskConcentration({ rows, residualLevels = NO_RESIDUAL, uncontrolled }: {
   rows: readonly MiperEntrySnapshot[]
@@ -42,7 +49,11 @@ export function RiskConcentration({ rows, residualLevels = NO_RESIDUAL, uncontro
   const params = useSearchParams()
   const matrix = useMemo(() => buildRiskMatrix(rows), [rows])
   const residual = useMemo(() => summarizeResidual(rows.map((row) => row.id), residualLevels), [rows, residualLevels])
-  const hrefFor = (cell: RiskMatrixCell) => hrefToMatrixOnly(pathname, params, { clasificacion: cell.classification })
+  const selected = useMemo(() => parseMatrixFilters(params).cell, [params])
+  const hrefFor = (cell: RiskMatrixCell) =>
+    selected?.probability === cell.probability && selected.consequence === cell.consequence
+      ? hrefWithoutMatrixFilter(pathname, params, "celda")
+      : hrefToMatrixOnly(pathname, params, { celda: cellParam(cell) })
   return (
     <ChartSection
       title="Dónde se concentra el riesgo"
@@ -58,7 +69,7 @@ export function RiskConcentration({ rows, residualLevels = NO_RESIDUAL, uncontro
         <div className="min-w-0">
           <h3 className="text-sm font-semibold text-[var(--color-text)]">Riesgo inherente</h3>
           <p className="mb-3 text-xs text-[var(--color-text-muted)]">Antes de las medidas: probabilidad × consecuencia</p>
-          <RiskMatrix matrix={matrix} caption="Riesgo inherente: cantidad de riesgos por probabilidad y consecuencia" hrefFor={hrefFor} renderLink={CellLink} />
+          <RiskMatrix matrix={matrix} caption="Riesgo inherente: cantidad de riesgos por probabilidad y consecuencia" hrefFor={hrefFor} selected={selected} renderLink={CellLink} />
         </div>
         <div className="min-w-0">
           <h3 className="text-sm font-semibold text-[var(--color-text)]">Riesgo residual</h3>

@@ -10,7 +10,7 @@ vi.mock("@/lib/auth/can", () => ({ requirePermission, can }))
 // ANA-002/PER-T02: la página ya no llama al servicio directo sino a su entrada
 // cacheada (`read-model-cache`); el doble se mueve ahí. Lo que esta prueba
 // verifica —qué secciones se pintan según permisos— no cambia.
-vi.mock("@/lib/services/read-model-cache", () => ({ getCachedAnalyticsDashboard: getAnalyticsDashboard }))
+vi.mock("@/lib/services/read-model-cache", () => ({ getCachedAnalyticsDashboard: getAnalyticsDashboard, getCachedSupplyLeadTime: getSupplyLeadTime }))
 vi.mock("@/lib/services/analytics", () => ({
   normalizeAnalyticsFilters: (filters: Record<string, unknown>) => ({
     fromDate: "2026-08-01",
@@ -19,7 +19,6 @@ vi.mock("@/lib/services/analytics", () => ({
   }),
 }))
 // CHART-029: los plazos del ciclo salen de su propia consulta (con prueba PGlite propia); acá sólo interesa qué se pinta.
-vi.mock("@/lib/services/analytics-module/lead-time", () => ({ getSupplyLeadTime }))
 vi.mock("./analytics-page.helpers", () => ({
   getFilterOptions,
   getParam: () => undefined,

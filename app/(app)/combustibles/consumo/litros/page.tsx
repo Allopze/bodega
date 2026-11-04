@@ -157,6 +157,8 @@ export default async function ConsumoLitrosPage({ searchParams }: { searchParams
     subject: "los litros y el rendimiento informados por Copec",
   }
   const coverageNote = coverageNoticeText(coverageInput)
+  // «Ver datos» → Excel de los gráficos de esta pantalla: sólo con `combustibles:export`, y con el aviso de cobertura en «Metadatos».
+  const chartExcel = canExport ? { permission: "combustibles:export" as const, notes: coverageNote ? [coverageNote] : [] } : undefined
   const exportParams = exportParamsFromFilters(filters)
   const historyParams = exportParamsFromFilters(historyFilters)
 
@@ -261,7 +263,7 @@ export default async function ConsumoLitrosPage({ searchParams }: { searchParams
       </div>
 
       <ViewSection id="rendimiento-mensual" title="Rendimiento por mes" question={`¿Los equipos rinden más o menos que antes? Con las lecturas de odómetro y horómetro de las cargas con tarjeta Copec. ${chartCaption}`}>
-        {rates.data ? <MeterRateSections series={rates.data} sourcesHref={inContext(FUEL_PATHS.fuentes)} excel={canExport ? { permission: "combustibles:export", notes: coverageNote ? [coverageNote] : [] } : undefined} /> : <SectionError what="el rendimiento por mes" />}
+        {rates.data ? <MeterRateSections series={rates.data} sourcesHref={inContext(FUEL_PATHS.fuentes)} excel={chartExcel} /> : <SectionError what="el rendimiento por mes" />}
       </ViewSection>
 
       <div className="mb-10 grid gap-8 xl:grid-cols-2">
@@ -320,6 +322,7 @@ export default async function ConsumoLitrosPage({ searchParams }: { searchParams
             emptyAction={emptyAction}
             periodLabel={period.label}
             evolutionCaption={chartCaption}
+            excel={chartExcel}
           />
         </UrlFold>
 

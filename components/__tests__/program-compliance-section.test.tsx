@@ -83,6 +83,17 @@ describe("ProgramComplianceSection", () => {
     expect(within(dataTable).getByRole("rowheader", { name: "Faena Beta" })).toBeDefined()
   })
 
+  it("«Ver datos» ofrece Excel sólo si la pantalla pasa el permiso de exportar del programa", () => {
+    renderSection()
+    expect(screen.queryByText("Exportar Excel", { exact: false })).toBeNull()
+  })
+
+  it("con `excel` el botón exporta la tabla de cifras por faena", () => {
+    renderSection({ excel: { permission: "prevention:training:export" } })
+    const button = screen.getByText("Exportar Excel", { exact: false }).closest("button")!
+    expect(button.getAttribute("aria-label")).toBe("Exportar Excel: Cumplimiento mensual 2026, por faena: cifras por faena")
+  })
+
   it("avisa de las actividades que no tienen mes y no caben en el calendario", () => {
     renderSection({ calendar: calendarOf(slots, true) })
     expect(screen.getByText("1 actividad exigible no tiene mes programado y no aparece en el calendario.")).toBeDefined()

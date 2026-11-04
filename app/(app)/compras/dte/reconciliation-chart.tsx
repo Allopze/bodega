@@ -27,6 +27,11 @@ import { useChartMotion } from "@/components/ui/chart-interactions"
  * Las capas siguen el orden de `RECONCILIATION_STATUS_ORDER` (lo que pide acción
  * en el piso del gráfico) y nunca llevan radio entre sí. El mes en curso va
  * tenue y punteado: todavía se emiten OC y no debe leerse como una caída.
+ *
+ * Sólo se dibujan —y por lo tanto sólo aparecen en la leyenda— los estados con
+ * OC en la ventana: la leyenda de recharts lista cada `<Bar>`, tenga datos o no,
+ * y con dos estados presentes salían seis rótulos, cuatro de ellos de colores
+ * que el gráfico no pinta. El orden y el color de cada estado no cambian.
  */
 
 const config = Object.fromEntries(
@@ -53,6 +58,7 @@ export function ReconciliationChart({ shape }: { shape: ReconciliationShape }) {
   const crossesYears = new Set(shape.months.map((month) => month.month.slice(0, 4))).size > 1
   const data = shape.months.map((month) => ({ ...month, ...month.counts, axis: axisLabel(month.month, crossesYears) }))
   const hasPartial = shape.months.some((month) => month.partial)
+  const present = RECONCILIATION_STATUS_ORDER.filter((status) => shape.months.some((month) => month.counts[status] > 0))
 
   const title = (_label: unknown, payload: ChartTooltipItem[]) => {
     const month = payload[0]?.payload as ReconciliationMonth | undefined
@@ -76,7 +82,7 @@ export function ReconciliationChart({ shape }: { shape: ReconciliationShape }) {
           <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={28} tick={{ fontSize: 11 }} />
           <ChartTooltip content={<ChartTooltipContent indicator="dot" labelFormatter={title} />} />
           <ChartLegend content={<ChartLegendContent />} />
-          {RECONCILIATION_STATUS_ORDER.map((status) => (
+          {present.map((status) => (
             <Bar key={status} dataKey={status} stackId="oc" fill={RECONCILIATION_STATUS_META[status].color} shape={MonthBar} {...motion} />
           ))}
         </BarChart>

@@ -119,6 +119,7 @@ const DENSAS: Record<string, string> = {
   "app/(app)/combustibles/control/_charts/overview-ranking-chart.tsx": "ranking de faenas: una barra por faena",
   "app/(app)/combustibles/control/_charts/overview-monthly-chart.tsx": "columnas apiladas por medio de suministro: más de 6 segmentos",
   "app/(app)/analitica/analytics-charts.tsx": "Pareto de proveedores: una barra por proveedor",
+  "app/(app)/combustibles/cuadratura/estanques/tank-level-chart.tsx": "dos paneles por estanque (nivel y entradas/salidas): small multiples",
 }
 
 // ─── Análisis del árbol ───────────────────────────────────────────────────

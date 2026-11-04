@@ -182,6 +182,15 @@ describe("tarjetas del panel", () => {
     expect(within(table).getByText("26-10 al 01-11")).toBeTruthy()
   })
 
+  it("el gráfico semanal sólo ofrece Excel con el permiso de exportar de mantención", () => {
+    const { unmount } = render(<WeeklyCard data={panelData()} />)
+    expect(screen.queryByText("Exportar Excel", { exact: false })).toBeNull()
+    unmount()
+
+    render(<WeeklyCard data={panelData()} excel={{ permission: "mant:export", notes: ["Últimas 2 semanas · todas las faenas del alcance."] }} />)
+    expect(screen.getByText("Exportar Excel", { exact: false }).closest("button")!.getAttribute("aria-label")).toBe("Exportar Excel: Registros por semana")
+  })
+
   it("próximas mantenciones: equipo, lectura, falta o pasada y estado con texto", () => {
     render(<UpcomingCard data={panelData()} />)
     const table = screen.getByRole("table", { name: undefined })

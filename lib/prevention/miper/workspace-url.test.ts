@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { hrefToMatrixPresentation, hrefToActivity, hrefToEntry, hrefToFicha, hrefToMatrix, hrefToMatrixOnly, hrefToMatrixWith, hrefToProgramOnly, hrefToTab, hrefToTask, PROGRAM_FILTER_KEYS, readWorkspaceView } from "./workspace-url"
+import { hrefToMatrixPresentation, hrefToActivity, hrefToEntry, hrefToFicha, hrefToMatrix, hrefToMatrixOnly, hrefToMatrixWith, hrefToProgramOnly, hrefToTab, hrefToTask, hrefWithoutMatrixFilter, PROGRAM_FILTER_KEYS, readWorkspaceView } from "./workspace-url"
 
 const P = "/prevencion/miper/m1"
 const params = (query: string) => new URLSearchParams(query)
@@ -42,6 +42,18 @@ describe("vistas del espacio de trabajo", () => {
     // `q` es del programa: no es un filtro de la matriz y se conserva.
     expect(hrefToMatrixOnly(P, current, { clasificacion: "important,intolerable" })).toBe(`${P}?q=prog&clasificacion=important%2Cintolerable`)
     expect(hrefToMatrixOnly(P, current)).toBe(`${P}?q=prog`)
+  })
+
+  it("la celda P × C también es un filtro de la matriz: hrefToMatrixOnly la reemplaza y descarta el resto", () => {
+    const current = params("celda=P2xC4&controlado=no&tab=resumen&q=prog")
+    expect(hrefToMatrixOnly(P, current, { celda: "P4xC2" })).toBe(`${P}?q=prog&celda=P4xC2`)
+    expect(hrefToMatrixOnly(P, current)).toBe(`${P}?q=prog`)
+  })
+
+  it("hrefWithoutMatrixFilter quita sólo ese filtro y deja la pestaña y los demás filtros donde están", () => {
+    const current = params("celda=P4xC2&controlado=no&tab=resumen")
+    expect(hrefWithoutMatrixFilter(P, current, "celda")).toBe(`${P}?controlado=no&tab=resumen`)
+    expect(hrefWithoutMatrixFilter(P, params("celda=P4xC2"), "celda")).toBe(P)
   })
 
   it("hrefToProgramOnly abre el programa entero: quita sus filtros (q, estado, frecuencia) y la vista; los de la matriz no lo afectan", () => {

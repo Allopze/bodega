@@ -1,4 +1,5 @@
 import { cn, formatPercent } from "@/lib/utils"
+import { CHART_ENTRY_MS } from "@/lib/chart-motion"
 
 /*
  * Medidor de marcas radiales: un semicírculo de rayitas en vez de un arco
@@ -8,7 +9,10 @@ import { cn, formatPercent } from "@/lib/utils"
  * curva y no se distinguían.
  *
  * SVG puro, sin recharts ni hooks: se renderiza en el servidor y la entrada es
- * una animación CSS (`tick-in`) que `motion-safe:` apaga sola.
+ * una animación CSS (`tick-in`) que `motion-safe:` apaga sola. Entera, la
+ * entrada dura `CHART_ENTRY_MS` (el tope de DESIGN.md § Gráficos › Movimiento):
+ * cada marca se enciende en la mitad de ese tiempo y las 41 se reparten el resto
+ * en el retardo, de modo que el barrido sigue leyéndose de izquierda a derecha.
  */
 
 const TICKS = 41
@@ -19,6 +23,9 @@ const CY = H - 8
 const RADIUS = W * 0.44
 const TICK_LEN = 16
 const MARKER_LEN = 26
+/** Lo que tarda una marca en encenderse; el resto de `CHART_ENTRY_MS` se reparte entre las marcas. */
+const TICK_FADE_MS = CHART_ENTRY_MS / 2
+const TICK_STEP_MS = (CHART_ENTRY_MS - TICK_FADE_MS) / (TICKS - 1)
 
 function clampPercent(value: number) {
   return Math.min(100, Math.max(0, value))
@@ -106,8 +113,8 @@ export function RadialTickGauge({
             stroke={tickColor(tick.kind)}
             strokeWidth={tick.marker ? 3 : 2.6}
             strokeLinecap="round"
-            className="motion-safe:animate-[tick-in_.45s_var(--ease-out)_both]"
-            style={{ animationDelay: `${tick.i * 14}ms` }}
+            className="motion-safe:animate-[tick-in_var(--ease-out)_both]"
+            style={{ animationDuration: `${TICK_FADE_MS}ms`, animationDelay: `${tick.i * TICK_STEP_MS}ms` }}
           />
         ))}
         <text

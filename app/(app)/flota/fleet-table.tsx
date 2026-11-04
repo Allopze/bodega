@@ -57,6 +57,8 @@ export function FleetTable({ vehicles, hasAnyVehicle, canViewCosts, canViewFuel 
             <div><dt className="text-[var(--color-text-subtle)]">Responsable</dt><dd>{vehicle.responsibleName ?? "—"}</dd></div>
             <div><dt className="text-[var(--color-text-subtle)]">Vencimiento</dt><dd>{vehicle.nextExpiryDate ? formatDate(vehicle.nextExpiryDate) : "—"}</dd></div>
             {vehicle.openWorkOrders != null && <div><dt className="text-[var(--color-text-subtle)]">OT abiertas</dt><dd>{vehicle.openWorkOrders}{vehicle.inWorkshopNow ? " · en taller" : ""}</dd></div>}
+            {/* P-9: la misma celda que la columna «Km/Hr» de la tabla (valor y aviso de lectura objetada), con la misma condición de columna. */}
+            {showMeterReading && <div><dt className="text-[var(--color-text-subtle)]">Km/Hr</dt><dd className="font-mono"><FleetMeterReading vehicle={vehicle} /></dd></div>}
           </dl>
           <Button asChild size="sm" variant="secondary" className="mt-3 w-full">
             <Link href={`/flota/${vehicle.id}`}>Ver ficha del equipo</Link>

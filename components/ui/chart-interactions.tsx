@@ -8,6 +8,7 @@ import {
   useIsTooltipActive,
 } from "recharts"
 import { cn, formatCLP, formatPercent, formatQty } from "@/lib/utils"
+import { CHART_ENTRY_MS } from "@/lib/chart-motion"
 import { useReducedMotion } from "@/lib/hooks/use-reduced-motion"
 
 /*
@@ -31,8 +32,11 @@ export function formatChartValue(value: unknown, format: ChartValueFormat = "cou
   }
 }
 
-/** Tope de la entrada de una serie (DESIGN.md § Gráficos › Movimiento). */
-export const CHART_ENTRY_MS = 200
+/**
+ * Tope de la entrada de una serie (DESIGN.md § Gráficos › Movimiento). Se define
+ * en `lib/chart-motion.ts` para que los componentes de servidor también lo usen.
+ */
+export { CHART_ENTRY_MS }
 
 /**
  * Animación de entrada de las series: ≤ 200 ms y apagada con «reducir movimiento».

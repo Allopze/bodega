@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { classify } from "./methodology"
 import {
-  buildRiskMatrix, cellName, classificationOfRiskLevel, RISK_MATRIX_CONSEQUENCES, RISK_MATRIX_PROBABILITIES,
+  buildRiskMatrix, cellName, cellParam, classificationOfRiskLevel, parseCellParam, RISK_MATRIX_CONSEQUENCES, RISK_MATRIX_PROBABILITIES,
   riskMatrixSummary, summarizeResidual,
 } from "./risk-matrix"
 
@@ -66,6 +66,70 @@ describe("buildRiskMatrix — conteo por probabilidad × consecuencia", () => {
     expect(buildRiskMatrix([]).busiest).toBeNull()
     expect(buildRiskMatrix([]).tied).toBe(0)
     expect(buildRiskMatrix(at(null, null, 3))).toMatchObject({ busiest: null, evaluated: 0, unevaluated: 3, severe: 0 })
+  })
+})
+
+describe("peligros más frecuentes de cada celda (P-3)", () => {
+  const haz = (probability: number | null, consequence: number | null, hazard: string | null, times = 1) =>
+    Array.from({ length: times }, () => ({ probability, consequence, hazard }))
+  const cell = (matrix: ReturnType<typeof buildRiskMatrix>, name: string) => matrix.cells.find((candidate) => cellName(candidate) === name)!
+
+  it("lista los 3 peligros más repetidos de la celda, el más frecuente primero, con su cuenta", () => {
+    const matrix = buildRiskMatrix([
+      ...haz(4, 2, "Caída de objetos", 3), ...haz(4, 2, "Ruido", 2), ...haz(4, 2, "Atrapamiento", 4), ...haz(4, 2, "Polvo", 1),
+    ])
+    expect(cell(matrix, "P4 × C2").topHazards).toEqual([
+      { label: "Atrapamiento", count: 4 }, { label: "Caída de objetos", count: 3 }, { label: "Ruido", count: 2 },
+    ])
+    // Un peligro más que no cabe: se dice cuántos quedaron fuera, no se calla.
+    expect(cell(matrix, "P4 × C2").moreHazards).toBe(1)
+  })
+
+  it("cuenta como un solo peligro lo que sólo difiere en tildes, mayúsculas o espacios, y rotula con la escritura más repetida", () => {
+    const matrix = buildRiskMatrix([
+      ...haz(2, 2, "Caida de objetos"), ...haz(2, 2, "Caída  de objetos", 2), ...haz(2, 2, "  caída de OBJETOS "),
+    ])
+    expect(cell(matrix, "P2 × C2").topHazards).toEqual([{ label: "Caída de objetos", count: 4 }])
+    expect(cell(matrix, "P2 × C2").moreHazards).toBe(0)
+  })
+
+  it("con empate de cuentas ordena por nombre (determinista, sin depender del orden de las filas)", () => {
+    const a = buildRiskMatrix([...haz(1, 1, "Zanja"), ...haz(1, 1, "Ácido"), ...haz(1, 1, "Bodega")])
+    const b = buildRiskMatrix([...haz(1, 1, "Bodega"), ...haz(1, 1, "Zanja"), ...haz(1, 1, "Ácido")])
+    expect(cell(a, "P1 × C1").topHazards.map((hazard) => hazard.label)).toEqual(["Ácido", "Bodega", "Zanja"])
+    expect(cell(b, "P1 × C1").topHazards).toEqual(cell(a, "P1 × C1").topHazards)
+  })
+
+  it("cada celda cuenta sólo lo suyo; una celda vacía o sin peligro escrito no tiene lista", () => {
+    const matrix = buildRiskMatrix([...haz(4, 4, "Incendio"), ...haz(1, 1, null), ...haz(1, 1, "   "), ...haz(null, 2, "Sin evaluar")])
+    expect(cell(matrix, "P4 × C4").topHazards).toEqual([{ label: "Incendio", count: 1 }])
+    expect(cell(matrix, "P1 × C1")).toMatchObject({ count: 2, topHazards: [], moreHazards: 0 })
+    expect(cell(matrix, "P2 × C2")).toMatchObject({ count: 0, topHazards: [] })
+    // El peligro de un riesgo sin P o C no aparece en ninguna celda: no entra en la grilla.
+    expect(matrix.cells.flatMap((candidate) => candidate.topHazards.map((hazard) => hazard.label))).not.toContain("Sin evaluar")
+  })
+
+  it("un peligro que falta en el dato (filas sin la columna) no rompe el conteo", () => {
+    const matrix = buildRiskMatrix(at(4, 2, 2))
+    expect(cell(matrix, "P4 × C2")).toMatchObject({ count: 2, topHazards: [], moreHazards: 0 })
+  })
+})
+
+describe("?celda= — la celda exacta en la URL", () => {
+  it("ida y vuelta para las nueve celdas de la grilla", () => {
+    for (const probability of RISK_MATRIX_PROBABILITIES) {
+      for (const consequence of RISK_MATRIX_CONSEQUENCES) {
+        expect(parseCellParam(cellParam({ probability, consequence }))).toEqual({ probability, consequence })
+      }
+    }
+    expect(cellParam({ probability: 4, consequence: 2 })).toBe("P4xC2")
+  })
+
+  it("lo que no es una celda de la escala 1-2-4 no filtra: ni valores fuera de escala ni basura", () => {
+    for (const value of [null, undefined, "", "P3xC2", "P4xC3", "P0xC1", "4x2", "P4C2", "P4xC2x", "P4xC", "important"]) {
+      expect(parseCellParam(value)).toBeNull()
+    }
+    expect(parseCellParam(" p2xc4 ")).toEqual({ probability: 2, consequence: 4 })
   })
 })
 

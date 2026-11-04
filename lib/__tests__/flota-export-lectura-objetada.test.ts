@@ -39,11 +39,11 @@ const sessionWith = (permissions: string[]) => ({ user: { id: "u1", email: "gere
 const base = {
   type: "Camión", brand: null, model: null, year: null, worksiteName: "Faena A", isActive: true, operationalStatus: "operativo",
   responsibleName: null, nextExpiryDate: null, totalLiters: 100, loadCount: 3, totalFuelAmount: 90_000, openWorkOrders: null,
-  lastOdometerReading: null, lastHourMeterReading: null, lastReadingObjection: null,
+  lastOdometerReading: null, lastHourMeterReading: null, lastReadingAt: null, lastReadingObjection: null,
 }
-const OBJETADA = { ...base, id: "v1", plate: "AA-0001", lastOdometerReading: 1_030, lastReadingObjection: { caseId: "case-1", ruleLabel: "Kilometraje regresivo" } }
-const LIMPIA = { ...base, id: "v2", plate: "AA-0002", lastOdometerReading: 52_000 }
-const HOROMETRO_OBJETADO = { ...base, id: "v3", plate: "AA-0003", lastHourMeterReading: 90, lastReadingObjection: { caseId: "case-3", ruleLabel: "Horómetro regresivo" } }
+const OBJETADA = { ...base, id: "v1", plate: "AA-0001", lastOdometerReading: 1_030, lastReadingAt: "2026-10-13T15:00:00.000Z", lastReadingObjection: { caseId: "case-1", ruleLabel: "Kilometraje regresivo" } }
+const LIMPIA = { ...base, id: "v2", plate: "AA-0002", lastOdometerReading: 52_000, lastReadingAt: "2026-10-12T15:00:00.000Z" }
+const HOROMETRO_OBJETADO = { ...base, id: "v3", plate: "AA-0003", lastHourMeterReading: 90.5, lastReadingAt: "2026-10-14T15:00:00.000Z", lastReadingObjection: { caseId: "case-3", ruleLabel: "Horómetro regresivo" } }
 const SIN_LECTURA = { ...base, id: "v4", plate: "AA-0004" }
 
 /** Valor de cada columna de la hoja «Flota», por patente. */
@@ -61,6 +61,52 @@ async function flotaSheet(result: Awaited<ReturnType<typeof exportFleetXlsxActio
   })
   return { headers, byPlate }
 }
+
+describe("exportFleetXlsxAction · columna «Última lectura» (P-9)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockGetGapMonths.mockResolvedValue([])
+    mockGetFleetOverview.mockResolvedValue([OBJETADA, LIMPIA, HOROMETRO_OBJETADO, SIN_LECTURA])
+  })
+
+  it("lleva el valor y la fecha de la última lectura, igual que «Km/Hr» de la lista, y la marca de objetada con su regla", async () => {
+    mockRequirePermission.mockResolvedValue(sessionWith(["flota:view", "combustibles:view"]))
+
+    const { headers, byPlate } = await flotaSheet(await exportFleetXlsxAction({}))
+
+    expect(headers).toContain("Última lectura")
+    expect(byPlate.get("AA-0002")?.["Última lectura"]).toBe("52.000 km · 12-10-2026")
+    expect(byPlate.get("AA-0001")?.["Última lectura"]).toBe("1.030 km · 13-10-2026 · Lectura objetada: Kilometraje regresivo")
+    // Horómetro, con coma decimal de es-CL.
+    expect(byPlate.get("AA-0003")?.["Última lectura"]).toBe("90,5 h · 14-10-2026 · Lectura objetada: Horómetro regresivo")
+  })
+
+  it("la marca coincide con la columna «Lectura objetada»: donde dice «Sí» la última lectura lo dice también", async () => {
+    mockRequirePermission.mockResolvedValue(sessionWith(["flota:view", "combustibles:view"]))
+
+    const { byPlate } = await flotaSheet(await exportFleetXlsxAction({}))
+
+    for (const [, row] of byPlate) {
+      expect(String(row["Última lectura"] ?? "").includes("Lectura objetada")).toBe(row["Lectura objetada"] === "Sí")
+    }
+  })
+
+  it("un equipo sin lectura queda con la celda vacía", async () => {
+    mockRequirePermission.mockResolvedValue(sessionWith(["flota:view", "combustibles:view"]))
+
+    const { byPlate } = await flotaSheet(await exportFleetXlsxAction({}))
+
+    expect(byPlate.get("AA-0004")?.["Última lectura"] ?? "").toBe("")
+  })
+
+  it("sin combustibles:view la columna no existe (la lectura sale de las cargas de combustible)", async () => {
+    mockRequirePermission.mockResolvedValue(sessionWith(["flota:view"]))
+
+    const { headers } = await flotaSheet(await exportFleetXlsxAction({}))
+
+    expect(headers).not.toContain("Última lectura")
+  })
+})
 
 describe("exportFleetXlsxAction · columna «Lectura objetada»", () => {
   beforeEach(() => {

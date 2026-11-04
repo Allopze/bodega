@@ -15,7 +15,7 @@ import type { Session } from "next-auth"
 import { db } from "@/db"
 import { deliveries, purchaseOrders, purchaseRequests, receipts } from "@/db/schema"
 import { worksiteScopeSql } from "@/lib/auth/scope"
-import { issuedOrderPredicate } from "./operational-period-metrics"
+import { issuedOrderPredicate, registeredReceiptPredicate } from "./operational-period-metrics"
 import { MONTH_LABELS } from "@/lib/utils"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -128,6 +128,8 @@ export async function getOperationalTrendHistory(
       .innerJoin(purchaseOrders, eq(receipts.purchaseOrderId, purchaseOrders.id))
       .where(and(
         orderScope,
+        // P-8: una recepción anulada no cuenta; el mismo criterio que el tile del Resumen y /reportes.
+        registeredReceiptPredicate(),
         gte(receipts.receivedAt, globalStart),
         lt(receipts.receivedAt, globalEnd),
       ))

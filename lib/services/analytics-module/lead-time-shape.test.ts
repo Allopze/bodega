@@ -2,8 +2,12 @@ import { describe, expect, it } from "vitest"
 import {
   LEAD_TIME_MIN_SAMPLE,
   LEAD_TIME_P90_MIN_SAMPLE,
+  LEAD_TIME_SLOWEST_LIMIT,
   buildSupplyLeadTime,
+  dayToPlainDate,
   leadTimeStageHeadline,
+  plainDateToDay,
+  slowestClosedItems,
   summarizeDurations,
   type LeadTimeItem,
 } from "./lead-time-shape"
@@ -156,5 +160,65 @@ describe("leadTimeStageHeadline", () => {
 
   it("sin ningún ítem cerrado lo dice sin hablar de «insuficiente»", () => {
     expect(leadTimeStageHeadline(buildSupplyLeadTime([], WINDOW), fmt)).toBe("Ningún ítem se cerró en el período.")
+  })
+})
+
+describe("slowestClosedItems", () => {
+  /** Un ítem con identidad: sólo ésos pueden listarse con un enlace a su solicitud. */
+  const named = (id: string, totalDays: number, over: Partial<LeadTimeItem> = {}): LeadTimeItem =>
+    item(id, {
+      itemId: id, requestId: `r-${id}`, requestCode: `SOL-${id}`, productName: `Producto ${id}`,
+      approvedDay: D + 1, issuedDay: D + 2, arrivedDay: D + totalDays - 1, deliveredDay: D + totalDays, closedDay: D + totalDays,
+      ...over,
+    })
+
+  it("ordena por plazo total, de mayor a menor, y trae los días de cada tramo", () => {
+    const rows = slowestClosedItems([named("a", 10), named("b", 25), named("c", 15)], WINDOW)
+
+    expect(rows.map((row) => [row.itemId, row.totalDays])).toEqual([["b", 25], ["c", 15], ["a", 10]])
+    expect(rows[0]).toMatchObject({ requestId: "r-b", requestCode: "SOL-b", productName: "Producto b", worksiteName: "Faena A" })
+    expect(rows[0]!.stages.map((stage) => [stage.key, stage.days])).toEqual([["approval", 1], ["purchase", 1], ["arrival", 22], ["delivery", 1]])
+  })
+
+  it("limita la lista a los más lentos (y un empate sale siempre en el mismo orden)", () => {
+    const items = Array.from({ length: LEAD_TIME_SLOWEST_LIMIT + 5 }, (_, i) => named(`i${String(i).padStart(2, "0")}`, 10))
+
+    const rows = slowestClosedItems(items, WINDOW)
+    expect(rows).toHaveLength(LEAD_TIME_SLOWEST_LIMIT)
+    expect(rows.map((row) => row.itemId)).toEqual([...rows.map((row) => row.itemId)].sort())
+  })
+
+  it("no lista lo que no puede nombrar ni medir: sin identidad, sin fecha de envío o fuera del período", () => {
+    const rows = slowestClosedItems([
+      item("sin-identidad"),
+      named("sin-envio", 30, { submittedDay: null }),
+      named("fuera", 30, { closedDay: D + 99 }),
+      named("al-reves", 30, { closedDay: D - 3 }),
+      named("ok", 12),
+    ], WINDOW)
+
+    expect(rows.map((row) => row.itemId)).toEqual(["ok"])
+  })
+
+  it("un tramo con fechas al revés queda en null (no se inventa una duración) pero el ítem se lista", () => {
+    const [row] = slowestClosedItems([named("revuelto", 20, { approvedDay: D + 5, issuedDay: D + 3 })], WINDOW)
+
+    expect(row!.stages.find((stage) => stage.key === "purchase")!.days).toBeNull()
+    expect(row!.stages.find((stage) => stage.key === "approval")!.days).toBe(5)
+  })
+
+  it("buildSupplyLeadTime la trae junto con las medianas", () => {
+    const report = buildSupplyLeadTime(Array.from({ length: 6 }, (_, i) => named(`n${i}`, 10 + i)), WINDOW)
+
+    expect(report.slowest[0]!.itemId).toBe("n5")
+    expect(report.overall.closedItems).toBe(6)
+  })
+})
+
+describe("días civiles", () => {
+  it("van y vuelven: la diferencia entre dos días es exactamente «días corridos»", () => {
+    expect(dayToPlainDate(plainDateToDay("2026-10-31"))).toBe("2026-10-31")
+    expect(plainDateToDay("2026-11-01") - plainDateToDay("2026-10-31")).toBe(1)
+    expect(plainDateToDay("1970-01-01")).toBe(0)
   })
 })

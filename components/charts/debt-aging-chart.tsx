@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { formatMoney } from "@/lib/services/billing/money"
 import { cn, formatCompactCLP, countOf } from "@/lib/utils"
+import { CHART_ENTRY_MS } from "@/lib/chart-motion"
 import { ChartFrame, ChartHeadlineCaption, ChartHeadlineValue } from "./chart-frame"
 
 /**
@@ -156,16 +157,19 @@ export function DebtAgingChart({
               data-state={state}
               title={`${bucket.label}: ${exact(bucket.amount)}${bucket.count === null ? "" : ` · ${countOf(bucket.count, "factura")}`}`}
               onMouseEnter={() => setActiveKey(bucket.key)}
-              // `min-w-1`: un tramo de 0,1 % del total no desaparece.
+              // `min-w-1`: un tramo de 0,1 % del total no desaparece. Entrada: todos los
+              // tramos crecen juntos en `CHART_ENTRY_MS` (el escalonado de 70 ms por tramo
+              // sumaba un segundo); `motion-safe:` la apaga con «reducir movimiento» y la
+              // duración va en línea porque Tailwind no ve un número interpolado en una clase.
               className={cn(
                 "h-full min-w-1 basis-0 origin-left transition-opacity duration-[var(--duration-fast)]",
-                "motion-safe:animate-[bar-grow-x_700ms_var(--ease-out)_backwards]",
+                "motion-safe:animate-[bar-grow-x_var(--ease-out)_backwards]",
                 state === "dimmed" && "opacity-35",
               )}
               style={{
                 flexGrow: (bucket.amount / sumAmounts) * 1000,
                 background: bucketColor(index, buckets.length),
-                animationDelay: `${index * 70}ms`,
+                animationDuration: `${CHART_ENTRY_MS}ms`,
               }}
             />
           )

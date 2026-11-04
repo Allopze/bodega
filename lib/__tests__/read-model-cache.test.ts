@@ -35,11 +35,13 @@ vi.mock("next/cache", () => ({
 
 const analyticsDashboard = vi.hoisted(() => vi.fn(async (_session: unknown, _filters: unknown) => ({ marca: "analítica" })))
 const integrityCases = vi.hoisted(() => vi.fn(async (_session: unknown, _filters: unknown) => [{ id: "caso-1" }]))
+const supplyLeadTime = vi.hoisted(() => vi.fn(async (_session: unknown, _filters: unknown) => ({ marca: "plazos" })))
 vi.mock("@/lib/services/analytics-module/dashboard", () => ({ getAnalyticsDashboard: analyticsDashboard }))
+vi.mock("@/lib/services/analytics-module/lead-time", () => ({ getSupplyLeadTime: supplyLeadTime }))
 vi.mock("@/lib/services/operational-integrity/ledger", () => ({ listOperationalIntegrityCases: integrityCases }))
 
 const {
-  getCachedAnalyticsDashboard, getCachedOperationalIntegrityCases,
+  getCachedAnalyticsDashboard, getCachedOperationalIntegrityCases, getCachedSupplyLeadTime,
   readModelScopeKey, HEAVY_READ_MODEL_TTL_SECONDS,
 } = await import("@/lib/services/read-model-cache")
 const {
@@ -65,6 +67,7 @@ beforeEach(() => {
   for (const declaration of declarations) declaration.calls.length = 0
   analyticsDashboard.mockClear()
   integrityCases.mockClear()
+  supplyLeadTime.mockClear()
 })
 
 describe("caché de los tableros pesados (ANA-002 / PER-T02)", () => {
@@ -123,6 +126,60 @@ describe("caché de los tableros pesados (ANA-002 / PER-T02)", () => {
     expect(integrityCases).toHaveBeenCalledTimes(1)
     expect(integrityCases.mock.calls[0]![0]).toMatchObject({ user: { worksiteIds: ["faena-a"], isGlobal: false } })
     expect(integrityCases.mock.calls[0]![1]).toEqual({ domain: "stock" })
+  })
+})
+
+describe("caché de los plazos del ciclo de abastecimiento (CHART-029 / P-7)", () => {
+  const leadTime = () => declarations.find((entry) => entry.keyParts.includes("analytics-lead-time"))!
+
+  /** Antes la consulta (5 subconsultas por ítem cerrado de dos ventanas) corría entera en cada visita. */
+  it("se declara con el mismo TTL de 30 s que los demás tableros pesados y la etiqueta de Analítica", () => {
+    expect(leadTime(), "los plazos no pasan por unstable_cache").toBeDefined()
+    expect(leadTime().options.revalidate).toBe(HEAVY_READ_MODEL_TTL_SECONDS)
+    expect(leadTime().options.tags).toEqual(["analytics-dashboard"])
+  })
+
+  it("dos alcances de faena distintos no comparten entrada: el alcance entra entero en la clave", async () => {
+    const window = { fromDate: "2026-10-01", toDate: "2026-10-31" }
+    await getCachedSupplyLeadTime(session(["faena-a"]), window)
+    await getCachedSupplyLeadTime(session(["faena-b"]), window)
+
+    const [primera, segunda] = leadTime().calls
+    expect(primera![0]).not.toEqual(segunda![0])
+    expect(JSON.stringify(primera)).toContain("faena-a")
+    expect(JSON.stringify(primera)).not.toContain("faena-b")
+  })
+
+  it("los filtros que la consulta aplica (faena, proveedor, tipo) entran en la clave; el vehículo no", async () => {
+    const window = { fromDate: "2026-10-01", toDate: "2026-10-31" }
+    await getCachedSupplyLeadTime(session(["faena-a"]), { ...window, worksiteId: "faena-a", supplierId: "prov-1", requestType: "epp", vehicleId: "veh-9" })
+
+    const [call] = leadTime().calls
+    expect(call![1]).toEqual({ ...window, worksiteId: "faena-a", supplierId: "prov-1", requestType: "epp" })
+  })
+
+  it("un proveedor distinto es otra entrada, y quitar el vehículo no fragmenta la caché", async () => {
+    const window = { fromDate: "2026-10-01", toDate: "2026-10-31" }
+    await getCachedSupplyLeadTime(session(["faena-a"]), { ...window, supplierId: "prov-1" })
+    await getCachedSupplyLeadTime(session(["faena-a"]), { ...window, supplierId: "prov-2" })
+    await getCachedSupplyLeadTime(session(["faena-a"]), { ...window, vehicleId: "veh-1" })
+    await getCachedSupplyLeadTime(session(["faena-a"]), { ...window, vehicleId: "veh-2" })
+
+    const [a, b, c, d] = leadTime().calls
+    expect(a![1]).not.toEqual(b![1])
+    expect(c).toEqual(d)
+  })
+
+  it("un permiso distinto cambia la clave y el servicio recibe sólo el alcance de la sesión", async () => {
+    await getCachedSupplyLeadTime(session(["faena-a"]), { fromDate: "2026-10-01", toDate: "2026-10-31" })
+
+    expect(supplyLeadTime.mock.calls[0]![0]).toMatchObject({ user: { worksiteIds: ["faena-a"], isGlobal: false, permissions: ["analytics:view", "warehouse:view_traceability"] } })
+  })
+
+  it("sin fechas, los filtros se normalizan antes de la clave (ventana por defecto)", async () => {
+    await getCachedSupplyLeadTime(session(["faena-a"]))
+
+    expect(leadTime().calls[0]![1]).toMatchObject({ fromDate: expect.any(String), toDate: expect.any(String) })
   })
 })
 

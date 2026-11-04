@@ -70,6 +70,9 @@ export interface InspectionListFilters extends InspectionKindFilter {
 
 const OPEN_FINDINGS_SQL = sql<number>`(SELECT COUNT(*)::int FROM prevention_inspection_findings f WHERE f.run_id = ${preventionInspectionRuns.id} AND f.status <> 'closed')`
 const CRITICAL_FINDINGS_SQL = sql<number>`(SELECT COUNT(*)::int FROM prevention_inspection_findings f WHERE f.run_id = ${preventionInspectionRuns.id} AND f.criticality IN ('high','critical') AND f.status <> 'closed')`
+/** Hallazgos sin cerrar de la ejecución en curso de la consulta, de una sola gravedad (`low|medium|high|critical`). */
+const openFindingsOfCriticality = (criticality: "low" | "medium" | "high" | "critical") =>
+  sql<number>`(SELECT COUNT(*)::int FROM prevention_inspection_findings f WHERE f.run_id = ${preventionInspectionRuns.id} AND f.criticality = ${criticality} AND f.status <> 'closed')`
 
 /**
  * Pendientes de revisión, un solo predicado para el tile y para la lista.
@@ -462,6 +465,10 @@ export async function summarizeInspectionTrends(access: InspectionAccess, filter
  *   ejecución: una planificada o en curso no tiene cumplimiento todavía.
  * - **Mes civil chileno**: sin `AT TIME ZONE`, una inspección cerrada a las
  *   21:30 del 31 de agosto caería en septiembre.
+ * - **Hallazgos que siguen abiertos, por gravedad** (P-4): se cuentan en la
+ *   misma consulta y quedan fechados por el mes de la INSPECCIÓN que los
+ *   registró, no por el de su apertura ni el de su cierre. «Abierto» es lo que
+ *   no está `closed` (incluye los que ya tienen CAPA en curso).
  * - `since` (`YYYY-MM-DD`) acota la ventana en SQL: la serie no baja la
  *   historia completa para recortarla después.
  */
@@ -480,8 +487,14 @@ export async function summarizeInspectionComplianceTrend(
     scoredRuns: sql<number>`COUNT(*) FILTER (WHERE ${scored})::int`,
     scoredItems: sql<number>`COALESCE(SUM(${evaluated}) FILTER (WHERE ${scored}), 0)::int`,
     weightedPoints: sql<number>`COALESCE(SUM(${preventionInspectionRuns.compliancePercent}::bigint * ${evaluated}) FILTER (WHERE ${scored}), 0)::int`,
-    openFindings: sql<number>`COALESCE(SUM(${OPEN_FINDINGS_SQL}), 0)::int`,
-    criticalOpenFindings: sql<number>`COALESCE(SUM(${CRITICAL_FINDINGS_SQL}), 0)::int`,
+    // Los hallazgos que siguen abiertos, por gravedad (P-4): el gráfico los apila.
+    // Cada ejecución cuenta los suyos con una subconsulta correlacionada —el mismo
+    // patrón de `OPEN_FINDINGS_SQL`— y el `FROM`/`WHERE` de abajo ya trae el alcance
+    // de faenas: una gravedad de otra faena no puede colarse por acá.
+    openCritical: sql<number>`COALESCE(SUM(${openFindingsOfCriticality("critical")}), 0)::int`,
+    openHigh: sql<number>`COALESCE(SUM(${openFindingsOfCriticality("high")}), 0)::int`,
+    openMedium: sql<number>`COALESCE(SUM(${openFindingsOfCriticality("medium")}), 0)::int`,
+    openLow: sql<number>`COALESCE(SUM(${openFindingsOfCriticality("low")}), 0)::int`,
   })
     .from(preventionInspectionRuns)
     .innerJoin(preventionInspectionTemplates, eq(preventionInspectionTemplates.id, preventionInspectionRuns.templateId))

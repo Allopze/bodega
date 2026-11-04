@@ -51,11 +51,3 @@ export const RISK_BAND_CELL: Record<RiskClassification, { zone: string; filled: 
     filled: "bg-[var(--color-danger)] text-white",
   },
 }
-
-/** La banda en plural, para «Ver los 4 riesgos Importantes». */
-export const RISK_BAND_PLURAL: Record<RiskClassification, string> = {
-  tolerable: "Tolerables",
-  moderate: "Moderados",
-  important: "Importantes",
-  intolerable: "Intolerables",
-}

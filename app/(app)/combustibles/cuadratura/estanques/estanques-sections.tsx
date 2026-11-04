@@ -5,12 +5,15 @@ import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { BulletBar } from "@/components/charts/bullet-bar"
 import { ChartSection } from "@/components/charts/chart-section"
+import type { ChartDataExcel } from "@/components/charts/chart-data-table"
 import { Table, TableBody, TableCell, TableCellNum, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import { differenceSeverity, type CycleAmount, type CycleDifference, type DifferenceSeverity, type FuelStorageBalance } from "@/lib/combustibles/fuel-cycle"
 import { fuelEquipmentHref, fuelLoadHref } from "@/lib/combustibles/routes"
 import { describeStorageLevel, summarizeStorageLevels } from "@/lib/combustibles/storage-level"
+import { idleTanksNote, summarizeTankLevels, tankLevelTable, type TankLevelView } from "@/lib/combustibles/tank-level"
 import { formatDateTime, formatQty } from "@/lib/utils"
 import { litersText } from "../_components/format"
+import { TankLevelChart } from "./tank-level-chart-lazy"
 
 const BADGE: Record<DifferenceSeverity, { label: string; variant: "success" | "warning" | "danger" | "neutral" }> = {
   normal: { label: "Normal", variant: "success" },
@@ -99,6 +102,70 @@ export function StorageLevelBars({ balances, canEditTanks = false }: { balances:
           )
         })}
       </ul>
+    </ChartSection>
+  )
+}
+
+/**
+ * CHART-020 (P-5): cómo subió y bajó el nivel de cada estanque en el período, con lo que entró y lo
+ * que salió. Complementa la barra de nivel de arriba (dónde está hoy contra su capacidad) y la tabla
+ * de abajo (las cifras): éste es el «cuándo».
+ *
+ * Los estanques sin movimientos no se dibujan —un nivel que no cambia es una cifra, no una curva— y
+ * se nombran en una línea para que su ausencia no parezca un olvido. Sin ningún movimiento, o con un
+ * período que todavía no empieza, el gráfico explica el vacío y ofrece ir al período anterior (A4).
+ */
+export function StorageLevelTrend({
+  view,
+  periodPhrase,
+  previousPeriodHref,
+  canCreate,
+  excel,
+}: {
+  view: TankLevelView
+  /** «en octubre», «en la semana del 26 de octubre»: lo que completa «tuvieron movimientos …». */
+  periodPhrase: string
+  /** El período anterior, a donde llevar al usuario cuando el actual no tiene movimientos. `null` si no hay. */
+  previousPeriodHref: string | null
+  canCreate: boolean
+  excel?: ChartDataExcel
+}) {
+  const cta = previousPeriodHref ? { ctaLabel: "Ver el período anterior", ctaHref: previousPeriodHref } : {}
+  if (view.notStarted) {
+    return (
+      <ChartSection
+        title="Nivel en el tiempo"
+        headingLevel={3}
+        empty={{ label: "Este período todavía no empieza", hint: "Desde su primer día, acá se ve cómo sube y baja el nivel de cada estanque.", ...cta }}
+      />
+    )
+  }
+  if (view.tanks.length === 0) {
+    return (
+      <ChartSection
+        title="Nivel en el tiempo"
+        headingLevel={3}
+        empty={{
+          label: `No hubo movimientos en los estanques ${periodPhrase}`,
+          hint: canCreate
+            ? "Con «Registrar movimiento», arriba, anota una recepción, un traspaso o una entrega y acá se ve cómo sube y baja el nivel."
+            : "Cuando haya recepciones, traspasos o entregas desde un estanque, acá se ve cómo sube y baja el nivel.",
+          ...cta,
+        }}
+      />
+    )
+  }
+  const table = tankLevelTable(view)
+  const idle = idleTanksNote(view, periodPhrase)
+  return (
+    <ChartSection
+      title="Nivel en el tiempo"
+      headingLevel={3}
+      summary={summarizeTankLevels(view, { periodPhrase })}
+      data={{ caption: "Nivel de cada estanque, con lo que entró y salió", headers: table.headers, rows: table.rows, excel }}
+    >
+      <TankLevelChart view={view} />
+      {idle ? <p className="mt-3 text-xs text-[var(--color-text-muted)]">{idle}</p> : null}
     </ChartSection>
   )
 }

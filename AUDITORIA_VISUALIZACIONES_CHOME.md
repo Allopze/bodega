@@ -2214,8 +2214,25 @@ El criterio de la Fase 0b se mantiene: construirlas hoy da pantallas vacías.
 
 ### K.5 Pendientes de código (menores)
 
-| # | Qué | Origen |
+Las once mejoras de la primera lista se hicieron el 2026-11-04 (rama `feat/graficos-mejoras`):
+
+| # | Qué | Estado |
 |---|---|---|
+| P-1 | Animaciones CSS ≤ 200 ms (`RankedList`, `DebtAgingChart`, medidor radial) | Hecho; constante única en `lib/chart-motion.ts` |
+| P-2 | «Ver datos» → Excel | Hecho en facturación, consumo, panel de mantención, capacitación, inspecciones, analítica, plazos y anomalías. Bodega, compras/DTE, reportes, PPA, alcotest, CPHS, CGRD, cierres y emergencias **no** tienen un permiso `*:export`: falta decidir con qué permiso se autoriza la descarga |
+| P-3 | MIPER: 3 peligros más frecuentes por celda y filtro por celda exacta (`?celda=`) | Hecho |
+| P-4 | Inspecciones: hallazgos abiertos por gravedad | Hecho (gráfico aparte, A5b) |
+| P-5 | Estanques: nivel en el tiempo con entradas y salidas | Hecho |
+| P-6 | Anomalías: cambios de reglas marcados en la serie | Hecho (alta, auditoría y `updated_at`) |
+| P-7 | Plazos: días por etapa en el detalle del ítem, ítems más lentos, filtro por proveedor, caché de 30 s | Hecho; el filtro por tipo existe en la consulta, la pantalla no tiene control de tipo |
+| P-8 | Tablero sin recepciones anuladas, igual que `/reportes` | Hecho. Queda una diferencia: las recepciones de oficina se atribuyen a la faena de la OC en el tablero y a la oficina en `/reportes` |
+| P-9 | `/flota`: Km/Hr en la tarjeta móvil; «Última lectura» en el Excel | Hecho |
+| P-10 | Código muerto (`PdtpMetric`, tipo `"hygiene"`) | Hecho |
+| P-11 | Aprobaciones: barra de antigüedad con datos | Ver el informe del recorrido del 2026-11-04 |
+
+Además: la leyenda de conciliación de `/compras/dte` sólo lista estados con datos, y la tendencia de `/analitica` usa tramos rectos.
+
+---|---|---|
 | P-1 | Animaciones CSS fuera del tope de 200 ms: `RankedList` (0,9 s), `DebtAgingChart` (700 ms), medidor radial (0,45 s) | Fase 4 |
 | P-2 | «Ver datos» → Excel está encendido sólo en combustible; activarlo pantalla por pantalla con su permiso `*:export` | Fase 4 |
 | P-3 | CHART-007: tooltip con los 3 peligros más frecuentes por celda y filtro P×C (hoy filtra por clasificación) | Fase 1 |

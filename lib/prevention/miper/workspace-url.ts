@@ -75,6 +75,13 @@ export const hrefToMatrixOnly = (pathname: string, params: Params, patch: Partia
   hrefReplacing(pathname, params, NOT_MATRIX_ONLY, patch)
 
 /**
+ * Quita UN filtro de la matriz y deja lo demás —la pestaña incluida— donde
+ * está: elegir otra vez la celda vigente del mapa de calor «quita el filtro»
+ * (DESIGN.md § Drill-down) sin sacar al usuario del Resumen.
+ */
+export const hrefWithoutMatrixFilter = (pathname: string, params: Params, key: MatrixFilterKey) => href(pathname, params, { [key]: null })
+
+/**
  * El programa entero (la cifra «Avance del plan» de Inicio, Fase B):
  * quita los filtros de su lista, porque el avance que muestra la cifra es el de
  * todo el programa. Los filtros de la matriz no afectan al programa y se quedan.

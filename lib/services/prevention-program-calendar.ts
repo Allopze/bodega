@@ -2,10 +2,11 @@
  * lib/services/prevention-program-calendar.ts
  *
  * El calendario de cumplimiento (CHART-008) de los programas anuales de casillas
- * que viven por faena: simulacros (N°84), actas del CGRD (N°81) y la evaluación
- * cuantitativa de higiene (N°45). Capacitación y alcotest ya tienen su propio
- * lector; éstos tres comparten la forma —una casilla por faena, mes y semana, con
- * estado— así que comparten el lector.
+ * que viven por faena: simulacros (N°84) y actas del CGRD (N°81). Capacitación y
+ * alcotest ya tienen su propio lector; éstos dos comparten la forma —una casilla
+ * por faena, mes y semana, con estado— así que comparten el lector. La evaluación
+ * cuantitativa de higiene (N°45) tiene una sola casilla por faena y año y ninguna
+ * pantalla la dibuja como calendario; si vuelve, se suma un tipo con su tabla.
  *
  * Es un servicio de LECTURA: arma el calendario, no toca las casillas. Las casillas
  * las siembra `prevention-program-slots.ts` y las resuelve cada módulo.
@@ -17,7 +18,6 @@ import {
   preventionEmergencyDrillSlots,
   preventionEmergencyPlans,
   preventionGrdMeetingSlots,
-  preventionHygieneMeasurementSlots,
   worksites,
 } from "@/db/schema"
 import { worksiteScopeSqlFor } from "@/lib/auth/scope"
@@ -25,18 +25,17 @@ import { buildSlotCalendar, type SlotCalendar, type SlotCalendarSlotStatus } fro
 import { currentPdtpPeriod, type PdtpPeriod } from "@/lib/services/pdtp/period"
 import { resolveProgramActivationPeriods } from "./prevention-program-slots"
 
-export type ProgramCalendarKind = "drills" | "grd" | "hygiene"
+export type ProgramCalendarKind = "drills" | "grd"
 
 /**
- * Las tres tablas de casillas tienen las mismas columnas de ubicación y estado
+ * Las dos tablas de casillas tienen las mismas columnas de ubicación y estado
  * (`worksite_id`, `year`, `scheduled_month`, `scheduled_week`, `status`); por eso
- * una sola consulta las sirve a las tres. El tipo de la de simulacros representa
- * a las demás: sólo se leen esas columnas.
+ * una sola consulta las sirve a las dos. El tipo de la de simulacros representa
+ * a la otra: sólo se leen esas columnas.
  */
 const SLOT_TABLES: Record<ProgramCalendarKind, typeof preventionEmergencyDrillSlots> = {
   drills: preventionEmergencyDrillSlots,
   grd: preventionGrdMeetingSlots as unknown as typeof preventionEmergencyDrillSlots,
-  hygiene: preventionHygieneMeasurementSlots as unknown as typeof preventionEmergencyDrillSlots,
 }
 
 export interface ProgramCalendarSlot {

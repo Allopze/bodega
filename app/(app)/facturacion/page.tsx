@@ -82,6 +82,9 @@ export default async function BillingSummaryPage({
   const flowSeries = flowSeriesByCurrency(summary.monthly, period)
   const partialPeriod = period === todayIso().slice(0, 7) ? period : undefined
   const canSync = can(session, "billing:manage_sync")
+  // «Ver datos» → Excel sólo para quien puede exportar facturación: verla no basta (la acción lo vuelve a exigir).
+  const canExportCharts = can(session, "billing:export")
+  const chartExcel = (notes: string[] = []) => (canExportCharts ? { excel: { permission: "billing:export" as const, notes } } : {})
 
   // «Facturado» se compara con el mismo mes anterior. «Cobrado» no: sus cifras
   // son por mes de emisión y el mes anterior ha tenido un mes más para cobrarse,
@@ -187,7 +190,16 @@ export default async function BillingSummaryPage({
                   key={series.currency}
                   title={flowSeries.length > 1 ? `Facturado y cobrado · ${series.currency}` : "Facturado y cobrado"}
                   summary={flowInsight(series, partialPeriod)}
-                  data={flowTable(series)}
+                  data={{
+                    ...flowTable(series),
+                    // Las salvedades del gráfico viajan en «Metadatos»: la hoja se lee sin la pantalla que las traía.
+                    ...chartExcel([
+                      "Cobrado: pagos confirmados de las facturas emitidas en cada mes; los meses recientes todavía pueden subir.",
+                      ...(partialPeriod && series.rows.some((row) => row.period === partialPeriod)
+                        ? [`El mes en curso (${billingPeriodLabel(partialPeriod)}) es parcial: su cifra todavía puede subir.`]
+                        : []),
+                    ]),
+                  }}
                 >
                   <BillingFlowChartLazy data={series.rows} currency={series.currency} variant="plain" partialPeriod={partialPeriod} />
                   <p className="mt-2 text-xs text-[var(--color-text-subtle)]">
@@ -216,7 +228,7 @@ export default async function BillingSummaryPage({
                     key={currency}
                     title={agingCharted.length > 1 ? `Antigüedad de la deuda · ${currency}` : "Antigüedad de la deuda"}
                     summary={agingInsight(buckets, currency)}
-                    data={agingTable(summary.aging, { currency, withCounts: agingWithCounts })}
+                    data={{ ...agingTable(summary.aging, { currency, withCounts: agingWithCounts }), ...chartExcel() }}
                     drillHref="/facturacion/cobranza"
                     drillLabel="Ir a Cobranza"
                   >

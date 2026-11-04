@@ -6,6 +6,7 @@ import { isGlobalRole } from "@/lib/auth/scope"
 import { ANALYTICS_DASHBOARD_TAG, OPERATIONAL_INTEGRITY_TAG } from "./operational-cache"
 import { getAnalyticsDashboard } from "./analytics-module/dashboard"
 import { normalizeAnalyticsFilters } from "./analytics-module/helpers"
+import { getSupplyLeadTime, type SupplyLeadTimeFilters, type SupplyLeadTimeResult } from "./analytics-module/lead-time"
 import type { AnalyticsDashboardData, AnalyticsFilters } from "./analytics-module/types"
 import { listOperationalIntegrityCases, type OperationalIntegrityCaseDto, type OperationalIntegrityFilters } from "./operational-integrity/ledger"
 
@@ -100,6 +101,38 @@ export function getCachedAnalyticsDashboard(
   rawFilters: AnalyticsFilters = {},
 ): Promise<AnalyticsDashboardData> {
   return cachedAnalyticsDashboard(readModelScopeKey(session), normalizeAnalyticsFilters(rawFilters))
+}
+
+const cachedSupplyLeadTime = unstable_cache(
+  async (key: ReadModelScopeKey, filters: SupplyLeadTimeFilters) =>
+    getSupplyLeadTime(sessionFromScopeKey(key), filters),
+  ["analytics-lead-time"],
+  { revalidate: HEAVY_READ_MODEL_TTL_SECONDS, tags: [ANALYTICS_DASHBOARD_TAG] },
+)
+
+/**
+ * CHART-029 / P-7: entrada cacheada de los plazos del ciclo de abastecimiento. Es una consulta pesada
+ * (cinco subconsultas correlacionadas por cada ítem cerrado de dos ventanas) que corría entera en cada
+ * visita y en cada cambio de filtro de Analítica, igual que el tablero de arriba.
+ *
+ * La clave lleva el **alcance completo** de la sesión (`readModelScopeKey`) y **los filtros que la
+ * consulta aplica** —período, faena, tipo y proveedor—, ya normalizados: dos usuarios con faenas
+ * distintas, o el mismo con otro proveedor elegido, jamás comparten una entrada. El filtro de vehículo
+ * no entra: este cálculo no lo usa, y dejarlo en la clave fragmentaría la caché sin cambiar la salida.
+ * Misma etiqueta y mismo TTL que el tablero (30 s).
+ */
+export function getCachedSupplyLeadTime(
+  session: Session,
+  rawFilters: AnalyticsFilters = {},
+): Promise<SupplyLeadTimeResult> {
+  const { fromDate, toDate, worksiteId, supplierId, requestType } = normalizeAnalyticsFilters(rawFilters)
+  const filters: SupplyLeadTimeFilters = {
+    fromDate, toDate,
+    ...(worksiteId ? { worksiteId } : {}),
+    ...(supplierId ? { supplierId } : {}),
+    ...(requestType ? { requestType } : {}),
+  }
+  return cachedSupplyLeadTime(readModelScopeKey(session), filters)
 }
 
 const cachedIntegrityCases = unstable_cache(

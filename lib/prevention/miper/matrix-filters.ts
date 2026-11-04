@@ -4,9 +4,11 @@
  */
 import { activeFilterCount, EMPTY_FILTERS, type GridFilters } from "./grid-view"
 import { CLASSIFICATION_LABEL, RISK_CLASSIFICATIONS, type RiskClassification } from "./methodology"
+import { cellParam, parseCellParam, SCALE_WORD } from "./risk-matrix"
 import { CONTROLLED_STATUS_LABEL } from "./snapshot"
 
-export const MATRIX_FILTER_KEYS = ["buscar", "clasificacion", "completitud", "controlado", "factor", "marca"] as const
+/** `celda` (P × C exacto, «P4xC2») lo escribe la matriz del Resumen (CHART-007); `clasificacion` sigue en el cajón de filtros. */
+export const MATRIX_FILTER_KEYS = ["buscar", "clasificacion", "celda", "completitud", "controlado", "factor", "marca"] as const
 export type MatrixFilterKey = typeof MATRIX_FILTER_KEYS[number]
 export type MatrixFilterChip = { key: MatrixFilterKey; label: string; value: string; displayValue: string }
 
@@ -22,6 +24,7 @@ export function parseMatrixFilters(params: { get(key: string): string | null }):
     ...EMPTY_FILTERS,
     search: (params.get("buscar") ?? "").slice(0, 200),
     classifications,
+    cell: parseCellParam(params.get("celda")),
     controlled: controlled === "yes" || controlled === "partial" || controlled === "no" ? controlled : "all",
     factorId: params.get("factor") || "all",
     onlyObserved: marks.includes("observados"),
@@ -36,6 +39,7 @@ export function matrixFilterPatch(filters: GridFilters): Record<MatrixFilterKey,
   return {
     buscar: filters.search.trim() || null,
     clasificacion: filters.classifications.length ? filters.classifications.join(",") : null,
+    celda: filters.cell ? cellParam(filters.cell) : null,
     completitud: filters.onlyIncomplete ? "pendientes" : filters.onlyComplete ? "completos" : null,
     controlado: filters.controlled === "all" ? null : filters.controlled,
     factor: filters.factorId === "all" ? null : filters.factorId,
@@ -51,6 +55,8 @@ export function hasEntryFilters(filters: GridFilters): boolean {
 export function matrixFilterChips(filters: GridFilters, factors: ReadonlyArray<{ id: string; name: string }>): MatrixFilterChip[] {
   const chips: MatrixFilterChip[] = []
   if (filters.classifications.length) chips.push({ key: "clasificacion", label: "Clasificación", value: filters.classifications.join(","), displayValue: filters.classifications.map((c) => CLASSIFICATION_LABEL[c]).join(", ") })
+  // Sin abreviaturas (A6): «P4 × C2» sólo se entiende con su nombre completo.
+  if (filters.cell) chips.push({ key: "celda", label: "Celda", value: cellParam(filters.cell), displayValue: `probabilidad ${SCALE_WORD[filters.cell.probability]} × consecuencia ${SCALE_WORD[filters.cell.consequence]}` })
   if (filters.onlyIncomplete || filters.onlyComplete) chips.push({ key: "completitud", label: "Estado", value: filters.onlyIncomplete ? "pendientes" : "completos", displayValue: filters.onlyIncomplete ? "Con pendientes" : "Completos" })
   if (filters.controlled !== "all") chips.push({ key: "controlado", label: "¿Controlado?", value: filters.controlled, displayValue: CONTROLLED_STATUS_LABEL[filters.controlled] })
   if (filters.factorId !== "all") chips.push({ key: "factor", label: "Factor", value: filters.factorId, displayValue: factors.find((factor) => factor.id === filters.factorId)?.name ?? "Factor" })

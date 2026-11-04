@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen, within } from "@testing-library/react"
+import { act, fireEvent, render, screen, within } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type { MiperEntrySnapshot } from "@/lib/prevention/miper/snapshot"
 
@@ -40,12 +40,41 @@ describe("RiskConcentration — dónde se concentra el riesgo", () => {
     expect(screen.getByText(/1 riesgo sin evaluar/)).toBeDefined()
   })
 
-  it("una celda lleva a la matriz filtrada por su clasificación, sin arrastrar los demás filtros", () => {
+  it("una celda lleva a la matriz filtrada por su P × C exacto, sin arrastrar los demás filtros", () => {
     show(ROWS, {}, 7, "buscar=lodo&factor=f1&controlado=no&tab=resumen")
+    const celdas = within(screen.getByRole("table", { name: /^Riesgo inherente/ })).getAllByRole("cell")
+    // P4 × C2 (3 riesgos) y P2 × C4 (1 riesgo) valen 8 y son «Importante»: cada una lleva a la suya, no a las 4.
+    expect(within(celdas[1]!).getByRole("link")).toHaveAttribute("href", `${P}?celda=P4xC2`)
+    expect(within(celdas[5]!).getByRole("link")).toHaveAttribute("href", `${P}?celda=P2xC4`)
+    expect(within(celdas[1]!).getByRole("link")).not.toHaveAttribute("aria-current")
+  })
+
+  it("la celda vigente se marca y elegirla otra vez quita el filtro sin tocar la pestaña ni los demás filtros", () => {
+    show(ROWS, {}, 7, "celda=P4xC2&controlado=no&tab=resumen")
+    const celdas = within(screen.getByRole("table", { name: /^Riesgo inherente/ })).getAllByRole("cell")
+    const active = within(celdas[1]!).getByRole("link")
+    expect(active).toHaveAttribute("aria-current", "true")
+    expect(active).toHaveAttribute("href", `${P}?controlado=no&tab=resumen`)
+    // Las demás siguen eligiendo su propia celda y reemplazan la vigente.
+    expect(within(celdas[5]!).getByRole("link")).toHaveAttribute("href", `${P}?celda=P2xC4`)
+  })
+
+  it("al enfocar una celda dice sus 3 peligros más frecuentes y a dónde lleva el clic", async () => {
+    const rows = [
+      ...["Atrapamiento", "Atrapamiento", "Atrapamiento", "Ruido", "Ruido", "Polvo", "Caída de objetos"].map((hazard, index) => entry(`h${index}`, 4, 2, { hazard })),
+      entry("solo", 1, 1, { hazard: "Iluminación deficiente" }),
+    ]
+    show(rows)
     const celda = within(screen.getByRole("table", { name: /^Riesgo inherente/ })).getAllByRole("cell")[1]!
-    const link = within(celda).getByRole("link")
-    expect(link).toHaveAttribute("href", `${P}?clasificacion=important`)
-    expect(link).toHaveAttribute("title", "Ver los 4 riesgos Importantes de la matriz")
+    await act(async () => { fireEvent.focus(within(celda).getByRole("link")) })
+    const tip = await screen.findByRole("tooltip")
+    expect(tip.textContent).toMatch(/Atrapamiento\D+3 riesgos/)
+    expect(tip.textContent).toMatch(/Ruido\D+2 riesgos/)
+    // Polvo y Caída de objetos empatan con 1: gana el orden alfabético, y el cuarto no cabe.
+    expect(tip.textContent).toMatch(/Caída de objetos\D+1 riesgo/)
+    expect(tip.textContent).not.toContain("Polvo")
+    expect(tip.textContent).toContain("y 1 peligro más")
+    expect(tip.textContent).toContain("Clic para ver estos 7 riesgos")
   })
 
   it("sin residual registrado (producción hoy) lo explica con una salida, no una grilla en cero", () => {

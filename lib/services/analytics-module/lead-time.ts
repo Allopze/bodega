@@ -1,14 +1,14 @@
 import type { Session } from "next-auth"
-import { and, eq, inArray, sql, type SQL } from "drizzle-orm"
+import { and, eq, inArray, sql } from "drizzle-orm"
 import { db } from "@/db"
-import {
-  approvalDecisions, deliveries, deliveryItems, purchaseOrderItems, purchaseOrders,
-  purchaseRequestItems, purchaseRequests, receiptItems, receipts, worksites,
-} from "@/db/schema"
+import { products, purchaseRequestItems, purchaseRequests, worksites } from "@/db/schema"
 import { can } from "@/lib/auth/can"
-import { issuedOrderPredicate } from "@/lib/services/operational-period-metrics"
 import { normalizeAnalyticsFilters, previousPeriod, worksiteFilter } from "./helpers"
-import { buildSupplyLeadTime, type LeadTimeItem, type SupplyLeadTime } from "./lead-time-shape"
+import { leadTimeMilestoneSql } from "./lead-time-sql"
+import {
+  LEAD_TIME_CLOSED_ITEM_STATUSES, buildSupplyLeadTime, plainDateToDay,
+  type LeadTimeItem, type SupplyLeadTime,
+} from "./lead-time-shape"
 import type { AnalyticsFilters } from "./types"
 
 /**
@@ -16,72 +16,33 @@ import type { AnalyticsFilters } from "./types"
  * solicitud → aprobación → OC → llegada → entrega, sólo de los ítems **ya cerrados**.
  *
  * La consulta saca, por ítem cerrado, el día en que ocurrió cada hito; las medianas, el P90, el `n` y
- * la regla de «datos insuficientes» las calcula `buildSupplyLeadTime` (pura, con pruebas propias).
+ * la regla de «datos insuficientes» las calcula `buildSupplyLeadTime` (pura, con pruebas propias). Los
+ * hitos se definen en `lead-time-sql.ts`, que comparte con la ficha de un ítem (`lead-time-item.ts`).
  *
  * **Alcance.** Es el mismo de sus hermanas en este módulo: la faena de la **solicitud** del ítem
  * (`worksiteFilter` sobre `purchase_requests.worksite_id`, intersectado con la faena elegida), y exige
- * `analytics:view`, el permiso de la pantalla que la muestra. No toca más tablas que las del ciclo ni
- * muestra más que fechas de ítems que el usuario ya puede ver en Seguimiento.
+ * `analytics:view`, el permiso de la pantalla que la muestra. Los filtros **sólo acotan** y nunca
+ * amplían: elegir una faena ajena deja cero ítems, no «todas».
  *
- * **Qué es «cerrado».** El ítem llegó completo a faena (`received`) o se entregó (`delivered`), que es
- * donde la regla de cierre de solicitudes (`deriveRequestStatus`) da por terminada la adquisición. Un
- * `partially_delivered` queda fuera: el estado solo no distingue si llegó completo (ver el comentario
- * de `RollupItem`) y adivinarlo sesgaría la medición.
+ * **Filtros.** Período, faena, tipo de solicitud y proveedor. El proveedor deja los ítems que tienen
+ * una línea de OC viva emitida a ese proveedor, y mide la emisión y la llegada sobre esas líneas (ver
+ * `lead-time-sql.ts`). El vehículo no aplica: el ciclo de abastecimiento no pasa por la flota.
  *
- * **Cuándo se cerró.** Por el último movimiento del ítem: la mayor entre su última recepción y su
- * última entrega (sin contar anuladas). Ese día decide si entra al período.
+ * **Los más lentos.** Junto con las medianas sale la lista de los ítems cerrados que más tardaron, con
+ * código de solicitud y producto. Es dato de ítems que el usuario ya ve en esta pantalla como agregado y
+ * está acotado por el mismo alcance de faenas.
  *
- * **Hitos** (todos en día civil de Chile, que es como se cuentan "días corridos" en el resto del producto):
- *  - envío: `purchase_requests.submitted_at` (texto ISO);
- *  - aprobación: primera decisión `approve`/`modify` del ítem;
- *  - OC: primera emisión de una OC viva que lo contiene (`issuedOrderPredicate`, la misma definición del
- *    tablero), con la línea no anulada;
- *  - llegada: primera recepción **no anulada** con cantidad recibida > 0;
- *  - entrega: primera entrega **no anulada** que lo incluye.
+ * **Qué es «cerrado».** Ver `LEAD_TIME_CLOSED_ITEM_STATUSES`. **Cuándo se cerró:** por el último
+ * movimiento del ítem (la mayor entre su última recepción y su última entrega, sin contar anuladas);
+ * ese día decide si entra al período.
  */
 
-const EPOCH = sql`date '1970-01-01'`
-
-/** Día civil de Chile (desde 1970) de un instante `timestamptz`. */
-const instantDay = (instant: SQL) => sql`((${instant} at time zone 'America/Santiago')::date - ${EPOCH})`
-
-/**
- * Un texto de fecha (día o ISO) leído como instante. Un texto que no empieza con una fecha (vacío,
- * basura de una importación) no es un timestamp: sin la guarda el cast reventaría toda la consulta
- * por una sola fila. Misma razón y forma que `approvalAgeDaysSql` (Aprobaciones).
- */
-const textInstant = (column: typeof purchaseRequests.submittedAt | typeof purchaseOrders.issuedAt) =>
-  sql`(case when ${column} ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' then ${column}::timestamptz end)`
-
-const submittedDay = instantDay(textInstant(purchaseRequests.submittedAt))
-
-const approvedDay = sql`(select ${instantDay(sql`min(${approvalDecisions.decidedAt})`)} from ${approvalDecisions}
-  where ${approvalDecisions.requestItemId} = ${purchaseRequestItems.id} and ${approvalDecisions.type} in ('approve', 'modify'))`
-
-const issuedDay = sql`(select ${instantDay(sql`min(${textInstant(purchaseOrders.issuedAt)})`)} from ${purchaseOrderItems}
-  inner join ${purchaseOrders} on ${purchaseOrders.id} = ${purchaseOrderItems.purchaseOrderId}
-  where ${purchaseOrderItems.requestItemId} = ${purchaseRequestItems.id} and ${purchaseOrderItems.status} <> 'cancelled' and ${issuedOrderPredicate()})`
-
-/** Recepciones vigentes del ítem, a través de las líneas de OC que lo cubren. */
-const arrival = (agg: "min" | "max") => sql`(select ${instantDay(sql`${sql.raw(agg)}(${receipts.receivedAt})`)} from ${receiptItems}
-  inner join ${receipts} on ${receipts.id} = ${receiptItems.receiptId}
-  inner join ${purchaseOrderItems} on ${purchaseOrderItems.id} = ${receiptItems.purchaseOrderItemId}
-  where ${purchaseOrderItems.requestItemId} = ${purchaseRequestItems.id} and ${receipts.status} <> 'voided' and ${receiptItems.quantityReceived} > 0)`
-
-const delivery = (agg: "min" | "max") => sql`(select ${instantDay(sql`${sql.raw(agg)}(${deliveries.deliveredAt})`)} from ${deliveryItems}
-  inner join ${deliveries} on ${deliveries.id} = ${deliveryItems.deliveryId}
-  where ${deliveryItems.requestItemId} = ${purchaseRequestItems.id} and ${deliveries.voidedAt} is null)`
-
-const closedDay = sql`greatest(${arrival("max")}, ${delivery("max")})`
-
-/** Estados de ítem con los que la adquisición terminó. */
-const CLOSED_ITEM_STATUSES = ["received", "delivered"]
-
-const toDay = (date: string) => Math.floor(Date.parse(`${date}T00:00:00Z`) / 86_400_000)
 const num = (value: unknown): number | null => (value === null || value === undefined ? null : Number(value))
 
+export type SupplyLeadTimeFilters = Pick<AnalyticsFilters, "fromDate" | "toDate" | "worksiteId" | "supplierId" | "requestType">
+
 export type SupplyLeadTimeResult = SupplyLeadTime & {
-  filters: { fromDate: string; toDate: string; worksiteId?: string; requestType?: string }
+  filters: { fromDate: string; toDate: string; worksiteId?: string; supplierId?: string; requestType?: string }
 }
 
 export async function getSupplyLeadTime(session: Session, rawFilters: AnalyticsFilters = {}): Promise<SupplyLeadTimeResult> {
@@ -90,34 +51,46 @@ export async function getSupplyLeadTime(session: Session, rawFilters: AnalyticsF
   const filters = normalizeAnalyticsFilters(rawFilters)
   const previous = previousPeriod(filters.fromDate, filters.toDate)
   const windows = {
-    current: [toDay(filters.fromDate), toDay(filters.toDate)] as const,
-    previous: [toDay(previous.fromDate), toDay(previous.toDate)] as const,
+    current: [plainDateToDay(filters.fromDate), plainDateToDay(filters.toDate)] as const,
+    previous: [plainDateToDay(previous.fromDate), plainDateToDay(previous.toDate)] as const,
   }
+  const milestones = leadTimeMilestoneSql(filters.supplierId)
 
   const rows = await db.select({
+    itemId: purchaseRequestItems.id,
+    requestId: purchaseRequests.id,
+    requestCode: purchaseRequests.code,
+    productName: sql<string | null>`coalesce(${products.name}, ${purchaseRequestItems.productNameFree})`,
     worksiteId: purchaseRequests.worksiteId,
     worksiteName: worksites.name,
     requestType: purchaseRequests.requestType,
-    submittedDay: sql<number | null>`${submittedDay}`,
-    approvedDay: sql<number | null>`${approvedDay}`,
-    issuedDay: sql<number | null>`${issuedDay}`,
-    arrivedDay: sql<number | null>`${arrival("min")}`,
-    deliveredDay: sql<number | null>`${delivery("min")}`,
-    closedDay: sql<number | null>`${closedDay}`,
+    submittedDay: sql<number | null>`${milestones.submittedDay}`,
+    approvedDay: sql<number | null>`${milestones.approvedDay}`,
+    issuedDay: sql<number | null>`${milestones.issuedDay}`,
+    arrivedDay: sql<number | null>`${milestones.arrivedDay}`,
+    deliveredDay: sql<number | null>`${milestones.deliveredDay}`,
+    closedDay: sql<number | null>`${milestones.closedDay}`,
   })
     .from(purchaseRequestItems)
     .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
     .innerJoin(worksites, eq(purchaseRequests.worksiteId, worksites.id))
+    .leftJoin(products, eq(purchaseRequestItems.productId, products.id))
     .where(and(
       worksiteFilter(session, purchaseRequests.worksiteId),
       filters.worksiteId ? eq(purchaseRequests.worksiteId, filters.worksiteId) : undefined,
       filters.requestType ? eq(purchaseRequests.requestType, filters.requestType) : undefined,
-      inArray(purchaseRequestItems.status, CLOSED_ITEM_STATUSES),
+      inArray(purchaseRequestItems.status, [...LEAD_TIME_CLOSED_ITEM_STATUSES]),
+      // Con proveedor, sólo ítems que ese proveedor tuvo en una OC viva: sin emisión de él no hay plazo suyo.
+      filters.supplierId ? sql`${milestones.issuedDay} is not null` : undefined,
       // Acota la lectura a las dos ventanas (período y comparación): el resto de la historia no hace falta.
-      sql`${closedDay} between ${windows.previous[0]} and ${windows.current[1]}`,
+      sql`${milestones.closedDay} between ${windows.previous[0]} and ${windows.current[1]}`,
     ))
 
   const items: LeadTimeItem[] = rows.map((row) => ({
+    itemId: row.itemId,
+    requestId: row.requestId,
+    requestCode: row.requestCode,
+    ...(row.productName ? { productName: row.productName } : {}),
     worksiteId: row.worksiteId,
     worksiteName: row.worksiteName,
     requestType: row.requestType,
@@ -135,6 +108,7 @@ export async function getSupplyLeadTime(session: Session, rawFilters: AnalyticsF
       fromDate: filters.fromDate,
       toDate: filters.toDate,
       ...(filters.worksiteId ? { worksiteId: filters.worksiteId } : {}),
+      ...(filters.supplierId ? { supplierId: filters.supplierId } : {}),
       ...(filters.requestType ? { requestType: filters.requestType } : {}),
     },
   }

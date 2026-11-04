@@ -1,13 +1,15 @@
 import { describe, expect, it } from "vitest"
 import {
+  FINDING_SEVERITIES,
   inspectionTrendDataTable,
   shapeInspectionTrend,
   summarizeInspectionTrend,
+  summarizeOpenFindings,
   type InspectionTrendRow,
 } from "./inspection-trend"
 
 const row = (over: Partial<InspectionTrendRow> & { month: string }): InspectionTrendRow => ({
-  runs: 0, scoredRuns: 0, scoredItems: 0, weightedPoints: 0, openFindings: 0, criticalOpenFindings: 0, ...over,
+  runs: 0, scoredRuns: 0, scoredItems: 0, weightedPoints: 0, openCritical: 0, openHigh: 0, openMedium: 0, openLow: 0, ...over,
 })
 
 describe("shapeInspectionTrend", () => {
@@ -46,6 +48,48 @@ describe("shapeInspectionTrend", () => {
   it("redondea a un decimal", () => {
     const [point] = shapeInspectionTrend([row({ month: "2026-10", runs: 1, scoredRuns: 1, scoredItems: 3, weightedPoints: 3 * 66.666 })], "2026-10-02")
     expect(point?.compliancePercent).toBe(66.7)
+  })
+})
+
+describe("hallazgos abiertos por gravedad (P-4)", () => {
+  it("cada mes lleva sus cuatro gravedades y el total es su suma", () => {
+    const [point] = shapeInspectionTrend([row({ month: "2026-10", runs: 4, openCritical: 1, openHigh: 2, openMedium: 3, openLow: 4 })], "2026-10-20")
+    expect(point?.open).toEqual({ critical: 1, high: 2, medium: 3, low: 4 })
+    expect(point?.openFindings).toBe(10)
+  })
+
+  it("un mes de relleno (sin inspecciones) no tiene hallazgos, no «sin dato»", () => {
+    const points = shapeInspectionTrend([
+      row({ month: "2026-08", runs: 1, openLow: 1 }),
+      row({ month: "2026-10", runs: 1, openHigh: 2 }),
+    ], "2026-10-20")
+    expect(points.map((point) => [point.month, point.openFindings])).toEqual([["2026-08", 1], ["2026-09", 0], ["2026-10", 2]])
+    expect(points[1]!.open).toEqual({ critical: 0, high: 0, medium: 0, low: 0 })
+  })
+
+  it("el orden de las gravedades es el de lectura: de la más grave a la menos", () => {
+    expect([...FINDING_SEVERITIES]).toEqual(["critical", "high", "medium", "low"])
+  })
+
+  it("la frase cuenta hallazgos, dice de qué inspecciones y cuántos son altos o críticos", () => {
+    const points = shapeInspectionTrend([
+      row({ month: "2026-08", runs: 2, openCritical: 1, openMedium: 2 }),
+      row({ month: "2026-09", runs: 3, openHigh: 2, openLow: 1 }),
+    ], "2026-10-05")
+    // Octubre es el mes en curso y no tiene hallazgos: la ventana llega hasta él.
+    expect(summarizeOpenFindings(points)).toBe("6 hallazgos siguen abiertos de las inspecciones entre agosto y octubre; 3 son de gravedad alta o crítica.")
+  })
+
+  it("singular, un solo mes y sin graves", () => {
+    const one = shapeInspectionTrend([row({ month: "2026-10", runs: 1, openLow: 1 })], "2026-10-05")
+    expect(summarizeOpenFindings(one)).toBe("1 hallazgo sigue abierto de las inspecciones en octubre; ninguno es de gravedad alta ni crítica.")
+    const severe = shapeInspectionTrend([row({ month: "2026-10", runs: 1, openCritical: 1 })], "2026-10-05")
+    expect(summarizeOpenFindings(severe)).toContain("1 es de gravedad alta o crítica.")
+  })
+
+  it("sin ningún hallazgo abierto no hay frase (y el gráfico no se dibuja)", () => {
+    expect(summarizeOpenFindings(shapeInspectionTrend([row({ month: "2026-10", runs: 5 })], "2026-10-05"))).toBe("")
+    expect(summarizeOpenFindings([])).toBe("")
   })
 })
 
@@ -140,14 +184,19 @@ describe("summarizeInspectionTrend", () => {
 describe("inspectionTrendDataTable", () => {
   it("marca el mes en curso y deja «—» donde no hay porcentaje", () => {
     const points = shapeInspectionTrend(
-      [row({ month: "2026-09", runs: 2, scoredRuns: 2, scoredItems: 20, weightedPoints: 20 * 80, openFindings: 3, criticalOpenFindings: 1 })],
+      [row({ month: "2026-09", runs: 2, scoredRuns: 2, scoredItems: 20, weightedPoints: 20 * 80, openCritical: 1, openHigh: 1, openLow: 1 })],
       "2026-10-05",
     )
     const table = inspectionTrendDataTable(points)
-    expect(table.headers[0]).toBe("Mes")
+    expect(table.headers).toEqual([
+      "Mes", "Inspecciones", "Ítems evaluados", "Cumplimiento ponderado",
+      "Hallazgos abiertos", "De gravedad crítica", "De gravedad alta", "De gravedad media", "De gravedad baja",
+    ])
+    // Cada fila tiene tantas celdas como encabezados: lo que se dibuja apilado sale también en cifras.
+    expect(table.rows.every((cells) => cells.length === table.headers.length)).toBe(true)
     expect(table.rows).toEqual([
-      ["Sep 2026", 2, 20, "80%", 3, 1],
-      ["Oct 2026 (en curso)", 0, 0, "—", 0, 0],
+      ["Sep 2026", 2, 20, "80%", 3, 1, 1, 0, 1],
+      ["Oct 2026 (en curso)", 0, 0, "—", 0, 0, 0, 0, 0],
     ])
   })
 })

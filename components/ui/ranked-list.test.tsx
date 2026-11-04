@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { render, screen, within } from "@testing-library/react"
 import { describe, expect, it } from "vitest"
+import { CHART_ENTRY_MS } from "@/lib/chart-motion"
 import { RankedList, formatRankedValue, type RankedListItem } from "./ranked-list"
 
 const items: RankedListItem[] = [
@@ -54,13 +55,18 @@ describe("RankedList · share", () => {
     expect(fills[0]!.className).toContain("border-r-2")
   })
 
-  it("el relleno entra con animación `motion-safe` y con retardo escalonado", () => {
+  it("el relleno entra con animación `motion-safe` de CHART_ENTRY_MS (≤ 200 ms) y sin escalonado", () => {
     const { container } = render(<RankedList ariaLabel="Gasto" format="count" items={items} />)
-    const fills = container.querySelectorAll<HTMLElement>("[data-rank-fill]")
-    expect(fills[0]!.className).toContain("motion-safe:animate-[bar-grow-x_.9s_var(--ease-out)_both]")
+    const fills = Array.from(container.querySelectorAll<HTMLElement>("[data-rank-fill]"))
+    expect(fills[0]!.className).toContain("motion-safe:animate-[bar-grow-x_var(--ease-out)_both]")
     expect(fills[0]!.className).toContain("origin-left")
-    expect(fills[0]!.style.animationDelay).toBe("0ms")
-    expect(fills[2]!.style.animationDelay).toBe("140ms")
+    // La duración sale de la constante compartida: ni un `.9s` en la clase ni un retardo por fila.
+    expect(fills[0]!.className).not.toMatch(/bar-grow-x_[\d.]+m?s/)
+    expect(CHART_ENTRY_MS).toBeLessThanOrEqual(200)
+    for (const fill of fills) {
+      expect(fill.style.animationDuration).toBe(`${CHART_ENTRY_MS}ms`)
+      expect(fill.style.animationDelay).toBe("")
+    }
   })
 
   it("apuntar una fila atenúa las otras (grupo en la lista, `hover:` en la fila)", () => {

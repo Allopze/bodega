@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { EMPTY_FILTERS } from "./grid-view"
-import { hasEntryFilters, matrixFilterChips, matrixFilterPatch, parseMatrixFilters } from "./matrix-filters"
+import { hasEntryFilters, MATRIX_FILTER_KEYS, matrixFilterChips, matrixFilterPatch, parseMatrixFilters } from "./matrix-filters"
 
 const params = (query: string) => new URLSearchParams(query)
 
@@ -21,6 +21,23 @@ describe("filtros de la matriz en la URL", () => {
     expect(chips.map((chip) => [chip.key, chip.displayValue])).toEqual([["clasificacion", "Importante"], ["completitud", "Con pendientes"], ["factor", "Mecánico"]])
     expect(hasEntryFilters(EMPTY_FILTERS)).toBe(false)
     expect(hasEntryFilters({ ...EMPTY_FILTERS, search: "x" })).toBe(true)
+  })
+
+  it("la celda P × C viaja en `celda`, junto a la clasificación, y no la pisa", () => {
+    const filters = parseMatrixFilters(params("celda=P4xC2&clasificacion=important"))
+    expect(filters).toEqual({ ...EMPTY_FILTERS, cell: { probability: 4, consequence: 2 }, classifications: ["important"] })
+    expect(matrixFilterPatch(filters)).toMatchObject({ celda: "P4xC2", clasificacion: "important" })
+    expect(MATRIX_FILTER_KEYS).toContain("celda")
+    // Una celda fuera de la escala escrita a mano en la URL se ignora.
+    expect(parseMatrixFilters(params("celda=P3xC2")).cell).toBeNull()
+    expect(matrixFilterPatch(EMPTY_FILTERS).celda).toBeNull()
+  })
+
+  it("la celda tiene su chip removible, dicho sin abreviaturas, con la clave de la URL", () => {
+    const chips = matrixFilterChips({ ...EMPTY_FILTERS, cell: { probability: 4, consequence: 2 }, classifications: ["important"] }, [])
+    expect(chips.map((chip) => chip.key)).toEqual(["clasificacion", "celda"])
+    expect(chips[1]).toEqual({ key: "celda", label: "Celda", value: "P4xC2", displayValue: "probabilidad Alta × consecuencia Media" })
+    expect(hasEntryFilters({ ...EMPTY_FILTERS, cell: { probability: 1, consequence: 1 } })).toBe(true)
   })
 
   it("la búsqueda no genera chip: ya está a la vista en su campo", () => {

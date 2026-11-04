@@ -81,6 +81,8 @@ export const pgliteTestFiles = [
   "lib/__tests__/analytics-finance-parity.test.ts",
   // CHART-029: plazos del ciclo de abastecimiento (hitos, sólo cerrados, anuladas) y alcance por faena.
   "lib/__tests__/analytics-lead-time.test.ts",
+  // P-8: el conteo de recepciones del tablero no incluye las anuladas y coincide con /reportes («Recepciones registradas»).
+  "lib/__tests__/dashboard-receipts-voided-parity.test.ts",
   "lib/__tests__/dashboard-fuel-provider.test.ts",
   "lib/__tests__/fleet-fuel-provider.test.ts",
   // C-9 (lecturas de medidor de Flota): recorrido y última lectura desde `fuel_meter_readings`.
@@ -194,6 +196,10 @@ export const pgliteTestFiles = [
   "lib/__tests__/fuel-inbox-pglite.test.ts",
   // «Por revisar» › casos (CHART-023): casos por semana y gravedad en hora de Chile, pendientes por regla y filtro `?regla=`.
   "lib/__tests__/fuel-inbox-case-charts-pglite.test.ts",
+  // Estanques (CHART-020, P-5): entradas y salidas por día civil chileno, curva que cierra en el «Nivel» de la tabla y alcance por faena.
+  "lib/__tests__/fuel-storage-level-series-pglite.test.ts",
+  // «Por revisar» › casos por semana (CHART-023, P-6): cuándo se creó o se modificó una regla (created_at, bitácora y updated_at), en hora de Chile.
+  "lib/__tests__/fuel-anomaly-rule-changes-pglite.test.ts",
   "lib/__tests__/fuel-review-reopen-pglite.test.ts",
   "lib/__tests__/equipment-file-pglite.test.ts",
   // Panel operacional: agregado batch de combustible por activo (litros,

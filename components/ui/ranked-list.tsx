@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { CaretRight } from "@phosphor-icons/react/dist/ssr"
 import { cn, formatCLP, formatQty, formatPercent } from "@/lib/utils"
+import { CHART_ENTRY_MS } from "@/lib/chart-motion"
 
 /*
  * Contrato (fase 0): la interfaz pública (`RankedListProps`, `RankedListItem`,
@@ -82,13 +83,15 @@ function formatShare(fraction: number) {
   return formatPercent(fraction * 100)
 }
 
-/** Entrada del relleno: crece desde la izquierda; sin movimiento si el usuario lo pidió. */
-const FILL_MOTION = "origin-left motion-safe:animate-[bar-grow-x_.9s_var(--ease-out)_both]"
-
-/** Escalonado corto: las filas se llenan en secuencia, no todas a la vez. */
-function fillDelay(index: number) {
-  return { animationDelay: `${Math.min(index, 12) * 70}ms` }
-}
+/**
+ * Entrada del relleno: crece desde la izquierda en `CHART_ENTRY_MS` (el tope de
+ * DESIGN.md § Gráficos › Movimiento); con «reducir movimiento» no hay animación.
+ * Todas las filas entran juntas: un escalonado de 70 ms por fila sumaba casi un
+ * segundo con doce filas. La duración va en línea porque Tailwind no ve un
+ * número interpolado dentro de un nombre de clase.
+ */
+const FILL_MOTION = "origin-left motion-safe:animate-[bar-grow-x_var(--ease-out)_both]"
+const FILL_ENTRY = { animationDuration: `${CHART_ENTRY_MS}ms` }
 
 /**
  * Ranking como lista: nombre y valor legibles sobre una barra de fondo de un
@@ -140,7 +143,7 @@ export function RankedList({
   return (
     <div className={className}>
       <ul aria-label={ariaLabel} className={cn("group/rank flex flex-col", compact ? "gap-3" : "gap-0.5")}>
-        {visible.map((item, index) => {
+        {visible.map((item) => {
           const tone = toneOf(item)
           const toneClasses = TONE_CLASSES[tone]
           const fraction = fractionOf(item)
@@ -177,7 +180,7 @@ export function RankedList({
                 <div aria-hidden className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-[var(--color-surface-2)]">
                   <div
                     className={cn("h-full rounded-full bg-[var(--rank-hue)]", FILL_MOTION)}
-                    style={{ width: `${fraction * 100}%`, ...fillDelay(index) }}
+                    style={{ width: `${fraction * 100}%`, ...FILL_ENTRY }}
                   />
                 </div>
                 {item.detail && <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">{item.detail}</p>}
@@ -210,7 +213,7 @@ export function RankedList({
                   !zero && fraction >= 0.25 && "border-r-2 border-[color-mix(in_oklch,var(--rank-hue)_70%,transparent)]",
                   FILL_MOTION,
                 )}
-                style={{ width: `${fraction * 100}%`, ...fillDelay(index) }}
+                style={{ width: `${fraction * 100}%`, ...FILL_ENTRY }}
               />
               <span className="relative truncate text-sm" title={item.label}>{item.label}</span>
               <span className="relative flex shrink-0 items-baseline gap-2.5 text-sm tabular-nums">

@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils"
 import type { PanelData } from "@/lib/services/mantencion/panel"
 import { fleetCoverage } from "@/lib/services/mantencion/panel-coverage"
 import { PANEL_PERIOD_PHRASE, weekRangeLabel } from "@/lib/services/mantencion/panel-filters"
-import { ChartDataTable } from "@/components/charts/chart-data-table"
+import { ChartDataTable, type ChartDataExcel } from "@/components/charts/chart-data-table"
 import { EquipmentStateBadge } from "../shared/equipment-state-badge"
 import { SectionCard } from "../shared/section-card"
 import { WeeklyChart } from "./weekly-chart"
@@ -32,7 +32,8 @@ const BAR_COLOR: Record<(typeof FLEET_BAR_STATES)[number], string> = {
 
 const worksiteParam = (data: PanelData) => (data.filters.worksiteId ? `&faena=${encodeURIComponent(data.filters.worksiteId)}` : "")
 
-export function WeeklyCard({ data }: { data: PanelData }) {
+/** `excel`: «Exportar Excel» de «Ver datos»; la página lo pasa sólo a quien tiene `mant:export`. */
+export function WeeklyCard({ data, excel }: { data: PanelData; excel?: ChartDataExcel }) {
   const worksite = data.filters.worksiteId ? "la faena elegida" : "todas las faenas"
   return (
     <SectionCard title="Registros por semana" description={`Últimas ${data.weeks.length} semanas · ${worksite}`}>
@@ -41,6 +42,7 @@ export function WeeklyCard({ data }: { data: PanelData }) {
         caption="Registros por semana"
         headers={["Semana", "Preventivas", "Correctivas"]}
         rows={data.weeks.map((week) => [weekRangeLabel(week.start), week.preventive, week.corrective])}
+        excel={excel}
       />
     </SectionCard>
   )

@@ -55,8 +55,27 @@ describe("LeadTimeSection", () => {
     const report = buildSupplyLeadTime([...many(5), item({ approvedDay: D + 5, issuedDay: D + 3 })], WINDOW)
     render(<LeadTimeSection report={report} ignoresFilters />)
 
-    expect(screen.getByText("Este gráfico respeta el período y la faena; no el proveedor ni el vehículo.")).toBeInTheDocument()
+    expect(screen.getByText("Este gráfico respeta el período, la faena y el proveedor; no el vehículo.")).toBeInTheDocument()
     expect(screen.getByText(/1 medición con fechas fuera de orden/)).toBeInTheDocument()
+  })
+
+  it("con proveedor elegido lo dice y explica cómo se mide; sin él no habla de proveedor", () => {
+    const report = { ...buildSupplyLeadTime(many(6), WINDOW), filters: { supplierId: "prov-1" } }
+    const { unmount } = render(<LeadTimeSection report={report} ignoresFilters={false} />)
+    expect(screen.getByText(/Con proveedor elegido sólo cuenta los ítems comprados a él/)).toBeInTheDocument()
+    expect(screen.queryByText(/no el vehículo/)).toBeNull()
+    unmount()
+
+    render(<LeadTimeSection report={buildSupplyLeadTime(many(6), WINDOW)} ignoresFilters={false} />)
+    expect(screen.queryByText(/Con proveedor elegido/)).toBeNull()
+  })
+
+  it("con proveedor y sin ítems cerrados el vacío nombra al proveedor como posible causa", () => {
+    const report = { ...buildSupplyLeadTime([], WINDOW), filters: { supplierId: "prov-1" } }
+    render(<LeadTimeSection report={report} ignoresFilters={false} />)
+
+    expect(screen.getByText(/Ningún ítem comprado a ese proveedor/)).toBeInTheDocument()
+    expect(screen.getByText(/quita el filtro de proveedor/)).toBeInTheDocument()
   })
 
   it("con varias faenas dibuja el total y cada faena; con una sola no repite la barra", () => {
@@ -87,5 +106,65 @@ describe("leadTimeDataRows", () => {
     expect(rows.find((row) => String(row[0]).endsWith("Aprobación"))).toEqual(["Total · Aprobación", "1 día", "—", 6])
     expect(rows.find((row) => String(row[0]).endsWith("Entrega"))).toEqual(["Total · Entrega", "Datos insuficientes", "—", 0])
     expect(rows.at(-1)).toEqual(["Total · Plazo total", "10 días", "—", 6])
+  })
+})
+
+describe("LeadTimeSection · ítems más lentos", () => {
+  const named = (i: number, over: Partial<LeadTimeItem> = {}) => item({
+    itemId: `it-${i}`, requestId: `req-${i}`, requestCode: `SOL-00${i}`, productName: `Guantes ${i}`,
+    arrivedDay: D + 9 + i, deliveredDay: D + 10 + i, closedDay: D + 10 + i, ...over,
+  })
+  const report = () => buildSupplyLeadTime(Array.from({ length: 6 }, (_, i) => named(i)), WINDOW)
+
+  it("lista los ítems cerrados que más tardaron, con los días de cada tramo y el total", () => {
+    render(<LeadTimeSection report={report()} ignoresFilters={false} />)
+
+    const table = screen.getByRole("table", { name: /Ítems cerrados que más tardaron/ })
+    const rows = within(table).getAllByRole("row")
+    // Encabezado + 6 ítems; el más lento (i = 5, 15 días) primero.
+    expect(rows).toHaveLength(7)
+    expect(within(rows[1]!).getByText("SOL-005")).toBeInTheDocument()
+    expect(within(rows[1]!).getByText("15 días")).toBeInTheDocument()
+    expect(screen.getByText("Ítems más lentos (6)")).toBeInTheDocument()
+  })
+
+  it("sin permisos de enlace el código y el producto son texto: no se ofrece un enlace que el destino rechazaría", () => {
+    render(<LeadTimeSection report={report()} ignoresFilters={false} />)
+
+    const table = screen.getByRole("table", { name: /Ítems cerrados que más tardaron/ })
+    expect(within(table).queryAllByRole("link")).toHaveLength(0)
+  })
+
+  it("con permiso, la solicitud y el ítem enlazan a su ficha", () => {
+    render(<LeadTimeSection report={report()} ignoresFilters={false} itemLinks={{ requests: true, tracking: true }} />)
+
+    const table = screen.getByRole("table", { name: /Ítems cerrados que más tardaron/ })
+    expect(within(table).getByRole("link", { name: "SOL-005" })).toHaveAttribute("href", "/solicitudes/req-5")
+    expect(within(table).getByRole("link", { name: "Guantes 5" })).toHaveAttribute("href", "/seguimiento/it-5")
+  })
+
+  it("cada permiso es independiente: sólo seguimiento deja la solicitud como texto", () => {
+    render(<LeadTimeSection report={report()} ignoresFilters={false} itemLinks={{ requests: false, tracking: true }} />)
+
+    const table = screen.getByRole("table", { name: /Ítems cerrados que más tardaron/ })
+    expect(within(table).queryByRole("link", { name: "SOL-005" })).toBeNull()
+    expect(within(table).getByRole("link", { name: "Guantes 5" })).toBeInTheDocument()
+  })
+
+  it("un tramo que no se pudo medir dice «—», no 0 días", () => {
+    const items = [...Array.from({ length: 5 }, (_, i) => named(i)), named(9, { deliveredDay: null, closedDay: D + 9 })]
+    render(<LeadTimeSection report={buildSupplyLeadTime(items, WINDOW)} ignoresFilters={false} />)
+
+    const row = within(screen.getByRole("table", { name: /Ítems cerrados que más tardaron/ })).getAllByRole("row").find((r) => within(r).queryByText("SOL-009"))!
+    expect(within(row).getAllByRole("cell").some((cell) => cell.textContent === "—")).toBe(true)
+  })
+
+  it("un informe en caché sin la lista (forma anterior) no rompe la tarjeta", () => {
+    const old = { ...report() } as Partial<ReturnType<typeof report>> as ReturnType<typeof report>
+    delete (old as { slowest?: unknown }).slowest
+    render(<LeadTimeSection report={old} ignoresFilters={false} />)
+
+    expect(screen.queryByText(/Ítems más lentos/)).toBeNull()
+    expect(screen.getByRole("figure", { name: "Plazos del ciclo de abastecimiento" })).toBeInTheDocument()
   })
 })

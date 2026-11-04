@@ -1,5 +1,5 @@
 /**
- * CHART-008 en simulacros, CGRD e higiene: el lector común de casillas por faena.
+ * CHART-008 en simulacros y CGRD: el lector común de casillas por faena.
  *
  * Protege el alcance (quien ve la faena A no ve las casillas ni el plan de la B),
  * que las faenas inactivas no aparezcan como fila, que cada tipo lea SU tabla, y
@@ -41,11 +41,10 @@ beforeAll(async () => {
     { id: WS_B, name: "Faena Beta", code: "PCB", isActive: true },
     { id: WS_OFF, name: "Faena Cerrada", code: "PCX", isActive: false },
   ])
-  // Sin programa activo se siembra el año base: 2 simulacros, 4 actas de CGRD y 1 medición de higiene por faena.
+  // Sin programa activo se siembra el año base: 2 simulacros y 4 actas de CGRD por faena.
   for (const id of [WS_A, WS_B, WS_OFF]) {
     await slots.ensureEmergencyDrillSlotsForWorksiteTx(inMemoryDb, id, YEAR)
     await slots.ensureGrdMeetingSlotsForWorksiteTx(inMemoryDb, id, YEAR)
-    await slots.ensureHygieneMeasurementSlotsForWorksiteTx(inMemoryDb, id, YEAR)
   }
   // La casilla de marzo de Alfa se declara «no hecha».
   await inMemoryDb.update(schema.preventionEmergencyDrillSlots).set({ status: "not_completed" })
@@ -64,10 +63,9 @@ afterAll(async () => {
 })
 
 describe("listProgramSlotsForCalendar", () => {
-  it("cada tipo lee su tabla: simulacros 2, CGRD 4 e higiene 1 por faena", async () => {
+  it("cada tipo lee su tabla: simulacros 2 y CGRD 4 por faena", async () => {
     expect(await listProgramSlotsForCalendar("drills", "all", YEAR)).toHaveLength(4)
     expect(await listProgramSlotsForCalendar("grd", "all", YEAR)).toHaveLength(8)
-    expect(await listProgramSlotsForCalendar("hygiene", "all", YEAR)).toHaveLength(2)
   })
 
   it("las faenas inactivas no son una fila", async () => {
@@ -76,7 +74,7 @@ describe("listProgramSlotsForCalendar", () => {
   })
 
   it("quien ve sólo la faena A no recibe las casillas de la B, de ningún tipo", async () => {
-    for (const kind of ["drills", "grd", "hygiene"] as const) {
+    for (const kind of ["drills", "grd"] as const) {
       const rows = await listProgramSlotsForCalendar(kind, [WS_A], YEAR)
       expect(new Set(rows.map((row) => row.worksiteId))).toEqual(new Set([WS_A]))
     }
@@ -87,9 +85,12 @@ describe("listProgramSlotsForCalendar", () => {
   })
 
   it("trae el nombre de la faena y respeta el año pedido", async () => {
-    const [row] = await listProgramSlotsForCalendar("hygiene", [WS_A], YEAR)
-    expect(row).toMatchObject({ worksiteName: "Faena Alfa", scheduledMonth: 2, scheduledWeek: 2, status: "pending" })
-    expect(await listProgramSlotsForCalendar("hygiene", "all", 2031)).toEqual([])
+    const rows = await listProgramSlotsForCalendar("grd", [WS_A], YEAR)
+    expect(rows).toHaveLength(4)
+    // Las cuatro actas del CGRD son de la semana 1, de febrero a mayo.
+    expect(rows.map((row) => row.scheduledMonth).sort((a, b) => a - b)).toEqual([2, 3, 4, 5])
+    expect(rows.every((row) => row.worksiteName === "Faena Alfa" && row.scheduledWeek === 1 && row.status === "pending")).toBe(true)
+    expect(await listProgramSlotsForCalendar("grd", "all", 2031)).toEqual([])
   })
 })
 
@@ -110,11 +111,6 @@ describe("loadProgramSlotCalendar", () => {
     expect(calendar.rows.map((row) => row.id)).toEqual([WS_A])
     // Febrero a mayo, semana 1: cuatro meses vencidos a junio.
     expect(calendar.rows[0]!.missed).toBe(4)
-  })
-
-  it("higiene: una sola celda exigible por faena", async () => {
-    const calendar = await loadProgramSlotCalendar("hygiene", "all", YEAR, TODAY)
-    for (const row of calendar.rows) expect(row.cells.filter((cell) => cell.status !== "na")).toHaveLength(1)
   })
 })
 

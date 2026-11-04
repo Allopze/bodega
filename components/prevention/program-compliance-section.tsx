@@ -1,4 +1,5 @@
 import { ChartSection } from "@/components/charts/chart-section"
+import type { ChartDataExcel } from "@/components/charts/chart-data-table"
 import { ComplianceCalendar, type ComplianceRow } from "@/components/charts/compliance-calendar"
 import {
   DEFAULT_SLOT_CALENDAR_WORDING,
@@ -42,6 +43,7 @@ export function ProgramComplianceSection({
   statusLabels,
   legend,
   linkNavigation = { scroll: false, replace: true },
+  excel,
   className,
 }: {
   title: string
@@ -78,6 +80,11 @@ export function ProgramComplianceSection({
    * registra el simulacro), pasa `{}`: ahí sí es navegación y debe quedar en el historial.
    */
   linkNavigation?: { scroll?: boolean; replace?: boolean }
+  /**
+   * «Exportar Excel» de «Ver datos». Opt-in con el permiso de exportar del programa
+   * (`prevention:training:export`…): la pantalla lo pasa sólo si la persona lo tiene.
+   */
+  excel?: ChartDataExcel
   className?: string
 }) {
   if (calendar.rows.length === 0) {
@@ -103,7 +110,7 @@ export function ProgramComplianceSection({
     <ChartSection
       title={title}
       summary={summarizeSlotCalendar(calendar.rows, { noun, wording })}
-      data={{ caption: `${caption}: cifras por ${noun.singular}`, ...slotCalendarDataTable(calendar.rows, rowHeader, wording) }}
+      data={{ caption: `${caption}: cifras por ${noun.singular}`, ...slotCalendarDataTable(calendar.rows, rowHeader, wording), excel }}
       className={className}
     >
       <ComplianceCalendar

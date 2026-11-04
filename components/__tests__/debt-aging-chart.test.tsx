@@ -4,6 +4,7 @@ import type { ComponentProps } from "react"
 import { fireEvent, render, screen, within } from "@testing-library/react"
 import { describe, expect, it } from "vitest"
 import { DebtAgingChart, type DebtAgingBucket } from "@/components/charts/debt-aging-chart"
+import { CHART_ENTRY_MS } from "@/lib/chart-motion"
 
 /** Los cinco tramos de `AGING_BUCKETS`, en el orden de los días. */
 const ORDEN = ["No vencida", "1–30 días", "31–60 días", "61–90 días", "Más de 90 días"]
@@ -55,6 +56,21 @@ describe("DebtAgingChart", () => {
     const vencido = screen.getByRole("link", { name: /vencido/ })
     expect(vencido.getAttribute("href")).toBe("/facturacion/facturas?vencidas=1")
     expect(vencido.textContent).toContain("$2.489M")
+  })
+
+  it("los segmentos entran en CHART_ENTRY_MS (≤ 200 ms), juntos y sólo bajo `motion-safe`", () => {
+    renderChart([100_000_000, 200_000_000, 2_000_000_000, 300_000_000, 50_000_000])
+
+    const segmentos = Array.from(document.querySelectorAll<HTMLElement>("[data-segment]"))
+    expect(segmentos).toHaveLength(5)
+    expect(CHART_ENTRY_MS).toBeLessThanOrEqual(200)
+    for (const segmento of segmentos) {
+      expect(segmento.className).toContain("motion-safe:animate-[bar-grow-x_var(--ease-out)_backwards]")
+      // Ni una duración propia en la clase (eran 700 ms) ni un retardo por tramo.
+      expect(segmento.className).not.toMatch(/bar-grow-x_\d/)
+      expect(segmento.style.animationDuration).toBe(`${CHART_ENTRY_MS}ms`)
+      expect(segmento.style.animationDelay).toBe("")
+    }
   })
 
   it("apuntar a una fila destaca su segmento y atenúa el resto; salir lo restaura", () => {

@@ -12,7 +12,7 @@ import {
 } from "@phosphor-icons/react/dist/ssr"
 import { can, requirePermission } from "@/lib/auth/can"
 import { normalizeAnalyticsFilters } from "@/lib/services/analytics"
-import { getCachedAnalyticsDashboard } from "@/lib/services/read-model-cache"
+import { getCachedAnalyticsDashboard, getCachedSupplyLeadTime } from "@/lib/services/read-model-cache"
 import { formatCLP, formatDate, formatPercent, formatQty } from "@/lib/utils"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
@@ -20,7 +20,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ChartSection } from "@/components/charts/chart-section"
 import { ChartErrorBoundary } from "@/components/chart-error-boundary"
 import { RankedList } from "@/components/ui/ranked-list"
-import { getSupplyLeadTime } from "@/lib/services/analytics-module/lead-time"
 import { AnalyticsFiltersBar } from "./analytics-filters"
 import { MonthlySpendChart, SupplierParetoChart } from "./analytics-charts-lazy"
 import { KpiCard } from "./analytics-kpi-card"
@@ -49,6 +48,8 @@ export default async function AnaliticaPage({
   const canViewPurchasing = can(session, "purchasing:view")
   const canViewDeliveries = can(session, "deliveries:view")
   const canViewReports = can(session, "reports:view")
+  // «Ver datos» → Excel sólo con el permiso de exportar del módulo (ver DESIGN.md § Exportar a Excel).
+  const chartExcel = can(session, "analytics:export") ? { excel: { permission: "analytics:export" as const } } : {}
 
   const sp = await searchParams
   const filters = normalizeAnalyticsFilters({
@@ -65,10 +66,11 @@ export default async function AnaliticaPage({
     getCachedAnalyticsDashboard(session, filters),
     getFilterOptions(session),
     // CHART-029: plazos del ciclo. Un fallo suyo no tumba el resto de la pantalla; se dice en su tarjeta.
-    getSupplyLeadTime(session, {
+    getCachedSupplyLeadTime(session, {
       fromDate: filters.fromDate,
       toDate: filters.toDate,
       ...(filters.worksiteId ? { worksiteId: filters.worksiteId } : {}),
+      ...(filters.supplierId ? { supplierId: filters.supplierId } : {}),
     }).catch(() => null),
   ])
 
@@ -217,7 +219,7 @@ export default async function AnaliticaPage({
             // La serie no sigue el período elegido: son 12 meses que terminan en `hasta` (C-10). La frase nombra la
             // ventana, el mes parcial y los meses sin datos del proveedor (C-4), y el mayor mes sólo entre los comparables.
             summary={monthlyTrendSummary(data.filters.toDate, data.spendByMonth, formatCLP)}
-            data={{ caption: "Gasto mensual en compras y combustible", ...trendDataRows(data.spendByMonth, canViewFuelCosts, formatCLP) }}
+            data={{ caption: "Gasto mensual en compras y combustible", ...trendDataRows(data.spendByMonth, canViewFuelCosts, formatCLP), ...chartExcel }}
             empty={data.spendByMonth.every((row) => row.totalAmount === 0) ? {
               label: "Aún no hay gasto en los últimos 12 meses",
               hint: "No se registraron órdenes de compra emitidas ni combustible en las faenas seleccionadas durante esta ventana. Revisa los filtros o que existan movimientos.",
@@ -252,6 +254,7 @@ export default async function AnaliticaPage({
           title="Concentración del gasto por proveedor (con IVA)"
           summary={paretoSummary(pareto, concentrationThreshold, canViewFuelCosts ? "del gasto" : "del gasto en compras")}
           data={{
+            ...chartExcel,
             caption: "Gasto por proveedor y porcentaje acumulado del gasto total",
             headers: ["Proveedor", "Módulo", "OC o cargas", "Gasto", "% del gasto", "% acumulado"],
             rows: paretoRows.map((row) => [
@@ -270,7 +273,12 @@ export default async function AnaliticaPage({
           </ChartErrorBoundary>
         </ChartSection>
 
-        <LeadTimeSection report={leadTime} ignoresFilters={Boolean(data.filters.supplierId || data.filters.vehicleId)} />
+        <LeadTimeSection
+          report={leadTime}
+          ignoresFilters={Boolean(data.filters.vehicleId)}
+          itemLinks={{ requests: can(session, "requests:view_all"), tracking: can(session, "warehouse:view_traceability") }}
+          {...(can(session, "analytics:export") ? { excel: { permission: "analytics:export" as const } } : {})}
+        />
 
         <section className="grid grid-cols-1 gap-5 xl:grid-cols-2">
           <ChartSection

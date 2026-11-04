@@ -2,9 +2,10 @@
  * Comparativos mensuales para el centro operacional.
  *
  * Cada valor usa la fecha nativa del hecho (creación, emisión, recepción o
- * entrega). No se infiere una decisión histórica desde el estado actual.
+ * entrega). No se infiere una decisión histórica desde el estado actual. Una
+ * recepción anulada no cuenta (ver `registeredReceiptPredicate`).
  */
-import { and, count, eq, gte, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm"
+import { and, count, eq, gte, inArray, isNotNull, isNull, lt, ne, sql } from "drizzle-orm"
 import type { Session } from "next-auth"
 import { db } from "@/db"
 import { deliveries, purchaseOrders, purchaseRequests, receipts } from "@/db/schema"
@@ -46,6 +47,18 @@ export function issuedOrderPredicate() {
     isNotNull(purchaseOrders.issuedAt),
     inArray(purchaseOrders.status, ISSUED_ORDER_STATUSES),
   )
+}
+
+/**
+ * P-8 (auditoría de visualizaciones, 2026-11): definición única de «recepción registrada».
+ *
+ * Una recepción anulada (`status = 'voided'`, REC-003) no es una recepción: se deshizo y su stock se
+ * revirtió. `/reportes` («Recepciones registradas») ya la excluía; el tablero la seguía contando, así que
+ * el mismo rótulo daba una cifra distinta según la pantalla. Los tiles del Resumen y la serie mensual de
+ * tendencia leen de acá, igual que `issuedOrderPredicate` fija qué es una OC emitida.
+ */
+export function registeredReceiptPredicate() {
+  return ne(receipts.status, "voided")
 }
 
 // El predicado de faena (alcance del rol ∩ faena elegida) vive en
@@ -97,9 +110,9 @@ export async function getOperationalPeriodMetrics(session: Session, options: Ope
     db.select({ value: count() }).from(purchaseOrders).where(and(orderScope, issuedOrderPredicate(), gte(purchaseOrders.issuedAt, previousIssuedStart), lt(purchaseOrders.issuedAt, previousIssuedEnd))),
     db.select({ value: count() }).from(purchaseOrders).where(and(orderScope, issuedOrderPredicate(), lt(purchaseOrders.issuedAt, previousIssuedEnd))),
 
-    db.select({ value: count() }).from(receipts).innerJoin(purchaseOrders, eq(receipts.purchaseOrderId, purchaseOrders.id)).where(and(orderScope, gte(receipts.receivedAt, bounds.currentStart), lt(receipts.receivedAt, bounds.currentEnd))),
-    db.select({ value: count() }).from(receipts).innerJoin(purchaseOrders, eq(receipts.purchaseOrderId, purchaseOrders.id)).where(and(orderScope, gte(receipts.receivedAt, bounds.previousStart), lt(receipts.receivedAt, bounds.previousEnd))),
-    db.select({ value: count() }).from(receipts).innerJoin(purchaseOrders, eq(receipts.purchaseOrderId, purchaseOrders.id)).where(and(orderScope, lt(receipts.receivedAt, bounds.previousEnd))),
+    db.select({ value: count() }).from(receipts).innerJoin(purchaseOrders, eq(receipts.purchaseOrderId, purchaseOrders.id)).where(and(orderScope, registeredReceiptPredicate(), gte(receipts.receivedAt, bounds.currentStart), lt(receipts.receivedAt, bounds.currentEnd))),
+    db.select({ value: count() }).from(receipts).innerJoin(purchaseOrders, eq(receipts.purchaseOrderId, purchaseOrders.id)).where(and(orderScope, registeredReceiptPredicate(), gte(receipts.receivedAt, bounds.previousStart), lt(receipts.receivedAt, bounds.previousEnd))),
+    db.select({ value: count() }).from(receipts).innerJoin(purchaseOrders, eq(receipts.purchaseOrderId, purchaseOrders.id)).where(and(orderScope, registeredReceiptPredicate(), lt(receipts.receivedAt, bounds.previousEnd))),
 
     db.select({ value: count() }).from(deliveries).where(and(deliveryScope, gte(deliveries.deliveredAt, bounds.currentStart), lt(deliveries.deliveredAt, bounds.currentEnd))),
     db.select({ value: count() }).from(deliveries).where(and(deliveryScope, gte(deliveries.deliveredAt, bounds.previousStart), lt(deliveries.deliveredAt, bounds.previousEnd))),

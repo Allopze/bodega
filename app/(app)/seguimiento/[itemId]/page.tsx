@@ -3,14 +3,17 @@ import { notFound, redirect } from "next/navigation"
 import Link from "next/link"
 import { requirePermission } from "@/lib/auth/can"
 import { getItemDetail } from "@/lib/services/trazabilidad-item"
+import { getItemLeadTime } from "@/lib/services/analytics-module/lead-time-item"
+import { plainDateToDay } from "@/lib/services/analytics-module/lead-time-shape"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { StateBadge } from "@/components/states/state-badge"
 import { EntityTimeline } from "@/components/states/entity-timeline"
-import { formatQty } from "@/lib/utils"
+import { formatQty, todayInChile } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { ArrowSquareOut } from "@phosphor-icons/react/dist/ssr"
 import { ItemSummaryCard } from "./trazabilidad-item-summary-card"
+import { ItemLeadTimeCard } from "./trazabilidad-item-lead-time"
 import {
   ApprovalsTable,
   OcItemsTable,
@@ -34,7 +37,12 @@ export default async function TrazabilidadItemPage({
   }
 
   const { itemId } = await params
-  const detail = await getItemDetail(session, itemId)
+  // Los plazos por etapa son un complemento de la ficha: si su consulta falla se dice en su tarjeta
+  // y el resto del expediente sigue a la vista.
+  const [detail, leadTime] = await Promise.all([
+    getItemDetail(session, itemId),
+    getItemLeadTime(session, itemId).catch(() => null),
+  ])
   if (!detail) notFound()
 
   const { item, approvals, ocItems, receipts, deliveries, timeline, inventoryMovements } = detail
@@ -91,6 +99,9 @@ export default async function TrazabilidadItemPage({
           totalDelivered={totalDelivered}
           totalReturned={totalReturned}
         />
+
+        {/* CHART-029: días por etapa de este ítem, con los mismos hitos que Analítica */}
+        <ItemLeadTimeCard leadTime={leadTime} todayDay={plainDateToDay(todayInChile())} />
 
         {/* Quantity flow visualization */}
         <section className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] border border-[var(--color-border)] p-6">

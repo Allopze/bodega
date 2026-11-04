@@ -20,6 +20,7 @@ import { filterFleetOverviewRows, type FleetOverviewFilters } from "@/lib/fleet-
 import { addExportMetadataSheet } from "@/lib/reports/export-metadata"
 import { recordAudit } from "@/lib/audit"
 import { fleetProviderGapNotice } from "./fleet-provider-gap"
+import { formatLastReading } from "./fleet-last-reading"
 
 const FLEET_EXPORT_LIMIT = 10_000
 
@@ -157,6 +158,9 @@ export async function exportFleetXlsxAction(filters: FleetOverviewFilters = {}) 
     ...(canViewFuel ? [
       { header: "Litros (12 meses)", key: "liters", width: 18 },
       { header: "Cargas (12 meses)", key: "loads", width: 18 },
+      // P-9: la misma lectura que la columna «Km/Hr» de la lista (odómetro y, a falta de él, horómetro),
+      // con la fecha en que se tomó y, si el detector tiene un caso abierto sobre ella, la misma marca.
+      { header: "Última lectura", key: "lastReading", width: 44 },
       // Misma marca que el aviso de la columna «Km/Hr» de la lista: hay un caso del detector aún abierto
       // sobre la última lectura del equipo.
       { header: "Lectura objetada", key: "objectedReading", width: 18 },
@@ -177,6 +181,7 @@ export async function exportFleetXlsxAction(filters: FleetOverviewFilters = {}) 
       expiry: row.nextExpiryDate ?? "",
       liters: row.totalLiters,
       loads: row.loadCount,
+      lastReading: formatLastReading(row),
       // Vacía sin lectura: ahí no hay nada que objetar, y «No» afirmaría que la lectura está bien.
       objectedReading: row.lastOdometerReading == null && row.lastHourMeterReading == null ? "" : row.lastReadingObjection ? "Sí" : "No",
       openWorkOrders: row.openWorkOrders,

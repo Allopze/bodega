@@ -45,7 +45,9 @@ const summary = vi.hoisted(() => ({
 
 vi.mock("next/navigation", () => ({ redirect: vi.fn(() => { throw new Error("NEXT_REDIRECT") }) }))
 vi.mock("@/lib/auth/auth", () => ({ auth: () => Promise.resolve({ user: { id: "u-1" } }) }))
-vi.mock("@/lib/auth/can", () => ({ can: () => true }))
+// Quien puede todo, salvo lo que cada prueba quite: `billing:export` decide si «Ver datos» ofrece Excel.
+const denied = vi.hoisted(() => new Set<string>())
+vi.mock("@/lib/auth/can", () => ({ can: (_session: unknown, permission: string) => !denied.has(permission) }))
 vi.mock("@/lib/services/billing/queries", () => ({
   getBillingSummary: () => Promise.resolve(summary),
   listUnlinkedInvoices: () => Promise.resolve([]),
@@ -88,7 +90,10 @@ describe("/facturacion · gráficos (CHART-036)", () => {
     vi.useFakeTimers({ toFake: ["Date"] })
     vi.setSystemTime(new Date("2026-10-15T15:00:00Z"))
   })
-  afterEach(() => vi.useRealTimers())
+  afterEach(() => {
+    vi.useRealTimers()
+    denied.clear()
+  })
 
   it("dibuja la serie mensual, un gráfico por moneda, sin los meses posteriores al período", async () => {
     const elements = await renderPage()
@@ -171,5 +176,26 @@ describe("/facturacion · gráficos (CHART-036)", () => {
     expect(collected.props.comparison).toBeUndefined()
     // A1: no se agregan tiles.
     expect(tiles).toHaveLength(4)
+  })
+
+  it("«Ver datos» ofrece Excel con `billing:export` en los dos gráficos, y el del flujo lleva sus salvedades a «Metadatos»", async () => {
+    const [clp, usd, aging] = sections(await renderPage()).filter((el) => el.props.data)
+    const excelOf = (section: El) => (section.props.data as { excel?: { permission: string; notes?: string[] } }).excel
+
+    expect(excelOf(clp!)?.permission).toBe("billing:export")
+    expect(excelOf(clp!)?.notes).toEqual([
+      "Cobrado: pagos confirmados de las facturas emitidas en cada mes; los meses recientes todavía pueden subir.",
+      "El mes en curso (Oct 2026) es parcial: su cifra todavía puede subir.",
+    ])
+    expect(excelOf(usd!)?.permission).toBe("billing:export")
+    expect(excelOf(aging!)?.permission).toBe("billing:export")
+  })
+
+  it("sin `billing:export` no hay Excel: ver la cifra no da la descarga", async () => {
+    denied.add("billing:export")
+    const data = sections(await renderPage()).filter((el) => el.props.data).map((el) => el.props.data as { excel?: unknown })
+
+    expect(data.length).toBeGreaterThanOrEqual(3)
+    for (const table of data) expect(table.excel).toBeUndefined()
   })
 })

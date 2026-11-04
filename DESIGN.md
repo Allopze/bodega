@@ -463,7 +463,7 @@ plataforma; el tablero suma su excepción de superficie (regla 7 de AGENTS.md).
 | `ComplianceCalendar` | Filas × períodos con estado | `<table>` real; ícono + color + texto oculto por celda; contenedor desplazable con foco de teclado. `statusLabels` cambia los rótulos (Fuentes: Completo/Parcial/Sin datos); `selected` y `linkNavigation` para cuando filtra la misma pantalla. Adaptador de programas de Prevención: `ProgramComplianceSection` (casillas, cierres mensuales del PDTP, sesiones del CPHS; `wording`/`statusLabels`/`legend` cambian el vocabulario cuando la celda no es una «actividad hecha», y `hrefFor` puede devolver `undefined` para una celda sin a dónde llevar). |
 | `MonthlyTrendChart` | Serie mensual: conteos apilados + una línea de % opcional | Eje de conteos a la izquierda y de % (0–100) a la derecha (A5b). El mes en curso es parcial (columna tenue, tramo punteado) y la línea se corta donde `rate` es `null` (sin dato o datos insuficientes, nunca 0). Los meses vacíos entre dos con datos se rellenan (`fillMonthSeries`): un hueco se ve. Inspecciones, alcotest y PPA. |
 | `ShareBar` | Partes excluyentes de un total (estado de una solicitud) | Barra 100 % en el orden del dominio, color por token, leyenda con cifra y enlace por parte; segmentos fuera del tabulador. |
-| `RiskMatrix` / `ResidualBands` | Matriz P×C de la MIPER | Tabla 3×3 con conteo y clase por celda; clases discretas (`risk-bands.ts`), nunca interpolado. |
+| `RiskMatrix` / `ResidualBands` | Matriz P×C de la MIPER | Tabla 3×3 con conteo y clase por celda; clases discretas (`risk-bands.ts`), nunca interpolado. Cada celda muestra los 3 peligros más frecuentes (al pasar el puntero o con foco) y filtra la matriz por la celda exacta (`?celda=P4xC2`). |
 | `RiskShareBar` | Mezcla de clasificaciones de riesgo en una celda de tabla | Versión compacta de `ShareBar` para las 4 bandas del RE-04. |
 | `DebtAgingChart`, `BillingFlowChart`, `ChartFrame` | Facturación y tablero | Movidos desde `dashboard/charts/` (quedan re-exports allí). |
 | `StageDurationBar` | Plazos por tramo de un proceso (solicitud → aprobación → OC → llegada → entrega) | Una barra apilada por grupo (todas las faenas, cada faena), un segmento por tramo con el largo de su **mediana** y una marca en el P90 del plazo total. Toda cifra va con su `n`; con menos de 5 ítems el tramo dice «datos insuficientes» y no dibuja (P90 desde 10). La barra suma medianas y el total se mide ítem por ítem: la nota al pie lo dice. Rampa de un matiz en OKLab, nunca OKLCH. Sólo ítems cerrados (sesgo de supervivencia declarado). Cálculo en `lib/services/analytics-module/lead-time-shape.ts`. |
@@ -511,6 +511,7 @@ que ya usa el código, y que un gráfico nuevo debe reutilizar antes de inventar
 | `?regla=` | Regla de detección que originó un caso | Casos por regla de `/combustibles/revisar` |
 | `?cobertura=` | Banda de cobertura de stock | `StockCoverageStrip` (`ShareBar`) de `/bodega` |
 | `?mes=` (con `faena=`) | Una celda de un calendario de cumplimiento | `ComplianceCalendar` de `/prevencion/cgrd` (`hrefFor`, `clearHref`); la conciliación DTE usa `?periodo=YYYY-MM&vinculo=` (`dteListHref`) |
+| `?celda=P4xC2` | Una celda de la matriz de riesgo | `RiskMatrix` en `/prevencion/miper/[id]` (`cellParam`, `hrefWithoutMatrixFilter`); se combina con `?clasificacion=` |
 
 Reglas de URL, todas ya vigentes en los componentes de arriba:
 
@@ -544,7 +545,13 @@ Reglas de URL, todas ya vigentes en los componentes de arriba:
 - Las pruebas que leen el SVG ya terminado (alturas, formas, rótulos) corren con la preferencia
   «reducir movimiento» activa (`matchMedia` simulado): es el estado final al que llega la animación.
 - Los gráficos que no son de recharts (`RankedList`, `DebtAgingChart`, el medidor radial) animan con
-  `motion-safe:` en CSS y todavía no están alineados al tope de 200 ms.
+  `motion-safe:` en CSS y respetan el mismo tope: la duración sale de `CHART_ENTRY_MS`
+  (`lib/chart-motion.ts`, que `chart-interactions.tsx` re-exporta; vive aparte porque esa pieza es
+  `"use client"` y un componente de servidor no puede leer un valor desde allí) y va en línea
+  (`animationDuration`), ya que Tailwind no ve un número interpolado en una clase. Las filas de un
+  ranking y los tramos de la antigüedad entran juntos, sin escalonado; en el medidor las 41 marcas se
+  reparten el tope (cada una se enciende en la mitad y el resto va en el retardo), así que el barrido
+  completo no pasa de 200 ms.
 
 ### Responsive: bajo 360 px los gráficos densos pasan a lista
 

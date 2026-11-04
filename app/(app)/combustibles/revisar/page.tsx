@@ -26,7 +26,7 @@ import {
   ANOMALY_STATUS_LABELS,
   isOpenAnomalyCaseStatus,
 } from "@/lib/combustibles/anomaly-labels"
-import { anomalyWeekTable, summarizeAnomalyWeeks, type AnomalyWeek } from "@/lib/combustibles/inbox/case-weeks"
+import { anomalyWeekTable, summarizeAnomalyWeeks, type AnomalyRuleChange, type AnomalyWeek } from "@/lib/combustibles/inbox/case-weeks"
 import { caseRuleLabel, parseCaseRuleParam, summarizeCaseRules } from "@/lib/combustibles/inbox/case-rules"
 import {
   FUEL_INBOX_DECISION_LABELS,
@@ -36,6 +36,7 @@ import {
 } from "@/lib/combustibles/inbox/detail-types"
 import {
   countFuelInboxDecided,
+  getFuelAnomalyRuleChanges,
   getFuelInbox,
   getFuelInboxCaseRules,
   getFuelInboxCaseWeeks,
@@ -63,6 +64,7 @@ const EMPTY_SUMMARY: FuelInboxSummary = { total: null, byKind: { carga: null, ca
 const NO_COUNTS: Record<FuelInboxKind, number | null> = { carga: null, caso: null, patente: null, pedido: null }
 const NO_CASE_RULES: FuelInboxCaseRule[] = []
 const NO_CASE_WEEKS: AnomalyWeek[] = []
+const NO_RULE_CHANGES: AnomalyRuleChange[] = []
 const SEVERITIES = ["low", "medium", "high", "critical"] as const
 /** `?ref=<fuente>:<id>` (de «Abrir el caso relacionado» en Cargas) → tipo de entidad que referencian los casos. */
 const SOURCE_TO_REFERENCE_TYPE: Record<string, string> = {
@@ -125,7 +127,7 @@ export default async function PorRevisarPage({ searchParams }: { searchParams: P
 
   // Los gráficos de casos sólo se piden donde pueden mostrarse: pendientes, en «Todo» o en «Casos».
   const showCaseCharts = view === "pendientes" && (kind === undefined || kind === "caso")
-  const [inbox, summary, decidedCounts, worksites, lastRun, detail, caseRules, caseWeeks] = await Promise.all([
+  const [inbox, summary, decidedCounts, worksites, lastRun, detail, caseRules, caseWeeks, ruleChanges] = await Promise.all([
     tracked(getFuelInbox(session, period, filters), EMPTY_PAGE, "la lista"),
     tracked(summarizeFuelInbox(session, period, { worksiteId }), EMPTY_SUMMARY, "los conteos"),
     view === "decididas" ? tracked(countFuelInboxDecided(session, period, filters), NO_COUNTS, "los conteos de lo decidido") : Promise.resolve(null),
@@ -134,6 +136,8 @@ export default async function PorRevisarPage({ searchParams }: { searchParams: P
     itemKey ? tracked(getFuelInboxItem(session, itemKey), null, "el detalle") : Promise.resolve(null),
     showCaseCharts ? tracked(getFuelInboxCaseRules(session, period, { worksiteId }), NO_CASE_RULES, "los casos por regla") : Promise.resolve(NO_CASE_RULES),
     showCaseCharts ? tracked(getFuelInboxCaseWeeks(session, { worksiteId }), NO_CASE_WEEKS, "los casos por semana") : Promise.resolve(NO_CASE_WEEKS),
+    // Las fechas en que cambió una regla de detección, para marcarlas en la serie semanal (P-6).
+    showCaseCharts ? tracked(getFuelAnomalyRuleChanges(), NO_RULE_CHANGES, "los cambios de reglas") : Promise.resolve(NO_RULE_CHANGES),
   ])
 
   const today = todayInChile()
@@ -196,7 +200,7 @@ export default async function PorRevisarPage({ searchParams }: { searchParams: P
   // Una consulta caída no se dibuja como un vacío: el banner ya dijo que falló.
   const rulesFailed = degraded.includes("los casos por regla")
   const weeksFailed = degraded.includes("los casos por semana")
-  const caseWeeksSummary = weeksFailed ? null : summarizeAnomalyWeeks(caseWeeks)
+  const caseWeeksSummary = weeksFailed ? null : summarizeAnomalyWeeks(caseWeeks, ruleChanges)
   const caseRulesSummary = rulesFailed ? null : summarizeCaseRules(caseRules)
   const showCaseSection = showCaseCharts && (caseRulesSummary !== null || caseWeeksSummary !== null)
 
@@ -208,7 +212,7 @@ export default async function PorRevisarPage({ searchParams }: { searchParams: P
         breadcrumb={<FuelBreadcrumbs items={[{ label: "Por revisar" }]} />}
         actions={<FuelHeaderActions period={period} />}
       />
-      <DegradedDataBanner degraded={degraded} total={8} />
+      <DegradedDataBanner degraded={degraded} total={9} />
       <SectionNav items={revisarNavItems({ pendientes: summary.total })} activeKey={view} ariaLabel="Por revisar" carryParams={FUEL_CARRY_PARAMS} />
 
       <p className="mb-4 text-sm font-medium text-[var(--color-text)]">{answer}</p>
@@ -270,14 +274,14 @@ export default async function PorRevisarPage({ searchParams }: { searchParams: P
                 bare
                 title="Casos detectados por semana"
                 summary={caseWeeksSummary}
-                data={caseWeeksSummary ? anomalyWeekTable(caseWeeks) : undefined}
+                data={caseWeeksSummary ? { ...anomalyWeekTable(caseWeeks, ruleChanges), ...(can(session, "combustibles:export") ? { excel: { permission: "combustibles:export" as const } } : {}) } : undefined}
                 empty={caseWeeksSummary ? null : {
                   label: `Ningún caso en las últimas ${caseWeeks.length} semanas`,
                   hint: "Cada semana que la revisión automática detecte casos aparecerá aquí, por gravedad.",
                   ...(canManageRules ? { ctaLabel: "Cómo se detecta cada cosa", ctaHref: FUEL_PATHS.ajustesReglas } : {}),
                 }}
               >
-                <CaseWeeksChart weeks={caseWeeks} />
+                <CaseWeeksChart weeks={caseWeeks} ruleChanges={ruleChanges} />
               </ChartSection>
             )}
             {rulesFailed ? null : (

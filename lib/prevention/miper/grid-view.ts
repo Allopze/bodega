@@ -1,10 +1,13 @@
 import type { RiskClassification } from "./methodology"
 import { normalizeMiperName } from "./names"
+import type { MatrixCellRef } from "./risk-matrix"
 import type { ControlledStatus, MiperEntrySnapshot } from "./snapshot"
 
 export type GridFilters = {
   search: string
   classifications: RiskClassification[]
+  /** Una celda exacta de la matriz P × C (CHART-007): la clasificación sola abarca varias celdas con la misma magnitud. */
+  cell: MatrixCellRef | null
   controlled: ControlledStatus | "all"
   factorId: string
   onlyObserved: boolean
@@ -14,10 +17,10 @@ export type GridFilters = {
   /** Filas sin datos que bloquean el envío a revisión. */
   onlyComplete: boolean
 }
-export const EMPTY_FILTERS: GridFilters = { search: "", classifications: [], controlled: "all", factorId: "all", onlyObserved: false, onlyModified: false, onlyIncomplete: false, onlyComplete: false }
+export const EMPTY_FILTERS: GridFilters = { search: "", classifications: [], cell: null, controlled: "all", factorId: "all", onlyObserved: false, onlyModified: false, onlyIncomplete: false, onlyComplete: false }
 
 export function activeFilterCount(filters: GridFilters) {
-  return (filters.search ? 1 : 0) + (filters.classifications.length ? 1 : 0) + (filters.controlled !== "all" ? 1 : 0)
+  return (filters.search ? 1 : 0) + (filters.classifications.length ? 1 : 0) + (filters.cell ? 1 : 0) + (filters.controlled !== "all" ? 1 : 0)
     + (filters.factorId !== "all" ? 1 : 0) + (filters.onlyObserved ? 1 : 0) + (filters.onlyModified ? 1 : 0) + (filters.onlyIncomplete ? 1 : 0) + (filters.onlyComplete ? 1 : 0)
 }
 
@@ -29,6 +32,7 @@ export function filterRows(rows: MiperEntrySnapshot[], filters: GridFilters, ctx
       if (!haystack.includes(needle)) return false
     }
     if (filters.classifications.length && (!row.classification || !filters.classifications.includes(row.classification))) return false
+    if (filters.cell && (row.probability !== filters.cell.probability || row.consequence !== filters.cell.consequence)) return false
     if (filters.controlled !== "all" && row.controlledStatus !== filters.controlled) return false
     if (filters.factorId !== "all" && row.riskFactorId !== filters.factorId) return false
     if (filters.onlyObserved && !ctx.observed.has(row.id)) return false

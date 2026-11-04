@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { EMPTY_FILTERS, filterRows } from "./grid-view"
+import { activeFilterCount, EMPTY_FILTERS, filterRows } from "./grid-view"
 import type { MiperEntrySnapshot } from "./snapshot"
 
 const row = (id: string, over: Partial<MiperEntrySnapshot>): MiperEntrySnapshot => ({
@@ -25,6 +25,23 @@ describe("vista de la grilla", () => {
     expect(filterRows(rows, { ...EMPTY_FILTERS, onlyObserved: true }, ctx).map((r) => r.id)).toEqual(["c"])
     expect(filterRows(rows, { ...EMPTY_FILTERS, onlyModified: true }, ctx).map((r) => r.id)).toEqual(["b"])
     expect(filterRows(rows, { ...EMPTY_FILTERS, onlyIncomplete: true }, ctx).map((r) => r.id)).toEqual(["a", "c"])
+  })
+  it("la celda P × C filtra por la pareja exacta, no por la clasificación que comparten", () => {
+    // P4 × C2 y P2 × C4 valen 8 («Importante») y son celdas distintas.
+    const cells = [
+      row("x", { probability: 4, consequence: 2, classification: "important" }),
+      row("y", { probability: 2, consequence: 4, classification: "important" }),
+      row("z", { probability: 4, consequence: 2, classification: "important" }),
+      row("w", { probability: null, consequence: 2 }),
+    ]
+    expect(filterRows(cells, { ...EMPTY_FILTERS, cell: { probability: 4, consequence: 2 } }, ctx).map((r) => r.id)).toEqual(["x", "z"])
+    expect(filterRows(cells, { ...EMPTY_FILTERS, classifications: ["important"] }, ctx).map((r) => r.id)).toEqual(["x", "y", "z"])
+    // Se combinan (Y): la celda dentro de otra clasificación no deja nada.
+    expect(filterRows(cells, { ...EMPTY_FILTERS, cell: { probability: 4, consequence: 2 }, classifications: ["intolerable"] }, ctx)).toEqual([])
+  })
+  it("la celda cuenta como un filtro activo", () => {
+    expect(activeFilterCount(EMPTY_FILTERS)).toBe(0)
+    expect(activeFilterCount({ ...EMPTY_FILTERS, cell: { probability: 1, consequence: 1 } })).toBe(1)
   })
   it("onlyComplete deja sólo los riesgos sin errores", () => {
     const rows = [row("a", { id: "a" }), row("b", { id: "b" })]

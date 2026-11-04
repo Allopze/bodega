@@ -143,6 +143,8 @@ describe("getFleetOverview · lecturas de medidor desde fuel_meter_readings", ()
     const row = rowOf(await getFleetOverview(session()), id)
 
     expect(row).toMatchObject({ lastOdometerReading: 11_000, lastHourMeterReading: null, kmDriven: 1_000, hoursRun: null, meterSeriesIncomplete: false })
+    // P-9: la fecha es la de ESA lectura (la última de Copec), no la del GPS más reciente ni la de la ventana.
+    expect(row.lastReadingAt).toBe(at(6))
   })
 
   it("un equipo con horómetro: horas corridas y última lectura en horas; el odómetro queda nulo", async () => {
@@ -156,6 +158,20 @@ describe("getFleetOverview · lecturas de medidor desde fuel_meter_readings", ()
     const row = rowOf(await getFleetOverview(session()), id)
 
     expect(row).toMatchObject({ lastHourMeterReading: 120, lastOdometerReading: null, hoursRun: 20, kmDriven: null, meterSeriesIncomplete: false })
+    expect(row.lastReadingAt).toBe(at(4))
+  })
+
+  it("con odómetro y horómetro la fecha es la de la lectura que «Km/Hr» muestra (el odómetro), no la más reciente de las dos", async () => {
+    const id = await addVehicle()
+    await addReadings(id, [
+      { value: 5_000, at: at(2) },
+      { value: 100, at: at(9), meterType: "hour_meter" },
+    ])
+
+    const row = rowOf(await getFleetOverview(session()), id)
+
+    expect(row).toMatchObject({ lastOdometerReading: 5_000, lastHourMeterReading: 100 })
+    expect(row.lastReadingAt).toBe(at(2))
   })
 
   it("el horómetro respeta las 24 horas por día de la regla: más que eso no se suma", async () => {
@@ -187,6 +203,7 @@ describe("getFleetOverview · lecturas de medidor desde fuel_meter_readings", ()
     const row = rowOf(await getFleetOverview(session()), id)
 
     expect(row).toMatchObject({ lastOdometerReading: null, kmDriven: null, meterSeriesIncomplete: false })
+    expect(row.lastReadingAt).toBeNull()
   })
 })
 
@@ -304,6 +321,8 @@ describe("getFleetOverview · permisos y alcance de las lecturas", () => {
     const row = rowOf(await getFleetOverview(session({ permissions: ["flota:view"] })), id)
 
     expect(row).toMatchObject({ lastOdometerReading: null, lastHourMeterReading: null, kmDriven: null, hoursRun: null, meterSeriesIncomplete: null })
+    // La fecha sale de la misma lectura: sin la capacidad tampoco se filtra.
+    expect(row.lastReadingAt).toBeNull()
   })
 
   it("sin view_costs las lecturas siguen visibles: no son un monto", async () => {

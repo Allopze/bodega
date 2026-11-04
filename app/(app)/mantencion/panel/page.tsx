@@ -29,6 +29,14 @@ export default async function MantencionPanelPage({ searchParams }: { searchPara
   // Una faena de la URL que no está en el alcance del usuario no se ofrece ni se muestra elegida.
   const worksiteId = worksites.some((item) => item.id === filters.worksiteId) ? (filters.worksiteId ?? "") : ""
   const exportParams: Record<string, string> = { periodo: filters.period, ...(worksiteId ? { faena: worksiteId } : {}) }
+  const canExport = can(session, "mant:export")
+  // Un libro sin la pantalla no dice qué faena ni qué ventana miraba: viaja en «Metadatos».
+  const weeklyExcel = canExport
+    ? {
+        permission: "mant:export" as const,
+        notes: [`Últimas ${data.weeks.length} semanas · ${worksiteId ? (worksites.find((item) => item.id === worksiteId)?.name ?? "faena elegida") : "todas las faenas del alcance"}.`],
+      }
+    : undefined
 
   return (
     <PageContainer>
@@ -36,7 +44,7 @@ export default async function MantencionPanelPage({ searchParams }: { searchPara
         title="Panel de mantención"
         description="Qué equipos necesitan mantención, qué está en taller y cuánto se ha registrado."
         breadcrumb={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Mantención" }, { label: "Panel" }]}
-        actions={can(session, "mant:export") ? <PanelExportButton params={exportParams} /> : undefined}
+        actions={canExport ? <PanelExportButton params={exportParams} /> : undefined}
       />
 
       <PanelFiltersBar period={filters.period} worksiteId={worksiteId} worksites={worksites} />
@@ -58,7 +66,7 @@ export default async function MantencionPanelPage({ searchParams }: { searchPara
           <FleetCard data={data} />
         </div>
         <div className="flex min-w-0 flex-col gap-4">
-          <WeeklyCard data={data} />
+          <WeeklyCard data={data} excel={weeklyExcel} />
           <HoursCard data={data} />
           <NotDoneCard data={data} />
         </div>

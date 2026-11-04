@@ -8,6 +8,7 @@ import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import { accountableFuelLoadsWhere } from "@/lib/combustibles/load-status"
+import type { TankDailyFlow } from "@/lib/combustibles/tank-level"
 
 /** ponytail: Umbral máximo de diferencia porcentual considerado "normal" en el
  *  semáforo del ciclo. Pendiente de hacer configurable por faena (sección 12). */
@@ -264,6 +265,68 @@ export async function getFuelStorageBalances(session: Session, filters: { worksi
       balanceLiters: opening.netLiters + period.netLiters,
     }
   })
+}
+
+/**
+ * Lo que entró y salió de cada estanque **por día civil chileno** dentro del período: la materia
+ * prima de la curva de nivel (`lib/combustibles/tank-level.ts`, CHART-020).
+ *
+ * Cuenta exactamente lo mismo que `getFuelStorageBalances` (por eso la curva termina en el «Nivel»
+ * de la tabla): entra lo recibido y lo traspasado hacia el estanque; sale lo traspasado desde él,
+ * las entregas desde el estanque del ledger y lo que la PWA repartió desde su punto de carga, sin
+ * las cargas anuladas.
+ *
+ * `balances` son los que la pantalla ya cargó con sus filtros de producto y faena; de ahí salen los
+ * estanques. **El alcance se vuelve a aplicar aquí**: una id que no está en las faenas de la sesión
+ * no devuelve nada, venga de quien venga, así que esta consulta no puede ensanchar el acceso.
+ */
+export async function getFuelStorageDailyFlows(
+  session: Session,
+  balances: ReadonlyArray<Pick<FuelStorageBalance, "storageLocationId">>,
+  range: { from: string; to: string },
+): Promise<TankDailyFlow[]> {
+  const requested = balances.map((balance) => balance.storageLocationId)
+  if (requested.length === 0) return []
+  const visible = await db
+    .select({ id: fuelStorageLocations.id })
+    .from(fuelStorageLocations)
+    .where(and(inArray(fuelStorageLocations.id, requested), worksiteScopeSql(session, fuelStorageLocations.worksiteId)))
+  const ids = visible.map((row) => row.id)
+  if (ids.length === 0) return []
+
+  const chileDay = (column: AnyPgColumn) => sql<string>`to_char((${column} at time zone 'America/Santiago')::date, 'YYYY-MM-DD')`
+  const movementDay = chileDay(fuelCycleMovements.occurredAt)
+  const submissionDay = chileDay(fuelTaeSubmissions.loadedAt)
+  const movementWindow = chileDayRange(fuelCycleMovements.occurredAt, range.from, range.to)
+
+  const [inbound, outboundMovements, outboundSubmissions] = await Promise.all([
+    db.select({ locationId: fuelCycleMovements.targetLocationId, day: movementDay, liters: sql<number>`coalesce(sum(${fuelCycleMovements.quantity}), 0)` })
+      .from(fuelCycleMovements)
+      .where(and(movementWindow, inArray(fuelCycleMovements.targetLocationId, ids), inArray(fuelCycleMovements.eventType, ["received", "transfer"])))
+      .groupBy(fuelCycleMovements.targetLocationId, movementDay),
+    db.select({ locationId: fuelCycleMovements.sourceLocationId, day: movementDay, liters: sql<number>`coalesce(sum(${fuelCycleMovements.quantity}), 0)` })
+      .from(fuelCycleMovements)
+      .where(and(movementWindow, inArray(fuelCycleMovements.sourceLocationId, ids), inArray(fuelCycleMovements.eventType, ["transfer", "tank_delivery"])))
+      .groupBy(fuelCycleMovements.sourceLocationId, movementDay),
+    db.select({ locationId: fuelTaeLoadingPoints.storageLocationId, day: submissionDay, liters: sql<number>`coalesce(sum(${fuelTaeSubmissions.liters}), 0)` })
+      .from(fuelTaeSubmissions)
+      .innerJoin(fuelTaeLoadingPoints, eq(fuelTaeSubmissions.loadingPointId, fuelTaeLoadingPoints.id))
+      .where(and(chileDayRange(fuelTaeSubmissions.loadedAt, range.from, range.to), ne(fuelTaeSubmissions.status, "voided"), inArray(fuelTaeLoadingPoints.storageLocationId, ids)))
+      .groupBy(fuelTaeLoadingPoints.storageLocationId, submissionDay),
+  ])
+
+  const byKey = new Map<string, TankDailyFlow>()
+  const add = (locationId: string | null, day: string, liters: number, direction: "inLiters" | "outLiters") => {
+    if (!locationId) return
+    const key = `${locationId}|${day}`
+    const flow = byKey.get(key) ?? { storageLocationId: locationId, day, inLiters: 0, outLiters: 0 }
+    flow[direction] += Number(liters)
+    byKey.set(key, flow)
+  }
+  for (const row of inbound) add(row.locationId, row.day, row.liters, "inLiters")
+  for (const row of outboundMovements) add(row.locationId, row.day, row.liters, "outLiters")
+  for (const row of outboundSubmissions) add(row.locationId, row.day, row.liters, "outLiters")
+  return [...byKey.values()].sort((a, b) => a.day.localeCompare(b.day) || a.storageLocationId.localeCompare(b.storageLocationId))
 }
 
 export type CycleStage = "received" | "delivered"

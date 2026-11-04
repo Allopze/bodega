@@ -167,7 +167,10 @@ export async function InspectionsScreen({ searchParams }: {
           criticalFindings: row.criticalFindings,
         }))}
         summary={summary}
-        trend={<InspectionTrendSection points={shapeInspectionTrend(trendRows, today)} />}
+        trend={<InspectionTrendSection
+          points={shapeInspectionTrend(trendRows, today)}
+          excel={session.user.permissions.includes("prevention:inspections:export") ? { permission: "prevention:inspections:export" } : undefined}
+        />}
         page={page}
         pageSize={INSPECTION_PAGE_SIZE}
         overdueProgramCount={overdueProgramCount}

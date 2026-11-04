@@ -10,9 +10,13 @@ import {
   anomalyWeekStarts,
   anomalyWeekTable,
   chileWeekStart,
+  ruleChangesByWeek,
+  ruleChangesText,
+  shapeAnomalyRuleChanges,
   shapeAnomalyWeeks,
   summarizeAnomalyWeeks,
   visibleSeverities,
+  type AnomalyRuleChangeRow,
 } from "./case-weeks"
 
 // Martes 3 de noviembre de 2026, mediodía en Chile (UTC-3): la semana en curso parte el lunes 2.
@@ -177,5 +181,128 @@ describe("anomalyWeekTable", () => {
         ["2 al 8 nov (en curso)", 1, 0, 1],
       ],
     })
+  })
+})
+
+// P-6: las semanas en que una regla de detección se creó o se modificó.
+const change = (patch: Partial<AnomalyRuleChangeRow> & Pick<AnomalyRuleChangeRow, "day" | "weekStart" | "epoch">): AnomalyRuleChangeRow => ({
+  ruleCode: "sello_repetido", ruleName: "Sello repetido", kind: "changed", source: "audit", ...patch,
+})
+
+describe("shapeAnomalyRuleChanges", () => {
+  it("deja los cambios de la ventana, de más antiguo a más reciente, y descarta los de fuera", () => {
+    const changes = shapeAnomalyRuleChanges(
+      [
+        change({ day: "2026-11-03", weekStart: "2026-11-02", epoch: 300 }),
+        change({ day: "2026-10-28", weekStart: "2026-10-26", epoch: 200, kind: "created", source: "rule", ruleCode: "km_regresivo", ruleName: null }),
+        change({ day: "2026-09-01", weekStart: "2026-08-31", epoch: 100 }),
+        change({ day: "2026-11-09", weekStart: "2026-11-09", epoch: 400 }),
+      ],
+      { now: NOW, weeks: 3 },
+    )
+    expect(changes).toEqual([
+      { ruleCode: "km_regresivo", ruleName: null, kind: "created", day: "2026-10-28", weekStart: "2026-10-26" },
+      { ruleCode: "sello_repetido", ruleName: "Sello repetido", kind: "changed", day: "2026-11-03", weekStart: "2026-11-02" },
+    ])
+  })
+
+  it("un cambio que la bitácora y `updated_at` cuentan a la vez se cuenta una sola vez", () => {
+    const changes = shapeAnomalyRuleChanges(
+      [
+        change({ day: "2026-10-28", weekStart: "2026-10-26", epoch: 1_000, source: "audit" }),
+        // La acción fija `updated_at` unos milisegundos antes de que la bitácora escriba su fila.
+        change({ day: "2026-10-28", weekStart: "2026-10-26", epoch: 999.4, source: "rule" }),
+      ],
+      { now: NOW, weeks: 3 },
+    )
+    expect(changes).toHaveLength(1)
+  })
+
+  it("el `updated_at` que ninguna entrada de la bitácora explica sí cuenta (guardar el umbral de rendimiento no audita la regla)", () => {
+    const changes = shapeAnomalyRuleChanges(
+      [
+        change({ day: "2026-10-20", weekStart: "2026-10-19", epoch: 1_000, source: "audit" }),
+        change({ day: "2026-10-29", weekStart: "2026-10-26", epoch: 900_000, source: "rule" }),
+      ],
+      { now: NOW, weeks: 3 },
+    )
+    expect(changes.map((item) => item.day)).toEqual(["2026-10-20", "2026-10-29"])
+  })
+
+  it("el mismo instante en otra regla no es el mismo cambio", () => {
+    const changes = shapeAnomalyRuleChanges(
+      [
+        change({ day: "2026-10-28", weekStart: "2026-10-26", epoch: 1_000, source: "audit" }),
+        change({ day: "2026-10-28", weekStart: "2026-10-26", epoch: 1_000, source: "rule", ruleCode: "otra" }),
+      ],
+      { now: NOW, weeks: 3 },
+    )
+    expect(changes).toHaveLength(2)
+  })
+
+  it("la creación de una regla no se pierde porque la bitácora tenga una edición cerca", () => {
+    const changes = shapeAnomalyRuleChanges(
+      [
+        change({ day: "2026-10-28", weekStart: "2026-10-26", epoch: 1_000, source: "rule", kind: "created" }),
+        change({ day: "2026-10-28", weekStart: "2026-10-26", epoch: 1_010, source: "audit" }),
+      ],
+      { now: NOW, weeks: 3 },
+    )
+    expect(changes.map((item) => item.kind)).toEqual(["created", "changed"])
+  })
+})
+
+describe("ruleChangesText", () => {
+  const base = { ruleCode: "sello_repetido", ruleName: "Sello repetido", weekStart: "2026-10-26" }
+
+  it("hasta tres cambios nombra cada regla con su verbo y su día; sin ficha usa el código", () => {
+    expect(ruleChangesText([{ ...base, kind: "created", day: "2026-10-28" }])).toBe("«Sello repetido» creada el 28 oct")
+    expect(ruleChangesText([
+      { ...base, kind: "created", day: "2026-10-28" },
+      { ...base, ruleCode: "km", ruleName: null, kind: "changed", day: "2026-10-30" },
+    ])).toBe("«Sello repetido» creada el 28 oct; «km» modificada el 30 oct")
+  })
+
+  it("con más de tres no los enumera: una instalación nueva crea de golpe todo el catálogo", () => {
+    const created = (day: string, code: string) => ({ ...base, ruleCode: code, ruleName: code, kind: "created" as const, day })
+    expect(ruleChangesText([created("2026-10-28", "a"), created("2026-10-28", "b"), created("2026-10-28", "c"), created("2026-10-28", "d")])).toBe("4 reglas creadas (28 oct)")
+    expect(ruleChangesText([
+      created("2026-10-27", "a"), created("2026-10-27", "b"), created("2026-10-28", "c"),
+      { ...base, kind: "changed", day: "2026-10-30" },
+    ])).toBe("3 reglas creadas y 1 regla modificada (27 oct al 30 oct)")
+  })
+
+  it("sin cambios no escribe nada", () => {
+    expect(ruleChangesText([])).toBe("")
+  })
+})
+
+describe("la serie con cambios de reglas", () => {
+  const weeks = shapeAnomalyWeeks(
+    [
+      { weekStart: "2026-10-12", severity: "high", count: 2 },
+      { weekStart: "2026-10-19", severity: "high", count: 9 },
+      { weekStart: "2026-11-02", severity: "medium", count: 3 },
+    ],
+    { now: NOW, weeks: 4 },
+  )
+  const changes = shapeAnomalyRuleChanges([change({ day: "2026-10-20", weekStart: "2026-10-19", epoch: 1, kind: "created", source: "rule" })], { now: NOW, weeks: 4 })
+
+  it("«Ver datos» suma la columna «Cambios de reglas» sólo cuando hay alguno, con la alternativa en texto de cada línea", () => {
+    expect(anomalyWeekTable(weeks).headers).toEqual(["Semana", "Media", "Alta", "Total"])
+    const table = anomalyWeekTable(weeks, changes)
+    expect(table.headers).toEqual(["Semana", "Media", "Alta", "Total", "Cambios de reglas"])
+    expect(table.rows.map((row) => row.at(-1))).toEqual(["—", "«Sello repetido» creada el 20 oct", "—", "—"])
+  })
+
+  it("si la semana más cargada coincide con un cambio de regla, la frase lo dice; si no, no", () => {
+    expect(summarizeAnomalyWeeks(weeks, changes)).toContain("La semana con más fue la del 19 al 25 oct (9). En esa semana también cambió una regla de detección: parte de la cifra puede deberse a eso.")
+    const elsewhere = shapeAnomalyRuleChanges([change({ day: "2026-10-14", weekStart: "2026-10-12", epoch: 1 })], { now: NOW, weeks: 4 })
+    expect(summarizeAnomalyWeeks(weeks, elsewhere)).not.toContain("cambió una regla")
+    expect(summarizeAnomalyWeeks(weeks)).not.toContain("cambió una regla")
+  })
+
+  it("agrupa los cambios por el lunes de su semana", () => {
+    expect([...ruleChangesByWeek(changes).keys()]).toEqual(["2026-10-19"])
   })
 })

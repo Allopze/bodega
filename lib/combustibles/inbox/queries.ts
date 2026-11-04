@@ -4,6 +4,7 @@ import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, like, lt, lte,
 import { alias } from "drizzle-orm/pg-core"
 import { db } from "@/db"
 import {
+  auditLog,
   fuelAnomalyCases,
   fuelAnomalyExecutions,
   fuelAnomalyRules,
@@ -35,7 +36,15 @@ import { logger } from "@/lib/logger"
 import { getUserIdsWithPermissionForWorksite } from "@/lib/services/notification-targeting"
 import { formatQty } from "@/lib/utils"
 import { decisionKindsFor, type FuelInboxItem, type FuelInboxItemExtras, type FuelInboxQueryFilters } from "./detail-types"
-import { ANOMALY_WEEKS_DEFAULT, anomalyWeekStarts, shapeAnomalyWeeks, type AnomalyWeek } from "./case-weeks"
+import {
+  ANOMALY_WEEKS_DEFAULT,
+  anomalyWeekStarts,
+  shapeAnomalyRuleChanges,
+  shapeAnomalyWeeks,
+  type AnomalyRuleChange,
+  type AnomalyRuleChangeRow,
+  type AnomalyWeek,
+} from "./case-weeks"
 import { flagDatum, flagReasonsLabel, flagReasonTitle, knownFlagReasons, primaryFlagReason } from "./reasons"
 import {
   FUEL_INBOX_KINDS,
@@ -848,6 +857,64 @@ export async function getFuelInboxCaseWeeks(
     ))
     .groupBy(weekStart, fuelAnomalyCases.severity)
   return shapeAnomalyWeeks(rows, { now, weeks })
+}
+
+/**
+ * Cuándo se creó o se modificó una regla de detección dentro de las últimas `weeks` semanas, para
+ * marcarlo en la serie de casos por semana (CHART-023, P-6): un salto de casos justo cuando cambió
+ * una regla es el instrumento, no la operación.
+ *
+ * Las reglas son del catálogo y **no tienen faena**, así que no hay alcance que aplicar: es el mismo
+ * nombre de regla que ya muestra «Pendientes por regla» a cualquiera que vea la bandeja, y no se
+ * entrega quién la cambió. `fuel_anomaly_rules` no tiene versionado: ver `AnomalyRuleChange` para las
+ * tres fuentes (`created_at`, la bitácora y `updated_at`) y cómo se evita contar dos veces un cambio.
+ */
+export async function getFuelAnomalyRuleChanges(options: { weeks?: number; now?: Date } = {}): Promise<AnomalyRuleChange[]> {
+  const weeks = options.weeks ?? ANOMALY_WEEKS_DEFAULT
+  const now = options.now ?? new Date()
+  const firstWeek = anomalyWeekStarts(now, weeks)[0]!
+  const since = sql`(${firstWeek}::timestamp at time zone 'America/Santiago')`
+  const dayOf = (column: AnyColumn) => sql<string>`to_char((${column} at time zone 'America/Santiago')::date, 'YYYY-MM-DD')`
+  const weekOf = (column: AnyColumn) => sql<string>`to_char(date_trunc('week', ${column} at time zone 'America/Santiago'), 'YYYY-MM-DD')`
+  const epochOf = (column: AnyColumn) => sql<number>`extract(epoch from ${column})::float8`
+
+  const [rules, audited] = await Promise.all([
+    db.select({
+      ruleCode: fuelAnomalyRules.code,
+      ruleName: fuelAnomalyRules.name,
+      createdDay: dayOf(fuelAnomalyRules.createdAt),
+      createdWeek: weekOf(fuelAnomalyRules.createdAt),
+      createdEpoch: epochOf(fuelAnomalyRules.createdAt),
+      updatedDay: dayOf(fuelAnomalyRules.updatedAt),
+      updatedWeek: weekOf(fuelAnomalyRules.updatedAt),
+      updatedEpoch: epochOf(fuelAnomalyRules.updatedAt),
+    })
+      .from(fuelAnomalyRules)
+      .where(sql`${fuelAnomalyRules.createdAt} >= ${since} or ${fuelAnomalyRules.updatedAt} >= ${since}`),
+    db.select({
+      ruleCode: sql<string>`coalesce(${auditLog.entityCode}, ${fuelAnomalyRules.code}, ${auditLog.entityId})`,
+      ruleName: fuelAnomalyRules.name,
+      day: dayOf(auditLog.createdAt),
+      week: weekOf(auditLog.createdAt),
+      epoch: epochOf(auditLog.createdAt),
+    })
+      .from(auditLog)
+      .leftJoin(fuelAnomalyRules, eq(fuelAnomalyRules.id, auditLog.entityId))
+      .where(and(eq(auditLog.entityType, "fuel_anomaly_rule"), eq(auditLog.action, "update"), gte(auditLog.createdAt, since))),
+  ])
+
+  const rows: AnomalyRuleChangeRow[] = []
+  for (const rule of rules) {
+    rows.push({ ruleCode: rule.ruleCode, ruleName: rule.ruleName, kind: "created", source: "rule", day: rule.createdDay, weekStart: rule.createdWeek, epoch: Number(rule.createdEpoch) })
+    // `updated_at` nace igual a `created_at`; sólo una diferencia real es un cambio.
+    if (Number(rule.updatedEpoch) - Number(rule.createdEpoch) > 1) {
+      rows.push({ ruleCode: rule.ruleCode, ruleName: rule.ruleName, kind: "changed", source: "rule", day: rule.updatedDay, weekStart: rule.updatedWeek, epoch: Number(rule.updatedEpoch) })
+    }
+  }
+  for (const entry of audited) {
+    rows.push({ ruleCode: entry.ruleCode, ruleName: entry.ruleName, kind: "changed", source: "audit", day: entry.day, weekStart: entry.week, epoch: Number(entry.epoch) })
+  }
+  return shapeAnomalyRuleChanges(rows, { now, weeks })
 }
 
 /** Conteos de «Decididas» por tipo, para los segmentos de esa vista (misma ventana y filtros que `getFuelInbox`). */

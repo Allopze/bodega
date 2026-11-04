@@ -16,6 +16,7 @@ import {
   CLASSIFICATION_LABEL, classify, criticalityOf, isScaleValue, RISK_CLASSIFICATIONS,
   type MiperScaleValue, type RiskClassification,
 } from "./methodology"
+import { cleanMiperName, normalizeMiperName } from "./names"
 
 /** De arriba abajo: la probabilidad más alta primero, como se lee un mapa de riesgos. */
 export const RISK_MATRIX_PROBABILITIES = [4, 2, 1] as const satisfies readonly MiperScaleValue[]
@@ -25,6 +26,12 @@ export const RISK_MATRIX_CONSEQUENCES = [1, 2, 4] as const satisfies readonly Mi
 /** Palabra de cada valor de la escala (probabilidad y consecuencia usan las mismas tres: baja, media, alta). */
 export const SCALE_WORD: Record<MiperScaleValue, string> = { 1: "Baja", 2: "Media", 4: "Alta" }
 
+/** Cuántos peligros distintos nombra el tooltip de una celda (CHART-007, P-3). */
+export const TOP_HAZARDS_PER_CELL = 3
+
+/** Un peligro de una celda y en cuántos de sus riesgos aparece. */
+export type HazardCount = { label: string; count: number }
+
 export type RiskMatrixCell = {
   probability: MiperScaleValue
   consequence: MiperScaleValue
@@ -32,6 +39,10 @@ export type RiskMatrixCell = {
   magnitude: number
   classification: RiskClassification
   count: number
+  /** Los {@link TOP_HAZARDS_PER_CELL} peligros más frecuentes de la celda: más repetido primero, con empate por nombre. */
+  topHazards: HazardCount[]
+  /** Peligros distintos de la celda que no caben en `topHazards`. */
+  moreHazards: number
 }
 
 export type RiskMatrixData = {
@@ -51,6 +62,20 @@ export type RiskMatrixData = {
   tied: number
 }
 
+/** Una celda de la grilla, por sus dos coordenadas: lo que el filtro `?celda=` lleva en la URL. */
+export type MatrixCellRef = { probability: MiperScaleValue; consequence: MiperScaleValue }
+
+/** El valor de `?celda=`: «P4xC2». Una sola clave para una sola dimensión (DESIGN.md § Drill-down). */
+export const cellParam = (cell: MatrixCellRef) => `P${cell.probability}xC${cell.consequence}`
+
+/** Lee `?celda=`; lo que no es una celda de la escala 1-2-4 (a mano en la URL) no filtra. */
+export function parseCellParam(value: string | null | undefined): MatrixCellRef | null {
+  const match = /^P(\d+)xC(\d+)$/i.exec((value ?? "").trim())
+  if (!match) return null
+  const probability = Number(match[1]), consequence = Number(match[2])
+  return isScaleValue(probability) && isScaleValue(consequence) ? { probability, consequence } : null
+}
+
 /** «P4 × C2». La abreviatura lleva su significado completo en el `title` del componente. */
 export const cellName = (cell: Pick<RiskMatrixCell, "probability" | "consequence">) => `P${cell.probability} × C${cell.consequence}`
 
@@ -58,14 +83,44 @@ export const cellName = (cell: Pick<RiskMatrixCell, "probability" | "consequence
 export const cellDescription = (cell: Pick<RiskMatrixCell, "probability" | "consequence">) =>
   `probabilidad ${SCALE_WORD[cell.probability]} × consecuencia ${SCALE_WORD[cell.consequence]} (${cellName(cell)})`
 
-type Evaluable = { probability: number | null; consequence: number | null }
+type Evaluable = { probability: number | null; consequence: number | null; hazard?: string | null }
+
+/**
+ * Los peligros más frecuentes de una celda. «Caída de objetos» y «caida de
+ * objetos » son el mismo peligro (misma clave que el diccionario: sin tildes,
+ * minúsculas, espacios colapsados) y se rotulan con la escritura más repetida;
+ * con empate, la primera que apareció. Un riesgo sin peligro escrito no suma.
+ */
+function summarizeHazards(hazards: readonly string[]): Pick<RiskMatrixCell, "topHazards" | "moreHazards"> {
+  const groups = new Map<string, { count: number; spellings: Map<string, number> }>()
+  for (const raw of hazards) {
+    const label = cleanMiperName(raw)
+    if (!label) continue
+    const key = normalizeMiperName(label)
+    const group = groups.get(key) ?? { count: 0, spellings: new Map<string, number>() }
+    group.count += 1
+    group.spellings.set(label, (group.spellings.get(label) ?? 0) + 1)
+    groups.set(key, group)
+  }
+  const ranked = [...groups.entries()].map(([key, group]) => {
+    // `Map` conserva el orden de aparición, y `reduce` sólo cambia de ganador con una escritura estrictamente más repetida.
+    const label = [...group.spellings.entries()].reduce((best, entry) => (entry[1] > best[1] ? entry : best))[0]
+    return { key, label, count: group.count }
+  }).sort((a, b) => b.count - a.count || a.key.localeCompare(b.key, "es-CL"))
+  return {
+    topHazards: ranked.slice(0, TOP_HAZARDS_PER_CELL).map(({ label, count }) => ({ label, count })),
+    moreHazards: Math.max(0, ranked.length - TOP_HAZARDS_PER_CELL),
+  }
+}
 
 export function buildRiskMatrix(rows: readonly Evaluable[]): RiskMatrixData {
   const cells: RiskMatrixCell[] = RISK_MATRIX_PROBABILITIES.flatMap((probability) =>
     RISK_MATRIX_CONSEQUENCES.map((consequence) => ({
       probability, consequence, magnitude: probability * consequence, classification: classify(probability, consequence)!, count: 0,
+      topHazards: [], moreHazards: 0,
     })))
   const byClassification = Object.fromEntries(RISK_CLASSIFICATIONS.map((classification) => [classification, 0])) as Record<RiskClassification, number>
+  const hazardsByCell = new Map<RiskMatrixCell, string[]>()
   let evaluated = 0
   for (const row of rows) {
     if (!isScaleValue(row.probability) || !isScaleValue(row.consequence)) continue
@@ -74,7 +129,13 @@ export function buildRiskMatrix(rows: readonly Evaluable[]): RiskMatrixData {
     cell.count += 1
     byClassification[cell.classification] += 1
     evaluated += 1
+    if (row.hazard) {
+      const list = hazardsByCell.get(cell)
+      if (list) list.push(row.hazard)
+      else hazardsByCell.set(cell, [row.hazard])
+    }
   }
+  for (const [cell, hazards] of hazardsByCell) Object.assign(cell, summarizeHazards(hazards))
   // Más riesgos; con empate, la de mayor magnitud (el empate se lee por el lado grave) y luego la de mayor probabilidad.
   const busiest = evaluated === 0 ? null : cells.reduce((best, cell) => {
     if (cell.count !== best.count) return cell.count > best.count ? cell : best

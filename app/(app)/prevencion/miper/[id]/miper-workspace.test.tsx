@@ -137,6 +137,30 @@ describe("MiperWorkspaceView — render completo (A2, fila 16)", () => {
   })
 })
 
+describe("MiperWorkspaceView — filtro por celda P × C (CHART-007)", () => {
+  // P4 × C2 y P2 × C4 valen 8 y son «Importante»: la clasificación no las separa, la celda sí.
+  const two = () => workspaceOf({
+    snapshot: { header, entries: [
+      entry({ id: "e1", rowNumber: 1, task: "Carga", probability: 4, consequence: 2, magnitude: 8 }),
+      entry({ id: "e2", rowNumber: 2, task: "Descarga", probability: 2, consequence: 4, magnitude: 8 }),
+    ] },
+    entryVersions: { e1: 1, e2: 1 },
+  })
+
+  it("?celda= deja sólo los riesgos de esa pareja, con su chip", () => {
+    show("celda=P4xC2", two())
+    expect(screen.getByText("Carga")).toBeTruthy()
+    expect(screen.queryByText("Descarga")).toBeNull()
+    expect(screen.getByRole("button", { name: "Eliminar filtro Celda" })).toBeTruthy()
+  })
+
+  it("la clasificación sola sigue abarcando las dos celdas", () => {
+    show("clasificacion=important", two())
+    expect(screen.getByText("Carga")).toBeTruthy()
+    expect(screen.getByText("Descarga")).toBeTruthy()
+  })
+})
+
 describe("MiperWorkspaceView — marcas del revisor y de lo publicado (A2, Task 3)", () => {
   const reviewerMode: WorkspaceMode = { ...editMode, canEdit: false, canReviewTechnical: true }
   const round = { id: "r1", stage: "technical", roundNumber: 1, openedAt: null, submittedByUserId: "u2", submittedAt: "2026-10-01T10:00:00Z", snapshot: { header, entries: [entry()] } }

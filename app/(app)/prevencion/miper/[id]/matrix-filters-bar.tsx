@@ -41,7 +41,7 @@ export function MatrixFiltersBar({ filters: parsed, riskFactors, hasBaseline, fi
       hasActiveFilters={filtered}
       activeCount={activeFilterCount(filters) - (filters.search ? 1 : 0)}
       onRemoveChip={(key) => setFilter(key as MatrixFilterKey, null)}
-      onClearAll={() => { setSearch(""); setFilters(matrixFilterPatch({ ...filters, search: "", classifications: [], controlled: "all", factorId: "all", onlyObserved: false, onlyModified: false, onlyIncomplete: false, onlyComplete: false })) }}
+      onClearAll={() => { setSearch(""); setFilters(matrixFilterPatch({ ...filters, search: "", classifications: [], cell: null, controlled: "all", factorId: "all", onlyObserved: false, onlyModified: false, onlyIncomplete: false, onlyComplete: false })) }}
       overflowFilters={(
         <div className="space-y-4">
           <fieldset className="space-y-1.5">

@@ -56,13 +56,24 @@ describe("MatrixFiltersBar: navegación de filtros", () => {
     expect(url.searchParams.get("buscar")).toBe("lodo")
     spy.mockRestore()
   })
-  it("limpiar todo quita las 6 claves y conserva tarea", () => {
+  it("limpiar todo quita las 7 claves y conserva tarea", () => {
     const spy = replace()
     render(<MatrixFiltersBar {...props} filters={f} />)
     fireEvent.click(screen.getByRole("button", { name: "Limpiar filtros" }))
     const url = last(spy)
     expect(url.searchParams.get("tarea")).toBe("k1")
-    for (const k of ["buscar", "clasificacion", "completitud", "controlado", "factor", "marca"]) expect(url.searchParams.has(k)).toBe(false)
+    for (const k of ["buscar", "clasificacion", "celda", "completitud", "controlado", "factor", "marca"]) expect(url.searchParams.has(k)).toBe(false)
+    spy.mockRestore()
+  })
+  it("la celda P × C elegida en la matriz tiene su chip, se quita sola y deja la clasificación", () => {
+    window.history.replaceState(null, "", "/prevencion/miper/m1?clasificacion=important&celda=P4xC2")
+    const spy = replace()
+    render(<MatrixFiltersBar {...props} filters={{ ...f, search: "", cell: { probability: 4, consequence: 2 } }} />)
+    expect(screen.getByText("probabilidad Alta × consecuencia Media")).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Eliminar filtro Celda" }))
+    const url = last(spy)
+    expect(url.searchParams.has("celda")).toBe(false)
+    expect(url.searchParams.get("clasificacion")).toBe("important")
     spy.mockRestore()
   })
   it("marcar una clasificación conserva tarea y suma a la lista", () => {

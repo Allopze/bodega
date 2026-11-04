@@ -35,6 +35,20 @@ export const LEAD_TIME_STAGES = [
 export type LeadTimeStageKey = (typeof LEAD_TIME_STAGES)[number]["key"]
 
 /**
+ * Estados de ítem con los que la adquisición terminó: llegó completo a faena (`received`) o se entregó
+ * (`delivered`), que es donde la regla de cierre de solicitudes (`deriveRequestStatus`) da por terminada
+ * la adquisición. Un `partially_delivered` queda fuera: el estado solo no distingue si llegó completo y
+ * adivinarlo sesgaría la medición. La consulta agregada y la ficha de un ítem comparten esta lista.
+ */
+export const LEAD_TIME_CLOSED_ITEM_STATUSES: readonly string[] = ["received", "delivered"]
+
+/** Día civil `YYYY-MM-DD` → días desde 1970-01-01 (la base de todas las fechas de este módulo). */
+export const plainDateToDay = (date: string) => Math.floor(Date.parse(`${date}T00:00:00Z`) / 86_400_000)
+
+/** Días desde 1970-01-01 → día civil `YYYY-MM-DD` (para `formatDate`). */
+export const dayToPlainDate = (day: number) => new Date(day * 86_400_000).toISOString().slice(0, 10)
+
+/**
  * Un ítem cerrado con sus hitos. Los días son **días civiles de Chile** contados desde 1970-01-01
  * (la diferencia entre dos es exactamente "días corridos"), o `null` si el hito no ocurrió.
  */
@@ -49,6 +63,14 @@ export interface LeadTimeItem {
   deliveredDay: number | null
   /** Último movimiento del ítem (última recepción o entrega): ubica el cierre en el tiempo. */
   closedDay: number | null
+  /**
+   * Identidad del ítem, para listar los más lentos con un enlace a su solicitud. Opcional porque el
+   * cálculo de medianas no la necesita; sin ella el ítem no entra a esa lista.
+   */
+  itemId?: string
+  requestId?: string
+  requestCode?: string
+  productName?: string
 }
 
 export interface DurationStat {
@@ -77,6 +99,19 @@ export interface LeadTimeGroup {
   total: DurationStat
 }
 
+/** Un ítem cerrado del período con sus días por tramo, para la lista de los más lentos. */
+export interface SlowLeadTimeItem {
+  itemId: string
+  requestId: string
+  requestCode: string
+  productName: string
+  worksiteName: string
+  /** Solicitud → cierre, en días corridos. */
+  totalDays: number
+  /** Los cuatro tramos; `null` si el hito no ocurrió o las fechas están fuera de orden. */
+  stages: Array<{ key: LeadTimeStageKey; label: string; days: number | null }>
+}
+
 export interface SupplyLeadTime {
   overall: LeadTimeGroup
   byWorksite: LeadTimeGroup[]
@@ -84,7 +119,15 @@ export interface SupplyLeadTime {
   previousTotal: DurationStat
   /** Observaciones con fechas fuera de orden, excluidas. */
   outOfOrder: number
+  /**
+   * Los ítems cerrados del período que más tardaron (hasta `LEAD_TIME_SLOWEST_LIMIT`), con los días de
+   * cada tramo. Es la fila individual detrás de las medianas: «dónde se atascó» lo que esperó más.
+   */
+  slowest: SlowLeadTimeItem[]
 }
+
+/** Cuántos ítems lentos se listan: lo que cabe leer, no el ranking completo. */
+export const LEAD_TIME_SLOWEST_LIMIT = 10
 
 /** Percentil con interpolación lineal (el `percentile_cont` de Postgres). `sorted` ya viene ordenado. */
 function percentile(sorted: readonly number[], p: number): number {
@@ -141,6 +184,37 @@ function toGroup(key: string, label: string, samples: Samples): LeadTimeGroup {
   }
 }
 
+/**
+ * Los ítems cerrados del período con el plazo total más largo. Sólo entra el que tiene identidad y un
+ * plazo total medible (fecha de envío y cierre, en orden): un ítem sin fecha de envío no tiene «cuánto
+ * tardó». Orden estable —total, luego código de solicitud e id— para que dos cargas den la misma lista.
+ */
+export function slowestClosedItems(
+  items: readonly LeadTimeItem[],
+  windows: LeadTimeWindows,
+  limit: number = LEAD_TIME_SLOWEST_LIMIT,
+): SlowLeadTimeItem[] {
+  const days = (from: number | null, to: number | null) => (from === null || to === null || to < from ? null : to - from)
+  const rows: SlowLeadTimeItem[] = []
+  for (const item of items) {
+    if (!item.itemId || !item.requestId || !item.requestCode || !inWindow(item.closedDay, windows.current)) continue
+    const totalDays = days(item.submittedDay, item.closedDay)
+    if (totalDays === null) continue
+    rows.push({
+      itemId: item.itemId,
+      requestId: item.requestId,
+      requestCode: item.requestCode,
+      productName: item.productName ?? "Ítem sin nombre",
+      worksiteName: item.worksiteName,
+      totalDays,
+      stages: LEAD_TIME_STAGES.map((stage) => ({ key: stage.key, label: stage.label, days: days(item[stage.from], item[stage.to]) })),
+    })
+  }
+  return rows
+    .sort((a, b) => b.totalDays - a.totalDays || a.requestCode.localeCompare(b.requestCode, "es") || a.itemId.localeCompare(b.itemId))
+    .slice(0, limit)
+}
+
 export function buildSupplyLeadTime(items: readonly LeadTimeItem[], windows: LeadTimeWindows): SupplyLeadTime {
   const overall = emptySamples()
   const byWorksite = new Map<string, { label: string; samples: Samples }>()
@@ -186,6 +260,7 @@ export function buildSupplyLeadTime(items: readonly LeadTimeItem[], windows: Lea
       .sort((a, b) => b.closedItems - a.closedItems || a.label.localeCompare(b.label, "es")),
     previousTotal: summarizeDurations(previousTotal),
     outOfOrder,
+    slowest: slowestClosedItems(items, windows),
   }
 }
 

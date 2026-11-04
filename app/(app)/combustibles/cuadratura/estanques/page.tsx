@@ -18,18 +18,20 @@ import { SectionNav } from "@/components/ui/section-nav"
 import { SegmentedControl } from "@/components/ui/segmented-control"
 import { FuelBreadcrumbs } from "@/components/combustibles/fuel-breadcrumbs"
 import { FuelHeaderActions } from "@/components/combustibles/fuel-header-actions"
-import { getFuelCycleComparison, getFuelStorageBalances, listFuelCycleMovements, type CycleStage } from "@/lib/combustibles/fuel-cycle"
+import { getFuelCycleComparison, getFuelStorageBalances, getFuelStorageDailyFlows, listFuelCycleMovements, type CycleStage } from "@/lib/combustibles/fuel-cycle"
 import { toChileInstantRange, toDateRange } from "@/lib/combustibles/period/adapters"
+import { fuelPeriodSearchParams } from "@/lib/combustibles/period/parse"
 import { resolveFuelPeriodForPage } from "@/lib/combustibles/period/server"
 import { FUEL_PATHS, withFuelContext } from "@/lib/combustibles/routes"
 import { FUEL_CARRY_PARAMS, cuadraturaNavItems } from "@/lib/combustibles/section-nav"
+import { buildTankLevelView } from "@/lib/combustibles/tank-level"
 import { ControlFilters } from "../../control/_components/control-filters"
 import { loadCuadraturaContext } from "../_components/context"
 import { firstParam, hrefWith, periodContext } from "../_components/params"
 import { ControlSection, SectionError } from "../_components/section"
 import { createSourceTracker } from "../_components/track"
 import { CycleWorkbench } from "./cycle-workbench"
-import { MovementsTable, StorageLevelBars, StorageLevels, cycleAnswer, severityBadge, stageAmount, type CycleMovementRow } from "./estanques-sections"
+import { MovementsTable, StorageLevelBars, StorageLevelTrend, StorageLevels, cycleAnswer, severityBadge, stageAmount, type CycleMovementRow } from "./estanques-sections"
 import { UrlSelect } from "../_components/url-select"
 import { litersText } from "../_components/format"
 import { formatQty } from "@/lib/utils"
@@ -58,6 +60,7 @@ export default async function CuadraturaEstanquesPage({ searchParams }: { search
   const ctxParams = periodContext(period, worksiteId)
   const canCreate = can(session, "combustibles:create")
   const canCreateTank = can(session, "admin:fleet_catalog")
+  const canExport = can(session, "combustibles:export")
 
   // Los días del período para las cifras (la consulta los compara en hora de Chile) y sus instantes
   // —inicio incluido, fin excluido— para la lista de movimientos, cuyo `occurredAt` es un `timestamptz`.
@@ -67,9 +70,13 @@ export default async function CuadraturaEstanquesPage({ searchParams }: { search
 
   const ctx = await loadCuadraturaContext(session)
   const { track, degraded, total } = createSourceTracker("cuadratura-estanques")
-  const [comparison, balances, movements, products, suppliers, locations, vehicles] = await Promise.all([
+  // El nivel en el tiempo parte de los estanques que ya trae el balance (mismos filtros y alcance) y de su
+  // nivel «Al inicio»: es la misma definición que la tabla, así que la curva termina en su «Nivel».
+  const balancesPromise = getFuelStorageBalances(session, { ...scope, from, to })
+  const [comparison, balances, levelFlows, movements, products, suppliers, locations, vehicles] = await Promise.all([
     track(getFuelCycleComparison(session, { ...scope, from, to }), CYCLE_FALLBACK, "etapas del ciclo"),
-    track(getFuelStorageBalances(session, { ...scope, from, to }), [], "nivel por estanque"),
+    track(balancesPromise, [], "nivel por estanque"),
+    track(balancesPromise.then((rows) => getFuelStorageDailyFlows(session, rows, { from, to })), [], "nivel en el tiempo"),
     track(listFuelCycleMovements(session, { ...scope, ...instants, stage }), { rows: [], total: 0 }, "movimientos"),
     settle(db.select({ id: fuelProducts.id, name: fuelProducts.name }).from(fuelProducts).where(eq(fuelProducts.isActive, true)).orderBy(asc(fuelProducts.name)), [], "cuadratura-products"),
     canCreate ? settle(db.select({ id: fuelSuppliers.id, name: fuelSuppliers.name }).from(fuelSuppliers).where(eq(fuelSuppliers.isActive, true)).orderBy(asc(fuelSuppliers.name)), [], "cuadratura-suppliers") : Promise.resolve([]),
@@ -92,6 +99,10 @@ export default async function CuadraturaEstanquesPage({ searchParams }: { search
   const allHref = `${hrefWith(PATH, sp, { etapa: null, pagina: null })}${MOVEMENTS_ANCHOR}`
   const invoicedHref = withFuelContext(`${FUEL_PATHS.cargas}?como=factura`, ctxParams)
   const movementRows: CycleMovementRow[] = movements.data.rows
+  const levelView = buildTankLevelView(balances.data, levelFlows.data, { from, to })
+  const previousPeriodHref = period.prev
+    ? hrefWith(PATH, sp, { periodo: null, desde: null, hasta: null, pagina: null, ...fuelPeriodSearchParams(period.prev) })
+    : null
 
   return (
     <PageContainer>
@@ -147,6 +158,15 @@ export default async function CuadraturaEstanquesPage({ searchParams }: { search
             {balances.failed ? <SectionError what="el nivel por estanque" /> : (
               <div className="space-y-4">
                 <StorageLevelBars balances={balances.data} canEditTanks={canCreateTank} />
+                {balances.data.length === 0 ? null : levelFlows.failed ? <SectionError what="el nivel en el tiempo" /> : (
+                  <StorageLevelTrend
+                    view={levelView}
+                    periodPhrase={phrase}
+                    previousPeriodHref={previousPeriodHref}
+                    canCreate={canCreate}
+                    excel={canExport ? { permission: "combustibles:export" } : undefined}
+                  />
+                )}
                 <StorageLevels balances={balances.data} canCreateTank={canCreateTank} />
               </div>
             )}

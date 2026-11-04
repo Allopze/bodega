@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
-import { requirePermission } from "@/lib/auth/can"
+import { can, requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { Button } from "@/components/ui/button"
 import { PageContainer } from "@/components/ui/page-container"
@@ -29,6 +29,7 @@ export default async function CapacitacionPage({
   try { session = await requirePermission("prevention:training:view") }
   catch { redirect("/forbidden") }
 
+  const canExport = can(session, "prevention:training:export")
   const access = {
     userId: session.user.id,
     scope: resolveWorksiteScope(session),
@@ -93,7 +94,7 @@ export default async function CapacitacionPage({
           { label: "Campañas y Capacitación" },
         ]} />}
         actions={
-          session.user.permissions.includes("prevention:training:export") ? (
+          canExport ? (
             <Button asChild variant="secondary">
               <a href={`/api/prevencion/capacitacion/export?${exportParams.toString()}`} download>Exportar Excel</a>
             </Button>
@@ -110,6 +111,7 @@ export default async function CapacitacionPage({
         hrefFor={(rowId, cellMonth) => viewHref({ faena: rowId, mes: cellMonth })}
         clearHref={viewHref({ faena: worksiteId, mes: null })}
         selected={worksiteId && month ? { rowId: worksiteId, month } : null}
+        excel={canExport ? { permission: "prevention:training:export" } : undefined}
         className="mb-4"
       />
       <TrainingOccurrenceList

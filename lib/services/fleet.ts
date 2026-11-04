@@ -276,13 +276,18 @@ export async function getFleetOverview(
     const fuel = fuelByVehicle.get(vehicle.id)
     const totalFuelAmount = canViewFuel && canViewCosts ? Number(fuel?.totalFuelAmount ?? 0) : null
     const series = meterSeriesByVehicle.get(vehicle.id)
-    const lastOdometer = series?.odometer.at(-1)?.value ?? null
-    const lastHourMeter = series?.hour_meter.at(-1)?.value ?? null
+    const lastOdometerPoint = series?.odometer.at(-1)
+    const lastHourMeterPoint = series?.hour_meter.at(-1)
+    const lastOdometer = lastOdometerPoint?.value ?? null
+    const lastHourMeter = lastHourMeterPoint?.value ?? null
     // La marca va sobre la lectura que la columna «Km/Hr» muestra (odómetro y, a falta de éste, horómetro:
     // `app/(app)/flota/fleet-table.tsx`), no sobre la otra serie del equipo, que nadie ve en esa fila.
     const shownReadingId = lastOdometer != null
       ? lastReadingIdBySeries.get(`${vehicle.id}:odometer`)
       : lastHourMeter != null ? lastReadingIdBySeries.get(`${vehicle.id}:hour_meter`) : undefined
+    const shownReadingAt = lastOdometer != null
+      ? lastOdometerPoint?.occurredAt
+      : lastHourMeter != null ? lastHourMeterPoint?.occurredAt : undefined
     // El recorrido se informa en la unidad de rendimiento del equipo (km/L → km; L/h → horas) y
     // sólo con pares que el detector de anomalías no objetaría: un retroceso sin reset aceptado
     // no se suma, así que nunca sale negativo ni absurdo. `meterSeriesIncomplete` avisa que hubo
@@ -320,6 +325,12 @@ export async function getFleetOverview(
       loadCount: canViewFuel ? Number(fuel?.loadCount ?? 0) : null,
       lastOdometerReading: canViewFuel ? lastOdometer : null,
       lastHourMeterReading: canViewFuel ? lastHourMeter : null,
+      /**
+       * Instante (ISO) de la lectura que la columna «Km/Hr» muestra: la del odómetro y, a falta de éste,
+       * la del horómetro —la misma sobre la que va `lastReadingObjection`—. `null` sin lectura o sin
+       * `combustibles:view`. La exportación a Excel lo lleva como «fecha de la última lectura».
+       */
+      lastReadingAt: canViewFuel ? (shownReadingAt ?? null) : null,
       /** Caso del detector aún abierto sobre la lectura que se muestra; `null` si no hay (o sin `combustibles:view`). */
       lastReadingObjection: canViewFuel && shownReadingId ? (openObjectionByReading.get(shownReadingId) ?? null) : null,
       kmDriven: km?.advance ?? null,

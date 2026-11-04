@@ -1,5 +1,5 @@
 import type * as React from "react"
-import { ChartDataTable } from "@/components/charts/chart-data-table"
+import { ChartDataTable, type ChartDataExcel } from "@/components/charts/chart-data-table"
 import { ChartErrorBoundary } from "@/components/chart-error-boundary"
 import type { ConsumptionDashboardData, EquipmentTypeConsumptionRow, HeatmapCell, VehicleEvolutionPoint } from "@/lib/combustibles/consumption-dashboard"
 import { buildEvolutionPanels, describeEvolution, evolutionTable } from "@/lib/combustibles/evolution-panels"
@@ -23,6 +23,8 @@ export interface CardsAnalysisProps {
   periodLabel: string
   /** Qué meses cubre la evolución por equipo («Últimos 6 meses, hasta octubre de 2026.»): es una ventana, no el período. */
   evolutionCaption?: string
+  /** «Exportar Excel» de la tabla de evolución por equipo; sólo si la persona puede exportar combustible. */
+  excel?: ChartDataExcel
 }
 
 function Block({ id, title, hint, children }: { id: string; title: string; hint?: string; children: React.ReactNode }) {
@@ -43,7 +45,7 @@ function Block({ id, title, hint, children }: { id: string; title: string; hint?
  * ficha del equipo). Los datos llegan ya filtrados por fuente, patente y
  * asociación.
  */
-export function CardsAnalysis({ dashboard, byEquipmentType, scatter, evolution, heatmap, canViewCosts, emptyAction, periodLabel, evolutionCaption }: CardsAnalysisProps) {
+export function CardsAnalysis({ dashboard, byEquipmentType, scatter, evolution, heatmap, canViewCosts, emptyAction, periodLabel, evolutionCaption, excel }: CardsAnalysisProps) {
   const scatterKm = scatter.filter((point) => point.medidoPor === "km")
   const scatterHora = scatter.filter((point) => point.medidoPor === "hora")
   const hasAnything = byEquipmentType.length > 0 || scatterKm.length > 0 || scatterHora.length > 0 || evolution.length > 0 || heatmap.length > 0
@@ -106,7 +108,7 @@ export function CardsAnalysis({ dashboard, byEquipmentType, scatter, evolution, 
       {evolution.length > 0 ? (
         <Block id="evolucion-equipo" title="Evolución por equipo" hint={[evolutionCaption, evolutionSummary, "Un panel por equipo, todos con la misma escala; se muestran hasta 8."].filter(Boolean).join(" ")}>
           <ChartErrorBoundary chartName="Evolución por equipo"><EvolutionByVehicleChart view={evolutionView} /></ChartErrorBoundary>
-          {evolutionView.panels.length > 0 ? <ChartDataTable caption="Litros por equipo y período" {...evolutionTable(evolutionView)} /> : null}
+          {evolutionView.panels.length > 0 ? <ChartDataTable caption="Litros por equipo y período" {...evolutionTable(evolutionView)} excel={excel} /> : null}
         </Block>
       ) : null}
 

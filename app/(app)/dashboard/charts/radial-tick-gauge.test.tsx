@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { render, screen } from "@testing-library/react"
 import { describe, expect, it } from "vitest"
+import { CHART_ENTRY_MS } from "@/lib/chart-motion"
 import { RadialTickGauge } from "./radial-tick-gauge"
 
 function ticks(container: HTMLElement) {
@@ -83,12 +84,20 @@ describe("RadialTickGauge", () => {
     expect(all.indexOf(target)).toBe(36)
   })
 
-  it("las marcas entran en secuencia con `tick-in` bajo `motion-safe`", () => {
+  it("las marcas entran en secuencia con `tick-in` bajo `motion-safe`, todas dentro de CHART_ENTRY_MS", () => {
     const { container } = render(<RadialTickGauge percent={0} targetPercent={90} />)
     const all = ticks(container)
-    expect(all[0]!.getAttribute("class")).toContain("motion-safe:animate-[tick-in_")
+    expect(all[0]!.getAttribute("class")).toContain("motion-safe:animate-[tick-in_var(--ease-out)_both]")
+    // Ni una duración propia en la clase (eran 0,45 s) ni un paso de 14 ms por marca (sumaba 1 s).
+    expect(all[0]!.getAttribute("class")).not.toMatch(/tick-in_[\d.]/)
     expect(all[0]!.style.animationDelay).toBe("0ms")
-    expect(all[10]!.style.animationDelay).toBe("140ms")
+    expect(all[10]!.style.animationDelay).toBe("25ms")
+    // El barrido avanza de izquierda a derecha y la última marca termina de encenderse a los CHART_ENTRY_MS.
+    const delays = all.map((tick) => parseFloat(tick.style.animationDelay))
+    expect(delays).toEqual([...delays].sort((a, b) => a - b))
+    const last = all[all.length - 1]!
+    expect(parseFloat(last.style.animationDelay) + parseFloat(last.style.animationDuration)).toBeLessThanOrEqual(CHART_ENTRY_MS)
+    for (const tick of all) expect(parseFloat(tick.style.animationDuration)).toBeLessThanOrEqual(CHART_ENTRY_MS)
   })
 
   it("usa viewBox, ancho fluido y un tope de 300 px", () => {

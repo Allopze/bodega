@@ -102,7 +102,7 @@ export function MonthlySpendChart({ data, showFuel }: { data: SpendByMonthRow[];
             <ReferenceLine key={month} x={month} stroke={REFERENCE_COLOR} strokeDasharray="4 3" />
           ))}
           <Area
-            type="monotone"
+            type="linear"
             dataKey="purchasingAmount"
             name="Compras"
             stackId="gasto"
@@ -114,7 +114,7 @@ export function MonthlySpendChart({ data, showFuel }: { data: SpendByMonthRow[];
           />
           {showFuel && (
             <Area
-              type="monotone"
+              type="linear"
               dataKey="fuelAmount"
               name="Combustible"
               stackId="gasto"
