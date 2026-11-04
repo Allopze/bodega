@@ -47,7 +47,11 @@ describe("useHistoryPhoto", () => {
     const create = vi.fn(() => "blob:foto")
     const revoke = vi.fn()
     vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: create, revokeObjectURL: revoke }))
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(new Blob(["jpeg"], { type: "image/jpeg" }), { status: 200 })))
+    // Cuerpo como bytes y no como `Blob` de jsdom: en Node 22 (el runtime de CI)
+    // `new Response(blobDeJsdom).blob()` lanza «object.stream is not a function»,
+    // el hook lo interpreta como corte de red y devuelve «offline». En Node 24
+    // no ocurre, por eso la falla no se veía en local.
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(new Uint8Array([0xff, 0xd8, 0xff, 0xe0]), { status: 200 })))
     const { result, unmount } = renderHook(() => useHistoryPhoto(UUID(50)), { wrapper: wrapper("u-1") })
     expect(result.current).toEqual({ status: "loading" })
     await waitFor(() => expect(result.current).toEqual({ status: "ready", url: "blob:foto" }))

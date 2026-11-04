@@ -10,7 +10,7 @@
  * procedencia —sin inventarles un motivo—, la 0324 agrega el CHECK sobre datos
  * que ya lo cumplen, y ninguna otra fila se toca.
  */
-import { PGlite } from "@electric-sql/pglite"
+import { PGlite } from "@/lib/testing/pglite-real"
 import { readFile } from "node:fs/promises"
 import path from "node:path"
 import { afterAll, describe, expect, it } from "vitest"

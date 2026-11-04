@@ -15,6 +15,7 @@
 import { promises as fs } from "node:fs"
 import path from "node:path"
 import type { PGlite } from "@electric-sql/pglite"
+import { cachePgliteTemplate } from "./pglite-template"
 
 /**
  * Split SQL text into individual top-level statements.
@@ -138,6 +139,7 @@ export async function migratePGlite(pg: PGlite, migrationsFolder: string): Promi
   } catch {
     /* first call - table is empty */
   }
+  const appliedAtStart = applied.size
 
   for (const entry of journal.entries) {
     if (applied.has(entry.tag)) continue
@@ -186,6 +188,14 @@ export async function migratePGlite(pg: PGlite, migrationsFolder: string): Promi
   // entre pruebas declaran mantenimiento para toda la sesión. La prueba del
   // trigger lo apaga para ejercitarlo (`pdtp-audit-append-only.test.ts`).
   await pg.exec("SET app.audit_maintenance = 'on'")
+
+  // Primera suite de la máquina: la base quedó migrada y sin datos de prueba
+  // (`appliedAtStart === 0`). Se guarda como plantilla para que las siguientes
+  // la carguen en vez de repetir el replay completo. Si la plantilla ya se
+  // cargó al construir la instancia, `appliedAtStart` trae las 371 filas.
+  if (appliedAtStart === 0 && journal.entries.length > 0) {
+    await cachePgliteTemplate(pg, migrationsFolder)
+  }
 }
 
 export { splitSqlStatements }

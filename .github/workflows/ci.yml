@@ -7,8 +7,8 @@ on:
       - main
       - master
 
-# El pipeline dura ~15 min; varios pushes seguidos sobre la misma rama
-# encolaban corridas completas que ya nadie iba a mirar.
+# Varios pushes seguidos sobre la misma rama encolaban corridas completas que
+# ya nadie iba a mirar.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -161,17 +161,35 @@ jobs:
         run: npm run test:env-dsn
 
   pglite:
-    # Las 53 suites de integración con PGlite (Postgres WASM in-memory) quedan
+    # 336 suites de integración con PGlite (Postgres WASM in-memory). Corren
     # fuera del job `unit` a propósito (vitest.config.ts excluye
-    # tests/pglite-files.ts) porque saturan CPU en paralelo y necesitan
-    # ejecución serial. Hasta 2026-08-05 no corrían en ningún gate: entre ellas
-    # está exactamente la evidencia de cierre P0/P1 de compras/recepción/stock
-    # de AUDITORIA_BUGS_2026-07-28.md (H-05, AUDITORIA_BUGS_2026-08-05.md).
+    # tests/pglite-files.ts) porque saturan CPU en paralelo.
+    #
+    # Hasta 2026-11-04 el job era uno solo y serial: 336 archivos × replay de
+    # 371 migraciones superaban los 45 min de timeout y la corrida se cancelaba
+    # SIEMPRE, con el pipeline entero esperando ese reloj. Medido en local:
+    # ~7,2 s por archivo sin cobertura y ×1,8 con instrumentación.
+    #
+    # Ahora: 2 shards × 2 workers. Cada shard tiene su runner de 4 vCPU/16 GiB,
+    # así que dos PGlite simultáneos (~2,6 GiB de pico medido) no compiten por
+    # memoria; el límite local de 3 workers no aplica acá. Además, la primera
+    # suite de cada worker deja una plantilla migrada en `.tmp/` y las
+    # siguientes la cargan en ~1 s en vez de repetir las 371 migraciones
+    # (lib/testing/pglite-template.ts), lo que baja otro ~22 min la corrida.
+    #
     # vitest.pglite.config.ts define su propio DATABASE_URL/PGHOST, así que
     # este job no necesita un Postgres real.
-    name: Integration tests (PGlite, serial)
+    name: Integration tests (PGlite, shard ${{ matrix.shard }}/2)
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    env:
+      NODE_OPTIONS: --max-old-space-size=4096
+      PGLITE_SHARD: ${{ matrix.shard }}
+      PGLITE_SHARDS: "2"
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -185,14 +203,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Integration tests (PGlite, serial)
-        run: npm run test:coverage:pglite
+      - name: Integration tests (PGlite, shard ${{ matrix.shard }}/2)
+        run: npm run test:coverage:pglite:shard
 
       - name: Upload coverage blob
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
-          name: coverage-blob-pglite
-          path: .vitest-reports/pglite.json
+          name: coverage-blob-pglite-${{ matrix.shard }}
+          path: .vitest-reports/pglite-${{ matrix.shard }}.json
           retention-days: 1
 
   coverage:
@@ -432,9 +450,15 @@ jobs:
 
       - name: Build
         env:
-          # next build corre su propia verificación de TypeScript en un worker
-          # aparte; el límite de heap por defecto de V8 se agota en este runner.
-          NODE_OPTIONS: --max-old-space-size=5120
+          # 5120 ya no alcanza: con el árbol de rutas actual el worker de
+          # webpack muere por heap. Medido el 2026-11-04: con 5120 falla
+          # («Ineffective mark-compacts near heap limit») y con 7168 compila.
+          # La imagen de producción ya usa 8192 (Dockerfile), así que CI se
+          # alinea con ella. No se activa BODEGA_BUILD_SKIP_TYPECHECK: el
+          # typecheck de `next build` es la única puerta que valida los tipos
+          # de ruta generados en `.next/types/**` (tsconfig.typecheck.json los
+          # excluye a propósito).
+          NODE_OPTIONS: --max-old-space-size=8192
           # Mismos valores que usaba la build de e2e/start-server.sh, para que
           # este artifact sea equivalente al que producía ese script: cualquier
           # NEXT_PUBLIC_* queda inlineado en los chunks de cliente durante la

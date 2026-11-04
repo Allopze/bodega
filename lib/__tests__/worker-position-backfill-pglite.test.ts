@@ -1,4 +1,4 @@
-import { PGlite } from "@electric-sql/pglite"
+import { PGlite } from "@/lib/testing/pglite-real"
 import { promises as fs } from "node:fs"
 import path from "node:path"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"

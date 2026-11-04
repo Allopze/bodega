@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "next dev --hostname 0.0.0.0 -p 3001",
-    "build": "bash scripts/run-resource-guard.sh next build --webpack",
+    "build": "BODEGA_NODE_HEAP_MB=${BODEGA_NODE_HEAP_MB:-7168} bash scripts/run-resource-guard.sh next build --webpack",
     "start": "node .next/standalone/server.js",
     "lint": "bash scripts/run-resource-guard.sh eslint",
     "typecheck": "bash scripts/run-resource-guard.sh tsc --noEmit --incremental false -p tsconfig.typecheck.json",
@@ -104,6 +104,7 @@
     "test:coverage": "bash scripts/run-resource-guard.sh vitest run --coverage",
     "test:coverage:unit": "bash scripts/run-resource-guard.sh vitest run --coverage --reporter=blob --reporter=default --outputFile.blob=.vitest-reports/unit.json",
     "test:coverage:pglite": "bash scripts/run-resource-guard.sh vitest run --config vitest.pglite.config.ts --coverage --reporter=blob --reporter=default --outputFile.blob=.vitest-reports/pglite.json",
+    "test:coverage:pglite:shard": "bash scripts/run-resource-guard.sh vitest run --config vitest.pglite.config.ts --coverage --reporter=blob --reporter=default --outputFile.blob=.vitest-reports/pglite-${PGLITE_SHARD}.json --shard=${PGLITE_SHARD}/${PGLITE_SHARDS} --fileParallelism --maxWorkers=${PGLITE_WORKERS:-2}",
     "test:coverage:merge": "bash scripts/run-resource-guard.sh vitest --config vitest.merged.config.ts --mergeReports=.vitest-reports --coverage",
     "test:coverage:all": "npm run test:coverage:unit && npm run test:coverage:pglite && npm run test:coverage:merge",
     "analyze": "bash scripts/run-resource-guard.sh next experimental-analyze",

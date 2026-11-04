@@ -207,8 +207,18 @@ describeIf("CPHS y gobernanza on real PostgreSQL", () => {
 
   it("reports the cadence as up to date after a closed meeting", async () => {
     const service = await import("@/lib/services/prevention-cphs")
-    const status = await service.getCommitteeStatus(committeeId, MANAGER)
-    expect(status?.cadence.monthsWithoutMeeting).toBeLessThan(2)
+    // La sesión se cerró el 2026-08-10 y la cadencia se mide contra el mes en
+    // curso. Sin fijar el reloj, esta prueba pasaba en agosto/septiembre y
+    // empezaba a fallar en noviembre («3 meses sin sesión»), aunque el comité
+    // estuviera al día cuando se cerró el acta.
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(new Date("2026-08-20T12:00:00.000Z"))
+    try {
+      const status = await service.getCommitteeStatus(committeeId, MANAGER)
+      expect(status?.cadence.monthsWithoutMeeting).toBeLessThan(2)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("refuses to close a session held by a single representation", async () => {

@@ -2043,6 +2043,15 @@ async function seedFixture(database: ReturnType<typeof drizzle<typeof schema>>) 
     { id: "veh-a", plate: "ABCD12", code: "KA-122", type: "camion", equipmentTypeId: "eqt-in-camion", meterType: "hour_meter", worksiteId: "ws-in-a", createdAt: now, updatedAt: now },
     { id: "veh-b", plate: "WXYZ99", code: "KA-999", type: "camion", equipmentTypeId: "eqt-in-camion", meterType: "hour_meter", worksiteId: "ws-in-b", createdAt: now, updatedAt: now },
   ])
+  // Ficha de Mantención para `veh-a`: desde b770f98dc la derivación abre la OT
+  // sólo si el equipo tiene perfil en el módulo (sin ficha lo omite y avisa).
+  // Sin esta fila la prueba «abre la OT» quedaba midiendo el camino de omisión.
+  await database.insert(schema.mantBrands).values({
+    id: "mb-in-a", name: "Marca fixture inspecciones", nameKey: "marca_fixture_inspecciones",
+  })
+  await database.insert(schema.mantEquipmentProfiles).values({
+    vehicleId: "veh-a", brandId: "mb-in-a",
+  })
 }
 
 async function resetDatabase(url: string) {

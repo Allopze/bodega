@@ -8,10 +8,16 @@ const projectRoot = path.dirname(fileURLToPath(import.meta.url))
 
 export default defineConfig({
   resolve: {
-    alias: {
-      "@": projectRoot,
-      "next/server": path.join(projectRoot, "node_modules/next/server.js"),
-    },
+    alias: [
+      // Cargar la plantilla migrada exige pasarla al constructor (`loadDataDir`
+      // no existe como método de instancia) y las 336 suites hacen
+      // `new PGlite()`. Este alias evita tocar cada archivo: el wrapper inyecta
+      // la plantilla cuando existe y cae al constructor normal cuando no.
+      // Sólo en este proyecto — el resto de Vitest no ejecuta suites PGlite.
+      { find: /^@electric-sql\/pglite$/, replacement: path.join(projectRoot, "lib/testing/pglite-with-template.ts") },
+      { find: "@", replacement: projectRoot },
+      { find: "next/server", replacement: path.join(projectRoot, "node_modules/next/server.js") },
+    ],
   },
   test: {
     name: "pglite",

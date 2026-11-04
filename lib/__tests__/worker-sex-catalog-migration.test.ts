@@ -7,7 +7,7 @@
  * la conversión: `intersex` pasa a `other`, `unspecified` («No informa») queda
  * sin registrar en vez de inventarle un sexo, y el resto no se toca.
  */
-import { PGlite } from "@electric-sql/pglite"
+import { PGlite } from "@/lib/testing/pglite-real"
 import { readFile } from "node:fs/promises"
 import path from "node:path"
 import { afterAll, describe, expect, it } from "vitest"

@@ -1,4 +1,4 @@
-import { PGlite } from "@electric-sql/pglite"
+import { PGlite } from "@/lib/testing/pglite-real"
 import { drizzle } from "drizzle-orm/pglite"
 import type { Session } from "next-auth"
 import { afterEach, describe, expect, it } from "vitest"
