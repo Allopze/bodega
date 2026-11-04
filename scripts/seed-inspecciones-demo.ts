@@ -21,6 +21,7 @@ import {
 import { createContainer, listContainersForWorksite } from "@/lib/services/prevention-containers"
 import type { ChecklistDefinition } from "@/lib/sst/types"
 import { closingActFromDefinition, fieldKindAcceptsPartial, fieldKindIsScorable } from "@/lib/prevention/inspections"
+import { assertDevSeedTarget } from "./dev-seed/guard"
 
 const ALL: InspectionAccess = {
   userId: "demo-user-prevencionista",
@@ -105,6 +106,7 @@ function buildClosingAct(definition: ChecklistDefinition, executorName: string) 
 }
 
 async function main() {
+  assertDevSeedTarget(process.env.DATABASE_URL)
   console.log("1) Aprobando plantillas del catálogo…")
   await approveAll()
 

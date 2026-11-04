@@ -22,6 +22,7 @@ import bcrypt from "bcryptjs"
 import { loadEnvConfig } from "@next/env"
 import * as schema from "../db/schema"
 import { SYSTEM_ROLES } from "../lib/auth/system-rbac"
+import { assertDevSeedTarget, formatDevSeedTarget } from "./dev-seed/guard"
 
 loadEnvConfig(process.cwd())
 
@@ -29,6 +30,9 @@ if (!process.env.DATABASE_URL) {
   console.error("DATABASE_URL es obligatorio")
   process.exit(1)
 }
+
+const target = assertDevSeedTarget(process.env.DATABASE_URL)
+console.log(`Destino de demostración: ${formatDevSeedTarget(target)}`)
 
 const client = postgres(process.env.DATABASE_URL, { max: 1 })
 const db = drizzle(client, { schema })
@@ -75,8 +79,18 @@ const TABLAS_DEMO = [
 async function main() {
   console.log("Generando entorno de demostración…")
 
-  await db.execute(sql.raw(`TRUNCATE ${TABLAS_DEMO.join(", ")} CASCADE`))
-  console.log(`  Limpieza: ${TABLAS_DEMO.length} tablas operacionales vaciadas`)
+  /*
+   * El truncado ya no es el comportamiento por defecto: sobre una base de
+   * desarrollo que además tiene datos sembrados por `dev-seed`, borraba las
+   * cargas de combustible, movimientos de inventario y solicitudes recién
+   * creadas. `--reset-demo` lo vuelve explícito.
+   */
+  if (process.argv.includes("--reset-demo")) {
+    await db.execute(sql.raw(`TRUNCATE ${TABLAS_DEMO.join(", ")} CASCADE`))
+    console.log(`  Limpieza: ${TABLAS_DEMO.length} tablas operacionales vaciadas`)
+  } else {
+    console.log("  Limpieza: omitida (usa --reset-demo para vaciar las tablas de demo)")
+  }
 
   const worksites = await db.select().from(schema.worksites)
   const workers = await db.select().from(schema.workers)

@@ -28,7 +28,8 @@ set -euo pipefail
 # backfill conciliación (si hace falta) ->
 # backfill referencias OC en DTE (si hace falta)
 # -> catálogo de reglas de anomalía -> sync-rbac -> decisiones de catálogo PDTP
-# -> dato de cursos/planes/campañas -> catálogo de inspecciones -> recreate app
+# -> dato de cursos/planes/campañas -> catálogo de inspecciones
+# -> datos demo (solo deploy:dev) -> recreate app
 # then cron containers ->
 # authenticated smoke check -> prune -> smoke público por el túnel.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -410,18 +411,27 @@ ship_image_to_prod() {
   # Se compara por capas y no por `.Id`: con el almacén de imágenes de
   # containerd (Docker 29+) el ID se recalcula al cargar, así que una imagen
   # idéntica aterriza con otro ID y comparar por ID reenviaría todo cada vez.
+  local image="${1:-$IMAGE}"
   local fingerprint local_layers remote_layers
   fingerprint='{{range .RootFS.Layers}}{{.}}{{"\n"}}{{end}}'
-  local_layers="$(docker image inspect "$IMAGE" --format "$fingerprint" | md5sum)"
-  remote_layers="$(prod_sh "docker image inspect $(printf '%q' "$IMAGE") --format $(printf '%q' "$fingerprint") 2>/dev/null | md5sum" | tr -d '\r')"
+  local_layers="$(docker image inspect "$image" --format "$fingerprint" | md5sum)"
+  remote_layers="$(prod_sh "docker image inspect $(printf '%q' "$image") --format $(printf '%q' "$fingerprint") 2>/dev/null | md5sum" | tr -d '\r')"
   if [ "$local_layers" = "$remote_layers" ]; then
-    echo "    producción ya tiene esta imagen; no se reenvía"
+    echo "    el servidor ya tiene esta imagen; no se reenvía"
     return 0
   fi
-  docker save "$IMAGE" | gzip -1 | prod_sh 'gunzip | docker load'
+  docker save "$image" | gzip -1 | prod_sh 'gunzip | docker load'
 }
 
 run_timed "Enviando la imagen a $PROD_SSH" ship_image_to_prod
+
+# El seed de dev corre desde la etapa `dev` (tsx + fuente, sin `next build`).
+# Se construye y envía sólo en deploy:dev; deploy:prod no entra a esta rama.
+SEED_DEV_IMAGE="${IMAGE}-seed-dev"
+if [ "${DEPLOY_LABEL:-}" = "dev" ] && [ "${PROD_DIR%/}" != "/srv/plataforma" ]; then
+  run_timed "Building seed-dev image" docker buildx build --builder "$BUILDER" --target dev --tag "$SEED_DEV_IMAGE" --load --progress=plain .
+  run_timed "Enviando la imagen seed-dev a $PROD_SSH" ship_image_to_prod "$SEED_DEV_IMAGE"
+fi
 
 # Read-only y sin depender de las columnas de proyección, así que corre antes
 # de migrar: deja en el log del deploy cuánta deriva OC-factura traía la base.
@@ -603,6 +613,17 @@ run_timed "Diagnóstico del cableado de acreditación del PDTP" run_in_prod dock
 # programa en borrador o un mapeo que se acaba de corregir en los pasos
 # anteriores. Idempotente; nunca aborta el deploy por su cuenta.
 run_timed "Reconciliando eventos de cumplimiento pendientes del PDTP" run_in_prod docker compose run --rm reconcile-pdtp-fulfillment-events
+
+# Datos de demostración: sólo en dev. `deploy:dev` fija DEPLOY_LABEL=dev y
+# un PROD_DIR distinto de /srv/plataforma; `deploy:prod` usa el path de
+# producción y este bloque no se ejecuta, aunque herede DEPLOY_LABEL=dev.
+# El servicio seed-dev recibe además -e DEPLOY_LABEL=dev y su guard rechaza
+# cualquier base llamada bodega/prod, así que no hay camino accidental a prod.
+# Va al final de las etapas de datos para que el seed encuentre el catálogo
+# PDTP, los roles y las faenas ya reconciliadas.
+if [ "${DEPLOY_LABEL:-}" = "dev" ] && [ "${PROD_DIR%/}" != "/srv/plataforma" ]; then
+  run_timed "Sembrando datos de demostración (solo dev)" run_in_prod env SEED_DEV_IMAGE="$SEED_DEV_IMAGE" docker compose --profile seed run --rm -e DEPLOY_LABEL=dev seed-dev
+fi
 
 # The durable database marker, not merely a host env var, determines whether
 # the immediately previous image is safe. A failed probe is deliberately

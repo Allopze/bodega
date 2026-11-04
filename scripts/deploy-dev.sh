@@ -19,8 +19,10 @@ set -euo pipefail
 # deploy-prod.sh, así dev ensaya los mismos pasos (migraciones, backfills,
 # rollback, smokes) que después corren en prod.
 # Diferencias: sin DEV_PUBLIC_URL se omite el smoke por el túnel; se permite
-# desplegar una rama de prueba (DEV_ALLOW_NON_MAIN_BRANCH); y usa el puerto
-# 3001 para no chocar con el 3000 de producción.
+# desplegar una rama de prueba (DEV_ALLOW_NON_MAIN_BRANCH); usa el puerto
+# 3001 para no chocar con el 3000 de producción; y al final de las etapas de
+# datos ejecuta `seed-dev` (datos de demostración). deploy:prod no ejecuta ese
+# servicio: el paso está detrás de DEPLOY_LABEL=dev.
 #
 # El .env de allá es estado de ese servidor, igual que en prod: si apunta a
 # integraciones reales (SII, proveedores de combustible, correo), el cron de

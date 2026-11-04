@@ -1304,6 +1304,40 @@ services:
       - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
     command: ["npx", "tsx", "db/seed.ts"]
 
+  # One-shot de datos de demostración del entorno de desarrollo.
+  #
+  # Lo invoca `deploy:dev` (deploy-prod.sh con DEPLOY_LABEL=dev) y NUNCA
+  # `deploy:prod`: el bloque está detrás de esa condición y este servicio no
+  # forma parte de `up`. El guard de scripts/dev-seed/guard.ts sólo acepta el
+  # host `db` del compose cuando recibe DEPLOY_LABEL=dev y
+  # SEED_DEV_ALLOW_DEPLOYED=true; además sigue rechazando cualquier base
+  # llamada bodega/prod. Ejecutarlo a mano contra el compose de producción sin
+  # `-e DEPLOY_LABEL=dev` falla antes de abrir la conexión.
+  #
+  # Usa `target: dev` —no `build`— porque necesita `tsx`, la fuente y
+  # db/schema, pero no un `next build` completo. deploy:dev construye y envía
+  # esta imagen al servidor; deploy:prod no toca esta rama.
+  #
+  # No repite el seed base (`db/seed.ts`): ese sigue siendo el servicio manual
+  # `seed`, y este sólo completa los datos de demostración sobre la
+  # dotación/catálogo que ya existan.
+  seed-dev:
+    profiles: ["seed"]
+    image: ${SEED_DEV_IMAGE:-ghcr.io/allopze/bodega:latest-seed-dev}
+    build:
+      context: .
+      target: dev
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
+      - DEPLOY_LABEL=${DEPLOY_LABEL:-producción}
+      - SEED_DEV_ALLOW_DEPLOYED=true
+    command: ["npx", "tsx", "scripts/dev-seed/index.ts", "--apply", "--write-report"]
+
   db:
     image: postgres:16-alpine
     restart: unless-stopped
