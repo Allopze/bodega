@@ -5,8 +5,8 @@ import type { AppHistoryRecord } from "@/lib/mantencion/contracts"
 import { plural } from "@/lib/mantencion/format"
 import { discardDraft } from "@/lib/mantencion/client/drafts"
 import { dueRows, equipmentLabel, workshopEntries, type WorkshopEntry } from "@/lib/mantencion/client/fleet-view"
-import { draftHasContent, type FlowDraft } from "@/lib/mantencion/client/flow-types"
-import { buildRecent, openObservations, rejectedRecords, worksiteSummary } from "@/lib/mantencion/client/home-model"
+import type { FlowDraft } from "@/lib/mantencion/client/flow-types"
+import { buildRecent, openObservations, refreshOutcomeMessage, rejectedRecords, worksiteSummary } from "@/lib/mantencion/client/home-model"
 import { buildOtViews, type OtView } from "@/lib/mantencion/client/ot-model"
 import { queueStats, STALE_PENDING_MS } from "@/lib/mantencion/client/queue"
 import type { DeviceAccount, QueueRecordItem } from "@/lib/mantencion/client/types"
@@ -33,6 +33,8 @@ export interface HomeProps {
   onStart: (kind: "P" | "C", vehicleId?: string | null, workOrderId?: string | null) => void
   onResume: (draft: FlowDraft) => void
   onFix: (item: QueueRecordItem) => void
+  /** «Descartar» un rechazo que no se puede corregir: borra el registro y libera sus fotos. */
+  onDiscardRejected: (item: QueueRecordItem) => void
   onNeedLogin: () => void
   onOtherAccount: () => void
   onForgotPin: (account: DeviceAccount) => void
@@ -61,7 +63,7 @@ function SignalLine({ online, pending, sending, old }: { online: boolean; pendin
   )
 }
 
-export function HomeScreen({ onStart, onResume, onFix, onNeedLogin, onOtherAccount, onForgotPin, onSwitched }: HomeProps) {
+export function HomeScreen({ onStart, onResume, onFix, onDiscardRejected, onNeedLogin, onOtherAccount, onForgotPin, onSwitched }: HomeProps) {
   const { account, stored, rows, queue, online, now } = useAppData()
   const { toast, refreshCatalog } = useAppActions()
   const drafts = useDrafts(account.userId)
@@ -70,7 +72,7 @@ export function HomeScreen({ onStart, onResume, onFix, onNeedLogin, onOtherAccou
   const [sitesOpen, setSitesOpen] = useState(false)
   const [workshop, setWorkshop] = useState<WorkshopEntry | null>(null)
   const [discarding, setDiscarding] = useState<FlowDraft | null>(null)
-  const [askStart, setAskStart] = useState<{ kind: "P" | "C"; vehicleId: string | null; workOrderId: string | null; existing: FlowDraft } | null>(null)
+  const [discardingRejected, setDiscardingRejected] = useState<QueueRecordItem | null>(null)
   const [openOt, setOpenOt] = useState<string | null>(null)
   const [searchingHistory, setSearchingHistory] = useState(false)
   /** Historial de un equipo; `backToOt` = la OT desde la que se abrió, a la que se vuelve al cerrarlo. */
@@ -100,18 +102,20 @@ export function HomeScreen({ onStart, onResume, onFix, onNeedLogin, onOtherAccou
     return row ? equipmentLabel(row.eq) : null
   }
 
-  const start = (kind: "P" | "C", vehicleId: string | null = null, workOrderId: string | null = null) => {
-    // Registrar de nuevo desde la misma OT retoma el avance que ya hay, no lo pisa.
-    const same = workOrderId ? drafts.find((draft) => draft.kind === kind && draftHasContent(draft) && draft.workOrderId === workOrderId) : undefined
-    if (same) { onResume(same); return }
-    const existing = drafts.find((draft) => draft.kind === kind && draftHasContent(draft) && (draft.vehicleId !== vehicleId || draft.workOrderId !== workOrderId))
-    if (existing) setAskStart({ kind, vehicleId, workOrderId, existing })
-    else onStart(kind, vehicleId, workOrderId)
-  }
+  const start = (kind: "P" | "C", vehicleId: string | null = null, workOrderId: string | null = null) => onStart(kind, vehicleId, workOrderId)
   /** «Registrar correctiva / preventiva» desde una OT: el equipo es el de la OT. */
   const registerFromOt = (kind: "P" | "C", view: OtView) => {
     setOpenOt(null)
     start(kind, view.ot.vehicleId, view.ot.id)
+  }
+  /**
+   * «Abrir la OT» de un equipo en taller. Sólo se abren las asignadas a quien está
+   * usando el teléfono: el catálogo ya filtra, pero una cuenta compartida puede dejar
+   * una tarjeta de la sesión anterior a la vista.
+   */
+  const openWorkOrder = (workOrderId: string) => {
+    if (otViews.mine.some((view) => view.ot.id === workOrderId)) setOpenOt(workOrderId)
+    else toast("Esa OT está asignada a otro mecánico.")
   }
 
   return (
@@ -146,7 +150,7 @@ export function HomeScreen({ onStart, onResume, onFix, onNeedLogin, onOtherAccou
             <div>{plural(stats.needsLogin, "registro sigue guardado", "registros siguen guardados")} en el teléfono. Entra de nuevo para enviarlos.</div>
           </Banner>
         ) : null}
-        <RejectedSection items={rejected} onFix={onFix} />
+        <RejectedSection items={rejected} onFix={onFix} onDiscard={setDiscardingRejected} />
         <ObservationBanner observations={observations} onOpen={() => setObservationsOpen(true)} />
         <DraftBanners drafts={drafts} equipmentOf={equipmentOf} onResume={onResume} onDiscard={setDiscarding} />
         {!stored ? (
@@ -169,12 +173,21 @@ export function HomeScreen({ onStart, onResume, onFix, onNeedLogin, onOtherAccou
           <button type="button" className="btns wide" aria-haspopup="dialog" onClick={() => setSearchingHistory(true)}>Historial de un equipo</button>
         </section>
 
-        <WorkshopSection entries={inWorkshop} onUpdate={setWorkshop} />
+        <WorkshopSection entries={inWorkshop} onUpdate={setWorkshop} onOpenWorkOrder={openWorkOrder} />
         <RecentSection rows={recent} now={now} records={historyById} onOpen={setOpenRecord} />
         {stored ? (
           <div className="stamp">
             Equipos al <span className="mono">{formatDateTime(stored.fetchedAt)}</span>
-            {online ? <> · <button type="button" className="lnk xs" style={{ display: "inline-flex" }} onClick={() => { void refreshCatalog().then((outcome) => toast(outcome === "offline" || outcome === "error" ? "No pudimos actualizar los equipos." : "Equipos al día.")) }}>Actualizar</button></> : null}
+            {/* Sin señal también se ofrece: el toque vuelve a probar la red y, si responde, limpia el «sin señal». */}
+            {" · "}
+            <button
+              type="button"
+              className="lnk xs"
+              style={{ display: "inline-flex" }}
+              onClick={() => { void refreshCatalog().then((outcome) => toast(refreshOutcomeMessage(outcome))) }}
+            >
+              Actualizar
+            </button>
           </div>
         ) : null}
       </div>
@@ -205,16 +218,16 @@ export function HomeScreen({ onStart, onResume, onFix, onNeedLogin, onOtherAccou
           <p>Se pierde lo que ingresaste{equipmentOf(discarding.vehicleId) ? ` de ${equipmentOf(discarding.vehicleId)}` : ""}.</p>
         </ConfirmDialog>
       ) : null}
-      {askStart ? (
+      {discardingRejected ? (
         <ConfirmDialog
-          title={`Ya tienes una ${askStart.kind === "P" ? "preventiva" : "correctiva"} sin terminar`}
-          confirmLabel="Empezar de cero"
-          cancelLabel="Seguir con esa"
+          title="¿Descartar este registro?"
+          confirmLabel="Descartar"
+          cancelLabel="Conservar"
           danger
-          onCancel={() => { const existing = askStart.existing; setAskStart(null); onResume(existing) }}
-          onConfirm={() => { const target = askStart; setAskStart(null); void discardDraft(target.existing).then(() => onStart(target.kind, target.vehicleId, target.workOrderId)) }}
+          onCancel={() => setDiscardingRejected(null)}
+          onConfirm={() => { const target = discardingRejected; setDiscardingRejected(null); onDiscardRejected(target) }}
         >
-          <p>Si empiezas de cero, se pierde lo que ingresaste{equipmentOf(askStart.existing.vehicleId) ? ` de ${equipmentOf(askStart.existing.vehicleId)}` : ""}.</p>
+          <p>Se perderá el registro y sus fotos; no se puede deshacer.</p>
         </ConfirmDialog>
       ) : null}
     </div>

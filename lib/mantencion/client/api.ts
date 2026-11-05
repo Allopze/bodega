@@ -15,7 +15,9 @@ import type { StoredPhoto } from "./types"
 /**
  * Cliente HTTP de la sincronización. Una sola regla de clasificación para toda
  * la app (ver el comentario de `SyncRecordResponse`):
- *  - 401/403 → la credencial venció, la revocaron o no hay permiso: `auth`.
+ *  - 401 → la credencial venció o la revocaron: `auth` (hay que entrar de nuevo).
+ *  - 403 → falta un permiso de la cuenta: `forbidden`. Entrar de nuevo no lo
+ *    arregla, así que no se pide login y se muestra el motivo del servidor.
  *  - red caída, 408, 429, 5xx → `retry` (backoff).
  *  - cualquier otro 4xx (409/422 incluidos) → `reject`: rechazo definitivo; el
  *    registro queda «Rechazado» con su motivo y nunca se descarta.
@@ -23,6 +25,7 @@ import type { StoredPhoto } from "./types"
 
 export type ApiFailure =
   | { kind: "auth"; status: number; message: string }
+  | { kind: "forbidden"; status: 403; message: string }
   | { kind: "retry"; message: string; retryAfterMs: number | null; network: boolean }
   | { kind: "reject"; status: number; code: string | null; field: string | null; message: string }
 export type ApiResult<T> = { kind: "ok"; value: T } | ApiFailure
@@ -34,8 +37,9 @@ const PHOTO_TIMEOUT_MS = 120_000
 
 export const NETWORK_MESSAGE = "Sin señal o la plataforma no responde."
 
-export function classifyStatus(status: number): "auth" | "retry" | "reject" {
-  if (status === 401 || status === 403) return "auth"
+export function classifyStatus(status: number): "auth" | "forbidden" | "retry" | "reject" {
+  if (status === 401) return "auth"
+  if (status === 403) return "forbidden"
   if (status === 408 || status === 425 || status === 429 || status >= 500) return "retry"
   return "reject"
 }
@@ -66,6 +70,7 @@ async function failureFrom(response: Response, fallback: string): Promise<ApiFai
   const message = messageFrom(body, fallback)
   const kind = classifyStatus(response.status)
   if (kind === "auth") return { kind, status: response.status, message }
+  if (kind === "forbidden") return { kind, status: 403, message }
   if (kind === "retry") return { kind, message, retryAfterMs: retryAfter(response), network: false }
   return {
     kind,
@@ -106,6 +111,8 @@ export async function requestCredential(deviceId: string, label: string, fetchIm
   }, DEFAULT_TIMEOUT_MS)
   if (isFailure(response)) return response
   if (response.status === 401) return { kind: "auth", status: 401, message: "Tu sesión de la plataforma venció." }
+  // Aquí el 403 viaja como `auth` a propósito: `bootstrap` lo usa para la pantalla «sin permiso»
+  // (no hay app que abrir), que es distinto de un rechazo de envío durante el uso normal.
   if (response.status === 403) return { kind: "auth", status: 403, message: "Tu cuenta no tiene permiso para usar la app de mantención." }
   if (!response.ok) return failureFrom(response, "No pudimos preparar este teléfono.")
   const body = (await readJson(response)) as DeviceCredentialResponse | null

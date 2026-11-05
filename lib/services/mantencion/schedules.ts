@@ -1,7 +1,7 @@
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm"
 import { db, type Tx } from "@/db"
 import {
-  fuelVehicles, mantBrands, mantEquipmentProfiles, mantScheduleBrandRules, mantScheduleGroups, mantScheduleIntervals,
+  fuelEquipmentTypes, fuelVehicles, mantBrands, mantEquipmentProfiles, mantScheduleBrandRules, mantScheduleGroups, mantScheduleIntervals,
   mantScheduleItemIntervals, mantScheduleItems, mantSchedules, worksites,
 } from "@/db/schema"
 import { isUniqueViolation } from "@/lib/action-error"
@@ -57,7 +57,14 @@ export async function listSchedules(): Promise<ScheduleListRow[]> {
     db.select({ scheduleId: mantEquipmentProfiles.scheduleId, n: sql<number>`count(*)::int` })
       .from(mantEquipmentProfiles)
       .innerJoin(fuelVehicles, and(eq(fuelVehicles.id, mantEquipmentProfiles.vehicleId), eq(fuelVehicles.isActive, true)))
-      .where(inArray(mantEquipmentProfiles.scheduleId, ids))
+      // Mismo filtro que los candidatos de `schedule-assign`: si el medidor del tipo no
+      // es odómetro ni horómetro, el equipo no tiene unidad y no aparece en el estado de
+      // la flota. Contarlo aquí dejaba «N equipos» por encima de los candidatos reales.
+      .innerJoin(fuelEquipmentTypes, eq(fuelEquipmentTypes.id, fuelVehicles.equipmentTypeId))
+      .where(and(
+        inArray(mantEquipmentProfiles.scheduleId, ids),
+        inArray(fuelEquipmentTypes.defaultMeterType, ["odometer", "hour_meter"]),
+      ))
       .groupBy(mantEquipmentProfiles.scheduleId),
     db.selectDistinct({ scheduleId: mantScheduleBrandRules.scheduleId })
       .from(mantScheduleBrandRules)

@@ -3,7 +3,7 @@ import { checklistFor } from "../schedule"
 import type { MantItemValue, MantPhotoKind } from "../types"
 import type { FleetRow } from "./fleet-view"
 import { newDraft, stepsFor, type FlowDraft, type FlowStep } from "./flow-types"
-import { analyzeLecture, parseQuantity, partsFilled } from "./flow-validate"
+import { analyzeLecture, invalidPart, partQuantityMessage, parseQuantity, partsFilled } from "./flow-validate"
 import type { QueueRecordItem, RecordSummary } from "./types"
 
 /** Lo que hace falta del momento de firmar. */
@@ -80,6 +80,11 @@ export function buildRecord(draft: FlowDraft, input: SignInput): BuiltRecord {
     // Con OT manda la OT: nunca «queda en taller» ni Nº de OT en papel (el servidor rechaza esa mezcla con 422).
     const linked = draft.workOrderId !== null
     const inWorkshop = !linked && draft.inWorkshop === true
+    // Una línea con repuesto y sin cantidad no se envía: el esquema contestaría «Too small» en inglés.
+    for (const job of draft.jobs) {
+      const incomplete = job.noParts ? null : invalidPart(job)
+      if (incomplete) return { ok: false, message: partQuantityMessage(incomplete) }
+    }
     candidate = {
       ...common,
       kind: "C",

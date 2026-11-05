@@ -2,10 +2,12 @@
 
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
+import type { Session } from "next-auth"
 import { z } from "zod"
 import { actionErrorResult } from "@/lib/actions/action-error-result"
 import { guardPermission } from "@/lib/auth/can"
 import type { ExportActionResult } from "@/components/ui/export-button"
+import { equipmentScope, viewerFromSession } from "@/lib/services/mantencion/access"
 import { createEquipment, updateEquipment, type EquipmentInput, type EquipmentResult } from "@/lib/services/mantencion/equipment"
 import { buildEquipmentTemplate, commitEquipmentImport, IMPORT_MAX_BYTES, previewEquipmentImport, type ImportPreview, type ImportSummary } from "@/lib/services/mantencion/equipment-import"
 import { exportEquipment } from "@/lib/services/mantencion/export-equipment"
@@ -17,9 +19,18 @@ import type { ActionState } from "@/lib/validation/operations"
  * (`mant:equipment:manage` para escribir, `mant:export` para el Excel); ocultar
  * un botón no es control de acceso. Los servicios devuelven los errores por
  * campo ya redactados en español.
+ *
+ * `mant:equipment:manage` no alcanza a todas las faenas: el alcance se calcula
+ * con `equipmentScope` y viaja en el actor, así que un encargado no global no
+ * puede editar, dar de baja ni importar equipos de otra faena por id.
  */
 
 const PATH = "/mantencion/equipos"
+
+/** Quien actúa y las faenas cuyos equipos puede escribir. */
+function equipmentActor(session: Session) {
+  return { userId: session.user.id, email: session.user.email ?? null, scope: equipmentScope(viewerFromSession(session)) }
+}
 
 /** Después de un cambio de equipos se refrescan la lista, la ficha, el panel y las pautas (cuentan equipos). */
 function revalidateEquipment(vehicleId?: string) {
@@ -67,7 +78,7 @@ export async function createEquipmentAction(_prev: ActionState, formData: FormDa
   if (guard.error) return guard.error
   let vehicleId: string
   try {
-    const result = await createEquipment({ userId: guard.session.user.id, email: guard.session.user.email ?? null }, readEquipmentForm(formData))
+    const result = await createEquipment(equipmentActor(guard.session), readEquipmentForm(formData))
     if (!result.ok) return toState(result)
     vehicleId = result.data.vehicleId
   } catch (error) {
@@ -86,7 +97,7 @@ export async function updateEquipmentAction(_prev: ActionState, formData: FormDa
   const retired = formData.get("status") === "baja"
   try {
     const result = await updateEquipment(
-      { userId: guard.session.user.id, email: guard.session.user.email ?? null },
+      equipmentActor(guard.session),
       vehicleId,
       readEquipmentForm(formData),
       { active: !retired, retiredReason: text(formData, "retiredReason", 1000) },
@@ -135,7 +146,8 @@ export async function previewImportAction(formData: FormData): Promise<MantActio
   const upload = await readUpload(formData)
   if (!upload.ok) return upload
   try {
-    return await previewEquipmentImport(upload.buffer)
+    // La vista previa también se limita a las faenas del actor: no anuncia filas que no va a poder escribir.
+    return await previewEquipmentImport(upload.buffer, equipmentScope(viewerFromSession(guard.session)))
   } catch (error) {
     return actionErrorResult(error, "No se pudo revisar la planilla.")
   }
@@ -148,7 +160,7 @@ export async function commitImportAction(formData: FormData): Promise<MantAction
   if (!upload.ok) return upload
   try {
     // Se vuelve a leer y validar el archivo: la vista previa no es una promesa.
-    const result = await commitEquipmentImport({ userId: guard.session.user.id, email: guard.session.user.email ?? null }, upload.buffer, upload.name)
+    const result = await commitEquipmentImport(equipmentActor(guard.session), upload.buffer, upload.name)
     if (result.ok) revalidateEquipment()
     return result
   } catch (error) {

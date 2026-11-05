@@ -2,7 +2,7 @@
 
 import { dueText, plural } from "@/lib/mantencion/format"
 import { daysInWorkshopText, observedRecordCount, RECENT_STATE_LABEL, shortWhen, type RecentRow } from "@/lib/mantencion/client/home-model"
-import { equipmentLabel, type FleetRow, type WorkshopEntry } from "@/lib/mantencion/client/fleet-view"
+import { equipmentLabel, isWorkOrderEntry, workshopWorkOrderId, type FleetRow, type WorkshopEntry } from "@/lib/mantencion/client/fleet-view"
 import type { AppHistoryRecord, CatalogObservation } from "@/lib/mantencion/contracts"
 import type { FlowDraft } from "@/lib/mantencion/client/flow-types"
 import type { QueueRecordItem } from "@/lib/mantencion/client/types"
@@ -28,7 +28,12 @@ export function DueSection({ rows, onPick }: { rows: FleetRow[]; onPick: (row: F
   )
 }
 
-export function WorkshopSection({ entries, onUpdate }: { entries: WorkshopEntry[]; onUpdate: (entry: WorkshopEntry) => void }) {
+export function WorkshopSection({ entries, onUpdate, onOpenWorkOrder }: {
+  entries: WorkshopEntry[]
+  onUpdate: (entry: WorkshopEntry) => void
+  /** Abre la OT del equipo: su ingreso, ítems y salida se registran ahí. */
+  onOpenWorkOrder: (workOrderId: string) => void
+}) {
   if (entries.length === 0) return null
   return (
     <section className="sect" aria-labelledby="h-taller">
@@ -36,7 +41,7 @@ export function WorkshopSection({ entries, onUpdate }: { entries: WorkshopEntry[
       {entries.map((entry) => {
         // En taller por una orden de trabajo: el ingreso y la salida se registran
         // en la OT, no con «Sigue en taller» / «Ya salió» (que son de la correctiva).
-        const viaWorkOrder = entry.folio?.startsWith("OT-") ?? false
+        const viaWorkOrder = isWorkOrderEntry(entry)
         const stale = entry.stale && !viaWorkOrder
         return (
           <div key={entry.recordId} className={stale ? "trow stale" : "trow"}>
@@ -48,7 +53,9 @@ export function WorkshopSection({ entries, onUpdate }: { entries: WorkshopEntry[
                 {stale ? <>. <strong style={{ color: "var(--ink)" }}>Toca actualizar.</strong></> : null}
               </div>
             </div>
-            {viaWorkOrder ? null : <button type="button" className="obtn" onClick={() => onUpdate(entry)} aria-label={`Actualizar estado de ${entry.equipmentCode}`}>Actualizar estado</button>}
+            {viaWorkOrder
+              ? <button type="button" className="obtn" onClick={() => onOpenWorkOrder(workshopWorkOrderId(entry))} aria-label={`Abrir la OT de ${entry.equipmentCode}`}>Abrir la OT</button>
+              : <button type="button" className="obtn" onClick={() => onUpdate(entry)} aria-label={`Actualizar estado de ${entry.equipmentCode}`}>Actualizar estado</button>}
           </div>
         )
       })}
@@ -102,7 +109,11 @@ export function RecentSection({ rows, now, records, onOpen }: {
   )
 }
 
-export function RejectedSection({ items, onFix }: { items: QueueRecordItem[]; onFix: (item: QueueRecordItem) => void }) {
+export function RejectedSection({ items, onFix, onDiscard }: {
+  items: QueueRecordItem[]
+  onFix: (item: QueueRecordItem) => void
+  onDiscard: (item: QueueRecordItem) => void
+}) {
   if (items.length === 0) return null
   return (
     <section className="sect" aria-labelledby="h-rej">
@@ -116,6 +127,7 @@ export function RejectedSection({ items, onFix }: { items: QueueRecordItem[]; on
           </div>
           <div className="banner-actions">
             <button type="button" className="btns" onClick={() => onFix(item)} aria-label={`Corregir y reenviar ${item.summary.equipmentCode}`}>Corregir y reenviar</button>
+            <button type="button" className="btns" onClick={() => onDiscard(item)} aria-label={`Descartar ${item.summary.equipmentCode}`}>Descartar</button>
           </div>
         </div>
       ))}

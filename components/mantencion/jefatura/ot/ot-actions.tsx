@@ -41,6 +41,11 @@ export interface OtActionsProps {
   /** Quien actúa: «Sr.» por defecto al recepcionar. */
   actorName: string
   pdfHref: string
+  /**
+   * El PDF exige `mant:ot:view_worksite|view_all` (la hoja imprimible expone el
+   * trabajo enlazado), así que el ítem se dibuja sólo para quien puede pedirlo.
+   */
+  canDownloadPdf: boolean
   /** Tipo de la OT: qué registro se ofrece (reparación → correctiva, mantención → preventiva). */
   repair: boolean
   maintenance: boolean
@@ -199,11 +204,13 @@ export function OtActions(props: OtActionsProps) {
           {!!recordForm && !recordFirst && options.filter((option) => !option.disabled).map((option) => (
             <DropdownMenuItem key={option.kind} onSelect={() => setRecordKind(option.kind)}>Registrar otra {KIND_TEXT[option.kind].toLowerCase()}</DropdownMenuItem>
           ))}
-          <DropdownMenuItem asChild>
-            <a href={props.pdfHref} download className="flex items-center gap-2">
-              <FilePdf className="h-4 w-4 shrink-0" aria-hidden /> Descargar PDF
-            </a>
-          </DropdownMenuItem>
+          {props.canDownloadPdf && (
+            <DropdownMenuItem asChild>
+              <a href={props.pdfHref} download className="flex items-center gap-2">
+                <FilePdf className="h-4 w-4 shrink-0" aria-hidden /> Descargar PDF
+              </a>
+            </DropdownMenuItem>
+          )}
           {allowed.has("void") && (
             <>
               <DropdownMenuSeparator />

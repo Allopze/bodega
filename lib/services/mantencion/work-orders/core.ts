@@ -3,6 +3,7 @@ import { db, type Tx } from "@/db"
 import { fuelVehicles, mantRecords, mantWorkOrderEvents, mantWorkOrders, type MantEquipmentSnapshot } from "@/db/schema"
 import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
+import type { WorkOrderOpRequest } from "@/lib/mantencion/contracts"
 import type { OtEventType, OtStatus } from "@/lib/mantencion/work-order-states"
 import { lockAndLoadVehicle, type VehicleContext } from "../records-create-context"
 import { dispatchWorkOrderNotifications, type NotificationPlan, type OtNotifyEvent } from "./notifications"
@@ -93,6 +94,21 @@ export type LockedResult = WorkOrderResult & { duplicate?: boolean }
 export const resultOf = (row: OtRow): { id: string; version: number; status: OtStatus } => ({ id: row.id, version: row.version, status: row.status as OtStatus })
 
 /**
+ * Evento que deja cada operación idempotente del teléfono. `client_op_id` es único
+ * global, así que un mismo id con otro tipo de evento es OTRA operación: contestarla
+ * como duplicado la borraría de la cola sin haberse aplicado nunca (hallazgo 3.3).
+ */
+export const CLIENT_OP_EVENTS: Record<WorkOrderOpRequest["action"], readonly OtEventType[]> = {
+  start: ["started"],
+  estimate: ["estimate_changed"],
+  items: ["items_marked", "item_added"],
+  finish: ["finished"],
+  // «Tomar» se retiró: sólo se reconocen los eventos que quedaron de antes del retiro,
+  // para que un teléfono con la operación vieja en la cola la cierre como aplicada.
+  take: ["taken"],
+}
+
+/**
  * Corre un paso sobre una OT existente: bloquea el equipo y luego la OT, comprueba
  * la versión esperada (sólo la web la manda) y ejecuta el paso; los avisos del
  * plan salen cuando la transacción ya confirmó. Un `OtRefusal` revierte todo y
@@ -100,7 +116,7 @@ export const resultOf = (row: OtRow): { id: string; version: number; status: OtS
  */
 export async function runLocked(
   actor: WorkOrderActor,
-  input: { workOrderId: string; expectedVersion?: number; clientOpId?: string },
+  input: { workOrderId: string; expectedVersion?: number; clientOpId?: string; clientOpTypes?: readonly OtEventType[] },
   step: (ctx: LockedContext) => Promise<StepOutcome>,
 ): Promise<LockedResult> {
   const [head] = await db.select({ vehicleId: mantWorkOrders.vehicleId }).from(mantWorkOrders).where(eq(mantWorkOrders.id, input.workOrderId)).limit(1)
@@ -114,12 +130,23 @@ export async function runLocked(
       if (input.clientOpId) {
         // Reenvío de una operación del teléfono: con la OT bloqueada, el segundo envío ve al primero aquí.
         const [applied] = await tx
-          .select({ actorUserId: mantWorkOrderEvents.actorUserId })
+          .select({
+            workOrderId: mantWorkOrderEvents.workOrderId,
+            type: mantWorkOrderEvents.type,
+            actorUserId: mantWorkOrderEvents.actorUserId,
+          })
           .from(mantWorkOrderEvents)
           .where(eq(mantWorkOrderEvents.clientOpId, input.clientOpId))
           .limit(1)
         if (applied) {
           if (applied.actorUserId !== actor.userId) refuse("Ese identificador de operación ya pertenece a otra persona.", "conflict")
+          // El mismo id aplicado en otra OT o como otra acción no es este envío: darlo por
+          // «duplicado» perdería el trabajo sin escribirlo. La búsqueda es global porque el
+          // índice único de `client_op_id` también lo es.
+          if (applied.workOrderId !== ot.id) refuse("Ese identificador ya se usó en otra orden.", "conflict")
+          if (input.clientOpTypes && !(input.clientOpTypes as readonly string[]).includes(applied.type)) {
+            refuse("Ese identificador ya se usó en otra orden.", "conflict")
+          }
           return { row: ot, duplicate: true }
         }
       }

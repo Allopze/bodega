@@ -456,6 +456,20 @@ export const pgliteTestFiles = [
   // Mantención de equipos: hoja de vida de la ficha (alcance, anuladas, totales), seguro y Excel del historial.
   "lib/__tests__/mantencion-equipment-life-pglite.test.ts",
   "lib/__tests__/mantencion-historical-import-pglite.test.ts",
+  // Corrección del módulo de mantención (auditoría 2026-11-04). Las cuatro van
+  // registradas aquí a propósito: el registro es del carril E, así que ningún
+  // otro carril edita este archivo. (Carril A) suplantación del ejecutor,
+  // alcance de escritura del taller y permisos de lectura del canal móvil.
+  "lib/__tests__/mantencion-seguridad-pglite.test.ts",
+  // (Carril B) composición de fotos, anulación de registros con OT, folio único
+  // e idempotencia de `client_op_id`.
+  "lib/__tests__/mantencion-integridad-pglite.test.ts",
+  // (Carril D) «Días fuera de servicio» y «En taller ahora» de OT, `stale` y
+  // totales del panel frente a la flota y el Excel.
+  "lib/__tests__/mantencion-panel-pglite.test.ts",
+  // (Carril E) la base rechaza fotos duplicadas, orden repetido y `sort_order`
+  // negativo (migración 0371).
+  "db/__tests__/mantencion-photo-constraints.test.ts",
   // Aprobaciones (CHART-030): la edad de la cola en días civiles de Chile — fila, contadores y filtro `?antiguedad=` comparten una sola fórmula SQL.
   "app/(app)/aprobaciones/queue-age-pglite.test.ts",
   // Combustibles › Fuentes (CHART-022): mapa de cobertura por mes (Copec, telemetría, OnWay), alcance por permiso y faena, día civil de Chile.

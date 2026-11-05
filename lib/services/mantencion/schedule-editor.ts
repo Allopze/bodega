@@ -237,14 +237,16 @@ async function fillMissingCells(
 ): Promise<{ filled: number; sourceValue: number | null }> {
   const sourceValue = others.length ? inheritedIntervalFor(others.map((other) => other.value), interval.value) : null
   const source = others.find((other) => other.value === sourceValue)
-  const items = await tx.select({ id: mantScheduleItems.id }).from(mantScheduleItems).where(eq(mantScheduleItems.scheduleId, scheduleId))
+  const items = await tx.select({ id: mantScheduleItems.id, isActive: mantScheduleItems.isActive })
+    .from(mantScheduleItems).where(eq(mantScheduleItems.scheduleId, scheduleId))
   if (items.length === 0) return { filled: 0, sourceValue }
   const own = await tx.select({ itemId: mantScheduleItemIntervals.itemId }).from(mantScheduleItemIntervals)
     .where(and(eq(mantScheduleItemIntervals.intervalId, interval.id), inArray(mantScheduleItemIntervals.itemId, items.map((item) => item.id))))
   const have = new Set(own.map((cell) => cell.itemId))
-  const missing = items.map((item) => item.id).filter((id) => !have.has(id))
-  if (missing.length === 0) return { filled: 0, sourceValue }
+  const missingItems = items.filter((item) => !have.has(item.id))
+  if (missingItems.length === 0) return { filled: 0, sourceValue }
 
+  const missing = missingItems.map((item) => item.id)
   const sourceCells = source
     ? await tx.select().from(mantScheduleItemIntervals)
       .where(and(eq(mantScheduleItemIntervals.intervalId, source.id), inArray(mantScheduleItemIntervals.itemId, missing)))
@@ -253,7 +255,10 @@ async function fillMissingCells(
   await tx.insert(mantScheduleItemIntervals)
     .values(missing.map((itemId) => ({ itemId, intervalId: interval.id, applies: applies.get(itemId) ?? false })))
     .onConflictDoNothing()
-  return { filled: missing.length, sourceValue }
+  // Se completan TODAS las celdas (un ítem inactivo restituido recupera la suya), pero el
+  // aviso cuenta sólo las actividades visibles: decir «3 actividades nuevas heredaron» por
+  // ítems que no están en la pauta manda a revisar una columna que no cambió.
+  return { filled: missingItems.filter((item) => item.isActive).length, sourceValue }
 }
 
 /**

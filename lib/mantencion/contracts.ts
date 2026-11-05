@@ -320,8 +320,12 @@ export interface CatalogEquipment {
   lastPreventive: { reading: number; date: string; intervalValue: number } | null
   /** Preventivas vigentes recientes (hasta 5), para el aviso de duplicado (regla 7). */
   recentPreventives: Array<{ id: string; folio: string | null; reading: number; date: string; intervalValue: number }>
-  /** Correctiva abierta con el equipo en taller (regla 11). */
-  workshop: { recordId: string; folio: string | null; entryDate: string | null; lastActivityDate: string; stale: boolean; daysStopped: number | null } | null
+  /**
+   * Correctiva abierta con el equipo en taller (regla 11). `recordId` es el id de la OT
+   * cuando el equipo lo detuvo una orden de trabajo; `workOrderId` viene fijo en ese caso
+   * (el id para abrir la OT) y `null` cuando el taller es de una correctiva.
+   */
+  workshop: { recordId: string; workOrderId: string | null; folio: string | null; entryDate: string | null; lastActivityDate: string; stale: boolean; daysStopped: number | null } | null
 }
 
 export interface CatalogOwnRecord {

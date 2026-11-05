@@ -5,7 +5,7 @@ import { isUniqueViolation } from "@/lib/action-error"
 import type { SyncWarning, SyncWorkOrderResponse, WorkOrderOpPayload, WorkOrderOpRequest } from "@/lib/mantencion/contracts"
 import { OT_PERMISSIONS, type OtStatus } from "@/lib/mantencion/work-order-states"
 import type { SyncContext } from "../sync-auth"
-import type { LockedResult } from "./core"
+import { CLIENT_OP_EVENTS, type LockedResult } from "./core"
 import {
   changeWorkOrderEstimate, finishWorkOrder, markWorkOrderItems, startWorkOrder,
 } from "./transitions"
@@ -19,8 +19,10 @@ import type { WorkOrderActor } from "./types"
  * rechaza con un motivo legible.
  *
  * Idempotente por `op.id` (= `mant_work_order_events.client_op_id`): la misma
- * operación enviada tres veces deja UN evento. Un identificador que ya usó otra
- * persona se rechaza con 409. No hay `expectedVersion`: lo que el teléfono pide
+ * operación enviada tres veces deja UN evento. El id es único global, así que se
+ * contesta como duplicado sólo si el evento ganador es de la MISMA OT y del MISMO
+ * tipo (hallazgo 3.3); uno que ya usó otra persona, otra OT u otra acción se
+ * rechaza con 409. No hay `expectedVersion`: lo que el teléfono pide
  * se evalúa bajo bloqueo contra el estado real y se rechaza (409/422, definitivo)
  * si ya no corresponde, p. ej. el ingreso de una OT que se reasignó a otro.
  */
@@ -42,9 +44,15 @@ interface AppliedOp {
   actorUserId: string
   createdAt: string
   workOrderId: string
+  type: string
   status: string
 }
 
+/**
+ * El evento que ya usó este `client_op_id`, mire donde mire: el índice único es global,
+ * así que el ganador puede ser de otra OT, de otra acción o de otra persona y hay que
+ * verlo para rechazarlo en vez de contestarlo como duplicado (hallazgo 3.3).
+ */
 async function findAppliedOp(opId: string): Promise<AppliedOp | null> {
   const [row] = await db
     .select({
@@ -52,6 +60,7 @@ async function findAppliedOp(opId: string): Promise<AppliedOp | null> {
       actorUserId: mantWorkOrderEvents.actorUserId,
       createdAt: mantWorkOrderEvents.createdAt,
       workOrderId: mantWorkOrderEvents.workOrderId,
+      type: mantWorkOrderEvents.type,
       status: mantWorkOrders.status,
     })
     .from(mantWorkOrderEvents)
@@ -61,11 +70,17 @@ async function findAppliedOp(opId: string): Promise<AppliedOp | null> {
   return row ?? null
 }
 
+const FOREIGN_OP = "Ese identificador ya se usó en otra orden."
+
 function appliedOutcome(op: WorkOrderOpRequest, applied: AppliedOp, userId: string): WorkOrderOpOutcome {
   if (applied.actorUserId !== userId) return refuse(409, "Ese identificador de operación ya pertenece a otra persona.")
+  // Mismo id en otra OT o con otro evento: NO es el reenvío de esta operación. Contestar
+  // 200 la borraría de la cola del teléfono sin haberse aplicado nunca.
+  if (applied.workOrderId !== op.workOrderId) return refuse(409, FOREIGN_OP)
+  if (!(CLIENT_OP_EVENTS[op.action] as readonly string[]).includes(applied.type)) return refuse(409, FOREIGN_OP)
   return {
     status: 200,
-    body: { ok: true, id: op.id, workOrderId: applied.workOrderId, status: applied.status as OtStatus, receivedAt: toIso(applied.createdAt), duplicate: true, warnings: [] },
+    body: { ok: true, id: op.id, workOrderId: op.workOrderId, status: applied.status as OtStatus, receivedAt: toIso(applied.createdAt), duplicate: true, warnings: [] },
   }
 }
 
@@ -137,7 +152,9 @@ export async function applyWorkOrderOp(op: WorkOrderOpRequest, context: SyncCont
       },
     }
   } catch (error) {
-    // Carrera por el índice único de `client_op_id`: otro envío de la misma operación confirmó primero.
+    // Carrera por el índice único (global) de `client_op_id`: otro envío confirmó primero.
+    // `appliedOutcome` decide: duplicado sólo si es la misma OT, la misma acción y la misma
+    // persona; si el ganador es ajeno, 409 y la operación no se da por aplicada.
     if (isUniqueViolation(error)) {
       const winner = await findAppliedOp(op.id)
       if (winner) return appliedOutcome(op, winner, viewer.userId)

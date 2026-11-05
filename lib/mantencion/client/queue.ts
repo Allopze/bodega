@@ -1,6 +1,7 @@
 import type { RecordAccepted } from "./api"
 import { STORE, idbGet, idbGetAll, req, runTx } from "./db"
 import { emit } from "./events"
+import { referencedPhotoIds, releasePhoto } from "./drafts"
 import type { WorkOrderOpPayload } from "../contracts"
 import type { QueueItem, QueueRecordItem, QueueReplyItem, QueueStatus, QueueWorkOrderItem, QueueWorkshopItem } from "./types"
 
@@ -110,9 +111,59 @@ export async function markSimpleSent(id: string): Promise<void> {
 
 /** Rechazo definitivo: se conserva todo (datos y fotos) para corregir y reenviar. */
 export async function markRejected(id: string, message: string, field: string | null): Promise<void> {
-  await updateItem(id, (item) => item.type === "record"
-    ? { ...item, status: "rejected", lastError: message, rejection: { message, field } }
-    : { ...item, status: "rejected", lastError: message })
+  await runTx([STORE.queue], "readwrite", async (s) => {
+    const current = (await req(s.queue.get(id))) as QueueItem | undefined
+    if (!current) return
+    const now = new Date().toISOString()
+    if (current.type !== "record") {
+      await req(s.queue.put({ ...current, status: "rejected", lastError: message, updatedAt: now }))
+      return
+    }
+    // El registro corregido tendrá otro id, así que sus novedades de taller ya no pueden
+    // aplicarse: si siguieran en la cola, quedarían pendientes para siempre. Se descartan
+    // y el motivo lo dice, para que el mecánico sepa que esa novedad no se enviará.
+    const dropped = await dropWorkshopIn(s.queue, current.id)
+    const reason = dropped > 0 ? `${message} También se descartó la novedad de taller de ese equipo.` : message
+    await req(s.queue.put({ ...current, status: "rejected", lastError: reason, updatedAt: now, rejection: { message: reason, field } }))
+  })
+  emit("queue")
+}
+
+/** Borra las novedades de taller (todavía sin enviar) que apuntan a un registro. Devuelve cuántas. */
+async function dropWorkshopIn(store: IDBObjectStore, recordId: string): Promise<number> {
+  const all = (await req(store.getAll())) as QueueItem[]
+  const targets = all.filter((item) => item.type === "workshop" && item.payload.recordId === recordId && item.status !== "sent")
+  for (const item of targets) await req(store.delete(item.id))
+  return targets.length
+}
+
+/**
+ * Descarta las novedades de taller de un registro que la plataforma rechazó: ese
+ * registro no va a existir, y su corrección tendrá otro id. Devuelve cuántas se
+ * descartaron.
+ */
+export async function discardWorkshopFor(recordId: string): Promise<number> {
+  const dropped = await runTx([STORE.queue], "readwrite", (s) => dropWorkshopIn(s.queue, recordId))
+  if (dropped > 0) emit("queue")
+  return dropped
+}
+
+/**
+ * «Descartar» un registro rechazado que el mecánico no puede corregir: sale de la
+ * cola y sus fotos se liberan, salvo las que otro envío o un borrador todavía usen.
+ */
+export async function discardRejectedRecord(id: string): Promise<void> {
+  const item = await getQueueItem(id)
+  if (item?.type !== "record" || item.status !== "rejected") return
+  await runTx([STORE.queue], "readwrite", async (s) => {
+    const current = (await req(s.queue.get(id))) as QueueItem | undefined
+    if (current?.type === "record" && current.status === "rejected") await req(s.queue.delete(id))
+  })
+  emit("queue")
+  // Las referencias se releen ya sin este ítem: si otro registro del mismo rechazo
+  // (o un borrador) usa una foto, esa foto se queda.
+  const inUse = await referencedPhotoIds([item.authorUserId])
+  for (const photoId of item.photoIds) if (!inUse.has(photoId)) await releasePhoto(photoId)
 }
 
 /** Quita de la cola un elemento rechazado que el mecánico ya leyó (sólo operaciones de OT: un registro rechazado se corrige, no se descarta). */
@@ -149,12 +200,23 @@ export async function requeueAuthor(authorUserId: string): Promise<void> {
   }
 }
 
-/** Al abrir la app: lo que quedó «enviando» porque se cerró a media subida vuelve a pendiente. */
+/**
+ * Al abrir la app: lo que quedó «enviando» porque se cerró a media subida vuelve a
+ * pendiente. Corre con el MISMO cerrojo entre pestañas que el motor (`mant-sync`):
+ * sin él, otra pestaña podría devolver a pendiente un ítem que se está enviando.
+ * Los intentos vuelven a cero: el cierre no fue una falla del envío.
+ */
 export async function resetInterruptedSending(): Promise<void> {
-  const items = await listQueue()
-  for (const item of items) {
-    if (item.status === "sending") await updateItem(item.id, (current) => ({ ...current, status: "pending", nextAttemptAt: 0 }))
+  const sweep = async () => {
+    const items = await listQueue()
+    for (const item of items) {
+      if (item.status !== "sending") continue
+      await updateItem(item.id, (current) => ({ ...current, status: "pending", attempts: 0, nextAttemptAt: 0, lastError: null }))
+    }
   }
+  const locks = typeof navigator === "undefined" ? undefined : navigator.locks
+  if (!locks?.request) { await sweep(); return }
+  await locks.request("mant-sync", sweep)
 }
 
 /** Poda lo enviado hace más de 48 horas (ya no tiene fotos ni nada que perder). */

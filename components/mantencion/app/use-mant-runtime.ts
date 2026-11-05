@@ -27,7 +27,8 @@ export function useMantRuntime(activeUserId: string | null, ready: boolean) {
     const stopSignal = startSignalTracking()
     void registerMantServiceWorker().then(() => { void requestPersistentStorage(); void registerBackgroundSync() })
     void (async () => {
-      // Lo que quedó «enviando» porque se cerró la app a media subida vuelve a pendiente.
+      // Lo que quedó «enviando» porque se cerró la app a media subida vuelve a pendiente
+      // (el barrido toma el cerrojo `mant-sync`, el mismo del motor: ver `queue.ts`).
       await resetInterruptedSending()
       await pruneSent()
       const accounts = await listAccounts()
@@ -46,7 +47,14 @@ export function useMantRuntime(activeUserId: string | null, ready: boolean) {
   useEffect(() => {
     if (!ready || !activeUserId) return
     // El historial va aparte: si falla (o tarda) no toca al catálogo, y al revés.
-    const refresh = () => { if (isOnline()) { void refreshCatalog(activeUserId); void refreshHistory(activeUserId) } }
+    // No se consulta `isOnline()`: esa señal pudo quedar pegada de un corte anterior y es
+    // justamente el refresco el que la limpia (`reportReachable(true)` cuando la red responde).
+    // Sólo se salta cuando el navegador mismo dice que no hay red.
+    const refresh = () => {
+      if (typeof navigator !== "undefined" && navigator.onLine === false) return
+      void refreshCatalog(activeUserId)
+      void refreshHistory(activeUserId)
+    }
     refresh()
     const onVisible = () => { if (document.visibilityState === "visible") refresh() }
     window.addEventListener("online", refresh)

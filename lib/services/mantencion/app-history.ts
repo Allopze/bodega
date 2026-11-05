@@ -22,6 +22,10 @@ import { groupJobs } from "./records-jobs"
  * no depende de quién pide (`historyVersion` tampoco) y la app puede cachearlo con
  * un solo ETag.
  *
+ * Excepción deliberada (auditoría 2.3, hallazgo 4.x): `mant:records:view_own` y
+ * `view_worksite` rigen en la web; el historial de flota y sus fotos son de lectura
+ * abierta para la app del mecánico (decisión de producto).
+ *
  * Es una proyección de lectura, no un segundo detalle de registro: sólo lo que
  * el contrato `AppHistoryRecord` nombra. Los anulados, las observaciones de
  * supervisión, la revisión, los datos de la anulación, las anomalías de sello,

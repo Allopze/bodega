@@ -384,4 +384,20 @@ describe("registro firmado", () => {
     expect(draft.photos).toMatchObject({ filtros: UUID(11), sticker: UUID(12) })
     expect(draft.marks.m1).toBe("R")
   })
+
+  it("una línea de repuesto sin cantidad se avisa con el nombre del repuesto y no llega al esquema del servidor", () => {
+    const ctx = ctxFor()
+    const draft = run(start(ctx, "C"), ctx,
+      { type: "patch", patch: { readingText: "40400" } },
+      { type: "jobAdd", workTypeId: "t-1" },
+      { type: "jobPart", workTypeId: "t-1", index: 0, field: "description", text: "Manguera" },
+      { type: "jobPart", workTypeId: "t-1", index: 0, field: "quantity", text: "" })
+    // El paso dice qué línea falta, en vez del «Too small: expected number to be >0» del contrato.
+    expect(validateStep(draft, "trabajo", ctx)["job:t-1"]).toBe("Escribe la cantidad de «Manguera» o bórralo.")
+    expect(buildRecord(draft, input(ctx))).toEqual({ ok: false, message: "Escribe la cantidad de «Manguera» o bórralo." })
+
+    // Con la cantidad puesta deja de avisar y se firma como siempre.
+    const fixed = run(draft, ctx, { type: "jobPart", workTypeId: "t-1", index: 0, field: "quantity", text: "2" })
+    expect(validateStep(fixed, "trabajo", ctx)["job:t-1"]).toBeUndefined()
+  })
 })

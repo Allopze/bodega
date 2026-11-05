@@ -336,12 +336,15 @@ describe("enlace de un registro con su OT", () => {
     expect(await testDb.select().from(schema.mantRecords)).toHaveLength(0)
   })
 
-  it("el registro lo firma el asignado (o quien él nombró como ejecutor); otro mecánico recibe 409; la jefatura puede", async () => {
+  it("el registro lo firma el asignado; otro mecánico (aunque el asignado lo nombre ejecutor) recibe 409; la jefatura puede", async () => {
     const id = await inWorkshop(IDS.mecBio)
     const stranger = await record(IDS.mecBio2, IDS.truckBio, { workOrderId: id })
     expect(stranger.outcome).toMatchObject({ status: 409, body: { ok: false, field: "workOrderId" } })
     const named = await record(IDS.mecBio2, IDS.truckBio, { workOrderId: id, executor: { kind: "otro_mecanico", userId: IDS.mecBio } })
-    expect(named.outcome.status).toBe(200)
+    expect(named.outcome.status).toBe(409)
+    // El asignado sí puede firmar y nombrar a otro como ejecutor: el autor sigue siendo él.
+    const assignee = await record(IDS.mecBio, IDS.truckBio, { workOrderId: id, executor: { kind: "otro_mecanico", userId: IDS.mecBio2 } })
+    expect(assignee.outcome.status).toBe(200)
     const manager = await record(IDS.jefe, IDS.truckBio, { workOrderId: id })
     expect(manager.outcome.status).toBe(200)
     expect(await testDb.select().from(schema.mantRecords).where(eq(schema.mantRecords.workOrderId, id))).toHaveLength(2)

@@ -95,7 +95,16 @@ describe("Chipax", () => {
   })
 
   it("queda deshabilitado mientras el feature flag esté apagado", async () => {
-    await expect(isProviderEnabled("chipax")).resolves.toBe(false)
+    // El shell de desarrollo puede traer BILLING_CHIPAX_ENABLED=true; la prueba
+    // fija el escenario que declara (flag apagado) y restaura el entorno.
+    const previous = process.env.BILLING_CHIPAX_ENABLED
+    delete process.env.BILLING_CHIPAX_ENABLED
+    try {
+      await expect(isProviderEnabled("chipax")).resolves.toBe(false)
+    } finally {
+      if (previous === undefined) delete process.env.BILLING_CHIPAX_ENABLED
+      else process.env.BILLING_CHIPAX_ENABLED = previous
+    }
   })
 
   it("sin credenciales el healthCheck lo dice y NO llama a la red", async () => {

@@ -95,6 +95,15 @@ export function parseQuantity(text: string): number {
   return Number.isFinite(value) ? value : 0
 }
 
+/** La primera línea de repuesto con descripción y sin cantidad válida (la que el servidor rechaza en inglés). */
+export function invalidPart(job: { parts: readonly FlowPart[] }): FlowPart | null {
+  return partsFilled(job).find((part) => parseQuantity(part.quantity) <= 0) ?? null
+}
+
+export function partQuantityMessage(part: FlowPart): string {
+  return `Escribe la cantidad de «${part.description.trim()}» o bórralo.`
+}
+
 function validateLectura(draft: FlowDraft, ctx: FlowCtx, errors: FlowErrors): void {
   const row = ctx.row
   if (!row) { errors.vehicle = "Elige un equipo."; return }
@@ -118,8 +127,12 @@ function validateTrabajo(draft: FlowDraft, ctx: FlowCtx, errors: FlowErrors): vo
   if (draft.jobs.length === 0) errors.workTypes = "Agrega al menos un trabajo."
   for (const job of draft.jobs) {
     if (job.hours < HOURS_MIN || job.hours > HOURS_MAX) errors[`job:${job.workTypeId}`] = `Las horas van entre ${HOURS_MIN} y ${HOURS_MAX}.`
-    else if (!job.noParts && !partsFilled(job).some((part) => parseQuantity(part.quantity) > 0)) {
-      errors[`job:${job.workTypeId}`] = "Agrega los repuestos con su cantidad, o marca «No se usaron repuestos»."
+    else if (!job.noParts) {
+      // Cada línea con descripción necesita su cantidad: si no, el esquema del servidor
+      // responde «Too small» en inglés, sin decir cuál repuesto.
+      const incomplete = invalidPart(job)
+      if (incomplete) errors[`job:${job.workTypeId}`] = partQuantityMessage(incomplete)
+      else if (partsFilled(job).length === 0) errors[`job:${job.workTypeId}`] = "Agrega los repuestos con su cantidad, o marca «No se usaron repuestos»."
     }
   }
   if (totalHours(draft.jobs) > HOURS_MAX) errors.hours = `El total de horas no puede pasar de ${HOURS_MAX}.`

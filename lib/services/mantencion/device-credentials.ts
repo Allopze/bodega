@@ -1,8 +1,10 @@
 import { createHash, randomBytes } from "node:crypto"
-import { and, desc, eq, isNull, sql } from "drizzle-orm"
-import { db } from "@/db"
-import { mantDeviceCredentials, users } from "@/db/schema"
+import { and, desc, eq, exists, inArray, isNull, sql } from "drizzle-orm"
+import { db, type Tx } from "@/db"
+import { mantDeviceCredentials, users, worksiteUsers } from "@/db/schema"
+import { isUniqueViolation } from "@/lib/action-error"
 import { recordAudit } from "@/lib/audit"
+import { getUserRbacById } from "@/lib/auth/rbac"
 import { nanoid } from "@/lib/id"
 import type { MantActionResult } from "./result"
 
@@ -43,6 +45,57 @@ export function hashDeviceToken(token: string): string {
 }
 
 /**
+ * Quien administra dispositivos. El alcance sale de la sesión: `mant:devices:manage`
+ * por sí solo no abre las credenciales de otra faena.
+ */
+export interface DeviceCredentialActor {
+  userId: string
+  isGlobal: boolean
+  viewAll: boolean
+  worksiteIds: readonly string[]
+}
+
+/** `null` = todas las faenas. */
+function deviceWorksiteScope(actor: DeviceCredentialActor): string[] | null {
+  return actor.isGlobal || actor.viewAll ? null : [...actor.worksiteIds]
+}
+
+/** «Ese dispositivo no es de tu faena.» — el mismo texto para lista y revocación. */
+export const DEVICE_OUT_OF_SCOPE = "Ese dispositivo no es de tu faena."
+
+/** Índice parcial que deja una sola credencial viva por (usuario, dispositivo). */
+const LIVE_UNIQUE = "mant_device_credentials_live_unique"
+
+/** ¿El dueño de la credencial comparte alguna faena con quien administra? */
+async function ownerSharesWorksite(client: Pick<Tx, "select">, actor: DeviceCredentialActor, ownerId: string): Promise<boolean> {
+  if (actor.isGlobal || actor.viewAll) return true
+  const scope = deviceWorksiteScope(actor)
+  if (!scope || scope.length === 0) return false
+  const rows = await client
+    .select({ worksiteId: worksiteUsers.worksiteId })
+    .from(worksiteUsers)
+    .where(and(eq(worksiteUsers.userId, ownerId), inArray(worksiteUsers.worksiteId, scope)))
+    .limit(1)
+  return rows.length > 0
+}
+
+/**
+ * Alcance de un llamador que no lo pasó. Las acciones siempre lo pasan; esto
+ * cubre a los llamadores históricos (pruebas, scripts) sin dejar la revocación
+ * abierta: el RBAC se relee de la base, igual que en la sincronización.
+ */
+async function actorFromRbac(userId: string): Promise<DeviceCredentialActor | null> {
+  const rbac = await getUserRbacById(userId, true)
+  if (!rbac) return null
+  return {
+    userId: rbac.id,
+    isGlobal: rbac.isGlobal,
+    viewAll: rbac.permissions.includes("mant:records:view_all"),
+    worksiteIds: rbac.worksiteIds,
+  }
+}
+
+/**
  * Emite una credencial nueva para (usuario, dispositivo) y revoca la vigente
  * anterior en la MISMA transacción: el índice parcial único deja a lo más una
  * viva por par, así que revocar primero es obligatorio, no cortesía.
@@ -54,40 +107,57 @@ export async function issueDeviceCredential(input: {
   actorEmail?: string | null
 }): Promise<{ token: string; expiresAt: string; credentialId: string }> {
   const token = randomBytes(32).toString("base64url")
-  const credentialId = nanoid()
   const now = new Date()
   const expiresAt = new Date(now.getTime() + DEVICE_CREDENTIAL_DAYS * 86_400_000).toISOString()
   const label = input.label?.trim() ? input.label.trim().slice(0, 120) : null
 
-  await db.transaction(async (tx) => {
-    const replaced = await tx
-      .update(mantDeviceCredentials)
-      .set({ revokedAt: now.toISOString(), revokedBy: null })
-      .where(and(
-        eq(mantDeviceCredentials.userId, input.userId),
-        eq(mantDeviceCredentials.deviceId, input.deviceId),
-        isNull(mantDeviceCredentials.revokedAt),
-      ))
-      .returning({ id: mantDeviceCredentials.id })
-    await tx.insert(mantDeviceCredentials).values({
-      id: credentialId,
-      userId: input.userId,
-      deviceId: input.deviceId,
-      tokenHash: hashDeviceToken(token),
-      label,
-      createdAt: now.toISOString(),
-      expiresAt,
+  // Dos emisiones simultáneas del mismo par chocaban al confirmar el índice
+  // parcial y respondían 500 en un endpoint cuyo contrato es «emitir/reemplazar».
+  const run = async (): Promise<string> => {
+    const credentialId = nanoid()
+    await db.transaction(async (tx) => {
+      // Serializa por (usuario, dispositivo): la segunda transacción ve la fila de la primera.
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`${input.userId}:${input.deviceId}`}))`)
+      const replaced = await tx
+        .update(mantDeviceCredentials)
+        .set({ revokedAt: now.toISOString(), revokedBy: null })
+        .where(and(
+          eq(mantDeviceCredentials.userId, input.userId),
+          eq(mantDeviceCredentials.deviceId, input.deviceId),
+          isNull(mantDeviceCredentials.revokedAt),
+        ))
+        .returning({ id: mantDeviceCredentials.id })
+      await tx.insert(mantDeviceCredentials).values({
+        id: credentialId,
+        userId: input.userId,
+        deviceId: input.deviceId,
+        tokenHash: hashDeviceToken(token),
+        label,
+        createdAt: now.toISOString(),
+        expiresAt,
+      })
+      await recordAudit({
+        userId: input.userId,
+        userEmail: input.actorEmail ?? undefined,
+        action: "create",
+        entityType: "mant_device_credential",
+        entityId: credentialId,
+        entityCode: input.deviceId,
+        newState: { deviceId: input.deviceId, label, expiresAt, replacedCredentialIds: replaced.map((row) => row.id) },
+      }, tx)
     })
-    await recordAudit({
-      userId: input.userId,
-      userEmail: input.actorEmail ?? undefined,
-      action: "create",
-      entityType: "mant_device_credential",
-      entityId: credentialId,
-      entityCode: input.deviceId,
-      newState: { deviceId: input.deviceId, label, expiresAt, replacedCredentialIds: replaced.map((row) => row.id) },
-    }, tx)
-  })
+    return credentialId
+  }
+
+  let credentialId: string
+  try {
+    credentialId = await run()
+  } catch (error) {
+    // Red de seguridad fuera de este proceso: si el INSERT chocó con una fila viva
+    // confirmada por otro nodo, el reintento la revoca y deja exactamente una viva.
+    if (!isUniqueViolation(error, LIVE_UNIQUE)) throw error
+    credentialId = await run()
+  }
 
   return { token, expiresAt, credentialId }
 }
@@ -127,8 +197,17 @@ export async function authenticateDeviceToken(
   return { credentialId: row.id, userId: row.userId, deviceId: row.deviceId }
 }
 
-/** Lista para la pantalla de dispositivos de jefatura (la más reciente primero). */
-export async function listDeviceCredentials(filter?: { userId?: string }): Promise<DeviceCredentialRow[]> {
+/**
+ * Lista para la pantalla de dispositivos de jefatura (la más reciente primero).
+ * Con `actor`, sólo salen las credenciales de personas que comparten alguna de
+ * sus faenas: los correos de otras faenas no se listan. El filtro va en SQL
+ * (`exists`), así que un usuario con varias faenas no se duplica.
+ */
+export async function listDeviceCredentials(filter?: {
+  userId?: string
+  actor?: DeviceCredentialActor
+}): Promise<DeviceCredentialRow[]> {
+  const scope = filter?.actor ? deviceWorksiteScope(filter.actor) : null
   const rows = await db
     .select({
       id: mantDeviceCredentials.id,
@@ -144,7 +223,17 @@ export async function listDeviceCredentials(filter?: { userId?: string }): Promi
     })
     .from(mantDeviceCredentials)
     .innerJoin(users, eq(users.id, mantDeviceCredentials.userId))
-    .where(filter?.userId ? eq(mantDeviceCredentials.userId, filter.userId) : undefined)
+    .where(and(
+      filter?.userId ? eq(mantDeviceCredentials.userId, filter.userId) : undefined,
+      scope
+        ? exists(
+          db.select({ one: sql`1` }).from(worksiteUsers).where(and(
+            eq(worksiteUsers.userId, mantDeviceCredentials.userId),
+            inArray(worksiteUsers.worksiteId, scope),
+          )),
+        )
+        : undefined,
+    ))
     .orderBy(desc(mantDeviceCredentials.createdAt))
   const now = Date.now()
   return rows.map((row) => ({
@@ -155,33 +244,50 @@ export async function listDeviceCredentials(filter?: { userId?: string }): Promi
 
 /**
  * Revoca una credencial. NO verifica el permiso `mant:devices:manage`: lo hace
- * quien llama (la server action de jefatura), igual que el resto de los
- * servicios de escritura del módulo que reciben `actorUserId`.
+ * quien llama (la server action de jefatura). Sí verifica el ALCAZANCE: sólo se
+ * revoca el dispositivo de alguien que comparta faena con quien revoca (o de
+ * cualquiera, si es global o ve todas las faenas). Así una jefatura delegada no
+ * deja sin sincronizar a la planta entera.
  */
 export async function revokeDeviceCredential(input: {
   credentialId: string
   actorUserId: string
   actorEmail?: string | null
+  actor?: DeviceCredentialActor
 }): Promise<MantActionResult> {
-  const revoked = await db.transaction(async (tx) => {
-    const [row] = await tx
-      .update(mantDeviceCredentials)
+  const actor = input.actor ?? await actorFromRbac(input.actorUserId)
+  if (!actor) return { ok: false, message: "No se pudo verificar tu alcance: recarga la página e inténtalo de nuevo." }
+
+  return db.transaction(async (tx): Promise<MantActionResult> => {
+    // Se bloquea la credencial: dos revocaciones simultáneas no auditan dos veces.
+    const [credential] = await tx
+      .select({
+        id: mantDeviceCredentials.id,
+        userId: mantDeviceCredentials.userId,
+        deviceId: mantDeviceCredentials.deviceId,
+        revokedAt: mantDeviceCredentials.revokedAt,
+      })
+      .from(mantDeviceCredentials)
+      .where(eq(mantDeviceCredentials.id, input.credentialId))
+      .for("update")
+      .limit(1)
+    // Mismo mensaje para «no existe» y «ya estaba revocada»: no se confirma el id.
+    if (!credential || credential.revokedAt) return { ok: false, message: "Esa credencial no existe o ya estaba revocada." }
+    if (!(await ownerSharesWorksite(tx, actor, credential.userId))) return { ok: false, message: DEVICE_OUT_OF_SCOPE }
+
+    await tx.update(mantDeviceCredentials)
       .set({ revokedAt: new Date().toISOString(), revokedBy: input.actorUserId })
-      .where(and(eq(mantDeviceCredentials.id, input.credentialId), isNull(mantDeviceCredentials.revokedAt)))
-      .returning({ id: mantDeviceCredentials.id, userId: mantDeviceCredentials.userId, deviceId: mantDeviceCredentials.deviceId })
-    if (!row) return null
+      .where(eq(mantDeviceCredentials.id, credential.id))
     await recordAudit({
       userId: input.actorUserId,
       userEmail: input.actorEmail ?? undefined,
       action: "status_change",
       entityType: "mant_device_credential",
-      entityId: row.id,
-      entityCode: row.deviceId,
-      oldState: { status: "vigente", userId: row.userId },
-      newState: { status: "revocada", userId: row.userId },
+      entityId: credential.id,
+      entityCode: credential.deviceId,
+      oldState: { status: "vigente", userId: credential.userId },
+      newState: { status: "revocada", userId: credential.userId },
     }, tx)
-    return row
+    return { ok: true, message: "Dispositivo desconectado. Tendrá que entrar de nuevo con señal." }
   })
-  if (!revoked) return { ok: false, message: "Esa credencial no existe o ya estaba revocada." }
-  return { ok: true, message: "Dispositivo desconectado. Tendrá que entrar de nuevo con señal." }
 }

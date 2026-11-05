@@ -5,6 +5,7 @@ import {
 } from "@/db/schema"
 import { recordAudit } from "@/lib/audit"
 import type { MantUnit } from "@/lib/mantencion/types"
+import { actorEquipmentScope, isWorksiteInScope } from "./access"
 import { scheduleChangeSummary } from "./equipment"
 import { writeEquipmentHistory, type MantActor } from "./equipment-history"
 
@@ -75,15 +76,22 @@ export async function assignEquipment(
   actor: MantActor,
   input: { scheduleId: string; vehicleIds: string[] },
 ): Promise<{ ok: true; message: string; data: AssignSummary } | { ok: false; message: string }> {
+  const scope = actorEquipmentScope(actor)
   return db.transaction(async (tx) => {
     const [schedule] = await tx.select().from(mantSchedules)
       .where(and(eq(mantSchedules.id, input.scheduleId), isNull(mantSchedules.deletedAt))).for("update").limit(1)
     if (!schedule) return { ok: false as const, message: "Esa pauta ya no existe." }
     const candidates = await candidatesFor(tx, schedule.unit as MantUnit)
     const selected = new Set(input.vehicleIds)
+    // Sólo se asigna lo que el actor administra; una selección con equipos de otra
+    // faena se rechaza entera en vez de aplicarse a medias.
+    const scoped = candidates.filter((candidate) => isWorksiteInScope(scope, candidate.worksiteId))
+    if (candidates.some((candidate) => selected.has(candidate.vehicleId) && !isWorksiteInScope(scope, candidate.worksiteId))) {
+      return { ok: false as const, message: "Hay equipos de otra faena en la selección: quítalos para continuar." }
+    }
     const assign: AssignCandidate[] = []
     const release: AssignCandidate[] = []
-    for (const candidate of candidates) {
+    for (const candidate of scoped) {
       const wanted = selected.has(candidate.vehicleId)
       if (wanted && candidate.scheduleId !== schedule.id) assign.push(candidate)
       else if (!wanted && candidate.scheduleId === schedule.id) release.push(candidate)

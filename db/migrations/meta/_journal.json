@@ -2598,6 +2598,13 @@
       "when": 1793738362595,
       "tag": "0370_marvelous_mentallo",
       "breakpoints": true
+    },
+    {
+      "idx": 371,
+      "version": "7",
+      "when": 1793843073533,
+      "tag": "0371_lean_princess_powerful",
+      "breakpoints": true
     }
   ]
 }

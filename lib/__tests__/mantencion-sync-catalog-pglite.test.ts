@@ -243,19 +243,20 @@ describe("POST /sync/taller", () => {
     expect(await testDb.select().from(schema.mantWorkshopUpdates)).toHaveLength(0)
   })
 
-  it("alcance: de otra faena no; quien lo registró (aunque sea de otra faena), el global y el de la faena sí", async () => {
+  it("alcance: de otra faena no; quien lo registró (aunque sea de otra faena), el global y jefatura sí; otro mecánico de la faena con view_own no", async () => {
     const created = await createCorrective(IDS.mecBio, { inWorkshop: true, workshopEntryDate: daysAgo(2), workshopReason: "Espera repuesto" })
     const outsider = await post(taller, "/api/mantencion/sync/taller", IDS.mecCho, sigue(created.id))
     expect(outsider.status).toBe(422)
     expect(String(outsider.body.message)).toContain("no es de tu faena")
 
-    expect((await post(taller, "/api/mantencion/sync/taller", IDS.mecBio2, sigue(created.id))).status).toBe(200)
+    // mecBio2 sólo tiene view_own y no registró ni ejecutó este trabajo: ya no puede mover su taller.
+    expect((await post(taller, "/api/mantencion/sync/taller", IDS.mecBio2, sigue(created.id))).status).toBe(422)
     expect((await post(taller, "/api/mantencion/sync/taller", IDS.jefe, sigue(created.id))).status).toBe(200)
 
     // Mecánico de Cholguán que registró un equipo de Biodiversa (fuera de faena): puede seguirlo él mismo.
     const outOfWorksite = await createCorrective(IDS.mecCho, { vehicleId: IDS.machineBio, reading: 1_000, inWorkshop: true, workshopEntryDate: daysAgo(2), workshopReason: "Espera repuesto" })
     expect((await post(taller, "/api/mantencion/sync/taller", IDS.mecCho, sigue(outOfWorksite.id))).status).toBe(200)
-    expect((await post(taller, "/api/mantencion/sync/taller", IDS.mecBio, sigue(outOfWorksite.id))).status).toBe(200)
+    expect((await post(taller, "/api/mantencion/sync/taller", IDS.mecBio, sigue(outOfWorksite.id))).status).toBe(422)
   })
 })
 

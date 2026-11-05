@@ -13,7 +13,7 @@ import {
   canActOnWorkOrder, canEditExecution, canEditRequest, type AccessCheck,
 } from "./access"
 import { activateWorkOrderCapaEvidence, supersedeWorkOrderCapaEvidence } from "./capa-link"
-import { applyChange, assertNotFuture, linkedRecordState, planFor, refuse, runLocked, type LockedResult, type OtRow } from "./core"
+import { applyChange, assertNotFuture, CLIENT_OP_EVENTS, linkedRecordState, planFor, refuse, runLocked, type LockedResult, type OtRow } from "./core"
 import { checkRequestFields, itemRows, normalizeItems } from "./create"
 import { findAssignableMechanic } from "./mechanics"
 import { markVehicleInWorkshop, markVehicleOutOfWorkshop } from "./vehicle-status"
@@ -158,7 +158,7 @@ async function resolveEntry(tx: Tx, ot: OtRow, entry: WorkOrderEntryPayload): Pr
 
 /** «Ingreso a taller»: asignada → en_ejecucion. El equipo pasa a `mantencion` sólo si hoy está `operativo`. */
 export async function startWorkOrder(actor: WorkOrderActor, input: Base & { entry: WorkOrderEntryPayload }): Promise<LockedResult> {
-  return runLocked(actor, input, async (ctx) => {
+  return runLocked(actor, { ...input, clientOpTypes: CLIENT_OP_EVENTS.start }, async (ctx) => {
     assertAct(canActOnWorkOrder(actor, ctx.ot, "start"))
     const fields = await resolveEntry(ctx.tx, ctx.ot, input.entry)
     const row = await applyChange(ctx, {
@@ -205,7 +205,7 @@ export async function changeWorkOrderEstimate(
   actor: WorkOrderActor,
   input: Base & { estimatedDeliveryDate: string; reason: string | null },
 ): Promise<LockedResult> {
-  return runLocked(actor, input, async (ctx) => {
+  return runLocked(actor, { ...input, clientOpTypes: CLIENT_OP_EVENTS.estimate }, async (ctx) => {
     assertAct(canEditExecution(actor, ctx.ot))
     const current = ctx.ot.estimatedDeliveryDate
     if (current === input.estimatedDeliveryDate) return { row: ctx.ot }
@@ -231,7 +231,7 @@ export interface MarkItemsInput extends Base {
 
 /** Marca SÍ/NO los ítems pedidos y agrega los que el taller encontró (máx. 12 por lista). */
 export async function markWorkOrderItems(actor: WorkOrderActor, input: MarkItemsInput): Promise<LockedResult> {
-  return runLocked(actor, input, async (ctx) => {
+  return runLocked(actor, { ...input, clientOpTypes: CLIENT_OP_EVENTS.items }, async (ctx) => {
     assertAct(canEditExecution(actor, ctx.ot))
     if (input.marks.length === 0 && input.added.length === 0) refuse("No hay nada que guardar en los ítems.", "invalid", "marks")
     const items = await ctx.tx.select().from(mantWorkOrderItems).where(eq(mantWorkOrderItems.workOrderId, ctx.ot.id))
@@ -277,7 +277,11 @@ export async function markWorkOrderItems(actor: WorkOrderActor, input: MarkItems
       })
     }
     if (rows.length) events.push({ type: "item_added", changeSet: { added: rows.map((row) => ({ id: row.id, kind: row.kind, description: row.description })) } })
-    if (events.length === 0) return { row: ctx.ot }
+    // Sin eventos no queda `client_op_id` que reconocer y el teléfono reenvía la operación
+    // para siempre (hallazgo 3.3). El caso real es reenviar ítems que ya se habían agregado:
+    // se deja un `items_marked` vacío como marca de «esta operación ya se aplicó». Desde la
+    // web no se llega acá: sus ítems agregados no llevan id, así que siempre son nuevos.
+    if (events.length === 0) events.push({ type: "items_marked", changeSet: { marks: [], added: [] } })
     // Un solo evento lleva la clave de la operación; los demás cuelgan de ella.
     const tagged = events.map((event, index) => ({
       ...event,
@@ -297,7 +301,7 @@ export async function markWorkOrderItems(actor: WorkOrderActor, input: MarkItems
  * basta cualquiera, porque enlazar ya exige que la OT esté en ejecución.
  */
 export async function finishWorkOrder(actor: WorkOrderActor, input: Base & { exitAt: string; note: string | null }): Promise<LockedResult> {
-  return runLocked(actor, input, async (ctx) => {
+  return runLocked(actor, { ...input, clientOpTypes: CLIENT_OP_EVENTS.finish }, async (ctx) => {
     assertAct(canActOnWorkOrder(actor, ctx.ot, "finish"))
     const [pending] = await ctx.tx
       .select({ count: sql<number>`count(*)::int` })

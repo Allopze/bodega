@@ -133,7 +133,7 @@ describe("deploy workflow", () => {
     // La imagen se construye acá y tiene que viajar; sin esto el despliegue
     // recrearía los contenedores con la imagen anterior.
     expect(deployScript).toContain("ship_image_to_prod")
-    expect(deployScript).toContain('docker save "$IMAGE"')
+    expect(deployScript).toContain('docker save "$image"')
   })
 
   it("uses BuildKit cache mounts and excludes local artifacts from the build context", () => {

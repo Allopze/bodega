@@ -1,3 +1,12 @@
+# Corrección del módulo de mantención — 2026-11-05
+
+Se ejecutó el plan de corrección derivado de la auditoría estática del 2026-11-04. El detalle completo, con archivo y prueba por hallazgo, está en [2026-11-04-auditoria-mantencion-codigo.md](2026-11-04-auditoria-mantencion-codigo.md).
+
+- **PASS — Puertas:** typecheck sin errores; lint 0 errores (1 warning preexistente); `check:secrets` verde; PGlite 4.350 pruebas verdes; migraciones 372 entradas verificadas.
+- **PASS — Navegador:** 57 pruebas E2E de mantención en Chromium (app, jefatura, equipos, pautas, permisos y OT), incluida la apertura de la OT desde la tarjeta de taller.
+- **PASS — `test:fast`:** 18.446 pruebas verdes, 0 fallos. Se corrigieron además los cuatro fallos ajenos que dependían del entorno (lock de LibreOffice, variable `$image` del deploy, flags de Chipax y correo DTE del shell) y el warning de lint de `ot-model.ts`.
+- **LÍMITES:** no se ejecutó la suite E2E completa, Safari/Android reales ni lector de pantalla; la migración 0371 no se aplicó en producción.
+
 # Historial anterior de mantención — verificación dirigida, 3 de noviembre de 2026
 
 ## Alcance y ambiente

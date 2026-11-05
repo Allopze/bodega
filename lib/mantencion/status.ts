@@ -108,7 +108,12 @@ export interface WorkshopState {
 
 /** Regla 11. `today` es `todayInChile()` del llamador, para que la función sea pura. */
 export function workshopState(input: WorkshopInput, today: string): WorkshopState {
-  const exit = input.updates.find((update) => update.kind === "salio")
+  // Gana la salida MÁS ANTIGUA: con dos filas `salio` (corrección manual o
+  // importación) la fecha no puede depender del orden en que llegan las filas.
+  // El `sort` es estable, así que en el mismo día decide el orden de inserción.
+  const exit = [...input.updates]
+    .sort((a, b) => (a.createdDate < b.createdDate ? -1 : a.createdDate > b.createdDate ? 1 : 0))
+    .find((update) => update.kind === "salio")
   const lastActivityDate = input.updates.reduce((max, update) => (update.createdDate > max ? update.createdDate : max), input.workDate)
   const inWorkshop = input.inWorkshop && !exit
   const exitDate = exit?.exitDate ?? null

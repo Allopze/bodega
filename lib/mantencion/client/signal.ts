@@ -40,10 +40,11 @@ async function reconcile(): Promise<void> {
 
 /** Los envíos informan si la plataforma contestó (`true`) o ni siquiera hubo respuesta de red (`false`). */
 export function reportReachable(reachable: boolean): void {
-  const next = !reachable
-  if (next === unreachable) return
-  unreachable = next
-  void reconcile()
+  const changed = unreachable !== !reachable
+  unreachable = !reachable
+  // Un éxito limpia siempre, también el `offlineSince` guardado de un corte anterior:
+  // si sólo se mirara el cambio en memoria, una marca de IndexedDB vieja sobreviviría.
+  if (changed || (reachable && offlineSince !== null)) void reconcile()
 }
 
 /** Engancha `online`/`offline`; devuelve la función que los suelta. Idempotente por llamada. */
@@ -51,7 +52,10 @@ export function startSignalTracking(): () => void {
   if (typeof window === "undefined") return () => {}
   const update = () => {
     browserOnline = navigator.onLine !== false
-    if (browserOnline === false) unreachable = false
+    // Cualquier cambio del navegador borra «la plataforma no contesta». Antes sólo se
+    // limpiaba al pasar a `offline`, y en el caso típico (wifi sin salida) el navegador
+    // nunca dispara `online`: la app quedaba «sin señal» hasta recargar.
+    unreachable = false
     void reconcile()
   }
   window.addEventListener("online", update)

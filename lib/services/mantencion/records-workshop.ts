@@ -1,4 +1,4 @@
-import { and, eq, type SQL } from "drizzle-orm"
+import { and, asc, eq, type SQL } from "drizzle-orm"
 import { db } from "@/db"
 import { mantRecordCorrectives, mantRecords, mantWorkshopUpdates } from "@/db/schema"
 import { workshopState, type WorkshopState } from "@/lib/mantencion/status"
@@ -49,6 +49,8 @@ export async function loadWorkshopCases(where: SQL | undefined, today: string = 
     .innerJoin(mantRecords, eq(mantRecords.id, mantWorkshopUpdates.recordId))
     .innerJoin(mantRecordCorrectives, eq(mantRecordCorrectives.recordId, mantRecords.id))
     .where(and(eq(mantRecordCorrectives.inWorkshop, true), where))
+    // Orden explícito: con dos salidas la fecha del tramo no puede depender del plan de la consulta.
+    .orderBy(asc(mantWorkshopUpdates.createdAt))
 
   const byRecord = new Map<string, Array<{ kind: "sigue" | "salio"; createdDate: string; exitDate: string | null }>>()
   for (const update of updates) {

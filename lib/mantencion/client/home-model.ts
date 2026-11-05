@@ -2,6 +2,7 @@ import type { CatalogObservation, MantCatalog } from "../contracts"
 import { recordKindText } from "../format"
 import type { MantUnit } from "../types"
 import { formatDate, formatDateTime, todayInChile } from "@/lib/utils"
+import type { RefreshOutcome } from "./catalog-sync"
 import type { QueueItem, QueueRecordItem, QueueStatus } from "./types"
 
 /** Lo que muestra «Mis últimos registros»: lo que el servidor ya conoce más lo que el teléfono aún no envió. */
@@ -68,6 +69,18 @@ export function buildRecent(catalog: MantCatalog | null | undefined, queue: read
 
 export function rejectedRecords(queue: readonly QueueItem[], userId: string): QueueRecordItem[] {
   return queue.filter((item): item is QueueRecordItem => item.type === "record" && item.authorUserId === userId && item.status === "rejected")
+}
+
+/** Lo que dice el aviso de «Actualizar»: cada resultado del refresco tiene su frase. */
+export function refreshOutcomeMessage(outcome: RefreshOutcome): string {
+  switch (outcome) {
+    case "updated": return "Equipos al día."
+    case "unchanged": return "No hubo cambios: los equipos ya estaban al día."
+    case "needs_login": return "Tu sesión venció: entra de nuevo para actualizar los equipos."
+    case "skipped": return "Necesitas entrar de nuevo para actualizar los equipos."
+    case "offline": return "Sin señal: no pudimos actualizar los equipos."
+    case "error": return "No pudimos actualizar los equipos. Intenta de nuevo."
+  }
 }
 
 /** Observaciones que esperan respuesta: sin respuesta del servidor y sin respuesta guardada en el teléfono. */

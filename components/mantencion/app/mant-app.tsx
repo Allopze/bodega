@@ -3,10 +3,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { bootstrapDevice, type BootstrapResult } from "@/lib/mantencion/client/bootstrap"
 import { refreshCatalog } from "@/lib/mantencion/client/catalog-sync"
+import { discardDraft, listDrafts } from "@/lib/mantencion/client/drafts"
+import { equipmentLabel } from "@/lib/mantencion/client/fleet-view"
+import { draftHasContent, newDraft, type FlowDraft } from "@/lib/mantencion/client/flow-types"
 import { setMeta } from "@/lib/mantencion/client/meta"
 import { draftFromRejected } from "@/lib/mantencion/client/flow-record"
-import { newDraft, type FlowDraft } from "@/lib/mantencion/client/flow-types"
-import { queueStats } from "@/lib/mantencion/client/queue"
+import { discardRejectedRecord, queueStats } from "@/lib/mantencion/client/queue"
 import { isOnline } from "@/lib/mantencion/client/signal"
 import { signOutToMantLogin } from "@/lib/mantencion/client/session"
 import type { DeviceAccount, QueueRecordItem } from "@/lib/mantencion/client/types"
@@ -77,6 +79,7 @@ export function MantApp({ sessionUser, appVersion, renderedAt }: MantAppProps) {
   const base = useMemo(() => (boot.status === "ready" ? { deviceId: boot.result.deviceId, appVersion } : null), [boot, appVersion])
   const data = useDeviceData(activeUserId, base)
   const runtime = useMantRuntime(activeUserId, ready)
+  const [draftAsk, setDraftAsk] = useState<{ kind: "P" | "C"; vehicleId: string | null; patch: Partial<FlowDraft>; preset: FlowDraft | null; existing: FlowDraft } | null>(null)
 
   const toast = useCallback((text: string) => {
     setMessage(text)
@@ -85,22 +88,46 @@ export function MantApp({ sessionUser, appVersion, renderedAt }: MantAppProps) {
   }, [])
   const actions = useMemo<AppActions>(() => ({ syncNow: runtime.syncNow, refreshCatalog: runtime.refresh, toast }), [runtime.syncNow, runtime.refresh, toast])
 
-  const startFlow = useCallback((kind: "P" | "C", vehicleId: string | null = null, patch: Partial<FlowDraft> = {}) => {
+  const openFlow = useCallback((kind: "P" | "C", vehicleId: string | null, patch: Partial<FlowDraft>, preset: FlowDraft | null) => {
     if (!data) return
     const row = vehicleId ? data.rows.find((entry) => entry.eq.id === vehicleId) : undefined
-    setScreen({ name: "flow", draft: { ...newDraft({ userId: data.account.userId, kind, vehicleId: row ? vehicleId : null, schedule: row?.schedule ?? null }), ...patch } })
+    setScreen({ name: "flow", draft: preset ?? { ...newDraft({ userId: data.account.userId, kind, vehicleId: row ? vehicleId : null, schedule: row?.schedule ?? null }), ...patch } })
   }, [data])
+
+  /**
+   * Puerta única de todo registro nuevo (inicio, OT, pantalla de éxito, «corregir y
+   * reenviar» y `?corregir=`). Hay un solo borrador por cuenta y tipo: si ya existe uno
+   * del mismo tipo CON contenido, se pregunta antes de pisarlo, aunque sea del mismo
+   * equipo. La única excepción es volver a abrir la corrección del MISMO registro
+   * rechazado o anulado: ahí reemplazarlo es justamente lo que se pidió.
+   *
+   * Los borradores se leen aquí, en el momento del toque: así la guardia no depende de
+   * que la lista de la pantalla haya terminado de cargar.
+   */
+  const startFlow = useCallback(async (kind: "P" | "C", vehicleId: string | null = null, patch: Partial<FlowDraft> = {}, preset: FlowDraft | null = null) => {
+    if (!data) return
+    const existing = (await listDrafts(data.account.userId).catch(() => [] as FlowDraft[]))
+      .find((draft) => draft.kind === kind && draftHasContent(draft))
+    const target = preset ?? patch
+    const sameRecord = existing !== undefined && (
+      (target.replacesQueueId != null && existing.replacesQueueId === target.replacesQueueId)
+      || (target.correctsRecordId != null && existing.correctsRecordId === target.correctsRecordId)
+    )
+    if (!existing || sameRecord) { openFlow(kind, vehicleId, patch, preset); return }
+    setDraftAsk({ kind, vehicleId, patch, preset, existing })
+  }, [data, openFlow])
 
   // `?corregir=<registro>`: abre el registro nuevo que corrige al anulado.
   useEffect(() => {
-    if (!link || !data || !ready || handledLink.current || screen.name !== "home") return
+    // Se espera al catálogo guardado: sin él no hay equipo que fijar y el registro abriría sin equipo.
+    if (!link || !data?.stored || !ready || handledLink.current || screen.name !== "home") return
     handledLink.current = true
     const known = data.stored?.catalog.myRecords.find((record) => record.id === link.recordId)
     const kind = link.kind ?? known?.kind ?? null
     const vehicleId = link.vehicleId ?? data.rows.find((row) => row.eq.code === known?.equipmentCode)?.eq.id ?? null
     clearLink()
     if (!kind) { setChooseKind(link.recordId); return }
-    startFlow(kind, vehicleId, { correctsRecordId: link.recordId })
+    void startFlow(kind, vehicleId, { correctsRecordId: link.recordId })
   }, [link, data, ready, screen.name, startFlow, clearLink])
 
   const askSignOut = async (after?: () => Promise<void>) => {
@@ -119,7 +146,19 @@ export function MantApp({ sessionUser, appVersion, renderedAt }: MantAppProps) {
   const fixRejected = (item: QueueRecordItem) => {
     const row = data?.rows.find((entry) => entry.eq.id === item.summary.vehicleId)
     if (!row) { toast("Ese equipo ya no está en la lista del teléfono. Avisa a tu supervisor."); return }
-    setScreen({ name: "flow", draft: draftFromRejected(item, row) })
+    // Pasa por la misma guardia que todo lo demás: sólo reemplaza el borrador de ESE rechazo.
+    void startFlow(item.payload.kind, row.eq.id, { replacesQueueId: item.id }, draftFromRejected(item, row))
+  }
+  /** «Descartar» un rechazo irreparable: sale de la cola y sus fotos se liberan si nadie más las usa. */
+  const discardRejected = (item: QueueRecordItem) => {
+    void discardRejectedRecord(item.id)
+      .then(() => toast("Registro descartado."))
+      .catch(() => toast("No pudimos descartarlo. Intenta de nuevo."))
+  }
+  /** « de KA-140 · SGCP-84» para el aviso de borrador pisado; vacío si el equipo no está en el teléfono. */
+  const equipmentOfDraft = (vehicleId: string | null): string => {
+    const row = vehicleId ? data?.rows.find((entry) => entry.eq.id === vehicleId) : undefined
+    return row ? ` de ${equipmentLabel(row.eq)}` : ""
   }
   const switched = (account: DeviceAccount) => {
     setActiveUserId(account.userId)
@@ -140,12 +179,13 @@ export function MantApp({ sessionUser, appVersion, renderedAt }: MantAppProps) {
     const body = screen.name === "flow" ? (
       <FlowScreen key={screen.draft.id} initial={screen.draft} onExit={() => setScreen({ name: "home" })} onSigned={(itemId) => setScreen({ name: "done", itemId })} />
     ) : screen.name === "done" ? (
-      <DoneScreen itemId={screen.itemId} onHome={() => setScreen({ name: "home" })} onStartOther={(kind, vehicleId) => startFlow(kind, vehicleId)} />
+      <DoneScreen itemId={screen.itemId} onHome={() => setScreen({ name: "home" })} onStartOther={(kind, vehicleId) => { void startFlow(kind, vehicleId) }} />
     ) : (
       <HomeScreen
-        onStart={(kind, vehicleId, workOrderId) => startFlow(kind, vehicleId ?? null, workOrderId ? { workOrderId } : {})}
+        onStart={(kind, vehicleId, workOrderId) => { void startFlow(kind, vehicleId ?? null, workOrderId ? { workOrderId } : {}) }}
         onResume={(draft) => setScreen({ name: "flow", draft: { ...draft, errors: {} } })}
         onFix={fixRejected}
+        onDiscardRejected={discardRejected}
         onNeedLogin={needLogin}
         onOtherAccount={() => { void askSignOut() }}
         onForgotPin={(account) => { void forgotPin(account) }}
@@ -171,13 +211,29 @@ export function MantApp({ sessionUser, appVersion, renderedAt }: MantAppProps) {
           <p>{plural(signOutAsk.pending, "registro sigue guardado", "registros siguen guardados")} en este teléfono. No se borran: se envían solos con la señal, con la cuenta de quien los hizo.</p>
         </ConfirmDialog>
       ) : null}
+      {draftAsk ? (
+        <ConfirmDialog
+          title={`Ya tienes una ${draftAsk.kind === "P" ? "preventiva" : "correctiva"} sin terminar`}
+          confirmLabel="Empezar de cero"
+          cancelLabel="Seguir con esa"
+          danger
+          onCancel={() => { const existing = draftAsk.existing; setDraftAsk(null); setScreen({ name: "flow", draft: { ...existing, errors: {} } }) }}
+          onConfirm={() => {
+            const ask = draftAsk
+            setDraftAsk(null)
+            void discardDraft(ask.existing).then(() => openFlow(ask.kind, ask.vehicleId, ask.patch, ask.preset))
+          }}
+        >
+          <p>Si empiezas de cero, se pierde lo que ingresaste{equipmentOfDraft(draftAsk.existing.vehicleId)}.</p>
+        </ConfirmDialog>
+      ) : null}
       {chooseKind ? (
         <ConfirmDialog
           title="¿Qué vas a corregir?"
           confirmLabel="Correctiva"
           cancelLabel="Preventiva"
-          onCancel={() => { const id = chooseKind; setChooseKind(null); startFlow("P", null, { correctsRecordId: id }) }}
-          onConfirm={() => { const id = chooseKind; setChooseKind(null); startFlow("C", null, { correctsRecordId: id }) }}
+          onCancel={() => { const id = chooseKind; setChooseKind(null); void startFlow("P", null, { correctsRecordId: id }) }}
+          onConfirm={() => { const id = chooseKind; setChooseKind(null); void startFlow("C", null, { correctsRecordId: id }) }}
         >
           <p>No encontramos ese registro en el teléfono. Elige de qué tipo era y empieza el registro corregido.</p>
         </ConfirmDialog>

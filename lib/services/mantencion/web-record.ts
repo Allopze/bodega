@@ -1,12 +1,14 @@
-import { eq } from "drizzle-orm"
+import { and, eq, inArray, isNull } from "drizzle-orm"
 import type { Session } from "next-auth"
 import { db } from "@/db"
-import { mantWorkOrders } from "@/db/schema"
+import { mantRecordPhotos, mantWorkOrders } from "@/db/schema"
 import {
   MANT_WEB_APP_VERSION, MANT_WEB_DEVICE_ID, MANT_WEB_PHOTO_TYPES, syncRecordSchema, webMetaField, webPhotoField,
   type CatalogEquipment, type SyncRecord, type SyncWarning,
 } from "@/lib/mantencion/contracts"
 import type { MantScheduleSnapshot } from "@/lib/mantencion/types"
+import { resolveMantencionFile } from "@/lib/storage/config"
+import { removeFile } from "@/lib/storage/helpers"
 import { viewerFromSession, type MantViewer } from "./access"
 import { toCatalogEquipment } from "./catalog"
 import { listMantCatalogs } from "./catalogs"
@@ -116,6 +118,29 @@ function withWebDevice(metaRaw: FormDataEntryValue | null): { raw: string | null
   }
 }
 
+/**
+ * Deshace las fotos que ESTA petición alcanzó a guardar cuando una posterior falla
+ * (hallazgo 3.4). Sólo borra las que siguen sin registro y son de quien subió: una foto
+ * ya anclada —o de otro autor— no se toca, aunque su id esté en la lista.
+ */
+async function discardUploadedPhotos(photoIds: string[], userId: string): Promise<void> {
+  if (photoIds.length === 0) return
+  const mine = and(inArray(mantRecordPhotos.id, photoIds), isNull(mantRecordPhotos.recordId), eq(mantRecordPhotos.uploadedBy, userId))
+  const rows = await db.select({ id: mantRecordPhotos.id, storageKey: mantRecordPhotos.storageKey }).from(mantRecordPhotos).where(mine)
+  if (rows.length === 0) return
+  await db.delete(mantRecordPhotos).where(and(
+    inArray(mantRecordPhotos.id, rows.map((row) => row.id)),
+    isNull(mantRecordPhotos.recordId),
+    eq(mantRecordPhotos.uploadedBy, userId),
+  ))
+  // Los archivos van después de las filas: si un borrado de fila falla, la fila sigue
+  // nombrando su archivo. Un archivo que no se pueda borrar se queda sin fila, no al revés.
+  for (const row of rows) {
+    const filePath = resolveMantencionFile(row.storageKey)
+    if (filePath) await removeFile(filePath).catch(() => undefined)
+  }
+}
+
 export async function registerWorkOrderRecordFromWeb(context: SyncContext, form: FormData): Promise<WebRecordOutcome> {
   const parsed = parseRecord(form.get("record"))
   if (!parsed.ok) return parsed.outcome
@@ -141,16 +166,27 @@ export async function registerWorkOrderRecordFromWeb(context: SyncContext, form:
     appVersion: MANT_WEB_APP_VERSION,
   }
 
+  // Cada `savePhoto` escribe su fila y su archivo por su cuenta (no hay transacción que
+  // envuelva el bucle). Si una foto posterior falla, las anteriores quedarían huérfanas
+  // para siempre —el formulario se reenvía con ids nuevos y nadie las reclama (hallazgo
+  // 3.4)—, así que se deshacen antes de devolver el error original.
+  const uploaded: string[] = []
+  const failPhotos = async (message: string): Promise<WebRecordOutcome> => {
+    await discardUploadedPhotos(uploaded, context.viewer.userId).catch(() => undefined)
+    return fail(message, "photos")
+  }
   for (const photo of record.photos) {
     const file = form.get(webPhotoField(photo.id))
-    if (!(file instanceof File)) return fail("Falta una de las fotos. Vuelve a cargarla.", "photos")
+    if (!(file instanceof File)) return failPhotos("Falta una de las fotos. Vuelve a cargarla.")
     if (!(MANT_WEB_PHOTO_TYPES as readonly string[]).includes(file.type)) {
-      return fail("Las fotos van en JPG o PNG. Si es una foto de iPhone (HEIC), guárdala como JPG y vuelve a cargarla.", "photos")
+      return failPhotos("Las fotos van en JPG o PNG. Si es una foto de iPhone (HEIC), guárdala como JPG y vuelve a cargarla.")
     }
     const meta = withWebDevice(form.get(webMetaField(photo.id)))
-    if (meta.kind !== undefined && meta.kind !== photo.kind) return fail("Una foto se cargó con otro tipo que el declarado en el registro.", "photos")
+    if (meta.kind !== undefined && meta.kind !== photo.kind) return failPhotos("Una foto se cargó con otro tipo que el declarado en el registro.")
     const saved = await savePhoto({ photoId: photo.id, file, metaRaw: meta.raw }, context)
-    if (!saved.body.ok) return fail(saved.body.message, "photos")
+    if (!saved.body.ok) return failPhotos(saved.body.message)
+    // Sólo se puede deshacer lo que creó esta petición: un «duplicado» ya era de otro envío.
+    if (!saved.body.duplicate) uploaded.push(photo.id)
   }
 
   const outcome = await createRecord(record, context)

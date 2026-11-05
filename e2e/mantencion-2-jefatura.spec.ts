@@ -166,10 +166,15 @@ test("siembra de registros propios con fotos reales", async () => {
       [photoIds.b1, rec.B.id, "correctiva", now], [photoIds.b2, rec.B.id, "correctiva", now], [photoIds.b3, rec.B.id, "correctiva", now],
       [photoIds.c1, rec.C.id, "filtros", now], [photoIds.c2, rec.C.id, "sticker", now],
     ]
+    // `sort_order` es único por registro: el servicio lo asigna por índice y la base
+    // (migración 0371) ahora lo exige. El fixture debe hacer lo mismo.
+    const nextOrder = new Map<string, number>()
     for (const [id, recordId, kind, stampedAt] of photos) {
+      const sortOrder = nextOrder.get(recordId) ?? 0
+      nextOrder.set(recordId, sortOrder + 1)
       writeFileSync(path.join(directory, `${id}.png`), png)
       await sql`insert into mant_record_photos ${sql({
-        id, record_id: recordId, kind, storage_key: `storage/mantencion/${id}.png`, mime_type: "image/png", sha256: "0".repeat(64),
+        id, record_id: recordId, kind, sort_order: sortOrder, storage_key: `storage/mantencion/${id}.png`, mime_type: "image/png", sha256: "0".repeat(64),
         bytes: png.length, width: 640, height: 480, stamped_at: stampedAt, uploaded_by: USER.mec1,
       })}`
     }
