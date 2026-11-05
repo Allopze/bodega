@@ -8,6 +8,7 @@ export const flotaModule = {
     "flota:manage_gps",
     "flota:view_gps_history",
     "flota:view_gps_driver",
+    "flota:manage_licenses",
   ] as const,
 
   permissionMeta: {
@@ -16,6 +17,7 @@ export const flotaModule = {
     "flota:manage_gps": { id: "p-flot-manage-gps", description: "Configurar y sincronizar monitoreo GPS" },
     "flota:view_gps_history": { id: "p-flot-view-gps-history", description: "Ver recorridos y viajes GPS" },
     "flota:view_gps_driver": { id: "p-flot-view-gps-driver", description: "Ver identidad vinculada del conductor GPS" },
+    "flota:manage_licenses": { id: "p-flot-manage-licenses", description: "Ver y actualizar licencias de conducir y recibir sus avisos de vencimiento" },
   },
 
   nav: [
@@ -41,6 +43,15 @@ export const flotaModule = {
           group:    "Flota",
         },
         {
+          // Licencias de conducir: la ven jefatura, admin. de contrato y jefe de
+          // terreno, que no tienen `flota:view`. Paridad con el gate de la página.
+          label:    "Conductores",
+          href:     "/flota/conductores",
+          iconName: "IdentificationCard",
+          permissions: ["flota:manage_licenses"],
+          group:    "Flota",
+        },
+        {
           label:    "Monitoreo GPS",
           href:     "/flota/monitoreo",
           iconName: "MapPin",
@@ -53,6 +64,10 @@ export const flotaModule = {
 
   defaultGrants: [
     { roleSlug: "administrador", permission: "flota:view" },
+    { roleSlug: "administrador", permission: "flota:manage_licenses" },
+    { roleSlug: "jefa_chome", permission: "flota:manage_licenses" },
+    { roleSlug: "admin_contrato", permission: "flota:manage_licenses" },
+    { roleSlug: "jefe_terreno", permission: "flota:manage_licenses" },
     { roleSlug: "jefe_mantencion", permission: "flota:view" },
     { roleSlug: "jefa_chome", permission: "flota:view" },
     { roleSlug: "administrador", permission: "flota:manage_documents" },
