@@ -6,7 +6,7 @@ import { civilDate } from "./dates"
  * «antiguas» A1/A2 que siguen vigentes en licencias emitidas antes de la reforma
  * de 1997. Los códigos son lo que se guarda en `worker_driver_licenses.classes`
  * y en `worker_positions.required_license_classes`; la restricción de la tabla
- * repite esta lista y `driver-licenses.test.ts` verifica que no se desalineen.
+ * repite esta lista y `lib/__tests__/driver-license-classes.test.ts` verifica que no se desalineen.
  */
 export const DRIVER_LICENSE_CLASSES = [
   "A1", "A2", "A3", "A4", "A5",

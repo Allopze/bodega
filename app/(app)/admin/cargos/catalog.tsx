@@ -17,6 +17,11 @@ import { TableCell, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
 import { useActionStateToast } from "@/lib/hooks/use-action-watchers"
 import { INITIAL_STATE } from "@/lib/form-state"
+import {
+  DRIVER_LICENSE_CLASS_INFO,
+  formatLicenseClassList,
+  sortLicenseClasses,
+} from "@/lib/validation/driver-licenses"
 
 /** Estado del catálogo. Vive acá y no como mapa suelto en cada celda para que
  *  cargos y capacidades no se separen en etiqueta ni en color. */
@@ -29,7 +34,7 @@ function catalogStateMeta(isActive: boolean, labels: { on: string; off: string }
 const POSITION_COLUMNS = [
   { key: "name", label: "Cargo", sortable: true },
   { key: "workerCount", label: "Trabajadores", sortable: true, width: "w-28" },
-  { key: "capabilitySearch", label: "Capacidades", sortable: false },
+  { key: "capabilitySearch", label: "Capacidades y licencia", sortable: false },
   { key: "status", label: "Estado", sortable: false, width: "w-36" },
   { key: "actions", label: "", sortable: false, width: "w-40" },
 ]
@@ -41,6 +46,29 @@ const CAPABILITY_COLUMNS = [
   { key: "isActive", label: "Estado", sortable: true, width: "w-24" },
   { key: "actions", label: "", sortable: false, width: "w-24" },
 ]
+
+/**
+ * Clases de licencia que exige el cargo. Etiquetas mono compactas con el nombre
+ * completo de la clase en `title` (A6): «A4» solo no dice qué habilita.
+ */
+function LicenseClassTags({ classes }: { classes: readonly string[] }) {
+  const sorted = sortLicenseClasses(classes)
+  if (sorted.length === 0) return null
+  return (
+    <span role="group" aria-label={`Exige licencia ${formatLicenseClassList(sorted)}`} className="inline-flex flex-wrap items-center gap-1">
+      <span aria-hidden className="text-xs text-[var(--color-text-subtle)]">Licencia</span>
+      {sorted.map((code) => (
+        <span
+          key={code}
+          title={DRIVER_LICENSE_CLASS_INFO[code].name}
+          className="rounded-[var(--radius-xs)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-1.5 py-0.5 font-mono text-[11px] font-semibold tabular-nums text-[var(--color-text)]"
+        >
+          {DRIVER_LICENSE_CLASS_INFO[code].short}
+        </span>
+      ))}
+    </span>
+  )
+}
 
 /** Acción de fila: sólo icono, así que el nombre accesible va en `aria-label`.
  *  `SubmitButton` no sirve acá porque siempre pinta su `label` como texto. */
@@ -77,7 +105,12 @@ export function WorkerPositionCatalog({ positions, capabilities }: { positions: 
 
   const positionRows = positions.map((position) => ({
     ...position,
-    capabilitySearch: position.capabilities.map((capability) => capability.name).join(" "),
+    // Las clases entran al buscador de la barra superior: «A4» encuentra los
+    // cargos que la exigen.
+    capabilitySearch: [
+      ...position.capabilities.map((capability) => capability.name),
+      ...sortLicenseClasses(position.requiredLicenseClasses).map((code) => DRIVER_LICENSE_CLASS_INFO[code].short),
+    ].join(" "),
     status: `${position.isActive ? "Activo" : "Inactivo"} ${position.needsReview ? "Pendiente de revisión" : "Revisado"}`,
   }))
 
@@ -127,10 +160,11 @@ export function WorkerPositionCatalog({ positions, capabilities }: { positions: 
         </TableCell>
         <TableCell className="text-sm text-[var(--color-text-muted)]">{position.workerCount}</TableCell>
         <TableCell>
-          <div className="flex flex-wrap gap-1">
+          <div className="flex flex-wrap items-center gap-1">
             {position.capabilities.length > 0
               ? position.capabilities.map((capability) => <Badge key={capability.id} variant="info" size="sm">{capability.name}</Badge>)
               : <span className="text-xs text-[var(--color-text-subtle)]">Sin capacidades</span>}
+            <LicenseClassTags classes={position.requiredLicenseClasses} />
           </div>
         </TableCell>
         <TableCell>
@@ -152,7 +186,10 @@ export function WorkerPositionCatalog({ positions, capabilities }: { positions: 
           {position.needsReview && <Badge variant="warning" size="sm">Por revisar</Badge>}
         </div>
         <p className="mt-3 text-xs text-[var(--color-text-muted)]">{position.workerCount} trabajador(es)</p>
-        <div className="mt-2 flex flex-wrap gap-1">{position.capabilities.map((capability) => <Badge key={capability.id} variant="info" size="sm">{capability.name}</Badge>)}</div>
+        <div className="mt-2 flex flex-wrap items-center gap-1">
+          {position.capabilities.map((capability) => <Badge key={capability.id} variant="info" size="sm">{capability.name}</Badge>)}
+          <LicenseClassTags classes={position.requiredLicenseClasses} />
+        </div>
         <div className="mt-3 border-t border-[var(--color-border)] pt-2">{positionActions(position)}</div>
       </article>
     )

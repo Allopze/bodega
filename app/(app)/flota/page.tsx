@@ -25,6 +25,9 @@ export const metadata: Metadata = { title: "Vehículos" }
 const formatNumber = (value: number) => formatQty(value, undefined, { maximumFractionDigits: 1 })
 const FLEET_PAGE_SIZE = 25
 
+/** Cómo se nombra un equipo en los avisos: su código y, si no tiene (carros, bateas), la patente. Un código vacío cuenta como ausente. */
+const vehicleIdentity = (vehicle: { code: string | null; plate: string }) => vehicle.code || vehicle.plate
+
 export default async function FlotaPage({
   searchParams,
 }: {
@@ -128,13 +131,13 @@ export default async function FlotaPage({
           {expiredVehicles.length > 0 && (
             <Callout tone="danger">
               <strong>Documentos vencidos:</strong>{" "}
-              {expiredVehicles.map((v) => v.plate).join(", ")}
+              {expiredVehicles.map(vehicleIdentity).join(", ")}
             </Callout>
           )}
           {expiringSoon.length > 0 && (
             <Callout tone="warning">
               <strong>Próximos a vencer ({warningDays} días):</strong>{" "}
-              {expiringSoon.map((v) => v.plate).join(", ")}
+              {expiringSoon.map(vehicleIdentity).join(", ")}
             </Callout>
           )}
         </div>
@@ -159,7 +162,7 @@ export default async function FlotaPage({
           <CardTitle className="text-base">Vehículos</CardTitle>
         </CardHeader>
         <CardContent className="overflow-x-auto">
-          <FleetTable vehicles={pageData.rows} hasAnyVehicle={pageData.index.length > 0} canViewCosts={canViewCosts} canViewFuel={canViewFuel} />
+          <FleetTable vehicles={pageData.rows} hasAnyVehicle={pageData.index.length > 0} canViewCosts={canViewCosts} canViewFuel={canViewFuel} today={today} warningDays={warningDays} />
         </CardContent>
         <ServerPagination pagination={pagination} hrefForPage={pageHref} />
       </Card>

@@ -38,7 +38,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   process.env.CRON_SECRET = "secreto"
   mocks.verifyCronSecret.mockReturnValue(true)
-  mocks.work.mockResolvedValue({ fleetDocuments: 1, riskReviews: 1, privacyRequests: 1, deliveries: 3 })
+  mocks.work.mockResolvedValue({ fleetDocuments: 1, driverLicenses: 1, riskReviews: 1, privacyRequests: 1, deliveries: 4 })
   mocks.withCronLock.mockImplementation(async (_n: string, run: () => Promise<unknown>) => run())
 })
 
@@ -49,6 +49,7 @@ describe("GET /api/cron/deadline-reminders", () => {
     const body = await response.json()
     expect(body.ok).toBe(true)
     expect(body.outcome).toBe("success")
+    expect(body.driverLicenses).toBe(1)
     expect(mocks.work).toHaveBeenCalledTimes(1)
   })
 

@@ -29,7 +29,8 @@ vi.mock("@/db", () => ({
 
 const { getUserRbacById } = await import("@/lib/auth/rbac")
 const { recordVisibility, recordVisibilitySql, viewerFromSession } = await import("@/lib/services/mantencion/access")
-const { loadEquipmentInsurance, loadLifeRows, loadLifeTotals, insuranceState } = await import("@/lib/services/mantencion/equipment-life")
+const { loadEquipmentInsurance, loadLifeRows, loadLifeTotals, insuranceState, INSURANCE_WARNING_DAYS } = await import("@/lib/services/mantencion/equipment-life")
+const { expiryState } = await import("@/lib/expiry")
 const { exportEquipmentHistory } = await import("@/lib/services/mantencion/export-equipment-history")
 
 async function sessionOf(userId: string): Promise<Session> {
@@ -174,6 +175,19 @@ describe("antecedentes de seguro", () => {
     expect(insuranceState("2026-10-29", "2026-10-29")).toEqual({ state: "por_vencer", days: 0 })
     expect(insuranceState("2026-10-26", "2026-10-29")).toEqual({ state: "vencido", days: -3 })
     expect(insuranceState(null, "2026-10-29")).toEqual({ state: "sin_fecha", days: null })
+  })
+
+  // Una sola lógica de vencimiento para flota, licencias y mantención (`lib/expiry.ts`): el seguro no puede
+  // volver a contar los días por su cuenta. La ventana de 30 días sigue siendo la de siempre.
+  it("el estado del seguro es el de `expiryState` con la ventana de aviso de mantención", () => {
+    for (const expiresAt of [null, "2026-09-01", "2026-10-28", "2026-10-29", "2026-10-30", "2026-11-28", "2026-11-29", "2027-10-29"]) {
+      const { state, days } = expiryState(expiresAt, "2026-10-29", INSURANCE_WARNING_DAYS)
+      expect(insuranceState(expiresAt, "2026-10-29")).toEqual({ state, days })
+    }
+    expect(INSURANCE_WARNING_DAYS).toBe(30)
+    // El borde de la ventana: 30 días todavía es «por vencer», 31 ya es vigente.
+    expect(insuranceState("2026-11-28", "2026-10-29").state).toBe("por_vencer")
+    expect(insuranceState("2026-11-29", "2026-10-29").state).toBe("vigente")
   })
 })
 

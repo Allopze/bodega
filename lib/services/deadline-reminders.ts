@@ -19,6 +19,17 @@
  * infraestructura de recordatorios existe y funciona en cinco dominios; estos
  * tres no la usaban.
  *
+ * Desde 2026-11 el barrido de flota mira también las fechas guardadas en el
+ * propio equipo (SOAP, permiso de circulación, revisión técnica y seguro), que
+ * son las que edita la ficha y las que muestran la lista y el Panel operacional:
+ * antes sólo leía los documentos subidos y el vencimiento declarado no avisaba a
+ * nadie. Y suma las licencias de conducir (`remindDriverLicenses`): vencida, por
+ * vencer, o trabajador cuyo cargo la exige y no la tiene.
+ *
+ * «Hoy» es el día civil en Chile (`todayInChile`), no el de UTC: entre las 20:00
+ * y la medianoche chilena UTC ya está en el día siguiente y el aviso salía un
+ * día antes de tiempo.
+ *
  * Todo aviso es **idempotente por `dedupeKey`**, con la fecha de vencimiento
  * dentro de la llave: correr el cron varias veces al día no repite el correo, y
  * si la fecha se corrige nace un aviso nuevo, que es lo correcto.
@@ -33,17 +44,23 @@ import {
   preventionRiskReviewTriggers,
   workers,
 } from "@/db/schema"
+import { loadDriverRosterForReminders } from "@/lib/services/driver-licenses"
 import { createNotifications } from "@/lib/services/notification-create"
 import {
   getUserIdsWithPermission,
   getUserIdsWithPermissionForWorksite,
 } from "@/lib/services/notification-targeting"
+import { getFleetAdminSettings } from "@/lib/services/system-settings"
+import { addDaysToPlainDate, formatDate, todayInChile } from "@/lib/utils"
+import { formatLicenseClassList } from "@/lib/validation/driver-licenses"
+import { expiringDocuments } from "@/lib/validation/fleet-documents"
 
 /** Cuánto antes se avisa. Un mes para un trámite legal es margen de gestión. */
 export const DEADLINE_WARNING_DAYS = 30
 
 export interface DeadlineReminderResult {
   fleetDocuments: number
+  driverLicenses: number
   riskReviews: number
   privacyRequests: number
   deliveries: number
@@ -52,71 +69,226 @@ export interface DeadlineReminderResult {
 const plusDays = (from: Date, days: number) =>
   new Date(from.getTime() + days * 86_400_000)
 
-/** `YYYY-MM-DD`, que es como guardan la fecha estas tres tablas o parte de ellas. */
-const asPlainDate = (value: Date) => value.toISOString().slice(0, 10)
-
 const etiqueta = (vencido: boolean) => (vencido ? "vencido" : "por vencer")
+
+const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1)
+
+/**
+ * «Conductor de camión» → «conductor de camión» para componerlo en una frase,
+ * pero «TI» o «SSO» se quedan como están.
+ */
+const inSentence = (text: string) =>
+  /^[A-ZÁÉÍÓÚÑ]{2}/.test(text) ? text : text.charAt(0).toLowerCase() + text.slice(1)
+
+/**
+ * Los destinatarios de un permiso por faena se resuelven con varias consultas:
+ * un barrido que recorre decenas de filas de la misma faena no debe repetirlas.
+ */
+function recipientsByWorksite(permission: string) {
+  const cache = new Map<string, Promise<string[]>>()
+  return (worksiteId: string): Promise<string[]> => {
+    let hit = cache.get(worksiteId)
+    if (!hit) {
+      hit = getUserIdsWithPermissionForWorksite(permission, worksiteId)
+      cache.set(worksiteId, hit)
+    }
+    return hit
+  }
+}
 
 /* ── FLO-002 · documentos legales del vehículo ───────────────────────────── */
 
-const DOCUMENT_LABEL: Record<string, string> = {
-  revision_tecnica: "La revisión técnica",
-  seguro: "El seguro",
-  permiso_circulacion: "El permiso de circulación",
-}
+/**
+ * Cómo se nombra cada tipo documental en una frase («KA-63: la revisión técnica
+ * está por vencer»). El género importa para «vencida»/«vencido». Las claves son
+ * los valores de `FLEET_DOCUMENT_TYPES`, que es lo que hay guardado; el mapa
+ * anterior usaba slugs (`revision_tecnica`) que nunca calzaban y todo salía con
+ * el rótulo genérico.
+ */
+const DOCUMENT_PHRASE: ReadonlyMap<string, { phrase: string; feminine: boolean }> = new Map([
+  ["SOAP", { phrase: "el SOAP", feminine: false }],
+  ["Permiso de circulación", { phrase: "el permiso de circulación", feminine: false }],
+  ["Revisión técnica", { phrase: "la revisión técnica", feminine: true }],
+  ["Seguro", { phrase: "el seguro", feminine: false }],
+  ["Padrón", { phrase: "el padrón", feminine: false }],
+  ["Certificado de emisiones", { phrase: "el certificado de emisiones", feminine: false }],
+])
 
-async function remindFleetDocuments(now: Date): Promise<{ examined: number; deliveries: number }> {
-  const horizon = asPlainDate(plusDays(now, DEADLINE_WARNING_DAYS))
-  const today = asPlainDate(now)
+const documentPhrase = (documentType: string) =>
+  DOCUMENT_PHRASE.get(documentType) ?? { phrase: `el documento «${documentType}»`, feminine: false }
 
-  const rows = await db
+/**
+ * Recorre los equipos ACTIVOS con sus cuatro fechas declaradas y sus documentos
+ * vigentes (mismo agrupamiento que `lib/services/fleet.ts`) y avisa de lo que
+ * vence dentro de la ventana de flota (`fleet.document.warning_days`). La
+ * columna del equipo manda sobre el documento del mismo tipo: es lo que edita la
+ * ficha y lo que muestran la lista y el Panel operacional (`expiringDocuments`).
+ */
+async function remindFleetDocuments(today: string, warningDays: number): Promise<{ examined: number; deliveries: number }> {
+  const horizon = addDaysToPlainDate(today, warningDays)
+
+  const vehicles = await db
     .select({
-      id: fleetVehicleDocuments.id,
+      id: fuelVehicles.id,
+      code: fuelVehicles.code,
+      plate: fuelVehicles.plate,
+      worksiteId: fuelVehicles.worksiteId,
+      soapExpiresAt: fuelVehicles.soapExpiresAt,
+      technicalReviewExpiresAt: fuelVehicles.technicalReviewExpiresAt,
+      circulationPermitExpiresAt: fuelVehicles.circulationPermitExpiresAt,
+      insuranceExpiresAt: fuelVehicles.insuranceExpiresAt,
+    })
+    .from(fuelVehicles)
+    .where(eq(fuelVehicles.isActive, true))
+
+  const documentRows = await db
+    .select({
+      vehicleId: fleetVehicleDocuments.vehicleId,
       documentType: fleetVehicleDocuments.documentType,
       expiresAt: fleetVehicleDocuments.expiresAt,
-      vehicleId: fuelVehicles.id,
-      vehicleCode: fuelVehicles.code,
-      worksiteId: fuelVehicles.worksiteId,
     })
     .from(fleetVehicleDocuments)
-    .innerJoin(fuelVehicles, eq(fleetVehicleDocuments.vehicleId, fuelVehicles.id))
+    .innerJoin(fuelVehicles, eq(fuelVehicles.id, fleetVehicleDocuments.vehicleId))
     .where(and(
+      eq(fuelVehicles.isActive, true),
       // Sólo el documento vigente de cada tipo: la historia `replaced` está ahí
       // para poder auditar, no para reclamar por una póliza que ya se renovó.
       eq(fleetVehicleDocuments.status, "current"),
       isNotNull(fleetVehicleDocuments.expiresAt),
       lte(fleetVehicleDocuments.expiresAt, horizon),
     ))
-
-  let deliveries = 0
-  for (const row of rows) {
-    if (!row.expiresAt) continue
-    const vencido = row.expiresAt < today
-    const recipients = await getUserIdsWithPermissionForWorksite("flota:manage_documents", row.worksiteId)
-    if (recipients.length === 0) continue
-
-    const que = DOCUMENT_LABEL[row.documentType] ?? `El documento «${row.documentType}»`
-    await createNotifications(recipients, {
-      type: vencido ? "fleet_document_overdue" : "fleet_document_due_soon",
-      title: `${row.vehicleCode}: ${que.toLowerCase()} está ${etiqueta(vencido)}`,
-      body: vencido
-        ? `${que} venció el ${row.expiresAt}. El vehículo no puede circular hasta renovarlo.`
-        : `${que} vence el ${row.expiresAt}.`,
-      entityType: "fleet_vehicle",
-      entityId: row.vehicleId,
-      entityHref: `/flota/${row.vehicleId}`,
-      dedupeKey: `fleet-document:${row.id}:${etiqueta(vencido)}:${row.expiresAt}`,
-    })
-    deliveries += recipients.length
+  const documentsByVehicle = new Map<string, Array<{ documentType: string; expiresAt: string | null }>>()
+  for (const row of documentRows) {
+    const list = documentsByVehicle.get(row.vehicleId) ?? []
+    list.push({ documentType: row.documentType, expiresAt: row.expiresAt })
+    documentsByVehicle.set(row.vehicleId, list)
   }
-  return { examined: rows.length, deliveries }
+
+  const recipientsOf = recipientsByWorksite("flota:manage_documents")
+  let examined = 0
+  let deliveries = 0
+  for (const vehicle of vehicles) {
+    const entries = expiringDocuments(
+      {
+        soapExpiresAt: vehicle.soapExpiresAt,
+        technicalReviewExpiresAt: vehicle.technicalReviewExpiresAt,
+        circulationPermitExpiresAt: vehicle.circulationPermitExpiresAt,
+        insuranceExpiresAt: vehicle.insuranceExpiresAt,
+      },
+      documentsByVehicle.get(vehicle.id) ?? [],
+      horizon,
+    )
+    // Un equipo sin código (bateas, carros) se identifica por su patente.
+    const identifier = vehicle.code?.trim() || vehicle.plate
+
+    for (const entry of entries) {
+      examined += 1
+      const vencido = entry.expiresAt < today
+      const recipients = await recipientsOf(vehicle.worksiteId)
+      if (recipients.length === 0) continue
+
+      const { phrase, feminine } = documentPhrase(entry.documentType)
+      const estado = vencido ? (feminine ? "vencida" : "vencido") : "por vencer"
+      await createNotifications(recipients, {
+        type: vencido ? "fleet_document_overdue" : "fleet_document_due_soon",
+        title: `${identifier}: ${phrase} está ${estado}`,
+        body: vencido
+          ? `${capitalize(phrase)} venció el ${formatDate(entry.expiresAt)}. El vehículo no puede circular hasta renovarlo.`
+          : `${capitalize(phrase)} vence el ${formatDate(entry.expiresAt)}.`,
+        entityType: "fleet_vehicle",
+        entityId: vehicle.id,
+        entityHref: `/flota/${vehicle.id}`,
+        // La fecha va en la llave: renovar el documento (o corregir la fecha)
+        // crea un aviso nuevo, que es lo correcto.
+        dedupeKey: `fleet-document:${vehicle.id}:${entry.documentType}:${etiqueta(vencido)}:${entry.expiresAt}`,
+      })
+      deliveries += recipients.length
+    }
+  }
+  return { examined, deliveries }
+}
+
+/* ── Licencias de conducir ───────────────────────────────────────────────── */
+
+/**
+ * Avisa a quien gestiona licencias (`flota:manage_licenses`) en la faena del
+ * conductor. Usa la misma nómina y el mismo estado que la pantalla
+ * `/flota/conductores` (`loadDriverRosterForReminders` → `resolveDriverStatus`),
+ * así que el correo no puede contradecirla.
+ *
+ *  - Vencida o por vencer: un aviso por tramo y por fecha (`dedupeKey` con la
+ *    fecha: al renovar nace un aviso nuevo en el próximo vencimiento).
+ *  - Sin licencia o clase insuficiente para el cargo: **una sola vez** por
+ *    trabajador y cargo. Repetirlo cada día convertiría el correo en ruido para
+ *    algo que no cambia hasta que alguien carga la licencia; si el cargo cambia
+ *    la exigencia es otra y vuelve a avisar.
+ */
+async function remindDriverLicenses(today: string, warningDays: number): Promise<{ examined: number; deliveries: number }> {
+  const roster = await loadDriverRosterForReminders(today, warningDays)
+  const recipientsOf = recipientsByWorksite("flota:manage_licenses")
+
+  let examined = 0
+  let deliveries = 0
+  for (const row of roster) {
+    const entityHref = `/flota/conductores?editar=${row.workerId}`
+
+    if ((row.status === "vencida" || row.status === "por_vencer") && row.license?.expiresAt) {
+      examined += 1
+      const recipients = await recipientsOf(row.worksiteId)
+      if (recipients.length === 0) continue
+
+      const vencido = row.status === "vencida"
+      const expiresAt = row.license.expiresAt
+      await createNotifications(recipients, {
+        type: vencido ? "driver_license_overdue" : "driver_license_due_soon",
+        title: `Licencia de ${row.name}: ${vencido ? "vencida" : "por vencer"}`,
+        body: vencido
+          ? `La licencia de ${row.name} venció el ${formatDate(expiresAt)}. No debe conducir hasta renovarla.`
+          : `La licencia de ${row.name} vence el ${formatDate(expiresAt)}.`,
+        entityType: "worker",
+        entityId: row.workerId,
+        entityHref,
+        dedupeKey: `driver-license:${row.workerId}:${etiqueta(vencido)}:${expiresAt}`,
+      })
+      deliveries += recipients.length
+      continue
+    }
+
+    if ((row.status === "sin_licencia" || row.status === "clase_insuficiente") && row.requiresLicense) {
+      examined += 1
+      const recipients = await recipientsOf(row.worksiteId)
+      if (recipients.length === 0) continue
+
+      const exige = row.requiredClasses.length > 0
+        ? `licencia ${formatLicenseClassList(row.requiredClasses)}`
+        : "licencia de conducir"
+      const quien = row.positionName
+        ? `${row.name} es ${inSentence(row.positionName)}, que exige ${exige}`
+        : `${row.name} debe tener ${exige}`
+      await createNotifications(recipients, {
+        type: "driver_license_missing",
+        title: row.status === "sin_licencia"
+          ? `Licencia de ${row.name}: sin registrar`
+          : `Licencia de ${row.name}: clase insuficiente`,
+        body: row.status === "sin_licencia"
+          ? `${quien}, y no tiene una registrada.`
+          : `${quien}, y su licencia no incluye esa clase.`,
+        entityType: "worker",
+        entityId: row.workerId,
+        entityHref,
+        dedupeKey: `driver-license-missing:${row.workerId}:${row.positionId ?? "sin-cargo"}:${row.status}`,
+      })
+      deliveries += recipients.length
+    }
+  }
+  return { examined, deliveries }
 }
 
 /* ── MIP-001 · revisiones de la matriz de riesgos ────────────────────────── */
 
-async function remindRiskReviews(now: Date): Promise<{ examined: number; deliveries: number }> {
-  const horizon = asPlainDate(plusDays(now, DEADLINE_WARNING_DAYS))
-  const today = asPlainDate(now)
+async function remindRiskReviews(today: string): Promise<{ examined: number; deliveries: number }> {
+  // `dueAt` es una fecha civil: «hoy» y la ventana se miden en días de Chile.
+  const horizon = addDaysToPlainDate(today, DEADLINE_WARNING_DAYS)
 
   const rows = await db
     .select({
@@ -204,20 +376,30 @@ async function remindPrivacyRequests(now: Date): Promise<{ examined: number; del
 }
 
 /**
- * Los tres barridos en una corrida. Van juntos porque son el mismo trabajo
- * —mirar una fecha y avisar— sobre tres tablas, y separarlos en tres crones
- * habría triplicado la configuración del planificador externo sin ganar nada.
+ * Todos los barridos en una corrida. Van juntos porque son el mismo trabajo
+ * —mirar una fecha y avisar— sobre varias tablas, y separarlos en crones habría
+ * multiplicado la configuración del planificador externo sin ganar nada.
+ *
+ * `now` fija «hoy» (día civil en Chile) para todos: el cron real llama sin
+ * argumento y las pruebas pasan un instante fijo.
  */
 export async function runDeadlineReminders(now = new Date()): Promise<DeadlineReminderResult> {
-  const [fleet, risk, privacy] = await Promise.all([
-    remindFleetDocuments(now),
-    remindRiskReviews(now),
+  const today = todayInChile(now)
+  // La ventana de flota y de licencias es el ajuste `fleet.document.warning_days`
+  // (el mismo que usan la lista de Flota y el Panel operacional); riesgo y
+  // privacidad conservan sus 30 días.
+  const { warningDays } = await getFleetAdminSettings()
+  const [fleet, drivers, risk, privacy] = await Promise.all([
+    remindFleetDocuments(today, warningDays),
+    remindDriverLicenses(today, warningDays),
+    remindRiskReviews(today),
     remindPrivacyRequests(now),
   ])
   return {
     fleetDocuments: fleet.examined,
+    driverLicenses: drivers.examined,
     riskReviews: risk.examined,
     privacyRequests: privacy.examined,
-    deliveries: fleet.deliveries + risk.deliveries + privacy.deliveries,
+    deliveries: fleet.deliveries + drivers.deliveries + risk.deliveries + privacy.deliveries,
   }
 }

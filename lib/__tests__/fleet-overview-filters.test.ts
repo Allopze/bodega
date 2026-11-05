@@ -16,6 +16,14 @@ describe("filterFleetOverviewRows", () => {
     expect(filterFleetOverviewRows(rows, { responsibleName: "Ana" }, dates)).toEqual([rows[0]])
   })
 
+  // Quien conoce al equipo por su código interno (KA-63) lo busca así; los carros y bateas no tienen y se hallan por patente.
+  it("la búsqueda también encuentra el código interno del equipo", () => {
+    const withCode = [{ ...rows[0]!, code: "KA-63" }, { ...rows[1]!, code: null }, rows[2]!]
+
+    expect(filterFleetOverviewRows(withCode, { q: "ka-63" }, dates)).toEqual([withCode[0]])
+    expect(filterFleetOverviewRows(withCode, { q: "CC-DD-22" }, dates)).toEqual([withCode[1]])
+  })
+
   it("separa vencidos, próximos y al día con límites inclusivos", () => {
     expect(filterFleetOverviewRows(rows, { expiry: "vencidos" }, dates)).toEqual([rows[0]])
     expect(filterFleetOverviewRows(rows, { expiry: "proximos" }, dates)).toEqual([rows[1]])

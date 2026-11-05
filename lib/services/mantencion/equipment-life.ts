@@ -4,6 +4,7 @@ import { db } from "@/db"
 import {
   fleetVehicleDocuments, fuelVehicles, mantRecordCorrectives, mantRecordVoids, mantRecords, mantWorkOrders, mantWorkshopUpdates, users, worksites,
 } from "@/db/schema"
+import { expiryState, type ExpiryState } from "@/lib/expiry"
 import { daysBetween } from "@/lib/mantencion/readings"
 import { workshopState } from "@/lib/mantencion/status"
 import type { MantExecutorKind, MantRecordKind, MantRecordStatus, MantReview, MantUnit } from "@/lib/mantencion/types"
@@ -150,14 +151,13 @@ export async function loadLifeRows(
 /** Días antes del vencimiento desde los que se avisa «por vencer». */
 export const INSURANCE_WARNING_DAYS = 30
 
-export type InsuranceState = "vigente" | "por_vencer" | "vencido" | "sin_fecha"
+/** Los cuatro estados son los de `lib/expiry.ts`: un vencimiento se lee igual en flota, licencias y mantención. */
+export type InsuranceState = ExpiryState
 
-/** `today` es `todayInChile()` del llamador: la función queda pura. */
+/** `today` es `todayInChile()` del llamador: la función queda pura. Delega en `expiryState` (`lib/expiry.ts`). */
 export function insuranceState(expiresAt: string | null, today: string): { state: InsuranceState; days: number | null } {
-  if (!expiresAt) return { state: "sin_fecha", days: null }
-  const days = daysBetween(today, expiresAt)
-  if (days < 0) return { state: "vencido", days }
-  return { state: days <= INSURANCE_WARNING_DAYS ? "por_vencer" : "vigente", days }
+  const { state, days } = expiryState(expiresAt, today, INSURANCE_WARNING_DAYS)
+  return { state, days }
 }
 
 export interface InsuranceDocument {

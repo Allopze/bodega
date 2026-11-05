@@ -33,6 +33,21 @@ function checked(formData: FormData, key: string, defaultValue = false): boolean
   return value === "on" || value === "true" || value === "1"
 }
 
+/**
+ * Clases de licencia que exige el cargo, tal como las envía `ChoiceChips`
+ * (un `<input hidden>` por clase marcada). El formulario siempre manda además
+ * un valor vacío como marca de que administra el campo: sin ella, «ninguna
+ * marcada» y «el formulario no tiene el campo» serían indistinguibles, y
+ * vaciar las clases de un cargo era imposible. `undefined` = no tocar.
+ */
+function requiredLicenseClasses(formData: FormData): string[] | undefined {
+  if (!formData.has("requiredLicenseClasses")) return undefined
+  return [...new Set(formData.getAll("requiredLicenseClasses")
+    .filter((value): value is string => typeof value === "string")
+    .map((value) => value.trim())
+    .filter(Boolean))]
+}
+
 function capabilityIds(formData: FormData): string[] {
   return [...new Set(formData.getAll("capabilityIds")
     .filter((value): value is string => typeof value === "string")
@@ -84,6 +99,7 @@ export async function createWorkerPositionAction(_previous: ActionState, formDat
       name: stringField(formData, "name"),
       isActive: checked(formData, "isActive", true),
       needsReview: checked(formData, "needsReview"),
+      requiredLicenseClasses: requiredLicenseClasses(formData) ?? [],
     }
     if (!input.code) return { ok: false, fieldErrors: { code: ["Ingresa un código."] } }
     if (!input.name) return { ok: false, fieldErrors: { name: ["Ingresa un nombre."] } }
@@ -101,7 +117,13 @@ export async function createWorkerPositionAction(_previous: ActionState, formDat
       entityType: "worker_position",
       entityId: position.id,
       entityCode: position.code,
-      newState: { name: position.name, isActive: position.isActive, needsReview: position.needsReview, capabilityIds: selectedCapabilities },
+      newState: {
+        name: position.name,
+        isActive: position.isActive,
+        needsReview: position.needsReview,
+        capabilityIds: selectedCapabilities,
+        requiredLicenseClasses: position.requiredLicenseClasses,
+      },
     })
     return { ok: true, message: `Cargo ${position.name} creado.` }
   })
@@ -115,6 +137,7 @@ export async function updateWorkerPositionAction(_previous: ActionState, formDat
       name: stringField(formData, "name"),
       isActive: checked(formData, "isActive"),
       needsReview: checked(formData, "needsReview"),
+      requiredLicenseClasses: requiredLicenseClasses(formData),
     }
     if (!id) return { ok: false, message: "Cargo no identificado." }
     if (!input.code) return { ok: false, fieldErrors: { code: ["Ingresa un código."] } }
@@ -133,7 +156,13 @@ export async function updateWorkerPositionAction(_previous: ActionState, formDat
       entityType: "worker_position",
       entityId: position.id,
       entityCode: position.code,
-      newState: { name: position.name, isActive: position.isActive, needsReview: position.needsReview, capabilityIds: selectedCapabilities },
+      newState: {
+        name: position.name,
+        isActive: position.isActive,
+        needsReview: position.needsReview,
+        capabilityIds: selectedCapabilities,
+        requiredLicenseClasses: position.requiredLicenseClasses,
+      },
     })
     return { ok: true, message: `Cargo ${position.name} actualizado.` }
   })

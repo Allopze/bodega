@@ -377,6 +377,8 @@ export const pgliteTestFiles = [
   // PREV-I13: alertas por correo del escaneo de integridad y de crons de Prevención fallidos.
   "lib/__tests__/prevention-ops-alerts.test.ts",
   "lib/__tests__/deadline-reminders.test.ts",
+  // Licencias de conducir (2026-11): nómina por capacidad del cargo, alcance de faena, auditoría y carga idempotente.
+  "lib/__tests__/driver-licenses-pglite.test.ts",
   "lib/reports/export-module/solicitudes.test.ts",
   "lib/__tests__/segregacion-dinero.test.ts",
   "lib/__tests__/inspection-finding-closure.test.ts",
@@ -432,6 +434,7 @@ export const pgliteTestFiles = [
   // Decisiones de catálogo EPP 2026-10-29: atributos faltantes, nombre del Evalight y color Piedra.
   "scripts/__tests__/apply-epp-catalog-decisions-2026-10-29.test.ts",
   "scripts/__tests__/apply-fleet-copec-decisions-2026-10-29.test.ts",
+  "scripts/__tests__/apply-vencimientos-planilla-2026-11.test.ts",
   "scripts/__tests__/apply-mantencion-correcciones-2026-10-31.test.ts",
   "scripts/__tests__/apply-copec-dated-mappings-2026-10-30.test.ts",
   // Mantención de equipos: carga inicial idempotente y conciliada con la flota (§13).

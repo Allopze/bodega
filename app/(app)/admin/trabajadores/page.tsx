@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { db } from "@/db"
-import { workers, worksites } from "@/db/schema"
+import { workerDriverLicenses, workers, worksites } from "@/db/schema"
 import { and, eq } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"
@@ -11,7 +11,12 @@ import { HeaderSignals, type HeaderSignal } from "@/components/ui/header-signals
 import { WorkerActions } from "./worker-actions"
 import { WorkerList } from "./worker-list"
 import { getSizeFamilyOptions } from "@/lib/services/sizes"
-import { listWorkerPositions } from "@/lib/services/worker-positions"
+import {
+  LICENSE_REQUIRING_CAPABILITY_CODES,
+  listWorkerPositions,
+  UNCLASSIFIED_POSITION_CODE,
+} from "@/lib/services/worker-positions"
+import type { AssignablePosition } from "./bulk-assign-dialog"
 
 export const metadata: Metadata = { title: "Trabajadores" }
 
@@ -20,7 +25,7 @@ export default async function TrabajadoresPage() {
   try { session = await requirePermission("admin:workers") }
   catch { redirect("/forbidden") }
 
-  const [allWorkers, allWorksites, sizeFamilies, positionCatalog] = await Promise.all([
+  const [allWorkers, allWorksites, sizeFamilies, positionCatalog, licensedRows] = await Promise.all([
     db.query.workers.findMany({
       with:    { worksite: true, positionCatalog: true },
       where:   worksiteScopeSql(session, workers.worksiteId),
@@ -36,7 +41,15 @@ export default async function TrabajadoresPage() {
     // El selector de cargo y el badge "por revisar" salen del catálogo
     // canónico, no del texto libre que todavía guarda `workers.position`.
     listWorkerPositions(),
+    // Sólo se sabe SI tiene licencia, no cuál ni hasta cuándo: alcanza para
+    // anticipar, al clasificar, quién quedará «sin licencia registrada». El
+    // detalle vive en Conductores, tras `flota:manage_licenses`.
+    db.select({ workerId: workerDriverLicenses.workerId })
+      .from(workerDriverLicenses)
+      .innerJoin(workers, eq(workers.id, workerDriverLicenses.workerId))
+      .where(worksiteScopeSql(session, workers.worksiteId)),
   ])
+  const licensedWorkerIds = new Set(licensedRows.map((row) => row.workerId))
 
   const positions = positionCatalog.map((position) => ({
     id:          position.id,
@@ -45,6 +58,21 @@ export default async function TrabajadoresPage() {
     isActive:    position.isActive,
     needsReview: position.needsReview,
   }))
+
+  // Lo que ofrece «Asignar cargo»: activos y reales. «Sin clasificar» es el
+  // problema que se está resolviendo, no un destino.
+  const assignablePositions: AssignablePosition[] = positionCatalog
+    .filter((position) => position.isActive && !position.isSystem)
+    .map((position) => ({
+      id: position.id,
+      name: position.name,
+      needsReview: position.needsReview,
+      aliases: position.aliases.map((alias) => alias.alias),
+      capabilities: position.capabilities.map(({ id, name }) => ({ id, name })),
+      drives: position.capabilities.some((capability) =>
+        (LICENSE_REQUIRING_CAPABILITY_CODES as readonly string[]).includes(capability.code)),
+      requiredLicenseClasses: position.requiredLicenseClasses,
+    }))
 
   const activeCount = allWorkers.filter((w) => w.isActive).length
   const inactiveCount = allWorkers.length - activeCount
@@ -83,6 +111,8 @@ export default async function TrabajadoresPage() {
           position:     w.positionCatalog?.name ?? w.position,
           positionId:   w.positionId,
           positionNeedsReview: w.positionCatalog?.needsReview ?? false,
+          unclassified: w.positionId === null || w.positionCatalog?.code === UNCLASSIFIED_POSITION_CODE,
+          hasDriverLicense: licensedWorkerIds.has(w.id),
           worksiteId:   w.worksiteId,
           worksiteName: w.worksite?.name ?? "—",
           isActive:     w.isActive,
@@ -96,6 +126,7 @@ export default async function TrabajadoresPage() {
         worksites={allWorksites.map((ws) => ({ id: ws.id, name: ws.name }))}
         sizeFamilies={sizeFamilies}
         positions={positions}
+        assignablePositions={assignablePositions}
       />
     </PageContainer>
   )

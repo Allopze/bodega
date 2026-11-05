@@ -3,18 +3,47 @@
 import * as React from "react"
 import Link from "next/link"
 import { DataTable } from "@/components/ui/data-table"
+import { ExpiryStatus } from "@/components/ui/expiry-status"
 import { TableCell } from "@/components/ui/table"
 import { MetaBadge } from "@/components/states/state-badge"
 import { formatFuelVehicleStatus } from "@/lib/combustibles/validation"
-import { formatCLP, formatDate } from "@/lib/utils"
+import { expiryState } from "@/lib/expiry"
+import { formatCLP } from "@/lib/utils"
 import type { getFleetOverview } from "@/lib/services/fleet"
+import { fleetExpirySubject } from "./fleet-expiry-subject"
 import { FleetMeterReading } from "./fleet-meter-reading"
 import { FleetTableRow } from "./fleet-table-row"
 import { Button } from "@/components/ui/button"
 
 type VehicleRow = Awaited<ReturnType<typeof getFleetOverview>>[number]
 
-export function FleetTable({ vehicles, hasAnyVehicle, canViewCosts, canViewFuel }: { vehicles: VehicleRow[]; hasAnyVehicle: boolean; canViewCosts: boolean; canViewFuel: boolean }) {
+/**
+ * «Próximo vencimiento»: el documento, su estado y cuánto falta, no solo una fecha. Sin ninguna fecha
+ * registrada dice lo que falta con texto apagado y sin pastilla: con pastilla, una flota recién cargada
+ * pintaría una columna entera de «Sin fecha».
+ */
+function NextExpiry({ vehicle, today, warningDays }: { vehicle: VehicleRow; today: string; warningDays: number }) {
+  if (!vehicle.nextExpiryDate) {
+    return <span className="text-xs text-[var(--color-text-subtle)]">Sin fecha registrada</span>
+  }
+  return (
+    <ExpiryStatus
+      status={expiryState(vehicle.nextExpiryDate, today, warningDays)}
+      warningDays={warningDays}
+      subject={fleetExpirySubject(vehicle.nextExpiryDocumentType)}
+    />
+  )
+}
+
+export function FleetTable({ vehicles, hasAnyVehicle, canViewCosts, canViewFuel, today, warningDays }: {
+  vehicles: VehicleRow[]
+  hasAnyVehicle: boolean
+  canViewCosts: boolean
+  canViewFuel: boolean
+  /** Hoy en Chile (`todayInChile()` del servidor) y la ventana de aviso de los ajustes de flota. */
+  today: string
+  warningDays: number
+}) {
   // `openWorkOrders` es null sin `mant:ot:view_*`: sin la capacidad no hay columna, no un 0 engañoso.
   const showWorkOrders = vehicles.some((v) => v.openWorkOrders != null)
   const showMeterReading = canViewFuel && vehicles.some((v) => v.lastOdometerReading != null || v.lastHourMeterReading != null)
@@ -55,7 +84,7 @@ export function FleetTable({ vehicles, hasAnyVehicle, canViewCosts, canViewFuel 
           <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
             <div><dt className="text-[var(--color-text-subtle)]">Faena</dt><dd>{vehicle.worksiteName}</dd></div>
             <div><dt className="text-[var(--color-text-subtle)]">Responsable</dt><dd>{vehicle.responsibleName ?? "—"}</dd></div>
-            <div><dt className="text-[var(--color-text-subtle)]">Vencimiento</dt><dd>{vehicle.nextExpiryDate ? formatDate(vehicle.nextExpiryDate) : "—"}</dd></div>
+            <div className="col-span-2"><dt className="text-[var(--color-text-subtle)]">Próximo vencimiento</dt><dd className="mt-0.5"><NextExpiry vehicle={vehicle} today={today} warningDays={warningDays} /></dd></div>
             {vehicle.openWorkOrders != null && <div><dt className="text-[var(--color-text-subtle)]">OT abiertas</dt><dd>{vehicle.openWorkOrders}{vehicle.inWorkshopNow ? " · en taller" : ""}</dd></div>}
             {/* P-9: la misma celda que la columna «Km/Hr» de la tabla (valor y aviso de lectura objetada), con la misma condición de columna. */}
             {showMeterReading && <div><dt className="text-[var(--color-text-subtle)]">Km/Hr</dt><dd className="font-mono"><FleetMeterReading vehicle={vehicle} /></dd></div>}
@@ -79,7 +108,7 @@ export function FleetTable({ vehicles, hasAnyVehicle, canViewCosts, canViewFuel 
               <MetaBadge meta={{ label: vehicle.isActive ? formatFuelVehicleStatus(vehicle.operationalStatus) : "Inactivo", variant: vehicle.isActive && vehicle.operationalStatus === "operativo" ? "success" : "outline" }} />
             </TableCell>
             <TableCell>{vehicle.responsibleName ?? "—"}</TableCell>
-            <TableCell>{vehicle.nextExpiryDate ? formatDate(vehicle.nextExpiryDate) : "—"}</TableCell>
+            <TableCell><NextExpiry vehicle={vehicle} today={today} warningDays={warningDays} /></TableCell>
             {canViewCosts && canViewFuel && <TableCell className="text-right font-mono">{formatCLP(vehicle.totalFuelAmount ?? 0)}</TableCell>}
             {showWorkOrders && <TableCell className="text-right font-mono">
               {vehicle.openWorkOrders ?? 0}

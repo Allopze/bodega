@@ -2042,7 +2042,7 @@ async function main() {
   await db.insert(schema.fleetVehicleDocuments).values({
     id: "fleet-doc-e2e",
     vehicleId: "fuel-veh-e2e",
-    documentType: "seguro",
+    documentType: "Seguro",
     fileName: "seguro-e2e.pdf",
     filePath: "storage/fleet/seguro-e2e-fixture.pdf",
     fileSize: 1024,
@@ -3542,6 +3542,44 @@ async function main() {
 
   // Mantención de equipos: roles del módulo, carga inicial y usuarios de prueba.
   await seedMantencionE2E(db, { hashedPassword: password, now })
+
+  // ── Conductores (licencias) ──
+  // Cuatro trabajadores de «Faena E2E» con un cargo que conduce y exige A4 o A5 (para
+  // e2e/flota-conductores.spec.ts): una licencia vencida, una por vencer, una vigente y
+  // una persona sin licencia. Las fechas son relativas a hoy (en Chile): la planilla
+  // se arma en cada corrida, así que «vencida» y «por vencer» siguen siéndolo. El admin
+  // E2E recibe `flota:manage_licenses` con el resto de `SYSTEM_PERMISSIONS`.
+  {
+    const hoyConductores = new Date().toLocaleDateString("en-CA", { timeZone: "America/Santiago" })
+    const enDiasConductores = (days: number) =>
+      new Date(Date.parse(`${hoyConductores}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10)
+
+    await db.insert(schema.workerPositions).values({
+      id: "worker-position-conductor-e2e",
+      code: "CONDUCTOR-E2E",
+      name: "Conductor de camión E2E",
+      normalizedKey: "conductor de camion e2e",
+      isActive: true,
+      needsReview: false,
+      isSystem: false,
+      requiredLicenseClasses: ["A4", "A5"],
+    })
+    await db.insert(schema.workerPositionCapabilities).values({
+      positionId: "worker-position-conductor-e2e",
+      capabilityId: "worker-capability-drives-vehicle",
+    })
+    await db.insert(schema.workers).values([
+      { id: "worker-lic-vencida-e2e", rut: "70100001-1", firstName: "QA Conductor", lastName: "Vencida", position: "Conductor de camión E2E", positionId: "worker-position-conductor-e2e", worksiteId: "ws-e2e", isActive: true, createdAt: now },
+      { id: "worker-lic-porvencer-e2e", rut: "70100002-2", firstName: "QA Conductor", lastName: "PorVencer", position: "Conductor de camión E2E", positionId: "worker-position-conductor-e2e", worksiteId: "ws-e2e", isActive: true, createdAt: now },
+      { id: "worker-lic-vigente-e2e", rut: "70100003-3", firstName: "QA Conductor", lastName: "Vigente", position: "Conductor de camión E2E", positionId: "worker-position-conductor-e2e", worksiteId: "ws-e2e", isActive: true, createdAt: now },
+      { id: "worker-lic-sin-e2e", rut: "70100004-4", firstName: "QA Conductor", lastName: "SinLicencia", position: "Conductor de camión E2E", positionId: "worker-position-conductor-e2e", worksiteId: "ws-e2e", isActive: true, createdAt: now },
+    ])
+    await db.insert(schema.workerDriverLicenses).values([
+      { workerId: "worker-lic-vencida-e2e", classes: ["A4", "A5"], expiresAt: enDiasConductores(-20), notes: "Prórroga por 6 meses" },
+      { workerId: "worker-lic-porvencer-e2e", classes: ["A5"], expiresAt: enDiasConductores(10), notes: null },
+      { workerId: "worker-lic-vigente-e2e", classes: ["A4", "B"], expiresAt: enDiasConductores(400), notes: null },
+    ])
+  }
 
   await client.end()
 }

@@ -2,12 +2,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 const mockRequirePermission = vi.fn()
 const mockCanAccessWorksite = vi.fn()
-const mockInsertValues = vi.fn(async () => undefined)
+const mockInsertValues = vi.fn(async (..._args: unknown[]) => undefined)
 // `.returning(...)` sólo lo usan los tres toggles (control optimista, CO-025);
 // updateFuelVehicleAction ignora el resuelto de `.where(...)` igual que antes.
 const mockUpdateReturning = vi.fn(async () => [{ id: "veh-1" }])
 const mockUpdateWhere = vi.fn(() => ({ returning: mockUpdateReturning }))
-const mockUpdateSet = vi.fn(() => ({ where: mockUpdateWhere }))
+const mockUpdateSet = vi.fn((..._args: unknown[]) => ({ where: mockUpdateWhere }))
 const mockFindVehicle = vi.fn()
 const mockFindEquipmentType = vi.fn()
 const mockFindProducts = vi.fn()
@@ -325,5 +325,107 @@ describe("fuel vehicle serial number can be cleared", () => {
 
     expect(result.ok).toBe(true)
     expect(mockUpdateSet).toHaveBeenCalledWith(expect.not.objectContaining({ serialNumber: expect.anything() }))
+  })
+})
+
+// Carros y bateas no tienen medidor ni cargan combustible: no hay producto que habilitar.
+describe("vehículo sin medidor (carro, batea)", () => {
+  function carroForm(overrides: Record<string, string> = {}) {
+    const fd = vehicleForm({ equipmentTypeId: "fet-carro", meterType: "none", performanceUnit: "not_applicable", ...overrides })
+    fd.delete("compatibleProductIds")
+    return fd
+  }
+
+  beforeEach(() => {
+    mockFindEquipmentType.mockResolvedValue({ id: "fet-carro", slug: "carro", isActive: true })
+  })
+
+  it("se crea sin productos compatibles, sin consultarlos ni insertar una lista vacía", async () => {
+    const result = await createFuelVehicleAction({ ok: false }, carroForm())
+
+    expect(result.ok).toBe(true)
+    expect(mockFindProducts).not.toHaveBeenCalled()
+    // Drizzle rechaza `values([])`: el alta no puede intentar guardar la lista vacía.
+    expect(mockInsertValues).not.toHaveBeenCalledWith([])
+    expect(mockInsertValues).toHaveBeenCalledWith(expect.objectContaining({ meterType: "none", performanceUnit: "not_applicable" }))
+  })
+
+  it("un equipo con medidor sigue necesitando un producto compatible", async () => {
+    const withMeter = vehicleForm()
+    withMeter.delete("compatibleProductIds")
+
+    const result = await createFuelVehicleAction({ ok: false }, withMeter)
+
+    expect(result.ok).toBe(false)
+    expect(result.fieldErrors?.compatibleProductIds?.[0]).toMatch(/producto compatible/i)
+    expect(mockInsertValues).not.toHaveBeenCalled()
+  })
+
+  it("se edita sin productos: se vacía la lista y no se inserta una lista vacía", async () => {
+    mockFindVehicle.mockResolvedValue({
+      id: "veh-1", worksiteId: "ws-1", equipmentTypeId: "fet-carro", operationalStatus: "operativo",
+      meterType: "none", performanceUnit: "not_applicable", tankCapacityLiters: null,
+    })
+
+    const result = await updateFuelVehicleAction({ ok: false }, carroForm({ id: "veh-1" }))
+
+    expect(result.ok).toBe(true)
+    expect(mockDeleteWhere).toHaveBeenCalled()
+    expect(mockInsertValues).not.toHaveBeenCalledWith([])
+  })
+
+  it("si el formulario no informa el medidor rige el guardado: con medidor, vaciar los productos se rechaza", async () => {
+    const fd = new FormData()
+    fd.set("id", "veh-1")
+    fd.set("model", "FH")
+
+    const result = await updateFuelVehicleAction({ ok: false }, fd)
+
+    expect(result.ok).toBe(false)
+    expect(result.fieldErrors?.compatibleProductIds?.[0]).toMatch(/producto compatible/i)
+    expect(mockUpdateSet).not.toHaveBeenCalled()
+  })
+})
+
+describe("campos de vehículo que se pueden borrar al editar", () => {
+  it("un código o una fecha de vencimiento enviados vacíos se guardan como null", async () => {
+    const result = await updateFuelVehicleAction({ ok: false }, vehicleForm({
+      id: "veh-1", code: "", soapExpiresAt: "", insuranceExpiresAt: "", insurancePolicyNumber: "", notes: "", brand: "", model: "",
+    }))
+
+    expect(result.ok).toBe(true)
+    expect(mockUpdateSet).toHaveBeenCalledWith(expect.objectContaining({
+      code: null, soapExpiresAt: null, insuranceExpiresAt: null, insurancePolicyNumber: null, notes: null, brand: null, model: null,
+    }))
+  })
+
+  it("lo que el formulario no envía no se toca", async () => {
+    const result = await updateFuelVehicleAction({ ok: false }, vehicleForm({ id: "veh-1", soapExpiresAt: "2027-03-31" }))
+
+    expect(result.ok).toBe(true)
+    const patch = mockUpdateSet.mock.calls[0]?.[0] as Record<string, unknown>
+    expect(patch.soapExpiresAt).toBe("2027-03-31")
+    // `undefined` (no tocar) y no `null` (quitar): Drizzle omite lo primero del UPDATE.
+    for (const untouched of ["code", "brand", "model", "technicalReviewExpiresAt", "circulationPermitExpiresAt", "insuranceExpiresAt", "notes"]) {
+      expect(patch[untouched], untouched).toBeUndefined()
+    }
+  })
+
+  it("rechaza una fecha de vencimiento que no existe en el calendario", async () => {
+    const result = await updateFuelVehicleAction({ ok: false }, vehicleForm({ id: "veh-1", technicalReviewExpiresAt: "2026-02-31" }))
+
+    expect(result.ok).toBe(false)
+    expect(result.fieldErrors?.technicalReviewExpiresAt?.[0]).toMatch(/revisión técnica/i)
+    expect(mockUpdateSet).not.toHaveBeenCalled()
+  })
+
+  it("al crear, vacío sigue siendo «sin dato»: no escribe null ni falla", async () => {
+    const result = await createFuelVehicleAction({ ok: false }, vehicleForm({ code: "", soapExpiresAt: "" }))
+
+    expect(result.ok).toBe(true)
+    const inserted = mockInsertValues.mock.calls.map((call) => call[0] as Record<string, unknown>).find((values) => values?.plate)
+    expect(inserted).toBeDefined()
+    expect(inserted!.code).toBeUndefined()
+    expect(inserted!.soapExpiresAt).toBeUndefined()
   })
 })

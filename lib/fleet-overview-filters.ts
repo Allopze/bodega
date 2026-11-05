@@ -20,6 +20,8 @@ export interface FleetOverviewFilters {
 
 export function filterFleetOverviewRows<T extends {
   plate: string
+  /** Opcional: quien conoce al equipo por su código interno (KA-63) lo busca así. */
+  code?: string | null
   brand: string | null
   model: string | null
   type: string
@@ -48,7 +50,7 @@ export function filterFleetOverviewRows<T extends {
     if (filters.expiry === "proximos" && !(row.nextExpiryDate && row.nextExpiryDate >= dates.today && row.nextExpiryDate <= dates.warningWindowEnd)) return false
     if (filters.expiry === "al-dia" && row.nextExpiryDate && row.nextExpiryDate <= dates.warningWindowEnd) return false
     if (query) {
-      const haystack = [row.plate, row.brand, row.model, row.type, row.worksiteName, row.responsibleName]
+      const haystack = [row.plate, row.code, row.brand, row.model, row.type, row.worksiteName, row.responsibleName]
         .filter(Boolean)
         .join(" ")
         .toLocaleLowerCase("es-CL")
