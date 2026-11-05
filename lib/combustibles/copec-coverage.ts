@@ -1,4 +1,4 @@
-export type CopecCoverageStatus = "unknown" | "incomplete" | "failed" | "complete" | "legitimate_empty"
+export type CopecCoverageStatus = "unknown" | "incomplete" | "failed" | "complete" | "legitimate_empty" | "closed_with_issues"
 export type CopecCoverageChannel = "TCT" | "TAE"
 export type CopecCoverageProduct = "diesel" | "bluemax"
 
@@ -11,7 +11,29 @@ export interface ProviderCoverageRow {
   status: string
 }
 
-const TERMINAL_STATUSES = new Set<CopecCoverageStatus>(["complete", "legitimate_empty"])
+/**
+ * Estado terminal de la decisión E6: el mes se cierra con evidencia aunque el
+ * informe del proveedor trajera filas inválidas. No es `complete` —hubo filas
+ * que no se pudieron usar— ni `incomplete` —eso dejaría el mes bloqueado para
+ * siempre y el barrido no avanzaría (hallazgo 4.1)—.
+ *
+ * Las filas válidas SÍ se proyectan (ver `importCopecPeriod`); lo que este
+ * estado certifica es que una persona revisó las inválidas y decidió cerrar el
+ * mes con ese motivo escrito y su nombre.
+ */
+export const CLOSED_WITH_ISSUES: CopecCoverageStatus = "closed_with_issues"
+
+/**
+ * Marca que lleva la evidencia cuando el esquema todavía no admite
+ * `closed_with_issues` como valor propio (la migración la aporta el carril E).
+ * Sin ella, el cierre se guardaba como `complete` y la pantalla perdía el
+ * motivo; con ella el estado se reconstruye igual y el mes sigue siendo
+ * terminal. Cuando la migración exista, el valor se guarda tal cual y esta
+ * marca deja de escribirse.
+ */
+export const CLOSED_WITH_ISSUES_MARKER = "[cerrado con observaciones]"
+
+const TERMINAL_STATUSES = new Set<CopecCoverageStatus>(["complete", "legitimate_empty", CLOSED_WITH_ISSUES])
 const CHANNELS: readonly CopecCoverageChannel[] = ["TCT", "TAE"]
 const PRODUCTS: readonly CopecCoverageProduct[] = ["diesel", "bluemax"]
 
@@ -64,8 +86,43 @@ export function canConfirmCopecEmpty(row: { status: string; sourceAvailability: 
   return row.status === "failed" && row.sourceAvailability === "available" && row.rowsReceived === 0
 }
 
-export function isTerminalCopecCoverage(status: string): status is "complete" | "legitimate_empty" {
+export function isTerminalCopecCoverage(status: string): status is "complete" | "legitimate_empty" | "closed_with_issues" {
   return TERMINAL_STATUSES.has(status as CopecCoverageStatus)
+}
+
+/**
+ * Estado que hay que MOSTRAR para una fila de cobertura. Reconoce el valor
+ * propio y, mientras el esquema no lo admita, la marca de evidencia con que se
+ * guardó el cierre (ver `CLOSED_WITH_ISSUES_MARKER`).
+ */
+export function copecCoverageStatusOf(row: { status: string; evidence?: string | null }): CopecCoverageStatus {
+  if (row.status === CLOSED_WITH_ISSUES) return CLOSED_WITH_ISSUES
+  if (row.status === "complete" && row.evidence?.trimStart().startsWith(CLOSED_WITH_ISSUES_MARKER)) return CLOSED_WITH_ISSUES
+  return row.status as CopecCoverageStatus
+}
+
+/**
+ * Si una persona puede cerrar este canal/producto/mes como «cerrado con
+ * observaciones» (E6).
+ *
+ * Se exige lo que la decisión aprobada pide y nada más:
+ * - el mes ya terminó (un mes abierto puede recibir más filas);
+ * - queda trabajo de mapeo pendiente: no. Con `rowsPending > 0` el mes tendría
+ *   litros sin atribuir y cerrarlo los escondería;
+ * - Copec SÍ entregó un archivo con filas: un mes sin datos no se «cierra con
+ *   observaciones», se cierra como vacío (`canConfirmCopecEmpty`) o queda en
+ *   falla.
+ * El motivo y el operador los exige `recordCopecPeriodCoverage`.
+ */
+export function canCloseCopecPeriodWithIssues(
+  row: { status: string; sourceAvailability: string; rowsReceived: number; rowsPending: number } | undefined,
+): { ok: true } | { ok: false; reason: string } {
+  if (!row) return { ok: false, reason: "No hay ninguna observación de cobertura para ese canal y producto" }
+  if (isTerminalCopecCoverage(row.status)) return { ok: false, reason: "Ese canal y producto ya tiene la cobertura cerrada" }
+  if (row.sourceAvailability !== "available") return { ok: false, reason: "Copec no entregó el informe: el mes no se puede cerrar con observaciones, sino resolver la descarga" }
+  if (row.rowsReceived === 0) return { ok: false, reason: "El informe no trajo filas: usa «confirmar vacío» o vuelve a sincronizar" }
+  if (row.rowsPending > 0) return { ok: false, reason: "Quedan filas sin asignar a un equipo o faena: resuélvelas antes de cerrar el mes" }
+  return { ok: true }
 }
 
 /** Las cuatro cuentas de la integración (`tct:diesel`, `tct:bluemax`, `tae:diesel`, `tae:bluemax`). */

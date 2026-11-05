@@ -1,10 +1,10 @@
 import type { Session } from "next-auth"
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm"
 import { db } from "@/db"
-import { fuelEquipmentLoads, fuelEquipmentTypes, fuelSupplyMedia, fuelVehicles, worksites } from "@/db/schema"
+import { fuelEquipmentLoads, fuelEquipmentTypes, fuelOperationRecords, fuelSupplyMedia, fuelVehicles, worksites } from "@/db/schema"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import type { PerformanceFamily, PerformanceUnit } from "@/lib/combustibles/control/contracts"
-import { buildLoadWhere, type ControlFilters } from "@/lib/combustibles/control/filters"
+import { buildLoadWhere, loadPerformanceUnitSql, type ControlFilters } from "@/lib/combustibles/control/filters"
 import { fuelLoadHrefFromEquipmentLoad } from "@/lib/combustibles/routes"
 import { resolvePagination, type PaginationState } from "@/lib/pagination"
 import { DETAIL_PAGE_SIZE, EXPORT_ROW_LIMIT } from "./performance"
@@ -25,7 +25,15 @@ export interface LoadDetailRow {
   unit: PerformanceUnit | null
   performanceValue: number | null
   performanceStatus: string
+  /**
+   * Lo que declaró la planilla, en la unidad en que lo declaró. `null` si la
+   * planilla no traía rendimiento **o** si lo declaró en otra unidad que la de
+   * la carga: contrastar «12» de una fila `lt_hr` contra un equipo km/L diría
+   * «12 km/L» (hallazgo 3.8). La unidad declarada queda en `declaredUnit`.
+   */
   declaredPerformance: number | null
+  /** Unidad del rendimiento declarado (`km_lt` → km/L, `lt_hr` → L/h); `null` o ausente si la fila no la trae. */
+  declaredUnit?: PerformanceUnit | null
   liters: number
   /** Null cuando quien consulta no tiene `combustibles:view_personal`: el dato no sale del servidor. */
   supervisor: string | null
@@ -35,6 +43,9 @@ export interface LoadDetailRow {
   /** Ficha de la carga (`fuelLoadHref`); `null` si la fila no apunta a un registro de origen. */
   href: string | null
 }
+
+/** Unidad de rendimiento que declara la planilla de origen (`fuel_operation_records.tipo_rendimiento`). */
+const DECLARED_UNIT: Record<string, PerformanceUnit> = { km_lt: "km_per_liter", lt_hr: "liters_per_hour" }
 
 export interface LoadDetailPage {
   rows: LoadDetailRow[]
@@ -65,10 +76,11 @@ export async function getLoadDetail(
     plate: fuelVehicles.plate,
     meterType: fuelEquipmentLoads.meterType,
     meterReading: fuelEquipmentLoads.meterReading,
-    unit: fuelVehicles.performanceUnit,
+    unit: sql<string | null>`${loadPerformanceUnitSql}`.as("unit"),
     performanceValue: fuelEquipmentLoads.performanceValue,
     performanceStatus: fuelEquipmentLoads.performanceStatus,
     declaredPerformance: fuelEquipmentLoads.declaredPerformance,
+    declaredUnit: fuelOperationRecords.tipoRendimiento,
     liters: fuelEquipmentLoads.liters,
     supervisor: options.includePersonal ? fuelEquipmentLoads.supervisorName : sql<string | null>`null`,
     reviewStatus: fuelEquipmentLoads.reviewStatus,
@@ -77,6 +89,7 @@ export async function getLoadDetail(
   }).from(fuelEquipmentLoads)
     .leftJoin(fuelVehicles, eq(fuelVehicles.id, fuelEquipmentLoads.vehicleId))
     .leftJoin(fuelEquipmentTypes, eq(fuelEquipmentTypes.id, fuelVehicles.equipmentTypeId))
+    .leftJoin(fuelOperationRecords, eq(fuelOperationRecords.id, fuelEquipmentLoads.operationRecordId))
     .innerJoin(worksites, eq(worksites.id, fuelEquipmentLoads.worksiteId))
     .leftJoin(fuelSupplyMedia, eq(fuelSupplyMedia.id, fuelEquipmentLoads.supplyMediumId))
     .where(where)
@@ -86,25 +99,32 @@ export async function getLoadDetail(
 
   return {
     pagination,
-    rows: rows.map((row) => ({
-      id: row.id,
-      occurredAt: row.occurredAt,
-      worksiteName: row.worksiteName,
-      code: row.code,
-      plate: row.plate,
-      meterType: row.meterType,
-      meterReading: toNullableNumber(row.meterReading),
-      unit: (row.unit === "km_per_liter" || row.unit === "liters_per_hour" ? row.unit : null) as PerformanceUnit | null,
-      performanceValue: toNullableNumber(row.performanceValue),
-      performanceStatus: row.performanceStatus,
-      declaredPerformance: toNullableNumber(row.declaredPerformance),
-      liters: toNumber(row.liters),
-      supervisor: row.supervisor ?? null,
-      reviewStatus: row.reviewStatus,
-      source: row.source,
-      mediumName: row.mediumName,
-      href: fuelLoadHrefFromEquipmentLoad({ source: row.source, taeSubmissionId: row.taeSubmissionId, operationRecordId: row.operationRecordId }),
-    })),
+    rows: rows.map((row) => {
+      const unit = (row.unit === "km_per_liter" || row.unit === "liters_per_hour" ? row.unit : null) as PerformanceUnit | null
+      const declaredUnit = row.declaredUnit ? (DECLARED_UNIT[row.declaredUnit] ?? null) : null
+      const declared = toNullableNumber(row.declaredPerformance)
+      return {
+        id: row.id,
+        occurredAt: row.occurredAt,
+        worksiteName: row.worksiteName,
+        code: row.code,
+        plate: row.plate,
+        meterType: row.meterType,
+        meterReading: toNullableNumber(row.meterReading),
+        unit,
+        performanceValue: toNullableNumber(row.performanceValue),
+        performanceStatus: row.performanceStatus,
+        // Sólo se contrasta en la misma unidad; si la planilla declaró otra, el número no se rotula con la del equipo.
+        declaredPerformance: declaredUnit !== null && declaredUnit !== unit ? null : declared,
+        declaredUnit,
+        liters: toNumber(row.liters),
+        supervisor: row.supervisor ?? null,
+        reviewStatus: row.reviewStatus,
+        source: row.source,
+        mediumName: row.mediumName,
+        href: fuelLoadHrefFromEquipmentLoad({ source: row.source, taeSubmissionId: row.taeSubmissionId, operationRecordId: row.operationRecordId }),
+      }
+    }),
   }
 }
 

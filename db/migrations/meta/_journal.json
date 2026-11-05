@@ -2605,6 +2605,20 @@
       "when": 1793843073533,
       "tag": "0371_lean_princess_powerful",
       "breakpoints": true
+    },
+    {
+      "idx": 372,
+      "version": "7",
+      "when": 1793897699626,
+      "tag": "0372_fuentes_integridad_claves",
+      "breakpoints": true
+    },
+    {
+      "idx": 373,
+      "version": "7",
+      "when": 1793897886177,
+      "tag": "0373_fuel_sellos_fk_set_null",
+      "breakpoints": true
     }
   ]
 }

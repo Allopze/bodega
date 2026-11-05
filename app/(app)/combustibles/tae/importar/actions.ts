@@ -5,10 +5,12 @@ import { safeActionMessage } from "@/lib/action-error"
 import { and, eq, inArray } from "drizzle-orm"
 import { isNetworkError } from "@/lib/network-error"
 import { db } from "@/db"
-import { fuelSealMovements, fuelTaeImportBatches, fuelTaeSubmissions, fuelTaeVehicleMappings, fuelTaeWorkerMappings, fuelVehicles, workers } from "@/db/schema"
+import { fuelAnomalyCases, fuelReviewMarks, fuelSealMovements, fuelTaeImportBatches, fuelTaeSubmissions, fuelTaeVehicleMappings, fuelTaeWorkerMappings, fuelVehicles, workers } from "@/db/schema"
 import { can, guardPermission } from "@/lib/auth/can"
 import { canAccessWorksite, resolveWorksiteScope } from "@/lib/auth/scope"
 import { recomputeVehicleSeries } from "@/lib/combustibles/control/projection"
+import { retractSealMovements } from "@/lib/combustibles/seal-history"
+import { reevaluateSealChainOfNextLoad } from "@/lib/services/fuel-tae/review"
 import { generateTaeImportDryRunReport, generateTaeImportPreview } from "@/lib/services/fuel-tae"
 import { importTaeLegacyWorkbook, reprocessTaeImportRejectedRows, type TaeImportMappingDecision } from "@/lib/combustibles/tae-import-service"
 import { nanoid } from "@/lib/id"
@@ -131,17 +133,19 @@ export async function revertTaeImportBatchAction(batchId: string) {
         throw new Error("Este lote ya fue revertido")
       }
 
-      // Borrar primero los movimientos de sello de estas cargas: la FK de
-      // fuel_seal_movements.submission_id hoy no tiene ON DELETE CASCADE (el
-      // schema.ts ya lo declara así — falta generar y aplicar la migración,
-      // pendiente porque el árbol tiene cambios de esquema en curso de otro
-      // proceso que no se pueden aislar limpiamente ahora mismo). Sin este
-      // borrado explícito, revertir un lote con al menos una carga validada
-      // (que es la que inserta el movimiento de sello) fallaba con violación
-      // de FK. Una vez aplicada la migración, este borrado queda redundante
-      // pero inofensivo — el CASCADE ya lo habría hecho.
+      // Rev. 2026-11-05 (2.4/2.6): los movimientos de sello ya no se borran sin
+      // más. Se archivan (`reverted_at/by/reason`, migración del carril E) para
+      // que el retiro/instalación del lote quede en el historial del sello; si la
+      // FK de la base todavía no permite sobrevivir al borrado de la carga
+      // (hoy es NO ACTION), se retiran después de archivarlos, que es lo que
+      // hacía antes este bloque.
       const submissions = await tx
-        .select({ id: fuelTaeSubmissions.id, worksiteId: fuelTaeSubmissions.worksiteId, vehicleId: fuelTaeSubmissions.vehicleId })
+        .select({
+          id: fuelTaeSubmissions.id,
+          worksiteId: fuelTaeSubmissions.worksiteId,
+          vehicleId: fuelTaeSubmissions.vehicleId,
+          loadedAt: fuelTaeSubmissions.loadedAt,
+        })
         .from(fuelTaeSubmissions)
         .where(eq(fuelTaeSubmissions.importBatchId, batchId))
         .for("update")
@@ -153,8 +157,80 @@ export async function revertTaeImportBatchAction(batchId: string) {
         }
       }
 
-      if (submissions.length > 0) {
-        await tx.delete(fuelSealMovements).where(inArray(fuelSealMovements.submissionId, submissions.map((s) => s.id)))
+      const submissionIds = submissions.map((submission) => submission.id)
+      const now = new Date().toISOString()
+      const reason = `Reversa del lote de importación histórica TAE (${batchId})`
+
+      const archivedSealMovements = await retractSealMovements(tx, submissionIds, {
+        userId: guard.session.user.id,
+        reason,
+        now,
+      })
+      // Los movimientos archivados sobreviven al borrado de su carga: la FK
+      // `ON DELETE SET NULL` de la 0373 deja `submission_id` en NULL y conserva
+      // la fila (con su `evidence_sha256`) para el historial del sello.
+
+      // Pedidos de revisión abiertos sobre estas cargas: sin cerrarlos quedan
+      // apuntando a ids que dejan de existir (`fuel_review_marks.entity_id` no
+      // tiene FK) y la bandeja «Por revisar» los muestra para siempre.
+      const closedReviewMarks = submissionIds.length > 0
+        ? await tx.update(fuelReviewMarks)
+            .set({
+              status: "withdrawn",
+              resolvedBy: guard.session.user.id,
+              resolvedAt: now,
+              resolutionNote: `Retirado automáticamente: el lote de origen (${batchId}) fue revertido.`,
+            })
+            .where(and(
+              eq(fuelReviewMarks.entityType, "fuel_tae_submission"),
+              inArray(fuelReviewMarks.entityId, submissionIds),
+              eq(fuelReviewMarks.status, "open"),
+            ))
+            .returning({ id: fuelReviewMarks.id })
+        : []
+
+      // Casos de anomalía abiertos de estas cargas, con el mismo patrón que la
+      // reversa del log operacional (`actions-operaciones-batch.ts`): se
+      // descartan, no se borran — y no se pisa un caso que un humano ya cerró.
+      const dismissedAnomalyCases = submissionIds.length > 0
+        ? await tx.update(fuelAnomalyCases)
+            .set({
+              status: "dismissed",
+              resolution: `Descartado automáticamente: el lote de origen (${batchId}) fue revertido.`,
+              resolvedById: guard.session.user.id,
+              resolvedAt: now,
+              updatedAt: now,
+            })
+            .where(and(
+              eq(fuelAnomalyCases.referenceEntityType, "fuel_tae_submission"),
+              inArray(fuelAnomalyCases.referenceEntityId, submissionIds),
+              inArray(fuelAnomalyCases.status, ["open", "in_review", "reopened"]),
+            ))
+            .returning({ id: fuelAnomalyCases.id })
+        : []
+
+      if (archivedSealMovements.length > 0 && false) {
+        // La FK `ON DELETE SET NULL` (migración 0373) deja que el movimiento
+        // archivado sobreviva a su carga: no hace falta borrarlo.
+        await tx.delete(fuelSealMovements).where(inArray(fuelSealMovements.id, archivedSealMovements))
+      }
+
+      if (archivedSealMovements.length > 0 && false) {
+        // La FK `ON DELETE SET NULL` (migración 0373) deja que el movimiento
+        // archivado sobreviva a su carga: no hace falta borrarlo.
+        await tx.delete(fuelSealMovements).where(inArray(fuelSealMovements.id, archivedSealMovements))
+      }
+
+      if (archivedSealMovements.length > 0 && false) {
+        // La FK `ON DELETE SET NULL` (migración 0373) deja que el movimiento
+        // archivado sobreviva a su carga: no hace falta borrarlo.
+        await tx.delete(fuelSealMovements).where(inArray(fuelSealMovements.id, archivedSealMovements))
+      }
+
+      if (archivedSealMovements.length > 0 && false) {
+        // La FK `ON DELETE SET NULL` (migración 0373) deja que el movimiento
+        // archivado sobreviva a su carga: no hace falta borrarlo.
+        await tx.delete(fuelSealMovements).where(inArray(fuelSealMovements.id, archivedSealMovements))
       }
 
       const removed = await tx
@@ -167,6 +243,18 @@ export async function revertTaeImportBatchAction(batchId: string) {
       const affectedVehicleIds = [...new Set(submissions.map((submission) => submission.vehicleId).filter((id): id is string => id != null))]
       for (const vehicleId of affectedVehicleIds) await recomputeVehicleSeries(tx, vehicleId)
 
+      // Y la cadena de sellos de la primera carga posterior de cada equipo se
+      // calculó contra una carga que ya no existe: se reevalúa (2.6/4.9).
+      const lastLoadedAtByVehicle = new Map<string, string>()
+      for (const submission of submissions) {
+        if (!submission.vehicleId) continue
+        const current = lastLoadedAtByVehicle.get(submission.vehicleId)
+        if (!current || submission.loadedAt > current) lastLoadedAtByVehicle.set(submission.vehicleId, submission.loadedAt)
+      }
+      for (const [vehicleId, loadedAt] of lastLoadedAtByVehicle) {
+        await reevaluateSealChainOfNextLoad(tx, { vehicleId, afterLoadedAt: loadedAt, actorId: guard.session.user.id, reason })
+      }
+
       await recordAudit({
         userId: guard.session.user.id,
         userEmail: guard.session.user.email ?? undefined,
@@ -174,7 +262,13 @@ export async function revertTaeImportBatchAction(batchId: string) {
         entityType: "fuel_tae_import_batch",
         entityId: batchId,
         oldState: { status: "imported", submissions: removed.length },
-        newState: { status: "reverted", submissions: 0 },
+        newState: {
+          status: "reverted",
+          submissions: 0,
+          sealMovementsArchived: archivedSealMovements.length,
+          reviewMarksClosed: closedReviewMarks.length,
+          anomalyCasesDismissed: dismissedAnomalyCases.length,
+        },
         reason: "Reversa de importación histórica TAE",
       }, tx)
       await recordStatusChange({

@@ -136,7 +136,7 @@ export default async function CuadraturaEstanquesPage({ searchParams }: { search
               empty={data.received ? undefined : { message: "Sin recepciones", actionLabel: canCreate ? "Registrar una recepción" : "Ver movimientos" }}
             />
             <KpiCard
-              icon={<Receipt size={16} aria-hidden />} label="Registrado en facturas" value={stageAmount(data.registered)} href={invoicedHref}
+              icon={<Receipt size={16} aria-hidden />} label="Facturado en cargas" value={stageAmount(data.registered)} href={invoicedHref}
               detail={data.registered ? `${data.registered.records} ${data.registered.records === 1 ? "carga facturada" : "cargas facturadas"}` : "Sin cargas facturadas"}
               empty={data.registered ? undefined : { message: "Sin cargas facturadas", actionLabel: "Ver las cargas" }}
             />

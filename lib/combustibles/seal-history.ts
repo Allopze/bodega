@@ -3,12 +3,21 @@
  * Cada carga TAE que registra sello retirado o instalado produce una entrada
  * en este read model. Los sellos repetidos y la continuidad inconsistente se
  * calculan aquí como base para las reglas de anomalía (sección 11).
+ *
+ * Población (auditoría 2026-11-05, 5.6): la misma que las otras dos pestañas de
+ * la pantalla de sellos —`status <> 'voided'`, no sólo `validated`—. Antes este
+ * historial omitía las cargas `submitted`/`observed` que «Por supervisor» y
+ * «Detalle por equipo» sí contaban, y las tres pestañas no cuadraban entre sí.
+ *
+ * Este módulo también es el dueño de la retractación de `fuel_seal_movements`
+ * (5.7): un movimiento deja de contar cuando la carga deja de estar validada,
+ * pero la fila no se borra —se marca— para no perder el historial del sello.
  */
 
 import type { Session } from "next-auth"
-import { and, eq, gte, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm"
-import { db } from "@/db"
-import { fuelTaeSubmissions, fuelTaeLoadingPoints, worksites, fuelVehicles, fuelProducts } from "@/db/schema"
+import { and, eq, gte, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm"
+import { db, type Tx } from "@/db"
+import { fuelSealMovements, fuelTaeSubmissions, fuelTaeLoadingPoints, worksites, fuelVehicles, fuelProducts } from "@/db/schema"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 
 export interface SealMovement {
@@ -77,7 +86,7 @@ export async function getSealHistory(session: Session, filters: SealHistoryFilte
     .leftJoin(fuelProducts, eq(fuelTaeSubmissions.productId, fuelProducts.id))
     .where(and(
       worksiteScopeSql(session, fuelTaeSubmissions.worksiteId),
-      eq(fuelTaeSubmissions.status, "validated"),
+      ne(fuelTaeSubmissions.status, "voided"),
       or(isNotNull(fuelTaeSubmissions.removedSealNumber), isNotNull(fuelTaeSubmissions.installedSealNumber)),
       filters.worksiteId ? eq(fuelTaeSubmissions.worksiteId, filters.worksiteId) : undefined,
       filters.from ? gte(sql`(${fuelTaeSubmissions.loadedAt} at time zone 'America/Santiago')::date`, sql`${filters.from}::date`) : undefined,
@@ -167,7 +176,7 @@ export async function getSealHistory(session: Session, filters: SealHistoryFilte
       .from(fuelTaeSubmissions)
       .where(and(
         worksiteScopeSql(session, fuelTaeSubmissions.worksiteId),
-        eq(fuelTaeSubmissions.status, "validated"),
+        ne(fuelTaeSubmissions.status, "voided"),
         inArray(fuelTaeSubmissions.removedSealNumber, brokenSeals),
       ))
 
@@ -214,10 +223,10 @@ const equipmentKey = (vehicleId: string | null, plate: string | null) => vehicle
  * fuera del recorte y no por eso el sello deja de estar vigente.
  */
 async function clearLatestSealOfEachEquipment(session: Session, movements: SealMovement[]) {
-  const pending = movements.filter((m) => m.continuityBroken && m.installedSeal)
-  if (pending.length === 0) return
-  const vehicleIds = [...new Set(pending.flatMap((m) => m.vehicleId ? [m.vehicleId] : []))]
-  const plates = [...new Set(pending.flatMap((m) => !m.vehicleId && m.plate ? [m.plate] : []))]
+  const candidates = movements.filter((m) => m.installedSeal)
+  if (candidates.length === 0) return
+  const vehicleIds = [...new Set(candidates.flatMap((m) => m.vehicleId ? [m.vehicleId] : []))]
+  const plates = [...new Set(candidates.flatMap((m) => !m.vehicleId && m.plate ? [m.plate] : []))]
 
   const latestRows = await db.select({
     vehicleId: fuelTaeSubmissions.vehicleId,
@@ -227,6 +236,10 @@ async function clearLatestSealOfEachEquipment(session: Session, movements: SealM
     .from(fuelTaeSubmissions)
     .where(and(
       worksiteScopeSql(session, fuelTaeSubmissions.worksiteId),
+      // El «sello vigente» sólo puede sostenerlo una carga validada: una
+      // enviada/observada todavía no reemplaza el sello anterior. La población
+      // del historial sí incluye las no anuladas (5.6), pero la marca de
+      // vigencia no se adelanta a una revisión pendiente.
       eq(fuelTaeSubmissions.status, "validated"),
       or(
         vehicleIds.length > 0 ? inArray(fuelTaeSubmissions.vehicleId, vehicleIds) : undefined,
@@ -243,13 +256,67 @@ async function clearLatestSealOfEachEquipment(session: Session, movements: SealM
     if (!current || row.latest > current) latestByEquipment.set(key, row.latest)
   }
 
-  for (const m of pending) {
+  for (const m of candidates) {
     const key = equipmentKey(m.vehicleId, m.plate)
     const latest = key ? latestByEquipment.get(key) : undefined
-    // Sin carga posterior del mismo equipo (o sin poder identificarlo), es su sello vigente.
-    if (!key || !latest || latest <= m.loadedAt) {
+    // Sin carga validada posterior del mismo equipo (o sin poder identificarlo),
+    // es su sello vigente. La carga enviada/observada puede mostrarse en el
+    // historial, pero no reemplaza la vigencia de la última validada.
+    if (key && latest && latest === m.loadedAt) {
       m.continuityBroken = false
       m.isLatestForEquipment = true
     }
   }
+}
+
+/* ── Retractación de movimientos de sello (auditoría 2026-11-05, 2.7 / 5.4) ── */
+
+const SEAL_MOVEMENT_RETRACTION_REASON_MAX = 500
+
+/**
+ * Retracta los movimientos de sello de las cargas indicadas: la carga dejó de
+ * estar validada, así que su retiro/instalación no debe seguir contando ni
+ * sostener la cadena de sellos del equipo. La fila **no se borra** — se marca
+ * con quién, cuándo y por qué (columnas de la migración 0372), para que el
+ * historial del sello sobreviva al borrado de la carga (`submission_id` queda
+ * NULL por la FK `ON DELETE SET NULL` de la 0373).
+ *
+ * Idempotente: sólo toca los que todavía estaban vigentes (`reverted_at is null`).
+ * Devuelve los ids efectivamente retractados (para auditarlos uno a uno).
+ */
+export async function retractSealMovements(
+  tx: Tx,
+  submissionIds: readonly string[],
+  actor: { userId: string | null; reason: string; now?: string },
+): Promise<string[]> {
+  if (submissionIds.length === 0) return []
+  const rows = await tx.update(fuelSealMovements)
+    .set({
+      revertedAt: actor.now ?? new Date().toISOString(),
+      revertedBy: actor.userId,
+      revertedReason: actor.reason.slice(0, SEAL_MOVEMENT_RETRACTION_REASON_MAX),
+    })
+    .where(and(
+      inArray(fuelSealMovements.submissionId, [...submissionIds]),
+      isNull(fuelSealMovements.revertedAt),
+    ))
+    .returning({ id: fuelSealMovements.id })
+  return rows.map((row) => row.id)
+}
+
+/**
+ * Reactiva los movimientos retractados de una carga que vuelve a estar
+ * validada. Misma operación inversa, también idempotente.
+ */
+export async function restoreSealMovements(tx: Tx, submissionIds: readonly string[]): Promise<string[]> {
+  if (submissionIds.length === 0) return []
+  const result = await tx.update(fuelSealMovements)
+    .set({ revertedAt: null, revertedBy: null, revertedReason: null })
+    .where(and(
+      inArray(fuelSealMovements.submissionId, [...submissionIds]),
+      isNotNull(fuelSealMovements.revertedAt),
+    ))
+    .returning({ id: fuelSealMovements.id })
+  const rows = Array.isArray(result) ? result : (result as { rows?: Array<{ id: string }> }).rows ?? []
+  return rows.map((row) => row.id)
 }

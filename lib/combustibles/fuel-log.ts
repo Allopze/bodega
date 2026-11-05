@@ -120,7 +120,7 @@ function openReviewMarkExistsSql(entityType: string, idColumn: unknown) {
 }
 
 /** Fuentes de `fuel_tae_submissions.source` que corresponden a los orígenes pedidos en `como`. */
-function taeSourcesForOrigins(origins: readonly FuelLoadOriginSlug[]): string[] {
+export function taeSourcesForOrigins(origins: readonly FuelLoadOriginSlug[]): string[] {
   const bySource: Record<string, FuelLoadOriginSlug> = { public_pwa: "qr", internal_app: "app", legacy_xlsx: "historico" }
   return Object.entries(bySource).filter(([, origin]) => origins.includes(origin)).map(([source]) => source)
 }

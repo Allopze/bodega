@@ -5,6 +5,7 @@ import { CloudArrowUp, WifiSlash, QrCode, CircleNotch } from "@phosphor-icons/re
 import { toast } from "@/lib/toast"
 import {
   countPendingTaeSubmissions,
+  countTaeQueue,
   clearTaeAccessConfig,
   clearTaeAccessToken,
   deleteTaeSubmission,
@@ -40,8 +41,10 @@ export function TaeForm() {
 
   const refreshQueue = React.useCallback(async () => {
     try {
-      const [pending, failedItems] = await Promise.all([countPendingTaeSubmissions(), getFailedTaeSubmissions()])
-      setPendingCount(pending)
+      // Las rechazadas no se van solas: se muestran aparte y no entran en
+      // «pendiente(s)» (auditoría 2026-11-05, 5.3).
+      const [cola, failedItems] = await Promise.all([countTaeQueue(), getFailedTaeSubmissions()])
+      setPendingCount(cola.pending + cola.syncing)
       setFailed(failedItems)
     } catch { /* sin cola (navegador sin IndexedDB) */ }
   }, [])
@@ -156,7 +159,34 @@ export function TaeForm() {
   }
 
   if (loading) return <main className="mx-auto flex min-h-dvh max-w-lg items-center justify-center px-4"><CircleNotch className="animate-spin text-[var(--color-primary)]" size={30} /></main>
-  if (!config || !submitter) return <main className="mx-auto flex min-h-dvh max-w-lg items-center px-4"><div className="w-full rounded-[var(--radius-2xl)] border border-(--color-border) bg-(--color-surface) p-6 text-center"><QrCode className="mx-auto text-[var(--color-primary)]" size={34} /><h1 className="mt-4 text-h2">Escanea el QR TAE</h1><p className="mt-1 text-sm text-[var(--color-text-muted)]">Este dispositivo aún no tiene un acceso TAE configurado.</p></div></main>
+  /*
+   * Sin acceso configurado el formulario no se puede abrir, pero las cargas
+   * rechazadas y sus fotos siguen en IndexedDB (auditoría 2026-11-05, 5.3). Antes
+   * este `return` las ocultaba todas: la persona veía «Escanea el QR TAE» y
+   * perdía la única pantalla desde la que podía corregirlas o descartarlas.
+   * El outbox se muestra igual; sin acceso, corregir pide primero un QR vigente.
+   */
+  if (!config || !submitter) return (
+    <main className="mx-auto flex min-h-dvh w-full max-w-lg items-center px-4">
+      <div className="w-full">
+        <div className="rounded-[var(--radius-2xl)] border border-(--color-border) bg-(--color-surface) p-6 text-center">
+          <QrCode className="mx-auto text-[var(--color-primary)]" size={34} />
+          <h1 className="mt-4 text-h2">Escanea el QR TAE</h1>
+          <p className="mt-1 text-sm text-[var(--color-text-muted)]">Este dispositivo aún no tiene un acceso TAE configurado.</p>
+          {pendingCount > 0 && (
+            <p role="status" className="mt-3 text-sm text-[var(--color-warning-ink)]">
+              Quedan {pendingCount} {pendingCount === 1 ? "carga" : "cargas"} en este dispositivo. No se pierden: se envían solas al recuperar señal o al volver a abrir el formulario con un acceso vigente.
+            </p>
+          )}
+        </div>
+        <TaeOutbox
+          failed={failed}
+          onFix={() => toast.error("Escanea el QR TAE vigente para corregir y reenviar esta carga. Sus datos y fotos siguen guardados en este dispositivo.")}
+          onDiscard={(id) => void deleteTaeSubmission(id).then(refreshQueue)}
+        />
+      </div>
+    </main>
+  )
 
   return (
     <main className="mx-auto w-full max-w-lg px-4 py-6">

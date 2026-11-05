@@ -1,3 +1,26 @@
+# Corrección del módulo de combustibles — 2026-11-05
+
+Se corrigieron los 45 hallazgos de la auditoría estática del 2026-11-05, con un reparto por día
+para el mes con un equipo reasignado. Durante la verificación aparecieron ocho defectos más, todos
+corregidos. El detalle por hallazgo está en
+[2026-11-05-auditoria-combustibles-codigo.md](2026-11-05-auditoria-combustibles-codigo.md) § 9.
+
+- **PASS · puertas:**
+  - typecheck y lint sin errores;
+  - migraciones: 374 entradas, sin cambios de esquema pendientes;
+  - `check:secrets` verde;
+  - PGlite completo: 4.422 en verde.
+- **PASS · navegador:** E2E de combustibles en Chromium, 46/46 (1 omitida), más el
+  recorrido de «Revisión de Copec» en escritorio y en 390 px.
+- **FALLA AJENA:** `test:fast` tiene 18.467 en verde y 4 fallidas en
+  `oc-pdf-route-engine` por `PDF_ORIGIN_NOT_CONFIGURED`, una variable del ambiente
+  que no tiene relación con combustibles.
+- **RIESGO:** el chequeo de tipos de `next build` necesitó 6.144 MiB localmente. El
+  CI usa 5.120.
+- **RESUELTO:** el mes Copec con un equipo reasignado a mitad de mes se reparte por
+  día según la faena de cada carga (§ 9.3, decisión del usuario).
+- **PENDIENTE:** commit, CI, deploy y migraciones 0372/0373 en producción.
+
 # Corrección del módulo de mantención — 2026-11-05
 
 Se ejecutó el plan de corrección derivado de la auditoría estática del 2026-11-04. El detalle completo, con archivo y prueba por hallazgo, está en [2026-11-04-auditoria-mantencion-codigo.md](2026-11-04-auditoria-mantencion-codigo.md).

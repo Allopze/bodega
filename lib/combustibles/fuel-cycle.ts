@@ -7,6 +7,7 @@ import { fuelCycleMovements, fuelLoads, fuelStorageLocations, fuelTaeLoadingPoin
 import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { worksiteScopeSql } from "@/lib/auth/scope"
+import { MAX_FUTURE_SKEW_MS } from "@/lib/combustibles/field-load-rules"
 import { accountableFuelLoadsWhere } from "@/lib/combustibles/load-status"
 import type { TankDailyFlow } from "@/lib/combustibles/tank-level"
 
@@ -31,6 +32,12 @@ export const fuelCycleMovementSchema = z.object({
   documentNumber: z.string().max(120).optional(),
   sourceType: z.string().max(80).optional(),
   sourceId: z.string().max(120).optional(),
+  /**
+   * Clave de idempotencia del formulario (auditoría 2026-11-05, 2.8). El
+   * formulario la genera al abrir el diálogo y la conserva entre reintentos: un
+   * doble submit o un refresco del POST registra el mismo movimiento una vez.
+   */
+  clientSubmissionId: z.string().trim().min(8).max(100).optional(),
   notes: z.string().max(1000).optional(),
 }).superRefine((value, ctx) => {
   const issue = (path: "supplierId" | "sourceLocationId" | "targetLocationId" | "vehicleId", message: string) => ctx.addIssue({ code: "custom", path: [path], message })
@@ -40,10 +47,34 @@ export const fuelCycleMovementSchema = z.object({
   if (value.eventType === "direct_delivery" && (!value.supplierId || !value.vehicleId)) issue(!value.supplierId ? "supplierId" : "vehicleId", "La entrega directa requiere proveedor y equipo")
 })
 
+/** Tipo de origen con que el formulario de estanques firma sus movimientos manuales (2.8). */
+export const MANUAL_CYCLE_MOVEMENT_SOURCE = "manual_receipt"
+
+/**
+ * Registra un movimiento manual del ciclo físico.
+ *
+ * Auditoría 2026-11-05 (2.8): el formulario manda «Documento o guía», pero no
+ * `sourceType`/`sourceId`, que son la única clave única de la tabla: un doble
+ * submit duplicaba litros recibidos e inflaba el nivel del estanque. Ahora el
+ * documento (o, si no hay, la clave del formulario) es la identidad de origen y
+ * el alta es idempotente. Una fecha futura se rechaza: un movimiento del futuro
+ * descuadra la cuadratura del período en curso.
+ */
 export async function createFuelCycleMovement(input: unknown, actor: { userId: string; userEmail?: string }) {
   const parsed = fuelCycleMovementSchema.parse(input)
+  const occurredMs = Date.parse(parsed.occurredAt)
+  if (!Number.isFinite(occurredMs)) throw new Error("La fecha del movimiento no es válida")
+  if (occurredMs > Date.now() + MAX_FUTURE_SKEW_MS) throw new Error("La fecha del movimiento no puede ser futura")
+
+  // Identidad de origen: la guía si vino, si no la clave del formulario (evita
+  // que dos recepciones sin documento se pisen entre sí como "la misma").
+  const documentNumber = parsed.documentNumber?.trim() || null
+  const sourceType = parsed.sourceType ?? MANUAL_CYCLE_MOVEMENT_SOURCE
+  const sourceId = parsed.sourceId ?? documentNumber ?? (parsed.clientSubmissionId ? `form:${parsed.clientSubmissionId}` : null)
+  const { clientSubmissionId: _clientSubmissionId, sourceType: _sourceType, sourceId: _sourceId, ...movement } = parsed
+
   const id = nanoid()
-  await db.transaction(async (tx) => {
+  const outcome = await db.transaction(async (tx) => {
     for (const locationId of [parsed.sourceLocationId, parsed.targetLocationId].filter(Boolean) as string[]) {
       const location = await tx.query.fuelStorageLocations.findFirst({ where: eq(fuelStorageLocations.id, locationId) })
       if (!location || location.worksiteId !== parsed.worksiteId || location.productId !== parsed.productId || !location.isActive) throw new Error("El estanque no corresponde a la faena, producto o estado seleccionado")
@@ -65,10 +96,26 @@ export async function createFuelCycleMovement(input: unknown, actor: { userId: s
         .limit(1)
       if (!compatible) throw new Error("El equipo no admite el producto seleccionado")
     }
-    await tx.insert(fuelCycleMovements).values({ id, ...parsed, createdBy: actor.userId })
-    await recordAudit({ userId: actor.userId, userEmail: actor.userEmail, action: "create", entityType: "fuel_cycle_movement", entityId: id, newState: parsed }, tx)
+    // `on conflict do nothing` sin objetivo: cualquier índice único —la clave de
+    // origen parcial sobre `source_id`— convierte el doble submit en no-op.
+    const inserted = await tx.insert(fuelCycleMovements)
+      .values({ id, ...movement, sourceType, sourceId, createdBy: actor.userId })
+      .onConflictDoNothing()
+      .returning({ id: fuelCycleMovements.id })
+    if (inserted.length === 0) {
+      // Ya estaba registrado: se devuelve el id existente y quién llama decide
+      // cómo contarlo (el formulario avisa «ya estaba»), sin auditar dos veces.
+      const [existing] = sourceId
+        ? await tx.select({ id: fuelCycleMovements.id }).from(fuelCycleMovements)
+            .where(and(eq(fuelCycleMovements.sourceType, sourceType), eq(fuelCycleMovements.sourceId, sourceId)))
+            .limit(1)
+        : []
+      return { id: existing?.id ?? id, duplicate: true as const }
+    }
+    await recordAudit({ userId: actor.userId, userEmail: actor.userEmail, action: "create", entityType: "fuel_cycle_movement", entityId: id, newState: { ...movement, sourceType, sourceId } }, tx)
+    return { id, duplicate: false as const }
   })
-  return { id }
+  return outcome
 }
 
 export type CycleAmount = { liters: number; records: number }
@@ -127,9 +174,17 @@ export async function getFuelCycleComparison(session: Session, filters: { worksi
   const received = sum.get("received") ?? null
   const sources = [sum.get("tank_delivery"), sum.get("direct_delivery"), taeRows[0] && Number(taeRows[0].records) > 0 ? { liters: Number(taeRows[0].liters), records: Number(taeRows[0].records) } : undefined].filter(Boolean) as CycleAmount[]
   const delivered = sources.length ? { liters: sources.reduce((total, source) => total + source.liters, 0), records: sources.reduce((total, source) => total + source.records, 0) } : null
-  const registered = registeredRows[0] ? { liters: Number(registeredRows[0].liters), records: Number(registeredRows[0].records) } : null
+  const registered = registeredRows[0] && Number(registeredRows[0].records) > 0
+    ? { liters: Number(registeredRows[0].liters), records: Number(registeredRows[0].records) }
+    : null
   // Sin etapa «Consumido»: ninguna fuente lo mide de verdad (lo que cargó cada equipo no es lo que gastó),
   // y mostrarla siempre en blanco insinuaba una medición que no existe.
+  //
+  // «Registrado» (5.8) sale de las cargas **facturadas** (`fuel_loads`), no de la
+  // serie canónica: una faena que opera con PWA/planilla no tiene facturas y el
+  // tile mostraba «Registrado 0 L» como si no hubiera registrado nada. Se llama
+  // por lo que es —la pantalla la rotula «Facturado»— y con cero filas se
+  // devuelve `null` para que la etapa diga «sin registros» en vez de un 0 falso.
   return { received, registered, delivered, differences: { receivedVsRegistered: compareCycleAmounts(received, registered), receivedVsDelivered: compareCycleAmounts(received, delivered) } }
 }
 

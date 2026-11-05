@@ -191,6 +191,7 @@ export async function readOperationFacts(
       fecha: fuelOperationRecords.fecha,
       horaCarga: fuelOperationRecords.horaCarga,
       horometro: fuelOperationRecords.horometro,
+      medidoPor: fuelOperationRecords.medidoPor,
       liters: fuelOperationRecords.liters,
       operador: fuelOperationRecords.operador,
       supervisor: fuelOperationRecords.supervisor,
@@ -221,6 +222,15 @@ export async function readOperationFacts(
     const flags: FlagReason[] = []
     if (isFillerDate(row.fecha)) flags.push("filler_value")
     if (!row.vehicleId) flags.push("unknown_vehicle")
+    // 5.9: la planilla declara si el medidor es km u hora. Sólo decide cuando el
+    // equipo no tiene un medidor canónico; si lo tiene, manda el equipo. Y si la
+    // planilla dice otro medidor que el del equipo, la lectura está en otra
+    // unidad: compararla con la serie inventaba `meter_regression` o un salto
+    // implausible. Esa lectura no alimenta la serie (el registro original la
+    // conserva en `fuel_operation_records.horometro`).
+    const canonicalMeter = asMeterType(row.vehicleMeterType)
+    const declaredMeter = row.medidoPor === "km" ? "odometer" : row.medidoPor === "hora" ? "hour_meter" : null
+    const meterConflict = canonicalMeter !== null && declaredMeter !== null && canonicalMeter !== declaredMeter
     facts.push({
       source: "operations_import",
       taeSubmissionId: null,
@@ -232,8 +242,8 @@ export async function readOperationFacts(
       occurredAt,
       month: day.slice(0, 7),
       liters: round(liters, 4)!,
-      meterType: asMeterType(row.vehicleMeterType),
-      meterReading: round(row.horometro === null ? null : Number(row.horometro), 2),
+      meterType: canonicalMeter ?? declaredMeter,
+      meterReading: meterConflict ? null : round(row.horometro === null ? null : Number(row.horometro), 2),
       driverWorkerId: null,
       driverName: blankToNull(row.operador),
       supervisorWorkerId: null,

@@ -50,8 +50,24 @@ export async function POST(request: Request) {
     }
     // La fecha de la carga la pone una persona sólo con este permiso; el servicio lo vuelve a exigir.
     const allowPastLoad = can(session, "combustibles:register_past_load")
-    if (parsedRequest.input.pastLoad && !allowPastLoad) {
+    const { pastLoad } = parsedRequest.input
+    // D3: la vía interna no fecha una carga con la hora del dispositivo. Un
+    // reenvío desde la cola sin conexión (`offline`/`capturedAt`) tiene que
+    // presentarse como carga de otro día, con motivo y con el permiso que la
+    // autoriza; si no, `offline` sería un atajo para fechar hasta 30 días atrás
+    // sin `register_past_load`. La vía pública (`/api/tae/submit`) conserva
+    // `offline`: allí la cola es la única fuente de la hora de captura (S-5).
+    const offlineReplay = parsedRequest.input.offline === true || parsedRequest.input.capturedAt != null
+    if ((pastLoad || offlineReplay) && !allowPastLoad) {
       return NextResponse.json({ ok: false, message: "No tienes permiso para registrar cargas con fecha pasada." }, { status: 403 })
+    }
+    if (offlineReplay && !pastLoad?.reason?.trim()) {
+      return NextResponse.json({
+        ok: false,
+        code: "past_load_required",
+        field: "pastLoad",
+        message: "Las cargas registradas sin conexión se ingresan como carga de otro día: indica la fecha, la hora y el motivo.",
+      }, { status: 422 })
     }
     const result = await createInternalFieldLoad({
       userId: session.user.id,

@@ -4,7 +4,7 @@ import { db } from "@/db"
 import { fuelEquipmentLoads, fuelEquipmentTypes, fuelVehicles, worksites } from "@/db/schema"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import type { PerformanceUnit } from "@/lib/combustibles/control/contracts"
-import { buildLoadWhere, chileDateSql, countableLoadSql, statisticallyValidLoadSql, type ControlFilters } from "@/lib/combustibles/control/filters"
+import { buildLoadWhere, chileDateSql, countableLoadSql, equipmentMatchSql, loadPerformanceUnitSql, statisticallyValidLoadSql, type ControlFilters } from "@/lib/combustibles/control/filters"
 import { WORSE_PERFORMANCE_THRESHOLD_PCT, coefficientOfVariation, deltaPct, isWorsePerformance, periodStartPlainDate, shiftPlainDateByMonths } from "@/lib/combustibles/control/view-helpers"
 import { resolvePagination, type PaginationState } from "@/lib/pagination"
 import { toNullableNumber, toNumber } from "./shared"
@@ -13,12 +13,15 @@ import { toNullableNumber, toNumber } from "./shared"
  * Consultas de las vistas de rendimiento por familia (R-01 a R-06). Promedio y
  * desviación se calculan en SQL (`avg`, `stddev_samp`) sobre cargas con
  * rendimiento calculado y sin revisión pendiente. Las unidades nunca se mezclan:
- * todo agrupa por la unidad del equipo.
+ * todo agrupa y rotula por la unidad con la que se calculó cada carga
+ * (`loadPerformanceUnitSql`), no por la que el equipo tiene hoy.
  */
 
 export const DETAIL_PAGE_SIZE = 50
 export const EXPORT_ROW_LIMIT = 10_000
-const MEASURABLE_UNITS = sql`${fuelVehicles.performanceUnit} in ('km_per_liter', 'liters_per_hour')`
+/** Cargas válidas mínimas para decir que un equipo «rinde peor»: con una sola, el promedio es esa carga. */
+export const MIN_SAMPLES_FOR_WORSE = 2
+const MEASURABLE_UNITS = sql`${loadPerformanceUnitSql} in ('km_per_liter', 'liters_per_hour')`
 
 /* ── R-02: por faena ─────────────────────────────────────────────────────── */
 
@@ -39,7 +42,7 @@ export async function getWorksiteStats(session: Session, filters: ControlFilters
   const rows = await db.select({
     worksiteId: worksites.id,
     worksiteName: worksites.name,
-    unit: fuelVehicles.performanceUnit,
+    unit: sql<string | null>`${loadPerformanceUnitSql}`.as("unit"),
     n: sql<number>`count(*)::int`,
     mean: sql<number | null>`avg(${perf})::float8`,
     sd: sql<number | null>`stddev_samp(${perf})::float8`,
@@ -48,8 +51,8 @@ export async function getWorksiteStats(session: Session, filters: ControlFilters
     .leftJoin(fuelEquipmentTypes, eq(fuelEquipmentTypes.id, fuelVehicles.equipmentTypeId))
     .innerJoin(worksites, eq(worksites.id, fuelEquipmentLoads.worksiteId))
     .where(and(buildLoadWhere(session, filters), statisticallyValidLoadSql, MEASURABLE_UNITS))
-    .groupBy(worksites.id, worksites.name, fuelVehicles.performanceUnit)
-    .orderBy(asc(worksites.name), asc(fuelVehicles.performanceUnit))
+    .groupBy(worksites.id, worksites.name, loadPerformanceUnitSql)
+    .orderBy(asc(worksites.name), asc(loadPerformanceUnitSql))
   return rows.map((row) => {
     const mean = toNullableNumber(row.mean)
     const sd = toNullableNumber(row.sd)
@@ -68,7 +71,7 @@ export async function getWorksiteStats(session: Session, filters: ControlFilters
 /** Cargas en revisión con rendimiento calculado: no entran al promedio ni a σ. Por unidad. */
 export async function getReviewExclusions(session: Session, filters: ControlFilters): Promise<Record<PerformanceUnit, number>> {
   const rows = await db.select({
-    unit: fuelVehicles.performanceUnit,
+    unit: sql<string | null>`${loadPerformanceUnitSql}`.as("unit"),
     n: sql<number>`count(*)::int`,
   }).from(fuelEquipmentLoads)
     .leftJoin(fuelVehicles, eq(fuelVehicles.id, fuelEquipmentLoads.vehicleId))
@@ -80,7 +83,7 @@ export async function getReviewExclusions(session: Session, filters: ControlFilt
       eq(fuelEquipmentLoads.performanceStatus, "computed"),
       MEASURABLE_UNITS,
     ))
-    .groupBy(fuelVehicles.performanceUnit)
+    .groupBy(loadPerformanceUnitSql)
   const byUnit = new Map(rows.map((row) => [row.unit, toNumber(row.n)]))
   return { km_per_liter: byUnit.get("km_per_liter") ?? 0, liters_per_hour: byUnit.get("liters_per_hour") ?? 0 }
 }
@@ -141,11 +144,13 @@ function equipmentCtes(session: Session, filters: ControlFilters) {
       plate: fuelVehicles.plate,
       brand: fuelVehicles.brand,
       model: fuelVehicles.model,
-      unit: fuelVehicles.performanceUnit,
+      // La unidad es la del cálculo de cada carga: un equipo corregido de km/L a
+      // L/h deja de mezclar 4,2 con litros por hora en la misma fila.
+      unit: sql<string | null>`${loadPerformanceUnitSql}`.as("unit"),
       typeName: sql<string | null>`${fuelEquipmentTypes.name}`.as("type_name"),
       family: sql<string | null>`${fuelEquipmentTypes.performanceFamily}`.as("family"),
       worksiteName: sql<string | null>`${worksites.name}`.as("worksite_name"),
-      modelKey: sql<string | null>`case when nullif(trim(${fuelVehicles.brand}), '') is null or nullif(trim(${fuelVehicles.model}), '') is null then null else lower(trim(${fuelVehicles.brand})) || '|' || lower(trim(${fuelVehicles.model})) || '|' || ${fuelVehicles.performanceUnit} end`.as("model_key"),
+      modelKey: sql<string | null>`case when nullif(trim(${fuelVehicles.brand}), '') is null or nullif(trim(${fuelVehicles.model}), '') is null then null else lower(trim(${fuelVehicles.brand})) || '|' || lower(trim(${fuelVehicles.model})) || '|' || ${loadPerformanceUnitSql} end`.as("model_key"),
       n: sql<number>`(count(*) filter (where ${statisticallyValidLoadSql}))::int`.as("n"),
       sumPerf: sql<number>`coalesce(sum(${perf}) filter (where ${statisticallyValidLoadSql}), 0)::float8`.as("sum_perf"),
       sd: sql<number | null>`(stddev_samp(${perf}) filter (where ${statisticallyValidLoadSql}))::float8`.as("sd"),
@@ -155,7 +160,7 @@ function equipmentCtes(session: Session, filters: ControlFilters) {
       .leftJoin(fuelEquipmentTypes, eq(fuelEquipmentTypes.id, fuelVehicles.equipmentTypeId))
       .leftJoin(worksites, eq(worksites.id, fuelVehicles.worksiteId))
       .where(and(base, countableLoadSql, MEASURABLE_UNITS))
-      .groupBy(fuelVehicles.id, fuelEquipmentTypes.name, fuelEquipmentTypes.performanceFamily, worksites.name),
+      .groupBy(fuelVehicles.id, fuelEquipmentTypes.name, fuelEquipmentTypes.performanceFamily, worksites.name, loadPerformanceUnitSql),
   )
   const mk = db.$with("mk").as(
     db.select({
@@ -172,6 +177,7 @@ function equipmentCtes(session: Session, filters: ControlFilters) {
       where ${fuelEquipmentLoads.vehicleId} = ${pv.vehicleId}
         and ${statisticallyValidLoadSql}
         ${scope ? sql`and ${scope}` : sql``}
+        and (${fuelEquipmentLoads.performanceUnit} is null or ${fuelEquipmentLoads.performanceUnit} = ${pv.unit})
         and ${chileDateSql(fuelEquipmentLoads.occurredAt)} >= ${historyStart}::date
         and ${chileDateSql(fuelEquipmentLoads.occurredAt)} < ${periodStart}::date
     )`
@@ -190,9 +196,8 @@ export async function getEquipmentStats(
 ): Promise<EquipmentStatsPage> {
   const { pv, mk, meanSql, modelMeanSql, historyMeanSql } = equipmentCtes(session, filters)
 
-  const needle = filters.equipment?.toLowerCase()
-  // Coincidencia exacta de código o patente: el filtro llega del selector de equipos, no de un texto libre.
-  const equipmentPredicate = needle ? sql`(lower(${pv.code}) = ${needle} or lower(${pv.plate}) = ${needle})` : undefined
+  // El filtro `equipo` es el mismo de `buildLoadWhere` (código o patente iguales), ahora aplicado también aquí.
+  const equipmentPredicate = equipmentMatchSql(pv.code, pv.plate, filters.equipment)
 
   const [{ total } = { total: 0 }] = await db.with(pv).select({ total: sql<number>`count(*)::int` }).from(pv).where(equipmentPredicate)
   const pagination = options.all
@@ -231,6 +236,8 @@ export async function getEquipmentStats(
       const historyMean = toNullableNumber(row.historyMean)
       const deltaModel = deltaPct(mean, modelMean)
       const deltaHistory = deltaPct(mean, historyMean)
+      // Con una sola carga el promedio no es una muestra: no se declara que rinda peor (igual que el conteo del Panel).
+      const comparable = toNumber(row.n) >= MIN_SAMPLES_FOR_WORSE
       return {
         vehicleId: row.vehicleId,
         worksiteName: row.worksiteName,
@@ -248,8 +255,8 @@ export async function getEquipmentStats(
         deltaModelPct: deltaModel,
         historyMean,
         deltaHistoryPct: deltaHistory,
-        worseThanModel: isWorsePerformance(unit, deltaModel),
-        worseThanHistory: isWorsePerformance(unit, deltaHistory),
+        worseThanModel: comparable && isWorsePerformance(unit, deltaModel),
+        worseThanHistory: comparable && isWorsePerformance(unit, deltaHistory),
       }
     }),
   }
@@ -287,11 +294,17 @@ export interface EquipmentWorseSummary {
  * 12 meses (km/L: menos es peor; L/h: más es peor), todo en SQL y sin paginar:
  * la lista de `getEquipmentStats` calcula la marca en JS sobre una página, y el
  * Panel necesita el total de todo el alcance. No cuentan cargas por decidir,
- * rechazadas, anuladas ni duplicadas (`statisticallyValidLoadSql`).
+ * rechazadas, anuladas ni duplicadas (`statisticallyValidLoadSql`), ni equipos
+ * con menos de `MIN_SAMPLES_FOR_WORSE` cargas válidas. Respeta los filtros de
+ * equipo, faena y medio: el conteo es el de la tabla que la frase acompaña.
  */
 export async function getEquipmentWorseSummary(session: Session, filters: ControlFilters, limit = 3): Promise<EquipmentWorseSummary> {
   const { pv, mk, meanSql, modelMeanSql, historyMeanSql } = equipmentCtes(session, filters)
   const threshold = WORSE_PERFORMANCE_THRESHOLD_PCT
+  // El filtro `equipo` acota el conteo igual que la lista: con `?equipo=KA-2` la
+  // frase no puede hablar de 37 equipos. Se aplica sobre `cmp` (después de `mk`),
+  // para no cambiar contra quién se compara cada equipo.
+  const equipmentPredicate = equipmentMatchSql(pv.code, pv.plate, filters.equipment)
 
   const cmp = db.$with("cmp").as(
     db.select({
@@ -301,10 +314,11 @@ export async function getEquipmentWorseSummary(session: Session, filters: Contro
       unit: pv.unit,
       typeName: pv.typeName,
       family: pv.family,
+      n: pv.n,
       mean: meanSql.as("mean"),
       modelMean: modelMeanSql.as("model_mean"),
       historyMean: historyMeanSql.as("history_mean"),
-    }).from(pv).leftJoin(mk, eq(mk.modelKey, pv.modelKey)),
+    }).from(pv).leftJoin(mk, eq(mk.modelKey, pv.modelKey)).where(equipmentPredicate),
   )
   const delta = (reference: typeof cmp.modelMean) =>
     sql<number | null>`case when ${cmp.mean} is not null and ${reference} > 0 then ((${cmp.mean} - ${reference}) / ${reference} * 100)::float8 else null end`
@@ -316,17 +330,20 @@ export async function getEquipmentWorseSummary(session: Session, filters: Contro
       unit: cmp.unit,
       typeName: cmp.typeName,
       family: cmp.family,
+      n: cmp.n,
       deltaModel: delta(cmp.modelMean).as("delta_model"),
       deltaHistory: delta(cmp.historyMean).as("delta_history"),
     }).from(cmp),
   )
-  // «Peor» según la dirección de cada unidad: km/L baja, L/h sube.
+  // «Peor» según la dirección de cada unidad: km/L baja, L/h sube. Y sólo con
+  // muestra suficiente: una sola carga no dice cómo rinde el equipo.
   const badness = (column: typeof scored.deltaModel) =>
     sql<number | null>`case when ${column} is null then null when ${scored.unit} = 'km_per_liter' then -${column} else ${column} end`
   const badModel = badness(scored.deltaModel)
   const badHistory = badness(scored.deltaHistory)
-  const worseModel = sql<boolean>`coalesce(${badModel} > ${threshold}, false)`
-  const worseHistory = sql<boolean>`coalesce(${badHistory} > ${threshold}, false)`
+  const comparable = sql<boolean>`${scored.n} >= ${MIN_SAMPLES_FOR_WORSE}`
+  const worseModel = sql<boolean>`(${comparable} and coalesce(${badModel} > ${threshold}, false))`
+  const worseHistory = sql<boolean>`(${comparable} and coalesce(${badHistory} > ${threshold}, false))`
 
   const [totals, examples] = await Promise.all([
     db.with(pv, mk, cmp, scored).select({

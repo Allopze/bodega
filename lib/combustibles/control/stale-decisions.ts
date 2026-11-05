@@ -1,4 +1,4 @@
-import { and, eq, gt, inArray, isNull } from "drizzle-orm"
+import { and, eq, gte, inArray, isNull } from "drizzle-orm"
 import type { Tx } from "@/db"
 import { fuelEquipmentLoads } from "@/db/schema"
 import { recordAudit } from "@/lib/audit"
@@ -16,14 +16,25 @@ import { recomputeVehicleSeries } from "./projection-series"
  * alguien decida) y cada una deja una auditoría con el estado anterior.
  *
  * Uso: tomar la foto ANTES de proyectar la carga nueva y reiniciar DESPUÉS, en
- * la misma transacción:
+ * la misma transacción. Para eso está `projectWithStaleDecisions`, que envuelve
+ * el trabajo y no deja el par desbalanceado:
  *
- *   const before = await snapshotDecidedLoadsAfter(tx, vehicleId, loadedAt)
- *   await projectTaeSubmissions(tx, [id])
- *   await resetStaleDecisionsAfter(tx, before, { userId })
+ *   await projectWithStaleDecisions(tx, vehicleId, loadedAt, { userId }, async () => {
+ *     await projectTaeSubmissions(tx, [id])
+ *   })
+ *
+ * (El alta en terreno lo hace a mano porque además audita `resetLoadIds`.)
  */
 
 export const STALE_DECISION_REASON = "Se registró una carga anterior del equipo: la decisión tomada ya no se ajusta a la serie y vuelve a revisarse"
+
+/**
+ * Instante anterior a cualquier carga: la foto con este `after` incluye todas
+ * las decisiones del equipo. Lo usan los cambios que no tienen un instante
+ * propio (medidor, unidad o estanque del equipo), donde TODA la serie se
+ * recalcula y ninguna decisión anterior conserva su base.
+ */
+export const SERIES_START_INSTANT = "1970-01-01T00:00:00.000Z"
 
 /** Lo que define «la serie» de una carga: si cambia algo de esto, la decisión se tomó sobre otro dato. */
 interface SeriesFingerprint {
@@ -114,16 +125,47 @@ export function seriesFingerprintChanged(before: SeriesFingerprint, after: Serie
     || JSON.stringify(before.flagReasons) !== JSON.stringify(after.flagReasons)
 }
 
-/** Las cargas del equipo posteriores a `after` que ya tienen una decisión (cuenta / no cuenta) y no están anuladas. */
+/**
+ * Las cargas del equipo desde `after` (incluido: una carga del mismo instante
+ * también puede cambiar de lugar en la serie) que ya tienen una decisión
+ * (cuenta / no cuenta) y no están anuladas.
+ */
 export async function snapshotDecidedLoadsAfter(tx: Tx, vehicleId: string, after: string): Promise<DecidedLoadsSnapshot> {
   const rows: SeriesRow[] = await tx.select(SERIES_COLUMNS).from(fuelEquipmentLoads)
     .where(and(
       eq(fuelEquipmentLoads.vehicleId, vehicleId),
-      gt(fuelEquipmentLoads.occurredAt, after),
+      gte(fuelEquipmentLoads.occurredAt, after),
       inArray(fuelEquipmentLoads.reviewStatus, ["approved", "rejected"]),
       isNull(fuelEquipmentLoads.voidedAt),
     ))
   return { vehicleId, loads: new Map(rows.map((row) => [row.id, toDecided(row)])) }
+}
+
+/**
+ * Foto → trabajo → reset, en la misma transacción.
+ *
+ * `work` es lo que cambia la serie del equipo: proyectar una carga, decidir una
+ * revisión, corregir una lectura, anular, recalcular tras cambiar el medidor.
+ * `after` es el instante de la carga que cambió: todo lo que se decidió desde
+ * ahí en adelante se mira contra la serie de antes y la de después, y lo que
+ * cambió de base se reabre con su auditoría. Devuelve los ids reabiertos.
+ *
+ * Sin equipo no hay serie que mirar: sólo se ejecuta `work`.
+ */
+export async function projectWithStaleDecisions(
+  tx: Tx,
+  vehicleId: string | null,
+  after: string,
+  actor: { userId: string | null; userEmail?: string },
+  work: () => Promise<void>,
+): Promise<string[]> {
+  if (!vehicleId) {
+    await work()
+    return []
+  }
+  const before = await snapshotDecidedLoadsAfter(tx, vehicleId, after)
+  await work()
+  return resetStaleDecisionsAfter(tx, before, actor)
 }
 
 /**

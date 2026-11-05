@@ -52,6 +52,7 @@ const status = {
   pendingItems: [],
   coverageMonth: "2025-01-01",
   coverage: [],
+  openRejections: [],
 }
 const source = {
   key: "copec" as const, name: "Copec", description: "Tarjetas de equipos y abastecimiento de estanques", status: "ok" as const, statusLabel: "Al día",
@@ -120,7 +121,13 @@ describe("fila de Copec en «Fuentes de datos»", () => {
   })
 
   it("habla de «Tarjeta de equipos» y «Abastecimiento de estanques», no de TCT ni TAE", () => {
-    render(<CopecSyncStatus source={source} initialStatus={{ ...status, coverage: [{ channel: "TCT", product: "diesel", status: "complete", canConfirmEmpty: false }, { channel: "TAE", product: "bluemax", status: "unknown", canConfirmEmpty: true }] }} initialStartOptions={startOptions} />)
+    const coverage = (channel: "TCT" | "TAE", product: "diesel" | "bluemax", rowStatus: "complete" | "unknown", canConfirmEmpty: boolean) => ({
+      channel, product, status: rowStatus, canConfirmEmpty,
+      canCloseWithIssues: false, closeWithIssuesBlockedReason: null,
+      rowsReceived: 0, rowsAccepted: 0, rowsRejected: 0, rowsPending: 0,
+      evidence: null, evidenceActorUserId: null, updatedAt: "2025-01-01T00:00:00.000Z",
+    })
+    render(<CopecSyncStatus source={source} initialStatus={{ ...status, coverage: [coverage("TCT", "diesel", "complete", false), coverage("TAE", "bluemax", "unknown", true)] }} initialStartOptions={startOptions} />)
     expect(screen.getByText("Tarjeta de equipos · Diésel")).toBeInTheDocument()
     expect(screen.getByText("Abastecimiento de estanques · BlueMax")).toBeInTheDocument()
     expect(screen.queryByText(/\bTCT\b|\bTAE\b/)).not.toBeInTheDocument()

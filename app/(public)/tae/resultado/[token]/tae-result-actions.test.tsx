@@ -6,24 +6,27 @@ const mocks = vi.hoisted(() => ({
   replace: vi.fn(),
   clearTaeAccessToken: vi.fn(),
   clearTaeAccessConfig: vi.fn(),
-  countPendingTaeSubmissions: vi.fn(),
+  countTaeQueue: vi.fn(),
 }))
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: mocks.replace }) }))
 vi.mock("@/lib/pwa/tae-offline-queue", () => ({
   clearTaeAccessToken: mocks.clearTaeAccessToken,
   clearTaeAccessConfig: mocks.clearTaeAccessConfig,
-  countPendingTaeSubmissions: mocks.countPendingTaeSubmissions,
+  countTaeQueue: mocks.countTaeQueue,
 }))
 
 import { TaeResultActions } from "./tae-result-actions"
+
+const vacia = { total: 0, pending: 0, syncing: 0, failed: 0 }
+const soloPendientes = (total: number) => ({ total, pending: total, syncing: 0, failed: 0 })
 
 afterEach(() => {
   cleanup()
   vi.clearAllMocks()
   mocks.clearTaeAccessToken.mockResolvedValue(undefined)
   mocks.clearTaeAccessConfig.mockResolvedValue(undefined)
-  mocks.countPendingTaeSubmissions.mockResolvedValue(0)
+  mocks.countTaeQueue.mockResolvedValue(vacia)
 })
 
 describe("TaeResultActions", () => {
@@ -35,7 +38,7 @@ describe("TaeResultActions", () => {
   })
 
   it("clears the device access before finishing on a shared device", async () => {
-    mocks.countPendingTaeSubmissions.mockResolvedValue(0)
+    mocks.countTaeQueue.mockResolvedValue(vacia)
     render(<TaeResultActions />)
     await waitFor(() => expect(screen.getByRole("button", { name: /finalizar en este dispositivo/i })).toBeEnabled())
     fireEvent.click(screen.getByRole("button", { name: /finalizar en este dispositivo/i }))
@@ -56,7 +59,7 @@ describe("TaeResultActions", () => {
  */
 describe("TaeResultActions — cargas pendientes", () => {
   it("bloquea finalizar y dice cuántas cargas retienen el dispositivo", async () => {
-    mocks.countPendingTaeSubmissions.mockResolvedValue(2)
+    mocks.countTaeQueue.mockResolvedValue(soloPendientes(2))
     render(<TaeResultActions />)
 
     await waitFor(() => expect(screen.getByRole("button", { name: /finalizar en este dispositivo/i })).toBeDisabled())
@@ -66,14 +69,31 @@ describe("TaeResultActions — cargas pendientes", () => {
     expect(mocks.clearTaeAccessToken).not.toHaveBeenCalled()
   })
 
+  /*
+   * Auditoría 2026-11-05 (5.3): una carga rechazada sigue en IndexedDB, no se
+   * sincroniza sola y su única salida es el formulario que abre el acceso
+   * guardado. Si el contador no la ve, «Finalizar» se habilita y borra el
+   * acceso: la carga y sus fotos quedan sin pantalla que las muestre.
+   */
+  it("una carga rechazada también bloquea y no borra el acceso", async () => {
+    mocks.countTaeQueue.mockResolvedValue({ total: 1, pending: 0, syncing: 0, failed: 1 })
+    render(<TaeResultActions />)
+
+    await waitFor(() => expect(screen.getByRole("button", { name: /finalizar en este dispositivo/i })).toBeDisabled())
+    expect(screen.getByRole("status")).toHaveTextContent(/1 carga rechazada/i)
+    expect(screen.getByRole("status")).toHaveTextContent(/corrígela/i)
+    expect(mocks.clearTaeAccessToken).not.toHaveBeenCalled()
+    expect(mocks.clearTaeAccessConfig).not.toHaveBeenCalled()
+  })
+
   it("no borra el acceso si aparece una carga entre el último refresco y el clic", async () => {
-    mocks.countPendingTaeSubmissions.mockResolvedValue(0)
+    mocks.countTaeQueue.mockResolvedValue(vacia)
     render(<TaeResultActions />)
     await waitFor(() => expect(screen.getByRole("button", { name: /finalizar en este dispositivo/i })).toBeEnabled())
 
     // La cola se llena justo antes de pulsar: por eso se vuelve a consultar
     // dentro del propio manejador y no se confía en el estado ya pintado.
-    mocks.countPendingTaeSubmissions.mockResolvedValue(1)
+    mocks.countTaeQueue.mockResolvedValue(soloPendientes(1))
     fireEvent.click(screen.getByRole("button", { name: /finalizar en este dispositivo/i }))
 
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(/cargas sin enviar/i))
@@ -81,9 +101,22 @@ describe("TaeResultActions — cargas pendientes", () => {
     expect(mocks.replace).not.toHaveBeenCalled()
   })
 
+  it("si la carga que aparece en el clic está rechazada, lo dice y no borra nada", async () => {
+    mocks.countTaeQueue.mockResolvedValue(vacia)
+    render(<TaeResultActions />)
+    await waitFor(() => expect(screen.getByRole("button", { name: /finalizar en este dispositivo/i })).toBeEnabled())
+
+    mocks.countTaeQueue.mockResolvedValue({ total: 1, pending: 0, syncing: 0, failed: 1 })
+    fireEvent.click(screen.getByRole("button", { name: /finalizar en este dispositivo/i }))
+
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(/rechazadas/i))
+    expect(mocks.clearTaeAccessToken).not.toHaveBeenCalled()
+    expect(mocks.replace).not.toHaveBeenCalled()
+  })
+
   // No poder leer la cola no es lo mismo que la cola esté vacía.
   it("ante un fallo al consultar la cola, se comporta como si hubiera pendientes", async () => {
-    mocks.countPendingTaeSubmissions.mockRejectedValue(new Error("IndexedDB no disponible"))
+    mocks.countTaeQueue.mockRejectedValue(new Error("IndexedDB no disponible"))
     render(<TaeResultActions />)
 
     await waitFor(() => expect(screen.getByRole("button", { name: /finalizar en este dispositivo/i })).toBeDisabled())

@@ -498,4 +498,22 @@ export const pgliteTestFiles = [
   "lib/combustibles/control/queries/meter-rates.test.ts",
   // Combustibles › Consumo (small multiples): evolución de litros por equipo y período, alcance por faena, ventana de meses y patente fuera de la flota.
   "lib/combustibles/__tests__/evolution-by-vehicle-pglite.test.ts",
+  // ── Auditoría de combustibles 2026-11-05 · las cinco suites del plan ───────
+  // El registro es del carril E, así que ningún otro carril edita este archivo:
+  // las suites A–D se escriben en sus carriles y quedan cubiertas por
+  // `npm run test:pglite` sin tocar nada más. El comentario de cada una dice
+  // qué hallazgo de `qa/reports/2026-11-05-auditoria-combustibles-codigo.md`
+  // protege, para que se pueda revisar la cobertura del plan de un vistazo.
+  // (A) serie canónica: el lock por equipo y el lost update de `recomputeVehicleSeries` (§2.1).
+  "lib/__tests__/fuel-serie-concurrencia-pglite.test.ts",
+  // (B) TAE: ciclo, sellos y la reversa de un lote que ya no borra el historial (§2.4, §2.6, §2.7).
+  "lib/__tests__/fuel-tae-ciclo-sellos-pglite.test.ts",
+  // (C) ingesta Copec: cobertura del período, correcciones del proveedor y barrido (§4.1–§4.8).
+  "lib/__tests__/fuel-copec-ingesta-pglite.test.ts",
+  // (D) consultas de período: mes civil de Chile y límites de la ventana (§3.3 y seguimiento de gráficos).
+  "lib/__tests__/fuel-consultas-periodo-pglite.test.ts",
+  // (E) las claves e integridad del esquema que agregaron las migraciones 0372/0373:
+  // despachos (E1), cargas operacionales (E2), vínculos abiertos (E3), sellos (E4),
+  // guía Copec compartida (E5), cobertura cerrada con incidencias (E6) y FK de cuentas (E7).
+  "db/__tests__/fuel-integridad-constraints.test.ts",
 ]

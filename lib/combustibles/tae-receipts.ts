@@ -42,6 +42,17 @@ function cardKey(cardNumber: string, productId: string) {
   return `${plateMatchKey(cardNumber)}::${productId}`
 }
 
+/**
+ * Identidad de origen completa de una recepción TAE (auditoría 2026-11-05, 2.9).
+ *
+ * Copec reutiliza la guía de despacho: `fuel_cycle_movements` sólo era único
+ * por `(source_type, source_id)` —y `source_id` es la guía—, así que la segunda
+ * fila de una misma guía para otra tarjeta o producto se descartaba en silencio
+ * (`onConflictDoNothing`) y sólo subía el contador de `duplicates`. La migración
+ * 0372 (carril E) agregó `source_plate` / `source_product` y un índice único
+ * propio para `copec_tae` sobre (guía, tarjeta, producto): la tarjeta y el
+ * producto forman parte de la clave, no un adorno de la fila.
+ */
 export async function importTaeReceipts(rows: ParsedTaeReceiptRow[], importerId: string): Promise<TaeReceiptImportOutcome> {
   const empty: TaeReceiptImportOutcome = { inserted: 0, duplicates: 0, unmappedCards: [], unmappedLiters: 0 }
   if (!rows.length) return empty
@@ -88,6 +99,10 @@ export async function importTaeReceipts(rows: ParsedTaeReceiptRow[], importerId:
       documentNumber: row.documentNumber,
       sourceType: TAE_RECEIPT_SOURCE,
       sourceId: row.documentNumber,
+      // La guía sola no distingue dos cargas de tarjetas/productos distintos
+      // (2.9): la tarjeta y el producto forman parte de la identidad de origen.
+      sourcePlate: plateMatchKey(row.cardNumber),
+      sourceProduct: row.productId,
       notes: row.station || null,
       createdBy: importerId,
     })

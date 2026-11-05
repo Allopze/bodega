@@ -12,6 +12,8 @@ import { validateFileBuffer, MimeType } from "@/lib/file-validation"
 import { nanoid } from "@/lib/id"
 import { setVehicleOperationalStatus } from "@/lib/services/fleet"
 import { moveProviderMappingsWithVehicleTx } from "@/lib/combustibles/provider-mappings"
+import { lockVehicleSeries, recomputeVehicles } from "@/lib/combustibles/control/projection-series"
+import { projectWithStaleDecisions, SERIES_START_INSTANT } from "@/lib/combustibles/control/stale-decisions"
 import { parseFleetXlsx } from "@/lib/combustibles/fleet-xlsx-import"
 import { normalizePlate } from "@/lib/combustibles/xlsx-utils"
 import {
@@ -106,6 +108,21 @@ function vehicleValues<T extends {
     compatibleProductIds: compatibleProductIds ?? [],
     operationalStatusReason,
   }
+}
+
+/**
+ * Medidor, unidad de rendimiento y capacidad del estanque son la base del
+ * cálculo de la serie: cambiar cualquiera deja los valores guardados con la
+ * unidad o el estanque anterior. Esos tres campos obligan a recalcular.
+ */
+function seriesInputsChanged(
+  existing: { meterType: string; performanceUnit: string; tankCapacityLiters: number | null },
+  next: { meterType?: string; performanceUnit?: string; tankCapacityLiters?: number },
+): boolean {
+  if (next.meterType !== undefined && next.meterType !== existing.meterType) return true
+  if (next.performanceUnit !== undefined && next.performanceUnit !== existing.performanceUnit) return true
+  return next.tankCapacityLiters !== undefined
+    && (existing.tankCapacityLiters === null || Math.abs(Number(existing.tankCapacityLiters) - Number(next.tankCapacityLiters)) > 1e-6)
 }
 
 export async function createFuelVehicleAction(
@@ -204,8 +221,24 @@ export async function updateFuelVehicleAction(
     const validProducts = await db.query.fuelProducts.findMany({ where: inArray(fuelProducts.id, compatibleProductIds) })
     if (validProducts.length !== compatibleProductIds.length || validProducts.some((product) => !product.isActive)) return { ok: false, message: "Hay productos compatibles inexistentes o inactivos" }
     const nextState = { ...data, updatedAt: new Date().toISOString() }
+    const recalcSeries = seriesInputsChanged(existing, data)
     await db.transaction(async (tx) => {
       await tx.update(fuelVehicles).set(nextState).where(eq(fuelVehicles.id, id))
+      if (recalcSeries) {
+        // Sin esto, las cargas siguen con el rendimiento de la unidad vieja y las
+        // consultas lo rotulan con la nueva (una excavadora «4,20 L/h» que en
+        // realidad era 4,20 km/L). No se borra ninguna carga: se recalcula qué
+        // vale cada una con el medidor y la unidad nuevos, y las decisiones
+        // tomadas con los valores viejos vuelven a revisarse.
+        await lockVehicleSeries(tx, id)
+        await projectWithStaleDecisions(
+          tx,
+          id,
+          SERIES_START_INSTANT,
+          { userId: session.user.id, userEmail: session.user.email ?? undefined },
+          async () => { await recomputeVehicles(tx, [id]) },
+        )
+      }
       // La sincronización atribuye por la faena de la asignación de proveedor, no por la del vehículo.
       if (data.worksiteId && data.worksiteId !== existing.worksiteId) {
         await moveProviderMappingsWithVehicleTx(tx, { vehicleId: id, worksiteId: data.worksiteId, actorUserId: session.user.id, actorEmail: session.user.email })

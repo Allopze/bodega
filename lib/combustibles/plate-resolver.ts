@@ -98,11 +98,21 @@ export function createVehicleResolver(
   }
 }
 
-/** Loads vehicle and mapping evidence once for one provider account. */
+/**
+ * Carga el padrón y las asignaciones del proveedor para una cuenta.
+ *
+ * C3 / 4.3: `inFleet` se arma con TODOS los mappings del proveedor, no sólo con
+ * los de la cuenta que se está sincronizando. Un vínculo manual hecho desde el
+ * lote de Diésel (`tct:diesel`) describe la misma patente que aparece en el
+ * informe de BlueMax (`tct:bluemax`): acotado a la cuenta, BlueMax la veía como
+ * `not_in_fleet`, no la contaba y tampoco la dejaba pendiente —el mes podía
+ * cerrarse «completo» con litros faltantes—. La ASIGNACIÓN (`resolveVehicle`)
+ * sí sigue siendo por cuenta: es la evidencia temporal de esa fuente.
+ */
 export async function loadVehicleResolver(
   mapping: { provider: "copec"; sourceAccount: string },
 ): Promise<VehicleResolver & { inFleet: FleetPlateCheck }> {
-  const [vehicles, mappings] = await Promise.all([
+  const [vehicles, mappings, providerMappings] = await Promise.all([
     db.query.fuelVehicles.findMany({ columns: { id: true, plate: true, worksiteId: true, meterType: true } }),
     db.query.fuelProviderMappings.findMany({
       where: and(
@@ -111,7 +121,12 @@ export async function loadVehicleResolver(
       ),
       columns: { externalKey: true, vehicleId: true, worksiteId: true, effectiveFrom: true, effectiveTo: true, isActive: true, version: true },
     }),
+    // Sólo para el chequeo de flota: patente ↔ vehículo del proveedor, sin importar la cuenta.
+    db.query.fuelProviderMappings.findMany({
+      where: eq(fuelProviderMappings.provider, mapping.provider),
+      columns: { externalKey: true, vehicleId: true },
+    }),
   ])
   const currentMonth = `${todayInChile().slice(0, 7)}-01`
-  return Object.assign(createVehicleResolver(vehicles, mappings, currentMonth), { inFleet: createFleetPlateCheck(vehicles, mappings) })
+  return Object.assign(createVehicleResolver(vehicles, mappings, currentMonth), { inFleet: createFleetPlateCheck(vehicles, providerMappings) })
 }

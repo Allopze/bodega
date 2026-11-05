@@ -13,6 +13,30 @@ import { loadPerformanceControlContext, thresholdForEquipmentType, type Performa
 
 const UPDATE_CHUNK = 500
 
+/**
+ * Candado por equipo de la serie canónica.
+ *
+ * Es el mismo que toma el alta en terreno (`submit.ts`, `fuel_tae_vehicle:<id>`),
+ * así que una carga nueva y un recálculo no pueden leer la serie a la vez: el
+ * segundo espera a que la primera transacción cierre y lee lo que ya se
+ * confirmó, en vez de una foto vieja. `pg_advisory_xact_lock` es reentrante en
+ * la misma transacción —volver a tomarlo no bloquea—, por eso cada escritor
+ * puede pedirlo sin saber si un llamador de más arriba ya lo tiene.
+ *
+ * Orden de candados de todo el módulo: equipo → carga (submission / registro
+ * del log) → filas de la serie (`fuel_equipment_loads`). Siempre en ese orden:
+ * al revés, una revisión que bloquea la carga y después espera el equipo se
+ * cruza con un alta que tiene el equipo y espera la carga.
+ */
+export async function lockVehicleSeries(tx: Tx, vehicleId: string): Promise<void> {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`fuel_tae_vehicle:${vehicleId}`}))`)
+}
+
+/** Varios equipos, en orden estable: dos recálculos que se cruzan no se bloquean entre sí. */
+export async function lockVehiclesSeries(tx: Tx, vehicleIds: Iterable<string>): Promise<void> {
+  for (const vehicleId of [...new Set(vehicleIds)].sort()) await lockVehicleSeries(tx, vehicleId)
+}
+
 type StoredRow = {
   id: string
   source: string
@@ -50,6 +74,10 @@ function changed(stored: StoredRow, next: SeriesResult): boolean {
 }
 
 export async function recomputeVehicleSeries(tx: Tx, vehicleId: string, context?: PerformanceControlContext): Promise<void> {
+  // Antes de leer: la serie se calcula con lo que ya confirmó quien tenía el
+  // candado, no con una foto que quedó vieja mientras se esperaba.
+  await lockVehicleSeries(tx, vehicleId)
+
   const [vehicle] = await tx.select({
     meterType: fuelVehicles.meterType,
     performanceUnit: fuelVehicles.performanceUnit,
@@ -83,7 +111,15 @@ export async function recomputeVehicleSeries(tx: Tx, vehicleId: string, context?
   })
     .from(fuelEquipmentLoads)
     .where(eq(fuelEquipmentLoads.vehicleId, vehicleId))
-    .orderBy(asc(fuelEquipmentLoads.occurredAt), asc(fuelEquipmentLoads.id))
+    // Dos cargas del mismo instante (la planilla sin hora queda en 00:00) se
+    // ordenan por la lectura física y no por el id: con el id, la de 5.200 podía
+    // quedar antes que la de 5.000 y el retroceso era espurio. Sin lectura, al
+    // final; el id sólo desempata lo que la lectura no distingue.
+    .orderBy(
+      asc(fuelEquipmentLoads.occurredAt),
+      sql`${fuelEquipmentLoads.meterReading} asc nulls last`,
+      asc(fuelEquipmentLoads.id),
+    )
   if (rows.length === 0) return
 
   const { settings, ruleConfig } = context ?? await loadPerformanceControlContext(tx)
@@ -141,7 +177,9 @@ async function persistChunk(tx: Tx, chunk: SeriesResult[]): Promise<void> {
 
 /** Recalcula varios equipos sin repetir y con un solo contexto de umbrales. */
 export async function recomputeVehicles(tx: Tx, vehicleIds: Iterable<string>, context?: PerformanceControlContext): Promise<void> {
-  const unique = [...new Set(vehicleIds)]
+  // Orden estable: los candados se toman siempre en el mismo orden, así dos
+  // recálculos que comparten equipos no se bloquean en cruz.
+  const unique = [...new Set(vehicleIds)].sort()
   if (unique.length === 0) return
   const ctx = context ?? await loadPerformanceControlContext(tx)
   for (const vehicleId of unique) await recomputeVehicleSeries(tx, vehicleId, ctx)

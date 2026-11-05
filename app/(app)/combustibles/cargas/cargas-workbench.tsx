@@ -4,6 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import { GasPump } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
+import { Callout } from "@/components/ui/callout"
 import { EmptyState } from "@/components/ui/empty-state"
 import { PageHeader } from "@/components/ui/page-header"
 import { AddFuelDataButton } from "@/components/combustibles/add-fuel-data-button"
@@ -74,6 +75,11 @@ export function CargasWorkbench({
 }) {
   const { clearFilters } = useUrlFilters({ resetPageKeys: ["pagina", "page"] })
   const [selected, setSelected] = React.useState<Set<string>>(new Set())
+  // El conteo y las filas son consultas distintas: si el conteo cae y la página
+  // recibe 0, las filas que sí llegaron no se pueden ocultar (hallazgo 6.1). La
+  // tabla se decide por `rows`, no por el total, y el aviso dice que falta el total.
+  const countUnavailable = pagination.totalItems === 0 && rows.length > 0
+  const isEmpty = rows.length === 0
 
   // La selección es de la página que se está viendo: si las filas cambian, se descarta.
   const signature = rows.map(rowKey).join("|")
@@ -104,13 +110,21 @@ export function CargasWorkbench({
       <CargasFilters lookups={lookups} canViewPersonal={canViewPersonal} />
 
       <p className="mb-2 text-xs text-[var(--color-text-muted)]" aria-live="polite">
-        {pagination.totalItems === 0
-          ? "Ninguna carga"
-          : <><span className="font-mono tabular-nums">{pagination.totalItems.toLocaleString("es-CL")}</span> {pagination.totalItems === 1 ? "carga" : "cargas"} {filtered ? "con estos filtros" : period.inLabel} · mostrando <span className="font-mono tabular-nums">{pagination.from}</span> a <span className="font-mono tabular-nums">{pagination.to}</span></>}
+        {countUnavailable
+          ? <>No pudimos contar las cargas {filtered ? "con estos filtros" : period.inLabel} · mostrando <span className="font-mono tabular-nums">{rows.length}</span> {rows.length === 1 ? "carga" : "cargas"}</>
+          : pagination.totalItems === 0
+            ? "Ninguna carga"
+            : <><span className="font-mono tabular-nums">{pagination.totalItems.toLocaleString("es-CL")}</span> {pagination.totalItems === 1 ? "carga" : "cargas"} {filtered ? "con estos filtros" : period.inLabel} · mostrando <span className="font-mono tabular-nums">{pagination.from}</span> a <span className="font-mono tabular-nums">{pagination.to}</span></>}
         {selected.size > 0 && <> · {selected.size} {selected.size === 1 ? "seleccionada" : "seleccionadas"} <button type="button" className="text-[var(--color-primary-ink)] underline underline-offset-2" onClick={() => setSelected(new Set())}>Quitar selección</button></>}
       </p>
 
-      {pagination.totalItems === 0 ? (
+      {countUnavailable && (
+        <Callout tone="warning" role="status" className="mb-3">
+          No pudimos obtener el total de cargas. Abajo están las filas que sí llegaron; el número y la paginación pueden estar incompletos.
+        </Callout>
+      )}
+
+      {isEmpty ? (
         filtered ? (
           <EmptyState
             compact

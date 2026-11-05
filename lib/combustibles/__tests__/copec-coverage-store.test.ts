@@ -51,7 +51,7 @@ describe("persistencia de cobertura Copec", () => {
     await expect(recordCopecPeriodCoverage({
       channel: "TAE", product: "bluemax", month: "2018-02-01",
       status: "legitimate_empty", sourceAvailability: "available",
-    })).rejects.toThrow(/evidencia y operador/)
+    })).rejects.toThrow(/motivo y el operador responsable/)
   })
 
   it("no reemplaza una cobertura completa por una confirmación vacía concurrente", async () => {
@@ -97,5 +97,29 @@ describe("persistencia de cobertura Copec", () => {
     // Un archivo que sí llegó y se rechazó es evidencia nueva.
     await recordCopecPeriodCoverage({ channel: "TCT", product: "bluemax", month, status: "failed", sourceAvailability: "available", rowsReceived: 4, rowsRejected: 1 })
     expect(await read()).toMatchObject({ status: "failed", rowsRejected: 1 })
+  })
+
+  it("4.5: una descarga fallida entre medio no borra los contadores ni deja certificar vacío un mes con consumo", async () => {
+    const month = "2018-03-01"
+    const read = async () => (await inMemoryDb.select().from(schema.fuelProviderPeriodCoverage)
+      .where(and(
+        eq(schema.fuelProviderPeriodCoverage.sourceAccount, "tct:bluemax"),
+        eq(schema.fuelProviderPeriodCoverage.periodMonth, month),
+      )))[0]
+    // 1. El mes trajo 5 filas y una quedó sin asignar.
+    await recordCopecPeriodCoverage({
+      channel: "TCT", product: "bluemax", month,
+      status: "incomplete", sourceAvailability: "available", rowsReceived: 5, rowsAccepted: 4, rowsPending: 1, quantityTotal: 400,
+    })
+    // 2. La corrida siguiente se cae por red: cambia el estado, no lo que el mes trajo.
+    await recordCopecPeriodCoverage({ channel: "TCT", product: "bluemax", month, status: "failed", sourceAvailability: "unknown" })
+    expect(await read()).toMatchObject({ status: "failed", rowsReceived: 5, rowsPending: 1, quantityTotal: 400 })
+    // 3. «No hay registros» ya no puede certificarlo vacío.
+    await recordCopecPeriodCoverage({
+      channel: "TCT", product: "bluemax", month,
+      status: "legitimate_empty", sourceAvailability: "available",
+      evidence: "No hay registros para el filtro seleccionado", evidenceActorUserId: "operator-1",
+    })
+    expect(await read()).toMatchObject({ status: "failed", rowsReceived: 5, quantityTotal: 400 })
   })
 })

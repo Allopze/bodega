@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { cronRequestSource, parseCronAllowedSources, verifyCronInternalRequest, verifyCronRequest } from "@/lib/security/cron-auth"
 import { syncCopecReports } from "@/lib/combustibles/copec-sync"
 import { copecSyncAvailability } from "@/lib/combustibles/copec-reports"
-import { fuelCronContractFor } from "@/lib/combustibles/fuel-cron-contract"
+import { fuelCronContractFor, isCopecSweepDegraded } from "@/lib/combustibles/fuel-cron-contract"
 import { logger } from "@/lib/logger"
 import { safeActionMessage } from "@/lib/action-error"
 import { withCronLock } from "@/lib/services/cron-lock"
@@ -61,7 +61,16 @@ export async function GET(request: NextRequest) {
       logger.warn("[cron/fuel-copec-sync] Skipped: otra corrida en curso")
       return respond(fuelCronContractFor({ conflict: true }))
     }
-    return respond(fuelCronContractFor({ failed: 0, total: 1 }), outcome)
+    // C6 / 4.6: el barrido puede terminar sin excepción y aun así ser parcial
+    // —Copec no entregó un informe, o el presupuesto cortó los meses que
+    // faltaban—. Antes la ruta respondía `healthy` igual y el scheduler no veía
+    // nada; ahora eso se reporta como `partial`/`degraded`.
+    const degraded = isCopecSweepDegraded(outcome)
+    if (degraded) logger.warn("[cron/fuel-copec-sync] Barrido parcial", { unavailable: outcome.unavailable, budgetExhausted: outcome.budgetExhausted })
+    return respond(
+      fuelCronContractFor({ failed: 0, total: 1, degraded }),
+      { ...outcome, degraded },
+    )
   } catch (error) {
     logger.error("[cron/fuel-copec-sync] Fatal error", error)
     return respond(fuelCronContractFor({ failed: 1, total: 1 }), { error: safeActionMessage(error, "Copec sync failed") })

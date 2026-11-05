@@ -66,3 +66,24 @@ export async function archiveCopecEvidence(
     sourceBytes: original.byteLength,
   }
 }
+
+/**
+ * Borra un archivo archivado que quedó sin fila en `fuel_provider_files`.
+ *
+ * El `.enc` se escribe antes de la fila (ver `archiveCopecEvidence`): si la
+ * inserción falla o el período revienta justo después, el archivo queda
+ * huérfano para siempre porque nada lo referencia y no hay GC de evidencia
+ * Copec. El llamador compensa con esto (C10 / 4.11).
+ *
+ * Sólo acepta rutas relativas bajo `copec-evidence/`: nunca borra fuera del
+ * directorio de evidencia aunque la ruta venga de la base.
+ */
+export async function removeCopecEvidence(storagePath: string): Promise<void> {
+  const prefix = "copec-evidence/"
+  if (!storagePath.startsWith(prefix) || storagePath.split("/").includes("..")) {
+    throw new Error("Ruta de evidencia Copec inválida")
+  }
+  const directory = resolveStorageFile(resolveStorageDir(), "copec-evidence")
+  const target = resolveStorageFile(directory, storagePath.slice(prefix.length))
+  await rm(target, { force: true })
+}

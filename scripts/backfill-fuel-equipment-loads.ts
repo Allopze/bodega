@@ -27,7 +27,7 @@ import { db } from "@/db"
 import { fuelEquipmentLoads, fuelOperationRecords, fuelTaeSubmissions } from "@/db/schema"
 import { readOperationFacts, readTaeFacts } from "@/lib/combustibles/control/projection-sources"
 import { upsertProjectedLoads } from "@/lib/combustibles/control/projection-upsert"
-import { recomputeVehicleSeries } from "@/lib/combustibles/control/projection-series"
+import { recomputeVehicleSeries, lockVehicleSeries } from "@/lib/combustibles/control/projection-series"
 import { loadPerformanceControlContext } from "@/lib/combustibles/control/settings"
 
 const DRY_RUN = process.env.FUEL_LOADS_BACKFILL_DRY_RUN === "true"
@@ -60,6 +60,10 @@ const chunks = <T>(items: T[]) => Array.from({ length: Math.ceil(items.length / 
 async function projectGroup(vehicleId: string | null, group: Group, context: Awaited<ReturnType<typeof loadPerformanceControlContext>>) {
   try {
     return await db.transaction(async (tx) => {
+      // Corre en cada despliegue, junto con las cargas que la gente sigue
+      // registrando: el candado por equipo (el mismo del alta) evita que este
+      // recálculo y un alta se pisen la serie. Orden: equipo → cargas → serie.
+      if (vehicleId) await lockVehicleSeries(tx, vehicleId)
       let projected = 0
       let skipped = 0
       for (const ids of chunks(group.tae)) {

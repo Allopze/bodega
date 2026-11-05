@@ -1,5 +1,6 @@
 import "server-only"
 import type { Session } from "next-auth"
+import { NOT_IN_FLEET } from "@/lib/combustibles/plate-resolver"
 import { and, count, desc, eq, gte, inArray, isNotNull, isNull, like, lt, max, ne, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
@@ -297,7 +298,9 @@ async function providerSource(ctx: Ctx): Promise<FuelSourceStatus | null> {
     const excluded = await db
       .select({ plate: fuelProviderTransactions.sourcePlate, loads: count() })
       .from(fuelProviderTransactions)
-      .where(and(eq(fuelProviderTransactions.syncRunId, latest.id), eq(fuelProviderTransactions.status, "excluded")))
+      // Sólo las fuera de flota: un agregado repartido por día también queda
+      // `excluded` (sus litros los cuentan las transacciones) y no es «ajeno».
+      .where(and(eq(fuelProviderTransactions.syncRunId, latest.id), eq(fuelProviderTransactions.status, "excluded"), eq(fuelProviderTransactions.resolutionCode, NOT_IN_FLEET.code)))
       .groupBy(fuelProviderTransactions.sourcePlate)
     const loads = excluded.reduce((total, row) => total + row.loads, 0)
     if (loads > 0) {

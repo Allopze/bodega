@@ -164,7 +164,7 @@ describe("seguridad de la PWA pública TAE (PostgreSQL integration)", () => {
     expect(evidences).toHaveLength(4)
   })
 
-  it("conserva OCR de baja confianza como sugerencia y exige confirmación humana para validar", async () => {
+  it("un equipo sin medidor no queda trabado por una sugerencia OCR de baja confianza", async () => {
     const result = await createTaeSubmission({
       accessToken: validToken,
       input: baseInput({ meterReading: null }),
@@ -187,7 +187,10 @@ describe("seguridad de la PWA pública TAE (PostgreSQL integration)", () => {
       status: "validated",
       reviewNote: "Revisión de prueba.",
       userId,
-    })).rejects.toThrow("Confirma o corrige manualmente")
+    })).resolves.toBeUndefined()
+    const [validated] = await inMemoryDb.select().from(schema.fuelTaeSubmissions)
+      .where(eq(schema.fuelTaeSubmissions.id, result.id))
+    expect(validated?.status).toBe("validated")
   })
 
   // CO-016: revalidar una carga volvía a insertar el movimiento de sello

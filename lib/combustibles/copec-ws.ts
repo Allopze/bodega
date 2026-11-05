@@ -53,6 +53,30 @@ const REQUEST_TIMEOUT_MS = 60_000
 const MAX_BYTES = 25 * 1024 * 1024
 /** Lo responde Copec al pasarse: «El rango máximo a consultar es de 31 días.» */
 const MAX_RANGE_DAYS = 31
+/**
+ * Piso del tiempo que se le concede a una consulta cuando queda poco
+ * presupuesto. Por debajo de esto no vale la pena abrir la conexión: se falla el
+ * producto y la corrida siguiente lo retoma.
+ */
+const MIN_REQUEST_TIMEOUT_MS = 5_000
+
+/**
+ * Tiempo máximo de UNA consulta, acotado por lo que le queda a la corrida.
+ *
+ * C7 / 4.7: el cron tiene `maxDuration = 300` y cada consulta podía esperar 60 s
+ * (con reintento, 120 s). Cuatro descargas por período podían pasarse del techo,
+ * la plataforma mataba el proceso, el `catch` no corría y la corrida quedaba
+ * `running` para siempre. Con el presupuesto del barrido como cota, la última
+ * consulta se corta a tiempo y el error se reporta como una corrida parcial.
+ *
+ * Devuelve `null` cuando ya no queda margen: el llamador falla sin consultar.
+ */
+export function clampCopecRequestTimeout(remainingMs: number | null | undefined): number | null {
+  if (remainingMs === null || remainingMs === undefined) return REQUEST_TIMEOUT_MS
+  if (!Number.isFinite(remainingMs)) return REQUEST_TIMEOUT_MS
+  if (remainingMs <= 0) return null
+  return Math.max(MIN_REQUEST_TIMEOUT_MS, Math.min(REQUEST_TIMEOUT_MS, Math.floor(remainingMs)))
+}
 
 export const COPEC_WS_PARSER_VERSION = "copec-ws-v1"
 
@@ -332,11 +356,11 @@ function allowedRedirect(response: Response, from: string): string | null {
 }
 
 /** Ni la URL ni el error de `fetch`: en BlueMax la URL lleva usuario y clave. */
-async function requestCopec(url: string, init: RequestInit, label: string, redact: (value: string) => string): Promise<{ body: Buffer; contentType: string }> {
+async function requestCopec(url: string, init: RequestInit, label: string, redact: (value: string) => string, timeoutMs: number): Promise<{ body: Buffer; contentType: string }> {
   let response: Response
   let body: Buffer
   try {
-    const signal = AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+    const signal = AbortSignal.timeout(timeoutMs)
     let target = url
     response = await fetch(target, { ...init, redirect: "manual", signal })
     // 301/302 sólo en GET: con POST, un cliente puede cambiarlos a GET y perder el sobre SOAP.
@@ -396,19 +420,21 @@ function assertRequest(request: CopecReportRequest) {
 interface WsSessionState {
   readonly config: CopecWsConfig
   readonly redact: (value: string) => string
+  /** Instante (epoch ms) en que la corrida deja de consultar; `null` sin presupuesto declarado. */
+  readonly deadline: number | null
   /** Copec ya entregó cargas de ESTE cliente en la sesión: las credenciales y el RUT sirven. */
   accessConfirmed: boolean
   /** Rechazo de acceso de esta sesión: el resto de las consultas no se envía. */
   blocked: { kind: CopecReportFailure["kind"]; message: string } | null
 }
 
-async function downloadDetail(state: WsSessionState, request: CopecReportRequest, channel: CopecChannel): Promise<CopecReportDownloadResult> {
+async function downloadDetail(state: WsSessionState, request: CopecReportRequest, channel: CopecChannel, timeoutMs: number): Promise<CopecReportDownloadResult> {
   const { product, from, to } = request
   const { config, redact } = state
   const label = `${channel} ${PRODUCT_LABEL[product]} ${from.slice(0, 7)}`
   const response = await retryCopecRequest(() => product === "diesel"
-    ? requestCopec(SOAP_URL, soapRequest(config, channel, from, to), label, redact)
-    : requestCopec(bluemaxUrl(config, channel, from, to), { method: "GET" }, label, redact))
+    ? requestCopec(SOAP_URL, soapRequest(config, channel, from, to), label, redact, timeoutMs)
+    : requestCopec(bluemaxUrl(config, channel, from, to), { method: "GET" }, label, redact, timeoutMs))
   const envelope = product === "diesel" ? readSoapEnvelope(response.body, label, redact) : readBluemaxEnvelope(response.body, label)
   if (interpretEnvelope(envelope, config.clientRut, label, redact) === "no_records") {
     // «No hay registros» cierra un mes cerrado como vacío para siempre. Sólo
@@ -435,10 +461,19 @@ async function downloadDetail(state: WsSessionState, request: CopecReportRequest
  * Una sesión por corrida. Cada producto se consulta por separado: una falla de
  * diésel no se lleva BlueMax. La excepción es un
  * rechazo de acceso, que corta lo que queda de la sesión (`CopecWsAccessFailure`).
+ *
+ * `deadline` (epoch ms) es el techo de la CORRIDA, no de una consulta: cada
+ * request se acota a lo que queda (C7). Sin él, una corrida podía encadenar
+ * varias esperas de 60 s y morir por `maxDuration`, dejando la fila `running`
+ * sin que nadie la cerrara.
  */
-export async function withCopecWebServiceSession<T>(run: (session: CopecSession) => Promise<T>): Promise<T> {
+export async function withCopecWebServiceSession<T>(
+  run: (session: CopecSession) => Promise<T>,
+  options: { deadline?: number | null } = {},
+): Promise<T> {
   const config = readCopecWsConfig()
-  const state: WsSessionState = { config, redact: redactor(config), accessConfirmed: false, blocked: null }
+  const state: WsSessionState = { config, redact: redactor(config), deadline: options.deadline ?? null, accessConfirmed: false, blocked: null }
+  const remaining = () => (state.deadline === null ? null : state.deadline - Date.now())
   return run({
     async download(requests, channel) {
       for (const request of requests) assertRequest(request)
@@ -448,8 +483,16 @@ export async function withCopecWebServiceSession<T>(run: (session: CopecSession)
           results.push({ product: request.product, unavailable: false, failure: state.blocked })
           continue
         }
+        const timeoutMs = clampCopecRequestTimeout(remaining())
+        if (timeoutMs === null) {
+          // Sin presupuesto no se abre la conexión: se informa como falla de red
+          // para que la cobertura quede `failed`/`unknown` y la corrida siguiente
+          // retome el período, en vez de esperar un minuto que ya no hay.
+          results.push({ product: request.product, unavailable: false, failure: { kind: "network", message: "La corrida de Copec se quedó sin presupuesto de tiempo antes de consultar este informe." } })
+          continue
+        }
         try {
-          results.push(await downloadDetail(state, request, channel))
+          results.push(await downloadDetail(state, request, channel, timeoutMs))
         } catch (error) {
           if (!(error instanceof CopecReportFailure)) throw error
           const failure = { kind: error.kind, message: error.message }

@@ -56,6 +56,7 @@ const COVERAGE_STATUS_LABEL: Record<CopecSyncStatus["coverage"][number]["status"
   failed: "Fallido",
   complete: "Completo",
   legitimate_empty: "Vacío confirmado",
+  closed_with_issues: "Cerrado con observaciones",
 }
 
 /** Los canales de Copec con el nombre que usa la plataforma (los valores viajan como TCT/TAE). */

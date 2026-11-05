@@ -44,7 +44,10 @@ async function addLoad(input: {
   seq += 1
   const month = input.month ?? "2026-03"
   await testDb.insert(schema.fuelOperationRecords).values({
-    id: `rec-${seq}`, batchId: "batch-1", worksiteId: input.worksite, vehicleId: input.vehicle, plate: input.vehicle ?? "SIN", fecha: `${month}-10`, liters: input.liters,
+    id: `rec-${seq}`, batchId: "batch-1", worksiteId: input.worksite, vehicleId: input.vehicle, plate: input.vehicle ?? "SIN", fecha: `${month}-10`,
+    // La identidad natural de una carga incluye la hora: dos cargas del mismo
+    // equipo/día/litros son válidas si ocurrieron a horas distintas (E2).
+    horaCarga: `${String(seq % 24).padStart(2, "0")}:00`, liters: input.liters,
   })
   await testDb.insert(schema.fuelEquipmentLoads).values({
     id: `load-${seq}`,

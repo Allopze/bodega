@@ -118,6 +118,7 @@ export default async function FichaCargaPage({ params, searchParams }: { params:
             }}
             showCosts={canViewCosts}
             canWrite={can(session, "combustibles:create")}
+            canDelete={can(session, "combustibles:delete")}
             vehicles={vehicles.map((vehicle) => ({ id: vehicle.id, plate: vehicle.plate, type: vehicle.type }))}
             suppliers={suppliersList.map((supplier) => ({ id: supplier.id, name: supplier.name }))}
             worksites={worksitesList.map((worksite) => ({ id: worksite.id, name: worksite.name }))}
