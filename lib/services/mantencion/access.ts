@@ -71,14 +71,38 @@ export function canSeeRecord(
 }
 
 /**
- * Faenas cuyos EQUIPOS puede ver (panel, lista de equipos, exportaciones).
- * Lo propio no abre equipos: un mecánico ve sus registros, no la flota ajena.
+ * Faenas cuyos EQUIPOS puede ver y administrar (panel, lista de equipos,
+ * exportaciones y escrituras de equipos). Lo propio no abre equipos: un mecánico
+ * ve sus registros, no la flota ajena.
+ *
+ * `mant:equipment:manage` NO abre todas las faenas: administrar equipos de una
+ * faena que no se ve sería un IDOR listo para aparecer en cuanto el permiso se
+ * delegue a un encargado sin `view_all`. Un rol global sí ve todas.
  */
 export function equipmentScope(viewer: MantViewer): MantWorksiteScope {
-  if (hasMantPermission(viewer, "mant:records:view_all") || hasMantPermission(viewer, "mant:equipment:manage")) return "all"
+  if (hasMantPermission(viewer, "mant:records:view_all")) return "all"
   if (hasMantPermission(viewer, "mant:records:view_worksite")) return viewer.isGlobal ? "all" : [...viewer.worksiteIds]
+  if (hasMantPermission(viewer, "mant:equipment:manage")) return viewer.isGlobal ? "all" : [...viewer.worksiteIds]
   return []
 }
+
+/** ¿La faena cae dentro del alcance de equipos? Un arreglo vacío no incluye ninguna. */
+export function isWorksiteInScope(scope: MantWorksiteScope, worksiteId: string | null | undefined): boolean {
+  return scope === "all" || (!!worksiteId && scope.includes(worksiteId))
+}
+
+/**
+ * Alcance de escritura de equipos de un actor. Las acciones lo calculan con
+ * `equipmentScope()` y lo pasan en `MantActor.scope`; `undefined` significa «sin
+ * filtro» y sólo lo usan rutas cuyo permiso ya es global (pautas, importador
+ * histórico) y las pruebas.
+ */
+export function actorEquipmentScope(actor: { scope?: MantWorksiteScope }): MantWorksiteScope {
+  return actor.scope ?? "all"
+}
+
+/** Mensaje único cuando una escritura de equipos cae fuera de las faenas del actor. */
+export const EQUIPMENT_OUT_OF_SCOPE = "Ese equipo es de una faena que no administras."
 
 /** Observar: jefatura en todo su alcance; supervisión sólo en sus faenas (§6). */
 export function canObserveRecord(viewer: MantViewer, record: { worksiteId: string }): boolean {

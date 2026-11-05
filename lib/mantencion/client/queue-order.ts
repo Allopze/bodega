@@ -24,7 +24,9 @@ const alive = (item: QueueItem) => item.status !== "sent" && item.status !== "re
 
 export function waitsForDependency(item: QueueItem, queue: readonly QueueItem[]): boolean {
   if (item.type === "workshop") {
-    return queue.some((other) => other.type === "record" && other.id === item.payload.recordId && other.status !== "sent")
+    // `alive`, no «distinto de enviado»: un registro rechazado no bloquea (si no, la novedad
+    // de taller quedaría pendiente para siempre), y su rechazo ya descarta esta novedad.
+    return queue.some((other) => other.type === "record" && other.id === item.payload.recordId && alive(other))
   }
   if (item.type === "ot") {
     const { workOrderId } = item.payload

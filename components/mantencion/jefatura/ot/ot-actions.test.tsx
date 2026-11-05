@@ -40,6 +40,7 @@ function props(overrides: Partial<Props> = {}): Props {
     entry: detail.entry, estimatedDeliveryDate: "2026-11-05", items: detail.items, assignedToUserId: "u-mec",
     mechanics: [{ id: "u-mec", name: "Javier Roa", worksiteNames: ["Biodiversa"] }, { id: "u-2", name: "Marta Lillo", worksiteNames: ["Santa Fe", "Mininco"] }],
     entryCatalogs: { workshops: [{ id: "w-1", name: "Taller Los Aromos" }], drivers: [] }, actorName: "Ana Pérez", pdfHref: "/api/mantencion/ot/ot-1/pdf",
+    canDownloadPdf: true,
     repair: true, maintenance: false, needsLinkedRecord: false, recordForm: null, actorUserId: "u-mec", ...overrides,
   }
 }
@@ -88,6 +89,17 @@ describe("OtActions: sólo se dibuja lo que allowedTransitions permite", () => {
     cleanup()
     render(<OtActions {...props({ status: "solicitada", assignedToUserId: null, allowedTransitions: ["assign"] })} />)
     expect(screen.getByRole("button", { name: "Asignar" })).toBeTruthy()
+  })
+
+  // El PDF y la impresión exigen `mant:ot:view_worksite|view_all`; el mecánico que
+  // sólo ejecuta ve la OT, pero no un botón que le respondería 403.
+  it("«Descargar PDF» sólo aparece con permiso para ver la OT", () => {
+    render(<OtActions {...props({ status: "solicitada", assignedToUserId: null, allowedTransitions: ["assign", "void"], canDownloadPdf: false })} />)
+    expect(openMenu()).toEqual(["Anular"])
+    expect(screen.queryByRole("menuitem", { name: /Descargar PDF/ })).toBeNull()
+    cleanup()
+    render(<OtActions {...props({ status: "solicitada", assignedToUserId: null, allowedTransitions: ["assign", "void"], canDownloadPdf: true })} />)
+    expect(openMenu()).toEqual(["Descargar PDF", "Anular"])
   })
 })
 

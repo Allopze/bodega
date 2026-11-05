@@ -7,19 +7,17 @@ function stripTrailingSlash(origin: string) {
   return origin.replace(/\/+$/, "")
 }
 
-export function resolvePdfRenderOrigin(req: Request) {
-  const internalOrigin = readRuntimeEnv("PDF_RENDER_ORIGIN")
-  if (internalOrigin) return stripTrailingSlash(internalOrigin)
-
-  const configuredOrigin = readRuntimeEnv("APP_URL") ?? new URL(req.url).origin
-  const originUrl = new URL(configuredOrigin)
-
-  if (originUrl.hostname === "0.0.0.0") {
-    originUrl.hostname = "127.0.0.1"
-    originUrl.protocol = "http:"
-  }
-
-  return stripTrailingSlash(originUrl.origin)
+/**
+ * Origen para imprimir desde una ruta de descarga.
+ *
+ * Sólo del entorno (`PDF_RENDER_ORIGIN` o `APP_URL`): el `Host` de la petición
+ * lo controla el cliente, y con él un proxy inverso ajeno podría quedarse con el
+ * servidor de Chromium. Sin configuración lanza `PDF_ORIGIN_NOT_CONFIGURED` en
+ * vez de caer al origen de la petición. El `Request` se acepta por la firma de
+ * los llamadores y no se lee.
+ */
+export function resolvePdfRenderOrigin(_req?: Request) {
+  return resolveInternalRenderOrigin()
 }
 
 /**

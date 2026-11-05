@@ -75,6 +75,18 @@ function retryDelay(item: QueueItem, failure: ApiFailure | null, now: number): n
 }
 
 async function settleFailure(item: QueueItem, failure: ApiFailure, account: DeviceAccount, now: number): Promise<Outcome> {
+  if (failure.kind === "forbidden") {
+    // Falta un permiso de la cuenta, no venció la sesión: volver a entrar falla igual.
+    // Un registro se muestra «Por corregir» con el motivo del servidor (y se puede
+    // descartar); lo que no tiene pantalla de rechazo (taller, OT, respuesta) espera
+    // como cuando la credencial no sirve, para no perderlo en silencio.
+    if (item.type === "record") {
+      await markRejected(item.id, failureMessage(failure), null)
+      return "rejected"
+    }
+    await markAuthorNeedsLogin(account.userId)
+    return "auth"
+  }
   if (failure.kind === "auth") {
     await markAccountNeedsLogin(account.userId)
     await markAuthorNeedsLogin(account.userId)
@@ -122,8 +134,11 @@ async function sendRecord(item: QueueRecordItem, account: DeviceAccount, deps: S
     if (result.kind === "reject" && result.code === "missing_photos") {
       await resetUploaded(item.photoIds)
       if (round === 0) continue
-      await markRetry(item.id, result.message, retryDelay(item, null, now))
-      return "retry"
+      // Segunda vez seguida: la causa es permanente (la foto es de otro autor o ya está
+      // en otro registro). Reintentar cada 15 min no la arregla; queda «Por corregir»
+      // para que el mecánico la revise o descarte el registro.
+      await markRejected(item.id, result.message, "photos")
+      return "rejected"
     }
     return settleFailure(item, result, account, now)
   }

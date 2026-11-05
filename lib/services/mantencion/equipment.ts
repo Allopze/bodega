@@ -7,7 +7,9 @@ import { isUniqueViolation } from "@/lib/action-error"
 import { moveProviderMappingsWithVehicleTx } from "@/lib/combustibles/provider-mappings"
 import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
+import { logger } from "@/lib/logger"
 import { isValidReason, reasonRequiredMessage } from "@/lib/validation/reason-thresholds"
+import { EQUIPMENT_OUT_OF_SCOPE, actorEquipmentScope, isWorksiteInScope } from "./access"
 import {
   EQUIPMENT_FIELD_LABELS, diffEquipmentFields, summarizeChanges, writeEquipmentHistory, type EquipmentFields, type MantActor,
 } from "./equipment-history"
@@ -25,12 +27,35 @@ export type { EquipmentCurrent, EquipmentInput, EquipmentResult, FieldErrors, Re
  * estaba en la flota), edición, baja y reactivación, con historial y auditoría
  * en la MISMA transacción. Es la ÚNICA puerta de escritura; la validación vive
  * en `equipment-resolve.ts`. El permiso `mant:equipment:manage` lo exige la
- * acción que llama.
+ * acción que llama, y el alcance de faenas llega en `MantActor.scope`: un
+ * encargado no global no puede tocar equipos de otra faena por id.
  */
 
+/** Índice único de la patente en la flota compartida. */
+const PLATE_UNIQUE = "fuel_vehicles_plate_unique"
+/** PK del perfil: el vehículo ya entró a la mantención (dos «incorporar» a la vez). */
+const PROFILE_PK = "mant_equipment_profiles_pkey"
+/** Quien no ve todas las faenas tampoco puede crear una. */
+const NEW_WORKSITE_OUT_OF_SCOPE = "No puedes crear faenas nuevas: elige una de tus faenas."
+
+/**
+ * Traduce una violación única al campo que la causó. Atribuir toda violación a
+ * la patente mandaba a corregir un campo que no tenía nada que ver.
+ */
 function uniqueFailure(error: unknown): { ok: false; message: string; fieldErrors: FieldErrors } | null {
   if (!isUniqueViolation(error)) return null
-  return equipmentFailure({ plate: "Esa patente ya está en otro equipo." })
+  if (isUniqueViolation(error, PLATE_UNIQUE)) return equipmentFailure({ plate: "Esa patente ya está en otro equipo." })
+  if (isUniqueViolation(error, PROFILE_PK)) {
+    return equipmentFailure({ code: "Ese vehículo ya está en la mantención: recarga la página y vuelve a intentarlo." })
+  }
+  logger.warn("[mantencion/equipos] violación única no prevista al guardar un equipo", error)
+  return equipmentFailure({}, "No se pudo guardar: otro equipo con los mismos datos ya existe. Recarga la página y vuelve a intentarlo.")
+}
+
+/** Faena actual del vehículo: la del ANTERIOR estado, antes de aplicar cambios. */
+async function currentWorksiteId(client: Pick<Tx, "select">, vehicleId: string): Promise<string | null> {
+  const [row] = await client.select({ worksiteId: fuelVehicles.worksiteId }).from(fuelVehicles).where(eq(fuelVehicles.id, vehicleId)).limit(1)
+  return row?.worksiteId ?? null
 }
 
 function auditState(fields: EquipmentFields) {
@@ -131,13 +156,20 @@ export async function createEquipment(
   actor: MantActor,
   input: EquipmentInput,
 ): Promise<EquipmentResult<{ vehicleId: string; incorporated: boolean }>> {
+  const scope = actorEquipmentScope(actor)
   try {
     return await db.transaction(async (tx) => {
+      // Sólo puede crear una faena nueva quien ve todas: una faena fuera de su
+      // alcance no se puede administrar después.
       const resolved = await resolveEquipment(tx, input, {
         current: null,
-        createWorksite: (name) => resolveOrCreateWorksite(tx, { typedName: name, actor: { userId: actor.userId, email: actor.email } }),
+        createWorksite: scope === "all"
+          ? (name) => resolveOrCreateWorksite(tx, { typedName: name, actor: { userId: actor.userId, email: actor.email } })
+          : undefined,
       })
       if (!resolved.ok) return equipmentFailure(resolved.fieldErrors)
+      if (!resolved.value.worksite.id) return equipmentFailure({ worksiteId: NEW_WORKSITE_OUT_OF_SCOPE })
+      if (!isWorksiteInScope(scope, resolved.value.worksite.id)) return equipmentFailure({ worksiteId: EQUIPMENT_OUT_OF_SCOPE })
       const data = await applyCreate(tx, actor, resolved.value, resolved.incorporate, "create")
       return { ok: true as const, data, message: data.incorporated ? "El vehículo ya estaba en la flota: se incorporó a la mantención." : "Equipo creado." }
     })
@@ -267,18 +299,25 @@ export async function updateEquipment(
   input: EquipmentInput,
   status: EquipmentStatusInput,
 ): Promise<EquipmentResult<{ changed: boolean }>> {
+  const scope = actorEquipmentScope(actor)
   try {
     return await db.transaction(async (tx) => {
       const current = await loadEquipmentCurrent(tx, vehicleId)
       if (!current) return equipmentFailure({}, "Ese equipo no existe en la mantención.")
+      // La faena de ORIGEN y la de destino tienen que estar en el alcance.
+      if (!isWorksiteInScope(scope, await currentWorksiteId(tx, vehicleId))) return equipmentFailure({}, EQUIPMENT_OUT_OF_SCOPE)
       if (!status.active && current.active && !isValidReason(status.retiredReason)) {
         return equipmentFailure({ retiredReason: reasonRequiredMessage("el motivo de la baja") })
       }
       const resolved = await resolveEquipment(tx, input, {
         current,
-        createWorksite: (name) => resolveOrCreateWorksite(tx, { typedName: name, actor: { userId: actor.userId, email: actor.email } }),
+        createWorksite: scope === "all"
+          ? (name) => resolveOrCreateWorksite(tx, { typedName: name, actor: { userId: actor.userId, email: actor.email } })
+          : undefined,
       })
       if (!resolved.ok) return equipmentFailure(resolved.fieldErrors)
+      if (!resolved.value.worksite.id) return equipmentFailure({ worksiteId: NEW_WORKSITE_OUT_OF_SCOPE })
+      if (!isWorksiteInScope(scope, resolved.value.worksite.id)) return equipmentFailure({ worksiteId: EQUIPMENT_OUT_OF_SCOPE })
       const edited = await applyUpdate(tx, actor, current, resolved.value, "update")
       let statusChanged = false
       if (!status.active && current.active) {
@@ -301,9 +340,11 @@ export async function updateEquipment(
 /** Da de baja un equipo con su motivo (sus registros se conservan). */
 export async function retireEquipment(actor: MantActor, vehicleId: string, reason: string): Promise<EquipmentResult<undefined>> {
   if (!isValidReason(reason)) return equipmentFailure({ retiredReason: reasonRequiredMessage("el motivo de la baja") })
+  const scope = actorEquipmentScope(actor)
   return db.transaction(async (tx) => {
     const current = await loadEquipmentCurrent(tx, vehicleId)
     if (!current) return equipmentFailure({}, "Ese equipo no existe en la mantención.")
+    if (!isWorksiteInScope(scope, await currentWorksiteId(tx, vehicleId))) return equipmentFailure({}, EQUIPMENT_OUT_OF_SCOPE)
     if (!current.active) return equipmentFailure({}, "El equipo ya estaba dado de baja.")
     await applyRetire(tx, actor, vehicleId, current.fields.code, reason.trim())
     return { ok: true as const, data: undefined, message: `${current.fields.code} quedó dado de baja.` }
@@ -312,9 +353,11 @@ export async function retireEquipment(actor: MantActor, vehicleId: string, reaso
 
 /** Vuelve a activar un equipo dado de baja. */
 export async function reactivateEquipment(actor: MantActor, vehicleId: string): Promise<EquipmentResult<undefined>> {
+  const scope = actorEquipmentScope(actor)
   return db.transaction(async (tx) => {
     const current = await loadEquipmentCurrent(tx, vehicleId)
     if (!current) return equipmentFailure({}, "Ese equipo no existe en la mantención.")
+    if (!isWorksiteInScope(scope, await currentWorksiteId(tx, vehicleId))) return equipmentFailure({}, EQUIPMENT_OUT_OF_SCOPE)
     if (current.active) return equipmentFailure({}, "El equipo ya estaba activo.")
     await applyReactivate(tx, actor, vehicleId, current.fields.code)
     return { ok: true as const, data: undefined, message: `${current.fields.code} volvió a estar activo.` }

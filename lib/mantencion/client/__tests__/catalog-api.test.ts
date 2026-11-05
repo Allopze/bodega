@@ -3,14 +3,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { getAccount, saveAccount } from "../accounts"
 import { classifyStatus, fetchCatalog, postRecord, requestCredential, uploadPhoto } from "../api"
 import { loadStoredCatalog, refreshCatalog } from "../catalog-sync"
+import { getOfflineSince, isOnline } from "../signal"
 import { account, catalog, freshDb, json, photo, preventivePayload, UUID } from "./fixtures"
 
 const CATALOG = catalog("u-1")
 const request = (fetchImpl: ReturnType<typeof vi.fn>, index = 0) => ({ url: String(fetchImpl.mock.calls[index]?.[0]), init: fetchImpl.mock.calls[index]?.[1] as RequestInit })
 
 describe("clasificación de respuestas (contrato de SyncRecordResponse)", () => {
-  it("401/403 piden entrar de nuevo; red, 408, 429 y 5xx reintentan; el resto es un rechazo", () => {
-    for (const status of [401, 403]) expect(classifyStatus(status)).toBe("auth")
+  it("401 pide entrar de nuevo y 403 es un permiso que falta, no una sesión vencida", () => {
+    expect(classifyStatus(401)).toBe("auth")
+    expect(classifyStatus(403)).toBe("forbidden")
     for (const status of [408, 429, 500, 502, 503, 504]) expect(classifyStatus(status)).toBe("retry")
     for (const status of [400, 404, 409, 413, 422]) expect(classifyStatus(status)).toBe("reject")
   })
@@ -99,6 +101,26 @@ describe("catálogo con ETag", () => {
     const outcome = await refreshCatalog("u-1", { fetchImpl: vi.fn(async () => { throw new TypeError("Failed to fetch") }) as unknown as typeof fetch, withOthers: false })
     expect(outcome).toBe("offline")
     expect(await loadStoredCatalog("u-1")).not.toBeNull()
+  })
+
+  it("una falla de red y luego un refresco exitoso dejan la app en línea y sin hora de corte", async () => {
+    await saveAccount(account("u-1"))
+    const down = vi.fn(async () => { throw new TypeError("Failed to fetch") })
+    expect(await refreshCatalog("u-1", { fetchImpl: down as unknown as typeof fetch, withOthers: false })).toBe("offline")
+    expect(isOnline()).toBe(false)
+    expect(getOfflineSince()).not.toBeNull()
+
+    const back = vi.fn(async () => json(200, CATALOG, { etag: '"v1"' }))
+    expect(await refreshCatalog("u-1", { fetchImpl: back as unknown as typeof fetch, withOthers: false })).toBe("updated")
+    expect(isOnline()).toBe(true)
+    expect(getOfflineSince()).toBeNull()
+  })
+
+  it("un 403 de permisos no marca la cuenta como vencida (entrar de nuevo no lo arregla)", async () => {
+    await saveAccount(account("u-1"))
+    const forbidden = vi.fn(async () => json(403, { code: "forbidden", message: "Tu cuenta no tiene permiso para usar la app del mecánico." }))
+    expect(await refreshCatalog("u-1", { fetchImpl: forbidden as unknown as typeof fetch, withOthers: false })).toBe("error")
+    expect((await getAccount("u-1"))?.status).toBe("ok")
   })
 
   it("una cuenta con la credencial vencida no pide nada", async () => {

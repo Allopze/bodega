@@ -26,7 +26,8 @@ import type { MantViewer } from "./access"
  */
 
 /** Súbelo cuando cambie la FORMA de la respuesta del catálogo: invalida las cachés de los teléfonos. */
-export const CATALOG_FORMAT = 3
+// 4 (2026-11): `equipment[].workshop.workOrderId`, para abrir la OT del equipo en taller.
+export const CATALOG_FORMAT = 4
 
 type Source = readonly [AnyPgTable, readonly AnyPgColumn[]]
 

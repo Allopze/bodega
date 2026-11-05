@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { buildRows, dueRows, filterForPicking, searchKey, workshopEntries } from "../fleet-view"
+import { buildRows, dueRows, filterForPicking, isWorkOrderEntry, searchKey, workshopEntries, workshopWorkOrderId } from "../fleet-view"
 import { buildRecent, openObservations, shortWhen, worksiteSummary } from "../home-model"
 import { newReplyItem, newWorkshopItem } from "../queue"
 import type { QueueItem } from "../types"
@@ -64,7 +64,7 @@ describe("flota en el teléfono", () => {
 })
 
 describe("equipos en taller", () => {
-  const inWorkshop = equipment({ workshop: { recordId: UUID(50), folio: "MC-BIO-0003", entryDate: "2026-10-24", lastActivityDate: "2026-10-24", stale: true, daysStopped: 4 } })
+  const inWorkshop = equipment({ workshop: { recordId: UUID(50), workOrderId: null, folio: "MC-BIO-0003", entryDate: "2026-10-24", lastActivityDate: "2026-10-24", stale: true, daysStopped: 4 } })
   const rows = buildRows(storedCatalog("u-1", [inWorkshop]), [])
   const update = (kind: "sigue" | "salio", createdAt: string) => newWorkshopItem({
     authorUserId: "u-1",
@@ -92,6 +92,21 @@ describe("equipos en taller", () => {
     const corrective = { ...recordItem(UUID(70), "u-1", [UUID(71), UUID(72)]), summary: { ...recordItem(UUID(70), "u-1", [UUID(71), UUID(72)]).summary, kind: "C" as const, intervalValue: null, inWorkshop: true, workshopEntryDate: "2026-10-28" } }
     const plain = buildRows(storedCatalog("u-1", [equipment()]), [corrective])
     expect(workshopEntries(plain, [corrective], "2026-10-28").map((entry) => entry.recordId)).toEqual([UUID(70)])
+  })
+
+  it("un equipo detenido por una OT trae el id con el que se abre la OT; una caché vieja se reconoce por el folio", () => {
+    const withOt = equipment({ workshop: { recordId: "ot-1", workOrderId: "ot-1", folio: "OT-BIO-0001", entryDate: "2026-10-24", lastActivityDate: "2026-10-28", stale: false, daysStopped: 4 } })
+    const [entry] = workshopEntries(buildRows(storedCatalog("u-1", [withOt]), []), [], "2026-10-28")
+    expect(entry).toMatchObject({ recordId: "ot-1", workOrderId: "ot-1", folio: "OT-BIO-0001" })
+    expect(isWorkOrderEntry(entry!)).toBe(true)
+    expect(workshopWorkOrderId(entry!)).toBe("ot-1")
+
+    // Catálogo guardado con el formato 3: sin `workOrderId`, el folio «OT-» lo delata y el id de la OT es el `recordId`.
+    const old = { ...entry!, workOrderId: null }
+    expect(isWorkOrderEntry(old)).toBe(true)
+    expect(workshopWorkOrderId(old)).toBe("ot-1")
+    // Y una correctiva no se confunde con una OT.
+    expect(isWorkOrderEntry({ workOrderId: null, folio: "MC-BIO-0003" })).toBe(false)
   })
 })
 

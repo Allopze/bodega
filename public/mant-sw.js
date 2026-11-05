@@ -77,6 +77,8 @@ function isStaticAsset(url) {
 async function appNavigation(request) {
   // Sólo la app misma se guarda como «la app»: su login (`/m/mantencion/entrar`)
   // también está en el alcance, y abrir sin señal debe mostrar la app, no el login.
+  // Y al revés: el login NUNCA recibe el shell guardado. Servirlo ahí mostraría la
+  // sesión anterior en una tablet ya cerrada, y taparía un error del servidor.
   const isAppShell = new URL(request.url).pathname === APP_PATH
   try {
     const response = await fetch(request)
@@ -86,12 +88,18 @@ async function appNavigation(request) {
       return response
     }
     // El servidor respondió, pero caído (5xx): mejor la app guardada que la página de error.
-    if (response.status >= 500) {
+    if (isAppShell && response.status >= 500) {
       const cached = await (await caches.open(SHELL_CACHE)).match(APP_PATH, { ignoreSearch: true })
       if (cached) return cached
     }
     return response
   } catch {
+    if (!isAppShell) {
+      return new Response("Sin conexión. Para entrar hace falta señal.", {
+        status: 503,
+        headers: { "content-type": "text/plain; charset=utf-8" },
+      })
+    }
     const cached = await (await caches.open(SHELL_CACHE)).match(APP_PATH, { ignoreSearch: true })
     return cached || new Response("Sin conexión y la app todavía no se guardó en este teléfono. Ábrela una vez con señal.", {
       status: 503,

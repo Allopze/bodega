@@ -83,6 +83,11 @@ export const mantRecords = pgTable("mant_records", {
   index("mant_records_status_idx").on(table.status),
   index("mant_records_review_idx").on(table.review),
   index("mant_records_work_order_idx").on(table.workOrderId),
+  // FKs sin índice: sin ellas el borrado/edición de la fila referida recorre la
+  // tabla completa para validar la FK (auditoría 2026-11-04, E2).
+  index("mant_records_duplicate_of_record_id_idx").on(table.duplicateOfRecordId),
+  index("mant_records_corrects_record_id_idx").on(table.correctsRecordId),
+  index("mant_records_executor_workshop_id_idx").on(table.executorWorkshopId),
   check("mant_records_kind_valid", sql`${table.kind} IN ('P', 'C')`),
   check("mant_records_unit_valid", sql`${table.unit} IN ('km', 'h')`),
   check("mant_records_reading_valid", sql`${table.reading} >= 0`),
@@ -161,6 +166,7 @@ export const mantRecordJobs = pgTable("mant_record_jobs", {
   sortOrder:    integer("sort_order").notNull().default(0),
 }, (table) => [
   index("mant_record_jobs_record_idx").on(table.recordId),
+  index("mant_record_jobs_work_type_id_idx").on(table.workTypeId),
   uniqueIndex("mant_record_jobs_type_unique").on(table.recordId, table.workTypeId),
   check("mant_record_jobs_hours_valid", sql`${table.hours} >= 0.5 AND ${table.hours} <= 72 AND (${table.hours} * 2) = floor(${table.hours} * 2)`),
 ])
@@ -185,6 +191,7 @@ export const mantRecordDrivers = pgTable("mant_record_drivers", {
   driverName: text("driver_name").notNull(),
 }, (table) => [
   primaryKey({ columns: [table.recordId, table.driverId], name: "mant_record_drivers_pk" }),
+  index("mant_record_drivers_driver_id_idx").on(table.driverId),
 ])
 
 /**
@@ -213,7 +220,24 @@ export const mantRecordPhotos = pgTable("mant_record_photos", {
 }, (table) => [
   index("mant_record_photos_record_idx").on(table.recordId),
   index("mant_record_photos_orphan_idx").on(table.uploadedBy, table.receivedAt).where(sql`${table.recordId} IS NULL`),
+  /*
+   * Composición de fotos garantizada por la base (auditoría 2026-11-04, 3.5).
+   * La regla 8 —preventiva = 1 `filtros` + 1 `sticker`; correctiva = 1..3
+   * `correctiva`— vivía sólo en `checkPhotoComposition`: una importación, una
+   * corrección manual o un bug de la app podía firmar un registro con dos
+   * filtros y sin sticker, y nada lo delataba después. Los dos índices son
+   * parciales sobre `record_id` no nulo para no chocar con las fotos
+   * huérfanas (se suben antes que el registro).
+   */
+  uniqueIndex("mant_record_photos_preventive_unique")
+    .on(table.recordId, table.kind)
+    .where(sql`${table.recordId} is not null and ${table.kind} in ('filtros','sticker')`),
+  /** El orden dentro de un registro es el que declara la bitácora: no se repite. */
+  uniqueIndex("mant_record_photos_record_order_unique")
+    .on(table.recordId, table.sortOrder)
+    .where(sql`${table.recordId} is not null`),
   check("mant_record_photos_kind_valid", sql`${table.kind} IN ('filtros', 'sticker', 'correctiva')`),
+  check("mant_record_photos_sort_order_valid", sql`${table.sortOrder} >= 0`),
   check("mant_record_photos_bytes_valid", sql`${table.bytes} > 0 AND ${table.bytes} <= 10485760`),
 ])
 

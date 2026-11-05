@@ -80,6 +80,7 @@ export function toCatalogEquipment(row: FleetRow): CatalogEquipment {
     workshop: row.workshop
       ? {
         recordId: row.workshop.recordId,
+        workOrderId: row.workshop.workOrderId ?? null,
         folio: row.workshop.folio,
         entryDate: row.workshop.entryDate,
         lastActivityDate: row.workshop.lastActivityDate,

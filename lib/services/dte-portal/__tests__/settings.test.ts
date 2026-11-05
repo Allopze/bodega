@@ -139,7 +139,17 @@ describe("readDtePortalAdminStatus", () => {
       { key: "dte.cod_emp", value: "433" },
     ])
 
-    const status = await readDtePortalAdminStatus()
+    // El shell puede traer DTE_SYNC_IMPORTER_EMAIL; esta prueba declara que el
+    // campo opcional no está configurado ni en la base ni en el entorno.
+    const previousEmail = process.env.DTE_SYNC_IMPORTER_EMAIL
+    delete process.env.DTE_SYNC_IMPORTER_EMAIL
+    let status
+    try {
+      status = await readDtePortalAdminStatus()
+    } finally {
+      if (previousEmail === undefined) delete process.env.DTE_SYNC_IMPORTER_EMAIL
+      else process.env.DTE_SYNC_IMPORTER_EMAIL = previousEmail
+    }
 
     expect(status.configured).toBe(true)
     expect(status.fields.importerEmail).toEqual({ configured: false, source: "missing" })

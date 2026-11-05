@@ -34,12 +34,14 @@ describe("resolvePdfRenderOrigin", () => {
     )
   })
 
-  it("normalizes Docker 0.0.0.0 origins to loopback", () => {
+  it("no cae al origen de la petición: sin configuración lanza", () => {
     delete process.env.APP_URL
     delete process.env.PDF_RENDER_ORIGIN
 
-    expect(resolvePdfRenderOrigin(requestFor("https://0.0.0.0:3000/api/pdf"))).toBe(
-      "http://127.0.0.1:3000",
+    // El Host de la petición lo controla el cliente; reenviar la cookie de sesión
+    // a ese origen es el riesgo que este cambio cierra.
+    expect(() => resolvePdfRenderOrigin(requestFor("https://0.0.0.0:3000/api/pdf"))).toThrow(
+      "PDF_ORIGIN_NOT_CONFIGURED",
     )
   })
 })

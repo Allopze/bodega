@@ -3,7 +3,7 @@ import { getHistory, getPhoto, type ApiFailure } from "./api"
 import type { RefreshOutcome } from "./catalog-sync"
 import { STORE, idbGet, idbPut, req, runTx } from "./db"
 import { emit } from "./events"
-import { isOnline, reportReachable } from "./signal"
+import { reportReachable } from "./signal"
 import type { CachedPhoto, DeviceAccount, StoredHistory } from "./types"
 
 /**
@@ -48,6 +48,7 @@ const inFlight = new Map<string, Promise<RefreshOutcome>>()
 
 function outcomeFrom(failure: ApiFailure): RefreshOutcome {
   if (failure.kind === "auth") return "needs_login"
+  // `forbidden` (403) es un permiso que falta: entrar de nuevo no lo arregla, así que no se pide login.
   return failure.kind === "retry" && failure.network ? "offline" : "error"
 }
 
@@ -133,7 +134,9 @@ export async function getPhotoBlob(account: Pick<DeviceAccount, "token">, photoI
     const cached = await readCachedPhoto(photoId)
     if (cached) return cached
   } catch { /* sin almacenamiento legible: se intenta por red */ }
-  if (!isOnline()) return null
+  // Sólo el navegador sin red evita el intento. Con `unreachable` de un corte anterior se
+  // prueba igual: si la foto baja, `reportReachable(true)` limpia la señal de toda la app.
+  if (typeof navigator !== "undefined" && navigator.onLine === false) return null
   const result = await getPhoto(account.token, photoId, fetchImpl)
   if (result.kind === "retry") reportReachable(!result.network)
   if (result.kind !== "ok") return null

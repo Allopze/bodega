@@ -44,6 +44,9 @@ async function withFixtureFile<T>(buffer: ArrayBuffer, name: string, run: (fixtu
   const tmpDir = path.resolve(process.cwd(), ".tmp")
   fs.mkdirSync(tmpDir, { recursive: true })
   const fixturePath = path.join(tmpDir, name)
+  // Un recálculo anterior que murió a medias deja `.~lock.<archivo>#`: con el lock
+  // presente, LibreOffice espera al dueño y el test se cuelga hasta el timeout.
+  fs.rmSync(path.join(tmpDir, `.~lock.${name}#`), { force: true })
   fs.writeFileSync(fixturePath, Buffer.from(buffer))
   try {
     return await run(fixturePath)
@@ -594,6 +597,7 @@ describe("renderPdtpRe36Workbook", () => {
   })
 })
 
+
 describe("renderPdtpRe36Buffer", () => {
   it("el buffer escrito conserva las fórmulas de los totales (round-trip, sin recálculo real)", async () => {
     const buffer = await renderPdtpRe36Buffer(buildFixtureDocument())
@@ -625,7 +629,7 @@ describe("renderPdtpRe36Buffer", () => {
     rows[1]!.cells[0] = { p: 1, e: 0 }
     const buffer = await renderPdtpRe36Buffer(doc)
     await withFixtureFile(buffer, "re36-capped-recalc.xlsx", async (fixturePath) => {
-      execFileSync("python3", [recalcScript!, fixturePath], { encoding: "utf8", timeout: 60_000 })
+      execFileSync("python3", [recalcScript!, fixturePath, "120"], { encoding: "utf8", timeout: 180_000 })
       const reloaded = new (await import("exceljs")).default.Workbook()
       await reloaded.xlsx.readFile(fixturePath)
       const ws = reloaded.getWorksheet("PDTP GENERAL")!
@@ -635,14 +639,14 @@ describe("renderPdtpRe36Buffer", () => {
       // Trimestre 1: enero 1 de 2 computable + marzo 0 de 1 (la fila de B).
       expect(result("F22")).toBeCloseTo(1 / 3)
     })
-  }, 60_000)
+  }, 180_000)
 
   it.skipIf(!canRecalcWithLibreOffice)("LibreOffice recalcula el libro sin errores", async () => {
     const buffer = await renderPdtpRe36Buffer(buildFixtureDocument())
     await withFixtureFile(buffer, "re36-libreoffice-recalc.xlsx", (fixturePath) => {
-      const output = execFileSync("python3", [recalcScript!, fixturePath], { encoding: "utf8", timeout: 60_000 })
+      const output = execFileSync("python3", [recalcScript!, fixturePath, "120"], { encoding: "utf8", timeout: 180_000 })
       const result = JSON.parse(output) as { status: string; total_errors: number }
       expect(result.total_errors).toBe(0)
     })
-  }, 60_000)
+  }, 180_000)
 })

@@ -4,7 +4,9 @@ import { webcrypto } from "node:crypto"
 import { Blob as NodeBlob } from "node:buffer"
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { ENTRY, catalog, equipment, freshDb, workOrder } from "@/lib/mantencion/client/__tests__/fixtures"
+import { ENTRY, UUID, catalog, equipment, freshDb, workOrder } from "@/lib/mantencion/client/__tests__/fixtures"
+import { loadDraft, saveDraft } from "@/lib/mantencion/client/drafts"
+import { newDraft } from "@/lib/mantencion/client/flow-types"
 import { MantApp, resetBootForTests } from "../mant-app"
 
 // El Blob de Node no entra a un FormData de jsdom: la subida de la foto se hace con una petición simple (la forma real del multipart se prueba en catalog-api.test.ts).
@@ -55,12 +57,16 @@ function installServer(options: { online: boolean; catalog?: typeof CATALOG }) {
 const click = (name: string | RegExp) => fireEvent.click(screen.getByRole("button", { name }))
 const typePin = (pin: string) => { for (const digit of pin) fireEvent.click(within(screen.getByRole("group", { name: "Teclado numérico" })).getByRole("button", { name: digit })) }
 
-async function openAndDefinePin() {
+async function definePin() {
   render(<MantApp sessionUser={USER} appVersion="test" renderedAt={new Date().toISOString()} />)
   await screen.findByRole("heading", { name: "Define tu PIN" })
   typePin("1234")
   await screen.findByRole("heading", { name: "Repite tu PIN" })
   typePin("1234")
+}
+
+async function openAndDefinePin() {
+  await definePin()
   // El saludo también está en la pantalla del PIN: la de inicio se reconoce por «Nuevo registro» y por traer el catálogo.
   await screen.findByRole("region", { name: "Nuevo registro" })
   await screen.findByRole("region", { name: "Le toca mantención" })
@@ -125,6 +131,7 @@ describe("App del mecánico (arranque, PIN, preventiva completa y envío)", () =
   })
   afterEach(() => {
     Object.defineProperty(navigator, "onLine", { value: true, configurable: true })
+    window.history.replaceState(null, "", "/")
     vi.unstubAllGlobals()
   })
 
@@ -342,5 +349,100 @@ describe("App del mecánico (arranque, PIN, preventiva completa y envío)", () =
     click("Terminar y avisar")
     await waitFor(() => expect(calls.filter((call) => call.method === "POST" && call.url.endsWith("/sync/ot"))).toHaveLength(1), { timeout: 5_000 })
     expect(calls.find((call) => call.url.endsWith("/sync/ot"))?.body).toMatchObject({ action: "finish", workOrderId: "ot-1" })
+  })
+
+  it("desde «Equipos en taller» se abre la OT del equipo detenido, con las acciones que ya tiene", async () => {
+    const withOt = catalog("u-1", [equipment({
+      workshop: { recordId: "ot-1", workOrderId: "ot-1", folio: "OT-BIO-0001", entryDate: "2026-10-27", lastActivityDate: "2026-10-28", stale: false, daysStopped: 1 },
+    })])
+    withOt.workOrders = [workOrder({ status: "en_ejecucion", entry: ENTRY })]
+    installServer({ online: true, catalog: withOt })
+    await openAndDefinePin()
+
+    const section = screen.getByRole("region", { name: "Equipo en taller" })
+    expect(within(section).getByText(/OT-BIO-0001/)).toBeTruthy()
+    // La OT se abre desde la tarjeta; «Actualizar estado» (que apunta a un registro) no se ofrece.
+    expect(within(section).queryByRole("button", { name: "Actualizar estado de KA-140" })).toBeNull()
+    fireEvent.click(within(section).getByRole("button", { name: "Abrir la OT de KA-140" }))
+
+    expect(await screen.findByRole("heading", { name: "OT-BIO-0001" })).toBeTruthy()
+    // El mismo OtSheet de siempre: ingreso/ítems/fecha/trabajo/terminar, sin acciones nuevas.
+    expect(screen.getByRole("button", { name: "Registrar correctiva" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: /Marcar ítems SÍ \/ NO/ })).toBeTruthy()
+    expect(screen.getByRole("button", { name: /Terminar \(salida de taller\)/ })).toBeTruthy()
+  })
+
+  it("si la OT del equipo no está entre las del mecánico, no se abre y se avisa", async () => {
+    const withOt = catalog("u-1", [equipment({
+      workshop: { recordId: "ot-9", workOrderId: "ot-9", folio: "OT-BIO-0009", entryDate: "2026-10-27", lastActivityDate: "2026-10-28", stale: false, daysStopped: 1 },
+    })])
+    withOt.workOrders = []
+    installServer({ online: true, catalog: withOt })
+    await openAndDefinePin()
+
+    fireEvent.click(within(screen.getByRole("region", { name: "Equipo en taller" })).getByRole("button", { name: "Abrir la OT de KA-140" }))
+    expect(await screen.findByText("Esa OT está asignada a otro mecánico.")).toBeTruthy()
+    expect(screen.queryByRole("heading", { name: "OT-BIO-0009" })).toBeNull()
+  })
+
+  it("no pisa un borrador del mismo tipo: pregunta primero y «Seguir con esa» lo conserva", async () => {
+    installServer({ online: true })
+    await openAndDefinePin()
+    await saveDraft({ ...newDraft({ userId: "u-1", kind: "P", vehicleId: "veh-1" }), readingText: "40010" })
+
+    // Aunque sea la misma pantalla la que arranca el registro, no se borra sin preguntar.
+    fireEvent.click(screen.getByRole("button", { name: /^Mantención preventiva/ }))
+    const dialog = await screen.findByRole("alertdialog", { name: "Ya tienes una preventiva sin terminar" })
+    fireEvent.click(within(dialog).getByRole("button", { name: "Seguir con esa" }))
+
+    expect(await screen.findByText("PASO 2/5")).toBeTruthy()
+    expect(screen.getByLabelText("Odómetro actual")).toHaveProperty("value", "40.010")
+    expect((await loadDraft("u-1", "P"))?.readingText).toBe("40010")
+  })
+
+  it("«Empezar de cero» sí descarta el borrador anterior", async () => {
+    installServer({ online: true })
+    await openAndDefinePin()
+    await saveDraft({ ...newDraft({ userId: "u-1", kind: "P", vehicleId: "veh-1" }), readingText: "40010" })
+
+    fireEvent.click(screen.getByRole("button", { name: /^Mantención preventiva/ }))
+    const dialog = await screen.findByRole("alertdialog", { name: "Ya tienes una preventiva sin terminar" })
+    fireEvent.click(within(dialog).getByRole("button", { name: "Empezar de cero" }))
+
+    expect(await screen.findByText("PASO 1/5")).toBeTruthy()
+    await waitFor(async () => expect(await loadDraft("u-1", "P")).toBeNull())
+  })
+
+  it("desde «Registro guardado» la guardia también pregunta antes de pisar un borrador", async () => {
+    installServer({ online: true })
+    await openAndDefinePin()
+    // Hay una correctiva a medias en el teléfono.
+    await saveDraft(newDraft({ userId: "u-1", kind: "C", vehicleId: "veh-1" }))
+    await signPreventive()
+
+    expect(await screen.findByRole("heading", { name: "Registro guardado" })).toBeTruthy()
+    // El botón depende de que la cola ya tenga el registro firmado: se espera, no se asume.
+    fireEvent.click(await screen.findByRole("button", { name: "Registrar correctiva en KA-140" }))
+    expect(await screen.findByRole("alertdialog", { name: "Ya tienes una correctiva sin terminar" })).toBeTruthy()
+  })
+
+  it("?corregir= pregunta si hay otro borrador del mismo tipo", async () => {
+    installServer({ online: true })
+    await saveDraft({ ...newDraft({ userId: "u-1", kind: "P", vehicleId: "veh-1" }), readingText: "40010" })
+    window.history.replaceState(null, "", `/m/mantencion?corregir=${UUID(9)}&tipo=P&equipo=veh-1`)
+    await definePin()
+
+    expect(await screen.findByRole("alertdialog", { name: "Ya tienes una preventiva sin terminar" })).toBeTruthy()
+  })
+
+  it("?corregir= del mismo registro que el borrador sí lo reemplaza, sin preguntar", async () => {
+    installServer({ online: true })
+    await saveDraft({ ...newDraft({ userId: "u-1", kind: "P", vehicleId: "veh-1" }), correctsRecordId: UUID(9) })
+    window.history.replaceState(null, "", `/m/mantencion?corregir=${UUID(9)}&tipo=P&equipo=veh-1`)
+    await definePin()
+
+    expect(await screen.findByText("PASO 2/5")).toBeTruthy()
+    expect(screen.queryByRole("alertdialog")).toBeNull()
+    await waitFor(async () => expect((await loadDraft("u-1", "P"))?.correctsRecordId).toBe(UUID(9)))
   })
 })

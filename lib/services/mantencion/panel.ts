@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, gte, inArray, sql, type SQL } from "drizzle-orm"
 import { db } from "@/db"
-import { mantRecordCorrectives, mantRecordItems, mantRecords, mantWorksiteSettings, worksites } from "@/db/schema"
+import { mantRecordCorrectives, mantRecordItems, mantRecords, mantWorkOrders, mantWorksiteSettings, worksites } from "@/db/schema"
 import { MANT_EQUIPMENT_STATES, type MantEquipmentState, type MantUnit } from "@/lib/mantencion/types"
 import { todayInChile } from "@/lib/utils"
 import { equipmentScope, recordVisibility, recordVisibilitySql, type MantViewer } from "./access"
@@ -44,6 +44,12 @@ export interface PanelUpcomingRow {
 
 export interface PanelWorkshopRow {
   recordId: string
+  /**
+   * OT que retiene el equipo en taller; `null` (o ausente) si lo retiene una
+   * correctiva. Con OT, `recordId` es el de la orden y «Trabajo»/«Motivo» salen
+   * de la OT, no de `mant_record_correctives`.
+   */
+  workOrderId?: string | null
   folio: string | null
   code: string
   plate: string
@@ -133,16 +139,57 @@ export async function loadPanel(viewer: MantViewer, filters: PanelFilters, today
   const counts = Object.fromEntries(MANT_EQUIPMENT_STATES.map((state) => [state, 0])) as Record<MantEquipmentState, number>
   for (const row of fleet) counts[row.status.state] += 1
 
-  // Días fuera de servicio del período (tramos ingreso → salida, o hasta hoy).
+  // Días fuera de servicio del período: tramos ingreso → salida, o hasta hoy si el
+  // equipo sigue detenido. `cases` sólo trae correctivas con `in_workshop`, y en el
+  // flujo con OT la correctiva no lo marca: el tramo de una OT en ejecución sólo
+  // existe en `fleet.workshop`. Sin esto, un equipo en taller por OT sumaba 0 días.
   let stoppedTotal = 0
   const stoppedEquipment = new Set<string>()
+  const addSegment = (vehicleId: string, entryDate: string, exitDate: string | null) => {
+    const days = stoppedDaysWithin(entryDate, exitDate, today, from)
+    if (days <= 0) return
+    stoppedTotal += days
+    stoppedEquipment.add(vehicleId)
+  }
+
+  // Tramo ABIERTO por equipo, tal como lo resolvió `loadFleet`: una OT en ejecución
+  // reemplaza a la correctiva del mismo equipo. Es la fuente autoritativa del tramo
+  // abierto y su `recordId` es el que no debe contarse dos veces desde `cases`.
+  const openByVehicle = new Map<string, { recordId: string; entryDate: string; workOrderId: string | null }>()
+  for (const row of fleet) {
+    const workshop = row.workshop
+    if (!workshop?.entryDate || workshop.exitDate) continue
+    openByVehicle.set(row.vehicleId, {
+      recordId: workshop.recordId,
+      entryDate: workshop.entryDate,
+      workOrderId: workshop.workOrderId ?? null,
+    })
+  }
+
+  // 1. Tramos cerrados: ingreso → salida de la correctiva.
   for (const item of cases) {
-    if (!item.entryDate) continue
-    const days = stoppedDaysWithin(item.entryDate, item.state.exitDate, today, from)
-    if (days > 0) {
-      stoppedTotal += days
-      stoppedEquipment.add(item.vehicleId)
-    }
+    if (!item.entryDate || !item.state.exitDate) continue
+    addSegment(item.vehicleId, item.entryDate, item.state.exitDate)
+  }
+
+  // 2. Tramos abiertos que conoce la flota (OT o la correctiva abierta que eligió
+  //    `loadFleet`): una vez por equipo, recortados al período.
+  const countedRecords = new Set<string>()
+  for (const [vehicleId, open] of openByVehicle) {
+    countedRecords.add(open.recordId)
+    addSegment(vehicleId, open.entryDate, null)
+  }
+
+  // 3. Correctivas abiertas que la flota no trae (equipo de baja, tipo sin unidad de
+  //    medida o fuera del alcance de equipos): una vez por registro. Si el equipo
+  //    tiene una OT abierta, no se suman: la OT ya contó ese tramo y el dato es
+  //    inconsistente (la OT manda).
+  for (const item of cases) {
+    if (!item.entryDate || item.state.exitDate) continue
+    if (openByVehicle.get(item.vehicleId)?.workOrderId) continue
+    if (countedRecords.has(item.recordId)) continue
+    countedRecords.add(item.recordId)
+    addSegment(item.vehicleId, item.entryDate, null)
   }
 
   const weekMap = new Map(weeks.map((start) => [start, { start, preventive: 0, corrective: 0 }]))
@@ -152,7 +199,10 @@ export async function loadPanel(viewer: MantViewer, filters: PanelFilters, today
   }
 
   const inShop = fleet.filter((row) => row.workshop)
-  const summaries = await correctiveSummaries(inShop.map((row) => row.workshop!.recordId))
+  const [summaries, orderSummaries] = await Promise.all([
+    correctiveSummaries(inShop.filter((row) => !row.workshop!.workOrderId).map((row) => row.workshop!.recordId)),
+    workOrderSummaries(inShop.filter((row) => row.workshop!.workOrderId).map((row) => row.workshop!.recordId)),
+  ])
 
   return {
     filters,
@@ -170,17 +220,23 @@ export async function loadPanel(viewer: MantViewer, filters: PanelFilters, today
       equipment: inShop.length,
       stale: inShop.filter((row) => row.workshop!.stale).length,
       rows: inShop
-        .map((row): PanelWorkshopRow => ({
-          recordId: row.workshop!.recordId,
-          folio: row.workshop!.folio,
-          code: row.code,
-          plate: row.plate,
-          worksiteName: row.worksiteName,
-          summary: summaries.get(row.workshop!.recordId)?.description ?? "",
-          reason: summaries.get(row.workshop!.recordId)?.reason ?? null,
-          daysStopped: row.workshop!.daysStopped,
-          stale: row.workshop!.stale,
-        }))
+        .map((row): PanelWorkshopRow => {
+          const workOrderId = row.workshop!.workOrderId ?? null
+          // Con OT, «Trabajo» y «Motivo» están en la OT; la correctiva del mismo equipo no existe.
+          const described = workOrderId ? orderSummaries.get(workOrderId) : summaries.get(row.workshop!.recordId)
+          return {
+            recordId: row.workshop!.recordId,
+            workOrderId,
+            folio: row.workshop!.folio,
+            code: row.code,
+            plate: row.plate,
+            worksiteName: row.worksiteName,
+            summary: described?.description ?? "",
+            reason: described?.reason ?? null,
+            daysStopped: row.workshop!.daysStopped,
+            stale: row.workshop!.stale,
+          }
+        })
         .sort((a, b) => (b.daysStopped ?? -1) - (a.daysStopped ?? -1) || a.code.localeCompare(b.code, "es", { numeric: true })),
     },
     stoppedDays: { total: stoppedTotal, equipment: stoppedEquipment.size },
@@ -226,6 +282,16 @@ async function correctiveSummaries(recordIds: string[]): Promise<Map<string, { d
     .from(mantRecordCorrectives)
     .where(inArray(mantRecordCorrectives.recordId, recordIds))
   return new Map(rows.map((row) => [row.recordId, { description: row.description, reason: row.reason }]))
+}
+
+/** «Trabajo» y «Motivo» de una OT en taller: lo que se pidió reparar y las observaciones. */
+async function workOrderSummaries(workOrderIds: string[]): Promise<Map<string, { description: string; reason: string | null }>> {
+  if (workOrderIds.length === 0) return new Map()
+  const rows = await db
+    .select({ id: mantWorkOrders.id, description: mantWorkOrders.repairDescription, reason: mantWorkOrders.observations })
+    .from(mantWorkOrders)
+    .where(inArray(mantWorkOrders.id, workOrderIds))
+  return new Map(rows.map((row) => [row.id, { description: row.description ?? "", reason: row.reason }]))
 }
 
 /** Faenas del selector del panel: las de su alcance de equipos (nunca las de otros). */

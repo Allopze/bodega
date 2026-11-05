@@ -1,9 +1,9 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import { eq } from "drizzle-orm"
+import { and, eq, sql } from "drizzle-orm"
 import { db } from "@/db"
-import { fuelEquipmentTypes } from "@/db/schema"
+import { fuelEquipmentTypes, fuelVehicles, mantEquipmentProfiles } from "@/db/schema"
 import { recordAudit } from "@/lib/audit"
 import { requirePermission } from "@/lib/auth/can"
 import { fuelEquipmentTypeSchema, fuelEquipmentTypeSlug } from "@/lib/combustibles/validation"
@@ -59,13 +59,35 @@ export async function updateFuelEquipmentTypeAction(_prev: ActionState, formData
 
   const nextState = { ...parsed.data, updatedAt: new Date().toISOString() }
   try {
-    await db.transaction(async (tx) => {
+    const result = await db.transaction(async (tx): Promise<ActionState> => {
+      if (parsed.data.defaultMeterType !== existing.defaultMeterType) {
+        // La unidad de un equipo de mantención sale del medidor de su tipo: al cambiarlo,
+        // los equipos ya registrados cambian de unidad —o se quedan sin ninguna y
+        // desaparecen del panel, de la lista y del catálogo del teléfono— sin aviso.
+        // Se bloquea mientras haya equipos en mantención para que la jefatura decida.
+        const [{ n } = { n: 0 }] = await tx
+          .select({ n: sql<number>`count(*)::int` })
+          .from(mantEquipmentProfiles)
+          .innerJoin(fuelVehicles, eq(fuelVehicles.id, mantEquipmentProfiles.vehicleId))
+          .where(and(eq(fuelVehicles.equipmentTypeId, id), eq(fuelVehicles.isActive, true)))
+        if (n > 0) {
+          return {
+            ok: false,
+            message: n === 1
+              ? "No puedes cambiar el medidor: 1 equipo en mantención quedaría sin unidad. Reasígnalo o dalo de baja primero."
+              : `No puedes cambiar el medidor: ${n} equipos en mantención quedarían sin unidad. Reasígnalos o dalos de baja primero.`,
+          }
+        }
+      }
       await tx.update(fuelEquipmentTypes).set(nextState).where(eq(fuelEquipmentTypes.id, id))
       await recordAudit({ userId: session.user.id, userEmail: session.user.email ?? undefined, action: "update", entityType: "fuel_equipment_type", entityId: id, oldState: existing, newState: nextState }, tx)
+      return { ok: true, message: "Tipo de equipo actualizado" }
     })
-    revalidatePath(PATH)
-    revalidatePath("/admin/flota-catalogos/vehiculos")
-    return { ok: true, message: "Tipo de equipo actualizado" }
+    if (result.ok) {
+      revalidatePath(PATH)
+      revalidatePath("/admin/flota-catalogos/vehiculos")
+    }
+    return result
   } catch {
     return { ok: false, message: "No se pudo actualizar el tipo de equipo" }
   }

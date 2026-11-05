@@ -2,8 +2,13 @@ import "fake-indexeddb/auto"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { saveAccount } from "../accounts"
 import { STORE, idbGetAll } from "../db"
+import { saveDraft } from "../drafts"
+import { newDraft } from "../flow-types"
 import { getPhoto, putPhoto } from "../photo-store"
-import { backoffMs, BACKOFF_CAP_MS, claimForSending, commitRecord, getQueueItem, listQueue, markRecordSent, queueStats } from "../queue"
+import {
+  backoffMs, BACKOFF_CAP_MS, claimForSending, commitRecord, discardRejectedRecord, enqueueSimple, getQueueItem, listQueue, markRecordSent,
+  markRetry, newWorkshopItem, queueStats, resetInterruptedSending,
+} from "../queue"
 import { runSync } from "../sync-engine"
 import type { QueueRecordItem } from "../types"
 import { UUID, account, freshDb, json, photo, recordItem } from "./fixtures"
@@ -113,6 +118,34 @@ describe("cola de envío", () => {
     expect(fetchImpl.mock.calls.filter(([, init]) => init?.method === "PUT")).toHaveLength(4)
   })
 
+  it("dos missing_photos seguidas dejan el registro rechazado, no reintentando para siempre", async () => {
+    await seed()
+    const fetchImpl = routes({ record: () => json(409, { ok: false, code: "missing_photos", message: "Faltan fotos" }) })
+    const report = await sync(fetchImpl)
+    expect(report.rejected).toBe(1)
+    expect(report.retried).toBe(0)
+    const item = (await getQueueItem(R1)) as QueueRecordItem
+    expect(item.status).toBe("rejected")
+    expect(item.rejection).toEqual({ message: "Faltan fotos", field: "photos" })
+    // Ronda 0 reintenta una vez y la 1 rechaza: dos POST en la misma pasada.
+    expect(fetchImpl.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(2)
+  })
+
+  it("descartar un rechazado lo borra con sus fotos y baja el contador, sin tocar las de un borrador vivo", async () => {
+    await seed()
+    await sync(routes({ record: () => json(422, { ok: false, code: "invalid", message: "El equipo está dado de baja.", field: "vehicleId" }) }))
+    expect(queueStats(await listQueue()).rejected).toBe(1)
+    // Un borrador sin terminar sigue usando la primera foto.
+    await saveDraft({ ...newDraft({ userId: "u-1", kind: "P", vehicleId: "veh-1" }), photos: { filtros: PHOTOS[0], sticker: null, correctiva: [] } })
+
+    await discardRejectedRecord(R1)
+
+    expect(await getQueueItem(R1)).toBeNull()
+    expect(queueStats(await listQueue()).rejected).toBe(0)
+    expect(await getPhoto(PHOTOS[0])).not.toBeNull()
+    expect(await getPhoto(PHOTOS[1])).toBeNull()
+  })
+
   it("401: la cuenta queda needs_login y sus elementos esperan; no se pierde nada", async () => {
     await seed()
     const report = await sync(routes({ record: () => json(401, { message: "vencida" }) }))
@@ -196,6 +229,45 @@ describe("cola de envío", () => {
     await runSync({ fetchImpl: fetchImpl as unknown as typeof fetch, skipCatalogRefresh: true })
     expect(calls.some((call) => call.includes("/sync/taller"))).toBe(false)
   })
+
+  it("un registro rechazado descarta su novedad de taller en vez de dejarla pendiente para siempre", async () => {
+    await seed()
+    await enqueueSimple(newWorkshopItem({
+      authorUserId: "u-1",
+      payload: { id: UUID(50), recordId: R1, kind: "sigue", note: "Esperando repuesto", createdAt: "2026-10-29T10:00:00.000Z", deviceId: UUID(900) },
+      summary: { vehicleId: "veh-1", equipmentCode: "KA-140", equipmentPlate: "SGCP-84" },
+    }, "2026-10-29T10:00:00.000Z"))
+    const report = await sync(routes({ record: () => json(422, { ok: false, code: "invalid", message: "La lectura es menor que la anterior.", field: "reading" }) }))
+    expect(report.rejected).toBe(1)
+
+    const queue = await listQueue()
+    expect(queue.filter((item) => item.type === "workshop")).toHaveLength(0)
+    expect(queueStats(queue).pending).toBe(0)
+    // El motivo del rechazo avisa que la novedad de taller no se enviará.
+    const item = (await getQueueItem(R1)) as QueueRecordItem
+    expect(item.rejection?.message).toContain("novedad de taller")
+  })
+
+  it("la novedad de taller de un registro ya enviado sí se envía", async () => {
+    await seed()
+    await sync(routes({}))
+    expect((await getQueueItem(R1))?.status).toBe("sent")
+    await enqueueSimple(newWorkshopItem({
+      authorUserId: "u-1",
+      payload: { id: UUID(51), recordId: R1, kind: "salio", exitDate: "2026-10-29", createdAt: "2026-10-29T10:00:00.000Z", deviceId: UUID(900) },
+      summary: { vehicleId: "veh-1", equipmentCode: "KA-140", equipmentPlate: "SGCP-84" },
+    }, "2026-10-29T10:00:00.000Z"))
+
+    const calls: string[] = []
+    const fetchImpl = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      calls.push(`${init?.method} ${String(url)}`)
+      return new Response(null, { status: 200 })
+    })
+    const report = await runSync({ fetchImpl: fetchImpl as unknown as typeof fetch, skipCatalogRefresh: true })
+    expect(calls).toContain("POST /api/mantencion/sync/taller")
+    expect(report.sent).toBe(1)
+    expect((await getQueueItem(UUID(51)))?.status).toBe("sent")
+  })
 })
 
 describe("backoff", () => {
@@ -269,5 +341,39 @@ describe("fallo inesperado al enviar", () => {
     expect(item.nextAttemptAt).toBe(now + backoffMs(0))
     expect(item.lastError).toMatch(/no se pudo armar/)
     expect(await getPhoto(PHOTOS[0])).not.toBeNull()
+  })
+})
+
+describe("barrido de arranque (lo que quedó «enviando»)", () => {
+  beforeEach(freshDb)
+
+  it("dos barridos concurrentes van por el cerrojo `mant-sync` y dejan el ítem pendiente con los intentos a cero", async () => {
+    await seed()
+    await markRetry(R1, "se cortó la subida", 123)
+    await claimForSending(R1)
+    expect(await getQueueItem(R1)).toMatchObject({ status: "sending", attempts: 1, lastError: "se cortó la subida" })
+
+    // Cerrojo falso: serializa como el del navegador y anota los nombres pedidos.
+    const lockNames: string[] = []
+    let tail: Promise<unknown> = Promise.resolve()
+    Object.defineProperty(navigator, "locks", {
+      configurable: true,
+      value: {
+        request(name: string, callback: () => Promise<unknown>) {
+          lockNames.push(name)
+          const run = tail.then(callback)
+          tail = run.then(() => undefined, () => undefined)
+          return run
+        },
+      },
+    })
+    try {
+      await Promise.all([resetInterruptedSending(), resetInterruptedSending()])
+    } finally {
+      delete (navigator as { locks?: unknown }).locks
+    }
+
+    expect(lockNames).toEqual(["mant-sync", "mant-sync"])
+    expect(await getQueueItem(R1)).toMatchObject({ status: "pending", attempts: 0, nextAttemptAt: 0, lastError: null })
   })
 })

@@ -28,6 +28,8 @@ export interface FleetRow {
 export interface WorkshopEntry {
   vehicleId: string
   recordId: string
+  /** OT que tiene el equipo en taller; `null` si lo detuvo una correctiva. */
+  workOrderId: string | null
   worksiteId: string
   equipmentCode: string
   equipmentPlate: string
@@ -36,6 +38,21 @@ export interface WorkshopEntry {
   lastActivityDate: string
   stale: boolean
   daysStopped: number | null
+}
+
+/**
+ * En taller por una orden de trabajo: su ingreso y su salida se registran en la OT,
+ * no con «Sigue en taller» / «Ya salió» (que son de la correctiva). Manda
+ * `workOrderId`; el folio `OT-…` es el respaldo de un catálogo guardado antes del
+ * formato 4, que no traía el campo.
+ */
+export function isWorkOrderEntry(entry: Pick<WorkshopEntry, "workOrderId" | "folio">): boolean {
+  return entry.workOrderId !== null || (entry.folio?.startsWith("OT-") ?? false)
+}
+
+/** El id con el que se abre la OT de un equipo en taller (con caché vieja, el de la OT es el `recordId`). */
+export function workshopWorkOrderId(entry: Pick<WorkshopEntry, "workOrderId" | "recordId">): string {
+  return entry.workOrderId ?? entry.recordId
 }
 
 /** Registros del propio teléfono que cuentan como vigentes: todo menos lo rechazado. */
@@ -159,7 +176,7 @@ export function workshopEntries(rows: FleetRow[], queue: readonly QueueItem[], t
     const w = row.eq.workshop
     if (!w || !row.mine) continue
     entries.set(w.recordId, {
-      vehicleId: row.eq.id, recordId: w.recordId, worksiteId: row.eq.worksiteId,
+      vehicleId: row.eq.id, recordId: w.recordId, workOrderId: w.workOrderId ?? null, worksiteId: row.eq.worksiteId,
       equipmentCode: row.eq.code, equipmentPlate: row.eq.plate, folio: w.folio, entryDate: w.entryDate,
       lastActivityDate: w.lastActivityDate, stale: w.stale,
       daysStopped: w.entryDate ? Math.max(0, daysBetween(w.entryDate, today)) : w.daysStopped,
@@ -172,7 +189,7 @@ export function workshopEntries(rows: FleetRow[], queue: readonly QueueItem[], t
     const row = rowByVehicle.get(summary.vehicleId)
     if (!row?.mine) continue
     entries.set(item.id, {
-      vehicleId: summary.vehicleId, recordId: item.id, worksiteId: row.eq.worksiteId,
+      vehicleId: summary.vehicleId, recordId: item.id, workOrderId: null, worksiteId: row.eq.worksiteId,
       equipmentCode: summary.equipmentCode, equipmentPlate: summary.equipmentPlate, folio: item.folio,
       entryDate: summary.workshopEntryDate, lastActivityDate: summary.workDate, stale: false,
       daysStopped: summary.workshopEntryDate ? Math.max(0, daysBetween(summary.workshopEntryDate, today)) : null,

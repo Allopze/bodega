@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
-import { render, screen } from "@testing-library/react"
-import { describe, expect, it } from "vitest"
+import { fireEvent, render, screen, within } from "@testing-library/react"
+import { describe, expect, it, vi } from "vitest"
 import type { CatalogObservation } from "@/lib/mantencion/contracts"
 import type { WorkshopEntry } from "@/lib/mantencion/client/fleet-view"
 import type { RecentRow } from "@/lib/mantencion/client/home-model"
-import { ObservationBanner, RecentSection, WorkshopSection } from "../home-lists"
+import { UUID, recordItem } from "@/lib/mantencion/client/__tests__/fixtures"
+import { ObservationBanner, RecentSection, RejectedSection, WorkshopSection } from "../home-lists"
 
 const observation = (id: string, recordId: string): CatalogObservation => ({
   id, recordId, folio: "MP-BIO-0001", equipmentCode: "KA-140", text: "Falta la foto del sticker", by: "Alexis", createdAt: "2026-10-27T12:00:00.000Z", response: null,
@@ -31,15 +32,49 @@ describe("avisos del inicio", () => {
     expect(screen.getByText("Folio pendiente").className).toContain("nw")
   })
 
-  it("un equipo en taller por una OT no ofrece «Actualizar estado»: eso se registra en la OT", () => {
+  it("un equipo en taller por una OT ofrece «Abrir la OT» en vez de «Actualizar estado»", () => {
     const entry: WorkshopEntry = {
-      vehicleId: "v1", recordId: "r1", worksiteId: "w1", equipmentCode: "KA-140", equipmentPlate: "ABCD-12",
+      vehicleId: "v1", recordId: "r1", workOrderId: null, worksiteId: "w1", equipmentCode: "KA-140", equipmentPlate: "ABCD-12",
       folio: "MC-BIO-0003", entryDate: "2026-10-20", lastActivityDate: "2026-10-20", stale: true, daysStopped: 8,
     }
-    render(<WorkshopSection entries={[entry, { ...entry, vehicleId: "v2", recordId: "ot-1", equipmentCode: "KA-141", folio: "OT-BIO-0001" }]} onUpdate={() => {}} />)
+    // La segunda es de una caché vieja (sin `workOrderId`): el folio «OT-» la reconoce igual.
+    const openOt = vi.fn()
+    render(
+      <WorkshopSection
+        entries={[entry, { ...entry, vehicleId: "v2", recordId: "ot-1", equipmentCode: "KA-141", folio: "OT-BIO-0001" }]}
+        onUpdate={() => {}}
+        onOpenWorkOrder={openOt}
+      />,
+    )
     expect(screen.getByRole("button", { name: "Actualizar estado de KA-140" })).toBeTruthy()
     expect(screen.queryByRole("button", { name: "Actualizar estado de KA-141" })).toBeNull()
     expect(screen.getByText(/OT-BIO-0001/)).toBeTruthy()
     expect(screen.getAllByText(/Toca actualizar/)).toHaveLength(1)
+
+    fireEvent.click(screen.getByRole("button", { name: "Abrir la OT de KA-141" }))
+    expect(openOt).toHaveBeenCalledWith("ot-1")
+  })
+
+  it("con el id de la OT en el catálogo, «Abrir la OT» usa ese id", () => {
+    const entry: WorkshopEntry = {
+      vehicleId: "v1", recordId: "r1", workOrderId: "ot-77", worksiteId: "w1", equipmentCode: "KA-140", equipmentPlate: "ABCD-12",
+      folio: "OT-BIO-0009", entryDate: "2026-10-20", lastActivityDate: "2026-10-20", stale: false, daysStopped: 8,
+    }
+    const openOt = vi.fn()
+    render(<WorkshopSection entries={[entry]} onUpdate={() => {}} onOpenWorkOrder={openOt} />)
+    fireEvent.click(screen.getByRole("button", { name: "Abrir la OT de KA-140" }))
+    expect(openOt).toHaveBeenCalledWith("ot-77")
+  })
+
+  it("un rechazo ofrece corregir y descartar, en ese orden", () => {
+    const item = { ...recordItem(UUID(1), "u-1", [UUID(11), UUID(12)]), status: "rejected" as const, rejection: { message: "El equipo está dado de baja.", field: "vehicleId" } }
+    const onFix = vi.fn()
+    const onDiscard = vi.fn()
+    render(<RejectedSection items={[item]} onFix={onFix} onDiscard={onDiscard} />)
+    expect(screen.getByText(/El equipo está dado de baja/)).toBeTruthy()
+    const buttons = within(screen.getByRole("region", { name: "Por corregir" })).getAllByRole("button").map((button) => button.textContent)
+    expect(buttons).toEqual(["Corregir y reenviar", "Descartar"])
+    fireEvent.click(screen.getByRole("button", { name: "Descartar KA-140" }))
+    expect(onDiscard).toHaveBeenCalledWith(item)
   })
 })

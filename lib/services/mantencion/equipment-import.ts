@@ -6,8 +6,10 @@ import { cleanName, nameKey, normalizeCode } from "@/lib/mantencion/normalize"
 import { EXCEL_DATE_FORMAT } from "@/lib/reports/excel-dates"
 import { xlsxToBase64 } from "@/lib/reports/export-module/excel-builder"
 import type { MantActionResult } from "./result"
+import { actorEquipmentScope, isWorksiteInScope } from "./access"
 import { applyCreate, applyUpdate } from "./equipment"
 import { diffEquipmentFields, summarizeChanges, type MantActor } from "./equipment-history"
+import type { MantWorksiteScope } from "./fleet"
 import {
   findIdentityByCode, loadEquipmentCatalogs, loadEquipmentCurrents, NEW_WORKSITE, resolveEquipment,
   type EquipmentCatalogs, type EquipmentCurrent, type EquipmentInput, type ResolvedEquipment, type VehicleIdentity,
@@ -191,6 +193,8 @@ interface PlanContext {
   catalogs: EquipmentCatalogs
   currents: Map<string, EquipmentCurrent>
   createWorksite?: (name: string) => Promise<{ id: string; name: string }>
+  /** Faenas que puede administrar quien importa: una fila sobre otra se rechaza en vez de escribirse. */
+  scope: MantWorksiteScope
 }
 
 async function planImport(client: Pick<Tx, "select">, rows: RawImportRow[], context: PlanContext): Promise<PlanItem[]> {
@@ -225,6 +229,13 @@ async function planImport(client: Pick<Tx, "select">, rows: RawImportRow[], cont
     if (hasPre) { plan.push(fail(raw, Object.values(pre))); continue }
 
     const value = resolved.value
+    // La faena de la fila (o la que se crearía) tiene que caer en el alcance de quien importa.
+    if (!isWorksiteInScope(context.scope, value.worksite.id)) {
+      plan.push(fail(raw, [value.worksite.id
+        ? "Ese equipo es de una faena que no administras: no puedes importarlo."
+        : "Esa faena no existe y no puedes crearla: no administras esa faena."]))
+      continue
+    }
     const label = [value.type.name, value.brand.name, value.worksite.name].filter(Boolean).join(" · ")
     if (!current) {
       const incorporate = resolved.incorporate
@@ -264,12 +275,12 @@ function summarize(plan: PlanItem[]): ImportSummary {
 }
 
 /** Vista previa: qué se crearía, qué cambiaría y qué filas traen error. No escribe nada. */
-export async function previewEquipmentImport(buffer: ArrayBuffer): Promise<MantActionResult<ImportPreview>> {
+export async function previewEquipmentImport(buffer: ArrayBuffer, scope: MantWorksiteScope = "all"): Promise<MantActionResult<ImportPreview>> {
   const parsed = await parseEquipmentWorkbook(buffer)
   if (!parsed.ok) return { ok: false, message: parsed.message }
   const catalogs = await loadEquipmentCatalogs(db)
   const currents = new Map((await loadEquipmentCurrents(db)).map((item) => [item.vehicleId, item]))
-  const plan = await planImport(db, parsed.rows, { catalogs, currents })
+  const plan = await planImport(db, parsed.rows, { catalogs, currents, scope })
   return { ok: true, data: { rows: plan.map((item) => item.result), summary: summarize(plan) } }
 }
 
@@ -277,17 +288,21 @@ export async function previewEquipmentImport(buffer: ArrayBuffer): Promise<MantA
 export async function commitEquipmentImport(actor: MantActor, buffer: ArrayBuffer, fileName: string): Promise<MantActionResult<ImportSummary>> {
   const parsed = await parseEquipmentWorkbook(buffer)
   if (!parsed.ok) return { ok: false, message: parsed.message }
+  const scope = actorEquipmentScope(actor)
   return db.transaction(async (tx) => {
     const catalogs = await loadEquipmentCatalogs(tx)
     const currents = new Map((await loadEquipmentCurrents(tx)).map((item) => [item.vehicleId, item]))
     const createdWorksites: string[] = []
     const plan = await planImport(tx, parsed.rows, {
-      catalogs, currents,
-      createWorksite: async (name) => {
-        const worksite = await resolveOrCreateWorksite(tx, { typedName: name, actor: { userId: actor.userId, email: actor.email } })
-        if (worksite.created) createdWorksites.push(worksite.name)
-        return worksite
-      },
+      catalogs, currents, scope,
+      // Sólo quien ve todas las faenas puede crear una durante la importación.
+      createWorksite: scope === "all"
+        ? async (name) => {
+          const worksite = await resolveOrCreateWorksite(tx, { typedName: name, actor: { userId: actor.userId, email: actor.email } })
+          if (worksite.created) createdWorksites.push(worksite.name)
+          return worksite
+        }
+        : undefined,
     })
     for (const item of plan) {
       if (item.kind === "create" || item.kind === "incorporate") await applyCreate(tx, actor, item.resolved, item.incorporate, "import")

@@ -9,7 +9,7 @@ import {
   PHOTO_CACHE_MAX_BYTES, PHOTO_CACHE_MAX_ITEMS, getHistoryStatus, getPhotoBlob, loadStoredHistory, refreshHistory, resetHistoryStatusForTests,
 } from "../history-sync"
 import { listQueue } from "../queue"
-import { reportReachable } from "../signal"
+import { isOnline, reportReachable } from "../signal"
 import type { CachedPhoto, StoredHistory } from "../types"
 import { account, freshDb, json, photo, recordItem, UUID } from "./fixtures"
 
@@ -25,7 +25,10 @@ const request = (fetchImpl: ReturnType<typeof vi.fn>, index = 0) => ({ url: Stri
 const asFetch = (fn: unknown) => fn as typeof fetch
 
 beforeEach(async () => { await freshDb(); resetHistoryStatusForTests() })
-afterEach(() => { vi.restoreAllMocks() })
+afterEach(() => {
+  vi.restoreAllMocks()
+  Object.defineProperty(navigator, "onLine", { value: true, configurable: true })
+})
 
 describe("historial con ETag", () => {
   it("guarda el historial con su ETag y la segunda vez pregunta con If-None-Match (304 = sin cambios, anota la hora)", async () => {
@@ -130,15 +133,24 @@ describe("foto del historial", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1)
   })
 
-  it("sin señal y sin copia devuelve null sin pedir nada; con señal, un fallo también es null", async () => {
+  it("sólo el navegador sin red evita el intento; con «sin señal» de memoria, una foto que baja la limpia", async () => {
     const fetchImpl = vi.fn(async () => imageResponse())
-    reportReachable(false)
+    // Navegador sin red: ni se intenta.
+    Object.defineProperty(navigator, "onLine", { value: false, configurable: true })
     expect(await getPhotoBlob(account("u-1"), UUID(51), asFetch(fetchImpl))).toBeNull()
     expect(fetchImpl).not.toHaveBeenCalled()
-    reportReachable(true)
-    expect(await getPhotoBlob(account("u-1"), UUID(51), asFetch(vi.fn(async () => json(404, {}))))).toBeNull()
-    expect(await getPhotoBlob(account("u-1"), UUID(51), asFetch(vi.fn(async () => { throw new TypeError("x") })))).toBeNull()
-    expect(await idbGetAll(STORE.photoCache)).toHaveLength(0)
+    Object.defineProperty(navigator, "onLine", { value: true, configurable: true })
+
+    // La marca en memoria venía de un corte anterior: la foto se pide igual y el éxito limpia la señal.
+    reportReachable(false)
+    expect(isOnline()).toBe(false)
+    expect((await getPhotoBlob(account("u-1"), UUID(51), asFetch(fetchImpl)))?.size).toBe(10)
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+    expect(isOnline()).toBe(true)
+
+    expect(await getPhotoBlob(account("u-1"), UUID(52), asFetch(vi.fn(async () => json(404, {}))))).toBeNull()
+    expect(await getPhotoBlob(account("u-1"), UUID(53), asFetch(vi.fn(async () => { throw new TypeError("x") })))).toBeNull()
+    expect(await idbGetAll(STORE.photoCache)).toHaveLength(1)
   })
 
   it("al pasar de 80 fotos expulsa la menos usada, y leer una la salva", async () => {

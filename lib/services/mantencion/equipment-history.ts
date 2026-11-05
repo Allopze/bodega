@@ -4,6 +4,7 @@ import { mantEquipmentHistory, users, type MantEquipmentHistoryAction, type Mant
 import { nanoid } from "@/lib/id"
 import { formatNumber } from "@/lib/mantencion/format"
 import { formatDate } from "@/lib/utils"
+import type { MantWorksiteScope } from "./fleet"
 
 /**
  * Historial de la ficha del equipo (§10): quién cambió qué y cuándo. Cada
@@ -15,6 +16,12 @@ import { formatDate } from "@/lib/utils"
 export interface MantActor {
   userId: string
   email: string | null
+  /**
+   * Faenas sobre cuyos equipos puede escribir (`equipmentScope`). Las escrituras
+   * de equipos lo exigen; `undefined` = sin filtro, y sólo lo dejan así las rutas
+   * cuyo permiso ya es global (pautas, importador histórico) y las pruebas.
+   */
+  scope?: MantWorksiteScope
 }
 
 /** Los campos de la ficha que el historial compara, tal como los ve la persona. */

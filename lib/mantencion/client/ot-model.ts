@@ -95,7 +95,7 @@ export function applyOp(ot: CatalogWorkOrder, op: WorkOrderOpRequest, context: {
       return ot
     case "start": {
       if (ot.status !== "asignada") return ot
-      const { workshopId, operatorDriverId, ...entry } = op.entry
+      const { workshopId, operatorDriverId: _operatorDriverId, ...entry } = op.entry
       const workshopName = workshopId ? context.workshops.find((workshop) => workshop.id === workshopId)?.name ?? null : null
       return { ...ot, status: "en_ejecucion", entry: { ...entry, workshopName } }
     }

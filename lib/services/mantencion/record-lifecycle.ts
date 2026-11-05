@@ -1,10 +1,13 @@
 import { and, eq, isNull, sql } from "drizzle-orm"
 import { db, type Tx } from "@/db"
-import { mantRecordObservations, mantRecords, mantRecordVoids } from "@/db/schema"
+import { mantRecordObservations, mantRecords, mantRecordVoids, mantWorkOrders } from "@/db/schema"
 import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
+import { createMantencionFilePath, resolveMantencionFile } from "@/lib/storage/config"
+import { removeFile } from "@/lib/storage/helpers"
 import { REASON_MAX_LENGTH, REASON_MIN_LENGTH } from "@/lib/validation/reason-thresholds"
 import { canObserveRecord, canSeeRecord, hasMantPermission, recordVisibility, type MantViewer } from "./access"
+import { pdfRevision, pdfStorageName } from "./record-pdf"
 import type { MantActionResult } from "./result"
 
 /**
@@ -28,6 +31,8 @@ interface LockedRecord {
   worksiteId: string
   registeredBy: string
   executorUserId: string | null
+  /** OT a la que el registro da el trabajo (regla del enlace registro ↔ OT). */
+  workOrderId: string | null
 }
 
 async function lockRecord(tx: Tx, recordId: string): Promise<LockedRecord | null> {
@@ -40,6 +45,7 @@ async function lockRecord(tx: Tx, recordId: string): Promise<LockedRecord | null
       worksiteId: mantRecords.worksiteId,
       registeredBy: mantRecords.registeredBy,
       executorUserId: mantRecords.executorUserId,
+      workOrderId: mantRecords.workOrderId,
     })
     .from(mantRecords)
     .where(eq(mantRecords.id, recordId))
@@ -49,6 +55,32 @@ async function lockRecord(tx: Tx, recordId: string): Promise<LockedRecord | null
 }
 
 const label = (record: LockedRecord) => record.folio ?? "sin folio"
+
+/** Estados en los que la OT ya salió de taller: su trabajo quedó firmado, recibido o cerrado. */
+const OUT_OF_WORKSHOP = ["trabajo_terminado", "recepcionada", "cerrada"] as const
+
+/**
+ * Bloquea la OT del registro y rechaza la anulación si ya salió de taller (hallazgo
+ * 3.2): anular el único trabajo vigente dejaría la OT —y su conformidad, su CAPA y la
+ * hoja de vida— acreditando una reparación que ya no existe. En `en_ejecucion` sigue
+ * permitido: la OT tiene que volver a taller de todos modos.
+ *
+ * ORDEN DE BLOQUEO: registro → OT. No hay ciclo con el orden equipo → OT de `runLocked`
+ * y `createRecord` porque aquí no se bloquea el equipo, y ningún camino bloquea una OT
+ * y después un registro (`linkedRecordState` lee sin `FOR UPDATE`).
+ */
+async function assertWorkOrderInWorkshop(tx: Tx, record: LockedRecord): Promise<MantActionResult | null> {
+  if (!record.workOrderId) return null
+  const [ot] = await tx
+    .select({ folio: mantWorkOrders.folio, status: mantWorkOrders.status })
+    .from(mantWorkOrders)
+    .where(eq(mantWorkOrders.id, record.workOrderId))
+    .for("update")
+    .limit(1)
+  // Sin OT legible (no debería: la FK la sostiene) o todavía en taller: la anulación sigue.
+  if (!ot || !(OUT_OF_WORKSHOP as readonly string[]).includes(ot.status)) return null
+  return { ok: false, message: `La OT ${ot.folio} ya salió de taller: reábrela antes de anular ${label(record)}.` }
+}
 
 /** Anular (regla 13): sólo jefatura, con motivo; el registro sigue visible y se excluye de lecturas y estados. */
 export async function voidRecord(input: { recordId: string; reason: string; viewer: MantViewer }): Promise<MantActionResult> {
@@ -62,6 +94,9 @@ export async function voidRecord(input: { recordId: string; reason: string; view
     const record = await lockRecord(tx, input.recordId)
     if (!record || !canSeeRecord(recordVisibility(viewer), record)) return { ok: false, message: NOT_FOUND }
     if (record.status === "anulado") return { ok: false, message: `El registro ${label(record)} ya estaba anulado.` }
+    // Antes de insertar nada: si la OT ya salió de taller, no se anula (ni anulación ni bitácora).
+    const blocked = await assertWorkOrderInWorkshop(tx, record)
+    if (blocked) return blocked
 
     await tx.insert(mantRecordVoids).values({ id: nanoid(), recordId: record.id, reason, userId: viewer.userId })
     await tx.update(mantRecords).set({
@@ -71,6 +106,12 @@ export async function voidRecord(input: { recordId: string; reason: string; view
       pdfGeneratedAt: null,
       updatedAt: sql`now()`,
     }).where(eq(mantRecords.id, record.id))
+    // El archivo de la revisión que acaba de dejar de valer se borra: la fila ya no lo
+    // nombra y el próximo «ANULADO» se archiva con otro nombre. Best effort: si no está
+    // (o falla el borrado), la descarga lo regenera igual.
+    const archivedName = pdfStorageName(record.id, pdfRevision(record.status))
+    const archivedPdf = resolveMantencionFile(createMantencionFilePath(archivedName))
+    if (archivedPdf) await removeFile(archivedPdf).catch(() => undefined)
     await recordAudit({
       userId: viewer.userId,
       userEmail: viewer.email ?? undefined,

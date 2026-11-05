@@ -7,7 +7,7 @@ import {
 import { daysBetween } from "@/lib/mantencion/readings"
 import { todayInChile } from "@/lib/utils"
 import { getCurrentScheduleSnapshots } from "./schedule-versions"
-import { equipmentStatus, workshopState, type WorkshopState } from "@/lib/mantencion/status"
+import { equipmentStatus, WORKSHOP_UPDATE_DAYS, workshopState, type WorkshopState } from "@/lib/mantencion/status"
 import type { MantEquipmentStatus, MantReading, MantUnit } from "@/lib/mantencion/types"
 
 /**
@@ -147,10 +147,13 @@ export async function loadFleet(options: LoadFleetOptions): Promise<FleetRow[]> 
   // Una OT en ejecución (con ingreso y sin salida) es la fuente del taller y reemplaza a la correctiva.
   for (const row of workOrderRows) {
     const entryDate = todayInChile(row.entryAt)
+    // La OT no tiene novedades de taller: su «última actividad» es la modificación de
+    // la propia OT, y con ella se enciende (o no) el aviso de «sin actualizar».
+    const lastActivityDate = todayInChile(row.updatedAt)
     workshopByVehicle.set(row.vehicleId, {
       inWorkshop: true,
-      stale: false,
-      lastActivityDate: todayInChile(row.updatedAt),
+      stale: daysBetween(lastActivityDate, today) > WORKSHOP_UPDATE_DAYS,
+      lastActivityDate,
       exitDate: null,
       daysStopped: Math.max(0, daysBetween(entryDate, today)),
       recordId: row.id,
@@ -262,6 +265,8 @@ async function openWorkshopRecords(vehicleIds: string[]) {
     })
     .from(mantWorkshopUpdates)
     .where(inArray(mantWorkshopUpdates.recordId, rows.map((row) => row.recordId)))
+    // Orden explícito: con dos salidas la fecha del tramo no puede depender del plan de la consulta.
+    .orderBy(asc(mantWorkshopUpdates.createdAt))
   const byRecord = groupBy(updates, (update) => update.recordId)
   return rows.map((row) => ({
     ...row,

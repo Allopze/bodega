@@ -9,7 +9,7 @@ import {
   OtEntrySection, OtExitSection, OtFaenaReceptionSection, OtHeaderSection, OtItemsSection, OtObservationsSection,
   OtReceptionSection, OtRejectionNotice, OtRepairSection, OtVoidedNotice,
 } from "@/components/mantencion/jefatura/ot/ot-sections"
-import { requireAnyPermission } from "@/lib/auth/can"
+import { can, requireAnyPermission } from "@/lib/auth/can"
 import { viewerFromSession } from "@/lib/services/mantencion/access"
 import { loadWorkOrderRecordForm } from "@/lib/services/mantencion/web-record"
 import { listAssignableMechanics, loadWorkOrderDetail, loadWorkOrderEntryCatalogs } from "@/lib/services/mantencion/work-orders/query"
@@ -32,6 +32,9 @@ export default async function WorkOrderDetailPage({ params }: { params: Promise<
 
   const allowed = new Set(detail.allowedTransitions)
   const needsEntryCatalogs = allowed.has("start") || (detail.canEditExecution && !!detail.entry)
+  // El PDF y la hoja imprimible exigen ver la OT (expone el trabajo enlazado): el
+  // mecánico que sólo ejecuta ve la OT y sus acciones, pero no el botón de descarga.
+  const canDownloadPdf = can(session, "mant:ot:view_worksite") || can(session, "mant:ot:view_all")
   // Los catálogos sólo se consultan cuando el usuario puede usarlos.
   const [mechanics, entryCatalogs, recordForm] = await Promise.all([
     allowed.has("assign") ? listAssignableMechanics() : Promise.resolve(null),
@@ -68,6 +71,7 @@ export default async function WorkOrderDetailPage({ params }: { params: Promise<
             actorName={session.user.name ?? ""}
             actorUserId={session.user.id}
             pdfHref={`/api/mantencion/ot/${detail.id}/pdf`}
+            canDownloadPdf={canDownloadPdf}
             repair={detail.repair}
             maintenance={detail.maintenance}
             needsLinkedRecord={detail.needsLinkedRecord}

@@ -58,9 +58,9 @@ async function sessionOf(userId: string): Promise<Session> {
 async function viewerOf(userId: string) { return viewerFromSession(await sessionOf(userId)) }
 
 const R = { prev: "rec-prev", manual: "rec-manual", workshop: "rec-workshop", outside: "rec-outside", duplicate: "rec-duplicate" } as const
-const PHOTO = (id: string, recordId: string, kind: "filtros" | "sticker" | "correctiva", stampedAt: string, receivedAt: string) => ({
+const PHOTO = (id: string, recordId: string, kind: "filtros" | "sticker" | "correctiva", stampedAt: string, receivedAt: string, sortOrder: number) => ({
   id, recordId, kind, storageKey: `storage/mantencion/${id}.jpg`, mimeType: "image/jpeg", sha256: "0".repeat(64), bytes: 1000,
-  width: 100, height: 100, stampedAt, receivedAt, uploadedBy: IDS.mecBio,
+  width: 100, height: 100, stampedAt, receivedAt, uploadedBy: IDS.mecBio, sortOrder,
 })
 
 interface RecordSeed {
@@ -101,9 +101,11 @@ beforeAll(async () => {
     { id: "it-2", recordId: R.prev, itemKey: "k4", groupName: "Frenos", itemName: "Revisión pastillas", sortOrder: 1, value: "NR", reason: "Falta repuesto", manufacturerWarning: true },
   ])
   await testDb.insert(schema.mantRecordPhotos).values([
-    PHOTO("ph-1", R.prev, "filtros", daysAgo(2), new Date().toISOString()),
+    // `sortOrder` es el de la bitácora (índice de la foto): la base exige que no
+    // se repita dentro del registro (índice único parcial de la migración 0371).
+    PHOTO("ph-1", R.prev, "filtros", daysAgo(2), new Date().toISOString(), 0),
     // Sello de hace 100 días y recepción hoy, sin período sin señal: debe advertirse (regla 8).
-    PHOTO("ph-2", R.prev, "sticker", new Date(Date.now() - 100 * 86_400_000).toISOString(), new Date().toISOString()),
+    PHOTO("ph-2", R.prev, "sticker", new Date(Date.now() - 100 * 86_400_000).toISOString(), new Date().toISOString(), 1),
   ])
 
   // R2 · preventiva registrada por OTRO mecánico en nombre de Javier, pauta elegida a mano y salto de lectura.
