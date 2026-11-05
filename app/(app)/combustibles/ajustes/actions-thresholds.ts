@@ -17,7 +17,7 @@ import {
   type PerformanceThresholdsInput,
 } from "@/lib/combustibles/control/catalogs"
 import { getPerformanceControlSettings, savePerformanceControlSettings } from "@/lib/combustibles/control/settings"
-import { recomputeVehicles } from "@/lib/combustibles/control/projection-series"
+import { lockVehiclesSeries, recomputeVehicles } from "@/lib/combustibles/control/projection-series"
 import type { ConfigResult } from "./actions"
 import { FUEL_PATHS } from "@/lib/combustibles/routes"
 import { revalidateFuel } from "@/lib/combustibles/revalidate"
@@ -124,6 +124,11 @@ export async function recomputeSeriesBatchAction(input: { cursor: string | null 
         .limit(RECOMPUTE_BATCH_SIZE)
 
       const batchIds = batch.map((vehicle) => vehicle.id)
+      // Los candados de los equipos del lote se toman antes de la foto y se
+      // mantienen hasta el commit: si un alta en terreno se cruza, espera a que
+      // el lote cierre, y las cifras que devuelve esta solicitud describen la
+      // misma serie que quedó escrita.
+      await lockVehiclesSeries(tx, batchIds)
       const before = await snapshotMarks(tx, batchIds)
       await recomputeVehicles(tx, batchIds)
       const changes = diffMarkSnapshots(before, await snapshotMarks(tx, batchIds))

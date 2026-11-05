@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { db } from "@/db"
 import { fuelLoads, fuelVehicles, fuelSuppliers, worksites } from "@/db/schema"
-import { inArray } from "drizzle-orm"
+import { and, inArray } from "drizzle-orm"
 import { can, canAccessWorksite, requirePermission } from "@/lib/auth/can"
-import { isGlobalRole } from "@/lib/auth/scope"
+import { isGlobalRole, worksiteScopeSql } from "@/lib/auth/scope"
 import { assertFuelCostAccess } from "@/lib/operational-control/capabilities"
 import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
@@ -103,21 +103,31 @@ export async function POST(req: NextRequest) {
 
   try {
     const result = await db.transaction(async (tx) => {
-      const [allVehicles, allSuppliers, allWorksites] = await Promise.all([
-        tx.query.fuelVehicles.findMany(),
+      // H8: los catálogos con faena se leen ya acotados al alcance. Antes, una
+      // patente o una faena de otra faena aparecía en el mapa y el mensaje
+      // («El vehículo pertenece a otra faena») confirmaba datos fuera del alcance.
+      const [allVehicles, allSuppliers, allWorksites, worksiteCodes, allVehiclePlates] = await Promise.all([
+        tx.query.fuelVehicles.findMany({ where: worksiteScopeSql(session, fuelVehicles.worksiteId) }),
         tx.query.fuelSuppliers.findMany(),
-        tx.query.worksites.findMany(),
+        tx.query.worksites.findMany({ where: worksiteScopeSql(session, worksites.id) }),
+        // Los códigos se miran sobre todas las faenas: `worksites.code` es único
+        // global y crear una faena no debe chocar con una que no se puede ver.
+        tx.query.worksites.findMany({ columns: { code: true } }),
+        // La patente también es única global: si existe fuera del alcance no se
+        // puede recrear, pero tampoco se revela a qué faena pertenece.
+        tx.query.fuelVehicles.findMany({ columns: { plate: true } }),
       ])
 
       const vehicleMap = new Map(allVehicles.map((v: { plate: string; id: string }) => [v.plate.toUpperCase(), v.id]))
       const vehicleWorksiteMap = new Map(allVehicles.map((v: { id: string; worksiteId: string }) => [v.id, v.worksiteId]))
+      const existingPlates = new Set(allVehiclePlates.map((v: { plate: string }) => v.plate.toUpperCase()))
       const supplierMap = new Map(allSuppliers.map((s: { name: string; id: string }) => [s.name.toUpperCase(), s.id]))
       const worksiteMap = new Map(allWorksites.map((w: { name: string; id: string }) => [w.name.toUpperCase(), w.id]))
       const worksiteById = new Map(allWorksites.map((worksite: { id: string }) => [worksite.id, worksite]))
 
       // Resolver el mapeo de faenas una vez: crea las faenas marcadas para crear
       // y produce fileFaena → worksiteId, o null cuando el usuario eligió omitir.
-      const takenCodes = new Set(allWorksites.map((w: { code: string }) => w.code))
+      const takenCodes = new Set(worksiteCodes.map((w: { code: string }) => w.code))
       const resolvedFaena = new Map<string, string | null>()
       const createdWorksiteIds = new Set<string>()
       const created: Array<{ type: string; name: string }> = []
@@ -145,7 +155,9 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Deduplicación (H3): consultar cargas existentes para los meses del archivo
+      // Deduplicación (H3): consultar cargas existentes para los meses del archivo.
+      // Acotada al alcance: una carga de otra faena no puede contar como duplicado
+      // ni aparecer (con su factura/fecha) en el mensaje de la fila.
       const monthsInFile = [...new Set(loads.map(l => l.month))]
       const existingLoads = monthsInFile.length > 0
         ? await tx.select({
@@ -154,7 +166,10 @@ export async function POST(req: NextRequest) {
             vehicleId: fuelLoads.vehicleId,
             loadDate: fuelLoads.loadDate,
             liters: fuelLoads.liters,
-          }).from(fuelLoads).where(inArray(fuelLoads.month, monthsInFile))
+          }).from(fuelLoads).where(and(
+            inArray(fuelLoads.month, monthsInFile),
+            worksiteScopeSql(session, fuelLoads.worksiteId),
+          ))
         : []
       const seenLoads = new Set(
         existingLoads.map(l =>
@@ -202,6 +217,12 @@ export async function POST(req: NextRequest) {
 
         // Auto-crear entidades faltantes si está habilitado
         if (!vehicleId && createMissing) {
+          // La patente existe fuera del alcance: no se crea un duplicado (el
+          // único es global) ni se dice a qué faena pertenece.
+          if (existingPlates.has(load.vehicle.toUpperCase())) {
+            importErrors.push({ rowIndex: load.rowIndex, field: "VEHICULO", message: `"${load.vehicle}" no encontrado` })
+            continue
+          }
           const id = nanoid()
           await tx.insert(fuelVehicles).values({ id, plate: load.vehicle, type: "camion", equipmentTypeId: fuelEquipmentTypeIdForLegacy("camion"), ...fuelMetricDefaultsForLegacy("camion"), worksiteId, isActive: true })
           vehicleId = id

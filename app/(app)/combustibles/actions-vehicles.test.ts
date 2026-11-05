@@ -100,7 +100,12 @@ beforeEach(() => {
   vi.clearAllMocks()
   mockRequirePermission.mockResolvedValue(session)
   mockCanAccessWorksite.mockReturnValue(true)
-  mockFindVehicle.mockResolvedValue({ id: "veh-1", worksiteId: "ws-1", equipmentTypeId: "fet-camioneta", operationalStatus: "operativo" })
+  mockFindVehicle.mockResolvedValue({
+    id: "veh-1", worksiteId: "ws-1", equipmentTypeId: "fet-camioneta", operationalStatus: "operativo",
+    // Campos canónicos del equipo: sin ellos, un formulario que no los cambia
+    // parecía un cambio de unidad/medidor y disparaba el recálculo de la serie.
+    meterType: "odometer", performanceUnit: "km_per_liter", tankCapacityLiters: null,
+  })
   mockFindEquipmentType.mockResolvedValue({ id: "fet-camioneta", slug: "camioneta", isActive: true })
   mockFindProducts.mockResolvedValue([{ id: "fuel-diesel", isActive: true }])
 })
@@ -271,7 +276,10 @@ describe("toggleFuelVehicleActiveAction", () => {
 describe("fuel vehicle serial number (llave de VisionLink)", () => {
   it("saves the serial in uppercase so it matches the telemetry feed", async () => {
     mockFindVehicle
-      .mockResolvedValueOnce({ id: "veh-1", worksiteId: "ws-1", equipmentTypeId: "fet-camioneta", operationalStatus: "operativo" })
+      .mockResolvedValueOnce({
+        id: "veh-1", worksiteId: "ws-1", equipmentTypeId: "fet-camioneta", operationalStatus: "operativo",
+        meterType: "odometer", performanceUnit: "km_per_liter", tankCapacityLiters: null,
+      })
       .mockResolvedValueOnce(undefined)
 
     const result = await updateFuelVehicleAction({ ok: false }, vehicleForm({ id: "veh-1", serialNumber: " dkj30153 " }))
@@ -282,7 +290,10 @@ describe("fuel vehicle serial number (llave de VisionLink)", () => {
 
   it("rejects a serial already assigned to another vehicle and names it", async () => {
     mockFindVehicle
-      .mockResolvedValueOnce({ id: "veh-1", worksiteId: "ws-1", equipmentTypeId: "fet-camioneta", operationalStatus: "operativo" })
+      .mockResolvedValueOnce({
+        id: "veh-1", worksiteId: "ws-1", equipmentTypeId: "fet-camioneta", operationalStatus: "operativo",
+        meterType: "odometer", performanceUnit: "km_per_liter", tankCapacityLiters: null,
+      })
       .mockResolvedValueOnce({ plate: "GR-10", code: "GR-10" })
 
     const result = await updateFuelVehicleAction({ ok: false }, vehicleForm({ id: "veh-1", serialNumber: "DKJ30153" }))

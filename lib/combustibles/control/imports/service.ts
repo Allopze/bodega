@@ -169,13 +169,13 @@ async function existingTelemetryKeys(client: Tx | typeof db, source: string, row
   return keys
 }
 
-/** Referencias del medio que ya existen, con la faena a la que pertenecen hoy. */
-async function existingSupplyReferences(client: Tx | typeof db, mediumId: string, rows: ResolvedSupplyRow[]): Promise<Map<string, string>> {
-  const references = new Map<string, string>()
+/** Referencias del medio que ya existen, con la faena y el mes a los que pertenecen hoy. */
+async function existingSupplyReferences(client: Tx | typeof db, mediumId: string, rows: ResolvedSupplyRow[]): Promise<Map<string, { worksiteId: string; month: string }>> {
+  const references = new Map<string, { worksiteId: string; month: string }>()
   for (const part of chunked(rows.map((row) => row.reference), 1000)) {
-    const found = await client.select({ reference: fuelSupplyInputs.reference, worksiteId: fuelSupplyInputs.worksiteId }).from(fuelSupplyInputs)
+    const found = await client.select({ reference: fuelSupplyInputs.reference, worksiteId: fuelSupplyInputs.worksiteId, month: fuelSupplyInputs.month }).from(fuelSupplyInputs)
       .where(and(eq(fuelSupplyInputs.supplyMediumId, mediumId), inArray(fuelSupplyInputs.reference, part)))
-    for (const row of found) references.set(row.reference, row.worksiteId)
+    for (const row of found) references.set(row.reference, { worksiteId: row.worksiteId, month: row.month })
   }
   return references
 }
@@ -186,16 +186,46 @@ async function existingSupplyReferences(client: Tx | typeof db, mediumId: string
  * faena y sobrescribirlo (faena, litros, fecha) con el upsert. Esas filas se
  * rechazan con su motivo, igual que una faena fuera de alcance.
  */
-function guardSupplyScope(session: Session, rows: ResolvedSupplyRow[], existing: Map<string, string>): { rows: ResolvedSupplyRow[]; issues: ImportRowIssue[] } {
+function guardSupplyScope(session: Session, rows: ResolvedSupplyRow[], existing: Map<string, { worksiteId: string }>): { rows: ResolvedSupplyRow[]; issues: ImportRowIssue[] } {
   const kept: ResolvedSupplyRow[] = []
   const issues: ImportRowIssue[] = []
   for (const row of rows) {
     const owner = existing.get(row.reference)
-    if (owner && !canAccessWorksite(session, owner)) {
+    if (owner && !canAccessWorksite(session, owner.worksiteId)) {
       issues.push({ rowIndex: row.rowIndex, field: "Referencia", message: `La referencia ${row.reference} ya está registrada en una faena fuera de tu alcance` })
     } else {
       kept.push(row)
     }
+  }
+  return { rows: kept, issues }
+}
+
+/**
+ * C8 / 2.2: la clave de un despacho pasa a ser (medio, referencia, faena, mes).
+ *
+ * Antes era (medio, referencia) y el upsert actualizaba `worksite_id`: un folio
+ * reutilizado entre faenas —los surtidores compartidos numeran por período— MOVÍA
+ * los litros de una faena a otra sin error. Ahora una referencia que ya existe
+ * con otra faena u otro mes se rechaza por fila, con su motivo, y nunca se
+ * reescribe la faena de un despacho ajeno.
+ *
+ * La comprobación es también en la escritura (ver `applySupplyRow`), porque
+ * entre la vista previa y la confirmación el archivo pudo cambiar.
+ */
+function guardSupplyCollisions(rows: ResolvedSupplyRow[], existing: Map<string, { worksiteId: string; month: string }>): { rows: ResolvedSupplyRow[]; issues: ImportRowIssue[] } {
+  const kept: ResolvedSupplyRow[] = []
+  const issues: ImportRowIssue[] = []
+  for (const row of rows) {
+    const owner = existing.get(row.reference)
+    if (owner && (owner.worksiteId !== row.worksiteId || owner.month !== row.month)) {
+      issues.push({
+        rowIndex: row.rowIndex,
+        field: "Referencia",
+        message: `La referencia ${row.reference} ya está registrada para ${owner.month} en otra faena; usa la clave (medio, referencia, faena, mes) o corrige el folio`,
+      })
+      continue
+    }
+    kept.push(row)
   }
   return { rows: kept, issues }
 }
@@ -237,19 +267,20 @@ export async function previewControlImport(session: Session, kind: ControlImport
   }
 
   const existing = await existingSupplyReferences(db, prepared.medium!.id, prepared.supply)
-  const guarded = guardSupplyScope(session, prepared.supply, existing)
-  const supply = guarded.rows
-  const isUpdate = (row: ResolvedSupplyRow) => existing.has(row.reference)
+  const scoped = guardSupplyScope(session, prepared.supply, existing)
+  const guard = guardSupplyCollisions(scoped.rows, existing)
+  const supply = guard.rows
+  const existsWithSameKey = (row: ResolvedSupplyRow) => existing.get(row.reference)?.worksiteId === row.worksiteId && existing.get(row.reference)?.month === row.month
   const period = periodOf(supply.map((row) => row.day))
-  const toUpdate = supply.filter(isUpdate).length
+  const toUpdate = supply.filter(existsWithSameKey).length
   return {
     ok: true,
     data: {
-      ...base, rejected: sortIssues([...prepared.issues, ...guarded.issues]),
+      ...base, rejected: sortIssues([...prepared.issues, ...scoped.issues, ...guard.issues]),
       validRows: supply.length, toUpdate, toInsert: supply.length - toUpdate,
       sampleHeaders: ["Fila", "Fecha", "Faena", "Litros", "Referencia"],
       sample: supply.slice(0, 8).map((row) => ({
-        rowIndex: row.rowIndex, action: isUpdate(row) ? "update" : "insert",
+        rowIndex: row.rowIndex, action: existsWithSameKey(row) ? "update" : "insert",
         cells: [String(row.rowIndex), row.day, row.worksite, String(row.liters), row.reference],
       })),
       periodFrom: period.from, periodTo: period.to,
@@ -258,6 +289,36 @@ export async function previewControlImport(session: Session, kind: ControlImport
       targetLabel: prepared.medium!.name,
     },
   }
+}
+
+/**
+ * Escribe una fila de suministro con la llave (medio, referencia, faena, mes).
+ *
+ * El `setWhere` es la parte que importa: el conflicto se resuelve contra
+ * (medio, referencia) —el único índice que existe— y la condición exige que la
+ * fila guardada sea de la MISMA faena y el MISMO mes. Si no lo es, PostgreSQL no
+ * actualiza ni inserta y la sentencia no devuelve fila: eso es una colisión, y
+ * el llamador la convierte en un rechazo con motivo en vez de mover el despacho
+ * de faena. Al ser una sola sentencia atómica, dos importaciones simultáneas no
+ * pueden pasar las dos.
+ */
+async function applySupplyRow(tx: Tx, input: { batchId: string; mediumId: string; row: ResolvedSupplyRow; existedBefore: boolean }): Promise<"inserted" | "updated" | "collision"> {
+  const { row } = input
+  const [written] = await tx.insert(fuelSupplyInputs).values({
+    id: nanoid(), batchId: input.batchId, supplyMediumId: input.mediumId, worksiteId: row.worksiteId, vehicleId: row.vehicleId,
+    occurredAt: row.occurredAt, month: row.month, liters: row.liters, reference: row.reference, rawRow: row.rawRow,
+  }).onConflictDoUpdate({
+    target: [fuelSupplyInputs.supplyMediumId, fuelSupplyInputs.reference, fuelSupplyInputs.worksiteId, fuelSupplyInputs.month],
+    set: {
+      vehicleId: sql`excluded.vehicle_id`, occurredAt: sql`excluded.occurred_at`,
+      liters: sql`excluded.liters`, rawRow: sql`excluded.raw_row`, updatedAt: sql`now()`,
+    },
+    // La faena y el mes NO se actualizan nunca: si difieren, la fila existente
+    // pertenece a otro despacho y la importación no la toca.
+    setWhere: and(eq(fuelSupplyInputs.worksiteId, row.worksiteId), eq(fuelSupplyInputs.month, row.month)),
+  }).returning({ id: fuelSupplyInputs.id })
+  if (!written) return "collision"
+  return input.existedBefore ? "updated" : "inserted"
 }
 
 export async function commitControlImport(session: Session, kind: ControlImportKind, input: ControlImportInput): Promise<{ ok: true; data: ControlImportResult } | Failure> {
@@ -274,24 +335,27 @@ export async function commitControlImport(session: Session, kind: ControlImportK
 
     const batchId = nanoid()
     let updated = 0
+    /** Filas que chocaron con un despacho de otra faena/mes: se rechazan, no se mueven. */
+    const collisions: ImportRowIssue[] = []
+    let existing: Map<string, { worksiteId: string; month: string }> | null = null
     if (kind === "telemetry") {
-      const existing = await existingTelemetryKeys(tx, prepared.source, prepared.telemetry)
-      updated = prepared.telemetry.filter((row) => existing.has(`${row.vehicleId}|${row.day}`)).length
+      const telemetryKeys = await existingTelemetryKeys(tx, prepared.source, prepared.telemetry)
+      updated = prepared.telemetry.filter((row) => telemetryKeys.has(`${row.vehicleId}|${row.day}`)).length
     } else {
-      const existing = await existingSupplyReferences(tx, prepared.medium!.id, prepared.supply)
-      const guarded = guardSupplyScope(session, prepared.supply, existing)
-      prepared.supply = guarded.rows
-      prepared.issues = sortIssues([...prepared.issues, ...guarded.issues])
+      existing = await existingSupplyReferences(tx, prepared.medium!.id, prepared.supply)
+      const scoped = guardSupplyScope(session, prepared.supply, existing)
+      const guard = guardSupplyCollisions(scoped.rows, existing)
+      prepared.supply = guard.rows
+      prepared.issues = sortIssues([...prepared.issues, ...scoped.issues, ...guard.issues])
       if (prepared.supply.length === 0) return { ok: false as const, message: "No hay filas válidas para importar. Corrige las filas rechazadas y vuelve a subir el archivo." }
-      updated = prepared.supply.filter((row) => existing.has(row.reference)).length
     }
-    const inserted = (kind === "telemetry" ? prepared.telemetry.length : prepared.supply.length) - updated
 
     await tx.insert(fuelControlImportBatches).values({
       id: batchId, kind, fileName: input.fileName.slice(0, 200), fileHash: prepared.fileHash, status: "imported",
-      totalRows: prepared.totalRows, insertedRows: inserted, updatedRows: updated, rejectedRows: prepared.issues.length, importedBy: userId,
+      totalRows: prepared.totalRows, insertedRows: 0, updatedRows: 0, rejectedRows: prepared.issues.length, importedBy: userId,
     })
 
+    let inserted = 0
     if (kind === "telemetry") {
       for (const part of chunked(prepared.telemetry)) {
         await tx.insert(fuelTelemetryDaily).values(part.map((row) => ({
@@ -305,20 +369,34 @@ export async function commitControlImport(session: Session, kind: ControlImportK
           },
         })
       }
+      inserted = prepared.telemetry.length - updated
     } else {
-      for (const part of chunked(prepared.supply)) {
-        await tx.insert(fuelSupplyInputs).values(part.map((row) => ({
-          id: nanoid(), batchId, supplyMediumId: prepared.medium!.id, worksiteId: row.worksiteId, vehicleId: row.vehicleId,
-          occurredAt: row.occurredAt, month: row.month, liters: row.liters, reference: row.reference, rawRow: row.rawRow,
-        }))).onConflictDoUpdate({
-          target: [fuelSupplyInputs.supplyMediumId, fuelSupplyInputs.reference],
-          set: {
-            worksiteId: sql`excluded.worksite_id`, vehicleId: sql`excluded.vehicle_id`, occurredAt: sql`excluded.occurred_at`,
-            month: sql`excluded.month`, liters: sql`excluded.liters`, rawRow: sql`excluded.raw_row`, updatedAt: sql`now()`,
-          },
-        })
+      // Fila por fila y no en bloque: la llave (medio, referencia, faena, mes)
+      // tiene que poder RECHAZAR la fila que choca, y un INSERT … VALUES
+      // multi-fila aborta la transacción entera o actualiza todas. El volumen de
+      // estos archivos es de cientos de filas, no de millones.
+      for (const row of prepared.supply) {
+        const existsWithSameKey = existing!.get(row.reference)?.worksiteId === row.worksiteId && existing!.get(row.reference)?.month === row.month
+        const outcome = await applySupplyRow(tx, { batchId, mediumId: prepared.medium!.id, row, existedBefore: existsWithSameKey })
+        if (outcome === "collision") {
+          collisions.push({
+            rowIndex: row.rowIndex,
+            field: "Referencia",
+            message: `La referencia ${row.reference} ya está registrada para otro mes o faena; no se movió el despacho existente`,
+          })
+          continue
+        }
+        if (outcome === "updated") updated++
+        else inserted++
       }
+      if (collisions.length > 0) prepared.issues = sortIssues([...prepared.issues, ...collisions])
     }
+
+    // Los contadores del lote se escriben al final: las colisiones por fila sólo
+    // se conocen después de intentar cada insert.
+    await tx.update(fuelControlImportBatches).set({
+      insertedRows: inserted, updatedRows: updated, rejectedRows: prepared.issues.length,
+    }).where(eq(fuelControlImportBatches.id, batchId))
 
     const stored = prepared.issues.slice(0, MAX_STORED_REJECTIONS)
     for (const part of chunked(stored)) {

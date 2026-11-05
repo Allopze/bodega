@@ -25,6 +25,7 @@ import { downloadOperationsTemplateAction } from "../actions-operaciones"
 import { downloadImportTemplateAction } from "../control/importar/actions"
 import type { MediumOption } from "../control/importar/import-types"
 import { CopecSyncStatus } from "../importar/copec-sync-status"
+import { CopecPeriodReview } from "./copec-period-review"
 import { FuelProviderQualityExportButton } from "../importar/fuel-provider-quality-export-button"
 import { AddDataLauncher } from "./add-data-launcher"
 import { CoverageMap } from "./coverage-map"
@@ -172,6 +173,8 @@ export default async function FuentesPage({ searchParams }: { searchParams: Prom
               return <SourceRow key={source.key} source={source} status={source} actions={actionsFor(source)} />
             })}
           </div>
+          {/* Meses y filas de Copec que esperan una decisión humana (4.1 y 4.2): sin esto el barrido no avanza. */}
+          {canSync && copecState ? <CopecPeriodReview state={copecState} /> : null}
         </>
       ) : null}
 

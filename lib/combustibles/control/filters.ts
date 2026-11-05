@@ -1,5 +1,5 @@
 import type { Session } from "next-auth"
-import { and, eq, ilike, inArray, isNull, or, sql, type SQL } from "drizzle-orm"
+import { and, eq, inArray, isNull, or, sql, type SQL, type SQLWrapper } from "drizzle-orm"
 import { fuelEquipmentLoads, fuelEquipmentTypes, fuelVehicles } from "@/db/schema"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import { codeYear } from "@/lib/utils"
@@ -128,20 +128,45 @@ export const statisticallyValidLoadSql: SQL = and(
 )!
 
 /**
+ * Unidad con la que se calculó el rendimiento de una carga.
+ *
+ * `fuel_equipment_loads.performance_unit` es la unidad del momento del cálculo;
+ * `fuel_vehicles.performance_unit` es la que el equipo tiene hoy. Agrupar y
+ * rotular con la del equipo hace que una excavadora corregida de km/L a L/h
+ * siga promediando 4,2 y lo imprima como «4,2 L/h» (hallazgo 3.2 de la
+ * auditoría 2026-11-05). Manda la unidad calculada; la del catálogo sólo cubre
+ * las cargas que no la guardan.
+ */
+export const loadPerformanceUnitSql: SQL = sql`coalesce(${fuelEquipmentLoads.performanceUnit}, ${fuelVehicles.performanceUnit})`
+
+/**
+ * Predicado del filtro `equipo`: el código o la patente del equipo, **iguales**
+ * (sin distinguir mayúsculas), sobre las columnas que le pase cada consulta.
+ *
+ * Antes «Por faena» y el detalle usaban `ilike '%KA-1%'` y la lista por equipo
+ * igualdad: con `?equipo=KA-1` la tabla mostraba una fila y el detalle también
+ * traía KA-10 y KA-11 (hallazgo 3.6). Una sola regla para todas las consultas.
+ */
+export function equipmentMatchSql(code: SQLWrapper, plate: SQLWrapper, needle: string | undefined): SQL | undefined {
+  const value = needle?.trim().toLowerCase()
+  if (!value) return undefined
+  return or(sql`lower(${code}) = ${value}`, sql`lower(${plate}) = ${value}`)
+}
+
+/**
  * Condiciones de alcance y filtros sobre `fuel_equipment_loads`.
  * El llamador debe hacer `leftJoin(fuelVehicles)` y `leftJoin(fuelEquipmentTypes)`
  * cuando filtra por familia, unidad o equipo (ver `withLoadJoins`).
  */
 export function buildLoadWhere(session: Session | null, filters: ControlFilters): SQL {
-  const equipmentTerm = filters.equipment ? `%${filters.equipment}%` : undefined
   return and(
     worksiteScopeSql(session, fuelEquipmentLoads.worksiteId, filters.worksiteId),
     filters.mandanteId ? sql`${fuelEquipmentLoads.worksiteId} in ${mandanteWorksitesSql(filters.mandanteId)}` : undefined,
     periodSql(filters, fuelEquipmentLoads.month, fuelEquipmentLoads.occurredAt),
     filters.family ? eq(fuelEquipmentTypes.performanceFamily, filters.family) : undefined,
-    filters.unit ? eq(fuelVehicles.performanceUnit, filters.unit) : undefined,
+    filters.unit ? eq(loadPerformanceUnitSql, filters.unit) : undefined,
     filters.supplyMediumId ? eq(fuelEquipmentLoads.supplyMediumId, filters.supplyMediumId) : undefined,
-    equipmentTerm ? or(ilike(fuelVehicles.code, equipmentTerm), ilike(fuelVehicles.plate, equipmentTerm)) : undefined,
+    equipmentMatchSql(fuelVehicles.code, fuelVehicles.plate, filters.equipment),
   ) ?? sql`true`
 }
 

@@ -1,11 +1,11 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
-import { asc, desc, inArray, isNotNull, sql } from "drizzle-orm"
+import { and, asc, desc, inArray, isNotNull, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { fuelConsumptionRecords, worksites } from "@/db/schema"
 import { settle } from "@/lib/async-settle"
 import { can, requirePermission } from "@/lib/auth/can"
-import { resolveWorksiteScope } from "@/lib/auth/scope"
+import { resolveWorksiteScope, worksiteScopeSql } from "@/lib/auth/scope"
 import { logger } from "@/lib/logger"
 import { buildConsumptionWhere } from "@/lib/combustibles/consumption-queries"
 import { inboxDueDate } from "@/lib/combustibles/inbox/types"
@@ -93,7 +93,12 @@ export default async function CargasTarjetasPage({ searchParams }: { searchParam
       }),
       [] as Array<{ id: string; name: string }>, "faenas",
     ),
-    settle(db.selectDistinct({ fuente: fuelConsumptionRecords.fuente }).from(fuelConsumptionRecords).where(isNotNull(fuelConsumptionRecords.fuente)), [] as Array<{ fuente: string | null }>, "tarjetas-proveedores"),
+    settle(db.selectDistinct({ fuente: fuelConsumptionRecords.fuente }).from(fuelConsumptionRecords).where(and(
+      isNotNull(fuelConsumptionRecords.fuente),
+      // El selector de proveedor no puede ofrecer fuentes de una faena fuera del
+      // alcance: además de filtrar de más, revelaba nombres de otras faenas (6.5).
+      worksiteScopeSql(session, fuelConsumptionRecords.worksiteId),
+    )), [] as Array<{ fuente: string | null }>, "tarjetas-proveedores"),
     track(db.select({ count: sql<number>`count(*)::int` }).from(fuelConsumptionRecords).where(where).then((result) => result[0]?.count ?? 0), 0, "total"),
   ])
   const countDegraded = degraded.includes("total")

@@ -31,6 +31,13 @@ export function fuelCronContractFor(input: {
   rateLimited?: boolean
   failed?: number
   total?: number
+  /**
+   * La corrida se completó pero con la fuente degradada (Copec no entregó parte
+   * de los informes, o el presupuesto de tiempo cortó el barrido). No es lo
+   * mismo que «todas las unidades fallaron»: se reporta `partial`/`degraded`
+   * para que el scheduler vea que hay trabajo sin hacer (C6 / 4.6).
+   */
+  degraded?: boolean
 }): FuelCronContract {
   if (input.unauthorized) return contract("unauthorized", "FUEL_CRON_UNAUTHORIZED", false, 401, 1, "critical")
   if (input.rateLimited) return contract("rate_limited", "FUEL_CRON_RATE_LIMITED", false, 429, 1, "degraded")
@@ -42,7 +49,22 @@ export function fuelCronContractFor(input: {
   // El conflicto de lock manda sólo cuando no hubo fallas propias que reportar
   // — dos corridas pisándose es una señal distinta de "esta corrida falló".
   if (input.conflict) return contract("conflict", "FUEL_CRON_ACTIVE_RUN", false, 409, 2, "waiting")
+  if (input.degraded) return contract("partial", "FUEL_CRON_PARTIAL", false, 503, 1, "degraded")
   return contract("success", "FUEL_CRON_SUCCESS", true, 200, 0, "healthy")
+}
+
+/**
+ * Si el resultado de un barrido de Copec deja el contrato del cron en
+ * `partial`/`degraded` en vez de `healthy`.
+ *
+ * C6 / 4.6: la ruta respondía `success` siempre y descartaba lo que la corrida
+ * sabía —productos que Copec no entregó y meses que el presupuesto no alcanzó
+ * a recorrer—, así que el scheduler la veía sana mientras el barrido era
+ * parcial. Es una función y no una condición en la ruta para poder probarla.
+ */
+export function isCopecSweepDegraded(outcome: { unavailable?: readonly string[]; sourceFailures?: number; budgetExhausted?: boolean }): boolean {
+  const sourceFailures = outcome.sourceFailures ?? outcome.unavailable?.length ?? 0
+  return sourceFailures > 0 || outcome.budgetExhausted === true
 }
 
 function contract(

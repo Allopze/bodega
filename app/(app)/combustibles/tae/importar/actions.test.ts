@@ -28,7 +28,12 @@ const tx = {
   })),
   select: vi.fn(() => ({
     from: vi.fn(() => ({
-      where: vi.fn(() => ({ for: mockForUpdate })),
+      where: vi.fn(() => ({
+        for: mockForUpdate,
+        // `reevaluateSealChainOfNextLoad` busca la carga siguiente y no hay
+        // ninguna en este escenario: el limit devuelve vacío y la reversa sigue.
+        orderBy: vi.fn(() => ({ limit: vi.fn().mockResolvedValue([]) })),
+      })),
     })),
   })),
   insert: vi.fn(),
@@ -84,8 +89,8 @@ describe("revertTaeImportBatchAction", () => {
       action: "delete",
       entityType: "fuel_tae_import_batch",
       entityId: "batch-1",
-      oldState: { status: "imported", submissions: 2 },
-      newState: { status: "reverted", submissions: 0 },
+      oldState: expect.objectContaining({ status: "imported", submissions: 2 }),
+      newState: expect.objectContaining({ status: "reverted", submissions: 0 }),
     }), tx)
     expect(mockRecordStatusChange).toHaveBeenCalledWith(expect.objectContaining({
       fromStatus: "imported",
@@ -94,12 +99,12 @@ describe("revertTaeImportBatchAction", () => {
     // Una sola invalidación de todo `/combustibles` (Archivos importados, Cargas, Cuadratura…), no rutas sueltas.
     expect(mockRevalidatePath).toHaveBeenCalledWith("/combustibles", "layout")
     expect(mockRevalidatePath).not.toHaveBeenCalledWith(expect.stringContaining("/tae/importar"))
-    // Movimientos de sello borrados ANTES de las cargas — sin CASCADE en la FK,
-    // el orden inverso revienta con violación de FK apenas una carga del lote
-    // llegó a validarse (ver el comentario en actions.ts).
+    // Los movimientos de sello ya no se borran: se archivan (2.6/4.9) para que
+    // el historial sobreviva a la reversa. Sólo se eliminan las cargas del lote.
     expect(tx.select).toHaveBeenCalled()
     expect(mockForUpdate).toHaveBeenCalledWith("update")
-    expect(tx.delete).toHaveBeenCalledTimes(2)
+    expect(tx.update).toHaveBeenCalled()
+    expect(tx.delete).toHaveBeenCalledTimes(1)
     // El rendimiento de los equipos afectados se recalcula sin las cargas revertidas.
     expect(mockRecomputeVehicleSeries).toHaveBeenCalledTimes(1)
     expect(mockRecomputeVehicleSeries).toHaveBeenCalledWith(tx, "vehicle-1")

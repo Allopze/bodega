@@ -4,7 +4,7 @@ import { db } from "@/db"
 import { fuelEquipmentLoads, fuelEquipmentTypes, fuelSupplyMedia, fuelVehicles, worksites } from "@/db/schema"
 import type { PerformanceUnit } from "@/lib/combustibles/control/contracts"
 import { worksiteScopeSql } from "@/lib/auth/scope"
-import { buildLoadWhere, countableLoadSql, statisticallyValidLoadSql, type ControlFilters } from "@/lib/combustibles/control/filters"
+import { buildLoadWhere, countableLoadSql, loadPerformanceUnitSql, statisticallyValidLoadSql, type ControlFilters } from "@/lib/combustibles/control/filters"
 import { buildCrosstab, globalRatio, type Crosstab, type MonthMediumRow } from "@/lib/combustibles/control/view-helpers"
 import { toNumber as num } from "./shared"
 
@@ -12,7 +12,9 @@ import { toNumber as num } from "./shared"
  * Consultas de la vista general (G-01 a G-07). Todo se agrega en SQL; el alcance
  * de faena y los filtros salen de `buildLoadWhere`. Los litros cuentan toda carga
  * `countableLoadSql`; las razones km/L y L/h usan solo cargas con rendimiento
- * calculado y sin revisión pendiente (`statisticallyValidLoadSql`).
+ * calculado y sin revisión pendiente (`statisticallyValidLoadSql`), separadas por
+ * la unidad con la que se calculó cada carga (`loadPerformanceUnitSql`): cambiar
+ * la unidad del equipo no reescribe el pasado ni mezcla km con horas.
  */
 
 /* ── Cifras de cabecera ──────────────────────────────────────────────────── */
@@ -34,8 +36,8 @@ export interface OverviewHeader {
 }
 
 export async function getOverviewHeader(session: Session, filters: ControlFilters): Promise<OverviewHeader> {
-  const km = eq(fuelVehicles.performanceUnit, "km_per_liter")
-  const hours = eq(fuelVehicles.performanceUnit, "liters_per_hour")
+  const km = eq(loadPerformanceUnitSql, "km_per_liter")
+  const hours = eq(loadPerformanceUnitSql, "liters_per_hour")
   const inReview = and(countableLoadSql, eq(fuelEquipmentLoads.reviewStatus, "flagged"))
   const computedInReview = and(inReview, eq(fuelEquipmentLoads.performanceStatus, "computed"))
   const [row] = await db.select({
@@ -104,7 +106,7 @@ export async function getWorksiteMediumCrosstab(session: Session, filters: Contr
     .leftJoin(fuelEquipmentTypes, eq(fuelEquipmentTypes.id, fuelVehicles.equipmentTypeId))
     .innerJoin(worksites, eq(worksites.id, fuelEquipmentLoads.worksiteId))
     .leftJoin(fuelSupplyMedia, eq(fuelSupplyMedia.id, fuelEquipmentLoads.supplyMediumId))
-    .where(and(buildLoadWhere(session, filters), countableLoadSql, eq(fuelVehicles.performanceUnit, unit)))
+    .where(and(buildLoadWhere(session, filters), countableLoadSql, eq(loadPerformanceUnitSql, unit)))
     .groupBy(worksites.id, worksites.name, fuelSupplyMedia.id, fuelSupplyMedia.name, fuelSupplyMedia.sortOrder)
     .orderBy(desc(sql`sum(${liters}) over (partition by ${worksites.id})`), asc(worksites.name), asc(fuelSupplyMedia.sortOrder))
   return buildCrosstab(rows.map((row) => ({ ...row, liters: num(row.liters) })))
@@ -134,7 +136,7 @@ export interface MeterSeries {
 export async function getMeterSeries(session: Session, filters: ControlFilters): Promise<Record<PerformanceUnit, MeterSeries>> {
   const rows = await db.select({
     month: fuelEquipmentLoads.month,
-    unit: fuelVehicles.performanceUnit,
+    unit: sql<string | null>`${loadPerformanceUnitSql}`.as("unit"),
     measure: sql<number>`coalesce(sum(${fuelEquipmentLoads.meterDelta}), 0)::float8`,
     liters: sql<number>`coalesce(sum(${fuelEquipmentLoads.accumulatedLiters}), 0)::float8`,
     segments: sql<number>`count(*)::int`,
@@ -144,9 +146,9 @@ export async function getMeterSeries(session: Session, filters: ControlFilters):
     .where(and(
       buildLoadWhere(session, filters),
       statisticallyValidLoadSql,
-      sql`${fuelVehicles.performanceUnit} in ('km_per_liter', 'liters_per_hour')`,
+      sql`${loadPerformanceUnitSql} in ('km_per_liter', 'liters_per_hour')`,
     ))
-    .groupBy(fuelEquipmentLoads.month, fuelVehicles.performanceUnit)
+    .groupBy(fuelEquipmentLoads.month, loadPerformanceUnitSql)
     .orderBy(asc(fuelEquipmentLoads.month))
   const build = (unit: PerformanceUnit): MeterSeries => {
     const points = rows.filter((row) => row.unit === unit).map((row) => ({

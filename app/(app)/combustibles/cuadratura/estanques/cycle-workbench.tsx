@@ -12,6 +12,7 @@ import { Field } from "@/components/ui/field"
 import { INITIAL_STATE, type ActionState } from "@/lib/form-state"
 import { toast } from "@/lib/toast"
 import { toLocalInputValue } from "@/lib/utils"
+import { nanoid } from "@/lib/id"
 import { createFuelCycleMovementAction } from "./actions"
 
 type Item = { id: string; name?: string | null; worksiteId?: string; productId?: string; plate?: string | null; code?: string | null }
@@ -19,6 +20,10 @@ type Props = { worksites: Item[]; products: Item[]; suppliers: Item[]; locations
 
 export function CycleWorkbench({ worksites, products, suppliers, locations, vehicles, canCreate }: Props) {
   const [open, setOpen] = useState(false)
+  // Clave de idempotencia del movimiento (auditoría 2026-11-05, 2.8): se genera
+  // al abrir el diálogo y no cambia entre reintentos, así un doble submit del
+  // mismo formulario registra los litros una sola vez.
+  const [clientSubmissionId, setClientSubmissionId] = useState(() => nanoid(24))
   const [type, setType] = useState("received")
   const [worksiteId, setWorksiteId] = useState(worksites[0]?.id ?? "")
   const [productId, setProductId] = useState(products[0]?.id ?? "")
@@ -42,7 +47,7 @@ export function CycleWorkbench({ worksites, products, suppliers, locations, vehi
   if (!canCreate) return null
   return (
     <>
-      <Button size="sm" onClick={() => setOpen(true)}><Plus size={16} />Registrar movimiento</Button>
+      <Button size="sm" onClick={() => { setClientSubmissionId(nanoid(24)); setOpen(true) }}><Plus size={16} />Registrar movimiento</Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
@@ -51,6 +56,7 @@ export function CycleWorkbench({ worksites, products, suppliers, locations, vehi
             <DialogDescription>El registro queda auditado y entra en la cuadratura del período.</DialogDescription>
           </DialogHeader>
           <form action={action} className="space-y-5">
+            <input type="hidden" name="clientSubmissionId" value={clientSubmissionId} />
             {state.message && !state.ok && <p className="flex gap-2 text-sm text-[var(--color-danger)]"><WarningCircle size={18} />{state.message}</p>}
             <div className="grid gap-4 md:grid-cols-2">
               <Field label="Tipo de evento" htmlFor="eventType">

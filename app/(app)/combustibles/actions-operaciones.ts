@@ -18,8 +18,9 @@ import {
 import {
   computeTotales,
   existingOperationKeys,
-  insertInChunks,
+  insertOperationRecordsIgnoringDuplicates,
   lookupMatchedPlateKeys,
+  operationMonthLocks,
   operationRowKey,
   readImportFile,
   requireGlobalImportSession,
@@ -163,10 +164,25 @@ export async function confirmOperationsImportAction(
   const archivoPath = createFuelImportPath(storageName)
 
   const lockKey = `fuel_ops:${hashArchivo}`
+  // C8 / 2.3: además del lock por hash del archivo —que sólo impide reimportar
+  // el MISMO archivo—, se toman los locks de cada mes que el archivo toca. Dos
+  // archivos que se solapan (el mes y el consolidado trimestral) tienen hashes
+  // distintos y antes no se serializaban: los dos leían `existingOperationKeys`
+  // antes de que el otro commitease e insertaban las mismas filas de marzo.
+  const monthLocks = operationMonthLocks(
+    parsed.rows.map((row) => row.fecha).sort()[0] ?? "",
+    parsed.rows.map((row) => row.fecha).sort().at(-1) ?? "",
+  )
 
   try {
     const result = await db.transaction(async (tx) => {
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${lockKey}))`)
+      // En orden alfabético, que es el mismo en los dos archivos: dos
+      // transacciones que toman los mismos locks en el mismo orden no se
+      // bloquean entre sí.
+      for (const month of [...monthLocks].sort()) {
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`fuel_ops:month:${month}`}))`)
+      }
 
       // Recheck bajo el lock (CO-026): tanto el duplicado por hash de archivo
       // como el dedupe secundario por fila corrían sin lock, así que dos
@@ -254,7 +270,10 @@ export async function confirmOperationsImportAction(
       }
 
       // `newRows`, no `parsed.rows`: excluye las cargas ya existentes. En lotes
-      // (INSERT_CHUNK_SIZE) para no superar el límite de parámetros de Postgres.
+      // (INSERT_CHUNK_SIZE) para no superar el límite de parámetros de Postgres,
+      // y tolerando la colisión por identidad natural (C8): una fila que choque
+      // con el índice único de E se cuenta como duplicada en vez de duplicar
+      // litros o abortar el lote entero.
       const recordRows = newRows.map((row) => {
         const vehicle = vehicleByKey.get(plateMatchKey(row.plate))
         const worksite = row.faenaNombre ? matchByNameOrContains(row.faenaNombre, allWorksites) : null
@@ -287,15 +306,30 @@ export async function confirmOperationsImportAction(
           rawRow: row.rawRow,
         }
       })
-      await insertInChunks(tx, fuelOperationRecords, recordRows)
+      const written = await insertOperationRecordsIgnoringDuplicates(tx, recordRows)
+      if (written.inserted === 0) {
+        return { ok: false as const, message: `Las ${recordRows.length} filas del archivo ya estaban importadas como cargas. No hay filas nuevas que importar.` }
+      }
+      // Fila del archivo de cada registro, por id: `insertedRecords` se deriva de
+      // `recordRows` (mismo orden que `newRows`), así que el índice del arreglo
+      // sigue siendo el `rowIndex` original para los rechazos.
+      const rowIndexByRecordId = new Map(newRows.map((row, index) => [recordRows[index]!.id, row.rowIndex]))
+      // La proyección trabaja sobre las filas que sí entraron: las que el índice
+      // descartó ya tienen su carga y volver a proyectarlas duplicaría litros.
+      const persistedIds = new Set(
+        await tx.select({ id: fuelOperationRecords.id }).from(fuelOperationRecords)
+          .where(and(eq(fuelOperationRecords.batchId, batchId)))
+          .then((rows) => rows.map((row) => row.id)),
+      )
+      const insertedRecords = recordRows.filter((record) => persistedIds.has(record.id))
 
       // Cada carga entra a la serie canónica con el rendimiento calculado por el
       // servidor (el «Rendimiento» digitado solo queda como declarado). Lo que la
       // proyección no puede convertir en carga —sin faena, sin litros— se
       // devuelve en `skipped` y se guarda junto a los errores del archivo.
-      const projection = await projectOperationRecords(tx, recordRows.map((record) => record.id))
+      const projection = await projectOperationRecords(tx, insertedRecords.map((record) => record.id))
       await auditResetDecisions(tx, projection.resetLoadIds, { userId: session.user.id, userEmail: session.user.email ?? undefined }, null)
-      const metaByRecordId = new Map(recordRows.map((record, index) => [record.id, { rowIndex: newRows[index]!.rowIndex, rawRow: newRows[index]!.rawRow }]))
+      const metaByRecordId = new Map(insertedRecords.map((record) => [record.id, { rowIndex: rowIndexByRecordId.get(record.id) ?? 0, rawRow: record.rawRow }]))
       const rejections: OperationRejection[] = [
         ...parsed.errors.map((error) => ({ rowIndex: error.rowIndex, field: error.field, message: error.message, rawRow: error.rawRow ?? null })),
         ...projection.skipped.map((item) => ({
@@ -321,10 +355,11 @@ export async function confirmOperationsImportAction(
           rechazadasEnArchivo: parsed.errors.length,
           rechazadasEnProyeccion: projection.skipped.length,
           cargasProyectadas: projection.projected,
+          duplicadasPorClaveNatural: written.duplicates,
         },
       }, tx)
 
-      return { ok: true as const, batchId, imported: newRows.length, duplicateRows, rejected: rejections.length }
+      return { ok: true as const, batchId, imported: written.inserted, duplicateRows: duplicateRows + written.duplicates, rejected: rejections.length }
     })
 
     if (!result.ok) {

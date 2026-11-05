@@ -1,5 +1,5 @@
 import { relations, sql } from "drizzle-orm"
-import { pgTable, text, integer, numeric, jsonb, timestamp, check, index } from "drizzle-orm/pg-core"
+import { pgTable, text, integer, numeric, jsonb, timestamp, check, index, uniqueIndex } from "drizzle-orm/pg-core"
 import { users } from "./users"
 import { worksites } from "./worksites"
 import { fuelVehicles } from "./fuel-vehicles"
@@ -67,6 +67,22 @@ export const fuelOperationRecords = pgTable("fuel_operation_records", {
   createdAt:         timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   check("fuel_operation_records_liters_positive", sql`${table.liters} >= 0`),
+  /**
+   * E2 (auditoría 2026-11-05, 2.3): identidad natural de una carga del log
+   * operacional. Antes la única barrera era el hash del archivo, así que un
+   * mensual y un consolidado que se solapan entraban por locks distintos y
+   * duplicaban las mismas cargas. `coalesce` normaliza los campos opcionales
+   * para que "sin hora" y "sin horómetro" cuenten como un solo valor (en un
+   * índice, dos NULL son distintos entre sí).
+   */
+  uniqueIndex("fuel_operation_records_identity_unique").on(
+    sql`coalesce(${table.worksiteId}, '')`,
+    table.plate,
+    table.fecha,
+    sql`coalesce(${table.horaCarga}, '')`,
+    table.liters,
+    sql`coalesce(${table.horometro}, 0)`,
+  ),
   index("fuel_operation_records_batch_idx").on(table.batchId),
   index("fuel_operation_records_worksite_idx").on(table.worksiteId),
   index("fuel_operation_records_vehicle_idx").on(table.vehicleId),

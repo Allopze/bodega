@@ -76,6 +76,12 @@ function makeTx() {
     },
     select: vi.fn(() => ({
       from: vi.fn(() => ({
+        // C8: la acción relee los ids persistidos para contar los que el
+        // `on conflict do nothing` descartó. Se devuelven los ids reales de las
+        // filas que el mock de insert recibió, para que la proyección las vea.
+        where: vi.fn(async () => insertedRows.flatMap((row) =>
+          (Array.isArray(row.values) ? row.values : [row.values]).map((value) => ({ id: (value as { id: string }).id })),
+        )),
         innerJoin: vi.fn(() => ({
           where: vi.fn().mockResolvedValue([]),
         })),
@@ -84,7 +90,17 @@ function makeTx() {
     insert: vi.fn(() => ({
       values: vi.fn((vals: unknown) => {
         insertedRows.push({ table: "?", values: vals })
-        return Promise.resolve()
+        // C8: las operaciones se insertan con `on conflict do nothing` y el
+        // llamador cuenta las filas devueltas para distinguir duplicados.
+        const promise = Promise.resolve() as Promise<void> & {
+          onConflictDoNothing?: () => { returning: () => Promise<Array<{ id: string }>> }
+        }
+        promise.onConflictDoNothing = () => ({
+          returning: async () => (Array.isArray(vals) ? vals : [vals]).map((value, index) => ({
+            id: (value as { id?: string }).id ?? `inserted-${index}`,
+          })),
+        })
+        return promise
       }),
     })),
     update: vi.fn(() => ({ set: vi.fn(() => ({ where: vi.fn().mockResolvedValue(undefined) })) })),
@@ -201,6 +217,9 @@ describe("confirmOperationsImportAction", () => {
     const tx = makeTx()
     tx.select.mockReturnValue({
       from: vi.fn(() => ({
+        // La relectura de ids persistidos no se usa en este caso; el dedupe
+        // existente se resuelve por el innerJoin de abajo.
+        where: vi.fn().mockResolvedValue([]),
         innerJoin: vi.fn(() => ({
           where: vi.fn().mockResolvedValue([
             { plate: "ABCD12", fecha: "2026-06-01", horaCarga: null, liters: 50, horometro: null },

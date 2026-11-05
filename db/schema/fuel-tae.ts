@@ -142,6 +142,10 @@ export const fuelTaeSubmissions = pgTable("fuel_tae_submissions", {
   index("fuel_tae_submissions_import_batch_idx").on(table.importBatchId),
   index("fuel_tae_submissions_installed_seal_idx").on(table.installedSealNumber),
   index("fuel_tae_submissions_medium_loaded_idx").on(table.supplyMediumId, table.loadedAt),
+  // E7: el conductor y el supervisor son FK sin índice; el detalle y los
+  // filtros por persona los consultan por separado.
+  index("fuel_tae_submissions_driver_idx").on(table.driverWorkerId),
+  index("fuel_tae_submissions_supervisor_idx").on(table.supervisorWorkerId),
   uniqueIndex("fuel_tae_submissions_legacy_source_unique")
     .on(table.importBatchId, table.legacySourceId)
     .where(sql`${table.legacySourceId} IS NOT NULL`),
@@ -256,11 +260,23 @@ export const fuelTaePublicLinksRelations = relations(fuelTaePublicLinks, ({ one 
 
 export const fuelSealMovements = pgTable("fuel_seal_movements", {
   id:              text("id").primaryKey(),
-  // Sin CASCADE, revertir un lote de importación fallaba con violación de FK
-  // en cuanto una de sus cargas llegaba a validarse (eso es lo que inserta la
-  // fila de movimiento de sello) — el registro de movimiento es un derivado
-  // de la carga TAE, no una entidad independiente que deba sobrevivirla.
-  submissionId:    text("submission_id").notNull().references(() => fuelTaeSubmissions.id, { onDelete: "cascade" }),
+  /**
+   * D2 / E4 (auditoría 2026-11-05, 2.4 y 2.6): el movimiento de sello es
+   * historial, no un derivado desechable de la carga. Cuando se revierte un
+   * lote TAE —o se descarta una carga— la fila ya no puede seguir colgando de
+   * la submission por FK obligatoria: la reversa la borraba para poder borrar
+   * la carga y con ella se perdía `evidence_sha256`, el único registro del
+   * hash de la foto del sello. Ahora la submission es opcional y la FK es
+   * `ON DELETE SET NULL`: el borrado deja el movimiento huérfano pero vivo, y
+   * la reversa lo marca con `reverted_at`/`reverted_by`/`reverted_reason`.
+   *
+   * El `ALTER` que cambia la FK a `SET NULL` viaja en la migración custom 0373
+   * (`drizzle-kit generate --custom`): 0053 la creó con `NO ACTION` mientras el
+   * snapshot de Drizzle la declaraba `cascade`, así que el drift está entre la
+   * base y el snapshot —no dentro del schema— y el arreglo no puede depender de
+   * lo que la comparación esquema↔snapshot detecte al generar.
+   */
+  submissionId:    text("submission_id").references(() => fuelTaeSubmissions.id, { onDelete: "set null" }),
   sealNumber:      text("seal_number").notNull(),
   movementType:    text("movement_type").notNull(),           // "removed" | "installed"
   changedBy:       text("changed_by").references(() => users.id),
@@ -269,17 +285,28 @@ export const fuelSealMovements = pgTable("fuel_seal_movements", {
   evidenceFileName: text("evidence_file_name"),
   evidenceFilePath: text("evidence_file_path"),
   evidenceSha256:  text("evidence_sha256"),
+  /** Cuándo se retractó el movimiento (reversa del lote o descarte de la carga). */
+  revertedAt:      timestamp("reverted_at", { withTimezone: true, mode: "string" }),
+  revertedBy:      text("reverted_by").references(() => users.id),
+  /** Motivo de la retractación; obligatorio para quien revierte, no para el histórico previo. */
+  revertedReason:  text("reverted_reason"),
   createdAt:       timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   check("fuel_seal_movements_type_valid", sql`${table.movementType} IN ('removed', 'installed')`),
   // Un envío registra a lo más un movimiento por tipo y sello. Revalidar una
   // carga (validada → observada → validada) volvía a insertar el retiro: el
   // historial del sello mostraba dos retiros del mismo sello en el mismo acto.
+  // Parcial por `submission_id`: con la columna nullable, los movimientos ya
+  // retractados (submission_id NULL) pueden repetir sello y tipo — son de
+  // cargas distintas y el índice total los rechazaría sólo por compartir NULL,
+  // que en un índice no es un valor.
   uniqueIndex("fuel_seal_movements_submission_type_seal_unique")
-    .on(table.submissionId, table.movementType, table.sealNumber),
+    .on(table.submissionId, table.movementType, table.sealNumber)
+    .where(sql`${table.submissionId} IS NOT NULL`),
   index("fuel_seal_movements_submission_idx").on(table.submissionId),
   index("fuel_seal_movements_seal_number_idx").on(table.sealNumber),
   index("fuel_seal_movements_type_idx").on(table.movementType),
+  index("fuel_seal_movements_reverted_by_idx").on(table.revertedBy),
 ])
 
 export const fuelSealMovementsRelations = relations(fuelSealMovements, ({ one }) => ({

@@ -7,13 +7,20 @@ import { reconcile } from "../calc/reconciliation"
 import { deliveryModeFor, type LoadingPointType } from "../contracts"
 import { accountableProviderTransactionsWhere } from "@/lib/combustibles/load-status"
 import { mandanteWorksitesSql, type ControlFilters } from "../filters"
-import { chileMonthSql, isoTextPeriodSql, submissionWhere, timestampPeriodSql } from "./field-filters"
+import { chileMonthSql, isoTextMonthSql, isoTextPeriodSql, submissionWhere, timestampPeriodSql } from "./field-filters"
 
 /**
  * Conciliación por mandante (C-02) y cruce por medio de suministro (C-03).
  * Entrada = entradas importadas + libro de proveedores mapeado a un medio.
  * Entregado = cargas de terreno no anuladas, separadas por el tipo de lugar de
  * carga (supuesto S-3).
+ *
+ * Los tres lados se agrupan por el **mismo calendario**: el mes civil chileno.
+ * La entrada importada ya trae su `month` chileno; el libro del proveedor y las
+ * entregas se convierten a hora de Chile antes de cortar el mes. Antes el
+ * proveedor se agrupaba por el texto UTC (`left(occurred_at, 7)`) y una
+ * transacción del 31-mar 22:10 de Chile —`2026-04-01T01:10Z`— caía en abril
+ * mientras su entrega quedaba en marzo (hallazgo 3.3).
  */
 
 export interface MandanteInfo {
@@ -132,8 +139,8 @@ export async function getReconciliationFlow(session: Session | null, filters: Co
   const [inputRows, providerRows, deliveryRows] = await Promise.all([
     db.select({ month: fuelSupplyInputs.month, liters: sql<number>`coalesce(sum(${fuelSupplyInputs.liters}), 0)::float8` })
       .from(fuelSupplyInputs).where(inputsWhere(session, filters)).groupBy(fuelSupplyInputs.month),
-    db.select({ month: sql<string>`left(${t.occurredAt}, 7)`, liters: sql<number>`coalesce(sum(${t.quantity}), 0)::float8` })
-      .from(t).innerJoin(fuelSupplyMedia, providerMediumOn).where(providerWhere(session, filters)).groupBy(sql`left(${t.occurredAt}, 7)`),
+    db.select({ month: isoTextMonthSql(t.occurredAt), liters: sql<number>`coalesce(sum(${t.quantity}), 0)::float8` })
+      .from(t).innerJoin(fuelSupplyMedia, providerMediumOn).where(providerWhere(session, filters)).groupBy(isoTextMonthSql(t.occurredAt)),
     db.select({ month: chileMonthSql(fuelTaeSubmissions.loadedAt), type: fuelTaeLoadingPoints.type, liters: sql<number>`coalesce(sum(${fuelTaeSubmissions.liters}), 0)::float8` })
       .from(fuelTaeSubmissions).leftJoin(fuelTaeLoadingPoints, eq(fuelTaeLoadingPoints.id, fuelTaeSubmissions.loadingPointId))
       .where(submissionWhere(session, filters)).groupBy(chileMonthSql(fuelTaeSubmissions.loadedAt), fuelTaeLoadingPoints.type),
@@ -167,9 +174,9 @@ export async function getReconciliationFlowsByMandante(
     db.select({ mandanteId: mw.mandanteId, month: fuelSupplyInputs.month, liters: sql<number>`coalesce(sum(${fuelSupplyInputs.liters}), 0)::float8` })
       .from(fuelSupplyInputs).innerJoin(mw, eq(mw.worksiteId, fuelSupplyInputs.worksiteId))
       .where(inputsWhere(session, open)).groupBy(mw.mandanteId, fuelSupplyInputs.month),
-    db.select({ mandanteId: mw.mandanteId, month: sql<string>`left(${t.occurredAt}, 7)`, liters: sql<number>`coalesce(sum(${t.quantity}), 0)::float8` })
+    db.select({ mandanteId: mw.mandanteId, month: isoTextMonthSql(t.occurredAt), liters: sql<number>`coalesce(sum(${t.quantity}), 0)::float8` })
       .from(t).innerJoin(fuelSupplyMedia, providerMediumOn).innerJoin(mw, eq(mw.worksiteId, t.worksiteId))
-      .where(providerWhere(session, open)).groupBy(mw.mandanteId, sql`left(${t.occurredAt}, 7)`),
+      .where(providerWhere(session, open)).groupBy(mw.mandanteId, isoTextMonthSql(t.occurredAt)),
     db.select({ mandanteId: mw.mandanteId, month: chileMonthSql(fuelTaeSubmissions.loadedAt), type: fuelTaeLoadingPoints.type, liters: sql<number>`coalesce(sum(${fuelTaeSubmissions.liters}), 0)::float8` })
       .from(fuelTaeSubmissions).innerJoin(mw, eq(mw.worksiteId, fuelTaeSubmissions.worksiteId))
       .leftJoin(fuelTaeLoadingPoints, eq(fuelTaeLoadingPoints.id, fuelTaeSubmissions.loadingPointId))

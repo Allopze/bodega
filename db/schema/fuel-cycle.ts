@@ -45,6 +45,15 @@ export const fuelCycleMovements = pgTable("fuel_cycle_movements", {
   documentNumber: text("document_number"),
   sourceType: text("source_type"),
   sourceId: text("source_id"),
+  /**
+   * E5 (auditoría 2026-11-05, 2.9): la guía del proveedor no es única —el
+   * propio informe TAE la reutiliza— así que la identidad del ingest necesita
+   * la patente y el producto de origen. Se guardan tal como los informa el
+   * proveedor (`source_*`), no resueltos: la misma guía puede llegar para dos
+   * vehículos distintos y cada movimiento sigue siendo el mismo al reimportar.
+   */
+  sourcePlate: text("source_plate"),
+  sourceProduct: text("source_product"),
   notes: text("notes"),
   createdBy: text("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
@@ -57,11 +66,18 @@ export const fuelCycleMovements = pgTable("fuel_cycle_movements", {
     OR (${t.eventType} = 'tank_delivery' AND ${t.sourceLocationId} IS NOT NULL AND ${t.vehicleId} IS NOT NULL)
     OR (${t.eventType} = 'direct_delivery' AND ${t.vehicleId} IS NOT NULL AND ${t.supplierId} IS NOT NULL)
   `),
-  // Idempotencia del ingest automático: la guía de despacho Copec es única por
-  // transacción, así que reimportar un mes no puede duplicar recepciones.
+  // Idempotencia del ingest automático: para cada fuente distinta de Copec TAE
+  // la referencia externa es única, así que reimportar un mes no duplica
+  // recepciones. Copec TAE queda fuera de este índice a propósito: su guía se
+  // reutiliza entre vehículos/estanques y la identidad completa es la de abajo
+  // (E5, auditoría 2026-11-05, 2.9). Antes esa guía repetida hacía que
+  // `onConflictDoNothing()` descartara la segunda recepción en silencio.
   uniqueIndex("fuel_cycle_movements_source_unique")
     .on(t.sourceType, t.sourceId)
-    .where(sql`${t.sourceId} IS NOT NULL`),
+    .where(sql`${t.sourceId} IS NOT NULL AND ${t.sourceType} IS DISTINCT FROM 'copec_tae'`),
+  uniqueIndex("fuel_cycle_movements_copec_tae_source_unique")
+    .on(t.sourceType, t.sourceId, t.sourcePlate, t.sourceProduct)
+    .where(sql`${t.sourceType} = 'copec_tae'`),
   index("fuel_cycle_movements_worksite_time_idx").on(t.worksiteId, t.occurredAt),
   index("fuel_cycle_movements_product_time_idx").on(t.productId, t.occurredAt),
   index("fuel_cycle_movements_vehicle_time_idx").on(t.vehicleId, t.occurredAt),

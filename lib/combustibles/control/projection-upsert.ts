@@ -5,6 +5,7 @@ import { nanoid } from "@/lib/id"
 import type { ReviewStatus } from "./contracts"
 import { SOURCE_FLAGS, orderFlags, parseInstantMs } from "./calc/performance-series"
 import type { ProjectedFacts, SkippedRecord } from "./projection-sources"
+import { lockVehiclesSeries } from "./projection-series"
 
 /**
  * Upsert idempotente de `fuel_equipment_loads` desde sus orígenes. No recalcula
@@ -112,6 +113,13 @@ export async function upsertProjectedLoads(
   const outcome: UpsertOutcome = { projected: 0, vehicleIds: [], resetLoadIds: [] }
   if (facts.length === 0) return outcome
   const vehicles = new Set<string>()
+  for (const fact of facts) if (fact.vehicleId) vehicles.add(fact.vehicleId)
+  // El candado por equipo se toma ANTES de leer las cargas existentes: toda vía
+  // que proyecta (terreno, TAE, log operacional, backfill) queda serializada
+  // contra el recálculo de la serie y contra otra proyección del mismo equipo,
+  // sin depender de que el llamador se acuerde de tomarlo. La serie la sigue
+  // recalculando el llamador, que también lo toma (es reentrante).
+  await lockVehiclesSeries(tx, vehicles)
   const sourceIds = facts.map((fact) => fact[key]!)
   const existing = await tx.select().from(fuelEquipmentLoads).where(inArray(fuelEquipmentLoads[key], sourceIds))
   const bySource = new Map(existing.map((row) => [row[key]!, row]))

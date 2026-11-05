@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm"
+import { and, eq, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { fuelCycleMovements, fuelLoads, fuelProviderTransactions, fuelReconciliationLinks } from "@/db/schema"
 import { nanoid } from "@/lib/id"
@@ -201,14 +201,23 @@ export function decideTaeReceiptMatch(
  * `unmatched_reconciliation_links` del preflight habría crecido para siempre.
  *
  * Es el mismo criterio que la conciliación DTE ya aplicaba borrando primero.
+ *
+ * C9 / 2.5: el DELETE+INSERT no estaba serializado. Dos corridas concurrentes
+ * (el cron y el botón) no veían la fila de la otra y dejaban dos `unmatched` en
+ * `ambiguous`/`unmatched`, donde el índice no puede hacer nada porque los NULL
+ * son distintos. `SELECT … FOR UPDATE` sobre la transacción del proveedor toma
+ * el turno: la segunda corrida espera, ve la fila de la primera y la reemplaza.
+ * El `onConflictDoNothing` sin objetivo cubre además el índice parcial que
+ * agrega E3 —inserte quien inserte primero, nunca hay dos filas—.
  */
 async function replaceLink(values: typeof fuelReconciliationLinks.$inferInsert): Promise<void> {
   await db.transaction(async (tx) => {
+    await tx.execute(sql`select 1 from ${fuelProviderTransactions} where ${fuelProviderTransactions.id} = ${values.providerTransactionId} for update`)
     await tx.delete(fuelReconciliationLinks).where(and(
       eq(fuelReconciliationLinks.providerTransactionId, values.providerTransactionId),
       eq(fuelReconciliationLinks.linkType, values.linkType),
     ))
-    await tx.insert(fuelReconciliationLinks).values(values)
+    await tx.insert(fuelReconciliationLinks).values(values).onConflictDoNothing()
   })
 }
 

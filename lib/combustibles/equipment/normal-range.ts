@@ -8,12 +8,17 @@ import type { EquipmentNormalRange, EquipmentSeriesPoint } from "./types"
  * la misma regla con la que el control marca una carga atípica
  * (`rendimiento_fuera_historico`). Sin suficientes cargas válidas no hay rango:
  * una franja inventada con tres puntos engañaría más de lo que ayuda.
+ *
+ * Con desviación cero tampoco hay rango: si todas las cargas valen 10,0, la
+ * franja se reduce a un punto y la primera carga en 10,5 saldría «fuera de
+ * rango» mientras el control —que exige `sd > 0`— la deja `ok` (hallazgo 3.7 de
+ * la auditoría 2026-11-05). La regla es la de `calc/performance-series.ts`.
  */
 export function computeNormalRange(values: readonly number[], k: number, minSamples: number): EquipmentNormalRange | null {
   if (values.length < Math.max(2, minSamples)) return null
   const avg = mean(values)
   const sd = sampleStdDev(values)
-  if (avg === null || sd === null) return null
+  if (avg === null || sd === null || !(sd > 0)) return null
   return { low: avg - k * sd, high: avg + k * sd, mean: avg, sd, samples: values.length, k }
 }
 

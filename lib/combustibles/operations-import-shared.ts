@@ -134,3 +134,56 @@ export async function insertInChunks<T>(tx: Tx, table: typeof fuelOperationRecor
     await tx.insert(table).values(rows.slice(i, i + INSERT_CHUNK_SIZE) as (typeof fuelOperationRecords.$inferInsert)[])
   }
 }
+
+/**
+ * C8 / 2.3: inserta las cargas tolerando la colisión por identidad natural.
+ *
+ * `fuel_operation_records` no tenía clave: dos archivos que se solapan (el mes y
+ * el consolidado trimestral) insertaban la misma carga dos veces, con litros y
+ * acumulados dobles. El dedupe por lectura previa dentro del lock por período
+ * cubre el caso normal; esto cubre el resto:
+ * - `onConflictDoNothing` no falla ni duplica cuando el índice natural exista
+ *   (lo aporta la migración del carril E): es la mitad "catch 23505" del
+ *   arreglo, hecha en una sola sentencia para no abortar la transacción del lote.
+ * Devuelve cuántas filas entraron y cuántas se omitieron por duplicado.
+ */
+export async function insertOperationRecordsIgnoringDuplicates(
+  tx: Tx,
+  rows: (typeof fuelOperationRecords.$inferInsert)[],
+): Promise<{ inserted: number; duplicates: number }> {
+  let inserted = 0
+  let duplicates = 0
+  for (let i = 0; i < rows.length; i += INSERT_CHUNK_SIZE) {
+    const part = rows.slice(i, i + INSERT_CHUNK_SIZE)
+    const written = await tx.insert(fuelOperationRecords).values(part).onConflictDoNothing().returning({ id: fuelOperationRecords.id })
+    inserted += written.length
+    duplicates += part.length - written.length
+  }
+  return { inserted, duplicates }
+}
+
+/**
+ * Meses que toca un archivo de cargas (`YYYY-MM`), para tomar el lock por
+ * período y no por hash del archivo.
+ *
+ * Con el lock por hash, dos archivos distintos que se solapan (marzo y el
+ * consolidado del primer trimestre) no se serializaban: cada uno calculaba
+ * `existingOperationKeys` antes de que el otro commitease y ambos insertaban
+ * las mismas filas. El lock por mes —tomado en orden— los pone en fila.
+ */
+export function operationMonthLocks(periodoDesde: string, periodoHasta: string): string[] {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(periodoDesde) || !/^\d{4}-\d{2}-\d{2}$/.test(periodoHasta)) return []
+  const months: string[] = []
+  let year = Number(periodoDesde.slice(0, 4))
+  let month = Number(periodoDesde.slice(5, 7))
+  const lastYear = Number(periodoHasta.slice(0, 4))
+  const lastMonth = Number(periodoHasta.slice(5, 7))
+  // Cota de seguridad: un archivo con una fecha corrupta no puede pedir miles de locks.
+  for (let guard = 0; guard < 60; guard++) {
+    months.push(`${year}-${String(month).padStart(2, "0")}`)
+    if (year === lastYear && month === lastMonth) break
+    month += 1
+    if (month > 12) { month = 1; year += 1 }
+  }
+  return months
+}

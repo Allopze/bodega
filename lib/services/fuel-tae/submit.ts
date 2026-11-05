@@ -241,6 +241,10 @@ export async function registerFieldLoad({
         // D-5: lo que vale es lo que digitó el operador. El OCR queda como
         // sugerencia para el revisor y nunca ocupa su lugar.
         meterReading: reading,
+        // Contrato con la guarda de OCR de la revisión (5.1): con lectura, la
+        // fuente es `manual` (una persona la tecleó, con o sin ayuda del OCR);
+        // sin lectura —equipo sin medidor— queda `null`, y la guarda no tiene
+        // nada que confirmar. El check de la tabla sólo admite ocr/manual/import.
         meterReadingSource: reading != null ? "manual" : null,
         ocrSuggestedReading: ocrResult?.value ?? null,
         ocrConfidence: ocrResult?.value != null ? ocrResult.confidence : null,

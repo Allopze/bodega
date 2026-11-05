@@ -3,7 +3,7 @@ import type { Tx } from "@/db"
 import { fuelEquipmentLoads, fuelOperationRecords } from "@/db/schema"
 import { readOperationFacts, readTaeFacts, type SkippedRecord } from "./projection-sources"
 import { upsertProjectedLoads, voidSkippedProjections } from "./projection-upsert"
-import { recomputeVehicles } from "./projection-series"
+import { recomputeVehicles, lockVehiclesSeries } from "./projection-series"
 
 /**
  * Proyección de los orígenes (cargas en terreno/TAE y log operacional) a la
@@ -13,6 +13,11 @@ import { recomputeVehicles } from "./projection-series"
  * Si cambian los hechos de una carga con decisión humana (litros, lectura,
  * instante o equipo), la decisión vuelve a `ok` y la carga se reevalúa;
  * `resetLoadIds` lista esas cargas para que el llamador lo audite.
+ *
+ * Toda vía que escribe la serie lo hace bajo el candado del equipo
+ * (`lockVehicleSeries`, mismo que el alta en terreno) y en el orden
+ * equipo → carga → serie: el upsert lo toma antes de leer y el recálculo antes
+ * de proyectar. Reentrante, así que el llamador puede tomarlo igual.
  */
 
 export { recomputeVehicleSeries } from "./projection-series"
@@ -52,6 +57,9 @@ export async function removeProjectionsForOperationBatch(tx: Tx, batchId: string
     .innerJoin(fuelOperationRecords, eq(fuelOperationRecords.id, fuelEquipmentLoads.operationRecordId))
     .where(eq(fuelOperationRecords.batchId, batchId))
   if (rows.length === 0) return
+  // Borrar y recalcular bajo el candado del equipo: un alta del mismo equipo no
+  // puede leer la serie entre el borrado y el recálculo.
+  await lockVehiclesSeries(tx, rows.flatMap((row) => (row.vehicleId ? [row.vehicleId] : [])))
   const ids = rows.map((row) => row.id)
   for (let i = 0; i < ids.length; i += 1000) {
     await tx.delete(fuelEquipmentLoads).where(inArray(fuelEquipmentLoads.id, ids.slice(i, i + 1000)))

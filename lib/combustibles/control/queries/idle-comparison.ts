@@ -9,8 +9,13 @@ import { dailyTelemetry, equipmentLabel } from "./idle"
 
 /**
  * V-08: L/h según la telemetría frente al L/h calculado desde las cargas del
- * mismo equipo y mes (promedio del rendimiento `liters_per_hour` de las cargas
- * que entran a estadística, ver `statisticallyValidLoadSql`).
+ * mismo equipo y mes.
+ *
+ * Los dos lados son la misma razón: Σlitros ÷ Σhoras. Sumar los litros y las
+ * horas de los tramos y dividir una vez (Σ 50 L/10 h y 40 L/1 h da 90/11 = 8,2)
+ * no es lo mismo que promediar las razones (22,5): el promedio de razones hace
+ * que una carga chica pese tanto como una grande y pinta la telemetría como
+ * «fuera de banda» cuando coincide (hallazgo 3.5 de la auditoría 2026-11-05).
  */
 
 export interface LitersPerHourComparisonRow {
@@ -40,7 +45,11 @@ export async function getLitersPerHourComparison(session: Session | null, filter
     db.select({
       vehicleId: fuelEquipmentLoads.vehicleId,
       month: fuelEquipmentLoads.month,
-      avg: sql<number>`avg(${fuelEquipmentLoads.performanceValue})::float8`,
+      // Σ litros y Σ horas de los tramos: la misma razón de sumas que la telemetría.
+      liters: sql<number | null>`sum(${fuelEquipmentLoads.accumulatedLiters})::float8`,
+      hours: sql<number | null>`sum(${fuelEquipmentLoads.meterDelta})::float8`,
+      // Respaldo para cargas sin los acumulados del tramo: promedio simple, lo único que queda.
+      avg: sql<number | null>`avg(${fuelEquipmentLoads.performanceValue})::float8`,
       count: sql<number>`count(*)::int`,
     }).from(fuelEquipmentLoads)
       .innerJoin(fuelVehicles, eq(fuelVehicles.id, fuelEquipmentLoads.vehicleId))
@@ -58,7 +67,13 @@ export async function getLitersPerHourComparison(session: Session | null, filter
   return telemetry.map((row) => {
     const telemetryLph = telemetryLitersPerHour(row.litersWorking, row.litersIdle, row.operating)
     const load = loadsByKey.get(`${row.vehicleId}|${row.month}`)
-    const loadsLph = load?.avg ?? null
+    const loadLiters = load?.liters === null || load?.liters === undefined ? null : Number(load.liters)
+    const loadHours = load?.hours === null || load?.hours === undefined ? null : Number(load.hours)
+    const loadsLph = load
+      ? loadLiters !== null && loadHours !== null && loadHours > 0
+        ? loadLiters / loadHours
+        : (load.avg === null ? null : Number(load.avg))
+      : null
     return {
       vehicleId: row.vehicleId,
       equipment: equipmentLabel(row.code, row.plate),

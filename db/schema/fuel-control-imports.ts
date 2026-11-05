@@ -65,7 +65,15 @@ export const fuelSupplyInputs = pgTable("fuel_supply_inputs", {
 }, (t) => [
   check("fuel_supply_inputs_liters_positive", sql`${t.liters} > 0`),
   check("fuel_supply_inputs_month_format", sql`${t.month} ~ '^[0-9]{4}-[0-9]{2}$'`),
-  uniqueIndex("fuel_supply_inputs_reference_unique").on(t.supplyMediumId, t.reference),
+  /**
+   * E1 (auditoría 2026-11-05, 2.2): la llave natural es la del despacho, no la
+   * del medio. Un surtidor compartido por dos faenas renumera folios cada mes,
+   * así que `(medio, referencia)` no identifica una entrega: con esa llave, el
+   * upsert del importador movía la fila de una faena a otra y los litros de la
+   * primera desaparecían sin error. `faena` y `mes` entran en la clave, y
+   * `reference` deja de ser única por medio.
+   */
+  uniqueIndex("fuel_supply_inputs_dispatch_unique").on(t.supplyMediumId, t.reference, t.worksiteId, t.month),
   index("fuel_supply_inputs_worksite_time_idx").on(t.worksiteId, t.occurredAt),
   index("fuel_supply_inputs_medium_time_idx").on(t.supplyMediumId, t.occurredAt),
 ])

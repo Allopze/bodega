@@ -57,12 +57,14 @@ interface EditFuelLoadFormProps {
   showCosts: boolean
   /** `combustibles:create`: quien sólo puede ver recibe la ficha en lectura. */
   canWrite: boolean
+  /** `combustibles:delete`: el botón de eliminar no se deriva de `canWrite`. */
+  canDelete: boolean
   vehicles: Array<{ id: string; plate: string; type: string }>
   suppliers: Array<{ id: string; name: string }>
   worksites: Array<{ id: string; name: string }>
 }
 
-export function EditFuelLoadForm({ load, showCosts, canWrite, vehicles, suppliers, worksites }: EditFuelLoadFormProps) {
+export function EditFuelLoadForm({ load, showCosts, canWrite, canDelete, vehicles, suppliers, worksites }: EditFuelLoadFormProps) {
   const router = useRouter()
   const [state, formAction, isPending] = useActionState<ActionState, FormData>(updateFuelLoadAction, { ok: false, message: "" })
   const [meterState, meterFormAction, meterPending] = useActionState<ActionState, FormData>(correctFuelLoadMeterAction, { ok: false, message: "" })
@@ -96,6 +98,7 @@ export function EditFuelLoadForm({ load, showCosts, canWrite, vehicles, supplier
   // Editar la ficha regenera montos: exige poder verlos y poder escribirlos. Las
   // acciones del servidor repiten esa condición (`requireFuelLoadSession`).
   const isEditable = load.status === "draft" && showCosts && canWrite
+  const canDeleteLoad = canDelete && load.status === "draft"
   // La corrección de medidor no toca dinero, así que no depende de `showCosts`;
   // una carga en borrador sin costos tampoco tiene otro modo de corregirla.
   const canCorrectMeter = canWrite && !isEditable && load.status !== "cancelled"
@@ -332,9 +335,9 @@ export function EditFuelLoadForm({ load, showCosts, canWrite, vehicles, supplier
           </CardContent>
         </Card>
 
-        {isEditable && (
+        {(isEditable || canDeleteLoad) && (
           <div className="flex justify-between">
-            <Button type="button" variant="destructive" onClick={() => setConfirmDeleteOpen(true)}>Eliminar</Button>
+            {canDeleteLoad ? <Button type="button" variant="destructive" onClick={() => setConfirmDeleteOpen(true)}>Eliminar</Button> : <span />}
       <ConfirmDialog
         open={confirmDeleteOpen}
         onOpenChange={setConfirmDeleteOpen}
@@ -345,10 +348,12 @@ export function EditFuelLoadForm({ load, showCosts, canWrite, vehicles, supplier
         loading={isPending}
         onConfirm={handleDelete}
       />
-            <div className="flex gap-3">
-              <Button type="button" variant="secondary" onClick={() => router.back()}>Cancelar</Button>
-              <Button type="submit" disabled={isPending}>{isPending ? "Guardando..." : "Guardar cambios"}</Button>
-            </div>
+            {isEditable && (
+              <div className="flex gap-3">
+                <Button type="button" variant="secondary" onClick={() => router.back()}>Cancelar</Button>
+                <Button type="submit" disabled={isPending}>{isPending ? "Guardando..." : "Guardar cambios"}</Button>
+              </div>
+            )}
           </div>
         )}
       </form>

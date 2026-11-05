@@ -74,6 +74,33 @@ function makeTx(existingLoads: unknown[] = []) {
   }
 }
 
+/** ¿El SQL de drizzle menciona este valor? (`inArray` guarda sus valores en `Param.value`). */
+function sqlMentions(value: unknown, needle: string): boolean {
+  if (value == null) return false
+  if (typeof value === "string" || typeof value === "number") return String(value) === needle
+  if (Array.isArray(value)) return value.some((item) => sqlMentions(item, needle))
+  if (typeof value === "object") {
+    const record = value as { queryChunks?: unknown[]; value?: unknown }
+    if (Array.isArray(record.queryChunks)) return record.queryChunks.some((chunk) => sqlMentions(chunk, needle))
+    if ("value" in record) return sqlMentions(record.value, needle)
+  }
+  return false
+}
+
+/**
+ * Simula la base real: el `WHERE` que trae el alcance de la sesión (`ws-1`) no
+ * devuelve la carga de la otra faena; uno sin alcance sí la devuelve.
+ */
+function makeScopedTx(outOfScopeLoads: unknown[], vehicles: { scoped: unknown[]; allPlates: unknown[] }) {
+  const tx = makeTx(outOfScopeLoads)
+  tx.query.fuelVehicles.findMany = vi.fn((args: { columns?: { plate?: boolean } } = {}) =>
+    Promise.resolve(args.columns?.plate ? vehicles.allPlates : vehicles.scoped))
+  // La faena en alcance es `ws-1`, la misma de la sesión de prueba.
+  tx.query.worksites.findMany = vi.fn().mockResolvedValue([{ id: "ws-1", name: "Faena Biodiversa", code: "FN-FAENA", isActive: true }])
+  tx.where = vi.fn((condition: unknown) => Promise.resolve(sqlMentions(condition, "ws-1") ? [] : outOfScopeLoads))
+  return tx
+}
+
 describe("POST /api/combustibles/import", () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -221,5 +248,64 @@ describe("POST /api/combustibles/import", () => {
     expect(json.imported).toBe(0)
     expect(json.errors[0].field).toBe("FAENA")
     expect(json.errors[0].message).toMatch(/omitida/i)
+  })
+
+  // Hallazgo 6.2: el chequeo de duplicados recorría todas las cargas del mes.
+  describe("alcance de faena en catálogos y deduplicación", () => {
+    const scopedUser = {
+      user: { id: "user-scope", isGlobal: false, worksiteIds: ["ws-1"], permissions: ["combustibles:import", "combustibles:view", "combustibles:view_costs"] },
+    }
+    const outOfScopeLoad = {
+      fuelSupplierId: "s-1",
+      receiptNumber: "29533428",
+      vehicleId: "v-1",
+      loadDate: "2026-01-15",
+      liters: 100,
+    }
+    const scopedVehicles = [{ id: "v-1", plate: "CAMION", worksiteId: "ws-1" }]
+
+    it("un usuario no global no ve la factura/fecha de una carga de otra faena", async () => {
+      mockRequirePermission.mockResolvedValue(scopedUser)
+      const tx = makeScopedTx([outOfScopeLoad], { scoped: scopedVehicles, allPlates: [{ plate: "CAMION" }] })
+      mockTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn(tx))
+
+      const { POST } = await import("./route")
+      const res = await POST(makeRequest({ loads: [validLoad], faenaMapping: {} }))
+      const json = await res.json()
+
+      // La carga ajena no se devuelve al `WHERE` con alcance: no hay duplicado y,
+      // sobre todo, la respuesta no repite su factura ni su fecha.
+      expect(json.imported).toBe(1)
+      expect(json.errors).toEqual([])
+      expect(JSON.stringify(json)).not.toContain("29533428")
+      expect(JSON.stringify(json)).not.toContain("Carga duplicada")
+    })
+
+    it("un usuario global sí deduplica contra una carga de cualquier faena", async () => {
+      mockRequirePermission.mockResolvedValue(session)
+      const tx = makeScopedTx([outOfScopeLoad], { scoped: scopedVehicles, allPlates: [{ plate: "CAMION" }] })
+      mockTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn(tx))
+
+      const { POST } = await import("./route")
+      const json = await (await POST(makeRequest({ loads: [validLoad], faenaMapping: {} }))).json()
+
+      expect(json.imported).toBe(0)
+      expect(json.errors[0]).toMatchObject({ field: "FACTURA" })
+    })
+
+    it("una patente que sólo existe en otra faena se informa como no encontrada, sin delatar la faena", async () => {
+      mockRequirePermission.mockResolvedValue(scopedUser)
+      const tx = makeScopedTx([], { scoped: [], allPlates: [{ plate: "CAMION" }, { plate: "OTRA" }] })
+      mockTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn(tx))
+
+      const { POST } = await import("./route")
+      const json = await (await POST(makeRequest({ loads: [validLoad], faenaMapping: {}, createMissing: true }))).json()
+
+      expect(json.imported).toBe(0)
+      expect(json.errors[0]).toMatchObject({ field: "VEHICULO", message: '"CAMION" no encontrado' })
+      expect(JSON.stringify(json)).not.toContain("otra faena")
+      // Tampoco intenta crear un duplicado de una patente única que no puede ver.
+      expect(tx.insert).not.toHaveBeenCalled()
+    })
   })
 })

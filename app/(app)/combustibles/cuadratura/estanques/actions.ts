@@ -33,14 +33,22 @@ export async function createFuelCycleMovementAction(_prev: ActionState, formData
     quantity: empty(formData.get("quantity")), occurredAt: toInstant(empty(formData.get("occurredAt"))), supplierId: empty(formData.get("supplierId")),
     sourceLocationId: empty(formData.get("sourceLocationId")), targetLocationId: empty(formData.get("targetLocationId")), vehicleId: empty(formData.get("vehicleId")),
     documentNumber: empty(formData.get("documentNumber")), notes: empty(formData.get("notes")),
+    // Clave del formulario (2.8): un doble submit del mismo diálogo no duplica
+    // los litros ni infla el nivel del estanque.
+    clientSubmissionId: empty(formData.get("clientSubmissionId")),
   }
   const parsed = fuelCycleMovementSchema.safeParse(raw)
   if (!parsed.success) return { ok: false, message: parsed.error.issues[0]?.message ?? "Revisa los datos del movimiento" }
   if (!canAccessWorksite(session, parsed.data.worksiteId)) return { ok: false, message: "No puedes operar esta faena" }
   try {
-    await createFuelCycleMovement(parsed.data, { userId: session.user.id, userEmail: session.user.email ?? undefined })
+    const result = await createFuelCycleMovement(parsed.data, { userId: session.user.id, userEmail: session.user.email ?? undefined })
     revalidateFuel()
-    return { ok: true, message: "Movimiento físico registrado" }
+    return {
+      ok: true,
+      message: result.duplicate
+        ? "Ese movimiento ya estaba registrado con el mismo documento; no se volvió a cargar."
+        : "Movimiento físico registrado",
+    }
   } catch (error) {
     logger.error("[createFuelCycleMovementAction]", error)
     const message = error instanceof Error && isNetworkError(error) ? "Sin conexión al servidor. Verifica tu conexión a internet e inténtalo nuevamente." : safeActionMessage(error, "No se pudo registrar el movimiento")

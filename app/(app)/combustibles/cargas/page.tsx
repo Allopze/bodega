@@ -130,6 +130,7 @@ export default async function CargasPage({ searchParams }: { searchParams: Promi
         status: filters.stateSlug === "por-validar" ? "submitted" : filters.stateSlug === "con-observacion" ? "observed" : filters.stateSlug === "validada" ? "validated" : filters.stateSlug === "anulada" ? "voided" : undefined,
         seal: filters.sealIncomplete ? "missing" : undefined,
         evidence: filters.photosIncomplete ? "missing" : undefined,
+        origins: filters.origins,
       }
     : undefined
 

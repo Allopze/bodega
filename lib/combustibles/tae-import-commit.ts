@@ -44,6 +44,30 @@ async function ensureLoadingPoints(tx: Tx, planned: TaeImportPlanRow[]): Promise
   return pointByKey
 }
 
+/**
+ * Un `legacySourceId` repetido en la planilla (copiar/pegar una fila) choca
+ * contra el único `(import_batch_id, legacy_source_id)` y el unique global de
+ * `client_submission_id`: el 23505 abortaba la transacción entera —incluidos los
+ * mapeos manuales recién guardados— y el usuario sólo veía el mensaje genérico
+ * (auditoría 2026-11-05, 4.8). La primera aparición se importa; las siguientes
+ * se rechazan por fila, con su motivo, para que el lote siga.
+ */
+function dedupePlannedByLegacySourceId(planned: TaeImportPlanRow[]): {
+  unique: TaeImportPlanRow[]
+  duplicated: TaeImportPlanRow[]
+} {
+  const seen = new Set<string>()
+  const unique: TaeImportPlanRow[] = []
+  const duplicated: TaeImportPlanRow[] = []
+  for (const item of planned) {
+    const key = item.row.legacySourceId.trim()
+    if (seen.has(key)) { duplicated.push(item); continue }
+    seen.add(key)
+    unique.push(item)
+  }
+  return { unique, duplicated }
+}
+
 /** Fila de `fuel_tae_submissions` de una carga histórica. La hora viene de la planilla (`loaded_at_source = 'import'`). */
 function buildSubmissionRows(input: {
   planned: TaeImportPlanRow[]
@@ -164,11 +188,13 @@ export async function importTaeLegacyWorkbook(input: { buffer: Buffer; fileName:
     }
 
     const batchId = nanoid()
-    const pointByKey = await ensureLoadingPoints(tx, plan.planned)
+    // B5: un ID histórico repetido en el archivo no puede tumbar el lote entero.
+    const { unique: plannedRows, duplicated: duplicatedRows } = dedupePlannedByLegacySourceId(plan.planned)
+    const pointByKey = await ensureLoadingPoints(tx, plannedRows)
 
     const now = new Date().toISOString()
     const submissions = buildSubmissionRows({
-      planned: plan.planned,
+      planned: plannedRows,
       pointByKey,
       batchId,
       fileHash,
@@ -185,13 +211,16 @@ export async function importTaeLegacyWorkbook(input: { buffer: Buffer; fileName:
       totalRows: parsed.rows.length + parsed.errors.length,
       validRows: submissions.length,
       observedRows,
-      invalidRows: parsed.errors.length + plan.rejected.length,
+      invalidRows: parsed.errors.length + plan.rejected.length + duplicatedRows.length,
       totalLiters,
       importedBy: input.userId,
-      notes: plan.rejected.length ? `${plan.rejected.length} filas válidas no fueron importadas por faena sin match o fuera de alcance.` : null,
+      notes: [
+        plan.rejected.length ? `${plan.rejected.length} filas válidas no fueron importadas por faena sin match o fuera de alcance.` : null,
+        duplicatedRows.length ? `${duplicatedRows.length} filas con ID histórico repetido se rechazaron (se importó la primera de cada ID).` : null,
+      ].filter(Boolean).join(" ") || null,
     })
     for (let index = 0; index < submissions.length; index += 200) await tx.insert(fuelTaeSubmissions).values(submissions.slice(index, index + 200))
-    const evidence = buildEvidenceRows(plan.planned, submissions)
+    const evidence = buildEvidenceRows(plannedRows, submissions)
     for (let index = 0; index < evidence.length; index += 500) await tx.insert(fuelTaeEvidence).values(evidence.slice(index, index + 500))
     await projectInChunks(tx, submissions.map((item) => item.id), input.userId)
     // Antes sólo se contaban (`invalidRows`); persistirlas permite ver el motivo
@@ -199,11 +228,23 @@ export async function importTaeLegacyWorkbook(input: { buffer: Buffer; fileName:
     const rejections = [
       ...parsed.errors.map((error) => ({ id: nanoid(), batchId, rowIndex: error.rowIndex, stage: "parse" as const, field: error.field, message: error.message, legacySourceId: null, rawRow: null })),
       ...plan.rejected.map((item) => ({ id: nanoid(), batchId, rowIndex: item.rowIndex, stage: "worksite" as const, field: null, message: item.message, legacySourceId: item.legacySourceId, rawRow: item.rawRow })),
+      // El ID duplicado es un problema del archivo, no de la faena: se registra
+      // como rechazo de parseo y no se reprocesa (hay que corregir la planilla).
+      ...duplicatedRows.map((item) => ({
+        id: nanoid(),
+        batchId,
+        rowIndex: item.row.rowIndex,
+        stage: "parse" as const,
+        field: "ID",
+        message: `ID histórico "${item.row.legacySourceId}" repetido en el archivo: se importó la primera fila y esta se rechaza.`,
+        legacySourceId: item.row.legacySourceId,
+        rawRow: item.row.rawRow,
+      })),
     ]
     if (rejections.length) await tx.insert(fuelTaeImportRejections).values(rejections)
     await recordStatusChanges(submissions.map((item) => ({ entityType: "fuel_tae_submission", entityId: item.id, fromStatus: null, toStatus: item.status, changedBy: input.userId, reason: item.reviewNote ?? undefined })), tx)
-    await recordAudit({ userId: input.userId, action: "create", entityType: "fuel_tae_import_batch", entityId: batchId, newState: { fileHash, importedRows: submissions.length, observedRows, invalidRows: parsed.errors.length + plan.rejected.length, totalLiters } }, tx)
-    return { batchId, importedRows: submissions.length, observedRows, validatedRows: submissions.length - observedRows, invalidRows: parsed.errors.length + plan.rejected.length, totalLiters }
+    await recordAudit({ userId: input.userId, action: "create", entityType: "fuel_tae_import_batch", entityId: batchId, newState: { fileHash, importedRows: submissions.length, observedRows, invalidRows: parsed.errors.length + plan.rejected.length + duplicatedRows.length, duplicatedIds: duplicatedRows.length, totalLiters } }, tx)
+    return { batchId, importedRows: submissions.length, observedRows, validatedRows: submissions.length - observedRows, invalidRows: parsed.errors.length + plan.rejected.length + duplicatedRows.length, totalLiters }
   })
   return result
 }
@@ -261,8 +302,12 @@ export async function reprocessTaeImportRejectedRows(input: { batchId: string; u
     const pointByKey = await ensureLoadingPoints(tx, plan.planned)
 
     const now = new Date().toISOString()
+    // Mismo criterio que la importación (B5): un ID repetido entre las filas
+    // reprocesadas se queda sólo una vez; el resto conserva su rechazo para que
+    // se vea que el archivo fuente lo repite.
+    const { unique: plannedRows, duplicated: duplicatedRows } = dedupePlannedByLegacySourceId(plan.planned)
     const submissions = buildSubmissionRows({
-      planned: plan.planned,
+      planned: plannedRows,
       pointByKey,
       batchId: batch.id,
       fileHash: batch.fileHash,
@@ -271,11 +316,13 @@ export async function reprocessTaeImportRejectedRows(input: { batchId: string; u
       fallbackReviewNote: "Fila reprocesada después de corregir el catálogo",
     })
     await tx.insert(fuelTaeSubmissions).values(submissions)
-    const evidence = buildEvidenceRows(plan.planned, submissions)
+    const evidence = buildEvidenceRows(plannedRows, submissions)
     if (evidence.length) await tx.insert(fuelTaeEvidence).values(evidence)
     await projectInChunks(tx, submissions.map((item) => item.id), input.userId)
 
-    const importedSourceIds = new Set(plan.planned.map((item) => item.row.legacySourceId))
+    // Sólo se cierran los rechazos cuyas filas realmente entraron: los IDs
+    // repetidos siguen rechazados.
+    const importedSourceIds = new Set(plannedRows.map((item) => item.row.legacySourceId))
     const removedRejectionIds = candidates.filter((item) => item.legacySourceId && importedSourceIds.has(item.legacySourceId)).map((item) => item.id)
     if (removedRejectionIds.length) await tx.delete(fuelTaeImportRejections).where(inArray(fuelTaeImportRejections.id, removedRejectionIds))
     const observedRows = submissions.filter((item) => item.status === "observed").length
@@ -286,7 +333,7 @@ export async function reprocessTaeImportRejectedRows(input: { batchId: string; u
       .returning({ id: fuelTaeImportBatches.id })
     if (!updatedBatch) throw new Error("El lote cambió de estado durante el reproceso")
     await recordStatusChanges(submissions.map((item) => ({ entityType: "fuel_tae_submission", entityId: item.id, fromStatus: null, toStatus: item.status, changedBy: input.userId, reason: item.reviewNote ?? undefined })), tx)
-    await recordAudit({ userId: input.userId, action: "update", entityType: "fuel_tae_import_batch", entityId: batch.id, oldState: { invalidRows: batch.invalidRows }, newState: { reprocessedRows: submissions.length, remainingInvalidRows: Math.max(0, batch.invalidRows - submissions.length) }, reason: "Reproceso de filas rechazadas después de corregir catálogos" }, tx)
+    await recordAudit({ userId: input.userId, action: "update", entityType: "fuel_tae_import_batch", entityId: batch.id, oldState: { invalidRows: batch.invalidRows }, newState: { reprocessedRows: submissions.length, duplicatedIds: duplicatedRows.length, remainingInvalidRows: Math.max(0, batch.invalidRows - submissions.length) }, reason: "Reproceso de filas rechazadas después de corregir catálogos" }, tx)
     return { reprocessedRows: submissions.length, remainingRows: rejectionRows.length - removedRejectionIds.length, observedRows, totalLiters }
   })
 }

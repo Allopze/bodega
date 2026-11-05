@@ -256,11 +256,13 @@ export async function confirmConsumptionImportAction(
   await writeBuffer(absolutePath, buffer)
   const archivoPath = createFuelImportPath(storageName)
 
-  // "all" es una sola operación atómica (reparte en N lotes, uno por faena);
-  // de faena única, el lock incluye la faena para no serializar contra otra
-  // faena distinta que comparta hash por coincidencia. Prefijo de dominio para
-  // no colisionar con el lock de otro importador sobre el mismo hashtext.
-  const lockKey = meta.worksiteId === "all" ? `fuel_tct_all:${hashArchivo}` : `fuel_tct:${hashArchivo}:${meta.worksiteId}`
+  // C8 / 2.10: el lock va por ARCHIVO, no por modo. Antes el modo global usaba
+  // `fuel_tct_all:<hash>` y el de una faena `fuel_tct:<hash>:<worksiteId>`: dos
+  // personas subiendo el MISMO archivo, una global y otra acotada a una faena,
+  // tomaban locks distintos y podían crear dos lotes (faena, período, fuente)
+  // con los mismos litros. El hash ya identifica el contenido; el modo no
+  // cambia qué filas se van a escribir, sólo a qué faena se atribuyen.
+  const lockKey = `fuel_tct:${hashArchivo}`
 
   try {
     const result = await db.transaction(async (tx) => {

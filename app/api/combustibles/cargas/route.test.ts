@@ -163,4 +163,60 @@ describe("POST /api/combustibles/cargas", () => {
       expect(await (await POST(request())).json()).toMatchObject({ ok: true, data: { id: "sub-1", review } })
     })
   })
+
+  describe("D3: offline/capturedAt no fecha la carga sin permiso ni motivo", () => {
+    const CAPTURED = "2026-10-20T08:00:00.000Z"
+    const PAST = { loadedAt: "2026-10-20T08:00", reason: "Se registró sin señal en la faena" }
+
+    it("403 si viene offline:true sin register_past_load, aunque no traiga pastLoad", async () => {
+      // El bypass del hallazgo 5.2: `register_load` + `offline` fechaba la carga
+      // hasta 30 días atrás sin motivo ni marca de carga pasada.
+      mockAuth.mockResolvedValue(session({ permissions: ["combustibles:register_load"] }))
+      mockParseRequest.mockResolvedValue({ ok: true, input: { worksiteId: "ws-1", offline: true, capturedAt: CAPTURED }, evidence: [], ocrResult: undefined })
+      const response = await POST(request())
+      expect(response.status).toBe(403)
+      expect(await response.json()).toMatchObject({ ok: false, message: "No tienes permiso para registrar cargas con fecha pasada." })
+      expect(mockCreateInternalFieldLoad).not.toHaveBeenCalled()
+    })
+
+    it("403 si sólo viene capturedAt (offline ausente) y falta el permiso", async () => {
+      mockAuth.mockResolvedValue(session({ permissions: ["combustibles:register_load"] }))
+      mockParseRequest.mockResolvedValue({ ok: true, input: { worksiteId: "ws-1", capturedAt: CAPTURED }, evidence: [], ocrResult: undefined })
+      expect((await POST(request())).status).toBe(403)
+      expect(mockCreateInternalFieldLoad).not.toHaveBeenCalled()
+    })
+
+    it("422 con register_past_load si el reenvío offline no se presenta como carga de otro día", async () => {
+      mockAuth.mockResolvedValue(session({ permissions: ["combustibles:register_load", "combustibles:register_past_load"] }))
+      mockParseRequest.mockResolvedValue({ ok: true, input: { worksiteId: "ws-1", offline: true, capturedAt: CAPTURED }, evidence: [], ocrResult: undefined })
+      const response = await POST(request())
+      expect(response.status).toBe(422)
+      expect(await response.json()).toMatchObject({ ok: false, code: "past_load_required", field: "pastLoad" })
+      expect(mockCreateInternalFieldLoad).not.toHaveBeenCalled()
+    })
+
+    it("422 si el pastLoad no trae motivo (aunque el permiso esté)", async () => {
+      mockAuth.mockResolvedValue(session({ permissions: ["combustibles:register_load", "combustibles:register_past_load"] }))
+      mockParseRequest.mockResolvedValue({ ok: true, input: { worksiteId: "ws-1", offline: true, capturedAt: CAPTURED, pastLoad: { loadedAt: "2026-10-20T08:00", reason: "   " } }, evidence: [], ocrResult: undefined })
+      const response = await POST(request())
+      expect(response.status).toBe(422)
+      expect(mockCreateInternalFieldLoad).not.toHaveBeenCalled()
+    })
+
+    it("201 con offline + pastLoad + register_past_load: llega al servicio como carga de otro día", async () => {
+      // El servicio es quien escribe la auditoría con `Carga de otro día: <motivo>`
+      // (`lib/services/fuel-tae/submit.ts`), por eso acá se comprueba que el motivo
+      // viaje intacto hasta él; la fila de auditoría la cubre la prueba PGlite del
+      // servicio (`fuel-past-load-pglite.test.ts`).
+      mockAuth.mockResolvedValue(session({ permissions: ["combustibles:register_load", "combustibles:register_past_load"] }))
+      mockParseRequest.mockResolvedValue({ ok: true, input: { worksiteId: "ws-1", offline: true, capturedAt: CAPTURED, pastLoad: PAST }, evidence: [], ocrResult: undefined })
+      const response = await POST(request())
+      expect(response.status).toBe(201)
+      expect(mockCreateInternalFieldLoad).toHaveBeenCalledWith(expect.objectContaining({
+        userId: "user-1",
+        allowPastLoad: true,
+        input: expect.objectContaining({ offline: true, capturedAt: CAPTURED, pastLoad: PAST }),
+      }))
+    })
+  })
 })

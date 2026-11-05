@@ -187,6 +187,20 @@ describe("proyección del control de combustible", () => {
     expect(stable(await loadsOf())).toEqual(stable(rows))
   })
 
+  it("5.9: una lectura que la planilla declara en horas no se compara con el odómetro del equipo", async () => {
+    // veh-1 es odómetro (km/L). La segunda fila trae 900 «hora»: compararla con
+    // los 1.400 km inventaba una regresión de medidor.
+    const r1 = await operationRecord({ fecha: "2026-02-01", horometro: 1000, medidoPor: "km" })
+    const r2 = await operationRecord({ fecha: "2026-02-03", horometro: 1400, liters: 40, medidoPor: "km" })
+    const r3 = await operationRecord({ fecha: "2026-02-05", horometro: 900, liters: 30, medidoPor: "hora" })
+    await projectOperationRecords(tx, [r1, r2, r3])
+
+    const [, second, third] = await loadsOf()
+    expect(second).toMatchObject({ meterReading: 1400, performanceStatus: "computed", performanceValue: 10 })
+    expect(third!.meterReading).toBeNull()
+    expect(third!.flagReasons).not.toContain("meter_regression")
+  })
+
   it("misma carga por planilla y por terreno dentro de la ventana: la segunda queda duplicada y fuera de la serie", async () => {
     const s = await taeSubmission({ loadedAt: "2026-02-01T11:30:00.000Z", meterReading: 1000 })
     const r = await operationRecord({ fecha: "2026-02-01", horaCarga: "08:40", horometro: 1000, liters: 100.3 })

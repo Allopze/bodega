@@ -192,10 +192,49 @@ export async function getFailedTaeSubmissions(): Promise<QueuedTaeSubmission[]> 
   return requestValue(tx.objectStore(SUBMISSIONS).index("status").getAll("failed"))
 }
 
-export async function countPendingTaeSubmissions(): Promise<number> {
+/**
+ * Estados que todavía representan trabajo de este dispositivo (auditoría
+ * 2026-11-05, 5.3). `synced` es el único terminado: `pending` aún no salió,
+ * `syncing` está en vuelo y `failed` el servidor lo rechazó y sigue en
+ * IndexedDB esperando corrección. Antes sólo contaba `pending`, así que
+ * «Finalizar en este dispositivo» se habilitaba con cargas rechazadas y les
+ * borraba el acceso a sus fotos.
+ */
+export const UNFINISHED_TAE_STATUSES = ["pending", "syncing", "failed"] as const
+
+export type UnfinishedTaeStatus = (typeof UNFINISHED_TAE_STATUSES)[number]
+
+export function isUnfinishedTaeStatus(status: QueuedTaeSubmission["status"]): status is UnfinishedTaeStatus {
+  return (UNFINISHED_TAE_STATUSES as readonly string[]).includes(status)
+}
+
+export interface TaeQueueCounts {
+  /** Cargas que todavía viven en este dispositivo (pendientes + en vuelo + rechazadas). */
+  total: number
+  pending: number
+  syncing: number
+  /** Rechazadas por el servidor: no se van solas, hay que corregirlas o descartarlas. */
+  failed: number
+}
+
+/** Cuántas cargas de cada estado no terminado hay en este dispositivo. */
+export async function countTaeQueue(): Promise<TaeQueueCounts> {
   const db = await openDb()
   const tx = db.transaction(SUBMISSIONS, "readonly")
-  return requestValue(tx.objectStore(SUBMISSIONS).index("status").count("pending"))
+  const store = tx.objectStore(SUBMISSIONS)
+  const [pending = 0, syncing = 0, failed = 0] = await Promise.all(
+    UNFINISHED_TAE_STATUSES.map((status) => requestValue<number>(store.index("status").count(status))),
+  )
+  return { total: pending + syncing + failed, pending, syncing, failed }
+}
+
+/**
+ * Cargas que impiden cerrar el acceso local del dispositivo. Incluye las
+ * rechazadas: no se sincronizan solas y, si se borra el acceso, quedan sin
+ * forma de volver al formulario que las corregiría.
+ */
+export async function countPendingTaeSubmissions(): Promise<number> {
+  return (await countTaeQueue()).total
 }
 
 export async function updateTaeSubmission(id: string, patch: Partial<QueuedTaeSubmission>) {

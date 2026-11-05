@@ -176,7 +176,23 @@ async function getUnmappedTae(session: Session, filters: TaeCopecFilters) {
 }
 
 async function getUnmappedTct(session: Session, filters: TaeCopecFilters) {
-  const where = and(ilike(fuelConsumptionRecords.fuente, "Copec TCT%"), isNull(fuelConsumptionRecords.vehicleId), filters.worksiteId ? eq(fuelConsumptionRecords.worksiteId, filters.worksiteId) : undefined, filters.from ? gte(fuelConsumptionRecords.periodoHasta, filters.from) : undefined, filters.to ? lte(fuelConsumptionRecords.periodoDesde, filters.to) : undefined, worksiteScopeSql(session, fuelConsumptionRecords.worksiteId))
+  /*
+   * Auditoría 2026-11-05 (5.7): la tabla mapeada sólo suma registros TCT **100%
+   * contenidos** en el filtro (`tctFullyContained`), pero este aviso usaba
+   * solapamiento y sumaba los litros completos del registro. Un agregado del
+   * 25-ene al 5-feb con filtro de enero aportaba 0 L a la tabla y todos sus
+   * litros a «sin equipo asociado». Ahora el aviso usa el mismo criterio de
+   * contención: si el registro no entra entero en la ventana, no aparece en
+   * ninguno de los dos canales —ni sumando de más ni desapareciendo a medias—.
+   */
+  const where = and(
+    ilike(fuelConsumptionRecords.fuente, "Copec TCT%"),
+    isNull(fuelConsumptionRecords.vehicleId),
+    filters.worksiteId ? eq(fuelConsumptionRecords.worksiteId, filters.worksiteId) : undefined,
+    filters.from ? gte(fuelConsumptionRecords.periodoDesde, filters.from) : undefined,
+    filters.to ? lte(fuelConsumptionRecords.periodoHasta, filters.to) : undefined,
+    worksiteScopeSql(session, fuelConsumptionRecords.worksiteId),
+  )
   const [row] = await db.select({ records: sql<number>`count(*)`, liters: sql<number>`coalesce(sum(${fuelConsumptionRecords.cantidadUnidad}), 0)` }).from(fuelConsumptionRecords).where(where)
   return row ?? { records: 0, liters: 0 }
 }

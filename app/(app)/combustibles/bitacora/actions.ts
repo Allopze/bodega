@@ -43,7 +43,13 @@ type RequestReviewResult = { ok: true; markId: string } | { ok: false; message: 
  * caracteres) sobre una carga. Llega a la bandeja «Por revisar». Un pedido ya
  * abierto no se duplica; para volver a pedir, primero se retira o se resuelve.
  */
+const FUEL_LOG_SOURCES: readonly FuelLogSource[] = ["tae_pwa", "invoiced", "operation_manual"]
+
 export async function requestReviewAction(source: FuelLogSource, entityId: string, note: string): Promise<RequestReviewResult> {
+  // El tipo desaparece en runtime: un `source` inventado hacía que
+  // `resolveFuelLogEntity` llegara a un `switch` sin rama y reventara con
+  // TypeError en vez de responder un error de validación (6.7).
+  if (!FUEL_LOG_SOURCES.includes(source)) return { ok: false, message: "El origen de la carga no es válido." }
   let session
   try { session = await requirePermission("combustibles:view", FUEL_PATHS.cargas) }
   catch { return { ok: false, message: "No tienes permiso para pedir revisiones." } }

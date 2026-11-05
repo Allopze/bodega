@@ -24,6 +24,39 @@ function chileDaySql(column: AnyColumn): SQL {
 }
 
 /**
+ * Instante de un `text` ISO (`2026-04-01T01:10:00.000Z`) como `timestamptz`.
+ * Sólo cuando el texto trae hora: una fecha suelta (`2026-03-01`) es un día
+ * civil, no un instante, y pasarla por UTC la correría de día.
+ */
+function isoInstantSql(column: AnyColumn): SQL {
+  return sql`(case when ${column} ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}[T ]' then ${column}::timestamptz end)`
+}
+
+/**
+ * Mes «YYYY-MM» en hora de Chile de un `text` que guarda un instante ISO, como
+ * `fuel_provider_transactions.occurred_at` o `fuel_meter_readings.occurred_at`.
+ *
+ * `left(occurred_at, 7)` sobre el texto mezcla calendarios: una transacción del
+ * 31-mar 22:10 de Chile se guarda `2026-04-01T01:10Z` y caía en abril. Con hora,
+ * el texto se convierte a `timestamptz` y se lleva a hora de Chile; una fecha
+ * suelta ya es civil y se usa tal cual.
+ */
+export function isoTextMonthSql(column: AnyColumn): SQL<string> {
+  return sql<string>`case
+    when ${column} ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}[T ]' then to_char(${isoInstantSql(column)} at time zone 'America/Santiago', 'YYYY-MM')
+    when ${column} ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' then left(${column}, 7)
+  end`
+}
+
+/** Día civil chileno de un `text` ISO, con la misma regla que `isoTextMonthSql`. */
+export function isoTextDaySql(column: AnyColumn): SQL {
+  return sql`case
+    when ${column} ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}[T ]' then (${isoInstantSql(column)} at time zone 'America/Santiago')::date
+    when ${column} ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' then left(${column}, 10)::date
+  end`
+}
+
+/**
  * Período sobre un `timestamptz` (y su columna `month` opcional): el rango
  * `desde`/`hasta` manda sobre año + meses, igual que `periodSql` del módulo.
  */
@@ -38,15 +71,19 @@ export function timestampPeriodSql(filters: ControlFilters, column: AnyColumn, m
   return monthColumn ? inArray(monthColumn, keys) : inArray(chileMonthSql(column), keys)
 }
 
-/** Período sobre una columna de texto ISO (`2026-03-05T12:00:00Z`), como `fuel_provider_transactions.occurred_at`. */
+/**
+ * Período sobre una columna de texto ISO (`2026-03-05T12:00:00Z`), como
+ * `fuel_provider_transactions.occurred_at`: el día y el mes se leen en hora de
+ * Chile, igual que el resto de las vistas (D1 de la auditoría 2026-11-05).
+ */
 export function isoTextPeriodSql(filters: ControlFilters, column: AnyColumn): SQL {
   if (filters.from || filters.to) {
     return and(
-      filters.from ? sql`left(${column}, 10) >= ${filters.from}` : undefined,
-      filters.to ? sql`left(${column}, 10) <= ${filters.to}` : undefined,
+      filters.from ? sql`${isoTextDaySql(column)} >= ${filters.from}::date` : undefined,
+      filters.to ? sql`${isoTextDaySql(column)} <= ${filters.to}::date` : undefined,
     )!
   }
-  return inArray(sql`left(${column}, 7)`, selectedMonthKeys(filters))
+  return inArray(isoTextMonthSql(column), selectedMonthKeys(filters))
 }
 
 /** Un sello «falta» si es nulo o solo espacios. */

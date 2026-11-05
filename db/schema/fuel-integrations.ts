@@ -107,6 +107,8 @@ export const fuelProviderTransactions = pgTable("fuel_provider_transactions", {
   index("fuel_provider_transactions_occurred_idx").on(table.occurredAt),
   index("fuel_provider_transactions_source_plate_idx").on(table.sourcePlate),
   index("fuel_provider_transactions_document_idx").on(table.provider, table.sourceAccount, table.documentNumber),
+  // E7: la vasija es FK y se consulta al atribuir una tarjeta TAE a un estanque.
+  index("fuel_provider_transactions_storage_location_idx").on(table.storageLocationId),
 ])
 
 export const fuelProviderRejections = pgTable("fuel_provider_rejections", {
@@ -209,6 +211,15 @@ export const fuelProviderPeriodCoverage = pgTable("fuel_provider_period_coverage
   channel: text("channel").notNull(),
   product: text("product").notNull(),
   periodMonth: text("period_month").notNull(),
+  /**
+   * E6 (auditoría 2026-11-05, 4.1): `failed` no es terminal y `legitimate_empty`
+   * exige cero filas, así que un mes con filas inválidas quedaba en un estado
+   * que ni cierra ni deja avanzar el barrido. `closed_with_issues` cierra el
+   * mes con lo recibido y deja constancia en `evidence` (más
+   * `evidence_actor_user_id`), que ya existen y no se duplican con una columna
+   * nueva. La constante que lo trata como terminal vive en el código de
+   * cobertura (`lib/combustibles/copec-coverage.ts`), que ajusta el carril C.
+   */
   status: text("status").notNull().default("unknown"),
   sourceAvailability: text("source_availability").notNull().default("unknown"),
   syncRunId: text("sync_run_id"),
@@ -228,7 +239,7 @@ export const fuelProviderPeriodCoverage = pgTable("fuel_provider_period_coverage
   check("fuel_provider_coverage_provider_valid", sql`${table.provider} IN ('copec')`),
   check("fuel_provider_coverage_channel_valid", sql`${table.channel} IN ('TCT', 'TAE')`),
   check("fuel_provider_coverage_product_valid", sql`${table.product} IN ('diesel', 'bluemax')`),
-  check("fuel_provider_coverage_status_valid", sql`${table.status} IN ('unknown', 'incomplete', 'failed', 'complete', 'legitimate_empty')`),
+  check("fuel_provider_coverage_status_valid", sql`${table.status} IN ('unknown', 'incomplete', 'failed', 'complete', 'legitimate_empty', 'closed_with_issues')`),
   check("fuel_provider_coverage_source_valid", sql`${table.sourceAvailability} IN ('unknown', 'available', 'unavailable')`),
   check("fuel_provider_coverage_period_valid", sql`${table.periodMonth} ~ '^\\d{4}-(0[1-9]|1[0-2])-01$'`),
   check("fuel_provider_coverage_counts_valid", sql`${table.rowsReceived} >= 0 AND ${table.rowsAccepted} >= 0 AND ${table.rowsRejected} >= 0 AND ${table.rowsPending} >= 0`),
@@ -263,6 +274,9 @@ export const fuelProviderEventRevisions = pgTable("fuel_provider_event_revisions
   foreignKey({ name: "fuel_provider_event_rev_file_fk", columns: [table.sourceFileId], foreignColumns: [fuelProviderFiles.id] }),
   uniqueIndex("fuel_provider_event_revision_unique").on(table.transactionId, table.fingerprint, table.sourceFileId),
   index("fuel_provider_event_revision_observed_idx").on(table.transactionId, table.observedAt),
+  // E7: el archivo de evidencia es FK y se consulta para reconstruir la
+  // procedencia de una revisión.
+  index("fuel_provider_event_revisions_file_idx").on(table.sourceFileId),
 ])
 
 export const fuelProviderSyncRunsRelations = relations(fuelProviderSyncRuns, ({ one, many }) => ({

@@ -4,15 +4,19 @@ import { safeActionMessage } from "@/lib/action-error"
 
 import { z } from "zod"
 import { xlsxToBase64 } from "@/lib/reports/export-module/excel-builder"
-import { and, desc, eq, ilike, or, sql } from "drizzle-orm"
+import { and, desc, eq, ilike, inArray, or, sql } from "drizzle-orm"
 import { isNetworkError } from "@/lib/network-error"
 import { db } from "@/db"
 import { fuelStorageLocations, fuelTaeEvidence, fuelTaeLoadingPoints, fuelTaePublicLinks, fuelTaeSubmissions } from "@/db/schema"
 import { can, guardPermission, requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite, worksiteScopeSql } from "@/lib/auth/scope"
 import { createTaePublicLink, revokeTaePublicLink, reviewTaeSubmission } from "@/lib/services/fuel-tae"
+import { detectTaeAnomaliesInTx } from "@/lib/services/fuel-tae/anomalies"
+import { reevaluateSealChainOfNextLoad } from "@/lib/services/fuel-tae/review"
+import { retractSealMovements, restoreSealMovements } from "@/lib/combustibles/seal-history"
 import { auditResetDecisions } from "@/lib/combustibles/projection-audit"
 import { projectTaeSubmissions } from "@/lib/combustibles/control/projection"
+import { projectWithStaleDecisions } from "@/lib/combustibles/control/stale-decisions"
 import { LOADING_POINT_TYPE_LABELS } from "@/lib/combustibles/control/contracts"
 import { taeMeterCorrectionSchema, taeReviewSchema } from "@/lib/validation/fuel-tae"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
@@ -23,6 +27,8 @@ import { resolveExportFilterNames } from "@/lib/combustibles/export-filter-names
 import { taeStatusLabel, taeMeterSourceLabel } from "@/lib/combustibles/labels"
 import { formatDateTime, todayInChile} from "@/lib/utils"
 import { FUEL_PATHS } from "@/lib/combustibles/routes"
+import { taeSourcesForOrigins } from "@/lib/combustibles/fuel-log"
+import type { FuelLoadOriginSlug } from "@/lib/combustibles/fuel-log-shared"
 import { revalidateFuel } from "@/lib/combustibles/revalidate"
 
 const MAX_TAE_EXPORT_ROWS = 10_000
@@ -192,9 +198,68 @@ export async function updateTaeMeterReadingAction(input: {
       if (nextStatus !== submission.status) {
         await recordStatusChange({ entityType: "fuel_tae_submission", entityId: parsed.data.id, fromStatus: submission.status, toStatus: nextStatus, changedBy: guard.session.user.id, reason: parsed.data.reason }, tx)
       }
+      /*
+       * Auditoría 2026-11-05 (5.5): la corrección cambia la lectura y puede
+       * degradar la carga a `observed`, pero no llamaba al detector de
+       * anomalías: un caso que la corrección debía abrir o cerrar quedaba
+       * intacto. Se evalúa con la lectura ya corregida.
+       */
+      await detectTaeAnomaliesInTx(
+        { ...submission, meterReading: parsed.data.meterReading, meterType: parsed.data.meterType, status: nextStatus },
+        tx,
+        guard.session.user.id,
+        nextStatus,
+      )
+      /*
+       * 2.7/5.4: los movimientos de sello siguen al estado de la carga. Si la
+       * corrección la devuelve a `observed`, sus sellos dejan de contar (se
+       * marcan, no se borran); si sigue validada, se reactivan.
+       */
+      const wasValidated = submission.status === "validated"
+      const sealMovements = wasValidated
+        ? await restoreSealMovements(tx, [parsed.data.id])
+        : await retractSealMovements(tx, [parsed.data.id], { userId: guard.session.user.id, reason: `Lectura corregida: ${parsed.data.reason}`, now })
+      for (const movementId of sealMovements) {
+        await recordAudit({
+          userId: guard.session.user.id,
+          action: "update",
+          entityType: "fuel_seal_movement",
+          entityId: movementId,
+          oldState: { revertedAt: wasValidated ? now : null },
+          newState: { revertedAt: wasValidated ? null : now, status: nextStatus },
+          reason: wasValidated
+            ? "La lectura corregida mantiene la carga validada: el movimiento de sello se reactiva"
+            : "La lectura corregida devolvió la carga a observada: el movimiento de sello se retracta",
+          worksiteId: submission.worksiteId,
+        }, tx)
+      }
       // La serie de la carga sigue a la lectura corregida (y a la marca de reinicio).
-      const projection = await projectTaeSubmissions(tx, [parsed.data.id])
-      await auditResetDecisions(tx, projection.resetLoadIds, { userId: guard.session.user.id }, submission.worksiteId)
+      //
+      // Hallazgo 3.1 (carril A): la corrección cambia la serie, así que las
+      // decisiones ya tomadas sobre cargas posteriores se reabren si su base
+      // cambió — con su auditoría. `projectWithStaleDecisions` toma la foto antes
+      // del trabajo y reinicia después, en la misma transacción.
+      await projectWithStaleDecisions(
+        tx,
+        submission.vehicleId,
+        submission.loadedAt,
+        { userId: guard.session.user.id, userEmail: guard.session.user.email ?? undefined },
+        async () => {
+          const projection = await projectTaeSubmissions(tx, [parsed.data.id])
+          await auditResetDecisions(tx, projection.resetLoadIds, { userId: guard.session.user.id }, submission.worksiteId)
+        },
+      )
+      // 5.4: la «carga anterior» de la siguiente no cambió, pero su lectura sí
+      // puede haber cambiado de serie; la cadena de sellos se recalcula con la
+      // carga anterior real (idempotente si nada cambió).
+      if (submission.vehicleId) {
+        await reevaluateSealChainOfNextLoad(tx, {
+          vehicleId: submission.vehicleId,
+          afterLoadedAt: submission.loadedAt,
+          actorId: guard.session.user.id,
+          reason: `Se corrigió la lectura de la carga ${submission.loadedAt}: se reevaluó la cadena de sellos de la siguiente`,
+        })
+      }
     })
   } catch (error) {
     logger.error("[updateTaeMeterReadingAction]", error)
@@ -206,7 +271,7 @@ export async function updateTaeMeterReadingAction(input: {
   return { ok: true, message: nextStatus === "observed" && submission.status === "validated" ? "Lectura actualizada; la carga volvió a observada" : "Lectura actualizada" }
 }
 
-export type TaeExportFilters = { q?: string; from?: string; to?: string; worksiteId?: string; loadingPointId?: string; status?: string; seal?: string; evidence?: string }
+export type TaeExportFilters = { q?: string; from?: string; to?: string; worksiteId?: string; loadingPointId?: string; status?: string; seal?: string; evidence?: string; origins?: FuelLoadOriginSlug[] }
 
 export async function exportTaeSubmissionsXlsxAction(filters: TaeExportFilters = {}) {
   let session
@@ -223,6 +288,10 @@ export async function exportTaeSubmissionsXlsxAction(filters: TaeExportFilters =
     filters.worksiteId ? eq(fuelTaeSubmissions.worksiteId, filters.worksiteId) : undefined,
     filters.loadingPointId ? eq(fuelTaeSubmissions.loadingPointId, filters.loadingPointId) : undefined,
     status ? eq(fuelTaeSubmissions.status, status) : undefined,
+    // 6.5: el Excel debe respetar «Cómo llegó». Las filas TAE sólo pertenecen a
+    // los orígenes de terreno; si el filtro no incluye ninguno, no se exporta
+    // ninguna (la lista tampoco las muestra).
+    filters.origins?.length ? inArray(fuelTaeSubmissions.source, taeSourcesForOrigins(filters.origins)) : undefined,
     filters.seal === "missing" ? sql`(${fuelTaeSubmissions.removedSealNumber} is null or btrim(${fuelTaeSubmissions.removedSealNumber}) = '' or ${fuelTaeSubmissions.installedSealNumber} is null or btrim(${fuelTaeSubmissions.installedSealNumber}) = '')` : undefined,
     // Una carga registrada después (fecha pasada) tiene las fotos opcionales: «sin fotos» no es un defecto en ella.
     filters.evidence === "missing" ? sql`(${fuelTaeSubmissions.loadedAtSource} <> 'backdated' and (select count(distinct ${fuelTaeEvidence.kind}) from ${fuelTaeEvidence} where ${fuelTaeEvidence.submissionId} = ${fuelTaeSubmissions.id}) < 4)` : undefined,
@@ -299,6 +368,7 @@ export async function exportTaeSubmissionsXlsxAction(filters: TaeExportFilters =
       Faena: filters.worksiteId ? (names.worksiteId ?? filters.worksiteId) : undefined,
       "Punto de carga": filters.loadingPointId ? (names.loadingPointId ?? filters.loadingPointId) : undefined,
       Estado: status ? taeStatusLabel(status) : undefined,
+      "Cómo llegó": filters.origins?.length ? filters.origins.join(", ") : undefined,
       Sello: filters.seal === "missing" ? "Sello incompleto" : undefined,
       Fotos: filters.evidence === "missing" ? "Le faltan fotos" : undefined,
     },

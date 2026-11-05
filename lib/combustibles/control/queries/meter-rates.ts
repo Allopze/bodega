@@ -6,11 +6,12 @@ import { worksiteScopeSql } from "@/lib/auth/scope"
 import { monthsWithoutProviderData } from "@/lib/combustibles/copec-coverage"
 import { listCopecPeriodCoverage } from "@/lib/combustibles/copec-coverage-store"
 import { acceptedMeterResetSql } from "@/lib/combustibles/meter-reset-sql"
-import { buildMeterRateSeries, isPartialMonth, type MeterRateSeries, type RateReading, type RateVehicle } from "@/lib/combustibles/meter-rate-series"
+import { buildMeterRateSeries, chileMonthOf, isPartialMonth, type MeterRateSeries, type RateReading, type RateVehicle } from "@/lib/combustibles/meter-rate-series"
 import { maxMeterRatePerDayOf } from "@/lib/combustibles/meter-series"
 import type { PerformanceUnit } from "@/lib/combustibles/control/contracts"
 import { loadPerformanceControlContext } from "@/lib/combustibles/control/settings"
 import { mandanteWorksitesSql, type ControlFilters } from "@/lib/combustibles/control/filters"
+import { isoTextDaySql, isoTextMonthSql } from "./field-filters"
 import { todayInChile } from "@/lib/utils"
 
 /**
@@ -21,6 +22,11 @@ import { todayInChile } from "@/lib/utils"
  * Flota (`getFleetOverview`) y que la comparación de L/h. El método y sus límites
  * están en `lib/combustibles/meter-rate-series.ts`; acá sólo se leen las series, se
  * marcan los resets aceptados y los meses sin datos del proveedor, y se arma.
+ *
+ * `occurred_at` es texto UTC: el mes de cada lectura —para la ventana, para el
+ * hueco y para la serie— se lee en hora de Chile (hallazgo 3.3). Con `left(…, 7)`
+ * una lectura del 31-mar 22:10 de Chile (`2026-04-01T01:10Z`) se atribuía a abril
+ * y `monthsWithReadings` declaraba abril con datos.
  */
 
 /** Unidad en que rinde un equipo según su medidor: el odómetro da km/L y el horómetro, L/h. */
@@ -56,7 +62,7 @@ export async function getMeterRateSeries(
 
   // Un mes de más hacia atrás: su última lectura es la base del primer par de la ventana.
   const lookbackMonth = previousMonth(firstMonth)
-  const readingMonth = sql`left(${fuelMeterReadings.occurredAt}, 7)`
+  const readingMonth = isoTextMonthSql(fuelMeterReadings.occurredAt)
 
   const [rows, jumpRules, control] = await Promise.all([
     db.select({
@@ -75,7 +81,7 @@ export async function getMeterRateSeries(
       .where(and(
         eq(fuelMeterReadings.source, "copec_tct"),
         sql`${readingMonth} >= ${lookbackMonth}`,
-        sql`left(${fuelMeterReadings.occurredAt}, 10) <= ${to}`,
+        sql`${isoTextDaySql(fuelMeterReadings.occurredAt)} <= ${to}::date`,
         worksiteScopeSql(session, fuelVehicles.worksiteId, filters.worksiteId),
         filters.mandanteId ? sql`${fuelVehicles.worksiteId} in ${mandanteWorksitesSql(filters.mandanteId)}` : undefined,
       ))
@@ -116,7 +122,8 @@ export async function getMeterRateSeries(
   // salen del mismo informe de Copec, así que un mes con lecturas ya tiene respaldo aunque la cobertura no lo diga.
   // Se mira también el mes previo: un par que lo cruza no se puede usar.
   const coverage = await listCopecPeriodCoverage(`${lookbackMonth}-01`, to)
-  const monthsWithReadings = new Set(rows.map((row) => row.occurredAt.slice(0, 7)))
+  // El mes de una lectura es el de Chile, no el del texto UTC: si no, la del 31 de marzo por la noche «respalda» abril.
+  const monthsWithReadings = new Set(rows.map((row) => chileMonthOf(row.occurredAt)))
   const gapMonths = monthsWithoutProviderData([lookbackMonth, ...monthKeys], coverage, monthsWithReadings)
 
   const today = window.today ?? todayInChile()

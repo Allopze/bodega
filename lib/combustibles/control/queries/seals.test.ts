@@ -156,10 +156,10 @@ describe("getSealHistory — el último sello de cada equipo no es un problema",
     expect(rows.get("h-b2")).toMatchObject({ installedSeal: "0103", continuityBroken: false, isLatestForEquipment: true })
   })
 
-  it("una carga posterior sin validar no convierte el sello vigente en un problema", async () => {
+  it("una carga posterior sin validar se muestra, pero no reemplaza el sello vigente", async () => {
     const rows = byId(await getSealHistory(globalSession(), may))
     expect(rows.get("h-c1")).toMatchObject({ continuityBroken: false, isLatestForEquipment: true })
-    expect(rows.has("h-c2")).toBe(false)
+    expect(rows.get("h-c2")).toMatchObject({ isLatestForEquipment: false })
   })
 
   it("sin equipo asociado se sigue por la patente", async () => {

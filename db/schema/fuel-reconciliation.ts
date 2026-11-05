@@ -41,9 +41,23 @@ export const fuelReconciliationLinks = pgTable("fuel_reconciliation_links", {
   `),
   uniqueIndex("fuel_reconciliation_links_target_unique")
     .on(table.providerTransactionId, table.linkType, table.fuelLoadId, table.cycleMovementId, table.dteDocumentId),
+  /**
+   * E3 (auditoría 2026-11-05, 2.5): el único de destinos no puede cumplir su
+   * promesa cuando las tres columnas de destino son NULL —en `unmatched` y
+   * `ambiguous` lo son, y en un índice dos NULL son distintos—. El código lo
+   * compensaba con `DELETE` + `INSERT`, así que dos corridas concurrentes
+   * dejaban dos filas abiertas. Este índice parcial cubre exactamente esas
+   * filas: una por (transacción, tipo de vínculo) mientras siga sin resolverse.
+   */
+  uniqueIndex("fuel_reconciliation_links_open_unique")
+    .on(table.providerTransactionId, table.linkType)
+    .where(sql`${table.status} IN ('unmatched', 'ambiguous')`),
   index("fuel_reconciliation_links_transaction_idx").on(table.providerTransactionId),
   index("fuel_reconciliation_links_status_idx").on(table.status),
   index("fuel_reconciliation_links_dte_idx").on(table.dteDocumentId),
+  // E7: los destinos son FK y se consultan por separado en la conciliación.
+  index("fuel_reconciliation_links_fuel_load_idx").on(table.fuelLoadId),
+  index("fuel_reconciliation_links_cycle_movement_idx").on(table.cycleMovementId),
 ])
 
 export const fuelReconciliationLinksRelations = relations(fuelReconciliationLinks, ({ one }) => ({

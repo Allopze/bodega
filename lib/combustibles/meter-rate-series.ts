@@ -1,4 +1,4 @@
-import { MONTH_NAMES, countOf, formatQty } from "@/lib/utils"
+import { MONTH_NAMES, countOf, formatQty, todayInChile } from "@/lib/utils"
 import { PERFORMANCE_UNIT_LABELS, type PerformanceUnit } from "./control/contracts"
 import { globalRatio } from "./control/view-helpers"
 import { meterSeriesSegments, type MeterSeriesPoint } from "./meter-series"
@@ -20,7 +20,9 @@ import { meterSeriesSegments, type MeterSeriesPoint } from "./meter-series"
  * - **Qué pares valen** lo decide `meterSeriesSegments`, la misma regla con que el
  *   detector de anomalías objeta una lectura y con que Flota calcula el recorrido:
  *   un retroceso o un salto imposible no se suma, un reset aceptado parte la serie.
- * - **Qué mes es de un par**: el de su lectura final.
+ * - **Qué mes es de un par**: el de su lectura final, leído en hora de Chile.
+ *   `occurred_at` es texto UTC: una lectura del 31-mar 22:10 de Chile llega como
+ *   `2026-04-01T01:10Z` y pertenece a marzo, no a abril.
  * - **El mes es la razón de las sumas** (Σkm ÷ ΣL; ΣL ÷ Σh), nunca el promedio de
  *   las razones de cada tramo: el promedio de razones deja que una carga chica pese
  *   como una grande.
@@ -112,7 +114,25 @@ export interface BuildMeterRateInput {
   minSegments?: number
 }
 
-const monthOf = (instant: string) => instant.slice(0, 7)
+const monthOf = (instant: string) => chileMonthOf(instant)
+
+/**
+ * Día civil chileno (`YYYY-MM-DD`) de un instante ISO. `occurred_at` se guarda en
+ * UTC (`2026-04-01T01:10:00.000Z`), así que `slice(0, 10)` mide el día en UTC y
+ * mueve de día —y de mes— todo lo cargado después de las 20:00 de Chile. Una
+ * fecha suelta (`2026-03-01`) ya es un día civil y se respeta tal cual, igual que
+ * en `isoTextDaySql`.
+ */
+export function chileDayOf(instant: string): string {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(instant)) return instant
+  if (Number.isNaN(Date.parse(instant))) return instant.slice(0, 10)
+  return todayInChile(instant)
+}
+
+/** Mes civil chileno («YYYY-MM») de un instante ISO. */
+export function chileMonthOf(instant: string): string {
+  return chileDayOf(instant).slice(0, 7)
+}
 
 /** Meses estrictamente entre dos meses «YYYY-MM». */
 function monthsBetween(from: string, to: string): string[] {
@@ -136,7 +156,7 @@ export function buildMeterRateSeries(input: BuildMeterRateInput): Record<Perform
   const { vehicles, monthKeys, fromDate, gapMonths, partialMonth = null, limits, minSegments = MIN_RATE_SEGMENTS } = input
   const inWindow = new Set(monthKeys)
   /** ¿La lectura cae dentro de lo que se dibuja? El mes previo sólo es base del primer par. */
-  const inRange = (instant: string) => inWindow.has(monthOf(instant)) && (!fromDate || instant.slice(0, 10) >= fromDate)
+  const inRange = (instant: string) => inWindow.has(monthOf(instant)) && (!fromDate || chileDayOf(instant) >= fromDate)
   const buckets: Record<PerformanceUnit, Map<string, Bucket>> = { km_per_liter: new Map(), liters_per_hour: new Map() }
   const readings: Record<PerformanceUnit, number> = { km_per_liter: 0, liters_per_hour: 0 }
   const bucketOf = (unit: PerformanceUnit, month: string) => {

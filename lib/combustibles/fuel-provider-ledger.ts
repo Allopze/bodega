@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { and, desc, eq, lte, ne, sql } from "drizzle-orm"
+import { and, desc, eq, inArray, lt, lte, ne, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
   fuelProviderRejections,
@@ -8,6 +8,7 @@ import {
   fuelProviderTransactions,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
+import { recordAudit } from "@/lib/audit"
 import { fuelSupplierIdForProvider } from "./fuel-sources"
 import { fingerprintProviderRow, type ProviderValidationResult, type ProviderRowInput } from "./provider-validation"
 
@@ -195,6 +196,220 @@ export async function recordFuelProviderIssues(runId: string, issues: DurablePro
   return status === "pending" ? { pending: issues.length } : { rejected: issues.length }
 }
 
+/* ── Revisión de correcciones y filas rechazadas (C2 / 4.2) ───────────────── */
+
+/**
+ * Una fila abierta de `fuel_provider_rejections`: lo que una persona tiene que
+ * mirar (una corrección del proveedor, una fila inválida, una tarjeta sin
+ * estanque). Antes nadie las cerraba y la lista crecía sin techo, además de
+ * dejar el mes `incomplete` para siempre.
+ */
+export interface CopecOpenRejection {
+  id: string
+  sourceAccount: string
+  sourceRowKey: string
+  code: string
+  message: string
+  sourceProduct: string | null
+  sourcePlate: string | null
+  occurredAt: string | null
+  quantity: number | null
+  amount: number | null
+  status: "open"
+  createdAt: string
+  /**
+   * Es una propuesta de corrección del proveedor (`CORRECTION_REVIEW_CODES`).
+   * Sólo éstas se pueden aprobar; una fila inválida o una tarjeta sin estanque
+   * se marca como revisada (`dismissed`).
+   */
+  isCorrection: boolean
+}
+
+/** Códigos que son propuestas de corrección: su resolución cambia la evidencia. */
+export const CORRECTION_REVIEW_CODES = ["possible_provider_correction", "tae_guide_correction_review"] as const
+
+export function isCorrectionReviewCode(code: string): boolean {
+  return (CORRECTION_REVIEW_CODES as readonly string[]).includes(code)
+}
+
+export async function listOpenCopecRejections(options: { limit?: number } = {}): Promise<CopecOpenRejection[]> {
+  const rows = await db.query.fuelProviderRejections.findMany({
+    where: and(eq(fuelProviderRejections.provider, "copec"), eq(fuelProviderRejections.status, "open")),
+    orderBy: [desc(fuelProviderRejections.createdAt)],
+    limit: options.limit ?? 50,
+    columns: {
+      id: true,
+      sourceAccount: true,
+      sourceRowKey: true,
+      code: true,
+      message: true,
+      sourceProduct: true,
+      sourcePlate: true,
+      occurredAt: true,
+      quantity: true,
+      amount: true,
+      status: true,
+      createdAt: true,
+    },
+  })
+  return rows.map((row) => ({ ...row, status: "open" as const, isCorrection: isCorrectionReviewCode(row.code) }))
+}
+
+export interface RejectionResolution {
+  rejectionId: string
+  status: "resolved" | "dismissed"
+  /** Motivo obligatorio: queda en la bitácora y en la fila. */
+  reason: string
+  actorUserId: string
+  actorEmail?: string | null
+}
+
+/**
+ * Cierra una fila de revisión del proveedor con actor, motivo y auditoría.
+ *
+ * - `resolved`: la observación del proveedor es correcta y reemplaza la
+ *   evidencia previa. La próxima corrida la aplica —`importCopecPeriod` lee
+ *   esta decisión—, marca la carga original como `superseded` y proyecta la
+ *   nueva.
+ * - `dismissed`: se revisó y la evidencia original se mantiene. La próxima
+ *   corrida ignora la observación, que es lo que permite cerrar el mes.
+ *
+ * La transacción de revisión (`row:…:correction-review`) deja de estar
+ * `pending` en ambos casos: si siguiera pendiente, `rowsPending` del mes nunca
+ * bajaría y la pantalla seguiría pidiendo lo mismo.
+ */
+export async function resolveFuelProviderRejection(input: RejectionResolution): Promise<{ ok: true }> {
+  const reason = input.reason.trim()
+  if (reason.length < 10) throw new Error("Escribe el motivo de la decisión (al menos 10 caracteres)")
+  const [rejection] = await db.select().from(fuelProviderRejections).where(eq(fuelProviderRejections.id, input.rejectionId)).limit(1)
+  if (!rejection) throw new Error("La observación no existe")
+  if (rejection.status !== "open") throw new Error("La observación ya fue resuelta")
+  // Aprobar = la fila del proveedor reemplaza a la carga anterior. Eso sólo tiene
+  // sentido para una corrección: aprobar una fila inválida la marcaría
+  // `superseded` con `correction_approved` sin que haya nada que la reemplace.
+  if (input.status === "resolved" && !isCorrectionReviewCode(rejection.code)) {
+    throw new Error("Sólo una corrección del proveedor se puede aprobar; esta fila se marca como revisada")
+  }
+
+  const now = new Date().toISOString()
+  const account = rejection.sourceAccount
+  const reviewIdentity = `row:${rejection.provider}:${account}:${rejection.sourceRowKey}`
+  await db.transaction(async (tx) => {
+    await tx.update(fuelProviderRejections).set({
+      status: input.status,
+      resolvedBy: input.actorUserId,
+      resolvedAt: now,
+    }).where(eq(fuelProviderRejections.id, rejection.id))
+    // La observación deja de contar como trabajo pendiente del mes.
+    await tx.update(fuelProviderTransactions).set({
+      status: input.status === "resolved" ? "superseded" : "excluded",
+      resolutionCode: input.status === "resolved" ? "correction_approved" : "correction_dismissed",
+      resolutionMessage: reason,
+      updatedAt: now,
+    }).where(and(
+      eq(fuelProviderTransactions.provider, rejection.provider),
+      eq(fuelProviderTransactions.sourceAccount, account),
+      eq(fuelProviderTransactions.identityKey, reviewIdentity),
+      eq(fuelProviderTransactions.status, "pending"),
+    ))
+    await recordAudit({
+      userId: input.actorUserId,
+      userEmail: input.actorEmail ?? undefined,
+      action: "status_change",
+      entityType: "fuel_provider_rejection",
+      entityId: rejection.id,
+      entityCode: `${rejection.code} ${rejection.sourcePlate ?? rejection.sourceRowKey}`.slice(0, 120),
+      oldState: { status: rejection.status },
+      newState: { status: input.status, code: rejection.code, sourceAccount: account },
+      reason,
+    }, tx)
+  })
+  return { ok: true }
+}
+
+/**
+ * Marca cargas ya registradas como reemplazadas por una corrección aprobada.
+ *
+ * `superseded` es el estado del catálogo (`fuel_provider_transactions_status_valid`)
+ * y el que `priorCopecEvents` excluye: sin él, la corrección aplicada seguía
+ * comparándose contra la evidencia vieja y el mes no convergía (C2 / 4.2).
+ * Queda una revisión en `fuel_provider_event_revisions` para poder auditar qué
+ * decía la fila reemplazada.
+ */
+export async function markCopecEventsSuperseded(
+  transactionIds: string[],
+  context: { reason: string; actorUserId?: string; runId?: string },
+): Promise<number> {
+  const ids = [...new Set(transactionIds)]
+  if (ids.length === 0) return 0
+  const rows = await db.select({
+    id: fuelProviderTransactions.id,
+    syncRunId: fuelProviderTransactions.syncRunId,
+    fingerprint: fuelProviderTransactions.fingerprint,
+    quantity: fuelProviderTransactions.quantity,
+    unitPrice: fuelProviderTransactions.unitPrice,
+    amount: fuelProviderTransactions.amount,
+    status: fuelProviderTransactions.status,
+    payloadHash: fuelProviderTransactions.payloadHash,
+    rawPayload: fuelProviderTransactions.rawPayload,
+  }).from(fuelProviderTransactions).where(inArray(fuelProviderTransactions.id, ids))
+  let updated = 0
+  for (const row of rows) {
+    await db.update(fuelProviderTransactions).set({
+      status: "superseded",
+      resolutionCode: "replaced_by_correction",
+      resolutionMessage: context.reason,
+      updatedAt: new Date().toISOString(),
+    }).where(and(eq(fuelProviderTransactions.id, row.id), ne(fuelProviderTransactions.status, "superseded")))
+    // Una fila `superseded` no se puede volver a versionar con la misma huella
+    // (índice único por transacción+huella+archivo); el `onConflictDoNothing`
+    // deja constancia sólo la primera vez, que es cuando importa.
+    await db.insert(fuelProviderEventRevisions).values({
+      id: nanoid(),
+      transactionId: row.id,
+      syncRunId: context.runId ?? row.syncRunId,
+      sourceFileId: null,
+      fingerprint: row.fingerprint,
+      quantity: row.quantity,
+      unitPrice: row.unitPrice,
+      amount: row.amount,
+      amountBasis: "reported",
+      status: "superseded",
+      payloadHash: row.payloadHash,
+      rawPayload: row.rawPayload,
+    }).onConflictDoNothing()
+    updated++
+  }
+  return updated
+}
+
+/**
+ * Cierra las corridas que quedaron `running` porque el proceso murió antes del
+ * `catch` (C7 / 4.7). No borra nada: las deja `failed` con el motivo, para que
+ * la pantalla deje de decir «sincronizando ahora» y el operador vea que ese mes
+ * se tiene que reintentar.
+ */
+export async function closeStaleFuelProviderSyncRuns(input: { provider: "copec"; olderThanMs: number; now?: number }): Promise<number> {
+  const cutoff = new Date((input.now ?? Date.now()) - input.olderThanMs).toISOString()
+  const stale = await db.select({ id: fuelProviderSyncRuns.id, requestedFrom: fuelProviderSyncRuns.requestedFrom })
+    .from(fuelProviderSyncRuns)
+    .where(and(
+      eq(fuelProviderSyncRuns.provider, input.provider),
+      eq(fuelProviderSyncRuns.status, "running"),
+      lt(fuelProviderSyncRuns.startedAt, cutoff),
+    ))
+  let closed = 0
+  for (const run of stale) {
+    const [updated] = await db.update(fuelProviderSyncRuns).set({
+      status: "failed",
+      finishedAt: new Date().toISOString(),
+      error: "La corrida quedó abierta: el proceso se interrumpió antes de terminarla. Vuelve a sincronizar ese mes.",
+    }).where(and(eq(fuelProviderSyncRuns.id, run.id), eq(fuelProviderSyncRuns.status, "running"))).returning({ id: fuelProviderSyncRuns.id })
+    if (updated) closed++
+  }
+  return closed
+}
+
 export interface ProviderRowResolution {
   worksiteId?: string | null
   vehicleId?: string | null
@@ -348,6 +563,40 @@ export async function recordFuelProviderValidation(
   return { accepted, rejected, pending, excluded }
 }
 
+export interface AffectedRunRow {
+  sourceAccount: string
+  sourcePlate: string | null
+  occurredAt: string | null
+  quantity: number | null
+  amount: number | null
+  identityKey: string
+  granularity: string
+}
+
+/** Litros y monto afectados de una corrida, sin contar dos veces la misma carga (4.10). */
+export function affectedRunImpact(rows: readonly AffectedRunRow[]): { affectedQuantity: number; affectedAmount: number } {
+  const plateKey = (row: AffectedRunRow) => `${row.sourceAccount}|${row.sourcePlate ?? ""}`
+  const platesWithDetail = new Set(rows.filter((row) => row.granularity !== "period_aggregate").map(plateKey))
+  const counted = rows.filter((row) => row.granularity !== "period_aggregate" || !platesWithDetail.has(plateKey(row)))
+  // Por valor, cuántas filas hay en cada espacio de identidad (`row:` / `external:` …).
+  const byValue = new Map<string, { quantity: number; amount: number; perNamespace: Map<string, number> }>()
+  for (const row of counted) {
+    const key = `${row.sourceAccount}|${row.sourcePlate ?? ""}|${row.occurredAt ?? ""}|${row.quantity ?? ""}|${row.amount ?? ""}`
+    const namespace = row.identityKey.split(":", 1)[0] ?? ""
+    const entry = byValue.get(key) ?? { quantity: row.quantity ?? 0, amount: row.amount ?? 0, perNamespace: new Map<string, number>() }
+    entry.perNamespace.set(namespace, (entry.perNamespace.get(namespace) ?? 0) + 1)
+    byValue.set(key, entry)
+  }
+  let affectedQuantity = 0
+  let affectedAmount = 0
+  for (const entry of byValue.values()) {
+    const times = Math.max(...entry.perNamespace.values())
+    affectedQuantity += entry.quantity * times
+    affectedAmount += entry.amount * times
+  }
+  return { affectedQuantity, affectedAmount }
+}
+
 export async function finishFuelProviderSyncRun(
   runId: string,
   input: {
@@ -364,10 +613,28 @@ export async function finishFuelProviderSyncRun(
     error?: string | null
   },
 ) {
-  const [affected] = await db.select({
-    quantity: sql<number>`coalesce(sum(case when ${fuelProviderTransactions.status} in ('pending', 'rejected') then coalesce(${fuelProviderTransactions.quantity}, 0) else 0 end), 0)`,
-    amount: sql<number>`coalesce(sum(case when ${fuelProviderTransactions.status} in ('pending', 'rejected') then coalesce(${fuelProviderTransactions.amount}, 0) else 0 end), 0)`,
-  }).from(fuelProviderTransactions).where(eq(fuelProviderTransactions.syncRunId, runId))
+  // C10 / 4.10: el impacto de la corrida no puede contar dos veces los mismos litros.
+  // - Una tarjeta TAE sin estanque deja DOS filas pendientes con los mismos
+  //   litros y monto (`row:copec:tae:*` y `external:<guía>`): son dos espacios de
+  //   identidad que describen la misma carga. Se cuenta una vez por valor, pero
+  //   dentro de un mismo espacio cada fila cuenta: dos cargas idénticas de verdad
+  //   (ocurrencia 1 y 2 de la misma firma) siguen siendo dos.
+  // - Con detalle TCT, el agregado mensual de una patente y sus transacciones
+  //   quedan pendientes en la misma corrida: el agregado es la suma de ellas, así
+  //   que sólo cuenta si esa patente no trajo transacciones.
+  const affectedRows = await db.select({
+    sourceAccount: fuelProviderTransactions.sourceAccount,
+    sourcePlate: fuelProviderTransactions.sourcePlate,
+    occurredAt: fuelProviderTransactions.occurredAt,
+    quantity: fuelProviderTransactions.quantity,
+    amount: fuelProviderTransactions.amount,
+    identityKey: fuelProviderTransactions.identityKey,
+    granularity: fuelProviderTransactions.granularity,
+  }).from(fuelProviderTransactions).where(and(
+    eq(fuelProviderTransactions.syncRunId, runId),
+    inArray(fuelProviderTransactions.status, ["pending", "rejected"]),
+  ))
+  const { affectedQuantity, affectedAmount } = affectedRunImpact(affectedRows)
   const [run] = await db.update(fuelProviderSyncRuns).set({
     status: input.status,
     receivedFrom: input.receivedFrom,
@@ -379,8 +646,8 @@ export async function finishFuelProviderSyncRun(
     rowsRejected: input.rowsRejected,
     rowsPending: input.rowsPending,
     rowsReprocessed: input.rowsReprocessed ?? 0,
-    affectedQuantity: Number(affected?.quantity ?? 0),
-    affectedAmount: Number(affected?.amount ?? 0),
+    affectedQuantity: Math.round(affectedQuantity * 10_000) / 10_000,
+    affectedAmount: Math.round(affectedAmount * 100) / 100,
     error: input.error ?? null,
     finishedAt: new Date().toISOString(),
   }).where(and(eq(fuelProviderSyncRuns.id, runId), eq(fuelProviderSyncRuns.status, "running"))).returning({ id: fuelProviderSyncRuns.id })

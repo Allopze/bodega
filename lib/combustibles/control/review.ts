@@ -5,7 +5,9 @@ import { fuelEquipmentLoads, fuelReviewMarks } from "@/db/schema"
 import { recordAudit } from "@/lib/audit"
 import { can } from "@/lib/auth/can"
 import { canAccessWorksite, isGlobalRole } from "@/lib/auth/scope"
-import { recomputeVehicles, recomputeVehicleSeries } from "./projection-series"
+import { lockVehicleSeries, lockVehiclesSeries, recomputeVehicleSeries } from "./projection-series"
+import { projectWithStaleDecisions } from "./stale-decisions"
+import { loadPerformanceControlContext } from "./settings"
 
 /**
  * Decisión humana sobre una carga marcada (atípica, retroceso de medidor,
@@ -36,10 +38,20 @@ export async function decideFlaggedLoad(
   }
 
   return db.transaction(async (tx) => {
+    // El candado del equipo se toma ANTES de bloquear la fila: el orden del
+    // módulo es equipo → carga → serie, y una revisión que bloqueara la carga
+    // esperando el equipo se cruzaría con un alta que tiene el equipo y espera
+    // esa carga. La lectura previa no bloquea: sólo sirve para saber el equipo.
+    const [head] = await tx.select({ vehicleId: fuelEquipmentLoads.vehicleId })
+      .from(fuelEquipmentLoads)
+      .where(eq(fuelEquipmentLoads.id, input.loadId))
+    if (head?.vehicleId) await lockVehicleSeries(tx, head.vehicleId)
+
     const [load] = await tx.select({
       id: fuelEquipmentLoads.id,
       worksiteId: fuelEquipmentLoads.worksiteId,
       vehicleId: fuelEquipmentLoads.vehicleId,
+      occurredAt: fuelEquipmentLoads.occurredAt,
       reviewStatus: fuelEquipmentLoads.reviewStatus,
       flagReasons: fuelEquipmentLoads.flagReasons,
       duplicateOfId: fuelEquipmentLoads.duplicateOfId,
@@ -58,6 +70,8 @@ export async function decideFlaggedLoad(
     if (load.reviewStatus !== "flagged") {
       return { ok: false as const, message: "La carga ya no está en revisión (otra persona pudo decidirla)" }
     }
+    // La proyección pudo mover la carga de equipo entre la lectura previa y el bloqueo.
+    if (load.vehicleId && load.vehicleId !== head?.vehicleId) await lockVehicleSeries(tx, load.vehicleId)
 
     const reviewStatus = input.decision === "approve" ? "approved" : "rejected"
     const now = new Date().toISOString()
@@ -69,21 +83,32 @@ export async function decideFlaggedLoad(
       // Aprobar una duplicada = «no es duplicada»: vuelve a la serie.
       duplicateOfId: input.decision === "approve" ? null : load.duplicateOfId,
     }
-    await tx.update(fuelEquipmentLoads).set({ ...next, updatedAt: now }).where(eq(fuelEquipmentLoads.id, load.id))
-
-    await recordAudit({
-      userId: session.user.id,
-      userEmail: session.user.email ?? undefined,
-      action: "status_change",
-      entityType: "fuel_equipment_load",
-      entityId: load.id,
-      oldState: { reviewStatus: load.reviewStatus, flagReasons: load.flagReasons, duplicateOfId: load.duplicateOfId },
-      newState: { reviewStatus, flagReasons: load.flagReasons, duplicateOfId: next.duplicateOfId, reviewedBy: session.user.id, reviewedAt: now },
-      reason: note,
-      worksiteId: load.worksiteId,
-    }, tx)
-
-    if (load.vehicleId) await recomputeVehicleSeries(tx, load.vehicleId)
+    // La decisión va dentro del trabajo: la foto de las decisiones siguientes se
+    // toma ANTES de escribir, o la propia carga recién decidida entraría en ella.
+    const vehicleId = load.vehicleId
+    await projectWithStaleDecisions(
+      tx,
+      vehicleId,
+      load.occurredAt,
+      { userId: session.user.id, userEmail: session.user.email ?? undefined },
+      async () => {
+        await tx.update(fuelEquipmentLoads).set({ ...next, updatedAt: now }).where(eq(fuelEquipmentLoads.id, load.id))
+        await recordAudit({
+          userId: session.user.id,
+          userEmail: session.user.email ?? undefined,
+          action: "status_change",
+          entityType: "fuel_equipment_load",
+          entityId: load.id,
+          oldState: { reviewStatus: load.reviewStatus, flagReasons: load.flagReasons, duplicateOfId: load.duplicateOfId },
+          newState: { reviewStatus, flagReasons: load.flagReasons, duplicateOfId: next.duplicateOfId, reviewedBy: session.user.id, reviewedAt: now },
+          reason: note,
+          worksiteId: load.worksiteId,
+        }, tx)
+        // La decisión saca o mete la carga en la serie: las cargas siguientes del
+        // equipo cambiaron de base, así que sus decisiones se reabren si corresponde.
+        if (vehicleId) await recomputeVehicleSeries(tx, vehicleId)
+      },
+    )
     return { ok: true as const }
   })
 }
@@ -127,15 +152,24 @@ export async function decideFlaggedLoads(
   if (input.decision !== "approve" && input.decision !== "reject") return { ok: false, message: "Decisión no reconocida" }
   const note = checkNote(input.note)
   if (!note.ok) return note
+  const noteText = note.note
   const loadIds = [...new Set((input.loadIds ?? []).filter((id): id is string => typeof id === "string" && id.trim() !== ""))]
   if (loadIds.length === 0) return { ok: false, message: "Elige al menos una carga" }
   if (loadIds.length > MAX_BATCH_DECISION) return { ok: false, message: `Decide hasta ${MAX_BATCH_DECISION} cargas por vez` }
 
   return db.transaction(async (tx) => {
+    // Candado por equipo antes de bloquear las filas (equipo → carga → serie),
+    // en orden estable: dos decisiones en lote que se cruzan no se bloquean en cruz.
+    const heads = await tx.select({ vehicleId: fuelEquipmentLoads.vehicleId })
+      .from(fuelEquipmentLoads)
+      .where(inArray(fuelEquipmentLoads.id, loadIds))
+    await lockVehiclesSeries(tx, heads.flatMap((row) => (row.vehicleId ? [row.vehicleId] : [])))
+
     const loads = await tx.select({
       id: fuelEquipmentLoads.id,
       worksiteId: fuelEquipmentLoads.worksiteId,
       vehicleId: fuelEquipmentLoads.vehicleId,
+      occurredAt: fuelEquipmentLoads.occurredAt,
       reviewStatus: fuelEquipmentLoads.reviewStatus,
       flagReasons: fuelEquipmentLoads.flagReasons,
       duplicateOfId: fuelEquipmentLoads.duplicateOfId,
@@ -153,15 +187,18 @@ export async function decideFlaggedLoads(
 
     const reviewStatus = input.decision === "approve" ? "approved" : "rejected"
     const now = new Date().toISOString()
-    let skipped = 0
-    const vehicleIds = new Set<string>()
-    const worksiteIds = new Set<string>()
+    // Una carga que alguien más ya decidió, o que se anuló, se omite; el resto
+    // se decide aunque la selección venga con alguna vencida.
+    const decidable = loads.filter((load) => !load.voidedAt && load.reviewStatus === "flagged")
+    const skipped = loads.length - decidable.length
+    if (decidable.length === 0) {
+      return { ok: false as const, message: loads.length === 1 ? "La carga ya no está por decidir (otra persona pudo decidirla)" : "Ninguna de las cargas seguía por decidir (otra persona pudo decidirlas)" }
+    }
 
-    for (const load of loads) {
-      if (load.voidedAt || load.reviewStatus !== "flagged") { skipped += 1; continue }
+    const decide = async (load: (typeof decidable)[number]) => {
       const duplicateOfId = input.decision === "approve" ? null : load.duplicateOfId
       await tx.update(fuelEquipmentLoads)
-        .set({ reviewStatus, reviewNote: note.note, reviewedBy: session.user.id, reviewedAt: now, duplicateOfId, updatedAt: now })
+        .set({ reviewStatus, reviewNote: noteText, reviewedBy: session.user.id, reviewedAt: now, duplicateOfId, updatedAt: now })
         .where(and(eq(fuelEquipmentLoads.id, load.id), eq(fuelEquipmentLoads.reviewStatus, "flagged")))
       await recordAudit({
         userId: session.user.id,
@@ -171,18 +208,36 @@ export async function decideFlaggedLoads(
         entityId: load.id,
         oldState: { reviewStatus: load.reviewStatus, flagReasons: load.flagReasons, duplicateOfId: load.duplicateOfId },
         newState: { reviewStatus, flagReasons: load.flagReasons, duplicateOfId, reviewedBy: session.user.id, reviewedAt: now, batch: loadIds.length > 1 },
-        reason: note.note,
+        reason: noteText,
         worksiteId: load.worksiteId,
       }, tx)
-      if (load.vehicleId) vehicleIds.add(load.vehicleId)
-      worksiteIds.add(load.worksiteId)
     }
 
-    if (skipped === loads.length) {
-      return { ok: false as const, message: loads.length === 1 ? "La carga ya no está por decidir (otra persona pudo decidirla)" : "Ninguna de las cargas seguía por decidir (otra persona pudo decidirlas)" }
+    // Una vuelta por equipo: decidir cambia la serie de las cargas posteriores
+    // del mismo equipo, y esas decisiones también se reabren si cambiaron de base.
+    const byVehicle = new Map<string | null, typeof decidable>()
+    for (const load of decidable) {
+      const key = load.vehicleId
+      byVehicle.set(key, [...(byVehicle.get(key) ?? []), load])
     }
-    await recomputeVehicles(tx, vehicleIds)
-    return { ok: true as const, decided: loads.length - skipped, skipped, worksiteIds: [...worksiteIds] }
+    const context = await loadPerformanceControlContext(tx)
+    const worksiteIds = new Set<string>()
+    for (const [vehicleId, vehicleLoads] of byVehicle) {
+      // Desde la más antigua del lote: lo anterior a ella no cambia.
+      const after = vehicleLoads.reduce((min, load) => (load.occurredAt < min ? load.occurredAt : min), vehicleLoads[0]!.occurredAt)
+      for (const load of vehicleLoads) worksiteIds.add(load.worksiteId)
+      await projectWithStaleDecisions(
+        tx,
+        vehicleId,
+        after,
+        { userId: session.user.id, userEmail: session.user.email ?? undefined },
+        async () => {
+          for (const load of vehicleLoads) await decide(load)
+          if (vehicleId) await recomputeVehicleSeries(tx, vehicleId, context)
+        },
+      )
+    }
+    return { ok: true as const, decided: decidable.length, skipped, worksiteIds: [...worksiteIds] }
   })
 }
 
@@ -213,10 +268,18 @@ export async function reopenFlaggedDecision(
   if (typeof input.loadId !== "string" || input.loadId.trim() === "") return { ok: false, message: "Falta la carga" }
 
   return db.transaction(async (tx) => {
+    // Equipo primero (ver `lockVehicleSeries`): deshacer una decisión también
+    // mueve la serie de las cargas siguientes.
+    const [head] = await tx.select({ vehicleId: fuelEquipmentLoads.vehicleId })
+      .from(fuelEquipmentLoads)
+      .where(eq(fuelEquipmentLoads.id, input.loadId))
+    if (head?.vehicleId) await lockVehicleSeries(tx, head.vehicleId)
+
     const [load] = await tx.select({
       id: fuelEquipmentLoads.id,
       worksiteId: fuelEquipmentLoads.worksiteId,
       vehicleId: fuelEquipmentLoads.vehicleId,
+      occurredAt: fuelEquipmentLoads.occurredAt,
       reviewStatus: fuelEquipmentLoads.reviewStatus,
       reviewNote: fuelEquipmentLoads.reviewNote,
       reviewedBy: fuelEquipmentLoads.reviewedBy,
@@ -237,28 +300,38 @@ export async function reopenFlaggedDecision(
     if (load.reviewStatus !== "approved" && load.reviewStatus !== "rejected") {
       return { ok: false as const, message: "La carga no tiene una decisión que deshacer (otra persona pudo deshacerla)" }
     }
+    // La proyección pudo mover la carga de equipo entre la lectura previa y el bloqueo.
+    if (load.vehicleId && load.vehicleId !== head?.vehicleId) await lockVehicleSeries(tx, load.vehicleId)
 
     const now = new Date().toISOString()
-    await tx.update(fuelEquipmentLoads)
-      .set({ reviewStatus: "ok", reviewNote: null, reviewedBy: null, reviewedAt: null, updatedAt: now })
-      .where(eq(fuelEquipmentLoads.id, load.id))
-
     // Con equipo, la serie decide si la carga vuelve a marcarse. Sin equipo no hay serie
     // y las marcas guardadas (equipo sin ficha, fecha pasada) siguen mandando.
     let finalStatus: "ok" | "flagged" = load.flagReasons.length > 0 ? "flagged" : "ok"
     let finalFlags: string[] = load.flagReasons
     let finalDuplicateOfId: string | null = load.duplicateOfId
-    if (load.vehicleId) {
-      await recomputeVehicleSeries(tx, load.vehicleId)
-      const [after] = await tx.select({
-        reviewStatus: fuelEquipmentLoads.reviewStatus,
-        flagReasons: fuelEquipmentLoads.flagReasons,
-        duplicateOfId: fuelEquipmentLoads.duplicateOfId,
-      }).from(fuelEquipmentLoads).where(eq(fuelEquipmentLoads.id, load.id)).limit(1)
-      finalStatus = after?.reviewStatus === "flagged" ? "flagged" : "ok"
-      finalFlags = after?.flagReasons ?? []
-      finalDuplicateOfId = after?.duplicateOfId ?? null
-    } else if (finalStatus === "flagged") {
+    const vehicleId = load.vehicleId
+    await projectWithStaleDecisions(
+      tx,
+      vehicleId,
+      load.occurredAt,
+      { userId: session.user.id, userEmail: session.user.email ?? undefined },
+      async () => {
+        await tx.update(fuelEquipmentLoads)
+          .set({ reviewStatus: "ok", reviewNote: null, reviewedBy: null, reviewedAt: null, updatedAt: now })
+          .where(eq(fuelEquipmentLoads.id, load.id))
+        if (!vehicleId) return
+        await recomputeVehicleSeries(tx, vehicleId)
+        const [after] = await tx.select({
+          reviewStatus: fuelEquipmentLoads.reviewStatus,
+          flagReasons: fuelEquipmentLoads.flagReasons,
+          duplicateOfId: fuelEquipmentLoads.duplicateOfId,
+        }).from(fuelEquipmentLoads).where(eq(fuelEquipmentLoads.id, load.id)).limit(1)
+        finalStatus = after?.reviewStatus === "flagged" ? "flagged" : "ok"
+        finalFlags = after?.flagReasons ?? []
+        finalDuplicateOfId = after?.duplicateOfId ?? null
+      },
+    )
+    if (!vehicleId && finalStatus === "flagged") {
       await tx.update(fuelEquipmentLoads).set({ reviewStatus: "flagged" }).where(eq(fuelEquipmentLoads.id, load.id))
     }
 

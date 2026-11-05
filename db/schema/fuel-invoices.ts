@@ -1,5 +1,5 @@
 import { relations, sql } from "drizzle-orm"
-import { pgTable, text, numeric, timestamp, boolean, check, index } from "drizzle-orm/pg-core"
+import { pgTable, text, numeric, timestamp, boolean, check, index, uniqueIndex } from "drizzle-orm/pg-core"
 import { users } from "./users"
 import { worksites } from "./worksites"
 import { fuelVehicles } from "./fuel-vehicles"
@@ -15,7 +15,13 @@ import { fuelProducts } from "./fuel-products"
 /* ── Fuel Loads (carga individual de combustible) ────────────────────────── */
 export const fuelLoads = pgTable("fuel_loads", {
   id:             text("id").primaryKey(),
-  statementId:    text("statement_id"),                          // nullable, vincula a cuenta corriente
+  /**
+   * E7 (auditoría 2026-11-05): la carga se imputa a la cuenta corriente
+   * mensual del proveedor. La columna existía sin FK, así que un id huérfano
+   * dejaba la carga "imputada" a un documento que no existe. Si la cuenta se
+   * borra, la carga sobrevive sin imputación (`SET NULL`) en vez de perderse.
+   */
+  statementId:    text("statement_id").references(() => fuelMonthlyStatements.id, { onDelete: "set null" }),
   loadDate:       text("load_date").notNull(),                   // "2026-01-15"
   month:          text("month").notNull(),                       // "2026-01" (para agrupar)
   serviceType:    text("service_type").notNull(),                // TCT | TAE
@@ -96,7 +102,12 @@ export const fuelMonthlyStatements = pgTable("fuel_monthly_statements", {
   check("fuel_statements_status_valid", sql`
     ${table.status} IN ('open', 'partial', 'paid', 'overdue', 'cancelled')
   `),
-  index("fuel_statements_month_supplier_idx").on(table.month, table.fuelSupplierId),
+  /**
+   * E7 (auditoría 2026-11-05): una cuenta corriente por (mes, proveedor). Sin
+   * esta llave, `fuel_loads.statement_id` no puede decidir a qué cuenta imputar
+   * una carga cuando hay dos filas para el mismo mes y proveedor.
+   */
+  uniqueIndex("fuel_statements_month_supplier_unique").on(table.month, table.fuelSupplierId),
   index("fuel_statements_status_idx").on(table.status),
 ])
 
