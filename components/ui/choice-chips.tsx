@@ -115,7 +115,9 @@ export function ChoiceChips({
   return (
     <div
       role="group"
-      aria-invalid={invalid || undefined}
+      // `aria-invalid` no aplica a `role="group"`: el error lo anuncia el texto
+      // del `Field`, enlazado por `aria-describedby`.
+      data-invalid={invalid || undefined}
       className={cn("flex flex-col gap-3", className)}
       {...aria}
     >

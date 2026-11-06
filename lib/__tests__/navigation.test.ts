@@ -298,6 +298,7 @@ describe("sidebar navigation", () => {
     expect(area?.items.map((item) => [item.group ?? null, item.label])).toEqual([
       ["Seguimiento", "Panel operacional"],
       ["Flota", "Vehículos"],
+      ["Flota", "Conductores"],
       ["Flota", "Monitoreo GPS"],
       ["Mantención", "Órdenes de trabajo"],
       ["Mantención", "Panel"],

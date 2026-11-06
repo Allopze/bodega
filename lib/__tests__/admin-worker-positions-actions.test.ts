@@ -149,7 +149,7 @@ describe("acciones del catálogo de cargos", () => {
       await updateWorkerPositionAction(previous, editForm())
 
       expect(mockUpdatePosition).toHaveBeenCalledTimes(1)
-      const [, input] = mockUpdatePosition.mock.calls[0]
+      const [, input] = mockUpdatePosition.mock.calls[0] ?? []
       // `undefined` = ausente: el servicio no escribe la columna.
       expect(input.requiredLicenseClasses).toBeUndefined()
     })

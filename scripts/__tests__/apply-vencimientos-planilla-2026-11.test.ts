@@ -61,7 +61,7 @@ const MACHINES: MachineInput[] = [
   ["Teno", "Camión", "KA-88", "LOST-1", date("2099-01-01"), date("2099-01-01"), date("2099-01-01")],
   ["Biodiversa", "Camión", "KA-66", "REP-1", date("2099-01-01"), date("2099-01-01"), date("2099-01-01")],
   ["Biodiversa", "Camión", "KA-67", "REP-1", date("2099-01-01"), date("2099-01-01"), date("2099-01-01")],
-  ["Biodiversa", "Grúa", "KA-55", "GRUA-1", date("2099-01-01"), date("2099-01-01"), date("2099-01-01")],
+  ["Biodiversa", "Montacargas", "KA-55", "GRUA-1", date("2099-01-01"), date("2099-01-01"), date("2099-01-01")],
   ["Biodiversa", "Camión", "KA-44", null, date("2099-01-01"), date("2099-01-01"), date("2099-01-01")],
 ]
 
