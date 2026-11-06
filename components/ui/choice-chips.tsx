@@ -44,13 +44,15 @@ export interface ChoiceChipsProps {
  * lector anuncia «A4, Transporte de carga simple…, presionado». El estado no
  * depende del color: la opción marcada lleva un check.
  */
+const NO_SUGGESTIONS: readonly string[] = []
+
 export function ChoiceChips({
   options,
   value,
   onChange,
   name,
   groups,
-  suggested = [],
+  suggested = NO_SUGGESTIONS,
   disabled,
   invalid,
   className,
