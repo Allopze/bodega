@@ -487,6 +487,25 @@ describe("planilla de vencimientos 2026-11", () => {
     expect(report.review.filter((note) => note.kind === "clase_insuficiente")).toHaveLength(0)
   }, 60_000)
 
+  it("corrige la patente mal escrita en Chome en vez de crear otro equipo, y conserva su historia", async () => {
+    await inMemoryDb.insert(schema.fuelVehicles).values({ id: "v-typo", plate: "DPDH-67", code: "KA-90", type: "camion", equipmentTypeId: "fet-camion", worksiteId: "w-mas" })
+    const machines: MachineInput[] = [["Masisa maderas", "Camión", "KA-90", "BPDH-67", date("2099-09-30"), date("2099-09-30"), date("2099-04-30")]]
+
+    const dry = await run(false, await buildPlanilla({ machines, workers: [] }))
+    expect(dry.outcomes.find((o) => o.action.startsWith("corregir patente"))).toMatchObject({ result: "dry-run" })
+    expect(dry.outcomes.find((o) => o.item === "BPDH-67" && o.action.startsWith("alta"))).toBeUndefined()
+    expect((await vehicle("DPDH-67")).id).toBe("v-typo")
+
+    await run(true, await buildPlanilla({ machines, workers: [] }))
+    expect(await vehicle("BPDH-67")).toMatchObject({ id: "v-typo", code: "KA-90", technicalReviewExpiresAt: "2099-04-30" })
+    expect(await inMemoryDb.select().from(schema.fuelVehicles).where(eq(schema.fuelVehicles.plate, "DPDH-67"))).toHaveLength(0)
+    const audit = await inMemoryDb.select().from(schema.auditLog).where(eq(schema.auditLog.entityId, "v-typo"))
+    expect(audit.some((row) => (JSON.parse(row.newState ?? "null") as { plate?: string } | null)?.plate === "BPDH-67")).toBe(true)
+
+    const again = await run(true, await buildPlanilla({ machines, workers: [] }))
+    expect(again.outcomes.find((o) => o.action.startsWith("corregir patente"))).toMatchObject({ result: "ya estaba" })
+  }, 60_000)
+
   it("omite las filas cuya faena no se resuelve, en equipos y en trabajadores", async () => {
     const machines: MachineInput[] = [["Teno", "Camión", "KA-1", "LOST-1", date("2099-01-01"), date("2099-01-01"), date("2099-01-01")]]
     const workersInput: WorkerInput[] = [["Teno", "ANA PRUEBA SOTO", dotted(R.n1), "conductor", "A5", date("2099-01-01"), null]]

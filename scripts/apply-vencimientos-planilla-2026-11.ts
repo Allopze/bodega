@@ -110,17 +110,38 @@ const MACHINE_TYPE_SLUGS = new Map<string, string>([
   ["tracto", "tracto"],
 ])
 
+/**
+ * Patentes mal escritas en Chome, confirmadas por el usuario. Se corrige la
+ * patente del registro existente —no se crea otro—, para que su historia
+ * (mantenciones, mapeos de proveedor) siga en el mismo equipo. Los mapeos de
+ * Copec usan la patente que informa Copec (`external_key`), no la del equipo,
+ * así que siguen calzando aunque Copec mantenga el error.
+ */
+export const PLATE_CORRECTIONS: ReadonlyArray<{ from: string; to: string; why: string }> = [
+  { from: "DPDH-67", to: "BPDH-67", why: "error de tipeo en Chome; KA-90 es BPDH-67 (confirmado por el usuario, 2026-11-05)" },
+]
+
+/** En dry-run la corrección aún no se aplicó: la patente corregida apunta al registro de la errada. */
+function withPlateCorrections<T extends { plate: string }>(byPlate: Map<string, T>): Map<string, T> {
+  for (const correction of PLATE_CORRECTIONS) {
+    const to = plateMatchKey(correction.to)
+    const from = byPlate.get(plateMatchKey(correction.from))
+    if (!byPlate.has(to) && from) byPlate.set(to, from)
+  }
+  return byPlate
+}
+
 interface VehicleDetails { brand: string | null; model: string | null; year: number | null }
 
 /**
- * Marca, modelo y año de los 16 equipos que la planilla trae y Chome no tenía.
+ * Marca, modelo y año de los 15 equipos que la planilla trae y Chome no tenía
+ * (BPDH-67 sí estaba, con la patente mal escrita: ver `PLATE_CORRECTIONS`).
  * La planilla no los lleva: están pendientes del usuario. Un `null` crea el
  * equipo sin esos datos (son opcionales) y se completan después desde Flota.
  * La clave es la patente tal como la escribe la planilla.
  */
 export const NEW_VEHICLE_DETAILS: Record<string, VehicleDetails | null> = {
   // completar con los datos que entregue el usuario
-  "BPDH-67": null,
   "PWTD-82": null,
   "HGKG-54": null,
   "JP-3896": null,
@@ -140,7 +161,7 @@ export const NEW_VEHICLE_DETAILS: Record<string, VehicleDetails | null> = {
 
 /**
  * Combustibles compatibles con que nacen los equipos nuevos, según su medidor:
- * un equipo con medidor (BPDH-67, camión) carga diésel; un carro o una batea
+ * un equipo con medidor (camión) carga diésel; un carro o una batea
  * (sin medidor) no cargan nada y nacen sin compatibles.
  */
 const compatibleProductIdsFor = (meterType: string): string[] => (meterType === "none" ? [] : ["fuel-diesel"])
@@ -578,11 +599,46 @@ function reportWorksites(ctx: Ctx, data: PlanillaData) {
 
 type VehicleRow = typeof fuelVehicles.$inferSelect
 
+async function runPlateCorrections(ctx: Ctx) {
+  ctx.step = STEP.vehicles
+  const vehicles = await db.select().from(fuelVehicles)
+  const byPlate = new Map(vehicles.map((vehicle) => [plateMatchKey(vehicle.plate), vehicle]))
+  for (const correction of PLATE_CORRECTIONS) {
+    const action = `corregir patente ${correction.from} → ${correction.to}`
+    const wrong = byPlate.get(plateMatchKey(correction.from))
+    const right = byPlate.get(plateMatchKey(correction.to))
+    if (right && !wrong) { ctx.report({ item: correction.to, action, result: "ya estaba" }); continue }
+    if (!wrong) { ctx.report({ item: correction.to, action, result: "omitido", detail: `no existe ${correction.from} en Chome` }); continue }
+    if (right) {
+      ctx.report({ item: correction.to, action, result: "omitido", detail: "existen las dos patentes: hay que decidir a mano cuál conservar" })
+      ctx.note({ kind: "conflicto", item: correction.to, detail: `existen ${correction.from} y ${correction.to} en Chome; no se corrigió` })
+      continue
+    }
+    if (!ctx.apply) { ctx.report({ item: correction.to, action, result: "dry-run", detail: correction.why }); continue }
+    await db.transaction(async (tx) => {
+      await tx.update(fuelVehicles).set({ plate: correction.to, updatedAt: new Date().toISOString() }).where(eq(fuelVehicles.id, wrong.id))
+      await recordAudit({
+        userId: ctx.actor.userId,
+        userEmail: ctx.actor.email,
+        action: "update",
+        entityType: "fuel_vehicle",
+        entityId: wrong.id,
+        entityCode: correction.to,
+        oldState: { plate: wrong.plate },
+        newState: { plate: correction.to },
+        reason: `${REASON}: ${correction.why}`,
+        worksiteId: wrong.worksiteId,
+      }, tx)
+    })
+    ctx.report({ item: correction.to, action, result: "aplicado", detail: correction.why })
+  }
+}
+
 async function runVehicles(ctx: Ctx, machines: MachineRow[]) {
   ctx.step = STEP.vehicles
   const [types, vehicles, settings] = await Promise.all([db.select().from(fuelEquipmentTypes), db.select().from(fuelVehicles), getFleetAdminSettings()])
   const typeBySlug = new Map(types.map((type) => [type.slug, type]))
-  const byPlate = new Map(vehicles.map((vehicle) => [plateMatchKey(vehicle.plate), vehicle]))
+  const byPlate = withPlateCorrections(new Map(vehicles.map((vehicle) => [plateMatchKey(vehicle.plate), vehicle])))
   const detailsByPlate = new Map(Object.entries(NEW_VEHICLE_DETAILS).map(([plate, details]) => [plateMatchKey(plate), details]))
   const seen = new Set<string>()
 
@@ -766,6 +822,15 @@ async function changeVehicleCode(ctx: Ctx, m: MachineRow, existing: VehicleRow) 
 async function reviewDuplicateCodes(ctx: Ctx, machines: MachineRow[]) {
   const vehicles = await db.select({ plate: fuelVehicles.plate, code: fuelVehicles.code }).from(fuelVehicles)
   const finalCode = new Map(vehicles.map((vehicle) => [plateMatchKey(vehicle.plate), (vehicle.code ?? "").trim().toUpperCase() || null]))
+  // En dry-run la patente errada sigue en la base: ya no cuenta como otro equipo.
+  for (const correction of PLATE_CORRECTIONS) {
+    const from = plateMatchKey(correction.from)
+    const to = plateMatchKey(correction.to)
+    if (finalCode.has(from) && !finalCode.has(to)) {
+      finalCode.set(to, finalCode.get(from) ?? null)
+      finalCode.delete(from)
+    }
+  }
   const inPlanilla = new Set<string>()
   for (const m of machines) {
     const key = plateMatchKey(m.plate)
@@ -792,7 +857,7 @@ async function runVehicleDates(ctx: Ctx, machines: MachineRow[]) {
   const seen = new Set<string>()
   // Después del paso 3: ya incluye los equipos nuevos. Cada equipo se vuelve a leer dentro de su transacción.
   const vehicles = await db.select().from(fuelVehicles)
-  const byPlate = new Map(vehicles.map((vehicle) => [plateMatchKey(vehicle.plate), vehicle]))
+  const byPlate = withPlateCorrections(new Map(vehicles.map((vehicle) => [plateMatchKey(vehicle.plate), vehicle])))
   for (const m of machines) {
     const key = plateMatchKey(m.plate)
     if (ctx.omittedPlates.has(key) || seen.has(key)) continue
@@ -1370,6 +1435,7 @@ export async function applyVencimientosPlanilla202611(options: VencimientosOptio
 
   await runEquipmentTypes(ctx)
   reportWorksites(ctx, data)
+  await runPlateCorrections(ctx)
   await runVehicles(ctx, data.machines)
   await reviewDuplicateCodes(ctx, data.machines)
   await runVehicleDates(ctx, data.machines)
