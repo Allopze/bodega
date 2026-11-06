@@ -2,10 +2,12 @@
 
 import { revalidatePath } from "next/cache"
 import { and, eq, inArray } from "drizzle-orm"
+import { z } from "zod"
 import { db } from "@/db"
-import { workers, worksites } from "@/db/schema"
+import { workerPositions, workers, worksites } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
+import { safeActionMessage } from "@/lib/action-error"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import { logger } from "@/lib/logger"
@@ -14,6 +16,8 @@ import { onWorkerEnteredDotacion } from "@/lib/services/pdtp-adapters/worker-lif
 import { evaluateWorksitePreventiveOrganization } from "@/lib/services/pdtp-adapters/preventive-organization-connector"
 import { importLifecycleEvents, insertWorker, setWorkerActive, updateWorkerFields, type WorkerLifecycleEvent } from "@/lib/services/workers"
 import {
+  BULK_ASSIGN_WORKER_POSITION_LIMIT,
+  bulkAssignWorkerPosition,
   recordWorkerPositionChange,
   resolveWorkerPosition,
   WorkerPositionDomainError,
@@ -27,6 +31,8 @@ import {
 import { workerSchema, type ActionState } from "@/lib/validation/masters"
 
 const REVALIDATE = "/admin/trabajadores"
+/** Lo que depende del cargo de un trabajador además de esta pantalla. */
+const POSITION_DEPENDENT_PATHS = ["/admin/cargos", "/flota/conductores"] as const
 
 /** Identifica un cargo del XLSX por lo que de verdad decide su identidad: el
  *  código explícito y la clave normalizada del nombre — la misma sobre la que
@@ -320,6 +326,74 @@ export async function toggleWorkerActive(_prev: ActionState, formData: FormData)
     message: pendings && !pendings.clear
       ? `Trabajador desactivado. Queda pendiente de cerrar: ${describeWorkerOffboarding(pendings)}.`
       : "Trabajador desactivado",
+  }
+}
+
+const bulkAssignInputSchema = z.object({
+  workerIds: z.array(z.string().trim().min(1)).min(1, "Elige al menos un trabajador.")
+    .max(BULK_ASSIGN_WORKER_POSITION_LIMIT, `Se pueden clasificar hasta ${BULK_ASSIGN_WORKER_POSITION_LIMIT} trabajadores a la vez.`),
+  positionId: z.string().trim().min(1, "Elige un cargo."),
+  reason: z.string().trim().max(500, "El motivo admite hasta 500 caracteres.").optional(),
+})
+
+const BULK_ASSIGN_DEFAULT_REASON = "Clasificación masiva desde Trabajadores"
+
+/**
+ * Asigna un mismo cargo a los trabajadores seleccionados en la vista «Sin cargo».
+ *
+ * El alcance de faena se verifica **por trabajador y todo o nada**: si uno solo
+ * está fuera de las faenas de quien opera, no se clasifica a nadie. Lo evalúa el
+ * servicio dentro de la transacción y sobre las filas ya bloqueadas, de modo que
+ * un traslado concurrente no abre una rendija entre la comprobación y la
+ * escritura. El historial de cargos y la auditoría quedan por trabajador.
+ */
+export async function bulkAssignWorkerPositionAction(
+  input: { workerIds: string[]; positionId: string; reason?: string },
+): Promise<ActionState> {
+  let session
+  try { session = await requirePermission("admin:workers") }
+  catch { return { ok: false, message: "Sin permisos" } }
+
+  const parsed = bulkAssignInputSchema.safeParse(input)
+  if (!parsed.success) return { ok: false, message: parsed.error.issues[0]?.message ?? "Revisa la selección." }
+  const { workerIds, positionId, reason } = parsed.data
+
+  try {
+    const position = await db.query.workerPositions.findFirst({
+      columns: { id: true, name: true },
+      where: eq(workerPositions.id, positionId),
+    })
+    if (!position) return { ok: false, message: "El cargo seleccionado no existe." }
+
+    const result = await bulkAssignWorkerPosition({
+      workerIds,
+      positionId,
+      reason: reason || BULK_ASSIGN_DEFAULT_REASON,
+      actorUserId: session.user.id,
+      actorEmail: session.user.email ?? null,
+      source: "admin",
+      canAccessWorksite: (worksiteId) => canAccessWorksite(session, worksiteId),
+    })
+
+    revalidatePath(REVALIDATE)
+    for (const path of POSITION_DEPENDENT_PATHS) revalidatePath(path)
+
+    const changed = result.changed.length
+    const unchanged = result.unchanged.length
+    const alreadyThere = unchanged > 0
+      ? ` ${unchanged} ya ${unchanged === 1 ? "tenía" : "tenían"} ese cargo.`
+      : ""
+    return {
+      ok: true,
+      message: changed > 0
+        ? `${changed} ${changed === 1 ? "trabajador clasificado" : "trabajadores clasificados"} como ${position.name}.${alreadyThere}`
+        : `Nadie cambió: los ${unchanged} trabajadores ya tenían el cargo ${position.name}.`,
+      data: { changed: result.changed, unchanged: result.unchanged, positionName: position.name },
+    }
+  } catch (error) {
+    if (error instanceof WorkerPositionDomainError) return { ok: false, message: error.message }
+    logger.error("[admin/trabajadores] bulkAssignWorkerPosition", error)
+    return { ok: false, message: safeActionMessage(error, "No se pudo asignar el cargo. Inténtalo de nuevo.") }
   }
 }
 

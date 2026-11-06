@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
-import { DatePicker } from "@/components/ui/date-picker"
+import { ClearableDatePicker } from "@/components/ui/clearable-date-picker"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
@@ -65,6 +65,48 @@ const DAYS = [
   { value: 1, label: "L" }, { value: 2, label: "M" }, { value: 3, label: "X" },
   { value: 4, label: "J" }, { value: 5, label: "V" }, { value: 6, label: "S" }, { value: 7, label: "D" },
 ]
+
+const EXPIRY_FIELDS = [
+  { name: "soapExpiresAt", id: "v-soap", label: "Vencimiento SOAP", short: "SOAP" },
+  { name: "technicalReviewExpiresAt", id: "v-tech", label: "Vencimiento revisión técnica", short: "revisión técnica" },
+  { name: "circulationPermitExpiresAt", id: "v-circ", label: "Vencimiento permiso de circulación", short: "permiso de circulación" },
+  { name: "insuranceExpiresAt", id: "v-ins-exp", label: "Vencimiento seguro", short: "seguro" },
+] as const
+
+/**
+ * Las cuatro fechas de vencimiento. Cada una puede quedar vacía: «Quitar fecha»
+ * hace viajar el campo vacío y el servidor lo guarda como `null`.
+ *
+ * El estado vive aquí y no en `VehicleForm` para que se reinicie con el sheet:
+ * en `VehicleForm` sobrevivía al cierre y mostraba, al reabrir, cambios que se
+ * habían cancelado.
+ */
+function VehicleExpiryFields({ vehicle, errors }: { vehicle?: VehicleForEdit | null; errors?: Record<string, string[]> }) {
+  const [values, setValues] = React.useState<Record<(typeof EXPIRY_FIELDS)[number]["name"], string>>({
+    soapExpiresAt: vehicle?.soapExpiresAt ?? "",
+    technicalReviewExpiresAt: vehicle?.technicalReviewExpiresAt ?? "",
+    circulationPermitExpiresAt: vehicle?.circulationPermitExpiresAt ?? "",
+    insuranceExpiresAt: vehicle?.insuranceExpiresAt ?? "",
+  })
+  return (
+    <div className="grid grid-cols-2 gap-4">
+      {EXPIRY_FIELDS.map((field) => (
+        <Field key={field.name} label={field.label} htmlFor={field.id} error={errors?.[field.name]?.[0]}>
+          <ClearableDatePicker
+            id={field.id}
+            name={field.name}
+            value={values[field.name]}
+            onChange={(iso) => setValues((current) => ({ ...current, [field.name]: iso }))}
+            error={!!errors?.[field.name]}
+            // El nombre accesible del selector incluye el campo; sin él solo diría la fecha elegida.
+            ariaLabel={field.label}
+            clearAriaLabel={`Quitar fecha de ${field.short}`}
+          />
+        </Field>
+      ))}
+    </div>
+  )
+}
 
 export function VehicleForm({ open, onClose, worksites, users, equipmentTypes, suppliers, products, editVehicle }: VehicleFormProps) {
   const isEdit = !!editVehicle
@@ -198,11 +240,22 @@ export function VehicleForm({ open, onClose, worksites, users, equipmentTypes, s
                       <SelectContent>{suppliers.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent>
                     </Select>
                   </Field>
-                  <fieldset className="space-y-2 border-t border-[var(--color-border)] pt-4">
-                    <legend className="text-sm font-medium text-[var(--color-text)]">Productos compatibles</legend>
-                    <p className="text-xs text-[var(--color-text-muted)]">TAE sólo permitirá registrar productos habilitados para este equipo.</p>
+                  {/* Sin `key` en la edición: ahí los marcados son los guardados. En el alta, cambiar entre un
+                      equipo con medidor y uno sin él reaplica el valor por defecto (diésel marcado o nada). */}
+                  <fieldset key={isEdit ? "edicion" : meterType === "none" ? "alta-sin-medidor" : "alta-con-medidor"} className="space-y-2 border-t border-[var(--color-border)] pt-4" aria-describedby="v-products-help">
+                    <legend className="text-sm font-medium text-[var(--color-text)]">
+                      Productos compatibles{meterType === "none" ? " (opcional)" : ""}
+                    </legend>
+                    <p id="v-products-help" className="text-xs text-[var(--color-text-muted)]">
+                      {meterType === "none"
+                        ? "Un equipo sin medidor (carro, batea) no carga combustible: puedes dejarlo sin productos."
+                        : "TAE sólo permitirá registrar productos habilitados para este equipo. Selecciona al menos uno."}
+                    </p>
+                    {state.fieldErrors?.compatibleProductIds?.[0] && (
+                      <p className="text-xs text-[var(--color-danger)]" role="alert">{state.fieldErrors.compatibleProductIds[0]}</p>
+                    )}
                     <div className="grid gap-2 sm:grid-cols-2">
-                      {products.map((product) => <div key={product.id} className="border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2"><Checkbox name="compatibleProductIds" value={product.id} defaultChecked={editVehicle ? selectedProductIds.has(product.id) : product.id === "fuel-diesel"} disabled={!product.isActive && !selectedProductIds.has(product.id)} label={product.name} /></div>)}
+                      {products.map((product) => <div key={product.id} className="border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2"><Checkbox name="compatibleProductIds" value={product.id} defaultChecked={editVehicle ? selectedProductIds.has(product.id) : meterType !== "none" && product.id === "fuel-diesel"} disabled={!product.isActive && !selectedProductIds.has(product.id)} label={product.name} /></div>)}
                     </div>
                   </fieldset>
                   <fieldset className="space-y-3 border-t border-[var(--color-border)] pt-4">
@@ -262,23 +315,7 @@ export function VehicleForm({ open, onClose, worksites, users, equipmentTypes, s
                     </Field>
                   )}
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <Field label="Vencimiento SOAP" htmlFor="v-soap">
-                      <DatePicker id="v-soap" name="soapExpiresAt" defaultValue={editVehicle?.soapExpiresAt ?? ""} />
-                    </Field>
-                    <Field label="Vencimiento revisión técnica" htmlFor="v-tech">
-                      <DatePicker id="v-tech" name="technicalReviewExpiresAt" defaultValue={editVehicle?.technicalReviewExpiresAt ?? ""} />
-                    </Field>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <Field label="Vencimiento permiso de circulación" htmlFor="v-circ">
-                      <DatePicker id="v-circ" name="circulationPermitExpiresAt" defaultValue={editVehicle?.circulationPermitExpiresAt ?? ""} />
-                    </Field>
-                    <Field label="Vencimiento seguro" htmlFor="v-ins-exp">
-                      <DatePicker id="v-ins-exp" name="insuranceExpiresAt" defaultValue={editVehicle?.insuranceExpiresAt ?? ""} />
-                    </Field>
-                  </div>
+                  <VehicleExpiryFields vehicle={editVehicle} errors={state.fieldErrors} />
 
                   <Field label="N° de póliza de seguro" htmlFor="v-policy">
                     <Input id="v-policy" name="insurancePolicyNumber" defaultValue={editVehicle?.insurancePolicyNumber ?? ""} />

@@ -20,6 +20,12 @@ export const workerPositions = pgTable("worker_positions", {
   isActive:      boolean("is_active").notNull().default(true),
   needsReview:   boolean("needs_review").notNull().default(false),
   isSystem:      boolean("is_system").notNull().default(false),
+  /**
+   * Clases de licencia que exige el cargo: basta tener **una** («A4 o A5»).
+   * Vacío = no exige una clase en particular (si conduce, cualquier licencia
+   * vigente sirve). Códigos de `DRIVER_LICENSE_CLASSES`.
+   */
+  requiredLicenseClasses: text("required_license_classes").array().notNull().default(sql`'{}'::text[]`),
   createdAt:     timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:     timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
@@ -27,6 +33,7 @@ export const workerPositions = pgTable("worker_positions", {
   check("worker_positions_code_valid", sql`length(trim(${table.code})) BETWEEN 2 AND 80`),
   check("worker_positions_name_valid", sql`length(trim(${table.name})) BETWEEN 2 AND 120`),
   check("worker_positions_normalized_key_valid", sql`length(trim(${table.normalizedKey})) BETWEEN 2 AND 120`),
+  check("worker_positions_required_license_classes_valid", sql`${table.requiredLicenseClasses} <@ ARRAY['A1','A2','A3','A4','A5','A1_ANTIGUA','A2_ANTIGUA','B','C','D','E','F']::text[]`),
 ])
 
 /** Sinónimos que se resuelven hacia un cargo canónico. */

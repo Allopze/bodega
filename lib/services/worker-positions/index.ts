@@ -9,7 +9,9 @@ import {
   workerPositions,
   workers,
 } from "@/db/schema"
+import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
+import { driverLicenseClassesSchema, sortLicenseClasses } from "@/lib/validation/driver-licenses"
 import {
   buildWorkerPositionAutoCode,
   cleanWorkerPositionDisplayName,
@@ -30,7 +32,8 @@ export class WorkerPositionDomainError extends Error {
       | "CONFLICT"
       | "INACTIVE"
       | "IN_USE"
-      | "SYSTEM_RECORD",
+      | "SYSTEM_RECORD"
+      | "FORBIDDEN",
   ) {
     super(message)
     this.name = "WorkerPositionDomainError"
@@ -53,6 +56,12 @@ export type CreateWorkerPositionInput = {
   name: string
   isActive?: boolean
   needsReview?: boolean
+  /**
+   * Clases de licencia de conducir que exige el cargo; basta con una
+   * («A4 o A5»). Vacío = el cargo no exige una clase en particular.
+   * En `updateWorkerPosition`, ausente = no tocar lo que ya tiene.
+   */
+  requiredLicenseClasses?: string[]
 }
 
 export type UpdateWorkerPositionInput = CreateWorkerPositionInput
@@ -106,6 +115,18 @@ export type RecordWorkerPositionChangeInput = {
   actorUserId?: string | null
 }
 
+/** Cargo de sistema donde cae un trabajador del que no se sabe el cargo. */
+export const UNCLASSIFIED_POSITION_CODE = "SIN-CLASIFICAR"
+
+/**
+ * Capacidades con las que un cargo conduce u opera maquinaria y, por tanto, se
+ * le exige licencia de conducir. Una sola definición para la pantalla de
+ * Conductores, el aviso diario y la asignación masiva de cargos: si cada una
+ * tuviera la suya, «pasarán a Conductores» y la lista de Conductores podrían
+ * discrepar.
+ */
+export const LICENSE_REQUIRING_CAPABILITY_CODES = ["drives_vehicle", "operates_equipment"] as const
+
 /** Espejo de los CHECK `worker_positions_{code,name}_valid`. Validarlos acá
  *  convierte un error crudo de Postgres —que aborta la importación entera— en
  *  un mensaje accionable que nombra el cargo culpable. */
@@ -115,6 +136,24 @@ const POSITION_CODE_MAX = 80
 function normalizedCode(value: string | null | undefined): string | null {
   const code = value?.trim().toUpperCase()
   return code || null
+}
+
+/**
+ * Valida las clases con el mismo esquema que el resto de la plataforma y las
+ * deja en el orden canónico, sin duplicados: lo guardado se lee igual siempre.
+ * Un valor desconocido se rechaza acá con un mensaje accionable en vez de
+ * dejar que el CHECK de la tabla aborte la operación con el texto del
+ * constraint.
+ */
+function parseRequiredLicenseClasses(value: readonly string[]): string[] {
+  const parsed = driverLicenseClassesSchema.safeParse([...value])
+  if (!parsed.success) {
+    throw new WorkerPositionDomainError(
+      parsed.error.issues[0]?.message ?? "Clase de licencia no reconocida",
+      "INVALID_INPUT",
+    )
+  }
+  return sortLicenseClasses(parsed.data)
 }
 
 function normalizeCapabilityCode(value: string): string {
@@ -154,6 +193,7 @@ export async function createWorkerPosition(
   if (name.length > POSITION_NAME_MAX || code.length > POSITION_CODE_MAX) {
     throw new WorkerPositionDomainError("El código o nombre del cargo es demasiado largo.", "INVALID_INPUT")
   }
+  const requiredLicenseClasses = parseRequiredLicenseClasses(input.requiredLicenseClasses ?? [])
 
   const normalizedConflict = await findByNormalizedKey(client, normalizedKey)
   if (normalizedConflict) {
@@ -174,6 +214,7 @@ export async function createWorkerPosition(
     normalizedKey,
     isActive: input.isActive ?? true,
     needsReview: input.needsReview ?? false,
+    requiredLicenseClasses,
     isSystem: false,
   }).onConflictDoNothing().returning()
   if (created) return created
@@ -201,6 +242,11 @@ export async function updateWorkerPosition(
   if (name.length > POSITION_NAME_MAX || code.length > POSITION_CODE_MAX) {
     throw new WorkerPositionDomainError("El código o nombre del cargo es demasiado largo.", "INVALID_INPUT")
   }
+  // Ausente = no tocar: las acciones que sólo cambian el estado (revisar,
+  // activar) no envían las clases y no deben vaciarlas.
+  const requiredLicenseClasses = input.requiredLicenseClasses === undefined
+    ? undefined
+    : parseRequiredLicenseClasses(input.requiredLicenseClasses)
 
   const normalizedConflict = await findByNormalizedKey(client, normalizedKey)
   if (normalizedConflict && normalizedConflict.id !== current.id) {
@@ -220,6 +266,7 @@ export async function updateWorkerPosition(
     normalizedKey,
     isActive: input.isActive ?? current.isActive,
     needsReview: input.needsReview ?? current.needsReview,
+    ...(requiredLicenseClasses === undefined ? {} : { requiredLicenseClasses }),
     updatedAt: new Date().toISOString(),
   }).where(eq(workerPositions.id, current.id)).returning()
   if (!updated) throw new Error("No se pudo actualizar el cargo.")
@@ -587,7 +634,7 @@ export async function resolveWorkerPosition(
       throw new WorkerPositionDomainError(`No existe el cargo con código "${code}" y falta su nombre.`, "NOT_FOUND")
     }
     const unclassified = await client.query.workerPositions.findFirst({
-      where: eq(workerPositions.code, "SIN-CLASIFICAR"),
+      where: eq(workerPositions.code, UNCLASSIFIED_POSITION_CODE),
     })
     if (!unclassified) throw new Error("No existe el cargo de sistema Sin clasificar.")
     return { position: ensureAssignable(unclassified, allowInactive), created: false }
@@ -749,6 +796,136 @@ export async function mergeWorkerPositions(
     }).onConflictDoNothing()
 
     return { target, movedWorkers: affected.length, movedAliases: movedAliases.length }
+  }
+  if (client) return work(client)
+  return db.transaction(work)
+}
+
+export type BulkAssignWorkerPositionInput = {
+  workerIds: string[]
+  positionId: string
+  /** Por qué se reclasifica; queda en el historial de cargos y en la auditoría. */
+  reason: string
+  actorUserId: string | null
+  actorEmail?: string | null
+  /** `admin`: selección masiva en Trabajadores. `import`: script de carga. */
+  source: "admin" | "import"
+  /**
+   * Alcance de faena de quien opera. Si se pasa y algún trabajador queda fuera,
+   * el lote entero se rechaza antes de escribir nada. Se evalúa dentro de la
+   * transacción y sobre las filas ya bloqueadas, así que un traslado de faena
+   * concurrente no deja pasar a nadie.
+   */
+  canAccessWorksite?: (worksiteId: string) => boolean
+}
+
+export type BulkAssignWorkerPositionResult = {
+  /** Trabajadores que cambiaron de cargo, en el orden recibido. */
+  changed: string[]
+  /** Trabajadores que ya tenían ese cargo: no se tocan ni se registran. */
+  unchanged: string[]
+}
+
+/** Tope por operación: es una transacción con dos escrituras por trabajador. */
+export const BULK_ASSIGN_WORKER_POSITION_LIMIT = 500
+
+/**
+ * Asigna un mismo cargo a varios trabajadores, todo o nada.
+ *
+ * Es la forma de clasificar una dotación recién importada sin abrir la ficha de
+ * cada persona. Por cada trabajador que de verdad cambia deja las tres huellas
+ * que deja una edición individual: el cargo (`position_id` y el texto legado
+ * `position`, que todavía leen informes viejos), una fila en
+ * `worker_position_history` y una entrada de auditoría con el cargo anterior.
+ * Idempotente: quien ya tiene el cargo queda en `unchanged` y no genera
+ * historial, de modo que repetir el lote —el script de carga lo hace en su
+ * segunda corrida— no ensucia nada.
+ *
+ * Sin `client` abre su propia transacción; con uno (la del script) se compone
+ * con sus otras escrituras.
+ */
+export async function bulkAssignWorkerPosition(
+  input: BulkAssignWorkerPositionInput,
+  client?: Client,
+): Promise<BulkAssignWorkerPositionResult> {
+  const work = async (tx: Client): Promise<BulkAssignWorkerPositionResult> => {
+    const ids = [...new Set(input.workerIds.map((id) => id.trim()).filter(Boolean))]
+    if (ids.length === 0) {
+      throw new WorkerPositionDomainError("Elige al menos un trabajador.", "INVALID_INPUT")
+    }
+    if (ids.length > BULK_ASSIGN_WORKER_POSITION_LIMIT) {
+      throw new WorkerPositionDomainError(
+        `Se pueden clasificar hasta ${BULK_ASSIGN_WORKER_POSITION_LIMIT} trabajadores a la vez.`,
+        "INVALID_INPUT",
+      )
+    }
+
+    const position = await tx.query.workerPositions.findFirst({
+      where: eq(workerPositions.id, input.positionId),
+    })
+    if (!position) throw new WorkerPositionDomainError("El cargo seleccionado no existe.", "NOT_FOUND")
+    ensureAssignable(position, false)
+
+    // `FOR UPDATE`: dos lotes simultáneos sobre las mismas personas leerían el
+    // mismo «cargo anterior» y dejarían historiales que no encadenan.
+    const rows = await tx.select({
+      id: workers.id,
+      worksiteId: workers.worksiteId,
+      positionId: workers.positionId,
+      position: workers.position,
+    }).from(workers).where(inArray(workers.id, ids)).for("update")
+    if (rows.length !== ids.length) {
+      throw new WorkerPositionDomainError("Uno o más trabajadores seleccionados ya no existen.", "NOT_FOUND")
+    }
+
+    const canAccess = input.canAccessWorksite
+    if (canAccess) {
+      const outside = rows.filter((row) => !canAccess(row.worksiteId))
+      if (outside.length > 0) {
+        throw new WorkerPositionDomainError(
+          `No tienes acceso a la faena de ${outside.length} de los trabajadores seleccionados.`,
+          "FORBIDDEN",
+        )
+      }
+    }
+
+    const byId = new Map(rows.map((row) => [row.id, row]))
+    const changedRows = ids.map((id) => byId.get(id)!).filter((row) => row.positionId !== position.id)
+    const changedIds = new Set(changedRows.map((row) => row.id))
+    const result: BulkAssignWorkerPositionResult = {
+      changed: changedRows.map((row) => row.id),
+      unchanged: ids.filter((id) => !changedIds.has(id)),
+    }
+    if (changedRows.length === 0) return result
+
+    await tx.update(workers)
+      .set({ positionId: position.id, position: position.name })
+      .where(inArray(workers.id, result.changed))
+
+    const reason = input.reason.trim()
+    for (const row of changedRows) {
+      await recordWorkerPositionChange({
+        workerId: row.id,
+        previousPositionId: row.positionId,
+        previousPositionLabel: row.position,
+        nextPosition: position,
+        source: input.source,
+        reason,
+        actorUserId: input.actorUserId,
+      }, tx)
+      await recordAudit({
+        userId: input.actorUserId,
+        userEmail: input.actorEmail ?? undefined,
+        action: "update",
+        entityType: "worker",
+        entityId: row.id,
+        oldState: { position: row.position ?? null },
+        newState: { position: position.name },
+        reason: reason || undefined,
+        worksiteId: row.worksiteId,
+      }, tx)
+    }
+    return result
   }
   if (client) return work(client)
   return db.transaction(work)

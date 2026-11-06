@@ -5,6 +5,8 @@ export type WorkerPositionCatalogRow = {
   isActive: boolean
   needsReview: boolean
   isSystem: boolean
+  /** Clases de licencia que exige el cargo (basta una); vacío = no exige una en particular. */
+  requiredLicenseClasses: string[]
   workerCount: number
   aliases: Array<{ id: string; alias: string }>
   capabilities: Array<{ id: string; code: string; name: string }>

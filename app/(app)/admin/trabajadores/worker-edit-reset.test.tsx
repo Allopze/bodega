@@ -12,12 +12,14 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: vi.fn(), push: vi.fn(), refresh: vi.fn() }),
+  usePathname: () => "/admin/trabajadores",
   useSearchParams: () => new URLSearchParams(),
 }))
 vi.mock("./actions", () => ({
   toggleWorkerActive: vi.fn(),
   createWorker: vi.fn(),
   updateWorker: vi.fn(),
+  bulkAssignWorkerPositionAction: vi.fn(),
 }))
 vi.mock("@/lib/toast", () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 
@@ -35,7 +37,7 @@ const WORKSITES = [{ id: "ws-1", name: "Faena Uno" }, { id: "ws-2", name: "Faena
 function worker(id: string, firstName: string, positionId: string, worksiteId: string, sizeTop: string) {
   return {
     id, rut: null, firstName, lastName: "Prueba", sex: null, position: null,
-    positionId, positionNeedsReview: false,
+    positionId, positionNeedsReview: false, unclassified: false, hasDriverLicense: false,
     worksiteId, worksiteName: worksiteId === "ws-1" ? "Faena Uno" : "Faena Dos",
     isActive: true, createdAt: "2026-08-18T00:00:00.000Z",
     sizeTop, sizeBottom: null, sizeShoe: null, sizeGloves: null, sizeHelmet: null,
@@ -66,6 +68,7 @@ describe("WorkerList — editar dos trabajadores seguidos", () => {
         worksites={WORKSITES}
         sizeFamilies={[]}
         positions={POSITIONS}
+        assignablePositions={[]}
       />,
     )
 

@@ -45,7 +45,20 @@ function canManageFuelVehicleWorksite(session: Session, worksiteId: string): boo
   return canAccessWorksite(session, worksiteId)
 }
 
+/**
+ * Campos que se pueden dejar vacíos a propósito. Al editar hay tres casos y el
+ * formulario los distingue: el campo no viaja (no se toca), viaja vacío (se
+ * borra: el esquema lo vuelve `null`) o viaja con valor. Antes `|| undefined`
+ * confundía los dos primeros y por eso no se podía borrar un código ni una
+ * fecha de vencimiento. Al crear no hay nada que borrar: vacío = sin dato.
+ */
+function clearableField(formData: FormData, key: string, isUpdate: boolean) {
+  if (!isUpdate) return formData.get(key) || undefined
+  return formData.has(key) ? String(formData.get(key)) : undefined
+}
+
 function vehicleFormData(formData: FormData, id?: string) {
+  const isUpdate = id !== undefined
   return {
     ...(id ? { id } : {}),
     plate: formData.get("plate") || undefined,
@@ -60,21 +73,21 @@ function vehicleFormData(formData: FormData, id?: string) {
     operatingStart: formData.get("operatingStart") || undefined,
     operatingEnd: formData.get("operatingEnd") || undefined,
     operatingTimezone: formData.get("operatingTimezone") || undefined,
-    code: formData.get("code") || undefined,
-    brand: formData.get("brand") || undefined,
-    model: formData.get("model") || undefined,
+    code: clearableField(formData, "code", isUpdate),
+    brand: clearableField(formData, "brand", isUpdate),
+    model: clearableField(formData, "model", isUpdate),
     year: formData.get("year") || undefined,
     serialNumber: formData.has("serialNumber") ? String(formData.get("serialNumber")) : undefined,
     worksiteId: formData.get("worksiteId") || undefined,
     responsibleUserId: formData.get("responsibleUserId") || undefined,
     operationalStatus: formData.get("operationalStatus") || undefined,
     operationalStatusReason: formData.get("operationalStatusReason") || undefined,
-    soapExpiresAt: formData.get("soapExpiresAt") || undefined,
-    technicalReviewExpiresAt: formData.get("technicalReviewExpiresAt") || undefined,
-    circulationPermitExpiresAt: formData.get("circulationPermitExpiresAt") || undefined,
-    insurancePolicyNumber: formData.get("insurancePolicyNumber") || undefined,
-    insuranceExpiresAt: formData.get("insuranceExpiresAt") || undefined,
-    notes: formData.get("notes") || undefined,
+    soapExpiresAt: clearableField(formData, "soapExpiresAt", isUpdate),
+    technicalReviewExpiresAt: clearableField(formData, "technicalReviewExpiresAt", isUpdate),
+    circulationPermitExpiresAt: clearableField(formData, "circulationPermitExpiresAt", isUpdate),
+    insurancePolicyNumber: clearableField(formData, "insurancePolicyNumber", isUpdate),
+    insuranceExpiresAt: clearableField(formData, "insuranceExpiresAt", isUpdate),
+    notes: clearableField(formData, "notes", isUpdate),
   }
 }
 
@@ -108,6 +121,13 @@ function vehicleValues<T extends {
     compatibleProductIds: compatibleProductIds ?? [],
     operationalStatusReason,
   }
+}
+
+/** Todos existen y están activos. Una lista vacía es válida: no hay nada que consultar. */
+async function compatibleProductsAreValid(productIds: string[]): Promise<boolean> {
+  if (productIds.length === 0) return true
+  const products = await db.query.fuelProducts.findMany({ where: inArray(fuelProducts.id, productIds) })
+  return products.length === productIds.length && products.every((product) => product.isActive)
 }
 
 /**
@@ -151,8 +171,7 @@ export async function createFuelVehicleAction(
     if (!equipmentType?.isActive) return { ok: false, message: "El tipo de equipo no existe o está inactivo" }
     const operationalStatus = parsed.data.operationalStatus ?? (await getFleetAdminSettings()).defaultVehicleStatus
     const { compatibleProductIds, operationalStatusReason: _, ...values } = vehicleValues({ ...parsed.data, operationalStatus }, equipmentType.slug)
-    const validProducts = await db.query.fuelProducts.findMany({ where: inArray(fuelProducts.id, compatibleProductIds) })
-    if (validProducts.length !== compatibleProductIds.length || validProducts.some((product) => !product.isActive)) return { ok: false, message: "Hay productos compatibles inexistentes o inactivos" }
+    if (!(await compatibleProductsAreValid(compatibleProductIds))) return { ok: false, message: "Hay productos compatibles inexistentes o inactivos" }
     await db.transaction(async (tx) => {
       await tx.insert(fuelVehicles).values({ id, ...values })
       await tx.insert(fuelVehicleOperationalIntervals).values({
@@ -163,7 +182,10 @@ export async function createFuelVehicleAction(
         reason: "Alta inicial del equipo",
         changedBy: session.user.id,
       })
-      await tx.insert(fuelVehicleProducts).values(compatibleProductIds.map((productId) => ({ vehicleId: id, productId })))
+      // Un equipo sin medidor (carro, batea) puede no tener ninguno, y Drizzle rechaza `values([])`.
+      if (compatibleProductIds.length > 0) {
+        await tx.insert(fuelVehicleProducts).values(compatibleProductIds.map((productId) => ({ vehicleId: id, productId })))
+      }
       await recordAudit({
         userId: session.user.id,
         userEmail: session.user.email ?? undefined,
@@ -218,8 +240,11 @@ export async function updateFuelVehicleAction(
     if (statusChanged && !operationalStatusReason) {
       return { ok: false, message: "Debes indicar el motivo del cambio de estado", fieldErrors: { operationalStatusReason: ["Motivo requerido al cambiar el estado"] } }
     }
-    const validProducts = await db.query.fuelProducts.findMany({ where: inArray(fuelProducts.id, compatibleProductIds) })
-    if (validProducts.length !== compatibleProductIds.length || validProducts.some((product) => !product.isActive)) return { ok: false, message: "Hay productos compatibles inexistentes o inactivos" }
+    // Con el medidor que el equipo tendrá al guardar: si el formulario no lo envía, vale el actual.
+    if ((data.meterType ?? existing.meterType) !== "none" && compatibleProductIds.length === 0) {
+      return { ok: false, message: "Revisa los datos", fieldErrors: { compatibleProductIds: ["Selecciona al menos un producto compatible"] } }
+    }
+    if (!(await compatibleProductsAreValid(compatibleProductIds))) return { ok: false, message: "Hay productos compatibles inexistentes o inactivos" }
     const nextState = { ...data, updatedAt: new Date().toISOString() }
     const recalcSeries = seriesInputsChanged(existing, data)
     await db.transaction(async (tx) => {
@@ -252,7 +277,9 @@ export async function updateFuelVehicleAction(
         })
       }
       await tx.delete(fuelVehicleProducts).where(eq(fuelVehicleProducts.vehicleId, id))
-      await tx.insert(fuelVehicleProducts).values(compatibleProductIds.map((productId) => ({ vehicleId: id, productId })))
+      if (compatibleProductIds.length > 0) {
+        await tx.insert(fuelVehicleProducts).values(compatibleProductIds.map((productId) => ({ vehicleId: id, productId })))
+      }
       await recordAudit({
         userId: session.user.id,
         userEmail: session.user.email ?? undefined,

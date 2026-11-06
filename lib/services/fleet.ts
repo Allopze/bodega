@@ -22,7 +22,7 @@ import { acceptedMeterResetSql } from "@/lib/combustibles/meter-reset-sql"
 import { getFuelProviderCoverageGaps } from "@/lib/combustibles/coverage-notice-data"
 import { maxMeterRatePerDayOf, meterSeriesAdvance, type MeterSeriesPoint } from "@/lib/combustibles/meter-series"
 import { fuelOperationOccurredAtSql } from "@/lib/combustibles/fuel-log"
-import { fleetDocumentMetadataSchema, resolveNextExpiryDate } from "@/lib/validation/fleet-documents"
+import { expiringDocuments, fleetDocumentMetadataSchema, resolveNextExpiryDate } from "@/lib/validation/fleet-documents"
 import { filterFleetOverviewRows, type FleetOverviewFilters } from "@/lib/fleet-overview-filters"
 import { isValidReason, reasonRequiredMessage } from "@/lib/validation/reason-thresholds"
 import { addMonths, todayInChile } from "@/lib/utils"
@@ -298,9 +298,18 @@ export async function getFleetOverview(
     const hours = vehicle.performanceUnit === "liters_per_hour"
       ? meterSeriesAdvance(series?.hour_meter ?? [], maxMeterRatePerDayOf(jumpRule, "hora", vehicle.equipmentType?.slug))
       : null
+    const declaredExpiries = {
+      soapExpiresAt: vehicle.soapExpiresAt,
+      technicalReviewExpiresAt: vehicle.technicalReviewExpiresAt,
+      circulationPermitExpiresAt: vehicle.circulationPermitExpiresAt,
+      insuranceExpiresAt: vehicle.insuranceExpiresAt,
+    }
+    const currentDocuments = currentDocumentsByVehicle.get(vehicle.id) ?? []
     return {
       id: vehicle.id,
       plate: vehicle.plate,
+      /** Código interno: los equipos de carro y batea no lo tienen, y entonces los identifica la patente. */
+      code: vehicle.code,
       type: vehicle.equipmentType?.name ?? vehicle.type,
       brand: vehicle.brand,
       model: vehicle.model,
@@ -314,12 +323,13 @@ export async function getFleetOverview(
       circulationPermitExpiresAt: vehicle.circulationPermitExpiresAt,
       insurancePolicyNumber: vehicle.insurancePolicyNumber,
       insuranceExpiresAt: vehicle.insuranceExpiresAt,
-      nextExpiryDate: resolveNextExpiryDate({
-        soapExpiresAt: vehicle.soapExpiresAt,
-        technicalReviewExpiresAt: vehicle.technicalReviewExpiresAt,
-        circulationPermitExpiresAt: vehicle.circulationPermitExpiresAt,
-        insuranceExpiresAt: vehicle.insuranceExpiresAt,
-      }, currentDocumentsByVehicle.get(vehicle.id) ?? []),
+      nextExpiryDate: resolveNextExpiryDate(declaredExpiries, currentDocuments),
+      /**
+       * Tipo documental al que pertenece `nextExpiryDate` («Revisión técnica»), con la misma
+       * precedencia que ella: la lista dice «Rev. técnica · vence en 9 días», no solo la fecha.
+       * `null` si el equipo no tiene ninguna fecha.
+       */
+      nextExpiryDocumentType: expiringDocuments(declaredExpiries, currentDocuments)[0]?.documentType ?? null,
       totalFuelAmount,
       totalLiters: canViewFuel ? Number(fuel?.totalLiters ?? 0) : null,
       loadCount: canViewFuel ? Number(fuel?.loadCount ?? 0) : null,
@@ -380,6 +390,7 @@ export async function getFleetOverviewPage(
   const index = vehicles.map((vehicle) => ({
     id: vehicle.id,
     plate: vehicle.plate,
+    code: vehicle.code,
     brand: vehicle.brand,
     model: vehicle.model,
     type: vehicle.equipmentType?.name ?? vehicle.type,

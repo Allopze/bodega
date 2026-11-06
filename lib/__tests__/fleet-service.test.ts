@@ -95,6 +95,7 @@ describe("getFleetOverview", () => {
       {
         id: "veh-1",
         plate: "AA-BB-11",
+        code: "KA-90",
         type: "camioneta",
         brand: "Toyota",
         model: "Hilux",
@@ -131,6 +132,9 @@ describe("getFleetOverview", () => {
     expect(vehicle.responsibleName).toBe("Jefe Mantención")
     expect(vehicle.operationalStatus).toBe("operativo")
     expect(vehicle.nextExpiryDate).toBe("2026-07-20")
+    // El tipo del documento al que pertenece esa fecha (el seguro es el que vence antes) y el código del equipo.
+    expect(vehicle.nextExpiryDocumentType).toBe("Seguro")
+    expect(vehicle.code).toBe("KA-90")
     // Las lecturas salen de `fuel_meter_readings` (Copec), no de `fuel_loads`.
     expect(vehicle).toMatchObject({ lastOdometerReading: 12_500, lastHourMeterReading: null, kmDriven: 2_500, hoursRun: null, meterSeriesIncomplete: false })
     // La imputación de costos fue retirada: no debe existir ese campo.

@@ -100,6 +100,11 @@ export type NotificationType =
   // que hasta entonces sólo se veían abriendo su pantalla.
   | "fleet_document_due_soon"
   | "fleet_document_overdue"
+  // Licencias de conducir (2026-11): vencimiento por tramo, y «sin licencia o
+  // clase insuficiente para el cargo» una sola vez por trabajador y cargo.
+  | "driver_license_due_soon"
+  | "driver_license_overdue"
+  | "driver_license_missing"
   | "risk_review_due_soon"
   | "risk_review_overdue"
   | "privacy_request_due_soon"

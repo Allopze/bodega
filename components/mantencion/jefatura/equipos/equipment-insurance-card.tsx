@@ -4,24 +4,27 @@ import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { DetailItem } from "@/components/ui/detail-item"
 import { EmptyState } from "@/components/ui/empty-state"
-import { plural } from "@/lib/mantencion/format"
-import type { EquipmentInsurance, InsuranceState } from "@/lib/services/mantencion/equipment-life"
+import { EXPIRY_STATE_LABEL, EXPIRY_STATE_VARIANT, expiryRelativeText } from "@/lib/expiry"
+import type { EquipmentInsurance } from "@/lib/services/mantencion/equipment-life"
 import { formatDate } from "@/lib/utils"
 import { SectionCard } from "../shared/section-card"
 
-const STATE_BADGE: Record<InsuranceState, { label: string; variant: "success" | "warning" | "danger" | "neutral" }> = {
-  vigente: { label: "Vigente", variant: "success" },
-  por_vencer: { label: "Por vencer", variant: "warning" },
-  vencido: { label: "Vencido", variant: "danger" },
-  sin_fecha: { label: "Sin vencimiento", variant: "neutral" },
-}
-
-/** Con texto, no sólo color: «vence en 12 días» / «venció hace 3 días». */
+/**
+ * Con texto, no sólo color: «vence en 12 días» / «venció hace 3 días». Las frases salen de
+ * `lib/expiry.ts`, como en flota y licencias; esta tarjeta ya no tiene una versión propia.
+ *
+ * Vigente no lleva frase: más allá de la ventana de aviso `expiryRelativeText` diría «vence el
+ * 30-09-2027», que repite la fecha que se ve al lado. Para lo demás no hace falta conocer la ventana
+ * (`INSURANCE_WARNING_DAYS` vive en un módulo de servidor que esta tarjeta de cliente no puede
+ * importar): «por vencer» es, por definición, estar dentro de ella, así que basta una que alcance
+ * a los días que faltan.
+ */
 function expiryText(insurance: EquipmentInsurance): string | null {
-  const { days } = insurance
-  if (days == null) return null
-  if (days === 0) return "vence hoy"
-  return days > 0 ? `vence en ${plural(days, "día", "días")}` : `venció hace ${plural(-days, "día", "días")}`
+  if (insurance.state === "vigente" || insurance.days == null) return null
+  return expiryRelativeText(
+    { state: insurance.state, days: insurance.days, expiresAt: insurance.expiresAt },
+    Math.max(insurance.days, 0),
+  )
 }
 
 /** ¿Hay algo que hacer con el seguro? Un vencimiento próximo o pasado sube en la ficha; el resto va abajo. */
@@ -65,7 +68,11 @@ export function EquipmentInsuranceCard({
       </SectionCard>
     )
   }
-  const badge = STATE_BADGE[insurance.state]
+  // «Sin vencimiento» es el rótulo propio de un seguro sin fecha: «Sin fecha» es el de `lib/expiry.ts`.
+  const badge = {
+    label: insurance.state === "sin_fecha" ? "Sin vencimiento" : EXPIRY_STATE_LABEL[insurance.state],
+    variant: EXPIRY_STATE_VARIANT[insurance.state],
+  }
   const text = expiryText(insurance)
   return (
     <SectionCard

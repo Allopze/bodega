@@ -5,8 +5,12 @@ import { safeActionMessage } from "@/lib/action-error"
 import { revalidatePath } from "next/cache"
 import { xlsxToBase64 } from "@/lib/reports/export-module/excel-builder"
 import { promises as fs } from "node:fs"
+import { eq } from "drizzle-orm"
+import { db } from "@/db"
+import { fuelVehicles } from "@/db/schema"
 import { can, requirePermission } from "@/lib/auth/can"
-import { serviceWorksiteScope } from "@/lib/auth/scope"
+import { canAccessWorksite, serviceWorksiteScope } from "@/lib/auth/scope"
+import { VEHICLE_EXPIRY_FIELDS, updateVehicleExpiriesSchema, type VehicleExpiryField } from "@/lib/combustibles/validation"
 import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
 import { uploadFleetDocument, deleteFleetDocument, getFleetOverview, getFleetProviderGapMonths, FLEET_OVERVIEW_LOOKBACK_MONTHS } from "@/lib/services/fleet"
@@ -118,6 +122,82 @@ export async function deleteFleetDocumentAction(
   } catch (e) {
     logger.error("[deleteFleetDocumentAction]", e)
     return { ok: false, message: safeActionMessage(e, "Error al eliminar documento") }
+  }
+}
+
+/**
+ * «Actualizar vencimientos» de la ficha del equipo: SOAP, permiso de
+ * circulación, revisión técnica y seguro, de una sola vez.
+ *
+ * Cada fecha tiene tres estados: ausente (no se toca), vacía (se quita: queda
+ * `null`) o con fecha civil (se guarda). Lo que no cambia no se escribe ni se
+ * audita. El permiso es el de los documentos de flota —quien renueva un SOAP
+ * es quien sube su comprobante— y el alcance es el de faena del equipo, igual
+ * que la edición del padrón.
+ */
+export async function updateVehicleExpiriesAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  let session
+  try { session = await requirePermission("flota:manage_documents") }
+  catch { return { ok: false, message: "Sin permisos para actualizar vencimientos" } }
+
+  const raw: Record<string, string | undefined> = { vehicleId: String(formData.get("vehicleId") ?? "") }
+  for (const field of VEHICLE_EXPIRY_FIELDS) raw[field] = formData.has(field) ? String(formData.get(field)) : undefined
+  const parsed = updateVehicleExpiriesSchema.safeParse(raw)
+  if (!parsed.success) {
+    return {
+      ok: false,
+      message: parsed.error.issues[0]?.message ?? "Revisa las fechas",
+      fieldErrors: parsed.error.flatten().fieldErrors,
+    }
+  }
+  const { vehicleId, ...incoming } = parsed.data
+
+  try {
+    const vehicle = await db.query.fuelVehicles.findFirst({ where: eq(fuelVehicles.id, vehicleId) })
+    if (!vehicle) return { ok: false, message: "Vehículo no encontrado" }
+    if (!canAccessWorksite(session, vehicle.worksiteId)) {
+      return { ok: false, message: "No puedes gestionar vehículos de esta faena" }
+    }
+
+    const changed = VEHICLE_EXPIRY_FIELDS.filter((field) => incoming[field] !== undefined && incoming[field] !== vehicle[field])
+    if (changed.length === 0) return { ok: true, message: "No hay cambios en los vencimientos" }
+
+    // Las cuatro columnas, antes y después: la bitácora dice qué fecha había y cuál quedó, también la que no cambió.
+    const patch: Partial<Record<VehicleExpiryField, string | null>> = {}
+    const oldState: Partial<Record<VehicleExpiryField, string | null>> = {}
+    const newState: Partial<Record<VehicleExpiryField, string | null>> = {}
+    for (const field of VEHICLE_EXPIRY_FIELDS) {
+      oldState[field] = vehicle[field] ?? null
+      const next = changed.includes(field) ? (incoming[field] ?? null) : (vehicle[field] ?? null)
+      newState[field] = next
+      if (changed.includes(field)) patch[field] = next
+    }
+    await db.transaction(async (tx) => {
+      await tx.update(fuelVehicles)
+        .set({ ...patch, updatedAt: new Date().toISOString() })
+        .where(eq(fuelVehicles.id, vehicleId))
+      await recordAudit({
+        userId: session.user.id,
+        userEmail: session.user.email ?? undefined,
+        action: "update",
+        entityType: "fuel_vehicle",
+        entityId: vehicleId,
+        entityCode: vehicle.code ?? vehicle.plate,
+        oldState,
+        newState,
+        worksiteId: vehicle.worksiteId,
+      }, tx)
+    })
+
+    revalidatePath("/flota")
+    revalidatePath(`/flota/${vehicleId}`)
+    return { ok: true, message: changed.length === 1 ? "Vencimiento actualizado" : "Vencimientos actualizados" }
+  } catch (e) {
+    logger.error("[updateVehicleExpiriesAction]", e)
+    return { ok: false, message: safeActionMessage(e, "Error al actualizar los vencimientos") }
   }
 }
 

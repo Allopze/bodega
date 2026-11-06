@@ -82,6 +82,35 @@ export const workers = pgTable("workers", {
   check("workers_sex_valid", sql`${table.sex} IS NULL OR ${table.sex} IN ('male', 'female', 'other')`),
 ])
 
+/**
+ * Licencia de conducir del trabajador (2026-11, reemplaza la hoja «Trabajadores»
+ * de la planilla de vencimientos). Una por trabajador: al renovarla se
+ * sobrescribe y la historia queda en la auditoría (`worker_driver_license`).
+ * Tabla aparte —no columnas en `workers`— para no tocar alta, importación ni
+ * exportación de trabajadores, y para que la lean sólo quienes tienen
+ * `flota:manage_licenses`.
+ *
+ * `expires_at` es la fecha hasta la que la licencia sirve, prórroga incluida
+ * (la planilla trae «Prórroga por 6 meses» en `notes`). Null = sin fecha
+ * registrada, que la pantalla trata como algo por resolver.
+ */
+export const workerDriverLicenses = pgTable("worker_driver_licenses", {
+  workerId:        text("worker_id").primaryKey().references(() => workers.id, { onDelete: "restrict" }),
+  classes:         text("classes").array().notNull(),
+  expiresAt:       text("expires_at"),
+  notes:           text("notes"),
+  // Sin FK a users: mismo criterio que `worker_capability_overrides` (evita el
+  // ciclo users -> worksites -> users); la identidad la resuelve la auditoría.
+  updatedByUserId: text("updated_by_user_id"),
+  createdAt:       timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  updatedAt:       timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [
+  index("worker_driver_licenses_expires_idx").on(table.expiresAt),
+  check("worker_driver_licenses_classes_valid", sql`cardinality(${table.classes}) >= 1 AND ${table.classes} <@ ARRAY['A1','A2','A3','A4','A5','A1_ANTIGUA','A2_ANTIGUA','B','C','D','E','F']::text[]`),
+  check("worker_driver_licenses_expires_valid", sql`${table.expiresAt} IS NULL OR ${table.expiresAt} ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'`),
+  check("worker_driver_licenses_notes_valid", sql`${table.notes} IS NULL OR length(${table.notes}) <= 300`),
+])
+
 /** Excepciones individuales a las capacidades heredadas desde el cargo. */
 export const workerCapabilityOverrides = pgTable("worker_capability_overrides", {
   id:              text("id").primaryKey(),
@@ -140,6 +169,7 @@ export const worksitesRelations = relations(worksites, ({ many }) => ({
 }))
 
 export const workersRelations = relations(workers, ({ one }) => ({
+  driverLicense: one(workerDriverLicenses, { fields: [workers.id], references: [workerDriverLicenses.workerId] }),
   worksite: one(worksites, { fields: [workers.worksiteId], references: [worksites.id] }),
   positionCatalog: one(workerPositions, { fields: [workers.positionId], references: [workerPositions.id] }),
 }))
@@ -161,4 +191,8 @@ export const workerPositionHistoryRelations = relations(workerPositionHistory, (
     references: [workerPositions.id],
     relationName: "worker_position_history_next",
   }),
+}))
+
+export const workerDriverLicensesRelations = relations(workerDriverLicenses, ({ one }) => ({
+  worker: one(workers, { fields: [workerDriverLicenses.workerId], references: [workers.id] }),
 }))

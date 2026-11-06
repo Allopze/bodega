@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { isCivilDate } from "@/lib/validation/dates"
 import { normalizePlate } from "./xlsx-utils"
 
 /* ── Fuel Load ───────────────────────────────────────────────────────────── */
@@ -262,6 +263,70 @@ export const fuelEquipmentTypeSchema = z.object({
   validateMeterPerformancePair(value.defaultMeterType, value.defaultPerformanceUnit, ctx)
 })
 
+/**
+ * Texto opcional que se puede borrar. Tres estados distintos, que el
+ * formulario de edición necesita distinguir (`vehicleFormData`):
+ *
+ * - ausente (`undefined`): el campo no viajó, no se toca;
+ * - presente y vacío (`""`): «quitar el dato», se guarda `null`;
+ * - con contenido: se guarda recortado.
+ *
+ * Antes un campo vacío se volvía `undefined` y por eso un código o una fecha
+ * de vencimiento no se podían borrar al editar (solo `serialNumber` lo hacía).
+ */
+function clearableText(max?: number) {
+  const text = z.string().trim()
+  return (max === undefined ? text : text.max(max)).transform((value) => value || null).optional()
+}
+
+/** Fecha civil real (`YYYY-MM-DD`) borrable: vacía = `null`, ausente = no tocar. */
+function clearableCivilDate(message: string) {
+  return z.string().trim()
+    .refine((value) => value === "" || isCivilDate(value), message)
+    .transform((value) => value || null)
+    .optional()
+}
+
+/** Las cuatro columnas de vencimiento del equipo, en el orden de la ficha. */
+export const VEHICLE_EXPIRY_FIELDS = [
+  "soapExpiresAt",
+  "circulationPermitExpiresAt",
+  "technicalReviewExpiresAt",
+  "insuranceExpiresAt",
+] as const
+
+export type VehicleExpiryField = (typeof VEHICLE_EXPIRY_FIELDS)[number]
+
+/**
+ * Entrada de «Actualizar vencimientos» (ficha del equipo). Solo cambian las
+ * fechas que viajan: ausente = no tocar, vacía = quitar la fecha.
+ */
+export const updateVehicleExpiriesSchema = z.object({
+  vehicleId: z.string().trim().min(1, "Vehículo requerido"),
+  soapExpiresAt: clearableCivilDate("La fecha del SOAP no es válida"),
+  circulationPermitExpiresAt: clearableCivilDate("La fecha del permiso de circulación no es válida"),
+  technicalReviewExpiresAt: clearableCivilDate("La fecha de la revisión técnica no es válida"),
+  insuranceExpiresAt: clearableCivilDate("La fecha del seguro no es válida"),
+})
+
+export type UpdateVehicleExpiriesInput = z.infer<typeof updateVehicleExpiriesSchema>
+
+/**
+ * Los productos compatibles son obligatorios mientras el equipo tenga medidor:
+ * TAE solo registra productos habilitados. Un equipo sin medidor (carros y
+ * bateas, que no cargan combustible) no tiene nada que habilitar.
+ */
+export function validateCompatibleProducts(
+  meterType: string | undefined,
+  compatibleProductIds: readonly string[] | undefined,
+  ctx: z.RefinementCtx,
+) {
+  if (meterType === undefined || meterType === "none") return
+  if (!compatibleProductIds?.length) {
+    ctx.addIssue({ code: "custom", path: ["compatibleProductIds"], message: "Selecciona al menos un producto compatible" })
+  }
+}
+
 const fuelVehicleBaseSchema = z.object({
   // Normalizada aquí (mismo canon que usa el import masivo, `normalizePlate`
   // de xlsx-utils.ts): antes el alta manual guardaba la patente cruda y el
@@ -275,14 +340,15 @@ const fuelVehicleBaseSchema = z.object({
   tankCapacityLiters: z.coerce.number().positive("La capacidad debe ser mayor que cero").max(1_000_000).optional(),
   comparisonGroup: z.string().trim().max(100).optional(),
   usualFuelSupplierId: z.string().optional(),
-  compatibleProductIds: z.array(z.string().min(1)).min(1, "Selecciona al menos un producto compatible").max(20),
+  // El mínimo de uno depende del medidor: ver `validateCompatibleProducts`.
+  compatibleProductIds: z.array(z.string().min(1)).max(20),
   operatingDays: z.array(z.coerce.number().int().min(1).max(7)).max(7).optional(),
   operatingStart: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Hora inicial inválida").optional(),
   operatingEnd: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Hora final inválida").optional(),
   operatingTimezone: z.string().trim().max(80).default("America/Santiago"),
-  code:      z.string().max(50).optional(),
-  brand:     z.string().max(100).optional(),
-  model:     z.string().max(100).optional(),
+  code:      clearableText(50),
+  brand:     clearableText(100),
+  model:     clearableText(100),
   year:      z.coerce.number().int().min(1990).max(2030).optional(),
   // Vacío = null: a diferencia de los otros opcionales, un vínculo erróneo con
   // VisionLink tiene que poder quitarse desde el formulario.
@@ -294,16 +360,17 @@ const fuelVehicleBaseSchema = z.object({
   responsibleUserId: z.string().optional(),
   operationalStatus: z.enum(FUEL_VEHICLE_STATUSES).optional(),
   operationalStatusReason: z.string().trim().min(5, "Explica el motivo en al menos 5 caracteres").max(500).optional(),
-  soapExpiresAt: z.string().optional(),
-  technicalReviewExpiresAt: z.string().optional(),
-  circulationPermitExpiresAt: z.string().optional(),
-  insurancePolicyNumber: z.string().max(60).optional(),
-  insuranceExpiresAt: z.string().optional(),
-  notes:     z.string().optional(),
+  soapExpiresAt: clearableCivilDate("La fecha del SOAP no es válida"),
+  technicalReviewExpiresAt: clearableCivilDate("La fecha de la revisión técnica no es válida"),
+  circulationPermitExpiresAt: clearableCivilDate("La fecha del permiso de circulación no es válida"),
+  insurancePolicyNumber: clearableText(60),
+  insuranceExpiresAt: clearableCivilDate("La fecha del seguro no es válida"),
+  notes:     clearableText(),
 })
 
 export const createFuelVehicleSchema = fuelVehicleBaseSchema.superRefine((value, ctx) => {
   validateMeterPerformancePair(value.meterType, value.performanceUnit, ctx)
+  validateCompatibleProducts(value.meterType, value.compatibleProductIds, ctx)
   const scheduleParts = [value.operatingDays?.length, value.operatingStart, value.operatingEnd].filter(Boolean).length
   if (scheduleParts > 0 && scheduleParts < 3) {
     ctx.addIssue({ code: "custom", path: ["operatingStart"], message: "Completa días, hora inicial y hora final" })
@@ -314,6 +381,8 @@ export const updateFuelVehicleSchema = fuelVehicleBaseSchema.partial().extend({
   id: z.string().min(1),
 }).superRefine((value, ctx) => {
   if (value.meterType && value.performanceUnit) validateMeterPerformancePair(value.meterType, value.performanceUnit, ctx)
+  // Sin `meterType` en la entrada no se sabe si el equipo lo tiene: lo resuelve la acción con el guardado.
+  validateCompatibleProducts(value.meterType, value.compatibleProductIds, ctx)
   const scheduleParts = [value.operatingDays?.length, value.operatingStart, value.operatingEnd].filter(Boolean).length
   if (scheduleParts > 0 && scheduleParts < 3) {
     ctx.addIssue({ code: "custom", path: ["operatingStart"], message: "Completa días, hora inicial y hora final" })

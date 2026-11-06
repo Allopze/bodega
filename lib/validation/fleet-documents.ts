@@ -70,7 +70,7 @@ export function resolveExpiryCandidates(
   return candidates
 }
 
-const CANONICAL_FIELD_LABEL: Record<CanonicalExpiryField, string> = {
+export const CANONICAL_FIELD_LABEL: Record<CanonicalExpiryField, string> = {
   soapExpiresAt: "SOAP",
   technicalReviewExpiresAt: "Revisión técnica",
   circulationPermitExpiresAt: "Permiso de circulación",
@@ -99,6 +99,41 @@ export function expiredDocumentTypes(
     out.add(document.documentType)
   }
   return [...out].sort((a, b) => a.localeCompare(b))
+}
+
+/**
+ * Vencimiento vigente de cada tipo documental de un equipo, con la misma
+ * precedencia que `resolveExpiryCandidates`: la columna declarada manda y el
+ * documento vigente sólo aporta cuando esa columna está vacía. Un tipo sin
+ * columna canónica («Padrón», «Otro»…) aporta su documento vigente tal cual.
+ *
+ * Con `horizon`, sólo lo que vence hasta esa fecha (inclusive): es lo que el
+ * aviso diario recorre. `source` dice de dónde salió la fecha, para que la
+ * ficha pueda aclarar «según documento subido».
+ */
+export function expiringDocuments(
+  declared: Partial<Record<CanonicalExpiryField, string | null>>,
+  currentDocuments: Array<{ documentType: string; expiresAt: string | null }>,
+  horizon?: string,
+): Array<{ documentType: string; expiresAt: string; source: "vehicle" | "document" }> {
+  const out = new Map<string, { documentType: string; expiresAt: string; source: "vehicle" | "document" }>()
+  for (const [field, label] of Object.entries(CANONICAL_FIELD_LABEL) as Array<[CanonicalExpiryField, string]>) {
+    const value = declared[field]
+    if (value) out.set(label, { documentType: label, expiresAt: value, source: "vehicle" })
+  }
+  for (const document of currentDocuments) {
+    if (!document.expiresAt) continue
+    const field = DOCUMENT_TYPE_CANONICAL_FIELD[document.documentType as keyof typeof DOCUMENT_TYPE_CANONICAL_FIELD]
+    if (field && declared[field]) continue
+    const previous = out.get(document.documentType)
+    // Dos documentos vigentes del mismo tipo no deberían existir (el versionado
+    // reemplaza); si pasara, manda el que vence antes.
+    if (previous && previous.expiresAt <= document.expiresAt) continue
+    out.set(document.documentType, { documentType: document.documentType, expiresAt: document.expiresAt, source: "document" })
+  }
+  return [...out.values()]
+    .filter((entry) => !horizon || entry.expiresAt <= horizon)
+    .sort((a, b) => a.expiresAt.localeCompare(b.expiresAt) || a.documentType.localeCompare(b.documentType))
 }
 
 /**

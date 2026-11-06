@@ -40,6 +40,7 @@ import {
   createWorkerPositionAction,
   reviewWorkerPositionAction,
   toggleWorkerPositionActiveAction,
+  updateWorkerPositionAction,
 } from "@/app/(app)/admin/cargos/actions"
 import type { ActionState } from "@/lib/form-state"
 
@@ -91,6 +92,7 @@ describe("acciones del catálogo de cargos", () => {
       name: "Conductor",
       isActive: true,
       needsReview: false,
+      requiredLicenseClasses: [],
     })
     expect(mockReplaceCapabilities).toHaveBeenCalledWith({
       positionId: "pos-conductor",
@@ -101,6 +103,103 @@ describe("acciones del catálogo de cargos", () => {
       entityType: "worker_position",
       entityId: "pos-conductor",
     }))
+  })
+
+  it("crea el cargo con las clases de licencia que exige, leídas con getAll", async () => {
+    mockCreatePosition.mockResolvedValue({
+      id: "pos-camion", code: "CAMION", name: "Conductor de camión",
+      isActive: true, needsReview: false, requiredLicenseClasses: ["A4", "A5"],
+    })
+    const form = new FormData()
+    form.set("code", "CAMION")
+    form.set("name", "Conductor de camión")
+    // El formulario manda además un valor vacío como marca del campo.
+    form.append("requiredLicenseClasses", "")
+    form.append("requiredLicenseClasses", "A4")
+    form.append("requiredLicenseClasses", "A5")
+    form.append("requiredLicenseClasses", "A4")
+
+    const result = await createWorkerPositionAction(previous, form)
+
+    expect(result.ok).toBe(true)
+    expect(mockCreatePosition).toHaveBeenCalledWith(expect.objectContaining({
+      requiredLicenseClasses: ["A4", "A5"],
+    }))
+    // La auditoría deja dicho qué licencia exige el cargo desde el día uno.
+    expect(mockRecordAudit).toHaveBeenCalledWith(expect.objectContaining({
+      entityType: "worker_position",
+      newState: expect.objectContaining({ requiredLicenseClasses: ["A4", "A5"] }),
+    }))
+  })
+
+  describe("edición de las clases de licencia", () => {
+    function editForm(extra?: (form: FormData) => void) {
+      const form = new FormData()
+      form.set("id", "pos-camion")
+      form.set("code", "CAMION")
+      form.set("name", "Conductor de camión")
+      extra?.(form)
+      return form
+    }
+    const updated = { id: "pos-camion", code: "CAMION", name: "Conductor de camión", isActive: true, needsReview: false }
+
+    it("sin el campo en el formulario no toca las clases que ya tiene", async () => {
+      mockUpdatePosition.mockResolvedValue(updated)
+
+      await updateWorkerPositionAction(previous, editForm())
+
+      expect(mockUpdatePosition).toHaveBeenCalledTimes(1)
+      const [, input] = mockUpdatePosition.mock.calls[0] ?? []
+      // `undefined` = ausente: el servicio no escribe la columna.
+      expect(input.requiredLicenseClasses).toBeUndefined()
+    })
+
+    it("con el campo vacío las borra todas (marca presente, ninguna clase)", async () => {
+      mockUpdatePosition.mockResolvedValue(updated)
+
+      await updateWorkerPositionAction(previous, editForm((form) => form.append("requiredLicenseClasses", "")))
+
+      expect(mockUpdatePosition).toHaveBeenCalledWith("pos-camion", expect.objectContaining({ requiredLicenseClasses: [] }))
+    })
+
+    it("con clases las reemplaza por las marcadas", async () => {
+      mockUpdatePosition.mockResolvedValue(updated)
+
+      await updateWorkerPositionAction(previous, editForm((form) => {
+        form.append("requiredLicenseClasses", "")
+        form.append("requiredLicenseClasses", "D")
+      }))
+
+      expect(mockUpdatePosition).toHaveBeenCalledWith("pos-camion", expect.objectContaining({ requiredLicenseClasses: ["D"] }))
+    })
+
+    it("revisar o desactivar un cargo no envía las clases y por tanto no las vacía", async () => {
+      mockUpdatePosition.mockResolvedValue(updated)
+      const review = new FormData()
+      review.set("id", "pos-camion")
+      review.set("code", "CAMION")
+      review.set("name", "Conductor de camión")
+      await reviewWorkerPositionAction(previous, review)
+
+      const toggle = new FormData()
+      toggle.set("id", "pos-camion")
+      toggle.set("code", "CAMION")
+      toggle.set("name", "Conductor de camión")
+      toggle.set("activate", "false")
+      await toggleWorkerPositionActiveAction(previous, toggle)
+
+      for (const [, input] of mockUpdatePosition.mock.calls) {
+        expect(input.requiredLicenseClasses).toBeUndefined()
+      }
+    })
+
+    it("devuelve el rechazo del servicio cuando una clase no existe", async () => {
+      mockUpdatePosition.mockRejectedValue(new actualDomainError("Clase de licencia no reconocida", "INVALID_INPUT"))
+
+      const result = await updateWorkerPositionAction(previous, editForm((form) => form.append("requiredLicenseClasses", "Z")))
+
+      expect(result).toEqual({ ok: false, message: "Clase de licencia no reconocida" })
+    })
   })
 
   it("marca un cargo como revisado sin alterar su identidad", async () => {

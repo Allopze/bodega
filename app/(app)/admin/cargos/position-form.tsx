@@ -1,11 +1,61 @@
 "use client"
 
+import * as React from "react"
 import { CatalogFormSheet } from "@/components/admin/catalog-form-sheet"
 import { Checkbox } from "@/components/ui/checkbox"
+import { ChoiceChips, type ChoiceChipOption } from "@/components/ui/choice-chips"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import {
+  DRIVER_LICENSE_CLASSES,
+  DRIVER_LICENSE_CLASS_GROUPS,
+  DRIVER_LICENSE_CLASS_INFO,
+} from "@/lib/validation/driver-licenses"
 import { createWorkerPositionAction, updateWorkerPositionAction } from "./actions"
 import type { WorkerCapabilityCatalogRow, WorkerPositionCatalogRow } from "./types"
+
+const LICENSE_CLASS_OPTIONS: ChoiceChipOption[] = DRIVER_LICENSE_CLASSES.map((code) => {
+  const info = DRIVER_LICENSE_CLASS_INFO[code]
+  return { value: code, label: info.short, description: info.name, group: info.group }
+})
+
+/**
+ * Selector de las clases de licencia que exige el cargo.
+ *
+ * Es un componente aparte —y no un `useState` de `PositionForm`— porque la hoja
+ * de Radix desmonta su contenido al cerrarse: el estado vive tanto como el
+ * formulario abierto y «Nuevo cargo» no hereda la selección del anterior.
+ *
+ * Recibe `aria-*` porque `Field` los inyecta en su único hijo para enlazar el
+ * rótulo y la ayuda con el grupo.
+ */
+function RequiredLicenseClassesField({
+  initial,
+  "aria-labelledby": labelledBy,
+  "aria-describedby": describedBy,
+}: {
+  initial: readonly string[]
+  "aria-labelledby"?: string
+  "aria-describedby"?: string
+}) {
+  const [value, setValue] = React.useState<string[]>(() => [...initial])
+  return (
+    <>
+      {/* Marca de que este formulario administra el campo: sin ella, no marcar
+          ninguna clase no llegaría al servidor y no habría cómo vaciarlas. */}
+      <input type="hidden" name="requiredLicenseClasses" value="" />
+      <ChoiceChips
+        name="requiredLicenseClasses"
+        options={LICENSE_CLASS_OPTIONS}
+        groups={DRIVER_LICENSE_CLASS_GROUPS}
+        value={value}
+        onChange={setValue}
+        aria-labelledby={labelledBy}
+        aria-describedby={describedBy}
+      />
+    </>
+  )
+}
 
 export function PositionForm({
   open,
@@ -93,6 +143,13 @@ export function PositionForm({
               )}
             </div>
           </fieldset>
+
+          <Field
+            label="Licencia de conducir"
+            helper="Basta con que tenga una de las marcadas. Déjalo vacío si el cargo no exige una clase en particular."
+          >
+            <RequiredLicenseClassesField initial={editPosition?.requiredLicenseClasses ?? []} />
+          </Field>
 
           <Checkbox
             id="position-needs-review"
