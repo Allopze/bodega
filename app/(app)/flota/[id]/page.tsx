@@ -195,7 +195,7 @@ export default async function FlotaVehiclePage({
             {detail.recentWorkOrders.length === 0 ? (
               <p className="text-sm text-[var(--color-text-muted)]">
                 Este equipo aún no tiene órdenes de trabajo. Se piden desde{" "}
-                <Link href={`/mantencion/ot?equipo=${vehicle.id}`} className="text-[var(--color-primary-ink)] underline-offset-4 hover:underline">Órdenes de trabajo</Link>.
+                <Link href={`/mantencion/ot?equipo=${vehicle.id}`} className="text-[var(--color-primary-ink)] underline underline-offset-4">Órdenes de trabajo</Link>.
               </p>
             ) : (
               <>
