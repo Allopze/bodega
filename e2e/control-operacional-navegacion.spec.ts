@@ -93,6 +93,7 @@ const MENU_DEL_AREA: ReadonlyArray<{ grupo: string; destinos: readonly DestinoDe
     grupo: "Flota",
     destinos: [
       { href: "/flota", nombre: "Vehículos" },
+      { href: "/flota/conductores", nombre: "Conductores" },
       { href: "/flota/monitoreo", nombre: "Monitoreo GPS" },
     ],
   },
@@ -131,7 +132,7 @@ test.describe("Control operacional — menú del área", () => {
     await login(page)
   })
 
-  test("agrupa el área en Seguimiento, Flota, Mantención y Combustible con sus diecisiete destinos en orden", async ({ page }) => {
+  test("agrupa el área en Seguimiento, Flota, Mantención y Combustible con sus dieciocho destinos en orden", async ({ page }) => {
     await page.goto("/control-operacional")
 
     const area = page
@@ -593,6 +594,7 @@ test.describe("Control operacional — tiles del panel", () => {
 const RUTAS_DEL_AREA = [
   "/control-operacional",
   "/flota",
+  "/flota/conductores",
   "/flota/monitoreo",
   "/mantencion/panel",
   "/combustibles",

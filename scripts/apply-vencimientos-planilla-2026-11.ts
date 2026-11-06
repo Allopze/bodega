@@ -173,7 +173,8 @@ const POSITION_PLANS: readonly PositionPlan[] = [
   {
     code: "CONDUCTOR-CAMION", name: "Conductor de camión", renamesFrom: "Chofer Camión",
     aliases: ["Chofer", "Conductor", "Chofer Camión", "Chófer de camión recolector", "Conductor o chófer de camión ampliroll", "Conductor camión Copec"],
-    capabilities: ["drives_vehicle"], requiredLicenseClasses: ["A4", "A5"],
+    // A2 antigua también habilita camión (decisión del usuario, 2026-11-05).
+    capabilities: ["drives_vehicle"], requiredLicenseClasses: ["A4", "A5", "A2_ANTIGUA"],
   },
   {
     code: "CONDUCTOR-TRACTO", name: "Conductor de tracto",
@@ -183,7 +184,7 @@ const POSITION_PLANS: readonly PositionPlan[] = [
   {
     code: "CONDUCTOR-MECANICO", name: "Conductor y mecánico",
     aliases: ["Conductor/Mecánico"],
-    capabilities: ["drives_vehicle"], requiredLicenseClasses: ["A4", "A5"],
+    capabilities: ["drives_vehicle"], requiredLicenseClasses: ["A4", "A5", "A2_ANTIGUA"],
   },
   {
     code: "OPERADOR-MAQUINARIA", name: "Operador de maquinaria",
@@ -224,7 +225,7 @@ export interface Outcome { step: string; item: string; action: string; result: R
 export type ReviewKind =
   | "equipo_vencido" | "licencia_vencida" | "clase_insuficiente" | "clase_no_reconocida"
   | "fila_omitida" | "dato_vacio" | "cargo_pendiente" | "conflicto" | "inactivo"
-  | "faena_distinta" | "codigo_duplicado"
+  | "faena_distinta" | "codigo_duplicado" | "identificado_por_nombre"
 export interface ReviewNote { kind: ReviewKind; item: string; detail: string }
 
 export interface VencimientosReport { outcomes: Outcome[]; review: ReviewNote[] }
@@ -235,6 +236,7 @@ const REVIEW_TITLES: Record<ReviewKind, string> = {
   clase_insuficiente: "Conductores con clase insuficiente para su cargo",
   clase_no_reconocida: "Clases de licencia que no se reconocieron",
   fila_omitida: "Filas omitidas",
+  identificado_por_nombre: "Trabajadores identificados por nombre (RUT de la planilla a corregir)",
   dato_vacio: "Datos vacíos en la planilla",
   cargo_pendiente: "Cargos que no estaban en el catálogo",
   conflicto: "Conflictos del catálogo de cargos",
@@ -1100,10 +1102,17 @@ async function resolveCargo(ctx: Ctx, text: string, cache: Map<string, CargoReso
   return result
 }
 
+/** Nombre completo como conjunto de palabras: sin tildes, mayúsculas ni orden. */
+export function nameKey(name: string): string {
+  return name
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase().split(/[^a-zñ]+/).filter(Boolean).sort().join(" ")
+}
+
 async function runWorkers(ctx: Ctx, rows: WorkerRow[]) {
   ctx.step = STEP.workers
   const [dbWorkers, positions] = await Promise.all([
-    db.select({ id: workers.id, rut: workers.rut, worksiteId: workers.worksiteId, positionId: workers.positionId, isActive: workers.isActive }).from(workers),
+    db.select({ id: workers.id, rut: workers.rut, firstName: workers.firstName, lastName: workers.lastName, worksiteId: workers.worksiteId, positionId: workers.positionId, isActive: workers.isActive }).from(workers),
     db.select().from(workerPositions),
   ])
   const positionById = new Map(positions.map((position) => [position.id, position]))
@@ -1113,8 +1122,21 @@ async function runWorkers(ctx: Ctx, rows: WorkerRow[]) {
     const key = cleanRut(worker.rut)
     byRut.set(key, [...(byRut.get(key) ?? []), worker])
   }
+  // La planilla escribe «APELLIDOS NOMBRES» y Chome guarda nombre y apellido
+  // por separado: se compara el conjunto de palabras, sin orden ni tildes.
+  const byName = new Map<string, typeof dbWorkers>()
+  for (const worker of dbWorkers) {
+    const key = nameKey(`${worker.firstName} ${worker.lastName}`)
+    if (key) byName.set(key, [...(byName.get(key) ?? []), worker])
+  }
+  /** Trabajador único con ese nombre completo, o null si no hay o hay más de uno. */
+  const uniqueByName = (name: string | null | undefined) => {
+    const found = byName.get(nameKey(name ?? "")) ?? []
+    return found.length === 1 ? found[0] : null
+  }
   const cargoCache = new Map<string, CargoResolution>()
   const seenRuts = new Set<string>()
+  const usedWorkerIds = new Set<string>()
   /** Clasificaciones pendientes de aplicar, agrupadas por cargo destino. */
   const toAssign = new Map<string, Array<{ workerId: string; label: string; positionName: string }>>()
 
@@ -1125,13 +1147,30 @@ async function runWorkers(ctx: Ctx, rows: WorkerRow[]) {
       ctx.note({ kind: "fila_omitida", item: label, detail: `Trabajadores, fila ${row.row}: ${detail}` })
     }
     if (!row.rut) { omit("trabajador de la planilla", "no trae RUT"); continue }
-    if (seenRuts.has(row.rut)) { omit("trabajador de la planilla", "RUT repetido en la planilla; vale la primera fila"); continue }
+    const repeatedInSheet = seenRuts.has(row.rut)
     seenRuts.add(row.rut)
     const worksite = ctx.resolveWorksite(row.faena)
     if (!worksite) { omit("trabajador de la planilla", `faena «${row.faena ?? ""}» sin resolver`); continue }
-    const matches = byRut.get(row.rut) ?? []
+    const matches = repeatedInSheet ? [] : (byRut.get(row.rut) ?? [])
     if (matches.length > 1) { omit("trabajador de la planilla", "su RUT está repetido en Chome"); continue }
-    const existing = matches[0]
+    let existing = matches[0]
+    if (!existing) {
+      // RUT repetido en la planilla (error de digitación) o que no calza con
+      // Chome: antes de omitir o de crear un duplicado, se busca por nombre.
+      const named = uniqueByName(row.name)
+      if (named && !usedWorkerIds.has(named.id)) {
+        existing = named
+        ctx.note({
+          kind: "identificado_por_nombre",
+          item: label,
+          detail: `Trabajadores, fila ${row.row}: ${repeatedInSheet ? "su RUT repite el de otra fila" : "su RUT no está en Chome"}; se identificó por nombre. Corrige el RUT en la planilla.`,
+        })
+      } else if (repeatedInSheet) {
+        omit("trabajador de la planilla", "RUT repetido en la planilla y el nombre no identifica a un único trabajador de Chome")
+        continue
+      }
+    }
+    if (existing) usedWorkerIds.add(existing.id)
 
     if (!existing) {
       const action = "crear trabajador"

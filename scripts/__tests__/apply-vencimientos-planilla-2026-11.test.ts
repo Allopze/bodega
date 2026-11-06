@@ -317,7 +317,7 @@ describe("planilla de vencimientos 2026-11", () => {
     // El cargo existente se renombra (mismo id: sus trabajadores lo siguen) y su nombre viejo queda como alias.
     const conductor = await positionNamed("Conductor de camión")
     expect(conductor.id).toBe("pos-chofer")
-    expect(conductor).toMatchObject({ code: "AUTO-TEST1", needsReview: false, requiredLicenseClasses: ["A4", "A5"] })
+    expect(conductor).toMatchObject({ code: "AUTO-TEST1", needsReview: false, requiredLicenseClasses: ["A4", "A5", "A2_ANTIGUA"] })
     const aliases = await inMemoryDb.select().from(schema.workerPositionAliases).where(eq(schema.workerPositionAliases.positionId, conductor.id))
     expect(aliases.map((alias) => alias.normalizedKey).sort()).toEqual([
       "chofer", "chofer camion", "chofer de camion recolector", "conductor", "conductor camion copec", "conductor o chofer de camion ampliroll",
@@ -458,6 +458,33 @@ describe("planilla de vencimientos 2026-11", () => {
     expect(await inMemoryDb.select().from(schema.workerPositions).where(eq(schema.workerPositions.id, "pos-conductor"))).toHaveLength(1)
     // El cargo con alias en conflicto igual se registra con el resto de sus alias.
     expect((await positionNamed("Conductor de camión")).id).toBe("pos-chofer")
+  }, 60_000)
+
+  it("un RUT repetido en la planilla no se descarta: identifica al trabajador por su nombre, en cualquier orden", async () => {
+    // La planilla escribe «APELLIDOS NOMBRES»; Chome guarda nombre y apellido por separado.
+    await inMemoryDb.insert(schema.workers).values({
+      id: "wk9", rut: "11111111-1", firstName: "Alejo Salem", lastName: "Prueba Lara", worksiteId: "w-mas",
+      isActive: true, positionId: UNCLASSIFIED, position: "Sin clasificar",
+    })
+    const workersInput: WorkerInput[] = [
+      ["Masisa maderas", "SIETE PRUEBA SOTO", dotted(R.w7), "Chofer", "A2", date("2099-01-01"), null],
+      ["Masisa maderas", "PRUEBA LARA ALEJO SALEM", dotted(R.w7), "Chofer", "A3/A5/B", date("2099-12-19"), null],
+    ]
+    const report = await run(true, await buildPlanilla({ machines: [], workers: workersInput }))
+
+    expect(await license("wk7")).toMatchObject({ classes: ["A2"] })
+    expect(await license("wk9")).toMatchObject({ classes: ["A3", "A5", "B"], expiresAt: "2099-12-19" })
+    expect((await worker("wk9")).positionId).toBe((await positionNamed("Conductor de camión")).id)
+    // No nace un duplicado y queda dicho que el RUT de la planilla hay que corregirlo.
+    expect(await inMemoryDb.select().from(schema.workers)).toHaveLength(8)
+    expect(report.review.find((note) => note.kind === "identificado_por_nombre")?.detail).toContain("repite el de otra fila")
+  }, 60_000)
+
+  it("con A2 antigua un conductor de camión no queda con clase insuficiente", async () => {
+    const workersInput: WorkerInput[] = [["Masisa maderas", "SIETE PRUEBA SOTO", dotted(R.w7), "Chofer", "A2 Antigua/B", date("2099-01-01"), null]]
+    const report = await run(true, await buildPlanilla({ machines: [], workers: workersInput }))
+    expect(await license("wk7")).toMatchObject({ classes: ["A2_ANTIGUA", "B"] })
+    expect(report.review.filter((note) => note.kind === "clase_insuficiente")).toHaveLength(0)
   }, 60_000)
 
   it("omite las filas cuya faena no se resuelve, en equipos y en trabajadores", async () => {
