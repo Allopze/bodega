@@ -190,6 +190,7 @@ describe("buildPerformanceGlossary", () => {
     const labour = buildPerformanceGlossary({ canViewFleet: false, canViewWorkOrders: true }).find((e) => e.key === "ot-maintenance-cost")!
     expect(labour.term).toBe("Mano de obra / taller externo (OT)")
     expect(labour.definition).toContain("Los repuestos y servicios comprados por OC van en su propia cifra")
+    expect(labour.definition).toContain("sin OT cerradas en el período marca $0")
 
     // Las compras vinculadas las abre purchasing:view, sin depender de OT ni de combustible.
     expect(keysOf({ canViewFleet: false, canViewPurchaseCosts: true })).toEqual(["vehicle-purchases"])
@@ -205,6 +206,8 @@ describe("buildPerformanceGlossary", () => {
     expect(keysOf({ canViewFleet: false, canViewCosts: true, canViewPurchaseCosts: true })).not.toContain("ot-total-cost")
     const definition = buildPerformanceGlossary({ ...total, canViewPurchaseCosts: true }).find((e) => e.key === "ot-total-cost")!.definition
     expect(definition).toContain("Combustible del proveedor, mano de obra de OT cerradas y compras vinculadas")
-    expect(definition).toContain("las tres series")
+    // Un equipo sin movimientos en una serie aporta $0; sólo una consulta fallida deja «—».
+    expect(definition).toContain("aporta $0")
+    expect(definition).toContain("no se pudo consultar")
   })
 })

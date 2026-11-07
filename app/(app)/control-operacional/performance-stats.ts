@@ -200,7 +200,7 @@ export function buildPerformanceGlossary(permissions: {
         key: "ot-maintenance-cost",
         term: "Mano de obra / taller externo (OT)",
         definition:
-          "Suma del costo cargado a mano en las OT cerradas del período: mano de obra o taller externo. Los repuestos y servicios comprados por OC van en su propia cifra. Es opcional: una OT sin costo no suma, y la cifra no se completa con un valor inventado.",
+          "Suma del costo cargado a mano en las OT cerradas del período: mano de obra o taller externo. Los repuestos y servicios comprados por OC van en su propia cifra. Es opcional: una OT cerrada sin costo cargado suma $0, y un equipo sin OT cerradas en el período marca $0.",
       },
       {
         key: "workshop-hours",
@@ -251,7 +251,7 @@ export function buildPerformanceGlossary(permissions: {
       key: "ot-total-cost",
       term: "Costo total",
       definition:
-        "Combustible del proveedor, mano de obra de OT cerradas y compras vinculadas. Sólo cuando las tres series están disponibles; si falta una, se deja «—» en vez de sumar un cero.",
+        "Combustible del proveedor, mano de obra de OT cerradas y compras vinculadas. Un equipo sin movimientos en una de ellas aporta $0; si una serie no se pudo consultar, se deja «—» en vez de sumar un cero.",
     })
   }
   if (permissions.canViewInspections && permissions.canViewCapa) {

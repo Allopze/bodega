@@ -101,7 +101,8 @@ export type OperationalAsset = {
   /**
    * Mano de obra / taller externo: Σ `total_cost` de las OT cerradas del período, que
    * jefatura carga a mano. No incluye los repuestos ni los servicios comprados por OC
-   * (van en `purchaseAmount`). `null` sin la capacidad de OT o si ninguna OT trae costo.
+   * (van en `purchaseAmount`). $0 si el equipo no tiene OT cerradas con costo en el
+   * período; `null` sólo sin la capacidad de OT o si su consulta falló.
    */
   maintenanceCost: number | null
   /**
@@ -410,12 +411,17 @@ export async function getOperationalControlHub(
     const gps = gpsByVehicle.get(vehicle.id)
     const workOrder = workOrdersByVehicle?.get(vehicle.id)
     const fuelBilledAmount = canViewFuel && canViewCosts ? fuelValue(fuel?.billedAmount, 0) : null
-    const maintenanceCost = workOrdersByVehicle ? (workOrder?.maintenanceCostInPeriod ?? null) : null
+    // Sin OT cerradas con costo en el período, la mano de obra del equipo es $0 de
+    // verdad, no un dato faltante (decisión 2026-11-07): antes quedaba `null` y el
+    // «Costo total» salía «—» para casi toda la flota. Sólo es `null` sin la
+    // capacidad de OT o si su consulta falló (`workOrdersByVehicle` en null).
+    const maintenanceCost = workOrdersByVehicle ? (workOrder?.maintenanceCostInPeriod ?? 0) : null
     const purchaseAmount = canViewPurchaseCosts
       ? (purchaseUnavailable ? null : (purchaseByVehicle.get(vehicle.id)?.purchaseAmount ?? 0))
       : null
     // Un total sólo existe con las tres series: sumar sólo dos y llamarlo «total» lo
-    // subestimaría sin avisar, y una serie sin dato no se completa con un cero.
+    // subestimaría sin avisar. Una serie es `null` sólo sin su capacidad o si su
+    // consulta falló; un equipo sin movimientos en una serie aporta $0.
     const totalCost = fuelBilledAmount != null && maintenanceCost != null && purchaseAmount != null
       ? fuelBilledAmount + maintenanceCost + purchaseAmount
       : null

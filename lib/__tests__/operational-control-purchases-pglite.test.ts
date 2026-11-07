@@ -284,6 +284,14 @@ describe("getOperationalControlHub · compras vinculadas", () => {
     expect(a).toMatchObject({ fuelBilledAmount: 200_000, maintenanceCost: 30_000, purchaseAmount: 160_000 })
     expect(a.totalCost).toBe(390_000)
 
+    // Un equipo sin OT cerradas con costo en el período aporta $0 de mano de obra:
+    // el total existe igual (antes salía «—» para casi toda la flota).
+    const b = find(complete, IDS.vB)
+    expect(b.maintenanceCost).toBe(0)
+    expect(b.purchaseAmount).toBe(70_000)
+    expect(b.fuelBilledAmount).not.toBeNull()
+    expect(b.totalCost).toBe((b.fuelBilledAmount ?? Number.NaN) + 70_000)
+
     // Sin la capacidad de compras no se publica un total que parezca completo.
     const withoutPurchases = await getOperationalControlHub(
       session({ permissions: all.filter((permission) => permission !== "purchasing:view") }),
