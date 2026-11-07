@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from "@testing-library/react"
-import { afterEach, describe, expect, it } from "vitest"
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { WorkOrderTab } from "@/lib/services/mantencion/work-orders/query"
 import type { WorkOrderPartsRequest } from "@/lib/services/mantencion/work-orders/types"
 import { otDetail, otRow } from "./ot-fixtures"
@@ -14,6 +14,17 @@ import { OtTable } from "./ot-table"
 import { OT_STATUSES, OT_STATUS_LABELS } from "@/lib/mantencion/work-order-states"
 import { OT_STATE_META } from "./ot-labels"
 
+// Sólo `OtListFilters` lee la URL: el resto de lo que se prueba aquí no usa el router.
+const navigation = vi.hoisted(() => ({ replace: vi.fn(), search: "" }))
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ replace: navigation.replace, push: vi.fn(), refresh: vi.fn() }),
+  usePathname: () => "/mantencion/ot",
+  useSearchParams: () => new URLSearchParams(navigation.search),
+}))
+
+const { OtListFilters } = await import("./ot-list-filters")
+
+beforeEach(() => navigation.replace.mockClear())
 afterEach(cleanup)
 
 const cards = () => within(screen.getByRole("list", { name: "Órdenes de trabajo como tarjetas" }))
@@ -37,6 +48,37 @@ describe("filtros y pestañas de la lista", () => {
     expect(filters).toMatchObject({ tab: "abiertas", page: 1 })
     expect(filters.from).toBeUndefined()
     expect(filters.to).toBeUndefined()
+  })
+
+  it("lee repuestos=pendientes como filtro y lo limpia con «Limpiar filtros»", () => {
+    const filters = parseWorkOrderQuery({ estado: "en_ejecucion", repuestos: "pendientes" })
+    expect(filters).toMatchObject({ tab: "en_ejecucion", partsPending: true })
+    expect(hasWorkOrderFilters(filters)).toBe(true)
+    expect(OT_FILTER_PARAMS).toContain("repuestos")
+    // Cualquier otro valor se ignora: no hay un «repuestos=todos» que filtre.
+    expect(parseWorkOrderQuery({ repuestos: "si" }).partsPending).toBe(false)
+    expect(hasWorkOrderFilters(parseWorkOrderQuery({}))).toBe(false)
+
+    // Es un chip removible (A2: no suma un control a la barra) y «Limpiar filtros» lo quita sin cambiar de pestaña.
+    navigation.search = "estado=en_ejecucion&repuestos=pendientes&pagina=2"
+    render(<OtListFilters options={{ worksites: [], mechanics: [] }} equipment={[]} />)
+    expect(screen.getByText("Repuestos:")).toBeTruthy()
+    expect(screen.getByText("pendientes")).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Limpiar filtros" }))
+    expect(navigation.replace).toHaveBeenCalledWith("/mantencion/ot?estado=en_ejecucion", { scroll: false })
+
+    navigation.replace.mockClear()
+    fireEvent.click(screen.getByRole("button", { name: "Eliminar filtro Repuestos" }))
+    expect(navigation.replace).toHaveBeenCalledWith("/mantencion/ot?estado=en_ejecucion", { scroll: false })
+    navigation.search = ""
+  })
+
+  it("sin el parámetro no hay chip de repuestos", () => {
+    navigation.search = "estado=abiertas"
+    render(<OtListFilters options={{ worksites: [], mechanics: [] }} equipment={[]} />)
+    expect(screen.queryByText("Repuestos:")).toBeNull()
+    expect(screen.queryByRole("button", { name: "Limpiar filtros" })).toBeNull()
+    navigation.search = ""
   })
 
   it("el estado no es un filtro: limpiar filtros no cambia de pestaña (A5)", () => {
@@ -82,6 +124,15 @@ describe("tabla de la lista", () => {
     expect(overdue).toHaveLength(1)
     expect(overdue[0]!.closest("[data-overdue]")?.textContent).toContain("28-10-2026")
     expect(table().getByText("05-11-2026").closest("[data-overdue]")).toBeNull()
+  })
+
+  it("una OT esperando repuesto lo dice en la celda de estado, en la tabla y en la tarjeta; las demás no", () => {
+    render(<OtTable rows={[otRow({ waitingParts: true }), otRow({ id: "ot-2", folio: "OT-BIO-0002", waitingParts: false })]} />)
+    expect(table().getAllByText("Esperando repuesto")).toHaveLength(1)
+    expect(table().getByText("Esperando repuesto").closest("tr")?.textContent).toContain("OT-BIO-0001")
+    expect(cards().getAllByText("Esperando repuesto")).toHaveLength(1)
+    // El estado sigue siendo el de la OT: la espera es un aviso aparte, no otro estado.
+    expect(table().getAllByText("En taller")).toHaveLength(2)
   })
 
   it("una OT devuelta lo dice en la celda de estado", () => {

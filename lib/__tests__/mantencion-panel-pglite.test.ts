@@ -285,6 +285,37 @@ describe("D2 · «En taller ahora» con los datos de la OT", () => {
   })
 })
 
+describe("«En taller ahora» dice si la OT espera un repuesto", () => {
+  async function requestParts(input: { id: string; worksiteId: string; vehicleId: string; workOrderId: string; itemStatus: string; requestStatus?: string }) {
+    const stamp = new Date().toISOString()
+    await testDb.insert(schema.purchaseRequests).values({
+      id: input.id, code: `REP-${input.id}`, worksiteId: input.worksiteId, requesterId: USER, requestType: "repuestos",
+      status: input.requestStatus ?? "approved", urgency: "high", deliveryMode: "directo_faena", createdAt: stamp, updatedAt: stamp,
+    })
+    await testDb.insert(schema.purchaseRequestItems).values({
+      id: `${input.id}-item`, requestId: input.id, productNameFree: "Bomba hidráulica", quantity: 1, status: input.itemStatus,
+      vehicleId: input.vehicleId, workOrderId: input.workOrderId, createdAt: stamp, updatedAt: stamp,
+    })
+  }
+
+  it("una OT en taller con una línea sin recibir sale con waitingParts; sin pedidos, una recibida o una solicitud cancelada, no", async () => {
+    expect((await panelOf(WS.ot)).workshop.rows[0]?.waitingParts).toBe(false)
+
+    await requestParts({ id: "d-parts-ot", worksiteId: WS.ot, vehicleId: V.ot, workOrderId: OT.ot, itemStatus: "in_purchase_order" })
+    expect((await panelOf(WS.ot)).workshop.rows[0]).toMatchObject({ workOrderId: OT.ot, waitingParts: true })
+
+    // Todo llegó a faena en la OT al día; la otra solicitud se canceló: ninguna de las dos espera.
+    await requestParts({ id: "d-parts-fresh", worksiteId: WS.fresh, vehicleId: V.fresh, workOrderId: OT.fresh, itemStatus: "received", requestStatus: "closed" })
+    expect((await panelOf(WS.fresh)).workshop.rows[0]?.waitingParts).toBe(false)
+    await requestParts({ id: "d-parts-mix", worksiteId: WS.mix, vehicleId: V.mix, workOrderId: OT.mix, itemStatus: "rejected", requestStatus: "cancelled" })
+    expect((await panelOf(WS.mix)).workshop.rows[0]?.waitingParts).toBe(false)
+  })
+
+  it("una correctiva en taller no tiene OT que espere: waitingParts es false", async () => {
+    expect((await panelOf(WS.open)).workshop.rows[0]).toMatchObject({ workOrderId: null, waitingParts: false })
+  })
+})
+
 describe("D3 · «sin actualizar» también para una OT", () => {
   it("una OT modificada hace 3 días está sin actualizar; hace 1 día, no", async () => {
     const fleet = await loadFleet({ scope: "all", today })

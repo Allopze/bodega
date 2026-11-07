@@ -316,6 +316,14 @@ describe("la lista y la cifra global usan el mismo predicado", () => {
     expect(closedUnfiltered.rows.find((row) => row.id === OT.cerrada)?.waitingParts).toBe(false)
   })
 
+  it("el Excel comparte el filtro: workOrdersWhere con partsPending trae las mismas OT que la lista", async () => {
+    const { workOrdersWhere } = await import("@/lib/services/mantencion/work-orders/query")
+    const ids = async (partsPending?: boolean) => (await testDb.select({ id: schema.mantWorkOrders.id }).from(schema.mantWorkOrders)
+      .where(workOrdersWhere(VIEWER, { tab: "abiertas", partsPending }))).map((row) => row.id).sort()
+    expect(await ids(true)).toEqual([OT.oc, OT.taller])
+    expect((await ids(false)).length).toBeGreaterThan(2)
+  })
+
   it("waitingParts cuenta sólo OT abiertas con alguna línea de repuesto sin recibir", async () => {
     const metrics = await getWorkOrderGlobalMetrics("all")
     expect(metrics.waitingParts).toBe(2)
