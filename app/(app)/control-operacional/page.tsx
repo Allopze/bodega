@@ -15,8 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Callout } from "@/components/ui/callout"
 import { DegradedDataBanner } from "@/components/ui/degraded-data-banner"
-import { DatePicker } from "@/components/ui/date-picker"
-import { Field } from "@/components/ui/field"
+import { PeriodControl } from "@/components/ui/period-control"
 import { MetaBadge } from "@/components/states/state-badge"
 import { KpiCard } from "@/components/ui/kpi-card"
 import { SummaryBar } from "@/components/ui/summary-bar"
@@ -135,7 +134,10 @@ export default async function OperationalControlPage({
   const defaultPeriod = resolveOperationalControlPeriod()
   const isDefaultPeriod = period.from === defaultPeriod.from && period.to === defaultPeriod.to
   const periodLabel = `${formatDate(period.from)} – ${formatDate(period.to)}`
-  const headerDescription = `Qué requiere atención hoy en flota y combustible, y el desempeño de los activos entre ${formatDate(period.from)} y ${formatDate(period.to)}.`
+  // El período no va en la descripción: la cabecera la corta a dos líneas y el
+  // rango quedaba truncado a mitad de fecha. Lo dice el selector del header y el
+  // rótulo de «Desempeño del período».
+  const headerDescription = "Qué requiere atención hoy en flota y combustible, y el desempeño de los activos en el período elegido."
 
   const { canViewFleet, canViewInspections, canViewCapa, canViewCosts, canViewServiceEquipment, canViewWorkOrders, canViewPurchaseCosts } = data.permissions
   // Secciones que pueden degradarse: documentos, ajustes de flota y GPS (sólo
@@ -186,7 +188,15 @@ export default async function OperationalControlPage({
           ]} />
         }
         actions={
-          <OperationalExportButton period={period} />
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <PeriodControl
+              mode="range"
+              from={period.from}
+              to={period.to}
+              defaultRange={{ ...defaultPeriod, label: "los últimos 90 días" }}
+            />
+            <OperationalExportButton period={period} />
+          </div>
         }
       />
 
@@ -201,7 +211,7 @@ export default async function OperationalControlPage({
           <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5">
             <h2 id="atencion-ahora" className="text-eyebrow">Requiere atención ahora</h2>
             <p className="text-xs text-[var(--color-text-subtle)]">
-              Foto de hoy: el período de más abajo no cambia estas cifras.
+              Foto de hoy: el período elegido no cambia estas cifras.
             </p>
           </div>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -211,6 +221,7 @@ export default async function OperationalControlPage({
                 icon={ATTENTION_ICONS[tile.key]}
                 label={tile.label}
                 value={tile.value}
+                valueKind={tile.valueKind}
                 detail={tile.detail}
                 tone={tile.tone}
                 href={tile.href}
@@ -252,33 +263,6 @@ export default async function OperationalControlPage({
             El rango pedido no es válido: el inicio no puede ser posterior al término. Se muestra el período por defecto.
           </Callout>
         )}
-
-        <Card>
-          <CardContent className="pt-6">
-            <form method="get" className="grid gap-3 sm:grid-cols-[1fr_1fr_auto_auto]">
-              <Field label="Desde" htmlFor="operational-from">
-                <DatePicker id="operational-from" name="desde" defaultValue={period.from} />
-              </Field>
-              <Field label="Hasta" htmlFor="operational-to">
-                <DatePicker id="operational-to" name="hasta" defaultValue={period.to} />
-              </Field>
-              <Button type="submit" className="self-end">
-                Aplicar período
-              </Button>
-              {!isDefaultPeriod && (
-                <Button asChild type="button" variant="ghost" className="self-end">
-                  <Link href="/control-operacional">
-                    Restablecer
-                    <span className="sr-only">
-                      {" "}
-                      (período por defecto {formatDate(defaultPeriod.from)} – {formatDate(defaultPeriod.to)})
-                    </span>
-                  </Link>
-                </Button>
-              )}
-            </form>
-          </CardContent>
-        </Card>
 
         <SummaryBar stats={performanceStats} />
 

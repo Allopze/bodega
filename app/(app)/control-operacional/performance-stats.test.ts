@@ -67,7 +67,8 @@ describe("buildPerformanceStats", () => {
     })
     expect(stats.find((s) => s.key === "driver-licenses")).toMatchObject({
       label: "Licencias por regularizar",
-      value: "2",
+      value: 2,
+      valueKind: "number",
       secondary: "3 por vencer en 30 días",
       tone: "danger",
       href: "/flota/conductores",
@@ -78,6 +79,7 @@ describe("buildPerformanceStats", () => {
     })
     expect(ok.find((s) => s.key === "driver-licenses")).toMatchObject({
       value: "Al día",
+      valueKind: "text",
       secondary: "Nada por vencer en 30 días",
     })
     const empty = buildPerformanceStats(METRICS, {
@@ -86,6 +88,7 @@ describe("buildPerformanceStats", () => {
     })
     expect(empty.find((s) => s.key === "driver-licenses")).toMatchObject({
       value: "Sin datos",
+      valueKind: "text",
       secondary: "No hay trabajadores con licencia en el alcance",
     })
   })
@@ -97,7 +100,8 @@ describe("buildPerformanceStats", () => {
     })
     expect(stats.find((s) => s.key === "tae-tct-coverage")).toMatchObject({
       label: "Equipos con un solo canal",
-      value: "3",
+      value: 3,
+      valueKind: "number",
       secondary: "2 sólo TAE · 1 sólo TCT · 8 con ambos",
       tone: "signal",
       href: "/combustibles/cuadratura/tarjeta-y-terreno",

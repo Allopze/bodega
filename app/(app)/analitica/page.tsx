@@ -3,7 +3,6 @@ import Link from "next/link"
 import { redirect } from "next/navigation"
 import {
   ArrowRight,
-  DownloadSimple,
   GasPump,
   Package,
   ShieldWarning,
@@ -17,6 +16,7 @@ import { formatCLP, formatDate, formatPercent, formatQty } from "@/lib/utils"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { ExportLink } from "@/components/ui/export-button"
 import { ChartSection } from "@/components/charts/chart-section"
 import { ChartErrorBoundary } from "@/components/chart-error-boundary"
 import { RankedList } from "@/components/ui/ranked-list"
@@ -52,6 +52,9 @@ export default async function AnaliticaPage({
   const chartExcel = can(session, "analytics:export") ? { excel: { permission: "analytics:export" as const } } : {}
 
   const sp = await searchParams
+  // El rango que la pantalla usa sin parámetros: el selector de período lo ofrece como «Volver a…».
+  const defaultFilters = normalizeAnalyticsFilters({})
+  const defaultRange = { from: defaultFilters.fromDate, to: defaultFilters.toDate }
   const filters = normalizeAnalyticsFilters({
     fromDate: getParam(sp, "from"),
     toDate: getParam(sp, "to"),
@@ -126,15 +129,7 @@ export default async function AnaliticaPage({
             { label: "Analítica" },
           ]} />
         }
-        actions={
-          <Link
-            href={`/api/reportes/export?${exportParams.toString()}`}
-            className="inline-flex h-8 items-center justify-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 text-xs font-semibold text-white transition-colors hover:bg-[var(--color-primary-strong)]"
-          >
-            <DownloadSimple size={14} />
-            Exportar Excel
-          </Link>
-        }
+        actions={<ExportLink href={`/api/reportes/export?${exportParams.toString()}`} />}
       />
 
       {/* `grid-cols-1` (= `minmax(0, 1fr)`) aquí y en cada sección: con la
@@ -144,6 +139,7 @@ export default async function AnaliticaPage({
       <div className="grid grid-cols-1 gap-5">
         <AnalyticsFiltersBar
           filters={data.filters}
+          defaultRange={defaultRange}
           worksites={options.worksites}
           suppliers={options.suppliers}
           vehicles={options.vehicles}
@@ -156,7 +152,7 @@ export default async function AnaliticaPage({
             icon={<ShoppingCart size={18} />}
             label="Gasto total (con IVA)"
             value={formatCLP(data.kpis.totalSpend)}
-            detail={`Período ${data.filters.fromDate} a ${data.filters.toDate}`}
+            detail={`Período ${formatDate(data.filters.fromDate)} a ${formatDate(data.filters.toDate)}`}
             trend={data.kpis.spendVariationPct}
             // Dinero gastado: subir es mala noticia. Sin esto `KpiCard` usa
             // `up-good` y pintaba de verde un alza del 133 % (Fase 0 · 0.2).
@@ -169,7 +165,7 @@ export default async function AnaliticaPage({
           <KpiCard
             icon={<Package size={18} />}
             label="Órdenes de compra"
-            value={formatQty(data.kpis.purchaseOrderCount)}
+            value={data.kpis.purchaseOrderCount}
             detail={`Promedio con IVA ${formatCLP(data.kpis.averageOrderAmount)}`}
             href={canViewPurchasing ? "/compras" : undefined}
             glossary="Cantidad de órdenes de compra emitidas en el período, sin borradores, anuladas ni eliminadas. El promedio divide el gasto en OC (con impuestos) entre ese número."
@@ -178,7 +174,7 @@ export default async function AnaliticaPage({
             icon={<GasPump size={18} />}
             label="Combustible"
             value={formatCLP(data.kpis.fuelAmount)}
-            detail={`${formatQty(data.kpis.fuelLiters, "L")} · ${data.kpis.fuelLoadCount} cargas`}
+            detail={`${formatQty(data.kpis.fuelLiters, "L")} · ${formatQty(data.kpis.fuelLoadCount)} cargas`}
             href={FUEL_PATHS.consumoLitros}
             glossary="Gasto en combustible durante el período, con impuestos incluidos (IVA e IEC). Suma las transacciones de Copec aceptadas y vigentes de todos los vehículos y estanques visibles para tu alcance, sin duplicar el agregado mensual del informe TCT."
           />}
@@ -186,14 +182,16 @@ export default async function AnaliticaPage({
             icon={<GasPump size={18} />}
             label="Combustible"
             value={formatQty(data.kpis.fuelLiters, "L")}
-            detail={`${data.kpis.fuelLoadCount} cargas · monto restringido`}
+            detail={`${formatQty(data.kpis.fuelLoadCount)} cargas · monto restringido`}
             href={FUEL_PATHS.consumoLitros}
             glossary="Volumen de combustible registrado durante el período. Los montos requieren el permiso de costos."
           />}
           <KpiCard
             icon={<ShieldWarning size={18} />}
             label="Alertas"
-            value={formatQty(data.alerts.length)}
+            // Sin alertas es una buena noticia dicha con palabras, no un «0» pelado (A1).
+            value={data.alerts.length === 0 ? "Ninguna" : data.alerts.length}
+            valueKind={data.alerts.length === 0 ? "text" : "number"}
             detail="Detectadas en el período"
             // Una alerta crítica es un problema, no un pendiente: el naranja
             // signal está reservado a pendientes (DESIGN.md).

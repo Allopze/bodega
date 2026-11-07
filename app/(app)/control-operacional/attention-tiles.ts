@@ -1,5 +1,5 @@
 import { FLEET_STOPPED_FILTER } from "@/lib/fleet-overview-filters"
-import { countOf } from "@/lib/utils"
+import { countOf, formatQty } from "@/lib/utils"
 import type { OperationalAttention } from "@/lib/services/operational-control"
 import { FUEL_INBOX_KINDS, type FuelInboxKind } from "@/lib/combustibles/inbox/types"
 import { FUEL_PATHS } from "@/lib/combustibles/routes"
@@ -18,7 +18,13 @@ export type AttentionTileKey = "stopped" | "workOrders" | "documents" | "fuel"
 export interface AttentionTile {
   key: AttentionTileKey
   label: string
-  value: string
+  /**
+   * Una cifra es un `number` y `KpiCard` la formatea (es-CL, «2.246»); una
+   * palabra («Ninguno», «Al día», «Sin dato») es un `string` con
+   * `valueKind: "text"`, que se pinta como mensaje y no como un numeral enorme.
+   */
+  value: string | number
+  valueKind: "number" | "text"
   detail: string
   tone: "neutral" | "signal" | "danger"
   href: string
@@ -41,10 +47,11 @@ export const NOT_COMPUTED = "No se pudo calcular"
 /** Valor de un tile cuya cifra no se pudo calcular: nunca un 0 que se lea como «no hay nada». */
 const NO_DATA = "Sin dato"
 
-const count = (n: number) => n.toLocaleString("es-CL")
+/** Una cifra dentro de una frase del detalle («3 sin asignar»); el valor del tile va como número. */
+const count = (n: number) => formatQty(n)
 
 function unavailable(key: AttentionTileKey, label: string, detail = NOT_COMPUTED): AttentionTile {
-  return { key, label, value: NO_DATA, detail, tone: "neutral", href: ATTENTION_HREFS[key] }
+  return { key, label, value: NO_DATA, valueKind: "text", detail, tone: "neutral", href: ATTENTION_HREFS[key] }
 }
 
 /** Equipos en mantención o fuera de servicio. `fleetSize` distingue «todo operativo» de «no hay equipos». */
@@ -53,13 +60,14 @@ export function stoppedTile(stopped: OperationalAttention["stoppedVehicles"], fl
   if (!stopped) return unavailable("stopped", label)
   if (stopped.total === 0) {
     return fleetSize === 0
-      ? { key: "stopped", label, value: "Sin equipos", detail: "No hay equipos en las faenas a las que tienes acceso", tone: "neutral", href: ATTENTION_HREFS.stopped }
-      : { key: "stopped", label, value: "Ninguno", detail: "Todo operativo", tone: "neutral", href: ATTENTION_HREFS.stopped }
+      ? { key: "stopped", label, value: "Sin equipos", valueKind: "text", detail: "No hay equipos en las faenas a las que tienes acceso", tone: "neutral", href: ATTENTION_HREFS.stopped }
+      : { key: "stopped", label, value: "Ninguno", valueKind: "text", detail: "Todo operativo", tone: "neutral", href: ATTENTION_HREFS.stopped }
   }
   return {
     key: "stopped",
     label,
-    value: count(stopped.total),
+    value: stopped.total,
+    valueKind: "number",
     detail: `${count(stopped.inMaintenance)} en mantención · ${count(stopped.outOfService)} fuera de servicio`,
     tone: "signal",
     href: ATTENTION_HREFS.stopped,
@@ -80,7 +88,7 @@ export function workOrdersTile(workOrders: OperationalAttention["workOrders"]): 
   const label = "OT abiertas"
   if (!workOrders) return unavailable("workOrders", label)
   if (workOrders.openCount === 0) {
-    return { key: "workOrders", label, value: "Ninguna", detail: "Sin órdenes de trabajo abiertas", tone: "neutral", href: ATTENTION_HREFS.workOrders }
+    return { key: "workOrders", label, value: "Ninguna", valueKind: "text", detail: "Sin órdenes de trabajo abiertas", tone: "neutral", href: ATTENTION_HREFS.workOrders }
   }
   const parts = [
     workOrders.unassignedOpen > 0 ? `${count(workOrders.unassignedOpen)} sin asignar` : "Todas con mecánico",
@@ -90,7 +98,8 @@ export function workOrdersTile(workOrders: OperationalAttention["workOrders"]): 
   return {
     key: "workOrders",
     label,
-    value: count(workOrders.openCount),
+    value: workOrders.openCount,
+    valueKind: "number",
     detail: parts.join(" · "),
     tone: workOrders.unassignedOpen > 0 || workOrders.estimateOverdue > 0 || workOrders.waitingParts > 0 ? "signal" : "neutral",
     href: ATTENTION_HREFS.workOrders,
@@ -108,6 +117,7 @@ export function documentsTile(documents: OperationalAttention["fleetDocuments"])
       key: "documents",
       label,
       value: "Ninguno",
+      valueKind: "text",
       detail: expiringSoon > 0 ? `${countOf(expiringSoon, "equipo")} por vencer en ${plazo}` : `Nada por vencer en ${plazo}`,
       tone: "neutral",
       // La cifra del tile y la lista que abre tienen que contar lo mismo: si no
@@ -118,7 +128,8 @@ export function documentsTile(documents: OperationalAttention["fleetDocuments"])
   return {
     key: "documents",
     label,
-    value: count(expired),
+    value: expired,
+    valueKind: "number",
     detail: `Equipos con documentos vencidos · ${expiringSoon > 0 ? `${count(expiringSoon)} por vencer en ${plazo}` : `ninguno por vencer en ${plazo}`}`,
     tone: "danger",
     href: ATTENTION_HREFS.documents,
@@ -156,12 +167,13 @@ export function fuelReviewTile(counts: FuelPendingCounts): AttentionTile {
   })
   if (failed.length > 0) return unavailable("fuel", label, parts.join(" · "))
   if (parts.length === 0) {
-    return { key: "fuel", label, value: "Al día", detail: "Nada espera a una persona", tone: "neutral", href: ATTENTION_HREFS.fuel }
+    return { key: "fuel", label, value: "Al día", valueKind: "text", detail: "Nada espera a una persona", tone: "neutral", href: ATTENTION_HREFS.fuel }
   }
   return {
     key: "fuel",
     label,
-    value: count(FUEL_INBOX_KINDS.reduce((sum, kind) => sum + (counts[kind] ?? 0), 0)),
+    value: FUEL_INBOX_KINDS.reduce((sum, kind) => sum + (counts[kind] ?? 0), 0),
+    valueKind: "number",
     detail: parts.join(" · "),
     tone: "signal",
     href: ATTENTION_HREFS.fuel,
