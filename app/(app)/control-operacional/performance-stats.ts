@@ -156,6 +156,8 @@ export function buildPerformanceGlossary(permissions: {
   canViewFuel?: boolean
   canViewCosts?: boolean
   canViewWorkOrders?: boolean
+  /** `purchasing:view`: abre la definición de las compras vinculadas y la del costo total. */
+  canViewPurchaseCosts?: boolean
   canViewLicenses?: boolean
   canViewTaeCoverage?: boolean
 }): GlossaryEntry[] {
@@ -196,9 +198,9 @@ export function buildPerformanceGlossary(permissions: {
     entries.push(
       {
         key: "ot-maintenance-cost",
-        term: "Costo de mantención",
+        term: "Mano de obra / taller externo (OT)",
         definition:
-          "Suma del costo total cargado en las OT cerradas dentro del período. Es opcional: una OT sin costo no suma, y la cifra no se completa con un valor inventado.",
+          "Suma del costo cargado a mano en las OT cerradas del período: mano de obra o taller externo. Los repuestos y servicios comprados por OC van en su propia cifra. Es opcional: una OT sin costo no suma, y la cifra no se completa con un valor inventado.",
       },
       {
         key: "workshop-hours",
@@ -213,6 +215,14 @@ export function buildPerformanceGlossary(permissions: {
           "Promedio de horas en taller, del ingreso a la salida, de las órdenes de reparación cerradas (con conformidad de la faena) dentro del período. Sin ninguna reparación cerrada no hay qué promediar y se muestra «Sin datos». Una cifra alta sugiere repuestos, mano de obra o aprobaciones frenando el retorno del equipo.",
       },
     )
+  }
+  if (permissions.canViewPurchaseCosts) {
+    entries.push({
+      key: "vehicle-purchases",
+      term: "Repuestos y servicios (OC)",
+      definition:
+        "Líneas de OC emitidas en el período de solicitudes de repuestos o servicios vinculadas al equipo, sin IVA, excluyendo OC anuladas.",
+    })
   }
   if (permissions.canViewInspections) {
     entries.push(
@@ -236,12 +246,12 @@ export function buildPerformanceGlossary(permissions: {
       },
     )
   }
-  if (permissions.canViewWorkOrders && permissions.canViewCosts) {
+  if (permissions.canViewWorkOrders && permissions.canViewCosts && permissions.canViewPurchaseCosts) {
     entries.push({
       key: "ot-total-cost",
       term: "Costo total",
       definition:
-        "Combustible del proveedor más la mantención de las OT cerradas del período. Sólo se muestra cuando ambas series están disponibles; si falta una, se deja «—» en vez de sumar un cero.",
+        "Combustible del proveedor, mano de obra de OT cerradas y compras vinculadas. Sólo cuando las tres series están disponibles; si falta una, se deja «—» en vez de sumar un cero.",
     })
   }
   if (permissions.canViewInspections && permissions.canViewCapa) {

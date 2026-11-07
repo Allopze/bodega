@@ -19,7 +19,7 @@ export async function exportOperationalControlXlsxAction(filters: Partial<Operat
     const period = resolveOperationalControlPeriod(filters)
     // El Excel lleva activos e indicadores; los conteos de «Requiere atención» son del panel.
     const data = await getOperationalControlHub(session, period, { includeAttention: false })
-    const { canViewFleet, canViewInspections, canViewCapa, canViewFuel, canViewCosts, canViewWorkOrders } = data.permissions
+    const { canViewFleet, canViewInspections, canViewCapa, canViewFuel, canViewCosts, canViewWorkOrders, canViewPurchaseCosts } = data.permissions
     const showFuelCost = canViewFuel && canViewCosts
     // Los instrumentos de servicio no tienen combustible modelado; no se
     // exportan como activos operacionales para no pintar filas inertes.
@@ -27,14 +27,19 @@ export async function exportOperationalControlXlsxAction(filters: Partial<Operat
     const ExcelJS = await import("exceljs")
     const workbook = new ExcelJS.Workbook()
     const sheet = workbook.addWorksheet("Activos")
-    sheet.columns = buildOperationalAssetExportColumns(canViewInspections, canViewCosts, canViewFuel, canViewCapa, canViewFleet, canViewWorkOrders)
+    sheet.columns = buildOperationalAssetExportColumns(canViewInspections, canViewCosts, canViewFuel, canViewCapa, canViewFleet, canViewWorkOrders, canViewPurchaseCosts)
     for (const asset of operationalAssets) {
-      sheet.addRow(buildOperationalAssetExportRow(asset, canViewInspections, canViewCosts, canViewFuel, canViewCapa, canViewFleet, canViewWorkOrders))
+      sheet.addRow(buildOperationalAssetExportRow(asset, canViewInspections, canViewCosts, canViewFuel, canViewCapa, canViewFleet, canViewWorkOrders, canViewPurchaseCosts))
     }
     sheet.getRow(1).font = { bold: true }
     sheet.views = [{ state: "frozen", ySplit: 1 }]
     sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: sheet.columns.length } }
+    // Las cuatro cifras en pesos del grupo de costos llevan el mismo formato; cada
+    // columna sólo existe con la capacidad de su serie (ver `buildOperationalAssetExportColumns`).
     if (showFuelCost) sheet.getColumn("fuelCost").numFmt = "$#,##0"
+    if (canViewWorkOrders) sheet.getColumn("maintenanceCost").numFmt = "$#,##0"
+    if (canViewPurchaseCosts) sheet.getColumn("purchaseAmount").numFmt = "$#,##0"
+    if (showFuelCost && canViewWorkOrders && canViewPurchaseCosts) sheet.getColumn("totalCost").numFmt = "$#,##0"
     if (canViewInspections) sheet.getColumn("inspectionCompliance").numFmt = '0.0"%"'
 
     // Mismos decimales que la pantalla: un float crudo en el Excel se copia
@@ -57,6 +62,10 @@ export async function exportOperationalControlXlsxAction(filters: Partial<Operat
     }
     if (showFuelCost) {
       indicatorRows.push(["Costo combustible (proveedor)", sumIfPresent((asset) => asset.fuelBilledAmount)])
+    }
+    if (canViewPurchaseCosts) {
+      // Líneas de OC de solicitudes vinculadas a un equipo, emitidas en el período.
+      indicatorRows.push(["Compras vinculadas a equipos", sumIfPresent((asset) => asset.purchaseAmount)])
     }
     if (canViewInspections) {
       indicatorRows.push(
@@ -90,7 +99,7 @@ export async function exportOperationalControlXlsxAction(filters: Partial<Operat
 
     await addExportMetadataSheet(workbook, session, { filters: period, rowCount: operationalAssets.length })
     const base64 = await xlsxToBase64(workbook)
-    await recordAudit({ userId: session.user.id, action: "export", entityType: "operational_control_report", entityId: nanoid(), newState: { period, rowCount: operationalAssets.length, includesFuelCosts: showFuelCost, includesCapa: canViewInspections && canViewCapa } })
+    await recordAudit({ userId: session.user.id, action: "export", entityType: "operational_control_report", entityId: nanoid(), newState: { period, rowCount: operationalAssets.length, includesFuelCosts: showFuelCost, includesPurchaseCosts: canViewPurchaseCosts, includesCapa: canViewInspections && canViewCapa } })
     return { ok: true as const, data: { base64, filename: `control_operacional_${period.from}_${period.to}.xlsx` } }
   } catch (error) { return { ok: false as const, message: safeActionMessage(error, "No se pudo exportar el reporte") } }
 }

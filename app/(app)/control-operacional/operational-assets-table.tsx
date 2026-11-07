@@ -32,7 +32,7 @@ function formatPerformance(asset: OperationalAsset): string | null {
   return `${value} ${asset.fuelPerformanceUnit === "km_per_liter" ? "km/L" : "L/h"}`
 }
 
-const COLUMNS = (canViewCosts: boolean, canViewInspections: boolean, canViewFuel: boolean, canViewCapa: boolean, canViewFleet: boolean, canViewWorkOrders: boolean) => {
+const COLUMNS = (canViewCosts: boolean, canViewInspections: boolean, canViewFuel: boolean, canViewCapa: boolean, canViewFleet: boolean, canViewWorkOrders: boolean, canViewPurchaseCosts: boolean) => {
   const showFuelCost = canViewFuel && canViewCosts
   const showCapa = canViewCapa && canViewInspections
   return [
@@ -83,10 +83,16 @@ const COLUMNS = (canViewCosts: boolean, canViewInspections: boolean, canViewFuel
     ...(showFuelCost
       ? [{ key: "fuelBilledAmount", label: "Costo combustible (proveedor)", sortable: true, numeric: true }]
       : []),
+    // Mano de obra y taller externo que jefatura carga en la OT cerrada. Los
+    // repuestos y servicios comprados por OC van en su propia columna.
     ...(canViewWorkOrders
-      ? [{ key: "maintenanceCost", label: "Costo mantención", sortable: true, numeric: true }]
+      ? [{ key: "maintenanceCost", label: "Mano de obra / taller (OT)", sortable: true, numeric: true }]
       : []),
-    ...(canViewWorkOrders && showFuelCost
+    ...(canViewPurchaseCosts
+      ? [{ key: "purchaseAmount", label: "Repuestos y servicios (OC)", sortable: true, numeric: true }]
+      : []),
+    // El total suma las tres series; con una sola ausente no se publica.
+    ...(canViewWorkOrders && showFuelCost && canViewPurchaseCosts
       ? [{ key: "totalCost", label: "Costo total", sortable: true, numeric: true }]
       : []),
     // Las acciones no se ocultan: sin «Ver»/«Combustible» la fila no tiene
@@ -109,6 +115,7 @@ export function OperationalAssetsTable({
   canViewFuel,
   canViewFleet,
   canViewWorkOrders = false,
+  canViewPurchaseCosts = false,
 }: {
   assets: OperationalAsset[]
   canViewCosts: boolean
@@ -117,8 +124,11 @@ export function OperationalAssetsTable({
   canViewFuel: boolean
   canViewFleet: boolean
   canViewWorkOrders?: boolean
+  /** `purchasing:view`: abre «Repuestos y servicios (OC)» y, con las otras dos series, el costo total. */
+  canViewPurchaseCosts?: boolean
 }) {
   const showFuelCost = canViewFuel && canViewCosts
+  const showTotalCost = canViewWorkOrders && showFuelCost && canViewPurchaseCosts
   const showCapa = canViewCapa && canViewInspections
 
   const renderMobileCard = (asset: OperationalAsset) => (
@@ -201,6 +211,12 @@ export function OperationalAssetsTable({
                 {asset.idleHours != null && asset.idleHours > 0 && ` · ${asset.idleHours.toLocaleString("es-CL", { maximumFractionDigits: 1 })} h`}
               </dd>
             </div>
+          </>
+        )}
+        {/* Costos: cada serie con la capacidad de su dominio, no con la de combustible
+            (una persona con compras u OT pero sin combustible también los ve). */}
+        {asset.kind === "vehicle" && (
+          <>
             {showFuelCost && (
               <div>
                 <dt className="text-[var(--color-text-subtle)]">Costo combustible facturado</dt>
@@ -209,11 +225,17 @@ export function OperationalAssetsTable({
             )}
             {canViewWorkOrders && (
               <div>
-                <dt className="text-[var(--color-text-subtle)]">Costo mantención</dt>
+                <dt className="text-[var(--color-text-subtle)]">Mano de obra / taller (OT)</dt>
                 <dd>{asset.maintenanceCost == null ? "—" : formatCLP(asset.maintenanceCost)}</dd>
               </div>
             )}
-            {canViewWorkOrders && showFuelCost && (
+            {canViewPurchaseCosts && (
+              <div>
+                <dt className="text-[var(--color-text-subtle)]">Repuestos y servicios (OC)</dt>
+                <dd>{asset.purchaseAmount == null ? "—" : formatCLP(asset.purchaseAmount)}</dd>
+              </div>
+            )}
+            {showTotalCost && (
               <div>
                 <dt className="text-[var(--color-text-subtle)]">Costo total</dt>
                 <dd>{asset.totalCost == null ? "—" : formatCLP(asset.totalCost)}</dd>
@@ -429,7 +451,12 @@ export function OperationalAssetsTable({
           {asset.kind === "service_equipment" || asset.maintenanceCost == null ? "—" : formatCLP(asset.maintenanceCost)}
         </TableCell>
       )}
-      {canViewWorkOrders && showFuelCost && (
+      {canViewPurchaseCosts && (
+        <TableCell className="text-right font-mono">
+          {asset.kind === "service_equipment" || asset.purchaseAmount == null ? "—" : formatCLP(asset.purchaseAmount)}
+        </TableCell>
+      )}
+      {showTotalCost && (
         <TableCell className="text-right font-mono">
           {asset.kind === "service_equipment" || asset.totalCost == null ? "—" : formatCLP(asset.totalCost)}
         </TableCell>
@@ -452,7 +479,7 @@ export function OperationalAssetsTable({
   return (
     <DataTable
       caption="Activos operacionales"
-      columns={COLUMNS(canViewCosts, canViewInspections, canViewFuel, canViewCapa, canViewFleet, canViewWorkOrders)}
+      columns={COLUMNS(canViewCosts, canViewInspections, canViewFuel, canViewCapa, canViewFleet, canViewWorkOrders, canViewPurchaseCosts)}
       rows={assets}
       enableColumnToggle
       stickyFirstColumn

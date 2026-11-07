@@ -182,4 +182,29 @@ describe("buildPerformanceGlossary", () => {
     expect(entries.map((e) => e.key)).toEqual(["ot-maintenance-cost", "workshop-hours", "mttr"])
     expect(entries[2]!.definition).toContain("reparación cerradas")
   })
+
+  it("define mano de obra, compras vinculadas y el costo total sólo con sus capacidades", () => {
+    const keysOf = (permissions: Parameters<typeof buildPerformanceGlossary>[0]) => buildPerformanceGlossary(permissions).map((e) => e.key)
+
+    // La mano de obra va con la capacidad de OT y ya no se llama «mantención»: los repuestos no están ahí.
+    const labour = buildPerformanceGlossary({ canViewFleet: false, canViewWorkOrders: true }).find((e) => e.key === "ot-maintenance-cost")!
+    expect(labour.term).toBe("Mano de obra / taller externo (OT)")
+    expect(labour.definition).toContain("Los repuestos y servicios comprados por OC van en su propia cifra")
+
+    // Las compras vinculadas las abre purchasing:view, sin depender de OT ni de combustible.
+    expect(keysOf({ canViewFleet: false, canViewPurchaseCosts: true })).toEqual(["vehicle-purchases"])
+    expect(keysOf({ canViewFleet: false, canViewWorkOrders: true })).not.toContain("vehicle-purchases")
+    const purchases = buildPerformanceGlossary({ canViewFleet: false, canViewPurchaseCosts: true })[0]!
+    expect(purchases.term).toBe("Repuestos y servicios (OC)")
+    expect(purchases.definition).toContain("excluyendo OC anuladas")
+
+    // El costo total exige las tres series: OT, costos de combustible y compras.
+    const total = { canViewFleet: false, canViewWorkOrders: true, canViewCosts: true }
+    expect(keysOf(total)).not.toContain("ot-total-cost")
+    expect(keysOf({ ...total, canViewPurchaseCosts: true })).toContain("ot-total-cost")
+    expect(keysOf({ canViewFleet: false, canViewCosts: true, canViewPurchaseCosts: true })).not.toContain("ot-total-cost")
+    const definition = buildPerformanceGlossary({ ...total, canViewPurchaseCosts: true }).find((e) => e.key === "ot-total-cost")!.definition
+    expect(definition).toContain("Combustible del proveedor, mano de obra de OT cerradas y compras vinculadas")
+    expect(definition).toContain("las tres series")
+  })
 })

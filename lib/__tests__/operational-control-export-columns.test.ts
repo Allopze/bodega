@@ -39,7 +39,8 @@ const asset: OperationalAsset = {
   criticalOpenAnomalyCases: 1,
   fuelBilledAmount: 800000,
   maintenanceCost: 50000,
-  totalCost: 850000,
+  purchaseAmount: 120000,
+  totalCost: 970000,
   idleHours: 4.5,
   idlePct: 22.5,
   litersIdle: 180,
@@ -58,6 +59,7 @@ const BASE = ["code", "name", "worksite", "status"]
 const INSPECTION_KEYS = ["inspections", "inspectionCompliance", "openFindings", "criticalOpenFindings", "openFindingsWithWorkOrder", "openFindingsWithoutWorkOrder"]
 const FUEL_KEYS = ["fuelLiters", "fuelLoadCount", "lastFuelLoadAt", "fuelPerformance", "flaggedLoads", "openAnomalyCases", "criticalOpenAnomalyCases", "idlePct", "litersIdle"]
 const WORK_ORDER_KEYS = ["openWorkOrders", "inWorkshop", "workshopHours", "maintenanceCost"]
+const PURCHASE_KEYS = ["purchaseAmount"]
 const FLEET_KEYS = ["nextExpiryDate", "expiredDocuments", "gpsOdometer", "gpsHourMeter", "gpsObservedAt", "gpsFuelLevel", "meterMismatch"]
 
 describe("buildOperationalAssetExportColumns", () => {
@@ -69,9 +71,35 @@ describe("buildOperationalAssetExportColumns", () => {
 
   it("las columnas de OT sólo salen con la capacidad de OT, antes del costo de combustible", () => {
     expect(keys(buildOperationalAssetExportColumns(true, true, true, true, true, true))).toEqual([
-      ...BASE, ...FLEET_KEYS, ...FUEL_KEYS, ...INSPECTION_KEYS, "overdueCapa", ...WORK_ORDER_KEYS, "fuelCost", "totalCost",
+      ...BASE, ...FLEET_KEYS, ...FUEL_KEYS, ...INSPECTION_KEYS, "overdueCapa", ...WORK_ORDER_KEYS, "fuelCost",
     ])
     expect(keys(buildOperationalAssetExportColumns(false, false, false, false, false, true))).toEqual([...BASE, ...WORK_ORDER_KEYS])
+  })
+
+  it("«Repuestos y servicios (OC)» sólo con purchasing:view; «Costo total» exige las tres", () => {
+    // Sólo compras: la columna sale sola, sin total (faltan combustible y OT).
+    expect(keys(buildOperationalAssetExportColumns(false, false, false, false, false, false, true))).toEqual([...BASE, ...PURCHASE_KEYS])
+    // Sin purchasing:view no hay columna ni total, aunque combustible y OT estén completos.
+    expect(keys(buildOperationalAssetExportColumns(false, true, true, false, false, true, false))).toEqual([
+      ...BASE, ...FUEL_KEYS, ...WORK_ORDER_KEYS, "fuelCost",
+    ])
+    // Con las tres, la compra va tras la mano de obra y el total cierra la fila.
+    expect(keys(buildOperationalAssetExportColumns(true, true, true, true, true, true, true))).toEqual([
+      ...BASE, ...FLEET_KEYS, ...FUEL_KEYS, ...INSPECTION_KEYS, "overdueCapa", ...WORK_ORDER_KEYS, ...PURCHASE_KEYS, "fuelCost", "totalCost",
+    ])
+    // Sin costos de combustible tampoco hay total.
+    expect(keys(buildOperationalAssetExportColumns(false, false, true, false, false, true, true))).toEqual([
+      ...BASE, ...FUEL_KEYS, ...WORK_ORDER_KEYS, ...PURCHASE_KEYS,
+    ])
+  })
+
+  it("rotula la mano de obra, las compras y el total con lo que miden", () => {
+    const headers = Object.fromEntries(
+      buildOperationalAssetExportColumns(true, true, true, true, true, true, true).map((column) => [column.key, column.header]),
+    )
+    expect(headers.maintenanceCost).toBe("Mano de obra / taller (OT)")
+    expect(headers.purchaseAmount).toBe("Repuestos y servicios (OC)")
+    expect(headers.totalCost).toBe("Costo total (combustible + mano de obra + compras)")
   })
 
   it("deja sólo las columnas base sin capacidades", () => {
@@ -218,7 +246,16 @@ describe("buildOperationalAssetExportRow", () => {
       .toMatchObject({ inWorkshop: "No", workshopHours: 0 })
     // Sin permiso de combustible no hay total: sólo mantención.
     expect(row).not.toHaveProperty("totalCost")
-    expect(buildOperationalAssetExportRow(asset, true, true, true, true, true, true)).toMatchObject({ totalCost: 850000 })
+    // Con combustible y OT pero sin compras, tampoco: un total de dos series sería engañoso.
+    expect(buildOperationalAssetExportRow(asset, true, true, true, true, true, true)).not.toHaveProperty("totalCost")
+    expect(buildOperationalAssetExportRow(asset, true, true, true, true, true, true, true)).toMatchObject({ totalCost: 970000 })
+  })
+
+  it("exporta las compras vinculadas sólo con purchasing:view y un null si la consulta falló", () => {
+    expect(buildOperationalAssetExportRow(asset, false, false, false, false, false, false, true)).toMatchObject({ purchaseAmount: 120000 })
+    expect(buildOperationalAssetExportRow(asset, true, true, true, true, true, true)).not.toHaveProperty("purchaseAmount")
+    const failed = buildOperationalAssetExportRow({ ...asset, purchaseAmount: null, totalCost: null }, true, true, true, true, true, true, true)
+    expect(failed).toMatchObject({ purchaseAmount: null, totalCost: null })
   })
 
   it("una consulta de OT que falló exporta vacío, no 0", () => {
