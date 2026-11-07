@@ -14,19 +14,21 @@ const PLATE = "E2E-FUEL-1"
 const WORKSITE_ID = "ws-e2e"
 const PRODUCT_ID = "fuel-diesel"
 const SUPPLIER_ID = "fuel-sup-e2e"
-const ADMIN_ID = "user-admin-e2e"
 
 const LOAD_OK = "qa-panel-fuel-load-ok"
 const LOAD_FLAGGED = "qa-panel-fuel-load-flagged"
 const SUB_OK = "qa-panel-fuel-sub-ok"
 const SUB_FLAGGED = "qa-panel-fuel-sub-flagged"
-const INVOICE_ID = "qa-panel-fuel-invoice"
+// El costo del panel sale del libro del proveedor (85200b665), no de `fuel_loads`.
+const SYNC_RUN_ID = "qa-panel-fuel-sync"
+const PROVIDER_TX_ID = "qa-panel-fuel-provider-tx"
 
 async function cleanup() {
   await withSql(async (sql) => {
     await sql`delete from fuel_equipment_loads where id in (${LOAD_OK}, ${LOAD_FLAGGED})`
     await sql`delete from fuel_tae_submissions where id in (${SUB_OK}, ${SUB_FLAGGED})`
-    await sql`delete from fuel_loads where id = ${INVOICE_ID}`
+    await sql`delete from fuel_provider_transactions where id = ${PROVIDER_TX_ID}`
+    await sql`delete from fuel_provider_sync_runs where id = ${SYNC_RUN_ID}`
   })
 }
 
@@ -59,12 +61,18 @@ test.describe("Panel operacional — combustible por activo", () => {
            'km_per_liter', 0, 'computed', 'flagged')
       `
       await sql`
-        insert into fuel_loads
-          (id, load_date, month, service_type, vehicle_id, fuel_supplier_id, worksite_id, product,
-           product_id, liters, base_amount, total_amount, status, created_by)
+        insert into fuel_provider_sync_runs (id, provider, requested_from, requested_to, correlation_id)
+        values (${SYNC_RUN_ID}, 'copec', '2026-10-01', '2026-10-31', ${SYNC_RUN_ID})
+      `
+      await sql`
+        insert into fuel_provider_transactions
+          (id, sync_run_id, provider, source_account, supplier_id, identity_key, fingerprint, source_row_key,
+           payload_hash, worksite_id, vehicle_id, product_id, source_plate, occurred_at, quantity, amount,
+           status, granularity)
         values
-          (${INVOICE_ID}, '2026-10-15', '2026-10', 'TCT', ${VEHICLE_ID}, ${SUPPLIER_ID}, ${WORKSITE_ID}, 'PETROLEO DIESEL',
-           ${PRODUCT_ID}, 100, 50000, 50000, 'registered', ${ADMIN_ID})
+          (${PROVIDER_TX_ID}, ${SYNC_RUN_ID}, 'copec', 'tct:diesel', ${SUPPLIER_ID}, ${PROVIDER_TX_ID}, ${PROVIDER_TX_ID},
+           ${PROVIDER_TX_ID}, ${PROVIDER_TX_ID}, ${WORKSITE_ID}, ${VEHICLE_ID}, ${PRODUCT_ID}, ${PLATE},
+           '2026-10-15T15:00:00.000Z', 100, 50000, 'accepted', 'transaction')
       `
     })
     await login(page)

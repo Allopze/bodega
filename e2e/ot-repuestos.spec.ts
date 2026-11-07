@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test"
-import { cerrarSesion, clearRateLimits, openLatestDraft, pickCurrentMonthDate, selectRadixById, textoVisible } from "./helpers"
+import { cerrarSesion, clearRateLimits, pickCurrentMonthDate, selectRadixById, textoVisible } from "./helpers"
 import { withSql } from "./mantencion-3-helpers"
 
 /**
@@ -111,9 +111,16 @@ test.describe("OT · repuestos pedidos", () => {
     await expect(page.getByRole("row").filter({ hasText: folio })).toHaveCount(0)
 
     // Enviado a aprobación (bajo el umbral basta el precio estimado), sí espera.
-    await openLatestDraft(page, "REP")
-    await page.getByRole("button", { name: /Enviar a aprobación/ }).click()
-    await expect(page.getByRole("button", { name: /Enviar a aprobación/ })).toHaveCount(0, { timeout: 30_000 })
+    // Se abre la solicitud desde la propia OT: la jefatura ve TODAS las de
+    // repuestos, y «el último borrador» de la lista puede ser el de otro test.
+    await page.goto(`/mantencion/ot/${otId}`)
+    await textoVisible(page, /^REP-/).first().click()
+    await expect(page).toHaveURL(/\/solicitudes\/(?!nueva)[^/?]+$/, { timeout: 30_000 })
+    await expect(textoVisible(page, REPUESTO).first()).toBeVisible({ timeout: 30_000 })
+    const enviar = page.getByRole("button", { name: /Enviar a aprobación/ })
+    await expect(enviar).toBeVisible()
+    await enviar.click()
+    await expect(enviar).toHaveCount(0, { timeout: 30_000 })
     await page.goto("/mantencion/ot?repuestos=pendientes")
     const fila = page.getByRole("row").filter({ hasText: folio })
     await expect(fila).toBeVisible()
