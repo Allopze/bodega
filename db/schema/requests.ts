@@ -7,6 +7,8 @@ import { costCenters } from "./cost-centers"
 import { eppTypes } from "./epp-types"
 import { serviceEquipment } from "./service-equipment"
 import { preventionEmergencyResources } from "./prevention/emergency"
+import { fuelVehicles } from "./fuel-vehicles"
+import { mantWorkOrders } from "./mantencion-work-orders"
 
 /* ── Purchase Request States ─────────────────────────────────────────────── */
 // draft | submitted | in_review | partially_approved | approved
@@ -83,6 +85,21 @@ export const purchaseRequestItems = pgTable("purchase_request_items", {
   equipmentId:     text("equipment_id").references(() => serviceEquipment.id),
   // Servicios de recarga/mantención sobre un activo de emergencia canónico.
   emergencyResourceId: text("emergency_resource_id").references(() => preventionEmergencyResources.id),
+  /*
+   * Repuestos y servicios sobre un equipo de la flota (2026-11-07). Hasta acá
+   * la patente y el equipo eran texto libre en `request_item_attributes`, y
+   * nadie podía responder «qué se compró para la KA-63» ni sumar esas OC al
+   * costo del equipo en Control operacional. `work_order_id` es opcional: la
+   * solicitud puede nacer desde la OT o pedirse para el equipo sin una.
+   */
+  vehicleId:       text("vehicle_id").references(() => fuelVehicles.id),
+  workOrderId:     text("work_order_id").references(() => mantWorkOrders.id, { onDelete: "set null" }),
+  /*
+   * Precio unitario que estima quien pide. Bajo el umbral de cotizaciones de
+   * repuestos (`ops.repuestos.quotation_threshold_clp`) reemplaza a la
+   * cotización para enviar, y la OC lo prefija cuando no hay adjudicación.
+   */
+  estimatedUnitPrice: numeric("estimated_unit_price", { precision: 12, scale: 2, mode: "number" }),
   // Supplier hint (mirrors productId / productNameFree pattern)
   suggestedSupplierId: text("suggested_supplier_id").references(() => suppliers.id),
   supplierHint:    text("supplier_hint"),                           // free-text fallback
@@ -131,6 +148,15 @@ export const purchaseRequestItems = pgTable("purchase_request_items", {
   index("purchase_request_items_equipment_idx").on(table.equipmentId),
   index("purchase_request_items_emergency_resource_idx").on(table.emergencyResourceId),
   check("purchase_request_items_one_service_subject", sql`NOT (${table.equipmentId} IS NOT NULL AND ${table.emergencyResourceId} IS NOT NULL)`),
+  // Costo y avance por equipo de flota: «qué se compró para este camión».
+  index("purchase_request_items_vehicle_idx").on(table.vehicleId),
+  index("purchase_request_items_work_order_idx").on(table.workOrderId),
+  // Una OT es de un equipo: el ítem que la nombra tiene que nombrar el equipo.
+  check("purchase_request_items_work_order_needs_vehicle", sql`${table.workOrderId} IS NULL OR ${table.vehicleId} IS NOT NULL`),
+  // Un ítem atiende a un solo sujeto: un vehículo de flota, un instrumento o un
+  // recurso de emergencia. Se agrega aparte del CHECK anterior para no
+  // reescribirlo (su DROP saldría sin IF EXISTS).
+  check("purchase_request_items_one_asset_subject", sql`NOT (${table.vehicleId} IS NOT NULL AND (${table.equipmentId} IS NOT NULL OR ${table.emergencyResourceId} IS NOT NULL))`),
 ])
 
 /* ── Request Item Attributes (talla, color, medida, etc.) ────────────────── */
@@ -199,6 +225,8 @@ export const purchaseRequestItemsRelations = relations(purchaseRequestItems, ({ 
   worker:            one(workers, { fields: [purchaseRequestItems.workerId], references: [workers.id] }),
   equipment:         one(serviceEquipment, { fields: [purchaseRequestItems.equipmentId], references: [serviceEquipment.id] }),
   emergencyResource: one(preventionEmergencyResources, { fields: [purchaseRequestItems.emergencyResourceId], references: [preventionEmergencyResources.id] }),
+  vehicle:           one(fuelVehicles, { fields: [purchaseRequestItems.vehicleId], references: [fuelVehicles.id] }),
+  workOrder:         one(mantWorkOrders, { fields: [purchaseRequestItems.workOrderId], references: [mantWorkOrders.id] }),
   suggestedSupplier: one(suppliers, { fields: [purchaseRequestItems.suggestedSupplierId], references: [suppliers.id] }),
   attributes:        many(requestItemAttributes),
   approvalDecisions: many(approvalDecisions),

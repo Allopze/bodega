@@ -140,24 +140,6 @@ export const purchaseOrderItems = pgTable("purchase_order_items", {
   index("purchase_order_items_request_item_id_idx").on(table.requestItemId),
 ])
 
-/* ── Quotations ───────────────────────────────────────────────────────────── */
-export const quotations = pgTable("quotations", {
-  id:              text("id").primaryKey(),
-  purchaseOrderId: text("purchase_order_id").references(() => purchaseOrders.id),
-  supplierId:      text("supplier_id").notNull().references(() => suppliers.id),
-  fileName:        text("file_name"),
-  filePath:        text("file_path"),
-  amount:          numeric("amount", { precision: 12, scale: 2, mode: "number" }),
-  validUntil:      text("valid_until"),
-  notes:           text("notes"),
-  uploadedBy:      text("uploaded_by").notNull().references(() => users.id),
-  uploadedAt:      timestamp("uploaded_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
-
-}, (table) => [
-  // DAT-11: FK sin índice.
-  index("quotations_purchase_order_id_idx").on(table.purchaseOrderId),
-])
-
 /* ── Purchase Order Invoices ──────────────────────────────────────────────── */
 // Facturas del proveedor adjuntadas a una OC (N-a-1).
 // Permite conciliación informativa: Σ amount vs purchase_orders.totalAmount.
@@ -359,7 +341,6 @@ export const purchaseOrdersRelations = relations(purchaseOrders, ({ one, many })
   createdBy:    one(users, { fields: [purchaseOrders.createdBy], references: [users.id], relationName: "po_created_by" }),
   issuedByUser: one(users, { fields: [purchaseOrders.issuedBy],  references: [users.id], relationName: "po_issued_by" }),
   items:      many(purchaseOrderItems),
-  quotations: many(quotations),
   invoices:   many(purchaseOrderInvoices),
   invoiceReconciliationReviews: many(purchaseOrderInvoiceReconciliationReviews),
 }))
