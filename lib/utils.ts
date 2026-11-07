@@ -476,6 +476,12 @@ export function chileWallClockDate(instant: Date): Date {
 /**
  * Convierte un valor de `<input type="datetime-local">` a un instante UTC sin
  * fijar -03/-04: Chile cambia el desfase por horario de verano.
+ *
+ * Una hora que no existe —el salto de septiembre, cuando las 00:00 pasan a ser
+ * la 01:00— avanza a la primera hora válida, como la desambiguación «compatible»
+ * de Temporal: «2026-09-06T00:15» es la 01:15 del 6. Antes caía en el día
+ * anterior y una carga de esa madrugada quedaba registrada el 5. Una hora que
+ * existe dos veces (el salto de abril) conserva el instante de siempre.
  */
 export function chileLocalDateTimeToUtc(value: string): string {
   const match = CHILE_LOCAL_DATE_TIME.exec(value)
@@ -484,8 +490,12 @@ export function chileLocalDateTimeToUtc(value: string): string {
     Number(match[1]), Number(match[2]) - 1, Number(match[3]),
     Number(match[4]), Number(match[5]), 0,
   )
-  let utc = wall - chileOffsetMs(new Date(wall))
-  utc = wall - chileOffsetMs(new Date(utc))
+  const first = wall - chileOffsetMs(new Date(wall))
+  const second = wall - chileOffsetMs(new Date(first))
+  const showsWall = (instant: number) => instant + chileOffsetMs(new Date(instant)) === wall
+  // Ninguno de los dos muestra esa hora en Chile: cae en el salto. El instante
+  // posterior es el que queda del mismo lado del salto (el mismo día).
+  const utc = showsWall(second) ? second : showsWall(first) ? first : Math.max(first, second)
   return new Date(utc).toISOString()
 }
 
