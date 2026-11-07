@@ -51,7 +51,8 @@ describe("buscador de Mis pendientes en móvil (UX-02)", () => {
     const clases = buscador.className.split(/\s+/)
 
     expect(clases).toContain("h-11")
-    expect(clases).toContain("text-base")
+    // 16 px exactos: `text-base` mide 15 px en esta escala e iOS igual hacía zoom.
+    expect(clases).toContain("text-[1rem]")
     expect(clases).toContain("sm:text-xs")
     // `flex-1` sin prefijo era la causa: en la columna móvil fija la base en 0 y anula `h-11`.
     expect(clases).not.toContain("flex-1")

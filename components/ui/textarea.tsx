@@ -14,7 +14,8 @@ const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
           "flex min-h-[80px] w-full rounded-(--radius-lg)",
           "border border-[var(--color-border-control)]",
           "bg-[var(--color-surface)] px-3.5 py-2.5",
-          "font-sans text-sm text-[var(--color-text)]",
+          // 16px en móvil para que iOS no haga zoom al enfocar (ver Input).
+          "font-sans text-[1rem] sm:text-sm text-[var(--color-text)]",
           "placeholder:text-[var(--color-text-subtle)]",
           "resize-y",
           "transition-[border-color,box-shadow] duration-[var(--duration-fast)] ease-[var(--ease-out)]",

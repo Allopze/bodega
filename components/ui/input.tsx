@@ -28,7 +28,10 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
           // iOS Safari hace zoom automático al enfocar un input con font-size
           // menor a 16px (rompe el layout en mobile). 16px en mobile, 12px
           // cuando el shell ya tiene más espacio y cabe el texto compacto.
-          "font-sans text-base sm:text-xs text-[var(--color-text)] font-medium",
+          // `text-[1rem]` y no `text-base`: en esta escala `text-base` mide
+          // 15px y el zoom ocurría igual (lo detectó la E2E del buscador de
+          // Mis pendientes, 2026-11-07).
+          "font-sans text-[1rem] sm:text-xs text-[var(--color-text)] font-medium",
           "placeholder:text-[var(--color-text-subtle)]",
           "transition-[border-color,box-shadow] duration-[var(--duration-fast)] ease-[var(--ease-out)]",
           "hover:border-[var(--color-border-control-hover)]",

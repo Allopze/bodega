@@ -449,7 +449,7 @@ function TrainingOccurrenceCard({
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button type="button" variant="secondary" size="icon" aria-label={`Más acciones de ${row.code}`}>
+                <Button type="button" variant="secondary" size="icon" aria-label={`Más acciones de ${row.code}, ${row.worksiteName}, ${scheduleLabel(row)}`}>
                   <DotsThree size={18} weight="bold" aria-hidden />
                 </Button>
               </DropdownMenuTrigger>
