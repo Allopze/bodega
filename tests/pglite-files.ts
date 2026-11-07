@@ -158,6 +158,7 @@ export const pgliteTestFiles = [
   "lib/__tests__/prevention-program-slots-pglite.test.ts",
   // CHART-008: lectores del calendario de cumplimiento faena × mes (alcance, paridad con la lista, activación por faena).
   "lib/__tests__/prevention-compliance-calendar-pglite.test.ts",
+  "lib/__tests__/prevention-training-occurrences-page-pglite.test.ts",
   "lib/__tests__/worksite-deactivation-pdtp.test.ts",
   "lib/__tests__/code-sequences.test.ts",
   "lib/__tests__/dispatch-guides.test.ts",
@@ -535,4 +536,7 @@ export const pgliteTestFiles = [
   "lib/__tests__/operational-control-purchases-pglite.test.ts",
   "lib/__tests__/vehicle-purchase-history-pglite.test.ts",
   "lib/__tests__/receiving-parts-notification-pglite.test.ts",
+  // Series correlativas EV-AAAA-NNNN / INSP-AAAA-NNNN: migración 0380 (renumeración
+  // idempotente con legacy_code y secuencias en su máximo) y emisión de los servicios.
+  "lib/__tests__/prevention-correlative-codes-pglite.test.ts",
 ]
