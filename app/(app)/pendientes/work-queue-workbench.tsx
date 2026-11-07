@@ -206,7 +206,7 @@ export function WorkQueueWorkbench({ result }: WorkQueueWorkbenchProps) {
               {label}
               {/* El conteo evita tener que pulsar el chip para descubrir si trae algo. */}
               <span className={cn(
-                "rounded-full px-1.5 text-[11px] tabular-nums",
+                "rounded-full px-1.5 text-2xs tabular-nums",
                 activeQuick === value ? "bg-[var(--color-primary)] text-white" : "bg-[var(--color-surface-2)] text-[var(--color-text-subtle)]",
               )}>{count}</span>
             </button>
@@ -344,12 +344,12 @@ function QueueCard({ item, today }: { item: OperationalWorkItem; today: string }
         </QueueItemLink>
         <PriorityBadge priority={item.priority} />
       </div>
-      <p className="mt-1 text-[11px] text-[var(--color-text-muted)]">
+      <p className="mt-1 text-2xs text-[var(--color-text-muted)]">
         {item.code && <span>{item.code} · </span>}{OPERATIONAL_MODULE_LABELS[item.module]} · {item.worksiteName}
       </p>
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <MetaBadge meta={{ label: `${item.blocked ? "Bloqueada · " : ""}${item.statusLabel}`, variant: item.blocked ? "danger" : "info" }} />
-        <span className={cn("text-[11px]", overdue ? overdueTone(daysLate) : "text-[var(--color-text-subtle)]")}>
+        <span className={cn("text-2xs", overdue ? overdueTone(daysLate) : "text-[var(--color-text-subtle)]")}>
           {item.sourceDueAt
             ? overdue
               ? `Vencida hace ${daysLate} día${daysLate === 1 ? "" : "s"}`
@@ -373,7 +373,7 @@ function QueueRow({ item, today }: { item: OperationalWorkItem; today: string })
       <td className="px-3 py-2.5"><PriorityBadge priority={item.priority} /></td>
       <td className="px-3 py-2.5">
         <QueueItemLink item={item} className="font-medium text-[var(--color-text)] hover:text-[var(--color-primary-ink)] hover:underline">{item.title}</QueueItemLink>
-        <p className="mt-0.5 text-[11px] text-[var(--color-text-muted)]">{[item.code, item.subtitle].filter(Boolean).join(" · ")}</p>
+        <p className="mt-0.5 text-2xs text-[var(--color-text-muted)]">{[item.code, item.subtitle].filter(Boolean).join(" · ")}</p>
       </td>
       <td className="px-3 py-2.5 text-[var(--color-text-muted)]">{OPERATIONAL_MODULE_LABELS[item.module]}</td>
       <td className="px-3 py-2.5 text-[var(--color-text-muted)]">{item.worksiteName}</td>
@@ -384,7 +384,7 @@ function QueueRow({ item, today }: { item: OperationalWorkItem; today: string })
         {item.sourceDueAt
           ? <time dateTime={item.sourceDueAt} className={overdue ? overdueTone(daysLate) : undefined}>{formatDate(item.sourceDueAt)}</time>
           : "Sin fecha"}
-        <span className={cn("block text-[11px]", overdue ? overdueTone(daysLate) : "text-[var(--color-text-subtle)]")}>
+        <span className={cn("block text-2xs", overdue ? overdueTone(daysLate) : "text-[var(--color-text-subtle)]")}>
           {dueMeta(item, overdue, daysLate)}
         </span>
       </td>

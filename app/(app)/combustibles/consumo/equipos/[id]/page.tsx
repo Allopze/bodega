@@ -305,7 +305,7 @@ function buildStats(file: EquipmentFile, links: { periodLabel: string; motorHref
   })
 
   items.push(idle
-    ? { key: "vacio", label: "Motor en vacío", value: idle.idlePct === null ? STAT_MISSING : `${formatQty(idle.idlePct, undefined, { maximumFractionDigits: 0 })} %`, secondary: `${formatQty(idle.operatingHours, undefined, { maximumFractionDigits: 0 })} h de motor`, href: links.motorHref }
+    ? { key: "vacio", label: "Motor en vacío", value: idle.idlePct === null ? STAT_MISSING : `${formatQty(idle.idlePct, undefined, { maximumFractionDigits: 0 })} %`, valueKind: idle.idlePct === null ? "text" : "number", secondary: `${formatQty(idle.operatingHours, undefined, { maximumFractionDigits: 0 })} h de motor`, href: links.motorHref }
     : { key: "vacio", label: "Motor en vacío", value: "Sin telemetría", valueKind: "text", secondary: "No hay horas informadas en el período", href: links.motorHref })
 
   if (seals) {

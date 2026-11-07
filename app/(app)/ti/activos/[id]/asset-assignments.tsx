@@ -62,7 +62,7 @@ function PhotoThumb({ photo, label }: { photo: PhotoRecord; label: string }) {
         />
         <span className="block p-2">
           <span className="block truncate text-xs font-medium text-[var(--color-text)]">{photo.caption || photo.fileName}</span>
-          <span className="mt-0.5 block text-[11px] text-[var(--color-text-muted)]">{formatDate(photo.uploadedAt)} · {photo.uploadedByName ?? "Sistema"}</span>
+          <span className="mt-0.5 block text-2xs text-[var(--color-text-muted)]">{formatDate(photo.uploadedAt)} · {photo.uploadedByName ?? "Sistema"}</span>
         </span>
       </button>
       <Dialog open={open} onOpenChange={setOpen}>
@@ -86,14 +86,14 @@ function PhotoCompare({ row }: { row: AssignmentRow }) {
 
   return (
     <div className="mt-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4">
-      <p className="mb-3 text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]">
+      <p className="mb-3 text-eyebrow">
         Evidencia fotográfica — comparación entrega vs devolución
       </p>
       <div className="grid gap-4 md:grid-cols-2">
         <div>
           <p className="mb-2 text-xs font-semibold text-[var(--color-text)]">Estado al entregar</p>
           {delivery.length === 0 ? (
-            <p className="text-xs italic text-[var(--color-text-subtle)]">Sin fotografías de entrega.</p>
+            <p className="text-xs text-[var(--color-text-subtle)]">Sin fotografías de entrega.</p>
           ) : (
             <div className="grid grid-cols-2 gap-2">
               {delivery.map((photo) => <PhotoThumb key={photo.id} photo={photo} label="Foto de entrega" />)}
@@ -103,7 +103,7 @@ function PhotoCompare({ row }: { row: AssignmentRow }) {
         <div>
           <p className="mb-2 text-xs font-semibold text-[var(--color-text)]">Estado al devolver</p>
           {returned.length === 0 ? (
-            <p className="text-xs italic text-[var(--color-text-subtle)]">{row.returnedAt ? "Sin fotografías de devolución." : "Aún no devuelto."}</p>
+            <p className="text-xs text-[var(--color-text-subtle)]">{row.returnedAt ? "Sin fotografías de devolución." : "Aún no devuelto."}</p>
           ) : (
             <div className="grid grid-cols-2 gap-2">
               {returned.map((photo) => <PhotoThumb key={photo.id} photo={photo} label="Foto de devolución" />)}

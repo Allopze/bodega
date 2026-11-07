@@ -94,7 +94,7 @@ export default async function OcDetailPage({
     return (
       <PageContainer width="form">
         <div className="mx-auto max-w-2xl py-10">
-          <p className="font-mono text-xs uppercase tracking-[0.08em] text-[var(--color-text-subtle)]">Orden eliminada</p>
+          <p className="text-eyebrow">Orden eliminada</p>
           <h1 className="mt-1 text-h1 text-[var(--color-text)]">{originalCode}</h1>
           <p className="mt-2 max-w-[60ch] text-sub">
             Esta orden de compra fue eliminada el {formatDate(order.deletedAt)}. Se conserva en la
@@ -812,7 +812,7 @@ export default async function OcDetailPage({
               <DetailItem label="IVA (19%)" value={formatCLP(order.taxAmount)} mono muted />
               <div className="flex items-center justify-between gap-3 border-t border-(--color-border) pt-3">
                 <dt className="font-semibold text-(--color-text)">{pendingCostLines > 0 ? "Total conocido" : "Total"}</dt>
-                <dd className="font-mono font-bold tabular-nums text-(--color-text)">{formatCLP(order.totalAmount)}</dd>
+                <dd className="font-mono font-semibold tabular-nums text-(--color-text)">{formatCLP(order.totalAmount)}</dd>
               </div>
               {/* Nunca se representa el costo desconocido como $0: se cuenta aparte. */}
               {pendingCostLines > 0 && (

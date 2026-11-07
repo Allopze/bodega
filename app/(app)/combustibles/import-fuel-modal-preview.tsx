@@ -7,7 +7,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select"
-import { ArrowLeft, CheckCircle, WarningCircle } from "@phosphor-icons/react"
+import { ArrowLeft, CheckCircle, Plus, Prohibit, WarningCircle } from "@phosphor-icons/react"
 import type { ParsedFuelLoad, ImportError } from "@/lib/combustibles/import"
 import { CREATE_FAENA, SKIP_FAENA } from "./import-fuel-modal.helpers"
 import type { Worksite } from "./import-fuel-modal.helpers"
@@ -119,10 +119,16 @@ export function PreviewStep({
                       </SelectItem>
                     ))}
                     <SelectItem value={CREATE_FAENA}>
-                      ➕ Crear faena «{faena}»
+                      <span className="inline-flex items-center gap-1.5">
+                        <Plus size={14} aria-hidden className="text-[var(--color-text-muted)]" />
+                        Crear faena «{faena}»
+                      </span>
                     </SelectItem>
                     <SelectItem value={SKIP_FAENA}>
-                      ⊘ Omitir estas filas
+                      <span className="inline-flex items-center gap-1.5">
+                        <Prohibit size={14} aria-hidden className="text-[var(--color-text-muted)]" />
+                        Omitir estas filas
+                      </span>
                     </SelectItem>
                   </SelectContent>
                 </Select>
@@ -138,7 +144,7 @@ export function PreviewStep({
             <div className="flex items-center gap-2">
               <CheckCircle className="h-5 w-5 text-[var(--color-success)]" />
               <div>
-                <p className="text-xl font-bold">{loads.length}</p>
+                <p className="text-xl font-semibold">{loads.length}</p>
                 <p className="text-xs text-[var(--color-text-muted)]">Válidas</p>
               </div>
             </div>
@@ -149,7 +155,7 @@ export function PreviewStep({
             <div className="flex items-center gap-2">
               <WarningCircle className="h-5 w-5 text-[var(--color-danger)]" />
               <div>
-                <p className="text-xl font-bold">{errors.length}</p>
+                <p className="text-xl font-semibold">{errors.length}</p>
                 <p className="text-xs text-[var(--color-text-muted)]">Errores</p>
               </div>
             </div>
@@ -160,7 +166,7 @@ export function PreviewStep({
             <div className="flex items-center gap-2">
               <WarningCircle className="h-5 w-5 text-[var(--color-warning-ink)]" />
               <div>
-                <p className="text-xl font-bold">{duplicates.length}</p>
+                <p className="text-xl font-semibold">{duplicates.length}</p>
                 <p className="text-xs text-[var(--color-text-muted)]">Duplicados</p>
               </div>
             </div>

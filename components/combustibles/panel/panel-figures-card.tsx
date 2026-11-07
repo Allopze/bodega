@@ -23,7 +23,7 @@ function PanelHistory({ points, ariaLabel }: { points: PanelHistoryPoint[]; aria
         const last = index === points.length - 1
         const height = point.value === null || max === 0 ? 3 : Math.round(4 + (point.value / max) * 34)
         return (
-          <span key={`${point.label}-${index}`} aria-hidden className={cn("flex h-14 w-9 flex-col items-center justify-end gap-1 text-[11px]", last ? "font-semibold text-[var(--color-text)]" : "text-[var(--color-text-subtle)]")}>
+          <span key={`${point.label}-${index}`} aria-hidden className={cn("flex h-14 w-9 flex-col items-center justify-end gap-1 text-2xs", last ? "font-semibold text-[var(--color-text)]" : "text-[var(--color-text-subtle)]")}>
             <i
               className={cn("block w-3 rounded-t-[2px]", point.value === null ? "bg-[var(--color-border)]" : last ? "bg-[var(--color-primary)]" : "bg-[var(--color-primary-line)]")}
               style={{ height }}
@@ -47,7 +47,7 @@ function FigureRow({ figure }: { figure: PanelFigure }) {
       {figure.value === null ? (
         <p className="text-lg font-semibold text-[var(--color-text-muted)]">Sin datos</p>
       ) : (
-        <p className="font-mono text-[26px] font-bold leading-tight tabular-nums tracking-tight text-[var(--color-text)]">
+        <p className="font-mono text-[26px] font-semibold leading-tight tabular-nums tracking-tight text-[var(--color-text)]">
           {figure.value}
           {figure.unitTitle ? (
             <abbr title={figure.unitTitle} className="ml-1.5 cursor-help font-sans text-sm font-medium tracking-normal text-[var(--color-text-muted)] no-underline decoration-dotted underline-offset-2 hover:underline">{figure.unit}</abbr>

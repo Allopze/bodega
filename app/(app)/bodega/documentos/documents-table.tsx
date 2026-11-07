@@ -129,7 +129,7 @@ export function DocumentsTable({ documents, detail, highlightId }: DocumentsTabl
                                     <TableCell className="text-[var(--color-text)]">
                                       {item.productName}
                                       {item.productSku && (
-                                        <span className="ml-1.5 font-mono text-[11px] text-[var(--color-text-subtle)]">{item.productSku}</span>
+                                        <span className="ml-1.5 font-mono text-2xs text-[var(--color-text-subtle)]">{item.productSku}</span>
                                       )}
                                     </TableCell>
                                     <TableCell className="text-right font-mono tabular-nums">{formatQty(item.expectedQuantity)}</TableCell>

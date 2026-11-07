@@ -474,7 +474,7 @@ function Section({
         <div className="flex items-center gap-2">
           <h2 className="text-sm font-semibold text-[var(--color-text)]">{title}</h2>
           <span
-            className="inline-flex items-center gap-1 rounded-full bg-[var(--color-surface-2)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-text-muted)]"
+            className="inline-flex items-center gap-1 rounded-full bg-[var(--color-surface-2)] px-1.5 py-0.5 text-2xs font-medium text-[var(--color-text-muted)]"
             title={meta.hint}
           >
             <Icon size={10} weight="fill" />

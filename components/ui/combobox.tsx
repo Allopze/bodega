@@ -225,7 +225,7 @@ export function Combobox({
               )}
             >
               <span className="text-sm truncate">{row.label}</span>
-              {row.hint && <span className="ml-auto shrink-0 text-[11px] text-(--color-text-subtle)">{row.hint}</span>}
+              {row.hint && <span className="ml-auto shrink-0 text-2xs text-(--color-text-subtle)">{row.hint}</span>}
               {hasValue && row.value === value && (
                 <Check aria-hidden="true" weight="bold" className={cn("size-3.5 shrink-0 text-(--color-primary)", !row.hint && "ml-auto")} />
               )}

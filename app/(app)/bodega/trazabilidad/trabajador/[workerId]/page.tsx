@@ -225,7 +225,7 @@ export default async function WorkerEppTraceabilityPage({
                             <ArrowSquareOut className="h-3 w-3 shrink-0" aria-hidden />
                           </Link>
                           {voided && (
-                            <span className="rounded-[var(--radius-full)] bg-[var(--color-surface-2)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-text-muted)]">
+                            <span className="rounded-[var(--radius-full)] bg-[var(--color-surface-2)] px-2 py-0.5 text-2xs font-medium text-[var(--color-text-muted)]">
                               Anulada
                             </span>
                           )}
@@ -275,7 +275,7 @@ export default async function WorkerEppTraceabilityPage({
                           <ArrowSquareOut className="h-3 w-3 shrink-0" aria-hidden />
                         </Link>
                         {voided && (
-                          <span className="rounded-[var(--radius-full)] bg-[var(--color-surface-2)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-text-muted)]">
+                          <span className="rounded-[var(--radius-full)] bg-[var(--color-surface-2)] px-2 py-0.5 text-2xs font-medium text-[var(--color-text-muted)]">
                             Anulada
                           </span>
                         )}

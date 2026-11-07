@@ -53,6 +53,38 @@ const COLUMNS: Record<number, string> = {
   5: "md:grid-cols-2 xl:grid-cols-5",
 }
 
+/**
+ * La cifra grande del paso. Sólo un número (o un monto) va en la cifra mono: una
+ * palabra («Sin datos», «Al día», «Cuadra») en ese tamaño y esa familia se lee
+ * como un dato y no como un estado, así que va en sans y en gris. «3 fuera» es
+ * ambas cosas: el 3 es la cifra y «fuera» la palabra que la acompaña.
+ */
+function splitFigure(figure: string): { numeral: string | null; word: string | null } {
+  const match = /^(-?\$?\d[\d.,]*[KM]?)(?:\s+(.+))?$/.exec(figure)
+  if (!match) return { numeral: null, word: figure }
+  return { numeral: match[1] ?? null, word: match[2] ?? null }
+}
+
+function StepFigure({ figure, note, valueClass }: { figure: string; note?: string; valueClass: string }) {
+  const { numeral, word } = splitFigure(figure)
+  const noteClass = "ml-1.5 font-sans text-sm font-medium tracking-normal text-[var(--color-text-muted)]"
+  if (numeral === null) {
+    return (
+      <p className="mt-1 flex min-h-8 items-center text-base font-medium leading-tight text-[var(--color-text-muted)]">
+        {figure}
+        {note ? <span className="ml-1.5 text-sm">{note}</span> : null}
+      </p>
+    )
+  }
+  return (
+    <p className={cn("mt-1 min-h-8 font-mono text-2xl font-semibold leading-tight tabular-nums tracking-tight", valueClass)}>
+      {numeral}
+      {word ? <span className={noteClass}>{word}</span> : null}
+      {note ? <span className={noteClass}>{note}</span> : null}
+    </p>
+  )
+}
+
 export function PanelStepsStrip({ steps }: { steps: PanelStep[] }) {
   return (
     <section aria-labelledby="panel-pasos" className="mb-5">
@@ -75,10 +107,7 @@ export function PanelStepsStrip({ steps }: { steps: PanelStep[] }) {
                   </span>
                   <Badge variant={style.badge} size="sm">{step.statusLabel}</Badge>
                 </span>
-                <p className={cn("mt-1 font-mono text-2xl font-bold leading-tight tabular-nums tracking-tight", style.value)}>
-                  {step.figure}
-                  {step.figureNote ? <span className="ml-1.5 font-sans text-sm font-medium tracking-normal text-[var(--color-text-muted)]">{step.figureNote}</span> : null}
-                </p>
+                <StepFigure figure={step.figure} note={step.figureNote} valueClass={style.value} />
                 <h3 className="text-base font-semibold text-[var(--color-text)]">{step.heading}</h3>
                 <p className="text-sm text-[var(--color-text-muted)]">{step.phrase}</p>
                 <span className="mt-auto inline-flex items-center gap-1.5 pt-2 text-sm font-semibold text-[var(--color-primary-ink)]">

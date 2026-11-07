@@ -94,6 +94,7 @@ export function ConsumptionFiltersBar({ section, fuentes, currentFilters, provee
           <Label htmlFor="consumo-patente" className="text-xs">Patente</Label>
           <Input
             id="consumo-patente"
+            // eslint-disable-next-line local/ui-type-scale -- normaliza el dato, no es un rótulo
             className="w-40 uppercase"
             placeholder="ABCD12"
             value={patenteDraft}

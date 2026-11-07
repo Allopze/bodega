@@ -44,7 +44,7 @@ export function OcItemCostForm({
     <form action={action} className="mt-2 flex flex-wrap items-end gap-2">
       <input type="hidden" name="purchaseOrderItemId" value={purchaseOrderItemId} />
       <div className="flex flex-col gap-1">
-        <label htmlFor={inputId} className="text-[10px] text-(--color-text-subtle)">
+        <label htmlFor={inputId} className="text-2xs text-(--color-text-subtle)">
           Costo unitario real
         </label>
         <Input
@@ -60,7 +60,7 @@ export function OcItemCostForm({
         />
       </div>
       <SubmitButton label="Registrar costo" loadingLabel="Registrando..." variant="secondary" size="sm" />
-      <p className="w-full text-[11px] text-(--color-text-subtle)">
+      <p className="w-full text-2xs text-(--color-text-subtle)">
         Se multiplicará por {quantity} {unitOfMeasure} y actualizará los totales de la orden.
       </p>
     </form>

@@ -51,15 +51,15 @@ export function AssetMaintenance({ assetId, rows, canManage, suppliers }: AssetM
         <div className="flex gap-8">
           <div>
             <p className="text-xs text-[var(--color-text-muted)]">Mantenciones</p>
-            <p className="font-mono text-xl font-bold text-[var(--color-text)]">{vigentes.length}</p>
+            <p className="font-mono text-xl font-semibold text-[var(--color-text)]">{vigentes.length}</p>
           </div>
           <div>
             <p className="text-xs text-[var(--color-text-muted)]">Costo acumulado</p>
-            <p className="font-mono text-xl font-bold text-[var(--color-text)]">{formatCLP(totalCost)}</p>
+            <p className="font-mono text-xl font-semibold text-[var(--color-text)]">{formatCLP(totalCost)}</p>
           </div>
           <div>
             <p className="text-xs text-[var(--color-text-muted)]">Última mantención</p>
-            <p className="font-mono text-xl font-bold text-[var(--color-text)]">{lastDate ? formatDate(lastDate) : "—"}</p>
+            <p className="font-mono text-xl font-semibold text-[var(--color-text)]">{lastDate ? formatDate(lastDate) : "—"}</p>
           </div>
         </div>
         {canManage && (

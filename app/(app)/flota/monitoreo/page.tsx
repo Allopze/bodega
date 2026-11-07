@@ -46,7 +46,7 @@ export default async function FleetGpsMonitoringPage() {
     { key: "linked", label: "Vehículos vinculados", value: monitoring.positions.length },
     { key: "moving", label: "En movimiento", value: monitoring.positions.filter((position) => position.speedKph > 0).length },
     { key: "ignition", label: "Con encendido", value: monitoring.positions.filter((position) => position.ignition).length },
-    { key: "capture", label: "Última consulta", value: latestSyncAt ? formatDateTime(latestSyncAt) : "Sin datos" },
+    { key: "capture", label: "Última consulta", value: latestSyncAt ? formatDateTime(latestSyncAt) : "Sin datos", valueKind: "text" },
   ] : []
   const onwayIsConfigured = adminStatus?.hasCredentials ?? false
 

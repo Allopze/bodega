@@ -74,7 +74,7 @@ export function EquipmentPerformanceChart({ unit, points, range, vehicleLabel }:
             }}
             {...motion}
           >
-            <LabelList dataKey="value" position="top" offset={8} formatter={(value: unknown) => fmt(value)} className="fill-[var(--color-text)] text-[10px]" />
+            <LabelList dataKey="value" position="top" offset={8} formatter={(value: unknown) => fmt(value)} className="fill-[var(--color-text)] text-2xs" />
           </Line>
         </ComposedChart>
       </ChartContainer>

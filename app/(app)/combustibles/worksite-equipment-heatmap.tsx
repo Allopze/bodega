@@ -64,7 +64,7 @@ export function WorksiteEquipmentHeatmap({ cells }: { cells: HeatmapCell[] }) {
         <div className="grid" style={{ gridTemplateColumns: `140px repeat(${topEquipments.length}, minmax(80px, 1fr))` }}>
           <div className="p-2 text-xs font-medium text-(--color-text-muted)" />
           {topEquipments.map((eq) => (
-            <div key={eq} className="p-2 text-center text-[10px] font-medium text-(--color-text-muted) truncate leading-tight" title={eq}>{eq}</div>
+            <div key={eq} className="p-2 text-center text-2xs font-medium text-(--color-text-muted) truncate leading-tight" title={eq}>{eq}</div>
           ))}
 
           {topWorksites.map((ws) => (
@@ -72,12 +72,12 @@ export function WorksiteEquipmentHeatmap({ cells }: { cells: HeatmapCell[] }) {
               <div className="flex items-center p-2 text-xs font-medium text-(--color-text) truncate" title={ws}>{ws}</div>
               {topEquipments.map((eq) => {
                 const cell = cellMap.get(`${ws}::${eq}`)
-                if (!cell) return <div key={`${ws}::${eq}`} className="flex items-center justify-center border border-(--color-border) bg-(--color-surface-2) p-2 text-[10px] text-(--color-text-muted)">—</div>
+                if (!cell) return <div key={`${ws}::${eq}`} className="flex items-center justify-center border border-(--color-border) bg-(--color-surface-2) p-2 text-2xs text-(--color-text-muted)">—</div>
                 const step = heatmapStep(cell.intensity)
                 return (
                   <div
                     key={`${ws}::${eq}`}
-                    className="flex flex-col items-center justify-center border border-(--color-border) p-2 text-center text-[10px] leading-tight"
+                    className="flex flex-col items-center justify-center border border-(--color-border) p-2 text-center text-2xs leading-tight"
                     style={{ backgroundColor: cell.liters > 0 ? stepColor(step.mix) : EMPTY_COLOR, color: step.mix === 100 && cell.liters > 0 ? "var(--color-surface)" : "var(--color-text)" }}
                     title={`${cell.worksiteName} · ${cell.equipmentLabel}: ${cell.liters.toLocaleString("es-CL")} L${cell.amount == null ? "" : ` / ${cell.amount.toLocaleString("es-CL")} CLP`}`}
                   >
@@ -91,7 +91,7 @@ export function WorksiteEquipmentHeatmap({ cells }: { cells: HeatmapCell[] }) {
         </div>
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center gap-3 text-[10px] text-(--color-text-muted)">
+      <div className="mt-3 flex flex-wrap items-center gap-3 text-2xs text-(--color-text-muted)">
         <span>Menos litros</span>
         {[...HEATMAP_STEPS].reverse().map((step) => (
           <span key={step.mix} className="inline-block h-3 w-6 rounded-sm border border-(--color-border)" style={{ backgroundColor: stepColor(step.mix) }} title={step.label} />

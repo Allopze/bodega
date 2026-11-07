@@ -401,7 +401,8 @@ describe("bandeja Por revisar", () => {
       const sessions: Array<[Session, string[] | "all"]> = [[globalSession(), "all"], [scopedSession(["ws-a"]), ["ws-a"]], [scopedSession(["ws-b"]), ["ws-b"]]]
       for (const [session, scope] of sessions) {
         const tile = fuelReviewTile(await getFuelInboxPendingForSession(session))
-        expect(Number(tile.value.replace(/\./g, ""))).toBe(await countFuelInboxPending(scope))
+        // `value` es `string | number` desde que KpiCard formatea cifras (UX-06).
+        expect(Number(String(tile.value).replace(/\./g, ""))).toBe(await countFuelInboxPending(scope))
       }
       // Sin ninguna faena a la vista el valor es «Al día», nunca un 0 pelado.
       expect(await getFuelInboxPendingForSession(scopedSession([]))).toEqual(NONE)

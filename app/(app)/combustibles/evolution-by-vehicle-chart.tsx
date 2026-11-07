@@ -92,10 +92,10 @@ function Panel({ panel, periods, axisMax }: { panel: EvolutionPanel; periods: st
         <LineChart data={panel.series} margin={{ top: 6, right: 6, left: 0, bottom: 0 }} accessibilityLayer={false}>
           <CartesianGrid vertical={false} strokeDasharray="2 5" />
           <XAxis
-            dataKey="periodo" tickLine={false} axisLine={false} tick={{ ...AXIS_TICK, fontSize: 10 }} interval="preserveStartEnd" minTickGap={16}
+            dataKey="periodo" tickLine={false} axisLine={false} tick={AXIS_TICK} interval="preserveStartEnd" minTickGap={16}
             tickFormatter={(value: string) => tickLabel(value, monthly)}
           />
-          <YAxis domain={[0, axisMax]} tickLine={false} axisLine={false} width={34} tick={{ ...AXIS_TICK, fontSize: 10 }} tickCount={3} tickFormatter={compactNumber} />
+          <YAxis domain={[0, axisMax]} tickLine={false} axisLine={false} width={36} tick={AXIS_TICK} tickCount={3} tickFormatter={compactNumber} />
           <ChartTooltip cursor={false} isAnimationActive={false} filterNull={false} content={<PanelTooltip />} />
           <Line
             dataKey="liters" type="linear" stroke={CHART_COLORS.brand} strokeWidth={2} connectNulls={false}

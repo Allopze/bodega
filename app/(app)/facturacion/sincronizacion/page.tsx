@@ -277,7 +277,7 @@ export default async function BillingSyncPage() {
                             <p className="text-xs text-[var(--color-text-subtle)]">reanudable desde cursor</p>
                           )}
                           <p
-                            className="font-mono text-[10px] text-[var(--color-text-faint)]"
+                            className="font-mono text-2xs text-[var(--color-text-faint)]"
                             title="Identificador para cruzar esta corrida con los logs del servidor"
                           >
                             {run.correlationId}

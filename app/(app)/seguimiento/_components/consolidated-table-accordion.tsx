@@ -55,7 +55,7 @@ export function ConsolidatedTableAccordion({ row }: Props) {
       {/* 1. Desglose de etapas y pendientes */}
       <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-2xs">
         <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-          <h4 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-subtle)]">
+          <h4 className="text-eyebrow">
             Etapa de las cantidades
           </h4>
           <div className="text-xs text-[var(--color-text-muted)]">
@@ -70,20 +70,20 @@ export function ConsolidatedTableAccordion({ row }: Props) {
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           {/* Solicitado */}
           <div className="border border-[var(--color-border)] rounded-lg p-2.5 bg-[var(--color-surface-2)]">
-            <span className="text-[11px] text-[var(--color-text-muted)] block">Solicitado</span>
-            <span className="font-mono text-base font-bold tabular-nums text-[var(--color-text)]">
+            <span className="text-2xs text-[var(--color-text-muted)] block">Solicitado</span>
+            <span className="font-mono text-base font-semibold tabular-nums text-[var(--color-text)]">
               {formatQty(row.requested, row.uom)}
             </span>
           </div>
 
           {/* En OC / Proveedor */}
           <div className="border border-[var(--color-border)] rounded-lg p-2.5 bg-[var(--color-surface-2)]">
-            <span className="text-[11px] text-[var(--color-text-muted)] block">En OC con proveedor</span>
-            <span className="font-mono text-base font-bold tabular-nums text-[var(--color-text)]">
+            <span className="text-2xs text-[var(--color-text-muted)] block">En OC con proveedor</span>
+            <span className="font-mono text-base font-semibold tabular-nums text-[var(--color-text)]">
               {formatQty(row.inOc, row.uom)}
             </span>
             {row.pendingBreakdown.pendingFromSupplier > 0 && (
-              <span className="block text-[10px] text-[var(--color-signal-ink)] font-medium mt-0.5">
+              <span className="block text-2xs text-[var(--color-signal-ink)] font-medium mt-0.5">
                 Faltan {formatQty(row.pendingBreakdown.pendingFromSupplier, row.uom)}
               </span>
             )}
@@ -91,44 +91,44 @@ export function ConsolidatedTableAccordion({ row }: Props) {
 
           {/* En oficina */}
           <div className="border border-[var(--color-border)] rounded-lg p-2.5 bg-[var(--color-surface-2)]">
-            <span className="text-[11px] text-[var(--color-text-muted)] block">En oficina central</span>
-            <span className="font-mono text-base font-bold tabular-nums text-[var(--color-text)]">
+            <span className="text-2xs text-[var(--color-text-muted)] block">En oficina central</span>
+            <span className="font-mono text-base font-semibold tabular-nums text-[var(--color-text)]">
               {formatQty(row.pendingBreakdown.inOffice, row.uom)}
             </span>
-            <span className="block text-[10px] text-[var(--color-text-muted)] mt-0.5">
+            <span className="block text-2xs text-[var(--color-text-muted)] mt-0.5">
               Recib: {formatQty(row.receivedOffice)} · Desp: {formatQty(row.dispatched)}
             </span>
           </div>
 
           {/* En tránsito */}
           <div className="border border-[var(--color-border)] rounded-lg p-2.5 bg-[var(--color-surface-2)]">
-            <span className="text-[11px] text-[var(--color-text-muted)] block">En camino a faena</span>
-            <span className="font-mono text-base font-bold tabular-nums text-[var(--color-text)]">
+            <span className="text-2xs text-[var(--color-text-muted)] block">En camino a faena</span>
+            <span className="font-mono text-base font-semibold tabular-nums text-[var(--color-text)]">
               {formatQty(row.pendingBreakdown.inTransit, row.uom)}
             </span>
-            <span className="block text-[10px] text-[var(--color-text-muted)] mt-0.5">
+            <span className="block text-2xs text-[var(--color-text-muted)] mt-0.5">
               Despachado vía GDI
             </span>
           </div>
 
           {/* En faena sin entregar */}
           <div className="border border-[var(--color-border)] rounded-lg p-2.5 bg-[var(--color-surface-2)]">
-            <span className="text-[11px] text-[var(--color-text-muted)] block">En faena (por entregar)</span>
-            <span className="font-mono text-base font-bold tabular-nums text-[var(--color-text)]">
+            <span className="text-2xs text-[var(--color-text-muted)] block">En faena (por entregar)</span>
+            <span className="font-mono text-base font-semibold tabular-nums text-[var(--color-text)]">
               {formatQty(row.pendingBreakdown.inFaenaAvailable, row.uom)}
             </span>
-            <span className="block text-[10px] text-[var(--color-text-muted)] mt-0.5">
+            <span className="block text-2xs text-[var(--color-text-muted)] mt-0.5">
               Recibido en faena
             </span>
           </div>
 
           {/* Entregado a usuario */}
           <div className="border border-[var(--color-success-line)] rounded-lg p-2.5 bg-[var(--color-success-tint)]">
-            <span className="text-[11px] text-[var(--color-success-ink)] font-medium block">Entregado a usuario</span>
-            <span className="font-mono text-base font-bold tabular-nums text-[var(--color-success-ink)]">
+            <span className="text-2xs text-[var(--color-success-ink)] font-medium block">Entregado a usuario</span>
+            <span className="font-mono text-base font-semibold tabular-nums text-[var(--color-success-ink)]">
               {formatQty(row.delivered, row.uom)}
             </span>
-            <span className="block text-[10px] text-[var(--color-success-ink)] mt-0.5">
+            <span className="block text-2xs text-[var(--color-success-ink)] mt-0.5">
               Con comprobante
             </span>
           </div>
@@ -138,7 +138,7 @@ export function ConsolidatedTableAccordion({ row }: Props) {
       {/* 2. Historial cronológico (Timeline) */}
       <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-2xs">
         <div className="flex items-center justify-between gap-2 mb-3">
-          <h4 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-subtle)]">
+          <h4 className="text-eyebrow">
             Trazabilidad cronológica de movimientos
           </h4>
           <Link
@@ -151,7 +151,7 @@ export function ConsolidatedTableAccordion({ row }: Props) {
         </div>
 
         {row.timeline.length === 0 ? (
-          <p className="text-xs text-[var(--color-text-muted)] italic">
+          <p className="text-xs text-[var(--color-text-subtle)]">
             No hay movimientos registrados para este ítem.
           </p>
         ) : (
@@ -181,10 +181,10 @@ export function ConsolidatedTableAccordion({ row }: Props) {
                   </span>
                   <div className="flex-1 min-w-0 bg-[var(--color-surface-2)] p-2.5 rounded-lg border border-[var(--color-border)]">
                     <div className="flex flex-wrap items-center justify-between gap-1">
-                      <span className={`font-bold text-[var(--color-text)] ${event.voided ? "line-through" : ""}`}>
+                      <span className={`font-semibold text-[var(--color-text)] ${event.voided ? "line-through" : ""}`}>
                         {event.title}
                       </span>
-                      <span className="text-[11px] text-[var(--color-text-muted)] font-mono tabular-nums">
+                      <span className="text-2xs text-[var(--color-text-muted)] font-mono tabular-nums">
                         {formatDateTime(event.date)}
                       </span>
                     </div>
@@ -193,7 +193,7 @@ export function ConsolidatedTableAccordion({ row }: Props) {
                       <div className="mt-1">
                         <Link
                           href={event.href}
-                          className="text-[11px] text-[var(--color-primary)] hover:underline font-semibold inline-flex items-center gap-1"
+                          className="text-2xs text-[var(--color-primary)] hover:underline font-semibold inline-flex items-center gap-1"
                         >
                           {TIMELINE_LINK_LABEL[event.type] ?? "Ver documento original"}
                           <ArrowSquareOut size={11} />

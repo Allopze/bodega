@@ -132,7 +132,7 @@ export function ConsolidatedTable({ requests }: Props) {
                       {request.requestCode}
                       <ArrowSquareOut size={12} className="shrink-0" />
                     </Link>
-                    <div className="text-[11px] text-[var(--color-text-muted)] truncate" title={request.requesterName}>
+                    <div className="text-2xs text-[var(--color-text-muted)] truncate" title={request.requesterName}>
                       {request.worksiteName}
                     </div>
                   </TableCell>
@@ -187,7 +187,7 @@ export function ConsolidatedTable({ requests }: Props) {
                     <TableCell colSpan={9} className="p-4 sm:p-5" id={detailId}>
                       <div className="space-y-4">
                         {request.lines.length === 0 ? (
-                          <p className="text-xs text-[var(--color-text-muted)] italic">
+                          <p className="text-xs text-[var(--color-text-subtle)]">
                             Esta solicitud no tiene líneas de evidencia para este rango de filtros.
                           </p>
                         ) : (

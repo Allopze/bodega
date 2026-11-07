@@ -124,7 +124,7 @@ export function UserList({ users, invitations, allRoles, allPermissions, allWork
                     <MetaBadge key={label} meta={{ label: `${label}`, variant: "default" }} />
                   ))}
                   {u.roleLabels.length > 3 && (
-                    <span className="text-[10px] font-medium text-[var(--color-text-subtle)] whitespace-nowrap">
+                    <span className="text-2xs font-medium text-[var(--color-text-subtle)] whitespace-nowrap">
                       +{u.roleLabels.length - 3} más
                     </span>
                   )}
@@ -202,7 +202,7 @@ export function UserList({ users, invitations, allRoles, allPermissions, allWork
                   <MetaBadge key={label} meta={{ label: `${label}`, variant: "default" }} />
                 ))}
                 {u.roleLabels.length > 3 && (
-                  <span className="text-[10px] font-medium text-[var(--color-text-subtle)] whitespace-nowrap">
+                  <span className="text-2xs font-medium text-[var(--color-text-subtle)] whitespace-nowrap">
                     +{u.roleLabels.length - 3} más
                   </span>
                 )}

@@ -56,7 +56,7 @@ export function MoneyStat({
   const content = (
     <>
       <div className="flex items-start justify-between gap-2">
-        <p className="text-xs font-medium uppercase tracking-wide text-[var(--color-text-muted)]">{label}</p>
+        <p className="text-eyebrow">{label}</p>
         <span
           className="shrink-0 text-[var(--color-text-subtle)]"
           title={origin}

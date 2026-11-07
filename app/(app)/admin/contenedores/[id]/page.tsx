@@ -48,7 +48,7 @@ export default async function ContenedorDetallePage({ params }: { params: Promis
       <section aria-labelledby="container-status-heading" className="rounded-2xl border border-slate-200/70 bg-white p-5 shadow-xs">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p id="container-status-heading" className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">Estado actual</p>
+            <p id="container-status-heading" className="text-eyebrow">Estado actual</p>
             <h2 className="mt-1 text-lg font-semibold text-[var(--color-text)]">{container.code}</h2>
           </div>
           <MetaBadge meta={{ label: `${CONTAINER_STATUS_LABELS[status] ?? container.status}`, variant: containerStatusVariant(status) }} dot />

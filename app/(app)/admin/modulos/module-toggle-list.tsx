@@ -135,7 +135,7 @@ function ModuleCard({ mod }: { mod: ModuleToggle }) {
                 retiró: cada módulo ya tiene nombre propio, así que el slug
                 sólo aportaba jerga. */}
             <span className={cn(
-              "rounded-[var(--radius-full)] px-1.5 py-0.5 text-[10px] font-medium",
+              "rounded-[var(--radius-full)] px-1.5 py-0.5 text-2xs font-medium",
               mod.enabled
                 ? "bg-[var(--color-success-tint)] text-[var(--color-success-ink)]"
                 : "bg-[var(--color-surface-2)] text-[var(--color-text-muted)]",
@@ -227,7 +227,7 @@ function SubmoduleRow({
             {sub.label}
           </span>
           {sub.permissions && sub.permissions.length > 0 && (
-            <span className="rounded-[var(--radius-full)] bg-[var(--color-primary-tint)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-primary-ink)]">
+            <span className="rounded-[var(--radius-full)] bg-[var(--color-primary-tint)] px-1.5 py-0.5 text-2xs font-medium text-[var(--color-primary-ink)]">
               Requiere permiso
             </span>
           )}
@@ -235,7 +235,7 @@ function SubmoduleRow({
         {/* La ruta cruda (`/prevencion/pdtp/nuevo`) era el único subtítulo. Se
             sustituye por lo que la pantalla necesita responder: si está visible
             o no. La ruta sigue siendo la clave de la operación, no un rótulo. */}
-        <p className="mt-0.5 text-[10px] text-[var(--color-text-faint)]">
+        <p className="mt-0.5 text-2xs text-[var(--color-text-faint)]">
           {sub.enabled ? "Visible y operativo" : "Oculto e inactivo para todos"}
         </p>
       </div>

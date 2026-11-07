@@ -69,7 +69,7 @@ export function Delta({
         aria-hidden
         className={cn(
           "inline-flex items-center gap-0.5 rounded-full font-semibold tabular-nums",
-          size === "md" ? "px-2 py-0.5 text-xs" : "px-1.5 py-0.5 text-[11px]",
+          size === "md" ? "px-2 py-0.5 text-xs" : "px-1.5 py-0.5 text-2xs",
           TONE_CLASSES[tone],
         )}
       >

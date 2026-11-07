@@ -128,7 +128,7 @@ function DocumentRow({ doc, current }: { doc: ChainDocument; current: boolean })
           )
         )}
         {current && (
-          <span className="rounded-(--radius-sm) bg-(--color-primary-tint) px-1.5 py-0.5 text-[11px] font-medium text-(--color-primary-ink)">
+          <span className="rounded-(--radius-sm) bg-(--color-primary-tint) px-1.5 py-0.5 text-2xs font-medium text-(--color-primary-ink)">
             Buscado
           </span>
         )}

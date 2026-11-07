@@ -254,7 +254,7 @@ function OcHeaderPreview({ profile }: { profile: CompanyProfile }) {
             </div>
           </div>
 
-          <div className="shrink-0 rounded-[var(--radius-sm)] border border-[var(--color-primary-line)] px-2 py-1 text-right text-[10px] font-semibold uppercase text-[var(--color-primary-ink)]">
+          <div className="shrink-0 rounded-[var(--radius-sm)] border border-[var(--color-primary-line)] px-2 py-1 text-right text-2xs font-semibold text-[var(--color-primary-ink)]">
             <p>R.U.T.: {profile.rut || "—"}</p>
             <p>Orden de compra</p>
             <p className="mt-1 font-mono text-xs">Nº 0001</p>

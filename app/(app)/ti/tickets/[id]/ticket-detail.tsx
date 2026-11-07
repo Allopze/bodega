@@ -58,7 +58,7 @@ interface TicketDetailProps {
 }
 
 const SECTION = "rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs"
-const HEADING = "text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]"
+const HEADING = "text-eyebrow"
 
 /**
  * Cuándo vence, donde se decide (TIUX-16). Un ticket abierto cuenta contra el

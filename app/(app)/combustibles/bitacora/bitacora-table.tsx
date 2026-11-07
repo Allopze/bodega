@@ -12,6 +12,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/compon
 import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui/responsive-data-list"
 import { ReviewRequestControl } from "@/components/combustibles/load-detail/review-request-control"
 import type { CargaRowHrefs } from "@/lib/combustibles/cargas-hrefs"
+import { FLAG_REASON_LABELS, type FlagReason } from "@/lib/combustibles/control/contracts"
 import { FUEL_LOAD_ORIGIN_LABEL, PERSONAL_DATA_LABEL, fuelLogPending, type FuelLogRow } from "@/lib/combustibles/fuel-log-shared"
 import { useLocalStorageState } from "@/lib/hooks/use-local-storage-state"
 import { formatDateTime } from "@/lib/utils"
@@ -30,6 +31,8 @@ interface ColumnDef {
   /** `canViewPersonal`: la sesión tiene `combustibles:view_personal`. El servidor ya enmascaró el dato; esto solo rotula el vacío. */
   render: (row: EnrichedRow, canViewPersonal: boolean) => React.ReactNode
   numeric?: boolean
+  /** Fechas y cantidad + unidad no se parten en dos líneas. Las columnas `numeric` ya van sin partir. */
+  nowrap?: boolean
 }
 
 function personalCell(value: string | null, canViewPersonal: boolean): React.ReactNode {
@@ -48,17 +51,38 @@ function meterUnit(label: string | null): string {
   return ""
 }
 
+/**
+ * El motivo de una carga por decidir, corto para la insignia de la columna: el
+ * texto entero («Lectura de medidor menor a la anterior») hacía una insignia de
+ * tres líneas. La frase completa queda en el `title` de la insignia y es la que
+ * se lee en la ficha de la carga y en «Por revisar».
+ */
+const FLAG_REASON_SHORT_LABELS: Record<FlagReason, string> = {
+  outlier: "Rendimiento atípico",
+  implausible: "Rendimiento fuera de rango",
+  meter_regression: "Lectura menor a la anterior",
+  over_capacity: "Litros sobre la capacidad",
+  filler_value: "Valor de relleno",
+  duplicate: "Posible duplicada",
+  unknown_vehicle: "Equipo sin ficha",
+  late_entry: "Registrada después",
+}
+
 function PendingCell({ row }: { row: EnrichedRow }) {
   const pending = fuelLogPending(row)
+  const flagReason = row.reviewFlagReason && Object.hasOwn(FLAG_REASON_SHORT_LABELS, row.reviewFlagReason) ? (row.reviewFlagReason as FlagReason) : null
   if (pending.length === 0) return <span className="text-[var(--color-text-subtle)]">—</span>
   const hrefFor = (kind: PendingKind) => (kind === "decide" ? row.hrefs.decide : kind === "requested" ? row.hrefs.requested : kind === "case" ? row.hrefs.cases : row.hrefs.detail)
   return (
     <span className="flex flex-wrap gap-1">
       {pending.map((item) => {
         const href = hrefFor(item.kind)
-        // Un motivo largo («Rendimiento fuera de rango físico») se parte en dos líneas: en la tarjeta del
-        // celular la columna mide la mitad del ancho y el badge, que no corta por defecto, se salía de ella.
-        const badge = <MetaBadge meta={{ label: item.label, variant: "signal" }} size="sm" className="max-w-full whitespace-normal text-left" />
+        // El motivo de una carga por decidir va corto y con la frase completa en el `title`. Aun así un motivo
+        // se parte en dos líneas si hace falta: en la tarjeta del celular la columna mide la mitad del ancho y
+        // el badge, que no corta por defecto, se salía de ella.
+        const short = item.kind === "decide" && flagReason ? FLAG_REASON_SHORT_LABELS[flagReason] : item.label
+        const full = item.kind === "decide" && flagReason ? FLAG_REASON_LABELS[flagReason] : undefined
+        const badge = <MetaBadge meta={{ label: short, variant: "signal" }} size="sm" title={full} className="max-w-full whitespace-normal text-left" />
         return href ? <Link key={item.kind} href={href} className="max-w-full rounded-full focus-visible:outline-2 focus-visible:outline-[var(--color-primary)]">{badge}</Link> : <span key={item.kind} className="max-w-full">{badge}</span>
       })}
     </span>
@@ -83,7 +107,7 @@ function EquipmentCell({ row }: { row: EnrichedRow }) {
 }
 
 const COLUMNS: ColumnDef[] = [
-  { key: "occurredAt", label: "Fecha y hora", defaultVisible: true, render: (r) => <span className="font-mono text-xs tabular-nums">{formatDateTime(r.occurredAt)}</span> },
+  { key: "occurredAt", label: "Fecha y hora", defaultVisible: true, nowrap: true, render: (r) => <span className="font-mono text-xs tabular-nums">{formatDateTime(r.occurredAt)}</span> },
   { key: "equipment", label: "Equipo", defaultVisible: true, render: (r) => <EquipmentCell row={r} /> },
   { key: "worksiteName", label: "Faena", defaultVisible: true, render: (r) => r.worksiteName ?? "—" },
   { key: "liters", label: "Litros", defaultVisible: true, numeric: true, render: (r) => `${Number(r.liters).toLocaleString("es-CL")} L` },
@@ -108,8 +132,8 @@ const COLUMNS: ColumnDef[] = [
   { key: "notes", label: "Observaciones", defaultVisible: false, render: (r) => <span className="line-clamp-2 max-w-[220px]">{r.notes ?? "—"}</span> },
   { key: "createdByName", label: "Creado por", defaultVisible: false, render: (r) => r.createdByName ?? "—" },
   { key: "updatedByName", label: "Modificado por", defaultVisible: false, render: (r) => r.updatedByName ?? "—" },
-  { key: "createdAt", label: "Creado", defaultVisible: false, render: (r) => r.createdAt ? formatDateTime(r.createdAt) : "—" },
-  { key: "updatedAt", label: "Modificado", defaultVisible: false, render: (r) => r.updatedAt ? formatDateTime(r.updatedAt) : "—" },
+  { key: "createdAt", label: "Creado", defaultVisible: false, nowrap: true, render: (r) => r.createdAt ? formatDateTime(r.createdAt) : "—" },
+  { key: "updatedAt", label: "Modificado", defaultVisible: false, nowrap: true, render: (r) => r.updatedAt ? formatDateTime(r.updatedAt) : "—" },
 ]
 
 const DEFAULT_COLUMN_KEYS = COLUMNS.filter((column) => column.defaultVisible).map((column) => column.key)
@@ -222,7 +246,7 @@ export function BitacoraTable({
               return (
                 <TableRow key={key}>
                   {selectable && <TableCell><Checkbox id={`select-${key}`} label={`Seleccionar la carga de ${label(row)}`} labelHidden checked={selected.has(key)} onChange={() => toggleRow(key)} /></TableCell>}
-                  {columns.map((column) => <TableCell key={column.key} className={column.numeric ? "text-right font-mono tabular-nums" : ""}>{column.render(row, canViewPersonal)}</TableCell>)}
+                  {columns.map((column) => <TableCell key={column.key} nowrap={column.numeric || column.nowrap} className={column.numeric ? "text-right font-mono tabular-nums" : ""}>{column.render(row, canViewPersonal)}</TableCell>)}
                   <TableCell>
                     <div className="flex items-center gap-1">
                       <ReviewRequestControl source={row.source} entityId={row.id} openRequest={requestSummary(row)} canWithdraw={canWithdraw(row)} variant="icon" equipmentLabel={label(row)} />
@@ -260,8 +284,8 @@ export function BitacoraTable({
               </>
             }
           >
-            <ResponsiveDataListField label="Litros"><span className="font-mono tabular-nums">{Number(row.liters).toLocaleString("es-CL")} L</span></ResponsiveDataListField>
-            <ResponsiveDataListField label="Lectura">{row.meterReading == null ? "—" : <span className="font-mono tabular-nums">{Number(row.meterReading).toLocaleString("es-CL")} {meterUnit(row.meterLabel)}</span>}</ResponsiveDataListField>
+            <ResponsiveDataListField label="Litros"><span className="whitespace-nowrap font-mono tabular-nums">{Number(row.liters).toLocaleString("es-CL")} L</span></ResponsiveDataListField>
+            <ResponsiveDataListField label="Lectura">{row.meterReading == null ? "—" : <span className="whitespace-nowrap font-mono tabular-nums">{Number(row.meterReading).toLocaleString("es-CL")} {meterUnit(row.meterLabel)}</span>}</ResponsiveDataListField>
             <ResponsiveDataListField label="Cómo llegó">{FUEL_LOAD_ORIGIN_LABEL[row.origin]}</ResponsiveDataListField>
             <ResponsiveDataListField label="Pendiente"><PendingCell row={row} /></ResponsiveDataListField>
           </ResponsiveDataListCard>

@@ -92,28 +92,28 @@ export default async function TiDashboardPage() {
             <KpiCard
               icon={<Laptop size={16} />}
               label="Parque vigente"
-              value={String(counts.totalAssets)}
+              value={counts.totalAssets}
               detail="Equipos que la empresa opera hoy"
               href="/ti/activos"
             />
             <KpiCard
               icon={<UserCirclePlus size={16} />}
               label="En custodia"
-              value={String(counts.activeAssignments)}
+              value={counts.activeAssignments}
               detail="Equipos entregados con acta vigente"
               href="/ti/asignaciones?estado=vigentes"
             />
             <KpiCard
               icon={<Package size={16} />}
               label="Disponibles"
-              value={String(counts.available)}
+              value={counts.available}
               detail="Listos para entregar"
               href="/ti/activos?estado=disponible"
             />
             <KpiCard
               icon={<Ticket size={16} />}
               label="Tickets abiertos"
-              value={String(counts.openTickets)}
+              value={counts.openTickets}
               detail="Casos de la mesa de ayuda sin cerrar"
               href="/ti/tickets"
             />

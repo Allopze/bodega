@@ -40,7 +40,7 @@ export function Stat({ label, value, icon }: { label: string; value: string; ico
     <div className="flex items-center gap-2 p-3 rounded-md border border-[var(--color-border)]">
       {icon}
       <div>
-        <p className="text-lg font-bold leading-tight">{value}</p>
+        <p className="text-lg font-semibold leading-tight">{value}</p>
         <p className="text-xs text-muted-foreground">{label}</p>
       </div>
     </div>

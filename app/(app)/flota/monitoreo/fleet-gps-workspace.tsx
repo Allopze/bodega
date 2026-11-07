@@ -36,11 +36,11 @@ export function FleetGpsWorkspace({ positions, alerts, canViewHistory, adminStat
       <TabsList aria-label="Secciones de monitoreo GPS">
         <TabsTrigger value="live">
           En vivo
-          {positions.length > 0 ? <span className="ml-1.5 rounded-full bg-[var(--color-surface-2)] px-1.5 text-[10px] font-semibold tabular-nums text-[var(--color-text-subtle)]">{positions.length}</span> : null}
+          {positions.length > 0 ? <span className="ml-1.5 rounded-full bg-[var(--color-surface-2)] px-1.5 text-2xs font-semibold tabular-nums text-[var(--color-text-subtle)]">{positions.length}</span> : null}
         </TabsTrigger>
         <TabsTrigger value="alerts">
           Alertas
-          {hasAlerts ? <span className={`ml-1.5 rounded-full px-1.5 text-[10px] font-semibold tabular-nums ${hasBlocked ? "bg-[var(--color-danger-tint)] text-[var(--color-danger-ink)]" : "bg-[var(--color-surface-2)] text-[var(--color-text-subtle)]"}`}>{alerts.length}</span> : null}
+          {hasAlerts ? <span className={`ml-1.5 rounded-full px-1.5 text-2xs font-semibold tabular-nums ${hasBlocked ? "bg-[var(--color-danger-tint)] text-[var(--color-danger-ink)]" : "bg-[var(--color-surface-2)] text-[var(--color-text-subtle)]"}`}>{alerts.length}</span> : null}
         </TabsTrigger>
         {canViewHistory ? <TabsTrigger value="history">Historial</TabsTrigger> : null}
         {adminStatus ? <TabsTrigger value="settings">Configuración</TabsTrigger> : null}

@@ -66,7 +66,7 @@ export function ApproveForm({
             />
           </div>
         )}
-        <p className="text-[11px] text-text-subtle">
+        <p className="text-2xs text-text-subtle">
           Una vez confirmada, la aprobación no se puede revertir desde aquí.
         </p>
         {approveState.ok === false && approveState.message && approveState !== INITIAL_STATE && (

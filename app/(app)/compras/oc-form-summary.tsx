@@ -26,7 +26,7 @@ export function OcFormSummary({
     <aside className="h-fit rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-[var(--shadow-card)] xl:sticky xl:top-6">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-[var(--color-text-subtle)]">Resumen OC</p>
+          <p className="text-eyebrow">Resumen OC</p>
           <p className="mt-1 text-sm text-[var(--color-text-muted)]">
             {countOf(includedItems.length, "ítem")} {pluralize(includedItems.length, "seleccionado", "seleccionados")}
           </p>

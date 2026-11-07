@@ -44,7 +44,7 @@ export function AppToaster({ position = "top-right" }: AppToasterProps) {
             "!border-[var(--color-border)] !bg-[var(--color-surface)] !px-4 !py-3.5 !pr-12 " +
             "font-sans text-sm text-[var(--color-text)] shadow-[var(--shadow-md)] " +
             "data-[swipe=end]:opacity-0 data-[swipe=end]:translate-x-full " +
-            "!transition-all !duration-[var(--duration-default)] !ease-[var(--ease-out)]",
+            "!transition-[opacity,transform,translate,height,box-shadow] !duration-[var(--duration-default)] !ease-[var(--ease-out)]",
           content: "min-w-0 flex-1 gap-1 overflow-hidden",
           icon: "!mt-0.5 !ml-0 !mr-0 !h-5 !w-5 !shrink-0 !self-start !justify-center",
           title: "line-clamp-3 break-words text-sm font-medium leading-5 text-[var(--color-text)]",

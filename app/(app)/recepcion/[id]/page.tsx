@@ -203,7 +203,7 @@ export default async function RecepcionDetallePage({
                         <TableCell>
                           <div className="font-medium text-[var(--color-text)]">{productName}</div>
                           {product?.sku && (
-                            <div className="mt-0.5 font-mono text-[11px] text-[var(--color-text-subtle)]">{product.sku}</div>
+                            <div className="mt-0.5 font-mono text-2xs text-[var(--color-text-subtle)]">{product.sku}</div>
                           )}
                           {flagged && (
                             <div className="mt-1 flex flex-wrap gap-1.5">
@@ -221,7 +221,7 @@ export default async function RecepcionDetallePage({
                           {/* A-35: "En oficina" junto a un título "Ítems recibidos
                               en faena" se leía como contradicción. Son dos hitos
                               distintos de la misma línea; el texto lo dice. */}
-                          <div className="mt-0.5 text-[11px] font-normal text-[var(--color-text-subtle)]">
+                          <div className="mt-0.5 text-2xs font-normal text-[var(--color-text-subtle)]">
                             Llegó antes a oficina: {formatQty(ocItem.quantityOfficeReceived ?? 0, ocItem.unitOfMeasure)}
                             {pendingToFaena > 0 && ` · por despachar: ${formatQty(pendingToFaena, ocItem.unitOfMeasure)}`}
                           </div>

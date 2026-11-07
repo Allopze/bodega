@@ -118,7 +118,7 @@ export function PdtpActivityPicker(props: PickerProps) {
                       {option.annualNumber != null && <span className="text-xs font-semibold text-(--color-primary-ink)">N°{option.annualNumber}</span>}
                     </span>
                     <span className="mt-0.5 block text-sm leading-5 text-(--color-text-muted)">{option.description}</span>
-                    <span className="mt-1 block font-mono text-[11px] text-(--color-text-subtle)">{option.code}{unavailable ? ` · ${option.status === "retired" ? "Retirada" : "Borrador"}` : ""}</span>
+                    <span className="mt-1 block font-mono text-2xs text-(--color-text-subtle)">{option.code}{unavailable ? ` · ${option.status === "retired" ? "Retirada" : "Borrador"}` : ""}</span>
                   </span>
                 </button>
               )

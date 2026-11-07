@@ -175,7 +175,7 @@ export function WorkerForm({ open, onClose, editWorker, worksites, sizeFamilies,
           <Checkbox id="wrk-isActive" name="isActive" value="on" defaultChecked={editWorker?.isActive ?? true} label="Trabajador activo" />
 
           <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4">
-            <p className="mb-3 text-xs font-medium uppercase tracking-wide text-[var(--color-text-subtle)]">Tallas EPP</p>
+            <p className="mb-3 text-eyebrow">Tallas EPP</p>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               <SizeSelect label="Camisa/Polera" value={sizes.sizeTop} onChange={(v) => setSize("sizeTop", v)} presets={presetsFor("sizeTop")} id="wrk-sizeTop" />
               <SizeSelect label="Pantalón" value={sizes.sizeBottom} onChange={(v) => setSize("sizeBottom", v)} presets={presetsFor("sizeBottom")} id="wrk-sizeBottom" />

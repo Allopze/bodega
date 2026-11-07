@@ -175,15 +175,15 @@ export function LicensePanel({ license, canManage, workers, worksites, assets, s
         <div className="flex flex-wrap items-start gap-4 text-center">
           <div>
             <p className="text-xs text-[var(--color-text-muted)]">Compradas</p>
-            <p className="font-mono text-lg font-bold text-[var(--color-text)]">{license.purchasedQuantity}</p>
+            <p className="font-mono text-lg font-semibold text-[var(--color-text)]">{license.purchasedQuantity}</p>
           </div>
           <div>
             <p className="text-xs text-[var(--color-text-muted)]">Asignadas</p>
-            <p className="font-mono text-lg font-bold text-[var(--color-text)]">{license.assignedQuantity}</p>
+            <p className="font-mono text-lg font-semibold text-[var(--color-text)]">{license.assignedQuantity}</p>
           </div>
           <div>
             <p className="text-xs text-[var(--color-text-muted)]">Disponibles</p>
-            <p className={`font-mono text-lg font-bold ${available === 0 && license.purchasedQuantity > 0 ? "text-[var(--color-danger-ink)]" : "text-[var(--color-success-ink)]"}`}>{available}</p>
+            <p className={`font-mono text-lg font-semibold ${available === 0 && license.purchasedQuantity > 0 ? "text-[var(--color-danger-ink)]" : "text-[var(--color-success-ink)]"}`}>{available}</p>
           </div>
           {canManage && (
             <LicenseSheet

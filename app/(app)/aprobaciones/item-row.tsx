@@ -82,7 +82,7 @@ export function ItemRow({
         <div className="flex-1 basis-[min(100%,18rem)] min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             {item.productSku && (
-              <span className="font-mono text-[11px] text-[var(--color-text-subtle)] bg-[var(--color-surface-2)] px-1.5 py-0.5 rounded">
+              <span className="font-mono text-2xs text-[var(--color-text-subtle)] bg-[var(--color-surface-2)] px-1.5 py-0.5 rounded">
                 {item.productSku}
               </span>
             )}
@@ -90,7 +90,7 @@ export function ItemRow({
               {item.productName}
             </span>
             {!item.productSku && (
-              <span className="text-[11px] text-[var(--color-text-subtle)] italic">(sin catálogo)</span>
+              <span className="text-2xs text-[var(--color-text-subtle)]">(sin catálogo)</span>
             )}
           </div>
 
@@ -99,7 +99,7 @@ export function ItemRow({
               {item.attributes.map((a) => (
                 <span
                   key={a.attributeName}
-                  className="text-[11px] bg-[var(--color-surface-2)] text-[var(--color-text-muted)] px-1.5 py-0.5 rounded"
+                  className="text-2xs bg-[var(--color-surface-2)] text-[var(--color-text-muted)] px-1.5 py-0.5 rounded"
                 >
                   {a.attributeName}: {a.value}
                 </span>
@@ -127,7 +127,7 @@ export function ItemRow({
           </div>
 
           {item.notes && (
-            <p className="mt-1 text-xs text-[var(--color-text-muted)] italic leading-snug">
+            <p className="mt-1 text-xs text-[var(--color-text-subtle)] leading-snug">
               {item.notes}
             </p>
           )}
@@ -161,7 +161,7 @@ export function ItemRow({
           </div>
         )}
         {action === "idle" && !canApprove && !showLoading && (
-          <span className="text-[11px] text-[var(--color-text-subtle)] italic shrink-0 max-w-[140px] text-right leading-tight">
+          <span className="text-2xs text-[var(--color-text-subtle)] shrink-0 max-w-[140px] text-right leading-tight">
             Requiere Jefatura, Secretaría o Prevención
           </span>
         )}

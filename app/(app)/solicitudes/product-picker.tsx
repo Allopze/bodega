@@ -145,7 +145,7 @@ export function ProductPicker({
                   : "hover:bg-[var(--color-surface-2)]",
               )}
             >
-              <span className="font-mono text-[11px] text-[var(--color-text-subtle)] shrink-0">
+              <span className="font-mono text-2xs text-[var(--color-text-subtle)] shrink-0">
                 {group.variants.length === 1 ? group.variants[0]?.sku : `${group.variants.length} variantes`}
               </span>
               <span title={group.name} className="text-sm truncate">{group.name}</span>
@@ -169,7 +169,7 @@ export function ProductPicker({
               )}
             >
               <span className="text-sm font-medium">Usar “{query.trim()}”</span>
-              <span className="text-[11px] text-[var(--color-text-subtle)]">Ítem fuera de catálogo</span>
+              <span className="text-2xs text-[var(--color-text-subtle)]">Ítem fuera de catálogo</span>
             </li>
           )}
         </ul>

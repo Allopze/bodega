@@ -56,7 +56,7 @@ export default async function PpaPublicPage({
   return (
     <main className="mx-auto w-full max-w-lg px-4 py-6">
       <header className="mb-6 text-center">
-        <h1 className="text-xl font-bold tracking-tight">PPA Digital</h1>
+        <h1 className="text-xl font-semibold tracking-tight">PPA Digital</h1>
         <p className="text-sm text-[var(--color-text-muted)]">
           Para, Piensa y Actúa: evaluación preventiva antes de iniciar el trabajo.
         </p>

@@ -163,7 +163,7 @@ export function TaxonomyView({ categories, activeSlug, confidentialityLabel = DE
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
       <section aria-labelledby="tax-categories-heading">
         <div className="mb-3 flex items-center justify-between gap-2">
-          <h2 id="tax-categories-heading" className="text-sm font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">
+          <h2 id="tax-categories-heading" className="text-sm font-semibold text-[var(--color-text-subtle)]">
             Categorías
           </h2>
           <span className="text-xs text-[var(--color-text-muted)]" aria-live="polite">
@@ -285,7 +285,7 @@ export function TaxonomyView({ categories, activeSlug, confidentialityLabel = DE
 
       <section aria-labelledby="tax-types-heading">
         <div className="mb-3 flex items-center justify-between gap-2">
-          <h2 id="tax-types-heading" className="text-sm font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">
+          <h2 id="tax-types-heading" className="text-sm font-semibold text-[var(--color-text-subtle)]">
             Tipos {activeCategory ? `· ${activeCategory.name}` : ""}
           </h2>
           {activeSlug && (

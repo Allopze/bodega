@@ -19,7 +19,7 @@ export const SelectableCard = React.forwardRef<
     role="radio"
     aria-checked={selected}
     className={cn(
-      "w-full rounded-[var(--radius)] border p-3 text-left transition-all",
+      "w-full rounded-[var(--radius)] border p-3 text-left transition-colors",
       selected
         ? "border-[var(--color-primary)] bg-[var(--color-primary-tint)] ring-1 ring-[var(--color-primary)]"
         : "border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-border-strong)] hover:bg-[var(--color-surface-2)]",
@@ -31,7 +31,7 @@ export const SelectableCard = React.forwardRef<
       {icon && (
         <span
           className={cn(
-            "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 text-xs font-bold transition-colors",
+            "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 text-xs font-semibold transition-colors",
             selected
               ? "border-[var(--color-primary)] bg-[var(--color-primary)] text-white"
               : "border-[var(--color-border)] text-[var(--color-text-faint)]",

@@ -141,7 +141,7 @@ export function OcFormItems({
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     {item.productSku && (
-                      <span className="font-mono text-[11px] text-[var(--color-text-subtle)] bg-[var(--color-surface-2)] px-1.5 py-0.5 rounded">
+                      <span className="font-mono text-2xs text-[var(--color-text-subtle)] bg-[var(--color-surface-2)] px-1.5 py-0.5 rounded">
                         {item.productSku}
                       </span>
                     )}
@@ -151,7 +151,7 @@ export function OcFormItems({
                     <span className="text-xs text-[var(--color-text-subtle)]">
                       · SOL {item.requestCode}
                     </span>
-                    <MetaBadge meta={{ label: MODE_LABELS[item.deliveryMode] ?? item.deliveryMode, variant: "outline" }} className="font-normal shrink-0 text-[11px]" />
+                    <MetaBadge meta={{ label: MODE_LABELS[item.deliveryMode] ?? item.deliveryMode, variant: "outline" }} className="font-normal shrink-0 text-2xs" />
                     {URGENCY_LABELS[item.urgency] && (
                       <MetaBadge meta={{ label: URGENCY_LABELS[item.urgency]!, variant: "warning" }} className="font-normal shrink-0" />
                     )}
@@ -185,7 +185,7 @@ export function OcFormItems({
                 {isSelected && (
                   <div className="flex flex-wrap items-start gap-2 shrink-0">
                     <div className="flex flex-col gap-1">
-                      <label htmlFor={`qty-${item.id}`} className="text-[10px] text-[var(--color-text-subtle)]">
+                      <label htmlFor={`qty-${item.id}`} className="text-2xs text-[var(--color-text-subtle)]">
                         Cantidad
                       </label>
                       <Input
@@ -197,7 +197,7 @@ export function OcFormItems({
                       />
                     </div>
                     <div className="flex flex-col gap-1">
-                      <label htmlFor={`supplier-${item.id}`} className="text-[10px] text-[var(--color-text-subtle)]">
+                      <label htmlFor={`supplier-${item.id}`} className="text-2xs text-[var(--color-text-subtle)]">
                         Proveedor
                       </label>
                       <Select value={supplierForItem} onValueChange={(v) => setItemSupplier(item.id, v)}>
@@ -212,7 +212,7 @@ export function OcFormItems({
                       </Select>
                     </div>
                     <div className="flex flex-col gap-1">
-                      <label htmlFor={`price-${item.id}`} className="text-[10px] text-[var(--color-text-subtle)]">
+                      <label htmlFor={`price-${item.id}`} className="text-2xs text-[var(--color-text-subtle)]">
                         Precio unit.
                       </label>
                       <Input
@@ -229,13 +229,13 @@ export function OcFormItems({
                         title={hint ?? (item.isService ? "Déjalo vacío si el costo aún no se conoce" : undefined)}
                       />
                       {hint ? (
-                        <span className="text-[10px] text-[var(--color-text-subtle)]">{hintSource}</span>
+                        <span className="text-2xs text-[var(--color-text-subtle)]">{hintSource}</span>
                       ) : item.isService && costPending ? (
-                        <span className="text-[10px] text-[var(--color-warning-ink)]">se registra después</span>
+                        <span className="text-2xs text-[var(--color-warning-ink)]">se registra después</span>
                       ) : null}
                     </div>
                     <div className="flex flex-col gap-1">
-                      <label htmlFor={`disc-${item.id}`} className="text-[10px] text-[var(--color-text-subtle)]">
+                      <label htmlFor={`disc-${item.id}`} className="text-2xs text-[var(--color-text-subtle)]">
                         Desc. %
                       </label>
                       <Input
@@ -248,7 +248,7 @@ export function OcFormItems({
                       />
                     </div>
                     <div className="flex flex-col gap-1 min-w-[80px] text-right">
-                      <span className="text-[10px] text-[var(--color-text-subtle)]">Subtotal</span>
+                      <span className="text-2xs text-[var(--color-text-subtle)]">Subtotal</span>
                       <span className={`text-sm font-medium ${subtotal === null ? "text-[var(--color-warning-ink)]" : "tabular-nums text-[var(--color-text)]"}`}>
                         {subtotal === null ? "Costo pendiente" : formatCLP(subtotal)}
                       </span>

@@ -56,7 +56,7 @@ export function BackupDestinationsForm({ initialConfig, localPath }: Props) {
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium text-[var(--color-text)]">Local</span>
-              <span className="rounded-full bg-[var(--color-success-tint)] px-2 py-0.5 text-[10px] font-semibold text-[var(--color-success-ink)]">Siempre activo</span>
+              <span className="rounded-full bg-[var(--color-success-tint)] px-2 py-0.5 text-2xs font-semibold text-[var(--color-success-ink)]">Siempre activo</span>
             </div>
             <p className="mt-1 text-xs text-[var(--color-text-muted)]">
               Snapshot en el disco del servidor ({localPath}). El path del host lo define la infraestructura (bind mount).

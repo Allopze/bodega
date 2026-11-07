@@ -116,7 +116,7 @@ export function OperationsImportWizard() {
         <CardContent className="text-center space-y-4 py-8">
           <CheckCircle className="h-12 w-12 mx-auto text-[var(--color-success)]" />
           <div>
-            <p className="text-2xl font-bold">{result.imported}</p>
+            <p className="text-2xl font-semibold">{result.imported}</p>
             <p className="text-[var(--color-text-muted)]">cargas de la planilla importadas exitosamente</p>
             {result.duplicateRows > 0 && (
               <p className="mt-1 text-xs text-[var(--color-text-muted)]">{result.duplicateRows} {result.duplicateRows === 1 ? "fila ya estaba" : "filas ya estaban"} importada{result.duplicateRows === 1 ? "" : "s"} en un archivo anterior y se omitieron.</p>

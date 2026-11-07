@@ -42,7 +42,7 @@ export function SavedViews({ scopeKey, className }: { scopeKey: string; classNam
           <BookmarkSimple size={14} />
           Vistas
           {views.length > 0 && (
-            <span className="ml-1 rounded-full bg-[var(--color-surface-2)] px-1.5 font-mono text-[10px] tabular-nums">
+            <span className="ml-1 rounded-full bg-[var(--color-surface-2)] px-1.5 font-mono text-2xs tabular-nums">
               {views.length}
             </span>
           )}

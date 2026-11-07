@@ -129,7 +129,7 @@ export function OperationalIntegrityWorkbench({ cases, canReconcile, filters, wo
             href={metricHref(filters, metric.patch)}
             className="rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface-2) px-3 py-2 transition-colors hover:border-(--color-primary)"
           >
-            <span className="block text-[11px] text-(--color-text-muted)">{metric.label}</span>
+            <span className="block text-2xs text-(--color-text-muted)">{metric.label}</span>
             <span className="block text-lg font-semibold text-(--color-text)">{metric.count}</span>
           </Link>
         ))}
@@ -196,12 +196,12 @@ export function OperationalIntegrityWorkbench({ cases, canReconcile, filters, wo
                 <div className="min-w-0">
                   <p className="text-xs font-semibold text-(--color-text)">{row.summary}</p>
                   {row.productName && (
-                    <p className="mt-0.5 truncate text-[11px] text-(--color-text-subtle)">
+                    <p className="mt-0.5 truncate text-2xs text-(--color-text-subtle)">
                       <span>{row.productName}</span>
                       {row.sku && <span> · {row.sku}</span>}
                     </p>
                   )}
-                  <p className="mt-0.5 text-[11px] text-(--color-text-subtle)">
+                  <p className="mt-0.5 text-2xs text-(--color-text-subtle)">
                     {DOMAIN_LABELS[row.domain]} · observado {formatDateTime(row.observedAt)}
                   </p>
                 </div>
@@ -214,7 +214,7 @@ export function OperationalIntegrityWorkbench({ cases, canReconcile, filters, wo
               <div className="mt-2 flex flex-wrap items-center gap-3">
                 <Link
                   href={row.href}
-                  className="inline-flex items-center gap-1 text-[11px] font-medium text-(--color-primary) hover:underline underline-offset-2"
+                  className="inline-flex items-center gap-1 text-2xs font-medium text-(--color-primary) hover:underline underline-offset-2"
                 >
                   <ArrowSquareOut size={13} aria-hidden />
                   Ver evidencia

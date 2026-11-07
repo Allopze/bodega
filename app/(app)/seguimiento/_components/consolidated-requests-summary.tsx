@@ -14,10 +14,10 @@ interface Props {
 function FlowStat({ label, value, uom }: { label: string; value: number; uom: string }) {
   return (
     <div className="bg-[var(--color-surface-2)] rounded-lg p-2 min-w-0 text-center">
-      <dt className="text-[10px] text-[var(--color-text-muted)] block uppercase">{label}</dt>
+      <dt className="text-eyebrow block">{label}</dt>
       {/* TR-O2: la cantidad va como `<dd>` dentro del `<dl>` para que el lector
           de pantalla asocie cada cifra a su etapa sin depender sólo del color. */}
-      <dd className="font-mono text-xs font-bold text-[var(--color-text)] tabular-nums">
+      <dd className="font-mono text-xs font-semibold text-[var(--color-text)] tabular-nums">
         {formatQty(value, uom)}
       </dd>
     </div>
@@ -50,7 +50,7 @@ export function ConsolidatedRequestsSummary({ requests }: Props) {
               <div className="flex flex-wrap items-center gap-2">
                 <Link
                   href={`/solicitudes/${request.requestId}`}
-                  className="font-mono text-sm font-bold text-[var(--color-primary)] hover:underline inline-flex items-center gap-1"
+                  className="font-mono text-sm font-semibold text-[var(--color-primary)] hover:underline inline-flex items-center gap-1"
                 >
                   {request.requestCode}
                   <ArrowSquareOut size={12} className="shrink-0" aria-hidden />
@@ -65,7 +65,7 @@ export function ConsolidatedRequestsSummary({ requests }: Props) {
             </div>
 
             {request.alert && (
-              <span className="rounded-[var(--radius-full)] bg-[var(--color-signal-tint)] px-2 py-0.5 text-[11px] font-semibold text-[var(--color-signal-ink)]">
+              <span className="rounded-[var(--radius-full)] bg-[var(--color-signal-tint)] px-2 py-0.5 text-2xs font-semibold text-[var(--color-signal-ink)]">
                 Tiene pendientes de compra
               </span>
             )}
@@ -76,7 +76,7 @@ export function ConsolidatedRequestsSummary({ requests }: Props) {
               detalla por UOM sin sumar unidades distintas. */}
           <div className="mt-3 space-y-1.5">
             {request.quantitiesByUom.length === 0 ? (
-              <p className="text-xs text-[var(--color-text-muted)] italic">
+              <p className="text-xs text-[var(--color-text-subtle)]">
                 Sin cantidades registradas para las líneas de esta solicitud en el alcance filtrado.
               </p>
             ) : (
@@ -90,7 +90,7 @@ export function ConsolidatedRequestsSummary({ requests }: Props) {
                 // hay más de una, es un rótulo del grupo y no un término más.
                 <div key={sum.uom}>
                   {request.quantitiesByUom.length > 1 && (
-                    <p className="text-[10px] uppercase tracking-wide text-[var(--color-text-muted)] mb-1">
+                    <p className="text-eyebrow mb-1">
                       {sum.uom}
                     </p>
                   )}
@@ -114,7 +114,7 @@ export function ConsolidatedRequestsSummary({ requests }: Props) {
                       }`}
                     >
                       <dt
-                        className={`text-[10px] block uppercase ${
+                        className={`text-2xs block ${
                           sum.pendingTotal > 0
                             ? "text-[var(--color-signal-ink)]"
                             : "text-[var(--color-text-muted)]"
@@ -123,7 +123,7 @@ export function ConsolidatedRequestsSummary({ requests }: Props) {
                         Pendiente
                       </dt>
                       <dd
-                        className={`font-mono text-xs font-bold tabular-nums ${
+                        className={`font-mono text-xs font-semibold tabular-nums ${
                           sum.pendingTotal > 0
                             ? "text-[var(--color-signal-ink)]"
                             : "text-[var(--color-success-ink)]"

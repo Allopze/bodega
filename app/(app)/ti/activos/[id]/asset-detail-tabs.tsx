@@ -23,7 +23,7 @@ interface AssetDetailTabsProps {
 }
 
 function Count({ children }: { children: React.ReactNode }) {
-  return <span className="ml-1 rounded-full bg-[var(--color-surface-2)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--color-text-muted)]">{children}</span>
+  return <span className="ml-1 rounded-full bg-[var(--color-surface-2)] px-1.5 py-0.5 text-2xs font-semibold text-[var(--color-text-muted)]">{children}</span>
 }
 
 const TABS = ["resumen", "asignaciones", "mantenciones", "tickets", "documentos", "historial"] as const

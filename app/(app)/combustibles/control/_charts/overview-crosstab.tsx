@@ -33,15 +33,15 @@ export function OverviewCrosstab({ crosstab, label, emptyText }: { crosstab: Cro
                   {liters(row.cells[column.key])}
                 </TableCellNum>
               ))}
-              <TableCellNum className="font-bold">{liters(row.total)}</TableCellNum>
+              <TableCellNum className="font-semibold">{liters(row.total)}</TableCellNum>
             </TableRow>
           ))}
         </TableBody>
         <TableFooter>
           <TableRow className="hover:bg-transparent">
-            <TableCell className="font-bold">Total</TableCell>
-            {crosstab.columns.map((column) => <TableCellNum key={column.key} className="font-bold">{liters(crosstab.columnTotals[column.key])}</TableCellNum>)}
-            <TableCellNum className="font-bold">{liters(crosstab.grandTotal)}</TableCellNum>
+            <TableCell className="font-semibold">Total</TableCell>
+            {crosstab.columns.map((column) => <TableCellNum key={column.key} className="font-semibold">{liters(crosstab.columnTotals[column.key])}</TableCellNum>)}
+            <TableCellNum className="font-semibold">{liters(crosstab.grandTotal)}</TableCellNum>
           </TableRow>
         </TableFooter>
       </Table>
