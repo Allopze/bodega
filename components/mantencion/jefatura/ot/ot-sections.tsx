@@ -1,16 +1,19 @@
 import type { ReactNode } from "react"
-import { CheckSquare, Square } from "@phosphor-icons/react/dist/ssr"
+import Link from "next/link"
+import { CheckSquare, Package, Square } from "@phosphor-icons/react/dist/ssr"
+import { Button } from "@/components/ui/button"
 import { Callout } from "@/components/ui/callout"
 import { DetailItem } from "@/components/ui/detail-item"
+import { EmptyState } from "@/components/ui/empty-state"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
-import { MetaBadge } from "@/components/states/state-badge"
+import { MetaBadge, StateBadge } from "@/components/states/state-badge"
 import { formatNumber } from "@/lib/mantencion/format"
 import { OT_ITEM_KIND_LABELS, type OtItemKind } from "@/lib/mantencion/work-order-states"
-import type { WorkOrderDetail, WorkOrderItemDetail } from "@/lib/services/mantencion/work-orders/types"
+import type { WorkOrderDetail, WorkOrderItemDetail, WorkOrderPartsRequest } from "@/lib/services/mantencion/work-orders/types"
 import { SectionCard } from "../shared/section-card"
 import { OT_STATE_META, equipmentText } from "./ot-labels"
 import { formatDay, formatTimeOnly, sortEventsNewestFirst } from "./ot-format"
-import { formatDateTime } from "@/lib/utils"
+import { formatDateTime, todayInChile } from "@/lib/utils"
 import { EstimateCell } from "./ot-table"
 
 const GRID = "grid gap-x-6 gap-y-4 sm:grid-cols-2 xl:grid-cols-3"
@@ -115,6 +118,123 @@ export function OtItemsSection({ detail, kind }: { detail: WorkOrderDetail; kind
           </Table>
         </TableRoot>
       )}
+    </SectionCard>
+  )
+}
+
+const TEXT_LINK = "font-mono text-[13px] font-semibold text-[var(--color-primary-ink)] underline-offset-2 hover:underline focus-visible:underline"
+
+/** Una línea recibida completa ya no se espera: la fecha estimada pasada sólo cuenta mientras falte algo por llegar. */
+function lineOverdue(line: WorkOrderPartsRequest, today: string): boolean {
+  return !!line.estimatedDelivery && line.estimatedDelivery < today && line.quantityReceived < line.quantity
+}
+
+function quantityText(line: Pick<WorkOrderPartsRequest, "quantity" | "unitOfMeasure">): string {
+  return line.unitOfMeasure && line.unitOfMeasure !== "unidad" ? `${formatNumber(line.quantity)} ${line.unitOfMeasure}` : formatNumber(line.quantity)
+}
+
+/**
+ * «Repuestos pedidos»: las solicitudes de compra vinculadas a la OT y su avance, y
+ * debajo lo que los registros enlazados declararon usar. Es INFORMACIÓN: la OT no
+ * lleva repuestos en su documento; el mecánico declara lo usado en el registro de
+ * la correctiva y las compras salen de una solicitud. El código de la solicitud
+ * sólo es enlace con `repuestos:view_all` (con `view_own` el enlace daría 404 sobre
+ * una ajena). `partsRequestHref` lo calcula la página (permiso y OT no cerrada).
+ */
+export function OtPartsRequestsSection({
+  detail,
+  canOpenRequests,
+  partsRequestHref,
+}: {
+  detail: WorkOrderDetail
+  canOpenRequests: boolean
+  partsRequestHref: string | null
+}) {
+  const lines = detail.partsRequests
+  const today = todayInChile()
+  const orderLink = partsRequestHref
+    ? <Button asChild variant="secondary" size="sm"><Link href={partsRequestHref}>Pedir repuestos</Link></Button>
+    : null
+  const openable = new Set(detail.linkedRecords.filter((record) => record.canOpen).map((record) => record.id))
+
+  return (
+    <SectionCard
+      title="Repuestos pedidos"
+      description="Solicitudes de compra vinculadas a esta orden y su avance."
+      action={lines.length > 0 ? orderLink : null}
+    >
+      {lines.length === 0 ? (
+        orderLink ? (
+          <EmptyState
+            compact
+            as="p"
+            icon={<Package size={20} aria-hidden />}
+            title="Sin repuestos pedidos"
+            description="Si esta orden necesita repuestos, pídelos desde aquí: la solicitud queda vinculada a la OT y al equipo."
+            action={orderLink}
+          />
+        ) : (
+          <Pending>Nadie ha pedido repuestos para esta orden.</Pending>
+        )
+      ) : (
+        <TableRoot aria-label="Repuestos pedidos" className="-mx-5 w-auto rounded-none border-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Solicitud</TableHead>
+                <TableHead>Repuesto</TableHead>
+                <TableHead>Cant.</TableHead>
+                <TableHead>Estado</TableHead>
+                <TableHead>OC</TableHead>
+                <TableHead>Entrega estimada</TableHead>
+                <TableHead>Recibido</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {lines.map((line) => (
+                <TableRow key={line.itemId}>
+                  <TableCell className="whitespace-nowrap">
+                    {canOpenRequests
+                      ? <Link href={`/solicitudes/${line.requestId}`} className={TEXT_LINK}>{line.requestCode}</Link>
+                      : <span className="font-mono text-[13px]">{line.requestCode}</span>}
+                  </TableCell>
+                  <TableCell>{line.description}</TableCell>
+                  <TableCell className="whitespace-nowrap font-mono text-xs tabular-nums">{quantityText(line)}</TableCell>
+                  <TableCell><StateBadge state={line.itemStatus} entity="item" size="sm" /></TableCell>
+                  <TableCell className="whitespace-nowrap font-mono text-[13px]">
+                    {line.orderCode ?? <span className="text-[var(--color-text-muted)]">—</span>}
+                  </TableCell>
+                  <TableCell className="text-[13px]">
+                    <EstimateCell row={{ estimatedDeliveryDate: line.estimatedDelivery, estimateOverdue: lineOverdue(line, today) }} />
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap font-mono text-xs tabular-nums">
+                    {formatNumber(line.quantityReceived)}/{formatNumber(line.quantity)}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableRoot>
+      )}
+
+      <div className="mt-4 border-t border-[var(--color-border)] pt-3">
+        <h3 className="mb-1.5 text-sm font-semibold text-[var(--color-text)]">Declarados en los registros</h3>
+        {detail.partsUsed.length === 0 ? (
+          <Pending>Ningún registro enlazado declara repuestos.</Pending>
+        ) : (
+          <ul aria-label="Repuestos declarados en los registros" className="flex flex-col gap-1 text-sm text-[var(--color-text)]">
+            {detail.partsUsed.map((part, index) => (
+              <li key={`${part.recordId}-${index}`}>
+                <span className="tabular-nums">{formatNumber(part.quantity)} × {part.description}</span>
+                <span className="text-[var(--color-text-muted)]"> · </span>
+                {openable.has(part.recordId)
+                  ? <Link href={`/mantencion/registros/${part.recordId}`} className={TEXT_LINK}>{part.recordFolio ?? "Registro"}</Link>
+                  : <span className="font-mono text-[13px] text-[var(--color-text-muted)]">{part.recordFolio ?? "Registro"}</span>}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </SectionCard>
   )
 }

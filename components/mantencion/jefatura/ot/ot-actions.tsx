@@ -1,8 +1,9 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { ArrowsClockwise, CaretDown, CheckCircle, FilePdf, ListChecks, NotePencil, Truck, UserPlus } from "@phosphor-icons/react"
+import { ArrowsClockwise, CaretDown, CheckCircle, FilePdf, ListChecks, NotePencil, Package, Truck, UserPlus } from "@phosphor-icons/react"
 import { unassignWorkOrderAction, voidWorkOrderAction } from "@/app/(app)/mantencion/ot/[id]/actions"
 import { Button } from "@/components/ui/button"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
@@ -54,6 +55,13 @@ export interface OtActionsProps {
   /** Equipo y catálogos del formulario de registro; sólo se carga si quien mira puede registrar (`canRegisterRecord`). */
   recordForm: WorkOrderRecordForm | null
   actorUserId: string
+  /**
+   * Destino de «Pedir repuestos» (`/solicitudes/nueva?tipo=repuestos&ot=<id>`), que
+   * precarga equipo, faena y OT. La página lo calcula con `repuestos:create` y la OT
+   * no cerrada ni anulada; `null` oculta la acción. Es presentación: la página de
+   * solicitudes vuelve a validar permiso, alcance y estado de la OT.
+   */
+  partsRequestHref: string | null
 }
 
 type RecordOption = { kind: RecordKind; disabled: boolean }
@@ -93,8 +101,9 @@ type DialogName = "assign" | "entry" | "estimate" | "items" | "finish" | "receiv
  * etapa es «Registrar trabajo» (correctiva o preventiva, desde el PC) y la
  * salida queda secundaria; con el registro hecho, «Registrar otra…» pasa al menú.
  * El resto (reasignar, desasignar, cambiar la fecha estimada, corregir el
- * ingreso, el PDF y anular) va en «Más acciones»: con todo a la vista, una OT en
- * taller llegaba a siete botones y apretaba el título en la barra superior.
+ * ingreso, pedir repuestos, el PDF y anular) va en «Más acciones»: con todo a la
+ * vista, una OT en taller llegaba a siete botones y apretaba el título en la barra
+ * superior.
  */
 export function OtActions(props: OtActionsProps) {
   const router = useRouter()
@@ -204,6 +213,13 @@ export function OtActions(props: OtActionsProps) {
           {!!recordForm && !recordFirst && options.filter((option) => !option.disabled).map((option) => (
             <DropdownMenuItem key={option.kind} onSelect={() => setRecordKind(option.kind)}>Registrar otra {KIND_TEXT[option.kind].toLowerCase()}</DropdownMenuItem>
           ))}
+          {props.partsRequestHref && (
+            <DropdownMenuItem asChild>
+              <Link href={props.partsRequestHref} className="flex items-center gap-2">
+                <Package className="h-4 w-4 shrink-0" aria-hidden /> Pedir repuestos
+              </Link>
+            </DropdownMenuItem>
+          )}
           {props.canDownloadPdf && (
             <DropdownMenuItem asChild>
               <a href={props.pdfHref} download className="flex items-center gap-2">

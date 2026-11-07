@@ -2,12 +2,13 @@
 import { cleanup, render, screen, within } from "@testing-library/react"
 import { afterEach, describe, expect, it } from "vitest"
 import type { WorkOrderTab } from "@/lib/services/mantencion/work-orders/query"
+import type { WorkOrderPartsRequest } from "@/lib/services/mantencion/work-orders/types"
 import { otDetail, otRow } from "./ot-fixtures"
 import { OT_FILTER_PARAMS, buildOtTabs, hasWorkOrderFilters, parseWorkOrderQuery } from "./ot-filters"
 import { OtAside } from "./ot-aside"
 import {
-  OtEntrySection, OtExitSection, OtFaenaReceptionSection, OtHeaderSection, OtItemsSection, OtReceptionSection, OtRejectionNotice, OtRepairSection,
-  OtVoidedNotice,
+  OtEntrySection, OtExitSection, OtFaenaReceptionSection, OtHeaderSection, OtItemsSection, OtPartsRequestsSection, OtReceptionSection, OtRejectionNotice,
+  OtRepairSection, OtVoidedNotice,
 } from "./ot-sections"
 import { OtTable } from "./ot-table"
 import { OT_STATUSES, OT_STATUS_LABELS } from "@/lib/mantencion/work-order-states"
@@ -175,6 +176,109 @@ describe("secciones del detalle, en el orden del talonario", () => {
     expect(screen.getByText("Motivo: Sigue la fuga de aceite")).toBeTruthy()
     rerender(<OtRejectionNotice detail={otDetail({ rejectionCount: 1, status: "cerrada" })} />)
     expect(screen.queryByText(/devuelta/)).toBeNull()
+  })
+})
+
+const PEDIR_REPUESTOS = "/solicitudes/nueva?tipo=repuestos&ot=ot-1"
+
+function partsLine(overrides: Partial<WorkOrderPartsRequest> = {}): WorkOrderPartsRequest {
+  return {
+    requestId: "req-1", requestCode: "REP-0007", requestStatus: "approved", itemId: "it-1", description: "Filtro hidráulico", quantity: 3, unitOfMeasure: "unidad",
+    itemStatus: "purchased", itemStatusLabel: "Pendiente de recepción", orderId: "oc-1", orderCode: "OC-2026-0100", orderStatus: "sent",
+    estimatedDelivery: "2099-01-15", quantityReceived: 1, requestedAt: "2026-11-02T10:00:00.000Z", ...overrides,
+  }
+}
+
+describe("«Repuestos pedidos»", () => {
+  const partsTable = () => within(screen.getByRole("region", { name: "Repuestos pedidos" }))
+
+  it("lista solicitud, repuesto, estado en español, OC y entrega estimada; marca «Vencida» si la fecha pasó y falta recibir", () => {
+    const detail = otDetail({
+      partsRequests: [
+        partsLine(),
+        partsLine({ requestId: "req-2", requestCode: "REP-0008", itemId: "it-2", description: "Sello de pistón", quantity: 2, itemStatus: "approved", itemStatusLabel: "Aprobado", orderId: null, orderCode: null, orderStatus: null, estimatedDelivery: null, quantityReceived: 0 }),
+        partsLine({ requestId: "req-3", requestCode: "REP-0009", itemId: "it-3", description: "Correa", quantity: 1, itemStatus: "purchased", orderCode: "OC-2026-0101", estimatedDelivery: "2020-02-03", quantityReceived: 0 }),
+        // La fecha ya pasó, pero la línea llegó completa: no hay nada que esperar.
+        partsLine({ requestId: "req-4", requestCode: "REP-0010", itemId: "it-4", description: "Perno", quantity: 4, itemStatus: "received", itemStatusLabel: "Recibido", orderCode: "OC-2026-0102", estimatedDelivery: "2020-02-04", quantityReceived: 4 }),
+      ],
+    })
+    render(<OtPartsRequestsSection detail={detail} canOpenRequests partsRequestHref={PEDIR_REPUESTOS} />)
+
+    expect(screen.getByRole("heading", { name: "Repuestos pedidos" })).toBeTruthy()
+    const rows = partsTable().getAllByRole("row")
+    // Cabecera + cuatro líneas; cada una con su solicitud, repuesto y estado en español (nunca el valor crudo).
+    expect(rows).toHaveLength(5)
+    expect(rows[1]!.textContent).toContain("REP-0007")
+    expect(rows[1]!.textContent).toContain("Filtro hidráulico")
+    expect(rows[1]!.textContent).toContain("Pendiente de recepción")
+    expect(rows[1]!.textContent).toContain("OC-2026-0100")
+    expect(rows[1]!.textContent).toContain("15-01-2099")
+    expect(rows[1]!.textContent).toContain("1/3")
+    expect(screen.queryByText("purchased")).toBeNull()
+    expect(rows[2]!.textContent).toContain("Aprobado")
+    expect(rows[2]!.textContent).toContain("0/2")
+    expect(rows[2]!.textContent).not.toContain("OC-")
+
+    const overdue = partsTable().getAllByText("Vencida")
+    expect(overdue).toHaveLength(1)
+    expect(overdue[0]!.closest("[data-overdue]")?.textContent).toContain("03-02-2020")
+    expect(partsTable().getByText("04-02-2020").closest("[data-overdue]")).toBeNull()
+  })
+
+  it("muestra «Declarados en los registros» con folio, cantidad y descripción", () => {
+    const detail = otDetail({
+      partsRequests: [partsLine()],
+      partsUsed: [
+        { recordId: "rec-1", recordFolio: "MC-BIO-0007", quantity: 2, description: "Manguera hidráulica" },
+        { recordId: "rec-2", recordFolio: "MC-SAN-0002", quantity: 1, description: "Abrazadera" },
+      ],
+    })
+    render(<OtPartsRequestsSection detail={detail} canOpenRequests partsRequestHref={PEDIR_REPUESTOS} />)
+    expect(screen.getByRole("heading", { name: "Declarados en los registros" })).toBeTruthy()
+    const declared = within(screen.getByRole("list", { name: "Repuestos declarados en los registros" }))
+    const items = declared.getAllByRole("listitem")
+    expect(items).toHaveLength(2)
+    expect(items[0]!.textContent).toContain("2 × Manguera hidráulica")
+    expect(items[0]!.textContent).toContain("MC-BIO-0007")
+    // El folio enlaza al registro sólo cuando quien mira puede abrirlo (la fixture marca `rec-2` como cerrado).
+    expect(declared.getByRole("link", { name: "MC-BIO-0007" }).getAttribute("href")).toBe("/mantencion/registros/rec-1")
+    expect(declared.queryByRole("link", { name: "MC-SAN-0002" })).toBeNull()
+  })
+
+  it("sin repuestos declarados lo dice en texto", () => {
+    render(<OtPartsRequestsSection detail={otDetail({ partsRequests: [partsLine()], partsUsed: [] })} canOpenRequests partsRequestHref={null} />)
+    expect(screen.getByText("Ningún registro enlazado declara repuestos.")).toBeTruthy()
+  })
+
+  it("sin solicitudes y con permiso, el estado vacío ofrece «Pedir repuestos» con la URL de prellenado", () => {
+    render(<OtPartsRequestsSection detail={otDetail()} canOpenRequests partsRequestHref={PEDIR_REPUESTOS} />)
+    expect(screen.getByText("Sin repuestos pedidos")).toBeTruthy()
+    const cta = screen.getAllByRole("link", { name: "Pedir repuestos" })
+    expect(cta).toHaveLength(1)
+    expect(cta[0]!.getAttribute("href")).toBe(PEDIR_REPUESTOS)
+    expect(screen.queryByRole("region", { name: "Repuestos pedidos" })).toBeNull()
+  })
+
+  it("con solicitudes, «Pedir repuestos» queda en la cabecera de la sección, una sola vez", () => {
+    render(<OtPartsRequestsSection detail={otDetail({ partsRequests: [partsLine()] })} canOpenRequests partsRequestHref={PEDIR_REPUESTOS} />)
+    const cta = screen.getAllByRole("link", { name: "Pedir repuestos" })
+    expect(cta).toHaveLength(1)
+    expect(cta[0]!.getAttribute("href")).toBe(PEDIR_REPUESTOS)
+  })
+
+  it("sin permiso para pedir (o con la OT cerrada) no ofrece pedir y el vacío lo dice en texto", () => {
+    render(<OtPartsRequestsSection detail={otDetail()} canOpenRequests={false} partsRequestHref={null} />)
+    expect(screen.getByText("Nadie ha pedido repuestos para esta orden.")).toBeTruthy()
+    expect(screen.queryByRole("link", { name: "Pedir repuestos" })).toBeNull()
+  })
+
+  it("sin permiso de solicitudes el código es texto, no enlace; con permiso lleva a la solicitud", () => {
+    const detail = otDetail({ partsRequests: [partsLine()] })
+    const { rerender } = render(<OtPartsRequestsSection detail={detail} canOpenRequests={false} partsRequestHref={null} />)
+    expect(partsTable().getByText("REP-0007")).toBeTruthy()
+    expect(screen.queryByRole("link", { name: "REP-0007" })).toBeNull()
+    rerender(<OtPartsRequestsSection detail={detail} canOpenRequests partsRequestHref={null} />)
+    expect(screen.getByRole("link", { name: "REP-0007" }).getAttribute("href")).toBe("/solicitudes/req-1")
   })
 })
 
