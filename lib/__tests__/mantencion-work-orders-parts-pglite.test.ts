@@ -38,7 +38,7 @@ const SNAPSHOT = { code: "KA-135", plate: "RBYD-98", noPlate: false, type: "Cami
 
 const OT = {
   taller: "ot-parts-taller", cerrada: "ot-parts-cerrada", cancelada: "ot-parts-cancelada", sinPedidos: "ot-parts-sin",
-  recibida: "ot-parts-recibida", anulada: "ot-parts-anulada", oc: "ot-parts-oc",
+  recibida: "ot-parts-recibida", anulada: "ot-parts-anulada", oc: "ot-parts-oc", borrador: "ot-parts-borrador",
 } as const
 
 type OtStatus = "solicitada" | "en_ejecucion" | "cerrada" | "anulada"
@@ -141,6 +141,7 @@ beforeAll(async () => {
   await insertOt(OT.recibida, "en_ejecucion", IDS.machineBio)
   await insertOt(OT.anulada, "anulada")
   await insertOt(OT.oc, "en_ejecucion", IDS.machineBio)
+  await insertOt(OT.borrador, "en_ejecucion", IDS.machineBio)
 
   // OT en taller: una línea ya en una OC enviada (1 de 3 recibida en faena) y otra recién aprobada. La
   // solicitud de la segunda es más nueva: sale primero.
@@ -168,6 +169,9 @@ beforeAll(async () => {
   await insertOrder({ id: "po-cancelled", code: "OC-2026-0101", status: "cancelled", lines: [{ id: "poi-oc1", requestItemId: "it-oc1", quantity: 1, received: 1 }] })
   await insertOrder({ id: "po-deleted", code: "OC-2026-0102", status: "sent", deletedAt: "2026-11-06T10:00:00Z", lines: [{ id: "poi-oc2", requestItemId: "it-oc2", quantity: 1, received: 1 }] })
   await insertOrder({ id: "po-line", code: "OC-2026-0103", status: "sent", estimatedDelivery: null, lines: [{ id: "poi-oc3", requestItemId: "it-oc3", quantity: 1, received: 1, status: "cancelled" }] })
+
+  // Sólo un borrador vinculado: todavía no es un pedido (decisión 2026-11-07).
+  await insertLine({ request: "req-draft", requestStatus: "draft", item: "it-draft1", itemStatus: "draft", workOrderId: OT.borrador, name: "Filtro de aire" })
 
   // Lo que el mecánico declaró usar en los registros enlazados a la OT en taller.
   await insertRecord({ id: "rec-1", folio: "MC-BIO-0100", workOrderId: OT.taller, parts: [[2, "Manguera hidráulica 1/2"], [1, "Abrazadera"]] })
@@ -221,6 +225,11 @@ describe("isWaitingParts", () => {
     expect(isWaitingParts("en_ejecucion", [])).toBe(false)
   })
 
+  it("un borrador todavía no es un pedido: no deja la OT esperando repuesto", () => {
+    expect(isWaitingParts("en_ejecucion", [row("draft", "draft")])).toBe(false)
+    expect(PARTS_PENDING_ITEM_STATUSES).not.toContain("draft")
+  })
+
   it("una solicitud cancelada o rechazada no cuenta aunque su ítem no esté rechazado", () => {
     expect(isWaitingParts("en_ejecucion", [row("approved", "cancelled")])).toBe(false)
     expect(isWaitingParts("en_ejecucion", [row("requested", "rejected")])).toBe(false)
@@ -236,6 +245,14 @@ describe("isWaitingParts", () => {
     const detail = await loadWorkOrderDetail(VIEWER, OT.cerrada)
     expect(detail?.partsRequests.map((line) => line.itemId).sort()).toEqual(["it-c1", "it-x1"])
     expect(detail?.waitingParts).toBe(false)
+  })
+
+  it("una OT con sólo un borrador lo lista, pero no espera repuesto", async () => {
+    const rows = await loadWorkOrderPartsRequests(OT.borrador)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ itemStatus: "draft", description: "Filtro de aire" })
+    expect(await exists(OT.borrador)).toBe(false)
+    expect((await loadWorkOrderDetail(VIEWER, OT.borrador))?.waitingParts).toBe(false)
   })
 
   it("una solicitud cancelada no deja a la OT esperando repuesto", async () => {

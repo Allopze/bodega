@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test"
-import { cerrarSesion, clearRateLimits, pickCurrentMonthDate, selectRadixById, textoVisible } from "./helpers"
+import { cerrarSesion, clearRateLimits, openLatestDraft, pickCurrentMonthDate, selectRadixById, textoVisible } from "./helpers"
 import { withSql } from "./mantencion-3-helpers"
 
 /**
@@ -99,16 +99,21 @@ test.describe("OT · repuestos pedidos", () => {
     await page.getByLabel("Precio unitario estimado (CLP)").fill("25000")
     await pickCurrentMonthDate(page, "Seleccionar fecha")
     await page.getByRole("button", { name: /Guardar borrador/ }).click()
+    await expect(textoVisible(page, /^Borrador guardado/).first()).toBeVisible({ timeout: 30_000 })
 
-    // El borrador queda vinculado: la OT lo lista como pedido.
-    await expect(async () => {
-      await page.goto(`/mantencion/ot/${otId}`)
-      await expect(textoVisible(page, REPUESTO)).toBeVisible({ timeout: 5_000 })
-    }).toPass({ timeout: 60_000 })
+    // El borrador queda vinculado: la OT lo lista, pero un borrador todavía no es
+    // un pedido y no la deja «esperando repuesto» (decisión 2026-11-07).
+    await page.goto(`/mantencion/ot/${otId}`)
+    await expect(textoVisible(page, REPUESTO)).toBeVisible({ timeout: 30_000 })
     await expect(page.getByRole("heading", { name: "Repuestos pedidos" })).toBeVisible()
     await expect(textoVisible(page, /^REP-/).first()).toBeVisible()
+    await page.goto("/mantencion/ot?repuestos=pendientes")
+    await expect(page.getByRole("row").filter({ hasText: folio })).toHaveCount(0)
 
-    // Y la lista de OT la marca esperando repuesto.
+    // Enviado a aprobación (bajo el umbral basta el precio estimado), sí espera.
+    await openLatestDraft(page, "REP")
+    await page.getByRole("button", { name: /Enviar a aprobación/ }).click()
+    await expect(page.getByRole("button", { name: /Enviar a aprobación/ })).toHaveCount(0, { timeout: 30_000 })
     await page.goto("/mantencion/ot?repuestos=pendientes")
     const fila = page.getByRole("row").filter({ hasText: folio })
     await expect(fila).toBeVisible()

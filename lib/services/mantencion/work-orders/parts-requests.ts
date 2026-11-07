@@ -23,12 +23,16 @@ import type { WorkOrderPartsRequest } from "./types"
  */
 
 /**
- * Estados de ítem en que el repuesto todavía no llegó a faena: del borrador a la
- * recepción parcial. `received` en adelante ya está (o se entregó), y `rejected`
- * nunca va a llegar. `partially_received` espera el resto de la línea.
+ * Estados de ítem en que el repuesto ya se pidió y todavía no llegó a faena: del
+ * envío a aprobación a la recepción parcial. `received` en adelante ya está (o se
+ * entregó), y `rejected` nunca va a llegar. `partially_received` espera el resto.
+ *
+ * El borrador (`draft`) NO cuenta (decisión 2026-11-07): todavía no es un pedido,
+ * y un borrador olvidado dejaba la OT «esperando repuesto» para siempre. La
+ * sección de la OT lo sigue listando como «Borrador».
  */
 export const PARTS_PENDING_ITEM_STATUSES = [
-  "draft", "requested", "approved", "pending_purchase", "in_purchase_order", "purchased",
+  "requested", "approved", "pending_purchase", "in_purchase_order", "purchased",
   "partially_office_received", "office_received", "partially_received",
 ] as const
 
