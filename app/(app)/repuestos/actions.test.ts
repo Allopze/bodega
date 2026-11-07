@@ -6,6 +6,7 @@ const mockCreateRequestActions = vi.hoisted(() => vi.fn(() => ({
   uploadQuotationAction: vi.fn(),
   deleteQuotationAction: vi.fn(),
   selectQuotationAction: vi.fn(),
+  approveWithoutQuotationAction: vi.fn(),
 })))
 
 vi.mock("@/lib/requests/request-actions", () => ({
@@ -17,6 +18,7 @@ vi.mock("@/lib/services/repuestos", () => ({
   addQuotation: vi.fn(),
   deleteQuotation: vi.fn(),
   selectRepuestoQuotation: vi.fn(),
+  approveRepuestoWithoutQuotation: vi.fn(),
 }))
 
 describe("repuestos Server Actions wrapper", () => {
@@ -26,6 +28,7 @@ describe("repuestos Server Actions wrapper", () => {
     expect(actions.uploadQuotationAction).toBeTypeOf("function")
     expect(actions.deleteQuotationAction).toBeTypeOf("function")
     expect(actions.selectQuotationAction).toBeTypeOf("function")
+    expect(actions.approveWithoutQuotationAction).toBeTypeOf("function")
     expect(mockCreateRequestActions).toHaveBeenCalledWith(expect.objectContaining({
       routePrefix: "/solicitudes",
       permissions: {
@@ -33,5 +36,22 @@ describe("repuestos Server Actions wrapper", () => {
         approve: "repuestos:approve",
       },
     }))
+  })
+
+  it("cablea la aprobación sin cotización con su servicio y su esquema", async () => {
+    await import("./actions")
+    const { approveRepuestoWithoutQuotation } = await import("@/lib/services/repuestos")
+    const config = (mockCreateRequestActions.mock.calls as unknown as unknown[][]).at(-1)![0] as {
+      services: { approveWithoutQuotation: unknown }
+      schemas: { approveWithoutQuotation: { safeParse: (value: unknown) => { success: boolean; data?: unknown } } }
+    }
+
+    expect(config.services.approveWithoutQuotation).toBe(approveRepuestoWithoutQuotation)
+    expect(config.schemas.approveWithoutQuotation.safeParse({ requestId: "req-1", justification: "  Bajo costo  " }))
+      .toEqual({ success: true, data: { requestId: "req-1", justification: "Bajo costo" } })
+    expect(config.schemas.approveWithoutQuotation.safeParse({ requestId: "req-1", justification: "" }).success).toBe(true)
+    expect(config.schemas.approveWithoutQuotation.safeParse({ requestId: "req-1" }).success).toBe(true)
+    expect(config.schemas.approveWithoutQuotation.safeParse({ requestId: "" }).success).toBe(false)
+    expect(config.schemas.approveWithoutQuotation.safeParse({ requestId: "req-1", justification: "x".repeat(1001) }).success).toBe(false)
   })
 })

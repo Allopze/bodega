@@ -40,6 +40,20 @@ export const repuestosModule = {
     { roleSlug: "prevencionista", permission: "repuestos:view_own" },
     { roleSlug: "prevencionista", permission: "repuestos:view_all" },
     { roleSlug: "prevencionista", permission: "repuestos:submit" },
+    // Mantención pide repuestos desde la OT (decisión del 2026-11-07). La
+    // jefatura ve todas; supervisión y administración de contrato, las propias.
+    // El mecánico no solicita y la aprobación sigue sólo en jefa_chome y
+    // administrador. Para bases ya pobladas, el espejo está en GRANT_ADDITIONS.
+    { roleSlug: "jefe_mantencion", permission: "repuestos:create" },
+    { roleSlug: "jefe_mantencion", permission: "repuestos:view_own" },
+    { roleSlug: "jefe_mantencion", permission: "repuestos:view_all" },
+    { roleSlug: "jefe_mantencion", permission: "repuestos:submit" },
+    { roleSlug: "supervisor_mantencion", permission: "repuestos:create" },
+    { roleSlug: "supervisor_mantencion", permission: "repuestos:view_own" },
+    { roleSlug: "supervisor_mantencion", permission: "repuestos:submit" },
+    { roleSlug: "admin_contrato", permission: "repuestos:create" },
+    { roleSlug: "admin_contrato", permission: "repuestos:view_own" },
+    { roleSlug: "admin_contrato", permission: "repuestos:submit" },
     // Faena: crea y ve sus propias solicitudes
     { roleSlug: "solicitante_faena", permission: "repuestos:create" },
     { roleSlug: "solicitante_faena", permission: "repuestos:view_own" },

@@ -78,6 +78,7 @@ export async function saveOperationalSettingsAction(_prev: ActionState, formData
         pdtpEvidenceMaxMb:           readNumber(formData, "pdtpEvidenceMaxMb"),
         pdtpEvidenceRetentionDays:  readNumber(formData, "pdtpEvidenceRetentionDays"),
         purchasingClpTolerance:     readNumber(formData, "purchasingClpTolerance"),
+        repuestosQuotationThresholdClp: readNumber(formData, "repuestosQuotationThresholdClp"),
       }, {
         userId:    session.user.id,
         userEmail: session.user.email ?? undefined,

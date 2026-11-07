@@ -42,6 +42,7 @@ import {
   purchaseOrders,
   purchaseRequestItems,
   purchaseRequests,
+  repuestoQuotations,
   requestItemAttributes,
   suppliers,
   sstDocuments,
@@ -680,16 +681,31 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
   // tuviera la tarea a la vista.
   for (const [requestType, permission] of [["repuestos", "repuestos:approve"], ["servicios", "servicios:approve"]] as const) {
     if (!hasPermission(session, permission)) continue
+    // Bajo el umbral de repuestos (o por la vía rápida) la solicitud se envía sin
+    // cotización: no hay ganadora que elegir, se aprueba directo. La fuente no
+    // exige una fila de cotización, así que la solicitud ya estaba en la cola;
+    // lo que cambia es la acción que se ofrece. Servicios conserva «al menos una
+    // cotización» y no se aprueba sin ella.
+    const withoutQuotation = requestType === "repuestos"
+      ? sql`NOT EXISTS (
+          SELECT 1 FROM ${repuestoQuotations}
+          WHERE ${repuestoQuotations.requestId} = ${purchaseRequests.id} AND ${repuestoQuotations.status} = 'pending'
+        )`
+      : sql`false`
     add("aprobaciones", sql`
       SELECT 'purchase_request'::text AS source_type, ${purchaseRequests.id} AS source_id, 'select_quotation'::text AS action_key,
-        'aprobaciones'::text AS module, ${purchaseRequests.code} AS code, CONCAT('Seleccionar cotización — ', ${purchaseRequests.code}) AS title,
+        'aprobaciones'::text AS module, ${purchaseRequests.code} AS code,
+        CASE WHEN ${withoutQuotation} THEN CONCAT('Aprobar solicitud — ', ${purchaseRequests.code})
+          ELSE CONCAT('Seleccionar cotización — ', ${purchaseRequests.code}) END AS title,
         ''::text AS subtitle, ${purchaseRequests.worksiteId} AS worksite_id,
-        ${worksites.name} AS worksite_name, ${purchaseRequests.status} AS status, 'Esperando cotización ganadora'::text AS status_label,
+        ${worksites.name} AS worksite_name, ${purchaseRequests.status} AS status,
+        CASE WHEN ${withoutQuotation} THEN 'Esperando aprobación' ELSE 'Esperando cotización ganadora' END AS status_label,
         CASE ${purchaseRequests.urgency} WHEN 'critical' THEN 'critical' WHEN 'high' THEN 'high' ELSE 'normal' END AS priority,
         false AS blocked, COALESCE(${purchaseRequests.submittedAt}, ${purchaseRequests.createdAt}::text) AS created_at,
         LEFT(${purchaseRequests.requiredDate}::text, 10) AS source_due_at,
         ${emptyAssignee} AS native_assignee_user_id, ${emptyAssignee} AS native_assignee_name,
-        CONCAT('/solicitudes/', ${purchaseRequests.id}) AS href, 'Seleccionar cotización ganadora'::text AS cta_label
+        CONCAT('/solicitudes/', ${purchaseRequests.id}) AS href,
+        CASE WHEN ${withoutQuotation} THEN 'Aprobar solicitud' ELSE 'Seleccionar cotización ganadora' END AS cta_label
       FROM ${purchaseRequests}
       INNER JOIN ${worksites} ON ${worksites.id} = ${purchaseRequests.worksiteId}
       WHERE ${inScope(purchaseRequests.worksiteId)}

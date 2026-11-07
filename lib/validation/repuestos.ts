@@ -70,6 +70,13 @@ export const selectQuotationSchema = z.object({
   justification: z.string().trim().max(REASON_MAX_LENGTH).nullable().optional().or(z.literal("")),
 })
 
+// ── Approve without quotation (jefa aprueba una solicitud enviada sin cotización) ──
+export const approveWithoutQuotationSchema = z.object({
+  requestId:     z.string().min(1, "Solicitud no especificada"),
+  /** Fundamento opcional: si viene, queda en la decisión y en la auditoría. */
+  justification: z.string().trim().max(REASON_MAX_LENGTH).nullable().optional().or(z.literal("")),
+})
+
 // ── Cancel request ────────────────────────────────────────────────────────────
 export const cancelRepuestoSchema = z.object({
   requestId: z.string().min(1, "Solicitud no especificada"),
@@ -81,3 +88,4 @@ export type RepuestoRequestFormData = z.infer<typeof repuestoRequestSchema>
 export type RepuestoItemFormData    = z.infer<typeof repuestoItemSchema>
 export type QuotationUploadData     = z.infer<typeof quotationUploadSchema>
 export type SelectQuotationData     = z.infer<typeof selectQuotationSchema>
+export type ApproveWithoutQuotationData = z.infer<typeof approveWithoutQuotationSchema>
