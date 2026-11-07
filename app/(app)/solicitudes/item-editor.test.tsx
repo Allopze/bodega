@@ -5,11 +5,11 @@
  * distintivo de "Costo pendiente" distingue un servicio sin precio de un
  * producto normal.
  */
-import { describe, it, expect, vi, afterEach } from "vitest"
-import { cleanup, render, screen } from "@testing-library/react"
+import { describe, it, expect, vi, afterEach, beforeAll } from "vitest"
+import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { ItemEditor } from "./item-editor"
 import { blankItem } from "./request-form.helpers"
-import type { ItemRow, ProductOption, WorkerOption, EquipmentOption } from "./request-form.types"
+import type { ItemRow, ProductOption, WorkerOption, EquipmentOption, VehicleOption, PendingCotizacion } from "./request-form.types"
 
 vi.mock("./actions", () => ({
   getWorkerEppStatusAction: vi.fn(async () => ({ activeRequest: null, lastDelivery: null })),
@@ -205,5 +205,196 @@ describe("ItemEditor — variantes de una familia", () => {
     )
     expect(screen.getByRole("combobox", { name: /Talla calzado/ })).toHaveTextContent("42")
     expect(screen.getByRole("combobox", { name: /^Color/ })).toHaveTextContent("Café")
+  })
+})
+
+
+// ── Repuestos y servicios: equipo de flota, OT y precio estimado ─────────────
+
+const FLEET: VehicleOption[] = [
+  {
+    id: "v-1", code: "KA-135", plate: "RBYD-98", label: "KA-135 · RBYD-98", hint: "Camión · Biodiversa",
+    worksiteId: "ws-1", brand: "Scania", model: "R450", operationalStatus: "operativo",
+    openWorkOrders: [
+      { id: "ot-1", folio: "OT-BIO-0007", status: "en_ejecucion" },
+      { id: "ot-2", folio: "OT-BIO-0009", status: "solicitada" },
+    ],
+  },
+  {
+    id: "v-2", code: "MQ-01", plate: "MQ-01", label: "MQ-01", hint: "Excavadora · Biodiversa",
+    worksiteId: "ws-1", brand: null, model: null, operationalStatus: "mantencion", openWorkOrders: [],
+  },
+  {
+    id: "v-3", code: "KA-200", plate: "BCDF-12", label: "KA-200 · BCDF-12", hint: "Camión · Cholguán",
+    worksiteId: "ws-2", brand: "Volvo", model: "FH", operationalStatus: "operativo", openWorkOrders: [],
+  },
+]
+
+function renderQuotation(
+  requestType: "repuestos" | "servicios",
+  overrides: Partial<ItemRow> = {},
+  props: {
+    readOnly?: boolean
+    worksiteId?: string
+    onUpdate?: ReturnType<typeof vi.fn>
+    onSelectVehicle?: ReturnType<typeof vi.fn>
+    onSelectWorkOrder?: ReturnType<typeof vi.fn>
+    quotationRule?: string
+    quotationNotice?: string | null
+  } = {},
+) {
+  return render(
+    <ItemEditor
+      item={{ ...blankItem("k-1"), productNameFree: "Manguera hidráulica", ...overrides }}
+      idx={0}
+      products={[]}
+      suppliers={[{ id: "sup-1", name: "Repuestos del Sur" }]}
+      vehicles={FLEET}
+      worksiteId={props.worksiteId ?? "ws-1"}
+      readOnly={props.readOnly ?? false}
+      requestType={requestType}
+      maxFileSizeMb={10}
+      quotationRule={props.quotationRule}
+      quotationNotice={props.quotationNotice}
+      onUpdate={props.onUpdate ?? vi.fn()}
+      onSelectVehicle={props.onSelectVehicle ?? vi.fn()}
+      onSelectWorkOrder={props.onSelectWorkOrder ?? vi.fn()}
+      onSelectProduct={vi.fn()}
+      onSelectFreeProduct={vi.fn()}
+      onClearProduct={vi.fn()}
+      onUpdateAttr={vi.fn()}
+      onUpdateWorker={vi.fn()}
+      onRemove={vi.fn()}
+      canRemove={false}
+    />,
+  )
+}
+
+function pendingCotizacion(): PendingCotizacion {
+  return {
+    _id: "c-1", file: new File(["x"], "cot.pdf"), fileName: "cot.pdf", fileSize: 1024,
+    totalAmount: "900000", supplierId: "", supplierNameFree: "Proveedor X",
+  }
+}
+
+describe("ItemEditor — equipo de flota en repuestos y servicios", () => {
+  beforeAll(() => {
+    // Radix Select pide estas APIs del puntero y del scroll, que jsdom no trae.
+    Object.assign(window.HTMLElement.prototype, {
+      hasPointerCapture: () => false,
+      releasePointerCapture: () => {},
+      scrollIntoView: () => {},
+    })
+  })
+
+  it("repuestos: muestra el combobox de flota y oculta patente libre al elegir un vehículo", () => {
+    renderQuotation("repuestos")
+    const flota = screen.getByRole("combobox", { name: /Equipo de flota/ })
+    expect(flota).toHaveAttribute("placeholder", "Busca por código o patente")
+    // Sin equipo elegido, los campos libres siguen disponibles («otro equipo»).
+    expect(screen.getByLabelText(/Patente \/ Código interno/)).toBeInTheDocument()
+    expect(screen.getByLabelText(/Equipo \/ Máquina/)).toBeInTheDocument()
+    expect(screen.queryByRole("combobox", { name: /Orden de trabajo/ })).toBeNull()
+
+    cleanup()
+    renderQuotation("repuestos", { vehicleId: "v-1", vehicleLabel: "KA-135 · RBYD-98" })
+    expect(screen.getByRole("combobox", { name: /Equipo de flota/ })).toHaveValue("KA-135 · RBYD-98")
+    expect(screen.queryByLabelText(/Patente \/ Código interno/)).toBeNull()
+    expect(screen.queryByLabelText(/Equipo \/ Máquina/)).toBeNull()
+    expect(screen.queryByLabelText(/^Marca/)).toBeNull()
+    expect(screen.queryByLabelText(/^Modelo/)).toBeNull()
+    // El N.° de parte es del repuesto, no del equipo.
+    expect(screen.getByLabelText(/N° de Parte/)).toBeInTheDocument()
+  })
+
+  it("ofrece sólo los equipos de la faena del formulario y avisa la elección", () => {
+    const onSelectVehicle = vi.fn()
+    renderQuotation("repuestos", {}, { onSelectVehicle })
+    fireEvent.focus(screen.getByRole("combobox", { name: /Equipo de flota/ }))
+
+    expect(screen.getByRole("option", { name: /KA-135 · RBYD-98/ })).toBeInTheDocument()
+    expect(screen.getByRole("option", { name: /MQ-01/ })).toBeInTheDocument()
+    expect(screen.queryByRole("option", { name: /KA-200/ })).toBeNull()
+    // «Otro equipo» devuelve el ítem a los campos libres.
+    expect(screen.getByRole("option", { name: "Otro equipo (no está en flota)" })).toBeInTheDocument()
+
+    fireEvent.mouseDown(screen.getByRole("option", { name: /KA-135 · RBYD-98/ }))
+    expect(onSelectVehicle).toHaveBeenCalledWith("v-1")
+  })
+
+  it("un equipo ya vinculado sigue visible aunque el catálogo no lo traiga", () => {
+    renderQuotation("repuestos", { vehicleId: "v-viejo", vehicleLabel: "KA-001 · VIEJ-01" })
+    expect(screen.getByRole("combobox", { name: /Equipo de flota/ })).toHaveValue("KA-001 · VIEJ-01")
+  })
+
+  it("muestra las OT abiertas del vehículo elegido", () => {
+    const onSelectWorkOrder = vi.fn()
+    renderQuotation("repuestos", { vehicleId: "v-1", vehicleLabel: "KA-135 · RBYD-98" }, { onSelectWorkOrder })
+
+    const trigger = screen.getByRole("combobox", { name: /Orden de trabajo/ })
+    fireEvent.keyDown(trigger, { key: "Enter" })
+    expect(screen.getByRole("option", { name: "Sin OT" })).toBeInTheDocument()
+    // Estado en español, nunca el valor crudo de la base.
+    expect(screen.getByRole("option", { name: "OT-BIO-0007 · En taller" })).toBeInTheDocument()
+    expect(screen.getByRole("option", { name: "OT-BIO-0009 · Por asignar" })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("option", { name: "OT-BIO-0007 · En taller" }))
+    expect(onSelectWorkOrder).toHaveBeenCalledWith("ot-1")
+  })
+
+  it("un equipo sin OT abiertas lo dice en vez de ofrecer una lista vacía", () => {
+    renderQuotation("repuestos", { vehicleId: "v-2", vehicleLabel: "MQ-01" })
+    expect(screen.getByText("Este equipo no tiene OT abiertas.")).toBeInTheDocument()
+  })
+
+  it("repuestos: muestra proveedor sugerido y precio estimado", () => {
+    const onUpdate = vi.fn()
+    renderQuotation("repuestos", {}, { onUpdate })
+    expect(screen.getByLabelText(/Proveedor sugerido/)).toBeInTheDocument()
+    const precio = screen.getByLabelText(/Precio unitario estimado \(CLP\)/)
+    expect(precio).toHaveAttribute("type", "number")
+    expect(screen.getByText("Opcional. Bajo el umbral permite enviar sin cotización.")).toBeInTheDocument()
+
+    fireEvent.change(precio, { target: { value: "35000" } })
+    expect(onUpdate).toHaveBeenCalledWith({ estimatedUnitPrice: "35000" })
+  })
+
+  it("servicios: ofrece el equipo de flota pero no el precio estimado ni el proveedor sugerido", () => {
+    renderQuotation("servicios")
+    expect(screen.getByRole("combobox", { name: /Equipo de flota/ })).toBeInTheDocument()
+    expect(screen.getByLabelText(/Ubicación/)).toBeInTheDocument()
+    expect(screen.queryByLabelText(/Precio unitario estimado/)).toBeNull()
+    expect(screen.queryByLabelText(/Proveedor sugerido/)).toBeNull()
+  })
+
+  it("en consulta resume el equipo, la OT, el precio estimado y el proveedor sugerido", () => {
+    renderQuotation("repuestos", {
+      vehicleId: "v-1", vehicleLabel: "KA-135 · RBYD-98", workOrderId: "ot-1", workOrderFolio: "OT-BIO-0007",
+      estimatedUnitPrice: "35000", suggestedSupplierId: "sup-1",
+    }, { readOnly: true })
+
+    expect(screen.getByText("Equipo de flota:").nextElementSibling).toHaveTextContent("KA-135 · RBYD-98")
+    expect(screen.getByText("Orden de trabajo:").nextElementSibling).toHaveTextContent("OT-BIO-0007")
+    expect(screen.getByText("Precio estimado:").nextElementSibling).toHaveTextContent(/35\.000/)
+    expect(screen.getByText("Proveedor sugerido:").nextElementSibling).toHaveTextContent("Repuestos del Sur")
+    expect(screen.queryByRole("combobox")).toBeNull()
+  })
+
+  it("las cotizaciones explican la regla y avisan lo que falta sólo si ya hay archivos", () => {
+    const rule = "Bajo $500.000 basta una cotización o el precio unitario estimado de cada ítem."
+    renderQuotation("repuestos", {}, { quotationRule: rule, quotationNotice: "Sobre $500.000 se requieren 3 cotizaciones." })
+    expect(screen.getByText(rule)).toBeInTheDocument()
+    // Sin archivos, el pendiente vive en el resumen; bajo el ítem sería ruido.
+    expect(screen.queryByText("Sobre $500.000 se requieren 3 cotizaciones.")).toBeNull()
+
+    cleanup()
+    renderQuotation("repuestos", { cotizaciones: [pendingCotizacion()] }, {
+      quotationRule: rule, quotationNotice: "Sobre $500.000 se requieren 3 cotizaciones.",
+    })
+    expect(screen.getByText("Sobre $500.000 se requieren 3 cotizaciones.")).toBeInTheDocument()
+
+    cleanup()
+    renderQuotation("repuestos", { cotizaciones: [pendingCotizacion()] }, { quotationRule: rule, quotationNotice: null })
+    expect(screen.queryByText(/se requieren 3 cotizaciones/)).toBeNull()
   })
 })

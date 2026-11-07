@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/select"
 import { COST_PENDING_LABEL, normalizeEquipmentCode } from "@/lib/products/service-items"
 import { ProductPicker } from "./product-picker"
-import type { ItemRow, ProductOption, SupplierOption, WorkerOption, EquipmentOption } from "./request-form.types"
+import type { ItemRow, ProductOption, SupplierOption, WorkerOption, EquipmentOption, VehicleOption } from "./request-form.types"
 import { QUOTATION_TYPES } from "@/lib/request-types"
 import { ItemEditorEquipment } from "./item-editor-equipment"
 import { ItemEditorSupplier } from "./item-editor-supplier"
@@ -22,7 +22,7 @@ import { ItemEditorAttributes } from "./item-editor-attributes"
 import { groupProductVariants, formatVariantProductName } from "@/lib/products/variant-grouping"
 import { URGENCY_OPTS } from "./request-form.constants"
 import { getWorkerEppStatusAction, type WorkerEppStatusResult } from "./actions"
-import { formatDate, formatQty } from "@/lib/utils"
+import { formatCLP, formatDate, formatQty } from "@/lib/utils"
 import { getEditableItemAttributes } from "./item-editor-attributes.helpers"
 
 // ── Props ─────────────────────────────────────────────────────────────────────
@@ -34,10 +34,19 @@ interface ItemEditorProps {
   suppliers:       SupplierOption[]
   workers?:        WorkerOption[]
   equipment?:      EquipmentOption[]
+  /** Equipos de flota del selector de repuestos/servicios (se filtran por `worksiteId`). */
+  vehicles?:       VehicleOption[]
+  /** Faena elegida en el formulario. */
+  worksiteId?:     string
   readOnly:        boolean
   requestType?:    string
   maxFileSizeMb:   number
+  /** Cómo está la regla de cotizaciones de la solicitud (ver `request-form.helpers`). */
+  quotationRule?:   string
+  quotationNotice?: string | null
   onUpdate:        (patch: Partial<ItemRow>) => void
+  onSelectVehicle?: (vehicleId: string) => void
+  onSelectWorkOrder?: (workOrderId: string) => void
   onSelectProduct: (pid: string) => void
   onSelectFreeProduct: (name: string) => void
   onClearProduct:  () => void
@@ -47,14 +56,20 @@ interface ItemEditorProps {
   canRemove:       boolean
 }
 
+const noop = () => {}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function ItemEditor({
-  item, idx, products, suppliers, workers, equipment, readOnly, requestType, maxFileSizeMb,
-  onUpdate, onSelectProduct, onSelectFreeProduct, onClearProduct, onUpdateAttr, onUpdateWorker,
+  item, idx, products, suppliers, workers, equipment, vehicles = [], worksiteId = "", readOnly, requestType, maxFileSizeMb,
+  quotationRule, quotationNotice,
+  onUpdate, onSelectVehicle = noop, onSelectWorkOrder = noop, onSelectProduct, onSelectFreeProduct, onClearProduct, onUpdateAttr, onUpdateWorker,
   onRemove, canRemove,
 }: ItemEditorProps) {
   const isQuotationType    = QUOTATION_TYPES.has(requestType ?? "")
+  // El proveedor sugerido sirve a quien compra repuestos (precio estimado y
+  // proveedor orientan la OC); servicios y el resto lo resuelven distinto.
+  const showSupplier = !isQuotationType || requestType === "repuestos"
   const selectedProduct = item.productId ? products.find((product) => product.id === item.productId) : null
   const variants = selectedProduct
     ? groupProductVariants(products).find((group) => group.variants.some((variant) => variant.id === selectedProduct.id))?.variants ?? []
@@ -141,7 +156,10 @@ export function ItemEditor({
       ...(item.workerId ? [{ label: "Colaborador", value: item.workerName || "Sin asignar" }] : []),
       ...(showEquipmentPicker && item.equipmentCode ? [{ label: "Código del equipo", value: item.equipmentLabel || item.equipmentCode }] : []),
       ...(item.emergencyResourceId ? [{ label: "Activo de emergencia", value: item.emergencyResourceLabel || "Registrado en la solicitud" }] : []),
-      ...(!isQuotationType && supplierName ? [{ label: "Proveedor sugerido", value: supplierName }] : []),
+      ...(item.vehicleId ? [{ label: "Equipo de flota", value: item.vehicleLabel || "Equipo vinculado" }] : []),
+      ...(item.workOrderId ? [{ label: "Orden de trabajo", value: item.workOrderFolio || "Vinculada" }] : []),
+      ...(item.estimatedUnitPrice.trim() ? [{ label: "Precio estimado", value: `${formatCLP(Number(item.estimatedUnitPrice))} c/u` }] : []),
+      ...(showSupplier && supplierName ? [{ label: "Proveedor sugerido", value: supplierName }] : []),
     ].filter((fact) => fact.value.trim())
 
     return (
@@ -471,12 +489,16 @@ export function ItemEditor({
           item={item}
           requestType={requestType ?? ""}
           readOnly={readOnly}
+          vehicles={vehicles}
+          worksiteId={worksiteId}
           onUpdate={onUpdate}
+          onSelectVehicle={onSelectVehicle}
+          onSelectWorkOrder={onSelectWorkOrder}
         />
       )}
 
-      {/* Supplier hint — hidden for quotation types */}
-      {!isQuotationType && (
+      {/* Supplier hint — catalog types and repuestos (hidden for servicios) */}
+      {showSupplier && (
         <ItemEditorSupplier
           item={item}
           suppliers={suppliers}
@@ -509,6 +531,8 @@ export function ItemEditor({
           maxFileSizeMb={maxFileSizeMb}
           readOnly={readOnly}
           suppliers={suppliers}
+          ruleHint={quotationRule}
+          notice={quotationNotice}
           onUpdate={onUpdate}
         />
       )}

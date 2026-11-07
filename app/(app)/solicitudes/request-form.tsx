@@ -23,7 +23,7 @@ import { URGENCY_OPTS } from "./request-form.constants"
 import { formatDate, formatDateTime, formatQty } from "@/lib/utils"
 import { QUOTATION_TYPES } from "@/lib/request-types"
 import type { RequestType } from "@/lib/request-types"
-import type { ItemRow, ProductOption, WorksiteOption, SupplierOption, WorkerOption, EquipmentOption, EditRequest, PrefillItem } from "./request-form.types"
+import type { ItemRow, ProductOption, WorksiteOption, SupplierOption, WorkerOption, EquipmentOption, EditRequest, PrefillItem, VehicleOption } from "./request-form.types"
 import { useRequestForm } from "./use-request-form"
 
 function SummaryLine({ label, value, muted = false }: { label: string; value: string; muted?: boolean }) {
@@ -64,6 +64,15 @@ interface RequestFormProps {
   prefillNotice?: string
   /** Faena con la que se abre el creador, ya validada en el servidor. */
   initialWorksiteId?: string
+  /** Urgencia con la que se abre el creador (p. ej. «alta» al pedir repuestos desde una OT). */
+  initialUrgency?: string
+  /** Equipos de flota del selector de repuestos/servicios (de `listVehicleOptionsForRequests`). */
+  vehicles?: VehicleOption[]
+  /**
+   * Umbral de cotizaciones de repuestos en CLP (Parámetros operativos). `null` o
+   * ausente = regla legada de 3 cotizaciones, sin exención por monto.
+   */
+  quotationThresholdClp?: number | null
 }
 
 function RequestFormHeader({
@@ -152,13 +161,17 @@ function RequestFormHeader({
 function ItemsSection({
   items, requestType, requestTypeLabel: _requestTypeLabel, readOnly, savedId, itemsError,
   products, suppliers, workers, equipment, maxFileSizeMb, units,
+  worksiteId, vehicles = [], quotationRule, quotationNotice,
   editableItemIds = [],
-  onAdd, onRemove, onUpdate, onSelectProduct, onSelectFreeProduct, onClearProduct, onUpdateAttr, onUpdateWorker,
+  onAdd, onRemove, onUpdate, onSelectVehicle, onSelectWorkOrder, onSelectProduct, onSelectFreeProduct, onClearProduct, onUpdateAttr, onUpdateWorker,
 }: {
   items: ItemRow[]; requestType: string; requestTypeLabel?: string; readOnly: boolean; savedId?: string
   editableItemIds?: string[]
   itemsError?: string; products: ProductOption[]; suppliers: SupplierOption[]; workers?: WorkerOption[]
   equipment?: EquipmentOption[]; maxFileSizeMb: number; units: string[]
+  worksiteId: string; vehicles?: VehicleOption[]
+  quotationRule?: string; quotationNotice?: string | null
+  onSelectVehicle: (key: string, vehicleId: string) => void; onSelectWorkOrder: (key: string, workOrderId: string) => void
   onAdd: () => void; onRemove: (key: string) => void; onUpdate: (key: string, patch: Partial<ItemRow>) => void
   onSelectProduct: (key: string, pid: string) => void; onSelectFreeProduct: (key: string, name: string) => void
   onClearProduct: (key: string) => void; onUpdateAttr: (itemKey: string, attrIdx: number, value: string) => void
@@ -272,8 +285,12 @@ function ItemsSection({
           return (
             <div key={item._key} className="space-y-2">
               <ItemEditor item={item} idx={idx} products={products} suppliers={suppliers} workers={readOnly && !isEditing ? undefined : workers} equipment={equipment}
+                vehicles={vehicles} worksiteId={worksiteId}
                 readOnly={(readOnly && !isEditing) || isSavingItem} requestType={requestType} maxFileSizeMb={maxFileSizeMb}
+                quotationRule={quotationRule} quotationNotice={quotationNotice}
                 onUpdate={(patch) => onUpdate(item._key, patch)}
+                onSelectVehicle={(vehicleId) => onSelectVehicle(item._key, vehicleId)}
+                onSelectWorkOrder={(workOrderId) => onSelectWorkOrder(item._key, workOrderId)}
                 onSelectProduct={(pid) => onSelectProduct(item._key, pid)}
                 onSelectFreeProduct={(name) => onSelectFreeProduct(item._key, name)}
                 onClearProduct={() => onClearProduct(item._key)}
@@ -387,6 +404,9 @@ export function RequestForm({
   prefillItems,
   prefillNotice,
   initialWorksiteId,
+  initialUrgency,
+  vehicles,
+  quotationThresholdClp,
 }: RequestFormProps) {
   const form = useRequestForm({
     worksites,
@@ -399,6 +419,9 @@ export function RequestForm({
     initialRequestType,
     prefillItems,
     initialWorksiteId,
+    initialUrgency,
+    vehicles,
+    quotationThresholdClp,
   })
   const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false)
   const stockWarning = form.stockWarning
@@ -433,7 +456,9 @@ export function RequestForm({
           <Info size={14} weight="fill" className="mt-0.5 shrink-0 text-[var(--color-signal-ink)]" />
           <div>
             <p className="text-xs font-medium text-[var(--color-signal-ink)]">Flujo para {form.requestTypeLabel}</p>
-            <p className="mt-0.5 text-xs text-[var(--color-signal-ink)] opacity-80">Agrega los ítems → Guarda el borrador → Adjunta cotización por ítem → Envía a revisión.</p>
+            <p className="mt-0.5 text-xs text-[var(--color-signal-ink)] opacity-80">{form.requestType === "repuestos"
+              ? "Agrega los ítems → Indica el equipo y el precio estimado → Guarda el borrador → Adjunta cotizaciones si corresponde → Envía a revisión."
+              : "Agrega los ítems → Guarda el borrador → Adjunta cotización por ítem → Envía a revisión."}</p>
           </div>
         </div>
       )}
@@ -443,6 +468,9 @@ export function RequestForm({
         editableItemIds={editableItemIds}
         products={products} suppliers={suppliers} workers={workers} equipment={equipment} maxFileSizeMb={maxFileSizeMb}
         units={units}
+        worksiteId={form.worksiteId} vehicles={vehicles}
+        quotationRule={form.quotationRule} quotationNotice={form.quotationNotice}
+        onSelectVehicle={form.selectVehicle} onSelectWorkOrder={form.selectWorkOrder}
         onAdd={form.addItem} onRemove={form.removeItem} onUpdate={form.updateItem}
         onSelectProduct={form.selectProduct} onSelectFreeProduct={form.selectFreeProduct}
         onClearProduct={form.clearProduct} onUpdateAttr={form.updateAttr}
