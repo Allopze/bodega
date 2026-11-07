@@ -16,7 +16,7 @@ import {
 import { fillMaintenanceMonths } from "@/lib/services/ti/dashboard"
 import { TiCharts } from "./ti-charts"
 
-export const metadata: Metadata = { title: "Resumen" }
+export const metadata: Metadata = { title: "Resumen de TI" }
 
 export default async function TiDashboardPage() {
   let session
@@ -37,7 +37,7 @@ export default async function TiDashboardPage() {
   return (
     <PageContainer>
       <PageHeader
-        title="Resumen"
+        title="Resumen de TI"
         description="Qué hay que atender hoy y cómo está el parque tecnológico."
         breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "TI" }, { label: "Resumen" }]} />}
       />

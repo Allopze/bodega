@@ -653,15 +653,18 @@ test.describe.serial("Combustible — tira de señales de terreno en Cargas", ()
     await expect(celdaDeTira(page, "Sello incompleto", 2)).toBeVisible()
   })
 
-  test("sin nada que atender las cuatro dicen «Ninguna» y no son enlaces; sin registros en terreno no hay tira", async ({ page }) => {
+  test("sin nada que atender la tira es una sola línea, sin tiles ni enlaces; sin registros en terreno no hay tira", async ({ page }) => {
     await login(page)
     await page.goto(`/combustibles/cargas?q=QA-TIRA&desde=2026-09-01&hasta=2026-09-30&faena=${WORKSITE_ID}`)
-    await expect(tiraDe(page).getByText("Ninguna", { exact: true })).toHaveCount(4)
-    await expect(tiraDe(page).getByRole("link")).toHaveCount(0)
+    // UX-13: cuatro cifras en cero son una línea («Nada por validar, observar ni completar …»), no cuatro «Ninguna».
+    await expect(page.getByText(/^Nada por validar, observar ni completar /)).toBeVisible()
+    await expect(tiraDe(page)).toHaveCount(0)
+    await expect(page.getByText("Ninguna", { exact: true })).toHaveCount(0)
 
     await page.goto(`${TIRA_URL}&como=factura`)
     await expect(page.getByRole("heading", { level: 1, name: "Cargas" })).toBeVisible()
     await expect(tiraDe(page)).toHaveCount(0)
+    await expect(page.getByText(/^Nada por validar, observar ni completar /)).toHaveCount(0)
   })
 
   test("«Caso abierto» lleva a los casos de ESA carga, no a todos", async ({ page }) => {

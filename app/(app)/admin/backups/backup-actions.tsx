@@ -35,12 +35,8 @@ export function BackupsActions() {
         </span>
       )}
       <form ref={formRef} action={formAction} onSubmit={requestConfirmation}>
-        <Button
-          type="submit"
-          disabled={pending}
-          size="sm"
-        >
-          <Play size={14} className={pending ? "animate-pulse" : ""} />
+        <Button type="submit" loading={pending} size="sm">
+          {!pending && <Play size={14} aria-hidden />}
           {pending ? "Respaldando…" : "Respaldar ahora"}
         </Button>
       </form>

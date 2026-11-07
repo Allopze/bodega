@@ -44,9 +44,9 @@ interface ConfirmDialogProps {
 }
 
 const variantConfig = {
-  destructive: { buttonVariant: "destructive" as const, icon: "⚠️" },
-  warning:     { buttonVariant: "signal" as const,     icon: "⚠️" },
-  default:     { buttonVariant: "primary" as const,    icon: undefined },
+  destructive: { buttonVariant: "destructive" as const },
+  warning:     { buttonVariant: "signal" as const },
+  default:     { buttonVariant: "primary" as const },
 }
 
 /**

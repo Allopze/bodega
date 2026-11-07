@@ -8,6 +8,7 @@ vi.mock("./weekly-chart", () => ({ WeeklyChart: () => <div data-testid="weekly-c
 
 const { FleetCard, HoursCard, NotDoneCard, UpcomingCard, WeeklyCard, WorkshopCard } = await import("./panel-cards")
 const { PanelKpis, PanelStrip } = await import("./panel-kpis")
+const { PanelEmptyState, hasNoEquipmentInScope } = await import("./panel-empty")
 
 const NO_COUNTS = { vencida: 0, proxima: 0, al_dia: 0, sin_lecturas: 0, sin_pauta: 0, baja: 0 }
 
@@ -282,5 +283,39 @@ describe("tarjetas del panel", () => {
     expect(screen.getByText("Ningún equipo en taller.")).toBeTruthy()
     expect(screen.getByText("Sin correctivas en el período.")).toBeTruthy()
     expect(screen.getByText("Todos los ítems se realizaron en el período.")).toBeTruthy()
+  })
+})
+
+describe("panel sin equipos (UX-13)", () => {
+  afterEach(cleanup)
+
+  const empty = (): PanelData => panelData({
+    records: { total: 0, preventive: 0, corrective: 0, hours: 0, pendingReview: 0 },
+    fleet: { active: 0, counts: NO_COUNTS },
+    workshop: { equipment: 0, stale: 0, rows: [] },
+    stoppedDays: { total: 0, equipment: 0 },
+    upcoming: [], hoursByWorksite: [], notDone: [],
+  })
+
+  it("la causa raíz es: ningún equipo activo, ningún registro y ninguno en taller", () => {
+    expect(hasNoEquipmentInScope(empty())).toBe(true)
+    expect(hasNoEquipmentInScope(panelData())).toBe(false)
+    expect(hasNoEquipmentInScope({ ...empty(), fleet: { active: 1, counts: { ...NO_COUNTS, sin_pauta: 1 } } })).toBe(false)
+    expect(hasNoEquipmentInScope({ ...empty(), records: { ...empty().records, total: 1 } })).toBe(false)
+    expect(hasNoEquipmentInScope({ ...empty(), workshop: { ...panelData().workshop } })).toBe(false)
+  })
+
+  it("dice qué significa y lleva a Equipos con un enlace real", () => {
+    render(<PanelEmptyState canManage />)
+    expect(screen.getByRole("heading", { name: "Todavía no hay equipos en mantención para estas faenas" })).toBeTruthy()
+    expect(screen.getByText(/Agrega o importa los equipos/)).toBeTruthy()
+    expect(screen.getByRole("link", { name: "Ir a Equipos" }).getAttribute("href")).toBe("/mantencion/equipos")
+  })
+
+  it("a quien no administra equipos le dice a quién pedirlos, sin mandarlo a agregar", () => {
+    render(<PanelEmptyState canManage={false} />)
+    expect(screen.queryByText(/Agrega o importa/)).toBeNull()
+    expect(screen.getByText(/Pide a quien administra la mantención/)).toBeTruthy()
+    expect(screen.getByRole("link", { name: "Ir a Equipos" })).toBeTruthy()
   })
 })

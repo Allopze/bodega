@@ -5,6 +5,7 @@ import Link from "next/link"
 import { toast } from "@/lib/toast"
 import { Button } from "@/components/ui/button"
 import { DatePicker } from "@/components/ui/date-picker"
+import { ClearableDatePicker } from "@/components/ui/clearable-date-picker"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/field"
@@ -22,6 +23,26 @@ import {
   transitionPreventionIncidentAction,
   triagePreventionIncidentAction,
 } from "../actions"
+
+/**
+ * Fecha opcional de un formulario que envía por `name`. El `DatePicker` solo no
+ * se puede vaciar una vez elegida la fecha, y aquí vaciar significa algo
+ * («Reintegro» vacío = reposo vigente): por eso va con «Quitar fecha».
+ */
+function OptionalDateField({ id, name, defaultValue, ariaLabel }: { id: string; name: string; defaultValue: string; ariaLabel: string }) {
+  const [value, setValue] = useState(defaultValue)
+  return (
+    <ClearableDatePicker
+      id={id}
+      name={name}
+      value={value}
+      onChange={setValue}
+      placeholder="Sin fecha"
+      ariaLabel={ariaLabel}
+      clearAriaLabel={`Quitar fecha de ${ariaLabel.toLowerCase()}`}
+    />
+  )
+}
 
 interface IncidentSnapshot {
   id: string
@@ -105,6 +126,7 @@ export function IncidentWorkflowPanel({ incident, notifications, capa, people, r
   const [evacuated, setEvacuated] = useState(incident.evacuated)
   const [responsibleId, setResponsibleId] = useState(responsibles[0]?.id ?? "unassigned")
   const [targetDate, setTargetDate] = useState(defaultTargetDate)
+  const [restartDate, setRestartDate] = useState("")
 
   const can = (permission: string) => permissions.includes(permission)
   function run(operation: () => Promise<{ ok: boolean; message?: string }>, onSuccess?: () => void) {
@@ -213,8 +235,8 @@ export function IncidentWorkflowPanel({ incident, notifications, capa, people, r
               <div className="md:col-span-2 lg:col-span-4"><p className="font-medium">{person.displayLabel}</p><p className="text-xs text-[var(--color-text-subtle)]">Estado actual: {person.indicatorInclusionStatus === "included" ? "Incluida" : person.indicatorInclusionStatus === "excluded" ? "Excluida" : "Pendiente"}</p></div>
               <div className="space-y-2"><Label htmlFor={`inclusion-${person.id}`}>Decisión</Label><Select name="inclusionStatus" defaultValue={person.indicatorInclusionStatus}><SelectTrigger id={`inclusion-${person.id}`}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="pending">Pendiente / provisional</SelectItem><SelectItem value="included">Incluida</SelectItem><SelectItem value="excluded">Excluida</SelectItem></SelectContent></Select></div>
               <div className="space-y-2"><Label>Calificación administrador</Label><Input name="administratorQualification" defaultValue={person.administratorQualification ?? ""} placeholder="Resolución o calificación" /></div>
-              <div className="space-y-2"><Label>Inicio del reposo</Label><Input name="absenceStartDate" type="date" defaultValue={person.absenceStartDate ?? ""} /></div>
-              <div className="space-y-2"><Label>Reintegro (vacío = reposo vigente)</Label><Input name="returnToWorkDate" type="date" defaultValue={person.returnToWorkDate ?? ""} /></div>
+              <div className="space-y-2"><Label htmlFor={`absence-start-${person.id}`}>Inicio del reposo</Label><OptionalDateField id={`absence-start-${person.id}`} name="absenceStartDate" defaultValue={person.absenceStartDate ?? ""} ariaLabel="Inicio del reposo" /></div>
+              <div className="space-y-2"><Label htmlFor={`return-to-work-${person.id}`}>Reintegro (vacío = reposo vigente)</Label><OptionalDateField id={`return-to-work-${person.id}`} name="returnToWorkDate" defaultValue={person.returnToWorkDate ?? ""} ariaLabel="Reintegro" /></div>
               <div className="space-y-2"><Label>Días de ausencia</Label><Input name="absenceDays" type="number" min={0} defaultValue={person.absenceDays} disabled={Boolean(person.absenceStartDate)} /><p className="text-xs text-[var(--color-text-subtle)]">{person.absenceStartDate ? "Se calcula desde las fechas de reposo." : "Sin fechas de reposo: se imputa al mes del accidente."}</p></div>
               <div className="space-y-2"><Label>Días de cargo</Label><Input name="chargeDays" type="number" min={0} defaultValue={person.chargeDays} /></div>
               <div className="md:col-span-2"><Checkbox name="absenceAtLeastNormalShift" defaultChecked={person.absenceAtLeastNormalShift} label="Ausencia igual o superior a una jornada normal" /></div>
@@ -263,7 +285,7 @@ export function IncidentWorkflowPanel({ incident, notifications, capa, people, r
           <div className="grid gap-3 md:grid-cols-3">
             <div className="space-y-2"><Label htmlFor="restart-authority">Organismo que autoriza</Label><Input id="restart-authority" name="authorityName" required minLength={3} placeholder="DT, SEREMI de Salud, SERNAGEOMIN…" /></div>
             <div className="space-y-2"><Label htmlFor="restart-reference">Folio o resolución</Label><Input id="restart-reference" name="authorizationReference" required minLength={3} /></div>
-            <div className="space-y-2"><Label htmlFor="restart-date">Fecha de la autorización</Label><Input id="restart-date" name="authorizationDate" type="date" required /></div>
+            <div className="space-y-2"><Label htmlFor="restart-date">Fecha de la autorización</Label><DatePicker id="restart-date" name="authorizationDate" value={restartDate} onChange={setRestartDate} ariaLabel="Fecha de la autorización" /></div>
           </div>
           {/* Sin "Checksum SHA-256 (opcional)": le pedía a quien registra la
               resolución del fiscalizador que corriera `sha256sum` sobre un PDF
@@ -275,7 +297,8 @@ export function IncidentWorkflowPanel({ incident, notifications, capa, people, r
             <div className="space-y-2"><Label htmlFor="restart-reason">Fundamento de autorización de reinicio</Label><Input id="restart-reason" name="reason" required minLength={10} /></div>
             <div className="space-y-2"><Label htmlFor="restart-segregation-reason">Excepción de segregación (si participaste en la investigación o las medidas)</Label><Input id="restart-segregation-reason" name="segregationExceptionReason" minLength={10} placeholder="Sólo si tienes autorización de excepción" /></div>
           </div>
-          <Button type="submit" variant="destructive" disabled={pending}>Autorizar reinicio</Button>
+          {/* El campo de fecha ya no es un `<input required>` nativo: sin fecha no se envía. */}
+          <Button type="submit" variant="destructive" disabled={pending || !restartDate}>Autorizar reinicio</Button>
         </form>
       )}
 

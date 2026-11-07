@@ -409,7 +409,7 @@ function RankingSection({
           {groups.map((group) => (
             <div key={group.currency}>
               {groups.length > 1 && (
-                <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">{group.currency}</h3>
+                <h3 className="mb-1 text-eyebrow">{group.currency}</h3>
               )}
               <RankedList
                 items={group.items}

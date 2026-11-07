@@ -4,8 +4,10 @@
  * es una fila de pestañas con contador, sin `Select` de estado ni tarjetas por estado.
  * Las tarjetas que quedan son condiciones que cruzan los estados.
  */
+import * as React from "react"
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { ShellHeaderProvider, useSafeShellHeader } from "@/components/layout/header-context"
 import { buildIncidentStatusCounts } from "@/lib/prevention/incident-list-filters"
 
 let search = ""
@@ -172,5 +174,51 @@ describe("lista de incidentes — la lista llega filtrada del servidor", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "Ver todos" })[0]!)
 
     expect(replace).toHaveBeenCalledWith("/prevencion/incidentes", { scroll: false })
+  })
+})
+
+/** Escribe en el buscador de la barra superior, que es el que filtra la tabla en memoria. */
+function TopBarSearch({ value }: { value: string }) {
+  const { setSearchQuery } = useSafeShellHeader()
+  React.useEffect(() => setSearchQuery(value), [value, setSearchQuery])
+  return null
+}
+
+describe("lista de incidentes — el código anterior también se encuentra", () => {
+  // La renumeración a folios correlativos dejó el código aleatorio viejo en `legacyCode`
+  // y la ficha lo muestra («Código anterior»): quien lo guardó en un correo o un papel
+  // tiene que poder escribirlo en el buscador y llegar al incidente renumerado.
+  const incidents = [
+    incident({ id: "inc-1", code: "EV-2026-0001", legacyCode: "INC-2026-AUIA6LVVHJ" }),
+    incident({ id: "inc-2", code: "EV-2026-0002", legacyCode: null }),
+  ]
+
+  function renderWithSearch(value: string) {
+    return render(
+      <ShellHeaderProvider>
+        <TopBarSearch value={value} />
+        <IncidentList incidents={incidents} worksites={[{ id: "ws-1", name: "Faena Norte" }]} counts={COUNTS} statusCounts={STATUS_COUNTS} canReport />
+      </ShellHeaderProvider>,
+    )
+  }
+
+  it("buscar el código aleatorio anterior encuentra el incidente renumerado y deja fuera al otro", () => {
+    renderWithSearch("INC-2026-AUIA6LVVHJ")
+
+    expect(screen.getAllByText("EV-2026-0001").length).toBeGreaterThan(0)
+    expect(screen.queryByText("EV-2026-0002")).toBeNull()
+  })
+
+  it("la búsqueda no distingue mayúsculas y el incidente sin código anterior no rompe el filtro", () => {
+    renderWithSearch("inc-2026-auia6lvvhj")
+
+    expect(screen.getAllByText("EV-2026-0001").length).toBeGreaterThan(0)
+    expect(screen.queryByText("EV-2026-0002")).toBeNull()
+  })
+
+  it("el código anterior no se muestra en la tabla: sólo se busca por él", () => {
+    renderWithSearch("")
+
+    expect(screen.queryByText("INC-2026-AUIA6LVVHJ")).toBeNull()
   })
 })

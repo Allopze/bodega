@@ -40,7 +40,7 @@ import { CreatePdtpRevisionButton } from "./[programId]/create-pdtp-revision-but
 import { Callout } from "@/components/ui/callout"
 import { getPdtpOperationalYears } from "@/lib/services/pdtp/operational-years"
 
-export const metadata: Metadata = { title: "Dashboard de Cumplimiento (PDTP SG-SST)" }
+export const metadata: Metadata = { title: "Panel de cumplimiento (PDTP SG-SST)" }
 
 type PdtpDashboardPageProps = {
   searchParams: Promise<{ faena?: string | string[]; anio?: string | string[] }>
@@ -234,8 +234,8 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
   return (
     <PageContainer>
       <PageHeader
-        title="Dashboard de Cumplimiento SG-SST"
-        description={`Avance operacional del Programa de Trabajo Preventivo ${year}. Monitoreo general y por faena.`}
+        title="Panel de cumplimiento SG-SST"
+        description={`Avance del Programa de Trabajo Preventivo ${year}, en total o por faena.`}
         breadcrumb={
           <Breadcrumbs
             items={[
@@ -306,14 +306,6 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
             </span>
           )}
         </div>
-        {focusProgram && (
-          <Link
-            href={activitiesHref(focusProgram.id, year, selectedWorksiteId, "anual", undefined, currentPeriod)}
-            className="inline-flex min-h-11 sm:min-h-0 items-center text-xs font-medium text-[var(--color-primary)] hover:underline"
-          >
-            Ver actividades del programa →
-          </Link>
-        )}
       </div>
 
       {mustChooseProgram ? (
@@ -416,7 +408,7 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
               href={focusProgram ? activitiesHref(focusProgram.id, year, selectedWorksiteId, "semana", "overdue", currentPeriod) : undefined}
             />
             <KpiCard
-              label="Acciones Pendientes"
+              label="Acciones pendientes"
               value={openActionsCount}
               detail={overdueActionsCount > 0 ? countOf(overdueActionsCount, "acción vencida", "acciones vencidas") : "Sin hallazgos vencidos"}
               icon={<WarningCircle size={22} />}

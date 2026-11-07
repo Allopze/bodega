@@ -23,7 +23,7 @@ test.describe("Módulo de TI", () => {
     await login(page)
     await page.goto("/ti")
     await expect(page).toHaveURL(/\/ti$/)
-    await expect(page.getByRole("heading", { name: "Resumen", exact: true })).toBeVisible()
+    await expect(page.getByRole("heading", { name: "Resumen de TI", exact: true })).toBeVisible()
     await expect(page.getByRole("heading", { name: "Atención hoy" })).toBeVisible()
   })
 

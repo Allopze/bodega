@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Package, Trash } from "@phosphor-icons/react"
+import { Package, Trash, Warning } from "@phosphor-icons/react"
 import { Input } from "@/components/ui/input"
 import { Field } from "@/components/ui/field"
 import { MetaBadge } from "@/components/states/state-badge"
@@ -352,8 +352,9 @@ export function ItemEditor({
 
           {/* F-6: Advertencia de solicitud duplicada */}
           {statusInfo?.activeRequest && (
-            <div className="mt-2 rounded border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] p-2 text-xs text-[var(--color-warning-ink)] font-medium">
-              ⚠️ Ya existe la solicitud <strong>{statusInfo.activeRequest.code}</strong> en trámite para este trabajador.
+            <div className="mt-2 flex items-start gap-1.5 rounded border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] p-2 text-xs text-[var(--color-warning-ink)] font-medium">
+              <Warning size={14} aria-hidden className="mt-px shrink-0" />
+              <span>Ya existe la solicitud <strong>{statusInfo.activeRequest.code}</strong> en trámite para este trabajador.</span>
             </div>
           )}
 

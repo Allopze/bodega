@@ -4,7 +4,7 @@ import * as React from "react"
 import { UserCircle } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Field } from "@/components/ui/field"
-import { Input } from "@/components/ui/input"
+import { DatePicker } from "@/components/ui/date-picker"
 import { MetaBadge } from "@/components/states/state-badge"
 import {
   Dialog,
@@ -168,13 +168,12 @@ export function PdtpAssigneePicker({
             htmlFor={`assignee-valid-from-${activityId}`}
             helper="Quien deja de estar asignado conserva su registro hasta el día anterior: el historial de responsables no se borra."
           >
-            <Input
+            <DatePicker
               id={`assignee-valid-from-${activityId}`}
-              type="date"
               name="validFrom"
               value={validFrom}
-              onChange={(event) => setValidFrom(event.target.value)}
-              aria-label="Rige desde"
+              onChange={setValidFrom}
+              ariaLabel="Rige desde"
             />
           </Field>
 

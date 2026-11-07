@@ -29,6 +29,8 @@ import type { IncidentStatus } from "@/lib/services/prevention-incidents"
 type IncidentListItem = {
   id: string
   code: string
+  /** Código aleatorio previo a la renumeración: se busca por él, pero no se muestra en la tabla. */
+  legacyCode?: string | null
   worksiteId: string
   worksiteName: string
   companyName: string
@@ -136,7 +138,7 @@ export function IncidentList({ incidents, worksites, counts, statusCounts, canRe
         caption="Incidentes y denuncias"
         columns={COLUMNS}
         rows={rows}
-        searchKeys={["code", "companyName", "worksiteName", "location", "eventTypeLabel"]}
+        searchKeys={["code", "legacyCode", "companyName", "worksiteName", "location", "eventTypeLabel"]}
         emptyTitle={sinDatos ? "Aún no hay incidentes canónicos" : "No hay incidentes con estos filtros"}
         emptyDescription={sinDatos ? "Registra aquí los eventos ocurridos en tus faenas: reporte, triage, investigación y CAPA quedan trazados desde el primer registro." : "Ajusta filtros o el buscador superior."}
         emptyAction={sinDatos && canReport ? <Button asChild><Link href="/prevencion/incidentes/reportar">Reportar incidente</Link></Button> : <Button type="button" variant="secondary" onClick={() => clearUrlFilters()}>Ver todos</Button>}

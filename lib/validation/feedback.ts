@@ -17,7 +17,7 @@ export type FeedbackPrioridad = typeof FEEDBACK_PRIORIDADES[number]
 // (notificaciones) como componentes (StateBadge, paneles). Antes cada pantalla
 // re-declaraba estos mapas con riesgo de divergencia.
 export const FEEDBACK_TIPO_LABELS: Record<FeedbackTipo, string> = {
-  bug:        "Bug",
+  bug: "Error",
   consulta:   "Consulta",
   sugerencia: "Sugerencia",
 }

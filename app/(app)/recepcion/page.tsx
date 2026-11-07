@@ -247,7 +247,7 @@ export default async function RecepcionPage({
     <PageContainer>
       <PageHeader
         title="Recepción"
-        description="Órdenes de compra emitidas con mercadería por recibir. Las completadas salen de la cola y se consultan en su tab."
+        description="Órdenes de compra con mercadería por recibir. Las completadas se consultan en su pestaña."
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Inicio", href: "/dashboard" },

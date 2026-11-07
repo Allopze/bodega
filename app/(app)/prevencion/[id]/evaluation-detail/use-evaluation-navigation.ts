@@ -74,7 +74,8 @@ export function useEvaluationNavigation({
       const isLocked = section.weekNumber ? isWeekLocked(section.weekNumber) : false
       return {
         value: section.id,
-        label: section.title + (isLocked ? " 🔒" : ""),
+        // Texto, no emoji (UX-17): el consumidor (`EvaluationSectionNav`) pinta `label` tal cual, en el selector y en el rótulo de la sección activa.
+        label: section.title + (isLocked ? " (bloqueada)" : ""),
       }
     }),
     ...(canViewFullEvaluation

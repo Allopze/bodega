@@ -46,6 +46,19 @@ function dateTime(value: string | null) {
   return value ? formatDateTime(value) : "—"
 }
 
+/**
+ * Nombre visible del carril legal. El valor crudo ("fatal_dt") se mostraba con
+ * `uppercase`; en caja de oración habría salido «diat» o «fatal dt», así que se
+ * nombra cada carril (las siglas DIAT/DIEP sí se escriben en mayúscula).
+ */
+const NOTIFICATION_LANE_LABELS: Record<string, string> = {
+  diat: "DIAT",
+  diep: "DIEP",
+  fatal_dt: "Fatal: Dirección del Trabajo",
+  fatal_seremi: "Fatal: Seremi de Salud",
+  restart_authorization: "Autorización de reinicio",
+}
+
 export default async function IncidentDetailPage({ params, searchParams }: PageProps) {
   const { id } = await params
   const query = await searchParams
@@ -263,7 +276,7 @@ export default async function IncidentDetailPage({ params, searchParams }: PageP
           <aside className="space-y-5">
             <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
               <h2 className="font-semibold">Carriles legales</h2>
-              {bundle.notifications.length === 0 ? <p className="mt-2 text-sm text-[var(--color-text-subtle)]">Este tipo no genera DIAT/DIEP o notificación fatal-grave.</p> : <ul className="mt-3 space-y-3">{bundle.notifications.map((lane) => <li key={lane.id} className="border-b border-[var(--color-border)] pb-3 last:border-0"><div className="flex justify-between gap-2"><strong className="text-sm uppercase">{lane.notificationType.replaceAll("_", " ")}</strong><MetaBadge meta={{ label: `${notificationStatusLabel(lane.status)}`, variant: lane.status === "overdue" ? "danger" : lane.status === "pending" ? "warning" : "success" }} /></div><p className="mt-1 text-xs text-[var(--color-text-subtle)]">Plazo: {dateTime(lane.deadlineAt)}</p>{lane.evidenceReference && <p className="mt-1 break-all text-xs">Evidencia: {lane.evidenceReference}</p>}</li>)}</ul>}
+              {bundle.notifications.length === 0 ? <p className="mt-2 text-sm text-[var(--color-text-subtle)]">Este tipo no genera DIAT/DIEP o notificación fatal-grave.</p> : <ul className="mt-3 space-y-3">{bundle.notifications.map((lane) => <li key={lane.id} className="border-b border-[var(--color-border)] pb-3 last:border-0"><div className="flex justify-between gap-2"><strong className="text-sm">{NOTIFICATION_LANE_LABELS[lane.notificationType] ?? lane.notificationType.replaceAll("_", " ")}</strong><MetaBadge meta={{ label: `${notificationStatusLabel(lane.status)}`, variant: lane.status === "overdue" ? "danger" : lane.status === "pending" ? "warning" : "success" }} /></div><p className="mt-1 text-xs text-[var(--color-text-subtle)]">Plazo: {dateTime(lane.deadlineAt)}</p>{lane.evidenceReference && <p className="mt-1 break-all text-xs">Evidencia: {lane.evidenceReference}</p>}</li>)}</ul>}
             </section>
 
             <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">

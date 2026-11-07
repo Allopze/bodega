@@ -10,6 +10,7 @@ vi.mock("next/link", () => ({
 }))
 
 import { FilterSummaryBar } from "@/components/ui/filter-summary-bar"
+import { CargasAttentionStrip } from "@/app/(app)/combustibles/cargas/attention-strip"
 import { buildFieldAttentionStats } from "./cargas-attention"
 
 afterEach(() => cleanup())
@@ -57,5 +58,23 @@ describe("la tira de señales de terreno, ya pintada", () => {
     renderStrip({ toValidate: 0, observed: 0, sealIncomplete: 0, photosIncomplete: 0 })
     for (const label of ["Por validar", "Con observación", "Sello incompleto", "Menos de 4 fotos"]) expect(screen.getByText(label)).toBeInTheDocument()
     expect(screen.queryAllByRole("link")).toHaveLength(0)
+  })
+})
+
+describe("CargasAttentionStrip: tiles o una sola línea (UX-13)", () => {
+  it("con las cuatro señales en cero es una línea con el período, sin grupo, tiles ni «Ninguna»", () => {
+    render(<CargasAttentionStrip attention={{ toValidate: 0, observed: 0, sealIncomplete: 0, photosIncomplete: 0 }} searchParams={{}} periodInLabel="en noviembre" />)
+    expect(screen.getByText("Nada por validar, observar ni completar en noviembre")).toBeInTheDocument()
+    expect(screen.queryByRole("group")).toBeNull()
+    expect(screen.queryByText("Ninguna")).toBeNull()
+    expect(screen.queryAllByRole("link")).toHaveLength(0)
+  })
+
+  it("con una sola señal distinta de cero vuelve a las cuatro celdas, y el «Ninguna» de las demás informa", () => {
+    render(<CargasAttentionStrip attention={{ toValidate: 0, observed: 2, sealIncomplete: 0, photosIncomplete: 0 }} searchParams={{}} periodInLabel="en noviembre" />)
+    expect(screen.getByRole("group", { name: "Cargas en terreno que piden atención" })).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "Con observación 2" })).toBeInTheDocument()
+    expect(screen.getAllByText("Ninguna")).toHaveLength(3)
+    expect(screen.queryByText(/Nada por validar/)).toBeNull()
   })
 })

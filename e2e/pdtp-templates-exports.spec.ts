@@ -20,7 +20,7 @@ test.describe("PDTP — Dashboard, plantillas e importación/exportación", () =
     await page.goto("/prevencion/pdtp")
 
     // Page header
-    await expect(page.getByRole("heading", { name: "Dashboard de Cumplimiento SG-SST" })).toBeVisible()
+    await expect(page.getByRole("heading", { name: "Panel de cumplimiento SG-SST" })).toBeVisible()
 
     // Enlace al listado de programas
     await expect(page.getByRole("link", { name: "Listado de programas" })).toBeVisible()

@@ -8,11 +8,9 @@ import { can, requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope, worksiteScopeSql } from "@/lib/auth/scope"
 import { logger } from "@/lib/logger"
 import { DegradedDataBanner } from "@/components/ui/degraded-data-banner"
-import { FilterSummaryBar } from "@/components/ui/filter-summary-bar"
 import { PageContainer } from "@/components/ui/page-container"
 import { SectionNav } from "@/components/ui/section-nav"
 import { ServerPagination } from "@/components/ui/server-pagination"
-import { buildFieldAttentionStats } from "@/lib/combustibles/cargas-attention"
 import { buildCargaRowHrefs } from "@/lib/combustibles/cargas-hrefs"
 import { canViewFuelPersonalData, getFieldLoadAttention, getFuelLogRows, getFuelLogTotal } from "@/lib/combustibles/fuel-log"
 import { CARGAS_PAGE_SIZE, countActiveAdvancedFilters, parseCargasSearchParams } from "@/lib/combustibles/fuel-log-params"
@@ -23,6 +21,7 @@ import { resolveFuelPeriodForPage } from "@/lib/combustibles/period/server"
 import { FUEL_PATHS, withFuelContext } from "@/lib/combustibles/routes"
 import { cargasNavItems, fuelAddDataOptions } from "@/lib/combustibles/section-nav"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
+import { CargasAttentionStrip } from "./attention-strip"
 import { CargasWorkbench } from "./cargas-workbench"
 import type { CargasFilterOption } from "./cargas-filters"
 import type { EnrichedRow } from "../bitacora/bitacora-table"
@@ -134,8 +133,6 @@ export default async function CargasPage({ searchParams }: { searchParams: Promi
       }
     : undefined
 
-  const attentionStats = attention ? buildFieldAttentionStats(attention, sp) : null
-
   const hrefForPage = (target: number) => buildPaginationHref(FUEL_PATHS.cargas, { ...sp, page: undefined }, target, "pagina")
 
   return (
@@ -167,11 +164,7 @@ export default async function CargasPage({ searchParams }: { searchParams: Promi
           <>
             <SectionNav items={cargasNavItems()} activeKey="cargas" ariaLabel="Vistas de cargas" carryParams={FUEL_CARRY_PARAMS} />
             <DegradedDataBanner degraded={degraded} total={tracked} />
-            {attentionStats && (
-              <div role="group" aria-label="Cargas en terreno que piden atención">
-                <FilterSummaryBar stats={attentionStats} className="mb-4" />
-              </div>
-            )}
+            {attention && <CargasAttentionStrip attention={attention} searchParams={sp} periodInLabel={period.inLabel} />}
           </>
         }
         after={<ServerPagination pagination={pagination} hrefForPage={hrefForPage} className="mt-2" />}

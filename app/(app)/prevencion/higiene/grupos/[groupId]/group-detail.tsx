@@ -18,7 +18,7 @@ import { addExposureGroupMemberAction, recordExposureMeasurementAction } from ".
 import { Field } from "@/components/ui/field"
 import { FileInput } from "@/components/ui/file-input"
 import { useOperation } from "@/lib/hooks/use-operation"
-import { todayInChile } from "@/lib/utils"
+import { formatQty, todayInChile } from "@/lib/utils"
 
 interface GroupInfo {
   id: string
@@ -85,7 +85,7 @@ export function GroupDetail({ group, worksiteName, agent, members, measurements,
     { label: "Límite permisible", value: agent.permissibleLimit ? `${agent.permissibleLimit} ${agent.unit}` : "No comparable: sin límite declarado" },
     { label: "Nivel de acción", value: agent.permissibleLimit ? `${(Number(agent.permissibleLimit) * Number(agent.actionLevelFactor)).toFixed(4)} ${agent.unit}` : "—" },
     { label: "Fundamento", value: agent.limitBasis },
-    { label: "Expuestos activos", value: String(activeMembers.length) },
+    { label: "Expuestos activos", value: formatQty(activeMembers.length) },
   ]
 
   return (

@@ -32,7 +32,7 @@ export default async function SchedulesPage() {
         breadcrumb={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Mantención" }, { label: "Pautas" }]}
         actions={(
           <div className="flex flex-wrap items-center gap-2">
-            {can(session, "mant:export") && <ExportButton action={exportSchedulesAction} label="Exportar a Excel" />}
+            {can(session, "mant:export") && <ExportButton action={exportSchedulesAction} />}
             <NewScheduleDialog schedules={rows.map((row) => ({ id: row.id, name: row.name, unit: row.unit }))} />
           </div>
         )}

@@ -36,11 +36,9 @@ export function NotificationBell() {
           <Bell size={16} />
           {hasUnread && data && (
             <>
-              {/* El pulso va ANTES del contador: pintado después, su 50 % de
-                  opacidad tapaba la cifra. Sólo con `motion-safe`: corría infinito
-                  incluso con `prefers-reduced-motion: reduce` (TIUX-54). */}
-              <span aria-hidden className="absolute -top-0.5 -right-0.5 hidden h-4 min-w-4 rounded-full bg-[var(--color-primary)] opacity-50 motion-safe:block motion-safe:animate-ping" />
-              <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--color-primary)] px-1 text-[11px] font-bold leading-none text-white animate-in fade-in zoom-in-95 duration-[var(--duration-fast)]">
+              {/* Contador estático: el número ya avisa. Un halo infinito (`animate-ping`)
+                  compite con el contenido de la página (UX-17, 2026-11-07). */}
+              <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--color-primary)] px-1 text-2xs font-semibold leading-none text-white animate-in fade-in zoom-in-95 duration-[var(--duration-fast)]">
                 {data.unreadCount > 9 ? "9+" : data.unreadCount}
               </span>
             </>
@@ -75,7 +73,7 @@ export function NotificationBell() {
       aria-label={`Notificaciones${hasUnread ? ` (${data?.unreadCount} sin leer)` : ""}`}
     >
       <Bell size={18} />
-      {hasUnread && data && <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--color-primary)] px-1 text-[11px] font-bold leading-none text-white">{data.unreadCount > 9 ? "9+" : data.unreadCount}</span>}
+      {hasUnread && data && <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--color-primary)] px-1 text-2xs font-semibold leading-none text-white">{data.unreadCount > 9 ? "9+" : data.unreadCount}</span>}
     </button>
 
     <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
@@ -212,7 +210,7 @@ function NotificationRow({
             {notification.body}
           </p>
         )}
-        <p className="mt-1 text-[10px] text-[var(--color-text-subtle)]">
+        <p className="mt-1 text-2xs text-[var(--color-text-subtle)]">
           {formatDate(notification.createdAt)}
         </p>
       </div>

@@ -44,7 +44,7 @@ export function PanelKpis({ data }: { data: PanelData }) {
       <KpiCard
         icon={<ClipboardText size={16} aria-hidden />}
         label={`Registros · ${period}`}
-        value={String(records.total)}
+        value={records.total}
         detail={`${plural(records.preventive, "preventiva", "preventivas")} · ${plural(records.corrective, "correctiva", "correctivas")}`}
         // Sin registros en el período, lo accionable es ampliar el período.
         href={records.total === 0 && filters.period !== "todo"
@@ -57,7 +57,7 @@ export function PanelKpis({ data }: { data: PanelData }) {
       <KpiCard
         icon={<Warning size={16} aria-hidden />}
         label="Mantenciones vencidas"
-        value={String(overdue)}
+        value={overdue}
         detail={overdueDetail(fleet.counts)}
         tone={overdue > 0 ? "danger" : "neutral"}
         // Sin equipos evaluables «vencida» está vacío por construcción: lo accionable es dejarlos evaluables.
@@ -67,7 +67,7 @@ export function PanelKpis({ data }: { data: PanelData }) {
       <KpiCard
         icon={<Truck size={16} aria-hidden />}
         label="Equipos en taller"
-        value={String(workshop.equipment)}
+        value={workshop.equipment}
         detail={workshop.equipment === 0
           ? "Ninguno detenido"
           : workshop.stale > 0 ? `${plural(workshop.stale, "sin actualizar", "sin actualizar")} hace más de 2 días` : "Todos con estado al día"}
@@ -77,7 +77,7 @@ export function PanelKpis({ data }: { data: PanelData }) {
       <KpiCard
         icon={<CalendarX size={16} aria-hidden />}
         label={`Días fuera de servicio · ${period}`}
-        value={String(stoppedDays.total)}
+        value={stoppedDays.total}
         detail={stoppedDays.total === 0 ? "Ningún equipo detenido" : `En ${plural(stoppedDays.equipment, "equipo", "equipos")}, de ingreso a salida`}
         href={`/mantencion/registros?tipo=C&situacion=paso_taller&estado=vigente${since}${worksite}`}
       />

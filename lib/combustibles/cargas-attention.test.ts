@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { buildFieldAttentionStats } from "./cargas-attention"
+import { attentionClearText, buildFieldAttentionStats, isAttentionClear } from "./cargas-attention"
 import { parseCargasSearchParams } from "./fuel-log-params"
 import { parseFuelLoadState } from "./fuel-log-shared"
 import { FUEL_PATHS } from "./routes"
@@ -95,5 +95,20 @@ describe("buildFieldAttentionStats: la tira de señales de terreno", () => {
     expect(fromSello.filters.photosIncomplete).toBeUndefined()
     expect(fromFotos.filters.photosIncomplete).toBe(true)
     expect(fromFotos.filters.sealIncomplete).toBeUndefined()
+  })
+})
+
+describe("la línea de «todo despejado» (UX-13)", () => {
+  it("sólo cuando las cuatro señales están en cero", () => {
+    expect(isAttentionClear(NONE)).toBe(true)
+    expect(isAttentionClear(ATTENTION)).toBe(false)
+    for (const key of ["toValidate", "observed", "sealIncomplete", "photosIncomplete"] as const) {
+      expect(isAttentionClear({ ...NONE, [key]: 1 })).toBe(false)
+    }
+  })
+
+  it("nombra el período que ya resuelve la página", () => {
+    expect(attentionClearText("en noviembre")).toBe("Nada por validar, observar ni completar en noviembre")
+    expect(attentionClearText("en la semana del 26 de octubre")).toBe("Nada por validar, observar ni completar en la semana del 26 de octubre")
   })
 })

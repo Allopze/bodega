@@ -75,7 +75,7 @@ export function ScheduleEditor({ model, candidates, canExport }: { model: Schedu
         breadcrumb={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Pautas", href: "/mantencion/pautas" }, { label: model.name }]}
         actions={(
           <div className="flex flex-wrap items-center gap-2">
-            {canExport && <ExportButton action={exportSchedulesAction} filters={{ scheduleId: model.id }} label="Exportar a Excel" />}
+            {canExport && <ExportButton action={exportSchedulesAction} filters={{ scheduleId: model.id }} />}
             <Button size="sm" variant={dirty ? "secondary" : "primary"} onClick={() => setAssignOpen(true)}>Asignar equipos</Button>
             {dirty && <Button size="sm" loading={pending} onClick={publish}>Publicar versión {formatNumber(model.version + 1)}</Button>}
           </div>

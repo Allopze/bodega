@@ -13,7 +13,7 @@ import { PROGRAM_STATUS_LABELS, SURVEILLANCE_STATUS_LABELS } from "@/lib/prevent
 import { enrollGroupInSurveillanceAction, recordSurveillanceOutcomeAction } from "../../actions"
 import { Field } from "@/components/ui/field"
 import { useOperation } from "@/lib/hooks/use-operation"
-import { todayInChile } from "@/lib/utils"
+import { formatQty, todayInChile } from "@/lib/utils"
 import { REASON_MAX_LENGTH, REASON_MIN_LENGTH } from "@/lib/validation/reason-thresholds"
 
 interface ProgramInfo {
@@ -70,8 +70,8 @@ export function ProgramDetail({ program, enrollments, eligibleGroups, canAssess 
     { label: "Protocolo", value: program.protocol },
     { label: "Periodicidad", value: `${program.periodicityMonths} meses` },
     { label: "Estado", value: PROGRAM_STATUS_LABELS[program.status] ?? program.status },
-    { label: "Matriculados", value: String(enrolledPeople) },
-    { label: "Vencidos", value: String(overdue) },
+    { label: "Matriculados", value: formatQty(enrolledPeople) },
+    { label: "Vencidos", value: formatQty(overdue) },
   ]
 
   return (

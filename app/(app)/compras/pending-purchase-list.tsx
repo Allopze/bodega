@@ -22,15 +22,19 @@ import type { PendingPurchaseItem, PendingPurchaseItemStage, PendingPurchaseRequ
  * una sola línea— y debajo van las solicitudes, cada una con su acción.
  */
 
+// Anchos: el texto libre es lo que se ajusta, y los códigos y fechas no se
+// parten (`nowrap` en sus celdas). «Solicita» llevaba el nombre en 4 líneas
+// mientras «Proveedor sugerido» tenía ancho de sobra: la tabla reparte el
+// sobrante según el contenido, así que el nombre necesita un mínimo propio.
 const COLUMNS = [
   { key: "_expand",          label: "",           sortable: false, width: "w-10" },
   { key: "code",             label: "Solicitud",  sortable: true,  width: "w-36" },
   { key: "date",             label: "Fecha",      sortable: true,  width: "w-28" },
-  { key: "requesterName",    label: "Solicita",   sortable: true  },
-  { key: "worksiteName",     label: "Faena",      sortable: true  },
+  { key: "requesterName",    label: "Solicita",   sortable: true,  width: "min-w-48" },
+  { key: "worksiteName",     label: "Faena",      sortable: true,  width: "min-w-36" },
   { key: "urgency",          label: "Urgencia",   sortable: true,  width: "w-24" },
   { key: "pendingItemCount", label: "Ítems por comprar", sortable: true, numeric: true, width: "w-32" },
-  { key: "supplier",         label: "Proveedor sugerido", sortable: false },
+  { key: "supplier",         label: "Proveedor sugerido", sortable: false, width: "min-w-40" },
   { key: "status",           label: "Estado",     sortable: true,  width: "w-32" },
   { key: "_actions",         label: "",           sortable: false, width: "w-40" },
 ]
@@ -214,14 +218,14 @@ export function PendingPurchaseList({
                       : <CaretRight size={14} weight="bold" aria-hidden />}
                   </Button>
                 </TableCell>
-                <TableCell>
+                <TableCell nowrap>
                   <Link
                     href={`/solicitudes/${request.id}`}
                     aria-label={`Ver solicitud ${request.code}`}
                     className="font-mono text-xs text-(--color-text) hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-primary)"
                   >{request.code}</Link>
                 </TableCell>
-                <TableCell className="text-xs text-(--color-text-subtle)">{formatDate(request.date)}</TableCell>
+                <TableCell nowrap className="text-xs text-(--color-text-subtle)">{formatDate(request.date)}</TableCell>
                 <TableCell className="text-sm text-(--color-text-muted)">{request.requesterName}</TableCell>
                 <TableCell className="text-sm text-(--color-text-muted)">{request.worksiteName}</TableCell>
                 <TableCell><PriorityBadge priority={request.urgency} size="sm" /></TableCell>
