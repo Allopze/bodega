@@ -16,6 +16,10 @@ export const preventionEmergencyPlans = pgTable("prevention_emergency_plans", {
   id:              text("id").primaryKey(),
   worksiteId:      text("worksite_id").notNull().references(() => worksites.id, { onDelete: "restrict" }),
   code:            text("code").notNull().unique(),
+  /** Código aleatorio previo a la serie correlativa `PE-AAAA-NNNN`, renumerado en
+   *  2026-11. Se conserva porque ya fue citado en documentos y mensajes; esos
+   *  textos son históricos y no se reescriben. */
+  legacyCode:      text("legacy_code"),
   title:           text("title").notNull(),
   status:          text("status").notNull().default("draft"),
   description:     text("description"),

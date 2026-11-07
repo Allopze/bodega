@@ -15,6 +15,7 @@ import {
 } from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { recordAudit } from "@/lib/audit"
+import { nextCodeTx } from "@/lib/code-sequences"
 import { nanoid } from "@/lib/id"
 import { recordOperationalActivity } from "@/lib/services/operational-activity"
 import type { RequestContext } from "@/lib/services/prevention-documents/utils"
@@ -366,10 +367,6 @@ async function assertActiveResponsible(client: CapaClient, userId: string | null
   if (!user) throw new Error("El responsable no existe o está inactivo.")
 }
 
-function createCode() {
-  return `CAPA-${codeYear()}-${nanoid(10).toUpperCase()}`
-}
-
 /**
  * CAPA-002 — lo que sigue pendiente de decidir.
  *
@@ -393,9 +390,13 @@ export async function createCapaActionWithClient(
   const now = new Date().toISOString()
   const reconciliationStatus = data.reconciliationStatus
     ?? (data.responsibleUserId ? "reconciled" : "needs_assignment")
+  // Serie correlativa por año (CAPA-2026-0001), la misma SEQUENCE nativa que los
+  // demás folios. Se reserva justo antes del insert, dentro de la transacción de
+  // quien llama; esta función no deduplica, así que no hay reintento que cuidar.
+  const code = await nextCodeTx(client, "CAPA", codeYear())
   const [created] = await client.insert(preventionCapaActions).values({
     id,
-    code: createCode(),
+    code,
     sourceType: data.sourceType,
     sourceId: data.sourceId,
     sourceItemId: data.sourceItemId ?? null,

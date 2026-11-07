@@ -9,7 +9,9 @@ import {
 } from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { recordModuleHistory } from "@/lib/audit"
+import { nextCodeTx } from "@/lib/code-sequences"
 import { nanoid } from "@/lib/id"
+import { codeYear } from "@/lib/utils"
 import { engagementMeasureKey } from "@/lib/prevention/external-engagements"
 import { onExternalEngagementClosed } from "@/lib/services/pdtp-adapters/external-engagement-accreditation-connector"
 import { createCapaActionWithClient } from "@/lib/services/prevention-capa"
@@ -74,8 +76,9 @@ const CODE_PREFIX: Record<string, string> = {
   organismo_administrador: "OAL",
 }
 
-function createCode(kind: string) {
-  return `${CODE_PREFIX[kind] ?? "EXT"}-${nanoid(8).toUpperCase()}`
+/** Serie correlativa por año de cada clase (COORD-2026-0001, FISC-…, OAL-…). */
+function createCode(tx: Tx, kind: string) {
+  return nextCodeTx(tx, CODE_PREFIX[kind] ?? "EXT", codeYear())
 }
 
 export async function createExternalEngagement(input: unknown, access: EngagementAccess) {
@@ -83,9 +86,10 @@ export async function createExternalEngagement(input: unknown, access: Engagemen
   requireAccess(access, "prevention:engagement:manage", data.worksiteId)
 
   return db.transaction(async (tx) => {
+    const code = await createCode(tx, data.kind)
     const [created] = await tx.insert(preventionExternalEngagements).values({
       id: `peng-${nanoid()}`,
-      code: createCode(data.kind),
+      code,
       worksiteId: data.worksiteId,
       kind: data.kind,
       direction: data.direction,

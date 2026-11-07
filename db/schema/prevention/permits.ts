@@ -61,6 +61,10 @@ export const preventionPermitTypes = pgTable("prevention_permit_types", {
 export const preventionWorkPermits = pgTable("prevention_work_permits", {
   id:                    text("id").primaryKey(),
   code:                  text("code").notNull().unique(),
+  /** Código aleatorio previo a la serie correlativa `PT-AAAA-NNNN`, renumerado en
+   *  2026-11. Se conserva porque ya fue citado en avisos, bitácoras y permisos
+   *  impresos; esos textos son históricos y no se reescriben. */
+  legacyCode:            text("legacy_code"),
   permitTypeId:          text("permit_type_id").notNull().references(() => preventionPermitTypes.id, { onDelete: "restrict" }),
   worksiteId:            text("worksite_id").notNull().references(() => worksites.id, { onDelete: "restrict" }),
   taskDescription:       text("task_description").notNull(),

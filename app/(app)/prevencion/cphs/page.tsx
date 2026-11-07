@@ -160,6 +160,7 @@ export default async function CphsPage({
         meetings={meetings.map((row) => ({
           id: row.meeting.id,
           code: row.meeting.code,
+          legacyCode: row.meeting.legacyCode,
           committeeName: row.committeeName,
           worksiteName: row.worksiteName,
           meetingType: row.meeting.meetingType,
@@ -173,6 +174,7 @@ export default async function CphsPage({
         reviews={reviews.map((row) => ({
           id: row.review.id,
           code: row.review.code,
+          legacyCode: row.review.legacyCode,
           periodLabel: row.review.periodLabel,
           worksiteName: row.worksiteName,
           heldAt: row.review.heldAt,

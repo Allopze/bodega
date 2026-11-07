@@ -36,6 +36,9 @@ export async function PublicIncidentReportsPanel({ scope, canTriage, canConvert 
             {report.occurredAt}
             {" · "}
             {report.isAnonymous ? "anónimo" : report.reporterName}
+            {/* Quien reportó sin identificarse sólo conserva este código como acuse:
+                el anterior a la serie RPT-AAAA-NNNN sigue siendo el que tiene en mano. */}
+            {report.legacyCode && <p className="text-xs text-[var(--color-text-subtle)]">Código anterior: {report.legacyCode}</p>}
             <p className="text-xs text-[var(--color-text-muted)]">{report.location} — {report.narrative}</p>
             {canTriage && <PublicReportActions reportId={report.id} reportCode={report.code} occurredAt={report.occurredAt} canConvert={canConvert} />}
           </li>

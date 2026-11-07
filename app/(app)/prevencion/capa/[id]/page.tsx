@@ -57,6 +57,11 @@ export default async function CapaDetailPage({ params }: { params: Promise<{ id:
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_380px]">
         <div className="space-y-5">
+          {/* Trazabilidad: el código aleatorio previo a la serie CAPA-AAAA-NNNN sigue
+              citado en notificaciones, motivos de hallazgo y documentos ya emitidos. */}
+          {bundle.action.legacyCode && (
+            <p className="text-xs text-[var(--color-text-subtle)]">Código anterior: {bundle.action.legacyCode}</p>
+          )}
           <section className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4">
             <h2 className="text-sm font-semibold">Acción y origen</h2>
             <dl className="mt-2">

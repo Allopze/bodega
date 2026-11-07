@@ -36,6 +36,7 @@ import { z } from "zod"
 import { db } from "@/db"
 import { preventionIncidentPublicReports, worksites } from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
+import { nextCodeTx } from "@/lib/code-sequences"
 import { nanoid } from "@/lib/id"
 import { INCIDENT_REPORT_CATEGORIES } from "@/lib/prevention/incident-report-categories"
 import { INCIDENT_EVENT_TYPES, reportPreventionIncident, type IncidentAccess } from "@/lib/services/prevention-incidents"
@@ -62,10 +63,6 @@ export const publicIncidentReportSchema = z.object({
   }
 })
 
-function reportCode() {
-  return `RPT-${codeYear()}-${nanoid(8).toUpperCase()}`
-}
-
 /**
  * Registra un reporte del canal público. **Sin sesión y sin identidad
  * técnica**: los únicos datos de la persona son los que ella escribió, y sólo
@@ -80,23 +77,30 @@ export async function submitPublicIncidentReport(input: unknown) {
   if (!worksite) throw new Error("La faena seleccionada no existe o está inactiva.")
 
   const now = new Date().toISOString()
-  const [created] = await db.insert(preventionIncidentPublicReports).values({
-    id: `incrpt-${nanoid()}`,
-    code: reportCode(),
-    worksiteId: data.worksiteId,
-    category: data.category,
-    occurredAt: data.occurredAt,
-    location: data.location,
-    narrative: data.narrative,
-    isAnonymous: data.isAnonymous,
-    // El anonimato se aplica acá, no en el cliente: si es anónimo, la
-    // identidad no llega a la base aunque venga en el payload.
-    reporterName: data.isAnonymous ? null : (data.reporterName?.trim() || null),
-    reporterContact: data.isAnonymous ? null : (data.reporterContact?.trim() || null),
-    status: "pending",
-    createdAt: now,
-    updatedAt: now,
-  }).returning()
+  // Serie correlativa por año (RPT-2026-0001), reservada en la misma transacción
+  // que el insert. Este canal no deduplica por clave del cliente: cada envío es
+  // un reporte, así que no hay reintento que cuidar.
+  const created = await db.transaction(async (tx) => {
+    const code = await nextCodeTx(tx, "RPT", codeYear())
+    const [row] = await tx.insert(preventionIncidentPublicReports).values({
+      id: `incrpt-${nanoid()}`,
+      code,
+      worksiteId: data.worksiteId,
+      category: data.category,
+      occurredAt: data.occurredAt,
+      location: data.location,
+      narrative: data.narrative,
+      isAnonymous: data.isAnonymous,
+      // El anonimato se aplica acá, no en el cliente: si es anónimo, la
+      // identidad no llega a la base aunque venga en el payload.
+      reporterName: data.isAnonymous ? null : (data.reporterName?.trim() || null),
+      reporterContact: data.isAnonymous ? null : (data.reporterContact?.trim() || null),
+      status: "pending",
+      createdAt: now,
+      updatedAt: now,
+    }).returning()
+    return row
+  })
   if (!created) throw new Error("No se pudo registrar el reporte.")
   // Devuelve el código para que la persona pueda referirse a su reporte sin
   // identificarse: es el único acuse que puede darse a un canal anónimo.

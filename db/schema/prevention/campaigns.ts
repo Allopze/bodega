@@ -23,6 +23,9 @@ export const preventionCampaigns = pgTable("prevention_campaigns", {
   id:                  text("id").primaryKey(),
   worksiteId:          text("worksite_id").notNull().references(() => worksites.id, { onDelete: "restrict" }),
   code:                text("code").notNull().unique(),
+  /** Código aleatorio previo a la serie correlativa `CMP-AAAA-NNNN`, renumerado en
+   *  2026-11. Los códigos de catálogo (`CAMP-…`) no se renumeran y no lo llevan. */
+  legacyCode:          text("legacy_code"),
   title:               text("title").notNull(),
   description:         text("description"),
   status:              text("status").notNull().default("pending"),

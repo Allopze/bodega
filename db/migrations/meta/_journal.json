@@ -2668,6 +2668,13 @@
       "when": 1794078263470,
       "tag": "0380_boring_thundra",
       "breakpoints": true
+    },
+    {
+      "idx": 381,
+      "version": "7",
+      "when": 1794088933812,
+      "tag": "0381_minor_frightful_four",
+      "breakpoints": true
     }
   ]
 }

@@ -29,6 +29,10 @@ import { worksites } from "../worksites"
 export const preventionExternalEngagements = pgTable("prevention_external_engagements", {
   id:          text("id").primaryKey(),
   code:        text("code").notNull().unique(),
+  /** Código aleatorio previo a las series correlativas `COORD/FISC/OAL-AAAA-NNNN`,
+   *  renumerado en 2026-11. Se conserva porque el acta y los compromisos ya lo
+   *  citan; esta columna es lo que vincula el código viejo con el vigente. */
+  legacyCode:  text("legacy_code"),
   worksiteId:  text("worksite_id").notNull().references(() => worksites.id, { onDelete: "restrict" }),
   kind:        text("kind").notNull(),
   /** `received` = la contraparte nos informó o fiscalizó; `delivered` = le

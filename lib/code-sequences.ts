@@ -33,7 +33,7 @@ function sequenceNameFor(prefix: string, year: number) {
  * in the application reads or writes it any more (the admin screen below also
  * talks to the native sequences), so it can be dropped in its own migration.
  */
-export async function nextCodeTx(tx: Tx, prefix: string, year = new Date().getFullYear()) {
+export async function nextCodeTx(tx: Tx | DB, prefix: string, year = new Date().getFullYear()) {
   const sequenceYear = isContinuousCodePrefix(prefix) ? 0 : year
   const result = await tx.execute<{ next_document_code: number }>(
     sql`SELECT next_document_code(${prefix}, ${sequenceYear})`
@@ -116,6 +116,24 @@ const CODE_SERIES_TABLES: Record<string, string> = {
   // Incidentes de prevención (EV, "Evento"): INC ya es la serie de tickets de TI.
   EV:   "prevention_incidents",
   INSP: "prevention_inspection_runs",
+  // Resto de las familias de prevención (migración 0381): antes llevaban un
+  // sufijo aleatorio, ahora PREFIJO-AAAA-NNNN por año civil chileno.
+  CAPA: "prevention_capa_actions",
+  CPHS: "prevention_committee_meetings",
+  RD:   "prevention_management_reviews",
+  PE:   "prevention_emergency_plans",
+  PT:   "prevention_work_permits",
+  CGRD: "prevention_grd_meetings",
+  RPT:  "prevention_incident_public_reports",
+  CMP:  "prevention_campaigns",
+  // COORD, FISC y OAL son las tres clases de interacción con externos y viven en
+  // una sola tabla (`kind`): el LIKE por prefijo separa sus series. EXT es el
+  // prefijo de respaldo del generador; el CHECK de `kind` lo hace inalcanzable,
+  // pero registrarlo evita que un cambio futuro emita sin control de folios.
+  COORD: "prevention_external_engagements",
+  FISC:  "prevention_external_engagements",
+  OAL:   "prevention_external_engagements",
+  EXT:   "prevention_external_engagements",
 }
 
 /**

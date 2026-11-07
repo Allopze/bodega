@@ -5805,6 +5805,34 @@ async function prepareDatabase(captureDbUrl: string) {
         (SELECT COALESCE(MAX(CAST(split_part(code,'-',3) AS int)),0) FROM prevention_inspection_runs WHERE code ~ ('^INSP-' || yr || '-[0-9]+$'))
       ));
 
+      -- CAPA, PT, CPHS (actas) y CGRD (actas) pasaron a PREFIJO-AAAA-NNNN (0381) y
+      -- el capturador las siembra con códigos fijos tipo CAPA-2026-0901: la
+      -- secuencia se alinea con el máximo sembrado para que lo que genere la app
+      -- no repita uno.
+      PERFORM next_document_code('CAPA', yr);
+      PERFORM setval('code_seq_capa_' || yr, GREATEST(
+        1,
+        (SELECT COALESCE(MAX(CAST(split_part(code,'-',3) AS int)),0) FROM prevention_capa_actions WHERE code ~ ('^CAPA-' || yr || '-[0-9]+$'))
+      ));
+
+      PERFORM next_document_code('PT', yr);
+      PERFORM setval('code_seq_pt_' || yr, GREATEST(
+        1,
+        (SELECT COALESCE(MAX(CAST(split_part(code,'-',3) AS int)),0) FROM prevention_work_permits WHERE code ~ ('^PT-' || yr || '-[0-9]+$'))
+      ));
+
+      PERFORM next_document_code('CPHS', yr);
+      PERFORM setval('code_seq_cphs_' || yr, GREATEST(
+        1,
+        (SELECT COALESCE(MAX(CAST(split_part(code,'-',3) AS int)),0) FROM prevention_committee_meetings WHERE code ~ ('^CPHS-' || yr || '-[0-9]+$'))
+      ));
+
+      PERFORM next_document_code('CGRD', yr);
+      PERFORM setval('code_seq_cgrd_' || yr, GREATEST(
+        1,
+        (SELECT COALESCE(MAX(CAST(split_part(code,'-',3) AS int)),0) FROM prevention_grd_meetings WHERE code ~ ('^CGRD-' || yr || '-[0-9]+$'))
+      ));
+
       -- GDI usa serie continua (year=0), igual que SOL, y su correlativo va en
       -- el segundo segmento: "GDI-000002".
       PERFORM next_document_code('GDI', 0);

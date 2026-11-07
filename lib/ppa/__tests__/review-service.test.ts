@@ -36,7 +36,9 @@ function mockTransactionResult(updated: Record<string, unknown>) {
     }]),
   })
   mockInsert.mockReturnValue({ values })
-  mockTransaction.mockImplementation(async (callback) => callback({ update: mockUpdate, insert: mockInsert }))
+  // El folio de la CAPA sale de la secuencia nativa (`next_document_code`, migración 0381).
+  const execute = vi.fn().mockResolvedValue([{ next_document_code: 1 }])
+  mockTransaction.mockImplementation(async (callback) => callback({ update: mockUpdate, insert: mockInsert, execute }))
   return { values, set }
 }
 

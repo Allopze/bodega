@@ -961,17 +961,24 @@ async function main() {
   if (lesionados.length > 0) await db.insert(schema.preventionIncidentPeople).values(lesionados)
   console.log(`  Indicadores SST: ${denominadores.length} denominadores · ${lesionados.length} personas lesionadas`)
 
-  // Los incidentes (EV) y las inspecciones (INSP) se sembraron con códigos
-  // fijos: se alinea cada secuencia con el máximo sembrado para que el primer
-  // código que genere la app no repita uno existente (next_document_code crea
-  // la secuencia si no existe y consume un valor; setval la fija en el máximo).
+  // Los incidentes (EV), las inspecciones (INSP), las CAPA y los permisos de
+  // trabajo (PT) se sembraron con códigos fijos: se alinea cada secuencia con el
+  // máximo sembrado para que el primer código que genere la app no repita uno
+  // existente (next_document_code crea la secuencia si no existe y consume un
+  // valor; setval la fija en el máximo). El plan de emergencia (PE-DEMO) y las
+  // actas (ACT-…) llevan códigos no correlativos y no chocan con su serie.
   await db.execute(sql`
     DO $$
     DECLARE
       serie record;
       grupo record;
     BEGIN
-      FOR serie IN SELECT * FROM (VALUES ('prevention_incidents', 'EV'), ('prevention_inspection_runs', 'INSP')) AS s(tabla, prefijo) LOOP
+      FOR serie IN SELECT * FROM (VALUES
+        ('prevention_incidents', 'EV'),
+        ('prevention_inspection_runs', 'INSP'),
+        ('prevention_capa_actions', 'CAPA'),
+        ('prevention_work_permits', 'PT')
+      ) AS s(tabla, prefijo) LOOP
         FOR grupo IN EXECUTE format(
           'SELECT split_part(code, ''-'', 2)::int AS anio, max(split_part(code, ''-'', 3)::int) AS maximo FROM %I WHERE code ~ %L GROUP BY 1',
           serie.tabla, '^' || serie.prefijo || '-[0-9]{4}-[0-9]{4,6}$')

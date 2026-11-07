@@ -16,6 +16,7 @@ import {
 } from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { recordModuleHistory } from "@/lib/audit"
+import { nextCodeTx } from "@/lib/code-sequences"
 import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
 import { getUserIdsWithPermissionForWorksite } from "@/lib/services/notification-targeting"
@@ -74,10 +75,6 @@ function scopeCondition(scope: WorksiteScope, column: AnyPgColumn) {
   if (scope.mode === "all") return undefined
   if (scope.mode === "none" || scope.ids.length === 0) return sql`false`
   return inArray(column, scope.ids)
-}
-
-function permitCode() {
-  return `PT-${codeYear()}-${nanoid(8).toUpperCase()}`
 }
 
 async function history(client: Client, args: {
@@ -246,9 +243,12 @@ export async function createWorkPermit(input: unknown, access: PermitAccess) {
     }
 
     const id = `permit-${nanoid()}`
+    // Serie correlativa por año (PT-2026-0001), después de las validaciones de
+    // arriba para que un rechazo no consuma número.
+    const code = await nextCodeTx(tx, "PT", codeYear())
     const [created] = await tx.insert(preventionWorkPermits).values({
       id,
-      code: permitCode(),
+      code,
       permitTypeId: data.permitTypeId,
       worksiteId: data.worksiteId,
       taskDescription: data.taskDescription,
