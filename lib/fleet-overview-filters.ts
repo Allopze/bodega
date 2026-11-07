@@ -15,6 +15,8 @@ export interface FleetOverviewFilters {
   operationalStatus?: string
   responsibleName?: string
   expiry?: "vencidos" | "proximos" | "al-dia"
+  /** `estado`: equipos cuya ficha y último intervalo operacional no coinciden. */
+  revision?: "estado"
   q?: string
 }
 
@@ -29,6 +31,10 @@ export function filterFleetOverviewRows<T extends {
   operationalStatus: string
   responsibleName: string | null
   nextExpiryDate: string | null
+  /** Presente en la lista de Flota; ausente en los conteos que no distinguen bajas. */
+  isActive?: boolean
+  /** La ficha y el último intervalo operacional abierto no coinciden. */
+  stateMismatch?: boolean
 }>(
   rows: T[],
   filters: FleetOverviewFilters,
@@ -46,9 +52,16 @@ export function filterFleetOverviewRows<T extends {
   return rows.filter((row) => {
     if (acceptedStatuses && !acceptedStatuses.includes(row.operationalStatus)) return false
     if (filters.responsibleName && row.responsibleName !== filters.responsibleName) return false
+    // Los filtros de vencimiento son operativos: un equipo dado de baja no
+    // bloquea la operación aunque conserve documentos vencidos (FLO-001).
+    if (filters.expiry && row.isActive === false) return false
+    if (filters.revision === "estado" && row.stateMismatch !== true) return false
     if (filters.expiry === "vencidos" && !(row.nextExpiryDate && row.nextExpiryDate < dates.today)) return false
     if (filters.expiry === "proximos" && !(row.nextExpiryDate && row.nextExpiryDate >= dates.today && row.nextExpiryDate <= dates.warningWindowEnd)) return false
-    if (filters.expiry === "al-dia" && row.nextExpiryDate && row.nextExpiryDate <= dates.warningWindowEnd) return false
+    // «Al día» exige una fecha: un equipo sin ninguna fecha registrada no está
+    // al día, está sin documentar (la tabla lo rotula así). Antes pasaba el
+    // filtro y el deep link del panel lo contaba como vigente.
+    if (filters.expiry === "al-dia" && (!row.nextExpiryDate || row.nextExpiryDate <= dates.warningWindowEnd)) return false
     if (query) {
       const haystack = [row.plate, row.code, row.brand, row.model, row.type, row.worksiteName, row.responsibleName]
         .filter(Boolean)

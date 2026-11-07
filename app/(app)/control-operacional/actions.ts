@@ -37,21 +37,31 @@ export async function exportOperationalControlXlsxAction(filters: Partial<Operat
     if (showFuelCost) sheet.getColumn("fuelCost").numFmt = "$#,##0"
     if (canViewInspections) sheet.getColumn("inspectionCompliance").numFmt = '0.0"%"'
 
+    // Mismos decimales que la pantalla: un float crudo en el Excel se copia
+    // tal cual a un correo y contradice la cifra que se vio al exportar.
+    const round1 = (value: number | null) => value == null ? null : Math.round(value * 10) / 10
     const indicatorRows: (string | number | null)[][] = [
       ["Período", `${period.from} a ${period.to}`],
-      ["Disponibilidad (%)", data.metrics.availabilityPercent],
-      ["Cobertura de estado (%)", data.metrics.stateCoveragePercent],
+      ["Disponibilidad (%)", round1(data.metrics.availabilityPercent)],
+      ["Cobertura de estado (%)", round1(data.metrics.stateCoveragePercent)],
     ]
+    // Si la consulta de una fuente falló, sus campos vienen `null` en todos los
+    // activos: sumar con `?? 0` publicaba un 0 que se lee como «no hubo». En
+    // ese caso la cifra del Excel va vacía, igual que en la pantalla.
+    const sumIfPresent = (pick: (asset: (typeof operationalAssets)[number]) => number | null) =>
+      operationalAssets.some((asset) => pick(asset) != null)
+        ? operationalAssets.reduce((sum, asset) => sum + (pick(asset) ?? 0), 0)
+        : null
     if (canViewFuel) {
-      indicatorRows.push(["Litros operacionales", operationalAssets.reduce((sum, asset) => sum + (asset.fuelLiters ?? 0), 0)])
+      indicatorRows.push(["Litros operacionales", sumIfPresent((asset) => asset.fuelLiters)])
     }
     if (showFuelCost) {
-      indicatorRows.push(["Costo combustible facturado", operationalAssets.reduce((sum, asset) => sum + (asset.fuelBilledAmount ?? 0), 0)])
+      indicatorRows.push(["Costo combustible (proveedor)", sumIfPresent((asset) => asset.fuelBilledAmount)])
     }
     if (canViewInspections) {
       indicatorRows.push(
-        ["Hallazgos abiertos", operationalAssets.reduce((sum, asset) => sum + (asset.openFindings ?? 0), 0)],
-        ["Hallazgos críticos", operationalAssets.reduce((sum, asset) => sum + (asset.criticalOpenFindings ?? 0), 0)],
+        ["Hallazgos abiertos", sumIfPresent((asset) => asset.openFindings)],
+        ["Hallazgos críticos", sumIfPresent((asset) => asset.criticalOpenFindings)],
       )
     }
     if (canViewWorkOrders) {
@@ -60,12 +70,14 @@ export async function exportOperationalControlXlsxAction(filters: Partial<Operat
         ["OT abiertas", operationalAssets.some((asset) => asset.openWorkOrders != null)
           ? operationalAssets.reduce((sum, asset) => sum + (asset.openWorkOrders ?? 0), 0)
           : null],
-        ["Horas en taller (período)", data.metrics.workshopHours == null ? null : Math.round(data.metrics.workshopHours * 10) / 10],
+        // La pantalla muestra horas enteras (`formatKpi(..., 0)`): el Excel no
+        // puede publicar un decimal que la tira de desempeño no muestra.
+        ["Horas en taller (período)", data.metrics.workshopHours == null ? null : Math.round(data.metrics.workshopHours)],
         ["Tiempo medio de reparación (h)", data.metrics.mttrHours == null ? null : Math.round(data.metrics.mttrHours * 10) / 10],
       )
     }
     if (canViewInspections && canViewCapa) {
-      indicatorRows.push(["CAPA vencidas", operationalAssets.reduce((sum, asset) => sum + (asset.overdueCapa ?? 0), 0)])
+      indicatorRows.push(["CAPA vencidas", sumIfPresent((asset) => asset.overdueCapa)])
     }
     if (data.degradedSources.length > 0) {
       indicatorRows.push(["Secciones no cargadas", data.degradedSources.join(", ")])

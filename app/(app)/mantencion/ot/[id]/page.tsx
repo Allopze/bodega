@@ -95,7 +95,7 @@ export default async function WorkOrderDetailPage({ params }: { params: Promise<
           <OtReceptionSection detail={detail} />
           <OtFaenaReceptionSection detail={detail} />
         </div>
-        <OtAside detail={detail} />
+        <OtAside detail={detail} showCosts={canDownloadPdf} />
       </div>
     </PageContainer>
   )

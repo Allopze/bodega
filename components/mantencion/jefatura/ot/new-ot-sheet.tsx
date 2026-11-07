@@ -49,6 +49,7 @@ export interface FormValues {
   requesterName: string
   repairDescription: string
   observations: string
+  totalCost: string
   annexItems: string[]
   maintenanceItems: string[]
   assignedToUserId: string
@@ -57,7 +58,7 @@ export interface FormValues {
 function initialValues(props: Pick<NewOtSheetProps, "today" | "defaultRequesterName">): FormValues {
   return {
     vehicleId: "", repair: true, maintenance: false, requestDate: props.today, requesterName: props.defaultRequesterName,
-    repairDescription: "", observations: "", annexItems: [], maintenanceItems: [], assignedToUserId: "",
+    repairDescription: "", observations: "", totalCost: "", annexItems: [], maintenanceItems: [], assignedToUserId: "",
   }
 }
 
@@ -77,6 +78,7 @@ export function buildCreatePayload(values: FormValues, clientRequestId: string) 
     requesterName: values.requesterName.trim(),
     repairDescription: values.repair ? values.repairDescription.trim() || null : null,
     observations: values.observations.trim() || null,
+    totalCost: values.totalCost.trim() === "" ? null : Number(values.totalCost),
     annexItems: cleanItems(values.annexItems),
     maintenanceItems: cleanItems(values.maintenanceItems),
     assignedToUserId: values.assignedToUserId || null,
@@ -236,6 +238,23 @@ export function NewWorkOrderCta(props: NewOtSheetProps) {
 
               <Field label="Observaciones" htmlFor="ot-observaciones" error={fieldError("observations")}>
                 <Textarea id="ot-observaciones" value={values.observations} maxLength={2000} rows={2} onChange={(event) => set("observations", event.target.value)} />
+              </Field>
+
+              <Field
+                label="Costo total (CLP, opcional)"
+                htmlFor="ot-costo"
+                error={fieldError("totalCost")}
+                helper="Mano de obra y repuestos de la OT. Se usa para el costo total por equipo; puede quedar vacío."
+              >
+                <Input
+                  id="ot-costo"
+                  type="number"
+                  min="0"
+                  step="1"
+                  inputMode="numeric"
+                  value={values.totalCost}
+                  onChange={(event) => set("totalCost", event.target.value)}
+                />
               </Field>
 
               {props.mechanics && (

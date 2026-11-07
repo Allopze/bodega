@@ -44,6 +44,8 @@ export const mantWorkOrders = pgTable("mant_work_orders", {
   /** REPARACIÓN: lo que se pide reparar. */
   repairDescription:     text("repair_description"),
   observations:          text("observations"),
+  /** Costo total de la OT (mano de obra + repuestos), opcional. Lo carga la jefatura. */
+  totalCost:             numeric("total_cost", { precision: 14, scale: 2, mode: "number" }),
   // ── Flujo ──
   status:                text("status").notNull().default("solicitada"),
   version:               integer("version").notNull().default(1),

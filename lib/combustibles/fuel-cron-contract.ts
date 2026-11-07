@@ -67,6 +67,15 @@ export function isCopecSweepDegraded(outcome: { unavailable?: readonly string[];
   return sourceFailures > 0 || outcome.budgetExhausted === true
 }
 
+/**
+ * Una corrida batch de anomalías no puede reportarse sana si el tope de escaneo
+ * dejó filas fuera o si algún caso no se pudo crear. Antes ambos casos volvían
+ * `completed` con `created: 0` y el cron respondía 200 (CO-062).
+ */
+export function isAnomalyBatchDegraded(results: ReadonlyArray<{ truncated?: boolean; failed?: number }>): boolean {
+  return results.some((result) => result.truncated === true || (result.failed ?? 0) > 0)
+}
+
 function contract(
   outcome: FuelCronOutcome,
   code: FuelCronContract["code"],

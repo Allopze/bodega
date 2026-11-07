@@ -1,5 +1,5 @@
 import type { Session } from "next-auth"
-import { and, asc, desc, eq, inArray, isNotNull, ne, sql } from "drizzle-orm"
+import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
   fleetVehicleDocuments,
@@ -88,6 +88,29 @@ export function vehicleLabel(vehicle: { plate: string; code: string | null }) {
  *  y arriesgar que diverja del servicio (CO-038). */
 export const FLEET_OVERVIEW_LOOKBACK_MONTHS = 12
 
+/** Vehículos con las relaciones que consumen la lista y la ficha. */
+async function loadFleetVehicles(vehicleScope: ReturnType<typeof and>, vehicleIds?: readonly string[]) {
+  return db.query.fuelVehicles.findMany({
+    where: and(
+      vehicleScope,
+      vehicleIds ? inArray(fuelVehicles.id, [...vehicleIds]) : undefined,
+    ),
+    with: {
+      worksite: true, responsibleUser: true, equipmentType: true, usualFuelSupplier: true,
+      // El intervalo abierto es el estado «vivo» del equipo; la ficha es la
+      // declaración. Si difieren, el panel lo avisa y /flota lo filtra.
+      operationalIntervals: {
+        where: isNull(fuelVehicleOperationalIntervals.endedAt),
+        columns: { status: true },
+        limit: 1,
+      },
+    },
+    orderBy: [fuelVehicles.plate],
+  })
+}
+
+type FleetOverviewVehicle = Awaited<ReturnType<typeof loadFleetVehicles>>[number]
+
 export interface FleetOverviewOptions {
   /**
    * Suma las OT abiertas de cada equipo (`openWorkOrders`, `inWorkshopNow`).
@@ -95,6 +118,14 @@ export interface FleetOverviewOptions {
    * `mant:ot:view_*` la consulta no corre y los campos quedan en `null`.
    */
   workOrders?: boolean
+  /**
+   * Vehículos y documentos ya cargados por el índice de `/flota`. Evita que la
+   * página repita las dos consultas para las 25 filas que acaba de indexar.
+   */
+  preloaded?: {
+    vehicles: FleetOverviewVehicle[]
+    documentsByVehicle: Map<string, Array<{ documentType: string; expiresAt: string | null }>>
+  }
 }
 
 /**
@@ -126,12 +157,13 @@ export async function getFleetOverview(
 
   // Litros, costo y cargas por vehículo salen del libro del proveedor (Copec) con la regla
   // canónica compartida con Analítica y la conciliación (C-9): `fuel_loads` —la serie
-  // facturada— tiene 0 filas en producción. El alcance es el de siempre, sobre la faena de la
-  // transacción.
+  // facturada— tiene 0 filas en producción. El alcance es el del EQUIPO, no el de la faena
+  // histórica de la transacción: un equipo trasladado conserva su combustible y las filas con
+  // `worksite_id` nulo (que el resolvedor de patentes no pudo atribuir) no desaparecen.
   const providerWhere = and(
     accountableProviderTransactionsWhere(),
     sql`left(${fuelProviderTransactions.occurredAt}, 10) >= ${since}`,
-    worksiteScopeSql(session, fuelProviderTransactions.worksiteId, worksiteId),
+    worksiteScopeSql(session, fuelVehicles.worksiteId, worksiteId),
     vehicleIds ? inArray(fuelProviderTransactions.vehicleId, [...vehicleIds]) : undefined,
   )
 
@@ -140,11 +172,9 @@ export async function getFleetOverview(
   const acceptedResetSql = acceptedMeterResetSql()
 
   const [vehicles, fuelRows, meterRows, objectionRows, jumpRules, documentExpiryRows, workOrderMetrics] = await Promise.all([
-    db.query.fuelVehicles.findMany({
-      where: vehicleScope,
-      with: { worksite: true, responsibleUser: true, equipmentType: true, usualFuelSupplier: true },
-      orderBy: [fuelVehicles.plate],
-    }),
+    options.preloaded
+      ? Promise.resolve(options.preloaded.vehicles.filter((vehicle) => !vehicleIds || vehicleIds.includes(vehicle.id)))
+      : loadFleetVehicles(vehicleScope, vehicleIds),
     canViewFuel ? db
       .select({
         vehicleId: fuelProviderTransactions.vehicleId,
@@ -154,6 +184,7 @@ export async function getFleetOverview(
         loadCount: sql<number>`COALESCE(SUM(${providerLoadCountSql()}), 0)`,
       })
       .from(fuelProviderTransactions)
+      .innerJoin(fuelVehicles, eq(fuelProviderTransactions.vehicleId, fuelVehicles.id))
       .where(and(providerWhere, isNotNull(fuelProviderTransactions.vehicleId)))
       .groupBy(fuelProviderTransactions.vehicleId) : Promise.resolve([]),
     // Lecturas de medidor de la ventana, de la fuente canónica: el detalle por transacción de
@@ -178,6 +209,7 @@ export async function getFleetOverview(
         eq(fuelMeterReadings.source, "copec_tct"),
         sql`left(${fuelMeterReadings.occurredAt}, 10) >= ${since}`,
         vehicleScope,
+        vehicleIds ? inArray(fuelMeterReadings.vehicleId, [...vehicleIds]) : undefined,
       ))
       .orderBy(fuelMeterReadings.vehicleId, fuelMeterReadings.meterType, fuelMeterReadings.occurredAt, fuelMeterReadings.id) : Promise.resolve([]),
     // Casos del detector que siguen ABIERTOS (`open`, `in_review`, `reopened`: los mismos que lista «Por
@@ -203,6 +235,7 @@ export async function getFleetOverview(
         eq(fuelMeterReadings.source, "copec_tct"),
         sql`left(${fuelMeterReadings.occurredAt}, 10) >= ${since}`,
         vehicleScope,
+        vehicleIds ? inArray(fuelMeterReadings.vehicleId, [...vehicleIds]) : undefined,
         worksiteScopeSql(session, fuelAnomalyCases.worksiteId, worksiteId),
       ))
       .orderBy(fuelAnomalyCases.detectedAt, fuelAnomalyCases.id) : Promise.resolve([]),
@@ -217,22 +250,25 @@ export async function getFleetOverview(
     // vencimiento" (ver `getFleetVehicleDetail`); el listado los ignoraba, así
     // que un seguro cargado como documento no aparecía ni en la columna ni en
     // el banner de vencidos de /flota.
-    db
-      .select({
-        vehicleId: fleetVehicleDocuments.vehicleId,
-        documentType: fleetVehicleDocuments.documentType,
-        expiresAt: fleetVehicleDocuments.expiresAt,
-      })
-      .from(fleetVehicleDocuments)
-      .innerJoin(fuelVehicles, eq(fuelVehicles.id, fleetVehicleDocuments.vehicleId))
-      .where(and(
-        isNotNull(fleetVehicleDocuments.expiresAt),
-        // Sólo la versión vigente de cada tipo: el MIN anterior tomaba también
-        // las reemplazadas, así que subir la póliza nueva no sacaba al equipo
-        // del atraso — seguía midiéndose contra la del año pasado.
-        eq(fleetVehicleDocuments.status, "current"),
-        vehicleScope,
-      )),
+    options.preloaded
+      ? Promise.resolve([] as Array<{ vehicleId: string; documentType: string; expiresAt: string | null }>)
+      : db
+        .select({
+          vehicleId: fleetVehicleDocuments.vehicleId,
+          documentType: fleetVehicleDocuments.documentType,
+          expiresAt: fleetVehicleDocuments.expiresAt,
+        })
+        .from(fleetVehicleDocuments)
+        .innerJoin(fuelVehicles, eq(fuelVehicles.id, fleetVehicleDocuments.vehicleId))
+        .where(and(
+          isNotNull(fleetVehicleDocuments.expiresAt),
+          // Sólo la versión vigente de cada tipo: el MIN anterior tomaba también
+          // las reemplazadas, así que subir la póliza nueva no sacaba al equipo
+          // del atraso — seguía midiéndose contra la del año pasado.
+          eq(fleetVehicleDocuments.status, "current"),
+          vehicleScope,
+          vehicleIds ? inArray(fleetVehicleDocuments.vehicleId, [...vehicleIds]) : undefined,
+        )),
     // OT abiertas por equipo, con el alcance de OT de la sesión (no el de flota:
     // son capacidades distintas). Se acota a los equipos pedidos para no contar
     // OT de equipos que la página ni lista.
@@ -264,12 +300,15 @@ export async function getFleetOverview(
   }
   const jumpRule = { config: jumpRules[0]?.config ?? null }
 
-  const currentDocumentsByVehicle = new Map<string, Array<{ documentType: string; expiresAt: string | null }>>()
-  for (const row of documentExpiryRows) {
-    currentDocumentsByVehicle.set(row.vehicleId, [
-      ...(currentDocumentsByVehicle.get(row.vehicleId) ?? []),
-      { documentType: row.documentType, expiresAt: row.expiresAt },
-    ])
+  const currentDocumentsByVehicle = options.preloaded?.documentsByVehicle
+    ?? new Map<string, Array<{ documentType: string; expiresAt: string | null }>>()
+  if (!options.preloaded) {
+    for (const row of documentExpiryRows) {
+      currentDocumentsByVehicle.set(row.vehicleId, [
+        ...(currentDocumentsByVehicle.get(row.vehicleId) ?? []),
+        { documentType: row.documentType, expiresAt: row.expiresAt },
+      ])
+    }
   }
 
   return vehicles.map((vehicle) => {
@@ -298,6 +337,18 @@ export async function getFleetOverview(
     const hours = vehicle.performanceUnit === "liters_per_hour"
       ? meterSeriesAdvance(series?.hour_meter ?? [], maxMeterRatePerDayOf(jumpRule, "hora", vehicle.equipmentType?.slug))
       : null
+    // Cruce que faltaba: el gasto del proveedor y el recorrido ya están en la
+    // misma fila, pero nadie los dividía. Se informa en la unidad del equipo
+    // (CLP/km o CLP/h) y sólo con ambas capacidades y un recorrido positivo.
+    const kmAdvance = km?.advance ?? 0
+    const hoursAdvance = hours?.advance ?? 0
+    const costPerUnit = totalFuelAmount != null
+      ? vehicle.performanceUnit === "km_per_liter" && kmAdvance > 0
+        ? { value: totalFuelAmount / kmAdvance, unit: "CLP/km" as const }
+        : vehicle.performanceUnit === "liters_per_hour" && hoursAdvance > 0
+          ? { value: totalFuelAmount / hoursAdvance, unit: "CLP/h" as const }
+          : null
+      : null
     const declaredExpiries = {
       soapExpiresAt: vehicle.soapExpiresAt,
       technicalReviewExpiresAt: vehicle.technicalReviewExpiresAt,
@@ -316,6 +367,9 @@ export async function getFleetOverview(
       year: vehicle.year,
       isActive: vehicle.isActive,
       operationalStatus: vehicle.operationalStatus,
+      stateMismatch: vehicle.isActive
+        && vehicle.operationalIntervals?.[0] != null
+        && vehicle.operationalIntervals[0].status !== vehicle.operationalStatus,
       worksiteName: vehicle.worksite?.name ?? "Sin faena",
       responsibleName: vehicle.responsibleUser?.name ?? vehicle.responsibleUser?.email ?? null,
       soapExpiresAt: vehicle.soapExpiresAt,
@@ -331,6 +385,9 @@ export async function getFleetOverview(
        */
       nextExpiryDocumentType: expiringDocuments(declaredExpiries, currentDocuments)[0]?.documentType ?? null,
       totalFuelAmount,
+      /** Gasto del proveedor ÷ recorrido del período, en la unidad del equipo. */
+      fuelCostPerUnit: costPerUnit?.value ?? null,
+      fuelCostPerUnitLabel: costPerUnit?.unit ?? null,
       totalLiters: canViewFuel ? Number(fuel?.totalLiters ?? 0) : null,
       loadCount: canViewFuel ? Number(fuel?.loadCount ?? 0) : null,
       lastOdometerReading: canViewFuel ? lastOdometer : null,
@@ -363,11 +420,7 @@ export async function getFleetOverviewPage(
   const canViewCosts = can(session, "flota:view") && can(session, "combustibles:view_costs")
   const vehicleScope = worksiteScopeSql(session, fuelVehicles.worksiteId, worksiteId)
   const [vehicles, documentExpiryRows] = await Promise.all([
-    db.query.fuelVehicles.findMany({
-      where: vehicleScope,
-      with: { worksite: true, responsibleUser: true, equipmentType: true },
-      orderBy: [fuelVehicles.plate],
-    }),
+    loadFleetVehicles(vehicleScope),
     db.select({
       vehicleId: fleetVehicleDocuments.vehicleId,
       documentType: fleetVehicleDocuments.documentType,
@@ -396,6 +449,9 @@ export async function getFleetOverviewPage(
     type: vehicle.equipmentType?.name ?? vehicle.type,
     worksiteName: vehicle.worksite?.name ?? "Sin faena",
     operationalStatus: vehicle.operationalStatus,
+    stateMismatch: vehicle.isActive
+      && vehicle.operationalIntervals?.[0] != null
+      && vehicle.operationalIntervals[0].status !== vehicle.operationalStatus,
     responsibleName: vehicle.responsibleUser?.name ?? vehicle.responsibleUser?.email ?? null,
     isActive: vehicle.isActive,
     nextExpiryDate: resolveNextExpiryDate({
@@ -412,17 +468,26 @@ export async function getFleetOverviewPage(
   const pageIds = matching.slice(offset, offset + limit).map((vehicle) => vehicle.id)
   const since = fleetOverviewSince()
   const [rows, fuelSummaryRows, providerGapMonths] = await Promise.all([
-    getFleetOverview(session, worksiteId, pageIds, { workOrders: true }),
+    getFleetOverview(session, worksiteId, pageIds, {
+      workOrders: true,
+      // La página ya tiene los vehículos y documentos del índice: no se
+      // vuelven a consultar para las 25 filas que va a mostrar.
+      preloaded: { vehicles, documentsByVehicle: currentDocumentsByVehicle },
+    }),
     // Mismo origen y misma regla que el detalle por vehículo de arriba (libro del proveedor, C-9).
     canViewFuel && matchingIds.length > 0 ? db.select({
       totalAmount: canViewCosts ? sql<number>`COALESCE(SUM(${fuelProviderTransactions.amount}), 0)` : sql<null>`null`,
       totalLiters: sql<number>`COALESCE(SUM(${fuelProviderTransactions.quantity}), 0)`,
-    }).from(fuelProviderTransactions).where(and(
-      accountableProviderTransactionsWhere(),
-      sql`left(${fuelProviderTransactions.occurredAt}, 10) >= ${since}`,
-      worksiteScopeSql(session, fuelProviderTransactions.worksiteId, worksiteId),
-      inArray(fuelProviderTransactions.vehicleId, matchingIds),
-    )) : Promise.resolve([]),
+    })
+      .from(fuelProviderTransactions)
+      .innerJoin(fuelVehicles, eq(fuelProviderTransactions.vehicleId, fuelVehicles.id))
+      .where(and(
+        accountableProviderTransactionsWhere(),
+        sql`left(${fuelProviderTransactions.occurredAt}, 10) >= ${since}`,
+        // Mismo criterio: el total de la página sigue al equipo.
+        worksiteScopeSql(session, fuelVehicles.worksiteId, worksiteId),
+        inArray(fuelProviderTransactions.vehicleId, matchingIds),
+      )) : Promise.resolve([]),
     getFleetProviderGapMonths(session, worksiteId),
   ])
   const fuelSummary = fuelSummaryRows[0]
@@ -463,7 +528,11 @@ export async function getFleetProviderGapMonths(session: Session, worksiteId?: s
   for (let month = since.slice(0, 7); month <= lastMonth; month = addMonths(`${month}-01`, 1).slice(0, 7)) months.push(month)
   // La consulta y la vara viven en `getFuelProviderCoverageGaps`, la misma que usan los avisos de cobertura de
   // los gráficos de combustible: Flota no puede discrepar de ellos. `fromDate` conserva el día de corte de la ventana.
-  const { gapMonths } = await getFuelProviderCoverageGaps(session, months, { worksiteId, fromDate: since })
+  const { gapMonths } = await getFuelProviderCoverageGaps(session, months, {
+    worksiteId,
+    fromDate: since,
+    byVehicleWorksite: true,
+  })
   return gapMonths
 }
 
@@ -483,7 +552,7 @@ export async function getFleetVehicleDetail(session: Session, id: string) {
     return null
   }
 
-  const [documents, recentOperations, operatorCounts, operationalIntervals, recentWorkOrders] = await Promise.all([
+  const [documents, currentOperation, providerReadings, operatorCounts, operationalIntervals, recentWorkOrders] = await Promise.all([
     db.query.fleetVehicleDocuments.findMany({
       // FLO-003: la ficha muestra el historial de versiones, no las anuladas.
       // Una anulación es un error corregido, no una versión del documento.
@@ -515,8 +584,25 @@ export async function getFleetVehicleDetail(session: Session, id: string) {
         operador: true,
       },
       orderBy: [desc(fuelOperationOccurredAtSql()), desc(fuelOperationRecords.createdAt)],
-      limit: 20,
+      // La ficha sólo muestra la última lectura; traer 20 filas era trabajo
+      // descartado en cada apertura.
+      limit: 1,
     }) : Promise.resolve([]),
+    // Lectura del proveedor (Copec): la misma fuente que la columna «Km/Hr» de
+    // la lista. La ficha la muestra aparte del log de cargas para que las dos
+    // cifras no se lean como si fueran la misma.
+    canViewFuel ? db.select({
+      meterType: fuelMeterReadings.meterType,
+      value: fuelMeterReadings.value,
+      occurredAt: fuelMeterReadings.occurredAt,
+    })
+      .from(fuelMeterReadings)
+      .where(and(
+        eq(fuelMeterReadings.vehicleId, id),
+        eq(fuelMeterReadings.source, "copec_tct"),
+      ))
+      .orderBy(desc(fuelMeterReadings.occurredAt), desc(fuelMeterReadings.id))
+      .limit(20) : Promise.resolve([]),
     canViewFuel ? db
       .select({ operador: fuelOperationRecords.operador, count: sql<number>`COUNT(*)` })
       .from(fuelOperationRecords)
@@ -565,8 +651,20 @@ export async function getFleetVehicleDetail(session: Session, id: string) {
     workOrderConsumptionImpact,
     // Última lectura de horómetro/odómetro con fecha real, y los operadores
     // más frecuentes — derivados del log operacional de combustible.
-    currentReading: recentOperations[0] ?? null,
-    recentOperations,
+    currentReading: currentOperation[0] ?? null,
+    // Misma lectura que la lista, pero de la fuente del proveedor: la ficha
+    // muestra ambas y dice de dónde sale cada una.
+    providerReading: (() => {
+      const odometer = providerReadings.find((row) => row.meterType === "odometer")
+      const hourMeter = providerReadings.find((row) => row.meterType === "hour_meter")
+      const selected = odometer ?? hourMeter
+      if (!selected) return null
+      return {
+        odometer: odometer?.value ?? null,
+        hourMeter: hourMeter?.value ?? null,
+        occurredAt: selected.occurredAt,
+      }
+    })(),
     topOperators: operatorCounts.map((o) => ({ operador: o.operador!, count: Number(o.count) })),
     operationalIntervals,
     nextExpiryDate: resolveNextExpiryDate({

@@ -124,7 +124,9 @@ const DataTableInner = <T extends Record<string, unknown>>({
 
   const visibleColumns = React.useMemo(() => {
     if (!enableColumnToggle) return columns
-    return columns.filter((col) => visibleKeys.has(col.key))
+    // Las columnas estructurales (`toggleable: false`) no dependen de la
+    // preferencia guardada: siempre se pintan.
+    return columns.filter((col) => col.toggleable === false || visibleKeys.has(col.key))
   }, [columns, enableColumnToggle, visibleKeys])
 
   // Las celdas del cuerpo las emite `renderRow`, que es del llamador: la tabla
@@ -135,7 +137,7 @@ const DataTableInner = <T extends Record<string, unknown>>({
   const hiddenCellRules = React.useMemo(() => {
     if (!enableColumnToggle) return null
     const rules = columns
-      .map((col, index) => (visibleKeys.has(col.key) ? null : `[data-dt="${tableId}"] tbody td:nth-child(${index + 1})`))
+      .map((col, index) => (col.toggleable === false || visibleKeys.has(col.key) ? null : `[data-dt="${tableId}"] tbody td:nth-child(${index + 1})`))
       .filter(Boolean)
     return rules.length > 0 ? `${rules.join(",")}{display:none}` : null
   }, [columns, enableColumnToggle, visibleKeys, tableId])
@@ -333,7 +335,7 @@ const DataTableInner = <T extends Record<string, unknown>>({
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="max-h-80 overflow-y-auto p-2">
                   <div className="space-y-1.5">
-                    {columns.map((column) => (
+                    {columns.filter((column) => column.toggleable !== false).map((column) => (
                       <Checkbox
                         key={column.key}
                         id={`col-${column.key}`}

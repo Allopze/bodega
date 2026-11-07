@@ -60,6 +60,55 @@ describe("buildPerformanceStats", () => {
     expect(stats.find((s) => s.key === "workshop-hours")).toMatchObject({ value: "Sin datos", secondary: "No se pudo calcular" })
   })
 
+  it("cruza las licencias de conducir sin depender de flota:view", () => {
+    const stats = buildPerformanceStats(METRICS, {
+      canViewFleet: false,
+      licenseAttention: { total: 12, expired: 2, expiringSoon: 3, warningDays: 30 },
+    })
+    expect(stats.find((s) => s.key === "driver-licenses")).toMatchObject({
+      label: "Licencias por regularizar",
+      value: "2",
+      secondary: "3 por vencer en 30 días",
+      tone: "danger",
+      href: "/flota/conductores",
+    })
+    const ok = buildPerformanceStats(METRICS, {
+      canViewFleet: false,
+      licenseAttention: { total: 12, expired: 0, expiringSoon: 0, warningDays: 30 },
+    })
+    expect(ok.find((s) => s.key === "driver-licenses")).toMatchObject({
+      value: "Al día",
+      secondary: "Nada por vencer en 30 días",
+    })
+    const empty = buildPerformanceStats(METRICS, {
+      canViewFleet: false,
+      licenseAttention: { total: 0, expired: 0, expiringSoon: 0, warningDays: 30 },
+    })
+    expect(empty.find((s) => s.key === "driver-licenses")).toMatchObject({
+      value: "Sin datos",
+      secondary: "No hay trabajadores con licencia en el alcance",
+    })
+  })
+
+  it("cruza la cobertura TAE/TCT del período", () => {
+    const stats = buildPerformanceStats(METRICS, {
+      canViewFleet: false,
+      taeCoverage: { bothChannels: 8, taeOnly: 2, tctOnly: 1 },
+    })
+    expect(stats.find((s) => s.key === "tae-tct-coverage")).toMatchObject({
+      label: "Equipos con un solo canal",
+      value: "3",
+      secondary: "2 sólo TAE · 1 sólo TCT · 8 con ambos",
+      tone: "signal",
+      href: "/combustibles/cuadratura/tarjeta-y-terreno",
+    })
+    const noData = buildPerformanceStats(METRICS, {
+      canViewFleet: false,
+      taeCoverage: { bothChannels: 0, taeOnly: 0, tctOnly: 0 },
+    })
+    expect(noData.find((s) => s.key === "tae-tct-coverage")).toBeUndefined()
+  })
+
   it("sin datos pinta «Sin datos» como texto, no 0", () => {
     const stats = buildPerformanceStats(
       { availabilityPercent: null, stateCoveragePercent: null },
@@ -130,7 +179,7 @@ describe("buildPerformanceGlossary", () => {
   it("define horas en taller y MTTR sólo con la capacidad de OT", () => {
     expect(buildPerformanceGlossary(ALL).map((e) => e.key)).not.toContain("mttr")
     const entries = buildPerformanceGlossary({ canViewFleet: false, canViewWorkOrders: true })
-    expect(entries.map((e) => e.key)).toEqual(["workshop-hours", "mttr"])
-    expect(entries[1]!.definition).toContain("reparación cerradas")
+    expect(entries.map((e) => e.key)).toEqual(["ot-maintenance-cost", "workshop-hours", "mttr"])
+    expect(entries[2]!.definition).toContain("reparación cerradas")
   })
 })

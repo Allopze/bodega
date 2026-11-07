@@ -22,6 +22,14 @@ export interface PerformancePermissions {
   canViewFleet: boolean
   /** `mant:ot:view_*`: sin ella no se pintan las cifras de órdenes de trabajo. */
   canViewWorkOrders?: boolean
+  /** Conteo de licencias de conducir; `null` sin `flota:manage_licenses` o si falló. */
+  licenseAttention?: import("@/lib/services/driver-licenses-contract").DriverLicenseAttention | null
+  /** Cobertura TAE/TCT del período; `null` sin `combustibles:tae_view` o si falló. */
+  taeCoverage?: {
+    bothChannels: number
+    taeOnly: number
+    tctOnly: number
+  } | null
 }
 
 export function formatKpi(value: number | null, suffix = "", precision = 1): string {
@@ -72,6 +80,42 @@ export function buildPerformanceStats(metrics: PerformanceMetrics, permissions: 
     })
   }
 
+  if (permissions.licenseAttention) {
+    const { total, expired, expiringSoon, warningDays } = permissions.licenseAttention
+    stats.push({
+      key: "driver-licenses",
+      label: "Licencias por regularizar",
+      // Sin nómina no hay un «al día» verificable: es ausencia de dato.
+      value: total === 0 ? "Sin datos" : expired === 0 ? "Al día" : formatKpi(expired),
+      valueKind: total === 0 || expired === 0 ? "text" : "number",
+      secondary: total === 0
+        ? "No hay trabajadores con licencia en el alcance"
+        : expired === 0
+          ? (expiringSoon > 0 ? `${expiringSoon} por vencer en ${warningDays} días` : `Nada por vencer en ${warningDays} días`)
+          : `${expiringSoon} por vencer en ${warningDays} días`,
+      ...(total > 0 && expired > 0 ? { tone: "danger" as const } : total > 0 && expiringSoon > 0 ? { tone: "signal" as const } : {}),
+      href: "/flota/conductores",
+    })
+  }
+
+  if (permissions.taeCoverage) {
+    const { bothChannels, taeOnly, tctOnly } = permissions.taeCoverage
+    const singleChannel = taeOnly + tctOnly
+    // Sin equipos con ningún canal no es «0 equipos con un solo canal»: es que
+    // no hay datos TAE/TCT que comparar en el período.
+    if (bothChannels + singleChannel > 0) {
+      stats.push({
+        key: "tae-tct-coverage",
+        label: "Equipos con un solo canal",
+        value: formatKpi(singleChannel),
+        valueKind: "number",
+        secondary: `${taeOnly} sólo TAE · ${tctOnly} sólo TCT · ${bothChannels} con ambos`,
+        ...(singleChannel > 0 ? { tone: "signal" as const } : {}),
+        href: "/combustibles/cuadratura/tarjeta-y-terreno",
+      })
+    }
+  }
+
   if (canViewWorkOrders) {
     const workshopHours = metrics.workshopHours ?? null
     stats.push({
@@ -112,6 +156,8 @@ export function buildPerformanceGlossary(permissions: {
   canViewFuel?: boolean
   canViewCosts?: boolean
   canViewWorkOrders?: boolean
+  canViewLicenses?: boolean
+  canViewTaeCoverage?: boolean
 }): GlossaryEntry[] {
   const entries: GlossaryEntry[] = []
   if (permissions.canViewFleet) {
@@ -130,8 +176,30 @@ export function buildPerformanceGlossary(permissions: {
       },
     )
   }
+  if (permissions.canViewLicenses) {
+    entries.push({
+      key: "driver-licenses",
+      term: "Licencias por regularizar",
+      definition:
+        "Trabajadores del alcance con licencia vencida, sin licencia o sin la clase que exige su cargo. Es la misma nómina de /flota/conductores; las que están por vencer usan la ventana de aviso de Flota. Sin trabajadores en la nómina se muestra «Sin datos», no «Al día».",
+    })
+  }
+  if (permissions.canViewTaeCoverage) {
+    entries.push({
+      key: "tae-tct-coverage",
+      term: "Equipos con un solo canal",
+      definition:
+        "Equipos que, en el período, tienen litros por TAE pero no por tarjeta TCT (o al revés). «Con ambos» son los que cuadran por los dos canales. La conciliación detallada vive en Cuadratura › Tarjeta y terreno.",
+    })
+  }
   if (permissions.canViewWorkOrders) {
     entries.push(
+      {
+        key: "ot-maintenance-cost",
+        term: "Costo de mantención",
+        definition:
+          "Suma del costo total cargado en las OT cerradas dentro del período. Es opcional: una OT sin costo no suma, y la cifra no se completa con un valor inventado.",
+      },
       {
         key: "workshop-hours",
         term: "Horas en taller",
@@ -160,7 +228,21 @@ export function buildPerformanceGlossary(permissions: {
         definition:
           "Hallazgos de inspección en estado abierto o vinculados a CAPA, de inspecciones no canceladas. Es trabajo vigente: no se recorta al período. El número entre paréntesis cuenta los críticos.",
       },
+      {
+        key: "open-findings-work-order",
+        term: "Hallazgos con OT",
+        definition:
+          "Del total de hallazgos abiertos, los que tienen una orden de trabajo vigente vinculada (`inspection_finding_id`). Los «sin OT» son trabajo correctivo detectado que todavía no entró a Mantención.",
+      },
     )
+  }
+  if (permissions.canViewWorkOrders && permissions.canViewCosts) {
+    entries.push({
+      key: "ot-total-cost",
+      term: "Costo total",
+      definition:
+        "Combustible del proveedor más la mantención de las OT cerradas del período. Sólo se muestra cuando ambas series están disponibles; si falta una, se deja «—» en vez de sumar un cero.",
+    })
   }
   if (permissions.canViewInspections && permissions.canViewCapa) {
     entries.push({
@@ -200,9 +282,9 @@ export function buildPerformanceGlossary(permissions: {
     if (permissions.canViewCosts) {
       entries.push({
         key: "fuel-cost",
-        term: "Costo facturado",
+        term: "Costo de combustible",
         definition:
-          "Suma de las cargas facturadas del período, con su estado contable. Puede no coincidir con los litros operacionales porque son series distintas: una mide consumo y la otra documento tributario.",
+          "Suma de las transacciones del proveedor (tarjetas y estanques) del período, con su estado contable. Es la misma serie que usan Flota y el Tablero. Puede no coincidir con los litros operacionales porque son series distintas: una mide consumo y la otra documento tributario.",
       })
     }
   }

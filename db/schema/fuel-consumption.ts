@@ -70,6 +70,29 @@ export const fuelConsumptionRecords = pgTable("fuel_consumption_records", {
   index("fuel_consumption_records_periodo_idx").on(table.periodoDesde),
 ])
 
+/* ── Rechazos de la importación TCT ───────────────────────────────────────── */
+/**
+ * Filas que el importador TCT omitió: patentes sin vehículo, colisiones de
+ * catálogo o filas que el parser rechazó. Antes sólo vivían en la respuesta del
+ * asistente; la ficha del lote decía «Filas rechazadas: 0» y no había forma de
+ * reprocesarlas. Se guardan por `hashArchivo` porque el lote se parte por faena
+ * y el rechazo es de la importación completa.
+ */
+export const fuelConsumptionImportRejections = pgTable("fuel_consumption_import_rejections", {
+  id:         text("id").primaryKey(),
+  hashArchivo: text("hash_archivo").notNull(),
+  /** Primer lote de la importación; el rechazo no pertenece a una faena. */
+  batchId:    text("batch_id").references(() => fuelImportBatches.id, { onDelete: "cascade" }),
+  rowIndex:   integer("row_index").notNull(),
+  patente:    text("patente"),
+  field:      text("field").notNull(),
+  message:    text("message").notNull(),
+  createdAt:  timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [
+  index("fuel_consumption_import_rejections_hash_idx").on(table.hashArchivo),
+  index("fuel_consumption_import_rejections_batch_idx").on(table.batchId),
+])
+
 /* ── Relations ───────────────────────────────────────────────────────────── */
 export const fuelImportBatchesRelations = relations(fuelImportBatches, ({ one, many }) => ({
   worksite: one(worksites, { fields: [fuelImportBatches.worksiteId], references: [worksites.id] }),

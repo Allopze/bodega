@@ -84,6 +84,13 @@ export const pgliteTestFiles = [
   // P-8: el conteo de recepciones del tablero no incluye las anuladas y coincide con /reportes («Recepciones registradas»).
   "lib/__tests__/dashboard-receipts-voided-parity.test.ts",
   "lib/__tests__/dashboard-fuel-provider.test.ts",
+  // CO-050: ledger durable de rechazos de la importación TCT, leído por hash del archivo.
+  "lib/__tests__/consumption-import-rejections-pglite.test.ts",
+  // CO-062: cursor durable por vehículo y señal de truncamiento del motor batch.
+  "lib/__tests__/anomaly-batch-cursor-pglite.test.ts",
+  // CO-045: el KPI de vencimientos del Tablero cuenta equipos activos con el criterio de Flota
+  // (columna declarada + documento vigente), no filas de `fleet_vehicle_documents`.
+  "lib/__tests__/dashboard-fleet-snapshot-pglite.test.ts",
   "lib/__tests__/fleet-fuel-provider.test.ts",
   // C-9 (lecturas de medidor de Flota): recorrido y última lectura desde `fuel_meter_readings`.
   "lib/__tests__/fleet-meter-readings.test.ts",
@@ -383,7 +390,6 @@ export const pgliteTestFiles = [
   "lib/__tests__/segregacion-dinero.test.ts",
   "lib/__tests__/inspection-finding-closure.test.ts",
   "lib/__tests__/supplier-document-crosscheck.test.ts",
-  "lib/__tests__/dashboard-fleet-documents-kpi.test.ts",
   "lib/__tests__/diagnose-delivery-quantities.test.ts",
   "lib/__tests__/trabajadores-scope.test.ts",
   "lib/__tests__/trazabilidad-export-scope.test.ts",
@@ -435,6 +441,7 @@ export const pgliteTestFiles = [
   "scripts/__tests__/apply-epp-catalog-decisions-2026-10-29.test.ts",
   "scripts/__tests__/apply-fleet-copec-decisions-2026-10-29.test.ts",
   "scripts/__tests__/apply-vencimientos-planilla-2026-11.test.ts",
+  "scripts/__tests__/apply-lista-empleados-2026-11.test.ts",
   "scripts/__tests__/apply-mantencion-correcciones-2026-10-31.test.ts",
   "scripts/__tests__/apply-copec-dated-mappings-2026-10-30.test.ts",
   // Mantención de equipos: carga inicial idempotente y conciliada con la flota (§13).

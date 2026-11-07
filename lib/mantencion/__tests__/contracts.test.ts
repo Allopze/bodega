@@ -137,6 +137,15 @@ describe("preventiva y datos comunes", () => {
     expect(preventiveRecordSchema.safeParse({ ...preventive, workDate: "28-10-2026" }).success).toBe(false)
   })
 
+  it("una fecha civil imposible no pasa el contrato", () => {
+    // La regex sola aceptaba `2026-02-31`; se guardaba como texto y el `::date`
+    // del panel de mantención reventaba al abrir la pantalla.
+    for (const workDate of ["2026-02-31", "2026-13-01", "2026-04-31"]) {
+      expect(preventiveRecordSchema.safeParse({ ...preventive, workDate }).success, workDate).toBe(false)
+    }
+    expect(preventiveRecordSchema.safeParse({ ...preventive, workDate: "2026-02-28" }).success).toBe(true)
+  })
+
   it("el id del registro es un UUID (la idempotencia depende de él)", () => {
     expect(preventiveRecordSchema.safeParse({ ...preventive, id: "no-es-uuid" }).success).toBe(false)
   })

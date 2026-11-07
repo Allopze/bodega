@@ -13,7 +13,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { runAllBatchRules } from "@/lib/combustibles/anomaly-detector"
 import { syncAnomalyRuleCatalog } from "@/lib/combustibles/anomaly-cases"
-import { fuelCronContractFor } from "@/lib/combustibles/fuel-cron-contract"
+import { fuelCronContractFor, isAnomalyBatchDegraded } from "@/lib/combustibles/fuel-cron-contract"
 import { logger } from "@/lib/logger"
 import { safeActionMessage } from "@/lib/action-error"
 import { verifyCronSecret } from "@/lib/security/cron-auth"
@@ -68,8 +68,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     // reglas reales fallaran. Ahora el resultado global distingue ambos casos.
     const { results, copecImport } = outcome
     const failed = results.filter((r) => r.status === "failed").length
-    logger.info("[cron/fuel-anomaly-detection] Completed", { results, copecImport })
-    return respond(fuelCronContractFor({ failed, total: results.length }), { results, copecImport })
+    // Un tope de escaneo que dejó filas fuera o un caso que no se pudo crear
+    // degradan la corrida: 503/partial, no un 200 que finge cobertura total.
+    const degraded = isAnomalyBatchDegraded(results)
+    logger.info("[cron/fuel-anomaly-detection] Completed", { results, copecImport, degraded })
+    return respond(fuelCronContractFor({ failed, total: results.length, degraded }), { results, copecImport })
   } catch (err) {
     logger.error("[cron/fuel-anomaly-detection] Fatal error", err)
     return respond(fuelCronContractFor({ failed: 1, total: 1 }), { error: safeActionMessage(err, "Unknown error") })

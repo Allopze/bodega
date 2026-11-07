@@ -7,6 +7,7 @@ import {
   fuelEquipmentTypes,
   fuelVehicleOperationalIntervals,
   fuelVehicles,
+  mantWorkOrders,
   preventionCapaActions,
   preventionInspectionFindings,
   preventionInspectionRuns,
@@ -65,6 +66,10 @@ export type OperationalAsset = {
   /** Hallazgos abiertos (`open` o `capa_linked`) del activo; no dependen del período. */
   openFindings: number | null
   criticalOpenFindings: number | null
+  /** Hallazgos abiertos con una OT vigente vinculada (`inspection_finding_id`). */
+  openFindingsWithWorkOrder: number | null
+  /** Hallazgos abiertos que todavía no entraron a Mantención como OT. */
+  openFindingsWithoutWorkOrder: number | null
   /** CAPA vencidas vinculadas a hallazgos de inspección; sólo con `prevention:capa:view`. */
   overdueCapa: number | null
   /** Próximo vencimiento documental del activo, con el criterio de Flota. */
@@ -87,8 +92,12 @@ export type OperationalAsset = {
   /** Casos de anomalía vigentes del activo (no dependen del período). */
   openAnomalyCases: number | null
   criticalOpenAnomalyCases: number | null
-  /** Costo facturado del período (`fuel_loads`); sólo con `combustibles:view_costs`. */
+  /** Costo del período según el libro del proveedor (`fuel_provider_transactions`); sólo con `combustibles:view_costs`. */
   fuelBilledAmount: number | null
+  /** Costo cargado en las OT cerradas del período; `null` sin la capacidad de OT o sin costos. */
+  maintenanceCost: number | null
+  /** Combustible + mantención; `null` si falta cualquiera de las dos series. */
+  totalCost: number | null
   /** Horas de motor en vacío del período; `null` sin `combustibles:view`. */
   idleHours: number | null
   /** Σ vacío ÷ Σ funcionamiento del período. */
@@ -239,6 +248,19 @@ export async function getOperationalControlHub(
       vehicleId: preventionInspectionRuns.subjectVehicleId,
       openFindings: sql<number>`COUNT(*)::int`,
       criticalOpenFindings: sql<number>`(COUNT(*) FILTER (WHERE ${preventionInspectionFindings.criticality} = 'critical'))::int`,
+      // El vínculo hallazgo → OT ya se escribe (`inspection_finding_id`), pero
+      // ningún agregado lo leía: el panel no distinguía el trabajo que ya está
+      // en Mantención del que sigue esperando una orden.
+      openFindingsWithWorkOrder: sql<number>`(COUNT(*) FILTER (WHERE EXISTS (
+        SELECT 1 FROM ${mantWorkOrders}
+        WHERE ${mantWorkOrders.inspectionFindingId} = ${preventionInspectionFindings.id}
+          AND ${mantWorkOrders.status} <> 'anulada'
+      )))::int`,
+      openFindingsWithoutWorkOrder: sql<number>`(COUNT(*) FILTER (WHERE NOT EXISTS (
+        SELECT 1 FROM ${mantWorkOrders}
+        WHERE ${mantWorkOrders.inspectionFindingId} = ${preventionInspectionFindings.id}
+          AND ${mantWorkOrders.status} <> 'anulada'
+      )))::int`,
     })
       .from(preventionInspectionFindings)
       .innerJoin(preventionInspectionRuns, eq(preventionInspectionRuns.id, preventionInspectionFindings.runId))
@@ -265,7 +287,10 @@ export async function getOperationalControlHub(
         vehicleScope,
         isNotNull(preventionInspectionRuns.subjectVehicleId),
         sql`${preventionInspectionRuns.status} <> 'cancelled'`,
-        sql`${preventionCapaActions.status} NOT IN ('closed', 'cancelled')`,
+        // Mismo criterio que el filtro «Vencidas» de /prevencion/capa: una CAPA
+        // ya verificada está cerrada en los hechos, aunque falte el cierre
+        // administrativo. Antes el panel la contaba y el tablero no.
+        sql`${preventionCapaActions.status} NOT IN ('verified', 'closed', 'cancelled')`,
         sql`${preventionCapaActions.targetDate} < ${today}`,
       ))
       .groupBy(preventionInspectionRuns.subjectVehicleId) : [],
@@ -319,9 +344,22 @@ export async function getOperationalControlHub(
   // El agregado de combustible se pide después de conocer los vehículos del
   // alcance: una consulta agrupada por vehículo, no una por fila. Sin
   // `combustibles:view` no se ejecuta y los campos quedan en null.
+  // La consulta de combustible entra en el mismo patrón de degradación que el
+  // resto del panel: si falla, las cifras de combustible quedan en «sin dato»
+  // y flota, OT e inspecciones siguen renderizando. Antes rechazaba el hub
+  // completo y el usuario perdía todo el panel por una sola fuente.
   const fuelSummary = canViewFuel && vehicles.length > 0
-    ? await getAssetFuelSummary(session, period, vehicles.map((vehicle) => vehicle.id))
+    ? await settleAttention(
+        "combustible",
+        () => getAssetFuelSummary(session, period, vehicles.map((vehicle) => vehicle.id)),
+        degradedSources,
+      )
     : new Map<string, AssetFuelSummary>()
+  const fuelUnavailable = canViewFuel && vehicles.length > 0 && fuelSummary === null
+  const fuelByVehicle = fuelSummary ?? new Map<string, AssetFuelSummary>()
+  /** `null` cuando la consulta de combustible falló: no se convierte el fallo en 0. */
+  const fuelValue = <T,>(value: T | undefined, fallback: T): T | null =>
+    fuelUnavailable ? null : (value ?? fallback)
 
   const inspectionsByVehicle = new Map(inspectionAgg.filter((row) => row.vehicleId).map((row) => [row.vehicleId!, row]))
   const findingsByVehicle = new Map(findingsAgg.filter((row) => row.vehicleId).map((row) => [row.vehicleId!, row]))
@@ -338,10 +376,15 @@ export async function getOperationalControlHub(
     const inspections = inspectionsByVehicle.get(vehicle.id)
     const findings = findingsByVehicle.get(vehicle.id)
     const capa = capaByVehicle.get(vehicle.id)
-    const fuel = fuelSummary.get(vehicle.id)
+    const fuel = fuelByVehicle.get(vehicle.id)
     const vehicleDocuments = documentsByVehicle.get(vehicle.id) ?? []
     const gps = gpsByVehicle.get(vehicle.id)
     const workOrder = workOrdersByVehicle?.get(vehicle.id)
+    const fuelBilledAmount = canViewFuel && canViewCosts ? fuelValue(fuel?.billedAmount, 0) : null
+    const maintenanceCost = workOrdersByVehicle ? (workOrder?.maintenanceCostInPeriod ?? null) : null
+    const totalCost = fuelBilledAmount != null && maintenanceCost != null
+      ? fuelBilledAmount + maintenanceCost
+      : null
     const declaredExpiry = {
       soapExpiresAt: vehicle.soapExpiresAt,
       technicalReviewExpiresAt: vehicle.technicalReviewExpiresAt,
@@ -349,14 +392,14 @@ export async function getOperationalControlHub(
       insuranceExpiresAt: vehicle.insuranceExpiresAt,
     }
     const rawStatus = vehicle.isActive ? vehicle.operationalStatus : "inactivo"
-    const fuelPerformanceUnit = canViewFuel && (vehicle.performanceUnit === "km_per_liter" || vehicle.performanceUnit === "liters_per_hour")
+    const fuelPerformanceUnit = canViewFuel && !fuelUnavailable && (vehicle.performanceUnit === "km_per_liter" || vehicle.performanceUnit === "liters_per_hour")
       ? vehicle.performanceUnit
       : null
     // La lectura de la carga y la telemetría sólo son comparables si hablan
     // del mismo medidor, son recientes entre sí y la diferencia supera el
     // ruido normal de dos fuentes distintas (2 h / 5 km).
     const gpsMeter = vehicle.meterType === "hour_meter" ? gps?.hourMeter : vehicle.meterType === "odometer" ? gps?.odometer : null
-    const meterMismatch = canViewFleet && canViewFuel
+    const meterMismatch = canViewFleet && canViewFuel && !fuelUnavailable
       && vehicle.meterType !== "none"
       && fuel?.lastMeterReading != null
       && fuel.lastMeterType === vehicle.meterType
@@ -389,6 +432,8 @@ export async function getOperationalControlHub(
       inspectionPartial: canViewInspections ? Number(inspections?.partial ?? 0) : null,
       openFindings: canViewInspections ? Number(findings?.openFindings ?? 0) : null,
       criticalOpenFindings: canViewInspections ? Number(findings?.criticalOpenFindings ?? 0) : null,
+      openFindingsWithWorkOrder: canViewInspections ? Number(findings?.openFindingsWithWorkOrder ?? 0) : null,
+      openFindingsWithoutWorkOrder: canViewInspections ? Number(findings?.openFindingsWithoutWorkOrder ?? 0) : null,
       overdueCapa: canViewInspections && canViewCapa ? Number(capa?.overdueCapa ?? 0) : null,
       nextExpiryDate: canViewFleet ? resolveNextExpiryDate(declaredExpiry, vehicleDocuments) : null,
       expiredDocumentTypes: canViewFleet ? expiredDocumentTypes(declaredExpiry, vehicleDocuments, today) : [],
@@ -396,18 +441,20 @@ export async function getOperationalControlHub(
       gpsHourMeter: canViewFleet ? (gps?.hourMeter == null ? null : Number(gps.hourMeter)) : null,
       gpsObservedAt: canViewFleet ? (gps?.observedAt ?? null) : null,
       gpsFuelLevel: canViewFleet ? (gps?.fuelLevel == null ? null : Number(gps.fuelLevel)) : null,
-      fuelLiters: canViewFuel ? (fuel?.liters ?? 0) : null,
-      fuelLoadCount: canViewFuel ? (fuel?.loadCount ?? 0) : null,
-      lastFuelLoadAt: canViewFuel ? (fuel?.lastLoadAt ?? null) : null,
-      fuelPerformanceValue: canViewFuel ? (fuel?.performanceValue ?? null) : null,
+      fuelLiters: canViewFuel ? fuelValue(fuel?.liters, 0) : null,
+      fuelLoadCount: canViewFuel ? fuelValue(fuel?.loadCount, 0) : null,
+      lastFuelLoadAt: canViewFuel ? fuelValue(fuel?.lastLoadAt, null) : null,
+      fuelPerformanceValue: canViewFuel ? fuelValue(fuel?.performanceValue, null) : null,
       fuelPerformanceUnit,
-      flaggedLoads: canViewFuel ? (fuel?.flaggedLoads ?? 0) : null,
-      openAnomalyCases: canViewFuel ? (fuel?.openCases ?? 0) : null,
-      criticalOpenAnomalyCases: canViewFuel ? (fuel?.criticalOpenCases ?? 0) : null,
-      fuelBilledAmount: canViewFuel && canViewCosts ? (fuel?.billedAmount ?? 0) : null,
-      idleHours: canViewFuel ? (fuel?.idleHours ?? 0) : null,
-      idlePct: canViewFuel ? (fuel?.idlePct ?? null) : null,
-      litersIdle: canViewFuel ? (fuel?.litersIdle ?? null) : null,
+      flaggedLoads: canViewFuel ? fuelValue(fuel?.flaggedLoads, 0) : null,
+      openAnomalyCases: canViewFuel ? fuelValue(fuel?.openCases, 0) : null,
+      criticalOpenAnomalyCases: canViewFuel ? fuelValue(fuel?.criticalOpenCases, 0) : null,
+      fuelBilledAmount,
+      maintenanceCost,
+      totalCost,
+      idleHours: canViewFuel ? fuelValue(fuel?.idleHours, 0) : null,
+      idlePct: canViewFuel ? fuelValue(fuel?.idlePct, null) : null,
+      litersIdle: canViewFuel ? fuelValue(fuel?.litersIdle, null) : null,
       meterMismatch,
       openWorkOrders: workOrdersByVehicle ? (workOrder?.openCount ?? 0) : null,
       inWorkshop: workOrdersByVehicle ? (workOrder?.inWorkshopNow ?? false) : null,
@@ -432,6 +479,8 @@ export async function getOperationalControlHub(
     inspectionPartial: null,
     openFindings: null,
     criticalOpenFindings: null,
+    openFindingsWithWorkOrder: null,
+    openFindingsWithoutWorkOrder: null,
     overdueCapa: null,
     nextExpiryDate: null,
     expiredDocumentTypes: [],
@@ -450,6 +499,8 @@ export async function getOperationalControlHub(
     openAnomalyCases: null,
     criticalOpenAnomalyCases: null,
     fuelBilledAmount: null,
+    maintenanceCost: null,
+    totalCost: null,
     idleHours: null,
     idlePct: null,
     litersIdle: null,

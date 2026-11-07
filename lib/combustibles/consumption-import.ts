@@ -29,6 +29,8 @@ export interface ImportError {
   rowIndex: number
   field: string
   message: string
+  /** Patente de la fila, cuando el error permite identificarla. */
+  patente?: string
   rawRow?: Record<string, unknown>
 }
 

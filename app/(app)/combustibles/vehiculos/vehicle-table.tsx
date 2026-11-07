@@ -46,6 +46,9 @@ export function VehicleCatalogTable({ vehicles, worksites, users, equipmentTypes
   const [toggleTarget, setToggleTarget] = React.useState<{ id: string; activate: boolean } | null>(null)
   const [toggleReason, setToggleReason] = React.useState("")
   const [tab, setTab] = React.useState<"active" | "inactive">("active")
+  // La búsqueda de la shell está oculta en todo `/combustibles`; esta tabla no
+  // tenía input propio y quedaba sin forma de filtrar por texto.
+  const [search, setSearch] = React.useState("")
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set())
   const [bulkActionType, setBulkActionType] = React.useState<"activate" | "deactivate" | null>(null)
   const [bulkReason, setBulkReason] = React.useState("")
@@ -185,6 +188,9 @@ export function VehicleCatalogTable({ vehicles, worksites, users, equipmentTypes
             caption="Vehículos activos"
             columns={COLUMNS_WITH_CHECKBOX}
             rows={activeVehicles}
+            search={search}
+            onSearchChange={setSearch}
+            searchPlaceholder="Buscar por patente, código, marca o modelo..."
             searchKeys={CONTRACT.searchKeys as (keyof VehicleRow)[]}
             tableClassName="table-fixed min-w-0"
             pageSize={25}
@@ -201,6 +207,9 @@ export function VehicleCatalogTable({ vehicles, worksites, users, equipmentTypes
             caption="Vehículos inactivos"
             columns={COLUMNS_WITH_CHECKBOX}
             rows={inactiveVehicles}
+            search={search}
+            onSearchChange={setSearch}
+            searchPlaceholder="Buscar por patente, código, marca o modelo..."
             searchKeys={CONTRACT.searchKeys as (keyof VehicleRow)[]}
             tableClassName="table-fixed min-w-0"
             pageSize={25}

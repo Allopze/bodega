@@ -1,10 +1,10 @@
 import type { Session } from "next-auth"
-import { and, desc, gte, inArray, isNotNull, isNull, lte, sql } from "drizzle-orm"
+import { and, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm"
 import { db } from "@/db"
-import { fuelAnomalyCases, fuelEquipmentLoads, fuelLoads } from "@/db/schema"
+import { fuelAnomalyCases, fuelEquipmentLoads, fuelProviderTransactions, fuelVehicles } from "@/db/schema"
 import { can } from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"
-import { accountableFuelLoadsWhere } from "@/lib/combustibles/load-status"
+import { accountableProviderTransactionsWhere } from "@/lib/combustibles/load-status"
 import { idlePct } from "../calc/idle"
 import { chileDateSql, countableLoadSql, parseControlFilters, statisticallyValidLoadSql } from "../filters"
 import { dailyTelemetry } from "./idle"
@@ -15,8 +15,11 @@ import { dailyTelemetry } from "./idle"
  * nunca una por fila.
  *
  * `fuelEquipmentLoads` es la serie operacional: litros, rendimiento y revisión.
- * `fuelLoads` es la serie facturada: sólo aporta el monto, que puede no
- * coincidir con los litros operacionales. No se suman entre sí.
+ * `fuelProviderTransactions` es el libro del proveedor (tarjetas y estanques) y
+ * aporta el monto, que puede no coincidir con los litros operacionales. No se
+ * suman entre sí. El monto NO sale de `fuel_loads`: esa serie está vacía en
+ * producción y dejaba el panel en $0 mientras Flota y el Tablero mostraban el
+ * gasto real del proveedor.
  *
  * El alcance por faena se aplica en cada consulta; un vehículo fuera del
  * alcance no aporta filas, aunque su id venga en la lista.
@@ -31,7 +34,7 @@ export interface AssetFuelSummary {
   flaggedLoads: number
   openCases: number
   criticalOpenCases: number
-  /** Sólo con `combustibles:view_costs`; `null` sin ese permiso. */
+  /** Sólo con `combustibles:view_costs`; `null` sin ese permiso o si el proveedor no trae monto. */
   billedAmount: number | null
   lastMeterReading: number | null
   lastMeterType: "odometer" | "hour_meter" | null
@@ -109,18 +112,23 @@ export async function getAssetFuelSummary(
       .groupBy(fuelAnomalyCases.vehicleId),
     canViewCosts
       ? db.select({
-          vehicleId: fuelLoads.vehicleId,
-          billedAmount: sql<number>`COALESCE(SUM(${fuelLoads.totalAmount}), 0)::float8`,
+          vehicleId: fuelProviderTransactions.vehicleId,
+          billedAmount: sql<number>`COALESCE(SUM(${fuelProviderTransactions.amount}), 0)::float8`,
         })
-          .from(fuelLoads)
+          .from(fuelProviderTransactions)
+          // El costo sigue al equipo: la faena histórica de la transacción puede
+          // ser otra (equipo trasladado) o venir nula, y no debe borrar el monto.
+          .innerJoin(fuelVehicles, eq(fuelProviderTransactions.vehicleId, fuelVehicles.id))
           .where(and(
-            inArray(fuelLoads.vehicleId, ids),
-            worksiteScopeSql(session, fuelLoads.worksiteId),
-            gte(fuelLoads.loadDate, period.from),
-            lte(fuelLoads.loadDate, period.to),
-            accountableFuelLoadsWhere(),
+            inArray(fuelProviderTransactions.vehicleId, ids),
+            isNotNull(fuelProviderTransactions.vehicleId),
+            worksiteScopeSql(session, fuelVehicles.worksiteId),
+            // `occurred_at` es texto y puede traer hora: se compara el día civil.
+            sql`left(${fuelProviderTransactions.occurredAt}, 10) >= ${period.from}`,
+            sql`left(${fuelProviderTransactions.occurredAt}, 10) <= ${period.to}`,
+            accountableProviderTransactionsWhere(),
           ))
-          .groupBy(fuelLoads.vehicleId)
+          .groupBy(fuelProviderTransactions.vehicleId)
       : Promise.resolve([] as Array<{ vehicleId: string; billedAmount: number }>),
     // Última lectura con medidor: es la que se contrasta con la telemetría.
     db.selectDistinctOn([fuelEquipmentLoads.vehicleId], {
@@ -169,6 +177,7 @@ export async function getAssetFuelSummary(
   }
 
   for (const row of costRows) {
+    if (!row.vehicleId) continue
     const entry = out.get(row.vehicleId)
     if (!entry) continue
     entry.billedAmount = Number(row.billedAmount ?? 0)

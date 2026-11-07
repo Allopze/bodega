@@ -3,7 +3,7 @@
  * Detección de archivos corruptos, reutilización entre cargas, y políticas.
  */
 
-import { desc, eq, isNotNull, sql } from "drizzle-orm"
+import { and, desc, eq, gt, inArray, isNotNull, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { fuelTaeEvidence, fuelTaeSubmissions } from "@/db/schema/fuel-tae"
 import { worksites } from "@/db/schema"
@@ -24,8 +24,19 @@ const DEFAULT_EVIDENCE_ROW_LIMIT = 50_000
  *  `rowLimit`: freno de emergencia contra un table scan sin límite — el llamador batch
  *  hace además una consulta por resultado (N+1 acotado, no una query nueva), así que
  *  limitar aquí también acota esa segunda pasada (sección 18). */
-export async function detectCorruptEvidence(rowLimit = DEFAULT_EVIDENCE_ROW_LIMIT): Promise<CorruptFileReport[]> {
-  // Sin WHERE: el filtro `isNotNull(filePath)` de antes garantizaba
+export interface CorruptEvidencePage {
+  corrupt: CorruptFileReport[]
+  /** Último `fuel_tae_evidence.id` procesado; null cuando la página fue la última. */
+  cursor: string | null
+  /** El `rowLimit` dejó filas fuera. */
+  truncated: boolean
+}
+
+export async function detectCorruptEvidence(
+  rowLimit = DEFAULT_EVIDENCE_ROW_LIMIT,
+  cursor?: string | null,
+): Promise<CorruptEvidencePage> {
+  // Sin WHERE de filePath: el filtro `isNotNull(filePath)` de antes garantizaba
   // `filePath != null` para TODA fila que llegaba al loop, así que la rama
   // "sin filePath ni externalUrl" de abajo era inalcanzable por construcción
   // — la evidencia histórica sólo-externa (Google Drive, sin filePath local)
@@ -40,6 +51,10 @@ export async function detectCorruptEvidence(rowLimit = DEFAULT_EVIDENCE_ROW_LIMI
     submissionId: fuelTaeEvidence.submissionId,
   })
     .from(fuelTaeEvidence)
+    .where(cursor ? gt(fuelTaeEvidence.id, cursor) : undefined)
+    // Keyset por id: sin ORDER BY, el LIMIT devolvía siempre la misma página y
+    // el resto de la evidencia no se revisaba nunca (CO-062).
+    .orderBy(fuelTaeEvidence.id)
     .limit(rowLimit)
 
   const corrupt: CorruptFileReport[] = []
@@ -54,23 +69,48 @@ export async function detectCorruptEvidence(rowLimit = DEFAULT_EVIDENCE_ROW_LIMI
       corrupt.push({ evidenceId: row.evidenceId, fileName: row.fileName, submissionId: row.submissionId, reason: `Tipo MIME no reconocido: ${row.mimeType}` })
     }
   }
-  return corrupt
+  return {
+    corrupt,
+    cursor: rows.length >= rowLimit ? (rows[rows.length - 1]?.evidenceId ?? null) : null,
+    truncated: rows.length >= rowLimit,
+  }
+}
+
+export interface ReusedEvidencePage {
+  reused: Map<string, Array<{ submissionId: string; evidenceId: string; kind: string }>>
+  /** Último hash procesado; null cuando la página fue la última. */
+  cursor: string | null
+  /** El `rowLimit` dejó hashes fuera. */
+  truncated: boolean
 }
 
 /** Grupo de evidencias reutilizadas: mismo SHA-256 aparece en cargas distintas.
- *  `rowLimit`: mismo freno de emergencia que `detectCorruptEvidence` — el
- *  llamador batch hace una consulta adicional por hash reutilizado encontrado. */
-export async function getReusedEvidence(rowLimit = DEFAULT_EVIDENCE_ROW_LIMIT): Promise<Map<string, Array<{ submissionId: string; evidenceId: string; kind: string }>>> {
-  const rows = await db.select({
+ *  Pagina por HASH, no por fila: un hash puede tener varias filas y un corte
+ *  plano lo dejaría partido entre dos corridas. El llamador batch hace una
+ *  consulta adicional por hash reutilizado encontrado. */
+export async function getReusedEvidence(
+  rowLimit = DEFAULT_EVIDENCE_ROW_LIMIT,
+  cursor?: string | null,
+): Promise<ReusedEvidencePage> {
+  const pageSize = Math.max(100, Math.min(rowLimit, 500))
+  const hashRows = await db.selectDistinct({ sha256: fuelTaeEvidence.sha256 })
+    .from(fuelTaeEvidence)
+    .where(and(
+      isNotNull(fuelTaeEvidence.sha256),
+      cursor ? gt(fuelTaeEvidence.sha256, cursor) : undefined,
+    ))
+    .orderBy(fuelTaeEvidence.sha256)
+    .limit(pageSize + 1)
+  const hasMore = hashRows.length > pageSize
+  const hashes = hashRows.slice(0, pageSize).map((row) => row.sha256).filter((hash): hash is string => !!hash)
+  const rows = hashes.length === 0 ? [] : await db.select({
     sha256: fuelTaeEvidence.sha256,
     submissionId: fuelTaeEvidence.submissionId,
     evidenceId: fuelTaeEvidence.id,
     kind: fuelTaeEvidence.kind,
   })
     .from(fuelTaeEvidence)
-    .where(isNotNull(fuelTaeEvidence.sha256))
-    .orderBy(fuelTaeEvidence.sha256)
-    .limit(rowLimit)
+    .where(inArray(fuelTaeEvidence.sha256, hashes))
 
   const byHash = new Map<string, Array<{ submissionId: string; evidenceId: string; kind: string }>>()
   for (const row of rows) {
@@ -85,7 +125,11 @@ export async function getReusedEvidence(rowLimit = DEFAULT_EVIDENCE_ROW_LIMIT): 
     const uniqueSubmissions = new Set(items.map((i) => i.submissionId))
     if (uniqueSubmissions.size > 1) reused.set(hash, items)
   }
-  return reused
+  return {
+    reused,
+    cursor: hasMore ? (hashes[hashes.length - 1] ?? null) : null,
+    truncated: hasMore,
+  }
 }
 
 /** Estadísticas de almacenamiento por faena para políticas de retención. */

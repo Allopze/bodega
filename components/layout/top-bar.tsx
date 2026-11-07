@@ -20,9 +20,10 @@ interface TopBarProps {
   worksiteName?: string
 }
 
-// `/combustibles` no construye ningún input propio en ninguna de sus
-// subrutas — estaba en esta lista sin que nada lo alimentara, así que sus
-// tablas basadas en DataTable (vehículos, proveedores) quedaban sin buscador.
+// `/combustibles`: las superficies de trabajo tienen su propio buscador
+// rotulado (Cargas, Por revisar, Facturas, Archivos, Vehículos, Proveedores).
+// Al ocultar el de la shell en todo el módulo, una DataTable sin `search`
+// propio se quedaba sin filtro; si se agrega una tabla nueva, tiene que traerlo.
 //
 // `/entregas` (BOD-01, auditoría 2026-10-05): el historial está paginado en el
 // servidor, así que el input de la shell sólo filtraba las 25 filas en pantalla

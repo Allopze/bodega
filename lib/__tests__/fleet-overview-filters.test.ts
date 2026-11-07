@@ -27,7 +27,23 @@ describe("filterFleetOverviewRows", () => {
   it("separa vencidos, próximos y al día con límites inclusivos", () => {
     expect(filterFleetOverviewRows(rows, { expiry: "vencidos" }, dates)).toEqual([rows[0]])
     expect(filterFleetOverviewRows(rows, { expiry: "proximos" }, dates)).toEqual([rows[1]])
-    expect(filterFleetOverviewRows(rows, { expiry: "al-dia" }, dates)).toEqual([rows[2]])
+    // Un equipo sin fecha no está «al día»: está sin documentar. La tabla lo
+    // rotula así, y el deep link del panel lo contaba como vigente.
+    expect(filterFleetOverviewRows(rows, { expiry: "al-dia" }, dates)).toEqual([])
+    const upToDate = { ...rows[2]!, plate: "ZZ-99", nextExpiryDate: "2027-01-01" }
+    expect(filterFleetOverviewRows([...rows, upToDate], { expiry: "al-dia" }, dates)).toEqual([upToDate])
+  })
+
+  it("un equipo dado de baja no entra en los filtros de vencimiento", () => {
+    const inactive = { ...rows[0]!, plate: "BAJA-01", isActive: false }
+    expect(filterFleetOverviewRows([inactive], { expiry: "vencidos" }, dates)).toEqual([])
+    expect(filterFleetOverviewRows([inactive], { operationalStatus: "operativo" }, dates)).toEqual([inactive])
+  })
+
+  it("filtra los equipos con discrepancia entre ficha e intervalo operacional", () => {
+    const mismatch = { ...rows[0]!, plate: "MIS-01", stateMismatch: true }
+    const matching = { ...rows[1]!, plate: "OK-02", stateMismatch: false }
+    expect(filterFleetOverviewRows([mismatch, matching], { revision: "estado" }, dates)).toEqual([mismatch])
   })
 
   // `/flota?estado=detenidos`: el Panel operacional enlaza aquí con su cifra de

@@ -63,6 +63,7 @@ interface Seed {
   estimated?: string
   closedAt?: string
   createdAt?: string
+  totalCost?: number
 }
 
 /** Una fila que cumple los `check` del estado pedido; cada estado suma lo que el anterior ya exigía. */
@@ -84,6 +85,7 @@ async function insertOt(seed: Seed) {
     requestedByUserId: IDS.jefe,
     requesterName: "Alexis Morales",
     repairDescription: seed.repair === false ? null : "Falla de frenos en la cabina",
+    totalCost: seed.totalCost ?? null,
     status,
     ...(assigned ? { assignedToUserId: who.userId, assignedByUserId: IDS.jefe, assignedAt: "2026-02-21T12:00:00Z" } : {}),
     ...(started ? {
@@ -122,27 +124,28 @@ beforeAll(async () => {
   await insertOt({ id: "ot-sol", vehicleId: IDS.truckBio, worksiteId: IDS.wsBio, status: "solicitada", createdAt: "2026-03-01T10:00:00Z" })
   await insertOt({ id: "ot-asig", vehicleId: IDS.truckBio, worksiteId: IDS.wsBio, status: "asignada", createdAt: "2026-03-02T10:00:00Z" })
   // En taller desde el 10/03 08:00, sin salida; estimada ya vencida al 25/03.
+  // Abierta con costo: no suma al período hasta que se cierre.
   await insertOt({
-    id: "ot-ejec", vehicleId: IDS.truckBio, worksiteId: IDS.wsBio, status: "en_ejecucion",
+    id: "ot-ejec", vehicleId: IDS.truckBio, worksiteId: IDS.wsBio, status: "en_ejecucion", totalCost: 20_000,
     entry: "2026-03-10T08:00:00Z", estimated: "2026-03-20", createdAt: "2026-03-03T10:00:00Z",
   })
   // Reparación que cruza el inicio del período: entró el 27/02 12:00 y salió el 02/03 12:00.
   await insertOt({
-    id: "ot-rep", vehicleId: IDS.truckBio, worksiteId: IDS.wsBio, status: "cerrada", repair: true,
+    id: "ot-rep", vehicleId: IDS.truckBio, worksiteId: IDS.wsBio, status: "cerrada", repair: true, totalCost: 100_000,
     entry: "2026-02-27T12:00:00Z", exit: "2026-03-02T12:00:00Z", closedAt: "2026-03-05T12:00:00Z", createdAt: "2026-02-25T10:00:00Z",
   })
   // Sólo mantención, entera dentro del período: 24 h.
   await insertOt({
-    id: "ot-mant", vehicleId: IDS.truckBio, worksiteId: IDS.wsBio, status: "cerrada", repair: false, maintenance: true,
+    id: "ot-mant", vehicleId: IDS.truckBio, worksiteId: IDS.wsBio, status: "cerrada", repair: false, maintenance: true, totalCost: 50_000,
     entry: "2026-03-10T00:00:00Z", exit: "2026-03-11T00:00:00Z", closedAt: "2026-03-12T12:00:00Z", createdAt: "2026-03-04T10:00:00Z",
   })
   // Cerrada en febrero: no entra a «cerradas del período» ni suma horas en marzo.
   await insertOt({
-    id: "ot-feb", vehicleId: IDS.truckBio, worksiteId: IDS.wsBio, status: "cerrada", repair: true,
+    id: "ot-feb", vehicleId: IDS.truckBio, worksiteId: IDS.wsBio, status: "cerrada", repair: true, totalCost: 30_000,
     entry: "2026-02-01T00:00:00Z", exit: "2026-02-02T00:00:00Z", closedAt: "2026-02-05T12:00:00Z", createdAt: "2026-02-01T10:00:00Z",
   })
   // Anulada: no cuenta en nada.
-  await insertOt({ id: "ot-anul", vehicleId: IDS.truckBio, worksiteId: IDS.wsBio, status: "anulada", createdAt: "2026-03-06T10:00:00Z" })
+  await insertOt({ id: "ot-anul", vehicleId: IDS.truckBio, worksiteId: IDS.wsBio, status: "anulada", totalCost: 999_999, createdAt: "2026-03-06T10:00:00Z" })
 
   // ── MQ-01 (Biodiversa): ya salió del taller, falta recepcionarla ──
   await insertOt({
@@ -237,6 +240,23 @@ describe("getVehicleWorkOrderMetrics", () => {
 
   it("MTTR sin reparaciones cerradas es null, no 0", () => {
     expect(meanTimeToRepairHours(0, 0)).toBeNull()
+  })
+
+  it("suma el costo de las OT cerradas del período y no el de las abiertas, anuladas o de otro mes", async () => {
+    const truck = (await getVehicleWorkOrderMetrics("all", { period: MARCH, now: NOW })).get(IDS.truckBio)!
+    // `ot-rep` 100.000 + `ot-mant` 50.000; `ot-ejec` sigue abierta y `ot-anul` está anulada.
+    expect(truck.maintenanceCostInPeriod).toBe(150_000)
+
+    const february = (await getVehicleWorkOrderMetrics("all", { period: { from: "2026-02-01", to: "2026-02-28" }, now: NOW })).get(IDS.truckBio)!
+    expect(february.maintenanceCostInPeriod).toBe(30_000)
+
+    // Sin período no hay cifra del período: null, no 0.
+    const noPeriod = (await getVehicleWorkOrderMetrics("all", { now: NOW })).get(IDS.truckBio)!
+    expect(noPeriod.maintenanceCostInPeriod).toBeNull()
+
+    // Equipo sin OT cerrada con costo: null, no 0.
+    const machine = (await getVehicleWorkOrderMetrics("all", { period: MARCH, now: NOW })).get(IDS.machineBio)!
+    expect(machine.maintenanceCostInPeriod).toBeNull()
   })
 
   it("trae la última salida de taller y la última OT cerrada", async () => {

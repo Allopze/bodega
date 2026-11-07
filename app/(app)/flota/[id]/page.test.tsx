@@ -39,6 +39,7 @@ function detail(performanceUnit: string, overrides: { vehicle?: Record<string, u
     workOrderConsumptionImpact: [],
     currentReading: null,
     recentOperations: [],
+    providerReading: null,
     topOperators: [],
     operationalIntervals: [],
     nextExpiryDate: null,
@@ -69,6 +70,19 @@ describe("ficha de vehículo: unidad de rendimiento", () => {
 
   it("un equipo sin rendimiento dice «No aplica»", async () => {
     expect(await factValue("not_applicable", "Unidad de rendimiento")).toBe("No aplica")
+  })
+})
+
+describe("ficha de vehículo: lecturas", () => {
+  it("muestra la lectura del proveedor separada de la del log de cargas", async () => {
+    mocks.detail.mockResolvedValue({
+      ...detail("km_per_liter"),
+      providerReading: { odometer: 12_500, hourMeter: null, occurredAt: "2026-11-01T12:00:00.000Z" },
+    })
+    render(await FlotaVehiclePage({ params: Promise.resolve({ id: "veh-1" }) }))
+
+    expect(screen.getByText("Última lectura del proveedor (Copec)").nextElementSibling?.textContent).toBe("12.500 km")
+    expect(screen.getByText("Fecha de lectura del proveedor").nextElementSibling?.textContent).toContain("2026")
   })
 })
 

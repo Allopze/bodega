@@ -3,16 +3,14 @@ import type { Session } from "next-auth"
 
 const getFuelControlOverview = vi.hoisted(() => vi.fn())
 const getFuelMonthlyTrend = vi.hoisted(() => vi.fn())
-const getExpiringFleetDocuments = vi.hoisted(() => vi.fn())
-const getFleetOverview = vi.hoisted(() => vi.fn())
+const getFleetDashboardSnapshot = vi.hoisted(() => vi.fn())
 const countPendingFuelCreditNotes = vi.hoisted(() => vi.fn())
 const readDtePortalConfig = vi.hoisted(() => vi.fn())
 const getWorkOrderGlobalMetrics = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/combustibles/fuel-control-overview", () => ({ getFuelControlOverview }))
 vi.mock("@/lib/services/dashboard-fuel", () => ({ getFuelMonthlyTrend }))
-vi.mock("@/lib/services/dashboard-domains-data", () => ({ getExpiringFleetDocuments }))
-vi.mock("@/lib/services/fleet", () => ({ getFleetOverview, FLEET_OVERVIEW_LOOKBACK_MONTHS: 12 }))
+vi.mock("@/lib/services/dashboard-domains-data", () => ({ getFleetDashboardSnapshot }))
 vi.mock("@/lib/services/dte-portal/reconciliation", () => ({ countPendingFuelCreditNotes }))
 vi.mock("@/lib/services/dte-portal/config", () => ({ readDtePortalConfig }))
 // Sólo se simula la consulta; `workOrderMetricsScope` es el real, para que la capacidad sea la de verdad.
@@ -56,8 +54,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   getFuelControlOverview.mockResolvedValue(null)
   getFuelMonthlyTrend.mockResolvedValue([])
-  getExpiringFleetDocuments.mockResolvedValue({ within30: 0, expired: 0 })
-  getFleetOverview.mockResolvedValue([])
+  getFleetDashboardSnapshot.mockResolvedValue({ activeVehicles: 0, within30: 0, expired: 0 })
   countPendingFuelCreditNotes.mockResolvedValue(0)
   readDtePortalConfig.mockResolvedValue({ credentials: { codEmp: "empresa" } })
   getWorkOrderGlobalMetrics.mockResolvedValue({ openCount: 5, unassignedOpen: 2, estimateOverdue: 1 })
@@ -67,8 +64,7 @@ describe("FleetSection capability matrix", () => {
   it("a flota-only role does not query fuel, TAE or DTE datasets", async () => {
     const section = await FleetSection(props("flota:view"))
 
-    expect(getFleetOverview).toHaveBeenCalledOnce()
-    expect(getExpiringFleetDocuments).toHaveBeenCalledOnce()
+    expect(getFleetDashboardSnapshot).toHaveBeenCalledOnce()
     expect(getFuelControlOverview).not.toHaveBeenCalled()
     expect(getFuelMonthlyTrend).not.toHaveBeenCalled()
     expect(readDtePortalConfig).not.toHaveBeenCalled()
@@ -81,8 +77,7 @@ describe("FleetSection capability matrix", () => {
 
     expect(getFuelControlOverview).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ includeTae: false }))
     expect(getFuelMonthlyTrend).toHaveBeenCalledOnce()
-    expect(getFleetOverview).not.toHaveBeenCalled()
-    expect(getExpiringFleetDocuments).not.toHaveBeenCalled()
+    expect(getFleetDashboardSnapshot).not.toHaveBeenCalled()
     expect(domainSectionOf(section).props.links.map((link) => link.href)).toEqual(["/control-operacional", "/combustibles/consumo"])
   })
 
@@ -99,11 +94,11 @@ describe("FleetSection capability matrix", () => {
 // reventaba, el Promise.all completo rechazaba y tumbaba la sección entera.
 describe("FleetSection degradation tracking", () => {
   it("no lanza cuando una consulta sin catch previo falla, y la marca como degradada", async () => {
-    getExpiringFleetDocuments.mockRejectedValue(new Error("boom"))
+    getFuelMonthlyTrend.mockRejectedValue(new Error("boom"))
 
     const section = await FleetSection(props("flota:view", "combustibles:view"))
 
-    expect(bannerOf(section).props.degraded).toContain("expiringDocs")
+    expect(bannerOf(section).props.degraded).toContain("fuelTrend")
     expect(bannerOf(section).props.total).toBeGreaterThan(0)
   })
 
@@ -133,11 +128,9 @@ function sectionOf(section: unknown) {
   return domainSectionOf(section).props as unknown as { kpis: unknown; charts: unknown; coverage?: Element }
 }
 
-const vehicle = (overrides: Record<string, unknown>) => ({ id: "v1", plate: "AA-11", isActive: true, ...overrides })
-
 describe("FleetSection · panel del tablero", () => {
   it("sólo conserva tendencias de combustible sin métricas de OT", async () => {
-    getFleetOverview.mockResolvedValue([vehicle({ id: "v1", plate: "AA-11" })])
+    getFleetDashboardSnapshot.mockResolvedValue({ activeVehicles: 1, within30: 0, expired: 0 })
     const { charts } = sectionOf(await FleetSection(props("flota:view", "combustibles:view", "combustibles:view_costs")))
 
     const slots = find(charts, (element) => element.type === ChartSlot)
@@ -252,6 +245,18 @@ describe("FleetSection · panel del tablero", () => {
     expect((chart.props.data as Array<{ partial: boolean }>).map((point) => point.partial)).toEqual([false, true])
   })
 
+  it("«Equipos por vencer» usa el snapshot por equipo y enlaza a su subconjunto", async () => {
+    getFleetDashboardSnapshot.mockResolvedValue({ activeVehicles: 4, within30: 1, expired: 1 })
+    const { kpis } = sectionOf(await FleetSection(props("flota:view")))
+    const tile = find(kpis, (element) => element.type === KpiCard && element.props.label === "Equipos por vencer")[0]!
+
+    expect(tile.props).toMatchObject({
+      value: "1",
+      detail: "1 ya vencido(s) · próximos 30 días",
+      href: "/flota?vencimiento=proximos",
+    })
+  })
+
   it("sin vehículos ni cargas los tiles dicen qué falta; si la fuente falló conservan la cifra", async () => {
     const empty = sectionOf(await FleetSection(props("flota:view", "combustibles:view")))
     const byLabel = (kpis: unknown, label: string) => find(kpis, (element) => element.type === KpiCard && element.props.label === label)[0]!
@@ -260,7 +265,7 @@ describe("FleetSection · panel del tablero", () => {
     expect(byLabel(empty.kpis, "Litros (6 meses)").props.empty).toMatchObject({ message: "Sin cargas registradas en 6 meses" })
 
     // Un cero por falla de la consulta no es "aún no hay": el banner de degradación lo avisa.
-    getFleetOverview.mockRejectedValue(new Error("boom"))
+    getFleetDashboardSnapshot.mockRejectedValue(new Error("boom"))
     const degraded = sectionOf(await FleetSection(props("flota:view")))
     expect(byLabel(degraded.kpis, "Vehículos activos").props.empty).toBeUndefined()
   })

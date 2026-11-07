@@ -93,8 +93,10 @@ beforeAll(async () => {
       id: "b-agg", granularity: "period_aggregate", worksiteId: IDS.wsB, vehicleId: IDS.vB, sourcePlate: "BB-0002",
       quantity: 70, amount: 80_000, occurredAt: `${MONTH}-01`, rawPayload: { detalle: [{ n: 1 }, { n: 2 }, { n: 3 }] },
     }),
-    // Vehículo C: una carga cuya faena es OTRA (la de A): el alcance se aplica a la faena de la transacción.
+    // Vehículo C: una carga registrada en otra faena (A) y otra sin faena. El
+    // costo sigue al EQUIPO (C), no a la faena histórica de la transacción.
     tx({ id: "c-1", vehicleId: IDS.vC, sourcePlate: "CC-0003", worksiteId: IDS.wsA, quantity: 33, amount: 33_000, occurredAt: dayOf(14) }),
+    tx({ id: "c-null", vehicleId: IDS.vC, sourcePlate: "CC-0003", worksiteId: null, quantity: 7, amount: 7_000, occurredAt: dayOf(14) }),
     // Recepción en estanque (TAE) sin vehículo: no es de ningún vehículo y no entra a la lista de flota.
     tx({ id: "tae-1", sourceAccount: "tae:diesel", vehicleId: null, sourcePlate: null, quantity: 1_000, amount: 1_200_000, occurredAt: dayOf(15) }),
   ])
@@ -144,11 +146,13 @@ describe("getFleetOverview · combustible por vehículo desde el libro del prove
     expect(rowOf(rows, IDS.vA)).toMatchObject({ totalLiters: 162, totalFuelAmount: 161_200 })
   })
 
-  it("una carga registrada en una faena fuera del alcance no cuenta: el vehículo queda en cero, no en nulo", async () => {
-    const empty = await getFleetOverview(session({ worksiteIds: [IDS.wsC], isGlobal: false }))
+  it("el costo sigue al equipo aunque la transacción tenga otra faena o ninguna", async () => {
+    const rows = await getFleetOverview(session({ worksiteIds: [IDS.wsC], isGlobal: false }))
 
-    // C pertenece a la faena C, pero su única carga está registrada en la faena A.
-    expect(rowOf(empty, IDS.vC)).toMatchObject({ totalLiters: 0, totalFuelAmount: 0, loadCount: 0 })
+    // C pertenece a la faena C: cuenta su carga registrada en A y la que no
+    // tiene faena. Antes el filtro por `worksite_id` de la transacción las
+    // dejaba en cero y el equipo parecía no haber consumido.
+    expect(rowOf(rows, IDS.vC)).toMatchObject({ totalLiters: 40, totalFuelAmount: 40_000, loadCount: 2 })
   })
 })
 
@@ -172,11 +176,11 @@ describe("getFleetOverview · permisos y alcance", () => {
     expect(rowOf(rows, IDS.vB).totalLiters).toBe(70)
   })
 
-  it("aplica el alcance de faena del usuario a la faena de la transacción", async () => {
+  it("aplica el alcance de faena del usuario a la faena del equipo", async () => {
     const rows = await getFleetOverview(session({ isGlobal: false, worksiteIds: [IDS.wsA, IDS.wsC] }))
 
-    // La carga de C se registró en la faena A (visible): cuenta. La de B no es visible.
-    expect(rowOf(rows, IDS.vC)).toMatchObject({ totalLiters: 33, totalFuelAmount: 33_000, loadCount: 1 })
+    // C es de una faena visible: cuentan sus dos cargas, una de ellas sin faena.
+    expect(rowOf(rows, IDS.vC)).toMatchObject({ totalLiters: 40, totalFuelAmount: 40_000, loadCount: 2 })
     expect(rows.map((row) => row.id)).not.toContain(IDS.vB)
   })
 })
@@ -187,15 +191,15 @@ describe("getFleetOverviewPage · resumen de la lista", () => {
   it("el costo y los litros de 12 meses son la suma del libro del proveedor de los vehículos filtrados", async () => {
     const page = await getFleetOverviewPage(session(), {}, dates, { offset: 0, limit: 50 })
 
-    // A (162 L, 161.200) + B (70 L, 80.000) + C (33 L, 33.000); la recepción TAE no es de ningún vehículo.
-    expect(page.summary.totalLiters).toBe(265)
-    expect(page.summary.totalFuelAmount).toBe(274_200)
+    // A (162 L, 161.200) + B (70 L, 80.000) + C (40 L, 40.000); la recepción TAE no es de ningún vehículo.
+    expect(page.summary.totalLiters).toBe(272)
+    expect(page.summary.totalFuelAmount).toBe(281_200)
   })
 
   it("sin combustibles:view_costs el resumen sólo trae litros", async () => {
     const page = await getFleetOverviewPage(session({ permissions: ["flota:view", "combustibles:view"] }), {}, dates, { offset: 0, limit: 50 })
 
-    expect(page.summary).toMatchObject({ totalLiters: 265, totalFuelAmount: null })
+    expect(page.summary).toMatchObject({ totalLiters: 272, totalFuelAmount: null })
   })
 })
 
@@ -224,6 +228,13 @@ describe("getFleetProviderGapMonths · meses de la ventana de 12 meses sin datos
 
     // 12 meses anteriores al actual (la ventana parte hace 12 meses): ninguno trajo datos ni cobertura.
     expect(gaps).toEqual(Array.from({ length: 12 }, (_, i) => monthKey(i - 12)))
+    expect(gaps).not.toContain(MONTH)
+  })
+
+  it("la cobertura de Flota sigue al equipo, no a la faena histórica de la transacción", async () => {
+    // C es de la faena C, pero su única carga está registrada en la faena A.
+    // El costo ya sigue al equipo; los meses con datos deben hacer lo mismo.
+    const gaps = await getFleetProviderGapMonths(session({ isGlobal: false, worksiteIds: [IDS.wsC] }))
     expect(gaps).not.toContain(MONTH)
   })
 
