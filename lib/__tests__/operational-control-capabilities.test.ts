@@ -14,7 +14,16 @@ describe("operationalControlCapabilities", () => {
       canViewFleet: true,
       canViewCosts: false,
       canViewWorkOrders: false,
+      canViewPurchaseCosts: false,
     })
+  })
+
+  it("los costos de compras los abre purchasing:view, no combustibles:view_costs", () => {
+    expect(operationalControlCapabilities(sessionWith("purchasing:view")).canViewPurchaseCosts).toBe(true)
+    expect(operationalControlCapabilities(sessionWith("combustibles:view", "combustibles:view_costs", "flota:view", "mant:ot:view_all")).canViewPurchaseCosts).toBe(false)
+    // Tener el costo de compras tampoco abre el panel, ni el de combustible.
+    expect(canViewOperationalControl(sessionWith("purchasing:view"))).toBe(false)
+    expect(operationalControlCapabilities(sessionWith("purchasing:view")).canViewCosts).toBe(false)
   })
 
   it("las cifras de OT las abre mant:ot:view_*, no flota ni inspecciones", () => {

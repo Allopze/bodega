@@ -11,6 +11,11 @@ export interface OperationalExportColumn {
  * superficies derivadas de flota, combustible, inspección o costos no se
  * incluyen cuando el usuario no tiene el permiso del subdominio (no se exportan
  * ceros engañosos en lugar de "sin datos").
+ *
+ * Los flags son posicionales: los nuevos se agregan al final con `false` por
+ * defecto, para no romper a los llamadores existentes. `canViewPurchaseCosts`
+ * (`purchasing:view`) abre «Repuestos y servicios (OC)», y «Costo total» exige
+ * las tres series: combustible, mano de obra de OT y compras.
  */
 export function buildOperationalAssetExportColumns(
   canViewInspections: boolean,
@@ -19,6 +24,7 @@ export function buildOperationalAssetExportColumns(
   canViewCapa = false,
   canViewFleet = false,
   canViewWorkOrders = false,
+  canViewPurchaseCosts = false,
 ): OperationalExportColumn[] {
   const showFuelCost = canViewFuel && canViewCosts
   const showCapa = canViewCapa && canViewInspections
@@ -70,12 +76,13 @@ export function buildOperationalAssetExportColumns(
           { header: "OT abiertas", key: "openWorkOrders", width: 14 },
           { header: "En taller", key: "inWorkshop", width: 12 },
           { header: "Horas en taller (período)", key: "workshopHours", width: 22 },
-          { header: "Costo mantención (período)", key: "maintenanceCost", width: 24 },
+          { header: "Mano de obra / taller (OT)", key: "maintenanceCost", width: 24 },
         ]
       : []),
+    ...(canViewPurchaseCosts ? [{ header: "Repuestos y servicios (OC)", key: "purchaseAmount", width: 26 }] : []),
     ...(showFuelCost ? [{ header: "Costo combustible (proveedor)", key: "fuelCost", width: 24 }] : []),
-    ...(showFuelCost && canViewWorkOrders
-      ? [{ header: "Costo total (combustible + mantención)", key: "totalCost", width: 30 }]
+    ...(showFuelCost && canViewWorkOrders && canViewPurchaseCosts
+      ? [{ header: "Costo total (combustible + mano de obra + compras)", key: "totalCost", width: 36 }]
       : []),
   ]
 }
@@ -103,6 +110,7 @@ export function buildOperationalAssetExportRow(
   canViewCapa = false,
   canViewFleet = false,
   canViewWorkOrders = false,
+  canViewPurchaseCosts = false,
 ): Record<string, string | number | null> {
   const showFuelCost = canViewFuel && canViewCosts
   const showCapa = canViewCapa && canViewInspections
@@ -154,7 +162,8 @@ export function buildOperationalAssetExportRow(
           maintenanceCost: asset.maintenanceCost,
         }
       : {}),
+    ...(canViewPurchaseCosts ? { purchaseAmount: asset.purchaseAmount } : {}),
     ...(showFuelCost ? { fuelCost: asset.fuelBilledAmount } : {}),
-    ...(showFuelCost && canViewWorkOrders ? { totalCost: asset.totalCost } : {}),
+    ...(showFuelCost && canViewWorkOrders && canViewPurchaseCosts ? { totalCost: asset.totalCost } : {}),
   }
 }

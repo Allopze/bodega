@@ -137,11 +137,12 @@ export default async function OperationalControlPage({
   const periodLabel = `${formatDate(period.from)} – ${formatDate(period.to)}`
   const headerDescription = `Qué requiere atención hoy en flota y combustible, y el desempeño de los activos entre ${formatDate(period.from)} y ${formatDate(period.to)}.`
 
-  const { canViewFleet, canViewInspections, canViewCapa, canViewCosts, canViewServiceEquipment, canViewWorkOrders } = data.permissions
+  const { canViewFleet, canViewInspections, canViewCapa, canViewCosts, canViewServiceEquipment, canViewWorkOrders, canViewPurchaseCosts } = data.permissions
   // Secciones que pueden degradarse: documentos, ajustes de flota y GPS (sólo
-  // con flota), OT (con su capacidad) y combustible. El denominador se deriva
-  // de las secciones realmente consultadas; antes era un 4 fijo.
-  const degradedTotal = (canViewFleet ? 3 : 0) + (canViewWorkOrders ? 1 : 0) + (canViewFuel ? 1 : 0)
+  // con flota), OT (con su capacidad), combustible y compras vinculadas (con
+  // `purchasing:view`). El denominador se deriva de las secciones realmente
+  // consultadas; antes era un 4 fijo.
+  const degradedTotal = (canViewFleet ? 3 : 0) + (canViewWorkOrders ? 1 : 0) + (canViewFuel ? 1 : 0) + (canViewPurchaseCosts ? 1 : 0)
   const operationalAssets = data.assets.filter((asset) => asset.kind === "vehicle")
   const fleetSize = operationalAssets.length
   const stateMismatchAssets = operationalAssets.filter((asset) => asset.stateMismatch)
@@ -168,6 +169,7 @@ export default async function OperationalControlPage({
     canViewFuel,
     canViewCosts,
     canViewWorkOrders,
+    canViewPurchaseCosts,
     canViewLicenses,
     canViewTaeCoverage: canViewTae,
   })
@@ -314,6 +316,7 @@ export default async function OperationalControlPage({
               canViewFuel={canViewFuel}
               canViewFleet={canViewFleet}
               canViewWorkOrders={canViewWorkOrders}
+              canViewPurchaseCosts={canViewPurchaseCosts}
             />
             {canViewServiceEquipment && serviceEquipmentCount > 0 && (
               <p className="mt-3 text-xs text-[var(--color-text-muted)]">
