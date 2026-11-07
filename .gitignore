@@ -118,6 +118,8 @@ playwright/.auth/
 /.monkeytest
 qa/reports/inspection-history-reconciliation.xlsx
 INVENTARIO DE EXTINTORES FAENA BIODIVERSA 2026.xlsx
+# Nómina con RUT, nombres y fechas: se lee con scripts/apply-lista-empleados-2026-11.ts --file y no se versiona.
+Lista Empleados de servicios-industriales-chome-ltda.xlsx
 .gitignore
 ‎Sin título.xlsx
 # En docs/ sólo se versiona documentación en texto (.md) y los logos (.svg).
