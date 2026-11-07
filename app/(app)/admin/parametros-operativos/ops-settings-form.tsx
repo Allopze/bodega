@@ -9,6 +9,7 @@ import { OptionSelect } from "@/components/ui/option-select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import { SubmitButton } from "@/components/ui/submit-button"
 import { toast } from "@/lib/toast"
+import { formatCLP } from "@/lib/utils"
 import { INITIAL_STATE, type ActionState } from "@/lib/form-state"
 import { saveOperationalSettingsAction } from "./actions"
 import { PDF_DOCUMENT_LIST, PDF_ENGINE_LABELS } from "@/lib/pdf/engines"
@@ -22,6 +23,7 @@ interface OpsSettingsFormProps {
     pdtpEvidenceMaxMb: number
     pdtpEvidenceRetentionDays: number
     purchasingClpTolerance: number
+    repuestosQuotationThresholdClp: number
   }
   defaults: typeof import("@/lib/services/system-settings").DEFAULT_OPS_SETTINGS
   office: {
@@ -122,6 +124,29 @@ export function OpsSettingsForm({ current, defaults, office, pdfEngines }: OpsSe
             step={1}
             defaultValue={String(current.purchasingClpTolerance)}
             error={!!state.fieldErrors?.purchasingClpTolerance}
+          />
+        </Field>
+      </Section>
+
+      <Section
+        title="Repuestos"
+        description="Cuándo una solicitud de repuestos puede enviarse sin las tres cotizaciones. Los servicios conservan la regla de siempre."
+      >
+        <Field
+          label="Monto bajo el cual no se exigen cotizaciones (CLP)"
+          htmlFor="repuestosQuotationThresholdClp"
+          helper={`Predeterminado: ${formatCLP(defaults.repuestosQuotationThresholdClp)}. Bajo este monto una solicitud de repuestos puede enviarse con una cotización o sólo con precios estimados. 0 = siempre se exigen.`}
+          error={state.fieldErrors?.repuestosQuotationThresholdClp?.[0]}
+        >
+          <Input
+            id="repuestosQuotationThresholdClp"
+            name="repuestosQuotationThresholdClp"
+            type="number"
+            min={0}
+            max={50_000_000}
+            step={1}
+            defaultValue={String(current.repuestosQuotationThresholdClp)}
+            error={!!state.fieldErrors?.repuestosQuotationThresholdClp}
           />
         </Field>
       </Section>

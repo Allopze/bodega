@@ -50,6 +50,12 @@ vi.mock("@/lib/storage/helpers", () => ({
 vi.mock("@/lib/requests/quotation-access", () => ({
   assertCanDeleteQuotation: vi.fn(),
 }))
+// El umbral de cotizaciones de repuestos se lee dentro de la transacción de envío.
+const mockGetOperationalSettings = vi.hoisted(() => vi.fn())
+vi.mock("@/lib/services/system-settings", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/services/system-settings")>()),
+  getOperationalSettings: (...args: unknown[]) => mockGetOperationalSettings(...args),
+}))
 
 // ── Helper: build chain mock ─────────────────────────────────────────────────
 
@@ -111,6 +117,7 @@ const mockQuotationsTable = {
   filePath: "filePath",
   supplierId: "supplierId",
   supplierNameFree: "supplierNameFree",
+  totalAmount: "totalAmount",
 }
 
 const storageConfig = {
@@ -132,6 +139,7 @@ let svc: ReturnType<typeof createRequestService>
 
 beforeEach(() => {
   vi.clearAllMocks()
+  mockGetOperationalSettings.mockResolvedValue({ repuestosQuotationThresholdClp: 500_000 })
   svc = createRequestService(config)
 })
 
@@ -359,63 +367,134 @@ describe("submitRequest", () => {
     await expect(svc.submitRequest({ requestId: "req-1", userId: "user-1" })).rejects.toThrow("Solo se pueden enviar")
   })
 
-  it("throws if <3 quotations and no notes", async () => {
+  // El orden de las lecturas de `submitRequest` es: solicitud (FOR UPDATE),
+  // cotizaciones pendientes, ítems en borrador y, sólo si la respuesta puede
+  // cambiar algo, el estado operativo de los vehículos.
+  function submitTx(options: {
+    request?: Record<string, unknown>
+    quotations?: unknown[]
+    items?: unknown[]
+    vehicles?: unknown[]
+  }) {
+    const mockSelect = vi.fn()
+      .mockReturnValueOnce(requestSelectChain([{ id: "req-1", status: "draft", code: "REP-001", notes: null, urgency: "normal", ...options.request }]))
+      .mockReturnValueOnce(plainSelectChain(options.quotations ?? []))
+      .mockReturnValueOnce(plainSelectChain(options.items ?? []))
+      .mockReturnValueOnce(plainSelectChain(options.vehicles ?? []))
     mockDbTransaction.mockImplementation(async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
-      const mockSelect = vi.fn()
-        .mockReturnValueOnce(requestSelectChain([{ id: "req-1", status: "draft", code: "REP-001", notes: null }]))
-        .mockReturnValueOnce(plainSelectChain([{ id: "q1" }]))
-      const tx = { select: mockSelect }
-      return fn(tx as never)
-    })
-    await expect(svc.submitRequest({ requestId: "req-1", userId: "user-1" })).rejects.toThrow("al menos 3 cotizaciones")
-  })
-
-  it("throws if there are no quotations at all, even with notes", async () => {
-    // Enviar sin ninguna cotización dejaba la solicitud sin salida: aprobar
-    // exige seleccionar una ganadora y adjuntarlas exige estado 'draft'.
-    mockDbTransaction.mockImplementation(async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
-      const mockSelect = vi.fn()
-        .mockReturnValueOnce(requestSelectChain([{ id: "req-1", status: "draft", code: "REP-001", notes: "Proveedor único" }]))
-        .mockReturnValueOnce(plainSelectChain([]))
-      const tx = { select: mockSelect }
-      return fn(tx as never)
-    })
-    await expect(svc.submitRequest({ requestId: "req-1", userId: "user-1" })).rejects.toThrow("al menos una cotización")
-  })
-
-  it("submits successfully with 3 quotations", async () => {
-    mockDbTransaction.mockImplementation(async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
-      const mockSelect = vi.fn()
-        .mockReturnValueOnce(requestSelectChain([{ id: "req-1", status: "draft", code: "REP-001", notes: null }]))
-        .mockReturnValueOnce(plainSelectChain([{ id: "q1" }, { id: "q2" }, { id: "q3" }]))
-        .mockReturnValueOnce(plainSelectChain([]))
       const tx = {
         select: mockSelect,
         update: vi.fn().mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([{ id: "req-1" }]) }) }) }),
       }
       return fn(tx as never)
     })
+    return mockSelect
+  }
+
+  it("throws if the quotation is over the threshold, there are fewer than 3 and no notes", async () => {
+    submitTx({ quotations: [{ id: "q1", totalAmount: 600_000 }] })
+    await expect(svc.submitRequest({ requestId: "req-1", userId: "user-1" })).rejects.toThrow("se requieren 3 cotizaciones")
+  })
+
+  it("throws if there is neither a quotation nor an estimated price, even with notes", async () => {
+    // Enviar sin ninguna cotización ni precio dejaba la solicitud sin salida:
+    // aprobar exige seleccionar una ganadora o estar bajo el umbral.
+    submitTx({ request: { notes: "Proveedor único" } })
+    await expect(svc.submitRequest({ requestId: "req-1", userId: "user-1" })).rejects.toThrow("al menos una cotización")
+  })
+
+  it("submits successfully with 3 quotations", async () => {
+    submitTx({ quotations: [{ id: "q1", totalAmount: 600_000 }, { id: "q2", totalAmount: 650_000 }, { id: "q3", totalAmount: 700_000 }] })
 
     await svc.submitRequest({ requestId: "req-1", userId: "user-1", userEmail: "test@test.com" })
     expect(submitItemTx).not.toHaveBeenCalled() // no draft items
     expect(recordStatusChange).toHaveBeenCalled()
   })
 
-  it("submits with <3 quotations but with notes (justification)", async () => {
-    mockDbTransaction.mockImplementation(async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
-      const mockSelect = vi.fn()
-        .mockReturnValueOnce(requestSelectChain([{ id: "req-1", status: "draft", code: "REP-001", notes: "Justificación" }]))
-        .mockReturnValueOnce(plainSelectChain([{ id: "q1" }]))
-        .mockReturnValueOnce(plainSelectChain([]))
-      const tx = {
-        select: mockSelect,
-        update: vi.fn().mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([{ id: "req-1" }]) }) }) }),
-      }
-      return fn(tx as never)
-    })
+  it("submits with <3 quotations over the threshold but with notes (justification)", async () => {
+    submitTx({ request: { notes: "Justificación" }, quotations: [{ id: "q1", totalAmount: 600_000 }] })
 
     await svc.submitRequest({ requestId: "req-1", userId: "user-1" })
     expect(recordStatusChange).toHaveBeenCalled()
+  })
+
+  it("repuestos bajo el umbral se envía sin cotización con los precios estimados", async () => {
+    submitTx({ items: [{ id: "item-1", quantity: 2, estimatedUnitPrice: 20_000, vehicleId: null, workOrderId: null }] })
+
+    await svc.submitRequest({ requestId: "req-1", userId: "user-1" })
+
+    expect(mockGetOperationalSettings).toHaveBeenCalledTimes(1)
+    expect(submitItemTx).toHaveBeenCalledTimes(1)
+    expect(submitItemTx).toHaveBeenCalledWith(expect.anything(), "item-1", "user-1", expect.anything())
+    expect(recordStatusChange).toHaveBeenCalled()
+  })
+
+  it("repuestos sobre el umbral sin cotización falla y no transiciona ningún ítem", async () => {
+    submitTx({ items: [{ id: "item-1", quantity: 1, estimatedUnitPrice: 900_000, vehicleId: null, workOrderId: null }] })
+
+    await expect(svc.submitRequest({ requestId: "req-1", userId: "user-1" })).rejects.toThrow("Sobre")
+    expect(submitItemTx).not.toHaveBeenCalled()
+  })
+
+  it("usa el umbral configurado, no un valor fijo", async () => {
+    mockGetOperationalSettings.mockResolvedValue({ repuestosQuotationThresholdClp: 1_500_000 })
+    submitTx({ items: [{ id: "item-1", quantity: 1, estimatedUnitPrice: 900_000, vehicleId: null, workOrderId: null }] })
+
+    await svc.submitRequest({ requestId: "req-1", userId: "user-1" })
+
+    expect(submitItemTx).toHaveBeenCalledTimes(1)
+  })
+
+  it("la vía rápida mira el estado operativo del vehículo sólo si hace falta", async () => {
+    // Crítica + equipo detenido, sin notas: pide la justificación.
+    submitTx({
+      request: { urgency: "critical" },
+      items: [{ id: "item-1", quantity: 1, estimatedUnitPrice: 900_000, vehicleId: "veh-1", workOrderId: null }],
+      vehicles: [{ operationalStatus: "detenido" }],
+    })
+    await expect(svc.submitRequest({ requestId: "req-1", userId: "user-1" })).rejects.toThrow("Urgencia crítica")
+
+    // Con una OT vinculada ya es elegible: no consulta la flota (la 4.ª lectura queda sin usar).
+    const mockSelect = submitTx({
+      request: { urgency: "critical", notes: "OT detenida" },
+      items: [{ id: "item-1", quantity: 1, estimatedUnitPrice: 900_000, vehicleId: "veh-1", workOrderId: "ot-1" }],
+    })
+    await svc.submitRequest({ requestId: "req-1", userId: "user-1" })
+    expect(mockSelect).toHaveBeenCalledTimes(3)
+  })
+
+  describe("servicios", () => {
+    let serviciosSvc: ReturnType<typeof createRequestService>
+    beforeEach(() => {
+      serviciosSvc = createRequestService({ ...config, requestType: "servicios", codePrefix: "SER" })
+    })
+
+    it("no lee el umbral y exige al menos una cotización aunque haya precios estimados", async () => {
+      mockDbTransaction.mockImplementation(async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
+        const mockSelect = vi.fn()
+          .mockReturnValueOnce(requestSelectChain([{ id: "req-1", status: "draft", code: "SER-001", notes: null, urgency: "normal" }]))
+          .mockReturnValueOnce(plainSelectChain([]))
+          .mockReturnValueOnce(plainSelectChain([{ id: "item-1", quantity: 1, estimatedUnitPrice: 10_000, vehicleId: null, workOrderId: null }]))
+        return fn({ select: mockSelect } as never)
+      })
+
+      await expect(serviciosSvc.submitRequest({ requestId: "req-1", userId: "user-1" }))
+        .rejects.toThrow("Adjunta al menos una cotización antes de enviar la solicitud.")
+      expect(mockGetOperationalSettings).not.toHaveBeenCalled()
+    })
+
+    it("con menos de 3 cotizaciones y sin notas conserva el mensaje de siempre", async () => {
+      mockDbTransaction.mockImplementation(async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
+        const mockSelect = vi.fn()
+          .mockReturnValueOnce(requestSelectChain([{ id: "req-1", status: "draft", code: "SER-001", notes: null, urgency: "normal" }]))
+          .mockReturnValueOnce(plainSelectChain([{ id: "q1", totalAmount: 20_000 }]))
+          .mockReturnValueOnce(plainSelectChain([]))
+        return fn({ select: mockSelect } as never)
+      })
+
+      await expect(serviciosSvc.submitRequest({ requestId: "req-1", userId: "user-1" }))
+        .rejects.toThrow("Se requieren al menos 3 cotizaciones")
+    })
   })
 })
 

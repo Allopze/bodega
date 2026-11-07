@@ -57,6 +57,13 @@ export interface QuotationPanelProps {
   downloadEndpointPrefix: string
   approvedText?:          string
   notesPlaceholder?:      string
+  /**
+   * Lo que la regla de cotizaciones pide a esta solicitud, ya redactado (ver
+   * `quotationRequirementMessage`). Cuando viene reemplaza los textos fijos de
+   * «mínimo 3 cotizaciones», que ya no valen para repuestos: el umbral lo
+   * configura Administración. Sin él (servicios) se conserva el texto de siempre.
+   */
+  requirementHint?:       string | null
   uploadQuotationAction:  (prev: ActionState, formData: FormData) => Promise<ActionState>
   deleteQuotationAction:  (prev: ActionState, formData: FormData) => Promise<ActionState>
   selectQuotationAction:  (prev: ActionState, formData: FormData) => Promise<ActionState>
@@ -74,6 +81,7 @@ export function QuotationPanel({
   downloadEndpointPrefix,
   approvedText = "✓ Cotización aprobada. Ítems listos para orden de compra en el módulo de Compras.",
   notesPlaceholder = "Condiciones de pago, plazo...",
+  requirementHint,
   uploadQuotationAction,
   deleteQuotationAction,
   selectQuotationAction,
@@ -141,7 +149,9 @@ export function QuotationPanel({
           </h2>
           <p className="mt-0.5 text-xs text-[var(--color-text-subtle)]">
             {isEditable
-              ? `${quotations.length}/3 adjuntadas${quotations.length < 3 ? " — mínimo 3, o menos con una justificación en Notas generales" : ""}`
+              ? requirementHint
+                ? `${quotations.length} adjuntadas — ${requirementHint}`
+                : `${quotations.length}/3 adjuntadas${quotations.length < 3 ? " — mínimo 3, o menos con una justificación en Notas generales" : ""}`
               : isPendingReview
               ? "Selecciona la cotización ganadora"
               : ""}
@@ -158,7 +168,7 @@ export function QuotationPanel({
       {quotations.length === 0 ? (
         <p className="text-sm text-[var(--color-text-subtle)] italic">
           No hay cotizaciones adjuntas.{" "}
-          {isEditable && "Mínimo 3, o menos con una justificación en Notas generales."}
+          {isEditable && (requirementHint || "Mínimo 3, o menos con una justificación en Notas generales.")}
         </p>
       ) : (
         <ul className="space-y-3">
