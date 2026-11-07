@@ -227,6 +227,39 @@ describe("auth bootstrap service", () => {
   })
 
   /*
+   * Decisión del 2026-11-07: mantención pide repuestos desde la OT. En
+   * producción los roles y los permisos `repuestos:*` ya existen, así que el
+   * cambio de `defaultGrants` sólo llega por una alta puntual.
+   */
+  it("concede repuestos:create a jefe_mantencion en una BD ya poblada", async () => {
+    const jefe = { roleId: "rol-jefe-mant", permissionId: "p-rep-create" }
+    const marker = "rbac:grant-addition:2026-11-07-rol-jefe-mant-p-rep-create"
+    const grantsDelJefe = () => inMemoryDb.select().from(schema.rolePermissions).where(and(
+      eq(schema.rolePermissions.roleId, jefe.roleId), eq(schema.rolePermissions.permissionId, jefe.permissionId),
+    ))
+    await ensureSystemRbac()
+    // Estado de producción: el rol y el permiso existen, el grant y la marca no.
+    await inMemoryDb.delete(schema.rolePermissions).where(and(
+      eq(schema.rolePermissions.roleId, jefe.roleId), eq(schema.rolePermissions.permissionId, jefe.permissionId),
+    ))
+    await inMemoryDb.delete(schema.systemSettings).where(eq(schema.systemSettings.key, marker))
+    expect(await grantsDelJefe()).toHaveLength(0)
+
+    await ensureSystemRbac()
+    expect(await grantsDelJefe()).toHaveLength(1)
+  })
+
+  it("las altas de repuestos para mantención no tocan la aprobación", () => {
+    const repuestos = GRANT_ADDITIONS.filter((addition) => addition.key.startsWith("2026-11-07-"))
+    // Tres roles: jefe (4 permisos), supervisor y administrador de contrato (3 c/u).
+    expect(repuestos).toHaveLength(10)
+    expect(repuestos.map((addition) => addition.permissionId)).not.toContain("p-rep-approve")
+    expect(new Set(repuestos.map((addition) => addition.roleId))).toEqual(
+      new Set(["rol-jefe-mant", "rol-sup-mantencion", "rol-admin-contrato"]),
+    )
+  })
+
+  /*
    * Una alta puntual es la réplica en producción de un cambio de
    * `defaultGrants`: si no coincide con uno, o el id tiene un error de tipeo,
    * la BD nueva y la de producción terminan con permisos distintos (o el

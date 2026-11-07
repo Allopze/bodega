@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { SYSTEM_PERMISSIONS, SYSTEM_ROLE_PERMISSIONS } from "@/lib/auth/system-rbac"
 import {
   QUOTATION_TYPES,
   isRequestType,
@@ -43,6 +44,19 @@ describe("request type permissions", () => {
       "repuestos",
       "servicios",
     ])
+  })
+
+  it("la jefatura de mantención ve «Repuestos» como tipo de solicitud al crear y al enviar", () => {
+    const nameById = new Map(SYSTEM_PERMISSIONS.map((permission) => [permission.id, permission.name]))
+    const permissionsOf = (roleId: string) => SYSTEM_ROLE_PERMISSIONS
+      .filter((grant) => grant.roleId === roleId)
+      .map((grant) => nameById.get(grant.permissionId)!)
+    for (const roleId of ["rol-jefe-mant", "rol-sup-mantencion", "rol-admin-contrato"]) {
+      expect(visibleRequestTypeOptions(permissionsOf(roleId)).map((option) => option.value), roleId).toContain("repuestos")
+      expect(visibleRequestTypeOptions(permissionsOf(roleId), "submit").map((option) => option.value), roleId).toContain("repuestos")
+    }
+    // El mecánico no solicita: no le aparece el tipo.
+    expect(visibleRequestTypeOptions(permissionsOf("rol-mecanico")).map((option) => option.value)).not.toContain("repuestos")
   })
 
   it("filters visible request type options for submit permissions", () => {

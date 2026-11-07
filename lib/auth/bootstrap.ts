@@ -108,6 +108,23 @@ export const GRANT_ADDITIONS = [
     roleId: "rol-admin-contrato" as const,
     permissionId,
   })),
+  // Mantención solicita repuestos desde la OT (decisión del 2026-11-07): la
+  // jefatura crea, envía y ve todas las solicitudes; supervisión de faena y
+  // administración de contrato crean, envían y ven las propias. Es la réplica
+  // de `modules/repuestos/manifest.ts`; la aprobación no cambia (sigue sólo en
+  // jefa_chome y administrador).
+  ...(["p-rep-create", "p-rep-own", "p-rep-all", "p-rep-submit"] as const).map((permissionId) => ({
+    key: `2026-11-07-rol-jefe-mant-${permissionId}`,
+    roleId: "rol-jefe-mant" as const,
+    permissionId,
+  })),
+  ...(["rol-sup-mantencion", "rol-admin-contrato"] as const).flatMap((roleId) =>
+    (["p-rep-create", "p-rep-own", "p-rep-submit"] as const).map((permissionId) => ({
+      key: `2026-11-07-${roleId}-${permissionId}`,
+      roleId,
+      permissionId,
+    })),
+  ),
 ] as const
 
 async function applyGrantAdditions(executor: typeof db | Tx) {
