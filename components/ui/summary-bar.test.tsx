@@ -36,10 +36,32 @@ describe("SummaryBar", () => {
   it("un valor de texto va en la sans del cuerpo: sin mono ni tabular-nums", () => {
     render(<SummaryBar stats={[{ key: "a", label: "Avance del plan", value: "Aún sin actividades", valueKind: "text", tone: "signal" }, { key: "b", label: "Otra", value: 7 }]} />)
     const text = screen.getByText("Aún sin actividades")
-    expect(text).toHaveClass("text-base", "font-semibold")
+    // Mismo tratamiento que `KpiCard valueKind="text"`: sans, 500, muted.
+    expect(text).toHaveClass("text-base", "font-medium", "text-[var(--color-text-muted)]")
     expect(text).not.toHaveClass("font-mono")
     expect(text).not.toHaveClass("tabular-nums")
     expect(screen.getByText("7")).toHaveClass("font-mono")
+  })
+
+  it("un valor numérico se formatea es-CL con separador de miles, también en la variante compacta", () => {
+    const stats = [
+      { key: "a", label: "Ejecutadas", value: 2246 },
+      { key: "b", label: "Planificadas", value: 12 },
+    ]
+    const { unmount } = render(<SummaryBar stats={stats} />)
+    expect(screen.getByText("2.246")).toHaveClass("font-mono", "tabular-nums")
+    expect(screen.queryByText("2246")).toBeNull()
+    expect(screen.getByText("12")).toBeInTheDocument()
+    unmount()
+
+    render(<SummaryBar compact stats={stats} />)
+    expect(screen.getByText("2.246")).toBeInTheDocument()
+    expect(screen.queryByText("2246")).toBeNull()
+  })
+
+  it("un valor ya formateado (string) se pinta tal cual", () => {
+    render(<SummaryBar stats={[{ key: "a", label: "Gasto", value: "$1.171.436" }]} />)
+    expect(screen.getByText("$1.171.436")).toBeInTheDocument()
   })
 
   describe("tono", () => {

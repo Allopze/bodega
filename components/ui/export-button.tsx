@@ -5,6 +5,14 @@ import { Button, type ButtonProps } from "@/components/ui/button"
 import { FileXls } from "@phosphor-icons/react"
 import { toast } from "@/lib/toast"
 
+/**
+ * Ícono único de «Exportar Excel» en toda la app. Había dos (una flecha de
+ * descarga en Solicitudes, Compras y Facturas; el archivo «XLS» en Flota,
+ * Control operacional y Mantención): auditoría UX-08, 2026-11-07. Quien arme un
+ * disparador propio (menú, diálogo) usa éste.
+ */
+export const EXPORT_ICON = FileXls
+
 export interface ExportActionResult {
   ok: boolean
   data?: {
@@ -75,6 +83,43 @@ export function useXlsxExport<TFilters = undefined>(
   return { run, loading }
 }
 
+export interface ExportLinkProps {
+  href: string
+  label?: string
+  /** Nombre accesible completo cuando el rótulo visible es corto (debe contener el rótulo: WCAG 2.5.3). */
+  ariaLabel?: string
+  variant?: ButtonProps["variant"]
+  size?: ButtonProps["size"]
+  className?: string
+  /** `true` (default) descarga con el nombre que da el servidor; un `string` fija el nombre del archivo. */
+  download?: boolean | string
+}
+
+/**
+ * Exportar Excel por GET (`/api/reportes/export?...`, `/api/.../xlsx`): el mismo
+ * botón que `ExportButton` —rótulo, ícono y jerarquía `secondary`— pero como
+ * enlace, porque la descarga la resuelve el navegador contra una ruta y no una
+ * acción de servidor. Sigue siendo `role=link`.
+ */
+export function ExportLink({
+  href,
+  label = "Exportar Excel",
+  ariaLabel,
+  variant = "secondary",
+  size = "sm",
+  className,
+  download = true,
+}: ExportLinkProps) {
+  return (
+    <Button variant={variant} size={size} className={className} asChild>
+      <a href={href} download={download || undefined} aria-label={ariaLabel}>
+        <EXPORT_ICON className="h-4 w-4 mr-1 shrink-0" />
+        {label}
+      </a>
+    </Button>
+  )
+}
+
 export function ExportButton<TFilters = undefined>({
   action,
   filters,
@@ -95,7 +140,7 @@ export function ExportButton<TFilters = undefined>({
       className={className}
       aria-label={ariaLabel}
     >
-      <FileXls className="h-4 w-4 mr-1 shrink-0" />
+      <EXPORT_ICON className="h-4 w-4 mr-1 shrink-0" />
       {label}
     </Button>
   )

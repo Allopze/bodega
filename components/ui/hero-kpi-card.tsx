@@ -1,7 +1,7 @@
 import type { ReactNode } from "react"
 import Link from "next/link"
 import { ArrowDown, ArrowUp } from "@phosphor-icons/react/dist/ssr"
-import { cn } from "@/lib/utils"
+import { cn, formatQty } from "@/lib/utils"
 
 /**
  * El primer tile de una fila, relleno en verde profundo.
@@ -18,7 +18,8 @@ import { cn } from "@/lib/utils"
 export function HeroKpiCard({ icon, label, value, detail, trend, href }: {
   icon: ReactNode
   label: string
-  value: string
+  /** Un `number` se formatea es-CL («2.246»); un `string` se pinta tal cual. */
+  value: string | number
   detail: string
   /** Variación porcentual ya calculada. `0` no es buena ni mala noticia. */
   trend?: number | null
@@ -43,13 +44,13 @@ export function HeroKpiCard({ icon, label, value, detail, trend, href }: {
         )}
       </div>
 
-      <p className="mt-2 font-mono text-2xl font-bold tabular-nums tracking-tight text-white">{value}</p>
+      <p className="mt-2 font-mono text-2xl font-semibold tabular-nums tracking-tight text-white">{typeof value === "number" ? formatQty(value) : value}</p>
 
       <div className="mt-2.5 flex items-start gap-2 text-xs">
         {typeof trend === "number" && (
           // Sin verde/rojo: sobre el relleno de marca no se distinguirían. La
           // flecha carga el signo y el fondo translúcido lo separa del detalle.
-          <span className="inline-flex items-center gap-0.5 rounded-full bg-white/15 px-1.5 py-0.5 text-[11px] font-semibold text-white">
+          <span className="inline-flex items-center gap-0.5 rounded-full bg-white/15 px-1.5 py-0.5 text-2xs font-semibold text-white">
             {trend > 0 ? <ArrowUp size={11} weight="bold" /> : trend < 0 ? <ArrowDown size={11} weight="bold" /> : null}
             {Math.abs(trend)}%
           </span>

@@ -1,8 +1,7 @@
 "use client"
 
 import { useSearchParams } from "next/navigation"
-import { DownloadSimple } from "@phosphor-icons/react"
-import { Button } from "@/components/ui/button"
+import { ExportLink } from "@/components/ui/export-button"
 
 /**
  * "Exportar Excel" respetando los filtros activos de la URL.
@@ -20,12 +19,6 @@ export function ExportExcelButton({ tipo }: { tipo: string }) {
     if (value) params.set(to!, value)
   }
 
-  return (
-    <Button variant="secondary" size="sm" asChild>
-      <a href={`/api/reportes/export?${params.toString()}`} download>
-        <DownloadSimple size={15} />
-        Exportar Excel
-      </a>
-    </Button>
-  )
+  // Mismo botón, ícono y jerarquía que el resto de las exportaciones (UX-08).
+  return <ExportLink href={`/api/reportes/export?${params.toString()}`} />
 }

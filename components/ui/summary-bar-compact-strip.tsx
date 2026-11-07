@@ -1,6 +1,6 @@
 import * as React from "react"
 import Link from "next/link"
-import { cn } from "@/lib/utils"
+import { cn, formatQty } from "@/lib/utils"
 import type { SummaryStat } from "./summary-bar"
 import { SUMMARY_TONE_TEXT, activeSummaryTone } from "./summary-bar-tone"
 
@@ -20,7 +20,7 @@ export function SummaryBarCompactStrip({ stats, className }: { stats: SummarySta
             <span className={cn(
               "font-mono font-semibold tabular-nums",
               tone ? SUMMARY_TONE_TEXT[tone] : isZero ? "text-[var(--color-text-faint)]" : "text-[var(--color-text)]",
-            )}>{stat.value}</span>
+            )}>{typeof stat.value === "number" ? formatQty(stat.value) : stat.value}</span>
             {stat.hint && <span className="text-text-subtle">{stat.hint}</span>}
           </>
         )

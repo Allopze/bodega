@@ -19,6 +19,54 @@ describe("KpiCard", () => {
     expect(tile).toHaveClass("rounded-[var(--radius-2xl)]", "border")
   })
 
+  it("la cifra mono va en peso 600, no 700 (el 700 queda para la marca)", () => {
+    render(<KpiCard {...base} />)
+    const value = screen.getByText("42")
+    expect(value).toHaveClass("font-semibold")
+    expect(value).not.toHaveClass("font-bold")
+  })
+
+  it("un `value` numérico se formatea es-CL con separador de miles", () => {
+    render(<KpiCard {...base} value={2246} />)
+    expect(screen.getByText("2.246")).toHaveClass("font-mono", "tabular-nums")
+    expect(screen.queryByText("2246")).toBeNull()
+  })
+
+  it("un número sin miles queda igual y un `string` se pinta tal cual", () => {
+    const { rerender } = render(<KpiCard {...base} value={42} />)
+    expect(screen.getByText("42")).toBeInTheDocument()
+    rerender(<KpiCard {...base} value="$1.171.436" />)
+    expect(screen.getByText("$1.171.436")).toBeInTheDocument()
+  })
+
+  it("el nombre accesible del enlace superpuesto usa la cifra ya formateada", () => {
+    render(<KpiCard {...base} value={12345} href="/solicitudes" secondaryAction={{ label: "Ver", href: "/otra" }} />)
+    expect(screen.getByRole("link", { name: "Solicitudes: 12.345" })).toBeInTheDocument()
+  })
+
+  it("`valueKind=\"text\"` dibuja una palabra en sans, con el peso visual del mensaje vacío, no como cifra", () => {
+    render(<KpiCard {...base} value="Ninguno" valueKind="text" />)
+    const value = screen.getByText("Ninguno")
+    expect(value).toHaveClass("font-sans", "text-base", "font-medium", "leading-snug")
+    expect(value).toHaveClass("text-[var(--color-text-muted)]")
+    expect(value).not.toHaveClass("font-mono")
+    expect(value).not.toHaveClass("text-2xl")
+    expect(value).not.toHaveClass("tabular-nums")
+  })
+
+  it("por defecto (`valueKind` omitido) un string conserva el estilo de cifra", () => {
+    render(<KpiCard {...base} value="Ninguno" />)
+    expect(screen.getByText("Ninguno")).toHaveClass("font-mono", "text-2xl")
+  })
+
+  it("el ícono del tile es neutro aunque quien llama lo pinte de un color de estado", () => {
+    const { container } = render(
+      <KpiCard {...base} icon={<svg data-testid="ico" className="text-[var(--color-success)]" />} />,
+    )
+    const wrapper = container.querySelector('[data-testid="ico"]')!.parentElement as HTMLElement
+    expect(wrapper.className).toContain("[&_svg]:text-[var(--color-text-subtle)]")
+  })
+
   it("`numerals=\"sans\"` saca la cifra de la mono", () => {
     render(<KpiCard {...base} numerals="sans" />)
     const value = screen.getByText("42")

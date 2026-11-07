@@ -2,11 +2,16 @@ import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 
-/* Estados de severidad (primary/success/warning/signal/danger) mantienen el
-   tratamiento mono-uppercase; los neutros/informativos (default/info/outline)
-   usan sans en caja normal para que la información rutinaria no grite. */
-const severityType = "font-mono font-semibold uppercase tracking-wider"
-const proseType    = "font-sans font-medium normal-case tracking-normal"
+/* Un solo tratamiento tipográfico para todas las variantes: Myriad, peso 500,
+   caja de oración, sin espaciado. La severidad la llevan el color (fondo -tint,
+   texto -ink) y el punto opcional, no la tipografía.
+
+   Decisión 2026-11-07 (auditoría UX-04): las severidades iban en mono
+   MAYÚSCULAS y las neutras en sans, así que una misma columna mezclaba
+   «Normal» con «● ALTA» y se leían como dos cosas distintas; además las
+   mayúsculas anchas partían o cortaban las insignias largas. Para los estados
+   largos conviene una insignia corta y el detalle en la fila. */
+const badgeType = "font-sans font-medium normal-case tracking-normal"
 
 const badgeVariants = cva(
   [
@@ -14,38 +19,32 @@ const badgeVariants = cva(
     "rounded-[var(--radius-full)]",
     "px-2 py-0.5",
     "whitespace-nowrap",
+    badgeType,
   ],
   {
     variants: {
       variant: {
-        default:  `${proseType} text-[var(--color-text-muted)] bg-[var(--color-surface-2)]`,
-        // Mismo tratamiento tipográfico que las severidades, pero cromáticamente
-        // neutro. Para el valor "apagado" de una dimensión de estado (Inactivo,
-        // Sin registro): antes caía en `default` (sans, caja normal) y la misma
-        // columna mezclaba dos sistemas tipográficos — ACTIVO junto a Inactivo.
-        neutral:  `${severityType} text-[var(--color-text-muted)] bg-[var(--color-surface-2)]`,
-        primary:  `${severityType} text-[var(--color-primary-ink)] bg-[var(--color-primary-tint)]`,
-        success:  `${severityType} text-[var(--color-success-ink)] bg-[var(--color-success-tint)]`,
-        warning:  `${severityType} text-[var(--color-warning-ink)] bg-[var(--color-warning-tint)]`,
-        signal:   `${severityType} text-[var(--color-signal-ink)] bg-[var(--color-signal-tint)]`,
-        info:     `${proseType} text-[var(--color-info-ink)] bg-[var(--color-info-tint)]`,
-        danger:   `${severityType} text-[var(--color-danger-ink)] bg-[var(--color-danger-tint)]`,
-        outline:  `${proseType} text-[var(--color-text-muted)] border border-[var(--color-border)] bg-transparent`,
+        default:  "text-[var(--color-text-muted)] bg-[var(--color-surface-2)]",
+        // Cromáticamente neutro, para el valor "apagado" de una dimensión de
+        // estado (Inactivo, Sin registro). Hoy es idéntico a `default`; se
+        // conserva porque `neutral` es parte de la API pública (MetaBadge).
+        neutral:  "text-[var(--color-text-muted)] bg-[var(--color-surface-2)]",
+        primary:  "text-[var(--color-primary-ink)] bg-[var(--color-primary-tint)]",
+        success:  "text-[var(--color-success-ink)] bg-[var(--color-success-tint)]",
+        warning:  "text-[var(--color-warning-ink)] bg-[var(--color-warning-tint)]",
+        signal:   "text-[var(--color-signal-ink)] bg-[var(--color-signal-tint)]",
+        info:     "text-[var(--color-info-ink)] bg-[var(--color-info-tint)]",
+        danger:   "text-[var(--color-danger-ink)] bg-[var(--color-danger-tint)]",
+        outline:  "text-[var(--color-text-muted)] border border-[var(--color-border)] bg-transparent",
       },
-      // Piso de 11px: por debajo el badge deja de ser legible de un vistazo, que
-      // es justo su función. `sm` rendía 9px y `default` 10px.
+      // Piso de 11px (`text-2xs`): por debajo el badge deja de ser legible de un
+      // vistazo, que es justo su función.
       size: {
-        sm:      "text-[11px]",
-        default: "text-[11px]",
-        lg:      "text-xs",
+        sm:      "text-2xs",
+        default: "text-xs",
+        lg:      "text-sm",
       },
     },
-    // Sin uppercase la caja óptica se achica: las variantes prose suben 1px.
-    compoundVariants: [
-      { variant: ["default", "info", "outline"], size: "sm",      className: "text-[11px]" },
-      { variant: ["default", "info", "outline"], size: "default", className: "text-xs" },
-      { variant: ["default", "info", "outline"], size: "lg",      className: "text-[13px]" },
-    ],
     defaultVariants: {
       variant: "default",
       size: "default",

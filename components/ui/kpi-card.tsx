@@ -1,7 +1,7 @@
 import type { ReactNode } from "react"
 import Link from "next/link"
 import { ArrowRight } from "@phosphor-icons/react/dist/ssr"
-import { cn } from "@/lib/utils"
+import { cn, formatQty } from "@/lib/utils"
 import { Card, CardContent } from "@/components/ui/card"
 import { Delta } from "@/components/ui/delta"
 import { MiniSparkline } from "@/components/ui/mini-sparkline"
@@ -36,10 +36,17 @@ export function KpiCard({
   numerals = "mono",
   surface = "card",
   empty,
+  valueKind = "number",
 }: {
   icon: ReactNode
   label: string
-  value: string
+  /**
+   * Un `number` se formatea aquí (es-CL, separador de miles: 2246 → «2.246»), así
+   * nadie vuelve a pasar `String(n)` y mostrar «2246» junto a «$1.171.436»
+   * (auditoría UX-06, 2026-11-07). Un `string` se pinta tal cual: para dinero
+   * (`formatCLP`), porcentajes o unidades que ya vienen formateados.
+   */
+  value: string | number
   detail: string
   trend?: number | null
   /**
@@ -78,7 +85,15 @@ export function KpiCard({
    * qué hacer. `actionLabel` se pinta como enlace; el destino es `href`.
    */
   empty?: { message: string; actionLabel?: string }
+  /**
+   * `number` (default) dibuja el valor como cifra. `text` es para palabras —
+   * «Ninguno», «Sin datos», «Al día»— que con estilo de cifra (mono negrita de
+   * 24–28 px) se leían como una cifra rota: van en sans, con el peso visual del
+   * mensaje de `empty`.
+   */
+  valueKind?: "number" | "text"
 }) {
+  const displayValue = typeof value === "number" ? formatQty(value) : value
   const hasSparkline = Array.isArray(sparkline) && sparkline.length >= 2
   const flat = surface === "flat"
   // Un tile vacío no muestra variación: "↓ 100 %" junto a «Sin OC emitidas»
@@ -93,7 +108,12 @@ export function KpiCard({
           {icon && (
             <span className={cn(
               "flex h-7 w-7 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-surface-2)] text-[var(--color-text-muted)]",
-              flat && "transition-colors duration-[var(--duration-fast)] group-hover/kpi:bg-[var(--color-primary-tint)] group-hover/kpi:text-[var(--color-primary-ink)]",
+              // El ícono es neutro aunque quien llama le pase `text-success` o
+              // `text-warning`: en Programa de trabajo cada tile lo pintaba verde
+              // o naranja como decoración, con los colores de estado para nada
+              // (auditoría UX-06). Sólo el hover del tablero lo tiñe.
+              "[&_svg]:text-[var(--color-text-subtle)]",
+              flat && "transition-colors duration-[var(--duration-fast)] group-hover/kpi:bg-[var(--color-primary-tint)] group-hover/kpi:text-[var(--color-primary-ink)] group-hover/kpi:[&_svg]:text-[var(--color-primary-ink)]",
             )}>
               {icon}
             </span>
@@ -106,13 +126,19 @@ export function KpiCard({
         <p className="mt-2 text-base font-semibold leading-snug text-[var(--color-text-muted)]">{empty.message}</p>
       ) : (
         <p className={cn(
-          // Anillo y cifra comparten tono (TIUX-15): `signal` pintaba el anillo
-          // naranja y la cifra verde primario, dos señales contradictorias.
-          // Texto con `-ink` (AGENTS.md regla 8): el naranja base no pasa AA.
-          "mt-2 tabular-nums tracking-tight",
-          numerals === "sans" ? "font-sans text-[28px] font-semibold leading-none" : "font-mono text-2xl font-bold",
-          tone === "danger" ? "text-[var(--color-danger-ink)]" : tone === "signal" ? "text-[var(--color-signal-ink)]" : "text-[var(--color-text)]",
-        )}>{value}</p>
+          "mt-2",
+          valueKind === "text"
+            ? "font-sans text-base font-medium leading-snug text-[var(--color-text-muted)]"
+            : cn(
+                // Anillo y cifra comparten tono (TIUX-15): `signal` pintaba el anillo
+                // naranja y la cifra verde primario, dos señales contradictorias.
+                // Texto con `-ink` (AGENTS.md regla 8): el naranja base no pasa AA.
+                // Peso 600 y no 700: el 700 queda sólo para la marca (UX-15).
+                "tabular-nums tracking-tight",
+                numerals === "sans" ? "font-sans text-[28px] font-semibold leading-none" : "font-mono text-2xl font-semibold",
+                tone === "danger" ? "text-[var(--color-danger-ink)]" : tone === "signal" ? "text-[var(--color-signal-ink)]" : "text-[var(--color-text)]",
+              ),
+        )}>{displayValue}</p>
       )}
 
       {empty?.actionLabel ? (
@@ -148,7 +174,7 @@ export function KpiCard({
   )
 
   const overlay = secondaryAction && href && (
-    <Link href={href} aria-label={`${label}: ${empty?.message ?? value}`} className="absolute inset-0 rounded-[inherit] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]" />
+    <Link href={href} aria-label={`${label}: ${empty?.message ?? displayValue}`} className="absolute inset-0 rounded-[inherit] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]" />
   )
 
   const card = flat ? (

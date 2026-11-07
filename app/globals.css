@@ -13,6 +13,11 @@
   --font-mono:    var(--font-geist-mono), "Geist Mono", ui-monospace, "Cascadia Code", monospace;
 
   /* ── Typography Scale ── */
+  /* 11px: piso legible para meta densa (conteos, pie de tarjeta, insignia sm).
+     Reemplaza a `text-[11px]`; `text-[10px]` y `text-[9px]` están prohibidos
+     (regla `local/ui-type-scale`): por debajo de 11px el texto deja de leerse
+     de un vistazo. */
+  --text-2xs:  0.6875rem;   /* 11px – meta densa, insignia sm          */
   --text-xs:   0.75rem;     /* 12px – labels, micro                    */
   --text-sm:   0.8125rem;   /* 13px – UI, table cells, dense lists     */
   --text-base: 0.9375rem;   /* 15px – body, paragraphs                  */
@@ -101,6 +106,14 @@
   --color-chrome:         oklch(0.965 0.002 0);    /* sidebar outer fill */
   --color-chrome-hover:   oklch(0.940 0.002 0);    /* hover inside chrome */
 
+  /* ── Navegación — un solo estado activo para todo el menú ──
+     Decisión 2026-11-07 (auditoría UX-09): «Inicio» y «Mis pendientes» se
+     marcaban en verde y el resto en gris slate. Todos los ítems activos usan
+     estos tokens; el hover sigue la rampa neutra del chrome. */
+  --color-nav-active-bg:  var(--color-primary-tint);
+  --color-nav-active-ink: var(--color-primary-ink);
+  --color-nav-hover-bg:   var(--color-chrome-hover);
+
   /* ── Layout dimensions ── */
   --sidebar-width:        15.5rem;  /* 248px — panel expandido                   */
   --sidebar-rail-width:   3.5rem;    /* 56px  — rail colapsado                   */
@@ -187,7 +200,7 @@ body {
 /* ─── Heading utilities ── */
 @utility text-display {
   font-family: var(--font-display);  /* Exo — marca Chome */
-  font-weight: 700;
+  font-weight: 600;
   font-size: var(--text-2xl);
   line-height: var(--leading-display);
   letter-spacing: 0;
@@ -195,7 +208,7 @@ body {
 @utility text-h1 {
   font-family: var(--font-display);  /* Exo — marca Chome */
   font-size: var(--text-xl);
-  font-weight: 700;
+  font-weight: 600;
   line-height: var(--leading-display);
   letter-spacing: 0;
 }
@@ -212,24 +225,26 @@ body {
   font-weight: 600;
   line-height: var(--leading-compact);
 }
+/* Rótulo de bloque/campo: caja de oración, 12px, muted. La jerarquía la llevan
+   el tamaño y el color, no las mayúsculas espaciadas (auditoría UX-05,
+   2026-11-07: entre 2 y 63 elementos en MAYÚSCULAS por pantalla). */
 @utility text-eyebrow {
   font-family: var(--font-sans);
-  font-size: 0.6875rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: 0;
   color: var(--color-text-muted);
 }
 /* Tratamiento tipográfico único de cabecera de tabla.
    Existía en dos versiones: `text-eyebrow` MAYÚSCULAS en DataTable (579 usos)
    y sentence-case 12px en las tablas crudas (~75). Esta utilidad es la fuente
-   única; el padding y la alineación los sigue decidiendo cada tabla. */
+   única y ahora es caja de oración, igual que `text-eyebrow`; el padding y la
+   alineación los sigue decidiendo cada tabla. */
 @utility th-type {
   font-size: var(--text-xs);
-  font-weight: 600;
+  font-weight: 500;
   color: var(--color-text-subtle);
-  text-transform: uppercase;
-  letter-spacing: 0.025em;
+  letter-spacing: 0;
 }
 
 @utility text-sub {
