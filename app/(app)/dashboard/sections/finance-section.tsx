@@ -260,7 +260,7 @@ export async function FinanceSection({ session, scope }: DomainSectionsProps) {
       key: "sin-datos",
       label: null,
       content: (
-        <KpiCard {...DASHBOARD_KPI} icon={<CurrencyDollar size={16} />} label="Facturación" value="Sin datos"
+        <KpiCard {...DASHBOARD_KPI} icon={<CurrencyDollar size={16} />} label="Facturación" value="Sin datos" valueKind="text"
           detail={has("billing:manage_sync") ? "Sincroniza un período para ver los indicadores" : "No hay indicadores disponibles para el período"}
           href={has("billing:manage_sync") ? "/facturacion/sincronizacion" : has("billing:view") ? "/facturacion" : undefined} />
       ),

@@ -1,6 +1,7 @@
 import { ClipboardText, ShieldWarning, Siren, WarningOctagon } from "@phosphor-icons/react/dist/ssr"
 import { ChartSlot } from "@/components/ui/dashboard-panel"
 import { KpiCard } from "@/components/ui/kpi-card"
+import { formatPercent } from "@/lib/utils"
 import { SummaryBar, type SummaryStat } from "@/components/ui/summary-bar"
 import { getFieldControlSummary } from "@/lib/services/dashboard-domains-data"
 import { getOperationalCalendarBounds } from "@/lib/services/operational-period-metrics"
@@ -53,7 +54,7 @@ export async function FieldControlSection({ session, scope }: DomainSectionsProp
         <>
           {field.visible.inspections && (
           <KpiCard {...DASHBOARD_KPI} icon={<ClipboardText size={16} />} label="Cumplimiento de inspecciones"
-            value={field.inspectionCompliance === null ? "—" : `${field.inspectionCompliance}%`}
+            value={field.inspectionCompliance === null ? "—" : formatPercent(field.inspectionCompliance)}
             // INI-05: es la única cifra de la vista que sigue al período, y decía "ahora".
             detail={field.inspectionsReviewed > 0 ? `${field.inspectionsReviewed} revisadas · ${periodo}` : "Sin inspecciones con resultado"}
             // Sin inspecciones con resultado no hay promedio que mostrar: un "—"
@@ -63,19 +64,19 @@ export async function FieldControlSection({ session, scope }: DomainSectionsProp
           )}
           {field.visible.inspections && (
           <KpiCard {...DASHBOARD_KPI} icon={<WarningOctagon size={16} />} label="Hallazgos críticos abiertos"
-            value={String(field.criticalFindingsOpen)}
+            value={field.criticalFindingsOpen}
             detail={field.criticalFindingsOpen > 0 ? "Criticidad alta o crítica · ahora" : "Ninguno abierto, ahora"}
             tone={field.criticalFindingsOpen > 0 ? "danger" : "neutral"} href="/prevencion/inspecciones?vista=critical" />
           )}
           {field.visible.drills && (
           <KpiCard {...DASHBOARD_KPI} icon={<Siren size={16} />} label="Simulacros por mejorar"
-            value={String(field.drillsNeedingImprovement)}
+            value={field.drillsNeedingImprovement}
             detail={drillTotal > 0 ? `De ${drillTotal} ejecutado(s) · ahora` : "Sin simulacros ejecutados"}
             tone={field.drillsNeedingImprovement > 0 ? "signal" : "neutral"} href="/prevencion/emergencias?tab=drills&vista=needs_improvement" />
           )}
           {field.visible.hygiene && (
           <KpiCard {...DASHBOARD_KPI} icon={<ShieldWarning size={16} />} label="Mediciones sobre el límite"
-            value={String(field.measurementsAboveLimit)}
+            value={field.measurementsAboveLimit}
             detail={field.measurementsAboveLimit > 0 ? "Exposición sobre el límite permisible · ahora" : "Ninguna sobre el límite"}
             tone={field.measurementsAboveLimit > 0 ? "danger" : "neutral"} href="/prevencion/higiene?tab=groups&vista=above_limit" />
           )}

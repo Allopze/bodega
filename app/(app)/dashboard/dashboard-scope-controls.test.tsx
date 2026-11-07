@@ -8,9 +8,12 @@ import type { DashboardScope } from "./dashboard-scope"
 
 // El selector de faena del alcance global navega con `router.replace`. En jsdom
 // no hay router de Next, y sin este mock el componente entero no monta.
+// `usePathname` lo lee `SegmentedControl` para saber si un enlace sólo cambia la
+// query de la página en que ya está (período) y navegar con `replace`.
 const replace = vi.fn()
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace, push: vi.fn(), refresh: vi.fn() }),
+  usePathname: () => "/dashboard",
 }))
 
 const worksiteOptions = [

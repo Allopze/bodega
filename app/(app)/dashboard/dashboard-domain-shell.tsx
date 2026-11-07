@@ -79,7 +79,7 @@ export function DomainSection({ domain, kpis, kpiGroups, summary, charts, links,
   return (
     <section id={domain.anchor} aria-labelledby={`${domain.anchor}-titulo`} className="scroll-mt-4">
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-[var(--color-border)] pb-2">
-        {/* Un escalón sobre los títulos de tarjeta (eyebrow uppercase): los
+        {/* Un escalón sobre los títulos de tarjeta (eyebrow): los
             dominios son el nivel de navegación de la mitad inferior y a la
             misma escala competían con sus propias tarjetas (§6.2). */}
         <h2 id={`${domain.anchor}-titulo`} className="text-h2 text-[var(--color-text)]">{domain.title}</h2>

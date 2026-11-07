@@ -81,7 +81,7 @@ export function OperationalMetricsStrip({ metrics }: { metrics: DashboardMetric[
               {...DASHBOARD_KPI}
               icon={<Icon size={16} />}
               label={metric.label}
-              value={String(metric.value)}
+              value={metric.value}
               detail={metric.description}
               glossary={metric.glossary}
               tone={metric.tone}

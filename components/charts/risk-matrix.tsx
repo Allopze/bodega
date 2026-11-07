@@ -51,7 +51,7 @@ function CellBody({ cell }: { cell: RiskMatrixCell }) {
         {cell.count}
         <span className="sr-only"> {pluralize(cell.count, "riesgo")}, </span>
       </span>
-      <span className="mt-1.5 text-[11px] font-medium leading-tight">{CLASSIFICATION_LABEL[cell.classification]}</span>
+      <span className="mt-1.5 text-2xs font-medium leading-tight">{CLASSIFICATION_LABEL[cell.classification]}</span>
     </>
   )
 }
@@ -122,9 +122,9 @@ export function RiskMatrix({
               <th scope="col" className="w-20 sm:w-28"><span className="sr-only">Probabilidad por consecuencia</span></th>
               {RISK_MATRIX_CONSEQUENCES.map((consequence) => (
                 <th key={consequence} scope="col" className="px-1 pb-1 text-center text-xs font-semibold text-[var(--color-text)]">
-                  <span className="block text-[11px] font-normal text-[var(--color-text-muted)]">Consecuencia </span>
+                  <span className="block text-2xs font-normal text-[var(--color-text-muted)]">Consecuencia </span>
                   {SCALE_WORD[consequence]}{" "}
-                  <span title={`Consecuencia ${SCALE_WORD[consequence]} (${consequence})`} className="font-mono text-[11px] font-normal text-[var(--color-text-muted)]">C{consequence}</span>
+                  <span title={`Consecuencia ${SCALE_WORD[consequence]} (${consequence})`} className="font-mono text-2xs font-normal text-[var(--color-text-muted)]">C{consequence}</span>
                 </th>
               ))}
             </tr>
@@ -133,9 +133,9 @@ export function RiskMatrix({
             {RISK_MATRIX_PROBABILITIES.map((probability) => (
               <tr key={probability}>
                 <th scope="row" className="pr-2 text-left text-xs font-semibold text-[var(--color-text)]">
-                  <span className="block text-[11px] font-normal text-[var(--color-text-muted)]">Probabilidad </span>
+                  <span className="block text-2xs font-normal text-[var(--color-text-muted)]">Probabilidad </span>
                   {SCALE_WORD[probability]}{" "}
-                  <span title={`Probabilidad ${SCALE_WORD[probability]} (${probability})`} className="font-mono text-[11px] font-normal text-[var(--color-text-muted)]">P{probability}</span>
+                  <span title={`Probabilidad ${SCALE_WORD[probability]} (${probability})`} className="font-mono text-2xs font-normal text-[var(--color-text-muted)]">P{probability}</span>
                 </th>
                 {RISK_MATRIX_CONSEQUENCES.map((consequence) => {
                   const cell = cellAt(probability, consequence)
