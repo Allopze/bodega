@@ -52,7 +52,7 @@ export function RecentActivity({ groups }: { groups: ActivityGroup[] }) {
                     {group.count > 1 && (
                       <span
                         title={`${group.count} movimientos iguales seguidos`}
-                        className="ml-1.5 inline-block rounded-full bg-[var(--color-surface-2)] px-1.5 py-0.5 align-[1px] text-xs font-bold tabular-nums text-[var(--color-text-muted)]"
+                        className="ml-1.5 inline-block rounded-full bg-[var(--color-surface-2)] px-1.5 py-0.5 align-[1px] text-xs font-semibold tabular-nums text-[var(--color-text-muted)]"
                       >
                         <span aria-hidden>×{group.count}</span>
                         <span className="sr-only">{group.count} veces{group.href && !group.sameTarget ? "; el enlace abre el más reciente" : ""}</span>

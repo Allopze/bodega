@@ -75,7 +75,7 @@ function capped(docs: ChainDocument[]): { shown: ChainDocument[]; hidden: number
 
 function ChainCode({ doc, current }: { doc: ChainDocument; current: boolean }) {
   const className = cn(
-    "rounded-(--radius-sm) px-1.5 py-0.5 font-mono text-[11px] transition-colors duration-(--duration-fast)",
+    "rounded-(--radius-sm) px-1.5 py-0.5 font-mono text-2xs transition-colors duration-(--duration-fast)",
     current
       ? "bg-(--color-primary-tint) font-semibold text-(--color-primary-ink)"
       : "bg-(--color-surface-2) text-(--color-text-muted) hover:bg-(--color-primary-tint) hover:text-(--color-primary-ink)",
@@ -160,7 +160,7 @@ export async function DocumentChainStrip({ chain, current, currentCode, classNam
               ))}
               {hidden > 0 && (
                 <span
-                  className="text-[11px] text-(--color-text-subtle)"
+                  className="text-2xs text-(--color-text-subtle)"
                   title={`${hidden} ${KIND_LABEL[group[0]!.kind].toLowerCase()}(s) más en el expediente`}
                 >
                   +{hidden}
@@ -174,7 +174,7 @@ export async function DocumentChainStrip({ chain, current, currentCode, classNam
       {dossierHref && (
         <Link
           href={dossierHref}
-          className="ml-auto text-[11px] font-medium text-(--color-primary) hover:underline underline-offset-2"
+          className="ml-auto text-2xs font-medium text-(--color-primary) hover:underline underline-offset-2"
         >
           Ver expediente
         </Link>

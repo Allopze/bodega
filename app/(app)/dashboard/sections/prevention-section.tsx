@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { Certificate, ChartBar, FileText, ShieldWarning, Siren } from "@phosphor-icons/react/dist/ssr"
 import { Button } from "@/components/ui/button"
+import { formatPercent } from "@/lib/utils"
 import { ChartSlot, DashboardPanel, PanelBlock } from "@/components/ui/dashboard-panel"
 import { EmptyState } from "@/components/ui/empty-state"
 import { KpiCard } from "@/components/ui/kpi-card"
@@ -157,17 +158,17 @@ export async function PreventionSection({ session, worksiteScope, worksiteIds, c
               href={canManagePdtp ? "/prevencion/pdtp/nuevo" : "/prevencion/pdtp"} />
           ) : (
             <KpiCard {...DASHBOARD_KPI} icon={<Certificate size={16} />} label="Cumplimiento PDTP" glossary={DASHBOARD_GLOSSARY.PDTP}
-              value={`${Math.round(pdtpPercent * 100)}%`}
+              value={formatPercent(Math.round(pdtpPercent * 100), 0)}
               detail={`Avance acreditado · año ${pdtpYear}`} href={`/prevencion/pdtp?anio=${pdtpYear}`} />
           ))}
-          <KpiCard {...DASHBOARD_KPI} icon={<Siren size={16} />} label="Incidentes abiertos" value={String(incidents.totalOpen)}
+          <KpiCard {...DASHBOARD_KPI} icon={<Siren size={16} />} label="Incidentes abiertos" value={incidents.totalOpen}
             detail={incidents.fatalOrSerious > 0 ? `${incidents.fatalOrSerious} fatal(es) o grave(s) · ahora` : "Ninguno fatal ni grave, ahora"}
             tone={incidents.fatalOrSerious > 0 ? "signal" : "neutral"} href="/prevencion/incidentes?status=open" />
-          <KpiCard {...DASHBOARD_KPI} icon={<ShieldWarning size={16} />} label="CAPA vencidas" glossary={DASHBOARD_GLOSSARY.CAPA} value={String(capa.overdue)}
+          <KpiCard {...DASHBOARD_KPI} icon={<ShieldWarning size={16} />} label="CAPA vencidas" glossary={DASHBOARD_GLOSSARY.CAPA} value={capa.overdue}
             detail={`${capa.open} abierta${capa.open === 1 ? "" : "s"} en total · ahora`} tone={capa.overdue > 0 ? "signal" : "neutral"} href="/prevencion/capa?vista=overdue" />
           {risk && (
             <KpiCard {...DASHBOARD_KPI} icon={<ShieldWarning size={16} />} label="Riesgos críticos sin control"
-              value={String(risk.criticalBlockers.length)}
+              value={risk.criticalBlockers.length}
               detail={risk.criticalBlockers.length > 0 ? "Sin control verificado ni PDTP · ahora" : "Todos con control verificado"}
               tone={risk.criticalBlockers.length > 0 ? "signal" : "neutral"} href={PORTFOLIO_SUMMARY_HREF.critical} />
           )}

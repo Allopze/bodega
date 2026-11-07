@@ -393,15 +393,19 @@ describe("bandeja Por revisar", () => {
       // Una sesión de la faena B no ve lo de la A, por más que se lo pida: el alcance sale de la sesión.
       const inB = await getFuelInboxPendingForSession(scopedSession(["ws-b"]))
       expect(inB).toEqual({ carga: 1, caso: 1, patente: 1, pedido: 1 })
+      // El tile entrega la cifra como número (la formatea KpiCard) y la marca
+      // como cifra; «Al día» va como texto (más abajo).
       expect(fuelReviewTile(inB)).toMatchObject({
-        value: "4",
+        value: 4,
+        valueKind: "number",
         detail: "1 carga por decidir · 1 caso · 1 patente sin vincular · 1 pedido de revisión",
         tone: "signal",
       })
       const sessions: Array<[Session, string[] | "all"]> = [[globalSession(), "all"], [scopedSession(["ws-a"]), ["ws-a"]], [scopedSession(["ws-b"]), ["ws-b"]]]
       for (const [session, scope] of sessions) {
         const tile = fuelReviewTile(await getFuelInboxPendingForSession(session))
-        expect(Number(tile.value.replace(/\./g, ""))).toBe(await countFuelInboxPending(scope))
+        // `value` es `string | number` desde que KpiCard formatea cifras (UX-06).
+        expect(Number(String(tile.value).replace(/\./g, ""))).toBe(await countFuelInboxPending(scope))
       }
       // Sin ninguna faena a la vista el valor es «Al día», nunca un 0 pelado.
       expect(await getFuelInboxPendingForSession(scopedSession([]))).toEqual(NONE)

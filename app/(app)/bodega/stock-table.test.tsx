@@ -98,12 +98,12 @@ describe("StockTable", () => {
     expect(cells(table, 2)).toEqual(["300", "0"])
   })
 
-  it("rotula los encabezados ordenables en mayúsculas como el resto: un <button> no hereda text-transform", () => {
+  it("rotula los encabezados ordenables en caja de oración, sin forzar mayúsculas", () => {
     const table = renderTable()
 
     for (const label of ["Producto", "En bodega", "Último movimiento"]) {
       const header = table.getByRole("columnheader", { name: label })
-      expect(within(header).getByRole("button")).toHaveClass("uppercase")
+      expect(within(header).getByRole("button")).not.toHaveClass("uppercase")
     }
   })
 

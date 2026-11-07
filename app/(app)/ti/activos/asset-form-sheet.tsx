@@ -174,7 +174,7 @@ export function AssetFormSheet({ trigger, assetTypes, suppliers, worksites, edit
 
               {showSpecs && (
                 <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
-                  <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">Especificaciones técnicas</p>
+                  <p className="mb-3 text-eyebrow">Especificaciones técnicas</p>
                   <div className="grid gap-4 sm:grid-cols-2">
                     <Field label="Procesador">
                       <Input name="processor" defaultValue={editAsset?.processor ?? ""} maxLength={80} placeholder="Intel Core i5-1235U" />

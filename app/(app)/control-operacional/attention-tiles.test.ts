@@ -47,7 +47,8 @@ describe("workOrdersTile", () => {
     expect(workOrdersTile({ openCount: 7, unassignedOpen: 3, estimateOverdue: 0, waitingParts: 0 })).toMatchObject({
       key: "workOrders",
       label: "OT abiertas",
-      value: "7",
+      value: 7,
+      valueKind: "number",
       detail: "3 sin asignar",
       tone: "signal",
       href: "/mantencion/ot?estado=abiertas",
@@ -63,7 +64,7 @@ describe("workOrdersTile", () => {
 
   it("todas asignadas y a tiempo: el tile queda neutro", () => {
     expect(workOrdersTile({ openCount: 4, unassignedOpen: 0, estimateOverdue: 0, waitingParts: 0 })).toMatchObject({
-      value: "4",
+      value: 4,
       detail: "Todas con mecánico",
       tone: "neutral",
     })
@@ -86,7 +87,7 @@ describe("workOrdersTile", () => {
 
   it("esperar repuesto no cambia el valor ni el destino: el tile sigue contando y enlazando a todas las abiertas", () => {
     expect(workOrdersTile({ openCount: 4, unassignedOpen: 0, estimateOverdue: 0, waitingParts: 3 })).toMatchObject({
-      value: "4",
+      value: 4,
       href: "/mantencion/ot?estado=abiertas",
     })
   })
@@ -94,19 +95,21 @@ describe("workOrdersTile", () => {
   it("sin abiertas dice «Ninguna», no 0", () => {
     expect(workOrdersTile({ openCount: 0, unassignedOpen: 0, estimateOverdue: 0, waitingParts: 0 })).toMatchObject({
       value: "Ninguna",
+      valueKind: "text",
       tone: "neutral",
     })
   })
 
   it("si la consulta falló dice «Sin dato», nunca 0", () => {
-    expect(workOrdersTile(null)).toMatchObject({ value: "Sin dato", detail: "No se pudo calcular", tone: "neutral" })
+    expect(workOrdersTile(null)).toMatchObject({ value: "Sin dato", valueKind: "text", detail: "No se pudo calcular", tone: "neutral" })
   })
 })
 
 describe("stoppedTile", () => {
   it("detalla mantención y fuera de servicio", () => {
     expect(stoppedTile({ total: 3, inMaintenance: 2, outOfService: 1 }, 10)).toMatchObject({
-      value: "3",
+      value: 3,
+      valueKind: "number",
       detail: "2 en mantención · 1 fuera de servicio",
       tone: "signal",
     })
@@ -115,6 +118,7 @@ describe("stoppedTile", () => {
   it("sin detenidos dice que todo está operativo, no 0", () => {
     expect(stoppedTile({ total: 0, inMaintenance: 0, outOfService: 0 }, 10)).toMatchObject({
       value: "Ninguno",
+      valueKind: "text",
       detail: "Todo operativo",
       tone: "neutral",
     })
@@ -123,18 +127,20 @@ describe("stoppedTile", () => {
   it("sin equipos en el alcance no dice «todo operativo»", () => {
     const tile = stoppedTile({ total: 0, inMaintenance: 0, outOfService: 0 }, 0)
     expect(tile.value).toBe("Sin equipos")
+    expect(tile.valueKind).toBe("text")
     expect(tile.detail).not.toContain("Todo operativo")
   })
 
   it("si no se pudo calcular lo dice en vez de pintar 0", () => {
-    expect(stoppedTile(null, 10)).toMatchObject({ value: "Sin dato", detail: "No se pudo calcular", tone: "neutral" })
+    expect(stoppedTile(null, 10)).toMatchObject({ value: "Sin dato", valueKind: "text", detail: "No se pudo calcular", tone: "neutral" })
   })
 })
 
 describe("documentsTile", () => {
   it("con vencidos, los cuenta y dice cuántos más vencen en la ventana de Flota", () => {
     expect(documentsTile({ expired: 4, expiringSoon: 2, warningDays: 30 })).toMatchObject({
-      value: "4",
+      value: 4,
+      valueKind: "number",
       detail: "Equipos con documentos vencidos · 2 por vencer en 30 días",
       tone: "danger",
     })
@@ -148,6 +154,7 @@ describe("documentsTile", () => {
   it("sin vencidos pero con por vencer, el detalle lo advierte y el enlace va a «próximos»", () => {
     expect(documentsTile({ expired: 0, expiringSoon: 1, warningDays: 30 })).toMatchObject({
       value: "Ninguno",
+      valueKind: "text",
       detail: "1 equipo por vencer en 30 días",
       tone: "neutral",
       href: "/flota?vencimiento=proximos",
@@ -167,14 +174,15 @@ describe("documentsTile", () => {
   })
 
   it("si no se pudo calcular lo dice", () => {
-    expect(documentsTile(null)).toMatchObject({ value: "Sin dato", detail: "No se pudo calcular" })
+    expect(documentsTile(null)).toMatchObject({ value: "Sin dato", valueKind: "text", detail: "No se pudo calcular" })
   })
 })
 
 describe("fuelReviewTile", () => {
   it("suma las cuatro colas de «Por revisar» y las detalla", () => {
     expect(fuelReviewTile(fuelCounts({ carga: 3, caso: 2, patente: 1, pedido: 1 }))).toMatchObject({
-      value: "7",
+      value: 7,
+      valueKind: "number",
       detail: "3 cargas por decidir · 2 casos · 1 patente sin vincular · 1 pedido de revisión",
       tone: "signal",
       href: "/combustibles/revisar",
@@ -182,8 +190,8 @@ describe("fuelReviewTile", () => {
   })
 
   it("no nombra las partes en cero", () => {
-    expect(fuelReviewTile(fuelCounts({ caso: 2, pedido: 5 }))).toMatchObject({ value: "7", detail: "2 casos · 5 pedidos de revisión" })
-    expect(fuelReviewTile(fuelCounts({ patente: 3 }))).toMatchObject({ value: "3", detail: "3 patentes sin vincular" })
+    expect(fuelReviewTile(fuelCounts({ caso: 2, pedido: 5 }))).toMatchObject({ value: 7, detail: "2 casos · 5 pedidos de revisión" })
+    expect(fuelReviewTile(fuelCounts({ patente: 3 }))).toMatchObject({ value: 3, detail: "3 patentes sin vincular" })
   })
 
   it("concuerda en singular y en plural", () => {
@@ -193,13 +201,14 @@ describe("fuelReviewTile", () => {
       .toBe("2 cargas por decidir · 2 casos · 2 patentes sin vincular · 2 pedidos de revisión")
   })
 
-  it("separa los miles como el resto de la plataforma", () => {
-    expect(fuelReviewTile(fuelCounts({ carga: 1234, caso: 6 }))).toMatchObject({ value: "1.240", detail: "1.234 cargas por decidir · 6 casos" })
+  it("el valor viaja como número (KpiCard le pone los miles) y el detalle los separa como el resto de la plataforma", () => {
+    expect(fuelReviewTile(fuelCounts({ carga: 1234, caso: 6 }))).toMatchObject({ value: 1240, valueKind: "number", detail: "1.234 cargas por decidir · 6 casos" })
   })
 
   it("con las cuatro colas vacías dice «Al día»", () => {
     expect(fuelReviewTile(fuelCounts())).toMatchObject({
       value: "Al día",
+      valueKind: "text",
       detail: "Nada espera a una persona",
       tone: "neutral",
       href: "/combustibles/revisar",
@@ -209,6 +218,7 @@ describe("fuelReviewTile", () => {
   it("si un tipo falló, no pinta un total parcial: nombra lo que falló y lo que sí se contó", () => {
     const tile = fuelReviewTile(fuelCounts({ carga: 4, caso: null, pedido: 1 }))
     expect(tile.value).toBe("Sin dato")
+    expect(tile.valueKind).toBe("text")
     expect(tile.detail).toBe("4 cargas por decidir · Casos: no se pudo calcular · 1 pedido de revisión")
     expect(tile.tone).toBe("neutral")
 
@@ -224,7 +234,7 @@ describe("fuelReviewTile", () => {
   })
 
   it("si fallaron las cuatro, lo dice", () => {
-    expect(fuelReviewTile({ carga: null, caso: null, patente: null, pedido: null })).toMatchObject({ value: "Sin dato", detail: "No se pudo calcular" })
+    expect(fuelReviewTile({ carga: null, caso: null, patente: null, pedido: null })).toMatchObject({ value: "Sin dato", valueKind: "text", detail: "No se pudo calcular" })
   })
 
   it("sigue enlazando a «Por revisar»: la cifra y la lista que abre cuentan lo mismo", () => {
@@ -248,8 +258,33 @@ describe("A1: ningún tile pinta un 0 pelado", () => {
       fuelReviewTile(fuelCounts({ carga: null })),
     ]
     for (const tile of empties) {
-      expect(tile.value).not.toMatch(/^(0|—)$/)
+      expect(String(tile.value)).not.toMatch(/^(0|—)$/)
       expect(tile.detail.length).toBeGreaterThan(0)
     }
+  })
+})
+
+describe("cifra o palabra: el tipo del valor decide cómo se pinta", () => {
+  it("una palabra es texto y una cifra es un número, nunca un número ya formateado como cadena", () => {
+    const tiles = [
+      stoppedTile({ total: 3, inMaintenance: 2, outOfService: 1 }, 10),
+      stoppedTile({ total: 0, inMaintenance: 0, outOfService: 0 }, 10),
+      stoppedTile({ total: 0, inMaintenance: 0, outOfService: 0 }, 0),
+      stoppedTile(null, 10),
+      workOrdersTile({ openCount: 7, unassignedOpen: 3, estimateOverdue: 0, waitingParts: 0 }),
+      workOrdersTile({ openCount: 0, unassignedOpen: 0, estimateOverdue: 0, waitingParts: 0 }),
+      documentsTile({ expired: 4, expiringSoon: 2, warningDays: 30 }),
+      documentsTile({ expired: 0, expiringSoon: 0, warningDays: 30 }),
+      fuelReviewTile(fuelCounts({ carga: 1234 })),
+      fuelReviewTile(fuelCounts()),
+      fuelReviewTile(fuelCounts({ caso: null })),
+    ]
+    for (const tile of tiles) {
+      if (tile.valueKind === "number") expect(typeof tile.value, `${tile.label}`).toBe("number")
+      else expect(typeof tile.value, `${tile.label}`).toBe("string")
+    }
+    expect(tiles.filter((tile) => tile.valueKind === "text").map((tile) => tile.value)).toEqual([
+      "Ninguno", "Sin equipos", "Sin dato", "Ninguna", "Ninguno", "Al día", "Sin dato",
+    ])
   })
 })

@@ -31,3 +31,20 @@ export const GUIDE_ACTION_CONFIRM_ARRIVAL = "Confirmar llegada a faena"
 export function receiptGuideActionLabel(guideStatus: string): string {
   return guideStatus === "draft" ? GUIDE_ACTION_COMPLETE_DISPATCH : GUIDE_ACTION_CONFIRM_ARRIVAL
 }
+
+/**
+ * Estados de OC que la pestaña activa ya da por sabidos (A5), por lo que la fila
+ * no necesita pastilla de color para ellos.
+ *
+ * - Sin `estado` es «Por atender»: la cola activa, cuyo caso corriente es la OC
+ *   enviada que aún no llega («Pendiente de recepción»).
+ * - Con un solo estado (pestañas «Pendiente de recepción» y «Llegó parcial a
+ *   faena»), ese estado.
+ * - Con varios (agrupadas, «Completadas», «Todas») la columna sí distingue una
+ *   fila de otra, así que nada es silencioso.
+ */
+export function quietOrderStatusesForTab(estadoParam: string | null | undefined): readonly string[] {
+  const statuses = (estadoParam ?? "").split(",").map((value) => value.trim()).filter(Boolean)
+  if (statuses.length === 0) return ["sent"]
+  return statuses.length === 1 ? statuses : []
+}

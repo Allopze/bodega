@@ -17,6 +17,11 @@ import { workers, worksites } from "../worksites"
 export const preventionIncidents = pgTable("prevention_incidents", {
   id: text("id").primaryKey(),
   code: text("code").notNull().unique(),
+  /* Código aleatorio previo a la serie correlativa `EV-AAAA-NNNN`, renumerado en
+   * 2026-11. Se conserva porque ya fue citado en notificaciones, tareas CAPA y
+   * documentos generados: esos textos son históricos y no se reescriben, y esta
+   * columna es lo que vincula el código viejo con el vigente. */
+  legacyCode: text("legacy_code"),
   clientSubmissionId: text("client_submission_id").notNull().unique(),
   worksiteId: text("worksite_id").notNull().references(() => worksites.id, { onDelete: "restrict" }),
   companyName: text("company_name").notNull(),

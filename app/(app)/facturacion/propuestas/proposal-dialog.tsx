@@ -265,14 +265,14 @@ export function ProposalDialog({
                   />
                 </label>
                 <label className="block w-20">
-                  <span className="mb-0.5 block text-[10px] text-[var(--color-text-muted)]">Cant.</span>
+                  <span className="mb-0.5 block text-2xs text-[var(--color-text-muted)]">Cant.</span>
                   <Input
                     type="number" min="0" step="0.0001" value={item.quantity}
                     onChange={(event) => updateItem(setItems, item.key, { quantity: event.target.value })}
                   />
                 </label>
                 <label className="block w-32">
-                  <span className="mb-0.5 block text-[10px] text-[var(--color-text-muted)]">Precio unit.</span>
+                  <span className="mb-0.5 block text-2xs text-[var(--color-text-muted)]">Precio unit.</span>
                   <Input
                     type="number" min="0" step="0.01" value={item.unitPrice}
                     onChange={(event) => updateItem(setItems, item.key, { unitPrice: event.target.value })}

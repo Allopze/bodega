@@ -214,6 +214,7 @@ function OperationalAlert({ alert }: { alert: DashboardAlert }) {
         <span className="sr-only">{alert.count} </span>
         {/* Desde `sm` el título no se parte: lo que cede espacio es la pista, que
             se trunca. Bajo `sm` la pista no se muestra y el título puede envolver. */}
+        {/* eslint-disable-next-line local/ui-type-scale -- normaliza el dato (el título llega en minúscula), no es un rótulo */}
         <span className="min-w-0 text-sm font-semibold text-[var(--color-text)] first-letter:uppercase sm:shrink-0">
           {alert.title}
           <span className="sr-only"> · {meta.label}</span>
@@ -222,7 +223,7 @@ function OperationalAlert({ alert }: { alert: DashboardAlert }) {
           {alert.description}
         </span>
       </span>
-      <span aria-hidden className={cn("shrink-0 rounded-full px-2 py-0.5 text-[13px] font-bold tabular-nums", meta.pill)}>
+      <span aria-hidden className={cn("shrink-0 rounded-full px-2 py-0.5 text-[13px] font-semibold tabular-nums", meta.pill)}>
         {alert.count}
       </span>
       <CaretRight

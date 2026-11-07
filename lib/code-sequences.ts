@@ -113,6 +113,9 @@ const CODE_SERIES_TABLES: Record<string, string> = {
   PF:  "billing_proposals",
   ACT: "it_asset_assignments",
   INC: "it_tickets",
+  // Incidentes de prevención (EV, "Evento"): INC ya es la serie de tickets de TI.
+  EV:   "prevention_incidents",
+  INSP: "prevention_inspection_runs",
 }
 
 /**

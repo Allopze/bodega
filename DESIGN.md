@@ -108,7 +108,7 @@ Cada color semántico tiene 4 variantes: base, `-tint` (superficie), `-line`
 |---|---|---|
 | `--font-display` | **Exo** | Marca Chome, títulos (`text-h1/h2/h3`, `text-display`) |
 | `--font-sans` | **Myriad Pro** | UI, body, formularios, tablas, navegación |
-| `--font-mono` | **Geist Mono** | Datos tabulares, códigos, badges, valores numéricos (salvo las cifras de KPI del tablero, que van en sans) |
+| `--font-mono` | **Geist Mono** | Datos tabulares, códigos, valores numéricos (salvo las cifras de KPI del tablero, que van en sans). Nunca rótulos ni insignias |
 
 `--font-serif` existe solo por compatibilidad y apunta a Exo. Los títulos y el
 cuerpo comparten un sistema tipográfico coherente: Exo para display, Myriad Pro
@@ -118,14 +118,16 @@ para lectura.
 
 | Utility | Tamaño | Fuente / peso | Uso |
 |---|---|---|---|
-| `text-eyebrow` | 11px | Myriad 600, uppercase, tracking 0.06em | Etiquetas de sección |
+| `text-2xs` | 11px | — | Piso legible: meta densa, insignia `sm`. Reemplaza `text-[11px]`; `text-[10px]`/`[9px]` están prohibidos |
+| `text-eyebrow` | 12px | Myriad 500, caja de oración, sin tracking, muted | Rótulo de bloque o de campo |
+| `th-type` | 12px | Myriad 500, caja de oración, subtle | Cabecera de tabla (`TableHead`, `DataTable`) |
 | `text-xs` | 12px | — | Labels, micro |
 | `text-sm` | 13px | — | UI densa, celdas de tabla, listas |
 | `text-base` | 15px | — | Body, párrafos |
 | `text-h3` | 15px | Exo 600 | Sub-sección |
 | `text-h2` / `text-lg` | 17px | Exo 600 | Cabeceras de sección |
-| `text-h1` / `text-xl` | 22px | Exo 700 | Títulos de página |
-| `text-display` / `text-2xl` | 28px | Exo 700 | Momentos display, login |
+| `text-h1` / `text-xl` | 22px | Exo 600 | Títulos de página (el título de la TopBar también va en Exo 600) |
+| `text-display` / `text-2xl` | 28px | Exo 600 | Momentos display, login |
 | `text-3xl` | 36px | — | Momento de marca |
 | `text-sub` | 13px | Myriad muted | Descripciones y texto secundario |
 
@@ -135,8 +137,22 @@ para lectura.
   **Excepción: el tablero (`/dashboard`)**, donde las cifras de KPI y los
   titulares de gráfico van en `font-sans font-semibold tabular-nums`
   (`KpiCard numerals="sans"`, vía `DASHBOARD_KPI`).
-- Badges en `font-mono`, uppercase, tracking wide.
-- Fechas y códigos de transacción en mono.
+- **Caja de oración en toda la interfaz** (auditoría UX-05, 2026-11-07). No hay
+  rótulos, cabeceras ni insignias en MAYÚSCULAS espaciadas: llegaban a 63 por
+  pantalla y nada destacaba. La jerarquía la llevan el tamaño y el color. La
+  regla ESLint `local/ui-type-scale` rechaza `uppercase` y `text-[9|10px]` en
+  clases; sólo se exceptúa un `uppercase` que normaliza un dato tecleado
+  (patente, código, RUT), con un `eslint-disable` que lo dice.
+- **Pesos 400–600.** El 700 queda para la marca; títulos y cifras van en 600.
+- **Una cifra se pasa como número** a `KpiCard`/`SummaryBar`, que la formatean
+  en es-CL (`2.246`, nunca `2246`); la regla `local/no-string-kpi-value` rechaza
+  `value={String(n)}`. Una palabra («Ninguno», «Sin datos», «Al día») va con
+  `valueKind: "text"` en sans muted: con estilo de cifra se leía como un número
+  roto.
+- Fechas y códigos de transacción en mono; un código, una cifra con su unidad y
+  una fecha no se parten en dos líneas (`TableCell nowrap`).
+- Sin itálica: el texto vacío o de meta («Sin nombre», «Pendiente») va en
+  `--color-text-subtle`.
 - El cuerpo aplica `font-feature-settings: "ss01", "cv11"`.
 
 ---
@@ -204,6 +220,14 @@ El rail desaparece y la navegación colapsa en un **drawer** de columna única:
 - `(auth)` — login/registro, sin AppShell (solo QueryProvider).
 - `(app)` — rutas autenticadas, AppShell completo.
 - `(print)` — impresión A4 (OC), sin AppShell, con auth check.
+- `(mecanico)` — app del mecánico (`/m/mantencion`), sin AppShell. **Excepción
+  declarada** (2026-11-07): tiene paleta propia (`app/(mecanico)/mant-app.css`,
+  variables `.mant`: verde `#27894d`, ámbar, naranja), portada del prototipo
+  validado para uso en terreno (pantalla al sol, guantes, objetivos de 52–56 px),
+  y conserva los `<input type="date">` nativos porque en el teléfono el selector
+  del sistema es el mejor control. Lo que sí rige ahí es la tipografía de la
+  plataforma: caja de oración (sin MAYÚSCULAS espaciadas) y el mismo saludo por
+  hora que el Inicio. No es un modelo para pantallas de `(app)`.
 
 ---
 
@@ -233,19 +257,36 @@ con reglas especiales para los submódulos de Prevención.
 
 ### Estado de los ítems
 
-- Ícono Phosphor; el weight cambia con el estado activo (`regular` → `bold`).
-- **Activo**: regla izquierda visible (`border-l-2 border-(--color-text)`) sin
-  fondo; label en `--color-primary-ink`, icono en `--color-primary`.
-- **Inactivo**: borde izquierdo transparente para no saltar el texto.
-- Hover: `bg-chrome-hover`, transición de color 140ms (`--duration-fast`).
-- Badge de pendientes: naranja signal, mono, `99+` para >99.
+- **Un solo estado activo para todo el menú** (decisión 2026-11-07, UX-09):
+  áreas, subítems, Inicio, Soporte, *flyout* del rail y menú móvil usan
+  `bg-nav-active-bg text-nav-active-ink font-semibold` (tokens
+  `--color-nav-active-bg` = `primary-tint`, `--color-nav-active-ink` =
+  `primary-ink`) y el ícono en `--color-primary`. Es el mismo verde de
+  selección de los chips y segmentados. Las clases salen de los helpers de
+  `nav-rows.tsx` (`navRowClass`, `navIconClass`, `navRailClass`): no se
+  escriben a mano.
+- **Inactivo**: texto `--color-text-muted`, ícono `--color-text-subtle`; hover
+  `bg-nav-hover-bg` (`--color-chrome-hover`) con transición de color 140ms.
+  Un padre con un hijo activo va en `--color-text`, sin relleno.
+- Sin paleta `slate-*` ni colores literales en el menú (lo vigila
+  `components/__tests__/ui-primitives-no-literal-colors.test.ts`).
+- Rótulos de grupo a 14px y peso 500, en hasta dos líneas (`line-clamp-2`): los
+  grupos de administración caben sin renombrarse. Los rótulos de sección
+  («Plataforma», grupos del manifiesto) usan `text-eyebrow`.
+- Badge de pendientes: naranja signal, mono `text-2xs`, `99+` para >99.
 - Los ítems se filtran por permisos (`canSeeNav`) y toggles de módulo.
 
 ### TopBar
 
-- `h-[3.5rem]`, sticky. **Desktop**: breadcrumb de contexto (área / página)
-  derivado de `NAV_ITEMS` + `usePathname()`, chip de faena opcional, campana de
-  notificaciones (ping animado + badge) y avatar con dropdown.
+- `h-[3.5rem]` en móvil, `lg:min-h-[4.5rem]` en escritorio; no es sticky (ver
+  AppShell). **Desktop**: el *breadcrumb* lo pasa cada página por
+  `PageHeader.breadcrumb` (no se deriva solo; `/dashboard` no lleva), título en
+  Exo 600 y, **debajo**, la descripción en hasta dos líneas (`line-clamp-2`,
+  ~72 caracteres por línea): es la línea que responde «qué es esto» y no se
+  trunca. Conviene que no pase de ~90 caracteres y que no repita datos que ya
+  muestra un control (el período, por ejemplo). Chip de faena opcional, campana
+  de notificaciones (contador estático, sin animación en bucle) y avatar con
+  dropdown.
 - **Mobile**: hamburguesa + marca Chome a la izquierda, campana + avatar a la
   derecha; el breadcrumb se oculta (`hidden lg:flex`).
 
@@ -304,17 +345,22 @@ el tamaño táctil también en desktop). Estados: loading con spinner +
 ### Table / DataTable
 
 Tabla semántica con scroll horizontal (`TableRoot` → `overflow-x-auto`),
-cabeceras uppercase sutiles, filas con hover `bg-surface-2`, celdas numéricas en
-mono tabular. `DataTable` (admin) integra búsqueda (conectada al TopBar vía
+cabeceras en `th-type` (caja de oración, 12px, subtle; ordenables o no, el mismo
+tratamiento), filas con hover `bg-surface-2`, celdas numéricas en mono tabular y
+`TableCell nowrap` para códigos, cifras con unidad y fechas. `DataTable`
+(`components/ui/data-table.tsx`) integra búsqueda (conectada al TopBar vía
 `useSafeShellHeader`), ordenamiento, paginación, estados vacíos/skeleton y vista
 mobile (`renderMobileCard`).
 
 ### Otros
 
-- **Badge**: las variantes de severidad (`primary/success/warning/signal/
-  danger/neutral`) van en mono uppercase; `default/info/outline` van en sans
-  normal-case a propósito, para que la información rutinaria no compita
-  visualmente con los estados. Dot opcional en cualquier variante.
+- **Badge**: **un solo tratamiento tipográfico** para todas las variantes (sans,
+  peso 500, caja de oración, `whitespace-nowrap`; `sm` = `text-2xs`, `default` =
+  `text-xs`, `lg` = `text-sm`). La severidad la llevan el color (`-tint` de fondo,
+  `-ink` de texto) y el punto opcional, no la tipografía. Hasta el 2026-11-07 las
+  severidades iban en mono MAYÚSCULAS y las neutras en sans, y una misma columna
+  mezclaba «Normal» con «● ALTA» (UX-04). Un estado largo lleva una insignia
+  corta y el detalle en la fila (o en el `title`).
 - **Dialog / Sheet**: overlay `bg-overlay` + `backdrop-blur`, content flotante
   (`shadow-lg`), animación fade + zoom. Título en `font-display` (Exo).
 - **Tabs, Popover, DropdownMenu, Tooltip, Checkbox**: primitives Radix
@@ -325,6 +371,38 @@ mobile (`renderMobileCard`).
 - **EmptyState / ErrorState**: usados consistentemente; empty en lenguaje de
   usuario + CTA real. **Skeleton**: shimmer en cargas. **Avatar**: iniciales con
   color por hash del nombre (OKLCH). **Pagination**: componente compartido único.
+
+### Período: tres patrones
+
+Un mismo control para la misma pregunta (auditoría UX-07, 2026-11-07: había seis
+controles distintos y tres maneras de aplicarlos).
+
+| Pregunta | Control | Dónde |
+|---|---|---|
+| Período de calendario (un mes o un rango de fechas) | `PeriodControl` (`components/ui/period-control.tsx`): paso ‹ ›, atajos, grilla de meses y rango personalizado en un *popover* | Combustible, Control operacional, Analítica, Facturación, Compras DTE |
+| Granularidad (Mes / Trimestre / Año) | `SegmentedControl` | Inicio |
+| Ventana móvil (7 días / 30 días / Este mes / Todo) | `SegmentedControl` | Mantención |
+
+- Se aplica al cambiar, con `router.replace(url, { scroll: false })` y sin botón
+  «Aplicar»/«Filtrar». La única excepción es el rango personalizado: son dos
+  campos, así que lleva «Aplicar rango» dentro del *popover*.
+- `PeriodControl` va en `PageHeader.actions` (es un control de la página, no del
+  contenido) y nunca toca `window.history` ni cookies: la cookie del período de
+  Combustibles vive sólo en su envoltorio (`components/combustibles/fuel-period-control.tsx`,
+  sobre `PeriodControlCore`). En Next 16, un `history.replaceState` seguido de
+  `revalidatePath` + `router.refresh` recarga la página entera.
+- Un enlace de `SegmentedControl` que sólo cambia la consulta de la misma página
+  usa `replace` y `scroll={false}`; uno que lleva a otra página conserva el
+  historial.
+
+### Exportar
+
+`ExportButton` (exportación por acción de servidor) y `ExportLink` (descarga GET,
+`<a download>`: sigue siendo un enlace) en `components/ui/export-button.tsx`.
+Rótulo «Exportar Excel» (o un calificativo: «Exportar historial», «Descargar
+plantilla»), ícono `EXPORT_ICON` (`FileXls`) y variante `secondary`: el primario
+de la cabecera es para la acción que crea trabajo. No se arman enlaces de
+descarga a mano.
 
 ### Modales multivista: el alto no cambia
 

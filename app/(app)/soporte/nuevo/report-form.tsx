@@ -2,6 +2,8 @@
 
 import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
+import { Bug, Lightbulb, Question } from "@phosphor-icons/react"
+import type { Icon } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -14,10 +16,11 @@ import { toast } from "@/lib/toast"
 import { createReportAction } from "@/app/(app)/soporte/actions"
 import type { FeedbackPrioridad, FeedbackTipo } from "@/lib/validation/feedback"
 
-const TIPO_OPTIONS: { value: FeedbackTipo; label: string; description: string }[] = [
-  { value: "bug",        label: "🐛 Bug",        description: "Algo no funciona como debería" },
-  { value: "consulta",   label: "❓ Consulta",   description: "Tengo una duda sobre la plataforma" },
-  { value: "sugerencia", label: "💡 Sugerencia", description: "Tengo una idea para mejorar algo" },
+// Íconos Phosphor en gris, no emoji (UX-17, 2026-11-07): el emoji se pinta distinto en cada sistema.
+const TIPO_OPTIONS: { value: FeedbackTipo; label: string; description: string; icon: Icon }[] = [
+  { value: "bug",        label: "Error",      description: "Algo no funciona como debería",     icon: Bug },
+  { value: "consulta",   label: "Consulta",   description: "Tengo una duda sobre la plataforma", icon: Question },
+  { value: "sugerencia", label: "Sugerencia", description: "Tengo una idea para mejorar algo",   icon: Lightbulb },
 ]
 
 const PRIORITY_OPTIONS: { value: FeedbackPrioridad; label: string }[] = [
@@ -95,10 +98,11 @@ export function ReportForm() {
               <SelectValue placeholder="Selecciona el tipo..." />
             </SelectTrigger>
             <SelectContent>
-              {TIPO_OPTIONS.map((opt) => (
-                <SelectItem key={opt.value} value={opt.value}>
-                  <span className="font-medium">{opt.label}</span>
-                  <span className="ml-2 text-sub text-xs">{opt.description}</span>
+              {TIPO_OPTIONS.map(({ value, label, description, icon: OptionIcon }) => (
+                <SelectItem key={value} value={value}>
+                  <OptionIcon size={14} aria-hidden className="mr-2 shrink-0 text-[var(--color-text-muted)]" />
+                  <span className="font-medium">{label}</span>
+                  <span className="ml-2 text-sub text-xs">{description}</span>
                 </SelectItem>
               ))}
             </SelectContent>

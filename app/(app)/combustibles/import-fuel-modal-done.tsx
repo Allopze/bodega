@@ -15,7 +15,7 @@ export function DoneStep({ result, onImportAnother, onClose }: DoneStepProps) {
     <div className="text-center space-y-4 py-4">
       <CheckCircle className="h-12 w-12 mx-auto text-[var(--color-success)]" />
       <div>
-        <p className="text-2xl font-bold">{result.imported}</p>
+        <p className="text-2xl font-semibold">{result.imported}</p>
         <p className="text-[var(--color-text-muted)]">cargas importadas exitosamente</p>
       </div>
 

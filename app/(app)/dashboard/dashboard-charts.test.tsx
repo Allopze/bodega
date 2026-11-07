@@ -49,7 +49,7 @@ describe("OperationalTrendChart", () => {
 
   it("la cifra grande es la del último mes, con su nombre y la variación contra el anterior", () => {
     const { container } = render(<OperationalTrendChart data={sample} />)
-    expect(screen.getByText("Tendencia Operativa")).toBeDefined()
+    expect(screen.getByText("Tendencia operativa")).toBeDefined()
     // La misma cifra aparece también en la leyenda (valores del mes activo):
     // la cabecera es la `ChartHeadlineValue`, la de 28 px.
     expect(container.querySelector(".text-\\[28px\\]")?.textContent).toBe("3")

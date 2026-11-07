@@ -76,7 +76,7 @@ export async function WarehouseSection({ session, scope }: DomainSectionsProps) 
           <KpiCard {...DASHBOARD_KPI} icon={<Truck size={16} />} label="Entregas de EPP" value={formatQty(eppWorkers)}
             detail={`Trabajadores con entrega · ${periodo}`} href="/entregas"
             empty={noDeliveries ? { message: `Sin entregas de EPP en ${periodo}`, actionLabel: canDeliver ? "Registrar una entrega" : "Ver entregas" } : undefined} />
-          <KpiCard {...DASHBOARD_KPI} icon={<Gauge size={16} />} label="Productos en rotación" value={String(analytics.productRotation.length)}
+          <KpiCard {...DASHBOARD_KPI} icon={<Gauge size={16} />} label="Productos en rotación" value={analytics.productRotation.length}
             detail={`Con movimiento · ${periodo}`} href={noRotation ? "/bodega" : "/analitica"}
             empty={noRotation ? { message: `Sin movimientos de stock en ${periodo}`, actionLabel: "Ir a Bodega" } : undefined} />
         </>

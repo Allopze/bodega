@@ -1,6 +1,25 @@
+"use client"
+
 import * as React from "react"
 import Link from "next/link"
+import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
+
+/**
+ * `true` si el enlace sólo cambia la query o el hash de la página en que ya se
+ * está: es un cambio de vista (período, pestaña, filtro), no una navegación. Sin
+ * pathname conocido (fuera de la app, en pruebas) no se supone nada.
+ */
+export function staysOnPage(href: string, pathname: string | null): boolean {
+  if (!pathname) return false
+  try {
+    const current = new URL(pathname, "http://localhost")
+    const target = new URL(href, `http://localhost${pathname}`)
+    return target.origin === current.origin && target.pathname === current.pathname
+  } catch {
+    return false
+  }
+}
 
 /**
  * Un ítem navega (`href`, renderiza `<Link>`) o alterna sin navegar (`onClick`,
@@ -64,8 +83,15 @@ function itemClassName(item: SegmentedControlItem, variant: "pills" | "segmented
 }
 
 function SegmentedControlLink({ item, className }: { item: Extract<SegmentedControlItem, { href: string }>; className: string }) {
+  const pathname = usePathname()
+  // Un ítem que sólo cambia la query de esta misma página es estado de la vista
+  // (AGENTS.md, «Navigation and scroll preservation»): `replace` para no llenar
+  // el historial de pasos intermedios y `scroll={false}` para no devolver al
+  // inicio a quien ya había bajado. Uno que va a otra página es navegación y
+  // conserva el comportamiento por defecto.
+  const sameView = staysOnPage(item.href, pathname)
   return (
-    <Link href={item.href} className={className} aria-current={item.active ? "page" : undefined}>
+    <Link href={item.href} replace={sameView} scroll={!sameView} className={className} aria-current={item.active ? "page" : undefined}>
       {item.label}
     </Link>
   )
@@ -81,7 +107,9 @@ function SegmentedControlButton({ item, className }: { item: Extract<SegmentedCo
 
 /**
  * Control segmentado reutilizable, en dos modos:
- * - `href`: selector de navegación sincronizado con la URL (el uso original).
+ * - `href`: selector de navegación sincronizado con la URL (el uso original). Si
+ *   el enlace sólo cambia la query de la página actual navega con `replace` y
+ *   sin mover el scroll (granularidad del tablero, ventana móvil de Mantención).
  * - `onClick`: alternador de una sola vista, sin navegar — `role="tab"` de
  *   Radix `Tabs` prometía un panel asociado que estos casos nunca tuvieron
  *   (axe `aria-valid-attr-value`); `aria-pressed` no promete nada que no exista.

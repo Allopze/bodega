@@ -7,7 +7,7 @@ import { Tooltip } from "@/components/ui/tooltip"
 import { CaretDown, SquaresFour } from "@phosphor-icons/react"
 import { cn } from "@/lib/utils"
 import { NAV_ICONS } from "./nav-icons"
-import { AreaItems } from "./nav-rows"
+import { AreaItems, navRailClass } from "./nav-rows"
 import type { AreaNode } from "./nav-items"
 
 export function AccordionAreas({
@@ -87,17 +87,21 @@ function AreaSection({
         <button
           type="button"
           aria-expanded={open}
-          className="flex w-full items-center gap-3 px-3 py-2 text-left text-base font-semibold text-slate-700 hover:text-slate-900 rounded-xl transition-colors cursor-pointer"
+          className="flex min-h-10 w-full cursor-pointer items-center gap-3 rounded-xl px-3 py-1.5 text-left text-sm font-medium text-(--color-text) transition-colors duration-(--duration-fast) ease-out hover:bg-nav-hover-bg"
         >
           <Icon
             size={20}
             weight="regular"
-            className={cn("shrink-0", open ? "text-slate-900 font-semibold" : "text-slate-500")}
+            className={cn("shrink-0", open ? "text-(--color-text)" : "text-(--color-text-subtle)")}
           />
-          <span title={area.label} className="flex-1 truncate">{area.label}</span>
+          {/* Dos líneas y no `truncate`: grupos como «Configuración de
+              plataforma» o «Comunicaciones e integraciones» no caben en una a
+              248 px y el recorte los volvía ilegibles (`title` no se lee con
+              el dedo). */}
+          <span title={area.label} className="line-clamp-2 flex-1 text-left leading-snug">{area.label}</span>
           <CaretDown
             size={15}
-            className={cn("shrink-0 text-slate-400 transition-transform duration-(--duration-fast)", open && "rotate-180")}
+            className={cn("shrink-0 text-(--color-text-faint) transition-transform duration-(--duration-fast)", open && "rotate-180")}
           />
         </button>
       </Collapsible.Trigger>
@@ -135,12 +139,7 @@ export function RailFlyout({
           <button
             type="button"
             aria-label={area.label}
-            className={cn(
-              "group relative flex items-center justify-center rounded-lg px-1 py-2 transition-[background-color,color] duration-(--duration-fast) ease-out",
-              inRoute
-                ? "bg-(--color-primary-tint) text-(--color-primary-ink)"
-                : "text-(--color-text-muted) hover:bg-(--color-chrome-hover) hover:text-(--color-text)",
-            )}
+            className={navRailClass(inRoute)}
           >
             <Icon size={21} weight="regular" className={cn("shrink-0", inRoute && "text-(--color-primary)")} />
           </button>
@@ -152,7 +151,7 @@ export function RailFlyout({
         sideOffset={10}
         className="w-56 p-2"
       >
-          <p className="px-2 pb-1 text-eyebrow">
+          <p className="px-3 pb-1 text-eyebrow">
             {area.label}
           </p>
           <AreaItems area={area} pathname={pathname} badgeCounts={badgeCounts} onNavigate={() => setOpen(false)} />

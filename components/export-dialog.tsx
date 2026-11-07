@@ -1,11 +1,12 @@
 "use client"
 
 import * as React from "react"
-import { DownloadSimple, Funnel } from "@phosphor-icons/react/dist/ssr"
+import { Funnel } from "@phosphor-icons/react/dist/ssr"
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger, DialogClose,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
+import { EXPORT_ICON } from "@/components/ui/export-button"
 import { DateRangePicker } from "@/components/ui/date-range-picker"
 import { WorksiteSelect, type WorksiteOption } from "@/components/ui/worksite-select"
 import {
@@ -111,7 +112,7 @@ const ExportDialogInner = React.memo(function ExportDialogInner({
       <DialogTrigger asChild>
         {trigger ?? (
           <Button variant="secondary" size="sm" className={tone === "signal" ? baseClass : undefined}>
-            <DownloadSimple size={14} className="mr-1" />
+            <EXPORT_ICON className="mr-1 h-4 w-4 shrink-0" />
             Exportar {label}
           </Button>
         )}

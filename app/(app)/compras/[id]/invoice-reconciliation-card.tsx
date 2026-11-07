@@ -292,7 +292,7 @@ export function InvoiceReconciliationCard({
 function CoverageMetric({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="text-[10px] uppercase tracking-[0.06em] text-(--color-text-subtle)">{label}</dt>
+      <dt className="text-eyebrow">{label}</dt>
       <dd className="mt-0.5 font-mono text-xs font-semibold tabular-nums text-(--color-text)">{value}</dd>
     </div>
   )

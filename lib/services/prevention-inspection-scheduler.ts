@@ -20,6 +20,7 @@ import {
   preventionInspectionRuns,
   preventionInspectionTemplates,
 } from "@/db/schema"
+import { nextCodeTx } from "@/lib/code-sequences"
 import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
 import { CAPA_REQUIRED_CRITICALITIES, nextDueAfter } from "@/lib/prevention/inspections"
@@ -100,9 +101,12 @@ export async function materializeProgramRuns(options: { programId?: string } = {
           subjectVehicleId: program.subjectVehicleId,
           subjectContainerId: program.subjectContainerId,
         })
+        // Serie correlativa por año (INSP-2026-0001). Si el slot ya existía el
+        // número se pierde: es el mismo hueco que deja cualquier rollback.
+        const code = await nextCodeTx(tx, "INSP", codeYear())
         const [inserted] = await tx.insert(preventionInspectionRuns).values({
           id: `insrun-${nanoid()}`,
-          code: `INSP-${codeYear()}-${nanoid(8).toUpperCase()}`,
+          code,
           templateId: program.templateId,
           programId: program.id,
           worksiteId: program.worksiteId,

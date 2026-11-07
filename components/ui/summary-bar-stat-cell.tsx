@@ -1,6 +1,6 @@
 import * as React from "react"
 import Link from "next/link"
-import { cn } from "@/lib/utils"
+import { cn, formatQty } from "@/lib/utils"
 import { Progress } from "./progress"
 import type { SummaryLinkProps, SummaryStat } from "./summary-bar"
 import { SUMMARY_TONE_TEXT, activeSummaryTone } from "./summary-bar-tone"
@@ -10,6 +10,9 @@ export function SummaryBarStatCell({ stat, renderLink, numerals = "mono" }: { st
   const isZero = !isText && typeof stat.value === "number" && stat.value === 0
   const tone = activeSummaryTone(stat, { isText })
   const toneClass = tone ? SUMMARY_TONE_TEXT[tone] : null
+  // Un número se formatea aquí (es-CL, «2.246»): así nadie pasa `String(n)` y la
+  // tira muestra «2246» junto a «$1.171.436» (auditoría UX-06, 2026-11-07).
+  const displayValue = typeof stat.value === "number" ? formatQty(stat.value) : stat.value
 
   const body = (
     <div className="px-4 py-3">
@@ -23,11 +26,19 @@ export function SummaryBarStatCell({ stat, renderLink, numerals = "mono" }: { st
       </div>
       <div className="mt-2 flex items-end gap-2">
         <span className={cn(
-          isText ? "text-base font-semibold leading-snug" : cn(numerals === "sans" ? "font-sans" : "font-mono", "text-[1.375rem] font-semibold leading-none tabular-nums tracking-tight"),
-          toneClass ?? (isZero ? "text-[var(--color-text-faint)]" : "text-[var(--color-text)]"),
-        )}>{stat.value}</span>
+          // Una palabra («Ninguno», «Sin datos») con el mismo tratamiento que
+          // `KpiCard valueKind="text"`: sans, 500, muted. Con estilo de cifra se
+          // leía como una cifra rota.
+          isText
+            ? "text-base font-medium leading-snug text-[var(--color-text-muted)]"
+            : cn(
+                numerals === "sans" ? "font-sans" : "font-mono",
+                "text-[1.375rem] font-semibold leading-none tabular-nums tracking-tight",
+                toneClass ?? (isZero ? "text-[var(--color-text-faint)]" : "text-[var(--color-text)]"),
+              ),
+        )}>{displayValue}</span>
         {stat.hint && <span className={cn(
-          "mb-0.5 font-mono text-[11px] font-semibold tabular-nums",
+          "mb-0.5 font-mono text-2xs font-semibold tabular-nums",
           toneClass ?? "text-[var(--color-text-subtle)]",
         )}>{stat.hint}</span>}
         {typeof stat.progress === "number" && (

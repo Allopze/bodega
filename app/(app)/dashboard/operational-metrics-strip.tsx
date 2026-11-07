@@ -67,7 +67,7 @@ export function OperationalMetricsStrip({ metrics }: { metrics: DashboardMetric[
     <section className="min-w-0" aria-labelledby="indicadores-operacionales">
       <div className="mb-3 flex items-baseline justify-between gap-3">
         <h2 id="indicadores-operacionales" className="text-eyebrow">
-          Indicadores Operacionales
+          Indicadores operacionales
         </h2>
         <span className="hidden text-xs text-[var(--color-text-muted)] sm:inline">Selecciona una cifra para ver el detalle</span>
       </div>
@@ -81,7 +81,7 @@ export function OperationalMetricsStrip({ metrics }: { metrics: DashboardMetric[
               {...DASHBOARD_KPI}
               icon={<Icon size={16} />}
               label={metric.label}
-              value={String(metric.value)}
+              value={metric.value}
               detail={metric.description}
               glossary={metric.glossary}
               tone={metric.tone}

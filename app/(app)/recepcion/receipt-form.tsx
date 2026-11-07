@@ -272,7 +272,7 @@ export function ReceiptForm({
                 <div>
                   <div className="flex items-center gap-2">
                     {item.productSku && (
-                      <span className="font-mono text-[11px] text-[var(--color-text-subtle)] bg-[var(--color-surface-2)] px-1.5 py-0.5 rounded">
+                      <span className="font-mono text-2xs text-[var(--color-text-subtle)] bg-[var(--color-surface-2)] px-1.5 py-0.5 rounded">
                         {item.productSku}
                       </span>
                     )}
@@ -354,7 +354,7 @@ export function ReceiptForm({
                       Pedido: {formatQty(item.quantity, item.unitOfMeasure)} · pendiente: {formatQty(remaining, item.unitOfMeasure)}
                     </p>
                   </div>
-                  {item.productSku && <span className="rounded bg-[var(--color-surface-2)] px-1.5 py-0.5 font-mono text-[11px] text-[var(--color-text-subtle)]">{item.productSku}</span>}
+                  {item.productSku && <span className="rounded bg-[var(--color-surface-2)] px-1.5 py-0.5 font-mono text-2xs text-[var(--color-text-subtle)]">{item.productSku}</span>}
                 </div>
                 <div className="mt-3 grid grid-cols-3 gap-2">
                   <Field label="Recibido">
@@ -462,7 +462,7 @@ export function ReceiptForm({
       <aside className="h-fit rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-[var(--shadow-card)] xl:sticky xl:top-6">
         {/* Sólo lo que no está en ningún otro control de la pantalla: la orden
             está en el título y la etapa en el selector (A5). */}
-        <p className="text-xs font-medium uppercase tracking-wide text-[var(--color-text-subtle)]">Resumen recepción</p>
+        <p className="text-eyebrow">Resumen recepción</p>
         <div className="mt-3 space-y-2 text-sm">
           <div className="flex items-center justify-between gap-3">
             <span className="text-[var(--color-text-muted)]">Líneas pendientes</span>

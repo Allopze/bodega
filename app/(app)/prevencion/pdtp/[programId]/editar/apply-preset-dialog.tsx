@@ -188,7 +188,7 @@ function PunctualCellGrid({ horizon, cells, onChange }: {
               onClick={() => toggle(month, week)}
               aria-pressed={isChecked}
               className={cn(
-                "rounded-[var(--radius-sm)] border px-1 py-1 font-mono text-[10px]",
+                "rounded-[var(--radius-sm)] border px-1 py-1 font-mono text-2xs",
                 isChecked
                   ? "border-[var(--color-primary)] bg-[var(--color-primary-tint)] text-[var(--color-primary)]"
                   : "border-[var(--color-border)] text-[var(--color-text-muted)] hover:bg-[var(--color-surface-2)]",

@@ -1,11 +1,12 @@
 /**
  * Labels canónicos de urgencia/severidad.
  *
- * Convención: masculino genérico ("Crítico") en singular sin contexto.
- * "Crítica" se reservó históricamente a campos cuyo sustantivo es femenino
- * (solicitud), pero genera inconsistencia cuando el mismo valor se aplica
- * a "ítem" o "estado" (masculinos). El adjetivo masculino es seguro
- * para todos los usos del sistema.
+ * Convención: femenino, porque el sustantivo es «urgencia» («Crítica», «Alta»).
+ * Antes se usaba el masculino genérico («Crítico») para que sirviera también a
+ * «ítem» o «estado», pero en pantalla la misma urgencia se leía «CRÍTICO» en la
+ * insignia, «Urgencia crítica» en la cabecera y «Crítica» en el Inicio. Estas
+ * etiquetas rotulan siempre una urgencia; lo que no es urgencia (riesgo, estado,
+ * severidad de un hallazgo) tiene sus propios mapas.
  *
  * Esta es la única fuente de verdad. Reemplaza los maps locales en
  * solicitudes/request-list.tsx, solicitudes/request-form.constants.ts,
@@ -14,7 +15,7 @@
 export const URGENCY_LABELS = {
   normal:   "Normal",
   high:     "Alta",
-  critical: "Crítico",
+  critical: "Crítica",
 } as const
 
 export type Urgency = keyof typeof URGENCY_LABELS

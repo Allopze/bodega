@@ -250,7 +250,7 @@ test("el panel muestra los cuatro indicadores, el gráfico con sus datos y cada 
 test("el panel exporta un Excel con los indicadores y las semanas como fecha", async ({ page }) => {
   await login(page, JEFE)
   await page.goto("/mantencion/panel?periodo=todo")
-  const { workbook, filename } = await download(page, "Exportar a Excel")
+  const { workbook, filename } = await download(page, "Exportar Excel")
   expect(filename).toMatch(/^panel-mantencion-\d{4}-\d{2}-\d{2}\.xlsx$/)
   expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual(expect.arrayContaining(["Indicadores", "Registros por semana", "Estado de la flota", "Metadatos"]))
   const weeks = workbook.getWorksheet("Registros por semana")!
@@ -331,7 +331,7 @@ test("registros: indicadores con su rango, filtros en la URL y orden por columna
 test("registros: el Excel trae sus cinco hojas, fechas reales y la autoría «en nombre de»", async ({ page }) => {
   await login(page, JEFE)
   await page.goto("/mantencion/registros")
-  const { workbook, filename } = await download(page, "Exportar a Excel")
+  const { workbook, filename } = await download(page, "Exportar Excel")
   expect(filename).toMatch(/^registros-mantencion-\d{4}-\d{2}-\d{2}\.xlsx$/)
   expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual(expect.arrayContaining([
     "Registros", "Ítems de preventivas", "Trabajos", "Repuestos", "Conductores", "Actualizaciones de taller", "Metadatos",

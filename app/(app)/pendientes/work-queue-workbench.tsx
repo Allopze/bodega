@@ -8,6 +8,7 @@ import { ArrowRight, MagnifyingGlass, WarningCircle } from "@phosphor-icons/reac
 import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
+import { Input } from "@/components/ui/input"
 import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
 import { Callout } from "@/components/ui/callout"
 import { DEFAULT_QUEUE_SORT, OPERATIONAL_MODULE_LABELS } from "@/lib/work-queue"
@@ -164,13 +165,17 @@ export function WorkQueueWorkbench({ result }: WorkQueueWorkbenchProps) {
 
       <form onSubmit={submitSearch} className="flex flex-col gap-2 sm:flex-row sm:items-center" role="search">
         <label className="sr-only" htmlFor="work-queue-search">Buscar en pendientes</label>
-        <input
+        {/* `Input` compartido y no un `<input>` crudo: trae `text-base` en móvil
+            (con 12 px iOS hace zoom al enfocar) y `h-11`. El `flex-1` va sólo
+            desde `sm`: en la columna móvil su base 0 anulaba la altura y el
+            campo se aplastaba a 16 px (UX-02). */}
+        <Input
           id="work-queue-search"
           type="search"
           value={term}
           onChange={(event) => setTerm(event.target.value)}
           placeholder="Buscar código, tarea o faena"
-          className="h-11 min-w-0 flex-1 rounded-[var(--radius)] border border-[var(--color-border-control)] bg-[var(--color-surface)] px-3 text-xs text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-subtle)] focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary-line)] sm:h-8"
+          className="min-w-0 sm:h-8 sm:flex-1"
         />
         {/* Lupa, no embudo: el embudo significa filtrar y este botón busca. */}
         <Button type="submit" variant="secondary" size="sm"><MagnifyingGlass size={14} />Buscar</Button>
@@ -206,7 +211,7 @@ export function WorkQueueWorkbench({ result }: WorkQueueWorkbenchProps) {
               {label}
               {/* El conteo evita tener que pulsar el chip para descubrir si trae algo. */}
               <span className={cn(
-                "rounded-full px-1.5 text-[11px] tabular-nums",
+                "rounded-full px-1.5 text-2xs tabular-nums",
                 activeQuick === value ? "bg-[var(--color-primary)] text-white" : "bg-[var(--color-surface-2)] text-[var(--color-text-subtle)]",
               )}>{count}</span>
             </button>
@@ -344,12 +349,12 @@ function QueueCard({ item, today }: { item: OperationalWorkItem; today: string }
         </QueueItemLink>
         <PriorityBadge priority={item.priority} />
       </div>
-      <p className="mt-1 text-[11px] text-[var(--color-text-muted)]">
+      <p className="mt-1 text-2xs text-[var(--color-text-muted)]">
         {item.code && <span>{item.code} · </span>}{OPERATIONAL_MODULE_LABELS[item.module]} · {item.worksiteName}
       </p>
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <MetaBadge meta={{ label: `${item.blocked ? "Bloqueada · " : ""}${item.statusLabel}`, variant: item.blocked ? "danger" : "info" }} />
-        <span className={cn("text-[11px]", overdue ? overdueTone(daysLate) : "text-[var(--color-text-subtle)]")}>
+        <span className={cn("text-2xs", overdue ? overdueTone(daysLate) : "text-[var(--color-text-subtle)]")}>
           {item.sourceDueAt
             ? overdue
               ? `Vencida hace ${daysLate} día${daysLate === 1 ? "" : "s"}`
@@ -373,18 +378,20 @@ function QueueRow({ item, today }: { item: OperationalWorkItem; today: string })
       <td className="px-3 py-2.5"><PriorityBadge priority={item.priority} /></td>
       <td className="px-3 py-2.5">
         <QueueItemLink item={item} className="font-medium text-[var(--color-text)] hover:text-[var(--color-primary-ink)] hover:underline">{item.title}</QueueItemLink>
-        <p className="mt-0.5 text-[11px] text-[var(--color-text-muted)]">{[item.code, item.subtitle].filter(Boolean).join(" · ")}</p>
+        <p className="mt-0.5 text-2xs text-[var(--color-text-muted)]">{[item.code, item.subtitle].filter(Boolean).join(" · ")}</p>
       </td>
       <td className="px-3 py-2.5 text-[var(--color-text-muted)]">{OPERATIONAL_MODULE_LABELS[item.module]}</td>
       <td className="px-3 py-2.5 text-[var(--color-text-muted)]">{item.worksiteName}</td>
       <td className="px-3 py-2.5">
         <MetaBadge meta={{ label: `${item.blocked ? "Bloqueada · " : ""}${item.statusLabel}`, variant: item.blocked ? "danger" : "info" }} />
       </td>
-      <td className="px-3 py-2.5 text-[var(--color-text-muted)]">
+      {/* `whitespace-nowrap`: la fecha y «Vencida hace N días» se partían en
+          tres líneas aunque sobraba ancho a la derecha. Dos líneas, no más. */}
+      <td className="whitespace-nowrap px-3 py-2.5 tabular-nums text-[var(--color-text-muted)]">
         {item.sourceDueAt
           ? <time dateTime={item.sourceDueAt} className={overdue ? overdueTone(daysLate) : undefined}>{formatDate(item.sourceDueAt)}</time>
           : "Sin fecha"}
-        <span className={cn("block text-[11px]", overdue ? overdueTone(daysLate) : "text-[var(--color-text-subtle)]")}>
+        <span className={cn("block text-2xs", overdue ? overdueTone(daysLate) : "text-[var(--color-text-subtle)]")}>
           {dueMeta(item, overdue, daysLate)}
         </span>
       </td>

@@ -141,7 +141,7 @@ export default async function PdtpPeriodClosuresPage({ params }: PageProps) {
                     </TableCell>
                     <TableCell>
                       <span className="block">{closure.closedByName}</span>
-                      <span className="block text-[11px] text-[var(--color-text-muted)]">{formatDateTime(closure.closedAt)}</span>
+                      <span className="block text-2xs text-[var(--color-text-muted)]">{formatDateTime(closure.closedAt)}</span>
                     </TableCell>
                     <TableCell>
                       {closure.distributedAt

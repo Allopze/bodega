@@ -56,9 +56,11 @@ describe("BitacoraTable: columna «Pendiente» y «Cómo llegó»", () => {
   it("muestra el motivo en palabras y enlaza la carga por decidir a la bandeja", () => {
     const flagged = row({ reviewFlagged: true, reviewFlagReason: "meter_regression", hrefs: { ...row().hrefs, decide: "/combustibles/revisar?tipo=carga&item=carga%3Ael-1" } })
     render(<BitacoraTable rows={[flagged]} canViewPersonal />)
-    const links = screen.getAllByRole("link", { name: "Lectura de medidor menor a la anterior" })
+    // La insignia va corta y la frase completa queda en su `title`.
+    const links = screen.getAllByRole("link", { name: "Lectura menor a la anterior" })
     expect(links.length).toBeGreaterThan(0)
     expect(links[0]).toHaveAttribute("href", "/combustibles/revisar?tipo=carga&item=carga%3Ael-1")
+    expect(within(links[0]!).getByText("Lectura menor a la anterior")).toHaveAttribute("title", "Lectura de medidor menor a la anterior")
   })
 
   it("la insignia de un caso abierto enlaza al enlace que armó la página para ESA carga", () => {

@@ -94,7 +94,7 @@ const COVERAGE_META: Record<CoveragePointRow["state"], StateMetaInput> = {
 
 function MetricButton({ label, value, onClick, tone }: { label: string; value: string | number; onClick: () => void; tone?: string }) {
   return <button type="button" onClick={onClick} className="rounded-2xl border border-slate-200/70 bg-white p-4 text-left shadow-xs transition-colors hover:border-slate-300">
-    <span className="block text-xs font-semibold uppercase tracking-wide text-text-subtle">{label}</span>
+    <span className="block text-eyebrow">{label}</span>
     <span className={`mt-1 block text-2xl font-semibold tabular-nums ${tone ?? "text-(--color-text)"}`}>{value}</span>
   </button>
 }

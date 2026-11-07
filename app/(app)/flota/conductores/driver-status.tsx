@@ -89,7 +89,7 @@ export function ClassTags({ classes, className }: { classes: readonly DriverLice
           <li
             key={code}
             title={`${info.short}: ${info.name}`}
-            className="list-none rounded-[var(--radius-xs)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-1.5 py-0.5 font-mono text-[11px] font-semibold leading-none text-[var(--color-text)]"
+            className="list-none rounded-[var(--radius-xs)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-1.5 py-0.5 font-mono text-2xs font-semibold leading-none text-[var(--color-text)]"
           >
             {info.short}
             <span className="sr-only">: {info.name}</span>

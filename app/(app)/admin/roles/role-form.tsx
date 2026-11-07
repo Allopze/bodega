@@ -190,7 +190,7 @@ export function RoleForm({ open, onClose, editRole, groupedPermissions }: RoleFo
               <section className="mt-2" aria-labelledby="role-permissions-title">
                 <div className="mb-2 flex items-center justify-between gap-3">
                   <h3 id="role-permissions-title" className="text-eyebrow">3. Permisos incluidos</h3>
-                  <span className="rounded-[var(--radius-full)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-text-muted)]">
+                  <span className="rounded-[var(--radius-full)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-0.5 text-2xs font-medium text-[var(--color-text-muted)]">
                     {selected.size} {selected.size === 1 ? "permiso" : "permisos"}
                   </span>
                 </div>
@@ -201,13 +201,13 @@ export function RoleForm({ open, onClose, editRole, groupedPermissions }: RoleFo
                     return (
                       <div key={group.module}>
                         <div className="mb-1.5 flex items-center justify-between">
-                          <span className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">
+                          <span className="text-eyebrow">
                             {moduleLabel(group.module)}
                           </span>
                           <button
                             type="button"
                             onClick={() => toggleModule(group)}
-                            className="text-[11px] text-[var(--color-primary)] hover:underline"
+                            className="text-2xs text-[var(--color-primary)] hover:underline"
                           >
                             {allOn ? "Quitar todos" : "Seleccionar todos"}
                           </button>

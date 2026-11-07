@@ -214,7 +214,7 @@ export function ImportExcelSection({ programId, visibleWorksites, catalogActivit
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="text-sm font-semibold text-[var(--color-text)]">Preview listo: {preview.source.fileName}</p>
-              <p className="mt-1 font-mono text-[11px] text-[var(--color-text-subtle)]">SHA-256 {preview.source.checksumSha256.slice(0, 16)}…</p>
+              <p className="mt-1 font-mono text-2xs text-[var(--color-text-subtle)]">SHA-256 {preview.source.checksumSha256.slice(0, 16)}…</p>
             </div>
             <MetaBadge meta={{ label: "Sin aplicar", variant: "info" }} />
           </div>

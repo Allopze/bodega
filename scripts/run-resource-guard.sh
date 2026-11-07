@@ -31,7 +31,10 @@ fi
 max_workers="${BODEGA_MAX_WORKERS:-3}"
 # 5120: desde 2026-10 el typecheck completo ya no cabe en 4096 (main pedía
 # ~4000–4096 MiB y cualquier rama mediana lo cruzaba; lo dominan drizzle y zod).
-heap_mb="${BODEGA_NODE_HEAP_MB:-5120}"
+# 6144 desde 2026-11-07: con heap holgado tsc ya marcaba ~5,8 GB en main
+# (`--extendedDiagnostics`) y pasaba a 5120 sin margen; el pulido UI/UX (+0,3 %)
+# lo hizo morir por heap dos veces seguidas. Mismo valor que el CI.
+heap_mb="${BODEGA_NODE_HEAP_MB:-6144}"
 nice_level="${BODEGA_NICE_LEVEL:-10}"
 oom_score_adj="${BODEGA_OOM_SCORE_ADJ:-500}"
 

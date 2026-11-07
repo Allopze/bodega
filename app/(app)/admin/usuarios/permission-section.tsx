@@ -1,6 +1,7 @@
 "use client"
 
 import { Lock } from "@phosphor-icons/react"
+import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
 import { cn } from "@/lib/utils"
 import { getModuleLabel, type Permission } from "./user-form.helpers"
@@ -30,9 +31,7 @@ export function PermissionSection({
     <div className="mt-5">
       <div className="mb-2 flex items-center justify-between gap-3">
         <p className="text-eyebrow">Permisos adicionales</p>
-        <span className="rounded-[var(--radius-full)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-0.5 font-mono text-[10px] font-semibold uppercase text-[var(--color-text-muted)]">
-          {directPermissionLabel}
-        </span>
+        <Badge size="sm">{directPermissionLabel}</Badge>
       </div>
       <p className="mb-3 text-xs text-[var(--color-text-subtle)]">
         El acceso del rol se conserva. Aquí sólo agregas excepciones directas.
@@ -43,7 +42,7 @@ export function PermissionSection({
           {activeModules.map((mod) => (
             <span
               key={mod}
-              className="inline-flex items-center rounded-[var(--radius-full)] bg-[var(--color-primary-tint)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-primary-ink)]"
+              className="inline-flex items-center rounded-[var(--radius-full)] bg-[var(--color-primary-tint)] px-2 py-0.5 text-2xs font-medium text-[var(--color-primary-ink)]"
             >
               {getModuleLabel(mod)}
             </span>
@@ -73,7 +72,7 @@ export function PermissionSection({
                   <button
                     type="button"
                     onClick={() => onToggleAllInModule(group)}
-                    className="text-[11px] font-medium text-[var(--color-primary)] transition-colors duration-[var(--duration-fast)] hover:text-[var(--color-primary-strong)]"
+                    className="text-2xs font-medium text-[var(--color-primary)] transition-colors duration-[var(--duration-fast)] hover:text-[var(--color-primary-strong)]"
                   >
                     {allToggled ? "Quitar todos" : "Seleccionar todos"}
                   </button>
@@ -94,7 +93,7 @@ export function PermissionSection({
                         <span title={permission.description ?? permission.name} className="flex-1 truncate text-sm text-[var(--color-text-muted)]">
                           {permission.description ?? permission.name}
                         </span>
-                        <span className="shrink-0 text-[10px] text-[var(--color-text-subtle)]">vía rol</span>
+                        <span className="shrink-0 text-2xs text-[var(--color-text-subtle)]">vía rol</span>
                       </div>
                     )
                   }

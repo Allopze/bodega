@@ -4,7 +4,7 @@ import * as React from "react"
 import { UserCircle } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Field } from "@/components/ui/field"
-import { Input } from "@/components/ui/input"
+import { DatePicker } from "@/components/ui/date-picker"
 import { MetaBadge } from "@/components/states/state-badge"
 import {
   Dialog,
@@ -120,7 +120,7 @@ export function PdtpAssigneePicker({
             <input key={userId} type="hidden" name="userIds" value={userId} />
           ))}
 
-          <p className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-[11px] text-[var(--color-text-muted)]">
+          <p className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-2xs text-[var(--color-text-muted)]">
             Con una persona asignada, esta actividad deja de aparecer en Pendientes para el resto de quienes
             comparten su cargo en esta faena. Sin nadie asignado, la siguen viendo todos, como hasta ahora.
           </p>
@@ -155,7 +155,7 @@ export function PdtpAssigneePicker({
                 />
                 <span>
                   <span className="font-medium text-[var(--color-text)]">{candidate.name}</span>
-                  <span className="block text-[11px] text-[var(--color-text-muted)]">
+                  <span className="block text-2xs text-[var(--color-text-muted)]">
                     {candidate.roleLabels.join(" · ")}
                   </span>
                 </span>
@@ -168,13 +168,12 @@ export function PdtpAssigneePicker({
             htmlFor={`assignee-valid-from-${activityId}`}
             helper="Quien deja de estar asignado conserva su registro hasta el día anterior: el historial de responsables no se borra."
           >
-            <Input
+            <DatePicker
               id={`assignee-valid-from-${activityId}`}
-              type="date"
               name="validFrom"
               value={validFrom}
-              onChange={(event) => setValidFrom(event.target.value)}
-              aria-label="Rige desde"
+              onChange={setValidFrom}
+              ariaLabel="Rige desde"
             />
           </Field>
 

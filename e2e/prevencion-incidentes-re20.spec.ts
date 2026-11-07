@@ -117,7 +117,7 @@ async function abrirCaso(page: Page, id: string, params: { etapa?: string; propo
   }
   const sufijo = query.size > 0 ? `?${query.toString()}` : ""
   await page.goto(`/prevencion/incidentes/${id}${sufijo}`)
-  await expect(page.getByRole("heading", { level: 2, name: /^Investigación INC-/ })).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByRole("heading", { level: 2, name: /^Investigación EV-/ })).toBeVisible({ timeout: 30_000 })
   await page.waitForLoadState("networkidle").catch(() => undefined)
 }
 
@@ -477,7 +477,7 @@ test.describe.serial("RE-20 — accidente con tiempo perdido, de punta a punta",
     await page.getByLabel("Para qué la necesitas").fill(PROPOSITO)
     await verConProposito.click()
     await expect(page).toHaveURL(/purpose=/, { timeout: 30_000 })
-    await expect(page.getByRole("heading", { level: 2, name: /^Investigación INC-/ })).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByRole("heading", { level: 2, name: /^Investigación EV-/ })).toBeVisible({ timeout: 30_000 })
     await page.waitForLoadState("networkidle").catch(() => undefined)
 
     // Con propósito: el vacío explica qué hacer y la acción es real. Un accidente del trabajo también

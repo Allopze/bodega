@@ -370,7 +370,7 @@ function EgressContextBlock({ workerId, workerName, context, canManage, canRevok
         <div className="mt-2 space-y-3">
           {context.accesses.length > 0 && (
             <section aria-label="Accesos vigentes">
-              <h4 className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">Accesos vigentes ({context.accesses.length})</h4>
+              <h4 className="text-eyebrow">Accesos vigentes ({context.accesses.length})</h4>
               <ul className="mt-1 space-y-1">
                 {context.accesses.map((access) => (
                   <li key={access.systemId} className={rowClass}>
@@ -395,7 +395,7 @@ function EgressContextBlock({ workerId, workerName, context, canManage, canRevok
           )}
           {context.licenses.length > 0 && (
             <section aria-label="Licencias asignadas">
-              <h4 className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">Licencias asignadas ({context.licenses.length})</h4>
+              <h4 className="text-eyebrow">Licencias asignadas ({context.licenses.length})</h4>
               <ul className="mt-1 space-y-1">
                 {context.licenses.map((license) => (
                   <li key={license.assignmentId} className={rowClass}>
@@ -417,7 +417,7 @@ function EgressContextBlock({ workerId, workerName, context, canManage, canRevok
           )}
           {context.assets.length > 0 && (
             <section aria-label="Equipos en custodia">
-              <h4 className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">Equipos en custodia ({context.assets.length})</h4>
+              <h4 className="text-eyebrow">Equipos en custodia ({context.assets.length})</h4>
               <ul className="mt-1 space-y-1">
                 {context.assets.map((asset) => (
                   <li key={asset.assignmentId} className={rowClass}>

@@ -17,7 +17,7 @@ export function SummaryItem({
         {icon}
       </span>
       <div className="min-w-0">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-text-subtle">{label}</p>
+        <p className="text-eyebrow">{label}</p>
         <p className={muted ? "truncate text-sm text-text-subtle" : "truncate text-sm font-medium text-(--color-text)"}>
           {value}
         </p>

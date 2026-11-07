@@ -166,7 +166,7 @@ export function AssetNextAction({
   return (
     <div className="flex flex-col gap-3">
       <div>
-        <h2 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]">{heading}</h2>
+        <h2 className="text-eyebrow">{heading}</h2>
         <p className="mt-1 text-sm text-[var(--color-text)]">{description}</p>
       </div>
 

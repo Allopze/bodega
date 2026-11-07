@@ -78,7 +78,7 @@ export function FilterToolbar({
                 <Funnel size={14} className="mr-1.5" />
                 Más filtros
                 {activeCount > 0 && (
-                  <MetaBadge meta={{ label: String(activeCount), variant: "signal" }} className="ml-1.5 px-1.5 py-0 font-mono text-[10px]" />
+                  <MetaBadge meta={{ label: String(activeCount), variant: "signal" }} size="sm" className="ml-1.5 px-1.5 py-0" />
                 )}
               </Button>
 

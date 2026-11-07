@@ -147,7 +147,7 @@ const SelectTrigger = React.forwardRef<
           }}
           placeholder="Buscar..."
           aria-label="Buscar en opciones"
-          className="min-w-0 flex-1 bg-transparent text-base sm:text-sm text-(--color-text) outline-none placeholder:text-[var(--color-text-subtle)]"
+          className="min-w-0 flex-1 bg-transparent text-[1rem] sm:text-sm text-(--color-text) outline-none placeholder:text-[var(--color-text-subtle)]"
           onClick={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
         />

@@ -112,7 +112,7 @@ export function TraceabilityIntegrityCases({
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div>
                   <p className="text-xs font-semibold text-(--color-text)">{CASE_LABELS[caseRow.findingCode] ?? caseRow.findingCode}</p>
-                  <p className="mt-0.5 text-[11px] text-(--color-text-subtle)">
+                  <p className="mt-0.5 text-2xs text-(--color-text-subtle)">
                     Detectado {formatDateTime(caseRow.detectedAt)} ·{" "}
                     {/* El id suelto no le decía nada a nadie: abre el
                         expediente donde se ve qué pasó con ese ítem. */}
@@ -140,7 +140,7 @@ export function TraceabilityIntegrityCases({
                   </span>
                 )}
               </div>
-              <p className="mt-2 text-[11px] text-(--color-text-subtle)">
+              <p className="mt-2 text-2xs text-(--color-text-subtle)">
                 Recibido en faena: {String(caseRow.snapshot.receivedAtFaena ?? 0)} · entregado: {String(caseRow.snapshot.delivered ?? 0)}
               </p>
               {!caseRow.resolutionId && canReconcile && (

@@ -77,7 +77,7 @@ const EntityTimelineInner = React.memo(function EntityTimelineInner({
 
       <div className="px-4 py-5">
         {events.length === 0 ? (
-          <p className="text-xs text-[var(--color-text-subtle)] italic">Sin registros en el historial.</p>
+          <p className="text-xs text-[var(--color-text-subtle)]">Sin registros en el historial.</p>
         ) : (
           <div className="relative border-l border-[var(--color-border)] ml-3 pl-6 space-y-6">
             {events.map((event) => {
@@ -117,7 +117,7 @@ const EntityTimelineInner = React.memo(function EntityTimelineInner({
                         naranja de advertencia lo leía como aviso (detector,
                         auditoría 2026-10-05); va como `blockquote` neutro. */}
                     {event.reason && (
-                      <blockquote className="mt-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-2 text-xs italic text-[var(--color-text-muted)]">
+                      <blockquote className="mt-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-2 text-xs text-[var(--color-text-muted)]">
                         &ldquo;{event.reason}&rdquo;
                       </blockquote>
                     )}

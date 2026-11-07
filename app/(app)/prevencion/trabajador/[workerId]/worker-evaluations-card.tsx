@@ -56,7 +56,7 @@ export function EvaluationCard({
   )
 
   return (
-    <Card className="flex flex-col h-full border border-(--color-border) bg-(--color-surface) hover:shadow-md transition-shadow">
+    <Card className="flex flex-col h-full border border-(--color-border) bg-(--color-surface) hover:bg-[var(--color-surface-2)] transition-colors">
       <CardHeader className="flex flex-row items-start justify-between border-b border-(--color-border) bg-(--color-surface-2) p-4">
         <div className="flex items-center gap-2">
           <span className="flex h-8 w-8 items-center justify-center rounded-(--radius-lg) bg-(--color-primary-tint) text-(--color-primary)">
@@ -83,7 +83,7 @@ export function EvaluationCard({
                 <div className="space-y-1">
                   <div className="flex justify-between text-sm">
                     <span className="text-(--color-text-muted)">Cumplimiento:</span>
-                    <span className="font-bold">{evaluation.porcentajeCumplimiento.toFixed(1)}%</span>
+                    <span className="font-semibold">{evaluation.porcentajeCumplimiento.toFixed(1)}%</span>
                   </div>
                   <div className="w-full bg-[var(--color-border)] h-2 rounded-full overflow-hidden">
                     <div
@@ -103,8 +103,8 @@ export function EvaluationCard({
 
               {isConductorLider && weeklyEvals.length > 0 && (
                 <div className="mt-4 pt-4 border-t border-(--color-border) space-y-2">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-text-subtle">
-                    Semanas de Acompañamiento
+                  <p className="text-eyebrow">
+                    Semanas de acompañamiento
                   </p>
                   <div className="grid grid-cols-2 gap-2">
                     {weeklyEvals.map((week) => {
@@ -122,10 +122,10 @@ export function EvaluationCard({
                       return (
                         <div key={week.id} className="p-2 border border-(--color-border) rounded-(--radius) flex flex-col gap-1 text-xs">
                           <span className="font-medium">Semana {week.semana}</span>
-                          <span className={`inline-block px-1.5 py-0.5 rounded-full text-[10px] text-center font-bold ${statusColor}`}>
+                          <span className={`inline-block px-1.5 py-0.5 rounded-full text-2xs text-center font-semibold ${statusColor}`}>
                             {statusLabel}
                           </span>
-                          <span className="text-[10px] text-(--color-text-muted) italic">
+                          <span className="text-2xs text-[var(--color-text-subtle)]">
                             Desb. {formatDateDisplay(week.fechaDesbloqueo)}
                           </span>
                         </div>
@@ -178,7 +178,7 @@ export function EvaluationCard({
                 + Iniciar Evaluación
               </Button>
             ) : (
-              <span className="text-xs text-text-subtle italic text-(--color-text-muted)">
+              <span className="text-xs text-[var(--color-text-subtle)]">
                 No habilitado
               </span>
             )}

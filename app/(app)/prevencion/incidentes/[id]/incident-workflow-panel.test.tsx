@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import type * as React from "react"
 import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
@@ -22,7 +23,7 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
-function renderPanel() {
+function renderPanel(overrides: Partial<React.ComponentProps<typeof IncidentWorkflowPanel>> = {}) {
   return render(
     <IncidentWorkflowPanel
       incident={{
@@ -35,6 +36,7 @@ function renderPanel() {
       responsibles={[]}
       permissions={["prevention:incidents:investigate"]}
       defaultTargetDate="2026-10-01"
+      {...overrides}
     />,
   )
 }
@@ -57,5 +59,40 @@ describe("IncidentWorkflowPanel — un envío rechazado", () => {
     await waitFor(() => expect(actions.addPreventionIncidentEvidenceAction).toHaveBeenCalledTimes(1))
     expect(field(container, "reference").value).toBe("DOC-2026-0042")
     expect(field(container, "description").value).toBe("Foto del anclaje")
+  })
+})
+
+describe("IncidentWorkflowPanel — fechas con el DatePicker del sistema (A6)", () => {
+  const person = {
+    id: "p-1", displayLabel: "Persona uno", absenceAtLeastNormalShift: true, absenceDays: 0,
+    absenceStartDate: "2026-09-02", returnToWorkDate: null, chargeDays: 0, administratorQualification: null,
+    indicatorInclusionStatus: "pending", version: 1,
+  }
+
+  it("el reposo se envía con los mismos nombres y formato ISO que el `<input type=date>`", async () => {
+    const { container } = renderPanel({ people: [person] })
+    expect(container.querySelector('input[type="date"]')).toBeNull()
+    expect(field(container, "absenceStartDate")).toMatchObject({ type: "hidden", value: "2026-09-02" })
+    expect(field(container, "returnToWorkDate")).toMatchObject({ type: "hidden", value: "" })
+
+    fireEvent.change(field(container, "reason"), { target: { value: "Resolución revisada y criterio aplicado" } })
+    await act(async () => { field(container, "absenceStartDate").closest("form")!.requestSubmit() })
+    await waitFor(() => expect(actions.classifyIncidentPersonForIndicatorsAction).toHaveBeenCalledTimes(1))
+    expect((actions.classifyIncidentPersonForIndicatorsAction.mock.calls as unknown[][])[0]![0]).toMatchObject({
+      absencePeriods: [{ startDate: "2026-09-02", endDate: null }],
+    })
+  })
+
+  it("autorizar el reinicio no se habilita sin la fecha de la autorización", () => {
+    const { container, getByRole } = renderPanel({
+      incident: {
+        id: "inc-1", status: "pending_capa", version: 7, actualSeverity: "serious", potentialSeverity: "critical",
+        isFatalOrSerious: true, operationsSuspended: true, evacuated: false, immediateMeasures: null,
+      },
+      permissions: ["prevention:incidents:authorize_restart"],
+    })
+    expect(container.querySelector('input[type="date"]')).toBeNull()
+    expect(field(container, "authorizationDate")).toMatchObject({ type: "hidden", value: "" })
+    expect(getByRole("button", { name: "Autorizar reinicio" })).toBeDisabled()
   })
 })

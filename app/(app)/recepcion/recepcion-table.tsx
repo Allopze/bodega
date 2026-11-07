@@ -9,13 +9,13 @@ import { hasServerListFilters, ServerListFilters, type ServerListFilterOption } 
 import { StageTabs, type StageTab } from "@/components/ui/stage-tabs"
 import { OnboardingHint } from "@/components/ui/onboarding-hint"
 import { TableRow, TableCell } from "@/components/ui/table"
-import { StateBadge } from "@/components/states/state-badge"
+import { OC_STATE_META, StateBadge } from "@/components/states/state-badge"
 import { StageProgressCompact } from "@/components/states/stage-progress-compact"
 import type { RequestProgress } from "@/lib/work-queue"
 import { StateLegend } from "@/components/states/state-legend"
 import { Button } from "@/components/ui/button"
 import { formatDate } from "@/lib/utils"
-import { canRegisterReceiptForOrder, receiptGuideActionLabel } from "./recepcion-table.helpers"
+import { canRegisterReceiptForOrder, quietOrderStatusesForTab, receiptGuideActionLabel } from "./recepcion-table.helpers"
 
 type OrderRow = {
   id:          string
@@ -73,11 +73,24 @@ const COLUMNS = [
 const EMPTY_FILTER_OPTIONS: ServerListFilterOption[] = []
 const EMPTY_STAGE_TABS: StageTab[] = []
 
+/**
+ * Estado de la OC. La pestaña activa ya fija el estado esperado (A5): repetirlo
+ * en una pastilla naranja en cada fila hacía que ninguna destacara. Ese estado
+ * se escribe como texto apagado, y la pastilla de color queda para las filas
+ * que se desvían («Recibido en oficina», «Llegó parcial»).
+ */
+function OrderStatus({ status, quiet }: { status: string; quiet: boolean }) {
+  if (!quiet) return <StateBadge state={status} entity="oc" size="sm" />
+  const label = OC_STATE_META[status as keyof typeof OC_STATE_META]?.label ?? status
+  return <span data-quiet-status className="text-xs text-[var(--color-text-muted)]">{label}</span>
+}
+
 export function RecepcionTable({ orders, wsMap, supMap, progressMap, guideMap, canOffice, canFaena, officeName, worksiteOptions = EMPTY_FILTER_OPTIONS, supplierOptions = EMPTY_FILTER_OPTIONS, stageTabs = EMPTY_STAGE_TABS }: RecepcionTableProps) {
   const router = useRouter()
 
   const searchParams = useSearchParams()
   const hasActiveFilters = hasServerListFilters(searchParams)
+  const quietStatuses = quietOrderStatusesForTab(searchParams.get("estado"))
 
   // Nombres resueltos en la fila para que el orden de esas columnas coincida con
   // lo que se lee (ver COLUMNS).
@@ -129,7 +142,9 @@ export function RecepcionTable({ orders, wsMap, supMap, progressMap, guideMap, c
                mouse; el destino accesible por teclado es el enlace del código. */
             onClick={() => router.push(href)}
           >
-            <TableCell>
+            {/* `nowrap`: el código no se parte en «OC-» / «2026-» / «0057» cuando
+                la columna de estado se lleva el ancho. */}
+            <TableCell nowrap>
               <Link
                 href={href}
                 aria-label={`Ver OC ${o.code}`}
@@ -144,14 +159,14 @@ export function RecepcionTable({ orders, wsMap, supMap, progressMap, guideMap, c
               {supMap[o.supplierId] ?? o.supplierId}
             </TableCell>
             <TableCell>
-              <StateBadge state={o.status} entity="oc" size="sm" />
+              <OrderStatus status={o.status} quiet={quietStatuses.includes(o.status)} />
             </TableCell>
             <TableCell>
               {progressMap[o.id]
                 ? <StageProgressCompact progress={progressMap[o.id]!} />
                 : <span className="text-xs text-[var(--color-text-subtle)]">—</span>}
             </TableCell>
-            <TableCell className="text-xs text-[var(--color-text-subtle)]">
+            <TableCell nowrap className="text-xs text-[var(--color-text-subtle)]">
               {o.sentAt ? formatDate(o.sentAt) : "—"}
             </TableCell>
             <TableCell onClick={(e) => e.stopPropagation()} className="text-right">
@@ -186,7 +201,7 @@ export function RecepcionTable({ orders, wsMap, supMap, progressMap, guideMap, c
                   {supMap[o.supplierId] ?? o.supplierId}
                 </p>
               </Link>
-              <StateBadge state={o.status} entity="oc" size="sm" />
+              <OrderStatus status={o.status} quiet={quietStatuses.includes(o.status)} />
             </div>
             <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
               <dt className="text-[var(--color-text-subtle)]">Faena</dt>

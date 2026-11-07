@@ -18,7 +18,7 @@ test.describe("Prevención — Capacitaciones y ODI", () => {
   test("la bandeja anual de capacitación carga correctamente", async ({ page }) => {
     await page.goto("/prevencion/capacitacion")
     await expect(page).toHaveURL(/\/prevencion\/capacitacion/)
-    await expectPageTitle(page, "Capacitación")
+    await expectPageTitle(page, "Campañas y capacitación")
   })
 
   test("exportar entrega el consolidado de capacitaciones en Excel", async ({ page }) => {

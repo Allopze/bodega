@@ -121,7 +121,7 @@ function TankPanel({ tank, view }: { tank: TankLevelSeries; view: TankLevelView 
               stroke={CHART_COLORS.neutral}
               strokeDasharray="4 3"
               ifOverflow="extendDomain"
-              label={{ value: `Capacidad ${litersWhole(tank.capacityLiters)}`, position: "insideBottomRight", fontSize: 10, fill: "var(--color-text-muted)" }}
+              label={{ value: `Capacidad ${litersWhole(tank.capacityLiters)}`, position: "insideBottomRight", fontSize: 11, fill: "var(--color-text-muted)" }}
             />
           ) : null}
           <ChartTooltip content={<BucketTooltip />} />

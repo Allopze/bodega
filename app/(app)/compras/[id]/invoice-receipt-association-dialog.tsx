@@ -108,7 +108,7 @@ export function InvoiceReceiptAssociationDialog({
                   </Button>
                 </div>
               </div>
-              <ul className="mt-1 list-disc space-y-0.5 pl-4 text-[11px] text-(--color-text-muted)">
+              <ul className="mt-1 list-disc space-y-0.5 pl-4 text-2xs text-(--color-text-muted)">
                 {suggestion.reasons.map((reason) => <li key={reason}>{reason}</li>)}
               </ul>
             </div>

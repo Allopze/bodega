@@ -61,7 +61,7 @@ function LicenseClassTags({ classes }: { classes: readonly string[] }) {
         <span
           key={code}
           title={DRIVER_LICENSE_CLASS_INFO[code].name}
-          className="rounded-[var(--radius-xs)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-1.5 py-0.5 font-mono text-[11px] font-semibold tabular-nums text-[var(--color-text)]"
+          className="rounded-[var(--radius-xs)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-1.5 py-0.5 font-mono text-2xs font-semibold tabular-nums text-[var(--color-text)]"
         >
           {DRIVER_LICENSE_CLASS_INFO[code].short}
         </span>

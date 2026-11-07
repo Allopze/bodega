@@ -10,21 +10,55 @@ import { isHrefActive, type AreaNode, type NavItem } from "./nav-items"
 
 function CountBadge({ count }: { count: number }) {
   return (
-    <span className="ml-auto shrink-0 rounded-full bg-signal-tint px-1.5 py-0.5 font-mono text-[11px] font-semibold tabular-nums text-signal-ink">
+    <span className="ml-auto shrink-0 rounded-full bg-signal-tint px-1.5 py-0.5 font-mono text-2xs font-semibold tabular-nums text-signal-ink">
       {count > 99 ? "99+" : count}
     </span>
   )
 }
 
 const rowBase =
-  "group relative flex h-[40px] items-center gap-3 px-3 rounded-xl text-[15px] font-medium transition-colors duration-(--duration-fast) ease-out"
+  "group relative flex min-h-10 items-center gap-3 rounded-xl px-3 py-1.5 text-sm font-medium transition-colors duration-(--duration-fast) ease-out"
 
-function itemRowClass(active: boolean) {
+/**
+ * Único tratamiento de selección de la navegación: verde suave (`nav-active-*`,
+ * definidos en `@theme`) para CUALQUIER ítem activo —área, subítem, Inicio,
+ * Soporte, flyout del rail y drawer móvil—. Antes convivían tres (píldora gris
+ * pizarra, verde y sólo texto) y el usuario no podía leer "aquí estoy" igual en
+ * dos lugares (auditoría UX-09, 2026-11-07).
+ *
+ * `ancestor` es la fila padre de un hijo activo: sin relleno —el relleno es sólo
+ * del destino—, con el texto en tinta plena para marcar el camino.
+ */
+export function navRowClass(active: boolean, ancestor = false) {
   return cn(
     rowBase,
     active
-      ? "bg-slate-200/80 font-semibold text-slate-900"
-      : "text-slate-600 hover:bg-slate-200/50 hover:text-slate-900",
+      ? "bg-nav-active-bg font-semibold text-nav-active-ink"
+      : ancestor
+        ? "text-(--color-text) hover:bg-nav-hover-bg"
+        : "text-(--color-text-muted) hover:bg-nav-hover-bg hover:text-(--color-text)",
+  )
+}
+
+/** Ícono de una fila de navegación; hereda `group-hover` de `navRowClass`. */
+export function navIconClass(active: boolean, ancestor = false) {
+  return cn(
+    "shrink-0",
+    active
+      ? "text-(--color-primary)"
+      : ancestor
+        ? "text-(--color-text)"
+        : "text-(--color-text-subtle) group-hover:text-(--color-text)",
+  )
+}
+
+/** Misma regla para el rail colapsado, donde el ícono es el único rótulo. */
+export function navRailClass(active: boolean) {
+  return cn(
+    "group relative flex items-center justify-center rounded-lg px-1 py-2 transition-colors duration-(--duration-fast) ease-out",
+    active
+      ? "bg-nav-active-bg text-nav-active-ink"
+      : "text-(--color-text-muted) hover:bg-nav-hover-bg hover:text-(--color-text)",
   )
 }
 
@@ -48,15 +82,9 @@ function LeafRow({
       onClick={onNavigate}
       aria-current={active ? "page" : undefined}
       data-pressable
-      className={itemRowClass(active)}
+      className={navRowClass(active)}
     >
-      {Icon && (
-        <Icon
-          size={20}
-          weight="regular"
-          className={cn("shrink-0", active ? "text-slate-900" : "text-slate-500 group-hover:text-slate-900")}
-        />
-      )}
+      {Icon && <Icon size={20} weight="regular" className={navIconClass(active)} />}
       <span title={item.label} className="flex-1 truncate">{item.label}</span>
       {count > 0 && <CountBadge count={count} />}
     </Link>
@@ -93,32 +121,29 @@ function BranchRow({
 
   return (
     <Collapsible.Root open={open} onOpenChange={setOpen}>
-      <div className={cn(itemRowClass(active), "w-full", !active && childActive && "text-slate-900")}>
+      {/* `py-0`: la fila se estira por sus dos hijos (enlace y caret), que
+          aportan el alto mínimo y su propio padding vertical; así el caret
+          conserva un blanco de toque del alto completo de la fila. */}
+      <div className={cn(navRowClass(active, childActive), "w-full py-0")}>
         <Link
           href={item.href}
           onClick={onNavigate}
           aria-current={active ? "page" : undefined}
           data-pressable
-          className="flex h-full min-w-0 flex-1 items-center gap-3 text-left"
+          className="flex min-w-0 flex-1 items-center gap-3 self-stretch py-1.5 text-left"
         >
-          {Icon && (
-            <Icon
-              size={20}
-              weight="regular"
-              className={cn("shrink-0", active ? "text-slate-900" : childActive ? "text-slate-700" : "text-slate-500 group-hover:text-slate-900")}
-            />
-          )}
+          {Icon && <Icon size={20} weight="regular" className={navIconClass(active, childActive)} />}
           <span title={item.label} className="flex-1 truncate">{item.label}</span>
           {count > 0 && <CountBadge count={count} />}
         </Link>
         <Collapsible.Trigger asChild>
-          <button type="button" aria-label={`Mostrar destinos de ${item.label}`} aria-expanded={open} className="flex h-full shrink-0 items-center px-2 text-text-faint hover:text-(--color-text)">
+          <button type="button" aria-label={`Mostrar destinos de ${item.label}`} aria-expanded={open} className="flex shrink-0 items-center self-stretch px-2 text-text-faint hover:text-(--color-text)">
           <CaretDown size={15} className={cn("shrink-0 text-text-faint transition-transform duration-(--duration-fast)", open && "rotate-180")} />
           </button>
         </Collapsible.Trigger>
       </div>
       <Collapsible.Content className="overflow-hidden data-[state=open]:animate-collapsible-down data-[state=closed]:animate-collapsible-up">
-        <ul className="my-1 ml-3 space-y-1 border-l border-slate-200/80 pl-2.5 py-0.5">
+        <ul className="my-1 ml-3 space-y-1 border-l border-(--color-border) pl-2.5 py-0.5">
           {(item.children ?? []).map((child) => {
             const ca = isHrefActive(child.href, pathname)
             return (
@@ -129,10 +154,10 @@ function BranchRow({
                   aria-current={ca ? "page" : undefined}
                   data-pressable
                   className={cn(
-                    "flex min-h-[36px] items-center rounded-xl px-2.5 text-sm font-medium transition-colors duration-(--duration-fast) ease-out",
+                    "flex min-h-9 items-center rounded-xl px-2.5 text-sm font-medium transition-colors duration-(--duration-fast) ease-out",
                     ca
-                      ? "bg-slate-200/80 font-semibold text-slate-900"
-                      : "text-slate-600 hover:bg-slate-200/50 hover:text-slate-900",
+                      ? "bg-nav-active-bg font-semibold text-nav-active-ink"
+                      : "text-(--color-text-muted) hover:bg-nav-hover-bg hover:text-(--color-text)",
                   )}
                 >
                   <span title={child.label} className="truncate">{child.label}</span>
@@ -190,7 +215,7 @@ const AreaItemsInner = React.memo(function AreaItemsInner({
         return (
           <React.Fragment key={item.href}>
             {showGroupHeader && (
-              <li className="mt-3 mb-1 px-3 text-[11px] font-semibold uppercase tracking-wide text-text-faint first:mt-1" aria-hidden="true">
+              <li className="text-eyebrow mt-6 mb-2 px-3 first:mt-1" aria-hidden="true">
                 {item.group}
               </li>
             )}

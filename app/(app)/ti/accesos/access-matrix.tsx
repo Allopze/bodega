@@ -165,9 +165,9 @@ export function AccessMatrix({ workers, systems, canManage, showAll, systemFilte
               </caption>
               <thead>
                 <tr>
-                  <th scope="col" className="sticky top-0 z-10 w-56 bg-[var(--color-surface)] px-2 py-2 text-left text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">Trabajador</th>
+                  <th scope="col" className="sticky top-0 z-10 w-56 bg-[var(--color-surface)] px-2 py-2 text-left text-eyebrow">Trabajador</th>
                   {systems.map((system) => (
-                    <th key={system.id} scope="col" className="sticky top-0 z-10 bg-[var(--color-surface)] px-1 py-2 text-center text-[11px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">{system.name}</th>
+                    <th key={system.id} scope="col" className="sticky top-0 z-10 bg-[var(--color-surface)] px-1 py-2 text-center text-eyebrow">{system.name}</th>
                   ))}
                 </tr>
               </thead>

@@ -138,7 +138,7 @@ export async function FleetSection({ session, scope }: DomainSectionsProps) {
         ]}
         kpis={
           <>
-            {canViewFleet && <KpiCard {...DASHBOARD_KPI} icon={<Truck size={16} />} label="Vehículos activos" value={String(activeVehicles)}
+            {canViewFleet && <KpiCard {...DASHBOARD_KPI} icon={<Truck size={16} />} label="Vehículos activos" value={activeVehicles}
               detail="En catálogo operativo · ahora" href="/flota"
               empty={activeVehicles === 0 && !degradedSources.includes("fleetSnapshot")
                 ? { message: "Aún no hay vehículos activos", actionLabel: canRegisterVehicles ? "Registrar un vehículo" : "Ver vehículos" }
@@ -157,7 +157,8 @@ export async function FleetSection({ session, scope }: DomainSectionsProps) {
                 destino es la pestaña «abiertas» de la lista, que cuenta lo mismo. A5: ésta es
                 la única vista del tablero con la cifra. */}
             {workOrderScope && <KpiCard {...DASHBOARD_KPI} icon={<Wrench size={16} />} label="OT abiertas"
-              value={workOrders ? String(workOrders.openCount) : "Sin dato"}
+              value={workOrders ? workOrders.openCount : "Sin dato"}
+              valueKind={workOrders ? "number" : "text"}
               detail={workOrders
                 ? workOrders.openCount === 0
                   ? "Sin órdenes de trabajo abiertas · ahora"
@@ -165,7 +166,7 @@ export async function FleetSection({ session, scope }: DomainSectionsProps) {
                 : "No se pudo calcular"}
               tone={workOrders && (workOrders.unassignedOpen > 0 || workOrders.estimateOverdue > 0) ? "signal" : "neutral"}
               href="/mantencion/ot?estado=abiertas" />}
-            {canViewFleet && <KpiCard {...DASHBOARD_KPI} icon={<Certificate size={16} />} label="Equipos por vencer" value={String(docs.within30)}
+            {canViewFleet && <KpiCard {...DASHBOARD_KPI} icon={<Certificate size={16} />} label="Equipos por vencer" value={docs.within30}
               detail={docs.expired > 0 ? `${docs.expired} ya vencido(s) · próximos 30 días` : "Próximos 30 días"}
               tone={docs.within30 + docs.expired > 0 ? "signal" : "neutral"}
               // La lista abre el subconjunto que cuenta la cifra: próximos si hay
@@ -182,7 +183,8 @@ export async function FleetSection({ session, scope }: DomainSectionsProps) {
             key: "tae-billed-gap",
             // A6: sigla con su nombre en el rótulo (glosario en `dashboard-glossary.ts`).
             label: "Brecha tarjeta TAE vs. facturado",
-            value: fuelControl?.tae ? `${formatQty(Math.abs(Math.round(fuelControl.tae.liters - fuelControl.billed.liters)))} L` : "—",
+            value: fuelControl?.tae ? `${formatQty(Math.abs(Math.round(fuelControl.tae.liters - fuelControl.billed.liters)))} L` : "Sin dato",
+            valueKind: fuelControl?.tae ? ("number" as const) : ("text" as const),
             secondary: fuelControl?.tae ? `${fuelControl.tae.pendingReview} por revisar · ${periodo}` : "Sin control de tarjeta TAE",
             href: FUEL_PATHS.cuadraturaTarjetaTerreno,
           }] : []),

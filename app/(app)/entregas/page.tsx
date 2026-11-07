@@ -1,4 +1,5 @@
 import { resolveProductSize } from "@/lib/products/product-size"
+import { ExportLink } from "@/components/ui/export-button"
 import { formatVariantProductName, resolveVariantAttributes } from "@/lib/products/variant-grouping"
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
@@ -25,7 +26,7 @@ import { ServerPagination } from "@/components/ui/server-pagination"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Button } from "@/components/ui/button"
-import { DownloadSimple, Package, User } from "@phosphor-icons/react/dist/ssr"
+import { Package, User } from "@phosphor-icons/react/dist/ssr"
 import { and, asc, count, desc, eq, gt, inArray } from "drizzle-orm"
 import { DeliveriesTable, type DeliveryRow } from "./deliveries-table"
 import type { DeliveryStockProductOption } from "./delivery-form.types"
@@ -345,12 +346,7 @@ export default async function Page({
                 defaultOpen={openFormRequested || Boolean(initialDeliverable)}
               />
             )}
-            <Button asChild variant="secondary" size="sm">
-              <a href={faena ? `/api/entregas/export?faena=${encodeURIComponent(faena)}` : "/api/entregas/export"} download>
-                <DownloadSimple size={15} aria-hidden />
-                Exportar Excel
-              </a>
-            </Button>
+            <ExportLink href={faena ? `/api/entregas/export?faena=${encodeURIComponent(faena)}` : "/api/entregas/export"} />
           </div>
         }
       />

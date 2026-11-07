@@ -156,7 +156,7 @@ export function UserInvitationsPanel({ invitations }: { invitations: InvitationR
               <div className="flex flex-wrap items-center gap-1">
                 {invitation.roleLabels.slice(0, 3).map((label) => <MetaBadge key={label} meta={{ label, variant: "default" }} />)}
                 {invitation.roleLabels.length > 3 && (
-                  <span className="text-[10px] font-medium text-[var(--color-text-subtle)]">+{invitation.roleLabels.length - 3} más</span>
+                  <span className="text-2xs font-medium text-[var(--color-text-subtle)]">+{invitation.roleLabels.length - 3} más</span>
                 )}
                 <span className="text-xs text-[var(--color-text-subtle)]">{invitation.worksiteCount} faena(s)</span>
               </div>

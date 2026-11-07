@@ -198,7 +198,7 @@ export function DocumentIntegrityWorkbench({ findings }: { findings: DocumentInt
                   <Link className="font-medium text-[var(--color-primary)] hover:underline" href={`/prevencion/documentacion/${finding.documentId}`}>
                     {finding.documentTitle}
                   </Link>
-                  <p className="mt-1 font-mono text-[10px] text-[var(--color-text-muted)]">{finding.code}</p>
+                  <p className="mt-1 font-mono text-2xs text-[var(--color-text-muted)]">{finding.code}</p>
                 </TableCell>
                 <TableCell className="min-w-80 text-sm">{finding.detail}</TableCell>
                 <TableCell className="min-w-96 text-sm text-[var(--color-text-muted)]">{finding.recommendedAction}</TableCell>

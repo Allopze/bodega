@@ -10,7 +10,7 @@ import type { ActivityNode } from "@/lib/prevention/miper/matrix-tree"
 import { progressPercent, type ProgramProgress } from "@/lib/prevention/miper/progress"
 import type { MiperEntrySnapshot } from "@/lib/prevention/miper/snapshot"
 import { hrefToMatrixOnly, hrefToProgramOnly, hrefToTab } from "@/lib/prevention/miper/workspace-url"
-import { countOf } from "@/lib/utils"
+import { countOf, formatPercent, formatQty } from "@/lib/utils"
 import { RiskConcentration } from "./risk-concentration"
 import { revealActivity } from "./workspace-memory"
 import { scrollToWhenReady, WorkspaceLink } from "./workspace-nav"
@@ -70,7 +70,7 @@ export function ResumenPanel({ matrixId, rows, tree, incomplete, linkedControlId
   const allComplete = tree.length > 0 && tree.every((activity) => activity.tasks.reduce((total, task) => total + task.complete, 0) === activity.entryCount)
   const stats: SummaryStat[] = [
     {
-      key: "completos", label: "Riesgos completos", value: `${rows.length - pending}/${rows.length}`,
+      key: "completos", label: "Riesgos completos", value: `${formatQty(rows.length - pending)}/${formatQty(rows.length)}`,
       secondary: pending > 0 ? `${countOf(pending, "riesgo")} con pendientes` : "Todos tienen los datos requeridos",
       href: rows.length > pending ? hrefToMatrixOnly(pathname, params, { completitud: "completos" }) : undefined,
     },
@@ -86,7 +86,7 @@ export function ResumenPanel({ matrixId, rows, tree, incomplete, linkedControlId
       href: uncontrolled > 0 ? hrefToMatrixOnly(pathname, params, { controlado: "no" }) : undefined,
     },
     {
-      key: "programa", label: "Avance del plan", value: planned === 0 ? "Aún sin actividades" : `${progressPercent(programProgress)}%`,
+      key: "programa", label: "Avance del plan", value: planned === 0 ? "Aún sin actividades" : formatPercent(progressPercent(programProgress) ?? 0, 0),
       valueKind: planned === 0 ? "text" : "number",
       secondary: planned === 0 ? "Genéralas desde las medidas" : `${done}/${planned} realizadas${overdue > 0 ? ` · ${countOf(overdue, "vencida")}` : ""}`,
       href: hrefToProgramOnly(pathname, params),

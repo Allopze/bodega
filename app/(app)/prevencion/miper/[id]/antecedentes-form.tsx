@@ -188,7 +188,7 @@ export function AntecedentesForm({ workspace, editable, onSaved, onDirtyChange }
         </Callout>
       )}
       <section className="grid gap-4 md:grid-cols-3">
-        <h3 className="md:col-span-3 text-sm font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">Identificación</h3>
+        <h3 className="md:col-span-3 text-sm font-semibold text-[var(--color-text-subtle)]">Identificación</h3>
         {textField("iperCode")}
         <Field label="Período"><Input value={header.period ?? ""} disabled /></Field>
         <Field label={HEADER_FIELD_LABEL.elaboratedOn} required><DatePicker value={header.elaboratedOn ?? undefined} disabled={locked} onChange={(iso) => set("elaboratedOn", iso)} /></Field>
@@ -204,20 +204,20 @@ export function AntecedentesForm({ workspace, editable, onSaved, onDirtyChange }
         {textField("worksiteName")}
       </section>
       <section className="grid gap-4 md:grid-cols-4">
-        <h3 className="md:col-span-4 text-sm font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">Dotación</h3>
+        <h3 className="md:col-span-4 text-sm font-semibold text-[var(--color-text-subtle)]">Dotación</h3>
         {numberField("headcountTotal")}{numberField("headcountMale")}{numberField("headcountFemale")}{numberField("headcountOther")}
         {sumMismatch && <p role="alert" className="md:col-span-4 text-sm text-[var(--color-danger-ink)]">Hombres + mujeres + otro suman {sum} y el total declarado es {header.headcountTotal}.</p>}
         {prefill.headcount.unrecorded > 0 && <p className="md:col-span-4 text-xs text-[var(--color-text-subtle)]">{prefill.headcount.unrecorded} trabajador(es) activo(s) no tienen el sexo registrado y se cuentan como &quot;otro&quot;. Complétalo en la ficha del trabajador.</p>}
       </section>
       <section className="grid gap-4 md:grid-cols-3">
-        <h3 className="md:col-span-3 text-sm font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">Responsables</h3>
+        <h3 className="md:col-span-3 text-sm font-semibold text-[var(--color-text-subtle)]">Responsables</h3>
         {textField("siteRepresentativeName", { required: true })}
         <Field label="Elaboró / revisó / aprobó" helper="Se registran solos con el flujo de revisión: no se escriben.">
           <Input disabled value={workspace.versions[0] ? `${workspace.versions[0].elaboratedByName} / ${workspace.versions[0].technicalReviewerName} / ${workspace.versions[0].approverName}` : "Se completa al aprobar la primera versión"} />
         </Field>
       </section>
       <section className="grid gap-4">
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">Participación</h3>
+        <h3 className="text-sm font-semibold text-[var(--color-text-subtle)]">Participación</h3>
         <Field label={HEADER_FIELD_LABEL.participationSummary}><Textarea value={header.participationSummary} disabled={locked} onChange={(event) => set("participationSummary", event.target.value)} /></Field>
         <Field label={HEADER_FIELD_LABEL.consultationEvidenceReference}><Input value={header.consultationEvidenceReference} disabled={locked} onChange={(event) => set("consultationEvidenceReference", event.target.value)} /></Field>
       </section>

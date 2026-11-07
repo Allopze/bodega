@@ -49,7 +49,7 @@ export function AssetHistory({ assetId, rows, retirements }: AssetHistoryProps) 
 
   return (
     <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs">
-      <h2 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Línea de tiempo del activo</h2>
+      <h2 className="text-eyebrow">Línea de tiempo del activo</h2>
       <p className="mt-1 text-xs text-[var(--color-text-muted)]">Todo lo que le ha ocurrido al equipo desde que ingresó. Nada se sobrescribe.</p>
       {truncated && (
         <p className="mt-1 text-xs font-medium text-[var(--color-text)]">Mostrando los {ASSET_HISTORY_LIMIT} más recientes.</p>

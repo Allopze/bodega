@@ -243,7 +243,7 @@ export default async function DispatchGuideDetailPage({ params }: { params: Prom
           )}
           {guide.notes && (
             <div className="mt-4 border-t border-[var(--color-border)] pt-3">
-              <p className="text-[11px] uppercase tracking-[0.06em] text-[var(--color-text-subtle)]">Observaciones</p>
+              <p className="text-eyebrow">Observaciones</p>
               <p className="mt-1 whitespace-pre-line text-sm text-[var(--color-text-muted)]">{guide.notes}</p>
             </div>
           )}
@@ -280,7 +280,7 @@ export default async function DispatchGuideDetailPage({ params }: { params: Prom
                     </TableCell>
                     <TableCell className={`text-right font-mono text-sm ${item.quantityReceived != null && item.quantityReceived < item.quantity ? "text-[var(--color-warning-ink)]" : "text-[var(--color-text-muted)]"}`}>
                       {item.quantityReceived == null ? "—" : formatQty(Math.max(0, item.quantity - item.quantityReceived))}
-                      {item.differenceReason && <span className="block max-w-28 truncate text-[10px] font-sans text-[var(--color-text-muted)]" title={item.differenceReason}>{item.differenceReason}</span>}
+                      {item.differenceReason && <span className="block max-w-28 truncate text-2xs font-sans text-[var(--color-text-muted)]" title={item.differenceReason}>{item.differenceReason}</span>}
                     </TableCell>
                     <TableCell className="text-sm text-[var(--color-text-muted)]">{item.unitOfMeasure}</TableCell>
                     <TableCell className="text-xs text-[var(--color-text-muted)]">{item.notes ?? "—"}</TableCell>
@@ -323,7 +323,7 @@ export default async function DispatchGuideDetailPage({ params }: { params: Prom
                       <TableCell className="text-sm">{movement.worksiteName}</TableCell>
                       <TableCell className="text-sm">
                         {movement.productName}
-                        <span className="block font-mono text-[11px] text-[var(--color-text-subtle)]">
+                        <span className="block font-mono text-2xs text-[var(--color-text-subtle)]">
                           {movement.productSku}
                         </span>
                       </TableCell>

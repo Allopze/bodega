@@ -125,7 +125,7 @@ export function ScheduleMatrix({ scheduleId, unit, intervals, groups, headerTop 
             <caption className="sr-only">Actividades de la pauta por intervalo</caption>
             <thead>
               <tr>
-                <th scope="col" className={cn(FIRST_COLUMN_CLASS, "sticky z-[15] min-w-40 border-y border-[var(--color-border)] px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-[var(--color-text-subtle)]", headerTop)}>Actividad</th>
+                <th scope="col" className={cn(FIRST_COLUMN_CLASS, "sticky z-[15] min-w-40 border-y border-[var(--color-border)] px-3 py-2 text-left th-type", headerTop)}>Actividad</th>
                 {intervals.map((interval) => (
                   <th
                     key={interval.id}
@@ -133,7 +133,7 @@ export function ScheduleMatrix({ scheduleId, unit, intervals, groups, headerTop 
                     className={cn("sticky z-10 w-24 whitespace-nowrap border-y border-[var(--color-border)] bg-[var(--color-surface)] px-1 py-2 text-center font-mono text-xs font-semibold text-[var(--color-text)]", headerTop)}
                   >
                     {formatReading(interval.value, unit)}
-                    {interval.needsReview && <>{" "}<span className="mt-0.5 block font-sans text-[10px] font-semibold uppercase tracking-wider text-[var(--color-warning-ink)]">Por revisar</span></>}
+                    {interval.needsReview && <>{" "}<span className="mt-0.5 block font-sans text-2xs font-semibold text-[var(--color-warning-ink)]">Por revisar</span></>}
                   </th>
                 ))}
                 <th scope="col" className={cn("sticky z-10 w-24 border-y border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-2", headerTop)}><span className="sr-only">Acciones</span></th>

@@ -310,13 +310,13 @@ export function MaterialEnvironmentalChart({ data }: { data: MaterialEnvironment
 
   return (
     <ChartFrame
-      title="Impacto Material y Ambiental"
+      title="Impacto material y ambiental"
       description="Incidentes peligrosos, daños materiales y derrames ambientales"
     >
       <ChartContainer config={materialEnvConfig} className="h-52 w-full" data-chart-kind="bars">
         <ComposedChart
           accessibilityLayer
-          aria-label="Impacto Material y Ambiental"
+          aria-label="Impacto material y ambiental"
           data={data}
           margin={{ top: 12, right: 0, left: 0, bottom: 0 }}
         >

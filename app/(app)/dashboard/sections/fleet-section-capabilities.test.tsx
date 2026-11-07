@@ -155,7 +155,9 @@ describe("FleetSection · panel del tablero", () => {
     const tile = tiles.find((element) => element.props.label === "OT abiertas")!
     expect(tiles).toHaveLength(4)
     expect(tile.props).toMatchObject({
-      value: "5",
+      // El tile recibe el número: es `KpiCard` quien lo formatea (es-CL).
+      value: 5,
+      valueKind: "number",
       detail: "2 sin asignar · 1 con entrega vencida · ahora",
       tone: "signal",
       href: "/mantencion/ot?estado=abiertas",
@@ -170,7 +172,7 @@ describe("FleetSection · panel del tablero", () => {
     const section = await FleetSection(props("flota:view", "mant:ot:view_all"))
     const tile = find(sectionOf(section).kpis, (element) => element.type === KpiCard && element.props.label === "OT abiertas")[0]!
 
-    expect(tile.props).toMatchObject({ value: "Sin dato", detail: "No se pudo calcular" })
+    expect(tile.props).toMatchObject({ value: "Sin dato", valueKind: "text", detail: "No se pudo calcular" })
     expect(bannerOf(section).props.degraded).toContain("workOrders")
   })
 
@@ -251,7 +253,7 @@ describe("FleetSection · panel del tablero", () => {
     const tile = find(kpis, (element) => element.type === KpiCard && element.props.label === "Equipos por vencer")[0]!
 
     expect(tile.props).toMatchObject({
-      value: "1",
+      value: 1,
       detail: "1 ya vencido(s) · próximos 30 días",
       href: "/flota?vencimiento=proximos",
     })

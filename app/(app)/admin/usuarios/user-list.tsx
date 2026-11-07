@@ -124,7 +124,7 @@ export function UserList({ users, invitations, allRoles, allPermissions, allWork
                     <MetaBadge key={label} meta={{ label: `${label}`, variant: "default" }} />
                   ))}
                   {u.roleLabels.length > 3 && (
-                    <span className="text-[10px] font-medium text-[var(--color-text-subtle)] whitespace-nowrap">
+                    <span className="text-2xs font-medium text-[var(--color-text-subtle)] whitespace-nowrap">
                       +{u.roleLabels.length - 3} más
                     </span>
                   )}
@@ -142,7 +142,10 @@ export function UserList({ users, invitations, allRoles, allPermissions, allWork
               <TableCell className="text-xs text-[var(--color-text-muted)]">
                 {formatDate(u.createdAt)}
               </TableCell>
-              {/* Actions */}
+              {/* Actions. Los tres íconos van en tono sutil: con el papelera en rojo
+                  cada fila llevaba un punto de alarma (~20 en la primera pantalla) y
+                  el rojo dejó de significar algo. Aparece al posar o enfocar, y en
+                  la confirmación. */}
               <TableCell>
                 <div className="flex items-center gap-2 justify-end">
                   <button
@@ -164,7 +167,7 @@ export function UserList({ users, invitations, allRoles, allPermissions, allWork
                       aria-label={`${u.isActive ? "Desactivar" : "Activar"} usuario ${u.name}`}
                     >
                       {u.isActive
-                        ? <ToggleRight size={20} className="text-[var(--color-primary)]" />
+                        ? <ToggleRight size={20} />
                         : <ToggleLeft size={20} />
                       }
                     </button>
@@ -172,7 +175,7 @@ export function UserList({ users, invitations, allRoles, allPermissions, allWork
                   <button
                     type="button"
                     onClick={() => setDeleteUserConfirm(u)}
-                    className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-danger)] hover:text-[var(--color-danger-ink)] hover:bg-[var(--color-danger-tint)] transition-colors duration-[var(--duration-fast)] "
+                    className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-danger-ink)] hover:bg-[var(--color-danger-tint)] focus-visible:text-[var(--color-danger-ink)] transition-colors duration-[var(--duration-fast)] "
                     title="Eliminar"
                     aria-label={`Eliminar usuario ${u.name}`}
                   >
@@ -202,7 +205,7 @@ export function UserList({ users, invitations, allRoles, allPermissions, allWork
                   <MetaBadge key={label} meta={{ label: `${label}`, variant: "default" }} />
                 ))}
                 {u.roleLabels.length > 3 && (
-                  <span className="text-[10px] font-medium text-[var(--color-text-subtle)] whitespace-nowrap">
+                  <span className="text-2xs font-medium text-[var(--color-text-subtle)] whitespace-nowrap">
                     +{u.roleLabels.length - 3} más
                   </span>
                 )}
@@ -224,6 +227,7 @@ export function UserList({ users, invitations, allRoles, allPermissions, allWork
                   type="button"
                   variant="ghost"
                   size="icon-mobile"
+                  className="text-[var(--color-text-subtle)]"
                   onClick={() => openEdit(u)}
                   title="Editar"
                   aria-label={`Editar usuario ${u.name}`}
@@ -237,11 +241,12 @@ export function UserList({ users, invitations, allRoles, allPermissions, allWork
                     type="submit"
                     variant="ghost"
                     size="icon-mobile"
+                    className="text-[var(--color-text-subtle)]"
                     title={u.isActive ? "Desactivar" : "Activar"}
                     aria-label={`${u.isActive ? "Desactivar" : "Activar"} usuario ${u.name}`}
                   >
                     {u.isActive
-                      ? <ToggleRight size={20} className="text-[var(--color-primary)]" />
+                      ? <ToggleRight size={20} />
                       : <ToggleLeft size={20} />
                     }
                   </Button>
@@ -253,7 +258,7 @@ export function UserList({ users, invitations, allRoles, allPermissions, allWork
                   onClick={() => setDeleteUserConfirm(u)}
                   title="Eliminar"
                   aria-label={`Eliminar usuario ${u.name}`}
-                  className="text-[var(--color-danger)] hover:text-[var(--color-danger-ink)] hover:bg-[var(--color-danger-tint)]"
+                  className="text-[var(--color-text-subtle)] hover:text-[var(--color-danger-ink)] hover:bg-[var(--color-danger-tint)] focus-visible:text-[var(--color-danger-ink)]"
                 >
                   <Trash size={16} />
                 </Button>

@@ -141,7 +141,7 @@ export default async function EmergencyResourceDetailPage({ params }: Props) {
       >
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p id="resource-status-heading" className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">Estado actual</p>
+            <p id="resource-status-heading" className="text-eyebrow">Estado actual</p>
             <h2 className="mt-1 text-lg font-semibold text-[var(--color-text)]">{resource.name}</h2>
           </div>
           <MetaBadge meta={{ label: `${EMERGENCY_RESOURCE_STATUS_LABELS[resource.status] ?? resource.status}`, variant: emergencyResourceStatusVariant(resource.status) }} dot />
@@ -259,7 +259,7 @@ export default async function EmergencyResourceDetailPage({ params }: Props) {
               <span aria-hidden className={`absolute -left-[1.59rem] top-1.5 h-2.5 w-2.5 rounded-full ring-4 ${item.tone?.dot ?? "bg-[var(--color-primary)]"} ${item.tone?.ring ?? "ring-[var(--color-primary)]/30"}`} />
               <div className="flex flex-wrap items-baseline gap-x-2">
                 <time className="text-xs tabular-nums text-[var(--color-text-subtle)]">{formatDateTime(item.at)}</time>
-                {item.tone ? <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">· {item.tone.label}</span> : null}
+                {item.tone ? <span className="text-2xs font-medium text-[var(--color-text-subtle)]">· {item.tone.label}</span> : null}
               </div>
               <p className="text-sm font-semibold text-[var(--color-text)]">{item.href ? <Link href={item.href} className="hover:underline">{item.title}</Link> : item.title}</p>
               {item.detail ? <p className="text-xs text-[var(--color-text-subtle)]">{item.detail}</p> : null}

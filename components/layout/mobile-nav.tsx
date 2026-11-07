@@ -9,7 +9,7 @@ import { CaretDown, Lifebuoy, MapPin } from "@phosphor-icons/react"
 import { cn } from "@/lib/utils"
 import { BrandMark } from "./brand-mark"
 import { NAV_ICONS } from "./nav-icons"
-import { AreaItems } from "./nav-rows"
+import { AreaItems, navIconClass, navRowClass } from "./nav-rows"
 import { getVisibleAreas, findActiveArea, isHrefActive, DASHBOARD_ITEM, type AreaNode } from "./nav-items"
 import { getAdminAreas } from "./admin-nav"
 import { SidebarUserProfile } from "./sidebar-user-profile"
@@ -34,6 +34,7 @@ const MobileNavInner = React.memo(function MobileNavInner({ session, worksiteNam
   )
   const routeArea = findActiveArea(areas, pathname)
   const dashActive = isHrefActive(DASHBOARD_ITEM.href, pathname)
+  const soporteActive = isHrefActive("/soporte", pathname)
   const DashIcon = NAV_ICONS[DASHBOARD_ITEM.iconName]
 
   return (
@@ -57,14 +58,10 @@ const MobileNavInner = React.memo(function MobileNavInner({ session, worksiteNam
           href={DASHBOARD_ITEM.href}
           onClick={onNavigate}
           aria-current={dashActive ? "page" : undefined}
-          className={cn(
-            "mb-1 flex h-[40px] items-center gap-3 rounded-xl px-3 text-[15px] transition-[color,background-color] duration-(--duration-fast) ease-out",
-            dashActive
-              ? "font-semibold text-(--color-primary-ink)"
-              : "text-(--color-text-muted) hover:bg-(--color-chrome-hover) hover:text-(--color-text)",
-          )}
+          data-pressable
+          className={cn(navRowClass(dashActive), "mb-1")}
         >
-          {DashIcon && <DashIcon size={20} weight="regular" className={cn("shrink-0", dashActive && "text-(--color-primary)")} />}
+          {DashIcon && <DashIcon size={20} weight="regular" className={navIconClass(dashActive)} />}
           Inicio
         </Link>
 
@@ -89,19 +86,11 @@ const MobileNavInner = React.memo(function MobileNavInner({ session, worksiteNam
           <Link
             href="/soporte"
             onClick={onNavigate}
+            aria-current={soporteActive ? "page" : undefined}
             data-pressable
-            className={cn(
-              "flex h-[40px] items-center gap-3 rounded-xl px-3 text-[15px] transition-[color,background-color] duration-(--duration-fast) ease-out",
-              isHrefActive("/soporte", pathname)
-                ? "font-semibold text-(--color-primary-ink)"
-                : "text-(--color-text-muted) hover:bg-(--color-chrome-hover) hover:text-(--color-text)",
-            )}
+            className={navRowClass(soporteActive)}
           >
-            <Lifebuoy
-              size={20}
-              weight="regular"
-              className={cn("shrink-0", isHrefActive("/soporte", pathname) && "text-(--color-primary)")}
-            />
+            <Lifebuoy size={20} weight="regular" className={navIconClass(soporteActive)} />
             <span>Soporte</span>
           </Link>
         </div>
@@ -155,11 +144,12 @@ function AreaAccordion({
         <button
           type="button"
           aria-expanded={open}
-          /* A2: eyebrow aplanado para consistencia con el desktop. */
-          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm font-semibold text-(--color-text-muted) transition-colors duration-(--duration-fast) hover:text-(--color-text)"
+          /* Mismo rótulo de grupo que el desktop (`AreaSection`): 13 px medio, en
+             tinta plena y hasta dos líneas, sin recortar. */
+          className="flex min-h-10 w-full items-center gap-3 rounded-xl px-3 py-1.5 text-left text-sm font-medium text-(--color-text) transition-colors duration-(--duration-fast) ease-out hover:bg-nav-hover-bg"
         >
-          <span title={area.label} className="flex-1 truncate">{area.label}</span>
-          <CaretDown size={14} className={cn("shrink-0 text-text-faint transition-transform duration-(--duration-fast)", open && "rotate-180")} />
+          <span title={area.label} className="line-clamp-2 flex-1 text-left leading-snug">{area.label}</span>
+          <CaretDown size={15} className={cn("shrink-0 text-(--color-text-faint) transition-transform duration-(--duration-fast)", open && "rotate-180")} />
         </button>
       </Collapsible.Trigger>
       <Collapsible.Content className="overflow-hidden data-[state=open]:animate-collapsible-down data-[state=closed]:animate-collapsible-up">

@@ -117,9 +117,12 @@ function baseFilterConditions(access: InspectionAccess, filter: InspectionListFi
   if (filter.search?.trim()) {
     // `unaccent` no está garantizado en la base; `ILIKE` cubre el caso real
     // (buscar por código o por nombre de plantilla) sin depender de extensiones.
+    // `legacy_code`: el código aleatorio previo a la serie INSP-AAAA-NNNN sigue
+    // citado en notificaciones y documentos, y quien lo trae debe poder encontrarla.
     const pattern = `%${filter.search.trim().replace(/[%_]/g, (match) => `\\${match}`)}%`
     conditions.push(sql`(
       ${preventionInspectionRuns.code} ILIKE ${pattern}
+      OR COALESCE(${preventionInspectionRuns.legacyCode}, '') ILIKE ${pattern}
       OR ${preventionInspectionTemplates.name} ILIKE ${pattern}
       OR COALESCE(${preventionInspectionRuns.subjectLabel}, '') ILIKE ${pattern}
       OR ${worksites.name} ILIKE ${pattern}

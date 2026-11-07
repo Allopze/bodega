@@ -237,6 +237,11 @@ export const preventionInspectionPrograms = pgTable("prevention_inspection_progr
 export const preventionInspectionRuns = pgTable("prevention_inspection_runs", {
   id:                text("id").primaryKey(),
   code:              text("code").notNull().unique(),
+  /* Código aleatorio previo a la serie correlativa `INSP-AAAA-NNNN`, renumerado en
+   * 2026-11. Se conserva porque ya fue citado en notificaciones, motivos de
+   * hallazgos y documentos generados: esos textos son históricos y no se
+   * reescriben, y esta columna vincula el código viejo con el vigente. */
+  legacyCode:        text("legacy_code"),
   templateId:        text("template_id").notNull().references(() => preventionInspectionTemplates.id, { onDelete: "restrict" }),
   programId:         text("program_id").references(() => preventionInspectionPrograms.id, { onDelete: "set null" }),
   worksiteId:        text("worksite_id").notNull().references(() => worksites.id, { onDelete: "restrict" }),

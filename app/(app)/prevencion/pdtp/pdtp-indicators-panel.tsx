@@ -217,7 +217,7 @@ export function PdtpIndicatorsPanel({ data, integral, asOf, worksiteId, declared
                             al revisar el mes. */}
                         {m.declaredNotPerformed > 0 && (
                           <span
-                            className="ml-1 whitespace-nowrap text-[10px] font-normal text-[var(--color-text-faint)]"
+                            className="ml-1 whitespace-nowrap text-2xs font-normal text-[var(--color-text-faint)]"
                             title="Semanas del mes con un desvío «no realizada» declarado. Queda el motivo registrado; lo planificado no cambia."
                           >
                             ({m.declaredNotPerformed} con motivo)
@@ -269,7 +269,7 @@ function IntegralTile({ integral }: { integral: PdtpIntegralCompliance }) {
             {integral.integral !== null ? `${integral.integral}%` : "—"}
           </span>
         </div>
-        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-[var(--color-text-muted)]">
+        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-0.5 text-2xs text-[var(--color-text-muted)]">
           {axes.map((axis) => (
             <span key={axis.label} title={`Peso ${Math.round(axis.weight * 100)}% en el índice de gestión preventiva`}>
               {axis.label} <span className="font-mono font-semibold text-[var(--color-text)]">{axis.value !== null ? `${Math.round(axis.value)}%` : "—"}</span>

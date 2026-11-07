@@ -6,7 +6,7 @@ import { matchesEquipmentSearch, type EquipmentListRow } from "@/lib/services/ma
 import { exportEquipmentAction } from "@/app/(app)/mantencion/equipos/actions"
 
 /**
- * «Exportar a Excel» de la lista: exporta los equipos que se ven, incluida la
+ * «Exportar Excel» de la lista: exporta los equipos que se ven, incluida la
  * búsqueda de la barra superior. Manda los ids visibles; el servidor vuelve a
  * cargarlos dentro del alcance de faenas de quien exporta, así que un id ajeno
  * no sale y la exportación nunca es más amplia que la pantalla.
@@ -17,5 +17,5 @@ export function EquipmentExportButton({ rows, includeRetired, filterLabels }: { 
   const vehicleIds = rows.filter((row) => matchesEquipmentSearch(row, query)).map((row) => row.id)
   const filters: Record<string, string> = { ...filterLabels }
   if (query) filters["búsqueda"] = query
-  return <ExportButton action={exportEquipmentAction} filters={{ vehicleIds, includeRetired, filters }} label="Exportar a Excel" />
+  return <ExportButton action={exportEquipmentAction} filters={{ vehicleIds, includeRetired, filters }} />
 }

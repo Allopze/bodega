@@ -148,7 +148,7 @@ export function PrivacyRightExecutionWorkbench({ bundle }: { bundle: Bundle }) {
                 <TableBody>{inventory.map((row) => {
                   const rectificationUnsupported = operation === "rectification" && row.domain === "document"
                   return <TableRow key={`${row.domain}:${row.id}`}>
-                    <TableCell><p className="font-medium">{row.label}</p><p className="font-mono text-[10px] text-(--color-text-muted)">{row.id}</p></TableCell>
+                    <TableCell><p className="font-medium">{row.label}</p><p className="font-mono text-2xs text-(--color-text-muted)">{row.id}</p></TableCell>
                     <TableCell><MetaBadge meta={{ label: row.status || "Sin estado", variant: "outline" }} /></TableCell>
                     <TableCell className="text-right">
                       {executable && !rectificationUnsupported ? <Button type="button" size="sm" variant="secondary" onClick={() => openExecution(row)}>Ejecutar</Button> : null}
@@ -189,7 +189,7 @@ export function PrivacyRightExecutionWorkbench({ bundle }: { bundle: Bundle }) {
                     traducen con el mismo catálogo que el inventario. */}
                 <p className="font-medium">{labelOf(PRIVACY_EXECUTION_OPERATION_LABELS, execution.operation)} · {labelOf(PRIVACY_EXECUTION_DOMAIN_LABELS, execution.domain)}</p>
                 <p>{formatDateTime(execution.createdAt)} · {labelOf(PRIVACY_EXECUTION_OUTCOME_LABELS, execution.outcome)}</p>
-                <p className="font-mono text-[10px] text-(--color-text-muted)">{execution.beforeHash.slice(0, 10)}… → {execution.afterHash.slice(0, 10)}…</p>
+                <p className="font-mono text-2xs text-(--color-text-muted)">{execution.beforeHash.slice(0, 10)}… → {execution.afterHash.slice(0, 10)}…</p>
               </li>
             ))}</ul>
           )}

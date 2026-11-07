@@ -36,6 +36,9 @@ export function AdminHealthCards({ signals }: { signals: AdminSignal[] }) {
             icon={Icon ? <Icon size={15} /> : null}
             label={signal.label}
             value={signal.value}
+            // Casi todas las señales son una palabra de estado («Al día», «Falló»);
+            // sólo los bloqueos traen una cuenta.
+            valueKind={/^\d+$/.test(signal.value) ? "number" : "text"}
             detail={signal.detail}
             tone={KPI_TONE[signal.tone]}
             href={signal.href}

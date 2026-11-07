@@ -21,7 +21,7 @@ export function VariantPreview({ variants, onRemove, onMarkDirty }: VariantPrevi
     <div className="space-y-2">
       <div className="flex items-center gap-2">
         <p className="text-sm font-medium">Vista previa de variantes</p>
-        <span className="inline-flex items-center rounded-full bg-[var(--color-primary-tint)] px-2 py-0.5 text-[11px] font-semibold text-[var(--color-primary-ink)]">
+        <span className="inline-flex items-center rounded-full bg-[var(--color-primary-tint)] px-2 py-0.5 text-2xs font-semibold text-[var(--color-primary-ink)]">
           {variants.length}
         </span>
       </div>
@@ -44,8 +44,8 @@ export function VariantPreview({ variants, onRemove, onMarkDirty }: VariantPrevi
                 <TableRow key={v.sku || v.name} className="border-t border-[var(--color-border)] even:bg-[var(--color-surface-1)] hover:bg-[var(--color-surface-2)] transition-colors">
                   <TableCell className="tabular-nums text-[var(--color-text-muted)]">{i + 1}</TableCell>
                   <TableCell className="font-medium text-[var(--color-text)]">{v.name}</TableCell>
-                  <TableCell className="font-mono text-[11px] text-[var(--color-text-subtle)]">
-                    {v.sku || <span className="italic text-[var(--color-text-faint)]">por asignar</span>}
+                  <TableCell className="font-mono text-2xs text-[var(--color-text-subtle)]">
+                    {v.sku || <span className="text-[var(--color-text-subtle)]">por asignar</span>}
                   </TableCell>
                   {v.attributes.map((attr) => (
                     <TableCell key={attr.name} className="text-[var(--color-text-muted)]">{attr.value}</TableCell>
@@ -68,7 +68,7 @@ export function VariantPreview({ variants, onRemove, onMarkDirty }: VariantPrevi
           </TableRoot>
         </div>
       </div>
-      <p className="text-[11px] text-[var(--color-text-faint)]">
+      <p className="text-2xs text-[var(--color-text-faint)]">
         Los SKU se asignarán automáticamente al crear. Puedes eliminar variantes que no necesites con el botón <X size={10} className="inline" />.
       </p>
     </div>

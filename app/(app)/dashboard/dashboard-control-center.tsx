@@ -4,7 +4,7 @@ import { DashboardPanel, PanelBlock, ChartSlot } from "@/components/ui/dashboard
 import { Delta, type DeltaPolarity } from "@/components/ui/delta"
 import { MiniSparkline } from "@/components/ui/mini-sparkline"
 import { CHART_COLORS } from "@/lib/chart-palette"
-import { cn } from "@/lib/utils"
+import { cn, formatQty } from "@/lib/utils"
 import { ChartFrame } from "./charts/chart-frame"
 import { periodComparisonLabel, periodFlowTitle, type DashboardScope } from "./dashboard-scope"
 import type { TodayItem } from "./dashboard-today"
@@ -236,7 +236,7 @@ function CompactMetricList({ title, description, entries }: {
                         <MiniSparkline data={entry.sparkline} color={CHART_COLORS.brand} className="h-6 w-14" />
                       </span>
                     )}
-                    <span className="text-[17px] font-semibold leading-none tabular-nums text-[var(--color-text)]">{entry.value}</span>
+                    <span className="text-[17px] font-semibold leading-none tabular-nums text-[var(--color-text)]">{typeof entry.value === "number" ? formatQty(entry.value) : entry.value}</span>
                     {hasDelta && entry.delta && (
                       <Delta
                         value={entry.delta.value}

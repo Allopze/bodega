@@ -27,4 +27,9 @@ describe("buscador de la shell", () => {
   it("Inicio (TRV-04): sin lista que filtrar, la shell no ofrece input en ninguna vista", () => {
     expect(hidesShellSearch("/dashboard")).toBe(true)
   })
+  it("Capacitación trae su propio buscador rotulado: sin input de la shell", () => {
+    expect(hidesShellSearch("/prevencion/capacitacion")).toBe(true)
+    // Las demás pantallas de Prevención conservan el de la shell.
+    expect(hidesShellSearch("/prevencion/capa")).toBe(false)
+  })
 })

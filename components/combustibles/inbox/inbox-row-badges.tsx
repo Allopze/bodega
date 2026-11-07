@@ -49,7 +49,9 @@ export function InboxRowBadges({
       <MetaBadge
         meta={{ label, variant: kind === "caso" ? "danger" : kind === "patente" ? "info" : "signal" }}
         size="sm"
-        className="whitespace-normal normal-case tracking-normal font-sans"
+        // La etiqueta principal puede ser una frase («Lectura menor a la anterior»):
+        // sólo ella puede partirse en dos líneas en vez de cortarse.
+        className="whitespace-normal"
       />
       {severity ? <MetaBadge meta={{ label: ANOMALY_SEVERITY_LABELS[severity], variant: anomalySeverityVariant(severity) }} size="sm" /> : null}
       {caseStatus && !decided ? <MetaBadge meta={{ label: ANOMALY_STATUS_LABELS[caseStatus], variant: "outline" }} size="sm" /> : null}

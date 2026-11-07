@@ -36,7 +36,7 @@ export default async function PublicAcknowledgementPage({
     return (
       <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-4 px-4 py-8">
         <header>
-          <p className="text-xs uppercase tracking-wide text-(--color-text-subtle)">Acuse de AST</p>
+          <p className="text-eyebrow">Acuse de AST</p>
           <h1 className="mt-1 text-lg font-semibold text-(--color-text)">Enlace vencido</h1>
         </header>
         <p role="status" className="rounded-(--radius-2xl) border border-(--color-border) bg-(--color-surface) p-4 text-sm text-(--color-text)">
@@ -54,7 +54,7 @@ export default async function PublicAcknowledgementPage({
   return (
     <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-4 px-4 py-8">
       <header>
-        <p className="text-xs uppercase tracking-wide text-(--color-text-subtle)">Acuse de AST</p>
+        <p className="text-eyebrow">Acuse de AST</p>
         <h1 className="mt-1 text-lg font-semibold text-(--color-text)">{view.title}</h1>
         <p className="mt-1 text-sm text-(--color-text-muted)">{view.detail}</p>
       </header>

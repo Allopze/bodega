@@ -59,4 +59,36 @@ describe("sidebar de administración", () => {
     expect(labels).toContain("Tipos de activo TI")
     expect(labels).toContain("Tipos de documento SST")
   })
+
+  /*
+   * UX-09: un solo estado activo (verde suave `nav-active-*`) para todo ítem, y
+   * ningún gris `slate-*` fuera de la rampa de tokens. Antes el sidebar mezclaba
+   * una píldora pizarra en las áreas con el verde de Inicio/Soporte.
+   */
+  it("pinta el ítem activo con el verde de navegación, no con una píldora gris", () => {
+    renderAdminSidebar("/admin/taxonomia-sst")
+    const active = screen.getByRole("link", { name: "Tipos de documento SST" })
+    expect(active.className).toContain("bg-nav-active-bg")
+    expect(active.className).toContain("text-nav-active-ink")
+    expect(active.className).toContain("font-semibold")
+
+    const inactive = screen.getByRole("link", { name: "Tipos de activo TI" })
+    expect(inactive.className).not.toContain("bg-nav-active-bg")
+    expect(inactive.className).toContain("hover:bg-nav-hover-bg")
+  })
+
+  it("no usa colores slate-* en ninguna fila ni rótulo del sidebar", () => {
+    const { container } = renderAdminSidebar("/admin/taxonomia-sst")
+    const html = container.innerHTML
+    expect(html).not.toMatch(/slate-\d/)
+  })
+
+  it("deja que el rótulo de un grupo ocupe dos líneas en vez de recortarlo", () => {
+    renderAdminSidebar("/admin/cargos")
+    const trigger = screen.getByRole("button", { name: "Catálogos" })
+    const label = trigger.querySelector("span")
+    expect(label?.className).toContain("line-clamp-2")
+    expect(label?.className).not.toContain("truncate")
+    expect(trigger.className).toContain("min-h-10")
+  })
 })

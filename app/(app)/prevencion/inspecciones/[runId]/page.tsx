@@ -75,6 +75,11 @@ export default async function InspeccionPage({ params }: { params: Promise<{ run
           />
         ) : undefined}
       />
+      {/* Trazabilidad: el código aleatorio previo a la serie INSP-AAAA-NNNN sigue
+          citado en notificaciones, motivos de hallazgo y actas ya emitidas. */}
+      {detail.run.legacyCode && (
+        <p className="mb-3 text-xs text-[var(--color-text-subtle)]">Código anterior: {detail.run.legacyCode}</p>
+      )}
       <InspectionRunDetail
         run={{
           id: detail.run.id,

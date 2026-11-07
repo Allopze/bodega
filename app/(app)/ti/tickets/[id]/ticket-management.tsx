@@ -27,7 +27,7 @@ interface ManagementProps {
 }
 
 const SECTION = "rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs"
-const HEADING = "text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]"
+const HEADING = "text-eyebrow"
 
 function FormAlert({ state }: { state: ActionState }) {
   if (!state.message || state.ok || state.fieldErrors) return null

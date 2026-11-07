@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { ClearableDatePicker } from "@/components/ui/clearable-date-picker"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
   Select,
@@ -203,21 +203,25 @@ function AdvancedFiltersForm({
 
         <div className="grid grid-cols-2 gap-3">
           <Field label="Fecha desde" htmlFor="filter-desde">
-            <Input
-              type="date"
+            <ClearableDatePicker
               id="filter-desde"
               value={draft.desde}
               max={draft.hasta || undefined}
-              onChange={(e) => patch("desde", e.target.value)}
+              onChange={(iso) => patch("desde", iso)}
+              placeholder="Desde"
+              ariaLabel="Fecha desde"
+              clearAriaLabel="Quitar fecha desde"
             />
           </Field>
           <Field label="Fecha hasta" htmlFor="filter-hasta">
-            <Input
-              type="date"
+            <ClearableDatePicker
               id="filter-hasta"
               value={draft.hasta}
               min={draft.desde || undefined}
-              onChange={(e) => patch("hasta", e.target.value)}
+              onChange={(iso) => patch("hasta", iso)}
+              placeholder="Hasta"
+              ariaLabel="Fecha hasta"
+              clearAriaLabel="Quitar fecha hasta"
             />
           </Field>
         </div>

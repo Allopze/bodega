@@ -168,7 +168,7 @@ export default async function PdtpPeriodClosureDetailPage({ params }: PageProps)
                     <TableCell>{deviation.reason}</TableCell>
                     <TableCell>
                       <span className="block">{deviation.recordedBy}</span>
-                      <span className="block text-[11px] text-[var(--color-text-muted)]">{deviation.recordedAt}</span>
+                      <span className="block text-2xs text-[var(--color-text-muted)]">{deviation.recordedAt}</span>
                     </TableCell>
                   </TableRow>
                 ))}

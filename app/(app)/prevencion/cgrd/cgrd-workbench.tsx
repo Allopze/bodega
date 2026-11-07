@@ -331,7 +331,7 @@ export function CgrdWorkbench({
 
             <div className="mt-3">
               <div className="flex items-center justify-between">
-                <h3 className="text-xs font-semibold uppercase text-[var(--color-text-subtle)]">Integrantes</h3>
+                <h3 className="text-eyebrow">Integrantes</h3>
                 {canManageCommittee && <Button type="button" size="sm" variant="secondary" onClick={() => setAddMemberOpen(true)}>Agregar integrante</Button>}
               </div>
               {members.filter((member) => member.status === "active").length === 0 ? (
@@ -679,7 +679,7 @@ function RecordMeetingDialog({ open, onOpenChange, committeeId, openSlots, onDon
 
       <div className="rounded-lg border border-[var(--color-border)] p-3">
         <div className="flex items-center justify-between">
-          <h3 className="text-xs font-semibold uppercase text-[var(--color-text-subtle)]">Acuerdos</h3>
+          <h3 className="text-eyebrow">Acuerdos</h3>
           <Button type="button" size="sm" variant="secondary" onClick={() => setDrafts((current) => [...current, { ...EMPTY_AGREEMENT }])}>Agregar acuerdo</Button>
         </div>
         {drafts.length === 0 ? (

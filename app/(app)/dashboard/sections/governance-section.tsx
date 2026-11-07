@@ -4,7 +4,7 @@ import { KpiCard } from "@/components/ui/kpi-card"
 import { getDashboardCounters } from "@/lib/services/prevention-documents/search"
 import { getPpaStats } from "@/lib/services/ppa-module/calculos"
 import { getDashboardStats } from "@/lib/services/sst-module/dashboard"
-import { listTrainingOccurrences, resolveTrainingOccurrenceYear } from "@/lib/services/prevention-training-occurrences"
+import { countTrainingOccurrencesByStatus, resolveTrainingOccurrenceYear } from "@/lib/services/prevention-training-occurrences"
 import { DASHBOARD_DOMAINS } from "../dashboard-domains"
 import { DASHBOARD_KPI, DomainSection } from "../dashboard-domain-shell"
 import { CHART_COLORS } from "@/lib/chart-palette"
@@ -21,18 +21,18 @@ export async function GovernanceSection({ session, worksiteScope, worksiteIds }:
   const permissions = session.user.permissions
   const has = (permission: string) => permissions.includes(permission)
 
-  const [docs, ppa, sstStats, occurrences] = await Promise.all([
+  const [docs, ppa, sstStats, trainingCounts] = await Promise.all([
     has("prevention:docs:view")
       ? getDashboardCounters(worksiteScope, permissions)
       : Promise.resolve(null),
     has("ppa:view") ? getPpaStats(worksiteIds).catch(() => null) : Promise.resolve(null),
     has("sst:view") ? getDashboardStats(worksiteIds).catch(() => null) : Promise.resolve(null),
     has("prevention:training:view")
-      ? listTrainingOccurrences(
+      ? countTrainingOccurrencesByStatus(
           { userId: session.user.id, scope: worksiteScope, permissions },
           { year: await resolveTrainingOccurrenceYear(undefined) },
-        ).catch(() => [])
-      : Promise.resolve([]),
+        ).catch(() => null)
+      : Promise.resolve(null),
   ])
 
   /* La tarjeta contaba brechas de competencia por persona hasta el 2026-09-19.
@@ -40,9 +40,11 @@ export async function GovernanceSection({ session, worksiteScope, worksiteIds }:
    * año que nadie marcó todavía; `not_completed` no entra, porque ésa ya fue
    * resuelta —declarada no hecha— y no es trabajo pendiente. `not_applicable`
    * tampoco: salió del programa de esa faena, así que no es ni numerador ni
-   * denominador. Por eso se cuenta `=== "pending"` y no `!== "completed"`. */
-  const pendingTraining = occurrences.filter((row) => row.status === "pending").length
-  const notDoneTraining = occurrences.filter((row) => row.status === "not_completed").length
+   * denominador. Por eso se cuenta `pending` y no «todo menos completed». Los
+   * cuenta la base por estado (`countTrainingOccurrencesByStatus`): cargar las
+   * miles de ocurrencias del año con su evidencia sólo para contarlas era el costo. */
+  const pendingTraining = trainingCounts?.pending ?? 0
+  const notDoneTraining = trainingCounts?.not_completed ?? 0
 
   /* Es la misma magnitud que la tira de /prevencion/ppa y sigue su misma regla
    * (`detentionFigure`): bajo `PPA_RATE_MIN_SAMPLE` PPA no hay porcentaje, hay el
@@ -61,14 +63,14 @@ export async function GovernanceSection({ session, worksiteScope, worksiteIds }:
       kpis={
         <>
           <KpiCard {...DASHBOARD_KPI} icon={<FileText size={16} />} label="Documentos por vencer"
-            value={String(docs?.expiringSoon.within30 ?? 0)}
+            value={docs?.expiringSoon.within30 ?? 0}
             detail={`${docs?.expiringSoon.within7 ?? 0} en 7 días · ${docs?.byStatus.vencido ?? 0} ya vencidos`}
             // El indicador lleva a la lista ya acotada al mismo rango que cuenta:
             // antes anunciaba una urgencia y dejaba al usuario buscándola a mano.
             tone={(docs?.expiringSoon.within7 ?? 0) > 0 ? "signal" : "neutral"} href="/prevencion/documentacion?vence=30" />
-          <KpiCard {...DASHBOARD_KPI} icon={<Certificate size={16} />} label="Acuses pendientes" value={String(docs?.ackPending ?? 0)}
+          <KpiCard {...DASHBOARD_KPI} icon={<Certificate size={16} />} label="Acuses pendientes" value={docs?.ackPending ?? 0}
             detail="Distribuciones sin firmar, ahora" href="/prevencion/documentacion" />
-          <KpiCard {...DASHBOARD_KPI} icon={<ShieldWarning size={16} />} label="Capacitaciones pendientes" value={String(pendingTraining)}
+          <KpiCard {...DASHBOARD_KPI} icon={<ShieldWarning size={16} />} label="Capacitaciones pendientes" value={pendingTraining}
             detail={`${notDoneTraining} declaradas no hechas · ahora`}
             tone={notDoneTraining > 0 ? "signal" : "neutral"} href="/prevencion/capacitacion" />
           {/* Sin `ppa:view` la cifra no existe: ni "—" ni un acceso a una pantalla

@@ -1,8 +1,9 @@
 "use client"
 
 import { useState } from "react"
-import { Plus, DownloadSimple, UploadSimple } from "@phosphor-icons/react"
+import { Plus, UploadSimple } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
+import { ExportLink } from "@/components/ui/export-button"
 import { SupplierForm } from "./supplier-form"
 import { CatalogImportPanel } from "@/components/admin/catalog-import-panel"
 import { importSuppliersFromXlsx } from "./actions"
@@ -13,13 +14,7 @@ export function SupplierActions() {
 
   return (
     <>
-      {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
-      <a
-        href="/api/admin/catalogos/export?tipo=proveedores"
-        className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-2)]"
-      >
-        <DownloadSimple size={14} />Exportar Excel
-      </a>
+      <ExportLink href="/api/admin/catalogos/export?tipo=proveedores" />
       <Button size="sm" variant="secondary" onClick={() => setImportOpen(true)}>
         <UploadSimple size={14} />Importar Excel
       </Button>

@@ -133,7 +133,7 @@ function MaintenanceChart({ data }: { data: MaintenanceMonthPoint[] }) {
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={data} margin={{ left: 0, right: 0 }} accessibilityLayer={false}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--color-border)" />
-            <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 10 }} interval="preserveStartEnd" minTickGap={16} />
+            <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 11 }} interval="preserveStartEnd" minTickGap={16} />
             <YAxis yAxisId="cost" tickLine={false} axisLine={false} tick={{ fontSize: 11 }} tickFormatter={compactCLP} width={64} />
             <YAxis yAxisId="count" orientation="right" allowDecimals={false} tickLine={false} axisLine={false} tick={{ fontSize: 11 }} width={28} />
             <Tooltip

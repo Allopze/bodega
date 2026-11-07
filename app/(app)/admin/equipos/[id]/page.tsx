@@ -166,7 +166,7 @@ export default async function EquipoDetailPage({ params }: { params: Promise<{ i
                               {formatCLP(record.subtotal)}
                             </span>
                             {record.costRecordedAt && (
-                              <p className="text-[11px] text-[var(--color-text-subtle)]">
+                              <p className="text-2xs text-[var(--color-text-subtle)]">
                                 registrado {formatDateTime(record.costRecordedAt)}
                               </p>
                             )}

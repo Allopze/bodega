@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { CaretDown, ClipboardText, ShoppingCart } from "@phosphor-icons/react"
+import { CaretDown, ClipboardText, DotsThree, ShoppingCart } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -19,14 +19,22 @@ const ACTION_ICONS = {
 } as const
 
 /** Menú cliente aislado: recibe sólo destinos ya filtrados por permisos. */
-export function DashboardActionMenu({ actions }: { actions: Action[] }) {
+export function DashboardActionMenu({ actions, compact = false }: { actions: Action[]; compact?: boolean }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button type="button" size="sm" variant="ghost" aria-label="Más acciones">
-          Más acciones
-          <CaretDown size={14} weight="bold" aria-hidden />
-        </Button>
+        {compact ? (
+          // Móvil: sólo el ícono, con el mismo nombre accesible. El tamaño `icon`
+          // da el blanco de toque de 44 px, del alto de la fila de pestañas.
+          <Button type="button" size="icon" variant="ghost" aria-label="Más acciones" title="Más acciones">
+            <DotsThree size={22} weight="bold" aria-hidden />
+          </Button>
+        ) : (
+          <Button type="button" size="sm" variant="ghost" aria-label="Más acciones">
+            Más acciones
+            <CaretDown size={14} weight="bold" aria-hidden />
+          </Button>
+        )}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         {actions.map((action) => <ActionItem key={action.key} action={action} />)}

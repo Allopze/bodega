@@ -86,7 +86,7 @@ export function buildPerformanceStats(metrics: PerformanceMetrics, permissions: 
       key: "driver-licenses",
       label: "Licencias por regularizar",
       // Sin nómina no hay un «al día» verificable: es ausencia de dato.
-      value: total === 0 ? "Sin datos" : expired === 0 ? "Al día" : formatKpi(expired),
+      value: total === 0 ? "Sin datos" : expired === 0 ? "Al día" : expired,
       valueKind: total === 0 || expired === 0 ? "text" : "number",
       secondary: total === 0
         ? "No hay trabajadores con licencia en el alcance"
@@ -107,7 +107,7 @@ export function buildPerformanceStats(metrics: PerformanceMetrics, permissions: 
       stats.push({
         key: "tae-tct-coverage",
         label: "Equipos con un solo canal",
-        value: formatKpi(singleChannel),
+        value: singleChannel,
         valueKind: "number",
         secondary: `${taeOnly} sólo TAE · ${tctOnly} sólo TCT · ${bothChannels} con ambos`,
         ...(singleChannel > 0 ? { tone: "signal" as const } : {}),

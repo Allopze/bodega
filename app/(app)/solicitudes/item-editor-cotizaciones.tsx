@@ -78,7 +78,7 @@ export function ItemEditorCotizaciones({ item, requestType, maxFileSizeMb, readO
       <div className="flex items-center justify-between">
         {/* En repuestos ya no siempre es obligatoria: bajo el umbral basta el precio estimado. */}
         <Field label="Cotizaciones" required={requestType === "servicios"} htmlFor={`cot-${item._key}`}>
-          <p className="text-[11px] text-(--color-text-subtle) mt-0.5">
+          <p className="text-2xs text-(--color-text-subtle) mt-0.5">
             {ruleHint ?? DEFAULT_RULE_HINT}
           </p>
         </Field>
@@ -117,7 +117,7 @@ export function ItemEditorCotizaciones({ item, requestType, maxFileSizeMb, readO
                 <div className="flex items-center gap-2">
                   <FilePdf size={14} className="shrink-0 text-(--color-text-subtle)" />
                   <span title={cot.fileName} className="flex-1 truncate text-xs text-(--color-text)">{cot.fileName}</span>
-                  <span className="text-[10px] text-(--color-text-muted)">
+                  <span className="text-2xs text-(--color-text-muted)">
                     {(cot.fileSize / 1024).toFixed(0)} KB
                   </span>
                   <button
@@ -183,7 +183,7 @@ export function ItemEditorCotizaciones({ item, requestType, maxFileSizeMb, readO
       )}
 
       {notice && (item.cotizaciones?.length ?? 0) > 0 && (
-        <p className="flex items-center gap-1.5 text-[11px] text-(--color-warning-ink)">
+        <p className="flex items-center gap-1.5 text-2xs text-(--color-warning-ink)">
           <Warning size={12} className="shrink-0" />
           {notice}
         </p>

@@ -115,6 +115,7 @@ export async function listInspectionFollowup(
       pattern ? or(
         ilike(preventionInspectionFindings.description, pattern),
         ilike(preventionInspectionRuns.code, pattern),
+        ilike(preventionInspectionRuns.legacyCode, pattern),
         ilike(preventionInspectionRuns.subjectLabel, pattern),
         ilike(worksites.name, pattern),
         ilike(preventionCapaActions.actionDescription, pattern),

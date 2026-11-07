@@ -43,7 +43,11 @@ interface TopBarProps {
 // `recordVisibilitySql` y sus filtros viven en la URL, así que el input de la shell
 // sólo filtraría las 25 filas de la página. `/mantencion/panel` es una portada de
 // indicadores sin colección que filtrar (mismo criterio que `/dashboard`).
-const ROUTES_WITH_OWN_SEARCH = ["/solicitudes", "/aprobaciones", "/compras", "/recepcion", "/pendientes", "/entregas", "/bodega", "/flota", "/soporte", "/prevencion/ppa", "/prevencion/inspecciones", "/prevencion/pdtp/obligaciones", "/facturacion/facturas", "/seguimiento", "/ti/accesos", "/ti/tickets", "/admin/taxonomia-sst", "/combustibles", "/mantencion/registros", "/mantencion/panel", "/mantencion/ot"]
+// `/prevencion/capacitacion`: la lista de actividades combina mes, estado y texto, y
+// el input de la shell no dice cuál de esos filtros alimenta; la lista trae su propio
+// buscador rotulado (pulido UI/UX 2026-11-07). Quien quite el input propio de esa
+// lista tiene que devolver esta ruta a la shell, o la pantalla queda sin búsqueda.
+const ROUTES_WITH_OWN_SEARCH = ["/solicitudes", "/aprobaciones", "/compras", "/recepcion", "/pendientes", "/entregas", "/bodega", "/flota", "/soporte", "/prevencion/ppa", "/prevencion/inspecciones", "/prevencion/pdtp/obligaciones", "/facturacion/facturas", "/seguimiento", "/ti/accesos", "/ti/tickets", "/admin/taxonomia-sst", "/combustibles", "/mantencion/registros", "/mantencion/panel", "/mantencion/ot", "/prevencion/capacitacion"]
 
 /** Formularios de alta/edición: no hay lista que filtrar, así que el input de
  *  la shell prometería un filtrado inexistente. Ninguna ruta bajo estos
@@ -181,20 +185,27 @@ const TopBarInner = React.memo(function TopBarInner({
                   sigue en el árbol de accesibilidad con su <h1> y su
                   descripción. Sin `aria-hidden` el lector anuncia el título y
                   la descripción de la página dos veces en escritorio. */}
-              <div aria-hidden="true" className="flex min-w-0 flex-wrap items-baseline gap-x-2">
-                {/* Heading destacado al inicio de la vista. `shrink-0`: el
-                    título no cede espacio ante la descripción — sin esto, una
-                    descripción larga lo truncaba a "Pendientes de f…" incluso
-                    a 1920px (auditoría UI/UX 2026-08-05, A3). El `max-w` cubre
-                    el caso patológico de un título larguísimo sin descripción. */}
-                <p title={header.title} className="max-w-[min(36rem,100%)] shrink-0 truncate text-lg font-bold tracking-tight text-(--color-text)">
+              <div aria-hidden="true" className="flex min-w-0 flex-col">
+                {/* Heading destacado al inicio de la vista. Exo 600, como el
+                    <h1> del PageHeader móvil (auditoría UX-15, 2026-11-07: el
+                    700 queda sólo para la marca). `leading-snug` y no el
+                    1.55 del cuerpo: con la descripción debajo, el bloque de
+                    dos líneas cabe en el `min-h` del header sin estirarlo.
+                    El `max-w` cubre el caso patológico de un título larguísimo. */}
+                <p title={header.title} className="max-w-[min(36rem,100%)] truncate font-display text-lg font-semibold leading-snug text-(--color-text)">
                   {header.title}
                 </p>
-                {/* Estaba en `2xl:block`, así que en un laptop de 1440 se perdían
+                {/* Va debajo del título y no a su lado (auditoría UX-11,
+                    2026-11-07): en la misma fila compartía ancho con el título,
+                    el chip de faena, hasta 3 botones y el buscador, y a 1440px
+                    terminaba en «…» justo donde estaba el dato que responde
+                    «qué es esto». Dos líneas, con un tope de ~72 caracteres por
+                    línea para que no se estire en pantallas anchas.
+                    Estaba en `2xl:block`, así que en un laptop de 1440 se perdían
                     los conteos de contexto ("N ítems en M solicitudes") y pistas
                     como "…y fija los precios" en compras/nueva (A-11). */}
                 {header.description && (
-                  <p title={header.description} className="hidden min-w-0 truncate text-xs text-(--color-text-muted) lg:block">
+                  <p title={header.description} className="hidden min-w-0 max-w-[72ch] line-clamp-2 text-xs leading-snug text-(--color-text-muted) lg:block">
                     {header.description}
                   </p>
                 )}

@@ -187,7 +187,7 @@ export function PdtpActivitySummary({
             onClick={() => onFilter(item.key)}
             title={item.title}
             className={[
-              "inline-flex items-center gap-1.5 rounded-[var(--radius-full)] px-2.5 py-1 text-[11px] font-medium transition-all",
+              "inline-flex items-center gap-1.5 rounded-[var(--radius-full)] px-2.5 py-1 text-2xs font-medium transition-colors",
               // Sin `opacity-70` en los inactivos: la opacidad se aplica al
               // MetaBadge entero y hunde `signal-ink` sobre `signal-tint` de
               // 4.5:1 a 3.0:1 (axe `color-contrast`, `serious`). El anillo del
@@ -294,7 +294,7 @@ export function PdtpPlanViewToggle({
 
   return (
     <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Semántica de las cifras de la planilla">
-      <span className="mr-1 text-[11px] font-medium text-[var(--color-text-subtle)]">Cifras:</span>
+      <span className="mr-1 text-2xs font-medium text-[var(--color-text-subtle)]">Cifras:</span>
       {items.map((item) => {
         const active = item.key === mode
         return (
@@ -304,7 +304,7 @@ export function PdtpPlanViewToggle({
             aria-pressed={active}
             onClick={() => onChange(item.key)}
             className={[
-              "min-h-11 rounded-md border px-2.5 py-1 text-[11px] transition-colors",
+              "min-h-11 rounded-md border px-2.5 py-1 text-2xs transition-colors",
               active
                 ? "border-[var(--color-primary)] bg-[var(--color-primary-tint)] font-semibold text-[var(--color-text)]"
                 : "border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]",

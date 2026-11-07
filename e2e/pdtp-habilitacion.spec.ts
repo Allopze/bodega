@@ -92,7 +92,7 @@ test.describe("PDTP — habilitar actividades", () => {
     await page.goto("/prevencion/capacitacion")
     // `name` compara por substring: sin `level` ni `exact` también toma cada
     // actividad del control anual cuyo título dice «Capacitación…».
-    await expect(page.getByRole("heading", { level: 1, name: "Campañas y Capacitación", exact: true })).toBeVisible()
+    await expect(page.getByRole("heading", { level: 1, name: "Campañas y capacitación", exact: true })).toBeVisible()
   })
 
   test("el CTA de una fila es alcanzable por teclado y revela su verbo", async ({ page }) => {

@@ -536,7 +536,7 @@ export function RequestForm({
               </Button>
               {form.isQuotation ? (
                 <div className="flex items-center gap-3">
-                  <span aria-live="polite" className="text-[11px] text-[var(--color-text-subtle)]">
+                  <span aria-live="polite" className="text-2xs text-[var(--color-text-subtle)]">
                     {(form.isSaving || form.isSubmitting || form.draftPending) ? "Guardando..."
                       : form.dirty ? "Cambios sin guardar"
                       : form.lastSavedAt ? `Guardado ${formatDateTime(form.lastSavedAt).slice(11, 16)}`
@@ -586,7 +586,7 @@ export function RequestForm({
                         <p className="text-sm font-medium text-[var(--color-text)]">{item.productName}</p>
                         <p className="mt-0.5 text-xs text-[var(--color-warning-ink)]">Ubicación: {item.locationName || stockWarning.worksiteName}</p>
                       </div>
-                      <span className="rounded-full border border-[var(--color-warning-line)] bg-[var(--color-surface)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-warning-ink)]">
+                      <span className="rounded-full border border-[var(--color-warning-line)] bg-[var(--color-surface)] px-2 py-0.5 text-2xs font-medium text-[var(--color-warning-ink)]">
                         {item.coverage === "total" ? "Cobertura total" : "Cobertura parcial"}
                       </span>
                     </div>

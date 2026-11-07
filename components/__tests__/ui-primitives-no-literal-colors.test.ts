@@ -43,10 +43,9 @@ const LITERAL_COLOR_RE = new RegExp(
  * El número es el conteo exacto en el momento de congelar: si baja, hay que
  * bajarlo aquí (o sacar el archivo al llegar a 0); si sube, el test falla.
  */
+// El menú lateral (nav-rows, sidebar-user-profile, desktop-nav-areas) salió de
+// la lista el 2026-11-07: pasó a los tokens --color-nav-* (auditoría UX-09).
 const FROZEN_DEBT: Record<string, number> = {
-  "components/layout/nav-rows.tsx": 19,
-  "components/layout/sidebar-user-profile.tsx": 5,
-  "components/layout/desktop-nav-areas.tsx": 5,
   "app/(app)/admin/inventario-faena/inventory-list.tsx": 4,
   "app/(app)/combustibles/import-fuel-modal-upload.tsx": 4,
   "app/(app)/admin/inventario-faena/[id]/page.tsx": 3,

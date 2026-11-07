@@ -229,7 +229,7 @@ export function AlcotestWorkbench({
           />
         )}
 
-        <h3 className="mt-3 text-xs font-medium uppercase tracking-wide text-[var(--color-text-subtle)]">Controles</h3>
+        <h3 className="text-eyebrow mt-3">Controles</h3>
         <div className="mt-2">
           <ProgramSlotList
             rows={visibleControlSlots}
@@ -243,7 +243,7 @@ export function AlcotestWorkbench({
           />
         </div>
 
-        <h3 className="mt-5 text-xs font-medium uppercase tracking-wide text-[var(--color-text-subtle)]">Envíos de registros (DO-48)</h3>
+        <h3 className="text-eyebrow mt-5">Envíos de registros (DO-48)</h3>
         <div className="mt-2">
           <ProgramSlotList
             rows={visibleDispatchSlots}

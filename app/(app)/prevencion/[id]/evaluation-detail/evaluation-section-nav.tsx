@@ -38,7 +38,7 @@ export function EvaluationSectionNav({
       <div className="rounded-(--radius-xl) border border-(--color-border) bg-(--color-surface) p-3 shadow-[var(--shadow-card)] sm:p-4">
         <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-wide text-text-subtle">Sección activa</p>
+            <p className="text-eyebrow">Sección activa</p>
             <p className="mt-1 truncate text-sm font-semibold text-(--color-text)">
               {selectedLabel}
             </p>

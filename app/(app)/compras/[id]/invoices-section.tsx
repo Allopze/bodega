@@ -364,12 +364,12 @@ function InvoiceItem({
           >
             {invoice.invoiceNumber}
           </a>
-          <p className="text-[11px] text-text-subtle mt-0.5">
+          <p className="text-2xs text-text-subtle mt-0.5">
             {invoice.amount != null ? formatCLP(invoice.amount) : "—"}
             {invoice.issueDate ? ` · ${formatDate(invoice.issueDate)}` : ""}
           </p>
           {lineEvidenceLabel && (
-            <p className={`mt-1 text-[11px] ${
+            <p className={`mt-1 text-2xs ${
               lineEvidence?.status === "linked_lines"
                 ? "text-[var(--color-success-ink)]"
                 : lineEvidence?.status === "without_lines"
@@ -379,7 +379,7 @@ function InvoiceItem({
               {lineEvidenceLabel}
             </p>
           )}
-          <p className="mt-1 text-[11px] text-(--color-text-muted)">
+          <p className="mt-1 text-2xs text-(--color-text-muted)">
             {linkedReceipts.length > 0
               ? `Recepciones: ${linkedReceipts.map((receipt) => receipt.code).join(", ")}`
               : "Sin recepción asociada"}
@@ -823,7 +823,7 @@ function AddInvoiceForm({
           {/* El resultado del análisis manda sobre el estado de reposo: decir
               "sugerencias actualizadas" después de pedirlo tapaba justo lo que
               hay que saber (cuántos quedaron sin XML, cuántos faltan). */}
-          <p aria-live="polite" className="mt-0.5 min-h-4 text-[11px] text-(--color-text-subtle)">
+          <p aria-live="polite" className="mt-0.5 min-h-4 text-2xs text-(--color-text-subtle)">
             {(refreshMessage
               || (lastCandidateAnalysis
                 ? `Último análisis de líneas: ${formatDateTime(lastCandidateAnalysis)}.`
@@ -888,20 +888,20 @@ function AddInvoiceForm({
       </Field>
 
       {extracting && (
-        <p className="text-[11px] text-(--color-text-muted) flex items-center gap-1">
+        <p className="text-2xs text-(--color-text-muted) flex items-center gap-1">
           <span className="inline-block animate-spin h-3 w-3 border border-current border-t-transparent rounded-full" />
           Procesando archivo...
         </p>
       )}
 
       {dteParsed && !extracting && (
-        <p className="flex items-center gap-1 text-[11px] text-[var(--color-success-ink)]">
+        <p className="flex items-center gap-1 text-2xs text-[var(--color-success-ink)]">
           ✓ Datos extraídos del archivo: campos auto-completados
         </p>
       )}
 
       {extractionWarnings.length > 0 && !extracting && (
-        <div role="alert" className="rounded border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-2 py-1.5 text-[11px] text-[var(--color-warning-ink)]">
+        <div role="alert" className="rounded border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-2 py-1.5 text-2xs text-[var(--color-warning-ink)]">
           <p className="font-medium">Revisión requerida</p>
           <ul className="mt-0.5 list-disc pl-4">
             {extractionWarnings.map((warning) => <li key={warning}>{warning}</li>)}
@@ -910,7 +910,7 @@ function AddInvoiceForm({
       )}
 
       {supplierRutMissing && !extracting && (
-        <div role="alert" className="rounded border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-2 py-2 text-[11px] text-[var(--color-warning-ink)]">
+        <div role="alert" className="rounded border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-2 py-2 text-2xs text-[var(--color-warning-ink)]">
           <p className="font-medium">No se pudo verificar el RUT del proveedor desde el archivo.</p>
           <Checkbox
             id="confirm-unverified-supplier"
@@ -997,7 +997,7 @@ function AddInvoiceForm({
             return (
               <div key={li.id} className="flex items-end gap-1.5 rounded border border-(--color-border) p-2 bg-surface-2">
                 <div className="flex-1 min-w-0">
-                  <p title={li.productName || "Ítem"} className="text-[10px] text-text-subtle truncate mb-1">Documento: {li.productName || "Ítem sin descripción"}</p>
+                  <p title={li.productName || "Ítem"} className="text-2xs text-text-subtle truncate mb-1">Documento: {li.productName || "Ítem sin descripción"}</p>
                   <OptionSelect
                     aria-label={`Asociar línea ${index + 1} a un ítem de la orden de compra`}
                     value={li.ocItemId || (li.resolution === "unlinked" ? "__unlinked" : "")}
@@ -1007,10 +1007,10 @@ function AddInvoiceForm({
                       ...ocItems.map((item) => ({ value: item.id, label: item.productName })),
                       { value: "__unlinked", label: "Mantener sin asociar a la OC" },
                     ]}
-                    className={`mb-1 h-11 min-w-0 px-1.5 text-[11px] sm:h-8 ${li.resolution === "needs_review" ? "border-[var(--color-warning)]" : ""}`}
+                    className={`mb-1 h-11 min-w-0 px-1.5 text-2xs sm:h-8 ${li.resolution === "needs_review" ? "border-[var(--color-warning)]" : ""}`}
                   />
                   {li.resolution === "needs_review" && (
-                    <p className="mb-1 text-[10px] text-[var(--color-warning-ink)]">Esta línea no se asociará hasta que selecciones un ítem de la OC o confirmes que queda sin asociar.</p>
+                    <p className="mb-1 text-2xs text-[var(--color-warning-ink)]">Esta línea no se asociará hasta que selecciones un ítem de la OC o confirmes que queda sin asociar.</p>
                   )}
                   <div className="grid grid-cols-2 gap-1.5">
                     <Input
@@ -1035,15 +1035,15 @@ function AddInvoiceForm({
                     />
                   </div>
                   {ocItem?.unitPrice === null && (
-                    <p className="mt-1 text-[10px] text-[var(--color-warning-ink)]">
+                    <p className="mt-1 text-2xs text-[var(--color-warning-ink)]">
                       Costo de OC pendiente: ingresa el precio indicado por la factura.
                     </p>
                   )}
-                  <p className="mt-1 text-[10px] text-text-subtle">
+                  <p className="mt-1 text-2xs text-text-subtle">
                     Unidad documento: <span className="font-medium text-(--color-text)">{li.unitOfMeasure || "no declarada"}</span>
                     {ocItem && <> · OC: {ocItem.unitOfMeasure}</>}
                   </p>
-                  {unitMismatch && <p className="mt-1 text-[10px] text-[var(--color-warning-ink)]">La unidad del documento difiere de la unidad de la OC; confirma cantidad y precio.</p>}
+                  {unitMismatch && <p className="mt-1 text-2xs text-[var(--color-warning-ink)]">La unidad del documento difiere de la unidad de la OC; confirma cantidad y precio.</p>}
                   <input type="hidden" name={`item_ocItemId_${index}`} value={li.ocItemId} />
                   <input type="hidden" name={`item_resolution_${index}`} value={li.resolution} />
                   <input type="hidden" name={`item_productName_${index}`} value={li.productName} />
@@ -1070,7 +1070,7 @@ function AddInvoiceForm({
       )}
 
       {unresolvedLineCount > 0 && (
-        <p className="text-[11px] text-[var(--color-warning-ink)]">Resuelve {unresolvedLineCount} línea(s) antes de adjuntar la factura.</p>
+        <p className="text-2xs text-[var(--color-warning-ink)]">Resuelve {unresolvedLineCount} línea(s) antes de adjuntar la factura.</p>
       )}
 
       <SubmitButton
@@ -1105,7 +1105,7 @@ function ReceiptSelection({
   return (
     <fieldset className="rounded-(--radius-lg) border border-(--color-border) p-3">
       <legend className="px-1 text-xs font-medium text-(--color-text)">Recepciones relacionadas (opcional)</legend>
-      <p className="mb-2 text-[11px] text-(--color-text-subtle)">
+      <p className="mb-2 text-2xs text-(--color-text-subtle)">
         Selecciona una o varias. El número de guía no se reutiliza como folio de factura.
       </p>
       <div className="max-h-40 space-y-1.5 overflow-y-auto">
@@ -1190,7 +1190,7 @@ function DteResolutionDialog({
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div className="min-w-0">
                       <p className="truncate text-xs font-semibold text-(--color-text)">{line.productName}</p>
-                      <p className="mt-0.5 text-[11px] text-(--color-text-subtle)">
+                      <p className="mt-0.5 text-2xs text-(--color-text-subtle)">
                         Línea {line.lineNumber} · {line.quantity} {line.unitOfMeasure ?? "sin unidad"} · {formatCLP(line.amount)}
                         {line.productCode ? ` · Código ${line.productCode}` : ""}
                       </p>
@@ -1347,7 +1347,7 @@ function DteCandidateRow({
           </Button>
         </div>
       </div>
-      <p className="mt-1 text-[11px] text-(--color-text-subtle)">
+      <p className="mt-1 text-2xs text-(--color-text-subtle)">
         Proveedor verificado · {doc.explanation.matchedLines}/{doc.explanation.totalLines} líneas vinculadas
         {doc.explanation.unitMismatches > 0 ? ` · ${doc.explanation.unitMismatches} unidad(es) incompatible(s)` : ""}
         {doc.explanation.quantityOverLines > 0 ? ` · ${doc.explanation.quantityOverLines} cantidad(es) excedida(s)` : ""}

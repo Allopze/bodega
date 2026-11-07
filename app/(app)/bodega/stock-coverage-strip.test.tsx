@@ -40,6 +40,28 @@ describe("StockCoverageStrip", () => {
     expect(screen.getByText(/menos de 3 en 90 días o el producto lleva menos de 30 días/)).toBeTruthy()
   })
 
+  it("si ninguna línea tiene consumo sólo queda la frase: sin barra, sin leyenda y sin «Ver datos» (UX-13)", () => {
+    const { container } = render(<StockCoverageStrip summary={summarizeCoverage(["none", "none", "none"])} noun="producto" active="" hrefFor={hrefFor} />)
+    expect(screen.getByRole("heading", { name: "Cobertura del stock" })).toBeTruthy()
+    expect(screen.getByText(/Todavía no hay consumo suficiente para estimar cuántos días alcanza el stock\. 3 sin consumo\./)).toBeTruthy()
+    expect(screen.queryByRole("img")).toBeNull()
+    expect(screen.queryByRole("list")).toBeNull()
+    expect(screen.queryByText("Ver datos")).toBeNull()
+    expect(container.querySelector("[data-segment]")).toBeNull()
+  })
+
+  it("con «Datos insuficientes» de por medio la barra sigue dibujándose: distingue dos bandas", () => {
+    render(<StockCoverageStrip summary={summarizeCoverage(["none", "insufficient"])} noun="producto" active="" hrefFor={hrefFor} />)
+    expect(screen.getByRole("img", { name: /Cobertura del stock/ })).toBeTruthy()
+  })
+
+  it("la tira se separa de lo que sigue con su propio margen inferior", () => {
+    const { container, rerender } = render(<StockCoverageStrip summary={summary} noun="producto" active="" hrefFor={hrefFor} />)
+    expect((container.firstChild as HTMLElement).className).toContain("mb-4")
+    rerender(<StockCoverageStrip summary={summarizeCoverage(["none"])} noun="producto" active="" hrefFor={hrefFor} />)
+    expect((container.firstChild as HTMLElement).className).toContain("mb-4")
+  })
+
   it("sin ninguna línea no dibuja nada: la tabla ya explica su vacío", () => {
     const { container } = render(<StockCoverageStrip summary={summarizeCoverage([])} noun="producto" active="" hrefFor={hrefFor} />)
     expect(container.firstChild).toBeNull()

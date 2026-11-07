@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { Button } from "@/components/ui/button"
-import { ExportButton } from "@/components/ui/export-button"
+import { EXPORT_ICON, ExportButton } from "@/components/ui/export-button"
 import { Combobox } from "@/components/ui/combobox"
 import { FileXls } from "@phosphor-icons/react"
 import type { WorksiteOption } from "@/components/ui/worksite-select"
@@ -69,7 +69,7 @@ export function ReportCard({
           // Sin activo no hay nada que exportar: botón realmente deshabilitado
           // (antes era un <span> que imitaba uno y repetía el texto del campo).
           <Button variant="secondary" size="sm" className="w-full" disabled>
-            <FileXls className="mr-1 h-4 w-4" /> Exportar Excel
+            <EXPORT_ICON className="mr-1 h-4 w-4 shrink-0" /> Exportar Excel
           </Button>
         ) : (
           <ExportButton

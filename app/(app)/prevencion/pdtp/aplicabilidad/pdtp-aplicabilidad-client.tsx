@@ -128,7 +128,7 @@ export function PdtpAplicabilidadClient({ activities, worksites, exclusions, par
     <div className="space-y-4">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
         <div>
-          <label htmlFor="pdtp-applicability-worksite" className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">Faena a gestionar</label>
+          <label htmlFor="pdtp-applicability-worksite" className="text-eyebrow">Faena a gestionar</label>
           <div className="mt-1 flex flex-wrap items-center gap-3">
             <Select value={selectedWorksiteId} onValueChange={setSelectedWorksiteId}>
               <SelectTrigger id="pdtp-applicability-worksite" className="w-[260px]">
@@ -196,13 +196,13 @@ export function PdtpAplicabilidadClient({ activities, worksites, exclusions, par
 
               return (
                 <TableRow key={act.id} className={isExcluded || isAutoExcludedCphs ? "bg-[var(--color-surface-muted)]/50 opacity-75" : ""}>
-                  <TableCell className="font-mono font-bold text-sm">{act.n}</TableCell>
+                  <TableCell className="font-mono font-semibold text-sm">{act.n}</TableCell>
                   <TableCell>
                     <div className="font-medium text-[var(--color-text)]">{act.activity}</div>
                   </TableCell>
                   <TableCell>
                     <div className="flex flex-col gap-1">
-                      <MetaBadge meta={{ label: pdtpScheduleModeLabel(act.scheduleMode), variant: "outline" }} className="w-fit text-[10px]" />
+                      <MetaBadge meta={{ label: pdtpScheduleModeLabel(act.scheduleMode), variant: "outline" }} size="sm" className="w-fit" />
                       <span className="text-xs text-[var(--color-text-muted)]">{pdtpIndicatorModeLabel(act.indicatorMode)}</span>
                     </div>
                   </TableCell>
@@ -229,7 +229,7 @@ export function PdtpAplicabilidadClient({ activities, worksites, exclusions, par
                         otra pregunta. Antes esto se veía igual que una actividad que no
                         necesita padrón —un guion— y no había forma de notarlo. */}
                     {act.indicatorMode === "coverage" && param?.expectedSubjectCount == null && (
-                      <MetaBadge meta={{ label: "Sin padrón", variant: "warning" }} title="Mide por cobertura pero nadie cargó su padrón. Mientras falte, se mide por la cantidad planificada del mes en vez de contra el total de sujetos." className="w-fit text-[10px] font-sans" />
+                      <MetaBadge meta={{ label: "Sin padrón", variant: "warning" }} title="Mide por cobertura pero nadie cargó su padrón. Mientras falte, se mide por la cantidad planificada del mes en vez de contra el total de sujetos." size="sm" className="w-fit" />
                     )}
                     {act.indicatorMode !== "coverage" && !param?.expectedSubjectCount && !param?.targetCoveragePercent && (
                       <span className="text-[var(--color-text-muted)]">—</span>

@@ -63,20 +63,20 @@ const SidebarUserProfileInner = React.memo(function SidebarUserProfileInner({
   }
 
   return (
-    <div className="border-t border-slate-200/80 px-2.5 py-2.5">
+    <div className="border-t border-(--color-border) px-2.5 py-2.5">
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
             type="button"
-            className="flex w-full items-center gap-2.5 rounded-xl p-1.5 text-left transition-colors duration-(--duration-fast) hover:bg-slate-200/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 cursor-pointer"
+            className="flex w-full items-center gap-2.5 rounded-xl p-1.5 text-left transition-colors duration-(--duration-fast) hover:bg-nav-hover-bg focus:outline-none focus-visible:ring-2 focus-visible:ring-(--color-primary) cursor-pointer"
             aria-label="Abrir menú de usuario"
           >
             <Avatar name={name} size="default" />
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold text-slate-900 leading-tight">{name}</p>
+              <p className="truncate text-sm font-semibold text-(--color-text) leading-tight">{name}</p>
               <p className="truncate text-xs text-(--color-text-subtle) leading-tight mt-0.5">{email}</p>
             </div>
-            <CaretUpDown size={16} aria-hidden className="text-slate-400 shrink-0" />
+            <CaretUpDown size={16} aria-hidden className="text-(--color-text-faint) shrink-0" />
           </button>
         </DropdownMenuTrigger>
         <UserDropdownContent

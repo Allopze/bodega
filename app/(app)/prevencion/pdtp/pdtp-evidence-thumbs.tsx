@@ -30,7 +30,7 @@ function classify(url: string): "image" | "pdf" | "other" {
   return "other"
 }
 
-const CHIP_CLASS = "inline-flex items-center gap-1 rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-0.5 text-[11px] text-[var(--color-text-muted)]"
+const CHIP_CLASS = "inline-flex items-center gap-1 rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-0.5 text-2xs text-[var(--color-text-muted)]"
 
 export function PdtpEvidenceThumbs({
   evidenceUrl,
@@ -91,12 +91,12 @@ export function PdtpEvidenceThumbs({
         )
       })}
       {items.length > max && (
-        <span className="text-[11px] text-[var(--color-text-faint)]">+{items.length - max}</span>
+        <span className="text-2xs text-[var(--color-text-faint)]">+{items.length - max}</span>
       )}
       {evidenceText && (origin === "integration"
         ? <SyntheticLabel text={evidenceText} />
         : (
-          <p className="basis-full text-[11px] italic text-[var(--color-text-muted)]">
+          <p className="basis-full text-2xs text-[var(--color-text-subtle)]">
             “{evidenceText.length > 140 ? `${evidenceText.slice(0, 140)}…` : evidenceText}”
           </p>
         ))}

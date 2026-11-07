@@ -54,10 +54,9 @@ export default async function PpaResultPage({
       <div className={`rounded-xl border-2 p-6 text-center ${tone.border} ${tone.bg}`} role="status" aria-live="polite">
         <Icon size={40} weight="fill" className={`mx-auto ${tone.ink}`} aria-hidden />
         <p
-          className={
-            `mt-3 text-2xl font-extrabold tracking-tight ${tone.ink} ` +
-            (view.tone === "danger" ? "uppercase" : "")
-          }
+          // Sin mayúsculas también en «detener»: el borde doble, el ícono y el
+          // color de peligro ya marcan la gravedad (auditoría UX-05).
+          className={`mt-3 text-2xl font-semibold tracking-tight ${tone.ink}`}
         >
           {view.title}
         </p>

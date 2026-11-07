@@ -132,7 +132,7 @@ export function CatalogTabs({ activities, roleOptions, responsibles, sheets, pro
       <TabsContent value="activities">
         <section>
           <div className="mb-3">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">Actividades preventivas</h2>
+            <h2 className="text-sm font-semibold text-[var(--color-text-subtle)]">Actividades preventivas</h2>
             <p className="text-xs text-[var(--color-text-muted)]">El código identifica la actividad; las revisiones conservan el contenido histórico.</p>
           </div>
           <DataTable
@@ -212,7 +212,7 @@ export function CatalogTabs({ activities, roleOptions, responsibles, sheets, pro
       <TabsContent value="responsibles">
         <section>
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">
+            <h2 className="text-sm font-semibold text-[var(--color-text-subtle)]">
               Responsables
             </h2>
           </div>
@@ -307,7 +307,7 @@ export function CatalogTabs({ activities, roleOptions, responsibles, sheets, pro
       <TabsContent value="sheets">
         <section>
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">
+            <h2 className="text-sm font-semibold text-[var(--color-text-subtle)]">
               Hojas del programa
             </h2>
           </div>
@@ -417,7 +417,7 @@ export function CatalogTabs({ activities, roleOptions, responsibles, sheets, pro
       <TabsContent value="programs">
         <section>
           <div className="mb-3">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">
+            <h2 className="text-sm font-semibold text-[var(--color-text-subtle)]">
               Programas activos y recientes
             </h2>
             <p className="text-xs text-[var(--color-text-muted)]">

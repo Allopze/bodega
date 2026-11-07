@@ -40,7 +40,7 @@ import { CreatePdtpRevisionButton } from "./[programId]/create-pdtp-revision-but
 import { Callout } from "@/components/ui/callout"
 import { getPdtpOperationalYears } from "@/lib/services/pdtp/operational-years"
 
-export const metadata: Metadata = { title: "Dashboard de Cumplimiento (PDTP SG-SST)" }
+export const metadata: Metadata = { title: "Panel de cumplimiento (PDTP SG-SST)" }
 
 type PdtpDashboardPageProps = {
   searchParams: Promise<{ faena?: string | string[]; anio?: string | string[] }>
@@ -234,8 +234,8 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
   return (
     <PageContainer>
       <PageHeader
-        title="Dashboard de Cumplimiento SG-SST"
-        description={`Avance operacional del Programa de Trabajo Preventivo ${year}. Monitoreo general y por faena.`}
+        title="Panel de cumplimiento SG-SST"
+        description={`Avance del Programa de Trabajo Preventivo ${year}, en total o por faena.`}
         breadcrumb={
           <Breadcrumbs
             items={[
@@ -306,14 +306,6 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
             </span>
           )}
         </div>
-        {focusProgram && (
-          <Link
-            href={activitiesHref(focusProgram.id, year, selectedWorksiteId, "anual", undefined, currentPeriod)}
-            className="inline-flex min-h-11 sm:min-h-0 items-center text-xs font-medium text-[var(--color-primary)] hover:underline"
-          >
-            Ver actividades del programa →
-          </Link>
-        )}
       </div>
 
       {mustChooseProgram ? (
@@ -377,11 +369,11 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <KpiCard
               label="Ejecutadas"
-              value={String(executedCount)}
+              value={executedCount}
               // PREV-C01: es el ejecutado del indicador —aprobado y con el tope
               // del mes—, no el conteo de registros; el rótulo lo decía mal.
               detail={`Aprobadas que cuentan para el cumplimiento ${year}${pendingApprovalCount > 0 && !canApprove ? ` · ${countOf(pendingApprovalCount, "por aprobar", "por aprobar")}` : ""}`}
-              icon={<ShieldCheck size={22} className="text-[var(--color-success-ink)]" />}
+              icon={<ShieldCheck size={22} />}
               href={focusProgram ? activitiesHref(focusProgram.id, year, selectedWorksiteId, "anual", "executed", currentPeriod) : undefined}
               // PRV-20: lo registrado y aún sin aprobar no suma arriba; se
               // dice cuánto es y se lleva a la bandeja de quien puede aprobar.
@@ -392,13 +384,13 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
             />
             <KpiCard
               label="Pendientes"
-              value={String(pendingCount)}
+              value={pendingCount}
               // Primero explica lo que muestra el tile (una cantidad de
               // instancias programadas sin ejecutar este mes); las
               // actividades en cero van como dato secundario, con
               // singular/plural correcto — antes decía "1 actividades".
               detail={`Programadas sin ejecutar este mes · ${zeroActivitiesLabel}${zeroActivitiesQualifier}`}
-              icon={<ChartBar size={22} className="text-[var(--color-primary)]" />}
+              icon={<ChartBar size={22} />}
               // "en_cero" (pending ∪ overdue), el mismo destino que la
               // columna "En cero" del panel de indicadores cuando hablan del
               // mismo mes: antes este tile enlazaba a "pending" a secas y
@@ -410,21 +402,16 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
                 checklist + cierre de acciones, y solo está definido por faena. */}
             <KpiCard
               label="Atrasadas"
-              value={String(overdueActivityCount)}
+              value={overdueActivityCount}
               detail="Actividades que requieren revisión prioritaria"
-              icon={<ListChecks size={22} className="text-[var(--color-info-ink)]" />}
+              icon={<ListChecks size={22} />}
               href={focusProgram ? activitiesHref(focusProgram.id, year, selectedWorksiteId, "semana", "overdue", currentPeriod) : undefined}
             />
             <KpiCard
-              label="Acciones Pendientes"
-              value={String(openActionsCount)}
+              label="Acciones pendientes"
+              value={openActionsCount}
               detail={overdueActionsCount > 0 ? countOf(overdueActionsCount, "acción vencida", "acciones vencidas") : "Sin hallazgos vencidos"}
-              icon={
-                <WarningCircle
-                  size={22}
-                  className={overdueActionsCount > 0 ? "text-[var(--color-danger)]" : "text-[var(--color-warning-ink)]"}
-                />
-              }
+              icon={<WarningCircle size={22} />}
               href={focusProgram ? `/prevencion/pdtp/acciones?programa=${focusProgram.id}&anio=${year}${selectedWorksiteId ? `&faena=${selectedWorksiteId}` : ""}${overdueActionsCount > 0 ? "&vencidas=1" : "&estado=abierta"}` : "/prevencion/pdtp/acciones"}
             />
           </div>

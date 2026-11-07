@@ -1,3 +1,4 @@
+import { ANOMALY_RULE_CATALOG } from "@/lib/combustibles/anomaly-rule-catalog"
 import type { MandanteReconciliationSummary } from "@/lib/combustibles/control/queries/reconciliation-summary"
 import type { WorseThanModelSummary } from "@/lib/combustibles/control/queries/worse-than-model"
 import type { FuelInboxSummary } from "@/lib/combustibles/inbox/types"
@@ -163,6 +164,8 @@ function inboxParts(summary: FuelInboxSummary): string[] {
   return parts
 }
 
+const RULE_NAME_BY_CODE = new Map<string, string>(ANOMALY_RULE_CATALOG.map((rule) => [rule.code, rule.name]))
+
 function inboxCaseBreakdown(summary: FuelInboxSummary): string | null {
   const breakdown = summary.caseBreakdown
   if (!breakdown || breakdown.length === 0) return null
@@ -171,8 +174,10 @@ function inboxCaseBreakdown(summary: FuelInboxSummary): string | null {
     .reduce((sum, item) => sum + item.count, 0)
   const parts: string[] = []
   const regressions = countForRule("kilometraje_regresivo")
+  const hourmeterRegressions = countForRule("horometro_regresivo")
   const meterJumps = countForRule("salto_medidor_implausible")
   if (regressions > 0) parts.push(`${count(regressions)} ${regressions === 1 ? "regresión de kilometraje" : "regresiones de kilometraje"}`)
+  if (hourmeterRegressions > 0) parts.push(`${count(hourmeterRegressions)} ${hourmeterRegressions === 1 ? "regresión de horómetro" : "regresiones de horómetro"}`)
   if (meterJumps > 0) parts.push(`${count(meterJumps)} ${meterJumps === 1 ? "salto de medidor" : "saltos de medidor"}`)
 
   const variation = breakdown.filter((item) => item.ruleCode === "variacion_brusca_consumo" && item.count > 0)
@@ -196,13 +201,22 @@ function inboxCaseBreakdown(summary: FuelInboxSummary): string | null {
     parts.push(`variación brusca: ${productParts.join(" · ")}`)
   }
 
-  const knownRules = new Set(["kilometraje_regresivo", "salto_medidor_implausible", "variacion_brusca_consumo"])
+  const knownRules = new Set(["kilometraje_regresivo", "horometro_regresivo", "salto_medidor_implausible", "variacion_brusca_consumo"])
+  // Nunca el código crudo (`sello_repetido`): la jefatura lee el nombre de la
+  // regla; una regla sin nombre en el catálogo se agrupa como «otras reglas».
   const otherRules = new Map<string, number>()
+  let unnamedTotal = 0
   for (const item of breakdown) {
-    if (knownRules.has(item.ruleCode)) continue
-    otherRules.set(item.ruleCode, (otherRules.get(item.ruleCode) ?? 0) + item.count)
+    if (knownRules.has(item.ruleCode) || item.count <= 0) continue
+    const name = RULE_NAME_BY_CODE.get(item.ruleCode)
+    if (!name) {
+      unnamedTotal += item.count
+      continue
+    }
+    otherRules.set(name, (otherRules.get(name) ?? 0) + item.count)
   }
-  for (const [ruleCode, total] of otherRules) parts.push(`${count(total)} ${total === 1 ? `caso de ${ruleCode}` : `casos de ${ruleCode}`}`)
+  for (const [name, total] of otherRules) parts.push(`${count(total)} ${total === 1 ? "caso" : "casos"} «${name}»`)
+  if (unnamedTotal > 0) parts.push(`${count(unnamedTotal)} ${unnamedTotal === 1 ? "caso" : "casos"} de otras reglas`)
   return parts.length > 0 ? parts.join(" · ") : null
 }
 

@@ -1,10 +1,11 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 import { redirect } from "next/navigation"
-import { DownloadSimple, Plus, SlidersHorizontal } from "@phosphor-icons/react/dist/ssr"
+import { Plus, SlidersHorizontal } from "@phosphor-icons/react/dist/ssr"
 import { requirePermission, can } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { Button } from "@/components/ui/button"
+import { ExportLink } from "@/components/ui/export-button"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { getIncidentDashboardCounts, getIncidentStatusCounts, listIncidentWorksites, listPreventionIncidents } from "@/lib/services/prevention-incidents"
@@ -76,11 +77,11 @@ export default async function IncidentsPage({ searchParams }: { searchParams: Pr
       <Re20PwaRegister />
       <PageHeader
         title="Incidentes y accidentes"
-        description="Fuente canónica de eventos, plazos DIAT/DIEP, investigación, CAPA y autorización de reinicio."
+        description="Eventos, plazos DIAT/DIEP, investigación, acciones CAPA y autorización de reinicio."
         breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "Prevención" }, { label: "Incidentes" }]} />}
         actions={<div className="flex gap-2">
           {canReport && <Button asChild><Link href="/prevencion/incidentes/reportar"><Plus className="size-4" />Reportar</Link></Button>}
-          {canExport && <Button asChild variant="secondary"><a href="/api/prevencion/incidentes/export" download><DownloadSimple className="size-4" />Exportar Excel</a></Button>}
+          {canExport && <ExportLink href="/api/prevencion/incidentes/export" />}
           {canConfigure && <Button asChild variant="secondary"><Link href="/prevencion/incidentes/configuracion"><SlidersHorizontal className="size-4" />Configurar RE-20</Link></Button>}
         </div>}
       />

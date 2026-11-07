@@ -2661,6 +2661,13 @@
       "when": 1794023196239,
       "tag": "0379_retira_quotations_oc",
       "breakpoints": true
+    },
+    {
+      "idx": 380,
+      "version": "7",
+      "when": 1794078263470,
+      "tag": "0380_boring_thundra",
+      "breakpoints": true
     }
   ]
 }

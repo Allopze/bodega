@@ -132,7 +132,7 @@ export function PdtpOverrideForm(props: Props) {
               />
             </Field>
           </div>
-          <p className="text-[11px] text-[var(--color-text-subtle)]">
+          <p className="text-2xs text-[var(--color-text-subtle)]">
             Define 0 para borrar el override y volver al plan global del catálogo.
           </p>
           <Field label="Motivo de la excepción" htmlFor="ovr-reason">

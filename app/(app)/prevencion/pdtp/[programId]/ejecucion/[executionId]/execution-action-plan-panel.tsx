@@ -179,7 +179,7 @@ function NewActionDraft({ executionId, onCancel, onSaved }: {
 
   return (
     <div className="space-y-3 rounded-(--radius-lg) border border-(--color-border) bg-surface-2 p-4">
-      <p className="text-xs font-semibold uppercase tracking-wide text-text-subtle">Nuevo hallazgo / acción</p>
+      <p className="text-eyebrow">Nuevo hallazgo / acción</p>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field label="Hallazgo" htmlFor="np-hallazgo">
           <Textarea id="np-hallazgo" value={hallazgo} onChange={(e) => setHallazgo(e.target.value)} rows={2} maxLength={1000} />
@@ -349,7 +349,7 @@ function ActionFollowupTimeline({ itemId, estado, worksiteId, followups, canMana
 
   return (
     <div className="space-y-3">
-      <p className="text-xs font-semibold uppercase tracking-wide text-text-subtle">Seguimiento</p>
+      <p className="text-eyebrow">Seguimiento</p>
       {followups.length === 0 ? (
         <p className="text-xs text-text-subtle">Sin registros de seguimiento aún.</p>
       ) : (

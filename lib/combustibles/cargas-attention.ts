@@ -31,6 +31,24 @@ function attentionCell(searchParams: CargasSearchParams, key: string, label: str
 }
 
 /**
+ * Las cuatro señales en cero: no hay nada que mirar en el período. Cuatro tiles que dicen
+ * «Ninguna» son cuatro avisos para una sola buena noticia (auditoría UX-13, 2026-11-07), así
+ * que la página pinta entonces una línea (`attentionClearText`) y no la tira. Basta UNA cifra
+ * distinta de cero para volver a las cuatro celdas: ahí el «Ninguna» de las demás sí informa.
+ */
+export function isAttentionClear(attention: FieldLoadAttention): boolean {
+  return attention.toValidate === 0 && attention.observed === 0 && attention.sealIncomplete === 0 && attention.photosIncomplete === 0
+}
+
+/**
+ * La línea tranquila de «todo despejado». `inLabel` es la frase del período que ya resuelve la
+ * página (`ResolvedFuelPeriod.inLabel`: «en octubre», «en la semana del 26 de octubre», «en 2026»).
+ */
+export function attentionClearText(inLabel: string): string {
+  return `Nada por validar, observar ni completar ${inLabel}`
+}
+
+/**
  * Las cuatro celdas de la tira, en el orden en que se atienden: primero lo que espera una
  * decisión y después lo que está incompleto. `searchParams` es la URL actual de Cargas: los
  * enlaces la conservan (período, faena, búsqueda…), cambian el parámetro de su filtro y sueltan

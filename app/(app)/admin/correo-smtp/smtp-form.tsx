@@ -243,7 +243,7 @@ function ResendStatusCard({ resendStatus }: { resendStatus: ResendStatus }) {
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-0.5">
-      <dt className="text-xs font-medium text-text-subtle uppercase tracking-wide">
+      <dt className="text-eyebrow">
         {label}
       </dt>
       <dd className="text-(--color-text)">{children}</dd>

@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { setPin } from "@/lib/mantencion/client/accounts"
 import { PinPad } from "./pin-pad"
+import { useGreeting } from "./use-greeting"
 import { firstName } from "./ui"
 
 /**
@@ -14,6 +15,7 @@ export function PinSetup({ userId, name, onDone }: { userId: string; name: strin
   const [first, setFirst] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const greeting = useGreeting()
 
   const submit = async (pin: string) => {
     if (first === null) { setFirst(pin); setError(null); return }
@@ -35,7 +37,7 @@ export function PinSetup({ userId, name, onDone }: { userId: string; name: strin
       <div className="pin-full">
         <div>
           <div className="cap">Primer ingreso</div>
-          <h1 className="h1" style={{ marginTop: 8 }}>Hola, {firstName(name)}</h1>
+          <h1 className="h1" style={{ marginTop: 8 }}>{greeting}, {firstName(name)}</h1>
         </div>
         <div>
           <h2 className="h2" style={{ fontSize: 21 }}>{first === null ? "Define tu PIN" : "Repite tu PIN"}</h2>

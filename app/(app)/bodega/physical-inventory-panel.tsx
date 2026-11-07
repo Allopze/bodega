@@ -164,7 +164,7 @@ export function PhysicalInventoryPanel({
             <>
               <div
                 aria-hidden
-                className="grid grid-cols-[minmax(0,1fr)_92px_72px] gap-3 border-b border-(--color-border) bg-(--color-surface-2) px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-(--color-text-muted)"
+                className="grid grid-cols-[minmax(0,1fr)_92px_72px] gap-3 border-b border-(--color-border) bg-(--color-surface-2) px-3 py-2 text-eyebrow"
               >
                 <span>Producto</span>
                 <span className="text-right" title="Cantidad contada. En blanco = no contado">Contado</span>

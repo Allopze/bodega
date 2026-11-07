@@ -48,7 +48,7 @@ function SortHeader({ column, sort, onSort }: { column: (typeof COLUMNS)[number]
       <button
         type="button"
         onClick={() => onSort(key)}
-        className="inline-flex min-h-6 items-center gap-1 uppercase tracking-wider hover:text-[var(--color-text)]"
+        className="inline-flex min-h-6 items-center gap-1 hover:text-[var(--color-text)]"
         aria-label={`Ordenar por ${column.label}${active ? ` (${sort.dir === "asc" ? "ascendente" : "descendente"})` : ""}`}
       >
         {column.label}

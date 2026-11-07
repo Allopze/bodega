@@ -86,8 +86,10 @@ jobs:
         env:
           # El runner hosted (7 GB) hace que tsc agote el heap por defecto de
           # V8 (~2 GB) en este repo; no ocurre en desarrollo local con más
-          # memoria disponible.
-          NODE_OPTIONS: --max-old-space-size=5120
+          # memoria disponible. 6144 desde 2026-11-07: con 5120 main ya no tenía
+          # margen (tsc marca ~5,8 GB con heap holgado) y el pulido UI/UX lo hizo
+          # morir por heap. Mismo valor que scripts/run-resource-guard.sh.
+          NODE_OPTIONS: --max-old-space-size=6144
         run: npm run typecheck
 
       - name: Lint

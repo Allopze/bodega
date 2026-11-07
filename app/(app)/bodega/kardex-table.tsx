@@ -40,7 +40,7 @@ function DocumentLink({ movement }: { movement: InventoryMovementWithRelations }
   const content = (
     <>
       <span>{label}</span>
-      {folio && <span className="block font-mono text-[11px] font-semibold text-[var(--color-text)]">{folio}</span>}
+      {folio && <span className="block font-mono text-2xs font-semibold text-[var(--color-text)]">{folio}</span>}
     </>
   )
   if (!href) return <span className="text-[var(--color-text-subtle)]">{content}</span>
@@ -106,7 +106,7 @@ export function KardexTable({ movements, worksites = [], canExport = false, sear
                       <TableCell className="text-xs text-[var(--color-text-muted)] whitespace-nowrap">
                         <span className="tabular-nums">{moment.date}</span>
                         {moment.time && (
-                          <span className="mt-0.5 block text-[11px] tabular-nums text-[var(--color-text-faint)]">{moment.time}</span>
+                          <span className="mt-0.5 block text-2xs tabular-nums text-[var(--color-text-faint)]">{moment.time}</span>
                         )}
                       </TableCell>
                       <TableCell>

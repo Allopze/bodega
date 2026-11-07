@@ -79,7 +79,7 @@ function PdtpAggregateBreakdown({ summaries, worksiteNames, planViewMode, bare =
   // `bare`: sin <details> propio, para vivir dentro del expander único de la
   // vista anual (UI/UX 2026-08-05, B1b — antes había dos expanders por fila).
   if (bare) return chips
-  return <details className="mt-2 text-[11px] text-[var(--color-text-muted)]"><summary className="cursor-pointer">Desglose por faena ({summaries.length})</summary>{chips}</details>
+  return <details className="mt-2 text-2xs text-[var(--color-text-muted)]"><summary className="cursor-pointer">Desglose por faena ({summaries.length})</summary>{chips}</details>
 }
 
 function aggregateSummaries(activity: PdtpSheetView["activities"][number]): PdtpAggregateActivityWorksite[] | null {
@@ -171,7 +171,7 @@ function PdtpDeviationMonthMark({ deviations }: { deviations: SheetDeviation[] }
     .join("\n")
   return (
     <span
-      className="ml-1 cursor-help align-super text-[9px] font-semibold text-[var(--color-signal-ink)]"
+      className="ml-1 cursor-help align-super text-2xs font-semibold text-[var(--color-signal-ink)]"
       title={detail}
       aria-label={`Desvíos declarados en el mes: ${deviations.length}`}
     >
@@ -478,7 +478,7 @@ export function PdtpSheetTable({
                     <TableRow className="bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-2)]">
                       <TableCell
                         colSpan={canOperate && worksiteId ? 5 : 4}
-                        className="py-1.5 pl-4 text-[10px] font-semibold uppercase tracking-widest text-[var(--color-text-faint)]"
+                        className="text-eyebrow py-1.5 pl-4 text-[var(--color-text-faint)]"
                       >
                         {group.label}
                       </TableCell>
@@ -497,7 +497,7 @@ export function PdtpSheetTable({
                               <p className="font-medium text-[var(--color-text)]">{activity.activity}</p>
                               {activity.notes && (
                                 <p
-                                  className="mt-1 flex items-start gap-1 text-[11px] italic text-[var(--color-text-faint)]"
+                                  className="mt-1 flex items-start gap-1 text-2xs text-[var(--color-text-subtle)]"
                                   title={activity.notes}
                                 >
                                   <NotePencil size={12} className="mt-0.5 shrink-0" aria-hidden />
@@ -518,7 +518,7 @@ export function PdtpSheetTable({
                                 <div className="mt-2 space-y-2">
                                   {activity.executions.map((exec) => (
                                     <div key={exec.id} className="rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1.5">
-                                      <div className="mb-1 flex items-center gap-2 text-[10px] text-[var(--color-text-subtle)]">
+                                      <div className="mb-1 flex items-center gap-2 text-2xs text-[var(--color-text-subtle)]">
                                         <span className="font-mono">{MONTH_LABELS[exec.month - 1]} · Sem {exec.week}</span>
                                         <span>·</span>
                                         <span>{exec.executedQuantity}</span>
@@ -532,7 +532,7 @@ export function PdtpSheetTable({
                                       <div className="mt-1 flex flex-wrap items-center gap-1.5">
                                         <Link
                                           href={`/prevencion/pdtp/${view.program.id}/ejecucion/${exec.id}`}
-                                          className="text-[10px] font-medium text-[var(--color-primary)] hover:underline"
+                                          className="text-2xs font-medium text-[var(--color-primary)] hover:underline"
                                         >
                                           Ver verificación →
                                         </Link>
@@ -644,7 +644,7 @@ export function PdtpSheetTable({
                   ))}
                   <TableHead className="min-w-[7.5rem] text-right" title={planViewDescription}>
                     <span className="block">Plan / ejecutado</span>
-                    <span className="block text-[10px] font-normal text-[var(--color-text-muted)]">{planViewMode === "historico" ? "Histórico" : "Exigible"}</span>
+                    <span className="block text-2xs font-normal text-[var(--color-text-muted)]">{planViewMode === "historico" ? "Histórico" : "Exigible"}</span>
                   </TableHead>
                   {canOperate && worksiteId && <TableHead className="w-48">Registrar</TableHead>}
                   {canApprove && worksiteId && pendingApprovals.length > 0 && <TableHead className="min-w-[10rem]">Aprobar</TableHead>}
@@ -661,7 +661,7 @@ export function PdtpSheetTable({
                             + (canOperate && worksiteId ? 1 : 0)
                             + (canApprove && worksiteId && pendingApprovals.length > 0 ? 1 : 0)
                           }
-                        className="py-1.5 pl-4 text-[10px] font-semibold uppercase tracking-widest text-[var(--color-text-faint)]"
+                        className="text-eyebrow py-1.5 pl-4 text-[var(--color-text-faint)]"
                       >
                         {group.label}
                       </TableCell>
@@ -682,7 +682,7 @@ export function PdtpSheetTable({
                           <TableCell className={`md:sticky md:left-12 md:z-10 md:bg-[var(--color-surface)] md:group-hover:bg-[var(--color-surface-2)] md:shadow-[1px_0_0_var(--color-border)] ${rowPy}`}>
                             <div className="max-w-[36rem]">
                               <p className="font-medium text-[var(--color-text)]">{activity.activity}</p>
-                              <details className="mt-1 text-[11px] text-[var(--color-text-muted)]">
+                              <details className="mt-1 text-2xs text-[var(--color-text-muted)]">
                                 <summary className="cursor-pointer hover:text-[var(--color-text)]">
                                   {worksiteId ? "Ver programa y responsables" : "Ver programa, responsables y faenas"}
                                 </summary>
@@ -694,14 +694,14 @@ export function PdtpSheetTable({
                                 </div>
                               </details>
                               {worksiteId && activity.executions.length > 0 && (
-                                <details className="mt-2 text-[11px]">
+                                <details className="mt-2 text-2xs">
                                   <summary className="cursor-pointer text-[var(--color-text-muted)]">
                                     {countOf(activity.executions.length, "ejecución con evidencia", "ejecuciones con evidencia")}
                                   </summary>
                                   <div className="mt-1 space-y-2">
                                     {activity.executions.map((exec) => (
                                       <div key={exec.id} className="rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1.5">
-                                        <div className="mb-1 flex items-center gap-2 text-[10px] text-[var(--color-text-subtle)]">
+                                        <div className="mb-1 flex items-center gap-2 text-2xs text-[var(--color-text-subtle)]">
                                           <span className="font-mono">{MONTH_LABELS[exec.month - 1]} · Sem {exec.week}</span>
                                           <span>·</span>
                                           <span>{exec.executedQuantity}</span>
@@ -715,7 +715,7 @@ export function PdtpSheetTable({
                                         <div className="mt-1 flex flex-wrap items-center gap-1.5">
                                           <Link
                                             href={`/prevencion/pdtp/${view.program.id}/ejecucion/${exec.id}`}
-                                            className="text-[10px] font-medium text-[var(--color-primary)] hover:underline"
+                                            className="text-2xs font-medium text-[var(--color-primary)] hover:underline"
                                           >
                                             Ver verificación →
                                           </Link>
@@ -744,7 +744,7 @@ export function PdtpSheetTable({
                               >
                                 <div className="whitespace-nowrap">
                                   <span>{formatQuantity(planned)}</span>
-                                  <span className="text-[11px] text-[var(--color-success-ink)]"> / {formatQuantity(executed)}</span>
+                                  <span className="text-2xs text-[var(--color-success-ink)]"> / {formatQuantity(executed)}</span>
                                   <PdtpDeviationMonthMark deviations={deviationsForMonth(activity, (PDTP_MONTHS[mi] ?? mi + 1))} />
                                 </div>
                               </TableCellNum>

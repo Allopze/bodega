@@ -45,7 +45,7 @@ export function AssetSummary({ asset, activeAssignment }: AssetSummaryProps) {
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
       <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs">
-        <h2 className="mb-2 text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Datos del equipo</h2>
+        <h2 className="mb-2 text-eyebrow">Datos del equipo</h2>
         <div className="grid gap-x-8 sm:grid-cols-2">
           <dl className="divide-y divide-[var(--color-border)]">
             <DetailItem label="Número de serie" value={asset.serialNumber ?? "—"} mono />
@@ -66,7 +66,7 @@ export function AssetSummary({ asset, activeAssignment }: AssetSummaryProps) {
 
         {(asset.processor || asset.ram || asset.storage || asset.os) && (
           <div className="mt-4 border-t border-[var(--color-border)] pt-3">
-            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">Especificaciones</h3>
+            <h3 className="mb-2 text-eyebrow">Especificaciones</h3>
             <dl className="grid gap-x-6 text-sm sm:grid-cols-2">
               {asset.processor && <div className="py-0.5"><dt className="inline text-xs text-[var(--color-text-muted)]">Procesador: </dt><dd className="inline text-[var(--color-text)]">{asset.processor}</dd></div>}
               {asset.ram && <div className="py-0.5"><dt className="inline text-xs text-[var(--color-text-muted)]">RAM: </dt><dd className="inline text-[var(--color-text)]">{asset.ram}</dd></div>}
@@ -83,7 +83,7 @@ export function AssetSummary({ asset, activeAssignment }: AssetSummaryProps) {
 
       <aside>
         <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs">
-          <h2 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Custodia vigente</h2>
+          <h2 className="text-eyebrow">Custodia vigente</h2>
           {activeAssignment ? (
             <div className="mt-3">
               <p className="flex flex-wrap items-center gap-2 text-sm font-medium text-[var(--color-text)]">

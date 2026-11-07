@@ -104,7 +104,7 @@ export function ChoiceChips({
           </span>
         </span>
         {option.description && (
-          <span className={cn("mt-0.5 line-clamp-2 text-[11px] leading-snug", isOn ? "text-[var(--color-primary-ink)]" : "text-[var(--color-text-muted)]")}>
+          <span className={cn("mt-0.5 line-clamp-2 text-2xs leading-snug", isOn ? "text-[var(--color-primary-ink)]" : "text-[var(--color-text-muted)]")}>
             {option.description}
           </span>
         )}
@@ -130,7 +130,7 @@ export function ChoiceChips({
           const headingId = `${baseId}-${group.id}`
           return (
             <div key={group.id} role="group" aria-labelledby={headingId} className="flex flex-col gap-1.5">
-              <span id={headingId} className="text-[11px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
+              <span id={headingId} className="text-eyebrow">
                 {group.label}
               </span>
               <div className={grid}>{items.map(renderOption)}</div>

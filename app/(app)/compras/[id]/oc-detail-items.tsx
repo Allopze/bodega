@@ -41,7 +41,7 @@ function ItemContext({ item }: { item: OcDetailItem }) {
 function CostTrace({ item }: { item: OcDetailItem }) {
   if (!item.costRecordedAt) return null
   return (
-    <p className="mt-0.5 text-[11px] text-[var(--color-text-subtle)]">
+    <p className="mt-0.5 text-2xs text-[var(--color-text-subtle)]">
       Costo registrado el {formatDateTime(item.costRecordedAt)}
       {item.costRecordedByName ? ` por ${item.costRecordedByName}` : ""}
     </p>
@@ -86,7 +86,7 @@ export function OcDetailItems({
               </div>
               <ItemContext item={item} />
               {item.notes && (
-                <p className="mt-2 text-xs italic text-[var(--color-text-subtle)]">{item.notes}</p>
+                <p className="mt-2 text-xs text-[var(--color-text-subtle)]">{item.notes}</p>
               )}
               <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
                 <div>
@@ -130,7 +130,7 @@ export function OcDetailItems({
           </div>
           <div className="mt-2 flex items-center justify-between gap-3 border-t border-[var(--color-border)] pt-3">
             <dt className="font-semibold text-[var(--color-text)]">{pendingCostLines > 0 ? "Total conocido" : "Total"}</dt>
-            <dd className="font-mono font-bold tabular-nums text-[var(--color-text)]">{formatCLP(order.totalAmount)}</dd>
+            <dd className="font-mono font-semibold tabular-nums text-[var(--color-text)]">{formatCLP(order.totalAmount)}</dd>
           </div>
           {pendingCostLines > 0 && (
             <div className="flex items-center justify-between gap-3 pt-2">
@@ -165,13 +165,13 @@ export function OcDetailItems({
                   <TableCell>
                     <div className="flex items-center gap-2">
                       {sku && (
-                        <span className="font-mono text-[11px] text-[var(--color-text-subtle)] bg-[var(--color-surface-2)] px-1.5 py-0.5 rounded">{sku}</span>
+                        <span className="font-mono text-2xs text-[var(--color-text-subtle)] bg-[var(--color-surface-2)] px-1.5 py-0.5 rounded">{sku}</span>
                       )}
                       <span className="font-medium text-[var(--color-text)]">{name}</span>
                     </div>
                     {reqCode && <p className="text-xs text-[var(--color-text-subtle)] mt-0.5">Solicitud: {reqCode}</p>}
                     <ItemContext item={item} />
-                    {item.notes && <p className="text-xs text-[var(--color-text-subtle)] italic mt-0.5">{item.notes}</p>}
+                    {item.notes && <p className="text-xs text-[var(--color-text-subtle)] mt-0.5">{item.notes}</p>}
                     <CostTrace item={item} />
                     {item.unitPrice === null && canRecordCost && (
                       <OcItemCostForm

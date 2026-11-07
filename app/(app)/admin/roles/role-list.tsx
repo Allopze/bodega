@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { PencilSimple } from "@phosphor-icons/react"
+import { Lock, PencilSimple } from "@phosphor-icons/react"
 import { DataTable } from "@/components/ui/data-table"
 import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
@@ -85,8 +85,14 @@ export function RoleList({ roles, groupedPermissions, permissions }: RoleListPro
                   </div>
                 </TableCell>
                 <TableCell>
-                  <span className="font-mono text-xs text-[var(--color-text-muted)]">
-                    {r.name}{r.isProtected ? " 🔒" : ""}
+                  <span className="inline-flex items-center gap-1 font-mono text-xs text-[var(--color-text-muted)]">
+                    {r.name}
+                    {r.isProtected && (
+                      <span title="Rol protegido" className="inline-flex shrink-0">
+                        <Lock size={12} aria-hidden />
+                        <span className="sr-only">Rol protegido</span>
+                      </span>
+                    )}
                   </span>
                 </TableCell>
                 <TableCell>

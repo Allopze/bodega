@@ -316,7 +316,7 @@ export function EditFuelLoadForm({ load, showCosts, canWrite, canDelete, vehicle
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="edit-load-total" className="text-lg font-semibold">Total</Label>
-                  <Input id="edit-load-total" value={formatCLP(totalAmount)} disabled className="bg-[var(--color-surface-2)] text-lg font-bold" />
+                  <Input id="edit-load-total" value={formatCLP(totalAmount)} disabled className="bg-[var(--color-surface-2)] text-lg font-semibold" />
                 </div>
                 {litersChanged && (
                   <p className="sm:col-span-2 text-xs text-[var(--color-warning-ink)]">

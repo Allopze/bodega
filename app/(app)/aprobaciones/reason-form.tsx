@@ -36,7 +36,7 @@ export function ReasonForm({
           required
         />
         {note && (
-          <p className="text-[11px] text-[var(--color-text-subtle)]">{note}</p>
+          <p className="text-2xs text-[var(--color-text-subtle)]">{note}</p>
         )}
         {state.ok === false && state.message && state !== INITIAL_STATE && (
           <p className="text-xs text-[var(--color-danger)] flex items-center gap-1">

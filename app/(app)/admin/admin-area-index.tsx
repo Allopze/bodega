@@ -128,7 +128,7 @@ export function AdminAreaIndex({ areas }: { areas: AreaNode[] }) {
           >
             <div className="mb-2 flex items-center gap-2 px-2">
               {AreaIcon && <AreaIcon size={16} className="shrink-0 text-[var(--color-text-subtle)]" />}
-              <h2 id={headingId} className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--color-text-subtle)]">
+              <h2 id={headingId} className="text-eyebrow">
                 {area.label}
               </h2>
             </div>

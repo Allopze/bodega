@@ -175,6 +175,91 @@ function hasLocalVariantMapPattern(expr) {
   return false;
 }
 
+// ── Rule: escala tipográfica (auditoría UX-05 / UX-15, 2026-11-07) ──────────
+// `uppercase` en un rótulo o cabecera y `text-[9px]`/`text-[10px]` rompen el
+// sistema: los rótulos son caja de oración (`text-eyebrow`, `th-type`) y el
+// piso de texto es 11px (`text-2xs`). Revisa cada literal de cadena y cada
+// fragmento de plantilla que parezca una lista de clases de Tailwind y reporta el
+// token completo —también con prefijo de variante: `sm:uppercase`, `hover:text-[10px]`—.
+// Los tokens que sólo CONTIENEN la palabra (`text-uppercase-foo`) no calzan.
+const TYPE_SCALE_TOKEN = /(^|\s)(?:[^\s:]+:)*(uppercase|text-\[(?:9|10)px\])(?=\s|$)/;
+
+const uiTypeScale = {
+  meta: {
+    type: "suggestion",
+    docs: {
+      description:
+        "Prohíbe `uppercase`, `text-[9px]` y `text-[10px]` en clases de Tailwind: usa text-eyebrow/th-type (caja de oración) y text-2xs (11px).",
+    },
+    schema: [],
+  },
+  create(context) {
+    function check(node, text) {
+      if (typeof text !== "string" || text.length === 0) return;
+      const match = TYPE_SCALE_TOKEN.exec(text);
+      if (!match) return;
+      const token = match[2];
+      context.report({
+        node,
+        message:
+          token === "uppercase"
+            ? "`uppercase` está fuera del sistema tipográfico: los rótulos y cabeceras van en caja de oración. Usa `text-eyebrow` (rótulo) o `th-type` (cabecera de tabla) de app/globals.css."
+            : "`{{ token }}` está bajo el piso legible de 11px. Usa `text-2xs` (11px) o `text-xs` (12px).",
+        data: { token },
+      });
+    }
+    return {
+      Literal(node) {
+        // Los tipos literales de TS (`"uppercase" | "none"`) no son clases.
+        if (node.parent?.type === "TSLiteralType") return;
+        check(node, node.value);
+      },
+      TemplateElement(node) {
+        check(node, node.value.cooked ?? node.value.raw);
+      },
+    };
+  },
+};
+
+// ── Rule: `value={String(n)}` en tiles de cifra (auditoría UX-06) ───────────
+// `KpiCard`, `SummaryBar` y `HeroKpiCard` reciben el número y lo formatean
+// (es-CL, separador de miles). Pasar `String(n)` lo esquiva y deja «2246» junto a
+// «$1.171.436». Sólo mira `value={String(...)}` en el JSX de estos componentes;
+// las filas de `stats` de `SummaryBar` son objetos y no se inspeccionan.
+const KPI_VALUE_COMPONENTS = new Set(["KpiCard", "SummaryBar", "HeroKpiCard"]);
+
+const noStringKpiValue = {
+  meta: {
+    type: "suggestion",
+    docs: {
+      description:
+        "Prohíbe value={String(...)} en KpiCard/SummaryBar/HeroKpiCard: pasa el número y el componente lo formatea (es-CL).",
+    },
+    schema: [],
+  },
+  create(context) {
+    return {
+      JSXAttribute(node) {
+        if (node.name.type !== "JSXIdentifier" || node.name.name !== "value") return;
+        const opening = node.parent;
+        if (opening?.type !== "JSXOpeningElement") return;
+        if (opening.name.type !== "JSXIdentifier" || !KPI_VALUE_COMPONENTS.has(opening.name.name)) return;
+        const value = node.value;
+        if (value?.type !== "JSXExpressionContainer") return;
+        const expr = value.expression;
+        if (expr?.type !== "CallExpression") return;
+        if (expr.callee.type !== "Identifier" || expr.callee.name !== "String") return;
+        context.report({
+          node,
+          message:
+            "No pases `value={String(n)}` a <{{ name }}>: pasa el número y el componente lo formatea con separador de miles (es-CL).",
+          data: { name: opening.name.name },
+        });
+      },
+    };
+  },
+};
+
 /** grupo B de la auditoría 2026-08-16: calcular HOY en UTC.
  *
  *  Se restringe a la forma "ahora mismo" (`new Date()` sin argumentos) y no a
@@ -247,6 +332,8 @@ const eslintConfig = defineConfig([
           "no-sql-alias-order-by": noSqlAliasOrderBy,
           "no-bare-to-locale": noBareToLocale,
           "no-raw-badge-variant-map": noRawBadgeVariantMap,
+          "ui-type-scale": uiTypeScale,
+          "no-string-kpi-value": noStringKpiValue,
         },
       },
     },
@@ -265,6 +352,36 @@ const eslintConfig = defineConfig([
       ],
       "react-hooks/set-state-in-effect": "off",
     },
+  },
+  // ── Escala tipográfica y cifras de tile (UX-04…UX-06, UX-15) ────────────────
+  // En "warn" mientras se barren los usos existentes; cuando el barrido termine
+  // pasan a "error" (como `no-raw-badge-variant-map`).
+  //
+  // `ui-type-scale` exime las superficies con su propio sistema tipográfico:
+  // - PDF y vistas de impresión (`components/pdf`, `app/(print)`): documentos en
+  //   papel, donde las mayúsculas de cabecera son convención de formulario.
+  // - App del mecánico (`app/(mecanico)`, `components/mantencion/app`): su propia
+  //   hoja de estilos, pensada para uso en terreno con guantes y sol.
+  // - Tests, E2E y scripts: citan clases como datos.
+  {
+    files: ["**/*.tsx"],
+    ignores: [
+      "components/pdf/**",
+      "app/(print)/**",
+      "app/(mecanico)/**",
+      "components/mantencion/app/**",
+      "**/*.test.tsx",
+      "**/__tests__/**",
+      "e2e/**",
+      "scripts/**",
+    ],
+    // "error" desde que el barrido del 2026-11-07 dejó el árbol en cero.
+    rules: { "local/ui-type-scale": "error" },
+  },
+  {
+    files: ["**/*.tsx"],
+    ignores: ["**/*.test.tsx", "**/__tests__/**", "e2e/**", "scripts/**"],
+    rules: { "local/no-string-kpi-value": "error" },
   },
   // ── Excepciones del día civil (UTC_TODAY_RESTRICTIONS) ────────────────────
   // Tests: varios usan la forma UTC como CONTROL —`prevention-dia-civil-chileno`

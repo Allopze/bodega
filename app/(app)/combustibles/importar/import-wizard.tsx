@@ -140,7 +140,7 @@ export function ImportWizard({ worksites, canImportAllWorksites }: { worksites: 
         <CardContent className="text-center space-y-4 py-8">
           <CheckCircle className="h-12 w-12 mx-auto text-[var(--color-success)]" />
           <div>
-            <p className="text-2xl font-bold">{result.imported}</p>
+            <p className="text-2xl font-semibold">{result.imported}</p>
             <p className="text-[var(--color-text-muted)]">registros de consumo importados exitosamente</p>
           </div>
           <ImportErrorList errors={result.errors} filename="errores-importacion.xlsx" title={`${result.errors.length} filas omitidas por errores:`} maxVisible={20} />
@@ -230,7 +230,7 @@ export function ImportWizard({ worksites, canImportAllWorksites }: { worksites: 
           <div className="grid gap-1.5">
             <div className="flex items-center gap-2">
               <Label className="text-xs">Período desde</Label>
-              {dateFromFile && file && <span className="text-[10px] rounded-full bg-[var(--color-primary-tint)] text-[var(--color-primary)] px-1.5 py-0.5 font-medium">Detectado del archivo</span>}
+              {dateFromFile && file && <span className="text-2xs rounded-full bg-[var(--color-primary-tint)] text-[var(--color-primary)] px-1.5 py-0.5 font-medium">Detectado del archivo</span>}
             </div>
             <DatePicker value={periodoDesde} onChange={setPeriodoDesde} />
           </div>

@@ -100,6 +100,7 @@ export function PositionForm({
               autoComplete="off"
               error={Boolean(state.fieldErrors?.code)}
               disabled={editPosition?.isSystem}
+              // eslint-disable-next-line local/ui-type-scale -- normaliza el dato (código tipeado), no es un rótulo
               className="font-mono uppercase"
             />
           </Field>

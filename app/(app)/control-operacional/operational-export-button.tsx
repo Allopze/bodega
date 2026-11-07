@@ -5,5 +5,6 @@ import type { OperationalControlPeriod } from "@/lib/services/operational-contro
 import { exportOperationalControlXlsxAction } from "./actions"
 
 export function OperationalExportButton({ period }: { period: OperationalControlPeriod }) {
-  return <ExportButton action={exportOperationalControlXlsxAction} filters={period} label="Exportar reporte" />
+  // Rótulo estándar «Exportar Excel» (auditoría UX-08): era «Exportar reporte».
+  return <ExportButton action={exportOperationalControlXlsxAction} filters={period} />
 }

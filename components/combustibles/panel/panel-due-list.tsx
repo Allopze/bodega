@@ -27,7 +27,7 @@ export function PanelDueList({ rows, userId, ariaLabel }: { rows: PanelDueRow[];
               onClick={() => markSeen(row.key)}
               className="group grid grid-cols-[4.25rem_minmax(0,1fr)_auto] items-center gap-3 rounded-[var(--radius-md)] px-1.5 py-3 text-sm transition-colors hover:bg-[var(--color-surface-2)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--color-primary)]"
             >
-              <span className={cn("font-mono text-xs", row.overdue ? "font-bold text-[var(--color-danger-ink)]" : "text-[var(--color-text-muted)]")}>
+              <span className={cn("font-mono text-xs", row.overdue ? "font-semibold text-[var(--color-danger-ink)]" : "text-[var(--color-text-muted)]")}>
                 {row.dueLabel}
                 {row.overdue ? <span className="sr-only"> (vencido)</span> : null}
               </span>

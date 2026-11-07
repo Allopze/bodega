@@ -106,7 +106,7 @@ export function PdtpComplianceCard(props: PdtpComplianceCardProps) {
         {/* El agregado global existe (mismo motor que la sección Prevención);
             antes esta tarjeta pedía "selecciona faena" mientras esa sección
             publicaba el porcentaje global cuatro pantallas más abajo (I-04). */}
-        <span className="text-xs uppercase tracking-wider text-[var(--color-text-muted)]">
+        <span className="text-xs text-[var(--color-text-muted)]">
           {worksiteId ? "Por faena" : `Global · ${worksiteCount} faenas`}
         </span>
       </div>

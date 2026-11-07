@@ -20,7 +20,7 @@ import {
   type PreventiveOrganization,
 } from "@/lib/prevention/cphs-organization"
 import { COMMITTEE_PROGRAM_STATUS_LABELS } from "@/lib/prevention/cphs-program"
-import { formatDate } from "@/lib/utils"
+import { formatDate, formatQty } from "@/lib/utils"
 import { designateDelegateAction, endDelegateAction, recordDtRegistrationAction } from "../actions"
 
 interface Profile {
@@ -50,10 +50,10 @@ export function WorksiteProfile({ profile, eligibleWorkers, canManage }: {
   canManage: boolean
 }) {
   const facts = [
-    { label: "Dotación activa", value: String(profile.headcount), hint: "Trabajadores propios en el padrón" },
+    { label: "Dotación activa", value: formatQty(profile.headcount), hint: "Trabajadores propios en el padrón" },
     {
       label: "Dotación declarada",
-      value: profile.declaredHeadcount ? String(profile.declaredHeadcount.workerCount) : "Sin declarar",
+      value: profile.declaredHeadcount ? formatQty(profile.declaredHeadcount.workerCount) : "Sin declarar",
       hint: profile.declaredHeadcount
         ? `Indicadores ${String(profile.declaredHeadcount.month).padStart(2, "0")}/${profile.declaredHeadcount.year}`
         : "No hay período cargado en indicadores",

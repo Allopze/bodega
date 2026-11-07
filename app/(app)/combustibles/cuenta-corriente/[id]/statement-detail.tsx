@@ -77,7 +77,7 @@ export function StatementDetail({ statement, today }: { statement: StatementData
             <SummaryFigure label="Total a pagar" value={formatCLP(statement.totalAmount)} />
             <SummaryFigure label="Pagado" value={formatCLP(statement.paidAmount)} tone="success" />
             <SummaryFigure label="Por pagar" value={formatCLP(pending)} tone={pending > 0 ? "warning" : undefined} />
-            <SummaryFigure label="Vence" value={statement.dueDate ? formatDate(statement.dueDate) : "Sin fecha"} />
+            <SummaryFigure label="Vence" value={statement.dueDate ? formatDate(statement.dueDate) : "Sin fecha"} valueKind={statement.dueDate ? "number" : "text"} />
           </dl>
         </CardContent>
       </Card>
@@ -167,12 +167,13 @@ export function StatementDetail({ statement, today }: { statement: StatementData
   )
 }
 
-function SummaryFigure({ label, value, tone }: { label: ReactNode; value: string; tone?: "success" | "warning" }) {
+/** `valueKind="text"` es para palabras («Sin fecha»): en sans y gris, no con el estilo de cifra. */
+function SummaryFigure({ label, value, tone, valueKind = "number" }: { label: ReactNode; value: string; tone?: "success" | "warning"; valueKind?: "number" | "text" }) {
   const color = tone === "success" ? "text-[var(--color-success-ink)]" : tone === "warning" ? "text-[var(--color-warning-ink)]" : "text-[var(--color-text)]"
   return (
     <div>
       <dt className="text-sm text-[var(--color-text-muted)]">{label}</dt>
-      <dd className={`mt-0.5 font-mono text-xl font-semibold tabular-nums ${color}`}>{value}</dd>
+      <dd className={valueKind === "text" ? "mt-0.5 text-base font-medium text-[var(--color-text-muted)]" : `mt-0.5 font-mono text-xl font-semibold tabular-nums ${color}`}>{value}</dd>
     </div>
   )
 }

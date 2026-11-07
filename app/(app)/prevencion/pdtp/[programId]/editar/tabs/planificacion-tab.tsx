@@ -381,7 +381,7 @@ export function PlanificacionTab({ programId, year, periodStart, periodEnd, acti
                 <TableHead
                   key={`${month}-${week}`}
                   className={cn(
-                    "px-0 py-1 text-center font-mono text-[10px] font-normal normal-case tracking-normal",
+                    "px-0 py-1 text-center font-mono text-2xs font-normal normal-case tracking-normal",
                     week === 1 && isQuarterStart(month) && "border-l border-[var(--color-border-strong)]",
                   )}
                 >
@@ -715,7 +715,7 @@ function PlanificacionRow({ activity, initial, horizon, weeks, source, onStateCh
                   title={`${MONTH_LABELS[month - 1]} · Semana ${week}`}
                   aria-label={`N°${activity.n} ${activity.activity} · ${MONTH_LABELS[month - 1]} · Semana ${week}`}
                   data-plan-cell={key}
-                  className="h-7 w-11 px-1 text-center text-[11px] sm:h-7 sm:text-[11px]"
+                  className="h-7 w-11 px-1 text-center text-2xs sm:h-7 sm:text-2xs"
                 />
               </TableCell>
             )

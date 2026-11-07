@@ -219,7 +219,7 @@ export function emphasizedTick(current: string | undefined) {
         {...rest}
         style={{
           fill: emphasized ? "var(--color-text)" : "var(--color-text-subtle)",
-          fontWeight: emphasized ? 700 : 400,
+          fontWeight: emphasized ? 600 : 400,
           transition: "fill 150ms ease",
         }}
       >

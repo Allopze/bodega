@@ -36,7 +36,7 @@
 .eqrow[aria-pressed="true"] { background: var(--gt); border: 2px solid var(--g); }
 .eqrow .c { font: 600 16px/1.2 var(--fm); white-space: nowrap; }
 .eqrow .d { font-size: 15px; color: var(--gr); margin-top: 3px; }
-.eqrow .f { font: 500 11px/1 var(--fm); color: var(--gr); letter-spacing: .04em; text-transform: uppercase; margin-top: 5px; }
+.eqrow .f { font: 500 11px/1 var(--fm); color: var(--gr); margin-top: 5px; }
 .eqsum { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 14px; border-bottom: 1px solid var(--ln); }
 .eqsum .c { font: 600 17px/1.2 var(--fm); }
 .lect { display: flex; align-items: center; min-height: 64px; padding: 0 16px; background: #fff; border: 2px solid var(--ink); border-radius: 8px; }

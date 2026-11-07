@@ -1,7 +1,8 @@
 import type { Metadata } from "next"
+import { ExportLink } from "@/components/ui/export-button"
 import Link from "next/link"
 import { notFound, redirect } from "next/navigation"
-import { ArrowLeft, DownloadSimple, LockKeyOpen } from "@phosphor-icons/react/dist/ssr"
+import { ArrowLeft, LockKeyOpen } from "@phosphor-icons/react/dist/ssr"
 import { can, requirePermission } from "@/lib/auth/can"
 import { auditIncidentSensitiveAccess } from "@/lib/services/prevention-incident-access"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
@@ -44,6 +45,19 @@ type PageProps = {
 
 function dateTime(value: string | null) {
   return value ? formatDateTime(value) : "—"
+}
+
+/**
+ * Nombre visible del carril legal. El valor crudo ("fatal_dt") se mostraba con
+ * `uppercase`; en caja de oración habría salido «diat» o «fatal dt», así que se
+ * nombra cada carril (las siglas DIAT/DIEP sí se escriben en mayúscula).
+ */
+const NOTIFICATION_LANE_LABELS: Record<string, string> = {
+  diat: "DIAT",
+  diep: "DIEP",
+  fatal_dt: "Fatal: Dirección del Trabajo",
+  fatal_seremi: "Fatal: Seremi de Salud",
+  restart_authorization: "Autorización de reinicio",
 }
 
 export default async function IncidentDetailPage({ params, searchParams }: PageProps) {
@@ -160,11 +174,16 @@ export default async function IncidentDetailPage({ params, searchParams }: PageP
         breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "Prevención" }, { label: "Incidentes", href: "/prevencion/incidentes" }, { label: incident.code }]} />}
         actions={<div className="flex gap-2">
           <Button asChild variant="secondary"><Link href="/prevencion/incidentes"><ArrowLeft className="size-4" />Bandeja</Link></Button>
-          {canExport && <Button asChild variant="secondary"><a href={`/api/prevencion/incidentes/${incident.id}/expediente`} download><DownloadSimple className="size-4" />Expediente Excel</a></Button>}
+          {canExport && <ExportLink href={`/api/prevencion/incidentes/${incident.id}/expediente`} label="Expediente Excel" size="default" />}
         </div>}
       />
 
       <div className="space-y-5">
+        {/* Trazabilidad: el código aleatorio previo a la serie EV-AAAA-NNNN sigue
+            citado en notificaciones, tareas CAPA y documentos ya emitidos. */}
+        {incident.legacyCode && (
+          <p className="text-xs text-[var(--color-text-subtle)]">Código anterior: {incident.legacyCode}</p>
+        )}
         <section className="grid gap-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 md:grid-cols-2 lg:grid-cols-4">
           <div><p className="text-eyebrow">Estado</p><MetaBadge meta={{ label: `${INCIDENT_STATUS_LABELS[incident.status as IncidentStatus] ?? incident.status}`, variant: incidentStatusBadgeVariant(incident.status) }} className="mt-2" /></div>
           <div><p className="text-eyebrow">Ocurrencia</p><p className="mt-2 text-sm font-medium">{dateTime(incident.occurredAt)}</p></div>
@@ -258,7 +277,7 @@ export default async function IncidentDetailPage({ params, searchParams }: PageP
           <aside className="space-y-5">
             <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
               <h2 className="font-semibold">Carriles legales</h2>
-              {bundle.notifications.length === 0 ? <p className="mt-2 text-sm text-[var(--color-text-subtle)]">Este tipo no genera DIAT/DIEP o notificación fatal-grave.</p> : <ul className="mt-3 space-y-3">{bundle.notifications.map((lane) => <li key={lane.id} className="border-b border-[var(--color-border)] pb-3 last:border-0"><div className="flex justify-between gap-2"><strong className="text-sm uppercase">{lane.notificationType.replaceAll("_", " ")}</strong><MetaBadge meta={{ label: `${notificationStatusLabel(lane.status)}`, variant: lane.status === "overdue" ? "danger" : lane.status === "pending" ? "warning" : "success" }} /></div><p className="mt-1 text-xs text-[var(--color-text-subtle)]">Plazo: {dateTime(lane.deadlineAt)}</p>{lane.evidenceReference && <p className="mt-1 break-all text-xs">Evidencia: {lane.evidenceReference}</p>}</li>)}</ul>}
+              {bundle.notifications.length === 0 ? <p className="mt-2 text-sm text-[var(--color-text-subtle)]">Este tipo no genera DIAT/DIEP o notificación fatal-grave.</p> : <ul className="mt-3 space-y-3">{bundle.notifications.map((lane) => <li key={lane.id} className="border-b border-[var(--color-border)] pb-3 last:border-0"><div className="flex justify-between gap-2"><strong className="text-sm">{NOTIFICATION_LANE_LABELS[lane.notificationType] ?? lane.notificationType.replaceAll("_", " ")}</strong><MetaBadge meta={{ label: `${notificationStatusLabel(lane.status)}`, variant: lane.status === "overdue" ? "danger" : lane.status === "pending" ? "warning" : "success" }} /></div><p className="mt-1 text-xs text-[var(--color-text-subtle)]">Plazo: {dateTime(lane.deadlineAt)}</p>{lane.evidenceReference && <p className="mt-1 break-all text-xs">Evidencia: {lane.evidenceReference}</p>}</li>)}</ul>}
             </section>
 
             <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">

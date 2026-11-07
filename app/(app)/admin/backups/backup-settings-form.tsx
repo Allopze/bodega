@@ -153,20 +153,20 @@ export function BackupSettingsForm() {
                       type="button"
                       onClick={() => handleSave(field.key)}
                       disabled={saving || value < field.min || value > field.max}
-                      className="ml-auto rounded-[var(--radius)] bg-[var(--color-primary)] px-2 py-0.5 text-[10px] font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="ml-auto rounded-[var(--radius)] bg-[var(--color-primary)] px-2 py-0.5 text-2xs font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       Guardar
                     </button>
                   )}
 
                   {!dirty && original !== undefined && (
-                    <span className="ml-auto text-[10px] text-[var(--color-text-faint)] tabular-nums">
+                    <span className="ml-auto text-2xs text-[var(--color-text-faint)] tabular-nums">
                       {original}
                     </span>
                   )}
                 </div>
 
-                <p className="text-[11px] leading-tight text-[var(--color-text-muted)]">
+                <p className="text-2xs leading-tight text-[var(--color-text-muted)]">
                   {field.description}
                 </p>
               </div>

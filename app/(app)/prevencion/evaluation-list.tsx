@@ -91,7 +91,7 @@ export function EvaluationList({ workerGroups, canCreate }: Props) {
                       // y era el objetivo principal de la fila.
                       className="inline-flex min-h-6 items-center font-medium text-(--color-text) hover:underline"
                     >
-                      {group.workerName || <span className="text-text-subtle italic">Sin nombre</span>}
+                      {group.workerName || <span className="text-[var(--color-text-subtle)]">Sin nombre</span>}
                     </Link>
                     {group.workerRut && (
                       <div className="text-xs text-(--color-text-muted)">
@@ -101,7 +101,7 @@ export function EvaluationList({ workerGroups, canCreate }: Props) {
                   </div>
                 </TableCell>
                 <TableCell className="text-(--color-text-muted)">
-                  {group.worksiteName || <span className="italic">—</span>}
+                  {group.worksiteName || <span className="text-[var(--color-text-subtle)]">—</span>}
                 </TableCell>
                 <TableCell>
                   {prevEval ? (
@@ -112,7 +112,7 @@ export function EvaluationList({ workerGroups, canCreate }: Props) {
                       )}
                     </div>
                   ) : (
-                    <span className="text-xs text-(--color-text-muted) italic">Pendiente</span>
+                    <span className="text-xs text-[var(--color-text-subtle)]">Pendiente</span>
                   )}
                 </TableCell>
                 <TableCell>
@@ -124,7 +124,7 @@ export function EvaluationList({ workerGroups, canCreate }: Props) {
                       )}
                     </div>
                   ) : (
-                    <span className="text-xs text-(--color-text-muted) italic">Pendiente</span>
+                    <span className="text-xs text-[var(--color-text-subtle)]">Pendiente</span>
                   )}
                 </TableCell>
                 <TableCell>
@@ -136,7 +136,7 @@ export function EvaluationList({ workerGroups, canCreate }: Props) {
                       )}
                     </div>
                   ) : (
-                    <span className="text-xs text-(--color-text-muted) italic">Pendiente</span>
+                    <span className="text-xs text-[var(--color-text-subtle)]">Pendiente</span>
                   )}
                 </TableCell>
                 <TableCell className="w-12 text-right text-(--color-text-muted)">

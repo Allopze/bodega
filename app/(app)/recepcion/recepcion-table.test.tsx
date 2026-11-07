@@ -6,10 +6,11 @@
  * recuento de pendientes aparte.
  */
 import { render, screen, within } from "@testing-library/react"
-import { describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 
+let search = ""
 vi.mock("next/navigation", () => ({
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => new URLSearchParams(search),
   usePathname: () => "/recepcion",
   useRouter: () => ({ replace: vi.fn(), push: vi.fn() }),
 }))
@@ -34,6 +35,8 @@ const progress = {
   nextAction: "diferencias",
   items: [],
 }
+
+beforeEach(() => { search = "" })
 
 const order = {
   id: "oc-1",
@@ -113,5 +116,60 @@ describe("acción sobre la guía viva (ADQ-11)", () => {
     expect(within(screen.getByRole("table")).getByRole("link", { name: "Confirmar llegada a faena" })).toBeInTheDocument()
     expect(within(mobileCards(container)).getByRole("link", { name: "Confirmar llegada a faena" })).toBeInTheDocument()
     expect(container.textContent).not.toMatch(/Cotejar|Completar guía/)
+  })
+})
+
+/** Pastilla de color = `StateBadge`; el estado esperado de la pestaña va como texto apagado. */
+describe("estado de la OC — sin pastilla repetida cuando la pestaña ya lo fija (UX-14, A5)", () => {
+  function renderOrders(statuses: string[]) {
+    return render(
+      <RecepcionTable
+        orders={statuses.map((status, index) => ({ ...order, id: `oc-${index}`, code: `OC-00${index}`, status }))}
+        wsMap={{ "ws-1": "Faena Norte" }}
+        supMap={{ "sup-1": "Ferretería Andes" }}
+        progressMap={{}}
+        guideMap={{}}
+        canOffice
+        canFaena
+        officeName="Oficina Central"
+      />,
+    )
+  }
+
+  it("en «Por atender» la OC pendiente de recepción es texto apagado y la desviación conserva su pastilla", () => {
+    renderOrders(["sent", "office_received"])
+    const table = screen.getByRole("table")
+
+    const quiet = table.querySelectorAll("[data-quiet-status]")
+    expect(quiet).toHaveLength(1)
+    expect(quiet[0]).toHaveTextContent("Pendiente de recepción")
+    expect(quiet[0].className).not.toMatch(/bg-\[var\(--color-(signal|warning)/)
+
+    // La desviación sigue visible y con color: no se esconde información.
+    const deviation = within(table).getByText("Recibido en oficina")
+    expect(deviation).not.toHaveAttribute("data-quiet-status")
+    expect(deviation.className).toMatch(/bg-\[var\(--color-signal-tint\)\]/)
+  })
+
+  it("en la pestaña «Pendiente de recepción» ninguna fila lleva pastilla", () => {
+    search = "estado=sent"
+    renderOrders(["sent", "sent"])
+    const table = screen.getByRole("table")
+    expect(table.querySelectorAll("[data-quiet-status]")).toHaveLength(2)
+  })
+
+  it("en «Todas» (varios estados) cada fila conserva su pastilla", () => {
+    search = "estado=sent,office_received,received,closed"
+    renderOrders(["sent", "received"])
+    const table = screen.getByRole("table")
+    expect(table.querySelectorAll("[data-quiet-status]")).toHaveLength(0)
+    expect(within(table).getByText("Pendiente de recepción").className).toMatch(/bg-\[var\(--color-signal-tint\)\]/)
+  })
+
+  it("el código de la OC y la fecha de envío no se parten en varias líneas", () => {
+    renderOrders(["sent"])
+    const table = screen.getByRole("table")
+    expect(within(table).getByRole("link", { name: "Ver OC OC-000" }).closest("td")).toHaveClass("whitespace-nowrap")
+    expect(within(table).getByText("01-09-2026").closest("td")).toHaveClass("whitespace-nowrap")
   })
 })

@@ -196,7 +196,7 @@ export function QuotationPanel({
       </div>
 
       {quotations.length === 0 ? (
-        <p className="text-sm text-[var(--color-text-subtle)] italic">
+        <p className="text-sm text-[var(--color-text-subtle)]">
           No hay cotizaciones adjuntas.{" "}
           {isEditable && (requirementHint || "Mínimo 3, o menos con una justificación en Notas generales.")}
         </p>

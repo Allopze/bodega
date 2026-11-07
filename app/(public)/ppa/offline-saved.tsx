@@ -48,7 +48,7 @@ export function OfflineSavedMessage({ onRequestNew }: OfflineSavedMessageProps =
     <main className="mx-auto w-full max-w-lg px-4 py-8">
       <div className="rounded-xl border-2 border-[var(--color-warning)] bg-[var(--color-warning-tint)] p-6 text-center" role="status" aria-live="polite">
         <CheckCircle size={40} weight="fill" className="mx-auto text-[var(--color-warning-ink)]" aria-hidden />
-        <p className="mt-3 text-2xl font-extrabold tracking-tight text-[var(--color-warning-ink)]">
+        <p className="mt-3 text-2xl font-semibold tracking-tight text-[var(--color-warning-ink)]">
           PPA guardado offline
         </p>
         <p className="mt-2 text-sm font-medium text-[var(--color-warning-ink)]">

@@ -4,7 +4,7 @@ export const REQUEST_TYPE_LABELS: Record<string, string> = {
   epp: "EPP", otro: "Otro", repuestos: "Repuestos", servicios: "Servicios",
 }
 export const URGENCY_LABELS: Record<string, string> = {
-  normal: "Normal", high: "Alta", critical: "Crítico",
+  normal: "Normal", high: "Alta", critical: "Crítica",
 }
 export function requestStatusLabel(s: string): string {
   return REQUEST_STATE_META[s as keyof typeof REQUEST_STATE_META]?.label ?? s

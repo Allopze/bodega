@@ -39,13 +39,13 @@ export function WarehouseHeaderMetrics({
       label: "Productos con stock",
       // Sin enlace: llevaba a esta misma pantalla y repetía el subtítulo de la
       // tabla (A5), una cifra con dos controles.
-      value: productsWithStock.toLocaleString("es-CL"),
+      value: productsWithStock,
     },
     {
       key: "movements",
       // Era el total histórico: sólo crecía y no cambiaba ninguna decisión.
       label: `Movimientos · ${movementWindowDays} d`,
-      value: movementCount.toLocaleString("es-CL"),
+      value: movementCount,
       // La cifra cuenta una ventana de días: el destino tiene que mostrar esa
       // misma ventana, no el historial completo (mostraba 70 donde decía 6).
       href: href(["vista=kardex", movementSince ? `desde=${movementSince}` : ""].filter(Boolean).join("&")),

@@ -69,6 +69,7 @@ export function FuelOriginSummary({ data, canViewCosts, tct, hrefs, worksiteHref
           icon={<GasPump size={16} aria-hidden />}
           label="Registrado en terreno"
           value={data.tae ? `${formatQty(Math.round(data.tae.liters))} L` : "Sin acceso"}
+          valueKind={data.tae ? "number" : "text"}
           detail={data.tae ? `${formatQty(data.tae.loads)} cargas · ${formatQty(data.tae.equipment)} equipos` : "Requiere el permiso de terreno"}
           trend={inProgress ? null : data.tae?.variationLitersPct ?? null}
           href={data.tae ? hrefs.terreno : null}
@@ -134,10 +135,12 @@ export function FuelOriginSummary({ data, canViewCosts, tct, hrefs, worksiteHref
   )
 }
 
-function OriginFigure({ icon, label, value, detail, trend, href }: {
+function OriginFigure({ icon, label, value, valueKind = "number", detail, trend, href }: {
   icon: React.ReactNode
   label: string
   value: string
+  /** `text` para palabras («Sin acceso»): en sans y gris, no con el estilo de cifra. */
+  valueKind?: "number" | "text"
   detail: string
   trend: number | null
   href: string | null
@@ -145,7 +148,7 @@ function OriginFigure({ icon, label, value, detail, trend, href }: {
   const body = (
     <div className="flex h-full flex-col bg-[var(--color-surface)] p-4 transition-colors group-hover:bg-[var(--color-surface-2)]">
       <div className="flex items-center gap-2 text-[var(--color-text-muted)]">{icon}<span className="text-xs font-medium">{label}</span></div>
-      <span className="mt-3 font-mono text-xl font-semibold tabular-nums text-[var(--color-text)]">{value}</span>
+      <span className={valueKind === "text" ? "mt-3 text-base font-medium text-[var(--color-text-muted)]" : "mt-3 font-mono text-xl font-semibold tabular-nums text-[var(--color-text)]"}>{value}</span>
       {/* En su propia línea y con quiebre: en una tarjeta de un tercio de ancho «vs. período anterior» se cortaba. */}
       {trend !== null && <Delta value={trend} format="percent" polarity="up-bad" comparisonLabel="vs. período anterior" className="mt-1.5 flex-wrap whitespace-normal" />}
       <span className="mt-1 text-xs text-[var(--color-text-muted)]">{detail}</span>
@@ -159,7 +162,7 @@ function OriginFigure({ icon, label, value, detail, trend, href }: {
 function ChannelBar({ label, value, max, tone }: { label: string; value: number; max: number; tone: "neutral" | "primary" | "info" }) {
   const width = value <= 0 ? 0 : Math.max(2, (value / max) * 100)
   return (
-    <span className="grid grid-cols-[4.5rem_minmax(0,1fr)_5.5rem] items-center gap-2 text-[11px] text-[var(--color-text-muted)]">
+    <span className="grid grid-cols-[4.5rem_minmax(0,1fr)_5.5rem] items-center gap-2 text-2xs text-[var(--color-text-muted)]">
       <span>{label}</span>
       <span className="h-1.5 overflow-hidden rounded-full bg-[var(--color-surface-3)]"><span className={`block h-full rounded-full ${CHANNEL_BAR_COLORS[tone]}`} style={{ width: `${width}%` }} /></span>
       <span className="text-right font-mono tabular-nums">{formatQty(Math.round(value), "L")}</span>

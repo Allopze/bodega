@@ -245,6 +245,7 @@ const DataTableInner = <T extends Record<string, unknown>>({
   const totalFiltered = sorted.length
   // Sólo se ofrece donde cambia algo: en una tabla de 3 filas es adorno.
   const showDensityToggle = totalFiltered >= DENSITY_MIN_ROWS
+  const onlyTableControls = !hasExplicitSearch && !actions
   // `page` puede quedar más allá del rango real si el buscador del TopBar o el
   // dataset (`rows`) cambian sin pasar por `toggleSort`/`onSearchChange`. Se
   // acota contra `totalFiltered` en vez de resetear en un efecto: así no hay
@@ -281,11 +282,19 @@ const DataTableInner = <T extends Record<string, unknown>>({
       {(hasExplicitSearch || actions || enableColumnToggle || (showDensityToggle && !hideDensityToggle)) && (
         <div className={cn(
           "flex flex-col gap-3 sm:flex-row sm:items-center",
-          hasExplicitSearch || showDensityToggle ? "sm:justify-between" : "sm:justify-end gap-2",
-          // A-19: cuando el único control es "Columnas" (el caso de /solicitudes,
-          // que tiene su buscador en `ServerListFilters`), esta barra se quedaba con una
-          // fila entera para un botón y dejaba ~60px de banda vacía sobre la tabla.
-          hasExplicitSearch || actions || (showDensityToggle && !hideDensityToggle) ? "mb-3" : "mb-1",
+          // Sólo controles de la tabla (Columnas y/o Densidad, sin buscador ni
+          // acciones): fila compacta alineada a la derecha. Sin eso el control
+          // flotaba a la izquierda y dejaba una banda muerta sobre la tabla
+          // (A-19; con el interruptor de densidad volvía a pasar: `justify-between`
+          // con un solo hijo lo pega al borde izquierdo).
+          onlyTableControls
+            ? "sm:justify-end mb-2"
+            : cn(
+                hasExplicitSearch || showDensityToggle ? "sm:justify-between" : "sm:justify-end gap-2",
+                "mb-3",
+              ),
+          // En móvil la densidad no se muestra: sin Columnas la fila quedaría vacía.
+          onlyTableControls && !enableColumnToggle && "max-sm:hidden",
         )}>
           <div className="flex items-center gap-2">
             {hasExplicitSearch && (
@@ -392,7 +401,9 @@ const DataTableInner = <T extends Record<string, unknown>>({
                       onClick={() => toggleSort(col.key)}
                       className={cn(
                         "inline-flex min-h-6 min-w-6 items-center gap-1",
-                        "text-eyebrow hover:text-[var(--color-text)]",
+                        // Hereda la tipografía de `TableHead` (`th-type`): una columna
+                        // ordenable y una plana se ven idénticas.
+                        "hover:text-[var(--color-text)]",
                         "transition-[color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)]",
                         "select-none",
                       )}

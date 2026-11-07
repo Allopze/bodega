@@ -1,11 +1,11 @@
-"use client"
-
-import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import { useTransition } from "react"
-import { OptionSelect } from "@/components/ui/option-select"
+import { PeriodControl } from "@/components/ui/period-control"
 
 /**
- * Selector de período del resumen.
+ * Selector del mes de un resumen (`?periodo=YYYY-MM`): Facturación y Documentos
+ * DTE. Es `PeriodControl` en modo mes, el mismo control de período del resto de
+ * la plataforma (ver la regla en `period-control.tsx`): cambia la URL con
+ * `router.replace` y sin mover el scroll, no con `router.push`, que llenaba el
+ * historial de pasos intermedios y devolvía el scroll al inicio.
  *
  * El período va en la URL porque identifica *qué* se está mirando: es
  * compartible y sobrevive a un refresco. (Los filtros de interfaz que no
@@ -13,30 +13,7 @@ import { OptionSelect } from "@/components/ui/option-select"
  * en el módulo de Prevención.)
  */
 export function PeriodPicker({ period }: { period: string }) {
-  const router = useRouter()
-  const pathname = usePathname()
-  const searchParams = useSearchParams()
-  const [isPending, startTransition] = useTransition()
-
-  const months = recentPeriods(24)
-
-  return (
-    <label className="flex items-center gap-2 text-sm">
-      <span className="text-[var(--color-text-muted)]">Período</span>
-      <OptionSelect
-        value={period}
-        disabled={isPending}
-        onValueChange={(value) => {
-          const params = new URLSearchParams(searchParams.toString())
-          params.set("periodo", value)
-          startTransition(() => router.push(`${pathname}?${params.toString()}`))
-        }}
-        options={months.map((value) => ({ value, label: formatOption(value) }))}
-        className="w-48"
-        aria-label="Período"
-      />
-    </label>
-  )
+  return <PeriodControl mode="month" month={period} />
 }
 
 /** Últimos N períodos hasta el mes actual, del más reciente al más antiguo. */

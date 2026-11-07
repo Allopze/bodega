@@ -118,8 +118,10 @@ const TableHead = React.forwardRef<HTMLTableCellElement, React.ThHTMLAttributes<
       ref={ref}
       scope={scope}
       className={cn(
-        "px-4 py-3 text-left text-xs font-semibold",
-        "text-(--color-text-subtle) uppercase tracking-wider",
+        // `th-type` es la fuente única de la tipografía de cabecera (caja de
+        // oración, 12px, peso 500): el mismo tratamiento que el botón de orden
+        // de DataTable, así una columna ordenable y una plana se ven iguales.
+        "px-4 py-3 text-left th-type",
         "whitespace-nowrap",
         "bg-(--color-surface-2) border-b border-(--color-border)",
         className,
@@ -132,12 +134,22 @@ const TableHead = React.forwardRef<HTMLTableCellElement, React.ThHTMLAttributes<
 )
 TableHead.displayName = "TableHead"
 
-const TableCell = React.forwardRef<HTMLTableCellElement, React.TdHTMLAttributes<HTMLTableCellElement>>(
-  ({ className, ...props }, ref) => (
+interface TableCellProps extends React.TdHTMLAttributes<HTMLTableCellElement> {
+  /**
+   * Para códigos, cantidad + unidad y fechas: no se parten en dos líneas
+   * («OC-» / «2026-» / «0057») y los dígitos alinean (`tabular-nums`). La tabla
+   * ya vive en un contenedor con scroll horizontal.
+   */
+  nowrap?: boolean
+}
+
+const TableCell = React.forwardRef<HTMLTableCellElement, TableCellProps>(
+  ({ className, nowrap = false, ...props }, ref) => (
     <td
       ref={ref}
       className={cn(
         "px-4 py-3 text-sm text-[var(--color-text)] align-middle",
+        nowrap && "whitespace-nowrap tabular-nums",
         className,
       )}
       {...props}

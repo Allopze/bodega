@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Package, Trash } from "@phosphor-icons/react"
+import { Package, Trash, Warning } from "@phosphor-icons/react"
 import { Input } from "@/components/ui/input"
 import { Field } from "@/components/ui/field"
 import { MetaBadge } from "@/components/states/state-badge"
@@ -177,7 +177,7 @@ export function ItemEditor({
                 <MetaBadge meta={{ label: `${COST_PENDING_LABEL}`, variant: "outline" }} title="El precio de este servicio se conoce al ejecutarlo o facturarlo; se registra sobre la orden de compra." />
               )}
               {selectedProduct?.isInactive && (
-                <span className="inline-flex items-center rounded-full border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-1.5 py-px text-[10px] font-medium text-[var(--color-warning-ink)]">
+                <span className="inline-flex items-center rounded-full border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-1.5 py-px text-2xs font-medium text-[var(--color-warning-ink)]">
                   Inactivo
                 </span>
               )}
@@ -217,7 +217,7 @@ export function ItemEditor({
     <div className="rounded-(--radius-2xl) bg-(--color-surface) shadow-(--shadow-card) p-4 space-y-4">
       {/* Row header */}
       <div className="flex items-start gap-3">
-        <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-(--color-surface-2) text-[10px] font-mono text-(--color-text-muted)">
+        <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-(--color-surface-2) text-2xs font-mono text-(--color-text-muted)">
           {idx + 1}
         </span>
 
@@ -243,7 +243,7 @@ export function ItemEditor({
                   <MetaBadge meta={{ label: `${COST_PENDING_LABEL}`, variant: "outline" }} title="El precio de este servicio se conoce al ejecutarlo o facturarlo; se registra sobre la orden de compra." className="ml-1.5 font-normal align-middle" />
                 )}
                 {selectedProduct?.isInactive && (
-                  <span className="ml-1.5 inline-flex items-center rounded-full bg-(--color-warning-tint) border border-(--color-warning-line) px-1.5 py-px text-[10px] font-medium text-(--color-warning-ink)" title="Este producto fue desactivado del catálogo">
+                  <span className="ml-1.5 inline-flex items-center rounded-full bg-(--color-warning-tint) border border-(--color-warning-line) px-1.5 py-px text-2xs font-medium text-(--color-warning-ink)" title="Este producto fue desactivado del catálogo">
                     inactivo
                   </span>
                 )}
@@ -263,7 +263,7 @@ export function ItemEditor({
               <Package size={14} className="text-(--color-text-subtle) shrink-0" />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium text-(--color-text)">{item.productNameFree}</p>
-                <p className="text-[11px] text-(--color-text-subtle)">Ítem histórico sin catálogo</p>
+                <p className="text-2xs text-(--color-text-subtle)">Ítem histórico sin catálogo</p>
               </div>
               {!readOnly && (
                 <button
@@ -345,15 +345,16 @@ export function ItemEditor({
             )}
           </Field>
           {!readOnly && item.workerId && item.workerName && !workerRequired && (
-            <p className="mt-1 text-[11px] text-(--color-text-subtle)">
+            <p className="mt-1 text-2xs text-(--color-text-subtle)">
               Usando tallas registradas para {item.workerName}
             </p>
           )}
 
           {/* F-6: Advertencia de solicitud duplicada */}
           {statusInfo?.activeRequest && (
-            <div className="mt-2 rounded border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] p-2 text-xs text-[var(--color-warning-ink)] font-medium">
-              ⚠️ Ya existe la solicitud <strong>{statusInfo.activeRequest.code}</strong> en trámite para este trabajador.
+            <div className="mt-2 flex items-start gap-1.5 rounded border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] p-2 text-xs text-[var(--color-warning-ink)] font-medium">
+              <Warning size={14} aria-hidden className="mt-px shrink-0" />
+              <span>Ya existe la solicitud <strong>{statusInfo.activeRequest.code}</strong> en trámite para este trabajador.</span>
             </div>
           )}
 
@@ -405,7 +406,7 @@ export function ItemEditor({
             )}
           </Field>
           {!readOnly && item.equipmentCode.trim() !== "" && (
-            <p className="mt-1 text-[11px] text-(--color-text-subtle)">
+            <p className="mt-1 text-2xs text-(--color-text-subtle)">
               {matchedEquipment
                 ? `Ya está en el catálogo: ${matchedEquipment.name}.`
                 : "No está en el catálogo: se dará de alta con este código en la faena de la solicitud."}
@@ -416,7 +417,7 @@ export function ItemEditor({
 
       {item.emergencyResourceId && (
         <div className="ml-8 max-w-sm rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2">
-          <p className="text-xs font-medium uppercase tracking-wide text-[var(--color-text-subtle)]">Activo de emergencia</p>
+          <p className="text-eyebrow">Activo de emergencia</p>
           <p className="mt-0.5 text-sm font-medium text-[var(--color-text)]">{item.emergencyResourceLabel || item.emergencyResourceId}</p>
           <p className="mt-1 text-xs text-[var(--color-text-muted)]">Al enviar, termina su asignación vigente y la cobertura queda en brecha hasta instalar un reemplazo.</p>
         </div>

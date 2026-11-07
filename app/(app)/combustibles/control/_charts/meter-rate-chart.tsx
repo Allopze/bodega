@@ -42,7 +42,7 @@ function monthTick(rows: MeterRateChartRow[]) {
     return (
       <g transform={`translate(${Number(x)},${Number(y)})`}>
         <text textAnchor="middle" dy={12} fontSize={11} fill="var(--color-text-muted)">{row.label}</text>
-        <text textAnchor="middle" dy={26} fontSize={10} fill="var(--color-text-muted)" fontStyle={row.status === "gap" ? "italic" : undefined}>{row.caption}</text>
+        <text textAnchor="middle" dy={26} fontSize={11} fill="var(--color-text-muted)" fontStyle={row.status === "gap" ? "italic" : undefined}>{row.caption}</text>
       </g>
     )
   }

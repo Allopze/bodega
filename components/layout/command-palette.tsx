@@ -139,7 +139,7 @@ export function CommandPalette({ session, enabledModuleIds, disabledSubmoduleHre
               aria-label="Buscar páginas"
               className="h-12 flex-1 bg-transparent text-[15px] text-(--color-text) outline-none placeholder:text-(--color-text-subtle)"
             />
-            <kbd className="hidden shrink-0 rounded border border-[var(--color-border)] px-1.5 py-0.5 font-mono text-[10px] text-(--color-text-subtle) sm:block">esc</kbd>
+            <kbd className="hidden shrink-0 rounded border border-[var(--color-border)] px-1.5 py-0.5 font-mono text-2xs text-(--color-text-subtle) sm:block">esc</kbd>
           </div>
 
           {results.length === 0 ? (

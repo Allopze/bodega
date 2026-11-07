@@ -110,7 +110,7 @@ function PpaFormInner(props: PpaFormProps & { onRequestNewSubmission: () => void
             const complete = step > value
             return (
               <li key={number} className="min-w-0">
-                <button type="button" onClick={() => value < step && (setStepError(null), setStep(value))} disabled={value > step} aria-current={active ? "step" : undefined} className={`flex w-full min-h-11 flex-col items-center justify-center rounded-[var(--radius)] px-1 text-center text-[11px] font-medium ${active ? "bg-[var(--color-primary-tint)] text-[var(--color-primary-ink)]" : complete ? "text-[var(--color-text)]" : "text-[var(--color-text-subtle)]"}`}>
+                <button type="button" onClick={() => value < step && (setStepError(null), setStep(value))} disabled={value > step} aria-current={active ? "step" : undefined} className={`flex w-full min-h-11 flex-col items-center justify-center rounded-[var(--radius)] px-1 text-center text-2xs font-medium ${active ? "bg-[var(--color-primary-tint)] text-[var(--color-primary-ink)]" : complete ? "text-[var(--color-text)]" : "text-[var(--color-text-subtle)]"}`}>
                   <span className="font-mono text-xs">{complete ? "✓" : number}</span>
                   <span className="truncate">{label}</span>
                 </button>

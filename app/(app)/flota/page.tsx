@@ -147,7 +147,7 @@ export default async function FlotaPage({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Filtros avanzados</CardTitle>
+          <CardTitle className="text-base">Filtros</CardTitle>
         </CardHeader>
         <CardContent>
           <FleetFilters

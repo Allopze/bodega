@@ -216,9 +216,7 @@ function SortableHeader({
       <button
         type="button"
         onClick={() => onSort(sortKey)}
-        // `uppercase` explícito: el navegador no le hereda `text-transform` a un
-        // <button>, y sin él estas columnas salían en minúscula junto a las demás.
-        className="inline-flex min-h-6 min-w-6 items-center gap-1 py-1 uppercase transition-colors hover:text-[var(--color-text)]"
+        className="inline-flex min-h-6 min-w-6 items-center gap-1 py-1 transition-colors hover:text-[var(--color-text)]"
       >
         {label}
         <span aria-hidden className={active ? "opacity-100" : "opacity-0"}>
@@ -401,9 +399,9 @@ export function StockTable({ worksites, canExport, canDeliver = false, canAdjust
           <div className="md:hidden">
             {groups.map((group) => (
               <div key={group.id}>
-                <h3 className="border-y border-[var(--color-border)] bg-[var(--color-surface-2)] px-5 py-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-subtle)] first:border-t-0">
+                <h3 className="border-y border-[var(--color-border)] bg-[var(--color-surface-2)] px-5 py-2 text-eyebrow first:border-t-0">
                   {group.heading}
-                  <span className="ml-2 font-normal normal-case tracking-normal">{group.meta}</span>
+                  <span className="ml-2 font-normal">{group.meta}</span>
                 </h3>
                 <div className="divide-y divide-[var(--color-border)]">
                 {group.rows.map(({ item: s, title, subtitle, worksiteId }) => {
@@ -493,7 +491,7 @@ export function StockTable({ worksites, canExport, canDeliver = false, canAdjust
                 {hasRowActions && <col className="w-14" />}
               </colgroup>
               <TableHeader>
-                <TableRow className="border-b border-[var(--color-border)] text-xs uppercase tracking-wide text-[var(--color-text-subtle)]">
+                <TableRow className="border-b border-[var(--color-border)] text-eyebrow">
                   <SortableHeader
                     label={groupBy === "faena" ? "Producto" : "Faena"}
                     sortKey="name" active={sort.key === "name"} dir={sort.dir} onSort={handleSort}
@@ -535,7 +533,7 @@ export function StockTable({ worksites, canExport, canDeliver = false, canAdjust
                       <TableHead
                         scope="rowgroup"
                         colSpan={(hasRowActions ? 5 : 4) + (hasCoverage ? 1 : 0)}
-                        className="bg-[var(--color-surface-2)] px-5 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]"
+                        className="bg-[var(--color-surface-2)] px-5 py-2.5 text-left text-eyebrow"
                       >
                         {/* Un <button> y no <details>: `details` no es válido
                             dentro de `tbody`, y el estado sobrevive al refresco
@@ -548,7 +546,7 @@ export function StockTable({ worksites, canExport, canDeliver = false, canAdjust
                         >
                           {isCollapsed ? <CaretRight size={12} weight="bold" aria-hidden /> : <CaretDown size={12} weight="bold" aria-hidden />}
                           {group.heading}
-                          <span className="font-normal normal-case tracking-normal">{group.meta}</span>
+                          <span className="font-normal">{group.meta}</span>
                         </button>
                       </TableHead>
                     </TableRow>
@@ -564,7 +562,7 @@ export function StockTable({ worksites, canExport, canDeliver = false, canAdjust
                               a la faena no tiene movimientos que mostrar. */}
                           <ProductName item={s} title={title} worksiteId={worksiteId} muted={empty} />
                           {subtitle && (
-                            <p className="mt-0.5 font-mono text-[11px] text-[var(--color-text-subtle)]">{subtitle}</p>
+                            <p className="mt-0.5 font-mono text-2xs text-[var(--color-text-subtle)]">{subtitle}</p>
                           )}
                         </TableCell>
                         <TableCell className="text-right">
@@ -585,7 +583,7 @@ export function StockTable({ worksites, canExport, canDeliver = false, canAdjust
                           {s.lastMovementAt ? (
                             <>
                               <span className="tabular-nums">{formatDate(s.lastMovementAt)}</span>
-                              <span className="mt-0.5 block text-[11px] text-[var(--color-text-faint)]">
+                              <span className="mt-0.5 block text-2xs text-[var(--color-text-faint)]">
                                 {formatDateRelative(s.lastMovementAt)}
                               </span>
                             </>

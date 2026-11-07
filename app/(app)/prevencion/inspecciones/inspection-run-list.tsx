@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Callout } from "@/components/ui/callout"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { EmptyState } from "@/components/ui/empty-state"
+import { ExportLink } from "@/components/ui/export-button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { DateRangePicker } from "@/components/ui/date-range-picker"
@@ -593,7 +594,7 @@ export function InspectionPageActions({
         initialOpen={initialOpen}
       /> : null}
       {canExport
-        ? <Button asChild variant="secondary"><a href={`/api/prevencion/inspecciones/export${exportQuery}`} download>Exportar Excel</a></Button>
+        ? <ExportLink href={`/api/prevencion/inspecciones/export${exportQuery}`} />
         : null}
     </>
   )

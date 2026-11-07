@@ -23,7 +23,7 @@ describe("tabla cruzada", () => {
     expect(out).toContain("TCT")
     expect(out).toContain("Sin medio informado")
     expect(out).toContain("1.730") // total general es-CL
-    expect(out).toMatch(/<td[^>]*font-bold[^>]*>1\.730<\/td>/)
+    expect(out).toMatch(/<td[^>]*font-semibold[^>]*>1\.730<\/td>/)
     expect(out).toContain("—")
     expect(out).not.toContain("vacío")
   })

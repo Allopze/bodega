@@ -77,7 +77,7 @@ describe("AcquisitionsSection · rediseño del tablero", () => {
     const tile = ocTile(kpis)
 
     // 5 emitidas contra 3 el período anterior: +2 en unidades, no un porcentaje.
-    expect(tile.props).toMatchObject({ value: "5", trend: 2, trendFormat: "number", trendPolarity: "neutral" })
+    expect(tile.props).toMatchObject({ value: 5, trend: 2, trendFormat: "number", trendPolarity: "neutral" })
     expect(tile.props.trendLabel).toMatch(/^vs\. /)
     // No se agregó ninguna consulta: sale del mismo `getOperationalPeriodMetrics`.
     expect(getOperationalPeriodMetrics).toHaveBeenCalledOnce()

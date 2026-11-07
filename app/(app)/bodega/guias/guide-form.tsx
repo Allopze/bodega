@@ -182,7 +182,7 @@ export function GuideForm({
           >
             <Buildings size={16} className="mt-0.5 shrink-0 text-[var(--color-text-subtle)]" aria-hidden />
             <div>
-              <p className="text-[11px] uppercase tracking-[0.06em] text-[var(--color-text-subtle)]">Origen</p>
+              <p className="text-eyebrow">Origen</p>
               <p className="text-sm font-semibold text-[var(--color-text)]">{originWorksiteName}</p>
               <p className="text-xs text-[var(--color-text-muted)]">
                 Fijo para toda guía de despacho interna
@@ -246,11 +246,11 @@ export function GuideForm({
                 >
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-[var(--color-text)]">{product?.name ?? "Producto"}</p>
-                    <p className="font-mono text-[11px] text-[var(--color-text-subtle)]">
+                    <p className="font-mono text-2xs text-[var(--color-text-subtle)]">
                       {product?.sku} · {formatQty(available, product?.unitOfMeasure)} en oficina
                     </p>
                     {item.sourceLabel && (
-                      <p className="text-[11px] text-[var(--color-text-muted)]">{item.sourceLabel}</p>
+                      <p className="text-2xs text-[var(--color-text-muted)]">{item.sourceLabel}</p>
                     )}
                   </div>
                   <Field label="Cantidad" htmlFor={`gdi-qty-${item.key}`} required error={exceeds ? "Sobre el stock" : undefined}>
@@ -354,7 +354,7 @@ export function GuideForm({
               />
             </Field>
             {selectedVehicle && (
-              <dl className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-[var(--color-text-muted)]">
+              <dl className="flex flex-wrap gap-x-4 gap-y-1 text-2xs text-[var(--color-text-muted)]">
                 <div className="flex gap-1">
                   <dt className="text-[var(--color-text-subtle)]">Patente:</dt>
                   <dd className="font-mono">{selectedVehicle.plate}</dd>

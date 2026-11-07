@@ -33,7 +33,7 @@ export function RequestPeoplePanel({
             <UserCircle size={17} weight="bold" />
           </span>
           <div>
-            <p className="text-xs font-medium uppercase tracking-wide text-[var(--color-text-subtle)]">Solicita</p>
+            <p className="text-eyebrow">Solicita</p>
             <p className="mt-0.5 text-sm font-semibold text-[var(--color-text)]">{summary.requester}</p>
             <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
               Creada {formatDate(createdAt)}
@@ -47,7 +47,7 @@ export function RequestPeoplePanel({
             <CheckCircle size={17} weight="bold" />
           </span>
           <div>
-            <p className="text-xs font-medium uppercase tracking-wide text-[var(--color-text-subtle)]">Última decisión</p>
+            <p className="text-eyebrow">Última decisión</p>
             <p className="mt-0.5 text-sm font-semibold text-[var(--color-text)]">
               {summary.latestDecisionLabel} · {summary.latestDecisionBy}
             </p>

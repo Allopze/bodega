@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { and, asc, eq, inArray, or, sql } from "drizzle-orm"
+import { and, asc, eq, inArray, ne, or, sql, type SQL } from "drizzle-orm"
 import type { AnyPgColumn } from "drizzle-orm/pg-core"
 import { z } from "zod"
 import { db, type DB, type Tx } from "@/db"
@@ -12,7 +12,9 @@ import {
 } from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { recordAudit } from "@/lib/audit"
+import { textSearchSql } from "@/lib/adquisiciones/list-query"
 import { getPdtpOperationalYears } from "@/lib/services/pdtp/operational-years"
+import { pdtpOverdueCutoffMonth, type PdtpPeriod } from "@/lib/services/pdtp/period"
 import { validateFileBuffer, MimeType } from "@/lib/file-validation"
 import { generateStorageName } from "@/lib/services/prevention-documents/utils"
 import {
@@ -285,18 +287,54 @@ export async function listTrainingOccurrenceWorksites(access: TrainingOccurrence
     .orderBy(asc(worksites.name))
 }
 
+/** Las casillas `código:slotKey` que el catálogo del año pide; se calculan una vez por año (el catálogo es estático). */
+const offeredSlotKeysCache = new Map<number, string[]>()
+function offeredSlotKeys(year: number): string[] {
+  let keys = offeredSlotKeysCache.get(year)
+  if (!keys) {
+    keys = [...trainingCatalogSlotKeysForYear(year)]
+    offeredSlotKeysCache.set(year, keys)
+  }
+  return keys
+}
+
 /**
  * PRV-06: ¿el catálogo vigente todavía pide esta casilla? Una pendiente que ya
  * no está en el catálogo no se ofrece (marcarla hecha acreditaría una celda sin
- * plan); las que ya tienen estado se conservan, son historia. La comparten la
- * lista y el calendario de cumplimiento: si cada una la reescribiera, el
- * calendario podría pintar de rojo una casilla que la lista no muestra.
+ * plan); las que ya tienen estado se conservan, son historia.
+ *
+ * Es UNA sola condición, en SQL, y la comparten la lista, la lista paginada,
+ * los contadores y el calendario de cumplimiento: si cada uno la reescribiera,
+ * el calendario podría pintar de rojo una casilla que la lista no muestra, o
+ * una pestaña contar una fila que la página nunca trae. Va en la consulta (y no
+ * como filtro posterior en JS) porque el total y las páginas tienen que salir
+ * de la base ya filtrados.
  */
-function isOfferedOccurrence(
-  validSlots: ReadonlySet<string>,
-  row: { status: string; code: string; slotKey: string },
-): boolean {
-  return row.status !== "pending" || validSlots.has(`${row.code}:${row.slotKey}`)
+function offeredOccurrenceSql(year: number): SQL {
+  return or(
+    ne(preventionTrainingOccurrences.status, "pending"),
+    inArray(
+      sql`${preventionTrainingCatalogItems.code} || ':' || ${preventionTrainingOccurrences.slotKey}`,
+      offeredSlotKeys(year),
+    ),
+  ) as SQL
+}
+
+/**
+ * Lo que toda lectura de ocurrencias del año comparte: el año, el catálogo
+ * vigente y activo, el alcance del usuario y las casillas que el catálogo sigue
+ * pidiendo. Cada lectura le suma su propia regla sobre las faenas inactivas.
+ */
+function occurrenceProgramConditions(access: TrainingOccurrenceAccess, year: number): SQL[] {
+  const conditions = [
+    eq(preventionTrainingOccurrences.year, year),
+    eq(preventionTrainingCatalogItems.catalogVersion, trainingCatalogVersionForYear(year)),
+    eq(preventionTrainingCatalogItems.isActive, true),
+    offeredOccurrenceSql(year),
+  ]
+  const scope = scopeCondition(access.scope, worksites.id)
+  if (scope) conditions.push(scope)
+  return conditions
 }
 
 /** Una casilla del programa de capacitación, sin evidencia ni títulos: lo que el calendario necesita. */
@@ -334,44 +372,37 @@ export async function listTrainingComplianceSlots(
     scheduledMonth: preventionTrainingOccurrences.scheduledMonth,
     scheduledWeek: preventionTrainingOccurrences.scheduledWeek,
     status: preventionTrainingOccurrences.status,
-    code: preventionTrainingCatalogItems.code,
-    slotKey: preventionTrainingOccurrences.slotKey,
   })
     .from(preventionTrainingOccurrences)
     .innerJoin(preventionTrainingCatalogItems, eq(preventionTrainingOccurrences.catalogItemId, preventionTrainingCatalogItems.id))
     .innerJoin(worksites, eq(preventionTrainingOccurrences.worksiteId, worksites.id))
     .where(and(
-      eq(preventionTrainingOccurrences.year, year),
+      ...occurrenceProgramConditions(access, year),
       filters.includeWorksiteId
         ? or(eq(worksites.isActive, true), eq(worksites.id, filters.includeWorksiteId))
         : eq(worksites.isActive, true),
-      eq(preventionTrainingCatalogItems.catalogVersion, trainingCatalogVersionForYear(year)),
-      eq(preventionTrainingCatalogItems.isActive, true),
-      scopeCondition(access.scope, worksites.id),
     ))
 
-  const validSlots = trainingCatalogSlotKeysForYear(year)
-  return rows
-    .filter((row) => isOfferedOccurrence(validSlots, row))
-    .map((row) => ({
-      worksiteId: row.worksiteId,
-      worksiteName: row.worksiteName,
-      scheduledMonth: row.scheduledMonth,
-      scheduledWeek: row.scheduledWeek,
-      status: row.status as TrainingOccurrenceStatus,
-    }))
+  return rows.map((row) => ({
+    worksiteId: row.worksiteId,
+    worksiteName: row.worksiteName,
+    scheduledMonth: row.scheduledMonth,
+    scheduledWeek: row.scheduledWeek,
+    status: row.status as TrainingOccurrenceStatus,
+  }))
 }
 
-export async function listTrainingOccurrences(
-  access: TrainingOccurrenceAccess,
-  filters: { year: number; worksiteId?: string; includeInactiveWorksites?: boolean },
-): Promise<TrainingOccurrenceListItem[]> {
-  requireAccess(access, "prevention:training:view")
-  if (access.scope.mode === "none") return []
+interface OccurrenceListRow {
+  occurrence: typeof preventionTrainingOccurrences.$inferSelect
+  catalog: typeof preventionTrainingCatalogItems.$inferSelect
+  worksiteName: string
+  worksiteActive: boolean
+  completedByName: string | null
+}
 
-  const year = filters.year
-  if (!isTrainingCatalogYear(year)) return []
-  const allRows = await db.select({
+/** La consulta de una fila de la lista, con sus uniones; cada lectura le pone su `where`, orden y límite. */
+function selectOccurrenceListRows() {
+  return db.select({
     occurrence: preventionTrainingOccurrences,
     catalog: preventionTrainingCatalogItems,
     worksiteName: worksites.name,
@@ -382,31 +413,10 @@ export async function listTrainingOccurrences(
     .innerJoin(preventionTrainingCatalogItems, eq(preventionTrainingOccurrences.catalogItemId, preventionTrainingCatalogItems.id))
     .innerJoin(worksites, eq(preventionTrainingOccurrences.worksiteId, worksites.id))
     .leftJoin(users, eq(preventionTrainingOccurrences.completedByUserId, users.id))
-    .where(and(
-      eq(preventionTrainingOccurrences.year, year),
-      filters.includeInactiveWorksites ? undefined : eq(worksites.isActive, true),
-      eq(preventionTrainingCatalogItems.catalogVersion, trainingCatalogVersionForYear(year)),
-      eq(preventionTrainingCatalogItems.isActive, true),
-      scopeCondition(access.scope, worksites.id),
-      filters.worksiteId ? eq(worksites.id, filters.worksiteId) : undefined,
-    ))
-    .orderBy(
-      asc(worksites.name),
-      sql`${preventionTrainingOccurrences.scheduledMonth} NULLS LAST`,
-      asc(preventionTrainingOccurrences.scheduledWeek),
-      asc(preventionTrainingCatalogItems.sortOrder),
-      asc(preventionTrainingOccurrences.slotKey),
-    )
+}
 
-  // PRV-06: una casilla pendiente que el catálogo vigente ya no pide no se
-  // ofrece: marcarla hecha acreditaría una celda sin plan. Las que ya tienen
-  // estado se conservan, son historia.
-  const validSlots = trainingCatalogSlotKeysForYear(year)
-  const rows = allRows.filter((row) => isOfferedOccurrence(validSlots, {
-    status: row.occurrence.status,
-    code: row.catalog.code,
-    slotKey: row.occurrence.slotKey,
-  }))
+/** Pega la evidencia (sólo de las filas recibidas) y da a cada fila la forma de la lista. */
+async function toOccurrenceListItems(rows: readonly OccurrenceListRow[]): Promise<TrainingOccurrenceListItem[]> {
   if (rows.length === 0) return []
   const occurrenceIds = rows.map((row) => row.occurrence.id)
   const evidenceRows = await db.select().from(preventionTrainingOccurrenceEvidence)
@@ -455,6 +465,249 @@ export async function listTrainingOccurrences(
     notApplicableReason: occurrence.notApplicableReason,
     evidence: evidenceByOccurrence.get(occurrence.id) ?? [],
   }))
+}
+
+/**
+ * Todas las ocurrencias del año, sin paginar, con su evidencia. La usan la
+ * exportación a Excel y el tablero de gobernanza, que necesitan el conjunto
+ * completo; la pantalla de capacitación lee `listTrainingOccurrencesPage`.
+ */
+export async function listTrainingOccurrences(
+  access: TrainingOccurrenceAccess,
+  filters: { year: number; worksiteId?: string; includeInactiveWorksites?: boolean },
+): Promise<TrainingOccurrenceListItem[]> {
+  requireAccess(access, "prevention:training:view")
+  if (access.scope.mode === "none") return []
+
+  const year = filters.year
+  if (!isTrainingCatalogYear(year)) return []
+  const rows = await selectOccurrenceListRows()
+    .where(and(
+      ...occurrenceProgramConditions(access, year),
+      filters.includeInactiveWorksites ? undefined : eq(worksites.isActive, true),
+      filters.worksiteId ? eq(worksites.id, filters.worksiteId) : undefined,
+    ))
+    .orderBy(
+      asc(worksites.name),
+      sql`${preventionTrainingOccurrences.scheduledMonth} NULLS LAST`,
+      asc(preventionTrainingOccurrences.scheduledWeek),
+      asc(preventionTrainingCatalogItems.sortOrder),
+      asc(preventionTrainingOccurrences.slotKey),
+    )
+  return toOccurrenceListItems(rows)
+}
+
+export type TrainingOccurrenceStatusFilter = TrainingOccurrenceStatus | "all"
+
+/** Cuántas ocurrencias hay por estado, más el total (`all`). Un estado sin filas cuenta 0. */
+export type TrainingOccurrenceStatusCounts = Record<TrainingOccurrenceStatus, number> & { all: number }
+
+export interface TrainingOccurrencePageFilters {
+  year: number
+  worksiteId?: string
+  /** Mostrar también las faenas inactivas (historial de sólo lectura); la página lo activa al elegir una faena. */
+  includeInactiveWorksites?: boolean
+  /** 1–12: sólo las casillas programadas ese mes (el mes que el usuario eligió en el calendario). */
+  month?: number | null
+  /** Por omisión `all`. Con `pending` la página llega ordenada por urgencia. */
+  status?: TrainingOccurrenceStatusFilter
+  /** Texto libre sobre código, título, faena y público. */
+  search?: string
+  /**
+   * Desde cuándo exige el programa a CADA faena (`resolveProgramActivationPeriods`).
+   * Una faena sin entrada, o con `null`, se exige desde el comienzo del año, igual
+   * que en el calendario de cumplimiento. Sólo decide el orden de las pendientes.
+   */
+  activationByWorksite: Record<string, PdtpPeriod | null>
+  /** Hoy (`currentPdtpPeriod()`): separa lo vencido, lo de este mes y lo futuro. */
+  today: PdtpPeriod
+  limit: number
+  offset: number
+}
+
+export interface TrainingOccurrencePage {
+  rows: TrainingOccurrenceListItem[]
+  /** Filas del filtro de estado elegido (lo que se pagina). */
+  total: number
+  /** Por estado, con el mismo año, faena, mes y texto pero SIN el filtro de estado: cada pestaña cuenta lo que mostraría. */
+  counts: TrainingOccurrenceStatusCounts
+}
+
+const EMPTY_STATUS_COUNTS: Readonly<TrainingOccurrenceStatusCounts> = {
+  all: 0,
+  pending: 0,
+  completed: 0,
+  not_completed: 0,
+  not_applicable: 0,
+}
+
+/** Cuenta por estado las ocurrencias que cumplen `where` (que ya lleva sus uniones a catálogo y faena). */
+async function countOccurrencesByStatus(where: SQL | undefined): Promise<TrainingOccurrenceStatusCounts> {
+  const rows = await db.select({
+    status: preventionTrainingOccurrences.status,
+    count: sql<number>`count(*)::int`,
+  })
+    .from(preventionTrainingOccurrences)
+    .innerJoin(preventionTrainingCatalogItems, eq(preventionTrainingOccurrences.catalogItemId, preventionTrainingCatalogItems.id))
+    .innerJoin(worksites, eq(preventionTrainingOccurrences.worksiteId, worksites.id))
+    .where(where)
+    .groupBy(preventionTrainingOccurrences.status)
+  const counts: TrainingOccurrenceStatusCounts = { ...EMPTY_STATUS_COUNTS }
+  for (const row of rows) {
+    const status = row.status as TrainingOccurrenceStatus
+    if (!(status in counts)) continue
+    counts[status] = Number(row.count)
+    counts.all += Number(row.count)
+  }
+  return counts
+}
+
+/**
+ * Los contadores por estado del año, sin traer ni una fila: lo que el tablero
+ * de gobernanza necesita («pendientes», «declaradas no hechas») sin cargar las
+ * miles de ocurrencias con su evidencia. Mismo alcance, catálogo, casillas
+ * ofrecidas y reglas de faenas inactivas que la lista.
+ */
+export async function countTrainingOccurrencesByStatus(
+  access: TrainingOccurrenceAccess,
+  filters: { year: number; worksiteId?: string; includeInactiveWorksites?: boolean },
+): Promise<TrainingOccurrenceStatusCounts> {
+  requireAccess(access, "prevention:training:view")
+  if (access.scope.mode === "none") return { ...EMPTY_STATUS_COUNTS }
+
+  const year = filters.year
+  if (!isTrainingCatalogYear(year)) return { ...EMPTY_STATUS_COUNTS }
+  return countOccurrencesByStatus(and(
+    ...occurrenceProgramConditions(access, year),
+    filters.includeInactiveWorksites ? undefined : eq(worksites.isActive, true),
+    filters.worksiteId ? eq(worksites.id, filters.worksiteId) : undefined,
+  ))
+}
+
+/**
+ * Las casillas ANTERIORES a la activación de su faena, como condición SQL: lo
+ * que `isPdtpPeriodOnOrAfterActivationPeriod` niega, mes + semana, sobre cada
+ * faena del mapa. Son pocas faenas (decenas como mucho), así que un `OR` de
+ * cláusulas por faena es más simple que una tabla temporal y cabe en un índice.
+ *
+ * Una faena sin activación (`null` o ausente) se exige desde el comienzo del
+ * año —el calendario la trata igual: `!activation` es «exigible»—, y una
+ * activación de un año anterior no recorta nada del año consultado.
+ */
+function beforeActivationSql(year: number, activationByWorksite: Record<string, PdtpPeriod | null>): SQL | undefined {
+  const month = preventionTrainingOccurrences.scheduledMonth
+  const week = preventionTrainingOccurrences.scheduledWeek
+  const clauses: SQL[] = []
+  for (const [worksiteId, activation] of Object.entries(activationByWorksite)) {
+    if (!activation || year > activation.year) continue
+    if (year < activation.year) {
+      clauses.push(sql`${preventionTrainingOccurrences.worksiteId} = ${worksiteId}`)
+      continue
+    }
+    clauses.push(sql`(${preventionTrainingOccurrences.worksiteId} = ${worksiteId} AND (${month} < ${activation.month} OR (${month} = ${activation.month} AND ${week} < ${activation.week})))`)
+  }
+  return clauses.length === 0 ? undefined : or(...clauses)
+}
+
+/**
+ * El cubo de urgencia de una casilla pendiente (0 es lo primero que hay que atender):
+ *
+ * 0. Vencida y exigible: su mes ya terminó y la faena ya estaba obligada.
+ * 1. De este mes: pendiente, todavía no es deuda.
+ * 2. Futura.
+ * 3. Todavía no exigible (anterior a la activación de su faena) o sin mes
+ *    programado: nadie le está pidiendo hacerla ahora.
+ *
+ * «Su mes ya terminó» usa el mismo corte que el calendario de cumplimiento
+ * (`pdtpOverdueCutoffMonth`, el de `monthPhase`): un mes vence cuando termina.
+ * Por eso lo que el calendario pinta de rojo es lo que esta lista muestra
+ * primero, y el mes en curso no se mezcla con la deuda.
+ */
+function urgencyBucketSql(
+  year: number,
+  today: PdtpPeriod,
+  activationByWorksite: Record<string, PdtpPeriod | null>,
+): SQL {
+  const month = preventionTrainingOccurrences.scheduledMonth
+  const overdueThrough = pdtpOverdueCutoffMonth(year, today, today)
+  const currentMonth = year === today.year ? today.month : 0
+  const beforeActivation = beforeActivationSql(year, activationByWorksite)
+  return sql`CASE
+    WHEN ${month} IS NULL THEN 3
+    ${beforeActivation ? sql`WHEN ${beforeActivation} THEN 3` : sql``}
+    WHEN ${month} <= ${overdueThrough} THEN 0
+    WHEN ${month} = ${currentMonth} THEN 1
+    ELSE 2
+  END`
+}
+
+/**
+ * La lista de capacitación paginada y filtrada en la base. `listTrainingOccurrences`
+ * traía las ~3.900 ocurrencias del año con su evidencia y la pantalla las pintaba
+ * todas (30 MB de HTML); ésta trae sólo la página pedida y la evidencia de sus
+ * filas, más los contadores de las pestañas.
+ *
+ * - `counts` cuenta por estado con el año, la faena, el mes y el texto pedidos
+ *   pero SIN el filtro de estado, porque cada pestaña *es* un filtro de estado.
+ * - `total` es lo que se pagina: `counts[status]`.
+ * - Orden: con `status: "pending"` primero por urgencia (ver `urgencyBucketSql`);
+ *   en cualquier estado después por mes, semana, faena, orden del catálogo,
+ *   casilla e `id`, que desempata: sin un orden total dos páginas podían repetir
+ *   o saltarse filas.
+ */
+export async function listTrainingOccurrencesPage(
+  access: TrainingOccurrenceAccess,
+  filters: TrainingOccurrencePageFilters,
+): Promise<TrainingOccurrencePage> {
+  requireAccess(access, "prevention:training:view")
+  const empty: TrainingOccurrencePage = { rows: [], total: 0, counts: { ...EMPTY_STATUS_COUNTS } }
+  if (access.scope.mode === "none") return empty
+
+  const year = filters.year
+  if (!isTrainingCatalogYear(year)) return empty
+
+  const status = filters.status ?? "all"
+  const limit = Math.max(1, Math.floor(filters.limit))
+  const offset = Math.max(0, Math.floor(filters.offset))
+
+  const baseWhere = and(
+    ...occurrenceProgramConditions(access, year),
+    filters.includeInactiveWorksites ? undefined : eq(worksites.isActive, true),
+    filters.worksiteId ? eq(worksites.id, filters.worksiteId) : undefined,
+    filters.month ? eq(preventionTrainingOccurrences.scheduledMonth, filters.month) : undefined,
+    textSearchSql(filters.search ?? "", [
+      preventionTrainingCatalogItems.code,
+      preventionTrainingCatalogItems.title,
+      worksites.name,
+      preventionTrainingCatalogItems.audience,
+    ]),
+  )
+  const rowsWhere = status === "all"
+    ? baseWhere
+    : and(baseWhere, eq(preventionTrainingOccurrences.status, status))
+
+  const [counts, pageRows] = await Promise.all([
+    countOccurrencesByStatus(baseWhere),
+    selectOccurrenceListRows()
+      .where(rowsWhere)
+      .orderBy(
+        ...(status === "pending" ? [urgencyBucketSql(year, filters.today, filters.activationByWorksite)] : []),
+        sql`${preventionTrainingOccurrences.scheduledMonth} ASC NULLS LAST`,
+        sql`${preventionTrainingOccurrences.scheduledWeek} ASC NULLS LAST`,
+        asc(worksites.name),
+        asc(preventionTrainingCatalogItems.sortOrder),
+        asc(preventionTrainingOccurrences.slotKey),
+        asc(preventionTrainingOccurrences.id),
+      )
+      .limit(limit)
+      .offset(offset),
+  ])
+
+  return {
+    rows: await toOccurrenceListItems(pageRows),
+    total: counts[status],
+    counts,
+  }
 }
 
 async function loadOccurrenceForMutation(client: Client, occurrenceId: string) {

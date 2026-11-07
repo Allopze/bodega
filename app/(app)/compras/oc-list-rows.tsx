@@ -98,7 +98,7 @@ export function OcTableRow({ row, canDelete = false, canSend = false }: { row: O
         {formatCLP(row.totalAmount)}
         {row.pendingCostLines > 0 && (
           <span
-            className="ml-1 text-[10px] font-normal text-[var(--color-warning-ink)]"
+            className="ml-1 text-2xs font-normal text-[var(--color-warning-ink)]"
             title={`${row.pendingCostLines} servicio(s) con costo pendiente, no incluidos en el total`}
           >
             +{row.pendingCostLines} pend.
@@ -238,7 +238,7 @@ export function OcMobileCard({
         <dd className="text-right font-mono font-semibold tabular-nums text-[var(--color-text)]">
           {formatCLP(row.totalAmount)}
           {row.pendingCostLines > 0 && (
-            <span className="ml-1 font-sans text-[10px] font-normal text-[var(--color-warning-ink)]">
+            <span className="ml-1 font-sans text-2xs font-normal text-[var(--color-warning-ink)]">
               +{row.pendingCostLines} pend.
             </span>
           )}

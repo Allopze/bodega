@@ -14,13 +14,13 @@ import type { Session } from "next-auth"
 const getDashboardCounters = vi.hoisted(() => vi.fn())
 const getPpaStats = vi.hoisted(() => vi.fn())
 const getDashboardStats = vi.hoisted(() => vi.fn())
-const listTrainingOccurrences = vi.hoisted(() => vi.fn())
+const countTrainingOccurrencesByStatus = vi.hoisted(() => vi.fn())
 const resolveTrainingOccurrenceYear = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/services/prevention-documents/search", () => ({ getDashboardCounters }))
 vi.mock("@/lib/services/ppa-module/calculos", () => ({ getPpaStats }))
 vi.mock("@/lib/services/sst-module/dashboard", () => ({ getDashboardStats }))
-vi.mock("@/lib/services/prevention-training-occurrences", () => ({ listTrainingOccurrences, resolveTrainingOccurrenceYear }))
+vi.mock("@/lib/services/prevention-training-occurrences", () => ({ countTrainingOccurrencesByStatus, resolveTrainingOccurrenceYear }))
 
 import { KpiCard } from "@/components/ui/kpi-card"
 import { GovernanceSection } from "./governance-section"
@@ -69,11 +69,15 @@ async function renderKpis(permissions = ["ppa:view"]) {
   return { container, tile }
 }
 
+const trainingCounts = (over: Record<string, number> = {}) => ({
+  all: 0, pending: 0, completed: 0, not_completed: 0, not_applicable: 0, ...over,
+})
+
 beforeEach(() => {
   vi.clearAllMocks()
   getDashboardCounters.mockResolvedValue(null)
   getDashboardStats.mockResolvedValue(null)
-  listTrainingOccurrences.mockResolvedValue([])
+  countTrainingOccurrencesByStatus.mockResolvedValue(trainingCounts())
   resolveTrainingOccurrenceYear.mockResolvedValue(2026)
 })
 
@@ -106,7 +110,7 @@ describe("GovernanceSection · Tasa de detención PPA", () => {
     vi.clearAllMocks()
     getDashboardCounters.mockResolvedValue(null)
     getDashboardStats.mockResolvedValue(null)
-    listTrainingOccurrences.mockResolvedValue([])
+    countTrainingOccurrencesByStatus.mockResolvedValue(trainingCounts())
     resolveTrainingOccurrenceYear.mockResolvedValue(2026)
     getPpaStats.mockResolvedValue(ppaStats({ total: 19, detenidos: 5 }))
     expect((await renderKpis()).tile!.props.value).toBe("5 de 19")
@@ -125,5 +129,40 @@ describe("GovernanceSection · Tasa de detención PPA", () => {
     const { tile } = await renderKpis(["prevention:docs:view"])
     expect(tile).toBeUndefined()
     expect(getPpaStats).not.toHaveBeenCalled()
+  })
+})
+
+describe("GovernanceSection · Capacitaciones pendientes", () => {
+  async function trainingTile(permissions: string[]) {
+    const section = await GovernanceSection(props(permissions))
+    const { kpis } = section.props as unknown as { kpis: ReactNode }
+    return findAll(kpis, (element) => element.type === KpiCard && element.props.label === "Capacitaciones pendientes")[0]
+  }
+
+  it("sale del contador por estado del año, sin cargar la lista de ocurrencias, y pasa el número al tile", async () => {
+    countTrainingOccurrencesByStatus.mockResolvedValue(trainingCounts({ all: 3900, pending: 2246, not_completed: 3 }))
+    const tile = await trainingTile(["prevention:training:view"])
+
+    // `KpiCard` formatea el número (2.246); `pending` y no «todo menos completed».
+    expect(tile!.props.value).toBe(2246)
+    expect(tile!.props.detail).toBe("3 declaradas no hechas · ahora")
+    expect(tile!.props.tone).toBe("signal")
+    expect(countTrainingOccurrencesByStatus).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "u1", permissions: ["prevention:training:view"] }),
+      { year: 2026 },
+    )
+  })
+
+  it("si el conteo falla, el tile queda en 0 en vez de romper la sección", async () => {
+    countTrainingOccurrencesByStatus.mockRejectedValue(new Error("boom"))
+    const tile = await trainingTile(["prevention:training:view"])
+
+    expect(tile!.props.value).toBe(0)
+    expect(tile!.props.detail).toBe("0 declaradas no hechas · ahora")
+  })
+
+  it("sin permiso de capacitación no consulta nada", async () => {
+    await trainingTile(["prevention:docs:view"])
+    expect(countTrainingOccurrencesByStatus).not.toHaveBeenCalled()
   })
 })
