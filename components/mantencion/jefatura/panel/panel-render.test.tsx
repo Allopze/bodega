@@ -20,7 +20,7 @@ function panelData(overrides: Partial<PanelData> = {}): PanelData {
     fleet: { active: 10, counts: { vencida: 3, proxima: 2, al_dia: 4, sin_lecturas: 1, sin_pauta: 0, baja: 0 } },
     workshop: {
       equipment: 2, stale: 1,
-      rows: [{ recordId: "rec-1", folio: "MC-BIO-0001", code: "KA-135", plate: "RBYD-98", worksiteName: "Biodiversa", summary: "Cambio de bomba", reason: "Espera repuesto de Santiago", daysStopped: 5, stale: true }],
+      rows: [{ recordId: "rec-1", folio: "MC-BIO-0001", code: "KA-135", plate: "RBYD-98", worksiteName: "Biodiversa", summary: "Cambio de bomba", reason: "Espera repuesto de Santiago", daysStopped: 5, stale: true, waitingParts: false }],
     },
     stoppedDays: { total: 9, equipment: 2 },
     weeks: [{ start: "2026-10-19", preventive: 3, corrective: 1 }, { start: "2026-10-26", preventive: 2, corrective: 0 }],
@@ -227,6 +227,31 @@ describe("tarjetas del panel", () => {
     expect(row.textContent).toContain("5 días")
     expect(row.textContent).toContain("Sin actualizar")
     expect(row.textContent).toContain("Sigue en taller: Espera repuesto de Santiago")
+  })
+
+  it("«En taller ahora» escribe «Esperando repuesto» sólo en la OT que lo espera, en tono señal", () => {
+    const base = panelData().workshop.rows[0]!
+    const data = panelData({
+      workshop: {
+        equipment: 2, stale: 0,
+        rows: [
+          { ...base, recordId: "ot-9", workOrderId: "ot-9", folio: "OT-BIO-0009", stale: false, waitingParts: true },
+          { ...base, recordId: "rec-2", workOrderId: null, folio: "MC-BIO-0002", code: "KA-200", plate: "BCDF-12", stale: false, waitingParts: false },
+        ],
+      },
+    })
+    render(<WorkshopCard data={data} />)
+    const waiting = screen.getAllByText("Esperando repuesto")
+    expect(waiting).toHaveLength(1)
+    expect(waiting[0]!.className).toContain("--color-signal-ink")
+    expect(waiting[0]!.closest("a")?.textContent).toContain("KA-135")
+    expect(screen.getByRole("link", { name: /KA-200/ }).textContent).not.toContain("Esperando repuesto")
+  })
+
+  it("una fila de OT enlaza a la orden, no a un registro que no existe", () => {
+    const base = panelData().workshop.rows[0]!
+    render(<WorkshopCard data={panelData({ workshop: { equipment: 1, stale: 0, rows: [{ ...base, recordId: "ot-9", workOrderId: "ot-9", folio: "OT-BIO-0009" }] } })} />)
+    expect(screen.getByRole("link", { name: /KA-135/ }).getAttribute("href")).toBe("/mantencion/ot/ot-9")
   })
 
   it("«Sin actualizar» va en tono señal (no rojo) y el texto largo se recorta a dos líneas sin perderse", () => {

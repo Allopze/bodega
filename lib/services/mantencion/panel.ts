@@ -3,10 +3,12 @@ import { db } from "@/db"
 import { mantRecordCorrectives, mantRecordItems, mantRecords, mantWorkOrders, mantWorksiteSettings, worksites } from "@/db/schema"
 import { MANT_EQUIPMENT_STATES, type MantEquipmentState, type MantUnit } from "@/lib/mantencion/types"
 import { todayInChile } from "@/lib/utils"
+import { OT_OPEN_STATUSES } from "@/lib/mantencion/work-order-states"
 import { equipmentScope, recordVisibility, recordVisibilitySql, type MantViewer } from "./access"
 import { loadFleet, type FleetRow, type MantWorksiteScope } from "./fleet"
 import { lastWeeks, periodStart, stoppedDaysWithin, type PanelFilters } from "./panel-filters"
 import { loadWorkshopCases } from "./records-workshop"
+import { partsPendingExistsSql } from "./work-orders/parts-requests"
 
 /**
  * Datos del panel de jefatura (§10). Reglas que no se negocian:
@@ -59,6 +61,13 @@ export interface PanelWorkshopRow {
   reason: string | null
   daysStopped: number | null
   stale: boolean
+  /**
+   * La OT que retiene el equipo espera un repuesto: alguna línea pedida para ella
+   * todavía no llegó a faena. Siempre `false` en una correctiva suelta (no hay OT
+   * a la que vincular la compra). Misma regla que la lista de OT y el tile de
+   * Control operacional (`partsPendingExistsSql`).
+   */
+  waitingParts: boolean
 }
 
 export interface PanelData {
@@ -235,6 +244,7 @@ export async function loadPanel(viewer: MantViewer, filters: PanelFilters, today
             reason: described?.reason ?? null,
             daysStopped: row.workshop!.daysStopped,
             stale: row.workshop!.stale,
+            waitingParts: workOrderId ? orderSummaries.get(workOrderId)?.waitingParts ?? false : false,
           }
         })
         .sort((a, b) => (b.daysStopped ?? -1) - (a.daysStopped ?? -1) || a.code.localeCompare(b.code, "es", { numeric: true })),
@@ -284,14 +294,19 @@ async function correctiveSummaries(recordIds: string[]): Promise<Map<string, { d
   return new Map(rows.map((row) => [row.recordId, { description: row.description, reason: row.reason }]))
 }
 
-/** «Trabajo» y «Motivo» de una OT en taller: lo que se pidió reparar y las observaciones. */
-async function workOrderSummaries(workOrderIds: string[]): Promise<Map<string, { description: string; reason: string | null }>> {
+/** «Trabajo» y «Motivo» de una OT en taller (lo que se pidió reparar y las observaciones) y si espera un repuesto. */
+async function workOrderSummaries(workOrderIds: string[]): Promise<Map<string, { description: string; reason: string | null; waitingParts: boolean }>> {
   if (workOrderIds.length === 0) return new Map()
   const rows = await db
-    .select({ id: mantWorkOrders.id, description: mantWorkOrders.repairDescription, reason: mantWorkOrders.observations })
+    .select({
+      id: mantWorkOrders.id,
+      description: mantWorkOrders.repairDescription,
+      reason: mantWorkOrders.observations,
+      waitingParts: sql<boolean>`(${inArray(mantWorkOrders.status, [...OT_OPEN_STATUSES])} AND ${partsPendingExistsSql(mantWorkOrders.id)})`,
+    })
     .from(mantWorkOrders)
     .where(inArray(mantWorkOrders.id, workOrderIds))
-  return new Map(rows.map((row) => [row.id, { description: row.description ?? "", reason: row.reason }]))
+  return new Map(rows.map((row) => [row.id, { description: row.description ?? "", reason: row.reason, waitingParts: row.waitingParts }]))
 }
 
 /** Faenas del selector del panel: las de su alcance de equipos (nunca las de otros). */

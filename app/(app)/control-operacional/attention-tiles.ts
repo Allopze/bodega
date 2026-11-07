@@ -69,7 +69,12 @@ export function stoppedTile(stopped: OperationalAttention["stoppedVehicles"], fl
 /**
  * Órdenes de trabajo abiertas (todo lo no cerrado ni anulado). El tile enlaza a
  * la lista con la pestaña «abiertas»: la cifra y las filas cuentan lo mismo.
- * El detalle dice cuántas esperan mecánico, que es lo que alguien tiene que hacer.
+ * El detalle dice cuántas esperan mecánico, cuántas tienen la entrega vencida y
+ * cuántas esperan un repuesto, que es lo que alguien tiene que hacer. Sin un tile
+ * propio para los repuestos (A1: tope de 4) y SIN cambiar el destino: el valor del
+ * tile son todas las abiertas, así que el enlace sigue llevando a todas; llevarlo a
+ * `?repuestos=pendientes` mostraría menos filas que la cifra (y `e2e/densidad-kpi`
+ * declara este destino). El filtro se llega por URL y se quita desde su chip.
  */
 export function workOrdersTile(workOrders: OperationalAttention["workOrders"]): AttentionTile {
   const label = "OT abiertas"
@@ -80,13 +85,14 @@ export function workOrdersTile(workOrders: OperationalAttention["workOrders"]): 
   const parts = [
     workOrders.unassignedOpen > 0 ? `${count(workOrders.unassignedOpen)} sin asignar` : "Todas con mecánico",
     ...(workOrders.estimateOverdue > 0 ? [`${count(workOrders.estimateOverdue)} con entrega vencida`] : []),
+    ...(workOrders.waitingParts > 0 ? [`${count(workOrders.waitingParts)} esperando repuesto`] : []),
   ]
   return {
     key: "workOrders",
     label,
     value: count(workOrders.openCount),
     detail: parts.join(" · "),
-    tone: workOrders.unassignedOpen > 0 || workOrders.estimateOverdue > 0 ? "signal" : "neutral",
+    tone: workOrders.unassignedOpen > 0 || workOrders.estimateOverdue > 0 || workOrders.waitingParts > 0 ? "signal" : "neutral",
     href: ATTENTION_HREFS.workOrders,
   }
 }

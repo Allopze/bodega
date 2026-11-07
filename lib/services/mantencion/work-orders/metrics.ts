@@ -6,6 +6,7 @@ import { worksiteScopeSqlFor, serviceWorksiteScope } from "@/lib/auth/scope"
 import { canViewWorkOrders, canViewAllWorkOrders } from "@/lib/operational-control/capabilities"
 import { OT_OPEN_STATUSES, type OtStatus } from "@/lib/mantencion/work-order-states"
 import { todayInChile } from "@/lib/utils"
+import { partsPendingExistsSql } from "./parts-requests"
 
 /**
  * Cifras de las órdenes de trabajo (OT) para Flota, Control operacional y el
@@ -73,6 +74,8 @@ export interface WorkOrderGlobalMetrics {
   unassignedOpen: number
   /** En ejecución con la fecha estimada de entrega ya pasada. */
   estimateOverdue: number
+  /** Abiertas con alguna línea de repuesto pedida que todavía no llegó a faena (`partsPendingExistsSql`). */
+  waitingParts: number
 }
 
 export interface VehicleRecentWorkOrder {
@@ -183,6 +186,7 @@ export async function getWorkOrderGlobalMetrics(
     openCount: sql<number>`(COUNT(*) FILTER (WHERE ${isOpen}))::int`,
     unassignedOpen: sql<number>`(COUNT(*) FILTER (WHERE ${isUnassignedOpen}))::int`,
     estimateOverdue: sql<number>`(COUNT(*) FILTER (WHERE ${mantWorkOrders.status} = 'en_ejecucion' AND ${mantWorkOrders.estimatedDeliveryDate} < ${today}))::int`,
+    waitingParts: sql<number>`(COUNT(*) FILTER (WHERE ${isOpen} AND ${partsPendingExistsSql(mantWorkOrders.id)}))::int`,
   })
     .from(mantWorkOrders)
     .where(and(ne(mantWorkOrders.status, "anulada"), scopeWhere(scope, options.worksiteId)))
@@ -190,6 +194,7 @@ export async function getWorkOrderGlobalMetrics(
     openCount: Number(row?.openCount ?? 0),
     unassignedOpen: Number(row?.unassignedOpen ?? 0),
     estimateOverdue: Number(row?.estimateOverdue ?? 0),
+    waitingParts: Number(row?.waitingParts ?? 0),
   }
 }
 

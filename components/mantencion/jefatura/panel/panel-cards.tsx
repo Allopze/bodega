@@ -258,7 +258,9 @@ export function WorkshopCard({ data }: { data: PanelData }) {
           {rows.map((row) => (
             <li key={row.recordId}>
               <Link
-                href={`/mantencion/registros/${row.recordId}`}
+                // Con OT, `recordId` es el id de la orden (ver `PanelWorkshopRow`): lleva a la OT, que es donde
+                // están «Repuestos pedidos» y el avance; `/mantencion/registros/<id de OT>` daba 404.
+                href={row.workOrderId ? `/mantencion/ot/${row.workOrderId}` : `/mantencion/registros/${row.recordId}`}
                 className="flex min-h-11 items-start justify-between gap-3 rounded-md px-1 py-2.5 hover:bg-[var(--color-surface-2)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--color-primary)]"
               >
                 <span className="min-w-0 text-sm">
@@ -269,6 +271,7 @@ export function WorkshopCard({ data }: { data: PanelData }) {
                 <span className="shrink-0 whitespace-nowrap text-right text-sm tabular-nums">
                   {row.daysStopped ? plural(row.daysStopped, "día", "días") : "desde hoy"}
                   {row.stale && <span className="block text-xs font-semibold text-[var(--color-signal-ink)]">Sin actualizar</span>}
+                  {row.waitingParts && <span className="block text-xs font-medium text-[var(--color-signal-ink)]">Esperando repuesto</span>}
                 </span>
               </Link>
             </li>

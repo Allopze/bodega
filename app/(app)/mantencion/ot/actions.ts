@@ -61,6 +61,8 @@ const exportFiltersSchema = z.object({
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   q: z.string().max(100).optional(),
+  /** `?repuestos=pendientes`: el Excel comparte `workOrdersWhere` con la lista; sin este campo el esquema lo descartaría. */
+  partsPending: z.boolean().optional(),
 })
 
 /** Excel con los mismos filtros de la lista. Mismo contrato que `ExportButton` (base64). */

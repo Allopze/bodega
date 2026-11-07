@@ -41,12 +41,12 @@ function props(overrides: Partial<Props> = {}): Props {
     mechanics: [{ id: "u-mec", name: "Javier Roa", worksiteNames: ["Biodiversa"] }, { id: "u-2", name: "Marta Lillo", worksiteNames: ["Santa Fe", "Mininco"] }],
     entryCatalogs: { workshops: [{ id: "w-1", name: "Taller Los Aromos" }], drivers: [] }, actorName: "Ana Pérez", pdfHref: "/api/mantencion/ot/ot-1/pdf",
     canDownloadPdf: true,
-    repair: true, maintenance: false, needsLinkedRecord: false, recordForm: null, actorUserId: "u-mec", ...overrides,
+    repair: true, maintenance: false, needsLinkedRecord: false, recordForm: null, actorUserId: "u-mec", partsRequestHref: null, ...overrides,
   }
 }
 
 const BUTTONS = ["Registrar ingreso", "Registrar trabajo", "Registrar salida", "Recepcionar", "Dar conformidad", "Asignar", "Marcar ítems", "Rechazar", "Reabrir"]
-const MENU = ["Reasignar", "Desasignar", "Cambiar entrega estimada", "Corregir ingreso", "Registrar otra correctiva", "Registrar otra preventiva", "Descargar PDF", "Anular"]
+const MENU = ["Reasignar", "Desasignar", "Cambiar entrega estimada", "Corregir ingreso", "Registrar otra correctiva", "Registrar otra preventiva", "Pedir repuestos", "Descargar PDF", "Anular"]
 
 function visibleButtons() {
   return BUTTONS.filter((name) => screen.queryByRole("button", { name: new RegExp(`^${name}$`) }))
@@ -100,6 +100,24 @@ describe("OtActions: sólo se dibuja lo que allowedTransitions permite", () => {
     cleanup()
     render(<OtActions {...props({ status: "solicitada", assignedToUserId: null, allowedTransitions: ["assign", "void"], canDownloadPdf: true })} />)
     expect(openMenu()).toEqual(["Descargar PDF", "Anular"])
+  })
+})
+
+describe("OtActions: «Pedir repuestos»", () => {
+  beforeEach(() => vi.clearAllMocks())
+  afterEach(cleanup)
+
+  const HREF = "/solicitudes/nueva?tipo=repuestos&ot=ot-1"
+
+  it("«Pedir repuestos» sólo aparece en el menú con partsRequestHref", () => {
+    render(<OtActions {...props({ allowedTransitions: ["finish"] })} />)
+    expect(openMenu()).not.toContain("Pedir repuestos")
+    cleanup()
+    render(<OtActions {...props({ allowedTransitions: ["finish"], partsRequestHref: HREF })} />)
+    // Va en «Más acciones», antes del PDF, y no como botón suelto en la cabecera.
+    expect(openMenu()).toEqual(["Pedir repuestos", "Descargar PDF"])
+    expect(screen.getByRole("menuitem", { name: "Pedir repuestos" }).getAttribute("href")).toBe(HREF)
+    expect(screen.queryByRole("button", { name: "Pedir repuestos" })).toBeNull()
   })
 })
 
