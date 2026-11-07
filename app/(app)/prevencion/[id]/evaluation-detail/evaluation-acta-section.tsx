@@ -39,14 +39,14 @@ export function EvaluationActaSection({
 
         {evaluation.motivo && (
           <div>
-            <p className="text-xs font-medium text-text-subtle uppercase tracking-wide mb-1">Motivo</p>
+            <p className="text-eyebrow mb-1">Motivo</p>
             <p className="text-sm text-(--color-text)">{MOTIVO_LABELS[evaluation.motivo] ?? evaluation.motivo}</p>
           </div>
         )}
 
         {isCerrado && evaluation.resultadoFinal && (
           <div>
-            <p className="text-xs font-medium text-text-subtle uppercase tracking-wide mb-1">Resultado Final</p>
+            <p className="text-eyebrow mb-1">Resultado final</p>
             <MetaBadge meta={{ label: `${RESULTADO_LABELS[evaluation.resultadoFinal] ?? evaluation.resultadoFinal}`, variant: resultadoBadgeVariant(evaluation.resultadoFinal) }} />
             {evaluation.porcentajeCumplimiento !== null && (
               <p className="mt-1 text-sm text-text-subtle">
@@ -58,14 +58,14 @@ export function EvaluationActaSection({
 
         {evaluation.restricciones && (
           <div>
-            <p className="text-xs font-medium text-text-subtle uppercase tracking-wide mb-1">Restricciones</p>
+            <p className="text-eyebrow mb-1">Restricciones</p>
             <p className="text-sm text-(--color-text)">{evaluation.restricciones}</p>
           </div>
         )}
 
         {evaluation.observacionesGenerales && (
           <div>
-            <p className="text-xs font-medium text-text-subtle uppercase tracking-wide mb-1">Observaciones generales</p>
+            <p className="text-eyebrow mb-1">Observaciones generales</p>
             <p className="text-sm text-(--color-text)">{evaluation.observacionesGenerales}</p>
           </div>
         )}
@@ -83,7 +83,7 @@ export function EvaluationActaSection({
             declaran, pero el tipo ya no lo garantiza. */}
         {(definition.closingAct?.signatureRoles.length ?? 0) > 0 && (
           <div>
-            <p className="text-xs font-medium text-text-subtle uppercase tracking-wide mb-2">Firmas requeridas (en acta impresa)</p>
+            <p className="text-eyebrow mb-2">Firmas requeridas (en acta impresa)</p>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
               {definition.closingAct!.signatureRoles.map((role) => (
                 <div

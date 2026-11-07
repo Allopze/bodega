@@ -63,7 +63,7 @@ export default async function PdtpTemplatesPage() {
                         <span className="text-sm font-semibold text-[var(--color-text)]">Versión {version.version}</span>
                         {index === 0 && <MetaBadge meta={{ label: "Actual", variant: "info" }} />}
                       </div>
-                      <p className="mt-1 font-mono text-[11px] text-[var(--color-text-subtle)]" title={version.contentDigest}>
+                      <p className="mt-1 font-mono text-2xs text-[var(--color-text-subtle)]" title={version.contentDigest}>
                         Huella {version.contentDigest.slice(0, 12)}…
                       </p>
                       <p className="mt-1 text-xs text-[var(--color-text-muted)]">
@@ -71,7 +71,7 @@ export default async function PdtpTemplatesPage() {
                       </p>
                     </div>
                     <div className="min-w-0">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">
+                      <p className="text-eyebrow">
                         {countOf(version.programs.length, "programa fijado", "programas fijados")} a esta versión
                       </p>
                       {version.programs.length === 0 ? (

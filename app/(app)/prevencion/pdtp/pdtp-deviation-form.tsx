@@ -173,7 +173,7 @@ export function PdtpDeviationForm({
                 />
                 <span>
                   <span className="font-medium text-[var(--color-text)]">{PDTP_DEVIATION_KIND_LABELS[option]}</span>
-                  <span className="block text-[11px] text-[var(--color-text-muted)]">{PDTP_DEVIATION_KIND_HINTS[option]}</span>
+                  <span className="block text-2xs text-[var(--color-text-muted)]">{PDTP_DEVIATION_KIND_HINTS[option]}</span>
                 </span>
               </label>
             ))}
@@ -292,7 +292,7 @@ export function PdtpDeviationList({ deviations, canWithdraw = false }: PdtpDevia
       {deviations.map((deviation) => (
         <li
           key={deviation.id}
-          className="rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1.5 text-[11px]"
+          className="rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1.5 text-2xs"
         >
           <div className="flex flex-wrap items-center gap-1.5 text-[var(--color-text-subtle)]">
             <span className="font-medium text-[var(--color-text)]">
@@ -340,7 +340,7 @@ function PdtpDeviationWithdrawButton({ deviationId }: { deviationId: string }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button type="button" size="sm" variant="ghost" className="mt-1 h-6 px-1.5 text-[11px]">
+        <Button type="button" size="sm" variant="ghost" className="mt-1 h-6 px-1.5 text-2xs">
           Retirar
         </Button>
       </DialogTrigger>

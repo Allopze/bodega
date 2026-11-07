@@ -142,9 +142,9 @@ export function ProgramLifecycleControls({
           <div className="flex flex-wrap items-center gap-2">
             <h2 id="program-lifecycle-title" className="text-sm font-semibold text-[var(--color-text)]">Estado del programa</h2>
             <MetaBadge meta={{ label: pdtpProgramStatusLabel(program.status), variant: statusVariant }} dot />
-            <span className="font-mono text-[11px] text-[var(--color-text-subtle)]">contenido v{program.contentVersion}</span>
+            <span className="font-mono text-2xs text-[var(--color-text-subtle)]">contenido v{program.contentVersion}</span>
             {program.contentDigest && (
-              <code title={program.contentDigest} className="rounded bg-[var(--color-surface-2)] px-1.5 py-0.5 text-[10px] text-[var(--color-text-muted)]">
+              <code title={program.contentDigest} className="rounded bg-[var(--color-surface-2)] px-1.5 py-0.5 text-2xs text-[var(--color-text-muted)]">
                 SHA-256 {program.contentDigest.slice(0, 12)}
               </code>
             )}
@@ -319,7 +319,7 @@ function LifecycleStep({ label, value, done }: { label: string; value: string; d
           fuera al teclado y al teléfono. `Tooltip` responde a foco; `tabIndex`
           hace alcanzable un rótulo que si no, no lo sería. */}
       <Tooltip content={expandRoleAbbreviations(label)} side="top">
-        <p tabIndex={0} className="w-fit max-w-full break-words rounded-(--radius-sm) text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">{label}</p>
+        <p tabIndex={0} className="text-eyebrow w-fit max-w-full break-words rounded-(--radius-sm)">{label}</p>
       </Tooltip>
       <p className={done ? "mt-0.5 text-xs font-medium break-words text-[var(--color-success-ink)]" : "mt-0.5 text-xs break-words text-[var(--color-text-muted)]"}>{value}</p>
     </li>

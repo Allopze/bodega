@@ -173,7 +173,7 @@ export function ActionPlanPanel({ evaluationId, items, readOnly, onUpdate }: Pro
 
       {draft && (
         <div className="rounded-(--radius-lg) border border-(--color-border) bg-surface-2 p-4 space-y-3">
-          <p className="text-xs font-semibold text-text-subtle uppercase tracking-wide">Nuevo ítem</p>
+          <p className="text-eyebrow">Nuevo ítem</p>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field label="Hallazgo" htmlFor="draft-hallazgo">
               <Input

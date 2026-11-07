@@ -156,11 +156,11 @@ export function ItemField({
                 </DialogHeader>
                 <div className="space-y-3">
                   <div className="rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface-2) px-3 py-2">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-text-subtle">Ítem</p>
+                    <p className="text-eyebrow">Ítem</p>
                     <p className="mt-1 text-sm font-medium leading-5 text-(--color-text)">{item.label}</p>
                   </div>
                   <div className="grid gap-1.5">
-                    <label htmlFor={`${item.id}-observacion`} className="text-[11px] font-semibold uppercase tracking-wide text-text-subtle">
+                    <label htmlFor={`${item.id}-observacion`} className="text-eyebrow">
                       Observación
                     </label>
                     <Textarea
@@ -173,7 +173,7 @@ export function ItemField({
                       className="min-h-32 text-sm"
                       maxLength={500}
                     />
-                    <p className="text-right text-[11px] text-text-subtle">{noteDraft.length}/500</p>
+                    <p className="text-right text-2xs text-text-subtle">{noteDraft.length}/500</p>
                   </div>
                 </div>
                 <DialogFooter className="flex-col-reverse sm:flex-row sm:items-center sm:justify-between">
@@ -209,7 +209,7 @@ export function ItemField({
         )}
         {needsCorrectiveAction && (
           <div className="grid gap-1.5 rounded-(--radius-lg) border border-(--color-danger-line) bg-(--color-danger-tint) p-3">
-            <label htmlFor={`${item.id}-accion-correctiva`} className="text-[11px] font-semibold uppercase tracking-wide text-(--color-danger)">
+            <label htmlFor={`${item.id}-accion-correctiva`} className="text-eyebrow text-(--color-danger-ink)">
               Acción correctiva requerida
             </label>
             <Textarea
@@ -329,7 +329,7 @@ export function ItemField({
 
   if (kind === "readonly") {
     return (
-      <p className="text-sm text-text-subtle italic">{item.label}</p>
+      <p className="text-sm text-[var(--color-text-subtle)]">{item.label}</p>
     )
   }
 

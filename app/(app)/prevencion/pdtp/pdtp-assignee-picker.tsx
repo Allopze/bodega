@@ -120,7 +120,7 @@ export function PdtpAssigneePicker({
             <input key={userId} type="hidden" name="userIds" value={userId} />
           ))}
 
-          <p className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-[11px] text-[var(--color-text-muted)]">
+          <p className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-2xs text-[var(--color-text-muted)]">
             Con una persona asignada, esta actividad deja de aparecer en Pendientes para el resto de quienes
             comparten su cargo en esta faena. Sin nadie asignado, la siguen viendo todos, como hasta ahora.
           </p>
@@ -155,7 +155,7 @@ export function PdtpAssigneePicker({
                 />
                 <span>
                   <span className="font-medium text-[var(--color-text)]">{candidate.name}</span>
-                  <span className="block text-[11px] text-[var(--color-text-muted)]">
+                  <span className="block text-2xs text-[var(--color-text-muted)]">
                     {candidate.roleLabels.join(" · ")}
                   </span>
                 </span>

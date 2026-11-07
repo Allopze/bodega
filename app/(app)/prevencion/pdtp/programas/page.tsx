@@ -102,7 +102,7 @@ export default async function PdtpProgramasListPage({ searchParams }: PdtpProgra
             const indicators = complianceByProgram.get(program.id)
 
             return (
-              <div key={program.id} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-shadow hover:shadow-md">
+              <div key={program.id} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:bg-[var(--color-surface-2)]">
                 <div className="flex items-start justify-between">
                   <div>
                     <p className="font-semibold text-[var(--color-text)]">{program.title} <span className="font-mono text-xs font-normal text-[var(--color-text-muted)]">v{program.version}</span></p>

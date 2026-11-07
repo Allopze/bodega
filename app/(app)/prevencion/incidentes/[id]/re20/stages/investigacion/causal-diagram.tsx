@@ -80,7 +80,7 @@ export function CausalDiagram({ tree, selectedId }: { tree: Re20Tree; selectedId
           </defs>
 
           {layout.looseTop !== null && (
-            <text x={16} y={layout.looseTop - 10} className="fill-[var(--color-warning-ink)] text-[11px] font-semibold">Sin conectar al árbol</text>
+            <text x={16} y={layout.looseTop - 10} className="fill-[var(--color-warning-ink)] text-2xs font-semibold">Sin conectar al árbol</text>
           )}
 
           <g fill="none">
@@ -99,7 +99,7 @@ export function CausalDiagram({ tree, selectedId }: { tree: Re20Tree; selectedId
             <g key={`gate-${gate.to}`}>
               <line x1={gate.x} y1={gate.y} x2={gate.x + 30 - 2} y2={gate.y} className="stroke-[var(--color-text-subtle)]" strokeWidth={1.5} markerEnd={`url(#${markerId})`} />
               <circle cx={gate.x} cy={gate.y} r={10} className="fill-[var(--color-surface)] stroke-[var(--color-text-subtle)]" strokeWidth={1.5} />
-              <text x={gate.x} y={gate.y + 4} textAnchor="middle" className="fill-[var(--color-text)] text-[11px] font-semibold">Y</text>
+              <text x={gate.x} y={gate.y + 4} textAnchor="middle" className="fill-[var(--color-text)] text-2xs font-semibold">Y</text>
             </g>
           ))}
 
@@ -125,7 +125,7 @@ export function CausalDiagram({ tree, selectedId }: { tree: Re20Tree; selectedId
                   strokeDasharray={node.role === "context" || node.role === "loose" ? "5 4" : undefined}
                 />
                 <text x={12} y={20} className="fill-[var(--color-text)] font-mono text-[12px] font-semibold">{node.id}</text>
-                <text x={NODE_W - 12} y={20} textAnchor="end" className={cn("text-[11px] font-semibold", style.role)}>
+                <text x={NODE_W - 12} y={20} textAnchor="end" className={cn("text-2xs font-semibold", style.role)}>
                   {node.role === "link" ? "" : FACT_ROLE_LABELS[node.role]}
                 </text>
                 <text className={cn("text-[12px]", node.description ? "fill-[var(--color-text)]" : "fill-[var(--color-text-subtle)]")}>
@@ -142,7 +142,7 @@ export function CausalDiagram({ tree, selectedId }: { tree: Re20Tree; selectedId
         <Legend swatch="fill-[var(--color-primary-tint)] stroke-[var(--color-primary)]" thick label="Hecho final" />
         <Legend swatch="fill-[var(--color-surface-2)] stroke-[var(--color-border-control)]" dashed label="Contexto (no causal)" />
         <span className="inline-flex items-center gap-1.5">
-          <svg aria-hidden width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" className="fill-[var(--color-surface)] stroke-[var(--color-text-subtle)]" strokeWidth="1.5" /><text x="10" y="14" textAnchor="middle" className="fill-[var(--color-text)] text-[10px] font-semibold">Y</text></svg>
+          <svg aria-hidden width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" className="fill-[var(--color-surface)] stroke-[var(--color-text-subtle)]" strokeWidth="1.5" /><text x="10" y="14" textAnchor="middle" className="fill-[var(--color-text)] text-2xs font-semibold">Y</text></svg>
           Conjunción: concurren varios hechos
         </span>
         <span className="inline-flex items-center gap-1.5">

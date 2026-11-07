@@ -22,7 +22,7 @@ import {
   type MiperPortfolioAction, type MiperPortfolioMatrix, type MiperPortfolioRow, type MiperPortfolioStatus,
 } from "@/lib/prevention/miper/portfolio"
 import { progressPercent } from "@/lib/prevention/miper/progress"
-import { countOf, formatDate } from "@/lib/utils"
+import { countOf, formatDate, formatQty } from "@/lib/utils"
 import { ImportMiperDialog } from "./import-dialog"
 import { NewMiperDialog, type CreationWorksite } from "./new-miper-dialog"
 
@@ -251,7 +251,7 @@ export function MiperHome({ rows, creationWorksites, currentYear, permissions }:
         </details>
         <SummaryBar renderLink={ReplaceLink} stats={[
           {
-            key: "con-miper", label: "Faenas con MIPER", value: `${summary.withMiper}/${summary.total}`,
+            key: "con-miper", label: "Faenas con MIPER", value: `${formatQty(summary.withMiper)}/${formatQty(summary.total)}`,
             href: linkUnlessZero(summary.withMiper, PORTFOLIO_SUMMARY_HREF.withMiper),
             // Con 0/0 no hay «todas»: el estado vacío de la lista ya dice que no hay faenas a tu alcance.
             secondary: withoutMiper > 0 ? `${countOf(withoutMiper, "faena")} sin MIPER` : summary.total > 0 ? "Todas tienen MIPER" : undefined,

@@ -226,7 +226,7 @@ export function CreateEvaluationDialog({ worker, open, onOpenChange, initialRole
 
           {isSeguimiento && (
             <div className="border-t border-(--color-border) pt-4 space-y-4">
-              <p className="text-xs font-semibold uppercase tracking-wider text-text-subtle">Detalles de Seguimiento</p>
+              <p className="text-eyebrow">Detalles de seguimiento</p>
 
               <Field label="Motivo de Seguimiento" htmlFor={uid + "-motivo"} error={formErrors.motivo}>
                 <Select value={motivo} onValueChange={setMotivo}>

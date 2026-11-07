@@ -7,8 +7,7 @@ import { SummaryBar, type SummaryStat } from "@/components/ui/summary-bar"
 import { detentionFigure } from "@/lib/ppa/detention-rate"
 import type { PpaStats } from "@/lib/services/ppa"
 
-function formatResponseTime(minutes: number | null): string {
-  if (minutes === null) return "—"
+function formatResponseTime(minutes: number): string {
   if (minutes < 60) return `${minutes} min`
   const h = Math.floor(minutes / 60)
   const m = minutes % 60
@@ -34,10 +33,14 @@ export function PpaMetricBar({ stats }: { stats: PpaStats }) {
     : figure.kind === "empty"
       ? { key: "desv", label: "Tasa de detención", value: "Sin PPA", valueKind: "text", icon: <ChartLineUp size={13} /> }
       : { key: "desv", label: "Tasa de detención", value: figure.basis, valueKind: "text", icon: <ChartLineUp size={13} />, secondary: figure.note }
+  // Sin ningún PPA revisado no hay promedio: palabra en sans, no un «—» con estilo de cifra.
+  const response: SummaryStat = stats.avgResponseMinutes === null
+    ? { key: "resp", label: "Resp. promedio", value: "Sin respuestas aún", valueKind: "text", icon: <Timer size={13} /> }
+    : { key: "resp", label: "Resp. promedio", value: formatResponseTime(stats.avgResponseMinutes), icon: <Timer size={13} /> }
   const cells: SummaryStat[] = [
     { key: "total", label: "Total PPA",      value: stats.total,                        icon: <ClipboardText size={13} /> },
     detention,
-    { key: "resp",  label: "Resp. promedio", value: formatResponseTime(stats.avgResponseMinutes), icon: <Timer size={13} /> },
+    response,
   ]
 
   return <SummaryBar stats={cells} />

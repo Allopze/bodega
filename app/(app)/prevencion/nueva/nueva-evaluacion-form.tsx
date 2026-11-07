@@ -132,7 +132,7 @@ export function NuevaEvaluacionForm({ workers, worksites, definiciones, cargoOpt
       className="overflow-hidden rounded-(--radius-xl) border border-(--color-border) bg-(--color-surface) shadow-[var(--shadow-card)]"
     >
       <div className="border-b border-(--color-border) bg-(--color-surface-2) px-4 py-3 sm:px-5">
-        <p className="text-xs font-semibold uppercase tracking-wide text-text-subtle">Ficha base</p>
+        <p className="text-eyebrow">Ficha base</p>
         <p className="mt-1 text-sm text-(--color-text-muted)">
           Identifica al trabajador, el alcance de la evaluación y los cargos aplicables.
         </p>
@@ -174,7 +174,7 @@ export function NuevaEvaluacionForm({ workers, worksites, definiciones, cargoOpt
                     <span className="flex min-w-0 flex-1 items-center justify-between gap-3">
                       <span title={w.name} className="truncate">{w.name}</span>
                       {w.rut && (
-                        <span className="shrink-0 rounded-(--radius) border border-(--color-border) bg-(--color-surface-2) px-2 py-0.5 font-mono text-[11px] text-text-subtle">
+                        <span className="shrink-0 rounded-(--radius) border border-(--color-border) bg-(--color-surface-2) px-2 py-0.5 font-mono text-2xs text-text-subtle">
                           {w.rut}
                         </span>
                       )}
@@ -276,7 +276,7 @@ export function NuevaEvaluacionForm({ workers, worksites, definiciones, cargoOpt
 
         {/* Summary */}
         <div className="rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface-2) p-3 sm:p-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-text-subtle">Resumen antes de crear</p>
+          <p className="text-eyebrow">Resumen antes de crear</p>
           <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
             <SummaryItem
               icon={<IdentificationBadge size={15} weight="bold" aria-hidden="true" />}

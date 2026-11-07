@@ -57,7 +57,7 @@ export function PdtpImportExcelDialog({
         <DialogHeader>
           <DialogTitle>Importar programa desde Excel</DialogTitle>
           <DialogDescription>
-            Carga un archivo <code className="rounded bg-[var(--color-surface-2)] px-1 py-0.5 text-[11px]">.xlsx</code> con la estructura del Programa de Trabajo Preventivo SG-SST
+            Carga un archivo <code className="rounded bg-[var(--color-surface-2)] px-1 py-0.5 text-2xs">.xlsx</code> con la estructura del Programa de Trabajo Preventivo SG-SST
             (hojas <em>PDTP GENERAL</em>, <em>CPHS</em>, <em>PRF y Adm. de contrato</em>, etc.). El programa no se modifica hasta que confirmes el preview.
           </DialogDescription>
         </DialogHeader>

@@ -122,7 +122,7 @@ export function WorksiteAdjustmentsPanel({
       </div>
 
       <div className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
-        <div className="grid grid-cols-[4rem_minmax(0,1fr)_8rem_7rem] gap-3 border-b border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">
+        <div className="text-eyebrow grid grid-cols-[4rem_minmax(0,1fr)_8rem_7rem] gap-3 border-b border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-2">
           <span>N°</span><span>Actividad</span><span>Estado</span><span className="text-right">Acción</span>
         </div>
         <div className="divide-y divide-[var(--color-border)]">

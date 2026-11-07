@@ -344,7 +344,7 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
         )}
         {sourceProgram && (
           <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">Linaje de revisión</p>
+            <p className="text-eyebrow">Linaje de revisión</p>
             <p className="mt-1 text-sm text-[var(--color-text)]">
               <Link className="font-medium text-[var(--color-primary-ink)] hover:underline" href={`/prevencion/pdtp/${sourceProgram.id}`}>v{sourceProgram.version}</Link>
               {" → "}v{program.version}. La evidencia y las firmas de v{sourceProgram.version} permanecen en su versión de origen.

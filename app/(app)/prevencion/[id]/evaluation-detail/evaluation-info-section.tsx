@@ -86,7 +86,7 @@ export function EvaluationInfoSection({
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <h2 className="text-lg font-bold text-(--color-text)">{workerName}</h2>
+            <h2 className="text-lg font-semibold text-(--color-text)">{workerName}</h2>
             {workerRut && <span className="text-sm text-text-subtle">RUT {workerRut}</span>}
             {evaluation.evaluatorRole && (
               <MetaBadge meta={{ label: `Rol: ${evaluatorRoleLabel(evaluation.evaluatorRole, worksiteAdminContratoLabel)}`, variant: "outline" }} />

@@ -194,7 +194,7 @@ export function ActivityReadinessWorkbench({
             >
               {label}
               <span className={cn(
-                "rounded-full px-1.5 text-[11px] tabular-nums",
+                "rounded-full px-1.5 text-2xs tabular-nums",
                 view === value ? "bg-[var(--color-primary)] text-white" : "bg-[var(--color-surface-2)] text-[var(--color-text-subtle)]",
               )}>{count}</span>
             </button>
@@ -330,7 +330,7 @@ function ReadinessTableRow({ row }: { row: ReadinessRow }) {
       </td>
       <td className="max-w-[28rem] px-3 py-2.5 align-top">
         <span className="line-clamp-2 break-words text-[var(--color-text)]" title={row.activity}>{row.activity}</span>
-        <span className="mt-0.5 line-clamp-1 block text-[11px] text-[var(--color-text-muted)]" title={row.reason}>
+        <span className="mt-0.5 line-clamp-1 block text-2xs text-[var(--color-text-muted)]" title={row.reason}>
           {row.reason}
         </span>
       </td>
@@ -340,7 +340,7 @@ function ReadinessTableRow({ row }: { row: ReadinessRow }) {
             <>
               <MetaBadge meta={{ label: row.instrumentKind, variant: "neutral" }} size="sm" />
               {row.instrumentCode && (
-                <span className="mt-0.5 block font-mono text-[11px] text-[var(--color-text-subtle)]">{row.instrumentCode}</span>
+                <span className="mt-0.5 block font-mono text-2xs text-[var(--color-text-subtle)]">{row.instrumentCode}</span>
               )}
             </>
           )
