@@ -9,7 +9,7 @@ import { listActiveSubstitutions } from "@/lib/services/substitutions"
 import { SuplenciasClient } from "./suplencias-client"
 
 export const metadata: Metadata = {
-  title: "Cuentas Temporales de Suplencia (R7) | Administración",
+  title: "Cuentas temporales de suplencia (R7) | Administración",
   description: "Gestión de reemplazos temporales para ausencias de rol",
 }
 

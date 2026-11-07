@@ -61,7 +61,7 @@ describe("WorkflowBar", () => {
     expect(screen.getByRole("heading", { name: "Ficha del documento (1)" })).toBeTruthy()
     expect(screen.getByRole("heading", { name: "Identificación y evaluación (1)" })).toBeTruthy()
     expect(screen.getByRole("heading", { name: "Medidas de control (42)" })).toBeTruthy()
-    expect(screen.getByRole("heading", { name: "Vínculos al Programa de Trabajo (1)" })).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "Vínculos al programa de trabajo (1)" })).toBeTruthy()
     expect(screen.queryByText("Advertencia que no bloquea")).toBeNull()
     fireEvent.click(screen.getByRole("button", { name: "Riesgo #3: Medida 42: falta plazo." }))
     expect(onOpenEntry).toHaveBeenLastCalledWith("e1", "medidas")

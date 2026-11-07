@@ -250,7 +250,7 @@ export function planMiperOccurrenceOverdue(args: MiperOccurrenceOverdueArgs): ()
     const recipients = withoutActor([args.responsibleUserId, ...prevencionistas], null)
     return notifyNewRecipients(recipients, {
       type: "miper_occurrence_overdue" satisfies NotificationType,
-      title: "Actividad del Programa de Trabajo vencida",
+      title: "Actividad del programa de trabajo vencida",
       body: `La actividad N°${args.actionNumber} «${args.actionDescription}» venció el ${args.dueOn} y sigue pendiente.`,
       entityType: MIPER_ENTITY,
       entityId: args.occurrenceId,
@@ -277,7 +277,7 @@ export function planMiperOccurrenceNotDone(args: MiperOccurrenceNotDoneArgs): ()
     const resolve = args.recipients ?? getUserIdsWithPermissionForWorksite
     return notifyNewRecipients(await resolve(REVIEW, args.worksiteId), {
       type: "miper_occurrence_not_done" satisfies NotificationType,
-      title: "Actividad del Programa registrada como «No se hizo»",
+      title: "Actividad del programa registrada como «No se hizo»",
       body: `La actividad N°${args.actionNumber} «${args.actionDescription}» (plazo ${args.dueOn}) se registró como «No se hizo». Revisa el motivo y qué medida la cubre.`,
       entityType: MIPER_ENTITY,
       entityId: args.occurrenceId,

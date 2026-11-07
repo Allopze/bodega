@@ -50,7 +50,7 @@ const COLUMNS = [
 export function AuditLog({ entries }: { entries: AuditRow[] }) {
   return (
     <DataTable
-      caption="Log de Auditoría"
+      caption="Log de auditoría"
       columns={COLUMNS}
       rows={entries}
       // M-18: también por id, para seguir la historia de un registro puntual.

@@ -142,7 +142,7 @@ export function EvaluationCard({
                 size="sm"
                 onClick={() => router.push(`/prevencion/${evaluation.id}`)}
               >
-                Ver / Editar
+                Ver / editar
               </Button>
               {permissions.canDelete && (
                 <Button
@@ -175,7 +175,7 @@ export function EvaluationCard({
                 className="w-full mt-2"
                 onClick={() => onStart(role)}
               >
-                + Iniciar Evaluación
+                + Iniciar evaluación
               </Button>
             ) : (
               <span className="text-xs text-[var(--color-text-subtle)]">

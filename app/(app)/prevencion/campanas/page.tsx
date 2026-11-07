@@ -12,7 +12,7 @@ import { listPdtpAccreditationBindings } from "@/lib/services/pdtp/accreditation
 import { PdtpScheduledActivityPanelServer } from "@/components/prevention/pdtp-scheduled-activity-panel-server"
 
 export const metadata: Metadata = {
-  title: "Campañas Preventivas | SGSST",
+  title: "Campañas preventivas | SGSST",
   description: "Registro de difusión y campañas preventivas de seguridad (R9)",
 }
 

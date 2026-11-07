@@ -13,7 +13,7 @@ import { CARGO_OPTIONS } from "@/lib/sst/cargos"
 import { buildNuevaEvaluacionScope } from "./nueva-evaluacion-page.helpers"
 import { PdtpScheduledActivityPanelServer } from "@/components/prevention/pdtp-scheduled-activity-panel-server"
 
-export const metadata: Metadata = { title: "Nueva Evaluación SST" }
+export const metadata: Metadata = { title: "Nueva evaluación SST" }
 
 export default async function NuevaEvaluacionPage() {
   let session
@@ -71,7 +71,7 @@ export default async function NuevaEvaluacionPage() {
   return (
     <PageContainer width="workbench">
       <PageHeader
-        title="Nueva Evaluación SST"
+        title="Nueva evaluación SST"
         description="Completa los datos para crear una nueva evaluación de seguridad."
         breadcrumb={
           <Breadcrumbs items={[

@@ -235,7 +235,7 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
     <PageContainer>
       <PageHeader
         title="Panel de cumplimiento SG-SST"
-        description={`Avance del Programa de Trabajo Preventivo ${year}, en total o por faena.`}
+        description={`Avance del programa de trabajo preventivo ${year}, en total o por faena.`}
         breadcrumb={
           <Breadcrumbs
             items={[

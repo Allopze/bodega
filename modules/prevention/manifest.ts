@@ -124,19 +124,19 @@ export const preventionModule = {
   ] as const,
 
   permissionMeta: {
-    "prevention:pdtp:view":       { id: "p-prev-pdtp-view",       description: "Ver Programa de Trabajo Preventivo SG-SST" },
-    "prevention:pdtp:execute":    { id: "p-prev-pdtp-execute",    description: "Registrar ejecuciones y evidencias del Programa de Trabajo Preventivo en faenas autorizadas" },
-    "prevention:pdtp:program:manage": { id: "p-prev-pdtp-program-manage", description: "Administrar catálogo, cronograma y metas por faena del Programa de Trabajo Preventivo" },
+    "prevention:pdtp:view":       { id: "p-prev-pdtp-view",       description: "Ver programa de trabajo preventivo SG-SST" },
+    "prevention:pdtp:execute":    { id: "p-prev-pdtp-execute",    description: "Registrar ejecuciones y evidencias del programa de trabajo preventivo en faenas autorizadas" },
+    "prevention:pdtp:program:manage": { id: "p-prev-pdtp-program-manage", description: "Administrar catálogo, cronograma y metas por faena del programa de trabajo preventivo" },
     "prevention:pdtp:override:manage": { id: "p-prev-pdtp-override-manage", description: "Crear, modificar o eliminar excepciones de meta por faena con motivo auditable" },
-    "prevention:pdtp:submit_review": { id: "p-prev-pdtp-submit-review", description: "Congelar una versión del Programa de Trabajo Preventivo y enviarla a revisión" },
-    "prevention:pdtp:approve":    { id: "p-prev-pdtp-approve",    description: "Aprobar el Programa de Trabajo Preventivo como jefatura de prevención" },
-    "prevention:pdtp:sign_legal": { id: "p-prev-pdtp-sign-legal", description: "Firmar el Programa de Trabajo Preventivo como Gerencia Legal y Recursos Humanos" },
-    "prevention:pdtp:activate": { id: "p-prev-pdtp-activate", description: "Activar una versión completamente aprobada del Programa de Trabajo Preventivo" },
-    "prevention:pdtp:lifecycle:manage": { id: "p-prev-pdtp-lifecycle-manage", description: "Reabrir o archivar versiones revisadas del Programa de Trabajo Preventivo con motivo auditable" },
+    "prevention:pdtp:submit_review": { id: "p-prev-pdtp-submit-review", description: "Congelar una versión del programa de trabajo preventivo y enviarla a revisión" },
+    "prevention:pdtp:approve":    { id: "p-prev-pdtp-approve",    description: "Aprobar el programa de trabajo preventivo como jefatura de prevención" },
+    "prevention:pdtp:sign_legal": { id: "p-prev-pdtp-sign-legal", description: "Firmar el programa de trabajo preventivo como Gerencia Legal y Recursos Humanos" },
+    "prevention:pdtp:activate": { id: "p-prev-pdtp-activate", description: "Activar una versión completamente aprobada del programa de trabajo preventivo" },
+    "prevention:pdtp:lifecycle:manage": { id: "p-prev-pdtp-lifecycle-manage", description: "Reabrir o archivar versiones revisadas del programa de trabajo preventivo con motivo auditable" },
     "prevention:pdtp:action:manage":    { id: "p-prev-pdtp-act-manage", description: "Crear/editar acciones correctivas y su seguimiento en el PDTP" },
     "prevention:pdtp:action:verify":    { id: "p-prev-pdtp-act-verify", description: "Verificar el cierre de acciones correctivas del PDTP" },
     "prevention:pdtp:obligation:cancel": { id: "p-prev-pdtp-obl-cancel", description: "Cancelar necesidades y eventos del PDTP" },
-    "prevention:pdtp:close_period": { id: "p-prev-pdtp-close-period", description: "Cerrar y reabrir el mes del Programa de Trabajo Preventivo por faena, congelando su foto" },
+    "prevention:pdtp:close_period": { id: "p-prev-pdtp-close-period", description: "Cerrar y reabrir el mes del programa de trabajo preventivo por faena, congelando su foto" },
     // Fase 5: nombrar a la persona no cambia el contenido firmado, pero SÍ
     // cambia quién ve la fila en /pendientes (el asignado la ve; los demás del
     // mismo rol dejan de verla). Por eso es permiso propio y no cuelga de
@@ -144,8 +144,8 @@ export const preventionModule = {
     "prevention:pdtp:assignee:manage": { id: "p-prev-pdtp-assignee-manage", description: "Asignar nominalmente actividades del programa a personas de una faena" },
     // Permiso propio (no `prevention:pdtp:execute`): quien sólo deja
     // constancias no debe poder tocar el resto de la planilla, y viceversa.
-    "prevention:constancias:view":    { id: "p-prev-constancias-view",    description: "Ver el submódulo de Constancias del Programa de Trabajo Preventivo" },
-    "prevention:constancias:execute": { id: "p-prev-constancias-execute", description: "Dejar constancia de una actividad del Programa de Trabajo Preventivo" },
+    "prevention:constancias:view":    { id: "p-prev-constancias-view",    description: "Ver el submódulo de Constancias del programa de trabajo preventivo" },
+    "prevention:constancias:execute": { id: "p-prev-constancias-execute", description: "Dejar constancia de una actividad del programa de trabajo preventivo" },
     // `prevention:alcohol_tests:view` está retirado y prohibido de reintroducir
     // (prevention-rbac.test.ts): el módulo nuevo usa el slug `alcotest`.
     "prevention:alcotest:view":     { id: "p-prev-alcotest-view",     description: "Ver los controles de alcotest y sus envíos de registro" },
@@ -221,7 +221,7 @@ export const preventionModule = {
     // no `prevention:risk:edit`: quien levanta la matriz en faena no
     // necesariamente lleva su programa, y al revés. Tampoco cuelga de
     // `pdtp:execute`, que es el programa del DS 44 y no el de la MIPER.
-    "prevention:risk:program:execute": { id: "p-prev-risk-program-execute", description: "Registrar Se hizo / No se hizo y la evidencia de las actividades del Programa de Trabajo de la MIPER" },
+    "prevention:risk:program:execute": { id: "p-prev-risk-program-execute", description: "Registrar Se hizo / No se hizo y la evidencia de las actividades del programa de trabajo de la MIPER" },
     "prevention:risk:override_segregation": { id: "p-prev-risk-override", description: "Autorizar excepción fundamentada a la segregación de verificación de controles MIPER" },
     "prevention:legal:view": { id: "p-prev-legal-view", description: "Ver el registro legal y la aplicabilidad dentro de la faena autorizada" },
     "prevention:legal:assess": { id: "p-prev-legal-assess", description: "Preparar requisitos, proponer aplicabilidad y evaluar cumplimiento" },

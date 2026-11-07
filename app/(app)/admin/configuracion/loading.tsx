@@ -9,7 +9,7 @@ export default function Loading() {
   return (
     <>
       <PageHeader
-        title="Configuración del Sistema"
+        title="Configuración del sistema"
         breadcrumb={BREADCRUMBS}
       />
       <SkeletonPage rows={6} />

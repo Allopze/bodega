@@ -457,7 +457,7 @@ export function ProductList({ products, categories, allSuppliers, units, templat
 
         <TabsContent value="active">
           <DataTable
-            caption="Productos Activos"
+            caption="Productos activos"
             columns={COLUMNS_WITH_CHECKBOX}
             rows={activeFamilies}
             searchKeys={CONTRACT.searchKeys as (keyof ProductFamilyRow)[]}
@@ -472,7 +472,7 @@ export function ProductList({ products, categories, allSuppliers, units, templat
 
         <TabsContent value="inactive">
           <DataTable
-            caption="Productos Inactivos"
+            caption="Productos inactivos"
             columns={COLUMNS_WITH_CHECKBOX}
             rows={inactiveFamilies}
             searchKeys={CONTRACT.searchKeys as (keyof ProductFamilyRow)[]}

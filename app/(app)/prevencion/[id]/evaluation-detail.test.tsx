@@ -264,8 +264,8 @@ describe("EvaluationDetail", () => {
           evaluation={makeEvaluation({ estado: "cerrado", resultadoFinal: "habilitado_autonomo", porcentajeCumplimiento: 95 })}
         />,
       )
-      // "Habilitado Autónomo" appears in header badge and acta section
-      const resultElements = screen.getAllByText("Habilitado Autónomo")
+      // "Habilitado autónomo" appears in header badge and acta section
+      const resultElements = screen.getAllByText("Habilitado autónomo")
       expect(resultElements.length).toBeGreaterThanOrEqual(1)
     })
 

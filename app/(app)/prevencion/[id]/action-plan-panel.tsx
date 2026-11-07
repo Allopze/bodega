@@ -108,7 +108,7 @@ export function ActionPlanPanel({ evaluationId, items, readOnly, onUpdate }: Pro
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-(--color-text)">Plan de Acción Correctiva</h3>
+        <h3 className="text-sm font-semibold text-(--color-text)">Plan de acción correctiva</h3>
         {!readOnly && (
           <Button size="sm" variant="secondary" onClick={handleAddRow} disabled={isPending || !!draft}>
             <Plus size={14} weight="bold" className="mr-1" />

@@ -246,7 +246,7 @@ export async function updateDeliveryModeAction(
         ["in_purchase_order", "purchased", "partially_received", "received", "partially_delivered", "delivered"].includes(i.status),
       )
       if (hasPurchasedItems) {
-        throw new Error("No se puede cambiar el modo de despacho porque esta solicitud ya posee ítems en Orden de Compra")
+        throw new Error("No se puede cambiar el modo de despacho porque esta solicitud ya posee ítems en orden de compra")
       }
 
       /*

@@ -98,7 +98,7 @@ test("/admin ofrece un índice de destinos agrupado por categoría", async ({ pa
   await page.setViewportSize({ width: 1440, height: 1080 })
   await login(page)
   await page.goto("/admin")
-  await expectPageTitle(page, "Panel de Administración")
+  await expectPageTitle(page, "Panel de administración")
 
   // Un solo landmark de navegación para las ocho áreas, no uno por área.
   const indice = page.getByRole("navigation", { name: "Índice de administración" })

@@ -8,7 +8,7 @@ import { PageContainer } from "@/components/ui/page-container"
 export default function Loading() {
   return (
     <PageContainer>
-      <PageHeader title="Campañas Preventivas | SGSST" />
+      <PageHeader title="Campañas preventivas | SGSST" />
       <SkeletonPage rows={6} />
     </PageContainer>
   )

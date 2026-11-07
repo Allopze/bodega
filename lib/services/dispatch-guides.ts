@@ -813,7 +813,7 @@ async function assertGuideQuantitiesWithinOfficeReceipt(
     throw new Error("La guía contiene una línea que ya no pertenece a su orden de compra")
   }
   if (lockedItems.some((item) => !item.productId)) {
-    throw new Error("Los servicios no pueden formar parte de una Guía de Despacho Interna")
+    throw new Error("Los servicios no pueden formar parte de una guía de despacho interna")
   }
 
   const allocations = await tx
@@ -917,7 +917,7 @@ export async function dispatchDispatchGuide(
     if (items.length === 0) throw new Error("La guía no tiene elementos que despachar")
     await assertGuideQuantitiesWithinOfficeReceipt(tx, guide, items)
     if (items.some((item) => item.isService)) {
-      throw new Error("Los servicios no pueden formar parte de una Guía de Despacho Interna")
+      throw new Error("Los servicios no pueden formar parte de una guía de despacho interna")
     }
 
     const [destination] = await tx

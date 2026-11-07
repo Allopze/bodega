@@ -41,11 +41,11 @@ import {
 
 const sstChartConfig = {
   tasaFrecuencia: {
-    label: "Tasa de Frecuencia (TF)",
+    label: "Tasa de frecuencia (TF)",
     color: CHART_COLORS.blue,
   },
   tasaGravedad: {
-    label: "Tasa de Gravedad (TG)",
+    label: "Tasa de gravedad (TG)",
     color: CHART_COLORS.danger,
   },
 } satisfies ChartConfig
@@ -80,15 +80,15 @@ const sstAccidentConfig = {
 
 const materialEnvConfig = {
   dangerousIncidents: {
-    label: "Inc. Peligrosos",
+    label: "Inc. peligrosos",
     color: CHART_COLORS.violet,
   },
   materialDamage: {
-    label: "Daño Material",
+    label: "Daño material",
     color: CHART_COLORS.signal,
   },
   environmentalSpills: {
-    label: "Daño Ambiental",
+    label: "Daño ambiental",
     color: CHART_COLORS.teal,
   },
 } satisfies ChartConfig
@@ -136,19 +136,19 @@ export function SstTrendChart({ data }: { data: SstMonthlyPoint[] }) {
 
   const at = active.activeIndex === null ? undefined : data[Math.min(active.activeIndex, data.length - 1)]
   const legend: LegendEntry[] = [
-    { key: "tasaFrecuencia", label: "Tasa de Frecuencia (TF)", color: CHART_COLORS.blue, value: at ? formatRate(at.tasaFrecuencia) : undefined },
-    { key: "tasaGravedad", label: "Tasa de Gravedad (TG)", color: CHART_COLORS.danger, value: at ? formatRate(at.tasaGravedad) : undefined },
+    { key: "tasaFrecuencia", label: "Tasa de frecuencia (TF)", color: CHART_COLORS.blue, value: at ? formatRate(at.tasaFrecuencia) : undefined },
+    { key: "tasaGravedad", label: "Tasa de gravedad (TG)", color: CHART_COLORS.danger, value: at ? formatRate(at.tasaGravedad) : undefined },
   ]
 
   return (
     <ChartFrame
-      title="Tasas de Siniestralidad SST"
-      description="Tasa de Frecuencia (izq.) y Tasa de Gravedad (der.), cada una en su escala"
+      title="Tasas de siniestralidad SST"
+      description="Tasa de frecuencia (izq.) y tasa de gravedad (der.), cada una en su escala"
     >
       <ChartContainer config={sstChartConfig} className={`h-52 w-full ${SERIES_FADE_CLASS}`} data-chart-kind="lines">
         <ComposedChart
           accessibilityLayer
-          aria-label="Tasas de Siniestralidad SST"
+          aria-label="Tasas de siniestralidad SST"
           data={data}
           margin={{ top: 12, right: 0, left: 0, bottom: 0 }}
         >
@@ -165,7 +165,7 @@ export function SstTrendChart({ data }: { data: SstMonthlyPoint[] }) {
             yAxisId="tf"
             type="monotone"
             dataKey="tasaFrecuencia"
-            name="Tasa de Frecuencia (TF)"
+            name="Tasa de frecuencia (TF)"
             stroke={CHART_COLORS.blue}
             strokeWidth={2}
             strokeLinecap="round"
@@ -178,7 +178,7 @@ export function SstTrendChart({ data }: { data: SstMonthlyPoint[] }) {
             yAxisId="tg"
             type="monotone"
             dataKey="tasaGravedad"
-            name="Tasa de Gravedad (TG)"
+            name="Tasa de gravedad (TG)"
             stroke={CHART_COLORS.danger}
             strokeWidth={2}
             strokeLinecap="round"
@@ -303,9 +303,9 @@ export function MaterialEnvironmentalChart({ data }: { data: MaterialEnvironment
 
   const at = active.activeIndex === null ? undefined : data[Math.min(active.activeIndex, data.length - 1)]
   const legend: LegendEntry[] = [
-    { key: "dangerousIncidents", label: "Inc. Peligrosos", color: CHART_COLORS.violet, swatch: "box", value: at ? formatQty(at.dangerousIncidents) : undefined },
-    { key: "materialDamage", label: "Daño Material", color: CHART_COLORS.signal, swatch: "box", value: at ? formatQty(at.materialDamage) : undefined },
-    { key: "environmentalSpills", label: "Daño Ambiental", color: CHART_COLORS.teal, swatch: "box", value: at ? formatQty(at.environmentalSpills) : undefined },
+    { key: "dangerousIncidents", label: "Inc. peligrosos", color: CHART_COLORS.violet, swatch: "box", value: at ? formatQty(at.dangerousIncidents) : undefined },
+    { key: "materialDamage", label: "Daño material", color: CHART_COLORS.signal, swatch: "box", value: at ? formatQty(at.materialDamage) : undefined },
+    { key: "environmentalSpills", label: "Daño ambiental", color: CHART_COLORS.teal, swatch: "box", value: at ? formatQty(at.environmentalSpills) : undefined },
   ]
 
   return (
@@ -329,9 +329,9 @@ export function MaterialEnvironmentalChart({ data }: { data: MaterialEnvironment
             cursor={<ColumnHoverCursor />}
             content={<ChartTooltipCard valueFormat="count" labelFormatter={(label) => monthTitle(String(label))} />}
           />
-          <Bar dataKey="dangerousIncidents" name="Inc. Peligrosos" fill={CHART_COLORS.violet} radius={[4, 4, 0, 0]} maxBarSize={48} shape={dimmedBarShape("dangerousIncidents", active.activeIndex, focus.focusedKey)} {...motion} />
-          <Bar dataKey="materialDamage" name="Daño Material" fill={CHART_COLORS.signal} radius={[4, 4, 0, 0]} maxBarSize={48} shape={dimmedBarShape("materialDamage", active.activeIndex, focus.focusedKey)} {...motion} />
-          <Bar dataKey="environmentalSpills" name="Daño Ambiental" fill={CHART_COLORS.teal} radius={[4, 4, 0, 0]} maxBarSize={48} shape={dimmedBarShape("environmentalSpills", active.activeIndex, focus.focusedKey)} {...motion} />
+          <Bar dataKey="dangerousIncidents" name="Inc. peligrosos" fill={CHART_COLORS.violet} radius={[4, 4, 0, 0]} maxBarSize={48} shape={dimmedBarShape("dangerousIncidents", active.activeIndex, focus.focusedKey)} {...motion} />
+          <Bar dataKey="materialDamage" name="Daño material" fill={CHART_COLORS.signal} radius={[4, 4, 0, 0]} maxBarSize={48} shape={dimmedBarShape("materialDamage", active.activeIndex, focus.focusedKey)} {...motion} />
+          <Bar dataKey="environmentalSpills" name="Daño ambiental" fill={CHART_COLORS.teal} radius={[4, 4, 0, 0]} maxBarSize={48} shape={dimmedBarShape("environmentalSpills", active.activeIndex, focus.focusedKey)} {...motion} />
         </ComposedChart>
       </ChartContainer>
       <InteractiveLegend entries={legend} focus={focus} label="Series de impacto material y ambiental" />

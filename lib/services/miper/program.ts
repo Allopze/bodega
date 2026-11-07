@@ -38,7 +38,7 @@ import {
 } from "./shared"
 
 const EDIT = "prevention:risk:edit"
-const STALE_PROGRAM = "El Programa de Trabajo cambió mientras lo editabas. Recarga antes de continuar."
+const STALE_PROGRAM = "El programa de trabajo cambió mientras lo editabas. Recarga antes de continuar."
 const STALE_ACTION = "La actividad cambió mientras la editabas. Recarga el programa."
 
 type Matrix = typeof preventionRiskMatrices.$inferSelect
@@ -94,7 +94,7 @@ export async function ensureProgram(client: Client, matrix: Matrix): Promise<Pro
 
   if (created) return created
   const [raced] = await client.select().from(preventionRiskPrograms).where(eq(preventionRiskPrograms.matrixId, matrix.id)).limit(1)
-  if (!raced) throw new RiskLegalDomainError("No se pudo preparar el Programa de Trabajo. Recarga la MIPER.")
+  if (!raced) throw new RiskLegalDomainError("No se pudo preparar el programa de trabajo. Recarga la MIPER.")
   return raced
 }
 
@@ -472,7 +472,7 @@ export async function applyProgramGeneration(
       if (decision.decision === "leave" && blocked.length > 0) {
         const row = blocked[0]!
         const band = row.classification === "intolerable" ? "Intolerable" : "Importante"
-        throw new RiskLegalDomainError(`La fila ${row.rowNumber} tiene un riesgo ${band}: «${row.description}» no puede quedar sin una actividad del Programa de Trabajo. Crea o asocia una actividad.`)
+        throw new RiskLegalDomainError(`La fila ${row.rowNumber} tiene un riesgo ${band}: «${row.description}» no puede quedar sin una actividad del programa de trabajo. Crea o asocia una actividad.`)
       }
 
       if (decision.decision === "leave") {

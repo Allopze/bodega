@@ -8,7 +8,7 @@ import { PageContainer } from "@/components/ui/page-container"
 export default function Loading() {
   return (
     <PageContainer>
-      <PageHeader title="Auditoría sensible de Prevención" />
+      <PageHeader title="Auditoría sensible de prevención" />
       <SkeletonPage rows={6} />
     </PageContainer>
   )

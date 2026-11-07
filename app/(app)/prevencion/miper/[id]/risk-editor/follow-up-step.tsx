@@ -38,7 +38,7 @@ export function FollowUpStep({ entry, data, mode, change, baselineEntry, issues 
   const observations = data.observations.filter((item) => item.entryId === entry.id)
   return (
     <div className="space-y-6">
-      <section aria-label="Programa de Trabajo del riesgo" className="space-y-2">
+      <section aria-label="Programa de trabajo del riesgo" className="space-y-2">
         <h3 className="text-sm font-semibold">Actividades del plan de medidas ({activities.length})</h3>
         <p className="text-sm text-[var(--color-text-subtle)]">Abre una actividad para consultar sus ejecuciones programadas y registrar lo realizado.</p>
         {programMessage && <p className="rounded-lg bg-[var(--color-warning-tint)] p-3 text-sm text-[var(--color-warning-ink)]">{programMessage}</p>}

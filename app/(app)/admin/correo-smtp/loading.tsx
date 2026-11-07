@@ -9,7 +9,7 @@ export default function Loading() {
   return (
     <>
       <PageHeader
-        title="Configuración de Correo"
+        title="Configuración de correo"
         breadcrumb={BREADCRUMBS}
       />
       <SkeletonPage rows={6} />

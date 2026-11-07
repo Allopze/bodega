@@ -116,7 +116,7 @@ export async function recordAlcoholTest(
   assertWorksiteAccess(input.worksiteId, scope)
   const activityNumber = resolveAlcotestActivityNumber(performerRoles)
   if (activityNumber === null) {
-    throw new Error("Tu rol no está habilitado para registrar un alcotest en el Programa de Trabajo Preventivo.")
+    throw new Error("Tu rol no está habilitado para registrar un alcotest en el programa de trabajo preventivo.")
   }
   if (!input.testedWorkerId && !input.testedPersonName?.trim()) {
     throw new Error("Indica a quién se le tomó el control: una persona de la dotación o el nombre de un tercero.")

@@ -39,7 +39,7 @@ export async function EvaluationsPage() {
         actions={
           canCreate ? (
             <Button asChild>
-              <Link href="/prevencion/nueva">Nueva Evaluación</Link>
+              <Link href="/prevencion/nueva">Nueva evaluación</Link>
             </Button>
           ) : undefined
         }

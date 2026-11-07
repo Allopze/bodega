@@ -68,7 +68,7 @@ export function NotificationAdminList({ rows, oldestReadDate, retentionDays }: N
         </form>
       </div>
       <DataTable
-        caption="Notificaciones de la Plataforma"
+        caption="Notificaciones de la plataforma"
         columns={COLUMNS}
         rows={dataRows}
         searchKeys={["title", "body", "userEmail", "type"]}

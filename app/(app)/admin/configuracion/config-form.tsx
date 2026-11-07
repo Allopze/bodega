@@ -218,7 +218,7 @@ export function ConfigForm({ initialPdfMaxSizeMb, initialCompanyProfile }: Confi
         </div>
 
         <div className="flex justify-end">
-          <SubmitButton label="Guardar Configuración" loadingLabel="Guardando..." variant="primary" />
+          <SubmitButton label="Guardar configuración" loadingLabel="Guardando..." variant="primary" />
         </div>
       </aside>
     </form>
@@ -243,11 +243,11 @@ function OcHeaderPreview({ profile }: { profile: CompanyProfile }) {
             </p>
             <div className="mt-2 space-y-1 text-xs text-[var(--color-text-muted)]">
               <PreviewLine label="Giro" value={profile.businessActivity} />
-              <PreviewLine label="Casa Matriz" value={profile.address} />
+              <PreviewLine label="Casa matriz" value={profile.address} />
               <PreviewLine label="Fono" value={profile.phone} />
               {profile.branchAddress && (
                 <>
-                  <p className="pt-1 text-[var(--color-text-subtle)]">Otras Direcciones o Sucursales:</p>
+                  <p className="pt-1 text-[var(--color-text-subtle)]">Otras direcciones o sucursales:</p>
                   <p>{profile.branchAddress}</p>
                 </>
               )}

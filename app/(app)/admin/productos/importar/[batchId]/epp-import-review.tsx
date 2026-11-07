@@ -249,7 +249,7 @@ export function EppImportReview({ batch }: { batch: { id: string; status: string
           <TableHeader>
             <TableRow>
               <TableHead>#</TableHead><TableHead>Nombre</TableHead><TableHead>Unidad</TableHead><TableHead>Tipo EPP</TableHead>
-              <TableHead>Color / Talla</TableHead><TableHead>Proveedor</TableHead><TableHead>Precio</TableHead><TableHead>Estado</TableHead>
+              <TableHead>Color / talla</TableHead><TableHead>Proveedor</TableHead><TableHead>Precio</TableHead><TableHead>Estado</TableHead>
               <TableHead>Decisión</TableHead><TableHead className="text-center" />
             </TableRow>
           </TableHeader>

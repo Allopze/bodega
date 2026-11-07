@@ -148,7 +148,7 @@ export function CgrdWorkbench({
   return (
     <PageContainer width="wide">
       <PageHeader
-        title="Gestión de Riesgos de Desastres"
+        title="Gestión de riesgos de desastres"
         description="Comité, matriz GRD y actas del CGRD (DS 44) — distinto del Comité Paritario."
         breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "Prevención", href: "/prevencion" }, { label: "CGRD" }]} />}
       />
@@ -268,7 +268,7 @@ export function CgrdWorkbench({
         <section className="mt-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <h2 className="text-sm font-semibold text-[var(--color-text)]">Coordinador de Gestión del Riesgo de Desastres</h2>
+              <h2 className="text-sm font-semibold text-[var(--color-text)]">Coordinador de gestión del riesgo de desastres</h2>
               <p className="text-xs text-[var(--color-text-subtle)]">
                 {workerCandidates.find((worker) => worker.id === structure.coordinator!.workerId)
                   ? `${workerCandidates.find((worker) => worker.id === structure.coordinator!.workerId)!.lastName}, ${workerCandidates.find((worker) => worker.id === structure.coordinator!.workerId)!.firstName}`
@@ -299,7 +299,7 @@ export function CgrdWorkbench({
         <EmptyState
           title={structure?.required === "coordinator" ? "Sin coordinador designado" : "Sin comité vigente"}
           description={structure?.required === "coordinator"
-            ? `Con ${structure.headcount} persona(s) corresponde designar un Coordinador de Gestión del Riesgo de Desastres. Constituir el comité también es válido: la norma fija un mínimo, y sobrecumplirlo no es incumplir.`
+            ? `Con ${structure.headcount} persona(s) corresponde designar un Coordinador de gestión del riesgo de desastres. Constituir el comité también es válido: la norma fija un mínimo, y sobrecumplirlo no es incumplir.`
             : "Esta faena no tiene un Comité de Gestión de Riesgos de Desastres constituido."}
           action={canManageCommittee ? (
             <div className="flex gap-2">
@@ -379,6 +379,9 @@ export function CgrdWorkbench({
                       <span className={meeting.annulledAt ? "ml-2 line-through text-[var(--color-text-subtle)]" : "ml-2"}>
                         {meeting.code} · {formatDateTime(meeting.heldOn)}
                       </span>
+                      {meeting.legacyCode && (
+                        <p className="mt-1 text-xs text-[var(--color-text-subtle)]">Código anterior: {meeting.legacyCode}</p>
+                      )}
                       {meeting.annulledReason && (
                         <p className="mt-1 text-xs text-[var(--color-text-subtle)]">Anulada: {meeting.annulledReason}</p>
                       )}
@@ -744,7 +747,7 @@ function DesignateCoordinatorDialog({ open, onOpenChange, worksiteId, workers, o
     <DialogHeader>
       <DialogTitle>Designar coordinador</DialogTitle>
       <DialogDescription>
-        Coordinador de Gestión del Riesgo de Desastres, la figura que corresponde hasta 25 personas. Es distinta
+        Coordinador de gestión del riesgo de desastres, la figura que corresponde hasta 25 personas. Es distinta
         del Delegado de Seguridad y Salud en el Trabajo, que es de otro cuerpo normativo.
       </DialogDescription>
     </DialogHeader>

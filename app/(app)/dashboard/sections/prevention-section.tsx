@@ -248,7 +248,7 @@ export async function PreventionSection({ session, worksiteScope, worksiteIds, c
                el ancho de un gráfico de barras, y a ancho completo dejaba a la
                cobertura sola en su fila con media fila vacía. */
             <ChartSlot>
-              <ChartFrame title="Cumplimiento del PDTP por faena" description={`Programa de Trabajo Preventivo ${pdtpYear}: comparativa entre las faenas del alcance`}>
+              <ChartFrame title="Cumplimiento del PDTP por faena" description={`Programa de trabajo preventivo ${pdtpYear}: comparativa entre las faenas del alcance`}>
                 {pdtpAllZero ? (
                   <EmptyState
                     compact align="start" as="p" className="px-0 py-2"

@@ -134,7 +134,7 @@ export function TaeAccessActivation({ accessToken }: { accessToken: string }) {
           <Button ref={retryRef} type="button" className="mt-5 w-full" size="lg" onClick={() => void activate()} loading={preparing}>Reintentar</Button>
         </section> : <>
           <CircleNotch size={30} className="mx-auto animate-spin text-[var(--color-primary)]" />
-          <h1 className="mt-4 text-h2">Preparando Control TAE</h1>
+          <h1 className="mt-4 text-h2">Preparando control TAE</h1>
           <p className="mt-1 text-sm text-[var(--color-text-muted)]" aria-live="polite">Este enlace configurará la faena y el punto de carga en este dispositivo.</p>
         </>}
       </div>

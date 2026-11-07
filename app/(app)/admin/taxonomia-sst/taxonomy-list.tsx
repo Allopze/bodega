@@ -171,7 +171,7 @@ export function TaxonomyView({ categories, activeSlug, confidentialityLabel = DE
           </span>
         </div>
         <DataTable
-          caption="Categorías Documentales SST"
+          caption="Categorías documentales SST"
           viewKey="tax"
           columns={CATEGORY_COLUMNS}
           rows={catRows}

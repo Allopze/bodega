@@ -58,7 +58,7 @@ import { ProgramAcknowledgmentBeacon } from "./program-acknowledgment-beacon"
 import { ProgramDiffusionCard } from "./program-diffusion-card"
 import { getPdtpProgramDiffusionStatus } from "@/lib/services/pdtp/program-acknowledgments"
 
-export const metadata: Metadata = { title: "Programa de Trabajo Preventivo SG-SST" }
+export const metadata: Metadata = { title: "Programa de trabajo preventivo SG-SST" }
 
 type PdtpPageProps = {
   params: Promise<{ programId: string }>

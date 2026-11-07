@@ -5,7 +5,7 @@ export default function Loading() {
   return (
     <>
       <PageHeader
-        title="Programa de Trabajo Preventivo"
+        title="Programa de trabajo preventivo"
         breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "Prevención", href: "/prevencion" }, { label: "Programa de trabajo", href: "/prevencion/pdtp" }, { label: "Detalle" }]} />}
       />
       <SkeletonPage rows={8} />

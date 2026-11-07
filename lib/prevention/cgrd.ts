@@ -29,7 +29,7 @@ export function resolveGrdStructure(workerCount: number): GrdStructure {
 }
 
 export const GRD_STRUCTURE_LABELS: Record<GrdStructure, string> = {
-  coordinator: "Coordinador de Gestión del Riesgo de Desastres",
+  coordinator: "Coordinador de gestión del riesgo de desastres",
   committee: "Comité de Gestión del Riesgo de Desastres (CGRD)",
 }
 

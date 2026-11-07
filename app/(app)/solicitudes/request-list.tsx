@@ -145,8 +145,8 @@ export function RequestList({
     <div className="flex flex-col gap-4">
       <OnboardingHint
         storageKey="hint_solicitudes_v1"
-        title="Solicitudes de EPPs, Servicios, repuestos u otros"
-        body="Crea solicitudes de EPPs, Servicios, repuestos u otros para tus faenas. EPP y otros se envían a aprobación al crearlos; repuestos y servicios pasan antes por un borrador para adjuntar cotizaciones."
+        title="Solicitudes de EPPs, servicios, repuestos u otros"
+        body="Crea solicitudes de EPPs, servicios, repuestos u otros para tus faenas. EPP y otros se envían a aprobación al crearlos; repuestos y servicios pasan antes por un borrador para adjuntar cotizaciones."
       />
       {/* A5: el estado vive en las tabs, así que la barra no repite su select. */}
       {stageTabs.length > 0 && <StageTabs tabs={stageTabs} ariaLabel="Etapa de la solicitud" />}

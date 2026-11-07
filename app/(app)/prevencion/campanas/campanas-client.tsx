@@ -105,7 +105,7 @@ export function CampanasClient({
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Campañas Preventivas (R9)"
+        title="Campañas preventivas (R9)"
         description="Registro histórico. Las campañas del programa 2026 (N°85-89) ya no se crean acá."
         actions={
           <Button asChild variant="secondary">
@@ -148,7 +148,7 @@ export function CampanasClient({
               <caption className="sr-only">Campañas de capacitación</caption>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Código</TableHead><TableHead>Título / Descripción</TableHead><TableHead>Faena</TableHead>
+                  <TableHead>Código</TableHead><TableHead>Título / descripción</TableHead><TableHead>Faena</TableHead>
                   <TableHead>Actividad PDTP</TableHead>
                   <TableHead>Estado</TableHead><TableHead className="text-right">Acciones</TableHead>
                 </TableRow>
@@ -156,7 +156,10 @@ export function CampanasClient({
               <TableBody>
                 {initialCampaigns.map((cmp) => (
                   <TableRow key={cmp.id} className="hover:bg-[var(--color-surface-hover)]">
-                    <TableCell className="font-mono font-medium">{cmp.code}</TableCell>
+                    <TableCell>
+                      <span className="font-mono font-medium">{cmp.code}</span>
+                      {cmp.legacyCode && <span className="block text-xs text-[var(--color-text-subtle)]">Código anterior: {cmp.legacyCode}</span>}
+                    </TableCell>
                     <TableCell>
                       <div className="font-medium text-[var(--color-text)]">{cmp.title}</div>
                       {cmp.description && (
@@ -206,7 +209,7 @@ export function CampanasClient({
       <Dialog open={!!doneCampaignItem} onOpenChange={(open) => !open && setDoneCampaignItem(null)}>
         <DialogContent className="sm:max-w-[480px]">
           <DialogHeader>
-            <DialogTitle>Marcar Campaña como Hecha</DialogTitle>
+            <DialogTitle>Marcar campaña como hecha</DialogTitle>
             {/* PREV-I10: desde b5ff6c1f cerrar una campaña no acredita; prometerlo
                 hacía que se diera la actividad por cumplida sin ir a Capacitación. */}
             <DialogDescription>

@@ -65,7 +65,7 @@ export default async function EppsPage() {
     <PageContainer>
       <PageHeader
         title="Catálogo de EPP"
-        description="Familias de Elementos de Protección Personal por tipo y variante"
+        description="Familias de elementos de protección personal por tipo y variante"
       />
       <EppFamilyList families={families} eppTypes={eppTypes} categories={categories.map((c) => ({ id: c.id, name: c.name }))} />
     </PageContainer>

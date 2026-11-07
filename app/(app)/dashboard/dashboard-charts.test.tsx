@@ -167,7 +167,7 @@ describe("gráficos SST y de flota", () => {
 
     const rates = render(<SstTrendChart data={sst(1)} />)
     expect(rates.container.querySelector("[data-chart]")).not.toBeNull()
-    expect(screen.getByRole("button", { name: /Tasa de Frecuencia/ })).toBeDefined()
+    expect(screen.getByRole("button", { name: /Tasa de frecuencia/ })).toBeDefined()
     rates.unmount()
 
     const material = render(

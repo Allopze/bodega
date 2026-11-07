@@ -78,9 +78,9 @@ export default async function PdtpApprovalsPage({ searchParams }: PdtpApprovalsP
   // no inducir a error (un usuario de faena solo ve sus faenas).
   const scopeDescription =
     scope.mode === "all"
-      ? `Ejecuciones semanales${program ? ` de "${program.title}"` : " del Programa de Trabajo Preventivo"} pendientes de aprobación, en todas las faenas.`
+      ? `Ejecuciones semanales${program ? ` de "${program.title}"` : " del programa de trabajo preventivo"} pendientes de aprobación, en todas las faenas.`
       : scope.mode === "some"
-        ? `Ejecuciones semanales${program ? ` de "${program.title}"` : " del Programa de Trabajo Preventivo"} pendientes de aprobación en tus ${countOf(scope.ids.length, "faena asignada", "faenas asignadas")}.`
+        ? `Ejecuciones semanales${program ? ` de "${program.title}"` : " del programa de trabajo preventivo"} pendientes de aprobación en tus ${countOf(scope.ids.length, "faena asignada", "faenas asignadas")}.`
         : "No tienes faenas asignadas, no se mostrarán ejecuciones pendientes."
 
   // One row per (activityId, worksiteId) pair — the same activity can be

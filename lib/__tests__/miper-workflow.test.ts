@@ -168,7 +168,7 @@ describe("flujo MIPER de extremo a extremo (servicio)", () => {
     await entries.saveMiperEntry({ matrixId: id, entryId, expectedVersion: row!.version, values: { probability: 4, consequence: 4 } }, author) // → Intolerable
     let m = await matrixRow(id)
     await expect(wf.submitMiperForReview({ matrixId: id, expectedVersion: m.version }, author))
-      .rejects.toThrow(/Intolerable exige una medida vinculada a una actividad del Programa de Trabajo/)
+      .rejects.toThrow(/Intolerable exige una medida vinculada a una actividad del programa de trabajo/)
 
     // Con la medida del riesgo dentro del programa, el envío pasa.
     await linkMeasureToProgram(id, controlId, "2028-03-01")
