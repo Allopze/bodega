@@ -521,6 +521,19 @@ test.describe("Control operacional — tiles del panel", () => {
     expect(await page.locator("[data-kpi-card]").count()).toBeLessThanOrEqual(4)
   })
 
+  test("la tabla de activos separa mano de obra de OT y compras de repuestos y servicios", async ({ page }) => {
+    // Plan 2026-11-07: el costo manual de la OT es sólo mano de obra / taller, y
+    // las OC vinculadas al equipo tienen su propia columna. El administrador del
+    // seed tiene OT y `purchasing:view`, así que ve ambas.
+    const table = page.getByRole("table", { name: "Activos operacionales" })
+    await expect(table).toBeVisible()
+    const header = (label: string) =>
+      table.getByRole("columnheader", { name: new RegExp(`^(?:Ordenar por )?${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`) })
+    await expect(header("Mano de obra / taller (OT)")).toBeVisible()
+    await expect(header("Repuestos y servicios (OC)")).toBeVisible()
+    await expect(header("Costo mantención")).toHaveCount(0)
+  })
+
   test("«Equipos detenidos» abre Vehículos con el estado «detenidos» ya aplicado", async ({ page }) => {
     await tileHacia(page, TILE.detenidos).click()
     await expect(page).toHaveURL(/\/flota\?estado=detenidos$/)
