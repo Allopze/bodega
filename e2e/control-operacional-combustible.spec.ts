@@ -101,7 +101,7 @@ test.describe("Panel operacional — combustible por activo", () => {
     await expect(cells.nth(column("Rendimiento promedio"))).toHaveText("12,5 km/L")
     await expect(cells.nth(column("Cargas marcadas (período)"))).toHaveText("1")
     await expect(cells.nth(column("Casos abiertos"))).toHaveText("0")
-    await expect(cells.nth(column("Costo combustible facturado"))).toContainText("$50.000")
+    await expect(cells.nth(column("Costo combustible (proveedor)"))).toContainText("$50.000")
     await expect(row.getByRole("link", { name: "Combustible" })).toHaveAttribute(
       "href",
       `/combustibles/consumo/equipos/${VEHICLE_ID}`,

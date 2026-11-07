@@ -219,7 +219,7 @@ export function OperationalAssetsTable({
           <>
             {showFuelCost && (
               <div>
-                <dt className="text-[var(--color-text-subtle)]">Costo combustible facturado</dt>
+                <dt className="text-[var(--color-text-subtle)]">Costo combustible (proveedor)</dt>
                 <dd>{asset.fuelBilledAmount == null ? "—" : formatCLP(asset.fuelBilledAmount)}</dd>
               </div>
             )}

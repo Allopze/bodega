@@ -498,13 +498,27 @@ test.describe("Control operacional — rutas retiradas", () => {
 const TILE = {
   detenidos: "/flota?estado=detenidos",
   ordenesAbiertas: "/mantencion/ot?estado=abiertas",
-  documentosVencidos: "/flota?vencimiento=vencidos",
   combustiblePorRevisar: "/combustibles/revisar",
+} as const
+
+/**
+ * El tile de documentos enlaza a lo que cuenta (85200b665): «vencidos» si hay
+ * alguno, si no «por vencer», si no «al día». La base E2E no siembra documentos
+ * vencidos, así que el destino depende de los datos y se lee del propio tile.
+ */
+const DOCUMENTOS_DESTINOS = {
+  "/flota?vencimiento=vencidos": "Documentos vencidos",
+  "/flota?vencimiento=proximos": "Próximos a vencer",
+  "/flota?vencimiento=al-dia": "Al día",
 } as const
 
 /** El tile se localiza por su destino —`KpiCard` envuelve la tarjeta en el enlace— y no por su rótulo. */
 function tileHacia(page: Page, href: string): Locator {
   return page.locator(`a[href="${href}"]:has([data-kpi-card])`)
+}
+
+function tileDeDocumentos(page: Page): Locator {
+  return page.locator(`a[href^="/flota?vencimiento="]:has([data-kpi-card])`)
 }
 
 test.describe("Control operacional — tiles del panel", () => {
@@ -518,6 +532,8 @@ test.describe("Control operacional — tiles del panel", () => {
     for (const [nombre, href] of Object.entries(TILE)) {
       await expect.soft(tileHacia(page, href), `tile ${nombre}`).toHaveCount(1)
     }
+    await expect.soft(tileDeDocumentos(page), "tile documentos").toHaveCount(1)
+    expect(Object.keys(DOCUMENTOS_DESTINOS)).toContain(await tileDeDocumentos(page).getAttribute("href"))
     expect(await page.locator("[data-kpi-card]").count()).toBeLessThanOrEqual(4)
   })
 
@@ -543,12 +559,15 @@ test.describe("Control operacional — tiles del panel", () => {
     await expect(page.getByRole("combobox", { name: "Estado operacional", exact: true })).toContainText("Detenidos")
   })
 
-  test("«Documentos vencidos» abre Vehículos con el vencimiento ya aplicado", async ({ page }) => {
-    await tileHacia(page, TILE.documentosVencidos).click()
-    await expect(page).toHaveURL(/\/flota\?vencimiento=vencidos$/)
+  test("«Documentos vencidos» abre Vehículos con el vencimiento que cuenta ya aplicado", async ({ page }) => {
+    const tile = tileDeDocumentos(page)
+    const href = (await tile.getAttribute("href")) as keyof typeof DOCUMENTOS_DESTINOS
+    expect(Object.keys(DOCUMENTOS_DESTINOS)).toContain(href)
+    await tile.click()
+    await expect(page).toHaveURL((url) => `${url.pathname}${url.search}` === href)
 
     await expect(page.getByRole("button", { name: "Eliminar filtro Vencimiento", exact: true })).toBeVisible()
-    await expect(page.getByRole("combobox", { name: "Vencimiento documental", exact: true })).toContainText("Documentos vencidos")
+    await expect(page.getByRole("combobox", { name: "Vencimiento documental", exact: true })).toContainText(DOCUMENTOS_DESTINOS[href])
   })
 
   test("«Combustible por revisar» abre «Por revisar» en sus pendientes", async ({ page }) => {
