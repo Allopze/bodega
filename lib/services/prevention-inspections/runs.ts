@@ -24,6 +24,7 @@ import {
   type Client,
   type InspectionAccess,
 } from "@/lib/services/prevention-inspections-access"
+import { nextCodeTx } from "@/lib/code-sequences"
 import { nanoid } from "@/lib/id"
 import { recordOperationalActivity } from "@/lib/services/operational-activity"
 import { getUserIdsWithPermissionForWorksite } from "@/lib/services/notification-targeting"
@@ -117,26 +118,32 @@ export async function createInspectionRun(input: unknown, access: InspectionAcce
     if (existing) return { run: existing, idempotentReplay: true }
   }
 
-  const [created] = await db.insert(preventionInspectionRuns).values({
-    id: `insrun-${nanoid()}`,
-    code: `INSP-${codeYear()}-${nanoid(8).toUpperCase()}`,
-    templateId: data.templateId,
-    programId: data.programId ?? null,
-    worksiteId: data.worksiteId,
-    subjectType: data.subjectType ?? (data.subjectContainerId ? "contenedor" : null),
-    // El nombre del recurso se congela como etiqueta: renombrarlo después no
-    // debe cambiar qué decía la inspección que se inspeccionó.
-    subjectLabel: subjectName ?? data.subjectLabel ?? null,
-    subjectResourceId: data.subjectResourceId ?? null,
-    subjectVehicleId: data.subjectVehicleId ?? null,
-    subjectContainerId: data.subjectContainerId ?? null,
-    origin: data.origin,
-    scheduledFor: data.scheduledFor ?? null,
-    status: "planned",
-    assignedToUserId: data.assignedToUserId ?? access.userId,
-    clientSubmissionId: data.clientSubmissionId ?? null,
-    createdByUserId: access.userId,
-  }).returning()
+  // Serie correlativa por año (INSP-2026-0001). El folio se reserva en la misma
+  // transacción que el insert; el `clientSubmissionId` ya se resolvió arriba, así
+  // que un reintento offline no quema número.
+  const [created] = await db.transaction(async (tx) => {
+    const code = await nextCodeTx(tx, "INSP", codeYear())
+    return tx.insert(preventionInspectionRuns).values({
+      id: `insrun-${nanoid()}`,
+      code,
+      templateId: data.templateId,
+      programId: data.programId ?? null,
+      worksiteId: data.worksiteId,
+      subjectType: data.subjectType ?? (data.subjectContainerId ? "contenedor" : null),
+      // El nombre del recurso se congela como etiqueta: renombrarlo después no
+      // debe cambiar qué decía la inspección que se inspeccionó.
+      subjectLabel: subjectName ?? data.subjectLabel ?? null,
+      subjectResourceId: data.subjectResourceId ?? null,
+      subjectVehicleId: data.subjectVehicleId ?? null,
+      subjectContainerId: data.subjectContainerId ?? null,
+      origin: data.origin,
+      scheduledFor: data.scheduledFor ?? null,
+      status: "planned",
+      assignedToUserId: data.assignedToUserId ?? access.userId,
+      clientSubmissionId: data.clientSubmissionId ?? null,
+      createdByUserId: access.userId,
+    }).returning()
+  })
   if (!created) throw new Error("No se pudo crear la inspección.")
   await history(db, { entityType: "run", entityId: created.id, worksiteId: data.worksiteId, changeType: "created", reason: `Inspección ${template.name} planificada`, afterState: created, actorUserId: access.userId })
 

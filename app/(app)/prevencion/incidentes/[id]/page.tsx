@@ -165,6 +165,11 @@ export default async function IncidentDetailPage({ params, searchParams }: PageP
       />
 
       <div className="space-y-5">
+        {/* Trazabilidad: el código aleatorio previo a la serie EV-AAAA-NNNN sigue
+            citado en notificaciones, tareas CAPA y documentos ya emitidos. */}
+        {incident.legacyCode && (
+          <p className="text-xs text-[var(--color-text-subtle)]">Código anterior: {incident.legacyCode}</p>
+        )}
         <section className="grid gap-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 md:grid-cols-2 lg:grid-cols-4">
           <div><p className="text-eyebrow">Estado</p><MetaBadge meta={{ label: `${INCIDENT_STATUS_LABELS[incident.status as IncidentStatus] ?? incident.status}`, variant: incidentStatusBadgeVariant(incident.status) }} className="mt-2" /></div>
           <div><p className="text-eyebrow">Ocurrencia</p><p className="mt-2 text-sm font-medium">{dateTime(incident.occurredAt)}</p></div>

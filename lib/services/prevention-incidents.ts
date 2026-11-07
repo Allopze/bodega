@@ -59,6 +59,7 @@ import {
   type IncidentClient,
 } from "@/lib/services/prevention-incident-access"
 import { recordModuleHistory } from "@/lib/audit"
+import { nextCodeTx } from "@/lib/code-sequences"
 import { nanoid } from "@/lib/id"
 import {
   decryptPreventionPayload,
@@ -502,10 +503,6 @@ export function incidentRequiresCapa(incident: {
     || ["high", "critical", "fatal"].includes(incident.potentialSeverity)
 }
 
-function createIncidentCode() {
-  return `INC-${codeYear()}-${nanoid(10).toUpperCase()}`
-}
-
 function nowIso() {
   return new Date().toISOString()
 }
@@ -626,9 +623,27 @@ export async function reportPreventionIncident(args: {
 
     const now = nowIso()
     const incidentId = `inc-${nanoid()}`
+
+    /* Un reintento offline reenvía la misma clave de sincronización. Se resuelve
+     * ANTES de reservar folio: `nextval` no se revierte, así que cada reintento
+     * quemaría un EV-AAAA-NNNN de una serie que se cita en documentos. */
+    const replayOf = async () => {
+      const [existing] = await tx.select().from(preventionIncidents)
+        .where(eq(preventionIncidents.clientSubmissionId, input.clientSubmissionId)).limit(1)
+      if (!existing) return null
+      if (existing.reportedByUserId !== args.access.ctx.userId || existing.worksiteId !== input.worksiteId) {
+        throw new Error("La clave de sincronización ya fue utilizada por otro reporte.")
+      }
+      return { incident: existing, idempotentReplay: true }
+    }
+    const replayed = await replayOf()
+    if (replayed) return replayed
+
+    // Serie correlativa por año (EV-2026-0001). INC ya es la de los tickets de TI.
+    const code = await nextCodeTx(tx, "EV", codeYear())
     const [created] = await tx.insert(preventionIncidents).values({
       id: incidentId,
-      code: createIncidentCode(),
+      code,
       clientSubmissionId: input.clientSubmissionId,
       worksiteId: input.worksiteId,
       companyName: input.companyName,
@@ -660,12 +675,11 @@ export async function reportPreventionIncident(args: {
     }).onConflictDoNothing({ target: preventionIncidents.clientSubmissionId }).returning()
 
     if (!created) {
-      const [existing] = await tx.select().from(preventionIncidents)
-        .where(eq(preventionIncidents.clientSubmissionId, input.clientSubmissionId)).limit(1)
-      if (!existing || existing.reportedByUserId !== args.access.ctx.userId || existing.worksiteId !== input.worksiteId) {
-        throw new Error("La clave de sincronización ya fue utilizada por otro reporte.")
-      }
-      return { incident: existing, idempotentReplay: true }
+      // Carrera: otro reintento insertó entre la lectura y este insert (aquí sí
+      // se consumió un folio; es el único camino que deja un hueco).
+      const raced = await replayOf()
+      if (!raced) throw new Error("La clave de sincronización ya fue utilizada por otro reporte.")
+      return raced
     }
 
     if (args.fromPublicReport) {
@@ -971,6 +985,8 @@ export async function listPreventionIncidents(args: IncidentListFilters & {
   return db.select({
     id: preventionIncidents.id,
     code: preventionIncidents.code,
+    // El buscador de la lista (TopBar) también encuentra por el código anterior.
+    legacyCode: preventionIncidents.legacyCode,
     worksiteId: preventionIncidents.worksiteId,
     worksiteName: worksites.name,
     companyName: preventionIncidents.companyName,

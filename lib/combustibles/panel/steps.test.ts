@@ -251,6 +251,37 @@ describe("tira de cinco pasos del Panel", () => {
       expect(step.phrase).toBe("346 casos. 114 regresiones de kilometraje · 83 saltos de medidor · variación brusca: 2 Diesel · 3 BlueMax · 144 históricos sin producto atribuible. El caso pendiente más antiguo: espera hace 62 días.")
     })
 
+    it("nombra cada regla por su nombre y nunca por su código crudo (UX-03)", () => {
+      const summary = inbox(15, { caso: 15, carga: 0, patente: 0, pedido: 0 }, "2026-10-31T13:00:00.000Z") as FuelInboxSummary & {
+        caseBreakdown: Array<{ ruleCode: string; product: string; count: number }>
+      }
+      summary.caseBreakdown = [
+        { ruleCode: "horometro_regresivo", product: "not_applicable", count: 12 },
+        { ruleCode: "sello_repetido", product: "not_applicable", count: 2 },
+        { ruleCode: "sello_repetido", product: "diesel", count: 1 },
+        { ruleCode: "regla_que_no_esta_en_el_catalogo", product: "not_applicable", count: 4 },
+        { ruleCode: "otra_regla_sin_nombre", product: "not_applicable", count: 1 },
+      ]
+
+      const step = stepOf(allGood({ inbox: summary }), "revisar")
+
+      expect(step.phrase).toBe("15 casos. 12 regresiones de horómetro · 3 casos «Sello repetido» · 5 casos de otras reglas.")
+      // Ninguna frase del panel puede filtrar un identificador en snake_case.
+      expect(step.phrase).not.toMatch(/[a-z]+_[a-z]+/)
+    })
+
+    it("pluraliza en singular la regla de horómetro y la regla con nombre", () => {
+      const summary = inbox(2, { caso: 2, carga: 0, patente: 0, pedido: 0 }, "2026-10-31T13:00:00.000Z") as FuelInboxSummary & {
+        caseBreakdown: Array<{ ruleCode: string; product: string; count: number }>
+      }
+      summary.caseBreakdown = [
+        { ruleCode: "horometro_regresivo", product: "not_applicable", count: 1 },
+        { ruleCode: "evidencia_faltante", product: "not_applicable", count: 1 },
+      ]
+
+      expect(stepOf(allGood({ inbox: summary }), "revisar").phrase).toBe("2 casos. 1 regresión de horómetro · 1 caso «Evidencia faltante en carga TAE».")
+    })
+
     it("en singular, y sin «lo más antiguo» si llegó hoy", () => {
       const step = stepOf(allGood({ inbox: inbox(1, { carga: 1 }, "2026-10-31T13:00:00.000Z") }), "revisar")
       expect(step.phrase).toBe("1 carga por decidir.")
