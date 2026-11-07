@@ -25,9 +25,14 @@ El flujo de repuestos existe como «solicitud con cotizaciones» pero vive aisla
 7. **Catálogo de repuestos:** fase 2, plan aparte. Aquí el repuesto sigue siendo texto libre con precio estimado.
 8. **Cierre del ciclo:** la OT **no** lleva repuestos como parte de su documento. Lo usado lo declara el mecánico en el registro de la correctiva (app y PC), que ya existe. La OT muestra, como información, las solicitudes/OC vinculadas y, al lado, lo que los registros enlazados declararon usar. Sin cambios en la app del mecánico.
 
+### Decisiones posteriores a la implementación (2026-11-07)
+9. **Umbral:** $200.000 por defecto.
+10. **Borrador:** una solicitud en borrador no deja la OT «esperando repuesto»; la espera empieza al enviar a aprobación (`PARTS_PENDING_ITEM_STATUSES` sin `draft`).
+11. **Costo total:** un equipo sin OT cerradas con costo en el período aporta $0 de mano de obra; el total sólo queda vacío si una serie no se pudo consultar o falta la capacidad.
+
 ### Decisiones mías (revisables)
 - El selector de vehículo aplica a **repuestos y servicios** (misma columna, mismo editor); los campos libres Equipo/Patente/Marca/Modelo quedan como respaldo «otro equipo» sólo cuando no se elige vehículo. El umbral de cotizaciones aplica **sólo a repuestos**; servicios conserva la regla actual.
-- Umbral por defecto **$500.000**, clave `ops.repuestos.quotation_threshold_clp`, rango 0 a 50.000.000. Umbral 0 = nunca se exime.
+- Umbral por defecto **$200.000** (el usuario lo fijó el 2026-11-07; el borrador decía $500.000), clave `ops.repuestos.quotation_threshold_clp`, rango 0 a 50.000.000. Umbral 0 = nunca se exime.
 - Monto a comparar: si hay cotizaciones, la **mayor** de las pendientes; si no, Σ cantidad × precio estimado (bloquea el envío si falta algún precio y no hay cotización).
 - Costo de compras por vehículo se protege con `purchasing:view` (no existe permiso de costos de compras) y se cuenta por **fecha de emisión** de la OC dentro del período, OC no anulada ni eliminada, líneas no canceladas. «Costo total» del panel pasa a exigir las tres series (combustible, OT, compras); hoy `jefe_mantencion`, `jefa_chome`, `secretaria` y `administrador` ya tienen `purchasing:view`, así que nadie pierde la columna.
 - No se registra un evento de OT al pedir repuestos. No se agregan tiles a Control operacional (A1: máximo 4); «esperando repuesto» va en el detalle del tile de OT. El filtro `?repuestos=pendientes` de la lista de OT no suma un control visible (A2: ya hay 6 primarios): se llega por chip, tile y enlace.
