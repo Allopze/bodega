@@ -8,6 +8,7 @@ import { DatePicker } from "@/components/ui/date-picker"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { EmptyState } from "@/components/ui/empty-state"
+import { ExportLink } from "@/components/ui/export-button"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
@@ -32,7 +33,7 @@ import {
 type Dashboard = Awaited<ReturnType<typeof getLegalDashboard>>
 
 export function LegalRequirementsHeaderActions({ canAssess, canExport }: { canAssess: boolean; canExport: boolean }) {
-  return <div className="flex gap-2">{canExport && <Button asChild variant="secondary"><a href="/api/prevencion/requisitos-legales/export" download>Exportar Excel</a></Button>}{canAssess && <CreateRequirementDialog />}</div>
+  return <div className="flex gap-2">{canExport && <ExportLink href="/api/prevencion/requisitos-legales/export" />}{canAssess && <CreateRequirementDialog />}</div>
 }
 
 function CreateRequirementDialog() {

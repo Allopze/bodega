@@ -1,8 +1,9 @@
 "use client"
 
 import * as React from "react"
-import { DownloadSimple, Plus, UploadSimple } from "@phosphor-icons/react"
+import { Plus, UploadSimple } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
+import { ExportLink } from "@/components/ui/export-button"
 import { CatalogImportPanel } from "@/components/admin/catalog-import-panel"
 import { WorkerForm } from "./worker-form"
 import { importWorkersFromXlsx } from "./actions"
@@ -17,13 +18,7 @@ export function WorkerActions({ worksites, sizeFamilies, positions }: { worksite
 
   return (
     <>
-      {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
-      <a
-        href="/api/admin/catalogos/export?tipo=trabajadores"
-        className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-2)]"
-      >
-        <DownloadSimple size={14} />Exportar Excel
-      </a>
+      <ExportLink href="/api/admin/catalogos/export?tipo=trabajadores" />
       <Button size="sm" variant="secondary" onClick={() => setImportOpen(true)}>
         <UploadSimple size={14} />Importar Excel
       </Button>

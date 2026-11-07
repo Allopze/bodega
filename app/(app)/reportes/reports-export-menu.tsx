@@ -1,9 +1,9 @@
 "use client"
 
 import * as React from "react"
-import { DownloadSimple } from "@phosphor-icons/react"
 import { ExportDialog, type StatusOption } from "@/components/export-dialog"
 import { Button } from "@/components/ui/button"
+import { EXPORT_ICON } from "@/components/ui/export-button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import type { WorksiteOption } from "@/components/ui/worksite-select"
 
@@ -66,8 +66,8 @@ export function ReportsExportMenu({ worksites }: { worksites: WorksiteOption[] }
     <>
       <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger asChild>
-          <Button size="sm">
-            <DownloadSimple size={14} />Exportar Excel
+          <Button variant="secondary" size="sm">
+            <EXPORT_ICON className="h-4 w-4 mr-1 shrink-0" />Exportar Excel
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">

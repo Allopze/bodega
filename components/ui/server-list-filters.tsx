@@ -2,8 +2,9 @@
 
 import { useWorksiteFilterPresence } from "@/components/layout/header-context"
 import * as React from "react"
-import { DownloadSimple, MagnifyingGlass } from "@phosphor-icons/react"
+import { MagnifyingGlass } from "@phosphor-icons/react"
 import { usePathname } from "next/navigation"
+import { ExportExcelButton } from "@/components/ui/export-excel-button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
@@ -107,33 +108,10 @@ const ServerListFiltersInner = React.memo(function ServerListFiltersInner({
     }
   }, [setFilter, setFilters])
 
-  const exportHref = React.useMemo(() => {
-    if (!exportTipo) return undefined
-    const params = new URLSearchParams({ tipo: exportTipo })
-    const qValue = searchParams.get("q")
-    const estado = searchParams.get("estado")
-    const faena = searchParams.get("faena")
-    const proveedor = searchParams.get("proveedor")
-    if (qValue) params.set("q", qValue)
-    if (estado) params.set("status", estado)
-    if (faena) params.set("faena", faena)
-    if (proveedor) params.set("proveedor", proveedor)
-    return `/api/reportes/export?${params.toString()}`
-  }, [exportTipo, searchParams])
-
   const toolbarActions = (
     <>
       <SavedViews scopeKey={pathname} />
-      {exportHref && (
-        <a
-          href={exportHref}
-          download
-          className="inline-flex h-11 items-center gap-1.5 whitespace-nowrap rounded-[var(--radius)] border border-[var(--color-border-control)] bg-[var(--color-surface)] px-3 text-xs font-medium text-[var(--color-text)] shadow-[var(--shadow-xs)] transition-colors hover:border-[var(--color-border-control-hover)] hover:bg-[var(--color-surface-2)] sm:h-8"
-        >
-          <DownloadSimple size={13} aria-hidden />
-          Exportar Excel
-        </a>
-      )}
+      {exportTipo && <ExportExcelButton tipo={exportTipo} />}
       {actions}
     </>
   )

@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import { FileXls } from "@phosphor-icons/react"
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger, DialogClose,
 } from "@/components/ui/dialog"
@@ -9,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { DateRangePicker } from "@/components/ui/date-range-picker"
 import { WorksiteSelect, type WorksiteOption } from "@/components/ui/worksite-select"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ExportButton } from "@/components/ui/export-button"
+import { EXPORT_ICON, ExportButton } from "@/components/ui/export-button"
 import { exportTiReport, type TiReportFilters, type TiReportType } from "./actions"
 
 interface TiExportDialogProps {
@@ -46,7 +45,7 @@ export function TiExportDialog({ type, title, worksites, systems, withPeriod = f
     <Dialog>
       <DialogTrigger asChild>
         <Button variant="secondary" size="sm" className="w-full">
-          <FileXls className="mr-1.5 h-4 w-4" /> Exportar con filtros
+          <EXPORT_ICON className="mr-1.5 h-4 w-4" /> Exportar con filtros
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
@@ -82,7 +81,7 @@ export function TiExportDialog({ type, title, worksites, systems, withPeriod = f
         </div>
         <DialogFooter>
           <DialogClose asChild><Button variant="secondary" size="sm">Cerrar</Button></DialogClose>
-          <ExportButton variant="primary" action={() => exportTiReport(type, undefined, filters)} />
+          <ExportButton action={() => exportTiReport(type, undefined, filters)} />
         </DialogFooter>
       </DialogContent>
     </Dialog>

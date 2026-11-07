@@ -3,8 +3,8 @@ import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { ServerPagination } from "@/components/ui/server-pagination"
 import Link from "next/link"
 import { redirect } from "next/navigation"
-import { DownloadSimple, Receipt } from "@phosphor-icons/react/dist/ssr"
-import { Button } from "@/components/ui/button"
+import { Receipt } from "@phosphor-icons/react/dist/ssr"
+import { ExportLink } from "@/components/ui/export-button"
 import { auth } from "@/lib/auth/auth"
 import { can } from "@/lib/auth/can"
 import { listInvoices, listActiveClients, type InvoiceFilters } from "@/lib/services/billing/queries"
@@ -75,7 +75,7 @@ export default async function InvoicesPage({
     <PageContainer>
       <PageHeader
         title="Facturas emitidas"
-        description="Documentos de venta de Chome. La información tributaria viene de la fuente externa y no se edita acá; el vínculo con cliente, contrato y faena sí es interno."
+        description="Datos tributarios de la fuente externa; cliente, contrato y faena se vinculan acá."
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Inicio", href: "/dashboard" },
@@ -84,14 +84,10 @@ export default async function InvoicesPage({
           ]} />
         }
         actions={can(session, "billing:export") ? (
-          <Button asChild size="sm" variant="secondary">
-            {/* El export respeta los filtros activos: mismo conjunto que la tabla. */}
-            <a href={`/api/facturacion/facturas/export?${new URLSearchParams(
-              Object.entries(params).filter(([key, value]) => key !== "pagina" && Boolean(value)) as [string, string][],
-            ).toString()}`}>
-              <DownloadSimple size={14} className="mr-1" /> Exportar Excel
-            </a>
-          </Button>
+          // El export respeta los filtros activos: mismo conjunto que la tabla.
+          <ExportLink href={`/api/facturacion/facturas/export?${new URLSearchParams(
+            Object.entries(params).filter(([key, value]) => key !== "pagina" && Boolean(value)) as [string, string][],
+          ).toString()}`} />
         ) : undefined}
       />
 

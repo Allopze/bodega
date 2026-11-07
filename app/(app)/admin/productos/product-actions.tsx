@@ -1,8 +1,9 @@
 "use client"
 
 import { useState } from "react"
-import { Plus, DownloadSimple, UploadSimple, HardHat, Package } from "@phosphor-icons/react"
+import { Plus, UploadSimple, HardHat, Package } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
+import { ExportLink } from "@/components/ui/export-button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { ProductForm } from "./product-form"
 import { ProductImportPanel } from "./product-import-panel"
@@ -32,13 +33,7 @@ export function ProductActions({ categories, allSuppliers, units, templates, siz
 
   return (
     <>
-      {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
-      <a
-        href="/api/admin/catalogos/export?tipo=productos"
-        className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-2)]"
-      >
-        <DownloadSimple size={14} />Exportar Excel
-      </a>
+      <ExportLink href="/api/admin/catalogos/export?tipo=productos" />
       <Button size="sm" variant="secondary" onClick={() => setImportChoiceOpen(true)}>
         <UploadSimple size={14} />Importar
       </Button>

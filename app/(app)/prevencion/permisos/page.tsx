@@ -2,7 +2,7 @@ import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
-import { Button } from "@/components/ui/button"
+import { ExportLink } from "@/components/ui/export-button"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import {
@@ -71,9 +71,7 @@ export default async function PermisosPage() {
         actions={
           <div className="flex items-center gap-2">
             {session.user.permissions.includes("prevention:permits:export") && (
-              <Button asChild variant="secondary">
-                <a href="/api/prevencion/permisos/export" download>Exportar Excel</a>
-              </Button>
+              <ExportLink href="/api/prevencion/permisos/export" />
             )}
             <PermitCreateButton
               canManage={canManage}

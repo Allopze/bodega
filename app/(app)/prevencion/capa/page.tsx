@@ -3,7 +3,7 @@ import { redirect } from "next/navigation"
 import { requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { resolvePagination } from "@/lib/pagination"
-import { Button } from "@/components/ui/button"
+import { ExportLink } from "@/components/ui/export-button"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { getCapaDashboardCounts, getCapaStatusCounts, listCapaActionsPage, listCapaWorksites } from "@/lib/services/prevention-capa"
@@ -65,9 +65,7 @@ export default async function CapaPage({ searchParams }: { searchParams: Promise
         ]} />}
         actions={
           <div className="flex gap-2">
-            <Button asChild variant="secondary">
-              <a href="/api/prevencion/capa/export" download>Exportar Excel</a>
-            </Button>
+            <ExportLink href="/api/prevencion/capa/export" />
             {/* E2E-006: la pantalla no tenía creación; toda CAPA nacía en otro módulo. */}
             {session.user.permissions.includes("prevention:capa:manage") && <ManualCapaDialog worksites={worksites} />}
           </div>

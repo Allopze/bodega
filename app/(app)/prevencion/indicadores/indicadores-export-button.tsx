@@ -1,16 +1,10 @@
-import { Button } from "@/components/ui/button"
-import { FileXls } from "@phosphor-icons/react/dist/ssr"
+import { ExportLink } from "@/components/ui/export-button"
 
 export function ExportIndicadoresButton({ year }: { year: number }) {
+  // `ExportLink` no expone `title`: el tooltip (qué trae el archivo) va en el contenedor.
   return (
-    <Button asChild variant="secondary" size="sm">
-      <a
-        href={`/api/prevencion/indicadores/export?year=${year}`}
-        title="Exportar cálculo canónico, fuentes y conciliación"
-      >
-      <FileXls className="h-4 w-4 mr-1" />
-      Exportar Excel
-      </a>
-    </Button>
+    <span title="Exportar cálculo canónico, fuentes y conciliación">
+      <ExportLink href={`/api/prevencion/indicadores/export?year=${year}`} />
+    </span>
   )
 }

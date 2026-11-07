@@ -5,6 +5,7 @@ import { requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
+import { ExportLink } from "@/components/ui/export-button"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import {
@@ -48,8 +49,8 @@ export default async function InspectionFollowupPage({ searchParams }: {
         { label: "Inspecciones", href: "/prevencion/inspecciones" },
         { label: "Seguimiento" },
       ]} />}
-      // `<a download>` y no `<Link>`: es un archivo, no una ruta de la app, y lleva los filtros de la pantalla.
-      actions={canExport ? <Button asChild variant="secondary"><a href={`/api/prevencion/inspecciones/seguimiento/export${buildInspectionFollowupExportQuery(filter)}`} download>Exportar Excel</a></Button> : undefined}
+      // `ExportLink` (`<a download>`) y no `<Link>`: es un archivo, no una ruta de la app, y lleva los filtros de la pantalla.
+      actions={canExport ? <ExportLink href={`/api/prevencion/inspecciones/seguimiento/export${buildInspectionFollowupExportQuery(filter)}`} /> : undefined}
     />
     {rows.length === 0 && !followupFilterIsActive(filter) ? <EmptyState
       title="Aún no hay hallazgos para seguir"
