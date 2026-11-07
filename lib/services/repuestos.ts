@@ -35,6 +35,7 @@ export const addQuotation             = svc.addQuotation
 export const deleteQuotation          = svc.deleteQuotation
 export const submitRepuestoRequest    = svc.submitRequest
 export const selectRepuestoQuotation  = svc.selectQuotation
+export const approveRepuestoWithoutQuotation = svc.approveWithoutQuotation
 // ARQ-1: `cancelRepuestoRequest`/`getQuotationsForRequest` (svc.cancelRequest/
 // svc.getQuotationsForRequest) no tenían consumidores — la cancelación real
 // llama directo a lib/requests/request-service-module/cancel-request.ts, y

@@ -6,12 +6,14 @@
  *   el precio estimado; sobre él vuelve la regla de 3 cotizaciones o
  *   justificación; la urgencia crítica con equipo detenido o con OT permite la
  *   vía rápida con justificación. Servicios conserva la regla legada.
+ * - `approveWithoutQuotation` es el espejo de `selectQuotation` para la
+ *   solicitud que se envió sin cotización.
  */
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
 import path from "node:path"
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
-import { eq } from "drizzle-orm"
+import { and, eq } from "drizzle-orm"
 import * as schema from "@/db/schema"
 import type { DB } from "@/db"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
@@ -32,6 +34,7 @@ await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 const { IDS, seedMantFixtures } = await import("./mantencion-sync-fixtures")
 const { createWorkOrderWithClient } = await import("@/lib/services/mantencion/work-orders/create")
 const { submitRequest } = await import("@/lib/requests/request-service-module/submit-request")
+const { approveWithoutQuotation } = await import("@/lib/requests/request-service-module/approve-without-quotation")
 const { quotationRequirementMessage } = await import("@/lib/requests/quotation-requirement")
 const { OPS_SETTING_KEYS } = await import("@/lib/services/system-settings")
 
@@ -285,5 +288,106 @@ describe("submitRequest · umbral de cotizaciones de repuestos", () => {
       await submit(id, servicios)
       expect(await statusOf(id)).toBe("submitted")
     })
+  })
+})
+
+describe("approveWithoutQuotation", () => {
+  async function submittedRequest(options: Partial<DraftOptions> = {}) {
+    await setThreshold(null)
+    const id = await draftRequest({ items: [{ price: 20_000, supplierId: "sup-thr" }, { price: 5_000 }], ...options })
+    await submit(id)
+    return id
+  }
+
+  const approve = (requestId: string, extra: Partial<Parameters<typeof approveWithoutQuotation>[1]> = {}) =>
+    approveWithoutQuotation(repuestos, { requestId, userId: IDS.jefe, roleContext: "jefa_chome", worksiteIds: "all", ...extra })
+
+  it("aprueba todos los ítems requested sin cotización", async () => {
+    const id = await submittedRequest()
+
+    await approve(id)
+
+    expect(await statusOf(id)).toBe("approved")
+    expect(await itemStatuses(id)).toEqual(["approved", "approved"])
+    const items = await testDb.select().from(schema.purchaseRequestItems)
+      .where(eq(schema.purchaseRequestItems.requestId, id)).orderBy(schema.purchaseRequestItems.sortOrder)
+    // Conserva el proveedor sugerido y no inventa una adjudicación.
+    expect(items[0]).toMatchObject({ suggestedSupplierId: "sup-thr", awardedQuotationId: null, awardedQuotationTotal: null })
+    const decisions = await testDb.select().from(schema.approvalDecisions)
+      .where(eq(schema.approvalDecisions.requestId, id))
+    expect(decisions).toHaveLength(2)
+    expect(decisions.every((decision) => decision.type === "approve" && decision.decidedBy === IDS.jefe)).toBe(true)
+    expect(decisions.every((decision) => decision.reason === "Aprobada sin cotización (bajo umbral o vía rápida)")).toBe(true)
+    expect(decisions.every((decision) => decision.roleContext === "jefa_chome")).toBe(true)
+  })
+
+  it("guarda el fundamento en la decisión cuando viene", async () => {
+    const id = await submittedRequest()
+
+    await approve(id, { justification: "  Repuesto de bajo costo, proveedor habitual  " })
+
+    const decisions = await testDb.select().from(schema.approvalDecisions)
+      .where(eq(schema.approvalDecisions.requestId, id))
+    expect(decisions.every((decision) =>
+      decision.reason === "Aprobada sin cotización (bajo umbral o vía rápida). Fundamento: Repuesto de bajo costo, proveedor habitual",
+    )).toBe(true)
+  })
+
+  it("deja la bitácora de estados de la solicitud", async () => {
+    const id = await submittedRequest()
+
+    await approve(id)
+
+    const changes = await testDb.select().from(schema.statusHistory)
+      .where(and(eq(schema.statusHistory.entityType, "purchase_request"), eq(schema.statusHistory.entityId, id)))
+    expect(changes.map((change) => [change.fromStatus, change.toStatus])).toEqual(
+      expect.arrayContaining([["draft", "submitted"], ["submitted", "approved"]]),
+    )
+  })
+
+  it("rechaza si hay cotizaciones pendientes", async () => {
+    const id = await submittedRequest({ items: [{ price: null }], quotations: [150_000] })
+
+    await expect(approve(id)).rejects.toThrow("Hay cotizaciones adjuntas: selecciona la ganadora")
+
+    expect(await statusOf(id)).toBe("submitted")
+    expect(await itemStatuses(id)).toEqual(["requested"])
+  })
+
+  it("rechaza fuera del alcance de faena", async () => {
+    const id = await submittedRequest()
+
+    await expect(approve(id, { worksiteIds: [IDS.wsCho] })).rejects.toThrow("No tienes acceso a esta faena")
+
+    expect(await statusOf(id)).toBe("submitted")
+  })
+
+  it("rechaza una solicitud que no está pendiente de aprobación", async () => {
+    await setThreshold(null)
+    const draft = await draftRequest({ items: [{ price: 1_000 }] })
+    await expect(approve(draft)).rejects.toThrow("La solicitud no está pendiente de aprobación")
+
+    const aprobada = await submittedRequest()
+    await approve(aprobada)
+    await expect(approve(aprobada)).rejects.toThrow("La solicitud no está pendiente de aprobación")
+  })
+
+  it("rechaza una solicitud que no existe o es de otro tipo", async () => {
+    await expect(approve("no-existe")).rejects.toThrow("no encontrada")
+
+    await setThreshold(null)
+    const servicio = await draftRequest({ type: "servicios", items: [{ price: null }], quotations: [10_000, 20_000, 30_000] })
+    await submit(servicio, servicios)
+    await expect(approve(servicio)).rejects.toThrow("no encontrada")
+  })
+
+  it("sólo aplica a repuestos", async () => {
+    await setThreshold(null)
+    const servicio = await draftRequest({ type: "servicios", items: [{ price: null }], quotations: [10_000, 20_000, 30_000] })
+    await submit(servicio, servicios)
+
+    await expect(approveWithoutQuotation(servicios, {
+      requestId: servicio, userId: IDS.jefe, worksiteIds: "all",
+    })).rejects.toThrow("sólo aplica a solicitudes de repuestos")
   })
 })

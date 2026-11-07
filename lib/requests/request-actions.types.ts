@@ -11,6 +11,7 @@ import type { Permission } from "@/modules/permissions"
 import type {
   RequestServiceFunctions,
   AddQuotationInput,
+  ApproveWithoutQuotationInput,
   SelectQuotationInput,
 } from "./request-config"
 
@@ -26,6 +27,8 @@ export interface RequestActionsConfig {
   schemas: {
     quotationUpload:  z.ZodType<Omit<AddQuotationInput, "fileBuffer" | "fileName" | "mimeType" | "fileSize" | "uploadedBy" | "userEmail">>
     selectQuotation:  z.ZodType<Pick<SelectQuotationInput, "requestId" | "quotationId" | "justification">>
+    /** Sólo repuestos; sin él (servicios) la acción responde que no está disponible. */
+    approveWithoutQuotation?: z.ZodType<Pick<ApproveWithoutQuotationInput, "requestId" | "justification">>
   }
   /** Service functions (already bound to the correct module config) */
   services: RequestServiceFunctions

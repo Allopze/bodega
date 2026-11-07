@@ -67,6 +67,11 @@ export interface QuotationPanelProps {
   uploadQuotationAction:  (prev: ActionState, formData: FormData) => Promise<ActionState>
   deleteQuotationAction:  (prev: ActionState, formData: FormData) => Promise<ActionState>
   selectQuotationAction:  (prev: ActionState, formData: FormData) => Promise<ActionState>
+  /**
+   * Sólo repuestos: aprueba la solicitud que se envió sin cotización (bajo el
+   * umbral o por la vía rápida). Sin esta acción el botón no se ofrece.
+   */
+  approveWithoutQuotationAction?: (prev: ActionState, formData: FormData) => Promise<ActionState>
 }
 
 const supplierLabel = (q: QuotationRow) =>
@@ -85,10 +90,15 @@ export function QuotationPanel({
   uploadQuotationAction,
   deleteQuotationAction,
   selectQuotationAction,
+  approveWithoutQuotationAction,
 }: QuotationPanelProps) {
   const isEditable = requestStatus === "draft"
   const isPendingReview = ["submitted", "in_review"].includes(requestStatus)
   const isApproved = requestStatus === "approved"
+  // Una solicitud de repuestos enviada sin cotización se aprueba directo; con
+  // cotizaciones pendientes la decisión es elegir la ganadora.
+  const canApproveWithoutQuotation =
+    !!approveWithoutQuotationAction && isPendingReview && canApprove && quotations.length === 0
 
   // Upload form
   const [showUpload, setShowUpload] = React.useState(false)
@@ -140,6 +150,24 @@ export function QuotationPanel({
     { ok: false },
   )
 
+  // Approve without quotation
+  const [showApproveDirect, setShowApproveDirect] = React.useState(false)
+  const [, approveDirectAction, approveDirectPending] = useActionState(
+    async (prev: ActionState, formData: FormData): Promise<ActionState> => {
+      const res = approveWithoutQuotationAction
+        ? await approveWithoutQuotationAction(prev, formData)
+        : { ok: false, message: "No se puede aprobar sin cotización" }
+      if (res.ok) {
+        toast.success(res.message ?? "Solicitud aprobada")
+        setShowApproveDirect(false)
+      } else {
+        toast.error(res.message ?? "Error al aprobar")
+      }
+      return res
+    },
+    { ok: false },
+  )
+
   return (
     <div className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-6 space-y-4">
       <div className="flex items-center justify-between">
@@ -152,6 +180,8 @@ export function QuotationPanel({
               ? requirementHint
                 ? `${quotations.length} adjuntadas — ${requirementHint}`
                 : `${quotations.length}/3 adjuntadas${quotations.length < 3 ? " — mínimo 3, o menos con una justificación en Notas generales" : ""}`
+              : canApproveWithoutQuotation
+              ? "Sin cotizaciones: puedes aprobar la solicitud directamente"
               : isPendingReview
               ? "Selecciona la cotización ganadora"
               : ""}
@@ -245,9 +275,20 @@ export function QuotationPanel({
         </ul>
       )}
 
+      {canApproveWithoutQuotation && (
+        <div>
+          <Button type="button" variant="primary" size="sm" onClick={() => setShowApproveDirect(true)}>
+            <CheckCircle size={14} />
+            Aprobar sin cotización
+          </Button>
+        </div>
+      )}
+
       {isApproved && (
         <p className="text-xs text-[var(--color-success-ink)] font-medium">
-          {approvedText}
+          {quotations.length === 0
+            ? "✓ Aprobada sin cotización. Ítems listos para orden de compra en el módulo de Compras."
+            : approvedText}
         </p>
       )}
 
@@ -371,6 +412,46 @@ export function QuotationPanel({
               </DialogClose>
               <Button type="submit" variant="primary" size="sm" disabled={selectPending}>
                 {selectPending ? "Aprobando…" : "Confirmar aprobación"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/*
+        Aprobar sin cotización. No es destructivo, pero sí una decisión de gasto:
+        se confirma y se deja el fundamento (opcional) en la decisión y en la
+        auditoría. Mismo diálogo que «Aprobar cotización»: el `ConfirmDialog`
+        compartido pediría el motivo como obligatorio.
+      */}
+      <Dialog open={showApproveDirect} onOpenChange={setShowApproveDirect}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Aprobar sin cotización</DialogTitle>
+            <DialogDescription>
+              Todos los ítems de la solicitud pasarán al estado &quot;Aprobado&quot; para orden de compra,
+              sin adjudicar una cotización.
+            </DialogDescription>
+          </DialogHeader>
+          <form action={approveDirectAction}>
+            <input type="hidden" name="requestId" value={requestId} />
+            <Field
+              label="Fundamento de la aprobación"
+              hint="Opcional. Si lo escribes, queda en la decisión y en la auditoría."
+            >
+              <Textarea
+                name="justification"
+                rows={3}
+                maxLength={1000}
+                placeholder="Por qué se aprueba sin cotización"
+              />
+            </Field>
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button type="button" variant="secondary" size="sm">Cancelar</Button>
+              </DialogClose>
+              <Button type="submit" variant="primary" size="sm" disabled={approveDirectPending}>
+                {approveDirectPending ? "Aprobando…" : "Confirmar aprobación"}
               </Button>
             </DialogFooter>
           </form>

@@ -2,7 +2,12 @@
 
 import * as React from "react"
 import { QuotationPanel, type QuotationRow } from "@/components/quotation-panel"
-import { uploadQuotationAction, deleteQuotationAction, selectQuotationAction } from "./actions"
+import {
+  uploadQuotationAction,
+  deleteQuotationAction,
+  selectQuotationAction,
+  approveWithoutQuotationAction,
+} from "./actions"
 
 export type { QuotationRow }
 
@@ -36,6 +41,7 @@ export function RepuestosQuotationPanel({
       uploadQuotationAction={uploadQuotationAction}
       deleteQuotationAction={deleteQuotationAction}
       selectQuotationAction={selectQuotationAction}
+      approveWithoutQuotationAction={approveWithoutQuotationAction}
     />
   )
 }

@@ -2,6 +2,7 @@ import type { RequestModuleConfig } from "../request-config"
 import type { Session } from "next-auth"
 import type {
   AddQuotationInput,
+  ApproveWithoutQuotationInput,
   DeleteQuotationInput,
   SubmitRequestInput,
   SelectQuotationInput,
@@ -12,6 +13,7 @@ import { addQuotation as addQuotationFn } from "./add-quotation"
 import { deleteQuotation as deleteQuotationFn } from "./delete-quotation"
 import { submitRequest as submitRequestFn } from "./submit-request"
 import { selectQuotation as selectQuotationFn } from "./select-quotation"
+import { approveWithoutQuotation as approveWithoutQuotationFn } from "./approve-without-quotation"
 
 /**
  * ARQ-1: ya no incluye `cancelRequest`/`getQuotationsForRequest` — sin
@@ -26,5 +28,6 @@ export function createRequestService(config: RequestModuleConfig) {
     deleteQuotation:   (input: DeleteQuotationInput) => deleteQuotationFn(config, input),
     submitRequest:     (input: SubmitRequestInput) => submitRequestFn(config, input),
     selectQuotation:   (input: SelectQuotationInput) => selectQuotationFn(config, input),
+    approveWithoutQuotation: (input: ApproveWithoutQuotationInput) => approveWithoutQuotationFn(config, input),
   }
 }

@@ -8,7 +8,8 @@
  *   export const uploadQuotationAction = actions.uploadQuotationAction
  *   // ...
  *
- * ARQ-1: sólo quedan las tres acciones de cotización — guardar borrador,
+ * ARQ-1: sólo quedan las acciones de cotización (subir, eliminar, seleccionar y,
+ * para repuestos, aprobar sin cotización) — guardar borrador,
  * enviar y cancelar viven en app/(app)/solicitudes/actions-module/, sin
  * pasar por este factory (ver el comentario de request-actions-workflow.ts).
  */
@@ -17,6 +18,7 @@ import {
   uploadQuotationActionImpl,
   deleteQuotationActionImpl,
   selectQuotationActionImpl,
+  approveWithoutQuotationActionImpl,
 } from "./request-actions-workflow"
 import type { ActionState } from "@/lib/validation/masters"
 import type { RequestActionsConfig } from "./request-actions.types"
@@ -30,6 +32,7 @@ export function createRequestActions(config: RequestActionsConfig) {
     uploadQuotationAction: (prev: ActionState, formData: FormData) => uploadQuotationActionImpl(config, prev, formData),
     deleteQuotationAction: (prev: ActionState, formData: FormData) => deleteQuotationActionImpl(config, prev, formData),
     selectQuotationAction: (prev: ActionState, formData: FormData) => selectQuotationActionImpl(config, prev, formData),
+    approveWithoutQuotationAction: (prev: ActionState, formData: FormData) => approveWithoutQuotationActionImpl(config, prev, formData),
   }
 }
 

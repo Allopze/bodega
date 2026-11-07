@@ -1,5 +1,5 @@
 /**
- * Workflow actions (quotation upload/delete/select) — extracted from the
+ * Workflow actions (quotation upload/delete/select, approve without quotation) — extracted from the
  * shared request actions factory.
  *
  * ARQ-1: este archivo también tenía `submitRequestActionImpl` y
@@ -205,5 +205,87 @@ export async function selectQuotationActionImpl(
   } catch (e) {
     logger.error(`[${logPrefix}/selectQuotationAction]`, e)
     return { ok: false, message: safeActionMessage(e, "Error al seleccionar cotización") }
+  }
+}
+
+// ── Approve without quotation (jefa approves a request sent without one) ─────
+
+/**
+ * Aprueba una solicitud de repuestos que se envió sin cotización (bajo el
+ * umbral o por la vía rápida). Mismo permiso, alcance, aviso al solicitante y
+ * revalidación que `selectQuotationActionImpl`: el resultado para el resto del
+ * sistema es el mismo, ítems `approved` listos para orden de compra.
+ */
+export async function approveWithoutQuotationActionImpl(
+  config: RequestActionsConfig,
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const { permissions, schemas, services, routePrefix, logPrefix } = config
+  let session
+  try { session = await requirePermission(permissions.approve) }
+  catch { return { ok: false, message: "Sin permisos para aprobar solicitudes" } }
+
+  const approveWithoutQuotation = services.approveWithoutQuotation
+  const schema = schemas.approveWithoutQuotation
+  if (!approveWithoutQuotation || !schema) {
+    return { ok: false, message: "Este tipo de solicitud no admite aprobación sin cotización" }
+  }
+
+  const parsed = schema.safeParse({
+    requestId:     formData.get("requestId"),
+    justification: formData.get("justification"),
+  })
+  if (!parsed.success) {
+    return { ok: false, message: "Datos incompletos" }
+  }
+  const d = parsed.data
+
+  const request = await db.query.purchaseRequests.findFirst({
+    where: eq(purchaseRequests.id, d.requestId),
+    columns: { worksiteId: true, requesterId: true, code: true },
+  })
+  if (!request) return { ok: false, message: "Solicitud no encontrada" }
+  if (!canAccessWorksite(session, request.worksiteId)) {
+    return { ok: false, message: "No tienes acceso a esta solicitud" }
+  }
+
+  const roleContext = session.user.roles[0] ?? "unknown"
+
+  try {
+    await approveWithoutQuotation({
+      requestId:     d.requestId,
+      justification: d.justification?.trim() || null,
+      userId:        session.user.id,
+      userEmail:     session.user.email ?? undefined,
+      roleContext,
+      worksiteIds:   isGlobalRole(session) ? "all" : visibleWorksiteIds(session),
+    })
+
+    // Notify requester (fire-and-forget)
+    void notifySafe({
+      userId:     request.requesterId,
+      type:       "request_approved",
+      title:      `Solicitud aprobada: ${request.code}`,
+      body:       `La jefatura aprobó la solicitud sin cotización. Los ítems han sido aprobados y están listos para orden de compra.`,
+      entityType: "purchase_request",
+      entityId:   d.requestId,
+      entityHref: `${routePrefix}/${d.requestId}`,
+    })
+
+    // Igual que al adjudicar: los ítems quedan `approved`, trabajo nuevo para
+    // Compras y una tarea menos en la cola de aprobaciones.
+    revalidateOperationalViews([
+      `${routePrefix}/${d.requestId}`,
+      routePrefix,
+      "/solicitudes",
+      `/solicitudes/${d.requestId}`,
+      "/compras",
+      "/compras/nueva",
+    ])
+    return { ok: true, message: "Solicitud aprobada. Ítems listos para orden de compra." }
+  } catch (e) {
+    logger.error(`[${logPrefix}/approveWithoutQuotationAction]`, e)
+    return { ok: false, message: safeActionMessage(e, "Error al aprobar la solicitud") }
   }
 }
