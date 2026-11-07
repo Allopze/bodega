@@ -393,8 +393,11 @@ describe("bandeja Por revisar", () => {
       // Una sesión de la faena B no ve lo de la A, por más que se lo pida: el alcance sale de la sesión.
       const inB = await getFuelInboxPendingForSession(scopedSession(["ws-b"]))
       expect(inB).toEqual({ carga: 1, caso: 1, patente: 1, pedido: 1 })
+      // El tile entrega la cifra como número (la formatea KpiCard) y la marca
+      // como cifra; «Al día» va como texto (más abajo).
       expect(fuelReviewTile(inB)).toMatchObject({
-        value: "4",
+        value: 4,
+        valueKind: "number",
         detail: "1 carga por decidir · 1 caso · 1 patente sin vincular · 1 pedido de revisión",
         tone: "signal",
       })

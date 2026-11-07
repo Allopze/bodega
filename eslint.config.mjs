@@ -375,12 +375,13 @@ const eslintConfig = defineConfig([
       "e2e/**",
       "scripts/**",
     ],
-    rules: { "local/ui-type-scale": "warn" },
+    // "error" desde que el barrido del 2026-11-07 dejó el árbol en cero.
+    rules: { "local/ui-type-scale": "error" },
   },
   {
     files: ["**/*.tsx"],
     ignores: ["**/*.test.tsx", "**/__tests__/**", "e2e/**", "scripts/**"],
-    rules: { "local/no-string-kpi-value": "warn" },
+    rules: { "local/no-string-kpi-value": "error" },
   },
   // ── Excepciones del día civil (UTC_TODAY_RESTRICTIONS) ────────────────────
   // Tests: varios usan la forma UTC como CONTROL —`prevention-dia-civil-chileno`
