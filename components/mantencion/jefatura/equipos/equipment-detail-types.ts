@@ -1,5 +1,6 @@
 import type { EquipmentHistoryEntry } from "@/lib/services/mantencion/equipment-history"
 import type { EquipmentInsurance } from "@/lib/services/mantencion/equipment-life"
+import type { VehiclePurchaseRecord } from "@/lib/services/vehicle-purchase-history"
 import type { MantEquipmentState, MantUnit } from "@/lib/mantencion/types"
 import type { EquipmentLifeData } from "./equipment-life-section"
 import type { EquipmentFormCatalogs, EquipmentFormValues } from "./equipment-form-types"
@@ -37,6 +38,10 @@ export interface EquipmentDetailData {
   /** `flota:view`: habilita el enlace a la ficha de flota y a los documentos de seguro. */
   canViewFleet: boolean
   history: EquipmentHistoryEntry[]
+  /** Repuestos y servicios comprados para el equipo. `null` = sin capacidad de verlos: la tarjeta no se dibuja. */
+  purchases: VehiclePurchaseRecord[] | null
+  /** Qué puede hacer quien mira con ellos: abrir la solicitud, abrir la OC y pedir repuestos (`null` = no puede). */
+  purchaseLinks: { canOpenRequests: boolean; canOpenOrders: boolean; newRequestHref: string | null }
 }
 
 /** Lo que hace falta para editar: sólo se carga si la persona puede administrar equipos. */

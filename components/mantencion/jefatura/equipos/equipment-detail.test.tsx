@@ -17,6 +17,7 @@ function data(overrides: Partial<EquipmentDetailData> = {}): EquipmentDetailData
     },
     workshop: null, recordCount: 1, life: { rows: [], totals: { active: 0, activeCorrective: 0, activePreventive: 0, activeHours: 0, voided: 0 }, hasMore: false, limit: 20 },
     insurance: { policyNumber: null, expiresAt: null, state: "sin_fecha", days: null, documents: [], hasData: false }, canViewFleet: true, history: [],
+    purchases: null, purchaseLinks: { canOpenRequests: false, canOpenOrders: false, newRequestHref: null },
     ...overrides,
   }
 }
