@@ -10,7 +10,10 @@
  * implementa la segunda: se prefija sólo lo determinable.
  */
 import { describe, expect, it } from "vitest"
-import { applySuggestedPrices, awardedUnitPrice, ocSubmitLabel, priceHint, suggestedPrice } from "./oc-form.helpers"
+import { formatCLP } from "@/lib/utils"
+import {
+  applySuggestedPrices, awardedUnitPrice, ocSubmitLabel, priceHint, priceSourceLabel, suggestedPrice,
+} from "./oc-form.helpers"
 import type { PendingItemOption } from "./oc-form.types"
 
 function item(overrides: Partial<PendingItemOption> = {}): PendingItemOption {
@@ -71,6 +74,82 @@ describe("suggestedPrice", () => {
 
   it("sin oferta sigue mandando el catálogo", () => {
     expect(suggestedPrice(item({ supplierPrices: { "sup-1": 90_000 } }), "sup-1")).toBe(90_000)
+  })
+})
+
+/**
+ * Repuestos vinculados al equipo (2026-11-07): el solicitante declara un precio
+ * unitario estimado y la OC lo prefija. El orden del precio sugerido es
+ * adjudicada de una línea → estimado del solicitante → catálogo.
+ */
+describe("precio estimado del solicitante", () => {
+  it("prefija el precio estimado cuando no hay adjudicación", () => {
+    // Ítem libre de repuesto: sin `productId` no hay catálogo, antes llegaba en $0.
+    expect(suggestedPrice(item({ estimatedUnitPrice: 20_000 }), "")).toBe(20_000)
+    // Y no depende de que ya se haya elegido proveedor.
+    expect(suggestedPrice(item({ estimatedUnitPrice: 20_000 }), "sup-1")).toBe(20_000)
+  })
+
+  it("la adjudicación de una línea gana sobre el estimado", () => {
+    const conAmbos = item({
+      estimatedUnitPrice: 20_000,
+      awardedQuotationId: "q-1", awardedQuotationTotal: 150_000, awardedLineCount: 1,
+    })
+    expect(suggestedPrice(conAmbos, "")).toBe(150_000)
+  })
+
+  it("una adjudicación multiítem no se reparte: queda el estimado del solicitante", () => {
+    const multi = item({
+      estimatedUnitPrice: 20_000,
+      awardedQuotationId: "q-1", awardedQuotationTotal: 300_000, awardedLineCount: 2,
+    })
+    expect(suggestedPrice(multi, "")).toBe(20_000)
+  })
+
+  it("el estimado manda sobre el precio de catálogo", () => {
+    const conCatalogo = item({ productId: "prod-1", supplierPrices: { "sup-1": 90_000 }, estimatedUnitPrice: 20_000 })
+    expect(suggestedPrice(conCatalogo, "sup-1")).toBe(20_000)
+  })
+
+  it("un estimado nulo o en cero no dice nada: sigue el catálogo", () => {
+    const base = { productId: "prod-1", supplierPrices: { "sup-1": 90_000 } }
+    expect(suggestedPrice(item({ ...base, estimatedUnitPrice: null }), "sup-1")).toBe(90_000)
+    expect(suggestedPrice(item({ ...base, estimatedUnitPrice: 0 }), "sup-1")).toBe(90_000)
+    expect(suggestedPrice(item({ estimatedUnitPrice: 0 }), "")).toBeUndefined()
+  })
+
+  it("applySuggestedPrices sigue el mismo orden: adjudicada → estimado → catálogo", () => {
+    const items = [
+      item({ id: "a", estimatedUnitPrice: 1_000, awardedQuotationId: "q-1", awardedQuotationTotal: 150_000, awardedLineCount: 1 }),
+      item({ id: "b", estimatedUnitPrice: 2_000, productId: "p", supplierPrices: { "sup-1": 20_000 } }),
+      item({ id: "c", productId: "p", supplierPrices: { "sup-1": 30_000 } }),
+      item({ id: "d" }),
+    ]
+    expect(applySuggestedPrices(items, "sup-1", () => "sup-1")).toEqual({ a: 150_000, b: 2_000, c: 30_000 })
+  })
+
+  it("la pista dice que el precio lo estimó el solicitante", () => {
+    expect(priceHint(item({ estimatedUnitPrice: 20_000 }), ""))
+      .toBe(`Precio estimado por el solicitante: ${formatCLP(20_000)}`)
+  })
+
+  it("la pista de la adjudicación gana sobre la del estimado, y la del estimado sobre la de catálogo", () => {
+    const adjudicada = item({
+      estimatedUnitPrice: 20_000,
+      awardedQuotationId: "q-1", awardedQuotationTotal: 150_000, awardedLineCount: 1,
+    })
+    expect(priceHint(adjudicada, "")).toContain("Oferta adjudicada")
+    const conCatalogo = item({ productId: "p", supplierPrices: { "sup-1": 90_000 }, estimatedUnitPrice: 20_000 })
+    expect(priceHint(conCatalogo, "sup-1")).toContain("Precio estimado por el solicitante")
+  })
+
+  it("la etiqueta bajo el campo nombra el origen del precio, no siempre «catálogo»", () => {
+    expect(priceSourceLabel(item({ estimatedUnitPrice: 20_000 }), "")).toBe("estimado")
+    expect(priceSourceLabel(item({ supplierPrices: { "sup-1": 20_000 } }), "sup-1")).toBe("catálogo")
+    expect(priceSourceLabel(item({
+      awardedQuotationId: "q-1", awardedQuotationTotal: 150_000, awardedLineCount: 1,
+    }), "")).toBe("adjudicada")
+    expect(priceSourceLabel(item(), "sup-1")).toBeNull()
   })
 })
 
