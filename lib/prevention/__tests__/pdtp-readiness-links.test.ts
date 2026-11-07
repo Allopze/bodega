@@ -19,7 +19,7 @@ import {
 /** Los parámetros que cada destino lee de verdad, verificados en su código. */
 const READS_PARAMS: Record<string, string[]> = {
   "/prevencion/inspecciones/plantillas": ["q", "tipo", "estado"],
-  "/prevencion/capacitacion": ["faena", "year"],
+  "/prevencion/capacitacion": ["faena", "year", "mes", "estado", "q", "page"],
   "/prevencion/emergencias": ["tab", "vista", "page"],
   "/prevencion/pdtp/aplicabilidad": [],
   "/admin/roles": [],
@@ -43,7 +43,7 @@ describe("pdtp-readiness-links — cada parámetro lo lee su destino", () => {
     assertOnlyKnownParams(link.href)
   })
 
-  it("capacitación se enlaza pelada: el destino no lee filtro de texto", () => {
+  it("capacitación se enlaza pelada: el destino cae en «Pendientes» sin ayuda", () => {
     const link = trainingCatalogItemLink()
     expect(link.href).toBe("/prevencion/capacitacion")
     assertOnlyKnownParams(link.href)

@@ -6,11 +6,11 @@ export default function Loading() {
   return (
     <PageContainer>
       <PageHeader
-        title="Campañas y Capacitación"
+        title="Campañas y capacitación"
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Prevención", href: "/prevencion" },
-            { label: "Campañas y Capacitación" },
+            { label: "Campañas y capacitación" },
           ]} />
         }
       />

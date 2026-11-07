@@ -17,9 +17,12 @@
  * - `/prevencion/emergencias` lee `tab` y `vista`
  *   (`lib/prevention/emergency-list-filters.ts`); `vista=draft` sólo es válido
  *   con `tab=plans`.
- * - `/prevencion/capacitacion` lee `faena`, `year` y `mes` (este último, desde
- *   2026-11-03, lo escribe el calendario de cumplimiento) y nada más
- *   (`training-occurrence-list.tsx`). El enlace de capacitación va pelado desde
+ * - `/prevencion/capacitacion` lee `faena`, `year` (o `anio`), `mes` (desde
+ *   2026-11-03, lo escribe el calendario de cumplimiento), `estado`
+ *   (`hecha`, `no_hecha`, `no_aplica`, `todas`; ausente es «Pendientes»), `q` y
+ *   `page` (desde 2026-11-07, cuando la lista pasó a paginarse en el servidor;
+ *   `app/(app)/prevencion/capacitacion/page.tsx` y `training-view.ts`) y nada
+ *   más. El enlace de capacitación va pelado desde
  *   que el catálogo de cursos dejó de existir (2026-09-19): antes apuntaba a
  *   `/prevencion/capacitacion/catalogo?tab=versions&q=<código>`.
  * - `/prevencion/pdtp/aplicabilidad` **no lee ningún parámetro**. Se enlaza
@@ -48,11 +51,13 @@ export function inspectionTemplateLink(code: string): PdtpReadinessLink {
 /**
  * El control anual de capacitación.
  *
- * Va pelado, sin `q` ni `tab`: el destino sólo lee `faena`, `year` y `mes`
- * (`training-occurrence-list.tsx`), y un parámetro que nadie lee es
- * exactamente el defecto que este archivo existe para impedir. Tampoco lleva
- * `year`: sin él la página resuelve el catálogo vigente por su cuenta, que es
- * el que corresponde al programa que se está habilitando.
+ * Va pelado: el destino lee `faena`, `year`, `mes`, `estado`, `q` y `page`
+ * (`app/(app)/prevencion/capacitacion/page.tsx`), pero este enlace no necesita
+ * ninguno, y un parámetro que el destino ignora es exactamente el defecto que
+ * este archivo existe para impedir. Pelado cae en «Pendientes», que es lo primero que
+ * necesita ver quien habilita un programa. Tampoco lleva `year`: sin él la
+ * página resuelve el catálogo vigente por su cuenta, que es el que corresponde
+ * al programa que se está habilitando.
  */
 export function trainingCatalogItemLink(): PdtpReadinessLink {
   return {
