@@ -31,6 +31,7 @@ import {
   listRecentVehicleWorkOrders,
   workOrderMetricsScope,
 } from "@/lib/services/mantencion/work-orders/metrics"
+import { getVehiclePurchaseHistory } from "@/lib/services/vehicle-purchase-history"
 
 /**
  * Equipos de una faena, para poblar selectores.
@@ -552,7 +553,7 @@ export async function getFleetVehicleDetail(session: Session, id: string) {
     return null
   }
 
-  const [documents, currentOperation, providerReadings, operatorCounts, operationalIntervals, recentWorkOrders] = await Promise.all([
+  const [documents, currentOperation, providerReadings, operatorCounts, operationalIntervals, recentWorkOrders, recentPurchases] = await Promise.all([
     db.query.fleetVehicleDocuments.findMany({
       // FLO-003: la ficha muestra el historial de versiones, no las anuladas.
       // Una anulación es un error corregido, no una versión del documento.
@@ -619,6 +620,10 @@ export async function getFleetVehicleDetail(session: Session, id: string) {
     // Últimas 10 OT del equipo; `null` (no `[]`) sin la capacidad, para que la
     // ficha no pinte «sin órdenes de trabajo» a quien no puede verlas.
     workOrderScope ? listRecentVehicleWorkOrders(workOrderScope, id, 10) : Promise.resolve(null),
+    // Repuestos y servicios comprados para el equipo (solicitud → OC → costo). El costo de una
+    // compra es información de compras: `purchasing:view`. `null` (no `[]`) sin ella, para que la
+    // ficha no pinte «sin compras» a quien no puede verlas.
+    can(session, "purchasing:view") ? getVehiclePurchaseHistory(id) : Promise.resolve(null),
   ])
 
   // Rendimiento promedio del log operacional ±30 días alrededor de la salida de
@@ -648,6 +653,7 @@ export async function getFleetVehicleDetail(session: Session, id: string) {
     vehicle,
     documents,
     recentWorkOrders,
+    recentPurchases,
     workOrderConsumptionImpact,
     // Última lectura de horómetro/odómetro con fecha real, y los operadores
     // más frecuentes — derivados del log operacional de combustible.

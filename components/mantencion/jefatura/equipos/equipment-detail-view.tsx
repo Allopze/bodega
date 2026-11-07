@@ -3,6 +3,7 @@
 import * as React from "react"
 import { usePathname, useRouter } from "next/navigation"
 import { PencilSimple } from "@phosphor-icons/react"
+import { VehiclePurchasesCard } from "@/components/fleet/vehicle-purchases-card"
 import { Button } from "@/components/ui/button"
 import { PageContainer } from "@/components/ui/page-container"
 import { PageHeader } from "@/components/ui/page-header"
@@ -20,7 +21,7 @@ import type { EquipmentDetailData, EquipmentEditData } from "./equipment-detail-
 
 /**
  * Ficha del equipo (§10). Se abre en modo LECTURA —estado de mantención (con el
- * taller y las lecturas), ficha, historial de cambios, seguro y hoja de vida— y «Editar ficha» cambia la columna principal
+ * taller y las lecturas), ficha, historial de cambios, compras vinculadas, seguro y hoja de vida— y «Editar ficha» cambia la columna principal
  * por el mismo formulario del alta. La acción de editar vive en `PageHeader`
  * (regla de layout 5); por eso este componente de cliente es quien lo rinde.
  */
@@ -92,6 +93,7 @@ export function EquipmentDetailView({
         <div className="flex flex-col gap-5">
           {insuranceFirst && insurance}
           <EquipmentHistoryList entries={data.history} />
+          {data.purchases && <VehiclePurchasesCard records={data.purchases} {...data.purchaseLinks} />}
           {!insuranceFirst && insurance}
         </div>
       </div>

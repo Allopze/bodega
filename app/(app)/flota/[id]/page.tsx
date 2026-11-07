@@ -5,6 +5,7 @@ import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { MetaBadge } from "@/components/states/state-badge"
+import { VehiclePurchasesCard } from "@/components/fleet/vehicle-purchases-card"
 import { Button } from "@/components/ui/button"
 import { can, requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite } from "@/lib/auth/scope"
@@ -266,6 +267,17 @@ export default async function FlotaVehiclePage({
             )}
           </CardContent>
         </Card>
+      )}
+
+      {detail.recentPurchases && (
+        <VehiclePurchasesCard
+          records={detail.recentPurchases}
+          canOpenRequests={can(session, "repuestos:view_all")}
+          // Esta tarjeta sólo se dibuja con `purchasing:view`, que es lo que abre la OC.
+          canOpenOrders
+          // Un equipo dado de baja no admite solicitudes nuevas (el formulario lo rechazaría).
+          newRequestHref={can(session, "repuestos:create") && vehicle.isActive ? `/solicitudes/nueva?tipo=repuestos&vehiculo=${vehicle.id}` : null}
+        />
       )}
 
       <Card>

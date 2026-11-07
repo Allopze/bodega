@@ -10,6 +10,7 @@ import { loadEquipmentInsurance, loadEquipmentWorkOrders, loadLifeRows, loadLife
 import { listHistoricalRecords } from "@/lib/services/mantencion/historical-import"
 import { listEquipmentHistory } from "@/lib/services/mantencion/equipment-history"
 import { loadFleet } from "@/lib/services/mantencion/fleet"
+import { getVehiclePurchaseHistory } from "@/lib/services/vehicle-purchase-history"
 import { LIFE_PAGE_SIZE } from "@/components/mantencion/jefatura/equipos/equipment-life-section"
 import { loadEquipmentFormCatalogs } from "../form-catalogs"
 
@@ -44,7 +45,10 @@ export default async function EquipmentDetailPage({
   const canManage = can(session, "mant:equipment:manage")
   // La hoja de vida y sus totales respetan el alcance de lectura: un supervisor sólo ve su faena y lo propio.
   const visibility = recordVisibilitySql(recordVisibility(viewer))
-  const [history, life, totals, insurance, recordCount, catalogs, workOrders, historical] = await Promise.all([
+  // Las compras vinculadas se ven con `purchasing:view` (cualquier OC) o `repuestos:view_all` (cualquier solicitud);
+  // sin ninguna, `null` y la tarjeta no se dibuja, en vez de decir «sin compras».
+  const canSeePurchases = can(session, "purchasing:view") || can(session, "repuestos:view_all")
+  const [history, life, totals, insurance, recordCount, catalogs, workOrders, historical, purchases] = await Promise.all([
     listEquipmentHistory(id),
     loadLifeRows(id, visibility, { limit: lifeLimit }),
     loadLifeTotals(id, visibility),
@@ -54,6 +58,7 @@ export default async function EquipmentDetailPage({
     // Las OT tienen su propio alcance (`mant:ot:view_*`); sin permiso, `null` y la sección no se dibuja.
     loadEquipmentWorkOrders(id, viewer),
     listHistoricalRecords(viewer, { vehicleId: id }),
+    canSeePurchases ? getVehiclePurchaseHistory(id) : Promise.resolve(null),
   ])
 
   const { status, workshop } = row
@@ -86,6 +91,13 @@ export default async function EquipmentDetailPage({
     insurance,
     canViewFleet: can(session, "flota:view"),
     history,
+    purchases,
+    purchaseLinks: {
+      canOpenRequests: can(session, "repuestos:view_all"),
+      canOpenOrders: can(session, "purchasing:view"),
+      // Un equipo dado de baja no admite solicitudes nuevas (el formulario lo rechazaría).
+      newRequestHref: can(session, "repuestos:create") && !row.retired ? `/solicitudes/nueva?tipo=repuestos&vehiculo=${row.vehicleId}` : null,
+    },
   }
 
   const edit: EquipmentEditData | null = catalogs

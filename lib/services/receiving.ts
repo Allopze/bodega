@@ -20,6 +20,7 @@ import { receiveItemTx, receiveOfficeItemTx } from "./item-state"
 import { applyMovementTx } from "./stock"
 import { OFFICE_ORIGIN_LABEL, prepareDispatchGuideForOfficeReceiptTx, resolveOfficeWorksite } from "./dispatch-guides"
 import { notifyManyUser, notifyAfterCommit } from "./notifications"
+import { notifyWorkOrderPartsReceived } from "./mantencion/work-orders/notifications"
 import { closeOrderTx } from "./purchasing-module/receiving"
 import {
   collectRequesterShortfallNoticesTx,
@@ -127,6 +128,10 @@ export async function registerReceipt(
   // Mismo criterio que la aprobación masiva (`requester-approval-notify.ts`).
   const arrivals = new Map<string, Arrival>()
   let arrivalPlace = OFFICE_ORIGIN_LABEL
+  // Líneas que pidió una OT de mantención y que esta recepción dejó COMPLETAS en
+  // faena, por OT. La recepción parcial no avisa: mantención no puede actuar
+  // hasta que el repuesto está entero. Un aviso por OT y recepción.
+  const partsArrivals = new Map<string, Set<string>>()
   const countArrival = (requestItemId: string, request: { id: string; code: string; requesterId: string | null }) => {
     if (!request.requesterId) return
     const arrival = arrivals.get(request.id)
@@ -141,6 +146,7 @@ export async function registerReceipt(
 
   const code = await db.transaction(async (tx) => {
     arrivals.clear()
+    partsArrivals.clear()
     shortfallNotices = []
     const shortfalls: RequesterShortfall[] = []
     // Read order INSIDE the transaction to avoid stale status checks.
@@ -370,9 +376,15 @@ export async function registerReceipt(
           if (fullReceived) {
             const reqItem = await tx.query.purchaseRequestItems.findFirst({
               where: eq(purchaseRequestItems.id, lockedOcItem.requestItemId),
+              columns: { id: true, workOrderId: true },
               with: { request: { columns: { requesterId: true, code: true, id: true } } },
             })
             if (reqItem?.request) countArrival(reqItem.id, reqItem.request)
+            if (reqItem?.workOrderId) {
+              const lines = partsArrivals.get(reqItem.workOrderId) ?? new Set<string>()
+              lines.add(reqItem.id)
+              partsArrivals.set(reqItem.workOrderId, lines)
+            }
 
             if (isEmergencyService && fullReceived && qtyRej === 0 && qtyDmg === 0) {
               await completeEmergencyResourceServiceCaseTx(tx, {
@@ -467,6 +479,12 @@ export async function registerReceipt(
 
   for (const arrival of arrivals.values()) {
     notifyAfterCommit(() => notifyManyUser([arrival.requesterId], arrivalNotice(input.stage, arrivalPlace, arrival)))
+  }
+  // Mantención: una vez por OT, con las líneas que quedaron completas en esta recepción.
+  for (const [workOrderId, lines] of partsArrivals) {
+    notifyAfterCommit(() => notifyWorkOrderPartsReceived({
+      workOrderId, receiptId, actorUserId: input.receivedBy, itemCount: lines.size,
+    }))
   }
   flushRequesterShortfallNotifications(shortfallNotices)
 
