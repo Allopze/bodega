@@ -345,6 +345,22 @@ describe("columna lateral", () => {
     expect(history.getByText("03-11-2026 → 05-11-2026")).toBeTruthy()
   })
 
+  it("el costo cargado se rotula como mano de obra / taller externo y remite a «Repuestos pedidos»", () => {
+    render(<OtAside detail={otDetail({ totalCost: 250_000 })} showCosts />)
+    expect(screen.getByRole("heading", { name: "Mano de obra / taller externo" })).toBeTruthy()
+    expect(screen.getByText("Cargado por jefatura. Los repuestos y servicios comprados por OC están en «Repuestos pedidos».")).toBeTruthy()
+    expect(screen.getByText(/250\.000/)).toBeTruthy()
+    expect(screen.queryByText(/Costo de la OT/)).toBeNull()
+    expect(screen.queryByText(/Mano de obra y repuestos/)).toBeNull()
+  })
+
+  it("sin permiso de costos o sin costo cargado no se dibuja la tarjeta", () => {
+    const { rerender } = render(<OtAside detail={otDetail({ totalCost: 250_000 })} />)
+    expect(screen.queryByText("Mano de obra / taller externo")).toBeNull()
+    rerender(<OtAside detail={otDetail({ totalCost: null })} showCosts />)
+    expect(screen.queryByText("Mano de obra / taller externo")).toBeNull()
+  })
+
   it("enlaza el registro sólo cuando se puede abrir", () => {
     render(<OtAside detail={otDetail()} />)
     expect(screen.getByRole("link", { name: "MC-BIO-0007" }).getAttribute("href")).toBe("/mantencion/registros/rec-1")
