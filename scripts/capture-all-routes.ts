@@ -2619,7 +2619,8 @@ async function prepareDatabase(captureDbUrl: string) {
   // evidencia, bitácora y difusión; el subpath /procedimiento no existe.
   await db.insert(schema.preventionIncidents).values({
     id: "inc-audit-1",
-    code: "INC-2026-0001",
+    // Prefijo EV: «INC» es la serie de los tickets de TI (it-ticket-audit-1).
+    code: "EV-2026-0001",
     clientSubmissionId: "capture-incident-submission-1",
     worksiteId,
     companyName: "Chome",
@@ -2677,7 +2678,7 @@ async function prepareDatabase(captureDbUrl: string) {
     administratorName: "Organismo administrador",
     responsibleUserId: "user-audit-prevencion",
     sentAt: "2026-06-08T15:30:00.000Z",
-    evidenceReference: "DIAT-INC-2026-0001.pdf",
+    evidenceReference: "DIAT-EV-2026-0001.pdf",
     evidenceChecksumSha256: "e".repeat(64),
     observations: "Notificación enviada dentro del plazo de la faena.",
     createdAt: now,
@@ -2713,7 +2714,7 @@ async function prepareDatabase(captureDbUrl: string) {
     incidentId: "inc-audit-1",
     investigationId: "incident-investigation-audit-1",
     kind: "photo",
-    reference: "EVID-INC-2026-0001-01.jpg",
+    reference: "EVID-EV-2026-0001-01.jpg",
     description: "Tablero aislado y tarjeta LOTO visible luego de la detención segura.",
     checksumSha256: "f".repeat(64),
     isSensitive: false,
@@ -2743,7 +2744,7 @@ async function prepareDatabase(captureDbUrl: string) {
     rootCauseText: "Secuencia LOTO insuficientemente visible en el punto de intervención.",
     actionPlanSummary: "Reforzar señalización, difusión por turno y verificación previa de energía cero.",
     diffusedAt: "2026-06-10T08:00:00.000Z",
-    evidenceRef: "ONEPAGE-INC-2026-0001.pdf",
+    evidenceRef: "ONEPAGE-EV-2026-0001.pdf",
     createdByUserId: userId,
     createdAt: now,
   })
@@ -2753,7 +2754,7 @@ async function prepareDatabase(captureDbUrl: string) {
     followupDate: "2026-06-22",
     note: "La señalización LOTO fue instalada y se mantiene pendiente la capacitación de refuerzo.",
     status: "completed",
-    evidenceRef: "SEG-INC-2026-0001",
+    evidenceRef: "SEG-EV-2026-0001",
     createdByUserId: "user-audit-prevencion",
     createdAt: now,
   })
@@ -2762,7 +2763,7 @@ async function prepareDatabase(captureDbUrl: string) {
     incidentId: "inc-audit-1",
     kind: "corrective_measures",
     summary: "Difusión de medidas de aislamiento y prueba de energía cero al turno día.",
-    evidenceRef: "CHARLA-INC-2026-0001",
+    evidenceRef: "CHARLA-EV-2026-0001",
     status: "confirmed",
     markedByUserId: "user-audit-prevencion",
     markedAt: "2026-06-10T08:10:00.000Z",
@@ -5781,6 +5782,27 @@ async function prepareDatabase(captureDbUrl: string) {
       PERFORM setval('code_seq_ent_' || yr, GREATEST(
         1,
         (SELECT COALESCE(MAX(CAST(split_part(code,'-',3) AS int)),0) FROM deliveries WHERE code ~ ('^ENT-' || yr || '-'))
+      ));
+
+      -- INC (tickets de TI), EV (incidentes de prevención) e INSP (inspecciones)
+      -- también se siembran con códigos fijos: sin esto, el primer código que
+      -- genere la app sería el -0001 y chocaría con el sembrado.
+      PERFORM next_document_code('INC', yr);
+      PERFORM setval('code_seq_inc_' || yr, GREATEST(
+        1,
+        (SELECT COALESCE(MAX(CAST(split_part(code,'-',3) AS int)),0) FROM it_tickets WHERE code ~ ('^INC-' || yr || '-[0-9]+$'))
+      ));
+
+      PERFORM next_document_code('EV', yr);
+      PERFORM setval('code_seq_ev_' || yr, GREATEST(
+        1,
+        (SELECT COALESCE(MAX(CAST(split_part(code,'-',3) AS int)),0) FROM prevention_incidents WHERE code ~ ('^EV-' || yr || '-[0-9]+$'))
+      ));
+
+      PERFORM next_document_code('INSP', yr);
+      PERFORM setval('code_seq_insp_' || yr, GREATEST(
+        1,
+        (SELECT COALESCE(MAX(CAST(split_part(code,'-',3) AS int)),0) FROM prevention_inspection_runs WHERE code ~ ('^INSP-' || yr || '-[0-9]+$'))
       ));
 
       -- GDI usa serie continua (year=0), igual que SOL, y su correlativo va en

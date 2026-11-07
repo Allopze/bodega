@@ -594,7 +594,7 @@ async function main() {
       : "closed"
     incidents.push({
       id: id("inc"),
-      code: `INC-2026-${String(i + 1).padStart(4, "0")}`,
+      code: `EV-2026-${String(i + 1).padStart(4, "0")}`,
       clientSubmissionId: id("csub"),
       worksiteId: pick(worksites).id,
       companyName: "Chome",
@@ -960,6 +960,29 @@ async function main() {
   }
   if (lesionados.length > 0) await db.insert(schema.preventionIncidentPeople).values(lesionados)
   console.log(`  Indicadores SST: ${denominadores.length} denominadores · ${lesionados.length} personas lesionadas`)
+
+  // Los incidentes (EV) y las inspecciones (INSP) se sembraron con códigos
+  // fijos: se alinea cada secuencia con el máximo sembrado para que el primer
+  // código que genere la app no repita uno existente (next_document_code crea
+  // la secuencia si no existe y consume un valor; setval la fija en el máximo).
+  await db.execute(sql`
+    DO $$
+    DECLARE
+      serie record;
+      grupo record;
+    BEGIN
+      FOR serie IN SELECT * FROM (VALUES ('prevention_incidents', 'EV'), ('prevention_inspection_runs', 'INSP')) AS s(tabla, prefijo) LOOP
+        FOR grupo IN EXECUTE format(
+          'SELECT split_part(code, ''-'', 2)::int AS anio, max(split_part(code, ''-'', 3)::int) AS maximo FROM %I WHERE code ~ %L GROUP BY 1',
+          serie.tabla, '^' || serie.prefijo || '-[0-9]{4}-[0-9]{4,6}$')
+        LOOP
+          PERFORM next_document_code(serie.prefijo, grupo.anio);
+          PERFORM setval('code_seq_' || lower(serie.prefijo) || '_' || grupo.anio, grupo.maximo);
+        END LOOP;
+      END LOOP;
+    END
+    $$
+  `)
 
   await client.end()
   console.log("Listo.")
