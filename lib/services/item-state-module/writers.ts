@@ -123,6 +123,16 @@ export const ITEM_STATUS_WRITERS: readonly ItemStatusWriter[] = [
       + "`approveItem`, porque además fija proveedor adjudicado e importe. La transición sí está en el mapa; lo que "
       + "está fuera del módulo es el escritor.",
   },
+  {
+    file: "lib/requests/request-service-module/approve-without-quotation.ts",
+    kind: "undeclared_transition",
+    writes: "requested → approved",
+    reason:
+      "Aprobar sin cotización (repuestos bajo el umbral o por la vía rápida, 2026-11-07) es el espejo de "
+      + "`select-quotation.ts` sin oferta ganadora: aprueba todos los ítems `requested` de la solicitud bajo el "
+      + "mismo bloqueo del padre y con la misma decisión registrada. La transición está en el mapa; lo que está "
+      + "fuera del módulo es el escritor, igual que en la adjudicación.",
+  },
 ] as const
 
 /** Los archivos que el guardián espera encontrar escribiendo el estado. */
