@@ -121,9 +121,13 @@ test.describe("OT · repuestos pedidos", () => {
     await expect(enviar).toBeVisible()
     await enviar.click()
     await expect(enviar).toHaveCount(0, { timeout: 30_000 })
-    await page.goto("/mantencion/ot?repuestos=pendientes")
+    // El botón desaparece al empezar el envío, no al confirmarlo: la lista se
+    // reintenta hasta que el servidor haya guardado la solicitud enviada.
     const fila = page.getByRole("row").filter({ hasText: folio })
-    await expect(fila).toBeVisible()
+    await expect(async () => {
+      await page.goto("/mantencion/ot?repuestos=pendientes")
+      await expect(fila).toBeVisible({ timeout: 5_000 })
+    }).toPass({ timeout: 60_000 })
     await expect(fila.getByText("Esperando repuesto")).toBeVisible()
   })
 
