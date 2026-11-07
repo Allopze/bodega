@@ -1,7 +1,8 @@
 "use client"
 
+import { ExportLink } from "@/components/ui/export-button"
 import Link from "next/link"
-import { DownloadSimple, Plus } from "@phosphor-icons/react"
+import { Plus } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 
 export function ComprasActions({
@@ -12,12 +13,7 @@ export function ComprasActions({
   exportHref?: string | null
 }) {
   const exportButton = exportHref ? (
-    <Button variant="secondary" size="sm" asChild>
-      <a href={exportHref} download>
-        <DownloadSimple size={15} />
-        Exportar Excel
-      </a>
-    </Button>
+    <ExportLink href={exportHref} />
   ) : null
 
   if (!canCreate) return exportButton

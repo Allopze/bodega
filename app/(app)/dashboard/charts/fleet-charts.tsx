@@ -129,7 +129,7 @@ export function FuelConsumptionChart({ data, showCosts = true, periodLabel }: { 
 
   return (
     <ChartFrame
-      title="Consumo de Combustibles"
+      title="Consumo de combustibles"
       description={`${showCosts ? "Litros cargados y costo por mes" : "Litros cargados por mes"}${periodLabel ? ` · ${periodLabel}` : ""}${partialFrom >= 0 ? " · el último mes es parcial" : ""}`}
       headline={
         <>
@@ -141,7 +141,7 @@ export function FuelConsumptionChart({ data, showCosts = true, periodLabel }: { 
       <ChartContainer config={fuelChartConfig} className={`h-52 w-full ${SERIES_FADE_CLASS}`} data-chart-kind="bars">
         <ComposedChart
           accessibilityLayer
-          aria-label="Consumo de Combustibles"
+          aria-label="Consumo de combustibles"
           data={data}
           margin={{ top: 12, right: 0, left: 0, bottom: 0 }}
         >

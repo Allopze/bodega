@@ -141,7 +141,7 @@ test.describe("Rediseño del tablero", () => {
   // en mono. Si alguien cambia `KpiCard` por defecto o suelta `DASHBOARD_KPI`,
   // una de las dos mitades cae.
   test("las cifras de KPI del tablero van en sans y las de /analitica conservan mono", async ({ page }) => {
-    await expect(page.getByRole("region", { name: "Indicadores Operacionales" })).toBeVisible()
+    await expect(page.getByRole("region", { name: "Indicadores operacionales" })).toBeVisible()
     const delTablero = await familiasDeCifras(page.locator("[data-kpi-card]"))
     if (delTablero.length === 0) test.skip(true, "El usuario no ve ningún tile con cifra en el Resumen")
     for (const familia of delTablero) {
@@ -225,7 +225,7 @@ test.describe("Rediseño del tablero", () => {
     await page.goto("/dashboard")
     await page.waitForLoadState("networkidle")
 
-    await expect(page.getByRole("region", { name: "Indicadores Operacionales" })).toBeVisible()
+    await expect(page.getByRole("region", { name: "Indicadores operacionales" })).toBeVisible()
     expect(await page.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches)).toBe(true)
     expect(errores, `errores de consola: ${errores.join(" | ")}`).toHaveLength(0)
   })

@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import { EXPORT_ICON } from "@/components/ui/export-button"
 import Link from "next/link"
 import { redirect, notFound } from "next/navigation"
 import { requireAuth, can } from "@/lib/auth/can"
@@ -37,7 +38,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { ChartBar, DotsThree, DownloadSimple, ListChecks, LockKey, PencilSimple, Wrench } from "@phosphor-icons/react/dist/ssr"
+import { ChartBar, DotsThree, ListChecks, LockKey, PencilSimple, Wrench } from "@phosphor-icons/react/dist/ssr"
 import { countOf, formatDate, formatDateSafe } from "@/lib/utils"
 import { PdtpSheetTable } from "../pdtp-sheet-table"
 import { PdtpSheetPicker, PdtpViewToggle, PdtpWorksitePicker } from "../pdtp-sheet-table-ui"
@@ -278,13 +279,13 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
                   <a href={exportRe36Href} download className="flex items-center gap-2">
-                    <DownloadSimple size={14} />
+                    <EXPORT_ICON size={14} aria-hidden />
                     Exportar RE-36
                   </a>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
                   <a href={exportPlanoHref} download className="flex items-center gap-2">
-                    <DownloadSimple size={14} />
+                    <EXPORT_ICON size={14} aria-hidden />
                     Exportar planilla plana
                   </a>
                 </DropdownMenuItem>
@@ -303,7 +304,7 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
                 {selectedWorksiteId && (
                   <DropdownMenuItem asChild>
                     <a href={`/api/prevencion/pdtp/expediente-auditor?programId=${programId}&faena=${selectedWorksiteId}`} download className="flex items-center gap-2">
-                      <DownloadSimple size={14} />
+                      <EXPORT_ICON size={14} aria-hidden />
                       Expediente auditor
                     </a>
                   </DropdownMenuItem>

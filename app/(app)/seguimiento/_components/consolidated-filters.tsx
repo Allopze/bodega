@@ -1,10 +1,10 @@
 "use client"
 
+import { ExportLink } from "@/components/ui/export-button"
 import { useWorksiteFilterPresence } from "@/components/layout/header-context"
 import * as React from "react"
 import {
   MagnifyingGlass,
-  DownloadSimple,
   SlidersHorizontal,
 } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
@@ -159,16 +159,12 @@ export function ConsolidatedFilters({
         }}
         hasActiveFilters={chips.length > 0}
         actions={
-          <Button asChild variant="secondary" size="sm" className="gap-1.5 shrink-0">
-            <a
-              href={buildExportUrl(current)}
-              download
-              aria-label="Exportar a Excel el seguimiento con los filtros aplicados"
-            >
-              <DownloadSimple size={14} weight="bold" />
-              Exportar Excel
-            </a>
-          </Button>
+          // El nombre accesible empieza con el texto visible (WCAG 2.5.3).
+          <ExportLink
+            href={buildExportUrl(current)}
+            ariaLabel="Exportar Excel del seguimiento con los filtros aplicados"
+            className="shrink-0"
+          />
         }
       >
         {/* Selector de faena. Con más de una faena visible la primera opción

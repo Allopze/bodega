@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import { ExportLink } from "@/components/ui/export-button"
 import Link from "next/link"
 import { redirect, notFound } from "next/navigation"
 import { requireAuth, can } from "@/lib/auth/can"
@@ -12,7 +13,6 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Table, TableBody, TableCell, TableCellNum, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
-import { DownloadSimple } from "@phosphor-icons/react/dist/ssr"
 import { ReporteGestionFilters } from "./reporte-gestion-filters"
 
 export const metadata: Metadata = { title: "Reporte de gestión PDTP" }
@@ -102,12 +102,8 @@ export default async function PdtpManagementReportPage({ params, searchParams }:
           ]} />
         }
         actions={selectedWorksiteId ? (
-          <Button asChild size="sm">
-            <a href={`/api/prevencion/pdtp/reporte-gestion?${downloadParams}`} download className="flex items-center gap-2">
-              <DownloadSimple size={14} />
-              Descargar Excel
-            </a>
-          </Button>
+          // Primario a propósito: descargar el reporte es la acción de esta página.
+          <ExportLink href={`/api/prevencion/pdtp/reporte-gestion?${downloadParams}`} label="Descargar Excel" variant="primary" />
         ) : undefined}
       />
 

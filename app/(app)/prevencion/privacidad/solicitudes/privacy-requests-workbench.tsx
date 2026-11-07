@@ -1,9 +1,10 @@
 "use client"
 
+import { EXPORT_ICON } from "@/components/ui/export-button"
 import * as React from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
-import { DownloadSimple, ShieldWarning } from "@phosphor-icons/react"
+import { ShieldWarning } from "@phosphor-icons/react"
 import { useSafeShellHeader } from "@/components/layout/header-context"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -183,7 +184,7 @@ export function PrivacyRequestsWorkbench({ rows, canExport, canExportClinical, p
                   {row.status === "en_proceso" && !row.legalHold && <Button type="button" size="sm" variant="secondary" onClick={() => openTerminal(row, "suspendida_retencion")}>Retener</Button>}
                   {row.status === "en_proceso" && <Button type="button" size="sm" onClick={() => openTerminal(row, "completada")}>Completar</Button>}
                   {["recibida", "validando_identidad", "en_proceso", "suspendida_retencion"].includes(row.status) && <Button type="button" size="sm" variant="ghost" onClick={() => openTerminal(row, "rechazada")}>Rechazar</Button>}
-                  {exportable && <Button type="button" size="sm" variant="secondary" onClick={() => { setExportRow(row); setExportPurpose(""); setIncludeClinical(false) }}><DownloadSimple size={15} className="mr-1" />Exportar</Button>}
+                  {exportable && <Button type="button" size="sm" variant="secondary" onClick={() => { setExportRow(row); setExportPurpose(""); setIncludeClinical(false) }}><EXPORT_ICON size={15} className="mr-1" />Exportar</Button>}
                 </div></TableCell>
               </TableRow>
             )

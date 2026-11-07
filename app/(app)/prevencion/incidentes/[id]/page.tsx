@@ -1,7 +1,8 @@
 import type { Metadata } from "next"
+import { ExportLink } from "@/components/ui/export-button"
 import Link from "next/link"
 import { notFound, redirect } from "next/navigation"
-import { ArrowLeft, DownloadSimple, LockKeyOpen } from "@phosphor-icons/react/dist/ssr"
+import { ArrowLeft, LockKeyOpen } from "@phosphor-icons/react/dist/ssr"
 import { can, requirePermission } from "@/lib/auth/can"
 import { auditIncidentSensitiveAccess } from "@/lib/services/prevention-incident-access"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
@@ -173,7 +174,7 @@ export default async function IncidentDetailPage({ params, searchParams }: PageP
         breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "Prevención" }, { label: "Incidentes", href: "/prevencion/incidentes" }, { label: incident.code }]} />}
         actions={<div className="flex gap-2">
           <Button asChild variant="secondary"><Link href="/prevencion/incidentes"><ArrowLeft className="size-4" />Bandeja</Link></Button>
-          {canExport && <Button asChild variant="secondary"><a href={`/api/prevencion/incidentes/${incident.id}/expediente`} download><DownloadSimple className="size-4" />Expediente Excel</a></Button>}
+          {canExport && <ExportLink href={`/api/prevencion/incidentes/${incident.id}/expediente`} label="Expediente Excel" size="default" />}
         </div>}
       />
 

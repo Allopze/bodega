@@ -1,8 +1,9 @@
 "use client"
 
+import { ExportLink } from "@/components/ui/export-button"
 import { useState } from "react"
 import Link from "next/link"
-import { DownloadSimple, Plus, Warning } from "@phosphor-icons/react"
+import { Plus, Warning } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose,
@@ -18,12 +19,7 @@ export function SolicitudesActions({ canCreate, hasWorksites, exportHref }: Soli
   const [showWarningModal, setShowWarningModal] = useState(false)
 
   const exportButton = exportHref ? (
-    <Button variant="secondary" size="sm" asChild>
-      <a href={exportHref} download>
-        <DownloadSimple size={15} />
-        Exportar Excel
-      </a>
-    </Button>
+    <ExportLink href={exportHref} />
   ) : null
 
   if (!canCreate) {

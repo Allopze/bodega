@@ -192,6 +192,13 @@ body {
   font-feature-settings: "ss01", "cv11";
 }
 
+/* Pesos 400–600 (auditoría UX-15, 2026-11-07): el `bold` por defecto del
+   navegador es 700 y dejaba cada <strong> de la app más pesado que los títulos.
+   Una clase explícita (`font-bold` de la marca) sigue ganando. */
+strong, b {
+  font-weight: 600;
+}
+
 .font-mono, [data-mono] {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum";

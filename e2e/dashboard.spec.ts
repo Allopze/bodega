@@ -52,7 +52,7 @@ test.describe("Dashboard operacional", () => {
     const hoy = page.getByRole("region", { name: "Hoy" })
     await expect(hoy).toBeVisible()
 
-    const indicadores = page.getByRole("region", { name: "Indicadores Operacionales" })
+    const indicadores = page.getByRole("region", { name: "Indicadores operacionales" })
     const [hoyBox, indicadoresBox] = [await hoy.boundingBox(), await indicadores.boundingBox()]
     expect(hoyBox!.y).toBeLessThan(indicadoresBox!.y)
 
@@ -96,7 +96,7 @@ test.describe("Dashboard operacional", () => {
 
 
   test("el panorama no repite lo que ya dice Hoy", async ({ page }) => {
-    const strip = page.getByRole("region", { name: "Indicadores Operacionales" })
+    const strip = page.getByRole("region", { name: "Indicadores operacionales" })
     await expect(strip).toBeVisible()
 
     // La ranura de trabajo propio se fue a Hoy: ningún contador de la cola.
@@ -109,7 +109,7 @@ test.describe("Dashboard operacional", () => {
    * renderizaba — el test lo habría dado por correcto igual.
    */
   test("la ranura de dinero se renderiza para quien la tiene autorizada", async ({ page }) => {
-    const strip = page.getByRole("region", { name: "Indicadores Operacionales" })
+    const strip = page.getByRole("region", { name: "Indicadores operacionales" })
     await expect(strip.getByText("Gasto en OC", { exact: true })).toBeVisible()
   })
 
@@ -180,7 +180,7 @@ test.describe("Dashboard operacional", () => {
     }
   })
   test("Inicio abre en Resumen y sólo esa vista está montada", async ({ page }) => {
-    await expect(page.getByRole("region", { name: "Indicadores Operacionales" })).toBeVisible()
+    await expect(page.getByRole("region", { name: "Indicadores operacionales" })).toBeVisible()
     // La cola ya no vive en Inicio: no hay tabla, sólo el resumen de Hoy.
     await expect(page.locator("#cola-de-trabajo")).toHaveCount(0)
     await expect(page.getByRole("region", { name: "Adquisiciones" })).toHaveCount(0)
@@ -219,7 +219,7 @@ test.describe("Dashboard operacional", () => {
 
   test("una vista no autorizada cae al Resumen en vez de dejar la página en blanco", async ({ page }) => {
     await page.goto("/dashboard?vista=contabilidad")
-    await expect(page.getByRole("region", { name: "Indicadores Operacionales" })).toBeVisible()
+    await expect(page.getByRole("region", { name: "Indicadores operacionales" })).toBeVisible()
   })
 
   /*
@@ -328,7 +328,7 @@ test.describe("Dashboard operacional", () => {
   test("una faena inexistente cae a todas en vez de dejar el tablero en cero", async ({ page }) => {
     await page.goto("/dashboard?faena=ws-que-no-existe")
 
-    await expect(page.getByRole("region", { name: "Indicadores Operacionales" })).toBeVisible()
+    await expect(page.getByRole("region", { name: "Indicadores operacionales" })).toBeVisible()
     // "Todas" lo declara el selector, que es el único sitio donde el alcance se
     // puede además cambiar. La etiqueta distingue el caso en que "todas" no son
     // todas —un rol con faenas acotadas—, que es lo único que aportaba la línea
@@ -359,7 +359,7 @@ test.describe("Dashboard con rol restringido", () => {
   })
 
   test("no muestra tiles ni alertas fuera de su permiso", async ({ page }) => {
-    const strip = page.getByRole("region", { name: "Indicadores Operacionales" })
+    const strip = page.getByRole("region", { name: "Indicadores operacionales" })
     await expect(strip).toBeVisible()
 
     // Sin approvals:approve ni purchasing:view. La aserción de la inversión
@@ -382,7 +382,7 @@ test.describe("Dashboard con rol restringido", () => {
    * mínimo se retiró, así que ahora esa ranura se cede.
    */
   test("ya no muestra Stock crítico: sin incidentes ni CAPA la ranura de riesgo se cede", async ({ page }) => {
-    const strip = page.getByRole("region", { name: "Indicadores Operacionales" })
+    const strip = page.getByRole("region", { name: "Indicadores operacionales" })
 
     await expect(strip.getByText("Stock crítico", { exact: true })).toHaveCount(0)
     await expect(page.getByText("productos con stock crítico")).toHaveCount(0)
@@ -391,7 +391,7 @@ test.describe("Dashboard con rol restringido", () => {
   })
 
   test("cede las ranuras que no autoriza en vez de rellenarlas con tareas", async ({ page }) => {
-    const strip = page.getByRole("region", { name: "Indicadores Operacionales" })
+    const strip = page.getByRole("region", { name: "Indicadores operacionales" })
     const stripText = (await strip.textContent()) ?? ""
 
     // Sin dinero autorizado la ranura se cede: quedan los tiles que el permiso
@@ -418,7 +418,7 @@ test.describe("Dashboard con rol restringido", () => {
     // Y escribir la vista a mano tampoco la abre: cae al Resumen.
     await page.goto("/dashboard?vista=flota")
     await expect(page.getByRole("region", { name: "Control operacional" })).toHaveCount(0)
-    await expect(page.getByRole("region", { name: "Indicadores Operacionales" })).toBeVisible()
+    await expect(page.getByRole("region", { name: "Indicadores operacionales" })).toBeVisible()
   })
 
   test("el flujo del mes sólo lista los módulos autorizados", async ({ page }) => {

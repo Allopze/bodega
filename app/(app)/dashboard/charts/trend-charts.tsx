@@ -147,7 +147,7 @@ export function OperationalTrendChart({ data }: { data: TrendPoint[] }) {
 
   return (
     <ChartFrame
-      title="Tendencia Operativa"
+      title="Tendencia operativa"
       description="Solicitudes, órdenes y recepciones (últimos 6 meses)"
       headline={
         <>
@@ -166,7 +166,7 @@ export function OperationalTrendChart({ data }: { data: TrendPoint[] }) {
       <ChartContainer config={trendChartConfig} className={`h-56 w-full ${SERIES_FADE_CLASS}`} data-chart-kind="lines">
         <ComposedChart
           accessibilityLayer
-          aria-label="Tendencia Operativa"
+          aria-label="Tendencia operativa"
           data={data}
           margin={{ top: 12, right: 12, left: 0, bottom: 0 }}
         >
