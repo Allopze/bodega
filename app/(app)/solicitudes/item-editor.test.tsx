@@ -236,9 +236,9 @@ function renderQuotation(
   props: {
     readOnly?: boolean
     worksiteId?: string
-    onUpdate?: ReturnType<typeof vi.fn>
-    onSelectVehicle?: ReturnType<typeof vi.fn>
-    onSelectWorkOrder?: ReturnType<typeof vi.fn>
+    onUpdate?: (patch: Partial<ItemRow>) => void
+    onSelectVehicle?: (vehicleId: string) => void
+    onSelectWorkOrder?: (workOrderId: string) => void
     quotationRule?: string
     quotationNotice?: string | null
   } = {},

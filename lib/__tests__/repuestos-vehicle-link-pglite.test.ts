@@ -14,7 +14,7 @@ import { migratePGlite } from "@/lib/testing/pglite-migrate"
 
 const pg = new PGlite()
 const testDb = drizzle(pg, { schema })
-const testGlobal = globalThis as typeof globalThis & { __db?: typeof testDb }
+const testGlobal = globalThis as unknown as { __db?: typeof testDb }
 testGlobal.__db = testDb
 
 vi.mock("@/db", () => ({
