@@ -16,19 +16,25 @@ export function PinPad({ onComplete, error, disabled = false }: { onComplete: (p
   const completeRef = useRef(onComplete)
   useEffect(() => { completeRef.current = onComplete })
 
+  // Los actualizadores son puros (sólo calculan el valor siguiente): React puede
+  // ejecutarlos dos veces (modo estricto, render concurrente), y un `setTimeout` o un
+  // aviso a la pantalla dentro de ellos se dispararía dos veces. Quien avisa del PIN
+  // completo es el efecto de abajo, que depende del valor.
   const push = (digit: string) => {
     if (disabled) return
-    setDigits((current) => {
-      if (current.length >= 4) return current
-      const next = current + digit
-      if (next.length === 4) {
-        // Se vacía en el siguiente turno para que el cuarto punto alcance a verse.
-        setTimeout(() => { setDigits(""); completeRef.current(next) }, 120)
-      }
-      return next
-    })
+    setDigits((current) => (current.length >= 4 ? current : current + digit))
   }
-  const erase = () => { if (!disabled) setDigits((current) => current.slice(0, -1)) }
+  // Con el cuarto dígito ya puesto el teclado queda cerrado: el PIN completo se entrega
+  // sí o sí, así que borrar en esa fracción de segundo no cambia nada.
+  const erase = () => { if (!disabled) setDigits((current) => (current.length >= 4 ? current : current.slice(0, -1))) }
+
+  useEffect(() => {
+    if (digits.length !== 4) return
+    // Se vacía en el siguiente turno para que el cuarto punto alcance a verse. Si la
+    // pantalla se desmonta antes, el temporizador se cancela y no se entrega un PIN a nadie.
+    const timer = setTimeout(() => { setDigits(""); completeRef.current(digits) }, 120)
+    return () => clearTimeout(timer)
+  }, [digits])
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {

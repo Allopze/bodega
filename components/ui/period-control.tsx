@@ -38,7 +38,7 @@ import { CalendarBlank, CaretDown, CaretLeft, CaretRight } from "@phosphor-icons
 import { Button } from "@/components/ui/button"
 import { DateRangePicker } from "@/components/ui/date-range-picker"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { addDaysToPlainDate, cn, MONTH_LABELS, MONTH_NAMES, todayInChile } from "@/lib/utils"
+import { addDaysToPlainDate, cn, MONTH_LABELS, MONTH_NAMES, todayInChile, trailingDaysRange } from "@/lib/utils"
 
 /* ---------- Motor genérico ---------- */
 
@@ -73,6 +73,13 @@ export interface PeriodControlCoreProps<P> {
   presets?: ReadonlyArray<PeriodControlPreset<P>>
   /** `false` oculta el rango personalizado (los estados de cuenta sólo admiten meses). */
   allowRange?: boolean
+  /**
+   * Primer mes («YYYY-MM») que la grilla de meses permite elegir: los anteriores quedan
+   * deshabilitados y «Año anterior» se apaga en su año. Sin esto la grilla retrocede sin
+   * tope. Acota sólo la grilla: las flechas y los accesos rápidos los acota quien arma `prev`
+   * y `presets` (el modo mes lo hace por su cuenta).
+   */
+  minMonth?: string
   /** Parámetros de período de la URL: se limpian al elegir uno nuevo, cualquiera sea su forma. */
   clearParams: readonly string[]
   /** Parámetros de paginación: vuelven a la primera página al cambiar el período. */
@@ -90,6 +97,8 @@ export interface PeriodControlCoreProps<P> {
 }
 
 const DEFAULT_PAGE_PARAMS = ["page", "pagina"] as const
+/** «YYYY-MM» con un mes real. */
+const MONTH_KEY = /^(\d{4})-(0[1-9]|1[0-2])$/
 
 function yearOf(plainDate: string, fallback: string): number {
   const year = Number(plainDate.slice(0, 4))
@@ -106,6 +115,7 @@ export function PeriodControlCore<P>({
   next,
   presets = [],
   allowRange = true,
+  minMonth,
   clearParams,
   pageParams = DEFAULT_PAGE_PARAMS,
   onSelect,
@@ -152,6 +162,8 @@ export function PeriodControlCore<P>({
 
   const currentYear = Number(today.slice(0, 4))
   const currentMonthKey = today.slice(0, 7)
+  // Un `minMonth` mal formado no acota nada: sin esto «2024» deshabilitaría o habilitaría meses por comparación de texto.
+  const earliestMonth = minMonth !== undefined && MONTH_KEY.test(minMonth) ? minMonth : null
 
   return (
     <div className={cn("inline-flex items-center rounded-[var(--radius-md)] border border-[var(--color-border-control)] bg-[var(--color-surface)]", className)} role="group" aria-label={groupLabel} aria-busy={pending || undefined}>
@@ -187,7 +199,7 @@ export function PeriodControlCore<P>({
             <div className="mb-2 flex items-center justify-between">
               <h2 className="text-sm font-semibold">Un mes</h2>
               <div className="flex items-center gap-1">
-                <Button type="button" variant="ghost" size="icon-sm" aria-label="Año anterior" onClick={() => setGridYear((y) => y - 1)}><CaretLeft aria-hidden="true" /></Button>
+                <Button type="button" variant="ghost" size="icon-sm" aria-label="Año anterior" disabled={earliestMonth !== null && gridYear <= Number(earliestMonth.slice(0, 4))} onClick={() => setGridYear((y) => y - 1)}><CaretLeft aria-hidden="true" /></Button>
                 <span className="w-12 text-center font-mono text-sm tabular-nums">{gridYear}</span>
                 <Button type="button" variant="ghost" size="icon-sm" aria-label="Año siguiente" disabled={gridYear >= currentYear} onClick={() => setGridYear((y) => y + 1)}><CaretRight aria-hidden="true" /></Button>
               </div>
@@ -199,7 +211,7 @@ export function PeriodControlCore<P>({
                 const period = model.month(gridYear, month)
                 const active = model.same(period, value)
                 return (
-                  <Button key={key} type="button" size="sm" variant={active ? "primary" : "secondary"} aria-pressed={active} disabled={key > currentMonthKey} onClick={() => navigate(period)}>
+                  <Button key={key} type="button" size="sm" variant={active ? "primary" : "secondary"} aria-pressed={active} disabled={key > currentMonthKey || (earliestMonth !== null && key < earliestMonth)} onClick={() => navigate(period)}>
                     {monthLabel}
                   </Button>
                 )
@@ -316,11 +328,12 @@ export function defaultRangePresets(today: string): PeriodControlPreset<DateRang
   const month = Number(today.slice(5, 7))
   const previous = shiftDateRange(monthRange(year, month), -1)
   return [
-    { key: "30d", label: "Últimos 30 días", period: { from: addDaysToPlainDate(today, -29), to: today } },
-    { key: "90d", label: "Últimos 90 días", period: { from: addDaysToPlainDate(today, -89), to: today } },
+    // `trailingDaysRange` es la definición única: Analítica abre con el mismo rango de 30 días y por eso este acceso sale marcado.
+    { key: "30d", label: "Últimos 30 días", period: trailingDaysRange(30, today) },
+    { key: "90d", label: "Últimos 90 días", period: trailingDaysRange(90, today) },
     { key: "mes", label: "Este mes", period: monthRange(year, month) },
     { key: "mes-anterior", label: "Mes anterior", period: previous },
-    { key: "12m", label: "Últimos 12 meses", period: { from: addDaysToPlainDate(today, -364), to: today } },
+    { key: "12m", label: "Últimos 12 meses", period: trailingDaysRange(365, today) },
   ]
 }
 
@@ -360,6 +373,13 @@ export interface MonthPeriodControlProps extends PeriodControlBaseProps {
   month: string
   /** Parámetro de URL del mes (por defecto `periodo`). */
   periodParam?: string
+  /**
+   * Primer mes («YYYY-MM») que se puede elegir. Sin él el control retrocede sin tope,
+   * año tras año; con él, la flecha ‹ se apaga al llegar y la grilla deshabilita los
+   * meses anteriores. Lo usan los resúmenes mensuales para ofrecer, por ejemplo, los
+   * últimos 24 meses y no toda la historia.
+   */
+  minMonth?: string
 }
 
 export type PeriodControlProps = RangePeriodControlProps | MonthPeriodControlProps
@@ -408,15 +428,13 @@ function RangePeriodControl({
   )
 }
 
-const MONTH_KEY = /^(\d{4})-(0[1-9]|1[0-2])$/
-
 function shiftMonthKey(key: string, direction: -1 | 1): string {
   const [year = 0, month = 1] = key.split("-").map(Number)
   const index = year * 12 + (month - 1) + direction
   return `${Math.floor(index / 12)}-${pad((index % 12) + 1)}`
 }
 
-function MonthPeriodControl({ month, periodParam = "periodo", today: todayProp, ...rest }: Omit<MonthPeriodControlProps, "mode">) {
+function MonthPeriodControl({ month, periodParam = "periodo", minMonth, today: todayProp, ...rest }: Omit<MonthPeriodControlProps, "mode">) {
   const today = todayProp ?? todayInChile()
   const model = React.useMemo<PeriodControlModel<string>>(() => ({
     same: (a, b) => a === b,
@@ -428,10 +446,14 @@ function MonthPeriodControl({ month, periodParam = "periodo", today: todayProp, 
   const nextKey = valid ? shiftMonthKey(month, 1) : null
   const [year = 0, monthNumber = 1] = month.split("-").map(Number)
   const bounds = valid ? monthRange(year, monthNumber) : { from: `${currentKey}-01`, to: today }
+  // «YYYY-MM» se ordena como texto; un `minMonth` mal formado no acota nada.
+  const earliest = minMonth !== undefined && MONTH_KEY.test(minMonth) ? minMonth : null
+  const allowed = (key: string) => earliest === null || key >= earliest
+  const previousKey = valid ? shiftMonthKey(month, -1) : null
   const presets: PeriodControlPreset<string>[] = [
     { key: "mes", label: "Este mes", period: currentKey },
     { key: "mes-anterior", label: "Mes anterior", period: shiftMonthKey(currentKey, -1) },
-  ]
+  ].filter((preset) => allowed(preset.period))
 
   return (
     <PeriodControlCore
@@ -441,10 +463,11 @@ function MonthPeriodControl({ month, periodParam = "periodo", today: todayProp, 
       value={month}
       from={bounds.from}
       to={bounds.to}
-      prev={valid ? shiftMonthKey(month, -1) : null}
+      prev={previousKey !== null && allowed(previousKey) ? previousKey : null}
       next={nextKey !== null && nextKey <= currentKey ? nextKey : null}
       presets={presets}
       allowRange={false}
+      {...(earliest !== null ? { minMonth: earliest } : {})}
       clearParams={[periodParam]}
       today={today}
     />

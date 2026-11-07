@@ -2,7 +2,7 @@
 
 import { describe, expect, it, vi } from "vitest"
 import {
-  detectPlatform, hasDeferredPrompt, INSTALL_SNOOZE_MS, installMode, promptInstall, type BeforeInstallPromptEvent,
+  detectPlatform, environmentSnapshot, hasDeferredPrompt, INSTALL_SNOOZE_MS, installMode, parseEnvironment, promptInstall, type BeforeInstallPromptEvent,
 } from "../install"
 
 const IPHONE = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1"
@@ -19,6 +19,24 @@ describe("detectPlatform", () => {
     expect(detectPlatform(IPAD_OS, 0)).toBe("other") // un Mac de verdad
     expect(detectPlatform(ANDROID, 5)).toBe("android")
     expect(detectPlatform(DESKTOP, 0)).toBe("other")
+  })
+})
+
+describe("environmentSnapshot", () => {
+  const withUserAgent = (value: string) => Object.defineProperty(window.navigator, "userAgent", { value, configurable: true })
+
+  it("es un texto estable (plataforma:modo) que `useSyncExternalStore` compara por valor", () => {
+    withUserAgent(ANDROID)
+    expect(environmentSnapshot()).toBe("android:web")
+    expect(environmentSnapshot()).toBe(environmentSnapshot())
+    withUserAgent(DESKTOP)
+    expect(environmentSnapshot()).toBe("other:web")
+  })
+
+  it("se lee de vuelta con `parseEnvironment`; un texto ajeno (el valor de servidor) no se interpreta", () => {
+    expect(parseEnvironment("ios:app")).toEqual({ platform: "ios", standalone: true })
+    expect(parseEnvironment("android:web")).toEqual({ platform: "android", standalone: false })
+    expect(parseEnvironment("server")).toBeNull()
   })
 })
 

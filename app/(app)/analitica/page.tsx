@@ -52,8 +52,12 @@ export default async function AnaliticaPage({
   const chartExcel = can(session, "analytics:export") ? { excel: { permission: "analytics:export" as const } } : {}
 
   const sp = await searchParams
-  // El rango que la pantalla usa sin parámetros: el selector de período lo ofrece como «Volver a…».
-  const defaultFilters = normalizeAnalyticsFilters({})
+  // Un solo «ahora» para los dos cálculos: con dos `new Date()` separados, una petición que cruza la
+  // medianoche compararía el rango vigente contra un por defecto de otro día y mostraría «Volver a…» sin motivo.
+  const now = new Date()
+  // El rango que la pantalla usa sin parámetros: los últimos 30 días, igual al acceso rápido de ese
+  // nombre en el selector (que sale marcado) y lo que «Volver a…» restablece.
+  const defaultFilters = normalizeAnalyticsFilters({}, now)
   const defaultRange = { from: defaultFilters.fromDate, to: defaultFilters.toDate }
   const filters = normalizeAnalyticsFilters({
     fromDate: getParam(sp, "from"),
@@ -61,7 +65,7 @@ export default async function AnaliticaPage({
     worksiteId: getParam(sp, "faena"),
     supplierId: getParam(sp, "proveedor"),
     vehicleId: getParam(sp, "vehiculo"),
-  })
+  }, now)
 
   const [data, options, leadTime] = await Promise.all([
     // ANA-002/PER-T02: la pantalla lee por la entrada cacheada (30 s); el

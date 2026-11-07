@@ -2,8 +2,8 @@
 
 import { useEffect, useState, useSyncExternalStore } from "react"
 import {
-  detectPlatform, hasDeferredPrompt, installMode, installSnapshot, isInstalledFlag, isStandalone,
-  promptInstall, readSnooze, subscribeInstall, writeSnooze, type InstallMode,
+  environmentSnapshot, hasDeferredPrompt, installMode, installSnapshot, isInstalledFlag,
+  parseEnvironment, promptInstall, readSnooze, subscribeInstall, writeSnooze, type InstallMode,
 } from "@/lib/mantencion/client/install"
 import { IconInstall, IconShare } from "./icons"
 
@@ -14,6 +14,12 @@ import { IconInstall, IconShare } from "./icons"
  */
 export function InstallPrompt() {
   const snapshot = useSyncExternalStore(subscribeInstall, installSnapshot, () => "server")
+  // Plataforma y si ya corre instalada: `navigator` y `matchMedia` no existen en el servidor y
+  // leerlos en el render (o en un efecto que luego pinta de nuevo) haría que el HTML del
+  // servidor y el de la hidratación difieran. Con `useSyncExternalStore` el servidor y la
+  // hidratación entregan «server» y el teléfono entrega su valor real en la misma pasada.
+  const environmentText = useSyncExternalStore(subscribeInstall, environmentSnapshot, () => "server")
+  const environment = parseEnvironment(environmentText)
   // Hora en que se abrió la pantalla (la regla de «Ahora no» se mide contra ella);
   // 0 mientras no se monta, porque el HTML del servidor no sabe nada del teléfono.
   const [openedAt, setOpenedAt] = useState(0)
@@ -24,12 +30,12 @@ export function InstallPrompt() {
   }, [])
 
   // Hasta montar no se sabe si está instalada ni en qué teléfono: el HTML del servidor no la muestra.
-  const mode: InstallMode = openedAt === 0 || snapshot === "server"
+  const mode: InstallMode = openedAt === 0 || snapshot === "server" || environment === null
     ? "hidden"
     : installMode({
-      standalone: isStandalone(),
+      standalone: environment.standalone,
       installed: isInstalledFlag(),
-      platform: detectPlatform(navigator.userAgent, navigator.maxTouchPoints ?? 0),
+      platform: environment.platform,
       hasPrompt: hasDeferredPrompt(),
       snoozedAt,
       now: openedAt,
