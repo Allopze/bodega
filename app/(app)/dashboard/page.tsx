@@ -4,7 +4,7 @@ import { redirect } from "next/navigation"
 import { auth } from "@/lib/auth/auth"
 import { can } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
-import { chileDateParts, formatDateLong, todayInChile } from "@/lib/utils"
+import { chileDateParts, formatDateLong, greetingForChileHour, todayInChile } from "@/lib/utils"
 import { PageContainer } from "@/components/ui/page-container"
 import { PageHeader } from "@/components/ui/page-header"
 import { OPERATIONAL_MODULE_LABELS } from "@/lib/work-queue"
@@ -31,6 +31,10 @@ import { ResumenView } from "./views/resumen-view"
 // de un sidebar que decía "Inicio" (I-13; ya detectado en
 // AUDITORIA_LENGUAJE_TECNICO §2.2 y migrado a medias).
 export const metadata: Metadata = { title: "Inicio" }
+
+function capitalizeFirst(text: string) {
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}
 
 function firstParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value
@@ -136,24 +140,38 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           la ranura (y el `h1`). Antes convivían dos identidades — un "Inicio" en
           la TopBar y un "Hola, …" en `text-3xl` debajo, más grande que el `h1`
           real— y la segunda costaba una banda entera antes del primer dato.
+          Se conserva el saludo (auditoría UX-18, 2026-11-07) pero según la hora
+          de Chile —"Buenos días", "Buenas tardes", "Buenas noches"— en vez de un
+          "Hola" fijo; se calcula aquí, en el servidor, así que no hay desajuste
+          de hidratación. `metadata.title` sigue siendo "Inicio".
           Ninguna cifra en el saludo: el total de la cola vive en el enlace
           "Ver todos mis pendientes (N)" del bloque "Hoy" (§A5). El `description`
           lleva la fecha en lenguaje natural —es la única superficie de la app
-          donde el "hoy" se nombra, y se nombra una vez, no en cada KPI. */}
+          donde el "hoy" se nombra, y se nombra una vez, no en cada KPI.
+          "Más acciones" va en `headerActions` (sólo la TopBar de escritorio): en
+          móvil `actions` abría una banda propia de ~80 px bajo el título, antes
+          de las pestañas; ahí el menú compacto vive en la fila de pestañas. */}
       <PageHeader
-        title={`Hola, ${session.user.name?.split(" ")[0] ?? "usuario"}`}
+        title={`${greetingForChileHour()}, ${session.user.name?.split(" ")[0] ?? "usuario"}`}
         // INI-02 (auditoría 2026-10-05): sin argumento `formatDateLong` devuelve "—".
         // Se le pasa el instante, no `todayInChile()`: el formateador ya fija
         // America/Santiago, y un "YYYY-MM-DD" se parsearía como medianoche UTC,
-        // que en Chile es el día anterior.
-        description={formatDateLong(new Date())}
-        actions={<QuickActions session={session} />}
+        // que en Chile es el día anterior. "sábado 7 de noviembre" arranca línea:
+        // sólo la primera letra va en mayúscula.
+        description={capitalizeFirst(formatDateLong(new Date()))}
+        headerActions={<QuickActions session={session} />}
       />
       <div className="animate-in fade-in duration-(--duration-default)">
         {/* Modos y filtros comparten fila: son las dos preguntas del encuadre
             ("qué miro" / "de qué"). En bandas separadas eran dos líneas. */}
         <div className="mb-5 flex flex-wrap items-end justify-between gap-x-6 gap-y-2 border-b border-border">
-          <DashboardViewTabs views={views} scope={scope} />
+          <div className="flex min-w-0 max-w-full items-end gap-1">
+            <DashboardViewTabs views={views} scope={scope} />
+            {/* Sólo móvil: en escritorio el menú vive en la TopBar (`headerActions`). */}
+            <div className="shrink-0 pb-0.5 lg:hidden">
+              <QuickActions session={session} compact />
+            </div>
+          </div>
           <div className="pb-2">
             <DashboardScopeControls
               scope={scope}

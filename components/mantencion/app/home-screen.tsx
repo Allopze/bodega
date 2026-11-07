@@ -23,6 +23,7 @@ import { OtSection } from "./ot-lists"
 import { OtSheet } from "./ot-sheet"
 import { RecordDetailSheet } from "./record-detail-sheet"
 import { useDrafts } from "./use-drafts"
+import { useGreeting } from "./use-greeting"
 import { useFleetHistory } from "./use-history"
 import { Banner, firstName, initials } from "./ui"
 import { WorkshopSheet } from "./workshop-sheet"
@@ -67,6 +68,7 @@ export function HomeScreen({ onStart, onResume, onFix, onDiscardRejected, onNeed
   const { account, stored, rows, queue, online, now } = useAppData()
   const { toast, refreshCatalog } = useAppActions()
   const drafts = useDrafts(account.userId)
+  const greeting = useGreeting()
   const [accountOpen, setAccountOpen] = useState(false)
   const [observationsOpen, setObservationsOpen] = useState(false)
   const [sitesOpen, setSitesOpen] = useState(false)
@@ -128,7 +130,7 @@ export function HomeScreen({ onStart, onResume, onFix, onDiscardRejected, onNeed
             <IconChevronDown />
           </button>
         </div>
-        <h1 className="h1" style={{ margin: "16px 0 6px" }}>Hola, {firstName(account.name)}</h1>
+        <h1 className="h1" style={{ margin: "16px 0 6px" }}>{greeting}, {firstName(account.name)}</h1>
         {sites && !sites.many ? <div className="sitel">{sites.text}</div> : null}
         {sites?.many ? (
           <>

@@ -258,7 +258,7 @@ test.describe("App del mecánico", () => {
 
     // Recargar sin señal: la app abre desde el caché y no se perdió nada.
     await pagina.reload()
-    await expect(pagina.getByRole("heading", { name: /^Hola, / })).toBeVisible({ timeout: 30_000 })
+    await expect(pagina.getByRole("heading", { name: /^(Buenos días|Buenas tardes|Buenas noches), / })).toBeVisible({ timeout: 30_000 })
     await expect(resumen(pagina).getByText("Folio pendiente")).toBeVisible()
     await expect(resumen(pagina).getByText("En el teléfono")).toBeVisible()
     await expect(pagina.getByRole("region", { name: /^Equipos? en taller$/ }).getByText(codigoCorrectiva)).toBeVisible()
@@ -360,7 +360,7 @@ test.describe("Historial del equipo", () => {
       // Sin señal y tras recargar: el historial y las fotos ya vistas siguen en el teléfono.
       await telefono.setOffline(true)
       await pagina.reload()
-      await expect(pagina.getByRole("heading", { name: /^Hola, / })).toBeVisible({ timeout: 30_000 })
+      await expect(pagina.getByRole("heading", { name: /^(Buenos días|Buenas tardes|Buenas noches), / })).toBeVisible({ timeout: 30_000 })
       const hojaSinSenal = await abrirHistorial()
       await hojaSinSenal.getByRole("button", { name: /QA_ Cambio de manguera sin señal/ }).click()
       await expect(pagina.getByRole("dialog", { name: /^MC-BIO-\d{4}$/ }).getByRole("region", { name: "Fotos del registro" }).getByRole("img")).toHaveCount(3)

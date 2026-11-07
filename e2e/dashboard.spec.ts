@@ -37,7 +37,7 @@ test.describe("Dashboard operacional", () => {
 
   test("el saludo es el único título y no repite el total de la cola", async ({ page }) => {
     await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1)
-    await expect(page.getByRole("heading", { level: 1 })).toHaveText(/^Hola, /)
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(/^(Buenos días|Buenas tardes|Buenas noches), /)
 
     await expect(page.getByText(/Tienes \d+ tareas? pendientes?/)).toHaveCount(0)
     await expect(page.getByText(/No tienes acciones pendientes/)).toHaveCount(0)

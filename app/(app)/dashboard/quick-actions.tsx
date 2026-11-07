@@ -10,12 +10,16 @@ import { resolveQuickActions } from "./dashboard-quick-actions"
  * ponía dos veces en la primera pantalla (A5). Analítica, Prevención, Recepción,
  * Entregas, Bodega y Reportes ya son entradas del sidebar.
  *
+ * `compact` es la versión móvil: un botón de sólo ícono que cabe en la fila de
+ * pestañas (la TopBar de escritorio no se muestra en móvil y `PageHeader.actions`
+ * abría una banda propia bajo el título).
+ *
  * El filtrado de permisos se ejecuta en el servidor. Sólo el popover de
  * acciones cruza a cliente, con una lista ya autorizada.
  */
-export function QuickActions({ session }: { session: Session }) {
+export function QuickActions({ session, compact = false }: { session: Session; compact?: boolean }) {
   const actions = resolveQuickActions({ can: (permission) => can(session, permission) })
   if (actions.length === 0) return null
 
-  return <DashboardActionMenu actions={actions} />
+  return <DashboardActionMenu actions={actions} compact={compact} />
 }

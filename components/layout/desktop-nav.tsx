@@ -12,6 +12,7 @@ import { NAV_ICONS } from "./nav-icons"
 import { getVisibleAreas, findActiveArea, isHrefActive, DASHBOARD_ITEM } from "./nav-items"
 import { getAdminAreas } from "./admin-nav"
 import { AccordionAreas, RailFlyout } from "./desktop-nav-areas"
+import { navIconClass, navRailClass, navRowClass } from "./nav-rows"
 import { SidebarUserProfile } from "./sidebar-user-profile"
 
 interface DesktopNavProps {
@@ -33,6 +34,7 @@ const DesktopNavInner = React.memo(function DesktopNavInner({ session, badgeCoun
   )
   const routeArea = findActiveArea(areas, pathname)
   const dashActive = isHrefActive(DASHBOARD_ITEM.href, pathname)
+  const soporteActive = isHrefActive("/soporte", pathname)
   const DashIcon = NAV_ICONS[DASHBOARD_ITEM.iconName]
   const showPanel = React.useCallback(() => onCollapsedChange(false), [onCollapsedChange])
   const hidePanel = React.useCallback(() => onCollapsedChange(true), [onCollapsedChange])
@@ -53,12 +55,7 @@ const DesktopNavInner = React.memo(function DesktopNavInner({ session, badgeCoun
             aria-current={dashActive ? "page" : undefined}
             aria-label="Inicio"
             data-pressable
-            className={cn(
-              "relative flex items-center justify-center rounded-lg px-1 py-2 transition-[background-color,color] duration-(--duration-fast) ease-out",
-              dashActive
-                ? "bg-(--color-primary-tint) text-(--color-primary-ink)"
-                : "text-(--color-text-muted) hover:bg-(--color-chrome-hover) hover:text-(--color-text)",
-            )}
+            className={navRailClass(dashActive)}
           >
             <SquaresFour size={21} weight="regular" className={cn("shrink-0", dashActive && "text-(--color-primary)")} />
           </Link>
@@ -83,12 +80,16 @@ const DesktopNavInner = React.memo(function DesktopNavInner({ session, badgeCoun
             <Link
               href="/soporte"
               aria-label="Soporte"
+              aria-current={soporteActive ? "page" : undefined}
               data-pressable
               className={cn(
-                "flex h-8 w-8 items-center justify-center rounded-(--radius) text-(--color-text-muted) transition-[background-color,color] duration-(--duration-fast) ease-out hover:bg-(--color-chrome-hover) hover:text-(--color-text)",
+                "flex h-8 w-8 items-center justify-center rounded-(--radius) transition-colors duration-(--duration-fast) ease-out",
+                soporteActive
+                  ? "bg-nav-active-bg text-nav-active-ink"
+                  : "text-(--color-text-muted) hover:bg-nav-hover-bg hover:text-(--color-text)",
               )}
             >
-              <Lifebuoy size={19} />
+              <Lifebuoy size={19} className={cn(soporteActive && "text-(--color-primary)")} />
             </Link>
           </Tooltip>
         )}
@@ -97,7 +98,7 @@ const DesktopNavInner = React.memo(function DesktopNavInner({ session, badgeCoun
             type="button"
             onClick={showPanel}
             aria-label="Mostrar panel"
-            className="flex h-8 w-8 items-center justify-center rounded-(--radius) text-(--color-text-muted) transition-[background-color,color] duration-(--duration-fast) ease-out hover:bg-(--color-chrome-hover) hover:text-(--color-text)"
+            className="flex h-8 w-8 items-center justify-center rounded-(--radius) text-(--color-text-muted) transition-[background-color,color] duration-(--duration-fast) ease-out hover:bg-nav-hover-bg hover:text-(--color-text)"
           >
             <CaretRight size={14} weight="bold" />
           </button>
@@ -122,7 +123,7 @@ const DesktopNavInner = React.memo(function DesktopNavInner({ session, badgeCoun
             type="button"
             onClick={hidePanel}
             aria-label="Ocultar panel"
-            className="flex h-7 w-7 items-center justify-center rounded-lg text-(--color-text-muted) transition-colors hover:bg-(--color-chrome-hover) hover:text-(--color-text)"
+            className="flex h-7 w-7 items-center justify-center rounded-lg text-(--color-text-muted) transition-colors hover:bg-nav-hover-bg hover:text-(--color-text)"
           >
             <CaretRight size={14} weight="bold" className="rotate-180" />
           </button>
@@ -131,26 +132,18 @@ const DesktopNavInner = React.memo(function DesktopNavInner({ session, badgeCoun
 
       {/* Links Navigation (con scroll independiente) */}
       <div data-nav-scroll className="flex-1 min-h-0 overflow-y-auto space-y-1 py-1 pr-1">
-        <p className="px-2 pb-1.5 text-xs font-bold uppercase tracking-wider text-(--color-text-muted)">Plataforma</p>
+        {/* Rótulo de sección en caja de oración (`text-eyebrow`); el primero del
+            panel no lleva aire arriba, el espacio con la fila es de 8 px
+            (`pb-1` + el `space-y-1` del contenedor). */}
+        <p className="text-eyebrow px-3 pb-1">Plataforma</p>
 
         <Link
           href={DASHBOARD_ITEM.href}
           aria-current={dashActive ? "page" : undefined}
           data-pressable
-          className={cn(
-            "relative mb-1 flex h-[40px] items-center gap-3 rounded-xl px-3 text-[15px] font-medium transition-colors",
-            dashActive
-              ? "bg-(--color-primary-tint) font-semibold text-(--color-primary-ink)"
-              : "text-(--color-text-muted) hover:bg-(--color-chrome-hover) hover:text-(--color-text)",
-          )}
+          className={cn(navRowClass(dashActive), "mb-1")}
         >
-          {DashIcon && (
-            <DashIcon
-              size={20}
-              weight="regular"
-              className={cn("shrink-0", dashActive ? "text-(--color-primary)" : "text-(--color-text-muted)")}
-            />
-          )}
+          {DashIcon && <DashIcon size={20} weight="regular" className={navIconClass(dashActive)} />}
           <span>Inicio</span>
         </Link>
 
@@ -162,19 +155,11 @@ const DesktopNavInner = React.memo(function DesktopNavInner({ session, badgeCoun
         {areas.filter((a) => a.id === "soporte").length > 0 && (
           <Link
             href="/soporte"
+            aria-current={soporteActive ? "page" : undefined}
             data-pressable
-            className={cn(
-              "relative flex h-[40px] items-center gap-3 rounded-xl px-3 text-[15px] font-medium transition-colors",
-              isHrefActive("/soporte", pathname)
-                ? "bg-(--color-primary-tint) font-semibold text-(--color-primary-ink)"
-                : "text-(--color-text-muted) hover:bg-(--color-chrome-hover) hover:text-(--color-text)",
-            )}
+            className={navRowClass(soporteActive)}
           >
-            <Lifebuoy
-              size={20}
-              weight="regular"
-              className={cn("shrink-0", isHrefActive("/soporte", pathname) ? "text-(--color-primary)" : "text-(--color-text-muted)")}
-            />
+            <Lifebuoy size={20} weight="regular" className={navIconClass(soporteActive)} />
             <span>Soporte</span>
           </Link>
         )}

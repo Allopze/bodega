@@ -411,6 +411,44 @@ export function chileDateParts(date: Date | string | number = new Date()): { yea
   return { year: Number(year), month: Number(month), day: Number(day) }
 }
 
+// hourCycle h23 y no hour12:false (ver CHILE_TIME_FORMAT): con este último algunos
+// ICU rinden "24" a medianoche en vez de "0".
+const CHILE_HOUR_FORMAT = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "America/Santiago",
+  hour: "2-digit",
+  hourCycle: "h23",
+})
+
+/**
+ * Hora del día (0–23) en hora de Chile continental, con su horario de verano.
+ *
+ * `getHours()` lee la zona del proceso, que en producción es UTC: un saludo
+ * calculado con ella diría "buenos días" a las 20:00 chilenas. Es el mismo
+ * motivo que `chileDateParts` para el día.
+ */
+export function chileHour(date: Date | string | number = new Date()): number {
+  const hour = CHILE_HOUR_FORMAT.formatToParts(new Date(date)).find((part) => part.type === "hour")
+  return Number(hour?.value ?? 0)
+}
+
+/**
+ * Saludo según la hora chilena: 05:00–11:59 días, 12:00–19:59 tardes, 20:00–04:59
+ * noches. La madrugada (00:00–04:59) cuenta como noche: quien abre la app a las
+ * 3 a.m. no está empezando la mañana.
+ *
+ * `/dashboard` lo calcula en el servidor, así que no hay desajuste de hidratación;
+ * un componente cliente que también se pinta sin conexión debe calcularlo tras
+ * montar.
+ */
+export function greetingForChileHour(
+  date: Date | string | number = new Date(),
+): "Buenos días" | "Buenas tardes" | "Buenas noches" {
+  const hour = chileHour(date)
+  if (hour >= 5 && hour < 12) return "Buenos días"
+  if (hour >= 12 && hour < 20) return "Buenas tardes"
+  return "Buenas noches"
+}
+
 /**
  * "YYYY-MM-DD" del día civil chileno — el formato en que se guardan las columnas
  * de fecha sin hora (`maintenance_date`, `expires_at`, `load_date`).
