@@ -120,7 +120,7 @@ afterAll(async () => {
 
 describe("submitRequest · umbral de cotizaciones de repuestos", () => {
   it("submit bajo umbral sin cotización pasa", async () => {
-    await setThreshold(null) // sin ajuste guardado: rige el predeterminado de $500.000
+    await setThreshold(null) // sin ajuste guardado: rige el predeterminado de $200.000
     const id = await draftRequest({ items: [{ quantity: 2, price: 20_000 }] })
 
     await submit(id)
@@ -145,8 +145,8 @@ describe("submitRequest · umbral de cotizaciones de repuestos", () => {
 
     const error = await submit(id).then(() => null, (e: Error) => e)
 
-    expect(error?.message).toBe(quotationRequirementMessage("needs_quotation", 500_000))
-    expect(error?.message).toContain("500.000")
+    expect(error?.message).toBe(quotationRequirementMessage("needs_quotation", 200_000))
+    expect(error?.message).toContain("200.000")
     expect(await statusOf(id)).toBe("draft")
   })
 
@@ -155,7 +155,7 @@ describe("submitRequest · umbral de cotizaciones de repuestos", () => {
     // Al segundo ítem le falta el precio: no hay cómo medir el monto.
     const id = await draftRequest({ items: [{ price: 10_000 }, { price: null }] })
 
-    await expect(submit(id)).rejects.toThrow(quotationRequirementMessage("no_quotation_or_estimate", 500_000))
+    await expect(submit(id)).rejects.toThrow(quotationRequirementMessage("no_quotation_or_estimate", 200_000))
     expect(await statusOf(id)).toBe("draft")
   })
 
@@ -189,7 +189,7 @@ describe("submitRequest · umbral de cotizaciones de repuestos", () => {
     await setThreshold(null)
     const id = await draftRequest({ items: [{ price: 10_000 }], quotations: [200_000, 800_000] })
 
-    await expect(submit(id)).rejects.toThrow(quotationRequirementMessage("needs_three", 500_000))
+    await expect(submit(id)).rejects.toThrow(quotationRequirementMessage("needs_three", 200_000))
     expect(await statusOf(id)).toBe("draft")
   })
 
@@ -218,7 +218,7 @@ describe("submitRequest · umbral de cotizaciones de repuestos", () => {
         .where(eq(schema.fuelVehicles.id, IDS.machineBio))
       const id = await draftRequest({ urgency: "critical", items: [{ price: 900_000, vehicleId: IDS.machineBio }] })
 
-      await expect(submit(id)).rejects.toThrow(quotationRequirementMessage("needs_justification", 500_000))
+      await expect(submit(id)).rejects.toThrow(quotationRequirementMessage("needs_justification", 200_000))
       expect(await statusOf(id)).toBe("draft")
     })
 
@@ -239,7 +239,7 @@ describe("submitRequest · umbral de cotizaciones de repuestos", () => {
       const sinNotas = await draftRequest({
         urgency: "critical", items: [{ price: 900_000, vehicleId: IDS.truckBio, workOrderId }],
       })
-      await expect(submit(sinNotas)).rejects.toThrow(quotationRequirementMessage("needs_justification", 500_000))
+      await expect(submit(sinNotas)).rejects.toThrow(quotationRequirementMessage("needs_justification", 200_000))
 
       const conNotas = await draftRequest({
         urgency: "critical", notes: "OT detenida esperando la pieza",
@@ -255,7 +255,7 @@ describe("submitRequest · umbral de cotizaciones de repuestos", () => {
         urgency: "high", notes: "Urgente", items: [{ price: 900_000, vehicleId: IDS.machineBio }],
       })
 
-      await expect(submit(id)).rejects.toThrow(quotationRequirementMessage("needs_quotation", 500_000))
+      await expect(submit(id)).rejects.toThrow(quotationRequirementMessage("needs_quotation", 200_000))
     })
 
     it("urgencia crítica con el equipo operativo y sin OT no es vía rápida", async () => {
@@ -264,7 +264,7 @@ describe("submitRequest · umbral de cotizaciones de repuestos", () => {
         urgency: "critical", notes: "Lo necesito ya", items: [{ price: 900_000, vehicleId: IDS.truckBio }],
       })
 
-      await expect(submit(id)).rejects.toThrow(quotationRequirementMessage("needs_quotation", 500_000))
+      await expect(submit(id)).rejects.toThrow(quotationRequirementMessage("needs_quotation", 200_000))
     })
   })
 

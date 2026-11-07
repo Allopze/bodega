@@ -53,9 +53,10 @@ export const DEFAULT_OPS_SETTINGS = {
   /**
    * Monto (CLP) hasta el cual una solicitud de repuestos puede enviarse con una
    * sola cotización o sólo con precios estimados. Sobre él rige la regla de 3
-   * cotizaciones o justificación. 0 = nunca se exime. Decisión 2026-11-07.
+   * cotizaciones o justificación. 0 = nunca se exime. $200.000 por decisión del
+   * usuario el 2026-11-07.
    */
-  repuestosQuotationThresholdClp: 500_000,
+  repuestosQuotationThresholdClp: 200_000,
 } as const
 
 export interface OperationalSettings {
