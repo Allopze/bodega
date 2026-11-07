@@ -126,7 +126,7 @@ export interface RequestQuotationState {
  * `null` para los tipos sin cotización (EPP/otro).
  */
 export function evaluateRequestQuotations({
-  items, requestType, notes, urgency = "normal", vehicles = [], quotationThresholdClp,
+  items, requestType, notes, urgency = "normal", vehicles = [], quotationThresholdClp, attachedQuotationTotals = [],
 }: {
   items: ItemRow[]
   requestType?: string
@@ -134,11 +134,21 @@ export function evaluateRequestQuotations({
   urgency?: string
   vehicles?: readonly Pick<VehicleOption, "id" | "operationalStatus">[]
   quotationThresholdClp?: number | null
+  /**
+   * Totales de las cotizaciones YA guardadas en el borrador (pendientes). Al
+   * guardar, el formulario saca de `item.cotizaciones` lo que subió; sin esto,
+   * un borrador con su cotización adjunta se veía «sin cotización» y el envío
+   * quedaba bloqueado en el cliente aunque el servidor lo aceptara.
+   */
+  attachedQuotationTotals?: readonly number[]
 }): RequestQuotationState | null {
   if (!requestType || !QUOTATION_TYPES.has(requestType)) return null
   const thresholdClp = quotationThresholdFor(requestType, quotationThresholdClp)
   // Una cotización sin monto escrito aún cuenta como archivo, pero su total es 0.
-  const quotationTotals = items.flatMap((item) => (item.cotizaciones ?? []).map((cot) => Number(cot.totalAmount) || 0))
+  const quotationTotals = [
+    ...attachedQuotationTotals,
+    ...items.flatMap((item) => (item.cotizaciones ?? []).map((cot) => Number(cot.totalAmount) || 0)),
+  ]
   const estimatedTotal = estimatedRequestTotal(items.map((item) => ({
     quantity: Number(item.quantity),
     estimatedUnitPrice: parseEstimatedPrice(item.estimatedUnitPrice),
@@ -165,7 +175,7 @@ export function quotationRuleHint(requestType: string, thresholdClp: number | nu
 
 export function buildRequestSummaryIssues({
   worksiteId, requiredDate, items, requestType, notes, products = [],
-  urgency, vehicles, quotationThresholdClp,
+  urgency, vehicles, quotationThresholdClp, attachedQuotationTotals,
 }: {
   worksiteId: string; requiredDate: string; items: ItemRow[]
   /** Repuestos/servicios: cotizaciones según la regla única de `quotation-requirement` (LOG-9/UX-2). */
@@ -178,6 +188,8 @@ export function buildRequestSummaryIssues({
   vehicles?: readonly Pick<VehicleOption, "id" | "operationalStatus">[]
   /** Umbral de repuestos en CLP, de Parámetros operativos. */
   quotationThresholdClp?: number | null
+  /** Cotizaciones ya guardadas en el borrador (ver `evaluateRequestQuotations`). */
+  attachedQuotationTotals?: readonly number[]
 }): string[] {
   const issues: string[] = []
   if (!worksiteId) issues.push("Selecciona una faena.")
@@ -208,7 +220,7 @@ export function buildRequestSummaryIssues({
       if (missingAttrs.length > 0) issues.push(`${label}: completa ${missingAttrs.map((attr) => attr.attributeName).join(", ")}.`)
     }
   })
-  const quotationState = evaluateRequestQuotations({ items, requestType, notes, urgency, vehicles, quotationThresholdClp })
+  const quotationState = evaluateRequestQuotations({ items, requestType, notes, urgency, vehicles, quotationThresholdClp, attachedQuotationTotals })
   if (quotationState?.message) issues.push(quotationState.message)
   return issues
 }

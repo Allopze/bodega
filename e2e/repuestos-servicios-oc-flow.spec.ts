@@ -152,7 +152,9 @@ test.describe("Repuestos/Servicios — adjudicación y visibilidad en compras", 
     await expect(page.getByPlaceholder("Ej: ABCD-12")).toHaveCount(0)
     await page.getByLabel("Precio unitario estimado (CLP)").fill(unitPrice)
     await page.getByRole("button", { name: /Guardar borrador/ }).click()
-    await page.waitForLoadState("networkidle").catch(() => undefined)
+    // Sin cotización que subir no hay otra señal de que el borrador ya existe:
+    // abrir «el último borrador» antes de esto abre el de otro test.
+    await expect(textoVisible(page, /^Borrador guardado/).first()).toBeVisible({ timeout: 30_000 })
     await openLatestDraft(page, "REP")
     await page.getByRole("button", { name: /Enviar a aprobación/ }).click()
   }

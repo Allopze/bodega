@@ -210,7 +210,7 @@ function withoutFleetLink(item: ItemRow): ItemRow {
 export function useRequestForm({
   worksites, products, workers, editRequest,
   userPermissions = [], initialRequestType, prefillItems, initialWorksiteId,
-  vehicles = [], initialUrgency, quotationThresholdClp,
+  vehicles = [], initialUrgency, quotationThresholdClp, attachedQuotationTotals,
 }: {
   worksites: WorksiteOption[]; products: ProductOption[]; suppliers: SupplierOption[]; workers?: WorkerOption[]
   editRequest?: EditRequest; maxFileSizeMb: number; userRoles?: string[]; userPermissions?: string[]
@@ -225,6 +225,8 @@ export function useRequestForm({
   initialUrgency?: string
   /** Umbral de cotizaciones de repuestos (Parámetros operativos); `null`/ausente = regla legada. */
   quotationThresholdClp?: number | null
+  /** Totales de las cotizaciones ya guardadas en el borrador (ficha de la solicitud). */
+  attachedQuotationTotals?: number[]
 }) {
   const router = useRouter()
   const isEdit = !!editRequest
@@ -719,10 +721,10 @@ export function useRequestForm({
   const urgencyLabel = URGENCY_OPTS.find((o) => o.value === urgency)?.label ?? urgency
   const worksiteLabel = worksites.find((w) => w.id === worksiteId)?.name ?? "Sin faena"
   const missingItems = buildRequestSummaryIssues({
-    worksiteId, requiredDate, items, requestType, notes, products, urgency, vehicles, quotationThresholdClp,
+    worksiteId, requiredDate, items, requestType, notes, products, urgency, vehicles, quotationThresholdClp, attachedQuotationTotals,
   })
   // La misma regla que el panel de pendientes, para avisar bajo las cotizaciones del ítem.
-  const quotationState = evaluateRequestQuotations({ items, requestType, notes, urgency, vehicles, quotationThresholdClp })
+  const quotationState = evaluateRequestQuotations({ items, requestType, notes, urgency, vehicles, quotationThresholdClp, attachedQuotationTotals })
   const quotationRule = isQuotation ? quotationRuleHint(requestType, quotationState?.thresholdClp ?? null) : ""
   const quotationNotice = quotationState?.message ?? null
   const statusLabel = editRequest ? requestStatusLabel(editRequest.status) : "Borrador"

@@ -562,6 +562,7 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
           equipment={equipmentOptions}
           vehicles={vehicleOptions}
           quotationThresholdClp={operationalSettings.repuestosQuotationThresholdClp}
+          attachedQuotationTotals={quotations.filter((quotation) => quotation.status === "pending").map((quotation) => quotation.totalAmount)}
           editableItemIds={editableRequestItemIds}
           editRequest={editRequest}
           maxFileSizeMb={maxFileSizeMb}

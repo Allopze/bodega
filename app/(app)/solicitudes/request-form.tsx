@@ -73,6 +73,8 @@ interface RequestFormProps {
    * ausente = regla legada de 3 cotizaciones, sin exención por monto.
    */
   quotationThresholdClp?: number | null
+  /** Totales de las cotizaciones ya guardadas en el borrador; los pasa la ficha de la solicitud. */
+  attachedQuotationTotals?: number[]
 }
 
 function RequestFormHeader({
@@ -407,6 +409,7 @@ export function RequestForm({
   initialUrgency,
   vehicles,
   quotationThresholdClp,
+  attachedQuotationTotals,
 }: RequestFormProps) {
   const form = useRequestForm({
     worksites,
@@ -422,6 +425,7 @@ export function RequestForm({
     initialUrgency,
     vehicles,
     quotationThresholdClp,
+    attachedQuotationTotals,
   })
   const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false)
   const stockWarning = form.stockWarning

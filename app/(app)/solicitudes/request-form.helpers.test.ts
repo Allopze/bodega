@@ -191,6 +191,18 @@ describe("buildRequestSummaryIssues — umbral de cotizaciones de repuestos", ()
     expect(message).toContain("$500.000")
   })
 
+  it("cuenta las cotizaciones ya guardadas en el borrador, no sólo las que se están subiendo", () => {
+    // Al guardar, el formulario saca de `item.cotizaciones` lo que subió: en la
+    // ficha del borrador esas cotizaciones llegan como `attachedQuotationTotals`.
+    const withoutAttached = buildRequestSummaryIssues({ ...base, notes: "Justificado.", items: [filtro()] })
+    expect(withoutAttached).toContain(quotationRequirementMessage("no_quotation_or_estimate", 500_000))
+
+    const withAttached = buildRequestSummaryIssues({
+      ...base, notes: "Justificado.", items: [filtro()], attachedQuotationTotals: [150_000],
+    })
+    expect(quotationIssues(withAttached)).toEqual([])
+  })
+
   it("sobre el umbral con una cotización y notas que lo justifican está en regla", () => {
     const issues = buildRequestSummaryIssues({
       ...base, notes: "Único proveedor en la zona.",
