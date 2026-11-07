@@ -425,7 +425,7 @@ export const preventionModule = {
           // Una sola pantalla: el control anual de ocurrencias por faena. El
           // catálogo de cursos, las competencias por trabajador y las brechas
           // se retiraron el 2026-09-19 con el modelo por persona.
-          label: "Campañas y Capacitación",
+          label: "Campañas y capacitación",
           href: "/prevencion/capacitacion",
           iconName: "Certificate",
           group: "Cumplimiento del programa",

@@ -579,7 +579,7 @@ export default function MyNewPage() {
 
 ## 7. Estándar Visual SaaS (Sidebar 1:1, TopBar Transparente y Tarjetas Flotantes)
 
-- **Sidebar 1:1:** Fondo blanco puro (`bg-white`), encabezado de sección micro-uppercase (`PLATAFORMA`), ítems con pills redondeados suaves (`rounded-xl bg-slate-100 font-semibold text-slate-900`) y perfil de usuario fijado al fondo del panel.
+- **Sidebar:** relleno `--color-chrome` al ras (parte izquierda de la "L"), rótulos de sección en `text-eyebrow` (caja de oración: «Plataforma», no `PLATAFORMA`), ítems con pills redondeados suaves y perfil de usuario fijado al fondo del panel. **Un solo estado activo para todo el menú** (decisión 2026-11-07): `bg-nav-active-bg text-nav-active-ink font-semibold` con el ícono en `--color-primary`, desde los helpers de `components/layout/nav-rows.tsx`. Nada de `slate-*` ni colores literales en el menú (ver DESIGN.md § Navegación).
 - **TopBar integrado en Desktop:** En escritorio el `TopBar` se mantiene transparente (`bg-transparent border-b-0`), proyectando el título de página y la barra de controles directamente sobre el lienzo sin franjas ni bordes rígidos.
 - **Mainzone / Tarjetas flotantes:** Las vistas (tablas, gráficos, listas) flotan sobre el lienzo tenue (`bg-[#f8fafc]`) como contenedores blancos redondeados (`bg-white border border-slate-200/70 rounded-2xl p-6 shadow-xs`). La única pantalla exceptuada es el tablero (`/dashboard`): ver la excepción declarada a continuación. Todo lo demás conserva las tarjetas flotantes.
 
@@ -686,7 +686,7 @@ whose lists each carry their own labelled search; the full list is in `top-bar.t
 
 ## DataTable auto-connects to TopBar
 
-`DataTable` (`components/admin/data-table.tsx`) already calls
+`DataTable` (`components/ui/data-table.tsx`) already calls
 `useSafeShellHeader()` internally. When no explicit `search` prop is given,
 it uses `searchQuery` from the TopBar to filter rows client-side via the
 `searchKeys` prop.
@@ -841,6 +841,22 @@ calculaba y se descartaba en los dos gráficos de flota. Derivada de la auditor�
   label en español + `Badge`.
 - **Abreviaturas de dominio** (`Acc. c/TP`, `HH`, `T1`) llevan `title`/Tooltip
   con el nombre completo, o se renombran.
+- **Tipografía** (auditoría UI/UX 2026-11-07): caja de oración en rótulos,
+  cabeceras e insignias (`text-eyebrow`, `th-type`, `Badge` ya lo hacen); piso
+  de 11px (`text-2xs`); pesos 400–600; las cifras de `KpiCard`/`SummaryBar` se
+  pasan como número y las palabras con `valueKind: "text"`. Dos reglas ESLint
+  locales lo vigilan: `local/ui-type-scale` (prohíbe `uppercase` y
+  `text-[9|10px]` en clases fuera de `components/pdf`, `(print)` y la app del
+  mecánico) y `local/no-string-kpi-value` (prohíbe `value={String(n)}`).
+- **Período**: un período de calendario se elige con `PeriodControl`
+  (`components/ui/period-control.tsx`); granularidad o ventana móvil, con
+  `SegmentedControl`. Se aplica al cambiar (`router.replace` + `scroll: false`),
+  sin botón «Aplicar»/«Filtrar», salvo el rango personalizado dentro de su
+  *popover*.
+- **Exportar**: `ExportButton` (acción de servidor) o `ExportLink` (descarga
+  GET), ambos de `components/ui/export-button.tsx`, con el rótulo «Exportar
+  Excel», el ícono `EXPORT_ICON` y la variante `secondary`. No se arman
+  enlaces de descarga a mano.
 <!-- END:screen-density-rules -->
 
 <!-- BEGIN:ui-audit-checklist -->
