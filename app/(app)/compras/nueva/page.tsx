@@ -4,6 +4,7 @@ import { db }            from "@/db"
 import {
   purchaseRequestItems, purchaseRequests,
   worksites, suppliers, products, productSuppliers, purchaseOrders, purchaseOrderItems,
+  fuelVehicles, mantWorkOrders,
 } from "@/db/schema"
 import { eq, inArray, asc } from "drizzle-orm"
 import { pendingPurchaseWhere } from "@/lib/adquisiciones/pending-purchase"
@@ -18,6 +19,7 @@ import Link from "next/link"
 import { getPurchasableCoverage } from "@/lib/services/purchasing-module/purchasable-coverage"
 import { getProductAttributesByIds, getRequestItemAttributesByIds } from "@/lib/services/product-sizes"
 import { formatVariantProductName } from "@/lib/products/variant-grouping"
+import { vehicleLabel } from "@/lib/services/fleet"
 
 /** Tope del selector de ítems; +1 en la consulta para detectar que hay más. */
 const PICKER_ITEM_LIMIT = 500
@@ -59,9 +61,17 @@ export default async function NuevaOcPage({
       // COT-001: la referencia de la adjudicación viaja desde la línea.
       awardedQuotationId:    purchaseRequestItems.awardedQuotationId,
       awardedQuotationTotal: purchaseRequestItems.awardedQuotationTotal,
+      // Repuestos vinculados al equipo: lo que el solicitante estimó y para qué
+      // equipo y OT es, para que Compras no tenga que abrir la solicitud.
+      estimatedUnitPrice:    purchaseRequestItems.estimatedUnitPrice,
+      vehicleCode:           fuelVehicles.code,
+      vehiclePlate:          fuelVehicles.plate,
+      workOrderFolio:        mantWorkOrders.folio,
     })
     .from(purchaseRequestItems)
     .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
+    .leftJoin(fuelVehicles, eq(fuelVehicles.id, purchaseRequestItems.vehicleId))
+    .leftJoin(mantWorkOrders, eq(mantWorkOrders.id, purchaseRequestItems.workOrderId))
     // El mismo predicado canónico que el contador y la tabla de /compras: el
     // selector ya filtraba la cobertura activa por su cuenta (más abajo, con
     // `getPurchasableCoverage`) y ése era justamente el criterio que la bandeja
@@ -208,6 +218,9 @@ export default async function NuevaOcPage({
         awardedQuotationId:    item.awardedQuotationId,
         awardedQuotationTotal: item.awardedQuotationTotal,
         awardedLineCount:      item.awardedQuotationId ? (awardedLineCounts.get(item.awardedQuotationId) ?? 1) : 0,
+        estimatedUnitPrice:    item.estimatedUnitPrice,
+        vehicleLabel:          item.vehiclePlate ? vehicleLabel({ plate: item.vehiclePlate, code: item.vehicleCode }) : null,
+        workOrderFolio:        item.workOrderFolio,
         deliveryMode:    req.deliveryMode as "via_oficina" | "directo_faena",
       }]
     })

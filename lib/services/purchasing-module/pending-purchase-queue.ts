@@ -15,10 +15,11 @@
 import { and, asc, count, countDistinct, eq, ilike, inArray, or, sql, type SQL } from "drizzle-orm"
 import { db } from "@/db"
 import {
-  products, purchaseOrderItems, purchaseOrders, purchaseRequestItems, purchaseRequests,
+  fuelVehicles, products, purchaseOrderItems, purchaseOrders, purchaseRequestItems, purchaseRequests,
   suppliers, users, worksites,
 } from "@/db/schema"
 import { pendingPurchaseWhere } from "@/lib/adquisiciones/pending-purchase"
+import { vehicleLabel } from "@/lib/services/fleet"
 import { getProductAttributesByIds, getRequestItemAttributesByIds } from "@/lib/services/product-sizes"
 import { formatVariantProductName } from "@/lib/products/variant-grouping"
 
@@ -47,6 +48,8 @@ export type PendingPurchaseItem = {
   orderCode:     string | null
   orderId:       string | null
   supplierName:  string | null
+  /** Equipo de flota para el que se pidió («KA-63 · ABCD-12»); `null` si no tiene. */
+  vehicleLabel:  string | null
 }
 
 export type PendingPurchaseRequest = {
@@ -197,12 +200,15 @@ export async function listPendingPurchaseRequests(
         status:          purchaseRequestItems.status,
         sortOrder:       purchaseRequestItems.sortOrder,
         supplierName:    suppliers.name,
+        vehiclePlate:    fuelVehicles.plate,
+        vehicleCode:     fuelVehicles.code,
         orderId:         purchaseOrders.id,
         orderCode:       purchaseOrders.code,
       })
       .from(purchaseRequestItems)
       .leftJoin(products, eq(products.id, purchaseRequestItems.productId))
       .leftJoin(suppliers, eq(suppliers.id, purchaseRequestItems.suggestedSupplierId))
+      .leftJoin(fuelVehicles, eq(fuelVehicles.id, purchaseRequestItems.vehicleId))
       // La OC que se muestra es la activa: una anulada o eliminada no cubre
       // nada, y mostrarla haría creer que el ítem ya se compró.
       .leftJoin(purchaseOrderItems, and(
@@ -268,6 +274,7 @@ export async function listPendingPurchaseRequests(
       orderCode:     row.orderCode,
       orderId:       row.orderId,
       supplierName:  row.supplierName,
+      vehicleLabel:  row.vehiclePlate ? vehicleLabel({ plate: row.vehiclePlate, code: row.vehicleCode }) : null,
     })
     itemsByRequest.set(row.requestId, list)
 

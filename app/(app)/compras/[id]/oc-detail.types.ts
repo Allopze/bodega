@@ -12,6 +12,9 @@ export interface OcDetailItem {
   /** Instrumento y colaborador del ítem de origen, cuando el servicio los nombra. */
   equipmentLabel: string | null
   workerName: string | null
+  /** Equipo de flota y OT de mantención para los que se pidió el repuesto o servicio. */
+  vehicleLabel?: string | null
+  workOrderFolio?: string | null
   /** Traza del costo registrado a posteriori: cuándo y quién. */
   costRecordedAt: string | null
   costRecordedByName: string | null

@@ -79,6 +79,9 @@ function ItemBreakdown({ items }: { items: PendingPurchaseItem[] }) {
               className="font-mono text-(--color-primary) underline underline-offset-2"
             >{item.orderCode}</Link>
           )}
+          {item.vehicleLabel && (
+            <span className="text-(--color-text-subtle)">equipo: {item.vehicleLabel}</span>
+          )}
           {item.stage === "pending_order" && item.supplierName && (
             <span className="text-(--color-text-subtle)">sugerido: {item.supplierName}</span>
           )}
