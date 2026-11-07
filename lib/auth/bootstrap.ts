@@ -125,6 +125,9 @@ export const GRANT_ADDITIONS = [
       permissionId,
     })),
   ),
+  // Y la lista de sus solicitudes: jefatura y administración de contrato ya
+  // tenían `requests:view_own`; supervisión no, y la lista le daba /forbidden.
+  { key: "2026-11-07-rol-sup-mantencion-p-req-own", roleId: "rol-sup-mantencion", permissionId: "p-req-own" },
 ] as const
 
 async function applyGrantAdditions(executor: typeof db | Tx) {

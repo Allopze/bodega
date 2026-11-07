@@ -190,7 +190,7 @@ describe("getOperationalControlHub · atención", () => {
       const hub = await getOperationalControlHub(session("flota:view", "mant:ot:view_all"))
 
       expect(hub.permissions.canViewWorkOrders).toBe(true)
-      expect(hub.attention.workOrders).toEqual({ openCount: 3, unassignedOpen: 1, estimateOverdue: 1 })
+      expect(hub.attention.workOrders).toEqual({ openCount: 3, unassignedOpen: 1, estimateOverdue: 1, waitingParts: 0 })
       const asset = (id: string) => hub.assets.find((a) => a.id === id)!
       expect(asset("en-mantencion")).toMatchObject({ openWorkOrders: 3, inWorkshop: true, workshopHours: 30 })
       // Un equipo sin OT tiene 0 (la consulta corrió), no null.

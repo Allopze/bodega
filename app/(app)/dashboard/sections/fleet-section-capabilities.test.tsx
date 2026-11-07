@@ -57,7 +57,7 @@ beforeEach(() => {
   getFleetDashboardSnapshot.mockResolvedValue({ activeVehicles: 0, within30: 0, expired: 0 })
   countPendingFuelCreditNotes.mockResolvedValue(0)
   readDtePortalConfig.mockResolvedValue({ credentials: { codEmp: "empresa" } })
-  getWorkOrderGlobalMetrics.mockResolvedValue({ openCount: 5, unassignedOpen: 2, estimateOverdue: 1 })
+  getWorkOrderGlobalMetrics.mockResolvedValue({ openCount: 5, unassignedOpen: 2, estimateOverdue: 1, waitingParts: 0 })
 })
 
 describe("FleetSection capability matrix", () => {

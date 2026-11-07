@@ -53,6 +53,10 @@ export const requestsModule = {
     // Jefe de mantención: crea y ve las propias (sin view_all)
     { roleSlug: "jefe_mantencion", permission: "requests:create" },
     { roleSlug: "jefe_mantencion", permission: "requests:view_own" },
+    // Supervisión de mantención pide repuestos desde la OT (2026-11-07) y ve
+    // las propias: sin esto, crear funcionaba pero /solicitudes le respondía
+    // /forbidden y no veía el ítem del menú.
+    { roleSlug: "supervisor_mantencion", permission: "requests:view_own" },
     // Jefatura de faena (administración de contrato y terreno): como el
     // solicitante de faena, crea y ve las propias. El alcance lo da la faena
     // asignada: los tres roles son no globales.

@@ -249,8 +249,13 @@ describe("auth bootstrap service", () => {
     expect(await grantsDelJefe()).toHaveLength(1)
   })
 
+  it("supervisión de mantención ve sus solicitudes en una BD ya poblada", () => {
+    expect(GRANT_ADDITIONS).toContainEqual({ key: "2026-11-07-rol-sup-mantencion-p-req-own", roleId: "rol-sup-mantencion", permissionId: "p-req-own" })
+    expect(SYSTEM_ROLE_PERMISSIONS).toContainEqual(expect.objectContaining({ roleId: "rol-sup-mantencion", permissionId: "p-req-own" }))
+  })
+
   it("las altas de repuestos para mantención no tocan la aprobación", () => {
-    const repuestos = GRANT_ADDITIONS.filter((addition) => addition.key.startsWith("2026-11-07-"))
+    const repuestos = GRANT_ADDITIONS.filter((addition) => addition.key.startsWith("2026-11-07-") && addition.permissionId.startsWith("p-rep-"))
     // Tres roles: jefe (4 permisos), supervisor y administrador de contrato (3 c/u).
     expect(repuestos).toHaveLength(10)
     expect(repuestos.map((addition) => addition.permissionId)).not.toContain("p-rep-approve")
