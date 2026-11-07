@@ -19,6 +19,8 @@ export interface AttentionVehicle {
   type: string
   worksiteName: string
   operationalStatus: string
+  /** Un equipo dado de baja no cuenta en los vencimientos operativos. */
+  isActive: boolean
   soapExpiresAt: string | null
   technicalReviewExpiresAt: string | null
   circulationPermitExpiresAt: string | null
@@ -58,6 +60,7 @@ function toFilterRow(vehicle: AttentionVehicle, nextExpiryDate: string | null) {
     operationalStatus: vehicle.operationalStatus,
     responsibleName: null,
     nextExpiryDate,
+    isActive: vehicle.isActive,
   }
 }
 

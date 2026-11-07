@@ -10,7 +10,7 @@ import { db } from "@/db"
 import { fuelVehicles } from "@/db/schema"
 import { can, requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite, serviceWorksiteScope } from "@/lib/auth/scope"
-import { VEHICLE_EXPIRY_FIELDS, updateVehicleExpiriesSchema, type VehicleExpiryField } from "@/lib/combustibles/validation"
+import { VEHICLE_EXPIRY_FIELDS, formatFuelVehicleStatus, updateVehicleExpiriesSchema, type VehicleExpiryField } from "@/lib/combustibles/validation"
 import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
 import { uploadFleetDocument, deleteFleetDocument, getFleetOverview, getFleetProviderGapMonths, FLEET_OVERVIEW_LOOKBACK_MONTHS } from "@/lib/services/fleet"
@@ -234,7 +234,7 @@ export async function exportFleetXlsxAction(filters: FleetOverviewFilters = {}) 
     { header: "Faena", key: "worksite", width: 24 },
     { header: "Estado", key: "status", width: 18 },
     { header: "Responsable", key: "responsible", width: 24 },
-    { header: "Próximo vencimiento", key: "expiry", width: 20 },
+    { header: "Próximo vencimiento", key: "expiry", width: 42 },
     ...(canViewFuel ? [
       { header: "Litros (12 meses)", key: "liters", width: 18 },
       { header: "Cargas (12 meses)", key: "loads", width: 18 },
@@ -246,7 +246,10 @@ export async function exportFleetXlsxAction(filters: FleetOverviewFilters = {}) 
       { header: "Lectura objetada", key: "objectedReading", width: 18 },
     ] : []),
     ...(canViewWorkOrders ? [{ header: "OT abiertas", key: "openWorkOrders", width: 14 }] : []),
-    ...(canViewCosts && canViewFuel ? [{ header: "Costo combustible", key: "fuelCost", width: 18 }] : []),
+    ...(canViewCosts && canViewFuel ? [
+      { header: "Costo combustible", key: "fuelCost", width: 18 },
+      { header: "Costo por km/h", key: "fuelCostPerUnit", width: 20 },
+    ] : []),
   ]
   for (const row of exportRows) {
     sheet.addRow({
@@ -256,9 +259,15 @@ export async function exportFleetXlsxAction(filters: FleetOverviewFilters = {}) 
       model: row.model ?? "",
       year: row.year ?? "",
       worksite: row.worksiteName,
-      status: row.isActive ? row.operationalStatus : "inactivo",
+      // Etiqueta humana, como la tabla: el enum crudo (`mantencion`) no se
+      // lee igual que «En mantención» y contradice el filtro aplicado.
+      status: row.isActive ? formatFuelVehicleStatus(row.operationalStatus) : "Inactivo",
       responsible: row.responsibleName ?? "",
-      expiry: row.nextExpiryDate ?? "",
+      // La tabla muestra tipo y fecha; el Excel exportaba sólo la fecha y
+      // dejaba sin explicar de qué documento vencía.
+      expiry: row.nextExpiryDate
+        ? `${row.nextExpiryDocumentType ?? "Documento"}: ${row.nextExpiryDate}`
+        : "",
       liters: row.totalLiters,
       loads: row.loadCount,
       lastReading: formatLastReading(row),
@@ -266,6 +275,9 @@ export async function exportFleetXlsxAction(filters: FleetOverviewFilters = {}) 
       objectedReading: row.lastOdometerReading == null && row.lastHourMeterReading == null ? "" : row.lastReadingObjection ? "Sí" : "No",
       openWorkOrders: row.openWorkOrders,
       fuelCost: row.totalFuelAmount,
+      fuelCostPerUnit: row.fuelCostPerUnit == null || row.fuelCostPerUnitLabel == null
+        ? ""
+        : `${row.fuelCostPerUnit.toLocaleString("es-CL", { maximumFractionDigits: 1 })} ${row.fuelCostPerUnitLabel}`,
     })
   }
   sheet.getRow(1).font = { bold: true }

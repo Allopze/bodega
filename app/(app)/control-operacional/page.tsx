@@ -22,6 +22,8 @@ import { KpiCard } from "@/components/ui/kpi-card"
 import { SummaryBar } from "@/components/ui/summary-bar"
 import { can, requireAuth } from "@/lib/auth/can"
 import { getFuelInboxPendingForSession } from "@/lib/combustibles/inbox/queries"
+import { getTaeCopecReconciliation } from "@/lib/combustibles/tae-copec-reconciliation"
+import { getDriverLicenseAttention } from "@/lib/services/driver-licenses"
 import {
   getOperationalControlHub,
   resolveOperationalControlPeriod,
@@ -101,7 +103,11 @@ export default async function OperationalControlPage({
   const canViewFuelSources = can(session, "combustibles:import")
     || can(session, "combustibles:tae_import")
     || can(session, "combustibles:sync_integrations")
-  const [data, fuelPending, sourceHealth] = await Promise.all([
+  // Cruces de otros subdominios: licencias (no se exponen sin su capacidad) y
+  // cobertura TAE/TCT del período (requiere `combustibles:tae_view`).
+  const canViewLicenses = can(session, "flota:manage_licenses")
+  const canViewTae = can(session, "combustibles:tae_view")
+  const [data, fuelPending, sourceHealth, taeCoverage, licenseAttention] = await Promise.all([
     getOperationalControlHub(session, period),
     // Las cuatro colas de «Por revisar», las mismas que cuenta el menú y la
     // bandeja: cada tipo cae a null por separado y el tile lo dice. El `catch`
@@ -112,6 +118,14 @@ export default async function OperationalControlPage({
     // La tarjeta de fuentes reutiliza el mismo read model de /combustibles/fuentes.
     canViewFuel
       ? getOperationalSourceHealth(session, period).catch(() => null)
+      : Promise.resolve(null),
+    canViewTae
+      ? getTaeCopecReconciliation(session, { from: period.from, to: period.to })
+          .then((result) => result.summary)
+          .catch(() => null)
+      : Promise.resolve(null),
+    canViewLicenses
+      ? getDriverLicenseAttention(session).catch(() => null)
       : Promise.resolve(null),
   ])
 
@@ -124,9 +138,13 @@ export default async function OperationalControlPage({
   const headerDescription = `Qué requiere atención hoy en flota y combustible, y el desempeño de los activos entre ${formatDate(period.from)} y ${formatDate(period.to)}.`
 
   const { canViewFleet, canViewInspections, canViewCapa, canViewCosts, canViewServiceEquipment, canViewWorkOrders } = data.permissions
+  // Secciones que pueden degradarse: documentos, ajustes de flota y GPS (sólo
+  // con flota), OT (con su capacidad) y combustible. El denominador se deriva
+  // de las secciones realmente consultadas; antes era un 4 fijo.
+  const degradedTotal = (canViewFleet ? 3 : 0) + (canViewWorkOrders ? 1 : 0) + (canViewFuel ? 1 : 0)
   const operationalAssets = data.assets.filter((asset) => asset.kind === "vehicle")
   const fleetSize = operationalAssets.length
-  const stateMismatchCount = operationalAssets.filter((asset) => asset.stateMismatch).length
+  const stateMismatchAssets = operationalAssets.filter((asset) => asset.stateMismatch)
   const serviceEquipmentCount = data.assets.filter((asset) => asset.kind === "service_equipment").length
 
   // Orden de lectura: lo que está parado y el trabajo que lo atiende, los papeles y, al final, el combustible. Cada tile existe sólo con la capacidad de su dominio.
@@ -137,7 +155,12 @@ export default async function OperationalControlPage({
     ...(fuelPending ? [fuelReviewTile(fuelPending)] : []),
   ]
 
-  const performanceStats = buildPerformanceStats(data.metrics, { canViewFleet, canViewWorkOrders })
+  const performanceStats = buildPerformanceStats(data.metrics, {
+    canViewFleet,
+    canViewWorkOrders,
+    licenseAttention,
+    taeCoverage,
+  })
   const glossary = buildPerformanceGlossary({
     canViewFleet,
     canViewInspections,
@@ -145,6 +168,8 @@ export default async function OperationalControlPage({
     canViewFuel,
     canViewCosts,
     canViewWorkOrders,
+    canViewLicenses,
+    canViewTaeCoverage: canViewTae,
   })
 
   return (
@@ -165,7 +190,7 @@ export default async function OperationalControlPage({
 
       {data.degradedSources.length > 0 && (
         <div className="mb-4">
-          <DegradedDataBanner degraded={data.degradedSources} total={4} />
+          <DegradedDataBanner degraded={data.degradedSources} total={degradedTotal} />
         </div>
       )}
 
@@ -193,12 +218,16 @@ export default async function OperationalControlPage({
         </section>
       )}
 
-      {canViewFleet && stateMismatchCount > 0 && (
+      {canViewFleet && stateMismatchAssets.length > 0 && (
         <div className="mb-4">
           <Callout tone="warning">
-            {stateMismatchCount === 1 ? "1 equipo tiene" : `${stateMismatchCount} equipos tienen`} un estado distinto
-            entre su ficha y el último intervalo operacional.{" "}
-            <Link href="/flota" className="underline underline-offset-4">Revisar en Vehículos</Link>.
+            {stateMismatchAssets.length === 1 ? "1 equipo tiene" : `${stateMismatchAssets.length} equipos tienen`} un
+            estado distinto entre su ficha y el último intervalo operacional:{" "}
+            {/* Sin un filtro de «discrepancia» en /flota, el aviso nombra los
+                equipos para que se puedan buscar por su código. */}
+            {stateMismatchAssets.slice(0, 6).map((asset) => asset.code).join(", ")}
+            {stateMismatchAssets.length > 6 && ` y ${stateMismatchAssets.length - 6} más`}.{" "}
+            <Link href="/flota?revision=estado" className="underline underline-offset-4">Revisar en Vehículos</Link>.
           </Callout>
         </div>
       )}
@@ -209,6 +238,10 @@ export default async function OperationalControlPage({
           <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">
             {periodLabel}
             {isDefaultPeriod && " · últimos 90 días"}
+          </p>
+          <p className="mt-1 text-xs text-[var(--color-text-subtle)]">
+            Este panel mide el período seleccionado. El Tablero usa el mes calendario y sus tendencias
+            de combustible, 6 meses fijos; las cifras no son comparables entre pantallas.
           </p>
         </div>
 

@@ -49,9 +49,15 @@ const COLUMNS = (canViewCosts: boolean, canViewInspections: boolean, canViewFuel
     ...(canViewFuel
       ? [
           { key: "fuelLiters", label: "Litros", sortable: true, numeric: true },
-          { key: "fuelPerformanceValue", label: "Rendimiento promedio", sortable: true, numeric: true },
+          { key: "fuelLoadCount", label: "Cargas (período)", sortable: true, numeric: true, defaultVisible: false },
+          { key: "lastFuelLoadAt", label: "Última carga", sortable: true, defaultVisible: false },
+          // km/L y L/h son magnitudes distintas: ordenar por el número crudo
+          // mezcla unidades y pone un «40 L/h» antes que un «12 km/L». Sin un
+          // criterio común, la columna no ofrece orden.
+          { key: "fuelPerformanceValue", label: "Rendimiento promedio", sortable: false, numeric: true },
           { key: "flaggedLoads", label: "Cargas marcadas (período)", sortable: true, numeric: true },
           { key: "openAnomalyCases", label: "Casos abiertos", sortable: true, numeric: true },
+          { key: "criticalOpenAnomalyCases", label: "Casos críticos", sortable: true, numeric: true, defaultVisible: false },
           { key: "idlePct", label: "Motor en vacío", sortable: true, numeric: true },
           { key: "litersIdle", label: "Litros en vacío", sortable: true, numeric: true, defaultVisible: false },
         ]
@@ -61,6 +67,8 @@ const COLUMNS = (canViewCosts: boolean, canViewInspections: boolean, canViewFuel
           { key: "inspectionCount", label: "Inspecciones", sortable: true, numeric: true, defaultVisible: false },
           { key: "inspectionCompliancePercent", label: "Cumplimiento inspecciones", sortable: true, numeric: true, defaultVisible: false },
           { key: "openFindings", label: "Hallazgos abiertos", sortable: true, numeric: true },
+          { key: "openFindingsWithWorkOrder", label: "Hallazgos con OT", sortable: true, numeric: true },
+          { key: "openFindingsWithoutWorkOrder", label: "Hallazgos sin OT", sortable: true, numeric: true, defaultVisible: false },
         ]
       : []),
     ...(showCapa
@@ -73,9 +81,17 @@ const COLUMNS = (canViewCosts: boolean, canViewInspections: boolean, canViewFuel
         ]
       : []),
     ...(showFuelCost
-      ? [{ key: "fuelBilledAmount", label: "Costo combustible facturado", sortable: true, numeric: true }]
+      ? [{ key: "fuelBilledAmount", label: "Costo combustible (proveedor)", sortable: true, numeric: true }]
       : []),
-    { key: "_action", label: "", sortable: false, numeric: true },
+    ...(canViewWorkOrders
+      ? [{ key: "maintenanceCost", label: "Costo mantención", sortable: true, numeric: true }]
+      : []),
+    ...(canViewWorkOrders && showFuelCost
+      ? [{ key: "totalCost", label: "Costo total", sortable: true, numeric: true }]
+      : []),
+    // Las acciones no se ocultan: sin «Ver»/«Combustible» la fila no tiene
+    // salida y el menú «Columnas» mostraba el id crudo `_action`.
+    { key: "_action", label: "Acciones", sortable: false, numeric: true, toggleable: false },
   ]
 }
 
@@ -157,7 +173,7 @@ export function OperationalAssetsTable({
           <>
             <div>
               <dt className="text-[var(--color-text-subtle)]">Litros del período</dt>
-              <dd>{(asset.fuelLiters ?? 0).toLocaleString("es-CL", { maximumFractionDigits: 1 })} L</dd>
+              <dd>{asset.fuelLiters == null ? "—" : `${asset.fuelLiters.toLocaleString("es-CL", { maximumFractionDigits: 1 })} L`}</dd>
             </div>
             <div>
               <dt className="text-[var(--color-text-subtle)]">Rendimiento promedio</dt>
@@ -165,11 +181,15 @@ export function OperationalAssetsTable({
             </div>
             <div>
               <dt className="text-[var(--color-text-subtle)]">Cargas marcadas (período)</dt>
-              <dd>{asset.flaggedLoads ?? 0}</dd>
+              <dd>{asset.flaggedLoads == null ? "—" : asset.flaggedLoads}</dd>
             </div>
             <div>
               <dt className="text-[var(--color-text-subtle)]">Casos abiertos</dt>
-              <dd>{asset.openAnomalyCases ?? 0}</dd>
+              <dd>
+                {asset.openAnomalyCases == null
+                  ? "—"
+                  : `${asset.openAnomalyCases}${(asset.criticalOpenAnomalyCases ?? 0) > 0 ? ` · ${asset.criticalOpenAnomalyCases} críticos` : ""}`}
+              </dd>
             </div>
             <div>
               <dt className="text-[var(--color-text-subtle)]">Motor en vacío</dt>
@@ -185,6 +205,18 @@ export function OperationalAssetsTable({
               <div>
                 <dt className="text-[var(--color-text-subtle)]">Costo combustible facturado</dt>
                 <dd>{asset.fuelBilledAmount == null ? "—" : formatCLP(asset.fuelBilledAmount)}</dd>
+              </div>
+            )}
+            {canViewWorkOrders && (
+              <div>
+                <dt className="text-[var(--color-text-subtle)]">Costo mantención</dt>
+                <dd>{asset.maintenanceCost == null ? "—" : formatCLP(asset.maintenanceCost)}</dd>
+              </div>
+            )}
+            {canViewWorkOrders && showFuelCost && (
+              <div>
+                <dt className="text-[var(--color-text-subtle)]">Costo total</dt>
+                <dd>{asset.totalCost == null ? "—" : formatCLP(asset.totalCost)}</dd>
               </div>
             )}
           </>
@@ -206,8 +238,20 @@ export function OperationalAssetsTable({
             <div>
               <dt className="text-[var(--color-text-subtle)]">Hallazgos abiertos</dt>
               <dd>
-                {asset.openFindings ?? 0}
-                {(asset.criticalOpenFindings ?? 0) > 0 && ` · ${asset.criticalOpenFindings} críticos`}
+                {asset.openFindings == null ? "—" : (
+                  <>
+                    {asset.openFindings}
+                    {(asset.criticalOpenFindings ?? 0) > 0 && ` · ${asset.criticalOpenFindings} críticos`}
+                  </>
+                )}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-[var(--color-text-subtle)]">Hallazgos con OT</dt>
+              <dd>
+                {asset.openFindingsWithWorkOrder == null
+                  ? "—"
+                  : `${asset.openFindingsWithWorkOrder} con OT · ${asset.openFindingsWithoutWorkOrder ?? 0} sin OT`}
               </dd>
             </div>
           </>
@@ -215,7 +259,7 @@ export function OperationalAssetsTable({
         {showCapa && asset.kind === "vehicle" && (
           <div>
             <dt className="text-[var(--color-text-subtle)]">CAPA vencidas</dt>
-            <dd>{asset.overdueCapa ?? 0}</dd>
+            <dd>{asset.overdueCapa == null ? "—" : asset.overdueCapa}</dd>
           </div>
         )}
         {canViewWorkOrders && asset.kind === "vehicle" && (
@@ -274,18 +318,29 @@ export function OperationalAssetsTable({
       {canViewFuel && (
         <>
           <TableCell className="text-right font-mono">
-            {asset.kind === "service_equipment"
+            {asset.kind === "service_equipment" || asset.fuelLiters == null
               ? "—"
-              : (asset.fuelLiters ?? 0).toLocaleString("es-CL", { maximumFractionDigits: 1 })}
+              : asset.fuelLiters.toLocaleString("es-CL", { maximumFractionDigits: 1 })}
+          </TableCell>
+          <TableCell className="text-right font-mono">
+            {asset.kind === "service_equipment" || asset.fuelLoadCount == null ? "—" : asset.fuelLoadCount}
+          </TableCell>
+          <TableCell className="text-right font-mono">
+            {asset.kind === "service_equipment" || asset.lastFuelLoadAt == null ? "—" : formatDateTime(asset.lastFuelLoadAt)}
           </TableCell>
           <TableCell className="text-right font-mono">
             {asset.kind === "service_equipment" ? "—" : (formatPerformance(asset) ?? "—")}
           </TableCell>
           <TableCell className="text-right font-mono">
-            {asset.kind === "service_equipment" ? "—" : (asset.flaggedLoads ?? 0)}
+            {asset.kind === "service_equipment" || asset.flaggedLoads == null ? "—" : asset.flaggedLoads}
           </TableCell>
           <TableCell className="text-right font-mono">
-            {asset.kind === "service_equipment" ? "—" : (asset.openAnomalyCases ?? 0)}
+            {asset.kind === "service_equipment" || asset.openAnomalyCases == null ? "—" : asset.openAnomalyCases}
+          </TableCell>
+          <TableCell className="text-right font-mono">
+            {asset.kind === "service_equipment" || asset.criticalOpenAnomalyCases == null
+              ? "—"
+              : asset.criticalOpenAnomalyCases}
           </TableCell>
           <TableCell className="text-right font-mono">
             {asset.kind === "service_equipment" || asset.idlePct == null
@@ -315,9 +370,9 @@ export function OperationalAssetsTable({
               : `${asset.inspectionCompliancePercent.toLocaleString("es-CL", { maximumFractionDigits: 1 })}%`}
           </TableCell>
           <TableCell className="text-right font-mono">
-            {asset.kind === "service_equipment" ? "—" : (
+            {asset.kind === "service_equipment" || asset.openFindings == null ? "—" : (
               <>
-                {asset.openFindings ?? 0}
+                {asset.openFindings}
                 {(asset.criticalOpenFindings ?? 0) > 0 && (
                   <span className="ml-1 text-[var(--color-danger-ink)]" title={`${asset.criticalOpenFindings} críticos`}>
                     · {asset.criticalOpenFindings}
@@ -326,11 +381,21 @@ export function OperationalAssetsTable({
               </>
             )}
           </TableCell>
+          <TableCell className="text-right font-mono">
+            {asset.kind === "service_equipment" || asset.openFindingsWithWorkOrder == null
+              ? "—"
+              : asset.openFindingsWithWorkOrder}
+          </TableCell>
+          <TableCell className="text-right font-mono">
+            {asset.kind === "service_equipment" || asset.openFindingsWithoutWorkOrder == null
+              ? "—"
+              : asset.openFindingsWithoutWorkOrder}
+          </TableCell>
         </>
       )}
       {showCapa && (
         <TableCell className="text-right font-mono">
-          {asset.kind === "service_equipment" ? "—" : (asset.overdueCapa ?? 0)}
+          {asset.kind === "service_equipment" || asset.overdueCapa == null ? "—" : asset.overdueCapa}
         </TableCell>
       )}
       {canViewWorkOrders && (
@@ -357,6 +422,16 @@ export function OperationalAssetsTable({
           {asset.kind === "service_equipment" || asset.fuelBilledAmount == null
             ? "—"
             : formatCLP(asset.fuelBilledAmount)}
+        </TableCell>
+      )}
+      {canViewWorkOrders && (
+        <TableCell className="text-right font-mono">
+          {asset.kind === "service_equipment" || asset.maintenanceCost == null ? "—" : formatCLP(asset.maintenanceCost)}
+        </TableCell>
+      )}
+      {canViewWorkOrders && showFuelCost && (
+        <TableCell className="text-right font-mono">
+          {asset.kind === "service_equipment" || asset.totalCost == null ? "—" : formatCLP(asset.totalCost)}
         </TableCell>
       )}
       <TableCell className="text-right">

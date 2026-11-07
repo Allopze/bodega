@@ -24,10 +24,16 @@ export interface AttentionTile {
   href: string
 }
 
-export const ATTENTION_HREFS: Record<AttentionTileKey, string> = {
+export const ATTENTION_HREFS: Record<AttentionTileKey, string> & {
+  /** El tile de documentos cambia de destino según lo que esté mirando: vencidos o por vencer. */
+  documentsSoon: string
+  documentsOk: string
+} = {
   stopped: `/flota?estado=${FLEET_STOPPED_FILTER}`,
   workOrders: "/mantencion/ot?estado=abiertas",
   documents: "/flota?vencimiento=vencidos",
+  documentsSoon: "/flota?vencimiento=proximos",
+  documentsOk: "/flota?vencimiento=al-dia",
   fuel: FUEL_PATHS.revisar,
 }
 
@@ -98,7 +104,9 @@ export function documentsTile(documents: OperationalAttention["fleetDocuments"])
       value: "Ninguno",
       detail: expiringSoon > 0 ? `${countOf(expiringSoon, "equipo")} por vencer en ${plazo}` : `Nada por vencer en ${plazo}`,
       tone: "neutral",
-      href: ATTENTION_HREFS.documents,
+      // La cifra del tile y la lista que abre tienen que contar lo mismo: si no
+      // hay vencidos y sí próximos, el enlace va a «próximos», no a «vencidos».
+      href: expiringSoon > 0 ? ATTENTION_HREFS.documentsSoon : ATTENTION_HREFS.documentsOk,
     }
   }
   return {

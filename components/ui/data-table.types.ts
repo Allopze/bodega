@@ -19,6 +19,12 @@ export interface ColumnDef {
   width?:         string
   /** Default visibility state when column toggle is enabled */
   defaultVisible?: boolean
+  /**
+   * `false` deja la columna siempre visible y fuera del menú «Columnas».
+   * Para columnas estructurales (acciones, selección) que no deben poder
+   * desaparecer ni mostrar su id interno como rótulo.
+   */
+  toggleable?: boolean
 }
 
 export interface DataTableProps<T extends Record<string, unknown>> {

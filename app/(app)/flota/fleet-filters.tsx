@@ -15,6 +15,7 @@ interface FleetFiltersProps {
     estado?: string
     responsable?: string
     vencimiento?: string
+    revision?: string
     q?: string
   }
   warningDays: number
@@ -60,6 +61,14 @@ export function FleetFilters({ operationalStatuses, responsibleUsers, current, w
         : "Al día"
     activeChips.push({ key: "vencimiento", label: "Vencimiento", value: current.vencimiento, displayValue: vencLabel })
   }
+  if (current.revision === "estado") {
+    activeChips.push({
+      key: "revision",
+      label: "Revisión",
+      value: "estado",
+      displayValue: "Estado distinto entre ficha e intervalo",
+    })
+  }
   if (current.q) {
     activeChips.push({ key: "q", label: "Búsqueda", value: current.q, displayValue: current.q })
   }
@@ -75,6 +84,7 @@ export function FleetFilters({ operationalStatuses, responsibleUsers, current, w
         {current.estado && <input type="hidden" name="estado" value={current.estado} />}
         {current.responsable && <input type="hidden" name="responsable" value={current.responsable} />}
         {current.vencimiento && <input type="hidden" name="vencimiento" value={current.vencimiento} />}
+        {current.revision && <input type="hidden" name="revision" value={current.revision} />}
         <Field label="Buscar" htmlFor="fleet-search">
           <Input
             id="fleet-search"

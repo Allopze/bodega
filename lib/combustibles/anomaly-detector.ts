@@ -10,15 +10,16 @@ import { and, desc, eq, gt, inArray, isNotNull, isNull, ne, sql } from "drizzle-
 import { db } from "@/db"
 import {
   fuelAnomalyExecutions, fuelAnomalyRules,
-  fuelAnomalyCases, fuelConsumptionRecords, fuelEquipmentTypes, fuelLoads, fuelMeterReadings, fuelOperationRecords,
-  fuelTaeSubmissions, fuelVehicleOperationalIntervals, fuelVehicles,
+  fuelAnomalyCases, fuelConsumptionRecords, fuelEquipmentLoads, fuelEquipmentTypes, fuelLoads, fuelMeterReadings, fuelOperationRecords,
+  fuelProviderTransactions, fuelTaeSubmissions, fuelVehicleOperationalIntervals, fuelVehicles,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { todayInChile } from "@/lib/utils"
 import { createAnomalyCase, type AnomalySeverity } from "./anomaly-cases"
 import { detectCorruptEvidence, getReusedEvidence } from "./evidence-management"
 import { fuelOperationOccurredAtSql } from "./fuel-log"
-import { accountableFuelLoadsWhere } from "./load-status"
+import { accountableProviderTransactionsWhere, accountableFuelLoadsWhere } from "./load-status"
+import { countableLoadSql } from "./control/filters"
 import { DEFAULT_OUTLIER_THRESHOLD_STDDEVS, MIN_CONCLUSIVE_SAMPLE, flagOutliers } from "./performance-statistics"
 import { buildFuelVariationCandidates, candidateTouchesCutoff, fuelVariationProductLabel } from "./fuel-variation"
 import { configOf, elapsedDays, maxMeterRatePerDayOf, readEqTypeOverride } from "./meter-series"
@@ -31,6 +32,27 @@ export { configOf }
  *  actuar como freno de emergencia contra un table scan sin límite, no como paginación real.
  *  ponytail: recalibrar (o mover a ventana temporal por consulta) cuando exista medición real. */
 const BATCH_SCAN_ROW_LIMIT = 50_000
+
+/**
+ * Página de vehículos para los detectores que escanean series por equipo.
+ * El cursor es el último `fuel_vehicles.id` de la página; al terminar vuelve a
+ * null para que la corrida siguiente empiece de nuevo y vea datos nuevos.
+ */
+async function vehiclePage(cursor: string | null | undefined, rowLimit: number) {
+  const pageSize = Math.max(100, Math.min(rowLimit, 500))
+  const rows = await db.select({ id: fuelVehicles.id })
+    .from(fuelVehicles)
+    .where(cursor ? gt(fuelVehicles.id, cursor) : undefined)
+    .orderBy(fuelVehicles.id)
+    .limit(pageSize + 1)
+  const hasMore = rows.length > pageSize
+  const ids = rows.slice(0, pageSize).map((row) => row.id)
+  return {
+    ids,
+    cursor: hasMore ? (ids[ids.length - 1] ?? null) : null,
+    truncated: hasMore,
+  }
+}
 
 /** Leer `minSample` del config de la regla, con fallback a la constante global. */
 function minSampleOf(rule: { config: string | null }, globalDefault: number): number {
@@ -118,6 +140,10 @@ export interface BatchRuleResult {
   ruleCode: string
   created: number
   skipped: number
+  /** Casos que no se pudieron crear. Distinto de `skipped` (duplicado/omitido). */
+  failed?: number
+  /** El tope de escaneo dejó filas fuera: la corrida no cubrió todo el universo. */
+  truncated?: boolean
   /** Distingue "corrió y no encontró nada" de "reventó" — antes ambos casos
    *  volvían `{created:0, skipped:0}` y el cron respondía 200 aunque las 8
    *  reglas hubieran fallado (CO-029/CO-039). `no_detector` es una regla activa
@@ -148,16 +174,28 @@ export async function runAllBatchRules(): Promise<BatchRuleResult[]> {
       const detector = BATCH_DETECTORS[rule.code]
       if (!detector) {
         await db.update(fuelAnomalyExecutions).set({ status: "completed", completedAt: new Date().toISOString() }).where(eq(fuelAnomalyExecutions.id, execId))
-        results.push({ ruleCode: rule.code, created: 0, skipped: 0, status: "no_detector" })
+        results.push({ ruleCode: rule.code, created: 0, skipped: 0, failed: 0, truncated: false, status: "no_detector" })
         continue
       }
 
-      const { created, skipped, scanned, details } = await detector(rule)
+      const { created, skipped, scanned, failed = 0, truncated = false, cursor, details } = await detector(rule)
       await db.update(fuelAnomalyExecutions).set({
-        status: "completed", completedAt: new Date().toISOString(),
-        casesCreated: created, casesSkipped: skipped, totalScanned: scanned,
+        status: failed > 0 ? "failed" : "completed",
+        completedAt: new Date().toISOString(),
+        casesCreated: created, casesSkipped: skipped, casesFailed: failed,
+        truncated, totalScanned: scanned,
+        ...(failed > 0 ? { error: `${failed} caso(s) no se pudieron crear` } : {}),
       }).where(eq(fuelAnomalyExecutions.id, execId))
-      results.push({ ruleCode: rule.code, created, skipped, status: "completed", ...(details ? { details } : {}) })
+      // El cursor es durable en la regla: la siguiente corrida continúa donde
+      // quedó esta, en vez de volver a escanear siempre las mismas primeras filas.
+      if (cursor !== undefined) {
+        await db.update(fuelAnomalyRules).set({ cursor, updatedAt: new Date().toISOString() }).where(eq(fuelAnomalyRules.id, rule.id))
+      }
+      results.push({
+        ruleCode: rule.code, created, skipped, failed, truncated,
+        status: failed > 0 ? "failed" : "completed",
+        ...(details ? { details } : {}),
+      })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       // Sólo el error de configuración es apto para salir en la respuesta del
@@ -166,18 +204,24 @@ export async function runAllBatchRules(): Promise<BatchRuleResult[]> {
         ? message
         : undefined
       await db.update(fuelAnomalyExecutions).set({
-        status: "failed", error: message, completedAt: new Date().toISOString(),
+        status: "failed", error: message, casesFailed: 0, truncated: false, completedAt: new Date().toISOString(),
       }).where(eq(fuelAnomalyExecutions.id, execId))
-      results.push({ ruleCode: rule.code, created: 0, skipped: 0, status: "failed", ...(visibleError ? { error: visibleError } : {}) })
+      results.push({
+        ruleCode: rule.code, created: 0, skipped: 0, failed: 0, truncated: false,
+        status: "failed", ...(visibleError ? { error: visibleError } : {}),
+      })
     }
   }
   return results
 }
 
-type DetectorFn = (rule: { id: string; code: string; config: string | null; severity?: string | null }) => Promise<{
+type DetectorFn = (rule: { id: string; code: string; config: string | null; severity?: string | null; cursor?: string | null }) => Promise<{
   created: number
   skipped: number
   scanned: number
+  failed?: number
+  truncated?: boolean
+  cursor?: string | null
   details?: BatchRuleResult["details"]
 }>
 
@@ -202,8 +246,25 @@ export function severityOf(rule: { severity?: string | null }, fallback: Anomaly
  * cargas en terreno lo calcula la serie del control, `lib/combustibles/control/`) — por eso estas dos reglas sólo cubren el
  * log operacional, no las tres fuentes.
  */
-async function getOperationPerformanceObservations(rowLimit: number) {
-  const rows = await db.select({
+async function getOperationPerformanceObservations(rowLimit: number, cursor?: string | null) {
+  // Paginación por VEHÍCULO, no por fila: el límite plano partía la historia de
+  // un equipo y volvía a escanear siempre las mismas primeras filas. La página
+  // se guarda en `fuel_anomaly_rules.cursor` y la siguiente corrida continúa
+  // después del último vehículo; al llegar al final, el cursor vuelve a null.
+  const pageSize = Math.max(100, Math.min(rowLimit, 500))
+  const vehicleRows = await db.selectDistinct({ vehicleId: fuelOperationRecords.vehicleId })
+    .from(fuelOperationRecords)
+    .innerJoin(fuelVehicles, eq(fuelOperationRecords.vehicleId, fuelVehicles.id))
+    .where(and(
+      isNotNull(fuelOperationRecords.rendimiento),
+      sql`${fuelVehicles.performanceUnit} <> 'not_applicable'`,
+      cursor ? gt(fuelOperationRecords.vehicleId, cursor) : undefined,
+    ))
+    .orderBy(fuelOperationRecords.vehicleId)
+    .limit(pageSize + 1)
+  const hasMore = vehicleRows.length > pageSize
+  const vehicleIds = vehicleRows.slice(0, pageSize).map((row) => row.vehicleId).filter((id): id is string => !!id)
+  const rows = vehicleIds.length === 0 ? [] : await db.select({
     id: fuelOperationRecords.id, vehicleId: fuelVehicles.id, plate: fuelVehicles.plate,
     worksiteId: fuelOperationRecords.worksiteId, comparisonGroup: fuelVehicles.comparisonGroup,
     performanceUnit: fuelVehicles.performanceUnit, rendimiento: fuelOperationRecords.rendimiento,
@@ -212,21 +273,27 @@ async function getOperationPerformanceObservations(rowLimit: number) {
     .from(fuelOperationRecords)
     .innerJoin(fuelVehicles, eq(fuelOperationRecords.vehicleId, fuelVehicles.id))
     .leftJoin(fuelEquipmentTypes, eq(fuelVehicles.equipmentTypeId, fuelEquipmentTypes.id))
-    .where(and(isNotNull(fuelOperationRecords.rendimiento), sql`${fuelVehicles.performanceUnit} <> 'not_applicable'`))
-    // Sin ORDER BY, qué filas caían dentro del LIMIT era arbitrario — el mismo
-    // vehículo podía tener suficiente muestra (≥ minSample) en una corrida y no
-    // en la siguiente, sin que cambiara ni un dato real (CO-029/CO-039).
+    .where(and(
+      inArray(fuelOperationRecords.vehicleId, vehicleIds),
+      isNotNull(fuelOperationRecords.rendimiento),
+      sql`${fuelVehicles.performanceUnit} <> 'not_applicable'`,
+    ))
     .orderBy(fuelOperationRecords.vehicleId, fuelOperationRecords.id)
-    .limit(rowLimit)
-  return rows.filter((r) => Number(r.rendimiento) > 0).map((r) => ({ ...r, rendimiento: Number(r.rendimiento) }))
+    .limit(BATCH_SCAN_ROW_LIMIT)
+
+  return {
+    observations: rows.filter((r) => Number(r.rendimiento) > 0).map((r) => ({ ...r, rendimiento: Number(r.rendimiento) })),
+    truncated: hasMore || rows.length >= BATCH_SCAN_ROW_LIMIT,
+    cursor: hasMore ? (vehicleIds[vehicleIds.length - 1] ?? null) : null,
+  }
 }
 
 /** Detectar rendimiento fuera del historial propio del equipo (outlier dentro de sus propias observaciones). */
 const detectPerformanceOutlierHistory: DetectorFn = async (rule) => {
-  let created = 0, skipped = 0, scanned = 0
+  let created = 0, skipped = 0, failed = 0, scanned = 0
   const minSample = minSampleOf(rule, MIN_CONCLUSIVE_SAMPLE)
   const rowLimit = batchRowLimitOf(rule, BATCH_SCAN_ROW_LIMIT)
-  const observations = await getOperationPerformanceObservations(rowLimit)
+  const { observations, truncated, cursor } = await getOperationPerformanceObservations(rowLimit, rule.cursor)
 
   const byVehicle = new Map<string, typeof observations>()
   for (const obs of observations) byVehicle.set(obs.vehicleId, [...(byVehicle.get(obs.vehicleId) ?? []), obs])
@@ -248,18 +315,19 @@ const detectPerformanceOutlierHistory: DetectorFn = async (rule) => {
           observedValue: String(row.rendimiento),
         })
         if (outcome.wasCreated) created++; else skipped++
-      } catch { skipped++ }
+      } catch { failed++ }
     }
   }
-  return { created, skipped, scanned }
+  return { created, skipped, failed, scanned, truncated, cursor }
 }
 
 /** Detectar rendimiento fuera del grupo comparable (outlier dentro del pool de equipos con el mismo `comparisonGroup`). */
 const detectPerformanceOutlierGroup: DetectorFn = async (rule) => {
-  let created = 0, skipped = 0, scanned = 0
+  let created = 0, skipped = 0, failed = 0, scanned = 0
   const minSample = minSampleOf(rule, MIN_CONCLUSIVE_SAMPLE)
   const rowLimit = batchRowLimitOf(rule, BATCH_SCAN_ROW_LIMIT)
-  const observations = (await getOperationPerformanceObservations(rowLimit)).filter((o) => o.comparisonGroup)
+  const { observations: allObservations, truncated, cursor } = await getOperationPerformanceObservations(rowLimit, rule.cursor)
+  const observations = allObservations.filter((o) => o.comparisonGroup)
 
   const byGroup = new Map<string, typeof observations>()
   for (const obs of observations) {
@@ -297,10 +365,10 @@ const detectPerformanceOutlierGroup: DetectorFn = async (rule) => {
           observedValue: String(row.rendimiento),
         })
         if (outcome.wasCreated) created++; else skipped++
-      } catch { skipped++ }
+      } catch { failed++ }
     }
   }
-  return { created, skipped, scanned }
+  return { created, skipped, failed, scanned, truncated, cursor }
 }
 
 /** Detectar litros superiores a capacidad del estanque. */
@@ -314,7 +382,7 @@ const detectLitersExceedCapacity: DetectorFn = async (rule) => {
     .leftJoin(fuelEquipmentTypes, eq(fuelVehicles.equipmentTypeId, fuelEquipmentTypes.id))
     .where(isNotNull(fuelVehicles.tankCapacityLiters))
 
-  let created = 0, skipped = 0, scanned = 0
+  let created = 0, skipped = 0, failed = 0, scanned = 0
 
   for (const v of vehicles) {
     if (!v.tankCapacityLiters) continue
@@ -341,10 +409,10 @@ const detectLitersExceedCapacity: DetectorFn = async (rule) => {
           observedValue: String(row.liters), expectedValue: `≤ ${Number(v.tankCapacityLiters)} L`,
         })
         if (outcome.wasCreated) created++; else skipped++
-      } catch { skipped++ }
+      } catch { failed++ }
     }
   }
-  return { created, skipped, scanned }
+  return { created, skipped, failed, scanned }
 }
 
 /** Detectar variación brusca de consumo entre períodos consecutivos. */
@@ -357,7 +425,7 @@ const detectSharpConsumptionChange: DetectorFn = async (rule) => {
   if (!scanFromMatch || !scanFromDate || !Number.isFinite(scanFromMs) || new Date(`${scanFromDate}T00:00:00.000Z`).toISOString().slice(0, 10) !== scanFromDate) {
     throw new Error(FUEL_VARIATION_SCAN_FROM_ERROR)
   }
-  let created = 0, skipped = 0, scanned = 0
+  let created = 0, skipped = 0, failed = 0, scanned = 0
   let unclassifiedRecords = 0, blockedByLegacyCases = 0
 
   // Acotar por VEHÍCULO, no por fila cruda: un LIMIT plano sobre filas podía
@@ -365,12 +433,17 @@ const detectSharpConsumptionChange: DetectorFn = async (rule) => {
   // incompleta) y, peor, dejar vehículos enteros sin analizar según dónde
   // cayera el corte alfabético de su id — ningún vehículo real se acerca al
   // techo, así que en la práctica esto no limita nada todavía (CO-029/CO-039).
-  const vehicleIdsInWindow = await db.selectDistinct({ vehicleId: fuelConsumptionRecords.vehicleId })
+  const pageSize = Math.max(100, Math.min(rowLimit, 500))
+  const vehicleRowsInWindow = await db.selectDistinct({ vehicleId: fuelConsumptionRecords.vehicleId })
     .from(fuelConsumptionRecords)
-    .where(isNotNull(fuelConsumptionRecords.vehicleId))
+    .where(and(
+      isNotNull(fuelConsumptionRecords.vehicleId),
+      rule.cursor ? gt(fuelConsumptionRecords.vehicleId, rule.cursor) : undefined,
+    ))
     .orderBy(fuelConsumptionRecords.vehicleId)
-    .limit(rowLimit)
-  const vehicleIdsToScan = vehicleIdsInWindow.map((row) => row.vehicleId).filter((id): id is string => !!id)
+    .limit(pageSize + 1)
+  const hasMore = vehicleRowsInWindow.length > pageSize
+  const vehicleIdsToScan = vehicleRowsInWindow.slice(0, pageSize).map((row) => row.vehicleId).filter((id): id is string => !!id)
 
   // Escanear consumo TCT: comparar cada patente+período con el período anterior
   const periods = vehicleIdsToScan.length === 0 ? [] : await db.select({
@@ -434,12 +507,17 @@ const detectSharpConsumptionChange: DetectorFn = async (rule) => {
         observedValue: `+${Math.round(pct)}%`, expectedValue: `< ${thresholdPct}%`,
       })
       if (outcome.wasCreated) created++; else skipped++
-    } catch { skipped++ }
+    } catch { failed++ }
   }
   return {
     created,
     skipped,
+    failed,
     scanned,
+    truncated: hasMore,
+    // Continúa después del último vehículo de esta página; al terminar, vuelve
+    // al principio para que las filas nuevas de vehículos ya vistos entren.
+    cursor: hasMore ? (vehicleIdsToScan[vehicleIdsToScan.length - 1] ?? null) : null,
     details: {
       unclassifiedRecords,
       ambiguousPeriods: variation.ambiguousPeriods.length,
@@ -462,7 +540,7 @@ const detectSharpConsumptionChange: DetectorFn = async (rule) => {
  * sólo cuenta actividad ocurrida DESPUÉS de que el equipo dejó de operar.
  */
 const detectConsumptionWhileInactive: DetectorFn = async (rule) => {
-  let created = 0, skipped = 0, scanned = 0
+  let created = 0, skipped = 0, failed = 0, scanned = 0
 
   // Equipos inactivos
   const inactive = await db.select({ vehicleId: fuelVehicles.id, plate: fuelVehicles.plate, worksiteId: fuelVehicles.worksiteId, operationalStatus: fuelVehicles.operationalStatus })
@@ -479,15 +557,40 @@ const detectConsumptionWhileInactive: DetectorFn = async (rule) => {
     // una ventana arbitraria, se salta (el estado sigue viéndose en /flota).
     if (!interval) continue
 
-    const rows = await db.select({ id: fuelTaeSubmissions.id })
-      .from(fuelTaeSubmissions)
-      .where(and(
-        eq(fuelTaeSubmissions.vehicleId, v.vehicleId),
-        ne(fuelTaeSubmissions.status, "voided"),
-        gt(fuelTaeSubmissions.loadedAt, interval.startedAt),
-      ))
-      .limit(1)
-    if (rows.length === 0) continue
+    // La regla nació mirando sólo la PWA TAE. Un equipo detenido que recibe
+    // cargas con tarjeta/TCT o desde la planilla operacional no generaba caso:
+    // el cruce «parado + cargó» quedaba incompleto justo en las fuentes que
+    // sostienen el consumo real. `startedOn` compara días civiles porque
+    // `fuel_provider_transactions.occurred_at` es texto.
+    const startedOn = interval.startedAt.slice(0, 10)
+    const [taeRows, providerRows, operationRows] = await Promise.all([
+      db.select({ id: fuelTaeSubmissions.id })
+        .from(fuelTaeSubmissions)
+        .where(and(
+          eq(fuelTaeSubmissions.vehicleId, v.vehicleId),
+          ne(fuelTaeSubmissions.status, "voided"),
+          gt(fuelTaeSubmissions.loadedAt, interval.startedAt),
+        ))
+        .limit(1),
+      db.select({ id: fuelProviderTransactions.id })
+        .from(fuelProviderTransactions)
+        .where(and(
+          eq(fuelProviderTransactions.vehicleId, v.vehicleId),
+          isNotNull(fuelProviderTransactions.vehicleId),
+          accountableProviderTransactionsWhere(),
+          sql`left(${fuelProviderTransactions.occurredAt}, 10) >= ${startedOn}`,
+        ))
+        .limit(1),
+      db.select({ id: fuelEquipmentLoads.id })
+        .from(fuelEquipmentLoads)
+        .where(and(
+          eq(fuelEquipmentLoads.vehicleId, v.vehicleId),
+          countableLoadSql,
+          gt(fuelEquipmentLoads.occurredAt, interval.startedAt),
+        ))
+        .limit(1),
+    ])
+    if (taeRows.length === 0 && providerRows.length === 0 && operationRows.length === 0) continue
     scanned++
     try {
       // referenceEntityId incluye la fecha: a diferencia de las demás reglas batch (que
@@ -501,29 +604,32 @@ const detectConsumptionWhileInactive: DetectorFn = async (rule) => {
         observedValue: "inactivo con cargas",
       })
       if (outcome.wasCreated) created++; else skipped++
-    } catch { skipped++ }
+    } catch { failed++ }
   }
-  return { created, skipped, scanned }
+  return { created, skipped, failed, scanned }
 }
 
 /** Detectar cargas facturadas (TCT/TAE) con un proveedor distinto del habitual del equipo.
  *  Sólo aplica a `fuel_loads` (facturación): la PWA TAE no registra proveedor por carga. */
 const detectUnusualSupplier: DetectorFn = async (rule) => {
   const rowLimit = batchRowLimitOf(rule, BATCH_SCAN_ROW_LIMIT)
-  let created = 0, skipped = 0, scanned = 0
+  let created = 0, skipped = 0, failed = 0, scanned = 0
 
-  const rows = await db.select({
+  const page = await vehiclePage(rule.cursor, rowLimit)
+  const rows = page.ids.length === 0 ? [] : await db.select({
     loadId: fuelLoads.id, worksiteId: fuelLoads.worksiteId, vehicleId: fuelLoads.vehicleId,
     fuelSupplierId: fuelLoads.fuelSupplierId, plate: fuelVehicles.plate,
     usualFuelSupplierId: fuelVehicles.usualFuelSupplierId,
   })
     .from(fuelLoads)
     .innerJoin(fuelVehicles, eq(fuelLoads.vehicleId, fuelVehicles.id))
-    .where(isNotNull(fuelVehicles.usualFuelSupplierId))
-    // Mismo motivo que getOperationPerformanceObservations: sin orden, el
-    // recorte del LIMIT era arbitrario entre corridas (CO-029/CO-039).
+    .where(and(
+      isNotNull(fuelVehicles.usualFuelSupplierId),
+      inArray(fuelLoads.vehicleId, page.ids),
+    ))
+    // La página es por vehículo y el orden dentro de ella es determinista.
     .orderBy(fuelLoads.vehicleId, fuelLoads.id)
-    .limit(rowLimit)
+    .limit(BATCH_SCAN_ROW_LIMIT)
 
   for (const row of rows) {
     if (row.fuelSupplierId === row.usualFuelSupplierId) continue
@@ -537,15 +643,20 @@ const detectUnusualSupplier: DetectorFn = async (rule) => {
         observedValue: row.fuelSupplierId, expectedValue: row.usualFuelSupplierId ?? undefined,
       })
       if (outcome.wasCreated) created++; else skipped++
-    } catch { skipped++ }
+    } catch { failed++ }
   }
-  return { created, skipped, scanned }
+  return {
+    created, skipped, failed, scanned,
+    truncated: page.truncated || rows.length >= BATCH_SCAN_ROW_LIMIT,
+    cursor: page.cursor,
+  }
 }
 
 /** Detectar evidencia reutilizada entre cargas (mismo SHA-256 en más de una carga). */
 const detectDuplicateEvidenceRule: DetectorFn = async (rule) => {
-  let created = 0, skipped = 0, scanned = 0
-  const reused = await getReusedEvidence(batchRowLimitOf(rule, BATCH_SCAN_ROW_LIMIT))
+  let created = 0, skipped = 0, failed = 0, scanned = 0
+  const rowLimit = batchRowLimitOf(rule, BATCH_SCAN_ROW_LIMIT)
+  const { reused, cursor, truncated } = await getReusedEvidence(rowLimit, rule.cursor)
 
   for (const [hash, items] of reused) {
     scanned++
@@ -562,15 +673,16 @@ const detectDuplicateEvidenceRule: DetectorFn = async (rule) => {
         observedValue: `${submissionIds.length} cargas`, expectedValue: "1 carga",
       })
       if (outcome.wasCreated) created++; else skipped++
-    } catch { skipped++ }
+    } catch { failed++ }
   }
-  return { created, skipped, scanned }
+  return { created, skipped, failed, scanned, truncated, cursor }
 }
 
 /** Detectar evidencia ilegible o corrupta (tamaño 0, MIME no imagen, sin archivo). */
 const detectCorruptEvidenceRule: DetectorFn = async (rule) => {
-  let created = 0, skipped = 0, scanned = 0
-  const corrupt = await detectCorruptEvidence(batchRowLimitOf(rule, BATCH_SCAN_ROW_LIMIT))
+  let created = 0, skipped = 0, failed = 0, scanned = 0
+  const rowLimit = batchRowLimitOf(rule, BATCH_SCAN_ROW_LIMIT)
+  const { corrupt, cursor, truncated } = await detectCorruptEvidence(rowLimit, rule.cursor)
 
   for (const item of corrupt) {
     scanned++
@@ -585,9 +697,9 @@ const detectCorruptEvidenceRule: DetectorFn = async (rule) => {
         observedValue: item.reason,
       })
       if (outcome.wasCreated) created++; else skipped++
-    } catch { skipped++ }
+    } catch { failed++ }
   }
-  return { created, skipped, scanned }
+  return { created, skipped, failed, scanned, truncated, cursor }
 }
 
 /**
@@ -644,10 +756,11 @@ function makeRegressiveMeterDetector(meterType: "km" | "hora"): DetectorFn {
   const meterLabel = meterType === "hora" ? "de horómetro" : "de odómetro"
   return async (rule) => {
     const rowLimit = batchRowLimitOf(rule, BATCH_SCAN_ROW_LIMIT)
-    let created = 0, skipped = 0, scanned = 0
+    let created = 0, skipped = 0, failed = 0, scanned = 0
+    const page = await vehiclePage(rule.cursor, rowLimit)
 
     // Log operacional: horometro + medidoPor (km|hora) en una sola columna.
-    const opRows = await db.select({
+    const opRows = page.ids.length === 0 ? [] : await db.select({
       id: fuelOperationRecords.id, vehicleId: fuelOperationRecords.vehicleId,
       worksiteId: fuelOperationRecords.worksiteId, horometro: fuelOperationRecords.horometro,
       plate: fuelVehicles.plate,
@@ -657,9 +770,10 @@ function makeRegressiveMeterDetector(meterType: "km" | "hora"): DetectorFn {
       .where(and(
         eq(fuelOperationRecords.medidoPor, meterType),
         isNotNull(fuelOperationRecords.horometro),
+        inArray(fuelOperationRecords.vehicleId, page.ids),
       ))
       .orderBy(fuelOperationRecords.vehicleId, fuelOperationOccurredAtSql(), fuelOperationRecords.createdAt)
-      .limit(rowLimit)
+      .limit(BATCH_SCAN_ROW_LIMIT)
 
     for (const { prev, curr } of flagRegressivePairs(opRows, (r) => Number(r.horometro))) {
       scanned++
@@ -672,20 +786,24 @@ function makeRegressiveMeterDetector(meterType: "km" | "hora"): DetectorFn {
           observedValue: String(curr.horometro), expectedValue: `> ${prev.horometro}`,
         })
         if (outcome.wasCreated) created++; else skipped++
-      } catch { skipped++ }
+      } catch { failed++ }
     }
 
     // Cargas manuales: odómetro y horómetro son columnas separadas.
     const readingColumn = meterType === "hora" ? fuelLoads.hourMeterReading : fuelLoads.odometerReading
-    const loadRows = await db.select({
+    const loadRows = page.ids.length === 0 ? [] : await db.select({
       id: fuelLoads.id, vehicleId: fuelLoads.vehicleId, worksiteId: fuelLoads.worksiteId,
       reading: readingColumn, plate: fuelVehicles.plate,
     })
       .from(fuelLoads)
       .innerJoin(fuelVehicles, eq(fuelLoads.vehicleId, fuelVehicles.id))
-      .where(and(isNotNull(readingColumn), accountableFuelLoadsWhere()))
+      .where(and(
+        isNotNull(readingColumn),
+        accountableFuelLoadsWhere(),
+        inArray(fuelLoads.vehicleId, page.ids),
+      ))
       .orderBy(fuelLoads.vehicleId, fuelLoads.loadDate, fuelLoads.createdAt)
-      .limit(rowLimit)
+      .limit(BATCH_SCAN_ROW_LIMIT)
 
     for (const { prev, curr } of flagRegressivePairs(loadRows, (r) => Number(r.reading))) {
       scanned++
@@ -698,14 +816,15 @@ function makeRegressiveMeterDetector(meterType: "km" | "hora"): DetectorFn {
           observedValue: String(curr.reading), expectedValue: `> ${prev.reading}`,
         })
         if (outcome.wasCreated) created++; else skipped++
-      } catch { skipped++ }
+      } catch { failed++ }
     }
 
     // Detalle del proveedor: una fila por transacción, con el odómetro que el
     // operario tipeó en el surtidor. Es la fuente donde el error de dedo aparece
     // de verdad —en la muestra real, 27 de 249 pares consecutivos retroceden— y
     // la única que hasta ahora no miraba nadie.
-    for (const { prev, curr } of providerReadingPairs(await meterReadingRows(meterType, rowLimit))
+    const readings = await meterReadingRows(meterType, page.ids)
+    for (const { prev, curr } of providerReadingPairs(readings)
       .filter(({ prev, curr }) => curr.value < prev.value)) {
       scanned++
       try {
@@ -717,15 +836,23 @@ function makeRegressiveMeterDetector(meterType: "km" | "hora"): DetectorFn {
           observedValue: String(curr.value), expectedValue: `> ${prev.value}`,
         })
         if (outcome.wasCreated) created++; else skipped++
-      } catch { skipped++ }
+      } catch { failed++ }
     }
 
-    return { created, skipped, scanned }
+    return {
+      created, skipped, failed, scanned,
+      truncated: page.truncated
+        || opRows.length >= BATCH_SCAN_ROW_LIMIT
+        || loadRows.length >= BATCH_SCAN_ROW_LIMIT
+        || readings.length >= BATCH_SCAN_ROW_LIMIT,
+      cursor: page.cursor,
+    }
   }
 }
 
 /** Serie del detalle de proveedor para un tipo de medidor, ya ordenada. */
-async function meterReadingRows(meterType: "km" | "hora", rowLimit: number) {
+async function meterReadingRows(meterType: "km" | "hora", vehicleIds: readonly string[]) {
+  if (vehicleIds.length === 0) return []
   return db.select({
     id: fuelMeterReadings.id,
     vehicleId: fuelMeterReadings.vehicleId,
@@ -740,12 +867,15 @@ async function meterReadingRows(meterType: "km" | "hora", rowLimit: number) {
     .from(fuelMeterReadings)
     .innerJoin(fuelVehicles, eq(fuelMeterReadings.vehicleId, fuelVehicles.id))
     .leftJoin(fuelEquipmentTypes, eq(fuelVehicles.equipmentTypeId, fuelEquipmentTypes.id))
-    .where(eq(fuelMeterReadings.meterType, meterType === "hora" ? "hour_meter" : "odometer"))
+    .where(and(
+      eq(fuelMeterReadings.meterType, meterType === "hora" ? "hour_meter" : "odometer"),
+      inArray(fuelMeterReadings.vehicleId, [...vehicleIds]),
+    ))
     // La serie es por equipo Y por fuente: el odómetro que reporta Copec y el que
     // reporta GPS son el mismo medidor físico, pero cada fuente arrastra su
     // propio desfase, así que compararlos entre sí inventa saltos que no existen.
     .orderBy(fuelMeterReadings.vehicleId, fuelMeterReadings.source, fuelMeterReadings.occurredAt)
-    .limit(rowLimit)
+    .limit(BATCH_SCAN_ROW_LIMIT)
 }
 
 type MeterReadingRow = Awaited<ReturnType<typeof meterReadingRows>>[number]
@@ -769,12 +899,15 @@ function providerReadingPairs(rows: MeterReadingRow[]): Array<{ prev: MeterReadi
  */
 const detectImplausibleMeterJump: DetectorFn = async (rule) => {
   const rowLimit = batchRowLimitOf(rule, BATCH_SCAN_ROW_LIMIT)
-  let created = 0, skipped = 0, scanned = 0
+  let created = 0, skipped = 0, failed = 0, scanned = 0, truncated = false
+  const page = await vehiclePage(rule.cursor, rowLimit)
 
   for (const meterType of ["km", "hora"] as const) {
     const unit = meterType === "hora" ? "h" : "km"
     const meterLabel = meterType === "hora" ? "de horómetro" : "de odómetro"
-    for (const { prev, curr } of providerReadingPairs(await meterReadingRows(meterType, rowLimit))) {
+    const readings = await meterReadingRows(meterType, page.ids)
+    truncated = truncated || readings.length >= BATCH_SCAN_ROW_LIMIT
+    for (const { prev, curr } of providerReadingPairs(readings)) {
       const delta = curr.value - prev.value
       if (delta <= 0) continue   // el retroceso es asunto de la regla regresiva
       const days = elapsedDays(prev.occurredAt, curr.occurredAt)
@@ -792,10 +925,10 @@ const detectImplausibleMeterJump: DetectorFn = async (rule) => {
           observedValue: String(curr.value), expectedValue: `≤ ${Math.round(prev.value + maxPerDay * days)}`,
         })
         if (outcome.wasCreated) created++; else skipped++
-      } catch { skipped++ }
+      } catch { failed++ }
     }
   }
-  return { created, skipped, scanned }
+  return { created, skipped, failed, scanned, truncated: truncated || page.truncated, cursor: page.cursor }
 }
 
 const BATCH_DETECTORS: Record<string, DetectorFn> = {

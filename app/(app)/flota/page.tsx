@@ -44,6 +44,7 @@ export default async function FlotaPage({
   const filterEstado = typeof sp.estado === "string" ? sp.estado : undefined
   const filterResponsable = typeof sp.responsable === "string" ? sp.responsable : undefined
   const filterVencimiento = typeof sp.vencimiento === "string" ? sp.vencimiento : undefined
+  const filterRevision = sp.revision === "estado" ? "estado" as const : undefined
   const q = typeof sp.q === "string" ? sp.q.slice(0, 160) : undefined
   const requestedPage = typeof sp.page === "string" && /^\d+$/.test(sp.page) ? Math.max(1, Number(sp.page)) : 1
 
@@ -58,6 +59,7 @@ export default async function FlotaPage({
     operationalStatus: filterEstado,
     responsibleName: filterResponsable,
     expiry: filterVencimiento as "vencidos" | "proximos" | "al-dia" | undefined,
+    revision: filterRevision,
     q,
   }
   const initialPageData = await getFleetOverviewPage(session, filters, { today, warningWindowEnd }, {
@@ -110,7 +112,7 @@ export default async function FlotaPage({
           ]} />
         }
         actions={<div className="flex items-center gap-2">
-          <FleetExportButton filters={{ operationalStatus: filterEstado, responsibleName: filterResponsable, expiry: filterVencimiento as "vencidos" | "proximos" | "al-dia" | undefined, q }} />
+          <FleetExportButton filters={{ operationalStatus: filterEstado, responsibleName: filterResponsable, expiry: filterVencimiento as "vencidos" | "proximos" | "al-dia" | undefined, revision: filterRevision, q }} />
           {/* El botón lleva al padrón, así que se guarda con el permiso del
               padrón y no con el de la decisión operativa. */}
           {can(session, "admin:fleet_vehicles") && (
@@ -151,7 +153,7 @@ export default async function FlotaPage({
           <FleetFilters
             operationalStatuses={operationalStatuses}
             responsibleUsers={responsibleUsers}
-            current={{ estado: filterEstado, responsable: filterResponsable, vencimiento: filterVencimiento, q }}
+            current={{ estado: filterEstado, responsable: filterResponsable, vencimiento: filterVencimiento, revision: filterRevision, q }}
             warningDays={warningDays}
           />
         </CardContent>

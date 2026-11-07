@@ -77,7 +77,11 @@ async function addLoad(input: {
   return id
 }
 
-async function addInvoice(input: {
+/**
+ * Serie antigua (`fuel_loads`): el panel ya no lee el monto de acá. Se sigue
+ * sembrando para probar que sus importes NO se cuelan en el agregado.
+ */
+async function addLegacyInvoice(input: {
   id: string
   vehicle: string
   worksite: string
@@ -103,11 +107,49 @@ async function addInvoice(input: {
   })
 }
 
+let txSeq = 0
+/** Libro del proveedor: la serie canónica del monto del panel. */
+async function addProviderTransaction(input: {
+  vehicle: string
+  worksite: string
+  date: string
+  amount: number
+  quantity?: number
+  status?: "accepted" | "pending" | "rejected" | "excluded" | "superseded"
+}) {
+  txSeq += 1
+  await testDb.insert(schema.fuelProviderTransactions).values({
+    id: `afs-tx-${txSeq}`,
+    syncRunId: "afs-run",
+    provider: "copec",
+    sourceAccount: "tct:diesel",
+    identityKey: `afs-idk-${txSeq}`,
+    fingerprint: `afs-fp-${txSeq}`,
+    sourceRowKey: `afs-row-${txSeq}`,
+    payloadHash: `afs-ph-${txSeq}`,
+    worksiteId: input.worksite,
+    vehicleId: input.vehicle,
+    sourcePlate: "AA-0001",
+    occurredAt: input.date,
+    quantity: input.quantity ?? 100,
+    amount: input.amount,
+    status: input.status ?? "accepted",
+    granularity: "transaction",
+  })
+}
+
 beforeAll(async () => {
   await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
   await seedControlFixtures(testDb)
 
   await testDb.insert(schema.fuelSuppliers).values({ id: "afs-supplier", name: "Proveedor AFS" })
+  await testDb.insert(schema.fuelProviderSyncRuns).values({
+    id: "afs-run",
+    provider: "copec",
+    requestedFrom: "2026-03-01",
+    requestedTo: "2026-03-31",
+    correlationId: "corr-afs",
+  })
 
   // vA marzo: 100 ok + 50 marcada + 40 aprobada + 60 original; la anulada, la
   // rechazada, la duplicada y la de febrero no cuentan.
@@ -132,13 +174,25 @@ beforeAll(async () => {
     { id: "afs-case-5", ruleId: "afs-rule", ruleCode: "afs_regla", severity: "critical", worksiteId: IDS.wsC, vehicleId: IDS.vC, referenceEntityType: "fuel_load", referenceEntityId: "afs-load-10", description: "De C", status: "reopened" },
   ])
 
-  await addInvoice({ id: "afs-inv-1", vehicle: IDS.vA, worksite: IDS.wsA, date: "2026-03-05", amount: 10000, status: "registered" })
-  await addInvoice({ id: "afs-inv-2", vehicle: IDS.vA, worksite: IDS.wsA, date: "2026-03-10", amount: 5000, status: "reconciled" })
-  await addInvoice({ id: "afs-inv-3", vehicle: IDS.vA, worksite: IDS.wsA, date: "2026-03-11", amount: 9999, status: "cancelled" })
-  await addInvoice({ id: "afs-inv-4", vehicle: IDS.vA, worksite: IDS.wsA, date: "2026-03-12", amount: 7777, status: "draft" })
-  await addInvoice({ id: "afs-inv-5", vehicle: IDS.vA, worksite: IDS.wsA, date: "2026-02-28", amount: 8888, status: "registered" })
-  await addInvoice({ id: "afs-inv-6", vehicle: IDS.vB, worksite: IDS.wsB, date: "2026-03-06", amount: 20000, status: "registered" })
-  await addInvoice({ id: "afs-inv-7", vehicle: IDS.vC, worksite: IDS.wsC, date: "2026-03-07", amount: 30000, status: "registered" })
+  // Serie antigua: importes distintos de los del proveedor. Si el panel volviera
+  // a leer `fuel_loads`, el monto de vA sería 15.000 y no 16.000.
+  await addLegacyInvoice({ id: "afs-inv-1", vehicle: IDS.vA, worksite: IDS.wsA, date: "2026-03-05", amount: 10000, status: "registered" })
+  await addLegacyInvoice({ id: "afs-inv-2", vehicle: IDS.vA, worksite: IDS.wsA, date: "2026-03-10", amount: 5000, status: "reconciled" })
+  await addLegacyInvoice({ id: "afs-inv-3", vehicle: IDS.vA, worksite: IDS.wsA, date: "2026-03-11", amount: 9999, status: "cancelled" })
+  await addLegacyInvoice({ id: "afs-inv-4", vehicle: IDS.vA, worksite: IDS.wsA, date: "2026-03-12", amount: 7777, status: "draft" })
+  await addLegacyInvoice({ id: "afs-inv-5", vehicle: IDS.vA, worksite: IDS.wsA, date: "2026-02-28", amount: 8888, status: "registered" })
+  await addLegacyInvoice({ id: "afs-inv-6", vehicle: IDS.vB, worksite: IDS.wsB, date: "2026-03-06", amount: 20000, status: "registered" })
+  await addLegacyInvoice({ id: "afs-inv-7", vehicle: IDS.vC, worksite: IDS.wsC, date: "2026-03-07", amount: 30000, status: "registered" })
+
+  // Libro del proveedor (la fuente que el panel debe usar): 16.000 / 21.000 / 31.000.
+  await addProviderTransaction({ vehicle: IDS.vA, worksite: IDS.wsA, date: "2026-03-05T15:00:00.000Z", amount: 12000 })
+  await addProviderTransaction({ vehicle: IDS.vA, worksite: IDS.wsA, date: "2026-03-10T15:00:00.000Z", amount: 4000 })
+  // Una pendiente y una rechazada no son consumo: no deben sumar.
+  await addProviderTransaction({ vehicle: IDS.vA, worksite: IDS.wsA, date: "2026-03-11T15:00:00.000Z", amount: 99999, status: "pending" })
+  await addProviderTransaction({ vehicle: IDS.vA, worksite: IDS.wsA, date: "2026-03-12T15:00:00.000Z", amount: 88888, status: "rejected" })
+  await addProviderTransaction({ vehicle: IDS.vA, worksite: IDS.wsA, date: "2026-02-28T15:00:00.000Z", amount: 77777 })
+  await addProviderTransaction({ vehicle: IDS.vB, worksite: IDS.wsB, date: "2026-03-06T15:00:00.000Z", amount: 21000 })
+  await addProviderTransaction({ vehicle: IDS.vC, worksite: IDS.wsC, date: "2026-03-07T15:00:00.000Z", amount: 31000 })
 
   // Telemetría de A y B en marzo: el % en vacío se recalcula desde las horas.
   await testDb.insert(schema.fuelTelemetryDaily).values([
@@ -158,7 +212,8 @@ describe("getAssetFuelSummary", () => {
       flaggedLoads: 1,
       openCases: 2,
       criticalOpenCases: 1,
-      billedAmount: 15000,
+      // 16.000 del libro del proveedor, no 15.000 de `fuel_loads`.
+      billedAmount: 16000,
       idleHours: 2,
       idlePct: 20,
       litersIdle: 12,
@@ -171,10 +226,10 @@ describe("getAssetFuelSummary", () => {
       flaggedLoads: 0,
       openCases: 1,
       criticalOpenCases: 0,
-      billedAmount: 20000,
+      billedAmount: 21000,
       idlePct: 20,
     })
-    expect(summary.get(IDS.vC)).toMatchObject({ liters: 999, performanceValue: 10, openCases: 1, criticalOpenCases: 1, billedAmount: 30000 })
+    expect(summary.get(IDS.vC)).toMatchObject({ liters: 999, performanceValue: 10, openCases: 1, criticalOpenCases: 1, billedAmount: 31000 })
   })
 
   it("sin permiso de costos no devuelve montos, pero sí el resto del agregado", async () => {
@@ -190,7 +245,7 @@ describe("getAssetFuelSummary", () => {
       [IDS.vA, IDS.vB, IDS.vC],
     )
 
-    expect(summary.get(IDS.vA)).toMatchObject({ liters: 250, openCases: 2, billedAmount: 15000 })
+    expect(summary.get(IDS.vA)).toMatchObject({ liters: 250, openCases: 2, billedAmount: 16000 })
     expect(summary.get(IDS.vB)).toMatchObject({ liters: 0, loadCount: 0, openCases: 0, billedAmount: null })
     expect(summary.get(IDS.vC)).toMatchObject({ liters: 0, loadCount: 0, openCases: 0, billedAmount: null })
   })

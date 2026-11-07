@@ -482,7 +482,7 @@ export async function reopenWorkOrder(actor: WorkOrderActor, input: Base & { rea
 function summarize(ot: OtRow) {
   return {
     repair: ot.repair, maintenance: ot.maintenance, requestDate: ot.requestDate, requesterName: ot.requesterName,
-    repairDescription: ot.repairDescription, observations: ot.observations,
+    repairDescription: ot.repairDescription, observations: ot.observations, totalCost: ot.totalCost,
   }
 }
 
@@ -499,6 +499,8 @@ export async function editWorkOrderRequest(actor: WorkOrderActor, input: EditWor
       requesterName: input.requesterName.trim(),
       repairDescription: input.repairDescription?.trim() || null,
       observations: input.observations?.trim() || null,
+      // Omitir el campo en una edición no borra el costo ya cargado.
+      totalCost: input.totalCost === undefined ? ctx.ot.totalCost : input.totalCost,
     }
     const previousItems = await ctx.tx.select({ kind: mantWorkOrderItems.kind, description: mantWorkOrderItems.description })
       .from(mantWorkOrderItems)

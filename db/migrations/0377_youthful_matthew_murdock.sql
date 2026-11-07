@@ -1,0 +1,1 @@
+ALTER TABLE "mant_work_orders" ADD COLUMN "total_cost" numeric(14, 2);

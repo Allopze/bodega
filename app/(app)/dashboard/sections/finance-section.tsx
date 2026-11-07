@@ -153,6 +153,11 @@ export async function FinanceSection({ session, scope }: DomainSectionsProps) {
     canSeeFuelDebt && debt.statements > 0 && worksiteId
       ? "La deuda de cuenta corriente es por proveedor: no se puede repartir por faena."
       : null,
+    // §5.6: en la misma sección conviven dos ventanas. Sin decirlo, el lector
+    // suma el costo de combustible de 6 meses al gasto de OC del período.
+    canSeeFuelCosts
+      ? "El costo de combustible usa 6 meses fijos; el gasto en OC y los rankings, el período seleccionado."
+      : null,
   ].filter(Boolean)
 
   /** "en el mes en curso", "en el trimestre en curso", "en el año en curso". */

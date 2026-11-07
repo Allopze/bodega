@@ -18,6 +18,9 @@ export function FuelSupplierList({ suppliers, generalSuppliers }: { suppliers: F
     sheetOpen, editRow, openCreate, openEdit, closeSheet, toggleAction, togglePending,
   } = useCatalogSheet<FuelSupplierRow>(toggleFuelSupplierActive)
   const [confirmId, setConfirmId] = React.useState<string | null>(null)
+  // La shell no muestra buscador en `/combustibles`; sin éste, la tabla de
+  // proveedores no se podía filtrar por texto.
+  const [search, setSearch] = React.useState("")
 
   return (
     <>
@@ -25,6 +28,9 @@ export function FuelSupplierList({ suppliers, generalSuppliers }: { suppliers: F
         caption="Proveedores de combustible"
         columns={COLUMNS}
         rows={suppliers}
+        search={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="Buscar por nombre, RUT o contacto..."
         searchKeys={CONTRACT.searchKeys as (keyof FuelSupplierRow)[]}
         pageSize={25}
         emptyTitle="Sin proveedores de combustible"

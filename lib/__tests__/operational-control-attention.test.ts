@@ -25,6 +25,7 @@ function vehicle(id: string, overrides: Partial<AttentionVehicle> = {}): Attenti
     type: "Camioneta",
     worksiteName: "Faena Norte",
     operationalStatus: "operativo",
+    isActive: true,
     soapExpiresAt: null,
     technicalReviewExpiresAt: null,
     circulationPermitExpiresAt: null,
@@ -94,6 +95,15 @@ describe("countFleetDocumentExpiry", () => {
 
   it("un equipo sin ninguna fecha no cuenta en ninguno", () => {
     expect(countFleetDocumentExpiry([vehicle("a")], [], DATES)).toEqual({ expired: 0, expiringSoon: 0 })
+  })
+
+  it("un equipo dado de baja no cuenta en los vencimientos operativos", () => {
+    const result = countFleetDocumentExpiry(
+      [vehicle("baja", { isActive: false, soapExpiresAt: "2026-01-01" })],
+      [],
+      DATES,
+    )
+    expect(result).toEqual({ expired: 0, expiringSoon: 0 })
   })
 
   it("cuenta equipos, no documentos: dos vencidos en el mismo equipo suman uno", () => {

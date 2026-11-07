@@ -133,6 +133,22 @@ beforeAll(async () => {
       createdAt: "2026-03-01T00:00:00.000Z",
       updatedAt: "2026-03-01T00:00:00.000Z",
     },
+    {
+      id: "ocf-capa-verified",
+      code: "OCF-CAPA-3",
+      sourceType: "inspection",
+      sourceId: "ocf-finding-verified",
+      worksiteId: IDS.wsA,
+      finding: "Hallazgo ya verificado",
+      actionDescription: "Corregir",
+      targetDate: "2020-01-01",
+      // Verificada: está cerrada en los hechos. El panel no debe contarla como
+      // vencida, igual que el filtro «Vencidas» de /prevencion/capa.
+      status: "verified",
+      createdByUserId: IDS.user,
+      createdAt: "2026-03-01T00:00:00.000Z",
+      updatedAt: "2026-03-01T00:00:00.000Z",
+    },
   ])
 
   await testDb.insert(schema.preventionInspectionFindings).values([
@@ -140,10 +156,31 @@ beforeAll(async () => {
     // Segundo hallazgo que referencia la MISMA CAPA: la CAPA debe contarse una vez.
     { id: "ocf-finding-critical-2", runId: "ocf-run-a", description: "Otro hallazgo de la misma CAPA", criticality: "high", status: "capa_linked", capaActionId: "ocf-capa-overdue" },
     { id: "ocf-finding-open", runId: "ocf-run-a", description: "Abierto", criticality: "high", status: "open" },
+    { id: "ocf-finding-verified", runId: "ocf-run-a", description: "Vinculado a CAPA verificada", criticality: "low", status: "capa_linked", capaActionId: "ocf-capa-verified" },
     { id: "ocf-finding-closed", runId: "ocf-run-a", description: "Cerrado", criticality: "critical", status: "closed" },
     { id: "ocf-finding-b", runId: "ocf-run-b", description: "De B", criticality: "low", status: "open", capaActionId: "ocf-capa-future" },
     { id: "ocf-finding-cancelled", runId: "ocf-run-cancelled", description: "De run cancelada", criticality: "critical", status: "open" },
   ])
+
+  // Una OT vigente sobre el hallazgo crítico: el panel debe distinguirlo del
+  // trabajo detectado que todavía no entró a Mantención.
+  await testDb.insert(schema.mantWorkOrders).values({
+    id: "ocf-ot-1",
+    folio: "OT-OCF-1",
+    vehicleId: IDS.vA,
+    worksiteId: IDS.wsA,
+    equipmentSnapshot: {
+      code: "KA-1", plate: "AA-1", noPlate: false, type: "camion", brand: "X",
+      model: null, year: null, worksite: "Faena A", unit: "km",
+    },
+    repair: true,
+    requestDate: "2026-03-05",
+    requestedByUserId: IDS.user,
+    requesterName: "Solicitante",
+    repairDescription: "Corregir hallazgo",
+    status: "solicitada",
+    inspectionFindingId: "ocf-finding-critical",
+  })
 }, 120_000)
 
 describe("Panel operacional: inspecciones, hallazgos y CAPA", () => {
@@ -161,10 +198,14 @@ describe("Panel operacional: inspecciones, hallazgos y CAPA", () => {
       inspectionCompliancePercent: 80,
       inspectionNonConforming: 2,
       inspectionPartial: 1,
-      // Abierto + dos capa_linked; el cerrado y el de la run cancelada no cuentan.
-      openFindings: 3,
+      // Abierto + tres capa_linked; el cerrado y el de la run cancelada no cuentan.
+      openFindings: 4,
       criticalOpenFindings: 1,
-      // Dos hallazgos referencian la misma CAPA: se cuenta una sola vez.
+      // De los 4 hallazgos abiertos, el crítico tiene una OT vigente vinculada.
+      openFindingsWithWorkOrder: 1,
+      openFindingsWithoutWorkOrder: 3,
+      // Dos hallazgos referencian la misma CAPA: se cuenta una sola vez. La
+      // CAPA `verified` no cuenta como vencida.
       overdueCapa: 1,
     })
     expect(b).toMatchObject({
@@ -182,8 +223,10 @@ describe("Panel operacional: inspecciones, hallazgos y CAPA", () => {
     const a = hub.assets.find((asset) => asset.id === IDS.vA)!
 
     expect(a.overdueCapa).toBeNull()
-    expect(a.openFindings).toBe(3)
+    expect(a.openFindings).toBe(4)
     expect(a.criticalOpenFindings).toBe(1)
+    expect(a.openFindingsWithWorkOrder).toBe(1)
+    expect(a.openFindingsWithoutWorkOrder).toBe(3)
   })
 
   it("sin prevention:inspections:view no consulta ni devuelve inspecciones, hallazgos ni CAPA, aunque tenga CAPA", async () => {
@@ -208,6 +251,8 @@ describe("Panel operacional: inspecciones, hallazgos y CAPA", () => {
     )
 
     expect(hub.assets.map((asset) => asset.id)).toEqual([IDS.vA])
-    expect(hub.assets[0]).toMatchObject({ openFindings: 3, criticalOpenFindings: 1, overdueCapa: 1 })
+    expect(hub.assets[0]).toMatchObject({
+      openFindings: 4, criticalOpenFindings: 1, openFindingsWithWorkOrder: 1, openFindingsWithoutWorkOrder: 3, overdueCapa: 1,
+    })
   })
 })

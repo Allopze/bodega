@@ -43,6 +43,7 @@ import {
 } from "@/lib/validation/driver-licenses"
 import type {
   DriverCandidate,
+  DriverLicenseAttention,
   DriverLicenseMutationResult,
   DriverRoster,
   DriverRosterRow,
@@ -339,6 +340,21 @@ async function loadRosterRow(client: Client, scope: WorksiteScope, workerId: str
 export async function getDriverRosterRow(session: Session, workerId: string): Promise<DriverRosterRow | null> {
   assertCanManageLicenses(session)
   return loadRosterRow(db, serviceWorksiteScope(session), workerId)
+}
+
+/**
+ * Conteo compacto para el Panel operacional. `null` sin `flota:manage_licenses`:
+ * la nómina de conductores no se expone a quien no la administra.
+ */
+export async function getDriverLicenseAttention(session: Session): Promise<DriverLicenseAttention | null> {
+  if (!canManageLicenses(session)) return null
+  const roster = await listDriverRoster(session)
+  return {
+    total: roster.rows.length,
+    expired: roster.rows.filter((row) => row.status === "vencida" || row.status === "sin_licencia" || row.status === "clase_insuficiente").length,
+    expiringSoon: roster.rows.filter((row) => row.status === "por_vencer").length,
+    warningDays: roster.warningDays,
+  }
 }
 
 /** Trabajadores activos del alcance sin licencia registrada, para «Registrar licencia». */

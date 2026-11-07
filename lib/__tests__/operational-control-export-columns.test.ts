@@ -20,6 +20,8 @@ const asset: OperationalAsset = {
   inspectionPartial: 1,
   openFindings: 2,
   criticalOpenFindings: 1,
+  openFindingsWithWorkOrder: 1,
+  openFindingsWithoutWorkOrder: 1,
   overdueCapa: 1,
   nextExpiryDate: "2026-12-31",
   expiredDocumentTypes: ["SOAP"],
@@ -36,6 +38,8 @@ const asset: OperationalAsset = {
   openAnomalyCases: 2,
   criticalOpenAnomalyCases: 1,
   fuelBilledAmount: 800000,
+  maintenanceCost: 50000,
+  totalCost: 850000,
   idleHours: 4.5,
   idlePct: 22.5,
   litersIdle: 180,
@@ -49,10 +53,11 @@ function keys(cols: ReturnType<typeof buildOperationalAssetExportColumns>) {
   return cols.map((c) => c.key)
 }
 
-const BASE = ["key", "kind", "code", "name", "worksite", "status"]
-const INSPECTION_KEYS = ["inspections", "inspectionCompliance", "openFindings", "criticalOpenFindings"]
-const FUEL_KEYS = ["fuelLiters", "fuelPerformance", "flaggedLoads", "openAnomalyCases", "idlePct", "litersIdle"]
-const WORK_ORDER_KEYS = ["openWorkOrders", "inWorkshop", "workshopHours"]
+// Sin «Contrato» (el `key` interno) ni «Clase» (la hoja sólo lleva vehículos).
+const BASE = ["code", "name", "worksite", "status"]
+const INSPECTION_KEYS = ["inspections", "inspectionCompliance", "openFindings", "criticalOpenFindings", "openFindingsWithWorkOrder", "openFindingsWithoutWorkOrder"]
+const FUEL_KEYS = ["fuelLiters", "fuelLoadCount", "lastFuelLoadAt", "fuelPerformance", "flaggedLoads", "openAnomalyCases", "criticalOpenAnomalyCases", "idlePct", "litersIdle"]
+const WORK_ORDER_KEYS = ["openWorkOrders", "inWorkshop", "workshopHours", "maintenanceCost"]
 const FLEET_KEYS = ["nextExpiryDate", "expiredDocuments", "gpsOdometer", "gpsHourMeter", "gpsObservedAt", "gpsFuelLevel", "meterMismatch"]
 
 describe("buildOperationalAssetExportColumns", () => {
@@ -64,7 +69,7 @@ describe("buildOperationalAssetExportColumns", () => {
 
   it("las columnas de OT sólo salen con la capacidad de OT, antes del costo de combustible", () => {
     expect(keys(buildOperationalAssetExportColumns(true, true, true, true, true, true))).toEqual([
-      ...BASE, ...FLEET_KEYS, ...FUEL_KEYS, ...INSPECTION_KEYS, "overdueCapa", ...WORK_ORDER_KEYS, "fuelCost",
+      ...BASE, ...FLEET_KEYS, ...FUEL_KEYS, ...INSPECTION_KEYS, "overdueCapa", ...WORK_ORDER_KEYS, "fuelCost", "totalCost",
     ])
     expect(keys(buildOperationalAssetExportColumns(false, false, false, false, false, true))).toEqual([...BASE, ...WORK_ORDER_KEYS])
   })
@@ -112,6 +117,12 @@ describe("buildOperationalAssetExportRow", () => {
     expect(row.status).toBe("En mantención")
   })
 
+  it("no exporta la clave interna ni una columna Clase constante", () => {
+    const row = buildOperationalAssetExportRow(asset, true, true)
+    expect(row).not.toHaveProperty("key")
+    expect(row).not.toHaveProperty("kind")
+  })
+
   it("omite claves de inspección y costo sin capacidad", () => {
     const row = buildOperationalAssetExportRow(asset, false, false)
     expect(row).not.toHaveProperty("inspections")
@@ -138,9 +149,12 @@ describe("buildOperationalAssetExportRow", () => {
     const row = buildOperationalAssetExportRow(asset, true, true, true)
     expect(row).toMatchObject({
       fuelLiters: 1200,
+      fuelLoadCount: 4,
+      lastFuelLoadAt: "2026-10-20T15:00:00.000Z",
       fuelPerformance: "12,5 km/L",
       flaggedLoads: 1,
       openAnomalyCases: 2,
+      criticalOpenAnomalyCases: 1,
       idlePct: 22.5,
       litersIdle: 180,
       fuelCost: 800000,
@@ -166,6 +180,8 @@ describe("buildOperationalAssetExportRow", () => {
       inspectionCompliance: 85,
       openFindings: 2,
       criticalOpenFindings: 1,
+      openFindingsWithWorkOrder: 1,
+      openFindingsWithoutWorkOrder: 1,
       overdueCapa: 1,
     })
   })
@@ -197,9 +213,12 @@ describe("buildOperationalAssetExportRow", () => {
 
   it("exporta OT abiertas, si está en taller y las horas del período con la capacidad de OT", () => {
     const row = buildOperationalAssetExportRow(asset, false, false, false, false, false, true)
-    expect(row).toMatchObject({ openWorkOrders: 2, inWorkshop: "Sí", workshopHours: 52.5 })
+    expect(row).toMatchObject({ openWorkOrders: 2, inWorkshop: "Sí", workshopHours: 52.5, maintenanceCost: 50000 })
     expect(buildOperationalAssetExportRow({ ...asset, inWorkshop: false, workshopHours: 0 }, false, false, false, false, false, true))
       .toMatchObject({ inWorkshop: "No", workshopHours: 0 })
+    // Sin permiso de combustible no hay total: sólo mantención.
+    expect(row).not.toHaveProperty("totalCost")
+    expect(buildOperationalAssetExportRow(asset, true, true, true, true, true, true)).toMatchObject({ totalCost: 850000 })
   })
 
   it("una consulta de OT que falló exporta vacío, no 0", () => {

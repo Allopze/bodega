@@ -35,6 +35,16 @@ export interface DriverRosterRow {
   missingClasses: DriverLicenseClass[]
 }
 
+export interface DriverLicenseAttention {
+  /** Trabajadores del alcance en la nómina (con o sin licencia registrada). */
+  total: number
+  /** Trabajadores con licencia vencida, sin licencia o sin la clase requerida. */
+  expired: number
+  /** Licencias que vencen dentro de la ventana configurada de Flota. */
+  expiringSoon: number
+  warningDays: number
+}
+
 export interface DriverRoster {
   rows: DriverRosterRow[]
   today: string

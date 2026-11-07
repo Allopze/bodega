@@ -1,11 +1,11 @@
 /**
- * Las **tres** consultas que la Fase 3 del dashboard necesita y que no existían.
+ * Consultas de dominio del Tablero que no existían como servicio propio.
  *
  * Todo el resto de las secciones por dominio consume funciones ya escritas
  * (`getCapaDashboardCounts`, `getDashboardCounters`, `getAnalyticsDashboard`…).
- * Estas tres son `count`/`sum` sobre columnas que ya están en el esquema.
+ * Estas son `count`/`sum` sobre columnas que ya están en el esquema.
  */
-import { and, count, eq, gte, inArray, isNotNull, lt, lte, ne, sql } from "drizzle-orm"
+import { and, count, eq, gte, inArray, isNotNull, lt, ne, sql } from "drizzle-orm"
 import type { Session } from "next-auth"
 import { db } from "@/db"
 import {
@@ -17,6 +17,7 @@ import {
   preventionInspectionRuns, preventionWorkPermits,
 } from "@/db/schema"
 import { worksiteScopeSql } from "@/lib/auth/scope"
+import { resolveNextExpiryDate } from "@/lib/validation/fleet-documents"
 
 export interface ReceptionQuality {
   received: number
@@ -104,53 +105,77 @@ export async function getOverdueFuelDebt(today: string): Promise<OverdueFuelDebt
   return { amount: Number(row?.amount ?? 0), statements: Number(row?.statements ?? 0) }
 }
 
-export interface ExpiringFleetDocuments {
+export interface FleetDashboardSnapshot {
+  /** Vehículos activos del alcance: el tile «Vehículos activos». */
+  activeVehicles: number
+  /** Equipos activos cuyo próximo vencimiento cae dentro del horizonte. */
   within30: number
+  /** Equipos activos con algún vencimiento anterior a hoy. */
   expired: number
 }
 
 /**
- * Documentos de flota por vencer y ya vencidos.
+ * Snapshot liviano de Flota para el Tablero: activos y vencimientos por equipo.
  *
- * Un vehículo sin revisión técnica vigente no puede circular, así que esto es
- * un bloqueo operacional con fecha conocida y nadie lo estaba mirando desde el
- * tablero. El alcance sale del vehículo, que sí tiene faena.
+ * Reemplaza a `getFleetOverview`, que cargaba transacciones del proveedor, la
+ * serie de medidores de 12 meses, casos de anomalía y reglas para terminar
+ * usando sólo `isActive`. El criterio de vencimiento es el de Flota y el Panel
+ * (`resolveNextExpiryDate`: columna declarada + documento vigente del mismo
+ * tipo), no el de filas de `fleet_vehicle_documents`.
  */
-export async function getExpiringFleetDocuments(
+export async function getFleetDashboardSnapshot(
   session: Session,
   today: string,
   horizon: string,
   worksiteId?: string,
-): Promise<ExpiringFleetDocuments> {
+): Promise<FleetDashboardSnapshot> {
   const scope = worksiteScopeSql(session, fuelVehicles.worksiteId, worksiteId)
-
-  const [row] = await db
-    .select({
-      within30: sql<number>`COUNT(*) FILTER (WHERE ${fleetVehicleDocuments.expiresAt} >= ${today} AND ${fleetVehicleDocuments.expiresAt} <= ${horizon})::int`,
-      expired: sql<number>`COUNT(*) FILTER (WHERE ${fleetVehicleDocuments.expiresAt} < ${today})::int`,
+  const [vehicles, documents] = await Promise.all([
+    db.select({
+      id: fuelVehicles.id,
+      soapExpiresAt: fuelVehicles.soapExpiresAt,
+      technicalReviewExpiresAt: fuelVehicles.technicalReviewExpiresAt,
+      circulationPermitExpiresAt: fuelVehicles.circulationPermitExpiresAt,
+      insuranceExpiresAt: fuelVehicles.insuranceExpiresAt,
+    }).from(fuelVehicles).where(and(scope, eq(fuelVehicles.isActive, true))),
+    db.select({
+      vehicleId: fleetVehicleDocuments.vehicleId,
+      documentType: fleetVehicleDocuments.documentType,
+      expiresAt: fleetVehicleDocuments.expiresAt,
     })
-    .from(fleetVehicleDocuments)
-    .innerJoin(fuelVehicles, eq(fleetVehicleDocuments.vehicleId, fuelVehicles.id))
-    // Sólo la versión vigente de cada tipo. Sin este filtro el KPI contaba
-    // también las reemplazadas —subir la póliza nueva no sacaba al equipo del
-    // atraso, seguía midiéndose contra la del año pasado, que es el mismo
-    // defecto que el resto del módulo ya había corregido— y desde FLO-003
-    // habría contado además las anuladas.
-    .where(and(
-      scope,
-      eq(fleetVehicleDocuments.status, "current"),
-      // FLO-001: y sólo los vehículos que siguen en la flota. La revisión
-      // técnica vencida de una camioneta dada de baja no es un bloqueo
-      // operacional: es un documento de un vehículo que ya no circula, y
-      // engordaba para siempre el indicador que la dirección mira.
-      eq(fuelVehicles.isActive, true),
-      isNotNull(fleetVehicleDocuments.expiresAt),
-      lte(fleetVehicleDocuments.expiresAt, horizon),
-    ))
+      .from(fleetVehicleDocuments)
+      .innerJoin(fuelVehicles, eq(fleetVehicleDocuments.vehicleId, fuelVehicles.id))
+      .where(and(
+        scope,
+        eq(fleetVehicleDocuments.status, "current"),
+        isNotNull(fleetVehicleDocuments.expiresAt),
+        eq(fuelVehicles.isActive, true),
+      )),
+  ])
 
-  return { within30: Number(row?.within30 ?? 0), expired: Number(row?.expired ?? 0) }
+  const documentsByVehicle = new Map<string, Array<{ documentType: string; expiresAt: string | null }>>()
+  for (const document of documents) {
+    const list = documentsByVehicle.get(document.vehicleId)
+    if (list) list.push({ documentType: document.documentType, expiresAt: document.expiresAt })
+    else documentsByVehicle.set(document.vehicleId, [{ documentType: document.documentType, expiresAt: document.expiresAt }])
+  }
+
+  let within30 = 0
+  let expired = 0
+  for (const vehicle of vehicles) {
+    const next = resolveNextExpiryDate({
+      soapExpiresAt: vehicle.soapExpiresAt,
+      technicalReviewExpiresAt: vehicle.technicalReviewExpiresAt,
+      circulationPermitExpiresAt: vehicle.circulationPermitExpiresAt,
+      insuranceExpiresAt: vehicle.insuranceExpiresAt,
+    }, documentsByVehicle.get(vehicle.id) ?? [])
+    if (!next) continue
+    if (next < today) expired++
+    else if (next <= horizon) within30++
+  }
+
+  return { activeVehicles: vehicles.length, within30, expired }
 }
-
 
 export interface FieldControlSummary {
   /** Promedio de `compliancePercent` de las inspecciones revisadas. */

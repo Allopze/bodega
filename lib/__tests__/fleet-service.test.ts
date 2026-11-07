@@ -109,6 +109,8 @@ describe("getFleetOverview", () => {
         performanceUnit: "km_per_liter",
         worksite: { name: "Faena Uno" },
         responsibleUser: { name: "Jefe Mantención", email: "mantencion@chome.cl" },
+        // La ficha dice «operativo», pero el intervalo abierto es «mantención».
+        operationalIntervals: [{ status: "mantencion" }],
       },
     ])
     // Orden real: combustible, lecturas de medidor, regla de salto, documentos.
@@ -131,12 +133,16 @@ describe("getFleetOverview", () => {
     expect(vehicle).not.toHaveProperty("totalOperationalCost")
     expect(vehicle.responsibleName).toBe("Jefe Mantención")
     expect(vehicle.operationalStatus).toBe("operativo")
+    expect(vehicle.stateMismatch).toBe(true)
     expect(vehicle.nextExpiryDate).toBe("2026-07-20")
     // El tipo del documento al que pertenece esa fecha (el seguro es el que vence antes) y el código del equipo.
     expect(vehicle.nextExpiryDocumentType).toBe("Seguro")
     expect(vehicle.code).toBe("KA-90")
     // Las lecturas salen de `fuel_meter_readings` (Copec), no de `fuel_loads`.
     expect(vehicle).toMatchObject({ lastOdometerReading: 12_500, lastHourMeterReading: null, kmDriven: 2_500, hoursRun: null, meterSeriesIncomplete: false })
+    // El cruce que faltaba: 100.000 de gasto del proveedor ÷ 2.500 km.
+    expect(vehicle.fuelCostPerUnit).toBe(40)
+    expect(vehicle.fuelCostPerUnitLabel).toBe("CLP/km")
     // La imputación de costos fue retirada: no debe existir ese campo.
     expect("totalAllocatedAmount" in vehicle).toBe(false)
     expect("allocationCount" in vehicle).toBe(false)

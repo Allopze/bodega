@@ -7,9 +7,8 @@ import { DegradedDataBanner } from "@/components/ui/degraded-data-banner"
 import { logger } from "@/lib/logger"
 import { getFuelControlOverview } from "@/lib/combustibles/fuel-control-overview"
 import { getOperationalCalendarBounds } from "@/lib/services/operational-period-metrics"
-import { getExpiringFleetDocuments } from "@/lib/services/dashboard-domains-data"
 import { getFuelMonthlyTrend } from "@/lib/services/dashboard-fuel"
-import { getFleetOverview } from "@/lib/services/fleet"
+import { getFleetDashboardSnapshot } from "@/lib/services/dashboard-domains-data"
 import { getWorkOrderGlobalMetrics, workOrderMetricsScope } from "@/lib/services/mantencion/work-orders/metrics"
 import { canViewOperationalControl, operationalControlCapabilities } from "@/lib/operational-control/capabilities"
 import { countPendingFuelCreditNotes } from "@/lib/services/dte-portal/reconciliation"
@@ -59,11 +58,11 @@ export async function FleetSection({ session, scope }: DomainSectionsProps) {
     ? await readDtePortalConfig().then((config) => config.credentials.codEmp || null).catch(() => null)
     : null
 
-  // De las 7 consultas de abajo, 4 tenían `.catch()` silencioso (sin log) y 3
-  // no tenían NADA — si cualquiera de esas 3 revienta, el `Promise.all`
-  // completo rechaza y tumba la sección entera vía Suspense/error boundary
-  // (CO-037). `track()` unifica las 7: loguea server-side y marca la fuente
-  // como degradada para que la UI no confunda "vacío real" con "falló".
+  // De las 5 consultas de abajo, varias tenían `.catch()` silencioso (sin log)
+  // y otras no tenían NADA — si cualquiera revienta, el `Promise.all` completo
+  // rechaza y tumba la sección entera vía Suspense/error boundary (CO-037).
+  // `track()` las unifica: loguea server-side y marca la fuente como degradada
+  // para que la UI no confunda "vacío real" con "falló".
   const degradedSources: string[] = []
   let trackedCount = 0
   function track<T>(promise: Promise<T>, fallback: T, label: string): Promise<T> {
@@ -78,14 +77,17 @@ export async function FleetSection({ session, scope }: DomainSectionsProps) {
   // 6 meses fijos para las dos tendencias — no depende de `scope.period`
   // (CO-038): ambos gráficos rotulan la ventana con este mismo número.
   const TREND_MONTHS = 6
-  const [fuelControl, fuelTrend, docs, fleet, pendingFuelCreditNotes, workOrders] = await Promise.all([
+  // Snapshot liviano: activos + vencimientos por equipo. Antes se cargaba
+  // `getFleetOverview` completo (transacciones, series de medidor, anomalías y
+  // reglas) para terminar contando sólo `isActive`.
+  const emptyFleetSnapshot = { activeVehicles: 0, within30: 0, expired: 0 }
+  const [fuelControl, fuelTrend, fleetSnapshot, pendingFuelCreditNotes, workOrders] = await Promise.all([
     canViewFuel ? track(getFuelControlOverview(session, {
       includeTae: canViewTae,
       filters: { fromDate: bounds.currentStart.slice(0, 10), toDate: bounds.currentEnd.slice(0, 10), ...(worksiteId ? { worksiteId } : {}) },
     }), null, "fuelControl") : Promise.resolve(null),
     canViewFuel ? track(getFuelMonthlyTrend(session, TREND_MONTHS, worksiteId), [], "fuelTrend") : Promise.resolve([]),
-    canViewFleet ? track(getExpiringFleetDocuments(session, today, plusDays(today, 30), worksiteId), { within30: 0, expired: 0 }, "expiringDocs") : Promise.resolve({ within30: 0, expired: 0 }),
-    canViewFleet ? track(getFleetOverview(session, worksiteId), [], "fleetOverview") : Promise.resolve([]),
+    canViewFleet ? track(getFleetDashboardSnapshot(session, today, plusDays(today, 30), worksiteId), emptyFleetSnapshot, "fleetSnapshot") : Promise.resolve(emptyFleetSnapshot),
     // Notas de crédito de combustible sin aplicar (rutEmisor de fuelSuppliers,
     // por empresa/período tributario — no por faena, igual que la deuda arriba).
     // "Mes calendario actual", no `scope.period` — ver el rótulo en el summary.
@@ -101,7 +103,10 @@ export async function FleetSection({ session, scope }: DomainSectionsProps) {
    * la fuente falló, el cero no es un dato y el banner de degradación ya lo
    * avisa, así que ahí se conserva la cifra.
    */
-  const activeVehicles = fleet.filter((vehicle) => vehicle.isActive).length
+  const activeVehicles = fleetSnapshot.activeVehicles
+  // El servicio cuenta equipos (no filas de documento) con el mismo criterio
+  // que Flota y el Panel: columna declarada + documento vigente del mismo tipo.
+  const docs = { within30: fleetSnapshot.within30, expired: fleetSnapshot.expired }
   const totalLiters = Math.round(fuelTrend.reduce((sum, point) => sum + (point.liters ?? 0), 0))
   // Meses sin datos del proveedor (C-4): no suman, y el aviso de cobertura de la sección los nombra (una sola vez:
   // ni este tile ni el gráfico lo repiten). La suma incluye el mes en curso a la fecha: «6 meses» sin ese aviso se
@@ -135,7 +140,7 @@ export async function FleetSection({ session, scope }: DomainSectionsProps) {
           <>
             {canViewFleet && <KpiCard {...DASHBOARD_KPI} icon={<Truck size={16} />} label="Vehículos activos" value={String(activeVehicles)}
               detail="En catálogo operativo · ahora" href="/flota"
-              empty={activeVehicles === 0 && !degradedSources.includes("fleetOverview")
+              empty={activeVehicles === 0 && !degradedSources.includes("fleetSnapshot")
                 ? { message: "Aún no hay vehículos activos", actionLabel: canRegisterVehicles ? "Registrar un vehículo" : "Ver vehículos" }
                 : undefined} />}
             {/* Antes decía "Litros del período" con un valor que en realidad sale
@@ -160,9 +165,16 @@ export async function FleetSection({ session, scope }: DomainSectionsProps) {
                 : "No se pudo calcular"}
               tone={workOrders && (workOrders.unassignedOpen > 0 || workOrders.estimateOverdue > 0) ? "signal" : "neutral"}
               href="/mantencion/ot?estado=abiertas" />}
-            {canViewFleet && <KpiCard {...DASHBOARD_KPI} icon={<Certificate size={16} />} label="Documentos por vencer" value={String(docs.within30)}
+            {canViewFleet && <KpiCard {...DASHBOARD_KPI} icon={<Certificate size={16} />} label="Equipos por vencer" value={String(docs.within30)}
               detail={docs.expired > 0 ? `${docs.expired} ya vencido(s) · próximos 30 días` : "Próximos 30 días"}
-              tone={docs.within30 + docs.expired > 0 ? "signal" : "neutral"} href="/flota" />}
+              tone={docs.within30 + docs.expired > 0 ? "signal" : "neutral"}
+              // La lista abre el subconjunto que cuenta la cifra: próximos si hay
+              // próximos; si no, los vencidos que muestra el detalle.
+              href={docs.within30 > 0
+                ? "/flota?vencimiento=proximos"
+                : docs.expired > 0
+                  ? "/flota?vencimiento=vencidos"
+                  : "/flota?vencimiento=al-dia"} />}
           </>
         }
         summary={<SummaryBar numerals="sans" stats={[

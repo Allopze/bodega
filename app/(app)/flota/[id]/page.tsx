@@ -48,6 +48,11 @@ export default async function FlotaVehiclePage({
     },
     detail.documents.filter((document) => document.status === "current"),
   ).map((entry) => [entry.documentType, entry]))
+  // El próximo vencimiento puede ser de un tipo sin columna canónica (Padrón,
+  // Certificado de emisiones): la cabecera lo nombra para que no aparezca una
+  // fecha que la tarjeta de Vencimientos no explique.
+  const nextExpiry = [...expiring.values()]
+    .sort((a, b) => a.expiresAt.localeCompare(b.expiresAt) || a.documentType.localeCompare(b.documentType))[0]
   const expiryRows = VEHICLE_EXPIRY_FIELDS.map((field) => {
     const label = CANONICAL_FIELD_LABEL[field]
     const entry = expiring.get(label)
@@ -97,7 +102,10 @@ export default async function FlotaVehiclePage({
             <Fact label="Proveedor habitual" value={vehicle.usualFuelSupplier?.name ?? "No asignado"} />
             <Fact label="Responsable" value={vehicle.responsibleUser?.name ?? vehicle.responsibleUser?.email ?? "—"} />
             <Fact label="Estado" value={<MetaBadge meta={{ label: `${formatFuelVehicleStatus(vehicle.operationalStatus)}`, variant: vehicle.operationalStatus === "operativo" ? "success" : "outline" }} />} />
-            <Fact label="Próximo vencimiento" value={detail.nextExpiryDate ? formatDate(detail.nextExpiryDate) : "—"} />
+            <Fact
+              label="Próximo vencimiento"
+              value={nextExpiry ? `${nextExpiry.documentType} · ${formatDate(nextExpiry.expiresAt)}` : "—"}
+            />
           </CardContent>
         </Card>
 
@@ -125,16 +133,37 @@ export default async function FlotaVehiclePage({
         </Card>
       </div>
 
-      {(detail.currentReading || detail.topOperators.length > 0) && (
+      {(detail.currentReading || detail.providerReading || detail.topOperators.length > 0) && (
         <Card>
           <CardHeader><CardTitle as="h2" className="text-base">Uso operacional</CardTitle></CardHeader>
           <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-3 text-sm">
               <Fact label="Código interno" value={vehicle.code ?? "—"} />
-              {detail.currentReading ? (
+              {detail.providerReading ? (
                 <>
                   <Fact
-                    label="Última lectura"
+                    label="Última lectura del proveedor (Copec)"
+                    value={
+                      detail.providerReading.odometer != null
+                        ? `${detail.providerReading.odometer.toLocaleString("es-CL")} km`
+                        : detail.providerReading.hourMeter != null
+                          ? `${detail.providerReading.hourMeter.toLocaleString("es-CL")} h`
+                          : "—"
+                    }
+                  />
+                  <Fact label="Fecha de lectura del proveedor" value={formatDateTime(detail.providerReading.occurredAt)} />
+                </>
+              ) : (
+                <Fact label="Última lectura del proveedor (Copec)" value="Sin lecturas" />
+              )}
+              {detail.currentReading ? (
+                <>
+                  {/* La lista de Vehículos usa la lectura del proveedor
+                      (Copec); ésta es la del log operacional de cargas. Misma
+                      etiqueta sin aclarar la fuente hacía que dos pantallas
+                      mostraran cifras distintas del mismo equipo. */}
+                  <Fact
+                    label="Última lectura (log de cargas)"
                     value={
                       detail.currentReading.horometro != null
                         ? `${detail.currentReading.horometro} ${detail.currentReading.medidoPor === "hora" ? "hr" : detail.currentReading.medidoPor === "km" ? "km" : ""}`.trim()

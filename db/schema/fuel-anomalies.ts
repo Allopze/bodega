@@ -15,6 +15,8 @@ export const fuelAnomalyRules = pgTable("fuel_anomaly_rules", {
   isActive:       boolean("is_active").notNull().default(true),
   /** JSON con parámetros específicos de la regla (umbral, ventana, etc.). */
   config:         text("config").$default(() => "{}"),
+  /** Última clave de paginación procesada (keyset durable); null = empezar de nuevo. */
+  cursor:         text("cursor"),
   createdBy:      text("created_by").references(() => users.id),
   createdAt:      timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:      timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
@@ -77,6 +79,10 @@ export const fuelAnomalyExecutions = pgTable("fuel_anomaly_executions", {
   casesCreated:   integer("cases_created").notNull().default(0),
   casesSkipped:   integer("cases_skipped").notNull().default(0),
   totalScanned:   integer("total_scanned").notNull().default(0),
+  /** El tope de escaneo dejó filas fuera: la corrida no cubrió todo el universo. */
+  truncated:      boolean("truncated").notNull().default(false),
+  /** Casos que no se pudieron crear (distinto de un duplicado omitido). */
+  casesFailed:    integer("cases_failed").notNull().default(0),
   status:         text("status").notNull().default("running"),
   error:          text("error"),
 }, (table) => [

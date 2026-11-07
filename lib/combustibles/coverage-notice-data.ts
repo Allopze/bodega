@@ -1,7 +1,7 @@
 import type { Session } from "next-auth"
-import { and, sql } from "drizzle-orm"
+import { and, eq, sql } from "drizzle-orm"
 import { db } from "@/db"
-import { fuelProviderTransactions } from "@/db/schema"
+import { fuelProviderTransactions, fuelVehicles } from "@/db/schema"
 import { can } from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import { monthsWithoutProviderData } from "@/lib/combustibles/copec-coverage"
@@ -46,6 +46,12 @@ export async function getFuelProviderCoverageGaps(
      * no puede darse por respaldado con filas anteriores a la ventana.
      */
     fromDate?: string
+    /**
+     * Flota: la cobertura sigue al EQUIPO, no al `worksite_id` histórico de la
+     * transacción. Los gráficos de combustible conservan el criterio de la
+     * transacción (su unidad es la faena del gasto).
+     */
+    byVehicleWorksite?: boolean
   } = {},
 ): Promise<FuelCoverageGaps> {
   const months = [...new Set(monthKeys)].sort()
@@ -53,16 +59,23 @@ export async function getFuelProviderCoverageGaps(
 
   const t = fuelProviderTransactions
   const monthSql = sql<string>`left(${t.occurredAt}, 7)`
-  const [monthsWithRows, coverage] = await Promise.all([
-    db.select({ month: monthSql })
-      .from(t)
+  const rowsQuery = (async () => {
+    const base = options.byVehicleWorksite
+      ? db.select({ month: monthSql }).from(t).innerJoin(fuelVehicles, eq(t.vehicleId, fuelVehicles.id))
+      : db.select({ month: monthSql }).from(t)
+    return base
       .where(and(
         accountableProviderTransactionsWhere(),
         sql`${monthSql} >= ${months[0]!} and ${monthSql} <= ${months[months.length - 1]!}`,
         options.fromDate ? sql`left(${t.occurredAt}, 10) >= ${options.fromDate}` : undefined,
-        worksiteScopeSql(session, t.worksiteId, options.worksiteId),
+        options.byVehicleWorksite
+          ? worksiteScopeSql(session, fuelVehicles.worksiteId, options.worksiteId)
+          : worksiteScopeSql(session, t.worksiteId, options.worksiteId),
       ))
-      .groupBy(monthSql),
+      .groupBy(monthSql)
+  })()
+  const [monthsWithRows, coverage] = await Promise.all([
+    rowsQuery,
     listCopecPeriodCoverage(`${months[0]}-01`, `${months[months.length - 1]}-01`),
   ])
 

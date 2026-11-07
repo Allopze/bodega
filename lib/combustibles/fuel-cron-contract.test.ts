@@ -1,5 +1,25 @@
 import { describe, expect, it } from "vitest"
-import { fuelCronContractFor } from "./fuel-cron-contract"
+import { fuelCronContractFor, isAnomalyBatchDegraded } from "./fuel-cron-contract"
+
+describe("isAnomalyBatchDegraded", () => {
+  it("una corrida completa no degrada", () => {
+    expect(isAnomalyBatchDegraded([{ truncated: false, failed: 0 }, { truncated: false }])).toBe(false)
+  })
+
+  it("un tope de escaneo que dejó filas fuera degrada la corrida", () => {
+    expect(isAnomalyBatchDegraded([{ truncated: true }])).toBe(true)
+  })
+
+  it("un caso que no se pudo crear degrada la corrida", () => {
+    expect(isAnomalyBatchDegraded([{ failed: 1 }])).toBe(true)
+  })
+
+  it("el contrato responde partial/503 cuando la corrida está degradada", () => {
+    expect(fuelCronContractFor({ degraded: true })).toMatchObject({
+      outcome: "partial", ok: false, httpStatus: 503, health: "degraded",
+    })
+  })
+})
 
 describe("fuelCronContractFor", () => {
   it("succeeds when nothing failed", () => {

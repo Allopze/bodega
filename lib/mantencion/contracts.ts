@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { civilDate } from "@/lib/validation/dates"
 import type { MantEquipmentState, MantExecutorKind, MantItemValue, MantPhotoKind, MantRecordKind, MantReview, MantRecordStatus, MantScheduleSnapshot, MantUnit } from "./types"
 import type { OtItemDone, OtItemKind, OtItemOrigin, OtStatus } from "./work-order-states"
 
@@ -14,7 +15,9 @@ import type { OtItemDone, OtItemKind, OtItemOrigin, OtStatus } from "./work-orde
  */
 
 const uuid = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, "Identificador inválido")
-const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha inválida")
+// `civilDate` valida que la fecha exista de verdad: la regex sola deja pasar
+// `2026-02-31`, que se guarda como texto y revienta el `::date` del panel.
+const isoDate = civilDate("Fecha inválida")
 const isoDateTime = z.string().datetime({ offset: true })
 const id = z.string().min(1).max(64)
 

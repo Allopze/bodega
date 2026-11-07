@@ -18,6 +18,7 @@ export function otDetail(overrides: Partial<WorkOrderDetail> = {}): WorkOrderDet
     unit: "km",
     repairDescription: "Pierde aceite por el cárter y hace ruido al frenar.",
     observations: "Equipo crítico para la faena.",
+    totalCost: null,
     requestedByUserId: "u-adm",
     requestedByName: "Ana Pérez",
     assignedByName: "Alexis Soto",

@@ -248,6 +248,39 @@ describe("consumo_durante_inactividad (batch — consumption while inactive)", (
     expect(cases.length).toBeGreaterThan(0)
   })
 
+  it("crea un caso cuando la carga viene del libro del proveedor (tarjeta/TCT)", async () => {
+    const vehId3 = nanoid()
+    const runId = nanoid()
+    await inMemoryDb.insert(schema.fuelVehicles).values({
+      id: vehId3, plate: `PROV${nanoid().slice(0, 4).toUpperCase()}`, type: "camion",
+      equipmentTypeId: eqTypeId, worksiteId: wsId, isActive: true,
+      operationalStatus: "mantencion",
+    })
+    await inMemoryDb.insert(schema.fuelVehicleOperationalIntervals).values({
+      id: nanoid(), vehicleId: vehId3, status: "mantencion",
+      startedAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+      reason: "Fixture de prueba",
+    })
+    await inMemoryDb.insert(schema.fuelProviderSyncRuns).values({
+      id: runId, provider: "copec", requestedFrom: "2026-01-01", requestedTo: "2026-12-31",
+      correlationId: nanoid(),
+    })
+    await inMemoryDb.insert(schema.fuelProviderTransactions).values({
+      id: nanoid(), syncRunId: runId, provider: "copec", sourceAccount: "tct:diesel",
+      identityKey: nanoid(), fingerprint: nanoid(), sourceRowKey: nanoid(), payloadHash: nanoid(),
+      worksiteId: wsId, vehicleId: vehId3, sourcePlate: "PROV",
+      occurredAt: new Date().toISOString(), quantity: 10, amount: 1000,
+      status: "accepted", granularity: "transaction",
+    })
+
+    await runAllBatchRules()
+
+    const { cases } = await getAnomalyCases({ ruleCode: "consumo_durante_inactividad" }, TEST_SESSION)
+    // Antes la regla sólo miraba `fuel_tae_submissions`: esta carga de tarjeta
+    // dejaba al equipo detenido sin caso.
+    expect(cases.some((c) => c.vehicleId === vehId3)).toBe(true)
+  })
+
   it("NO crea caso si la carga es anterior al intervalo de inactividad vigente", async () => {
     const vehId2 = nanoid()
     await inMemoryDb.insert(schema.fuelVehicles).values({

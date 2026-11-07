@@ -18,6 +18,8 @@ describe("destinos de los tiles", () => {
       stopped: "/flota?estado=detenidos",
       workOrders: "/mantencion/ot?estado=abiertas",
       documents: "/flota?vencimiento=vencidos",
+      documentsSoon: "/flota?vencimiento=proximos",
+      documentsOk: "/flota?vencimiento=al-dia",
       fuel: "/combustibles/revisar",
     })
   })
@@ -121,12 +123,18 @@ describe("documentsTile", () => {
       .toBe("Equipos con documentos vencidos · ninguno por vencer en 45 días")
   })
 
-  it("sin vencidos pero con por vencer, el detalle lo advierte", () => {
+  it("sin vencidos pero con por vencer, el detalle lo advierte y el enlace va a «próximos»", () => {
     expect(documentsTile({ expired: 0, expiringSoon: 1, warningDays: 30 })).toMatchObject({
       value: "Ninguno",
       detail: "1 equipo por vencer en 30 días",
       tone: "neutral",
+      href: "/flota?vencimiento=proximos",
     })
+  })
+
+  it("con vencidos enlaza a «vencidos»; sin nada, a «al día»", () => {
+    expect(documentsTile({ expired: 2, expiringSoon: 1, warningDays: 30 }).href).toBe("/flota?vencimiento=vencidos")
+    expect(documentsTile({ expired: 0, expiringSoon: 0, warningDays: 30 }).href).toBe("/flota?vencimiento=al-dia")
   })
 
   it("sin nada vencido ni por vencer, el estado bueno", () => {

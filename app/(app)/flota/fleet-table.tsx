@@ -17,6 +17,13 @@ import { Button } from "@/components/ui/button"
 
 type VehicleRow = Awaited<ReturnType<typeof getFleetOverview>>[number]
 
+/** Gasto del proveedor por km o por hora, con un decimal: no es un monto CLP entero. */
+function formatUnitCost(value: number | null, label: string | null): string {
+  if (value == null || label == null) return "—"
+  const unit = label === "CLP/km" ? "km" : "h"
+  return `$${value.toLocaleString("es-CL", { maximumFractionDigits: 1 })}/${unit}`
+}
+
 /**
  * «Próximo vencimiento»: el documento, su estado y cuánto falta, no solo una fecha. Sin ninguna fecha
  * registrada dice lo que falta con texto apagado y sin pastilla: con pastilla, una flota recién cargada
@@ -55,6 +62,9 @@ export function FleetTable({ vehicles, hasAnyVehicle, canViewCosts, canViewFuel,
     { key: "responsibleName", label: "Responsable", sortable: true },
     { key: "nextExpiryDate", label: "Próximo vencimiento", sortable: true },
     ...(canViewCosts && canViewFuel ? [{ key: "totalFuelAmount", label: "Combustible", sortable: true, numeric: true }] : []),
+    // Ratio de dos unidades distintas (CLP/km y CLP/h): ordenarlo por el número
+    // crudo compararía magnitudes que no lo son.
+    ...(canViewCosts && canViewFuel ? [{ key: "fuelCostPerUnit", label: "Costo por km/h", sortable: false, numeric: true }] : []),
     ...(showWorkOrders ? [{ key: "openWorkOrders", label: "OT abiertas", sortable: true, numeric: true }] : []),
     ...(showMeterReading ? [{ key: "_meterReading", label: "Km/Hr", sortable: false, numeric: true }] : []),
   ], [canViewCosts, canViewFuel, showWorkOrders, showMeterReading])
@@ -85,6 +95,9 @@ export function FleetTable({ vehicles, hasAnyVehicle, canViewCosts, canViewFuel,
             <div><dt className="text-[var(--color-text-subtle)]">Faena</dt><dd>{vehicle.worksiteName}</dd></div>
             <div><dt className="text-[var(--color-text-subtle)]">Responsable</dt><dd>{vehicle.responsibleName ?? "—"}</dd></div>
             <div className="col-span-2"><dt className="text-[var(--color-text-subtle)]">Próximo vencimiento</dt><dd className="mt-0.5"><NextExpiry vehicle={vehicle} today={today} warningDays={warningDays} /></dd></div>
+            {canViewCosts && canViewFuel && (
+              <div><dt className="text-[var(--color-text-subtle)]">Costo por km/h</dt><dd className="font-mono">{formatUnitCost(vehicle.fuelCostPerUnit, vehicle.fuelCostPerUnitLabel)}</dd></div>
+            )}
             {vehicle.openWorkOrders != null && <div><dt className="text-[var(--color-text-subtle)]">OT abiertas</dt><dd>{vehicle.openWorkOrders}{vehicle.inWorkshopNow ? " · en taller" : ""}</dd></div>}
             {/* P-9: la misma celda que la columna «Km/Hr» de la tabla (valor y aviso de lectura objetada), con la misma condición de columna. */}
             {showMeterReading && <div><dt className="text-[var(--color-text-subtle)]">Km/Hr</dt><dd className="font-mono"><FleetMeterReading vehicle={vehicle} /></dd></div>}
@@ -110,6 +123,14 @@ export function FleetTable({ vehicles, hasAnyVehicle, canViewCosts, canViewFuel,
             <TableCell>{vehicle.responsibleName ?? "—"}</TableCell>
             <TableCell><NextExpiry vehicle={vehicle} today={today} warningDays={warningDays} /></TableCell>
             {canViewCosts && canViewFuel && <TableCell className="text-right font-mono">{formatCLP(vehicle.totalFuelAmount ?? 0)}</TableCell>}
+            {canViewCosts && canViewFuel && (
+              <TableCell
+                className="text-right font-mono"
+                title={vehicle.meterSeriesIncomplete ? "El recorrido es una cota inferior: parte de la serie se descartó por lecturas inválidas." : undefined}
+              >
+                {formatUnitCost(vehicle.fuelCostPerUnit, vehicle.fuelCostPerUnitLabel)}
+              </TableCell>
+            )}
             {showWorkOrders && <TableCell className="text-right font-mono">
               {vehicle.openWorkOrders ?? 0}
               {vehicle.inWorkshopNow && <span className="ml-1 font-sans text-xs text-[var(--color-warning-ink)]">en taller</span>}

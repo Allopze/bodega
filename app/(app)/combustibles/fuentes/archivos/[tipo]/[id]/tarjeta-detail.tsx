@@ -11,6 +11,7 @@ import { PageHeader } from "@/components/ui/page-header"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import { FuelBreadcrumbs } from "@/components/combustibles/fuel-breadcrumbs"
 import { FuelHeaderActions } from "@/components/combustibles/fuel-header-actions"
+import { getConsumptionImportRejections, getImportRejectionAccess } from "@/lib/combustibles/consumption-import-rejections"
 import { buildFuelVehiclesWhere } from "@/lib/combustibles/queries"
 import { FUEL_PATHS } from "@/lib/combustibles/routes"
 import { formatCLP, formatDate, formatDateTime, formatQty } from "@/lib/utils"
@@ -37,6 +38,10 @@ export async function TarjetaDetail({ session, id }: { session: Session; id: str
   if (!canAccessWorksite(session, batch.worksiteId)) redirect("/forbidden")
 
   const showCosts = canSeeFuelCosts(session)
+  // Ledger de rechazos de la importación completa: `filasInvalidas` es por lote
+  // y en modo «todas las faenas» vale 0 porque el rechazo no tiene faena.
+  const rejectionAccess = await getImportRejectionAccess(session, batch.hashArchivo)
+  const rejections = rejectionAccess.visible ? await getConsumptionImportRejections(batch.hashArchivo) : []
   const unlinkedPlates = [...new Set(batch.records.filter((record) => !record.vehicle).map((record) => record.patente))].sort()
   const canLinkVehicles = can(session, "combustibles:manage_vehicles")
   const canRevert = can(session, "combustibles:revert") && batch.estado !== "revertido"
@@ -64,7 +69,7 @@ export async function TarjetaDetail({ session, id }: { session: Session; id: str
           { label: "Faena", value: batch.worksite?.name },
           { label: "De dónde", value: cardSourceLabel(batch.fuente) },
           { label: "Filas válidas", value: formatQty(batch.filasValidas), mono: true },
-          { label: "Filas rechazadas", value: formatQty(batch.filasInvalidas), mono: true },
+          { label: "Filas rechazadas", value: rejectionAccess.visible ? formatQty(rejections.length) : "—", mono: true },
           { label: "Patentes", value: formatQty(batch.totalPatentes), mono: true },
           { label: "Litros", value: formatQty(Math.round(batch.totalCantidad), "L"), mono: true },
           ...(showCosts ? [{ label: "Monto", value: formatCLP(batch.totalMonto), mono: true }] : []),
@@ -88,6 +93,42 @@ export async function TarjetaDetail({ session, id }: { session: Session; id: str
           </ul>
         </Section>
       ) : null}
+
+      {rejectionAccess.multiWorksite && !rejectionAccess.visible && (
+        <p className="text-sm text-[var(--color-text-muted)]">
+          Esta importación cubrió varias faenas. Los rechazos del archivo los revisa un administrador global.
+        </p>
+      )}
+
+      {rejections.length > 0 && (
+        <Section
+          title={`Filas rechazadas (${rejections.length})`}
+          description="Filas del archivo que no se importaron: patentes sin vehículo, colisiones de catálogo o filas inválidas. Quedan registradas para corregirlas y reprocesar el archivo."
+        >
+          <TableRoot aria-label="Filas rechazadas de la importación">
+            <Table className="min-w-[640px]">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Fila</TableHead>
+                  <TableHead>Patente</TableHead>
+                  <TableHead>Campo</TableHead>
+                  <TableHead>Motivo</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rejections.map((rejection, index) => (
+                  <TableRow key={`${rejection.rowIndex}-${index}`}>
+                    <TableCell className="font-mono tabular-nums">{rejection.rowIndex}</TableCell>
+                    <TableCell className="font-mono">{rejection.patente ?? "—"}</TableCell>
+                    <TableCell>{rejection.field}</TableCell>
+                    <TableCell>{rejection.message}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableRoot>
+        </Section>
+      )}
 
       <Section title={`Registros del archivo (${batch.records.length})`}>
         <TableRoot aria-label="Registros del reporte de tarjeta">

@@ -35,6 +35,7 @@ interface NewOrder {
   requesterName: string
   repairDescription: string | null
   observations: string | null
+  totalCost: number | null
   items: ItemTexts
   inspectionFindingId: string | null
   clientRequestId: string | null
@@ -94,6 +95,7 @@ async function insertLocked(tx: Tx, order: NewOrder, actor: Pick<WorkOrderActor,
     requesterName: order.requesterName.trim(),
     repairDescription: order.repairDescription?.trim() || null,
     observations: order.observations?.trim() || null,
+    totalCost: order.totalCost,
     status: assigned ? "asignada" : "solicitada",
     assignedToUserId: assigned,
     assignedByUserId: assigned ? actor.userId : null,
@@ -152,6 +154,7 @@ export async function createWorkOrderWithClient(
       requesterName: input.requesterName,
       repairDescription: input.repairDescription,
       observations: input.observations,
+      totalCost: null,
       items,
       inspectionFindingId: input.inspectionFindingId,
       clientRequestId: null,
@@ -270,6 +273,7 @@ export async function createWorkOrder(actor: WorkOrderActor, input: CreateWorkOr
         requesterName: input.requesterName,
         repairDescription: input.repairDescription,
         observations: input.observations,
+        totalCost: input.totalCost ?? null,
         items,
         inspectionFindingId: null,
         clientRequestId: input.clientRequestId,

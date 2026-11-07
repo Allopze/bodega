@@ -23,8 +23,9 @@ export function buildOperationalAssetExportColumns(
   const showFuelCost = canViewFuel && canViewCosts
   const showCapa = canViewCapa && canViewInspections
   return [
-    { header: "Contrato", key: "key", width: 34 },
-    { header: "Clase", key: "kind", width: 22 },
+    // Sin «Contrato»: el `key` interno (`vehicle:<uuid>`) no significa nada
+    // para quien recibe el archivo. Sin «Clase»: la hoja sólo lleva vehículos,
+    // así que la columna valía siempre lo mismo.
     { header: "Código", key: "code", width: 18 },
     { header: "Activo", key: "name", width: 30 },
     { header: "Faena", key: "worksite", width: 24 },
@@ -43,9 +44,12 @@ export function buildOperationalAssetExportColumns(
     ...(canViewFuel
       ? [
           { header: "Litros operacionales", key: "fuelLiters", width: 18 },
+          { header: "Cargas (período)", key: "fuelLoadCount", width: 16 },
+          { header: "Última carga", key: "lastFuelLoadAt", width: 20 },
           { header: "Rendimiento promedio", key: "fuelPerformance", width: 20 },
           { header: "Cargas marcadas (período)", key: "flaggedLoads", width: 18 },
           { header: "Casos abiertos", key: "openAnomalyCases", width: 16 },
+          { header: "Casos críticos", key: "criticalOpenAnomalyCases", width: 16 },
           { header: "Motor en vacío (%)", key: "idlePct", width: 16 },
           { header: "Litros en vacío", key: "litersIdle", width: 16 },
         ]
@@ -56,6 +60,8 @@ export function buildOperationalAssetExportColumns(
           { header: "Cumplimiento inspecciones", key: "inspectionCompliance", width: 22 },
           { header: "Hallazgos abiertos", key: "openFindings", width: 18 },
           { header: "Hallazgos críticos", key: "criticalOpenFindings", width: 18 },
+          { header: "Hallazgos con OT", key: "openFindingsWithWorkOrder", width: 18 },
+          { header: "Hallazgos sin OT", key: "openFindingsWithoutWorkOrder", width: 18 },
         ]
       : []),
     ...(showCapa ? [{ header: "CAPA vencidas", key: "overdueCapa", width: 14 }] : []),
@@ -64,9 +70,13 @@ export function buildOperationalAssetExportColumns(
           { header: "OT abiertas", key: "openWorkOrders", width: 14 },
           { header: "En taller", key: "inWorkshop", width: 12 },
           { header: "Horas en taller (período)", key: "workshopHours", width: 22 },
+          { header: "Costo mantención (período)", key: "maintenanceCost", width: 24 },
         ]
       : []),
-    ...(showFuelCost ? [{ header: "Costo combustible facturado", key: "fuelCost", width: 24 }] : []),
+    ...(showFuelCost ? [{ header: "Costo combustible (proveedor)", key: "fuelCost", width: 24 }] : []),
+    ...(showFuelCost && canViewWorkOrders
+      ? [{ header: "Costo total (combustible + mantención)", key: "totalCost", width: 30 }]
+      : []),
   ]
 }
 
@@ -97,8 +107,6 @@ export function buildOperationalAssetExportRow(
   const showFuelCost = canViewFuel && canViewCosts
   const showCapa = canViewCapa && canViewInspections
   return {
-    key: asset.key,
-    kind: asset.kind === "vehicle" ? "Vehículo / equipo móvil" : "Instrumento de servicio",
     code: asset.code,
     name: asset.name,
     worksite: asset.worksiteName,
@@ -117,9 +125,12 @@ export function buildOperationalAssetExportRow(
     ...(canViewFuel
       ? {
           fuelLiters: asset.fuelLiters,
+          fuelLoadCount: asset.fuelLoadCount,
+          lastFuelLoadAt: asset.lastFuelLoadAt,
           fuelPerformance: formatPerformance(asset.fuelPerformanceValue, asset.fuelPerformanceUnit),
           flaggedLoads: asset.flaggedLoads,
           openAnomalyCases: asset.openAnomalyCases,
+          criticalOpenAnomalyCases: asset.criticalOpenAnomalyCases,
           idlePct: asset.idlePct,
           litersIdle: asset.litersIdle,
         }
@@ -130,6 +141,8 @@ export function buildOperationalAssetExportRow(
           inspectionCompliance: asset.inspectionCompliancePercent,
           openFindings: asset.openFindings,
           criticalOpenFindings: asset.criticalOpenFindings,
+          openFindingsWithWorkOrder: asset.openFindingsWithWorkOrder,
+          openFindingsWithoutWorkOrder: asset.openFindingsWithoutWorkOrder,
         }
       : {}),
     ...(showCapa ? { overdueCapa: asset.overdueCapa } : {}),
@@ -138,8 +151,10 @@ export function buildOperationalAssetExportRow(
           openWorkOrders: asset.openWorkOrders,
           inWorkshop: asset.inWorkshop == null ? null : asset.inWorkshop ? "Sí" : "No",
           workshopHours: asset.workshopHours == null ? null : Math.round(asset.workshopHours * 10) / 10,
+          maintenanceCost: asset.maintenanceCost,
         }
       : {}),
     ...(showFuelCost ? { fuelCost: asset.fuelBilledAmount } : {}),
+    ...(showFuelCost && canViewWorkOrders ? { totalCost: asset.totalCost } : {}),
   }
 }

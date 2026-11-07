@@ -29,6 +29,8 @@ const requestFields = {
   requesterName: z.string().trim().min(2, "Indica quién solicita.").max(120),
   repairDescription: z.string().trim().max(2000).nullable(),
   observations: z.string().trim().max(2000).nullable(),
+  /** Costo total de la OT (CLP), opcional. No es una regla de negocio: puede quedar vacío. */
+  totalCost: z.number().finite().min(0).max(999_999_999).nullable().optional(),
   annexItems: itemList,
   maintenanceItems: itemList,
 }

@@ -3,7 +3,7 @@
 import { createHash } from "node:crypto"
 import { and, desc, eq, isNull, ne, sql } from "drizzle-orm"
 import { db } from "@/db"
-import { fuelConsumptionRecords, fuelImportBatches, fuelProviderMappings, fuelProviderTransactions, fuelVehicles } from "@/db/schema"
+import { fuelConsumptionImportRejections, fuelConsumptionRecords, fuelImportBatches, fuelProviderMappings, fuelProviderTransactions, fuelVehicles } from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite, isGlobalRole } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
@@ -225,6 +225,7 @@ export async function confirmConsumptionImportAction(
         unmatchedErrors.push({
           rowIndex: row.rowIndex,
           field: "PATENTE",
+          patente: row.patente,
           message: ambigua
             ? `Patente "${row.patente}" coincide con más de un vehículo del catálogo; unifica las fichas antes de importar`
             : `Patente "${row.patente}" sin vehículo asociado a ninguna faena`,
@@ -242,6 +243,9 @@ export async function confirmConsumptionImportAction(
     rowsByWorksite.set(meta.worksiteId, parsed.rows)
   }
   const batchIds = [...rowsByWorksite.values()].map(() => nanoid())
+  // Los rechazos son de la importación completa (no de una faena): se guardan
+  // en un ledger propio y la ficha del lote los lee por el hash del archivo.
+  const importRejections = [...parsed.errors, ...unmatchedErrors]
 
   // Persistir el archivo original para trazabilidad sólo cuando hay al menos
   // un lote que crear; así una importación global sin vehículos no deja huérfanos.
@@ -346,6 +350,17 @@ export async function confirmConsumptionImportAction(
           newState: { worksiteId, periodo: `${meta.periodoDesde}..${meta.periodoHasta}`, fuente: meta.fuente, ...batchTotals },
         }, tx)
       }
+      if (importRejections.length > 0) {
+        await tx.insert(fuelConsumptionImportRejections).values(importRejections.map((error) => ({
+          id: nanoid(),
+          hashArchivo,
+          batchId: batchIds[0] ?? null,
+          rowIndex: error.rowIndex,
+          patente: error.patente ?? null,
+          field: error.field,
+          message: error.message,
+        })))
+      }
       return { ok: true as const }
     })
 
@@ -383,16 +398,17 @@ export async function revertBatchAction(_prev: ActionState, formData: FormData):
   await db.transaction(async (tx) => {
     await tx.delete(fuelConsumptionRecords).where(eq(fuelConsumptionRecords.batchId, batchId))
     await tx.update(fuelImportBatches).set({ estado: "revertido", updatedAt: new Date().toISOString() }).where(eq(fuelImportBatches.id, batchId))
-  })
-
-  await recordAudit({
-    userId: session.user.id,
-    userEmail: session.user.email ?? undefined,
-    action: "delete",
-    entityType: "fuel_import_batch",
-    entityId: batchId,
-    oldState: { estado: batch.estado },
-    newState: { estado: "revertido" },
+    // La bitácora comparte la transacción: si falla, la reversa no queda
+    // confirmada sin dejar rastro (CO-025).
+    await recordAudit({
+      userId: session.user.id,
+      userEmail: session.user.email ?? undefined,
+      action: "delete",
+      entityType: "fuel_import_batch",
+      entityId: batchId,
+      oldState: { estado: batch.estado },
+      newState: { estado: "revertido" },
+    }, tx)
   })
 
   revalidateFuel()
@@ -508,16 +524,17 @@ export async function linkConsumptionPlateAction(_prev: ActionState, formData: F
         sql`left(coalesce(${fuelProviderTransactions.occurredAt}, ''), 10) >= ${batch.periodoDesde}`,
       ))
     }
+    // El vínculo escribe mappings y promueve transacciones del proveedor: la
+    // bitácora va en la misma transacción, no después del commit (CO-025).
+    await recordAudit({
+      userId: session.user.id,
+      userEmail: session.user.email ?? undefined,
+      action: "update",
+      entityType: "fuel_consumption_record",
+      entityId: batchId,
+      newState: { patente, vehicleId, count: linked.length },
+    }, tx)
     return linked
-  })
-
-  await recordAudit({
-    userId: session.user.id,
-    userEmail: session.user.email ?? undefined,
-    action: "update",
-    entityType: "fuel_consumption_record",
-    entityId: batchId,
-    newState: { patente, vehicleId, count: updated.length },
   })
 
   revalidateFuel()
