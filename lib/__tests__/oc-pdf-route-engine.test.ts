@@ -2,7 +2,7 @@
  * Despacho de motor en la ruta del PDF de la OC. Los dos motores están
  * mockeados: lo que se prueba es cuál se elige y con qué respuesta, no el PDF.
  */
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { Session } from "next-auth"
 
 const mockAuth = vi.hoisted(() => vi.fn())
@@ -58,6 +58,10 @@ const params = { params: Promise.resolve({ id: "oc-1" }) }
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // El origen de impresión sale sólo del entorno desde 12be41bce (nunca del Host
+  // de la petición, que controla el cliente): sin esto la ruta lanza
+  // PDF_ORIGIN_NOT_CONFIGURED antes de elegir motor. Lo cubre pdf-render-origin.test.ts.
+  vi.stubEnv("PDF_RENDER_ORIGIN", "http://127.0.0.1:3000")
   mockAuth.mockResolvedValue(makeSession())
   mockGetPdfEngineFor.mockResolvedValue("chromium")
   mockFindFirst.mockResolvedValue({ id: "oc-1", code: "OC-2026-0001", worksiteId: "w-1" })
@@ -67,6 +71,10 @@ beforeEach(() => {
     order: { id: "oc-1", code: "OC-2026-0001" },
     suggestedFilename: "OC 2026-0001.pdf",
   })
+})
+
+afterEach(() => {
+  vi.unstubAllEnvs()
 })
 
 describe("elección de motor", () => {
