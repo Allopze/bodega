@@ -31,6 +31,7 @@ export const OPS_SETTING_KEYS = {
   pdtpEvidenceMaxMb:         "ops.pdtp.evidence_max_mb",
   pdtpEvidenceRetentionDays: "ops.pdtp.evidence_retention_days",
   purchasingClpTolerance:    "ops.compras.clp_tolerance",
+  repuestosQuotationThresholdClp: "ops.repuestos.quotation_threshold_clp",
 } as const
 
 export const DEFAULT_OPS_SETTINGS = {
@@ -49,6 +50,13 @@ export const DEFAULT_OPS_SETTINGS = {
    * (ver `money-tolerance.ts`): aflojar lo que nadie revisa es otra decisión.
    */
   purchasingClpTolerance:       1,
+  /**
+   * Monto (CLP) hasta el cual una solicitud de repuestos puede enviarse con una
+   * sola cotización o sólo con precios estimados. Sobre él rige la regla de 3
+   * cotizaciones o justificación. 0 = nunca se exime. $200.000 por decisión del
+   * usuario el 2026-11-07.
+   */
+  repuestosQuotationThresholdClp: 200_000,
 } as const
 
 export interface OperationalSettings {
@@ -58,6 +66,7 @@ export interface OperationalSettings {
   pdtpEvidenceMaxMb:           number
   pdtpEvidenceRetentionDays:  number
   purchasingClpTolerance:     number
+  repuestosQuotationThresholdClp: number
 }
 
 const OPS_VALIDATION: Record<keyof OperationalSettings, { min: number; max: number }> = {
@@ -67,6 +76,7 @@ const OPS_VALIDATION: Record<keyof OperationalSettings, { min: number; max: numb
   pdtpEvidenceMaxMb:           { min: 1,      max: 100 },
   pdtpEvidenceRetentionDays:  { min: 30,     max: 3650 },
   purchasingClpTolerance:     { min: 0,      max: 100_000 },
+  repuestosQuotationThresholdClp: { min: 0,  max: 50_000_000 },
 }
 
 /**
@@ -126,6 +136,7 @@ export async function getOperationalSettings(
     pdtpEvidenceMaxMb:           parseIntStrict(raw.pdtpEvidenceMaxMb,           DEFAULT_OPS_SETTINGS.pdtpEvidenceMaxMb),
     pdtpEvidenceRetentionDays:  parseIntStrict(raw.pdtpEvidenceRetentionDays,  DEFAULT_OPS_SETTINGS.pdtpEvidenceRetentionDays),
     purchasingClpTolerance:     parseIntStrict(raw.purchasingClpTolerance,     DEFAULT_OPS_SETTINGS.purchasingClpTolerance),
+    repuestosQuotationThresholdClp: parseIntStrict(raw.repuestosQuotationThresholdClp, DEFAULT_OPS_SETTINGS.repuestosQuotationThresholdClp),
   }
 
   for (const k of Object.keys(settings) as Array<keyof OperationalSettings>) {

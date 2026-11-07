@@ -18,6 +18,7 @@ import { can } from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import { expiredDocumentTypes, resolveNextExpiryDate } from "@/lib/validation/fleet-documents"
 import { getAssetFuelSummary, type AssetFuelSummary } from "@/lib/combustibles/control/queries/asset-fuel-summary"
+import { getVehiclePurchaseSummary, type VehiclePurchaseSummary } from "@/lib/services/purchasing-module/vehicle-purchase-summary"
 import { logger } from "@/lib/logger"
 import { getFleetAdminSettings } from "@/lib/services/system-settings"
 import {
@@ -28,7 +29,10 @@ import {
   type VehicleWorkOrderMetrics,
   type WorkOrderGlobalMetrics,
 } from "@/lib/services/mantencion/work-orders/metrics"
-import { canViewWorkOrders as sessionCanViewWorkOrders } from "@/lib/operational-control/capabilities"
+import {
+  canViewPurchaseCosts as sessionCanViewPurchaseCosts,
+  canViewWorkOrders as sessionCanViewWorkOrders,
+} from "@/lib/operational-control/capabilities"
 import { addDaysToPlainDate, todayInChile } from "@/lib/utils"
 import { civilDate } from "@/lib/validation/dates"
 import {
@@ -94,9 +98,19 @@ export type OperationalAsset = {
   criticalOpenAnomalyCases: number | null
   /** Costo del período según el libro del proveedor (`fuel_provider_transactions`); sólo con `combustibles:view_costs`. */
   fuelBilledAmount: number | null
-  /** Costo cargado en las OT cerradas del período; `null` sin la capacidad de OT o sin costos. */
+  /**
+   * Mano de obra / taller externo: Σ `total_cost` de las OT cerradas del período, que
+   * jefatura carga a mano. No incluye los repuestos ni los servicios comprados por OC
+   * (van en `purchaseAmount`). $0 si el equipo no tiene OT cerradas con costo en el
+   * período; `null` sólo sin la capacidad de OT o si su consulta falló.
+   */
   maintenanceCost: number | null
-  /** Combustible + mantención; `null` si falta cualquiera de las dos series. */
+  /**
+   * Σ líneas de OC (no anuladas) emitidas en el período, de las solicitudes de repuestos o
+   * servicios vinculadas al equipo. `null` sin `purchasing:view` o si la consulta falló.
+   */
+  purchaseAmount: number | null
+  /** Combustible + mano de obra + compras; `null` si falta cualquiera de las tres series. */
   totalCost: number | null
   /** Horas de motor en vacío del período; `null` sin `combustibles:view`. */
   idleHours: number | null
@@ -201,6 +215,7 @@ export async function getOperationalControlHub(
   const canViewCapa = can(session, "prevention:capa:view")
   const canViewCosts = can(session, "combustibles:view_costs")
   const canViewFuel = can(session, "combustibles:view")
+  const canViewPurchaseCosts = sessionCanViewPurchaseCosts(session)
   const canViewServiceEquipment = can(session, "admin:service_equipment")
   // Las OT se ven con `mant:ot:view_*`; no abren el hub (el gate de abajo sigue
   // siendo flota, inspecciones o combustible) y su alcance es el de las OT.
@@ -341,6 +356,16 @@ export async function getOperationalControlHub(
     }, degradedSources) : null,
   ])
 
+  // Lo comprado por OC para cada equipo (repuestos y servicios vinculados) se pide en
+  // paralelo con el combustible y degrada igual: si falla, la cifra queda en «sin
+  // dato» (`null`), no en 0, y el panel lo anuncia. Sin `purchasing:view` no se consulta.
+  const purchaseSummaryPending = canViewPurchaseCosts && vehicles.length > 0
+    ? settleAttention(
+        "compras",
+        () => getVehiclePurchaseSummary(session, period, vehicles.map((vehicle) => vehicle.id)),
+        degradedSources,
+      )
+    : null
   // El agregado de combustible se pide después de conocer los vehículos del
   // alcance: una consulta agrupada por vehículo, no una por fila. Sin
   // `combustibles:view` no se ejecuta y los campos quedan en null.
@@ -360,6 +385,11 @@ export async function getOperationalControlHub(
   /** `null` cuando la consulta de combustible falló: no se convierte el fallo en 0. */
   const fuelValue = <T,>(value: T | undefined, fallback: T): T | null =>
     fuelUnavailable ? null : (value ?? fallback)
+
+  const purchaseSummary = purchaseSummaryPending ? await purchaseSummaryPending : new Map<string, VehiclePurchaseSummary>()
+  /** `null` cuando la consulta de compras falló: tampoco se convierte en 0. */
+  const purchaseUnavailable = purchaseSummaryPending !== null && purchaseSummary === null
+  const purchaseByVehicle = purchaseSummary ?? new Map<string, VehiclePurchaseSummary>()
 
   const inspectionsByVehicle = new Map(inspectionAgg.filter((row) => row.vehicleId).map((row) => [row.vehicleId!, row]))
   const findingsByVehicle = new Map(findingsAgg.filter((row) => row.vehicleId).map((row) => [row.vehicleId!, row]))
@@ -381,9 +411,19 @@ export async function getOperationalControlHub(
     const gps = gpsByVehicle.get(vehicle.id)
     const workOrder = workOrdersByVehicle?.get(vehicle.id)
     const fuelBilledAmount = canViewFuel && canViewCosts ? fuelValue(fuel?.billedAmount, 0) : null
-    const maintenanceCost = workOrdersByVehicle ? (workOrder?.maintenanceCostInPeriod ?? null) : null
-    const totalCost = fuelBilledAmount != null && maintenanceCost != null
-      ? fuelBilledAmount + maintenanceCost
+    // Sin OT cerradas con costo en el período, la mano de obra del equipo es $0 de
+    // verdad, no un dato faltante (decisión 2026-11-07): antes quedaba `null` y el
+    // «Costo total» salía «—» para casi toda la flota. Sólo es `null` sin la
+    // capacidad de OT o si su consulta falló (`workOrdersByVehicle` en null).
+    const maintenanceCost = workOrdersByVehicle ? (workOrder?.maintenanceCostInPeriod ?? 0) : null
+    const purchaseAmount = canViewPurchaseCosts
+      ? (purchaseUnavailable ? null : (purchaseByVehicle.get(vehicle.id)?.purchaseAmount ?? 0))
+      : null
+    // Un total sólo existe con las tres series: sumar sólo dos y llamarlo «total» lo
+    // subestimaría sin avisar. Una serie es `null` sólo sin su capacidad o si su
+    // consulta falló; un equipo sin movimientos en una serie aporta $0.
+    const totalCost = fuelBilledAmount != null && maintenanceCost != null && purchaseAmount != null
+      ? fuelBilledAmount + maintenanceCost + purchaseAmount
       : null
     const declaredExpiry = {
       soapExpiresAt: vehicle.soapExpiresAt,
@@ -451,6 +491,7 @@ export async function getOperationalControlHub(
       criticalOpenAnomalyCases: canViewFuel ? fuelValue(fuel?.criticalOpenCases, 0) : null,
       fuelBilledAmount,
       maintenanceCost,
+      purchaseAmount,
       totalCost,
       idleHours: canViewFuel ? fuelValue(fuel?.idleHours, 0) : null,
       idlePct: canViewFuel ? fuelValue(fuel?.idlePct, null) : null,
@@ -500,6 +541,9 @@ export async function getOperationalControlHub(
     criticalOpenAnomalyCases: null,
     fuelBilledAmount: null,
     maintenanceCost: null,
+    // Los instrumentos de servicio no son `fuel_vehicles`: sus solicitudes apuntan a
+    // `service_equipment`, no al vehículo, y no entran a esta suma.
+    purchaseAmount: null,
     totalCost: null,
     idleHours: null,
     idlePct: null,
@@ -558,6 +602,6 @@ export async function getOperationalControlHub(
       // MTTR = horas en taller de las OT de reparación cerradas ÷ cuántas son. Sin ninguna cerrada no hay qué promediar.
       mttrHours: workOrdersByVehicle ? meanTimeToRepairHours(repairClosed, repairWorkshopHours) : null,
     },
-    permissions: { canViewFleet, canViewInspections, canViewCapa, canViewFuel, canViewCosts, canViewServiceEquipment, canViewWorkOrders },
+    permissions: { canViewFleet, canViewInspections, canViewCapa, canViewFuel, canViewCosts, canViewServiceEquipment, canViewWorkOrders, canViewPurchaseCosts },
   }
 }

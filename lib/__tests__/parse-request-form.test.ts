@@ -73,3 +73,51 @@ describe("parseRequestForm — cantidad", () => {
     if (!result.ok) expect(result.error.message).toMatch(/ítems/i)
   })
 })
+
+describe("parseRequestForm — equipo de flota, OT y precio estimado", () => {
+  function repuestosForm(item: Record<string, unknown>): FormData {
+    const fd = makeFormData({ requestType: "repuestos" })
+    fd.set("itemsJson", JSON.stringify([{
+      productId: null, productNameFree: "Manguera hidráulica", quantity: 2, unitOfMeasure: "unidad",
+      urgency: "normal", attributes: [], ...item,
+    }]))
+    return fd
+  }
+  const sessionRepuestos = () => {
+    const session = makeSession()
+    ;(session.user as { permissions: string[] }).permissions = ["repuestos:create"]
+    return session
+  }
+
+  it("conserva el vehículo, la OT y el precio estimado", () => {
+    const result = parseRequestForm(sessionRepuestos(), repuestosForm({
+      vehicleId: "v-1", workOrderId: "ot-1", estimatedUnitPrice: "35000",
+    }))
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.data.items[0]).toMatchObject({ vehicleId: "v-1", workOrderId: "ot-1", estimatedUnitPrice: 35_000 })
+    }
+  })
+
+  it("un precio estimado vacío es «sin precio», no cero", () => {
+    for (const blank of ["", null]) {
+      const result = parseRequestForm(sessionRepuestos(), repuestosForm({ estimatedUnitPrice: blank }))
+      expect(result.ok).toBe(true)
+      if (result.ok) expect(result.data.items[0]!.estimatedUnitPrice).toBeNull()
+    }
+  })
+
+  it("sin los campos nuevos el ítem se valida como antes", () => {
+    const result = parseRequestForm(sessionRepuestos(), repuestosForm({}))
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.data.items[0]!.vehicleId).toBeUndefined()
+      expect(result.data.items[0]!.estimatedUnitPrice ?? null).toBeNull()
+    }
+  })
+
+  it("rechaza un precio estimado negativo", () => {
+    const result = parseRequestForm(sessionRepuestos(), repuestosForm({ estimatedUnitPrice: -1 }))
+    expect(result.ok).toBe(false)
+  })
+})

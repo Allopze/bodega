@@ -681,6 +681,19 @@ export function campoInspeccion(page: Page, label: string) {
  * móvil oculto y esperaba treinta segundos por él, lo que se leía como si el guardado no
  * hubiera ocurrido cuando en realidad sí había ocurrido.
  */
+/**
+ * Elige un equipo de flota en el combobox «Equipo de flota» del ítem de
+ * repuestos/servicios (2026-11-07). Busca por patente o código y confirma que
+ * el campo muestre la etiqueta elegida.
+ */
+export async function pickVehicle(page: Page, plateOrCode: string) {
+  const combo = page.getByRole("combobox", { name: "Equipo de flota" }).first()
+  await combo.click()
+  await combo.fill(plateOrCode)
+  await page.getByRole("option", { name: new RegExp(plateOrCode) }).first().click()
+  await expect(combo).toHaveValue(new RegExp(plateOrCode))
+}
+
 export function textoVisible(page: Page, text: string | RegExp) {
   return page.getByText(text).filter({ visible: true })
 }

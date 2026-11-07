@@ -56,6 +56,13 @@ export interface WorkOrderListRow {
   /** Días desde el ingreso hasta la salida (o hasta hoy). */
   daysInWorkshop: number | null
   rejectionCount: number
+  /**
+   * OT abierta con alguna línea de repuesto pedida que todavía no llegó a faena.
+   * Una OT cerrada o anulada nunca espera repuesto (el equipo ya salió). La misma
+   * regla en la lista, el panel y el tile de Control operacional: ver
+   * `partsPendingExistsSql` en `parts-requests.ts`.
+   */
+  waitingParts: boolean
   createdAt: string
 }
 
@@ -80,6 +87,40 @@ export interface WorkOrderEventDetail {
   changeSet: Record<string, unknown> | null
   actorName: string
   createdAt: string
+}
+
+/**
+ * Una línea de repuesto pedida para la OT: el ítem de la solicitud con su OC
+ * activa (si ya existe) y lo recibido en faena. La OT no lleva repuestos en su
+ * documento: esto sólo la informa de lo que otras solicitudes y compras guardaron.
+ */
+export interface WorkOrderPartsRequest {
+  requestId: string
+  requestCode: string
+  requestStatus: string
+  itemId: string
+  description: string
+  quantity: number
+  unitOfMeasure: string
+  /** Estado crudo del ítem; la pantalla muestra `itemStatusLabel`. */
+  itemStatus: string
+  itemStatusLabel: string
+  orderId: string | null
+  orderCode: string | null
+  orderStatus: string | null
+  /** Entrega estimada de la OC (YYYY-MM-DD); null sin OC activa o sin fecha. */
+  estimatedDelivery: string | null
+  /** Recibido en faena de esa línea; 0 sin OC activa. */
+  quantityReceived: number
+  requestedAt: string
+}
+
+/** Un repuesto que el mecánico declaró usar en un registro enlazado a la OT (`mant_record_parts`). */
+export interface WorkOrderPartUsed {
+  recordId: string
+  recordFolio: string | null
+  quantity: number
+  description: string
 }
 
 export interface WorkOrderDetail extends WorkOrderListRow {
@@ -114,6 +155,10 @@ export interface WorkOrderDetail extends WorkOrderListRow {
   events: WorkOrderEventDetail[]
   linkedRecords: Array<{ id: string; folio: string | null; kind: "P" | "C"; workDate: string; signedAt: string; status: "vigente" | "anulado"; canOpen: boolean }>
   inspectionFinding: { id: string; runId: string; capaActionId: string | null } | null
+  /** Repuestos pedidos para esta OT (solicitudes de compra vinculadas), la más reciente primero. */
+  partsRequests: WorkOrderPartsRequest[]
+  /** Lo que los registros vigentes enlazados declararon usar, vía `loadWorkOrderLinkedWork`. */
+  partsUsed: WorkOrderPartUsed[]
   /** Transiciones que el usuario que mira puede ejecutar ahora (la UI sólo las refleja). */
   allowedTransitions: OtTransition[]
   canEditRequest: boolean

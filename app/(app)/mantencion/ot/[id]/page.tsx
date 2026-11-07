@@ -7,7 +7,7 @@ import { OtAside } from "@/components/mantencion/jefatura/ot/ot-aside"
 import { equipmentText, workOrderTypeText } from "@/components/mantencion/jefatura/ot/ot-labels"
 import {
   OtEntrySection, OtExitSection, OtFaenaReceptionSection, OtHeaderSection, OtItemsSection, OtObservationsSection,
-  OtReceptionSection, OtRejectionNotice, OtRepairSection, OtVoidedNotice,
+  OtPartsRequestsSection, OtReceptionSection, OtRejectionNotice, OtRepairSection, OtVoidedNotice,
 } from "@/components/mantencion/jefatura/ot/ot-sections"
 import { can, requireAnyPermission } from "@/lib/auth/can"
 import { viewerFromSession } from "@/lib/services/mantencion/access"
@@ -35,6 +35,14 @@ export default async function WorkOrderDetailPage({ params }: { params: Promise<
   // El PDF y la hoja imprimible exigen ver la OT (expone el trabajo enlazado): el
   // mecánico que sólo ejecuta ve la OT y sus acciones, pero no el botón de descarga.
   const canDownloadPdf = can(session, "mant:ot:view_worksite") || can(session, "mant:ot:view_all")
+  // «Pedir repuestos» precarga equipo, faena y OT en la solicitud (contrato de `/solicitudes/nueva`). Sólo con
+  // permiso para crear y mientras la OT siga abierta: una cerrada o anulada ya no recibe repuestos. La solicitud
+  // vuelve a validarlo; esto sólo decide si se ofrece. Con `view_own` el enlace a una solicitud ajena daría 404,
+  // así que el código sólo es enlace con `view_all`.
+  const partsRequestHref = can(session, "repuestos:create") && detail.status !== "cerrada" && detail.status !== "anulada"
+    ? `/solicitudes/nueva?tipo=repuestos&ot=${detail.id}`
+    : null
+  const canOpenRequests = can(session, "repuestos:view_all")
   // Los catálogos sólo se consultan cuando el usuario puede usarlos.
   const [mechanics, entryCatalogs, recordForm] = await Promise.all([
     allowed.has("assign") ? listAssignableMechanics() : Promise.resolve(null),
@@ -76,6 +84,7 @@ export default async function WorkOrderDetailPage({ params }: { params: Promise<
             maintenance={detail.maintenance}
             needsLinkedRecord={detail.needsLinkedRecord}
             recordForm={recordForm}
+            partsRequestHref={partsRequestHref}
           />
         )}
       />
@@ -89,6 +98,7 @@ export default async function WorkOrderDetailPage({ params }: { params: Promise<
           <OtRepairSection detail={detail} />
           <OtItemsSection detail={detail} kind="anexo" />
           <OtItemsSection detail={detail} kind="mantencion" />
+          <OtPartsRequestsSection detail={detail} canOpenRequests={canOpenRequests} partsRequestHref={partsRequestHref} />
           <OtObservationsSection detail={detail} />
           <OtEntrySection detail={detail} />
           <OtExitSection detail={detail} />

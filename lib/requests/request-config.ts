@@ -51,6 +51,15 @@ export interface RequestItemInput {
   model?:         string | null
   partNumber?:    string | null
   location?:      string | null
+  /**
+   * Equipo de flota (`fuel_vehicles.id`). Con vehículo, Equipo/Patente/Marca/
+   * Modelo libres no se guardan como atributos: los dice el registro.
+   */
+  vehicleId?:     string | null
+  /** OT abierta del mismo vehículo; exige `vehicleId`. */
+  workOrderId?:   string | null
+  /** Precio unitario estimado por quien pide (CLP); null = no lo indicó. */
+  estimatedUnitPrice?: number | null
 }
 
 export interface AddQuotationInput {
@@ -97,6 +106,22 @@ export interface SelectQuotationInput {
 }
 
 /**
+ * Aprobación de una solicitud que se envió sin cotización (bajo el umbral de
+ * repuestos o por la vía rápida de urgencia crítica). Mismos datos de alcance
+ * que `SelectQuotationInput`, sin cotización ganadora.
+ */
+export interface ApproveWithoutQuotationInput {
+  requestId:      string
+  userId:         string
+  userEmail?:     string
+  roleContext?:   string
+  /** Fundamento opcional; se guarda en la decisión si viene. */
+  justification?: string | null
+  /** Scope-defensive: if set, only allows access to matching worksites. */
+  worksiteIds?:   string[] | "all"
+}
+
+/**
  * Typed service functions expected by the action factory.
  *
  * ARQ-1: acotado a las 3 acciones que el factory de acciones todavía
@@ -107,6 +132,8 @@ export interface RequestServiceFunctions {
   addQuotation:     (input: AddQuotationInput) => Promise<string>
   deleteQuotation:  (input: DeleteQuotationInput) => Promise<void>
   selectQuotation:  (input: SelectQuotationInput) => Promise<void>
+  /** Sólo repuestos: aprobar sin cotización cuando la regla lo permitió al enviar. */
+  approveWithoutQuotation?: (input: ApproveWithoutQuotationInput) => Promise<void>
 }
 
 // ── Complete module config ────────────────────────────────────────────────────

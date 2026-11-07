@@ -28,6 +28,9 @@ vi.mock("@/lib/services/notifications", () => ({
   notifyManyUser: vi.fn(async () => {}),
   notifyAfterCommit: vi.fn((callback: () => unknown) => { void callback() }),
 }))
+vi.mock("@/lib/services/mantencion/work-orders/notifications", () => ({
+  notifyWorkOrderPartsReceived: vi.fn(async () => {}),
+}))
 
 import {
   cancelDispatchGuide,
@@ -46,6 +49,7 @@ import {
 } from "@/lib/services/dispatch-guides"
 import { dispatchGuideInputSchema } from "@/lib/validation/dispatch-guides"
 import { registerReceipt } from "@/lib/services/receiving"
+import { notifyWorkOrderPartsReceived } from "@/lib/services/mantencion/work-orders/notifications"
 
 const now = new Date().toISOString()
 const OFFICE = "ws-oficina"
@@ -954,5 +958,56 @@ describe("Guías de Despacho Internas", () => {
     await inMemoryDb.delete(schema.systemSettings)
       .where(eq(schema.systemSettings.key, OFFICE_WORKSITE_SETTING_KEY))
     expect((await resolveOfficeWorksite()).id).toBe(OFFICE)
+  })
+  /* ── Repuestos de una OT que llegan por guía (2026-11-07) ─────────────── */
+
+  async function partsForWorkOrder(quantity: number) {
+    const { seedMantFixtures, IDS } = await import("./mantencion-sync-fixtures")
+    const [seeded] = await inMemoryDb.select({ id: schema.worksites.id }).from(schema.worksites).where(eq(schema.worksites.id, IDS.wsBio))
+    if (!seeded) await seedMantFixtures(inMemoryDb)
+    const { createWorkOrderWithClient } = await import("@/lib/services/mantencion/work-orders/create")
+    const ot = await inMemoryDb.transaction((tx) => createWorkOrderWithClient(tx as never, {
+      vehicleId: IDS.truckBio, inspectionFindingId: null, repair: true, maintenance: false,
+      repairDescription: "Fuga hidráulica", observations: null, requesterName: "Jefatura",
+    }, { userId: IDS.jefe, name: "Jefatura" }))
+    const order = await makeAcquisitionOrder(quantity)
+    await inMemoryDb.update(schema.purchaseRequestItems)
+      .set({ vehicleId: IDS.truckBio, workOrderId: ot.id })
+      .where(eq(schema.purchaseRequestItems.id, order.requestItemId))
+    await setOfficeStock("p-gdi", 0)
+    const receiptId = await registerReceipt({
+      purchaseOrderId: order.orderId, receivedBy: ISSUER.userId, stage: "office",
+      items: [{ purchaseOrderItemId: order.orderItemId, quantityReceived: quantity }],
+    })
+    const [guide] = await inMemoryDb.select().from(schema.dispatchGuides).where(eq(schema.dispatchGuides.receiptId, receiptId))
+    await dispatchDispatchGuide(guide!.id, ISSUER)
+    const detail = await getDispatchGuideDetail(guide!.id)
+    vi.mocked(notifyWorkOrderPartsReceived).mockClear()
+    return { workOrderId: ot.id, guideId: guide!.id, guideItemId: detail!.guide.items[0]!.id }
+  }
+
+  it("avisa a mantención cuando el repuesto de una OT llega completo a faena por la guía", async () => {
+    const { workOrderId, guideId, guideItemId } = await partsForWorkOrder(4)
+
+    await confirmDispatchGuideReceipt(guideId, {
+      receivedByWorkerId: "w-recibe",
+      items: [{ guideItemId, quantityReceived: 4 }],
+    }, FAENA_ACTOR)
+
+    expect(notifyWorkOrderPartsReceived).toHaveBeenCalledTimes(1)
+    expect(notifyWorkOrderPartsReceived).toHaveBeenCalledWith(expect.objectContaining({
+      workOrderId, actorUserId: FAENA_ACTOR.userId, itemCount: 1, receiptId: expect.any(String),
+    }))
+  })
+
+  it("una llegada parcial por guía no avisa a mantención", async () => {
+    const { guideId, guideItemId } = await partsForWorkOrder(4)
+
+    await confirmDispatchGuideReceipt(guideId, {
+      receivedByWorkerId: "w-recibe",
+      items: [{ guideItemId, quantityReceived: 3, differenceReason: "Una unidad llegó dañada en el traslado" }],
+    }, FAENA_ACTOR)
+
+    expect(notifyWorkOrderPartsReceived).not.toHaveBeenCalled()
   })
 })

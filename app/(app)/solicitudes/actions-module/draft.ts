@@ -70,6 +70,9 @@ export async function persistDraft(
     patent:        item.patent || null,
     brand:         item.brand || null,
     model:         item.model || null,
+    vehicleId:     item.vehicleId || null,
+    workOrderId:   item.workOrderId || null,
+    estimatedUnitPrice: item.estimatedUnitPrice ?? null,
   }))
   const requestInput = {
     id:            d.id,

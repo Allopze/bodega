@@ -222,9 +222,12 @@ test.describe("Densidad — todo KPI de subconjunto llega a su subconjunto", () 
   const TILES_DEL_PANEL = [
     { dominio: "Equipos detenidos", destino: "/flota?estado=detenidos" },
     { dominio: "OT abiertas", destino: "/mantencion/ot?estado=abiertas" },
-    { dominio: "Documentos vencidos", destino: "/flota?vencimiento=vencidos" },
+    // Documentos enlaza a lo que cuenta: vencidos, si no por vencer, si no al día
+    // (85200b665). Cualquiera de los tres es su subconjunto, nunca el total.
+    { dominio: "Documentos vencidos", destino: /^\/flota\?vencimiento=(vencidos|proximos|al-dia)$/ },
     { dominio: "Combustible por revisar", destino: "/combustibles/revisar" },
   ]
+  const enlazaA = (href: string, destino: string | RegExp) => typeof destino === "string" ? href === destino : destino.test(href)
 
   test("los tiles del panel operacional enlazan a su subconjunto, no al total", async ({ page }) => {
     await login(page)
@@ -240,9 +243,9 @@ test.describe("Densidad — todo KPI de subconjunto llega a su subconjunto", () 
     expect(await page.locator("[data-kpi-card]").count(), "hay tiles que no son enlaces").toBe(hrefs.length)
 
     const faltantes = TILES_DEL_PANEL
-      .filter((tile) => !hrefs.includes(tile.destino))
+      .filter((tile) => !hrefs.some((href) => enlazaA(href, tile.destino)))
       .map((tile) => `${tile.dominio}: no enlaza a ${tile.destino}`)
-    const sobrantes = hrefs.filter((href) => !TILES_DEL_PANEL.some((tile) => tile.destino === href))
+    const sobrantes = hrefs.filter((href) => !TILES_DEL_PANEL.some((tile) => enlazaA(href, tile.destino)))
     expect(faltantes).toEqual([])
     expect(sobrantes, "tiles con un destino que la tabla no declara").toEqual([])
   })

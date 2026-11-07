@@ -1,6 +1,6 @@
 import { and, eq, inArray, ne } from "drizzle-orm"
 import { db } from "@/db"
-import { permissions, rolePermissions, roles, userPermissions, userRoles } from "@/db/schema"
+import { mantWorkOrders, permissions, rolePermissions, roles, userPermissions, userRoles } from "@/db/schema"
 import type { NotificationType } from "@/db/schema/audit"
 import { OT_PERMISSIONS } from "@/lib/mantencion/work-order-states"
 import { notifyAfterCommit, notifyManyUser } from "@/lib/services/notification-create"
@@ -89,13 +89,20 @@ async function holdersBeyondAdmin(userIds: readonly string[], permission: string
   return new Set([...viaRole, ...direct].map((row) => row.userId))
 }
 
+/**
+ * Quienes tienen `permission` en la faena, sin el actor. Si alguno lo tiene por
+ * algo distinto del rol `administrador`, sólo ellos (ver el comentario del
+ * archivo); si no, todos, para que el aviso no se pierda.
+ */
+async function holdersForPermission(permission: string, worksiteId: string, actorUserId: string): Promise<string[]> {
+  const candidates = (await getUserIdsWithPermissionForWorksite(permission, worksiteId))
+    .filter((id) => id !== actorUserId)
+  const responsible = await holdersBeyondAdmin(candidates, permission)
+  return responsible.size > 0 ? candidates.filter((id) => responsible.has(id)) : candidates
+}
+
 async function recipients(plan: NotificationPlan): Promise<string[]> {
-  const forPermission = async (permission: string) => {
-    const candidates = (await getUserIdsWithPermissionForWorksite(permission, plan.worksiteId))
-      .filter((id) => id !== plan.actorUserId)
-    const responsible = await holdersBeyondAdmin(candidates, permission)
-    return responsible.size > 0 ? candidates.filter((id) => responsible.has(id)) : candidates
-  }
+  const forPermission = (permission: string) => holdersForPermission(permission, plan.worksiteId, plan.actorUserId)
   const ids: string[] = []
   switch (plan.event) {
     case "created":
@@ -144,5 +151,61 @@ export function dispatchWorkOrderNotifications(plans: readonly NotificationPlan[
   if (plans.length === 0) return
   notifyAfterCommit(async () => {
     for (const plan of plans) await sendWorkOrderNotification(plan)
+  })
+}
+
+export interface PartsReceivedNotice {
+  workOrderId: string
+  /** Recepción que dejó los repuestos en faena: parte de la clave de deduplicación. */
+  receiptId: string
+  /** Quien registró la recepción: nunca se avisa a sí mismo. */
+  actorUserId: string
+  /** Líneas de la OT que esa recepción dejó completas en faena. */
+  itemCount: number
+}
+
+/**
+ * Aviso a mantención de que repuestos pedidos para la OT llegaron completos a
+ * faena (la recepción parcial no avisa: ver `registerReceipt`). Va al mecánico
+ * asignado y a quien administra las OT de la faena (`mant:ot:manage`), con el
+ * mismo criterio de `administrador` que el resto de los avisos de la OT.
+ *
+ * No es un `OtNotifyEvent` porque no depende de la versión de la OT: se
+ * deduplica por recepción, así que reenviarlo no repite el aviso. Una OT
+ * cerrada o anulada ya no espera nada: no se avisa. Llamar DESPUÉS del commit.
+ */
+export async function notifyWorkOrderPartsReceived(input: PartsReceivedNotice): Promise<void> {
+  const [order] = await db
+    .select({
+      id: mantWorkOrders.id,
+      folio: mantWorkOrders.folio,
+      worksiteId: mantWorkOrders.worksiteId,
+      status: mantWorkOrders.status,
+      assignedToUserId: mantWorkOrders.assignedToUserId,
+      equipmentSnapshot: mantWorkOrders.equipmentSnapshot,
+    })
+    .from(mantWorkOrders)
+    .where(eq(mantWorkOrders.id, input.workOrderId))
+    .limit(1)
+  if (!order) return
+  if (order.status === "cerrada" || order.status === "anulada") return
+
+  const userIds = [...new Set([
+    ...(order.assignedToUserId ? [order.assignedToUserId] : []),
+    ...await holdersForPermission(OT_PERMISSIONS.manage, order.worksiteId, input.actorUserId),
+  ])].filter((id) => id !== input.actorUserId)
+  if (userIds.length === 0) return
+
+  const lines = input.itemCount === 1 ? "1 línea recibida" : `${input.itemCount} líneas recibidas`
+  // Mismo rótulo que `equipmentLabel` de `./core`; no se importa de ahí porque `core` importa este módulo.
+  const equipment = `${order.equipmentSnapshot.code} · ${order.equipmentSnapshot.type}`
+  await notifyManyUser(userIds, {
+    type: "mant_ot_parts_received",
+    title: `Repuestos recibidos para OT ${order.folio}`,
+    body: `${equipment} · ${lines} en faena. Revisa «Repuestos pedidos» en la OT.`,
+    entityType: "mant_work_order",
+    entityId: order.id,
+    entityHref: `/mantencion/ot/${order.id}`,
+    dedupeKey: `mant-ot-parts:${order.id}:${input.receiptId}`,
   })
 }

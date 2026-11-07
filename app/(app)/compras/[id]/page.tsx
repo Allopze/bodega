@@ -40,6 +40,7 @@ import { DocumentChainStrip } from "@/components/documents/document-chain-strip"
 import { DteReceivedCard } from "./dte-received-card"
 import { suggestReceiptLinks } from "@/lib/services/purchasing-module/invoice-receipt-suggestions"
 import { resolveOrderItemMatchName } from "@/lib/services/purchasing-module/order-item-identity"
+import { vehicleLabel } from "@/lib/services/fleet"
 
 
 export const metadata: Metadata = { title: "Orden de compra" }
@@ -129,8 +130,13 @@ export default async function OcDetailPage({
       ? db.query.purchaseRequestItems.findMany({
           where: (ri, { inArray }) => inArray(ri.id, requestItemIds),
           // `equipment` y `worker`: la ficha tiene que decir sobre qué
-          // instrumento y para quién es cada línea de servicio.
-          with: { request: true, equipment: true, worker: true, attributes: true },
+          // instrumento y para quién es cada línea de servicio. `vehicle` y
+          // `workOrder` hacen lo mismo con un repuesto pedido para un equipo de
+          // flota o para una OT de mantención.
+          with: {
+            request: true, equipment: true, worker: true, attributes: true,
+            vehicle: true, workOrder: { columns: { folio: true } },
+          },
         })
       : Promise.resolve([]),
 
@@ -661,6 +667,11 @@ export default async function OcDetailPage({
                         const worker = i.requestItemId ? reqItemMap[i.requestItemId]?.worker : null
                         return worker ? `${worker.firstName} ${worker.lastName}` : null
                       })(),
+                      vehicleLabel: (() => {
+                        const vehicle = i.requestItemId ? reqItemMap[i.requestItemId]?.vehicle : null
+                        return vehicle ? vehicleLabel(vehicle) : null
+                      })(),
+                      workOrderFolio: i.requestItemId ? (reqItemMap[i.requestItemId]?.workOrder?.folio ?? null) : null,
                       costRecordedAt: i.costRecordedAt,
                       costRecordedByName: i.costRecordedBy ? (costRecorderNameById.get(i.costRecordedBy) ?? null) : null,
                     })),

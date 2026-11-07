@@ -50,6 +50,13 @@ vi.mock("@/db", () => ({
   },
 }))
 
+// El historial de compras tiene su propia suite PGlite (`vehicle-purchase-history-pglite`):
+// acá sólo importa CUÁNDO la ficha lo pide y qué hace con el resultado.
+const getVehiclePurchaseHistory = vi.fn()
+vi.mock("@/lib/services/vehicle-purchase-history", () => ({
+  getVehiclePurchaseHistory: (...args: unknown[]) => getVehiclePurchaseHistory(...args),
+}))
+
 import { getFleetOverview, getFleetVehicleDetail } from "@/lib/services/fleet"
 
 /**
@@ -298,6 +305,30 @@ describe("getFleetVehicleDetail", () => {
     // Sin `mant:ot:view_*` la ficha no sabe de OT: `null`, no «sin órdenes de trabajo».
     expect(detail!.recentWorkOrders).toBeNull()
     expect(detail!.workOrderConsumptionImpact).toEqual([])
+    // Ídem para las compras: sin `purchasing:view` ni se consultan ni se dicen vacías.
+    expect(detail!.recentPurchases).toBeNull()
+    expect(getVehiclePurchaseHistory).not.toHaveBeenCalled()
+  })
+
+  it("con purchasing:view trae las compras vinculadas del equipo", async () => {
+    const withPurchases = { user: { id: "buyer", isGlobal: true, worksiteIds: [], permissions: ["flota:view", "purchasing:view"] } } as unknown as Session
+    findFirstVehicle.mockResolvedValue({ id: "veh-1", worksiteId: "ws-1", plate: "AA-BB-11" })
+    findManyDocuments.mockResolvedValue([])
+    findManyIntervals.mockResolvedValue([])
+    getVehiclePurchaseHistory.mockResolvedValue([{ requestItemId: "item-1", itemName: "Filtro hidráulico" }])
+
+    const detail = await getFleetVehicleDetail(withPurchases, "veh-1")
+
+    expect(getVehiclePurchaseHistory).toHaveBeenCalledWith("veh-1")
+    expect(detail!.recentPurchases).toEqual([{ requestItemId: "item-1", itemName: "Filtro hidráulico" }])
+  })
+
+  it("un vehículo fuera del alcance de faenas no consulta compras", async () => {
+    const outOfScope = { user: { id: "buyer", isGlobal: false, worksiteIds: ["ws-otra"], permissions: ["flota:view", "purchasing:view"] } } as unknown as Session
+    findFirstVehicle.mockResolvedValue({ id: "veh-1", worksiteId: "ws-1", plate: "AA-BB-11" })
+
+    expect(await getFleetVehicleDetail(outOfScope, "veh-1")).toBeNull()
+    expect(getVehiclePurchaseHistory).not.toHaveBeenCalled()
   })
 
   it("con mant:ot:view_* trae las últimas OT del equipo; el antes/después de rendimiento exige combustible y una OT cerrada", async () => {

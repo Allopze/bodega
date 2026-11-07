@@ -63,12 +63,17 @@ describe("createRequestActions factory", () => {
       requestId: z.string(),
       quotationId: z.string(),
     }),
+    approveWithoutQuotation: z.object({
+      requestId: z.string().min(1),
+      justification: z.string().trim().nullable().optional(),
+    }),
   }
 
   const mockServices = {
     addQuotation: vi.fn(),
     deleteQuotation: vi.fn(),
     selectQuotation: vi.fn(),
+    approveWithoutQuotation: vi.fn(),
   }
 
   const mockConfig: RequestActionsConfig = {
@@ -226,6 +231,118 @@ describe("createRequestActions factory", () => {
       const result = await actions.selectQuotationAction({ ok: false, message: "" }, fd)
       expect(result.ok).toBe(false)
       expect(result.message).toBe("Select failed")
+    })
+  })
+  describe("approveWithoutQuotationAction", () => {
+    const state = { ok: false, message: "" }
+    const form = (fields: Record<string, string> = { requestId: "req-1" }) => {
+      const fd = new FormData()
+      for (const [key, value] of Object.entries(fields)) fd.append(key, value)
+      return fd
+    }
+    const approver = { user: { id: "u1", email: "u1@test.com", roles: ["jefa_chome"] } }
+
+    it("exige repuestos:approve", async () => {
+      mockRequirePermission.mockRejectedValue(new Error("Unauthorized"))
+
+      const result = await actions.approveWithoutQuotationAction(state, form())
+
+      expect(mockRequirePermission).toHaveBeenCalledWith("repuestos:approve")
+      expect(result.ok).toBe(false)
+      expect(result.message).toContain("Sin permisos")
+      expect(mockServices.approveWithoutQuotation).not.toHaveBeenCalled()
+      expect(mockNotifySafe).not.toHaveBeenCalled()
+    })
+
+    it("llama al servicio con el alcance y la justificación, avisa al solicitante y revalida", async () => {
+      mockRequirePermission.mockResolvedValue(approver)
+      mockFindFirst.mockResolvedValue({ worksiteId: "ws-1", requesterId: "u2", code: "REQ-001" })
+      mockCanAccessWorksite.mockReturnValue(true)
+
+      const result = await actions.approveWithoutQuotationAction(state, form({ requestId: "req-1", justification: "  Bajo costo  " }))
+
+      expect(result).toEqual({ ok: true, message: "Solicitud aprobada. Ítems listos para orden de compra." })
+      expect(mockServices.approveWithoutQuotation).toHaveBeenCalledWith(expect.objectContaining({
+        requestId: "req-1", userId: "u1", userEmail: "u1@test.com", roleContext: "jefa_chome", justification: "Bajo costo",
+      }))
+      expect(mockNotifySafe).toHaveBeenCalledWith(expect.objectContaining({
+        userId: "u2", type: "request_approved", entityType: "purchase_request", entityId: "req-1",
+        entityHref: "/compras/repuestos/req-1",
+      }))
+      // Las mismas vistas que seleccionar una cotización: la solicitud, sus
+      // listados y las pantallas de Compras donde el ítem aprobado aparece.
+      for (const path of ["/compras/repuestos/req-1", "/compras/repuestos", "/solicitudes", "/solicitudes/req-1", "/compras", "/compras/nueva", "/pendientes"]) {
+        expect(mockRevalidatePath).toHaveBeenCalledWith(path)
+      }
+    })
+
+    it("sin justificación la manda como null", async () => {
+      mockRequirePermission.mockResolvedValue(approver)
+      mockFindFirst.mockResolvedValue({ worksiteId: "ws-1", requesterId: "u2", code: "REQ-001" })
+      mockCanAccessWorksite.mockReturnValue(true)
+
+      await actions.approveWithoutQuotationAction(state, form())
+
+      expect(mockServices.approveWithoutQuotation).toHaveBeenCalledWith(expect.objectContaining({ justification: null }))
+    })
+
+    it("rechaza datos incompletos sin tocar el servicio", async () => {
+      mockRequirePermission.mockResolvedValue(approver)
+
+      const result = await actions.approveWithoutQuotationAction(state, form({ requestId: "" }))
+
+      expect(result).toEqual({ ok: false, message: "Datos incompletos" })
+      expect(mockServices.approveWithoutQuotation).not.toHaveBeenCalled()
+    })
+
+    it("no aprueba una solicitud de una faena fuera de alcance", async () => {
+      mockRequirePermission.mockResolvedValue(approver)
+      mockFindFirst.mockResolvedValue({ worksiteId: "ws-9", requesterId: "u2", code: "REQ-001" })
+      mockCanAccessWorksite.mockReturnValue(false)
+
+      const result = await actions.approveWithoutQuotationAction(state, form())
+
+      expect(result).toEqual({ ok: false, message: "No tienes acceso a esta solicitud" })
+      expect(mockServices.approveWithoutQuotation).not.toHaveBeenCalled()
+    })
+
+    it("responde que la solicitud no existe", async () => {
+      mockRequirePermission.mockResolvedValue(approver)
+      mockFindFirst.mockResolvedValue(undefined)
+
+      const result = await actions.approveWithoutQuotationAction(state, form())
+
+      expect(result).toEqual({ ok: false, message: "Solicitud no encontrada" })
+    })
+
+    it("devuelve el error del servicio y no notifica", async () => {
+      mockRequirePermission.mockResolvedValue(approver)
+      mockFindFirst.mockResolvedValue({ worksiteId: "ws-1", requesterId: "u2", code: "REQ-001" })
+      mockCanAccessWorksite.mockReturnValue(true)
+      mockServices.approveWithoutQuotation.mockRejectedValue(new Error("Hay cotizaciones adjuntas: selecciona la ganadora"))
+
+      const result = await actions.approveWithoutQuotationAction(state, form())
+
+      expect(result.ok).toBe(false)
+      expect(result.message).toBe("Hay cotizaciones adjuntas: selecciona la ganadora")
+      expect(mockNotifySafe).not.toHaveBeenCalled()
+    })
+
+    it("un módulo sin aprobación sin cotización (servicios) responde que no está disponible", async () => {
+      const { approveWithoutQuotation: _service, ...servicesWithout } = mockServices
+      const { approveWithoutQuotation: _schema, ...schemasWithout } = schemas
+      const serviciosActions = createRequestActions({
+        ...mockConfig,
+        permissions: { submit: "servicios:submit", approve: "servicios:approve" },
+        schemas: schemasWithout,
+        services: servicesWithout,
+      })
+      mockRequirePermission.mockResolvedValue(approver)
+
+      const result = await serviciosActions.approveWithoutQuotationAction(state, form())
+
+      expect(result).toEqual({ ok: false, message: "Este tipo de solicitud no admite aprobación sin cotización" })
+      expect(mockServices.approveWithoutQuotation).not.toHaveBeenCalled()
     })
   })
 })

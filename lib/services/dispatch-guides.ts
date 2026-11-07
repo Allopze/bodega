@@ -43,6 +43,7 @@ import {
   inventoryMovements,
   purchaseOrderItems,
   purchaseOrders,
+  purchaseRequestItems,
   products,
   receiptItems,
   receipts,
@@ -68,6 +69,8 @@ import {
   type RequesterShortfall,
 } from "@/lib/services/requester-shortfall-notify"
 import { receiveItemTx } from "@/lib/services/item-state"
+import { notifyAfterCommit } from "@/lib/services/notifications"
+import { notifyWorkOrderPartsReceived } from "@/lib/services/mantencion/work-orders/notifications"
 import type { DispatchGuideInput } from "@/lib/validation/dispatch-guides"
 import { isValidReason, reasonRequiredMessage } from "@/lib/validation/reason-thresholds"
 
@@ -1039,9 +1042,16 @@ export async function confirmDispatchGuideReceipt(
   // `E2E-001`: los avisos al solicitante se acumulan dentro de la transacción y
   // se sueltan recién después del COMMIT (ver `notifyAfterCommit`).
   const shortfallNotices: PendingRequesterNotification[] = []
+  // Repuestos de una OT que quedaron completos en faena con esta guía: el mismo
+  // aviso a mantención que da `registerReceipt` cuando la OC llega directo a
+  // faena. Una OC vía oficina llega a faena por acá y antes no avisaba.
+  const partsArrivals = new Map<string, Set<string>>()
+  const partsReceipt: { id: string | null } = { id: null }
 
   const result = await db.transaction(async (tx) => {
     shortfallNotices.length = 0
+    partsArrivals.clear()
+    partsReceipt.id = null
     const guide = await lockGuide(tx, guideId)
     if (guide.status === "received") throw new Error("La recepción de esta guía ya fue confirmada")
     if (guide.status !== "dispatched" && guide.status !== "partially_received") {
@@ -1145,10 +1155,23 @@ export async function confirmDispatchGuideReceipt(
           .set({ quantityReceived: line.nextReceived })
           .where(eq(purchaseOrderItems.id, line.poItem.id))
         if (line.poItem.requestItemId) {
+          const fullReceived = line.nextReceived >= line.poItem.quantity
           await receiveItemTx(tx, line.poItem.requestItemId, actor.userId, {
-            fullReceived: line.nextReceived >= line.poItem.quantity,
+            fullReceived,
             userEmail: actor.userEmail,
           })
+          if (fullReceived) {
+            const [requestItem] = await tx
+              .select({ workOrderId: purchaseRequestItems.workOrderId })
+              .from(purchaseRequestItems)
+              .where(eq(purchaseRequestItems.id, line.poItem.requestItemId))
+            if (requestItem?.workOrderId) {
+              const lines = partsArrivals.get(requestItem.workOrderId) ?? new Set<string>()
+              lines.add(line.poItem.requestItemId)
+              partsArrivals.set(requestItem.workOrderId, lines)
+              partsReceipt.id = receiptId
+            }
+          }
         }
         await tx.update(dispatchGuideItems)
           .set({
@@ -1262,6 +1285,14 @@ export async function confirmDispatchGuideReceipt(
   })
 
   flushRequesterShortfallNotifications(shortfallNotices)
+  const receiptForParts = partsReceipt.id
+  if (receiptForParts) {
+    for (const [workOrderId, lines] of partsArrivals) {
+      notifyAfterCommit(() => notifyWorkOrderPartsReceived({
+        workOrderId, receiptId: receiptForParts, actorUserId: actor.userId, itemCount: lines.size,
+      }))
+    }
+  }
   return result
 }
 

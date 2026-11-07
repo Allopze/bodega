@@ -9,16 +9,28 @@ function formatLineAmount(amount: number | null) {
 }
 
 /**
- * Instrumento y colaborador del ítem de origen. La OC de una mantención tiene
- * que decir sobre qué aparato es: desde que el equipo pasó a ser una FK, dejó
- * de viajar como atributo de texto y la ficha se quedó sin ese dato.
+ * El equipo del ítem de origen. La OC de una mantención tiene que decir sobre
+ * qué aparato es: desde que el equipo pasó a ser una FK, dejó de viajar como
+ * atributo de texto y la ficha se quedó sin ese dato.
+ *
+ * Hay dos clases de «equipo» y el esquema las hace excluyentes: el instrumento
+ * de un servicio (`equipmentLabel`) y el vehículo de la flota, que puede traer
+ * la OT que originó el pedido («KA-63 · ABCD-12 · OT M-0042»).
  */
+function assetLabel(item: OcDetailItem): string | null {
+  if (item.equipmentLabel) return item.equipmentLabel
+  if (!item.vehicleLabel) return null
+  return item.workOrderFolio ? `${item.vehicleLabel} · OT ${item.workOrderFolio}` : item.vehicleLabel
+}
+
+/** Instrumento o vehículo y colaborador del ítem de origen. */
 function ItemContext({ item }: { item: OcDetailItem }) {
-  if (!item.equipmentLabel && !item.workerName) return null
+  const asset = assetLabel(item)
+  if (!asset && !item.workerName) return null
   return (
     <p className="mt-0.5 text-xs text-[var(--color-text-subtle)]">
       {[
-        item.equipmentLabel ? `Equipo: ${item.equipmentLabel}` : null,
+        asset ? `Equipo: ${asset}` : null,
         item.workerName ? `Colaborador: ${item.workerName}` : null,
       ].filter(Boolean).join(" · ")}
     </p>

@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test"
-import { attachQuotation, login, pickCurrentMonthDate, selectRadixById, waitForDraftSaved, openLatestDraft } from "./helpers"
+import { attachQuotation, login, pickCurrentMonthDate, pickVehicle, selectRadixById, textoVisible, waitForDraftSaved, openLatestDraft } from "./helpers"
 
 /**
  * El camino real de repuestos/servicios: borrador con cotizaciones → enviar →
@@ -134,5 +134,55 @@ test.describe("Repuestos/Servicios — adjudicación y visibilidad en compras", 
     await createSubmitAndAward(page, "Repuestos")
     await expect(page.getByRole("heading", { name: "Cotizaciones" })).toBeVisible()
     await expect(page.getByText("cotizacion-e2e.pdf")).toBeVisible()
+  })
+  /*
+   * Umbral de cotizaciones de repuestos (2026-11-07): bajo $500.000 basta el
+   * precio estimado, y la jefatura aprueba sin cotización. El ítem apunta a un
+   * equipo de flota (`fuel-veh-e2e`, patente E2E-FUEL-1) y la OC lo muestra.
+   */
+  async function draftWithVehicle(page: Page, description: string, unitPrice: string) {
+    await page.goto("/solicitudes/nueva")
+    await page.waitForLoadState("networkidle").catch(() => undefined)
+    await selectRadixById(page, "worksiteId", "Faena E2E")
+    await selectRadixById(page, "requestType", "Repuestos")
+    await pickCurrentMonthDate(page, "Seleccionar fecha")
+    await page.getByPlaceholder("Describe el ítem requerido...").fill(description)
+    await pickVehicle(page, "E2E-FUEL-1")
+    // Con un equipo de flota elegido no se escribe la patente a mano.
+    await expect(page.getByPlaceholder("Ej: ABCD-12")).toHaveCount(0)
+    await page.getByLabel("Precio unitario estimado (CLP)").fill(unitPrice)
+    await page.getByRole("button", { name: /Guardar borrador/ }).click()
+    // Sin cotización que subir no hay otra señal de que el borrador ya existe:
+    // abrir «el último borrador» antes de esto abre el de otro test.
+    await expect(textoVisible(page, /^Borrador guardado/).first()).toBeVisible({ timeout: 30_000 })
+    await openLatestDraft(page, "REP")
+    await page.getByRole("button", { name: /Enviar a aprobación/ }).click()
+  }
+
+  test("repuesto bajo umbral: equipo de flota, sin cotización, aprobación directa y OC con el equipo", async ({ page }) => {
+    await draftWithVehicle(page, "QA_ Filtro de aceite bajo umbral", "20000")
+
+    await expect(page.getByRole("heading", { name: "Cotizaciones" })).toBeVisible({ timeout: 15_000 })
+    const approve = page.getByRole("button", { name: "Aprobar sin cotización", exact: true })
+    const dialog = page.getByRole("dialog", { name: "Aprobar sin cotización" })
+    await expect(approve).toBeVisible()
+    await expect(async () => {
+      await approve.click()
+      await expect(dialog).toBeVisible({ timeout: 2_000 })
+    }).toPass({ timeout: 30_000 })
+    await dialog.getByRole("button", { name: "Confirmar aprobación" }).click()
+
+    await expect(textoVisible(page, "Aprobada").first()).toBeVisible({ timeout: 15_000 })
+    const requestId = new URL(page.url()).pathname.split("/").pop() ?? ""
+    expect(requestId).not.toBe("")
+
+    // La nueva OC prellena el precio estimado y dice para qué equipo es.
+    await page.goto(`/compras/nueva?solicitud=${requestId}`)
+    await expect(textoVisible(page, /E2E-FUEL-1/).first()).toBeVisible({ timeout: 15_000 })
+  })
+
+  test("repuesto sobre umbral sin cotización queda bloqueado", async ({ page }) => {
+    await draftWithVehicle(page, "QA_ Motor de partida sobre umbral", "900000")
+    await expect(page.getByText(/se necesita al menos una cotización/i).first()).toBeVisible({ timeout: 15_000 })
   })
 })

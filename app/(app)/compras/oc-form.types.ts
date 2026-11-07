@@ -54,6 +54,16 @@ export interface PendingItemOption {
   awardedQuotationTotal?: number | null
   /** Cuántas líneas comparten esa adjudicación. 1 = el total es de esta línea. */
   awardedLineCount?:      number
+  /**
+   * Precio unitario que el solicitante estimó al pedir el repuesto. Es una
+   * referencia declarada, no un compromiso: sólo prefija el precio cuando no
+   * hay adjudicación de una línea que la reemplace.
+   */
+  estimatedUnitPrice?:    number | null
+  /** Equipo de flota para el que se pidió («KA-63 · ABCD-12»), cuando lo hay. */
+  vehicleLabel?:          string | null
+  /** Folio de la OT de mantención que originó el pedido, cuando la hay. */
+  workOrderFolio?:        string | null
 }
 
 export interface OcItemRow extends PendingItemOption {

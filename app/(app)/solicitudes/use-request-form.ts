@@ -7,14 +7,15 @@ import { INITIAL_STATE } from "@/lib/form-state"
 import { useActionWatchers } from "@/lib/hooks/use-action-watchers"
 import { URGENCY_OPTS } from "./request-form.constants"
 import type { ActionState } from "@/lib/validation/operations"
-import type { ItemRow, ProductOption, WorksiteOption, SupplierOption, WorkerOption, EditRequest, PrefillItem } from "./request-form.types"
+import type { ItemRow, ProductOption, WorksiteOption, SupplierOption, WorkerOption, EditRequest, PrefillItem, VehicleOption } from "./request-form.types"
 import { nanoid } from "@/lib/id"
 import { QUOTATION_TYPES, visibleRequestTypeOptions } from "@/lib/request-types"
 import type { RequestType } from "@/lib/request-types"
 import { saveDraft, submitRequest, cancelRequest, deleteRequestAction } from "./actions"
 import {
   applyPrefillAttributeValues, blankItemForType, buildAttrsFromProduct, buildRequestSummaryIssues,
-  equipmentFromAttributes, parseAttributeOptions, requestStatusLabel,
+  equipmentFromAttributes, evaluateRequestQuotations, parseAttributeOptions, parseEstimatedPrice,
+  quotationRuleHint, requestStatusLabel,
 } from "./request-form.helpers"
 import { groupProductVariants } from "@/lib/products/variant-grouping"
 import { normalizeSizeLabel, suggestedWorkerSize } from "@/lib/products/product-size"
@@ -199,9 +200,17 @@ function useDraftPersistence({
   return { buildDraftFormData }
 }
 
+/** El equipo y la OT son de una faena: al dejarla, el vínculo ya no tiene sentido. */
+function withoutFleetLink(item: ItemRow): ItemRow {
+  return item.vehicleId || item.workOrderId
+    ? { ...item, vehicleId: "", vehicleLabel: "", workOrderId: "", workOrderFolio: "" }
+    : item
+}
+
 export function useRequestForm({
   worksites, products, workers, editRequest,
   userPermissions = [], initialRequestType, prefillItems, initialWorksiteId,
+  vehicles = [], initialUrgency, quotationThresholdClp, attachedQuotationTotals,
 }: {
   worksites: WorksiteOption[]; products: ProductOption[]; suppliers: SupplierOption[]; workers?: WorkerOption[]
   editRequest?: EditRequest; maxFileSizeMb: number; userRoles?: string[]; userPermissions?: string[]
@@ -210,6 +219,14 @@ export function useRequestForm({
    *  el servidor). Sin esto, "Reponer" desde Bodega abría la solicitud en la
    *  primera faena de la lista, que casi nunca es la que tiene el quiebre. */
   initialWorksiteId?: string
+  /** Equipos de flota ofrecidos en «Equipo de flota» (repuestos y servicios). */
+  vehicles?: VehicleOption[]
+  /** Urgencia con la que se abre el creador (p. ej. «alta» al pedir repuestos desde una OT). */
+  initialUrgency?: string
+  /** Umbral de cotizaciones de repuestos (Parámetros operativos); `null`/ausente = regla legada. */
+  quotationThresholdClp?: number | null
+  /** Totales de las cotizaciones ya guardadas en el borrador (ficha de la solicitud). */
+  attachedQuotationTotals?: number[]
 }) {
   const router = useRouter()
   const isEdit = !!editRequest
@@ -248,14 +265,23 @@ export function useRequestForm({
   const [savedId, setSavedId] = useState(editRequest?.id)
   const [worksiteId, setWorksiteIdState] = useState(editRequest?.worksiteId ?? initialWorksiteId ?? (worksites[0]?.id ?? ""))
   const [requestType, setRequestTypeState] = useState(editRequest?.requestType ?? allowedInitialRequestType ?? requestTypeOpts[0]?.value ?? "epp")
-  const [urgency, setUrgencyState] = useState(editRequest?.urgency ?? "normal")
-  const [deliveryMode, setDeliveryModeState] = useState<string>(editRequest?.deliveryMode ?? "via_oficina")
+  const [urgency, setUrgencyState] = useState(editRequest?.urgency ?? initialUrgency ?? "normal")
+  // Repuestos y servicios llegan a la faena sin pasar por la oficina: ése es el
+  // despacho por defecto de los tipos con cotización. El resto (EPP, otros) sigue
+  // pasando por la oficina. La persona puede cambiarlo; ver `deliveryModeEditedRef`.
+  const [deliveryMode, setDeliveryModeState] = useState<string>(
+    editRequest?.deliveryMode ?? (QUOTATION_TYPES.has(requestType) ? "directo_faena" : "via_oficina"),
+  )
+  const deliveryModeEditedRef = useRef(false)
   const [requiredDate, setRequiredDateState] = useState(editRequest?.requiredDate ?? "")
   const [notes, setNotesState] = useState(editRequest?.notes ?? "")
-  const setWorksiteId = useCallback((value: string) => { invalidateStockWarning(); setWorksiteIdState(value) }, [invalidateStockWarning])
   const setRequestType = useCallback((value: string) => { invalidateStockWarning(); setRequestTypeState(value) }, [invalidateStockWarning])
   const setUrgency = useCallback((value: string) => { invalidateStockWarning(); setUrgencyState(value) }, [invalidateStockWarning])
-  const setDeliveryMode = useCallback((value: string) => { invalidateStockWarning(); setDeliveryModeState(value) }, [invalidateStockWarning])
+  const setDeliveryMode = useCallback((value: string) => {
+    invalidateStockWarning()
+    deliveryModeEditedRef.current = true
+    setDeliveryModeState(value)
+  }, [invalidateStockWarning])
   const setRequiredDate = useCallback((value: string) => { invalidateStockWarning(); setRequiredDateState(value) }, [invalidateStockWarning])
   const setNotes = useCallback((value: string) => { invalidateStockWarning(); setNotesState(value) }, [invalidateStockWarning])
 
@@ -276,6 +302,10 @@ export function useRequestForm({
           variantQuantities: {}, workerId: item.workerId ?? "", workerName: item.workerName ?? "",
           equipmentCode: item.equipmentCode ?? "", equipmentLabel: item.equipmentLabel ?? "",
           emergencyResourceId: item.emergencyResourceId ?? "", emergencyResourceLabel: item.emergencyResourceLabel ?? "",
+          vehicleId: item.vehicleId ?? "",
+          vehicleLabel: item.vehicleLabel ?? vehicles.find((vehicle) => vehicle.id === item.vehicleId)?.label ?? "",
+          workOrderId: item.workOrderId ?? "", workOrderFolio: item.workOrderFolio ?? "",
+          estimatedUnitPrice: item.estimatedUnitPrice == null ? "" : String(item.estimatedUnitPrice),
           showAttrs: !isQuotation && item.attributes.length > 0, cotizaciones: [],
           ...equipmentFromAttributes(editRequest.requestType, item.attributes),
           attributes: isQuotation ? [] : item.attributes.map((a) => {
@@ -314,6 +344,11 @@ export function useRequestForm({
           emergencyResourceLabel: prefill.emergencyResourceLabel ?? "",
           suggestedSupplierId: prefill.suggestedSupplierId ?? "",
           supplierHint:        prefill.supplierHint ?? "",
+          vehicleId:           prefill.vehicleId ?? "",
+          vehicleLabel:        prefill.vehicleLabel ?? vehicles.find((vehicle) => vehicle.id === prefill.vehicleId)?.label ?? "",
+          workOrderId:         prefill.workOrderId ?? "",
+          workOrderFolio:      prefill.workOrderFolio ?? "",
+          estimatedUnitPrice:  prefill.estimatedUnitPrice == null ? "" : String(prefill.estimatedUnitPrice),
           isEpp:               prod?.isEpp ?? false,
           attributes:          attrs,
           showAttrs:           attrs.length > 0,
@@ -325,6 +360,17 @@ export function useRequestForm({
     // evita IDs distintos entre el HTML inicial y el primer render del cliente.
     return [blankItemForType("new-0", requestType)]
   })
+
+  // Cambiar de faena con un equipo ya elegido limpia el equipo y la OT de todos
+  // los ítems: son de la faena anterior, y si se conservaran el servidor rechazaría
+  // el borrador con «El equipo pertenece a otra faena» sin que el selector (que
+  // sólo ofrece los de la faena actual) mostrara cuál es.
+  const setWorksiteId = useCallback((value: string) => {
+    invalidateStockWarning()
+    if (value === worksiteId) return
+    setWorksiteIdState(value)
+    setItems((prev) => prev.some((item) => item.vehicleId || item.workOrderId) ? prev.map(withoutFleetLink) : prev)
+  }, [invalidateStockWarning, worksiteId])
 
   const [dirty, setDirty] = useState(false)
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null)
@@ -345,6 +391,12 @@ export function useRequestForm({
     if (prev === requestType || isEdit) return
     if (QUOTATION_TYPES.has(requestType) || QUOTATION_TYPES.has(prev)) {
       setItems([blankItemForType(nanoid(), requestType)])
+    }
+    // El despacho por defecto sigue al tipo mientras la persona no lo haya
+    // elegido: repuestos y servicios van directo a faena, el resto vía oficina.
+    // Una elección explícita no se pisa.
+    if (!deliveryModeEditedRef.current) {
+      setDeliveryModeState(QUOTATION_TYPES.has(requestType) ? "directo_faena" : "via_oficina")
     }
   }, [requestType, isEdit])
 
@@ -422,6 +474,33 @@ export function useRequestForm({
     ))
   }, [invalidateStockWarning])
 
+  /**
+   * Elegir equipo de flota fija el equipo y suelta la OT: las OT abiertas son de
+   * ese equipo, así que la anterior ya no corresponde. Con `""` («Otro equipo») el
+   * ítem vuelve a los campos libres; lo que se había escrito en ellos se conserva.
+   */
+  const selectVehicle = useCallback((key: string, vehicleId: string) => {
+    const vehicle = vehicleId ? vehicles.find((option) => option.id === vehicleId) : undefined
+    if (vehicleId && !vehicle) return
+    invalidateStockWarning()
+    setItems((prev) => prev.map((i) => i._key !== key ? i : {
+      ...i,
+      vehicleId: vehicle?.id ?? "", vehicleLabel: vehicle?.label ?? "",
+      workOrderId: "", workOrderFolio: "",
+    }))
+  }, [invalidateStockWarning, vehicles])
+
+  const selectWorkOrder = useCallback((key: string, workOrderId: string) => {
+    invalidateStockWarning()
+    setItems((prev) => prev.map((i) => {
+      if (i._key !== key) return i
+      const order = workOrderId
+        ? vehicles.find((vehicle) => vehicle.id === i.vehicleId)?.openWorkOrders.find((candidate) => candidate.id === workOrderId)
+        : undefined
+      return order ? { ...i, workOrderId: order.id, workOrderFolio: order.folio } : { ...i, workOrderId: "", workOrderFolio: "" }
+    }))
+  }, [invalidateStockWarning, vehicles])
+
   const updateItemWorker = useCallback((key: string, workerId: string) => {
     // Limpiar la selección es un caso legítimo (el combobox manda ""), y antes
     // el early-return por "no encontré el trabajador" lo hacía imposible.
@@ -497,9 +576,16 @@ export function useRequestForm({
         workerId: item.workerId || null,
         equipmentCode: item.equipmentCode || null,
         emergencyResourceId: item.emergencyResourceId || null,
+        // Con un equipo de flota elegido, Equipo/Patente/Marca/Modelo los dice el
+        // registro del vehículo: no se mandan (el servidor tampoco los guarda).
+        vehicleId: item.vehicleId || null,
+        workOrderId: item.vehicleId ? (item.workOrderId || null) : null,
+        estimatedUnitPrice: parseEstimatedPrice(item.estimatedUnitPrice),
         partNumber: item.partNumber || null, location: item.location || null,
-        equipmentName: item.equipmentName || null, patent: item.patent || null,
-        brand: item.brand || null, model: item.model || null,
+        equipmentName: item.vehicleId ? null : (item.equipmentName || null),
+        patent: item.vehicleId ? null : (item.patent || null),
+        brand: item.vehicleId ? null : (item.brand || null),
+        model: item.vehicleId ? null : (item.model || null),
         // Sólo los atributos con valor: un opcional en blanco no es un dato, y
         // enviarlo hacía que el esquema del servidor rechazara la solicitud
         // entera con "Valor requerido" mientras el panel decía "Listo para
@@ -634,7 +720,13 @@ export function useRequestForm({
   const requestTypeLabel = requestTypeOpts.find((o) => o.value === requestType)?.label ?? requestType
   const urgencyLabel = URGENCY_OPTS.find((o) => o.value === urgency)?.label ?? urgency
   const worksiteLabel = worksites.find((w) => w.id === worksiteId)?.name ?? "Sin faena"
-  const missingItems = buildRequestSummaryIssues({ worksiteId, requiredDate, items, requestType, notes, products })
+  const missingItems = buildRequestSummaryIssues({
+    worksiteId, requiredDate, items, requestType, notes, products, urgency, vehicles, quotationThresholdClp, attachedQuotationTotals,
+  })
+  // La misma regla que el panel de pendientes, para avisar bajo las cotizaciones del ítem.
+  const quotationState = evaluateRequestQuotations({ items, requestType, notes, urgency, vehicles, quotationThresholdClp, attachedQuotationTotals })
+  const quotationRule = isQuotation ? quotationRuleHint(requestType, quotationState?.thresholdClp ?? null) : ""
+  const quotationNotice = quotationState?.message ?? null
   const statusLabel = editRequest ? requestStatusLabel(editRequest.status) : "Borrador"
   const submitMessage = submitState.message
   const submitOk = submitState.ok
@@ -649,7 +741,7 @@ export function useRequestForm({
     canDeleteRequest, canCancelRequest, deleteConfirmOpen, setDeleteConfirmOpen,
     isSaving, isSubmitting, isDeleting, draftPending,
     addItem, removeItem, updateItem, selectProduct, selectFreeProduct, clearProduct,
-    updateItemWorker, updateAttr,
+    updateItemWorker, updateAttr, selectVehicle, selectWorkOrder, quotationRule, quotationNotice,
     buildDraftFormData, draftAction, submitAction, cancelAction, deleteAction,
     startSaveTransition, startSubmitTransition, startDeleteTransition, silentNavBack,
     pendingHref, setPendingHref, confirmLeave,

@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input"
 import { SegmentedControl } from "@/components/ui/segmented-control"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { formatCLP, formatQty, quantityStep } from "@/lib/utils"
-import { priceHint, suggestedSupplierLabel } from "./oc-form.helpers"
+import { priceHint, priceSourceLabel, suggestedSupplierLabel } from "./oc-form.helpers"
 import type { SupplierOption, PendingItemOption } from "./oc-form.types"
 
 const MODE_LABELS: Record<string, string> = {
@@ -120,6 +120,7 @@ export function OcFormItems({
             const subtotal     = costPending ? null : qty * price! * (1 - disc / 100)
             const supplierForItem = resolveItemSupplierId(item)
             const hint         = priceHint(item, supplierForItem)
+            const hintSource   = priceSourceLabel(item, supplierForItem)
             const supLabel     = suggestedSupplierLabel(item, suppliers)
 
             return (
@@ -164,6 +165,12 @@ export function OcFormItems({
                       <MetaBadge meta={{ label: "Servicio", variant: "outline" }} className="font-normal shrink-0" />
                     )}
                   </div>
+                  {item.vehicleLabel && (
+                    <div className="mt-0.5 text-xs text-[var(--color-text-subtle)]">
+                      Equipo: {item.vehicleLabel}
+                      {item.workOrderFolio && ` · OT ${item.workOrderFolio}`}
+                    </div>
+                  )}
                   <div className="mt-1 text-xs text-[var(--color-text-muted)]">
                     Aprobado: {formatQty(item.quantity, item.unitOfMeasure)}
                     {item.notes && ` · ${item.notes}`}
@@ -222,7 +229,7 @@ export function OcFormItems({
                         title={hint ?? (item.isService ? "Déjalo vacío si el costo aún no se conoce" : undefined)}
                       />
                       {hint ? (
-                        <span className="text-[10px] text-[var(--color-text-subtle)]">catálogo</span>
+                        <span className="text-[10px] text-[var(--color-text-subtle)]">{hintSource}</span>
                       ) : item.isService && costPending ? (
                         <span className="text-[10px] text-[var(--color-warning-ink)]">se registra después</span>
                       ) : null}

@@ -17,10 +17,20 @@ interface Props {
   maxFileSizeMb: number
   readOnly: boolean
   suppliers: SupplierOption[]
+  /** Explica la regla vigente (con el umbral de repuestos); ver `quotationRuleHint`. */
+  ruleHint?: string
+  /**
+   * Qué le falta a la solicitud según la regla única de cotizaciones
+   * (`evaluateRequestQuotations`), o `null` si está en regla. Es el mismo texto
+   * que el panel de pendientes y que rechazaría el servidor al enviar.
+   */
+  notice?: string | null
   onUpdate: (patch: Partial<ItemRow>) => void
 }
 
-export function ItemEditorCotizaciones({ item, requestType, maxFileSizeMb, readOnly, suppliers, onUpdate }: Props) {
+const DEFAULT_RULE_HINT = "Mínimo 3 cotizaciones, o menos con una justificación en Notas generales. Cada archivo necesita proveedor y monto."
+
+export function ItemEditorCotizaciones({ item, requestType, maxFileSizeMb, readOnly, suppliers, ruleHint, notice, onUpdate }: Props) {
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const cotizacionesRef = React.useRef(item.cotizaciones)
   React.useEffect(() => { cotizacionesRef.current = item.cotizaciones })
@@ -66,9 +76,10 @@ export function ItemEditorCotizaciones({ item, requestType, maxFileSizeMb, readO
   return (
     <div className="ml-8 space-y-3">
       <div className="flex items-center justify-between">
-        <Field label="Cotizaciones" required={requestType === "repuestos"} htmlFor={`cot-${item._key}`}>
+        {/* En repuestos ya no siempre es obligatoria: bajo el umbral basta el precio estimado. */}
+        <Field label="Cotizaciones" required={requestType === "servicios"} htmlFor={`cot-${item._key}`}>
           <p className="text-[11px] text-(--color-text-subtle) mt-0.5">
-            Mínimo 3 cotizaciones, o menos con una justificación en Notas generales. Cada archivo necesita proveedor y monto.
+            {ruleHint ?? DEFAULT_RULE_HINT}
           </p>
         </Field>
       </div>
@@ -171,10 +182,10 @@ export function ItemEditorCotizaciones({ item, requestType, maxFileSizeMb, readO
         </ul>
       )}
 
-      {requestType === "repuestos" && (item.cotizaciones?.length ?? 0) > 0 && (item.cotizaciones?.length ?? 0) < 3 && (
+      {notice && (item.cotizaciones?.length ?? 0) > 0 && (
         <p className="flex items-center gap-1.5 text-[11px] text-(--color-warning-ink)">
           <Warning size={12} className="shrink-0" />
-          Mínimo 3 cotizaciones, o menos con una justificación en Notas generales.
+          {notice}
         </p>
       )}
     </div>

@@ -114,6 +114,26 @@ describe("system-rbac → manifest parity", () => {
     expect(perms).toContain("admin:worker_positions")
   })
 
+  it("mantención solicita repuestos pero no los aprueba", () => {
+    // jefe_mantencion ve todas las solicitudes; supervisor_mantencion y
+    // admin_contrato sólo las propias. La aprobación sigue en jefa_chome y
+    // administrador; el mecánico no solicita.
+    expect(rolePermissions("rol-jefe-mant")).toEqual(expect.arrayContaining([
+      "repuestos:create", "repuestos:view_own", "repuestos:view_all", "repuestos:submit",
+    ]))
+    for (const roleId of ["rol-sup-mantencion", "rol-admin-contrato"]) {
+      const perms = rolePermissions(roleId)
+      expect(perms, roleId).toEqual(expect.arrayContaining(["repuestos:create", "repuestos:view_own", "repuestos:submit"]))
+      expect(perms, roleId).not.toContain("repuestos:view_all")
+    }
+    for (const roleId of ["rol-jefe-mant", "rol-sup-mantencion", "rol-admin-contrato", "rol-mecanico"]) {
+      expect(rolePermissions(roleId), roleId).not.toContain("repuestos:approve")
+    }
+    expect(rolePermissions("rol-mecanico")).not.toContain("repuestos:create")
+    expect(rolePermissions("rol-jefa")).toContain("repuestos:approve")
+    expect(rolePermissions("rol-admin")).toContain("repuestos:approve")
+  })
+
   it("grants jefe_mantencion the fleet catalog", () => {
     const perms = rolePermissions("rol-jefe-mant")
     expect(perms).toContain("admin:fleet_catalog")

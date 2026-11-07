@@ -61,17 +61,47 @@ describe("operational work queue — cotización ganadora (repuestos/servicios)"
         id: "req-owq-servicio", code: "SOL-OWQ-SERV", worksiteId, requesterId: "user-owq-test",
         requestType: "servicios", urgency: "normal", status: "in_review", createdAt: now, updatedAt: now,
       },
+      // Repuestos con una cotización pendiente: ahí sí se elige la ganadora.
+      {
+        id: "req-owq-repuesto-cot", code: "SOL-OWQ-REP-COT", worksiteId, requesterId: "user-owq-test",
+        requestType: "repuestos", urgency: "normal", status: "submitted", createdAt: now, updatedAt: now,
+      },
     ])
+    await inMemoryDb.insert(schema.repuestoQuotations).values({
+      id: "q-owq-1", requestId: "req-owq-repuesto-cot", supplierNameFree: "Repuestos del Sur",
+      fileName: "cot.pdf", filePath: "storage/cot.pdf", totalAmount: 150_000, status: "pending",
+    })
   })
 
   afterAll(async () => { await pg.close() })
 
-  it("ofrece la solicitud de repuestos a quien tiene repuestos:approve", async () => {
+  it("ofrece la solicitud de repuestos enviada sin cotización como «Aprobar solicitud»", async () => {
+    // Bajo el umbral una solicitud de repuestos se envía sin cotización: no hay
+    // ganadora que elegir, se aprueba directo. La cola la lista igual (la
+    // fuente no exige una fila de cotización) pero con la acción correcta.
     const result = await getOperationalWorkQueue(makeSession(["repuestos:approve"]), { module: "aprobaciones" })
     const item = result.items.find((i) => i.sourceId === "req-owq-repuesto")
     expect(item).toBeDefined()
     expect(item!.href).toBe("/solicitudes/req-owq-repuesto")
+    expect(item!.ctaLabel).toBe("Aprobar solicitud")
+    expect(item!.statusLabel).toBe("Esperando aprobación")
+    expect(item!.title).toBe("Aprobar solicitud — SOL-OWQ-REP")
+  })
+
+  it("con una cotización pendiente la solicitud de repuestos sigue pidiendo la ganadora", async () => {
+    const result = await getOperationalWorkQueue(makeSession(["repuestos:approve"]), { module: "aprobaciones" })
+    const item = result.items.find((i) => i.sourceId === "req-owq-repuesto-cot")
+    expect(item).toBeDefined()
     expect(item!.ctaLabel).toBe("Seleccionar cotización ganadora")
+    expect(item!.statusLabel).toBe("Esperando cotización ganadora")
+    expect(item!.title).toBe("Seleccionar cotización — SOL-OWQ-REP-COT")
+  })
+
+  it("servicios conserva «Seleccionar cotización ganadora»: no se aprueba sin cotización", async () => {
+    const result = await getOperationalWorkQueue(makeSession(["servicios:approve"]), { module: "aprobaciones" })
+    const item = result.items.find((i) => i.sourceId === "req-owq-servicio")
+    expect(item!.ctaLabel).toBe("Seleccionar cotización ganadora")
+    expect(item!.statusLabel).toBe("Esperando cotización ganadora")
   })
 
   it("ofrece la solicitud de servicios a quien tiene servicios:approve", async () => {
@@ -92,12 +122,12 @@ describe("operational work queue — cotización ganadora (repuestos/servicios)"
     const session = makeSession(["repuestos:approve", "servicios:approve"])
     const queue = await getOperationalWorkQueue(session, { module: "aprobaciones" })
     const count = await getOperationalWorkCount(session)
-    expect(queue.items.length).toBe(2)
-    expect(count).toBe(2)
+    expect(queue.items.length).toBe(3)
+    expect(count).toBe(3)
   })
 
   it("el contador respeta el permiso por tipo", async () => {
-    expect(await getOperationalWorkCount(makeSession(["repuestos:approve"]))).toBe(1)
+    expect(await getOperationalWorkCount(makeSession(["repuestos:approve"]))).toBe(2)
     expect(await getOperationalWorkCount(makeSession(["approvals:approve"]))).toBe(0)
   })
 })

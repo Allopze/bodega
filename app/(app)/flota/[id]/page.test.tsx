@@ -171,3 +171,52 @@ describe("ficha de vehículo: vencimientos", () => {
     expect(within(list).queryByRole("button", { name: /^Actualizar/ })).toBeNull()
   })
 })
+
+describe("ficha de vehículo: repuestos y servicios comprados", () => {
+  const purchase = {
+    requestItemId: "item-1", requestId: "req-1", requestCode: "REP-2026-0042", requestType: "repuestos", itemName: "Filtro hidráulico",
+    quantity: 2, unitOfMeasure: "unidad", itemStatus: "purchased", itemStatusLabel: "Pendiente de recepción", workOrderId: "ot-1",
+    workOrderFolio: "OT-BIO-0007", requestedAt: "2026-11-02T15:00:00.000Z", requesterName: "Alexis Morales", orderId: "oc-1",
+    orderCode: "OC-2026-0310", orderStatus: "sent", unitPrice: 20_000, subtotal: 40_000,
+  }
+
+  async function renderWith(recentPurchases: unknown, vehicle: Record<string, unknown> = {}) {
+    mocks.detail.mockResolvedValue({ ...detail("km_per_liter", { vehicle }), recentPurchases })
+    render(await FlotaVehiclePage({ params: Promise.resolve({ id: "veh-1" }) }))
+  }
+
+  it("sin purchasing:view (recentPurchases null) no dibuja la tarjeta: no dice «sin compras»", async () => {
+    await renderWith(null)
+
+    expect(screen.queryByRole("heading", { name: "Repuestos y servicios comprados" })).toBeNull()
+    expect(screen.queryByText("Sin compras vinculadas")).toBeNull()
+  })
+
+  it("con compras, las lista con su OC y el botón «Pedir repuestos» sólo si puede crear solicitudes", async () => {
+    mocks.can.mockImplementation((_session, permission) => permission === "repuestos:create" || permission === "repuestos:view_all")
+    await renderWith([purchase])
+
+    const heading = screen.getByRole("heading", { name: "Repuestos y servicios comprados" })
+    expect(heading).toBeInTheDocument()
+    expect(screen.getByText("Filtro hidráulico")).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "REP-2026-0042" }).getAttribute("href")).toBe("/solicitudes/req-1")
+    expect(screen.getByRole("link", { name: "OC-2026-0310" }).getAttribute("href")).toBe("/compras/oc-1")
+    expect(screen.getByRole("link", { name: "Pedir repuestos" }).getAttribute("href")).toBe("/solicitudes/nueva?tipo=repuestos&vehiculo=veh-1")
+  })
+
+  it("sin repuestos:create no hay botón, y sin repuestos:view_all la solicitud es texto", async () => {
+    await renderWith([purchase])
+
+    expect(screen.queryByRole("link", { name: "Pedir repuestos" })).toBeNull()
+    expect(screen.queryByRole("link", { name: "REP-2026-0042" })).toBeNull()
+    expect(screen.getByText("REP-2026-0042")).toBeInTheDocument()
+  })
+
+  it("un equipo dado de baja no ofrece pedir repuestos", async () => {
+    mocks.can.mockReturnValue(true)
+    await renderWith([], { isActive: false })
+
+    expect(screen.getByText("Sin compras vinculadas")).toBeInTheDocument()
+    expect(screen.queryByRole("link", { name: "Pedir repuestos" })).toBeNull()
+  })
+})

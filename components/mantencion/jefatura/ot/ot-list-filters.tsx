@@ -20,7 +20,8 @@ export interface OtFilterEquipment {
 
 /**
  * Filtros de la lista de OT (A2): seis primarios —búsqueda, faena, equipo,
- * mecánico, desde y hasta— con una pastilla removible por cada filtro activo. El
+ * mecánico, desde y hasta— con una pastilla removible por cada filtro activo
+ * (también «Repuestos: pendientes», que no tiene control propio). El
  * estado NO está aquí: son las pestañas sobre la tabla (A5). Todo vive en la URL
  * (`router.replace`, sin mover el scroll) y la búsqueda es del servidor, por eso
  * la ruta está en `ROUTES_WITH_OWN_SEARCH` y este input va rotulado.
@@ -39,6 +40,7 @@ export function OtListFilters({ options, equipment }: { options: WorkOrderFilter
   const from = getFilter("desde")
   const to = getFilter("hasta")
   const q = searchParams.get("q") ?? ""
+  const partsPending = getFilter("repuestos") === "pendientes"
 
   const chips: ActiveFilterChip[] = []
   const add = (key: string, label: string, value: string, displayValue: string | undefined) => {
@@ -50,6 +52,8 @@ export function OtListFilters({ options, equipment }: { options: WorkOrderFilter
   add("desde", "Desde", from, from ? formatDate(from) : undefined)
   add("hasta", "Hasta", to, to ? formatDate(to) : undefined)
   add("q", "Búsqueda", q, q)
+  // Sin control propio (A2): llega por el enlace del tile de OT o de la ficha y se quita desde el chip.
+  add("repuestos", "Repuestos", partsPending ? "pendientes" : "", "pendientes")
 
   return (
     <FilterToolbar

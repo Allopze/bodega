@@ -295,7 +295,7 @@ describe("getWorkOrderGlobalMetrics", () => {
   it("cuenta abiertas, sin asignar y con entrega estimada vencida (sólo en ejecución)", async () => {
     // Abiertas: 3 de KA-135 + 1 de MQ-01 + 1 de KA-200. Vencida: `ot-ejec` (estimada 20/03);
     // `ot-term` también tiene estimada pasada pero ya salió del taller, y `ot-cho` vence en abril.
-    expect(await getWorkOrderGlobalMetrics("all", { today: TODAY })).toEqual({ openCount: 5, unassignedOpen: 1, estimateOverdue: 1 })
+    expect(await getWorkOrderGlobalMetrics("all", { today: TODAY })).toEqual({ openCount: 5, unassignedOpen: 1, estimateOverdue: 1, waitingParts: 0 })
   })
 
   it("«hoy» decide qué estimada está vencida: el mismo día no lo está", async () => {
@@ -305,9 +305,42 @@ describe("getWorkOrderGlobalMetrics", () => {
   })
 
   it("respeta el alcance y la faena elegida", async () => {
-    expect(await getWorkOrderGlobalMetrics([IDS.wsBio], { today: TODAY })).toEqual({ openCount: 4, unassignedOpen: 1, estimateOverdue: 1 })
-    expect(await getWorkOrderGlobalMetrics("all", { worksiteId: IDS.wsCho, today: TODAY })).toEqual({ openCount: 1, unassignedOpen: 0, estimateOverdue: 0 })
-    expect(await getWorkOrderGlobalMetrics([IDS.wsBio], { worksiteId: IDS.wsCho, today: TODAY })).toEqual({ openCount: 0, unassignedOpen: 0, estimateOverdue: 0 })
+    expect(await getWorkOrderGlobalMetrics([IDS.wsBio], { today: TODAY })).toEqual({ openCount: 4, unassignedOpen: 1, estimateOverdue: 1, waitingParts: 0 })
+    expect(await getWorkOrderGlobalMetrics("all", { worksiteId: IDS.wsCho, today: TODAY })).toEqual({ openCount: 1, unassignedOpen: 0, estimateOverdue: 0, waitingParts: 0 })
+    expect(await getWorkOrderGlobalMetrics([IDS.wsBio], { worksiteId: IDS.wsCho, today: TODAY })).toEqual({ openCount: 0, unassignedOpen: 0, estimateOverdue: 0, waitingParts: 0 })
+  })
+
+  it("waitingParts cuenta sólo OT abiertas con alguna línea de repuesto sin recibir", async () => {
+    const now = new Date().toISOString()
+    const request = async (id: string, status: string, lines: Array<{ item: string; workOrderId: string; vehicleId: string; status: string }>) => {
+      await testDb.insert(schema.purchaseRequests).values({
+        id, code: `REP-${id}`, worksiteId: IDS.wsBio, requesterId: IDS.jefe, requestType: "repuestos", status, urgency: "high",
+        deliveryMode: "directo_faena", createdAt: now, updatedAt: now,
+      })
+      await testDb.insert(schema.purchaseRequestItems).values(lines.map((line) => ({
+        id: line.item, requestId: id, productNameFree: "Repuesto", quantity: 1, status: line.status,
+        vehicleId: line.vehicleId, workOrderId: line.workOrderId, createdAt: now, updatedAt: now,
+      })))
+    }
+    // Abierta y esperando: dos líneas en la misma OT cuentan una sola vez (es la OT, no la línea).
+    await request("w-req-ejec", "approved", [
+      { item: "w-it-1", workOrderId: "ot-ejec", vehicleId: IDS.truckBio, status: "in_purchase_order" },
+      { item: "w-it-2", workOrderId: "ot-ejec", vehicleId: IDS.truckBio, status: "approved" },
+    ])
+    // Abierta y todo recibido: no espera.
+    await request("w-req-asig", "closed", [{ item: "w-it-3", workOrderId: "ot-asig", vehicleId: IDS.truckBio, status: "received" }])
+    // Cerrada con una línea sin recibir: el equipo ya salió, no espera.
+    await request("w-req-rep", "approved", [{ item: "w-it-4", workOrderId: "ot-rep", vehicleId: IDS.truckBio, status: "in_purchase_order" }])
+    // Anulada con una línea sin recibir: tampoco.
+    await request("w-req-anul", "approved", [{ item: "w-it-5", workOrderId: "ot-anul", vehicleId: IDS.truckBio, status: "approved" }])
+    // Otra faena: cuenta sólo con ese alcance.
+    await request("w-req-cho", "approved", [{ item: "w-it-6", workOrderId: "ot-cho", vehicleId: IDS.truckCho, status: "purchased" }])
+
+    expect((await getWorkOrderGlobalMetrics("all", { today: TODAY })).waitingParts).toBe(2)
+    expect((await getWorkOrderGlobalMetrics([IDS.wsBio], { today: TODAY })).waitingParts).toBe(1)
+    expect((await getWorkOrderGlobalMetrics("all", { worksiteId: IDS.wsCho, today: TODAY })).waitingParts).toBe(1)
+    // La cifra no toca las demás.
+    expect(await getWorkOrderGlobalMetrics("all", { today: TODAY })).toMatchObject({ openCount: 5, unassignedOpen: 1, estimateOverdue: 1 })
   })
 })
 

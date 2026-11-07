@@ -7,8 +7,12 @@ export type RawSearchParams = Record<string, string | string[] | undefined>
 
 export const OT_PAGE_SIZE = 25
 
-/** Parámetros de la URL que son filtros (los que limpia «Limpiar filtros»; la pestaña `estado` no). */
-export const OT_FILTER_PARAMS = ["faena", "equipo", "mecanico", "desde", "hasta", "q"] as const
+/**
+ * Parámetros de la URL que son filtros (los que limpia «Limpiar filtros»; la pestaña `estado` no).
+ * `repuestos` (`?repuestos=pendientes`) no tiene control en la barra (A2: ya hay seis primarios): se
+ * llega por un enlace y vive como chip removible.
+ */
+export const OT_FILTER_PARAMS = ["faena", "equipo", "mecanico", "desde", "hasta", "q", "repuestos"] as const
 
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/
 
@@ -24,7 +28,7 @@ export function isWorkOrderTab(value: string | undefined): value is WorkOrderTab
 }
 
 /**
- * La URL de la lista (`?estado=&faena=&equipo=&mecanico=&desde=&hasta=&q=&pagina=`)
+ * La URL de la lista (`?estado=&faena=&equipo=&mecanico=&desde=&hasta=&q=&repuestos=&pagina=`)
  * como filtros del servicio. Sin `estado` rige «Abiertas». Un valor de fecha mal
  * formado se ignora en vez de llegar a la consulta.
  */
@@ -41,6 +45,7 @@ export function parseWorkOrderQuery(raw: RawSearchParams): WorkOrderListFilters 
     from: desde && ISO_DAY.test(desde) ? desde : undefined,
     to: hasta && ISO_DAY.test(hasta) ? hasta : undefined,
     q: first(raw, "q"),
+    partsPending: first(raw, "repuestos") === "pendientes",
     page: Number.isFinite(page) && page > 0 ? page : 1,
     pageSize: OT_PAGE_SIZE,
   }
@@ -48,12 +53,12 @@ export function parseWorkOrderQuery(raw: RawSearchParams): WorkOrderListFilters 
 
 /** Hay algún filtro activo distinto de la pestaña. */
 export function hasWorkOrderFilters(filters: WorkOrderListFilters): boolean {
-  return !!(filters.worksiteId || filters.vehicleId || filters.assignedToUserId || filters.from || filters.to || filters.q)
+  return !!(filters.worksiteId || filters.vehicleId || filters.assignedToUserId || filters.from || filters.to || filters.q || filters.partsPending)
 }
 
 /** Número de filtros activos sin contar la búsqueda ni la pestaña. */
 export function workOrderFilterCount(filters: WorkOrderListFilters): number {
-  return [filters.worksiteId, filters.vehicleId, filters.assignedToUserId, filters.from, filters.to].filter(Boolean).length
+  return [filters.worksiteId, filters.vehicleId, filters.assignedToUserId, filters.from, filters.to, filters.partsPending].filter(Boolean).length
 }
 
 /** Rótulos de las pestañas, en el orden del flujo. «Abiertas» es la predeterminada (sin parámetro). */

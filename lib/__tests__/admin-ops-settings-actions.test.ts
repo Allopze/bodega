@@ -126,6 +126,40 @@ describe("saveOperationalSettingsAction", () => {
       expect.anything(),
     )
   })
+
+  it("guarda repuestosQuotationThresholdClp", async () => {
+    mockRequirePermission.mockResolvedValueOnce(makeSession())
+    const res = await saveOperationalSettingsAction(
+      prevState,
+      makeFormData({ repuestosQuotationThresholdClp: "750000" }),
+    )
+    expect(res.ok).toBe(true)
+    expect(mockUpdateOpsSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ repuestosQuotationThresholdClp: "750000" }),
+      expect.objectContaining({ userId: "user-1" }),
+      expect.anything(),
+    )
+  })
+
+  it("un umbral de repuestos en 0 (nunca se exime) viaja como «0», no se descarta", async () => {
+    mockRequirePermission.mockResolvedValueOnce(makeSession())
+    await saveOperationalSettingsAction(prevState, makeFormData({ repuestosQuotationThresholdClp: "0" }))
+    expect(mockUpdateOpsSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ repuestosQuotationThresholdClp: "0" }),
+      expect.anything(),
+      expect.anything(),
+    )
+  })
+
+  it("sin el campo en el formulario no toca el umbral", async () => {
+    mockRequirePermission.mockResolvedValueOnce(makeSession())
+    await saveOperationalSettingsAction(prevState, makeFormData())
+    expect(mockUpdateOpsSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ repuestosQuotationThresholdClp: undefined }),
+      expect.anything(),
+      expect.anything(),
+    )
+  })
 })
 
 import { getOperationalSettings } from "@/lib/services/system-settings"

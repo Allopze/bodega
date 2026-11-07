@@ -70,7 +70,7 @@ export default async function WorkOrdersPage({ searchParams }: { searchParams: P
   const pagination = resolvePagination({ pageParam: String(filters.page), totalItems: list.total, pageSize: filters.pageSize })
   const filtered = hasWorkOrderFilters(filters)
   const empty = emptyCopy(filters.tab, filtered)
-  const exportFilters = { tab: filters.tab, worksiteId: filters.worksiteId, vehicleId: filters.vehicleId, assignedToUserId: filters.assignedToUserId, from: filters.from, to: filters.to, q: filters.q }
+  const exportFilters = { tab: filters.tab, worksiteId: filters.worksiteId, vehicleId: filters.vehicleId, assignedToUserId: filters.assignedToUserId, from: filters.from, to: filters.to, q: filters.q, partsPending: filters.partsPending }
 
   const params = new URLSearchParams()
   for (const [key, value] of Object.entries(raw)) {

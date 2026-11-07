@@ -1,9 +1,15 @@
-import type { ItemRow, AttrRow, ProductOption } from "./request-form.types"
+import type { ItemRow, AttrRow, ProductOption, VehicleOption } from "./request-form.types"
 import { REPUESTO_ATTRIBUTE_NAMES } from "@/lib/validation/repuestos"
 import { SERVICE_ATTRIBUTE_NAMES } from "@/lib/validation/servicios"
 import { REQUEST_STATE_META } from "@/components/states/state-badge"
 import { QUOTATION_TYPES } from "@/lib/request-types"
 import { catalogItemIssues } from "@/lib/products/service-items"
+import {
+  estimatedRequestTotal,
+  evaluateQuotationRequirement,
+  quotationRequirementMessage,
+} from "@/lib/requests/quotation-requirement"
+import { formatCLP } from "@/lib/utils"
 
 export function equipmentFromAttributes(
   requestType: string,
@@ -28,6 +34,7 @@ export function blankItem(key = "new-0"): ItemRow {
     urgency: "normal", suggestedSupplierId: "", supplierHint: "", notes: "", attributes: [],
     variantQuantities: {}, workerId: "", workerName: "", equipmentCode: "", equipmentLabel: "",
     emergencyResourceId: "", emergencyResourceLabel: "",
+    vehicleId: "", vehicleLabel: "", workOrderId: "", workOrderFolio: "", estimatedUnitPrice: "",
     isEpp: false, productName: "", showAttrs: false, cotizaciones: [],
     partNumber: "", location: "", equipmentName: "", patent: "", brand: "", model: "",
   }
@@ -91,14 +98,98 @@ export function requestStatusLabel(status: string): string {
   return REQUEST_STATE_META[status as keyof typeof REQUEST_STATE_META]?.label ?? status
 }
 
+/** Precio unitario estimado tal como se escribe → número; `null` si está vacío o no es un número. */
+export function parseEstimatedPrice(raw: string | null | undefined): number | null {
+  const text = (raw ?? "").trim()
+  if (text === "") return null
+  const value = Number(text)
+  return Number.isFinite(value) && value >= 0 ? value : null
+}
+
+/** El umbral de cotizaciones sólo existe en repuestos; servicios conserva la regla legada (`null`). */
+function quotationThresholdFor(requestType: string | undefined, thresholdClp: number | null | undefined): number | null {
+  return requestType === "repuestos" ? (thresholdClp ?? null) : null
+}
+
+export interface RequestQuotationState {
+  /** Umbral aplicado: `null` en servicios (y en repuestos si la página no lo informó). */
+  thresholdClp: number | null
+  /** `null` cuando la regla se cumple. */
+  message: string | null
+}
+
+/**
+ * La regla de cotizaciones de la solicitud tal como la evaluará el servidor al
+ * enviar (`lib/requests/quotation-requirement.ts`), con lo que hay en pantalla.
+ * Una sola función para el panel de pendientes y el aviso bajo las cotizaciones.
+ *
+ * `null` para los tipos sin cotización (EPP/otro).
+ */
+export function evaluateRequestQuotations({
+  items, requestType, notes, urgency = "normal", vehicles = [], quotationThresholdClp, attachedQuotationTotals = [],
+}: {
+  items: ItemRow[]
+  requestType?: string
+  notes?: string
+  urgency?: string
+  vehicles?: readonly Pick<VehicleOption, "id" | "operationalStatus">[]
+  quotationThresholdClp?: number | null
+  /**
+   * Totales de las cotizaciones YA guardadas en el borrador (pendientes). Al
+   * guardar, el formulario saca de `item.cotizaciones` lo que subió; sin esto,
+   * un borrador con su cotización adjunta se veía «sin cotización» y el envío
+   * quedaba bloqueado en el cliente aunque el servidor lo aceptara.
+   */
+  attachedQuotationTotals?: readonly number[]
+}): RequestQuotationState | null {
+  if (!requestType || !QUOTATION_TYPES.has(requestType)) return null
+  const thresholdClp = quotationThresholdFor(requestType, quotationThresholdClp)
+  // Una cotización sin monto escrito aún cuenta como archivo, pero su total es 0.
+  const quotationTotals = [
+    ...attachedQuotationTotals,
+    ...items.flatMap((item) => (item.cotizaciones ?? []).map((cot) => Number(cot.totalAmount) || 0)),
+  ]
+  const estimatedTotal = estimatedRequestTotal(items.map((item) => ({
+    quantity: Number(item.quantity),
+    estimatedUnitPrice: parseEstimatedPrice(item.estimatedUnitPrice),
+  })))
+  const operationalStatusById = new Map(vehicles.map((vehicle) => [vehicle.id, vehicle.operationalStatus]))
+  // Vía rápida: una OT vinculada o un equipo que no está operativo.
+  const fastPathEligible = items.some((item) => item.workOrderId
+    || (item.vehicleId && (operationalStatusById.get(item.vehicleId) ?? "operativo") !== "operativo"))
+
+  const result = evaluateQuotationRequirement({
+    quotationTotals, estimatedTotal, thresholdClp, urgency, fastPathEligible,
+    hasJustification: !!notes?.trim(),
+  })
+  return { thresholdClp, message: result.ok ? null : quotationRequirementMessage(result.reason, thresholdClp) }
+}
+
+/** Explica la regla vigente bajo el título «Cotizaciones» del ítem, en el idioma de quien pide. */
+export function quotationRuleHint(requestType: string, thresholdClp: number | null): string {
+  if (requestType === "repuestos" && thresholdClp !== null && thresholdClp > 0) {
+    return `Bajo ${formatCLP(thresholdClp)} basta una cotización o el precio unitario estimado de cada ítem. Sobre ese monto se necesitan 3 cotizaciones, o menos con una justificación en Notas generales. Cada archivo necesita proveedor y monto.`
+  }
+  return "Mínimo 3 cotizaciones, o menos con una justificación en Notas generales. Cada archivo necesita proveedor y monto."
+}
+
 export function buildRequestSummaryIssues({
   worksiteId, requiredDate, items, requestType, notes, products = [],
+  urgency, vehicles, quotationThresholdClp, attachedQuotationTotals,
 }: {
   worksiteId: string; requiredDate: string; items: ItemRow[]
-  /** Repuestos/servicios exigen ≥3 cotizaciones o justificación (LOG-9/UX-2). */
+  /** Repuestos/servicios: cotizaciones según la regla única de `quotation-requirement` (LOG-9/UX-2). */
   requestType?: string; notes?: string
   /** Catálogo, para evaluar las reglas del producto elegido (colaborador, dosis). */
   products?: ProductOption[]
+  /** Urgencia de la solicitud: la vía rápida exige «crítica». */
+  urgency?: string
+  /** Equipos de flota del formulario; dicen cuáles no están operativos (vía rápida). */
+  vehicles?: readonly Pick<VehicleOption, "id" | "operationalStatus">[]
+  /** Umbral de repuestos en CLP, de Parámetros operativos. */
+  quotationThresholdClp?: number | null
+  /** Cotizaciones ya guardadas en el borrador (ver `evaluateRequestQuotations`). */
+  attachedQuotationTotals?: readonly number[]
 }): string[] {
   const issues: string[] = []
   if (!worksiteId) issues.push("Selecciona una faena.")
@@ -129,11 +220,7 @@ export function buildRequestSummaryIssues({
       if (missingAttrs.length > 0) issues.push(`${label}: completa ${missingAttrs.map((attr) => attr.attributeName).join(", ")}.`)
     }
   })
-  if (requestType && QUOTATION_TYPES.has(requestType)) {
-    const totalCotizaciones = items.reduce((sum, item) => sum + (item.cotizaciones?.length ?? 0), 0)
-    if (totalCotizaciones < 3 && !notes?.trim()) {
-      issues.push("Adjunta 3 cotizaciones o justifica en Notas generales por qué no es posible.")
-    }
-  }
+  const quotationState = evaluateRequestQuotations({ items, requestType, notes, urgency, vehicles, quotationThresholdClp, attachedQuotationTotals })
+  if (quotationState?.message) issues.push(quotationState.message)
   return issues
 }

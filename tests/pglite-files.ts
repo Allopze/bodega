@@ -526,4 +526,13 @@ export const pgliteTestFiles = [
   // despachos (E1), cargas operacionales (E2), vínculos abiertos (E3), sellos (E4),
   // guía Copec compartida (E5), cobertura cerrada con incidencias (E6) y FK de cuentas (E7).
   "db/__tests__/fuel-integridad-constraints.test.ts",
+  // Repuestos vinculados al equipo y a la OT (2026-11-07).
+  "lib/__tests__/repuestos-vehicle-link-pglite.test.ts",
+  "lib/__tests__/request-vehicle-options-pglite.test.ts",
+  "lib/__tests__/repuestos-draft-vehicle-pglite.test.ts",
+  "lib/__tests__/repuestos-quotation-threshold-pglite.test.ts",
+  "lib/__tests__/mantencion-work-orders-parts-pglite.test.ts",
+  "lib/__tests__/operational-control-purchases-pglite.test.ts",
+  "lib/__tests__/vehicle-purchase-history-pglite.test.ts",
+  "lib/__tests__/receiving-parts-notification-pglite.test.ts",
 ]

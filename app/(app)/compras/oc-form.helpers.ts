@@ -19,14 +19,28 @@ export function awardedUnitPrice(item: PendingItemOption): number | undefined {
   return item.awardedQuotationTotal / item.quantity
 }
 
+/**
+ * Precio unitario que estimó el solicitante. Un 0 no cuenta: el campo admite
+ * cero pero no informa nada, y prefijarlo convertiría el «costo pendiente» de
+ * un servicio en una línea de $0.
+ */
+export function requesterEstimatedPrice(item: PendingItemOption): number | undefined {
+  const estimated = item.estimatedUnitPrice
+  return estimated != null && Number.isFinite(estimated) && estimated > 0 ? estimated : undefined
+}
+
 export function suggestedPrice(
   item: PendingItemOption,
   nextSupplierId: string,
 ) {
-  // La oferta adjudicada manda sobre el precio de catálogo: es el compromiso
-  // comercial que se acaba de tomar, no una referencia histórica.
+  // La oferta adjudicada manda sobre todo: es el compromiso comercial que se
+  // acaba de tomar. Después viene lo que el solicitante estimó para ESTE ítem
+  // —más específico que el precio de catálogo de un producto— y al final el
+  // catálogo, que es una referencia histórica.
   const awarded = awardedUnitPrice(item)
   if (awarded !== undefined) return awarded
+  const estimated = requesterEstimatedPrice(item)
+  if (estimated !== undefined) return estimated
   return nextSupplierId ? item.supplierPrices[nextSupplierId] : undefined
 }
 
@@ -39,6 +53,8 @@ export function applySuggestedPrices(
   for (const item of items) {
     const awarded = awardedUnitPrice(item)
     if (awarded !== undefined) { next[item.id] = awarded; continue }
+    const estimated = requesterEstimatedPrice(item)
+    if (estimated !== undefined) { next[item.id] = estimated; continue }
     const id   = getSupplierId(item)
     const price = id ? item.supplierPrices[id] : undefined
     if (price !== undefined) next[item.id] = price
@@ -57,9 +73,26 @@ export function priceHint(item: PendingItemOption, nextSupplierId: string) {
       ? `Oferta adjudicada: ${formatCLP(item.awardedQuotationTotal)}`
       : `Oferta adjudicada por ${formatCLP(item.awardedQuotationTotal)} en ${item.awardedLineCount} líneas: reparte el precio tú`
   }
+  const estimated = requesterEstimatedPrice(item)
+  if (estimated !== undefined) return `Precio estimado por el solicitante: ${formatCLP(estimated)}`
   const price = nextSupplierId ? item.supplierPrices[nextSupplierId] : undefined
   if (price === undefined) return null
   return `Precio catálogo: ${formatCLP(price)}`
+}
+
+/**
+ * Rótulo corto bajo el campo de precio: de dónde salió lo que hay escrito. Sigue
+ * las mismas ramas que `priceHint` para que ambos digan lo mismo; antes el
+ * rótulo era siempre «catálogo», que con un estimado del solicitante mentiría.
+ */
+export function priceSourceLabel(
+  item: PendingItemOption,
+  nextSupplierId: string,
+): "adjudicada" | "estimado" | "catálogo" | null {
+  if (item.awardedQuotationId && item.awardedQuotationTotal != null) return "adjudicada"
+  if (requesterEstimatedPrice(item) !== undefined) return "estimado"
+  const price = nextSupplierId ? item.supplierPrices[nextSupplierId] : undefined
+  return price === undefined ? null : "catálogo"
 }
 
 export function suggestedSupplierLabel(

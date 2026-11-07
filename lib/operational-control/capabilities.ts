@@ -28,6 +28,16 @@ export function canViewWorkOrders(session: Session): boolean {
   return can(session, "mant:ot:view_all") || can(session, "mant:ot:view_worksite")
 }
 
+/**
+ * El costo de repuestos y servicios comprados por OC para un equipo se protege
+ * con `purchasing:view`: no existe un permiso de costos de compras aparte, y
+ * `combustibles:view_costs` es del combustible. Entrar al panel tampoco lo
+ * habilita (el gate de entrada es `canViewOperationalControl`).
+ */
+export function canViewPurchaseCosts(session: Session): boolean {
+  return can(session, "purchasing:view")
+}
+
 /** `mant:ot:view_all`: ve las OT de todas las faenas, no sólo las de su alcance. */
 export function canViewAllWorkOrders(session: Session): boolean {
   return can(session, "mant:ot:view_all")
@@ -38,7 +48,8 @@ export function canViewAllWorkOrders(session: Session): boolean {
  *
  * No se debe usar la visibilidad del dominio Flota del dashboard como permiso
  * transitivo: cada consulta y dato sensible se decide con la capacidad de su
- * propio subdominio. `canViewCosts` protege montos de combustible.
+ * propio subdominio. `canViewCosts` protege montos de combustible y
+ * `canViewPurchaseCosts` los de repuestos y servicios comprados por OC.
  */
 export function operationalControlCapabilities(session: Session) {
   return {
@@ -47,6 +58,7 @@ export function operationalControlCapabilities(session: Session) {
     canViewFleet: can(session, "flota:view"),
     canViewCosts: can(session, "combustibles:view_costs"),
     canViewWorkOrders: canViewWorkOrders(session),
+    canViewPurchaseCosts: canViewPurchaseCosts(session),
   } as const
 }
 

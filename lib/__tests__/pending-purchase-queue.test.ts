@@ -65,6 +65,7 @@ async function seedItem(id: string, requestId: string, opts: {
   name?: string
   supplierId?: string | null
   sortOrder?: number
+  vehicleId?: string | null
 } = {}) {
   await inMemoryDb.insert(schema.purchaseRequestItems).values({
     id, requestId,
@@ -75,6 +76,7 @@ async function seedItem(id: string, requestId: string, opts: {
     status: opts.status ?? "approved",
     suggestedSupplierId: opts.supplierId === undefined ? "sup-cola" : opts.supplierId,
     sortOrder: opts.sortOrder ?? 0,
+    vehicleId: opts.vehicleId ?? null,
     createdAt: now, updatedAt: now,
   })
 }
@@ -107,6 +109,14 @@ describe("cola de Compras — solicitudes aprobadas sin OC", () => {
     await inMemoryDb.insert(schema.suppliers).values({
       id: "sup-cola", name: "Proveedor Cola", isActive: true, createdAt: now, updatedAt: now,
     })
+    await inMemoryDb.insert(schema.fuelEquipmentTypes).values({
+      id: "et-cola", slug: "camion-cola", name: "Camión",
+    })
+    await inMemoryDb.insert(schema.fuelVehicles).values([
+      { id: "veh-cola", plate: "ABCD-12", code: "KA-63", type: "camion", equipmentTypeId: "et-cola", worksiteId: WS },
+      // Sin código interno: la etiqueta cae a la patente sola.
+      { id: "veh-cola-sin-codigo", plate: "WXYZ-99", code: null, type: "camion", equipmentTypeId: "et-cola", worksiteId: WS },
+    ])
     await inMemoryDb.insert(schema.productCategories).values({
       id: "cat-cola", name: "Cat Cola", slug: "cat-cola", sortOrder: 1,
     })
@@ -304,5 +314,21 @@ describe("cola de Compras — solicitudes aprobadas sin OC", () => {
     expect(row.worksiteName).toBe("Faena Cola")
     expect(row.supplierNames).toEqual(["Proveedor Cola"])
     expect(row.date).toBe(now)
+  })
+
+  it("la cola de compras trae la etiqueta del vehículo", async () => {
+    // Un repuesto pedido para un equipo: Compras tiene que ver para cuál sin
+    // abrir la solicitud. La etiqueta es la de la flota («código · patente»).
+    await seedRequest("req-veh", "SOL-COLA-0010")
+    await seedItem("it-veh-a", "req-veh", { status: "approved", name: "Manguera", vehicleId: "veh-cola" })
+    await seedItem("it-veh-b", "req-veh", { status: "approved", name: "Filtro", vehicleId: "veh-cola-sin-codigo", sortOrder: 1 })
+    await seedItem("it-veh-c", "req-veh", { status: "approved", name: "Grasa", sortOrder: 2 })
+
+    const [request] = await listPendingPurchaseRequests(undefined, { q: "SOL-COLA-0010" }, { limit: 50, offset: 0 })
+    const byId = new Map(request!.items.map((item) => [item.id, item]))
+    expect(byId.get("it-veh-a")?.vehicleLabel).toBe("KA-63 · ABCD-12")
+    expect(byId.get("it-veh-b")?.vehicleLabel).toBe("WXYZ-99")
+    // Un ítem sin equipo no inventa etiqueta.
+    expect(byId.get("it-veh-c")?.vehicleLabel).toBeNull()
   })
 })

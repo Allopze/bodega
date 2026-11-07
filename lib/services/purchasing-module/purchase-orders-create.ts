@@ -231,6 +231,11 @@ export async function createOrdersBySupplier(input: CreateOrdersBySupplierInput)
             // en la cola sin decir sobre qué instrumento era: el hermano tiene
             // que apuntar al mismo equipo que el ítem del que salió.
             equipmentId:         requestItem.equipmentId,
+            // El remanente sigue siendo para el mismo camión y la misma OT, y
+            // conserva el precio que estimó quien pidió.
+            vehicleId:           requestItem.vehicleId,
+            workOrderId:         requestItem.workOrderId,
+            estimatedUnitPrice:  requestItem.estimatedUnitPrice,
             suggestedSupplierId: requestItem.suggestedSupplierId,
             supplierHint:        requestItem.supplierHint,
             sortOrder:           requestItem.sortOrder,

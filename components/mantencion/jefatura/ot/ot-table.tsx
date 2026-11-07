@@ -28,6 +28,11 @@ function daysText(row: WorkOrderListRow): string {
   return row.daysInWorkshop === 0 ? "Desde hoy" : plural(row.daysInWorkshop, "día", "días")
 }
 
+/** Aviso de que la OT sigue abierta por un repuesto que no llegó (en texto, no sólo color); el estado de la OT no cambia. */
+function WaitingPartsNote() {
+  return <span className="text-xs font-medium text-[var(--color-signal-ink)]">Esperando repuesto</span>
+}
+
 function StatusCell({ row }: { row: WorkOrderListRow }) {
   return (
     <div className="flex flex-col items-start gap-1">
@@ -37,6 +42,7 @@ function StatusCell({ row }: { row: WorkOrderListRow }) {
           {row.rejectionCount === 1 ? "Devuelta 1 vez" : `Devuelta ${row.rejectionCount} veces`}
         </span>
       )}
+      {row.waitingParts && <WaitingPartsNote />}
     </div>
   )
 }
@@ -69,6 +75,7 @@ export function OtTable({ rows }: { rows: WorkOrderListRow[] }) {
               </ResponsiveDataListField>
               <ResponsiveDataListField label="Entrega estimada"><EstimateCell row={row} /></ResponsiveDataListField>
               <ResponsiveDataListField label="Días en taller"><span className="text-[var(--color-text)]">{daysText(row)}</span></ResponsiveDataListField>
+              {row.waitingParts && <ResponsiveDataListField label="Repuestos"><WaitingPartsNote /></ResponsiveDataListField>}
             </ResponsiveDataListCard>
           </li>
         ))}

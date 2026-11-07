@@ -1,8 +1,14 @@
-import { and, eq } from "drizzle-orm"
+import { and, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
-import { purchaseRequests, purchaseRequestItems } from "@/db/schema"
+import { fuelVehicles, purchaseRequests, purchaseRequestItems } from "@/db/schema"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { submitItemTx } from "@/lib/services/item-state"
+import { getOperationalSettings } from "@/lib/services/system-settings"
+import {
+  estimatedRequestTotal,
+  evaluateQuotationRequirement,
+  quotationRequirementMessage,
+} from "../quotation-requirement"
 import type { RequestModuleConfig, SubmitRequestInput } from "../request-config"
 
 export async function submitRequest(
@@ -29,36 +35,65 @@ export async function submitRequest(
       throw new Error("Solo se pueden enviar solicitudes en borrador")
     }
 
+    // Se lee todo lo que la regla necesita ANTES de transicionar los ítems: el
+    // estimado sale de los ítems `draft` y deja de existir una vez enviados.
     const quotations = await tx
-      .select({ id: qt.id })
+      .select({ id: qt.id, totalAmount: qt.totalAmount })
       .from(qt)
       .where(and(
         eq(qt.requestId, input.requestId),
         eq(qt.status, "pending"),
       ))
 
-    // Sin ninguna cotización la solicitud nace sin salida: aprobar estos tipos
-    // sólo ocurre al seleccionar una ganadora, y adjuntarlas exige estado
-    // 'draft', al que ya no se vuelve (el flujo lineal retiró "devolver a
-    // borrador"). La justificación en notas releva del mínimo de 3, no de
-    // tener alguna.
-    if (quotations.length === 0) {
-      throw new Error("Adjunta al menos una cotización antes de enviar la solicitud.")
-    }
-
-    if (quotations.length < 3 && !request.notes?.trim()) {
-      throw new Error(
-        "Se requieren al menos 3 cotizaciones. Si no es posible, agrega una justificación en las notas de la solicitud.",
-      )
-    }
-
     const items = await tx
-      .select({ id: purchaseRequestItems.id })
+      .select({
+        id: purchaseRequestItems.id,
+        quantity: purchaseRequestItems.quantity,
+        estimatedUnitPrice: purchaseRequestItems.estimatedUnitPrice,
+        vehicleId: purchaseRequestItems.vehicleId,
+        workOrderId: purchaseRequestItems.workOrderId,
+      })
       .from(purchaseRequestItems)
       .where(and(
         eq(purchaseRequestItems.requestId, input.requestId),
         eq(purchaseRequestItems.status, "draft"),
       ))
+
+    /*
+     * Regla única de cotizaciones (`quotation-requirement.ts`). Sin ninguna
+     * cotización la solicitud sólo nace con salida si es de repuestos y está
+     * bajo el umbral (o va por la vía rápida): se aprueba con
+     * `approveWithoutQuotation`. En servicios `thresholdClp` es null y rige la
+     * regla de siempre: aprobar sólo ocurre al seleccionar una ganadora, y
+     * adjuntarlas exige estado 'draft', al que ya no se vuelve.
+     */
+    const thresholdClp = config.requestType === "repuestos"
+      ? (await getOperationalSettings(tx)).repuestosQuotationThresholdClp
+      : null
+
+    // Vía rápida: una OT vinculada, o un equipo que no está operativo. Sólo se
+    // consulta la flota cuando la respuesta puede cambiar algo.
+    let fastPathEligible = items.some((item) => item.workOrderId)
+    if (!fastPathEligible && thresholdClp !== null) {
+      const vehicleIds = [...new Set(items.flatMap((item) => (item.vehicleId ? [item.vehicleId] : [])))]
+      if (vehicleIds.length > 0) {
+        const vehicles = await tx
+          .select({ operationalStatus: fuelVehicles.operationalStatus })
+          .from(fuelVehicles)
+          .where(inArray(fuelVehicles.id, vehicleIds))
+        fastPathEligible = vehicles.some((vehicle) => vehicle.operationalStatus !== "operativo")
+      }
+    }
+
+    const verdict = evaluateQuotationRequirement({
+      quotationTotals: quotations.map((quotation) => Number(quotation.totalAmount)),
+      estimatedTotal: estimatedRequestTotal(items),
+      thresholdClp,
+      urgency: request.urgency,
+      fastPathEligible,
+      hasJustification: !!request.notes?.trim(),
+    })
+    if (!verdict.ok) throw new Error(quotationRequirementMessage(verdict.reason, thresholdClp))
 
     for (const item of items) {
       await submitItemTx(tx, item.id, input.userId, { userEmail: input.userEmail })

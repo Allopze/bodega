@@ -17,8 +17,10 @@ import {
   allowedTransitions, canEditExecution, canEditRequest, canRegisterWorkOrderRecord, canSeeWorkOrder, workOrderVisibility, workOrderVisibilitySql,
 } from "./access"
 import { linkedRecordState } from "./core"
+import { loadWorkOrderLinkedWork } from "./linked-work"
 import { findAssignableMechanics, findWorksiteMechanics, listAssignableMechanicsWithWorksites, type WorksiteMechanic } from "./mechanics"
-import type { WorkOrderDetail, WorkOrderListRow } from "./types"
+import { isWaitingParts, loadWorkOrderPartsRequests, partsPendingExistsSql } from "./parts-requests"
+import type { WorkOrderDetail, WorkOrderListRow, WorkOrderPartUsed } from "./types"
 
 /**
  * Lectura de las órdenes de trabajo para la lista, el detalle, los filtros y los
@@ -40,6 +42,8 @@ export interface WorkOrderListFilters {
   to?: string
   /** Búsqueda en el servidor: folio, código o patente del equipo, solicitante. */
   q?: string
+  /** Sólo las OT abiertas que esperan un repuesto (`?repuestos=pendientes`). */
+  partsPending?: boolean
   page: number
   pageSize: number
 }
@@ -59,6 +63,9 @@ function likePattern(text: string): string {
   return `%${text.replace(/[\\%_]/g, (char) => `\\${char}`)}%`
 }
 
+/** OT abierta: todo lo que no está cerrado ni anulado. */
+const isOpenSql = () => inArray(mantWorkOrders.status, [...OT_OPEN_STATUSES])
+
 /** Filtros comunes a la lista y a los conteos (todo menos la pestaña). */
 function baseWhere(viewer: MantViewer, filters: Omit<WorkOrderListFilters, "tab" | "page" | "pageSize">): SQL {
   const q = filters.q?.trim()
@@ -75,6 +82,8 @@ function baseWhere(viewer: MantViewer, filters: Omit<WorkOrderListFilters, "tab"
           or ${mantWorkOrders.equipmentSnapshot}->>'plate' ilike ${likePattern(q)}
           or ${mantWorkOrders.requesterName} ilike ${likePattern(q)})`
       : undefined,
+    // Misma regla que la columna `waitingParts` y que la cifra del tile: abierta y con una línea pendiente.
+    filters.partsPending ? and(isOpenSql(), partsPendingExistsSql(mantWorkOrders.id)) : undefined,
   )!
 }
 
@@ -95,7 +104,7 @@ type ListSource = {
   id: string; folio: string; status: string; vehicleId: string; equipmentSnapshot: typeof mantWorkOrders.$inferSelect["equipmentSnapshot"]
   worksiteId: string; worksiteName: string; repair: boolean; maintenance: boolean; requestDate: string; requesterName: string
   assignedToUserId: string | null; assignedToName: string | null; workshopEntryAt: string | null; estimatedDeliveryDate: string | null
-  workshopExitAt: string | null; rejectionCount: number; createdAt: string
+  workshopExitAt: string | null; rejectionCount: number; waitingParts: boolean; createdAt: string
 }
 
 function toListRow(row: ListSource, today: string): WorkOrderListRow {
@@ -121,6 +130,7 @@ function toListRow(row: ListSource, today: string): WorkOrderListRow {
     estimateOverdue: row.status === "en_ejecucion" && !!row.estimatedDeliveryDate && row.estimatedDeliveryDate < today,
     daysInWorkshop: daysInWorkshop(row, today),
     rejectionCount: row.rejectionCount,
+    waitingParts: row.waitingParts,
     createdAt: iso(row.createdAt),
   }
 }
@@ -145,6 +155,8 @@ const listColumns = {
   estimatedDeliveryDate: mantWorkOrders.estimatedDeliveryDate,
   workshopExitAt: mantWorkOrders.workshopExitAt,
   rejectionCount: mantWorkOrders.rejectionCount,
+  // Una OT cerrada ya soltó el equipo: no espera repuesto aunque le queden líneas sin recibir.
+  waitingParts: sql<boolean>`(${isOpenSql()} AND ${partsPendingExistsSql(mantWorkOrders.id)})`,
   createdAt: mantWorkOrders.createdAt,
 }
 
@@ -276,7 +288,7 @@ export async function loadWorkOrderDetail(viewer: MantViewer, id: string): Promi
   const facts = { status, worksiteId: ot.worksiteId, requestedByUserId: ot.requestedByUserId, assignedToUserId: ot.assignedToUserId }
   if (!canSeeWorkOrder(workOrderVisibility(viewer), facts)) return null
 
-  const [itemRows, eventRows, recordRows, findingRows, recordState] = await Promise.all([
+  const [itemRows, eventRows, recordRows, findingRows, recordState, partsRequests, linkedWork] = await Promise.all([
     db.select().from(mantWorkOrderItems).where(eq(mantWorkOrderItems.workOrderId, id))
       .orderBy(asc(mantWorkOrderItems.kind), asc(mantWorkOrderItems.sortOrder), asc(mantWorkOrderItems.createdAt)),
     db.select().from(mantWorkOrderEvents).where(eq(mantWorkOrderEvents.workOrderId, id)).orderBy(asc(mantWorkOrderEvents.createdAt), asc(mantWorkOrderEvents.id)),
@@ -290,6 +302,9 @@ export async function loadWorkOrderDetail(viewer: MantViewer, id: string): Promi
       : Promise.resolve([]),
     // Sólo en taller importa si ya está el trabajo que exige «terminar».
     status === "en_ejecucion" ? linkedRecordState(db, id) : Promise.resolve(null),
+    // Ver la OT incluye ver lo pedido para ella y lo que los registros enlazados declararon usar: `canSeeWorkOrder` ya pasó arriba.
+    loadWorkOrderPartsRequests(id),
+    loadWorkOrderLinkedWork(id),
   ])
 
   const userIds = [...new Set([
@@ -301,7 +316,15 @@ export async function loadWorkOrderDetail(viewer: MantViewer, id: string): Promi
   const nameOf = (userId: string | null) => (userId ? names.get(userId) ?? null : null)
 
   const today = todayInChile()
-  const list = toListRow({ ...ot, worksiteName: head.worksiteName, assignedToName: nameOf(ot.assignedToUserId) }, today)
+  const list = toListRow({
+    ...ot, worksiteName: head.worksiteName, assignedToName: nameOf(ot.assignedToUserId), waitingParts: isWaitingParts(status, partsRequests),
+  }, today)
+  // Un registro anulado quedó sin efecto: lo que declaró usar no cuenta.
+  const partsUsed: WorkOrderPartUsed[] = linkedWork
+    .filter((record) => !record.voided)
+    .flatMap((record) => record.parts.map((part) => ({
+      recordId: record.id, recordFolio: record.folio, quantity: part.quantity, description: part.description,
+    })))
   const visibility = recordVisibility(viewer)
   const finding = findingRows[0]
 
@@ -370,6 +393,8 @@ export async function loadWorkOrderDetail(viewer: MantViewer, id: string): Promi
       canOpen: canSeeRecord(visibility, record),
     })),
     inspectionFinding: finding ? { id: finding.id, runId: finding.runId, capaActionId: finding.capaActionId } : null,
+    partsRequests,
+    partsUsed,
     allowedTransitions: allowedTransitions(viewer, facts),
     canEditRequest: canEditRequest(viewer, facts).ok,
     canEditExecution: canEditExecution(viewer, facts).ok,

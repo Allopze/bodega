@@ -190,7 +190,7 @@ describe("getOperationalControlHub · atención", () => {
       const hub = await getOperationalControlHub(session("flota:view", "mant:ot:view_all"))
 
       expect(hub.permissions.canViewWorkOrders).toBe(true)
-      expect(hub.attention.workOrders).toEqual({ openCount: 3, unassignedOpen: 1, estimateOverdue: 1 })
+      expect(hub.attention.workOrders).toEqual({ openCount: 3, unassignedOpen: 1, estimateOverdue: 1, waitingParts: 0 })
       const asset = (id: string) => hub.assets.find((a) => a.id === id)!
       expect(asset("en-mantencion")).toMatchObject({ openWorkOrders: 3, inWorkshop: true, workshopHours: 30 })
       // Un equipo sin OT tiene 0 (la consulta corrió), no null.
@@ -230,6 +230,55 @@ describe("getOperationalControlHub · atención", () => {
       expect(hub.assets).toHaveLength(5)
       expect(hub.assets.every((asset) => asset.openWorkOrders === null)).toBe(true)
       expect(hub.metrics.workshopHours).toBeNull()
+    })
+  })
+
+  describe("compras vinculadas", () => {
+    const purchaseRow = { vehicleId: "en-mantencion", purchaseAmount: 123_000, orderCount: 2, lastOrderAt: "2026-10-20T15:00:00.000Z" }
+
+    it("sin purchasing:view no consulta compras y deja la cifra en null (entrar al panel no la habilita)", async () => {
+      mocks.rowsByQuery.set("purchase_order_items", [purchaseRow])
+
+      const hub = await getOperationalControlHub(session("flota:view"))
+
+      expect(mocks.issued).not.toContain("purchase_order_items")
+      expect(hub.permissions.canViewPurchaseCosts).toBe(false)
+      expect(hub.assets.every((asset) => asset.purchaseAmount === null)).toBe(true)
+    })
+
+    it("con la capacidad suma las compras por equipo; un equipo sin compras tiene 0, no null", async () => {
+      mocks.rowsByQuery.set("purchase_order_items", [purchaseRow])
+
+      const hub = await getOperationalControlHub(session("flota:view", "purchasing:view"))
+
+      expect(hub.permissions.canViewPurchaseCosts).toBe(true)
+      expect(mocks.issued.filter((table) => table === "purchase_order_items")).toHaveLength(1)
+      const asset = (id: string) => hub.assets.find((a) => a.id === id)!
+      expect(asset("en-mantencion").purchaseAmount).toBe(123_000)
+      expect(asset("operativo").purchaseAmount).toBe(0)
+      // Falta combustible y mano de obra: con una sola serie no hay «total».
+      expect(asset("en-mantencion").totalCost).toBeNull()
+      expect(hub.degradedSources).toEqual([])
+    })
+
+    it("la exportación también las pide (el Excel lleva la columna)", async () => {
+      mocks.rowsByQuery.set("purchase_order_items", [purchaseRow])
+
+      const hub = await getOperationalControlHub(session("flota:view", "purchasing:view"), {}, { includeAttention: false })
+
+      expect(hub.assets.find((a) => a.id === "en-mantencion")?.purchaseAmount).toBe(123_000)
+    })
+
+    it("si la consulta de compras falla queda en null (no 0), se anuncia y el resto del panel sigue", async () => {
+      mocks.failing.add("purchase_order_items")
+
+      const hub = await getOperationalControlHub(session("flota:view", "purchasing:view"))
+
+      expect(hub.assets.every((asset) => asset.purchaseAmount === null && asset.totalCost === null)).toBe(true)
+      expect(hub.degradedSources).toEqual(["compras"])
+      expect(hub.attention.stoppedVehicles?.total).toBe(3)
+      expect(hub.assets).toHaveLength(5)
+      expect(mocks.logError).toHaveBeenCalledTimes(1)
     })
   })
 
