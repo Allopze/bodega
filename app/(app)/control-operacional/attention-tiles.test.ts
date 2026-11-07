@@ -44,7 +44,7 @@ describe("destinos de los tiles", () => {
 
 describe("workOrdersTile", () => {
   it("cuenta las abiertas y dice cuántas esperan mecánico", () => {
-    expect(workOrdersTile({ openCount: 7, unassignedOpen: 3, estimateOverdue: 0 })).toMatchObject({
+    expect(workOrdersTile({ openCount: 7, unassignedOpen: 3, estimateOverdue: 0, waitingParts: 0 })).toMatchObject({
       key: "workOrders",
       label: "OT abiertas",
       value: "7",
@@ -55,22 +55,44 @@ describe("workOrdersTile", () => {
   })
 
   it("agrega las de entrega vencida al detalle", () => {
-    expect(workOrdersTile({ openCount: 7, unassignedOpen: 0, estimateOverdue: 2 })).toMatchObject({
+    expect(workOrdersTile({ openCount: 7, unassignedOpen: 0, estimateOverdue: 2, waitingParts: 0 })).toMatchObject({
       detail: "Todas con mecánico · 2 con entrega vencida",
       tone: "signal",
     })
   })
 
   it("todas asignadas y a tiempo: el tile queda neutro", () => {
-    expect(workOrdersTile({ openCount: 4, unassignedOpen: 0, estimateOverdue: 0 })).toMatchObject({
+    expect(workOrdersTile({ openCount: 4, unassignedOpen: 0, estimateOverdue: 0, waitingParts: 0 })).toMatchObject({
       value: "4",
       detail: "Todas con mecánico",
       tone: "neutral",
     })
   })
 
+  it("agrega «N esperando repuesto» al detalle y pone tono de señal", () => {
+    const tile = workOrdersTile({ openCount: 4, unassignedOpen: 0, estimateOverdue: 0, waitingParts: 2 })
+    expect(tile.detail).toContain("2 esperando repuesto")
+    expect(tile.detail).toBe("Todas con mecánico · 2 esperando repuesto")
+    expect(tile.tone).toBe("signal")
+    // Las tres partes, en el orden en que alguien las atiende.
+    expect(workOrdersTile({ openCount: 9, unassignedOpen: 3, estimateOverdue: 1, waitingParts: 2 }).detail)
+      .toBe("3 sin asignar · 1 con entrega vencida · 2 esperando repuesto")
+    expect(workOrdersTile({ openCount: 4, unassignedOpen: 0, estimateOverdue: 0, waitingParts: 1 }).detail).toContain("1 esperando repuesto")
+  })
+
+  it("sin esperas no nombra el cero", () => {
+    expect(workOrdersTile({ openCount: 4, unassignedOpen: 1, estimateOverdue: 0, waitingParts: 0 }).detail).not.toContain("esperando")
+  })
+
+  it("esperar repuesto no cambia el valor ni el destino: el tile sigue contando y enlazando a todas las abiertas", () => {
+    expect(workOrdersTile({ openCount: 4, unassignedOpen: 0, estimateOverdue: 0, waitingParts: 3 })).toMatchObject({
+      value: "4",
+      href: "/mantencion/ot?estado=abiertas",
+    })
+  })
+
   it("sin abiertas dice «Ninguna», no 0", () => {
-    expect(workOrdersTile({ openCount: 0, unassignedOpen: 0, estimateOverdue: 0 })).toMatchObject({
+    expect(workOrdersTile({ openCount: 0, unassignedOpen: 0, estimateOverdue: 0, waitingParts: 0 })).toMatchObject({
       value: "Ninguna",
       tone: "neutral",
     })
