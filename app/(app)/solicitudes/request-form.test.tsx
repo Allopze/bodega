@@ -264,6 +264,27 @@ describe("RequestForm", () => {
       expect(screen.getByText("Enviar a aprobación")).toBeDefined()
     })
 
+    // Repuestos y servicios llegan a la faena sin pasar por la oficina: el
+    // despacho que viaja con el borrador es «directo a faena» sin que la persona
+    // tenga que tocar el selector.
+    it("repuestos nace con despacho directo a faena", async () => {
+      const { saveDraft } = await import("./actions")
+      render(
+        <RequestForm
+          worksites={worksites}
+          products={products}
+          suppliers={suppliers}
+          units={["unidad", "par", "caja"]} maxFileSizeMb={10}
+          userPermissions={["repuestos:create"]}
+          initialRequestType="repuestos"
+        />,
+      )
+      fireEvent.submit(screen.getByText("Guardar borrador").closest("form")!)
+      await vi.waitFor(() => expect(saveDraft).toHaveBeenCalled())
+      const formData = vi.mocked(saveDraft).mock.calls[0]![1]
+      expect(formData.get("deliveryMode")).toBe("directo_faena")
+    })
+
     // UX-1: sin esto, el botón nunca se deshabilitaba durante el envío
     // (useFormStatus no funciona sin action= en este form) y un doble click
     // en una conexión lenta despachaba la creación dos veces.

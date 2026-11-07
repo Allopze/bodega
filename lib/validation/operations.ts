@@ -44,6 +44,22 @@ export const requestItemSchema = z.object({
   equipmentCode:       z.string().trim().max(40).transform(normalizeEquipmentCode)
                          .optional().nullable(),
   emergencyResourceId: z.string().trim().max(120).optional().nullable(),
+  /**
+   * Equipo de flota (`fuel_vehicles.id`) y OT abierta del mismo equipo a la que
+   * se vincula el pedido de repuestos o servicios. El servidor valida faena,
+   * estado y pertenencia al guardar el borrador (`persist-draft.ts`).
+   */
+  vehicleId:           z.string().max(60).nullable().optional(),
+  workOrderId:         z.string().max(60).nullable().optional(),
+  /**
+   * Precio unitario estimado por quien pide (CLP). Vacío = no lo indicó, y no es
+   * lo mismo que 0 (`z.coerce.number()` convertiría `""` en 0): por eso el vacío
+   * se normaliza a `null` antes de coercionar.
+   */
+  estimatedUnitPrice:  z.preprocess(
+                         (value) => (value === "" || value == null ? null : value),
+                         z.coerce.number().nonnegative("El precio estimado no puede ser negativo").max(999_999_999, "El precio estimado es demasiado alto").nullable(),
+                       ).optional(),
   suggestedSupplierId: z.string().nullable().optional(),
   supplierHint:        z.string().max(100).nullable().optional().or(z.literal("")),
   sortOrder:           z.coerce.number().int().default(0),

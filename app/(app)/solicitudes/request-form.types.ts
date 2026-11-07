@@ -2,6 +2,8 @@
  * Shared types for the request form and its sub-components.
  */
 
+import type { RequestVehicleOption } from "@/lib/services/request-vehicle-options"
+
 // ── External option types (passed as props from the server page) ──────────────
 
 export interface ProductOption {
@@ -43,6 +45,9 @@ export interface EquipmentOption {
   kind:       string
   worksiteId: string
 }
+
+/** Equipo de flota del selector «Equipo de flota», con sus OT abiertas. */
+export type VehicleOption = RequestVehicleOption
 
 export interface WorkerOption {
   id:         string
@@ -89,6 +94,12 @@ export interface EditItem {
   equipmentLabel:      string | null
   emergencyResourceId?: string | null
   emergencyResourceLabel?: string | null
+  /** Equipo de flota y OT vinculados (repuestos/servicios), con su etiqueta ya resuelta. */
+  vehicleId?:          string | null
+  vehicleLabel?:       string | null
+  workOrderId?:        string | null
+  workOrderFolio?:     string | null
+  estimatedUnitPrice?: number | null
   attributes:          { attributeId: string | null; attributeName: string; value: string }[]
 }
 
@@ -116,6 +127,14 @@ export interface ItemRow {
   equipmentLabel:      string
   emergencyResourceId?: string
   emergencyResourceLabel?: string
+  /** Equipo de flota (`fuel_vehicles.id`); vacío = «otro equipo» con los campos libres. */
+  vehicleId:           string
+  vehicleLabel:        string
+  /** OT abierta de ese equipo; sólo con `vehicleId`. */
+  workOrderId:         string
+  workOrderFolio:      string
+  /** Precio unitario estimado en CLP, tal como se escribe ("" = sin indicar). */
+  estimatedUnitPrice:  string
   isEpp:               boolean
   productName:         string
   showAttrs:           boolean
@@ -151,6 +170,12 @@ export interface PrefillItem {
   emergencyResourceLabel?: string | null
   suggestedSupplierId?: string | null
   supplierHint?:        string | null
+  /** Equipo de flota y OT con los que se abre el creador (`?ot=`, `?vehiculo=` o copia). */
+  vehicleId?:           string | null
+  vehicleLabel?:        string | null
+  workOrderId?:         string | null
+  workOrderFolio?:      string | null
+  estimatedUnitPrice?:  number | null
   replenishmentGapKey?: string
   /** Atributos ya cargados (copia de otra solicitud), por nombre y valor. */
   attributes?:          { attributeId: string | null; attributeName: string; value: string }[]

@@ -8,13 +8,16 @@ import {
   approvalDecisions, purchaseRequestItems,
   repuestoQuotations, serviceQuotations,
   purchaseOrders, purchaseOrderItems,
-  productUnits,
+  productUnits, fuelVehicles, mantWorkOrders,
 } from "@/db/schema"
 import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm"
 import { can, canAccessWorksite, requireAuth } from "@/lib/auth/can"
 import { canViewRequestDetail } from "./access"
 import { QUOTATION_TYPES } from "@/lib/request-types"
-import { getPdfMaxSizeMb } from "@/lib/services/system-settings"
+import { getOperationalSettings, getPdfMaxSizeMb } from "@/lib/services/system-settings"
+import { listVehicleOptionsForRequests } from "@/lib/services/request-vehicle-options"
+import { vehicleLabel } from "@/lib/services/fleet"
+import { buildRequirementHint } from "./requirement-hint"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { StateBadge } from "@/components/states/state-badge"
@@ -159,7 +162,32 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
     referencedEquipment.map((equipment) => [equipment.id, equipment.code]),
   )
 
-  const [allWorksites, allProducts, allAttrs, productSupplierRows, timelineEvents, approvalDecisionRows, allSuppliers, maxFileSizeMb, unitRows, editableWorkers] = await Promise.all([
+  // Y para el equipo de flota y la OT a los que el pedido está vinculado: la ficha
+  // los muestra por su etiqueta (`KA-135 · RBYD-98`, folio de la OT), no por el id.
+  const referencedVehicleIds = [...new Set(
+    request.items.map((i) => i.vehicleId).filter((id): id is string => id != null),
+  )]
+  const referencedVehicles = referencedVehicleIds.length === 0
+    ? []
+    : await db
+        .select({ id: fuelVehicles.id, code: fuelVehicles.code, plate: fuelVehicles.plate, operationalStatus: fuelVehicles.operationalStatus })
+        .from(fuelVehicles)
+        .where(inArray(fuelVehicles.id, referencedVehicleIds))
+  const vehicleLabelById = new Map(referencedVehicles.map((vehicle) => [vehicle.id, vehicleLabel(vehicle)]))
+  const vehicleStatusById = new Map(referencedVehicles.map((vehicle) => [vehicle.id, vehicle.operationalStatus]))
+
+  const referencedWorkOrderIds = [...new Set(
+    request.items.map((i) => i.workOrderId).filter((id): id is string => id != null),
+  )]
+  const referencedWorkOrders = referencedWorkOrderIds.length === 0
+    ? []
+    : await db
+        .select({ id: mantWorkOrders.id, folio: mantWorkOrders.folio })
+        .from(mantWorkOrders)
+        .where(inArray(mantWorkOrders.id, referencedWorkOrderIds))
+  const workOrderFolioById = new Map(referencedWorkOrders.map((order) => [order.id, order.folio]))
+
+  const [allWorksites, allProducts, allAttrs, productSupplierRows, timelineEvents, approvalDecisionRows, allSuppliers, maxFileSizeMb, unitRows, editableWorkers, operationalSettings, vehicleOptions, allEquipment] = await Promise.all([
     db.select().from(worksites).where(eq(worksites.isActive, true)).orderBy(asc(worksites.name)),
     canLoadItemEditOptions
       ? db.select().from(products).where(
@@ -247,6 +275,17 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
           ))
           .orderBy(asc(workers.lastName), asc(workers.firstName))
       : Promise.resolve([]),
+    getOperationalSettings(),
+    // El selector de flota sólo se ofrece mientras el borrador se puede editar.
+    canEditItems && isQuotation ? listVehicleOptionsForRequests(session) : Promise.resolve([]),
+    canLoadItemEditOptions
+      ? db.select({
+          id: serviceEquipment.id, code: serviceEquipment.code, name: serviceEquipment.name,
+          kind: serviceEquipment.kind, worksiteId: serviceEquipment.worksiteId,
+        }).from(serviceEquipment)
+          .where(eq(serviceEquipment.isActive, true))
+          .orderBy(asc(serviceEquipment.code))
+      : Promise.resolve([]),
   ])
 
   const decidedItemIds = new Set(approvalDecisionRows.flatMap((decision) => decision.requestItemId ? [decision.requestItemId] : []))
@@ -262,6 +301,10 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
       id:          w.id,
       name:        w.name,
     }))
+
+  // Sólo los instrumentos de las faenas visibles, como en «Nueva solicitud».
+  const visibleWorksiteIds = new Set(worksiteOptions.map((worksite) => worksite.id))
+  const equipmentOptions = allEquipment.filter((equipment) => visibleWorksiteIds.has(equipment.worksiteId))
 
   const activeSupplierIds = new Set(allSuppliers.map((supplier) => supplier.id))
   const preferredSupplierByProduct = new Map<string, string>()
@@ -427,6 +470,11 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
       workerName:          item.workerId ? (workerNameById.get(item.workerId) ?? null) : null,
       equipmentCode:       item.equipmentId ? (equipmentCodeById.get(item.equipmentId) ?? null) : null,
       equipmentLabel:      item.equipmentId ? (equipmentLabelById.get(item.equipmentId) ?? null) : null,
+      vehicleId:           item.vehicleId,
+      vehicleLabel:        item.vehicleId ? (vehicleLabelById.get(item.vehicleId) ?? null) : null,
+      workOrderId:         item.workOrderId,
+      workOrderFolio:      item.workOrderId ? (workOrderFolioById.get(item.workOrderId) ?? null) : null,
+      estimatedUnitPrice:  item.estimatedUnitPrice,
       attributes:          item.attributes.map((a) => ({
         attributeId:   a.attributeId,
         attributeName: a.attributeName,
@@ -434,6 +482,21 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
       })),
     })),
   }
+
+  // Cómo está la solicitud frente a la regla única de cotizaciones: los paneles lo
+  // muestran en lugar del «mínimo 3…» fijo.
+  const requirementHint = isQuotation
+    ? buildRequirementHint({
+        requestType: request.requestType,
+        status: request.status,
+        urgency: request.urgency,
+        notes: request.notes,
+        thresholdClp: operationalSettings.repuestosQuotationThresholdClp,
+        quotationTotals: quotations.filter((quotation) => quotation.status === "pending").map((quotation) => quotation.totalAmount),
+        items: request.items,
+        vehicleStatusById,
+      })
+    : null
 
   return (
     <PageContainer width="workbench">
@@ -477,6 +540,7 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
             quotations={quotations}
             canUpload={canUploadQuotation}
             canApprove={canApproveQuotation}
+            requirementHint={requirementHint}
           />
         )}
         {isQuotation && request.requestType === "servicios" && (
@@ -486,6 +550,7 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
             quotations={quotations}
             canUpload={canUploadQuotation}
             canApprove={canApproveQuotation}
+            requirementHint={requirementHint}
           />
         )}
         <RequestForm
@@ -494,6 +559,9 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
           products={productOptions}
           suppliers={supplierOptions}
           workers={editableWorkerOptions}
+          equipment={equipmentOptions}
+          vehicles={vehicleOptions}
+          quotationThresholdClp={operationalSettings.repuestosQuotationThresholdClp}
           editableItemIds={editableRequestItemIds}
           editRequest={editRequest}
           maxFileSizeMb={maxFileSizeMb}

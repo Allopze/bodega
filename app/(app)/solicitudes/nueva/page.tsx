@@ -9,8 +9,9 @@ import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { listReplenishmentSuggestions } from "@/lib/services/epp-replenishment"
 import { logger } from "@/lib/logger"
 import type { PrefillItem } from "../request-form.types"
-import { getPdfMaxSizeMb } from "@/lib/services/system-settings"
-import { resolveInitialRequestType, visibleRequestTypeOptions } from "@/lib/request-types"
+import { getOperationalSettings, getPdfMaxSizeMb } from "@/lib/services/system-settings"
+import { listVehicleOptionsForRequests } from "@/lib/services/request-vehicle-options"
+import { QUOTATION_TYPES, resolveInitialRequestType, visibleRequestTypeOptions } from "@/lib/request-types"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { RequestForm } from "../request-form"
@@ -47,7 +48,11 @@ export default async function NuevaSolicitudPage({
     ? "El tipo indicado en el enlace no está disponible para tu cuenta. Se seleccionó el primer tipo de solicitud que puedes crear."
     : undefined
 
-  const [allWorksites, allProducts, allAttrs, productSupplierRows, allSuppliers, allWorkers, allEquipment, maxFileSizeMb, unitRows] = await Promise.all([
+  // El catálogo de flota sólo sirve a repuestos y servicios; quien no puede crear
+  // ninguno de los dos no lo paga.
+  const canPickFleetVehicle = requestTypeOptions.some((option) => QUOTATION_TYPES.has(option.value))
+
+  const [allWorksites, allProducts, allAttrs, productSupplierRows, allSuppliers, allWorkers, allEquipment, maxFileSizeMb, unitRows, vehicleOptions, operationalSettings] = await Promise.all([
     db.select().from(worksites)
       .where(eq(worksites.isActive, true))
       .orderBy(asc(worksites.name)),
@@ -87,6 +92,8 @@ export default async function NuevaSolicitudPage({
     db.select({ code: productUnits.code }).from(productUnits)
       .where(eq(productUnits.isActive, true))
       .orderBy(asc(productUnits.sortOrder), asc(productUnits.code)),
+    canPickFleetVehicle ? listVehicleOptionsForRequests(session) : Promise.resolve([]),
+    getOperationalSettings(),
   ])
 
   // Scope worksites to the user's assignments
@@ -233,6 +240,8 @@ export default async function NuevaSolicitudPage({
         suppliers={supplierOptions}
         workers={workerOptions}
         equipment={equipmentOptions}
+        vehicles={vehicleOptions}
+        quotationThresholdClp={operationalSettings.repuestosQuotationThresholdClp}
         maxFileSizeMb={maxFileSizeMb}
         userRoles={session.user.roles}
         userPermissions={session.user.permissions}
