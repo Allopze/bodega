@@ -147,6 +147,7 @@ export type NotificationType =
   | "mant_ot_received"           // recepcionada → quienes dan conformidad en la faena
   | "mant_ot_rejected"           // devuelta a taller → jefatura + el mecánico
   | "mant_ot_closed"             // conformidad → quien solicitó + jefatura
+  | "mant_ot_parts_received"     // repuestos de la OT completos en faena → mecánico + jefatura (dedupe por recepción)
 
 export const notifications = pgTable("notifications", {
   id:           text("id").primaryKey(),
