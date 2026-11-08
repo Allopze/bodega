@@ -71,8 +71,10 @@ test.describe("Shell — landmarks", () => {
   test("el cromo global vive en el banner, no en el landmark del contenido", async ({ page }) => {
     await login(page)
     // Inicio ya no ofrece el buscador del shell (TRV-04: sin lista que filtrar),
-    // así que la prueba usa una lista que sí lo muestra.
-    await page.goto("/ti/activos")
+    // así que la prueba usa una lista que sí lo muestra. No `/ti/activos`: desde
+    // la auditoría de TI (2026-11-08) busca en servidor con su propio input y
+    // está en ROUTES_WITH_OWN_SEARCH; `/ti/licencias` filtra con el del shell.
+    await page.goto("/ti/licencias")
     const banner = page.getByRole("banner")
     await expect(banner).toBeVisible({ timeout: 30_000 })
 
