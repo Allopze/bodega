@@ -104,6 +104,9 @@ export async function listSupplierLinks(filters?: {
     .groupBy(itAssets.supplierId)
     .as("asset_agg")
 
+  // La mantención de un activo eliminado del inventario no es accionable para
+  // negociar con el proveedor; se excluye del agregado (antes la subconsulta
+  // correlacionada la contaba). Es un cambio deliberado de universo.
   const maintenanceAgg = db
     .select({
       supplierId: itMaintenances.supplierId,

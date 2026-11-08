@@ -647,6 +647,44 @@ describe("módulo TI — mantenciones, bajas, proveedores y garantías", () => {
       expect(asset?.status).toBe("en_reparacion")
     })
 
+    it("editar una mantención a reparación también mueve el activo", async () => {
+      const assetId = await makeAsset("TI-REP-STATE-03")
+      const maintenanceId = await createMaintenance({
+        assetId, type: "correctiva", date: "2026-09-02", workDone: "Diagnóstico",
+      }, actor)
+      await updateMaintenance({
+        id: maintenanceId, assetId, type: "reparacion", date: "2026-09-02", workDone: "Diagnóstico",
+      }, actor)
+
+      const [asset] = await testDb.select().from(schema.itAssets).where(eq(schema.itAssets.id, assetId))
+      expect(asset?.status).toBe("en_reparacion")
+    })
+
+    it("anular la reparación devuelve el activo a su estado anterior", async () => {
+      const assetId = await makeAsset("TI-REP-VOID-01")
+      const maintenanceId = await createMaintenance({
+        assetId, type: "reparacion", date: "2026-09-02", workDone: "Cambio de pantalla",
+      }, actor)
+      await voidMaintenance(maintenanceId, "Se registró en el activo equivocado", actor)
+
+      const [asset] = await testDb.select().from(schema.itAssets).where(eq(schema.itAssets.id, assetId))
+      expect(asset?.status).toBe("disponible")
+    })
+
+    it("no revierte el activo si queda otra reparación vigente", async () => {
+      const assetId = await makeAsset("TI-REP-VOID-02")
+      const first = await createMaintenance({
+        assetId, type: "reparacion", date: "2026-09-02", workDone: "Primera",
+      }, actor)
+      await createMaintenance({
+        assetId, type: "reparacion", date: "2026-09-03", workDone: "Segunda",
+      }, actor)
+      await voidMaintenance(first, "Duplicada por error de digitación", actor)
+
+      const [asset] = await testDb.select().from(schema.itAssets).where(eq(schema.itAssets.id, assetId))
+      expect(asset?.status).toBe("en_reparacion")
+    })
+
     it("no toca el estado de un activo en custodia: para eso está la salida a reparación", async () => {
       const assetId = await makeAsset("TI-REP-STATE-02")
       await createAssignment({

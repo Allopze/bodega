@@ -49,6 +49,7 @@ export function AssetTable({ rows }: { rows: AssetRow[] }) {
       rows={rows as unknown as Record<string, unknown>[]}
       searchKeys={[]}
       disableInternalSearch
+      disableSort
       renderRow={(raw) => {
         const row = raw as unknown as AssetRow
         const href = `/ti/activos/${row.id}`

@@ -375,7 +375,13 @@ export async function changeAssetStatus(
   })
 }
 
-export type AssetOrder = "codigo" | "codigo_desc" | "activo" | "faena" | "garantia" | "reciente"
+export type AssetOrder =
+  | "codigo" | "codigo_desc" | "activo" | "faena" | "garantia" | "reciente"
+  | "estado" | "asignado" | "tipo" | "mantenciones" | "costo"
+
+// Las subconsultas de búsqueda usan las tablas base: PostgreSQL las sombrea en
+// su propio scope, así que no chocan con los joins de `listAssets` y el mismo
+// predicado sirve para `countAssets`, que no lleva esos joins.
 
 export interface AssetListFilters {
   typeId?: string
@@ -429,7 +435,31 @@ function buildAssetConditions(filters: AssetListFilters): SQL[] {
   if (filters.minAgeYears) conditions.push(sql`${itAssets.purchaseDate} IS NOT NULL AND ${itAssets.purchaseDate}::date <= (${today}::date - make_interval(years => ${filters.minAgeYears}::int))`)
   if (filters.search) {
     const like = `%${escapeLikePattern(filters.search.trim())}%`
-    conditions.push(sql`(${itAssets.code} ILIKE ${like} OR ${itAssets.serialNumber} ILIKE ${like} OR ${itAssets.brand} ILIKE ${like} OR ${itAssets.model} ILIKE ${like})`)
+    // La búsqueda cliente anterior también cubría persona, faena y tipo; al
+    // pasar a servidor se perdieron y el placeholder seguía prometiendo
+    // «persona». Los EXISTS mantienen el mismo alcance en count y list sin
+    // duplicar joins.
+    conditions.push(sql`(
+      ${itAssets.code} ILIKE ${like}
+      OR ${itAssets.serialNumber} ILIKE ${like}
+      OR ${itAssets.brand} ILIKE ${like}
+      OR ${itAssets.model} ILIKE ${like}
+      OR EXISTS (
+        SELECT 1 FROM ${workers}
+        WHERE ${workers.id} = ${itAssets.workerId}
+          AND concat(${workers.firstName}, ' ', ${workers.lastName}) ILIKE ${like}
+      )
+      OR EXISTS (
+        SELECT 1 FROM ${worksites}
+        WHERE ${worksites.id} = ${itAssets.worksiteId}
+          AND ${worksites.name} ILIKE ${like}
+      )
+      OR EXISTS (
+        SELECT 1 FROM ${itAssetTypes}
+        WHERE ${itAssetTypes.id} = ${itAssets.assetTypeId}
+          AND ${itAssetTypes.name} ILIKE ${like}
+      )
+    )`)
   }
   return conditions
 }
@@ -441,6 +471,10 @@ function assetOrderBy(order: AssetOrder | undefined) {
     case "faena": return [asc(worksites.name), asc(itAssets.code)]
     case "garantia": return [asc(itAssets.warrantyEndDate), asc(itAssets.code)]
     case "reciente": return [desc(itAssets.createdAt), desc(itAssets.id)]
+    case "estado": return [asc(itAssets.status), asc(itAssets.code)]
+    case "asignado": return [asc(sql`lower(concat(coalesce(${workers.firstName}, ''), ' ', coalesce(${workers.lastName}, '')))`), asc(itAssets.code)]
+    case "tipo": return [asc(itAssetTypes.name), asc(itAssets.code)]
+    case "costo": return [desc(sql`coalesce(${itAssets.cost}, 0)`), asc(itAssets.code)]
     default: return [asc(itAssets.code)]
   }
 }
@@ -501,7 +535,11 @@ export async function listAssets(filters: AssetListFilters) {
     .leftJoin(maintenanceAgg, eq(maintenanceAgg.assetId, itAssets.id))
     .leftJoin(ticketAgg, eq(ticketAgg.assetId, itAssets.id))
     .where(and(...conditions))
-    .orderBy(...assetOrderBy(filters.order))
+    // `mantenciones` ordena por el agregado agrupado, que solo existe dentro de
+    // esta consulta; el resto de los órdenes vive en `assetOrderBy`.
+    .orderBy(...(filters.order === "mantenciones"
+      ? [desc(maintenanceAgg.total), asc(itAssets.code)]
+      : assetOrderBy(filters.order)))
 
   return filters.limit ? base.limit(filters.limit).offset(filters.offset ?? 0) : base
 }

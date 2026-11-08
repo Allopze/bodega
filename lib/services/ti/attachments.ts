@@ -72,7 +72,9 @@ export async function createTiAttachment(
     const [current] = await tx.select({ total: count() }).from(attachments)
       .where(and(eq(attachments.entityType, input.entityType), eq(attachments.entityId, input.entityId)))
     if ((current?.total ?? 0) >= MAX_TI_ATTACHMENTS_PER_ENTITY) {
-      throw new Error(`Este activo ya tiene ${MAX_TI_ATTACHMENTS_PER_ENTITY} documentos: elimina o reemplaza uno antes de subir otro`)
+      // Los adjuntos son append-only: no hay «elimina» ni «reemplaza» que el
+      // usuario pueda hacer. El mensaje debe pedir la vía real (liberar cupo).
+      throw new Error(`Este activo alcanzó el máximo de ${MAX_TI_ATTACHMENTS_PER_ENTITY} documentos. Pide a TI que libere un cupo antes de subir otro`)
     }
 
     await tx.insert(attachments).values({

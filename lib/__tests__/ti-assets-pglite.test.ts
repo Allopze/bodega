@@ -313,6 +313,30 @@ describe("módulo TI — activos", () => {
       expect(desc.map((a) => a.code)).toEqual(["TI-PAGE-0005", "TI-PAGE-0004"])
     })
 
+    it("busca por trabajador, faena y tipo además de código, marca y serie", async () => {
+      const id = await createAsset({
+        code: "TI-SEARCH-01", assetTypeId: typeId, brand: "Dell", model: "Latitude",
+        worksiteId: "ws-ti-norte",
+      }, actor)
+      await testDb.update(schema.itAssets).set({ workerId: "wk-ti-juan" }).where(eq(schema.itAssets.id, id))
+
+      expect((await listAssets({ search: "TI-SEARCH" })).map((a) => a.id)).toContain(id)
+      expect((await listAssets({ search: "Juan" })).map((a) => a.id)).toContain(id)
+      expect((await listAssets({ search: "Faena Norte" })).map((a) => a.id)).toContain(id)
+      expect((await listAssets({ search: "Notebook" })).map((a) => a.id)).toContain(id)
+      expect(await countAssets({ search: "Juan" })).toBeGreaterThanOrEqual(1)
+    })
+
+    it("acepta todos los órdenes del select sin romper la consulta", async () => {
+      for (const order of ["estado", "asignado", "tipo", "faena", "garantia", "codigo_desc", "reciente"] as const) {
+        const rows = await listAssets({ search: "TI-PAGE-", order, limit: 2 })
+        expect(rows.length).toBeGreaterThan(0)
+      }
+      // `mantenciones` y `costo` usan el agregado/orden propio.
+      expect((await listAssets({ search: "TI-PAGE-", order: "mantenciones", limit: 2 })).length).toBeGreaterThan(0)
+      expect((await listAssets({ search: "TI-PAGE-", order: "costo", limit: 2 })).length).toBeGreaterThan(0)
+    })
+
     it("filtra reparaciones demoradas por el historial y no por updatedAt", async () => {
       const old = await createAsset({ code: "TI-REP-OLD", assetTypeId: typeId, worksiteId: "ws-ti-norte" }, actor)
       const recent = await createAsset({ code: "TI-REP-NEW", assetTypeId: typeId, worksiteId: "ws-ti-norte" }, actor)

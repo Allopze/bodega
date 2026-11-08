@@ -2,11 +2,17 @@
 
 import { revalidatePath } from "next/cache"
 import { requirePermission } from "@/lib/auth/can"
-import { serviceWorksiteScope } from "@/lib/auth/scope"
+import { serviceWorksiteScope, worksiteScopeSql } from "@/lib/auth/scope"
+import { itAssets } from "@/db/schema"
 import { safeActionMessage } from "@/lib/action-error"
 import { parseZ } from "@/lib/actions/parse-z"
 import { logger } from "@/lib/logger"
-import { createAsset, updateAsset, changeAssetStatus } from "@/lib/services/ti/assets"
+import { createAsset, updateAsset, changeAssetStatus, listAssets, type AssetListFilters } from "@/lib/services/ti/assets"
+import { IT_ASSET_STATUS_META } from "@/lib/services/ti/constants"
+import { buildXlsxBuffer } from "@/lib/reports/export-module/excel-builder"
+import { recordAudit } from "@/lib/audit"
+import { todayInChile } from "@/lib/utils"
+import type { ExportActionResult } from "@/components/ui/export-button"
 import { itAssetCreateSchema, itAssetUpdateSchema, itAssetStatusChangeSchema, type ItAssetFormData } from "@/lib/validation/ti"
 import type { ActionState } from "@/lib/validation/masters"
 import type { z } from "zod"
@@ -116,5 +122,87 @@ export async function changeAssetStatusAction(_prev: ActionState, formData: Form
   } catch (error) {
     logger.error("[ti:changeAssetStatus]", error)
     return { ok: false, message: safeActionMessage(error, "Error al cambiar el estado") }
+  }
+}
+
+/** Filtros serializables que el inventario pasa al export (sin `scope` SQL). */
+export interface InventoryExportFilters {
+  typeId?: string
+  status?: string
+  workerId?: string
+  worksiteId?: string
+  supplierId?: string
+  warrantyWindow?: AssetListFilters["warrantyWindow"]
+  maxAgeYears?: number
+  minAgeYears?: number
+  repairStuck?: boolean
+  search?: string
+  order?: AssetListFilters["order"]
+  includeRetired?: boolean
+}
+
+/**
+ * Exporta el inventario con los filtros que el usuario tiene en pantalla, no
+ * el catálogo completo de Reportes. El alcance de faena se resuelve de nuevo
+ * desde la sesión: los filtros del cliente solo lo acotan.
+ */
+export async function exportInventoryAction(rawFilters?: InventoryExportFilters): Promise<ExportActionResult> {
+  let session
+  try { session = await requirePermission("ti:export") }
+  catch { return { ok: false, message: "Sin permisos para exportar el inventario" } }
+
+  const scope = worksiteScopeSql(session, itAssets.worksiteId)
+  try {
+    const rows = await listAssets({ ...rawFilters, scope })
+    if (rows.length === 0) return { ok: false, message: "Sin activos para exportar con estos filtros" }
+
+    const buffer = await buildXlsxBuffer({
+      filenameBase: "Inventario TI",
+      worksheetName: "Inventario",
+      headers: [],
+      rows: [],
+      sheets: [{
+        worksheetName: "Inventario",
+        headers: [
+          "Código", "Activo", "Serie", "Tipo", "Estado", "Faena", "Asignado a",
+          "Fecha compra", "Costo", "Garantía", "Mantenciones", "Costo mantención", "Tickets",
+        ],
+        rows: rows.map((row) => [
+          row.code,
+          [row.brand, row.model].filter(Boolean).join(" "),
+          row.serialNumber ?? "",
+          row.typeName,
+          IT_ASSET_STATUS_META[row.status]?.label ?? row.status,
+          row.worksiteName ?? "",
+          row.workerName ?? "",
+          row.purchaseDate ?? "",
+          row.cost != null ? Number(row.cost) : "",
+          row.warrantyEndDate ?? "",
+          row.maintenanceCount,
+          row.maintenanceCost,
+          row.ticketCount,
+        ]),
+      }],
+    })
+
+    await recordAudit({
+      userId: session.user.id,
+      userEmail: session.user.email ?? undefined,
+      action: "export",
+      entityType: "it_inventory",
+      entityId: "inventario",
+      newState: { filters: rawFilters ?? null, rows: rows.length },
+    })
+
+    return {
+      ok: true,
+      data: {
+        base64: Buffer.from(buffer).toString("base64"),
+        filename: `inventario-ti-${todayInChile()}.xlsx`,
+      },
+    }
+  } catch (error) {
+    logger.error("[ti:exportInventory]", error)
+    return { ok: false, message: "Error al exportar el inventario" }
   }
 }

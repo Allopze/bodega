@@ -246,6 +246,7 @@ const MODULE_LABELS: Record<string, string> = {
   prevention:      "Prevención",
   operations:      "Pendientes operacionales",
   billing:         "Facturación y cobranza",
+  ti:              "TI",
 }
 
 function getModuleLabel(moduleId: string): string {

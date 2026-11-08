@@ -18,7 +18,7 @@ vi.mock("@/db", () => ({
   get Tx() { return undefined },
 }))
 
-import { createTiAttachment, listTiAttachments } from "@/lib/services/ti/attachments"
+import { createTiAttachment, listTiAttachments, MAX_TI_ATTACHMENTS_PER_ENTITY } from "@/lib/services/ti/attachments"
 import { createAsset, softDeleteAsset } from "@/lib/services/ti/assets"
 import { getAssetHistory } from "@/lib/services/ti/history"
 
@@ -60,6 +60,29 @@ describe("módulo TI — adjuntos de activos", () => {
       .where(and(eq(schema.auditLog.entityType, "it_attachment"), eq(schema.auditLog.entityId, id)))
     expect(auditRow?.action).toBe("create")
   })
+
+  it("rechaza el documento que supera el tope con un mensaje que no pide borrar", async () => {
+    const assetId = await createAsset({ code: "TI-DOC-CAP", assetTypeId: typeId, worksiteId: "ws-ti-norte" }, actor)
+    for (let i = 0; i < MAX_TI_ATTACHMENTS_PER_ENTITY; i++) {
+      await createTiAttachment({
+        entityType: "it_asset",
+        entityId: assetId,
+        fileName: `doc-${i}.pdf`,
+        filePath: `storage/ti/doc-${i}.pdf`,
+        fileSize: 1024,
+        mimeType: "application/pdf",
+      }, actor)
+    }
+
+    await expect(createTiAttachment({
+      entityType: "it_asset",
+      entityId: assetId,
+      fileName: "doc-extra.pdf",
+      filePath: "storage/ti/doc-extra.pdf",
+      fileSize: 1024,
+      mimeType: "application/pdf",
+    }, actor)).rejects.toThrow(/máximo de 50/i)
+  }, 20_000)
 
   it("rechaza subir a una faena fuera del alcance del actor", async () => {
     const assetId = await createAsset({ code: "TI-DOC-0002", assetTypeId: typeId, worksiteId: "ws-ti-norte" }, actor)

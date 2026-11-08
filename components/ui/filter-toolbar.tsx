@@ -143,7 +143,7 @@ export function FilterToolbar({
               className="inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-0.5 text-xs text-[var(--color-text)]"
             >
               <span className="text-[var(--color-text-subtle)]">{chip.label}:</span>
-              <span className="font-medium">{chip.displayValue}</span>
+              <span className="max-w-[12rem] truncate font-medium" title={chip.displayValue}>{chip.displayValue}</span>
               {onRemoveChip && (
                 <button
                   type="button"

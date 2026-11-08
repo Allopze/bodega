@@ -1,6 +1,6 @@
-import { eq, and, isNull, desc, sql, type SQL } from "drizzle-orm"
+import { eq, and, isNull, desc, ne, sql, type SQL } from "drizzle-orm"
 import { db } from "@/db"
-import { itMaintenances, itAssets, suppliers, users, worksites } from "@/db/schema"
+import { itMaintenances, itAssets, itAssetHistory, itAssetAssignments, suppliers, users, worksites } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { appendAssetHistory } from "./history"
@@ -30,6 +30,41 @@ export interface CreateMaintenanceInput {
 const textOrNull = (v: string | null | undefined, max = 500) => {
   const t = (v ?? "").trim()
   return t ? t.slice(0, max) : null
+}
+
+type MaintenanceTx = Parameters<Parameters<typeof db.transaction>[0]>[0]
+
+/**
+ * Efecto único de una reparación: el activo sale de servicio. Se usa al crear
+ * y al editar el tipo a `reparacion`, para que ambos caminos se comporten
+ * igual. Solo aplica desde `disponible`/`en_bodega`; un activo en custodia se
+ * mueve con la salida a reparación (`kind: repair_exit`), que deja acta.
+ */
+async function moveAssetToRepair(
+  tx: MaintenanceTx,
+  input: { assetId: string; from: string; maintenanceId: string; detail: string; reason: string },
+  actor: { userId: string },
+): Promise<void> {
+  await tx.update(itAssets).set({
+    status: "en_reparacion",
+    workerId: null,
+    updatedAt: new Date().toISOString(),
+  }).where(eq(itAssets.id, input.assetId))
+  await appendAssetHistory({
+    assetId: input.assetId,
+    action: "status_changed",
+    detail: input.detail,
+    changes: { from: input.from, to: "en_reparacion", maintenanceId: input.maintenanceId },
+    actorUserId: actor.userId,
+  }, tx)
+  await recordStatusChange({
+    entityType: "it_asset",
+    entityId: input.assetId,
+    fromStatus: input.from,
+    toStatus: "en_reparacion",
+    changedBy: actor.userId,
+    reason: input.reason,
+  }, tx)
 }
 
 export async function createMaintenance(
@@ -72,26 +107,13 @@ export async function createMaintenance(
     // camino correcto es la salida a reparación (`kind: repair_exit`), que deja
     // el acta y la trazabilidad del custodio.
     if (input.type === "reparacion" && (asset.status === "disponible" || asset.status === "en_bodega")) {
-      await tx.update(itAssets).set({
-        status: "en_reparacion",
-        workerId: null,
-        updatedAt: new Date().toISOString(),
-      }).where(eq(itAssets.id, input.assetId))
-      await appendAssetHistory({
+      await moveAssetToRepair(tx, {
         assetId: input.assetId,
-        action: "status_changed",
+        from: asset.status,
+        maintenanceId: id,
         detail: `Estado: ${asset.status} → En reparación (mantención registrada).`,
-        changes: { from: asset.status, to: "en_reparacion", maintenanceId: id },
-        actorUserId: actor.userId,
-      }, tx)
-      await recordStatusChange({
-        entityType: "it_asset",
-        entityId: input.assetId,
-        fromStatus: asset.status,
-        toStatus: "en_reparacion",
-        changedBy: actor.userId,
         reason: "Mantención de reparación registrada",
-      }, tx)
+      }, actor)
     }
 
     await appendAssetHistory({
@@ -126,7 +148,7 @@ export async function updateMaintenance(
 
     const [asset] = await tx.select({ worksiteId: itAssets.worksiteId, status: itAssets.status })
       .from(itAssets)
-      .where(and(eq(itAssets.id, existing.assetId), isNull(itAssets.deletedAt)))
+      .where(and(eq(itAssets.id, existing.assetId), isNull(itAssets.deletedAt))).for("update")
     if (!asset) throw new Error("Activo no encontrado")
     assertTiWorksiteAccess(worksiteIds, asset.worksiteId)
     if (isRetiredStatus(asset.status)) {
@@ -148,6 +170,21 @@ export async function updateMaintenance(
       updatedAt: new Date().toISOString(),
     }).where(eq(itMaintenances.id, input.id))
 
+    // Editar una mantención a «reparación» debe comportarse como crearla.
+    if (
+      input.type === "reparacion" &&
+      existing.type !== "reparacion" &&
+      (asset.status === "disponible" || asset.status === "en_bodega")
+    ) {
+      await moveAssetToRepair(tx, {
+        assetId: existing.assetId,
+        from: asset.status,
+        maintenanceId: input.id,
+        detail: `Estado: ${asset.status} → En reparación (mantención editada a reparación).`,
+        reason: "Mantención editada a reparación",
+      }, actor)
+    }
+
     await appendAssetHistory({
       assetId: existing.assetId,
       action: "maintenance",
@@ -168,12 +205,15 @@ export async function updateMaintenance(
 }
 
 /**
- * Anula una mantención mal ingresada. No hay efecto secundario que revertir
- * en `it_assets`: `createMaintenance`/`updateMaintenance` nunca lo tocan.
- * Solo excluye la fila de los agregados de costo (ver `maintenanceCostByAsset`
- * y los consumidores en `queries.ts`/`reportes/actions.ts`) — la fila sigue
- * apareciendo en `listMaintenances`, tachada, para que la corrección quede
- * visible en vez de desaparecer como un borrado.
+ * Anula una mantención mal ingresada. Excluye la fila de los agregados de
+ * costo (ver `maintenanceCostByAsset` y los consumidores en `queries.ts`/
+ * `reportes/actions.ts`) y la deja visible en `listMaintenances`, tachada.
+ *
+ * Una `reparacion` sí tiene efecto secundario: al crearla (o al editar el tipo
+ * a reparación) el activo pasa a `en_reparacion`. Anular la mantención que lo
+ * movió lo devuelve a su estado anterior (`disponible`/`en_bodega`) solo si no
+ * queda otra reparación vigente ni una salida a reparación abierta; el
+ * historial guarda `changes.from` y `maintenanceId` para encontrarla.
  */
 export async function voidMaintenance(
   id: string,
@@ -189,9 +229,9 @@ export async function voidMaintenance(
     if (!existing) throw new Error("Mantención no encontrada")
     if (existing.voidedAt) throw new Error("Esta mantención ya fue anulada")
 
-    const [asset] = await tx.select({ worksiteId: itAssets.worksiteId })
+    const [asset] = await tx.select({ worksiteId: itAssets.worksiteId, status: itAssets.status })
       .from(itAssets)
-      .where(and(eq(itAssets.id, existing.assetId), isNull(itAssets.deletedAt)))
+      .where(and(eq(itAssets.id, existing.assetId), isNull(itAssets.deletedAt))).for("update")
     if (!asset) throw new Error("Activo no encontrado")
     assertTiWorksiteAccess(worksiteIds, asset.worksiteId)
 
@@ -220,6 +260,66 @@ export async function voidMaintenance(
       newState: { voidedAt: now, voidReason: trimmed },
       reason: trimmed,
     }, tx)
+
+    // La mantención pudo ser la que dejó el activo en «En reparación». Anularla
+    // no debe dejar el equipo fuera de servicio para siempre: se devuelve al
+    // estado anterior solo si no hay otra reparación vigente ni una salida a
+    // reparación abierta. El historial guarda `from` y `maintenanceId`.
+    if (asset.status === "en_reparacion") {
+      const [repairEntry] = await tx.select({ changes: itAssetHistory.changes })
+        .from(itAssetHistory)
+        .where(and(
+          eq(itAssetHistory.assetId, existing.assetId),
+          eq(itAssetHistory.action, "status_changed"),
+          sql`${itAssetHistory.changes}::jsonb->>'maintenanceId' = ${id}`,
+        ))
+        .orderBy(desc(itAssetHistory.createdAt))
+        .limit(1)
+
+      let previousStatus: string | null = null
+      try {
+        const parsed = JSON.parse(repairEntry?.changes ?? "{}") as { from?: unknown }
+        previousStatus = typeof parsed.from === "string" ? parsed.from : null
+      } catch {
+        previousStatus = null
+      }
+
+      if (previousStatus === "disponible" || previousStatus === "en_bodega") {
+        const [otherRepair] = await tx.select({ id: itMaintenances.id }).from(itMaintenances)
+          .where(and(
+            eq(itMaintenances.assetId, existing.assetId),
+            eq(itMaintenances.type, "reparacion"),
+            isNull(itMaintenances.voidedAt),
+            ne(itMaintenances.id, id),
+          )).limit(1)
+        const [openRepairExit] = await tx.select({ id: itAssetAssignments.id }).from(itAssetAssignments)
+          .where(and(
+            eq(itAssetAssignments.assetId, existing.assetId),
+            isNull(itAssetAssignments.returnedAt),
+            eq(itAssetAssignments.kind, "repair_exit"),
+          )).limit(1)
+
+        if (!otherRepair && !openRepairExit) {
+          await tx.update(itAssets).set({ status: previousStatus, updatedAt: now })
+            .where(eq(itAssets.id, existing.assetId))
+          await appendAssetHistory({
+            assetId: existing.assetId,
+            action: "status_changed",
+            detail: `Estado: En reparación → ${previousStatus} (mantención anulada).`,
+            changes: { from: "en_reparacion", to: previousStatus, maintenanceId: id, voided: true },
+            actorUserId: actor.userId,
+          }, tx)
+          await recordStatusChange({
+            entityType: "it_asset",
+            entityId: existing.assetId,
+            fromStatus: "en_reparacion",
+            toStatus: previousStatus,
+            changedBy: actor.userId,
+            reason: "Mantención de reparación anulada",
+          }, tx)
+        }
+      }
+    }
 
     return { assetId: existing.assetId }
   })

@@ -26,6 +26,8 @@ interface AssetDocumentsProps {
   assetId: string
   documents: DocumentRow[]
   canManage: boolean
+  /** Tope del servicio; se muestra para que el cupo no se descubra al fallar. */
+  maxAttachments: number
 }
 
 /**
@@ -34,7 +36,7 @@ interface AssetDocumentsProps {
  * No hay borrado: `attachments` es append-only, igual que el historial del
  * activo — el copy del formulario avisa que la carga es permanente.
  */
-export function AssetDocuments({ assetId, documents, canManage }: AssetDocumentsProps) {
+export function AssetDocuments({ assetId, documents, canManage, maxAttachments }: AssetDocumentsProps) {
   const router = useRouter()
   const [file, setFile] = React.useState<File | null>(null)
   const [uploading, setUploading] = React.useState(false)
@@ -42,6 +44,14 @@ export function AssetDocuments({ assetId, documents, canManage }: AssetDocuments
   // `FileInput` no expone un reset imperativo (guarda el nombre en estado
   // interno): remontarlo con una `key` nueva es la única forma de limpiarlo.
   const [inputKey, setInputKey] = React.useState(0)
+
+  function handleOpenChange(next: boolean) {
+    setOpen(next)
+    if (!next) {
+      setFile(null)
+      setInputKey((key) => key + 1)
+    }
+  }
 
   async function upload() {
     if (!file) return
@@ -88,7 +98,7 @@ export function AssetDocuments({ assetId, documents, canManage }: AssetDocuments
           title="Sin documentos"
           description={
             canManage
-              ? "Adjunta la factura, la orden de compra o el informe de servicio de este equipo."
+              ? `Adjunta la factura, la orden de compra o el informe de servicio de este equipo (0 de ${maxAttachments} documentos).`
               : "Acá aparecerán las facturas y órdenes de compra que se adjunten a este activo."
           }
           action={canManage ? (
@@ -100,7 +110,10 @@ export function AssetDocuments({ assetId, documents, canManage }: AssetDocuments
       ) : (
         <div className="space-y-2">
           {canManage && (
-            <div className="flex justify-end">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs text-[var(--color-text-muted)]">
+                {documents.length} de {maxAttachments} documentos
+              </span>
               <Button type="button" variant="secondary" size="sm" onClick={() => setOpen(true)}>
                 <UploadSimple size={14} className="mr-1.5" aria-hidden /> Subir documento
               </Button>
@@ -134,12 +147,13 @@ export function AssetDocuments({ assetId, documents, canManage }: AssetDocuments
       )}
 
       {canManage && (
-        <Dialog open={open} onOpenChange={setOpen}>
+        <Dialog open={open} onOpenChange={handleOpenChange}>
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle>Subir documento</DialogTitle>
               <DialogDescription>
-                PDF, imagen, XML u Office. Máximo {MAX_FILE_MB} MB. Las cargas son permanentes: no se pueden eliminar.
+                PDF, imagen, XML u Office. Máximo {MAX_FILE_MB} MB y {maxAttachments} documentos por activo
+                ({documents.length} usados). Las cargas son permanentes: no se pueden eliminar.
               </DialogDescription>
             </DialogHeader>
             <form
@@ -156,7 +170,7 @@ export function AssetDocuments({ assetId, documents, canManage }: AssetDocuments
                 />
               </Field>
               <div className="flex justify-end gap-2">
-                <Button type="button" variant="secondary" size="sm" onClick={() => setOpen(false)} disabled={uploading}>
+                <Button type="button" variant="secondary" size="sm" onClick={() => handleOpenChange(false)} disabled={uploading}>
                   Cancelar
                 </Button>
                 <Button type="submit" size="sm" disabled={uploading || !file}>

@@ -30,11 +30,18 @@ export async function POST(request: Request) {
   if (guard.error) return NextResponse.json(guard.error, { status: 403 })
 
   // 30 cargas por hora por usuario: el endpoint acepta 25 MB por archivo y
-  // antes no tenía ninguna cuota de frecuencia.
-  const limit = await consumeFixedWindowLimit(`ti:attachment:${guard.session!.user.id}`, {
-    maxAttempts: 30,
-    lockMs: 60 * 60 * 1000,
-  })
+  // antes no tenía ninguna cuota de frecuencia. Si el limiter no puede leer su
+  // tabla, el endpoint devuelve un 503 claro en vez de un 500 opaco.
+  let limit: { allowed: boolean }
+  try {
+    limit = await consumeFixedWindowLimit(`ti:attachment:${guard.session!.user.id}`, {
+      maxAttempts: 30,
+      lockMs: 60 * 60 * 1000,
+    })
+  } catch (error) {
+    logger.error("[ti:attachments:rate-limit]", error)
+    return NextResponse.json({ error: "No se pudo verificar la cuota de cargas. Intenta de nuevo en unos minutos." }, { status: 503 })
+  }
   if (!limit.allowed) {
     return NextResponse.json({ error: "Demasiadas cargas seguidas. Espera unos minutos y vuelve a intentar." }, { status: 429 })
   }

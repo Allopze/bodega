@@ -81,6 +81,7 @@ const DataTableInner = <T extends Record<string, unknown>>({
   actions,
   loading = false,
   disableInternalSearch = false,
+  disableSort = false,
   enableColumnToggle = false,
   hideDensityToggle = false,
   stickyFirstColumn = false,
@@ -196,9 +197,9 @@ const DataTableInner = <T extends Record<string, unknown>>({
     ? ""
     : search !== undefined ? search : searchQuery
   const hasExplicitSearch = !disableInternalSearch && search !== undefined
-  const [sortKey, setSortKey] = React.useState<string | null>(() => viewKey ? searchParams.get(`${viewKey}_sort`) : null)
+  const [sortKey, setSortKey] = React.useState<string | null>(() => !disableSort && viewKey ? searchParams.get(`${viewKey}_sort`) : null)
   const [sortDir, setSortDir] = React.useState<SortDir>(() => {
-    if (!viewKey) return null
+    if (disableSort || !viewKey) return null
     const d = searchParams.get(`${viewKey}_dir`)
     return d === "asc" || d === "desc" ? d : null
   })
@@ -225,7 +226,7 @@ const DataTableInner = <T extends Record<string, unknown>>({
 
   // ── Sort ────────────────────────────────────────────────────────────────────
   const sorted = React.useMemo(() => {
-    if (!sortKey || !sortDir) return filtered
+    if (disableSort || !sortKey || !sortDir) return filtered
     const sortValue = columns.find((col) => col.key === sortKey)?.sortValue
     const valueOf = (row: T) => (sortValue ? sortValue(row) : row[sortKey])
     return [...filtered].sort((a, b) => {
@@ -239,7 +240,7 @@ const DataTableInner = <T extends Record<string, unknown>>({
           : String(av).localeCompare(String(bv), "es-CL", { sensitivity: "base" })
       return sortDir === "asc" ? cmp : -cmp
     })
-  }, [filtered, sortKey, sortDir, columns])
+  }, [filtered, sortKey, sortDir, columns, disableSort])
 
   // ── Paginate ─────────────────────────────────────────────────────────────────
   const totalFiltered = sorted.length

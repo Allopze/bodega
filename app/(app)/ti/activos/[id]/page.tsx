@@ -13,7 +13,7 @@ import { listAssignments, getAssignmentsPhotos, getAssignmentsAccessories } from
 import { listMaintenances } from "@/lib/services/ti/maintenance"
 import { isRetiredStatus } from "@/lib/services/ti/constants"
 import { listAssetTypes } from "@/lib/services/ti/asset-types"
-import { listTiAttachments } from "@/lib/services/ti/attachments"
+import { listTiAttachments, MAX_TI_ATTACHMENTS_PER_ENTITY } from "@/lib/services/ti/attachments"
 import type { ItAssetFormData } from "@/lib/validation/ti"
 import { AssetDetailTabs } from "./asset-detail-tabs"
 import { AssetSummary } from "./asset-summary"
@@ -169,7 +169,7 @@ export default async function AssetDetailPage({
         assignments={<AssetAssignments assetId={asset.id} rows={assignmentsWithEvidence} canDeliver={canDeliver} workers={workerOptions} worksites={worksitesList} />}
         maintenance={<AssetMaintenance assetId={asset.id} rows={maintenances} canManage={canManageMaintenance && !isRetiredStatus(asset.status)} suppliers={suppliersList} />}
         tickets={<AssetTickets rows={tickets} />}
-        documents={<AssetDocuments assetId={asset.id} documents={documents} canManage={canManage} />}
+        documents={<AssetDocuments assetId={asset.id} documents={documents} canManage={canManage} maxAttachments={MAX_TI_ATTACHMENTS_PER_ENTITY} />}
         history={<AssetHistory assetId={asset.id} rows={history} retirements={retirements} />}
         counts={{
           assignments: assignments.length,

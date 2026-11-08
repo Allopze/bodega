@@ -2,12 +2,11 @@
 
 import { useWorksiteFilterPresence } from "@/components/layout/header-context"
 import * as React from "react"
-import { useRouter, usePathname } from "next/navigation"
-import { FilterToolbar } from "@/components/ui/filter-toolbar"
+import { useRouter, usePathname, useSearchParams } from "next/navigation"
+import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
 import { FilterSearchInput } from "@/components/ui/filter-search-input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { IT_ASSET_STATUS_META } from "@/lib/services/ti/constants"
-import { X } from "@phosphor-icons/react"
 
 const ALL = "_all"
 
@@ -47,7 +46,12 @@ const ORDER_OPTIONS = [
   { value: "codigo_desc", label: "Código Z-A" },
   { value: "activo", label: "Marca y modelo" },
   { value: "faena", label: "Faena" },
+  { value: "estado", label: "Estado" },
+  { value: "asignado", label: "Asignado a" },
+  { value: "tipo", label: "Tipo" },
   { value: "garantia", label: "Garantía más próxima" },
+  { value: "mantenciones", label: "Más mantenciones" },
+  { value: "costo", label: "Mayor costo" },
   { value: "reciente", label: "Más recientes" },
 ]
 
@@ -79,12 +83,13 @@ export function AssetFilters({ types, workers, worksites, suppliers, current }: 
   useWorksiteFilterPresence()
   const router = useRouter()
   const pathname = usePathname()
+  const searchParams = useSearchParams()
 
   function setParam(key: string, value: string | null) {
-    const params = new URLSearchParams()
-    for (const [k, v] of Object.entries(current)) {
-      if (typeof v === "string" && v) params.set(k, v)
-    }
+    // URL viva, no el `current` del render del servidor: si el usuario escribe
+    // en el buscador y cambia un select antes del rebote de 350 ms, `current`
+    // todavía no tiene `q` y lo borraría.
+    const params = new URLSearchParams(searchParams.toString())
     if (value && value !== ALL) params.set(key, value)
     else params.delete(key)
     // Cambiar un filtro cambia el conjunto: la página anterior ya no existe.
@@ -93,11 +98,64 @@ export function AssetFilters({ types, workers, worksites, suppliers, current }: 
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
   }
 
+  // Limpiar filtros no debe borrar la vista de la tabla (columnas y orden).
+  function clearFilters() {
+    const params = new URLSearchParams()
+    for (const key of ["ti-activos_cols", "ti-activos_sort", "ti-activos_dir", "orden"]) {
+      const value = searchParams.get(key)
+      if (value) params.set(key, value)
+    }
+    const qs = params.toString()
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
+  }
+
   const overflowKeys = ["trabajador", "proveedor", "garantia", "antiguedad", "antiguedad_min"] as const
   const activeCount = overflowKeys.filter((key) => typeof current[key] === "string" && current[key]).length
 
+  // Los filtros primarios viven inline en `sm+`; en móvil se pliegan en el
+  // mismo Sheet de «Más filtros» para que la tabla no quede bajo cinco filas
+  // de controles (regla A2: el muro se pliega, no se apila).
+  const primaryFilters = (
+    <>
+      <SelectFilter
+        value={String(current.tipo ?? "")}
+        onValue={(v) => setParam("tipo", v)}
+        allLabel="Todos los tipos"
+        ariaLabel="Filtrar por tipo"
+        options={types.map((t) => ({ value: t.id, label: t.name }))}
+      />
+      <SelectFilter
+        value={String(current.estado ?? "")}
+        onValue={(v) => setParam("estado", v)}
+        allLabel="Todos los estados"
+        ariaLabel="Filtrar por estado"
+        options={Object.entries(IT_ASSET_STATUS_META).map(([value, meta]) => ({ value, label: meta.label }))}
+      />
+      <SelectFilter
+        value={String(current.faena ?? "")}
+        onValue={(v) => setParam("faena", v)}
+        allLabel="Todas las faenas"
+        ariaLabel="Filtrar por faena"
+        options={worksites.map((w) => ({ value: w.id, label: w.name }))}
+      />
+      <div className="flex items-center gap-2">
+        <span className="shrink-0 text-xs font-medium text-[var(--color-text-muted)]">Ordenar</span>
+        <SelectFilter
+          value={String(current.orden ?? "")}
+          onValue={(v) => setParam("orden", v === "codigo" ? null : v)}
+          allLabel="Código A-Z"
+          ariaLabel="Ordenar el inventario"
+          options={ORDER_OPTIONS}
+        />
+      </div>
+    </>
+  )
+
   const overflowFilters = (
     <div className="flex flex-col gap-3 py-2">
+      <div className="flex flex-col gap-3 sm:hidden">
+        {primaryFilters}
+      </div>
       <SelectFilter
         value={String(current.trabajador ?? "")}
         onValue={(v) => setParam("trabajador", v)}
@@ -139,91 +197,49 @@ export function AssetFilters({ types, workers, worksites, suppliers, current }: 
   // Chips removibles de TODOS los filtros activos (A2). Antes solo cubrían los
   // cinco plegados: con tipo/estado/faena aplicados no se veía ninguno y el
   // badge de «Más filtros» decía 0 porque cuenta solo ese panel.
-  const chips = [
+  const chips: ActiveFilterChip[] = [
     typeof current.q === "string" && current.q
-      ? { key: "q", label: `Búsqueda: ${current.q}` } : null,
+      ? { key: "q", label: "Búsqueda", value: current.q, displayValue: current.q } : null,
     current.reparacion === "demorada"
-      ? { key: "reparacion", label: "Reparación demorada (+14 días)" } : null,
+      ? { key: "reparacion", label: "Reparación", value: "demorada", displayValue: "Demorada (+14 días)" } : null,
     typeof current.orden === "string" && current.orden && current.orden !== "codigo"
-      ? { key: "orden", label: `Orden: ${ORDER_OPTIONS.find((o) => o.value === current.orden)?.label ?? current.orden}` } : null,
+      ? { key: "orden", label: "Orden", value: current.orden, displayValue: ORDER_OPTIONS.find((o) => o.value === current.orden)?.label ?? current.orden } : null,
     typeof current.tipo === "string" && current.tipo
-      ? { key: "tipo", label: `Tipo: ${types.find((t) => t.id === current.tipo)?.name ?? "—"}` } : null,
+      ? { key: "tipo", label: "Tipo", value: current.tipo, displayValue: types.find((t) => t.id === current.tipo)?.name ?? "—" } : null,
     typeof current.estado === "string" && current.estado
-      ? { key: "estado", label: `Estado: ${IT_ASSET_STATUS_META[current.estado]?.label ?? current.estado}` } : null,
+      ? { key: "estado", label: "Estado", value: current.estado, displayValue: IT_ASSET_STATUS_META[current.estado]?.label ?? current.estado } : null,
     typeof current.faena === "string" && current.faena
-      ? { key: "faena", label: `Faena: ${worksites.find((w) => w.id === current.faena)?.name ?? "—"}` } : null,
+      ? { key: "faena", label: "Faena", value: current.faena, displayValue: worksites.find((w) => w.id === current.faena)?.name ?? "—" } : null,
     typeof current.trabajador === "string" && current.trabajador
-      ? { key: "trabajador", label: `Trabajador: ${workerLabel(workers.find((w) => w.id === current.trabajador) ?? { name: "—", lastName: "" })}` } : null,
+      ? { key: "trabajador", label: "Trabajador", value: current.trabajador, displayValue: workerLabel(workers.find((w) => w.id === current.trabajador) ?? { name: "—", lastName: "" }) } : null,
     typeof current.proveedor === "string" && current.proveedor
-      ? { key: "proveedor", label: `Proveedor: ${suppliers.find((s) => s.id === current.proveedor)?.name ?? "—"}` } : null,
+      ? { key: "proveedor", label: "Proveedor", value: current.proveedor, displayValue: suppliers.find((s) => s.id === current.proveedor)?.name ?? "—" } : null,
     typeof current.garantia === "string" && current.garantia
-      ? { key: "garantia", label: WARRANTY_OPTIONS.find((o) => o.value === current.garantia)?.label ?? "Garantía" } : null,
+      ? { key: "garantia", label: "Garantía", value: current.garantia, displayValue: WARRANTY_OPTIONS.find((o) => o.value === current.garantia)?.label ?? "Garantía" } : null,
     typeof current.antiguedad === "string" && current.antiguedad
-      ? { key: "antiguedad", label: AGE_OPTIONS.find((o) => o.value === current.antiguedad)?.label ?? `Hasta ${current.antiguedad} años` } : null,
+      ? { key: "antiguedad", label: "Antigüedad máxima", value: current.antiguedad, displayValue: AGE_OPTIONS.find((o) => o.value === current.antiguedad)?.label ?? `Hasta ${current.antiguedad} años` } : null,
     typeof current.antiguedad_min === "string" && current.antiguedad_min
-      ? { key: "antiguedad_min", label: MIN_AGE_OPTIONS.find((o) => o.value === current.antiguedad_min)?.label ?? `${current.antiguedad_min} años o más` } : null,
-  ].filter((c): c is { key: string; label: string } => c !== null)
+      ? { key: "antiguedad_min", label: "Antigüedad mínima", value: current.antiguedad_min, displayValue: MIN_AGE_OPTIONS.find((o) => o.value === current.antiguedad_min)?.label ?? `${current.antiguedad_min} años o más` } : null,
+  ].filter((c): c is ActiveFilterChip => c !== null)
 
   return (
-    <>
     <FilterToolbar
       overflowFilters={overflowFilters}
+      activeChips={chips}
+      onRemoveChip={(key) => setParam(key, null)}
       activeCount={activeCount}
-      onClearAll={() => router.replace(pathname, { scroll: false })}
+      onClearAll={clearFilters}
     >
       <FilterSearchInput
         param="q"
         pageKeys={["pagina"]}
         placeholder="Buscar código, marca, serie o persona..."
         ariaLabel="Buscar activos"
-        className="w-full sm:w-64"
       />
-      <SelectFilter
-        value={String(current.tipo ?? "")}
-        onValue={(v) => setParam("tipo", v)}
-        allLabel="Todos los tipos"
-        ariaLabel="Filtrar por tipo"
-        options={types.map((t) => ({ value: t.id, label: t.name }))}
-      />
-      <SelectFilter
-        value={String(current.estado ?? "")}
-        onValue={(v) => setParam("estado", v)}
-        allLabel="Todos los estados"
-        ariaLabel="Filtrar por estado"
-        options={Object.entries(IT_ASSET_STATUS_META).map(([value, meta]) => ({ value, label: meta.label }))}
-      />
-      <SelectFilter
-        value={String(current.faena ?? "")}
-        onValue={(v) => setParam("faena", v)}
-        allLabel="Todas las faenas"
-        ariaLabel="Filtrar por faena"
-        options={worksites.map((w) => ({ value: w.id, label: w.name }))}
-      />
-      <SelectFilter
-        value={String(current.orden ?? "")}
-        onValue={(v) => setParam("orden", v === "codigo" ? null : v)}
-        allLabel="Código A-Z"
-        ariaLabel="Ordenar el inventario"
-        options={ORDER_OPTIONS}
-      />
+      {/* En móvil estos filtros viven en el Sheet de «Más filtros». */}
+      <div className="hidden flex-wrap items-center gap-2.5 sm:flex">
+        {primaryFilters}
+      </div>
     </FilterToolbar>
-    {chips.length > 0 && (
-      <ul className="mb-3 flex flex-wrap items-center gap-2" aria-label="Filtros activos">
-        {chips.map((chip) => (
-          <li key={chip.key}>
-            <button
-              type="button"
-              onClick={() => setParam(chip.key, null)}
-              aria-label={`Quitar filtro: ${chip.label}`}
-              className="inline-flex min-h-8 items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-xs text-[var(--color-text)] hover:bg-[var(--color-surface)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]"
-            >
-              {chip.label}
-              <X size={12} aria-hidden />
-            </button>
-          </li>
-        ))}
-      </ul>
-    )}
-    </>
   )
 }

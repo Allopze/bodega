@@ -116,6 +116,11 @@ export function MaintenanceSheet({ trigger, assetId, suppliers, assets = [], edi
                     </SelectContent>
                   </Select>
                 </Field>
+                {type === "reparacion" && (
+                  <p className="text-xs text-[var(--color-text-muted)]">
+                    Si el activo está disponible o en bodega, quedará en «En reparación». Anular esta mantención lo devuelve a su estado anterior.
+                  </p>
+                )}
                 <Field label="Fecha" required error={state.fieldErrors?.date?.[0]}>
                   <DatePicker name="date" value={date} onChange={setDate} max={todayInChile()} />
                 </Field>

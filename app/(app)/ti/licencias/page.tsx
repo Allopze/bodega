@@ -34,6 +34,10 @@ export default async function LicenciasPage({
   const onlyRenewing = sp.renovacion === "proxima"
   const canManage = can(session, "ti:manage_licenses")
   const worksiteIds = serviceWorksiteScope(session)
+  // Crear o editar una licencia toca el catálogo corporativo: el servicio exige
+  // alcance global. Asignar/revocar sí se permite por faena, así que la UI no
+  // debe ofrecer «Nueva»/«Editar» a un rol acotado.
+  const canManageGlobal = canManage && worksiteIds === "all"
   const workerScope = worksiteScopeSql(session, workers.worksiteId)
   const worksiteScope = worksiteScopeSql(session, worksites.id)
   const assetScope = worksiteScopeSql(session, itAssets.worksiteId)
@@ -68,7 +72,7 @@ export default async function LicenciasPage({
         title="Licencias"
         description="Licencias y suscripciones de software y servicios: compradas, asignadas y disponibles."
         breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "TI", href: "/ti" }, { label: "Licencias" }]} />}
-        actions={canManage ? (
+        actions={canManageGlobal ? (
           <LicenseCta suppliers={suppliersList} users={usersList} />
         ) : undefined}
       />
@@ -89,6 +93,7 @@ export default async function LicenciasPage({
         <LicenseList
           licenses={licensesWithAssignments}
           canManage={canManage}
+          canEdit={canManageGlobal}
           workers={workersList}
           worksites={worksitesList}
           assets={assetOptions}

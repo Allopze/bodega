@@ -16,13 +16,18 @@ import { listAssets, countAssets, countRetiredAssets, type AssetListFilters, typ
 import { isRetiredStatus } from "@/lib/services/ti/constants"
 import { listAssetTypes } from "@/lib/services/ti/asset-types"
 import { ServerPagination } from "@/components/ui/server-pagination"
+import { ExportButton } from "@/components/ui/export-button"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { DEFAULT_PAGE_SIZE } from "@/lib/constants"
 import { AssetTable } from "./asset-table"
 import { AssetFilters } from "./asset-filters"
 import { NewAssetCta } from "./asset-form-sheet"
+import { exportInventoryAction, type InventoryExportFilters } from "./actions"
 
-const ASSET_ORDERS: readonly AssetOrder[] = ["codigo", "codigo_desc", "activo", "faena", "garantia", "reciente"]
+const ASSET_ORDERS: readonly AssetOrder[] = [
+  "codigo", "codigo_desc", "activo", "faena", "garantia", "reciente",
+  "estado", "asignado", "tipo", "mantenciones", "costo",
+]
 
 export const metadata: Metadata = { title: "Inventario" }
 
@@ -37,6 +42,7 @@ export default async function InventarioPage({
 
   const canManage = can(session, "ti:manage_assets")
   const canAdminTypes = can(session, "admin:it_asset_types")
+  const canExport = can(session, "ti:export")
   const sp = await searchParams
   const status = typeof sp.estado === "string" ? sp.estado : undefined
   const search = typeof sp.q === "string" ? sp.q.trim().slice(0, 100) : ""
@@ -77,6 +83,12 @@ export default async function InventarioPage({
   // se puede resolver la página ni mostrar "N activos" con los filtros.
   const total = await countAssets(filters)
   const pagination = resolvePagination({ pageParam: sp.pagina, totalItems: total, pageSize: DEFAULT_PAGE_SIZE })
+  // Una página fuera de rango se renderiza acotada pero la URL conservaba el
+  // número viejo: normalizarla evita que un enlace compartido diga «99» y
+  // muestre la última página.
+  if (typeof sp.pagina === "string" && sp.pagina !== String(pagination.page)) {
+    redirect(buildPaginationHref("/ti/activos", sp, pagination.page, "pagina"))
+  }
 
   const [assets, retiredHidden, types, activeWorkers, activeWorksites, activeSuppliers] = await Promise.all([
     listAssets({ ...filters, limit: pagination.limit, offset: pagination.offset }),
@@ -94,6 +106,21 @@ export default async function InventarioPage({
   const FILTER_KEYS = ["tipo", "estado", "trabajador", "faena", "proveedor", "garantia", "antiguedad", "antiguedad_min", "q", "reparacion"] as const
   const hasFilters = FILTER_KEYS.some((key) => typeof sp[key] === "string" && sp[key])
   const isEmpty = total === 0
+  // Copia plana: el `scope` SQL no se puede serializar al cliente ni al action.
+  const exportFilters: InventoryExportFilters = {
+    typeId: filters.typeId,
+    status: filters.status,
+    workerId: filters.workerId,
+    worksiteId: filters.worksiteId,
+    supplierId: filters.supplierId,
+    warrantyWindow: filters.warrantyWindow,
+    maxAgeYears: filters.maxAgeYears,
+    minAgeYears: filters.minAgeYears,
+    repairStuck: filters.repairStuck,
+    search: filters.search,
+    order: filters.order,
+    includeRetired: filters.includeRetired,
+  }
 
   return (
     <PageContainer>
@@ -101,12 +128,15 @@ export default async function InventarioPage({
         title="Inventario"
         description="Activos tecnológicos de CHOME: qué hay, dónde está y quién lo tiene."
         breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "TI", href: "/ti" }, { label: "Inventario" }]} />}
-        actions={(canManage || canAdminTypes) ? (
+        actions={(canManage || canAdminTypes || canExport) ? (
           <div className="flex flex-wrap items-center gap-2">
             {canAdminTypes && (
               <Button asChild variant="ghost">
                 <Link href="/admin/tipos-activo"><Tag size={14} className="mr-1.5" aria-hidden /> Tipos de activo</Link>
               </Button>
+            )}
+            {canExport && (
+              <ExportButton action={exportInventoryAction} filters={exportFilters} label="Exportar Excel" />
             )}
             {canManage && (
               <NewAssetCta assetTypes={types} suppliers={activeSuppliers} worksites={activeWorksites} canManageTypes={canAdminTypes} />
@@ -160,7 +190,7 @@ export default async function InventarioPage({
         </>
       )}
 
-      {retiredHidden > 0 && (
+      {retiredHidden > 0 && !hasFilters && (
         <Callout tone="info" className="mt-4">
           {retiredHidden === 1 ? "1 activo dado de baja, perdido o robado no aparece" : `${retiredHidden} activos dados de baja, perdidos o robados no aparecen`} en esta lista.{" "}
           <Link href="/ti/activos?estado=dado_de_baja" className="font-semibold underline">Ver dados de baja</Link>

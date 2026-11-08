@@ -58,6 +58,8 @@ interface LicensePanelProps {
     assignments: Assignment[]
   }
   canManage: boolean
+  /** Crear/editar el catálogo corporativo: requiere alcance global. */
+  canEdit: boolean
   workers: { id: string; name: string; lastName: string }[]
   worksites: { id: string; name: string }[]
   assets: { id: string; code: string; typeName: string }[]
@@ -84,7 +86,7 @@ function assignmentTarget(assignment: Assignment): string {
   return assignment.workerName || assignment.assetCode || assignment.area || assignment.worksiteName || "—"
 }
 
-export function LicensePanel({ license, canManage, workers, worksites, assets, suppliers, users }: LicensePanelProps) {
+export function LicensePanel({ license, canManage, canEdit, workers, worksites, assets, suppliers, users }: LicensePanelProps) {
   const [open, setOpen] = React.useState(false)
   const [targetKind, setTargetKind] = React.useState<TargetKind>("worker")
   const available = Math.max(0, license.purchasedQuantity - license.assignedQuantity)
@@ -185,7 +187,7 @@ export function LicensePanel({ license, canManage, workers, worksites, assets, s
             <p className="text-xs text-[var(--color-text-muted)]">Disponibles</p>
             <p className={`font-mono text-lg font-semibold ${available === 0 && license.purchasedQuantity > 0 ? "text-[var(--color-danger-ink)]" : "text-[var(--color-success-ink)]"}`}>{available}</p>
           </div>
-          {canManage && (
+          {canEdit && (
             <LicenseSheet
               trigger={<Button type="button" variant="secondary" size="sm" className="min-h-11 sm:min-h-0">Editar</Button>}
               suppliers={suppliers}

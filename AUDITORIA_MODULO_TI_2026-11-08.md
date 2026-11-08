@@ -142,3 +142,59 @@ Resultado de las 10 rutas a 1440 px, más 1024 y 390 px en las pantallas con cam
 - **Sube «Actas sin acuse»**: ahora incluye devueltas pendientes, que también se pueden acusar.
 - **Aparecen licencias vencidas**: el tablero y el cron empezarán a reportar lo que antes era invisible.
 - **No se tocó** la navegación, el modelo de tickets, el flujo de aceptación ni el diseño de las tarjetas del resumen.
+
+---
+
+## 7. Segunda pasada (2026-11-08) — re-auditoría del commit con los cambios
+
+Revisión del commit `b234379cc` contra los servicios, páginas y primitivos compartidos. Encontré una regresión funcional, dos dead ends de UI y varias inconsistencias; corregí lo acotado y dejé documentado lo que requiere una decisión de producto.
+
+### 7.1 Hallazgos y estado
+
+| ID | Sev | Hallazgo | Estado |
+|---|---|---|---|
+| R1 | P1 | La búsqueda del inventario ya no encontraba por persona, faena ni tipo, pero el placeholder prometía «persona»: al pasar a búsqueda de servidor se perdieron los campos que filtraba `DataTable`. | **Corregido** con `EXISTS` sobre `workers`, `worksites` e `it_asset_types`; prueba PGlite por apellido, faena, tipo y conteo. |
+| R2 | P2 | Licencias: un rol de faena con `ti:manage_licenses` veía «Nueva» y «Editar», pero el servicio exige alcance global. | **Corregido**: `canManageGlobal` para crear/editar y `canManage` para asignar/revocar; `LicensePanel` recibe `canEdit`. |
+| R3 | P2 | Registrar una reparación movía el activo a `en_reparacion` sin aviso; `updateMaintenance` no aplicaba la misma regla y `voidMaintenance` afirmaba que la mantención nunca tocaba el activo. | **Corregido**: crear y editar a reparación usan el mismo helper; anular revierte al estado anterior si no hay otra reparación ni salida abierta; el sheet avisa; comentario actualizado. |
+| R4 | P2 | El tope de 50 adjuntos pedía «eliminar o reemplazar», pero el módulo es append-only. | **Parcial**: copy corregido, «N de 50» en el sheet y en el diálogo. El borrado sigue sin existir por integridad: el cupo se libera con TI. |
+| R5 | P2 | El inventario perdió el orden por columna y solo ofrecía 6 órdenes en un select sin etiqueta. | **Parcial**: se agregaron Estado/Asignado/Tipo/Mantenciones/Costo y la etiqueta «Ordenar». El clic en cabeceras requiere sort servidor en `DataTable`. |
+| R6 | P2 | La barra de filtros se volvía un muro de 5 controles en móvil. | **Corregido**: en `<sm` quedan búsqueda y «Más filtros»; los primarios viven en el Sheet. |
+| R7 | P2 | Los chips del inventario eran un sistema paralelo al `FilterToolbar`; faltaba «Limpiar filtros» con filtros visibles y el chip de búsqueda podía crecer sin límite. | **Corregido**: `activeChips` del primitivo, valor truncado con `title`; «Limpiar filtros» con cualquier filtro. |
+| R8 | P3 | Cambiar un select antes del rebote de la búsqueda podía borrar lo recién escrito. | **Corregido**: `setParam` parte de `useSearchParams()` vivo. |
+| R9 | P3 | El toggle del módulo decía «Ti». | **Corregido**: `ti: "TI"`. |
+| R10 | P3 | El aviso de retirados decía «en esta lista» con filtros activos. | **Corregido**: se oculta con filtros. |
+| R11 | P3 | `?pagina=99` mostraba la última página sin normalizar la URL. | **Corregido**: redirección a la página acotada. |
+| R12 | P3 | «Limpiar filtros» borraba columnas y orden guardados. | **Corregido**: preserva `ti-activos_cols/_sort/_dir` y `orden`. |
+| R13 | P3 | Un `_sort` viejo podía ordenar la página actual. | **Corregido**: `DataTable` acepta `disableSort`; el inventario lo usa. |
+| R14 | P3 | Un fallo del rate limiter devolvía 500. | **Corregido**: 503 con mensaje. |
+| R15 | P3 | Cancelar el diálogo de documentos conservaba el archivo. | **Corregido**: reset en `onOpenChange(false)`. |
+| R16 | P3 | El agregado de proveedores ahora excluye activos eliminados. | **Documentado** como cambio deliberado. |
+| R17 | P3 | `getTicketsByMonth` correcto pero sin consumidor. | **Pendiente** (cablear a un gráfico o retirar). |
+| R18 | P2 | El `FilterSearchInput` del inventario perdió `h-11`, `pl-8` y `text-xs` al pasarle un `className` que reemplazaba el default. | **Corregido**: usa la clase del primitivo. |
+| R19 | P2 | No se podía exportar el inventario con los filtros de pantalla. | **Implementado**: `ExportButton` en `PageHeader.actions` con el permiso `ti:export` y alcance revalidado en servidor. |
+
+### 7.2 Crítica de diseño
+
+- **Impeccable (modo Operate): 15/20.** Accesibilidad 3, rendimiento 3, theming 4, responsive 2, integridad 3. La base es buena; las grietas eran de flujo y consistencia.
+- **Nielsen: 23/40 (Acceptable).** Control/libertad, consistencia, prevención, reconocimiento y flexibilidad son los más bajos.
+- **Awwwards (adaptado): ~6,9/10.** No aplica el jurado de landing: el módulo es Operate. Diseño 7, usabilidad 7, contenido 8, creatividad 5 (no es el objetivo).
+- **Unslop:** sin gradientes, emojis, mayúsculas, glows ni motion decorativo. Los patrones planos son las 4 KPI + 2 gráficos iguales y la barra de filtros; el momento propio es «Atención hoy».
+- **Personas:** Alex pierde sort y acciones masivas; Jordan no ve el efecto de «reparación» ni entiende el select de orden; Sam tiene base accesible; Riley choca con búsquedas y el tope; Casey enfrentaba el muro de filtros.
+
+### 7.3 Verificación de la segunda pasada
+
+| Puerta | Resultado |
+|---|---|
+| `tsc --noEmit` | **Pasa** (ejecutado directo con heap explícito; el lock del resource guard lo retenía una suite E2E ajena). |
+| `eslint .` | **Pasa** (directo, mismo motivo). |
+| PGlite TI (9 archivos) | **176/176 pasan**, incluidas búsqueda por tres campos, todos los órdenes, crear/editar/anular reparación, tope de adjuntos, cupos globales y fecha de revocación. |
+| No-PGlite dirigidas | **65/65 pasan** (actions, permisos, buscador). |
+| Migraciones | Sin cambios en esta pasada; `0382` sigue verificado. |
+| Navegador de la segunda pasada | **Ejecutado** con un `next dev` aislado en `:3011`, un admin temporal y un rol de faena temporal, mientras la E2E ajena seguía corriendo (no se tocó). Resultados: buscador propio visible y el de la shell oculto; exportación con toast «Archivo exportado»; búsqueda por «Jorge» (3 filas, `TI-NB-0002`), «Biodiversa» (4 filas, `TI-NB-0001`) e «Impresora» (5 filas) —la búsqueda por persona/faena/tipo funciona—; chips y «Limpiar filtros»; orden por «Más mantenciones»; `?pagina=99` redirige a `?pagina=3`; aviso de reparación en el sheet; «N de 50 documentos» y diálogo; móvil 390: 0 overflow, selects primarios fuera de línea (0), «Más filtros» (1) y Sheet con «Filtrar por tipo» (1) y «Ordenar»; rol de faena: `/ti/licencias` sin «Nueva» ni «Editar», `/ti/activos` sin export; 0 violaciones axe serious/critical en activos y licencias; 0 errores de consola en admin, móvil y faena. Capturas en `audit/screenshots/ti-2026-11-08-r2/`. Los usuarios temporales quedaron **inactivos** (no se pudieron borrar porque `audit_log` es append-only y los referencia) y sin contraseña válida. |
+
+### 7.4 Pendiente / decisiones
+
+- **Adjuntos:** decidir si los documentos admiten borrado con auditoría; mientras no, el tope de 50 es un límite duro y el mensaje deriva a TI.
+- **Ordenamiento:** recuperar el clic en cabeceras exige sort servidor en `DataTable` (mayor alcance) o mantener el select ampliado (lo implementado).
+- **Funcionalidades mayores:** mantención preventiva programada, acciones masivas, adjuntos en mantención/ticket/acta, etiquetas/QR, búsqueda transversal y gráfico de tickets.
+- **`getTicketsByMonth`:** cablear o retirar.

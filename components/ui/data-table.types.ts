@@ -69,6 +69,12 @@ export interface DataTableProps<T extends Record<string, unknown>> {
   loading?:     boolean
   /** When true, disables the in-memory text filter and its toolbar input. */
   disableInternalSearch?: boolean
+  /**
+   * Cuando la página ordena en el servidor y las columnas no son `sortable`,
+   * ignora un `_sort`/`_dir` viejo de la URL: sin esto la tabla ordenaría solo
+   * la página cargada y contradiría el orden del servidor.
+   */
+  disableSort?: boolean
   /** When true, adds a "Columnas" dropdown menu allowing users to toggle column visibility */
   enableColumnToggle?: boolean
   /**
