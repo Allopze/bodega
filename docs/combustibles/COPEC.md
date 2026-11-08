@@ -10,6 +10,12 @@ el 2026-10-31. Pedía un correo con código en cada login, el portal cerraba la
 sesión ante cualquier navegación por URL y desde 2026-10 «Descargar Detalle»
 llegó a mandar el informe por correo en vez de descargarlo.
 
+Desde 2026-11 usuario, clave, RUT, interruptor del cron y email del importador
+se administran en **Combustibles › Ajustes › Integraciones › Copec › Configurar**
+(usuario y clave cifrados en `system_settings` con `DTE_SETTINGS_KEYRING`). Lo
+guardado ahí gana; las variables de abajo quedan como respaldo del servidor.
+`COPEC_SYNC_START_DATE` sigue siendo sólo del servidor.
+
 | Variable | Para qué |
 | --- | --- |
 | `COPEC_USERNAME` / `COPEC_PASSWORD` | Las mismas del portal. Para los web services el usuario tiene que ser **ADMINISTRADOR CLIENTE**. |
@@ -144,8 +150,10 @@ corrida, con litros/monto cuando la fila los trae.
 - Cada corrida planifica como máximo **4 meses** (`MAX_PERIODS_PER_RUN`), y
   no empieza un mes nuevo pasados 150 s: el cron corta a los 5 minutos. Lo que
   falte lo toma la corrida siguiente.
-- Sin `COPEC_USERNAME`/`COPEC_PASSWORD`/`COPEC_CLIENT_RUT`, o con `COPEC_SYNC_ENABLED=false`, el
-  cron responde `disabled` y no corre. Antes fallaba dentro de la corrida y
+- Sin usuario, clave y RUT (guardados en la plataforma o en el `.env`), o con la
+  sincronización automática apagada (interruptor de la pantalla, o
+  `COPEC_SYNC_ENABLED=false` si no hay nada guardado), el cron responde
+  `disabled` y no corre. Antes fallaba dentro de la corrida y
   reportaba `failed` a diario por una integración que nadie configuró.
 - El botón «Sincronizar» corre **el mismo barrido** que el cron
   (`syncCopecReports`): el mes en curso primero y después los meses pendientes,

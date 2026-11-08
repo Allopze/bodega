@@ -8,9 +8,11 @@
  *   npx tsx --env-file=.env.local scripts/talana-sync.ts            # simulación
  *   npx tsx --env-file=.env.local scripts/talana-sync.ts --apply    # aplica
  *
- * Por defecto SIMULA, sin importar `TALANA_SYNC_MODE` (que sólo gobierna al
+ * Por defecto SIMULA, sin importar el modo configurado (que sólo gobierna al
  * cron): descarga, guarda la copia local y calcula lo que haría, sin tocar
- * trabajadores. `--apply` fuerza el modo `apply`. Necesita `TALANA_API_TOKEN`.
+ * trabajadores. `--apply` fuerza el modo `apply`. Necesita el token de Talana:
+ * el guardado en Administración › Sincronización Talana o, si no hay, el
+ * `TALANA_API_TOKEN` del entorno.
  *
  * Toma el mismo candado que el cron (`talana-workers-sync`), así que no se pisa
  * con una corrida programada. Imprime el estado, la razón del fusible y los
@@ -24,7 +26,7 @@ import { pathToFileURL } from "node:url"
 import { asc, eq, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { talanaSyncRunItems } from "@/db/schema"
-import { readTalanaConfig } from "@/lib/integrations/talana/talana-settings"
+import { loadTalanaConfig } from "@/lib/integrations/talana/talana-settings"
 import {
   runTalanaSync,
   TalanaSyncFailure,
@@ -74,9 +76,11 @@ function printResult(result: TalanaSyncResult, tally: ItemTally[]) {
 
 export async function main(argv = process.argv): Promise<number> {
   const mode: TalanaRunMode = argv.includes("--apply") ? "apply" : "simulate"
-  const { token, hasCredentials } = readTalanaConfig()
+  const { token, hasCredentials, tokenUnreadable } = await loadTalanaConfig()
   if (!hasCredentials) {
-    console.error("Falta TALANA_API_TOKEN en el entorno (revisa .env.local).")
+    console.error(tokenUnreadable
+      ? "El token guardado en la plataforma no se puede abrir con el llavero de este entorno (DTE_SETTINGS_KEYRING)."
+      : "Falta el token de Talana: defínelo en la plataforma o en TALANA_API_TOKEN (revisa .env.local).")
     return 1
   }
 

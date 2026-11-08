@@ -39,6 +39,12 @@ vi.mock("@/lib/services/system-settings", () => ({
 vi.mock("@/lib/services/smtp-settings", () => ({
   testResendConnection: mockTestResendConnection,
 }))
+// Las acciones de la clave de Resend (guardar/restaurar) se prueban en
+// `app/(app)/admin/correo-smtp/actions.test.ts`; acá sólo hay que poder cargar el módulo.
+vi.mock("@/lib/services/resend-settings", () => ({
+  saveResendSettings: vi.fn(),
+  clearResendSettings: vi.fn(),
+}))
 vi.mock("@/lib/audit", () => ({ recordAudit: mockRecordAudit }))
 vi.mock("@/lib/services/email-templates", () => ({
   updateTemplate: mockUpdateTemplate,

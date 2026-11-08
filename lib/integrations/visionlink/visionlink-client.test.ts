@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { fetchVisionLinkUtilization, resetVisionLinkTokenCache, VisionLinkClientError } from "./visionlink-client"
+import { fetchVisionLinkUtilization, resetVisionLinkTokenCache, verifyVisionLinkCredentials, VisionLinkClientError } from "./visionlink-client"
 
 const credentials = { clientId: "client-id", clientSecret: "client-secret" }
 const range = { startDate: "2026-10-16", endDate: "2026-10-29" }
@@ -89,5 +89,53 @@ describe("fetchVisionLinkUtilization", () => {
     resetVisionLinkTokenCache()
     const odd = vi.fn<typeof fetch>().mockResolvedValueOnce(token()).mockResolvedValueOnce(json({ items: [] }))
     await expect(fetchVisionLinkUtilization(credentials, range, { fetchImpl: odd })).rejects.toMatchObject({ code: "VISIONLINK_BAD_RESPONSE" })
+  })
+})
+
+describe("verifyVisionLinkCredentials", () => {
+  beforeEach(() => resetVisionLinkTokenCache())
+
+  it("pide sólo el token: no consulta ningún endpoint de datos", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValueOnce(token())
+    await verifyVisionLinkCredentials({ ...credentials, scope: "api://x/.default" }, { fetchImpl })
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+    const [url, init] = fetchImpl.mock.calls[0]!
+    expect(String(url)).toContain("login.microsoftonline.com")
+    expect((init!.body as URLSearchParams).get("scope")).toBe("api://x/.default")
+  })
+
+  it("no lee ni escribe la caché: un secreto rotado no se da por bueno con un token viejo", async () => {
+    const first = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(token())
+      .mockResolvedValueOnce(json({ utilizations: [], responseMetadata: {} }))
+    await fetchVisionLinkUtilization(credentials, range, { fetchImpl: first })
+
+    // Con un token vigente en caché, probar igual va al proveedor y se entera del rechazo.
+    const rejected = vi.fn<typeof fetch>().mockResolvedValueOnce(json({ error: "invalid_client", trace_id: "t" }, 401))
+    await expect(verifyVisionLinkCredentials(credentials, { fetchImpl: rejected })).rejects.toMatchObject({ code: "VISIONLINK_AUTH_FAILED" })
+    expect(rejected).toHaveBeenCalledTimes(1)
+
+    // …y probar con éxito no deja un token que el cron reutilice sin pedirlo.
+    resetVisionLinkTokenCache()
+    await verifyVisionLinkCredentials(credentials, { fetchImpl: vi.fn<typeof fetch>().mockResolvedValueOnce(token()) })
+    const afterProbe = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(token())
+      .mockResolvedValueOnce(json({ utilizations: [], responseMetadata: {} }))
+    await fetchVisionLinkUtilization(credentials, range, { fetchImpl: afterProbe })
+    expect(afterProbe).toHaveBeenCalledTimes(2)
+  })
+
+  it("el error trae sólo un código: ni el cuerpo del proveedor ni las credenciales", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValueOnce(json({ error_description: "AADSTS7000215 client-secret client-id" }, 401))
+    let error: unknown
+    try {
+      await verifyVisionLinkCredentials(credentials, { fetchImpl })
+    } catch (caught) {
+      error = caught
+    }
+    expect(error).toBeInstanceOf(VisionLinkClientError)
+    const { message } = error as VisionLinkClientError
+    expect(message).toBe("VISIONLINK_AUTH_FAILED (HTTP 401)")
+    expect(message).not.toContain("client-secret")
   })
 })

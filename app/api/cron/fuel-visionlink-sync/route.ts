@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { cronRequestSource, parseCronAllowedSources, verifyCronInternalRequest, verifyCronRequest } from "@/lib/security/cron-auth"
 import { fuelCronContractFor } from "@/lib/combustibles/fuel-cron-contract"
 import { VisionLinkClientError } from "@/lib/integrations/visionlink/visionlink-client"
-import { readVisionLinkConfig } from "@/lib/integrations/visionlink/visionlink-settings"
+import { loadVisionLinkConfig } from "@/lib/integrations/visionlink/visionlink-settings"
 import { syncVisionLink } from "@/lib/integrations/visionlink/visionlink-sync"
 import { logger } from "@/lib/logger"
 import { withCronLock } from "@/lib/services/cron-lock"
@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
   }
 
   // Sin credenciales o apagado no es una falla: la integración no está en uso.
-  const config = readVisionLinkConfig()
+  const config = await loadVisionLinkConfig()
   if (!config.hasCredentials || !config.syncEnabled) {
     return respond(fuelCronContractFor({ disabled: true }), {
       reason: config.hasCredentials ? "sync deshabilitado" : "sin credenciales",

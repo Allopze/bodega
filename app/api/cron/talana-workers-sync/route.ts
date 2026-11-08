@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { talanaCronContractFor, type TalanaCronOutcome } from "@/lib/integrations/talana/talana-cron-contract"
-import { readTalanaConfig } from "@/lib/integrations/talana/talana-settings"
+import { loadTalanaConfig } from "@/lib/integrations/talana/talana-settings"
 import { hasStalledTalanaRun, runTalanaSync, TalanaSyncFailure } from "@/lib/integrations/talana/talana-sync"
 import { logger } from "@/lib/logger"
 import { cronRequestSource, verifyCronSecret } from "@/lib/security/cron-auth"
@@ -36,10 +36,12 @@ export async function GET(request: NextRequest) {
 
   if (!await isRouteOperational("/admin/trabajadores")) return respond("disabled")
 
-  const { hasCredentials, mode, token } = readTalanaConfig()
+  // Lo guardado desde Administración › Sincronización Talana, o el `.env` si
+  // nadie guardó nada. El motivo es neutro: ya no depende de una variable.
+  const { hasCredentials, mode, token } = await loadTalanaConfig()
   if (!hasCredentials) return respond("disabled", { reason: "sin token" })
   if (mode === "off") {
-    return respond("disabled", { reason: "sincronización apagada (TALANA_SYNC_MODE)" })
+    return respond("disabled", { reason: "sincronización apagada" })
   }
 
   try {

@@ -2,12 +2,26 @@
 
 import { useActionState, useEffect, useRef, useState, type FormEvent } from "react"
 import { toast } from "@/lib/toast"
+import {
+  SecretSettingField,
+  SETTING_SOURCE_LABELS,
+  SettingsKeyringCallout,
+} from "@/components/admin/secret-setting-field"
+import { Button } from "@/components/ui/button"
+import { Callout } from "@/components/ui/callout"
 import { SubmitButton } from "@/components/ui/submit-button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { INITIAL_STATE } from "@/lib/form-state"
-import { setEmailsEnabledAction, testResendAction } from "./actions"
+import { useOperation } from "@/lib/hooks/use-operation"
+import {
+  restoreResendSettingsAction,
+  saveResendApiKeyAction,
+  setEmailsEnabledAction,
+  testResendAction,
+} from "./actions"
 import { formatDateTime } from "@/lib/utils"
+import type { ActionState } from "@/lib/validation/masters"
 import type { LastDeliveryTest, ResendStatus } from "@/lib/services/smtp-settings"
 
 interface CorreoFormsProps {
@@ -179,11 +193,8 @@ function ResendStatusCard({ resendStatus }: { resendStatus: ResendStatus }) {
         <p className="mt-1 text-sm text-(--color-text-muted)">
           Los correos se envían a través de{" "}
           <span className="font-medium text-(--color-text)">Resend</span>.
-          La clave de API se configura con la variable de entorno{" "}
-          <code className="rounded bg-surface-2 px-1 py-0.5 font-mono text-xs">
-            RESEND_API_KEY
-          </code>
-          .
+          La clave de API se guarda cifrada en la plataforma; si no hay una guardada,
+          se usa la que tenga configurada el servidor.
         </p>
       </div>
 
@@ -200,10 +211,10 @@ function ResendStatusCard({ resendStatus }: { resendStatus: ResendStatus }) {
           </span>
         </Row>
 
-        <Row label="Clave API (prefijo)">
-          <code className="font-mono text-xs text-(--color-text-muted)">
-            {resendStatus.apiKeyPrefix}
-          </code>
+        <Row label="Origen de la clave API">
+          <span className="text-(--color-text-muted)">
+            {SETTING_SOURCE_LABELS[resendStatus.source]}
+          </span>
         </Row>
 
         <Row label="Remitente (From)">
@@ -217,6 +228,14 @@ function ResendStatusCard({ resendStatus }: { resendStatus: ResendStatus }) {
         </Row>
       </dl>
 
+      {!resendStatus.configured && (
+        <Callout tone="warning" className="mt-5">
+          Guarda una clave de API de Resend para activar el envío de correos.
+        </Callout>
+      )}
+
+      <ResendApiKeyForm resendStatus={resendStatus} />
+
       {resendStatus.configured && (
         <div className="mt-5 flex justify-end">
           <button
@@ -229,13 +248,87 @@ function ResendStatusCard({ resendStatus }: { resendStatus: ResendStatus }) {
           </button>
         </div>
       )}
+    </div>
+  )
+}
 
-      {!resendStatus.configured && (
-        <p className="mt-5 rounded-(--radius) border border-(--color-warning-line) bg-(--color-warning-tint) px-4 py-3 text-sm text-(--color-warning-ink)">
-          Configura <code className="font-mono text-xs">RESEND_API_KEY</code> en el entorno para
-          activar el envío de correos.
-        </p>
+/**
+ * Clave de API de solo escritura: el campo parte vacío, vacío conserva la
+ * guardada y la clave jamás vuelve al navegador (ni siquiera un prefijo).
+ * Restaurar borra lo guardado y devuelve el mando al `.env` del servidor.
+ */
+function ResendApiKeyForm({ resendStatus }: { resendStatus: ResendStatus }) {
+  // El aviso sale dentro de la acción, donde se conoce el resultado.
+  const [, formAction] = useActionState<ActionState, FormData>(async (prev, formData) => {
+    const result = await saveResendApiKeyAction(prev, formData)
+    if (result.ok) toast.success(result.message ?? "Clave de Resend guardada")
+    else if (result.message) toast.error(result.message)
+    return result
+  }, INITIAL_STATE)
+  const [confirmRestoreOpen, setConfirmRestoreOpen] = useState(false)
+  const restore = useOperation()
+
+  function openRestore() {
+    restore.setMessage("")
+    setConfirmRestoreOpen(true)
+  }
+
+  function handleRestore() {
+    restore.run(restoreResendSettingsAction, (result) => {
+      setConfirmRestoreOpen(false)
+      toast.success(result.message ?? "Configuración del servidor restaurada")
+    })
+  }
+
+  return (
+    <div className="mt-6 border-t border-(--color-border) pt-5">
+      {!resendStatus.canStoreSecrets && (
+        <div className="mb-4">
+          <SettingsKeyringCallout>
+            Mientras tanto el correo sigue usando la clave del servidor y la prueba de envío funciona igual.
+          </SettingsKeyringCallout>
+        </div>
       )}
+
+      <form action={formAction} className="space-y-4">
+        <SecretSettingField
+          id="resend-api-key"
+          name="apiKey"
+          label="Clave API de Resend"
+          type="password"
+          placeholder="re_..."
+          status={{ configured: resendStatus.configured, source: resendStatus.source }}
+          clearName="clearApiKey"
+          disabled={!resendStatus.canStoreSecrets}
+        />
+
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {resendStatus.hasStoredSettings && (
+            <Button type="button" variant="secondary" size="sm" onClick={openRestore} disabled={restore.pending}>
+              Restaurar la configuración del servidor
+            </Button>
+          )}
+          <SubmitButton
+            label="Guardar clave"
+            loadingLabel="Guardando..."
+            variant="primary"
+            disabled={!resendStatus.canStoreSecrets}
+          />
+        </div>
+      </form>
+
+      <ConfirmDialog
+        open={confirmRestoreOpen}
+        onOpenChange={setConfirmRestoreOpen}
+        title="¿Restaurar la configuración del servidor?"
+        description="Se borra la clave guardada en la plataforma y el correo vuelve a usar la clave del servidor (.env). Si el servidor no tiene ninguna, no se enviará ningún correo hasta guardar una nueva."
+        confirmLabel="Restaurar"
+        cancelLabel="Cancelar"
+        variant="warning"
+        onConfirm={handleRestore}
+        loading={restore.pending}
+        error={restore.message || undefined}
+      />
     </div>
   )
 }

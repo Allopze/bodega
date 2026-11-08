@@ -34,6 +34,7 @@ import { todayInChile } from "@/lib/utils"
 import { createNotifications } from "@/lib/services/notification-create"
 import { getUserIdsWithPermission } from "@/lib/services/notification-targeting"
 import { getEmailsEnabled } from "@/lib/services/system-settings"
+import { readResendConfig } from "@/lib/services/resend-settings"
 import type { PdtpEvidenceIntegrityResult } from "@/lib/services/pdtp/evidence-integrity"
 
 /**
@@ -72,8 +73,10 @@ const SAMPLE_SIZE = 5
 const ERROR_MAX = 300
 
 async function warnIfEmailUnavailable(context: string): Promise<void> {
-  if (!process.env.RESEND_API_KEY?.trim()) {
-    logger.warn(`[prevention-alerts] ${context}: correo no configurado (RESEND_API_KEY ausente); la alerta queda sólo en la plataforma`)
+  // La clave puede estar guardada en la plataforma o venir del `.env`: se pregunta
+  // al mismo lector que usa el envío, no al entorno.
+  if (!(await readResendConfig()).apiKey) {
+    logger.warn(`[prevention-alerts] ${context}: correo no configurado (clave de Resend ausente); la alerta queda sólo en la plataforma`)
     return
   }
   if (!(await getEmailsEnabled())) {

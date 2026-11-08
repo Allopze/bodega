@@ -79,8 +79,14 @@ export async function startCopecSyncAction(): Promise<
 > {
   const guard = await guardPermission("combustibles:sync_integrations", FUEL_PATHS.fuentes)
   if (guard.error) return guard.error
-  if (!copecSyncAvailability().hasCredentials) {
-    return { ok: false, message: "Faltan las credenciales de Copec en el servidor (COPEC_USERNAME y COPEC_PASSWORD)." }
+  const availability = await copecSyncAvailability()
+  if (!availability.hasCredentials) {
+    return {
+      ok: false,
+      message: availability.hasUnreadableSecret
+        ? "No se pueden abrir las credenciales de Copec guardadas: el llavero de cifrado del servidor no las descifra. Vuelve a ingresarlas en Combustibles › Ajustes › Integraciones."
+        : "Faltan las credenciales de Copec (usuario, contraseña y RUT de la empresa). Configúralas en Combustibles › Ajustes › Integraciones.",
+    }
   }
   try {
     const periods = await getCopecSweepPeriods()

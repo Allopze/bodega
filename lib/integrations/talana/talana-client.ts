@@ -287,6 +287,23 @@ export function createTalanaClient(options: TalanaClientOptions) {
   }
 
   return {
+    /**
+     * Comprobación de credenciales para «Probar conexión»: UNA petición por
+     * `contracts-resumed-paginated` con `page_size=1`, sin seguir `next`. Con el
+     * límite de Talana (50 por minuto y 10 minutos de bloqueo de la URL) una
+     * prueba tiene que costar una sola petición, y no se reintenta ni siquiera
+     * ante un 429. Devuelve sólo el `count` declarado (contratos activos e
+     * históricos, no sólo los vigentes) y nunca el cuerpo: el diálogo no debe
+     * poder mostrar datos de personas.
+     */
+    async ping(): Promise<{ ok: true; contractCount: number | null }> {
+      const url = new URL(`${TALANA_API_BASE_URL}/contracts-resumed-paginated/`)
+      url.searchParams.set("page_size", "1")
+      const body = await get(url.toString())
+      if (Array.isArray(body)) return { ok: true, contractCount: null }
+      if (isObject(body) && Array.isArray(body.results)) return { ok: true, contractCount: int(body.count) }
+      throw new TalanaClientError("TALANA_BAD_RESPONSE")
+    },
     /** Todos los contratos (activos e históricos), o sólo los vigentes hoy. */
     listContracts({ onlyActive }: { onlyActive: boolean }) {
       const url = new URL(`${TALANA_API_BASE_URL}/contracts-resumed-paginated/`)
@@ -303,4 +320,9 @@ export function createTalanaClient(options: TalanaClientOptions) {
   }
 }
 
-export type TalanaClient = ReturnType<typeof createTalanaClient>
+/**
+ * Lo que la sincronización necesita del cliente. `ping` (Probar conexión) queda
+ * fuera a propósito: es de la pantalla de configuración, y exigirlo obligaría a
+ * cada doble de prueba de la sincronización a implementarlo.
+ */
+export type TalanaClient = Pick<ReturnType<typeof createTalanaClient>, "listContracts" | "listAbsences">

@@ -2,7 +2,7 @@
  * Integration-style tests for the Resend mail facade.
  * Verifies the full send path including kill-switch and key-missing guards.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 import { Resend } from "resend"
 import { sendEmail, sendBatchEmails, sendInvitationEmail } from "@/lib/email/smtp"
 import { getEmailsEnabled } from "@/lib/services/system-settings"
@@ -18,29 +18,26 @@ vi.mock("@/lib/services/email-templates", () => ({
   })),
 }))
 
-const { mockSend, mockBatchSend } = vi.hoisted(() => ({
+const { mockSend, mockBatchSend, mockReadResendConfig } = vi.hoisted(() => ({
   mockSend: vi.fn(),
   mockBatchSend: vi.fn(),
+  mockReadResendConfig: vi.fn(),
 }))
 
 vi.mock("resend", () => ({ Resend: vi.fn() }))
 
-const originalKey = process.env.RESEND_API_KEY
+// La clave vigente la decide `readResendConfig` (precedencia en `resend-settings.test.ts`).
+vi.mock("@/lib/services/resend-settings", () => ({ readResendConfig: mockReadResendConfig }))
 
 beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(getEmailsEnabled).mockResolvedValue(true)
-  process.env.RESEND_API_KEY = "re_test_full"
+  mockReadResendConfig.mockResolvedValue({ apiKey: "re_test_full", source: "environment", unreadable: false })
   mockSend.mockResolvedValue({ data: { id: "id1" }, error: null })
   mockBatchSend.mockResolvedValue({ data: { data: [{ id: "id1" }] }, error: null })
   vi.mocked(Resend).mockImplementation(function () {
     return { emails: { send: mockSend }, batch: { send: mockBatchSend } }
   } as never)
-})
-
-afterEach(() => {
-  if (originalKey === undefined) delete process.env.RESEND_API_KEY
-  else process.env.RESEND_API_KEY = originalKey
 })
 
 describe("kill-switch precedence", () => {
@@ -52,9 +49,9 @@ describe("kill-switch precedence", () => {
   })
 
   it("missing key blocks even when kill-switch is on", async () => {
-    delete process.env.RESEND_API_KEY
+    mockReadResendConfig.mockResolvedValue({ apiKey: "", source: "missing", unreadable: false })
     const r = await sendEmail({ to: "a@b.cl", subject: "x", text: "x", html: "x" })
-    expect(r).toMatchObject({ sent: false, reason: expect.stringContaining("RESEND_API_KEY") })
+    expect(r).toMatchObject({ sent: false, reason: expect.stringContaining("Clave de Resend") })
     expect(mockSend).not.toHaveBeenCalled()
   })
 })

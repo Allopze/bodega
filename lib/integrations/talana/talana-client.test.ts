@@ -83,3 +83,43 @@ describe("createTalanaClient", () => {
     await expect(createTalanaClient({ token: "t", fetchImpl: bad }).listContracts({ onlyActive: false })).rejects.toMatchObject({ code: "TALANA_BAD_RESPONSE" })
   })
 })
+
+describe("createTalanaClient · ping (Probar conexión)", () => {
+  it("hace UNA sola petición con page_size=1, sin seguir la paginación, y devuelve sólo el conteo", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      json({ count: 412, next: "https://talana.com/es/api/contracts-resumed-paginated/?page=2", results: [rawContract(1)] }),
+    )
+    const result = await createTalanaClient({ token: "tok", fetchImpl }).ping()
+    expect(result).toEqual({ ok: true, contractCount: 412 })
+    expect(JSON.stringify(result)).not.toContain("11111111-1")
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+    const [url, init] = fetchImpl.mock.calls[0]!
+    expect(String(url)).toBe("https://talana.com/es/api/contracts-resumed-paginated/?page_size=1")
+    expect((init!.headers as Record<string, string>).Authorization).toBe("Token tok")
+    expect(init!.redirect).toBe("manual")
+    expect(init!.signal).toBeInstanceOf(AbortSignal)
+  })
+
+  it("acepta una lista plana (sin conteo) y rechaza una respuesta sin la forma esperada", async () => {
+    const plain = vi.fn<typeof fetch>().mockResolvedValue(json([rawContract(1)]))
+    await expect(createTalanaClient({ token: "t", fetchImpl: plain }).ping()).resolves.toEqual({ ok: true, contractCount: null })
+    const bad = vi.fn<typeof fetch>().mockResolvedValue(json({ unexpected: true }))
+    await expect(createTalanaClient({ token: "t", fetchImpl: bad }).ping()).rejects.toMatchObject({ code: "TALANA_BAD_RESPONSE" })
+  })
+
+  it("401, 429 y 500 fallan con su código, sin reintentar y sin propagar el cuerpo del proveedor", async () => {
+    for (const [status, code] of [[401, "TALANA_AUTH_FAILED"], [429, "TALANA_RATE_LIMITED"], [500, "TALANA_HTTP_ERROR"]] as const) {
+      const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response("secreto del proveedor", { status }))
+      const error = await createTalanaClient({ token: "t", fetchImpl }).ping().catch((e: unknown) => e)
+      expect(error).toBeInstanceOf(TalanaClientError)
+      expect((error as TalanaClientError).code).toBe(code)
+      expect(String((error as Error).message)).not.toContain("secreto")
+      expect(fetchImpl).toHaveBeenCalledTimes(1)
+    }
+  })
+
+  it("un timeout se informa como TALANA_TIMEOUT", async () => {
+    const timeout = vi.fn<typeof fetch>().mockRejectedValue(Object.assign(new Error("t"), { name: "TimeoutError" }))
+    await expect(createTalanaClient({ token: "t", fetchImpl: timeout }).ping()).rejects.toMatchObject({ code: "TALANA_TIMEOUT" })
+  })
+})

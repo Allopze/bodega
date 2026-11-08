@@ -1,5 +1,6 @@
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
+import { eq, inArray } from "drizzle-orm"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 import path from "node:path"
@@ -327,6 +328,47 @@ describe("estado de las fuentes de datos (PostgreSQL)", () => {
       expect(telemetry.status).toBe("pendiente")
       expect(telemetry.problem).toMatch(/^Faltan los datos del /)
     } finally {
+      delete process.env.VISIONLINK_CLIENT_ID
+      delete process.env.VISIONLINK_CLIENT_SECRET
+      delete process.env.VISIONLINK_SYNC_ENABLED
+    }
+  })
+
+  it("con VisionLink guardado desde la plataforma rige lo guardado, aunque el .env no diga nada", async () => {
+    vi.stubEnv("DTE_SETTINGS_KEYRING", JSON.stringify({ k1: Buffer.alloc(32, 7).toString("base64url") }))
+    vi.stubEnv("DTE_SETTINGS_ACTIVE_KEY_ID", "k1")
+    const { encryptDteSetting } = await import("@/lib/services/dte-portal/settings-crypto")
+    const keys = ["combustibles.visionlink.client_id", "combustibles.visionlink.client_secret", "combustibles.visionlink.sync_enabled"]
+    await inMemoryDb.insert(schema.systemSettings).values([
+      { key: keys[0]!, value: "id-guardado" },
+      { key: keys[1]!, value: encryptDteSetting("secreto-guardado", keys[1]!) },
+      { key: keys[2]!, value: "true" },
+    ])
+    try {
+      const old = todayInChile(new Date(Date.now() - 6 * 86_400_000))
+      await inMemoryDb.insert(schema.fuelTelemetryDaily).values({ id: nanoid(), vehicleId: vehicleA, source: "visionlink-api", day: old, month: old.slice(0, 7), operatingHours: 8, idleHours: 1 })
+      const telemetry = byKey(await getFuelSourceStatuses(global(), monthPeriod), "telemetria")!
+      expect(telemetry.status).toBe("pendiente")
+      expect(telemetry.facts).toContainEqual({ label: "Sincronización diaria", value: "Activada (VisionLink)" })
+    } finally {
+      await inMemoryDb.delete(schema.systemSettings).where(inArray(schema.systemSettings.key, keys))
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it("con VisionLink apagado desde la plataforma, la telemetría atrasada no es un problema aunque el .env lo encienda", async () => {
+    process.env.VISIONLINK_CLIENT_ID = "id"
+    process.env.VISIONLINK_CLIENT_SECRET = "secreto"
+    process.env.VISIONLINK_SYNC_ENABLED = "true"
+    await inMemoryDb.insert(schema.systemSettings).values({ key: "combustibles.visionlink.sync_enabled", value: "false" })
+    try {
+      const old = todayInChile(new Date(Date.now() - 6 * 86_400_000))
+      await inMemoryDb.insert(schema.fuelTelemetryDaily).values({ id: nanoid(), vehicleId: vehicleA, source: "visionlink-api", day: old, month: old.slice(0, 7), operatingHours: 8, idleHours: 1 })
+      const telemetry = byKey(await getFuelSourceStatuses(global(), monthPeriod), "telemetria")!
+      expect(telemetry.status).toBe("ok")
+      expect(telemetry.problem).toBeNull()
+    } finally {
+      await inMemoryDb.delete(schema.systemSettings).where(eq(schema.systemSettings.key, "combustibles.visionlink.sync_enabled"))
       delete process.env.VISIONLINK_CLIENT_ID
       delete process.env.VISIONLINK_CLIENT_SECRET
       delete process.env.VISIONLINK_SYNC_ENABLED

@@ -30,6 +30,8 @@ import {
   readChipaxConfig,
   saveChipaxSettings,
 } from "@/lib/services/billing/chipax-settings"
+import { salesSyncSettingsGroup } from "@/lib/services/billing/config"
+import { clearSettingsGroup, saveSettingsGroup } from "@/lib/services/encrypted-settings"
 import { assertCostCenterAllowed } from "@/lib/services/cost-centers"
 import type { ActionState } from "@/lib/validation/masters"
 import type { BillingProviderId } from "@/db/schema"
@@ -783,6 +785,78 @@ export async function clearChipaxSettingsAction(): Promise<ActionResult> {
     return { ok: true, message: "Se restauró la configuración del servidor" }
   } catch (err) {
     logger.error("[billing/clearChipaxSettings]", err)
+    return { ok: false, message: "No se pudo restaurar la configuración del servidor" }
+  }
+}
+
+/* ── Automatización de facturas de venta (FacturaEnLínea) ─────────────────── */
+
+const salesSyncSettingsSchema = z.object({
+  syncEnabled: z.boolean(),
+})
+
+/**
+ * Enciende o apaga la sincronización automática de facturas de venta.
+ *
+ * Mismo permiso que el resto de la pantalla, `billing:manage_sync`. Sólo se
+ * guarda el interruptor: las credenciales del portal que usa esta sincronización
+ * se administran en Administración › Sincronización DTE, con su propio permiso,
+ * y `BILLING_HISTORY_FLOOR` sigue siendo una decisión del despliegue. Al no haber
+ * ningún secreto, guardar no necesita llavero.
+ */
+export async function saveSalesSyncSettingsAction(
+  _prevState: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const { session, error } = await guardPermission("billing:manage_sync")
+  if (error) return error
+
+  const parsed = salesSyncSettingsSchema.safeParse({
+    syncEnabled: formData.get("syncEnabled") === "on",
+  })
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? "Parámetros inválidos" }
+  }
+
+  try {
+    const result = await saveSettingsGroup(
+      salesSyncSettingsGroup,
+      { set: { syncEnabled: String(parsed.data.syncEnabled) } },
+      { userId: session.user.id, userEmail: session.user.email ?? undefined },
+    )
+
+    revalidatePath("/facturacion/sincronizacion")
+
+    if (!result.changed) {
+      return { ok: true, message: "Sin cambios: la configuración ya estaba así." }
+    }
+    return {
+      ok: true,
+      message: parsed.data.syncEnabled
+        ? "Sincronización automática de facturas de venta activada."
+        : "Sincronización automática de facturas de venta desactivada.",
+    }
+  } catch (err) {
+    // Nunca se propaga el mensaje original: puede venir de la capa de datos.
+    logger.error("[billing/saveSalesSyncSettings]", err)
+    return { ok: false, message: "No se pudo guardar la configuración de la sincronización de ventas" }
+  }
+}
+
+/** Borra el interruptor guardado y vuelve a lo que declara el `.env` del servidor. */
+export async function clearSalesSyncSettingsAction(): Promise<ActionResult> {
+  const { session, error } = await guardPermission("billing:manage_sync")
+  if (error) return error
+
+  try {
+    await clearSettingsGroup(salesSyncSettingsGroup, {
+      userId: session.user.id,
+      userEmail: session.user.email ?? undefined,
+    })
+    revalidatePath("/facturacion/sincronizacion")
+    return { ok: true, message: "Se restauró la configuración del servidor" }
+  } catch (err) {
+    logger.error("[billing/clearSalesSyncSettings]", err)
     return { ok: false, message: "No se pudo restaurar la configuración del servidor" }
   }
 }

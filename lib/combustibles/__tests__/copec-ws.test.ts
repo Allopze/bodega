@@ -6,6 +6,14 @@ import { buildCopecTransactionRows } from "../copec-events"
 import { copecStationLabel, copecWsItemToRecord, withCopecWebServiceSession } from "../copec-ws"
 import type { CopecReportDownloadResult } from "../copec-reports"
 
+// La configuración vigente sale de `system_settings` con el `.env` de respaldo.
+// Estas pruebas no tienen base de datos: se lee sólo el entorno que cada caso
+// stubea, con la misma conversión que usa el lector real.
+vi.mock("@/lib/combustibles/copec-settings", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/combustibles/copec-settings")>()
+  return { ...actual, loadCopecConfig: async () => actual.copecConfigFromEnv(process.env) }
+})
+
 // Datos inventados con la forma exacta de las respuestas reales del 2026-10-30
 // (relleno con espacios, ceros a la izquierda, entidades numéricas, mezcla de
 // mayúsculas en SOAP y minúsculas en BlueMax).
@@ -412,9 +420,9 @@ describe("withCopecWebServiceSession", () => {
 
   it("sin RUT cliente, o con uno inválido, la corrida cae antes de consultar", async () => {
     vi.stubEnv("COPEC_CLIENT_RUT", "")
-    await expect(download([{ product: "diesel", ...PERIOD }])).rejects.toThrow(/COPEC_CLIENT_RUT/)
+    await expect(download([{ product: "diesel", ...PERIOD }])).rejects.toThrow(/Falta el RUT de la empresa cliente de Copec/)
     vi.stubEnv("COPEC_CLIENT_RUT", "76123456-X")
-    await expect(download([{ product: "diesel", ...PERIOD }])).rejects.toThrow(/no es un RUT válido/)
+    await expect(download([{ product: "diesel", ...PERIOD }])).rejects.toThrow(/RUT de la empresa cliente de Copec no es válido/)
     expect(fetchMock).not.toHaveBeenCalled()
   })
 })

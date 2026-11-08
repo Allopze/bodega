@@ -1,12 +1,15 @@
 /**
  * Outbound mail facade — powered by Resend.
  *
- * Configuration: set RESEND_API_KEY in the environment.
- * All sends are no-ops when the key is absent or the global
+ * Configuration: la clave de API se guarda desde Administración › Correo
+ * (cifrada en system_settings); si no hay una guardada se usa RESEND_API_KEY del
+ * entorno. `readResendConfig` decide cuál (con una caché corta, porque se lee en
+ * cada envío). All sends are no-ops when the key is absent or the global
  * emails kill-switch (system_settings: emails_enabled) is off.
  */
 import { Resend } from "resend"
 import { getEmailsEnabled } from "@/lib/services/system-settings"
+import { readResendConfig } from "@/lib/services/resend-settings"
 import { renderTemplate } from "@/lib/services/email-templates"
 
 const FROM = "Plataforma Chome <plataforma@portalchome.cl>"
@@ -28,19 +31,24 @@ type InvitationEmailInput = {
 
 export type SendResult = { sent: true } | { sent: false; reason: string }
 
-function getResend(): Resend | null {
-  const key = process.env.RESEND_API_KEY?.trim()
-  return key ? new Resend(key) : null
+/** Cliente de Resend con la clave vigente (guardada o del entorno), o el motivo por el que no hay. */
+async function getResend(): Promise<{ resend: Resend } | { reason: string }> {
+  const { apiKey, unreadable } = await readResendConfig()
+  if (apiKey) return { resend: new Resend(apiKey) }
+  return {
+    reason: unreadable
+      ? "La clave de Resend guardada no se puede abrir con el llavero de este servidor"
+      : "Clave de Resend no configurada",
+  }
 }
 
-async function canSend(): Promise<{ ok: true } | { ok: false; reason: string }> {
+async function canSend(): Promise<{ ok: true; resend: Resend } | { ok: false; reason: string }> {
   if (!(await getEmailsEnabled())) {
     return { ok: false, reason: "Envío de correos desactivado" }
   }
-  if (!getResend()) {
-    return { ok: false, reason: "RESEND_API_KEY no configurado" }
-  }
-  return { ok: true }
+  const transport = await getResend()
+  if ("reason" in transport) return { ok: false, reason: transport.reason }
+  return { ok: true, resend: transport.resend }
 }
 
 export async function sendInvitationEmail(input: InvitationEmailInput): Promise<SendResult> {
@@ -74,8 +82,7 @@ export async function sendEmail(message: {
   const gate = await canSend()
   if (!gate.ok) return { sent: false, reason: gate.reason }
 
-  const resend = getResend()!
-  const { error } = await resend.emails.send({
+  const { error } = await gate.resend.emails.send({
     from: FROM,
     to: message.to,
     subject: message.subject,
@@ -95,8 +102,7 @@ export async function sendBatchEmails(
   const gate = await canSend()
   if (!gate.ok) return { sent: false, reason: gate.reason }
 
-  const resend = getResend()!
-  const { error } = await resend.batch.send(
+  const { error } = await gate.resend.batch.send(
     messages.map((m) => ({
       from: FROM,
       to: m.to,

@@ -36,7 +36,7 @@ describe("startCopecSyncAction", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.guardPermission.mockResolvedValue({ session: { user: { id: "operador-1" } }, error: null })
-    mocks.availability.mockReturnValue({ hasCredentials: true, syncEnabled: true })
+    mocks.availability.mockResolvedValue({ hasCredentials: true, syncEnabled: true, hasUnreadableSecret: false })
     mocks.getCopecSweepPeriods.mockResolvedValue(PERIODS)
     mocks.startCronJobInBackground.mockResolvedValue("started")
   })
@@ -48,8 +48,22 @@ describe("startCopecSyncAction", () => {
   })
 
   it("explica que faltan credenciales en vez de iniciar una corrida que fallaría", async () => {
-    mocks.availability.mockReturnValue({ hasCredentials: false, syncEnabled: true })
+    mocks.availability.mockResolvedValue({ hasCredentials: false, syncEnabled: true, hasUnreadableSecret: false })
     await expect(startCopecSyncAction()).resolves.toMatchObject({ ok: false, message: expect.stringMatching(/credenciales de Copec/) })
+    expect(mocks.startCronJobInBackground).not.toHaveBeenCalled()
+  })
+
+  it("manda a Ajustes › Integraciones en vez de nombrar variables del servidor", async () => {
+    mocks.availability.mockResolvedValue({ hasCredentials: false, syncEnabled: true, hasUnreadableSecret: false })
+    const result = await startCopecSyncAction()
+    expect(result).toMatchObject({ ok: false, message: expect.stringContaining("Combustibles › Ajustes › Integraciones") })
+    expect(result.ok ? "" : result.message).not.toMatch(/COPEC_/)
+  })
+
+  it("distingue las credenciales guardadas que el llavero no puede abrir de las que faltan", async () => {
+    mocks.availability.mockResolvedValue({ hasCredentials: false, syncEnabled: true, hasUnreadableSecret: true })
+    const result = await startCopecSyncAction()
+    expect(result).toMatchObject({ ok: false, message: expect.stringMatching(/llavero/) })
     expect(mocks.startCronJobInBackground).not.toHaveBeenCalled()
   })
 

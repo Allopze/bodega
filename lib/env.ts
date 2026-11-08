@@ -72,7 +72,6 @@ export const env = {
 
   // Optional — gracefully degrade if absent
   appUrl:           process.env.APP_URL?.trim() || null,
-  resendApiKey:     process.env.RESEND_API_KEY?.trim() || null,
   storagePath:      process.env.STORAGE_PATH?.trim() || null,
 
   // Numeric with defaults

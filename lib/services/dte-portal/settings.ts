@@ -11,7 +11,7 @@ import { db } from "@/db"
 import { dtePortalOperationLeases, systemSettings } from "@/db/schema"
 import { eq, gte, inArray, like, or, sql } from "drizzle-orm"
 import { recordAudit } from "@/lib/audit"
-import { CHIPAX_SETTING_KEYS } from "@/lib/services/billing/chipax-settings"
+import { SHARED_KEYRING_SECRET_KEYS } from "@/lib/services/settings-secret-keys"
 import {
   decryptDteSetting,
   encryptDteSetting,
@@ -54,16 +54,14 @@ const SENSITIVE_FIELDS: readonly DteSensitiveSettingField[] = [
   "codEmp",
   "importerEmail",
 ]
-/**
- * Secretos que NO son del portal DTE pero se cifran con el MISMO keyring
- * (`billing.chipax.*`). El re-cifrado tiene que re-envolverlos: si se quedan
- * con el `kid` retirado, el sobre no vuelve a abrirse nunca y Chipax cae en
- * silencio a la credencial del `.env`.
+/*
+ * Los secretos que NO son del portal DTE pero se cifran con el MISMO keyring
+ * (Chipax, OnWay, Cloudreve, Talana, VisionLink, Copec, Resend) viven en
+ * `SHARED_KEYRING_SECRET_KEYS` (lib/services/settings-secret-keys.ts). El
+ * re-cifrado tiene que re-envolverlos: si se quedan con el `kid` retirado, el
+ * sobre no vuelve a abrirse nunca y la integración cae en silencio a la
+ * credencial del `.env`.
  */
-const SHARED_KEYRING_SECRET_KEYS: readonly string[] = [
-  CHIPAX_SETTING_KEYS.appId,
-  CHIPAX_SETTING_KEYS.secretKey,
-]
 
 const REQUIRED_CREDENTIAL_FIELDS: readonly DteSensitiveSettingField[] = [
   "rutUsr",
@@ -643,8 +641,9 @@ export async function rotateDteSettingsKeyring(actor: DteSettingsActor): Promise
       after[field] = envelope
       rewrapped += 1
     }
-    // Los secretos de Chipax comparten este keyring: si no se re-envuelven acá,
-    // retirar la clave anterior (paso final del runbook) los deja ilegibles.
+    // Los secretos de las demás integraciones comparten este keyring: si no se
+    // re-envuelven acá, retirar la clave anterior (paso final del runbook) los
+    // deja ilegibles.
     for (const key of SHARED_KEYRING_SECRET_KEYS) {
       const value = rows.find((row) => row.key === key)?.value
       // Un valor sin sobre sólo puede venir de una escritura a mano y ya se

@@ -334,6 +334,13 @@ export async function getAdminHealthFacts(areas: AreaNode[]): Promise<AdminHealt
     try { return await getLastDeliveryTest() } catch { return null }
   }
 
+  // La clave de Resend puede estar guardada en la plataforma o venir del
+  // `.env`, así que saber si hay una exige leer la BD (antes bastaba el entorno).
+  // Si la lectura falla se omite el tile en vez de afirmar «sin configurar».
+  const emailConfigured = async (): Promise<boolean | null> => {
+    try { return (await getResendStatus()).configured } catch { return null }
+  }
+
   // `getPlatformHealth` escribe un archivo de sonda y ejecuta `df`; se paga
   // sólo si la sesión ve /admin/modulos, que es adonde lleva el tile.
   const infra = async (): Promise<InfraFact | null> => {
@@ -343,10 +350,11 @@ export async function getAdminHealthFacts(areas: AreaNode[]): Promise<AdminHealt
     } catch { return null }
   }
 
-  const [backupLatest, backupSuccess, emailTest, dteLatest, dteSuccess, locks, infraFact] = await Promise.all([
+  const [backupLatest, backupSuccess, emailTest, emailIsConfigured, dteLatest, dteSuccess, locks, infraFact] = await Promise.all([
     wantsBackup ? lastBackup(false) : Promise.resolve(null),
     wantsBackup ? lastBackup(true)  : Promise.resolve(null),
     wantsEmail  ? lastEmailTest()   : Promise.resolve(null),
+    wantsEmail  ? emailConfigured() : Promise.resolve(null),
     wantsDte    ? lastDte(false)    : Promise.resolve(null),
     wantsDte    ? lastDte(true)     : Promise.resolve(null),
     wantsLocks  ? activeLocks()     : Promise.resolve(0),
@@ -355,7 +363,7 @@ export async function getAdminHealthFacts(areas: AreaNode[]): Promise<AdminHealt
 
   const facts: AdminHealthFacts = {}
   if (wantsBackup) facts.backup = { latest: backupLatest, lastSuccessAt: backupSuccess?.startedAt ?? null }
-  if (wantsEmail)  facts.email  = { configured: getResendStatus().configured, lastTest: emailTest }
+  if (wantsEmail && emailIsConfigured !== null) facts.email = { configured: emailIsConfigured, lastTest: emailTest }
   if (wantsDte)    facts.dte    = { latest: dteLatest, lastSuccessAt: dteSuccess?.startedAt ?? null }
   if (wantsLocks)  facts.lockouts = { activeLocks: locks }
   // Sin `infraFact` la sonda falló entera: se omite el tile en vez de afirmar

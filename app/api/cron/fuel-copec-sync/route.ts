@@ -48,10 +48,12 @@ export async function GET(request: NextRequest) {
   // configuró todavía. Antes `env()` lanzaba dentro de la corrida y la ruta
   // reportaba `failed` todos los días por una integración fuera de uso. Es el
   // mismo criterio que ya aplicaba la ruta de Aramco.
-  const availability = copecSyncAvailability()
+  const availability = await copecSyncAvailability()
   if (!availability.hasCredentials || !availability.syncEnabled) {
     return respond(fuelCronContractFor({ disabled: true }), {
-      reason: availability.hasCredentials ? "sync deshabilitado" : "sin credenciales",
+      reason: availability.hasCredentials
+        ? "sync deshabilitado"
+        : availability.hasUnreadableSecret ? "credenciales ilegibles" : "sin credenciales",
     })
   }
 

@@ -1,3 +1,4 @@
+import type { SettingSource } from "@/lib/services/encrypted-settings"
 import { formatDateTime } from "@/lib/utils"
 
 /**
@@ -41,4 +42,18 @@ export function lastRunText(run: IntegrationRun | null | undefined): string {
     case "skipped": return `Última corrida: ${when} · se saltó porque había otra en curso.`
     default: return `Última corrida: ${when}.`
   }
+}
+
+/**
+ * De dónde salen las credenciales de una integración, en palabras: «guardadas
+ * en la plataforma», «del servidor» o las dos (usuario del servidor y clave
+ * guardada, por ejemplo). `null` si ninguna está configurada.
+ */
+export function credentialsOriginText(sources: readonly SettingSource[]): string | null {
+  const stored = sources.includes("system_settings")
+  const server = sources.includes("environment")
+  if (stored && server) return "guardadas en la plataforma y del servidor"
+  if (stored) return "guardadas en la plataforma"
+  if (server) return "del servidor"
+  return null
 }

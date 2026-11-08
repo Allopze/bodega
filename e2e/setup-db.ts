@@ -437,6 +437,36 @@ async function main() {
   })
   await db.insert(schema.userRoles).values({ userId: "user-admin-parcial-e2e", roleId: "rol-admin-parcial" })
 
+  /*
+   * RR. HH. sin administración de integraciones: ve /admin/talana
+   * (`admin:workers_hr`) pero no puede configurar la sincronización
+   * (`admin:talana_settings` es sólo del administrador). Es la frontera que
+   * `e2e/talana-configuracion.spec.ts` verifica con una sesión real.
+   */
+  const hrPermissionIds = ["admin:workers_hr"]
+    .map((name) => SYSTEM_PERMISSIONS.find((p) => p.name === name)!.id)
+  await db.insert(schema.roles).values({
+    id: "rol-rrhh-e2e",
+    name: "rrhh_e2e",
+    label: "RR. HH. E2E",
+    description: "Ve la sincronización con Talana sin poder configurarla — E2E",
+    isGlobal: true,
+  })
+  await db.insert(schema.rolePermissions).values(
+    hrPermissionIds.map((permissionId) => ({ roleId: "rol-rrhh-e2e", permissionId })),
+  )
+  await db.insert(schema.users).values({
+    id: "user-rrhh-e2e",
+    name: "RR. HH. E2E",
+    email: "rrhh@e2e.chome.cl",
+    hashedPassword: await bcrypt.hash("chome2026", 10),
+    avatarColor: "200",
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.userRoles).values({ userId: "user-rrhh-e2e", roleId: "rol-rrhh-e2e" })
+
   await db.insert(schema.suppliers).values({
     id: "sup-e2e",
     name: "Proveedor E2E",

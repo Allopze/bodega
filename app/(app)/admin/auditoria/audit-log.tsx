@@ -36,6 +36,15 @@ const ENTITY_LABELS: Record<string, string> = {
   product_category: "Categoría",
   warehouse:        "Bodega",
   billing_chipax_settings: "Configuración Chipax",
+  // Configuraciones de integraciones administrables desde la plataforma.
+  dte_portal_settings:        "Configuración DTE",
+  fleet_onway_settings:       "Configuración OnWay",
+  cloudreve_storage_settings: "Configuración Cloudreve",
+  talana_settings:            "Configuración Talana",
+  fuel_copec_settings:        "Configuración Copec",
+  fuel_visionlink_settings:   "Configuración VisionLink",
+  resend_settings:            "Configuración Resend",
+  billing_sales_settings:     "Automatización de ventas",
 }
 
 const COLUMNS = [
