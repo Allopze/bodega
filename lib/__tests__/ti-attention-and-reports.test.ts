@@ -162,12 +162,15 @@ describe("TI: Atención hoy y reportes", () => {
     expect(egresos.rows[0]).toEqual(expect.arrayContaining(["Egreso", "1 de 2", 1]))
   })
 
-  it("el reporte de licencias calcula cupos libres con lo que el usuario ve", async () => {
+  it("el reporte de licencias cuenta los cupos sobre el total aunque el detalle esté acotado", async () => {
     const [licencias, asignaciones] = await licenseSheets("all")
     expect(licencias?.rows[0]).toEqual(expect.arrayContaining(["Office", 5, 2, 3]))
     expect(asignaciones?.rows).toHaveLength(2)
+    // El detalle de asignaciones se acota a la faena (1 fila), pero la cifra
+    // de cupos es global (2 asignados, 3 libres): el cupo comprado pertenece a
+    // la licencia, no a la faena, y declararlo acotado ofrecía asientos falsos.
     const [scopedLic, scopedAsig] = await licenseSheets([W1])
-    expect(scopedLic?.rows[0]).toEqual(expect.arrayContaining([5, 1, 4]))
+    expect(scopedLic?.rows[0]).toEqual(expect.arrayContaining([5, 2, 3]))
     expect(scopedAsig?.rows).toHaveLength(1)
   })
 

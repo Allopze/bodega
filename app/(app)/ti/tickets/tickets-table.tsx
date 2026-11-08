@@ -99,7 +99,7 @@ export function TicketsTable({ rows }: { rows: Row[]; canManage: boolean }) {
         return (
           <TableRow key={row.id}>
             <TableCell className="w-32">
-              <Link href={`/ti/tickets/${row.id}`} className="whitespace-nowrap font-mono text-xs font-semibold text-[var(--color-primary)] hover:underline">
+              <Link href={`/ti/tickets/${row.id}`} className="whitespace-nowrap font-mono text-xs font-semibold text-[var(--color-primary-ink)] hover:underline">
                 {row.code}
               </Link>
             </TableCell>
@@ -125,7 +125,7 @@ export function TicketsTable({ rows }: { rows: Row[]; canManage: boolean }) {
         return (
           <Link key={row.id} href={`/ti/tickets/${row.id}`} className="block rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
             <div className="flex items-start justify-between gap-2">
-              <span className="whitespace-nowrap font-mono text-xs font-semibold text-[var(--color-primary)]">{row.code}</span>
+              <span className="whitespace-nowrap font-mono text-xs font-semibold text-[var(--color-primary-ink)]">{row.code}</span>
               <MetaBadge meta={priorityMeta(row.priority)} />
             </div>
             <div className="mt-1 text-sm font-medium text-[var(--color-text)]">{row.subject}</div>

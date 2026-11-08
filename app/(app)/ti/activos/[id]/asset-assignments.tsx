@@ -50,7 +50,7 @@ function PhotoThumb({ photo, label }: { photo: PhotoRecord; label: string }) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="group block w-full overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] text-left transition-colors hover:border-[var(--color-primary-line)]"
+        className="group block w-full overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] text-left transition-colors hover:border-[var(--color-primary-line)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]"
       >
         <Image
           unoptimized
@@ -145,7 +145,7 @@ export function AssetAssignments({ assetId, rows, canDeliver, workers, worksites
           <article key={row.id} className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">
-                <span className="font-mono text-xs font-semibold text-[var(--color-primary)]">{row.code}</span>
+                <span className="font-mono text-xs font-semibold text-[var(--color-primary-ink)]">{row.code}</span>
                 <MetaBadge meta={{ label: row.returnedAt ? "Devuelto" : "Vigente", variant: row.returnedAt ? "default" : "info" }} />
                 <span className="text-xs text-[var(--color-text-muted)]">{IT_ASSIGNMENT_KIND_META[row.kind] ?? row.kind}</span>
               </div>

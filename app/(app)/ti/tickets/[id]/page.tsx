@@ -49,6 +49,7 @@ export default async function TicketDetailPage({
         title={ticket.code}
         description={ticket.subject}
         breadcrumb={<Breadcrumbs items={[
+          { label: "Inicio", href: "/dashboard" },
           { label: "TI", href: "/ti" },
           { label: "Mesa de ayuda", href: "/ti/tickets" },
           { label: ticket.code },

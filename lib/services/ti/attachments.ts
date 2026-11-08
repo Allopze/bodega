@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull } from "drizzle-orm"
+import { and, asc, count, eq, isNull } from "drizzle-orm"
 import { db } from "@/db"
 import { attachments, itAssets, users } from "@/db/schema"
 import { nanoid } from "@/lib/id"
@@ -17,6 +17,9 @@ import { assertTiWorksiteAccess, type TiWorksiteScope } from "./scope"
  * global). Ampliar esta lista es agregar una entrada acá y un guard de permiso
  * propio en la ruta — no exige rediseñar nada.
  */
+/** Tope por entidad: sin cuota, un activo podía acumular adjuntos sin límite. */
+export const MAX_TI_ATTACHMENTS_PER_ENTITY = 50
+
 export const TI_UPLOADABLE_ENTITY_TYPES = ["it_asset"] as const
 export type TiUploadableEntityType = (typeof TI_UPLOADABLE_ENTITY_TYPES)[number]
 
@@ -65,6 +68,12 @@ export async function createTiAttachment(
       .for("update")
     if (!asset) throw new Error("Activo no encontrado")
     assertTiWorksiteAccess(worksiteIds, asset.worksiteId)
+
+    const [current] = await tx.select({ total: count() }).from(attachments)
+      .where(and(eq(attachments.entityType, input.entityType), eq(attachments.entityId, input.entityId)))
+    if ((current?.total ?? 0) >= MAX_TI_ATTACHMENTS_PER_ENTITY) {
+      throw new Error(`Este activo ya tiene ${MAX_TI_ATTACHMENTS_PER_ENTITY} documentos: elimina o reemplaza uno antes de subir otro`)
+    }
 
     await tx.insert(attachments).values({
       id,

@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { usePathname, useRouter } from "next/navigation"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { FilterToolbar } from "@/components/ui/filter-toolbar"
 import { cn } from "@/lib/utils"
@@ -25,11 +25,16 @@ export function WarrantyFilters({
 }) {
   const router = useRouter()
   const pathname = usePathname()
+  const searchParams = useSearchParams()
 
   function href(nextView: string, nextFaena: string) {
-    const params = new URLSearchParams()
+    // Parte de la URL viva: el DataTable persiste `_cols`, `_sort` y `_dir`, y
+    // reconstruir desde cero los borraba al cambiar de banda o de faena.
+    const params = new URLSearchParams(searchParams.toString())
     if (nextView) params.set("ventana", nextView)
+    else params.delete("ventana")
     if (nextFaena) params.set("faena", nextFaena)
+    else params.delete("faena")
     const qs = params.toString()
     return qs ? `${pathname}?${qs}` : pathname
   }
@@ -62,8 +67,14 @@ export function WarrantyFilters({
       </div>
       <FilterToolbar
         className="mb-0"
+        activeChips={faena ? [{
+          key: "faena",
+          label: "Faena",
+          value: faena,
+          displayValue: worksites.find((w) => w.id === faena)?.name ?? "Faena",
+        }] : []}
+        onRemoveChip={() => router.replace(href(view, ""), { scroll: false })}
         onClearAll={() => router.replace(href(view, ""), { scroll: false })}
-        hasActiveFilters={Boolean(faena)}
       >
         <Select value={faena || ALL} onValueChange={(v) => router.replace(href(view, v === ALL ? "" : v), { scroll: false })}>
           <SelectTrigger className="h-11 w-full text-xs sm:h-8 sm:w-auto sm:min-w-[9rem]" aria-label="Filtrar por faena">

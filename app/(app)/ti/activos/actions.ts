@@ -6,7 +6,7 @@ import { serviceWorksiteScope } from "@/lib/auth/scope"
 import { safeActionMessage } from "@/lib/action-error"
 import { parseZ } from "@/lib/actions/parse-z"
 import { logger } from "@/lib/logger"
-import { createAsset, updateAsset, softDeleteAsset, changeAssetStatus } from "@/lib/services/ti/assets"
+import { createAsset, updateAsset, changeAssetStatus } from "@/lib/services/ti/assets"
 import { itAssetCreateSchema, itAssetUpdateSchema, itAssetStatusChangeSchema, type ItAssetFormData } from "@/lib/validation/ti"
 import type { ActionState } from "@/lib/validation/masters"
 import type { z } from "zod"
@@ -92,25 +92,6 @@ export async function updateAssetAction(_prev: ActionState, formData: FormData):
   } catch (error) {
     logger.error("[ti:updateAsset]", error)
     return { ok: false, message: safeActionMessage(error, "Error al actualizar el activo") }
-  }
-}
-
-export async function deleteAssetAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  let session
-  try { session = await requireTiManage() }
-  catch { return { ok: false, message: "Sin permisos para eliminar activos" } }
-
-  const assetId = String(formData.get("assetId") ?? "")
-  if (!assetId) return { ok: false, message: "Activo no especificado" }
-
-  try {
-    await softDeleteAsset(assetId, { userId: session.user.id, userEmail: session.user.email ?? undefined }, serviceWorksiteScope(session))
-    revalidatePath("/ti")
-    revalidatePath("/ti/activos")
-    return { ok: true, message: "Activo eliminado del inventario (su historial se conserva)" }
-  } catch (error) {
-    logger.error("[ti:deleteAsset]", error)
-    return { ok: false, message: safeActionMessage(error, "Error al eliminar el activo") }
   }
 }
 

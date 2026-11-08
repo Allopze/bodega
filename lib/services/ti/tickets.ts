@@ -211,7 +211,7 @@ export async function transitionTicket(
     if (input.status === "resuelto" && !isValidReason(input.resolution)) {
       throw new Error(reasonRequiredMessage("cómo se resolvió el ticket"))
     }
-    if (input.status === "cerrado" && !isValidReason(input.resolution ?? ticket.resolution)) {
+    if (input.status === "cerrado" && !isValidReason(input.resolution?.trim() || ticket.resolution)) {
       throw new Error(reasonRequiredMessage("cómo se resolvió el ticket"))
     }
 
@@ -423,6 +423,11 @@ export async function addTicketComment(
    */
   onlyRequesterUserId?: string,
 ): Promise<TicketCommentResult> {
+  // El máximo de 2000 vive en zod, que es la puerta del formulario; el
+  // servicio es la única guarda para una llamada directa o un futuro importador.
+  const body = input.body.trim()
+  if (!body) throw new Error("Escribe el comentario")
+  if (body.length > 2000) throw new Error("El comentario no puede superar los 2000 caracteres")
   const id = nanoid()
   return db.transaction(async (tx) => {
     const [ticket] = await tx.select({
@@ -444,7 +449,7 @@ export async function addTicketComment(
     await tx.insert(itTicketComments).values({
       id,
       ticketId: input.ticketId,
-      body: input.body,
+      body,
       authorUserId: actor.userId,
       isInternal: input.isInternal,
     })

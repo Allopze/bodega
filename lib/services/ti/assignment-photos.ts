@@ -112,13 +112,19 @@ export async function deletePendingPhoto(id: string, uploadedByUserId: string): 
   })
 }
 
-/** Limpia cargas abandonadas; una foto anclada a un acta nunca entra aquí. */
-export async function cleanupOrphanPhotos(olderThanMinutes = 60): Promise<number> {
+/**
+ * Limpia cargas abandonadas; una foto anclada a un acta nunca entra aquí.
+ *
+ * Las fotos de devolución nacen con `pendingAssignmentId` y solo lo pierden al
+ * confirmar el formulario. Filtrar además por `pendingAssignmentId IS NULL`
+ * dejaba fuera justo las cargas que se abandonan, que son las que hay que
+ * borrar. El umbral de 24 h evita competir con un sheet abierto.
+ */
+export async function cleanupOrphanPhotos(olderThanMinutes = 24 * 60): Promise<number> {
   const threshold = new Date(Date.now() - olderThanMinutes * 60_000).toISOString()
   const removed = await db.delete(itAssignmentPhotos)
     .where(and(
       isNull(itAssignmentPhotos.assignmentId),
-      isNull(itAssignmentPhotos.pendingAssignmentId),
       lt(itAssignmentPhotos.createdAt, threshold),
     ))
     .returning({ filePath: itAssignmentPhotos.filePath })

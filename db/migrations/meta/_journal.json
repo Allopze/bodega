@@ -2675,6 +2675,13 @@
       "when": 1794088933812,
       "tag": "0381_minor_frightful_four",
       "breakpoints": true
+    },
+    {
+      "idx": 382,
+      "version": "7",
+      "when": 1794105562471,
+      "tag": "0382_motionless_demogoblin",
+      "breakpoints": true
     }
   ]
 }

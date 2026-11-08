@@ -13,24 +13,24 @@ import type { AssetRow } from "./page"
 
 const assetName = (row: AssetRow) => [row.brand, row.model].filter(Boolean).join(" ")
 
-// Las claves antiguas (`name`, `worker`, `worksite`, `type`) no existían en la
-// fila (`typeName`, `workerName`…): el orden era arbitrario y `aria-sort`
-// anunciaba uno falso. `sortValue` ordena por el dato real de cada columna.
+// Sin `sortable`: la lista pagina en el servidor y ordenar acá solo ordenaría
+// la página cargada. El orden se elige en la barra de filtros (`?orden=`) y lo
+// aplica `listAssets` sobre el conjunto completo.
 const COLUMNS = [
-  { key: "code", label: "Código", sortable: true, width: "w-32", sortValue: (r: AssetRow) => r.code },
-  { key: "asset", label: "Activo", sortable: true, sortValue: (r: AssetRow) => `${assetName(r)} ${r.code}`.trim().toLowerCase() },
-  { key: "status", label: "Estado", sortable: true, width: "w-36", sortValue: (r: AssetRow) => IT_ASSET_STATUS_META[r.status]?.label ?? r.status },
-  { key: "worker", label: "Asignado a", sortable: true, sortValue: (r: AssetRow) => r.workerName },
-  { key: "worksite", label: "Faena", sortable: true, sortValue: (r: AssetRow) => r.worksiteName },
-  { key: "type", label: "Tipo", sortable: true, sortValue: (r: AssetRow) => r.typeName },
-  { key: "warranty", label: "Garantía", sortable: true, width: "w-40", sortValue: (r: AssetRow) => r.warrantyEndDate },
+  { key: "code", label: "Código", width: "w-32" },
+  { key: "asset", label: "Activo" },
+  { key: "status", label: "Estado", width: "w-36" },
+  { key: "worker", label: "Asignado a" },
+  { key: "worksite", label: "Faena" },
+  { key: "type", label: "Tipo" },
+  { key: "warranty", label: "Garantía", width: "w-40" },
   // Costo y Tickets parten ocultos (siguen en "Columnas" y en la ficha): con las
   // diez columnas visibles la tabla medía ~1280px en un pozo de 1126px a 1440 y
   // "Mantenciones" quedaba cortada. Son los dos datos menos operativos del día.
-  { key: "cost", label: "Costo", numeric: true, sortable: true, width: "w-28", defaultVisible: false, sortValue: (r: AssetRow) => r.cost },
+  { key: "cost", label: "Costo", numeric: true, width: "w-28", defaultVisible: false },
   // "Mant." era una abreviatura sin nombre completo (A6): el encabezado es de texto plano.
-  { key: "maintenance", label: "Mantenciones", numeric: true, sortable: true, width: "w-32", sortValue: (r: AssetRow) => r.maintenanceCount },
-  { key: "tickets", label: "Tickets", numeric: true, sortable: true, width: "w-20", defaultVisible: false, sortValue: (r: AssetRow) => r.ticketCount },
+  { key: "maintenance", label: "Mantenciones", numeric: true, width: "w-32" },
+  { key: "tickets", label: "Tickets", numeric: true, width: "w-20", defaultVisible: false },
 ]
 
 function StatusBadge({ status }: { status: string }) {
@@ -47,7 +47,8 @@ export function AssetTable({ rows }: { rows: AssetRow[] }) {
       caption="Inventario de activos TI"
       columns={COLUMNS}
       rows={rows as unknown as Record<string, unknown>[]}
-      searchKeys={["code", "brand", "model", "serialNumber", "workerName", "worksiteName", "typeName"]}
+      searchKeys={[]}
+      disableInternalSearch
       renderRow={(raw) => {
         const row = raw as unknown as AssetRow
         const href = `/ti/activos/${row.id}`
@@ -64,7 +65,7 @@ export function AssetTable({ rows }: { rows: AssetRow[] }) {
             }}
           >
             <TableCell className="w-32 whitespace-nowrap">
-              <Link href={href} className="font-mono text-xs font-semibold whitespace-nowrap text-[var(--color-primary)] hover:underline">
+              <Link href={href} className="font-mono text-xs font-semibold whitespace-nowrap text-[var(--color-primary-ink)] hover:underline">
                 {row.code}
               </Link>
             </TableCell>
@@ -94,7 +95,7 @@ export function AssetTable({ rows }: { rows: AssetRow[] }) {
         return (
           <Link key={row.id} href={`/ti/activos/${row.id}`} className="flex min-h-11 items-center justify-between gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
             <div className="min-w-0">
-              <div className="font-mono text-xs font-semibold text-[var(--color-primary)]">{row.code}</div>
+              <div className="font-mono text-xs font-semibold text-[var(--color-primary-ink)]">{row.code}</div>
               <div className="text-sm text-[var(--color-text)]">{assetName(row) || row.typeName}</div>
               <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
                 <StatusBadge status={row.status} />
@@ -106,9 +107,8 @@ export function AssetTable({ rows }: { rows: AssetRow[] }) {
           </Link>
         )
       }}
-      // El vacío "sin activos" / "sin filtros que coincidan" lo pinta la página;
-      // este solo cubre la búsqueda de la barra superior.
-      emptyTitle="Ningún activo coincide con la búsqueda"
+      // El vacío "sin activos" / "sin filtros que coincidan" lo pinta la página.
+      emptyTitle="Ningún activo coincide con los filtros"
       emptyDescription="Prueba con otro código, marca, serie o persona."
       pageSize={25}
       enableColumnToggle

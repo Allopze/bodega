@@ -49,7 +49,7 @@ function Legend({ items }: { items: readonly { label: string; color: string; das
 function DataTable({ caption, headers, rows }: { caption: string; headers: string[]; rows: (string | number)[][] }) {
   return (
     <details className="mt-3 text-xs">
-      <summary className="inline-flex min-h-11 sm:min-h-8 cursor-pointer items-center font-semibold text-[var(--color-primary)] hover:underline">
+      <summary className="inline-flex min-h-11 sm:min-h-8 cursor-pointer items-center font-semibold text-[var(--color-primary-ink)] hover:underline">
         Ver datos
       </summary>
       <div className="mt-2 max-h-64 overflow-auto">

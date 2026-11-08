@@ -189,7 +189,7 @@ export async function listRetirements(filters: { scope?: SQL; assetId?: string; 
     .innerJoin(users, eq(itAssetRetirements.responsibleUserId, users.id))
     .leftJoin(worksites, eq(itAssets.worksiteId, worksites.id))
     .where(conditions.length ? and(...conditions) : undefined)
-    .orderBy(desc(itAssetRetirements.date))
+    .orderBy(desc(itAssetRetirements.date), desc(itAssetRetirements.id))
 
   // `canReverse` se calcula en JS (no en SQL) para reusar `retirementTargetStatus`
   // y no duplicar la regla de negocio entre BD y aplicación.

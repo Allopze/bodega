@@ -47,7 +47,7 @@ interface TopBarProps {
 // el input de la shell no dice cuál de esos filtros alimenta; la lista trae su propio
 // buscador rotulado (pulido UI/UX 2026-11-07). Quien quite el input propio de esa
 // lista tiene que devolver esta ruta a la shell, o la pantalla queda sin búsqueda.
-const ROUTES_WITH_OWN_SEARCH = ["/solicitudes", "/aprobaciones", "/compras", "/recepcion", "/pendientes", "/entregas", "/bodega", "/flota", "/soporte", "/prevencion/ppa", "/prevencion/inspecciones", "/prevencion/pdtp/obligaciones", "/facturacion/facturas", "/seguimiento", "/ti/accesos", "/ti/tickets", "/admin/taxonomia-sst", "/combustibles", "/mantencion/registros", "/mantencion/panel", "/mantencion/ot", "/prevencion/capacitacion"]
+const ROUTES_WITH_OWN_SEARCH = ["/solicitudes", "/aprobaciones", "/compras", "/recepcion", "/pendientes", "/entregas", "/bodega", "/flota", "/soporte", "/prevencion/ppa", "/prevencion/inspecciones", "/prevencion/pdtp/obligaciones", "/facturacion/facturas", "/seguimiento", "/ti/accesos", "/ti/tickets", "/ti/activos", "/admin/taxonomia-sst", "/combustibles", "/mantencion/registros", "/mantencion/panel", "/mantencion/ot", "/prevencion/capacitacion"]
 
 /** Formularios de alta/edición: no hay lista que filtrar, así que el input de
  *  la shell prometería un filtrado inexistente. Ninguna ruta bajo estos
@@ -65,8 +65,8 @@ const OWN_SEARCH_PATTERNS = [
   /^\/facturacion$/,
   // TI (TIUX-35): el resumen, los reportes y la ficha de un activo no tienen
   // lista que filtrar; el input de la shell prometía un filtrado que no existe.
-  // Las listas `/ti/activos` y `/ti/licencias` lo conservan. `/ti/tickets` (y su
-  // ficha) está en ROUTES_WITH_OWN_SEARCH: la mesa de ayuda busca en servidor.
+  // `/ti/licencias` lo conserva. `/ti/activos` y `/ti/tickets` (y sus fichas)
+  // están en ROUTES_WITH_OWN_SEARCH: esas listas buscan en servidor.
   /^\/ti$/,
   /^\/ti\/reportes$/,
   /^\/ti\/activos\/[^/]+$/,

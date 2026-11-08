@@ -210,7 +210,7 @@ function SubmitButton({ confirmText, expected, nextValue }: { confirmText: strin
     <button
       type="submit"
       disabled={isMismatch || nextValue < 1}
-      className="h-9 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 text-sm font-medium text-[var(--color-on-primary)] transition-opacity hover:opacity-90 disabled:opacity-40"
+      className="h-9 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40"
     >
       Aplicar corrección
     </button>

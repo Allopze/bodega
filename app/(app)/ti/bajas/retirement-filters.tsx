@@ -1,6 +1,6 @@
 "use client"
 
-import { usePathname, useRouter } from "next/navigation"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { IT_RETIREMENT_REASONS } from "@/lib/validation/ti"
@@ -17,10 +17,12 @@ export function RetirementFilters({
 }) {
   const router = useRouter()
   const pathname = usePathname()
+  const searchParams = useSearchParams()
 
   function setParam(key: keyof typeof current, value: string | null) {
-    const params = new URLSearchParams()
-    for (const [k, v] of Object.entries(current)) if (v) params.set(k, v)
+    // Parte de la URL viva para no borrar `_cols`, `_sort` y `_dir` que el
+    // DataTable persiste: `current` es solo el subconjunto de filtros.
+    const params = new URLSearchParams(searchParams.toString())
     if (value && value !== ALL) params.set(key, value)
     else params.delete(key)
     const qs = params.toString()

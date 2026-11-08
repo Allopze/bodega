@@ -11,6 +11,7 @@ import { createTiFilePath, resolveStorageFile, resolveTiDir } from "@/lib/storag
 import { createTiAttachment, isTiUploadableEntityType } from "@/lib/services/ti/attachments"
 import { safeActionMessage } from "@/lib/action-error"
 import { logger } from "@/lib/logger"
+import { consumeFixedWindowLimit } from "@/lib/services/rate-limit"
 
 const MAX_FILE_SIZE = 25 * 1024 * 1024
 
@@ -27,6 +28,16 @@ const MAX_FILE_SIZE = 25 * 1024 * 1024
 export async function POST(request: Request) {
   const guard = await guardPermission("ti:manage_assets")
   if (guard.error) return NextResponse.json(guard.error, { status: 403 })
+
+  // 30 cargas por hora por usuario: el endpoint acepta 25 MB por archivo y
+  // antes no tenía ninguna cuota de frecuencia.
+  const limit = await consumeFixedWindowLimit(`ti:attachment:${guard.session!.user.id}`, {
+    maxAttempts: 30,
+    lockMs: 60 * 60 * 1000,
+  })
+  if (!limit.allowed) {
+    return NextResponse.json({ error: "Demasiadas cargas seguidas. Espera unos minutos y vuelve a intentar." }, { status: 429 })
+  }
 
   let form: FormData
   try {

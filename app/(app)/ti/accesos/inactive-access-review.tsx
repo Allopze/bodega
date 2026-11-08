@@ -54,7 +54,7 @@ export function InactiveAccessReview({ workers, canManage }: { workers: Inactive
         <Link
           href={pathname}
           scroll={false}
-          className="inline-flex min-h-11 items-center text-sm font-semibold text-[var(--color-primary)] hover:underline sm:min-h-0"
+          className="inline-flex min-h-11 items-center text-sm font-semibold text-[var(--color-primary-ink)] hover:underline sm:min-h-0"
         >
           Volver a la matriz
         </Link>

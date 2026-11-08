@@ -31,7 +31,7 @@ export function AccessStatusFieldset({ defaultValue, error }: { defaultValue: st
   return (
     <fieldset aria-describedby={error ? errorId : undefined} aria-invalid={error ? true : undefined}>
       <legend className="mb-1.5 text-sm font-medium leading-tight text-[var(--color-text)]">
-        Estado <span className="text-[var(--color-danger)]" aria-hidden>*</span>
+        Estado <span className="text-[var(--color-danger-ink)]" aria-hidden>*</span>
       </legend>
       <div className="grid grid-cols-3 gap-2">
         {Object.entries(IT_ACCESS_STATUS_META).map(([value, meta]) => (
@@ -111,7 +111,7 @@ export function AccessSheet({ systems, onClose, fixed, workers, initialWorkerId 
 
   return (
     <Sheet open onOpenChange={(v) => { if (!v) onClose() }}>
-      <SheetContent className="sm:max-w-md">
+      <SheetContent stableHeight className="sm:max-w-md">
         <form action={formAction} className="flex flex-col flex-1 min-h-0">
           <input type="hidden" name="workerId" value={workerId} />
           <input type="hidden" name="systemId" value={systemId} />
@@ -126,7 +126,7 @@ export function AccessSheet({ systems, onClose, fixed, workers, initialWorkerId 
           </SheetHeader>
           <SheetBody className="space-y-4">
             {state.message && !state.ok && !state.fieldErrors && (
-              <p className="text-sm text-[var(--color-danger)]" role="alert">{state.message}</p>
+              <p className="text-sm text-[var(--color-danger-ink)]" role="alert">{state.message}</p>
             )}
             <FieldGroup>
               {!fixed && workers && (

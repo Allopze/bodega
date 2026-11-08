@@ -65,7 +65,7 @@ function Signatories({ row, muted }: { row: Row; muted?: boolean }) {
 }
 
 /** `canManage` acá es `ti:reverse_retirement`, no `ti:manage_assets`: revertir es un permiso propio. */
-export function RetirementTable({ rows, canManage = false }: { rows: Row[]; canManage?: boolean }) {
+export function RetirementTable({ rows, canManage = false, hasFilters = false }: { rows: Row[]; canManage?: boolean; hasFilters?: boolean }) {
   return (
     <DataTable
       caption="Bajas de activos TI"
@@ -83,7 +83,7 @@ export function RetirementTable({ rows, canManage = false }: { rows: Row[]; canM
           <TableRow key={row.id} className={reversed ? "bg-[var(--color-surface-2)]" : undefined}>
             <TableCell className={`w-28 ${muted}`}>{formatDate(row.date)}</TableCell>
             <TableCell>
-              <Link href={`/ti/activos/${row.assetId}`} className={`font-mono text-xs font-semibold hover:underline ${reversed ? "text-[var(--color-text-subtle)] line-through" : "text-[var(--color-primary)]"}`}>
+              <Link href={`/ti/activos/${row.assetId}`} className={`font-mono text-xs font-semibold hover:underline ${reversed ? "text-[var(--color-text-subtle)] line-through" : "text-[var(--color-primary-ink)]"}`}>
                 {row.assetCode}
               </Link>
               <span className="ml-2 text-xs text-[var(--color-text-subtle)]">{[row.brand, row.model].filter(Boolean).join(" ")}</span>
@@ -119,7 +119,7 @@ export function RetirementTable({ rows, canManage = false }: { rows: Row[]; canM
               <div className="flex items-center gap-1.5">
                 {/* En móvil esta tarjeta es la única lectura de la baja: sin la
                     marca, una baja ya revertida se reporta como vigente. */}
-                <span className={`font-mono text-xs font-semibold ${reversed ? "text-[var(--color-text-subtle)] line-through" : "text-[var(--color-primary)]"}`}>{row.assetCode}</span>
+                <span className={`font-mono text-xs font-semibold ${reversed ? "text-[var(--color-text-subtle)] line-through" : "text-[var(--color-primary-ink)]"}`}>{row.assetCode}</span>
                 {reversed && <MetaBadge meta={{ label: "Revertida", variant: "default" }} />}
               </div>
               <div className={`text-sm ${reversed ? "text-[var(--color-text-subtle)] line-through" : "text-[var(--color-text)]"}`}>{reasonLabel(row.reason)} · {formatDate(row.date)}</div>
@@ -143,8 +143,13 @@ export function RetirementTable({ rows, canManage = false }: { rows: Row[]; canM
           </div>
         )
       }}
-      emptyTitle="Sin bajas registradas"
-      emptyDescription="Los activos dados de baja aparecerán acá con su motivo y destino."
+      emptyTitle={hasFilters ? "Ninguna baja coincide con los filtros" : "Sin bajas registradas"}
+      emptyDescription={hasFilters
+        ? "Prueba con otro motivo o quita la faena."
+        : "Los activos dados de baja aparecerán acá con su motivo y destino."}
+      emptyAction={hasFilters
+        ? <Button asChild variant="secondary" size="sm"><Link href="/ti/bajas">Limpiar filtros</Link></Button>
+        : undefined}
       pageSize={25}
       viewKey="ti-bajas"
       enableColumnToggle

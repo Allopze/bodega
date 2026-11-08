@@ -3,6 +3,7 @@
 import * as React from "react"
 import { useSafeShellHeader } from "@/components/layout/header-context"
 import { EmptyState } from "@/components/ui/empty-state"
+import { Button } from "@/components/ui/button"
 import { LicensePanel } from "./license-panel"
 
 type PanelProps = React.ComponentProps<typeof LicensePanel>
@@ -14,7 +15,7 @@ type PanelProps = React.ComponentProps<typeof LicensePanel>
  * escribir en él no hacía nada.
  */
 export function LicenseList({ licenses, ...shared }: Omit<PanelProps, "license"> & { licenses: PanelProps["license"][] }) {
-  const { searchQuery } = useSafeShellHeader()
+  const { searchQuery, setSearchQuery } = useSafeShellHeader()
   const query = searchQuery.trim().toLowerCase()
 
   const visible = query
@@ -29,6 +30,7 @@ export function LicenseList({ licenses, ...shared }: Omit<PanelProps, "license">
         compact
         title="Ninguna licencia coincide"
         description={`No hay licencias que coincidan con «${searchQuery.trim()}». Prueba con el nombre o el proveedor.`}
+        action={<Button variant="secondary" size="sm" onClick={() => setSearchQuery("")}>Limpiar búsqueda</Button>}
       />
     )
   }

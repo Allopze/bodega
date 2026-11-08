@@ -120,8 +120,8 @@ export function VoidMaintenanceDialog({
             </Field>
 
             {state.ok === false && state.message && state !== INITIAL_STATE && (
-              <p className="flex items-center gap-1.5 text-sm text-[var(--color-danger)]">
-                <Warning size={15} /> {state.message}
+              <p className="flex items-center gap-1.5 text-sm text-[var(--color-danger-ink)]" role="alert">
+                <Warning size={15} aria-hidden /> {state.message}
               </p>
             )}
 

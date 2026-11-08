@@ -155,10 +155,12 @@ export function AccessMatrix({ workers, systems, canManage, showAll, systemFilte
         />
       ) : (
         <>
-          {/* Escritorio: tabla con cabecera fija. Sin contenedor `overflow-x`:
-              un ancestro con overflow se vuelve el contenedor de scroll del
-              `sticky` y la cabecera dejaba de fijarse al pozo. */}
-          <div className="mt-4 hidden md:block">
+          {/* Escritorio: la tabla suma una columna por sistema activo y el pozo
+              del shell es `overflow-x-hidden`. Sin scroll propio, las últimas
+              columnas quedaban inalcanzables. El contenedor scrollea en ambos
+              ejes y acota el alto: así `sticky top-0` se fija dentro de la
+              tabla y no se pierde al mover el scroll. */}
+          <div className="mt-4 hidden max-h-[calc(100dvh-14rem)] overflow-auto md:block">
             <table className="w-full border-collapse text-sm">
               <caption className="sr-only">
                 Accesos de cada trabajador a cada sistema. Usa las flechas para moverte entre celdas y Enter para abrir el acceso.

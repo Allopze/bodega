@@ -3,6 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { useActionState } from "react"
+import { useFormStatus } from "react-dom"
 import { toast } from "@/lib/toast"
 import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
@@ -76,7 +77,7 @@ export function NewChecklistCta({ workers }: { workers: { id: string; name: stri
             </SheetHeader>
             <SheetBody className="space-y-4">
               {state.message && !state.ok && !state.fieldErrors && (
-                <p className="text-sm text-[var(--color-danger)]" role="alert">{state.message}</p>
+                <p className="text-sm text-[var(--color-danger-ink)]" role="alert">{state.message}</p>
               )}
               <FieldGroup>
                 <Field label="Trabajador" required error={state.fieldErrors?.workerId?.[0]}>
@@ -289,6 +290,22 @@ function ChecklistCard({ checklist, defaultOpen, canManage, canRevokeLicenses, t
   )
 }
 
+/** Botón de la casilla: se deshabilita mientras la Server Action está en vuelo. */
+function TaskToggleButton({ label, children }: { label: string; children: React.ReactNode }) {
+  const { pending } = useFormStatus()
+  return (
+    <button
+      type="submit"
+      disabled={pending}
+      aria-busy={pending}
+      aria-label={label}
+      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-[var(--color-primary)] disabled:opacity-60 sm:h-9 sm:w-9"
+    >
+      {children}
+    </button>
+  )
+}
+
 function TaskLine({ task, canManage, action }: {
   task: ChecklistRow["tasks"][number]
   canManage: boolean
@@ -327,14 +344,12 @@ function TaskLine({ task, canManage, action }: {
     <form action={action} className="flex items-start gap-1">
       <input type="hidden" name="taskId" value={task.id} />
       <input type="hidden" name="done" value={task.done ? "" : "on"} />
-      {/* Objetivo táctil de 44 px en móvil; la caja visible sigue siendo de 20 px. */}
-      <button
-        type="submit"
-        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-[var(--color-primary)] sm:h-9 sm:w-9"
-        aria-label={task.done ? `Reabrir ${task.name}` : `Completar ${task.name}`}
-      >
+      {/* Objetivo táctil de 44 px en móvil; la caja visible sigue siendo de 20 px.
+          `useFormStatus` evita el doble envío sin cambiar la caja por un botón
+          con texto, que rompería la lectura de la lista. */}
+      <TaskToggleButton label={task.done ? `Reabrir ${task.name}` : `Completar ${task.name}`}>
         {box}
-      </button>
+      </TaskToggleButton>
       {text}
     </form>
   )
@@ -428,7 +443,7 @@ function EgressContextBlock({ workerId, workerName, context, canManage, canRevok
                         solo se lleva a ella. */}
                     <Link
                       href={`/ti/activos/${asset.assetId}`}
-                      className="inline-flex min-h-11 items-center px-2 text-xs font-semibold text-[var(--color-primary)] hover:underline sm:min-h-0 sm:px-0"
+                      className="inline-flex min-h-11 items-center px-2 text-xs font-semibold text-[var(--color-primary-ink)] hover:underline sm:min-h-0 sm:px-0"
                     >
                       Devolver en la ficha<span className="sr-only"> de {asset.code}</span>
                     </Link>

@@ -73,7 +73,6 @@ const KNOWN_OUT_OF_SCOPE = new Set([
   "/compras: purchasing:create_order",
   "/recepcion: receiving:register_office",
   "/recepcion: receiving:register_faena",
-  "/ti/reportes: ti:export",
 ])
 
 type Entry = { href: string; permissions: string[] }

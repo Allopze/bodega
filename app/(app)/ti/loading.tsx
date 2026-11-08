@@ -5,7 +5,7 @@ import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 export default function Loading() {
   return (
     <PageContainer>
-      <PageHeader title="Resumen" breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "TI", href: "/ti" }, { label: "Resumen" }]} />} />
+      <PageHeader title="Resumen de TI" breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "TI", href: "/ti" }, { label: "Resumen de TI" }]} />} />
       <div className="flex flex-col gap-4">
         <Skeleton className="h-64 rounded-2xl" />
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">

@@ -4,6 +4,7 @@ import { useWorksiteFilterPresence } from "@/components/layout/header-context"
 import * as React from "react"
 import { useRouter, usePathname } from "next/navigation"
 import { FilterToolbar } from "@/components/ui/filter-toolbar"
+import { FilterSearchInput } from "@/components/ui/filter-search-input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { IT_ASSET_STATUS_META } from "@/lib/services/ti/constants"
 import { X } from "@phosphor-icons/react"
@@ -38,6 +39,16 @@ const MIN_AGE_OPTIONS = [
   { value: "3", label: "3 años o más" },
   { value: "5", label: "5 años o más" },
   { value: "8", label: "8 años o más" },
+]
+
+/** El inventario pagina en el servidor: el orden viaja en la URL, no en la tabla. */
+const ORDER_OPTIONS = [
+  { value: "codigo", label: "Código A-Z" },
+  { value: "codigo_desc", label: "Código Z-A" },
+  { value: "activo", label: "Marca y modelo" },
+  { value: "faena", label: "Faena" },
+  { value: "garantia", label: "Garantía más próxima" },
+  { value: "reciente", label: "Más recientes" },
 ]
 
 function workerLabel(w: { name: string; lastName: string }) {
@@ -76,6 +87,8 @@ export function AssetFilters({ types, workers, worksites, suppliers, current }: 
     }
     if (value && value !== ALL) params.set(key, value)
     else params.delete(key)
+    // Cambiar un filtro cambia el conjunto: la página anterior ya no existe.
+    params.delete("pagina")
     const qs = params.toString()
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
   }
@@ -123,9 +136,22 @@ export function AssetFilters({ types, workers, worksites, suppliers, current }: 
     </div>
   )
 
-  // Chips removibles de los filtros avanzados activos (A2): viven plegados en
-  // "Más filtros" y sin esto no se ve cuáles están aplicados.
+  // Chips removibles de TODOS los filtros activos (A2). Antes solo cubrían los
+  // cinco plegados: con tipo/estado/faena aplicados no se veía ninguno y el
+  // badge de «Más filtros» decía 0 porque cuenta solo ese panel.
   const chips = [
+    typeof current.q === "string" && current.q
+      ? { key: "q", label: `Búsqueda: ${current.q}` } : null,
+    current.reparacion === "demorada"
+      ? { key: "reparacion", label: "Reparación demorada (+14 días)" } : null,
+    typeof current.orden === "string" && current.orden && current.orden !== "codigo"
+      ? { key: "orden", label: `Orden: ${ORDER_OPTIONS.find((o) => o.value === current.orden)?.label ?? current.orden}` } : null,
+    typeof current.tipo === "string" && current.tipo
+      ? { key: "tipo", label: `Tipo: ${types.find((t) => t.id === current.tipo)?.name ?? "—"}` } : null,
+    typeof current.estado === "string" && current.estado
+      ? { key: "estado", label: `Estado: ${IT_ASSET_STATUS_META[current.estado]?.label ?? current.estado}` } : null,
+    typeof current.faena === "string" && current.faena
+      ? { key: "faena", label: `Faena: ${worksites.find((w) => w.id === current.faena)?.name ?? "—"}` } : null,
     typeof current.trabajador === "string" && current.trabajador
       ? { key: "trabajador", label: `Trabajador: ${workerLabel(workers.find((w) => w.id === current.trabajador) ?? { name: "—", lastName: "" })}` } : null,
     typeof current.proveedor === "string" && current.proveedor
@@ -145,6 +171,13 @@ export function AssetFilters({ types, workers, worksites, suppliers, current }: 
       activeCount={activeCount}
       onClearAll={() => router.replace(pathname, { scroll: false })}
     >
+      <FilterSearchInput
+        param="q"
+        pageKeys={["pagina"]}
+        placeholder="Buscar código, marca, serie o persona..."
+        ariaLabel="Buscar activos"
+        className="w-full sm:w-64"
+      />
       <SelectFilter
         value={String(current.tipo ?? "")}
         onValue={(v) => setParam("tipo", v)}
@@ -166,9 +199,16 @@ export function AssetFilters({ types, workers, worksites, suppliers, current }: 
         ariaLabel="Filtrar por faena"
         options={worksites.map((w) => ({ value: w.id, label: w.name }))}
       />
+      <SelectFilter
+        value={String(current.orden ?? "")}
+        onValue={(v) => setParam("orden", v === "codigo" ? null : v)}
+        allLabel="Código A-Z"
+        ariaLabel="Ordenar el inventario"
+        options={ORDER_OPTIONS}
+      />
     </FilterToolbar>
     {chips.length > 0 && (
-      <ul className="mb-3 flex flex-wrap items-center gap-2" aria-label="Filtros avanzados activos">
+      <ul className="mb-3 flex flex-wrap items-center gap-2" aria-label="Filtros activos">
         {chips.map((chip) => (
           <li key={chip.key}>
             <button

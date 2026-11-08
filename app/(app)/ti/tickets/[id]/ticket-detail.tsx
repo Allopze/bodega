@@ -166,7 +166,7 @@ export function TicketDetail({
             <div className="flex flex-wrap justify-between gap-x-3 gap-y-0.5"><dt className="text-xs text-[var(--color-text-muted)]">Faena</dt><dd className="min-w-0 break-words font-medium text-[var(--color-text)]">{ticket.worksiteName}</dd></div>
             <div className="flex flex-wrap justify-between gap-x-3 gap-y-0.5"><dt className="text-xs text-[var(--color-text-muted)]">Activo</dt><dd className="min-w-0 break-words font-medium text-[var(--color-text)]">
               {ticket.assetId
-                ? <Link href={`/ti/activos/${ticket.assetId}`} className="inline-flex min-h-11 items-center whitespace-nowrap text-[var(--color-primary)] hover:underline sm:min-h-0">{ticket.assetCode}</Link>
+                ? <Link href={`/ti/activos/${ticket.assetId}`} className="inline-flex min-h-11 items-center whitespace-nowrap text-[var(--color-primary-ink)] hover:underline sm:min-h-0">{ticket.assetCode}</Link>
                 : "—"}
             </dd></div>
             {/* Quien gestiona ve y cambia el responsable en su propio bloque. */}

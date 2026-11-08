@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { requirePermission } from "@/lib/auth/can"
+import { serviceWorksiteScope } from "@/lib/auth/scope"
 import { safeActionMessage } from "@/lib/action-error"
 import { parseZ } from "@/lib/actions/parse-z"
 import { logger } from "@/lib/logger"
@@ -25,7 +26,7 @@ export async function createSupplierLinkAction(_prev: ActionState, formData: For
     await createSupplierLink(parsed.data, {
       userId: session.user.id,
       userEmail: session.user.email ?? undefined,
-    })
+    }, serviceWorksiteScope(session))
     revalidatePath("/ti/garantias")
     return { ok: true, message: "Proveedor vinculado como TI" }
   } catch (error) {
@@ -46,7 +47,7 @@ export async function deleteSupplierLinkAction(_prev: ActionState, formData: For
     await deleteSupplierLink(linkId, {
       userId: session.user.id,
       userEmail: session.user.email ?? undefined,
-    })
+    }, serviceWorksiteScope(session))
     revalidatePath("/ti/garantias")
     return { ok: true, message: "Vínculo eliminado" }
   } catch (error) {

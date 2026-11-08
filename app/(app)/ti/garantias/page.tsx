@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { can, requirePermission } from "@/lib/auth/can"
-import { worksiteScopeSql } from "@/lib/auth/scope"
+import { serviceWorksiteScope, worksiteScopeSql } from "@/lib/auth/scope"
 import { db } from "@/db"
 import { itAssets, suppliers, worksites } from "@/db/schema"
 import { eq, asc, and } from "drizzle-orm"
@@ -24,7 +24,10 @@ export default async function GarantiasPage({
   try { session = await requirePermission("ti:view") }
   catch { redirect("/forbidden") }
 
-  const canManage = can(session, "ti:manage_assets")
+  // El catálogo de proveedores es global: administrarlo exige alcance global,
+  // igual que licencias y sistemas de acceso. Un rol de faena solo consulta.
+  const serviceScope = serviceWorksiteScope(session)
+  const canManage = can(session, "ti:manage_assets") && serviceScope === "all"
   const sp = await searchParams
   // `?ventana=` conserva sus valores históricos (expiring_30, expired…): el
   // resumen del módulo enlaza con ellos. Ver `warranty-windows.ts`.
@@ -40,7 +43,7 @@ export default async function GarantiasPage({
     // universo (acotado por faena) y la banda se aplica después, con la misma
     // regla que el badge de cada fila.
     listAssetsByWarranty({ scope }),
-    listSupplierLinks(),
+    listSupplierLinks({ assetScope: scope, worksiteIds: serviceScope }),
     db.select({ id: suppliers.id, name: suppliers.name })
       .from(suppliers).where(eq(suppliers.isActive, true)).orderBy(asc(suppliers.name)),
     db.select({ id: worksites.id, name: worksites.name })
@@ -55,12 +58,12 @@ export default async function GarantiasPage({
       <PageHeader
         title="Garantías y proveedores"
         description="Vigencia de garantías por activo y proveedores identificados para TI."
-        breadcrumb={<Breadcrumbs items={[{ label: "TI", href: "/ti" }, { label: "Garantías y proveedores" }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "TI", href: "/ti" }, { label: "Garantías y proveedores" }]} />}
       />
 
       <WarrantyFilters view={view} faena={faena} counts={counts} worksites={worksitesList} />
 
-      <WarrantyTable rows={warrantyRows} />
+      <WarrantyTable rows={warrantyRows} hasFilters={Boolean(view || faena)} />
 
       <div className="mt-6">
         <SupplierLinksPanel links={supplierLinks} canManage={canManage} suppliers={suppliersList} />

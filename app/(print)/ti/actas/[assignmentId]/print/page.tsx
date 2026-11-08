@@ -14,8 +14,18 @@ interface PageProps { params: Promise<{ assignmentId: string }> }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { assignmentId } = await params
-  const assignment = await getAssignmentById(assignmentId)
-  return { title: assignment ? `Acta ${assignment.code}` : "Acta" }
+  // El título se genera fuera del cuerpo de la página: sin este chequeo,
+  // cualquier sesión autenticada leía el código del acta en el `<title>`.
+  try {
+    const session = await requirePermission("ti:view")
+    const assignment = await getAssignmentById(assignmentId)
+    if (!assignment || !canAccessWorksite(session, assignment.worksiteId)) {
+      return { title: "Acta de entrega" }
+    }
+    return { title: `Acta ${assignment.code}` }
+  } catch {
+    return { title: "Acta de entrega" }
+  }
 }
 
 export default async function ActaPrintPage({ params }: PageProps) {

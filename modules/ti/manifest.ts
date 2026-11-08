@@ -38,7 +38,7 @@ export const tiModule = {
       // encabezado cuando cambia `group`, así que cada grupo va contiguo.
       items: [
         { label: "Resumen",             href: "/ti",             iconName: "Desktop",       permissions: ["ti:view"], group: "Seguimiento" },
-        { label: "Reportes TI",         href: "/ti/reportes",    iconName: "ChartBar",      permissions: ["ti:view", "ti:export"], group: "Seguimiento" },
+        { label: "Reportes TI",         href: "/ti/reportes",    iconName: "ChartBar",      permissions: ["ti:view"], group: "Seguimiento" },
         { label: "Inventario",          href: "/ti/activos",     iconName: "Laptop",        permissions: ["ti:view"], group: "Equipos" },
         { label: "Entregas",            href: "/ti/asignaciones", iconName: "UserCirclePlus", permissions: ["ti:view"], group: "Equipos" },
         { label: "Mantenciones",        href: "/ti/mantenciones", iconName: "Wrench",        permissions: ["ti:view"], group: "Equipos" },

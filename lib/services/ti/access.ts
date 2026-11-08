@@ -128,7 +128,9 @@ export async function upsertSystemAccess(
       await tx.update(itSystemAccess).set({
         status: input.status,
         grantedAt: reactivating ? now : existing.grantedAt,
-        revokedAt: input.status === "baja" ? now : null,
+        // Re-guardar una fila que ya estaba en «baja» no puede mover la fecha
+        // en que se revocó: es la evidencia de cuándo se cerró la cuenta.
+        revokedAt: input.status === "baja" ? (existing.revokedAt ?? now) : null,
         responsibleUserId: input.responsibleUserId || existing.responsibleUserId,
         notes: input.notes == null ? existing.notes : input.notes.trim() || null,
         updatedAt: now,

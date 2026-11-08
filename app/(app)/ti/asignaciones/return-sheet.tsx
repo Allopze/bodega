@@ -34,6 +34,8 @@ interface ReturnSheetProps {
     assetId: string
     assetCode: string
     workerName: string
+    /** Entrega original: la devolución no puede ser anterior. */
+    deliveredAt: string
     accessories?: { id: string; name: string; returnedAt: string | null }[]
   }
 }
@@ -99,14 +101,19 @@ export function ReturnSheet({ trigger, open: openProp, onOpenChange, reference, 
 
           <SheetBody className="space-y-4">
             {state.message && !state.ok && !state.fieldErrors && (
-              <p className="text-sm text-[var(--color-danger)]" role="alert">{state.message}</p>
+              <p className="text-sm text-[var(--color-danger-ink)]" role="alert">{state.message}</p>
             )}
 
             {reference && <AssignmentReference reference={reference} />}
 
             <FieldGroup>
               <Field label="Fecha y hora de devolución" required error={state.fieldErrors?.returnedAt?.[0]}>
-                <DateTimePicker name="returnedAt" value={returnedAt} onChange={setReturnedAt} />
+                <DateTimePicker
+                  name="returnedAt"
+                  value={returnedAt}
+                  onChange={setReturnedAt}
+                  min={toLocalInputValue(new Date(assignment.deliveredAt))}
+                />
               </Field>
 
               <PhysicalStateChoice

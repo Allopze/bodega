@@ -12,12 +12,17 @@ import { Callout } from "@/components/ui/callout"
 import { Package, Tag } from "@phosphor-icons/react/dist/ssr"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
-import { listAssets, countRetiredAssets, type AssetListFilters } from "@/lib/services/ti/assets"
+import { listAssets, countAssets, countRetiredAssets, type AssetListFilters, type AssetOrder } from "@/lib/services/ti/assets"
 import { isRetiredStatus } from "@/lib/services/ti/constants"
 import { listAssetTypes } from "@/lib/services/ti/asset-types"
+import { ServerPagination } from "@/components/ui/server-pagination"
+import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
+import { DEFAULT_PAGE_SIZE } from "@/lib/constants"
 import { AssetTable } from "./asset-table"
 import { AssetFilters } from "./asset-filters"
 import { NewAssetCta } from "./asset-form-sheet"
+
+const ASSET_ORDERS: readonly AssetOrder[] = ["codigo", "codigo_desc", "activo", "faena", "garantia", "reciente"]
 
 export const metadata: Metadata = { title: "Inventario" }
 
@@ -34,6 +39,11 @@ export default async function InventarioPage({
   const canAdminTypes = can(session, "admin:it_asset_types")
   const sp = await searchParams
   const status = typeof sp.estado === "string" ? sp.estado : undefined
+  const search = typeof sp.q === "string" ? sp.q.trim().slice(0, 100) : ""
+  const repairStuck = sp.reparacion === "demorada"
+  const order = (ASSET_ORDERS as readonly string[]).includes(String(sp.orden))
+    ? String(sp.orden) as AssetOrder
+    : "codigo"
 
   const scope = worksiteScopeSql(session, itAssets.worksiteId)
   const workerScope = worksiteScopeSql(session, workers.worksiteId)
@@ -57,11 +67,19 @@ export default async function InventarioPage({
     minAgeYears: typeof sp.antiguedad_min === "string" && /^\d+$/.test(sp.antiguedad_min)
       ? Number(sp.antiguedad_min)
       : undefined,
+    repairStuck,
+    search: search || undefined,
+    order,
     scope,
   }
 
+  // Primero el total: el inventario pagina en el servidor y sin el conteo no
+  // se puede resolver la página ni mostrar "N activos" con los filtros.
+  const total = await countAssets(filters)
+  const pagination = resolvePagination({ pageParam: sp.pagina, totalItems: total, pageSize: DEFAULT_PAGE_SIZE })
+
   const [assets, retiredHidden, types, activeWorkers, activeWorksites, activeSuppliers] = await Promise.all([
-    listAssets(filters),
+    listAssets({ ...filters, limit: pagination.limit, offset: pagination.offset }),
     // Solo se pregunta cuando la lista las oculta: con un estado terminal elegido ya se ven.
     filters.includeRetired ? Promise.resolve(0) : countRetiredAssets(scope),
     listAssetTypes({ includeInactive: true }),
@@ -73,16 +91,16 @@ export default async function InventarioPage({
       .from(suppliers).where(eq(suppliers.isActive, true)).orderBy(asc(suppliers.name)),
   ])
 
-  const FILTER_KEYS = ["tipo", "estado", "trabajador", "faena", "proveedor", "garantia", "antiguedad", "antiguedad_min"] as const
+  const FILTER_KEYS = ["tipo", "estado", "trabajador", "faena", "proveedor", "garantia", "antiguedad", "antiguedad_min", "q", "reparacion"] as const
   const hasFilters = FILTER_KEYS.some((key) => typeof sp[key] === "string" && sp[key])
-  const isEmpty = assets.length === 0
+  const isEmpty = total === 0
 
   return (
     <PageContainer>
       <PageHeader
         title="Inventario"
         description="Activos tecnológicos de CHOME: qué hay, dónde está y quién lo tiene."
-        breadcrumb={<Breadcrumbs items={[{ label: "TI", href: "/ti" }, { label: "Inventario" }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "TI", href: "/ti" }, { label: "Inventario" }]} />}
         actions={(canManage || canAdminTypes) ? (
           <div className="flex flex-wrap items-center gap-2">
             {canAdminTypes && (
@@ -131,10 +149,14 @@ export default async function InventarioPage({
       ) : (
         <>
           <p className="mb-2 text-sm text-[var(--color-text-muted)]" aria-live="polite">
-            <span className="font-semibold text-[var(--color-text)]">{assets.length}</span>{" "}
-            {assets.length === 1 ? "activo" : "activos"}{hasFilters ? " con los filtros aplicados" : ""}
+            <span className="font-semibold text-[var(--color-text)]">{pagination.totalItems}</span>{" "}
+            {pagination.totalItems === 1 ? "activo" : "activos"}{hasFilters ? " con los filtros aplicados" : ""}
           </p>
           <AssetTable rows={assets as AssetRow[]} />
+          <ServerPagination
+            pagination={pagination}
+            hrefForPage={(page) => buildPaginationHref("/ti/activos", sp, page, "pagina")}
+          />
         </>
       )}
 

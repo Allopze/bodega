@@ -90,7 +90,7 @@ export default async function TicketsPage({
       <PageHeader
         title="Mesa de ayuda"
         description="Reporta y sigue problemas de equipos, correo, cuentas, accesos y más."
-        breadcrumb={<Breadcrumbs items={[{ label: "TI", href: "/ti" }, { label: "Mesa de ayuda" }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "TI", href: "/ti" }, { label: "Mesa de ayuda" }]} />}
         actions={canCreate ? (
           <TicketCta workers={workersList} worksites={worksitesList} assets={assetOptions} />
         ) : undefined}

@@ -61,7 +61,7 @@ export function NewSystemCta() {
             </SheetHeader>
             <SheetBody className="space-y-4">
               {state.message && !state.ok && !state.fieldErrors && (
-                <p className="text-sm text-[var(--color-danger)]" role="alert">{state.message}</p>
+                <p className="text-sm text-[var(--color-danger-ink)]" role="alert">{state.message}</p>
               )}
               <FieldGroup>
                 <Field label="Nombre" required error={state.fieldErrors?.name?.[0]}>
@@ -128,9 +128,14 @@ export function AccessSystemsPanel({ systems, canManage }: { systems: SystemRow[
                 <form action={toggleAction} className="flex items-center">
                   <input type="hidden" name="systemId" value={system.id} />
                   <input type="hidden" name="isActive" value="on" />
-                  <button type="submit" className="-my-1 inline-flex min-h-11 items-center px-2 text-xs font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-text)] sm:min-h-0 sm:px-0" title="Activar sistema">
-                    Activar
-                  </button>
+                  <SubmitButton
+                    variant="link"
+                    size="sm"
+                    label="Activar"
+                    loadingLabel="Activando..."
+                    className="-my-1 inline-flex min-h-11 items-center px-2 text-xs font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-text)] sm:min-h-0 sm:px-0"
+                    title="Activar sistema"
+                  />
                 </form>
               )
             )}

@@ -67,7 +67,7 @@ export default async function LicenciasPage({
       <PageHeader
         title="Licencias"
         description="Licencias y suscripciones de software y servicios: compradas, asignadas y disponibles."
-        breadcrumb={<Breadcrumbs items={[{ label: "TI", href: "/ti" }, { label: "Licencias" }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "TI", href: "/ti" }, { label: "Licencias" }]} />}
         actions={canManage ? (
           <LicenseCta suppliers={suppliersList} users={usersList} />
         ) : undefined}

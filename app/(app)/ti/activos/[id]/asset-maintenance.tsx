@@ -2,7 +2,7 @@ import { formatDate, formatCLP } from "@/lib/utils"
 import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
-import { IT_MAINTENANCE_TYPE_META } from "@/lib/services/ti/constants"
+import { IT_MAINTENANCE_TYPE_META, IT_MAINTENANCE_TYPE_VARIANT } from "@/lib/services/ti/constants"
 import { MaintenanceSheet } from "../../mantenciones/maintenance-sheet"
 import { VoidMaintenanceDialog } from "../../mantenciones/void-maintenance-dialog"
 
@@ -62,7 +62,7 @@ export function AssetMaintenance({ assetId, rows, canManage, suppliers }: AssetM
             <p className="font-mono text-xl font-semibold text-[var(--color-text)]">{lastDate ? formatDate(lastDate) : "—"}</p>
           </div>
         </div>
-        {canManage && (
+        {canManage && rows.length > 0 && (
           <MaintenanceSheet
             trigger={<Button type="button" variant="secondary" size="sm">Registrar mantención</Button>}
             assetId={assetId}
@@ -74,14 +74,21 @@ export function AssetMaintenance({ assetId, rows, canManage, suppliers }: AssetM
       {rows.length === 0 ? (
         <EmptyState
           title="Sin mantenciones registradas"
-          description="Registra la primera mantención o reparación de este equipo."
+          description="Aún no hay mantenciones ni reparaciones de este equipo."
+          action={canManage ? (
+            <MaintenanceSheet
+              trigger={<Button type="button" variant="secondary" size="sm">Registrar la primera</Button>}
+              assetId={assetId}
+              suppliers={suppliers}
+            />
+          ) : undefined}
         />
       ) : (
         rows.map((row) => (
           <article key={row.id} className={`rounded-2xl border border-[var(--color-border)] p-5 shadow-xs ${row.voidedAt ? "bg-[var(--color-surface-2)]" : "bg-[var(--color-surface)]"}`}>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
-                <MetaBadge meta={{ label: IT_MAINTENANCE_TYPE_META[row.type] ?? row.type, variant: "warning" }} />
+                <MetaBadge meta={{ label: IT_MAINTENANCE_TYPE_META[row.type] ?? row.type, variant: IT_MAINTENANCE_TYPE_VARIANT[row.type] ?? "default" }} />
                 <span className={`text-xs ${row.voidedAt ? "text-[var(--color-text-subtle)]" : "text-[var(--color-text-muted)]"}`}>{formatDate(row.date)}</span>
                 {row.voidedAt && (
                   <MetaBadge meta={{ label: "Anulada", variant: "danger" }} />

@@ -73,7 +73,7 @@ export default async function MantencionesPage({
       <PageHeader
         title="Mantenciones"
         description="Mantenciones y reparaciones por equipo, con su costo acumulado para identificar activos que conviene reemplazar."
-        breadcrumb={<Breadcrumbs items={[{ label: "TI", href: "/ti" }, { label: "Mantenciones" }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "TI", href: "/ti" }, { label: "Mantenciones" }]} />}
         actions={canManage ? (
           <MaintenanceCta suppliers={suppliersList} assets={assetOptions} />
         ) : undefined}
@@ -81,7 +81,12 @@ export default async function MantencionesPage({
 
       <MaintenanceFilters current={{ tipo, faena, desde, hasta }} worksites={worksitesList} />
 
-      <MaintenanceTable rows={rows} canManage={canManage} suppliers={suppliersList} />
+      <MaintenanceTable
+        rows={rows}
+        canManage={canManage}
+        suppliers={suppliersList}
+        hasFilters={Boolean(tipo || faena || desde || hasta)}
+      />
 
       <section className="mt-6 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs">
         <h2 className="text-h2">Candidatos a reemplazo</h2>
@@ -100,7 +105,7 @@ export default async function MantencionesPage({
             {ranking.slice(0, 10).map((row) => (
               <li key={row.assetId} className="flex items-center justify-between gap-4 border-b border-[var(--color-border)] py-2 text-sm last:border-b-0">
                 <span className="text-[var(--color-text)]">
-                  <Link href={`/ti/activos/${row.assetId}`} className="font-mono text-xs font-semibold text-[var(--color-primary)] hover:underline">{row.assetCode}</Link>
+                  <Link href={`/ti/activos/${row.assetId}`} className="font-mono text-xs font-semibold text-[var(--color-primary-ink)] hover:underline">{row.assetCode}</Link>
                   <span className="ml-2 text-xs text-[var(--color-text-muted)]">{[row.brand, row.model].filter(Boolean).join(" ")}</span>
                 </span>
                 <span className="flex flex-wrap items-center justify-end gap-2 text-right">

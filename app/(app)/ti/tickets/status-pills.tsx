@@ -48,7 +48,7 @@ export function TicketStatusPills({
   const options = allOptions.filter((option) => option.value === "" || option.value === current || option.count > 0)
 
   return (
-    <nav aria-label="Filtrar por estado" className="mb-4 flex flex-wrap gap-2">
+    <div role="group" aria-label="Filtrar por estado" className="mb-4 flex flex-wrap gap-2">
       {options.map((option) => {
         const active = current === option.value
         return (
@@ -70,6 +70,6 @@ export function TicketStatusPills({
           </Link>
         )
       })}
-    </nav>
+    </div>
   )
 }

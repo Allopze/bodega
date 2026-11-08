@@ -46,7 +46,7 @@ export default async function TiDashboardPage() {
         <EmptyState
           title="Aún no hay activos TI registrados"
           description="Registra el primer activo del inventario para empezar a gestionar custodia, garantías y mantenciones."
-          action={<Link href="/ti/activos" className="inline-flex items-center gap-1.5 text-sm font-semibold text-[var(--color-primary)] hover:underline"><Laptop size={14} /> Ir al inventario</Link>}
+          action={<Link href="/ti/activos" className="inline-flex items-center gap-1.5 text-sm font-semibold text-[var(--color-primary-ink)] hover:underline"><Laptop size={14} /> Ir al inventario</Link>}
         />
       ) : (
         <div className="flex flex-col gap-4">
@@ -59,7 +59,7 @@ export default async function TiDashboardPage() {
                 icon={<CheckCircle size={20} />}
                 title="Todo al día"
                 description="No hay actas sin acuse, préstamos vencidos, tickets fuera de plazo ni vencimientos próximos en tus faenas. Cuando algo requiera atención, aparecerá aquí."
-                action={<Link href="/ti/tickets" className="inline-flex items-center gap-1.5 text-sm font-semibold text-[var(--color-primary)] hover:underline">Ir a la mesa de ayuda</Link>}
+                action={<Link href="/ti/tickets" className="inline-flex items-center gap-1.5 text-sm font-semibold text-[var(--color-primary-ink)] hover:underline">Ir a la mesa de ayuda</Link>}
               />
             ) : (
               <ul className="mt-2 divide-y divide-[var(--color-border)] pb-2">
@@ -102,6 +102,9 @@ export default async function TiDashboardPage() {
               value={counts.activeAssignments}
               detail="Equipos entregados con acta vigente"
               href="/ti/asignaciones?estado=vigentes"
+              empty={counts.activeAssignments === 0
+                ? { message: "Sin equipos entregados", actionLabel: "Ver entregas" }
+                : undefined}
             />
             <KpiCard
               icon={<Package size={16} />}
@@ -109,6 +112,9 @@ export default async function TiDashboardPage() {
               value={counts.available}
               detail="Listos para entregar"
               href="/ti/activos?estado=disponible"
+              empty={counts.available === 0
+                ? { message: "Sin equipos disponibles", actionLabel: "Ver inventario" }
+                : undefined}
             />
             <KpiCard
               icon={<Ticket size={16} />}
@@ -116,6 +122,9 @@ export default async function TiDashboardPage() {
               value={counts.openTickets}
               detail="Casos de la mesa de ayuda sin cerrar"
               href="/ti/tickets"
+              empty={counts.openTickets === 0
+                ? { message: "Ningún ticket abierto", actionLabel: "Ir a la mesa de ayuda" }
+                : undefined}
             />
           </div>
 

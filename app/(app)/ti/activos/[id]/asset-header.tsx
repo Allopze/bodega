@@ -102,11 +102,11 @@ function RetiredBanner({ status, retirement }: { status: string; retirement: Ret
       {retirement ? (
         <>
           <dl className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2 lg:grid-cols-5">
-            <div><dt className="text-xs opacity-80">Fecha</dt><dd className="font-medium">{formatDate(retirement.date)}</dd></div>
-            <div><dt className="text-xs opacity-80">Motivo</dt><dd className="font-medium">{IT_RETIREMENT_REASON_META[retirement.reason] ?? retirement.reason}</dd></div>
-            <div><dt className="text-xs opacity-80">Destino</dt><dd className="font-medium">{retirement.destination ?? "—"}</dd></div>
-            <div><dt className="text-xs opacity-80">Responsable</dt><dd className="font-medium">{retirement.responsibleName}</dd></div>
-            <div><dt className="text-xs opacity-80">Autorizó</dt><dd className="font-medium">{retirement.authorizedByName}</dd></div>
+            <div><dt className="text-xs">Fecha</dt><dd className="font-medium">{formatDate(retirement.date)}</dd></div>
+            <div><dt className="text-xs">Motivo</dt><dd className="font-medium">{IT_RETIREMENT_REASON_META[retirement.reason] ?? retirement.reason}</dd></div>
+            <div><dt className="text-xs">Destino</dt><dd className="font-medium">{retirement.destination ?? "—"}</dd></div>
+            <div><dt className="text-xs">Responsable</dt><dd className="font-medium">{retirement.responsibleName}</dd></div>
+            <div><dt className="text-xs">Autorizó</dt><dd className="font-medium">{retirement.authorizedByName}</dd></div>
           </dl>
           <p className="mt-2 text-sm">
             No admite entregas, mantenciones ni ediciones. Si la baja fue un error, se revierte desde Bajas con el permiso correspondiente.{" "}

@@ -24,6 +24,10 @@ export const SENSITIVE_GRANT_PERMISSIONS: ReadonlySet<string> = new Set([
   // Firmar el propio trabajo: aprobar, publicar o cerrar un registro en cuyas
   // etapas previas la persona ya participó.
   "prevention:sign_own_work",
+  // Deshacer una baja registrada bajo doble control (responsable + autorizante).
+  // El manifiesto de TI separa este permiso justamente para que no lo herede
+  // quien registra la baja; sin esta entrada, `admin:users` podía autoconcederlo.
+  "ti:reverse_retirement",
 ])
 
 /**

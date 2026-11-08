@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "it_asset_types_name_lower_unique" ON "it_asset_types" USING btree (lower("name"));

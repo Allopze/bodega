@@ -37,6 +37,13 @@ describe("módulo TI — catálogo de tipos de activo", () => {
 
   afterAll(async () => pg.close())
 
+  it("rechaza un nombre duplicado sin distinguir mayúsculas ni espacios", async () => {
+    await upsertAssetType({ name: "Periférico", category: "periferico", hasSpecs: false }, actor)
+    await expect(
+      upsertAssetType({ name: "  periférico  ", category: "periferico", hasSpecs: false }, actor),
+    ).rejects.toThrow(/ya existe/i)
+  })
+
   it("crea un tipo de activo y audita la creación", async () => {
     const id = await upsertAssetType(
       { name: "Notebook", category: "computacion", hasSpecs: true },

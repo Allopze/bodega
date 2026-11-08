@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, or, sql, type SQL } from "drizzle-orm"
+import { and, asc, desc, eq, inArray, isNull, or, sql, type SQL } from "drizzle-orm"
 import { db } from "@/db"
 import {
   itAccessSystems, itAssets, itChecklistTasks, itLicenseAssignments, itLicenses, itSystemAccess,
@@ -50,7 +50,7 @@ export function ticketSlaVerdict(
 }
 
 /** Fecha y hora en Chile, legible en Excel. */
-function stamp(iso: string | null | undefined): string {
+export function stamp(iso: string | null | undefined): string {
   if (!iso) return ""
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return ""
@@ -167,11 +167,21 @@ export async function licenseSheets(scope: TiWorksiteScope): Promise<TiReportShe
     .where(and(inArray(itLicenseAssignments.licenseId, licenseRows.map((l) => l.id)), licenseAssignmentScope(scope)))
     .orderBy(asc(itLicenses.name), asc(itLicenseAssignments.assignedAt))
 
-  // «Asignados» cuenta lo que el usuario puede ver (mismo criterio que el listado).
-  const assigned = new Map<string, number>()
-  for (const a of assignmentRows) {
-    if (!a.revokedAt) assigned.set(a.licenseId, (assigned.get(a.licenseId) ?? 0) + 1)
-  }
+  // «Asignados» es global: los cupos comprados pertenecen a la licencia, no a
+  // una faena. El detalle de asignaciones sí queda acotado a lo que el usuario
+  // puede ver, pero la cifra del cupo no puede declarar asientos libres falsos.
+  const globalAssignedRows = licenseRows.length === 0 ? [] : await db
+    .select({
+      licenseId: itLicenseAssignments.licenseId,
+      total: sql<number>`count(*)::int`,
+    })
+    .from(itLicenseAssignments)
+    .where(and(
+      inArray(itLicenseAssignments.licenseId, licenseRows.map((l) => l.id)),
+      isNull(itLicenseAssignments.revokedAt),
+    ))
+    .groupBy(itLicenseAssignments.licenseId)
+  const assigned = new Map(globalAssignedRows.map((row) => [row.licenseId, row.total]))
 
   return [
     {

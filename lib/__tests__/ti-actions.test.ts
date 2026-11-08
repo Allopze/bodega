@@ -346,6 +346,8 @@ describe("ti:transitionTicketAction", () => {
 
   it("notifica al nuevo asignado cuando la asignación cambia a otro técnico", async () => {
     mockAuthFn.mockResolvedValue(makeSession(["ti:manage_tickets"], ["ws-ti-norte"], ["admin_contrato"]))
+    // La transición con un asignado explícito exige que gestione tickets.
+    mockGetUserIdsWithPermission.mockResolvedValue(["user-ti-2"])
     mockTransitionTicket.mockResolvedValue({
       ...baseTransitionResult, assigneeChanged: true, assigneeUserId: "user-ti-2", previousAssigneeUserId: null,
     })
@@ -363,6 +365,7 @@ describe("ti:transitionTicketAction", () => {
 
   it("no notifica la autoasignación", async () => {
     mockAuthFn.mockResolvedValue(makeSession(["ti:manage_tickets"], ["ws-ti-norte"], ["admin_contrato"]))
+    mockGetUserIdsWithPermission.mockResolvedValue(["user-ti-1"])
     // El actor (user-ti-1) se autoasigna: assigneeChanged es true pero el
     // nuevo asignado es el mismo que ejecuta la transición.
     mockTransitionTicket.mockResolvedValue({

@@ -11,6 +11,7 @@ import { cleanupOrphanPhotos } from "./assignment-photos"
 import { civilDaysUntil } from "./civil-dates"
 import { todayInChile } from "@/lib/utils"
 import { TICKET_SLA_WARNING_HOURS, ticketSlaStage } from "./ticket-sla"
+import { repairStartedAtSql, repairStuckSql } from "./repair-age"
 
 /* ── Alertas TI diarias (cron) ──────────────────────────────────────────────
  * Notifican solo lo accionable, deduplicadas por `dedupeKey`, para no inundar
@@ -82,7 +83,8 @@ export async function collectTiAlerts(): Promise<TiAlert[]> {
     .where(and(
       eq(itLicenses.isActive, true),
       sql`${itLicenses.renewalDate} IS NOT NULL`,
-      sql`${itLicenses.renewalDate} >= ${today}`,
+      // Sin límite inferior: una licencia ya vencida es el caso más urgente y
+      // antes no generaba ninguna alerta ni aparecía en el tablero.
       sql`${itLicenses.renewalDate} <= (${today}::date + 14)::text`,
     ))
   for (const license of licenses) {
@@ -100,23 +102,25 @@ export async function collectTiAlerts(): Promise<TiAlert[]> {
     })
   }
 
-  // Activos >30 días en reparación.
+  // Activos con más de `REPAIR_STUCK_DAYS` en reparación. Mismo umbral y mismo
+  // predicado que la tarjeta del tablero: antes el cron esperaba 30 días y
+  // además cualquier edición reiniciaba `updatedAt`.
   const stuckRepairs = await db
     .select({
       id: itAssets.id,
       code: itAssets.code,
       brand: itAssets.brand,
       model: itAssets.model,
-      updatedAt: itAssets.updatedAt,
+      repairStartedAt: sql<string>`${repairStartedAtSql()}`,
     })
     .from(itAssets)
     .where(and(
       isNull(itAssets.deletedAt),
       eq(itAssets.status, "en_reparacion"),
-      lt(itAssets.updatedAt, sql`now() - interval '30 days'`),
+      repairStuckSql(),
     ))
   for (const asset of stuckRepairs) {
-    const days = Math.floor((Date.now() - new Date(asset.updatedAt).getTime()) / (1000 * 60 * 60 * 24))
+    const days = Math.floor((Date.now() - new Date(asset.repairStartedAt).getTime()) / (1000 * 60 * 60 * 24))
     alerts.push({
       type: "ti_repair_stuck",
       title: `Reparación demorada: ${asset.code}`,

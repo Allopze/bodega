@@ -5,7 +5,7 @@ import {
   itAssets, itAssetTypes, workers, worksites, suppliers, itMaintenances,
   itAssetHistory,
 } from "@/db/schema"
-import { eq, asc, and, isNull, sql, type SQL } from "drizzle-orm"
+import { eq, asc, and, isNull, notInArray, sql, type SQL } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
 import { serviceWorksiteScope, worksiteScopeSql } from "@/lib/auth/scope"
 import { buildXlsxBuffer } from "@/lib/reports/export-module/excel-builder"
@@ -13,9 +13,9 @@ import { recordAudit } from "@/lib/audit"
 import { logger } from "@/lib/logger"
 import { todayInChile } from "@/lib/utils"
 import type { ExportActionResult } from "@/components/ui/export-button"
-import { IT_ASSET_STATUS_META } from "@/lib/services/ti/constants"
+import { IT_ASSET_STATUS_META, IT_RETIRED_STATUSES } from "@/lib/services/ti/constants"
 import { civilDaysUntil } from "@/lib/services/ti/civil-dates"
-import { accessSheet, checklistSheet, licenseSheets, ticketsSheet } from "@/lib/services/ti/reports"
+import { accessSheet, checklistSheet, licenseSheets, stamp, ticketsSheet } from "@/lib/services/ti/reports"
 
 export type TiReportType =
   | "inventario_general"
@@ -185,7 +185,9 @@ export async function exportTiReport(type: TiReportType, assetId?: string, rawFi
         sheets = [{
           worksheetName: `Historial ${asset.code}`,
           headers: ["Fecha", "Acción", "Detalle"],
-          rows: history.map((h) => [h.createdAt.slice(0, 19).replace("T", " "), h.action, h.detail]),
+          // Misma hora de Chile que el resto de las hojas: `slice(0,19)` dejaba
+          // el historial en UTC y el mismo evento difería 3–4 h del Excel.
+          rows: history.map((h) => [stamp(h.createdAt), h.action, h.detail]),
         }]
         break
       }
@@ -247,7 +249,14 @@ export async function exportTiReport(type: TiReportType, assetId?: string, rawFi
           })
           .from(itAssets)
           .leftJoin(suppliers, eq(itAssets.supplierId, suppliers.id))
-          .where(and(isNull(itAssets.deletedAt), sql`${itAssets.warrantyEndDate} IS NOT NULL`, scope ?? sql`true`))
+          // Mismo universo que /ti/garantias: la garantía de un activo retirado
+          // no es accionable y la pantalla ya la excluye.
+          .where(and(
+            isNull(itAssets.deletedAt),
+            notInArray(itAssets.status, [...IT_RETIRED_STATUSES]),
+            sql`${itAssets.warrantyEndDate} IS NOT NULL`,
+            scope ?? sql`true`,
+          ))
           .orderBy(asc(itAssets.warrantyEndDate))
         sheets = [{
           worksheetName: "Garantías",

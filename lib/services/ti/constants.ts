@@ -73,6 +73,19 @@ export const IT_MAINTENANCE_TYPE_META: Record<string, string> = {
   revision:     "Revisión",
 }
 
+/**
+ * Color por tipo: `warning` significa «requiere atención» en el resto del
+ * módulo. Pintar las cinco variantes de naranja hacía que una mantención
+ * preventiva se leyera como una urgencia.
+ */
+export const IT_MAINTENANCE_TYPE_VARIANT: Record<string, "default" | "info" | "warning"> = {
+  preventiva:    "info",
+  correctiva:    "warning",
+  reparacion:    "warning",
+  actualizacion: "default",
+  revision:      "default",
+}
+
 export const IT_RETIREMENT_REASON_META: Record<string, string> = {
   venta:       "Venta",
   reciclaje:   "Reciclaje",

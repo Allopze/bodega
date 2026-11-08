@@ -260,7 +260,7 @@ export async function listLicenses(scope?: SQL, worksiteIds: TiWorksiteScope = "
       supplierName: suppliers.name,
       type: itLicenses.type,
       purchasedQuantity: itLicenses.purchasedQuantity,
-      assignedQuantity: assignedQuantityCondition(worksiteIds).as("assignedQuantity"),
+      assignedQuantity: assignedQuantityCondition().as("assignedQuantity"),
       cost: itLicenses.cost,
       periodicity: itLicenses.periodicity,
       startDate: itLicenses.startDate,
@@ -308,7 +308,7 @@ function selectAssignments(where: SQL | undefined) {
     .leftJoin(itAssets, eq(itLicenseAssignments.assetId, itAssets.id))
     .leftJoin(worksites, eq(itLicenseAssignments.worksiteId, worksites.id))
     .where(where)
-    .orderBy(desc(itLicenseAssignments.assignedAt))
+    .orderBy(desc(itLicenseAssignments.assignedAt), desc(itLicenseAssignments.id))
 }
 
 export async function getLicenseAssignments(licenseId: string, worksiteIds: TiWorksiteScope = "all") {
@@ -371,24 +371,17 @@ export function licenseScopeCondition(worksiteIds: TiWorksiteScope): SQL | undef
   )`
 }
 
-function assignedQuantityCondition(worksiteIds: TiWorksiteScope): SQL<number> {
-  if (worksiteIds === "all") {
-    return sql<number>`(
-      SELECT count(*)::int
-      FROM it_license_assignments ila
-      WHERE ila.license_id = ${itLicenses.id}
-        AND ila.revoked_at IS NULL
-    )`
-  }
-  if (worksiteIds.length === 0) return sql<number>`0`
-  const ids = sql.join(worksiteIds.map((id) => sql`${id}`), sql`, `)
+/**
+ * Cupos asignados SIEMPRE sobre el total de la licencia, no sobre la faena del
+ * usuario: `purchasedQuantity` es global y `assignLicense` cuenta todas las
+ * asignaciones vigentes. Contar solo las de mi faena producía «1/10, 9 libres»
+ * y el servidor rechazaba la asignación porque las 10 estaban usadas.
+ */
+function assignedQuantityCondition(): SQL<number> {
   return sql<number>`(
     SELECT count(*)::int
     FROM it_license_assignments ila
-    LEFT JOIN workers lw ON lw.id = ila.worker_id
-    LEFT JOIN it_assets la ON la.id = ila.asset_id
     WHERE ila.license_id = ${itLicenses.id}
       AND ila.revoked_at IS NULL
-      AND (ila.worksite_id IN (${ids}) OR lw.worksite_id IN (${ids}) OR la.worksite_id IN (${ids}))
   )`
 }

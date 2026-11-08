@@ -93,7 +93,7 @@ export default async function AsignacionesPage({
       <PageHeader
         title="Entregas"
         description="Equipos entregados, préstamos, devoluciones y transferencias, con su acta."
-        breadcrumb={<Breadcrumbs items={[{ label: "TI", href: "/ti" }, { label: "Entregas" }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "TI", href: "/ti" }, { label: "Entregas" }]} />}
         actions={canManage ? (
           <AssignmentCta workers={workersList} worksites={worksitesList} assets={assetOptions} />
         ) : undefined}

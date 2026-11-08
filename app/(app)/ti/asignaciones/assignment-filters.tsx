@@ -12,7 +12,7 @@
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { SegmentedControl } from "@/components/ui/segmented-control"
-import { Button } from "@/components/ui/button"
+import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 const ALL = "_all"
@@ -42,49 +42,65 @@ export function AssignmentFilters({ worksites, counts }: {
   }
 
   const hasExtraFilters = pendingAcceptance || overdueLoans || Boolean(worksiteId)
+  const chips: ActiveFilterChip[] = worksiteId
+    ? [{
+        key: "faena",
+        label: "Faena",
+        value: worksiteId,
+        displayValue: worksites.find((w) => w.id === worksiteId)?.name ?? "Faena",
+      }]
+    : []
 
   return (
-    <div className="mb-4 flex flex-wrap items-end gap-x-6 gap-y-3">
-      <SegmentedControl
-        ariaLabel="Estado de la custodia"
-        items={[
-          { key: "todas", label: "Todas", active: !onlyActive, onClick: () => update({ estado: null }) },
-          { key: "vigentes", label: "Vigentes", active: onlyActive, onClick: () => update({ estado: "vigentes" }) },
-        ]}
-      />
-      <SegmentedControl
-        ariaLabel="Entregas que piden una acción"
-        items={[
-          {
-            key: "acuse",
-            label: `Sin acuse aún (${counts.pendingAcceptance})`,
-            active: pendingAcceptance,
-            onClick: () => update({ acuse: pendingAcceptance ? null : "pendiente" }),
-          },
-          {
-            key: "vencidos",
-            label: `Préstamos vencidos (${counts.overdueLoans})`,
-            active: overdueLoans,
-            onClick: () => update({ prestamo: overdueLoans ? null : "vencido" }),
-          },
-        ]}
-      />
-      <div className="w-full sm:w-56">
-        <Select value={worksiteId || ALL} onValueChange={(value) => update({ faena: value === ALL ? null : value })}>
-          <SelectTrigger aria-label="Faena">
-            <SelectValue placeholder="Todas las faenas" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>Todas las faenas</SelectItem>
-            {worksites.map((worksite) => <SelectItem key={worksite.id} value={worksite.id}>{worksite.name}</SelectItem>)}
-          </SelectContent>
-        </Select>
+    <div className="mb-4 flex flex-col gap-3">
+      <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
+        <SegmentedControl
+          ariaLabel="Estado de la custodia"
+          items={[
+            { key: "todas", label: "Todas", active: !onlyActive, onClick: () => update({ estado: null }) },
+            { key: "vigentes", label: "Vigentes", active: onlyActive, onClick: () => update({ estado: "vigentes" }) },
+          ]}
+        />
+        <SegmentedControl
+          ariaLabel="Entregas que piden una acción"
+          items={[
+            {
+              key: "acuse",
+              label: `Sin acuse aún (${counts.pendingAcceptance})`,
+              active: pendingAcceptance,
+              onClick: () => update({ acuse: pendingAcceptance ? null : "pendiente" }),
+            },
+            {
+              key: "vencidos",
+              label: `Préstamos vencidos (${counts.overdueLoans})`,
+              active: overdueLoans,
+              onClick: () => update({ prestamo: overdueLoans ? null : "vencido" }),
+            },
+          ]}
+        />
       </div>
-      {hasExtraFilters && (
-        <Button type="button" variant="link" size="sm" onClick={() => update({ acuse: null, prestamo: null, faena: null })}>
-          Limpiar filtros
-        </Button>
-      )}
+      {/* La faena es un filtro estructurado más: entra en la barra compartida
+          para tener chip removible y el mismo «Limpiar filtros» que las otras
+          seis listas, en vez de una barra artesanal solo para ella. */}
+      <FilterToolbar
+        className="mb-0"
+        activeChips={chips}
+        onRemoveChip={() => update({ faena: null })}
+        hasActiveFilters={hasExtraFilters}
+        onClearAll={() => update({ acuse: null, prestamo: null, faena: null })}
+      >
+        <div className="w-full sm:w-56">
+          <Select value={worksiteId || ALL} onValueChange={(value) => update({ faena: value === ALL ? null : value })}>
+            <SelectTrigger aria-label="Faena">
+              <SelectValue placeholder="Todas las faenas" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>Todas las faenas</SelectItem>
+              {worksites.map((worksite) => <SelectItem key={worksite.id} value={worksite.id}>{worksite.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+      </FilterToolbar>
     </div>
   )
 }

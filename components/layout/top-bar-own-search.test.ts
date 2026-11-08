@@ -10,11 +10,11 @@ describe("buscador de la shell", () => {
     expect(hidesShellSearch("/prevencion/miper/factores")).toBe(false)
     expect(hidesShellSearch("/prevencion/miper/controles/ctrl-1")).toBe(false)
   })
-  it("TI: oculto en el resumen, reportes y fichas; visible en las listas de activos y licencias", () => {
-    for (const path of ["/ti", "/ti/reportes", "/ti/activos/a-1", "/ti/tickets", "/ti/tickets/t-1"]) {
+  it("TI: oculto donde la lista busca en servidor; visible en licencias y entregas", () => {
+    for (const path of ["/ti", "/ti/reportes", "/ti/activos", "/ti/activos/a-1", "/ti/tickets", "/ti/tickets/t-1"]) {
       expect(hidesShellSearch(path), path).toBe(true)
     }
-    for (const path of ["/ti/activos", "/ti/licencias", "/ti/entregas"]) {
+    for (const path of ["/ti/licencias", "/ti/asignaciones"]) {
       expect(hidesShellSearch(path), path).toBe(false)
     }
   })

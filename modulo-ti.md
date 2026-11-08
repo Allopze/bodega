@@ -1,9 +1,17 @@
 # Módulo TI — Plataforma CHOME
 
-## Estado de avance (to-do) — actualizado 2026-09-03
+## Estado de avance — actualizado 2026-11-08
 
-> Criterio: se marca ☒ solo lo **verificado en el worktree** (archivos existentes y funcionales, checks ejecutados), no intenciones.
-> ⚠️ Frente al To-Do original: 7 ítems que estaban ☐ o "in progress" están **implementados** (ficha de activo, asignaciones, acta, bajas, garantías, reportes); y el ☒ de "Schema + migración" **no era real** al revisarlo (0241–0244 eran PDTP/alcotest/GRD). La migración TI se generó el 2026-09-03 como **0245_round_paper_doll.sql** (17 tablas `it_*`) y se aplicó a la base de desarrollo.
+> **Este documento reemplaza el estado del 2026-09-03.** Las secciones de fases y el detalle de la migración 0245 se conservan como historia; lo que sigue describe el módulo tal como está hoy. La auditoría vigente y sus hallazgos cerrados están en `AUDITORIA_MODULO_TI_2026-11-08.md`.
+
+- **Navegación (3 grupos):** Seguimiento (Resumen `/ti`, Reportes TI `/ti/reportes`), Equipos (Inventario `/ti/activos`, Entregas `/ti/asignaciones`, Mantenciones `/ti/mantenciones`, Garantías y proveedores `/ti/garantias`, Bajas `/ti/bajas`), Servicios (Mesa de ayuda `/ti/tickets`, Accesos `/ti/accesos`, Licencias `/ti/licencias`).
+- **Permisos:** 10, incluido `ti:reverse_retirement` (separado de `ti:manage_assets` para preservar el doble control de la baja; es permiso sensible de concesión).
+- **Inventario:** página con búsqueda y paginación **en servidor** (`?q=`, `?pagina=`, `?orden=`), filtros estructurados y `ServerPagination`. La tabla no ordena en cliente.
+- **Reparación:** registrar una mantención de tipo `reparacion` sobre un activo `disponible`/`en_bodega` lo deja `en_reparacion`. Un activo en custodia no se toca: para eso está la salida a reparación (`kind: repair_exit`).
+- **Reparación demorada:** umbral único de **14 días** en tablero, cron y filtro `?reparacion=demorada`, medido desde el último movimiento del historial (no `updatedAt`).
+- **Adjuntos:** tope de **50 por activo**, 25 MB por archivo y **30 cargas/hora por usuario** en `POST /api/ti/attachments`. Sigue siendo append-only (sin borrado).
+- **Migraciones:** 0245 (17 tablas `it_*`) + **0382** (índice único `lower(name)` en `it_asset_types`). Cadena verificada con `npm run db:verify-migrations`.
+- **Estado de verificación:** `typecheck` y `lint` en verde; pruebas PGlite de TI en verde; recorrido autenticado en navegador de las 10 rutas sin errores de consola, sin overflow y sin violaciones axe graves. Ver `AUDITORIA_MODULO_TI_2026-11-08.md` para el detalle.
 
 ### Fase 1 — core
 
@@ -46,14 +54,13 @@
 - [x] **`npm run lint` en verde** (0 problemas; se limpiaron ~40 warnings de imports/vars sin uso y el `no-img-element` del acta con la convención del repo).
 - [x] Verificación: `tsc` ✅, `lint` ✅, PGlite TI 52/52 ✅ + unit 21/21 ✅ + module-toggles 27/27 ✅ (tras el fix de inventario), `db:verify-migrations` ✅ (250 entradas), `db:generate` "No schema changes" ✅.
 
-### Pendiente real
+### Pendiente real (2026-11-08)
 
-- [x] **`npm run db:migrate` + `npm run db:sync-rbac` en la base de desarrollo** — ✅ aplicados 2026-09-03 contra `bodega_dev@127.0.0.1:5433` (`.env.local`): 17/17 tablas `it_*` creadas, rol `tecnico_ti` materializado (global) y grants `p-ti-*` (9 permisos) asignados según el manifest: administrador 9, tecnico_ti 8, jefa_chome/subgerente 2, representantes de faena + secretaria 1 (`ti:create_ticket`).
-- [ ] **Suite completa PGlite en verde**: archivos ajenos al módulo fallan — `prevention-pdtp.test.ts` (38 aislado) y `prevention-cgrd.test.ts` (19/19 aislado, pero falla en la corrida completa por interferencia) — por trabajo PDTP/GRD **sin commitear de otra tarea** en el mismo worktree (no los toqué; reconciliar al integrar ese trabajo).
-- [x] **`npm run test:e2e` con `e2e/ti-modulo.spec.ts`** — ✅ 5/5 passed (2026-09-03, contenedor e2e desechable).
-- [ ] **`npm run audit` / `audit:full`** + lectura de `qa/reports/latest.md` (requiere app corriendo con sesión QA).
-- [ ] **Verificación manual en navegador**: búsqueda → ficha completa (tabs, fotos comparadas, acta PDF, historial), transiciones de ticket, permisos por rol (sin permiso → `/forbidden`).
-- [ ] **Commit**: todo el módulo está sin trackear, mezclado con PDTP/constancias/GRD (migraciones 0241–0249). Commits atómicos por dominio al cerrar.
+- [x] **Base de desarrollo**: 17 tablas `it_*`, rol `tecnico_ti` y grants `ti:*` aplicados; migración 0382 pendiente de aplicar donde corresponda (el archivo y el checksum ya están en el repo).
+- [x] **Verificación en navegador** de las 10 rutas `/ti` con una sesión autenticada: sin errores de consola, sin overflow en 1440/1024/390 y sin violaciones axe `serious`/`critical`.
+- [ ] **`npm run test:e2e` completo**: `e2e/ti-modulo.spec.ts` existe y cubre resumen, inventario, tickets, reportes y el guard de `ti:view`; no se ejecutó la suite E2E completa en esta pasada.
+- [ ] **Rendimiento del catálogo de proveedores**: la consulta ya no es 4 × N correlacionada, pero el panel sigue sin paginar (catálogo pequeño por diseño).
+- [ ] **Commit**: los cambios del 2026-11-08 están en el worktree, sin commit al cierre de este documento.
 
 ## Decisiones de diseño (confirmadas)
 
@@ -127,11 +134,13 @@ Manifest `modules/ti/manifest.ts` con id `ti`:
 - `ti:manage_licenses` — licencias, suscripciones y asignaciones.
 - `ti:manage_access` — sistemas, accesos por trabajador, checklists.
 - `ti:export` — exportar reportes.
+- `ti:reverse_retirement` — revertir una baja equivocada. **No** se concede a `tecnico_ti`: si quien registra la baja bajo doble control pudiera revertirla solo, el control quedaría anulado.
 
 `defaultGrants`:
 - **Nuevo rol `tecnico_ti`** (global, se agrega a `SYSTEM_ROLES` + `ROLE_ID_BY_SLUG` en `lib/auth/system-rbac.ts`): `ti:view`, `ti:manage_assets`, `ti:manage_maintenance`, `ti:manage_tickets`, `ti:comment_internal`, `ti:manage_licenses`, `ti:manage_access`, `ti:export`.
 - `administrador`: todos (automático vía system-rbac).
-- `jefa_chome`, `subgerente_operaciones`: `ti:view`, `ti:export`.
+- `jefa_chome`: `ti:view`, `ti:export`, `ti:reverse_retirement`.
+- `subgerente_operaciones`: `ti:view`, `ti:export`.
 - `admin_contrato`, `jefe_terreno`, `supervisor_terreno`: `ti:create_ticket` (scoped por faena).
 - `secretaria`: `ti:create_ticket`.
 
@@ -174,18 +183,19 @@ app/(app)/ti/
   reportes/page.tsx, reportes/export-menu.tsx
 app/api/ti/photos/route.ts                    # POST multipart (asignación+stage+caption)
 app/api/ti/photos/[id]/route.ts               # GET autenticado, anti-IDOR
+app/api/ti/attachments/route.ts               # POST multipart (25 MB, 30/hora, tope 50 por activo)
 app/api/ti/attachments/[id]/route.ts          # GET adjuntos genéricos
 app/api/cron/ti-alerts/route.ts               # verifyCronSecret + withCronLock
 app/(print)/ti/actas/[assignmentId]/print/page.tsx, acta-styles.ts, print-trigger.tsx, filename.ts
 app/(print)/ti/actas/[assignmentId]/print/pdf/route.ts   # withBrowserContext (patrón OC)
 ```
 
-Navegación (manifest `nav`, areaId `ti`, sin niveles innecesarios): Dashboard `/ti`, Inventario `/ti/activos`, Asignaciones `/ti/asignaciones`, Mantenciones `/ti/mantenciones`, Tickets `/ti/tickets`, Licencias `/ti/licencias`, Accesos `/ti/accesos`, Garantías y proveedores `/ti/garantias`, Bajas `/ti/bajas`, Reportes `/ti/reportes`.
+Navegación (manifest `nav`, areaId `ti`, tres grupos contiguos): **Seguimiento** — Resumen `/ti`, Reportes TI `/ti/reportes`; **Equipos** — Inventario `/ti/activos`, Entregas `/ti/asignaciones`, Mantenciones `/ti/mantenciones`, Garantías y proveedores `/ti/garantias`, Bajas `/ti/bajas`; **Servicios** — Mesa de ayuda `/ti/tickets`, Accesos `/ti/accesos`, Licencias `/ti/licencias`.
 
 ## Flujos clave
 
 ### Inventario
-- `PageHeader` + filtros server-side por `searchParams` (tipo, estado, trabajador, faena, proveedor, garantía, antigüedad) con `FilterToolbar`/patrón `server-list-filters`; búsqueda de texto vía TopBar→`DataTable` (searchKeys: code, serial, brand, model, worker name). Combinables.
+- `PageHeader` + filtros server-side por `searchParams` (tipo, estado, trabajador, faena, proveedor, garantía, antigüedad, `reparacion=demorada`) con `FilterToolbar`. La búsqueda (`?q=`) y el orden (`?orden=codigo|codigo_desc|activo|faena|garantia|reciente`) también viajan en la URL y se resuelven en `listAssets`/`countAssets`; la página usa `ServerPagination` (`?pagina=`). La ruta está en `ROUTES_WITH_OWN_SEARCH`, así que el TopBar no muestra un segundo buscador. Los agregados de mantención/tickets salen de subconsultas agrupadas, no correlacionadas por fila.
 - Alta de activo: `Sheet` (patrón `catalog-form-sheet`) con `Field`, `DatePicker`; specs solo si el tipo tiene `hasSpecs`. Validación server (zod) + client. Código interno manual único.
 - Ficha `/ti/activos/[id]` con tabs sincronizadas a `?tab=` (patrón `oc-detail-tabs`): **Resumen** (datos, badge estado, custodio, garantía, costo, costo acumulado reparaciones, #mantenciones, #tickets), **Asignaciones**, **Mantenciones**, **Tickets**, **Documentos**, **Fotografías**, **Historial** (`EntityTimeline` + `it_asset_history`).
 - Cambio de estado: `ConfirmDialog` con motivo; `recordAudit` (old/new) + `recordStatusChange` + fila en `it_asset_history`. Nunca sobrescribir.
@@ -199,7 +209,7 @@ Navegación (manifest `nav`, areaId `ti`, sin niveles innecesarios): Dashboard `
 6. Devolución: acción en asignación activa → fotos de devolución + estado físico + accesorios devueltos + observaciones → cierra `returnedAt`, activo vuelve a `disponible` (o `en_bodega`). Transferencia = devolver + nueva entrega (o action dedicada que hace ambas en una transacción).
 
 ### Mantenciones
-Registro con `reportedIssue/diagnosis/workDone/partsUsed/supplierId/technician/cost` + adjuntos (`attachments`). Panel en ficha del activo con: costo acumulado, #repeticiones, última mantención. Dashboard: ranking "mayor gasto acumulado" (señal de reemplazo).
+Registro con `reportedIssue/diagnosis/workDone/partsUsed/supplierId/technician/cost` + adjuntos (`attachments`). Panel en ficha del activo con: costo acumulado, #repeticiones, última mantención. Dashboard: ranking "mayor gasto acumulado" (señal de reemplazo). Una mantención de tipo `reparacion` sobre un activo `disponible` o `en_bodega` lo deja `en_reparacion` y lo registra en historial/`status_history`; sobre un activo en custodia no cambia el estado (se usa la salida a reparación).
 
 ### Bajas
 `ConfirmDialog` con motivo/razón + responsable + autorizado por + destino + fotos/docs → inserta `it_asset_retirements`, setea `status='dado_de_baja'` (o `perdido`/`robado` según reason), historial + auditoría. El activo y su timeline quedan intactos para siempre.
@@ -224,8 +234,8 @@ Registro con `reportedIssue/diagnosis/workDone/partsUsed/supplierId/technician/c
 ### Alertas cron (Fase 2)
 `app/api/cron/ti-alerts/route.ts` diario 6:45 (crontab docker-compose + job `ti-alerts` en `cron-runner.mjs`):
 - Garantías: vencen en ≤30/≤60/≤90 días.
-- Licencias: renovación en ≤14 días.
-- Activos: `en_reparacion` > 30 días.
+- Licencias: renuevan en ≤14 días **o ya están vencidas** (el caso más urgente).
+- Activos: `en_reparacion` hace más de **14 días**, medido desde el último movimiento del historial (mismo predicado que el tablero y el filtro `?reparacion=demorada`).
 - Tickets: abiertos sin `updatedAt` > 5 días.
 Notificaciones in-app a usuarios con `ti:view` (`getUserIdsWithPermission`), `dedupeKey` `ti:<tipo>:<id>:<día>`.
 
@@ -249,21 +259,20 @@ Tickets (listado + ficha + comentarios + SLA). Licencias + suscripciones + asign
 
 ## Tests
 
-- ✅ **PGlite** (52 tests, 6 archivos, en `tests/pglite-files.ts`): `ti-assets-pglite`, `ti-assignments-pglite` (invariantes: una asignación activa por activo, fotos históricas no se borran, devolución restaura estado, transferencia atómica), `ti-tickets-pglite` (scope faena, permisos), `ti-licenses-access-pglite`, `ti-maintenance-retirement-pglite`, `ti-alerts-pglite` (dedupe, ventanas de vencimiento).
-- ✅ **Unit + Actions** (21 tests): `ti-validation.test.ts` (esquemas zod) y `ti-actions.test.ts` con mocks (patrón `bodega-actions.test.ts`): permisos, validación, errores seguros.
-- ⏳ **Componentes**: tabs de ficha, assignment-sheet (testing-library, patrón `receipt-form.test.tsx`) — pendiente.
-- ✅ **e2e**: `e2e/ti-modulo.spec.ts` + fixtures TI en `e2e/setup-db.ts` — **5/5 passed** (2026-09-03).
+- ✅ **PGlite**: `ti-assets-pglite` (incluye paginación, orden y filtro de reparación demorada), `ti-assignments-pglite` (una asignación activa por activo, fotos históricas, devolución/transferencia atómicas, fechas no invertidas, trabajador inactivo), `ti-tickets-pglite`, `ti-licenses-access-pglite` (cupos globales y fecha de revocación preservada), `ti-maintenance-retirement-pglite` (mantención mueve a reparación, protecciones del retirado, proveedores acotados), `ti-asset-types-pglite` (unicidad case-insensitive), `ti-alerts-pglite` y `ti-attention-and-reports` (mismo umbral de reparación y cupos globales).
+- ✅ **Unit + Actions**: `ti-validation.test.ts` y `ti-actions.test.ts` (permisos, validación, errores seguros).
+- ✅ **e2e**: `e2e/ti-modulo.spec.ts` + fixtures TI en `e2e/setup-db.ts`.
+- ⏳ **Componentes**: tabs de ficha, `assignment-sheet` (testing-library) — pendiente.
 
 ## Verificación (Definition of Done)
 
-1. ✅ `npx tsc --noEmit` y `npm run lint` — en verde.
-2. ✅ `npm run db:generate` → migración **0245** (17 tablas `it_*`) + ✅ `npm run db:migrate` **aplicada en la base de desarrollo** (2026-09-03; 17/17 tablas verificadas). Re-generar dice "No schema changes".
-3. ✅ `npm run db:sync-rbac` (rol `tecnico_ti` + grants `ti:*`) — aplicado en la base de desarrollo 2026-09-03 y verificado.
-4. ✅ `npm run test:pglite` (TI 52/52 + module-toggles 27/27). Suite completa: solo fallan `prevention-pdtp`/`prevention-cgrd` (otra tarea sin commitear, ver arriba).
-5. ✅ `npm run test:e2e` con `e2e/ti-modulo.spec.ts` — 5/5 passed.
-6. ⏳ `npm run audit` (QA exploratoria) y leer `qa/reports/latest.md`.
-7. ⏳ Verificación manual en navegador: buscar activo en inventario → ficha completa (tabs, fotos entrega/devolución comparadas, acta PDF, historial, mantenciones, tickets).
-8. ⏳ Permisos por rol: tecnico_ti completo, jefatura solo su faena, representante solo crea tickets, sin permiso → `/forbidden` (cubierto en e2e).
+1. ✅ `npm run typecheck` y `npm run lint` — en verde al 2026-11-08.
+2. ✅ Migraciones 0245 + **0382** (`it_asset_types_name_lower_unique`); `npm run db:verify-migrations` en verde y checksums actualizados.
+3. ✅ `npm run db:sync-rbac` (rol `tecnico_ti` + 10 grants `ti:*`, incluido `ti:reverse_retirement` solo para quien corresponde).
+4. ✅ Pruebas PGlite de TI en verde (servicios, acciones y reportes).
+5. ✅ Recorrido autenticado en navegador de las 10 rutas `/ti`: 0 errores de consola, 0 overflow horizontal en 1440/1024/390 y 0 violaciones axe `serious`/`critical`.
+6. ⏳ `npm run test:e2e` completo (el spec de TI existe; no se ejecutó la suite completa en esta pasada).
+7. ⏳ Permisos por rol en un entorno con usuarios reales: `tecnico_ti` completo, jefatura de faena acotada, representante solo crea tickets, sin permiso → `/forbidden`.
 
 ## Riesgos / notas
 

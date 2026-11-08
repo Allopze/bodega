@@ -138,7 +138,7 @@ export default async function AccesosPage({
       <PageHeader
         title="Accesos"
         description="Qué sistemas tiene cada trabajador y cómo entra y sale la gente de TI. Nunca se almacenan contraseñas."
-        breadcrumb={<Breadcrumbs items={[{ label: "TI", href: "/ti" }, { label: "Accesos" }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "TI", href: "/ti" }, { label: "Accesos" }]} />}
         actions={header}
       />
 

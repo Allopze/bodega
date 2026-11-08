@@ -51,10 +51,14 @@ export default async function AssetDetailPage({
   // solo los usan los formularios: quien únicamente consulta no los carga.
   const needsCatalogs = canManage || canManageMaintenance
 
-  // Todo en paralelo: el alcance de faena se resuelve dentro de `getAssetById`
-  // y, si el activo no es visible, `notFound()` descarta el resto sin mostrarlo.
-  const [asset, history, assignments, maintenances, tickets, retirements, documents, assetTypes, suppliersList, worksitesList, workersList, retirementUsers] = await Promise.all([
-    getAssetById(id, scope),
+  // El alcance se resuelve antes de cualquier otra consulta: si el activo no
+  // es visible, no tiene sentido cargar historial, custodia ni mantenciones de
+  // un recurso ajeno. Antes las 11 consultas salían en paralelo y `notFound()`
+  // llegaba recién después, así que la seguridad dependía del orden de dos líneas.
+  const asset = await getAssetById(id, scope)
+  if (!asset) notFound()
+
+  const [history, assignments, maintenances, tickets, retirements, documents, assetTypes, suppliersList, worksitesList, workersList, retirementUsers] = await Promise.all([
     getAssetHistory(id),
     listAssignments({ assetId: id }),
     listMaintenances({ assetId: id }),
@@ -84,7 +88,6 @@ export default async function AssetDetailPage({
       ? db.select({ id: users.id, name: users.name }).from(users).where(eq(users.isActive, true)).orderBy(asc(users.name))
       : Promise.resolve([]),
   ])
-  if (!asset) notFound()
 
   // Fotos y accesorios por asignación para la comparación entrega/devolución,
   // en lote (2 queries totales en vez de 2 por asignación).
@@ -109,6 +112,7 @@ export default async function AssetDetailPage({
       <PageHeader
         title={asset.code}
         breadcrumb={<Breadcrumbs items={[
+          { label: "Inicio", href: "/dashboard" },
           { label: "TI", href: "/ti" },
           { label: "Inventario", href: "/ti/activos" },
           { label: asset.code },

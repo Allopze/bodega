@@ -267,7 +267,7 @@ export function LicensePanel({ license, canManage, workers, worksites, assets, s
             </SheetHeader>
             <SheetBody className="space-y-4">
               {assignState.message && !assignState.ok && !assignState.fieldErrors && (
-                <p className="text-sm text-[var(--color-danger)]" role="alert">{assignState.message}</p>
+                <p className="text-sm text-[var(--color-danger-ink)]" role="alert">{assignState.message}</p>
               )}
               <FieldGroup>
                 <SegmentedControl

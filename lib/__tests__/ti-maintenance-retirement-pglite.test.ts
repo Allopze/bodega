@@ -463,7 +463,11 @@ describe("módulo TI — mantenciones, bajas, proveedores y garantías", () => {
         assetId, date: "2026-09-01", reason: "venta",
         responsibleUserId: actor.userId, authorizedByUserId: AUTHORIZER,
       }, actor)
-      await softDeleteAsset(assetId, actor)
+      // El servicio ya no permite eliminar un activo con baja vigente, así que
+      // el estado legado (borrado sin revertir) se fuerza directo en la tabla.
+      await testDb.update(schema.itAssets)
+        .set({ deletedAt: new Date().toISOString() })
+        .where(eq(schema.itAssets.id, assetId))
 
       await expect(reverseRetirement(retirementId, "Intento sobre un activo ya eliminado", actor))
         .rejects.toThrow(/eliminado del inventario/)
@@ -569,7 +573,7 @@ describe("módulo TI — mantenciones, bajas, proveedores y garantías", () => {
 
   describe("proveedores TI y garantías", () => {
     it("vincula un proveedor con categoría y agrega conteos", async () => {
-      await createSupplierLink({ supplierId: "sup-ti-repuestos", category: "reparacion" }, actor)
+      await createSupplierLink({ supplierId: "sup-ti-repuestos", category: "reparacion" }, actor, "all")
       const links = await listSupplierLinks()
       const link = links.find((l) => l.supplierId === "sup-ti-repuestos")
       expect(link?.supplierName).toBe("Repuestos TI Ltda.")
@@ -577,13 +581,13 @@ describe("módulo TI — mantenciones, bajas, proveedores y garantías", () => {
     })
 
     it("impide duplicar el vínculo (proveedor, categoría)", async () => {
-      await expect(createSupplierLink({ supplierId: "sup-ti-repuestos", category: "reparacion" }, actor))
+      await expect(createSupplierLink({ supplierId: "sup-ti-repuestos", category: "reparacion" }, actor, "all"))
         .rejects.toThrow()
     })
 
     it("elimina un vínculo", async () => {
-      const id = await createSupplierLink({ supplierId: "sup-ti-repuestos", category: "licencias" }, actor)
-      await deleteSupplierLink(id, actor)
+      const id = await createSupplierLink({ supplierId: "sup-ti-repuestos", category: "licencias" }, actor, "all")
+      await deleteSupplierLink(id, actor, "all")
       expect((await listSupplierLinks()).some((l) => l.id === id)).toBe(false)
     })
 
@@ -602,6 +606,85 @@ describe("módulo TI — mantenciones, bajas, proveedores y garantías", () => {
 
       const vencidas = await listAssetsByWarranty({ window: "expired" })
       expect(vencidas.map((a) => a.id)).toContain(vencida)
+    })
+
+    it("solo un alcance global puede escribir el catálogo de proveedores", async () => {
+      await expect(
+        createSupplierLink({ supplierId: "sup-ti-repuestos", category: "reparacion" }, actor, ["ws-ti-norte"]),
+      ).rejects.toThrow(/alcance global/i)
+    })
+
+    it("acota a las faenas del usuario los conteos del proveedor", async () => {
+      const now = new Date().toISOString()
+      await testDb.insert(schema.suppliers).values({
+        id: "sup-ti-scope", name: "Proveedor Alcance", rut: "99999999-9", isActive: true, createdAt: now, updatedAt: now,
+      })
+      await createSupplierLink({ supplierId: "sup-ti-scope", category: "reparacion" }, actor, "all")
+
+      const norte = await makeAsset("TI-SC-01", "ws-ti-norte")
+      const sur = await makeAsset("TI-SC-02", "ws-ti-sur")
+      await testDb.update(schema.itAssets).set({ supplierId: "sup-ti-scope" }).where(eq(schema.itAssets.id, norte))
+      await testDb.update(schema.itAssets).set({ supplierId: "sup-ti-scope" }).where(eq(schema.itAssets.id, sur))
+
+      const acotado = await listSupplierLinks({
+        assetScope: eq(schema.itAssets.worksiteId, "ws-ti-norte"),
+      })
+      expect(acotado.find((l) => l.supplierId === "sup-ti-scope")?.assetCount).toBe(1)
+
+      const global = await listSupplierLinks()
+      expect(global.find((l) => l.supplierId === "sup-ti-scope")?.assetCount).toBe(2)
+    })
+  })
+
+  describe("la reparación mueve el estado del activo", () => {
+    it("deja en 'en_reparacion' un activo disponible al registrar una reparación", async () => {
+      const assetId = await makeAsset("TI-REP-STATE-01")
+      await createMaintenance({
+        assetId, type: "reparacion", date: "2026-09-02", workDone: "Cambio de pantalla",
+      }, actor)
+
+      const [asset] = await testDb.select().from(schema.itAssets).where(eq(schema.itAssets.id, assetId))
+      expect(asset?.status).toBe("en_reparacion")
+    })
+
+    it("no toca el estado de un activo en custodia: para eso está la salida a reparación", async () => {
+      const assetId = await makeAsset("TI-REP-STATE-02")
+      await createAssignment({
+        assetId, workerId: "wk-ti-juan", worksiteId: "ws-ti-norte", kind: "delivery",
+        deliveredAt: "2026-09-01T10:00", physicalState: "bueno", accessoryNames: [], photoIds: [],
+      }, actor)
+      await createMaintenance({
+        assetId, type: "reparacion", date: "2026-09-02", workDone: "Diagnóstico",
+      }, actor)
+
+      const [asset] = await testDb.select().from(schema.itAssets).where(eq(schema.itAssets.id, assetId))
+      expect(asset?.status).toBe("asignado")
+    })
+  })
+
+  describe("protecciones del activo retirado", () => {
+    it("rechaza registrar una mantención sobre un activo dado de baja", async () => {
+      const assetId = await makeAsset("TI-RET-MANT-01")
+      await retireAsset({
+        assetId, date: "2026-09-01", reason: "reciclaje",
+        responsibleUserId: actor.userId, authorizedByUserId: AUTHORIZER,
+        destination: "Recicladora Norte",
+      }, actor)
+
+      await expect(createMaintenance({
+        assetId, type: "reparacion", date: "2026-09-02", workDone: "Cambio de pantalla",
+      }, actor)).rejects.toThrow(/dado de baja/i)
+    })
+
+    it("no permite eliminar un activo con una baja vigente", async () => {
+      const assetId = await makeAsset("TI-RET-DEL-01")
+      await retireAsset({
+        assetId, date: "2026-09-01", reason: "venta",
+        responsibleUserId: actor.userId, authorizedByUserId: AUTHORIZER,
+        destination: "Venta de equipos usados",
+      }, actor)
+
+      await expect(softDeleteAsset(assetId, actor)).rejects.toThrow(/baja vigente/i)
     })
   })
 })

@@ -10,6 +10,7 @@ import { nanoid } from "@/lib/id"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { appendAssetHistory } from "./history"
 import { assertTiWorksiteAccess, type TiWorksiteScope } from "./scope"
+import { repairStuckSql } from "./repair-age"
 import { MANUAL_ASSET_STATUSES } from "@/lib/validation/ti"
 import { todayInChile, escapeLikePattern } from "@/lib/utils"
 
@@ -247,6 +248,17 @@ export async function softDeleteAsset(
       .limit(1)
     if (openAssignment) throw new Error(`El activo tiene la asignación ${openAssignment.code} abierta: devuélvelo antes de eliminarlo`)
 
+    // Una baja vigente se revierte desde Bajas, con su propio permiso. Si el
+    // activo desaparece del inventario, `retirementReverseBlocker` ya no puede
+    // encontrar el registro y la baja queda imposible de deshacer: no existe
+    // ninguna acción de restauración en el módulo.
+    const [activeRetirement] = await tx.select({ id: itAssetRetirements.id }).from(itAssetRetirements)
+      .where(and(eq(itAssetRetirements.assetId, assetId), isNull(itAssetRetirements.reversedAt)))
+      .limit(1)
+    if (activeRetirement) {
+      throw new Error("El activo tiene una baja vigente: revierte la baja antes de eliminarlo")
+    }
+
     await tx.update(itAssets).set({ deletedAt: new Date().toISOString(), updatedAt: new Date().toISOString() })
       .where(eq(itAssets.id, assetId))
 
@@ -363,6 +375,8 @@ export async function changeAssetStatus(
   })
 }
 
+export type AssetOrder = "codigo" | "codigo_desc" | "activo" | "faena" | "garantia" | "reciente"
+
 export interface AssetListFilters {
   typeId?: string
   status?: string
@@ -378,12 +392,18 @@ export interface AssetListFilters {
    * no había forma de responderla desde el inventario.
    */
   minAgeYears?: number
+  /** Solo equipos que llevan más de `REPAIR_STUCK_DAYS` en reparación. */
+  repairStuck?: boolean
   search?: string
   scope?: SQL | undefined
   includeRetired?: boolean
+  order?: AssetOrder
+  limit?: number
+  offset?: number
 }
 
-export async function listAssets(filters: AssetListFilters) {
+/** Predicado compartido por `listAssets` y `countAssets`. */
+function buildAssetConditions(filters: AssetListFilters): SQL[] {
   const conditions: SQL[] = [isNull(itAssets.deletedAt)]
   if (!filters.includeRetired) {
     conditions.push(notInArray(itAssets.status, [...IT_RETIRED_STATUSES]))
@@ -394,6 +414,9 @@ export async function listAssets(filters: AssetListFilters) {
   if (filters.worksiteId) conditions.push(eq(itAssets.worksiteId, filters.worksiteId))
   if (filters.supplierId) conditions.push(eq(itAssets.supplierId, filters.supplierId))
   if (filters.scope) conditions.push(filters.scope)
+  if (filters.repairStuck) {
+    conditions.push(sql`${itAssets.status} = 'en_reparacion' AND ${repairStuckSql()}`)
+  }
 
   const today = todayInChile()
   if (filters.warrantyWindow === "active") conditions.push(sql`${itAssets.warrantyEndDate} IS NOT NULL AND ${itAssets.warrantyEndDate} >= ${today}`)
@@ -402,14 +425,52 @@ export async function listAssets(filters: AssetListFilters) {
   if (filters.warrantyWindow === "expiring_90") conditions.push(sql`${itAssets.warrantyEndDate} IS NOT NULL AND ${itAssets.warrantyEndDate} >= ${today} AND ${itAssets.warrantyEndDate} <= (${today}::date + 90)::text`)
   if (filters.warrantyWindow === "expired") conditions.push(sql`${itAssets.warrantyEndDate} IS NOT NULL AND ${itAssets.warrantyEndDate} < ${today}`)
   if (filters.warrantyWindow === "none") conditions.push(sql`${itAssets.warrantyEndDate} IS NULL`)
-  if (filters.maxAgeYears) conditions.push(sql`${itAssets.purchaseDate} IS NOT NULL AND ${itAssets.purchaseDate} >= (${today}::date - ${filters.maxAgeYears} * interval '1 year')::text`)
-  if (filters.minAgeYears) conditions.push(sql`${itAssets.purchaseDate} IS NOT NULL AND ${itAssets.purchaseDate} <= (${today}::date - ${filters.minAgeYears} * interval '1 year')::text`)
+  if (filters.maxAgeYears) conditions.push(sql`${itAssets.purchaseDate} IS NOT NULL AND ${itAssets.purchaseDate}::date >= (${today}::date - make_interval(years => ${filters.maxAgeYears}::int))`)
+  if (filters.minAgeYears) conditions.push(sql`${itAssets.purchaseDate} IS NOT NULL AND ${itAssets.purchaseDate}::date <= (${today}::date - make_interval(years => ${filters.minAgeYears}::int))`)
   if (filters.search) {
     const like = `%${escapeLikePattern(filters.search.trim())}%`
     conditions.push(sql`(${itAssets.code} ILIKE ${like} OR ${itAssets.serialNumber} ILIKE ${like} OR ${itAssets.brand} ILIKE ${like} OR ${itAssets.model} ILIKE ${like})`)
   }
+  return conditions
+}
 
-  return db
+function assetOrderBy(order: AssetOrder | undefined) {
+  switch (order) {
+    case "codigo_desc": return [desc(itAssets.code)]
+    case "activo": return [asc(sql`lower(concat(coalesce(${itAssets.brand}, ''), ' ', coalesce(${itAssets.model}, '')))`), asc(itAssets.code)]
+    case "faena": return [asc(worksites.name), asc(itAssets.code)]
+    case "garantia": return [asc(itAssets.warrantyEndDate), asc(itAssets.code)]
+    case "reciente": return [desc(itAssets.createdAt), desc(itAssets.id)]
+    default: return [asc(itAssets.code)]
+  }
+}
+
+export async function listAssets(filters: AssetListFilters) {
+  const conditions = buildAssetConditions(filters)
+
+  // Los tres agregados salen de dos subconsultas agrupadas (una por tabla), no
+  // de tres correlacionadas por fila: con 2.000 activos y 30.000 mantenciones,
+  // el plan anterior ejecutaba 6.000 subconsultas en un solo statement.
+  const maintenanceAgg = db
+    .select({
+      assetId: itMaintenances.assetId,
+      total: sql<number>`count(*)::int`.as("maintenance_count"),
+      cost: sql<number>`coalesce(sum(${itMaintenances.cost}), 0)::float8`.as("maintenance_cost"),
+    })
+    .from(itMaintenances)
+    .where(isNull(itMaintenances.voidedAt))
+    .groupBy(itMaintenances.assetId)
+    .as("maintenance_agg")
+  const ticketAgg = db
+    .select({
+      assetId: itTickets.assetId,
+      total: sql<number>`count(*)::int`.as("ticket_count"),
+    })
+    .from(itTickets)
+    .groupBy(itTickets.assetId)
+    .as("ticket_agg")
+
+  const base = db
     .select({
       id: itAssets.id,
       code: itAssets.code,
@@ -429,16 +490,28 @@ export async function listAssets(filters: AssetListFilters) {
       typeName: itAssetTypes.name,
       workerName: sql<string | null>`nullif(trim(concat(${workers.firstName}, ' ', ${workers.lastName})), '')`,
       worksiteName: worksites.name,
-      maintenanceCount: sql<number>`(SELECT count(*)::int FROM ${itMaintenances} WHERE ${itMaintenances.assetId} = ${itAssets.id} AND ${itMaintenances.voidedAt} IS NULL)`,
-      maintenanceCost: sql<number>`(SELECT coalesce(sum(${itMaintenances.cost}), 0)::float8 FROM ${itMaintenances} WHERE ${itMaintenances.assetId} = ${itAssets.id} AND ${itMaintenances.voidedAt} IS NULL)`,
-      ticketCount: sql<number>`(SELECT count(*)::int FROM ${itTickets} WHERE ${itTickets.assetId} = ${itAssets.id})`,
+      maintenanceCount: sql<number>`coalesce(${maintenanceAgg.total}, 0)`,
+      maintenanceCost: sql<number>`coalesce(${maintenanceAgg.cost}, 0)`,
+      ticketCount: sql<number>`coalesce(${ticketAgg.total}, 0)`,
     })
     .from(itAssets)
     .innerJoin(itAssetTypes, eq(itAssets.assetTypeId, itAssetTypes.id))
     .leftJoin(workers, eq(itAssets.workerId, workers.id))
     .leftJoin(worksites, eq(itAssets.worksiteId, worksites.id))
+    .leftJoin(maintenanceAgg, eq(maintenanceAgg.assetId, itAssets.id))
+    .leftJoin(ticketAgg, eq(ticketAgg.assetId, itAssets.id))
     .where(and(...conditions))
-    .orderBy(asc(itAssets.code))
+    .orderBy(...assetOrderBy(filters.order))
+
+  return filters.limit ? base.limit(filters.limit).offset(filters.offset ?? 0) : base
+}
+
+export async function countAssets(filters: AssetListFilters): Promise<number> {
+  const [row] = await db
+    .select({ total: sql<number>`count(*)::int` })
+    .from(itAssets)
+    .where(and(...buildAssetConditions(filters)))
+  return row?.total ?? 0
 }
 
 /**

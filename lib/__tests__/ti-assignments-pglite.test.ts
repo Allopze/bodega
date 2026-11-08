@@ -284,9 +284,29 @@ describe("módulo TI — asignaciones (custodia)", () => {
       createdAt: new Date(Date.now() - 2 * 3_600_000).toISOString(),
     })
 
-    expect(await cleanupOrphanPhotos(60)).toBe(0)
+    // Las fotos de devolución nacen con `pendingAssignmentId` y solo lo pierden
+    // al confirmar. Antes el aseo exigía `pendingAssignmentId IS NULL`, así que
+    // una carga abandonada quedaba para siempre; ahora entra con el umbral.
+    await cleanupOrphanPhotos(60)
     expect((await testDb.select({ id: schema.itAssignmentPhotos.id }).from(schema.itAssignmentPhotos)
-      .where(eq(schema.itAssignmentPhotos.id, "ph-devol-pendiente-antigua")))).toHaveLength(1)
+      .where(eq(schema.itAssignmentPhotos.id, "ph-devol-pendiente-antigua")))).toHaveLength(0)
+
+    // Una carga reciente (dentro del umbral por defecto de 24 h) se conserva:
+    // el formulario puede seguir abierto.
+    await testDb.insert(schema.itAssignmentPhotos).values({
+      id: "ph-devol-pendiente-reciente",
+      assignmentId: null,
+      pendingAssignmentId: assignmentId,
+      stage: "return",
+      fileName: "devolucion-reciente.jpg",
+      filePath: "storage/ti/devolucion-reciente.jpg",
+      fileSize: 1024,
+      mimeType: "image/jpeg",
+      uploadedByUserId: actor.userId,
+    })
+    expect(await cleanupOrphanPhotos()).toBe(0)
+    expect((await testDb.select({ id: schema.itAssignmentPhotos.id }).from(schema.itAssignmentPhotos)
+      .where(eq(schema.itAssignmentPhotos.id, "ph-devol-pendiente-reciente")))).toHaveLength(1)
   })
 
   it("no permite preparar evidencia de devolución fuera del scope de la faena", async () => {
@@ -787,6 +807,78 @@ describe("módulo TI — asignaciones (custodia)", () => {
       const acta = await getAssignmentById(nuevo)
       expect(acta?.acceptanceStatus).toBe("pendiente")
       expect(acta?.acceptedByUserId).toBeNull()
+    })
+  })
+
+  describe("integridad de fechas y custodio", () => {
+    it("rechaza una devolución anterior a la entrega", async () => {
+      const assetId = await makeAsset("TI-A-FECHA-01")
+      const assignmentId = await createAssignment({
+        assetId, workerId: "wk-ti-juan", worksiteId: "ws-ti-norte", kind: "delivery",
+        deliveredAt: "2026-09-10T10:00", physicalState: "bueno", accessoryNames: [], photoIds: [],
+      }, actor)
+
+      await expect(returnAssignment({
+        assignmentId,
+        returnedAt: "2026-09-09T10:00",
+        returnPhysicalState: "bueno",
+        returnedAccessoryNames: [],
+        photoIds: [],
+        nextStatus: "disponible",
+      }, actor)).rejects.toThrow(/anterior a la entrega/i)
+    })
+
+    it("rechaza una transferencia cuyo cierre es anterior a la entrega original", async () => {
+      const assetId = await makeAsset("TI-A-FECHA-02")
+      const assignmentId = await createAssignment({
+        assetId, workerId: "wk-ti-juan", worksiteId: "ws-ti-norte", kind: "delivery",
+        deliveredAt: "2026-09-10T10:00", physicalState: "bueno", accessoryNames: [], photoIds: [],
+      }, actor)
+
+      await expect(transferAssignment({
+        assignmentId,
+        returnedAt: "2026-09-09T10:00",
+        returnPhysicalState: "bueno",
+        newWorkerId: "wk-ti-maria",
+        newWorksiteId: "ws-ti-sur",
+        newDeliveredAt: "2026-09-11T10:00",
+        newPhysicalState: "bueno",
+        newAccessoryNames: [],
+        photoIds: [],
+      }, actor)).rejects.toThrow(/anterior a la entrega original/i)
+    })
+
+    it("rechaza una nueva entrega anterior al cierre de la custodia", async () => {
+      const assetId = await makeAsset("TI-A-FECHA-03")
+      const assignmentId = await createAssignment({
+        assetId, workerId: "wk-ti-juan", worksiteId: "ws-ti-norte", kind: "delivery",
+        deliveredAt: "2026-09-10T10:00", physicalState: "bueno", accessoryNames: [], photoIds: [],
+      }, actor)
+
+      await expect(transferAssignment({
+        assignmentId,
+        returnedAt: "2026-09-12T10:00",
+        returnPhysicalState: "bueno",
+        newWorkerId: "wk-ti-maria",
+        newWorksiteId: "ws-ti-sur",
+        newDeliveredAt: "2026-09-11T10:00",
+        newPhysicalState: "bueno",
+        newAccessoryNames: [],
+        photoIds: [],
+      }, actor)).rejects.toThrow(/anterior a la devolución/i)
+    })
+
+    it("rechaza entregar equipos a un trabajador inactivo", async () => {
+      const assetId = await makeAsset("TI-A-INACTIVO-01")
+      await testDb.update(schema.workers).set({ isActive: false }).where(eq(schema.workers.id, "wk-ti-juan"))
+      try {
+        await expect(createAssignment({
+          assetId, workerId: "wk-ti-juan", worksiteId: "ws-ti-norte", kind: "delivery",
+          deliveredAt: "2026-09-10T10:00", physicalState: "bueno", accessoryNames: [], photoIds: [],
+        }, actor)).rejects.toThrow(/inactivo/i)
+      } finally {
+        await testDb.update(schema.workers).set({ isActive: true }).where(eq(schema.workers.id, "wk-ti-juan"))
+      }
     })
   })
 })

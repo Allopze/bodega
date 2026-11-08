@@ -70,7 +70,7 @@ export default async function BajasPage({
       <PageHeader
         title="Bajas"
         description="Proceso formal de baja: el activo conserva su historial completo para siempre."
-        breadcrumb={<Breadcrumbs items={[{ label: "TI", href: "/ti" }, { label: "Bajas" }]} />}
+        breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "TI", href: "/ti" }, { label: "Bajas" }]} />}
         actions={canManage ? (
           <RetirementCta assets={retirementAssets} users={techUsers} />
         ) : undefined}
@@ -78,7 +78,7 @@ export default async function BajasPage({
 
       <RetirementFilters current={{ motivo, faena }} worksites={worksitesList} />
 
-      <RetirementTable rows={rows} canManage={canReverse} />
+      <RetirementTable rows={rows} canManage={canReverse} hasFilters={Boolean(motivo || faena)} />
     </PageContainer>
   )
 }

@@ -7,6 +7,7 @@ import {
   itAssetAssignments, worksites, itSystemAccess, itWorkerChecklists, itChecklistTasks, workers,
 } from "@/db/schema"
 import { todayInChile } from "@/lib/utils"
+import { repairStuckSql } from "./repair-age"
 import { licenseScopeCondition } from "./licenses"
 import type { TiWorksiteScope } from "./scope"
 
@@ -80,7 +81,7 @@ export async function getTiDashboardCounts(
     // Las licencias no tienen clave de faena propia: se acotan por las faenas
     // de sus asignaciones vigentes, igual que `listLicenses`.
     db.select({
-      renewing14: sql<number>`count(*) filter (where ${itLicenses.renewalDate} IS NOT NULL AND ${itLicenses.renewalDate} >= ${today} AND ${itLicenses.renewalDate} <= (${today}::date + 14)::text AND ${itLicenses.isActive})::int`,
+      renewing14: sql<number>`count(*) filter (where ${itLicenses.renewalDate} IS NOT NULL AND ${itLicenses.renewalDate} <= (${today}::date + 14)::text AND ${itLicenses.isActive})::int`,
     }).from(itLicenses).where(licenseScopeCondition(worksiteIds)),
 
     db.select({
@@ -88,7 +89,10 @@ export async function getTiDashboardCounts(
     }).from(itMaintenances)
       .innerJoin(itAssets, eq(itMaintenances.assetId, itAssets.id))
       .where(and(
-        sql`${itMaintenances.date} >= (${today}::date - interval '1 year')::text`,
+        // Comparar como fecha, no como texto: `…::text` agrega «00:00:00» y
+        // dejaba fuera el día exacto del borde (una mantención del 26/06 no
+        // entraba en «último año» el 26/06 del año siguiente).
+        sql`${itMaintenances.date}::date >= (${today}::date - interval '1 year')`,
         isNull(itAssets.deletedAt),
         isNull(itMaintenances.voidedAt),
         assetScope ?? sql`true`,
@@ -133,7 +137,7 @@ export async function getAssetsByType(scope?: SQL) {
     .innerJoin(itAssetTypes, eq(itAssets.assetTypeId, itAssetTypes.id))
     .where(where)
     .groupBy(itAssetTypes.name)
-    .orderBy(sql`count(*) DESC`)
+    .orderBy(sql`count(*) DESC, ${itAssetTypes.name} ASC`)
 }
 
 export async function getAssetsByWorksite(scope?: SQL) {
@@ -147,7 +151,7 @@ export async function getAssetsByWorksite(scope?: SQL) {
     .leftJoin(worksites, eq(itAssets.worksiteId, worksites.id))
     .where(where)
     .groupBy(worksites.name)
-    .orderBy(sql`count(*) DESC`)
+    .orderBy(sql`count(*) DESC, ${worksites.name} ASC`)
 }
 
 /** Incluye a propósito los estados terminales: son parte de esta dimensión. */
@@ -174,7 +178,7 @@ export async function getMaintenanceCostByMonth(assetScope?: SQL) {
     .from(itMaintenances)
     .innerJoin(itAssets, eq(itMaintenances.assetId, itAssets.id))
     .where(and(
-      sql`${itMaintenances.date} >= (${todayInChile()}::date - interval '12 months')::text`,
+      sql`${itMaintenances.date}::date >= (${todayInChile()}::date - interval '12 months')`,
       isNull(itAssets.deletedAt),
       isNull(itMaintenances.voidedAt),
       assetScope ?? sql`true`,
@@ -218,20 +222,22 @@ export async function getTicketsByCategory(scope?: SQL) {
     .from(itTickets)
     .where(scope ?? undefined)
     .groupBy(itTickets.category)
-    .orderBy(sql`count(*) DESC`)
+    .orderBy(sql`count(*) DESC, ${itTickets.category} ASC`)
 }
 
-/** Tickets por mes (últimos 12 meses). */
+/** Tickets por mes (últimos 12 meses), agrupados por mes civil de Chile. */
 export async function getTicketsByMonth(scope?: SQL) {
+  const month = sql`date_trunc('month', ${itTickets.createdAt} AT TIME ZONE 'America/Santiago')`
+  const floor = sql`(date_trunc('month', now() AT TIME ZONE 'America/Santiago') - interval '11 months') AT TIME ZONE 'America/Santiago'`
   return db
     .select({
-      month: sql<string>`to_char(date_trunc('month', ${itTickets.createdAt}), 'YYYY-MM')`,
+      month: sql<string>`to_char(${month}, 'YYYY-MM')`,
       total: sql<number>`count(*)::int`,
     })
     .from(itTickets)
-    .where(scope ?? undefined)
-    .groupBy(sql`date_trunc('month', ${itTickets.createdAt})`)
-    .orderBy(sql`date_trunc('month', ${itTickets.createdAt})`)
+    .where(and(scope ?? sql`true`, sql`${itTickets.createdAt} >= ${floor}`))
+    .groupBy(month)
+    .orderBy(month)
 }
 
 
@@ -300,8 +306,11 @@ export async function getTiAttentionItems(
     unsigned, overdueLoans, overdueTickets, dueSoonTickets, warranties,
     licenses, inactiveAccess, offboardings, longRepairs,
   ] = await Promise.all([
+    // Misma regla que el filtro `?acuse=pendiente` y el contador de la píldora:
+    // toda acta pendiente cuenta, incluso devuelta (el acuse aún se registra).
+    // Con `returnedAt IS NULL` el tablero decía 2 y la lista mostraba 5.
     assignmentBase().where(and(
-      isNull(itAssetAssignments.returnedAt), isNull(itAssets.deletedAt), assignmentScope,
+      isNull(itAssets.deletedAt), assignmentScope,
       eq(itAssetAssignments.acceptanceStatus, "pendiente"),
     )).groupBy(worksites.name),
 
@@ -338,7 +347,6 @@ export async function getTiAttentionItems(
       .where(and(
         licenseScopeCondition(scope),
         eq(itLicenses.isActive, true),
-        sql`${itLicenses.renewalDate} >= ${today}`,
         sql`${itLicenses.renewalDate} <= (${today}::date + 14)::text`,
       )),
 
@@ -368,11 +376,7 @@ export async function getTiAttentionItems(
       .where(and(
         liveAsset,
         eq(itAssets.status, "en_reparacion"),
-        sql`coalesce(
-          (SELECT max(h.created_at) FROM it_asset_history h
-            WHERE h.asset_id = ${itAssets.id} AND h.action IN ('status_changed', 'assigned', 'returned')),
-          ${itAssets.updatedAt}
-        ) < ${nowIso}::timestamptz - interval '14 days'`,
+        repairStuckSql(),
       )).groupBy(worksites.name),
   ])
 
@@ -382,10 +386,10 @@ export async function getTiAttentionItems(
     toItem({ key: "tickets-vencidos", label: "Tickets fuera de plazo", hint: "Ya pasó el plazo de atención", href: "/ti/tickets?vencimiento=vencido" }, overdueTickets),
     toItem({ key: "tickets-por-vencer", label: "Tickets que vencen en 24 horas", hint: "Atiéndelos antes de que se atrasen", href: "/ti/tickets?vencimiento=por_vencer" }, dueSoonTickets),
     toItem({ key: "garantias", label: "Garantías que vencen en 30 días", hint: "Reclama o cotiza reemplazo a tiempo", href: "/ti/garantias?ventana=expiring_30" }, warranties),
-    toItem({ key: "licencias", label: "Licencias por renovar en 14 días", hint: "Confirma la renovación con el responsable", href: "/ti/licencias?renovacion=proxima" }, licenses),
+    toItem({ key: "licencias", label: "Licencias por renovar o vencidas", hint: "Confirma la renovación con el responsable", href: "/ti/licencias?renovacion=proxima" }, licenses),
     toItem({ key: "accesos-inactivos", label: "Ex trabajadores con accesos activos", hint: "Revoca los accesos que siguen abiertos", href: "/ti/accesos?revision=inactivos" }, inactiveAccess),
     toItem({ key: "egresos", label: "Egresos con tareas pendientes", hint: "Completa la lista de egreso", href: "/ti/accesos?vista=ingreso-egreso" }, offboardings),
-    toItem({ key: "reparaciones", label: "Equipos en reparación hace más de 14 días", hint: "Pregunta al proveedor o da de baja", href: "/ti/activos?estado=en_reparacion" }, longRepairs),
+    toItem({ key: "reparaciones", label: "Equipos en reparación hace más de 14 días", hint: "Pregunta al proveedor o da de baja", href: "/ti/activos?estado=en_reparacion&reparacion=demorada" }, longRepairs),
   ]
   return items.filter((item) => item.total > 0)
 }
@@ -404,5 +408,5 @@ export async function getAssetsByWorksiteGroup(scope?: SQL) {
     .leftJoin(worksites, eq(itAssets.worksiteId, worksites.id))
     .where(activeParkWhere(scope))
     .groupBy(worksites.name)
-    .orderBy(sql`count(*) DESC`)
+    .orderBy(sql`count(*) DESC, ${worksites.name} ASC`)
 }

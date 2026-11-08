@@ -21,6 +21,7 @@ export function AssetTickets({ rows }: { rows: TicketRow[] }) {
       <EmptyState
         title="Sin tickets para este activo"
         description="Cuando un trabajador reporte un problema con este equipo, el ticket aparecerá acá."
+        action={<Link href="/ti/tickets" className="text-sm font-semibold text-[var(--color-primary-ink)] hover:underline">Ir a la mesa de ayuda</Link>}
       />
     )
   }
@@ -35,7 +36,7 @@ export function AssetTickets({ rows }: { rows: TicketRow[] }) {
         >
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <span className="font-mono text-xs font-semibold text-[var(--color-primary)]">{row.code}</span>
+              <span className="font-mono text-xs font-semibold text-[var(--color-primary-ink)]">{row.code}</span>
               <MetaBadge meta={{ label: `${IT_TICKET_STATUS_META[row.status]?.label ?? row.status}`, variant: IT_TICKET_STATUS_META[row.status]?.variant ?? "default" }} />
             </div>
             <MetaBadge meta={{ label: `${IT_TICKET_PRIORITY_META[row.priority]?.label ?? row.priority}`, variant: IT_TICKET_PRIORITY_META[row.priority]?.variant ?? "default" }} />

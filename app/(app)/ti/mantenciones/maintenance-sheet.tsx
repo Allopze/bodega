@@ -84,7 +84,7 @@ export function MaintenanceSheet({ trigger, assetId, suppliers, assets = [], edi
 
           <SheetBody className="space-y-4">
             {state.message && !state.ok && !state.fieldErrors && (
-              <p className="text-sm text-[var(--color-danger)]" role="alert">{state.message}</p>
+              <p className="text-sm text-[var(--color-danger-ink)]" role="alert">{state.message}</p>
             )}
 
             <FieldGroup>

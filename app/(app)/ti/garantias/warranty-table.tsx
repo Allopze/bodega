@@ -2,6 +2,7 @@
 
 import Link from "next/link"
 import { DataTable } from "@/components/ui/data-table"
+import { Button } from "@/components/ui/button"
 import { MetaBadge } from "@/components/states/state-badge"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { formatDate } from "@/lib/utils"
@@ -30,7 +31,7 @@ const COLUMNS = [
   { key: "worker", label: "Asignado a" },
 ]
 
-export function WarrantyTable({ rows }: { rows: Row[] }) {
+export function WarrantyTable({ rows, hasFilters = false }: { rows: Row[]; hasFilters?: boolean }) {
   return (
     <DataTable
       caption="Garantías de activos TI"
@@ -43,7 +44,7 @@ export function WarrantyTable({ rows }: { rows: Row[] }) {
         return (
           <TableRow key={row.id}>
             <TableCell className="w-28">
-              <Link href={`/ti/activos/${row.id}`} className="font-mono text-xs font-semibold text-[var(--color-primary)] hover:underline">
+              <Link href={`/ti/activos/${row.id}`} className="font-mono text-xs font-semibold text-[var(--color-primary-ink)] hover:underline">
                 {row.code}
               </Link>
             </TableCell>
@@ -67,7 +68,7 @@ export function WarrantyTable({ rows }: { rows: Row[] }) {
         return (
           <Link key={row.id} href={`/ti/activos/${row.id}`} className="flex items-center justify-between rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
             <div>
-              <div className="font-mono text-xs font-semibold text-[var(--color-primary)]">{row.code}</div>
+              <div className="font-mono text-xs font-semibold text-[var(--color-primary-ink)]">{row.code}</div>
               <div className="text-sm text-[var(--color-text)]">{[row.brand, row.model].filter(Boolean).join(" ") || "—"}</div>
               <div className="mt-0.5 text-xs text-[var(--color-text-muted)]">
                 {[row.worksiteName, row.warrantyEndDate ? `hasta ${formatDate(row.warrantyEndDate)}` : null].filter(Boolean).join(" · ") || "—"}
@@ -77,8 +78,13 @@ export function WarrantyTable({ rows }: { rows: Row[] }) {
           </Link>
         )
       }}
-      emptyTitle="Sin activos con garantía"
-      emptyDescription="Los activos con fecha de término de garantía aparecerán acá."
+      emptyTitle={hasFilters ? "Ninguna garantía coincide con los filtros" : "Sin activos con garantía"}
+      emptyDescription={hasFilters
+        ? "Prueba con otra banda de vigencia o quita la faena."
+        : "Los activos con fecha de término de garantía aparecerán acá."}
+      emptyAction={hasFilters
+        ? <Button asChild variant="secondary" size="sm"><Link href="/ti/garantias">Limpiar filtros</Link></Button>
+        : undefined}
       pageSize={25}
       viewKey="ti-garantias"
     />

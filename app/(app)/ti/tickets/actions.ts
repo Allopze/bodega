@@ -159,6 +159,20 @@ async function transitionTicketImpl(_prev: ActionState, formData: FormData): Pro
   }, "Revisa la transición")
   if (!parsed.ok) return parsed
 
+  // La ficha no envía `assigneeUserId` al cambiar de estado, pero un POST
+  // fabricado sí puede: si viene un técnico, debe gestionar tickets (la misma
+  // regla que `assignTicketAction`, que antes solo aplicaba al reasignar).
+  if (parsed.data.assigneeUserId && parsed.data.assigneeUserId !== IT_TICKET_UNASSIGN) {
+    const technicians = await getUserIdsWithPermission("ti:manage_tickets")
+    if (!technicians.includes(parsed.data.assigneeUserId)) {
+      return {
+        ok: false,
+        message: "Revisa la transición",
+        fieldErrors: { assigneeUserId: ["Esa persona no gestiona tickets de TI"] },
+      }
+    }
+  }
+
   try {
     const result = await transitionTicket({
       ...parsed.data,

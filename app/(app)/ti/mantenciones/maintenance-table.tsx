@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { formatDate, formatCLP } from "@/lib/utils"
-import { IT_MAINTENANCE_TYPE_META } from "@/lib/services/ti/constants"
+import { IT_MAINTENANCE_TYPE_META, IT_MAINTENANCE_TYPE_VARIANT } from "@/lib/services/ti/constants"
 import { MaintenanceSheet } from "./maintenance-sheet"
 import { VoidMaintenanceDialog } from "./void-maintenance-dialog"
 
@@ -107,10 +107,11 @@ function RowActions({ row, suppliers, stacked }: { row: Row; suppliers: { id: st
   )
 }
 
-export function MaintenanceTable({ rows, canManage = false, suppliers = [] }: {
+export function MaintenanceTable({ rows, canManage = false, suppliers = [], hasFilters = false }: {
   rows: Row[]
   canManage?: boolean
   suppliers?: { id: string; name: string }[]
+  hasFilters?: boolean
 }) {
   return (
     <DataTable
@@ -129,7 +130,7 @@ export function MaintenanceTable({ rows, canManage = false, suppliers = [] }: {
           <TableRow key={row.id} className={voided ? "bg-[var(--color-surface-2)]" : undefined}>
             <TableCell className={`w-28 ${muted}`}>{formatDate(row.date)}</TableCell>
             <TableCell>
-              <Link href={`/ti/activos/${row.assetId}`} className={`font-mono text-xs font-semibold hover:underline ${voided ? "text-[var(--color-text-subtle)] line-through" : "text-[var(--color-primary)]"}`}>
+              <Link href={`/ti/activos/${row.assetId}`} className={`font-mono text-xs font-semibold hover:underline ${voided ? "text-[var(--color-text-subtle)] line-through" : "text-[var(--color-primary-ink)]"}`}>
                 {row.assetCode}
               </Link>
               <span className="ml-2 text-xs text-[var(--color-text-subtle)]">{[row.assetBrand, row.assetModel].filter(Boolean).join(" ")}</span>
@@ -138,7 +139,7 @@ export function MaintenanceTable({ rows, canManage = false, suppliers = [] }: {
               )}
             </TableCell>
             <TableCell className={`w-32 text-xs ${voided ? "text-[var(--color-text-subtle)]" : "text-[var(--color-text-muted)]"}`}>{row.worksiteName ?? "—"}</TableCell>
-            <TableCell className="w-28"><MetaBadge meta={{ label: typeLabel(row.type), variant: voided ? "default" : "warning" }} /></TableCell>
+            <TableCell className="w-28"><MetaBadge meta={{ label: typeLabel(row.type), variant: voided ? "default" : (IT_MAINTENANCE_TYPE_VARIANT[row.type] ?? "default") }} /></TableCell>
             <TableCell className={`max-w-[320px] ${muted}`}>
               <div className={`truncate ${voided ? "line-through" : ""}`}>{row.workDone}</div>
               {row.reportedIssue && (
@@ -192,8 +193,13 @@ export function MaintenanceTable({ rows, canManage = false, suppliers = [] }: {
           </div>
         )
       }}
-      emptyTitle="Sin mantenciones"
-      emptyDescription="Las mantenciones y reparaciones registradas aparecerán acá."
+      emptyTitle={hasFilters ? "Ninguna mantención coincide con los filtros" : "Sin mantenciones"}
+      emptyDescription={hasFilters
+        ? "Prueba con otro tipo, otra faena o un período más amplio."
+        : "Las mantenciones y reparaciones registradas aparecerán acá."}
+      emptyAction={hasFilters
+        ? <Button asChild variant="secondary" size="sm"><Link href="/ti/mantenciones">Limpiar filtros</Link></Button>
+        : undefined}
       pageSize={25}
       viewKey="ti-mantenciones"
       enableColumnToggle

@@ -31,6 +31,8 @@ interface TransferSheetProps {
     assetCode: string
     workerName: string
     worksiteName: string
+    /** Entrega original: el fin de la custodia no puede ser anterior. */
+    deliveredAt: string
   }
   /** `worksiteId` permite filtrar el custodio por la faena elegida (TIUX-48); sin él se lista todo. */
   workers: { id: string; name: string; lastName: string; worksiteId?: string }[]
@@ -102,12 +104,17 @@ export function TransferSheet({ trigger, open: openProp, onOpenChange, assignmen
 
           <SheetBody className="space-y-4">
             {state.message && !state.ok && !state.fieldErrors && (
-              <p className="text-sm text-[var(--color-danger)]" role="alert">{state.message}</p>
+              <p className="text-sm text-[var(--color-danger-ink)]" role="alert">{state.message}</p>
             )}
             <FieldGroup>
               <p className="text-eyebrow text-[var(--color-text-faint)]">Termina la custodia de {assignment.workerName}</p>
               <Field label="Fin de la custodia actual" required error={state.fieldErrors?.returnedAt?.[0]} helper="Fecha y hora en que el equipo deja de estar a cargo de quien lo tiene hoy.">
-                <DateTimePicker name="returnedAt" value={returnedAt} onChange={setReturnedAt} />
+                <DateTimePicker
+                  name="returnedAt"
+                  value={returnedAt}
+                  onChange={setReturnedAt}
+                  min={toLocalInputValue(new Date(assignment.deliveredAt))}
+                />
               </Field>
               <PhysicalStateChoice
                 name="returnPhysicalState"
@@ -147,7 +154,7 @@ export function TransferSheet({ trigger, open: openProp, onOpenChange, assignmen
               </div>
 
               <Field label="Inicio de la nueva custodia" required error={state.fieldErrors?.deliveredAt?.[0]} helper="Fecha y hora en que el nuevo custodio recibe el equipo.">
-                <DateTimePicker name="newDeliveredAt" value={newDeliveredAt} onChange={setNewDeliveredAt} />
+                <DateTimePicker name="newDeliveredAt" value={newDeliveredAt} onChange={setNewDeliveredAt} min={returnedAt} />
               </Field>
               <PhysicalStateChoice
                 name="newPhysicalState"

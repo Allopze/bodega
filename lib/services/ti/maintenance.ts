@@ -2,11 +2,11 @@ import { eq, and, isNull, desc, sql, type SQL } from "drizzle-orm"
 import { db } from "@/db"
 import { itMaintenances, itAssets, suppliers, users, worksites } from "@/db/schema"
 import { nanoid } from "@/lib/id"
-import { recordAudit } from "@/lib/audit"
+import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { appendAssetHistory } from "./history"
 import { assertTiWorksiteAccess, type TiWorksiteScope } from "./scope"
 import { escapeLikePattern, formatDate, formatCLP } from "@/lib/utils"
-import { IT_MAINTENANCE_TYPE_META } from "./constants"
+import { IT_MAINTENANCE_TYPE_META, isRetiredStatus } from "./constants"
 
 /** Etiqueta en español del tipo para el historial: nunca el enum crudo. */
 const typeLabel = (type: string) => (IT_MAINTENANCE_TYPE_META[type] ?? type).toLowerCase()
@@ -39,11 +39,17 @@ export async function createMaintenance(
 ): Promise<string> {
   const id = nanoid()
   await db.transaction(async (tx) => {
-    const [asset] = await tx.select({ id: itAssets.id, code: itAssets.code, worksiteId: itAssets.worksiteId })
+    const [asset] = await tx.select({ id: itAssets.id, code: itAssets.code, worksiteId: itAssets.worksiteId, status: itAssets.status })
       .from(itAssets)
       .where(and(eq(itAssets.id, input.assetId), isNull(itAssets.deletedAt))).for("update")
     if (!asset) throw new Error("Activo no encontrado")
     assertTiWorksiteAccess(worksiteIds, asset.worksiteId)
+    // La ficha esconde el botón, pero la baja puede ocurrir en otra pestaña con
+    // el formulario ya abierto. Una mantención sobre un activo vendido no
+    // aparece en el inventario para corregirla y suma en el gasto anual.
+    if (isRetiredStatus(asset.status)) {
+      throw new Error("El activo está dado de baja: no admite mantenciones")
+    }
 
     await tx.insert(itMaintenances).values({
       id,
@@ -60,6 +66,33 @@ export async function createMaintenance(
       cost: input.cost ?? 0,
       observations: textOrNull(input.observations),
     })
+
+    // Registrar una reparación es la señal de que el equipo salió de servicio.
+    // Solo se mueve si está disponible o en bodega: si está en custodia, el
+    // camino correcto es la salida a reparación (`kind: repair_exit`), que deja
+    // el acta y la trazabilidad del custodio.
+    if (input.type === "reparacion" && (asset.status === "disponible" || asset.status === "en_bodega")) {
+      await tx.update(itAssets).set({
+        status: "en_reparacion",
+        workerId: null,
+        updatedAt: new Date().toISOString(),
+      }).where(eq(itAssets.id, input.assetId))
+      await appendAssetHistory({
+        assetId: input.assetId,
+        action: "status_changed",
+        detail: `Estado: ${asset.status} → En reparación (mantención registrada).`,
+        changes: { from: asset.status, to: "en_reparacion", maintenanceId: id },
+        actorUserId: actor.userId,
+      }, tx)
+      await recordStatusChange({
+        entityType: "it_asset",
+        entityId: input.assetId,
+        fromStatus: asset.status,
+        toStatus: "en_reparacion",
+        changedBy: actor.userId,
+        reason: "Mantención de reparación registrada",
+      }, tx)
+    }
 
     await appendAssetHistory({
       assetId: input.assetId,
@@ -91,11 +124,14 @@ export async function updateMaintenance(
     if (existing.voidedAt) throw new Error("Esta mantención está anulada: no se puede editar")
     if (input.assetId !== existing.assetId) throw new Error("No se puede cambiar el activo de una mantención existente")
 
-    const [asset] = await tx.select({ worksiteId: itAssets.worksiteId })
+    const [asset] = await tx.select({ worksiteId: itAssets.worksiteId, status: itAssets.status })
       .from(itAssets)
       .where(and(eq(itAssets.id, existing.assetId), isNull(itAssets.deletedAt)))
     if (!asset) throw new Error("Activo no encontrado")
     assertTiWorksiteAccess(worksiteIds, asset.worksiteId)
+    if (isRetiredStatus(asset.status)) {
+      throw new Error("El activo está dado de baja: no admite mantenciones")
+    }
 
     await tx.update(itMaintenances).set({
       type: input.type,
@@ -239,7 +275,7 @@ export async function listMaintenances(filters: {
     .leftJoin(worksites, eq(itAssets.worksiteId, worksites.id))
     .leftJoin(suppliers, eq(itMaintenances.supplierId, suppliers.id))
     .where(conditions.length ? and(...conditions) : undefined)
-    .orderBy(desc(itMaintenances.date))
+    .orderBy(desc(itMaintenances.date), desc(itMaintenances.id))
 }
 
 /** Resumen de costo por activo: identifica equipos que conviene reemplazar. Excluye anuladas. */

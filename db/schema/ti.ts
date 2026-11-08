@@ -16,6 +16,10 @@ export const itAssetTypes = pgTable("it_asset_types", {
 }, (table) => [
   check("it_asset_types_category_valid", sql`${table.category} IN ('computacion', 'periferico', 'red', 'telefonia', 'movilidad', 'almacenamiento', 'otro')`),
   index("it_asset_types_active_idx").on(table.isActive),
+  // «Notebook» y «notebook» son el mismo tipo: sin esto el catálogo se llenaba
+  // de duplicados que solo se distinguían por mayúsculas, y el `eq` del
+  // servicio era sensible a ellas (mismo criterio que los sistemas de acceso).
+  uniqueIndex("it_asset_types_name_lower_unique").on(sql`lower(${table.name})`),
 ])
 
 /* ── Activos TI ───────────────────────────────────────────────────────────── */

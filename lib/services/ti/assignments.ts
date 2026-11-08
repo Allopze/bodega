@@ -65,9 +65,10 @@ export async function createAssignment(
     if (openAssignment) throw new Error("El activo ya tiene una asignación abierta")
 
     const [worker] = await tx
-      .select({ id: workers.id, worksiteId: workers.worksiteId, name: sql<string>`trim(concat(${workers.firstName}, ' ', ${workers.lastName}))` })
+      .select({ id: workers.id, worksiteId: workers.worksiteId, isActive: workers.isActive, name: sql<string>`trim(concat(${workers.firstName}, ' ', ${workers.lastName}))` })
       .from(workers).where(eq(workers.id, input.workerId))
     if (!worker) throw new Error("Trabajador no encontrado")
+    if (!worker.isActive) throw new Error("El trabajador está inactivo: no se le pueden entregar equipos")
     if (worker.worksiteId !== input.worksiteId) {
       throw new Error("El trabajador no pertenece a la faena seleccionada")
     }
@@ -282,6 +283,12 @@ export async function returnAssignment(
     }
 
     const returnedAt = chileLocalDateTimeToUtc(input.returnedAt)
+    // Un acta con fecha de devolución anterior a la entrega produce una
+    // duración negativa y ordena la custodia en un lugar incoherente. El
+    // formulario solo pedía «no futura», así que la comparación vive acá.
+    if (new Date(returnedAt).getTime() < new Date(assignment.deliveredAt).getTime()) {
+      throw new Error("La devolución no puede ser anterior a la entrega")
+    }
     const now = new Date().toISOString()
 
     await tx.update(itAssetAssignments).set({
@@ -392,14 +399,24 @@ export async function transferAssignment(
       .where(and(eq(itAssets.id, assignment.assetId), isNull(itAssets.deletedAt))).for("update")
     if (!asset) throw new Error("Activo no encontrado")
 
-    const [worker] = await tx.select({ id: workers.id, worksiteId: workers.worksiteId }).from(workers).where(eq(workers.id, input.newWorkerId))
+    const [worker] = await tx.select({ id: workers.id, worksiteId: workers.worksiteId, isActive: workers.isActive }).from(workers).where(eq(workers.id, input.newWorkerId))
     if (!worker) throw new Error("Trabajador no encontrado")
+    if (!worker.isActive) throw new Error("El trabajador está inactivo: no se le pueden entregar equipos")
     if (worker.worksiteId !== input.newWorksiteId) {
       throw new Error("El trabajador no pertenece a la faena seleccionada")
     }
 
     const returnedAt = chileLocalDateTimeToUtc(input.returnedAt)
     const newDeliveredAt = chileLocalDateTimeToUtc(input.newDeliveredAt)
+    // La transferencia son dos tramos encadenados: cerrar antes de que empezara
+    // la custodia actual, o abrir la nueva antes de cerrarla, deja tramos
+    // solapados y un acta nueva con fecha anterior a la que reemplaza.
+    if (new Date(returnedAt).getTime() < new Date(assignment.deliveredAt).getTime()) {
+      throw new Error("La devolución no puede ser anterior a la entrega original")
+    }
+    if (new Date(newDeliveredAt).getTime() < new Date(returnedAt).getTime()) {
+      throw new Error("La nueva entrega no puede ser anterior a la devolución")
+    }
     const now = new Date().toISOString()
     const code = await nextCodeTx(tx, "ACT", codeYear())
 
@@ -558,7 +575,7 @@ export async function listAssignments(filters: AssignmentListFilters) {
     .innerJoin(worksites, eq(itAssetAssignments.worksiteId, worksites.id))
     .leftJoin(users, eq(itAssetAssignments.deliveredByUserId, users.id))
     .where(conditions.length ? and(...conditions) : undefined)
-    .orderBy(desc(itAssetAssignments.deliveredAt))
+    .orderBy(desc(itAssetAssignments.deliveredAt), desc(itAssetAssignments.id))
 }
 
 /**

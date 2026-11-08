@@ -19,7 +19,7 @@ vi.mock("@/db", () => ({
 }))
 
 import {
-  createAsset, updateAsset, softDeleteAsset, changeAssetStatus, listAssets, getAssetById, listAssetOptions,
+  createAsset, updateAsset, softDeleteAsset, changeAssetStatus, listAssets, countAssets, getAssetById, listAssetOptions,
 } from "@/lib/services/ti/assets"
 import { getAssetHistory } from "@/lib/services/ti/history"
 import { retireAsset } from "@/lib/services/ti/retirements"
@@ -293,5 +293,39 @@ describe("módulo TI — activos", () => {
     await createAsset({ code: "TI-NB-9003", assetTypeId: typeId, serialNumber: "SN-VIVO-1" }, actor)
     await expect(createAsset({ code: "TI-NB-9004", assetTypeId: typeId, serialNumber: "SN-VIVO-1" }, actor))
       .rejects.toThrow(/número de serie .* ya está registrado/i)
+  })
+
+  describe("inventario paginado y ordenado", () => {
+    it("pagina y cuenta sobre el conjunto filtrado, no sobre la página cargada", async () => {
+      for (let i = 1; i <= 5; i++) {
+        await createAsset({ code: `TI-PAGE-000${i}`, assetTypeId: typeId, worksiteId: "ws-ti-norte" }, actor)
+      }
+      const filters = { search: "TI-PAGE-", order: "codigo" as const }
+      expect(await countAssets(filters)).toBe(5)
+
+      const page1 = await listAssets({ ...filters, limit: 2, offset: 0 })
+      expect(page1.map((a) => a.code)).toEqual(["TI-PAGE-0001", "TI-PAGE-0002"])
+
+      const page3 = await listAssets({ ...filters, limit: 2, offset: 4 })
+      expect(page3.map((a) => a.code)).toEqual(["TI-PAGE-0005"])
+
+      const desc = await listAssets({ ...filters, limit: 2, offset: 0, order: "codigo_desc" })
+      expect(desc.map((a) => a.code)).toEqual(["TI-PAGE-0005", "TI-PAGE-0004"])
+    })
+
+    it("filtra reparaciones demoradas por el historial y no por updatedAt", async () => {
+      const old = await createAsset({ code: "TI-REP-OLD", assetTypeId: typeId, worksiteId: "ws-ti-norte" }, actor)
+      const recent = await createAsset({ code: "TI-REP-NEW", assetTypeId: typeId, worksiteId: "ws-ti-norte" }, actor)
+      await testDb.update(schema.itAssets)
+        .set({ status: "en_reparacion", updatedAt: new Date(Date.now() - 20 * 86_400_000).toISOString() })
+        .where(eq(schema.itAssets.id, old))
+      await testDb.update(schema.itAssets)
+        .set({ status: "en_reparacion" })
+        .where(eq(schema.itAssets.id, recent))
+
+      const rows = await listAssets({ repairStuck: true, search: "TI-REP-" })
+      expect(rows.map((a) => a.id)).toContain(old)
+      expect(rows.map((a) => a.id)).not.toContain(recent)
+    })
   })
 })

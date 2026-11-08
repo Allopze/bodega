@@ -1,6 +1,6 @@
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
-import { eq, inArray } from "drizzle-orm"
+import { and, eq, inArray } from "drizzle-orm"
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
 import path from "node:path"
 import * as schema from "@/db/schema"
@@ -118,13 +118,16 @@ describe("módulo TI — licencias, accesos y checklists", () => {
         .rejects.toThrow(/No tienes acceso a esta faena/)
     })
 
-    it("limita el contador visible de asignaciones a la faena del usuario", async () => {
+    it("cuenta los cupos sobre el total aunque el listado esté acotado a una faena", async () => {
       const id = await createLicense({ name: "Licencia con alcance", purchasedQuantity: 3, periodicity: "anual" }, actor)
-      await assignLicense({ licenseId: id, workerId: "wk-ti-juan" }, actor)
-      await assignLicense({ licenseId: id, workerId: "wk-ti-maria" }, actor)
+      await assignLicense({ licenseId: id, workerId: "wk-ti-juan" }, actor)   // faena norte
+      await assignLicense({ licenseId: id, workerId: "wk-ti-maria" }, actor)  // faena sur
 
+      // El listado se acota por faena, pero los cupos comprados pertenecen a la
+      // licencia: declarar 1/3 usado ofrecía dos asientos que el servidor
+      // rechazaba al asignar (las tres estaban en uso).
       const scoped = await listLicenses(undefined, ["ws-ti-norte"])
-      expect(scoped.find((license) => license.id === id)?.assignedQuantity).toBe(1)
+      expect(scoped.find((license) => license.id === id)?.assignedQuantity).toBe(2)
     })
 
     it("exige al menos un destino en la asignación (check de BD)", async () => {
@@ -188,6 +191,21 @@ describe("módulo TI — licencias, accesos y checklists", () => {
       const row = workerAccess.find((a) => a.systemId === systemId)
       expect(row?.status).toBe("baja")
       expect(row?.revokedAt).toBeTruthy()
+    })
+
+    it("conserva la fecha de revocación al re-guardar un acceso ya revocado", async () => {
+      const systemId = await createAccessSystem({ name: "Sistema Fecha Revocación" }, actor)
+      await upsertSystemAccess({ systemId, workerId: "wk-ti-juan", status: "baja" }, actor)
+
+      const original = "2026-03-10T12:00:00.000Z"
+      await testDb.update(schema.itSystemAccess).set({ revokedAt: original })
+        .where(and(eq(schema.itSystemAccess.systemId, systemId), eq(schema.itSystemAccess.workerId, "wk-ti-juan")))
+
+      await upsertSystemAccess({ systemId, workerId: "wk-ti-juan", status: "baja", notes: "Re-guardado" }, actor)
+      const row = (await listWorkerAccess("wk-ti-juan", "all")).find((a) => a.systemId === systemId)
+      // El driver devuelve el timestamptz con su zona; se compara el instante.
+      expect(row?.revokedAt ? new Date(row.revokedAt).toISOString() : null)
+        .toBe(new Date(original).toISOString())
     })
 
     it("limpia la revocación y conserva las notas al reactivar un acceso", async () => {
