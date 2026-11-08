@@ -1,4 +1,5 @@
 import { PeriodControl } from "@/components/ui/period-control"
+import { addMonths, todayInChile } from "@/lib/utils"
 
 /**
  * Selector del mes de un resumen (`?periodo=YYYY-MM`): Facturación y Documentos
@@ -11,9 +12,18 @@ import { PeriodControl } from "@/components/ui/period-control"
  * compartible y sobrevive a un refresco. (Los filtros de interfaz que no
  * cambian el contenido no deben ir a la URL — ver la nota de `router.refresh`
  * en el módulo de Prevención.)
+ *
+ * Ofrece los últimos 24 meses (el actual y los 23 anteriores), lo mismo que el
+ * `<select>` al que reemplazó. Sin `minMonth` la grilla retrocedía año tras año
+ * sin tope, hasta años sin ningún dato.
  */
+export const PERIOD_PICKER_MONTHS = 24
+
 export function PeriodPicker({ period }: { period: string }) {
-  return <PeriodControl mode="month" month={period} />
+  // Mes de Chile, como el resto del control: `recentPeriods` mide con la hora del equipo y
+  // adelanta el mes las últimas horas del último día.
+  const minMonth = addMonths(`${todayInChile().slice(0, 7)}-01`, -(PERIOD_PICKER_MONTHS - 1)).slice(0, 7)
+  return <PeriodControl mode="month" month={period} minMonth={minMonth} />
 }
 
 /** Últimos N períodos hasta el mes actual, del más reciente al más antiguo. */

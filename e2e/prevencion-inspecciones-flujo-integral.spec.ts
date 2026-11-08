@@ -81,6 +81,6 @@ test.describe("Inspecciones — Flujo Integral y Trazabilidad CAPA / PDTP", () =
     await page.goto("/prevencion")
     // El h1 real lo pone `prevention-home.tsx`; "Prevención de riesgos" es el
     // rótulo del área en el sidebar, no el título de la página.
-    await expectPageTitle(page, "Inicio de Prevención")
+    await expectPageTitle(page, "Inicio de prevención")
   })
 })

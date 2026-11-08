@@ -116,18 +116,40 @@ Las capturas no se versionan porque muestran nombres y correos del clon de produ
 
 ## Riesgos y pendientes
 
-1. **Despliegue de la renumeración.** En producción la migración 0380 renumera ~1 incidente y ~87 inspecciones.
-   - Avisar a prevencionistas y jefaturas que los códigos cambiaron. La ficha muestra «Código anterior» y la búsqueda lo encuentra.
+1. **Despliegue de las renumeraciones.** En producción, la migración 0380 renumera incidentes (~1) e inspecciones (~87); la 0381 renumera CAPA (~51 reales), actas CPHS (~13) y planes de emergencia (~10).
+   - Avisar a prevencionistas y jefaturas que los códigos cambiaron. Cada ficha muestra «Código anterior» y la búsqueda lo encuentra.
    - Los textos ya enviados (correos, tareas CAPA, documentos generados) conservan el código viejo.
-   - Desplegar código y migración juntos. Si el código anterior crea algo después de migrar, nace con código aleatorio; volver a correr el SQL de 0380 lo corrige, porque es idempotente.
-2. **Códigos CAPA aleatorios** («CAPA-2026-UKEJYM4S7B»): mismo problema que INC/INSP, fuera del alcance decidido. Candidato a la misma solución.
-3. **Títulos en Title Case preexistentes** («Panel de Administración», «Configuración del Sistema», «Planes de Emergencia»…). Nunca estuvieron en mayúsculas; es un barrido de textos aparte y varias E2E los pinan.
-4. **React Doctor** sigue en rojo por 3 errores preexistentes de la app del mecánico.
-5. **`mant-app.test.tsx`** es inestable con la máquina cargada.
-6. **Analítica:** el rango por defecto (31 días hasta hoy) no coincide con ningún atajo, así que ninguno aparece marcado al abrir.
-7. **Sin cobertura en esta pasada:**
-   - roles distintos del QA;
+   - Desplegar código y migraciones juntos. Si el código anterior crea algo después de migrar, nace con código aleatorio; volver a correr el SQL de la migración lo corrige, porque es idempotente.
+2. **Folio del canal público de reportes (RPT).** Ahora es correlativo. No es una llave: ninguna ruta busca ni actúa por ese código. Sí deja ver cuántos reportes van en el año, como cualquier folio público. Si se prefiere ocultarlo, es un cambio de una línea.
+3. **Sin cobertura:**
    - lector de pantalla real;
-   - zoom al 200 % fuera de las rutas de su E2E;
-   - las fichas `[id]` salvo las tocadas;
-   - Safari/iOS real (el zoom se verificó por tamaño calculado, no en un iPhone).
+   - Safari/iOS real (el zoom se verificó por tamaño calculado, no en un iPhone);
+   - recorrido manual de roles distintos del QA (sí los cubre la suite E2E completa, ver «Cierre»).
+
+---
+
+## Cierre (2026-11-07, «termina lo faltante»)
+
+Rama `feat/pulido-cierre`, sobre el merge `3f3b6089f`.
+
+| Pendiente del pulido | Cómo quedó |
+|---|---|
+| Códigos aleatorios en el resto de Prevención | Decisión del usuario: **todas** las familias. CAPA, CPHS, RD, PE, PT, CGRD, RPT, CMP y COORD/FISC/OAL/EXT nacen como `PREFIJO-AAAA-NNNN` vía `nextCodeTx`. La migración **0381** agrega `legacy_code` en 9 tablas y renumera sólo los códigos aleatorios: los de catálogo (`CAMP-…`) y los *fixtures* no se tocan. «Código anterior» se muestra y se puede buscar. En `bodega_dev`: 155 CAPA, 13 actas CPHS, 10 planes y 48 permisos renumerados; campañas de catálogo intactas. |
+| Títulos y rótulos en Title Case | ~200 textos en ~100 archivos pasan a caja de oración. Se conservan nombres propios, órganos oficiales, siglas, niveles de riesgo con nombre y los documentos Excel/PDF. Tres `loading.tsx` ahora calzan con el título de su página. |
+| React Doctor en rojo | 0 errores. `pin-pad` tenía un actualizador de estado con efectos que **enviaba el PIN dos veces** en StrictMode (3 pruebas nuevas fallan con el código anterior). `install-prompt` lee el navegador después de hidratar. |
+| `mant-app.test.tsx` inestable | No era un tiempo de espera: un refresco del catálogo del test anterior se escribía en la base del siguiente. Se drena en `afterEach`. Pasó 5/5 con la máquina 6 veces más lenta. |
+| Rango por defecto de Analítica | Abre exactamente en «Últimos 30 días» (`trailingDaysRange`, día de Chile), así que el atajo aparece marcado. El selector de mes de Facturación y Compras DTE vuelve a limitarse a 24 meses (`minMonth`). |
+
+### Verificación final
+
+| Puerta | Resultado |
+|---|---|
+| Typecheck, lint, secretos, alias de Drizzle | OK |
+| Migraciones | 382 entradas verificadas |
+| `test:fast` | 19.134 pruebas, 0 fallas |
+| `test:pglite` (suite completa) | 4.673 pruebas, 0 fallas |
+| React Doctor | 0 errores (antes 3) |
+
+**Suite E2E completa (163 specs, 1.113 pruebas): 1.106 pasaron, 1 falló y 6 se omitieron.**
+
+La falla era `prevencion-inspecciones-lectura` a 390 × 844: «Derivar a CAPA» quedaba un 0,1 % bajo el pliegue, porque los rótulos pasaron de 11 a 12 px. Las comprobaciones laterales, que son el propósito de la prueba («sin scroll horizontal»), pasaban. Ahora la prueba lleva el botón a la vista antes de exigir que entre completo; sigue fallando si se recorta por los lados. Corrida otra vez, pasa.

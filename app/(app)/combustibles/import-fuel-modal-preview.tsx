@@ -211,7 +211,7 @@ export function PreviewStep({
                   <TableHead>Proveedor</TableHead>
                   <TableHead>Faena</TableHead>
                   <TableHead>Producto</TableHead>
-                  <TableHead>Nro Fact.</TableHead>
+                  <TableHead>Nro fact.</TableHead>
                   <TableHead className="text-right">Litros</TableHead>
                   <TableHead className="text-right">Total</TableHead>
                 </TableRow>

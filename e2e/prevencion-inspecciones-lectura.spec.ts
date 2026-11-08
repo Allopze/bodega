@@ -44,6 +44,13 @@ test.describe("Inspecciones — detalle en lectura", () => {
     expect(caja.x, "«Derivar a CAPA» empieza antes del borde izquierdo").toBeGreaterThanOrEqual(0)
     expect(caja.x + caja.width, "«Derivar a CAPA» queda tras el borde derecho").toBeLessThanOrEqual(390)
     expect(caja.height, "el botón mide menos de 44 px de alto").toBeGreaterThanOrEqual(44)
+    // Lo que se protege es el recorte lateral: llevado a la vista, el botón entra
+    // completo. Sin el scroll previo, `ratio: 1` también exigía que cayera entero
+    // sobre el pliegue de 844 px, y bastó que los rótulos pasaran de 11 a 12 px
+    // (pulido UI/UX 2026-11-07) para dejarlo un 0,1 % bajo el borde inferior.
+    // `scrollIntoViewIfNeeded` no mueve nada si el botón ya es «visible» aunque sea
+    // en parte: hay que centrarlo explícitamente.
+    await derivar.evaluate((el) => el.scrollIntoView({ block: "center" }))
     await expect(derivar).toBeInViewport({ ratio: 1 })
     await sinDesborde(page)
 

@@ -4,6 +4,7 @@
  * CAPA es una fila de pestañas con contador, sin `Select` de estado ni tarjetas por
  * estado. Las tarjetas que quedan son condiciones que cruzan los estados.
  */
+import { useEffect } from "react"
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { buildCapaStatusCounts } from "@/lib/prevention/capa-list-filters"
@@ -18,6 +19,7 @@ vi.mock("next/navigation", () => ({
 }))
 
 const { CapaList } = await import("./capa-list")
+const { ShellHeaderProvider, useSafeShellHeader } = await import("@/components/layout/header-context")
 
 const STATUS_COUNTS = buildCapaStatusCounts([
   { status: "pending", total: 2 },
@@ -173,5 +175,35 @@ describe("lista CAPA — la lista llega filtrada del servidor", () => {
     // Una vez en la pestaña y otra en el badge de la fila: el rótulo es el mismo.
     expect(screen.getAllByText("Pendiente de verificación").length).toBeGreaterThanOrEqual(2)
     expect(screen.queryByText("pending_verification")).toBeNull()
+  })
+})
+
+describe("lista CAPA — el buscador del encabezado encuentra también el código anterior", () => {
+  /** Escribe en el buscador del TopBar, que alimenta `useSafeShellHeader`. */
+  function TypeInTopBar({ text }: { text: string }) {
+    const { setSearchQuery } = useSafeShellHeader()
+    useEffect(() => { setSearchQuery(text) }, [setSearchQuery, text])
+    return null
+  }
+
+  it("una acción renumerada (serie CAPA-AAAA-NNNN) se encuentra por el código aleatorio que ya se citó", () => {
+    render(
+      <ShellHeaderProvider>
+        <TypeInTopBar text="k3j9x0ab12" />
+        <CapaList
+          actions={[
+            action({ id: "capa-1", code: "CAPA-2026-0001", legacyCode: "CAPA-2026-K3J9X0AB12" }),
+            action({ id: "capa-2", code: "CAPA-2026-0002", legacyCode: null }),
+          ]}
+          worksites={[{ id: "ws-1", name: "Faena Norte" }]}
+          counts={COUNTS}
+          statusCounts={STATUS_COUNTS}
+          pagination={resolvePagination({ pageParam: "1", totalItems: 2, pageSize: 50 })}
+        />
+      </ShellHeaderProvider>,
+    )
+
+    expect(screen.getByText("CAPA-2026-0001")).toBeTruthy()
+    expect(screen.queryByText("CAPA-2026-0002")).toBeNull()
   })
 })

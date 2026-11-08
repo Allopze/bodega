@@ -37,7 +37,7 @@ export function EvaluationList({ workerGroups, canCreate }: Props) {
         action={
           canCreate ? (
             <Button asChild>
-              <Link href="/prevencion/nueva">Nueva Evaluación</Link>
+              <Link href="/prevencion/nueva">Nueva evaluación</Link>
             </Button>
           ) : undefined
         }
@@ -54,7 +54,7 @@ export function EvaluationList({ workerGroups, canCreate }: Props) {
             <TableHead>Faena</TableHead>
             <TableHead>Prevencionista</TableHead>
             <TableHead>{ADMIN_CONTRATO_DEFAULT_LABEL}</TableHead>
-            <TableHead>Conductor Líder</TableHead>
+            <TableHead>Conductor líder</TableHead>
             <TableHead><span className="sr-only">Ver</span></TableHead>
           </TableRow>
         </TableHeader>

@@ -161,6 +161,10 @@ export const preventionGrdThreats = pgTable("prevention_grd_threats", {
 export const preventionGrdMeetings = pgTable("prevention_grd_meetings", {
   id:                text("id").primaryKey(),
   code:              text("code").notNull().unique(),
+  /** Código aleatorio previo a la serie correlativa `CGRD-AAAA-NNNN`, renumerado en
+   *  2026-11. El acta ya fue citada como evidencia; esta columna vincula el
+   *  código viejo con el vigente. */
+  legacyCode:        text("legacy_code"),
   committeeId:       text("committee_id").notNull().references(() => preventionGrdCommittees.id, { onDelete: "cascade" }),
   heldOn:            timestamp("held_on", { withTimezone: true, mode: "string" }).notNull(),
   agenda:            text("agenda").notNull(),

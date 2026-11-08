@@ -33,10 +33,10 @@ describe('MOTIVO_LABELS', () => {
 
 describe('RESULTADO_LABELS', () => {
   it('has labels for all resultado values', () => {
-    expect(RESULTADO_LABELS['habilitado_autonomo']).toBe('Habilitado Autónomo')
+    expect(RESULTADO_LABELS['habilitado_autonomo']).toBe('Habilitado autónomo')
     expect(RESULTADO_LABELS['habilitado_restricciones']).toBe('Habilitado c/Restricciones')
-    expect(RESULTADO_LABELS['no_habilitado']).toBe('No Habilitado')
-    expect(RESULTADO_LABELS['requiere_reforzamiento']).toBe('Requiere Reforzamiento')
+    expect(RESULTADO_LABELS['no_habilitado']).toBe('No habilitado')
+    expect(RESULTADO_LABELS['requiere_reforzamiento']).toBe('Requiere reforzamiento')
   })
 
   it('returns undefined for unknown resultado', () => {

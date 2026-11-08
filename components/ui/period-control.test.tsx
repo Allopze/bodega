@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { addDaysToPlainDate } from "@/lib/utils"
+import { addDaysToPlainDate, trailingDaysRange } from "@/lib/utils"
 
 const nav = vi.hoisted(() => ({ replace: vi.fn(), push: vi.fn(), pathname: "/control-operacional", search: "" }))
 
@@ -86,6 +86,13 @@ describe("rangos de fechas civiles", () => {
     expect(presets.find((preset) => preset.key === "90d")?.period).toEqual({ from: DEFAULT_FROM, to: TODAY })
     expect(presets.find((preset) => preset.key === "mes-anterior")?.period).toEqual(monthRange(2026, 10))
     expect(presets.find((preset) => preset.key === "mes")?.period).toEqual(monthRange(2026, 11))
+  })
+
+  it("«Últimos N días» son N días corridos con hoy incluido, la misma definición que usa Analítica", () => {
+    const presets = defaultRangePresets(TODAY)
+    expect(presets.find((preset) => preset.key === "30d")?.period).toEqual({ from: "2026-10-08", to: TODAY })
+    expect(presets.find((preset) => preset.key === "30d")?.period).toEqual(trailingDaysRange(30, TODAY))
+    expect(presets.find((preset) => preset.key === "12m")?.period).toEqual({ from: addDaysToPlainDate(TODAY, -364), to: TODAY })
   })
 })
 
@@ -265,5 +272,65 @@ describe("PeriodControl · mes", () => {
     openPanel()
     fireEvent.click(screen.getByRole("button", { name: "Mes anterior" }))
     expect(lastUrl()).toBe("/control-operacional?periodo=2026-10")
+  })
+
+  // Facturación y Documentos DTE ofrecían los últimos 24 meses (el actual y 23 más): con
+  // TODAY = 2026-11 el primero es 2024-12. Sin tope la grilla retrocedía año tras año.
+  describe("con minMonth", () => {
+    const MIN = "2024-12"
+    function renderBounded(month: string, minMonth: string = MIN) {
+      return render(<PeriodControl mode="month" month={month} minMonth={minMonth} today={TODAY} />)
+    }
+
+    it("la flecha de atrás se apaga en el primer mes y un mes después sigue funcionando", () => {
+      renderBounded("2024-12")
+      expect(screen.getByRole("button", { name: "Período anterior" })).toBeDisabled()
+      cleanup()
+      renderBounded("2025-01")
+      expect(screen.getByRole("button", { name: "Período anterior" })).toBeEnabled()
+      fireEvent.click(screen.getByRole("button", { name: "Período anterior" }))
+      expect(lastUrl()).toBe("/control-operacional?periodo=2024-12")
+    })
+
+    it("la grilla deshabilita los meses anteriores y «Año anterior» se apaga en el año del tope", () => {
+      renderBounded("2025-06")
+      openPanel()
+      const previousYear = screen.getByRole("button", { name: "Año anterior" })
+      expect(previousYear).toBeEnabled()
+      fireEvent.click(previousYear)
+      expect(screen.getByText("2024")).toBeInTheDocument()
+      expect(screen.getByRole("button", { name: "Año anterior" })).toBeDisabled()
+      expect(screen.getByRole("button", { name: "Nov" })).toBeDisabled()
+      expect(screen.getByRole("button", { name: "Dic" })).toBeEnabled()
+      // Lo habilitado sigue aplicando.
+      fireEvent.click(screen.getByRole("button", { name: "Dic" }))
+      expect(lastUrl()).toBe("/control-operacional?periodo=2024-12")
+    })
+
+    it("un mes de la grilla anterior al tope no navega aunque se haga clic", () => {
+      renderBounded("2024-12")
+      openPanel()
+      nav.replace.mockClear()
+      fireEvent.click(screen.getByRole("button", { name: "Nov" }))
+      expect(nav.replace).not.toHaveBeenCalled()
+    })
+
+    it("no ofrece un acceso rápido que caiga antes del tope", () => {
+      renderBounded("2026-11", "2026-11")
+      openPanel()
+      expect(screen.getByRole("button", { name: "Este mes" })).toBeInTheDocument()
+      expect(screen.queryByRole("button", { name: "Mes anterior" })).toBeNull()
+    })
+
+    it("un minMonth mal formado no acota nada, y sin él la grilla retrocede sin tope", () => {
+      renderBounded("2025-06", "2024")
+      expect(screen.getByRole("button", { name: "Período anterior" })).toBeEnabled()
+      openPanel()
+      fireEvent.click(screen.getByRole("button", { name: "Año anterior" }))
+      fireEvent.click(screen.getByRole("button", { name: "Año anterior" }))
+      expect(screen.getByText("2023")).toBeInTheDocument()
+      expect(screen.getByRole("button", { name: "Año anterior" })).toBeEnabled()
+      expect(screen.getByRole("button", { name: "Ene" })).toBeEnabled()
+    })
   })
 })

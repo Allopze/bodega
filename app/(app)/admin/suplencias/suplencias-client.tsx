@@ -49,7 +49,7 @@ interface SuplenciasClientProps {
 }
 
 const getStatusBadge = (user: typeof users.$inferSelect, nowMs: number) => {
-  if (!user.isActive) return <MetaBadge meta={{ label: "Revocada / Inactiva", variant: "danger" }} />
+  if (!user.isActive) return <MetaBadge meta={{ label: "Revocada / inactiva", variant: "danger" }} />
   if (!user.validUntil) return <MetaBadge meta={{ label: "Sin límite", variant: "outline" }} />
   const validUntilDate = new Date(user.validUntil)
   const diffDays = Math.ceil((validUntilDate.getTime() - nowMs) / (1000 * 3600 * 24))
@@ -135,11 +135,11 @@ export function SuplenciasClient({ activeUsers, substitutions }: SuplenciasClien
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Cuentas Temporales de Suplencia (R7)"
+        title="Cuentas temporales de suplencia (R7)"
         description="Gestión de suplencias temporales con herencia automática de roles y faenas del titular"
         actions={
           <Button onClick={() => setIsCreateOpen(true)} className="bg-[var(--color-primary)] text-white">
-            + Nueva Suplencia
+            + Nueva suplencia
           </Button>
         }
       />
@@ -170,7 +170,7 @@ export function SuplenciasClient({ activeUsers, substitutions }: SuplenciasClien
           description="Crea una cuenta temporal para reemplazar a un usuario ausente durante un período acotado."
           action={
             <Button onClick={() => setIsCreateOpen(true)} className="bg-[var(--color-primary)] text-white">
-              Crear Suplencia
+              Crear suplencia
             </Button>
           }
         />
@@ -236,14 +236,14 @@ export function SuplenciasClient({ activeUsers, substitutions }: SuplenciasClien
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
         <DialogContent className="sm:max-w-[480px]">
           <DialogHeader>
-            <DialogTitle>Crear Cuenta Temporal de Suplencia</DialogTitle>
+            <DialogTitle>Crear cuenta temporal de suplencia</DialogTitle>
             <DialogDescription>
               La cuenta heredará los roles y faenas del titular. El suplente recibirá una invitación para definir su contraseña y sólo podrá usarla hasta el vencimiento indicado.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">
-              <Label>Usuario Titular a Reemplazar</Label>
+              <Label>Usuario titular a reemplazar</Label>
               <Select value={selectedTitularId} onValueChange={setSelectedTitularId}>
                 <SelectTrigger>
                   <SelectValue placeholder="Selecciona el usuario ausente" />
@@ -258,7 +258,7 @@ export function SuplenciasClient({ activeUsers, substitutions }: SuplenciasClien
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label>Nombre Completo del Suplente</Label>
+              <Label>Nombre completo del suplente</Label>
               <Input
                 placeholder="Ej: Juan Pérez (Reemplazo)"
                 value={subName}
@@ -266,7 +266,7 @@ export function SuplenciasClient({ activeUsers, substitutions }: SuplenciasClien
               />
             </div>
             <div className="space-y-1.5">
-              <Label>Correo Electrónico del Suplente</Label>
+              <Label>Correo electrónico del suplente</Label>
               <Input
                 type="email"
                 placeholder="suplente@empresa.cl"
@@ -275,7 +275,7 @@ export function SuplenciasClient({ activeUsers, substitutions }: SuplenciasClien
               />
             </div>
             <div className="space-y-1.5">
-              <Label>Vigencia Inicial (Días)</Label>
+              <Label>Vigencia inicial (días)</Label>
               <Select value={String(validDays)} onValueChange={(val) => setValidDays(Number(val))}>
                 <SelectTrigger>
                   <SelectValue />
@@ -294,7 +294,7 @@ export function SuplenciasClient({ activeUsers, substitutions }: SuplenciasClien
               Cancelar
             </Button>
             <Button onClick={handleCreate} disabled={isPending}>
-              {isPending ? "Creando..." : "Crear Suplencia"}
+              {isPending ? "Creando..." : "Crear suplencia"}
             </Button>
           </DialogFooter>
         </DialogContent>

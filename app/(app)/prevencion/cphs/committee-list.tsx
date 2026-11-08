@@ -34,6 +34,8 @@ interface CommitteeItem {
 interface MeetingItem {
   id: string
   code: string
+  /** Código aleatorio previo a la serie CPHS-AAAA-NNNN: el buscador también lo encuentra. */
+  legacyCode: string | null
   committeeName: string
   worksiteName: string
   meetingType: string
@@ -48,6 +50,8 @@ interface MeetingItem {
 interface ReviewItem {
   id: string
   code: string
+  /** Código aleatorio previo a la serie RD-AAAA-NNNN: el buscador también lo encuentra. */
+  legacyCode: string | null
   periodLabel: string
   worksiteName: string | null
   heldAt: string
@@ -76,9 +80,9 @@ export function CommitteeList({ committees, meetings, reviews, worksites, assign
   const filteredCommittees = committees.filter((item) =>
     !query || `${item.name} ${item.worksiteName}`.toLocaleLowerCase("es-CL").includes(query))
   const filteredMeetings = meetings.filter((item) =>
-    !query || `${item.code} ${item.committeeName} ${item.worksiteName}`.toLocaleLowerCase("es-CL").includes(query))
+    !query || `${item.code} ${item.legacyCode ?? ""} ${item.committeeName} ${item.worksiteName}`.toLocaleLowerCase("es-CL").includes(query))
   const filteredReviews = reviews.filter((item) =>
-    !query || `${item.code} ${item.periodLabel} ${item.worksiteName ?? ""}`.toLocaleLowerCase("es-CL").includes(query))
+    !query || `${item.code} ${item.legacyCode ?? ""} ${item.periodLabel} ${item.worksiteName ?? ""}`.toLocaleLowerCase("es-CL").includes(query))
 
   const metrics = [
     { id: "active", label: "Comités vigentes", value: committees.filter((item) => item.status === "active" && !item.mandateExpired).length, detail: "Con mandato al día" },
@@ -196,6 +200,7 @@ export function CommitteeList({ committees, meetings, reviews, worksites, assign
                 <TableRow key={item.id}>
                   <TableCell>
                     <span className="font-mono text-xs">{item.code}</span>
+                    {item.legacyCode && <span className="block text-xs text-[var(--color-text-subtle)]">Código anterior: {item.legacyCode}</span>}
                     <span className="block text-sm">{item.committeeName}</span>
                     <span className="text-xs text-[var(--color-text-subtle)]">{item.worksiteName}</span>
                   </TableCell>
@@ -242,6 +247,7 @@ export function CommitteeList({ committees, meetings, reviews, worksites, assign
                 <TableRow key={item.id}>
                   <TableCell>
                     <span className="font-mono text-xs">{item.code}</span>
+                    {item.legacyCode && <span className="block text-xs text-[var(--color-text-subtle)]">Código anterior: {item.legacyCode}</span>}
                     <span className="block text-sm">{item.periodLabel}</span>
                   </TableCell>
                   <TableCell className="text-sm">{item.worksiteName ?? "Toda la organización"}</TableCell>

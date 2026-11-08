@@ -543,6 +543,19 @@ export function addDaysToPlainDate(plainDate: string, days: number): string {
 }
 
 /**
+ * Los últimos `days` días corridos con hoy incluido: `trailingDaysRange(30, "2026-06-26")`
+ * es del 28 de mayo al 26 de junio (30 días, no 31).
+ *
+ * Es la definición única de «Últimos 30 días»: el acceso rápido de `PeriodControl`
+ * y el rango por defecto de Analítica salen de aquí. Cuando cada uno la calculaba
+ * por su lado (uno hasta hoy-29, el otro hasta hoy-30), la pantalla abría con un
+ * rango que ningún acceso rápido reconocía como propio. Hoy es el día civil chileno.
+ */
+export function trailingDaysRange(days: number, today: string = todayInChile()): { from: string; to: string } {
+  return { from: addDaysToPlainDate(today, -(days - 1)), to: today }
+}
+
+/**
  * Suma `months` meses sobre una fecha civil "YYYY-MM-DD" conservando el último
  * día válido del mes destino.
  *

@@ -266,6 +266,9 @@ describe("casillas del programa del CGRD — N°81", () => {
     const [llena] = await inMemoryDb.select().from(schema.preventionGrdMeetingSlots)
       .where(eq(schema.preventionGrdMeetingSlots.id, slot.id))
     expect(llena).toMatchObject({ status: "completed", meetingId: meeting.id })
+    // Folio correlativo por año (migración 0381), ya no un sufijo aleatorio.
+    expect(meeting.code).toMatch(/^CGRD-\d{4}-\d{4}$/)
+    expect(meeting.legacyCode).toBeNull()
   })
 
   /* Sin esto el checklist miente: la casilla quedaría en verde apuntando a un

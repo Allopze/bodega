@@ -13,7 +13,7 @@ import { listWorkerEvaluations } from "@/lib/services/sst-module/worker-evaluati
 import { WorkerEvaluations } from "./worker-evaluations"
 import { evaluationsForVisit, listOpenEvaluationVisits } from "./visit-context"
 
-export const metadata: Metadata = { title: "Evaluaciones del Trabajador - SST" }
+export const metadata: Metadata = { title: "Evaluaciones del trabajador - SST" }
 
 interface Props {
   params: Promise<{ workerId: string }>

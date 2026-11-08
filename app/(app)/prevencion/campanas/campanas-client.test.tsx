@@ -20,7 +20,7 @@ const { CampanasClient } = await import("./campanas-client")
 const { ShellHeaderProvider } = await import("@/components/layout/header-context")
 
 const pending = {
-  id: "camp-1", worksiteId: "ws-1", worksiteName: "Faena Norte", code: "CAMP-001",
+  id: "camp-1", worksiteId: "ws-1", worksiteName: "Faena Norte", code: "CAMP-001", legacyCode: null,
   title: "Puntos ciegos", description: null, status: "pending", pdtpActivityNumbers: [88],
   evidenceUrl: null, heldOn: null, completedAt: null, completedByUserId: null,
   createdByUserId: "user-1", createdAt: "2026-05-01T12:00:00.000Z", updatedAt: "2026-05-01T12:00:00.000Z",

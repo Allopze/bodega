@@ -4,6 +4,7 @@ import type { Session } from "next-auth"
 import { systemSettings } from "@/db/schema"
 import { db } from "@/db"
 import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
+import { todayInChile, trailingDaysRange } from "@/lib/utils"
 import type { AnalyticsFilters, SpendByMonthRow, WorksiteSpendRow, VehicleCostRow } from "./types"
 
 export const ACTIVE_ORDER_STATUSES = ["sent", "partially_office_received", "office_received", "partially_received", "received", "closed"]
@@ -16,9 +17,21 @@ export interface AnalyticsAlertThresholds {
 
 export const DEFAULT_ALERT_THRESHOLDS: AnalyticsAlertThresholds = { vehicleMonthlyAnomalyAmount: 5_000_000, supplierConcentrationPct: 60, eppRecurringDeliveryCount: 3 }
 
+/**
+ * Sin fechas, los últimos 30 días hasta HOY (día civil de Chile): un rango más ancho
+ * que «mes en curso» para que el tablero abierto a principios de mes (o de una faena
+ * con poca actividad) no aparezca vacío.
+ *
+ * Es el mismo rango que el acceso rápido «Últimos 30 días» de `PeriodControl`
+ * (`trailingDaysRange`): así la pantalla abre con ese acceso marcado y «Volver a los
+ * últimos 30 días» dice exactamente lo que restablece. Antes terminaba en el día del
+ * servidor y empezaba 31 días antes (hoy-30), un día más ancho que el acceso rápido,
+ * y ninguno aparecía seleccionado.
+ */
 export function normalizeAnalyticsFilters(input: AnalyticsFilters, now: Date = new Date()) {
+  const trailing = trailingDaysRange(30, todayInChile(now))
   return {
-    fromDate: input.fromDate ?? daysAgo(now, 30), toDate: input.toDate ?? dateOnly(now),
+    fromDate: input.fromDate ?? trailing.from, toDate: input.toDate ?? trailing.to,
     ...(input.worksiteId ? { worksiteId: input.worksiteId } : {}),
     ...(input.supplierId ? { supplierId: input.supplierId } : {}),
     ...(input.vehicleId ? { vehicleId: input.vehicleId } : {}),
@@ -184,9 +197,12 @@ export function moduleLabel(value: unknown) {
 }
 
 export function dateOnly(date: Date) { return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}` }
-/** ISO date `days` before `date` — used as a wider default range than "mes en curso" so a
- * dashboard opened early in the month (or for a faena with sparse recent activity) doesn't
- * land empty. */
+/**
+ * ISO date `days` before `date`, medida con el día del servidor. Ya no la usa el rango por
+ * defecto de Analítica (ahora `trailingDaysRange`, día de Chile); la sigue usando el tablero
+ * de consumo de combustible (`lib/combustibles/consumption-dashboard.ts`), que tiene su
+ * propio rango por defecto.
+ */
 export function daysAgo(date: Date, days: number) {
   const d = new Date(date)
   d.setDate(d.getDate() - days)

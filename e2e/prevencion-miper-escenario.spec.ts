@@ -194,7 +194,7 @@ test("pasos 1–7: la prevencionista crea la MIPER, la completa, genera el progr
   await page.getByRole("tab", { name: "Revisión" }).click()
   await cabecera(page).getByRole("button", { name: "Enviar a revisión", exact: true }).click()
   const bloqueo = page.getByRole("dialog", { name: "Falta 1 dato para enviar" })
-  await expect(bloqueo).toContainText("Un riesgo Intolerable exige una medida vinculada a una actividad del Programa de Trabajo.")
+  await expect(bloqueo).toContainText("Un riesgo Intolerable exige una medida vinculada a una actividad del programa de trabajo.")
   await page.keyboard.press("Escape")
   await expect(bloqueo).toBeHidden()
   await expect(estado(page, /Borrador/)).toBeVisible()
@@ -338,7 +338,7 @@ test("pasos 10–11: Legal y RRHH sella la v1, las ocurrencias nacen y el libro 
   // Paso 11: con la versión sellada nacen las ocurrencias del programa. En
   // borrador no existían (asserción del paso 6); acá son las del período.
   await legal.goto(`${miperUrl}?tab=programa`)
-  await expect(legal.getByRole("heading", { name: "Programa de Trabajo Preventivo RE-04.1" })).toBeVisible()
+  await expect(legal.getByRole("heading", { name: "Programa de trabajo preventivo RE-04.1" })).toBeVisible()
   const sheet = await abrirActividad(legal)
   await expect(sheet.getByText("Las ejecuciones se generan al aprobar la versión de la matriz.")).toHaveCount(0)
   // El período 2028 con una definición anual genera tres ocurrencias. Legal y
@@ -351,7 +351,7 @@ test("pasos 10–11: Legal y RRHH sella la v1, las ocurrencias nacen y el libro 
 test("paso 12: el responsable marca «Se hizo» con fecha efectiva y evidencia, y el avance se actualiza", async ({ browser }) => {
   const page = await as(browser, "prev.faena@e2e.chome.cl")
   await page.goto(`${miperUrl}?tab=programa`)
-  await expect(page.getByRole("heading", { name: "Programa de Trabajo Preventivo RE-04.1" })).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Programa de trabajo preventivo RE-04.1" })).toBeVisible()
   // Avance inicial: nada registrado y las tres ocurrencias del período planificadas.
   await expect(page.getByText("0/3 · 0% realizado").first()).toBeVisible()
   const sheet = await abrirActividad(page)
@@ -431,7 +431,7 @@ test("paso 14: la Jefa consulta el avance en el «Resumen» de la MIPER, en la p
   await jefa.goto(`${miperUrl}?tab=resumen`)
   await jefa.getByRole("link", { name: /^Avance del plan/ }).click()
   await expect(jefa).toHaveURL(/tab=programa/)
-  await expect(jefa.getByRole("heading", { name: "Programa de Trabajo Preventivo RE-04.1" })).toBeVisible()
+  await expect(jefa.getByRole("heading", { name: "Programa de trabajo preventivo RE-04.1" })).toBeVisible()
   await expect(jefa.getByText("1/3 · 33% realizado").first()).toBeVisible()
 })
 
@@ -465,7 +465,7 @@ test("paso 15: trazabilidad de la actividad al riesgo y del riesgo a sus medidas
   await expect(page.getByRole("article", { name: `Medida: ${MEASURE_1}` })).toBeVisible()
   // …y del riesgo a la actividad del programa que la ejecuta (§7.3, los dos sentidos).
   await irAPaso(page, "Seguimiento")
-  const programa = page.getByRole("region", { name: "Programa de Trabajo del riesgo" })
+  const programa = page.getByRole("region", { name: "Programa de trabajo del riesgo" })
   await expect(programa.getByRole("heading", { name: "Actividades del plan de medidas (1)" })).toBeVisible()
   await expect(programa.getByRole("link", { name: /^Actividad #1: / })).toBeVisible()
 })

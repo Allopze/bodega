@@ -200,7 +200,7 @@ export function ProgramPanel({
           icon={<ClipboardText size={24} />}
           title="Esta MIPER todavía no tiene plan de medidas"
           // `\u2011`: guion que no parte línea; en la columna de 40ch el código quedaba «RE-» / «04.1».
-          description={"El plan de medidas (Programa de Trabajo RE\u201104.1) convierte las medidas de la matriz en actividades con responsable y fecha. Se crea al empezar a generar las actividades o al agregar la primera."}
+          description={"El plan de medidas (programa de trabajo RE\u201104.1) convierte las medidas de la matriz en actividades con responsable y fecha. Se crea al empezar a generar las actividades o al agregar la primera."}
           action={mode.canEdit ? <Button size="sm" variant="secondary" onClick={() => setGenerateOpen(true)}>Generar actividades desde las medidas</Button> : undefined}
           secondaryAction={mode.canEdit ? <Button size="sm" variant="ghost" onClick={() => setHeaderOpen(true)}>Completar antecedentes</Button> : undefined}
         />
@@ -329,7 +329,7 @@ function ProgramHeader({ program, header, progress, canEdit, fichaHref, onEdit }
   return (
     <section className="space-y-3">
       <div>
-        <h2 className="text-h3">Programa de Trabajo Preventivo RE-04.1</h2>
+        <h2 className="text-h3">Programa de trabajo preventivo RE-04.1</h2>
         <p className="mt-1 text-sm text-[var(--color-text-muted)]">Organiza las medidas en actividades y registra cada ejecución con su evidencia.</p>
       </div>
       <dl className="flex flex-wrap gap-x-8 gap-y-3 rounded-xl bg-[var(--color-surface-2)] p-4">

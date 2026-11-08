@@ -93,6 +93,24 @@ export function isStandalone(): boolean {
   return iosStandalone || ["standalone", "fullscreen", "minimal-ui"].some((mode) => window.matchMedia?.(`(display-mode: ${mode})`)?.matches === true)
 }
 
+/**
+ * Dónde corre la app, como texto `plataforma:modo` (`ios:web`, `android:app`…).
+ * Va como texto y no como objeto para que `useSyncExternalStore` lo compare por
+ * valor: un objeto nuevo en cada lectura lo haría re-renderizar sin fin. Quien lo
+ * lee en el servidor recibe el valor de servidor de la propia llamada al hook, no
+ * este, porque `navigator` no existe allí.
+ */
+export function environmentSnapshot(): string {
+  if (typeof window === "undefined") return "other:web"
+  return `${detectPlatform(navigator.userAgent, navigator.maxTouchPoints ?? 0)}:${isStandalone() ? "app" : "web"}`
+}
+
+export function parseEnvironment(snapshot: string): { platform: InstallPlatform; standalone: boolean } | null {
+  const [platform, mode] = snapshot.split(":")
+  if (platform !== "ios" && platform !== "android" && platform !== "other") return null
+  return { platform, standalone: mode === "app" }
+}
+
 /** Regla pura de qué mostrar. */
 export function installMode(input: {
   standalone: boolean

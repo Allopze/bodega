@@ -7,13 +7,13 @@
  */
 
 const DTE_TIPO_LABEL: Record<string, string> = {
-  "33": "Factura Electrónica",
-  "34": "Factura Exenta",
-  "56": "Nota de Débito",
-  "61": "Nota de Crédito",
-  "52": "Guía de Despacho",
-  "39": "Boleta Afecta",
-  "41": "Boleta Exenta",
+  "33": "Factura electrónica",
+  "34": "Factura exenta",
+  "56": "Nota de débito",
+  "61": "Nota de crédito",
+  "52": "Guía de despacho",
+  "39": "Boleta afecta",
+  "41": "Boleta exenta",
 }
 
 export function dteTipoLabel(tipoDte: string): string {

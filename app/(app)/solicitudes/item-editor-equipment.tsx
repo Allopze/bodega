@@ -132,7 +132,7 @@ export function ItemEditorEquipment({
             libres sólo existen para «otro equipo». */}
         {!item.vehicleId && (
           <>
-            <Field label="Equipo / Máquina" className="sm:col-span-2" htmlFor={`equip-${item._key}`}>
+            <Field label="Equipo / máquina" className="sm:col-span-2" htmlFor={`equip-${item._key}`}>
               <Input
                 id={`equip-${item._key}`}
                 className="h-8 text-sm"
@@ -142,7 +142,7 @@ export function ItemEditorEquipment({
                 disabled={readOnly}
               />
             </Field>
-            <Field label="Patente / Código interno" htmlFor={`pat-${item._key}`}>
+            <Field label="Patente / código interno" htmlFor={`pat-${item._key}`}>
               <Input
                 id={`pat-${item._key}`}
                 className="h-8 text-sm"

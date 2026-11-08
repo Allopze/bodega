@@ -10,7 +10,7 @@ export const PREPARATION_GROUPS = [
   { key: "ficha", title: "Ficha del documento" },
   { key: "riesgos", title: "Identificación y evaluación" },
   { key: "medidas", title: "Medidas de control" },
-  { key: "programa", title: "Vínculos al Programa de Trabajo" },
+  { key: "programa", title: "Vínculos al programa de trabajo" },
 ] as const
 
 export type PreparationGroupKey = (typeof PREPARATION_GROUPS)[number]["key"]

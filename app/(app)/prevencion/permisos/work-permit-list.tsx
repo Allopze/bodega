@@ -41,6 +41,8 @@ interface WorkerOption {
 type PermitItem = {
   id: string
   code: string
+  /** Código aleatorio previo a la serie PT-AAAA-NNNN: el buscador también lo encuentra. */
+  legacyCode: string | null
   status: string
   taskDescription: string
   location: string
@@ -164,7 +166,7 @@ export function WorkPermitList({ permits, canManage, canRequest, types, worksite
         caption="Permisos de trabajo"
         columns={COLUMNS}
         rows={rows}
-        searchKeys={["code", "typeName", "taskDescription", "location", "worksiteName"]}
+        searchKeys={["code", "legacyCode", "typeName", "taskDescription", "location", "worksiteName"]}
         emptyTitle={permits.length === 0 ? "Aún no hay permisos de trabajo" : "No hay permisos con estos filtros"}
         emptyDescription={permits.length === 0 ? "Un permiso autoriza una tarea crítica sólo cuando su AST está escrito, los controles verificados, las energías aisladas y toda la cuadrilla habilitada." : "Ajusta los filtros o el texto del buscador superior."}
         emptyAction={permits.length > 0 ? <Button type="button" variant="secondary" onClick={() => clearUrlFilters()}>Ver todos</Button> : canRequest && types.length > 0 && worksites.length > 0 ? <NewPermitDialog types={types} worksites={worksites} workers={workers} supervisors={supervisors} /> : canManage ? <PermitTypeDialog /> : undefined}

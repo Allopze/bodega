@@ -215,6 +215,15 @@ describe("#21 — supervisor y peligro MIPER validados al crear", () => {
     const permit = await nuevoPermiso({ riskEntryId: "re-pwg-vigente" })
     expect(permit).toMatchObject({ supervisorUserId: APROBADOR.userId, riskEntryId: "re-pwg-vigente" })
   })
+
+  it("los permisos nacen con folio correlativo PT-AAAA-NNNN, uno tras otro (migración 0381)", async () => {
+    const primero = await nuevoPermiso()
+    const segundo = await nuevoPermiso()
+    const numero = (code: string) => Number(/^PT-\d{4}-(\d{4})$/.exec(code)?.[1])
+    expect(primero.code).toMatch(/^PT-\d{4}-\d{4}$/)
+    expect(numero(segundo.code)).toBe(numero(primero.code) + 1)
+    expect(primero.legacyCode).toBeNull()
+  })
 })
 
 describe("#63 — avisos del flujo del permiso", () => {

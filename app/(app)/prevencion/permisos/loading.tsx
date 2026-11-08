@@ -6,11 +6,11 @@ export default function Loading() {
   return (
     <PageContainer>
       <PageHeader
-        title="Permisos de Trabajo Especial"
+        title="Permisos de trabajo especial"
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Prevención", href: "/prevencion" },
-            { label: "Permisos de Trabajo" },
+            { label: "Permisos de trabajo" },
           ]} />
         }
       />

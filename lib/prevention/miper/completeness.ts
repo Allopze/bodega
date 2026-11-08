@@ -66,7 +66,7 @@ export function checkMiperCompleteness(
     if (cls === "intolerable") {
       if (entry.controls.length > 0 && assigned.length === 0) err("dueDate", "Un riesgo Intolerable exige una medida por implementar con responsable y plazo.")
       if (options.requireProgramLink && !entry.controls.some((control) => options.linkedControlIds?.has(control.id))) {
-        err("programLink", "Un riesgo Intolerable exige una medida vinculada a una actividad del Programa de Trabajo.")
+        err("programLink", "Un riesgo Intolerable exige una medida vinculada a una actividad del programa de trabajo.")
       }
       issues.push({ scope: "entry", entryId: entry.id, field: "classification", severity: "warning", message: "Riesgo Intolerable: no debe comenzar ni continuar el trabajo hasta que se reduzca el riesgo." })
     }

@@ -169,6 +169,10 @@ export const preventionCommitteeMembers = pgTable("prevention_committee_members"
 export const preventionCommitteeMeetings = pgTable("prevention_committee_meetings", {
   id:              text("id").primaryKey(),
   code:            text("code").notNull().unique(),
+  /** Código aleatorio previo a la serie correlativa `CPHS-AAAA-NNNN`, renumerado en
+   *  2026-11. Las actas ya fueron citadas (`Acta CPHS-…` como evidencia); esta
+   *  columna vincula el código viejo con el vigente. */
+  legacyCode:      text("legacy_code"),
   committeeId:     text("committee_id").notNull().references(() => preventionCommittees.id, { onDelete: "cascade" }),
   meetingType:     text("meeting_type").notNull().default("ordinary"),
   scheduledFor:    timestamp("scheduled_for", { withTimezone: true, mode: "string" }).notNull(),
@@ -280,6 +284,9 @@ export const preventionCommitteeAgreements = pgTable("prevention_committee_agree
 export const preventionManagementReviews = pgTable("prevention_management_reviews", {
   id:              text("id").primaryKey(),
   code:            text("code").notNull().unique(),
+  /** Código aleatorio previo a la serie correlativa `RD-AAAA-NNNN`, renumerado en
+   *  2026-11. Se conserva porque ya fue citado en documentos y mensajes. */
+  legacyCode:      text("legacy_code"),
   worksiteId:      text("worksite_id").references(() => worksites.id, { onDelete: "set null" }),
   periodLabel:     text("period_label").notNull(),
   heldAt:          timestamp("held_at", { withTimezone: true, mode: "string" }).notNull(),

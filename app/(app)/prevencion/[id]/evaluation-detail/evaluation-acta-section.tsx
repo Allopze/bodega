@@ -35,7 +35,7 @@ export function EvaluationActaSection({
   return (
     <TabsContent value="acta">
       <div className="border border-(--color-border) bg-(--color-surface) p-5 space-y-5">
-        <h3 className="text-base font-semibold text-(--color-text)">Acta de Cierre</h3>
+        <h3 className="text-base font-semibold text-(--color-text)">Acta de cierre</h3>
 
         {evaluation.motivo && (
           <div>

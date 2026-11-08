@@ -176,8 +176,8 @@ export function PdtpAplicabilidadClient({ activities, worksites, exclusions, par
             <TableRow>
               <TableHead className="w-[60px]">N°</TableHead>
               <TableHead>Actividad</TableHead>
-              <TableHead className="w-[140px]">Modo / Indicador</TableHead>
-              <TableHead className="w-[140px]">Estado Faena</TableHead>
+              <TableHead className="w-[140px]">Modo / indicador</TableHead>
+              <TableHead className="w-[140px]">Estado faena</TableHead>
               <TableHead className="w-[180px]">Parámetros (R1/R2)</TableHead>
               <TableHead className="w-[160px]">Asignada a</TableHead>
               {canManage && <TableHead className="w-[120px] text-right">Acciones</TableHead>}
@@ -288,7 +288,7 @@ export function PdtpAplicabilidadClient({ activities, worksites, exclusions, par
 
           <div className="space-y-4 py-2">
             <Field
-              label="Sujetos esperados en la faena (R1 - Todo o Nada)"
+              label="Sujetos esperados en la faena (R1 - todo o nada)"
               htmlFor="subjectCount"
               helper="Si la inspección no alcanza este total de sujetos en la faena, la actividad cuenta 0."
             >
@@ -340,7 +340,7 @@ export function PdtpAplicabilidadClient({ activities, worksites, exclusions, par
               Cancelar
             </Button>
             <Button onClick={handleSaveParams} disabled={pending}>
-              Guardar Parámetros
+              Guardar parámetros
             </Button>
           </DialogFooter>
         </DialogContent>

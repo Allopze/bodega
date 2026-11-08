@@ -2,9 +2,10 @@
 import "fake-indexeddb/auto"
 import { webcrypto } from "node:crypto"
 import { Blob as NodeBlob } from "node:buffer"
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { act, cleanup, configure, fireEvent, getConfig, render, screen, waitFor, within } from "@testing-library/react"
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { ENTRY, UUID, catalog, equipment, freshDb, workOrder } from "@/lib/mantencion/client/__tests__/fixtures"
+import { refreshCatalog } from "@/lib/mantencion/client/catalog-sync"
 import { loadDraft, saveDraft } from "@/lib/mantencion/client/drafts"
 import { newDraft } from "@/lib/mantencion/client/flow-types"
 import { MantApp, resetBootForTests } from "../mant-app"
@@ -118,7 +119,30 @@ async function signPreventive() {
   click("Firmar y guardar")
 }
 
+/**
+ * Deja terminado lo que la app del mecánico alcanzó a dejar en vuelo. Al abrir, la app
+ * refresca el catálogo en segundo plano (varias lecturas y escrituras en IndexedDB,
+ * deduplicadas por cuenta en el módulo). Si la prueba termina antes de que acabe, ese
+ * refresco sigue corriendo ya con la prueba siguiente en marcha: su escritura de
+ * «catálogo + otros equipos» cae en la base NUEVA y la pantalla muestra el catálogo
+ * de la prueba anterior (con la carga de la máquina la ventana se alarga y la prueba
+ * de «Abrir la OT» hacía clic sobre la OT de otra prueba). Se desmonta primero, para
+ * que nada nuevo arranque, y se espera ese refresco con la API pública: si hay uno en
+ * vuelo, `refreshCatalog` devuelve el mismo; si no, hace uno rápido contra el mismo servidor simulado.
+ */
+async function settleBackgroundWork() {
+  cleanup()
+  await refreshCatalog(USER.id)
+}
+
 describe("App del mecánico (arranque, PIN, preventiva completa y envío)", () => {
+  // Cada paso espera a IndexedDB y a un servidor simulado: con la máquina cargada el
+  // 1 s por defecto de `findBy*`/`waitFor` no alcanza aunque la app funcione bien.
+  // Es sólo paciencia: ninguna aserción cambia.
+  const defaultAsyncTimeout = getConfig().asyncUtilTimeout
+  beforeAll(() => { configure({ asyncUtilTimeout: 5_000 }) })
+  afterAll(() => { configure({ asyncUtilTimeout: defaultAsyncTimeout }) })
+
   beforeEach(async () => {
     await freshDb()
     resetBootForTests()
@@ -129,7 +153,8 @@ describe("App del mecánico (arranque, PIN, preventiva completa y envío)", () =
     URL.createObjectURL = vi.fn(() => "blob:foto")
     URL.revokeObjectURL = vi.fn()
   })
-  afterEach(() => {
+  afterEach(async () => {
+    await settleBackgroundWork()
     Object.defineProperty(navigator, "onLine", { value: true, configurable: true })
     window.history.replaceState(null, "", "/")
     vi.unstubAllGlobals()
@@ -379,6 +404,9 @@ describe("App del mecánico (arranque, PIN, preventiva completa y envío)", () =
     withOt.workOrders = []
     installServer({ online: true, catalog: withOt })
     await openAndDefinePin()
+    // «Le toca mantención» sale con el catálogo de cualquier prueba (KA-140 trae el mismo estado en todas):
+    // el folio es de ESTA, y es lo que asegura que el clic cae sobre su catálogo y no sobre uno ajeno.
+    await screen.findByText(/OT-BIO-0009/)
 
     fireEvent.click(within(screen.getByRole("region", { name: "Equipo en taller" })).getByRole("button", { name: "Abrir la OT de KA-140" }))
     expect(await screen.findByText("Esa OT está asignada a otro mecánico.")).toBeTruthy()

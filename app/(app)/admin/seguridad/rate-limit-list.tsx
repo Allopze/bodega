@@ -80,7 +80,7 @@ export function RateLimitList({ rows, total }: RateLimitListProps) {
         </form>
       </div>
       <DataTable
-        caption="Claves con Bloqueo por Rate Limit"
+        caption="Claves con bloqueo por rate limit"
         columns={COLUMNS}
         rows={dataRows}
         searchKeys={["key"]}

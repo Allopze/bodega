@@ -88,6 +88,7 @@ export default async function PermisosPage() {
         permits={permits.map((row) => ({
           id: row.permit.id,
           code: row.permit.code,
+          legacyCode: row.permit.legacyCode,
           status: row.permit.status,
           taskDescription: row.permit.taskDescription,
           location: row.permit.location,

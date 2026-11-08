@@ -292,15 +292,15 @@ describe("ItemEditor — equipo de flota en repuestos y servicios", () => {
     const flota = screen.getByRole("combobox", { name: /Equipo de flota/ })
     expect(flota).toHaveAttribute("placeholder", "Busca por código o patente")
     // Sin equipo elegido, los campos libres siguen disponibles («otro equipo»).
-    expect(screen.getByLabelText(/Patente \/ Código interno/)).toBeInTheDocument()
-    expect(screen.getByLabelText(/Equipo \/ Máquina/)).toBeInTheDocument()
+    expect(screen.getByLabelText(/Patente \/ código interno/)).toBeInTheDocument()
+    expect(screen.getByLabelText(/Equipo \/ máquina/)).toBeInTheDocument()
     expect(screen.queryByRole("combobox", { name: /Orden de trabajo/ })).toBeNull()
 
     cleanup()
     renderQuotation("repuestos", { vehicleId: "v-1", vehicleLabel: "KA-135 · RBYD-98" })
     expect(screen.getByRole("combobox", { name: /Equipo de flota/ })).toHaveValue("KA-135 · RBYD-98")
-    expect(screen.queryByLabelText(/Patente \/ Código interno/)).toBeNull()
-    expect(screen.queryByLabelText(/Equipo \/ Máquina/)).toBeNull()
+    expect(screen.queryByLabelText(/Patente \/ código interno/)).toBeNull()
+    expect(screen.queryByLabelText(/Equipo \/ máquina/)).toBeNull()
     expect(screen.queryByLabelText(/^Marca/)).toBeNull()
     expect(screen.queryByLabelText(/^Modelo/)).toBeNull()
     // El N.° de parte es del repuesto, no del equipo.

@@ -7,7 +7,7 @@ import { getEmailsEnabled } from "@/lib/services/system-settings"
 import { getLastDeliveryTest, getResendStatus } from "@/lib/services/smtp-settings"
 import { CorreoForms } from "./smtp-form"
 
-export const metadata: Metadata = { title: "Configuración de Correo" }
+export const metadata: Metadata = { title: "Configuración de correo" }
 
 export default async function CorreoSmtpPage() {
   try {
@@ -25,7 +25,7 @@ export default async function CorreoSmtpPage() {
   return (
     <PageContainer>
       <PageHeader
-        title="Configuración de Correo"
+        title="Configuración de correo"
         description="Estado del servicio de envío de correos y configuración global de notificaciones."
         breadcrumb={[
           { label: "Inicio", href: "/dashboard" },

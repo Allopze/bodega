@@ -131,7 +131,7 @@ test.describe("Combustibles module", () => {
     await pickOption(page, "vehicleCombobox", /E2E-FUEL-1/)
     await pickOption(page, "fuelSupplierId", "Proveedor Combustible E2E")
     await pickOption(page, "worksiteId", "Faena E2E")
-    await pickOption(page, "product", "Petróleo Diésel")
+    await pickOption(page, "product", "Petróleo diésel")
     await page.fill('input[name="receiptNumber"]', "TEST-001")
     await page.fill('input[name="liters"]', "1000")
     await page.fill('input[name="baseAmount"]', "1000000")

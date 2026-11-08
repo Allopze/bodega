@@ -16,7 +16,7 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { PdtpAplicabilidadClient, type AssigneesMap, type ExclusionsMap, type ParamsMap } from "./pdtp-aplicabilidad-client"
 import { CreatePdtpRevisionButton } from "../[programId]/create-pdtp-revision-button"
 
-export const metadata: Metadata = { title: "Aplicabilidad por Faena (PDTP SG-SST)" }
+export const metadata: Metadata = { title: "Aplicabilidad por faena (PDTP SG-SST)" }
 
 export default async function PdtpAplicabilidadPage() {
   let session
@@ -43,9 +43,9 @@ export default async function PdtpAplicabilidadPage() {
     return (
       <PageContainer>
         <PageHeader
-          title="Aplicabilidad por Faena"
+          title="Aplicabilidad por faena"
           description="Sin programa PDTP activo en el sistema."
-          breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "Prevención", href: "/prevencion" }, { label: "Programa de trabajo", href: "/prevencion/pdtp" }, { label: "Aplicabilidad por Faena" }]} />}
+          breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "Prevención", href: "/prevencion" }, { label: "Programa de trabajo", href: "/prevencion/pdtp" }, { label: "Aplicabilidad por faena" }]} />}
         />
         <EmptyState
           title={`Sin programa preventivo activo para ${period.year}`}
@@ -152,14 +152,14 @@ export default async function PdtpAplicabilidadPage() {
   return (
     <PageContainer>
       <PageHeader
-        title="Aplicabilidad y Reglas por Faena (PDTP)"
+        title="Aplicabilidad y reglas por faena (PDTP)"
         description={`Programa anual ${program.year}: gestiona exclusiones, sujetos esperados y metas de cobertura por faena.`}
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Inicio", href: "/dashboard" },
             { label: "Prevención", href: "/prevencion" },
             { label: "Programa de trabajo", href: "/prevencion/pdtp" },
-            { label: "Aplicabilidad por Faena" },
+            { label: "Aplicabilidad por faena" },
           ]} />
         }
       />

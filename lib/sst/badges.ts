@@ -21,10 +21,10 @@ export const MOTIVO_LABELS: Record<string, string> = {
 // ── Resultado ────────────────────────────────────────────────────────────────
 
 export const RESULTADO_LABELS: Record<string, string> = {
-  habilitado_autonomo:      "Habilitado Autónomo",
+  habilitado_autonomo:      "Habilitado autónomo",
   habilitado_restricciones: "Habilitado c/Restricciones",
-  no_habilitado:            "No Habilitado",
-  requiere_reforzamiento:   "Requiere Reforzamiento",
+  no_habilitado:            "No habilitado",
+  requiere_reforzamiento:   "Requiere reforzamiento",
 }
 
 // ── Estado (evaluación) ──────────────────────────────────────────────────────

@@ -192,7 +192,7 @@ export function GenerateActionsDialog({
           <EmptyState
             compact
             title="Todas las medidas de la MIPER ya tienen actividad"
-            description="Cada medida de control está cubierta por una actividad del Programa de Trabajo. No hay nada que generar."
+            description="Cada medida de control está cubierta por una actividad del programa de trabajo. No hay nada que generar."
             action={<Button type="button" variant="secondary" onClick={() => setOpen(false)}>Cerrar</Button>}
           />
         ) : (
@@ -230,7 +230,7 @@ export function GenerateActionsDialog({
                   {blocked.length > 0 && (
                     <p role="alert" className="text-xs text-[var(--color-danger-ink)]">
                       La fila {blocked[0]!.rowNumber} tiene un riesgo {CLASSIFICATION_LABEL[blocked[0]!.classification as RiskClassification]}:
-                      {" "}«{blocked[0]!.description}» no puede quedar sin una actividad del Programa de Trabajo.
+                      {" "}«{blocked[0]!.description}» no puede quedar sin una actividad del programa de trabajo.
                     </p>
                   )}
 

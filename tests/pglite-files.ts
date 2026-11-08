@@ -539,4 +539,7 @@ export const pgliteTestFiles = [
   // Series correlativas EV-AAAA-NNNN / INSP-AAAA-NNNN: migración 0380 (renumeración
   // idempotente con legacy_code y secuencias en su máximo) y emisión de los servicios.
   "lib/__tests__/prevention-correlative-codes-pglite.test.ts",
+  // Resto de las familias (CAPA, CPHS, RD, PE, PT, CGRD, RPT, CMP, COORD/FISC/OAL):
+  // migración 0381, con la forma aleatoria exacta de cada una y el catálogo intacto.
+  "lib/__tests__/prevention-correlative-codes-families-pglite.test.ts",
 ]

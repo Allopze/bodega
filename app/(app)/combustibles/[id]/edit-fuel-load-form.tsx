@@ -248,13 +248,13 @@ export function EditFuelLoadForm({ load, showCosts, canWrite, canDelete, vehicle
               <Select name="product" defaultValue={load.product} disabled={!isEditable}>
                 <SelectTrigger id="edit-load-product"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="PETROLEO DIESEL">Petróleo Diésel</SelectItem>
+                  <SelectItem value="PETROLEO DIESEL">Petróleo diésel</SelectItem>
                   <SelectItem value="BLUEMAX">BlueMax</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="edit-load-receipt">Nro Factura/Boleta</Label>
+              <Label htmlFor="edit-load-receipt">Nro factura/boleta</Label>
               <Input id="edit-load-receipt" name="receiptNumber" defaultValue={load.receiptNumber ?? ""} disabled={!isEditable} />
             </div>
             <div className="space-y-2">
@@ -298,16 +298,16 @@ export function EditFuelLoadForm({ load, showCosts, canWrite, canDelete, vehicle
             {showCosts && (
               <>
                 <div className="space-y-2">
-                  <Label htmlFor="edit-load-base">Base Afecta (CLP) *</Label>
+                  <Label htmlFor="edit-load-base">Base afecta (CLP) *</Label>
                   <Input id="edit-load-base" name="baseAmount" type="number" step="0.01" min="0" required
                     value={baseAmount} onChange={(e) => setBaseAmount(Number(e.target.value))} disabled={!isEditable} />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="edit-load-iec-fixed">IEC Fijo</Label>
+                  <Label htmlFor="edit-load-iec-fixed">IEC fijo</Label>
                   <Input id="edit-load-iec-fixed" value={formatCLP(iecFixed)} disabled className="bg-[var(--color-surface-2)]" />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="edit-load-iec-variable">IEC Variable</Label>
+                  <Label htmlFor="edit-load-iec-variable">IEC variable</Label>
                   <Input id="edit-load-iec-variable" value={formatCLP(iecVariable)} disabled className="bg-[var(--color-surface-2)]" />
                 </div>
                 <div className="space-y-2">

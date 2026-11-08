@@ -101,7 +101,7 @@ export const ADMIN_AREAS: AreaNode[] = [
     items: [
       { label: "Folios",                href: "/admin/folios",    iconName: "FileText",    permissions: ["admin:folios"] },
       { label: "Seguridad y bloqueos",  href: "/admin/seguridad", iconName: "ShieldCheck", permissions: ["admin:security"] },
-      { label: "Log de Auditoría",      href: "/admin/auditoria", iconName: "ShieldCheck", permissions: ["admin:audit_log"] },
+      { label: "Log de auditoría",      href: "/admin/auditoria", iconName: "ShieldCheck", permissions: ["admin:audit_log"] },
     ],
   },
   {

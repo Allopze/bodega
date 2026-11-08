@@ -6,7 +6,7 @@ export default function Loading() {
   return (
     <PageContainer>
       <PageHeader
-        title="CPHS Paritarios"
+        title="CPHS y gobernanza"
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Prevención", href: "/prevencion" },

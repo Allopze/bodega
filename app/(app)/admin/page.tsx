@@ -13,7 +13,7 @@ import { AdminHealthCards } from "./admin-health-cards"
 // estarlo, que es exactamente el caso que esta pantalla debe delatar.
 export const dynamic = "force-dynamic"
 
-export const metadata: Metadata = { title: "Panel de Administración" }
+export const metadata: Metadata = { title: "Panel de administración" }
 
 export default async function AdminPage() {
   const session = await auth()
@@ -34,7 +34,7 @@ export default async function AdminPage() {
   return (
     <PageContainer>
       <PageHeader
-        title="Panel de Administración"
+        title="Panel de administración"
         description="Configura los parámetros, catálogos y accesos de Plataforma Chome."
         breadcrumb={
           <Breadcrumbs items={[

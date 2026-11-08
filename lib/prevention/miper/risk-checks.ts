@@ -10,7 +10,7 @@ const BLOCKS: ReadonlyArray<Omit<RiskCheck, "ok" | "messages"> & { fields: reado
   { key: "evaluacion", label: "Evaluación P×C registrada", step: "evaluacion", fields: ["probability", "consequence"] },
   { key: "controlado", label: "«¿Está controlado?» indicado", step: "medidas", fields: ["controlledStatus"] },
   { key: "medidas", label: "Medidas de control suficientes", step: "medidas", fields: ["controls", "dueDate", "responsible", "description"] },
-  { key: "programa", label: "Medida vinculada al Programa de Trabajo", step: "seguimiento", fields: ["programLink"] },
+  { key: "programa", label: "Medida vinculada al programa de trabajo", step: "seguimiento", fields: ["programLink"] },
 ]
 
 export function riskChecks(entry: Pick<MiperEntrySnapshot, "classification">, issues: readonly CompletenessIssue[]): RiskCheck[] {

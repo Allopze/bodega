@@ -210,7 +210,7 @@ export function buildPerformanceGlossary(permissions: {
       },
       {
         key: "mttr",
-        term: "MTTR · tiempo medio de reparación (Mean Time To Repair)",
+        term: "MTTR · tiempo medio de reparación (mean time to repair)",
         definition:
           "Promedio de horas en taller, del ingreso a la salida, de las órdenes de reparación cerradas (con conformidad de la faena) dentro del período. Sin ninguna reparación cerrada no hay qué promediar y se muestra «Sin datos». Una cifra alta sugiere repuestos, mano de obra o aprobaciones frenando el retorno del equipo.",
       },

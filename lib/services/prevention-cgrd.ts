@@ -49,6 +49,7 @@ import {
   workers,
 } from "@/db/schema"
 import { createCapaActionWithClient } from "@/lib/services/prevention-capa"
+import { nextCodeTx } from "@/lib/code-sequences"
 import { nanoid } from "@/lib/id"
 import { codeYear, todayInChile } from "@/lib/utils"
 import {
@@ -625,9 +626,11 @@ export async function recordGrdMeeting(input: unknown, access: CgrdAccess) {
     if (committee.status !== "active") throw new Error("Un comité disuelto o vencido no puede registrar sesiones.")
 
     await claimPreventionEvidenceUpload(tx, { path: data.evidenceUrl, domain: "cgrd", worksiteId: committee.worksiteId, userId: access.userId })
+    // Serie correlativa por año (CGRD-2026-0001), reservada tras las validaciones.
+    const code = await nextCodeTx(tx, "CGRD", codeYear())
     const [created] = await tx.insert(preventionGrdMeetings).values({
       id: `grdmt-${nanoid()}`,
-      code: `CGRD-${codeYear()}-${nanoid(8).toUpperCase()}`,
+      code,
       committeeId: data.committeeId,
       heldOn: data.heldOn,
       agenda: data.agenda,

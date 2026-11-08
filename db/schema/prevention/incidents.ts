@@ -448,6 +448,10 @@ export type PreventionIncidentInvestigation = typeof preventionIncidentInvestiga
 export const preventionIncidentPublicReports = pgTable("prevention_incident_public_reports", {
   id: text("id").primaryKey(),
   code: text("code").notNull().unique(),
+  /** Código aleatorio previo a la serie correlativa `RPT-AAAA-NNNN`, renumerado en
+   *  2026-11. Quien reportó sin identificarse sólo tiene este código como acuse,
+   *  así que el buzón lo sigue encontrando por él. */
+  legacyCode: text("legacy_code"),
   worksiteId: text("worksite_id").notNull().references(() => worksites.id, { onDelete: "restrict" }),
   /** Qué se está reportando; el triage decide después si es un incidente. */
   category: text("category").notNull(),

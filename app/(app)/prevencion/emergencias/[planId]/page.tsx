@@ -77,6 +77,11 @@ export default async function PlanEmergenciaPage({ params, searchParams }: { par
           { label: detail.plan.title },
         ]} />}
       />
+      {/* Trazabilidad: el código aleatorio previo a la serie PE-AAAA-NNNN sigue
+          citado en documentos y mensajes ya emitidos. */}
+      {detail.plan.legacyCode && (
+        <p className="mb-3 text-xs text-[var(--color-text-subtle)]">Código anterior: {detail.plan.legacyCode}</p>
+      )}
       <PlanDetail
         plan={{
           id: detail.plan.id,

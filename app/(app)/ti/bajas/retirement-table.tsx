@@ -50,7 +50,7 @@ const COLUMNS = [
   { key: "reason", label: "Motivo", sortable: true, width: "w-32", sortValue: (r: Row) => reasonLabel(r.reason) },
   { key: "destination", label: "Destino final", width: "w-36" },
   // Doble control: responsable y autorizante tienen que verse juntos en la lista.
-  { key: "responsible", label: "Responsable / Autorizó", sortable: true, width: "w-48", sortValue: (r: Row) => r.responsibleName },
+  { key: "responsible", label: "Responsable / autorizó", sortable: true, width: "w-48", sortValue: (r: Row) => r.responsibleName },
   { key: "observations", label: "Observaciones" },
   { key: "reversal", label: "", width: "w-28" },
 ]

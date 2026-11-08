@@ -69,7 +69,7 @@ export const ANNEX_LABELS: Record<(typeof RE20_ANNEX_CODES)[number], string> = {
 export const SIGNATURE_LABELS: Record<(typeof RE20_SIGNATURE_ROLES)[number], string> = {
   investigator: "Responsable de la investigación / Prevención de Riesgos",
   cphs: "Representante Comité Paritario",
-  contract_admin: "Administrador de Contrato",
+  contract_admin: "Administrador de contrato",
   area_manager: "Subgerente del área",
 }
 

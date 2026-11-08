@@ -5,7 +5,7 @@ export default function Loading() {
   return (
     <>
       <PageHeader
-        title="Evaluaciones del Trabajador"
+        title="Evaluaciones del trabajador"
         breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "Evaluaciones SST", href: "/prevencion" }, { label: "Trabajador" }]} />}
       />
       <SkeletonPage rows={6} />

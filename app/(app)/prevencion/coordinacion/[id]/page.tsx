@@ -56,6 +56,11 @@ export default async function EngagementDetailPage({ params }: { params: Promise
         actions={<MetaBadge meta={{ label: `${engagement.closedAt ? "Cerrada" : "Abierta"}`, variant: engagement.closedAt ? "success" : "outline" }} />}
       />
 
+      {/* Trazabilidad: el código aleatorio previo a la serie COORD/FISC/OAL-AAAA-NNNN
+          sigue citado en el acta y en los compromisos ya emitidos. */}
+      {engagement.legacyCode && (
+        <p className="mb-3 text-xs text-[var(--color-text-subtle)]">Código anterior: {engagement.legacyCode}</p>
+      )}
       <dl className="grid gap-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 sm:grid-cols-2 lg:grid-cols-3">
         <div><dt className="text-eyebrow">Faena</dt><dd className="mt-1">{worksiteName}</dd></div>
         <div><dt className="text-eyebrow">Contraparte</dt><dd className="mt-1">{engagement.counterpartyName} · {COUNTERPARTY_TYPE_LABELS[engagement.counterpartyType] ?? engagement.counterpartyType}</dd></div>

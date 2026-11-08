@@ -6,7 +6,7 @@ export default function Loading() {
   return (
     <PageContainer>
       <PageHeader
-        title="Higiene Ocupacional"
+        title="Higiene y vigilancia"
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Prevención", href: "/prevencion" },

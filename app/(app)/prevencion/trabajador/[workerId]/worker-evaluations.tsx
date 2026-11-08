@@ -63,7 +63,7 @@ export function WorkerEvaluations({
       )}
       <div className="grid gap-6 md:grid-cols-3">
         <EvaluationCard
-          title="Prevencionista de Faena"
+          title="Prevencionista de faena"
           role="prevencionista_faena"
           worksiteAdminContratoLabel={worker.adminContratoLabel}
           icon={<ShieldCheck size={18} />}
@@ -87,7 +87,7 @@ export function WorkerEvaluations({
           onDelete={setDeleteTarget}
         />
         <EvaluationCard
-          title="Conductor Líder (Acompañamiento)"
+          title="Conductor líder (acompañamiento)"
           role="conductor_lider"
           worksiteAdminContratoLabel={worker.adminContratoLabel}
           icon={<Car size={18} />}

@@ -26,7 +26,7 @@ export function CostCenterList({ costCenters, worksites, canCreate }: CostCenter
   return (
     <>
       <DataTable
-        caption="Centros de Costo"
+        caption="Centros de costo"
         columns={CC_COLUMNS}
         rows={rows}
         searchKeys={CONTRACT.searchKeys}

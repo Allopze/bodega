@@ -55,12 +55,12 @@ export function ConstanciasWorkbench({
     <PageContainer width="wide">
       <PageHeader
         title="Constancias"
-        description="Actividades del Programa de Trabajo Preventivo que se cumplen dejando constancia: se hicieron o no se hicieron, con evidencia u observación."
+        description="Actividades del programa de trabajo preventivo que se cumplen dejando constancia: se hicieron o no se hicieron, con evidencia u observación."
         breadcrumb={<Breadcrumbs items={[{ label: "Inicio", href: "/dashboard" }, { label: "Programa de trabajo", href: "/prevencion/pdtp" }, { label: "Constancias" }]} />}
       />
 
       {!view ? (
-        <EmptyState title="No hay un programa activo" description="Activa una versión del Programa de Trabajo Preventivo para poder dejar constancias." />
+        <EmptyState title="No hay un programa activo" description="Activa una versión del programa de trabajo preventivo para poder dejar constancias." />
       ) : (
         <>
           <div className="grid grid-cols-2 overflow-hidden border-y border-[var(--color-border)] sm:grid-cols-2">

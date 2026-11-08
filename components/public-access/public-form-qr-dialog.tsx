@@ -47,7 +47,7 @@ export function PublicFormQrDialog({
   selectedOptionId,
   onSelectedOptionChange,
   pdfSubtitle,
-  triggerLabel = "QR / Enlace",
+  triggerLabel = "QR / enlace",
   qrAlt,
   hideSelector = false,
   children,

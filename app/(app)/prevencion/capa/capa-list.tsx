@@ -31,6 +31,8 @@ import {
 interface CapaListItem {
   id: string
   code: string
+  /** Código aleatorio previo a la serie CAPA-AAAA-NNNN: el buscador también lo encuentra. */
+  legacyCode?: string | null
   sourceType: string
   sourceId: string
   worksiteId: string
@@ -94,7 +96,7 @@ export function CapaList({ actions, worksites, counts, statusCounts, pagination 
 
   const filtered = actions.filter((item) => {
     if (!query) return true
-    return [item.code, item.finding, item.actionDescription, item.responsibleName, item.responsibleSnapshot, worksiteName.get(item.worksiteId)]
+    return [item.code, item.legacyCode, item.finding, item.actionDescription, item.responsibleName, item.responsibleSnapshot, worksiteName.get(item.worksiteId)]
       .filter(Boolean).some((value) => String(value).toLocaleLowerCase("es-CL").includes(query))
   })
 

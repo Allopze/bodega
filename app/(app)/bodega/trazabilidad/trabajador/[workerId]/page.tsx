@@ -19,7 +19,7 @@ import { listEppCoverageGaps } from "@/lib/services/prevention-epp"
 import { getProductAttributesByIds } from "@/lib/services/product-sizes"
 import { formatVariantProductName } from "@/lib/products/variant-grouping"
 
-export const metadata: Metadata = { title: "Trazabilidad EPP del Trabajador" }
+export const metadata: Metadata = { title: "Trazabilidad EPP del trabajador" }
 
 export default async function WorkerEppTraceabilityPage({
   params,
@@ -121,7 +121,7 @@ export default async function WorkerEppTraceabilityPage({
         <div className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4 space-y-2">
           <div className="flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
             <User size={18} className="text-[var(--color-primary)]" />
-            <span>Datos Personales</span>
+            <span>Datos personales</span>
           </div>
           <dl className="grid grid-cols-2 gap-x-2 gap-y-1 text-xs">
             <dt className="text-[var(--color-text-subtle)]">RUT</dt>
@@ -136,7 +136,7 @@ export default async function WorkerEppTraceabilityPage({
         <div className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4 space-y-2">
           <div className="flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
             <HardHat size={18} className="text-[var(--color-primary)]" />
-            <span>Tallas Registradas</span>
+            <span>Tallas registradas</span>
           </div>
           <div className="flex flex-wrap gap-1.5 text-xs">
             {worker.sizeTop && <MetaBadge meta={{ label: `Superior: ${worker.sizeTop}`, variant: "outline" }} />}
@@ -157,7 +157,7 @@ export default async function WorkerEppTraceabilityPage({
             ) : (
               <Warning size={18} className="text-[var(--color-warning-ink)]" />
             )}
-            <span>Estado de Cobertura EPP</span>
+            <span>Estado de cobertura EPP</span>
           </div>
           {!canViewEppGaps ? (
             <p className="text-xs text-[var(--color-text-subtle)]">
@@ -181,7 +181,7 @@ export default async function WorkerEppTraceabilityPage({
       {/* ── Historial de Entregas ── */}
       <section className="space-y-3">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-base font-semibold text-[var(--color-text)]">Historial de Entregas EPP</h2>
+          <h2 className="text-base font-semibold text-[var(--color-text)]">Historial de entregas EPP</h2>
           {voidedCount > 0 && (
             <p className="text-xs text-[var(--color-text-subtle)]">
               {validDeliveries.length} {validDeliveries.length === 1 ? "entrega vigente" : "entregas vigentes"} ·{" "}
@@ -204,10 +204,10 @@ export default async function WorkerEppTraceabilityPage({
                 <TableRow>
                   <TableHead>Código</TableHead>
                   <TableHead>Fecha</TableHead>
-                  <TableHead>EPP Entregado</TableHead>
+                  <TableHead>EPP entregado</TableHead>
                   <TableHead>Cantidad</TableHead>
                   <TableHead>Firma</TableHead>
-                  <TableHead>Devolución EPP Antiguo</TableHead>
+                  <TableHead>Devolución EPP antiguo</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

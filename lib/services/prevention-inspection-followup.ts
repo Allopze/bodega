@@ -120,6 +120,7 @@ export async function listInspectionFollowup(
         ilike(worksites.name, pattern),
         ilike(preventionCapaActions.actionDescription, pattern),
         ilike(preventionCapaActions.code, pattern),
+        ilike(preventionCapaActions.legacyCode, pattern),
         ilike(responsible.name, pattern),
         ilike(preventionCapaActions.responsibleSnapshot, pattern),
       ) : undefined,

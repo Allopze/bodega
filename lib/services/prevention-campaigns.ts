@@ -3,7 +3,9 @@ import { z } from "zod"
 import { db } from "@/db"
 import { preventionCampaigns } from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
+import { nextCodeTx } from "@/lib/code-sequences"
 import { nanoid } from "@/lib/id"
+import { codeYear } from "@/lib/utils"
 import { recordPdtpTriggerEventSafe } from "@/lib/services/pdtp/trigger-events"
 import { replacePdtpAccreditationBindings } from "@/lib/services/pdtp/accreditation-bindings"
 import { evidencePathSchema } from "@/lib/validation/evidence-contract"
@@ -51,11 +53,13 @@ export async function createCampaign(input: unknown, access: CampaignAccess) {
   const data = campaignCreateSchema.parse(input)
   requireAccess(access, "prevention:campaign:manage", data.worksiteId)
 
-  const code = `CMP-${nanoid(6).toUpperCase()}`
   const now = new Date().toISOString()
 
   const id = `cmp-${nanoid()}`
   return db.transaction(async (tx) => {
+  // Serie correlativa por año (CMP-2026-0001). Las campañas sembradas del
+  // catálogo llevan `CAMP-<faena>-<campaña>` y quedan fuera de esta serie.
+  const code = await nextCodeTx(tx, "CMP", codeYear())
   const [created] = await tx.insert(preventionCampaigns).values({
     id,
     worksiteId: data.worksiteId,

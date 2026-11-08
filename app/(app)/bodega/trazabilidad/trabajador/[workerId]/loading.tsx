@@ -6,7 +6,7 @@ export default function Loading() {
   return (
     <PageContainer>
       <PageHeader
-        title="Trazabilidad EPP del Trabajador"
+        title="Trazabilidad EPP del trabajador"
         breadcrumb={
           <Breadcrumbs
             items={[

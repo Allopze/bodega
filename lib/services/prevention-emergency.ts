@@ -19,6 +19,7 @@ import {
 } from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { recordModuleHistory } from "@/lib/audit"
+import { nextCodeTx } from "@/lib/code-sequences"
 import { nanoid } from "@/lib/id"
 import { assessDrillCompletion, assessPlanReadiness } from "@/lib/prevention/emergency"
 import type { EmergencyQuickFilter } from "@/lib/prevention/emergency-list-filters"
@@ -152,17 +153,23 @@ export async function createEmergencyPlan(input: unknown, access: EmergencyAcces
     )).limit(1)
   if (vigente) throw new EmergencyDomainError(`La faena ya tiene el plan ${vigente.code} vigente. Archívalo para emitir el siguiente.`)
 
-  const [created] = await db.insert(preventionEmergencyPlans).values({
-    id: `pemgp-${nanoid()}`,
-    worksiteId: data.worksiteId,
-    code: `PE-${codeYear()}-${nanoid(6).toUpperCase()}`,
-    title: data.title,
-    description: data.description ?? null,
-    createdByUserId: access.userId,
-  }).returning()
-  if (!created) throw new Error("No se pudo crear el plan de emergencia.")
-  await history(db, { entityType: "plan", entityId: created.id, worksiteId: data.worksiteId, changeType: "created", reason: `Plan creado: ${data.title}`, afterState: created, actorUserId: access.userId })
-  return created
+  // Serie correlativa por año (PE-2026-0001). Se reserva DESPUÉS de la validación
+  // de arriba para que un rechazo por plan vigente no consuma número, y en la
+  // misma transacción que el insert y su bitácora.
+  return db.transaction(async (tx) => {
+    const code = await nextCodeTx(tx, "PE", codeYear())
+    const [created] = await tx.insert(preventionEmergencyPlans).values({
+      id: `pemgp-${nanoid()}`,
+      worksiteId: data.worksiteId,
+      code,
+      title: data.title,
+      description: data.description ?? null,
+      createdByUserId: access.userId,
+    }).returning()
+    if (!created) throw new Error("No se pudo crear el plan de emergencia.")
+    await history(tx, { entityType: "plan", entityId: created.id, worksiteId: data.worksiteId, changeType: "created", reason: `Plan creado: ${data.title}`, afterState: created, actorUserId: access.userId })
+    return created
+  })
 }
 
 /**

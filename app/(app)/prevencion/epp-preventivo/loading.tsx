@@ -6,11 +6,11 @@ export default function Loading() {
   return (
     <PageContainer>
       <PageHeader
-        title="EPP Preventivo"
+        title="Requisitos de EPP"
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Prevención", href: "/prevencion" },
-            { label: "EPP Preventivo" },
+            { label: "EPP preventivo" },
           ]} />
         }
       />

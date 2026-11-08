@@ -109,7 +109,7 @@ export async function PreventionHome() {
   return (
     <PageContainer width="workbench">
       <PageHeader
-        title="Inicio de Prevención"
+        title="Inicio de prevención"
         description="Accede al trabajo disponible para tu rol y tus faenas autorizadas."
         breadcrumb={<Breadcrumbs items={[{ label: "Prevención" }]} />}
       />

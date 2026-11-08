@@ -98,6 +98,7 @@ export default async function ComitePage({ params }: { params: Promise<{ committ
         meetings={meetings.map((row) => ({
           id: row.meeting.id,
           code: row.meeting.code,
+          legacyCode: row.meeting.legacyCode,
           meetingType: row.meeting.meetingType,
           scheduledFor: row.meeting.scheduledFor,
           agenda: row.meeting.agenda,

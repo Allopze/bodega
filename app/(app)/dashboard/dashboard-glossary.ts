@@ -7,7 +7,7 @@
  * a un `<abbr title>`.
  */
 export const DASHBOARD_GLOSSARY = {
-  PDTP: "PDTP: Programa de Trabajo Preventivo del año, con su avance acreditado frente a lo planificado.",
+  PDTP: "PDTP: programa de trabajo preventivo del año, con su avance acreditado frente a lo planificado.",
   CAPA: "CAPA: acciones correctivas y preventivas que nacen de incidentes, hallazgos y auditorías.",
   MIPER: "MIPER: matriz de identificación de peligros y evaluación de riesgos.",
   PPA: "PPA: Para, Piensa y Actúa. Detención de una tarea ante una condición insegura.",

@@ -7,6 +7,11 @@ import { worksites } from "../worksites"
 export const preventionCapaActions = pgTable("prevention_capa_actions", {
   id:                    text("id").primaryKey(),
   code:                  text("code").notNull().unique(),
+  /** Código aleatorio previo a la serie correlativa `CAPA-AAAA-NNNN`, renumerado en
+   *  2026-11. Se conserva porque ya fue citado en notificaciones, motivos de
+   *  hallazgo y documentos generados: esos textos son históricos y no se
+   *  reescriben, y esta columna es lo que vincula el código viejo con el vigente. */
+  legacyCode:            text("legacy_code"),
   sourceType:            text("source_type").notNull(),
   sourceId:              text("source_id").notNull(),
   /**

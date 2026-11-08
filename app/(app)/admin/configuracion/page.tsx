@@ -6,7 +6,7 @@ import { PageContainer } from "@/components/ui/page-container"
 import { getCompanyProfile, getPdfMaxSizeMb } from "@/lib/services/system-settings"
 import { ConfigForm } from "./config-form"
 
-export const metadata: Metadata = { title: "Configuración del Sistema" }
+export const metadata: Metadata = { title: "Configuración del sistema" }
 
 export default async function ConfiguracionPage() {
   try {
@@ -23,7 +23,7 @@ export default async function ConfiguracionPage() {
   return (
     <PageContainer>
       <PageHeader
-        title="Configuración del Sistema"
+        title="Configuración del sistema"
         description="Ajustar parámetros globales de Plataforma Chome."
         breadcrumb={[
           { label: "Inicio", href: "/dashboard" },

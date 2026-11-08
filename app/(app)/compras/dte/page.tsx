@@ -230,7 +230,7 @@ export default async function DteListPage({
       {truncated && (
         <p className="text-sm text-[var(--color-text-muted)]">
           Se muestran los {ROW_LIMIT} documentos más recientes de {periodo}; hay más.
-          Usa el Libro de Compras Electrónico en Reportes para ver el período completo.
+          Usa el libro de compras electrónico en Reportes para ver el período completo.
         </p>
       )}
 

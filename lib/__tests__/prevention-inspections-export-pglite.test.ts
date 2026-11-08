@@ -569,7 +569,8 @@ describe("Seguimiento — listInspectionFollowup", () => {
     await testDb.insert(schema.preventionCapaActions).values([
       capa("capa-fup-late", "CAPA-FUP-001", "pending", "2026-10-01", { actionDescription: "Cambiar la manguera dañada", responsibleUserId: ASIGNADA }),
       // Más atrasada que la anterior, y con responsable sólo por texto (sin usuario).
-      capa("capa-fup-late2", "CAPA-FUP-002", "in_progress", "2026-09-15", { responsibleSnapshot: "Contratista Externo" }),
+      // Con el código aleatorio previo a la serie CAPA-AAAA-NNNN (migración 0381).
+      capa("capa-fup-late2", "CAPA-FUP-002", "in_progress", "2026-09-15", { responsibleSnapshot: "Contratista Externo", legacyCode: "CAPA-2026-K3J9X0AB12" }),
       // Plazo vencido pero ya cerrada: no cuenta como vencida.
       capa("capa-fup-done", "CAPA-FUP-003", "closed", "2026-09-10"),
       // Vence hoy: todavía no está vencida.
@@ -656,6 +657,7 @@ describe("Seguimiento — listInspectionFollowup", () => {
     expect(await search("MANGUERA")).toEqual(["fnd-exp-2", "fnd-fup-late"]) // hallazgo "Manguera con grietas" y "Manguera dañada"
     expect(await search("repuesto")).toEqual([]) // el seguimiento no es campo de búsqueda
     expect(await search("capa-fup-002")).toEqual(["fnd-fup-late2"]) // código de la acción
+    expect(await search("K3J9X0AB12")).toEqual(["fnd-fup-late2"]) // código anterior de la acción (legacy_code)
     expect(await search("INS-FUP")).toHaveLength(5) // código de la inspección
     expect(await search("Camión FUP-1")).toHaveLength(5) // sujeto
     expect(await search("Seguimiento Dos")).toHaveLength(5) // faena

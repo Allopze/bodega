@@ -179,7 +179,7 @@ export function CreateEvaluationDialog({ worker, open, onOpenChange, initialRole
           )}
 
           <div className="grid grid-cols-2 gap-4">
-            <Field label="Fecha de Evaluación" htmlFor={uid + "-fecha"} error={formErrors.fecha}>
+            <Field label="Fecha de evaluación" htmlFor={uid + "-fecha"} error={formErrors.fecha}>
               <DatePicker
                 id={uid + "-fecha"}
                 value={fechaEvaluacion}
@@ -187,7 +187,7 @@ export function CreateEvaluationDialog({ worker, open, onOpenChange, initialRole
               />
             </Field>
 
-            <Field label="Tipo de Evaluación" htmlFor={uid + "-definicion"}>
+            <Field label="Tipo de evaluación" htmlFor={uid + "-definicion"}>
               <Select
                 value={definicionCode}
                 onValueChange={(v) => {
@@ -203,14 +203,14 @@ export function CreateEvaluationDialog({ worker, open, onOpenChange, initialRole
                   <SelectValue placeholder="Selecciona un tipo" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="trabajador_nuevo">Trabajador Nuevo</SelectItem>
+                  <SelectItem value="trabajador_nuevo">Trabajador nuevo</SelectItem>
                   <SelectItem value="trabajador_antiguo">Seguimiento</SelectItem>
                 </SelectContent>
               </Select>
             </Field>
           </div>
 
-          <Field label="Cargo(s) Aplicable(s)" error={formErrors.cargos}>
+          <Field label="Cargo(s) aplicable(s)" error={formErrors.cargos}>
             <div className="grid grid-cols-2 gap-2 mt-1 p-2 border border-(--color-border) rounded-(--radius-lg) bg-(--color-surface-2)">
               {CARGO_OPTIONS.map((cargo) => (
                 <Checkbox
@@ -228,7 +228,7 @@ export function CreateEvaluationDialog({ worker, open, onOpenChange, initialRole
             <div className="border-t border-(--color-border) pt-4 space-y-4">
               <p className="text-eyebrow">Detalles de seguimiento</p>
 
-              <Field label="Motivo de Seguimiento" htmlFor={uid + "-motivo"} error={formErrors.motivo}>
+              <Field label="Motivo de seguimiento" htmlFor={uid + "-motivo"} error={formErrors.motivo}>
                 <Select value={motivo} onValueChange={setMotivo}>
                   <SelectTrigger id={uid + "-motivo"}>
                     <SelectValue placeholder="Selecciona motivo" />
@@ -242,11 +242,11 @@ export function CreateEvaluationDialog({ worker, open, onOpenChange, initialRole
               </Field>
 
               {motivo === "otro" && (
-                <Field label="Especificar Motivo" htmlFor={uid + "-motivo-otro"}>
+                <Field label="Especificar motivo" htmlFor={uid + "-motivo-otro"}>
                   <input
                     id={uid + "-motivo-otro"}
                     type="text"
-                    aria-label="Especificar Motivo"
+                    aria-label="Especificar motivo"
                     className="flex h-9 w-full rounded-(--radius-lg) border border-[var(--color-border-control)] bg-[var(--color-surface)] px-3.5 py-1.5 text-sm text-[var(--color-text)] focus-visible:outline-none focus-visible:border-[var(--color-primary)] focus-visible:ring-2 focus-visible:ring-[var(--color-primary-line)]"
                     value={motivoOtro}
                     onChange={(e) => setMotivoOtro(e.target.value)}
@@ -256,11 +256,11 @@ export function CreateEvaluationDialog({ worker, open, onOpenChange, initialRole
               )}
 
               <div className="grid grid-cols-2 gap-4">
-                <Field label="Patente Equipo (Opcional)" htmlFor={uid + "-patente"}>
+                <Field label="Patente del equipo (opcional)" htmlFor={uid + "-patente"}>
                   <input
                     id={uid + "-patente"}
                     type="text"
-                    aria-label="Patente Equipo"
+                    aria-label="Patente del equipo"
                     className="flex h-9 w-full rounded-(--radius-lg) border border-[var(--color-border-control)] bg-[var(--color-surface)] px-3.5 py-1.5 text-sm text-[var(--color-text)] focus-visible:outline-none focus-visible:border-[var(--color-primary)] focus-visible:ring-2 focus-visible:ring-[var(--color-primary-line)]"
                     value={equipoPatente}
                     onChange={(e) => setEquipoPatente(e.target.value)}
@@ -269,7 +269,7 @@ export function CreateEvaluationDialog({ worker, open, onOpenChange, initialRole
                 </Field>
               </div>
 
-              <Field label="Descripción de Evento (Opcional)" htmlFor={uid + "-desc"}>
+              <Field label="Descripción de evento (opcional)" htmlFor={uid + "-desc"}>
                 <Textarea
                   id={uid + "-desc"}
                   value={descripcionEvento}
@@ -286,7 +286,7 @@ export function CreateEvaluationDialog({ worker, open, onOpenChange, initialRole
               <Button variant="ghost" disabled={isPending}>Cancelar</Button>
             </DialogClose>
             <Button type="submit" disabled={isPending}>
-              {isPending ? "Iniciando..." : "Confirmar e Iniciar"}
+              {isPending ? "Iniciando..." : "Confirmar e iniciar"}
             </Button>
           </div>
         </form>

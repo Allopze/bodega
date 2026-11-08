@@ -53,6 +53,11 @@ export default async function PermisoPage({ params }: { params: Promise<{ permit
           { label: detail.permit.code },
         ]} />}
       />
+      {/* Trazabilidad: el código aleatorio previo a la serie PT-AAAA-NNNN sigue
+          citado en avisos, bitácoras y permisos ya impresos. */}
+      {detail.permit.legacyCode && (
+        <p className="mb-3 text-xs text-[var(--color-text-subtle)]">Código anterior: {detail.permit.legacyCode}</p>
+      )}
       <PermitDetail
         permit={{
           id: detail.permit.id,

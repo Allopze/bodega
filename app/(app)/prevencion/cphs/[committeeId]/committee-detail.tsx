@@ -78,6 +78,8 @@ interface MemberInfo {
 interface MeetingInfo {
   id: string
   code: string
+  /** Código aleatorio previo a la serie CPHS-AAAA-NNNN; las actas ya lo citan. */
+  legacyCode: string | null
   meetingType: string
   scheduledFor: string
   agenda: string
@@ -251,6 +253,7 @@ export function CommitteeDetail({
                   <TableRow key={meeting.id}>
                     <TableCell>
                       <span className="font-mono text-xs">{meeting.code}</span>
+                      {meeting.legacyCode && <span className="block text-xs text-[var(--color-text-subtle)]">Código anterior: {meeting.legacyCode}</span>}
                       <span className="block max-w-xs text-xs text-[var(--color-text-subtle)]">{meeting.agenda}</span>
                       {meeting.agendaSentAt && <span className="block text-xs text-[var(--color-text-subtle)]">Tabla enviada previamente</span>}
                     </TableCell>

@@ -8,6 +8,7 @@ import {
   formatCLP,
   todayInChile,
   addDaysToPlainDate,
+  trailingDaysRange,
   subtractBusinessDays,
   DELIVERY_BACKDATE_BUSINESS_DAYS,
   formatFileSize,
@@ -385,6 +386,25 @@ describe("todayInChile / addDaysToPlainDate", () => {
     // El cambio de hora chileno de 2026 cae el 6 de septiembre.
     expect(addDaysToPlainDate("2026-09-05", 2)).toBe("2026-09-07")
     expect(addDaysToPlainDate("2026-12-31", 30)).toBe("2027-01-30")
+  })
+})
+
+/**
+ * `trailingDaysRange` es la definición única de «Últimos N días»: la usan el
+ * acceso rápido de `PeriodControl` y el rango por defecto de Analítica.
+ */
+describe("trailingDaysRange", () => {
+  it("son N días corridos con hoy incluido: 30 días no son 31", () => {
+    expect(trailingDaysRange(30, "2026-06-26")).toEqual({ from: "2026-05-28", to: "2026-06-26" })
+    expect(trailingDaysRange(1, "2026-06-26")).toEqual({ from: "2026-06-26", to: "2026-06-26" })
+    // 365 días = «últimos 12 meses» de PeriodControl.
+    expect(trailingDaysRange(365, "2026-11-06")).toEqual({ from: "2025-11-07", to: "2026-11-06" })
+  })
+
+  it("cruza meses y años sin que la corra el cambio de hora", () => {
+    expect(trailingDaysRange(30, "2026-01-10")).toEqual({ from: "2025-12-12", to: "2026-01-10" })
+    // El cambio de hora chileno de 2026 cae el 6 de septiembre.
+    expect(trailingDaysRange(5, "2026-09-08")).toEqual({ from: "2026-09-04", to: "2026-09-08" })
   })
 })
 

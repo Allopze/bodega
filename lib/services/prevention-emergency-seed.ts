@@ -90,7 +90,8 @@ export async function seedEmergencyPlansForActiveWorksites(input: {
   for (const worksite of activeWorksites) {
     // La clave natural es la que ya impone el índice parcial
     // `prevention_emergency_plan_active_worksite_unique`: una faena, un plan no
-    // archivado. El `code` lleva un nanoid y no sirve para reconocer nada.
+    // archivado. El `code` es un correlativo por año (PE-AAAA-NNNN): lo asigna la
+    // serie, no identifica a la faena y no sirve para reconocer nada.
     const [existing] = await db.select({
       id: preventionEmergencyPlans.id,
       code: preventionEmergencyPlans.code,

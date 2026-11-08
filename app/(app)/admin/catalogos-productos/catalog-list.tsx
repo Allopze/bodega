@@ -103,7 +103,7 @@ export function CatalogList({ units, templates, categories, legacyUnits }: Catal
             </div>
           )}
           <DataTable
-        caption="Unidades de Producto"
+        caption="Unidades de producto"
         enableColumnToggle
         viewKey="cat"
         stickyFirstColumn
@@ -182,7 +182,7 @@ export function CatalogList({ units, templates, categories, legacyUnits }: Catal
       {tab === "templates" && (
         <section>
           <DataTable
-            caption="Atributos Reutilizables"
+            caption="Atributos reutilizables"
             columns={ATTR_COLUMNS}
             rows={attrRows}
             searchKeys={["name", "type", "categoryId"]}

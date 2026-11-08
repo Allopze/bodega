@@ -26,7 +26,7 @@ interface NewFuelLoadData {
 }
 
 const PRODUCTS = [
-  { value: "PETROLEO DIESEL", label: "Petróleo Diésel" },
+  { value: "PETROLEO DIESEL", label: "Petróleo diésel" },
   { value: "BLUEMAX", label: "BlueMax" },
 ]
 

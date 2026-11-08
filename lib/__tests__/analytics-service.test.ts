@@ -71,12 +71,27 @@ beforeEach(() => {
 })
 
 describe("normalizeAnalyticsFilters", () => {
-  it("defaults to a trailing 30-day window when no dates are provided", () => {
+  it("defaults to the last 30 days ending today (30 calendar days, today included)", () => {
     const filters = normalizeAnalyticsFilters({}, new Date("2026-06-26T12:00:00Z"))
     expect(filters).toEqual({
-      fromDate: "2026-05-27",
+      fromDate: "2026-05-28",
       toDate: "2026-06-26",
     })
+  })
+
+  it("measures 'today' as the Chilean civil day, not the server's UTC day", () => {
+    // 21:30 del 26 de junio en Chile (UTC-4 en invierno) ya es el 27 en UTC.
+    const filters = normalizeAnalyticsFilters({}, new Date("2026-06-27T01:30:00Z"))
+    expect(filters).toEqual({
+      fromDate: "2026-05-28",
+      toDate: "2026-06-26",
+    })
+  })
+
+  it("only fills the bound that is missing", () => {
+    const now = new Date("2026-06-26T12:00:00Z")
+    expect(normalizeAnalyticsFilters({ fromDate: "2026-01-01" }, now)).toEqual({ fromDate: "2026-01-01", toDate: "2026-06-26" })
+    expect(normalizeAnalyticsFilters({ toDate: "2026-03-31" }, now)).toEqual({ fromDate: "2026-05-28", toDate: "2026-03-31" })
   })
 
   it("keeps explicit date and entity filters", () => {

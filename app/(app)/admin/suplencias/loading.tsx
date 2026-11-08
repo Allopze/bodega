@@ -8,7 +8,7 @@ import { PageContainer } from "@/components/ui/page-container"
 export default function Loading() {
   return (
     <PageContainer>
-      <PageHeader title="Cuentas Temporales de Suplencia (R7) | Administración" />
+      <PageHeader title="Cuentas temporales de suplencia (R7) | Administración" />
       <SkeletonPage rows={6} />
     </PageContainer>
   )

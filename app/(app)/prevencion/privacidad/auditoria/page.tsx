@@ -13,7 +13,7 @@ import {
 } from "@/lib/services/prevention-privacy"
 import { formatDateTime } from "@/lib/utils"
 
-export const metadata: Metadata = { title: "Auditoría sensible de Prevención" }
+export const metadata: Metadata = { title: "Auditoría sensible de prevención" }
 
 export default async function PreventionPrivacyAuditPage() {
   let session

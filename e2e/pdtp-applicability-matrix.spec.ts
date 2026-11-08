@@ -18,7 +18,7 @@ test.describe("PDTP — Matriz de aplicabilidad por faena", () => {
     await page.goto("/prevencion/pdtp/aplicabilidad")
 
     // Heading
-    await expect(page.getByRole("heading", { name: /Aplicabilidad y Reglas por Faena/ })).toBeVisible()
+    await expect(page.getByRole("heading", { name: /Aplicabilidad y reglas por faena/ })).toBeVisible()
   })
 
   test("el detalle del programa responde al filtro por faena", async ({ page }) => {

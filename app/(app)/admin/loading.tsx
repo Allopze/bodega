@@ -9,7 +9,7 @@ export default function Loading() {
   return (
     <>
       <PageHeader
-        title="Panel de Administración"
+        title="Panel de administración"
         breadcrumb={BREADCRUMBS}
       />
       <SkeletonPage rows={8} />

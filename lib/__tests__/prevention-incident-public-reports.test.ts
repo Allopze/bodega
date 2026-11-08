@@ -59,7 +59,8 @@ beforeAll(async () => {
 describe("INC-001 — canal público de reporte", () => {
   it("acepta un reporte sin sesión y devuelve un folio con el que referirse a él", async () => {
     const { code } = await submitPublicIncidentReport({ ...BASE, isAnonymous: true })
-    expect(code).toMatch(/^RPT-\d{4}-[A-Z0-9_-]{8}$/)
+    // Serie correlativa por año (migración 0381), ya no un sufijo aleatorio.
+    expect(code).toMatch(/^RPT-\d{4}-\d{4}$/)
   })
 
   it("no guarda identidad en un reporte anónimo aunque el cliente la mande", async () => {

@@ -80,7 +80,7 @@ export function SequenceList({ rows }: SequenceListProps) {
       ) : (
         <>
         <DataTable
-          caption="Secuencias de Folios"
+          caption="Secuencias de folios"
           columns={COLUMNS}
           rows={dataRows}
           searchKeys={["prefix", "year"]}

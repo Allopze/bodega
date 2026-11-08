@@ -16,6 +16,7 @@ import {
   workers,
   worksites,
 } from "@/db/schema"
+import { nextCodeTx } from "@/lib/code-sequences"
 import { nanoid } from "@/lib/id"
 import {
   CPHS_NOT_FOUND,
@@ -643,9 +644,11 @@ export async function scheduleCommitteeMeeting(input: unknown, access: CphsAcces
     if (committee.status !== "active") throw new Error("Un comité disuelto o vencido no puede convocar sesiones.")
 
     const id = `cphsmt-${nanoid()}`
+    // Serie correlativa por año (CPHS-2026-0001), reservada en esta transacción.
+    const code = await nextCodeTx(tx, "CPHS", codeYear())
     const [created] = await tx.insert(preventionCommitteeMeetings).values({
       id,
-      code: `CPHS-${codeYear()}-${nanoid(8).toUpperCase()}`,
+      code,
       committeeId: data.committeeId,
       meetingType: data.meetingType,
       scheduledFor: data.scheduledFor,
@@ -901,18 +904,23 @@ export async function createManagementReview(input: unknown, access: CphsAccess)
   const data = managementReviewSchema.parse(input)
   requireAccess(access, "prevention:governance:review", data.worksiteId ?? undefined)
 
-  const [created] = await db.insert(preventionManagementReviews).values({
-    id: `mgmtrev-${nanoid()}`,
-    code: `RD-${codeYear()}-${nanoid(6).toUpperCase()}`,
-    worksiteId: data.worksiteId ?? null,
-    periodLabel: data.periodLabel,
-    heldAt: data.heldAt,
-    inputs: data.inputs,
-    createdByUserId: access.userId,
-  }).returning()
-  if (!created) throw new Error("No se pudo registrar la revisión por la dirección.")
-  await history(db, { entityType: "management_review", entityId: created.id, worksiteId: data.worksiteId ?? null, changeType: "created", reason: `Revisión ${data.periodLabel}`, afterState: created, actorUserId: access.userId })
-  return created
+  // Serie correlativa por año (RD-2026-0001): el folio se reserva y la revisión se
+  // inserta en la misma transacción, junto con su entrada de bitácora.
+  return db.transaction(async (tx) => {
+    const code = await nextCodeTx(tx, "RD", codeYear())
+    const [created] = await tx.insert(preventionManagementReviews).values({
+      id: `mgmtrev-${nanoid()}`,
+      code,
+      worksiteId: data.worksiteId ?? null,
+      periodLabel: data.periodLabel,
+      heldAt: data.heldAt,
+      inputs: data.inputs,
+      createdByUserId: access.userId,
+    }).returning()
+    if (!created) throw new Error("No se pudo registrar la revisión por la dirección.")
+    await history(tx, { entityType: "management_review", entityId: created.id, worksiteId: data.worksiteId ?? null, changeType: "created", reason: `Revisión ${data.periodLabel}`, afterState: created, actorUserId: access.userId })
+    return created
+  })
 }
 
 const closeReviewSchema = z.object({
