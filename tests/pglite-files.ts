@@ -443,6 +443,9 @@ export const pgliteTestFiles = [
   "scripts/__tests__/apply-fleet-copec-decisions-2026-10-29.test.ts",
   "scripts/__tests__/apply-vencimientos-planilla-2026-11.test.ts",
   "scripts/__tests__/apply-lista-empleados-2026-11.test.ts",
+  "lib/__tests__/talana-sync-pglite.test.ts",
+  // Lecturas de /admin/talana y de la ficha del trabajador (resumen, diferencias, fusible auditado).
+  "lib/__tests__/talana-read-pglite.test.ts",
   "scripts/__tests__/apply-mantencion-correcciones-2026-10-31.test.ts",
   "scripts/__tests__/apply-copec-dated-mappings-2026-10-30.test.ts",
   // Mantención de equipos: carga inicial idempotente y conciliada con la flota (§13).

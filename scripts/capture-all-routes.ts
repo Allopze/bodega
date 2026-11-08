@@ -958,6 +958,7 @@ const routeTargets: RouteTarget[] = [
   { slug: "admin-seguridad", path: "/admin/seguridad", auth: true },
   { slug: "admin-suplencias", path: "/admin/suplencias", auth: true },
   { slug: "admin-taxonomia-sst", path: "/admin/taxonomia-sst", auth: true },
+  { slug: "admin-talana", path: "/admin/talana", auth: true, notes: "Sincronización diaria de contratos y ausencias desde Talana: diferencias, cambios de la última corrida e historial. Solo lectura." },
   { slug: "admin-trabajadores", path: "/admin/trabajadores", auth: true },
   {
     slug: "admin-usuarios",

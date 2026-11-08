@@ -18,6 +18,8 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { toggleWorkerActive } from "./actions"
 import { COLUMNS, CONTRACT } from "./catalog-contract"
 import { Badge } from "@/components/ui/badge"
+import type { TalanaChip } from "@/lib/integrations/talana/worker-hr-status"
+import type { WorkerTalanaInfo } from "./talana-info"
 import { useSafeShellHeader } from "@/components/layout/header-context"
 import { useReducedMotion } from "@/lib/hooks/use-reduced-motion"
 import { cn } from "@/lib/utils"
@@ -48,6 +50,28 @@ type WorkerRow = {
   sizeShoe:    string | null
   sizeGloves:  string | null
   sizeHelmet:  string | null
+  /** Lo que dice Talana de esta persona; sólo llega con `admin:workers_hr`. */
+  talana?:     WorkerTalanaInfo
+}
+
+const CHIP_VARIANT = { info: "info", warning: "warning", neutral: "neutral" } as const
+
+/**
+ * Lo excepcional que Talana sabe de la persona (licencia en curso, plazo por
+ * vencer, finiquito), bajo su nombre y en una sola línea por chip. Nada si no hay nada que decir o la
+ * sesión no tiene el permiso: el servidor ni siquiera envía el dato.
+ */
+function TalanaChips({ chips }: { chips: TalanaChip[] | undefined }) {
+  if (!chips || chips.length === 0) return null
+  return (
+    <div className="mt-1 flex flex-wrap gap-1">
+      {chips.slice(0, 2).map((chip) => (
+        <Badge key={chip.label} variant={CHIP_VARIANT[chip.tone]} size="sm" className="whitespace-nowrap">
+          {chip.label}
+        </Badge>
+      ))}
+    </div>
+  )
 }
 
 /**
@@ -243,6 +267,7 @@ export function WorkerList({
                 {w.firstName} {w.lastName}
               </h2>
               <p className="mt-0.5 font-mono text-xs text-[var(--color-text-subtle)]">{w.rut ?? "—"}</p>
+              <TalanaChips chips={w.talana?.chips} />
             </div>
           </div>
           <MetaBadge meta={{ label: `${w.isActive ? "Activo" : "Inactivo"}`, variant: w.isActive ? "success" : "default" }} dot />
@@ -297,6 +322,7 @@ export function WorkerList({
           <p className="text-sm font-medium text-[var(--color-text)]">
             {w.firstName} {w.lastName}
           </p>
+          <TalanaChips chips={w.talana?.chips} />
         </TableCell>
         <TableCell>
           <span className="font-mono text-xs text-[var(--color-text-muted)]">

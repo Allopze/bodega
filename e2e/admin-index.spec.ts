@@ -178,6 +178,7 @@ test("una sesión con permisos de admin parciales solo ve sus categorías e íte
   await expect(sidebar.getByRole("link", { name: "Notificaciones" })).toBeVisible()
   await expect(sidebar.getByRole("link", { name: "Correo SMTP" })).toBeVisible()
   await expect(sidebar.getByRole("link", { name: "Sincronización DTE" })).toHaveCount(0)
+  await expect(sidebar.getByRole("link", { name: "Sincronización Talana" })).toHaveCount(0)
   await expect(sidebar.getByRole("link", { name: "Plantillas de correo" })).toHaveCount(0)
 })
 

@@ -808,8 +808,11 @@ export type BulkAssignWorkerPositionInput = {
   reason: string
   actorUserId: string | null
   actorEmail?: string | null
-  /** `admin`: selección masiva en Trabajadores. `import`: script de carga. */
-  source: "admin" | "import"
+  /**
+   * `admin`: selección masiva en Trabajadores. `import`: script de carga.
+   * `system`: sincronización automática (Talana), sin persona detrás.
+   */
+  source: "admin" | "import" | "system"
   /**
    * Alcance de faena de quien opera. Si se pasa y algún trabajador queda fuera,
    * el lote entero se rechaza antes de escribir nada. Se evalúa dentro de la

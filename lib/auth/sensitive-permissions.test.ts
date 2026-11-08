@@ -26,6 +26,12 @@ describe("isSensitiveGrant", () => {
     expect(isSensitiveGrant({ name: "prevention:sign_own_work", module: "prevention" })).toBe(true)
   })
 
+  it("marca la reversión de una baja de TI", () => {
+    // Doble control: quien registra la baja no hereda el permiso de deshacerla,
+    // así que tampoco puede concedérselo con `admin:users`.
+    expect(isSensitiveGrant({ name: "ti:reverse_retirement", module: "ti" })).toBe(true)
+  })
+
   it("no marca un permiso operativo corriente", () => {
     expect(isSensitiveGrant({ name: "prevention:capa:complete", module: "prevention" })).toBe(false)
     expect(isSensitiveGrant({ name: "receiving:register_faena", module: "receiving" })).toBe(false)
@@ -36,6 +42,6 @@ describe("isSensitiveGrant", () => {
     // Un permiso que "parece" de gobierno pero no está declarado NO se bloquea:
     // la lista se mantiene a mano justamente para que agregarlo sea deliberado.
     expect(isSensitiveGrant({ name: "prevention:override_algo_nuevo", module: "prevention" })).toBe(false)
-    expect(SENSITIVE_GRANT_PERMISSIONS.size).toBe(4)
+    expect(SENSITIVE_GRANT_PERMISSIONS.size).toBe(5)
   })
 })

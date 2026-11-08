@@ -18,15 +18,17 @@ vi.mock("./worker-form", () => ({ WorkerForm: () => null }))
 
 import { WorkerList } from "./worker-list"
 import type { AssignablePosition } from "./bulk-assign-dialog"
+import type { WorkerTalanaInfo } from "./talana-info"
 
 type Overrides = {
   position?: { name: string; needsReview: boolean }
   unclassified?: boolean
   hasDriverLicense?: boolean
+  talana?: WorkerTalanaInfo
 }
 
 function worker(id: string, firstName: string, isActive: boolean, overrides: Overrides = {}) {
-  const { position, unclassified = false, hasDriverLicense = false } = overrides
+  const { position, unclassified = false, hasDriverLicense = false, talana } = overrides
   return {
     id, rut: null, firstName, lastName: "Prueba", sex: null,
     position: position?.name ?? null,
@@ -37,6 +39,7 @@ function worker(id: string, firstName: string, isActive: boolean, overrides: Ove
     worksiteId: "ws-1", worksiteName: "Faena Uno", isActive,
     createdAt: "2026-08-18T00:00:00.000Z",
     sizeTop: null, sizeBottom: null, sizeShoe: null, sizeGloves: null, sizeHelmet: null,
+    ...(talana ? { talana } : {}),
   }
 }
 
@@ -211,5 +214,54 @@ describe("WorkerList — «Sin cargo»", () => {
     const dialog = screen.getByRole("dialog", { name: "Asignar cargo" })
     expect(within(dialog).getByText(/Se aplicará a 3 trabajadores seleccionados/)).toBeTruthy()
     expect(within(dialog).getByRole("button", { name: "Asignar a 3" })).toBeDisabled()
+  })
+})
+
+describe("WorkerList — chips de Talana", () => {
+  const SUMMARY: WorkerTalanaInfo["summary"] = {
+    syncedAt: "2026-11-08T09:35:00.000Z",
+    contract: null,
+    absence: { label: "Licencia médica", startsOn: "2026-11-02", endsOn: "2026-11-20", current: true },
+  }
+  const LICENCIA = "Licencia médica hasta 20-11-2026"
+  const PLAZO = "Plazo vence el 30-11-2026"
+
+  it("muestra la licencia en curso junto al estado, en la tabla y en la tarjeta móvil", () => {
+    const talana: WorkerTalanaInfo = { summary: SUMMARY, chips: [{ label: LICENCIA, tone: "info" }] }
+    renderList([worker("w-1", "Ana", true, { talana })])
+
+    expect(table().getByText(LICENCIA)).toBeTruthy()
+    // jsdom monta tabla y tarjeta a la vez: uno en cada árbol.
+    expect(screen.getAllByText(LICENCIA)).toHaveLength(2)
+  })
+
+  it("pinta como máximo dos chips por trabajador", () => {
+    const talana: WorkerTalanaInfo = {
+      summary: SUMMARY,
+      chips: [
+        { label: LICENCIA, tone: "info" },
+        { label: PLAZO, tone: "warning" },
+        { label: "Finiquitado en Talana", tone: "neutral" },
+      ],
+    }
+    renderList([worker("w-1", "Ana", true, { talana })])
+
+    expect(table().queryByText(LICENCIA)).not.toBeNull()
+    expect(table().queryByText(PLAZO)).not.toBeNull()
+    expect(table().queryByText("Finiquitado en Talana")).toBeNull()
+  })
+
+  it("sin el campo talana (sin el permiso) no hay chips ni rastro de Talana", () => {
+    renderList([worker("w-1", "Ana", true)])
+
+    expect(screen.queryByText(/Licencia médica/)).toBeNull()
+    expect(screen.queryByText(/Plazo/)).toBeNull()
+    expect(screen.queryByText(/Talana/)).toBeNull()
+  })
+
+  it("un trabajador con datos de Talana pero nada excepcional no muestra chips", () => {
+    renderList([worker("w-1", "Ana", true, { talana: { summary: SUMMARY, chips: [] } })])
+
+    expect(screen.queryByText(/Licencia médica/)).toBeNull()
   })
 })
