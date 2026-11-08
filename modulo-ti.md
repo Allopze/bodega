@@ -60,7 +60,7 @@
 - [x] **Verificación en navegador** de las 10 rutas `/ti` con una sesión autenticada: sin errores de consola, sin overflow en 1440/1024/390 y sin violaciones axe `serious`/`critical`.
 - [ ] **`npm run test:e2e` completo**: `e2e/ti-modulo.spec.ts` existe y cubre resumen, inventario, tickets, reportes y el guard de `ti:view`; no se ejecutó la suite E2E completa en esta pasada.
 - [ ] **Rendimiento del catálogo de proveedores**: la consulta ya no es 4 × N correlacionada, pero el panel sigue sin paginar (catálogo pequeño por diseño).
-- [ ] **Commit**: los cambios del 2026-11-08 están en el worktree, sin commit al cierre de este documento.
+- [x] **Commit**: primera auditoría en `b234379cc` y segunda pasada en `598ded084`, ambas en `main`.
 
 ## Decisiones de diseño (confirmadas)
 
@@ -276,7 +276,7 @@ Tickets (listado + ficha + comentarios + SLA). Licencias + suscripciones + asign
 
 ## Riesgos / notas
 
-- El worktree ya tiene cambios PDTP sin commitear (migraciones 0241/0242). Trabajar sin tocar esos archivos; commits atómicos por dominio al cerrar.
+- El worktree quedó limpio al 2026-11-08; las dos pasadas de TI están en `main` (`b234379cc`, `598ded084`). Mantener commits atómicos por dominio.
 - `tecnico_ti` global: si más adelante se quiere scope por faena, `isGlobal:false` + `worksite_users` (sin cambios de schema).
 - Áreas de licencia como texto libre en v1 (no confundir con `cost_centers`, que es para costos de mantención/flota).
 - No implementar: descubrimiento automático, agentes, MDM, red, SIEM (fuera de alcance).
