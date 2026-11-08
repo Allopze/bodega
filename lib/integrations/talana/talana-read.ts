@@ -28,7 +28,7 @@ import { todayInChile } from "@/lib/utils"
 import { isChomeEmployer, titleCase } from "./mapping"
 import type { PlannerContract, PlannerPosition, PlannerWorker, PlannerWorksite } from "./talana-planner"
 import { computeDifferences, type TalanaDifference } from "./talana-differences"
-import { readTalanaConfig, type TalanaSyncMode } from "./talana-settings"
+import { loadTalanaConfig, type TalanaConfigSources, type TalanaSyncMode } from "./talana-settings"
 import { summarizeTalanaPerson, type TalanaWorkerSummary } from "./worker-hr-status"
 
 /* ── Tipos ────────────────────────────────────────────────────────────────── */
@@ -38,7 +38,18 @@ export type TalanaItemKind = "alta" | "reactivacion" | "baja" | "traslado" | "ca
 export type TalanaItemOutcome = "planned" | "applied" | "skipped" | "failed"
 
 export interface TalanaOverview {
-  config: { mode: TalanaSyncMode; hasCredentials: boolean }
+  /**
+   * Lo vigente (guardado en la plataforma, o el `.env`) y de dónde sale cada
+   * valor. Nunca el token: este objeto viaja a componentes de servidor que
+   * pasan datos al navegador.
+   */
+  config: {
+    mode: TalanaSyncMode
+    hasCredentials: boolean
+    sources: TalanaConfigSources
+    /** Hay un token guardado que este servidor no puede abrir. */
+    tokenUnreadable: boolean
+  }
   /** La corrida más reciente, incluso si sigue en curso. */
   lastRun: TalanaRunRow | null
   /** La última corrida terminada, si quedó bloqueada por el fusible y nadie la revisó. */
@@ -121,7 +132,7 @@ export function filterByWorksiteScope<T extends { worksiteId: string | null }>(s
 /* ── Resumen de la pantalla ───────────────────────────────────────────────── */
 
 export async function getTalanaOverview(): Promise<TalanaOverview> {
-  const config = readTalanaConfig()
+  const config = await loadTalanaConfig()
   const today = todayInChile()
 
   const [lastRun, lastFinished, lastGoodSyncAt, activeByEmployer, absenceRows, chomeRutRows] = await Promise.all([
@@ -161,7 +172,12 @@ export async function getTalanaOverview(): Promise<TalanaOverview> {
     : null
 
   return {
-    config: { mode: config.mode, hasCredentials: config.hasCredentials },
+    config: {
+      mode: config.mode,
+      hasCredentials: config.hasCredentials,
+      sources: config.sources,
+      tokenUnreadable: config.tokenUnreadable,
+    },
     lastRun: lastRun ?? null,
     blockedRun,
     lastGoodSyncAt,

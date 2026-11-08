@@ -14,9 +14,11 @@ import {
   listTalanaRuns,
   loadTalanaDifferences,
 } from "@/lib/integrations/talana/talana-read"
+import { readTalanaAdminStatus } from "@/lib/integrations/talana/talana-settings"
 import { exportTalanaXlsxAction } from "./actions"
 import { FusibleBanner } from "./fusible-banner"
 import { FIX_IN_LABELS, ITEM_KIND_LABELS, itemReasonLabel, runReasonText } from "./talana-labels"
+import { TalanaSettingsDialog } from "./talana-settings-dialog"
 import { TalanaStatusLine } from "./talana-status-line"
 import { TalanaView, type ChangeTableRow, type DifferenceTableRow, type RunTableRow } from "./talana-view"
 
@@ -31,7 +33,15 @@ const BREADCRUMBS = (
   ]} />
 )
 
-const ACTIONS = <ExportButton action={exportTalanaXlsxAction} />
+/** Por qué no corre, dicho sin suponer de dónde sale la configuración (plataforma o `.env`). */
+function disabledReason(config: { hasCredentials: boolean; tokenUnreadable: boolean }): string {
+  if (config.tokenUnreadable) {
+    return "El token guardado no se puede abrir con el llavero de este servidor: hay que ingresarlo de nuevo."
+  }
+  return config.hasCredentials
+    ? "Hay un token de Talana, pero el modo de sincronización está apagado."
+    : "Falta el token de Talana."
+}
 
 export default async function TalanaPage({
   searchParams,
@@ -45,10 +55,15 @@ export default async function TalanaPage({
   const params = await searchParams
   const requestedRun = typeof params.corrida === "string" ? params.corrida : null
 
-  const [overview, runs, { differences }] = await Promise.all([
+  // Configurar es de administración (`admin:talana_settings`), no de quien sólo
+  // revisa la sincronización: sin el permiso ni se lee el estado ni aparece el botón.
+  const canConfigure = can(session, "admin:talana_settings")
+
+  const [overview, runs, { differences }, settingsStatus] = await Promise.all([
     getTalanaOverview(),
     listTalanaRuns(30),
     loadTalanaDifferences(),
+    canConfigure ? readTalanaAdminStatus() : Promise.resolve(null),
   ])
 
   // Una corrida que no está entre las listadas (id inventado, o más vieja que
@@ -99,6 +114,12 @@ export default async function TalanaPage({
 
   const { config, blockedRun } = overview
   const enabled = config.hasCredentials && config.mode !== "off"
+  const actions = (
+    <>
+      {settingsStatus && <TalanaSettingsDialog status={settingsStatus} />}
+      <ExportButton action={exportTalanaXlsxAction} />
+    </>
+  )
 
   return (
     <PageContainer>
@@ -106,7 +127,7 @@ export default async function TalanaPage({
         title="Sincronización Talana"
         description="Contratos y ausencias desde Talana, una vez al día. Solo lectura: nunca escribe en Talana."
         breadcrumb={BREADCRUMBS}
-        actions={ACTIONS}
+        actions={actions}
       />
 
       {!enabled && (
@@ -116,10 +137,11 @@ export default async function TalanaPage({
           title="La sincronización con Talana no está habilitada"
           className="mb-4"
         >
-          {config.hasCredentials
-            ? "El servidor tiene el token de Talana, pero el modo de sincronización está apagado."
-            : "Falta el token de Talana en el servidor."}
-          {" "}Mientras tanto, esta pantalla muestra lo último que se descargó. Pídele a quien administra el servidor que lo configure.
+          {disabledReason(config)}
+          {" "}Mientras tanto, esta pantalla muestra lo último que se descargó.{" "}
+          {canConfigure
+            ? "Se configura con el botón «Configurar»."
+            : "Pídele a un administrador que la configure."}
         </Callout>
       )}
 

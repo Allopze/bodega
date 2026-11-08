@@ -544,6 +544,58 @@ describe("controlled encryption conversion and keyring re-cipher", () => {
     }
   })
 
+  // Hasta el 2026-11-08 la rotación sólo cubría a Chipax: OnWay y Cloudreve
+  // quedaban con el `kid` retirado y dejaban de abrirse al retirar la clave
+  // anterior. Las integraciones nuevas comparten el mismo llavero.
+  it("re-wraps every registered secret: OnWay, Cloudreve and the newer integrations", async () => {
+    const oldKey = Buffer.alloc(32, 4).toString("base64url")
+    const nextKey = Buffer.alloc(32, 6).toString("base64url")
+    const oldKeyring = parseDteSettingsKeyring({
+      DTE_SETTINGS_MODE: "encrypted_only",
+      DTE_SETTINGS_ACTIVE_KEY_ID: "old",
+      DTE_SETTINGS_KEYRING: JSON.stringify({ old: oldKey }),
+    })
+    process.env = {
+      ...originalEnv,
+      DTE_SETTINGS_MODE: "encrypted_only",
+      DTE_SETTINGS_ACTIVE_KEY_ID: "next",
+      DTE_SETTINGS_KEYRING: JSON.stringify({ old: oldKey, next: nextKey }),
+    }
+    const secrets: Record<string, string> = {
+      "flota.onway.password": "onway-pass",
+      "storage.cloudreve.password": "cloudreve-pass",
+      "talana.api_token": "talana-token",
+      "combustibles.copec.password": "copec-pass",
+      "combustibles.visionlink.client_secret": "visionlink-secret",
+      "email.resend.api_key": "resend-key",
+    }
+    mocks.txSelectWhere.mockResolvedValue([
+      { key: "dte.encryption_mode", value: "encrypted_only" },
+      ...Object.entries(secrets).map(([key, plaintext]) => ({ key, value: encryptDteSetting(plaintext, key, oldKeyring) })),
+    ])
+    try {
+      await expect(rotateDteSettingsKeyring({ userId: "admin" })).resolves.toEqual({
+        rewrapped: Object.keys(secrets).length,
+        keyId: "next",
+      })
+      const writes = mocks.insertValues.mock.calls.map(([value]) => value as { key: string; value: string })
+      const nextKeyring = parseDteSettingsKeyring({
+        DTE_SETTINGS_MODE: "encrypted_only",
+        DTE_SETTINGS_ACTIVE_KEY_ID: "next",
+        DTE_SETTINGS_KEYRING: JSON.stringify({ next: nextKey }),
+      })
+      for (const [key, plaintext] of Object.entries(secrets)) {
+        const write = writes.find((value) => value.key === key)
+        expect(write?.value, key).toMatch(/^enc:v1:next:/)
+        expect(decryptDteSetting(write!.value, key, nextKeyring)).toBe(plaintext)
+      }
+      const audit = JSON.stringify(vi.mocked(recordAudit).mock.calls[0]?.[0])
+      for (const plaintext of Object.values(secrets)) expect(audit).not.toContain(plaintext)
+    } finally {
+      process.env = originalEnv
+    }
+  })
+
   it("does not let the host encrypted_only mode bypass the durable conversion marker", async () => {
     const activeKey = Buffer.alloc(32, 7).toString("base64url")
     const keyring = parseDteSettingsKeyring({

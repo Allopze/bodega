@@ -1,47 +1,72 @@
 /**
  * Tests for Resend status helpers (replaces old SMTP-settings tests).
+ *
+ * `getResendStatus` compone el estado seguro de la clave (origen, sin valor) con
+ * el remitente fijo; la precedencia guardado/entorno se prueba en
+ * `lib/services/__tests__/resend-settings.test.ts`.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { getResendStatus, testResendConnection } from "@/lib/services/smtp-settings"
+import { beforeEach, describe, expect, it, vi } from "vitest"
+
+const mockReadResendAdminStatus = vi.hoisted(() => vi.fn())
+
+vi.mock("@/lib/services/resend-settings", () => ({
+  readResendAdminStatus: mockReadResendAdminStatus,
+}))
 
 // sendEmail is the dependency of testResendConnection
 vi.mock("@/lib/email/smtp", () => ({
   sendEmail: vi.fn(),
 }))
 
-import { sendEmail } from "@/lib/email/smtp"
+vi.mock("@/db", () => ({ db: {} }))
 
-const originalKey = process.env.RESEND_API_KEY
+import { getResendStatus, testResendConnection } from "@/lib/services/smtp-settings"
+import { sendEmail } from "@/lib/email/smtp"
 
 beforeEach(() => {
   vi.clearAllMocks()
 })
 
-afterEach(() => {
-  if (originalKey === undefined) delete process.env.RESEND_API_KEY
-  else process.env.RESEND_API_KEY = originalKey
-})
-
 describe("getResendStatus", () => {
-  it("reports configured=true and a key prefix when RESEND_API_KEY is set", () => {
-    process.env.RESEND_API_KEY = "re_live_abcdefghij"
-    const status = getResendStatus()
-    expect(status.configured).toBe(true)
-    expect(status.apiKeyPrefix).toBe("re_liv…")
-    expect(status.from).toBe("plataforma@portalchome.cl")
+  it("reports configured=true with the source of the key and the fixed sender", async () => {
+    mockReadResendAdminStatus.mockResolvedValue({
+      configured: true,
+      source: "system_settings",
+      hasStoredSettings: true,
+      canStoreSecrets: true,
+    })
+    const status = await getResendStatus()
+    expect(status).toEqual({
+      configured: true,
+      source: "system_settings",
+      hasStoredSettings: true,
+      canStoreSecrets: true,
+      from: "plataforma@portalchome.cl",
+    })
   })
 
-  it("reports configured=false when RESEND_API_KEY is absent", () => {
-    delete process.env.RESEND_API_KEY
-    const status = getResendStatus()
+  it("reports configured=false when there is no key anywhere", async () => {
+    mockReadResendAdminStatus.mockResolvedValue({
+      configured: false,
+      source: "missing",
+      hasStoredSettings: false,
+      canStoreSecrets: false,
+    })
+    const status = await getResendStatus()
     expect(status.configured).toBe(false)
-    expect(status.apiKeyPrefix).toBe("—")
+    expect(status.source).toBe("missing")
   })
 
-  it("reports configured=false when RESEND_API_KEY is an empty string", () => {
-    process.env.RESEND_API_KEY = "  "
-    const status = getResendStatus()
-    expect(status.configured).toBe(false)
+  it("no longer exposes any part of the key (the old prefix is gone)", async () => {
+    mockReadResendAdminStatus.mockResolvedValue({
+      configured: true,
+      source: "environment",
+      hasStoredSettings: false,
+      canStoreSecrets: true,
+    })
+    const status = await getResendStatus()
+    expect(status).not.toHaveProperty("apiKeyPrefix")
+    expect(status).not.toHaveProperty("apiKey")
   })
 })
 
@@ -56,8 +81,8 @@ describe("testResendConnection", () => {
   })
 
   it("returns { ok: false, error } when sendEmail fails", async () => {
-    vi.mocked(sendEmail).mockResolvedValue({ sent: false, reason: "RESEND_API_KEY no configurado" })
+    vi.mocked(sendEmail).mockResolvedValue({ sent: false, reason: "Clave de Resend no configurada" })
     const result = await testResendConnection("admin@example.cl")
-    expect(result).toEqual({ ok: false, error: "RESEND_API_KEY no configurado" })
+    expect(result).toEqual({ ok: false, error: "Clave de Resend no configurada" })
   })
 })

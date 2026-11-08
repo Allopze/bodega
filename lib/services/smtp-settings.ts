@@ -1,30 +1,27 @@
 /**
  * Resend delivery status helpers — replaces the old SMTP DB config service.
  *
- * Configuration is entirely env-based: set RESEND_API_KEY.
+ * La clave de API se administra desde Administración › Correo y se guarda
+ * cifrada en `system_settings`; si no hay una guardada se usa `RESEND_API_KEY`
+ * del `.env` del servidor (ver `resend-settings.ts`). Lo que sale de acá hacia
+ * la pantalla dice SI hay clave y de DÓNDE viene, nunca la clave ni un prefijo.
  * The "from" address is hardcoded to the verified Resend domain.
  */
 import { desc, eq } from "drizzle-orm"
 import { db } from "@/db"
 import { auditLog } from "@/db/schema"
 import { sendEmail } from "@/lib/email/smtp"
+import { readResendAdminStatus, type ResendAdminStatus } from "@/lib/services/resend-settings"
 
 export const RESEND_FROM = "plataforma@portalchome.cl"
 export const RESEND_FROM_DISPLAY = `Plataforma Chome <${RESEND_FROM}>`
 
-export type ResendStatus = {
-  configured: boolean
+export type ResendStatus = ResendAdminStatus & {
   from: string
-  apiKeyPrefix: string
 }
 
-export function getResendStatus(): ResendStatus {
-  const key = process.env.RESEND_API_KEY?.trim() ?? ""
-  return {
-    configured: key.length > 0,
-    from: RESEND_FROM,
-    apiKeyPrefix: key.length > 0 ? `${key.slice(0, 6)}…` : "—",
-  }
+export async function getResendStatus(): Promise<ResendStatus> {
+  return { ...(await readResendAdminStatus()), from: RESEND_FROM }
 }
 
 export type LastDeliveryTest = {

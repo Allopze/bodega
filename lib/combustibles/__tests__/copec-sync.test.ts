@@ -127,6 +127,14 @@ vi.mock("@/lib/combustibles/copec-ws", async (importOriginal) => ({
     return run({ download: (...args: unknown[]) => mockDownloadCopecReports(...args) })
   },
 }))
+// La configuración (credenciales, correo de la corrida) vive en `copec-settings`
+// y se lee de `system_settings`. Acá sólo importa el correo del importador, que
+// sigue saliendo de la variable de entorno que estas pruebas stubean; sin este
+// mock la lectura nueva recibiría el estado de sincronización de
+// `db.query.systemSettings.findFirst`, que se simula sin filtrar por clave.
+vi.mock("@/lib/combustibles/copec-settings", () => ({
+  loadCopecConfig: async () => ({ importerEmail: process.env.COPEC_SYNC_IMPORTER_EMAIL?.trim() ?? "" }),
+}))
 vi.mock("@/lib/combustibles/consumption-import", () => ({
   parseCopecDetail: (...args: unknown[]) => mockParseCopecDetail(...args),
 }))
@@ -315,9 +323,9 @@ describe("syncCopecReportPeriod", () => {
         version: 1,
       }))
     })
-    // importCopecPeriod only looks up the importer user when this env var is
-    // set — stub it here so the test doesn't depend on the ambient shell/CI
-    // environment ever defining it.
+    // importCopecPeriod only looks up the importer user when the configured
+    // importer email is set (the mock above reads it from this env var) — stub
+    // it here so the test doesn't depend on the ambient shell/CI environment.
     vi.stubEnv("COPEC_SYNC_IMPORTER_EMAIL", "importer@chome.cl")
     mockSettingFindFirst.mockResolvedValue(undefined)
     mockBatchFindFirst.mockResolvedValue(undefined)

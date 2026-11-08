@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 import { Resend } from "resend"
 import { sendEmail, sendInvitationEmail, sendBatchEmails } from "@/lib/email/smtp"
 import { getEmailsEnabled } from "@/lib/services/system-settings"
@@ -14,29 +14,30 @@ vi.mock("@/lib/services/email-templates", () => ({
   })),
 }))
 
-const { mockSend, mockBatchSend } = vi.hoisted(() => ({
+const { mockSend, mockBatchSend, mockReadResendConfig } = vi.hoisted(() => ({
   mockSend: vi.fn(),
   mockBatchSend: vi.fn(),
+  mockReadResendConfig: vi.fn(),
 }))
 
 vi.mock("resend", () => ({ Resend: vi.fn() }))
 
-const originalKey = process.env.RESEND_API_KEY
+// La clave vigente (guardada en la plataforma o del entorno) la decide
+// `readResendConfig`; su precedencia se prueba en `resend-settings.test.ts`.
+vi.mock("@/lib/services/resend-settings", () => ({ readResendConfig: mockReadResendConfig }))
+
+const KEY_PRESENT = { apiKey: "re_test_key", source: "environment", unreadable: false }
+const KEY_MISSING = { apiKey: "", source: "missing", unreadable: false }
 
 beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(getEmailsEnabled).mockResolvedValue(true)
-  process.env.RESEND_API_KEY = "re_test_key"
+  mockReadResendConfig.mockResolvedValue(KEY_PRESENT)
   mockSend.mockResolvedValue({ data: { id: "msg_1" }, error: null })
   mockBatchSend.mockResolvedValue({ data: { data: [{ id: "msg_1" }] }, error: null })
   vi.mocked(Resend).mockImplementation(function () {
     return { emails: { send: mockSend }, batch: { send: mockBatchSend } }
   } as never)
-})
-
-afterEach(() => {
-  if (originalKey === undefined) delete process.env.RESEND_API_KEY
-  else process.env.RESEND_API_KEY = originalKey
 })
 
 describe("sendEmail", () => {
@@ -56,11 +57,33 @@ describe("sendEmail", () => {
     })
   })
 
-  it("returns { sent: false } when RESEND_API_KEY is not set", async () => {
-    delete process.env.RESEND_API_KEY
+  it("returns { sent: false } when no Resend key is configured", async () => {
+    mockReadResendConfig.mockResolvedValue(KEY_MISSING)
     const result = await sendEmail({ to: "a@b.cl", subject: "x", text: "x", html: "x" })
-    expect(result).toEqual({ sent: false, reason: "RESEND_API_KEY no configurado" })
+    expect(result).toEqual({ sent: false, reason: "Clave de Resend no configurada" })
     expect(mockSend).not.toHaveBeenCalled()
+  })
+
+  it("explains when the stored key cannot be opened with this server's keyring", async () => {
+    mockReadResendConfig.mockResolvedValue({ apiKey: "", source: "missing", unreadable: true })
+    const result = await sendEmail({ to: "a@b.cl", subject: "x", text: "x", html: "x" })
+    expect(result).toEqual({
+      sent: false,
+      reason: expect.stringContaining("no se puede abrir con el llavero"),
+    })
+    expect(mockSend).not.toHaveBeenCalled()
+  })
+
+  it("builds the Resend client with the effective key from readResendConfig", async () => {
+    mockReadResendConfig.mockResolvedValue({ apiKey: "re_stored_key", source: "system_settings", unreadable: false })
+    await sendEmail({ to: "a@b.cl", subject: "x", text: "x", html: "x" })
+    expect(Resend).toHaveBeenCalledWith("re_stored_key")
+  })
+
+  it("does not read the key when the kill-switch is already off", async () => {
+    vi.mocked(getEmailsEnabled).mockResolvedValue(false)
+    await sendEmail({ to: "a@b.cl", subject: "x", text: "x", html: "x" })
+    expect(mockReadResendConfig).not.toHaveBeenCalled()
   })
 
   it("returns { sent: false } when the global kill-switch is off", async () => {
@@ -112,6 +135,15 @@ describe("sendBatchEmails", () => {
   it("short-circuits with { sent: true, count: 0 } for empty input", async () => {
     const result = await sendBatchEmails([])
     expect(result).toEqual({ sent: true, count: 0 })
+    expect(mockBatchSend).not.toHaveBeenCalled()
+  })
+
+  it("returns { sent: false } when no Resend key is configured", async () => {
+    mockReadResendConfig.mockResolvedValue(KEY_MISSING)
+    const result = await sendBatchEmails([
+      { to: "a@example.cl", subject: "A", text: "a", html: "<p>a</p>" },
+    ])
+    expect(result).toEqual({ sent: false, reason: "Clave de Resend no configurada" })
     expect(mockBatchSend).not.toHaveBeenCalled()
   })
 

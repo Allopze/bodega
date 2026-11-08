@@ -31,9 +31,13 @@ const mail = vi.hoisted(() => ({
   sendBatchEmails: vi.fn(async (messages: unknown[]) => ({ sent: true as const, count: messages.length })),
 }))
 const log = vi.hoisted(() => ({ warn: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn() }))
+// La clave de Resend vigente (guardada en la plataforma o del entorno) la decide
+// `readResendConfig`; su precedencia se prueba en `resend-settings.test.ts`.
+const resend = vi.hoisted(() => ({ readResendConfig: vi.fn() }))
 
 vi.mock("@/db", () => ({ get db() { return testGlobal.__db } }))
 vi.mock("@/lib/logger", () => ({ logger: log }))
+vi.mock("@/lib/services/resend-settings", () => ({ readResendConfig: resend.readResendConfig }))
 vi.mock("@/lib/email/smtp", () => ({
   sendEmail: mail.sendEmail,
   sendBatchEmails: mail.sendBatchEmails,
@@ -53,7 +57,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   vi.clearAllMocks()
-  process.env.RESEND_API_KEY = "re_test_key"
+  resend.readResendConfig.mockResolvedValue({ apiKey: "re_test_key", source: "environment", unreadable: false })
   await testDb.delete(schema.notifications)
   await testDb.delete(schema.cronRuns)
   await testDb.delete(schema.userRoles)
@@ -182,9 +186,19 @@ describe("alerta del escaneo de integridad de la evidencia PDTP", () => {
 
 describe("sin correo configurado", () => {
   it("deja la alerta en la plataforma, lo registra y no lanza", async () => {
-    delete process.env.RESEND_API_KEY
+    resend.readResendConfig.mockResolvedValue({ apiKey: "", source: "missing", unreadable: false })
     await expect(alertPreventionCronFailure("prevention-training-reminders", new Error("x"))).resolves.toBeUndefined()
     expect(await notificationsFor(ADMIN)).toHaveLength(1)
     expect(log.warn).toHaveBeenCalledWith(expect.stringMatching(/correo no configurado/i))
+  })
+
+  // La clave puede estar guardada en la plataforma y no en el entorno: el aviso
+  // de «correo no configurado» no puede mirar sólo `process.env`.
+  it("no avisa cuando la clave está guardada en la plataforma aunque el entorno no la tenga", async () => {
+    vi.stubEnv("RESEND_API_KEY", "")
+    resend.readResendConfig.mockResolvedValue({ apiKey: "re_stored", source: "system_settings", unreadable: false })
+    await alertPreventionCronFailure("prevention-training-reminders", new Error("x"))
+    expect(log.warn).not.toHaveBeenCalledWith(expect.stringMatching(/correo no configurado/i))
+    vi.unstubAllEnvs()
   })
 })

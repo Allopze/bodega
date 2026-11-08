@@ -5,6 +5,8 @@
  * sesión ante cualquier navegación por URL.
  */
 
+import { loadCopecConfig } from "@/lib/combustibles/copec-settings"
+
 export type CopecProduct = "diesel" | "bluemax"
 
 /** Los dos canales se consultan con la misma llamada y sólo cambia el tipo de tarjeta:
@@ -96,14 +98,17 @@ export type CopecUnavailableReason = "no_results" | "no_records"
  * reportaba `failed`, o sea una alerta diaria por una integración que
  * simplemente no está en uso.
  *
- * `COPEC_SYNC_ENABLED` sólo apaga si vale exactamente `"false"`: el default es
- * seguir corriendo, para no apagar la integración de nadie por omisión.
+ * Lee la configuración vigente (`loadCopecConfig`): lo guardado desde
+ * Combustibles › Ajustes › Integraciones, con el `.env` de respaldo. El
+ * interruptor sólo apaga si vale exactamente `"false"`: el default es seguir
+ * corriendo, para no apagar la integración de nadie por omisión.
+ *
+ * `hasUnreadableSecret` distingue «sin credenciales» de «hay credenciales
+ * guardadas que este servidor no puede abrir», que pide otra acción.
  */
-export function copecSyncAvailability(): { hasCredentials: boolean; syncEnabled: boolean } {
-  return {
-    hasCredentials: Boolean(process.env.COPEC_USERNAME?.trim() && process.env.COPEC_PASSWORD?.trim() && process.env.COPEC_CLIENT_RUT?.trim()),
-    syncEnabled: process.env.COPEC_SYNC_ENABLED?.trim() !== "false",
-  }
+export async function copecSyncAvailability(): Promise<{ hasCredentials: boolean; syncEnabled: boolean; hasUnreadableSecret: boolean }> {
+  const { hasCredentials, syncEnabled, hasUnreadableSecret } = await loadCopecConfig()
+  return { hasCredentials, syncEnabled, hasUnreadableSecret }
 }
 
 /** La sesión Copec de una corrida: todas sus descargas pasan por ella. */

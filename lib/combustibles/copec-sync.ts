@@ -32,6 +32,7 @@ import {
   type CopecReportDownloadResult,
   type CopecDownloadedReport,
 } from "@/lib/combustibles/copec-reports"
+import { loadCopecConfig } from "@/lib/combustibles/copec-settings"
 import { COPEC_WS_PARSER_VERSION, withCopecWebServiceSession } from "@/lib/combustibles/copec-ws"
 import { parseTaeReceiptRecords } from "@/lib/combustibles/tae-receipt-import"
 import { importTaeReceipts, TaeSupplierMissingError } from "@/lib/combustibles/tae-receipts"
@@ -675,14 +676,14 @@ async function importCopecPeriod(
    *  de camino no cierre la corrida diciendo que no se procesó nada. */
   quality?: { accepted: number; rejected: number; pending: number },
 ): Promise<PeriodSyncResult> {
-  const importerEmail = process.env.COPEC_SYNC_IMPORTER_EMAIL?.trim()
-  const configuredImporter = importerId
-    ? null
-    : importerEmail
+  // Sólo se consulta la configuración cuando nadie pidió la corrida a mano: con
+  // `importerId` el operador que la lanzó es el usuario de la corrida.
+  const importerEmail = importerId ? "" : (await loadCopecConfig()).importerEmail
+  const configuredImporter = importerEmail
     ? await db.query.users.findFirst({ where: and(eq(users.email, importerEmail), eq(users.isActive, true)), columns: { id: true } })
     : null
   const resolvedImporterId = importerId ?? configuredImporter?.id
-  if (!resolvedImporterId) throw new Error("No hay un usuario activo para registrar la sincronización Copec. Configura COPEC_SYNC_IMPORTER_EMAIL para la ejecución automática.")
+  if (!resolvedImporterId) throw new Error("No hay un usuario activo para registrar la sincronización Copec. Define el usuario de la ejecución automática en Combustibles › Ajustes › Integraciones.")
 
   let imported = 0
   let refreshed = 0
@@ -1488,7 +1489,8 @@ export interface CopecSweepResult {
  * El barrido completo: el mes en curso y los meses pendientes, en UNA sesión
  * Copec. Lo corre el cron y también el botón «Sincronizar» (en segundo
  * plano, ver `startCopecSyncAction`); `importerId` es el operador que lo pidió,
- * y sin él la corrida queda a nombre de `COPEC_SYNC_IMPORTER_EMAIL`.
+ * y sin él la corrida queda a nombre del usuario configurado en Ajustes › Integraciones
+ * (`importerEmail`; `COPEC_SYNC_IMPORTER_EMAIL` del `.env` de respaldo).
  */
 export async function syncCopecReports(options: { importerId?: string } = {}): Promise<CopecSweepResult> {
   // C7 / 4.7: antes de planificar, se cierran las corridas que quedaron

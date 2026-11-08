@@ -446,6 +446,8 @@ export const pgliteTestFiles = [
   "lib/__tests__/talana-sync-pglite.test.ts",
   // Lecturas de /admin/talana y de la ficha del trabajador (resumen, diferencias, fusible auditado).
   "lib/__tests__/talana-read-pglite.test.ts",
+  // Ajustes de integraciones cifrados en system_settings: lectura, respaldo del .env y rotación del llavero.
+  "lib/__tests__/encrypted-settings-pglite.test.ts",
   "scripts/__tests__/apply-mantencion-correcciones-2026-10-31.test.ts",
   "scripts/__tests__/apply-copec-dated-mappings-2026-10-30.test.ts",
   // Mantención de equipos: carga inicial idempotente y conciliada con la flota (§13).

@@ -345,7 +345,7 @@ describe("getAdminHealthFacts · sólo lee lo que la sesión ve", () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    mockGetResendStatus.mockReturnValue({ configured: true, from: "x", apiKeyPrefix: "y" })
+    mockGetResendStatus.mockResolvedValue({ configured: true, source: "environment", from: "x", hasStoredSettings: false, canStoreSecrets: true })
     mockGetLastDeliveryTest.mockResolvedValue(null)
     mockGetPlatformHealth.mockResolvedValue({
       status: "ok", db: "connected", storage: "writable",
@@ -420,5 +420,32 @@ describe("getAdminHealthFacts · sólo lee lo que la sesión ve", () => {
     ])
     expect(facts.backup).toEqual({ latest: null, lastSuccessAt: null })
     expect(facts.email?.lastTest).toBeNull()
+  })
+
+  /**
+   * La clave de Resend puede estar guardada en la plataforma (se lee de la BD,
+   * por eso el estado es asíncrono): el tile tiene que reflejar lo que el
+   * servicio resuelva, no sólo el entorno.
+   */
+  it("espera el estado asíncrono de Resend y lo entrega como `configured`", async () => {
+    mockGetResendStatus.mockResolvedValue({ configured: false, source: "missing", from: "x", hasStoredSettings: false, canStoreSecrets: true })
+    const sinClave = await getAdminHealthFacts([area("Correo", "/admin/correo-smtp")])
+    expect(sinClave.email?.configured).toBe(false)
+
+    mockGetResendStatus.mockResolvedValue({ configured: true, source: "system_settings", from: "x", hasStoredSettings: true, canStoreSecrets: true })
+    const conClave = await getAdminHealthFacts([area("Correo", "/admin/correo-smtp")])
+    expect(conClave.email?.configured).toBe(true)
+  })
+
+  it("no consulta el estado de Resend a quien no ve /admin/correo-smtp", async () => {
+    await getAdminHealthFacts([area("Respaldos", "/admin/backups")])
+    expect(mockGetResendStatus).not.toHaveBeenCalled()
+  })
+
+  /** Si no se pudo leer la clave no se afirma «sin configurar»: se omite el tile. */
+  it("omite el tile de correo si el estado de Resend no se puede leer", async () => {
+    mockGetResendStatus.mockRejectedValue(new Error("llavero roto"))
+    const facts = await getAdminHealthFacts([area("Correo", "/admin/correo-smtp")])
+    expect(facts.email).toBeUndefined()
   })
 })

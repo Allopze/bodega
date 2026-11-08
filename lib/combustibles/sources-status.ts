@@ -23,7 +23,7 @@ import { listCopecPeriodCoverage } from "@/lib/combustibles/copec-coverage-store
 import { toChileInstantRange } from "@/lib/combustibles/period/adapters"
 import type { ResolvedFuelPeriod } from "@/lib/combustibles/period/types"
 import { listTaeImportBatches } from "@/lib/combustibles/tae-import-ledger"
-import { readVisionLinkConfig } from "@/lib/integrations/visionlink/visionlink-settings"
+import { loadVisionLinkConfig } from "@/lib/integrations/visionlink/visionlink-settings"
 import { describeProviderPendingItems, listProviderPendingItems } from "@/lib/combustibles/provider-pending-items"
 import { logger } from "@/lib/logger"
 import { getCronJobHealth, type CronJobHealth } from "@/lib/services/cron-lock"
@@ -418,7 +418,7 @@ async function telemetriaSource(ctx: Ctx): Promise<FuelSourceStatus | null> {
   const lastDay = agg?.lastDay ?? null
   if (!lastDay && !batch) return { ...base, statusLabel: "Sin datos" }
 
-  const vision = readVisionLinkConfig()
+  const vision = await loadVisionLinkConfig()
   const cron = ctx.cron.get(JOB.visionlink) ?? null
   // Con la sincronización diaria de VisionLink activa, quedarse atrás sí es un problema.
   const continuous = vision.hasCredentials && vision.syncEnabled && ctx.global

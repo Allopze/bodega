@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
   verifyCronInternalRequest: vi.fn(() => false),
   isRouteOperational: vi.fn(),
   syncVisionLink: vi.fn(),
-  readVisionLinkConfig: vi.fn(),
+  loadVisionLinkConfig: vi.fn(),
   withCronLock: vi.fn(async (_job: string, run: () => Promise<unknown>) => run()),
   consumeFixedWindowLimit: vi.fn(async () => ({ allowed: true, remaining: 9 })),
 }))
@@ -21,7 +21,7 @@ vi.mock("@/lib/security/cron-auth", () => ({
 }))
 vi.mock("@/lib/services/module-toggles", () => ({ isRouteOperational: (...args: unknown[]) => Reflect.apply(mocks.isRouteOperational, null, args) }))
 vi.mock("@/lib/integrations/visionlink/visionlink-sync", () => ({ syncVisionLink: (...args: unknown[]) => Reflect.apply(mocks.syncVisionLink, null, args) }))
-vi.mock("@/lib/integrations/visionlink/visionlink-settings", () => ({ readVisionLinkConfig: (...args: unknown[]) => Reflect.apply(mocks.readVisionLinkConfig, null, args) }))
+vi.mock("@/lib/integrations/visionlink/visionlink-settings", () => ({ loadVisionLinkConfig: (...args: unknown[]) => Reflect.apply(mocks.loadVisionLinkConfig, null, args) }))
 vi.mock("@/lib/services/cron-lock", () => ({ withCronLock: (...args: [string, () => Promise<unknown>]) => Reflect.apply(mocks.withCronLock, null, args) }))
 vi.mock("@/lib/services/rate-limit", () => ({ consumeFixedWindowLimit: (...args: unknown[]) => Reflect.apply(mocks.consumeFixedWindowLimit, null, args) }))
 
@@ -40,7 +40,7 @@ describe("GET /api/cron/fuel-visionlink-sync", () => {
     vi.clearAllMocks()
     mocks.verifyCronRequest.mockReturnValue(true)
     mocks.isRouteOperational.mockResolvedValue(true)
-    mocks.readVisionLinkConfig.mockReturnValue(CONFIG)
+    mocks.loadVisionLinkConfig.mockResolvedValue(CONFIG)
     mocks.withCronLock.mockImplementation(async (_job: string, run: () => Promise<unknown>) => run())
     mocks.syncVisionLink.mockResolvedValue({ from: "2026-10-16", to: "2026-10-29", assets: 6, matched: 5, unmatched: [], inserted: 60, updated: 10, skippedDays: {} })
   })
@@ -60,9 +60,9 @@ describe("GET /api/cron/fuel-visionlink-sync", () => {
   })
 
   it("informa deshabilitado —no falla— sin credenciales o con el sync apagado", async () => {
-    mocks.readVisionLinkConfig.mockReturnValue({ ...CONFIG, clientSecret: "", hasCredentials: false })
+    mocks.loadVisionLinkConfig.mockResolvedValue({ ...CONFIG, clientSecret: "", hasCredentials: false })
     expect(await (await GET(request())).json()).toMatchObject({ outcome: "disabled", reason: "sin credenciales" })
-    mocks.readVisionLinkConfig.mockReturnValue({ ...CONFIG, syncEnabled: false })
+    mocks.loadVisionLinkConfig.mockResolvedValue({ ...CONFIG, syncEnabled: false })
     expect(await (await GET(request())).json()).toMatchObject({ outcome: "disabled", reason: "sync deshabilitado" })
     expect(mocks.syncVisionLink).not.toHaveBeenCalled()
   })

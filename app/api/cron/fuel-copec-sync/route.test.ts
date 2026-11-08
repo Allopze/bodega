@@ -24,6 +24,12 @@ vi.mock("@/lib/services/module-toggles", () => ({ isRouteOperational: (...args: 
 vi.mock("@/lib/combustibles/copec-sync", () => ({ syncCopecReports: (...args: unknown[]) => Reflect.apply(mocks.syncCopecReports, null, args) }))
 vi.mock("@/lib/services/cron-lock", () => ({ withCronLock: (...args: [string, () => Promise<unknown>]) => Reflect.apply(mocks.withCronLock, null, args) }))
 vi.mock("@/lib/services/rate-limit", () => ({ consumeFixedWindowLimit: (...args: unknown[]) => Reflect.apply(mocks.consumeFixedWindowLimit, null, args) }))
+// La configuración vigente sale de `system_settings` con el `.env` de respaldo.
+// Sin base de datos aquí, se lee sólo el entorno que cada caso fija abajo.
+vi.mock("@/lib/combustibles/copec-settings", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/combustibles/copec-settings")>()
+  return { ...actual, loadCopecConfig: async () => actual.copecConfigFromEnv(process.env) }
+})
 
 const { GET } = await import("./route")
 

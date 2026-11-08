@@ -7,7 +7,7 @@ import { getAllBillingProviders, isProviderEnabled } from "@/lib/services/billin
 import type { BillingProviderCapabilities } from "@/lib/services/billing/providers/types"
 import { deriveProviderStatus, readStoredHealth } from "@/lib/services/billing/health"
 import { listRecentSyncRuns, getLastSuccessfulRuns, todayIso } from "@/lib/services/billing/queries"
-import { readSalesSyncConfig } from "@/lib/services/billing/config"
+import { loadSalesSyncConfig, readSalesSyncAdminStatus } from "@/lib/services/billing/config"
 import { readChipaxAdminStatus } from "@/lib/services/billing/chipax-settings"
 import {
   formatDateTime,
@@ -22,6 +22,7 @@ import { MetaBadge } from "@/components/states/state-badge"
 import { SyncControls } from "./sync-controls"
 import { ProviderHealthButton } from "./provider-health-button"
 import { ChipaxSettingsDialog } from "./chipax-settings-dialog"
+import { SalesSyncSettingsDialog } from "./sales-sync-settings-dialog"
 import { Table, TableBody, TableHeader, TableRoot } from "@/components/ui/table"
 
 export const dynamic = "force-dynamic"
@@ -63,7 +64,7 @@ export default async function BillingSyncPage() {
     provider.id === "chipax",   // se muestra aunque aún no declare capacidades
   )
 
-  const [stored, configured, enabled, runs, lastSuccess, chipaxStatus] = await Promise.all([
+  const [stored, configured, enabled, runs, lastSuccess, chipaxStatus, salesConfig, salesStatus] = await Promise.all([
     readStoredHealth(syncProviders.map((provider) => provider.id)),
     Promise.all(syncProviders.map((provider) => provider.isConfigured())),
     // `isProviderEnabled` consulta `system_settings` desde que Chipax se puede
@@ -72,9 +73,12 @@ export default async function BillingSyncPage() {
     listRecentSyncRuns(30),
     getLastSuccessfulRuns(),
     readChipaxAdminStatus(),
+    // El interruptor de ventas también se guarda en `system_settings`: ya no es
+    // una variable de entorno que se lea sin esperar.
+    loadSalesSyncConfig(),
+    readSalesSyncAdminStatus(),
   ])
 
-  const salesConfig = readSalesSyncConfig()
   const lastSuccessMap = new Map(lastSuccess.map((row) => [`${row.provider}:${row.scope}`, row.finishedAt]))
 
   const cards = syncProviders.map((provider, index) => ({
@@ -154,6 +158,13 @@ export default async function BillingSyncPage() {
                 {/* A3: el formulario no vive abierto en la tarjeta; se abre a
                     pedido desde acá, junto a la acción hermana del proveedor. */}
                 {card.id === "chipax" && <ChipaxSettingsDialog status={chipaxStatus} />}
+                {card.id === "factura_en_linea" && (
+                  <SalesSyncSettingsDialog
+                    status={salesStatus}
+                    credentialsConfigured={card.configured}
+                    canManageCredentials={can(session, "admin:dte_sync")}
+                  />
+                )}
                 <ProviderHealthButton
                   provider={card.id}
                   label={card.label}

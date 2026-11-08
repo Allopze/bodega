@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
 import { verifyCronSecret } from "@/lib/security/cron-auth"
-import { readSalesSyncConfig } from "@/lib/services/billing/config"
+import { loadSalesSyncConfig } from "@/lib/services/billing/config"
 import { currentPeriod, previousBillingPeriod, syncBillingInvoices } from "@/lib/services/billing/sync"
 import { cronContractFor } from "@/lib/services/dte-portal/cron-contract"
 import { assertDtePortalStartsAllowed, isIntentionalDtePortalCutoverPause } from "@/lib/services/dte-portal/operation-lease"
@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
   if (!secret || !verifyCronSecret(request.headers.get("authorization"), secret)) {
     return response(cronContractFor({ unauthorized: true }))
   }
-  if (!readSalesSyncConfig().enabled) {
+  if (!(await loadSalesSyncConfig()).enabled) {
     return response(cronContractFor({ disabled: true }))
   }
 

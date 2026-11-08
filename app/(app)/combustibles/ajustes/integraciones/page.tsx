@@ -11,8 +11,10 @@ import { PageHeader } from "@/components/ui/page-header"
 import { FuelBreadcrumbs } from "@/components/combustibles/fuel-breadcrumbs"
 import { FuelHeaderActions } from "@/components/combustibles/fuel-header-actions"
 import { FUEL_PATHS } from "@/lib/combustibles/routes"
+import { CopecSettingsDialog } from "./copec-settings-dialog"
 import { cronOutcomeBadge, lastRunText, type IntegrationRun } from "./integration-status"
-import { loadIntegrationsData } from "./integrations-data"
+import { loadIntegrationsData, type IntegrationConfigView } from "./integrations-data"
+import { VisionLinkSettingsDialog } from "./visionlink-settings-dialog"
 
 export const metadata: Metadata = { title: "Integraciones" }
 
@@ -35,6 +37,25 @@ function IntegrationCard({ id, title, summary, run, runsFailed, children }: {
       <p className="mt-1 text-sm text-[var(--color-text-muted)]">{runsFailed ? "No se pudo leer cuándo corrió por última vez." : lastRunText(run)}</p>
       <div className="mt-5">{children}</div>
     </Card>
+  )
+}
+
+/** Credenciales y actualización diaria, en palabras, con de dónde salen las credenciales. */
+function ConfigSummary({ config }: { config: IntegrationConfigView<unknown> }) {
+  return (
+    <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
+      <div>
+        <dt className="text-xs text-[var(--color-text-subtle)]">Credenciales</dt>
+        <dd className="text-[var(--color-text)]">
+          {config.hasCredentials ? "Configuradas" : "Sin configurar"}
+          {config.hasCredentials && config.credentialsOrigin ? <span className="text-[var(--color-text-muted)]"> · {config.credentialsOrigin}</span> : null}
+        </dd>
+      </div>
+      <div>
+        <dt className="text-xs text-[var(--color-text-subtle)]">Actualización diaria</dt>
+        <dd className="text-[var(--color-text)]">{config.syncEnabled ? "Activada" : "Desactivada"}</dd>
+      </div>
+    </dl>
   )
 }
 
@@ -67,7 +88,8 @@ export default async function AjustesIntegracionesPage() {
             run={data.runs.copec}
             runsFailed={data.runsFailed}
           >
-            <p className="text-sm text-[var(--color-text-muted)]">Las credenciales de Copec se configuran en el servidor; aquí no se editan.</p>
+            <ConfigSummary config={data.copec} />
+            <div className="mt-4"><CopecSettingsDialog status={data.copec.status} /></div>
           </IntegrationCard>
 
           <IntegrationCard
@@ -77,17 +99,8 @@ export default async function AjustesIntegracionesPage() {
             run={data.runs.visionlink}
             runsFailed={data.runsFailed}
           >
-            <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
-              <div>
-                <dt className="text-xs text-[var(--color-text-subtle)]">Credenciales</dt>
-                <dd className="text-[var(--color-text)]">{data.visionlink.hasCredentials ? "Configuradas en el servidor" : "Sin configurar"}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-[var(--color-text-subtle)]">Actualización diaria</dt>
-                <dd className="text-[var(--color-text)]">{data.visionlink.syncEnabled ? "Activada" : "Desactivada"}</dd>
-              </div>
-            </dl>
-            <p className="mt-3 text-sm text-[var(--color-text-muted)]">Se activa y se cambia en la configuración del servidor; aquí no hay interruptor.</p>
+            <ConfigSummary config={data.visionlink} />
+            <div className="mt-4"><VisionLinkSettingsDialog status={data.visionlink.status} /></div>
           </IntegrationCard>
         </div>
       </div>

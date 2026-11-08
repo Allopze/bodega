@@ -22,14 +22,17 @@
  * desde el Excel; si no, cada mes ya importado aparecería entero como
  * «corrección pendiente de revisión».
  *
- * Credenciales: las de la cuenta del portal (`COPEC_USERNAME`/`COPEC_PASSWORD`, usuario
- * ADMINISTRADOR CLIENTE) más `COPEC_CLIENT_RUT`. BlueMax las exige en la query
+ * Credenciales: las de la cuenta del portal (usuario ADMINISTRADOR CLIENTE) más el
+ * RUT de la empresa, guardadas en Combustibles › Ajustes › Integraciones
+ * (`copec-settings.ts`; `COPEC_USERNAME`, `COPEC_PASSWORD` y `COPEC_CLIENT_RUT` del
+ * `.env` quedan de respaldo). BlueMax las exige en la query
  * string, así que ningún error de este módulo repite la URL ni el mensaje de
  * `fetch`, que la puede incluir.
  */
 
 import { XMLParser } from "fast-xml-parser"
 import { cleanRut, validateRut } from "@/lib/rut"
+import { loadCopecConfig } from "@/lib/combustibles/copec-settings"
 import {
   CopecReportFailure,
   CopecReportTimeoutFailure,
@@ -93,17 +96,23 @@ interface CopecWsConfig {
 }
 
 /**
+ * Lee la configuración vigente (lo guardado desde Ajustes › Integraciones, con
+ * el `.env` de respaldo; ver `copec-settings.ts`).
+ *
  * Lanza un `Error` plano, no una `CopecReportFailure`: sin configuración no hay
  * mes que registrar como fallido, y la corrida entera tiene que caer con un
- * motivo que se pueda corregir.
+ * motivo que se pueda corregir. Ningún mensaje lleva un valor de la
+ * configuración.
  */
-function readCopecWsConfig(): CopecWsConfig {
-  const username = process.env.COPEC_USERNAME?.trim()
-  const password = process.env.COPEC_PASSWORD?.trim()
-  const rawRut = process.env.COPEC_CLIENT_RUT?.trim()
-  if (!username || !password) throw new Error("Faltan COPEC_USERNAME y COPEC_PASSWORD para consultar los web services de Copec.")
-  if (!rawRut) throw new Error("Falta COPEC_CLIENT_RUT (RUT de la empresa cliente de Copec) para consultar los web services de Copec.")
-  if (!validateRut(rawRut)) throw new Error("COPEC_CLIENT_RUT no es un RUT válido.")
+async function readCopecWsConfig(): Promise<CopecWsConfig> {
+  const { username, password, clientRut: rawRut, hasUnreadableSecret } = await loadCopecConfig()
+  if (!username || !password) {
+    throw new Error(hasUnreadableSecret
+      ? "No se pueden abrir las credenciales de Copec guardadas en la plataforma: el llavero de cifrado de este servidor no las descifra. Vuelve a ingresarlas en Combustibles › Ajustes › Integraciones."
+      : "Faltan el usuario y la contraseña de Copec para consultar los web services. Ingrésalos en Combustibles › Ajustes › Integraciones.")
+  }
+  if (!rawRut) throw new Error("Falta el RUT de la empresa cliente de Copec para consultar los web services. Ingrésalo en Combustibles › Ajustes › Integraciones.")
+  if (!validateRut(rawRut)) throw new Error("El RUT de la empresa cliente de Copec no es válido. Corrígelo en Combustibles › Ajustes › Integraciones.")
   return { username, password, clientRut: cleanRut(rawRut) }
 }
 
@@ -471,7 +480,7 @@ export async function withCopecWebServiceSession<T>(
   run: (session: CopecSession) => Promise<T>,
   options: { deadline?: number | null } = {},
 ): Promise<T> {
-  const config = readCopecWsConfig()
+  const config = await readCopecWsConfig()
   const state: WsSessionState = { config, redact: redactor(config), deadline: options.deadline ?? null, accessConfirmed: false, blocked: null }
   const remaining = () => (state.deadline === null ? null : state.deadline - Date.now())
   return run({

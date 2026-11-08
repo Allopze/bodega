@@ -3,8 +3,8 @@
 import { useActionState, useEffect, useState } from "react"
 import { CheckCircle, LockKey, WarningCircle, XCircle } from "@phosphor-icons/react/dist/ssr"
 import { toast } from "@/lib/toast"
+import { SecretSettingField } from "@/components/admin/secret-setting-field"
 import { Button } from "@/components/ui/button"
-import { Checkbox } from "@/components/ui/checkbox"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
@@ -30,7 +30,6 @@ interface DteCredentialsFormProps {
  * Los inputs siempre parten vacíos: vacío conserva y cada borrado es explícito.
  */
 export function DteCredentialsForm({ status }: DteCredentialsFormProps) {
-  const [claveInput, setClaveInput] = useState("")
   // El aviso sale dentro de la acción, donde se conoce el resultado. La clave
   // es un campo no controlado que React vacía al terminar; su espejo se vacía
   // acá, o «Borrar la contraseña persistida» quedaría deshabilitada.
@@ -38,7 +37,6 @@ export function DteCredentialsForm({ status }: DteCredentialsFormProps) {
     const result = await saveDteSettingsAction(prev, formData)
     if (result.ok) {
       toast.success(result.message ?? "Configuración DTE guardada")
-      setClaveInput("")
     } else if (result.message) {
       toast.error(result.message)
     }
@@ -201,24 +199,19 @@ export function DteCredentialsForm({ status }: DteCredentialsFormProps) {
 
           <FieldGroup>
             <div className="grid gap-4 sm:grid-cols-2">
-              <SecretField id="dte-rut-usr" name="rutUsr" label="RUT del usuario" configured={status.fields.rutUsr.configured} clearName="clearRutUsr" placeholder="12345678-9" />
-              <SecretField id="dte-rut-emp" name="rutEmp" label="RUT de la empresa" configured={status.fields.rutEmp.configured} clearName="clearRutEmp" placeholder="78023530-6" />
+              <SecretSettingField id="dte-rut-usr" name="rutUsr" label="RUT del usuario" status={status.fields.rutUsr} clearName="clearRutUsr" placeholder="12345678-9" />
+              <SecretSettingField id="dte-rut-emp" name="rutEmp" label="RUT de la empresa" status={status.fields.rutEmp} clearName="clearRutEmp" placeholder="78023530-6" />
             </div>
 
-            <SecretField id="dte-cod-emp" name="codEmp" label="Código de empresa (CodEmp)" configured={status.fields.codEmp.configured} clearName="clearCodEmp" placeholder="433" />
+            <SecretSettingField id="dte-cod-emp" name="codEmp" label="Código de empresa (CodEmp)" status={status.fields.codEmp} clearName="clearCodEmp" placeholder="433" />
 
-            <Field label="Contraseña" htmlFor="dte-clave" helper={status.fields.clave.configured ? "Déjela vacía para conservar la existente; marque borrar solo si desea retirarla." : "Ingrese una contraseña solo para configurarla."}>
-              <Input id="dte-clave" name="clave" type="password" placeholder="••••••••" autoComplete="new-password" onChange={(event) => setClaveInput(event.currentTarget.value)} />
-            </Field>
-            {status.fields.clave.configured && (
-              <Checkbox id="dte-clear-clave" name="clearClave" value="on" disabled={claveInput.length > 0} label="Borrar la contraseña persistida" />
-            )}
+            <SecretSettingField id="dte-clave" name="clave" label="Contraseña" type="password" status={status.fields.clave} clearName="clearClave" />
 
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Intervalo entre consultas (ms)" htmlFor="dte-delay" helper="0–10.000 · en blanco conserva el intervalo actual.">
                 <Input id="dte-delay" name="delayMs" type="number" min={0} max={10000} step={100} placeholder="500" />
               </Field>
-              <SecretField id="dte-importer" name="importerEmail" label="Email del usuario técnico (importer)" configured={status.fields.importerEmail.configured} clearName="clearImporterEmail" placeholder="tecnico@empresa.cl" type="email" />
+              <SecretSettingField id="dte-importer" name="importerEmail" label="Email del usuario técnico (importer)" status={status.fields.importerEmail} clearName="clearImporterEmail" placeholder="tecnico@empresa.cl" type="email" />
             </div>
 
             <div className="flex items-center justify-between gap-4 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-3">
@@ -269,33 +262,6 @@ export function DteCredentialsForm({ status }: DteCredentialsFormProps) {
         onConfirm={handleRotation}
         loading={rotation.pending}
       />
-    </div>
-  )
-}
-
-function SecretField({
-  id,
-  name,
-  label,
-  configured,
-  clearName,
-  placeholder,
-  type = "text",
-}: {
-  id: string
-  name: string
-  label: string
-  configured: boolean
-  clearName: string
-  placeholder: string
-  type?: "text" | "email"
-}) {
-  return (
-    <div className="space-y-2">
-      <Field label={label} htmlFor={id} helper={configured ? "Vacío conserva el valor existente." : "Aún no configurado."}>
-        <Input id={id} name={name} type={type} placeholder={placeholder} autoComplete="off" />
-      </Field>
-      {configured && <Checkbox id={`dte-${clearName}`} name={clearName} value="on" label={`Borrar ${label.toLowerCase()} persistido`} />}
     </div>
   )
 }

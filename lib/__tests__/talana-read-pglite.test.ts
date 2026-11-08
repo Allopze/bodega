@@ -147,12 +147,33 @@ describe("lecturas de la sincronización con Talana", () => {
     it("separa la última corrida, el bloqueo sin revisar y la última descarga buena", async () => {
       const overview = await getTalanaOverview()
 
-      expect(overview.config).toEqual({ mode: "simulate", hasCredentials: true })
+      expect(overview.config).toEqual({
+        mode: "simulate",
+        hasCredentials: true,
+        sources: { token: "environment", mode: "environment" },
+        tokenUnreadable: false,
+      })
       expect(overview.lastRun?.id).toBe("run-block")
       expect(overview.blockedRun?.id).toBe("run-block")
       expect(overview.blockedRun?.fusibleReason).toBe("active_drop")
       // La última con datos (success o partial) es la más reciente de las dos, no la bloqueada.
       expect(overview.lastGoodSyncAt).toBe((await testDb.query.talanaSyncRuns.findFirst({ where: eq(schema.talanaSyncRuns.id, "run-good") }))?.finishedAt)
+    })
+
+    it("lo guardado en la plataforma gana sobre el .env y el resumen dice de dónde sale, sin el token", async () => {
+      await testDb.insert(schema.systemSettings).values({ key: "talana.sync_mode", value: "apply", updatedAt: new Date().toISOString() })
+      try {
+        const overview = await getTalanaOverview()
+        expect(overview.config).toEqual({
+          mode: "apply",
+          hasCredentials: true,
+          sources: { token: "environment", mode: "system_settings" },
+          tokenUnreadable: false,
+        })
+        expect(JSON.stringify(overview.config)).not.toContain("token-de-prueba")
+      } finally {
+        await testDb.delete(schema.systemSettings).where(eq(schema.systemSettings.key, "talana.sync_mode"))
+      }
     })
 
     it("cuenta como activos sólo los contratos vigentes de las razones sociales de Chome", async () => {

@@ -84,10 +84,11 @@ async function request(fetchImpl: FetchLike, url: string, init: RequestInit): Pr
   }
 }
 
-async function accessToken(credentials: VisionLinkCredentials, fetchImpl: FetchLike, now: () => number): Promise<string> {
-  const key = credentials.clientId
-  if (cachedToken && cachedToken.key === key && cachedToken.expiresAt - TOKEN_MARGIN_MS > now()) return cachedToken.token
-
+/** Pide un token nuevo al proveedor. Sin caché: quien llama decide si lo guarda. */
+async function requestAccessToken(
+  credentials: VisionLinkCredentials,
+  fetchImpl: FetchLike,
+): Promise<{ token: string; ttlSeconds: number }> {
   const response = await request(fetchImpl, TOKEN_URL, {
     method: "POST",
     headers: {
@@ -104,8 +105,33 @@ async function accessToken(credentials: VisionLinkCredentials, fetchImpl: FetchL
   const body = await response.json().catch(() => null) as { access_token?: unknown; expires_in?: unknown } | null
   if (!body || typeof body.access_token !== "string") throw new VisionLinkClientError("VISIONLINK_AUTH_FAILED")
   const ttlSeconds = typeof body.expires_in === "number" ? body.expires_in : Number(body.expires_in) || 3600
-  cachedToken = { key, token: body.access_token, expiresAt: now() + ttlSeconds * 1000 }
-  return body.access_token
+  return { token: body.access_token, ttlSeconds }
+}
+
+async function accessToken(credentials: VisionLinkCredentials, fetchImpl: FetchLike, now: () => number): Promise<string> {
+  const key = credentials.clientId
+  if (cachedToken && cachedToken.key === key && cachedToken.expiresAt - TOKEN_MARGIN_MS > now()) return cachedToken.token
+
+  const { token, ttlSeconds } = await requestAccessToken(credentials, fetchImpl)
+  cachedToken = { key, token, expiresAt: now() + ttlSeconds * 1000 }
+  return token
+}
+
+/**
+ * «Probar conexión» de Ajustes › Integraciones: pide únicamente el token OAuth
+ * con las credenciales dadas y lo descarta. No lee la caché ni la escribe: un
+ * token en memoria de un secreto anterior habría dado por buena una credencial
+ * que el proveedor ya no acepta, y probar no debe cambiar lo que usa el cron.
+ *
+ * No consulta ningún endpoint de datos (no gasta del cupo de 50.000 llamadas) y
+ * lanza `VisionLinkClientError`, cuyo mensaje es sólo un código: nunca el cuerpo
+ * de la respuesta ni las credenciales.
+ */
+export async function verifyVisionLinkCredentials(
+  credentials: VisionLinkCredentials,
+  options: { fetchImpl?: FetchLike } = {},
+): Promise<void> {
+  await requestAccessToken(credentials, options.fetchImpl ?? fetch)
 }
 
 /**

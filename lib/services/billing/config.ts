@@ -8,6 +8,13 @@
  * bundle del cliente bajo ninguna circunstancia.
  */
 
+import {
+  defineSettingsGroup,
+  readSettingsAdminStatus,
+  readSettingsGroup,
+  type SettingSource,
+} from "@/lib/services/encrypted-settings"
+
 /* ── Sincronización de ventas (FacturaEnLínea) ───────────────────────────── */
 
 export interface BillingSalesSyncConfig {
@@ -20,10 +27,87 @@ export interface BillingSalesSyncConfig {
   historyFloor: string
 }
 
+/**
+ * Configuración de la sincronización de ventas **según el entorno**, sin tocar
+ * la base de datos.
+ *
+ * Es el respaldo del interruptor y la única fuente de `historyFloor`, que es una
+ * decisión del despliegue y no se administra desde la plataforma. Quien necesite
+ * saber si la automatización está encendida debe usar `loadSalesSyncConfig()`,
+ * que superpone lo que se haya guardado desde Facturación › Sincronización.
+ */
 export function readSalesSyncConfig(): BillingSalesSyncConfig {
   return {
     enabled: process.env.BILLING_SALES_SYNC_ENABLED?.trim().toLowerCase() === "true",
     historyFloor: normalizePeriod(process.env.BILLING_HISTORY_FLOOR) ?? "2024-01",
+  }
+}
+
+/**
+ * Interruptor de la automatización de ventas, administrable desde la
+ * plataforma. Sin campos secretos: no necesita llavero. Las credenciales del
+ * portal que usa esta sincronización viven en Administración › Sincronización
+ * DTE, no acá.
+ */
+export const salesSyncSettingsGroup = defineSettingsGroup({
+  name: "billing-sales",
+  entityType: "billing_sales_settings",
+  entityId: "sales_sync",
+  fields: {
+    syncEnabled: { key: "billing.sales.sync_enabled", secret: false },
+  },
+})
+
+/**
+ * Valor del `.env` para el interruptor, en la forma en que se guarda
+ * («true» / «false»). Sin la variable no hay respaldo: queda apagado y el origen
+ * se informa como «sin configurar».
+ */
+function salesSyncEnvValues() {
+  const raw = process.env.BILLING_SALES_SYNC_ENABLED?.trim().toLowerCase()
+  return { syncEnabled: raw ? String(raw === "true") : undefined }
+}
+
+function isEnabledValue(value: string | undefined): boolean {
+  return value?.trim().toLowerCase() === "true"
+}
+
+export interface LoadedSalesSyncConfig extends BillingSalesSyncConfig {
+  /** De dónde sale `enabled`: lo guardado, el `.env` o ninguno. */
+  source: SettingSource
+}
+
+/**
+ * Configuración vigente de la sincronización de ventas: lo guardado desde la
+ * plataforma gana y el `.env` es el respaldo. Si la BD no responde se usa el
+ * `.env` (y queda un aviso en el log): apagar la automatización por una caída de
+ * Postgres sería peor que seguir con lo que el servidor declara.
+ */
+export async function loadSalesSyncConfig(): Promise<LoadedSalesSyncConfig> {
+  const { historyFloor } = readSalesSyncConfig()
+  const resolved = await readSettingsGroup(salesSyncSettingsGroup, salesSyncEnvValues())
+  return {
+    enabled: isEnabledValue(resolved.values.syncEnabled),
+    historyFloor,
+    source: resolved.sources.syncEnabled,
+  }
+}
+
+/** DTO para la pantalla: el interruptor, su origen y si hay algo que restaurar. */
+export interface SalesSyncAdminStatus {
+  enabled: boolean
+  source: SettingSource
+  /** True si el interruptor está guardado en la plataforma (habilita «Restaurar»). */
+  hasStoredSettings: boolean
+}
+
+export async function readSalesSyncAdminStatus(): Promise<SalesSyncAdminStatus> {
+  const status = await readSettingsAdminStatus(salesSyncSettingsGroup, salesSyncEnvValues())
+  const field = status.fields.syncEnabled
+  return {
+    enabled: isEnabledValue(field.value),
+    source: field.source,
+    hasStoredSettings: status.hasStoredSettings,
   }
 }
 

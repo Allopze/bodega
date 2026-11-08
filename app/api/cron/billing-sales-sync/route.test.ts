@@ -3,7 +3,7 @@ import { NextRequest } from "next/server"
 
 const mocks = vi.hoisted(() => ({
   verifyCronSecret: vi.fn(),
-  readSalesSyncConfig: vi.fn(),
+  loadSalesSyncConfig: vi.fn(),
   syncBillingInvoices: vi.fn(),
   currentPeriod: vi.fn(),
   previousBillingPeriod: vi.fn(),
@@ -17,7 +17,7 @@ vi.mock("@/lib/security/cron-auth", () => ({
   verifyCronSecret: (...args: unknown[]) => mocks.verifyCronSecret(...args),
 }))
 vi.mock("@/lib/services/billing/config", () => ({
-  readSalesSyncConfig: (...args: unknown[]) => mocks.readSalesSyncConfig(...args),
+  loadSalesSyncConfig: async (...args: unknown[]) => mocks.loadSalesSyncConfig(...args),
 }))
 vi.mock("@/lib/services/billing/sync", () => ({
   syncBillingInvoices: (...args: unknown[]) => mocks.syncBillingInvoices(...args),
@@ -79,7 +79,7 @@ describe("GET /api/cron/billing-sales-sync", () => {
     process.env = { ...originalEnv, CRON_SECRET: "test-cron-secret" }
     vi.clearAllMocks()
     mocks.verifyCronSecret.mockReturnValue(true)
-    mocks.readSalesSyncConfig.mockReturnValue({ enabled: true })
+    mocks.loadSalesSyncConfig.mockResolvedValue({ enabled: true, historyFloor: "2024-01", source: "system_settings" })
     mocks.assertDtePortalStartsAllowed.mockResolvedValue(undefined)
     mocks.currentPeriod.mockReturnValue("2026-08")
     mocks.previousBillingPeriod.mockReturnValue("2026-07")
@@ -89,7 +89,7 @@ describe("GET /api/cron/billing-sales-sync", () => {
   })
 
   it("returns disabled without touching the DTE cutover fence when sales automation is off", async () => {
-    mocks.readSalesSyncConfig.mockReturnValue({ enabled: false })
+    mocks.loadSalesSyncConfig.mockResolvedValue({ enabled: false, historyFloor: "2024-01", source: "system_settings" })
 
     const response = await GET(request())
 

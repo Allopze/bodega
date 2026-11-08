@@ -44,7 +44,7 @@ const FUSIBLE_TEXT: Record<FusibleReason, string> = {
 }
 
 const ERROR_TEXT: Record<string, string> = {
-  TALANA_AUTH_FAILED: "Talana rechazó el token (revisar TALANA_API_TOKEN o los permisos de la cuenta)",
+  TALANA_AUTH_FAILED: "Talana rechazó el token (revisar el token en Administración › Sincronización Talana o los permisos de la cuenta)",
   TALANA_RATE_LIMITED: "Talana limitó las consultas; se reintenta mañana",
   TALANA_TIMEOUT: "Talana no respondió a tiempo",
   TALANA_SNAPSHOT_INCOMPLETE: "la descarga de Talana vino incompleta",

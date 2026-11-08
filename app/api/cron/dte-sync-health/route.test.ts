@@ -4,7 +4,7 @@ import { NextRequest } from "next/server"
 const mocks = vi.hoisted(() => ({
   verifyCronSecret: vi.fn(),
   readDtePortalConfig: vi.fn(),
-  readSalesSyncConfig: vi.fn(),
+  loadSalesSyncConfig: vi.fn(),
   readChipaxConfig: vi.fn(),
   selectWhere: vi.fn(),
   evaluateDteSyncHealth: vi.fn(),
@@ -20,7 +20,7 @@ vi.mock("@/lib/services/dte-portal/config", () => ({
   readDtePortalConfig: (...args: unknown[]) => mocks.readDtePortalConfig(...args),
 }))
 vi.mock("@/lib/services/billing/config", () => ({
-  readSalesSyncConfig: (...args: unknown[]) => mocks.readSalesSyncConfig(...args),
+  loadSalesSyncConfig: async (...args: unknown[]) => mocks.loadSalesSyncConfig(...args),
 }))
 vi.mock("@/lib/services/billing/chipax-settings", () => ({
   readChipaxConfig: async (...args: unknown[]) => mocks.readChipaxConfig(...args),
@@ -79,7 +79,7 @@ describe("GET /api/cron/dte-sync-health", () => {
       syncEnabled: true,
       credentials: { rutUsr: "user", rutEmp: "company", clave: "secret", codEmp: "433" },
     })
-    mocks.readSalesSyncConfig.mockReturnValue({ enabled: false })
+    mocks.loadSalesSyncConfig.mockResolvedValue({ enabled: false, historyFloor: "2024-01", source: "missing" })
     mocks.readChipaxConfig.mockReturnValue({ enabled: false, syncEnabled: false, hasCredentials: false, companyTaxId: "" })
     mocks.selectWhere.mockResolvedValue([])
     mocks.evaluateDteSyncHealth.mockReturnValue(healthy)

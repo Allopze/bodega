@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { cronOutcomeBadge, INTEGRATION_JOBS, lastRunText } from "./integration-status"
+import { credentialsOriginText, cronOutcomeBadge, INTEGRATION_JOBS, lastRunText } from "./integration-status"
 
 describe("estado de las integraciones en palabras", () => {
   it("dice cómo terminó la última corrida", () => {
@@ -23,5 +23,19 @@ describe("estado de las integraciones en palabras", () => {
 
   it("los nombres de las corridas son los de los crons del módulo", () => {
     expect(INTEGRATION_JOBS).toEqual({ copec: "fuel-copec-sync", visionlink: "fuel-visionlink-sync" })
+  })
+})
+
+describe("origen de las credenciales", () => {
+  it("dice si están guardadas en la plataforma, vienen del servidor o son de las dos partes", () => {
+    expect(credentialsOriginText(["system_settings", "system_settings"])).toBe("guardadas en la plataforma")
+    expect(credentialsOriginText(["environment", "environment", "environment"])).toBe("del servidor")
+    expect(credentialsOriginText(["system_settings", "environment"])).toBe("guardadas en la plataforma y del servidor")
+  })
+
+  it("un campo faltante no cambia lo que se dice de los demás; sin ninguno no hay origen", () => {
+    expect(credentialsOriginText(["missing", "environment"])).toBe("del servidor")
+    expect(credentialsOriginText(["missing", "missing"])).toBeNull()
+    expect(credentialsOriginText([])).toBeNull()
   })
 })

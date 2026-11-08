@@ -62,6 +62,8 @@ export const adminModule = {
     "admin:storage",
     // Talana (RR. HH.): datos laborales y estado de la sincronización
     "admin:workers_hr",
+    // Talana: token y modo de la sincronización (credencial de la integración)
+    "admin:talana_settings",
   ] as const,
 
   permissionMeta: {
@@ -102,6 +104,7 @@ export const adminModule = {
     "admin:dte_sync":           { id: "p-adm-dte",   description: "Sincronizar documentos tributarios (DTE)" },
     "admin:storage":            { id: "p-adm-stor",  description: "Configurar almacenamiento de documentos SST" },
     "admin:workers_hr":         { id: "p-adm-wrkhr", description: "Ver la información laboral de Talana (contrato, ausencias) y el estado de su sincronización" },
+    "admin:talana_settings":    { id: "p-adm-tlnset", description: "Configurar la integración con Talana (token y modo)" },
   },
 
   // No aparece en el sidebar principal; el TopBar lo descubre dinámicamente
@@ -230,5 +233,10 @@ export const adminModule = {
     { roleSlug: "secretaria", permission: "admin:workers_hr" },
     { roleSlug: "prevencionista", permission: "admin:workers_hr" },
     { roleSlug: "gerente_legal_rrhh", permission: "admin:workers_hr" },
+    /* Token y modo de la sincronización con Talana: el token da lectura de toda
+     * la nómina (contratos, RUT, ausencias) y el modo `apply` modifica fichas de
+     * trabajadores. Es infraestructura, como `admin:smtp` o `admin:storage`:
+     * sólo administrador. Ver los resultados (`admin:workers_hr`) no basta. */
+    { roleSlug: "administrador", permission: "admin:talana_settings" },
   ],
 } as const satisfies ModuleManifest

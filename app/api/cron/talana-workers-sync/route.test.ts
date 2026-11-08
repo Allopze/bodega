@@ -3,7 +3,7 @@ import { NextRequest } from "next/server"
 
 const mocks = vi.hoisted(() => ({
   isRouteOperational: vi.fn(),
-  readTalanaConfig: vi.fn(),
+  loadTalanaConfig: vi.fn(),
   runTalanaSync: vi.fn(),
   hasStalledTalanaRun: vi.fn(async () => false),
   withCronLock: vi.fn(async (_job: string, run: () => Promise<unknown>) => run()),
@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock("@/lib/services/module-toggles", () => ({ isRouteOperational: (...args: unknown[]) => Reflect.apply(mocks.isRouteOperational, null, args) }))
-vi.mock("@/lib/integrations/talana/talana-settings", () => ({ readTalanaConfig: (...args: unknown[]) => Reflect.apply(mocks.readTalanaConfig, null, args) }))
+vi.mock("@/lib/integrations/talana/talana-settings", () => ({ loadTalanaConfig: (...args: unknown[]) => Reflect.apply(mocks.loadTalanaConfig, null, args) }))
 vi.mock("@/lib/integrations/talana/talana-sync", () => ({
   runTalanaSync: (...args: unknown[]) => Reflect.apply(mocks.runTalanaSync, null, args),
   hasStalledTalanaRun: (...args: unknown[]) => Reflect.apply(mocks.hasStalledTalanaRun, null, args),
@@ -50,7 +50,7 @@ describe("GET /api/cron/talana-workers-sync", () => {
     process.env.CRON_SECRET = "cron-secret"
     vi.clearAllMocks()
     mocks.isRouteOperational.mockResolvedValue(true)
-    mocks.readTalanaConfig.mockReturnValue({ token: TOKEN, mode: "simulate", hasCredentials: true, enabled: true })
+    mocks.loadTalanaConfig.mockResolvedValue({ token: TOKEN, mode: "simulate", hasCredentials: true, enabled: true })
     mocks.withCronLock.mockImplementation(async (_job: string, run: () => Promise<unknown>) => run())
     mocks.hasStalledTalanaRun.mockResolvedValue(false)
     mocks.consumeFixedWindowLimit.mockResolvedValue({ allowed: true, remaining: 9 })
@@ -84,21 +84,21 @@ describe("GET /api/cron/talana-workers-sync", () => {
   })
 
   it("responde deshabilitado, sin error, cuando no hay token", async () => {
-    mocks.readTalanaConfig.mockReturnValue({ token: "", mode: "simulate", hasCredentials: false, enabled: false })
+    mocks.loadTalanaConfig.mockResolvedValue({ token: "", mode: "simulate", hasCredentials: false, enabled: false })
     const response = await GET(request())
     expect(response.status).toBe(200)
     expect(await response.json()).toMatchObject({ ok: true, outcome: "disabled", code: "TALANA_CRON_DISABLED", reason: "sin token" })
     expect(mocks.runTalanaSync).not.toHaveBeenCalled()
   })
 
-  it("responde deshabilitado cuando TALANA_SYNC_MODE está apagado", async () => {
-    mocks.readTalanaConfig.mockReturnValue({ token: TOKEN, mode: "off", hasCredentials: true, enabled: false })
+  it("responde deshabilitado, con un motivo que no nombra variables, cuando el modo está apagado", async () => {
+    mocks.loadTalanaConfig.mockResolvedValue({ token: TOKEN, mode: "off", hasCredentials: true, enabled: false })
     const response = await GET(request())
     expect(response.status).toBe(200)
     expect(await response.json()).toMatchObject({
       ok: true,
       outcome: "disabled",
-      reason: "sincronización apagada (TALANA_SYNC_MODE)",
+      reason: "sincronización apagada",
     })
     expect(mocks.runTalanaSync).not.toHaveBeenCalled()
   })
@@ -108,7 +108,7 @@ describe("GET /api/cron/talana-workers-sync", () => {
     const response = await GET(request())
     expect(await response.json()).toMatchObject({ ok: true, outcome: "disabled", code: "TALANA_CRON_DISABLED" })
     expect(mocks.isRouteOperational).toHaveBeenCalledWith("/admin/trabajadores")
-    expect(mocks.readTalanaConfig).not.toHaveBeenCalled()
+    expect(mocks.loadTalanaConfig).not.toHaveBeenCalled()
     expect(mocks.runTalanaSync).not.toHaveBeenCalled()
   })
 
@@ -131,7 +131,7 @@ describe("GET /api/cron/talana-workers-sync", () => {
   })
 
   it("pasa el modo apply tal cual cuando está configurado", async () => {
-    mocks.readTalanaConfig.mockReturnValue({ token: TOKEN, mode: "apply", hasCredentials: true, enabled: true })
+    mocks.loadTalanaConfig.mockResolvedValue({ token: TOKEN, mode: "apply", hasCredentials: true, enabled: true })
     mocks.runTalanaSync.mockResolvedValue({ runId: "run-2", mode: "apply", status: "success", fusibleReason: null, counts: COUNTS })
     const response = await GET(request())
     expect(response.status).toBe(200)

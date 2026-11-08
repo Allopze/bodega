@@ -153,7 +153,7 @@ export function SyncControls({
         <p className="text-xs text-[var(--color-text-muted)]">
           {automationEnabled
             ? "La automatización del proveedor seleccionado está activa. Esta ejecución manual sirve para períodos anteriores o para forzar una actualización."
-            : `La automatización del proveedor seleccionado está desactivada (${activeProvider === "chipax" ? "BILLING_CHIPAX_SYNC_ENABLED" : "BILLING_SALES_SYNC_ENABLED"}). Solo se sincroniza desde acá.`}
+            : `La automatización del proveedor seleccionado está desactivada (se enciende desde «${activeProvider === "chipax" ? "Credenciales" : "Automatización"}» en su tarjeta). Solo se sincroniza desde acá.`}
         </p>
       </header>
 
