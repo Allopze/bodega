@@ -59,6 +59,7 @@ const routes: RouteTarget[] = [
   { slug: "admin-productos-nuevo", path: "/admin/productos/nuevo", auth: true },
   { slug: "admin-productos-detalle", path: "/admin/productos/prod-audit-1", auth: true },
   { slug: "admin-proveedores", path: "/admin/proveedores", auth: true },
+  { slug: "admin-talana", path: "/admin/talana", auth: true },
   { slug: "admin-trabajadores", path: "/admin/trabajadores", auth: true },
   { slug: "admin-usuarios", path: "/admin/usuarios", auth: true },
   { slug: "forbidden", path: "/forbidden", auth: true },

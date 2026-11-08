@@ -304,6 +304,8 @@ ENV_WHITELIST=(
   PDTP_EVIDENCE_GC_DELETE
   COPEC_USERNAME COPEC_PASSWORD COPEC_CLIENT_RUT COPEC_SYNC_START_DATE COPEC_SYNC_IMPORTER_EMAIL
   ONWAY_USERNAME ONWAY_PASSWORD ONWAY_SYNC_ENABLED
+  # Talana (sincronización de trabajadores): token sólo de entorno, sin copia en la base.
+  TALANA_API_TOKEN TALANA_SYNC_MODE
   # VisionLink (telemetría): credenciales sólo de entorno, sin copia en la base.
   VISIONLINK_CLIENT_ID VISIONLINK_CLIENT_SECRET VISIONLINK_SCOPE VISIONLINK_SYNC_ENABLED
   # Cloudreve (storage de documentos SST): la URL y el backend son configuración

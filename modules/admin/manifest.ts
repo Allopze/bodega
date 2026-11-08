@@ -60,6 +60,8 @@ export const adminModule = {
     "admin:dte_sync",
     // Almacenamiento de documentos
     "admin:storage",
+    // Talana (RR. HH.): datos laborales y estado de la sincronización
+    "admin:workers_hr",
   ] as const,
 
   permissionMeta: {
@@ -99,6 +101,7 @@ export const adminModule = {
     "admin:backups":            { id: "p-adm-bkp",   description: "Gestionar respaldos y restauración" },
     "admin:dte_sync":           { id: "p-adm-dte",   description: "Sincronizar documentos tributarios (DTE)" },
     "admin:storage":            { id: "p-adm-stor",  description: "Configurar almacenamiento de documentos SST" },
+    "admin:workers_hr":         { id: "p-adm-wrkhr", description: "Ver la información laboral de Talana (contrato, ausencias) y el estado de su sincronización" },
   },
 
   // No aparece en el sidebar principal; el TopBar lo descubre dinámicamente
@@ -218,5 +221,14 @@ export const adminModule = {
      * como `admin:security` o `admin:module_management`, no gestión operativa
      * como `admin:backups`: Jefatura queda fuera a propósito. */
     { roleSlug: "administrador", permission: "admin:storage" },
+    /* Información laboral de Talana (tipo de contrato, término, licencias y
+     * permisos): la ven quienes ya administran personas o la dotación, todos
+     * con alcance global. Los roles acotados a una faena (`solicitante_faena`,
+     * `prevencionista_faena`) quedan fuera a propósito: ven a sus trabajadores,
+     * pero no su situación contractual ni sus licencias médicas. */
+    { roleSlug: "administrador", permission: "admin:workers_hr" },
+    { roleSlug: "secretaria", permission: "admin:workers_hr" },
+    { roleSlug: "prevencionista", permission: "admin:workers_hr" },
+    { roleSlug: "gerente_legal_rrhh", permission: "admin:workers_hr" },
   ],
 } as const satisfies ModuleManifest

@@ -94,6 +94,10 @@ services:
       - ONWAY_USERNAME=${ONWAY_USERNAME:-}
       - ONWAY_PASSWORD=${ONWAY_PASSWORD:-}
       - ONWAY_SYNC_ENABLED=${ONWAY_SYNC_ENABLED:-false}
+      # Talana (RR. HH.): sincronización diaria de trabajadores, sólo lectura.
+      # Modo `off` (defecto) | `simulate` | `apply`; ver .env.example.
+      - TALANA_API_TOKEN=${TALANA_API_TOKEN:-}
+      - TALANA_SYNC_MODE=${TALANA_SYNC_MODE:-off}
       # Cron endpoints and the DTE/billing integrations are server-only. A
       # Compose `.env` is used for interpolation; these explicit mappings are
       # what actually put the values into the running app container.
@@ -255,6 +259,10 @@ services:
       - ONWAY_USERNAME=${ONWAY_USERNAME:-}
       - ONWAY_PASSWORD=${ONWAY_PASSWORD:-}
       - ONWAY_SYNC_ENABLED=${ONWAY_SYNC_ENABLED:-false}
+      # Talana (RR. HH.): sincronización diaria de trabajadores, sólo lectura.
+      # Modo `off` (defecto) | `simulate` | `apply`; ver .env.example.
+      - TALANA_API_TOKEN=${TALANA_API_TOKEN:-}
+      - TALANA_SYNC_MODE=${TALANA_SYNC_MODE:-off}
       - GENERATED_DOCS_ARCHIVE_ENABLED=${GENERATED_DOCS_ARCHIVE_ENABLED:-true}
       - PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=${PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH:-/usr/bin/chromium-browser}
       - SENTRY_DSN=${SENTRY_DSN:-}
@@ -397,6 +405,10 @@ services:
         # TI — alertas diarias: garantías por vencer, licencias por renovar,
         # reparaciones demoradas y tickets sin actualización.
         45 6 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs ti-alerts >/proc/1/fd/1 2>&1
+        # Talana — sincronización diaria de trabajadores (altas, bajas, traslados,
+        # cargos). Sólo lectura contra Talana; con TALANA_SYNC_MODE=off responde
+        # «deshabilitado» y no hace nada. Sólo necesita CRON_SECRET.
+        30 6 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs talana-workers-sync >/proc/1/fd/1 2>&1
         # Integridad operacional — 05:30, antes de que empiece la jornada, para
         # que los descuadres del día anterior estén en la mesa cuando alguien
         # abra trazabilidad. Sólo observa: no cierra casos ni toca stock. Va

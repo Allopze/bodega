@@ -168,6 +168,8 @@ export const ROUTE_OWNER_ALIASES: RouteOwnerRule[] = [
   { moduleId: "billing", submoduleHref: "/facturacion/sincronizacion", prefix: "/api/cron/chipax-sync" },
   { moduleId: "admin", submoduleHref: "/admin", prefix: "/api/cron/dte-portal-sync" },
   { moduleId: "admin", submoduleHref: "/admin", prefix: "/api/cron/dte-sync-health" },
+  // Sincronización diaria de trabajadores con Talana: es Administración › Trabajadores.
+  { moduleId: "admin", submoduleHref: "/admin", prefix: "/api/cron/talana-workers-sync" },
   { moduleId: "combustibles", submoduleHref: "/combustibles/revisar", prefix: "/api/cron/fuel-anomaly-detection" },
   { moduleId: "combustibles", submoduleHref: "/combustibles/fuentes", prefix: "/api/cron/fuel-copec-sync" },
   // Telemetría VisionLink: es una fuente de datos más (motor en vacío de Consumo).

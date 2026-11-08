@@ -78,6 +78,7 @@ export const ADMIN_AREAS: AreaNode[] = [
     items: [
       { label: "Notificaciones",       href: "/admin/notificaciones", iconName: "EnvelopeSimple", permissions: ["admin:notifications"] },
       { label: "Sincronización DTE",   href: "/admin/dte",            iconName: "Receipt",        permissions: ["admin:dte_sync"] },
+      { label: "Sincronización Talana", href: "/admin/talana",       iconName: "ArrowsClockwise", permissions: ["admin:workers_hr"] },
       { label: "Correo SMTP",          href: "/admin/correo-smtp",    iconName: "EnvelopeSimple", permissions: ["admin:smtp"] },
       { label: "Plantillas de correo", href: "/admin/plantillas",     iconName: "FileText",       permissions: ["admin:email_templates"] },
     ],

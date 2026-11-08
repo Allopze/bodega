@@ -3,8 +3,11 @@ import { redirect } from "next/navigation"
 import { db } from "@/db"
 import { workerDriverLicenses, workers, worksites } from "@/db/schema"
 import { and, eq } from "drizzle-orm"
-import { requirePermission } from "@/lib/auth/can"
+import { can, requirePermission } from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"
+import { logger } from "@/lib/logger"
+import { getTalanaWorkerSummaries } from "@/lib/integrations/talana/talana-read"
+import { talanaWorkerChips } from "@/lib/integrations/talana/worker-hr-status"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { HeaderSignals, type HeaderSignal } from "@/components/ui/header-signals"
@@ -50,6 +53,15 @@ export default async function TrabajadoresPage() {
       .where(worksiteScopeSql(session, workers.worksiteId)),
   ])
   const licensedWorkerIds = new Set(licensedRows.map((row) => row.workerId))
+
+  // Contrato, término y licencias son datos laborales y de salud: sólo se
+  // consultan —y sólo viajan al navegador— con `admin:workers_hr`. Sin el
+  // permiso, la fila no lleva ni la clave `talana`.
+  const talanaSummaries = can(session, "admin:workers_hr")
+    ? await getTalanaWorkerSummaries(allWorkers.map((worker) => ({ id: worker.id, rut: worker.rut })))
+      // Es un dato de apoyo: si falla la consulta, Trabajadores sigue funcionando.
+      .catch((error: unknown) => { logger.error("[trabajadores:talana]", error); return null })
+    : null
 
   const positions = positionCatalog.map((position) => ({
     id:          position.id,
@@ -122,6 +134,9 @@ export default async function TrabajadoresPage() {
           sizeShoe:     w.sizeShoe,
           sizeGloves:   w.sizeGloves,
           sizeHelmet:   w.sizeHelmet,
+          ...(talanaSummaries?.[w.id]
+            ? { talana: { summary: talanaSummaries[w.id]!, chips: talanaWorkerChips(talanaSummaries[w.id]) } }
+            : {}),
         }))}
         worksites={allWorksites.map((ws) => ({ id: ws.id, name: ws.name }))}
         sizeFamilies={sizeFamilies}

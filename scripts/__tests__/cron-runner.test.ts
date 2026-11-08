@@ -128,6 +128,39 @@ describe("cron runner", () => {
     expect(success).toBe(0)
   })
 
+  it("accepts the TALANA_CRON_ contract and calls Talana with the Bearer only", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse(200, {
+      ok: true,
+      outcome: "success",
+      code: "TALANA_CRON_SUCCESS",
+    }))
+    const success = await runCronJob("talana-workers-sync", {
+      secret: "cron-secret",
+      internalSecret: "must-not-be-sent",
+      log: vi.fn(),
+      fetchImpl,
+    })
+    expect(success).toBe(0)
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "http://app:3000/api/cron/talana-workers-sync",
+      expect.objectContaining({ headers: { Authorization: "Bearer cron-secret", Accept: "application/json" } }),
+    )
+    // Un blocked/partial del orquestador es degradación visible, no éxito.
+    const degraded = await runCronJob("talana-workers-sync", {
+      secret: "cron-secret",
+      log: vi.fn(),
+      fetchImpl: vi.fn().mockResolvedValue(jsonResponse(503, { ok: false, outcome: "partial", code: "TALANA_CRON_PARTIAL" })),
+    })
+    expect(degraded).toBe(1)
+    // Un payload con el prefijo de otro contrato no se acepta.
+    const wrongPrefix = await runCronJob("talana-workers-sync", {
+      secret: "cron-secret",
+      log: vi.fn(),
+      fetchImpl: vi.fn().mockResolvedValue(jsonResponse(200, { ok: true, outcome: "success", code: "DTE_CRON_SUCCESS" })),
+    })
+    expect(wrongPrefix).toBe(1)
+  })
+
   it("sends the second secret only to Fleet GPS jobs", async () => {
     const gpsFetch = vi.fn().mockResolvedValue(jsonResponse(200, {
       ok: true,

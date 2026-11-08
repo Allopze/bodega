@@ -6,6 +6,8 @@ import { Field, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
+import { DetailItem } from "@/components/ui/detail-item"
+import { ExpiryStatus } from "@/components/ui/expiry-status"
 import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from "@/components/ui/select"
@@ -15,6 +17,11 @@ import type { WorkerSizeField } from "@/lib/products/product-size"
 import type { SizeFamilyOption } from "@/app/(app)/admin/productos/product-form.types"
 import type { WorkerPositionOption } from "@/app/(app)/admin/cargos/types"
 import { PERSON_SEX_LABELS, PERSON_SEX_VALUES } from "@/lib/person-sex"
+import { expiryState } from "@/lib/expiry"
+import { titleCase } from "@/lib/integrations/talana/mapping"
+import { CONTRACT_STATE_LABELS, CONTRACT_WARNING_DAYS } from "@/lib/integrations/talana/worker-hr-status"
+import { formatDate, formatDateTime, todayInChile } from "@/lib/utils"
+import type { WorkerTalanaInfo } from "./talana-info"
 
 // Qué campo del padrón alimenta cada familia del catálogo ya no vive acá: el
 // cruce se deriva de `attributeName` con `sizeFamilyForWorkerField` y las
@@ -40,6 +47,8 @@ interface WorkerForEdit {
   sizeShoe:   string | null
   sizeGloves: string | null
   sizeHelmet: string | null
+  /** Lo que dice Talana; sólo llega con `admin:workers_hr`. */
+  talana?:    WorkerTalanaInfo
 }
 
 interface WorkerFormProps {
@@ -184,9 +193,65 @@ export function WorkerForm({ open, onClose, editWorker, worksites, sizeFamilies,
               <SizeSelect label="Casco" value={sizes.sizeHelmet} onChange={(v) => setSize("sizeHelmet", v)} presets={presetsFor("sizeHelmet")} id="wrk-sizeHelmet" />
             </div>
           </div>
+
+          {isEdit && editWorker?.talana && <TalanaPanel info={editWorker.talana} />}
         </FieldGroup>
       )}
     </CatalogFormSheet>
+  )
+}
+
+/**
+ * Sólo lectura: lo que Talana dice del contrato y las ausencias. No hay campos
+ * que editar acá —se corrige en Talana—, y el panel no envía nada con el
+ * formulario.
+ */
+function TalanaPanel({ info }: { info: WorkerTalanaInfo }) {
+  const { contract, absence, syncedAt } = info.summary
+  const contractText = contract
+    ? [contract.type, (contract.startsOn ?? contract.hiredOn) ? `desde ${formatDate((contract.startsOn ?? contract.hiredOn)!)}` : null].filter(Boolean).join(" · ") || null
+    : null
+  const absenceText = absence
+    ? absence.current
+      ? `${absence.label} · hasta ${formatDate(absence.endsOn)}`
+      : `Próxima: ${absence.label} · del ${formatDate(absence.startsOn)} al ${formatDate(absence.endsOn)}`
+    : null
+
+  return (
+    <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4">
+      <p className="mb-3 text-eyebrow">Datos de Talana</p>
+      <dl className="grid grid-cols-2 gap-3 text-sm">
+        <DetailItem layout="stacked" label="Contrato" value={contractText} className="col-span-2" />
+        {/* Un indefinido vigente no tiene término que mostrar: «Contrato» ya lo dice. */}
+        {contract && (contract.fixedTerm || contract.state !== "vigente") && (
+          <DetailItem layout="stacked" label="Término" value={<ContractEnd contract={contract} />} className="col-span-2" />
+        )}
+        <DetailItem layout="stacked" label="Centro de costo" value={contract?.costCenterName} />
+        <DetailItem layout="stacked" label="Cargo en Talana" value={contract?.cargo} />
+        <DetailItem layout="stacked" label="Jefe en Talana" value={contract?.jefeName ? titleCase(contract.jefeName) : null} />
+        <DetailItem layout="stacked" label="Ausencia" value={absenceText} />
+      </dl>
+      <p className="mt-3 text-xs text-[var(--color-text-subtle)]">
+        {syncedAt ? `Al ${formatDateTime(syncedAt)}. ` : ""}Se corrige en Talana.
+      </p>
+    </div>
+  )
+}
+
+function ContractEnd({ contract }: { contract: NonNullable<WorkerTalanaInfo["summary"]["contract"]> }) {
+  if (contract.state === "finiquitado") {
+    return <>{CONTRACT_STATE_LABELS.finiquitado}{contract.endsOn ? ` · ${formatDate(contract.endsOn)}` : ""}</>
+  }
+  if (!contract.fixedTerm && contract.state !== "vencido_sin_renovar") return <>Indefinido</>
+  if (!contract.endsOn) return <>Plazo fijo sin fecha de término</>
+  // Una sola representación: pastilla + frase relativa. «Sin renovar ni
+  // finiquitar» reemplaza el rótulo cuando el plazo venció y Talana no lo cerró.
+  return (
+    <ExpiryStatus
+      status={expiryState(contract.endsOn, todayInChile(), CONTRACT_WARNING_DAYS)}
+      warningDays={CONTRACT_WARNING_DAYS}
+      label={contract.state === "vencido_sin_renovar" ? "Sin renovar ni finiquitar" : undefined}
+    />
   )
 }
 

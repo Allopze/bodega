@@ -328,6 +328,7 @@ describe("module-toggles service", () => {
       expect(resolveModuleRoute("/api/prevencion/cgrd/mapa/plano-1")).toEqual({ moduleId: "prevention", submoduleHref: "/prevencion/cgrd/mapa" })
       expect(resolveModuleRoute("/api/prevencion/cgrd/evidence/acta-1")).toEqual({ moduleId: "prevention", submoduleHref: "/prevencion/cgrd" })
       expect(resolveModuleRoute("/api/cron/billing-sales-sync")).toEqual({ moduleId: "billing", submoduleHref: "/facturacion/sincronizacion" })
+      expect(resolveModuleRoute("/api/cron/talana-workers-sync")).toEqual({ moduleId: "admin", submoduleHref: "/admin" })
       // La app del mecánico salió del menú (PWA aparte): su ruta, su login y su
       // sincronización siguen bajo el interruptor de Mantención de equipos.
       expect(resolveModuleRoute("/m/mantencion")).toEqual({ moduleId: "mantencion_equipos", submoduleHref: "/mantencion/registros" })
