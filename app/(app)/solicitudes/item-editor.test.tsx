@@ -733,9 +733,9 @@ describe("ItemEditor — repuestos: buscador del catálogo", () => {
     expect(screen.getByRole("group", { name: "Repuesto elegido" })).not.toHaveFocus()
   })
 
-  it("un repuesto desactivado después de pedirse se ve, rotulado, y se puede cambiar", () => {
+  it("un repuesto desactivado después de pedirse se ve, dice que hay que cambiarlo antes de enviar, y se puede cambiar", () => {
     renderRepuesto({ productId: "rpt-4", productName: "Filtro descontinuado" })
-    expect(screen.getByRole("group", { name: "Repuesto elegido" })).toHaveTextContent("Inactivo")
+    expect(screen.getByRole("group", { name: "Repuesto elegido" })).toHaveTextContent("Repuesto desactivado — cámbialo antes de enviar")
     expect(screen.getByRole("button", { name: "Cambiar" })).toBeInTheDocument()
   })
 

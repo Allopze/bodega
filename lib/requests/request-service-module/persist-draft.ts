@@ -71,15 +71,20 @@ async function assertItemFleetLink(
  * catálogo y sigue activo. El CHECK de la base impide que un EPP o un servicio
  * sea repuesto, pero nada impide que el cliente mande el id de un EPP: sin esta
  * lectura una solicitud de repuestos podía colgar de cualquier producto.
+ *
+ * `alreadySaved`: el borrador ya tenía ese repuesto guardado. Si lo desactivaron
+ * después, volver a guardar (el autoguardado lo hace solo) no puede fallar: el
+ * repuesto se conserva y es el envío el que lo frena
+ * (`inactiveRequestProductsMessage`). Sólo se rechaza elegir uno ya inactivo.
  */
-async function assertCatalogSparePart(tx: Tx, productId: string): Promise<void> {
+async function assertCatalogSparePart(tx: Tx, productId: string, alreadySaved: boolean): Promise<void> {
   const [product] = await tx
     .select({ name: products.name, sku: products.sku, isActive: products.isActive, isSparePart: products.isSparePart })
     .from(products)
     .where(eq(products.id, productId))
   if (!product) throw new Error("El repuesto elegido ya no existe en el catálogo")
   if (!product.isSparePart) throw new Error(`«${product.name}» no es un repuesto del catálogo`)
-  if (!product.isActive) {
+  if (!product.isActive && !alreadySaved) {
     throw new Error(`El repuesto «${product.name}» (${product.sku}) está inactivo: elige otro o descríbelo con texto libre`)
   }
 }
@@ -95,6 +100,8 @@ export async function persistDraft(
   const year = new Date().getFullYear()
 
   await db.transaction(async (tx) => {
+    // Repuestos que el borrador ya tenía guardados (ver `assertCatalogSparePart`).
+    const savedProductIds = new Set<string>()
     if (isEdit) {
       // DAT-3: lockeado — sin esto, un submitRequest concurrente puede mover
       // la solicitud a 'submitted' con ítems 'requested' justo entre esta
@@ -126,6 +133,12 @@ export async function persistDraft(
         eq(approvalDecisions.requestId, requestId),
       )
 
+      for (const saved of await tx
+        .select({ productId: purchaseRequestItems.productId })
+        .from(purchaseRequestItems)
+        .where(eq(purchaseRequestItems.requestId, requestId))) {
+        if (saved.productId) savedProductIds.add(saved.productId)
+      }
       await tx.delete(purchaseRequestItems).where(eq(purchaseRequestItems.requestId, requestId))
     } else {
       const code = await nextCodeTx(tx, config.codePrefix, year)
@@ -161,7 +174,7 @@ export async function persistDraft(
       const vehicleId = item.vehicleId?.trim() || null
       // Sólo repuestos ofrece catálogo; servicios sigue siendo texto libre.
       const productId = config.requestType === "repuestos" ? (item.productId?.trim() || null) : null
-      if (productId) await assertCatalogSparePart(tx, productId)
+      if (productId) await assertCatalogSparePart(tx, productId, savedProductIds.has(productId))
 
       await tx.insert(purchaseRequestItems).values({
         id:              itemId,

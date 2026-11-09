@@ -1,9 +1,9 @@
 "use server"
 
 import { redirect } from "next/navigation"
-import { and, eq, inArray } from "drizzle-orm"
+import { eq } from "drizzle-orm"
 import { db } from "@/db"
-import { purchaseRequests, products } from "@/db/schema"
+import { purchaseRequests } from "@/db/schema"
 import { can, canAccessWorksite, requireAuth } from "@/lib/auth/can"
 import { notifyManyUser, getUserIdsWithPermission, notifyAfterCommit } from "@/lib/services/notifications"
 import { type ActionState, type RequestFormData } from "@/lib/validation/operations"
@@ -15,6 +15,7 @@ import { createSubmittedRequest } from "@/lib/services/requests-draft"
 import { EppStockAvailabilityError } from "@/lib/services/epp-stock-availability"
 import { EppStockConfirmationError, EPP_STOCK_CONFIRMATION_MAX_LENGTH } from "@/lib/services/epp-stock-confirmation"
 import { RequestSubmissionKeyConflictError } from "@/lib/services/requests-draft-create"
+import { inactiveRequestProductsMessage } from "@/lib/requests/inactive-request-products"
 import { persistDraft } from "./draft"
 import { parseRequestForm } from "./parse-request-form"
 import { revalidateOperationalViews } from "@/lib/services/operational-cache"
@@ -215,15 +216,6 @@ async function createAndSubmit(
 
 /** Un producto dado de baja no puede entrar a aprobación. */
 async function assertProductsActive(productIds: Array<string | null | undefined>): Promise<ActionState | null> {
-  const catalogProductIds = productIds.filter((id): id is string => !!id)
-  if (catalogProductIds.length === 0) return null
-
-  const inactiveProducts = await db
-    .select({ name: products.name })
-    .from(products)
-    .where(and(inArray(products.id, catalogProductIds), eq(products.isActive, false)))
-  if (inactiveProducts.length === 0) return null
-
-  const names = inactiveProducts.map((p) => p.name).join(", ")
-  return { ok: false, message: `Los siguientes productos están inactivos y no pueden solicitarse: ${names}` }
+  const message = await inactiveRequestProductsMessage(productIds)
+  return message ? { ok: false, message } : null
 }

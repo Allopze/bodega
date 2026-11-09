@@ -39,6 +39,7 @@ const { createWorkOrderWithClient } = await import("@/lib/services/mantencion/wo
 const { createSparePartTx, setSparePartActive } = await import("@/lib/services/spare-parts-catalog")
 const { persistRepuestoDraft } = await import("@/lib/services/repuestos")
 const { persistServiceDraft } = await import("@/lib/services/servicios")
+const { inactiveRequestProductsMessage } = await import("@/lib/requests/inactive-request-products")
 
 const SNAPSHOT = { code: "KA-135", plate: "RBYD-98", noPlate: false, type: "Camión", brand: "Scania", model: "R450", year: 2021, worksite: "Biodiversa", unit: "km" as const }
 
@@ -239,6 +240,28 @@ describe("persistRepuestoDraft · repuesto del catálogo", () => {
 
   it("rechaza un repuesto inactivo diciendo cuál es y qué hacer", async () => {
     expect(await message(() => persistRepuestoDraft(session, draft({ productId: inactivePartId, description: "" }))))
+      .toBe("El repuesto «Filtro de aire» (RPT-002) está inactivo: elige otro o descríbelo con texto libre")
+  })
+
+  it("un borrador que ya tenía el repuesto se vuelve a guardar aunque lo hayan desactivado; el envío lo frena", async () => {
+    const part = await createPart("Correa de distribución", "CD-10", "Gates")
+    const requestId = await persistRepuestoDraft(session, draft({ productId: part.id, description: "" }))
+    await setSparePartActive(part.id, false)
+
+    // El autoguardado vuelve a mandar el mismo ítem: no falla y el repuesto se conserva.
+    await persistRepuestoDraft(session, draft({ productId: part.id, description: "", quantity: 3 }, IDS.wsBio, { id: requestId }))
+    const { item } = await savedItem(requestId)
+    expect(item).toMatchObject({ productId: part.id, quantity: 3 })
+
+    // Enviar sí lo frena, diciendo cuál es y qué hacer.
+    expect(await inactiveRequestProductsMessage([item.productId]))
+      .toBe(`El repuesto «Correa de distribución» (${part.sku}) fue desactivado del catálogo: cámbialo antes de enviar`)
+    expect(await inactiveRequestProductsMessage([partId, null])).toBeNull()
+  })
+
+  it("al editar un borrador, elegir un repuesto que ya estaba inactivo se rechaza", async () => {
+    const requestId = await persistRepuestoDraft(session, draft({ productId: partId, description: "" }))
+    expect(await message(() => persistRepuestoDraft(session, draft({ productId: inactivePartId, description: "" }, IDS.wsBio, { id: requestId }))))
       .toBe("El repuesto «Filtro de aire» (RPT-002) está inactivo: elige otro o descríbelo con texto libre")
   })
 

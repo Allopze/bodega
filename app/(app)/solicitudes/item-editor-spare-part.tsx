@@ -110,18 +110,13 @@ export function ItemEditorSparePart({ item, spareParts, vehicles, onUpdate, onSe
         tabIndex={-1}
         role="group"
         aria-label="Repuesto elegido"
-        className="rounded-(--radius) border border-(--color-border) bg-(--color-surface-2) px-3 py-2 focus-visible:outline-2 focus-visible:outline-(--color-primary)"
+        className={part?.isInactive
+          ? "rounded-(--radius) border border-(--color-warning-line) bg-(--color-warning-tint) px-3 py-2 focus-visible:outline-2 focus-visible:outline-(--color-primary)"
+          : "rounded-(--radius) border border-(--color-border) bg-(--color-surface-2) px-3 py-2 focus-visible:outline-2 focus-visible:outline-(--color-primary)"}
       >
         <div className="flex items-center gap-2">
           <Package size={14} aria-hidden className="shrink-0 text-(--color-text-subtle)" />
-          <span className="min-w-0 flex-1 text-sm font-medium text-(--color-text)">
-            {name}
-            {part?.isInactive && (
-              <span className="ml-1.5 inline-flex items-center rounded-full bg-(--color-warning-tint) border border-(--color-warning-line) px-1.5 py-px align-middle text-2xs font-medium text-(--color-warning-ink)" title="Este repuesto fue desactivado del catálogo">
-                Inactivo
-              </span>
-            )}
-          </span>
+          <span className="min-w-0 flex-1 text-sm font-medium text-(--color-text)">{name}</span>
           <button
             type="button"
             onClick={onClearProduct}
@@ -130,6 +125,12 @@ export function ItemEditorSparePart({ item, spareParts, vehicles, onUpdate, onSe
             Cambiar
           </button>
         </div>
+        {part?.isInactive && (
+          // El borrador se sigue guardando con él; es el envío el que lo frena.
+          <p className="mt-1 pl-[22px] text-xs font-medium text-(--color-warning-ink)">
+            Repuesto desactivado — cámbialo antes de enviar
+          </p>
+        )}
         {facts.length > 0 && (
           <dl aria-label="Datos del repuesto" className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 pl-[22px] text-xs">
             {facts.map((fact) => (
