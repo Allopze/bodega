@@ -8,6 +8,7 @@ export const repuestosModule = {
     "repuestos:view_all",
     "repuestos:submit",
     "repuestos:approve",
+    "repuestos:catalog",
   ] as const,
 
   permissionMeta: {
@@ -16,6 +17,7 @@ export const repuestosModule = {
     "repuestos:view_all":  { id: "p-rep-all",     description: "Ver todas las solicitudes de repuestos" },
     "repuestos:submit":    { id: "p-rep-submit",  description: "Enviar solicitudes de repuestos a aprobación" },
     "repuestos:approve":   { id: "p-rep-approve", description: "Aprobar cotizaciones de repuestos" },
+    "repuestos:catalog":   { id: "p-rep-catalog", description: "Gestionar catálogo de repuestos" },
   },
   // Repuestos no longer has its own page; it is created and managed inside the
   // unified Solicitudes flow (/solicitudes). No standalone nav entry.
@@ -54,6 +56,13 @@ export const repuestosModule = {
     { roleSlug: "admin_contrato", permission: "repuestos:create" },
     { roleSlug: "admin_contrato", permission: "repuestos:view_own" },
     { roleSlug: "admin_contrato", permission: "repuestos:submit" },
+    // Catálogo de repuestos (fase 2, decisión del 2026-11-09): lo gestionan
+    // administración, secretaría, jefatura y jefe de mantención. Espejo en
+    // GRANT_ADDITIONS para bases ya pobladas.
+    { roleSlug: "administrador", permission: "repuestos:catalog" },
+    { roleSlug: "secretaria", permission: "repuestos:catalog" },
+    { roleSlug: "jefa_chome", permission: "repuestos:catalog" },
+    { roleSlug: "jefe_mantencion", permission: "repuestos:catalog" },
     // Faena: crea y ve sus propias solicitudes
     { roleSlug: "solicitante_faena", permission: "repuestos:create" },
     { roleSlug: "solicitante_faena", permission: "repuestos:view_own" },
