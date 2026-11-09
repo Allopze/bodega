@@ -550,4 +550,7 @@ export const pgliteTestFiles = [
   // GPS OnWay: un snapshot sin equipos es una falla en la bitácora, no un éxito
   // con 0 equipos (así se escondió el GPS detenido del 2026-11-02 al 11-08).
   "lib/integrations/onway/onway-sync-pglite.test.ts",
+  // Refresco en vivo de Monitoreo GPS: una lectura por minuto como mucho, sin
+  // adelantarse al cron ni escribir en su bitácora.
+  "lib/integrations/onway/onway-live-pglite.test.ts",
 ]

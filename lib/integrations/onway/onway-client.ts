@@ -458,6 +458,12 @@ export async function fetchOnwayTelemetry(input: OnwayCredentials, options: Onwa
 }
 
 interface OnwayTelemetryOptions {
+  /**
+   * `false` lee sólo el snapshot del mapa (posición, velocidad, rumbo,
+   * encendido): una consulta al portal. El detalle es una consulta por equipo
+   * (~50) más la de alertas, y queda para el cron cada 5 minutos.
+   */
+  includeDetails?: boolean
   includeHistory?: boolean
   historyFrom?: string
   historyTo?: string
@@ -468,6 +474,9 @@ interface OnwayTelemetryOptions {
 async function collectTelemetry(input: OnwayCredentials, options: OnwayTelemetryOptions): Promise<OnwayTelemetryBundle> {
   const credentials = validateOnwayCredentials(input)
   const portal = await scrapePortal(credentials)
+  if (options.includeDetails === false) {
+    return { snapshot: portal.snapshot, details: [], alerts: [], historyByDeviceId: new Map(), tripsByDeviceId: new Map(), warnings: [] }
+  }
   const { page } = await getBrowserSession(accountKey(credentials))
   const warnings: OnwayTelemetryBundle["warnings"] = []
   let details: OnwayDeviceTelemetry[] = []

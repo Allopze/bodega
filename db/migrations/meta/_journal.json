@@ -2689,6 +2689,13 @@
       "when": 1794109783624,
       "tag": "0383_right_glorian",
       "breakpoints": true
+    },
+    {
+      "idx": 384,
+      "version": "7",
+      "when": 1794225917826,
+      "tag": "0384_same_mole_man",
+      "breakpoints": true
     }
   ]
 }

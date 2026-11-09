@@ -178,6 +178,8 @@ export const ROUTE_OWNER_ALIASES: RouteOwnerRule[] = [
   { moduleId: "feedback", submoduleHref: "/soporte", prefix: "/api/cron/feedback-sla-reminders" },
   { moduleId: "flota", submoduleHref: "/flota/monitoreo", prefix: "/api/cron/fleet-onway-retention" },
   { moduleId: "flota", submoduleHref: "/flota/monitoreo", prefix: "/api/cron/fleet-onway-sync" },
+  // Refresco en vivo que pide la propia página de Monitoreo GPS.
+  { moduleId: "flota", submoduleHref: "/flota/monitoreo", prefix: "/api/flota/monitoreo" },
   { moduleId: "warehouse", submoduleHref: "/seguimiento", prefix: "/api/cron/operational-integrity-scan" },
   // TRZ-001: el segundo libro de integridad, el que cubre entregas contra
   // recepción en faena.

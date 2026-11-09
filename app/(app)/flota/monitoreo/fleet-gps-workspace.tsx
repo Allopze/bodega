@@ -4,9 +4,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import type { FleetGpsPosition } from "@/lib/services/fleet-gps"
 import { formatDateTime } from "@/lib/utils"
+import { FleetGpsLiveStatus } from "./fleet-gps-live-status"
 import { FleetGpsMap } from "./fleet-gps-map"
 import { FleetGpsTable } from "./fleet-gps-table"
 import { OnwayControls } from "./onway-controls"
+import { useOnwayLiveRefresh } from "./use-onway-live-refresh"
 
 type Alert = {
   id: string; plate: string; worksiteName: string; alertType: string; title: string; priority: string | null
@@ -31,20 +33,26 @@ export function FleetGpsWorkspace({ positions, alerts, canViewHistory, adminStat
 }) {
   const hasAlerts = alerts.length > 0
   const hasBlocked = blockedAlertsCount > 0
+  // Fuera de las pestañas: el refresco sigue aunque se mire «Alertas», y se
+  // detiene sólo al salir de Monitoreo GPS (este componente no vive en otra página).
+  const live = useOnwayLiveRefresh()
   return (
     <Tabs defaultValue={hasBlocked && !positions.length ? "alerts" : "live"}>
-      <TabsList aria-label="Secciones de monitoreo GPS">
-        <TabsTrigger value="live">
-          En vivo
-          {positions.length > 0 ? <span className="ml-1.5 rounded-full bg-[var(--color-surface-2)] px-1.5 text-2xs font-semibold tabular-nums text-[var(--color-text-subtle)]">{positions.length}</span> : null}
-        </TabsTrigger>
-        <TabsTrigger value="alerts">
-          Alertas
-          {hasAlerts ? <span className={`ml-1.5 rounded-full px-1.5 text-2xs font-semibold tabular-nums ${hasBlocked ? "bg-[var(--color-danger-tint)] text-[var(--color-danger-ink)]" : "bg-[var(--color-surface-2)] text-[var(--color-text-subtle)]"}`}>{alerts.length}</span> : null}
-        </TabsTrigger>
-        {canViewHistory ? <TabsTrigger value="history">Historial</TabsTrigger> : null}
-        {adminStatus ? <TabsTrigger value="settings">Configuración</TabsTrigger> : null}
-      </TabsList>
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <TabsList aria-label="Secciones de monitoreo GPS">
+          <TabsTrigger value="live">
+            En vivo
+            {positions.length > 0 ? <span className="ml-1.5 rounded-full bg-[var(--color-surface-2)] px-1.5 text-2xs font-semibold tabular-nums text-[var(--color-text-subtle)]">{positions.length}</span> : null}
+          </TabsTrigger>
+          <TabsTrigger value="alerts">
+            Alertas
+            {hasAlerts ? <span className={`ml-1.5 rounded-full px-1.5 text-2xs font-semibold tabular-nums ${hasBlocked ? "bg-[var(--color-danger-tint)] text-[var(--color-danger-ink)]" : "bg-[var(--color-surface-2)] text-[var(--color-text-subtle)]"}`}>{alerts.length}</span> : null}
+          </TabsTrigger>
+          {canViewHistory ? <TabsTrigger value="history">Historial</TabsTrigger> : null}
+          {adminStatus ? <TabsTrigger value="settings">Configuración</TabsTrigger> : null}
+        </TabsList>
+        <FleetGpsLiveStatus refreshing={live.refreshing} status={live.status} />
+      </div>
       <TabsContent value="live" className="space-y-3">
         <FleetGpsMap positions={positions} />
         <Card id="vehiculos-gps" className="overflow-hidden">

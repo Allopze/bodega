@@ -147,12 +147,22 @@ export async function getCronJobHealth(sinceDays = 30): Promise<CronJobHealth[]>
  *
  * `reserve()` saca una conexión del pool y la devuelve recién en `release()`,
  * así que lock y unlock comparten sesión por construcción.
+ *
+ * ## `ledger: false`
+ *
+ * Para un disparo que NO es el cron pero comparte su lock (el refresco en vivo
+ * de Monitoreo GPS usa el de `fleet-onway-sync` para no navegar el portal
+ * mientras el cron lee el detalle). No escribe en `cron_runs`: esa bitácora
+ * responde si el planificador sigue invocando el cron, y un refresco por
+ * minuto la llenaría de corridas que no son suyas.
  */
 export async function withCronLock<T>(
   jobName: string,
   run: () => Promise<T>,
+  options: { ledger?: boolean } = {},
 ): Promise<T | { skipped: true; reason: string }> {
   const key = `cron:${jobName}`
+  const ledger = options.ledger ?? true
   const client = db.$client as unknown as {
     reserve?: () => Promise<{
       unsafe: (query: string, params?: unknown[]) => Promise<unknown>
@@ -162,18 +172,14 @@ export async function withCronLock<T>(
 
   // Sin `reserve` (PGlite en pruebas, o un driver distinto) se cae al camino
   // anterior: menos garantía, pero el job igual corre.
-  if (typeof client?.reserve !== "function") return runWithPooledLock(key, jobName, run)
+  if (typeof client?.reserve !== "function") return runWithPooledLock(key, jobName, run, ledger)
 
   const connection = await client.reserve()
   try {
     const rows = await connection.unsafe("SELECT pg_try_advisory_lock(hashtext($1)) AS locked", [key]) as Array<{ locked: boolean }>
-    if (!rows?.[0]?.locked) {
-      logger.warn(`[cron/${jobName}] otra corrida está en curso; se omite este disparo`)
-      await recordSkip(jobName, "otra corrida en curso")
-      return { skipped: true, reason: "another run in progress" }
-    }
+    if (!rows?.[0]?.locked) return await skipLockedRun(jobName, ledger)
     try {
-      return await recorded(jobName, run)
+      return ledger ? await recorded(jobName, run) : await run()
     } finally {
       // Mismo `connection`, así que el unlock no puede fallar por conexión
       // equivocada. Si aun así devuelve false, se registra: es una señal real.
@@ -187,24 +193,30 @@ export async function withCronLock<T>(
   }
 }
 
+/** Lock tomado: el disparo se salta. Fuera de la bitácora no se avisa, porque solaparse es lo esperado. */
+async function skipLockedRun(jobName: string, ledger: boolean): Promise<{ skipped: true; reason: string }> {
+  if (ledger) {
+    logger.warn(`[cron/${jobName}] otra corrida está en curso; se omite este disparo`)
+    await recordSkip(jobName, "otra corrida en curso")
+  }
+  return { skipped: true, reason: "another run in progress" }
+}
+
 /** Camino sin conexión reservada. Ver el docblock: el unlock es best-effort. */
 async function runWithPooledLock<T>(
   key: string,
   jobName: string,
   run: () => Promise<T>,
+  ledger: boolean,
 ): Promise<T | { skipped: true; reason: string }> {
   const [acquired] = await db
     .execute<{ locked: boolean }>(sql`SELECT pg_try_advisory_lock(hashtext(${key})) AS locked`)
     .then((result) => (result as unknown as { rows: Array<{ locked: boolean }> }).rows ?? [])
 
-  if (!acquired?.locked) {
-    logger.warn(`[cron/${jobName}] otra corrida está en curso; se omite este disparo`)
-    await recordSkip(jobName, "otra corrida en curso")
-    return { skipped: true, reason: "another run in progress" }
-  }
+  if (!acquired?.locked) return skipLockedRun(jobName, ledger)
 
   try {
-    return await recorded(jobName, run)
+    return ledger ? await recorded(jobName, run) : await run()
   } finally {
     await db.execute(sql`SELECT pg_advisory_unlock(hashtext(${key}))`).catch(() => {})
   }

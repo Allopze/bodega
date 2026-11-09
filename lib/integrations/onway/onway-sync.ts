@@ -19,10 +19,17 @@ import { readOnwayConfig } from "./onway-settings"
 import { applyOnwayAlertRules } from "./onway-automation"
 
 export interface SyncOnwayOptions {
-  trigger?: "manual" | "cron"
+  /** `live`: refresco por minuto mientras alguien tiene abierta Monitoreo GPS. */
+  trigger?: "manual" | "cron" | "live"
   actorUserId?: string
   now?: Date
   includeHistory?: boolean
+  /**
+   * Sólo el snapshot del mapa (posición, velocidad, rumbo, encendido). Conserva
+   * lo que dejó la última lectura completa —hora GPS, señal, medidores,
+   * conductor— en vez de borrarlo, y no toca alertas, historial ni medidores.
+   */
+  positionsOnly?: boolean
 }
 
 export interface SyncOnwayResult {
@@ -119,10 +126,13 @@ export async function syncOnway(options: SyncOnwayOptions = {}): Promise<SyncOnw
 
   try {
     const now = options.now ?? new Date()
-    const window = historyWindow(options, now)
+    const positionsOnly = options.positionsOnly === true
+    const window = positionsOnly ? null : historyWindow(options, now)
     const telemetry = await fetchOnwayTelemetry(
       { username: config.username, password: config.password },
-      window ? { includeHistory: true, historyFrom: window.from, historyTo: window.to } : { includeHistory: false },
+      positionsOnly
+        ? { includeDetails: false, includeHistory: false }
+        : window ? { includeHistory: true, historyFrom: window.from, historyTo: window.to } : { includeHistory: false },
     )
     const snapshot = telemetry.snapshot
     // Sesión viva y cero equipos no es «nada que actualizar»: la cuenta perdió
@@ -141,13 +151,16 @@ export async function syncOnway(options: SyncOnwayOptions = {}): Promise<SyncOnw
     const matchByDevice = new Map(reconciliation.matched.map((row) => [row.device.externalDeviceId, row]))
     const detailsByDevice = new Map(telemetry.details.map((detail) => [detail.deviceId, detail]))
     let driverMappings = new Map<string, { id: string; workerId: string }>()
-    try {
-      driverMappings = await resolveOnwayDriverMappings(
-        telemetry.details.flatMap((detail) => detail.driverExternalId ? [detail.driverExternalId] : []),
-      )
-    } catch {
-      // Un keyring ausente o una identidad malformada no debe detener la flota.
-      logger.warn("[flota/onway] no se pudieron resolver conductores", { code: "ONWAY_DRIVER_MAPPING_UNAVAILABLE" })
+    // Sin detalle no hay conductores que resolver (y el conductor vigente se conserva).
+    if (!positionsOnly) {
+      try {
+        driverMappings = await resolveOnwayDriverMappings(
+          telemetry.details.flatMap((detail) => detail.driverExternalId ? [detail.driverExternalId] : []),
+        )
+      } catch {
+        // Un keyring ausente o una identidad malformada no debe detener la flota.
+        logger.warn("[flota/onway] no se pudieron resolver conductores", { code: "ONWAY_DRIVER_MAPPING_UNAVAILABLE" })
+      }
     }
     const driverMappingIdForDevice = (externalDeviceId: string) => {
       const externalId = detailsByDevice.get(externalDeviceId)?.driverExternalId
@@ -160,7 +173,7 @@ export async function syncOnway(options: SyncOnwayOptions = {}): Promise<SyncOnw
       for (const device of snapshot.devices) {
         const match = matchByDevice.get(device.externalDeviceId)
         const detail = detailsByDevice.get(device.externalDeviceId)
-        const values = {
+        const snapshotValues = {
           provider: "onway" as const,
           externalDeviceId: device.externalDeviceId,
           externalGroupId: device.groupId,
@@ -174,6 +187,12 @@ export async function syncOnway(options: SyncOnwayOptions = {}): Promise<SyncOnw
           headingDegrees: device.headingDegrees,
           ignition: device.ignition,
           sourceStatus: device.sourceStatus,
+          observedAt,
+          syncRunId: runId,
+          updatedAt,
+        }
+        const values = {
+          ...snapshotValues,
           gpsReportedAt: detail?.gpsReportedAt ?? null,
           gprsReportedAt: detail?.gprsReportedAt ?? null,
           gpsStatus: detail?.gpsStatus ?? null,
@@ -189,19 +208,18 @@ export async function syncOnway(options: SyncOnwayOptions = {}): Promise<SyncOnw
           temperature1: detail?.temperature1 ?? null,
           humidity1: detail?.humidity1 ?? null,
           driverMappingId: driverMappingIdForDevice(device.externalDeviceId),
-          observedAt,
-          syncRunId: runId,
-          updatedAt,
         }
         await tx.insert(fleetGpsLatestPositions)
           .values({ id: `gpspos-${nanoid()}`, ...values })
           .onConflictDoUpdate({
             target: [fleetGpsLatestPositions.provider, fleetGpsLatestPositions.externalDeviceId],
-            set: values,
+            // Sin detalle, actualizar `values` borraría la hora GPS, los
+            // medidores y el conductor que dejó la última lectura completa.
+            set: positionsOnly ? snapshotValues : values,
           })
       }
 
-      const meters = reconciliation.matched.flatMap((match) => {
+      const meters = positionsOnly ? [] : reconciliation.matched.flatMap((match) => {
         const detail = detailsByDevice.get(match.device.externalDeviceId)
         const vehicle = vehicles.find((row) => row.id === match.vehicleId)
         const occurredAt = detail?.gpsReportedAt ?? observedAt
@@ -214,10 +232,12 @@ export async function syncOnway(options: SyncOnwayOptions = {}): Promise<SyncOnw
           hourMeter: detail.hourMeter,
         })].filter((reading): reading is ParsedMeterReading => reading !== null) : []
       })
-      await saveMeterReadings(tx, "gps_onway", meters, (plate) => {
-        const vehicle = vehicles.find((row) => row.plate.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9]/g, "").toUpperCase() === plate)
-        return vehicle ? { id: vehicle.id, meterType: vehicle.meterType } : undefined
-      })
+      if (meters.length > 0) {
+        await saveMeterReadings(tx, "gps_onway", meters, (plate) => {
+          const vehicle = vehicles.find((row) => row.plate.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9]/g, "").toUpperCase() === plate)
+          return vehicle ? { id: vehicle.id, meterType: vehicle.meterType } : undefined
+        })
+      }
 
       const alerts = telemetry.alerts.flatMap((alert) => {
         const match = alert.externalDeviceId ? matchByDevice.get(alert.externalDeviceId) : undefined
@@ -328,7 +348,8 @@ export async function syncOnway(options: SyncOnwayOptions = {}): Promise<SyncOnw
 
     // Las reglas se evalúan después de persistir: la clave externa ya deduplica
     // el evento y las reglas iniciales están desactivadas hasta revisión humana.
-    await applyOnwayAlertRules()
+    // Una lectura sólo de posiciones no trae alertas nuevas que evaluar.
+    if (!positionsOnly) await applyOnwayAlertRules()
 
     return {
       runId,
