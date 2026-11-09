@@ -125,6 +125,12 @@ const nextConfig: NextConfig = {
       "./node_modules/takumi-pdf/**/*",
       "./node_modules/@takumi-rs/**/*",
     ],
+    // El worker de MapLibre se genera en el build (`generateStaticParams`); si
+    // Next llegara a atender la ruta en runtime, el standalone igual lo tiene.
+    "/vendor/maplibre/[version]/[file]": [
+      "./node_modules/maplibre-gl/dist/maplibre-gl-worker.mjs",
+      "./node_modules/maplibre-gl/dist/maplibre-gl-shared.mjs",
+    ],
   },
   outputFileTracingExcludes: {
     "/*": [

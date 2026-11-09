@@ -468,6 +468,8 @@ const eslintConfig = defineConfig([
       "**/oc-pdfcn-render.ts",
       "lib/services/platform-health.ts",
       "lib/services/purchasing-module/invoice-ocr.ts",
+      // Sirve el worker de MapLibre desde node_modules (con turbopackIgnore).
+      "app/vendor/maplibre/**/route.ts",
       // Sólo manipulan el nombre (extname/basename), nunca arman una ruta de escritura.
       "app/api/prevencion/documentacion/bulk-download/route.ts",
       "lib/requests/request-service-module/add-quotation.ts",

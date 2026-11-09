@@ -80,4 +80,37 @@ describe("createCspHeader (audit S-09)", () => {
     const csp = createCspHeader("nonce", { isDev: false, sentryDsn: "" })
     expect(csp).toContain("connect-src 'self';")
   })
+
+  // 2026-11-09: el mapa de /flota/monitoreo estuvo en blanco en producción
+  // porque `connect-src` bloqueaba el estilo de tiles.openfreemap.org.
+  describe("origen del mapa base", () => {
+    function connectSrc(csp: string) {
+      return csp.split(";").find((p) => p.trim().startsWith("connect-src"))?.trim()
+    }
+
+    it("abre connect-src al origen del estilo configurado, después de Sentry", () => {
+      const csp = createCspHeader("nonce", {
+        isDev: false,
+        sentryDsn: "https://abc@o1.ingest.sentry.io/2",
+        mapStyleUrl: "https://tiles.openfreemap.org/styles/liberty",
+      })
+      expect(connectSrc(csp)).toBe("connect-src 'self' https://o1.ingest.sentry.io https://tiles.openfreemap.org")
+    })
+
+    it("abre sólo el origen, no la ruta del estilo", () => {
+      const csp = createCspHeader("nonce", { isDev: false, sentryDsn: "", mapStyleUrl: "https://api.maptiler.com/maps/streets/style.json?key=abc" })
+      expect(connectSrc(csp)).toBe("connect-src 'self' https://api.maptiler.com")
+      expect(csp).not.toContain("key=abc")
+    })
+
+    it("en producción sin proveedor no agrega nada", () => {
+      const csp = createCspHeader("nonce", { isDev: false, sentryDsn: "", mapStyleUrl: null })
+      expect(connectSrc(csp)).toBe("connect-src 'self'")
+    })
+
+    it("ignora un estilo inválido o sin https", () => {
+      expect(connectSrc(createCspHeader("nonce", { isDev: false, sentryDsn: "", mapStyleUrl: "no es una url" }))).toBe("connect-src 'self'")
+      expect(connectSrc(createCspHeader("nonce", { isDev: false, sentryDsn: "", mapStyleUrl: "http://tiles.example.com/style.json" }))).toBe("connect-src 'self'")
+    })
+  })
 })
