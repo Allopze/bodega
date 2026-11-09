@@ -284,7 +284,8 @@ test("pedir desde la OT con el catálogo, catalogar al armar la OC, precio al em
   // Directo a faena (lo que propone una solicitud de repuestos): no hay etapa de oficina.
   await expect(receiptStageCard(page, "Oficina")).toHaveCount(0)
   for (const nombre of [vehiclePart.name, libre]) {
-    await page.getByLabel(`Cantidad a recibir de ${nombre}`, { exact: true }).filter({ visible: true }).fill("1")
+    // El rótulo suma los atributos que se pidieron (la línea libre trae «· N° de Parte: …»).
+    await page.getByRole("spinbutton", { name: new RegExp(`^Cantidad a recibir de ${nombre}( ·|$)`) }).fill("1")
   }
   await page.getByRole("button", { name: receiptSubmitName("Faena") }).click()
   await expect(page.getByRole("heading", { name: /^REC-/ })).toBeVisible({ timeout: 30_000 })
