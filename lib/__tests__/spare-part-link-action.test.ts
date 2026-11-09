@@ -106,6 +106,15 @@ describe("buscar y vincular: purchasing:create_order", () => {
       ok: false, message: "El repuesto ya no está disponible en el catálogo",
     })
   })
+
+  it("vincular avisa antes de enviar la OC si el repuesto se compra en otra unidad que la línea", async () => {
+    mockAuth.mockResolvedValue(session(["purchasing:create_order"]))
+    expect(await linkSparePartForOcAction({ productId: "new-1", unitOfMeasure: "juego" })).toEqual({
+      ok: false, message: "El repuesto RPT-001 se compra por «unidad» y la línea pide «juego»; elige otro o crea uno nuevo",
+    })
+    // La misma unidad, con otra caja, vale.
+    expect(await linkSparePartForOcAction({ productId: "new-1", unitOfMeasure: "Unidad" })).toMatchObject({ ok: true })
+  })
 })
 
 describe("crear: repuestos:catalog", () => {

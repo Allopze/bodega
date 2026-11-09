@@ -17,6 +17,7 @@ import {
   lockPurchaseRequestItemsTx,
   PURCHASE_COVERAGE_EPSILON,
 } from "./purchasable-coverage"
+import { findOrderSparePartLinksTx, revertOrderSparePartLinksTx } from "./spare-part-link-revert"
 import { invoiceNotVoided } from "@/lib/services/purchasing-module/invoice-scope"
 
 export async function deleteOrder(
@@ -76,7 +77,13 @@ export async function deleteOrder(
     const requestItemIds = ocItems
       .map((i) => i.requestItemId)
       .filter((id): id is string => id !== null)
-    const lockedRequestItems = await lockPurchaseRequestItemsTx(tx, requestItemIds)
+    // Catálogo de repuestos: lo que esta OC vinculó al armarse (incluidos los
+    // remanentes de compras parciales, que no tienen línea en ella) entra al
+    // mismo bloqueo en orden léxico; más abajo vuelve a texto libre.
+    const sparePartLinks = await findOrderSparePartLinksTx(tx, orderId, requestItemIds)
+    const orderRequestItemIds = new Set(requestItemIds)
+    const lockedRequestItems = (await lockPurchaseRequestItemsTx(tx, [...requestItemIds, ...sparePartLinks.keys()]))
+      .filter((item) => orderRequestItemIds.has(item.id))
     // DAT-1: los padres, después de sus ítems y antes de devolverlos a la cola.
     await lockRequestsForRollupTx(tx, lockedRequestItems.map((item) => item.requestId))
 
@@ -128,6 +135,14 @@ export async function deleteOrder(
         tx,
       )
     }
+
+    // Con las líneas de esta OC ya anuladas, el vínculo que ella hizo cae.
+    await revertOrderSparePartLinksTx(tx, {
+      orderId,
+      links: sparePartLinks,
+      userId,
+      userEmail: opts?.userEmail,
+    })
 
     const affectedRequestIds = [...new Set(
       lockedRequestItems.map((item) => item.requestId),

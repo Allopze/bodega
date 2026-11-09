@@ -6,6 +6,7 @@ import { requirePermission } from "@/lib/auth/can"
 import { logger } from "@/lib/logger"
 import { listSpareParts, createSparePartTx, findSparePartByPartNumber } from "@/lib/services/spare-parts-catalog"
 import { getSparePartLinkInfo, type SparePartLinkInfo } from "@/lib/services/purchasing-module/spare-part-link"
+import { sparePartUnitMismatchMessage } from "@/lib/services/purchasing-module/spare-part-unit"
 import { dbErrMsg } from "./helpers"
 
 /**
@@ -52,7 +53,11 @@ const searchSchema = z.object({
   partNumber: z.string().trim().max(100).nullish(),
 })
 
-const linkSchema = z.object({ productId: z.string().trim().min(1, "Repuesto requerido").max(64) })
+const linkSchema = z.object({
+  productId: z.string().trim().min(1, "Repuesto requerido").max(64),
+  /** Unidad de la línea: el vínculo exige la misma (la OC la vuelve a exigir al crearse). */
+  unitOfMeasure: z.string().trim().max(24).nullish(),
+})
 
 const createSchema = z.object({
   name: z.string().trim().min(1, "Escribe el nombre del repuesto").max(200, "El nombre es demasiado largo"),
@@ -102,7 +107,7 @@ export async function searchSparePartsForOcAction(input: z.input<typeof searchSc
   }
 }
 
-/** Confirma que el repuesto sigue activo y trae sus precios por proveedor. */
+/** Confirma que el repuesto sigue activo, que se compra en la unidad de la línea, y trae sus precios por proveedor. */
 export async function linkSparePartForOcAction(input: z.input<typeof linkSchema>): Promise<SparePartLinkResult> {
   try {
     await requirePermission("purchasing:create_order")
@@ -115,6 +120,10 @@ export async function linkSparePartForOcAction(input: z.input<typeof linkSchema>
   try {
     const part = await getSparePartLinkInfo(parsed.data.productId)
     if (!part) return { ok: false, message: "El repuesto ya no está disponible en el catálogo" }
+    const unitMismatch = parsed.data.unitOfMeasure
+      ? sparePartUnitMismatchMessage(part, parsed.data.unitOfMeasure)
+      : null
+    if (unitMismatch) return { ok: false, message: unitMismatch }
     return { ok: true, part }
   } catch (e) {
     logger.error("[linkSparePartForOcAction]", e)

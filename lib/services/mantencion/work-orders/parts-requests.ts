@@ -114,8 +114,9 @@ export async function loadWorkOrderPartsRequests(workOrderId: string): Promise<W
     .innerJoin(purchaseRequests, eq(purchaseRequests.id, purchaseRequestItems.requestId))
     .leftJoin(purchaseOrderItems, and(eq(purchaseOrderItems.requestItemId, purchaseRequestItems.id), ne(purchaseOrderItems.status, "cancelled")))
     .leftJoin(purchaseOrders, and(eq(purchaseOrders.id, purchaseOrderItems.purchaseOrderId), ne(purchaseOrders.status, "cancelled"), isNull(purchaseOrders.deletedAt)))
-    // El producto es el del ítem de solicitud o, si era texto libre y Compras lo
-    // catalogó al armar la OC, el de la línea de OC (siempre que esa OC cuente).
+    // El producto es el del ítem de solicitud —también cuando Compras lo catalogó
+    // al armar la OC, que lo escribe ahí y lo deshace si esa OC se elimina o se
+    // anula— o, en su defecto, el de la línea de OC (siempre que esa OC cuente).
     .leftJoin(products, eq(products.id, sql`coalesce(
       ${purchaseRequestItems.productId},
       case when ${purchaseOrders.id} is not null then ${purchaseOrderItems.productId} end

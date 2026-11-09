@@ -168,7 +168,7 @@ function LinkView({
   function choose(part: SparePartChoice) {
     op.run(
       async () => {
-        const linked = await linkSparePartForOcAction({ productId: part.id })
+        const linked = await linkSparePartForOcAction({ productId: part.id, unitOfMeasure: item.unitOfMeasure })
         return linked.ok ? { ok: true, data: { part: linked.part } } : { ok: false, message: linked.message }
       },
       (done) => onChosen(done.data!.part as LinkedSparePart),

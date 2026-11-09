@@ -33,8 +33,9 @@ export interface VehiclePurchaseRecord {
   requestType:     string
   itemName:        string
   /**
-   * Producto de catálogo de la línea: el del ítem de solicitud o, si el pedido
-   * era texto libre y Compras lo catalogó al armar la OC, el de la línea de OC.
+   * Producto de catálogo de la línea: el del ítem de solicitud (también cuando
+   * Compras lo catalogó al armar la OC, que lo escribe ahí y lo deshace si esa
+   * OC se elimina o se anula) o, en su defecto, el de una línea de OC viva.
    * `null` = texto libre. La ficha del repuesto sólo existe cuando `isSparePart`.
    */
   productId:       string | null
@@ -103,10 +104,11 @@ export async function getVehiclePurchaseHistory(
       ne(purchaseOrders.status, "cancelled"),
       isNull(purchaseOrders.deletedAt),
     ))
-    // El producto va después de la OC porque puede venir de ella: un pedido en
-    // texto libre que Compras catalogó al armar la OC sólo tiene `product_id` en
-    // la línea de OC. El del ítem de solicitud manda cuando existe; el de una OC
-    // que no cuenta (anulada o eliminada) tampoco cuenta.
+    // El producto va después de la OC porque puede venir de ella. Catalogar al
+    // armar la OC escribe el `product_id` en el ítem de solicitud y lo devuelve a
+    // texto libre si esa OC se elimina o se anula (`spare-part-link-revert.ts`),
+    // así que el del ítem manda; el de la línea de OC sólo suple a un ítem sin
+    // producto, y el de una OC que no cuenta (anulada o eliminada) no cuenta.
     .leftJoin(products, eq(products.id, sql`coalesce(
       ${purchaseRequestItems.productId},
       case when ${purchaseOrders.id} is not null then ${purchaseOrderItems.productId} end

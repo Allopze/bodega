@@ -12,6 +12,7 @@ import { computeLineSubtotal, computeOrderTotals } from "@/lib/order-totals"
 import { addItemToPurchaseOrderTx } from "../item-state"
 import { lockRequestsForRollupTx } from "../item-state-module/rollup"
 import { getActiveOrderedQuantityTx, PURCHASE_COVERAGE_EPSILON } from "./purchasable-coverage"
+import { sparePartUnitMismatchMessage } from "./spare-part-unit"
 
 export interface CreateOrderItemInput {
   requestItemId: string
@@ -21,7 +22,9 @@ export interface CreateOrderItemInput {
    * tiene producto y esta línea trae un repuesto de catálogo, Compras lo está
    * **catalogando al armar la OC**: el servicio lo escribe en la línea de la OC y
    * en el ítem de solicitud de origen (y en el remanente de una compra parcial),
-   * en la misma transacción. Sólo vale para repuestos activos.
+   * en la misma transacción. Sólo vale para repuestos activos y en la misma
+   * unidad de la línea. El vínculo queda anotado con esta OC: si se elimina o se
+   * anula, la línea vuelve a texto libre (`spare-part-link-revert.ts`).
    */
   productId:     string | null
   productNameFree: string | null
@@ -204,7 +207,7 @@ export async function createOrdersBySupplier(input: CreateOrdersBySupplierInput)
     const linkedProductIds = [...new Set(sparePartLinks.values())]
     if (linkedProductIds.length > 0) {
       const validParts = await tx
-        .select({ id: products.id })
+        .select({ id: products.id, sku: products.sku, unitOfMeasure: products.unitOfMeasure })
         .from(products)
         .where(and(
           inArray(products.id, linkedProductIds),
@@ -214,6 +217,15 @@ export async function createOrdersBySupplier(input: CreateOrdersBySupplierInput)
       if (validParts.length !== linkedProductIds.length) {
         throw new Error("El repuesto elegido no existe, está inactivo o no es un repuesto del catálogo")
       }
+      // Un repuesto se compra en una sola unidad: vincular «juego» a uno que va
+      // por «unidad» dejaría en su ficha un precio por juego como si fuese por
+      // unidad (ver `spare-part-unit.ts`).
+      const partById = new Map(validParts.map((part) => [part.id, part]))
+      for (const [requestItemId, productId] of sparePartLinks) {
+        const lineUnit = lockedSourcesByRequestItemId.get(requestItemId)!.requestItem.unitOfMeasure
+        const mismatch = sparePartUnitMismatchMessage(partById.get(productId)!, lineUnit)
+        if (mismatch) throw new Error(mismatch)
+      }
     }
 
     for (const orderInput of input.orders) {
@@ -222,6 +234,11 @@ export async function createOrdersBySupplier(input: CreateOrdersBySupplierInput)
         .from(suppliers)
         .where(and(eq(suppliers.id, orderInput.supplierId), eq(suppliers.isActive, true)))
       if (!activeSupplier) throw new Error("El proveedor seleccionado no está activo")
+
+      // El id se reserva antes de recorrer las líneas: el vínculo de un repuesto
+      // hecho al armar esta OC queda anotado con ella, para que eliminarla o
+      // anularla lo deshaga (`revertOrderSparePartLinksTx`).
+      const orderId = nanoid()
 
       const sourceItems: Array<{
         inputItem: CreateOrderItemInput
@@ -270,7 +287,7 @@ export async function createOrdersBySupplier(input: CreateOrdersBySupplierInput)
             entityType: "request_item",
             entityId:   requestItem.id,
             oldState:   { productId: null },
-            newState:   { productId: linkedProductId, linkedFrom: "purchase_order" },
+            newState:   { productId: linkedProductId, linkedFrom: "purchase_order", purchaseOrderId: orderId },
           }, tx)
         }
 
@@ -309,6 +326,19 @@ export async function createOrdersBySupplier(input: CreateOrdersBySupplierInput)
             notes:               requestItem.notes,
             splitFromItemId:     requestItem.id,
           })
+          if (linkedProductId) {
+            // El remanente hereda el vínculo de esta OC, y con la misma marca:
+            // si la OC se elimina o se anula, vuelve a texto libre con su origen.
+            await recordAudit({
+              userId:     input.createdBy,
+              userEmail:  input.userEmail,
+              action:     "update",
+              entityType: "request_item",
+              entityId:   siblingId,
+              oldState:   { productId: null },
+              newState:   { productId: linkedProductId, linkedFrom: "purchase_order", purchaseOrderId: orderId },
+            }, tx)
+          }
 
           const attrs = await tx.query.requestItemAttributes.findMany({
             where: eq(requestItemAttributes.requestItemId, requestItem.id),
@@ -374,7 +404,6 @@ export async function createOrdersBySupplier(input: CreateOrdersBySupplierInput)
         throw new Error("Los ítems de la OC pertenecen a solicitudes con modo de despacho distinto; crea órdenes separadas")
       }
 
-      const orderId = nanoid()
       const code    = await nextCodeTx(tx, "OC", year)
       const totals  = computeOrderTotals(orderInput.items)
       orderIds.push(orderId)

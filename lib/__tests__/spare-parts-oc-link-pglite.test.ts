@@ -9,6 +9,9 @@
  *    no deja rastro.
  *  - T8: al emitir la OC (`draft → sent`) cada línea de repuesto registra su
  *    precio con el proveedor, con fuente `purchase_order`. EPP y texto libre no.
+ *  - Revisión final: eliminar o anular la OC deshace el vínculo que ella hizo
+ *    (no el que eligió quien pidió); el vínculo exige la unidad del repuesto y
+ *    un repuesto no admite movimientos de bodega.
  */
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
@@ -35,19 +38,20 @@ await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
 const { IDS, seedMantFixtures } = await import("./mantencion-sync-fixtures")
 const catalog = await import("@/lib/services/spare-parts-catalog")
-const { createOrder, issueAndSendOrder } = await import("@/lib/services/purchasing")
+const { createOrder, issueAndSendOrder, cancelOrder, deleteOrder } = await import("@/lib/services/purchasing")
+const { applyMovementTx } = await import("@/lib/services/stock-movement")
 
 const now = new Date().toISOString()
 let seq = 0
 
-async function createPart(name: string, partNumber: string) {
+async function createPart(name: string, partNumber: string, unitOfMeasure = "unidad") {
   return testDb.transaction((tx) => catalog.createSparePartTx(tx as unknown as Tx, {
-    name, partNumber, unitOfMeasure: "unidad", createdByUserId: IDS.jefe,
+    name, partNumber, unitOfMeasure, createdByUserId: IDS.jefe,
   }))
 }
 
 /** Solicitud de un ítem sin producto (texto libre), lista para comprar. */
-async function freeTextItem(opts: { quantity?: number; requestType?: string; productId?: string | null } = {}) {
+async function freeTextItem(opts: { quantity?: number; requestType?: string; productId?: string | null; unitOfMeasure?: string } = {}) {
   seq += 1
   const requestId = `r-${seq}`
   const itemId = `i-${seq}`
@@ -58,7 +62,7 @@ async function freeTextItem(opts: { quantity?: number; requestType?: string; pro
   })
   await testDb.insert(schema.purchaseRequestItems).values({
     id: itemId, requestId, productId: opts.productId ?? null, productNameFree: "Filtro de aire", quantity: opts.quantity ?? 2,
-    unitOfMeasure: "unidad", status: "approved", vehicleId: IDS.truckBio, createdAt: now, updatedAt: now,
+    unitOfMeasure: opts.unitOfMeasure ?? "unidad", status: "approved", vehicleId: IDS.truckBio, createdAt: now, updatedAt: now,
   })
   return { requestId, itemId }
 }
@@ -70,10 +74,10 @@ function line(requestItemId: string, over: Partial<Parameters<typeof createOrder
   }
 }
 
-async function orderFor(requestItemId: string, productId: string | null, over: { unitPrice?: number | null; discount?: number; quantity?: number; supplierId?: string } = {}) {
+async function orderFor(requestItemId: string, productId: string | null, over: { unitPrice?: number | null; discount?: number; quantity?: number; supplierId?: string; unitOfMeasure?: string } = {}) {
   return createOrder({
     worksiteId: IDS.wsBio, supplierId: over.supplierId ?? "sup-a", createdBy: IDS.jefe,
-    items: [line(requestItemId, { productId, unitPrice: over.unitPrice === undefined ? 10_000 : over.unitPrice, discount: over.discount, quantity: over.quantity ?? 2 })],
+    items: [line(requestItemId, { productId, unitPrice: over.unitPrice === undefined ? 10_000 : over.unitPrice, discount: over.discount, quantity: over.quantity ?? 2, unitOfMeasure: over.unitOfMeasure ?? "unidad" })],
   })
 }
 
@@ -208,6 +212,123 @@ describe("catálogo de repuestos · vincular al armar la OC y precio al emitir",
       })).rejects.toThrow()
       expect((await requestItem(ok.itemId)).productId).toBeNull()
       expect((await requestItem(ok.itemId)).status).toBe("approved")
+    })
+  })
+
+  describe("el vínculo hecho al armar la OC se deshace si la OC no sigue", () => {
+    async function siblingOf(itemId: string) {
+      const [row] = await testDb.select().from(schema.purchaseRequestItems)
+        .where(eq(schema.purchaseRequestItems.splitFromItemId, itemId))
+      return row!
+    }
+
+    it("eliminar el borrador devuelve la línea a texto libre y se puede volver a catalogar", async () => {
+      const { itemId } = await freeTextItem({ quantity: 2 })
+      const orderId = await orderFor(itemId, partA.id)
+      await deleteOrder(orderId, IDS.jefe)
+
+      const item = await requestItem(itemId)
+      expect(item).toMatchObject({ productId: null, productNameFree: "Filtro de aire", status: "pending_purchase" })
+      // Ya no es un vínculo fijo: otra OC puede catalogarla con el repuesto correcto.
+      const again = await orderFor(itemId, partB.id)
+      expect((await ocLines(again))[0]!.productId).toBe(partB.id)
+      expect((await requestItem(itemId)).productId).toBe(partB.id)
+    })
+
+    it("anular una OC emitida también deshace el vínculo y deja constancia en la bitácora", async () => {
+      const { itemId } = await freeTextItem({ quantity: 1 })
+      const orderId = await orderFor(itemId, partA.id, { quantity: 1 })
+      await issueAndSendOrder(orderId, IDS.jefe)
+      await cancelOrder(orderId, IDS.jefe, "Repuesto equivocado")
+
+      expect((await requestItem(itemId)).productId).toBeNull()
+      const trail = await testDb.select().from(schema.auditLog)
+        .where(and(eq(schema.auditLog.entityType, "request_item"), eq(schema.auditLog.entityId, itemId)))
+      const states = trail.map((row) => JSON.parse(row.newState ?? "{}") as Record<string, unknown>)
+      expect(states).toContainEqual(expect.objectContaining({ productId: partA.id, linkedFrom: "purchase_order", purchaseOrderId: orderId }))
+      expect(states).toContainEqual(expect.objectContaining({ productId: null, unlinkedFrom: "purchase_order", purchaseOrderId: orderId }))
+    })
+
+    it("el remanente de una compra parcial también vuelve a texto libre", async () => {
+      const { itemId } = await freeTextItem({ quantity: 5 })
+      const orderId = await orderFor(itemId, partA.id, { quantity: 2 })
+      const sibling = await siblingOf(itemId)
+      expect(sibling.productId).toBe(partA.id)
+
+      await deleteOrder(orderId, IDS.jefe)
+      expect((await requestItem(itemId)).productId).toBeNull()
+      expect((await requestItem(sibling.id)).productId).toBeNull()
+      expect((await requestItem(sibling.id)).productNameFree).toBe("Filtro de aire")
+    })
+
+    it("un ítem que sigue en otra OC viva conserva su vínculo", async () => {
+      const { itemId } = await freeTextItem({ quantity: 5 })
+      const first = await orderFor(itemId, partA.id, { quantity: 2 })
+      const sibling = await siblingOf(itemId)
+      // El remanente se compra en otra OC: esa OC ya cuenta con el repuesto.
+      const second = await orderFor(sibling.id, partA.id, { quantity: 3 })
+
+      await deleteOrder(first, IDS.jefe)
+      expect((await requestItem(itemId)).productId).toBeNull()
+      expect((await requestItem(sibling.id)).productId).toBe(partA.id)
+      expect((await ocLines(second))[0]!.productId).toBe(partA.id)
+    })
+
+    it("el repuesto que eligió quien pidió no se toca al anular ni al eliminar", async () => {
+      const cancelled = await freeTextItem({ quantity: 1, productId: partA.id })
+      const sent = await orderFor(cancelled.itemId, partA.id, { quantity: 1 })
+      await issueAndSendOrder(sent, IDS.jefe)
+      await cancelOrder(sent, IDS.jefe, "Proveedor sin stock")
+      expect((await requestItem(cancelled.itemId)).productId).toBe(partA.id)
+
+      const deleted = await freeTextItem({ quantity: 1, productId: partA.id })
+      await deleteOrder(await orderFor(deleted.itemId, partA.id, { quantity: 1 }), IDS.jefe)
+      expect((await requestItem(deleted.itemId)).productId).toBe(partA.id)
+    })
+  })
+
+  describe("la unidad del repuesto tiene que ser la de la línea", () => {
+    it("rechaza vincular un repuesto que se compra en otra unidad", async () => {
+      const kit = await createPart("Kit de empaquetaduras", "KE-010", "juego")
+      const { itemId } = await freeTextItem({ quantity: 1, unitOfMeasure: "unidad" })
+      await expect(orderFor(itemId, kit.id, { quantity: 1 })).rejects.toThrow(
+        `El repuesto ${kit.sku} se compra por «juego» y la línea pide «unidad»; elige otro o crea uno nuevo`,
+      )
+      expect((await requestItem(itemId)).productId).toBeNull()
+    })
+
+    it("la misma unidad escrita con otra caja o espacios vale", async () => {
+      const kit = await createPart("Kit de sellos", "KS-011", "juego")
+      const { itemId } = await freeTextItem({ quantity: 1, unitOfMeasure: " Juego" })
+      const orderId = await orderFor(itemId, kit.id, { quantity: 1, unitOfMeasure: " Juego" })
+      expect((await ocLines(orderId))[0]!.productId).toBe(kit.id)
+    })
+
+    it("al emitir, una línea en otra unidad que el repuesto no escribe su precio", async () => {
+      const kit = await createPart("Kit de embrague", "KE-012", "juego")
+      // Elegido al pedir (no pasa por el vínculo de la OC) pero en «unidad».
+      const { itemId } = await freeTextItem({ quantity: 1, productId: kit.id, unitOfMeasure: "unidad" })
+      await issueAndSendOrder(await orderFor(itemId, kit.id, { quantity: 1, unitPrice: 90_000 }), IDS.jefe)
+      expect(await priceHistory(kit.id)).toHaveLength(0)
+      expect(await supplierPrice(kit.id)).toBeNull()
+    })
+  })
+
+  describe("los repuestos no tienen existencias en bodega", () => {
+    it("applyMovementTx rechaza un movimiento de un repuesto", async () => {
+      await expect(testDb.transaction((tx) => applyMovementTx(tx as unknown as Tx, {
+        worksiteId: IDS.wsBio, productId: partA.id, type: "ingreso_oc", quantity: 1, performedBy: IDS.jefe,
+      }))).rejects.toThrow("Los repuestos no tienen existencias en bodega")
+      const stock = await testDb.select().from(schema.worksiteStock)
+        .where(eq(schema.worksiteStock.productId, partA.id))
+      expect(stock).toHaveLength(0)
+    })
+
+    it("un producto de bodega sigue moviéndose como siempre", async () => {
+      const after = await testDb.transaction((tx) => applyMovementTx(tx as unknown as Tx, {
+        worksiteId: IDS.wsBio, productId: normalProductId, type: "ingreso_oc", quantity: 3, performedBy: IDS.jefe,
+      }))
+      expect(after).toBe(3)
     })
   })
 

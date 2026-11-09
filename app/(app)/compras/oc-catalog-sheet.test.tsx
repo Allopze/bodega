@@ -77,7 +77,7 @@ describe("OcCatalogSheet — vincular a un repuesto existente", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Vincular este" }))
 
     await waitFor(() => expect(onLink).toHaveBeenCalledWith("item-1", LINKED))
-    expect(link).toHaveBeenCalledWith({ productId: "rpt-1" })
+    expect(link).toHaveBeenCalledWith({ productId: "rpt-1", unitOfMeasure: "unidad" })
     expect(onOpenChange).toHaveBeenCalledWith(false)
   })
 
