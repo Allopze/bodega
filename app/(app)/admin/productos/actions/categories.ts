@@ -9,6 +9,7 @@ import { recordAudit } from "@/lib/audit"
 import { requirePermission } from "@/lib/auth/can"
 import { productCategorySchema, type ActionState } from "@/lib/validation/masters"
 import { formString, REVALIDATE } from "./helpers"
+import { isSparePartsCategory, SPARE_PARTS_CATEGORY_SLUG_LOCKED_MESSAGE } from "@/lib/products/spare-parts-category"
 
 export async function createCategory(_prev: ActionState, formData: FormData): Promise<ActionState> {
   let session
@@ -53,6 +54,13 @@ export async function updateCategory(_prev: ActionState, formData: FormData): Pr
   if (!parsed.success) return { ok: false, fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]> }
   const d = parsed.data
   if (!d.id) return { ok: false, message: "ID requerido" }
+
+  // Catálogo de repuestos: `createSparePartTx` busca su categoría por el slug
+  // «repuestos»; cambiárselo dejaría al catálogo sin categoría.
+  const current = await db.query.productCategories.findFirst({ where: eq(productCategories.id, d.id) })
+  if (current && isSparePartsCategory(current) && d.slug !== current.slug) {
+    return { ok: false, fieldErrors: { slug: [SPARE_PARTS_CATEGORY_SLUG_LOCKED_MESSAGE] } }
+  }
 
   const conflict = await db.query.productCategories.findFirst({ where: eq(productCategories.slug, d.slug) })
   if (conflict && conflict.id !== d.id) return { ok: false, fieldErrors: { slug: ["Este slug ya existe"] } }

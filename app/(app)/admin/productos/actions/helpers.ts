@@ -1,11 +1,25 @@
 import { nanoid } from "@/lib/id"
 import { buildEppFamilyIdentityKey } from "@/lib/services/epp-import"
 import { classifyEppTypeIdByName } from "@/lib/services/epp-type-classification"
-import { type Tx } from "@/db"
+import { type DB, type Tx } from "@/db"
 import { eppProductFamilies, productCategories } from "@/db/schema"
 import { eq } from "drizzle-orm"
+import { isSparePartsCategory } from "@/lib/products/spare-parts-category"
 
 export const REVALIDATE = "/admin/productos"
+
+/**
+ * Catálogo de repuestos: la categoría «Repuestos» no admite productos comunes
+ * (`lib/products/spare-parts-category.ts`). Se resuelve por slug, como la busca
+ * `createSparePartTx`, no por el id sembrado.
+ */
+export async function isSparePartsCategoryId(client: DB | Tx, categoryId: string): Promise<boolean> {
+  const category = await client.query.productCategories.findFirst({
+    where: eq(productCategories.id, categoryId),
+    columns: { slug: true },
+  })
+  return isSparePartsCategory(category)
+}
 
 export function formString(formData: FormData, name: string) {
   const value = formData.get(name)

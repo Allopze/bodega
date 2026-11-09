@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input"
 import { INITIAL_STATE, type ActionState } from "@/lib/form-state"
 import { toCode } from "@/lib/utils"
 import { Checkbox } from "@/components/ui/checkbox"
+import { isSparePartsCategory } from "@/lib/products/spare-parts-category"
 import { createCategory, updateCategory } from "./actions"
 
 export interface CategoryForEdit {
@@ -26,6 +27,8 @@ interface CategoryPanelProps {
 
 export function CategoryPanel({ open, onClose, editCategory }: CategoryPanelProps) {
   const isEdit = !!editCategory
+  // El catálogo de repuestos busca su categoría por este slug: no se edita.
+  const slugLocked = isSparePartsCategory(editCategory)
   const action = isEdit ? updateCategory : createCategory
   const [state, formAction] = useActionState<ActionState, FormData>(
     async (prev, formData) => {
@@ -68,10 +71,15 @@ export function CategoryPanel({ open, onClose, editCategory }: CategoryPanelProp
                   onChange={(e) => { if (!isEdit) changeSlug(toCode(e.target.value).toLowerCase().replace(/-+/g, "-")) }}
                 />
               </Field>
-              <Field label="Slug" htmlFor="cat-slug" required helper="Identificador único del sistema" error={state.fieldErrors?.slug?.[0]}>
+              <Field
+                label="Slug" htmlFor="cat-slug" required
+                helper={slugLocked ? "Lo usa el catálogo de repuestos: no se puede cambiar" : "Identificador único del sistema"}
+                error={state.fieldErrors?.slug?.[0]}
+              >
                 <Input
                   id="cat-slug" name="slug"
                   value={slug}
+                  readOnly={slugLocked}
                   onChange={(e) => changeSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-"))}
                   placeholder="herramientas-manuales"
                   error={!!state.fieldErrors?.slug}

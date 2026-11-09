@@ -6,6 +6,7 @@ import { suppliers } from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
+import { categoriesForCatalogProducts } from "@/lib/products/spare-parts-category"
 import { ProductRouteSheet } from "../product-route-sheet"
 import { getSizeFamilyOptions } from "@/lib/services/sizes"
 
@@ -51,7 +52,7 @@ export default async function NuevoProductoPage() {
         }
       />
       <ProductRouteSheet
-        categories={allCategories.map((c) => ({ id: c.id, name: c.name, slug: c.slug, isEpp: c.isEpp, requiresPrevencion: c.requiresPrevencion }))}
+        categories={categoriesForCatalogProducts(allCategories).map((c) => ({ id: c.id, name: c.name, slug: c.slug, isEpp: c.isEpp, requiresPrevencion: c.requiresPrevencion }))}
         allSuppliers={allSuppliers.map((s) => ({ id: s.id, name: s.name }))}
         units={units.map((unit) => ({ code: unit.code, label: unit.label, isActive: unit.isActive }))}
         templates={templates.map((template) => ({

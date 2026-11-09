@@ -11,6 +11,7 @@ import { safeActionMessage } from "@/lib/action-error"
 import { buildEppFamilyIdentityKey } from "@/lib/services/epp-import"
 import { eppProductFamilySchema } from "@/lib/validation/product-catalogs"
 import type { ActionState } from "@/lib/validation/masters"
+import { isSparePartsCategory, SPARE_PARTS_CATEGORY_RESERVED_MESSAGE } from "@/lib/products/spare-parts-category"
 
 /** Marca el choque de `identityKey` para distinguirlo de un error del driver. */
 class EppFamilyIdentityCollision extends Error {
@@ -270,6 +271,7 @@ export async function updateEppFamilyAction(_prev: ActionState, formData: FormDa
         where: eq(productCategories.id, d.categoryId),
       })
       if (!category) throw new EppFamilyValidationError("categoryId", "La categoría indicada no existe.")
+      if (isSparePartsCategory(category)) throw new EppFamilyValidationError("categoryId", SPARE_PARTS_CATEGORY_RESERVED_MESSAGE)
 
       const brand = d.brand ?? null
       const model = d.model ?? null

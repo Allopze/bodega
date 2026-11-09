@@ -3,7 +3,7 @@
 import { safeActionMessage } from "@/lib/action-error"
 
 import { revalidatePath } from "next/cache"
-import { eq } from "drizzle-orm"
+import { and, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
 import { products, productCategories } from "@/db/schema"
 import { recordAudit } from "@/lib/audit"
@@ -15,6 +15,7 @@ import type { ActionState } from "@/lib/validation/masters"
 import { nanoid } from "@/lib/id"
 import { lockCatalogProductsForUpdateTx } from "@/lib/services/catalog-product-locks"
 import { formString, generateUniqueSkus, REVALIDATE } from "./helpers"
+import { isSparePartsCategory, SPARE_PARTS_CATEGORY_RESERVED_MESSAGE } from "@/lib/products/spare-parts-category"
 
 // ── EPP Import (Excel → review → confirm) ──────────────────────────────────────
 
@@ -116,7 +117,7 @@ async function resolveImportCategory(tx: Parameters<Parameters<typeof db.transac
   if (existing) return existing
   const id = `cat-${slug}`
   await tx.insert(productCategories).values({ id, name, slug, isEpp: false, requiresPrevencion: false, sortOrder: 10 }).onConflictDoNothing()
-  return { id, name }
+  return { id, name, slug }
 }
 
 export async function importProductsFromXlsx(_prev: ActionState, formData: FormData): Promise<ActionState> {
@@ -153,6 +154,17 @@ export async function importProductsFromXlsx(_prev: ActionState, formData: FormD
       const lockedProductIds = await lockCatalogProductsForUpdateTx(tx, updateProductIds)
       const missingTargetId = updateProductIds.find((productId) => !lockedProductIds.has(productId))
       if (missingTargetId) throw new Error("Uno de los productos del archivo ya no existe")
+      // Catálogo de repuestos: un repuesto se edita en su catálogo (como en
+      // `updateProduct`), no reescribiéndolo por su ID desde esta planilla.
+      if (updateProductIds.length > 0) {
+        const spareTargets = await tx.select({ id: products.id }).from(products)
+          .where(and(inArray(products.id, updateProductIds), eq(products.isSparePart, true)))
+        const spareIds = new Set(spareTargets.map((row) => row.id))
+        const spareRow = activeRows.find((row) => row.existingId && spareIds.has(row.existingId))
+        if (spareRow) {
+          throw new Error(`Fila ${spareRow.rowNumber}: es un repuesto; los repuestos se editan en Mantención → Catálogo de repuestos`)
+        }
+      }
 
       // Todos los SKU del lote de una sola consulta y sobre `tx`: generarlos de
       // a uno con `db` consultaba fuera de la transacción, así que dos filas del
@@ -171,6 +183,7 @@ export async function importProductsFromXlsx(_prev: ActionState, formData: FormD
         const isActive = v["Activo"]?.trim() !== "No"
         const categoryName = (v["Categoría"] ?? "Elementos de Protección Personal").trim()
         const category = await resolveImportCategory(tx, categoryName)
+        if (isSparePartsCategory(category)) throw new Error(`Fila ${row.rowNumber}: ${SPARE_PARTS_CATEGORY_RESERVED_MESSAGE}`)
 
         if (row.decision === "update" && row.existingId) {
           updated++

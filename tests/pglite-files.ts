@@ -560,4 +560,7 @@ export const pgliteTestFiles = [
   // llega a la OC y a la solicitud (también al remanente), y la emisión deja el
   // precio del repuesto en el catálogo con fuente purchase_order.
   "lib/__tests__/spare-parts-oc-link-pglite.test.ts",
+  // Catálogo de repuestos: la categoría «Repuestos» no admite productos comunes
+  // y su slug no se cambia (/admin/productos).
+  "lib/__tests__/admin-categoria-repuestos-pglite.test.ts",
 ]
