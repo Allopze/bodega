@@ -19,7 +19,7 @@ import { nanoid } from "@/lib/id"
 
 const pg = new PGlite()
 const inMemoryDb = drizzle(pg, { schema })
-const testGlobal = globalThis as typeof globalThis & { __db?: typeof inMemoryDb }
+const testGlobal = globalThis as unknown as { __db?: typeof inMemoryDb }
 testGlobal.__db = inMemoryDb
 
 const mockAuthFn = vi.hoisted(() => vi.fn())
