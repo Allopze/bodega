@@ -374,6 +374,7 @@ export default async function OcDetailPage({
         productName: item.productId ? productMap[item.productId]?.name ?? null : null,
       }),
       productCode: item.productId ? productMap[item.productId]?.sku ?? null : null,
+      partNumber: item.productId ? productMap[item.productId]?.partNumber ?? null : null,
       unitOfMeasure: item.unitOfMeasure,
       quantity: item.quantity,
       invoicedQuantity: invoicedByItem.get(item.id) ?? 0,
@@ -709,6 +710,7 @@ export default async function OcDetailPage({
                     catalogName: (i.productId ? productMap[i.productId]?.name : null) ?? i.productNameFree ?? null,
                     sizeLabel: i.productId ? resolveProductSize(productMap[i.productId]?.attributes ?? [])?.label ?? null : null,
                     productCode: i.productId ? productMap[i.productId]?.sku ?? null : null,
+                    partNumber: i.productId ? productMap[i.productId]?.partNumber ?? null : null,
                     attributes: i.requestItemId
                       ? reqItemMap[i.requestItemId]?.attributes.map((attribute) => ({
                           name: attribute.attributeName,

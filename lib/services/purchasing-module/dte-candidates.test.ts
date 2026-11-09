@@ -155,6 +155,31 @@ describe("assessDteCandidates", () => {
     expect(result[1]).toMatchObject({ confidence: "low", amountMatches: true })
   })
 
+  it("enlaza el código del proveedor con el N° de parte del repuesto de catálogo", () => {
+    const [candidate] = assessDteCandidates([{
+      ...doc("part-number", "86887200-4", "2026-08-10", 5000),
+      enrichmentStatus: "ready" as const,
+      lines: [{
+        id: "line-filtro", lineNumber: 1, productCode: "1R-0750", productName: "FILTRO COMB CAT",
+        unitOfMeasure: "UN", quantity: 2, unitPrice: 2500, amount: 5000,
+      }],
+    }], {
+      supplierRut: "86887200-4",
+      createdOn: "2026-08-01",
+      expectedAmount: 5000,
+      orderItems: [
+        ...orderItems,
+        {
+          id: "oc-filtro", productId: "product-filtro", productName: "Filtro de petróleo",
+          productCode: "RPT-001", partNumber: "1R0750", unitOfMeasure: "unidad", quantity: 2, invoicedQuantity: 0,
+        },
+      ],
+      aliases: [],
+    })
+
+    expect(candidate?.proposedLinks[0]).toMatchObject({ purchaseOrderItemId: "oc-filtro", matchType: "sku" })
+  })
+
   it("uses a confirmed supplier alias before the internal SKU", () => {
     const [candidate] = assessDteCandidates([{
       ...doc("alias", "86887200-4", "2026-08-10", 1000),
