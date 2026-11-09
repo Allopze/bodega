@@ -125,6 +125,12 @@ export async function syncOnway(options: SyncOnwayOptions = {}): Promise<SyncOnw
       window ? { includeHistory: true, historyFrom: window.from, historyTo: window.to } : { includeHistory: false },
     )
     const snapshot = telemetry.snapshot
+    // Sesión viva y cero equipos no es «nada que actualizar»: la cuenta perdió
+    // la flota o no es la que corresponde. Contado como éxito, el GPS quedó
+    // congelado del 2026-11-02 al 11-08 con la bitácora en verde.
+    if (snapshot.devices.length + snapshot.rejected.length === 0) {
+      throw new OnwayClientError("ONWAY_SNAPSHOT_EMPTY")
+    }
     const vehicles = await db.select({
       id: fuelVehicles.id,
       plate: fuelVehicles.plate,

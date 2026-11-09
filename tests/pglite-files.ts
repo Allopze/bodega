@@ -547,4 +547,7 @@ export const pgliteTestFiles = [
   // Resto de las familias (CAPA, CPHS, RD, PE, PT, CGRD, RPT, CMP, COORD/FISC/OAL):
   // migración 0381, con la forma aleatoria exacta de cada una y el catálogo intacto.
   "lib/__tests__/prevention-correlative-codes-families-pglite.test.ts",
+  // GPS OnWay: un snapshot sin equipos es una falla en la bitácora, no un éxito
+  // con 0 equipos (así se escondió el GPS detenido del 2026-11-02 al 11-08).
+  "lib/integrations/onway/onway-sync-pglite.test.ts",
 ]

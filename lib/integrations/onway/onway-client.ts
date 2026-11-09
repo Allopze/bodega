@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import { existsSync } from "node:fs"
 import type { Browser, BrowserServer, Page, Response } from "playwright"
 import { logger } from "@/lib/logger"
@@ -37,6 +38,8 @@ interface OnwayBrowserSession {
   server: BrowserServer
   browser: Browser
   page: Page
+  /** Huella (sólo en memoria) de la cuenta con la que se autenticó la página. */
+  account: string
 }
 
 interface OnwayPortalDeviceRef {
@@ -72,6 +75,8 @@ export type OnwayClientErrorCode =
   | "ONWAY_INTERACTIVE_AUTH_REQUIRED"
   | "ONWAY_PORTAL_TIMEOUT"
   | "ONWAY_RESPONSE_INVALID"
+  /** El portal aceptó la sesión pero no devolvió ningún equipo. */
+  | "ONWAY_SNAPSHOT_EMPTY"
   | "ONWAY_SYNC_FAILED"
 
 export class OnwayClientError extends Error {
@@ -234,9 +239,18 @@ async function closeBrowserSession(): Promise<void> {
   }
 }
 
-async function getBrowserSession(): Promise<OnwayBrowserSession> {
+function accountKey(credentials: OnwayCredentials): string {
+  return createHash("sha256").update(credentials.username).update("\0").update(credentials.password).digest("hex")
+}
+
+/**
+ * La página autenticada pertenece a una cuenta. Sin comparar la cuenta, guardar
+ * credenciales nuevas en Monitoreo no tenía efecto: el portal seguía abierto con
+ * la sesión anterior y el cron la reusaba hasta reiniciar el contenedor.
+ */
+async function getBrowserSession(account: string): Promise<OnwayBrowserSession> {
   const current = state.browserSession
-  if (current?.browser.isConnected() && !current.page.isClosed()) return current
+  if (current?.account === account && current.browser.isConnected() && !current.page.isClosed()) return current
   await closeBrowserSession()
 
   const { chromium } = await import("playwright")
@@ -253,7 +267,7 @@ async function getBrowserSession(): Promise<OnwayBrowserSession> {
       serviceWorkers: "block",
     })
     const page = await context.newPage()
-    state.browserSession = { server, browser, page }
+    state.browserSession = { server, browser, page, account }
     return state.browserSession
   } catch (error) {
     await withOnwayDeadline(server.kill(), BROWSER_CLOSE_TIMEOUT_MS).catch(() => undefined)
@@ -363,7 +377,7 @@ async function fetchTrips(page: Page, ref: OnwayPortalDeviceRef): Promise<OnwayT
 }
 
 async function scrapeWithSession(credentials: OnwayCredentials): Promise<OnwayPortalSnapshot> {
-  const { page } = await getBrowserSession()
+  const { page } = await getBrowserSession(accountKey(credentials))
   const responsePromise = page.waitForResponse(isSnapshotResponse, { timeout: NAVIGATION_TIMEOUT_MS })
   void responsePromise.catch(() => undefined)
 
@@ -454,7 +468,7 @@ interface OnwayTelemetryOptions {
 async function collectTelemetry(input: OnwayCredentials, options: OnwayTelemetryOptions): Promise<OnwayTelemetryBundle> {
   const credentials = validateOnwayCredentials(input)
   const portal = await scrapePortal(credentials)
-  const { page } = await getBrowserSession()
+  const { page } = await getBrowserSession(accountKey(credentials))
   const warnings: OnwayTelemetryBundle["warnings"] = []
   let details: OnwayDeviceTelemetry[] = []
   let alerts: OnwayAlertSnapshot[] = []
