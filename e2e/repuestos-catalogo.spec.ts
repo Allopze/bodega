@@ -270,9 +270,10 @@ test("pedir desde la OT con el catálogo, catalogar al armar la OC, precio al em
   await issueOrderFromDetail(page)
   await expect(page.getByText(/Pendiente de recepción/).first()).toBeVisible({ timeout: 30_000 })
   await page.goto(`/mantencion/repuestos/${newPartId}`)
-  const proveedores = page.getByRole("table", { name: "Tabla de proveedores y precios" })
+  // `TableRoot` nombra su contenedor desplazable (una región), no la tabla.
+  const proveedores = page.getByRole("region", { name: "Tabla de proveedores y precios" })
   await expect(proveedores.getByRole("row").filter({ hasText: "Proveedor E2E" })).toContainText("$45.000")
-  const historial = page.getByRole("table", { name: "Tabla del historial de precio" })
+  const historial = page.getByRole("region", { name: "Tabla del historial de precio" })
   const filaHistorial = historial.getByRole("row").filter({ hasText: "Proveedor E2E" })
   await expect(filaHistorial).toHaveCount(1)
   await expect(filaHistorial).toContainText("Orden de compra")
