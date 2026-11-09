@@ -27,12 +27,15 @@ export function OcForm({
   pendingItems,
   initialWorksiteId,
   initialItemIds,
+  canCreateSparePart = false,
 }: {
   suppliers:    SupplierOption[]
   worksites:    WorksiteOption[]
   pendingItems: PendingItemOption[]
   initialWorksiteId?: string
   initialItemIds?: string[]
+  /** `repuestos:catalog`: «Catalogar» puede crear el repuesto, no sólo vincular uno existente. */
+  canCreateSparePart?: boolean
 }) {
   const f = useOcForm({ suppliers, worksites, pendingItems, initialWorksiteId, initialItemIds })
 
@@ -139,6 +142,10 @@ export function OcForm({
           setItemQuantity={f.setItemQuantity}
           resolveItemSupplierId={f.resolveItemSupplierId}
           setItemSupplier={f.setItemSupplier}
+          linkedParts={f.linkedParts}
+          onLinkPart={f.linkSparePart}
+          onUnlinkPart={f.unlinkSparePart}
+          canCreateSparePart={canCreateSparePart}
         />
 
         {/* Error */}

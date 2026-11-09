@@ -1,5 +1,5 @@
 import { formatCLP } from "@/lib/utils"
-import type { PendingItemOption } from "./oc-form.types"
+import type { LinkedSparePart, PendingItemOption } from "./oc-form.types"
 
 export function itemSupplierId(
   item: PendingItemOption,
@@ -113,4 +113,49 @@ export function suggestedSupplierLabel(
 export function ocSubmitLabel(itemCount: number, orderCount: number): string {
   const items = `${itemCount} ítem${itemCount !== 1 ? "s" : ""}`
   return orderCount > 1 ? `Crear ${orderCount} OC · ${items}` : `Crear OC (${items})`
+}
+
+/* ── Catalogar al comprar ─────────────────────────────────────────────────────
+ * Una línea de repuesto pedida en texto libre puede vincularse a un repuesto del
+ * catálogo al armar la OC. El vínculo es estado del formulario: se escribe al
+ * crear la OC. */
+
+/** ¿Se puede catalogar esta línea? Repuestos pedidos en texto libre, sin producto. */
+export function canCatalogLine(item: PendingItemOption): boolean {
+  return item.requestType === "repuestos" && !item.productId && !item.isService
+}
+
+/**
+ * La línea tal como queda con el repuesto vinculado: el producto, su SKU y N° de
+ * parte, y el precio de catálogo por proveedor —que alimenta el último escalón
+ * de `suggestedPrice`—. No toca la descripción que escribió quien pidió.
+ */
+export function applyLinkedPart(item: PendingItemOption, part: LinkedSparePart | undefined): PendingItemOption {
+  if (!part) return item
+  return {
+    ...item,
+    productId:      part.id,
+    productSku:     part.sku,
+    isSparePart:    true,
+    partNumber:     part.partNumber,
+    supplierPrices: part.prices,
+  }
+}
+
+/** «RPT-004 · N° 1R-0750»: cómo se nombra un repuesto vinculado junto a la línea. */
+export function sparePartTag(part: { sku: string | null; partNumber: string | null }): string {
+  return [part.sku, part.partNumber ? `N° ${part.partNumber}` : null].filter(Boolean).join(" · ")
+}
+
+/**
+ * Lo que se precarga al crear el repuesto desde la línea: la descripción que
+ * escribió quien pidió y su N° de parte. La marca NO se precarga: el atributo
+ * «Marca» de la solicitud es la del equipo (Caterpillar, Volvo), no la del
+ * fabricante del repuesto, y copiarla ensuciaría la clave de N° de parte + marca.
+ */
+export function sparePartDraftFromLine(item: PendingItemOption): { name: string; partNumber: string } {
+  return {
+    name: (item.productNameFree ?? item.productName).trim(),
+    partNumber: (item.requestedPartNumber ?? "").trim(),
+  }
 }

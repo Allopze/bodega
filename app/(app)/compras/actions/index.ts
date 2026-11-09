@@ -10,6 +10,10 @@ export { recordItemCostAction } from "./item-cost"
 // ── Conciliación administrativa OC ↔ facturas ───────────────────────────────
 export { acceptInvoiceReconciliationAction } from "./invoice-reconciliation"
 
+// ── Catalogar al comprar (vincular o crear un repuesto desde la línea de la OC) ─
+export { searchSparePartsForOcAction, linkSparePartForOcAction, createSparePartForOcAction } from "./spare-part-link"
+export type { SparePartChoice, SearchSparePartsResult, SparePartLinkResult } from "./spare-part-link"
+
 // ── Order termination ────────────────────────────────────────────────────────
 export { closeOrderAction, cancelOrderAction, deleteOrderAction } from "./order-cancel"
 

@@ -9,7 +9,7 @@ import {
 import { eq, inArray, asc } from "drizzle-orm"
 import { pendingPurchaseWhere } from "@/lib/adquisiciones/pending-purchase"
 import { requirePermission } from "@/lib/auth/can"
-import { canAccessWorksite }  from "@/lib/auth/can"
+import { can, canAccessWorksite }  from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
@@ -19,6 +19,7 @@ import Link from "next/link"
 import { getPurchasableCoverage } from "@/lib/services/purchasing-module/purchasable-coverage"
 import { getProductAttributesByIds, getRequestItemAttributesByIds } from "@/lib/services/product-sizes"
 import { formatVariantProductName } from "@/lib/products/variant-grouping"
+import { REPUESTO_ATTRIBUTE_NAMES } from "@/lib/validation/repuestos"
 import { vehicleLabel } from "@/lib/services/fleet"
 
 /** Tope del selector de ítems; +1 en la consulta para detectar que hay más. */
@@ -64,6 +65,7 @@ export default async function NuevaOcPage({
       // Repuestos vinculados al equipo: lo que el solicitante estimó y para qué
       // equipo y OT es, para que Compras no tenga que abrir la solicitud.
       estimatedUnitPrice:    purchaseRequestItems.estimatedUnitPrice,
+      vehicleId:             purchaseRequestItems.vehicleId,
       vehicleCode:           fuelVehicles.code,
       vehiclePlate:          fuelVehicles.plate,
       workOrderFolio:        mantWorkOrders.folio,
@@ -102,14 +104,17 @@ export default async function NuevaOcPage({
     db
       .select({
         id: purchaseRequests.id, code: purchaseRequests.code, worksiteId: purchaseRequests.worksiteId,
-        deliveryMode: purchaseRequests.deliveryMode,
+        deliveryMode: purchaseRequests.deliveryMode, requestType: purchaseRequests.requestType,
       })
       .from(purchaseRequests)
       .where(inArray(purchaseRequests.id, requestIds)),
 
     productIds.length > 0
       ? db
-          .select({ id: products.id, sku: products.sku, name: products.name, isService: products.isService })
+          .select({
+            id: products.id, sku: products.sku, name: products.name, isService: products.isService,
+            isSparePart: products.isSparePart, partNumber: products.partNumber,
+          })
           .from(products)
           .where(inArray(products.id, productIds))
       : Promise.resolve([]),
@@ -206,6 +211,14 @@ export default async function NuevaOcPage({
         productId:       item.productId,
         // Un servicio entra a la OC sin precio si todavía no se conoce.
         isService:       product?.isService ?? false,
+        // Catalogar al comprar: la línea de repuesto sin producto se puede vincular
+        // al catálogo desde el formulario; con producto, ya lo está.
+        requestType:     req.requestType,
+        vehicleId:       item.vehicleId,
+        requestedPartNumber: recordedById.get(item.id)
+          ?.find((attribute) => attribute.name === REPUESTO_ATTRIBUTE_NAMES.partNumber)?.value.trim() || null,
+        isSparePart:     product?.isSparePart ?? false,
+        partNumber:      product?.partNumber ?? null,
         productNameFree: item.productNameFree,
         quantity:        item.quantity,
         unitOfMeasure:   item.unitOfMeasure,
@@ -277,6 +290,7 @@ export default async function NuevaOcPage({
         pendingItems={pendingItems}
         initialWorksiteId={initialWorksiteId}
         initialItemIds={initialItemIds}
+        canCreateSparePart={can(session, "repuestos:catalog")}
       />
     </PageContainer>
   )

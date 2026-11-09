@@ -8,7 +8,7 @@
 import { describe, it, expect, vi } from "vitest"
 import { renderHook, act } from "@testing-library/react"
 import { useOcForm } from "./use-oc-form"
-import type { PendingItemOption, WorksiteOption } from "./oc-form.types"
+import type { LinkedSparePart, PendingItemOption, WorksiteOption } from "./oc-form.types"
 
 vi.mock("./actions", () => ({ createOrderAction: vi.fn() }))
 vi.mock("@/lib/toast", () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
@@ -114,5 +114,90 @@ describe("useOcForm — partial purchase quantity", () => {
     act(() => result.current.toggleItem("i1"))
     act(() => result.current.setItemQuantity(items[0]!, "999"))
     expect(result.current.includedItems[0]!.quantity).toBe(10)
+  })
+})
+
+describe("useOcForm — catalogar un repuesto al armar la OC", () => {
+  const SUPPLIER = { id: "sup-1", name: "Repuestos del Sur", paymentTerms: null }
+  const PART: LinkedSparePart = {
+    id: "rpt-1", sku: "RPT-001", name: "Filtro de aire", partNumber: "AF-100", partBrand: null,
+    unitOfMeasure: "unidad", prices: { "sup-1": 21_000 },
+  }
+  const freeTextLine = () => makeItem({
+    id: "i1", productId: null, productSku: null, productName: "Filtro aire", productNameFree: "Filtro aire",
+    requestType: "repuestos", supplierPrices: {},
+  })
+
+  function sentItems(itemsJson: string) {
+    return JSON.parse(itemsJson) as Array<{ requestItemId: string; productId: string | null; unitPrice: number | null }>
+  }
+
+  it("sin vínculo la línea viaja en texto libre y a precio cero", () => {
+    const { result } = renderHook(() =>
+      useOcForm({ suppliers: [SUPPLIER], worksites: [WORKSITE], pendingItems: [freeTextLine()], initialWorksiteId: "ws-1" }),
+    )
+    act(() => result.current.toggleItem("i1"))
+    expect(sentItems(result.current.itemsJson)[0]).toMatchObject({ requestItemId: "i1", productId: null, unitPrice: 0 })
+  })
+
+  it("vincular manda el productId del repuesto y sugiere el precio del catálogo del proveedor elegido", () => {
+    const { result } = renderHook(() =>
+      useOcForm({ suppliers: [SUPPLIER], worksites: [WORKSITE], pendingItems: [freeTextLine()], initialWorksiteId: "ws-1" }),
+    )
+    act(() => result.current.setSupplierId("sup-1"))
+    act(() => result.current.toggleItem("i1"))
+    expect(sentItems(result.current.itemsJson)[0]!.unitPrice).toBe(0)
+
+    act(() => result.current.linkSparePart("i1", PART))
+
+    expect(result.current.linkedParts).toEqual({ i1: PART })
+    expect(result.current.includedItems[0]).toMatchObject({ productId: "rpt-1", productSku: "RPT-001", isSparePart: true })
+    expect(sentItems(result.current.itemsJson)[0]).toMatchObject({ requestItemId: "i1", productId: "rpt-1", unitPrice: 21_000 })
+  })
+
+  it("al cambiar de proveedor después de vincular se aplica el precio de ese proveedor", () => {
+    const part = { ...PART, prices: { "sup-1": 21_000, "sup-2": 19_500 } }
+    const suppliers = [SUPPLIER, { id: "sup-2", name: "Frenos Bío Bío", paymentTerms: null }]
+    const { result } = renderHook(() =>
+      useOcForm({ suppliers, worksites: [WORKSITE], pendingItems: [freeTextLine()], initialWorksiteId: "ws-1" }),
+    )
+    act(() => result.current.toggleItem("i1"))
+    act(() => result.current.linkSparePart("i1", part))
+    act(() => result.current.handleSupplierChange("sup-2"))
+    expect(sentItems(result.current.itemsJson)[0]!.unitPrice).toBe(19_500)
+  })
+
+  it("un precio escrito a mano no lo pisa el vínculo", () => {
+    const { result } = renderHook(() =>
+      useOcForm({ suppliers: [SUPPLIER], worksites: [WORKSITE], pendingItems: [freeTextLine()], initialWorksiteId: "ws-1" }),
+    )
+    act(() => result.current.setSupplierId("sup-1"))
+    act(() => result.current.toggleItem("i1"))
+    act(() => result.current.setItemPrice("i1", "25000"))
+    act(() => result.current.linkSparePart("i1", PART))
+    expect(sentItems(result.current.itemsJson)[0]!.unitPrice).toBe(25_000)
+  })
+
+  it("quitar el vínculo devuelve la línea a texto libre", () => {
+    const { result } = renderHook(() =>
+      useOcForm({ suppliers: [SUPPLIER], worksites: [WORKSITE], pendingItems: [freeTextLine()], initialWorksiteId: "ws-1" }),
+    )
+    act(() => result.current.toggleItem("i1"))
+    act(() => result.current.linkSparePart("i1", PART))
+    act(() => result.current.unlinkSparePart("i1"))
+    expect(result.current.linkedParts).toEqual({})
+    expect(sentItems(result.current.itemsJson)[0]!.productId).toBeNull()
+    expect(result.current.includedItems[0]!.isSparePart).toBeFalsy()
+  })
+
+  it("el vínculo de una línea no toca a las demás", () => {
+    const other = makeItem({ id: "i2", productId: "prod-epp", requestType: "epp" })
+    const { result } = renderHook(() =>
+      useOcForm({ suppliers: [SUPPLIER], worksites: [WORKSITE], pendingItems: [freeTextLine(), other], initialWorksiteId: "ws-1" }),
+    )
+    act(() => result.current.toggleItem("i1"))
+    act(() => result.current.toggleItem("i2"))
+    act(() => result.current.linkSparePart("i1", PART))
+    expect(sentItems(result.current.itemsJson).map((i) => [i.requestItemId, i.productId])).toEqual([["i1", "rpt-1"], ["i2", "prod-epp"]])
   })
 })
