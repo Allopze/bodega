@@ -40,8 +40,11 @@ export interface EquipmentDetailData {
   history: EquipmentHistoryEntry[]
   /** Repuestos y servicios comprados para el equipo. `null` = sin capacidad de verlos: la tarjeta no se dibuja. */
   purchases: VehiclePurchaseRecord[] | null
-  /** Qué puede hacer quien mira con ellos: abrir la solicitud, abrir la OC y pedir repuestos (`null` = no puede). */
-  purchaseLinks: { canOpenRequests: boolean; canOpenOrders: boolean; newRequestHref: string | null }
+  /**
+   * Qué puede hacer quien mira con ellos: abrir la solicitud, abrir la OC, abrir la ficha del repuesto
+   * de catálogo (`repuestos:catalog`) y pedir repuestos (`null` = no puede).
+   */
+  purchaseLinks: { canOpenRequests: boolean; canOpenOrders: boolean; canOpenSpareParts: boolean; newRequestHref: string | null }
 }
 
 /** Lo que hace falta para editar: sólo se carga si la persona puede administrar equipos. */

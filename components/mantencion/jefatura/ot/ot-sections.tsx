@@ -10,6 +10,7 @@ import { MetaBadge, StateBadge } from "@/components/states/state-badge"
 import { formatNumber } from "@/lib/mantencion/format"
 import { OT_ITEM_KIND_LABELS, type OtItemKind } from "@/lib/mantencion/work-order-states"
 import type { WorkOrderDetail, WorkOrderItemDetail, WorkOrderPartsRequest } from "@/lib/services/mantencion/work-orders/types"
+import { SparePartReference } from "@/components/mantencion/spare-part-reference"
 import { SectionCard } from "../shared/section-card"
 import { OT_STATE_META, equipmentText } from "./ot-labels"
 import { formatDay, formatTimeOnly, sortEventsNewestFirst } from "./ot-format"
@@ -140,14 +141,18 @@ function quantityText(line: Pick<WorkOrderPartsRequest, "quantity" | "unitOfMeas
  * la correctiva y las compras salen de una solicitud. El código de la solicitud
  * sólo es enlace con `repuestos:view_all` (con `view_own` el enlace daría 404 sobre
  * una ajena). `partsRequestHref` lo calcula la página (permiso y OT no cerrada).
+ * Una línea con producto de catálogo muestra su SKU y N° de parte; el nombre enlaza
+ * a la ficha del repuesto sólo con `canOpenSpareParts` (`repuestos:catalog`).
  */
 export function OtPartsRequestsSection({
   detail,
   canOpenRequests,
+  canOpenSpareParts = false,
   partsRequestHref,
 }: {
   detail: WorkOrderDetail
   canOpenRequests: boolean
+  canOpenSpareParts?: boolean
   partsRequestHref: string | null
 }) {
   const lines = detail.partsRequests
@@ -198,7 +203,7 @@ export function OtPartsRequestsSection({
                       ? <Link href={`/solicitudes/${line.requestId}`} className={TEXT_LINK}>{line.requestCode}</Link>
                       : <span className="font-mono text-[13px]">{line.requestCode}</span>}
                   </TableCell>
-                  <TableCell>{line.description}</TableCell>
+                  <TableCell><SparePartReference name={line.description} product={line} canOpen={canOpenSpareParts} /></TableCell>
                   <TableCell className="whitespace-nowrap font-mono text-xs tabular-nums">{quantityText(line)}</TableCell>
                   <TableCell><StateBadge state={line.itemStatus} entity="item" size="sm" /></TableCell>
                   <TableCell className="whitespace-nowrap font-mono text-[13px]">

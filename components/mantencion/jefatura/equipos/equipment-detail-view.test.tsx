@@ -20,7 +20,7 @@ import { EquipmentDetailView } from "./equipment-detail-view"
 
 const purchase: VehiclePurchaseRecord = {
   requestItemId: "item-1", requestId: "req-1", requestCode: "REP-2026-0042", requestType: "repuestos", itemName: "Filtro hidráulico",
-  quantity: 2, unitOfMeasure: "unidad", itemStatus: "purchased", itemStatusLabel: "Pendiente de recepción", workOrderId: "ot-1",
+  productId: null, sku: null, partNumber: null, isSparePart: false, quantity: 2, unitOfMeasure: "unidad", itemStatus: "purchased", itemStatusLabel: "Pendiente de recepción", workOrderId: "ot-1",
   workOrderFolio: "OT-BIO-0007", requestedAt: "2026-11-02T15:00:00.000Z", requesterName: "Alexis Morales", orderId: "oc-1",
   orderCode: "OC-2026-0310", orderStatus: "sent", unitPrice: 20_000, subtotal: 40_000,
 }
@@ -35,7 +35,7 @@ function data(overrides: Partial<EquipmentDetailData> = {}): EquipmentDetailData
     },
     workshop: null, recordCount: 1, life: { rows: [], totals: { active: 0, activeCorrective: 0, activePreventive: 0, activeHours: 0, voided: 0 }, hasMore: false, limit: 20 },
     insurance: { policyNumber: null, expiresAt: null, state: "sin_fecha", days: null, documents: [], hasData: false }, canViewFleet: true, history: [],
-    purchases: null, purchaseLinks: { canOpenRequests: false, canOpenOrders: false, newRequestHref: null },
+    purchases: null, purchaseLinks: { canOpenRequests: false, canOpenOrders: false, canOpenSpareParts: false, newRequestHref: null },
     ...overrides,
   }
 }
@@ -56,7 +56,7 @@ describe("ficha del equipo: «Repuestos y servicios comprados»", () => {
   it("con compras las lista y enlaza según los permisos que trae la ficha", () => {
     render(view({
       purchases: [purchase],
-      purchaseLinks: { canOpenRequests: true, canOpenOrders: true, newRequestHref: "/solicitudes/nueva?tipo=repuestos&vehiculo=veh-1" },
+      purchaseLinks: { canOpenRequests: true, canOpenOrders: true, canOpenSpareParts: false, newRequestHref: "/solicitudes/nueva?tipo=repuestos&vehiculo=veh-1" },
     }))
     expect(screen.getByRole("heading", { name: "Repuestos y servicios comprados" })).toBeDefined()
     expect(screen.getByRole("link", { name: "REP-2026-0042" }).getAttribute("href")).toBe("/solicitudes/req-1")
@@ -65,12 +65,24 @@ describe("ficha del equipo: «Repuestos y servicios comprados»", () => {
   })
 
   it("sin compras y con permiso ofrece pedir repuestos; sin permiso lo dice en texto", () => {
-    render(view({ purchases: [], purchaseLinks: { canOpenRequests: false, canOpenOrders: false, newRequestHref: "/solicitudes/nueva?tipo=repuestos&vehiculo=veh-1" } }))
+    render(view({ purchases: [], purchaseLinks: { canOpenRequests: false, canOpenOrders: false, canOpenSpareParts: false, newRequestHref: "/solicitudes/nueva?tipo=repuestos&vehiculo=veh-1" } }))
     expect(screen.getByText("Sin compras vinculadas")).toBeDefined()
     expect(screen.getByRole("link", { name: "Pedir repuestos" })).toBeDefined()
     cleanup()
     render(view({ purchases: [] }))
     expect(screen.getByText("Nadie ha pedido repuestos ni servicios para este equipo.")).toBeDefined()
     expect(screen.queryByRole("link", { name: "Pedir repuestos" })).toBeNull()
+  })
+
+  it("el permiso del catálogo llega a la tarjeta: con repuestos:catalog el repuesto enlaza a su ficha; sin él, sólo muestra su identidad", () => {
+    const catalogado: VehiclePurchaseRecord = { ...purchase, productId: "prod-1", sku: "RPT-001", partNumber: "1R-0750", isSparePart: true }
+    const links = { canOpenRequests: true, canOpenOrders: true, newRequestHref: null }
+    render(view({ purchases: [catalogado], purchaseLinks: { ...links, canOpenSpareParts: true } }))
+    expect(screen.getByRole("link", { name: "Filtro hidráulico" }).getAttribute("href")).toBe("/mantencion/repuestos/prod-1")
+    expect(screen.getByText("RPT-001 · N° de parte 1R-0750")).toBeDefined()
+    cleanup()
+    render(view({ purchases: [catalogado], purchaseLinks: { ...links, canOpenSpareParts: false } }))
+    expect(screen.queryByRole("link", { name: "Filtro hidráulico" })).toBeNull()
+    expect(screen.getByText("RPT-001 · N° de parte 1R-0750")).toBeDefined()
   })
 })

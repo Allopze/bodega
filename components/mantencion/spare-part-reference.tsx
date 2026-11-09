@@ -1,0 +1,43 @@
+import Link from "next/link"
+
+/** Lo que la lista de una compra o de una OT sabe del producto de una línea. */
+export interface ProductReferenceData {
+  productId: string | null
+  sku: string | null
+  /** N° de parte del fabricante; sólo los repuestos de catálogo lo tienen. */
+  partNumber: string | null
+  /** La ficha `/mantencion/repuestos/[id]` sólo existe para repuestos de catálogo. */
+  isSparePart: boolean
+}
+
+const NAME_LINK = "text-[var(--color-primary-ink)] underline-offset-2 hover:underline focus-visible:underline"
+
+/**
+ * Nombre de la línea con la identidad del producto debajo: el SKU y, si lo tiene,
+ * el N° de parte (con el que el proveedor factura). Es una sola pieza para las dos
+ * superficies que muestran lo comprado —la ficha del equipo/vehículo y «Repuestos
+ * pedidos» de la OT— para que un repuesto se lea igual en todas.
+ *
+ * El nombre es enlace a la ficha del repuesto sólo con `canOpen` (`repuestos:catalog`)
+ * y cuando el producto es un repuesto de catálogo: un enlace que da 403/404 es peor
+ * que ninguno. Una línea en texto libre no trae identidad y se dibuja sólo con el
+ * nombre.
+ */
+export function SparePartReference({
+  name,
+  product,
+  canOpen,
+}: {
+  name: string
+  product: ProductReferenceData
+  canOpen: boolean
+}) {
+  const href = canOpen && product.isSparePart && product.productId ? `/mantencion/repuestos/${product.productId}` : null
+  const identity = [product.sku, product.partNumber ? `N° de parte ${product.partNumber}` : null].filter(Boolean).join(" · ")
+  return (
+    <>
+      {href ? <Link href={href} className={NAME_LINK}>{name}</Link> : name}
+      {identity && <span className="block font-mono text-2xs text-[var(--color-text-muted)]">{identity}</span>}
+    </>
+  )
+}

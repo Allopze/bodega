@@ -234,7 +234,7 @@ const PEDIR_REPUESTOS = "/solicitudes/nueva?tipo=repuestos&ot=ot-1"
 
 function partsLine(overrides: Partial<WorkOrderPartsRequest> = {}): WorkOrderPartsRequest {
   return {
-    requestId: "req-1", requestCode: "REP-0007", requestStatus: "approved", itemId: "it-1", description: "Filtro hidráulico", quantity: 3, unitOfMeasure: "unidad",
+    requestId: "req-1", requestCode: "REP-0007", requestStatus: "approved", itemId: "it-1", description: "Filtro hidráulico", productId: null, sku: null, partNumber: null, isSparePart: false, quantity: 3, unitOfMeasure: "unidad",
     itemStatus: "purchased", itemStatusLabel: "Pendiente de recepción", orderId: "oc-1", orderCode: "OC-2026-0100", orderStatus: "sent",
     estimatedDelivery: "2099-01-15", quantityReceived: 1, requestedAt: "2026-11-02T10:00:00.000Z", ...overrides,
   }
@@ -321,6 +321,26 @@ describe("«Repuestos pedidos»", () => {
     render(<OtPartsRequestsSection detail={otDetail()} canOpenRequests={false} partsRequestHref={null} />)
     expect(screen.getByText("Nadie ha pedido repuestos para esta orden.")).toBeTruthy()
     expect(screen.queryByRole("link", { name: "Pedir repuestos" })).toBeNull()
+  })
+
+  it("una línea con repuesto de catálogo muestra SKU y N° de parte; el nombre enlaza a la ficha sólo con repuestos:catalog", () => {
+    const detail = otDetail({
+      partsRequests: [
+        partsLine({ productId: "prod-1", sku: "RPT-001", partNumber: "1R-0750", isSparePart: true }),
+        partsLine({ itemId: "it-2", requestCode: "REP-0008", description: "Sello de pistón" }),
+      ],
+    })
+    const { rerender } = render(<OtPartsRequestsSection detail={detail} canOpenRequests canOpenSpareParts partsRequestHref={null} />)
+    const rows = partsTable().getAllByRole("row")
+    expect(rows[1]!.textContent).toContain("RPT-001 · N° de parte 1R-0750")
+    expect(partsTable().getByRole("link", { name: "Filtro hidráulico" }).getAttribute("href")).toBe("/mantencion/repuestos/prod-1")
+    // El texto libre no trae identidad ni enlace.
+    expect(rows[2]!.textContent).not.toContain("N° de parte")
+    expect(partsTable().queryByRole("link", { name: "Sello de pistón" })).toBeNull()
+
+    rerender(<OtPartsRequestsSection detail={detail} canOpenRequests canOpenSpareParts={false} partsRequestHref={null} />)
+    expect(partsTable().queryByRole("link", { name: "Filtro hidráulico" })).toBeNull()
+    expect(partsTable().getAllByRole("row")[1]!.textContent).toContain("RPT-001 · N° de parte 1R-0750")
   })
 
   it("sin permiso de solicitudes el código es texto, no enlace; con permiso lleva a la solicitud", () => {

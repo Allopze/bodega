@@ -100,6 +100,16 @@ export interface WorkOrderPartsRequest {
   requestStatus: string
   itemId: string
   description: string
+  /**
+   * Producto de catálogo de la línea (el del ítem de solicitud o, si Compras lo
+   * catalogó al armar la OC, el de la línea de OC); `null` = texto libre. La
+   * ficha del repuesto sólo existe cuando `isSparePart`.
+   */
+  productId: string | null
+  sku: string | null
+  /** N° de parte del fabricante (repuestos de catálogo). */
+  partNumber: string | null
+  isSparePart: boolean
   quantity: number
   unitOfMeasure: string
   /** Estado crudo del ítem; la pantalla muestra `itemStatusLabel`. */
