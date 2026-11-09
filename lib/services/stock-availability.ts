@@ -107,6 +107,8 @@ export async function getStockAvailability(
       requestScope,
       eq(worksites.isActive, true),
       eq(products.isService, false),
+      // Consumo directo: el repuesto de catálogo no llega a la bodega, no es stock en tránsito.
+      eq(products.isSparePart, false),
       notInArray(purchaseRequests.status, [...TERMINAL_REQUEST_STATUSES]),
       inArray(purchaseRequestItems.status, [...NOT_YET_AT_FAENA_ITEM_STATUSES]),
     ))
