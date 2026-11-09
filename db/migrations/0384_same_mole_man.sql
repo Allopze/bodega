@@ -1,0 +1,2 @@
+ALTER TABLE "fleet_gps_sync_runs" DROP CONSTRAINT IF EXISTS "fleet_gps_sync_runs_trigger_valid";--> statement-breakpoint
+ALTER TABLE "fleet_gps_sync_runs" ADD CONSTRAINT "fleet_gps_sync_runs_trigger_valid" CHECK ("fleet_gps_sync_runs"."trigger" IN ('manual', 'cron', 'live'));

@@ -83,6 +83,20 @@ describe("withCronLock deja constancia de la corrida", () => {
     expect(salud.map((s) => s.jobName)).toEqual(["prueba-si-corre"])
     expect(salud.find((s) => s.jobName === "prueba-nunca-corrio")).toBeUndefined()
   })
+
+  // El refresco en vivo de Monitoreo GPS comparte el lock de `fleet-onway-sync`
+  // y no es una corrida del cron: no debe llenar su bitácora.
+  it("con `ledger: false` corre el trabajo sin escribir en la bitácora", async () => {
+    const result = await withCronLock("prueba-sin-bitacora", async () => ({ ok: true }), { ledger: false })
+    expect(result).toEqual({ ok: true })
+    expect(await testDb.select().from(schema.cronRuns)).toEqual([])
+  })
+
+  it("con `ledger: false` el error sigue subiendo y tampoco deja fila", async () => {
+    await expect(withCronLock("prueba-sin-bitacora", async () => { throw new Error("portal caído") }, { ledger: false }))
+      .rejects.toThrow("portal caído")
+    expect(await testDb.select().from(schema.cronRuns)).toEqual([])
+  })
 })
 
 describe("getCronJobHealth", () => {

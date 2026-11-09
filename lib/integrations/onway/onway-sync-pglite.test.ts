@@ -128,3 +128,58 @@ describe("syncOnway con un snapshot vacío", () => {
     expect(run).toMatchObject({ status: "partial", errorCode: null })
   })
 })
+
+/**
+ * Refresco por minuto de Monitoreo GPS: sólo el snapshot del mapa. La hora GPS,
+ * la señal y los medidores vienen del detalle (cada 5 min, en el cron): una
+ * lectura liviana no puede dejarlos en blanco.
+ */
+describe("syncOnway sólo con posiciones (refresco en vivo)", () => {
+  const DETAIL_AT = "2026-11-09T12:00:00.000Z"
+
+  beforeAll(async () => {
+    await testDb.insert(schema.fleetGpsSyncRuns).values({
+      id: "gpsrun-con-detalle", trigger: "cron", status: "success", devicesReceived: 1,
+      startedAt: DETAIL_AT, finishedAt: DETAIL_AT,
+    })
+    await testDb.insert(schema.fleetGpsLatestPositions).values({
+      id: "gpspos-con-detalle", externalDeviceId: "9002", externalGroupId: "10",
+      sourcePlate: "EF-GH-34", normalizedPlate: "EFGH34",
+      latitude: -36.8, longitude: -73.05, speedKph: 0, headingDegrees: 0, ignition: false,
+      gpsReportedAt: DETAIL_AT, gpsStatus: "A", odometer: 220784, movementState: "stopped",
+      observedAt: DETAIL_AT, syncRunId: "gpsrun-con-detalle",
+    })
+  })
+
+  it("mueve la posición y la hora de captura, y conserva lo que vino del detalle", async () => {
+    mocks.fetchOnwayTelemetry.mockResolvedValue(telemetry({
+      devices: [{
+        externalDeviceId: "9002", groupId: "10", sourcePlate: "EF-GH-34", normalizedPlate: "EFGH34",
+        latitude: -37.1, longitude: -72.9, speedKph: 54, headingDegrees: 90, ignition: true, sourceStatus: "1",
+      }],
+      rejected: [],
+    }))
+    const now = new Date("2026-11-09T12:03:00.000Z")
+    mocks.applyOnwayAlertRules.mockClear()
+
+    const result = await syncOnway({ trigger: "live", positionsOnly: true, now })
+
+    expect(mocks.fetchOnwayTelemetry).toHaveBeenCalledWith(
+      expect.anything(),
+      { includeDetails: false, includeHistory: false },
+    )
+    const [position] = await testDb.select().from(schema.fleetGpsLatestPositions)
+      .where(eq(schema.fleetGpsLatestPositions.id, "gpspos-con-detalle"))
+    expect(position).toMatchObject({
+      latitude: -37.1, longitude: -72.9, speedKph: 54, headingDegrees: 90, ignition: true,
+      syncRunId: result.runId, gpsStatus: "A", odometer: 220784, movementState: "stopped",
+    })
+    expect(new Date(position?.observedAt ?? 0).toISOString()).toBe(now.toISOString())
+    expect(new Date(position?.gpsReportedAt ?? 0).toISOString()).toBe(DETAIL_AT)
+
+    const [run] = await testDb.select().from(schema.fleetGpsSyncRuns)
+      .where(eq(schema.fleetGpsSyncRuns.id, result.runId))
+    expect(run).toMatchObject({ trigger: "live", devicesReceived: 1 })
+    expect(mocks.applyOnwayAlertRules).not.toHaveBeenCalled()
+  })
+})

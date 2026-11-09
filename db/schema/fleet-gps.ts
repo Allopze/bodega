@@ -77,7 +77,8 @@ export const fleetGpsSyncRuns = pgTable("fleet_gps_sync_runs", {
   finishedAt: timestamp("finished_at", { withTimezone: true, mode: "string" }),
 }, (table) => [
   check("fleet_gps_sync_runs_provider_valid", sql`${table.provider} IN ('onway')`),
-  check("fleet_gps_sync_runs_trigger_valid", sql`${table.trigger} IN ('manual', 'cron')`),
+  // `live`: refresco de posiciones mientras alguien tiene abierta Monitoreo GPS.
+  check("fleet_gps_sync_runs_trigger_valid", sql`${table.trigger} IN ('manual', 'cron', 'live')`),
   check("fleet_gps_sync_runs_status_valid", sql`${table.status} IN ('running', 'success', 'partial', 'failed')`),
   check("fleet_gps_sync_runs_counts_valid", sql`
     ${table.devicesReceived} >= 0 AND ${table.devicesAccepted} >= 0

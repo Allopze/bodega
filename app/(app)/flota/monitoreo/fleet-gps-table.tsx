@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/table"
 import type { FleetGpsPosition } from "@/lib/services/fleet-gps"
 import { formatDateTime } from "@/lib/utils"
+import { formatGpsMeter } from "./fleet-gps-format"
 
 export function FleetGpsTable({ positions }: { positions: FleetGpsPosition[] }) {
   const { searchQuery } = useSafeShellHeader()
@@ -85,7 +86,7 @@ export function FleetGpsTable({ positions }: { positions: FleetGpsPosition[] }) 
               <TableCell>
                 <div>{position.gpsStatus ?? position.sourceStatus ?? "Sin estado GPS"}</div>
                 <div className="text-xs text-[var(--color-text-subtle)]">
-                  {position.odometer !== null ? `${Math.round(position.odometer).toLocaleString("es-CL")} km` : position.hourMeter !== null ? `${Math.round(position.hourMeter).toLocaleString("es-CL")} h` : "Sin medidor"}
+                  {formatGpsMeter(position)}
                   {position.driverName ? ` · ${position.driverName}` : ""}
                 </div>
               </TableCell>
