@@ -10,7 +10,8 @@
  * para siempre: la línea ya no ofrecía «Catalogar», el servidor rechazaba otro
  * repuesto y la próxima OC emitida escribía su precio en el repuesto equivocado.
  *
- * Se deshace sólo lo que esa OC vinculó, y sólo si:
+ * Se deshace sólo lo que esa OC vinculó (con los remanentes que lo heredaron, a
+ * cualquier profundidad), y sólo si:
  *  - el ítem sigue apuntando al mismo repuesto que vinculó la OC;
  *  - ninguna otra OC viva lo cubre (esa OC ya compra ese repuesto);
  *  - conserva su texto libre, para no dejar una línea sin nombre.
@@ -24,39 +25,69 @@ import { recordAudit } from "@/lib/audit"
 import { getActiveOrderedQuantitiesTx, PURCHASE_COVERAGE_EPSILON } from "./purchasable-coverage"
 
 /**
+ * Lo que esta OC vinculó, por ítem de solicitud: el repuesto que le puso y, si
+ * el ítem no lleva marca propia sino que la heredó al separarse de un ítem
+ * vinculado (el remanente de una compra parcial hecha por otra OC), de cuál.
+ */
+export type OrderSparePartLinks = Map<string, { productId: string; inheritedFrom: string | null }>
+
+/**
  * Los ítems de solicitud que esta OC vinculó a un repuesto, con el repuesto que
  * les puso. Se lee antes de bloquear, para sumar los remanentes (que no tienen
  * línea en la OC) al mismo bloqueo en orden léxico que toman eliminar y anular.
  *
- * Candidatos: los ítems de las líneas de la OC y sus remanentes; la bitácora se
- * consulta sólo para ellos (índice por entidad). La marca se filtra con `LIKE`
- * y se confirma en JS en vez de castear `new_state` a `jsonb`: un estado viejo
- * que no fuese JSON válido haría fallar el cast y, con él, eliminar la OC.
+ * Candidatos: los ítems de las líneas de la OC y todos sus descendientes por
+ * `splitFromItemId`, a cualquier profundidad. El remanente que deja esta OC
+ * lleva su marca; pero si otra OC compra parte de ese remanente, el nuevo
+ * remanente copia el repuesto sin marca (esa otra OC no vinculó nada). Ese
+ * descendiente hereda el vínculo de su padre y cae con él. La bitácora se
+ * consulta sólo para los candidatos (índice por entidad). La marca se filtra
+ * con `LIKE` y se confirma en JS en vez de castear `new_state` a `jsonb`: un
+ * estado viejo que no fuese JSON válido haría fallar el cast y, con él,
+ * eliminar la OC.
+ *
+ * El mapa sale en orden de árbol (padres antes que hijos), que es el orden en
+ * que `revertOrderSparePartLinksTx` decide.
  */
 export async function findOrderSparePartLinksTx(
   tx: Tx,
   orderId: string,
   orderRequestItemIds: readonly string[],
-): Promise<Map<string, string>> {
-  const links = new Map<string, string>()
+): Promise<OrderSparePartLinks> {
+  const links: OrderSparePartLinks = new Map()
   const lineItemIds = [...new Set(orderRequestItemIds)]
   if (lineItemIds.length === 0) return links
 
-  const remainders = await tx
-    .select({ id: purchaseRequestItems.id })
-    .from(purchaseRequestItems)
-    .where(inArray(purchaseRequestItems.splitFromItemId, lineItemIds))
-  const candidateIds = [...new Set([...lineItemIds, ...remainders.map((row) => row.id)])]
+  const parentOf = new Map<string, string>()
+  const treeOrder = [...lineItemIds]
+  const seen = new Set(lineItemIds)
+  let frontier = lineItemIds
+  while (frontier.length > 0) {
+    const children = await tx
+      .select({ id: purchaseRequestItems.id, parentId: purchaseRequestItems.splitFromItemId })
+      .from(purchaseRequestItems)
+      .where(inArray(purchaseRequestItems.splitFromItemId, frontier))
+      .orderBy(purchaseRequestItems.id)
+    frontier = []
+    for (const child of children) {
+      if (seen.has(child.id) || !child.parentId) continue
+      seen.add(child.id)
+      parentOf.set(child.id, child.parentId)
+      treeOrder.push(child.id)
+      frontier.push(child.id)
+    }
+  }
 
   const rows = await tx
     .select({ requestItemId: auditLog.entityId, newState: auditLog.newState })
     .from(auditLog)
     .where(and(
       eq(auditLog.entityType, "request_item"),
-      inArray(auditLog.entityId, candidateIds),
+      inArray(auditLog.entityId, treeOrder),
       like(auditLog.newState, '%"linkedFrom":"purchase_order"%'),
     ))
 
+  const marked = new Map<string, string>()
   for (const row of rows) {
     let state: { productId?: unknown; linkedFrom?: unknown; purchaseOrderId?: unknown }
     try {
@@ -65,7 +96,18 @@ export async function findOrderSparePartLinksTx(
       continue
     }
     if (state.linkedFrom !== "purchase_order" || state.purchaseOrderId !== orderId) continue
-    if (typeof state.productId === "string") links.set(row.requestItemId, state.productId)
+    if (typeof state.productId === "string") marked.set(row.requestItemId, state.productId)
+  }
+
+  for (const id of treeOrder) {
+    const own = marked.get(id)
+    if (own) {
+      links.set(id, { productId: own, inheritedFrom: null })
+      continue
+    }
+    const parentId = parentOf.get(id)
+    const parentLink = parentId ? links.get(parentId) : undefined
+    if (parentId && parentLink) links.set(id, { productId: parentLink.productId, inheritedFrom: parentId })
   }
   return links
 }
@@ -79,14 +121,14 @@ export async function revertOrderSparePartLinksTx(
   tx: Tx,
   input: {
     orderId: string
-    links: Map<string, string>
+    links: OrderSparePartLinks
     userId: string
     userEmail?: string
   },
 ): Promise<string[]> {
   if (input.links.size === 0) return []
 
-  const items = await tx
+  const rows = await tx
     .select({
       id: purchaseRequestItems.id,
       productId: purchaseRequestItems.productId,
@@ -94,12 +136,18 @@ export async function revertOrderSparePartLinksTx(
     })
     .from(purchaseRequestItems)
     .where(inArray(purchaseRequestItems.id, [...input.links.keys()]))
-  const coverage = await getActiveOrderedQuantitiesTx(tx, items.map((item) => item.id))
+  const itemById = new Map(rows.map((row) => [row.id, row]))
+  const coverage = await getActiveOrderedQuantitiesTx(tx, rows.map((item) => item.id))
 
   const reverted: string[] = []
-  for (const item of items) {
-    const linkedProductId = input.links.get(item.id)
-    if (!linkedProductId || item.productId !== linkedProductId) continue
+  const revertedIds = new Set<string>()
+  // Orden de árbol: un descendiente que sólo heredó el vínculo cae si cae su
+  // padre. Si el padre lo conserva (otra OC viva lo compra), el remanente que
+  // esa compra dejó también lo conserva.
+  for (const [itemId, link] of input.links) {
+    const item = itemById.get(itemId)
+    if (!item || item.productId !== link.productId) continue
+    if (link.inheritedFrom && !revertedIds.has(link.inheritedFrom)) continue
     if ((coverage.get(item.id) ?? 0) > PURCHASE_COVERAGE_EPSILON) continue
     if (!item.productNameFree?.trim()) continue
 
@@ -113,10 +161,11 @@ export async function revertOrderSparePartLinksTx(
       action:     "update",
       entityType: "request_item",
       entityId:   item.id,
-      oldState:   { productId: linkedProductId },
+      oldState:   { productId: link.productId },
       newState:   { productId: null, unlinkedFrom: "purchase_order", purchaseOrderId: input.orderId },
     }, tx)
     reverted.push(item.id)
+    revertedIds.add(item.id)
   }
   return reverted
 }

@@ -40,6 +40,7 @@ const { IDS, seedMantFixtures } = await import("./mantencion-sync-fixtures")
 const catalog = await import("@/lib/services/spare-parts-catalog")
 const { createOrder, issueAndSendOrder, cancelOrder, deleteOrder } = await import("@/lib/services/purchasing")
 const { applyMovementTx } = await import("@/lib/services/stock-movement")
+const { setProductSupplierPriceTx } = await import("@/lib/services/product-supplier-prices")
 
 const now = new Date().toISOString()
 let seq = 0
@@ -274,6 +275,46 @@ describe("catálogo de repuestos · vincular al armar la OC y precio al emitir",
       expect((await ocLines(second))[0]!.productId).toBe(partA.id)
     })
 
+    it("el remanente de un remanente también vuelve a texto libre", async () => {
+      const { itemId } = await freeTextItem({ quantity: 5 })
+      const orderA = await orderFor(itemId, partA.id, { quantity: 2 })
+      const remainder = await siblingOf(itemId)
+      // La OC B compra parte del remanente: el nuevo remanente hereda el repuesto
+      // sin marca propia (B no vinculó nada, el ítem ya venía vinculado por A).
+      const orderB = await orderFor(remainder.id, partA.id, { quantity: 1 })
+      const second = await siblingOf(remainder.id)
+      expect(second.productId).toBe(partA.id)
+
+      await cancelOrder(orderB, IDS.jefe, "Proveedor sin stock")
+      await cancelOrder(orderA, IDS.jefe, "Repuesto equivocado")
+      for (const id of [itemId, remainder.id, second.id]) {
+        expect(await requestItem(id)).toMatchObject({ productId: null, productNameFree: "Filtro de aire" })
+      }
+    })
+
+    it("si el remanente sigue en otra OC viva, su propio remanente conserva el vínculo", async () => {
+      const { itemId } = await freeTextItem({ quantity: 5 })
+      const orderA = await orderFor(itemId, partA.id, { quantity: 2 })
+      const remainder = await siblingOf(itemId)
+      await orderFor(remainder.id, partA.id, { quantity: 1 })
+      const second = await siblingOf(remainder.id)
+
+      await cancelOrder(orderA, IDS.jefe, "Repuesto equivocado")
+      expect((await requestItem(itemId)).productId).toBeNull()
+      expect((await requestItem(remainder.id)).productId).toBe(partA.id)
+      expect((await requestItem(second.id)).productId).toBe(partA.id)
+    })
+
+    it("una línea sin texto libre conserva el vínculo para no quedar sin nombre", async () => {
+      const { itemId } = await freeTextItem({ quantity: 1 })
+      const orderId = await orderFor(itemId, partA.id, { quantity: 1 })
+      await testDb.update(schema.purchaseRequestItems)
+        .set({ productNameFree: "   " })
+        .where(eq(schema.purchaseRequestItems.id, itemId))
+      await deleteOrder(orderId, IDS.jefe)
+      expect((await requestItem(itemId)).productId).toBe(partA.id)
+    })
+
     it("el repuesto que eligió quien pidió no se toca al anular ni al eliminar", async () => {
       const cancelled = await freeTextItem({ quantity: 1, productId: partA.id })
       const sent = await orderFor(cancelled.itemId, partA.id, { quantity: 1 })
@@ -302,6 +343,17 @@ describe("catálogo de repuestos · vincular al armar la OC y precio al emitir",
       const { itemId } = await freeTextItem({ quantity: 1, unitOfMeasure: " Juego" })
       const orderId = await orderFor(itemId, kit.id, { quantity: 1, unitOfMeasure: " Juego" })
       expect((await ocLines(orderId))[0]!.productId).toBe(kit.id)
+    })
+
+    it("al emitir, la unidad con espacio duro o tabulación vale igual que al vincular", async () => {
+      const part = await createPart("Filtro de cabina", "FC-013", "unidad")
+      // String.trim() quita el espacio duro y la tabulación; trim() de Postgres
+      // sólo quita espacios. El vínculo y el precio tienen que decir lo mismo.
+      const { itemId } = await freeTextItem({ quantity: 1, unitOfMeasure: "\tUnidad\u00a0" })
+      const orderId = await orderFor(itemId, part.id, { quantity: 1, unitPrice: 15_000 })
+      expect((await ocLines(orderId))[0]).toMatchObject({ productId: part.id, unitOfMeasure: "\tUnidad\u00a0" })
+      await issueAndSendOrder(orderId, IDS.jefe)
+      expect(await supplierPrice(part.id)).toMatchObject({ unitPrice: 15_000 })
     })
 
     it("al emitir, una línea en otra unidad que el repuesto no escribe su precio", async () => {
@@ -396,6 +448,84 @@ describe("catálogo de repuestos · vincular al armar la OC y precio al emitir",
       await issueAndSendOrder(await orderFor(itemId, part.id, { unitPrice: 5_000, quantity: 1 }), IDS.jefe)
       expect(await supplierPrice(part.id)).toMatchObject({ unitPrice: 9_999 })
       expect(await priceHistory(part.id)).toHaveLength(0)
+    })
+
+    it("anular la OC más nueva devuelve el precio de la anterior", async () => {
+      const part = await createPart("Disco de freno", "DF-410")
+      const first = await freeTextItem({ quantity: 1 })
+      const orderOne = await orderFor(first.itemId, part.id, { unitPrice: 12_000, quantity: 1 })
+      await issueAndSendOrder(orderOne, IDS.jefe)
+      const second = await freeTextItem({ quantity: 1 })
+      const orderTwo = await orderFor(second.itemId, part.id, { unitPrice: 13_500, quantity: 1 })
+      await issueAndSendOrder(orderTwo, IDS.jefe)
+
+      await cancelOrder(orderTwo, IDS.jefe, "Precio mal cotizado")
+      const history = await priceHistory(part.id)
+      expect(history).toHaveLength(1)
+      expect(history[0]).toMatchObject({ sourceId: orderOne, newPrice: 12_000 })
+      const price = await supplierPrice(part.id)
+      expect(price).toMatchObject({ unitPrice: 12_000 })
+      // La vigencia vuelve a ser la de la OC que quedó: una factura entre ambas
+      // OC no debe chocar con la fecha de la anulada.
+      expect(new Date(price!.lastUpdated).getTime()).toBe(new Date(history[0]!.effectiveDate).getTime())
+    })
+
+    it("anular la OC más vieja no toca el precio vigente de la más nueva", async () => {
+      const part = await createPart("Tambor de freno", "TF-411")
+      const first = await freeTextItem({ quantity: 1 })
+      const orderOne = await orderFor(first.itemId, part.id, { unitPrice: 12_000, quantity: 1 })
+      await issueAndSendOrder(orderOne, IDS.jefe)
+      const second = await freeTextItem({ quantity: 1 })
+      const orderTwo = await orderFor(second.itemId, part.id, { unitPrice: 13_500, quantity: 1 })
+      await issueAndSendOrder(orderTwo, IDS.jefe)
+
+      await cancelOrder(orderOne, IDS.jefe, "Duplicada")
+      expect((await priceHistory(part.id)).map((row) => row.sourceId)).toEqual([orderTwo])
+      expect(await supplierPrice(part.id)).toMatchObject({ unitPrice: 13_500 })
+    })
+
+    it("anular la única OC deja al repuesto sin precio con ese proveedor", async () => {
+      const part = await createPart("Manguera hidráulica", "MH-412")
+      const { itemId } = await freeTextItem({ quantity: 1 })
+      const orderId = await orderFor(itemId, part.id, { unitPrice: 22_000, quantity: 1 })
+      await issueAndSendOrder(orderId, IDS.jefe)
+      expect(await supplierPrice(part.id)).toMatchObject({ unitPrice: 22_000 })
+
+      await cancelOrder(orderId, IDS.jefe, "Proveedor equivocado")
+      expect(await priceHistory(part.id)).toHaveLength(0)
+      expect(await supplierPrice(part.id)).toBeNull()
+    })
+
+    it("un precio de conciliación posterior a la OC no se toca al anularla", async () => {
+      const part = await createPart("Correa de alternador", "CA-413")
+      const { itemId } = await freeTextItem({ quantity: 1 })
+      const orderId = await orderFor(itemId, part.id, { unitPrice: 10_000, quantity: 1 })
+      await issueAndSendOrder(orderId, IDS.jefe)
+      await testDb.transaction((tx) => setProductSupplierPriceTx(tx as unknown as Tx, {
+        productId: part.id, supplierId: "sup-a", unitPrice: 11_000, source: "invoice_reconciliation",
+        sourceId: "fac-1", effectiveAt: new Date(Date.now() + 60_000).toISOString(), rejectOlderThanCurrent: true,
+      }))
+
+      await cancelOrder(orderId, IDS.jefe, "Anulada después de facturar")
+      const history = await priceHistory(part.id)
+      expect(history.map((row) => row.source)).toEqual(["invoice_reconciliation"])
+      expect(await supplierPrice(part.id)).toMatchObject({ unitPrice: 11_000 })
+    })
+
+    it("anular la OC devuelve el precio de conciliación que había antes", async () => {
+      const part = await createPart("Filtro de aceite", "FA-414")
+      await testDb.transaction((tx) => setProductSupplierPriceTx(tx as unknown as Tx, {
+        productId: part.id, supplierId: "sup-a", unitPrice: 9_000, source: "invoice_reconciliation",
+        sourceId: "fac-2", effectiveAt: new Date(Date.now() - 86_400_000).toISOString(),
+      }))
+      const { itemId } = await freeTextItem({ quantity: 1 })
+      const orderId = await orderFor(itemId, part.id, { unitPrice: 10_000, quantity: 1 })
+      await issueAndSendOrder(orderId, IDS.jefe)
+      expect(await supplierPrice(part.id)).toMatchObject({ unitPrice: 10_000 })
+
+      await cancelOrder(orderId, IDS.jefe, "Precio mal cotizado")
+      expect((await priceHistory(part.id)).map((row) => row.source)).toEqual(["invoice_reconciliation"])
+      expect(await supplierPrice(part.id)).toMatchObject({ unitPrice: 9_000 })
     })
 
     it("una OC de EPP no escribe precios", async () => {

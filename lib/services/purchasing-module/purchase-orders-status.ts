@@ -3,9 +3,17 @@
  * All DB mutations here, never in Server Actions or UI components.
  */
 
-import { eq, and, gt, inArray, isNotNull, sql } from "drizzle-orm"
+import { eq, and, desc, gt, inArray, isNotNull } from "drizzle-orm"
 import { db } from "@/db"
-import { products, purchaseOrders, purchaseOrderItems, purchaseRequestItems, suppliers } from "@/db/schema"
+import {
+  productSupplierPriceHistory,
+  productSuppliers,
+  products,
+  purchaseOrders,
+  purchaseOrderItems,
+  purchaseRequestItems,
+  suppliers,
+} from "@/db/schema"
 import { recordAudit, recordStatusChange, recordStatusChanges } from "@/lib/audit"
 import { setProductSupplierPriceTx } from "@/lib/services/product-supplier-prices"
 import { lockRequestsForRollupTx, rollupRequestStatus } from "@/lib/services/item-state-module/rollup"
@@ -15,6 +23,7 @@ import {
   PURCHASE_COVERAGE_EPSILON,
 } from "./purchasable-coverage"
 import { findOrderSparePartLinksTx, revertOrderSparePartLinksTx } from "./spare-part-link-revert"
+import { normalizeUnitOfMeasure } from "./spare-part-unit"
 
 /* ── Emitir y enviar (draft → sent) ─────────────────────────────────────────────
  * Fusión 2026-08-07: "emitir" y "enviar al proveedor" eran dos pasos (draft →
@@ -74,6 +83,8 @@ async function recordSparePartPricesTx(
       quantity:   purchaseOrderItems.quantity,
       unitPrice:  purchaseOrderItems.unitPrice,
       discount:   purchaseOrderItems.discount,
+      lineUnit:   purchaseOrderItems.unitOfMeasure,
+      partUnit:   products.unitOfMeasure,
     })
     .from(purchaseOrderItems)
     .innerJoin(products, eq(products.id, purchaseOrderItems.productId))
@@ -82,15 +93,17 @@ async function recordSparePartPricesTx(
       eq(products.isSparePart, true),
       isNotNull(purchaseOrderItems.unitPrice),
       gt(purchaseOrderItems.unitPrice, 0),
-      // Precio por «juego» no es precio por «unidad»: una línea en otra unidad
-      // que la del repuesto no informa su precio (misma normalización que
-      // `normalizeUnitOfMeasure` de `spare-part-unit.ts`).
-      sql`lower(trim(${purchaseOrderItems.unitOfMeasure})) = lower(trim(${products.unitOfMeasure}))`,
     ))
     .orderBy(purchaseOrderItems.sortOrder, purchaseOrderItems.id)
 
   for (const line of lines) {
     if (!line.productId || line.unitPrice === null || line.quantity <= 0) continue
+    // Precio por «juego» no es precio por «unidad»: una línea en otra unidad que
+    // la del repuesto no informa su precio. Se compara en JS con el mismo
+    // normalizador que valida el vínculo al armar la OC: `trim()` de Postgres
+    // sólo quita espacios y dejaba fuera una unidad con tabulación o espacio
+    // duro que el vínculo sí había aceptado.
+    if (normalizeUnitOfMeasure(line.lineUnit) !== normalizeUnitOfMeasure(line.partUnit)) continue
     const netUnitPrice = line.unitPrice * (1 - (line.discount ?? 0) / 100)
     if (!(netUnitPrice > 0)) continue
     await setProductSupplierPriceTx(tx, {
@@ -103,6 +116,86 @@ async function recordSparePartPricesTx(
       userId:     input.userId,
       rejectOlderThanCurrent: true,
     })
+  }
+}
+
+/**
+ * Catálogo de repuestos: anular una OC emitida retira el precio que escribió.
+ *
+ * Una OC anulada no es un precio acordado; dejarlo vigente hacía que «¿cuánto
+ * pagamos la última vez?» respondiera con una compra que no ocurrió. Para cada
+ * repuesto y proveedor que la OC registró (fuente `purchase_order` con su id):
+ *
+ * - Sus filas de historial se borran: la OC ya no es evidencia de precio.
+ * - `product_suppliers` no guarda de dónde vino su precio vigente; se infiere
+ *   del historial. Vino de esta OC si la fila más reciente es suya y su precio
+ *   es el vigente. Sólo entonces se toca: si después escribió otra OC o una
+ *   factura conciliada, ese precio manda y se deja como está.
+ * - Se restaura la fila más reciente que queda (precio y vigencia). Sin
+ *   historial restante, el precio previo que la OC anotó al escribir (un precio
+ *   anterior al historial); si no había precio previo, la relación la creó esta
+ *   OC y se elimina, salvo que alguien la haya marcado preferida o anotado algo
+ *   en ella desde entonces: en ese caso se conserva sin precio.
+ */
+async function revertSparePartPricesTx(tx: PriceTx, orderId: string): Promise<void> {
+  const written = await tx
+    .selectDistinct({
+      productId:  productSupplierPriceHistory.productId,
+      supplierId: productSupplierPriceHistory.supplierId,
+    })
+    .from(productSupplierPriceHistory)
+    .where(and(
+      eq(productSupplierPriceHistory.source, "purchase_order"),
+      eq(productSupplierPriceHistory.sourceId, orderId),
+    ))
+    .orderBy(productSupplierPriceHistory.productId, productSupplierPriceHistory.supplierId)
+
+  for (const { productId, supplierId } of written) {
+    const [relation] = await tx
+      .select()
+      .from(productSuppliers)
+      .where(and(eq(productSuppliers.productId, productId), eq(productSuppliers.supplierId, supplierId)))
+      .for("update")
+    const history = await tx
+      .select()
+      .from(productSupplierPriceHistory)
+      .where(and(
+        eq(productSupplierPriceHistory.productId, productId),
+        eq(productSupplierPriceHistory.supplierId, supplierId),
+      ))
+      .orderBy(
+        desc(productSupplierPriceHistory.effectiveDate),
+        desc(productSupplierPriceHistory.createdAt),
+      )
+    const isOwn = (row: (typeof history)[number]) => row.source === "purchase_order" && row.sourceId === orderId
+    const own = history.filter(isOwn)
+    const remaining = history.filter((row) => !isOwn(row))
+
+    await tx.delete(productSupplierPriceHistory).where(inArray(productSupplierPriceHistory.id, own.map((row) => row.id)))
+
+    const newest = history[0]
+    if (!relation || !newest || !isOwn(newest) || relation.unitPrice !== newest.newPrice) continue
+
+    const restore = remaining[0]
+    if (restore) {
+      await tx.update(productSuppliers)
+        .set({ unitPrice: restore.newPrice, lastUpdated: restore.effectiveDate })
+        .where(eq(productSuppliers.id, relation.id))
+      continue
+    }
+    // `own` va del más nuevo al más viejo: el último es la primera escritura.
+    const previousPrice = own[own.length - 1]!.previousPrice
+    if (previousPrice !== null) {
+      await tx.update(productSuppliers)
+        .set({ unitPrice: previousPrice })
+        .where(eq(productSuppliers.id, relation.id))
+    } else if (!relation.isPreferred && !relation.notes) {
+      await tx.delete(productSuppliers).where(eq(productSuppliers.id, relation.id))
+    } else {
+      await tx.update(productSuppliers)
+        .set({ unitPrice: null })
+        .where(eq(productSuppliers.id, relation.id))
+    }
   }
 }
 
@@ -355,6 +448,9 @@ export async function cancelOrder(
         tx,
       )
     }
+
+    // El precio que esta OC escribió al emitirse cae con ella.
+    await revertSparePartPricesTx(tx, orderId)
 
     // Con las líneas de esta OC ya anuladas, el vínculo que ella hizo cae.
     await revertOrderSparePartLinksTx(tx, {
