@@ -96,6 +96,7 @@ export async function planAutoLinksTx(tx: Tx, purchaseOrderId: string): Promise<
       productNameFree: purchaseOrderItems.productNameFree,
       productName: products.name,
       productCode: products.sku,
+      partNumber: products.partNumber,
       unitOfMeasure: purchaseOrderItems.unitOfMeasure,
     })
     .from(purchaseOrderItems)
@@ -115,6 +116,7 @@ export async function planAutoLinksTx(tx: Tx, purchaseOrderId: string): Promise<
     productId: item.productId,
     productName: item.productNameFree ?? item.productName ?? item.id,
     productCode: item.productCode ?? null,
+    partNumber: item.partNumber ?? null,
     unitOfMeasure: item.unitOfMeasure,
     sizeLabel: item.productId ? sizes.get(item.productId)?.label ?? null : null,
   }))

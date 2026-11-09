@@ -12,6 +12,13 @@ export interface PurchaseOrderItemForMatching {
   id: string
   productName: string
   productCode: string | null
+  /**
+   * N° de parte del fabricante de un repuesto de catálogo (`products.part_number`).
+   * Los proveedores de repuestos facturan con su propio código, que casi siempre
+   * es ese número y no nuestro SKU (`RPT-001`): el paso de código compara la
+   * línea del documento contra el SKU **o** contra este número.
+   */
+  partNumber?: string | null
   unitOfMeasure: string
   /**
    * Talla de la variante. El catálogo guarda el mismo nombre en todas las
@@ -44,8 +51,13 @@ export function matchInvoiceItemsToPurchaseOrderItems<T extends InvoiceItemForMa
 
   return extractedItems.map((item) => {
     const documentSize = documentSizeOf(item)
-    const byCode = item.productCode
-      ? ocItems.filter((ocItem) => !claimedOrderItemIds.has(ocItem.id) && normalizeCode(ocItem.productCode) === normalizeCode(item.productCode))
+    // Un código que al normalizarse queda vacío («---») no identifica nada: sin
+    // esta guarda igualaría a toda línea de OC sin SKU ni N° de parte.
+    const documentCode = normalizeCode(item.productCode)
+    const byCode = documentCode
+      ? ocItems.filter((ocItem) => !claimedOrderItemIds.has(ocItem.id) && (
+        normalizeCode(ocItem.productCode) === documentCode || normalizeCode(ocItem.partNumber) === documentCode
+      ))
       : []
     const codeResolution = resolveCandidate(sizeCompatible(byCode, documentSize), item.unitOfMeasure)
     if (codeResolution.candidate) {
