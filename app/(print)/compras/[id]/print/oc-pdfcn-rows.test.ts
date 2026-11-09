@@ -66,6 +66,26 @@ describe("buildOcPdfRows", () => {
     ])
   })
 
+  it("una línea catalogada como repuesto dice el nombre, el SKU y su N° de parte una sola vez", () => {
+    // Compras la catalogó al armar la OC: conserva el texto y el N° de parte libres.
+    const rows = buildOcPdfRows(data([item({
+      productId: "rpt-1",
+      productNameFree: "filtro aceite cat",
+      requestItem: {
+        equipment: null, worker: null,
+        attributes: [
+          { id: "a1", attributeName: "N° de Parte", value: "1r 0750" },
+          { id: "a2", attributeName: "Equipo", value: "Camión KA-135" },
+        ],
+      },
+    } as unknown as Partial<Item>)], {
+      "rpt-1": { id: "rpt-1", sku: "RPT-001", name: "Filtro de aceite", isSparePart: true, partNumber: "1R-0750" },
+    }))
+
+    expect(rows[0]).toMatchObject({ sku: "RPT-001", nombre: "Filtro de aceite" })
+    expect(rows[0]?.notas).toEqual(["N° de parte: 1R-0750", "Equipo: Camión KA-135"])
+  })
+
   it("omite el número de serie cuando no lo hay", () => {
     const rows = buildOcPdfRows(data([item({
       requestItem: { equipment: { code: "EQ-02", name: "Compactador", serialNumber: null }, worker: null, attributes: [] },

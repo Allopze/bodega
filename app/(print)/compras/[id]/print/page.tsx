@@ -1,4 +1,5 @@
 import { mergeVariantAttributes } from "@/lib/products/variant-grouping"
+import { withCatalogPartNumber } from "@/lib/products/spare-part-display"
 import { redirect } from "next/navigation"
 import Image from "next/image"
 import { requireAuth, canAny } from "@/lib/auth/can"
@@ -129,7 +130,8 @@ export default async function PrintOcPage({ params }: { params: Promise<{ id: st
                 const name    = product?.name ?? item.productNameFree ?? "Producto sin nombre"
                 const sku     = product?.sku ?? ""
                 const attributes = mergeVariantAttributes(product?.attributes ?? [],
-                  item.requestItem?.attributes.map((a) => ({ name: a.attributeName, value: a.value })) ?? [])
+                  // Un repuesto de catálogo dice su N° de parte una vez; el libre de la línea no se repite.
+                  withCatalogPartNumber(product, item.requestItem?.attributes).map((a) => ({ name: a.attributeName, value: a.value })))
                 const equipment = item.requestItem?.equipment
                 const worker    = item.requestItem?.worker
 

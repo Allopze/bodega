@@ -1,4 +1,5 @@
 import { getProductAttributesByIds, getRequestItemAttributesByIds } from "@/lib/services/product-sizes"
+import { withCatalogPartNumber } from "@/lib/products/spare-part-display"
 import { formatVariantProductName } from "@/lib/products/variant-grouping"
 import type { Metadata } from "next"
 import { redirect, notFound } from "next/navigation"
@@ -67,7 +68,7 @@ export default async function NuevaRecepcionPage({
   const productRows = productIds.length > 0
     ? await db.query.products.findMany({
         where: (p, { inArray }) => inArray(p.id, productIds),
-        columns: { id: true, sku: true, name: true, serviceSubjectKind: true },
+        columns: { id: true, sku: true, name: true, serviceSubjectKind: true, isSparePart: true, partNumber: true },
       })
     : []
 
@@ -116,12 +117,20 @@ export default async function NuevaRecepcionPage({
     disposedByItem.set(row.purchaseOrderItemId, entry)
   }
 
+  // Un repuesto de catálogo dice su N° de parte una vez; el libre que queda en la
+  // línea catalogada al armar la OC no se repite.
+  const recordedForDisplay = (
+    product: { isSparePart: boolean; partNumber: string | null } | null | undefined,
+    recorded: Array<{ name: string; value: string }> | undefined,
+  ) => withCatalogPartNumber(product, recorded?.map((attribute) => ({ attributeName: attribute.name, value: attribute.value })))
+    .map((attribute) => ({ name: attribute.attributeName, value: attribute.value }))
+
   const items: ReceiptOcItem[] = order.items.map((item) => {
     const product = item.productId ? productMap[item.productId] : null
     return {
       id:               item.id,
       requestItemId:    item.requestItemId,
-      productName:      formatVariantProductName(productRows.find((p) => p.id === item.productId)?.name ?? item.productNameFree ?? "(sin nombre)", item.productId ? attributesById.get(item.productId) : [], item.requestItemId ? recordedById.get(item.requestItemId) : []),
+      productName:      formatVariantProductName(productRows.find((p) => p.id === item.productId)?.name ?? item.productNameFree ?? "(sin nombre)", item.productId ? attributesById.get(item.productId) : [], item.requestItemId ? recordedForDisplay(product, recordedById.get(item.requestItemId)) : []),
       productSku:       product?.sku ?? null,
       quantity:         item.quantity,
       quantityOfficeReceived: item.quantityOfficeReceived ?? 0,

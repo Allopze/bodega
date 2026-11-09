@@ -1,0 +1,35 @@
+import { describe, expect, it } from "vitest"
+import { CATALOG_PART_NUMBER_LABEL, isFreePartNumberAttribute, withCatalogPartNumber } from "./spare-part-display"
+
+const RECORDED = [
+  { attributeName: "N° de Parte", value: "1r 0750" },
+  { attributeName: "Equipo", value: "Camión KA-135" },
+]
+
+describe("withCatalogPartNumber", () => {
+  it("con un repuesto de catálogo, el N° de parte libre se reemplaza por el del repuesto, una sola vez", () => {
+    expect(withCatalogPartNumber({ isSparePart: true, partNumber: "1R-0750" }, RECORDED)).toEqual([
+      { attributeName: CATALOG_PART_NUMBER_LABEL, value: "1R-0750" },
+      { attributeName: "Equipo", value: "Camión KA-135" },
+    ])
+  })
+
+  it("un repuesto sin N° de parte sólo esconde el libre", () => {
+    expect(withCatalogPartNumber({ isSparePart: true, partNumber: null }, RECORDED)).toEqual([
+      { attributeName: "Equipo", value: "Camión KA-135" },
+    ])
+  })
+
+  it("sin repuesto, o con un producto que no es repuesto, no cambia nada", () => {
+    expect(withCatalogPartNumber(null, RECORDED)).toEqual(RECORDED)
+    expect(withCatalogPartNumber({ isSparePart: false, partNumber: "X" }, RECORDED)).toEqual(RECORDED)
+    expect(withCatalogPartNumber({ isSparePart: true, partNumber: "X" }, undefined)).toEqual([
+      { attributeName: CATALOG_PART_NUMBER_LABEL, value: "X" },
+    ])
+  })
+
+  it("reconoce el atributo libre sin importar mayúsculas ni espacios", () => {
+    expect(isFreePartNumberAttribute(" n° de parte ")).toBe(true)
+    expect(isFreePartNumberAttribute("Marca")).toBe(false)
+  })
+})

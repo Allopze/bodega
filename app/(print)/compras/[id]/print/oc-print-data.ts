@@ -15,7 +15,11 @@ import { clpAmountToWords } from "./oc-number-to-words"
 export interface OcPrintData {
   order: NonNullable<Awaited<ReturnType<typeof loadOrderWithRelations>>>
   company: Awaited<ReturnType<typeof getCompanyProfile>>
-  productMap: Record<string, { id: string; sku: string; name: string; attributes?: VariantAttribute[] }>
+  productMap: Record<string, {
+    id: string; sku: string; name: string; attributes?: VariantAttribute[]
+    /** Repuesto de catálogo: su N° de parte reemplaza al libre de la línea (`withCatalogPartNumber`). */
+    isSparePart?: boolean; partNumber?: string | null
+  }>
   issuedDate: string
   authorizedByName: string | null
   authorizedDate: string | null
@@ -73,7 +77,7 @@ export async function loadOcPrintDataOrNull(
   const products = productIds.length > 0
     ? await db.query.products.findMany({
         where: (p, { inArray }) => inArray(p.id, productIds),
-        columns: { id: true, sku: true, name: true },
+        columns: { id: true, sku: true, name: true, isSparePart: true, partNumber: true },
       })
     : []
   const attributesById = await getProductAttributesByIds(productIds)

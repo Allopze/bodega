@@ -1,4 +1,5 @@
 import { getProductAttributesByIds } from "@/lib/services/product-sizes"
+import { withCatalogPartNumber } from "@/lib/products/spare-part-display"
 import { formatVariantProductName } from "@/lib/products/variant-grouping"
 import type { Metadata } from "next"
 import Link from "next/link"
@@ -77,7 +78,7 @@ export default async function RecepcionDetallePage({
   const productRows = productIds.length > 0
     ? await db.query.products.findMany({
         where: (product, { inArray }) => inArray(product.id, [...new Set(productIds)]),
-        columns: { id: true, sku: true, name: true },
+        columns: { id: true, sku: true, name: true, isSparePart: true, partNumber: true },
       })
     : []
 
@@ -100,6 +101,11 @@ export default async function RecepcionDetallePage({
 
   const attributesById = await getProductAttributesByIds(productIds)
   const productMap = Object.fromEntries(productRows.map((product) => [product.id, { ...product, attributes: attributesById.get(product.id) }]))
+  // Un repuesto de catálogo dice su N° de parte una vez; el libre que queda en la
+  // línea catalogada al armar la OC no se repite.
+  const recordedAttributes = (ocItem: (typeof receipt.items)[number]["purchaseOrderItem"]) =>
+    withCatalogPartNumber(ocItem.productId ? productMap[ocItem.productId] : null, ocItem.requestItem?.attributes)
+      .map((attribute) => ({ name: attribute.attributeName, value: attribute.value }))
   const destinationLabel = receipt.locationType === "office"
     ? officeLabel
     : formatWorksiteLabel(receipt.worksite?.name ?? receipt.purchaseOrder.worksite?.name ?? "").trim()
@@ -123,14 +129,11 @@ export default async function RecepcionDetallePage({
       const product = ocItem.productId ? productMap[ocItem.productId] : null
       return {
         id:               item.id,
-        productName:      formatVariantProductName(product?.name ?? ocItem.productNameFree ?? "(sin nombre)", product?.attributes, ocItem.requestItem?.attributes.map((a) => ({ name: a.attributeName, value: a.value }))),
+        productName:      formatVariantProductName(product?.name ?? ocItem.productNameFree ?? "(sin nombre)", product?.attributes, recordedAttributes(ocItem)),
         quantity:         ocItem.quantity,
         unitOfMeasure:    ocItem.unitOfMeasure,
         quantityReceived: ocItem.quantityReceived ?? 0,
-        attributes:       ocItem.requestItem?.attributes.map((attribute) => ({
-          name: attribute.attributeName,
-          value: attribute.value,
-        })) ?? [],
+        attributes:       recordedAttributes(ocItem),
       }
     }),
     // A-10: el panel es compartido con /compras/[id]; sin declarar la audiencia
@@ -194,7 +197,7 @@ export default async function RecepcionDetallePage({
                   {receipt.items.map((item) => {
                     const ocItem = item.purchaseOrderItem
                     const product = ocItem.productId ? productMap[ocItem.productId] : null
-                    const productName = formatVariantProductName(product?.name ?? ocItem.productNameFree ?? "(sin nombre)", product?.attributes, ocItem.requestItem?.attributes.map((a) => ({ name: a.attributeName, value: a.value })))
+                    const productName = formatVariantProductName(product?.name ?? ocItem.productNameFree ?? "(sin nombre)", product?.attributes, recordedAttributes(ocItem))
                     const pendingToFaena = Math.max(0, (ocItem.quantityOfficeReceived ?? 0) - (ocItem.quantityReceived ?? 0))
                     const flagged = (item.quantityRejected ?? 0) > 0 || (item.quantityDamaged ?? 0) > 0
 

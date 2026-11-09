@@ -1,5 +1,6 @@
 import { getProductAttributesByIds } from "@/lib/services/product-sizes"
 import { resolveProductSize } from "@/lib/products/product-size"
+import { withCatalogPartNumber } from "@/lib/products/spare-part-display"
 import { formatVariantProductName } from "@/lib/products/variant-grouping"
 import type { Metadata } from "next"
 import Link from "next/link"
@@ -143,7 +144,7 @@ export default async function OcDetailPage({
     productIds.length > 0
       ? db.query.products.findMany({
           where: (p, { inArray }) => inArray(p.id, productIds),
-          columns: { id: true, sku: true, name: true, partNumber: true },
+          columns: { id: true, sku: true, name: true, partNumber: true, isSparePart: true },
         })
       : Promise.resolve([]),
 
@@ -256,9 +257,17 @@ export default async function OcDetailPage({
 
   const attributesById = await getProductAttributesByIds(productIds)
   const productMap = Object.fromEntries(productRows.map((product) => [product.id, { ...product, attributes: attributesById.get(product.id) }]))
+  // Una línea catalogada al armar la OC conserva su N° de parte libre (deshacer
+  // el vínculo lo necesita); se muestra el del repuesto, una sola vez.
+  const ocProductByRequestItem = new Map(order.items.flatMap((item) =>
+    item.requestItemId && item.productId ? [[item.requestItemId, item.productId] as const] : []))
+  const requestItemsForDisplay = requestItemRows.map((row) => {
+    const productId = ocProductByRequestItem.get(row.id)
+    return { ...row, attributes: withCatalogPartNumber(productId ? productMap[productId] : null, row.attributes) }
+  })
   const itemName = (item: { productId: string | null; productNameFree: string | null; requestItemId: string | null }) => {
     const product = item.productId ? productMap[item.productId] : undefined
-    const recorded = requestItemRows.find((row) => row.id === item.requestItemId)?.attributes
+    const recorded = requestItemsForDisplay.find((row) => row.id === item.requestItemId)?.attributes
     return formatVariantProductName(product?.name ?? item.productNameFree ?? "Ítem", product?.attributes,
       recorded?.map((a) => ({ name: a.attributeName, value: a.value })))
   }
@@ -418,7 +427,7 @@ export default async function OcDetailPage({
     : null
 
   // Build maps
-  const reqItemMap = Object.fromEntries(requestItemRows.map((ri) => [ri.id, ri]))
+  const reqItemMap = Object.fromEntries(requestItemsForDisplay.map((ri) => [ri.id, ri]))
 
   const canManage      = session.user.permissions.includes("purchasing:create_order")
   const canSend        = session.user.permissions.includes("purchasing:send_order")

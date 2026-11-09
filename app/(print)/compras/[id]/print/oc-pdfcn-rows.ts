@@ -1,4 +1,5 @@
 import { mergeVariantAttributes } from "@/lib/products/variant-grouping"
+import { withCatalogPartNumber } from "@/lib/products/spare-part-display"
 /**
  * Aplana una OC en las filas que imprime la tabla de ítems.
  *
@@ -40,7 +41,8 @@ export function buildOcPdfRows(data: OcPrintData): OcPdfRow[] {
     const equipment = item.requestItem?.equipment
     const worker    = item.requestItem?.worker
     const attributes = mergeVariantAttributes(product?.attributes ?? [],
-      item.requestItem?.attributes.map((a) => ({ name: a.attributeName, value: a.value })) ?? [])
+      // Un repuesto de catálogo dice su N° de parte una vez; el libre de la línea no se repite.
+      withCatalogPartNumber(product, item.requestItem?.attributes).map((a) => ({ name: a.attributeName, value: a.value })))
 
     const notas: string[] = []
     if (equipment) {

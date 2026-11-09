@@ -18,6 +18,7 @@ import { getOperationalSettings, getPdfMaxSizeMb } from "@/lib/services/system-s
 import { listVehicleOptionsForRequests } from "@/lib/services/request-vehicle-options"
 import { listSpareParts } from "@/lib/services/spare-parts-catalog"
 import { buildSparePartOptions, sparePartFacts } from "../spare-part-options"
+import { isFreePartNumberAttribute } from "@/lib/products/spare-part-display"
 import { vehicleLabel } from "@/lib/services/fleet"
 import { buildRequirementHint } from "./requirement-hint"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
@@ -401,12 +402,16 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
       quantity:      item.quantity,
       unitOfMeasure: item.unitOfMeasure,
       attributes:    [
-        // Con un repuesto de catálogo, SKU, N° de parte y marca salen del producto.
+        // Con un repuesto de catálogo, SKU, N° de parte y marca salen del producto;
+        // el N° de parte libre (que queda si Compras lo catalogó al armar la OC)
+        // no se repite.
         ...catalogPartAttributes(item.productId),
-        ...item.attributes.map((attribute) => ({
-          name: attribute.attributeName,
-          value: attribute.value,
-        })),
+        ...item.attributes
+          .filter((attribute) => !(item.productId && sparePartById.has(item.productId) && isFreePartNumberAttribute(attribute.attributeName)))
+          .map((attribute) => ({
+            name: attribute.attributeName,
+            value: attribute.value,
+          })),
       ],
     })),
   )
