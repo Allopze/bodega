@@ -17,7 +17,7 @@
  * pantalla (`repuestos:create` / `purchasing:create_order` en el buscador).
  */
 
-import { and, asc, desc, eq, inArray, isNull, ne, notInArray, or, sql } from "drizzle-orm"
+import { and, asc, desc, eq, inArray, isNull, ne, notInArray, or, sql, type AnyColumn, type SQL } from "drizzle-orm"
 import { db, type Tx } from "@/db"
 import {
   fuelVehicles,
@@ -36,7 +36,7 @@ import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { generateUniqueSkus } from "@/lib/products/product-skus"
 import { resolveActiveUnitCode } from "@/lib/services/product-unit-catalog"
-import { matchesQuery } from "@/lib/utils"
+import { escapeLikePattern } from "@/lib/utils"
 
 /* ── Tipos ───────────────────────────────────────────────────────────────── */
 
@@ -50,6 +50,18 @@ export interface ListSparePartsOptions {
   query?: string
   vehicleId?: string
   includeInactive?: boolean
+  /** Sólo estos repuestos (p. ej. los que una solicitud ya referencia). */
+  ids?: readonly string[]
+  /** Sólo los comprados para `vehicleId` o para otro de su marca y modelo. */
+  onlyVehicleMatches?: boolean
+  /** Tope de filas; sin él, todas. */
+  limit?: number
+}
+
+export interface SparePartSearchResult {
+  parts: SparePartListItem[]
+  /** Cuántos coincidían antes del tope. */
+  total: number
 }
 
 export interface SparePartListItem {
@@ -193,18 +205,7 @@ function cleanOptional(value: string | null | undefined): string | null {
   return trimmed ? trimmed : null
 }
 
-/** «1R-0750» y «1r 0750» son el mismo N° de parte para la búsqueda. */
-function compactPartNumber(value: string): string {
-  return value.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "")
-}
-
-function sameText(a: string | null | undefined, b: string | null | undefined): boolean {
-  const left = (a ?? "").trim().toLowerCase()
-  const right = (b ?? "").trim().toLowerCase()
-  return left !== "" && left === right
-}
-
-interface NormalizedSparePartInput {
+export interface NormalizedSparePartInput {
   name: string
   partNumber: string | null
   partBrand: string | null
@@ -252,6 +253,24 @@ function samePartNumberAndBrand(partNumber: string, partBrand: string | null) {
   )
 }
 
+async function findPartNumberOwner(
+  client: typeof db | Tx,
+  partNumber: string,
+  partBrand: string | null,
+  exceptId?: string,
+): Promise<string | null> {
+  const [existing] = await client
+    .select({ sku: products.sku })
+    .from(products)
+    .where(and(samePartNumberAndBrand(partNumber, partBrand), exceptId ? ne(products.id, exceptId) : undefined))
+    .limit(1)
+  return existing?.sku ?? null
+}
+
+function duplicatePartNumberMessage(sku: string | null): string {
+  return sku ? `Ya existe el repuesto ${sku} con ese N° de parte` : "Ya existe un repuesto con ese N° de parte"
+}
+
 async function assertPartNumberAvailable(
   client: typeof db | Tx,
   partNumber: string | null,
@@ -259,12 +278,32 @@ async function assertPartNumberAvailable(
   exceptId?: string,
 ) {
   if (!partNumber) return
-  const [existing] = await client
-    .select({ sku: products.sku })
-    .from(products)
-    .where(and(samePartNumberAndBrand(partNumber, partBrand), exceptId ? ne(products.id, exceptId) : undefined))
-    .limit(1)
-  if (existing) throw new Error(`Ya existe el repuesto ${existing.sku} con ese N° de parte`)
+  const sku = await findPartNumberOwner(client, partNumber, partBrand, exceptId)
+  if (sku) throw new Error(duplicatePartNumberMessage(sku))
+}
+
+/**
+ * Corre una escritura de repuesto en un savepoint y, si el índice único del N°
+ * de parte la rechaza (otra alta del mismo número ganó la carrera entre la
+ * revisión previa y la escritura), dice cuál es el repuesto que ya lo tiene,
+ * con el mismo mensaje que la revisión previa. El savepoint deja la transacción
+ * usable para esa lectura: sin él, Postgres la da por abortada.
+ */
+async function withPartNumberGuard(
+  tx: Tx,
+  data: { partNumber: string | null; partBrand: string | null },
+  write: (sp: Tx) => Promise<unknown>,
+  exceptId?: string,
+): Promise<void> {
+  try {
+    await tx.transaction(async (sp) => { await write(sp as unknown as Tx) })
+  } catch (error) {
+    if (isUniqueViolation(error) && data.partNumber) {
+      const sku = await findPartNumberOwner(tx, data.partNumber, data.partBrand, exceptId)
+      throw new Error(duplicatePartNumberMessage(sku))
+    }
+    throw error
+  }
 }
 
 function isUniqueViolation(error: unknown): boolean {
@@ -304,11 +343,13 @@ interface VehicleLinkRow {
  * de solicitud o de la línea de OC que la compra (Compras cataloga al armar la
  * OC). Las solicitudes anuladas o rechazadas no cuentan; la OC anulada o
  * eliminada tampoco aporta su vínculo.
+ *
+ * `productIds`: sólo esos repuestos (lo que devolvió la búsqueda). `null` = todo
+ * el catálogo, para la lista completa de la pantalla de gestión.
  */
-async function loadVehicleLinks(productId?: string): Promise<VehicleLinkRow[]> {
-  const sparePartIds = db.select({ id: products.id }).from(products).where(
-    productId ? and(eq(products.isSparePart, true), eq(products.id, productId)) : eq(products.isSparePart, true),
-  )
+async function loadVehicleLinks(productIds: readonly string[] | null): Promise<VehicleLinkRow[]> {
+  if (productIds !== null && productIds.length === 0) return []
+  const allSpareParts = db.select({ id: products.id }).from(products).where(eq(products.isSparePart, true))
 
   const rows = await db
     .select({
@@ -335,19 +376,23 @@ async function loadVehicleLinks(productId?: string): Promise<VehicleLinkRow[]> {
     .where(and(
       notInArray(purchaseRequests.status, DEAD_REQUEST_STATUSES),
       notInArray(purchaseRequestItems.status, DEAD_REQUEST_STATUSES),
-      or(
-        inArray(purchaseRequestItems.productId, sparePartIds),
-        inArray(purchaseOrderItems.productId, sparePartIds),
-      ),
+      productIds !== null
+        ? or(inArray(purchaseRequestItems.productId, [...productIds]), inArray(purchaseOrderItems.productId, [...productIds]))
+        : or(inArray(purchaseRequestItems.productId, allSpareParts), inArray(purchaseOrderItems.productId, allSpareParts)),
     ))
+
+  // Una línea entra si CUALQUIERA de sus dos lados es uno de los buscados, así
+  // que el otro lado puede ser un producto común: se descarta acá.
+  const spare = productIds !== null
+    ? new Set(productIds)
+    : new Set((await db.select({ id: products.id }).from(products).where(eq(products.isSparePart, true))).map((row) => row.id))
 
   const links: VehicleLinkRow[] = []
   const seen = new Set<string>()
-  const wanted = (id: string | null): id is string => id !== null && (!productId || id === productId)
   for (const row of rows) {
     const candidates = [row.requestProductId, row.orderId ? row.orderProductId : null]
     for (const candidate of candidates) {
-      if (!wanted(candidate)) continue
+      if (candidate === null || !spare.has(candidate)) continue
       const key = `${candidate}|${row.requestItemId}`
       if (seen.has(key)) continue
       seen.add(key)
@@ -363,18 +408,120 @@ async function loadVehicleLinks(productId?: string): Promise<VehicleLinkRow[]> {
       })
     }
   }
-  // Una línea entra si CUALQUIERA de sus dos lados es repuesto, así que el
-  // otro lado puede ser un producto común: se descarta acá.
-  if (productId) return links
-  const spare = new Set(
-    (await db.select({ id: products.id }).from(products).where(eq(products.isSparePart, true))).map((row) => row.id),
-  )
-  return links.filter((link) => spare.has(link.productId))
+  return links
+}
+
+/* ── Búsqueda en SQL ─────────────────────────────────────────────────────── */
+
+/*
+ * La base no tiene la extensión `unaccent` (ver migración 0177), así que el
+ * pliegue de tildes es un `translate` con las vocales acentuadas del español.
+ * Va antes de `lower`: con collation C, `lower` no baja «Á».
+ */
+const FOLD_FROM = "ÁÉÍÓÚÜÑÀÈÌÒÙÂÊÎÔÛÄËÏÖÇáéíóúüñàèìòùâêîôûäëïöç"
+const FOLD_TO   = "AEIOUUNAEIOUAEIOUAEIOCaeiouunaeiouaeiouaeioc"
+
+function foldSql(value: SQL | AnyColumn): SQL {
+  return sql`lower(translate(coalesce(${value}, ''), ${FOLD_FROM}, ${FOLD_TO}))`
+}
+
+/** Mismo pliegue que `foldSql`, del lado del texto escrito. */
+export function foldSparePartSearch(value: string): string {
+  return value.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().trim()
+}
+
+/** «1R-0750», «1r 0750» y «1r0750» son el mismo N° de parte para la búsqueda. */
+function compactSearch(value: string): string {
+  return foldSparePartSearch(value).replace(/[^a-z0-9]/g, "")
+}
+
+/**
+ * El repuesto se compró para un vehículo que cumple `vehicleCondition`: una
+ * línea de solicitud viva lo apunta, o la línea de OC (no anulada ni eliminada)
+ * que compra esa línea. Misma regla que `loadVehicleLinks`, en SQL, para ordenar
+ * y filtrar sin traer el historial completo.
+ */
+function purchasedForVehicleSql(vehicleCondition: SQL): SQL {
+  return sql`EXISTS (
+    SELECT 1 FROM ${purchaseRequestItems}
+    INNER JOIN ${purchaseRequests} ON ${purchaseRequests.id} = ${purchaseRequestItems.requestId}
+    INNER JOIN ${fuelVehicles} ON ${fuelVehicles.id} = ${purchaseRequestItems.vehicleId}
+    WHERE ${purchaseRequests.status} NOT IN ('cancelled', 'rejected')
+      AND ${purchaseRequestItems.status} NOT IN ('cancelled', 'rejected')
+      AND (
+        ${purchaseRequestItems.productId} = ${products.id}
+        OR EXISTS (
+          SELECT 1 FROM ${purchaseOrderItems}
+          INNER JOIN ${purchaseOrders} ON ${purchaseOrders.id} = ${purchaseOrderItems.purchaseOrderId}
+          WHERE ${purchaseOrderItems.requestItemId} = ${purchaseRequestItems.id}
+            AND ${purchaseOrderItems.productId} = ${products.id}
+            AND ${purchaseOrders.deletedAt} IS NULL
+            AND ${purchaseOrders.status} <> 'cancelled'
+        )
+      )
+      AND ${vehicleCondition}
+  )`
 }
 
 /* ── Lectura ─────────────────────────────────────────────────────────────── */
 
-export async function listSpareParts(opts: ListSparePartsOptions = {}): Promise<SparePartListItem[]> {
+/** Cuántos repuestos devuelve por defecto una búsqueda con tope. */
+export const SPARE_PART_SEARCH_LIMIT = 30
+
+/**
+ * Busca en el catálogo con el filtro, el orden por vehículo y el tope en SQL,
+ * y sólo después carga precios, última compra y vehículos de las filas que
+ * devuelve. Con miles de repuestos, el buscador no paga el catálogo entero.
+ *
+ * - `query`: nombre, SKU, N° de parte (también sin guiones) y marca, sin
+ *   distinguir mayúsculas ni tildes.
+ * - `vehicleId`: primero lo comprado para ese vehículo, luego para otro de la
+ *   misma marca y modelo, luego el resto; dentro de cada grupo, alfabético.
+ * - `onlyVehicleMatches`: sólo esos dos primeros grupos (la lista inicial del
+ *   buscador, antes de escribir). Sin `vehicleId` no devuelve nada.
+ * - `ids`: sólo esos repuestos (los que una solicitud ya referencia).
+ * - `limit`: tope de filas; `total` dice cuántas coincidían.
+ */
+export async function searchSpareParts(opts: ListSparePartsOptions = {}): Promise<SparePartSearchResult> {
+  if (opts.ids && opts.ids.length === 0) return { parts: [], total: 0 }
+
+  let target: { id: string; brandKey: string | null; modelKey: string | null } | null = null
+  if (opts.vehicleId) {
+    const [vehicle] = await db
+      .select({ brand: fuelVehicles.brand, model: fuelVehicles.model })
+      .from(fuelVehicles)
+      .where(eq(fuelVehicles.id, opts.vehicleId))
+      .limit(1)
+    const brandKey = vehicle?.brand ? foldSparePartSearch(vehicle.brand) : ""
+    const modelKey = vehicle?.model ? foldSparePartSearch(vehicle.model) : ""
+    target = { id: opts.vehicleId, brandKey: brandKey || null, modelKey: modelKey || null }
+  }
+  if (opts.onlyVehicleMatches && !target) return { parts: [], total: 0 }
+
+  const forVehicle = target ? purchasedForVehicleSql(sql`${fuelVehicles.id} = ${target.id}`) : null
+  // Sin marca o sin modelo no hay «mismo modelo»: dos equipos sin dato no son iguales.
+  const forModel = target?.brandKey && target.modelKey
+    ? purchasedForVehicleSql(sql`${foldSql(sql`btrim(${fuelVehicles.brand})`)} = ${target.brandKey} AND ${foldSql(sql`btrim(${fuelVehicles.model})`)} = ${target.modelKey}`)
+    : null
+  const tier = forVehicle
+    ? sql<number>`CASE WHEN ${forVehicle} THEN 0 ${forModel ? sql`WHEN ${forModel} THEN 1 ` : sql``}ELSE 2 END`
+    : sql<number>`2`
+
+  const query = foldSparePartSearch(opts.query ?? "")
+  const compactQuery = compactSearch(opts.query ?? "")
+  const pattern = `%${escapeLikePattern(query)}%`
+  const textMatch = query
+    ? or(
+        sql`${foldSql(products.name)} LIKE ${pattern}`,
+        sql`${foldSql(products.sku)} LIKE ${pattern}`,
+        sql`${foldSql(products.partNumber)} LIKE ${pattern}`,
+        sql`${foldSql(products.partBrand)} LIKE ${pattern}`,
+        compactQuery
+          ? sql`regexp_replace(${foldSql(products.partNumber)}, '[^a-z0-9]', '', 'g') LIKE ${`%${compactQuery}%`}`
+          : undefined,
+      )
+    : undefined
+
   const preferred = db
     .select({
       productId:    productSuppliers.productId,
@@ -387,7 +534,7 @@ export async function listSpareParts(opts: ListSparePartsOptions = {}): Promise<
     .where(eq(productSuppliers.isPreferred, true))
     .as("preferred")
 
-  const parts = await db
+  const base = db
     .select({
       id:                    products.id,
       sku:                   products.sku,
@@ -399,24 +546,25 @@ export async function listSpareParts(opts: ListSparePartsOptions = {}): Promise<
       preferredSupplierId:   preferred.supplierId,
       preferredSupplierName: preferred.supplierName,
       preferredPrice:        preferred.unitPrice,
+      tier:                  sql<number>`${tier}`.mapWith(Number),
+      total:                 sql<number>`count(*) OVER ()`.mapWith(Number),
     })
     .from(products)
     .leftJoin(preferred, eq(preferred.productId, products.id))
     .where(and(
       eq(products.isSparePart, true),
       opts.includeInactive ? undefined : eq(products.isActive, true),
+      opts.ids ? inArray(products.id, [...opts.ids]) : undefined,
+      textMatch,
+      opts.onlyVehicleMatches ? or(forVehicle ?? undefined, forModel ?? undefined) : undefined,
     ))
+    // Sin vehículo no hay grupos (y un `ORDER BY 2` literal ordenaría por la 2.ª columna).
+    .orderBy(...(forVehicle ? [tier] : []), foldSql(products.name), asc(products.sku))
+    .$dynamic()
+  const parts = await (opts.limit !== undefined ? base.limit(opts.limit) : base)
+  if (parts.length === 0) return { parts: [], total: 0 }
 
-  const query = (opts.query ?? "").trim()
-  const compactQuery = compactPartNumber(query)
-  const matching = query
-    ? parts.filter((part) =>
-        matchesQuery(query, [part.name, part.sku, part.partNumber])
-        || (compactQuery.length > 0 && part.partNumber !== null && compactPartNumber(part.partNumber).includes(compactQuery)))
-    : parts
-  if (matching.length === 0) return []
-
-  const ids = matching.map((part) => part.id)
+  const ids = parts.map((part) => part.id)
 
   const latestPrices = await db
     .selectDistinctOn([productSuppliers.productId], {
@@ -443,56 +591,45 @@ export async function listSpareParts(opts: ListSparePartsOptions = {}): Promise<
     .groupBy(purchaseOrderItems.productId)
   const lastPurchaseById = new Map(lastPurchases.map((row) => [row.productId, row.lastAt]))
 
-  const links = await loadVehicleLinks()
-  const vehiclesByPart = new Map<string, Map<string, { brand: string | null; model: string | null }>>()
+  // Con tope, sólo los vínculos de las filas devueltas; sin tope ni filtro, el
+  // catálogo entero en una sola lectura (no una lista de miles de ids).
+  const wholeCatalog = opts.limit === undefined && !opts.ids && !query && !opts.onlyVehicleMatches
+  const links = await loadVehicleLinks(wholeCatalog ? null : ids)
+  const vehiclesByPart = new Map<string, Set<string>>()
   for (const link of links) {
-    const vehicles = vehiclesByPart.get(link.productId) ?? new Map()
-    vehicles.set(link.vehicleId, { brand: link.vehicleBrand, model: link.vehicleModel })
+    const vehicles = vehiclesByPart.get(link.productId) ?? new Set<string>()
+    vehicles.add(link.vehicleId)
     vehiclesByPart.set(link.productId, vehicles)
   }
 
-  let target: { id: string; brand: string | null; model: string | null } | null = null
-  if (opts.vehicleId) {
-    const [vehicle] = await db
-      .select({ id: fuelVehicles.id, brand: fuelVehicles.brand, model: fuelVehicles.model })
-      .from(fuelVehicles)
-      .where(eq(fuelVehicles.id, opts.vehicleId))
-      .limit(1)
-    target = vehicle ?? { id: opts.vehicleId, brand: null, model: null }
-  }
-
-  const items: SparePartListItem[] = matching.map((part) => {
-    const vehicles = vehiclesByPart.get(part.id) ?? new Map<string, { brand: string | null; model: string | null }>()
-    let vehicleMatch: SparePartVehicleMatch = null
-    if (target) {
-      if (vehicles.has(target.id)) vehicleMatch = "vehicle"
-      else if ([...vehicles.values()].some((v) => sameText(v.brand, target.brand) && sameText(v.model, target.model))) {
-        vehicleMatch = "model"
+  const matchByTier: Record<number, SparePartVehicleMatch> = { 0: "vehicle", 1: "model" }
+  return {
+    total: parts[0]!.total,
+    parts: parts.map((part) => {
+      const vehicles = vehiclesByPart.get(part.id) ?? new Set<string>()
+      return {
+        id: part.id,
+        sku: part.sku,
+        name: part.name,
+        partNumber: part.partNumber,
+        partBrand: part.partBrand,
+        unitOfMeasure: part.unitOfMeasure,
+        isActive: part.isActive,
+        preferredSupplierId: part.preferredSupplierId,
+        preferredSupplierName: part.preferredSupplierName,
+        lastPrice: part.preferredPrice ?? latestPriceById.get(part.id) ?? null,
+        lastPurchasedAt: lastPurchaseById.get(part.id) ?? null,
+        vehicleCount: vehicles.size,
+        purchasedForVehicleIds: [...vehicles].sort(),
+        vehicleMatch: target ? (matchByTier[part.tier] ?? null) : null,
       }
-    }
-    return {
-      id: part.id,
-      sku: part.sku,
-      name: part.name,
-      partNumber: part.partNumber,
-      partBrand: part.partBrand,
-      unitOfMeasure: part.unitOfMeasure,
-      isActive: part.isActive,
-      preferredSupplierId: part.preferredSupplierId,
-      preferredSupplierName: part.preferredSupplierName,
-      lastPrice: part.preferredPrice ?? latestPriceById.get(part.id) ?? null,
-      lastPurchasedAt: lastPurchaseById.get(part.id) ?? null,
-      vehicleCount: vehicles.size,
-      purchasedForVehicleIds: [...vehicles.keys()].sort(),
-      vehicleMatch,
-    }
-  })
+    }),
+  }
+}
 
-  const tier = (match: SparePartVehicleMatch) => (match === "vehicle" ? 0 : match === "model" ? 1 : 2)
-  return items.sort((a, b) =>
-    tier(a.vehicleMatch) - tier(b.vehicleMatch)
-    || a.name.localeCompare(b.name, "es-CL", { sensitivity: "base" })
-    || a.sku.localeCompare(b.sku))
+/** La búsqueda sin el total: la lista de gestión y la exportación. */
+export async function listSpareParts(opts: ListSparePartsOptions = {}): Promise<SparePartListItem[]> {
+  return (await searchSpareParts(opts)).parts
 }
 
 export async function getSparePartDetail(id: string): Promise<SparePartDetail | null> {
@@ -547,7 +684,7 @@ export async function getSparePartDetail(id: string): Promise<SparePartDetail | 
     .where(eq(productSupplierPriceHistory.productId, id))
     .orderBy(desc(productSupplierPriceHistory.effectiveDate), desc(productSupplierPriceHistory.createdAt))
 
-  const links = await loadVehicleLinks(id)
+  const links = await loadVehicleLinks([id])
   const usageByVehicle = new Map<string, SparePartVehicleUsage & { items: Set<string> }>()
   for (const link of links) {
     const usage = usageByVehicle.get(link.vehicleId) ?? {
@@ -682,6 +819,32 @@ export async function findSparePartByPartNumber(
 /* ── Escritura ───────────────────────────────────────────────────────────── */
 
 /**
+ * El INSERT del alta, sin la revisión previa del N° de parte: si otra alta del
+ * mismo número llegó primero, el índice único decide y el error dice cuál es.
+ * Exportado sólo para probar esa carrera; las altas pasan por `createSparePartTx`.
+ */
+export async function insertSparePartRowTx(
+  tx: Tx,
+  { id, sku, categoryId, data }: { id: string; sku: string; categoryId: string; data: NormalizedSparePartInput },
+): Promise<void> {
+  await withPartNumberGuard(tx, data, (sp) => sp.insert(products).values({
+    id,
+    sku,
+    name: data.name,
+    categoryId,
+    unitOfMeasure: data.unitOfMeasure,
+    isEpp: false,
+    isService: false,
+    isSparePart: true,
+    partNumber: data.partNumber,
+    partBrand: data.partBrand,
+    referencePrice: data.referencePrice,
+    notes: data.notes,
+    isActive: true,
+  }))
+}
+
+/**
  * Da de alta un repuesto de catálogo dentro de la transacción del llamador
  * (la pantalla del catálogo o «crear desde la OC»).
  */
@@ -699,29 +862,7 @@ export async function createSparePartTx(
   const [sku] = await generateUniqueSkus(tx, 1, SPARE_PART_SKU_PREFIX)
   const id = nanoid()
 
-  try {
-    await tx.insert(products).values({
-      id,
-      sku: sku!,
-      name: data.name,
-      categoryId,
-      unitOfMeasure: data.unitOfMeasure,
-      isEpp: false,
-      isService: false,
-      isSparePart: true,
-      partNumber: data.partNumber,
-      partBrand: data.partBrand,
-      referencePrice: data.referencePrice,
-      notes: data.notes,
-      isActive: true,
-    })
-  } catch (error) {
-    // Carrera con otra alta del mismo N° de parte: el índice único decide.
-    if (isUniqueViolation(error) && data.partNumber) {
-      throw new Error("Ya existe un repuesto con ese N° de parte")
-    }
-    throw error
-  }
+  await insertSparePartRowTx(tx, { id, sku: sku!, categoryId, data })
 
   await recordAudit({
     userId: input.createdByUserId,
@@ -751,22 +892,15 @@ export async function updateSparePart(
     const data = await normalizeInput(tx, input)
     await assertPartNumberAvailable(tx, data.partNumber, data.partBrand, id)
 
-    try {
-      await tx.update(products).set({
-        name: data.name,
-        partNumber: data.partNumber,
-        partBrand: data.partBrand,
-        unitOfMeasure: data.unitOfMeasure,
-        notes: data.notes,
-        referencePrice: data.referencePrice,
-        updatedAt: new Date().toISOString(),
-      }).where(eq(products.id, id))
-    } catch (error) {
-      if (isUniqueViolation(error) && data.partNumber) {
-        throw new Error("Ya existe un repuesto con ese N° de parte")
-      }
-      throw error
-    }
+    await withPartNumberGuard(tx as unknown as Tx, data, (sp) => sp.update(products).set({
+      name: data.name,
+      partNumber: data.partNumber,
+      partBrand: data.partBrand,
+      unitOfMeasure: data.unitOfMeasure,
+      notes: data.notes,
+      referencePrice: data.referencePrice,
+      updatedAt: new Date().toISOString(),
+    }).where(eq(products.id, id)), id)
 
     await recordAudit({
       userId: actorUserId,

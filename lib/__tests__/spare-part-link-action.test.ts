@@ -16,7 +16,7 @@ vi.mock("@/lib/services/module-toggles", async (importOriginal) => ({
 }))
 
 const mockAuth = vi.hoisted(() => vi.fn())
-const mockList = vi.hoisted(() => vi.fn())
+const mockSearch = vi.hoisted(() => vi.fn())
 const mockFindByPartNumber = vi.hoisted(() => vi.fn())
 const mockCreate = vi.hoisted(() => vi.fn())
 const mockLinkInfo = vi.hoisted(() => vi.fn())
@@ -27,7 +27,7 @@ vi.mock("@/db", () => ({
   db: { transaction: vi.fn(async (run: (tx: unknown) => Promise<unknown>) => run(fakeTx)) },
 }))
 vi.mock("@/lib/services/spare-parts-catalog", () => ({
-  listSpareParts: mockList,
+  searchSpareParts: mockSearch,
   findSparePartByPartNumber: mockFindByPartNumber,
   createSparePartTx: mockCreate,
 }))
@@ -54,7 +54,7 @@ const LISTED = (id: string) => ({
 
 beforeEach(() => {
   vi.clearAllMocks()
-  mockList.mockResolvedValue([LISTED("1"), LISTED("2")])
+  mockSearch.mockResolvedValue({ parts: [LISTED("1"), LISTED("2")], total: 2 })
   mockFindByPartNumber.mockResolvedValue(null)
   mockCreate.mockResolvedValue({ id: "new-1", sku: "RPT-001" })
   mockLinkInfo.mockResolvedValue({
@@ -67,7 +67,7 @@ describe("buscar y vincular: purchasing:create_order", () => {
     mockAuth.mockResolvedValue(session(["repuestos:catalog"]))
     expect(await searchSparePartsForOcAction({ query: "filtro" })).toMatchObject({ ok: false })
     expect(await linkSparePartForOcAction({ productId: "p-1" })).toMatchObject({ ok: false })
-    expect(mockList).not.toHaveBeenCalled()
+    expect(mockSearch).not.toHaveBeenCalled()
     expect(mockLinkInfo).not.toHaveBeenCalled()
   })
 
@@ -80,22 +80,34 @@ describe("buscar y vincular: purchasing:create_order", () => {
     mockAuth.mockResolvedValue(session(["purchasing:create_order"]))
     mockFindByPartNumber.mockResolvedValue({ id: "2" })
     const result = await searchSparePartsForOcAction({ query: "  ", vehicleId: "v-1", partNumber: "PN-2" })
-    expect(mockList).toHaveBeenCalledWith({ query: undefined, vehicleId: "v-1" })
+    expect(mockSearch).toHaveBeenCalledWith({ query: undefined, vehicleId: "v-1", limit: 40 })
     expect(mockFindByPartNumber).toHaveBeenCalledWith("PN-2")
     expect(result).toMatchObject({ ok: true, total: 2, suggestion: { id: "2", sku: "RPT-2" } })
     // Sólo viajan los campos que la hoja necesita.
     expect(result.ok && Object.keys(result.parts[0]!).sort()).toEqual(
-      ["id", "lastPrice", "lastPurchasedAt", "name", "partBrand", "partNumber", "sku", "vehicleMatch"],
+      ["id", "lastPrice", "lastPurchasedAt", "name", "partBrand", "partNumber", "sku", "unitOfMeasure", "vehicleMatch"],
     )
   })
 
-  it("no busca sugerencia sin N° de parte, y recorta la lista a 40 con el total real", async () => {
+  it("no busca sugerencia sin N° de parte, y pide el tope de 40 al servicio con el total real", async () => {
     mockAuth.mockResolvedValue(session(["purchasing:create_order"]))
-    mockList.mockResolvedValue(Array.from({ length: 55 }, (_, i) => LISTED(String(i))))
+    mockSearch.mockResolvedValue({ parts: Array.from({ length: 40 }, (_, i) => LISTED(String(i))), total: 55 })
     const result = await searchSparePartsForOcAction({ query: "filtro" })
+    expect(mockSearch).toHaveBeenCalledWith({ query: "filtro", vehicleId: undefined, limit: 40 })
     expect(mockFindByPartNumber).not.toHaveBeenCalled()
     expect(result).toMatchObject({ ok: true, total: 55, suggestion: null })
     expect(result.ok && result.parts).toHaveLength(40)
+  })
+
+  it("la sugerencia fuera del tope se lee aparte, con el vehículo de la línea", async () => {
+    mockAuth.mockResolvedValue(session(["purchasing:create_order"]))
+    mockFindByPartNumber.mockResolvedValue({ id: "99" })
+    mockSearch
+      .mockResolvedValueOnce({ parts: [LISTED("1")], total: 120 })
+      .mockResolvedValueOnce({ parts: [LISTED("99")], total: 1 })
+    const result = await searchSparePartsForOcAction({ query: "", vehicleId: "v-1", partNumber: "PN-99" })
+    expect(mockSearch).toHaveBeenLastCalledWith({ ids: ["99"], vehicleId: "v-1" })
+    expect(result).toMatchObject({ ok: true, suggestion: { id: "99", unitOfMeasure: "unidad" } })
   })
 
   it("vincular confirma que el repuesto sigue activo; si ya no existe lo dice", async () => {

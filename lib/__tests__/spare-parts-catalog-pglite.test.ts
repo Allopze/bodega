@@ -106,6 +106,17 @@ describe("catálogo de repuestos", () => {
     }, IDS.jefe)).rejects.toThrow("Ya existe el repuesto RPT-001 con ese N° de parte")
   })
 
+  it("si otra alta del mismo N° de parte gana la carrera, el error dice cuál es el repuesto", async () => {
+    // Sin la revisión previa: el índice único es quien rechaza el INSERT.
+    const [category] = await testDb.select().from(schema.productCategories).where(eq(schema.productCategories.slug, "repuestos"))
+    await expect(testDb.transaction((tx) => catalog.insertSparePartRowTx(tx as unknown as Tx, {
+      id: "rpt-carrera", sku: "RPT-950", categoryId: category!.id,
+      data: { name: "Filtro duplicado", partNumber: "1R-0750", partBrand: "caterpillar", unitOfMeasure: "unidad", notes: null, referencePrice: null },
+    }))).rejects.toThrow("Ya existe el repuesto RPT-001 con ese N° de parte")
+    const [ghost] = await testDb.select().from(schema.products).where(eq(schema.products.id, "rpt-carrera"))
+    expect(ghost).toBeUndefined()
+  })
+
   it("valida nombre y unidad activa", async () => {
     await expect(createPart({ name: "   " })).rejects.toThrow(/nombre/)
     await expect(createPart({ name: "Correa", unitOfMeasure: "no-existe" })).rejects.toThrow(/catálogo de unidades/)
@@ -135,6 +146,19 @@ describe("catálogo de repuestos", () => {
     expect((await catalog.listSpareParts({ query: "1r0750" })).map((part) => part.sku).sort()).toEqual(["RPT-001", "RPT-003"])
   })
 
+  it("busca también por marca del repuesto y con tope informa el total", async () => {
+    expect((await catalog.listSpareParts({ query: "CATERPILLAR" })).map((part) => part.sku)).toEqual(["RPT-001"])
+    expect((await catalog.listSpareParts({ query: "VÁLVULA" })).map((part) => part.name)).toEqual(["Válvula de alivio"])
+    // Un comodín de LIKE escrito por la persona es texto literal.
+    expect(await catalog.listSpareParts({ query: "%" })).toEqual([])
+
+    const everything = await catalog.searchSpareParts()
+    const limited = await catalog.searchSpareParts({ limit: 2 })
+    expect(limited.parts).toHaveLength(2)
+    expect(limited.total).toBe(everything.parts.length)
+    expect(limited.parts.map((part) => part.id)).toEqual(everything.parts.slice(0, 2).map((part) => part.id))
+  })
+
   it("con vehículo: primero lo comprado para él, luego para su marca/modelo, luego el resto alfabético", async () => {
     const forVehicle = await createPart({ name: "Zapata de freno", partNumber: "ZF-1" })
     const forModel = await createPart({ name: "Yugo de dirección", partNumber: "YD-1" })
@@ -156,6 +180,21 @@ describe("catálogo de repuestos", () => {
     expect(rest.every((part) => part.vehicleMatch === null)).toBe(true)
     expect(rest.map((part) => part.name)).toEqual([...rest.map((part) => part.name)].sort((a, b) => a.localeCompare(b, "es-CL")))
     expect(rest.find((part) => part.id === cancelled.id)).toMatchObject({ vehicleCount: 0, purchasedForVehicleIds: [] })
+
+    // La lista inicial del buscador: sólo lo comprado para el vehículo o su modelo.
+    const initial = await catalog.searchSpareParts({ vehicleId: IDS.truckBio, onlyVehicleMatches: true, limit: 30 })
+    expect(initial.parts.map((part) => [part.id, part.vehicleMatch])).toEqual([[forVehicle.id, "vehicle"], [forModel.id, "model"]])
+    expect(initial.total).toBe(2)
+    expect(await catalog.searchSpareParts({ onlyVehicleMatches: true })).toEqual({ parts: [], total: 0 })
+
+    // Con tope, el orden por vehículo se aplica antes de cortar.
+    const top = await catalog.searchSpareParts({ vehicleId: IDS.truckBio, limit: 1 })
+    expect(top.parts.map((part) => part.id)).toEqual([forVehicle.id])
+
+    // Por id (lo que una solicitud ya referencia), con sus vehículos.
+    const byId = await catalog.listSpareParts({ ids: [forOther.id] })
+    expect(byId).toEqual([expect.objectContaining({ id: forOther.id, purchasedForVehicleIds: [IDS.truckCho], vehicleMatch: null })])
+    expect(await catalog.listSpareParts({ ids: [] })).toEqual([])
 
     // Sin vehículo: alfabético puro.
     const plain = await catalog.listSpareParts()

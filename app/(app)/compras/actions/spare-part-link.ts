@@ -4,7 +4,7 @@ import { z } from "zod"
 import { db, type Tx } from "@/db"
 import { requirePermission } from "@/lib/auth/can"
 import { logger } from "@/lib/logger"
-import { listSpareParts, createSparePartTx, findSparePartByPartNumber } from "@/lib/services/spare-parts-catalog"
+import { searchSpareParts, createSparePartTx, findSparePartByPartNumber, type SparePartListItem } from "@/lib/services/spare-parts-catalog"
 import { getSparePartLinkInfo, type SparePartLinkInfo } from "@/lib/services/purchasing-module/spare-part-link"
 import { sparePartUnitMismatchMessage } from "@/lib/services/purchasing-module/spare-part-unit"
 import { dbErrMsg } from "./helpers"
@@ -30,6 +30,8 @@ export interface SparePartChoice {
   name: string
   partNumber: string | null
   partBrand: string | null
+  /** Unidad en que se compra: la línea tiene que pedir la misma para vincularlo. */
+  unitOfMeasure: string
   /** Último precio conocido (proveedor preferido, o el más reciente). */
   lastPrice: number | null
   /** Fecha ISO de la última compra con OC emitida. */
@@ -66,13 +68,14 @@ const createSchema = z.object({
   unitOfMeasure: z.string().trim().toLowerCase().min(1, "Unidad requerida").max(24),
 })
 
-function toChoice(part: Awaited<ReturnType<typeof listSpareParts>>[number]): SparePartChoice {
+function toChoice(part: SparePartListItem): SparePartChoice {
   return {
     id: part.id,
     sku: part.sku,
     name: part.name,
     partNumber: part.partNumber,
     partBrand: part.partBrand,
+    unitOfMeasure: part.unitOfMeasure,
     lastPrice: part.lastPrice,
     lastPurchasedAt: part.lastPurchasedAt,
     vehicleMatch: part.vehicleMatch,
@@ -90,15 +93,20 @@ export async function searchSparePartsForOcAction(input: z.input<typeof searchSc
   const { query, vehicleId, partNumber } = parsed.data
 
   try {
-    const all = await listSpareParts({ query: query || undefined, vehicleId: vehicleId || undefined })
-    // La sugerencia sólo se pide al abrir la hoja, sin texto de búsqueda: `all`
-    // es entonces el catálogo completo y contiene al repuesto exacto.
+    // Filtro, orden por vehículo y tope en SQL: el catálogo no viaja entero.
+    const found = await searchSpareParts({ query: query || undefined, vehicleId: vehicleId || undefined, limit: SEARCH_LIMIT })
+    // La sugerencia sólo se pide al abrir la hoja; puede quedar fuera del tope,
+    // así que se lee aparte, con el mismo vehículo para su insignia.
     const suggestionRow = partNumber ? await findSparePartByPartNumber(partNumber) : null
-    const suggestion = suggestionRow ? (all.find((part) => part.id === suggestionRow.id) ?? null) : null
+    const suggestion = suggestionRow
+      ? (found.parts.find((part) => part.id === suggestionRow.id)
+        ?? (await searchSpareParts({ ids: [suggestionRow.id], vehicleId: vehicleId || undefined })).parts[0]
+        ?? null)
+      : null
     return {
       ok: true,
-      parts: all.slice(0, SEARCH_LIMIT).map(toChoice),
-      total: all.length,
+      parts: found.parts.map(toChoice),
+      total: found.total,
       suggestion: suggestion ? toChoice(suggestion) : null,
     }
   } catch (e) {
