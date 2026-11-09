@@ -16,11 +16,15 @@ export const REPUESTO_ATTRIBUTE_NAMES = {
   model: "Modelo",
 } as const
 
-// ── Repuesto item (free-text, always uncatalogued) ────────────────────────────
+// ── Repuesto item (texto libre o repuesto del catálogo) ───────────────────────
 export const repuestoItemSchema = z.object({
   id:              z.string().optional(),
-  // Description of the spare part (productNameFree in the DB)
-  description:     z.string().trim().min(1, "Describe el repuesto requerido").max(200, "Descripción demasiado larga"),
+  // Repuesto del catálogo (`products.is_spare_part`). El servidor valida que
+  // exista, esté activo y sea repuesto al guardar el borrador.
+  productId:       z.string().trim().max(60).nullable().optional().or(z.literal("")),
+  // Description of the spare part (productNameFree in the DB). Con un repuesto de
+  // catálogo el nombre lo dice el producto, así que sólo se exige sin él.
+  description:     z.string().trim().max(200, "Descripción demasiado larga").default(""),
   quantity:        z.coerce.number().positive("Cantidad debe ser mayor a 0"),
   unitOfMeasure:   unitOfMeasureSchema.default("unidad"),
   sortOrder:       z.coerce.number().int().default(0),
@@ -31,7 +35,10 @@ export const repuestoItemSchema = z.object({
   patent:          z.string().trim().max(20).nullable().optional().or(z.literal("")),
   brand:           z.string().trim().max(80).nullable().optional().or(z.literal("")),
   model:           z.string().trim().max(80).nullable().optional().or(z.literal("")),
-})
+}).refine(
+  (item) => !!item.productId?.trim() || item.description.length > 0,
+  { message: "Describe el repuesto requerido", path: ["description"] },
+)
 
 // ── Repuesto request header ───────────────────────────────────────────────────
 export const repuestoRequestSchema = z.object({

@@ -11,9 +11,11 @@ import {
 } from "@/components/ui/select"
 import { COST_PENDING_LABEL, normalizeEquipmentCode } from "@/lib/products/service-items"
 import { ProductPicker } from "./product-picker"
-import type { ItemRow, ProductOption, SupplierOption, WorkerOption, EquipmentOption, VehicleOption } from "./request-form.types"
+import type { ItemRow, ProductOption, SparePartOption, SupplierOption, WorkerOption, EquipmentOption, VehicleOption } from "./request-form.types"
 import { QUOTATION_TYPES } from "@/lib/request-types"
 import { ItemEditorEquipment } from "./item-editor-equipment"
+import { ItemEditorSparePart } from "./item-editor-spare-part"
+import { sparePartFacts } from "./spare-part-options"
 import { ItemEditorSupplier } from "./item-editor-supplier"
 import { ItemEditorCotizaciones } from "./item-editor-cotizaciones"
 import { VariantSelector } from "./variant-selector"
@@ -31,6 +33,8 @@ interface ItemEditorProps {
   item:            ItemRow
   idx:             number
   products:        ProductOption[]
+  /** Repuestos del catálogo (sólo solicitudes de repuestos); el buscador y la ficha los usan. */
+  spareParts?:     SparePartOption[]
   suppliers:       SupplierOption[]
   workers?:        WorkerOption[]
   equipment?:      EquipmentOption[]
@@ -57,11 +61,12 @@ interface ItemEditorProps {
 }
 
 const noop = () => {}
+const NO_SPARE_PARTS: SparePartOption[] = []
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function ItemEditor({
-  item, idx, products, suppliers, workers, equipment, vehicles = [], worksiteId = "", readOnly, requestType, maxFileSizeMb,
+  item, idx, products, spareParts = NO_SPARE_PARTS, suppliers, workers, equipment, vehicles = [], worksiteId = "", readOnly, requestType, maxFileSizeMb,
   quotationRule, quotationNotice,
   onUpdate, onSelectVehicle = noop, onSelectWorkOrder = noop, onSelectProduct, onSelectFreeProduct, onClearProduct, onUpdateAttr, onUpdateWorker,
   onRemove, canRemove,
@@ -71,6 +76,11 @@ export function ItemEditor({
   // proveedor orientan la OC); servicios y el resto lo resuelven distinto.
   const showSupplier = !isQuotationType || requestType === "repuestos"
   const selectedProduct = item.productId ? products.find((product) => product.id === item.productId) : null
+  // Repuesto del catálogo: se busca aparte del producto general (no tiene
+  // atributos, tallas ni colaborador).
+  const selectedPart = requestType === "repuestos" && item.productId
+    ? spareParts.find((part) => part.id === item.productId)
+    : undefined
   const variants = selectedProduct
     ? groupProductVariants(products).find((group) => group.variants.some((variant) => variant.id === selectedProduct.id))?.variants ?? []
     : []
@@ -132,7 +142,9 @@ export function ItemEditor({
   if (readOnly) {
     const attributeDetails = isQuotationType
       ? [
-          { label: "N° de parte", value: item.partNumber },
+          // Con un repuesto de catálogo el SKU, el N° de parte y la marca salen del
+          // producto; el N° de parte libre sólo existe en los ítems sin catálogo.
+          ...(selectedPart ? sparePartFacts(selectedPart) : [{ label: "N° de parte", value: item.partNumber }]),
           { label: "Ubicación", value: item.location },
           { label: "Equipo / máquina", value: item.equipmentName },
           { label: "Patente / código interno", value: item.patent },
@@ -176,7 +188,7 @@ export function ItemEditor({
               {selectedProduct?.isService && (
                 <MetaBadge meta={{ label: `${COST_PENDING_LABEL}`, variant: "outline" }} title="El precio de este servicio se conoce al ejecutarlo o facturarlo; se registra sobre la orden de compra." />
               )}
-              {selectedProduct?.isInactive && (
+              {(selectedProduct?.isInactive || selectedPart?.isInactive) && (
                 <span className="inline-flex items-center rounded-full border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-1.5 py-px text-2xs font-medium text-[var(--color-warning-ink)]">
                   Inactivo
                 </span>
@@ -223,7 +235,16 @@ export function ItemEditor({
 
         {/* Product picker / Description */}
         <div className="flex-1 space-y-2">
-          {isQuotationType ? (
+          {requestType === "repuestos" ? (
+            <ItemEditorSparePart
+              item={item}
+              spareParts={spareParts}
+              vehicles={vehicles}
+              onUpdate={onUpdate}
+              onSelectProduct={onSelectProduct}
+              onClearProduct={onClearProduct}
+            />
+          ) : isQuotationType ? (
             <Field label="Descripción" required htmlFor={`desc-${item._key}`}>
               <Input
                 id={`desc-${item._key}`}
@@ -492,6 +513,7 @@ export function ItemEditor({
           readOnly={readOnly}
           vehicles={vehicles}
           worksiteId={worksiteId}
+          catalogPrice={selectedPart?.lastPrice ?? null}
           onUpdate={onUpdate}
           onSelectVehicle={onSelectVehicle}
           onSelectWorkOrder={onSelectWorkOrder}

@@ -3,6 +3,11 @@
  * el servidor valida el vínculo (equipo activo y de la faena de la solicitud, OT
  * abierta y del mismo equipo) con los mensajes que ve quien pide, y con equipo
  * elegido no guarda Equipo/Patente/Marca/Modelo como atributos libres.
+ *
+ * Catálogo de repuestos (2026-11-09): un ítem puede apuntar a un repuesto del
+ * catálogo (`productId`). El servidor exige que exista, sea repuesto y esté
+ * activo; con producto guarda `product_id`, no copia el nombre ni el N° de parte,
+ * y servicios sigue siendo texto libre.
  */
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
@@ -11,7 +16,7 @@ import type { Session } from "next-auth"
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
 import { eq } from "drizzle-orm"
 import * as schema from "@/db/schema"
-import type { DB } from "@/db"
+import type { DB, Tx } from "@/db"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 
 const pg = new PGlite()
@@ -31,6 +36,7 @@ await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
 const { IDS, seedMantFixtures } = await import("./mantencion-sync-fixtures")
 const { createWorkOrderWithClient } = await import("@/lib/services/mantencion/work-orders/create")
+const { createSparePartTx, setSparePartActive } = await import("@/lib/services/spare-parts-catalog")
 const { persistRepuestoDraft } = await import("@/lib/services/repuestos")
 const { persistServiceDraft } = await import("@/lib/services/servicios")
 
@@ -93,10 +99,6 @@ describe("persistRepuestoDraft · equipo de flota, OT y precio estimado", () => 
       receivedAt: "2026-02-24T09:00:00Z", receiverName: "Pedro Soto", receivedByUserId: IDS.jefe, receivedRecordedAt: "2026-02-24T09:00:00Z",
       faenaReceivedAt: "2026-02-25T09:00:00Z", faenaReceiverName: "Admin Contrato", faenaReceivedByUserId: IDS.jefe, closedAt: "2026-02-25T09:00:00Z",
     })
-  })
-
-  afterAll(async () => {
-    await pg.close()
   })
 
   it("guarda el vehículo, la OT y el precio estimado del ítem", async () => {
@@ -177,4 +179,101 @@ describe("persistRepuestoDraft · equipo de flota, OT y precio estimado", () => 
       .from(schema.purchaseRequests).where(eq(schema.purchaseRequests.id, viaOficina))
     expect(row?.deliveryMode).toBe("via_oficina")
   })
+})
+
+describe("persistRepuestoDraft · repuesto del catálogo", () => {
+  let partId = ""
+  let inactivePartId = ""
+
+  async function createPart(name: string, partNumber: string, partBrand: string | null = null) {
+    return testDb.transaction((tx) => createSparePartTx(tx as unknown as Tx, {
+      name, partNumber, partBrand, unitOfMeasure: "unidad", createdByUserId: IDS.jefe,
+    }))
+  }
+
+  beforeAll(async () => {
+    const part = await createPart("Filtro de aceite", "1R-0750", "Caterpillar")
+    partId = part.id
+    const inactive = await createPart("Filtro de aire", "AF-25", "Donaldson")
+    inactivePartId = inactive.id
+    await setSparePartActive(inactive.id, false)
+    // Un producto que no es repuesto (un EPP corriente): el CHECK de la base sólo
+    // impide lo contrario, así que nada lo frena si el cliente manda su id.
+    await testDb.insert(schema.products).values({
+      id: "prod-casco-cat", sku: "EPP-CAT-1", name: "Casco de seguridad", categoryId: "cat-repuestos",
+      unitOfMeasure: "unidad", isEpp: true,
+    })
+  })
+
+  it("guarda el repuesto como producto y no copia su nombre ni el N° de parte", async () => {
+    const requestId = await persistRepuestoDraft(session, draft({
+      productId: partId, description: "", partNumber: "OTRO-NUMERO", vehicleId: IDS.truckBio, estimatedUnitPrice: 18_900,
+    }))
+    const { item, attributes } = await savedItem(requestId)
+    expect(item).toMatchObject({
+      productId: partId, productNameFree: null, vehicleId: IDS.truckBio, estimatedUnitPrice: 18_900, status: "draft",
+    })
+    // El N° de parte lo dice el producto: no queda una segunda copia como atributo.
+    expect(attributes).toEqual({})
+  })
+
+  it("con un repuesto conserva el resto de los campos libres del equipo", async () => {
+    const requestId = await persistRepuestoDraft(session, draft({
+      productId: partId, description: "", equipmentName: "Generador", patent: "GEN-01", brand: "Honda", model: "EU70",
+    }))
+    const { attributes } = await savedItem(requestId)
+    expect(attributes).toEqual({ Equipo: "Generador", "Patente/Código": "GEN-01", Marca: "Honda", Modelo: "EU70" })
+  })
+
+  it("sin producto sigue guardando el texto libre y su N° de parte", async () => {
+    const requestId = await persistRepuestoDraft(session, draft({ productId: null, description: "Manguera hidráulica", partNumber: "MH-9" }))
+    const { item, attributes } = await savedItem(requestId)
+    expect(item).toMatchObject({ productId: null, productNameFree: "Manguera hidráulica" })
+    expect(attributes).toEqual({ "N° de Parte": "MH-9" })
+  })
+
+  it("rechaza un producto que no es un repuesto de catálogo", async () => {
+    expect(await message(() => persistRepuestoDraft(session, draft({ productId: "prod-casco-cat", description: "" }))))
+      .toBe("«Casco de seguridad» no es un repuesto del catálogo")
+  })
+
+  it("rechaza un repuesto inactivo diciendo cuál es y qué hacer", async () => {
+    expect(await message(() => persistRepuestoDraft(session, draft({ productId: inactivePartId, description: "" }))))
+      .toBe("El repuesto «Filtro de aire» (RPT-002) está inactivo: elige otro o descríbelo con texto libre")
+  })
+
+  it("rechaza un producto que ya no existe", async () => {
+    expect(await message(() => persistRepuestoDraft(session, draft({ productId: "prod-no-existe", description: "" }))))
+      .toBe("El repuesto elegido ya no existe en el catálogo")
+  })
+
+  it("un ítem rechazado no deja la solicitud a medias", async () => {
+    const before = (await testDb.select({ id: schema.purchaseRequests.id }).from(schema.purchaseRequests)).length
+    await message(() => persistRepuestoDraft(session, {
+      ...draft({ productId: partId, description: "" }),
+      items: [
+        { description: "", productId: partId, quantity: 1, unitOfMeasure: "unidad" },
+        { description: "", productId: "prod-casco-cat", quantity: 1, unitOfMeasure: "unidad" },
+      ],
+    }))
+    const after = (await testDb.select({ id: schema.purchaseRequests.id }).from(schema.purchaseRequests)).length
+    expect(after).toBe(before)
+  })
+
+  it("al editar el borrador se puede pasar de un repuesto de catálogo a texto libre", async () => {
+    const requestId = await persistRepuestoDraft(session, draft({ productId: partId, description: "" }))
+    await persistRepuestoDraft(session, draft({ productId: null, description: "Filtro genérico" }, IDS.wsBio, { id: requestId }))
+    const { item } = await savedItem(requestId)
+    expect(item).toMatchObject({ productId: null, productNameFree: "Filtro genérico" })
+  })
+
+  it("servicios no ofrece catálogo: ignora el producto y guarda el texto", async () => {
+    const requestId = await persistServiceDraft(session, draft({ productId: partId, description: "Cambio de filtros", location: "Taller" }))
+    const { item } = await savedItem(requestId)
+    expect(item).toMatchObject({ productId: null, productNameFree: "Cambio de filtros" })
+  })
+})
+
+afterAll(async () => {
+  await pg.close()
 })

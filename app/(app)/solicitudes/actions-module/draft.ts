@@ -57,9 +57,13 @@ export async function persistDraft(
     return { ok: false, message: "Las solicitudes de EPP y otros se crean y envían en un solo paso" }
   }
 
+  // Sólo repuestos ofrece catálogo: el servidor del borrador valida que el
+  // producto sea un repuesto activo. En servicios `productId` no se usa.
+  const isRepuestos = d.requestType === "repuestos"
   const items = d.items.map((item, i) => ({
     id:            item.id,
-    description:   item.productNameFree?.trim() || item.productId || "",
+    productId:     isRepuestos ? (item.productId || null) : null,
+    description:   item.productNameFree?.trim() || (isRepuestos ? "" : item.productId || ""),
     quantity:      item.quantity,
     unitOfMeasure: item.unitOfMeasure,
     sortOrder:     i,

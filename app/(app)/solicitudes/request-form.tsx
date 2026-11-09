@@ -23,7 +23,7 @@ import { URGENCY_OPTS } from "./request-form.constants"
 import { formatDate, formatDateTime, formatQty } from "@/lib/utils"
 import { QUOTATION_TYPES } from "@/lib/request-types"
 import type { RequestType } from "@/lib/request-types"
-import type { ItemRow, ProductOption, WorksiteOption, SupplierOption, WorkerOption, EquipmentOption, EditRequest, PrefillItem, VehicleOption } from "./request-form.types"
+import type { ItemRow, ProductOption, SparePartOption, WorksiteOption, SupplierOption, WorkerOption, EquipmentOption, EditRequest, PrefillItem, VehicleOption } from "./request-form.types"
 import { useRequestForm } from "./use-request-form"
 
 function SummaryLine({ label, value, muted = false }: { label: string; value: string; muted?: boolean }) {
@@ -48,6 +48,12 @@ interface RequestFormProps {
    */
   units: string[]
   products: ProductOption[]
+  /**
+   * Catálogo de repuestos para el buscador del ítem (sólo solicitudes de
+   * repuestos). Va aparte de `products`: el catálogo general no ofrece repuestos,
+   * y la ficha de una solicitud trae además los repuestos que ya referencia.
+   */
+  spareParts?: SparePartOption[]
   suppliers: SupplierOption[]
   workers?: WorkerOption[]
   equipment?: EquipmentOption[]
@@ -162,14 +168,14 @@ function RequestFormHeader({
 
 function ItemsSection({
   items, requestType, requestTypeLabel: _requestTypeLabel, readOnly, savedId, itemsError,
-  products, suppliers, workers, equipment, maxFileSizeMb, units,
+  products, spareParts, suppliers, workers, equipment, maxFileSizeMb, units,
   worksiteId, vehicles = [], quotationRule, quotationNotice,
   editableItemIds = [],
   onAdd, onRemove, onUpdate, onSelectVehicle, onSelectWorkOrder, onSelectProduct, onSelectFreeProduct, onClearProduct, onUpdateAttr, onUpdateWorker,
 }: {
   items: ItemRow[]; requestType: string; requestTypeLabel?: string; readOnly: boolean; savedId?: string
   editableItemIds?: string[]
-  itemsError?: string; products: ProductOption[]; suppliers: SupplierOption[]; workers?: WorkerOption[]
+  itemsError?: string; products: ProductOption[]; spareParts?: SparePartOption[]; suppliers: SupplierOption[]; workers?: WorkerOption[]
   equipment?: EquipmentOption[]; maxFileSizeMb: number; units: string[]
   worksiteId: string; vehicles?: VehicleOption[]
   quotationRule?: string; quotationNotice?: string | null
@@ -286,7 +292,7 @@ function ItemsSection({
           const isEditing = editingItemKey === item._key
           return (
             <div key={item._key} className="space-y-2">
-              <ItemEditor item={item} idx={idx} products={products} suppliers={suppliers} workers={readOnly && !isEditing ? undefined : workers} equipment={equipment}
+              <ItemEditor item={item} idx={idx} products={products} spareParts={spareParts} suppliers={suppliers} workers={readOnly && !isEditing ? undefined : workers} equipment={equipment}
                 vehicles={vehicles} worksiteId={worksiteId}
                 readOnly={(readOnly && !isEditing) || isSavingItem} requestType={requestType} maxFileSizeMb={maxFileSizeMb}
                 quotationRule={quotationRule} quotationNotice={quotationNotice}
@@ -393,6 +399,7 @@ function SummarySidebar({
 export function RequestForm({
   worksites,
   products,
+  spareParts,
   units,
   suppliers,
   workers,
@@ -414,6 +421,7 @@ export function RequestForm({
   const form = useRequestForm({
     worksites,
     products,
+    spareParts,
     suppliers,
     workers,
     editRequest,
@@ -470,7 +478,7 @@ export function RequestForm({
         items={form.items} requestType={form.requestType} requestTypeLabel={form.requestTypeLabel}
         readOnly={form.readOnly} savedId={form.savedId} itemsError={form.itemsError}
         editableItemIds={editableItemIds}
-        products={products} suppliers={suppliers} workers={workers} equipment={equipment} maxFileSizeMb={maxFileSizeMb}
+        products={products} spareParts={spareParts} suppliers={suppliers} workers={workers} equipment={equipment} maxFileSizeMb={maxFileSizeMb}
         units={units}
         worksiteId={form.worksiteId} vehicles={vehicles}
         quotationRule={form.quotationRule} quotationNotice={form.quotationNotice}

@@ -7,6 +7,7 @@ import {
   approvalDecisions,
   fuelVehicles,
   mantWorkOrders,
+  products,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { OT_OPEN_STATUSES, type OtStatus } from "@/lib/mantencion/work-order-states"
@@ -21,6 +22,13 @@ import type { Session } from "next-auth"
  * fuentes para el mismo dato terminaban contradiciéndose.
  */
 const FREE_EQUIPMENT_FIELDS = new Set(["equipmentName", "patent", "brand", "model"])
+
+/**
+ * Con un repuesto de catálogo el N° de parte lo dice el producto: guardarlo
+ * también como atributo del ítem sería una segunda fuente que se desfasa en
+ * cuanto alguien corrige el catálogo.
+ */
+const CATALOG_PART_FIELDS = new Set(["partNumber"])
 
 /**
  * Valida el vínculo del ítem con la flota: el equipo existe, está activo y es de
@@ -55,6 +63,24 @@ async function assertItemFleetLink(
   if (!workOrder || workOrder.vehicleId !== vehicleId) throw new Error("La OT no corresponde al equipo elegido")
   if (!(OT_OPEN_STATUSES as readonly OtStatus[]).includes(workOrder.status as OtStatus)) {
     throw new Error("La OT ya está cerrada o anulada")
+  }
+}
+
+/**
+ * El producto elegido para un ítem de repuestos existe, es un repuesto de
+ * catálogo y sigue activo. El CHECK de la base impide que un EPP o un servicio
+ * sea repuesto, pero nada impide que el cliente mande el id de un EPP: sin esta
+ * lectura una solicitud de repuestos podía colgar de cualquier producto.
+ */
+async function assertCatalogSparePart(tx: Tx, productId: string): Promise<void> {
+  const [product] = await tx
+    .select({ name: products.name, sku: products.sku, isActive: products.isActive, isSparePart: products.isSparePart })
+    .from(products)
+    .where(eq(products.id, productId))
+  if (!product) throw new Error("El repuesto elegido ya no existe en el catálogo")
+  if (!product.isSparePart) throw new Error(`«${product.name}» no es un repuesto del catálogo`)
+  if (!product.isActive) {
+    throw new Error(`El repuesto «${product.name}» (${product.sku}) está inactivo: elige otro o descríbelo con texto libre`)
   }
 }
 
@@ -133,12 +159,17 @@ export async function persistDraft(
       const itemId = item.id ?? nanoid()
       await assertItemFleetLink(tx, data.worksiteId, item)
       const vehicleId = item.vehicleId?.trim() || null
+      // Sólo repuestos ofrece catálogo; servicios sigue siendo texto libre.
+      const productId = config.requestType === "repuestos" ? (item.productId?.trim() || null) : null
+      if (productId) await assertCatalogSparePart(tx, productId)
 
       await tx.insert(purchaseRequestItems).values({
         id:              itemId,
         requestId,
-        productId:       null,
-        productNameFree: item.description,
+        productId,
+        // Un ítem de catálogo se nombra por su producto, como el de EPP: el
+        // nombre libre quedaría como una copia que se desfasa del catálogo.
+        productNameFree: productId ? null : item.description,
         quantity:        item.quantity,
         unitOfMeasure:   item.unitOfMeasure,
         status:          "draft",
@@ -156,6 +187,7 @@ export async function persistDraft(
 
       for (const [fieldName, displayName] of Object.entries(config.attributeNames)) {
         if (vehicleId && FREE_EQUIPMENT_FIELDS.has(fieldName)) continue
+        if (productId && CATALOG_PART_FIELDS.has(fieldName)) continue
         const value = item[fieldName as keyof RequestServiceInput["items"][number]]
         if (typeof value === "string" && value.trim()) {
           await tx.insert(requestItemAttributes).values({

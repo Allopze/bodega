@@ -40,6 +40,12 @@ export interface RequestServiceInput {
 
 export interface RequestItemInput {
   id?:            string
+  /**
+   * Repuesto del catálogo (`products.is_spare_part`). Sólo lo honra repuestos:
+   * con él el ítem guarda el producto y no `description` ni «N° de Parte».
+   * Servicios lo ignora y sigue guardando texto libre.
+   */
+  productId?:     string | null
   description:    string
   quantity:       number
   unitOfMeasure:  string

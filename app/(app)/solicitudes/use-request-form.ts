@@ -7,7 +7,7 @@ import { INITIAL_STATE } from "@/lib/form-state"
 import { useActionWatchers } from "@/lib/hooks/use-action-watchers"
 import { URGENCY_OPTS } from "./request-form.constants"
 import type { ActionState } from "@/lib/validation/operations"
-import type { ItemRow, ProductOption, WorksiteOption, SupplierOption, WorkerOption, EditRequest, PrefillItem, VehicleOption } from "./request-form.types"
+import type { ItemRow, ProductOption, SparePartOption, WorksiteOption, SupplierOption, WorkerOption, EditRequest, PrefillItem, VehicleOption } from "./request-form.types"
 import { nanoid } from "@/lib/id"
 import { QUOTATION_TYPES, visibleRequestTypeOptions } from "@/lib/request-types"
 import type { RequestType } from "@/lib/request-types"
@@ -20,6 +20,7 @@ import {
 import { groupProductVariants } from "@/lib/products/variant-grouping"
 import { normalizeSizeLabel, suggestedWorkerSize } from "@/lib/products/product-size"
 import { closestVariant } from "./variant-selector.helpers"
+import { prefillPriceForPart } from "./spare-part-options"
 
 const AUTOSAVE_INTERVAL_MS = 60_000
 
@@ -207,12 +208,17 @@ function withoutFleetLink(item: ItemRow): ItemRow {
     : item
 }
 
+const NO_SPARE_PARTS: SparePartOption[] = []
+
 export function useRequestForm({
   worksites, products, workers, editRequest,
   userPermissions = [], initialRequestType, prefillItems, initialWorksiteId,
   vehicles = [], initialUrgency, quotationThresholdClp, attachedQuotationTotals,
+  spareParts = NO_SPARE_PARTS,
 }: {
   worksites: WorksiteOption[]; products: ProductOption[]; suppliers: SupplierOption[]; workers?: WorkerOption[]
+  /** Catálogo de repuestos (sólo solicitudes de repuestos): `selectProduct` elige de aquí un id que no es del catálogo general. */
+  spareParts?: SparePartOption[]
   editRequest?: EditRequest; maxFileSizeMb: number; userRoles?: string[]; userPermissions?: string[]
   initialRequestType?: RequestType; prefillItems?: PrefillItem[]
   /** Faena sugerida por el enlace de entrada (ya validada contra el alcance en
@@ -290,13 +296,14 @@ export function useRequestForm({
       const isQuotation = QUOTATION_TYPES.has(editRequest.requestType)
       return editRequest.items.map((item) => {
         const prod = item.productId ? products.find((p) => p.id === item.productId) : null
+        const part = item.productId ? spareParts.find((p) => p.id === item.productId) : undefined
         return {
           _key: item.id ?? `edit-${item.productId ?? item.productNameFree ?? "item"}`,
           id: item.id, updatedAt: item.updatedAt, productId: item.productId, productNameFree: item.productNameFree ?? "",
           quantity: String(item.quantity), unitOfMeasure: item.unitOfMeasure,
           urgency: item.urgency, suggestedSupplierId: item.suggestedSupplierId ?? "",
           supplierHint: item.supplierHint ?? "", notes: item.notes ?? "", status: item.status,
-          isEpp: prod?.isEpp ?? false, productName: prod?.name ?? item.productNameFree ?? "",
+          isEpp: prod?.isEpp ?? false, productName: prod?.name ?? part?.name ?? item.productNameFree ?? "",
           // Sin esto la ficha de una solicitud ya enviada mostraba el selector de
           // colaborador vacío aunque el ítem sí tuviera uno asignado.
           variantQuantities: {}, workerId: item.workerId ?? "", workerName: item.workerName ?? "",
@@ -323,6 +330,7 @@ export function useRequestForm({
     if (prefillItems && prefillItems.length > 0) {
       return prefillItems.map((prefill, index) => {
         const prod = prefill.productId ? products.find((p) => p.id === prefill.productId) : null
+        const part = prefill.productId ? spareParts.find((p) => p.id === prefill.productId) : undefined
         const attrs = applyPrefillAttributeValues(prod ? buildAttrsFromProduct(prod) : [], prefill.attributes)
         return {
           // Esta llave llega a los id/htmlFor de los controles. Debe ser idéntica
@@ -331,7 +339,7 @@ export function useRequestForm({
           ...blankItemForType(`prefill-${index}`, requestType),
           productId:           prefill.productId,
           productNameFree:     prefill.productNameFree,
-          productName:         prod?.name ?? prefill.productNameFree,
+          productName:         prod?.name ?? part?.name ?? prefill.productNameFree,
           quantity:            String(prefill.quantity),
           unitOfMeasure:       prefill.unitOfMeasure,
           urgency:             prefill.urgency,
@@ -422,7 +430,37 @@ export function useRequestForm({
     setItems((prev) => prev.map((i) => i._key === key ? { ...i, ...patch } : i))
   }, [invalidateStockWarning])
 
+  /**
+   * Elegir un repuesto del catálogo. El nombre, el SKU, el N° de parte y la marca
+   * los dice el repuesto, así que lo escrito como N° de parte se descarta. El
+   * precio estimado y el proveedor sólo se precargan si la persona no puso el
+   * suyo: un precio o un proveedor escritos a mano no se pisan.
+   */
+  const selectSparePart = useCallback((key: string, part: SparePartOption) => {
+    invalidateStockWarning()
+    setItems((prev) => prev.map((i) => {
+      if (i._key !== key) return i
+      const previousPart = i.productId ? spareParts.find((p) => p.id === i.productId) : undefined
+      const previousPrice = previousPart ? prefillPriceForPart(previousPart) : null
+      const price = prefillPriceForPart(part)
+      // «Sin tocar»: vacío, o el mismo que precargó el repuesto anterior.
+      const priceUntouched = i.estimatedUnitPrice.trim() === "" || (previousPrice !== null && i.estimatedUnitPrice === previousPrice)
+      const supplierUntouched = !i.supplierHint && (!i.suggestedSupplierId || i.suggestedSupplierId === previousPart?.preferredSupplierId)
+      return {
+        ...i,
+        productId: part.id, productNameFree: "", productName: part.name,
+        unitOfMeasure: part.unitOfMeasure, isEpp: false,
+        partNumber: "",
+        estimatedUnitPrice: priceUntouched ? (price ?? "") : i.estimatedUnitPrice,
+        suggestedSupplierId: supplierUntouched ? (part.preferredSupplierId ?? "") : i.suggestedSupplierId,
+        attributes: [], variantQuantities: {}, showAttrs: false,
+      }
+    }))
+  }, [invalidateStockWarning, spareParts])
+
   const selectProduct = useCallback((key: string, prodId: string) => {
+    const part = spareParts.find((p) => p.id === prodId)
+    if (part) { selectSparePart(key, part); return }
     const prod = products.find((p) => p.id === prodId)
     if (!prod) return
     invalidateStockWarning()
@@ -454,7 +492,7 @@ export function useRequestForm({
         emergencyResourceLabel: keepsEmergencyResource ? i.emergencyResourceLabel : "",
       }
     }))
-  }, [invalidateStockWarning, products])
+  }, [invalidateStockWarning, products, spareParts, selectSparePart])
 
   const selectFreeProduct = useCallback((key: string, name: string) => {
     const trimmed = name.trim()
@@ -469,10 +507,23 @@ export function useRequestForm({
 
   const clearProduct = useCallback((key: string) => {
     invalidateStockWarning()
-    setItems((prev) => prev.map((i) =>
-      i._key !== key ? i : { ...i, productId: null, productNameFree: "", productName: "", isEpp: false, suggestedSupplierId: "", supplierHint: "", attributes: [], showAttrs: false, workerId: "", workerName: "", equipmentCode: "", equipmentLabel: "", emergencyResourceId: "", emergencyResourceLabel: "" }
-    ))
-  }, [invalidateStockWarning])
+    setItems((prev) => prev.map((i) => {
+      if (i._key !== key) return i
+      const clearedPart = i.productId ? spareParts.find((p) => p.id === i.productId) : undefined
+      // «Cambiar» de repuesto suelta lo que el repuesto había precargado (precio y
+      // proveedor), pero no lo que la persona escribió o eligió ella.
+      const prefilledPrice = clearedPart ? prefillPriceForPart(clearedPart) : null
+      const clearsPrice = prefilledPrice !== null && i.estimatedUnitPrice === prefilledPrice
+      const clearsSupplier = !clearedPart
+        || (!i.supplierHint && i.suggestedSupplierId === (clearedPart.preferredSupplierId ?? ""))
+      return {
+        ...i, productId: null, productNameFree: "", productName: "", isEpp: false,
+        suggestedSupplierId: clearsSupplier ? "" : i.suggestedSupplierId, supplierHint: clearsSupplier ? "" : i.supplierHint,
+        ...(clearsPrice ? { estimatedUnitPrice: "" } : {}),
+        attributes: [], showAttrs: false, workerId: "", workerName: "", equipmentCode: "", equipmentLabel: "", emergencyResourceId: "", emergencyResourceLabel: "",
+      }
+    }))
+  }, [invalidateStockWarning, spareParts])
 
   /**
    * Elegir equipo de flota fija el equipo y suelta la OT: las OT abiertas son de

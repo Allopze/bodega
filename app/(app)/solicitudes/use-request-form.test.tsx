@@ -6,7 +6,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest"
 import { act, cleanup, renderHook } from "@testing-library/react"
 import { INITIAL_STATE } from "@/lib/form-state"
-import type { VehicleOption, WorksiteOption } from "./request-form.types"
+import type { SparePartOption, VehicleOption, WorksiteOption } from "./request-form.types"
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ back: vi.fn(), refresh: vi.fn(), push: vi.fn(), replace: vi.fn() }),
@@ -206,5 +206,156 @@ describe("useRequestForm — despacho por defecto", () => {
       },
     })
     expect(result.current.deliveryMode).toBe("via_oficina")
+  })
+})
+
+describe("useRequestForm — repuesto del catálogo", () => {
+  const FILTRO: SparePartOption = {
+    id: "rpt-1", sku: "RPT-001", name: "Filtro de aceite", partNumber: "1R-0750", partBrand: "Caterpillar",
+    unitOfMeasure: "juego", lastPrice: 35_000.4, preferredSupplierId: "sup-1", purchasedForVehicleIds: ["v-1"],
+  }
+  const PASTILLA: SparePartOption = {
+    id: "rpt-2", sku: "RPT-002", name: "Pastilla de freno", partNumber: "PF-200", partBrand: null,
+    unitOfMeasure: "unidad", lastPrice: 18_900, preferredSupplierId: null, purchasedForVehicleIds: [],
+  }
+  const SIN_PRECIO: SparePartOption = {
+    id: "rpt-3", sku: "RPT-003", name: "O-ring", partNumber: null, partBrand: null,
+    unitOfMeasure: "unidad", lastPrice: null, preferredSupplierId: null, purchasedForVehicleIds: [],
+  }
+  const SPARE_PARTS = [FILTRO, PASTILLA, SIN_PRECIO]
+
+  function setupCatalog(overrides: Partial<Parameters<typeof useRequestForm>[0]> = {}) {
+    return setup({ initialWorksiteId: "ws-1", spareParts: SPARE_PARTS, ...overrides })
+  }
+
+  it("elegir un repuesto fija producto, unidad y proveedor, y precarga el último precio en pesos enteros", () => {
+    const { result } = setupCatalog()
+    const key = result.current.items[0]!._key
+    act(() => result.current.updateItem(key, { productNameFree: "filtro", partNumber: "OEM-77" }))
+
+    act(() => result.current.selectProduct(key, "rpt-1"))
+    expect(result.current.items[0]).toMatchObject({
+      productId: "rpt-1", productName: "Filtro de aceite", productNameFree: "", unitOfMeasure: "juego",
+      estimatedUnitPrice: "35000", suggestedSupplierId: "sup-1", isEpp: false,
+      // El N° de parte lo dice el repuesto: lo escrito antes no viaja.
+      partNumber: "",
+    })
+    // Lo que viaja al servidor: el producto, sin nombre libre ni N° de parte.
+    expect(serializedItem(result)).toMatchObject({
+      productId: "rpt-1", productNameFree: null, partNumber: null, estimatedUnitPrice: 35_000,
+    })
+  })
+
+  it("no pisa un precio que la persona ya escribió", () => {
+    const { result } = setupCatalog()
+    const key = result.current.items[0]!._key
+    act(() => result.current.updateItem(key, { estimatedUnitPrice: "12000" }))
+    act(() => result.current.selectProduct(key, "rpt-1"))
+    expect(result.current.items[0]!.estimatedUnitPrice).toBe("12000")
+  })
+
+  it("un repuesto sin precio conocido deja el estimado como estaba", () => {
+    const { result } = setupCatalog()
+    const key = result.current.items[0]!._key
+    act(() => result.current.selectProduct(key, "rpt-3"))
+    expect(result.current.items[0]).toMatchObject({ productId: "rpt-3", estimatedUnitPrice: "", suggestedSupplierId: "" })
+    expect(serializedItem(result).estimatedUnitPrice).toBeNull()
+  })
+
+  it("no pisa el proveedor que la persona eligió antes", () => {
+    const { result } = setupCatalog()
+    const key = result.current.items[0]!._key
+    act(() => result.current.updateItem(key, { suggestedSupplierId: "sup-9" }))
+    act(() => result.current.selectProduct(key, "rpt-1"))
+    expect(result.current.items[0]!.suggestedSupplierId).toBe("sup-9")
+
+    // Ni el que escribió a mano.
+    const second = setupCatalog()
+    const secondKey = second.result.current.items[0]!._key
+    act(() => second.result.current.updateItem(secondKey, { supplierHint: "treck" }))
+    act(() => second.result.current.selectProduct(secondKey, "rpt-1"))
+    expect(second.result.current.items[0]).toMatchObject({ supplierHint: "treck", suggestedSupplierId: "" })
+  })
+
+  it("cambiar de repuesto reemplaza el precio que había precargado el anterior, no uno escrito a mano", () => {
+    const { result } = setupCatalog()
+    const key = result.current.items[0]!._key
+    act(() => result.current.selectProduct(key, "rpt-1"))
+    expect(result.current.items[0]!.estimatedUnitPrice).toBe("35000")
+    act(() => result.current.selectProduct(key, "rpt-2"))
+    expect(result.current.items[0]!.estimatedUnitPrice).toBe("18900")
+    // Al pasar a uno sin precio, el del anterior no se queda como si fuera suyo.
+    act(() => result.current.selectProduct(key, "rpt-3"))
+    expect(result.current.items[0]!.estimatedUnitPrice).toBe("")
+
+    act(() => result.current.selectProduct(key, "rpt-1"))
+    act(() => result.current.updateItem(key, { estimatedUnitPrice: "41000" }))
+    act(() => result.current.selectProduct(key, "rpt-2"))
+    expect(result.current.items[0]!.estimatedUnitPrice).toBe("41000")
+  })
+
+  it("«Cambiar» suelta el precio y el proveedor precargados, y conserva los escritos", () => {
+    const { result } = setupCatalog()
+    const key = result.current.items[0]!._key
+    act(() => result.current.selectProduct(key, "rpt-1"))
+    act(() => result.current.clearProduct(key))
+    expect(result.current.items[0]).toMatchObject({
+      productId: null, productName: "", productNameFree: "", estimatedUnitPrice: "", suggestedSupplierId: "",
+    })
+
+    act(() => result.current.selectProduct(key, "rpt-1"))
+    act(() => result.current.updateItem(key, { estimatedUnitPrice: "41000", suggestedSupplierId: "sup-9" }))
+    act(() => result.current.clearProduct(key))
+    expect(result.current.items[0]).toMatchObject({ productId: null, estimatedUnitPrice: "41000", suggestedSupplierId: "sup-9" })
+  })
+
+  it("el texto libre sigue viajando como descripción, sin producto", () => {
+    const { result } = setupCatalog()
+    const key = result.current.items[0]!._key
+    act(() => result.current.selectProduct(key, "rpt-1"))
+    act(() => result.current.clearProduct(key))
+    act(() => result.current.updateItem(key, { productNameFree: "Manguera hidráulica", productId: null, partNumber: "MH-9" }))
+    expect(serializedItem(result)).toMatchObject({ productId: null, productNameFree: "Manguera hidráulica", partNumber: "MH-9" })
+    expect(result.current.missingItems.some((issue) => issue.includes("selecciona o describe"))).toBe(false)
+  })
+
+  it("el umbral de cotizaciones usa el precio precargado", () => {
+    const { result } = setupCatalog({ quotationThresholdClp: 100_000 })
+    const key = result.current.items[0]!._key
+    act(() => result.current.updateItem(key, { quantity: "4" }))
+    // 4 × $35.000 = $140.000 supera el umbral: sin cotizaciones no se puede enviar.
+    act(() => result.current.selectProduct(key, "rpt-1"))
+    expect(result.current.missingItems.some((issue) => /cotizaci/i.test(issue))).toBe(true)
+
+    act(() => result.current.updateItem(key, { quantity: "2" }))
+    expect(result.current.missingItems.some((issue) => /cotizaci/i.test(issue))).toBe(false)
+  })
+
+  it("al editar un borrador hidrata el nombre del repuesto desde el catálogo", () => {
+    const { result } = setupCatalog({
+      editRequest: {
+        id: "req-1", code: "REP-1", worksiteId: "ws-1", requestType: "repuestos", urgency: "normal",
+        deliveryMode: "directo_faena", requiredDate: "2099-12-01", status: "draft", notes: null,
+        items: [{
+          id: "it-1", productId: "rpt-1", productNameFree: null, quantity: 2, unitOfMeasure: "juego", urgency: "normal",
+          suggestedSupplierId: null, supplierHint: null, notes: null, status: "draft", workerId: null, workerName: null,
+          equipmentCode: null, equipmentLabel: null, attributes: [], estimatedUnitPrice: 33_000,
+        }],
+      },
+    })
+    expect(result.current.items[0]).toMatchObject({
+      productId: "rpt-1", productName: "Filtro de aceite", productNameFree: "", estimatedUnitPrice: "33000",
+    })
+  })
+
+  it("un id que no es del catálogo de repuestos se busca en el catálogo general, como siempre", () => {
+    const casco = {
+      id: "prod-casco", sku: "EPP-1", name: "Casco", isEpp: true, isService: false, requiresWorker: false, equipmentKind: null,
+      unitOfMeasure: "unidad", categoryName: "cat", referencePrice: null, familyId: null, preferredSupplierId: null, attributes: [],
+    }
+    const { result } = setupCatalog({ products: [casco], initialRequestType: "epp" })
+    const key = result.current.items[0]!._key
+    act(() => result.current.selectProduct(key, "prod-casco"))
+    expect(result.current.items[0]).toMatchObject({ productId: "prod-casco", productName: "Casco", isEpp: true })
   })
 })
