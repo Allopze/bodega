@@ -300,15 +300,15 @@ describe("sidebar navigation", () => {
       ["Flota", "Vehículos"],
       ["Flota", "Conductores"],
       ["Flota", "Monitoreo GPS"],
-      // El catálogo es del módulo `repuestos`, que se registra antes que Mantención de equipos: dentro
-      // del grupo manda el orden de registro.
-      ["Mantención", "Catálogo de repuestos"],
       ["Mantención", "Órdenes de trabajo"],
       ["Mantención", "Panel"],
       ["Mantención", "Registros"],
       ["Mantención", "Equipos"],
       ["Mantención", "Pautas"],
       ["Mantención", "Dispositivos"],
+      // El catálogo es del módulo `repuestos`, que se registra después de Mantención de equipos:
+      // dentro del grupo manda el orden de registro.
+      ["Mantención", "Catálogo de repuestos"],
       ["Combustible", "Panel"],
       ["Combustible", "Cargas"],
       ["Combustible", "Por revisar"],

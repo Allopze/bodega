@@ -48,7 +48,6 @@ export const registry = [
   deliveriesModule,
   reportsModule,
   analyticsModule,
-  repuestosModule,
   serviciosModule,
   operationsModule,
   // ── Facturación y Cobranza (cuentas por cobrar) ─────────────────────────
@@ -63,6 +62,10 @@ export const registry = [
   // ── Control operacional ─────────────────────────────────────────────────
   flotaModule,
   mantencionEquiposModule,
+  // Después de Mantención de equipos: su único ítem de menú («Catálogo de
+  // repuestos», grupo Mantención) va detrás de las OT y del Panel, y dentro de
+  // un grupo manda el orden de registro.
+  repuestosModule,
   // ── Prevención ampliada: IPER, incidentes, capacitaciones ────────────────
   preventionModule,
   // ── TI ───────────────────────────────────────────────────────────────────
