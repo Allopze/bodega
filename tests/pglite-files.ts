@@ -556,4 +556,8 @@ export const pgliteTestFiles = [
   // Catálogo de repuestos (fase 2): orden por vehículo, N° de parte duplicado,
   // inactivos excluidos, SKU RPT-NNN y ficha con historial de precio.
   "lib/__tests__/spare-parts-catalog-pglite.test.ts",
+  // Catalogar al comprar (T7) y precio al emitir (T8): el productId de la línea
+  // llega a la OC y a la solicitud (también al remanente), y la emisión deja el
+  // precio del repuesto en el catálogo con fuente purchase_order.
+  "lib/__tests__/spare-parts-oc-link-pglite.test.ts",
 ]

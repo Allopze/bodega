@@ -15,6 +15,14 @@ import { getActiveOrderedQuantityTx, PURCHASE_COVERAGE_EPSILON } from "./purchas
 
 export interface CreateOrderItemInput {
   requestItemId: string
+  /**
+   * Producto de la línea. La fuente de verdad es el ítem de solicitud: si coincide
+   * con el suyo (o viene vacío) no cambia nada. Cuando el ítem de solicitud no
+   * tiene producto y esta línea trae un repuesto de catálogo, Compras lo está
+   * **catalogando al armar la OC**: el servicio lo escribe en la línea de la OC y
+   * en el ítem de solicitud de origen (y en el remanente de una compra parcial),
+   * en la misma transacción. Sólo vale para repuestos activos.
+   */
   productId:     string | null
   productNameFree: string | null
   quantity:      number
@@ -104,6 +112,7 @@ export async function createOrdersBySupplier(input: CreateOrdersBySupplierInput)
       requestItem: typeof purchaseRequestItems.$inferSelect
       costCenterId: string | null
       deliveryMode: string
+      requestType: string
     }>()
 
     // The request and its parent are locked and resolved inside this transaction:
@@ -116,6 +125,7 @@ export async function createOrdersBySupplier(input: CreateOrdersBySupplierInput)
         worksiteId: purchaseRequests.worksiteId,
         costCenterId: purchaseRequests.costCenterId,
         deliveryMode: purchaseRequests.deliveryMode,
+        requestType: purchaseRequests.requestType,
       })
       .from(purchaseRequestItems)
       .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
@@ -171,7 +181,39 @@ export async function createOrdersBySupplier(input: CreateOrdersBySupplierInput)
         requestItem: source.requestItem,
         costCenterId: source.costCenterId,
         deliveryMode: source.deliveryMode,
+        requestType: source.requestType,
       })
+    }
+
+    // Catálogo de repuestos: una línea de repuesto pedida en texto libre puede
+    // vincularse a un repuesto del catálogo al armar la OC. El cliente sólo
+    // propone el producto; aquí se decide si procede, con la fila ya bloqueada.
+    const sparePartLinks = new Map<string, string>()
+    for (const item of allInputItems) {
+      const proposed = item.productId ?? null
+      const source = lockedSourcesByRequestItemId.get(item.requestItemId)!
+      if (!proposed || proposed === source.requestItem.productId) continue
+      if (source.requestItem.productId) {
+        throw new Error("El ítem ya está vinculado a otro producto del catálogo: recarga la página")
+      }
+      if (source.requestType !== "repuestos") {
+        throw new Error("Sólo las líneas de una solicitud de repuestos se pueden vincular a un repuesto del catálogo")
+      }
+      sparePartLinks.set(item.requestItemId, proposed)
+    }
+    const linkedProductIds = [...new Set(sparePartLinks.values())]
+    if (linkedProductIds.length > 0) {
+      const validParts = await tx
+        .select({ id: products.id })
+        .from(products)
+        .where(and(
+          inArray(products.id, linkedProductIds),
+          eq(products.isSparePart, true),
+          eq(products.isActive, true),
+        ))
+      if (validParts.length !== linkedProductIds.length) {
+        throw new Error("El repuesto elegido no existe, está inactivo o no es un repuesto del catálogo")
+      }
     }
 
     for (const orderInput of input.orders) {
@@ -194,7 +236,13 @@ export async function createOrdersBySupplier(input: CreateOrdersBySupplierInput)
         // validado antes de abrir la transacción; la guarda conserva el error
         // útil si la implementación evoluciona y pierde esa correspondencia.
         if (!source) throw new Error(`Item ${item.requestItemId} not found`)
-        const requestItem = source.requestItem
+        const sourceRequestItem = source.requestItem
+        const linkedProductId = sparePartLinks.get(item.requestItemId) ?? null
+        // Con vínculo, de aquí en adelante la línea es un repuesto de catálogo:
+        // el remanente de una compra parcial y la línea de la OC lo heredan.
+        const requestItem = linkedProductId
+          ? { ...sourceRequestItem, productId: linkedProductId }
+          : sourceRequestItem
         // La misma regla que alimenta el selector se reafirma dentro de la
         // transacción. Las compras parciales válidas se representan como un
         // ítem hermano; por eso una línea activa sobre este mismo ítem nunca se
@@ -205,6 +253,25 @@ export async function createOrdersBySupplier(input: CreateOrdersBySupplierInput)
         }
         if (item.quantity > requestItem.quantity) {
           throw new Error("La cantidad a comprar no puede superar la cantidad aprobada del ítem")
+        }
+
+        if (linkedProductId) {
+          // El ítem de solicitud es la fuente de verdad del producto: el vínculo
+          // se escribe también ahí (misma transacción que la OC) para que el
+          // historial del repuesto, la recepción y la conciliación lo vean.
+          await tx
+            .update(purchaseRequestItems)
+            .set({ productId: linkedProductId, updatedAt: new Date().toISOString() })
+            .where(eq(purchaseRequestItems.id, requestItem.id))
+          await recordAudit({
+            userId:     input.createdBy,
+            userEmail:  input.userEmail,
+            action:     "update",
+            entityType: "request_item",
+            entityId:   requestItem.id,
+            oldState:   { productId: null },
+            newState:   { productId: linkedProductId, linkedFrom: "purchase_order" },
+          }, tx)
         }
 
         sourceItems.push({ inputItem: item, requestItem, costCenterId: source.costCenterId, deliveryMode: source.deliveryMode })

@@ -3,10 +3,11 @@
  * All DB mutations here, never in Server Actions or UI components.
  */
 
-import { eq, and, inArray } from "drizzle-orm"
+import { eq, and, gt, inArray, isNotNull } from "drizzle-orm"
 import { db } from "@/db"
-import { purchaseOrders, purchaseOrderItems, purchaseRequestItems, suppliers } from "@/db/schema"
+import { products, purchaseOrders, purchaseOrderItems, purchaseRequestItems, suppliers } from "@/db/schema"
 import { recordAudit, recordStatusChange, recordStatusChanges } from "@/lib/audit"
+import { setProductSupplierPriceTx } from "@/lib/services/product-supplier-prices"
 import { lockRequestsForRollupTx, rollupRequestStatus } from "@/lib/services/item-state-module/rollup"
 import {
   getActiveOrderedQuantitiesTx,
@@ -39,6 +40,62 @@ export interface OrderDispatchRecord {
   hasDispatchEvidence: boolean
   /** Frase que se guarda en historial y auditoría; la usa también el aviso. */
   summary: string
+}
+
+type PriceTx = Parameters<typeof setProductSupplierPriceTx>[0]
+
+/**
+ * Catálogo de repuestos: emitir la OC deja constancia del precio que se acordó
+ * con el proveedor. Cada línea cuyo producto es un repuesto de catálogo
+ * (`is_spare_part`) registra su precio unitario en `product_suppliers` y en su
+ * historial con fuente `purchase_order`; así «¿cuánto pagamos la última vez y a
+ * quién?» se responde desde la ficha del repuesto. EPP y demás productos no se
+ * tocan: su precio sigue viniendo de la ficha del producto y de la conciliación.
+ *
+ * - Se registra el precio neto de descuento (`subtotal / cantidad`), el mismo
+ *   criterio de la conciliación de facturas, para que ambas fuentes sean
+ *   comparables. Una línea sin precio o con precio 0 no informa nada y se omite.
+ * - `rejectOlderThanCurrent`: si el catálogo ya trae un precio más reciente (una
+ *   factura conciliada con fecha posterior), la OC no lo pisa.
+ * - Si una misma OC repite un repuesto con precios distintos, se registran en el
+ *   orden de la OC y queda vigente el último.
+ */
+async function recordSparePartPricesTx(
+  tx: PriceTx,
+  input: { orderId: string; supplierId: string; userId: string; effectiveAt: string },
+): Promise<void> {
+  const lines = await tx
+    .select({
+      productId:  purchaseOrderItems.productId,
+      quantity:   purchaseOrderItems.quantity,
+      unitPrice:  purchaseOrderItems.unitPrice,
+      discount:   purchaseOrderItems.discount,
+    })
+    .from(purchaseOrderItems)
+    .innerJoin(products, eq(products.id, purchaseOrderItems.productId))
+    .where(and(
+      eq(purchaseOrderItems.purchaseOrderId, input.orderId),
+      eq(products.isSparePart, true),
+      isNotNull(purchaseOrderItems.unitPrice),
+      gt(purchaseOrderItems.unitPrice, 0),
+    ))
+    .orderBy(purchaseOrderItems.sortOrder, purchaseOrderItems.id)
+
+  for (const line of lines) {
+    if (!line.productId || line.unitPrice === null || line.quantity <= 0) continue
+    const netUnitPrice = line.unitPrice * (1 - (line.discount ?? 0) / 100)
+    if (!(netUnitPrice > 0)) continue
+    await setProductSupplierPriceTx(tx, {
+      productId:  line.productId,
+      supplierId: input.supplierId,
+      unitPrice:  netUnitPrice,
+      source:     "purchase_order",
+      sourceId:   input.orderId,
+      effectiveAt: input.effectiveAt,
+      userId:     input.userId,
+      rejectOlderThanCurrent: true,
+    })
+  }
 }
 
 export async function issueAndSendOrder(
@@ -107,6 +164,13 @@ export async function issueAndSendOrder(
       .update(purchaseOrders)
       .set({ status: "sent", issuedAt: now, issuedBy: userId, sentAt: now, updatedAt: now })
       .where(eq(purchaseOrders.id, orderId))
+
+    await recordSparePartPricesTx(tx, {
+      orderId,
+      supplierId: order.supplierId,
+      userId,
+      effectiveAt: now,
+    })
 
     // Move request items to "purchased" status
     const requestItemIds = ocItems
