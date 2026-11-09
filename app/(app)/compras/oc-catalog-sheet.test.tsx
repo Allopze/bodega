@@ -29,11 +29,11 @@ const LINE: PendingItemOption = {
 
 const FILTER = {
   id: "rpt-1", sku: "RPT-001", name: "Filtro de aire primario", partNumber: "AF-100", partBrand: "Donaldson",
-  lastPrice: 21_000, lastPurchasedAt: "2026-10-15T12:00:00.000Z", vehicleMatch: "vehicle" as const,
+  unitOfMeasure: "unidad", lastPrice: 21_000, lastPurchasedAt: "2026-10-15T12:00:00.000Z", vehicleMatch: "vehicle" as const,
 }
 const OTHER = {
   id: "rpt-2", sku: "RPT-002", name: "Filtro de combustible", partNumber: "FF-200", partBrand: null,
-  lastPrice: null, lastPurchasedAt: null, vehicleMatch: null,
+  unitOfMeasure: "Unidad", lastPrice: null, lastPurchasedAt: null, vehicleMatch: null,
 }
 const LINKED: LinkedSparePart = {
   id: "rpt-1", sku: "RPT-001", name: "Filtro de aire primario", partNumber: "AF-100", partBrand: "Donaldson",
@@ -101,6 +101,33 @@ describe("OcCatalogSheet — vincular a un repuesto existente", () => {
     expect(await screen.findByText("Ya se compró para este equipo")).toBeTruthy()
     expect(screen.getByText(/21\.000/)).toBeTruthy()
     expect(search).toHaveBeenLastCalledWith({ query: "aire", vehicleId: "v-1", partNumber: null })
+  })
+
+  it("muestra la unidad de cada repuesto y deja a la vista, sin poder elegirlo, el que se compra en otra", async () => {
+    const KIT = { ...OTHER, id: "rpt-3", sku: "RPT-003", name: "Kit de juntas", unitOfMeasure: "juego" }
+    search.mockResolvedValue({ ok: true, parts: [KIT, OTHER], total: 2, suggestion: null })
+    open()
+    const kit = await screen.findByRole("button", { name: /Kit de juntas/ })
+    expect(kit.textContent).toContain("por juego")
+    expect(kit.textContent).toContain("Se compra por «juego» y esta línea pide «unidad»")
+    expect((kit as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(kit)
+    expect(link).not.toHaveBeenCalled()
+
+    // «Unidad» y «unidad» son la misma: se elige. Y el compatible va primero.
+    const same = screen.getByRole("button", { name: /Filtro de combustible/ })
+    expect((same as HTMLButtonElement).disabled).toBe(false)
+    expect(same.textContent).toContain("por Unidad")
+    const order = screen.getAllByRole("listitem").map((li) => li.textContent ?? "")
+    expect(order[0]).toContain("Filtro de combustible")
+  })
+
+  it("la sugerencia en otra unidad dice por qué y no se puede vincular", async () => {
+    search.mockResolvedValue({ ok: true, parts: [OTHER], total: 1, suggestion: { ...FILTER, unitOfMeasure: "caja" } })
+    open()
+    await screen.findByText("Coincide por N° de parte")
+    expect(screen.getByText("Se compra por «caja» y esta línea pide «unidad»")).toBeTruthy()
+    expect((screen.getByRole("button", { name: "Vincular este" }) as HTMLButtonElement).disabled).toBe(true)
   })
 
   it("con el catálogo vacío ofrece crear el repuesto (si puede) en vez de un callejón sin salida", async () => {

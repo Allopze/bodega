@@ -13,6 +13,7 @@ import {
   Sheet, SheetBody, SheetCloseButton, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle,
 } from "@/components/ui/sheet"
 import { useOperation } from "@/lib/hooks/use-operation"
+import { normalizeUnitOfMeasure } from "@/lib/services/purchasing-module/spare-part-unit"
 import { formatCLP, formatDate, formatQty } from "@/lib/utils"
 import {
   createSparePartForOcAction,
@@ -30,6 +31,21 @@ type View = "link" | "create"
 const MATCH_BADGES: Record<NonNullable<SparePartChoice["vehicleMatch"]>, { label: string; variant: "success" | "info" }> = {
   vehicle: { label: "Ya se compró para este equipo", variant: "success" },
   model: { label: "Se compró para un equipo igual", variant: "info" },
+}
+
+/**
+ * Por qué un repuesto no se puede vincular a la línea: se compra en otra unidad.
+ * Misma comparación que exige el servidor (`sparePartUnitMismatchMessage`), dicha
+ * antes de elegir para no descubrirla con un error después.
+ */
+export function unitMismatchReason(part: Pick<SparePartChoice, "unitOfMeasure">, lineUnit: string): string | null {
+  if (normalizeUnitOfMeasure(part.unitOfMeasure) === normalizeUnitOfMeasure(lineUnit)) return null
+  return `Se compra por «${part.unitOfMeasure.trim()}» y esta línea pide «${lineUnit.trim()}»`
+}
+
+/** SKU, N° de parte, marca y unidad: lo que distingue dos repuestos de nombre parecido. */
+function choiceFacts(part: SparePartChoice): string {
+  return [sparePartTag(part), part.partBrand, `por ${part.unitOfMeasure.trim()}`].filter(Boolean).join(" · ")
 }
 
 interface OcCatalogSheetProps {
@@ -161,9 +177,14 @@ function LinkView({
 
   const loading = result === null || result.key !== debounced
   const data = result?.data
-  const parts = data?.ok
+  const lineUnit = item.unitOfMeasure
+  // Los de otra unidad no se pueden vincular: van al final, con el motivo a la vista.
+  const parts = (data?.ok
     ? data.parts.filter((part) => debounced !== "" || part.id !== suggestion?.id)
-    : []
+    : [])
+    .map((part) => ({ part, mismatch: unitMismatchReason(part, lineUnit) }))
+    .sort((left, right) => Number(left.mismatch !== null) - Number(right.mismatch !== null))
+  const suggestionMismatch = suggestion ? unitMismatchReason(suggestion, lineUnit) : null
 
   function choose(part: SparePartChoice) {
     op.run(
@@ -182,9 +203,10 @@ function LinkView({
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0">
               <div className="text-sm font-medium">{suggestion.name}</div>
-              <div className="text-xs">{sparePartTag(suggestion)}{suggestion.partBrand ? ` · ${suggestion.partBrand}` : ""}</div>
+              <div className="text-xs">{choiceFacts(suggestion)}</div>
+              {suggestionMismatch && <div className="mt-1 text-xs font-medium text-[var(--color-warning-ink)]">{suggestionMismatch}</div>}
             </div>
-            <Button type="button" size="sm" variant="primary" onClick={() => choose(suggestion)} disabled={op.pending}>
+            <Button type="button" size="sm" variant="primary" onClick={() => choose(suggestion)} disabled={op.pending || suggestionMismatch !== null}>
               Vincular este
             </Button>
           </div>
@@ -228,19 +250,21 @@ function LinkView({
             </p>
           )}
           <ul aria-label="Repuestos del catálogo" aria-busy={loading} className="flex flex-col gap-2">
-            {parts.map((part) => (
+            {parts.map(({ part, mismatch }) => (
               <li key={part.id}>
                 <button
                   type="button"
                   onClick={() => choose(part)}
-                  disabled={op.pending}
-                  className="flex w-full items-start justify-between gap-3 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5 text-left transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-surface-2)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)] disabled:opacity-60"
+                  // Otra unidad: el servidor lo rechazaría. Se ve, pero no se elige.
+                  disabled={op.pending || mismatch !== null}
+                  className="flex w-full items-start justify-between gap-3 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5 text-left transition-colors duration-[var(--duration-fast)] enabled:hover:bg-[var(--color-surface-2)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)] disabled:cursor-not-allowed disabled:bg-[var(--color-surface-2)]"
                 >
                   <span className="min-w-0">
-                    <span className="block text-sm font-medium text-[var(--color-text)]">{part.name}</span>
-                    <span className="block text-xs text-[var(--color-text-muted)]">
-                      {sparePartTag(part)}{part.partBrand ? ` · ${part.partBrand}` : ""}
-                    </span>
+                    <span className={mismatch ? "block text-sm font-medium text-[var(--color-text-muted)]" : "block text-sm font-medium text-[var(--color-text)]"}>{part.name}</span>
+                    <span className="block text-xs text-[var(--color-text-muted)]">{choiceFacts(part)}</span>
+                    {mismatch && (
+                      <span className="mt-1 block text-xs font-medium text-[var(--color-warning-ink)]">{mismatch}</span>
+                    )}
                     {part.vehicleMatch && (
                       <MetaBadge meta={MATCH_BADGES[part.vehicleMatch]} size="sm" className="mt-1.5" />
                     )}
