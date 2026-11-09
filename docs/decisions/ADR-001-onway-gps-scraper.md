@@ -47,7 +47,8 @@ Rechazada: el DOM es más frágil que el contrato JSON usado por el mapa. Persis
 
 - Cambios en Auth0, selectores o endpoints de OnWay pueden detener la sincronización. Los errores se guardan como códigos acotados y se muestran sin propagar respuestas del proveedor.
 - Auth0 puede exigir CAPTCHA o verificación interactiva. En ese caso el cron responde degradado y necesita intervención humana; no intenta eludir el desafío.
-- Reiniciar el proceso descarta la sesión y obliga a autenticar una vez en la siguiente corrida.
+- Reiniciar el proceso descarta la sesión y obliga a autenticar una vez en la siguiente corrida. Cambiar el usuario o la contraseña también: la sesión queda atada a la cuenta con la que se autenticó.
+- Un snapshot con la sesión viva y sin ningún equipo es una falla (`ONWAY_SNAPSHOT_EMPTY`), no un éxito con cero equipos: la cuenta perdió la flota o no es la que corresponde. Así se escondió el GPS detenido entre el 2026-11-02 y el 11-08.
 - Antes de habilitar producción se debe aplicar la migración, comprobar Chromium y ejecutar una sincronización manual. El éxito local del build no demuestra que Auth0 acepte una credencial en producción.
 
 ## Operación

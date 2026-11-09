@@ -86,6 +86,13 @@ describe("GET /api/cron/fleet-onway-sync", () => {
     expect(await response.json()).toMatchObject({ outcome: "partial", code: "FLEET_GPS_CRON_PARTIAL" })
   })
 
+  it("reports a portal that answers with no devices as failed, not as a healthy success", async () => {
+    mocks.syncOnway.mockRejectedValue(new OnwayClientError("ONWAY_SNAPSHOT_EMPTY"))
+    const response = await GET(request())
+    expect(response.status).toBe(503)
+    expect(await response.json()).toMatchObject({ outcome: "failed", health: "unhealthy", errorCode: "ONWAY_SNAPSHOT_EMPTY" })
+  })
+
   it("reports an overlapping run as a conflict", async () => {
     mocks.withCronLock.mockResolvedValue({ skipped: true, reason: "locked" })
     const response = await GET(request())
