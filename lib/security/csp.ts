@@ -16,6 +16,8 @@
  *     interpolates user input into a style prop can lead to CSS
  *     exfiltration; tracked in AUDITORIA_COMPLETA.md.
  */
+import { mapStyleConnectSrcOrigin, resolveMapStyleUrl } from "@/lib/maps/map-style"
+
 /**
  * Origen de ingest de Sentry, derivado del DSN que el build inlineó en el
  * cliente, en vez de un wildcard *.sentry.io: `connect-src` no se abre más de
@@ -31,9 +33,17 @@ export function sentryConnectSrcOrigin(dsn: string | undefined = process.env.NEX
   }
 }
 
-export function createCspHeader(nonce: string, options: { isDev?: boolean; sentryDsn?: string } = {}): string {
+export function createCspHeader(
+  nonce: string,
+  options: { isDev?: boolean; sentryDsn?: string; mapStyleUrl?: string | null } = {},
+): string {
   const isDev = options.isDev ?? process.env.NODE_ENV === "development"
   const sentryOrigin = "sentryDsn" in options ? sentryConnectSrcOrigin(options.sentryDsn) : sentryConnectSrcOrigin()
+  // El estilo del mapa de Monitoreo GPS (y sus tiles, glifos y sprites) se pide
+  // por fetch: sin su origen en `connect-src` el mapa queda en blanco.
+  const mapOrigin = mapStyleConnectSrcOrigin(
+    "mapStyleUrl" in options ? options.mapStyleUrl ?? null : resolveMapStyleUrl(undefined, !isDev),
+  )
   return [
     "default-src 'self'",
     // Next App Router inserta algunos chunks dinámicamente sin propagar el
@@ -49,9 +59,10 @@ export function createCspHeader(nonce: string, options: { isDev?: boolean; sentr
     // ya no hace falta habilitar un origen externo para pintar una imagen.
     "img-src 'self' data: blob:",
     "font-src 'self' data:",
-    // El origen de Sentry va al final para que el prefijo de la directiva no
-    // dependa de si hay DSN (una aserción de test se rompió así el 2026-08-04).
-    `connect-src 'self'${isDev ? " ws: wss:" : ""}${sentryOrigin ? ` ${sentryOrigin}` : ""}`,
+    // Los orígenes opcionales (Sentry, mapa) van al final para que el prefijo de
+    // la directiva no dependa de ellos (una aserción de test se rompió así el
+    // 2026-08-04).
+    `connect-src 'self'${isDev ? " ws: wss:" : ""}${sentryOrigin ? ` ${sentryOrigin}` : ""}${mapOrigin ? ` ${mapOrigin}` : ""}`,
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
