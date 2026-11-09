@@ -9,6 +9,8 @@ export type ProductSupplierPriceSource =
   | "epp_import"
   | "invoice_reconciliation"
   | "baseline"
+  /** Precio unitario de una línea de repuesto de catálogo al emitir la OC. */
+  | "purchase_order"
 
 type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
