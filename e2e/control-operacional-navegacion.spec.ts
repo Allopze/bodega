@@ -100,6 +100,8 @@ const MENU_DEL_AREA: ReadonlyArray<{ grupo: string; destinos: readonly DestinoDe
   {
     grupo: "Mantención",
     destinos: [
+      // El catálogo es del módulo `repuestos`, que se registra antes que Mantención de equipos: en el grupo manda el orden de registro.
+      { href: "/mantencion/repuestos", nombre: "Catálogo de repuestos" },
       { href: "/mantencion/ot", nombre: "Órdenes de trabajo" },
       { href: "/mantencion/panel", nombre: "Panel" },
       { href: "/mantencion/registros", nombre: "Registros" },
@@ -132,7 +134,7 @@ test.describe("Control operacional — menú del área", () => {
     await login(page)
   })
 
-  test("agrupa el área en Seguimiento, Flota, Mantención y Combustible con sus dieciocho destinos en orden", async ({ page }) => {
+  test("agrupa el área en Seguimiento, Flota, Mantención y Combustible con sus diecinueve destinos en orden", async ({ page }) => {
     await page.goto("/control-operacional")
 
     const area = page

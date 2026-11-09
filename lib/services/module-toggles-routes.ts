@@ -220,6 +220,11 @@ export const PERMISSION_TARGET_OVERRIDES: Array<{ test: (permission: string) => 
   { test: (permission) => ["combustibles:approve_flagged", "combustibles:review_anomalies", "combustibles:resolve_anomalies"].includes(permission), href: "/combustibles/revisar" },
   { test: (permission) => permission === "combustibles:manage_statements", href: "/combustibles/pagos" },
   { test: (permission) => permission.startsWith("sst:"), href: "/prevencion/evaluaciones" },
+  // Repuestos: el único ítem de menú del módulo es el catálogo (`/mantencion/repuestos`).
+  // Con un solo ítem, `canonicalPermissionRoute` derivaría TODOS sus permisos a él y apagar el
+  // catálogo cerraría también el pedido y la aprobación de repuestos, que viven en Solicitudes.
+  // Sólo `repuestos:catalog` pertenece al submódulo; el resto sigue gobernado por el módulo.
+  { test: (permission) => permission.startsWith("repuestos:") && permission !== "repuestos:catalog", href: "/solicitudes" },
   // Crear, asignar, ejecutar, recibir y dar conformidad no están en el menú;
   // apagar el submódulo de OT también los apaga.
   { test: (permission) => permission.startsWith("mant:ot:"), href: "/mantencion/ot" },

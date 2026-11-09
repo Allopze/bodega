@@ -19,9 +19,25 @@ export const repuestosModule = {
     "repuestos:approve":   { id: "p-rep-approve", description: "Aprobar cotizaciones de repuestos" },
     "repuestos:catalog":   { id: "p-rep-catalog", description: "Gestionar catálogo de repuestos" },
   },
-  // Repuestos no longer has its own page; it is created and managed inside the
-  // unified Solicitudes flow (/solicitudes). No standalone nav entry.
-  nav: [],
+  // Las solicitudes de repuestos se crean y gestionan dentro del flujo unificado
+  // de Solicitudes (/solicitudes): el módulo no tiene pantalla de solicitudes
+  // propia. Lo único que declara en el menú es el catálogo de repuestos (fase 2,
+  // 2026-11-09), que vive bajo Mantención y se muestra sólo con `repuestos:catalog`.
+  // El menú sólo lo refleja: la página y cada acción vuelven a exigir el permiso.
+  nav: [
+    {
+      areaId: "control-operacional",
+      items: [
+        {
+          label: "Catálogo de repuestos",
+          href: "/mantencion/repuestos",
+          iconName: "Package",
+          permissions: ["repuestos:catalog"],
+          group: "Mantención",
+        },
+      ],
+    },
+  ],
   defaultGrants: [
     // Administrador: acceso total
     { roleSlug: "administrador", permission: "repuestos:create" },
