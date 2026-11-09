@@ -217,7 +217,11 @@ export function useRequestForm({
   spareParts = NO_SPARE_PARTS,
 }: {
   worksites: WorksiteOption[]; products: ProductOption[]; suppliers: SupplierOption[]; workers?: WorkerOption[]
-  /** Catálogo de repuestos (sólo solicitudes de repuestos): `selectProduct` elige de aquí un id que no es del catálogo general. */
+  /**
+   * Repuestos que el formulario ya conoce al abrir (los que la solicitud o la
+   * copia referencian). El resto llega del buscador, que pregunta al servidor;
+   * al elegir uno, `selectSparePart` lo suma a `spareParts`.
+   */
   spareParts?: SparePartOption[]
   editRequest?: EditRequest; maxFileSizeMb: number; userRoles?: string[]; userPermissions?: string[]
   initialRequestType?: RequestType; prefillItems?: PrefillItem[]
@@ -290,6 +294,10 @@ export function useRequestForm({
   }, [invalidateStockWarning])
   const setRequiredDate = useCallback((value: string) => { invalidateStockWarning(); setRequiredDateState(value) }, [invalidateStockWarning])
   const setNotes = useCallback((value: string) => { invalidateStockWarning(); setNotesState(value) }, [invalidateStockWarning])
+
+  // Repuestos conocidos: los iniciales más los que se van eligiendo del buscador.
+  // La ficha del ítem y el precio/proveedor precargados salen de aquí.
+  const [knownSpareParts, setKnownSpareParts] = useState<SparePartOption[]>(spareParts)
 
   const [items, setItems] = useState<ItemRow[]>(() => {
     if (editRequest && editRequest.items.length > 0) {
@@ -438,9 +446,10 @@ export function useRequestForm({
    */
   const selectSparePart = useCallback((key: string, part: SparePartOption) => {
     invalidateStockWarning()
+    setKnownSpareParts((prev) => [...prev.filter((known) => known.id !== part.id), part])
     setItems((prev) => prev.map((i) => {
       if (i._key !== key) return i
-      const previousPart = i.productId ? spareParts.find((p) => p.id === i.productId) : undefined
+      const previousPart = i.productId ? knownSpareParts.find((p) => p.id === i.productId) : undefined
       const previousPrice = previousPart ? prefillPriceForPart(previousPart) : null
       const price = prefillPriceForPart(part)
       // «Sin tocar»: vacío, o el mismo que precargó el repuesto anterior.
@@ -456,10 +465,10 @@ export function useRequestForm({
         attributes: [], variantQuantities: {}, showAttrs: false,
       }
     }))
-  }, [invalidateStockWarning, spareParts])
+  }, [invalidateStockWarning, knownSpareParts])
 
   const selectProduct = useCallback((key: string, prodId: string) => {
-    const part = spareParts.find((p) => p.id === prodId)
+    const part = knownSpareParts.find((p) => p.id === prodId)
     if (part) { selectSparePart(key, part); return }
     const prod = products.find((p) => p.id === prodId)
     if (!prod) return
@@ -492,7 +501,7 @@ export function useRequestForm({
         emergencyResourceLabel: keepsEmergencyResource ? i.emergencyResourceLabel : "",
       }
     }))
-  }, [invalidateStockWarning, products, spareParts, selectSparePart])
+  }, [invalidateStockWarning, products, knownSpareParts, selectSparePart])
 
   const selectFreeProduct = useCallback((key: string, name: string) => {
     const trimmed = name.trim()
@@ -509,7 +518,7 @@ export function useRequestForm({
     invalidateStockWarning()
     setItems((prev) => prev.map((i) => {
       if (i._key !== key) return i
-      const clearedPart = i.productId ? spareParts.find((p) => p.id === i.productId) : undefined
+      const clearedPart = i.productId ? knownSpareParts.find((p) => p.id === i.productId) : undefined
       // «Cambiar» de repuesto suelta lo que el repuesto había precargado (precio y
       // proveedor), pero no lo que la persona escribió o eligió ella.
       const prefilledPrice = clearedPart ? prefillPriceForPart(clearedPart) : null
@@ -523,7 +532,7 @@ export function useRequestForm({
         attributes: [], showAttrs: false, workerId: "", workerName: "", equipmentCode: "", equipmentLabel: "", emergencyResourceId: "", emergencyResourceLabel: "",
       }
     }))
-  }, [invalidateStockWarning, spareParts])
+  }, [invalidateStockWarning, knownSpareParts])
 
   /**
    * Elegir equipo de flota fija el equipo y suelta la OT: las OT abiertas son de
@@ -791,7 +800,8 @@ export function useRequestForm({
     stockWarning, dismissStockWarning, submitDirectRequest,
     canDeleteRequest, canCancelRequest, deleteConfirmOpen, setDeleteConfirmOpen,
     isSaving, isSubmitting, isDeleting, draftPending,
-    addItem, removeItem, updateItem, selectProduct, selectFreeProduct, clearProduct,
+    addItem, removeItem, updateItem, selectProduct, selectSparePart, selectFreeProduct, clearProduct,
+    spareParts: knownSpareParts,
     updateItemWorker, updateAttr, selectVehicle, selectWorkOrder, quotationRule, quotationNotice,
     buildDraftFormData, draftAction, submitAction, cancelAction, deleteAction,
     startSaveTransition, startSubmitTransition, startDeleteTransition, silentNavBack,

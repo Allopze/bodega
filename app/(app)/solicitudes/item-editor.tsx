@@ -33,7 +33,7 @@ interface ItemEditorProps {
   item:            ItemRow
   idx:             number
   products:        ProductOption[]
-  /** Repuestos del catálogo (sólo solicitudes de repuestos); el buscador y la ficha los usan. */
+  /** Repuestos que el formulario conoce (los de la solicitud y los elegidos): la ficha del ítem. */
   spareParts?:     SparePartOption[]
   suppliers:       SupplierOption[]
   workers?:        WorkerOption[]
@@ -52,6 +52,8 @@ interface ItemEditorProps {
   onSelectVehicle?: (vehicleId: string) => void
   onSelectWorkOrder?: (workOrderId: string) => void
   onSelectProduct: (pid: string) => void
+  /** Repuesto elegido del buscador (viene del servidor, con sus datos). */
+  onSelectSparePart?: (part: SparePartOption) => void
   onSelectFreeProduct: (name: string) => void
   onClearProduct:  () => void
   onUpdateAttr:    (i: number, v: string) => void
@@ -68,7 +70,7 @@ const NO_SPARE_PARTS: SparePartOption[] = []
 export function ItemEditor({
   item, idx, products, spareParts = NO_SPARE_PARTS, suppliers, workers, equipment, vehicles = [], worksiteId = "", readOnly, requestType, maxFileSizeMb,
   quotationRule, quotationNotice,
-  onUpdate, onSelectVehicle = noop, onSelectWorkOrder = noop, onSelectProduct, onSelectFreeProduct, onClearProduct, onUpdateAttr, onUpdateWorker,
+  onUpdate, onSelectVehicle = noop, onSelectWorkOrder = noop, onSelectProduct, onSelectSparePart, onSelectFreeProduct, onClearProduct, onUpdateAttr, onUpdateWorker,
   onRemove, canRemove,
 }: ItemEditorProps) {
   const isQuotationType    = QUOTATION_TYPES.has(requestType ?? "")
@@ -242,6 +244,7 @@ export function ItemEditor({
               vehicles={vehicles}
               onUpdate={onUpdate}
               onSelectProduct={onSelectProduct}
+              onSelectSparePart={onSelectSparePart}
               onClearProduct={onClearProduct}
             />
           ) : isQuotationType ? (

@@ -3,14 +3,18 @@
  * Pedir repuestos con catálogo, de punta a punta en el formulario real (hook,
  * lista de ítems y editor sin mocks): el buscador sobre la descripción, el orden
  * por equipo, el precio que se precarga y lo que viaja al guardar el borrador.
+ *
+ * El buscador pregunta al servidor (`searchSparePartsForRequestAction`): aquí lo
+ * simula una función que responde como el servicio.
  */
-import { describe, it, expect, vi, afterEach, beforeAll } from "vitest"
+import { describe, it, expect, vi, afterEach, beforeAll, beforeEach } from "vitest"
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { INITIAL_STATE } from "@/lib/form-state"
 import type { PropsWithChildren } from "react"
 import type { SparePartOption, VehicleOption } from "./request-form.types"
 
 const saveDraft = vi.fn(async (_prev: unknown, _data: FormData) => INITIAL_STATE)
+const searchParts = vi.fn()
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ back: vi.fn(), refresh: vi.fn(), push: vi.fn() }),
@@ -22,6 +26,7 @@ vi.mock("./actions", () => ({
   cancelRequest: vi.fn(async () => INITIAL_STATE),
   deleteRequestAction: vi.fn(async () => INITIAL_STATE),
   getWorkerEppStatusAction: vi.fn(async () => ({ activeRequest: null, lastDelivery: null })),
+  searchSparePartsForRequestAction: (input: unknown) => searchParts(input),
 }))
 vi.mock("@/components/ui/submit-button", () => ({
   SubmitButton: ({ label, disabled }: { label: string; disabled?: boolean }) => (
@@ -76,12 +81,26 @@ const PASTILLA: SparePartOption = {
   unitOfMeasure: "unidad", lastPrice: 18_900, preferredSupplierId: null, purchasedForVehicleIds: ["v-1"],
 }
 
+/** Como el servicio: sin texto, sólo lo comprado para el equipo; con texto, lo que coincide, lo del equipo primero. */
+function fakeSearch({ query, vehicleId }: { query: string; vehicleId: string | null }) {
+  const catalog = [PASTILLA, FILTRO]
+  const forVehicle = (part: SparePartOption) => !!vehicleId && part.purchasedForVehicleIds.includes(vehicleId)
+  const parts = query
+    ? catalog.filter((part) => part.name.toLowerCase().includes(query.toLowerCase()))
+    : catalog.filter(forVehicle)
+  return Promise.resolve({ ok: true, parts: [...parts].sort((a, b) => Number(forVehicle(b)) - Number(forVehicle(a))), total: parts.length })
+}
+
+beforeEach(() => {
+  searchParts.mockReset()
+  searchParts.mockImplementation(fakeSearch)
+})
+
 function renderForm() {
   return render(
     <RequestForm
       worksites={WORKSITES}
       products={[]}
-      spareParts={[FILTRO, PASTILLA]}
       suppliers={[]}
       units={["unidad", "juego"]}
       maxFileSizeMb={10}
@@ -106,13 +125,22 @@ describe("RequestForm — repuestos con catálogo", () => {
     saveDraft.mockClear()
     renderForm()
 
-    // Equipo de flota: los repuestos comprados para él suben primero.
+    // Equipo de flota: sin escribir, el buscador ofrece lo ya comprado para él.
     fireEvent.focus(screen.getByRole("combobox", { name: /Equipo de flota/ }))
     fireEvent.mouseDown(screen.getByRole("option", { name: /KA-135/ }))
     fireEvent.focus(screen.getByRole("combobox", { name: /Descripción/ }))
+    const initial = await screen.findAllByRole("option")
+    expect(searchParts).toHaveBeenLastCalledWith({ query: "", vehicleId: "v-1" })
+    expect(initial).toHaveLength(1)
+    expect(initial[0]).toHaveTextContent("Pastilla de freno")
+    expect(within(initial[0]!).getByText("Para este equipo")).toBeInTheDocument()
+
+    // Escribiendo, pregunta al servidor con el equipo: lo de él primero.
+    fireEvent.change(screen.getByRole("combobox", { name: /Descripción/ }), { target: { value: "de" } })
+    await waitFor(() => expect(screen.getAllByRole("option")).toHaveLength(2))
+    expect(searchParts).toHaveBeenLastCalledWith({ query: "de", vehicleId: "v-1" })
     const options = screen.getAllByRole("option")
     expect(options[0]).toHaveTextContent("Pastilla de freno")
-    expect(within(options[0]!).getByText("Para este equipo")).toBeInTheDocument()
     expect(options[1]).toHaveTextContent("Filtro de aceite")
 
     // Elegir el repuesto: ficha de lectura, sin N° de parte libre y con el último precio.
@@ -135,8 +163,13 @@ describe("RequestForm — repuestos con catálogo", () => {
     saveDraft.mockClear()
     renderForm()
 
+    // Sin equipo ni texto no hay nada que preguntar.
     fireEvent.focus(screen.getByRole("combobox", { name: /Descripción/ }))
-    fireEvent.mouseDown(screen.getByRole("option", { name: /Filtro de aceite/ }))
+    expect(screen.queryByRole("option")).toBeNull()
+    expect(searchParts).not.toHaveBeenCalled()
+
+    fireEvent.change(screen.getByRole("combobox", { name: /Descripción/ }), { target: { value: "filtro" } })
+    fireEvent.mouseDown(await screen.findByRole("option", { name: /Filtro de aceite/ }))
     expect(screen.getByLabelText(/Precio unitario estimado/)).toHaveValue(35_000)
 
     fireEvent.click(screen.getByRole("button", { name: "Cambiar" }))

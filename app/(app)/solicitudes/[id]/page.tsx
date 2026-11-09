@@ -298,7 +298,12 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
           .where(eq(serviceEquipment.isActive, true))
           .orderBy(asc(serviceEquipment.code))
       : Promise.resolve([]),
-    canPickSpareParts ? listSpareParts() : Promise.resolve([]),
+    // El buscador pregunta al servidor mientras se escribe: aquí sólo los
+    // repuestos que la solicitud ya referencia, con su precio y proveedor
+    // (precargan y sueltan el estimado al cambiarlos).
+    canPickSpareParts && referencedProductIds.length > 0
+      ? listSpareParts({ ids: referencedProductIds, includeInactive: true })
+      : Promise.resolve([]),
   ])
 
   const decidedItemIds = new Set(approvalDecisionRows.flatMap((decision) => decision.requestItemId ? [decision.requestItemId] : []))
@@ -334,8 +339,8 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
     }
   }
 
-  // Repuestos que la solicitud ya referencia (aunque estén inactivos) más, al
-  // editar un borrador de repuestos, el catálogo activo para el buscador.
+  // Repuestos que la solicitud ya referencia (aunque estén inactivos); al editar
+  // un borrador de repuestos, con los datos completos del catálogo.
   const sparePartOptions = buildSparePartOptions({
     catalog: catalogSpareParts,
     referenced: allProducts.filter((product) => product.isSparePart),

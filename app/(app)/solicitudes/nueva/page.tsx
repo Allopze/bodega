@@ -56,7 +56,7 @@ export default async function NuevaSolicitudPage({
   // El catálogo de repuestos sólo sirve al buscador de «Solicitud de repuestos».
   const canPickSpareParts = can(session, "repuestos:create")
 
-  const [allWorksites, allProducts, allAttrs, productSupplierRows, allSuppliers, allWorkers, allEquipment, maxFileSizeMb, unitRows, vehicleOptions, operationalSettings, catalogSpareParts] = await Promise.all([
+  const [allWorksites, allProducts, allAttrs, productSupplierRows, allSuppliers, allWorkers, allEquipment, maxFileSizeMb, unitRows, vehicleOptions, operationalSettings] = await Promise.all([
     db.select().from(worksites)
       .where(eq(worksites.isActive, true))
       .orderBy(asc(worksites.name)),
@@ -99,7 +99,6 @@ export default async function NuevaSolicitudPage({
       .orderBy(asc(productUnits.sortOrder), asc(productUnits.code)),
     canPickFleetVehicle ? listVehicleOptionsForRequests(session) : Promise.resolve([]),
     getOperationalSettings(),
-    canPickSpareParts ? listSpareParts() : Promise.resolve([]),
   ])
 
   // Scope worksites to the user's assignments
@@ -158,15 +157,6 @@ export default async function NuevaSolicitudPage({
     name: s.name,
   }))
 
-  // Sólo los equipos que la persona puede ver: `purchasedForVehicleIds` ordena el
-  // buscador y no debe delatar el parque de otra faena.
-  const sparePartOptions = buildSparePartOptions({
-    catalog: catalogSpareParts,
-    referenced: [],
-    activeSupplierIds,
-    visibleVehicleIds: new Set(vehicleOptions.map((vehicle) => vehicle.id)),
-  })
-
   const scopedWorksiteIds = new Set(scopedWorksites.map((w) => w.id))
   const workerOptions = allWorkers
     .filter((w) => scopedWorksiteIds.has(w.worksiteId))
@@ -212,6 +202,21 @@ export default async function NuevaSolicitudPage({
     ? "La faena del equipo no está entre las que puedes elegir."
     : prefill.prefillNotice
   const initialUrgency = prefillWorksiteUnavailable ? undefined : prefill.initialUrgency
+
+  // El buscador de repuestos pregunta al servidor mientras se escribe; aquí sólo
+  // viajan los repuestos que la copia ya trae (aunque estén desactivados, para
+  // decir cuál era). Sólo los equipos que la persona puede ver:
+  // `purchasedForVehicleIds` no debe delatar el parque de otra faena.
+  const prefillProductIds = [...new Set((prefillItems ?? []).flatMap((item) => item.productId ? [item.productId] : []))]
+  const referencedSpareParts = canPickSpareParts && prefillProductIds.length > 0
+    ? await listSpareParts({ ids: prefillProductIds, includeInactive: true })
+    : []
+  const sparePartOptions = buildSparePartOptions({
+    catalog: referencedSpareParts,
+    referenced: [],
+    activeSupplierIds,
+    visibleVehicleIds: new Set(vehicleOptions.map((vehicle) => vehicle.id)),
+  })
 
   // Faena pedida por el enlace (p. ej. "Reponer" desde una fila de Bodega).
   // Validada contra el alcance: un id ajeno en la URL no puede cambiar la faena

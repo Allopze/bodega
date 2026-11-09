@@ -27,6 +27,13 @@ interface ProductPickerProps {
    * y perdía lo escrito si salía del campo sin confirmar.
    */
   freeText?:         { value: string; onChange: (value: string) => void }
+  /**
+   * Las opciones ya vienen filtradas por lo escrito (búsqueda en el servidor):
+   * se muestran tal cual, sin volver a filtrarlas aquí.
+   */
+  prefiltered?:      boolean
+  /** Una búsqueda en curso: la lista se marca `aria-busy`. */
+  busy?:             boolean
   /** Los inyecta `Field`. */
   "aria-labelledby"?:  string
   "aria-describedby"?: string
@@ -56,6 +63,8 @@ export function ProductPicker({
   id,
   label = "Buscar producto en catálogo o ingresar ítem libre",
   freeText,
+  prefiltered = false,
+  busy = false,
   "aria-labelledby": ariaLabelledBy,
   "aria-describedby": ariaDescribedBy,
 }: ProductPickerProps) {
@@ -66,8 +75,8 @@ export function ProductPicker({
   const listboxRef = React.useRef<HTMLUListElement>(null)
 
   const groups = React.useMemo(() => {
-    return groupProductsForPicker(products, query)
-  }, [query, products])
+    return groupProductsForPicker(products, prefiltered ? "" : query)
+  }, [query, products, prefiltered])
 
   // The "use free text" option sits at the end of the list when the user
   // typed something that didn't match any product. Con `freeText` no existe:
@@ -188,6 +197,7 @@ export function ProductPicker({
           ref={listboxRef}
           role="listbox"
           aria-labelledby={labelId}
+          aria-busy={busy || undefined}
           className={cn(
             "absolute z-20 top-full mt-1 left-0 right-0 max-h-52 overflow-y-auto",
             "rounded-[var(--radius-xl)] bg-[var(--color-surface)]",

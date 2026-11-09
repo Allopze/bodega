@@ -6,17 +6,28 @@
  * producto normal.
  */
 import * as React from "react"
-import { describe, it, expect, vi, afterEach, beforeAll } from "vitest"
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react"
+import { describe, it, expect, vi, afterEach, beforeAll, beforeEach } from "vitest"
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { ItemEditor } from "./item-editor"
 import { blankItem } from "./request-form.helpers"
+import { normalizePickerText } from "./product-picker.helpers"
+import { sparePartMatchForVehicle } from "./spare-part-options"
 import type { ItemRow, ProductOption, SparePartOption, WorkerOption, EquipmentOption, VehicleOption, PendingCotizacion } from "./request-form.types"
 
+// Sin respuesta preparada, el buscador de repuestos no encuentra nada.
+const searchParts = vi.hoisted(() => vi.fn<(input: { query: string; vehicleId: string | null }) => Promise<unknown>>(
+  async () => ({ ok: true, parts: [], total: 0 }),
+))
 vi.mock("./actions", () => ({
   getWorkerEppStatusAction: vi.fn(async () => ({ activeRequest: null, lastDelivery: null })),
+  searchSparePartsForRequestAction: (input: { query: string; vehicleId: string | null }) => searchParts(input),
 }))
 
-afterEach(() => cleanup())
+afterEach(() => {
+  cleanup()
+  searchParts.mockReset()
+  searchParts.mockImplementation(async () => ({ ok: true, parts: [], total: 0 }))
+})
 
 const WORKERS: WorkerOption[] = [
   { id: "w-1", firstName: "Ana", lastName: "Colaboradora", rut: "11.111.111-1", sizeTop: null, sizeBottom: null, sizeShoe: null, sizeGloves: null, sizeHelmet: null },
@@ -430,6 +441,21 @@ const FLEET_WITH_MODEL: VehicleOption[] = [
   },
 ]
 
+/**
+ * Como el servicio: sólo activos; sin texto, lo comprado para el equipo o su
+ * modelo; con texto, nombre, SKU, N° de parte (también sin guion) o marca. En el
+ * orden alfabético del catálogo: subir lo del equipo es del buscador.
+ */
+function fakeSearch({ query, vehicleId }: { query: string; vehicleId: string | null }) {
+  const compact = (value: string) => normalizePickerText(value).replace(/[^a-z0-9]/g, "")
+  const needle = normalizePickerText(query)
+  const parts = SPARE_PARTS.filter((part) => !part.isInactive).filter((part) => query
+    ? [part.name, part.sku, part.partNumber ?? "", part.partBrand ?? ""].some((field) =>
+        normalizePickerText(field).includes(needle) || (compact(query) !== "" && compact(field).includes(compact(query))))
+    : sparePartMatchForVehicle(part, vehicleId ?? "", FLEET_WITH_MODEL) !== null)
+  return Promise.resolve({ ok: true, parts, total: parts.length })
+}
+
 function renderRepuesto(
   overrides: Partial<ItemRow> = {},
   props: {
@@ -437,6 +463,7 @@ function renderRepuesto(
     spareParts?: SparePartOption[]
     onUpdate?: (patch: Partial<ItemRow>) => void
     onSelectProduct?: (productId: string) => void
+    onSelectSparePart?: (part: SparePartOption) => void
     onClearProduct?: () => void
   } = {},
 ) {
@@ -454,6 +481,7 @@ function renderRepuesto(
       maxFileSizeMb={10}
       onUpdate={props.onUpdate ?? vi.fn()}
       onSelectProduct={props.onSelectProduct ?? vi.fn()}
+      onSelectSparePart={props.onSelectSparePart}
       onSelectFreeProduct={vi.fn()}
       onClearProduct={props.onClearProduct ?? vi.fn()}
       onUpdateAttr={vi.fn()}
@@ -510,6 +538,10 @@ describe("ItemEditor — repuestos: buscador del catálogo", () => {
       scrollIntoView: () => {},
     })
   })
+  beforeEach(() => {
+    searchParts.mockReset()
+    searchParts.mockImplementation(fakeSearch)
+  })
 
   it("la descripción es un buscador que sigue aceptando texto libre sin confirmarlo", () => {
     const onUpdate = vi.fn()
@@ -523,24 +555,28 @@ describe("ItemEditor — repuestos: buscador del catálogo", () => {
     expect(screen.getByText(/Si no está catalogado, Compras lo cataloga al comprar/)).toBeInTheDocument()
   })
 
-  it("ofrece sólo repuestos activos, con SKU, N° de parte, marca y último precio", () => {
-    renderRepuesto()
-    fireEvent.focus(descripcion())
+  it("pregunta al servidor lo escrito y muestra SKU, N° de parte, marca y último precio", async () => {
+    render(<RepuestoHarness />)
+    fireEvent.change(descripcion(), { target: { value: "filtro" } })
 
-    const names = optionNames()
-    expect(names).toHaveLength(3)
-    expect(names.some((name) => name.includes("Filtro descontinuado"))).toBe(false)
-    const filtro = screen.getByRole("option", { name: /Filtro de aceite/ })
+    const filtro = await screen.findByRole("option", { name: /Filtro de aceite/ })
+    expect(searchParts).toHaveBeenLastCalledWith({ query: "filtro", vehicleId: null })
+    expect(optionNames()).toHaveLength(1)
     expect(filtro).toHaveTextContent("RPT-001")
     expect(filtro).toHaveTextContent("N° 1R-0750 · Caterpillar · $35.000")
     // Sin N° de parte ni precio no se inventa una segunda línea.
-    expect(screen.getByRole("option", { name: /O-ring hidráulico/ })).not.toHaveTextContent("N°")
+    fireEvent.change(descripcion(), { target: { value: "o-ring" } })
+    expect(await screen.findByRole("option", { name: /O-ring hidráulico/ })).not.toHaveTextContent("N°")
   })
 
-  it("sin equipo elegido conserva el orden del catálogo y no rotula nada", () => {
-    renderRepuesto()
+  it("sin equipo ni texto no pregunta nada; con texto conserva el orden del catálogo y no rotula", async () => {
+    render(<RepuestoHarness />)
     fireEvent.focus(descripcion())
+    expect(screen.queryByRole("option")).toBeNull()
+    expect(searchParts).not.toHaveBeenCalled()
 
+    fireEvent.change(descripcion(), { target: { value: "o" } })
+    await waitFor(() => expect(optionNames()).toHaveLength(3))
     const names = optionNames()
     expect(names).toHaveLength(3)
     expect(names[0]).toContain("Filtro de aceite")
@@ -550,10 +586,22 @@ describe("ItemEditor — repuestos: buscador del catálogo", () => {
     expect(screen.queryByText("Mismo modelo")).toBeNull()
   })
 
-  it("con un equipo elegido suben primero los comprados para él, luego los del mismo modelo", () => {
+  it("con un equipo elegido y sin texto ofrece lo comprado para él y para su modelo", async () => {
     renderRepuesto({ vehicleId: "v-1", vehicleLabel: "KA-135 · RBYD-98" })
     fireEvent.focus(descripcion())
 
+    const initial = await screen.findAllByRole("option")
+    expect(searchParts).toHaveBeenLastCalledWith({ query: "", vehicleId: "v-1" })
+    expect(initial).toHaveLength(2)
+    expect(initial[0]).toHaveTextContent("Pastilla de freno")
+    expect(initial[1]).toHaveTextContent("Filtro de aceite")
+  })
+
+  it("con un equipo elegido suben primero los comprados para él, luego los del mismo modelo", async () => {
+    renderRepuesto({ vehicleId: "v-1", vehicleLabel: "KA-135 · RBYD-98", productNameFree: "o" })
+    fireEvent.focus(descripcion())
+
+    await waitFor(() => expect(screen.getAllByRole("option")).toHaveLength(3))
     const options = screen.getAllByRole("option")
     expect(options[0]).toHaveTextContent("Pastilla de freno")
     expect(within(options[0]!).getByText("Para este equipo")).toBeInTheDocument()
@@ -563,24 +611,32 @@ describe("ItemEditor — repuestos: buscador del catálogo", () => {
     expect(within(options[2]!).queryByText(/Para este equipo|Mismo modelo/)).toBeNull()
   })
 
-  it("encuentra por N° de parte aunque se teclee sin guion", () => {
+  it("muestra lo que el servidor encontró sin volver a filtrarlo (N° de parte sin guion)", async () => {
     render(<RepuestoHarness />)
     fireEvent.change(descripcion(), { target: { value: "1r0750" } })
 
+    expect(await screen.findByRole("option", { name: /Filtro de aceite/ })).toBeInTheDocument()
     expect(optionNames()).toHaveLength(1)
-    expect(screen.getByRole("option", { name: /Filtro de aceite/ })).toBeInTheDocument()
   })
 
-  it("elegir un fila avisa al formulario con el id del repuesto", () => {
+  it("elegir una fila entrega al formulario el repuesto con sus datos", async () => {
+    const onSelectSparePart = vi.fn()
     const onSelectProduct = vi.fn()
-    renderRepuesto({}, { onSelectProduct })
+    renderRepuesto({ productNameFree: "pastilla" }, { onSelectSparePart, onSelectProduct })
     fireEvent.focus(descripcion())
-    fireEvent.mouseDown(screen.getByRole("option", { name: /Pastilla de freno/ }))
+    fireEvent.mouseDown(await screen.findByRole("option", { name: /Pastilla de freno/ }))
 
-    expect(onSelectProduct).toHaveBeenCalledWith("rpt-3")
+    expect(onSelectSparePart).toHaveBeenCalledWith(PASTILLA)
+    expect(onSelectProduct).not.toHaveBeenCalled()
   })
 
-  it("con el teclado: Enter tras escribir no elige nada; ArrowDown + Enter elige la primera", () => {
+  it("un fallo de la búsqueda se dice y deja seguir con texto libre", async () => {
+    searchParts.mockResolvedValue({ ok: false, message: "No se pudo buscar en el catálogo de repuestos" })
+    renderRepuesto({ productNameFree: "filtro" })
+    expect((await screen.findByRole("status")).textContent).toContain("Puedes describirlo con tus palabras")
+  })
+
+  it("con el teclado: Enter tras escribir no elige nada; ArrowDown + Enter elige la primera", async () => {
     const onSelectProduct = vi.fn()
     render(
       <ItemEditor
@@ -606,7 +662,7 @@ describe("ItemEditor — repuestos: buscador del catálogo", () => {
     )
     const campo = descripcion()
     fireEvent.focus(campo)
-    expect(screen.getAllByRole("option")).toHaveLength(1)
+    expect(await screen.findAllByRole("option")).toHaveLength(1)
     // Nada activo todavía: la primera sugerencia no se elige por inercia.
     expect(campo).not.toHaveAttribute("aria-activedescendant")
 
@@ -645,10 +701,10 @@ describe("ItemEditor — repuestos: buscador del catálogo", () => {
     expect(within(datos).queryByText("Marca del repuesto:")).toBeNull()
   })
 
-  it("«Cambiar» devuelve al buscador y de ahí se vuelve a texto libre", () => {
+  it("«Cambiar» devuelve al buscador y de ahí se vuelve a texto libre", async () => {
     render(<RepuestoHarness />)
-    fireEvent.focus(descripcion())
-    fireEvent.mouseDown(screen.getByRole("option", { name: /Filtro de aceite/ }))
+    fireEvent.change(descripcion(), { target: { value: "filtro" } })
+    fireEvent.mouseDown(await screen.findByRole("option", { name: /Filtro de aceite/ }))
     expect(screen.getByRole("group", { name: "Repuesto elegido" })).toBeInTheDocument()
     expect(screen.queryByLabelText(/N° de Parte/)).toBeNull()
 
@@ -664,10 +720,10 @@ describe("ItemEditor — repuestos: buscador del catálogo", () => {
     expect(screen.queryByRole("group", { name: "Repuesto elegido" })).toBeNull()
   })
 
-  it("al elegir el foco pasa a la ficha del repuesto", () => {
+  it("al elegir el foco pasa a la ficha del repuesto", async () => {
     render(<RepuestoHarness />)
-    fireEvent.focus(descripcion())
-    fireEvent.mouseDown(screen.getByRole("option", { name: /Pastilla de freno/ }))
+    fireEvent.change(descripcion(), { target: { value: "pastilla" } })
+    fireEvent.mouseDown(await screen.findByRole("option", { name: /Pastilla de freno/ }))
 
     expect(screen.getByRole("group", { name: "Repuesto elegido" })).toHaveFocus()
   })
@@ -688,10 +744,12 @@ describe("ItemEditor — repuestos: buscador del catálogo", () => {
     expect(screen.getByLabelText(/N° de Parte/)).toHaveValue("MH-9")
   })
 
-  it("sin catálogo (permiso o catálogo vacío) sigue siendo un campo de descripción", () => {
+  it("sin catálogo (permiso o catálogo vacío) sigue siendo un campo de descripción", async () => {
+    searchParts.mockResolvedValue({ ok: true, parts: [], total: 0 })
     const onUpdate = vi.fn()
-    renderRepuesto({}, { spareParts: [], onUpdate })
+    renderRepuesto({ productNameFree: "retén" }, { spareParts: [], onUpdate })
     fireEvent.focus(descripcion())
+    await waitFor(() => expect(searchParts).toHaveBeenCalled())
     expect(screen.queryByRole("listbox")).toBeNull()
     fireEvent.change(descripcion(), { target: { value: "Retén de rueda" } })
     expect(onUpdate).toHaveBeenCalledWith({ productNameFree: "Retén de rueda", productId: null })

@@ -171,7 +171,7 @@ function ItemsSection({
   products, spareParts, suppliers, workers, equipment, maxFileSizeMb, units,
   worksiteId, vehicles = [], quotationRule, quotationNotice,
   editableItemIds = [],
-  onAdd, onRemove, onUpdate, onSelectVehicle, onSelectWorkOrder, onSelectProduct, onSelectFreeProduct, onClearProduct, onUpdateAttr, onUpdateWorker,
+  onAdd, onRemove, onUpdate, onSelectVehicle, onSelectWorkOrder, onSelectProduct, onSelectFreeProduct, onSelectSparePart, onClearProduct, onUpdateAttr, onUpdateWorker,
 }: {
   items: ItemRow[]; requestType: string; requestTypeLabel?: string; readOnly: boolean; savedId?: string
   editableItemIds?: string[]
@@ -182,6 +182,7 @@ function ItemsSection({
   onSelectVehicle: (key: string, vehicleId: string) => void; onSelectWorkOrder: (key: string, workOrderId: string) => void
   onAdd: () => void; onRemove: (key: string) => void; onUpdate: (key: string, patch: Partial<ItemRow>) => void
   onSelectProduct: (key: string, pid: string) => void; onSelectFreeProduct: (key: string, name: string) => void
+  onSelectSparePart?: (key: string, part: SparePartOption) => void
   onClearProduct: (key: string) => void; onUpdateAttr: (itemKey: string, attrIdx: number, value: string) => void
   onUpdateWorker: (itemKey: string, workerId: string) => void
 }) {
@@ -300,6 +301,7 @@ function ItemsSection({
                 onSelectVehicle={(vehicleId) => onSelectVehicle(item._key, vehicleId)}
                 onSelectWorkOrder={(workOrderId) => onSelectWorkOrder(item._key, workOrderId)}
                 onSelectProduct={(pid) => onSelectProduct(item._key, pid)}
+                onSelectSparePart={onSelectSparePart ? (part) => onSelectSparePart(item._key, part) : undefined}
                 onSelectFreeProduct={(name) => onSelectFreeProduct(item._key, name)}
                 onClearProduct={() => onClearProduct(item._key)}
                 onUpdateAttr={(i, v) => onUpdateAttr(item._key, i, v)}
@@ -478,13 +480,13 @@ export function RequestForm({
         items={form.items} requestType={form.requestType} requestTypeLabel={form.requestTypeLabel}
         readOnly={form.readOnly} savedId={form.savedId} itemsError={form.itemsError}
         editableItemIds={editableItemIds}
-        products={products} spareParts={spareParts} suppliers={suppliers} workers={workers} equipment={equipment} maxFileSizeMb={maxFileSizeMb}
+        products={products} spareParts={form.spareParts} suppliers={suppliers} workers={workers} equipment={equipment} maxFileSizeMb={maxFileSizeMb}
         units={units}
         worksiteId={form.worksiteId} vehicles={vehicles}
         quotationRule={form.quotationRule} quotationNotice={form.quotationNotice}
         onSelectVehicle={form.selectVehicle} onSelectWorkOrder={form.selectWorkOrder}
         onAdd={form.addItem} onRemove={form.removeItem} onUpdate={form.updateItem}
-        onSelectProduct={form.selectProduct} onSelectFreeProduct={form.selectFreeProduct}
+        onSelectProduct={form.selectProduct} onSelectFreeProduct={form.selectFreeProduct} onSelectSparePart={form.selectSparePart}
         onClearProduct={form.clearProduct} onUpdateAttr={form.updateAttr}
         onUpdateWorker={form.updateItemWorker}
       />

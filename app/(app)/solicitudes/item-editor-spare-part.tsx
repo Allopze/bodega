@@ -3,19 +3,69 @@
 import * as React from "react"
 import { Package } from "@phosphor-icons/react"
 import { Field } from "@/components/ui/field"
+import { searchSparePartsForRequestAction } from "./actions"
 import { ProductPicker } from "./product-picker"
 import { sparePartFacts, sparePartPickerOptions } from "./spare-part-options"
 import type { ItemRow, SparePartOption, VehicleOption } from "./request-form.types"
 
 interface Props {
   item: ItemRow
-  /** Catálogo de repuestos; vacío si la persona no puede pedirlos o aún no hay ninguno. */
+  /** Repuestos que el formulario ya conoce (los de la solicitud y los elegidos): la ficha del elegido. */
   spareParts: SparePartOption[]
   /** Equipos de flota: con el del ítem elegido, los repuestos que ya se compraron para él suben primero. */
   vehicles: VehicleOption[]
   onUpdate: (patch: Partial<ItemRow>) => void
   onSelectProduct: (productId: string) => void
+  /** Repuesto elegido del buscador, con sus datos (viene del servidor, no de `spareParts`). */
+  onSelectSparePart?: (part: SparePartOption) => void
   onClearProduct: () => void
+}
+
+/** Espera entre teclas antes de preguntarle al servidor. */
+const SEARCH_DEBOUNCE_MS = 250
+
+interface SearchResult {
+  /** Búsqueda que respondió: texto y equipo. */
+  key: string
+  parts: SparePartOption[]
+  error: string | null
+}
+
+/**
+ * Las opciones del buscador vienen del servidor mientras se escribe: el catálogo
+ * puede tener miles de repuestos y no viaja entero. Sin texto, la lista inicial
+ * es lo comprado para el equipo del ítem o para uno de su modelo; sin texto ni
+ * equipo no hay nada que preguntar.
+ */
+function useSparePartSearch(text: string, vehicleId: string, enabled: boolean) {
+  const [debounced, setDebounced] = React.useState(text.trim())
+  React.useEffect(() => {
+    const timer = setTimeout(() => setDebounced(text.trim()), SEARCH_DEBOUNCE_MS)
+    return () => clearTimeout(timer)
+  }, [text])
+
+  const [result, setResult] = React.useState<SearchResult | null>(null)
+  const key = `${debounced}|${vehicleId}`
+  const idle = !enabled || (debounced === "" && vehicleId === "")
+  React.useEffect(() => {
+    if (idle) return
+    let cancelled = false
+    void searchSparePartsForRequestAction({ query: debounced, vehicleId: vehicleId || null })
+      .then((data) => {
+        if (cancelled) return
+        setResult(data.ok
+          ? { key, parts: data.parts, error: null }
+          : { key, parts: [], error: data.message })
+      })
+      .catch(() => {
+        if (!cancelled) setResult({ key, parts: [], error: "No se pudo buscar en el catálogo." })
+      })
+    return () => { cancelled = true }
+  }, [idle, key, debounced, vehicleId])
+
+  if (idle) return { parts: [] as SparePartOption[], error: null, loading: false }
+  // Mientras llega la respuesta nueva se siguen viendo las anteriores.
+  return { parts: result?.parts ?? [], error: result?.error ?? null, loading: result?.key !== key }
 }
 
 /**
@@ -25,12 +75,18 @@ interface Props {
  * y el ítem queda atado al repuesto (nombre, SKU, N° de parte y marca de
  * lectura, y el último precio como estimado).
  */
-export function ItemEditorSparePart({ item, spareParts, vehicles, onUpdate, onSelectProduct, onClearProduct }: Props) {
+export function ItemEditorSparePart({ item, spareParts, vehicles, onUpdate, onSelectProduct, onSelectSparePart, onClearProduct }: Props) {
   const part = item.productId ? spareParts.find((candidate) => candidate.id === item.productId) : undefined
+  const search = useSparePartSearch(item.productNameFree, item.vehicleId, !item.productId)
   const options = React.useMemo(
-    () => sparePartPickerOptions(spareParts, item.vehicleId, vehicles),
-    [spareParts, item.vehicleId, vehicles],
+    () => sparePartPickerOptions(search.parts, item.vehicleId, vehicles),
+    [search.parts, item.vehicleId, vehicles],
   )
+  function selectFromSearch(productId: string) {
+    const chosen = search.parts.find((candidate) => candidate.id === productId)
+    if (chosen && onSelectSparePart) onSelectSparePart(chosen)
+    else onSelectProduct(productId)
+  }
   const fieldId = `desc-${item._key}`
 
   // Elegir un repuesto desmonta el buscador y «Cambiar» lo vuelve a montar: sin
@@ -99,13 +155,21 @@ export function ItemEditorSparePart({ item, spareParts, vehicles, onUpdate, onSe
         id={fieldId}
         label="Descripción"
         products={options}
+        // El servidor ya filtró por nombre, SKU, N° de parte y marca.
+        prefiltered
+        busy={search.loading}
         placeholder="Describe el ítem requerido..."
         freeText={{
           value: item.productNameFree,
           onChange: (text) => onUpdate({ productNameFree: text, productId: null }),
         }}
-        onSelectProduct={onSelectProduct}
+        onSelectProduct={selectFromSearch}
       />
+      {search.error && (
+        <p role="status" className="mt-1 text-xs text-(--color-text-muted)">
+          {search.error} Puedes describirlo con tus palabras.
+        </p>
+      )}
     </Field>
   )
 }
