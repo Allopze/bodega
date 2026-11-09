@@ -143,7 +143,7 @@ export default async function OcDetailPage({
     productIds.length > 0
       ? db.query.products.findMany({
           where: (p, { inArray }) => inArray(p.id, productIds),
-          columns: { id: true, sku: true, name: true },
+          columns: { id: true, sku: true, name: true, partNumber: true },
         })
       : Promise.resolve([]),
 

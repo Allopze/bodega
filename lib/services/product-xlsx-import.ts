@@ -245,7 +245,7 @@ export async function importProductsFromXlsx(buffer: Buffer): Promise<ProductImp
         })
         // Preserve the historical behavior for a repeated SKU within the same
         // workbook: subsequent rows update the row created by the first one.
-        existing = { id: productId, sku: item.sku }
+        existing = { id: productId, sku: item.sku, isSparePart: false }
         existingBySku.set(item.sku, existing)
       }
 
