@@ -86,6 +86,13 @@ describe("createSubmittedRequest — DB integration", () => {
     await inMemoryDb.insert(schema.worksiteStock).values({
       id: "stock-csr-epp-optional-driver", worksiteId, productId: "prod-csr-epp-optional-driver", quantity: 4, minStock: 0, updatedAt: now,
     })
+    await inMemoryDb.insert(schema.productCategories).values({
+      id: "cat-csr-repuestos", name: "Repuestos CSR", slug: "cat-csr-repuestos", isEpp: false,
+    })
+    await inMemoryDb.insert(schema.products).values({
+      id: "prod-csr-repuesto", sku: "RPT-901", name: "Filtro CSR", categoryId: "cat-csr-repuestos",
+      isSparePart: true, partNumber: "CSR-123", isActive: true, createdAt: now, updatedAt: now,
+    })
     await inMemoryDb.insert(schema.workers).values([
       { id: "worker-csr-own", firstName: "Ana", lastName: "Propia", worksiteId, isActive: true, createdAt: now },
       { id: "worker-csr-other", firstName: "Beto", lastName: "Ajeno", worksiteId: otherWorksiteId, isActive: true, createdAt: now },
@@ -295,6 +302,25 @@ describe("createSubmittedRequest — DB integration", () => {
       productId: "prod-csr-epp-snapshot-driver",
       quantity: 1,
     })
+  })
+
+  it("rechaza un repuesto de catálogo en una solicitud de EPP u «otro»", async () => {
+    vi.stubEnv("AUTH_SECRET", "create-submitted-request-test-secret")
+    for (const requestType of ["epp", "otro"] as const) {
+      const submissionKey = `csr-spare-part-${requestType}-0001`
+      await expect(createSubmittedRequest(userId, "csr-test@chome.cl", baseData({
+        requestType,
+        items: [{
+          productId: "prod-csr-repuesto", productNameFree: null, quantity: 1, unitOfMeasure: "unidad",
+          urgency: "normal", workerId: null, suggestedSupplierId: null, supplierHint: null,
+          notes: null, sortOrder: 0, attributes: [],
+        }],
+      }), { submissionKey })).rejects.toThrow("Ítem 1: «Filtro CSR» es un repuesto de catálogo; pídelo en una solicitud de repuestos")
+
+      const persisted = await inMemoryDb.select().from(schema.purchaseRequests)
+        .where(eq(schema.purchaseRequests.submissionKey, submissionKey))
+      expect(persisted).toHaveLength(0)
+    }
   })
 
   it("rejects a legacy optional quantity driver before warning or request creation", async () => {

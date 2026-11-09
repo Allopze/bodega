@@ -144,7 +144,8 @@ export async function createRequest(
  * (`requires_worker`) y atributos declarados —presencia y tipo, incluido el
  * conteo entero de `integer`—. El formulario ya las avisa, pero la fuente de
  * verdad es esta: el payload llega como JSON y `isRequired`/`type` se releen
- * del catálogo, nunca de lo que mandó el cliente.
+ * del catálogo, nunca de lo que mandó el cliente. También rechaza un repuesto
+ * de catálogo: sus callers son sólo las solicitudes de EPP y «otro».
  */
 export async function resolveCatalogItemQuantitiesTx(
   tx: Tx,
@@ -161,12 +162,24 @@ export async function resolveCatalogItemQuantitiesTx(
   const productRows = await tx.select({
     id: products.id, name: products.name,
     requiresWorker: products.requiresWorker, equipmentKind: products.equipmentKind,
-    serviceSubjectKind: products.serviceSubjectKind,
+    serviceSubjectKind: products.serviceSubjectKind, isSparePart: products.isSparePart,
   })
     .from(products)
     .where(inArray(products.id, productIds))
     .orderBy(asc(products.id))
     .for("share")
+
+  // Este camino sirve a las solicitudes de EPP y «otro» (crear, borrador y
+  // editar ítem). Un repuesto de catálogo es consumo directo y vive en la
+  // solicitud de repuestos, que lo valida en persist-draft.ts: aquí colgaría de
+  // un tipo que lo recibiría como bien con stock. El formulario ya no lo ofrece,
+  // pero el payload llega como JSON.
+  for (const [index, item] of items.entries()) {
+    const sparePart = item.productId ? productRows.find((row) => row.id === item.productId && row.isSparePart) : undefined
+    if (sparePart) {
+      throw new Error(`Ítem ${index + 1}: «${sparePart.name}» es un repuesto de catálogo; pídelo en una solicitud de repuestos`)
+    }
+  }
   const attributeRows = await tx.select({
     id:         productAttributes.id,
     productId:  productAttributes.productId,
