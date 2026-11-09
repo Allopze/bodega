@@ -553,4 +553,7 @@ export const pgliteTestFiles = [
   // Refresco en vivo de Monitoreo GPS: una lectura por minuto como mucho, sin
   // adelantarse al cron ni escribir en su bitácora.
   "lib/integrations/onway/onway-live-pglite.test.ts",
+  // Catálogo de repuestos (fase 2): orden por vehículo, N° de parte duplicado,
+  // inactivos excluidos, SKU RPT-NNN y ficha con historial de precio.
+  "lib/__tests__/spare-parts-catalog-pglite.test.ts",
 ]
