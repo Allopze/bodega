@@ -76,7 +76,8 @@ export async function GET(req: NextRequest) {
             eq(worksiteStock.productId, products.id),
             eq(worksiteStock.worksiteId, worksiteId),
           ))
-          .where(and(eq(products.isActive, true), eq(products.isService, false)))
+          // Un repuesto de catálogo es consumo directo: no tiene saldo que ajustar ni contar.
+          .where(and(eq(products.isActive, true), eq(products.isService, false), eq(products.isSparePart, false)))
           .orderBy(asc(products.name))
       : []
 

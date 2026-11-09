@@ -17,7 +17,11 @@ export default async function ProductosPage() {
   catch { redirect("/forbidden") }
 
   const [allProducts, allCategories, allSuppliers, recentBatches, units, templates, sizeFamilies] = await Promise.all([
+    // Los repuestos de catálogo se gestionan en Mantención → Catálogo de
+    // repuestos: editarlos aquí podía cambiar marcas (EPP/servicio) que el CHECK
+    // de `products` prohíbe combinar con `is_spare_part`.
     db.query.products.findMany({
+      where: (p, { eq }) => eq(p.isSparePart, false),
       with: {
         category: true,
         productAttributes: {
@@ -55,7 +59,7 @@ export default async function ProductosPage() {
     <PageContainer>
       <PageHeader
         title="Catálogo de productos"
-        description="Productos, categorías, atributos y EPP."
+        description="Productos, categorías, atributos y EPP. Los repuestos se gestionan en Catálogo de repuestos."
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Inicio", href: "/dashboard" },

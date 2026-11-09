@@ -138,6 +138,8 @@ export default async function Page({
         gt(worksiteStock.quantity, 0),
         eq(products.isActive, true),
         eq(products.isService, false),
+        // Un repuesto de catálogo es consumo directo: nunca se entrega desde bodega.
+        eq(products.isSparePart, false),
       )),
     getDeliverableEppItems({ worksiteIds: allWorksites.map((worksite) => worksite.id) }),
     db

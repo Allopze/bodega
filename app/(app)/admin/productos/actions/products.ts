@@ -214,6 +214,7 @@ export async function updateProduct(_prev: ActionState, formData: FormData): Pro
     if (!lockedProductIds.has(productId)) throw new Error("Producto no encontrado")
     const lockedProduct = await tx.query.products.findFirst({ where: eq(products.id, productId) })
     if (!lockedProduct) throw new Error("Producto no encontrado")
+    if (lockedProduct.isSparePart) throw new Error("Los repuestos se editan en Mantención → Catálogo de repuestos")
     const oldAttributes = await tx.select().from(productAttributes).where(eq(productAttributes.productId, productId))
     // Con la regla del logo aplicada a ambos lados: convertir un `Modelo: Con
     // logo` en `Logo` (o agregar el Logo que faltaba) normaliza la prenda y no

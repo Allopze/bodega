@@ -96,6 +96,8 @@ async function buildProductosReport(): Promise<ReportData> {
     })
     .from(products)
     .leftJoin(productCategories, eq(products.categoryId, productCategories.id))
+    // Los repuestos tienen su propio Excel en Catálogo de repuestos.
+    .where(eq(products.isSparePart, false))
     .orderBy(asc(products.name))
 
   const allSuppliers = await db

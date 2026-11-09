@@ -172,7 +172,8 @@ export async function buildPrefill({
         unitOfMeasure: products.unitOfMeasure,
       })
       .from(products)
-      .where(and(eq(products.isActive, true), inArray(products.id, productoIds)))
+      // Reposición de stock: un repuesto de catálogo (consumo directo) no se repone.
+      .where(and(eq(products.isActive, true), eq(products.isSparePart, false), inArray(products.id, productoIds)))
     const byId = new Map(rows.map((row) => [row.id, row]))
 
     const items: PrefillItem[] = []
