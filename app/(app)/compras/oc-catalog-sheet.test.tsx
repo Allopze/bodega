@@ -110,13 +110,18 @@ describe("OcCatalogSheet — vincular a un repuesto existente", () => {
     const kit = await screen.findByRole("button", { name: /Kit de juntas/ })
     expect(kit.textContent).toContain("por juego")
     expect(kit.textContent).toContain("Se compra por «juego» y esta línea pide «unidad»")
-    expect((kit as HTMLButtonElement).disabled).toBe(true)
+    // Sigue enfocable: aria-disabled y la razón como descripción, no `disabled` nativo.
+    expect((kit as HTMLButtonElement).disabled).toBe(false)
+    expect(kit.getAttribute("aria-disabled")).toBe("true")
+    expect(document.getElementById(kit.getAttribute("aria-describedby") ?? "")?.textContent)
+      .toBe("Se compra por «juego» y esta línea pide «unidad»")
     fireEvent.click(kit)
     expect(link).not.toHaveBeenCalled()
 
     // «Unidad» y «unidad» son la misma: se elige. Y el compatible va primero.
     const same = screen.getByRole("button", { name: /Filtro de combustible/ })
     expect((same as HTMLButtonElement).disabled).toBe(false)
+    expect(same.getAttribute("aria-disabled")).toBeNull()
     expect(same.textContent).toContain("por Unidad")
     const order = screen.getAllByRole("listitem").map((li) => li.textContent ?? "")
     expect(order[0]).toContain("Filtro de combustible")
@@ -127,7 +132,12 @@ describe("OcCatalogSheet — vincular a un repuesto existente", () => {
     open()
     await screen.findByText("Coincide por N° de parte")
     expect(screen.getByText("Se compra por «caja» y esta línea pide «unidad»")).toBeTruthy()
-    expect((screen.getByRole("button", { name: "Vincular este" }) as HTMLButtonElement).disabled).toBe(true)
+    const linkButton = screen.getByRole("button", { name: "Vincular este" })
+    expect(linkButton.getAttribute("aria-disabled")).toBe("true")
+    expect(document.getElementById(linkButton.getAttribute("aria-describedby") ?? "")?.textContent)
+      .toBe("Se compra por «caja» y esta línea pide «unidad»")
+    fireEvent.click(linkButton)
+    expect(link).not.toHaveBeenCalled()
   })
 
   it("con el catálogo vacío ofrece crear el repuesto (si puede) en vez de un callejón sin salida", async () => {

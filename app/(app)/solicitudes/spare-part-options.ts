@@ -182,3 +182,25 @@ export function sparePartPickerOptions(
 export function prefillPriceForPart(part: Pick<SparePartOption, "lastPrice">): string | null {
   return part.lastPrice != null && part.lastPrice > 0 ? String(Math.round(part.lastPrice)) : null
 }
+
+function foldSearch(value: string | null | undefined): string {
+  return (value ?? "").normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().trim()
+}
+
+/**
+ * Si el repuesto calza con lo escrito, con el criterio del buscador del servidor
+ * (nombre, SKU, N° de parte —también sin guiones— y marca, sin tildes ni
+ * mayúsculas). Mientras llega la respuesta a lo último escrito, el formulario
+ * sigue mostrando la anterior: este filtro deja fuera las que ya no calzan, para
+ * que no se elija un repuesto de una búsqueda que quien escribe ya abandonó.
+ */
+export function sparePartMatchesText(
+  part: Pick<SparePartOption, "name" | "sku" | "partNumber" | "partBrand">,
+  text: string,
+): boolean {
+  const query = foldSearch(text)
+  if (!query) return true
+  const compact = query.replace(/[^a-z0-9]/g, "")
+  if ([part.name, part.sku, part.partNumber, part.partBrand].some((value) => foldSearch(value).includes(query))) return true
+  return compact !== "" && foldSearch(part.partNumber).replace(/[^a-z0-9]/g, "").includes(compact)
+}

@@ -5,6 +5,7 @@
 import { describe, expect, it } from "vitest"
 import type { SparePartListItem } from "@/lib/services/spare-parts-catalog"
 import {
+  sparePartMatchesText,
   buildSparePartOptions, prefillPriceForPart, sparePartDetail, sparePartFacts, sparePartMatchForVehicle,
   sparePartPickerOptions, toSparePartOption,
 } from "./spare-part-options"
@@ -151,5 +152,21 @@ describe("prefillPriceForPart", () => {
     expect(prefillPriceForPart({ lastPrice: 35_000.6 })).toBe("35001")
     expect(prefillPriceForPart({ lastPrice: 0 })).toBeNull()
     expect(prefillPriceForPart({ lastPrice: null })).toBeNull()
+  })
+})
+
+describe("sparePartMatchesText", () => {
+  const part = { name: "Filtro de aceite", sku: "RPT-001", partNumber: "1R-0750", partBrand: "Caterpillar" }
+  it("calza por nombre sin tildes ni mayúsculas, SKU, N° de parte sin guiones y marca", () => {
+    expect(sparePartMatchesText(part, "FILTRO")).toBe(true)
+    expect(sparePartMatchesText({ ...part, name: "Válvula" }, "valvula")).toBe(true)
+    expect(sparePartMatchesText(part, "rpt-001")).toBe(true)
+    expect(sparePartMatchesText(part, "1r0750")).toBe(true)
+    expect(sparePartMatchesText(part, "cater")).toBe(true)
+    expect(sparePartMatchesText(part, "  ")).toBe(true)
+  })
+  it("no calza con una búsqueda distinta", () => {
+    expect(sparePartMatchesText(part, "correa")).toBe(false)
+    expect(sparePartMatchesText({ ...part, partNumber: null }, "0750")).toBe(false)
   })
 })

@@ -204,9 +204,19 @@ function LinkView({
             <div className="min-w-0">
               <div className="text-sm font-medium">{suggestion.name}</div>
               <div className="text-xs">{choiceFacts(suggestion)}</div>
-              {suggestionMismatch && <div className="mt-1 text-xs font-medium text-[var(--color-warning-ink)]">{suggestionMismatch}</div>}
+              {suggestionMismatch && <div id="oc-catalog-suggestion-mismatch" className="mt-1 text-xs font-medium text-[var(--color-warning-ink)]">{suggestionMismatch}</div>}
             </div>
-            <Button type="button" size="sm" variant="primary" onClick={() => choose(suggestion)} disabled={op.pending || suggestionMismatch !== null}>
+            {/* Otra unidad: no se vincula, pero el botón sigue enfocable y dice por qué. */}
+            <Button
+              type="button"
+              size="sm"
+              variant="primary"
+              onClick={() => { if (suggestionMismatch === null) choose(suggestion) }}
+              disabled={op.pending}
+              aria-disabled={suggestionMismatch !== null ? true : undefined}
+              aria-describedby={suggestionMismatch !== null ? "oc-catalog-suggestion-mismatch" : undefined}
+              className={suggestionMismatch !== null ? "cursor-not-allowed opacity-60" : undefined}
+            >
               Vincular este
             </Button>
           </div>
@@ -254,16 +264,21 @@ function LinkView({
               <li key={part.id}>
                 <button
                   type="button"
-                  onClick={() => choose(part)}
-                  // Otra unidad: el servidor lo rechazaría. Se ve, pero no se elige.
-                  disabled={op.pending || mismatch !== null}
-                  className="flex w-full items-start justify-between gap-3 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5 text-left transition-colors duration-[var(--duration-fast)] enabled:hover:bg-[var(--color-surface-2)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)] disabled:cursor-not-allowed disabled:bg-[var(--color-surface-2)]"
+                  onClick={() => { if (mismatch === null) choose(part) }}
+                  // Otra unidad: el servidor lo rechazaría. Se ve y se puede
+                  // enfocar (el lector de pantalla lee por qué), pero no se elige.
+                  disabled={op.pending}
+                  aria-disabled={mismatch !== null ? true : undefined}
+                  aria-describedby={mismatch !== null ? `oc-catalog-mismatch-${part.id}` : undefined}
+                  className={`flex w-full items-start justify-between gap-3 rounded-[var(--radius-lg)] border border-[var(--color-border)] px-3 py-2.5 text-left transition-colors duration-[var(--duration-fast)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)] disabled:cursor-not-allowed disabled:bg-[var(--color-surface-2)] ${mismatch !== null
+                    ? "cursor-not-allowed bg-[var(--color-surface-2)]"
+                    : "bg-[var(--color-surface)] enabled:hover:bg-[var(--color-surface-2)]"}`}
                 >
                   <span className="min-w-0">
                     <span className={mismatch ? "block text-sm font-medium text-[var(--color-text-muted)]" : "block text-sm font-medium text-[var(--color-text)]"}>{part.name}</span>
                     <span className="block text-xs text-[var(--color-text-muted)]">{choiceFacts(part)}</span>
                     {mismatch && (
-                      <span className="mt-1 block text-xs font-medium text-[var(--color-warning-ink)]">{mismatch}</span>
+                      <span id={`oc-catalog-mismatch-${part.id}`} className="mt-1 block text-xs font-medium text-[var(--color-warning-ink)]">{mismatch}</span>
                     )}
                     {part.vehicleMatch && (
                       <MetaBadge meta={MATCH_BADGES[part.vehicleMatch]} size="sm" className="mt-1.5" />

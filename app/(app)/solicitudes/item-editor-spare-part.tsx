@@ -5,7 +5,7 @@ import { Package } from "@phosphor-icons/react"
 import { Field } from "@/components/ui/field"
 import { searchSparePartsForRequestAction } from "./actions"
 import { ProductPicker } from "./product-picker"
-import { sparePartFacts, sparePartPickerOptions } from "./spare-part-options"
+import { sparePartFacts, sparePartMatchesText, sparePartPickerOptions } from "./spare-part-options"
 import type { ItemRow, SparePartOption, VehicleOption } from "./request-form.types"
 
 interface Props {
@@ -64,8 +64,17 @@ function useSparePartSearch(text: string, vehicleId: string, enabled: boolean) {
   }, [idle, key, debounced, vehicleId])
 
   if (idle) return { parts: [] as SparePartOption[], error: null, loading: false }
-  // Mientras llega la respuesta nueva se siguen viendo las anteriores.
-  return { parts: result?.parts ?? [], error: result?.error ?? null, loading: result?.key !== key }
+  // También en la espera entre teclas: lo escrito ya no es lo que se preguntó.
+  const loading = result?.key !== key || text.trim() !== debounced
+  const parts = result?.parts ?? []
+  // Mientras llega la respuesta nueva se siguen viendo las anteriores, pero sólo
+  // las que calzan con lo escrito ahora: si no, se podía elegir un repuesto de
+  // una búsqueda ya abandonada. Con el texto al día se muestra lo del servidor.
+  return {
+    parts: loading ? parts.filter((part) => sparePartMatchesText(part, text)) : parts,
+    error: result?.error ?? null,
+    loading,
+  }
 }
 
 /**

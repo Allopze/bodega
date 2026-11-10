@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { CATALOG_PART_NUMBER_LABEL, isFreePartNumberAttribute, withCatalogPartNumber } from "./spare-part-display"
+import { CATALOG_PART_NUMBER_LABEL, REQUESTED_PART_NUMBER_LABEL, isFreePartNumberAttribute, withCatalogPartNumber } from "./spare-part-display"
 
 const RECORDED = [
   { attributeName: "N° de Parte", value: "1r 0750" },
@@ -14,8 +14,17 @@ describe("withCatalogPartNumber", () => {
     ])
   })
 
-  it("un repuesto sin N° de parte sólo esconde el libre", () => {
+  it("si el número que se pidió es otro, se ven los dos, cada uno con su rótulo", () => {
+    expect(withCatalogPartNumber({ isSparePart: true, partNumber: "1R-0751" }, RECORDED)).toEqual([
+      { attributeName: CATALOG_PART_NUMBER_LABEL, value: "1R-0751" },
+      { attributeName: REQUESTED_PART_NUMBER_LABEL, value: "1r 0750" },
+      { attributeName: "Equipo", value: "Camión KA-135" },
+    ])
+  })
+
+  it("un repuesto sin N° de parte deja a la vista el que se pidió, rotulado", () => {
     expect(withCatalogPartNumber({ isSparePart: true, partNumber: null }, RECORDED)).toEqual([
+      { attributeName: REQUESTED_PART_NUMBER_LABEL, value: "1r 0750" },
       { attributeName: "Equipo", value: "Camión KA-135" },
     ])
   })
