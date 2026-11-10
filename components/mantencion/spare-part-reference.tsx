@@ -12,6 +12,17 @@ export interface ProductReferenceData {
 
 const NAME_LINK = "text-[var(--color-primary-ink)] underline-offset-2 hover:underline focus-visible:underline"
 
+/** «RPT-001 · N° de parte 1R-0750»: la identidad del producto, o vacío en texto libre. */
+export function sparePartIdentity(product: ProductReferenceData): string {
+  return [product.sku, product.partNumber ? `N° de parte ${product.partNumber}` : null].filter(Boolean).join(" · ")
+}
+
+/** El nombre de la línea, enlazado a la ficha del repuesto sólo si se puede abrir. */
+export function SparePartName({ name, product, canOpen }: { name: string; product: ProductReferenceData; canOpen: boolean }) {
+  const href = canOpen && product.isSparePart && product.productId ? `/mantencion/repuestos/${product.productId}` : null
+  return href ? <Link href={href} className={NAME_LINK}>{name}</Link> : <>{name}</>
+}
+
 /**
  * Nombre de la línea con la identidad del producto debajo: el SKU y, si lo tiene,
  * el N° de parte (con el que el proveedor factura). Es una sola pieza para las dos
@@ -32,11 +43,10 @@ export function SparePartReference({
   product: ProductReferenceData
   canOpen: boolean
 }) {
-  const href = canOpen && product.isSparePart && product.productId ? `/mantencion/repuestos/${product.productId}` : null
-  const identity = [product.sku, product.partNumber ? `N° de parte ${product.partNumber}` : null].filter(Boolean).join(" · ")
+  const identity = sparePartIdentity(product)
   return (
     <>
-      {href ? <Link href={href} className={NAME_LINK}>{name}</Link> : name}
+      <SparePartName name={name} product={product} canOpen={canOpen} />
       {identity && <span className="block font-mono text-2xs text-[var(--color-text-muted)]">{identity}</span>}
     </>
   )

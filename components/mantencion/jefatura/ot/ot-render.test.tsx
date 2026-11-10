@@ -349,7 +349,19 @@ describe("«Repuestos pedidos»", () => {
     expect(partsTable().getByText("REP-0007")).toBeTruthy()
     expect(screen.queryByRole("link", { name: "REP-0007" })).toBeNull()
     rerender(<OtPartsRequestsSection detail={detail} canOpenRequests partsRequestHref={null} />)
-    expect(screen.getByRole("link", { name: "REP-0007" }).getAttribute("href")).toBe("/solicitudes/req-1")
+    expect(partsTable().getByRole("link", { name: "REP-0007" }).getAttribute("href")).toBe("/solicitudes/req-1")
+  })
+
+  it("en móvil cada línea es una tarjeta con repuesto, solicitud, estado, cantidad y recibido", () => {
+    render(<OtPartsRequestsSection detail={otDetail({ partsRequests: [partsLine()] })} canOpenRequests partsRequestHref={null} />)
+    const cards = screen.getByRole("list", { name: "Repuestos pedidos" })
+    expect(cards.className).toContain("md:hidden")
+    const card = within(cards)
+    expect(card.getByRole("link", { name: "REP-0007" }).getAttribute("href")).toBe("/solicitudes/req-1")
+    expect(card.getByText("Cantidad")).toBeTruthy()
+    expect(card.getByText("Recibido")).toBeTruthy()
+    // La tabla de escritorio queda oculta bajo md.
+    expect(screen.getByRole("region", { name: "Repuestos pedidos" }).parentElement!.className).toContain("hidden md:block")
   })
 })
 

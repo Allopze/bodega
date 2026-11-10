@@ -211,3 +211,32 @@ describe("buildPrefill — copia de una solicitud con equipo de flota (?desde=)"
     expect(await buildPrefill({ ...base, session: sessionOf(["ws-cho"]), desdeId: "req-1" })).toEqual({})
   })
 })
+
+describe("buildPrefill — «Pedir repuestos» desde la ficha de un repuesto (?repuesto=)", () => {
+  const PART = { id: "rpt-1", name: "Filtro de aceite", unitOfMeasure: "unidad", isActive: true, isSparePart: true }
+
+  it("abre el pedido con el repuesto elegido y pide el equipo y la cantidad", async () => {
+    selectResults.push([PART])
+    const result = await buildPrefill({ ...base, session: sessionOf(["ws-bio"]), sparePartId: "rpt-1" })
+    expect(result.sparePartDefaults).toBe(true)
+    expect(result.prefillItems).toEqual([{
+      productId: "rpt-1", productNameFree: "", quantity: 1, unitOfMeasure: "unidad", urgency: "normal", notes: "",
+    }])
+    expect(result.prefillNotice).toBe("Filtro de aceite preseleccionado. Indica el equipo y la cantidad.")
+  })
+
+  it("un repuesto desactivado o un producto que no es repuesto no se precarga", async () => {
+    selectResults.push([{ ...PART, isActive: false }])
+    const inactive = await buildPrefill({ ...base, session: sessionOf(["ws-bio"]), sparePartId: "rpt-1" })
+    expect(inactive.prefillItems).toBeUndefined()
+    expect(inactive.prefillNotice).toMatch(/desactivado/)
+
+    selectResults.push([{ ...PART, isSparePart: false }])
+    const common = await buildPrefill({ ...base, session: sessionOf(["ws-bio"]), sparePartId: "rpt-1" })
+    expect(common.prefillItems).toBeUndefined()
+
+    selectResults.push([])
+    const missing = await buildPrefill({ ...base, session: sessionOf(["ws-bio"]), sparePartId: "no-existe" })
+    expect(missing.prefillItems).toBeUndefined()
+  })
+})

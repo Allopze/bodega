@@ -44,7 +44,12 @@ export default async function SparePartDetailPage({ params }: { params: Promise<
       : canOpenMaintenanceEquipment ? (vehicleId) => `/mantencion/equipos/${vehicleId}` : null,
     canOpenRequests: can(session, "repuestos:view_all"),
     canOpenOrders: can(session, "purchasing:view"),
-    canRequestParts: can(session, "repuestos:create"),
+    // Con el repuesto ya elegido en el pedido; uno inactivo no se ofrece al pedir.
+    requestPartsHref: can(session, "repuestos:create")
+      ? part.isActive
+        ? `/solicitudes/nueva?tipo=repuestos&repuesto=${encodeURIComponent(part.id)}`
+        : "/solicitudes/nueva?tipo=repuestos"
+      : null,
   }
 
   const hasActivity = suppliers.length + priceHistory.length + purchasedFor.length + recentLines.length > 0

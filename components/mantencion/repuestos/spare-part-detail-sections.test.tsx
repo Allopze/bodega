@@ -16,9 +16,9 @@ const FULL_ACCESS: SparePartLinkAccess = {
   vehicleHref: (id) => `/flota/${id}`,
   canOpenRequests: true,
   canOpenOrders: true,
-  canRequestParts: true,
+  requestPartsHref: "/solicitudes/nueva?tipo=repuestos&repuesto=rep-1",
 }
-const NO_ACCESS: SparePartLinkAccess = { vehicleHref: null, canOpenRequests: false, canOpenOrders: false, canRequestParts: false }
+const NO_ACCESS: SparePartLinkAccess = { vehicleHref: null, canOpenRequests: false, canOpenOrders: false, requestPartsHref: null }
 
 const USAGE = [{
   vehicleId: "veh-1", vehicleCode: "KA-135", vehiclePlate: "RBYD-98", vehicleBrand: "Volvo", vehicleModel: "FH 460", requestCount: 2, lastRequestedAt: "2026-11-03T15:00:00.000Z",
@@ -42,17 +42,18 @@ describe("fichas de repuesto — secciones", () => {
     )
     expect(screen.getByText("Todavía no hay precios registrados")).toBeTruthy()
     expect(screen.getByText("Sin cambios de precio")).toBeTruthy()
-    expect(screen.getByText("Todavía no se pidió para ningún equipo")).toBeTruthy()
+    expect(screen.getByText("Todavía no se compró para ningún equipo")).toBeTruthy()
     expect(screen.getByText("Todavía no hay solicitudes ni órdenes con este repuesto")).toBeTruthy()
     // CTA reales (enlaces), no rutas pegadas como texto.
     expect(screen.getByRole("link", { name: "Ver órdenes de compra" }).getAttribute("href")).toBe("/compras")
-    expect(screen.getAllByRole("link", { name: "Pedir repuestos" })[0]!.getAttribute("href")).toBe("/solicitudes/nueva?tipo=repuestos")
+    // «Pedir repuestos» abre el pedido con este repuesto ya elegido.
+    expect(screen.getAllByRole("link", { name: "Pedir repuestos" })[0]!.getAttribute("href")).toBe("/solicitudes/nueva?tipo=repuestos&repuesto=rep-1")
   })
 
   it("un repuesto sin actividad dice una sola vez qué falta, con su acción para llenarlo", () => {
     const { rerender } = render(<NoActivityNotice access={FULL_ACCESS} />)
     expect(screen.getByText("Todavía no se ha comprado")).toBeTruthy()
-    expect(screen.getByRole("link", { name: "Pedir repuestos" }).getAttribute("href")).toBe("/solicitudes/nueva?tipo=repuestos")
+    expect(screen.getByRole("link", { name: "Pedir repuestos" }).getAttribute("href")).toBe("/solicitudes/nueva?tipo=repuestos&repuesto=rep-1")
     rerender(<NoActivityNotice access={NO_ACCESS} />)
     expect(screen.queryByRole("link")).toBeNull()
   })
@@ -78,27 +79,48 @@ describe("fichas de repuesto — secciones", () => {
   it("sin acceso a la ficha del equipo, el equipo va como texto", () => {
     render(<PurchasedForSection usage={USAGE} access={NO_ACCESS} />)
     expect(screen.queryByRole("link")).toBeNull()
-    expect(screen.getByText("KA-135 · RBYD-98")).toBeTruthy()
+    const table = screen.getByRole("region", { name: "Tabla de equipos para los que se compró" })
+    expect(within(table).getByText("KA-135 · RBYD-98")).toBeTruthy()
+  })
+
+  it("en móvil cada tabla es una lista de tarjetas con los mismos datos y enlaces", () => {
+    render(
+      <>
+        <PurchasedForSection usage={USAGE} access={FULL_ACCESS} />
+        <RecentLinesSection lines={[LINE]} access={FULL_ACCESS} />
+      </>,
+    )
+    const vehicles = screen.getByRole("list", { name: "Equipos para los que se compró" })
+    expect(vehicles.className).toContain("md:hidden")
+    expect(within(vehicles).getByRole("link", { name: "KA-135 · RBYD-98" }).getAttribute("href")).toBe("/flota/veh-1")
+    expect(within(vehicles).getByText("Volvo FH 460")).toBeTruthy()
+    const lines = screen.getByRole("list", { name: "Últimas solicitudes y órdenes de compra" })
+    expect(within(lines).getByRole("link", { name: "OC-2026-0042" }).getAttribute("href")).toBe("/compras/oc-1")
+    expect(within(lines).getByText("$18.990")).toBeTruthy()
+    // La tabla de escritorio sigue en el DOM, oculta bajo md.
+    expect(screen.getByRole("region", { name: "Tabla de últimas solicitudes y órdenes de compra" }).parentElement!.className).toContain("hidden md:block")
   })
 
   it("las últimas líneas enlazan solicitud y OC sólo a quien puede abrirlas, y dicen el estado de la OC en español", () => {
     const { rerender } = render(<RecentLinesSection lines={[LINE]} access={FULL_ACCESS} />)
-    expect(screen.getByRole("link", { name: "REP-2026-0007" }).getAttribute("href")).toBe("/solicitudes/req-1")
-    expect(screen.getByRole("link", { name: "OC-2026-0042" }).getAttribute("href")).toBe("/compras/oc-1")
-    expect(screen.getByRole("link", { name: "KA-135 · RBYD-98" }).getAttribute("href")).toBe("/flota/veh-1")
+    const table = () => screen.getByRole("region", { name: "Tabla de últimas solicitudes y órdenes de compra" })
+    expect(within(table()).getByRole("link", { name: "REP-2026-0007" }).getAttribute("href")).toBe("/solicitudes/req-1")
+    expect(within(table()).getByRole("link", { name: "OC-2026-0042" }).getAttribute("href")).toBe("/compras/oc-1")
+    expect(within(table()).getByRole("link", { name: "KA-135 · RBYD-98" }).getAttribute("href")).toBe("/flota/veh-1")
     expect(screen.queryByText("sent")).toBeNull()
-    expect(screen.getByText("$18.990")).toBeTruthy()
+    expect(within(table()).getByText("$18.990")).toBeTruthy()
 
     rerender(<RecentLinesSection lines={[LINE]} access={NO_ACCESS} />)
     expect(screen.queryByRole("link")).toBeNull()
-    expect(screen.getByText("REP-2026-0007")).toBeTruthy()
-    expect(screen.getByText("OC-2026-0042")).toBeTruthy()
+    expect(within(table()).getByText("REP-2026-0007")).toBeTruthy()
+    expect(within(table()).getByText("OC-2026-0042")).toBeTruthy()
   })
 
   it("una línea sin OC ni precio no inventa un costo", () => {
     render(<RecentLinesSection lines={[{ ...LINE, orderId: null, orderCode: null, orderStatus: null, supplierName: null, unitPrice: null }]} access={FULL_ACCESS} />)
-    expect(screen.getByText("Sin OC")).toBeTruthy()
-    expect(screen.getByText("Sin precio")).toBeTruthy()
+    const table = screen.getByRole("region", { name: "Tabla de últimas solicitudes y órdenes de compra" })
+    expect(within(table).getByText("Sin OC")).toBeTruthy()
+    expect(within(table).getByText("Sin precio")).toBeTruthy()
   })
 
   it("el historial de precio es una tabla con el antes, el ahora y el origen legible (nunca el valor crudo)", () => {
@@ -130,8 +152,11 @@ describe("fichas de repuesto — secciones", () => {
         ]}
       />,
     )
-    expect(screen.getByText("Preferido")).toBeTruthy()
-    expect(screen.getByText("Sin precio")).toBeTruthy()
+    const table = screen.getByRole("region", { name: "Tabla de proveedores y precios" })
+    expect(within(table).getByText("Preferido")).toBeTruthy()
+    expect(within(table).getByText("Sin precio")).toBeTruthy()
+    const cards = screen.getByRole("list", { name: "Proveedores y precios" })
+    expect(within(cards).getByText("Preferido")).toBeTruthy()
   })
 
   it("la tarjeta de datos muestra el estado, el SKU y lo que falta como «—»", () => {
