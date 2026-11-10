@@ -156,11 +156,13 @@ function LinkView({
 
   const requestedPartNumber = item.requestedPartNumber
   const vehicleId = item.vehicleId
+  const requestId = item.requestId
   React.useEffect(() => {
     let cancelled = false
     void searchSparePartsForOcAction({
       query: debounced,
       vehicleId,
+      requestId,
       // La sugerencia por N° de parte se pide sólo con el catálogo completo a la vista.
       partNumber: debounced === "" ? requestedPartNumber : null,
     })
@@ -173,7 +175,7 @@ function LinkView({
         if (!cancelled) setResult({ key: debounced, data: { ok: false, message: "No se pudo buscar en el catálogo. Inténtalo de nuevo." } })
       })
     return () => { cancelled = true }
-  }, [debounced, vehicleId, requestedPartNumber])
+  }, [debounced, vehicleId, requestId, requestedPartNumber])
 
   const loading = result === null || result.key !== debounced
   const data = result?.data

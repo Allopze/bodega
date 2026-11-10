@@ -33,7 +33,9 @@ export default async function SparePartsCatalogPage({ searchParams }: { searchPa
     partBrand: part.partBrand,
     unitOfMeasure: part.unitOfMeasure,
     preferredSupplierName: part.preferredSupplierName,
+    lastSupplierName: part.lastSupplierName,
     lastPrice: part.lastPrice,
+    referencePrice: part.referencePrice,
     lastPurchasedAt: part.lastPurchasedAt,
     vehicleCount: part.vehicleCount,
   }))

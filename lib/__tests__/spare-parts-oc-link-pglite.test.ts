@@ -155,9 +155,12 @@ describe("catálogo de repuestos · vincular al armar la OC y precio al emitir",
       expect(siblings[0]).toMatchObject({ productId: partA.id, quantity: 3, vehicleId: IDS.truckBio })
     })
 
-    it("el vínculo cuenta en «comprado para» del vehículo", async () => {
+    it("el vínculo cuenta en «comprado para» del vehículo desde que la OC se emite", async () => {
       const { itemId } = await freeTextItem({ quantity: 1 })
-      await orderFor(itemId, partB.id, { quantity: 1 })
+      const orderId = await orderFor(itemId, partB.id, { quantity: 1 })
+      // En borrador todavía no se compró.
+      expect((await catalog.getSparePartDetail(partB.id))?.purchasedFor).toEqual([])
+      await issueAndSendOrder(orderId, IDS.jefe)
       const detail = await catalog.getSparePartDetail(partB.id)
       expect(detail?.purchasedFor.map((usage) => usage.vehicleId)).toEqual([IDS.truckBio])
     })

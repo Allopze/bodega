@@ -11,8 +11,9 @@ import type { DB } from "../../db"
  * - dos repuestos que se encuentran con la misma búsqueda (`RCE2E`); el que va
  *   primero por nombre (`QA_Aceite…`) nunca se compró para el equipo;
  * - el otro (`QA_Filtro…`) con precio preferido de «Proveedor E2E» y una
- *   compra anterior (solicitud cerrada, ítem entregado) para el primer equipo
- *   de Biodiversa con ficha de mantención — el mismo que elige la spec.
+ *   compra anterior (solicitud cerrada, ítem entregado, OC cerrada) para el
+ *   primer equipo de Biodiversa con ficha de mantención — el mismo que elige la
+ *   spec. Sin la OC emitida no contaría: pedir no es comprar.
  *
  * Corre después de `seedMantencionE2E`, que crea Biodiversa y sus equipos.
  */
@@ -71,5 +72,15 @@ export async function seedRepuestosCatalogoE2E(db: DB, options: { now: string })
     id: "req-item-rpt-e2e-previa", requestId: "req-rpt-e2e-previa", productId: vehiclePart.id, productNameFree: null,
     quantity: 1, unitOfMeasure: "unidad", status: "delivered", urgency: "normal", requiredDate: "2026-10-01",
     vehicleId: vehicle.id, sortOrder: 0, createdAt: now, updatedAt: now,
+  })
+  await db.insert(schema.purchaseOrders).values({
+    id: "oc-rpt-e2e-previa", code: "OC-RPT-E2E-PREVIA", worksiteId: vehicle.worksiteId, supplierId: "sup-e2e",
+    createdBy: "user-admin-e2e", status: "closed", deliveryMode: "directo_faena",
+    issuedAt: now, sentAt: now, createdAt: now, updatedAt: now,
+  })
+  await db.insert(schema.purchaseOrderItems).values({
+    id: "oc-item-rpt-e2e-previa", purchaseOrderId: "oc-rpt-e2e-previa", requestItemId: "req-item-rpt-e2e-previa",
+    productId: vehiclePart.id, quantity: 1, unitOfMeasure: "unidad",
+    unitPrice: vehiclePart.preferredPrice, subtotal: vehiclePart.preferredPrice, sortOrder: 0,
   })
 }

@@ -156,6 +156,13 @@ describe("catálogo de repuestos", () => {
     expect((await catalog.listSpareParts({ query: "1r0750" })).map((part) => part.sku).sort()).toEqual(["RPT-001", "RPT-003"])
   })
 
+  it("busca varias palabras en cualquier orden, cada una en cualquier campo", async () => {
+    expect((await catalog.listSpareParts({ query: "aceite filtro" })).map((part) => part.sku).sort()).toEqual(["RPT-001", "RPT-003"])
+    expect((await catalog.listSpareParts({ query: "  filtro   caterpillar " })).map((part) => part.sku)).toEqual(["RPT-001"])
+    expect((await catalog.listSpareParts({ query: "aceite 1r0750 fleetguard" })).map((part) => part.sku)).toEqual(["RPT-003"])
+    expect(await catalog.listSpareParts({ query: "aceite freno" })).toEqual([])
+  })
+
   it("busca también por marca del repuesto y con tope informa el total", async () => {
     expect((await catalog.listSpareParts({ query: "CATERPILLAR" })).map((part) => part.sku)).toEqual(["RPT-001"])
     expect((await catalog.listSpareParts({ query: "VÁLVULA" })).map((part) => part.name)).toEqual(["Válvula de alivio"])
@@ -176,12 +183,16 @@ describe("catálogo de repuestos", () => {
     const cancelled = await createPart({ name: "Cable de embrague", partNumber: "CE-1" })
 
     await requestFor("veh", forVehicle.id, IDS.truckBio)
+    await orderFor("veh", "i-veh", forVehicle.id)
     // truckAra es Scania R450 igual que truckBio.
     await requestFor("mod", forModel.id, IDS.truckAra)
+    await orderFor("mod", "i-mod", forModel.id)
     // truckCho es Volvo FH: no suma.
     await requestFor("oth", forOther.id, IDS.truckCho)
+    await orderFor("oth", "i-oth", forOther.id)
     // Una solicitud anulada para el mismo vehículo no cuenta como «comprado para».
     await requestFor("can", cancelled.id, IDS.truckBio, { requestStatus: "cancelled" })
+    await orderFor("can", "i-can", cancelled.id)
 
     const ranked = await catalog.listSpareParts({ vehicleId: IDS.truckBio })
     expect(ranked[0]).toMatchObject({ id: forVehicle.id, vehicleMatch: "vehicle", vehicleCount: 1, purchasedForVehicleIds: [IDS.truckBio] })
@@ -216,8 +227,10 @@ describe("catálogo de repuestos", () => {
     const mine = await createPart({ name: "Perno de rueda", partNumber: "PR-SC-1" })
     const other = await createPart({ name: "Tuerca de rueda", partNumber: "TR-SC-1" })
     await requestFor("scope-mine", mine.id, IDS.truckBio)
+    await orderFor("scope-mine", "i-scope-mine", mine.id)
     // truckAra es Scania R450 como truckBio, pero de otra faena (Arauco).
     await requestFor("scope-other", other.id, IDS.truckAra)
+    await orderFor("scope-other", "i-scope-other", other.id)
 
     // Sin alcance (global) el equipo de Arauco cuenta como «mismo modelo».
     const unscoped = await catalog.searchSpareParts({ vehicleId: IDS.truckBio, onlyVehicleMatches: true, query: "rueda" })
@@ -232,6 +245,36 @@ describe("catálogo de repuestos", () => {
     // Un equipo fuera del alcance no da orden ninguno.
     const outside = await catalog.searchSpareParts({ vehicleId: IDS.truckAra, onlyVehicleMatches: true, vehicleScope: [IDS.wsBio] })
     expect(outside).toEqual({ parts: [], total: 0 })
+  })
+
+  it("pedirlo no es comprarlo: sin OC emitida no cuenta, y la solicitud en curso se puede excluir", async () => {
+    const pending = await createPart({ name: "Sensor de temperatura", partNumber: "ST-1" })
+    const drafted = await createPart({ name: "Sensor de presión", partNumber: "SP-1" })
+    const voided = await createPart({ name: "Sensor de nivel", partNumber: "SN-1" })
+    const bought = await createPart({ name: "Sensor de velocidad", partNumber: "SV-1" })
+    // Sólo pedido, sin OC.
+    await requestFor("sen-pend", pending.id, IDS.truckBio)
+    // OC en borrador: todavía no se compró.
+    await requestFor("sen-draft", drafted.id, IDS.truckBio)
+    await orderFor("sen-draft", "i-sen-draft", drafted.id, { status: "draft" })
+    // OC anulada: no se compró.
+    await requestFor("sen-void", voided.id, IDS.truckBio)
+    await orderFor("sen-void", "i-sen-void", voided.id, { status: "cancelled" })
+    // OC emitida: sí.
+    await requestFor("sen-sent", bought.id, IDS.truckBio)
+    await orderFor("sen-sent", "i-sen-sent", bought.id, { status: "sent" })
+
+    const ranked = await catalog.searchSpareParts({ vehicleId: IDS.truckBio, query: "sensor" })
+    const match = Object.fromEntries(ranked.parts.map((part) => [part.id, part.vehicleMatch]))
+    expect(match).toEqual({ [pending.id]: null, [drafted.id]: null, [voided.id]: null, [bought.id]: "vehicle" })
+    expect(ranked.parts[0]!.id).toBe(bought.id)
+    const counts = Object.fromEntries(ranked.parts.map((part) => [part.id, part.vehicleCount]))
+    expect(counts).toEqual({ [pending.id]: 0, [drafted.id]: 0, [voided.id]: 0, [bought.id]: 1 })
+    expect((await catalog.getSparePartDetail(pending.id))!.purchasedFor).toEqual([])
+
+    // La solicitud que se está convirtiendo en OC no se cuenta a sí misma.
+    const excluded = await catalog.searchSpareParts({ vehicleId: IDS.truckBio, query: "sensor", excludeRequestId: "r-sen-sent" })
+    expect(excluded.parts.find((part) => part.id === bought.id)?.vehicleMatch).toBeNull()
   })
 
   it("la línea de OC vinculada al repuesto también cuenta como «comprado para»", async () => {
@@ -272,6 +315,7 @@ describe("catálogo de repuestos", () => {
     await orderFor("df-1", "i-df-1", part.id, { issuedAt: "2026-10-21T12:00:00.000Z" })
     await requestFor("df-2", part.id, IDS.truckBio, { createdAt: "2026-11-01T12:00:00.000Z" })
     await requestFor("df-3", part.id, IDS.truckAra, { createdAt: "2026-11-03T12:00:00.000Z" })
+    await orderFor("df-3", "i-df-3", part.id, { status: "draft" })
 
     const detail = await catalog.getSparePartDetail(part.id)
     expect(detail).not.toBeNull()
@@ -283,23 +327,40 @@ describe("catálogo de repuestos", () => {
     expect(detail!.priceHistory.map((entry) => entry.newPrice)).toEqual([12_500, 11_000, 10_000])
     expect(detail!.priceHistory[0]).toMatchObject({ source: "purchase_order", sourceId: "oc-df-2", previousPrice: 10_000, createdByName: "Alexis Morales" })
 
+    // Sólo lo comprado con OC emitida: df-2 sólo se pidió y df-3 tiene la OC en borrador.
     expect(detail!.purchasedFor).toEqual([
-      expect.objectContaining({ vehicleId: IDS.truckAra, vehicleCode: "KA-300", vehicleBrand: "Scania", vehicleModel: "R450", requestCount: 1 }),
-      expect.objectContaining({ vehicleId: IDS.truckBio, vehicleCode: "KA-135", vehiclePlate: "RBYD-98", requestCount: 2 }),
+      expect.objectContaining({ vehicleId: IDS.truckBio, vehicleCode: "KA-135", vehiclePlate: "RBYD-98", vehicleBrand: "Scania", vehicleModel: "R450", requestCount: 1 }),
     ])
 
-    expect(detail!.recentLines.map((line) => line.requestCode)).toEqual(["REP-df-3", "REP-df-2", "REP-df-1"])
-    expect(detail!.recentLines[2]).toMatchObject({
+    // «Últimas solicitudes» sí muestra lo pedido y el borrador.
+    expect(detail!.recentLines.map((line) => line.requestCode).sort()).toEqual(["REP-df-1", "REP-df-2", "REP-df-3"])
+    expect(detail!.recentLines.find((line) => line.requestCode === "REP-df-1")).toMatchObject({
       orderCode: "OC-df-1", orderStatus: "sent", supplierName: "Repuestos del Sur", unitPrice: 15_000, vehicleCode: "KA-135",
     })
-    expect(detail!.recentLines[0]).toMatchObject({ orderId: null, orderCode: null })
+    expect(detail!.recentLines.find((line) => line.requestCode === "REP-df-2")).toMatchObject({ orderId: null, orderCode: null })
 
     // Lista: el precio del preferido y la última OC emitida.
     const [listed] = await catalog.listSpareParts({ query: "DF-9" })
     expect(listed).toMatchObject({
-      preferredSupplierId: "sup-a", preferredSupplierName: "Repuestos del Sur", lastPrice: 12_500,
-      lastPurchasedAt: "2026-10-21T12:00:00.000Z", vehicleCount: 2,
+      preferredSupplierId: "sup-a", preferredSupplierName: "Repuestos del Sur", lastPrice: 12_500, lastSupplierName: "Repuestos del Sur",
+      lastPurchasedAt: "2026-10-21T12:00:00.000Z", vehicleCount: 1,
     })
+  })
+
+  it("lista: sin preferido dice el proveedor del último precio, y trae el precio de referencia", async () => {
+    const part = await createPart({ name: "Manguera hidráulica", partNumber: "MH-1", referencePrice: 8_990 })
+    const [bare] = await catalog.listSpareParts({ query: "MH-1" })
+    expect(bare).toMatchObject({ preferredSupplierName: null, lastSupplierName: null, lastPrice: null, referencePrice: 8_990 })
+
+    // Emitir una OC registra el precio con el proveedor, pero no lo marca preferido.
+    await testDb.transaction(async (tx) => {
+      await setProductSupplierPriceTx(tx as never, {
+        productId: part.id, supplierId: "sup-b", unitPrice: 9_500, source: "purchase_order", sourceId: "oc-mh",
+        effectiveAt: "2026-11-04T12:00:00.000Z", userId: IDS.jefe,
+      })
+    })
+    const [priced] = await catalog.listSpareParts({ query: "MH-1" })
+    expect(priced).toMatchObject({ preferredSupplierName: null, lastSupplierName: "Frenos Bío Bío", lastPrice: 9_500, referencePrice: 8_990 })
   })
 
   it("la ficha devuelve null para un id inexistente o un producto que no es repuesto", async () => {

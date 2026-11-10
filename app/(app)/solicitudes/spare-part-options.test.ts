@@ -16,7 +16,7 @@ function listItem(over: Partial<SparePartListItem> = {}): SparePartListItem {
     id: "rpt-1", sku: "RPT-001", name: "Filtro de aceite", partNumber: "1R-0750", partBrand: "Caterpillar",
     unitOfMeasure: "unidad", isActive: true, preferredSupplierId: "sup-1", preferredSupplierName: "Repuestos del Sur",
     lastPrice: 35_000, lastPurchasedAt: "2026-10-01T12:00:00.000Z", vehicleCount: 2,
-    purchasedForVehicleIds: ["v-1", "v-9"], vehicleMatch: null, ...over,
+    purchasedForVehicleIds: ["v-1", "v-9"], vehicleMatch: null, lastSupplierName: "Repuestos del Sur", referencePrice: null, ...over,
   }
 }
 
@@ -153,6 +153,11 @@ describe("prefillPriceForPart", () => {
     expect(prefillPriceForPart({ lastPrice: 0 })).toBeNull()
     expect(prefillPriceForPart({ lastPrice: null })).toBeNull()
   })
+  it("sin precio de compra, usa el precio de referencia de la ficha", () => {
+    expect(prefillPriceForPart({ lastPrice: null, referencePrice: 12_490.4 })).toBe("12490")
+    expect(prefillPriceForPart({ lastPrice: 14_000, referencePrice: 12_490 })).toBe("14000")
+    expect(prefillPriceForPart({ lastPrice: null, referencePrice: 0 })).toBeNull()
+  })
 })
 
 describe("sparePartMatchesText", () => {
@@ -168,5 +173,10 @@ describe("sparePartMatchesText", () => {
   it("no calza con una búsqueda distinta", () => {
     expect(sparePartMatchesText(part, "correa")).toBe(false)
     expect(sparePartMatchesText({ ...part, partNumber: null }, "0750")).toBe(false)
+  })
+  it("calza con varias palabras en cualquier orden, y exige todas", () => {
+    expect(sparePartMatchesText(part, "aceite filtro")).toBe(true)
+    expect(sparePartMatchesText(part, "caterpillar  1r-0750 aceite")).toBe(true)
+    expect(sparePartMatchesText(part, "aceite freno")).toBe(false)
   })
 })

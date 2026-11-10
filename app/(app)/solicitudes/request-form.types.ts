@@ -42,6 +42,8 @@ export interface SparePartOption {
   unitOfMeasure:  string
   /** Precio con el proveedor preferido o, si no tiene, el último conocido: precarga el precio estimado. */
   lastPrice:      number | null
+  /** Precio orientativo de la ficha: precarga el estimado sólo cuando no hay `lastPrice`. */
+  referencePrice?: number | null
   preferredSupplierId: string | null
   /** Equipos (dentro del alcance de quien pide) para los que ya se compró: sube en el buscador. */
   purchasedForVehicleIds: string[]

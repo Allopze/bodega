@@ -55,6 +55,7 @@ export function toSparePartOption(
     partBrand: part.partBrand,
     unitOfMeasure: part.unitOfMeasure,
     lastPrice: part.lastPrice,
+    referencePrice: part.referencePrice,
     preferredSupplierId: part.preferredSupplierId && activeSupplierIds.has(part.preferredSupplierId)
       ? part.preferredSupplierId
       : null,
@@ -178,9 +179,14 @@ export function sparePartPickerOptions(
     }))
 }
 
-/** Precio con el que se precarga el estimado: entero en CLP (el campo es de pesos enteros) o `null`. */
-export function prefillPriceForPart(part: Pick<SparePartOption, "lastPrice">): string | null {
-  return part.lastPrice != null && part.lastPrice > 0 ? String(Math.round(part.lastPrice)) : null
+/**
+ * Precio con el que se precarga el estimado: entero en CLP (el campo es de pesos
+ * enteros) o `null`. Primero el último precio de compra; si el repuesto nunca
+ * se compró, el precio de referencia que se anotó en su ficha.
+ */
+export function prefillPriceForPart(part: Pick<SparePartOption, "lastPrice" | "referencePrice">): string | null {
+  const price = part.lastPrice != null && part.lastPrice > 0 ? part.lastPrice : part.referencePrice
+  return price != null && price > 0 ? String(Math.round(price)) : null
 }
 
 function foldSearch(value: string | null | undefined): string {
@@ -189,18 +195,22 @@ function foldSearch(value: string | null | undefined): string {
 
 /**
  * Si el repuesto calza con lo escrito, con el criterio del buscador del servidor
- * (nombre, SKU, N° de parte —también sin guiones— y marca, sin tildes ni
- * mayúsculas). Mientras llega la respuesta a lo último escrito, el formulario
- * sigue mostrando la anterior: este filtro deja fuera las que ya no calzan, para
- * que no se elija un repuesto de una búsqueda que quien escribe ya abandonó.
+ * (cada palabra en el nombre, el SKU, el N° de parte —también sin guiones— o la
+ * marca, en cualquier orden, sin tildes ni mayúsculas). Mientras llega la
+ * respuesta a lo último escrito, el formulario sigue mostrando la anterior: este
+ * filtro deja fuera las que ya no calzan, para que no se elija un repuesto de
+ * una búsqueda que quien escribe ya abandonó.
  */
 export function sparePartMatchesText(
   part: Pick<SparePartOption, "name" | "sku" | "partNumber" | "partBrand">,
   text: string,
 ): boolean {
-  const query = foldSearch(text)
-  if (!query) return true
-  const compact = query.replace(/[^a-z0-9]/g, "")
-  if ([part.name, part.sku, part.partNumber, part.partBrand].some((value) => foldSearch(value).includes(query))) return true
-  return compact !== "" && foldSearch(part.partNumber).replace(/[^a-z0-9]/g, "").includes(compact)
+  const tokens = foldSearch(text).split(/\s+/).filter(Boolean)
+  const fields = [part.name, part.sku, part.partNumber, part.partBrand].map(foldSearch)
+  const compactPartNumber = foldSearch(part.partNumber).replace(/[^a-z0-9]/g, "")
+  return tokens.every((token) => {
+    if (fields.some((value) => value.includes(token))) return true
+    const compact = token.replace(/[^a-z0-9]/g, "")
+    return compact !== "" && compactPartNumber.includes(compact)
+  })
 }

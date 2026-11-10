@@ -48,7 +48,7 @@ function session(permissions: string[]): Session {
 
 const LISTED = (id: string) => ({
   id, sku: `RPT-${id}`, name: `Repuesto ${id}`, partNumber: `PN-${id}`, partBrand: null, unitOfMeasure: "unidad", isActive: true,
-  preferredSupplierId: null, preferredSupplierName: null, lastPrice: 1000, lastPurchasedAt: null, vehicleCount: 0,
+  preferredSupplierId: null, preferredSupplierName: null, lastSupplierName: null, lastPrice: 1000, referencePrice: null, lastPurchasedAt: null, vehicleCount: 0,
   purchasedForVehicleIds: [], vehicleMatch: null,
 })
 
@@ -79,8 +79,9 @@ describe("buscar y vincular: purchasing:create_order", () => {
   it("busca con el vehículo de la línea y devuelve la sugerencia por N° de parte", async () => {
     mockAuth.mockResolvedValue(session(["purchasing:create_order"]))
     mockFindByPartNumber.mockResolvedValue({ id: "2" })
-    const result = await searchSparePartsForOcAction({ query: "  ", vehicleId: "v-1", partNumber: "PN-2" })
-    expect(mockSearch).toHaveBeenCalledWith({ query: undefined, vehicleId: "v-1", vehicleScope: "all", limit: 40 })
+    const result = await searchSparePartsForOcAction({ query: "  ", vehicleId: "v-1", partNumber: "PN-2", requestId: "req-1" })
+    // La solicitud de la línea no cuenta como «ya se compró para este equipo».
+    expect(mockSearch).toHaveBeenCalledWith({ query: undefined, vehicleId: "v-1", vehicleScope: "all", excludeRequestId: "req-1", limit: 40 })
     expect(mockFindByPartNumber).toHaveBeenCalledWith("PN-2")
     expect(result).toMatchObject({ ok: true, total: 2, suggestion: { id: "2", sku: "RPT-2" } })
     // Sólo viajan los campos que la hoja necesita.

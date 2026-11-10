@@ -37,7 +37,7 @@ function session(permissions: string[]): Session {
 
 const PART = {
   id: "rpt-1", sku: "RPT-001", name: "Filtro", partNumber: "AF-1", partBrand: null, unitOfMeasure: "unidad", isActive: true,
-  preferredSupplierId: "sup-baja", preferredSupplierName: "Dado de baja", lastPrice: 1000, lastPurchasedAt: null,
+  preferredSupplierId: "sup-baja", preferredSupplierName: "Dado de baja", lastSupplierName: "Dado de baja", lastPrice: 1000, referencePrice: null, lastPurchasedAt: null,
   vehicleCount: 2, purchasedForVehicleIds: ["v-mio", "v-ajeno"], vehicleMatch: "vehicle" as const,
 }
 

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { DataTable, type ColumnDef } from "@/components/ui/data-table"
 import { EmptyState } from "@/components/ui/empty-state"
 import { ExportButton } from "@/components/ui/export-button"
+import { useSafeShellHeader } from "@/components/layout/header-context"
 import { PageHeader } from "@/components/ui/page-header"
 import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui/responsive-data-list"
 import { StageTabs } from "@/components/ui/stage-tabs"
@@ -25,7 +26,11 @@ export interface SparePartRow {
   partBrand: string | null
   unitOfMeasure: string
   preferredSupplierName: string | null
+  /** Proveedor del precio más reciente: se muestra cuando no hay preferido. */
+  lastSupplierName: string | null
   lastPrice: number | null
+  /** Precio orientativo de la ficha: se muestra, rotulado, cuando no hay precio de compra. */
+  referencePrice: number | null
   lastPurchasedAt: string | null
   vehicleCount: number
 }
@@ -41,11 +46,29 @@ const stripAccents = (text: string) => text.normalize("NFD").replace(/[̀-ͯ]/g,
  * guiones): nombre, SKU, N° de parte —también compacto, para que «1r0750» encuentre «1R-0750»—, marca y proveedor.
  */
 export function buildSearchText(row: SparePartRow): string {
-  const parts = [row.name, row.sku, row.partNumber, row.partBrand, row.preferredSupplierName]
+  const parts = [row.name, row.sku, row.partNumber, row.partBrand, row.preferredSupplierName ?? row.lastSupplierName]
     .filter((value): value is string => Boolean(value))
   const compactPartNumber = row.partNumber ? row.partNumber.replace(/[^\p{L}\p{N}]/gu, "") : ""
   const text = [...parts, compactPartNumber].join(" ").toLowerCase()
   return `${text} ${stripAccents(text)}`
+}
+
+/**
+ * Si la fila calza con lo escrito en la barra superior: cada palabra tiene que
+ * estar en `searchText`, en cualquier orden («aceite filtro» encuentra «Filtro
+ * de aceite»). `DataTable` busca la frase entera por contiene y es compartido,
+ * así que esta pantalla filtra antes y le apaga su filtro interno.
+ */
+export function matchesSearch(searchText: string, query: string): boolean {
+  const tokens = stripAccents(query.toLowerCase()).split(/\s+/).filter(Boolean)
+  return tokens.every((token) => searchText.includes(token))
+}
+
+/** Proveedor de la fila: el preferido, o el del último precio conocido. */
+export function supplierCell(row: Pick<SparePartRow, "preferredSupplierName" | "lastSupplierName">): { name: string; isLast: boolean } | null {
+  if (row.preferredSupplierName) return { name: row.preferredSupplierName, isLast: false }
+  if (row.lastSupplierName) return { name: row.lastSupplierName, isLast: true }
+  return null
 }
 
 /** «N° 1R-0750 · Caterpillar · RPT-001»: la segunda línea de la celda, y lo que distingue dos filtros parecidos. */
@@ -55,8 +78,8 @@ export function identityLine(row: Pick<SparePartRow, "sku" | "partNumber" | "par
 
 const COLUMNS: ColumnDef[] = [
   { key: "name", label: "Repuesto", sortable: true },
-  { key: "preferredSupplierName", label: "Proveedor preferido", sortable: true, sortValue: (row: SparePartRow) => row.preferredSupplierName ?? "" },
-  { key: "lastPrice", label: "Último precio", sortable: true, numeric: true },
+  { key: "preferredSupplierName", label: "Proveedor", sortable: true, sortValue: (row: SparePartRow) => supplierCell(row)?.name ?? "" },
+  { key: "lastPrice", label: "Último precio", sortable: true, numeric: true, sortValue: (row: SparePartRow) => row.lastPrice ?? row.referencePrice ?? -1 },
   { key: "lastPurchasedAt", label: "Última compra", sortable: true, sortValue: (row: SparePartRow) => row.lastPurchasedAt ?? "" },
   { key: "vehicleCount", label: "Comprado para", sortable: true, numeric: true },
 ]
@@ -86,6 +109,31 @@ function emptyCopy(tab: SparePartTab, hasInactive: boolean) {
   }
 }
 
+function SupplierValue({ row }: { row: SparePartRow }) {
+  const supplier = supplierCell(row)
+  if (!supplier) return <span className={MUTED}>Sin proveedor</span>
+  return (
+    <>
+      {supplier.name}
+      {supplier.isLast && <span className={`block text-xs ${MUTED}`}>Último proveedor</span>}
+    </>
+  )
+}
+
+/** El precio de compra; si nunca se compró, el de referencia de la ficha, dicho como tal. */
+function PriceValue({ row }: { row: SparePartRow }) {
+  if (row.lastPrice !== null) return <span className="font-mono">{formatCLP(row.lastPrice)}</span>
+  if (row.referencePrice !== null) {
+    return (
+      <>
+        <span className="font-mono">{formatCLP(row.referencePrice)}</span>
+        <span className={`block font-sans text-xs ${MUTED}`}>Referencia</span>
+      </>
+    )
+  }
+  return <span className={MUTED}>—</span>
+}
+
 interface SparePartsCatalogViewProps {
   /** Repuestos de la pestaña elegida. */
   rows: SparePartRow[]
@@ -105,9 +153,12 @@ export function SparePartsCatalogView({ rows, counts, tab, units }: SparePartsCa
   // Cada apertura es un formulario nuevo: sin esto, cancelar un intento con errores lo dejaba pintado al reabrir.
   const [formKey, setFormKey] = React.useState(0)
   const total = counts.active + counts.inactive
+  const { searchQuery } = useSafeShellHeader()
   const data = React.useMemo<TableData[]>(
-    () => rows.map((row) => ({ ...row, searchText: buildSearchText(row) })),
-    [rows],
+    () => rows
+      .map((row) => ({ ...row, searchText: buildSearchText(row) }))
+      .filter((row) => matchesSearch(row.searchText, searchQuery)),
+    [rows, searchQuery],
   )
   const empty = emptyCopy(tab, counts.inactive > 0)
   const newButton = (
@@ -157,6 +208,8 @@ export function SparePartsCatalogView({ rows, counts, tab, units }: SparePartsCa
           columns={COLUMNS}
           rows={data}
           searchKeys={["searchText"]}
+          // Ya filtrado arriba por palabras; el filtro de `DataTable` busca la frase entera.
+          disableInternalSearch
           hideDensityToggle
           emptyTitle="Ningún repuesto coincide"
           emptyDescription="Prueba con otro nombre, SKU o N° de parte."
@@ -168,8 +221,8 @@ export function SparePartsCatalogView({ rows, counts, tab, units }: SparePartsCa
                   <Link href={`/mantencion/repuestos/${row.id}`} className={LINK_CLASS}>{row.name}</Link>
                   <p className={`mt-0.5 text-xs ${MUTED}`}>{identityLine(row)}</p>
                 </TableCell>
-                <TableCell>{row.preferredSupplierName ?? <span className={MUTED}>Sin proveedor</span>}</TableCell>
-                <TableCellNum>{row.lastPrice === null ? <span className={MUTED}>—</span> : formatCLP(row.lastPrice)}</TableCellNum>
+                <TableCell><SupplierValue row={row} /></TableCell>
+                <TableCellNum><PriceValue row={row} /></TableCellNum>
                 <TableCell nowrap>{row.lastPurchasedAt ? <span className="font-mono text-[13px]">{formatDate(row.lastPurchasedAt)}</span> : <span className={MUTED}>Sin compras</span>}</TableCell>
                 <TableCellNum>{row.vehicleCount === 0 ? <span className={MUTED}>—</span> : plural(row.vehicleCount, "equipo", "equipos")}</TableCellNum>
               </TableRow>
@@ -183,8 +236,8 @@ export function SparePartsCatalogView({ rows, counts, tab, units }: SparePartsCa
                 title={<Link href={`/mantencion/repuestos/${row.id}`} className={LINK_CLASS}>{row.name}</Link>}
                 description={identityLine(row)}
               >
-                <ResponsiveDataListField label="Proveedor preferido">{row.preferredSupplierName ?? "Sin proveedor"}</ResponsiveDataListField>
-                <ResponsiveDataListField label="Último precio"><span className="font-mono">{row.lastPrice === null ? "—" : formatCLP(row.lastPrice)}</span></ResponsiveDataListField>
+                <ResponsiveDataListField label="Proveedor"><SupplierValue row={row} /></ResponsiveDataListField>
+                <ResponsiveDataListField label="Último precio"><PriceValue row={row} /></ResponsiveDataListField>
                 <ResponsiveDataListField label="Última compra">{row.lastPurchasedAt ? <span className="font-mono">{formatDate(row.lastPurchasedAt)}</span> : "Sin compras"}</ResponsiveDataListField>
                 <ResponsiveDataListField label="Comprado para">{row.vehicleCount === 0 ? "—" : plural(row.vehicleCount, "equipo", "equipos")}</ResponsiveDataListField>
               </ResponsiveDataListCard>

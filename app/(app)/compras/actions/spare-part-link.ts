@@ -54,6 +54,8 @@ const searchSchema = z.object({
   vehicleId: z.string().trim().max(64).nullish(),
   /** Sólo al abrir la hoja: el N° de parte que escribió quien pidió, para sugerir el repuesto exacto. */
   partNumber: z.string().trim().max(100).nullish(),
+  /** Solicitud de la línea: sus propias líneas no cuentan como «ya se compró para este equipo». */
+  requestId: z.string().trim().max(64).nullish(),
 })
 
 const linkSchema = z.object({
@@ -92,7 +94,7 @@ export async function searchSparePartsForOcAction(input: z.input<typeof searchSc
   }
   const parsed = searchSchema.safeParse(input)
   if (!parsed.success) return { ok: false, message: "Revisa la búsqueda" }
-  const { query, vehicleId, partNumber } = parsed.data
+  const { query, vehicleId, partNumber, requestId } = parsed.data
 
   try {
     // Filtro, orden por vehículo y tope en SQL: el catálogo no viaja entero.
@@ -101,13 +103,14 @@ export async function searchSparePartsForOcAction(input: z.input<typeof searchSc
     // al alcance de faenas de la sesión, como en el buscador de la solicitud.
     // Un rol global sigue viendo toda la flota.
     const vehicleScope = serviceWorksiteScope(session)
-    const found = await searchSpareParts({ query: query || undefined, vehicleId: vehicleId || undefined, vehicleScope, limit: SEARCH_LIMIT })
+    const excludeRequestId = requestId || undefined
+    const found = await searchSpareParts({ query: query || undefined, vehicleId: vehicleId || undefined, vehicleScope, excludeRequestId, limit: SEARCH_LIMIT })
     // La sugerencia sólo se pide al abrir la hoja; puede quedar fuera del tope,
     // así que se lee aparte, con el mismo vehículo para su insignia.
     const suggestionRow = partNumber ? await findSparePartByPartNumber(partNumber) : null
     const suggestion = suggestionRow
       ? (found.parts.find((part) => part.id === suggestionRow.id)
-        ?? (await searchSpareParts({ ids: [suggestionRow.id], vehicleId: vehicleId || undefined, vehicleScope })).parts[0]
+        ?? (await searchSpareParts({ ids: [suggestionRow.id], vehicleId: vehicleId || undefined, vehicleScope, excludeRequestId })).parts[0]
         ?? null)
       : null
     return {

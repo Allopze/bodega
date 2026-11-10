@@ -63,7 +63,8 @@ describe("OcCatalogSheet — vincular a un repuesto existente", () => {
   it("pide el catálogo ordenado para el equipo de la línea y sugiere por el N° de parte que escribió quien pidió", async () => {
     open()
     await screen.findByText("Coincide por N° de parte")
-    expect(search).toHaveBeenCalledWith({ query: "", vehicleId: "v-1", partNumber: "AF-100" })
+    // La propia solicitud no cuenta como «ya se compró para este equipo».
+    expect(search).toHaveBeenCalledWith({ query: "", vehicleId: "v-1", requestId: "req-1", partNumber: "AF-100" })
     // La sugerencia no se repite en la lista de abajo.
     expect(screen.getAllByText("Filtro de aire primario")).toHaveLength(1)
     expect(screen.getByText("Filtro de combustible")).toBeTruthy()
@@ -100,7 +101,7 @@ describe("OcCatalogSheet — vincular a un repuesto existente", () => {
     fireEvent.change(screen.getByLabelText("Buscar en el catálogo"), { target: { value: "aire" } })
     expect(await screen.findByText("Ya se compró para este equipo")).toBeTruthy()
     expect(screen.getByText(/21\.000/)).toBeTruthy()
-    expect(search).toHaveBeenLastCalledWith({ query: "aire", vehicleId: "v-1", partNumber: null })
+    expect(search).toHaveBeenLastCalledWith({ query: "aire", vehicleId: "v-1", requestId: "req-1", partNumber: null })
   })
 
   it("muestra la unidad de cada repuesto y deja a la vista, sin poder elegirlo, el que se compra en otra", async () => {

@@ -7,10 +7,12 @@
  * directo: no entra a stock ni kárdex.
  *
  * La compatibilidad con vehículos NO se declara: se deriva del historial. Un
- * repuesto «se compró para» un vehículo cuando una línea de solicitud lo
- * apunta (`purchase_request_items.product_id`, o la línea de OC vinculada a esa
- * solicitud con `purchase_order_items.product_id`) con `vehicle_id` y la
- * solicitud no está anulada ni rechazada.
+ * repuesto «se compró para» un vehículo cuando una línea de solicitud con ese
+ * `vehicle_id` tiene una línea de OC **emitida** (ni borrador ni anulada ni
+ * eliminada) y el repuesto está en cualquiera de las dos
+ * (`purchase_request_items.product_id` o `purchase_order_items.product_id`), y
+ * la solicitud no está anulada ni rechazada. Pedirlo no basta: hasta que hay OC
+ * emitida no se compró (recorrido 2026-11-09, FF-1).
  *
  * SIN AUTORIZACIÓN: este servicio no revisa permisos. Quien lo llama exige
  * `repuestos:catalog` para escribir, y para leer lo que corresponda a su
@@ -64,6 +66,11 @@ export interface ListSparePartsOptions {
   vehicleScope?: readonly string[] | "all"
   /** Tope de filas; sin él, todas. */
   limit?: number
+  /**
+   * Solicitud que se está atendiendo (la que Compras convierte en OC): sus
+   * propias líneas no cuentan como «ya se compró para este equipo».
+   */
+  excludeRequestId?: string
 }
 
 export interface SparePartSearchResult {
@@ -82,8 +89,19 @@ export interface SparePartListItem {
   isActive: boolean
   preferredSupplierId: string | null
   preferredSupplierName: string | null
+  /**
+   * Proveedor del precio más reciente (cualquiera, preferido o no). Emitir una
+   * OC registra precio pero no marca preferido: sin esto, la lista decía «Sin
+   * proveedor» con proveedor y precio conocidos (recorrido 2026-11-09, UX-3).
+   */
+  lastSupplierName: string | null
   /** Precio del proveedor preferido; si no tiene, el último precio conocido de cualquier proveedor. */
   lastPrice: number | null
+  /**
+   * Precio orientativo que se anotó en la ficha. No es una compra: se usa sólo
+   * cuando no hay `lastPrice` (precarga del estimado, lista y Excel).
+   */
+  referencePrice: number | null
   /** Fecha (ISO) de la OC emitida más reciente que lo incluye. */
   lastPurchasedAt: string | null
   /** Vehículos distintos para los que se pidió. */
@@ -360,8 +378,9 @@ interface VehicleLinkRow {
 /**
  * Pares (repuesto, vehículo) del historial. El repuesto puede venir de la línea
  * de solicitud o de la línea de OC que la compra (Compras cataloga al armar la
- * OC). Las solicitudes anuladas o rechazadas no cuentan; la OC anulada o
- * eliminada tampoco aporta su vínculo.
+ * OC). Sólo cuenta lo comprado: la línea tiene que tener una OC emitida (ni
+ * borrador, ni anulada, ni eliminada). Las solicitudes anuladas o rechazadas
+ * tampoco cuentan.
  *
  * `productIds`: sólo esos repuestos (lo que devolvió la búsqueda). `null` = todo
  * el catálogo, para la lista completa de la pantalla de gestión.
@@ -374,7 +393,6 @@ async function loadVehicleLinks(productIds: readonly string[] | null): Promise<V
     .select({
       requestProductId: purchaseRequestItems.productId,
       orderProductId:   purchaseOrderItems.productId,
-      orderId:          purchaseOrders.id,
       requestItemId:    purchaseRequestItems.id,
       vehicleId:        fuelVehicles.id,
       vehicleCode:      fuelVehicles.code,
@@ -386,15 +404,13 @@ async function loadVehicleLinks(productIds: readonly string[] | null): Promise<V
     .from(purchaseRequestItems)
     .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
     .innerJoin(fuelVehicles, eq(purchaseRequestItems.vehicleId, fuelVehicles.id))
-    .leftJoin(purchaseOrderItems, eq(purchaseOrderItems.requestItemId, purchaseRequestItems.id))
-    .leftJoin(purchaseOrders, and(
-      eq(purchaseOrderItems.purchaseOrderId, purchaseOrders.id),
-      isNull(purchaseOrders.deletedAt),
-      ne(purchaseOrders.status, "cancelled"),
-    ))
+    .innerJoin(purchaseOrderItems, eq(purchaseOrderItems.requestItemId, purchaseRequestItems.id))
+    .innerJoin(purchaseOrders, eq(purchaseOrderItems.purchaseOrderId, purchaseOrders.id))
     .where(and(
       notInArray(purchaseRequests.status, DEAD_REQUEST_STATUSES),
       notInArray(purchaseRequestItems.status, DEAD_REQUEST_STATUSES),
+      isNull(purchaseOrders.deletedAt),
+      notInArray(purchaseOrders.status, NOT_ISSUED_ORDER_STATUSES),
       productIds !== null
         ? or(inArray(purchaseRequestItems.productId, [...productIds]), inArray(purchaseOrderItems.productId, [...productIds]))
         : or(inArray(purchaseRequestItems.productId, allSpareParts), inArray(purchaseOrderItems.productId, allSpareParts)),
@@ -409,7 +425,7 @@ async function loadVehicleLinks(productIds: readonly string[] | null): Promise<V
   const links: VehicleLinkRow[] = []
   const seen = new Set<string>()
   for (const row of rows) {
-    const candidates = [row.requestProductId, row.orderId ? row.orderProductId : null]
+    const candidates = [row.requestProductId, row.orderProductId]
     for (const candidate of candidates) {
       if (candidate === null || !spare.has(candidate)) continue
       const key = `${candidate}|${row.requestItemId}`
@@ -456,30 +472,54 @@ function compactSearch(value: string): string {
 
 /**
  * El repuesto se compró para un vehículo que cumple `vehicleCondition`: una
- * línea de solicitud viva lo apunta, o la línea de OC (no anulada ni eliminada)
- * que compra esa línea. Misma regla que `loadVehicleLinks`, en SQL, para ordenar
- * y filtrar sin traer el historial completo.
+ * línea de solicitud viva para ese vehículo tiene una línea de OC emitida (ni
+ * borrador, ni anulada, ni eliminada) y el repuesto está en la línea de
+ * solicitud o en la de OC. Misma regla que `loadVehicleLinks`, en SQL, para
+ * ordenar y filtrar sin traer el historial completo. `excludeRequestId`: las
+ * líneas de esa solicitud no cuentan (la que se está convirtiendo en OC).
  */
-function purchasedForVehicleSql(vehicleCondition: SQL): SQL {
+function purchasedForVehicleSql(vehicleCondition: SQL, excludeRequestId?: string): SQL {
   return sql`EXISTS (
     SELECT 1 FROM ${purchaseRequestItems}
     INNER JOIN ${purchaseRequests} ON ${purchaseRequests.id} = ${purchaseRequestItems.requestId}
     INNER JOIN ${fuelVehicles} ON ${fuelVehicles.id} = ${purchaseRequestItems.vehicleId}
+    INNER JOIN ${purchaseOrderItems} ON ${purchaseOrderItems.requestItemId} = ${purchaseRequestItems.id}
+    INNER JOIN ${purchaseOrders} ON ${purchaseOrders.id} = ${purchaseOrderItems.purchaseOrderId}
     WHERE ${purchaseRequests.status} NOT IN ('cancelled', 'rejected')
       AND ${purchaseRequestItems.status} NOT IN ('cancelled', 'rejected')
-      AND (
-        ${purchaseRequestItems.productId} = ${products.id}
-        OR EXISTS (
-          SELECT 1 FROM ${purchaseOrderItems}
-          INNER JOIN ${purchaseOrders} ON ${purchaseOrders.id} = ${purchaseOrderItems.purchaseOrderId}
-          WHERE ${purchaseOrderItems.requestItemId} = ${purchaseRequestItems.id}
-            AND ${purchaseOrderItems.productId} = ${products.id}
-            AND ${purchaseOrders.deletedAt} IS NULL
-            AND ${purchaseOrders.status} <> 'cancelled'
-        )
-      )
+      AND ${purchaseOrders.deletedAt} IS NULL
+      AND ${purchaseOrders.status} NOT IN ('draft', 'cancelled')
+      AND (${purchaseRequestItems.productId} = ${products.id} OR ${purchaseOrderItems.productId} = ${products.id})
+      ${excludeRequestId ? sql`AND ${purchaseRequests.id} <> ${excludeRequestId}` : sql``}
       AND ${vehicleCondition}
   )`
+}
+
+/**
+ * Lo escrito se parte en palabras y cada una tiene que aparecer en el nombre,
+ * el SKU, el N° de parte (también sin guiones) o la marca: «aceite filtro»
+ * encuentra «Filtro de aceite» (recorrido 2026-11-09, FF-5).
+ */
+export function sparePartSearchTokens(folded: string): string[] {
+  return folded.split(/\s+/).filter(Boolean)
+}
+
+function sparePartTextMatchSql(foldedQuery: string): SQL | undefined {
+  const tokens = sparePartSearchTokens(foldedQuery)
+  if (tokens.length === 0) return undefined
+  return and(...tokens.map((token) => {
+    const pattern = `%${escapeLikePattern(token)}%`
+    const compact = compactSearch(token)
+    return or(
+      sql`${foldSql(products.name)} LIKE ${pattern}`,
+      sql`${foldSql(products.sku)} LIKE ${pattern}`,
+      sql`${foldSql(products.partNumber)} LIKE ${pattern}`,
+      sql`${foldSql(products.partBrand)} LIKE ${pattern}`,
+      compact
+        ? sql`regexp_replace(${foldSql(products.partNumber)}, '[^a-z0-9]', '', 'g') LIKE ${`%${compact}%`}`
+        : undefined,
+    )
+  }))
 }
 
 /* ── Lectura ─────────────────────────────────────────────────────────────── */
@@ -522,32 +562,20 @@ export async function searchSpareParts(opts: ListSparePartsOptions = {}): Promis
   }
   if (opts.onlyVehicleMatches && !target) return { parts: [], total: 0 }
 
-  const forVehicle = target ? purchasedForVehicleSql(sql`${fuelVehicles.id} = ${target.id}`) : null
+  const forVehicle = target ? purchasedForVehicleSql(sql`${fuelVehicles.id} = ${target.id}`, opts.excludeRequestId) : null
   // Sin marca o sin modelo no hay «mismo modelo»: dos equipos sin dato no son iguales.
   const forModel = target?.brandKey && target.modelKey
     ? purchasedForVehicleSql(and(
         sql`${foldSql(sql`btrim(${fuelVehicles.brand})`)} = ${target.brandKey} AND ${foldSql(sql`btrim(${fuelVehicles.model})`)} = ${target.modelKey}`,
         inScope,
-      )!)
+      )!, opts.excludeRequestId)
     : null
   const tier = forVehicle
     ? sql<number>`CASE WHEN ${forVehicle} THEN 0 ${forModel ? sql`WHEN ${forModel} THEN 1 ` : sql``}ELSE 2 END`
     : sql<number>`2`
 
   const query = foldSparePartSearch(opts.query ?? "")
-  const compactQuery = compactSearch(opts.query ?? "")
-  const pattern = `%${escapeLikePattern(query)}%`
-  const textMatch = query
-    ? or(
-        sql`${foldSql(products.name)} LIKE ${pattern}`,
-        sql`${foldSql(products.sku)} LIKE ${pattern}`,
-        sql`${foldSql(products.partNumber)} LIKE ${pattern}`,
-        sql`${foldSql(products.partBrand)} LIKE ${pattern}`,
-        compactQuery
-          ? sql`regexp_replace(${foldSql(products.partNumber)}, '[^a-z0-9]', '', 'g') LIKE ${`%${compactQuery}%`}`
-          : undefined,
-      )
-    : undefined
+  const textMatch = sparePartTextMatchSql(query)
 
   const preferred = db
     .select({
@@ -570,6 +598,7 @@ export async function searchSpareParts(opts: ListSparePartsOptions = {}): Promis
       partBrand:             products.partBrand,
       unitOfMeasure:         products.unitOfMeasure,
       isActive:              products.isActive,
+      referencePrice:        products.referencePrice,
       preferredSupplierId:   preferred.supplierId,
       preferredSupplierName: preferred.supplierName,
       preferredPrice:        preferred.unitPrice,
@@ -595,13 +624,15 @@ export async function searchSpareParts(opts: ListSparePartsOptions = {}): Promis
 
   const latestPrices = await db
     .selectDistinctOn([productSuppliers.productId], {
-      productId: productSuppliers.productId,
-      unitPrice: productSuppliers.unitPrice,
+      productId:    productSuppliers.productId,
+      unitPrice:    productSuppliers.unitPrice,
+      supplierName: suppliers.name,
     })
     .from(productSuppliers)
+    .innerJoin(suppliers, eq(productSuppliers.supplierId, suppliers.id))
     .where(and(inArray(productSuppliers.productId, ids), sql`${productSuppliers.unitPrice} IS NOT NULL`))
     .orderBy(productSuppliers.productId, desc(productSuppliers.lastUpdated))
-  const latestPriceById = new Map(latestPrices.map((row) => [row.productId, row.unitPrice]))
+  const latestPriceById = new Map(latestPrices.map((row) => [row.productId, row]))
 
   const lastPurchases = await db
     .select({
@@ -644,7 +675,9 @@ export async function searchSpareParts(opts: ListSparePartsOptions = {}): Promis
         isActive: part.isActive,
         preferredSupplierId: part.preferredSupplierId,
         preferredSupplierName: part.preferredSupplierName,
-        lastPrice: part.preferredPrice ?? latestPriceById.get(part.id) ?? null,
+        lastSupplierName: latestPriceById.get(part.id)?.supplierName ?? null,
+        lastPrice: part.preferredPrice ?? latestPriceById.get(part.id)?.unitPrice ?? null,
+        referencePrice: part.referencePrice,
         lastPurchasedAt: lastPurchaseById.get(part.id) ?? null,
         vehicleCount: vehicles.size,
         purchasedForVehicleIds: [...vehicles].sort(),
