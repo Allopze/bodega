@@ -2,6 +2,9 @@
  * Formatting helpers for the Orden de Compra print view.
  */
 
+import { vehicleLabel } from "@/lib/fleet-vehicle-label"
+import { requestItemAssetLabel } from "@/lib/purchasing/request-item-asset"
+
 export function formatOrderNumber(code: string): string {
   return code.replace(/^OC-/, "")
 }
@@ -53,6 +56,29 @@ export function formatUnit(unit: string): string {
   const normalized = unit.trim().toLowerCase()
   if (["unidad", "unidades", "un", "u"].includes(normalized)) return "UN"
   return unit.trim().toUpperCase()
+}
+
+/**
+ * «Equipo: …» bajo la línea de la OC impresa: el instrumento de un servicio (con su N° de
+ * serie, que el proveedor necesita para identificarlo) o el equipo de flota de un repuesto
+ * con la OT de mantención que lo originó («Equipo: KA-54 · UD-1187 · OT OT-PAC-0006»), igual
+ * que la ficha de la OC (`requestItemAssetLabel`). Lo usan la vista de impresión y el PDF.
+ */
+export function formatItemAssetNote(requestItem: {
+  equipment?: { code: string; name: string; serialNumber?: string | null } | null
+  vehicle?: { plate: string; code: string | null } | null
+  workOrder?: { folio: string } | null
+} | null | undefined): string | null {
+  if (!requestItem) return null
+  const { equipment, vehicle, workOrder } = requestItem
+  const label = requestItemAssetLabel({
+    equipmentLabel: equipment
+      ? `${equipment.code} · ${equipment.name}${equipment.serialNumber ? ` · N° serie ${equipment.serialNumber}` : ""}`
+      : null,
+    vehicleLabel: vehicle ? vehicleLabel(vehicle) : null,
+    workOrderFolio: workOrder?.folio ?? null,
+  })
+  return label ? `Equipo: ${label}` : null
 }
 
 export function unique(values: string[]): string[] {

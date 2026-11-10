@@ -40,8 +40,15 @@ async function loadOrderWithRelations(id: string) {
             // `equipment` y `worker`: el instrumento y la persona son parte del
             // encargo. Desde que el equipo pasó a ser una FK (0149) dejó de
             // viajar como atributo de texto, y la OC impresa quedó sin decirle
-            // al proveedor qué aparato tiene que mantener.
-            with: { request: true, attributes: true, equipment: true, worker: true },
+            // al proveedor qué aparato tiene que mantener. `vehicle` y `workOrder`
+            // hacen lo mismo con un repuesto pedido para un equipo de flota y una
+            // OT de mantención (FF-7): sólo lo que se imprime, la patente, el código
+            // y el folio.
+            with: {
+              request: true, attributes: true, equipment: true, worker: true,
+              vehicle: { columns: { plate: true, code: true } },
+              workOrder: { columns: { folio: true } },
+            },
           },
         },
       },

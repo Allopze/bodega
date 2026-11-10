@@ -7,7 +7,7 @@ import { PrintTrigger } from "./print-trigger"
 import { loadOcPrintData } from "./oc-print-data"
 import { OC_PRINT_STYLES } from "./oc-print-styles"
 import { FieldLine, TotalLine } from "./oc-print-components"
-import { formatOrderNumber, formatPlainCLP, formatDecimal, formatDiscount, formatPrintAmount, formatUnit } from "./oc-print-formatters"
+import { formatItemAssetNote, formatOrderNumber, formatPlainCLP, formatDecimal, formatDiscount, formatPrintAmount, formatUnit } from "./oc-print-formatters"
 import { MobileDocumentSummary } from "@/components/print/mobile-document-summary"
 
 export const dynamic = "force-dynamic"
@@ -132,7 +132,7 @@ export default async function PrintOcPage({ params }: { params: Promise<{ id: st
                 const attributes = mergeVariantAttributes(product?.attributes ?? [],
                   // Un repuesto de catálogo dice su N° de parte una vez; el libre de la línea no se repite.
                   withCatalogPartNumber(product, item.requestItem?.attributes).map((a) => ({ name: a.attributeName, value: a.value })))
-                const equipment = item.requestItem?.equipment
+                const asset     = formatItemAssetNote(item.requestItem)
                 const worker    = item.requestItem?.worker
 
                 return (
@@ -141,12 +141,7 @@ export default async function PrintOcPage({ params }: { params: Promise<{ id: st
                     <td className="mono">{sku}</td>
                     <td>
                       <span className="item-name">{name}</span>
-                      {equipment && (
-                        <div className="item-note">
-                          Equipo: {equipment.code} · {equipment.name}
-                          {equipment.serialNumber ? ` · N° serie ${equipment.serialNumber}` : ""}
-                        </div>
-                      )}
+                      {asset && <div className="item-note">{asset}</div>}
                       {worker && (
                         <div className="item-note">Colaborador: {worker.firstName} {worker.lastName}</div>
                       )}

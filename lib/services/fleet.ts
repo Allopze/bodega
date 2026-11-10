@@ -77,9 +77,7 @@ export async function listWorksiteVehicles(args: { worksiteId: string; activeOnl
 export { setVehicleOperationalStatus } from "@/lib/services/fleet-operational-status"
 
 /** Etiqueta estable de un equipo para congelar como evidencia: "KA-122 · ABCD-12". */
-export function vehicleLabel(vehicle: { plate: string; code: string | null }) {
-  return vehicle.code ? `${vehicle.code} · ${vehicle.plate}` : vehicle.plate
-}
+export { vehicleLabel } from "@/lib/fleet-vehicle-label"
 
 // `worksiteId` es la faena elegida en el tablero: se intersecta con el alcance
 // del rol (nunca lo reemplaza). Los llamadores sin selector de faena (/flota)
