@@ -4,18 +4,22 @@
  * «Nueva OC», Compras ve para qué equipo y OT es cada línea y de dónde salió el
  * precio que está prefijado, sin abrir la solicitud.
  */
-import { fireEvent, render, screen } from "@testing-library/react"
-import { describe, expect, it, vi } from "vitest"
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { OcFormItems } from "./oc-form-items"
 import { priceHint, suggestedPrice } from "./oc-form.helpers"
 import type { PendingItemOption } from "./oc-form.types"
 
 // La hoja «Catalogar» llama acciones de servidor: aquí sólo importa que se abra.
+const unlinkAction = vi.fn()
 vi.mock("./actions", () => ({
   searchSparePartsForOcAction: vi.fn(async () => ({ ok: true, parts: [], total: 0, suggestion: null })),
   linkSparePartForOcAction: vi.fn(),
   createSparePartForOcAction: vi.fn(),
+  unlinkSparePartForOcAction: (...args: unknown[]) => unlinkAction(...args),
 }))
+beforeEach(() => unlinkAction.mockReset())
+afterEach(cleanup)
 
 function makeItem(overrides: Partial<PendingItemOption> = {}): PendingItemOption {
   return {
@@ -106,27 +110,36 @@ describe("OcFormItems — Catalogar", () => {
     expect(screen.queryByRole("button", { name: "Catalogar" })).toBeNull()
   })
 
-  it("una línea ya vinculada muestra el repuesto y deja quitar el vínculo; no vuelve a ofrecer «Catalogar»", () => {
-    const unlink = vi.fn()
-    const linked = repuesto({ productId: "rpt-1", productSku: "RPT-001", isSparePart: true, partNumber: "AF-100" })
-    renderItems([linked], [], {
-      onLinkPart,
-      onUnlinkPart: unlink,
-      linkedParts: { [linked.id]: { id: "rpt-1", sku: "RPT-001", name: "Filtro", partNumber: "AF-100", partBrand: null, unitOfMeasure: "unidad", prices: {} } },
-    })
+  it("una línea vinculada desde la hoja muestra el repuesto y deja desvincular; no vuelve a ofrecer «Catalogar»", async () => {
+    const onUnlink = vi.fn()
+    unlinkAction.mockResolvedValue({ ok: true })
+    const linked = repuesto({ productId: "rpt-1", productSku: "RPT-001", isSparePart: true, partNumber: "AF-100", linkedFromSheet: true })
+    renderItems([linked], [], { onLinkPart, onUnlinkPart: onUnlink })
     expect(screen.getByText("Repuesto de catálogo")).toBeTruthy()
     expect(screen.getByText("N° AF-100")).toBeTruthy()
     expect(screen.getByText("RPT-001")).toBeTruthy()
     expect(screen.queryByRole("button", { name: "Catalogar" })).toBeNull()
-    fireEvent.click(screen.getByRole("button", { name: "Quitar vínculo" }))
-    expect(unlink).toHaveBeenCalledWith(linked.id)
+    fireEvent.click(screen.getByRole("button", { name: /Desvincular/ }))
+    // Primero se quita en el servidor; recién entonces la línea vuelve a texto libre.
+    await waitFor(() => expect(onUnlink).toHaveBeenCalledWith(linked.id))
+    expect(unlinkAction).toHaveBeenCalledWith({ requestItemId: linked.id })
   })
 
-  it("un repuesto que ya venía catalogado desde la solicitud no ofrece quitar el vínculo", () => {
+  it("si el servidor rechaza desvincular (la línea ya está en una OC), dice el motivo y la línea no cambia", async () => {
+    const onUnlink = vi.fn()
+    unlinkAction.mockResolvedValue({ ok: false, message: "El ítem ya está en una orden de compra: elimínala o anúlala antes de cambiar el repuesto" })
+    const linked = repuesto({ productId: "rpt-1", productSku: "RPT-001", isSparePart: true, partNumber: "AF-100", linkedFromSheet: true })
+    renderItems([linked], [], { onLinkPart, onUnlinkPart: onUnlink })
+    fireEvent.click(screen.getByRole("button", { name: /Desvincular/ }))
+    expect((await screen.findByRole("alert")).textContent).toContain("ya está en una orden de compra")
+    expect(onUnlink).not.toHaveBeenCalled()
+  })
+
+  it("un repuesto que ya venía catalogado desde la solicitud no ofrece desvincular", () => {
     const fromRequest = repuesto({ productId: "rpt-1", productSku: "RPT-001", isSparePart: true, partNumber: "AF-100" })
-    renderItems([fromRequest], [], { onLinkPart, onUnlinkPart: () => {}, linkedParts: {} })
+    renderItems([fromRequest], [], { onLinkPart, onUnlinkPart: () => {} })
     expect(screen.getByText("Repuesto de catálogo")).toBeTruthy()
-    expect(screen.queryByRole("button", { name: "Quitar vínculo" })).toBeNull()
+    expect(screen.queryByRole("button", { name: /Desvincular/ })).toBeNull()
   })
 
   it("«Catalogar» abre la hoja con la descripción de la línea", async () => {

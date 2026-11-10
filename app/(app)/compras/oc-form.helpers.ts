@@ -117,8 +117,9 @@ export function ocSubmitLabel(itemCount: number, orderCount: number): string {
 
 /* ── Catalogar al comprar ─────────────────────────────────────────────────────
  * Una línea de repuesto pedida en texto libre puede vincularse a un repuesto del
- * catálogo al armar la OC. El vínculo es estado del formulario: se escribe al
- * crear la OC. */
+ * catálogo al armar la OC. El vínculo se guarda en el ítem de solicitud al elegirlo
+ * en la hoja (sobrevive a una recarga); el estado del formulario sólo lo muestra
+ * sin recargar. */
 
 /** ¿Se puede catalogar esta línea? Repuestos pedidos en texto libre, sin producto. */
 export function canCatalogLine(item: PendingItemOption): boolean {
@@ -129,16 +130,32 @@ export function canCatalogLine(item: PendingItemOption): boolean {
  * La línea tal como queda con el repuesto vinculado: el producto, su SKU y N° de
  * parte, y el precio de catálogo por proveedor —que alimenta el último escalón
  * de `suggestedPrice`—. No toca la descripción que escribió quien pidió.
+ *
+ * `null` es el vínculo quitado desde la línea («Desvincular»): vuelve a texto libre,
+ * también cuando el servidor la había traído ya vinculada (recarga de la página).
  */
-export function applyLinkedPart(item: PendingItemOption, part: LinkedSparePart | undefined): PendingItemOption {
-  if (!part) return item
+export function applyLinkedPart(item: PendingItemOption, part: LinkedSparePart | null | undefined): PendingItemOption {
+  if (part === undefined) return item
+  if (part === null) {
+    return {
+      ...item,
+      productId:       null,
+      productSku:      null,
+      productName:     item.productNameFree?.trim() || item.productName,
+      isSparePart:     false,
+      partNumber:      null,
+      supplierPrices:  {},
+      linkedFromSheet: false,
+    }
+  }
   return {
     ...item,
-    productId:      part.id,
-    productSku:     part.sku,
-    isSparePart:    true,
-    partNumber:     part.partNumber,
-    supplierPrices: part.prices,
+    productId:       part.id,
+    productSku:      part.sku,
+    isSparePart:     true,
+    partNumber:      part.partNumber,
+    supplierPrices:  part.prices,
+    linkedFromSheet: true,
   }
 }
 

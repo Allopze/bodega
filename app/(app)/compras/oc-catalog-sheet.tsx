@@ -71,7 +71,9 @@ interface OcCatalogSheetProps {
  * precio y su historial queden donde corresponde. Dos caminos: vincular uno que
  * ya existe (con sugerencia por N° de parte) o crearlo prellenado desde la línea.
  *
- * El vínculo no se guarda aquí: vive en el formulario y se escribe al crear la OC.
+ * El vínculo se guarda en el servidor al elegir (FF-6), en la línea (ítem de solicitud):
+ * una recarga no lo pierde ni deja huérfano al repuesto recién creado. `onLink` avisa al
+ * formulario para mostrarlo sin recargar. Se quita desde la línea con «Desvincular».
  */
 export function OcCatalogSheet({ item, canCreate, unitLabels, onOpenChange, onLink }: OcCatalogSheetProps) {
   return (
@@ -208,7 +210,7 @@ function LinkView({
   function choose(part: SparePartChoice) {
     op.run(
       async () => {
-        const linked = await linkSparePartForOcAction({ productId: part.id, unitOfMeasure: item.unitOfMeasure })
+        const linked = await linkSparePartForOcAction({ requestItemId: item.id, productId: part.id })
         return linked.ok ? { ok: true, data: { part: linked.part } } : { ok: false, message: linked.message }
       },
       (done) => onChosen(done.data!.part as LinkedSparePart),
@@ -345,7 +347,7 @@ function CreateView({
     op.run(
       async () => {
         const created = await createSparePartForOcAction({
-          name, partNumber, partBrand, unitOfMeasure: item.unitOfMeasure,
+          requestItemId: item.id, name, partNumber, partBrand, unitOfMeasure: item.unitOfMeasure,
         })
         return created.ok ? { ok: true, data: { part: created.part } } : { ok: false, message: created.message }
       },

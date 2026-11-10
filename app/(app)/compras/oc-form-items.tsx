@@ -8,7 +8,9 @@ import { MetaBadge } from "@/components/states/state-badge"
 import { Input } from "@/components/ui/input"
 import { SegmentedControl } from "@/components/ui/segmented-control"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { useOperation } from "@/lib/hooks/use-operation"
 import { formatCLP, formatQty, quantityStep } from "@/lib/utils"
+import { unlinkSparePartForOcAction } from "./actions"
 import { canCatalogLine, priceHint, priceSourceLabel, sparePartTag, suggestedSupplierLabel } from "./oc-form.helpers"
 import { OcCatalogSheet } from "./oc-catalog-sheet"
 import type { UnitLabels } from "@/lib/products/unit-label"
@@ -46,10 +48,10 @@ interface OcFormItemsProps {
   resolveItemSupplierId: (item: PendingItemOption) => string
   setItemSupplier:    (itemId: string, supplierId: string) => void
   /**
-   * Catalogar al comprar: los repuestos que Compras vinculó a líneas en texto
-   * libre. Sin `onLinkPart` la fila no ofrece «Catalogar» (otros usos del selector).
+   * Catalogar al comprar: vincular una línea en texto libre a un repuesto (la hoja
+   * lo guarda en el servidor y avisa aquí para mostrarlo) y quitar ese vínculo. Sin
+   * `onLinkPart` la fila no ofrece «Catalogar» (otros usos del selector).
    */
-  linkedParts?:       Record<string, LinkedSparePart>
   onLinkPart?:        (itemId: string, part: LinkedSparePart) => void
   onUnlinkPart?:      (itemId: string) => void
   /** `repuestos:catalog`: permite crear el repuesto desde la hoja, no sólo vincular uno existente. */
@@ -58,12 +60,43 @@ interface OcFormItemsProps {
   unitLabels?: UnitLabels
 }
 
+/**
+ * «Desvincular»: quita el vínculo que se hizo desde «Catalogar». Lo guardado en el
+ * servidor es lo que manda, así que primero se quita allí y sólo entonces la línea
+ * vuelve a texto libre en pantalla; si el servidor lo rechaza (la línea ya está en una
+ * OC, por ejemplo) se dice el motivo y la línea no cambia.
+ */
+function UnlinkPartButton({ item, onUnlinked }: { item: PendingItemOption; onUnlinked: (itemId: string) => void }) {
+  const op = useOperation()
+  return (
+    <>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        loading={op.pending}
+        aria-label={`Desvincular el repuesto de ${item.productName}`}
+        onClick={() => op.run(
+          async () => {
+            const result = await unlinkSparePartForOcAction({ requestItemId: item.id })
+            return result.ok ? { ok: true } : { ok: false, message: result.message }
+          },
+          () => onUnlinked(item.id),
+        )}
+      >
+        Desvincular
+      </Button>
+      {op.message && <span role="alert" className="text-[var(--color-danger-ink)]">{op.message}</span>}
+    </>
+  )
+}
+
 export function OcFormItems({
   filteredItems, filteredByWorksite, selectedItems, suppliers,
   worksiteId, search, worksiteModes, modeFilter, onModeChange, onToggle, onToggleAll, onSearchChange,
   itemPrice, itemDiscount, setItemPrice, setItemDiscount, itemQuantity, setItemQuantity,
   resolveItemSupplierId, setItemSupplier,
-  linkedParts, onLinkPart, onUnlinkPart, canCreateSparePart = false, unitLabels,
+  onLinkPart, onUnlinkPart, canCreateSparePart = false, unitLabels,
 }: OcFormItemsProps) {
   // La hoja «Catalogar» es una sola para todas las filas; esta es la línea abierta.
   const [catalogingId, setCatalogingId] = React.useState<string | null>(null)
@@ -193,10 +226,8 @@ export function OcFormItems({
                     <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[var(--color-text-muted)]">
                       <MetaBadge meta={{ label: "Repuesto de catálogo", variant: "primary" }} className="font-normal shrink-0 text-2xs" />
                       <span>{sparePartTag({ sku: null, partNumber: item.partNumber ?? null }) || "Sin N° de parte"}</span>
-                      {linkedParts?.[item.id] && onUnlinkPart && (
-                        <Button type="button" variant="ghost" size="sm" onClick={() => onUnlinkPart(item.id)}>
-                          Quitar vínculo
-                        </Button>
+                      {item.linkedFromSheet && onUnlinkPart && (
+                        <UnlinkPartButton item={item} onUnlinked={onUnlinkPart} />
                       )}
                     </div>
                   ) : onLinkPart && canCatalogLine(item) ? (

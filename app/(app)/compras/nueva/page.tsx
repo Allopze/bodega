@@ -17,6 +17,7 @@ import { OcForm } from "../oc-form"
 import type { PendingItemOption, SupplierOption, WorksiteOption } from "../oc-form"
 import Link from "next/link"
 import { getPurchasableCoverage } from "@/lib/services/purchasing-module/purchasable-coverage"
+import { findSheetLinkedItemIds } from "@/lib/services/purchasing-module/spare-part-item-link"
 import { getProductAttributesByIds, getRequestItemAttributesByIds } from "@/lib/services/product-sizes"
 import { formatVariantProductName } from "@/lib/products/variant-grouping"
 import { REPUESTO_ATTRIBUTE_NAMES } from "@/lib/validation/repuestos"
@@ -100,7 +101,7 @@ export default async function NuevaOcPage({
   const requestItemIds = rawItems.map((item) => item.id)
   const productIds = [...new Set(rawItems.flatMap((i) => i.productId ? [i.productId] : []))]
 
-  const [requestRows, productRows, supplierPriceRows, allSuppliers, allWorksites, coverageLines, unitRows] = await Promise.all([
+  const [requestRows, productRows, supplierPriceRows, allSuppliers, allWorksites, coverageLines, unitRows, sheetLinkedIds] = await Promise.all([
     db
       .select({
         id: purchaseRequests.id, code: purchaseRequests.code, worksiteId: purchaseRequests.worksiteId,
@@ -158,6 +159,10 @@ export default async function NuevaOcPage({
 
     // Rótulos de unidad para la hoja «Catalogar» («bidon» → «Bidón»).
     db.select({ code: productUnits.code, label: productUnits.label }).from(productUnits),
+
+    // Los repuestos que Compras vinculó desde «Catalogar» (y que una recarga no
+    // pierde): esas líneas ofrecen «Desvincular»; el que eligió quien pidió, no.
+    findSheetLinkedItemIds(rawItems.filter((item) => item.productId).map((item) => item.id)),
   ])
   const unitLabels = Object.fromEntries(unitRows.map((unit) => [unit.code, unit.label]))
 
@@ -223,6 +228,7 @@ export default async function NuevaOcPage({
           ?.find((attribute) => attribute.name === REPUESTO_ATTRIBUTE_NAMES.partNumber)?.value.trim() || null,
         isSparePart:     product?.isSparePart ?? false,
         partNumber:      product?.partNumber ?? null,
+        linkedFromSheet: sheetLinkedIds.has(item.id),
         productNameFree: item.productNameFree,
         quantity:        item.quantity,
         unitOfMeasure:   item.unitOfMeasure,

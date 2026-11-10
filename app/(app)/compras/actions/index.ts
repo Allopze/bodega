@@ -11,8 +11,8 @@ export { recordItemCostAction } from "./item-cost"
 export { acceptInvoiceReconciliationAction } from "./invoice-reconciliation"
 
 // ── Catalogar al comprar (vincular o crear un repuesto desde la línea de la OC) ─
-export { searchSparePartsForOcAction, linkSparePartForOcAction, createSparePartForOcAction } from "./spare-part-link"
-export type { SparePartChoice, SearchSparePartsResult, SparePartLinkResult } from "./spare-part-link"
+export { searchSparePartsForOcAction, linkSparePartForOcAction, createSparePartForOcAction, unlinkSparePartForOcAction } from "./spare-part-link"
+export type { SparePartChoice, SearchSparePartsResult, SparePartLinkResult, SparePartUnlinkResult } from "./spare-part-link"
 
 // ── Order termination ────────────────────────────────────────────────────────
 export { closeOrderAction, cancelOrderAction, deleteOrderAction } from "./order-cancel"

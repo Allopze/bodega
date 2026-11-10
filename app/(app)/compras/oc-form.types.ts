@@ -1,7 +1,8 @@
 /**
- * Repuesto de catálogo que Compras vinculó a una línea al armar la OC: su
- * identidad y el precio vigente por proveedor (`supplierId` → precio). Sólo es
- * estado del formulario; el vínculo se escribe al crear la OC.
+ * Repuesto de catálogo que Compras vinculó a una línea desde la hoja «Catalogar»:
+ * su identidad y el precio vigente por proveedor (`supplierId` → precio). El
+ * vínculo ya está guardado en el ítem de solicitud (FF-6); aquí es lo que el
+ * formulario necesita para mostrarlo sin recargar.
  */
 export type { SparePartLinkInfo as LinkedSparePart } from "@/lib/services/purchasing-module/spare-part-link"
 
@@ -81,6 +82,11 @@ export interface PendingItemOption {
   isSparePart?:           boolean
   /** N° de parte del repuesto de catálogo vinculado. */
   partNumber?:            string | null
+  /**
+   * El vínculo con el repuesto lo hizo Compras desde «Catalogar» (no quien pidió) y se puede
+   * quitar mientras el ítem no tenga OC: la línea ofrece «Desvincular».
+   */
+  linkedFromSheet?:       boolean
 }
 
 export interface OcItemRow extends PendingItemOption {

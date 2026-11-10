@@ -239,6 +239,24 @@ describe("applyLinkedPart", () => {
     // La descripción que escribió quien pidió no se pisa.
     expect(linked.productNameFree).toBe("Filtro aire camión")
     expect(canCatalogLine(linked)).toBe(false)
+    // Lo vinculó la hoja: la línea puede desvincularse.
+    expect(linked.linkedFromSheet).toBe(true)
+  })
+
+  it("con `null` (desvinculada) la línea vuelve a texto libre, también si el servidor la trajo ya vinculada", () => {
+    // Tras una recarga la línea llega con el producto del catálogo y su nombre.
+    const fromServer = item({
+      requestType: "repuestos", productId: "rpt-1", productSku: "RPT-001", productName: "Filtro de aire primario",
+      productNameFree: "Filtro aire camión", isSparePart: true, partNumber: "AF-100",
+      supplierPrices: { "sup-1": 21_000 }, linkedFromSheet: true,
+    })
+    const unlinked = applyLinkedPart(fromServer, null)
+    expect(unlinked).toMatchObject({
+      productId: null, productSku: null, productName: "Filtro aire camión", isSparePart: false,
+      partNumber: null, supplierPrices: {}, linkedFromSheet: false,
+    })
+    // Y se puede volver a catalogar.
+    expect(canCatalogLine(unlinked)).toBe(true)
   })
 
   it("el precio del catálogo para el proveedor elegido pasa a ser el sugerido", () => {

@@ -87,7 +87,8 @@ describe("OcCatalogSheet — vincular a un repuesto existente", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Vincular este" }))
 
     await waitFor(() => expect(onLink).toHaveBeenCalledWith("item-1", LINKED))
-    expect(link).toHaveBeenCalledWith({ productId: "rpt-1", unitOfMeasure: "unidad" })
+    // El vínculo se guarda en la línea al elegir, no al crear la OC (FF-6).
+    expect(link).toHaveBeenCalledWith({ requestItemId: "item-1", productId: "rpt-1" })
     expect(onOpenChange).toHaveBeenCalledWith(false)
   })
 
@@ -209,8 +210,9 @@ describe("OcCatalogSheet — crear un repuesto nuevo", () => {
     fireEvent.click(screen.getByRole("button", { name: "Crear y vincular" }))
 
     await waitFor(() => expect(onLink).toHaveBeenCalledWith("item-1", LINKED))
+    // Crea y vincula a la línea en el servidor, en la misma llamada (FF-6).
     expect(create).toHaveBeenCalledWith({
-      name: "Filtro de aire camión", partNumber: "AF-100", partBrand: "Donaldson", unitOfMeasure: "unidad",
+      requestItemId: "item-1", name: "Filtro de aire camión", partNumber: "AF-100", partBrand: "Donaldson", unitOfMeasure: "unidad",
     })
     // La hoja se cierra: el aviso dice que el catálogo ganó un repuesto.
     expect(toastSuccess).toHaveBeenCalledWith("Repuesto RPT-001 creado en el catálogo y vinculado a la línea")

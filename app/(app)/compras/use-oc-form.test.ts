@@ -185,9 +185,26 @@ describe("useOcForm — catalogar un repuesto al armar la OC", () => {
     act(() => result.current.toggleItem("i1"))
     act(() => result.current.linkSparePart("i1", PART))
     act(() => result.current.unlinkSparePart("i1"))
-    expect(result.current.linkedParts).toEqual({})
+    expect(result.current.linkedParts).toEqual({ i1: null })
     expect(sentItems(result.current.itemsJson)[0]!.productId).toBeNull()
     expect(result.current.includedItems[0]!.isSparePart).toBeFalsy()
+  })
+
+  it("una línea que el servidor trae ya vinculada (recarga) viaja con su repuesto y, al desvincularla, en texto libre", () => {
+    // FF-6: el vínculo guardado en el ítem sobrevive a la recarga, sin el estado local.
+    const fromServer = makeItem({
+      id: "i1", productId: "rpt-1", productSku: "RPT-001", productName: "Filtro de aire", productNameFree: "Filtro aire",
+      requestType: "repuestos", isSparePart: true, partNumber: "AF-100", linkedFromSheet: true, supplierPrices: { "sup-1": 21_000 },
+    })
+    const { result } = renderHook(() =>
+      useOcForm({ suppliers: [SUPPLIER], worksites: [WORKSITE], pendingItems: [fromServer], initialWorksiteId: "ws-1" }),
+    )
+    act(() => result.current.toggleItem("i1"))
+    expect(sentItems(result.current.itemsJson)[0]).toMatchObject({ requestItemId: "i1", productId: "rpt-1" })
+
+    act(() => result.current.unlinkSparePart("i1"))
+    expect(sentItems(result.current.itemsJson)[0]).toMatchObject({ requestItemId: "i1", productId: null })
+    expect(result.current.includedItems[0]).toMatchObject({ productName: "Filtro aire", linkedFromSheet: false })
   })
 
   it("el vínculo de una línea no toca a las demás", () => {

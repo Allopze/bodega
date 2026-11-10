@@ -48,9 +48,10 @@ export function useOcForm({
   const [quantities,   setQuantities]   = React.useState<Record<string, number>>({})
   const [itemSuppliers, setItemSuppliers] = React.useState<Record<string, string>>({})
   const [search,       setSearch]       = React.useState("")
-  // Repuestos que Compras vinculó a líneas en texto libre al armar esta OC. El
-  // vínculo se escribe al crearla; mientras tanto sólo vive acá.
-  const [linkedParts,  setLinkedParts]  = React.useState<Record<string, LinkedSparePart>>({})
+  // Repuestos que Compras vinculó (o desvinculó: `null`) en líneas de esta OC desde la
+  // hoja «Catalogar». El servidor ya lo guardó en el ítem de solicitud (FF-6); esto sólo
+  // lo muestra sin recargar y manda sobre lo que trajo la página.
+  const [linkedParts,  setLinkedParts]  = React.useState<Record<string, LinkedSparePart | null>>({})
 
   // Las líneas tal como quedan con su vínculo: con producto, SKU y el precio de
   // catálogo del repuesto, que entra como último escalón del precio sugerido.
@@ -233,22 +234,18 @@ export function useOcForm({
   }, [filteredItems, supplierId, suppliers])
 
   /**
-   * Vincula una línea de repuesto a un repuesto del catálogo. El precio que el
-   * catálogo tenga para el proveedor elegido pasa a ser el sugerido de la línea
-   * (último escalón de `suggestedPrice`): si ya hay un precio escrito a mano, no
+   * Muestra la línea vinculada a un repuesto del catálogo (el servidor ya lo guardó). El
+   * precio que el catálogo tenga para el proveedor elegido pasa a ser el sugerido de la
+   * línea (último escalón de `suggestedPrice`): si ya hay un precio escrito a mano, no
    * se pisa.
    */
   function linkSparePart(itemId: string, part: LinkedSparePart) {
     setLinkedParts((prev) => ({ ...prev, [itemId]: part }))
   }
 
+  /** Muestra la línea otra vez en texto libre (el servidor ya quitó el vínculo). */
   function unlinkSparePart(itemId: string) {
-    setLinkedParts((prev) => {
-      if (!(itemId in prev)) return prev
-      const next = { ...prev }
-      delete next[itemId]
-      return next
-    })
+    setLinkedParts((prev) => ({ ...prev, [itemId]: null }))
   }
 
   // A tab switch changes which items are selectable; clear the selection

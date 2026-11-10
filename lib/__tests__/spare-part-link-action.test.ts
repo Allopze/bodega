@@ -2,9 +2,14 @@
  * Catalogar al comprar (T7): las acciones de servidor de la hoja «Catalogar».
  * La autorización se decide en el servidor, no en la UI:
  *
- *  - buscar y vincular exigen `purchasing:create_order`;
- *  - crear un repuesto nuevo exige `repuestos:catalog` (quien sólo compra puede
- *    vincular uno existente, no ensuciar el catálogo para todos).
+ *  - buscar, vincular y quitar el vínculo exigen `purchasing:create_order`;
+ *  - crear un repuesto nuevo exige `repuestos:catalog` además de poder armar la OC
+ *    (quien sólo compra puede vincular uno existente, no ensuciar el catálogo para
+ *    todos).
+ *
+ * Vincular y crear escriben el vínculo en el ítem de solicitud al elegir (FF-6): el
+ * servicio de vínculo se simula aquí; su comportamiento contra Postgres real está en
+ * `spare-part-item-link-pglite.test.ts`.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { Session } from "next-auth"
@@ -18,27 +23,30 @@ vi.mock("@/lib/services/module-toggles", async (importOriginal) => ({
 const mockAuth = vi.hoisted(() => vi.fn())
 const mockSearch = vi.hoisted(() => vi.fn())
 const mockFindByPartNumber = vi.hoisted(() => vi.fn())
-const mockCreate = vi.hoisted(() => vi.fn())
+const mockCreateAndLink = vi.hoisted(() => vi.fn())
+const mockLink = vi.hoisted(() => vi.fn())
+const mockUnlink = vi.hoisted(() => vi.fn())
 const mockLinkInfo = vi.hoisted(() => vi.fn())
-const fakeTx = vi.hoisted(() => ({ tag: "tx" }))
 
 const mockLogger = vi.hoisted(() => ({ error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() }))
 vi.mock("@/lib/logger", () => ({ logger: mockLogger }))
 vi.mock("@/lib/auth/auth", () => ({ auth: mockAuth }))
-vi.mock("@/db", () => ({
-  db: { transaction: vi.fn(async (run: (tx: unknown) => Promise<unknown>) => run(fakeTx)) },
-}))
 vi.mock("@/lib/services/spare-parts-catalog", () => ({
   searchSpareParts: mockSearch,
   findSparePartByPartNumber: mockFindByPartNumber,
-  createSparePartTx: mockCreate,
 }))
 vi.mock("@/lib/services/purchasing-module/spare-part-link", () => ({ getSparePartLinkInfo: mockLinkInfo }))
+vi.mock("@/lib/services/purchasing-module/spare-part-item-link", () => ({
+  createSparePartAndLinkToRequestItem: mockCreateAndLink,
+  linkSparePartToRequestItem: mockLink,
+  unlinkSparePartFromRequestItem: mockUnlink,
+}))
 
 import {
   createSparePartForOcAction,
   linkSparePartForOcAction,
   searchSparePartsForOcAction,
+  unlinkSparePartForOcAction,
 } from "@/app/(app)/compras/actions"
 
 function session(permissions: string[]): Session {
@@ -58,7 +66,9 @@ beforeEach(() => {
   vi.clearAllMocks()
   mockSearch.mockResolvedValue({ parts: [LISTED("1"), LISTED("2")], total: 2 })
   mockFindByPartNumber.mockResolvedValue(null)
-  mockCreate.mockResolvedValue({ id: "new-1", sku: "RPT-001" })
+  mockCreateAndLink.mockResolvedValue({ id: "new-1", sku: "RPT-001" })
+  mockLink.mockResolvedValue(undefined)
+  mockUnlink.mockResolvedValue(undefined)
   mockLinkInfo.mockResolvedValue({
     id: "new-1", sku: "RPT-001", name: "Filtro", partNumber: "AF-1", partBrand: null, unitOfMeasure: "unidad", prices: {},
   })
@@ -68,8 +78,11 @@ describe("buscar y vincular: purchasing:create_order", () => {
   it("sin el permiso no consulta nada", async () => {
     mockAuth.mockResolvedValue(session(["repuestos:catalog"]))
     expect(await searchSparePartsForOcAction({ query: "filtro" })).toMatchObject({ ok: false })
-    expect(await linkSparePartForOcAction({ productId: "p-1" })).toMatchObject({ ok: false })
+    expect(await linkSparePartForOcAction({ requestItemId: "item-1", productId: "p-1" })).toMatchObject({ ok: false })
+    expect(await unlinkSparePartForOcAction({ requestItemId: "item-1" })).toMatchObject({ ok: false })
     expect(mockSearch).not.toHaveBeenCalled()
+    expect(mockLink).not.toHaveBeenCalled()
+    expect(mockUnlink).not.toHaveBeenCalled()
     expect(mockLinkInfo).not.toHaveBeenCalled()
   })
 
@@ -122,57 +135,122 @@ describe("buscar y vincular: purchasing:create_order", () => {
     expect(result).toMatchObject({ ok: true, suggestion: { id: "99", unitOfMeasure: "unidad" } })
   })
 
-  it("vincular confirma que el repuesto sigue activo; si ya no existe lo dice", async () => {
+  it("vincular guarda el vínculo en el ítem, a nombre del usuario, y devuelve el repuesto con sus precios", async () => {
     mockAuth.mockResolvedValue(session(["purchasing:create_order"]))
-    expect(await linkSparePartForOcAction({ productId: "new-1" })).toMatchObject({ ok: true, part: { id: "new-1", sku: "RPT-001" } })
+    expect(await linkSparePartForOcAction({ requestItemId: "item-1", productId: "new-1" })).toMatchObject({ ok: true, part: { id: "new-1", sku: "RPT-001" } })
+    expect(mockLink).toHaveBeenCalledWith({
+      requestItemId: "item-1", productId: "new-1",
+      actor: { userId: "user-1", userEmail: "compras@test.cl", worksiteScope: "all" },
+    })
+  })
+
+  it("con una sesión de faena, el vínculo se acota a sus faenas", async () => {
+    mockAuth.mockResolvedValue({
+      ...session(["purchasing:create_order"]),
+      user: { ...session([]).user, permissions: ["purchasing:create_order"], worksiteIds: ["ws-1"], isGlobal: false },
+    })
+    await linkSparePartForOcAction({ requestItemId: "item-1", productId: "new-1" })
+    expect(mockLink).toHaveBeenCalledWith(expect.objectContaining({ actor: expect.objectContaining({ worksiteScope: ["ws-1"] }) }))
+  })
+
+  it("si el repuesto ya no está en el catálogo tras vincular, lo dice", async () => {
+    mockAuth.mockResolvedValue(session(["purchasing:create_order"]))
     mockLinkInfo.mockResolvedValue(null)
-    expect(await linkSparePartForOcAction({ productId: "gone" })).toEqual({
+    expect(await linkSparePartForOcAction({ requestItemId: "item-1", productId: "gone" })).toEqual({
       ok: false, message: "El repuesto ya no está disponible en el catálogo",
     })
   })
 
-  it("vincular avisa antes de enviar la OC si el repuesto se compra en otra unidad que la línea", async () => {
+  it("un rechazo del servicio (otra unidad, otro producto, ítem ya en una OC) llega tal cual y no se registra como fallo", async () => {
     mockAuth.mockResolvedValue(session(["purchasing:create_order"]))
-    expect(await linkSparePartForOcAction({ productId: "new-1", unitOfMeasure: "juego" })).toEqual({
+    mockLink.mockRejectedValue(new Error("El repuesto RPT-001 se compra por «unidad» y la línea pide «juego»; elige otro o crea uno nuevo"))
+    expect(await linkSparePartForOcAction({ requestItemId: "item-1", productId: "new-1" })).toEqual({
       ok: false, message: "El repuesto RPT-001 se compra por «unidad» y la línea pide «juego»; elige otro o crea uno nuevo",
     })
-    // La misma unidad, con otra caja, vale.
-    expect(await linkSparePartForOcAction({ productId: "new-1", unitOfMeasure: "Unidad" })).toMatchObject({ ok: true })
+    expect(mockLinkInfo).not.toHaveBeenCalled()
+    expect(mockLogger.error).not.toHaveBeenCalled()
+  })
+
+  it("exige la línea y el repuesto antes de tocar nada", async () => {
+    mockAuth.mockResolvedValue(session(["purchasing:create_order"]))
+    expect(await linkSparePartForOcAction({ requestItemId: "", productId: "new-1" })).toMatchObject({ ok: false })
+    expect(await linkSparePartForOcAction({ requestItemId: "item-1", productId: " " })).toMatchObject({ ok: false })
+    expect(mockLink).not.toHaveBeenCalled()
+  })
+})
+
+describe("quitar el vínculo: purchasing:create_order", () => {
+  it("lo pide al servicio con la línea y el actor, y avisa si se rechaza", async () => {
+    mockAuth.mockResolvedValue(session(["purchasing:create_order"]))
+    expect(await unlinkSparePartForOcAction({ requestItemId: "item-1" })).toEqual({ ok: true })
+    expect(mockUnlink).toHaveBeenCalledWith({
+      requestItemId: "item-1",
+      actor: { userId: "user-1", userEmail: "compras@test.cl", worksiteScope: "all" },
+    })
+
+    mockUnlink.mockRejectedValue(new Error("El ítem ya está en una orden de compra: elimínala o anúlala antes de cambiar el repuesto"))
+    expect(await unlinkSparePartForOcAction({ requestItemId: "item-1" })).toEqual({
+      ok: false, message: "El ítem ya está en una orden de compra: elimínala o anúlala antes de cambiar el repuesto",
+    })
+  })
+
+  it("un fallo del driver no filtra el SQL", async () => {
+    mockAuth.mockResolvedValue(session(["purchasing:create_order"]))
+    mockUnlink.mockRejectedValue(Object.assign(new Error("Failed query: update purchase_request_items ..."), { query: "update" }))
+    expect(await unlinkSparePartForOcAction({ requestItemId: "item-1" })).toEqual({ ok: false, message: "No se pudo quitar el vínculo" })
   })
 })
 
 describe("crear: repuestos:catalog", () => {
+  const CREATE = { requestItemId: "item-1", name: "Filtro", unitOfMeasure: "unidad" }
+
   it("quien sólo puede comprar no crea repuestos", async () => {
     mockAuth.mockResolvedValue(session(["purchasing:create_order"]))
-    expect(await createSparePartForOcAction({ name: "Filtro", unitOfMeasure: "unidad" })).toEqual({
+    expect(await createSparePartForOcAction(CREATE)).toEqual({
       ok: false, message: "Sin permisos para crear repuestos en el catálogo",
     })
-    expect(mockCreate).not.toHaveBeenCalled()
+    expect(mockCreateAndLink).not.toHaveBeenCalled()
   })
 
-  it("con el permiso crea en una transacción, a nombre del usuario, y devuelve el repuesto para vincular", async () => {
+  it("quien sólo administra el catálogo no escribe vínculos en las líneas de una OC", async () => {
+    mockAuth.mockResolvedValue(session(["repuestos:catalog"]))
+    expect(await createSparePartForOcAction(CREATE)).toEqual({
+      ok: false, message: "Sin permisos para vincular repuestos a una orden de compra",
+    })
+    expect(mockCreateAndLink).not.toHaveBeenCalled()
+  })
+
+  it("con los dos permisos crea y vincula en una sola operación, a nombre del usuario, y devuelve el repuesto", async () => {
     mockAuth.mockResolvedValue(session(["purchasing:create_order", "repuestos:catalog"]))
     const result = await createSparePartForOcAction({
-      name: "  Filtro de aire ", partNumber: " AF-1 ", partBrand: "", unitOfMeasure: "Unidad",
+      requestItemId: "item-1", name: "  Filtro de aire ", partNumber: " AF-1 ", partBrand: "", unitOfMeasure: "Unidad",
     })
-    expect(mockCreate).toHaveBeenCalledWith(fakeTx, {
-      name: "Filtro de aire", partNumber: "AF-1", partBrand: null, unitOfMeasure: "unidad", createdByUserId: "user-1",
+    expect(mockCreateAndLink).toHaveBeenCalledWith({
+      requestItemId: "item-1",
+      sparePart: { name: "Filtro de aire", partNumber: "AF-1", partBrand: null, unitOfMeasure: "unidad" },
+      actor: { userId: "user-1", userEmail: "compras@test.cl", worksiteScope: "all" },
     })
     expect(mockLinkInfo).toHaveBeenCalledWith("new-1")
     expect(result).toMatchObject({ ok: true, part: { id: "new-1", sku: "RPT-001" } })
   })
 
   it("valida el nombre antes de tocar el catálogo", async () => {
-    mockAuth.mockResolvedValue(session(["repuestos:catalog"]))
-    const result = await createSparePartForOcAction({ name: "   ", unitOfMeasure: "unidad" })
+    mockAuth.mockResolvedValue(session(["purchasing:create_order", "repuestos:catalog"]))
+    const result = await createSparePartForOcAction({ ...CREATE, name: "   " })
     expect(result).toEqual({ ok: false, message: "Escribe el nombre del repuesto" })
-    expect(mockCreate).not.toHaveBeenCalled()
+    expect(mockCreateAndLink).not.toHaveBeenCalled()
+  })
+
+  it("sin la línea no crea nada", async () => {
+    mockAuth.mockResolvedValue(session(["purchasing:create_order", "repuestos:catalog"]))
+    expect(await createSparePartForOcAction({ ...CREATE, requestItemId: "" })).toMatchObject({ ok: false })
+    expect(mockCreateAndLink).not.toHaveBeenCalled()
   })
 
   it("un N° de parte repetido llega al usuario con el SKU del existente", async () => {
-    mockAuth.mockResolvedValue(session(["repuestos:catalog"]))
-    mockCreate.mockRejectedValue(new Error("Ya existe el repuesto RPT-001 con ese N° de parte"))
-    expect(await createSparePartForOcAction({ name: "Filtro", partNumber: "AF-1", unitOfMeasure: "unidad" })).toEqual({
+    mockAuth.mockResolvedValue(session(["purchasing:create_order", "repuestos:catalog"]))
+    mockCreateAndLink.mockRejectedValue(new Error("Ya existe el repuesto RPT-001 con ese N° de parte"))
+    expect(await createSparePartForOcAction({ ...CREATE, partNumber: "AF-1" })).toEqual({
       ok: false, message: "Ya existe el repuesto RPT-001 con ese N° de parte",
     })
     // Es una validación de negocio esperada, no un fallo: no va al log de errores.
@@ -180,10 +258,10 @@ describe("crear: repuestos:catalog", () => {
   })
 
   it("un fallo del driver sí se registra como error y no filtra el SQL", async () => {
-    mockAuth.mockResolvedValue(session(["repuestos:catalog"]))
+    mockAuth.mockResolvedValue(session(["purchasing:create_order", "repuestos:catalog"]))
     mockLogger.error.mockClear()
-    mockCreate.mockRejectedValue(Object.assign(new Error("Failed query: insert into products ..."), { query: "insert into products" }))
-    expect(await createSparePartForOcAction({ name: "Filtro", partNumber: "AF-2", unitOfMeasure: "unidad" })).toEqual({
+    mockCreateAndLink.mockRejectedValue(Object.assign(new Error("Failed query: insert into products ..."), { query: "insert into products" }))
+    expect(await createSparePartForOcAction({ ...CREATE, partNumber: "AF-2" })).toEqual({
       ok: false, message: "No se pudo crear el repuesto",
     })
     expect(mockLogger.error).toHaveBeenCalled()

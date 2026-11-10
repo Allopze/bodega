@@ -146,7 +146,6 @@ export function OcForm({
           setItemQuantity={f.setItemQuantity}
           resolveItemSupplierId={f.resolveItemSupplierId}
           setItemSupplier={f.setItemSupplier}
-          linkedParts={f.linkedParts}
           onLinkPart={f.linkSparePart}
           onUnlinkPart={f.unlinkSparePart}
           canCreateSparePart={canCreateSparePart}

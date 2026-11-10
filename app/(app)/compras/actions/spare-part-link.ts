@@ -1,13 +1,18 @@
 "use server"
 
 import { z } from "zod"
-import { db, type Tx } from "@/db"
-import { requirePermission } from "@/lib/auth/can"
-import { serviceWorksiteScope } from "@/lib/auth/scope"
+import type { Session } from "next-auth"
+import { requirePermission, visibleWorksiteIds } from "@/lib/auth/can"
+import { isGlobalRole, serviceWorksiteScope } from "@/lib/auth/scope"
 import { logger } from "@/lib/logger"
-import { searchSpareParts, createSparePartTx, findSparePartByPartNumber, type SparePartListItem } from "@/lib/services/spare-parts-catalog"
+import { searchSpareParts, findSparePartByPartNumber, type SparePartListItem } from "@/lib/services/spare-parts-catalog"
 import { getSparePartLinkInfo, type SparePartLinkInfo } from "@/lib/services/purchasing-module/spare-part-link"
-import { sparePartUnitMismatchMessage } from "@/lib/services/purchasing-module/spare-part-unit"
+import {
+  createSparePartAndLinkToRequestItem,
+  linkSparePartToRequestItem,
+  unlinkSparePartFromRequestItem,
+  type SparePartItemLinkActor,
+} from "@/lib/services/purchasing-module/spare-part-item-link"
 import { dbErrMsg } from "./helpers"
 
 /**
@@ -49,6 +54,10 @@ export type SparePartLinkResult =
   | { ok: true; part: SparePartLinkInfo }
   | { ok: false; message: string }
 
+export type SparePartUnlinkResult =
+  | { ok: true }
+  | { ok: false; message: string }
+
 const searchSchema = z.object({
   query: z.string().trim().max(100).optional().default(""),
   vehicleId: z.string().trim().max(64).nullish(),
@@ -59,12 +68,17 @@ const searchSchema = z.object({
 })
 
 const linkSchema = z.object({
+  /** La línea (ítem de solicitud) que se cataloga: el servicio exige que el repuesto use su unidad. */
+  requestItemId: z.string().trim().min(1, "Línea requerida").max(64),
   productId: z.string().trim().min(1, "Repuesto requerido").max(64),
-  /** Unidad de la línea: el vínculo exige la misma (la OC la vuelve a exigir al crearse). */
-  unitOfMeasure: z.string().trim().max(24).nullish(),
+})
+
+const unlinkSchema = z.object({
+  requestItemId: z.string().trim().min(1, "Línea requerida").max(64),
 })
 
 const createSchema = z.object({
+  requestItemId: z.string().trim().min(1, "Línea requerida").max(64),
   name: z.string().trim().min(1, "Escribe el nombre del repuesto").max(200, "El nombre es demasiado largo"),
   partNumber: z.string().trim().max(100, "El N° de parte es demasiado largo").nullish(),
   partBrand: z.string().trim().max(100, "La marca es demasiado larga").nullish(),
@@ -125,10 +139,23 @@ export async function searchSparePartsForOcAction(input: z.input<typeof searchSc
   }
 }
 
-/** Confirma que el repuesto sigue activo, que se compra en la unidad de la línea, y trae sus precios por proveedor. */
+/** Quién hace el vínculo y hasta dónde llegan sus faenas, como en `createOrderAction`. */
+function linkActor(session: Session): SparePartItemLinkActor {
+  return {
+    userId: session.user.id,
+    userEmail: session.user.email ?? undefined,
+    worksiteScope: isGlobalRole(session) ? "all" : visibleWorksiteIds(session),
+  }
+}
+
+/**
+ * Vincula la línea al repuesto elegido y lo guarda en el ítem de solicitud (sobrevive a
+ * una recarga). Devuelve el repuesto con sus precios por proveedor para la pantalla.
+ */
 export async function linkSparePartForOcAction(input: z.input<typeof linkSchema>): Promise<SparePartLinkResult> {
+  let session
   try {
-    await requirePermission("purchasing:create_order")
+    session = await requirePermission("purchasing:create_order")
   } catch {
     return { ok: false, message: "Sin permisos para vincular repuestos a una orden de compra" }
   }
@@ -136,20 +163,19 @@ export async function linkSparePartForOcAction(input: z.input<typeof linkSchema>
   if (!parsed.success) return { ok: false, message: "Elige un repuesto" }
 
   try {
+    await linkSparePartToRequestItem({ ...parsed.data, actor: linkActor(session) })
     const part = await getSparePartLinkInfo(parsed.data.productId)
     if (!part) return { ok: false, message: "El repuesto ya no está disponible en el catálogo" }
-    const unitMismatch = parsed.data.unitOfMeasure
-      ? sparePartUnitMismatchMessage(part, parsed.data.unitOfMeasure)
-      : null
-    if (unitMismatch) return { ok: false, message: unitMismatch }
     return { ok: true, part }
   } catch (e) {
-    logger.error("[linkSparePartForOcAction]", e)
     return { ok: false, message: dbErrMsg(e, "No se pudo vincular el repuesto") }
   }
 }
 
-/** Crea un repuesto nuevo en el catálogo desde la línea y lo devuelve listo para vincular. */
+/**
+ * Crea un repuesto nuevo en el catálogo desde la línea y lo vincula a ella, todo en una
+ * transacción: si el vínculo se rechaza, el repuesto tampoco queda creado.
+ */
 export async function createSparePartForOcAction(input: z.input<typeof createSchema>): Promise<SparePartLinkResult> {
   let session
   try {
@@ -157,27 +183,53 @@ export async function createSparePartForOcAction(input: z.input<typeof createSch
   } catch {
     return { ok: false, message: "Sin permisos para crear repuestos en el catálogo" }
   }
+  // Escribe el vínculo en la línea: quien crea tiene que poder armar la OC.
+  try {
+    await requirePermission("purchasing:create_order")
+  } catch {
+    return { ok: false, message: "Sin permisos para vincular repuestos a una orden de compra" }
+  }
   const parsed = createSchema.safeParse(input)
   if (!parsed.success) {
     return { ok: false, message: parsed.error.issues[0]?.message ?? "Revisa los datos del repuesto" }
   }
-  const { name, partNumber, partBrand, unitOfMeasure } = parsed.data
+  const { requestItemId, name, partNumber, partBrand, unitOfMeasure } = parsed.data
 
   try {
-    const created = await db.transaction((tx) => createSparePartTx(tx as unknown as Tx, {
-      name,
-      partNumber: partNumber || null,
-      partBrand: partBrand || null,
-      unitOfMeasure,
-      createdByUserId: session.user.id,
-    }))
+    const created = await createSparePartAndLinkToRequestItem({
+      requestItemId,
+      sparePart: { name, partNumber: partNumber || null, partBrand: partBrand || null, unitOfMeasure },
+      actor: linkActor(session),
+    })
     const part = await getSparePartLinkInfo(created.id)
     if (!part) return { ok: false, message: "El repuesto se creó pero no se pudo leer; búscalo en el catálogo" }
     return { ok: true, part }
   } catch (e) {
-    // Un N° de parte repetido o una unidad inactiva son validaciones de negocio:
-    // vuelven a la hoja tal cual y no se registran como error. `dbErrMsg` sí
-    // registra lo interno (driver, esquema) y no lo muestra.
+    // Un N° de parte repetido, una unidad inactiva o un ítem ya vinculado son
+    // validaciones de negocio: vuelven a la hoja tal cual y no se registran como
+    // error. `dbErrMsg` sí registra lo interno (driver, esquema) y no lo muestra.
     return { ok: false, message: dbErrMsg(e, "No se pudo crear el repuesto") }
+  }
+}
+
+/**
+ * Quita el vínculo que se hizo desde la hoja y devuelve la línea a texto libre. Sólo
+ * mientras el ítem no esté en una OC viva, y nunca el repuesto que eligió quien pidió.
+ */
+export async function unlinkSparePartForOcAction(input: z.input<typeof unlinkSchema>): Promise<SparePartUnlinkResult> {
+  let session
+  try {
+    session = await requirePermission("purchasing:create_order")
+  } catch {
+    return { ok: false, message: "Sin permisos para vincular repuestos a una orden de compra" }
+  }
+  const parsed = unlinkSchema.safeParse(input)
+  if (!parsed.success) return { ok: false, message: "Línea no válida" }
+
+  try {
+    await unlinkSparePartFromRequestItem({ requestItemId: parsed.data.requestItemId, actor: linkActor(session) })
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, message: dbErrMsg(e, "No se pudo quitar el vínculo") }
   }
 }
