@@ -80,7 +80,7 @@ describe("buscar y vincular: purchasing:create_order", () => {
     mockAuth.mockResolvedValue(session(["purchasing:create_order"]))
     mockFindByPartNumber.mockResolvedValue({ id: "2" })
     const result = await searchSparePartsForOcAction({ query: "  ", vehicleId: "v-1", partNumber: "PN-2" })
-    expect(mockSearch).toHaveBeenCalledWith({ query: undefined, vehicleId: "v-1", limit: 40 })
+    expect(mockSearch).toHaveBeenCalledWith({ query: undefined, vehicleId: "v-1", vehicleScope: "all", limit: 40 })
     expect(mockFindByPartNumber).toHaveBeenCalledWith("PN-2")
     expect(result).toMatchObject({ ok: true, total: 2, suggestion: { id: "2", sku: "RPT-2" } })
     // Sólo viajan los campos que la hoja necesita.
@@ -89,11 +89,20 @@ describe("buscar y vincular: purchasing:create_order", () => {
     )
   })
 
+  it("con una sesión de faena, el orden por equipo y «mismo modelo» se acotan a sus faenas", async () => {
+    mockAuth.mockResolvedValue({
+      ...session(["purchasing:create_order"]),
+      user: { ...session([]).user, permissions: ["purchasing:create_order"], worksiteIds: ["ws-1"], isGlobal: false },
+    })
+    await searchSparePartsForOcAction({ query: "filtro", vehicleId: "v-1" })
+    expect(mockSearch).toHaveBeenCalledWith({ query: "filtro", vehicleId: "v-1", vehicleScope: ["ws-1"], limit: 40 })
+  })
+
   it("no busca sugerencia sin N° de parte, y pide el tope de 40 al servicio con el total real", async () => {
     mockAuth.mockResolvedValue(session(["purchasing:create_order"]))
     mockSearch.mockResolvedValue({ parts: Array.from({ length: 40 }, (_, i) => LISTED(String(i))), total: 55 })
     const result = await searchSparePartsForOcAction({ query: "filtro" })
-    expect(mockSearch).toHaveBeenCalledWith({ query: "filtro", vehicleId: undefined, limit: 40 })
+    expect(mockSearch).toHaveBeenCalledWith({ query: "filtro", vehicleId: undefined, vehicleScope: "all", limit: 40 })
     expect(mockFindByPartNumber).not.toHaveBeenCalled()
     expect(result).toMatchObject({ ok: true, total: 55, suggestion: null })
     expect(result.ok && result.parts).toHaveLength(40)
@@ -106,7 +115,7 @@ describe("buscar y vincular: purchasing:create_order", () => {
       .mockResolvedValueOnce({ parts: [LISTED("1")], total: 120 })
       .mockResolvedValueOnce({ parts: [LISTED("99")], total: 1 })
     const result = await searchSparePartsForOcAction({ query: "", vehicleId: "v-1", partNumber: "PN-99" })
-    expect(mockSearch).toHaveBeenLastCalledWith({ ids: ["99"], vehicleId: "v-1" })
+    expect(mockSearch).toHaveBeenLastCalledWith({ ids: ["99"], vehicleId: "v-1", vehicleScope: "all" })
     expect(result).toMatchObject({ ok: true, suggestion: { id: "99", unitOfMeasure: "unidad" } })
   })
 

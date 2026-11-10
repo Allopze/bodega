@@ -3,6 +3,7 @@
 import { z } from "zod"
 import { db, type Tx } from "@/db"
 import { requirePermission } from "@/lib/auth/can"
+import { serviceWorksiteScope } from "@/lib/auth/scope"
 import { logger } from "@/lib/logger"
 import { searchSpareParts, createSparePartTx, findSparePartByPartNumber, type SparePartListItem } from "@/lib/services/spare-parts-catalog"
 import { getSparePartLinkInfo, type SparePartLinkInfo } from "@/lib/services/purchasing-module/spare-part-link"
@@ -83,8 +84,9 @@ function toChoice(part: SparePartListItem): SparePartChoice {
 }
 
 export async function searchSparePartsForOcAction(input: z.input<typeof searchSchema>): Promise<SearchSparePartsResult> {
+  let session
   try {
-    await requirePermission("purchasing:create_order")
+    session = await requirePermission("purchasing:create_order")
   } catch {
     return { ok: false, message: "Sin permisos para vincular repuestos a una orden de compra" }
   }
@@ -94,13 +96,18 @@ export async function searchSparePartsForOcAction(input: z.input<typeof searchSc
 
   try {
     // Filtro, orden por vehículo y tope en SQL: el catálogo no viaja entero.
-    const found = await searchSpareParts({ query: query || undefined, vehicleId: vehicleId || undefined, limit: SEARCH_LIMIT })
+    // `purchasing:create_order` no es sólo de roles de oficina (también lo tiene
+    // la secretaría de faena): el orden por equipo y «mismo modelo» se recortan
+    // al alcance de faenas de la sesión, como en el buscador de la solicitud.
+    // Un rol global sigue viendo toda la flota.
+    const vehicleScope = serviceWorksiteScope(session)
+    const found = await searchSpareParts({ query: query || undefined, vehicleId: vehicleId || undefined, vehicleScope, limit: SEARCH_LIMIT })
     // La sugerencia sólo se pide al abrir la hoja; puede quedar fuera del tope,
     // así que se lee aparte, con el mismo vehículo para su insignia.
     const suggestionRow = partNumber ? await findSparePartByPartNumber(partNumber) : null
     const suggestion = suggestionRow
       ? (found.parts.find((part) => part.id === suggestionRow.id)
-        ?? (await searchSpareParts({ ids: [suggestionRow.id], vehicleId: vehicleId || undefined })).parts[0]
+        ?? (await searchSpareParts({ ids: [suggestionRow.id], vehicleId: vehicleId || undefined, vehicleScope })).parts[0]
         ?? null)
       : null
     return {

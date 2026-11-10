@@ -36,6 +36,7 @@ import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { generateUniqueSkus } from "@/lib/products/product-skus"
 import { resolveActiveUnitCode } from "@/lib/services/product-unit-catalog"
+import { worksiteScopeSqlFor } from "@/lib/auth/scope"
 import { escapeLikePattern } from "@/lib/utils"
 
 /* ── Tipos ───────────────────────────────────────────────────────────────── */
@@ -54,6 +55,13 @@ export interface ListSparePartsOptions {
   ids?: readonly string[]
   /** Sólo los comprados para `vehicleId` o para otro de su marca y modelo. */
   onlyVehicleMatches?: boolean
+  /**
+   * Faenas cuyos equipos cuentan para ordenar y filtrar por vehículo (el
+   * alcance de quien busca). Un `vehicleId` fuera de ellas no ordena nada, y
+   * «mismo modelo» sólo mira equipos de ellas: si no, el orden delataba que otra
+   * faena compró un repuesto para su parque. Sin él (o `"all"`), toda la flota.
+   */
+  vehicleScope?: readonly string[] | "all"
   /** Tope de filas; sin él, todas. */
   limit?: number
 }
@@ -306,10 +314,21 @@ async function withPartNumberGuard(
   }
 }
 
+/** El índice único que hace de un N° de parte + marca un solo repuesto (migración 0385). */
+const PART_NUMBER_UNIQUE_INDEX = "products_spare_part_number_brand_unique"
+
+/**
+ * Sólo un 23505 de ese índice es un «N° de parte repetido». Otro choque único
+ * (un SKU que ganó la carrera, por ejemplo) se relanza tal cual: traducirlo a
+ * «ya existe ese N° de parte» mandaba a buscar un duplicado que no existe.
+ */
 function isUniqueViolation(error: unknown): boolean {
   let current: unknown = error
   for (let depth = 0; depth < 4 && current && typeof current === "object"; depth++) {
-    if ((current as { code?: unknown }).code === "23505") return true
+    const { code, constraint, constraint_name: constraintName } = current as {
+      code?: unknown; constraint?: unknown; constraint_name?: unknown
+    }
+    if (code === "23505") return (constraint ?? constraintName) === PART_NUMBER_UNIQUE_INDEX
     current = (current as { cause?: unknown }).cause
   }
   return false
@@ -485,23 +504,31 @@ export const SPARE_PART_SEARCH_LIMIT = 30
 export async function searchSpareParts(opts: ListSparePartsOptions = {}): Promise<SparePartSearchResult> {
   if (opts.ids && opts.ids.length === 0) return { parts: [], total: 0 }
 
+  const scope = opts.vehicleScope ?? "all"
+  const inScope = worksiteScopeSqlFor(scope === "all" ? "all" : [...scope], fuelVehicles.worksiteId)
+
   let target: { id: string; brandKey: string | null; modelKey: string | null } | null = null
   if (opts.vehicleId) {
     const [vehicle] = await db
       .select({ brand: fuelVehicles.brand, model: fuelVehicles.model })
       .from(fuelVehicles)
-      .where(eq(fuelVehicles.id, opts.vehicleId))
+      .where(and(eq(fuelVehicles.id, opts.vehicleId), inScope))
       .limit(1)
-    const brandKey = vehicle?.brand ? foldSparePartSearch(vehicle.brand) : ""
-    const modelKey = vehicle?.model ? foldSparePartSearch(vehicle.model) : ""
-    target = { id: opts.vehicleId, brandKey: brandKey || null, modelKey: modelKey || null }
+    if (vehicle) {
+      const brandKey = vehicle.brand ? foldSparePartSearch(vehicle.brand) : ""
+      const modelKey = vehicle.model ? foldSparePartSearch(vehicle.model) : ""
+      target = { id: opts.vehicleId, brandKey: brandKey || null, modelKey: modelKey || null }
+    }
   }
   if (opts.onlyVehicleMatches && !target) return { parts: [], total: 0 }
 
   const forVehicle = target ? purchasedForVehicleSql(sql`${fuelVehicles.id} = ${target.id}`) : null
   // Sin marca o sin modelo no hay «mismo modelo»: dos equipos sin dato no son iguales.
   const forModel = target?.brandKey && target.modelKey
-    ? purchasedForVehicleSql(sql`${foldSql(sql`btrim(${fuelVehicles.brand})`)} = ${target.brandKey} AND ${foldSql(sql`btrim(${fuelVehicles.model})`)} = ${target.modelKey}`)
+    ? purchasedForVehicleSql(and(
+        sql`${foldSql(sql`btrim(${fuelVehicles.brand})`)} = ${target.brandKey} AND ${foldSql(sql`btrim(${fuelVehicles.model})`)} = ${target.modelKey}`,
+        inScope,
+      )!)
     : null
   const tier = forVehicle
     ? sql<number>`CASE WHEN ${forVehicle} THEN 0 ${forModel ? sql`WHEN ${forModel} THEN 1 ` : sql``}ELSE 2 END`

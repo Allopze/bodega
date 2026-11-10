@@ -117,6 +117,16 @@ describe("catálogo de repuestos", () => {
     expect(ghost).toBeUndefined()
   })
 
+  it("otro choque único (un SKU repetido) no se disfraza de N° de parte repetido", async () => {
+    const [category] = await testDb.select().from(schema.productCategories).where(eq(schema.productCategories.slug, "repuestos"))
+    const attempt = testDb.transaction((tx) => catalog.insertSparePartRowTx(tx as unknown as Tx, {
+      id: "rpt-sku-carrera", sku: "RPT-001", categoryId: category!.id,
+      data: { name: "Otro repuesto", partNumber: "SKU-CHOQUE-1", partBrand: null, unitOfMeasure: "unidad", notes: null, referencePrice: null },
+    }))
+    await expect(attempt).rejects.toThrow()
+    await expect(attempt).rejects.not.toThrow(/N° de parte/)
+  })
+
   it("valida nombre y unidad activa", async () => {
     await expect(createPart({ name: "   " })).rejects.toThrow(/nombre/)
     await expect(createPart({ name: "Correa", unitOfMeasure: "no-existe" })).rejects.toThrow(/catálogo de unidades/)
@@ -200,6 +210,28 @@ describe("catálogo de repuestos", () => {
     const plain = await catalog.listSpareParts()
     expect(plain.map((part) => part.name)).toEqual([...plain.map((part) => part.name)].sort((a, b) => a.localeCompare(b, "es-CL")))
     expect(plain.every((part) => part.vehicleMatch === null)).toBe(true)
+  })
+
+  it("con alcance de faenas: «mismo modelo» sólo cuenta equipos de esas faenas", async () => {
+    const mine = await createPart({ name: "Perno de rueda", partNumber: "PR-SC-1" })
+    const other = await createPart({ name: "Tuerca de rueda", partNumber: "TR-SC-1" })
+    await requestFor("scope-mine", mine.id, IDS.truckBio)
+    // truckAra es Scania R450 como truckBio, pero de otra faena (Arauco).
+    await requestFor("scope-other", other.id, IDS.truckAra)
+
+    // Sin alcance (global) el equipo de Arauco cuenta como «mismo modelo».
+    const unscoped = await catalog.searchSpareParts({ vehicleId: IDS.truckBio, onlyVehicleMatches: true, query: "rueda" })
+    expect(unscoped.parts.map((part) => [part.id, part.vehicleMatch])).toEqual([[mine.id, "vehicle"], [other.id, "model"]])
+
+    // Con sólo Biodiversa, el parque de Arauco no ordena ni filtra.
+    const scoped = await catalog.searchSpareParts({ vehicleId: IDS.truckBio, onlyVehicleMatches: true, query: "rueda", vehicleScope: [IDS.wsBio] })
+    expect(scoped.parts.map((part) => [part.id, part.vehicleMatch])).toEqual([[mine.id, "vehicle"]])
+    const ranked = await catalog.searchSpareParts({ vehicleId: IDS.truckBio, query: "rueda", vehicleScope: [IDS.wsBio] })
+    expect(ranked.parts.find((part) => part.id === other.id)?.vehicleMatch).toBeNull()
+
+    // Un equipo fuera del alcance no da orden ninguno.
+    const outside = await catalog.searchSpareParts({ vehicleId: IDS.truckAra, onlyVehicleMatches: true, vehicleScope: [IDS.wsBio] })
+    expect(outside).toEqual({ parts: [], total: 0 })
   })
 
   it("la línea de OC vinculada al repuesto también cuenta como «comprado para»", async () => {

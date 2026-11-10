@@ -5,7 +5,7 @@ import { z } from "zod"
 import { db } from "@/db"
 import { fuelVehicles, suppliers } from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
-import { worksiteScopeSql } from "@/lib/auth/scope"
+import { serviceWorksiteScope, worksiteScopeSql } from "@/lib/auth/scope"
 import { logger } from "@/lib/logger"
 import { SPARE_PART_SEARCH_LIMIT, searchSpareParts } from "@/lib/services/spare-parts-catalog"
 import { toSparePartOption } from "../spare-part-options"
@@ -54,9 +54,12 @@ export async function searchSparePartsForRequestAction(
     ).map((vehicle) => vehicle.id))
     const vehicleId = parsed.data.vehicleId && visibleVehicleIds.has(parsed.data.vehicleId) ? parsed.data.vehicleId : undefined
 
+    // «Mismo modelo» también se recorta a las faenas de la sesión: un equipo de
+    // otra faena con la misma marca y modelo no puede subir un repuesto.
+    const vehicleScope = serviceWorksiteScope(session)
     const found = await searchSpareParts(query
-      ? { query, vehicleId, limit: SPARE_PART_SEARCH_LIMIT }
-      : { vehicleId, onlyVehicleMatches: true, limit: SPARE_PART_SEARCH_LIMIT })
+      ? { query, vehicleId, vehicleScope, limit: SPARE_PART_SEARCH_LIMIT }
+      : { vehicleId, vehicleScope, onlyVehicleMatches: true, limit: SPARE_PART_SEARCH_LIMIT })
 
     const supplierIds = [...new Set(found.parts.flatMap((part) => part.preferredSupplierId ? [part.preferredSupplierId] : []))]
     const activeSupplierIds = new Set(supplierIds.length === 0 ? [] : (await db
