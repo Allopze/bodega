@@ -208,3 +208,144 @@ Ninguno confirmado. Ningún paso del flujo pedido falló; los datos en BD coinci
 
 Además, `audit_log` (append-only) y los eventos/decisiones de las solicitudes y OC. La OT mock
 `mock-mant-ot-00582` quedó con la solicitud vinculada.
+
+---
+
+## Segundo recorrido (HEAD `a1a4c601b`)
+
+Mismo montaje que el primero: `next dev --webpack -p 3002` desde el worktree, con `AUTH_URL`/`NEXTAUTH_URL`/`APP_URL`/`PDF_RENDER_ORIGIN`
+en :3002, y BD `bodega_dev` migrada a 0386 con RBAC sincronizado. Chromium de `@playwright/test`, escritorio 1440×900 y móvil
+390×844. Se reutilizaron los registros `QA_` del primer recorrido. Las capturas están en
+`/tmp/claude-1000/-home-allopze-dev-chome-bodega/b3e310bf-dea9-47fc-89e5-565925c7f16c/scratchpad/walkthrough2/`, carpeta que no
+está versionada. **Correo:** se volvió a confirmar antes de emitir que sigue inerte. `RESEND_API_KEY` está vacía en `.env`,
+`.env.local` y `.env.development.local`, y `system_settings` no tiene filas `email.resend.*`. El proveedor es el mock de siempre.
+
+### PASS: arreglos re-verificados
+
+1. **«Comprado para», «Para este equipo» y «Ya se compró» cuentan sólo OC emitidas.** RPT-004 se pidió y aprobó para KA-54
+   en REP-2026-0004, todavía sin OC. En la hoja «Catalogar» de esa misma solicitud no lleva la insignia, y RPT-001 y RPT-003
+   sí la llevan porque tienen la OC-2026-0058 emitida (`13-catalogar-inicial.png`, `14-catalogar-busqueda.png`). El buscador
+   del pedido sugiere sólo RPT-001 y RPT-003 con «Para este equipo» (`07-picker-sugerencias-equipo.png`). La lista muestra
+   «Comprado para: 1 equipo» únicamente en los repuestos con OC emitida. En la ficha, «Comprado para» se rotula «…con orden
+   de compra emitida».
+2. **El precio de referencia sirve de respaldo.** RPT-004 se creó con referencia $9.900 y sin compras. Al pedirlo, desde la
+   OT y desde la ficha, se precarga 9900, y la BD guarda `estimated_unit_price = 9900` (`06-pedir-desde-ficha-preelegido.png`).
+   En la lista se lee «$9.900 · Referencia», y en las filas con compras, «Último proveedor» bajo el proveedor
+   (`02-tras-crear-rpt004.png`). El Excel trae las columnas «Proveedor preferido», «Último proveedor», «Último precio (CLP)»
+   y «Precio de referencia (CLP)», y la unidad con su rótulo («Unidad», «Juego»).
+3. **Categoría «Repuestos».** «Es EPP» y «Requiere aprobación de Prevención» aparecen deshabilitados y desmarcados, con la
+   ayuda «un repuesto no es EPP ni pasa por Prevención». Un clic forzado no los marca (`04-categoria-repuestos.png`).
+4. **Búsqueda de varias palabras en cualquier orden.** En la TopBar de la lista, «aceite filtro», «filtro aceite» y
+   «QA-123 aceite» encuentran RPT-001, «lubri aceite» encuentra RPT-004 y «aceite xyz» deja el vacío
+   (`03-busqueda-aceite-filtro.png`). En el buscador del pedido, «aceite filtro», «filtro QA-123» y «motor aceite» también
+   funcionan (`08-picker-aceite-filtro.png`). En la hoja «Catalogar», «aceite filtro» devuelve RPT-001.
+5. **La OC dice el N° de parte una sola vez y la recepción dice «Consumo directo».** En «Seguimiento del pedido» cada línea
+   muestra «N° de parte: …» una vez (`oc-escritorio-emitida.png`). En la recepción, el tipo dice «Consumo directo: los
+   repuestos se entregan sin pasar por stock» y cada línea dice «Consumo directo, no pasa por stock». Desapareció «Actualiza
+   stock» (`23-recepcion-form.png`). Tras REC-2026-0105 quedan 0 filas en `inventory_movements` y en `worksite_stock` para
+   RPT-004 y RPT-005.
+6. **Móvil.** La ficha (precios, historial, «Comprado para», últimas compras), la sección «Repuestos pedidos» de la OT, la OC
+   y la lista se ven como tarjetas. No hay desborde: `scrollWidth = 390` en el documento y en el pozo, y ningún contenedor
+   con scroll horizontal interno. La única tabla visible en la OT es «Mantenciones solicitadas», que es previa a la rama y no
+   desborda (`m-ficha-rpt001.png`, `m-ficha-rpt004.png`, `m-ot-repuestos.png`, `m-ot.png`, `oc-movil.png`, `m-lista.png`).
+7. **«Pedir repuestos» desde la ficha preelige el repuesto.** El enlace lleva a
+   `/solicitudes/nueva?tipo=repuestos&repuesto=<id>`, con la tarjeta «Repuesto elegido» (RPT-004, N° QA-901, QA_Lubri) y el
+   precio precargado (`06-pedir-desde-ficha-preelegido.png`).
+8. **«Crear y vincular» avisa.** Aparece el toast «Repuesto RPT-005 creado en el catálogo y vinculado a la línea»
+   (`16-crear-y-vincular-toast.png`). La hoja muestra las unidades con su rótulo («por unidad», «por juego», «Unidad de
+   medida: Unidad») y deshabilita el repuesto que se compra por juego (`14-…`, `15-catalogar-crear.png`).
+9. **Regresión del flujo completo con un pedido nuevo.**
+   - REP-2026-0004 se creó desde la OT OT-PAC-0006 (KA-54) con dos líneas: RPT-004 de catálogo y «QA_Bujía libre» en texto
+     libre, N° QA-902. Se envió y se aprobó sin cotización (`09-…`, `10-…`, `11-solicitud-aprobada.png`).
+   - La línea libre se catalogó como RPT-005. Luego se creó OC-2026-0061 con RPT-004 a $10.500 y RPT-005 a $3.800, ambas
+     con `product_id` en la BD, y se emitió.
+   - En las fichas aparece el precio vigente, la fila de historial «Orden de compra» y «Comprado para» KA-54
+     (`22-ficha-rpt004-tras-emitir.png`, `22-ficha-rpt005-tras-emitir.png`).
+   - La recepción en faena dejó la OC `closed`, la solicitud «Pedido entregado en faena» y la OT «Entregado 3/3, 4/4»
+     (`oc-escritorio-recibida.png`, `25-ot-escritorio.png`, `26-solicitud-entregada.png`).
+   - **Reversión de precio:** se armó OC-2026-0062 con RPT-001, que venía de REP-2026-0003. El formulario precargó $14.000,
+     se cambió a $18.000 y se emitió: la ficha mostró «$14.000 → $18.000». Al anularla, el precio vigente volvió a $14.000 y
+     su fila de historial desapareció (`27-rpt001-antes.png`, `27-rpt001-tras-emitir-18000.png`, `27-rpt001-tras-anular.png`).
+
+### Capturas pedidas de una OC de mantención (OC-2026-0061)
+
+| Archivo | Qué muestra |
+|---|---|
+| `oc-escritorio-emitida.png` | Escritorio, recién emitida. Seguimiento, códigos RPT-004 y RPT-005, «Equipo: KA-54 · UD-1187 · OT OT-PAC-0006» |
+| `oc-escritorio-recibida.png` | Escritorio, después de la recepción. «Recepción completada», expediente con REC-2026-0105 |
+| `oc-movil.png` | Móvil 390 px, página completa en tarjetas. Códigos, equipo y OT |
+| `oc-pdf.png` + `oc.pdf` | Vista «Imprimir / PDF» y el PDF descargado de `/compras/<id>/print/pdf` (200, «OC 2026-0061.pdf», 1 página) |
+
+En el expediente de las capturas aparece OC-2026-0060 (anulada). Es el borrador del hallazgo FF-6 y no forma parte del flujo
+normal.
+
+### PRODUCT BUG
+
+Ninguno confirmado.
+
+### FUNCTIONAL FINDING
+
+- **FF-6 · El vínculo de «Catalogar» vive sólo en el navegador.** «Crear y vincular» crea RPT-005 en el servidor al instante,
+  pero el vínculo con la línea queda en el estado del formulario (`use-oc-form.ts` `linkSparePart`). Si la página se recarga
+  antes de crear la OC, la línea vuelve a «Catalogar» y RPT-005 queda huérfano en el catálogo. Así pasó en este recorrido: se
+  creó OC-2026-0060 con la línea `product_id NULL`, y por lo tanto sin historial de precio para RPT-005 (verificado en la BD).
+  Se anuló y se rehízo con «Coincide por N° de parte · Vincular este». Conviene persistir el vínculo en el ítem de la solicitud
+  al crear o vincular, o avisar que se pierde al salir.
+- **FF-7 · El PDF de la OC no dice para qué equipo ni para qué OT es el repuesto.** El detalle muestra «Equipo: KA-54 ·
+  UD-1187 · OT OT-PAC-0006», pero la vista de impresión y el PDF sólo traen SKU, nombre y N° de parte. Lo comprobé con el
+  texto extraído del PDF y con `oc-pdf.png`. `print/page.tsx` usa `requestItem.equipment`, que corresponde a los equipos de
+  activos, y no `vehicle` ni la OT, que es lo que llevan los repuestos. Falta decidir si el proveedor y quien recibe deben
+  verlo; si la respuesta es sí, es un arreglo de esa página.
+
+### UX FINDING / INCONSISTENCY
+
+- **UX-8.** El precio de referencia no aparece fuera de la ficha y la lista. En la hoja «Catalogar», RPT-004 dice «Sin
+  precio» aunque tiene referencia de $9.900, y la opción del buscador del pedido tampoco la muestra. En cambio, la lista
+  dice «$9.900 · Referencia».
+- **UX-9.** En las tarjetas móviles de «Repuestos pedidos» de la OT, el N° de parte en mono se corta a la mitad («QA-» en un
+  renglón y «901» en el siguiente) (`m-ot-repuestos.png`).
+- **IN-5.** En la OC completada, el seguimiento muestra el paso «Entrega» vacío mientras el estado dice «Recepción
+  completada». En la solicitud el mismo paso aparece como «Entrega completada» (`oc-escritorio-recibida.png` vs
+  `26-solicitud-entregada.png`). Es probablemente previo a la rama.
+- **UX-7 sigue igual** (previo a la rama): «Agregar ítem» no hereda el equipo de la OT, aunque sí la OT.
+- «Vincular este» no muestra toast. Basta con el cambio de la línea; lo dejo sólo como observación.
+
+### AUTOMATION WARNING
+
+- El dev de :3002 se reinició tres veces por «approaching the used memory threshold»: al compilar la ruta del PDF y antes de
+  la prueba de reversión. Eso provocó `socket hang up` y `ERR_CONNECTION_REFUSED`, y los pasos se repitieron. No son fallos
+  del producto.
+- La primera vez, «Guardar borrador» tardó por la compilación y el script pulsó «Enviar a aprobación» del mismo formulario.
+  La solicitud quedó enviada directamente sin pasar por borrador; la BD está correcta.
+- Justo después de anular OC-2026-0060, `/compras/nueva` todavía no listaba los ítems devueltos. En la carga siguiente sí
+  estaban. Lo más probable es que la acción siguiera en curso en un dev lento.
+- **Fuga de credencial en la salida de la automatización.** Un `TimeoutError`/`socket hang up` de `context.request.get`
+  imprimió en la salida de la terminal el «call log» de Playwright, que trae las cookies de sesión del usuario QA en :3002.
+  Se borraron de los archivos de salida del scratchpad y se eliminó `state-admin.json`. El token es un JWT de Auth.js que
+  sigue válido hasta que expire. Los scripts siguientes imprimen sólo la primera línea de cada error.
+
+### Consola y red
+
+- Sin `pageerror` ni respuestas ≥400 en ningún paso, ni en escritorio ni en móvil.
+- `/admin/productos` repite el aviso previo de `DataTable` sobre las columnas «referencePrice» e «isActive».
+- Los únicos fallos de red ocurrieron durante los reinicios del dev, junto con un aviso «[Fast Refresh] performing full
+  reload» del mismo reinicio.
+
+### COVERAGE GAP
+
+- Esta vez no se recorrió el rol `solicitante_faena`, la hoja «Catalogar» en móvil, ni la pasada de teclado/axe.
+- No se probó WebKit.
+- El vínculo perdido al recargar (FF-6) se observó en escritorio; no se intentó en móvil.
+
+### Registros `QA_` nuevos en `bodega_dev`
+
+| Tipo | Id | Detalle |
+|---|---|---|
+| products (repuesto) | `fTFZDnerTWs8EpjFY8qVi` | RPT-004 QA_Aceite motor 15W40 (QA-901, QA_Lubri, ref. $9.900) |
+| products (repuesto) | `LhjwWL0rQ-7V_ARO1wwMy` | RPT-005 QA_Bujía libre (QA-902), creado con «Crear y vincular» |
+| purchase_requests | `ero6hzlqeaqbn-pZvw-4U` | REP-2026-0004 (OT-PAC-0006), cerrada; ítems `HTUPoNI4bgvCwsPMUWtOk`, `olDUZu2_hyRelR29KtxjR` |
+| purchase_orders | `tAZeX6w1F7qkNzyxsFbhj` | OC-2026-0060, anulada (borrador sin vínculo, FF-6) |
+| purchase_orders | `EzdPF1-79WLizRlb2SeED` | OC-2026-0061, cerrada |
+| purchase_orders | `VJv2Jyi-hYn_x6CdlhhFF` | OC-2026-0062, anulada (prueba de reversión, RPT-001 de REP-2026-0003, que vuelve a la cola) |
+| receipts | `sC-0uGFi0Ccs6oXlTAvSi` | REC-2026-0105 |
+| product_supplier_price_history | `HUDhiD0YJvBeTmLJsZI45`, `bXmZYoAjJIhSVs3DzuzTN` | RPT-004 $10.500 y RPT-005 $3.800, fuente `purchase_order` |
