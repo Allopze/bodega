@@ -214,7 +214,15 @@ export default async function NuevaOcPage({
         worksiteId:      req.worksiteId,
         worksiteName:    wsMap[req.worksiteId] ?? req.worksiteId,
         productName:     product
-          ? formatVariantProductName(product.name, attributesById.get(product.id), recordedById.get(item.id))
+          ? formatVariantProductName(
+              product.name,
+              attributesById.get(product.id),
+              // Un repuesto de catálogo ya muestra su N° de parte en la etiqueta
+              // «Repuesto de catálogo»: el N° de parte libre del pedido no se repite.
+              product.isSparePart
+                ? (recordedById.get(item.id) ?? []).filter((attribute) => attribute.name !== REPUESTO_ATTRIBUTE_NAMES.partNumber)
+                : recordedById.get(item.id),
+            )
           : item.productNameFree ?? "(sin nombre)",
         productSku:      product?.sku ?? null,
         productId:       item.productId,
