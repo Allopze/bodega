@@ -57,6 +57,27 @@ function makeItem(overrides: Partial<ReceiptOcItem> = {}): ReceiptOcItem {
 // ── Tests ───────────────────────────────────────────────────────────────────
 
 describe("ReceiptForm", () => {
+  describe("repuestos de catálogo", () => {
+    it("una OC sólo de repuestos dice consumo directo, no «Actualiza stock»", () => {
+      render(
+        <ReceiptForm
+          purchaseOrderId="po-1"
+          orderCode="OC-001"
+          orderWorksiteName="Faena Norte"
+          officeName="Administración"
+          items={[makeItem({ productName: "Filtro de aceite", productSku: "RPT-001", isDirectConsumption: true })]}
+          canOffice={false}
+          canFaena={true}
+          deliveryMode="directo_faena"
+        />,
+      )
+      expect(screen.queryByText(/Actualiza stock/)).toBeNull()
+      expect(screen.getByText(/Consumo directo: los repuestos se entregan sin pasar por stock/)).toBeTruthy()
+      expect(screen.getAllByText(/Consumo directo, no pasa por stock/).length).toBeGreaterThan(0)
+      expect(screen.queryByText(/no ingresa a stock/)).toBeNull()
+    })
+  })
+
   describe("rendering", () => {
     it("renders the form header with order code in items section", () => {
       render(

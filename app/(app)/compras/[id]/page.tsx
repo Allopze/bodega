@@ -1,7 +1,7 @@
 import { getProductAttributesByIds } from "@/lib/services/product-sizes"
 import { resolveProductSize } from "@/lib/products/product-size"
 import { withCatalogPartNumber } from "@/lib/products/spare-part-display"
-import { formatVariantProductName } from "@/lib/products/variant-grouping"
+import { formatVariantProductName, mergeVariantAttributes } from "@/lib/products/variant-grouping"
 import type { Metadata } from "next"
 import Link from "next/link"
 import { notFound, redirect } from "next/navigation"
@@ -499,14 +499,16 @@ export default async function OcDetailPage({
       const requestItem = i.requestItemId ? reqItemMap[i.requestItemId] : null
       return {
         id:               i.id,
-        productName:      itemName(i),
+        // El panel lista los atributos debajo del nombre: con `itemName` (que
+        // ya los agrega al nombre) el N° de parte salía dos veces (UX-1).
+        productName:      (i.productId ? productMap[i.productId]?.name : undefined) ?? i.productNameFree ?? "Ítem",
         quantity:         i.quantity,
         unitOfMeasure:    i.unitOfMeasure,
         quantityReceived: receivedByItem.get(i.id) ?? i.quantityReceived ?? 0,
-        attributes:       requestItem?.attributes.map((attribute) => ({
-          name: attribute.attributeName,
-          value: attribute.value,
-        })) ?? [],
+        attributes:       mergeVariantAttributes(
+          (i.productId ? productMap[i.productId]?.attributes : undefined) ?? [],
+          requestItem?.attributes.map((attribute) => ({ name: attribute.attributeName, value: attribute.value })) ?? [],
+        ),
       }
     }),
     // El panel tiene dos voces (A-10) y quien entra por recepción lee la suya:

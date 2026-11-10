@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { describeStageProgress } from "./receipt-form-progress"
+import { describeStageProgress, faenaStockEffect, rejectionHint } from "./receipt-form-progress"
 import type { ReceiptOcItem } from "./receipt-form.types"
 
 function item(overrides: Partial<ReceiptOcItem> = {}): ReceiptOcItem {
@@ -68,5 +68,24 @@ describe("describeStageProgress", () => {
     const p = describeStageProgress([], "via_oficina")
     expect(p.officeComplete).toBe(false)
     expect(p.faenaComplete).toBe(false)
+  })
+})
+
+describe("faenaStockEffect / rejectionHint", () => {
+  it("sin repuestos, la recepción actualiza stock", () => {
+    expect(faenaStockEffect([item()])).toBe("Actualiza stock y trazabilidad.")
+    expect(rejectionHint([item()])).toBe("lo que llegó pero no ingresa a stock")
+  })
+
+  it("sólo repuestos: consumo directo, sin hablar de stock", () => {
+    const parts = [item({ isDirectConsumption: true }), item({ id: "oci-2", isDirectConsumption: true })]
+    expect(faenaStockEffect(parts)).toBe("Consumo directo: los repuestos se entregan sin pasar por stock.")
+    expect(rejectionHint(parts)).toBe("lo que llegó pero no se acepta")
+  })
+
+  it("mixta: dice las dos cosas", () => {
+    const mixed = [item(), item({ id: "oci-2", isDirectConsumption: true })]
+    expect(faenaStockEffect(mixed)).toBe("Actualiza stock y trazabilidad; los repuestos son de consumo directo y no pasan por stock.")
+    expect(rejectionHint(mixed)).toBe("lo que llegó pero no ingresa a stock")
   })
 })

@@ -142,6 +142,7 @@ export default async function NuevaRecepcionPage({
       unitOfMeasure:    item.unitOfMeasure,
       notes:            item.notes,
       isEmergencyService: product?.serviceSubjectKind === "emergency_resource",
+      isDirectConsumption: product?.isSparePart === true,
       emergencyResourceLabel: item.requestItemId ? (emergencySubjectMap.get(item.requestItemId) ?? null) : null,
     }
   })
