@@ -9,7 +9,7 @@ import path from "node:path"
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
 import { eq } from "drizzle-orm"
 import * as schema from "@/db/schema"
-import type { DB } from "@/db"
+import type { DB, Tx } from "@/db"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 
 const pg = new PGlite()
@@ -29,6 +29,7 @@ await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 const { IDS, seedMantFixtures } = await import("./mantencion-sync-fixtures")
 const { createWorkOrderWithClient } = await import("@/lib/services/mantencion/work-orders/create")
 const { getVehiclePurchaseHistory } = await import("@/lib/services/vehicle-purchase-history")
+const { createSparePartTx } = await import("@/lib/services/spare-parts-catalog")
 
 const now = new Date().toISOString()
 let workOrderId = ""
@@ -137,5 +138,68 @@ describe("getVehiclePurchaseHistory", () => {
     const [item] = await testDb.select({ vehicleId: schema.purchaseRequestItems.vehicleId }).from(schema.purchaseRequestItems)
       .where(eq(schema.purchaseRequestItems.id, "i-other"))
     expect(item!.vehicleId).toBe(IDS.machineBio)
+  })
+
+  describe("identidad del producto (catálogo de repuestos)", () => {
+    let sparePartId = ""
+    let sparePartSku = ""
+    let serviceId = ""
+
+    beforeAll(async () => {
+      const part = await testDb.transaction((tx) => createSparePartTx(tx as unknown as Tx, {
+        name: "Filtro de aceite", partNumber: "1R-0750", partBrand: "Caterpillar", unitOfMeasure: "unidad", createdByUserId: IDS.jefe,
+      }))
+      sparePartId = part.id
+      sparePartSku = part.sku
+      await testDb.insert(schema.productCategories).values({
+        id: "cat-hist-servicios", name: "Servicios (historial)", slug: "servicios-historial", isEpp: false, requiresPrevencion: false, sortOrder: 1,
+      })
+      serviceId = "prod-hist-servicio"
+      await testDb.insert(schema.products).values({
+        id: serviceId, sku: "SRV-H-1", name: "Alineación", categoryId: "cat-hist-servicios", unitOfMeasure: "unidad", isService: true,
+      })
+    })
+
+    it("trae producto, SKU, N° de parte y si es repuesto de catálogo; el texto libre no trae nada de eso", async () => {
+      await insertRequest("r-cat")
+      await insertItem("i-cat", "r-cat", { vehicleId: IDS.truckAra, productId: sparePartId, productNameFree: null, createdAt: "2026-11-02T12:00:00.000Z" })
+      await insertRequest("r-free")
+      await insertItem("i-free", "r-free", { vehicleId: IDS.truckAra, productNameFree: "Sello de pistón", createdAt: "2026-11-01T12:00:00.000Z" })
+      await insertRequest("r-srv", "servicios")
+      await insertItem("i-srv", "r-srv", { vehicleId: IDS.truckAra, productId: serviceId, productNameFree: null, createdAt: "2026-10-31T12:00:00.000Z" })
+
+      const byItem = new Map((await getVehiclePurchaseHistory(IDS.truckAra)).map((record) => [record.requestItemId, record]))
+
+      expect(byItem.get("i-cat")).toMatchObject({
+        itemName: "Filtro de aceite", productId: sparePartId, sku: sparePartSku, partNumber: "1R-0750", isSparePart: true,
+      })
+      expect(byItem.get("i-free")).toMatchObject({
+        itemName: "Sello de pistón", productId: null, sku: null, partNumber: null, isSparePart: false,
+      })
+      // Un servicio de catálogo es producto (tiene SKU) pero no tiene ficha de repuesto a la cual enlazar.
+      expect(byItem.get("i-srv")).toMatchObject({ productId: serviceId, sku: "SRV-H-1", partNumber: null, isSparePart: false })
+    })
+
+    it("un pedido en texto libre que Compras catalogó en la OC toma el repuesto de la línea de OC", async () => {
+      await insertRequest("r-oc-cat")
+      await insertItem("i-oc-cat", "r-oc-cat", { vehicleId: IDS.truckAra, productNameFree: "filtro aceite motor", createdAt: "2026-11-03T12:00:00.000Z" })
+      await insertOrder("oc-cat", "i-oc-cat")
+      await testDb.update(schema.purchaseOrderItems).set({ productId: sparePartId }).where(eq(schema.purchaseOrderItems.id, "oc-cat-line"))
+
+      const record = (await getVehiclePurchaseHistory(IDS.truckAra)).find((row) => row.requestItemId === "i-oc-cat")
+
+      expect(record).toMatchObject({ productId: sparePartId, sku: sparePartSku, partNumber: "1R-0750", isSparePart: true, orderId: "oc-cat" })
+    })
+
+    it("el repuesto catalogado en una OC anulada no cuenta: la línea vuelve a ser texto libre", async () => {
+      await insertRequest("r-oc-void")
+      await insertItem("i-oc-void", "r-oc-void", { vehicleId: IDS.truckAra, productNameFree: "filtro aceite motor", createdAt: "2026-11-04T12:00:00.000Z" })
+      await insertOrder("oc-void", "i-oc-void", { status: "cancelled" })
+      await testDb.update(schema.purchaseOrderItems).set({ productId: sparePartId }).where(eq(schema.purchaseOrderItems.id, "oc-void-line"))
+
+      const record = (await getVehiclePurchaseHistory(IDS.truckAra)).find((row) => row.requestItemId === "i-oc-void")
+
+      expect(record).toMatchObject({ itemName: "filtro aceite motor", productId: null, sku: null, isSparePart: false, orderId: null })
+    })
   })
 })

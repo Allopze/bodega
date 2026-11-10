@@ -10,6 +10,7 @@ import { eq, sql } from "drizzle-orm"
 import * as schema from "../db/schema"
 import { SYSTEM_PERMISSIONS } from "../lib/auth/system-rbac"
 import { seedMantencionE2E } from "./fixtures/mantencion-setup"
+import { seedRepuestosCatalogoE2E } from "./fixtures/repuestos-catalogo-setup"
 import { INSPECCION_EXTINTORES } from "../lib/sst/definitions/inspeccion-extintores"
 import {
   assertSafeDestructiveDatabase,
@@ -3572,6 +3573,8 @@ async function main() {
 
   // Mantención de equipos: roles del módulo, carga inicial y usuarios de prueba.
   await seedMantencionE2E(db, { hashedPassword: password, now })
+  // Catálogo de repuestos: dos repuestos y una compra previa para un equipo de Biodiversa.
+  await seedRepuestosCatalogoE2E(db, { now })
 
   // ── Conductores (licencias) ──
   // Cuatro trabajadores de «Faena E2E» con un cargo que conduce y exige A4 o A5 (para

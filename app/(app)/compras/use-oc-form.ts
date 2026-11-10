@@ -6,9 +6,9 @@ import { toast } from "@/lib/toast"
 import { INITIAL_STATE } from "@/lib/form-state"
 import { createOrderAction } from "./actions"
 import { computeOrderTotals } from "@/lib/order-totals"
-import { itemSupplierId, suggestedPrice, applySuggestedPrices } from "./oc-form.helpers"
+import { itemSupplierId, suggestedPrice, applySuggestedPrices, applyLinkedPart } from "./oc-form.helpers"
 import type { ActionState } from "@/lib/validation/operations"
-import type { SupplierOption, WorksiteOption, PendingItemOption, OcItemRow } from "./oc-form.types"
+import type { SupplierOption, WorksiteOption, PendingItemOption, OcItemRow, LinkedSparePart } from "./oc-form.types"
 
 /** Identidad estable: un `[]` nuevo por render reiniciaría los inicializadores. */
 const EMPTY_ITEM_IDS: string[] = []
@@ -48,6 +48,17 @@ export function useOcForm({
   const [quantities,   setQuantities]   = React.useState<Record<string, number>>({})
   const [itemSuppliers, setItemSuppliers] = React.useState<Record<string, string>>({})
   const [search,       setSearch]       = React.useState("")
+  // Repuestos que Compras vinculó (o desvinculó: `null`) en líneas de esta OC desde la
+  // hoja «Catalogar». El servidor ya lo guardó en el ítem de solicitud (FF-6); esto sólo
+  // lo muestra sin recargar y manda sobre lo que trajo la página.
+  const [linkedParts,  setLinkedParts]  = React.useState<Record<string, LinkedSparePart | null>>({})
+
+  // Las líneas tal como quedan con su vínculo: con producto, SKU y el precio de
+  // catálogo del repuesto, que entra como último escalón del precio sugerido.
+  const allItems = React.useMemo(
+    () => pendingItems.map((item) => applyLinkedPart(item, linkedParts[item.id])),
+    [pendingItems, linkedParts],
+  )
 
   const [state, action] = useActionState<ActionState, FormData>(createOrderAction, INITIAL_STATE)
 
@@ -62,7 +73,7 @@ export function useOcForm({
     const nextSupplier = suppliers.find((s) => s.id === nextSupplierId)
     if (nextSupplier?.paymentTerms) setPaymentTerms(nextSupplier.paymentTerms)
     setUnitPrices((prev) => {
-      const updates = applySuggestedPrices(pendingItems, nextSupplierId, (item) =>
+      const updates = applySuggestedPrices(allItems, nextSupplierId, (item) =>
         resolveItemSupplierId(item, nextSupplierId),
       )
       return { ...prev, ...updates }
@@ -85,7 +96,7 @@ export function useOcForm({
       return next
     })
     // When changing a per-item supplier, also auto-apply the supplier's catalog price if available
-    const item = pendingItems.find((i) => i.id === itemId)
+    const item = allItems.find((i) => i.id === itemId)
     if (item && supplierId) {
       const catalogPrice: number | undefined = item.supplierPrices[supplierId]
       if (catalogPrice !== undefined) {
@@ -136,7 +147,7 @@ export function useOcForm({
     // Vaciar el campo de un servicio es la forma de decir "todavía no se sabe";
     // en cualquier otro ítem sigue significando 0, como antes.
     if (value.trim() === "") {
-      const item = pendingItems.find((i) => i.id === itemId)
+      const item = allItems.find((i) => i.id === itemId)
       setUnitPrices((p) => ({ ...p, [itemId]: item?.isService ? null : 0 }))
       return
     }
@@ -163,8 +174,8 @@ export function useOcForm({
 
   // Filter items by selected worksite
   const filteredByWorksite = worksiteId
-    ? pendingItems.filter((i) => i.worksiteId === worksiteId)
-    : pendingItems
+    ? allItems.filter((i) => i.worksiteId === worksiteId)
+    : allItems
 
   // The OC creation guard rejects mixing via_oficina and directo_faena items in
   // the same order, so when a faena has pending items in both modes, the picker
@@ -222,6 +233,21 @@ export function useOcForm({
     }
   }, [filteredItems, supplierId, suppliers])
 
+  /**
+   * Muestra la línea vinculada a un repuesto del catálogo (el servidor ya lo guardó). El
+   * precio que el catálogo tenga para el proveedor elegido pasa a ser el sugerido de la
+   * línea (último escalón de `suggestedPrice`): si ya hay un precio escrito a mano, no
+   * se pisa.
+   */
+  function linkSparePart(itemId: string, part: LinkedSparePart) {
+    setLinkedParts((prev) => ({ ...prev, [itemId]: part }))
+  }
+
+  /** Muestra la línea otra vez en texto libre (el servidor ya quitó el vínculo). */
+  function unlinkSparePart(itemId: string) {
+    setLinkedParts((prev) => ({ ...prev, [itemId]: null }))
+  }
+
   // A tab switch changes which items are selectable; clear the selection
   // instead of carrying over ids from the other mode (they'd fail the
   // mixing guard on submit anyway).
@@ -239,7 +265,7 @@ export function useOcForm({
       return next
     })
     if (shouldSelect) {
-      const item = pendingItems.find((i) => i.id === itemId)
+      const item = allItems.find((i) => i.id === itemId)
       if (item) setDefaultPriceForItem(item)
     }
   }
@@ -291,7 +317,7 @@ export function useOcForm({
   return {
     // State
     supplierId, worksiteId, paymentTerms, estDelivery, address, notes,
-    selectedItems, unitPrices, discounts, quantities, itemSuppliers, search, state, modeFilter,
+    selectedItems, unitPrices, discounts, quantities, itemSuppliers, search, state, modeFilter, linkedParts,
     // Setters
     setPaymentTerms, setEstDelivery, setAddress, setNotes,
     setWorksiteId, setSearch, setSupplierId, setItemSupplier,
@@ -303,6 +329,7 @@ export function useOcForm({
     itemPrice, itemDiscount, setItemPrice, setItemDiscount,
     itemQuantity, setItemQuantity,
     toggleItem, toggleAll, handleModeChange,
+    linkSparePart, unlinkSparePart,
     // Props passthrough
     action, suppliers, worksites, pendingItems,
   }

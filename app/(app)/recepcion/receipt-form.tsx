@@ -14,7 +14,7 @@ import { registerReceiptAction } from "./actions"
 import { formatQty } from "@/lib/utils"
 import type { ActionState } from "@/lib/validation/operations"
 import Link from "next/link"
-import { describeStageProgress } from "./receipt-form-progress"
+import { describeStageProgress, faenaStockEffect, rejectionHint } from "./receipt-form-progress"
 import type { ReceiptOcItem, ReceiptStage } from "./receipt-form.types"
 import { remainingForStage } from "./receipt-remaining"
 
@@ -235,8 +235,8 @@ export function ReceiptForm({
                 <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
                   {faenaAvailable
                     ? deliveryMode === "directo_faena"
-                      ? `Proveedor entrega directamente en ${orderWorksiteName}. Actualiza stock y trazabilidad.`
-                      : `Oficina distribuye a ${orderWorksiteName}. Actualiza stock y trazabilidad.`
+                      ? `Proveedor entrega directamente en ${orderWorksiteName}. ${faenaStockEffect(items)}`
+                      : `Oficina distribuye a ${orderWorksiteName}. ${faenaStockEffect(items)}`
                     : deliveryMode === "directo_faena"
                       ? "No quedan ítems pendientes de recepción en faena."
                       : "Disponible una vez registrada la llegada a oficina."}
@@ -286,6 +286,7 @@ export function ReceiptForm({
                     {item.quantityOfficeReceived > 0 && ` · En oficina: ${formatQty(item.quantityOfficeReceived, item.unitOfMeasure)}`}
                     {item.quantityReceived > 0 && ` · Ya recibido: ${formatQty(item.quantityReceived, item.unitOfMeasure)}`}
                     {!pending && " · Completamente recibido"}
+                    {item.isDirectConsumption && " · Consumo directo, no pasa por stock"}
                   </div>
                   {overBooked && (
                     <p className="text-xs text-[var(--color-danger)] mt-0.5">
@@ -352,6 +353,7 @@ export function ReceiptForm({
                     )}
                     <p className="mt-0.5 text-xs text-[var(--color-text-subtle)]">
                       Pedido: {formatQty(item.quantity, item.unitOfMeasure)} · pendiente: {formatQty(remaining, item.unitOfMeasure)}
+                      {item.isDirectConsumption && " · Consumo directo, no pasa por stock"}
                     </p>
                   </div>
                   {item.productSku && <span className="rounded bg-[var(--color-surface-2)] px-1.5 py-0.5 font-mono text-2xs text-[var(--color-text-subtle)]">{item.productSku}</span>}
@@ -374,7 +376,7 @@ export function ReceiptForm({
           })}
         </div>
         <p className="text-xs text-[var(--color-text-subtle)]">
-          Registra en <strong>Rechazado</strong> o <strong>Dañado</strong> lo que llegó pero no ingresa a stock. Una línea 100% rechazada va con Recibido en 0.
+          Registra en <strong>Rechazado</strong> o <strong>Dañado</strong> {rejectionHint(items)}. Una línea 100% rechazada va con Recibido en 0.
         </p>
         </div>
 

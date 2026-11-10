@@ -4,6 +4,7 @@ import { fuelVehicles, purchaseRequests, purchaseRequestItems } from "@/db/schem
 import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { submitItemTx } from "@/lib/services/item-state"
 import { getOperationalSettings } from "@/lib/services/system-settings"
+import { inactiveRequestProductsMessage } from "../inactive-request-products"
 import {
   estimatedRequestTotal,
   evaluateQuotationRequirement,
@@ -52,12 +53,20 @@ export async function submitRequest(
         estimatedUnitPrice: purchaseRequestItems.estimatedUnitPrice,
         vehicleId: purchaseRequestItems.vehicleId,
         workOrderId: purchaseRequestItems.workOrderId,
+        productId: purchaseRequestItems.productId,
       })
       .from(purchaseRequestItems)
       .where(and(
         eq(purchaseRequestItems.requestId, input.requestId),
         eq(purchaseRequestItems.status, "draft"),
       ))
+
+    // Un producto dado de baja no entra a aprobación. Se mira aquí, bajo el
+    // bloqueo de la solicitud y sobre los ítems que se van a enviar: mirarlo
+    // antes en la acción dejaba una ventana para editar el borrador entre la
+    // revisión y el envío.
+    const inactiveMessage = await inactiveRequestProductsMessage(items.map((item) => item.productId), tx)
+    if (inactiveMessage) throw new Error(inactiveMessage)
 
     /*
      * Regla única de cotizaciones (`quotation-requirement.ts`). Sin ninguna

@@ -17,6 +17,7 @@ import {
 import { nanoid } from "@/lib/id"
 import { applyLogoRule } from "@/lib/products/epp-logo"
 import { toCode } from "@/lib/utils"
+import { SPARE_PARTS_CATEGORY_RESERVED_MESSAGE, SPARE_PARTS_CATEGORY_SLUG } from "@/lib/products/spare-parts-category"
 import { lockCatalogProductsForUpdateTx } from "@/lib/services/catalog-product-locks"
 import { setProductSupplierPriceTx } from "@/lib/services/product-supplier-prices"
 import { getSizeFamilyOptions } from "@/lib/services/sizes"
@@ -243,7 +244,7 @@ function buildManualCorrections(previous: NormalizedEppRow, next: NormalizedEppR
   return corrections
 }
 
-async function resolveCategory(tx: Tx, categoryName: string) { const slug = toCode(categoryName).toLowerCase(); const existing = await tx.query.productCategories.findFirst({ where: eq(productCategories.slug, slug) }); if (existing) return existing; const id = slug === "epp" ? DEFAULT_CATEGORY.id : `cat-${slug}`; await tx.insert(productCategories).values({ id, name: categoryName, slug, isEpp: true, requiresPrevencion: true, sortOrder: 10 }).onConflictDoNothing(); return { id, name: categoryName } }
+async function resolveCategory(tx: Tx, categoryName: string) { const slug = toCode(categoryName).toLowerCase(); if (slug === SPARE_PARTS_CATEGORY_SLUG) throw new Error(SPARE_PARTS_CATEGORY_RESERVED_MESSAGE); const existing = await tx.query.productCategories.findFirst({ where: eq(productCategories.slug, slug) }); if (existing) return existing; const id = slug === "epp" ? DEFAULT_CATEGORY.id : `cat-${slug}`; await tx.insert(productCategories).values({ id, name: categoryName, slug, isEpp: true, requiresPrevencion: true, sortOrder: 10 }).onConflictDoNothing(); return { id, name: categoryName } }
 
 async function resolveFamily(tx: Tx, categoryId: string, normalized: NormalizedEppRow) {
   const existing = await tx.query.eppProductFamilies.findFirst({ where: eq(eppProductFamilies.identityKey, normalized.familyIdentityKey) })

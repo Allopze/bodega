@@ -18,6 +18,7 @@ import { OcFormItems } from "./oc-form-items"
 import { OcFormSummary } from "./oc-form-summary"
 import { PAYMENT_TERMS_OPTIONS } from "./oc-form.types"
 import type { SupplierOption, WorksiteOption, PendingItemOption } from "./oc-form.types"
+import type { UnitLabels } from "@/lib/products/unit-label"
 
 export type { SupplierOption, WorksiteOption, PendingItemOption }
 
@@ -27,12 +28,18 @@ export function OcForm({
   pendingItems,
   initialWorksiteId,
   initialItemIds,
+  canCreateSparePart = false,
+  unitLabels,
 }: {
   suppliers:    SupplierOption[]
   worksites:    WorksiteOption[]
   pendingItems: PendingItemOption[]
   initialWorksiteId?: string
   initialItemIds?: string[]
+  /** `repuestos:catalog`: «Catalogar» puede crear el repuesto, no sólo vincular uno existente. */
+  canCreateSparePart?: boolean
+  /** Código → rótulo del catálogo de unidades («bidon» → «Bidón»). */
+  unitLabels?: UnitLabels
 }) {
   const f = useOcForm({ suppliers, worksites, pendingItems, initialWorksiteId, initialItemIds })
 
@@ -139,6 +146,10 @@ export function OcForm({
           setItemQuantity={f.setItemQuantity}
           resolveItemSupplierId={f.resolveItemSupplierId}
           setItemSupplier={f.setItemSupplier}
+          onLinkPart={f.linkSparePart}
+          onUnlinkPart={f.unlinkSparePart}
+          canCreateSparePart={canCreateSparePart}
+          unitLabels={unitLabels}
         />
 
         {/* Error */}

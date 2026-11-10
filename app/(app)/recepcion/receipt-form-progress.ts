@@ -78,3 +78,23 @@ export function describeStageProgress(
 
   return { office, faena, officeComplete, faenaComplete }
 }
+
+/**
+ * Qué hace la recepción en faena con el stock. Un repuesto de catálogo es de
+ * consumo directo (decisión 2026-11-09): va del proveedor a la máquina y no
+ * entra a stock, así que «Actualiza stock» no se le puede decir (recorrido
+ * 2026-11-09, UX-2).
+ */
+export function faenaStockEffect(items: readonly Pick<ReceiptOcItem, "isDirectConsumption">[]): string {
+  const direct = items.filter((item) => item.isDirectConsumption).length
+  if (direct === 0) return "Actualiza stock y trazabilidad."
+  if (direct === items.length) return "Consumo directo: los repuestos se entregan sin pasar por stock."
+  return "Actualiza stock y trazabilidad; los repuestos son de consumo directo y no pasan por stock."
+}
+
+/** Ayuda bajo la tabla: qué va en Rechazado/Dañado, sin hablar de stock cuando nada entra a stock. */
+export function rejectionHint(items: readonly Pick<ReceiptOcItem, "isDirectConsumption">[]): string {
+  return items.length > 0 && items.every((item) => item.isDirectConsumption)
+    ? "lo que llegó pero no se acepta"
+    : "lo que llegó pero no ingresa a stock"
+}

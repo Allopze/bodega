@@ -22,6 +22,7 @@ import { pendingPurchaseWhere } from "@/lib/adquisiciones/pending-purchase"
 import { vehicleLabel } from "@/lib/services/fleet"
 import { getProductAttributesByIds, getRequestItemAttributesByIds } from "@/lib/services/product-sizes"
 import { formatVariantProductName } from "@/lib/products/variant-grouping"
+import { withCatalogPartNumber } from "@/lib/products/spare-part-display"
 
 /** Cómo se clasifica cada ítem dentro de una solicitud que espera OC. */
 export type PendingPurchaseItemStage =
@@ -194,6 +195,8 @@ export async function listPendingPurchaseRequests(
         productId:       purchaseRequestItems.productId,
         productName:     products.name,
         productSku:      products.sku,
+        isSparePart:     products.isSparePart,
+        partNumber:      products.partNumber,
         productNameFree: purchaseRequestItems.productNameFree,
         quantity:        purchaseRequestItems.quantity,
         unitOfMeasure:   purchaseRequestItems.unitOfMeasure,
@@ -238,6 +241,11 @@ export async function listPendingPurchaseRequests(
     getProductAttributesByIds(itemRows.flatMap((row) => row.productId ? [row.productId] : [])),
     getRequestItemAttributesByIds(itemRows.map((row) => row.id)),
   ])
+  // Un repuesto de catálogo dice su N° de parte (uno solo, con el rótulo del
+  // catálogo), no el libre que quedó si Compras lo catalogó al armar la OC.
+  const recordedForDisplay = (row: { id: string; isSparePart: boolean | null; partNumber: string | null }) =>
+    withCatalogPartNumber(row, (recordedById.get(row.id) ?? []).map((attribute) => ({ attributeName: attribute.name, value: attribute.value })))
+      .map((attribute) => ({ name: attribute.attributeName, value: attribute.value }))
   const itemsByRequest = new Map<string, PendingPurchaseItem[]>()
   const suppliersByRequest = new Map<string, Set<string>>()
   // El LEFT JOIN a la OC puede devolver más de una fila por ítem si un
@@ -264,7 +272,7 @@ export async function listPendingPurchaseRequests(
       id:            row.id,
       // Comprar sin la talla obliga a abrir la solicitud para saber cuál pedir.
       productName:   row.productName
-        ? formatVariantProductName(row.productName, row.productId ? attributesById.get(row.productId) : undefined, recordedById.get(row.id))
+        ? formatVariantProductName(row.productName, row.productId ? attributesById.get(row.productId) : undefined, recordedForDisplay(row))
         : row.productNameFree ?? "(sin nombre)",
       productSku:    row.productSku,
       quantity:      row.quantity,

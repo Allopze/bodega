@@ -8,6 +8,7 @@ import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from "@/components/ui/select"
 import { OT_STATUS_LABELS, type OtStatus } from "@/lib/mantencion/work-order-states"
+import { formatCLP } from "@/lib/utils"
 import type { ItemRow, VehicleOption } from "./request-form.types"
 
 interface Props {
@@ -18,6 +19,8 @@ interface Props {
   vehicles: VehicleOption[]
   /** Faena elegida en el formulario: sólo se ofrecen los equipos de esa faena. */
   worksiteId: string
+  /** Último precio conocido del repuesto de catálogo elegido, si lo hay. */
+  catalogPrice?: number | null
   onUpdate: (patch: Partial<ItemRow>) => void
   onSelectVehicle: (vehicleId: string) => void
   onSelectWorkOrder: (workOrderId: string) => void
@@ -26,9 +29,12 @@ interface Props {
 const NO_WORK_ORDER = "__none__"
 
 export function ItemEditorEquipment({
-  item, requestType, readOnly, vehicles, worksiteId, onUpdate, onSelectVehicle, onSelectWorkOrder,
+  item, requestType, readOnly, vehicles, worksiteId, catalogPrice = null, onUpdate, onSelectVehicle, onSelectWorkOrder,
 }: Props) {
   const isRepuestos = requestType === "repuestos"
+  // Con un repuesto de catálogo el N° de parte lo dice el producto: pedirlo otra
+  // vez dejaría dos fuentes para el mismo dato.
+  const hasCatalogPart = isRepuestos && !!item.productId
   const vehicle = item.vehicleId ? vehicles.find((option) => option.id === item.vehicleId) : undefined
 
   const vehicleOptions = React.useMemo(() => {
@@ -104,8 +110,8 @@ export function ItemEditorEquipment({
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        {isRepuestos && (
-          <Field label="N° de Parte" htmlFor={`part-${item._key}`}>
+        {isRepuestos && !hasCatalogPart && (
+          <Field label="N° de parte" htmlFor={`part-${item._key}`}>
             <Input
               id={`part-${item._key}`}
               className="h-8 text-sm"
@@ -182,7 +188,9 @@ export function ItemEditorEquipment({
         <Field
           label="Precio unitario estimado (CLP)"
           htmlFor={`price-${item._key}`}
-          helper="Opcional. Bajo el umbral permite enviar sin cotización."
+          helper={hasCatalogPart && catalogPrice != null && catalogPrice > 0
+            ? `Último precio conocido en el catálogo: ${formatCLP(catalogPrice)}. Puedes cambiarlo. Bajo el umbral permite enviar sin cotización.`
+            : "Opcional. Bajo el umbral permite enviar sin cotización."}
         >
           <Input
             id={`price-${item._key}`}

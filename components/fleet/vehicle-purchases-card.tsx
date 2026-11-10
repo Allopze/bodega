@@ -4,6 +4,7 @@ import { StateBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { EmptyState } from "@/components/ui/empty-state"
+import { SparePartReference } from "@/components/mantencion/spare-part-reference"
 import { REQUEST_TYPE_LABELS } from "@/lib/request-types"
 import type { VehiclePurchaseRecord } from "@/lib/services/vehicle-purchase-history"
 import { formatCLP, formatDate, formatQty } from "@/lib/utils"
@@ -23,12 +24,14 @@ function Cost({ record }: { record: VehiclePurchaseRecord }) {
   return <span className="font-mono text-sm font-medium tabular-nums text-[var(--color-text)]">{formatCLP(record.subtotal)}</span>
 }
 
-function PurchaseRow({ record, canOpenRequests, canOpenOrders }: { record: VehiclePurchaseRecord; canOpenRequests: boolean; canOpenOrders: boolean }) {
+function PurchaseRow({ record, canOpenRequests, canOpenOrders, canOpenSpareParts }: { record: VehiclePurchaseRecord; canOpenRequests: boolean; canOpenOrders: boolean; canOpenSpareParts: boolean }) {
   return (
     <li className="py-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-sm font-medium text-[var(--color-text)]">{record.itemName}</p>
+          <p className="text-sm font-medium text-[var(--color-text)]">
+            <SparePartReference name={record.itemName} product={record} canOpen={canOpenSpareParts} />
+          </p>
           <p className="mt-0.5 text-xs text-[var(--color-text-subtle)]">
             {REQUEST_TYPE_LABELS[record.requestType] ?? record.requestType} · {formatQty(record.quantity, record.unitOfMeasure)} · {formatDate(record.requestedAt)}
             {record.requesterName ? ` · ${record.requesterName}` : ""}
@@ -57,6 +60,8 @@ function PurchaseRow({ record, canOpenRequests, canOpenOrders }: { record: Vehic
  *
  * - `canOpenRequests`: puede abrir la solicitud (`repuestos:view_all`).
  * - `canOpenOrders`: puede abrir la OC (`purchasing:view`).
+ * - `canOpenSpareParts`: puede abrir la ficha del repuesto de catálogo (`repuestos:catalog`);
+ *   sin él el nombre es texto, aunque el SKU y el N° de parte se muestran igual.
  * - `newRequestHref`: URL de prellenado de «Nueva solicitud» con el vehículo, o
  *   `null` si no puede crear solicitudes de repuestos.
  */
@@ -64,11 +69,13 @@ export function VehiclePurchasesCard({
   records,
   canOpenRequests,
   canOpenOrders = false,
+  canOpenSpareParts = false,
   newRequestHref,
 }: {
   records: VehiclePurchaseRecord[]
   canOpenRequests: boolean
   canOpenOrders?: boolean
+  canOpenSpareParts?: boolean
   newRequestHref: string | null
 }) {
   const requestButton = newRequestHref
@@ -98,7 +105,7 @@ export function VehiclePurchasesCard({
         ) : (
           <ul className="divide-y divide-[var(--color-border)]">
             {records.map((record) => (
-              <PurchaseRow key={record.requestItemId} record={record} canOpenRequests={canOpenRequests} canOpenOrders={canOpenOrders} />
+              <PurchaseRow key={record.requestItemId} record={record} canOpenRequests={canOpenRequests} canOpenOrders={canOpenOrders} canOpenSpareParts={canOpenSpareParts} />
             ))}
           </ul>
         )}

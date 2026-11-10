@@ -99,6 +99,16 @@ test("solicitar, aprobar y comprar servicios con costo pendiente, y registrar el
   await selectRadixById(page, "ocWorksiteId", "Faena E2E")
   await selectRadixById(page, "supplierId", "Proveedor E2E")
 
+  // Si la faena tiene ítems pendientes en los dos modos de despacho, la OC
+  // trabaja de a uno y deja de pestaña inicial la que dicte el id de las
+  // solicitudes (al azar en esta suite). La solicitud de este test es «Vía
+  // oficina»: se elige a mano en vez de depender del modo que quede por
+  // defecto. El rótulo lleva el conteo («Vía oficina (2)»), de ahí el prefijo.
+  const modoDespacho = page.getByRole("group", { name: "Modo de despacho" })
+  if (await modoDespacho.count()) {
+    await modoDespacho.getByRole("button", { name: /^Vía oficina/ }).click()
+  }
+
   const monogasRow = page
     .locator('div:has(> label > input[type="checkbox"])')
     .filter({ hasText: `SOL ${requestCode}` })

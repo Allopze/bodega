@@ -2,12 +2,13 @@ import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { db } from "@/db"
 import { worksites, products, productAttributes, suppliers, productSuppliers, workers, serviceEquipment, productUnits } from "@/db/schema"
-import { eq, asc, desc } from "drizzle-orm"
-import { requireAuth } from "@/lib/auth/can"
-import { canAccessWorksite } from "@/lib/auth/can"
+import { and, eq, asc, desc } from "drizzle-orm"
+import { can, canAccessWorksite, requireAuth } from "@/lib/auth/can"
 import { buildPrefill } from "./prefill"
 import { getOperationalSettings, getPdfMaxSizeMb } from "@/lib/services/system-settings"
 import { listVehicleOptionsForRequests } from "@/lib/services/request-vehicle-options"
+import { listSpareParts } from "@/lib/services/spare-parts-catalog"
+import { buildSparePartOptions, prefillPriceForPart } from "../spare-part-options"
 import { QUOTATION_TYPES, resolveInitialRequestType, visibleRequestTypeOptions } from "@/lib/request-types"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
@@ -34,6 +35,8 @@ export default async function NuevaSolicitudPage({
     ot?: string | string[]
     /** Equipo de flota para el que se piden repuestos (`?tipo=repuestos&vehiculo=`). */
     vehiculo?: string | string[]
+    /** Repuesto de catálogo preelegido (`?tipo=repuestos&repuesto=`, desde su ficha). */
+    repuesto?: string | string[]
   }>
 }) {
   let session
@@ -52,13 +55,16 @@ export default async function NuevaSolicitudPage({
   // El catálogo de flota sólo sirve a repuestos y servicios; quien no puede crear
   // ninguno de los dos no lo paga.
   const canPickFleetVehicle = requestTypeOptions.some((option) => QUOTATION_TYPES.has(option.value))
+  // El catálogo de repuestos sólo sirve al buscador de «Solicitud de repuestos».
+  const canPickSpareParts = can(session, "repuestos:create")
 
   const [allWorksites, allProducts, allAttrs, productSupplierRows, allSuppliers, allWorkers, allEquipment, maxFileSizeMb, unitRows, vehicleOptions, operationalSettings] = await Promise.all([
     db.select().from(worksites)
       .where(eq(worksites.isActive, true))
       .orderBy(asc(worksites.name)),
+    // Los repuestos del catálogo tienen su propio buscador: EPP y «otro» no los ofrecen.
     db.select().from(products)
-      .where(eq(products.isActive, true))
+      .where(and(eq(products.isActive, true), eq(products.isSparePart, false)))
       .orderBy(asc(products.name)),
     db.select().from(productAttributes)
       .orderBy(asc(productAttributes.sortOrder)),
@@ -185,6 +191,7 @@ export default async function NuevaSolicitudPage({
     emergencyResourceId: firstParam(query.recursoEmergencia),
     workOrderId: fleetPrefillAllowed ? firstParam(query.ot) : "",
     vehicleId: fleetPrefillAllowed ? firstParam(query.vehiculo) : "",
+    sparePartId: fleetPrefillAllowed && canPickSpareParts ? firstParam(query.repuesto) : "",
   })
 
   // La faena del equipo vinculado (OT, equipo o copia con equipo) manda: el
@@ -193,11 +200,36 @@ export default async function NuevaSolicitudPage({
   // abrir un formulario con un equipo que nadie podrá guardar.
   const worksiteIsOffered = (id: string | undefined) => !!id && worksiteOptions.some((w) => w.id === id)
   const prefillWorksiteUnavailable = prefill.initialWorksiteId !== undefined && !worksiteIsOffered(prefill.initialWorksiteId)
-  const prefillItems = prefillWorksiteUnavailable ? undefined : prefill.prefillItems
+  const basePrefillItems = prefillWorksiteUnavailable ? undefined : prefill.prefillItems
   const prefillNotice = prefillWorksiteUnavailable
     ? "La faena del equipo no está entre las que puedes elegir."
     : prefill.prefillNotice
   const initialUrgency = prefillWorksiteUnavailable ? undefined : prefill.initialUrgency
+
+  // El buscador de repuestos pregunta al servidor mientras se escribe; aquí sólo
+  // viajan los repuestos que la copia ya trae (aunque estén desactivados, para
+  // decir cuál era). Sólo los equipos que la persona puede ver:
+  // `purchasedForVehicleIds` no debe delatar el parque de otra faena.
+  const prefillProductIds = [...new Set((basePrefillItems ?? []).flatMap((item) => item.productId ? [item.productId] : []))]
+  const referencedSpareParts = canPickSpareParts && prefillProductIds.length > 0
+    ? await listSpareParts({ ids: prefillProductIds, includeInactive: true })
+    : []
+  const sparePartOptions = buildSparePartOptions({
+    catalog: referencedSpareParts,
+    referenced: [],
+    activeSupplierIds,
+    visibleVehicleIds: new Set(vehicleOptions.map((vehicle) => vehicle.id)),
+  })
+  // Desde la ficha del repuesto: el mismo precio estimado y proveedor que al
+  // elegirlo en el buscador.
+  const prefillItems = prefill.sparePartDefaults && basePrefillItems
+    ? basePrefillItems.map((item) => {
+        const part = item.productId ? sparePartOptions.find((option) => option.id === item.productId) : undefined
+        if (!part) return item
+        const price = prefillPriceForPart(part)
+        return { ...item, estimatedUnitPrice: price === null ? null : Number(price), suggestedSupplierId: part.preferredSupplierId }
+      })
+    : basePrefillItems
 
   // Faena pedida por el enlace (p. ej. "Reponer" desde una fila de Bodega).
   // Validada contra el alcance: un id ajeno en la URL no puede cambiar la faena
@@ -256,6 +288,7 @@ export default async function NuevaSolicitudPage({
         initialWorksiteId={initialWorksiteId}
         initialUrgency={initialUrgency}
         products={productOptions}
+        spareParts={sparePartOptions}
         suppliers={supplierOptions}
         workers={workerOptions}
         equipment={equipmentOptions}

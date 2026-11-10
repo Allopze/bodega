@@ -16,6 +16,8 @@ export interface ReceiptOcItem {
   unitOfMeasure:        string
   notes:                string | null
   isEmergencyService?:   boolean
+  /** Repuesto de catálogo: consumo directo, no entra a stock al recibirse. */
+  isDirectConsumption?: boolean
   emergencyResourceLabel?: string | null
 }
 

@@ -152,6 +152,8 @@ export interface DteCandidateOrderItem {
   productId: string | null
   productName: string
   productCode: string | null
+  /** N° de parte del repuesto de catálogo: los proveedores facturan con su código, no con el SKU. */
+  partNumber?: string | null
   unitOfMeasure: string
   quantity: number
   invoicedQuantity: number
@@ -275,7 +277,7 @@ export function assessDteCandidates<T extends DteCandidateDocumentInput>(
               .flatMap((alias) => itemByProductId.get(alias.productId) ?? [])
           : []
         const bySku = code
-          ? orderItems.filter((item) => normalizeCode(item.productCode) === code)
+          ? orderItems.filter((item) => normalizeCode(item.productCode) === code || normalizeCode(item.partNumber) === code)
           : []
         const byAliasName = name
           ? aliases

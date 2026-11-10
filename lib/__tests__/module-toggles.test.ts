@@ -365,6 +365,23 @@ describe("module-toggles service", () => {
       )).rejects.toThrow(/submódulo inactivo/i)
     })
 
+    it("apagar el catálogo de repuestos cierra sólo el catálogo, no el pedido de repuestos", async () => {
+      // El catálogo es el único ítem de menú del módulo `repuestos`: sin override, todos sus permisos
+      // derivarían a `/mantencion/repuestos` y apagarlo cerraría también las solicitudes de repuestos.
+      expect(resolveModuleRoute("/mantencion/repuestos"))
+        .toEqual({ moduleId: "repuestos", submoduleHref: "/mantencion/repuestos" })
+      expect(resolveModuleRoute("/mantencion/repuestos/rep-1"))
+        .toEqual({ moduleId: "repuestos", submoduleHref: "/mantencion/repuestos" })
+
+      await setSubmoduleToggle("repuestos", "/mantencion/repuestos", false, ACTOR)
+
+      await expect(assertPermissionModuleEnabled("repuestos:catalog")).rejects.toThrow(/submódulo inactivo/i)
+      await expect(assertPermissionModuleEnabled("repuestos:create", "/solicitudes/nueva")).resolves.toBeUndefined()
+      await expect(assertPermissionModuleEnabled("repuestos:approve")).resolves.toBeUndefined()
+      expect(routeIsEnabled("/mantencion/repuestos/rep-1", await getNavigationToggleState())).toBe(false)
+      expect(routeIsEnabled("/mantencion/ot", await getNavigationToggleState())).toBe(true)
+    })
+
     it("apagar Inspecciones cierra lo que consultan sus exports (P2-11)", async () => {
       // Los dos Excel (inspecciones y Anexo 15) llaman a `assertInspectionOperationEnabled`; el
       // de seguimiento no lo hacía y seguía descargando con el submódulo apagado.

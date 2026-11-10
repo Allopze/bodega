@@ -553,4 +553,18 @@ export const pgliteTestFiles = [
   // Refresco en vivo de Monitoreo GPS: una lectura por minuto como mucho, sin
   // adelantarse al cron ni escribir en su bitácora.
   "lib/integrations/onway/onway-live-pglite.test.ts",
+  // Catálogo de repuestos (fase 2): orden por vehículo, N° de parte duplicado,
+  // inactivos excluidos, SKU RPT-NNN y ficha con historial de precio.
+  "lib/__tests__/spare-parts-catalog-pglite.test.ts",
+  // Catalogar al comprar (T7) y precio al emitir (T8): el productId de la línea
+  // llega a la OC y a la solicitud (también al remanente), y la emisión deja el
+  // precio del repuesto en el catálogo con fuente purchase_order.
+  "lib/__tests__/spare-parts-oc-link-pglite.test.ts",
+  // Catalogar al comprar (FF-6): el vínculo de la hoja «Catalogar» se guarda en
+  // el ítem al elegirlo (sobrevive a la recarga), se quita desde la línea y no lo
+  // deshace eliminar o anular una OC; «crear y vincular» es una sola transacción.
+  "lib/__tests__/spare-part-item-link-pglite.test.ts",
+  // Catálogo de repuestos: la categoría «Repuestos» no admite productos comunes
+  // y su slug no se cambia (/admin/productos).
+  "lib/__tests__/admin-categoria-repuestos-pglite.test.ts",
 ]

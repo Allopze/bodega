@@ -134,6 +134,13 @@ describe("system-rbac → manifest parity", () => {
     expect(rolePermissions("rol-admin")).toContain("repuestos:approve")
   })
 
+  it("el catálogo de repuestos lo gestionan administración, secretaría, jefatura y jefe de mantención", () => {
+    const withCatalog = SYSTEM_ROLES
+      .map((role) => role.id)
+      .filter((roleId) => rolePermissions(roleId).includes("repuestos:catalog"))
+    expect(new Set(withCatalog)).toEqual(new Set(["rol-admin", "rol-sec", "rol-jefa", "rol-jefe-mant"]))
+  })
+
   it("grants jefe_mantencion the fleet catalog", () => {
     const perms = rolePermissions("rol-jefe-mant")
     expect(perms).toContain("admin:fleet_catalog")

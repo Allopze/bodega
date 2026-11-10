@@ -1,4 +1,5 @@
 import { mergeVariantAttributes } from "@/lib/products/variant-grouping"
+import { withCatalogPartNumber } from "@/lib/products/spare-part-display"
 /**
  * Aplana una OC en las filas que imprime la tabla de ítems.
  *
@@ -13,6 +14,7 @@ import type { OcPrintData } from "./oc-print-data"
 import {
   formatDecimal,
   formatDiscount,
+  formatItemAssetNote,
   formatPlainCLP,
   formatPrintAmount,
   formatUnit,
@@ -37,18 +39,14 @@ export type OcPdfRow = {
 export function buildOcPdfRows(data: OcPrintData): OcPdfRow[] {
   return data.order.items.map((item, index) => {
     const product = item.productId ? data.productMap[item.productId] : null
-    const equipment = item.requestItem?.equipment
+    const asset     = formatItemAssetNote(item.requestItem)
     const worker    = item.requestItem?.worker
     const attributes = mergeVariantAttributes(product?.attributes ?? [],
-      item.requestItem?.attributes.map((a) => ({ name: a.attributeName, value: a.value })) ?? [])
+      // Un repuesto de catálogo dice su N° de parte una vez; el libre de la línea no se repite.
+      withCatalogPartNumber(product, item.requestItem?.attributes).map((a) => ({ name: a.attributeName, value: a.value })))
 
     const notas: string[] = []
-    if (equipment) {
-      notas.push(
-        `Equipo: ${equipment.code} · ${equipment.name}` +
-        (equipment.serialNumber ? ` · N° serie ${equipment.serialNumber}` : ""),
-      )
-    }
+    if (asset) notas.push(asset)
     if (worker) notas.push(`Colaborador: ${worker.firstName} ${worker.lastName}`)
     for (const attribute of attributes) {
       notas.push(`${attribute.name}: ${attribute.value}`)

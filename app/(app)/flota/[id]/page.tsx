@@ -275,6 +275,8 @@ export default async function FlotaVehiclePage({
           canOpenRequests={can(session, "repuestos:view_all")}
           // Esta tarjeta sólo se dibuja con `purchasing:view`, que es lo que abre la OC.
           canOpenOrders
+          // La ficha del repuesto de catálogo es del catálogo (`repuestos:catalog`), no de las compras.
+          canOpenSpareParts={can(session, "repuestos:catalog")}
           // Un equipo dado de baja no admite solicitudes nuevas (el formulario lo rechazaría).
           newRequestHref={can(session, "repuestos:create") && vehicle.isActive ? `/solicitudes/nueva?tipo=repuestos&vehiculo=${vehicle.id}` : null}
         />

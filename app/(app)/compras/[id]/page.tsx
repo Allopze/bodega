@@ -1,6 +1,7 @@
 import { getProductAttributesByIds } from "@/lib/services/product-sizes"
 import { resolveProductSize } from "@/lib/products/product-size"
-import { formatVariantProductName } from "@/lib/products/variant-grouping"
+import { withCatalogPartNumber } from "@/lib/products/spare-part-display"
+import { formatVariantProductName, mergeVariantAttributes } from "@/lib/products/variant-grouping"
 import type { Metadata } from "next"
 import Link from "next/link"
 import { notFound, redirect } from "next/navigation"
@@ -143,7 +144,7 @@ export default async function OcDetailPage({
     productIds.length > 0
       ? db.query.products.findMany({
           where: (p, { inArray }) => inArray(p.id, productIds),
-          columns: { id: true, sku: true, name: true },
+          columns: { id: true, sku: true, name: true, partNumber: true, isSparePart: true },
         })
       : Promise.resolve([]),
 
@@ -256,9 +257,17 @@ export default async function OcDetailPage({
 
   const attributesById = await getProductAttributesByIds(productIds)
   const productMap = Object.fromEntries(productRows.map((product) => [product.id, { ...product, attributes: attributesById.get(product.id) }]))
+  // Una línea catalogada al armar la OC conserva su N° de parte libre (deshacer
+  // el vínculo lo necesita); se muestra el del repuesto, una sola vez.
+  const ocProductByRequestItem = new Map(order.items.flatMap((item) =>
+    item.requestItemId && item.productId ? [[item.requestItemId, item.productId] as const] : []))
+  const requestItemsForDisplay = requestItemRows.map((row) => {
+    const productId = ocProductByRequestItem.get(row.id)
+    return { ...row, attributes: withCatalogPartNumber(productId ? productMap[productId] : null, row.attributes) }
+  })
   const itemName = (item: { productId: string | null; productNameFree: string | null; requestItemId: string | null }) => {
     const product = item.productId ? productMap[item.productId] : undefined
-    const recorded = requestItemRows.find((row) => row.id === item.requestItemId)?.attributes
+    const recorded = requestItemsForDisplay.find((row) => row.id === item.requestItemId)?.attributes
     return formatVariantProductName(product?.name ?? item.productNameFree ?? "Ítem", product?.attributes,
       recorded?.map((a) => ({ name: a.attributeName, value: a.value })))
   }
@@ -374,6 +383,7 @@ export default async function OcDetailPage({
         productName: item.productId ? productMap[item.productId]?.name ?? null : null,
       }),
       productCode: item.productId ? productMap[item.productId]?.sku ?? null : null,
+      partNumber: item.productId ? productMap[item.productId]?.partNumber ?? null : null,
       unitOfMeasure: item.unitOfMeasure,
       quantity: item.quantity,
       invoicedQuantity: invoicedByItem.get(item.id) ?? 0,
@@ -417,7 +427,7 @@ export default async function OcDetailPage({
     : null
 
   // Build maps
-  const reqItemMap = Object.fromEntries(requestItemRows.map((ri) => [ri.id, ri]))
+  const reqItemMap = Object.fromEntries(requestItemsForDisplay.map((ri) => [ri.id, ri]))
 
   const canManage      = session.user.permissions.includes("purchasing:create_order")
   const canSend        = session.user.permissions.includes("purchasing:send_order")
@@ -489,14 +499,16 @@ export default async function OcDetailPage({
       const requestItem = i.requestItemId ? reqItemMap[i.requestItemId] : null
       return {
         id:               i.id,
-        productName:      itemName(i),
+        // El panel lista los atributos debajo del nombre: con `itemName` (que
+        // ya los agrega al nombre) el N° de parte salía dos veces (UX-1).
+        productName:      (i.productId ? productMap[i.productId]?.name : undefined) ?? i.productNameFree ?? "Ítem",
         quantity:         i.quantity,
         unitOfMeasure:    i.unitOfMeasure,
         quantityReceived: receivedByItem.get(i.id) ?? i.quantityReceived ?? 0,
-        attributes:       requestItem?.attributes.map((attribute) => ({
-          name: attribute.attributeName,
-          value: attribute.value,
-        })) ?? [],
+        attributes:       mergeVariantAttributes(
+          (i.productId ? productMap[i.productId]?.attributes : undefined) ?? [],
+          requestItem?.attributes.map((attribute) => ({ name: attribute.attributeName, value: attribute.value })) ?? [],
+        ),
       }
     }),
     // El panel tiene dos voces (A-10) y quien entra por recepción lee la suya:
@@ -709,6 +721,7 @@ export default async function OcDetailPage({
                     catalogName: (i.productId ? productMap[i.productId]?.name : null) ?? i.productNameFree ?? null,
                     sizeLabel: i.productId ? resolveProductSize(productMap[i.productId]?.attributes ?? [])?.label ?? null : null,
                     productCode: i.productId ? productMap[i.productId]?.sku ?? null : null,
+                    partNumber: i.productId ? productMap[i.productId]?.partNumber ?? null : null,
                     attributes: i.requestItemId
                       ? reqItemMap[i.requestItemId]?.attributes.map((attribute) => ({
                           name: attribute.attributeName,

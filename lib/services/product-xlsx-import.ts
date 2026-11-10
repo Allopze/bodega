@@ -185,7 +185,7 @@ export async function importProductsFromXlsx(buffer: Buffer): Promise<ProductImp
     // That removes a multi-product lock cycle regardless of Excel row order.
     const existingBySku = new Map(
       (await tx
-        .select({ id: products.id, sku: products.sku })
+        .select({ id: products.id, sku: products.sku, isSparePart: products.isSparePart })
         .from(products)
         .where(inArray(products.sku, importSkus))
         .orderBy(asc(products.id))
@@ -203,6 +203,11 @@ export async function importProductsFromXlsx(buffer: Buffer): Promise<ProductImp
       if (supplier?.created) result.suppliersCreated += 1
 
       let existing = existingBySku.get(item.sku)
+      // Esta importación deja el producto como EPP; un repuesto de catálogo no
+      // puede serlo (CHECK de `products`) y se gestiona en su propia pantalla.
+      if (existing?.isSparePart) {
+        throw new Error(`Fila ${item.rowNumber}: el SKU ${item.sku} es un repuesto; se edita en Mantención → Catálogo de repuestos.`)
+      }
       const productId = existing?.id ?? nanoid()
       const notes = [
         item.notes,
@@ -240,7 +245,7 @@ export async function importProductsFromXlsx(buffer: Buffer): Promise<ProductImp
         })
         // Preserve the historical behavior for a repeated SKU within the same
         // workbook: subsequent rows update the row created by the first one.
-        existing = { id: productId, sku: item.sku }
+        existing = { id: productId, sku: item.sku, isSparePart: false }
         existingBySku.set(item.sku, existing)
       }
 

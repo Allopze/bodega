@@ -66,6 +66,69 @@ describe("buildOcPdfRows", () => {
     ])
   })
 
+  describe("«Equipo: …» de un repuesto pedido para un equipo de flota y una OT (FF-7)", () => {
+    const withVehicle = (requestItem: Record<string, unknown>) =>
+      buildOcPdfRows(data([item({ requestItem: { equipment: null, worker: null, attributes: [], ...requestItem } } as unknown as Partial<Item>)]))[0]!.notas
+
+    it("dice el código y la patente del equipo y el folio de la OT, como el detalle de la OC", () => {
+      expect(withVehicle({ vehicle: { code: "KA-54", plate: "UD-1187" }, workOrder: { folio: "OT-PAC-0006" } }))
+        .toEqual(["Equipo: KA-54 · UD-1187 · OT OT-PAC-0006"])
+    })
+
+    it("sin código de equipo usa sólo la patente; sin OT no nombra una OT", () => {
+      expect(withVehicle({ vehicle: { code: null, plate: "UD-1187" }, workOrder: { folio: "OT-PAC-0006" } }))
+        .toEqual(["Equipo: UD-1187 · OT OT-PAC-0006"])
+      expect(withVehicle({ vehicle: { code: "KA-54", plate: "UD-1187" }, workOrder: null }))
+        .toEqual(["Equipo: KA-54 · UD-1187"])
+    })
+
+    it("va primero, antes del colaborador, los atributos y las notas de la línea", () => {
+      const rows = buildOcPdfRows(data([item({
+        notes: "Entregar en portería",
+        requestItem: {
+          equipment: null,
+          vehicle: { code: "KA-54", plate: "UD-1187" }, workOrder: { folio: "OT-PAC-0006" },
+          worker: { firstName: "Ana", lastName: "Pérez" },
+          attributes: [{ id: "a1", attributeName: "Talla", value: "L" }],
+        },
+      } as unknown as Partial<Item>)]))
+      expect(rows[0]?.notas).toEqual([
+        "Equipo: KA-54 · UD-1187 · OT OT-PAC-0006", "Colaborador: Ana Pérez", "Talla: L", "Entregar en portería",
+      ])
+    })
+
+    it("el instrumento de un servicio conserva su serie y no arrastra OT", () => {
+      expect(withVehicle({
+        equipment: { code: "EQ-01", name: "Retroexcavadora", serialNumber: "SN-7" },
+        vehicle: null, workOrder: { folio: "OT-PAC-0006" },
+      })).toEqual(["Equipo: EQ-01 · Retroexcavadora · N° serie SN-7"])
+    })
+
+    it("una línea sin equipo ni vehículo no dibuja la línea", () => {
+      expect(withVehicle({ vehicle: null, workOrder: { folio: "OT-PAC-0006" } })).toEqual([])
+    })
+  })
+
+  it("una línea catalogada como repuesto dice el nombre, el SKU y su N° de parte una sola vez", () => {
+    // Compras la catalogó al armar la OC: conserva el texto y el N° de parte libres.
+    const rows = buildOcPdfRows(data([item({
+      productId: "rpt-1",
+      productNameFree: "filtro aceite cat",
+      requestItem: {
+        equipment: null, worker: null,
+        attributes: [
+          { id: "a1", attributeName: "N° de Parte", value: "1r 0750" },
+          { id: "a2", attributeName: "Equipo", value: "Camión KA-135" },
+        ],
+      },
+    } as unknown as Partial<Item>)], {
+      "rpt-1": { id: "rpt-1", sku: "RPT-001", name: "Filtro de aceite", isSparePart: true, partNumber: "1R-0750" },
+    }))
+
+    expect(rows[0]).toMatchObject({ sku: "RPT-001", nombre: "Filtro de aceite" })
+    expect(rows[0]?.notas).toEqual(["N° de parte: 1R-0750", "Equipo: Camión KA-135"])
+  })
+
   it("omite el número de serie cuando no lo hay", () => {
     const rows = buildOcPdfRows(data([item({
       requestItem: { equipment: { code: "EQ-02", name: "Compactador", serialNumber: null }, worker: null, attributes: [] },

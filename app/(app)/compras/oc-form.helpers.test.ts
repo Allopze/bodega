@@ -12,9 +12,10 @@
 import { describe, expect, it } from "vitest"
 import { formatCLP } from "@/lib/utils"
 import {
-  applySuggestedPrices, awardedUnitPrice, ocSubmitLabel, priceHint, priceSourceLabel, suggestedPrice,
+  applyLinkedPart, applySuggestedPrices, awardedUnitPrice, canCatalogLine, ocSubmitLabel, priceHint,
+  priceSourceLabel, sparePartDraftFromLine, sparePartTag, suggestedPrice,
 } from "./oc-form.helpers"
-import type { PendingItemOption } from "./oc-form.types"
+import type { LinkedSparePart, PendingItemOption } from "./oc-form.types"
 
 function item(overrides: Partial<PendingItemOption> = {}): PendingItemOption {
   return {
@@ -198,5 +199,103 @@ describe("ocSubmitLabel", () => {
 
   it("con varios proveedores dice cuántas OC nacen y cuántos ítems llevan", () => {
     expect(ocSubmitLabel(5, 2)).toBe("Crear 2 OC · 5 ítems")
+  })
+})
+
+/**
+ * Catalogar al comprar (fase 2 del catálogo de repuestos, 2026-11-09): una línea
+ * de repuesto pedida en texto libre se vincula a un repuesto del catálogo al
+ * armar la OC. El precio del catálogo para el proveedor elegido entra como el
+ * último escalón del precio sugerido.
+ */
+describe("canCatalogLine", () => {
+  it("sólo las líneas de repuestos sin producto se pueden catalogar", () => {
+    expect(canCatalogLine(item({ requestType: "repuestos" }))).toBe(true)
+    expect(canCatalogLine(item({ requestType: "repuestos", productId: "p-1" }))).toBe(false)
+    expect(canCatalogLine(item({ requestType: "repuestos", isService: true }))).toBe(false)
+    expect(canCatalogLine(item({ requestType: "epp" }))).toBe(false)
+    expect(canCatalogLine(item({ requestType: "servicios" }))).toBe(false)
+    // Una página que no informa el tipo no ofrece catalogar a ciegas.
+    expect(canCatalogLine(item())).toBe(false)
+  })
+})
+
+describe("applyLinkedPart", () => {
+  const part: LinkedSparePart = {
+    id: "rpt-1", sku: "RPT-001", name: "Filtro de aire", partNumber: "AF-100", partBrand: "Donaldson",
+    unitOfMeasure: "unidad", prices: { "sup-1": 21_000 },
+  }
+
+  it("sin vínculo devuelve la misma línea", () => {
+    const line = item({ requestType: "repuestos" })
+    expect(applyLinkedPart(line, undefined)).toBe(line)
+  })
+
+  it("con vínculo la línea pasa a ser el repuesto: producto, SKU, N° de parte y precios", () => {
+    const linked = applyLinkedPart(item({ requestType: "repuestos", productNameFree: "Filtro aire camión" }), part)
+    expect(linked).toMatchObject({
+      productId: "rpt-1", productSku: "RPT-001", isSparePart: true, partNumber: "AF-100", supplierPrices: { "sup-1": 21_000 },
+    })
+    // La descripción que escribió quien pidió no se pisa.
+    expect(linked.productNameFree).toBe("Filtro aire camión")
+    expect(canCatalogLine(linked)).toBe(false)
+    // Lo vinculó la hoja: la línea puede desvincularse.
+    expect(linked.linkedFromSheet).toBe(true)
+  })
+
+  it("con `null` (desvinculada) la línea vuelve a texto libre, también si el servidor la trajo ya vinculada", () => {
+    // Tras una recarga la línea llega con el producto del catálogo y su nombre.
+    const fromServer = item({
+      requestType: "repuestos", productId: "rpt-1", productSku: "RPT-001", productName: "Filtro de aire primario",
+      productNameFree: "Filtro aire camión", isSparePart: true, partNumber: "AF-100",
+      supplierPrices: { "sup-1": 21_000 }, linkedFromSheet: true,
+    })
+    const unlinked = applyLinkedPart(fromServer, null)
+    expect(unlinked).toMatchObject({
+      productId: null, productSku: null, productName: "Filtro aire camión", isSparePart: false,
+      partNumber: null, supplierPrices: {}, linkedFromSheet: false,
+    })
+    // Y se puede volver a catalogar.
+    expect(canCatalogLine(unlinked)).toBe(true)
+  })
+
+  it("el precio del catálogo para el proveedor elegido pasa a ser el sugerido", () => {
+    const linked = applyLinkedPart(item({ requestType: "repuestos" }), part)
+    expect(suggestedPrice(linked, "sup-1")).toBe(21_000)
+    expect(priceHint(linked, "sup-1")).toContain("Precio catálogo")
+    expect(priceSourceLabel(linked, "sup-1")).toBe("catálogo")
+    // Otro proveedor sin precio: nada que sugerir.
+    expect(suggestedPrice(linked, "sup-2")).toBeUndefined()
+  })
+
+  it("el estimado del solicitante y la adjudicación siguen mandando sobre el catálogo", () => {
+    const withEstimate = applyLinkedPart(item({ requestType: "repuestos", estimatedUnitPrice: 18_000 }), part)
+    expect(suggestedPrice(withEstimate, "sup-1")).toBe(18_000)
+    const awarded = applyLinkedPart(item({
+      requestType: "repuestos", estimatedUnitPrice: 18_000,
+      awardedQuotationId: "q-1", awardedQuotationTotal: 40_000, awardedLineCount: 1,
+    }), part)
+    expect(suggestedPrice(awarded, "sup-1")).toBe(40_000)
+  })
+
+  it("al cambiar de proveedor se vuelve a sugerir con el precio de ese proveedor", () => {
+    const linked = applyLinkedPart(item({ requestType: "repuestos" }), { ...part, prices: { "sup-1": 21_000, "sup-2": 19_500 } })
+    expect(applySuggestedPrices([linked], "sup-2", () => "sup-2")).toEqual({ "item-1": 19_500 })
+  })
+})
+
+describe("sparePartTag y borrador del alta", () => {
+  it("nombra el repuesto por SKU y N° de parte", () => {
+    expect(sparePartTag({ sku: "RPT-004", partNumber: "1R-0750" })).toBe("RPT-004 · N° 1R-0750")
+    expect(sparePartTag({ sku: "RPT-004", partNumber: null })).toBe("RPT-004")
+    expect(sparePartTag({ sku: null, partNumber: "1R-0750" })).toBe("N° 1R-0750")
+    expect(sparePartTag({ sku: null, partNumber: null })).toBe("")
+  })
+
+  it("el alta parte del texto libre y del N° de parte que escribió quien pidió, sin marca", () => {
+    expect(sparePartDraftFromLine(item({ productNameFree: "  Filtro de aceite ", requestedPartNumber: " 1R-0750 " })))
+      .toEqual({ name: "Filtro de aceite", partNumber: "1R-0750" })
+    expect(sparePartDraftFromLine(item({ productNameFree: null, productName: "Manguera" })))
+      .toEqual({ name: "Manguera", partNumber: "" })
   })
 })

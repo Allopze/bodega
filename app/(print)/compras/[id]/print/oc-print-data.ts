@@ -15,7 +15,11 @@ import { clpAmountToWords } from "./oc-number-to-words"
 export interface OcPrintData {
   order: NonNullable<Awaited<ReturnType<typeof loadOrderWithRelations>>>
   company: Awaited<ReturnType<typeof getCompanyProfile>>
-  productMap: Record<string, { id: string; sku: string; name: string; attributes?: VariantAttribute[] }>
+  productMap: Record<string, {
+    id: string; sku: string; name: string; attributes?: VariantAttribute[]
+    /** Repuesto de catálogo: su N° de parte reemplaza al libre de la línea (`withCatalogPartNumber`). */
+    isSparePart?: boolean; partNumber?: string | null
+  }>
   issuedDate: string
   authorizedByName: string | null
   authorizedDate: string | null
@@ -36,8 +40,15 @@ async function loadOrderWithRelations(id: string) {
             // `equipment` y `worker`: el instrumento y la persona son parte del
             // encargo. Desde que el equipo pasó a ser una FK (0149) dejó de
             // viajar como atributo de texto, y la OC impresa quedó sin decirle
-            // al proveedor qué aparato tiene que mantener.
-            with: { request: true, attributes: true, equipment: true, worker: true },
+            // al proveedor qué aparato tiene que mantener. `vehicle` y `workOrder`
+            // hacen lo mismo con un repuesto pedido para un equipo de flota y una
+            // OT de mantención (FF-7): sólo lo que se imprime, la patente, el código
+            // y el folio.
+            with: {
+              request: true, attributes: true, equipment: true, worker: true,
+              vehicle: { columns: { plate: true, code: true } },
+              workOrder: { columns: { folio: true } },
+            },
           },
         },
       },
@@ -73,7 +84,7 @@ export async function loadOcPrintDataOrNull(
   const products = productIds.length > 0
     ? await db.query.products.findMany({
         where: (p, { inArray }) => inArray(p.id, productIds),
-        columns: { id: true, sku: true, name: true },
+        columns: { id: true, sku: true, name: true, isSparePart: true, partNumber: true },
       })
     : []
   const attributesById = await getProductAttributesByIds(productIds)

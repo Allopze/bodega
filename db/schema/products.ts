@@ -85,6 +85,19 @@ export const products = pgTable("products", {
    */
   serviceSubjectKind:  text("service_subject_kind"),
   referencePrice:      numeric("reference_price", { precision: 12, scale: 2, mode: "number" }),
+  /**
+   * Repuesto de catálogo (fase 2 de «Repuestos vinculados», 2026-11-09). Vive en
+   * la categoría sembrada `repuestos` y es de CONSUMO DIRECTO: no entra a stock
+   * ni kárdex; al recibirse en faena pasa a «entregado». El catálogo existe para
+   * dar identidad al repuesto (N° de parte + marca), historial de precio por
+   * proveedor y conciliación de facturas. Un repuesto no es EPP ni servicio
+   * (`products_spare_part_exclusive`).
+   */
+  isSparePart:         boolean("is_spare_part").notNull().default(false),
+  /** N° de parte del fabricante, tal como viene impreso o en la factura. */
+  partNumber:          text("part_number"),
+  /** Marca del fabricante del repuesto (no la del vehículo). Texto libre. */
+  partBrand:           text("part_brand"),
   isActive:            boolean("is_active").notNull().default(true),
   notes:               text("notes"),
   createdAt:           timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
@@ -95,6 +108,12 @@ export const products = pgTable("products", {
   index("products_family_id_idx").on(table.familyId),
   check("products_service_subject_kind_valid", sql`${table.serviceSubjectKind} IS NULL OR ${table.serviceSubjectKind} IN ('service_equipment', 'emergency_resource')`),
   check("products_service_subject_consistent", sql`${table.serviceSubjectKind} IS NULL OR ${table.isService} = true`),
+  check("products_spare_part_exclusive", sql`NOT (${table.isSparePart} AND (${table.isEpp} OR ${table.isService}))`),
+  // Un mismo N° de parte de una misma marca es un solo repuesto. La marca nula
+  // cuenta como su propio valor ('') para que dos altas sin marca choquen.
+  uniqueIndex("products_spare_part_number_brand_unique")
+    .on(sql`lower(${table.partNumber})`, sql`lower(coalesce(${table.partBrand}, ''))`)
+    .where(sql`${table.isSparePart} AND ${table.partNumber} IS NOT NULL`),
 ])
 
 /* ── Product Attributes (talla, color, medida, modelo, etc.) ─────────────── */

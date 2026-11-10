@@ -12,7 +12,7 @@
  * `repuestos:view_all` en la ficha de mantención) antes de pedirlo.
  */
 
-import { and, desc, eq, isNull, ne } from "drizzle-orm"
+import { and, desc, eq, isNull, ne, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
   mantWorkOrders,
@@ -32,6 +32,17 @@ export interface VehiclePurchaseRecord {
   /** `repuestos` o `servicios`. */
   requestType:     string
   itemName:        string
+  /**
+   * Producto de catálogo de la línea: el del ítem de solicitud (también cuando
+   * Compras lo catalogó al armar la OC, que lo escribe ahí y lo deshace si esa
+   * OC se elimina o se anula) o, en su defecto, el de una línea de OC viva.
+   * `null` = texto libre. La ficha del repuesto sólo existe cuando `isSparePart`.
+   */
+  productId:       string | null
+  sku:             string | null
+  /** N° de parte del fabricante (repuestos de catálogo). */
+  partNumber:      string | null
+  isSparePart:     boolean
   quantity:        number
   unitOfMeasure:   string
   itemStatus:      string
@@ -59,6 +70,10 @@ export async function getVehiclePurchaseHistory(
       requestId:      purchaseRequests.id,
       requestCode:    purchaseRequests.code,
       requestType:    purchaseRequests.requestType,
+      productId:      products.id,
+      productSku:     products.sku,
+      productPartNumber:  products.partNumber,
+      productIsSparePart: products.isSparePart,
       productName:    products.name,
       productFree:    purchaseRequestItems.productNameFree,
       quantity:       purchaseRequestItems.quantity,
@@ -76,7 +91,6 @@ export async function getVehiclePurchaseHistory(
     })
     .from(purchaseRequestItems)
     .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
-    .leftJoin(products, eq(purchaseRequestItems.productId, products.id))
     .leftJoin(users, eq(purchaseRequests.requesterId, users.id))
     .leftJoin(mantWorkOrders, eq(purchaseRequestItems.workOrderId, mantWorkOrders.id))
     // Una línea anulada no es una compra; una OC anulada o eliminada (soft
@@ -90,6 +104,15 @@ export async function getVehiclePurchaseHistory(
       ne(purchaseOrders.status, "cancelled"),
       isNull(purchaseOrders.deletedAt),
     ))
+    // El producto va después de la OC porque puede venir de ella. Catalogar al
+    // armar la OC escribe el `product_id` en el ítem de solicitud y lo devuelve a
+    // texto libre si esa OC se elimina o se anula (`spare-part-link-revert.ts`),
+    // así que el del ítem manda; el de la línea de OC sólo suple a un ítem sin
+    // producto, y el de una OC que no cuenta (anulada o eliminada) no cuenta.
+    .leftJoin(products, eq(products.id, sql`coalesce(
+      ${purchaseRequestItems.productId},
+      case when ${purchaseOrders.id} is not null then ${purchaseOrderItems.productId} end
+    )`))
     .where(eq(purchaseRequestItems.vehicleId, vehicleId))
     .orderBy(desc(purchaseRequestItems.createdAt), desc(purchaseRequestItems.id))
     .limit(limit)
@@ -104,6 +127,10 @@ export async function getVehiclePurchaseHistory(
       requestCode:     row.requestCode,
       requestType:     row.requestType,
       itemName:        row.productName ?? row.productFree ?? (row.requestType === "servicios" ? "Servicio" : "Repuesto"),
+      productId:       row.productId,
+      sku:             row.productSku,
+      partNumber:      row.productPartNumber,
+      isSparePart:     row.productIsSparePart === true,
       quantity:        row.quantity,
       unitOfMeasure:   row.unitOfMeasure,
       itemStatus:      row.itemStatus,

@@ -147,7 +147,9 @@ export async function voidReceipt(
       //    y su referencia: el kardex muestra el ingreso y su reverso, no un hueco.
       if (!orderItem.productId || !stockWorksiteId) continue
       const product = await tx.query.products.findFirst({ where: eq(products.id, orderItem.productId) })
-      if (product?.isService) continue
+      // Servicios y repuestos de catálogo (consumo directo) nunca ingresaron
+      // stock: no hay nada que revertir.
+      if (product?.isService || product?.isSparePart) continue
 
       const [onHand] = await tx.select({ quantity: worksiteStock.quantity })
         .from(worksiteStock)

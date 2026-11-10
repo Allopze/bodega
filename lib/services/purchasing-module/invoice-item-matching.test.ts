@@ -111,4 +111,62 @@ describe("matchInvoiceItemsToPurchaseOrderItems", () => {
       expect(result).toMatchObject({ ocItemId: null, matchType: "ambiguous" })
     })
   })
+
+  describe("N° de parte de un repuesto de catálogo", () => {
+    // El proveedor factura con SU código (el N° de parte), no con nuestro SKU `RPT-NNN`.
+    const repuestos = [
+      { id: "filtro", productName: "Filtro de aceite", productCode: "RPT-001", partNumber: "1R-0750", unitOfMeasure: "unidad" },
+      { id: "pastilla", productName: "Pastilla de freno", productCode: "RPT-002", partNumber: "PF-200", unitOfMeasure: "unidad" },
+      { id: "correa", productName: "Correa del alternador", productCode: "RPT-003", partNumber: null, unitOfMeasure: "unidad" },
+    ]
+    const line = (productName: string, productCode: string | null) =>
+      ({ productName, productCode, unitOfMeasure: "UN", quantity: 1, unitPrice: 1 })
+
+    it("enlaza la línea cuyo código del proveedor es el N° de parte, aunque el nombre no se parezca", () => {
+      const [result] = matchInvoiceItemsToPurchaseOrderItems([line("ELEMENTO FILTRANTE LUBRICANTE MOTOR", "1R-0750")], repuestos)
+      expect(result).toMatchObject({ ocItemId: "filtro", matchType: "code", candidateCount: 1 })
+    })
+
+    it("compara el N° de parte normalizado: sin guiones, espacios ni mayúsculas", () => {
+      const results = matchInvoiceItemsToPurchaseOrderItems([
+        line("Elemento filtrante", "1r 0750"),
+        line("Balata delantera", "pf200"),
+      ], repuestos)
+      expect(results.map((result) => [result.ocItemId, result.matchType])).toEqual([["filtro", "code"], ["pastilla", "code"]])
+    })
+
+    it("el SKU sigue enlazando cuando el proveedor factura con nuestro código", () => {
+      const [result] = matchInvoiceItemsToPurchaseOrderItems([line("Algo distinto", "RPT-002")], repuestos)
+      expect(result).toMatchObject({ ocItemId: "pastilla", matchType: "code" })
+    })
+
+    it("sin N° de parte en la OC cae al enlace por nombre, como antes", () => {
+      const [result] = matchInvoiceItemsToPurchaseOrderItems([line("Correa del alternador Gates", "K060885")], repuestos)
+      expect(result).toMatchObject({ ocItemId: "correa", matchType: "name" })
+    })
+
+    it("un código ajeno al SKU y a todos los N° de parte no enlaza por código", () => {
+      const [result] = matchInvoiceItemsToPurchaseOrderItems([line("Neumático 295/80", "ZZ-999")], repuestos)
+      expect(result).toMatchObject({ ocItemId: null, matchType: "none" })
+    })
+
+    it("dos líneas de la OC con el mismo N° de parte quedan ambiguas, no se adivina", () => {
+      const [result] = matchInvoiceItemsToPurchaseOrderItems(
+        [line("Filtro de aceite", "1R-0750")],
+        [
+          { ...repuestos[0]!, id: "a" },
+          { ...repuestos[0]!, id: "b", productCode: "RPT-009", partNumber: "1R 0750" },
+        ],
+      )
+      expect(result).toMatchObject({ ocItemId: null, matchType: "ambiguous", candidateCount: 2 })
+    })
+
+    it("un código que al normalizarse queda vacío no enlaza con líneas sin SKU ni N° de parte", () => {
+      const [result] = matchInvoiceItemsToPurchaseOrderItems(
+        [line("Sello trasero", "---")],
+        [{ id: "libre", productName: "Retén de cigüeñal", productCode: null, partNumber: null, unitOfMeasure: "unidad" }],
+      )
+      expect(result).toMatchObject({ ocItemId: null, matchType: "none" })
+    })
+  })
 })

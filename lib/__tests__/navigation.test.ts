@@ -306,6 +306,9 @@ describe("sidebar navigation", () => {
       ["Mantención", "Equipos"],
       ["Mantención", "Pautas"],
       ["Mantención", "Dispositivos"],
+      // El catálogo es del módulo `repuestos`, que se registra después de Mantención de equipos:
+      // dentro del grupo manda el orden de registro.
+      ["Mantención", "Catálogo de repuestos"],
       ["Combustible", "Panel"],
       ["Combustible", "Cargas"],
       ["Combustible", "Por revisar"],

@@ -4,12 +4,12 @@ import { db }            from "@/db"
 import {
   purchaseRequestItems, purchaseRequests,
   worksites, suppliers, products, productSuppliers, purchaseOrders, purchaseOrderItems,
-  fuelVehicles, mantWorkOrders,
+  fuelVehicles, mantWorkOrders, productUnits,
 } from "@/db/schema"
 import { eq, inArray, asc } from "drizzle-orm"
 import { pendingPurchaseWhere } from "@/lib/adquisiciones/pending-purchase"
 import { requirePermission } from "@/lib/auth/can"
-import { canAccessWorksite }  from "@/lib/auth/can"
+import { can, canAccessWorksite }  from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
@@ -17,8 +17,10 @@ import { OcForm } from "../oc-form"
 import type { PendingItemOption, SupplierOption, WorksiteOption } from "../oc-form"
 import Link from "next/link"
 import { getPurchasableCoverage } from "@/lib/services/purchasing-module/purchasable-coverage"
+import { findSheetLinkedItemIds } from "@/lib/services/purchasing-module/spare-part-item-link"
 import { getProductAttributesByIds, getRequestItemAttributesByIds } from "@/lib/services/product-sizes"
 import { formatVariantProductName } from "@/lib/products/variant-grouping"
+import { REPUESTO_ATTRIBUTE_NAMES } from "@/lib/validation/repuestos"
 import { vehicleLabel } from "@/lib/services/fleet"
 
 /** Tope del selector de ítems; +1 en la consulta para detectar que hay más. */
@@ -64,6 +66,7 @@ export default async function NuevaOcPage({
       // Repuestos vinculados al equipo: lo que el solicitante estimó y para qué
       // equipo y OT es, para que Compras no tenga que abrir la solicitud.
       estimatedUnitPrice:    purchaseRequestItems.estimatedUnitPrice,
+      vehicleId:             purchaseRequestItems.vehicleId,
       vehicleCode:           fuelVehicles.code,
       vehiclePlate:          fuelVehicles.plate,
       workOrderFolio:        mantWorkOrders.folio,
@@ -98,18 +101,21 @@ export default async function NuevaOcPage({
   const requestItemIds = rawItems.map((item) => item.id)
   const productIds = [...new Set(rawItems.flatMap((i) => i.productId ? [i.productId] : []))]
 
-  const [requestRows, productRows, supplierPriceRows, allSuppliers, allWorksites, coverageLines] = await Promise.all([
+  const [requestRows, productRows, supplierPriceRows, allSuppliers, allWorksites, coverageLines, unitRows, sheetLinkedIds] = await Promise.all([
     db
       .select({
         id: purchaseRequests.id, code: purchaseRequests.code, worksiteId: purchaseRequests.worksiteId,
-        deliveryMode: purchaseRequests.deliveryMode,
+        deliveryMode: purchaseRequests.deliveryMode, requestType: purchaseRequests.requestType,
       })
       .from(purchaseRequests)
       .where(inArray(purchaseRequests.id, requestIds)),
 
     productIds.length > 0
       ? db
-          .select({ id: products.id, sku: products.sku, name: products.name, isService: products.isService })
+          .select({
+            id: products.id, sku: products.sku, name: products.name, isService: products.isService,
+            isSparePart: products.isSparePart, partNumber: products.partNumber,
+          })
           .from(products)
           .where(inArray(products.id, productIds))
       : Promise.resolve([]),
@@ -150,7 +156,15 @@ export default async function NuevaOcPage({
           .innerJoin(purchaseOrders, eq(purchaseOrderItems.purchaseOrderId, purchaseOrders.id))
           .where(inArray(purchaseOrderItems.requestItemId, requestItemIds))
       : Promise.resolve([]),
+
+    // Rótulos de unidad para la hoja «Catalogar» («bidon» → «Bidón»).
+    db.select({ code: productUnits.code, label: productUnits.label }).from(productUnits),
+
+    // Los repuestos que Compras vinculó desde «Catalogar» (y que una recarga no
+    // pierde): esas líneas ofrecen «Desvincular»; el que eligió quien pidió, no.
+    findSheetLinkedItemIds(rawItems.filter((item) => item.productId).map((item) => item.id)),
   ])
+  const unitLabels = Object.fromEntries(unitRows.map((unit) => [unit.code, unit.label]))
 
   const reqMap     = Object.fromEntries(requestRows.map((r) => [r.id, r]))
   const productMap = Object.fromEntries(productRows.map((p) => [p.id, p]))
@@ -200,12 +214,29 @@ export default async function NuevaOcPage({
         worksiteId:      req.worksiteId,
         worksiteName:    wsMap[req.worksiteId] ?? req.worksiteId,
         productName:     product
-          ? formatVariantProductName(product.name, attributesById.get(product.id), recordedById.get(item.id))
+          ? formatVariantProductName(
+              product.name,
+              attributesById.get(product.id),
+              // Un repuesto de catálogo ya muestra su N° de parte en la etiqueta
+              // «Repuesto de catálogo»: el N° de parte libre del pedido no se repite.
+              product.isSparePart
+                ? (recordedById.get(item.id) ?? []).filter((attribute) => attribute.name !== REPUESTO_ATTRIBUTE_NAMES.partNumber)
+                : recordedById.get(item.id),
+            )
           : item.productNameFree ?? "(sin nombre)",
         productSku:      product?.sku ?? null,
         productId:       item.productId,
         // Un servicio entra a la OC sin precio si todavía no se conoce.
         isService:       product?.isService ?? false,
+        // Catalogar al comprar: la línea de repuesto sin producto se puede vincular
+        // al catálogo desde el formulario; con producto, ya lo está.
+        requestType:     req.requestType,
+        vehicleId:       item.vehicleId,
+        requestedPartNumber: recordedById.get(item.id)
+          ?.find((attribute) => attribute.name === REPUESTO_ATTRIBUTE_NAMES.partNumber)?.value.trim() || null,
+        isSparePart:     product?.isSparePart ?? false,
+        partNumber:      product?.partNumber ?? null,
+        linkedFromSheet: sheetLinkedIds.has(item.id),
         productNameFree: item.productNameFree,
         quantity:        item.quantity,
         unitOfMeasure:   item.unitOfMeasure,
@@ -277,6 +308,8 @@ export default async function NuevaOcPage({
         pendingItems={pendingItems}
         initialWorksiteId={initialWorksiteId}
         initialItemIds={initialItemIds}
+        canCreateSparePart={can(session, "repuestos:catalog")}
+        unitLabels={unitLabels}
       />
     </PageContainer>
   )

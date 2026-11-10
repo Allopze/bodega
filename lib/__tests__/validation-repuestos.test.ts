@@ -28,6 +28,33 @@ describe("repuestoItemSchema", () => {
 
     expect(result.success).toBe(false)
   })
+
+  it("exige describir el repuesto cuando no viene del catálogo", () => {
+    for (const item of [
+      { quantity: 1 },
+      { quantity: 1, description: "   " },
+      { quantity: 1, description: "", productId: null },
+      { quantity: 1, description: "", productId: "   " },
+    ]) {
+      const result = repuestoItemSchema.safeParse(item)
+      expect(result.success).toBe(false)
+      expect(result.error?.issues[0]).toMatchObject({ message: "Describe el repuesto requerido", path: ["description"] })
+    }
+  })
+
+  it("con un repuesto de catálogo no pide la descripción", () => {
+    const result = repuestoItemSchema.parse({ quantity: 2, productId: "prod-rpt-1" })
+
+    expect(result.productId).toBe("prod-rpt-1")
+    expect(result.description).toBe("")
+  })
+
+  it("sigue limitando la descripción libre", () => {
+    const result = repuestoItemSchema.safeParse({ ...validRepuestoItem, description: "x".repeat(201) })
+
+    expect(result.success).toBe(false)
+    expect(result.error?.issues[0]?.message).toBe("Descripción demasiado larga")
+  })
 })
 
 describe("repuestoRequestSchema", () => {

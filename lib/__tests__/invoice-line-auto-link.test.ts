@@ -37,6 +37,7 @@ async function insertFixture(prefix: string, lines: Line[]) {
     { id: `${prefix}-m`, purchaseOrderId: prefix, productId: "pantalon-m", quantity: 26, unitOfMeasure: "unidad", unitPrice: 1, subtotal: 26 },
     { id: `${prefix}-l`, purchaseOrderId: prefix, productId: "pantalon-l", quantity: 18, unitOfMeasure: "unidad", unitPrice: 1, subtotal: 18 },
     { id: `${prefix}-casco`, purchaseOrderId: prefix, productId: "casco", quantity: 1, unitOfMeasure: "unidad", unitPrice: 1, subtotal: 1 },
+    { id: `${prefix}-filtro`, purchaseOrderId: prefix, productId: "filtro-aceite", quantity: 2, unitOfMeasure: "unidad", unitPrice: 1, subtotal: 2 },
   ])
   await inMemoryDb.insert(schema.dteDocuments).values({
     id: `${prefix}-dte`, tipoDte: "33", folio: Math.floor(Math.random() * 1e6), rutEmisor: "76000000-0",
@@ -75,6 +76,8 @@ describe("reparto automático de líneas DTE al recalcular la conciliación", ()
       { id: "pantalon-m", sku: "EPP-204", name: "Pantalón Slack Cargo gabardina gris/naranjo", categoryId: "cat-auto-link", unitOfMeasure: "unidad", createdAt: now, updatedAt: now },
       { id: "pantalon-l", sku: "EPP-101", name: "Pantalón Slack Cargo gabardina gris/naranjo", categoryId: "cat-auto-link", unitOfMeasure: "unidad", createdAt: now, updatedAt: now },
       { id: "casco", sku: "EPP-001", name: "Casco de seguridad", categoryId: "cat-auto-link", unitOfMeasure: "unidad", createdAt: now, updatedAt: now },
+      // Repuesto de catálogo: el proveedor lo factura con su N° de parte, no con el SKU.
+      { id: "filtro-aceite", sku: "RPT-001", name: "Filtro de aceite", categoryId: "cat-auto-link", unitOfMeasure: "unidad", isSparePart: true, partNumber: "1R-0750", createdAt: now, updatedAt: now },
     ])
     await inMemoryDb.insert(schema.productAttributes).values([
       { id: "attr-m", productId: "pantalon-m", name: "Talla", type: "select", options: JSON.stringify(["T/M"]) },
@@ -116,6 +119,16 @@ describe("reparto automático de líneas DTE al recalcular la conciliación", ()
 
     expect(await allocationsOf("alias-1")).toEqual([
       expect.objectContaining({ purchaseOrderItemId: "alias-casco", source: "dte_suggestion" }),
+    ])
+  })
+
+  it("reparte por el N° de parte del repuesto cuando el proveedor factura con su propio código", async () => {
+    await insertFixture("parte", [{ id: "parte-1", productName: "ELEMENTO FILTRANTE LUBRICANTE MOTOR", productCode: "1R 0750", quantity: 2 }])
+
+    await backfillPurchaseOrderInvoiceReconciliations()
+
+    expect(await allocationsOf("parte-1")).toEqual([
+      expect.objectContaining({ purchaseOrderItemId: "parte-filtro", quantity: 2, source: "dte_suggestion" }),
     ])
   })
 

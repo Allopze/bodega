@@ -23,7 +23,9 @@ import {
   formString, normalizeSelectOptions,
   generateUniqueProductSku, generateUniqueSkus,
   resolveManualEppFamily, ensureEppFamilyTx, applyEppFamilyFichaTx, REVALIDATE,
+  isSparePartsCategoryId,
 } from "./helpers"
+import { isSparePartsCategory, SPARE_PARTS_CATEGORY_RESERVED_MESSAGE } from "@/lib/products/spare-parts-category"
 import { resolveVariantAttributes, variantGroupKey } from "@/lib/products/variant-grouping"
 import { applyLogoRule } from "@/lib/products/epp-logo"
 import { productVariantBatchSchema, type ProductVariantBatchInput } from "./product-variant-batch.schema"
@@ -72,6 +74,12 @@ export async function createProduct(_prev: ActionState, formData: FormData): Pro
   })
   if (!parsed.success) return { ok: false, fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]> }
   const d = parsed.data
+
+  // Catálogo de repuestos: «Repuestos» es sólo de los repuestos (se crean en
+  // Mantención). El formulario ya no la ofrece; esto cierra el envío directo.
+  if (await isSparePartsCategoryId(db, d.categoryId)) {
+    return { ok: false, fieldErrors: { categoryId: [SPARE_PARTS_CATEGORY_RESERVED_MESSAGE] } }
+  }
 
   /*
    * CAT-003: la unidad tiene que existir en el catálogo administrable y estar
@@ -195,6 +203,11 @@ export async function updateProduct(_prev: ActionState, formData: FormData): Pro
   if (!current) return { ok: false, message: "Producto no encontrado" }
   const sku = current.sku
 
+  // Catálogo de repuestos: un producto común no se mueve a «Repuestos».
+  if (await isSparePartsCategoryId(db, d.categoryId)) {
+    return { ok: false, fieldErrors: { categoryId: [SPARE_PARTS_CATEGORY_RESERVED_MESSAGE] } }
+  }
+
   // CAT-003: misma regla que al crear. Editar un producto no puede ser la
   // puerta trasera por la que entra una unidad fuera del catálogo.
   let unitOfMeasure: string
@@ -214,6 +227,7 @@ export async function updateProduct(_prev: ActionState, formData: FormData): Pro
     if (!lockedProductIds.has(productId)) throw new Error("Producto no encontrado")
     const lockedProduct = await tx.query.products.findFirst({ where: eq(products.id, productId) })
     if (!lockedProduct) throw new Error("Producto no encontrado")
+    if (lockedProduct.isSparePart) throw new Error("Los repuestos se editan en Mantención → Catálogo de repuestos")
     const oldAttributes = await tx.select().from(productAttributes).where(eq(productAttributes.productId, productId))
     // Con la regla del logo aplicada a ambos lados: convertir un `Modelo: Con
     // logo` en `Logo` (o agregar el Logo que faltaba) normaliza la prenda y no
@@ -746,6 +760,7 @@ export async function createProductVariantBatch(input: ProductVariantBatchInput)
       // 1. Create or resolve EPP family
       const category = await tx.query.productCategories.findFirst({ where: eq(productCategories.id, d.categoryId) })
       if (!category) throw new Error("Categoría no encontrada")
+      if (isSparePartsCategory(category)) throw new Error(SPARE_PARTS_CATEGORY_RESERVED_MESSAGE)
 
       // La familia se crea para TODO lote de variantes, no sólo EPP: es lo que
       // agrupa las variantes en el picker de solicitudes. Sin ella

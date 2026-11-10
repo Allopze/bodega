@@ -1,0 +1,252 @@
+"use client"
+
+import * as React from "react"
+import Link from "next/link"
+import { Package, Plus } from "@phosphor-icons/react"
+import { exportSparePartsAction } from "@/app/(app)/mantencion/repuestos/actions"
+import { Button } from "@/components/ui/button"
+import { DataTable, type ColumnDef } from "@/components/ui/data-table"
+import { EmptyState } from "@/components/ui/empty-state"
+import { ExportButton } from "@/components/ui/export-button"
+import { useSafeShellHeader } from "@/components/layout/header-context"
+import { PageHeader } from "@/components/ui/page-header"
+import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui/responsive-data-list"
+import { StageTabs } from "@/components/ui/stage-tabs"
+import { TableCell, TableCellNum, TableRow } from "@/components/ui/table"
+import { plural } from "@/lib/mantencion/format"
+import { formatCLP, formatDate } from "@/lib/utils"
+import { SparePartFormSheet, type SparePartUnitOption } from "./spare-part-form-sheet"
+
+/** Lo que la lista necesita de cada repuesto (un subconjunto de `SparePartListItem`). */
+export interface SparePartRow {
+  id: string
+  sku: string
+  name: string
+  partNumber: string | null
+  partBrand: string | null
+  unitOfMeasure: string
+  preferredSupplierName: string | null
+  /** Proveedor del precio más reciente: se muestra cuando no hay preferido. */
+  lastSupplierName: string | null
+  lastPrice: number | null
+  /** Precio orientativo de la ficha: se muestra, rotulado, cuando no hay precio de compra. */
+  referencePrice: number | null
+  lastPurchasedAt: string | null
+  vehicleCount: number
+}
+
+export type SparePartTab = "activos" | "inactivos"
+
+type TableData = SparePartRow & { searchText: string } & Record<string, unknown>
+
+const stripAccents = (text: string) => text.normalize("NFD").replace(/[̀-ͯ]/g, "")
+
+/**
+ * Texto que la búsqueda de la barra superior recorre (`DataTable` busca por contiene, sin tildes ni
+ * guiones): nombre, SKU, N° de parte —también compacto, para que «1r0750» encuentre «1R-0750»—, marca y proveedor.
+ */
+export function buildSearchText(row: SparePartRow): string {
+  const parts = [row.name, row.sku, row.partNumber, row.partBrand, row.preferredSupplierName ?? row.lastSupplierName]
+    .filter((value): value is string => Boolean(value))
+  const compactPartNumber = row.partNumber ? row.partNumber.replace(/[^\p{L}\p{N}]/gu, "") : ""
+  const text = [...parts, compactPartNumber].join(" ").toLowerCase()
+  return `${text} ${stripAccents(text)}`
+}
+
+/**
+ * Si la fila calza con lo escrito en la barra superior: cada palabra tiene que
+ * estar en `searchText`, en cualquier orden («aceite filtro» encuentra «Filtro
+ * de aceite»). `DataTable` busca la frase entera por contiene y es compartido,
+ * así que esta pantalla filtra antes y le apaga su filtro interno.
+ */
+export function matchesSearch(searchText: string, query: string): boolean {
+  const tokens = stripAccents(query.toLowerCase()).split(/\s+/).filter(Boolean)
+  return tokens.every((token) => searchText.includes(token))
+}
+
+/** Proveedor de la fila: el preferido, o el del último precio conocido. */
+export function supplierCell(row: Pick<SparePartRow, "preferredSupplierName" | "lastSupplierName">): { name: string; isLast: boolean } | null {
+  if (row.preferredSupplierName) return { name: row.preferredSupplierName, isLast: false }
+  if (row.lastSupplierName) return { name: row.lastSupplierName, isLast: true }
+  return null
+}
+
+/** «N° 1R-0750 · Caterpillar · RPT-001»: la segunda línea de la celda, y lo que distingue dos filtros parecidos. */
+export function identityLine(row: Pick<SparePartRow, "sku" | "partNumber" | "partBrand">): string {
+  return [row.partNumber ? `N° ${row.partNumber}` : null, row.partBrand, row.sku].filter(Boolean).join(" · ")
+}
+
+const COLUMNS: ColumnDef[] = [
+  { key: "name", label: "Repuesto", sortable: true },
+  { key: "preferredSupplierName", label: "Proveedor", sortable: true, sortValue: (row: SparePartRow) => supplierCell(row)?.name ?? "" },
+  { key: "lastPrice", label: "Último precio", sortable: true, numeric: true, sortValue: (row: SparePartRow) => row.lastPrice ?? row.referencePrice ?? -1 },
+  { key: "lastPurchasedAt", label: "Última compra", sortable: true, sortValue: (row: SparePartRow) => row.lastPurchasedAt ?? "" },
+  { key: "vehicleCount", label: "Comprado para", sortable: true, numeric: true },
+]
+
+const LINK_CLASS = "font-semibold text-[var(--color-primary-ink)] underline-offset-2 hover:underline focus-visible:underline"
+const MUTED = "text-[var(--color-text-subtle)]"
+
+function emptyCopy(tab: SparePartTab, hasInactive: boolean) {
+  if (tab === "inactivos") {
+    return {
+      title: "No hay repuestos inactivos",
+      description: "Un repuesto que ya no se usa se desactiva desde su ficha: deja de ofrecerse al pedir, pero conserva su historial.",
+      cta: false,
+    }
+  }
+  if (hasInactive) {
+    return {
+      title: "No hay repuestos activos",
+      description: "Los desactivados están en la pestaña Inactivos, donde se pueden reactivar. También puedes crear uno nuevo.",
+      cta: true,
+    }
+  }
+  return {
+    title: "Todavía no hay repuestos en el catálogo",
+    description: "Se agregan al armar una OC de repuestos o desde aquí.",
+    cta: true,
+  }
+}
+
+function SupplierValue({ row }: { row: SparePartRow }) {
+  const supplier = supplierCell(row)
+  if (!supplier) return <span className={MUTED}>Sin proveedor</span>
+  return (
+    <>
+      {supplier.name}
+      {supplier.isLast && <span className={`block text-xs ${MUTED}`}>Último proveedor</span>}
+    </>
+  )
+}
+
+/** El precio de compra; si nunca se compró, el de referencia de la ficha, dicho como tal. */
+function PriceValue({ row }: { row: SparePartRow }) {
+  if (row.lastPrice !== null) return <span className="font-mono">{formatCLP(row.lastPrice)}</span>
+  if (row.referencePrice !== null) {
+    return (
+      <>
+        <span className="font-mono">{formatCLP(row.referencePrice)}</span>
+        <span className={`block font-sans text-xs ${MUTED}`}>Referencia</span>
+      </>
+    )
+  }
+  return <span className={MUTED}>—</span>
+}
+
+interface SparePartsCatalogViewProps {
+  /** Repuestos de la pestaña elegida. */
+  rows: SparePartRow[]
+  counts: { active: number; inactive: number }
+  tab: SparePartTab
+  /** Unidades activas, para el formulario. */
+  units: SparePartUnitOption[]
+}
+
+/**
+ * La pantalla del catálogo: encabezado con «Nuevo repuesto» y «Exportar Excel», pestañas
+ * Activos/Inactivos con su conteo y la tabla. El Sheet de alta es uno solo, y lo abren tanto el
+ * botón del encabezado como el del estado vacío: por eso el estado vive aquí y no en el botón.
+ */
+export function SparePartsCatalogView({ rows, counts, tab, units }: SparePartsCatalogViewProps) {
+  const [formOpen, setFormOpen] = React.useState(false)
+  // Cada apertura es un formulario nuevo: sin esto, cancelar un intento con errores lo dejaba pintado al reabrir.
+  const [formKey, setFormKey] = React.useState(0)
+  const total = counts.active + counts.inactive
+  const { searchQuery } = useSafeShellHeader()
+  const data = React.useMemo<TableData[]>(
+    () => rows
+      .map((row) => ({ ...row, searchText: buildSearchText(row) }))
+      .filter((row) => matchesSearch(row.searchText, searchQuery)),
+    [rows, searchQuery],
+  )
+  const empty = emptyCopy(tab, counts.inactive > 0)
+  const newButton = (
+    <Button size="sm" onClick={() => { setFormKey((key) => key + 1); setFormOpen(true) }}>
+      <Plus size={14} aria-hidden />Nuevo repuesto
+    </Button>
+  )
+
+  return (
+    <>
+      <PageHeader
+        title="Catálogo de repuestos"
+        description="Repuestos con su N° de parte, proveedor, último precio y los equipos para los que se compraron."
+        breadcrumb={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Mantención" }, { label: "Catálogo de repuestos" }]}
+        actions={(
+          <div className="flex flex-wrap items-center gap-2">
+            {total > 0 && <ExportButton action={exportSparePartsAction} filters={{ scope: tab }} />}
+            {newButton}
+          </div>
+        )}
+      />
+
+      {total > 0 && (
+        <div className="mb-3">
+          <React.Suspense fallback={<div className="h-11 border-b border-[var(--color-border)] sm:h-9" aria-hidden />}>
+            <StageTabs
+              ariaLabel="Estado de los repuestos"
+              tabs={[
+                { value: "", label: "Activos", count: counts.active },
+                { value: "inactivos", label: "Inactivos", count: counts.inactive },
+              ]}
+            />
+          </React.Suspense>
+        </div>
+      )}
+
+      {rows.length === 0 ? (
+        <EmptyState
+          icon={<Package size={24} aria-hidden />}
+          title={empty.title}
+          description={empty.description}
+          action={empty.cta ? newButton : undefined}
+        />
+      ) : (
+        <DataTable
+          caption={tab === "inactivos" ? "Repuestos inactivos" : "Repuestos activos"}
+          columns={COLUMNS}
+          rows={data}
+          searchKeys={["searchText"]}
+          // Ya filtrado arriba por palabras; el filtro de `DataTable` busca la frase entera.
+          disableInternalSearch
+          hideDensityToggle
+          emptyTitle="Ningún repuesto coincide"
+          emptyDescription="Prueba con otro nombre, SKU o N° de parte."
+          renderRow={(raw) => {
+            const row = raw as TableData
+            return (
+              <TableRow key={row.id}>
+                <TableCell>
+                  <Link href={`/mantencion/repuestos/${row.id}`} className={LINK_CLASS}>{row.name}</Link>
+                  <p className={`mt-0.5 text-xs ${MUTED}`}>{identityLine(row)}</p>
+                </TableCell>
+                <TableCell><SupplierValue row={row} /></TableCell>
+                <TableCellNum><PriceValue row={row} /></TableCellNum>
+                <TableCell nowrap>{row.lastPurchasedAt ? <span className="font-mono text-[13px]">{formatDate(row.lastPurchasedAt)}</span> : <span className={MUTED}>Sin compras</span>}</TableCell>
+                <TableCellNum>{row.vehicleCount === 0 ? <span className={MUTED}>—</span> : plural(row.vehicleCount, "equipo", "equipos")}</TableCellNum>
+              </TableRow>
+            )
+          }}
+          renderMobileCard={(raw) => {
+            const row = raw as TableData
+            return (
+              <ResponsiveDataListCard
+                key={row.id}
+                title={<Link href={`/mantencion/repuestos/${row.id}`} className={LINK_CLASS}>{row.name}</Link>}
+                description={identityLine(row)}
+              >
+                <ResponsiveDataListField label="Proveedor"><SupplierValue row={row} /></ResponsiveDataListField>
+                <ResponsiveDataListField label="Último precio"><PriceValue row={row} /></ResponsiveDataListField>
+                <ResponsiveDataListField label="Última compra">{row.lastPurchasedAt ? <span className="font-mono">{formatDate(row.lastPurchasedAt)}</span> : "Sin compras"}</ResponsiveDataListField>
+                <ResponsiveDataListField label="Comprado para">{row.vehicleCount === 0 ? "—" : plural(row.vehicleCount, "equipo", "equipos")}</ResponsiveDataListField>
+              </ResponsiveDataListCard>
+            )
+          }}
+        />
+      )}
+
+      <SparePartFormSheet key={formKey} open={formOpen} onClose={() => setFormOpen(false)} units={units} />
+    </>
+  )
+}

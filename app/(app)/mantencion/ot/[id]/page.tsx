@@ -43,6 +43,8 @@ export default async function WorkOrderDetailPage({ params }: { params: Promise<
     ? `/solicitudes/nueva?tipo=repuestos&ot=${detail.id}`
     : null
   const canOpenRequests = can(session, "repuestos:view_all")
+  // El nombre del repuesto enlaza a su ficha del catálogo sólo con `repuestos:catalog` (la ficha lo exige en el servidor).
+  const canOpenSpareParts = can(session, "repuestos:catalog")
   // Los catálogos sólo se consultan cuando el usuario puede usarlos.
   const [mechanics, entryCatalogs, recordForm] = await Promise.all([
     allowed.has("assign") ? listAssignableMechanics() : Promise.resolve(null),
@@ -98,7 +100,7 @@ export default async function WorkOrderDetailPage({ params }: { params: Promise<
           <OtRepairSection detail={detail} />
           <OtItemsSection detail={detail} kind="anexo" />
           <OtItemsSection detail={detail} kind="mantencion" />
-          <OtPartsRequestsSection detail={detail} canOpenRequests={canOpenRequests} partsRequestHref={partsRequestHref} />
+          <OtPartsRequestsSection detail={detail} canOpenRequests={canOpenRequests} canOpenSpareParts={canOpenSpareParts} partsRequestHref={partsRequestHref} />
           <OtObservationsSection detail={detail} />
           <OtEntrySection detail={detail} />
           <OtExitSection detail={detail} />

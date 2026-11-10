@@ -5,11 +5,13 @@ import { Button } from "@/components/ui/button"
 import { Callout } from "@/components/ui/callout"
 import { DetailItem } from "@/components/ui/detail-item"
 import { EmptyState } from "@/components/ui/empty-state"
+import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui/responsive-data-list"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import { MetaBadge, StateBadge } from "@/components/states/state-badge"
 import { formatNumber } from "@/lib/mantencion/format"
 import { OT_ITEM_KIND_LABELS, type OtItemKind } from "@/lib/mantencion/work-order-states"
 import type { WorkOrderDetail, WorkOrderItemDetail, WorkOrderPartsRequest } from "@/lib/services/mantencion/work-orders/types"
+import { SparePartIdentity, SparePartName, SparePartReference, sparePartIdentity } from "@/components/mantencion/spare-part-reference"
 import { SectionCard } from "../shared/section-card"
 import { OT_STATE_META, equipmentText } from "./ot-labels"
 import { formatDay, formatTimeOnly, sortEventsNewestFirst } from "./ot-format"
@@ -140,14 +142,18 @@ function quantityText(line: Pick<WorkOrderPartsRequest, "quantity" | "unitOfMeas
  * la correctiva y las compras salen de una solicitud. El código de la solicitud
  * sólo es enlace con `repuestos:view_all` (con `view_own` el enlace daría 404 sobre
  * una ajena). `partsRequestHref` lo calcula la página (permiso y OT no cerrada).
+ * Una línea con producto de catálogo muestra su SKU y N° de parte; el nombre enlaza
+ * a la ficha del repuesto sólo con `canOpenSpareParts` (`repuestos:catalog`).
  */
 export function OtPartsRequestsSection({
   detail,
   canOpenRequests,
+  canOpenSpareParts = false,
   partsRequestHref,
 }: {
   detail: WorkOrderDetail
   canOpenRequests: boolean
+  canOpenSpareParts?: boolean
   partsRequestHref: string | null
 }) {
   const lines = detail.partsRequests
@@ -177,44 +183,74 @@ export function OtPartsRequestsSection({
           <Pending>Nadie ha pedido repuestos para esta orden.</Pending>
         )
       ) : (
-        <TableRoot aria-label="Repuestos pedidos" className="-mx-5 w-auto rounded-none border-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Solicitud</TableHead>
-                <TableHead>Repuesto</TableHead>
-                <TableHead>Cant.</TableHead>
-                <TableHead>Estado</TableHead>
-                <TableHead>OC</TableHead>
-                <TableHead>Entrega estimada</TableHead>
-                <TableHead>Recibido</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {lines.map((line) => (
-                <TableRow key={line.itemId}>
-                  <TableCell className="whitespace-nowrap">
+        <>
+          {/* Bajo md, tarjetas: a 390 px la tabla partía el SKU en cuatro renglones y cortaba el estado. */}
+          <ul aria-label="Repuestos pedidos" className="flex flex-col gap-2 md:hidden">
+            {lines.map((line) => (
+              <li key={line.itemId}>
+                <ResponsiveDataListCard
+                  title={<SparePartName name={line.description} product={line} canOpen={canOpenSpareParts} />}
+                  description={sparePartIdentity(line) ? <SparePartIdentity product={line} className="font-mono" /> : undefined}
+                  status={<StateBadge state={line.itemStatus} entity="item" size="sm" />}
+                >
+                  <ResponsiveDataListField label="Solicitud">
                     {canOpenRequests
                       ? <Link href={`/solicitudes/${line.requestId}`} className={TEXT_LINK}>{line.requestCode}</Link>
-                      : <span className="font-mono text-[13px]">{line.requestCode}</span>}
-                  </TableCell>
-                  <TableCell>{line.description}</TableCell>
-                  <TableCell className="whitespace-nowrap font-mono text-xs tabular-nums">{quantityText(line)}</TableCell>
-                  <TableCell><StateBadge state={line.itemStatus} entity="item" size="sm" /></TableCell>
-                  <TableCell className="whitespace-nowrap font-mono text-[13px]">
-                    {line.orderCode ?? <span className="text-[var(--color-text-muted)]">—</span>}
-                  </TableCell>
-                  <TableCell className="text-[13px]">
+                      : <span className="font-mono">{line.requestCode}</span>}
+                  </ResponsiveDataListField>
+                  <ResponsiveDataListField label="Cantidad"><span className="font-mono tabular-nums">{quantityText(line)}</span></ResponsiveDataListField>
+                  <ResponsiveDataListField label="Recibido">
+                    <span className="font-mono tabular-nums">{formatNumber(line.quantityReceived)}/{formatNumber(line.quantity)}</span>
+                  </ResponsiveDataListField>
+                  <ResponsiveDataListField label="OC"><span className="font-mono">{line.orderCode ?? "—"}</span></ResponsiveDataListField>
+                  <ResponsiveDataListField label="Entrega estimada">
                     <EstimateCell row={{ estimatedDeliveryDate: line.estimatedDelivery, estimateOverdue: lineOverdue(line, today) }} />
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap font-mono text-xs tabular-nums">
-                    {formatNumber(line.quantityReceived)}/{formatNumber(line.quantity)}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </TableRoot>
+                  </ResponsiveDataListField>
+                </ResponsiveDataListCard>
+              </li>
+            ))}
+          </ul>
+          <div className="hidden md:block">
+            <TableRoot aria-label="Repuestos pedidos" className="-mx-5 w-auto rounded-none border-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Solicitud</TableHead>
+                    <TableHead>Repuesto</TableHead>
+                    <TableHead>Cant.</TableHead>
+                    <TableHead>Estado</TableHead>
+                    <TableHead>OC</TableHead>
+                    <TableHead>Entrega estimada</TableHead>
+                    <TableHead>Recibido</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {lines.map((line) => (
+                    <TableRow key={line.itemId}>
+                      <TableCell className="whitespace-nowrap">
+                        {canOpenRequests
+                          ? <Link href={`/solicitudes/${line.requestId}`} className={TEXT_LINK}>{line.requestCode}</Link>
+                          : <span className="font-mono text-[13px]">{line.requestCode}</span>}
+                      </TableCell>
+                      <TableCell><SparePartReference name={line.description} product={line} canOpen={canOpenSpareParts} /></TableCell>
+                      <TableCell className="whitespace-nowrap font-mono text-xs tabular-nums">{quantityText(line)}</TableCell>
+                      <TableCell><StateBadge state={line.itemStatus} entity="item" size="sm" /></TableCell>
+                      <TableCell className="whitespace-nowrap font-mono text-[13px]">
+                        {line.orderCode ?? <span className="text-[var(--color-text-muted)]">—</span>}
+                      </TableCell>
+                      <TableCell className="text-[13px]">
+                        <EstimateCell row={{ estimatedDeliveryDate: line.estimatedDelivery, estimateOverdue: lineOverdue(line, today) }} />
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap font-mono text-xs tabular-nums">
+                        {formatNumber(line.quantityReceived)}/{formatNumber(line.quantity)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableRoot>
+          </div>
+        </>
       )}
 
       <div className="mt-4 border-t border-[var(--color-border)] pt-3">

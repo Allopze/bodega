@@ -1,9 +1,9 @@
 "use server"
 
 import { redirect } from "next/navigation"
-import { and, eq, inArray } from "drizzle-orm"
+import { eq } from "drizzle-orm"
 import { db } from "@/db"
-import { purchaseRequests, products } from "@/db/schema"
+import { purchaseRequests } from "@/db/schema"
 import { can, canAccessWorksite, requireAuth } from "@/lib/auth/can"
 import { notifyManyUser, getUserIdsWithPermission, notifyAfterCommit } from "@/lib/services/notifications"
 import { type ActionState, type RequestFormData } from "@/lib/validation/operations"
@@ -127,9 +127,8 @@ export async function submitRequest(_prev: ActionState, formData: FormData): Pro
     return { ok: false, message: "No tienes acceso a la faena de esta solicitud" }
   }
 
-  const inactiveError = await assertProductsActive(request.items.map((item) => item.productId))
-  if (inactiveError) return inactiveError
-
+  // Los productos dados de baja se revisan dentro de la transacción del envío,
+  // bajo el bloqueo de la solicitud (`submitRequest`).
   try {
     const submitFn = request.requestType === "repuestos" ? submitRepuestoRequest : submitServiceRequest
     await submitFn({
@@ -211,19 +210,4 @@ async function createAndSubmit(
 
   revalidateOperationalViews([REVALIDATE, `${REVALIDATE}/${outcome.requestId}`])
   redirect(`${REVALIDATE}/${outcome.requestId}`)
-}
-
-/** Un producto dado de baja no puede entrar a aprobación. */
-async function assertProductsActive(productIds: Array<string | null | undefined>): Promise<ActionState | null> {
-  const catalogProductIds = productIds.filter((id): id is string => !!id)
-  if (catalogProductIds.length === 0) return null
-
-  const inactiveProducts = await db
-    .select({ name: products.name })
-    .from(products)
-    .where(and(inArray(products.id, catalogProductIds), eq(products.isActive, false)))
-  if (inactiveProducts.length === 0) return null
-
-  const names = inactiveProducts.map((p) => p.name).join(", ")
-  return { ok: false, message: `Los siguientes productos están inactivos y no pueden solicitarse: ${names}` }
 }

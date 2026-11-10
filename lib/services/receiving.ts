@@ -406,8 +406,11 @@ export async function registerReceipt(
           })
           // A catalog service is evidence/cost work, not a physical unit. It
           // keeps its receipt history but never creates a stock balance or a
-          // kardex movement that an operator could later deliver.
-          if (product?.isService) continue
+          // kardex movement that an operator could later deliver. A catalog
+          // spare part is direct consumption (decisión 2026-11-09): it goes
+          // from the supplier to the machine, so it never enters the stock
+          // either; its item is already `delivered` (see `receiveItemTx`).
+          if (product?.isService || product?.isSparePart) continue
           await applyMovementTx(tx, {
             worksiteId: stockWorksiteId,
             productId:   lockedOcItem.productId,

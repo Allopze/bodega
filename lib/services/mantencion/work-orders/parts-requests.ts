@@ -96,6 +96,10 @@ export async function loadWorkOrderPartsRequests(workOrderId: string): Promise<W
       requestedAt: purchaseRequests.createdAt,
       itemId: purchaseRequestItems.id,
       freeName: purchaseRequestItems.productNameFree,
+      productId: products.id,
+      productSku: products.sku,
+      productPartNumber: products.partNumber,
+      productIsSparePart: products.isSparePart,
       productName: products.name,
       quantity: purchaseRequestItems.quantity,
       unitOfMeasure: purchaseRequestItems.unitOfMeasure,
@@ -108,9 +112,15 @@ export async function loadWorkOrderPartsRequests(workOrderId: string): Promise<W
     })
     .from(purchaseRequestItems)
     .innerJoin(purchaseRequests, eq(purchaseRequests.id, purchaseRequestItems.requestId))
-    .leftJoin(products, eq(products.id, purchaseRequestItems.productId))
     .leftJoin(purchaseOrderItems, and(eq(purchaseOrderItems.requestItemId, purchaseRequestItems.id), ne(purchaseOrderItems.status, "cancelled")))
     .leftJoin(purchaseOrders, and(eq(purchaseOrders.id, purchaseOrderItems.purchaseOrderId), ne(purchaseOrders.status, "cancelled"), isNull(purchaseOrders.deletedAt)))
+    // El producto es el del ítem de solicitud —también cuando Compras lo catalogó
+    // al armar la OC, que lo escribe ahí y lo deshace si esa OC se elimina o se
+    // anula— o, en su defecto, el de la línea de OC (siempre que esa OC cuente).
+    .leftJoin(products, eq(products.id, sql`coalesce(
+      ${purchaseRequestItems.productId},
+      case when ${purchaseOrders.id} is not null then ${purchaseOrderItems.productId} end
+    )`))
     .where(eq(purchaseRequestItems.workOrderId, workOrderId))
     .orderBy(desc(purchaseRequests.createdAt), asc(purchaseRequestItems.sortOrder), asc(purchaseRequestItems.id))
 
@@ -126,6 +136,10 @@ export async function loadWorkOrderPartsRequests(workOrderId: string): Promise<W
       requestStatus: row.requestStatus,
       itemId: row.itemId,
       description: row.freeName?.trim() || row.productName || "Sin descripción",
+      productId: row.productId,
+      sku: row.productSku,
+      partNumber: row.productPartNumber,
+      isSparePart: row.productIsSparePart === true,
       quantity: row.quantity,
       unitOfMeasure: row.unitOfMeasure,
       itemStatus: row.itemStatus,

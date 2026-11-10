@@ -128,6 +128,14 @@ export const GRANT_ADDITIONS = [
   // Y la lista de sus solicitudes: jefatura y administración de contrato ya
   // tenían `requests:view_own`; supervisión no, y la lista le daba /forbidden.
   { key: "2026-11-07-rol-sup-mantencion-p-req-own", roleId: "rol-sup-mantencion", permissionId: "p-req-own" },
+  // Catálogo de repuestos (fase 2, decisión del 2026-11-09): réplica de
+  // `modules/repuestos/manifest.ts`. Lo gestionan administración, secretaría,
+  // jefatura y jefe de mantención; el resto sólo lo consulta al pedir/comprar.
+  ...(["rol-admin", "rol-sec", "rol-jefa", "rol-jefe-mant"] as const).map((roleId) => ({
+    key: `2026-11-09-${roleId}-p-rep-catalog`,
+    roleId,
+    permissionId: "p-rep-catalog" as const,
+  })),
 ] as const
 
 async function applyGrantAdditions(executor: typeof db | Tx) {

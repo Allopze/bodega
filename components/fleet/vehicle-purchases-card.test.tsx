@@ -7,7 +7,7 @@ import { VehiclePurchasesCard } from "./vehicle-purchases-card"
 function record(overrides: Partial<VehiclePurchaseRecord> = {}): VehiclePurchaseRecord {
   return {
     requestItemId: "item-1", requestId: "req-1", requestCode: "REP-2026-0042", requestType: "repuestos",
-    itemName: "Filtro hidráulico", quantity: 2, unitOfMeasure: "unidad", itemStatus: "purchased", itemStatusLabel: "Pendiente de recepción",
+    itemName: "Filtro hidráulico", productId: null, sku: null, partNumber: null, isSparePart: false, quantity: 2, unitOfMeasure: "unidad", itemStatus: "purchased", itemStatusLabel: "Pendiente de recepción",
     workOrderId: "ot-1", workOrderFolio: "OT-BIO-0007", requestedAt: "2026-11-02T15:00:00.000Z", requesterName: "Alexis Morales",
     orderId: "oc-1", orderCode: "OC-2026-0310", orderStatus: "sent", unitPrice: 20_000, subtotal: 40_000, ...overrides,
   }
@@ -80,5 +80,45 @@ describe("«Repuestos y servicios comprados»", () => {
   it("sin permiso de pedir no hay botón aunque haya compras", () => {
     render(<VehiclePurchasesCard records={[record()]} canOpenRequests canOpenOrders newRequestHref={null} />)
     expect(screen.queryByRole("link", { name: "Pedir repuestos" })).toBeNull()
+  })
+
+  describe("identidad del repuesto de catálogo", () => {
+    const catalogado = () => record({ productId: "prod-1", sku: "RPT-001", partNumber: "1R-0750", isSparePart: true })
+
+    it("muestra el SKU y el N° de parte, y con repuestos:catalog el nombre enlaza a la ficha del repuesto", () => {
+      render(<VehiclePurchasesCard records={[catalogado()]} canOpenRequests canOpenOrders canOpenSpareParts newRequestHref={null} />)
+      const row = screen.getByRole("listitem")
+      expect(row.textContent).toContain("RPT-001 · N° de parte 1R-0750")
+      expect(within(row).getByRole("link", { name: "Filtro hidráulico" }).getAttribute("href")).toBe("/mantencion/repuestos/prod-1")
+    })
+
+    it("sin repuestos:catalog el nombre es texto (un enlace a la ficha daría 403) pero la identidad se ve igual", () => {
+      render(<VehiclePurchasesCard records={[catalogado()]} canOpenRequests canOpenOrders canOpenSpareParts={false} newRequestHref={null} />)
+      const row = screen.getByRole("listitem")
+      expect(row.textContent).toContain("RPT-001 · N° de parte 1R-0750")
+      expect(within(row).queryByRole("link", { name: "Filtro hidráulico" })).toBeNull()
+      expect(within(row).getByText("Filtro hidráulico")).toBeDefined()
+    })
+
+    it("un repuesto sin N° de parte muestra sólo el SKU", () => {
+      render(<VehiclePurchasesCard records={[record({ productId: "prod-2", sku: "RPT-002", isSparePart: true })]} canOpenRequests canOpenOrders canOpenSpareParts newRequestHref={null} />)
+      const row = screen.getByRole("listitem")
+      expect(row.textContent).toContain("RPT-002")
+      expect(row.textContent).not.toContain("N° de parte")
+    })
+
+    it("un servicio de catálogo muestra su SKU pero no enlaza: no tiene ficha de repuesto", () => {
+      render(<VehiclePurchasesCard records={[record({ itemName: "Alineación", requestType: "servicios", productId: "prod-3", sku: "SRV-001" })]} canOpenRequests canOpenOrders canOpenSpareParts newRequestHref={null} />)
+      const row = screen.getByRole("listitem")
+      expect(row.textContent).toContain("SRV-001")
+      expect(within(row).queryByRole("link", { name: "Alineación" })).toBeNull()
+    })
+
+    it("una línea en texto libre no muestra identidad ni enlace", () => {
+      render(<VehiclePurchasesCard records={[record()]} canOpenRequests canOpenOrders canOpenSpareParts newRequestHref={null} />)
+      const row = screen.getByRole("listitem")
+      expect(row.textContent).not.toContain("N° de parte")
+      expect(within(row).queryByRole("link", { name: "Filtro hidráulico" })).toBeNull()
+    })
   })
 })

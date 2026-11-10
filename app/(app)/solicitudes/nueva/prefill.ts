@@ -32,6 +32,11 @@ export interface PrefillResult {
   initialWorksiteId?: string
   /** Urgencia con la que se abre el creador: «alta» al pedir repuestos desde una OT. */
   initialUrgency?: string
+  /**
+   * El ítem viene de la ficha de un repuesto (`?repuesto=`): la página le pone el
+   * precio estimado y el proveedor del catálogo, como al elegirlo del buscador.
+   */
+  sparePartDefaults?: boolean
 }
 
 export interface PrefillRequest {
@@ -45,6 +50,8 @@ export interface PrefillRequest {
   workOrderId?: string
   /** `?vehiculo=`: equipo de flota para el que se piden repuestos. */
   vehicleId?: string
+  /** `?repuesto=`: repuesto de catálogo con el que se abre el pedido (desde su ficha). */
+  sparePartId?: string
 }
 
 const OPEN_WORK_ORDER_STATUSES: readonly string[] = OT_OPEN_STATUSES
@@ -123,10 +130,36 @@ async function fleetPrefill({
   }
 }
 
+/**
+ * «Pedir repuestos» desde la ficha de un repuesto (`?repuesto=`): el pedido abre
+ * con ese repuesto elegido. Sólo un repuesto de catálogo activo; uno desactivado
+ * o un producto común no se precarga.
+ */
+async function sparePartPrefill(sparePartId: string): Promise<PrefillResult> {
+  const [part] = await db
+    .select({
+      id: products.id, name: products.name, unitOfMeasure: products.unitOfMeasure,
+      isActive: products.isActive, isSparePart: products.isSparePart,
+    })
+    .from(products)
+    .where(eq(products.id, sparePartId))
+    .limit(1)
+  if (!part || !part.isSparePart) return { prefillNotice: "El repuesto del enlace no existe en el catálogo." }
+  if (!part.isActive) return { prefillNotice: "El repuesto del enlace está desactivado: elige otro del catálogo." }
+  return {
+    sparePartDefaults: true,
+    prefillItems: [{
+      productId: part.id, productNameFree: "", quantity: 1, unitOfMeasure: part.unitOfMeasure, urgency: "normal", notes: "",
+    }],
+    prefillNotice: `${part.name} preseleccionado. Indica el equipo y la cantidad.`,
+  }
+}
+
 export async function buildPrefill({
-  session, reposicion, desdeId, productoIds, cantidades, emergencyResourceId, workOrderId = "", vehicleId = "",
+  session, reposicion, desdeId, productoIds, cantidades, emergencyResourceId, workOrderId = "", vehicleId = "", sparePartId = "",
 }: PrefillRequest): Promise<PrefillResult> {
   if (workOrderId || vehicleId) return fleetPrefill({ session, workOrderId, vehicleId })
+  if (sparePartId) return sparePartPrefill(sparePartId)
 
   if (emergencyResourceId) {
     const [resource] = await db.select({
@@ -172,7 +205,8 @@ export async function buildPrefill({
         unitOfMeasure: products.unitOfMeasure,
       })
       .from(products)
-      .where(and(eq(products.isActive, true), inArray(products.id, productoIds)))
+      // Reposición de stock: un repuesto de catálogo (consumo directo) no se repone.
+      .where(and(eq(products.isActive, true), eq(products.isSparePart, false), inArray(products.id, productoIds)))
     const byId = new Map(rows.map((row) => [row.id, row]))
 
     const items: PrefillItem[] = []

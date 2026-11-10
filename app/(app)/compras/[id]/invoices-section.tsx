@@ -101,6 +101,8 @@ export interface OcItem {
   /** Talla de la variante; distingue líneas de la OC que comparten nombre. */
   sizeLabel?: string | null
   productCode: string | null
+  /** N° de parte del repuesto de catálogo; el matcher lo compara con el código de la factura. */
+  partNumber?: string | null
   attributes?: Array<{ name: string; value: string }>
   unitOfMeasure: string
   quantity: number

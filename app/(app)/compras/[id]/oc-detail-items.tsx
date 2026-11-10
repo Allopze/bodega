@@ -1,4 +1,5 @@
 import { formatVariantProductName, type VariantAttribute } from "@/lib/products/variant-grouping"
+import { requestItemAssetLabel } from "@/lib/purchasing/request-item-asset"
 import { countOf, formatCLP, formatDateTime, formatQty } from "@/lib/utils"
 import { OcItemCostForm } from "./oc-item-cost-form"
 import type { OcDetailItem, OcDetailOrder } from "./oc-detail.types"
@@ -11,16 +12,11 @@ function formatLineAmount(amount: number | null) {
 /**
  * El equipo del ítem de origen. La OC de una mantención tiene que decir sobre
  * qué aparato es: desde que el equipo pasó a ser una FK, dejó de viajar como
- * atributo de texto y la ficha se quedó sin ese dato.
- *
- * Hay dos clases de «equipo» y el esquema las hace excluyentes: el instrumento
- * de un servicio (`equipmentLabel`) y el vehículo de la flota, que puede traer
- * la OT que originó el pedido («KA-63 · ABCD-12 · OT M-0042»).
+ * atributo de texto y la ficha se quedó sin ese dato. La regla es la misma que
+ * usa la OC impresa (`requestItemAssetLabel`).
  */
 function assetLabel(item: OcDetailItem): string | null {
-  if (item.equipmentLabel) return item.equipmentLabel
-  if (!item.vehicleLabel) return null
-  return item.workOrderFolio ? `${item.vehicleLabel} · OT ${item.workOrderFolio}` : item.vehicleLabel
+  return requestItemAssetLabel(item)
 }
 
 /** Instrumento o vehículo y colaborador del ítem de origen. */

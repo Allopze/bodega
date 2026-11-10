@@ -28,6 +28,7 @@ const PRODUCT_LARGE = "availability-glove-l"
 const PRODUCT_MEDIUM = "availability-glove-m"
 const PRODUCT_XL = "availability-glove-xl"
 const SERVICE = "availability-service"
+const SPARE_PART = "availability-spare-part"
 
 function scopedSession(worksiteIds: string[]) {
   return {
@@ -81,6 +82,8 @@ beforeAll(async () => {
     { id: PRODUCT_MEDIUM, sku: "GUANTE-M", name: "Guante", categoryId: CATEGORY_ID, unitOfMeasure: "par", isActive: true, createdAt: NOW, updatedAt: NOW },
     { id: PRODUCT_XL, sku: "GUANTE-XL", name: "Guante", categoryId: CATEGORY_ID, unitOfMeasure: "par", isActive: true, createdAt: NOW, updatedAt: NOW },
     { id: SERVICE, sku: "SERV-01", name: "Calibración", categoryId: CATEGORY_ID, unitOfMeasure: "servicio", isService: true, isActive: true, createdAt: NOW, updatedAt: NOW },
+    // Repuesto de catálogo: consumo directo, nunca ingresa a la bodega.
+    { id: SPARE_PART, sku: "RPT-001", name: "Filtro hidráulico", categoryId: CATEGORY_ID, unitOfMeasure: "unidad", isSparePart: true, partNumber: "HF-35", isActive: true, createdAt: NOW, updatedAt: NOW },
   ])
   await inMemoryDb.insert(schema.worksiteStock).values([
     { id: "stock-alpha-s", worksiteId: WS_ALPHA, productId: PRODUCT_SMALL, quantity: 3, minStock: 0, updatedAt: NOW },
@@ -99,6 +102,8 @@ beforeAll(async () => {
     { id: "request-item-s", requestId: "request-alpha", productId: PRODUCT_SMALL, quantity: 10, status: "partially_delivered", createdAt: NOW, updatedAt: NOW },
     { id: "request-item-l", requestId: "request-alpha", productId: PRODUCT_LARGE, quantity: 6, status: "partially_received", createdAt: NOW, updatedAt: NOW },
     { id: "request-item-service", requestId: "request-alpha", productId: SERVICE, quantity: 50, status: "partially_received", createdAt: NOW, updatedAt: NOW },
+    // Pedido y aprobado, pero el repuesto de catálogo no es stock en tránsito: no cuenta.
+    { id: "request-item-spare-part", requestId: "request-alpha", productId: SPARE_PART, quantity: 9, status: "approved", createdAt: NOW, updatedAt: NOW },
     // Aprobado y todavía sin OC: también está por recibir, entero.
     { id: "request-item-approved", requestId: "request-alpha", productId: PRODUCT_LARGE, quantity: 2, status: "approved", createdAt: NOW, updatedAt: NOW },
     // Nunca entró a Alfa: no tiene registro de stock, sólo lo por recibir.

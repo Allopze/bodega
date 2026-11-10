@@ -5,7 +5,7 @@
 
 import { eq, and, sql } from "drizzle-orm"
 import { db, type Tx } from "@/db"
-import { deliveries, deliveryItems, worksites, worksiteStock, inventoryMovements, stockAdjustments, stockReturns } from "@/db/schema"
+import { deliveries, deliveryItems, products, worksites, worksiteStock, inventoryMovements, stockAdjustments, stockReturns } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { nextCodeTx } from "@/lib/code-sequences"
@@ -275,6 +275,18 @@ export async function applyMovementTx(tx: Tx, input: ApplyMovementInput): Promis
   }
   if (!ws.isActive) {
     throw new Error(`Worksite '${ws.name}' is not active`)
+  }
+
+  // Catálogo de repuestos: un repuesto se compra para un equipo y se consume
+  // directo, sin pasar por bodega. La recepción ya los omite; esta guarda impide
+  // que cualquier otro camino (ajuste, traspaso, guía) les abra existencias.
+  const [product] = await tx
+    .select({ isSparePart: products.isSparePart })
+    .from(products)
+    .where(eq(products.id, input.productId))
+    .limit(1)
+  if (product?.isSparePart === true) {
+    throw new Error("Los repuestos no tienen existencias en bodega: se compran para un equipo y se consumen directo")
   }
 
   const now = new Date().toISOString()

@@ -95,6 +95,7 @@ export default async function EquipmentDetailPage({
     purchaseLinks: {
       canOpenRequests: can(session, "repuestos:view_all"),
       canOpenOrders: can(session, "purchasing:view"),
+      canOpenSpareParts: can(session, "repuestos:catalog"),
       // Un equipo dado de baja no admite solicitudes nuevas (el formulario lo rechazaría).
       newRequestHref: can(session, "repuestos:create") && !row.retired ? `/solicitudes/nueva?tipo=repuestos&vehiculo=${row.vehicleId}` : null,
     },

@@ -27,6 +27,30 @@ export interface ProductOption {
   attributes:      { id: string; name: string; type: string; isRequired: boolean; options: string | null; drivesQuantity: boolean }[]
 }
 
+/**
+ * Repuesto del catálogo que el buscador de «Solicitud de repuestos» ofrece
+ * (`lib/services/spare-parts-catalog`). Es un tipo aparte de `ProductOption`: un
+ * repuesto no tiene atributos, tallas ni colaborador, y sus datos propios (N° de
+ * parte, marca, a qué equipos se compró) no caben en el producto general.
+ */
+export interface SparePartOption {
+  id:             string
+  sku:            string
+  name:           string
+  partNumber:     string | null
+  partBrand:      string | null
+  unitOfMeasure:  string
+  /** Precio con el proveedor preferido o, si no tiene, el último conocido: precarga el precio estimado. */
+  lastPrice:      number | null
+  /** Precio orientativo de la ficha: precarga el estimado sólo cuando no hay `lastPrice`. */
+  referencePrice?: number | null
+  preferredSupplierId: string | null
+  /** Equipos (dentro del alcance de quien pide) para los que ya se compró: sube en el buscador. */
+  purchasedForVehicleIds: string[]
+  /** Desactivado después de pedirse: se ve en la solicitud, pero no se ofrece en el buscador. */
+  isInactive?:    boolean
+}
+
 export interface WorksiteOption {
   id: string
   name: string

@@ -68,7 +68,9 @@ interface LineSeed {
   item: string
   itemStatus: string
   workOrderId: string | null
-  name: string
+  name: string | null
+  /** Producto de catálogo del ítem de solicitud; sin él, es texto libre. */
+  productId?: string
   quantity?: number
   sortOrder?: number
 }
@@ -83,14 +85,14 @@ async function insertLine(seed: LineSeed) {
     })
   }
   await testDb.insert(schema.purchaseRequestItems).values({
-    id: seed.item, requestId: seed.request, productNameFree: seed.name, quantity: seed.quantity ?? 1, status: seed.itemStatus,
+    id: seed.item, requestId: seed.request, productNameFree: seed.name, productId: seed.productId ?? null, quantity: seed.quantity ?? 1, status: seed.itemStatus,
     sortOrder: seed.sortOrder ?? 0, vehicleId: seed.workOrderId ? IDS.truckBio : null, workOrderId: seed.workOrderId, createdAt: stamp, updatedAt: stamp,
   })
 }
 
 async function insertOrder(input: {
   id: string; code: string; status?: string; deletedAt?: string; estimatedDelivery?: string | null
-  lines: Array<{ id: string; requestItemId: string; quantity: number; received?: number; status?: string }>
+  lines: Array<{ id: string; requestItemId: string; quantity: number; received?: number; status?: string; productId?: string }>
 }) {
   await testDb.insert(schema.purchaseOrders).values({
     id: input.id, code: input.code, worksiteId: IDS.wsBio, supplierId: "sup-parts", createdBy: IDS.jefe, status: input.status ?? "sent",
@@ -98,7 +100,7 @@ async function insertOrder(input: {
     ...(input.deletedAt ? { deletedAt: input.deletedAt } : {}),
   })
   await testDb.insert(schema.purchaseOrderItems).values(input.lines.map((line) => ({
-    id: line.id, purchaseOrderId: input.id, requestItemId: line.requestItemId, productNameFree: "línea", quantity: line.quantity,
+    id: line.id, purchaseOrderId: input.id, requestItemId: line.requestItemId, productNameFree: "línea", productId: line.productId ?? null, quantity: line.quantity,
     unitPrice: 1000, subtotal: 1000 * line.quantity, quantityReceived: line.received ?? 0, status: line.status ?? "issued",
   })))
 }
@@ -345,5 +347,49 @@ describe("la lista y la cifra global usan el mismo predicado", () => {
     const metrics = await getWorkOrderGlobalMetrics("all")
     expect(metrics.waitingParts).toBe(2)
     expect(await getWorkOrderGlobalMetrics([IDS.wsCho])).toMatchObject({ openCount: 0, waitingParts: 0 })
+  })
+})
+
+/**
+ * Identidad del repuesto (catálogo de repuestos, 2026-11-09). Va al final y con su
+ * propia OT: las pruebas de arriba cuentan las OT que esperan repuesto.
+ */
+describe("loadWorkOrderPartsRequests: identidad del producto", () => {
+  const OT_CATALOGO = "ot-parts-catalogo"
+
+  beforeAll(async () => {
+    await insertOt(OT_CATALOGO, "en_ejecucion")
+    await testDb.insert(schema.productCategories).values({ id: "cat-parts-id", name: "Repuestos (OT)", slug: "repuestos-ot", isEpp: false, requiresPrevencion: false, sortOrder: 1 })
+    await testDb.insert(schema.products).values([
+      { id: "prod-parts-rpt", sku: "RPT-901", name: "Filtro hidráulico", categoryId: "cat-parts-id", unitOfMeasure: "unidad", isSparePart: true, partNumber: "HF-35", partBrand: "Donaldson" },
+      { id: "prod-parts-srv", sku: "SRV-901", name: "Alineación", categoryId: "cat-parts-id", unitOfMeasure: "unidad", isService: true },
+    ])
+    // Catalogado desde la solicitud.
+    await insertLine({ request: "req-id-a", item: "it-id-a", itemStatus: "approved", workOrderId: OT_CATALOGO, name: null, productId: "prod-parts-rpt", sortOrder: 0 })
+    // Texto libre.
+    await insertLine({ request: "req-id-a", item: "it-id-b", itemStatus: "approved", workOrderId: OT_CATALOGO, name: "Sello de pistón", sortOrder: 1 })
+    // Texto libre que Compras catalogó al armar la OC: el producto está sólo en la línea de OC.
+    await insertLine({ request: "req-id-a", item: "it-id-c", itemStatus: "purchased", workOrderId: OT_CATALOGO, name: "filtro hidráulico", sortOrder: 2 })
+    await insertOrder({ id: "po-id-c", code: "OC-2026-0900", lines: [{ id: "poi-id-c", requestItemId: "it-id-c", quantity: 1, productId: "prod-parts-rpt" }] })
+    // El mismo caso pero con la OC anulada: ese catálogo ya no cuenta.
+    await insertLine({ request: "req-id-a", item: "it-id-d", itemStatus: "pending_purchase", workOrderId: OT_CATALOGO, name: "filtro hidráulico", sortOrder: 3 })
+    await insertOrder({ id: "po-id-d", code: "OC-2026-0901", status: "cancelled", lines: [{ id: "poi-id-d", requestItemId: "it-id-d", quantity: 1, productId: "prod-parts-rpt" }] })
+    // Un servicio de catálogo: tiene SKU pero no ficha de repuesto.
+    await insertLine({ request: "req-id-a", item: "it-id-e", itemStatus: "approved", workOrderId: OT_CATALOGO, name: null, productId: "prod-parts-srv", sortOrder: 4 })
+  })
+
+  it("trae producto, SKU, N° de parte y si es repuesto de catálogo; el texto libre no trae nada de eso", async () => {
+    const byItem = new Map((await loadWorkOrderPartsRequests(OT_CATALOGO)).map((row) => [row.itemId, row]))
+
+    expect(byItem.get("it-id-a")).toMatchObject({ description: "Filtro hidráulico", productId: "prod-parts-rpt", sku: "RPT-901", partNumber: "HF-35", isSparePart: true })
+    expect(byItem.get("it-id-b")).toMatchObject({ description: "Sello de pistón", productId: null, sku: null, partNumber: null, isSparePart: false })
+    expect(byItem.get("it-id-e")).toMatchObject({ description: "Alineación", productId: "prod-parts-srv", sku: "SRV-901", partNumber: null, isSparePart: false })
+  })
+
+  it("un texto libre catalogado en la OC toma el repuesto de la línea de OC, siempre que esa OC cuente", async () => {
+    const byItem = new Map((await loadWorkOrderPartsRequests(OT_CATALOGO)).map((row) => [row.itemId, row]))
+
+    expect(byItem.get("it-id-c")).toMatchObject({ orderCode: "OC-2026-0900", productId: "prod-parts-rpt", sku: "RPT-901", isSparePart: true })
+    expect(byItem.get("it-id-d")).toMatchObject({ orderCode: null, productId: null, sku: null, isSparePart: false })
   })
 })

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { filterProductsForPicker, groupProductsForPicker } from "./product-picker.helpers"
+import { filterProductsForPicker, groupProductsForPicker, type PickerOption } from "./product-picker.helpers"
 import type { ProductOption } from "./request-form.types"
 
 const products: ProductOption[] = [
@@ -110,5 +110,46 @@ describe("groupProductsForPicker: el recorte cuenta familias, no filas", () => {
 
     expect(groups).toHaveLength(1)
     expect(groups[0]!.variants).toHaveLength(8)
+  })
+})
+
+describe("filterProductsForPicker: textos extra (N° de parte, marca)", () => {
+  const option = (id: string, name: string, searchTerms: string[], sku = `RPT-${id}`): PickerOption => ({
+    id, sku, name, familyId: id, attributes: [], searchTerms,
+  })
+  const parts = [
+    option("1", "Filtro de aceite", ["1R-0750", "Caterpillar"]),
+    option("2", "Filtro de aire", ["AF 25", "Donaldson"]),
+    option("3", "Pastilla de freno", []),
+  ]
+
+  it("encuentra por N° de parte o marca, sin importar mayúsculas ni tildes", () => {
+    expect(filterProductsForPicker(parts, "caterpillar").map((p) => p.id)).toEqual(["1"])
+    expect(filterProductsForPicker(parts, "DONALDSON").map((p) => p.id)).toEqual(["2"])
+    expect(filterProductsForPicker(parts, "1R-0750").map((p) => p.id)).toEqual(["1"])
+  })
+
+  it("ignora guiones y espacios del N° de parte: «1r0750» y «af25» lo encuentran", () => {
+    expect(filterProductsForPicker(parts, "1r0750").map((p) => p.id)).toEqual(["1"])
+    expect(filterProductsForPicker(parts, "af25").map((p) => p.id)).toEqual(["2"])
+    expect(filterProductsForPicker(parts, "1R 0750").map((p) => p.id)).toEqual(["1"])
+  })
+
+  it("una búsqueda de sólo signos no empareja todo por quedar vacía al compactarla", () => {
+    expect(filterProductsForPicker(parts, "...")).toEqual([])
+  })
+
+  it("sin búsqueda devuelve todo y sin textos extra se comporta como siempre", () => {
+    expect(filterProductsForPicker(parts, "  ")).toHaveLength(3)
+    expect(filterProductsForPicker(parts, "pastilla").map((p) => p.id)).toEqual(["3"])
+    // El SKU sigue buscándose tal cual.
+    expect(filterProductsForPicker(parts, "rpt-2").map((p) => p.id)).toEqual(["2"])
+  })
+
+  it("dos repuestos con el mismo nombre son dos opciones: cada uno es su propia familia", () => {
+    const twins = [option("a", "Filtro de aceite", ["1R-0750"]), option("b", "Filtro de aceite", ["LF-3000"])]
+    const groups = groupProductsForPicker(twins, "filtro")
+    expect(groups).toHaveLength(2)
+    expect(groups.map((group) => group.variants[0]!.id)).toEqual(["a", "b"])
   })
 })

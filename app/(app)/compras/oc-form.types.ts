@@ -1,4 +1,12 @@
 /**
+ * Repuesto de catálogo que Compras vinculó a una línea desde la hoja «Catalogar»:
+ * su identidad y el precio vigente por proveedor (`supplierId` → precio). El
+ * vínculo ya está guardado en el ítem de solicitud (FF-6); aquí es lo que el
+ * formulario necesita para mostrarlo sin recargar.
+ */
+export type { SparePartLinkInfo as LinkedSparePart } from "@/lib/services/purchasing-module/spare-part-link"
+
+/**
  * Vocabulario sugerido para la condición de pago. Sugerencias, no validación:
  * proveedores y OC históricas traen valores propios que no se deben rechazar
  * (auditoría UI/UX 2026-07-29, A-30).
@@ -64,6 +72,21 @@ export interface PendingItemOption {
   vehicleLabel?:          string | null
   /** Folio de la OT de mantención que originó el pedido, cuando la hay. */
   workOrderFolio?:        string | null
+  /** Tipo de la solicitud de origen (`repuestos`, `epp`…): sólo `repuestos` se cataloga. */
+  requestType?:           string
+  /** Id del equipo de flota: ordena el buscador del catálogo (lo ya comprado para él, primero). */
+  vehicleId?:             string | null
+  /** N° de parte que escribió quien pidió (texto libre), para sugerir el repuesto y precargar el alta. */
+  requestedPartNumber?:   string | null
+  /** El producto de la línea es un repuesto del catálogo (vinculado al pedir o al armar la OC). */
+  isSparePart?:           boolean
+  /** N° de parte del repuesto de catálogo vinculado. */
+  partNumber?:            string | null
+  /**
+   * El vínculo con el repuesto lo hizo Compras desde «Catalogar» (no quien pidió) y se puede
+   * quitar mientras el ítem no tenga OC: la línea ofrece «Desvincular».
+   */
+  linkedFromSheet?:       boolean
 }
 
 export interface OcItemRow extends PendingItemOption {

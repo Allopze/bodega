@@ -396,6 +396,8 @@ export async function prepareDispatchGuideForOfficeReceiptTx(
       eq(receipts.purchaseOrderId, input.purchaseOrderId),
       eq(purchaseOrderItems.purchaseOrderId, input.purchaseOrderId),
       eq(products.isService, false),
+      // El repuesto de catálogo es de consumo directo: no ingresó stock a la oficina, no hay qué trasladar.
+      eq(products.isSparePart, false),
       gt(receiptItems.quantityReceived, 0),
     ))
     .orderBy(asc(receiptItems.id))
@@ -496,6 +498,7 @@ export async function prepareAdditionalDispatchGuideForOfficeReceipt(
         eq(receiptItems.receiptId, receiptId),
         eq(purchaseOrderItems.purchaseOrderId, order.id),
         eq(products.isService, false),
+        eq(products.isSparePart, false),
         gt(receiptItems.quantityReceived, 0),
       ))
       .orderBy(asc(receiptItems.id))

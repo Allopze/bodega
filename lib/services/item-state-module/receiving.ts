@@ -43,11 +43,13 @@ export async function receiveItemTx(
     const product = item.productId
       ? await tx.query.products.findFirst({ where: eq(products.id, item.productId) })
       : null
-    // Texto libre y productos de servicio no generan stock al recibirse, por lo
-    // que no tienen una entrega posterior desde Bodega. Al completarse la
-    // recepción llegan directamente al estado terminal; los productos físicos
-    // de catálogo sí quedan "received" para su posterior entrega.
-    const fullyReceivedTarget: ItemStatus = !item.productId || product?.isService
+    // Texto libre, productos de servicio y repuestos de catálogo no generan
+    // stock al recibirse (el repuesto es de consumo directo: se instala en la
+    // faena, no pasa por la bodega), por lo que no tienen una entrega posterior
+    // desde Bodega. Al completarse la recepción llegan directamente al estado
+    // terminal; los productos físicos de catálogo sí quedan "received" para su
+    // posterior entrega.
+    const fullyReceivedTarget: ItemStatus = !item.productId || product?.isService || product?.isSparePart
       ? "delivered"
       : "received"
 

@@ -23,6 +23,7 @@ import { getProductWarnings, getFamilyWarnings, isProductEditDisabled, type Prod
 import type { AttributeTemplateOption, SizeFamilyOption, ProductUnitOption } from "./product-form.types"
 import { formatProductVariant, groupProductVariants } from "@/lib/products/variant-grouping"
 import { COLUMNS, CONTRACT } from "./catalog-contract"
+import { categoriesForCatalogProducts } from "@/lib/products/spare-parts-category"
 
 interface ProductRow {
   id: string; sku: string; name: string
@@ -594,7 +595,7 @@ export function ProductList({ products, categories, allSuppliers, units, templat
           setEditProductFull(null)
           setAddVariantFamily(null)
         }}
-        categories={categories.map((c) => ({ id: c.id, name: c.name, slug: c.slug, isEpp: c.isEpp, requiresPrevencion: c.requiresPrevencion }))}
+        categories={categoriesForCatalogProducts(categories).map((c) => ({ id: c.id, name: c.name, slug: c.slug, isEpp: c.isEpp, requiresPrevencion: c.requiresPrevencion }))}
         allSuppliers={allSuppliers}
         units={units}
         templates={templates}

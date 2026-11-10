@@ -16,6 +16,9 @@ import { canViewRequestDetail } from "./access"
 import { QUOTATION_TYPES } from "@/lib/request-types"
 import { getOperationalSettings, getPdfMaxSizeMb } from "@/lib/services/system-settings"
 import { listVehicleOptionsForRequests } from "@/lib/services/request-vehicle-options"
+import { listSpareParts } from "@/lib/services/spare-parts-catalog"
+import { buildSparePartOptions, sparePartFacts } from "../spare-part-options"
+import { attributeDisplayName, isFreePartNumberAttribute } from "@/lib/products/spare-part-display"
 import { vehicleLabel } from "@/lib/services/fleet"
 import { buildRequirementHint } from "./requirement-hint"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
@@ -128,6 +131,9 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
     && ["submitted", "in_review", "partially_approved"].includes(request.status)
     && request.items.some((item) => item.status === "requested")
   const canLoadItemEditOptions = canEditItems || canLoadPendingItemEditOptions
+  // El buscador de repuestos sólo se ofrece mientras el borrador de una
+  // solicitud de repuestos se puede editar y la persona puede pedirlos.
+  const canPickSpareParts = canEditItems && request.requestType === "repuestos" && can(session, "repuestos:create")
 
   // Sólo los colaboradores que los ítems ya nombran: la ficha es de consulta y
   // no ofrece el padrón completo, pero sí tiene que decir para quién es cada ítem.
@@ -187,14 +193,21 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
         .where(inArray(mantWorkOrders.id, referencedWorkOrderIds))
   const workOrderFolioById = new Map(referencedWorkOrders.map((order) => [order.id, order.folio]))
 
-  const [allWorksites, allProducts, allAttrs, productSupplierRows, timelineEvents, approvalDecisionRows, allSuppliers, maxFileSizeMb, unitRows, editableWorkers, operationalSettings, vehicleOptions, allEquipment] = await Promise.all([
+  // Los repuestos del catálogo no se ofrecen en el catálogo general (tienen su
+  // buscador); sólo se cargan los que la solicitud ya referencia, para decir cuál es.
+  const sparePartsOnlyIfReferenced = referencedProductIds.length > 0
+    ? or(eq(products.isSparePart, false), inArray(products.id, referencedProductIds))
+    : eq(products.isSparePart, false)
+
+  const [allWorksites, allProducts, allAttrs, productSupplierRows, timelineEvents, approvalDecisionRows, allSuppliers, maxFileSizeMb, unitRows, editableWorkers, operationalSettings, vehicleOptions, allEquipment, catalogSpareParts] = await Promise.all([
     db.select().from(worksites).where(eq(worksites.isActive, true)).orderBy(asc(worksites.name)),
     canLoadItemEditOptions
-      ? db.select().from(products).where(
+      ? db.select().from(products).where(and(
           referencedProductIds.length > 0
             ? or(eq(products.isActive, true), inArray(products.id, referencedProductIds))
-            : eq(products.isActive, true)
-        ).orderBy(asc(products.name))
+            : eq(products.isActive, true),
+          sparePartsOnlyIfReferenced,
+        )).orderBy(asc(products.name))
       : referencedProductIds.length === 0
         ? Promise.resolve([])
         : db.select().from(products).where(inArray(products.id, referencedProductIds)).orderBy(asc(products.name)),
@@ -286,6 +299,12 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
           .where(eq(serviceEquipment.isActive, true))
           .orderBy(asc(serviceEquipment.code))
       : Promise.resolve([]),
+    // El buscador pregunta al servidor mientras se escribe: aquí sólo los
+    // repuestos que la solicitud ya referencia, con su precio y proveedor
+    // (precargan y sueltan el estimado al cambiarlos).
+    canPickSpareParts && referencedProductIds.length > 0
+      ? listSpareParts({ ids: referencedProductIds, includeInactive: true })
+      : Promise.resolve([]),
   ])
 
   const decidedItemIds = new Set(approvalDecisionRows.flatMap((decision) => decision.requestItemId ? [decision.requestItemId] : []))
@@ -321,7 +340,17 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
     }
   }
 
-  const productOptions = allProducts.map((p) => ({
+  // Repuestos que la solicitud ya referencia (aunque estén inactivos); al editar
+  // un borrador de repuestos, con los datos completos del catálogo.
+  const sparePartOptions = buildSparePartOptions({
+    catalog: catalogSpareParts,
+    referenced: allProducts.filter((product) => product.isSparePart),
+    activeSupplierIds,
+    visibleVehicleIds: new Set(vehicleOptions.map((vehicle) => vehicle.id)),
+  })
+  const sparePartById = new Map(sparePartOptions.map((part) => [part.id, part]))
+
+  const productOptions = allProducts.filter((p) => !p.isSparePart).map((p) => ({
     id:             p.id,
     sku:            p.sku,
     name:           p.name,
@@ -360,6 +389,10 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
   const documentChain = await getDocumentChain(session, { kind: "request", id: request.id })
 
   const productNameById = new Map(allProducts.map((product) => [product.id, product.name]))
+  const catalogPartAttributes = (productId: string | null) => {
+    const part = productId ? sparePartById.get(productId) : undefined
+    return part ? sparePartFacts(part).map((fact) => ({ name: fact.label, value: fact.value })) : []
+  }
   const progress = buildRequestProgress(
     request.status,
     request.items.map((item) => ({
@@ -368,10 +401,18 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
       status:        item.status,
       quantity:      item.quantity,
       unitOfMeasure: item.unitOfMeasure,
-      attributes:    item.attributes.map((attribute) => ({
-        name: attribute.attributeName,
-        value: attribute.value,
-      })),
+      attributes:    [
+        // Con un repuesto de catálogo, SKU, N° de parte y marca salen del producto;
+        // el N° de parte libre (que queda si Compras lo catalogó al armar la OC)
+        // no se repite.
+        ...catalogPartAttributes(item.productId),
+        ...item.attributes
+          .filter((attribute) => !(item.productId && sparePartById.has(item.productId) && isFreePartNumberAttribute(attribute.attributeName)))
+          .map((attribute) => ({
+            name: attributeDisplayName(attribute.attributeName),
+            value: attribute.value,
+          })),
+      ],
     })),
   )
 
@@ -557,6 +598,7 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
           worksites={worksiteOptions}
           units={unitRows.map((u) => u.code)}
           products={productOptions}
+          spareParts={sparePartOptions}
           suppliers={supplierOptions}
           workers={editableWorkerOptions}
           equipment={equipmentOptions}

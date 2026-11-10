@@ -14,6 +14,8 @@ export const productSupplierPriceHistory = pgTable("product_supplier_price_histo
   createdAt:         timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   index("product_supplier_price_history_product_supplier_date_idx").on(table.productId, table.supplierId, table.effectiveDate),
+  // Anular una OC busca las filas que escribió por fuente e id.
+  index("product_supplier_price_history_source_idx").on(table.source, table.sourceId),
 ])
 
 export type ProductSupplierPriceHistory = typeof productSupplierPriceHistory.$inferSelect

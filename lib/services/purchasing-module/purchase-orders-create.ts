@@ -12,9 +12,20 @@ import { computeLineSubtotal, computeOrderTotals } from "@/lib/order-totals"
 import { addItemToPurchaseOrderTx } from "../item-state"
 import { lockRequestsForRollupTx } from "../item-state-module/rollup"
 import { getActiveOrderedQuantityTx, PURCHASE_COVERAGE_EPSILON } from "./purchasable-coverage"
+import { sparePartUnitMismatchMessage } from "./spare-part-unit"
 
 export interface CreateOrderItemInput {
   requestItemId: string
+  /**
+   * Producto de la línea. La fuente de verdad es el ítem de solicitud: si coincide
+   * con el suyo (o viene vacío) no cambia nada. Cuando el ítem de solicitud no
+   * tiene producto y esta línea trae un repuesto de catálogo, Compras lo está
+   * **catalogando al armar la OC**: el servicio lo escribe en la línea de la OC y
+   * en el ítem de solicitud de origen (y en el remanente de una compra parcial),
+   * en la misma transacción. Sólo vale para repuestos activos y en la misma
+   * unidad de la línea. El vínculo queda anotado con esta OC: si se elimina o se
+   * anula, la línea vuelve a texto libre (`spare-part-link-revert.ts`).
+   */
   productId:     string | null
   productNameFree: string | null
   quantity:      number
@@ -104,6 +115,7 @@ export async function createOrdersBySupplier(input: CreateOrdersBySupplierInput)
       requestItem: typeof purchaseRequestItems.$inferSelect
       costCenterId: string | null
       deliveryMode: string
+      requestType: string
     }>()
 
     // The request and its parent are locked and resolved inside this transaction:
@@ -116,6 +128,7 @@ export async function createOrdersBySupplier(input: CreateOrdersBySupplierInput)
         worksiteId: purchaseRequests.worksiteId,
         costCenterId: purchaseRequests.costCenterId,
         deliveryMode: purchaseRequests.deliveryMode,
+        requestType: purchaseRequests.requestType,
       })
       .from(purchaseRequestItems)
       .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
@@ -171,7 +184,48 @@ export async function createOrdersBySupplier(input: CreateOrdersBySupplierInput)
         requestItem: source.requestItem,
         costCenterId: source.costCenterId,
         deliveryMode: source.deliveryMode,
+        requestType: source.requestType,
       })
+    }
+
+    // Catálogo de repuestos: una línea de repuesto pedida en texto libre puede
+    // vincularse a un repuesto del catálogo al armar la OC. El cliente sólo
+    // propone el producto; aquí se decide si procede, con la fila ya bloqueada.
+    const sparePartLinks = new Map<string, string>()
+    for (const item of allInputItems) {
+      const proposed = item.productId ?? null
+      const source = lockedSourcesByRequestItemId.get(item.requestItemId)!
+      if (!proposed || proposed === source.requestItem.productId) continue
+      if (source.requestItem.productId) {
+        throw new Error("El ítem ya está vinculado a otro producto del catálogo: recarga la página")
+      }
+      if (source.requestType !== "repuestos") {
+        throw new Error("Sólo las líneas de una solicitud de repuestos se pueden vincular a un repuesto del catálogo")
+      }
+      sparePartLinks.set(item.requestItemId, proposed)
+    }
+    const linkedProductIds = [...new Set(sparePartLinks.values())]
+    if (linkedProductIds.length > 0) {
+      const validParts = await tx
+        .select({ id: products.id, sku: products.sku, unitOfMeasure: products.unitOfMeasure })
+        .from(products)
+        .where(and(
+          inArray(products.id, linkedProductIds),
+          eq(products.isSparePart, true),
+          eq(products.isActive, true),
+        ))
+      if (validParts.length !== linkedProductIds.length) {
+        throw new Error("El repuesto elegido no existe, está inactivo o no es un repuesto del catálogo")
+      }
+      // Un repuesto se compra en una sola unidad: vincular «juego» a uno que va
+      // por «unidad» dejaría en su ficha un precio por juego como si fuese por
+      // unidad (ver `spare-part-unit.ts`).
+      const partById = new Map(validParts.map((part) => [part.id, part]))
+      for (const [requestItemId, productId] of sparePartLinks) {
+        const lineUnit = lockedSourcesByRequestItemId.get(requestItemId)!.requestItem.unitOfMeasure
+        const mismatch = sparePartUnitMismatchMessage(partById.get(productId)!, lineUnit)
+        if (mismatch) throw new Error(mismatch)
+      }
     }
 
     for (const orderInput of input.orders) {
@@ -180,6 +234,11 @@ export async function createOrdersBySupplier(input: CreateOrdersBySupplierInput)
         .from(suppliers)
         .where(and(eq(suppliers.id, orderInput.supplierId), eq(suppliers.isActive, true)))
       if (!activeSupplier) throw new Error("El proveedor seleccionado no está activo")
+
+      // El id se reserva antes de recorrer las líneas: el vínculo de un repuesto
+      // hecho al armar esta OC queda anotado con ella, para que eliminarla o
+      // anularla lo deshaga (`revertOrderSparePartLinksTx`).
+      const orderId = nanoid()
 
       const sourceItems: Array<{
         inputItem: CreateOrderItemInput
@@ -194,7 +253,13 @@ export async function createOrdersBySupplier(input: CreateOrdersBySupplierInput)
         // validado antes de abrir la transacción; la guarda conserva el error
         // útil si la implementación evoluciona y pierde esa correspondencia.
         if (!source) throw new Error(`Item ${item.requestItemId} not found`)
-        const requestItem = source.requestItem
+        const sourceRequestItem = source.requestItem
+        const linkedProductId = sparePartLinks.get(item.requestItemId) ?? null
+        // Con vínculo, de aquí en adelante la línea es un repuesto de catálogo:
+        // el remanente de una compra parcial y la línea de la OC lo heredan.
+        const requestItem = linkedProductId
+          ? { ...sourceRequestItem, productId: linkedProductId }
+          : sourceRequestItem
         // La misma regla que alimenta el selector se reafirma dentro de la
         // transacción. Las compras parciales válidas se representan como un
         // ítem hermano; por eso una línea activa sobre este mismo ítem nunca se
@@ -205,6 +270,25 @@ export async function createOrdersBySupplier(input: CreateOrdersBySupplierInput)
         }
         if (item.quantity > requestItem.quantity) {
           throw new Error("La cantidad a comprar no puede superar la cantidad aprobada del ítem")
+        }
+
+        if (linkedProductId) {
+          // El ítem de solicitud es la fuente de verdad del producto: el vínculo
+          // se escribe también ahí (misma transacción que la OC) para que el
+          // historial del repuesto, la recepción y la conciliación lo vean.
+          await tx
+            .update(purchaseRequestItems)
+            .set({ productId: linkedProductId, updatedAt: new Date().toISOString() })
+            .where(eq(purchaseRequestItems.id, requestItem.id))
+          await recordAudit({
+            userId:     input.createdBy,
+            userEmail:  input.userEmail,
+            action:     "update",
+            entityType: "request_item",
+            entityId:   requestItem.id,
+            oldState:   { productId: null },
+            newState:   { productId: linkedProductId, linkedFrom: "purchase_order", purchaseOrderId: orderId },
+          }, tx)
         }
 
         sourceItems.push({ inputItem: item, requestItem, costCenterId: source.costCenterId, deliveryMode: source.deliveryMode })
@@ -242,6 +326,19 @@ export async function createOrdersBySupplier(input: CreateOrdersBySupplierInput)
             notes:               requestItem.notes,
             splitFromItemId:     requestItem.id,
           })
+          if (linkedProductId) {
+            // El remanente hereda el vínculo de esta OC, y con la misma marca:
+            // si la OC se elimina o se anula, vuelve a texto libre con su origen.
+            await recordAudit({
+              userId:     input.createdBy,
+              userEmail:  input.userEmail,
+              action:     "update",
+              entityType: "request_item",
+              entityId:   siblingId,
+              oldState:   { productId: null },
+              newState:   { productId: linkedProductId, linkedFrom: "purchase_order", purchaseOrderId: orderId },
+            }, tx)
+          }
 
           const attrs = await tx.query.requestItemAttributes.findMany({
             where: eq(requestItemAttributes.requestItemId, requestItem.id),
@@ -307,7 +404,6 @@ export async function createOrdersBySupplier(input: CreateOrdersBySupplierInput)
         throw new Error("Los ítems de la OC pertenecen a solicitudes con modo de despacho distinto; crea órdenes separadas")
       }
 
-      const orderId = nanoid()
       const code    = await nextCodeTx(tx, "OC", year)
       const totals  = computeOrderTotals(orderInput.items)
       orderIds.push(orderId)

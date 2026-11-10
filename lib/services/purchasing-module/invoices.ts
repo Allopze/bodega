@@ -755,6 +755,7 @@ async function linkDteItemsToOrderTx(
       productNameFree: purchaseOrderItems.productNameFree,
       productName: products.name,
       productCode: products.sku,
+      partNumber: products.partNumber,
       unitOfMeasure: purchaseOrderItems.unitOfMeasure,
     })
     .from(purchaseOrderItems)
@@ -768,6 +769,7 @@ async function linkDteItemsToOrderTx(
       id: item.id,
       productName: item.productNameFree ?? item.productName ?? item.id,
       productCode: item.productCode ?? null,
+      partNumber: item.partNumber ?? null,
       unitOfMeasure: item.unitOfMeasure,
       sizeLabel: item.productId ? sizes.get(item.productId)?.label ?? null : null,
     })),

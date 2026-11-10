@@ -331,4 +331,20 @@ describe("cola de Compras — solicitudes aprobadas sin OC", () => {
     // Un ítem sin equipo no inventa etiqueta.
     expect(byId.get("it-veh-c")?.vehicleLabel).toBeNull()
   })
+
+  it("un repuesto de catálogo dice su N° de parte una sola vez, con el rótulo del catálogo", async () => {
+    await inMemoryDb.insert(schema.products).values({
+      id: "rpt-cola", sku: "RPT-COLA", name: "Filtro de aceite", categoryId: "cat-repuestos",
+      unitOfMeasure: "unidad", isSparePart: true, partNumber: "1R-0750", isActive: true, createdAt: now, updatedAt: now,
+    })
+    await seedRequest("req-rpt", "SOL-COLA-0011")
+    await seedItem("it-rpt", "req-rpt", { status: "approved", productId: "rpt-cola", name: "Filtro aceite" })
+    // El N° de parte libre que escribió quien pidió (el mismo, escrito de otra forma).
+    await inMemoryDb.insert(schema.requestItemAttributes).values({
+      id: "ria-rpt", requestItemId: "it-rpt", attributeName: "N° de Parte", value: "1r 0750",
+    })
+
+    const [request] = await listPendingPurchaseRequests(undefined, { q: "SOL-COLA-0011" }, { limit: 50, offset: 0 })
+    expect(request!.items[0]!.productName).toBe("Filtro de aceite · N° de parte: 1R-0750")
+  })
 })

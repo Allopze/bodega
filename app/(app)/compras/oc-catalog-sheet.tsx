@@ -1,0 +1,398 @@
+"use client"
+
+import * as React from "react"
+import { LinkSimple, Package } from "@phosphor-icons/react"
+import { MetaBadge } from "@/components/states/state-badge"
+import { Button } from "@/components/ui/button"
+import { Callout } from "@/components/ui/callout"
+import { EmptyState } from "@/components/ui/empty-state"
+import { Field } from "@/components/ui/field"
+import { Input } from "@/components/ui/input"
+import { SegmentedControl } from "@/components/ui/segmented-control"
+import {
+  Sheet, SheetBody, SheetCloseButton, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle,
+} from "@/components/ui/sheet"
+import { useOperation } from "@/lib/hooks/use-operation"
+import { unitLabel, unitWord, type UnitLabels } from "@/lib/products/unit-label"
+import { normalizeUnitOfMeasure } from "@/lib/services/purchasing-module/spare-part-unit"
+import { toast } from "@/lib/toast"
+import { formatCLP, formatDate, formatQty } from "@/lib/utils"
+import {
+  createSparePartForOcAction,
+  linkSparePartForOcAction,
+  searchSparePartsForOcAction,
+  type SearchSparePartsResult,
+  type SparePartChoice,
+} from "./actions"
+import { sparePartDraftFromLine, sparePartTag } from "./oc-form.helpers"
+import type { LinkedSparePart, PendingItemOption } from "./oc-form.types"
+
+type View = "link" | "create"
+
+/** Por qué un repuesto sube en la lista: ya se compró para este equipo, o para uno igual. */
+const MATCH_BADGES: Record<NonNullable<SparePartChoice["vehicleMatch"]>, { label: string; variant: "success" | "info" }> = {
+  vehicle: { label: "Ya se compró para este equipo", variant: "success" },
+  model: { label: "Se compró para un equipo igual", variant: "info" },
+}
+
+/**
+ * Por qué un repuesto no se puede vincular a la línea: se compra en otra unidad.
+ * Misma comparación que exige el servidor (`sparePartUnitMismatchMessage`), dicha
+ * antes de elegir para no descubrirla con un error después.
+ */
+export function unitMismatchReason(
+  part: Pick<SparePartChoice, "unitOfMeasure">,
+  lineUnit: string,
+  labels?: UnitLabels,
+): string | null {
+  if (normalizeUnitOfMeasure(part.unitOfMeasure) === normalizeUnitOfMeasure(lineUnit)) return null
+  return `Se compra por «${unitWord(part.unitOfMeasure, labels)}» y esta línea pide «${unitWord(lineUnit, labels)}»`
+}
+
+/** SKU, N° de parte, marca y unidad: lo que distingue dos repuestos de nombre parecido. */
+function choiceFacts(part: SparePartChoice, labels?: UnitLabels): string {
+  return [sparePartTag(part), part.partBrand, `por ${unitWord(part.unitOfMeasure, labels)}`].filter(Boolean).join(" · ")
+}
+
+interface OcCatalogSheetProps {
+  /** La línea que se cataloga; `null` = hoja cerrada. */
+  item: PendingItemOption | null
+  /** `repuestos:catalog`: sin él sólo se puede vincular a un repuesto que ya existe. */
+  canCreate: boolean
+  /** Código → rótulo del catálogo de unidades («bidon» → «Bidón»). */
+  unitLabels?: UnitLabels
+  onOpenChange: (open: boolean) => void
+  onLink: (itemId: string, part: LinkedSparePart) => void
+}
+
+/**
+ * «Catalogar»: Compras arma la OC con una línea de repuesto que el solicitante
+ * escribió en texto libre y la ata a un repuesto del catálogo, para que su
+ * precio y su historial queden donde corresponde. Dos caminos: vincular uno que
+ * ya existe (con sugerencia por N° de parte) o crearlo prellenado desde la línea.
+ *
+ * El vínculo se guarda en el servidor al elegir (FF-6), en la línea (ítem de solicitud):
+ * una recarga no lo pierde ni deja huérfano al repuesto recién creado. `onLink` avisa al
+ * formulario para mostrarlo sin recargar. Se quita desde la línea con «Desvincular».
+ */
+export function OcCatalogSheet({ item, canCreate, unitLabels, onOpenChange, onLink }: OcCatalogSheetProps) {
+  return (
+    <Sheet open={item !== null} onOpenChange={onOpenChange}>
+      {/* `stableHeight`: alternar entre «vincular» y «crear» no debe mover la caja. */}
+      <SheetContent stableHeight className="sm:max-w-xl sm:h-[min(80vh,40rem)]">
+        {item && (
+          // `key`: cada línea abre con búsqueda y borrador propios.
+          <CatalogBody key={item.id} item={item} canCreate={canCreate} unitLabels={unitLabels} onClose={() => onOpenChange(false)} onLink={onLink} />
+        )}
+      </SheetContent>
+    </Sheet>
+  )
+}
+
+function CatalogBody({
+  item, canCreate, unitLabels, onClose, onLink,
+}: {
+  item: PendingItemOption
+  canCreate: boolean
+  unitLabels?: UnitLabels
+  onClose: () => void
+  onLink: OcCatalogSheetProps["onLink"]
+}) {
+  const [view, setView] = React.useState<View>("link")
+  const lineName = (item.productNameFree ?? item.productName).trim()
+
+  return (
+    <>
+      <SheetHeader>
+        <div className="min-w-0">
+          <SheetTitle>Catalogar repuesto</SheetTitle>
+          <SheetDescription>
+            «{lineName}» · {formatQty(item.quantity, item.unitOfMeasure)}
+            {item.requestedPartNumber ? ` · N° de parte ${item.requestedPartNumber}` : ""}
+          </SheetDescription>
+        </div>
+        <SheetCloseButton />
+      </SheetHeader>
+
+      {canCreate && (
+        <div className="shrink-0 border-b border-[var(--color-border)] px-6 py-3">
+          <SegmentedControl
+            ariaLabel="Cómo catalogar la línea"
+            items={[
+              { key: "link", label: "Vincular a uno existente", active: view === "link", onClick: () => setView("link") },
+              { key: "create", label: "Crear uno nuevo", active: view === "create", onClick: () => setView("create") },
+            ]}
+          />
+        </div>
+      )}
+
+      {view === "link" || !canCreate ? (
+        <LinkView
+          item={item}
+          canCreate={canCreate}
+          unitLabels={unitLabels}
+          onCreateInstead={() => setView("create")}
+          onChosen={(part) => { onLink(item.id, part); onClose() }}
+        />
+      ) : (
+        <CreateView
+          item={item}
+          unitLabels={unitLabels}
+          onCancel={onClose}
+          onCreated={(part) => {
+            onLink(item.id, part)
+            // La hoja se cierra: sin el aviso, nada decía que el catálogo ganó un repuesto.
+            toast.success(`Repuesto ${part.sku} creado en el catálogo y vinculado a la línea`)
+            onClose()
+          }}
+        />
+      )}
+    </>
+  )
+}
+
+/* ── Camino 1: vincular a un repuesto que ya existe ─────────────────────────── */
+
+function LinkView({
+  item, canCreate, unitLabels, onCreateInstead, onChosen,
+}: {
+  item: PendingItemOption
+  canCreate: boolean
+  unitLabels?: UnitLabels
+  onCreateInstead: () => void
+  onChosen: (part: LinkedSparePart) => void
+}) {
+  const [query, setQuery] = React.useState("")
+  const [debounced, setDebounced] = React.useState("")
+  const [result, setResult] = React.useState<{ key: string; data: SearchSparePartsResult } | null>(null)
+  const [suggestion, setSuggestion] = React.useState<SparePartChoice | null>(null)
+  const op = useOperation()
+
+  React.useEffect(() => {
+    const timer = setTimeout(() => setDebounced(query.trim()), 250)
+    return () => clearTimeout(timer)
+  }, [query])
+
+  const requestedPartNumber = item.requestedPartNumber
+  const vehicleId = item.vehicleId
+  const requestId = item.requestId
+  React.useEffect(() => {
+    let cancelled = false
+    void searchSparePartsForOcAction({
+      query: debounced,
+      vehicleId,
+      requestId,
+      // La sugerencia por N° de parte se pide sólo con el catálogo completo a la vista.
+      partNumber: debounced === "" ? requestedPartNumber : null,
+    })
+      .then((data) => {
+        if (cancelled) return
+        setResult({ key: debounced, data })
+        if (debounced === "") setSuggestion(data.ok ? data.suggestion : null)
+      })
+      .catch(() => {
+        if (!cancelled) setResult({ key: debounced, data: { ok: false, message: "No se pudo buscar en el catálogo. Inténtalo de nuevo." } })
+      })
+    return () => { cancelled = true }
+  }, [debounced, vehicleId, requestId, requestedPartNumber])
+
+  const loading = result === null || result.key !== debounced
+  const data = result?.data
+  const lineUnit = item.unitOfMeasure
+  // Los de otra unidad no se pueden vincular: van al final, con el motivo a la vista.
+  const parts = (data?.ok
+    ? data.parts.filter((part) => debounced !== "" || part.id !== suggestion?.id)
+    : [])
+    .map((part) => ({ part, mismatch: unitMismatchReason(part, lineUnit, unitLabels) }))
+    .sort((left, right) => Number(left.mismatch !== null) - Number(right.mismatch !== null))
+  const suggestionMismatch = suggestion ? unitMismatchReason(suggestion, lineUnit, unitLabels) : null
+
+  function choose(part: SparePartChoice) {
+    op.run(
+      async () => {
+        const linked = await linkSparePartForOcAction({ requestItemId: item.id, productId: part.id })
+        return linked.ok ? { ok: true, data: { part: linked.part } } : { ok: false, message: linked.message }
+      },
+      (done) => onChosen(done.data!.part as LinkedSparePart),
+    )
+  }
+
+  return (
+    <SheetBody className="flex flex-col gap-4">
+      {suggestion && (
+        <Callout tone="info" role="status" icon={<LinkSimple size={16} weight="bold" />} title="Coincide por N° de parte">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-sm font-medium">{suggestion.name}</div>
+              <div className="text-xs">{choiceFacts(suggestion, unitLabels)}</div>
+              {suggestionMismatch && <div id="oc-catalog-suggestion-mismatch" className="mt-1 text-xs font-medium text-[var(--color-warning-ink)]">{suggestionMismatch}</div>}
+            </div>
+            {/* Otra unidad: no se vincula, pero el botón sigue enfocable y dice por qué. */}
+            <Button
+              type="button"
+              size="sm"
+              variant="primary"
+              onClick={() => { if (suggestionMismatch === null) choose(suggestion) }}
+              disabled={op.pending}
+              aria-disabled={suggestionMismatch !== null ? true : undefined}
+              aria-describedby={suggestionMismatch !== null ? "oc-catalog-suggestion-mismatch" : undefined}
+              className={suggestionMismatch !== null ? "cursor-not-allowed opacity-60" : undefined}
+            >
+              Vincular este
+            </Button>
+          </div>
+        </Callout>
+      )}
+
+      <Field label="Buscar en el catálogo" htmlFor="oc-catalog-search">
+        <Input
+          id="oc-catalog-search"
+          type="search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Nombre, SKU o N° de parte"
+          autoComplete="off"
+        />
+      </Field>
+
+      {op.message && (
+        <p role="alert" className="text-sm text-[var(--color-danger)]">{op.message}</p>
+      )}
+
+      {data && !data.ok ? (
+        <p role="alert" className="text-sm text-[var(--color-danger)]">{data.message}</p>
+      ) : loading && result === null ? (
+        <p role="status" className="text-sm text-[var(--color-text-muted)]">Buscando repuestos…</p>
+      ) : parts.length === 0 && !suggestion ? (
+        <EmptyState
+          compact
+          icon={<Package size={22} weight="light" />}
+          title={debounced ? `Ningún repuesto coincide con «${debounced}»` : "El catálogo de repuestos está vacío"}
+          description={canCreate
+            ? "Créalo ahora con los datos de la línea y quedará vinculado a esta compra."
+            : "Pídele a quien administra el catálogo que cree el repuesto y vuelve a intentarlo."}
+          action={canCreate ? <Button type="button" variant="secondary" size="sm" onClick={onCreateInstead}>Crear repuesto nuevo</Button> : undefined}
+        />
+      ) : (
+        <>
+          {data?.ok && data.total > data.parts.length && (
+            <p className="text-xs text-[var(--color-text-muted)]">
+              Mostrando {data.parts.length} de {data.total}. Escribe para afinar la búsqueda.
+            </p>
+          )}
+          <ul aria-label="Repuestos del catálogo" aria-busy={loading} className="flex flex-col gap-2">
+            {parts.map(({ part, mismatch }) => (
+              <li key={part.id}>
+                <button
+                  type="button"
+                  onClick={() => { if (mismatch === null) choose(part) }}
+                  // Otra unidad: el servidor lo rechazaría. Se ve y se puede
+                  // enfocar (el lector de pantalla lee por qué), pero no se elige.
+                  disabled={op.pending}
+                  aria-disabled={mismatch !== null ? true : undefined}
+                  aria-describedby={mismatch !== null ? `oc-catalog-mismatch-${part.id}` : undefined}
+                  className={`flex w-full items-start justify-between gap-3 rounded-[var(--radius-lg)] border border-[var(--color-border)] px-3 py-2.5 text-left transition-colors duration-[var(--duration-fast)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)] disabled:cursor-not-allowed disabled:bg-[var(--color-surface-2)] ${mismatch !== null
+                    ? "cursor-not-allowed bg-[var(--color-surface-2)]"
+                    : "bg-[var(--color-surface)] enabled:hover:bg-[var(--color-surface-2)]"}`}
+                >
+                  <span className="min-w-0">
+                    <span className={mismatch ? "block text-sm font-medium text-[var(--color-text-muted)]" : "block text-sm font-medium text-[var(--color-text)]"}>{part.name}</span>
+                    <span className="block text-xs text-[var(--color-text-muted)]">{choiceFacts(part, unitLabels)}</span>
+                    {mismatch && (
+                      <span id={`oc-catalog-mismatch-${part.id}`} className="mt-1 block text-xs font-medium text-[var(--color-warning-ink)]">{mismatch}</span>
+                    )}
+                    {part.vehicleMatch && (
+                      <MetaBadge meta={MATCH_BADGES[part.vehicleMatch]} size="sm" className="mt-1.5" />
+                    )}
+                  </span>
+                  <span className="shrink-0 text-right text-xs text-[var(--color-text-muted)]">
+                    {part.lastPrice !== null ? (
+                      <span className="block font-medium tabular-nums text-[var(--color-text)]">{formatCLP(part.lastPrice)}</span>
+                    ) : part.referencePrice !== null && part.referencePrice > 0 ? (
+                      // Nunca se compró: el precio de la ficha, dicho como lo que es.
+                      <>
+                        <span className="block font-medium tabular-nums text-[var(--color-text)]">{formatCLP(part.referencePrice)}</span>
+                        <span className="block">Referencia</span>
+                      </>
+                    ) : (
+                      <span className="block">Sin precio</span>
+                    )}
+                    {part.lastPurchasedAt && <span className="block">Comprado {formatDate(part.lastPurchasedAt)}</span>}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </SheetBody>
+  )
+}
+
+/* ── Camino 2: crear un repuesto nuevo, prellenado desde la línea ───────────── */
+
+function CreateView({
+  item, unitLabels, onCancel, onCreated,
+}: {
+  item: PendingItemOption
+  unitLabels?: UnitLabels
+  onCancel: () => void
+  onCreated: (part: LinkedSparePart) => void
+}) {
+  const draft = React.useMemo(() => sparePartDraftFromLine(item), [item])
+  const [name, setName] = React.useState(draft.name)
+  const [partNumber, setPartNumber] = React.useState(draft.partNumber)
+  const [partBrand, setPartBrand] = React.useState("")
+  const op = useOperation()
+
+  function submit(event: React.FormEvent) {
+    // La hoja vive en un portal dentro del formulario de la OC: este envío no
+    // puede llegar a él.
+    event.preventDefault()
+    event.stopPropagation()
+    op.run(
+      async () => {
+        const created = await createSparePartForOcAction({
+          requestItemId: item.id, name, partNumber, partBrand, unitOfMeasure: item.unitOfMeasure,
+        })
+        return created.ok ? { ok: true, data: { part: created.part } } : { ok: false, message: created.message }
+      },
+      (done) => onCreated(done.data!.part as LinkedSparePart),
+    )
+  }
+
+  return (
+    <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col">
+      <SheetBody className="flex flex-col gap-4">
+        <p className="text-sm text-[var(--color-text-muted)]">
+          Se agrega al catálogo de repuestos con un código RPT y queda vinculado a esta línea. Revisa el nombre y los datos del fabricante.
+        </p>
+        <Field label="Nombre del repuesto" htmlFor="oc-catalog-name" required>
+          <Input id="oc-catalog-name" value={name} onChange={(event) => setName(event.target.value)} maxLength={200} required />
+        </Field>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field
+            label="N° de parte"
+            htmlFor="oc-catalog-part-number"
+            helper="Evita duplicados: un mismo N° de parte y marca es un solo repuesto."
+          >
+            <Input id="oc-catalog-part-number" value={partNumber} onChange={(event) => setPartNumber(event.target.value)} maxLength={100} />
+          </Field>
+          <Field label="Marca del repuesto" htmlFor="oc-catalog-part-brand" helper="Del fabricante, no del equipo.">
+            <Input id="oc-catalog-part-brand" value={partBrand} onChange={(event) => setPartBrand(event.target.value)} maxLength={100} />
+          </Field>
+        </div>
+        <p className="text-xs text-[var(--color-text-muted)]">Unidad de medida: {unitLabel(item.unitOfMeasure, unitLabels)}</p>
+        {op.message && (
+          <p role="alert" className="text-sm text-[var(--color-danger)]">{op.message}</p>
+        )}
+      </SheetBody>
+      <SheetFooter>
+        <Button type="button" variant="ghost" onClick={onCancel} disabled={op.pending}>Cancelar</Button>
+        <Button type="submit" variant="primary" loading={op.pending} disabled={name.trim() === ""}>
+          Crear y vincular
+        </Button>
+      </SheetFooter>
+    </form>
+  )
+}

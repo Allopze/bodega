@@ -1,16 +1,20 @@
 "use client"
 
 import * as React from "react"
-import { Package, MagnifyingGlass } from "@phosphor-icons/react"
+import { Package, MagnifyingGlass, BookBookmark } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { MetaBadge } from "@/components/states/state-badge"
 import { Input } from "@/components/ui/input"
 import { SegmentedControl } from "@/components/ui/segmented-control"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { useOperation } from "@/lib/hooks/use-operation"
 import { formatCLP, formatQty, quantityStep } from "@/lib/utils"
-import { priceHint, priceSourceLabel, suggestedSupplierLabel } from "./oc-form.helpers"
-import type { SupplierOption, PendingItemOption } from "./oc-form.types"
+import { unlinkSparePartForOcAction } from "./actions"
+import { canCatalogLine, priceHint, priceSourceLabel, sparePartTag, suggestedSupplierLabel } from "./oc-form.helpers"
+import { OcCatalogSheet } from "./oc-catalog-sheet"
+import type { UnitLabels } from "@/lib/products/unit-label"
+import type { SupplierOption, PendingItemOption, LinkedSparePart } from "./oc-form.types"
 
 const MODE_LABELS: Record<string, string> = {
   via_oficina:   "Vía oficina",
@@ -43,6 +47,48 @@ interface OcFormItemsProps {
   setItemQuantity:    (item: PendingItemOption, value: string) => void
   resolveItemSupplierId: (item: PendingItemOption) => string
   setItemSupplier:    (itemId: string, supplierId: string) => void
+  /**
+   * Catalogar al comprar: vincular una línea en texto libre a un repuesto (la hoja
+   * lo guarda en el servidor y avisa aquí para mostrarlo) y quitar ese vínculo. Sin
+   * `onLinkPart` la fila no ofrece «Catalogar» (otros usos del selector).
+   */
+  onLinkPart?:        (itemId: string, part: LinkedSparePart) => void
+  onUnlinkPart?:      (itemId: string) => void
+  /** `repuestos:catalog`: permite crear el repuesto desde la hoja, no sólo vincular uno existente. */
+  canCreateSparePart?: boolean
+  /** Código → rótulo del catálogo de unidades, para la hoja «Catalogar». */
+  unitLabels?: UnitLabels
+}
+
+/**
+ * «Desvincular»: quita el vínculo que se hizo desde «Catalogar». Lo guardado en el
+ * servidor es lo que manda, así que primero se quita allí y sólo entonces la línea
+ * vuelve a texto libre en pantalla; si el servidor lo rechaza (la línea ya está en una
+ * OC, por ejemplo) se dice el motivo y la línea no cambia.
+ */
+function UnlinkPartButton({ item, onUnlinked }: { item: PendingItemOption; onUnlinked: (itemId: string) => void }) {
+  const op = useOperation()
+  return (
+    <>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        loading={op.pending}
+        aria-label={`Desvincular el repuesto de ${item.productName}`}
+        onClick={() => op.run(
+          async () => {
+            const result = await unlinkSparePartForOcAction({ requestItemId: item.id })
+            return result.ok ? { ok: true } : { ok: false, message: result.message }
+          },
+          () => onUnlinked(item.id),
+        )}
+      >
+        Desvincular
+      </Button>
+      {op.message && <span role="alert" className="text-[var(--color-danger-ink)]">{op.message}</span>}
+    </>
+  )
 }
 
 export function OcFormItems({
@@ -50,7 +96,12 @@ export function OcFormItems({
   worksiteId, search, worksiteModes, modeFilter, onModeChange, onToggle, onToggleAll, onSearchChange,
   itemPrice, itemDiscount, setItemPrice, setItemDiscount, itemQuantity, setItemQuantity,
   resolveItemSupplierId, setItemSupplier,
+  onLinkPart, onUnlinkPart, canCreateSparePart = false, unitLabels,
 }: OcFormItemsProps) {
+  // La hoja «Catalogar» es una sola para todas las filas; esta es la línea abierta.
+  const [catalogingId, setCatalogingId] = React.useState<string | null>(null)
+  const cataloging = filteredByWorksite.find((i) => i.id === catalogingId) ?? null
+
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
@@ -171,6 +222,22 @@ export function OcFormItems({
                       {item.workOrderFolio && ` · OT ${item.workOrderFolio}`}
                     </div>
                   )}
+                  {item.isSparePart ? (
+                    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[var(--color-text-muted)]">
+                      <MetaBadge meta={{ label: "Repuesto de catálogo", variant: "primary" }} className="font-normal shrink-0 text-2xs" />
+                      <span>{sparePartTag({ sku: null, partNumber: item.partNumber ?? null }) || "Sin N° de parte"}</span>
+                      {item.linkedFromSheet && onUnlinkPart && (
+                        <UnlinkPartButton item={item} onUnlinked={onUnlinkPart} />
+                      )}
+                    </div>
+                  ) : onLinkPart && canCatalogLine(item) ? (
+                    <div className="mt-1.5">
+                      <Button type="button" variant="secondary" size="sm" onClick={() => setCatalogingId(item.id)}>
+                        <BookBookmark size={14} weight="bold" className="mr-1.5" aria-hidden="true" />
+                        Catalogar
+                      </Button>
+                    </div>
+                  ) : null}
                   <div className="mt-1 text-xs text-[var(--color-text-muted)]">
                     Aprobado: {formatQty(item.quantity, item.unitOfMeasure)}
                     {item.notes && ` · ${item.notes}`}
@@ -259,6 +326,16 @@ export function OcFormItems({
             )
           })}
         </div>
+      )}
+
+      {onLinkPart && (
+        <OcCatalogSheet
+          item={cataloging}
+          canCreate={canCreateSparePart}
+          unitLabels={unitLabels}
+          onOpenChange={(open) => { if (!open) setCatalogingId(null) }}
+          onLink={onLinkPart}
+        />
       )}
     </div>
   )

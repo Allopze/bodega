@@ -2,10 +2,24 @@ import { nanoid } from "@/lib/id"
 import { buildEppFamilyIdentityKey } from "@/lib/services/epp-import"
 import { classifyEppTypeIdByName } from "@/lib/services/epp-type-classification"
 import { type DB, type Tx } from "@/db"
-import { eppProductFamilies, products, productCategories } from "@/db/schema"
-import { eq, sql } from "drizzle-orm"
+import { eppProductFamilies, productCategories } from "@/db/schema"
+import { eq } from "drizzle-orm"
+import { isSparePartsCategory } from "@/lib/products/spare-parts-category"
 
 export const REVALIDATE = "/admin/productos"
+
+/**
+ * Catálogo de repuestos: la categoría «Repuestos» no admite productos comunes
+ * (`lib/products/spare-parts-category.ts`). Se resuelve por slug, como la busca
+ * `createSparePartTx`, no por el id sembrado.
+ */
+export async function isSparePartsCategoryId(client: DB | Tx, categoryId: string): Promise<boolean> {
+  const category = await client.query.productCategories.findFirst({
+    where: eq(productCategories.id, categoryId),
+    columns: { slug: true },
+  })
+  return isSparePartsCategory(category)
+}
 
 export function formString(formData: FormData, name: string) {
   const value = formData.get(name)
@@ -43,43 +57,9 @@ export function displayOptionsText(options: string | null): string {
   return options
 }
 
-/**
- * Genera `count` SKU secuenciales dentro de una transacción.
- *
- * Usa secuencias numéricas consecutivas: EPP-001, EPP-002, ... (EPP)
- * o PRD-001, PRD-002, ... (no-EPP). El arranque se calcula desde el máximo
- * existente en la BD para el prefijo dado, de modo que siempre continúa la
- * secuencia sin colisiones.
- *
- * Dentro de una transacción de lote variantes, el `Set` local evita
- * duplicados si dos lotes concurrentes leen el mismo max al inicio.
- */
-export async function generateUniqueSkus(client: DB | Tx, count: number, isEpp: boolean): Promise<string[]> {
-  const prefix = isEpp ? "EPP" : "PRD"
-
-  const rows = await client
-    .select({ sku: products.sku })
-    .from(products)
-    .where(sql`${products.sku} LIKE ${prefix + '-%'}`)
-
-  let maxNum = 0
-  for (const row of rows) {
-    const num = parseInt(row.sku.slice(prefix.length + 1), 10)
-    if (!isNaN(num) && num > maxNum) maxNum = num
-  }
-
-  const generated: string[] = []
-  for (let i = 0; i < count; i++) {
-    maxNum++
-    generated.push(`${prefix}-${String(maxNum).padStart(3, "0")}`)
-  }
-  return generated
-}
-
-export async function generateUniqueProductSku(client: DB | Tx, isEpp: boolean) {
-  const [sku] = await generateUniqueSkus(client, 1, isEpp)
-  return sku!
-}
+// El generador de SKU vive en `lib/products/product-skus.ts` para que los
+// servicios de `lib/` (catálogo de repuestos) lo usen sin importar desde `app/`.
+export { generateUniqueSkus, generateUniqueProductSku } from "@/lib/products/product-skus"
 
 /**
  * Devuelve la familia con esa identidad, creándola si aún no existe.

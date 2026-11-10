@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input"
 import { INITIAL_STATE, type ActionState } from "@/lib/form-state"
 import { toCode } from "@/lib/utils"
 import { Checkbox } from "@/components/ui/checkbox"
+import { isSparePartsCategory } from "@/lib/products/spare-parts-category"
 import { createCategory, updateCategory } from "./actions"
 
 export interface CategoryForEdit {
@@ -26,6 +27,8 @@ interface CategoryPanelProps {
 
 export function CategoryPanel({ open, onClose, editCategory }: CategoryPanelProps) {
   const isEdit = !!editCategory
+  // El catálogo de repuestos busca su categoría por este slug: no se edita.
+  const slugLocked = isSparePartsCategory(editCategory)
   const action = isEdit ? updateCategory : createCategory
   const [state, formAction] = useActionState<ActionState, FormData>(
     async (prev, formData) => {
@@ -68,10 +71,15 @@ export function CategoryPanel({ open, onClose, editCategory }: CategoryPanelProp
                   onChange={(e) => { if (!isEdit) changeSlug(toCode(e.target.value).toLowerCase().replace(/-+/g, "-")) }}
                 />
               </Field>
-              <Field label="Slug" htmlFor="cat-slug" required helper="Identificador único del sistema" error={state.fieldErrors?.slug?.[0]}>
+              <Field
+                label="Slug" htmlFor="cat-slug" required
+                helper={slugLocked ? "Lo usa el catálogo de repuestos: no se puede cambiar" : "Identificador único del sistema"}
+                error={state.fieldErrors?.slug?.[0]}
+              >
                 <Input
                   id="cat-slug" name="slug"
                   value={slug}
+                  readOnly={slugLocked}
                   onChange={(e) => changeSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-"))}
                   placeholder="herramientas-manuales"
                   error={!!state.fieldErrors?.slug}
@@ -82,8 +90,24 @@ export function CategoryPanel({ open, onClose, editCategory }: CategoryPanelProp
                 <Input id="cat-sort" name="sortOrder" type="number" defaultValue={editCategory?.sortOrder ?? 0} className="w-24" />
               </Field>
               <div className="space-y-2">
-                <Checkbox id="cat-epp" name="isEpp" value="on" defaultChecked={editCategory?.isEpp ?? false} label="Es EPP (equipo de protección personal)" />
-                <Checkbox id="cat-prev" name="requiresPrevencion" value="on" defaultChecked={editCategory?.requiresPrevencion ?? false} label="Requiere aprobación de Prevención" />
+                {slugLocked ? (
+                  // Bloqueadas como el slug: el servidor las rechaza si cambian. Una
+                  // casilla deshabilitada no se envía, así que su valor viaja oculto.
+                  <>
+                    <Checkbox id="cat-epp" checked={editCategory?.isEpp ?? false} disabled readOnly label="Es EPP (equipo de protección personal)" aria-describedby="cat-flags-locked" />
+                    <Checkbox id="cat-prev" checked={editCategory?.requiresPrevencion ?? false} disabled readOnly label="Requiere aprobación de Prevención" aria-describedby="cat-flags-locked" />
+                    {editCategory?.isEpp && <input type="hidden" name="isEpp" value="on" />}
+                    {editCategory?.requiresPrevencion && <input type="hidden" name="requiresPrevencion" value="on" />}
+                    <p id="cat-flags-locked" className="text-xs text-[var(--color-text-muted)]">
+                      Lo usa el catálogo de repuestos: un repuesto no es EPP ni pasa por Prevención.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <Checkbox id="cat-epp" name="isEpp" value="on" defaultChecked={editCategory?.isEpp ?? false} label="Es EPP (equipo de protección personal)" />
+                    <Checkbox id="cat-prev" name="requiresPrevencion" value="on" defaultChecked={editCategory?.requiresPrevencion ?? false} label="Requiere aprobación de Prevención" />
+                  </>
+                )}
               </div>
             </FieldGroup>
           </SheetBody>
