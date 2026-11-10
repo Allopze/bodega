@@ -1,0 +1,1 @@
+CREATE INDEX "product_supplier_price_history_source_idx" ON "product_supplier_price_history" USING btree ("source","source_id");

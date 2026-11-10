@@ -2703,6 +2703,13 @@
       "when": 1794252953242,
       "tag": "0385_spare_parts_catalog",
       "breakpoints": true
+    },
+    {
+      "idx": 386,
+      "version": "7",
+      "when": 1794268934528,
+      "tag": "0386_price_history_source_idx",
+      "breakpoints": true
     }
   ]
 }
