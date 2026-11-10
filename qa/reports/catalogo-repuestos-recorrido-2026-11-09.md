@@ -349,3 +349,101 @@ Ninguno confirmado.
 | purchase_orders | `VJv2Jyi-hYn_x6CdlhhFF` | OC-2026-0062, anulada (prueba de reversión, RPT-001 de REP-2026-0003, que vuelve a la cola) |
 | receipts | `sC-0uGFi0Ccs6oXlTAvSi` | REC-2026-0105 |
 | product_supplier_price_history | `HUDhiD0YJvBeTmLJsZI45`, `bXmZYoAjJIhSVs3DzuzTN` | RPT-004 $10.500 y RPT-005 $3.800, fuente `purchase_order` |
+
+---
+
+## Tercera verificación (HEAD `b446a9f5f`)
+
+Verifica los cuatro arreglos posteriores al segundo recorrido: el vínculo de «Catalogar» guardado en el servidor con su
+«Desvincular» (`2f2bc0dbc`), el precio de referencia en la hoja y en el buscador (`344b768b2`), «Equipo: … · OT …» en la OC
+impresa y en el PDF (`8d7ae958f`) y el N° de parte que no se parte a mitad de token (`b446a9f5f`).
+
+**Montaje.** `next dev --webpack -p 3002` desde el worktree de la rama, con `AUTH_URL`/`NEXTAUTH_URL`/`APP_URL`/`PDF_RENDER_ORIGIN`
+en :3002. La base es `bodega_dev` en `127.0.0.1:5433`, con migraciones hasta la 0386. Chromium de `@playwright/test` desde scripts
+`.mjs`, escritorio 1440×900 y móvil 390×844. **Correo:** antes de emitir o aprobar se comprobó que sigue inerte. `RESEND_API_KEY`
+está vacía en `.env`, `.env.local` y `.env.development.local`, y `system_settings` no tiene filas `email.resend.*`. Las capturas,
+el PDF y el registro de eventos están en
+`/tmp/claude-1000/-home-allopze-dev-chome-bodega/b3e310bf-dea9-47fc-89e5-565925c7f16c/scratchpad/walkthrough3/`, carpeta que no está
+versionada.
+
+**Puertas y E2E sobre `b446a9f5f`** (en un worktree desechable para el E2E): `npm run typecheck`, `npm run lint`,
+`npm run test:fast` (1320 archivos, 19.888 pruebas) y `npm run test:pglite` (373 archivos, 4.862 pruebas) salieron con código 0.
+El E2E de compras, repuestos y documentos impresos o en PDF pasó completo: 48 de 48. Incluye `repuestos-catalogo`,
+`repuestos-servicios-oc-flow`, `repuestos-servicios-flow`, `ot-repuestos`, `servicios-costo-pendiente`, `delivery-print`, `oc-flow`,
+`oc-reconciliation`, `pdf-exports`, `prevencion-inspecciones-reportes-print`, `print-mobile` y `sst-pdf`.
+
+### PASS: verificado en el navegador
+
+1. **El vínculo de «Catalogar» sobrevive a la recarga y se deshace con «Desvincular».** Se creó REP-2026-0005 desde la OT
+   OT-PAC-0006 con dos líneas en texto libre y se aprobó sin cotización. En `/compras/nueva`:
+   - «QA_Aceite motor libre» (N° QA-901): la hoja abre con «Coincide por N° de parte» y RPT-004. «Vincular este» cierra la hoja y la
+     línea pasa a «Repuesto de catálogo · N° QA-901» con «Desvincular». La BD guarda `product_id = RPT-004` en el ítem de solicitud
+     al instante, antes de crear ninguna OC (`c04-linea-vinculada-sin-recargar.png`).
+   - Tras recargar la página la línea sigue vinculada y conserva «Desvincular» (`c05-tras-recarga-vinculada.png`).
+   - «QA_Filtro de aire libre» (N° QA-903): «Crear uno nuevo» llega prellenado, y «Crear y vincular» da el toast «Repuesto RPT-007
+     creado en el catálogo y vinculado a la línea». Tras recargar, las dos líneas siguen vinculadas, con dos «Desvincular»
+     (`c07-crear-y-vincular.png`, `c08-tras-recarga-ambas.png`).
+   - «Desvincular» en cada una: la línea vuelve a «Catalogar» y la BD deja `product_id NULL` en ambas. Tras recargar siguen
+     sin vínculo (`c09-tras-desvincular.png`, `c10-desvinculadas-tras-recarga.png`).
+2. **«Equipo: … · OT …» en la OC impresa y en el PDF.** En OC-2026-0061, la vista `/compras/<id>/print` y el PDF descargado
+   (`200`, `application/pdf`, «OC 2026-0061.pdf», 1 página) traen, bajo cada una de las dos líneas, «Equipo: KA-54 · UD-1187 · OT
+   OT-PAC-0006», y el N° de parte una sola vez (`oc-pdf-final.png`, `oc-final.pdf`). Se comprobó con el texto extraído del PDF.
+3. **Precio de referencia en la hoja «Catalogar» y en el buscador.** RPT-006 (`QA_Lubricante sin compras`, referencia $7.700, nunca
+   comprado) aparece en la hoja como «$7.700 · Referencia» (`c02-hoja-referencia-rpt006.png`) y en el buscador de
+   `/solicitudes/nueva` como «N° QA-904 · QA_Lubri · $7.700 · Referencia» (`b01-picker-referencia-desktop.png`).
+   **RPT-004 ya no muestra «Referencia»**, y es lo correcto: se compró en OC-2026-0061 y ahora muestra su último precio, «$10.500
+   · Comprado 09-11-2026» (`c03-hoja-rpt004-precio.png`). La referencia sólo se usa cuando no hay compra, así que se verificó con
+   un repuesto nuevo sin compras.
+4. **OT «Repuestos pedidos» a 390 px.** El N° de parte y el SKU no se parten dentro de la palabra: en el DOM, cada token
+   («RPT-004», «QA-901», «REP-2026-0004», «OC-2026-0061»…) ocupa un solo renglón, y la lista de tokens partidos queda vacía. El
+   rótulo «RPT-004 · N° de parte QA-901» sólo cambia de renglón entre palabras (`e01-ot-repuestos-390.png`). No hay desborde
+   horizontal: `scrollWidth = 390` en el documento y en el pozo.
+
+### PRODUCT BUG
+
+Ninguno confirmado.
+
+### UX FINDING
+
+- **UX-10 · La línea vinculada desde «Catalogar» repite el N° de parte en `/compras/nueva` tras recargar.** La línea
+  se llama «QA_Aceite motor 15W40 · N° de Parte: QA-901» y debajo lleva la etiqueta «Repuesto de catálogo · N° QA-901». El nombre
+  arrastra el atributo que escribió quien pidió (`recordedById` en `formatVariantProductName`, `nueva/page.tsx`) y la etiqueta
+  agrega el N° de parte del repuesto, con dos grafías («N° de Parte» y «N°»). Sin recarga no ocurre, porque el estado del
+  formulario conserva el nombre libre. La vista de impresión y la ficha de la OC ya lo evitan con `withCatalogPartNumber`
+  (`c05-tras-recarga-vinculada.png`, `c08-tras-recarga-ambas.png`). Es de forma, no de datos.
+- **UX-11 · Tras recargar, la línea vinculada cambia de lugar.** En `c05` la línea recién vinculada pasa por debajo de la que
+  sigue libre. Es un orden por producto o nombre y no por fecha de creación. Es una observación, sin impacto en los datos.
+- «Vincular este» sigue sin toast (observación del segundo recorrido); «Crear y vincular» sí lo muestra.
+
+### AUTOMATION WARNING
+
+- El dev de :3002 se reinició una vez por «approaching the used memory threshold», entre la comprobación de la OC impresa y la
+  de la OT en móvil. La primera navegación posterior superó los 240 s de espera y falló con `ERR_INCOMPLETE_CHUNKED_ENCODING` y
+  `ERR_CONNECTION_RESET`. Esos 11 eventos son del reinicio y no del producto. Se repitió el paso tras calentar el servidor.
+- Al enviar el formulario de la solicitud, la compilación inicial de la ruta hizo que el script pulsara «Enviar a aprobación» antes
+  que «Guardar borrador», igual que en el segundo recorrido. REP-2026-0005 quedó enviada y se aprobó después. La BD es coherente.
+- No se imprimió ninguna credencial. El estado de sesión del navegador se borró al terminar.
+
+### Consola y red
+
+- Escritorio, en todos los pasos de las secciones 1 a 3: sin errores de consola, sin `pageerror` y sin respuestas ≥ 400. El log del
+  servidor de desarrollo no registra errores.
+- Móvil: sólo los fallos del reinicio descrito arriba.
+
+### COVERAGE GAP
+
+- No se ejecutó WebKit/Safari. No se hizo pasada de teclado ni axe en la hoja «Catalogar».
+- No se recorrió «Catalogar» en móvil; el móvil se limitó a la OT.
+- No se creó una OC con las líneas vinculadas desde la hoja; esa parte la cubren el E2E `repuestos-catalogo` y
+  `spare-part-item-link-pglite.test.ts`.
+- El PDF se verificó por su texto extraído y por la vista de impresión, no por una imagen del PDF.
+
+### Registros `QA_` nuevos en `bodega_dev`
+
+| Tipo | Id | Detalle |
+|---|---|---|
+| products (repuesto) | `73RDsxmDH94yMta-Irhbf` | RPT-006 QA_Lubricante sin compras (QA-904, QA_Lubri, ref. $7.700) |
+| products (repuesto) | `uKXT5Y5ONbpE_KOc3LDRd` | RPT-007 QA_Filtro de aire libre (QA-903), creado con «Crear y vincular»; sin vínculo tras «Desvincular» |
+| purchase_requests | `7G1F0w_e9_A7zyPtHHNLp` | REP-2026-0005 (OT-PAC-0006), aprobada, a la espera de OC; ítems `E2goB0ecub43lpXG426mC` (QA_Aceite motor libre) y `ESrZoeN20r2hyZOBiL5LH` (QA_Filtro de aire libre), ambos sin `product_id` |
+
+Además, `audit_log` (append-only) y los eventos y decisiones de la solicitud.
