@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { formatCLP, formatQty, quantityStep } from "@/lib/utils"
 import { canCatalogLine, priceHint, priceSourceLabel, sparePartTag, suggestedSupplierLabel } from "./oc-form.helpers"
 import { OcCatalogSheet } from "./oc-catalog-sheet"
+import type { UnitLabels } from "@/lib/products/unit-label"
 import type { SupplierOption, PendingItemOption, LinkedSparePart } from "./oc-form.types"
 
 const MODE_LABELS: Record<string, string> = {
@@ -53,6 +54,8 @@ interface OcFormItemsProps {
   onUnlinkPart?:      (itemId: string) => void
   /** `repuestos:catalog`: permite crear el repuesto desde la hoja, no sólo vincular uno existente. */
   canCreateSparePart?: boolean
+  /** Código → rótulo del catálogo de unidades, para la hoja «Catalogar». */
+  unitLabels?: UnitLabels
 }
 
 export function OcFormItems({
@@ -60,7 +63,7 @@ export function OcFormItems({
   worksiteId, search, worksiteModes, modeFilter, onModeChange, onToggle, onToggleAll, onSearchChange,
   itemPrice, itemDiscount, setItemPrice, setItemDiscount, itemQuantity, setItemQuantity,
   resolveItemSupplierId, setItemSupplier,
-  linkedParts, onLinkPart, onUnlinkPart, canCreateSparePart = false,
+  linkedParts, onLinkPart, onUnlinkPart, canCreateSparePart = false, unitLabels,
 }: OcFormItemsProps) {
   // La hoja «Catalogar» es una sola para todas las filas; esta es la línea abierta.
   const [catalogingId, setCatalogingId] = React.useState<string | null>(null)
@@ -298,6 +301,7 @@ export function OcFormItems({
         <OcCatalogSheet
           item={cataloging}
           canCreate={canCreateSparePart}
+          unitLabels={unitLabels}
           onOpenChange={(open) => { if (!open) setCatalogingId(null) }}
           onLink={onLinkPart}
         />

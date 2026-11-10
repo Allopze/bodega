@@ -22,6 +22,8 @@ const mockCreate = vi.hoisted(() => vi.fn())
 const mockLinkInfo = vi.hoisted(() => vi.fn())
 const fakeTx = vi.hoisted(() => ({ tag: "tx" }))
 
+const mockLogger = vi.hoisted(() => ({ error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() }))
+vi.mock("@/lib/logger", () => ({ logger: mockLogger }))
 vi.mock("@/lib/auth/auth", () => ({ auth: mockAuth }))
 vi.mock("@/db", () => ({
   db: { transaction: vi.fn(async (run: (tx: unknown) => Promise<unknown>) => run(fakeTx)) },
@@ -173,5 +175,17 @@ describe("crear: repuestos:catalog", () => {
     expect(await createSparePartForOcAction({ name: "Filtro", partNumber: "AF-1", unitOfMeasure: "unidad" })).toEqual({
       ok: false, message: "Ya existe el repuesto RPT-001 con ese N° de parte",
     })
+    // Es una validación de negocio esperada, no un fallo: no va al log de errores.
+    expect(mockLogger.error).not.toHaveBeenCalled()
+  })
+
+  it("un fallo del driver sí se registra como error y no filtra el SQL", async () => {
+    mockAuth.mockResolvedValue(session(["repuestos:catalog"]))
+    mockLogger.error.mockClear()
+    mockCreate.mockRejectedValue(Object.assign(new Error("Failed query: insert into products ..."), { query: "insert into products" }))
+    expect(await createSparePartForOcAction({ name: "Filtro", partNumber: "AF-2", unitOfMeasure: "unidad" })).toEqual({
+      ok: false, message: "No se pudo crear el repuesto",
+    })
+    expect(mockLogger.error).toHaveBeenCalled()
   })
 })

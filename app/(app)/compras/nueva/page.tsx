@@ -4,7 +4,7 @@ import { db }            from "@/db"
 import {
   purchaseRequestItems, purchaseRequests,
   worksites, suppliers, products, productSuppliers, purchaseOrders, purchaseOrderItems,
-  fuelVehicles, mantWorkOrders,
+  fuelVehicles, mantWorkOrders, productUnits,
 } from "@/db/schema"
 import { eq, inArray, asc } from "drizzle-orm"
 import { pendingPurchaseWhere } from "@/lib/adquisiciones/pending-purchase"
@@ -100,7 +100,7 @@ export default async function NuevaOcPage({
   const requestItemIds = rawItems.map((item) => item.id)
   const productIds = [...new Set(rawItems.flatMap((i) => i.productId ? [i.productId] : []))]
 
-  const [requestRows, productRows, supplierPriceRows, allSuppliers, allWorksites, coverageLines] = await Promise.all([
+  const [requestRows, productRows, supplierPriceRows, allSuppliers, allWorksites, coverageLines, unitRows] = await Promise.all([
     db
       .select({
         id: purchaseRequests.id, code: purchaseRequests.code, worksiteId: purchaseRequests.worksiteId,
@@ -155,7 +155,11 @@ export default async function NuevaOcPage({
           .innerJoin(purchaseOrders, eq(purchaseOrderItems.purchaseOrderId, purchaseOrders.id))
           .where(inArray(purchaseOrderItems.requestItemId, requestItemIds))
       : Promise.resolve([]),
+
+    // Rótulos de unidad para la hoja «Catalogar» («bidon» → «Bidón»).
+    db.select({ code: productUnits.code, label: productUnits.label }).from(productUnits),
   ])
+  const unitLabels = Object.fromEntries(unitRows.map((unit) => [unit.code, unit.label]))
 
   const reqMap     = Object.fromEntries(requestRows.map((r) => [r.id, r]))
   const productMap = Object.fromEntries(productRows.map((p) => [p.id, p]))
@@ -291,6 +295,7 @@ export default async function NuevaOcPage({
         initialWorksiteId={initialWorksiteId}
         initialItemIds={initialItemIds}
         canCreateSparePart={can(session, "repuestos:catalog")}
+        unitLabels={unitLabels}
       />
     </PageContainer>
   )

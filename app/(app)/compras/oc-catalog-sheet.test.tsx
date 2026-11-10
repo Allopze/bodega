@@ -16,7 +16,8 @@ vi.mock("./actions", () => ({
   linkSparePartForOcAction: (...args: unknown[]) => link(...args),
   createSparePartForOcAction: (...args: unknown[]) => create(...args),
 }))
-vi.mock("@/lib/toast", () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
+const toastSuccess = vi.fn()
+vi.mock("@/lib/toast", () => ({ toast: { error: vi.fn(), success: (...args: unknown[]) => toastSuccess(...args) } }))
 
 const { OcCatalogSheet } = await import("./oc-catalog-sheet")
 
@@ -40,11 +41,18 @@ const LINKED: LinkedSparePart = {
   unitOfMeasure: "unidad", prices: { "sup-1": 21_000 },
 }
 
-function open(props: { canCreate?: boolean; onLink?: (id: string, part: LinkedSparePart) => void; onOpenChange?: (open: boolean) => void } = {}) {
+function open(props: {
+  canCreate?: boolean
+  onLink?: (id: string, part: LinkedSparePart) => void
+  onOpenChange?: (open: boolean) => void
+  item?: PendingItemOption
+  unitLabels?: Record<string, string>
+} = {}) {
   return render(
     <OcCatalogSheet
-      item={LINE}
+      item={props.item ?? LINE}
       canCreate={props.canCreate ?? true}
+      unitLabels={props.unitLabels}
       onOpenChange={props.onOpenChange ?? (() => {})}
       onLink={props.onLink ?? (() => {})}
     />,
@@ -55,6 +63,7 @@ beforeEach(() => {
   search.mockReset()
   link.mockReset()
   create.mockReset()
+  toastSuccess.mockReset()
   search.mockResolvedValue({ ok: true, parts: [FILTER, OTHER], total: 2, suggestion: FILTER })
 })
 afterEach(cleanup)
@@ -123,9 +132,18 @@ describe("OcCatalogSheet — vincular a un repuesto existente", () => {
     const same = screen.getByRole("button", { name: /Filtro de combustible/ })
     expect((same as HTMLButtonElement).disabled).toBe(false)
     expect(same.getAttribute("aria-disabled")).toBeNull()
-    expect(same.textContent).toContain("por Unidad")
+    expect(same.textContent).toContain("por unidad")
     const order = screen.getAllByRole("listitem").map((li) => li.textContent ?? "")
     expect(order[0]).toContain("Filtro de combustible")
+  })
+
+  it("nombra las unidades con su rótulo del catálogo de unidades, no con el código", async () => {
+    const DRUM = { ...OTHER, id: "rpt-4", sku: "RPT-004", name: "Aceite hidráulico", unitOfMeasure: "bidon" }
+    search.mockResolvedValue({ ok: true, parts: [DRUM], total: 1, suggestion: null })
+    open({ unitLabels: { unidad: "Unidad", bidon: "Bidón" } })
+    const drum = await screen.findByRole("button", { name: /Aceite hidráulico/ })
+    expect(drum.textContent).toContain("por bidón")
+    expect(drum.textContent).toContain("Se compra por «bidón» y esta línea pide «unidad»")
   })
 
   it("la sugerencia en otra unidad dice por qué y no se puede vincular", async () => {
@@ -174,6 +192,13 @@ describe("OcCatalogSheet — crear un repuesto nuevo", () => {
     expect(screen.getByText("Unidad de medida: unidad")).toBeTruthy()
   })
 
+  it("la unidad de la línea se muestra con su rótulo", async () => {
+    open({ canCreate: true, item: { ...LINE, unitOfMeasure: "bidon" }, unitLabels: { bidon: "Bidón" } })
+    await screen.findByText("Coincide por N° de parte")
+    fireEvent.click(screen.getByRole("button", { name: "Crear uno nuevo" }))
+    expect(await screen.findByText("Unidad de medida: Bidón")).toBeTruthy()
+  })
+
   it("crea con los datos editados, la unidad de la línea, y vincula el repuesto nuevo", async () => {
     create.mockResolvedValue({ ok: true, part: LINKED })
     const onLink = vi.fn()
@@ -187,6 +212,8 @@ describe("OcCatalogSheet — crear un repuesto nuevo", () => {
     expect(create).toHaveBeenCalledWith({
       name: "Filtro de aire camión", partNumber: "AF-100", partBrand: "Donaldson", unitOfMeasure: "unidad",
     })
+    // La hoja se cierra: el aviso dice que el catálogo ganó un repuesto.
+    expect(toastSuccess).toHaveBeenCalledWith("Repuesto RPT-001 creado en el catálogo y vinculado a la línea")
   })
 
   it("un N° de parte repetido se informa en la hoja y no vincula nada", async () => {
@@ -199,6 +226,7 @@ describe("OcCatalogSheet — crear un repuesto nuevo", () => {
 
     expect((await screen.findByRole("alert")).textContent).toContain("Ya existe el repuesto RPT-001")
     expect(onLink).not.toHaveBeenCalled()
+    expect(toastSuccess).not.toHaveBeenCalled()
   })
 
   it("sin nombre no se puede crear", async () => {

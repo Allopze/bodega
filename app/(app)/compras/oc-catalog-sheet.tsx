@@ -13,7 +13,9 @@ import {
   Sheet, SheetBody, SheetCloseButton, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle,
 } from "@/components/ui/sheet"
 import { useOperation } from "@/lib/hooks/use-operation"
+import { unitLabel, unitWord, type UnitLabels } from "@/lib/products/unit-label"
 import { normalizeUnitOfMeasure } from "@/lib/services/purchasing-module/spare-part-unit"
+import { toast } from "@/lib/toast"
 import { formatCLP, formatDate, formatQty } from "@/lib/utils"
 import {
   createSparePartForOcAction,
@@ -38,14 +40,18 @@ const MATCH_BADGES: Record<NonNullable<SparePartChoice["vehicleMatch"]>, { label
  * Misma comparación que exige el servidor (`sparePartUnitMismatchMessage`), dicha
  * antes de elegir para no descubrirla con un error después.
  */
-export function unitMismatchReason(part: Pick<SparePartChoice, "unitOfMeasure">, lineUnit: string): string | null {
+export function unitMismatchReason(
+  part: Pick<SparePartChoice, "unitOfMeasure">,
+  lineUnit: string,
+  labels?: UnitLabels,
+): string | null {
   if (normalizeUnitOfMeasure(part.unitOfMeasure) === normalizeUnitOfMeasure(lineUnit)) return null
-  return `Se compra por «${part.unitOfMeasure.trim()}» y esta línea pide «${lineUnit.trim()}»`
+  return `Se compra por «${unitWord(part.unitOfMeasure, labels)}» y esta línea pide «${unitWord(lineUnit, labels)}»`
 }
 
 /** SKU, N° de parte, marca y unidad: lo que distingue dos repuestos de nombre parecido. */
-function choiceFacts(part: SparePartChoice): string {
-  return [sparePartTag(part), part.partBrand, `por ${part.unitOfMeasure.trim()}`].filter(Boolean).join(" · ")
+function choiceFacts(part: SparePartChoice, labels?: UnitLabels): string {
+  return [sparePartTag(part), part.partBrand, `por ${unitWord(part.unitOfMeasure, labels)}`].filter(Boolean).join(" · ")
 }
 
 interface OcCatalogSheetProps {
@@ -53,6 +59,8 @@ interface OcCatalogSheetProps {
   item: PendingItemOption | null
   /** `repuestos:catalog`: sin él sólo se puede vincular a un repuesto que ya existe. */
   canCreate: boolean
+  /** Código → rótulo del catálogo de unidades («bidon» → «Bidón»). */
+  unitLabels?: UnitLabels
   onOpenChange: (open: boolean) => void
   onLink: (itemId: string, part: LinkedSparePart) => void
 }
@@ -65,14 +73,14 @@ interface OcCatalogSheetProps {
  *
  * El vínculo no se guarda aquí: vive en el formulario y se escribe al crear la OC.
  */
-export function OcCatalogSheet({ item, canCreate, onOpenChange, onLink }: OcCatalogSheetProps) {
+export function OcCatalogSheet({ item, canCreate, unitLabels, onOpenChange, onLink }: OcCatalogSheetProps) {
   return (
     <Sheet open={item !== null} onOpenChange={onOpenChange}>
       {/* `stableHeight`: alternar entre «vincular» y «crear» no debe mover la caja. */}
       <SheetContent stableHeight className="sm:max-w-xl sm:h-[min(80vh,40rem)]">
         {item && (
           // `key`: cada línea abre con búsqueda y borrador propios.
-          <CatalogBody key={item.id} item={item} canCreate={canCreate} onClose={() => onOpenChange(false)} onLink={onLink} />
+          <CatalogBody key={item.id} item={item} canCreate={canCreate} unitLabels={unitLabels} onClose={() => onOpenChange(false)} onLink={onLink} />
         )}
       </SheetContent>
     </Sheet>
@@ -80,10 +88,11 @@ export function OcCatalogSheet({ item, canCreate, onOpenChange, onLink }: OcCata
 }
 
 function CatalogBody({
-  item, canCreate, onClose, onLink,
+  item, canCreate, unitLabels, onClose, onLink,
 }: {
   item: PendingItemOption
   canCreate: boolean
+  unitLabels?: UnitLabels
   onClose: () => void
   onLink: OcCatalogSheetProps["onLink"]
 }) {
@@ -119,14 +128,21 @@ function CatalogBody({
         <LinkView
           item={item}
           canCreate={canCreate}
+          unitLabels={unitLabels}
           onCreateInstead={() => setView("create")}
           onChosen={(part) => { onLink(item.id, part); onClose() }}
         />
       ) : (
         <CreateView
           item={item}
+          unitLabels={unitLabels}
           onCancel={onClose}
-          onCreated={(part) => { onLink(item.id, part); onClose() }}
+          onCreated={(part) => {
+            onLink(item.id, part)
+            // La hoja se cierra: sin el aviso, nada decía que el catálogo ganó un repuesto.
+            toast.success(`Repuesto ${part.sku} creado en el catálogo y vinculado a la línea`)
+            onClose()
+          }}
         />
       )}
     </>
@@ -136,10 +152,11 @@ function CatalogBody({
 /* ── Camino 1: vincular a un repuesto que ya existe ─────────────────────────── */
 
 function LinkView({
-  item, canCreate, onCreateInstead, onChosen,
+  item, canCreate, unitLabels, onCreateInstead, onChosen,
 }: {
   item: PendingItemOption
   canCreate: boolean
+  unitLabels?: UnitLabels
   onCreateInstead: () => void
   onChosen: (part: LinkedSparePart) => void
 }) {
@@ -184,9 +201,9 @@ function LinkView({
   const parts = (data?.ok
     ? data.parts.filter((part) => debounced !== "" || part.id !== suggestion?.id)
     : [])
-    .map((part) => ({ part, mismatch: unitMismatchReason(part, lineUnit) }))
+    .map((part) => ({ part, mismatch: unitMismatchReason(part, lineUnit, unitLabels) }))
     .sort((left, right) => Number(left.mismatch !== null) - Number(right.mismatch !== null))
-  const suggestionMismatch = suggestion ? unitMismatchReason(suggestion, lineUnit) : null
+  const suggestionMismatch = suggestion ? unitMismatchReason(suggestion, lineUnit, unitLabels) : null
 
   function choose(part: SparePartChoice) {
     op.run(
@@ -205,7 +222,7 @@ function LinkView({
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0">
               <div className="text-sm font-medium">{suggestion.name}</div>
-              <div className="text-xs">{choiceFacts(suggestion)}</div>
+              <div className="text-xs">{choiceFacts(suggestion, unitLabels)}</div>
               {suggestionMismatch && <div id="oc-catalog-suggestion-mismatch" className="mt-1 text-xs font-medium text-[var(--color-warning-ink)]">{suggestionMismatch}</div>}
             </div>
             {/* Otra unidad: no se vincula, pero el botón sigue enfocable y dice por qué. */}
@@ -278,7 +295,7 @@ function LinkView({
                 >
                   <span className="min-w-0">
                     <span className={mismatch ? "block text-sm font-medium text-[var(--color-text-muted)]" : "block text-sm font-medium text-[var(--color-text)]"}>{part.name}</span>
-                    <span className="block text-xs text-[var(--color-text-muted)]">{choiceFacts(part)}</span>
+                    <span className="block text-xs text-[var(--color-text-muted)]">{choiceFacts(part, unitLabels)}</span>
                     {mismatch && (
                       <span id={`oc-catalog-mismatch-${part.id}`} className="mt-1 block text-xs font-medium text-[var(--color-warning-ink)]">{mismatch}</span>
                     )}
@@ -307,9 +324,10 @@ function LinkView({
 /* ── Camino 2: crear un repuesto nuevo, prellenado desde la línea ───────────── */
 
 function CreateView({
-  item, onCancel, onCreated,
+  item, unitLabels, onCancel, onCreated,
 }: {
   item: PendingItemOption
+  unitLabels?: UnitLabels
   onCancel: () => void
   onCreated: (part: LinkedSparePart) => void
 }) {
@@ -356,7 +374,7 @@ function CreateView({
             <Input id="oc-catalog-part-brand" value={partBrand} onChange={(event) => setPartBrand(event.target.value)} maxLength={100} />
           </Field>
         </div>
-        <p className="text-xs text-[var(--color-text-muted)]">Unidad de medida: {item.unitOfMeasure}</p>
+        <p className="text-xs text-[var(--color-text-muted)]">Unidad de medida: {unitLabel(item.unitOfMeasure, unitLabels)}</p>
         {op.message && (
           <p role="alert" className="text-sm text-[var(--color-danger)]">{op.message}</p>
         )}

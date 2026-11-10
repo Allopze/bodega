@@ -175,7 +175,9 @@ export async function createSparePartForOcAction(input: z.input<typeof createSch
     if (!part) return { ok: false, message: "El repuesto se creó pero no se pudo leer; búscalo en el catálogo" }
     return { ok: true, part }
   } catch (e) {
-    logger.error("[createSparePartForOcAction]", e)
+    // Un N° de parte repetido o una unidad inactiva son validaciones de negocio:
+    // vuelven a la hoja tal cual y no se registran como error. `dbErrMsg` sí
+    // registra lo interno (driver, esquema) y no lo muestra.
     return { ok: false, message: dbErrMsg(e, "No se pudo crear el repuesto") }
   }
 }
