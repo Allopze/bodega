@@ -58,7 +58,7 @@ function session(permissions: string[]): Session {
 
 const LISTED = (id: string) => ({
   id, sku: `RPT-${id}`, name: `Repuesto ${id}`, partNumber: `PN-${id}`, partBrand: null, unitOfMeasure: "unidad", isActive: true,
-  preferredSupplierId: null, preferredSupplierName: null, lastSupplierName: null, lastPrice: 1000, referencePrice: null, lastPurchasedAt: null, vehicleCount: 0,
+  preferredSupplierId: null, preferredSupplierName: null, lastSupplierName: null, lastPrice: 1000, referencePrice: 800, lastPurchasedAt: null, vehicleCount: 0,
   purchasedForVehicleIds: [], vehicleMatch: null,
 })
 
@@ -101,7 +101,7 @@ describe("buscar y vincular: purchasing:create_order", () => {
     expect(result).toMatchObject({ ok: true, total: 2, suggestion: { id: "2", sku: "RPT-2" } })
     // Sólo viajan los campos que la hoja necesita.
     expect(result.ok && Object.keys(result.parts[0]!).sort()).toEqual(
-      ["id", "lastPrice", "lastPurchasedAt", "name", "partBrand", "partNumber", "sku", "unitOfMeasure", "vehicleMatch"],
+      ["id", "lastPrice", "lastPurchasedAt", "name", "partBrand", "partNumber", "referencePrice", "sku", "unitOfMeasure", "vehicleMatch"],
     )
   })
 

@@ -40,6 +40,8 @@ export interface SparePartChoice {
   unitOfMeasure: string
   /** Último precio conocido (proveedor preferido, o el más reciente). */
   lastPrice: number | null
+  /** Precio de referencia de la ficha, para el repuesto que nunca se compró. */
+  referencePrice: number | null
   /** Fecha ISO de la última compra con OC emitida. */
   lastPurchasedAt: string | null
   /** `vehicle`: ya se compró para este equipo; `model`: para otro de su misma marca y modelo. */
@@ -94,6 +96,7 @@ function toChoice(part: SparePartListItem): SparePartChoice {
     partBrand: part.partBrand,
     unitOfMeasure: part.unitOfMeasure,
     lastPrice: part.lastPrice,
+    referencePrice: part.referencePrice,
     lastPurchasedAt: part.lastPurchasedAt,
     vehicleMatch: part.vehicleMatch,
   }

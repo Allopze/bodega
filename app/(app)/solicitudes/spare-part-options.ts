@@ -138,13 +138,18 @@ export function sparePartMatchForVehicle(
 
 /**
  * Segunda línea del renglón: «N° 1R-0750 · Caterpillar · $35.000». Lo que
- * distingue dos repuestos con el mismo nombre y orienta el precio.
+ * distingue dos repuestos con el mismo nombre y orienta el precio. Un repuesto
+ * que nunca se compró muestra el precio de referencia de su ficha, rotulado
+ * («$9.900 · Referencia»): el mismo que se precarga como estimado al elegirlo.
  */
-export function sparePartDetail(part: Pick<SparePartOption, "partNumber" | "partBrand" | "lastPrice">): string {
+export function sparePartDetail(part: Pick<SparePartOption, "partNumber" | "partBrand" | "lastPrice" | "referencePrice">): string {
+  const purchased = part.lastPrice != null && part.lastPrice > 0
+  const reference = !purchased && part.referencePrice != null && part.referencePrice > 0
   return [
     part.partNumber ? `N° ${part.partNumber}` : null,
     part.partBrand || null,
-    part.lastPrice != null && part.lastPrice > 0 ? formatCLP(part.lastPrice) : null,
+    purchased ? formatCLP(part.lastPrice!) : null,
+    reference ? `${formatCLP(part.referencePrice!)} · Referencia` : null,
   ].filter(Boolean).join(" · ")
 }
 

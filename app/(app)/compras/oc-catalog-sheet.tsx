@@ -308,6 +308,12 @@ function LinkView({
                   <span className="shrink-0 text-right text-xs text-[var(--color-text-muted)]">
                     {part.lastPrice !== null ? (
                       <span className="block font-medium tabular-nums text-[var(--color-text)]">{formatCLP(part.lastPrice)}</span>
+                    ) : part.referencePrice !== null && part.referencePrice > 0 ? (
+                      // Nunca se compró: el precio de la ficha, dicho como lo que es.
+                      <>
+                        <span className="block font-medium tabular-nums text-[var(--color-text)]">{formatCLP(part.referencePrice)}</span>
+                        <span className="block">Referencia</span>
+                      </>
                     ) : (
                       <span className="block">Sin precio</span>
                     )}

@@ -30,11 +30,11 @@ const LINE: PendingItemOption = {
 
 const FILTER = {
   id: "rpt-1", sku: "RPT-001", name: "Filtro de aire primario", partNumber: "AF-100", partBrand: "Donaldson",
-  unitOfMeasure: "unidad", lastPrice: 21_000, lastPurchasedAt: "2026-10-15T12:00:00.000Z", vehicleMatch: "vehicle" as const,
+  unitOfMeasure: "unidad", lastPrice: 21_000, referencePrice: null, lastPurchasedAt: "2026-10-15T12:00:00.000Z", vehicleMatch: "vehicle" as const,
 }
 const OTHER = {
   id: "rpt-2", sku: "RPT-002", name: "Filtro de combustible", partNumber: "FF-200", partBrand: null,
-  unitOfMeasure: "Unidad", lastPrice: null, lastPurchasedAt: null, vehicleMatch: null,
+  unitOfMeasure: "Unidad", lastPrice: null, referencePrice: null, lastPurchasedAt: null, vehicleMatch: null,
 }
 const LINKED: LinkedSparePart = {
   id: "rpt-1", sku: "RPT-001", name: "Filtro de aire primario", partNumber: "AF-100", partBrand: "Donaldson",
@@ -112,6 +112,27 @@ describe("OcCatalogSheet — vincular a un repuesto existente", () => {
     expect(await screen.findByText("Ya se compró para este equipo")).toBeTruthy()
     expect(screen.getByText(/21\.000/)).toBeTruthy()
     expect(search).toHaveBeenLastCalledWith({ query: "aire", vehicleId: "v-1", requestId: "req-1", partNumber: null })
+  })
+
+  it("un repuesto que nunca se compró muestra su precio de referencia rotulado, no «Sin precio»", async () => {
+    const REF = { ...OTHER, id: "rpt-5", sku: "RPT-005", name: "Aceite de motor 15W40", referencePrice: 9_900 }
+    search.mockResolvedValue({ ok: true, parts: [REF, OTHER], total: 2, suggestion: null })
+    open()
+    const withReference = await screen.findByRole("button", { name: /Aceite de motor 15W40/ })
+    expect(withReference.textContent).toContain("9.900")
+    expect(withReference.textContent).toContain("Referencia")
+    expect(withReference.textContent).not.toContain("Sin precio")
+    // Sin compras ni referencia sigue diciendo «Sin precio».
+    expect(screen.getByRole("button", { name: /Filtro de combustible/ }).textContent).toContain("Sin precio")
+  })
+
+  it("el último precio de compra manda sobre el de referencia", async () => {
+    const BOTH = { ...FILTER, referencePrice: 9_900 }
+    search.mockResolvedValue({ ok: true, parts: [BOTH], total: 1, suggestion: null })
+    open()
+    const row = await screen.findByRole("button", { name: /Filtro de aire primario/ })
+    expect(row.textContent).toContain("21.000")
+    expect(row.textContent).not.toContain("Referencia")
   })
 
   it("muestra la unidad de cada repuesto y deja a la vista, sin poder elegirlo, el que se compra en otra", async () => {

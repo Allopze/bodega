@@ -569,6 +569,17 @@ describe("ItemEditor — repuestos: buscador del catálogo", () => {
     expect(await screen.findByRole("option", { name: /O-ring hidráulico/ })).not.toHaveTextContent("N°")
   })
 
+  it("un repuesto que nunca se compró muestra su precio de referencia rotulado en la opción", async () => {
+    const aceite: SparePartOption = {
+      id: "rpt-5", sku: "RPT-005", name: "Aceite motor 15W40", partNumber: "QA-901", partBrand: "QA_Lubri",
+      unitOfMeasure: "unidad", lastPrice: null, referencePrice: 9_900, preferredSupplierId: null, purchasedForVehicleIds: [],
+    }
+    searchParts.mockResolvedValue({ ok: true, parts: [aceite], total: 1 })
+    render(<RepuestoHarness />)
+    fireEvent.change(descripcion(), { target: { value: "aceite" } })
+    expect(await screen.findByRole("option", { name: /Aceite motor/ })).toHaveTextContent("N° QA-901 · QA_Lubri · $9.900 · Referencia")
+  })
+
   it("sin equipo ni texto no pregunta nada; con texto conserva el orden del catálogo y no rotula", async () => {
     render(<RepuestoHarness />)
     fireEvent.focus(descripcion())

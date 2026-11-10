@@ -136,6 +136,18 @@ describe("sparePartDetail", () => {
     expect(sparePartDetail({ partNumber: "PF-200", partBrand: null, lastPrice: null })).toBe("N° PF-200")
     expect(sparePartDetail({ partNumber: null, partBrand: null, lastPrice: 0 })).toBe("")
   })
+
+  it("un repuesto que nunca se compró muestra su precio de referencia rotulado", () => {
+    expect(sparePartDetail({ partNumber: "QA-901", partBrand: "QA_Lubri", lastPrice: null, referencePrice: 9_900 }))
+      .toBe("N° QA-901 · QA_Lubri · $9.900 · Referencia")
+    expect(sparePartDetail({ partNumber: null, partBrand: null, lastPrice: 0, referencePrice: 9_900 })).toBe("$9.900 · Referencia")
+  })
+
+  it("el último precio de compra manda sobre el de referencia, y un cero de referencia no se muestra", () => {
+    expect(sparePartDetail({ partNumber: "PF-200", partBrand: null, lastPrice: 35_000, referencePrice: 9_900 })).toBe("N° PF-200 · $35.000")
+    expect(sparePartDetail({ partNumber: "PF-200", partBrand: null, lastPrice: null, referencePrice: 0 })).toBe("N° PF-200")
+    expect(sparePartDetail({ partNumber: "PF-200", partBrand: null, lastPrice: null })).toBe("N° PF-200")
+  })
 })
 
 describe("sparePartFacts", () => {
