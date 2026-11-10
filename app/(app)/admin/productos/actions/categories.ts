@@ -9,7 +9,11 @@ import { recordAudit } from "@/lib/audit"
 import { requirePermission } from "@/lib/auth/can"
 import { productCategorySchema, type ActionState } from "@/lib/validation/masters"
 import { formString, REVALIDATE } from "./helpers"
-import { isSparePartsCategory, SPARE_PARTS_CATEGORY_SLUG_LOCKED_MESSAGE } from "@/lib/products/spare-parts-category"
+import {
+  isSparePartsCategory,
+  SPARE_PARTS_CATEGORY_FLAGS_LOCKED_MESSAGE,
+  SPARE_PARTS_CATEGORY_SLUG_LOCKED_MESSAGE,
+} from "@/lib/products/spare-parts-category"
 
 export async function createCategory(_prev: ActionState, formData: FormData): Promise<ActionState> {
   let session
@@ -56,10 +60,16 @@ export async function updateCategory(_prev: ActionState, formData: FormData): Pr
   if (!d.id) return { ok: false, message: "ID requerido" }
 
   // Catálogo de repuestos: `createSparePartTx` busca su categoría por el slug
-  // «repuestos»; cambiárselo dejaría al catálogo sin categoría.
+  // «repuestos»; cambiárselo dejaría al catálogo sin categoría. Sus marcas EPP y
+  // Prevención tampoco: desviarían los pedidos de repuestos a Prevención.
   const current = await db.query.productCategories.findFirst({ where: eq(productCategories.id, d.id) })
-  if (current && isSparePartsCategory(current) && d.slug !== current.slug) {
-    return { ok: false, fieldErrors: { slug: [SPARE_PARTS_CATEGORY_SLUG_LOCKED_MESSAGE] } }
+  if (current && isSparePartsCategory(current)) {
+    if (d.slug !== current.slug) {
+      return { ok: false, fieldErrors: { slug: [SPARE_PARTS_CATEGORY_SLUG_LOCKED_MESSAGE] } }
+    }
+    if (d.isEpp !== current.isEpp || d.requiresPrevencion !== current.requiresPrevencion) {
+      return { ok: false, message: SPARE_PARTS_CATEGORY_FLAGS_LOCKED_MESSAGE }
+    }
   }
 
   const conflict = await db.query.productCategories.findFirst({ where: eq(productCategories.slug, d.slug) })

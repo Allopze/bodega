@@ -90,8 +90,24 @@ export function CategoryPanel({ open, onClose, editCategory }: CategoryPanelProp
                 <Input id="cat-sort" name="sortOrder" type="number" defaultValue={editCategory?.sortOrder ?? 0} className="w-24" />
               </Field>
               <div className="space-y-2">
-                <Checkbox id="cat-epp" name="isEpp" value="on" defaultChecked={editCategory?.isEpp ?? false} label="Es EPP (equipo de protección personal)" />
-                <Checkbox id="cat-prev" name="requiresPrevencion" value="on" defaultChecked={editCategory?.requiresPrevencion ?? false} label="Requiere aprobación de Prevención" />
+                {slugLocked ? (
+                  // Bloqueadas como el slug: el servidor las rechaza si cambian. Una
+                  // casilla deshabilitada no se envía, así que su valor viaja oculto.
+                  <>
+                    <Checkbox id="cat-epp" checked={editCategory?.isEpp ?? false} disabled readOnly label="Es EPP (equipo de protección personal)" aria-describedby="cat-flags-locked" />
+                    <Checkbox id="cat-prev" checked={editCategory?.requiresPrevencion ?? false} disabled readOnly label="Requiere aprobación de Prevención" aria-describedby="cat-flags-locked" />
+                    {editCategory?.isEpp && <input type="hidden" name="isEpp" value="on" />}
+                    {editCategory?.requiresPrevencion && <input type="hidden" name="requiresPrevencion" value="on" />}
+                    <p id="cat-flags-locked" className="text-xs text-[var(--color-text-muted)]">
+                      Lo usa el catálogo de repuestos: un repuesto no es EPP ni pasa por Prevención.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <Checkbox id="cat-epp" name="isEpp" value="on" defaultChecked={editCategory?.isEpp ?? false} label="Es EPP (equipo de protección personal)" />
+                    <Checkbox id="cat-prev" name="requiresPrevencion" value="on" defaultChecked={editCategory?.requiresPrevencion ?? false} label="Requiere aprobación de Prevención" />
+                  </>
+                )}
               </div>
             </FieldGroup>
           </SheetBody>

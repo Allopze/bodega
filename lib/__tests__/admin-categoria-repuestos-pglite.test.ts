@@ -217,6 +217,17 @@ describe("el slug de «Repuestos» no se puede cambiar", () => {
     expect(await category(SPARE_PARTS_CATEGORY_ID)).toMatchObject({ name: "Repuestos de flota", slug: "repuestos", sortOrder: 90 })
   })
 
+  it("marcarla como EPP o con aprobación de Prevención se rechaza en el servidor", async () => {
+    for (const flag of ["isEpp", "requiresPrevencion"]) {
+      const result = await updateCategory({ ok: false }, categoryForm({
+        id: SPARE_PARTS_CATEGORY_ID, name: "Repuestos", slug: "repuestos", sortOrder: "95", [flag]: "on",
+      }))
+      expect(result.ok).toBe(false)
+      expect(result.message).toMatch(/no se pueden cambiar/)
+    }
+    expect(await category(SPARE_PARTS_CATEGORY_ID)).toMatchObject({ isEpp: false, requiresPrevencion: false })
+  })
+
   it("otra categoría no puede tomar el slug «repuestos»", async () => {
     const result = await createCategory({ ok: false }, categoryForm({ name: "Repuestos 2", slug: "repuestos", sortOrder: "1" }))
     expect(result.ok).toBe(false)
