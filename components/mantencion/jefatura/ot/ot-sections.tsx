@@ -11,7 +11,7 @@ import { MetaBadge, StateBadge } from "@/components/states/state-badge"
 import { formatNumber } from "@/lib/mantencion/format"
 import { OT_ITEM_KIND_LABELS, type OtItemKind } from "@/lib/mantencion/work-order-states"
 import type { WorkOrderDetail, WorkOrderItemDetail, WorkOrderPartsRequest } from "@/lib/services/mantencion/work-orders/types"
-import { SparePartName, SparePartReference, sparePartIdentity } from "@/components/mantencion/spare-part-reference"
+import { SparePartIdentity, SparePartName, SparePartReference, sparePartIdentity } from "@/components/mantencion/spare-part-reference"
 import { SectionCard } from "../shared/section-card"
 import { OT_STATE_META, equipmentText } from "./ot-labels"
 import { formatDay, formatTimeOnly, sortEventsNewestFirst } from "./ot-format"
@@ -190,7 +190,7 @@ export function OtPartsRequestsSection({
               <li key={line.itemId}>
                 <ResponsiveDataListCard
                   title={<SparePartName name={line.description} product={line} canOpen={canOpenSpareParts} />}
-                  description={sparePartIdentity(line) ? <span className="font-mono">{sparePartIdentity(line)}</span> : undefined}
+                  description={sparePartIdentity(line) ? <SparePartIdentity product={line} className="font-mono" /> : undefined}
                   status={<StateBadge state={line.itemStatus} entity="item" size="sm" />}
                 >
                   <ResponsiveDataListField label="Solicitud">

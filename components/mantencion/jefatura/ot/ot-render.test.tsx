@@ -323,6 +323,20 @@ describe("«Repuestos pedidos»", () => {
     expect(screen.queryByRole("link", { name: "Pedir repuestos" })).toBeNull()
   })
 
+  it("el SKU y el N° de parte no se parten a mitad de token (tarjetas móviles y tabla): sólo se corta entre campos (UX-9)", () => {
+    // Chromium corta «QA-901» después del guion; a 390 px quedaba «QA-» en un renglón y «901» en el siguiente.
+    const detail = otDetail({ partsRequests: [partsLine({ productId: "prod-1", sku: "RPT-004", partNumber: "QA-901", isSparePart: true })] })
+    render(<OtPartsRequestsSection detail={detail} canOpenRequests canOpenSpareParts partsRequestHref={null} />)
+    const cardList = within(screen.getByRole("list", { name: "Repuestos pedidos" }))
+    for (const scope of [cardList, partsTable()]) {
+      for (const token of ["RPT-004", "QA-901"]) {
+        expect(scope.getByText(token).className).toContain("whitespace-nowrap")
+      }
+    }
+    // El texto sigue siendo uno solo para quien lo lee o lo copia.
+    expect(cardList.getByText("RPT-004").parentElement?.textContent).toBe("RPT-004 · N° de parte QA-901")
+  })
+
   it("una línea con repuesto de catálogo muestra SKU y N° de parte; el nombre enlaza a la ficha sólo con repuestos:catalog", () => {
     const detail = otDetail({
       partsRequests: [

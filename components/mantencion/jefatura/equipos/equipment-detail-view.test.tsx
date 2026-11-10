@@ -79,10 +79,10 @@ describe("ficha del equipo: «Repuestos y servicios comprados»", () => {
     const links = { canOpenRequests: true, canOpenOrders: true, newRequestHref: null }
     render(view({ purchases: [catalogado], purchaseLinks: { ...links, canOpenSpareParts: true } }))
     expect(screen.getByRole("link", { name: "Filtro hidráulico" }).getAttribute("href")).toBe("/mantencion/repuestos/prod-1")
-    expect(screen.getByText("RPT-001 · N° de parte 1R-0750")).toBeDefined()
+    expect(screen.getByText((_, element) => element?.textContent === "RPT-001 · N° de parte 1R-0750" && element.children.length === 2)).toBeDefined()
     cleanup()
     render(view({ purchases: [catalogado], purchaseLinks: { ...links, canOpenSpareParts: false } }))
     expect(screen.queryByRole("link", { name: "Filtro hidráulico" })).toBeNull()
-    expect(screen.getByText("RPT-001 · N° de parte 1R-0750")).toBeDefined()
+    expect(screen.getByText((_, element) => element?.textContent === "RPT-001 · N° de parte 1R-0750" && element.children.length === 2)).toBeDefined()
   })
 })
