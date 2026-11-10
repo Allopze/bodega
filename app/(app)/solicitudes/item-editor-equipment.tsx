@@ -111,7 +111,7 @@ export function ItemEditorEquipment({
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         {isRepuestos && !hasCatalogPart && (
-          <Field label="N° de Parte" htmlFor={`part-${item._key}`}>
+          <Field label="N° de parte" htmlFor={`part-${item._key}`}>
             <Input
               id={`part-${item._key}`}
               className="h-8 text-sm"

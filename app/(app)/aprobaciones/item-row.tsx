@@ -6,6 +6,7 @@ import { MetaBadge, StateBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { formatQty, formatDate } from "@/lib/utils"
+import { attributeDisplayName } from "@/lib/products/spare-part-display"
 import { PriorityBadge } from "@/components/ui/priority-badge"
 import type { ApprovalItem } from "./types"
 import { ApproveForm } from "./approve-form"
@@ -101,7 +102,7 @@ export function ItemRow({
                   key={a.attributeName}
                   className="text-2xs bg-[var(--color-surface-2)] text-[var(--color-text-muted)] px-1.5 py-0.5 rounded"
                 >
-                  {a.attributeName}: {a.value}
+                  {attributeDisplayName(a.attributeName)}: {a.value}
                 </span>
               ))}
             </div>

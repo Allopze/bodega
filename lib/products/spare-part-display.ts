@@ -11,6 +11,11 @@
  * «1R-0750»); si es otro, se ven los dos, rotulados, porque la diferencia es
  * justo lo que hay que revisar.
  *
+ * El atributo libre se guarda con el nombre histórico «N° de Parte» (hay filas
+ * en producción con él), pero se muestra siempre como «N° de parte», el rótulo
+ * del catálogo: en una misma solicitud convivían las dos grafías (recorrido
+ * 2026-11-09, IN-1).
+ *
  * Sólo presentación: no toca datos.
  */
 import { REPUESTO_ATTRIBUTE_NAMES } from "@/lib/validation/repuestos"
@@ -44,18 +49,28 @@ function compactPartNumber(value: string): string {
   return value.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().replace(/[^a-z0-9]/g, "")
 }
 
+/** El nombre con que se muestra un atributo guardado: el N° de parte libre con el rótulo del catálogo. */
+export function attributeDisplayName(name: string): string {
+  return isFreePartNumberAttribute(name) ? CATALOG_PART_NUMBER_LABEL : name
+}
+
 /**
  * Los atributos de la línea tal como se muestran. Con un repuesto de catálogo,
  * su N° de parte va primero; el libre se esconde si es el mismo y, si no, queda
  * a continuación rotulado como el pedido. Sin repuesto, o con un producto que no
- * es repuesto, quedan como están.
+ * es repuesto, quedan como están salvo el N° de parte libre, que se rotula como
+ * en el catálogo.
  */
 export function withCatalogPartNumber<T extends RecordedAttribute>(
   product: CatalogPartLike | null | undefined,
   recorded: readonly T[] | null | undefined,
 ): RecordedAttribute[] {
   const attributes = [...(recorded ?? [])]
-  if (!product?.isSparePart) return attributes
+  if (!product?.isSparePart) {
+    return attributes.map((attribute) => isFreePartNumberAttribute(attribute.attributeName)
+      ? { ...attribute, attributeName: CATALOG_PART_NUMBER_LABEL }
+      : attribute)
+  }
   const partNumber = product.partNumber?.trim() ?? ""
   const catalogKey = compactPartNumber(partNumber)
   const free = attributes

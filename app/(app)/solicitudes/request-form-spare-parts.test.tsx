@@ -149,7 +149,7 @@ describe("RequestForm — repuestos con catálogo", () => {
     expect(ficha).toHaveTextContent("Filtro de aceite")
     expect(ficha).toHaveTextContent("RPT-001")
     expect(ficha).toHaveTextContent("1R-0750")
-    expect(screen.queryByLabelText(/N° de Parte/)).toBeNull()
+    expect(screen.queryByLabelText(/N° de parte/)).toBeNull()
     expect(screen.getByLabelText(/Precio unitario estimado/)).toHaveValue(35_000)
     expect(screen.getByLabelText("Unidad")).toHaveValue("juego")
 
@@ -177,7 +177,7 @@ describe("RequestForm — repuestos con catálogo", () => {
     expect(screen.getByLabelText(/Precio unitario estimado/)).toHaveValue(null)
 
     fireEvent.change(screen.getByPlaceholderText("Describe el ítem requerido..."), { target: { value: "Manguera hidráulica" } })
-    fireEvent.change(screen.getByLabelText(/N° de Parte/), { target: { value: "MH-9" } })
+    fireEvent.change(screen.getByLabelText(/N° de parte/), { target: { value: "MH-9" } })
     expect(await savedItem()).toMatchObject({
       productId: null, productNameFree: "Manguera hidráulica", partNumber: "MH-9", estimatedUnitPrice: null,
     })

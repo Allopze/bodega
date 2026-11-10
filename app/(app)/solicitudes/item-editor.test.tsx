@@ -316,7 +316,7 @@ describe("ItemEditor — equipo de flota en repuestos y servicios", () => {
     expect(screen.queryByLabelText(/^Marca/)).toBeNull()
     expect(screen.queryByLabelText(/^Modelo/)).toBeNull()
     // El N.° de parte es del repuesto, no del equipo.
-    expect(screen.getByLabelText(/N° de Parte/)).toBeInTheDocument()
+    expect(screen.getByLabelText(/N° de parte/)).toBeInTheDocument()
   })
 
   it("ofrece sólo los equipos de la faena del formulario y avisa la elección", () => {
@@ -687,7 +687,7 @@ describe("ItemEditor — repuestos: buscador del catálogo", () => {
     expect(within(datos).getByText("Marca del repuesto:").nextElementSibling).toHaveTextContent("Caterpillar")
     // Ni buscador ni N° de parte libre: el repuesto ya lo dice.
     expect(screen.queryByRole("combobox", { name: /Descripción/ })).toBeNull()
-    expect(screen.queryByLabelText(/N° de Parte/)).toBeNull()
+    expect(screen.queryByLabelText(/N° de parte/)).toBeNull()
     // El precio estimado sigue siendo editable y dice de dónde viene la sugerencia.
     expect(screen.getByLabelText(/Precio unitario estimado/)).toBeEnabled()
     expect(screen.getByText(/Último precio conocido en el catálogo: \$35\.000/)).toBeInTheDocument()
@@ -706,14 +706,14 @@ describe("ItemEditor — repuestos: buscador del catálogo", () => {
     fireEvent.change(descripcion(), { target: { value: "filtro" } })
     fireEvent.mouseDown(await screen.findByRole("option", { name: /Filtro de aceite/ }))
     expect(screen.getByRole("group", { name: "Repuesto elegido" })).toBeInTheDocument()
-    expect(screen.queryByLabelText(/N° de Parte/)).toBeNull()
+    expect(screen.queryByLabelText(/N° de parte/)).toBeNull()
 
     fireEvent.click(screen.getByRole("button", { name: "Cambiar" }))
     expect(screen.queryByRole("group", { name: "Repuesto elegido" })).toBeNull()
     // El foco vuelve al buscador, vacío, y el N° de parte libre reaparece.
     expect(descripcion()).toHaveValue("")
     expect(descripcion()).toHaveFocus()
-    expect(screen.getByLabelText(/N° de Parte/)).toBeInTheDocument()
+    expect(screen.getByLabelText(/N° de parte/)).toBeInTheDocument()
 
     fireEvent.change(descripcion(), { target: { value: "Filtro marca Donaldson" } })
     expect(descripcion()).toHaveValue("Filtro marca Donaldson")
@@ -741,7 +741,7 @@ describe("ItemEditor — repuestos: buscador del catálogo", () => {
 
   it("un ítem de texto libre conserva su N° de parte escrito", () => {
     renderRepuesto({ productNameFree: "Manguera hidráulica", partNumber: "MH-9" })
-    expect(screen.getByLabelText(/N° de Parte/)).toHaveValue("MH-9")
+    expect(screen.getByLabelText(/N° de parte/)).toHaveValue("MH-9")
   })
 
   it("sin catálogo (permiso o catálogo vacío) sigue siendo un campo de descripción", async () => {

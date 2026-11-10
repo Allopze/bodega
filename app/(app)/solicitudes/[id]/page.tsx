@@ -18,7 +18,7 @@ import { getOperationalSettings, getPdfMaxSizeMb } from "@/lib/services/system-s
 import { listVehicleOptionsForRequests } from "@/lib/services/request-vehicle-options"
 import { listSpareParts } from "@/lib/services/spare-parts-catalog"
 import { buildSparePartOptions, sparePartFacts } from "../spare-part-options"
-import { isFreePartNumberAttribute } from "@/lib/products/spare-part-display"
+import { attributeDisplayName, isFreePartNumberAttribute } from "@/lib/products/spare-part-display"
 import { vehicleLabel } from "@/lib/services/fleet"
 import { buildRequirementHint } from "./requirement-hint"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
@@ -409,7 +409,7 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
         ...item.attributes
           .filter((attribute) => !(item.productId && sparePartById.has(item.productId) && isFreePartNumberAttribute(attribute.attributeName)))
           .map((attribute) => ({
-            name: attribute.attributeName,
+            name: attributeDisplayName(attribute.attributeName),
             value: attribute.value,
           })),
       ],

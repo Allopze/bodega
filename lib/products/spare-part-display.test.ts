@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest"
-import { CATALOG_PART_NUMBER_LABEL, REQUESTED_PART_NUMBER_LABEL, isFreePartNumberAttribute, withCatalogPartNumber } from "./spare-part-display"
+import {
+  CATALOG_PART_NUMBER_LABEL, REQUESTED_PART_NUMBER_LABEL, attributeDisplayName, isFreePartNumberAttribute, withCatalogPartNumber,
+} from "./spare-part-display"
 
 const RECORDED = [
   { attributeName: "N° de Parte", value: "1r 0750" },
@@ -29,12 +31,18 @@ describe("withCatalogPartNumber", () => {
     ])
   })
 
-  it("sin repuesto, o con un producto que no es repuesto, no cambia nada", () => {
-    expect(withCatalogPartNumber(null, RECORDED)).toEqual(RECORDED)
-    expect(withCatalogPartNumber({ isSparePart: false, partNumber: "X" }, RECORDED)).toEqual(RECORDED)
+  it("sin repuesto, o con un producto que no es repuesto, sólo rotula el N° de parte libre como el catálogo", () => {
+    const relabeled = [{ attributeName: "N° de parte", value: "1r 0750" }, { attributeName: "Equipo", value: "Camión KA-135" }]
+    expect(withCatalogPartNumber(null, RECORDED)).toEqual(relabeled)
+    expect(withCatalogPartNumber({ isSparePart: false, partNumber: "X" }, RECORDED)).toEqual(relabeled)
     expect(withCatalogPartNumber({ isSparePart: true, partNumber: "X" }, undefined)).toEqual([
       { attributeName: CATALOG_PART_NUMBER_LABEL, value: "X" },
     ])
+  })
+
+  it("el nombre guardado «N° de Parte» se muestra «N° de parte»; los demás, igual", () => {
+    expect(attributeDisplayName("N° de Parte")).toBe("N° de parte")
+    expect(attributeDisplayName("Equipo")).toBe("Equipo")
   })
 
   it("reconoce el atributo libre sin importar mayúsculas ni espacios", () => {
