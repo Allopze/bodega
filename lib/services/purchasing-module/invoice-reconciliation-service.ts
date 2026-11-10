@@ -16,7 +16,7 @@ import {
 import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { computeLineSubtotal, computeOrderTotals } from "@/lib/order-totals"
-import { setProductSupplierPriceTx } from "@/lib/services/product-supplier-prices"
+import { invoicePriceEvidence, setProductSupplierPriceTx } from "@/lib/services/product-supplier-prices"
 import {
   formatInvoiceReconciliationIssues,
   reconcileInvoiceEvidence,
@@ -407,14 +407,13 @@ async function applyCatalogPricesTx(
     if (!line.productId) throw new Error("Solo se puede actualizar catálogo desde líneas vinculadas a un producto")
     if (seenProducts.has(line.productId)) throw new Error("Selecciona una sola fuente de precio por producto")
     seenProducts.add(line.productId)
-    const effectiveAt = line.issueDate ? `${line.issueDate}T00:00:00.000Z` : line.uploadedAt
     const result = await setProductSupplierPriceTx(tx, {
       productId: line.productId,
       supplierId: input.supplierId,
       unitPrice: line.subtotal / line.quantity,
       source: "invoice_reconciliation",
       sourceId: line.id,
-      effectiveAt,
+      ...invoicePriceEvidence(line),
       userId: input.userId,
       isPreferredWhenCreated: false,
       rejectOlderThanCurrent: true,

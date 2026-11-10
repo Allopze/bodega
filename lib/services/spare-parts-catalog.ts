@@ -681,7 +681,12 @@ export async function getSparePartDetail(id: string): Promise<SparePartDetail | 
     .from(productSupplierPriceHistory)
     .innerJoin(suppliers, eq(productSupplierPriceHistory.supplierId, suppliers.id))
     .leftJoin(users, eq(productSupplierPriceHistory.createdByUserId, users.id))
-    .where(eq(productSupplierPriceHistory.productId, id))
+    .where(and(
+      eq(productSupplierPriceHistory.productId, id),
+      // Una OC o factura que repite el precio vigente deja una fila de
+      // confirmación (mismo precio antes y después): no es un cambio de precio.
+      sql`${productSupplierPriceHistory.previousPrice} IS DISTINCT FROM ${productSupplierPriceHistory.newPrice}`,
+    ))
     .orderBy(desc(productSupplierPriceHistory.effectiveDate), desc(productSupplierPriceHistory.createdAt))
 
   const links = await loadVehicleLinks([id])

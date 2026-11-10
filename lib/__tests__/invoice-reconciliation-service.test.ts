@@ -379,6 +379,39 @@ describe("servicio transaccional de conciliación OC-factura", () => {
     expect(history).toEqual([expect.objectContaining({ previousPrice: 50, newPrice: 52, source: "invoice_reconciliation" })])
   })
 
+  it("una factura del mismo día que el precio vigente lo corrige, y una que repite el precio lo confirma", async () => {
+    // El precio vigente se escribió a las 11:00 de Chile del 21 (p. ej., al emitir una OC).
+    await inMemoryDb.update(schema.productSuppliers).set({ unitPrice: 50, lastUpdated: "2026-08-21T15:00:00.000Z" })
+      .where(eq(schema.productSuppliers.id, "ps-catalog"))
+    const sameDay = await insertOrderFixture({ id: "same-day", invoiceIssueDate: "2026-08-21" })
+    const sameDayEvidence = await getPurchaseOrderInvoiceReconciliation("same-day")
+    await acceptPurchaseOrderInvoiceReconciliation({
+      purchaseOrderId: "same-day", fingerprint: sameDayEvidence.fingerprint,
+      reason: "Factura del mismo día que corrige el precio de la orden.",
+      catalogInvoiceItemIds: [sameDay.invoiceItemId], canUpdateCatalog: true,
+      userId, worksiteScope: "all",
+    })
+    const [corrected] = await inMemoryDb.select().from(schema.productSuppliers).where(eq(schema.productSuppliers.id, "ps-catalog"))
+    expect(corrected?.unitPrice).toBe(52)
+    // Queda después de lo que corrigió: se fecha en la vigencia que tenía.
+    expect(new Date(corrected!.lastUpdated).toISOString()).toBe("2026-08-21T15:00:00.000Z")
+
+    const confirm = await insertOrderFixture({ id: "confirm-price", invoiceIssueDate: "2026-08-22" })
+    const confirmEvidence = await getPurchaseOrderInvoiceReconciliation("confirm-price")
+    await acceptPurchaseOrderInvoiceReconciliation({
+      purchaseOrderId: "confirm-price", fingerprint: confirmEvidence.fingerprint,
+      reason: "Factura que repite el precio vigente del catálogo.",
+      catalogInvoiceItemIds: [confirm.invoiceItemId], canUpdateCatalog: true,
+      userId, worksiteScope: "all",
+    })
+    const [confirmed] = await inMemoryDb.select().from(schema.productSuppliers).where(eq(schema.productSuppliers.id, "ps-catalog"))
+    expect(confirmed?.unitPrice).toBe(52)
+    expect(new Date(confirmed!.lastUpdated).toISOString()).toBe("2026-08-22T00:00:00.000Z")
+    const rows = await inMemoryDb.select().from(schema.productSupplierPriceHistory)
+      .where(eq(schema.productSupplierPriceHistory.sourceId, confirm.invoiceItemId))
+    expect(rows).toEqual([expect.objectContaining({ previousPrice: 52, newPrice: 52, source: "invoice_reconciliation" })])
+  })
+
   it("actualiza cada producto con el precio de su asignación documental", async () => {
     await inMemoryDb.insert(schema.products).values([
       {

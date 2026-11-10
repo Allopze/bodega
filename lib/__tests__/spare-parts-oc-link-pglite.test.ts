@@ -40,7 +40,8 @@ const { IDS, seedMantFixtures } = await import("./mantencion-sync-fixtures")
 const catalog = await import("@/lib/services/spare-parts-catalog")
 const { createOrder, issueAndSendOrder, cancelOrder, deleteOrder } = await import("@/lib/services/purchasing")
 const { applyMovementTx } = await import("@/lib/services/stock-movement")
-const { setProductSupplierPriceTx } = await import("@/lib/services/product-supplier-prices")
+const { setProductSupplierPriceTx, invoicePriceEvidence } = await import("@/lib/services/product-supplier-prices")
+const { todayInChile } = await import("@/lib/utils")
 
 const now = new Date().toISOString()
 let seq = 0
@@ -412,13 +413,16 @@ describe("catálogo de repuestos · vincular al armar la OC y precio al emitir",
       expect(detail?.suppliers[0]).toMatchObject({ supplierId: "sup-a", unitPrice: 13_500 })
     })
 
-    it("el mismo precio otra vez no ensucia el historial", async () => {
+    it("el mismo precio otra vez queda como confirmación, no como cambio en la ficha", async () => {
       const part = await createPart("Bujía", "BU-500")
       for (let i = 0; i < 2; i += 1) {
         const { itemId } = await freeTextItem({ quantity: 1 })
         await issueAndSendOrder(await orderFor(itemId, part.id, { unitPrice: 8_000, quantity: 1 }), IDS.jefe)
       }
-      expect(await priceHistory(part.id)).toHaveLength(1)
+      const history = await priceHistory(part.id)
+      expect(history.map((row) => [row.previousPrice, row.newPrice])).toEqual([[null, 8_000], [8_000, 8_000]])
+      const detail = await catalog.getSparePartDetail(part.id)
+      expect(detail?.priceHistory.map((entry) => [entry.previousPrice, entry.newPrice])).toEqual([[null, 8_000]])
     })
 
     it("cada proveedor lleva su propio precio", async () => {
@@ -526,6 +530,109 @@ describe("catálogo de repuestos · vincular al armar la OC y precio al emitir",
       await cancelOrder(orderId, IDS.jefe, "Precio mal cotizado")
       expect((await priceHistory(part.id)).map((row) => row.source)).toEqual(["invoice_reconciliation"])
       expect(await supplierPrice(part.id)).toMatchObject({ unitPrice: 9_000 })
+    })
+
+    it("anular A y después B no resucita el precio de A: la relación que creó A se va", async () => {
+      const part = await createPart("Cilindro de freno", "CF-420")
+      const first = await freeTextItem({ quantity: 1 })
+      const orderA = await orderFor(first.itemId, part.id, { unitPrice: 12_000, quantity: 1 })
+      await issueAndSendOrder(orderA, IDS.jefe)
+      const second = await freeTextItem({ quantity: 1 })
+      const orderB = await orderFor(second.itemId, part.id, { unitPrice: 13_500, quantity: 1 })
+      await issueAndSendOrder(orderB, IDS.jefe)
+
+      await cancelOrder(orderA, IDS.jefe, "Duplicada")
+      expect(await supplierPrice(part.id)).toMatchObject({ unitPrice: 13_500 })
+      // La fila de B hereda el «antes» de A: antes de A no había precio.
+      expect((await priceHistory(part.id)).map((row) => [row.sourceId, row.previousPrice, row.newPrice])).toEqual([[orderB, null, 13_500]])
+
+      await cancelOrder(orderB, IDS.jefe, "También anulada")
+      expect(await priceHistory(part.id)).toHaveLength(0)
+      expect(await supplierPrice(part.id)).toBeNull()
+    })
+
+    it("dos OC al mismo precio: anular ambas deja al repuesto sin precio", async () => {
+      const part = await createPart("Retén de rueda", "RR-421")
+      const first = await freeTextItem({ quantity: 1 })
+      const orderA = await orderFor(first.itemId, part.id, { unitPrice: 8_000, quantity: 1 })
+      await issueAndSendOrder(orderA, IDS.jefe)
+      const second = await freeTextItem({ quantity: 1 })
+      const orderB = await orderFor(second.itemId, part.id, { unitPrice: 8_000, quantity: 1 })
+      await issueAndSendOrder(orderB, IDS.jefe)
+
+      // B confirma el precio de A: anular A no lo retira.
+      await cancelOrder(orderA, IDS.jefe, "Duplicada")
+      expect(await supplierPrice(part.id)).toMatchObject({ unitPrice: 8_000 })
+      await cancelOrder(orderB, IDS.jefe, "También anulada")
+      expect(await priceHistory(part.id)).toHaveLength(0)
+      expect(await supplierPrice(part.id)).toBeNull()
+    })
+
+    it("una OC que repite el repuesto a dos precios deja una sola fila (el último) y al anularla vuelve el precio previo", async () => {
+      const part = await createPart("Junta de culata", "JC-422")
+      await testDb.transaction((tx) => setProductSupplierPriceTx(tx as unknown as Tx, {
+        productId: part.id, supplierId: "sup-a", unitPrice: 9_000, source: "invoice_reconciliation",
+        sourceId: "fac-422", effectiveAt: new Date(Date.now() - 86_400_000).toISOString(),
+      }))
+      const one = await freeTextItem({ quantity: 1 })
+      const two = await freeTextItem({ quantity: 1 })
+      const orderId = await createOrder({
+        worksiteId: IDS.wsBio, supplierId: "sup-a", createdBy: IDS.jefe,
+        items: [
+          line(one.itemId, { productId: part.id, unitPrice: 10_000, quantity: 1 }),
+          line(two.itemId, { productId: part.id, unitPrice: 11_000, quantity: 1 }),
+        ],
+      })
+      await issueAndSendOrder(orderId, IDS.jefe)
+      const own = (await priceHistory(part.id)).filter((row) => row.sourceId === orderId)
+      expect(own.map((row) => [row.previousPrice, row.newPrice])).toEqual([[9_000, 11_000]])
+      expect(await supplierPrice(part.id)).toMatchObject({ unitPrice: 11_000 })
+
+      await cancelOrder(orderId, IDS.jefe, "Precio mal cotizado")
+      expect(await supplierPrice(part.id)).toMatchObject({ unitPrice: 9_000 })
+      expect((await priceHistory(part.id)).map((row) => row.sourceId)).toEqual(["fac-422"])
+    })
+
+    it("una factura que confirma el mismo precio lo sostiene al anular la OC", async () => {
+      const part = await createPart("Termostato", "TE-423")
+      const { itemId } = await freeTextItem({ quantity: 1 })
+      const orderId = await orderFor(itemId, part.id, { unitPrice: 10_000, quantity: 1 })
+      await issueAndSendOrder(orderId, IDS.jefe)
+      const result = await testDb.transaction((tx) => setProductSupplierPriceTx(tx as unknown as Tx, {
+        productId: part.id, supplierId: "sup-a", unitPrice: 10_000, source: "invoice_reconciliation", sourceId: "fac-423",
+        ...invoicePriceEvidence({ issueDate: todayInChile(), uploadedAt: now }), rejectOlderThanCurrent: true,
+      }))
+      expect(result).toMatchObject({ stale: false, changed: false })
+
+      await cancelOrder(orderId, IDS.jefe, "Anulada después de facturar")
+      expect(await supplierPrice(part.id)).toMatchObject({ unitPrice: 10_000 })
+      expect((await priceHistory(part.id)).map((row) => row.sourceId)).toEqual(["fac-423"])
+    })
+
+    it("una factura del mismo día que la OC corrige su precio; una de un día anterior no", async () => {
+      const part = await createPart("Bomba de combustible", "BC-424")
+      const { itemId } = await freeTextItem({ quantity: 1 })
+      const orderId = await orderFor(itemId, part.id, { unitPrice: 10_000, quantity: 1 })
+      await issueAndSendOrder(orderId, IDS.jefe)
+
+      const yesterday = todayInChile(new Date(Date.now() - 86_400_000))
+      const stale = await testDb.transaction((tx) => setProductSupplierPriceTx(tx as unknown as Tx, {
+        productId: part.id, supplierId: "sup-a", unitPrice: 9_000, source: "invoice_reconciliation", sourceId: "fac-424-old",
+        ...invoicePriceEvidence({ issueDate: yesterday, uploadedAt: now }), rejectOlderThanCurrent: true,
+      }))
+      expect(stale.stale).toBe(true)
+
+      const sameDay = await testDb.transaction((tx) => setProductSupplierPriceTx(tx as unknown as Tx, {
+        productId: part.id, supplierId: "sup-a", unitPrice: 9_500, source: "invoice_reconciliation", sourceId: "fac-424",
+        ...invoicePriceEvidence({ issueDate: todayInChile(), uploadedAt: now }), rejectOlderThanCurrent: true,
+      }))
+      expect(sameDay).toMatchObject({ stale: false, changed: true })
+      expect(await supplierPrice(part.id)).toMatchObject({ unitPrice: 9_500 })
+
+      // La factura corrigió a la OC: anularla no toca el precio facturado.
+      await cancelOrder(orderId, IDS.jefe, "Anulada después de facturar")
+      expect(await supplierPrice(part.id)).toMatchObject({ unitPrice: 9_500 })
+      expect((await priceHistory(part.id)).map((row) => [row.sourceId, row.previousPrice, row.newPrice])).toEqual([["fac-424", null, 9_500]])
     })
 
     it("una OC de EPP no escribe precios", async () => {
