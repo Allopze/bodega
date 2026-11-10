@@ -15,7 +15,6 @@ import { createSubmittedRequest } from "@/lib/services/requests-draft"
 import { EppStockAvailabilityError } from "@/lib/services/epp-stock-availability"
 import { EppStockConfirmationError, EPP_STOCK_CONFIRMATION_MAX_LENGTH } from "@/lib/services/epp-stock-confirmation"
 import { RequestSubmissionKeyConflictError } from "@/lib/services/requests-draft-create"
-import { inactiveRequestProductsMessage } from "@/lib/requests/inactive-request-products"
 import { persistDraft } from "./draft"
 import { parseRequestForm } from "./parse-request-form"
 import { revalidateOperationalViews } from "@/lib/services/operational-cache"
@@ -128,9 +127,8 @@ export async function submitRequest(_prev: ActionState, formData: FormData): Pro
     return { ok: false, message: "No tienes acceso a la faena de esta solicitud" }
   }
 
-  const inactiveError = await assertProductsActive(request.items.map((item) => item.productId))
-  if (inactiveError) return inactiveError
-
+  // Los productos dados de baja se revisan dentro de la transacción del envío,
+  // bajo el bloqueo de la solicitud (`submitRequest`).
   try {
     const submitFn = request.requestType === "repuestos" ? submitRepuestoRequest : submitServiceRequest
     await submitFn({
@@ -212,10 +210,4 @@ async function createAndSubmit(
 
   revalidateOperationalViews([REVALIDATE, `${REVALIDATE}/${outcome.requestId}`])
   redirect(`${REVALIDATE}/${outcome.requestId}`)
-}
-
-/** Un producto dado de baja no puede entrar a aprobación. */
-async function assertProductsActive(productIds: Array<string | null | undefined>): Promise<ActionState | null> {
-  const message = await inactiveRequestProductsMessage(productIds)
-  return message ? { ok: false, message } : null
 }

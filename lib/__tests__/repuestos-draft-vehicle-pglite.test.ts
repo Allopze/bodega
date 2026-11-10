@@ -37,7 +37,7 @@ await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 const { IDS, seedMantFixtures } = await import("./mantencion-sync-fixtures")
 const { createWorkOrderWithClient } = await import("@/lib/services/mantencion/work-orders/create")
 const { createSparePartTx, setSparePartActive } = await import("@/lib/services/spare-parts-catalog")
-const { persistRepuestoDraft } = await import("@/lib/services/repuestos")
+const { persistRepuestoDraft, submitRepuestoRequest } = await import("@/lib/services/repuestos")
 const { persistServiceDraft } = await import("@/lib/services/servicios")
 const { inactiveRequestProductsMessage } = await import("@/lib/requests/inactive-request-products")
 
@@ -257,6 +257,25 @@ describe("persistRepuestoDraft · repuesto del catálogo", () => {
     expect(await inactiveRequestProductsMessage([item.productId]))
       .toBe(`El repuesto «Correa de distribución» (${part.sku}) fue desactivado del catálogo: cámbialo antes de enviar`)
     expect(await inactiveRequestProductsMessage([partId, null])).toBeNull()
+
+    // El servicio de envío lo revisa bajo el bloqueo de la solicitud y no la mueve.
+    await expect(submitRepuestoRequest({ requestId, userId: IDS.jefe }))
+      .rejects.toThrow(`El repuesto «Correa de distribución» (${part.sku}) fue desactivado del catálogo: cámbialo antes de enviar`)
+    const [request] = await testDb.select({ status: schema.purchaseRequests.status }).from(schema.purchaseRequests)
+      .where(eq(schema.purchaseRequests.id, requestId))
+    expect(request?.status).toBe("draft")
+  })
+
+  it("el mensaje nombra también un producto común inactivo junto al repuesto", async () => {
+    const part = await createPart("Polea tensora", "PT-11", "Gates")
+    await setSparePartActive(part.id, false)
+    await testDb.insert(schema.productCategories).values({ id: "cat-inactivo-comun", name: "Lubricantes", slug: "lubricantes-ina", sortOrder: 90 })
+    await testDb.insert(schema.products).values({
+      id: "p-inactivo-comun", sku: "GEN-INA", name: "Grasa multiuso", categoryId: "cat-inactivo-comun", unitOfMeasure: "unidad",
+      isActive: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    })
+    expect(await inactiveRequestProductsMessage([part.id, "p-inactivo-comun"]))
+      .toBe(`El repuesto «Polea tensora» (${part.sku}) fue desactivado del catálogo y el producto «Grasa multiuso» (GEN-INA) está inactivo: cámbialos antes de enviar`)
   })
 
   it("al editar un borrador, elegir un repuesto que ya estaba inactivo se rechaza", async () => {
