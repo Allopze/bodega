@@ -161,7 +161,11 @@ export async function commitImportAction(formData: FormData): Promise<MantAction
   if (!upload.ok) return upload
   try {
     // Se vuelve a leer y validar el archivo: la vista previa no es una promesa.
-    const result = await commitEquipmentImport(equipmentActor(guard.session), upload.buffer, upload.name)
+    // Faenas y marcas nuevas sólo se crean si la persona marcó su casilla en la vista previa.
+    const result = await commitEquipmentImport(equipmentActor(guard.session), upload.buffer, upload.name, {
+      allowNewWorksites: formData.get("allowNewWorksites") === "1",
+      allowNewBrands: formData.get("allowNewBrands") === "1",
+    })
     if (result.ok) revalidateEquipment()
     return result
   } catch (error) {
@@ -187,6 +191,7 @@ const incorporateSchema = z.object({
   rows: z.array(z.object({
     vehicleId: z.string().min(1).max(64),
     brandId: z.string().max(64),
+    newBrandName: z.string().max(80).nullable().optional(),
     scheduleId: z.string().max(64).nullable(),
     initialReading: z.string().max(20),
     initialReadingDate: z.string().max(10).nullable(),
@@ -207,6 +212,7 @@ export async function incorporateFleetAction(input: z.input<typeof incorporateSc
     const result = await incorporateFleetVehicles(equipmentActor(guard.session), parsed.data.rows.map((row) => ({
       vehicleId: row.vehicleId,
       brandId: row.brandId,
+      newBrandName: row.newBrandName?.trim() || null,
       scheduleId: row.scheduleId || null,
       initialReading: numberOrNull(row.initialReading.trim()),
       initialReadingDate: row.initialReadingDate || null,

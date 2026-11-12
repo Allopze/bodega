@@ -37,6 +37,8 @@ export interface NotificationPlan {
   equipment: string
   /** Complemento del cuerpo (motivo del rechazo, etc.). */
   detail?: string | null
+  /** `unassigned` por una reasignación: la OT no vuelve a «Por asignar», pasó a otro mecánico. */
+  reassigned?: boolean
 }
 
 const TYPE: Record<OtNotifyEvent, NotificationType> = {
@@ -145,7 +147,11 @@ export async function sendWorkOrderNotification(plan: NotificationPlan): Promise
   const userIds = await recipients(plan)
   if (userIds.length === 0) return
   // La OT del administrador de contrato nace asignada al mecánico de su faena: entonces no está «por asignar».
-  const text = plan.event === "created" && plan.assigneeUserId ? "Ya tiene mecánico asignado; puedes reasignarla." : BODY[plan.event]
+  const text = plan.event === "created" && plan.assigneeUserId
+    ? "Ya tiene mecánico asignado; puedes reasignarla."
+    : plan.event === "unassigned" && plan.reassigned
+      ? "Se reasignó a otro mecánico: ya no tienes que ejecutarla."
+      : BODY[plan.event]
   const body = [plan.equipment, text, plan.detail ? `Motivo: ${plan.detail}` : null].filter(Boolean).join(" · ")
   await notifyManyUser(userIds, {
     type: TYPE[plan.event],

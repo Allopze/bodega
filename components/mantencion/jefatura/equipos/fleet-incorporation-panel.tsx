@@ -23,6 +23,8 @@ import { incorporateFleetAction } from "@/app/(app)/mantencion/equipos/actions"
 interface Draft { brandId: string; scheduleId: string; reading: string; date: string }
 
 const UNIT_SHORT: Record<MantUnit, string> = { km: "km", h: "h" }
+/** Valor del selector de marca que significa «crear esta marca» (la de la flota). */
+const NEW_BRAND = "nueva-marca:"
 
 /**
  * «Incorporar desde la flota»: la flota ya tiene código, patente, tipo y faena
@@ -30,11 +32,13 @@ const UNIT_SHORT: Record<MantUnit, string> = { km: "km", h: "h" }
  * se muestran como texto, no como campos: no se cambian desde esta pantalla.
  * La búsqueda de la barra superior filtra la tabla (una sola tabla en la página).
  */
-export function FleetIncorporationPanel({ candidates, brands, schedules, today }: {
+export function FleetIncorporationPanel({ candidates, brands, schedules, today, canCreateBrands = false }: {
   candidates: IncorporationCandidate[]
   brands: Array<{ id: string; name: string }>
   schedules: Array<{ id: string; name: string; unit: MantUnit }>
   today: string
+  /** Quien ve todas las faenas puede crear la marca de la flota que no está en la lista. */
+  canCreateBrands?: boolean
 }) {
   const { searchQuery } = useSafeShellHeader()
   const [drafts, setDrafts] = React.useState<Record<string, Draft>>(() => Object.fromEntries(candidates.map((item) => [item.vehicleId, {
@@ -73,6 +77,10 @@ export function FleetIncorporationPanel({ candidates, brands, schedules, today }
   const someVisibleSelected = selectable.some((item) => selected.has(item.vehicleId))
   const blocked = candidates.filter((item) => item.blocker).length
   const brandOptions = brands.map((brand) => ({ value: brand.id, label: brand.name }))
+  /** Las de la lista y, si la marca de la flota no está, «Crear «X»» al final. */
+  const brandOptionsFor = (item: IncorporationCandidate) => canCreateBrands && item.fleetBrand && !item.suggestedBrandId
+    ? [...brandOptions, { value: `${NEW_BRAND}${item.fleetBrand}`, label: `Crear «${item.fleetBrand}»` }]
+    : brandOptions
   // «Sin pauta» es el valor vacío: lo pinta `emptyLabel` (Radix no admite una opción con valor "").
   const scheduleOptions = (unit: MantUnit) => schedules
     .filter((schedule) => schedule.unit === unit)
@@ -120,8 +128,9 @@ export function FleetIncorporationPanel({ candidates, brands, schedules, today }
       const result = await incorporateFleetAction({
         rows: chosen.map((item) => {
           const draft = drafts[item.vehicleId]!
+          const newBrandName = draft.brandId.startsWith(NEW_BRAND) ? draft.brandId.slice(NEW_BRAND.length) : null
           return {
-            vehicleId: item.vehicleId, brandId: draft.brandId, scheduleId: draft.scheduleId || null,
+            vehicleId: item.vehicleId, brandId: newBrandName ? "" : draft.brandId, newBrandName, scheduleId: draft.scheduleId || null,
             initialReading: draft.reading, initialReadingDate: draft.reading.trim() ? draft.date || null : null,
           }
         }),
@@ -247,11 +256,13 @@ export function FleetIncorporationPanel({ candidates, brands, schedules, today }
                         <TableCell className="align-top">
                           <OptionSelect
                             aria-label={`Marca de ${label}`} className="h-9 w-full" placeholder="Elige la marca"
-                            options={brandOptions} value={draft.brandId} error={rowErrors.length > 0 && !draft.brandId}
+                            options={brandOptionsFor(item)} value={draft.brandId} error={rowErrors.length > 0 && !draft.brandId}
                             onValueChange={(value) => patch(item.vehicleId, { brandId: value })}
                           />
-                          {item.fleetBrand && !item.suggestedBrandId && (
-                            <p className="mt-1 text-xs text-[var(--color-text-muted)]">En la flota dice «{item.fleetBrand}».</p>
+                          {item.fleetBrand && !item.suggestedBrandId && !draft.brandId.startsWith(NEW_BRAND) && (
+                            <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                              En la flota dice «{item.fleetBrand}»{canCreateBrands ? ": puedes crearla al final de la lista." : ", que no está en la lista."}
+                            </p>
                           )}
                         </TableCell>
                         <TableCell className="align-top">

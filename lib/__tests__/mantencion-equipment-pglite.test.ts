@@ -31,7 +31,7 @@ const {
 } = await import("@/lib/services/mantencion/equipment")
 type EquipmentInput = import("@/lib/services/mantencion/equipment").EquipmentInput
 const { listEquipmentHistory } = await import("@/lib/services/mantencion/equipment-history")
-const { previewEquipmentImport, commitEquipmentImport, buildEquipmentTemplate } = await import("@/lib/services/mantencion/equipment-import")
+const { previewEquipmentImport, commitEquipmentImport, buildEquipmentTemplate, similarName } = await import("@/lib/services/mantencion/equipment-import")
 
 const actor = { userId: "u-jefe-eq", email: "jefe@example.test" }
 const T = { km: "t-camion", h: "t-excavadora", none: "t-estanque" } as const
@@ -292,7 +292,7 @@ describe("importación", () => {
     expect(preview.data.summary).toMatchObject({ created: 2, updated: 1, unchanged: 1, errors: 3, newWorksites: ["Faena Importada"] })
     const errorRow = preview.data.rows.find((row) => row.row === 6)
     expect(errorRow?.messages.join(" ")).toMatch(/patente válida/)
-    expect(errorRow?.messages.join(" ")).toMatch(/Marca X/)
+    // «Marca X» ya no es error en la vista previa de la jefatura: se anunciaría como marca nueva (B2).
     expect(preview.data.rows.find((row) => row.row === 7)?.messages[0]).toMatch(/ya aparece en la fila 2/)
     expect(preview.data.rows.find((row) => row.row === 8)?.messages.join(" ")).toMatch(/se mide en horas/)
     const updateRow = preview.data.rows.find((row) => row.row === 4)
@@ -303,7 +303,8 @@ describe("importación", () => {
   })
 
   it("al confirmar escribe sólo las filas válidas, con historial «import» y una auditoría", async () => {
-    const result = await commitEquipmentImport(actor, await workbookBuffer(ROWS), "equipos.xlsx")
+    // La faena nueva sólo se crea con la casilla «Crear estas faenas» (A3).
+    const result = await commitEquipmentImport(actor, await workbookBuffer(ROWS), "equipos.xlsx", { allowNewWorksites: true })
     expect(result).toMatchObject({ ok: true, data: { created: 2, updated: 1, unchanged: 1, errors: 3, newWorksites: ["Faena Importada"] } })
 
     const [im1] = await vehicleByCode("IM-1")
@@ -328,6 +329,64 @@ describe("importación", () => {
     // Repetir la misma planilla ya no crea nada: lo creado ahora es «sin cambios».
     const again = await previewEquipmentImport(await workbookBuffer(ROWS.slice(0, 2)))
     expect(again.ok && again.data.summary).toMatchObject({ created: 0, unchanged: 2 })
+  })
+
+  // ── Planilla real (2026-11-11): avisos, faenas y marcas nuevas con confirmación ──
+
+  it("un tipo sin medidor sale «No aplica» y no bloquea la importación", async () => {
+    const preview = await previewEquipmentImport(await workbookBuffer([["ES-9", "Sin patente", "Estanque (prueba)", "Scania", null, null, "Arauco", null, null, null]]))
+    expect(preview.ok && preview.data.rows[0]).toMatchObject({ kind: "skipped", messages: [expect.stringMatching(/No aplica/)] })
+    expect(preview.ok && preview.data.summary).toMatchObject({ skipped: 1, errors: 0 })
+  })
+
+  it("una lectura inicial distinta en un equipo con registros se conserva con aviso, sin perder la fila", async () => {
+    const preview = await previewEquipmentImport(await workbookBuffer([["KA-600", null, null, null, null, null, null, null, 999_999, "01-10-2026"]]))
+    expect(preview.ok).toBe(true)
+    if (!preview.ok) return
+    expect(preview.data.rows[0]?.kind).not.toBe("error")
+    expect(preview.data.rows[0]?.notices?.[0]).toMatch(/se conserva la actual/i)
+  })
+
+  it("una faena nueva exige la casilla; «Sin ubicación» nunca se crea", async () => {
+    const rows: Array<Array<string | number | null>> = [
+      ["IM-20", "GHJK-20", "Camión (prueba)", "Scania", null, null, "Faena Sin Casilla", null, null, null],
+      ["IM-21", "GHJK-21", "Camión (prueba)", "Scania", null, null, "Sin ubicación", null, null, null],
+    ]
+    const preview = await previewEquipmentImport(await workbookBuffer(rows))
+    expect(preview.ok && preview.data.summary.newWorksites).toEqual(["Faena Sin Casilla"])
+    expect(preview.ok && preview.data.rows[1]?.messages[0]).toMatch(/no es una faena/)
+    const sinCasilla = await commitEquipmentImport(actor, await workbookBuffer(rows), "equipos.xlsx")
+    expect(sinCasilla).toMatchObject({ ok: true, data: { created: 0, errors: 2 } })
+    expect(await testDb.select().from(schema.worksites).where(eq(schema.worksites.name, "Faena Sin Casilla"))).toHaveLength(0)
+  })
+
+  it("una marca nueva se anuncia, y sólo se crea con su casilla", async () => {
+    const rows: Array<Array<string | number | null>> = [["IM-30", "GHJK-30", "Camión (prueba)", "Rocongu", null, null, "Arauco", null, null, null]]
+    const preview = await previewEquipmentImport(await workbookBuffer(rows))
+    expect(preview.ok && preview.data.summary).toMatchObject({ newBrands: ["Rocongu"], created: 1, errors: 0 })
+    const sinCasilla = await commitEquipmentImport(actor, await workbookBuffer(rows), "equipos.xlsx")
+    expect(sinCasilla).toMatchObject({ ok: true, data: { created: 0, errors: 1 } })
+    const conCasilla = await commitEquipmentImport(actor, await workbookBuffer(rows), "equipos.xlsx", { allowNewBrands: true })
+    expect(conCasilla).toMatchObject({ ok: true, data: { created: 1, newBrands: ["Rocongu"] } })
+    const [brand] = await testDb.select().from(schema.mantBrands).where(eq(schema.mantBrands.name, "Rocongu"))
+    expect(brand).toBeDefined()
+    expect(await profileOf((await vehicleByCode("IM-30"))[0]!.id)).toMatchObject({ brandId: brand!.id })
+  })
+
+  it("sugiere la marca existente parecida antes de crear un duplicado", () => {
+    const existing = ["Mercedes", "Ford Cargo", "Sinotruk", "Scania", "MAN"]
+    expect(similarName("Mercedes Benz", existing)).toBe("Mercedes")
+    expect(similarName("Ford", existing)).toBe("Ford Cargo")
+    expect(similarName("Sinotruck", existing)).toBe("Sinotruk")
+    expect(similarName("Rocongu", existing)).toBeNull()
+    expect(similarName("Mazda", existing)).toBeNull()
+  })
+
+  it("quien no ve todas las faenas no crea marcas: la fila queda con error", async () => {
+    const encargado = { ...actor, scope: [WS.arauco] }
+    const rows: Array<Array<string | number | null>> = [["IM-31", "GHJK-31", "Camión (prueba)", "Tremac", null, null, "Arauco", null, null, null]]
+    const result = await commitEquipmentImport(encargado, await workbookBuffer(rows), "equipos.xlsx", { allowNewBrands: true })
+    expect(result).toMatchObject({ ok: true, data: { created: 0, errors: 1 } })
   })
 
   it("rechaza un archivo que no es Excel y una planilla sin columna de código", async () => {

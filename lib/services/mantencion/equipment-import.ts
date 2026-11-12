@@ -1,4 +1,5 @@
 import ExcelJS from "exceljs"
+import { loadXlsxTolerant } from "@/lib/reports/xlsx-normalize"
 import { db, type Tx } from "@/db"
 import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
@@ -15,6 +16,7 @@ import {
   type EquipmentCatalogs, type EquipmentCurrent, type EquipmentInput, type ResolvedEquipment, type VehicleIdentity,
 } from "./equipment-resolve"
 import { styleHeaderRow } from "./export-equipment"
+import { ensureCatalogEntry } from "./catalogs"
 import { listIncorporationCandidates } from "./fleet-incorporation"
 import { resolveOrCreateWorksite } from "./worksites"
 
@@ -63,12 +65,10 @@ function cellText(value: ExcelJS.CellValue): string {
 
 export async function parseEquipmentWorkbook(buffer: ArrayBuffer): Promise<{ ok: true; rows: RawImportRow[] } | { ok: false; message: string }> {
   if (buffer.byteLength > IMPORT_MAX_BYTES) return { ok: false, message: "El archivo pesa más de 5 MB. Divide la planilla en partes." }
-  const workbook = new ExcelJS.Workbook()
-  try {
-    await workbook.xlsx.load(Buffer.from(buffer) as never)
-  } catch {
-    return { ok: false, message: "No se pudo leer el archivo: sube una planilla de Excel (.xlsx), como la plantilla." }
-  }
+  // Tolera planillas con el espacio de nombres prefijado (OpenXML SDK): la plantilla
+  // completada con una de esas herramientas se rechazaba como si no fuera un Excel.
+  const workbook = await loadXlsxTolerant(buffer)
+  if (!workbook) return { ok: false, message: "No se pudo leer el archivo: sube una planilla de Excel (.xlsx), como la plantilla." }
   const sheet = workbook.getWorksheet("Equipos") ?? workbook.worksheets[0]
   if (!sheet) return { ok: false, message: "La planilla no tiene hojas." }
 
@@ -106,7 +106,8 @@ function parseDateText(text: string): string | null | "invalid" {
   return match ? `${match[3]}-${match[2]!.padStart(2, "0")}-${match[1]!.padStart(2, "0")}` : "invalid"
 }
 
-export type ImportRowKind = "create" | "incorporate" | "update" | "unchanged" | "error"
+/** `skipped` = «No aplica»: la fila es válida pero no corresponde a Mantención (tipo sin medidor). No bloquea. */
+export type ImportRowKind = "create" | "incorporate" | "update" | "unchanged" | "skipped" | "error"
 
 export interface ImportRowResult {
   row: number
@@ -116,6 +117,8 @@ export interface ImportRowResult {
   label: string
   /** Motivos de error, o los cambios sobre un equipo existente. */
   messages: string[]
+  /** Avisos que no impiden importar la fila (p. ej. una lectura inicial que se conserva). */
+  notices?: string[]
 }
 
 export interface ImportSummary {
@@ -126,14 +129,20 @@ export interface ImportSummary {
   incorporated: number
   updated: number
   unchanged: number
+  skipped: number
   errors: number
   newWorksites: string[]
+  /** Marcas que no están en la lista: en la vista previa, las que se crearían; al confirmar, las creadas. */
+  newBrands: string[]
+  /** Marca nueva → la existente que se le parece («Mercedes Benz» → «Mercedes»): probable error de escritura. */
+  newBrandHints?: Record<string, string>
 }
 
 export interface ImportPreview { rows: ImportRowResult[]; summary: ImportSummary }
 
 type PlanItem =
   | { kind: "error"; result: ImportRowResult }
+  | { kind: "skipped"; result: ImportRowResult }
   | { kind: "unchanged"; result: ImportRowResult }
   | { kind: "create" | "incorporate"; result: ImportRowResult; resolved: ResolvedEquipment; incorporate: VehicleIdentity | null }
   | { kind: "update"; result: ImportRowResult; resolved: ResolvedEquipment; current: EquipmentCurrent }
@@ -192,7 +201,7 @@ function inputFromRow(raw: RawImportRow, current: EquipmentCurrent | null, fleet
   }
   const brandText = raw.brand || keep?.brand || ""
   const brand = brandText ? catalogs.brands.find((item) => item.isActive && nameKey(item.name) === nameKey(brandText)) : undefined
-  if (brandText && !brand) pre.brandId = `La marca «${brandText}» no está en la lista de marcas.`
+  if (brandText && !brand) pre.brandId = `La marca «${brandText}» no está en la lista de marcas. Agrégala en Mantención › Catálogos o marca «Crear estas marcas».`
   const scheduleText = raw.schedule || keep?.schedule || ""
   const schedule = scheduleText && nameKey(scheduleText) !== "sin pauta"
     ? catalogs.schedules.find((item) => nameKey(item.name) === nameKey(scheduleText))
@@ -228,10 +237,29 @@ function inputFromRow(raw: RawImportRow, current: EquipmentCurrent | null, fleet
   return { input, pre }
 }
 
+/**
+ * Qué hacer con una faena o una marca que no existe:
+ * - `preview`: se anuncia (vista previa) y la fila cuenta como válida;
+ * - `create`: se crea (confirmación con la casilla marcada, sólo alcance total);
+ * - `forbid`: la fila queda con error (sin la casilla, o sin alcance total).
+ * Antes la importación creaba faenas en silencio: con la planilla real habría
+ * creado «Sin ubicación», «Servimar» o «Calymag» (2026-11-11).
+ */
+export type NewEntryMode = "preview" | "create" | "forbid"
+
+/** Nombres que significan «no sé dónde está»: nunca se crean como faena. */
+const PLACEHOLDER_WORKSITES = new Set(["sin ubicacion", "sin faena", "sin asignar", "por asignar", "no aplica"])
+
+/** Id provisorio de una marca nueva en la vista previa (nunca se escribe). */
+const PENDING_BRAND = "nueva-marca:"
+
 interface PlanContext {
   catalogs: EquipmentCatalogs
   currents: Map<string, EquipmentCurrent>
   createWorksite?: (name: string) => Promise<{ id: string; name: string }>
+  createBrand?: (name: string) => Promise<{ id: string; name: string }>
+  newWorksites: NewEntryMode
+  newBrands: NewEntryMode
   /** Faenas que puede administrar quien importa: una fila sobre otra se rechaza en vez de escribirse. */
   scope: MantWorksiteScope
 }
@@ -244,7 +272,8 @@ async function planImport(client: Pick<Tx, "select">, rows: RawImportRow[], cont
     kind: "error", result: { row: raw.row, code: normalizeCode(raw.code), kind: "error", label: "", messages },
   })
 
-  for (const raw of rows) {
+  for (const original of rows) {
+    const raw = { ...original }
     const code = normalizeCode(raw.code)
     if (!code) { plan.push(fail(raw, ["Falta el código del equipo."])); continue }
     const firstRow = seen.get(code)
@@ -266,6 +295,22 @@ async function planImport(client: Pick<Tx, "select">, rows: RawImportRow[], cont
       plan.push(fail(raw, [`El equipo ${code} está dado de baja: reactívalo desde su ficha antes de actualizarlo.`]))
       continue
     }
+    // «Sin ubicación» y similares: en un vehículo que ya existe es como dejarla en blanco; en uno nuevo, falta la faena.
+    if (raw.worksite && PLACEHOLDER_WORKSITES.has(nameKey(raw.worksite))) {
+      if (fleet || current) raw.worksite = ""
+      else { plan.push(fail(raw, [`«${raw.worksite}» no es una faena: escribe la faena real del equipo.`])); continue }
+    }
+    // Tipos sin odómetro ni horómetro (carros, bateas, camas bajas): no llevan pauta. Aviso, no error.
+    const typeRow = fleet?.equipmentTypeId
+      ? catalogs.types.find((item) => item.id === fleet.equipmentTypeId)
+      : (raw.type ? catalogs.types.find((item) => nameKey(item.name) === nameKey(raw.type)) : undefined)
+    if (typeRow && !typeRow.unit && !current) {
+      plan.push({ kind: "skipped", result: {
+        row: raw.row, code, kind: "skipped", label: typeRow.name,
+        messages: [`No aplica: «${typeRow.name}» no se mide en kilómetros ni en horas, así que no lleva pauta de mantención. Sus vencimientos se ven en Flota.`],
+      } })
+      continue
+    }
     if (fleet) {
       // Alcance de ORIGEN: la faena que el vehículo tiene hoy (auditoría I-1/I-2).
       if (!isWorksiteInScope(context.scope, fleet.worksiteId)) {
@@ -275,12 +320,25 @@ async function planImport(client: Pick<Tx, "select">, rows: RawImportRow[], cont
       const conflicts = fleetConflicts(raw, code, fleet, catalogs)
       if (conflicts.length) { plan.push(fail(raw, conflicts)); continue }
     }
+    // Marca que no está en la lista: se anuncia, se crea o es error según el modo (B2).
+    const brandText = raw.brand || current?.fields.brand || ""
+    if (brandText && cleanName(brandText).length < 2) { plan.push(fail(raw, [`La marca «${brandText}» es demasiado corta.`])); continue }
+    if (brandText && context.newBrands !== "forbid" && !catalogs.brands.some((item) => item.isActive && nameKey(item.name) === nameKey(brandText))) {
+      const inactive = catalogs.brands.find((item) => nameKey(item.name) === nameKey(brandText))
+      if (inactive) { plan.push(fail(raw, [`La marca «${inactive.name}» está desactivada. Actívala en Mantención › Catálogos.`])); continue }
+      if (context.newBrands === "create" && context.createBrand) {
+        const created = await context.createBrand(cleanName(brandText))
+        catalogs.brands.push({ id: created.id, name: created.name, isActive: true })
+      } else {
+        catalogs.brands.push({ id: `${PENDING_BRAND}${nameKey(brandText)}`, name: cleanName(brandText), isActive: true })
+      }
+    }
     const { input, pre } = inputFromRow(raw, current, fleet, catalogs)
     const hasPre = Object.keys(pre).length > 0
     // Con errores de lectura de la fila no se crea la faena nueva: la fila no se va a importar.
     const resolved = await resolveEquipment(client, input, {
-      current, catalogs, keepWorksiteId: fleet?.worksiteId ?? null,
-      createWorksite: hasPre ? undefined : context.createWorksite,
+      current, catalogs, keepWorksiteId: fleet?.worksiteId ?? null, ignoreLockedInitialReading: true,
+      createWorksite: hasPre || context.newWorksites !== "create" ? undefined : context.createWorksite,
     })
     if (!resolved.ok) {
       plan.push(fail(raw, Object.values({ ...resolved.fieldErrors, ...pre })))
@@ -289,12 +347,33 @@ async function planImport(client: Pick<Tx, "select">, rows: RawImportRow[], cont
     if (hasPre) { plan.push(fail(raw, Object.values(pre))); continue }
 
     const value = resolved.value
+    const notices = resolved.notices.length ? resolved.notices : undefined
+    if (value.worksite.id === null && context.scope === "all" && context.newWorksites === "forbid") {
+      plan.push(fail(raw, [`La faena «${value.worksite.name}» no existe: marca «Crear estas faenas» o corrige el nombre.`]))
+      continue
+    }
     // La faena de la fila (o la que se crearía) tiene que caer en el alcance de quien importa.
     if (!isWorksiteInScope(context.scope, value.worksite.id)) {
       plan.push(fail(raw, [value.worksite.id
         ? "Ese equipo es de una faena que no administras: no puedes importarlo."
         : "Esa faena no existe y no puedes crearla: no administras esa faena."]))
       continue
+    }
+    // El vehículo que `resolveEquipment` decidió incorporar puede no ser el que se emparejó
+    // antes (p. ej. «Sin patente»: la patente pasa a ser el código y choca con otro de la
+    // flota). Se le aplican las mismas reglas: alcance de origen y datos de flota fijos.
+    const target = resolved.incorporate
+    if (target && target.id !== fleet?.id && target.worksiteId) {
+      if (!isWorksiteInScope(context.scope, target.worksiteId)) {
+        plan.push(fail(raw, ["Ese equipo es de una faena que no administras: no puedes importarlo."]))
+        continue
+      }
+      const moved = value.worksite.id !== target.worksiteId || value.type.id !== target.equipmentTypeId
+      const recoded = !!target.code && normalizeCode(target.code) !== code
+      if (moved || recoded) {
+        plan.push(fail(raw, [`La patente ${target.plate} ya es del equipo ${target.code ?? target.plate} en la flota: usa su código, su faena y su tipo, o corrige la fila.`]))
+        continue
+      }
     }
     const label = [value.type.name, value.brand.name, value.worksite.name].filter(Boolean).join(" · ")
     if (!current) {
@@ -308,7 +387,7 @@ async function planImport(client: Pick<Tx, "select">, rows: RawImportRow[], cont
       }
       plan.push({
         kind: incorporate ? "incorporate" : "create", resolved: value, incorporate,
-        result: { row: raw.row, code, kind: incorporate ? "incorporate" : "create", label, messages: [] },
+        result: { row: raw.row, code, kind: incorporate ? "incorporate" : "create", label, messages: [], notices },
       })
       continue
     }
@@ -316,26 +395,61 @@ async function planImport(client: Pick<Tx, "select">, rows: RawImportRow[], cont
     if (identity) Object.assign(identity, { code: value.code, plate: value.plate })
     const entries = Object.entries(changes)
     if (entries.length === 0) {
-      plan.push({ kind: "unchanged", result: { row: raw.row, code, kind: "unchanged", label, messages: [] } })
+      plan.push({ kind: "unchanged", result: { row: raw.row, code, kind: "unchanged", label, messages: [], notices } })
     } else {
       plan.push({
         kind: "update", resolved: value, current,
-        result: { row: raw.row, code, kind: "update", label, messages: entries.map(([field, change]) => summarizeChanges({ [field]: change })) },
+        result: { row: raw.row, code, kind: "update", label, messages: entries.map(([field, change]) => summarizeChanges({ [field]: change })), notices },
       })
     }
   }
   return plan
 }
 
+/** Distancia de edición (Levenshtein) entre dos claves cortas. */
+function editDistance(a: string, b: string): number {
+  const row = Array.from({ length: b.length + 1 }, (_, index) => index)
+  for (let i = 1; i <= a.length; i++) {
+    let previous = row[0]!
+    row[0] = i
+    for (let j = 1; j <= b.length; j++) {
+      const current = row[j]!
+      row[j] = Math.min(row[j]! + 1, row[j - 1]! + 1, previous + (a[i - 1] === b[j - 1] ? 0 : 1))
+      previous = current
+    }
+  }
+  return row[b.length]!
+}
+
+/**
+ * La existente que probablemente quiso escribir: una contiene a la otra como
+ * palabra inicial («Mercedes Benz» ~ «Mercedes», «Ford» ~ «Ford Cargo») o están
+ * a 1–2 letras («Sinotruck» ~ «Sinotruk»). `null` si no hay una sola candidata clara.
+ */
+export function similarName(typed: string, existing: readonly string[]): string | null {
+  const key = nameKey(typed).replace(/[^a-z0-9 ]/g, "")
+  const hits = existing.filter((name) => {
+    const other = nameKey(name).replace(/[^a-z0-9 ]/g, "")
+    if (!other || other === key) return false
+    if (other.startsWith(`${key} `) || key.startsWith(`${other} `)) return true
+    return Math.min(key.length, other.length) >= 4 && editDistance(key, other) <= (Math.max(key.length, other.length) >= 8 ? 2 : 1)
+  })
+  return hits.length === 1 ? hits[0]! : null
+}
+
 function summarize(plan: PlanItem[]): ImportSummary {
   const count = (kind: ImportRowKind) => plan.filter((item) => item.kind === kind).length
   const newWorksites = new Map<string, string>()
+  const newBrands = new Map<string, string>()
   for (const item of plan) {
-    if ("resolved" in item && item.resolved.worksite.id === null) newWorksites.set(nameKey(item.resolved.worksite.name), item.resolved.worksite.name)
+    if (!("resolved" in item)) continue
+    if (item.resolved.worksite.id === null) newWorksites.set(nameKey(item.resolved.worksite.name), item.resolved.worksite.name)
+    if (item.resolved.brand.id.startsWith(PENDING_BRAND)) newBrands.set(nameKey(item.resolved.brand.name), item.resolved.brand.name)
   }
   return {
     total: plan.length, created: count("create"), incorporated: count("incorporate"), updated: count("update"),
-    unchanged: count("unchanged"), errors: count("error"), newWorksites: [...newWorksites.values()],
+    unchanged: count("unchanged"), skipped: count("skipped"), errors: count("error"),
+    newWorksites: [...newWorksites.values()], newBrands: [...newBrands.values()],
   }
 }
 
@@ -345,12 +459,34 @@ export async function previewEquipmentImport(buffer: ArrayBuffer, scope: MantWor
   if (!parsed.ok) return { ok: false, message: parsed.message }
   const catalogs = await loadEquipmentCatalogs(db)
   const currents = new Map((await loadEquipmentCurrents(db)).map((item) => [item.vehicleId, item]))
-  const plan = await planImport(db, parsed.rows, { catalogs, currents, scope })
-  return { ok: true, data: { rows: plan.map((item) => item.result), summary: summarize(plan) } }
+  // Faenas y marcas nuevas: sólo quien ve todas las faenas puede crearlas; a los demás se les informa como error.
+  const mode: NewEntryMode = scope === "all" ? "preview" : "forbid"
+  const existingBrands = catalogs.brands.filter((brand) => brand.isActive).map((brand) => brand.name)
+  const plan = await planImport(db, parsed.rows, { catalogs, currents, scope, newWorksites: mode, newBrands: mode })
+  const summary = summarize(plan)
+  const hints: Record<string, string> = {}
+  for (const name of summary.newBrands) {
+    const similar = similarName(name, existingBrands)
+    if (similar) hints[name] = similar
+  }
+  if (Object.keys(hints).length) summary.newBrandHints = hints
+  return { ok: true, data: { rows: plan.map((item) => item.result), summary } }
 }
 
 /** Confirma la importación: vuelve a validar el archivo y escribe las filas válidas en una sola transacción. */
-export async function commitEquipmentImport(actor: MantActor, buffer: ArrayBuffer, fileName: string): Promise<MantActionResult<ImportSummary>> {
+export interface CommitImportOptions {
+  /** La persona marcó «Crear estas faenas» en la vista previa. */
+  allowNewWorksites?: boolean
+  /** La persona marcó «Crear estas marcas» en la vista previa. */
+  allowNewBrands?: boolean
+}
+
+export async function commitEquipmentImport(
+  actor: MantActor,
+  buffer: ArrayBuffer,
+  fileName: string,
+  options: CommitImportOptions = {},
+): Promise<MantActionResult<ImportSummary>> {
   const parsed = await parseEquipmentWorkbook(buffer)
   if (!parsed.ok) return { ok: false, message: parsed.message }
   const scope = actorEquipmentScope(actor)
@@ -358,16 +494,23 @@ export async function commitEquipmentImport(actor: MantActor, buffer: ArrayBuffe
     const catalogs = await loadEquipmentCatalogs(tx)
     const currents = new Map((await loadEquipmentCurrents(tx)).map((item) => [item.vehicleId, item]))
     const createdWorksites: string[] = []
+    const createdBrands: string[] = []
+    // Sólo quien ve todas las faenas puede crear faenas o marcas, y sólo si marcó la casilla.
+    const canCreate = scope === "all"
     const plan = await planImport(tx, parsed.rows, {
       catalogs, currents, scope,
-      // Sólo quien ve todas las faenas puede crear una durante la importación.
-      createWorksite: scope === "all"
-        ? async (name) => {
-          const worksite = await resolveOrCreateWorksite(tx, { typedName: name, actor: { userId: actor.userId, email: actor.email } })
-          if (worksite.created) createdWorksites.push(worksite.name)
-          return worksite
-        }
-        : undefined,
+      newWorksites: canCreate && options.allowNewWorksites ? "create" : "forbid",
+      newBrands: canCreate && options.allowNewBrands ? "create" : "forbid",
+      createWorksite: async (name) => {
+        const worksite = await resolveOrCreateWorksite(tx, { typedName: name, actor: { userId: actor.userId, email: actor.email } })
+        if (worksite.created) createdWorksites.push(worksite.name)
+        return worksite
+      },
+      createBrand: async (name) => {
+        const brand = await ensureCatalogEntry(tx, "brands", name)
+        if (brand.created) createdBrands.push(cleanName(name))
+        return { id: brand.id, name: cleanName(name) }
+      },
     })
     for (const item of plan) {
       if (item.kind === "create" || item.kind === "incorporate") await applyCreate(tx, actor, item.resolved, item.incorporate, "import")
@@ -376,6 +519,7 @@ export async function commitEquipmentImport(actor: MantActor, buffer: ArrayBuffe
     const summary = summarize(plan)
     // Las faenas se crearon durante la validación: se informan las creadas, ya no las pendientes.
     summary.newWorksites = createdWorksites
+    summary.newBrands = createdBrands
     summary.errorRows = plan.filter((item) => item.kind === "error").map((item) => item.result)
     const written = summary.created + summary.incorporated + summary.updated
     if (written > 0) {
@@ -390,6 +534,7 @@ export async function commitEquipmentImport(actor: MantActor, buffer: ArrayBuffe
       summary.incorporated ? `${summary.incorporated} incorporados desde la flota` : "",
       summary.updated ? `${summary.updated} ${summary.updated === 1 ? "actualizado" : "actualizados"}` : "",
       summary.unchanged ? `${summary.unchanged} sin cambios` : "",
+      summary.skipped ? `${summary.skipped} no aplican` : "",
       summary.errors ? `${summary.errors} con error (no se importaron)` : "",
     ].filter(Boolean)
     return { ok: true as const, data: summary, message: parts.length ? parts.join(" · ") : "No había filas para importar." }

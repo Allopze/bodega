@@ -7,7 +7,7 @@ import {
   OT_ITEM_MAX_PER_KIND, OT_TRANSITIONS, type OtItemDone, type OtItemKind, type OtTransition,
 } from "@/lib/mantencion/work-order-states"
 import type { EditWorkOrderInput } from "@/lib/mantencion/work-order-schemas"
-import { REASON_MIN_LENGTH } from "@/lib/validation/reason-thresholds"
+import { isValidReason, REASON_MIN_LENGTH } from "@/lib/validation/reason-thresholds"
 import { todayInChile } from "@/lib/utils"
 import {
   canActOnWorkOrder, canEditExecution, canEditRequest, type AccessCheck,
@@ -71,7 +71,16 @@ export async function assignWorkOrder(actor: WorkOrderActor, input: Base & { ass
       assignedByUserId: actor.userId,
       assignedAt: nowIso(),
     }, [{ type: "assigned", changeSet: { from: ctx.ot.assignedToUserId, to: input.assignedToUserId }, clientOpId: input.clientOpId }])
-    return { row, notify: [planFor(row, "assigned", actor)] }
+    // El mecánico anterior también se entera: antes seguía creyendo que la OT era suya. El aviso
+    // `unassigned` le llega a él (el plan lleva al que la tenía, no al nuevo) y dice que fue reasignada.
+    const previous = ctx.ot.assignedToUserId
+    return {
+      row,
+      notify: [
+        planFor(row, "assigned", actor),
+        ...(previous ? [{ ...planFor(row, "unassigned", actor), assigneeUserId: previous, reassigned: true }] : []),
+      ],
+    }
   })
 }
 
@@ -215,7 +224,7 @@ export async function changeWorkOrderEstimate(
       refuse("La fecha estimada de entrega no puede ser anterior al ingreso.", "invalid", "estimatedDeliveryDate")
     }
     const reason = (input.reason ?? "").trim()
-    if (reason.length < 5) refuse("Cuenta por qué cambia la fecha estimada (al menos 5 caracteres).", "invalid", "reason")
+    if (!isValidReason(reason)) refuse(`Cuenta por qué cambia la fecha estimada (al menos ${REASON_MIN_LENGTH} caracteres).`, "invalid", "reason")
     const row = await applyChange(ctx, { estimatedDeliveryDate: input.estimatedDeliveryDate }, [
       { type: "estimate_changed", reason, changeSet: { from: current, to: input.estimatedDeliveryDate }, clientOpId: input.clientOpId },
     ])

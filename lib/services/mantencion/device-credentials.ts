@@ -302,9 +302,14 @@ export async function revokeDeviceCredential(input: {
     if (!credential || credential.revokedAt) return { ok: false, message: "Esa credencial no existe o ya estaba revocada." }
     if (!(await ownerSharesWorksite(tx, actor, credential.userId))) return { ok: false, message: DEVICE_OUT_OF_SCOPE }
 
+    const now = new Date().toISOString()
     await tx.update(mantDeviceCredentials)
-      .set({ revokedAt: new Date().toISOString(), revokedBy: input.actorUserId })
+      .set({ revokedAt: now, revokedBy: input.actorUserId })
       .where(eq(mantDeviceCredentials.id, credential.id))
+    // Una tablet robada conserva la cookie de la plataforma: revocar sólo la credencial de la app
+    // la dejaba entrando por la web. Se cierran todas las sesiones de la persona (AUTH-003: el
+    // callback JWT descarta las anteriores a `sessionsValidFrom`, y la sincronización también).
+    await tx.update(users).set({ sessionsValidFrom: now, updatedAt: now }).where(eq(users.id, credential.userId))
     await recordAudit({
       userId: input.actorUserId,
       userEmail: input.actorEmail ?? undefined,
@@ -315,6 +320,6 @@ export async function revokeDeviceCredential(input: {
       oldState: { status: "vigente", userId: credential.userId },
       newState: { status: "revocada", userId: credential.userId },
     }, tx)
-    return { ok: true, message: "Dispositivo desconectado. Tendrá que entrar de nuevo con señal." }
+    return { ok: true, message: "Dispositivo desconectado. También se cerraron sus sesiones en la plataforma: tendrá que entrar de nuevo con su contraseña en todos sus equipos." }
   })
 }

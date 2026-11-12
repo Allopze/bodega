@@ -303,6 +303,26 @@ describe("3.4 · fotos huérfanas del registro web", () => {
     expect(await testDb.select().from(schema.mantRecords)).toEqual([])
   })
 
+  it("si createRecord rechaza el registro después de guardar las fotos, tampoco quedan fila ni archivo", async () => {
+    const workOrderId = await inWorkshop()
+    const shot = crypto.randomUUID()
+    const bytes = await makeJpeg(32, 24, "#1e3e6e")
+    const form = new FormData()
+    // Fecha futura: `savePhoto` la deja pasar y `createRecord` la rechaza ya con la foto en disco.
+    form.set("record", JSON.stringify(correctiveBody([], {
+      workOrderId, reading: 12_000, workDate: addDaysToPlainDate(today, 3), photos: [{ id: shot, kind: "correctiva" }],
+    })))
+    form.set(`photo:${shot}`, new File([bytes as BlobPart], `${shot}.jpg`, { type: "image/jpeg" }))
+    form.set(`meta:${shot}`, JSON.stringify(await metaFor(bytes, { kind: "correctiva" })))
+
+    const outcome = await registerWorkOrderRecordFromWeb(await syncOf(IDS.mecBio, MANT_WEB_DEVICE_ID), form)
+    expect(outcome).toMatchObject({ ok: false, field: "workDate" })
+
+    expect(await testDb.select().from(schema.mantRecordPhotos)).toEqual([])
+    expect(existsSync(storageDir) ? readdirSync(storageDir) : []).toEqual([])
+    expect(await testDb.select().from(schema.mantRecords)).toEqual([])
+  })
+
   it("una foto que ya era de otra petición no se deshace: sólo se compensa lo creado aquí", async () => {
     const workOrderId = await inWorkshop()
     const shot = crypto.randomUUID()

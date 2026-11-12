@@ -41,7 +41,7 @@ export const mantencionEquiposModule = {
     "mant:records:observe":       { id: "p-mant-records-observe", description: "Observar registros de mantención dentro de su alcance" },
     "mant:records:review":        { id: "p-mant-records-review", description: "Marcar registros de mantención como revisados" },
     "mant:records:void":          { id: "p-mant-records-void", description: "Anular registros de mantención firmados" },
-    "mant:equipment:manage":      { id: "p-mant-equipment-manage", description: "Crear, editar, dar de baja e importar equipos de mantención" },
+    "mant:equipment:manage":      { id: "p-mant-equipment-manage", description: "Crear, editar, dar de baja e importar equipos de mantención y administrar sus catálogos (marcas, talleres, conductores, tipos de trabajo y aceites)" },
     "mant:schedules:manage":      { id: "p-mant-schedules-manage", description: "Crear, editar y asignar pautas de mantención" },
     "mant:devices:manage":        { id: "p-mant-devices-manage", description: "Revocar credenciales de dispositivo de la app del mecánico" },
     "mant:export":                { id: "p-mant-export", description: "Exportar registros, equipos y pautas de mantención (Excel y PDF)" },
@@ -49,7 +49,7 @@ export const mantencionEquiposModule = {
     "mant:ot:view_all":           { id: "p-mant-ot-view-all", description: "Ver las órdenes de trabajo de todas las faenas" },
     "mant:ot:create":             { id: "p-mant-ot-create", description: "Crear órdenes de trabajo para equipos de sus faenas" },
     "mant:ot:manage":             { id: "p-mant-ot-manage", description: "Asignar, reasignar, anular y reabrir órdenes de trabajo" },
-    "mant:ot:execute":            { id: "p-mant-ot-execute", description: "Tomar y ejecutar órdenes de trabajo de cualquier faena (ingreso y salida de taller)" },
+    "mant:ot:execute":            { id: "p-mant-ot-execute", description: "Ejecutar las órdenes de trabajo asignadas (ingreso y salida de taller) desde la app o el PC" },
     "mant:ot:receive":            { id: "p-mant-ot-receive", description: "Registrar la recepción del equipo al salir del taller" },
     "mant:ot:conform":            { id: "p-mant-ot-conform", description: "Registrar la recepción en faena (conformidad) y cerrar la orden de trabajo" },
   },
@@ -94,6 +94,15 @@ export const mantencionEquiposModule = {
           href: "/mantencion/pautas",
           iconName: "ListChecks",
           permissions: ["mant:schedules:manage"],
+          group: "Mantención",
+        },
+        {
+          // Marcas, talleres, conductores, tipos de trabajo y aceites. Mismo permiso que exige la
+          // página y sus acciones (`mant:equipment:manage`): el menú sólo lo refleja.
+          label: "Catálogos",
+          href: "/mantencion/catalogos",
+          iconName: "Books",
+          permissions: ["mant:equipment:manage"],
           group: "Mantención",
         },
         {

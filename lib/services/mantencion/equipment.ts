@@ -105,7 +105,9 @@ export async function applyCreate(
         model: row.model, year: row.year, worksite: row.worksiteName, schedule: null, initialReading: null, initialReadingDate: null,
       }
     }
-    await tx.update(fuelVehicles).set({ ...sharedValues, updatedAt: now }).where(eq(fuelVehicles.id, vehicleId))
+    // «Incorporar desde la flota» sólo crea la ficha: el texto libre de marca de la flota se conserva.
+    const { brand: _fleetBrand, ...fleetSafe } = sharedValues
+    await tx.update(fuelVehicles).set({ ...(origin === "fleet" ? fleetSafe : sharedValues), updatedAt: now }).where(eq(fuelVehicles.id, vehicleId))
     // Incorporar puede cambiar la faena del vehículo: sus asignaciones de proveedor lo siguen.
     if (row && row.worksiteId !== resolved.worksite.id) {
       await moveProviderMappingsWithVehicleTx(tx, { vehicleId, worksiteId: resolved.worksite.id, actorUserId: actor.userId, actorEmail: actor.email })

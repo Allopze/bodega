@@ -38,11 +38,22 @@ export function getRequest(path: string, token: string | null, headers: Record<s
   return new Request(`${ORIGIN}${path}`, { headers: { ...authHeaders(token), ...headers } })
 }
 
-export function photoRequest(token: string | null, id: string, input: { file?: Uint8Array | null; meta?: unknown; name?: string }): Request {
+/**
+ * Como la manda el teléfono: el cuerpo ya serializado y con su `Content-Length`. Un `Request`
+ * con un `FormData` crudo no lo trae (el navegador lo calcula al enviar), y la ruta lo exige.
+ */
+export async function photoRequest(token: string | null, id: string, input: { file?: Uint8Array | null; meta?: unknown; name?: string }): Promise<Request> {
   const form = new FormData()
   if (input.file) form.set("file", new File([input.file as BlobPart], input.name ?? "foto.jpg", { type: "image/jpeg" }))
   if (input.meta !== undefined && input.meta !== null) form.set("meta", typeof input.meta === "string" ? input.meta : JSON.stringify(input.meta))
-  return new Request(`${ORIGIN}/api/mantencion/sync/fotos/${id}`, { method: "PUT", headers: authHeaders(token), body: form })
+  const url = `${ORIGIN}/api/mantencion/sync/fotos/${id}`
+  const probe = new Request(url, { method: "PUT", body: form })
+  const body = new Uint8Array(await probe.arrayBuffer())
+  return new Request(url, {
+    method: "PUT",
+    headers: { ...authHeaders(token), "content-type": probe.headers.get("content-type") ?? "", "content-length": String(body.byteLength) },
+    body,
+  })
 }
 
 export const idParams = (id: string) => ({ params: Promise.resolve({ id }) })

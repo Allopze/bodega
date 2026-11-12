@@ -556,6 +556,38 @@ describe("exportar", () => {
     expect((await audits("mant_schedule_export")).length).toBe(1)
   })
 
+  it("D4: el Excel trae la versión PUBLICADA, no el borrador, y la hoja de metadatos avisa de los cambios sin publicar", async () => {
+    const load = async (base64: string) => {
+      const workbook = new ExcelJS.Workbook()
+      await workbook.xlsx.load(Buffer.from(base64, "base64") as never)
+      return workbook
+    }
+    const metadataNotes = (workbook: ExcelJS.Workbook) => {
+      const notes: string[] = []
+      workbook.getWorksheet("Metadatos")!.eachRow((row) => { if (row.getCell(1).value === "Nota") notes.push(String(row.getCell(2).value)) })
+      return notes
+    }
+    const itemNames = (workbook: ExcelJS.Workbook) => {
+      const names: string[] = []
+      workbook.getWorksheet("Camiones y tractos")!.eachRow((row) => { names.push(String(row.getCell(2).value ?? "")) })
+      return names
+    }
+
+    // Limpio: sin aviso.
+    expect(metadataNotes(await load((await exportSchedules(session, { scheduleIds: [sourceId] })).base64))).toEqual([])
+
+    // Un ítem en el borrador, sin publicar: no sale en el archivo y la hoja de metadatos lo dice.
+    ok(await addScheduleItem(actor, { scheduleId: sourceId, groupName: "Motor", name: "Ítem solo en borrador" }))
+    try {
+      const draftExport = await load((await exportSchedules(session, { scheduleIds: [sourceId] })).base64)
+      expect(itemNames(draftExport)).not.toContain("Ítem solo en borrador")
+      expect(metadataNotes(draftExport)).toEqual([expect.stringContaining("sin publicar")])
+      expect(metadataNotes(draftExport)[0]).toContain("Camiones y tractos")
+    } finally {
+      ok(await discardScheduleDraft(actor, sourceId))
+    }
+  })
+
   it("el Excel de equipos exporta el estado dentro del alcance y registra la auditoría", async () => {
     const result = await exportEquipment(session, { vehicleIds: null, includeRetired: false, filters: { estado: "todos" } })
     const workbook = new ExcelJS.Workbook()

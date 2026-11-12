@@ -23,7 +23,14 @@ export const PHOTO_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4
 
 export type PhotoOutcome =
   | { status: 200; body: { ok: true; id: string; duplicate: boolean } }
-  | { status: 409 | 422; body: { ok: false; code: "rejected" | "invalid"; message: string } }
+  | { status: 409 | 422; body: { ok: false; code: "rejected" | "invalid" | "retry"; message: string } }
+
+/**
+ * La huella no coincide: el archivo se alteró o llegó cortado EN EL CAMINO (señal débil, un
+ * proxy). El teléfono sigue teniendo la foto buena, así que reenviar la arregla: 409 `retry`,
+ * que el cliente trata como reintento (con espera) y no como rechazo definitivo del registro.
+ */
+const retryable = (message: string): PhotoOutcome => ({ status: 409, body: { ok: false, code: "retry", message } })
 
 const invalid = (message: string): PhotoOutcome => ({ status: 422, body: { ok: false, code: "invalid", message } })
 
@@ -73,7 +80,7 @@ export async function savePhoto(upload: PhotoUpload, context: SyncContext): Prom
 
   const sha256 = createHash("sha256").update(bytes).digest("hex")
   if (sha256 !== meta.sha256.toLowerCase()) {
-    return invalid("La foto llegó alterada o incompleta (la huella no coincide). Se vuelve a enviar sola.")
+    return retryable("La foto llegó alterada o incompleta (la huella no coincide). Se vuelve a enviar sola.")
   }
 
   // Las dimensiones se leen del archivo: lo que declare el teléfono no se guarda sin verificar.

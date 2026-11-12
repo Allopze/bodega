@@ -1,10 +1,11 @@
 import { and, eq, inArray, isNull } from "drizzle-orm"
 import { db } from "@/db"
 import { fuelEquipmentTypes, fuelVehicles, mantEquipmentProfiles, worksites } from "@/db/schema"
-import { findByNameKey, isValidPlate, normalizeCode, normalizePlate } from "@/lib/mantencion/normalize"
+import { cleanName, findByNameKey, isValidPlate, normalizeCode, normalizePlate } from "@/lib/mantencion/normalize"
 import type { MantUnit } from "@/lib/mantencion/types"
 import { isUniqueViolation } from "@/lib/action-error"
 import { actorEquipmentScope, isWorksiteInScope } from "./access"
+import { ensureCatalogEntry } from "./catalogs"
 import { applyCreate } from "./equipment"
 import type { MantActor } from "./equipment-history"
 import { loadEquipmentCatalogs, resolveEquipment, type EquipmentCatalogs, type EquipmentInput } from "./equipment-resolve"
@@ -97,6 +98,11 @@ export async function listIncorporationCandidates(scope: MantWorksiteScope, cata
 export interface IncorporationRowInput {
   vehicleId: string
   brandId: string
+  /**
+   * Marca nueva a crear (la de la flota, que no está en la lista). Sólo la
+   * acepta quien ve todas las faenas; si viene, `brandId` se ignora.
+   */
+  newBrandName?: string | null
   scheduleId: string | null
   initialReading: number | null
   initialReadingDate: string | null
@@ -142,13 +148,23 @@ export async function incorporateFleetVehicles(actor: MantActor, rows: Incorpora
       if (!isWorksiteInScope(scope, identity.worksiteId)) { fail("Ese vehículo es de una faena que no administras."); continue }
       const blocker = blockerFor(identity)
       if (blocker) { fail(blocker); continue }
+      let brandId = row.brandId
+      if (row.newBrandName?.trim()) {
+        const typedBrand = cleanName(row.newBrandName)
+        if (typedBrand.length < 2 || typedBrand.length > 80) { fail("El nombre de la marca debe tener entre 2 y 80 caracteres."); continue }
+        if (scope !== "all") { fail("Sólo la jefatura que ve todas las faenas puede crear marcas: elige una de la lista."); continue }
+        const brand = await ensureCatalogEntry(tx, "brands", row.newBrandName)
+        if (!catalogs.brands.some((item) => item.id === brand.id)) catalogs.brands.push({ id: brand.id, name: cleanName(row.newBrandName), isActive: true })
+        if (!catalogs.brands.find((item) => item.id === brand.id)?.isActive) { fail(`La marca «${cleanName(row.newBrandName)}» está desactivada. Actívala en Mantención › Catálogos.`); continue }
+        brandId = brand.id
+      }
       const detail = detailOf.get(row.vehicleId)
       const input: EquipmentInput = {
         code: identity.code ?? "",
         plate: identity.plate,
         noPlate: plateIsCode(identity.plate, identity.code),
         equipmentTypeId: identity.equipmentTypeId ?? "",
-        brandId: row.brandId,
+        brandId,
         model: detail?.model ?? "",
         year: detail?.year ?? null,
         worksiteId: identity.worksiteId ?? "",

@@ -6,6 +6,7 @@ import { z } from "zod"
 import { actionErrorResult } from "@/lib/actions/action-error-result"
 import { guardPermission } from "@/lib/auth/can"
 import type { ExportActionResult } from "@/components/ui/export-button"
+import type { MantUnit } from "@/lib/mantencion/types"
 import { exportSchedules } from "@/lib/services/mantencion/export-schedules"
 import type { MantActionResult } from "@/lib/services/mantencion/result"
 import { createSchedule, deleteSchedule, parseIntervalList } from "@/lib/services/mantencion/schedules"
@@ -38,7 +39,8 @@ export async function createScheduleAction(_prev: ActionState, formData: FormDat
   try {
     const result = await createSchedule(actor(guard.session), {
       name: String(formData.get("name") ?? "").slice(0, 200),
-      unit: unit === "h" ? "h" : "km",
+      // Sin forzar: un valor raro lo rechaza la validación del servicio con su error de campo.
+      unit: unit as MantUnit,
       intervals,
       copyFromId: String(formData.get("copyFromId") ?? "").trim().slice(0, 64) || null,
     })

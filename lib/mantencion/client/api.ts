@@ -68,7 +68,10 @@ function retryAfter(response: Response): number | null {
 async function failureFrom(response: Response, fallback: string): Promise<ApiFailure> {
   const body = await readJson(response)
   const message = messageFrom(body, fallback)
-  const kind = classifyStatus(response.status)
+  // `code: "retry"` (p. ej. una foto que llegó alterada: 409) pide reenviar, no rendirse. Sólo
+  // levanta un rechazo a reintento; 401/403 conservan su camino.
+  const byStatus = classifyStatus(response.status)
+  const kind = byStatus === "reject" && body?.code === "retry" ? "retry" : byStatus
   if (kind === "auth") return { kind, status: response.status, message }
   if (kind === "forbidden") return { kind, status: 403, message }
   if (kind === "retry") return { kind, message, retryAfterMs: retryAfter(response), network: false }

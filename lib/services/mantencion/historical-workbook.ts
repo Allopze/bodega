@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto"
+import { loadXlsxTolerant } from "@/lib/reports/xlsx-normalize"
 import ExcelJS from "exceljs"
 import { nameKey } from "@/lib/mantencion/normalize"
 import { parseLegacyDate } from "./legacy-import"
@@ -73,9 +74,9 @@ const REQUIRED: ReadonlyArray<[number, string]> = [
 /** El contrato es el consolidado exportado de Forms, no cualquier planilla de mantención. */
 export async function parseHistoricalWorkbook(buffer: ArrayBuffer): Promise<HistoricalParse> {
   if (buffer.byteLength > HISTORICAL_MAX_BYTES) return { ok: false, message: "El archivo supera 5 MB." }
-  const workbook = new ExcelJS.Workbook()
-  try { await workbook.xlsx.load(buffer as ExcelJS.Buffer) }
-  catch { return { ok: false, message: "No se pudo leer el archivo Excel." } }
+  // Tolera planillas con el espacio de nombres prefijado (OpenXML SDK).
+  const workbook = await loadXlsxTolerant(buffer)
+  if (!workbook) return { ok: false, message: "No se pudo leer el archivo Excel." }
   if (!workbook.worksheets.length) return { ok: false, message: "La planilla no contiene hojas." }
   if (workbook.worksheets.length > 50) return { ok: false, message: "El archivo contiene demasiadas hojas." }
   const rows: HistoricalRow[] = []

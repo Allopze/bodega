@@ -418,6 +418,18 @@ describe("A4: administrar equipos no alcanza a las faenas que no se ven", () => 
     expect(v?.worksiteId).toBe(IDS.wsCho)
   })
 
+  it("«Sin patente» no sirve para incorporar un vehículo de otra faena (revisión final)", async () => {
+    // Un vehículo de Cholguán sin código cuya patente coincide con el código de la fila.
+    await testDb.insert(schema.fuelVehicles).values({
+      id: "veh-sinpat-cho", plate: "BCDF-77", code: null, type: "camion", equipmentTypeId: "fet-test-km", worksiteId: IDS.wsCho, meterType: "odometer",
+    })
+    const encargado = await equipmentActor(IDS.supBio)
+    const result = await commitEquipmentImport(encargado, await workbookBuffer([["BCDF-77", "Sin patente", "Camión", "Scania", null, null, "Biodiversa", null, null, null]]), "equipos.xlsx")
+    expect(result).toMatchObject({ ok: true, data: { incorporated: 0, created: 0, errors: 1 } })
+    const [v] = await testDb.select().from(schema.fuelVehicles).where(eq(schema.fuelVehicles.id, "veh-sinpat-cho"))
+    expect(v).toMatchObject({ worksiteId: IDS.wsCho, code: null })
+  })
+
   it("ni la jefatura traslada por planilla: faena y patente de la flota son de sólo lectura", async () => {
     const jefe = await equipmentActor(IDS.jefe)
     const result = await commitEquipmentImport(jefe, await workbookBuffer([
@@ -491,6 +503,9 @@ describe("A5: la lista y la revocación de dispositivos respetan la faena", () =
     const antes = Date.now() - 60_000
     const emitida = await issueDeviceCredential({ userId: IDS.mecCho, deviceId: "tab-robada" })
     expect((await revokeDeviceCredential({ credentialId: emitida.credentialId, actorUserId: IDS.jefe, actor: await deviceActor(IDS.jefe) })).ok).toBe(true)
+    // La revocación también cierra las sesiones web de la persona (revisión final).
+    const [owner] = await testDb.select({ sessionsValidFrom: schema.users.sessionsValidFrom }).from(schema.users).where(eq(schema.users.id, IDS.mecCho))
+    expect(owner?.sessionsValidFrom).toBeTruthy()
     // La misma sesión vieja (cookie de la tablet), con éste u otro deviceId: bloqueada.
     await expect(issueDeviceCredential({ userId: IDS.mecCho, deviceId: "tab-robada", sessionIssuedAt: antes })).rejects.toBeInstanceOf(DeviceReissueBlockedError)
     await expect(issueDeviceCredential({ userId: IDS.mecCho, deviceId: "otro-uuid", sessionIssuedAt: antes })).rejects.toBeInstanceOf(DeviceReissueBlockedError)
@@ -701,6 +716,22 @@ describe("Incorporar desde la flota: sin volver a escribir lo que la flota ya ti
     expect((await listIncorporationCandidates(encargado.scope!)).map((item) => item.vehicleId)).not.toContain("fl-bio-1")
   })
 
+  it("crear la marca de la flota al incorporar: la jefatura sí, el encargado de faena no", async () => {
+    const encargado = await equipmentActor(IDS.supBio)
+    const rechazo = await incorporateFleetVehicles(encargado, [
+      { vehicleId: "fl-bio-2", brandId: "", newBrandName: "Marca rara", scheduleId: null, initialReading: null, initialReadingDate: null },
+    ])
+    expect(rechazo.rows[0]?.messages.join(" ")).toMatch(/Sólo la jefatura/)
+    const jefe = await equipmentActor(IDS.jefe)
+    const ok = await incorporateFleetVehicles(jefe, [
+      { vehicleId: "fl-bio-2", brandId: "", newBrandName: "Marca rara", scheduleId: null, initialReading: null, initialReadingDate: null },
+    ])
+    expect(ok.incorporated).toBe(1)
+    const [brand] = await testDb.select().from(schema.mantBrands).where(eq(schema.mantBrands.name, "Marca rara"))
+    const [profile] = await testDb.select().from(schema.mantEquipmentProfiles).where(eq(schema.mantEquipmentProfiles.vehicleId, "fl-bio-2"))
+    expect(profile?.brandId).toBe(brand?.id)
+  })
+
   it("la plantilla viene precargada con los vehículos sin ficha y con la flota bloqueada", async () => {
     const encargado = await equipmentActor(IDS.supBio)
     const template = await buildEquipmentTemplate(encargado.scope!)
@@ -710,10 +741,10 @@ describe("Incorporar desde la flota: sin volver a escribir lo que la flota ya ti
     const sheet = workbook.getWorksheet("Equipos")!
     const codes: string[] = []
     sheet.eachRow((row, number) => { if (number > 1) codes.push(String(row.getCell(1).value ?? "")) })
-    expect(codes).toContain("FB-02")
+    expect(codes).toContain("FB-03")
     expect(codes).not.toContain("FC-01") // otra faena
     expect(codes).not.toContain("") // sin código: bloqueado, no se precarga
-    const row = codes.indexOf("FB-02") + 2
+    const row = codes.indexOf("FB-03") + 2
     // Excel bloquea por defecto: al leer, ExcelJS omite `locked: true`. Lo que importa es que no venga desbloqueada y que la hoja esté protegida.
     expect(sheet.getCell(`A${row}`).protection?.locked).not.toBe(false)
     expect((sheet as unknown as { sheetProtection?: { sheet?: boolean } }).sheetProtection?.sheet).toBe(true)

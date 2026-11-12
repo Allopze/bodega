@@ -45,6 +45,14 @@ describe("filtros de Registros en la URL", () => {
   })
 })
 
+describe("fechas de los filtros de Registros", () => {
+  it("descarta una fecha que el calendario no tiene en vez de pasarla cruda a SQL", () => {
+    expect(parseRecordFilters({ desde: "2026-02-31", hasta: "2026-13-01" })).toEqual({})
+    expect(parseRecordFilters({ desde: "2026-02-28", hasta: "2028-02-29" })).toEqual({ from: "2026-02-28", to: "2028-02-29" })
+    expect(parseRecordFilters({ desde: "2027-02-29" })).toEqual({})
+  })
+})
+
 describe("la lista que viaja al detalle (?lista=)", () => {
   it("la misma lista produce el mismo texto: lo que ya es el valor por omisión no se escribe", () => {
     expect(recordQueryToParams(parseRecordQuery({})).toString()).toBe("")

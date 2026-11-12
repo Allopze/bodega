@@ -361,7 +361,7 @@ describe("asignación y concurrencia", () => {
     expect(refused(await transitions.unassignWorkOrder(jefe, { workOrderId: id, expectedVersion: 1 })).code).toBe("conflict")
   })
 
-  it("asignar, reasignar y desasignar: valida al mecánico, no deja evento si no cambia y avisa sólo al mecánico nuevo", async () => {
+  it("asignar, reasignar y desasignar: valida al mecánico, no deja evento si no cambia y avisa al nuevo y, al reasignar, también al que la perdía", async () => {
     const id = await newOt()
     const jefe = await actorOf(IDS.jefe)
     expect(refused(await transitions.assignWorkOrder(jefe, { workOrderId: id, assignedToUserId: IDS.plain })).field).toBe("assignedToUserId")
@@ -375,6 +375,23 @@ describe("asignación y concurrencia", () => {
     expect(await row(id)).toMatchObject({ status: "solicitada", assignedToUserId: null, assignedAt: null })
     expect((await eventsOf(id)).map((event) => event.type)).toEqual(["created", "assigned", "assigned", "unassigned"])
     await vi.waitFor(async () => expect((await notificationsOf("mant_ot_assigned")).map((notice) => notice.userId).sort()).toEqual([IDS.mecBio, IDS.mecCho]))
+    // D4: pasar la OT de Bio a Cho avisó también a Bio (antes seguía creyendo que era suya); el
+    // aviso de «volvió a por asignar» le llega después a Cho, que era quien la tenía.
+    await vi.waitFor(async () => {
+      const lost = await notificationsOf("mant_ot_unassigned")
+      expect(lost.map((notice) => notice.userId).sort()).toEqual([IDS.mecBio, IDS.mecCho])
+      expect(lost.find((notice) => notice.userId === IDS.mecBio)?.body).toContain("Se reasignó a otro mecánico")
+      expect(lost.find((notice) => notice.userId === IDS.mecCho)?.body).toContain("Volvió a «Por asignar»")
+    })
+  })
+
+  it("asignar a quien ya la tiene, o por primera vez, no manda aviso de «quitada»", async () => {
+    const id = await newOt()
+    const jefe = await actorOf(IDS.jefe)
+    ok(await transitions.assignWorkOrder(jefe, { workOrderId: id, assignedToUserId: IDS.mecBio }))
+    ok(await transitions.assignWorkOrder(jefe, { workOrderId: id, assignedToUserId: IDS.mecBio }))
+    await settle()
+    expect(await notificationsOf("mant_ot_unassigned")).toEqual([])
   })
 
   it("la jefatura puede asignar a un mecánico de OTRA faena y él la trabaja", async () => {
@@ -434,6 +451,8 @@ describe("ingreso a taller", () => {
     const current = (await row(id)).estimatedDeliveryDate!
     const newDate = addDaysToPlainDate(today, 6)
     expect(refused(await transitions.changeWorkOrderEstimate(mecanico, { workOrderId: id, estimatedDeliveryDate: newDate, reason: null })).field).toBe("reason")
+    // D4: mismo umbral que las demás transiciones (REASON_MIN_LENGTH), no un 5 propio.
+    expect(refused(await transitions.changeWorkOrderEstimate(mecanico, { workOrderId: id, estimatedDeliveryDate: newDate, reason: "Repuesto" })).message).toContain("al menos 10 caracteres")
     ok(await transitions.changeWorkOrderEstimate(mecanico, { workOrderId: id, estimatedDeliveryDate: newDate, reason: "Falta un repuesto importado" }))
     const event = (await eventsOf(id)).find((item) => item.type === "estimate_changed")
     expect(event).toMatchObject({ reason: "Falta un repuesto importado", changeSet: { from: current, to: newDate } })
@@ -842,6 +861,23 @@ describe("avisos: sólo después del commit", () => {
 })
 
 describe("lectura: lista, detalle, filtros y Excel", () => {
+  it("D4: una página más allá de la última sirve la última página, no un listado vacío", async () => {
+    const first = await newOt()
+    const second = await newOt({ vehicleId: IDS.truckCho })
+    const third = await newOt({ vehicleId: IDS.machineBio })
+    const jefe = await viewerOf(IDS.jefe)
+    const filters = { tab: "abiertas" as const, pageSize: 2 }
+    const page2 = await listWorkOrders(jefe, { ...filters, page: 2 })
+    expect(page2.rows).toHaveLength(1)
+    // Página 9 de 2: antes volvía sin filas con total 3 (el estado vacío con la lista llena).
+    const beyond = await listWorkOrders(jefe, { ...filters, page: 9 })
+    expect(beyond.total).toBe(3)
+    expect(beyond.rows.map((item) => item.id)).toEqual(page2.rows.map((item) => item.id))
+    expect([first, second, third]).toContain(beyond.rows[0]?.id)
+    // Sin ninguna fila en la pestaña la página 9 sigue vacía (no hay última página que servir).
+    expect((await listWorkOrders(jefe, { tab: "cerrada", pageSize: 2, page: 9 })).rows).toEqual([])
+  })
+
   it("la lista respeta el alcance: el administrador de contrato ve las de su faena, el mecánico las suyas y las por asignar", async () => {
     const bio = await newOt()
     const cho = await newOt({ vehicleId: IDS.truckCho })

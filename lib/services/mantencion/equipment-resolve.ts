@@ -4,7 +4,7 @@ import {
   fuelEquipmentTypes, fuelVehicles, mantBrands, mantEquipmentProfiles, mantRecords, mantSchedules, worksites,
 } from "@/db/schema"
 import { unitName } from "@/lib/mantencion/format"
-import { cleanName, findByNameKey, normalizeCode, normalizePlate, resolvePlate } from "@/lib/mantencion/normalize"
+import { cleanName, findByNameKey, nameKey, normalizeCode, normalizePlate, resolvePlate } from "@/lib/mantencion/normalize"
 import type { MantUnit } from "@/lib/mantencion/types"
 import { codeYear, todayInChile } from "@/lib/utils"
 import { unitFromMeter } from "./fleet"
@@ -250,6 +250,12 @@ export interface ResolveOptions {
    * equipo de una faena desactivada no se podía editar en nada (auditoría I-3).
    */
   keepWorksiteId?: string | null
+  /**
+   * Importación: si el equipo ya tiene registros y la fila trae otra lectura
+   * inicial, se conserva la actual con un aviso en vez de rechazar toda la fila
+   * (la planilla real traía 45 filas así; 2026-11-11). El formulario no lo usa.
+   */
+  ignoreLockedInitialReading?: boolean
 }
 
 /**
@@ -260,8 +266,10 @@ export async function resolveEquipment(
   client: Reader,
   input: EquipmentInput,
   options: ResolveOptions,
-): Promise<{ ok: true; value: ResolvedEquipment; incorporate: VehicleIdentity | null } | { ok: false; fieldErrors: FieldErrors }> {
+): Promise<{ ok: true; value: ResolvedEquipment; incorporate: VehicleIdentity | null; notices: string[] } | { ok: false; fieldErrors: FieldErrors }> {
   const errors: FieldErrors = {}
+  /** Avisos que no impiden guardar (sólo con `ignoreLockedInitialReading`). */
+  const notices: string[] = []
   const { current } = options
   const catalogs = options.catalogs ?? await loadEquipmentCatalogs(client)
   const today = todayInChile()
@@ -316,7 +324,8 @@ export async function resolveEquipment(
   }
   if (current && current.recordCount > 0) {
     if ((initialReading ?? null) !== current.fields.initialReading) {
-      errors.initialReading = "La lectura inicial no se puede cambiar: el equipo ya tiene registros."
+      if (options.ignoreLockedInitialReading) notices.push("La lectura inicial no se cambia: el equipo ya tiene registros. Se conserva la actual.")
+      else errors.initialReading = "La lectura inicial no se puede cambiar: el equipo ya tiene registros."
     }
     initialReading = current.fields.initialReading
     initialReadingDate = current.fields.initialReadingDate
@@ -342,7 +351,7 @@ export async function resolveEquipment(
     else if (typed.length > 80) errors.worksiteId = "El nombre de la faena es demasiado largo (máximo 80 caracteres)."
     else {
       const existing = findByNameKey(catalogs.worksites, typed)
-      if (existing && !existing.isActive) errors.worksiteId = `La faena «${existing.name}» existe pero está inactiva.`
+      if (existing && !existing.isActive) errors.worksiteId = inactiveWorksiteMessage(existing.name, catalogs.worksites)
       else if (existing) { worksiteId = existing.id; worksiteName = existing.name }
       else newWorksiteName = typed
     }
@@ -419,5 +428,18 @@ export async function resolveEquipment(
       initialReadingDate,
     },
   }
-  return { ok: true, value, incorporate }
+  return { ok: true, value, incorporate, notices }
+}
+
+/**
+ * «La faena X está inactiva», con la activa que probablemente la reemplazó si
+ * hay exactamente una que empieza con la misma palabra (las faenas se
+ * unificaron el 2026-11; la planilla real traía los nombres antiguos).
+ */
+function inactiveWorksiteMessage(name: string, all: EquipmentCatalogs["worksites"]): string {
+  const first = nameKey(name).split(" ")[0] ?? ""
+  const candidates = first.length >= 3 ? all.filter((item) => item.isActive && nameKey(item.name).split(" ")[0] === first) : []
+  return candidates.length === 1
+    ? `La faena «${name}» está inactiva. ¿Es «${candidates[0]!.name}»? Escribe esa.`
+    : `La faena «${name}» existe pero está inactiva.`
 }

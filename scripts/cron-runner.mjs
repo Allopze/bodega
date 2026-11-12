@@ -209,6 +209,14 @@ const JOBS = Object.freeze({
     kind: "sync",
     codePrefix: "PREVENTION_CRON_",
   },
+  // Auditoría Mantención 2026-11-11: borra las fotos de la app que nunca se
+  // anclaron a un registro (más de 7 días con record_id nulo) y sus archivos.
+  "mantencion-fotos-huerfanas": {
+    url: "http://app:3000/api/cron/mantencion-fotos-huerfanas",
+    timeoutMs: 5 * 60 * 1_000,
+    kind: "sync",
+    codePrefix: "MANTENCION_CRON_",
+  },
   "sst-weekly-alerts": {
     url: "http://app:3000/api/cron/sst-weekly-alerts",
     timeoutMs: 5 * 60 * 1_000,

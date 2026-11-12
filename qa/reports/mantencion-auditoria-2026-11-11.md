@@ -91,3 +91,66 @@ Dev en :3002 desde el worktree, contra `bodega_dev` con las migraciones al día,
   - `records-filters.ts` sigue validando fechas con la regex antigua.
   - La fase 5 (fotos huérfanas, tope del multipart y menores).
 - **Marcas de la flota fuera de la lista** (Maxus, Mahindra, etc.): hay que agregarlas al catálogo de marcas de Mantención antes de incorporar esos vehículos.
+
+---
+
+# Plan 2 (2026-11-12): lo que destapó la carpeta «Flota y mantención Chome»
+
+## Corregido / nuevo
+
+- **El importador abre planillas de OpenXML SDK.** La plantilla completada del equipo (216 filas) venía con el prefijo `x:` en el XML y rutas absolutas en las relaciones, y se rechazaba con «No se pudo leer el archivo». Ahora la carga es tolerante: `lib/reports/xlsx-normalize.ts` (`loadXlsxTolerant`) quita los prefijos y relativiza las rutas, con tope de tamaño descomprimido. Lo usan también el importador histórico y el script de vencimientos.
+- **Avisos por fila en la importación:**
+  - Los tipos sin medidor (carros, bateas) salen «No aplica», como aviso.
+  - Si el equipo ya tiene registros, la lectura inicial se conserva con un aviso en vez de rechazar la fila.
+- **Faenas y marcas nuevas sólo con casilla explícita**, y sólo para quien ve todas las faenas.
+  - «Sin ubicación», «Por asignar» y similares nunca se crean como faena.
+  - Una faena inactiva sugiere su reemplazo activo.
+  - La vista previa avisa de las marcas parecidas: «Mercedes Benz → ¿es Mercedes?».
+- **`/mantencion/catalogos`:** marcas, talleres, conductores, tipos de trabajo y aceites, con alta, renombre y desactivación, auditoría y usos.
+  - Los catálogos son comunes a todas las faenas: sólo la jefatura global los edita; un encargado de faena los ve en modo lectura.
+  - «Crear marca» también está disponible al importar y al incorporar desde la flota.
+- **Vencimientos:**
+  - Se completaron marca, modelo y año de los 15 carros y bateas.
+  - El script lee la planilla FINAL (2026-11-08), en la que viene corregido el RUT de la fila 7.
+  - El detalle está en `qa/reports/vencimientos-carpeta-flota-2026-11-11.md`.
+- **Robustez:**
+  - Cron diario de fotos huérfanas, en `scripts/cron-runner.mjs` y en el crontab de `docker-compose.yml` a las 04:40.
+  - El formulario web descarta sus fotos cuando el registro se rechaza.
+  - La subida de fotos aplica su tope leyendo el flujo; ya no exige `Content-Length`.
+  - Una huella distinta se puede reintentar.
+  - Menores: fechas civiles en los filtros de registros, el Excel de pautas exporta la versión publicada, alcance en el Excel del panel, motivo de 10 caracteres, la paginación de OT se ajusta a la última página y reasignar una OT avisa al mecánico anterior.
+- **Revisión final (Opus):**
+  - **Alta, cerrada:** con «Sin patente», la planilla podía incorporar un vehículo de otra faena. La regresión falla sin el arreglo.
+  - **Medias, cerradas:**
+    - Revocar un dispositivo cierra todas las sesiones de la persona.
+    - El tope de las fotos se aplica por flujo.
+    - Catálogos sólo con alcance global.
+
+## Verificación
+
+| Puerta | Resultado |
+|---|---|
+| `npm run lint` | OK |
+| `npm run test:fast` | 1.325 archivos, 19.953 pruebas OK |
+| `npm run test:pglite` | 375 archivos, 4.931 pruebas OK |
+| `npm run check:secrets` | OK |
+| `npm run typecheck` | OK tras corregir el tipo del cuerpo de la foto |
+
+La pasada completa de `test:pglite` terminó con 1 rechazo sin manejar, causado por el `cancel()` del flujo. Se corrigió y esa suite se volvió a correr, ya sin errores.
+
+Navegador (:3002 contra `bodega_dev`):
+
+| Recorrido | Resultado |
+|---|---|
+| Importar el `.xlsx` real de la carpeta | Abre con 24 equipos nuevos, 21 por incorporar, 44 por actualizar, 47 sin cambios, 24 «No aplica» y 56 con error. Aparecen la casilla de 17 marcas nuevas y las sugerencias de marca parecida. No se confirmó: los datos reales no se escribieron. |
+| `/mantencion/catalogos` | Se creó, renombró y desactivó la marca `QA_Marca Verificada`, que queda inactiva en `bodega_dev`. |
+| Móvil, catálogos e incorporar | Sin scroll horizontal. |
+
+En el recorrido hubo 0 errores de consola y 0 respuestas ≥ 400.
+
+## Pendiente de decisión
+
+- Si «Cholguán Máquinas» es un alias de «Cholguan - Arauco». Sin el alias, la planilla FINAL omite las 61 filas de Cholguán. Con él aparecen dos traslados de faena, un tipo «CARRO DESECHOS», cuatro cargos fuera del plan, el RUT inválido de la fila 66 y ocho licencias sin clase.
+- El modelo de JP-3896: «PLANO DE 2 EJES» o vacío.
+- Volver a derivar un hallazgo cuya OT está cerrada: lo bloquea el índice `mant_work_orders_finding_unique`.
+- El mensaje de huella con código 409 `retry` sólo lo entienden los PWA actualizados. Un teléfono con la versión vieja lo sigue tratando como rechazo.

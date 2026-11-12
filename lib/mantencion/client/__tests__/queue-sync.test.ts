@@ -105,6 +105,23 @@ describe("cola de envío", () => {
     expect(again).not.toHaveBeenCalled()
   })
 
+  it("D3: una foto que llegó alterada (409 retry) deja el registro pendiente y se reenvía sola; no queda rechazado", async () => {
+    await seed()
+    const message = "La foto llegó alterada o incompleta (la huella no coincide). Se vuelve a enviar sola."
+    const failing = routes({ photo: () => json(409, { ok: false, code: "retry", message }) })
+    const report = await sync(failing, Date.now())
+    expect(report).toMatchObject({ rejected: 0, retried: 1, sent: 0 })
+    const pending = (await getQueueItem(R1)) as QueueRecordItem
+    expect(pending.status).toBe("pending")
+    expect(pending.lastError).toBe(message)
+    expect(pending.rejection ?? null).toBeNull()
+    expect(await getPhoto(PHOTOS[0])).not.toBeNull()
+    // Esa foto no se dio por subida: el siguiente intento la vuelve a mandar y el registro sale.
+    expect(failing.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false)
+    expect((await sync(routes({}), Date.now() + BACKOFF_CAP_MS + 1_000)).sent).toBe(1)
+    expect(((await getQueueItem(R1)) as QueueRecordItem).status).toBe("sent")
+  })
+
   it("409 missing_photos: vuelve a subir las fotos y reintenta en la misma pasada", async () => {
     await seed()
     let posts = 0

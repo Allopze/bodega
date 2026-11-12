@@ -25,7 +25,8 @@ export default async function IncorporateFleetPage() {
     redirect("/forbidden")
   }
   const catalogs = await loadEquipmentCatalogs(db)
-  const candidates = await listIncorporationCandidates(equipmentScope(viewerFromSession(session)), catalogs)
+  const scope = equipmentScope(viewerFromSession(session))
+  const candidates = await listIncorporationCandidates(scope, catalogs)
   return (
     <PageContainer>
       <FleetIncorporationPanel
@@ -33,6 +34,8 @@ export default async function IncorporateFleetPage() {
         brands={catalogs.brands.filter((brand) => brand.isActive).map(({ id, name }) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name, "es"))}
         schedules={[...catalogs.schedules].sort((a, b) => a.name.localeCompare(b.name, "es"))}
         today={todayInChile()}
+        // Crear una marca nueva desde aquí: sólo quien ve todas las faenas (igual que en la importación).
+        canCreateBrands={scope === "all"}
       />
     </PageContainer>
   )

@@ -695,4 +695,28 @@ describe("panel", () => {
     expect(indicators.getRow(3).getCell(2).value).toBe("Biodiversa")
     expect(workbook.getWorksheet("Registros por semana")!.getRow(2).getCell(1).value).toBeInstanceOf(Date)
   })
+
+  it("D4: la fecha de inicio sale con formatDate y la columna de horas lleva el mismo nombre que la pantalla", async () => {
+    const outcome = await exportPanel({ session: await sessionOf(IDS.jefe), filters: parsePanelFilters({ periodo: "30" }) })
+    if (!outcome.ok) throw new Error("exportación rechazada")
+    const workbook = new ExcelJS.Workbook()
+    await workbook.xlsx.load(Buffer.from(outcome.data.base64, "base64") as never)
+    expect(String(workbook.getWorksheet("Indicadores")!.getRow(2).getCell(3).value)).toMatch(/^Desde el \d{2}-\d{2}-\d{4}$/)
+    expect(workbook.getWorksheet("Horas por faena")!.getRow(1).getCell(2).value).toBe("Horas hombre (h)")
+    expect(workbook.getWorksheet("Indicadores")!.getRow(8).getCell(1).value).toBe("Horas hombre del período (h)")
+  })
+
+  it("D4: una faena fuera del alcance de quien exporta no se aplica ni se nombra en el libro", async () => {
+    // El supervisor de Biodiversa pide la faena de Cholguán por la URL: sale con su propio alcance.
+    const outcome = await exportPanel({ session: await sessionOf(IDS.supBio), filters: parsePanelFilters({ periodo: "30", faena: IDS.wsCho }) })
+    if (!outcome.ok) throw new Error("exportación rechazada")
+    const workbook = new ExcelJS.Workbook()
+    await workbook.xlsx.load(Buffer.from(outcome.data.base64, "base64") as never)
+    const indicators = workbook.getWorksheet("Indicadores")!
+    expect(indicators.getRow(3).getCell(2).value).toBe("Todas las faenas")
+    const metadata = JSON.stringify(workbook.getWorksheet("Metadatos")!.getSheetValues())
+    expect(metadata).not.toContain("Cholguán")
+    const audit = (await testDb.select().from(schema.auditLog).where(eq(schema.auditLog.entityType, "mant_panel_export")))
+    expect(audit.every((row) => row.worksiteId === null || row.worksiteId !== IDS.wsCho)).toBe(true)
+  })
 })

@@ -9,6 +9,7 @@ import type { OtView } from "@/lib/mantencion/client/ot-model"
 import { OT_ITEM_KIND_LABELS, OT_STATUS_LABELS, type OtItemKind } from "@/lib/mantencion/work-order-states"
 import type { WorkOrderOpRequest } from "@/lib/mantencion/contracts"
 import { formatDate, formatDateTime, toLocalInputValue, todayInChile } from "@/lib/utils"
+import { isValidReason, REASON_MIN_LENGTH } from "@/lib/validation/reason-thresholds"
 import { useAppData } from "./app-context"
 import { Sheet } from "./dialog"
 import { OtEntryForm } from "./ot-entry-form"
@@ -55,7 +56,7 @@ function EstimateForm({ view, saving, error, onSubmit, onBack }: { view: OtView;
     if (!date) next.date = "Indica la nueva fecha."
     else if (date === current) next.date = "Elige una fecha distinta a la actual."
     else if (entryDay && date < entryDay) next.date = "La entrega no puede ser antes del ingreso."
-    if (reason.trim().length < 5) next.reason = "Cuenta por qué cambia la fecha."
+    if (!isValidReason(reason)) next.reason = `Cuenta por qué cambia la fecha (al menos ${REASON_MIN_LENGTH} caracteres).`
     setErrors(next)
     if (Object.keys(next).length === 0) onSubmit({ action: "estimate", estimatedDeliveryDate: date, reason: reason.trim() })
   }
