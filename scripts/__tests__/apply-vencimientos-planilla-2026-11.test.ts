@@ -302,10 +302,11 @@ describe("planilla FINAL (encabezados en la fila 4, tablas y XML de OpenXML SDK)
     expect(data.skipped).toEqual([])
   })
 
-  it("con la planilla FINAL el plan se aplica igual que con el consolidado: la faena sin resolver se omite y se informa", async () => {
+  it("con la planilla FINAL el plan se aplica igual que con el consolidado; «Cholguán Máquinas» resuelve a «Cholguan - Arauco»", async () => {
     const { applyVencimientosPlanilla202611 } = await script()
     const report = await applyVencimientosPlanilla202611({ actorEmail: ACTOR, apply: false, buffer: await buildFinalPlanilla() })
-    expect(report.outcomes.find((o) => o.item === "TEST-33")).toMatchObject({ result: "omitido" })
+    // Alias confirmado por el usuario (2026-11-12): la fila de Cholguán ya no se omite.
+    expect(report.outcomes.find((o) => o.item === "TEST-33")).toMatchObject({ result: "dry-run" })
     expect(report.outcomes.filter((o) => o.item.startsWith("TEST-") && o.result === "dry-run").length).toBeGreaterThan(0)
     // Dos trabajadores con RUT distinto: el RUT identifica y no hace falta el respaldo por nombre.
     expect(report.review.filter((note) => note.kind === "identificado_por_nombre")).toEqual([])
@@ -329,13 +330,14 @@ describe("datos de los 15 carros y bateas nuevos", () => {
       // Un modelo que repite la marca o se declara genérico no es un modelo.
       if (details!.model) {
         expect(details!.model.toLowerCase(), plate).not.toBe(details!.brand!.toLowerCase())
-        expect(details!.model, plate).not.toMatch(/gen[eé]rico|sin modelo|hehizo/i)
+        // «Genérico» se conserva tal cual viene (JP-3896, decisión del usuario 2026-11-12).
+        expect(details!.model, plate).not.toMatch(/^sin modelo$|^hehizo$/i)
         expect(details!.model, plate).toBe(details!.model.trim())
       }
     }
     expect(NEW_VEHICLE_DETAILS["PWTD-82"]).toEqual({ brand: "Emes", model: "PLANO 2 EJES", year: 2022 })
     expect(NEW_VEHICLE_DETAILS["HGKG-54"]).toEqual({ brand: "Rocongu", model: null, year: 2017 })
-    expect(NEW_VEHICLE_DETAILS["JP-3896"]).toEqual({ brand: "Rocongu", model: null, year: 2015 })
+    expect(NEW_VEHICLE_DETAILS["JP-3896"]).toEqual({ brand: "Rocongu", model: "PLANO DE 2 EJES GENÉRICO", year: 2015 })
   })
 
   it("al crear los equipos los guarda en la ficha", async () => {
