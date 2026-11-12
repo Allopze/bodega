@@ -40,13 +40,12 @@ function SummaryLine({ label, value, muted = false }: { label: string; value: st
 interface RequestFormProps {
   worksites: WorksiteOption[]
   /**
-   * Códigos de `product_units` (activos, ordenados) para el datalist de unidad.
-   * Requerido y no opcional-con-default a propósito: era una constante
-   * hardcodeada de 13 valores que el catálogo del admin no alimentaba, así que
-   * crear una unidad ahí no aparecía nunca acá. Que el compilador obligue a
-   * pasarla evita que vuelva a divergir en silencio.
+   * Códigos de la lista fija de unidades (`PRODUCT_UNIT_CODES`) para el datalist de unidad.
+   * Requerido y no opcional-con-default a propósito: este formulario tuvo su
+   * propia copia de 13 unidades que se separó de la lista real. Que el
+   * compilador obligue a pasarla evita que vuelva a divergir en silencio.
    */
-  units: string[]
+  units: readonly string[]
   products: ProductOption[]
   /**
    * Catálogo de repuestos para el buscador del ítem (sólo solicitudes de
@@ -176,7 +175,7 @@ function ItemsSection({
   items: ItemRow[]; requestType: string; requestTypeLabel?: string; readOnly: boolean; savedId?: string
   editableItemIds?: string[]
   itemsError?: string; products: ProductOption[]; spareParts?: SparePartOption[]; suppliers: SupplierOption[]; workers?: WorkerOption[]
-  equipment?: EquipmentOption[]; maxFileSizeMb: number; units: string[]
+  equipment?: EquipmentOption[]; maxFileSizeMb: number; units: readonly string[]
   worksiteId: string; vehicles?: VehicleOption[]
   quotationRule?: string; quotationNotice?: string | null
   onSelectVehicle: (key: string, vehicleId: string) => void; onSelectWorkOrder: (key: string, workOrderId: string) => void

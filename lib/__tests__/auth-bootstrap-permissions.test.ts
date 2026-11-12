@@ -62,7 +62,6 @@ describe("system-rbac → manifest parity", () => {
   const expectedAdminPermissions = [
     "admin:roles",
     "admin:cost_centers",
-    "admin:product_catalogs",
     "admin:document_taxonomy",
     "admin:pdtp_catalog",
     "admin:deviation_catalog",
@@ -88,16 +87,14 @@ describe("system-rbac → manifest parity", () => {
     }
   })
 
-  it("grants cost centers and product catalogs to secretaria", () => {
+  it("grants cost centers to secretaria", () => {
     const perms = rolePermissions("rol-sec")
     expect(perms).toContain("admin:cost_centers")
-    expect(perms).toContain("admin:product_catalogs")
   })
 
   it("grants jefa_chome the operational admin catalogs", () => {
     const perms = rolePermissions("rol-jefa")
     expect(perms).toContain("admin:cost_centers")
-    expect(perms).toContain("admin:product_catalogs")
     expect(perms).toContain("admin:pdtp_catalog")
     expect(perms).toContain("admin:fleet_catalog")
     expect(perms).toContain("admin:notifications")

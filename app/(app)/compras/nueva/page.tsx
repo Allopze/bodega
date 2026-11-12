@@ -4,8 +4,9 @@ import { db }            from "@/db"
 import {
   purchaseRequestItems, purchaseRequests,
   worksites, suppliers, products, productSuppliers, purchaseOrders, purchaseOrderItems,
-  fuelVehicles, mantWorkOrders, productUnits,
+  fuelVehicles, mantWorkOrders,
 } from "@/db/schema"
+import { PRODUCT_UNIT_LABELS } from "@/lib/products/units"
 import { eq, inArray, asc } from "drizzle-orm"
 import { pendingPurchaseWhere } from "@/lib/adquisiciones/pending-purchase"
 import { requirePermission } from "@/lib/auth/can"
@@ -101,7 +102,7 @@ export default async function NuevaOcPage({
   const requestItemIds = rawItems.map((item) => item.id)
   const productIds = [...new Set(rawItems.flatMap((i) => i.productId ? [i.productId] : []))]
 
-  const [requestRows, productRows, supplierPriceRows, allSuppliers, allWorksites, coverageLines, unitRows, sheetLinkedIds] = await Promise.all([
+  const [requestRows, productRows, supplierPriceRows, allSuppliers, allWorksites, coverageLines, sheetLinkedIds] = await Promise.all([
     db
       .select({
         id: purchaseRequests.id, code: purchaseRequests.code, worksiteId: purchaseRequests.worksiteId,
@@ -157,14 +158,10 @@ export default async function NuevaOcPage({
           .where(inArray(purchaseOrderItems.requestItemId, requestItemIds))
       : Promise.resolve([]),
 
-    // Rótulos de unidad para la hoja «Catalogar» («bidon» → «Bidón»).
-    db.select({ code: productUnits.code, label: productUnits.label }).from(productUnits),
-
     // Los repuestos que Compras vinculó desde «Catalogar» (y que una recarga no
     // pierde): esas líneas ofrecen «Desvincular»; el que eligió quien pidió, no.
     findSheetLinkedItemIds(rawItems.filter((item) => item.productId).map((item) => item.id)),
   ])
-  const unitLabels = Object.fromEntries(unitRows.map((unit) => [unit.code, unit.label]))
 
   const reqMap     = Object.fromEntries(requestRows.map((r) => [r.id, r]))
   const productMap = Object.fromEntries(productRows.map((p) => [p.id, p]))
@@ -309,7 +306,7 @@ export default async function NuevaOcPage({
         initialWorksiteId={initialWorksiteId}
         initialItemIds={initialItemIds}
         canCreateSparePart={can(session, "repuestos:catalog")}
-        unitLabels={unitLabels}
+        unitLabels={PRODUCT_UNIT_LABELS}
       />
     </PageContainer>
   )

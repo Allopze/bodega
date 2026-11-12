@@ -8,8 +8,9 @@ import {
   approvalDecisions, purchaseRequestItems,
   repuestoQuotations, serviceQuotations,
   purchaseOrders, purchaseOrderItems,
-  productUnits, fuelVehicles, mantWorkOrders,
+  fuelVehicles, mantWorkOrders,
 } from "@/db/schema"
+import { PRODUCT_UNIT_CODES } from "@/lib/products/units"
 import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm"
 import { can, canAccessWorksite, requireAuth } from "@/lib/auth/can"
 import { canViewRequestDetail } from "./access"
@@ -199,7 +200,7 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
     ? or(eq(products.isSparePart, false), inArray(products.id, referencedProductIds))
     : eq(products.isSparePart, false)
 
-  const [allWorksites, allProducts, allAttrs, productSupplierRows, timelineEvents, approvalDecisionRows, allSuppliers, maxFileSizeMb, unitRows, editableWorkers, operationalSettings, vehicleOptions, allEquipment, catalogSpareParts] = await Promise.all([
+  const [allWorksites, allProducts, allAttrs, productSupplierRows, timelineEvents, approvalDecisionRows, allSuppliers, maxFileSizeMb, editableWorkers, operationalSettings, vehicleOptions, allEquipment, catalogSpareParts] = await Promise.all([
     db.select().from(worksites).where(eq(worksites.isActive, true)).orderBy(asc(worksites.name)),
     canLoadItemEditOptions
       ? db.select().from(products).where(and(
@@ -268,11 +269,6 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
       .orderBy(desc(approvalDecisions.decidedAt)),
     db.select().from(suppliers).where(eq(suppliers.isActive, true)).orderBy(asc(suppliers.name)),
     getPdfMaxSizeMb(),
-    // Mismas sugerencias de unidad que en /solicitudes/nueva: desde el catálogo
-    // del admin, no desde una constante.
-    db.select({ code: productUnits.code }).from(productUnits)
-      .where(eq(productUnits.isActive, true))
-      .orderBy(asc(productUnits.sortOrder), asc(productUnits.code)),
     canLoadPendingItemEditOptions
       ? db.select({
           id: workers.id, firstName: workers.firstName, lastName: workers.lastName, rut: workers.rut,
@@ -596,7 +592,7 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
         )}
         <RequestForm
           worksites={worksiteOptions}
-          units={unitRows.map((u) => u.code)}
+          units={PRODUCT_UNIT_CODES}
           products={productOptions}
           spareParts={sparePartOptions}
           suppliers={supplierOptions}

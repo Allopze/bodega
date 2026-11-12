@@ -13,7 +13,9 @@
  *  1. **Existir** — FK en base (migración 0307). Alcanza a todo camino de
  *     escritura, incluidos los importadores masivos y los scripts, que es
  *     justo lo que una validación sólo-zod no puede hacer.
- *  2. **Estar activa** — no lo puede expresar una FK; se comprueba al escribir.
+ *  2. **Ser elegible** — desde el 2026-11-12 la lista elegible es fija
+ *     (`PRODUCT_UNITS`); un código histórico que la FK todavía acepta no se
+ *     puede elegir para una escritura nueva.
  */
 
 import { PGlite } from "@electric-sql/pglite"
@@ -110,19 +112,21 @@ describe("CAT-003 — la unidad del producto sale del catálogo de unidades", ()
     expect(imported?.unitOfMeasure).toBe("bidon")
   })
 
-  it("una unidad desactivada existe para la FK pero deja de ser elegible al escribir", async () => {
-    await inMemoryDb.update(schema.productUnits)
-      .set({ isActive: false })
-      .where(eq(schema.productUnits.code, "tarro"))
-
-    // La FK la sigue aceptando —y debe hacerlo: hay productos históricos que la
-    // usan y borrar la fila del catálogo los dejaría huérfanos—.
+  it("un código histórico existe para la FK pero no es elegible al escribir", async () => {
+    // Un código que alguna vez estuvo en el catálogo administrable y ya no está
+    // en la lista fija: hay productos históricos que lo usan.
+    await inMemoryDb.insert(schema.productUnits).values({
+      id: "unit-legacy-galon", code: "galon", label: "Galón", sortOrder: 999, isActive: false,
+    })
+    // La FK lo sigue aceptando —y debe hacerlo: borrar la fila dejaría
+    // huérfanos a los productos que lo usan—.
     await inMemoryDb.insert(schema.products).values({
       id: "p-cat003-legacy", sku: "CAT003-3", name: "Producto histórico",
-      categoryId: CATEGORY, unitOfMeasure: "tarro", isActive: true, createdAt: now, updatedAt: now,
+      categoryId: CATEGORY, unitOfMeasure: "galon", isActive: true, createdAt: now, updatedAt: now,
     })
 
-    // Lo que ya no se puede es elegirla para una escritura nueva.
-    await expect(resolveActiveUnitCode("tarro")).rejects.toThrow(/catálogo de unidades/)
+    // Lo que ya no se puede es elegirlo para una escritura nueva.
+    expect(() => resolveActiveUnitCode("galon")).toThrow(/unidades de medida/)
+    expect(resolveActiveUnitCode(" Tarro ")).toBe("tarro")
   })
 })

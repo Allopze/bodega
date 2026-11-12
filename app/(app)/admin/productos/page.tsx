@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
+import { CatalogTabs } from "./catalog-tabs"
 import { categoriesForCatalogProducts } from "@/lib/products/spare-parts-category"
 import { ProductList } from "./product-list"
 import { ProductActions } from "./product-actions"
@@ -17,7 +18,7 @@ export default async function ProductosPage() {
   try { await requirePermission("admin:products") }
   catch { redirect("/forbidden") }
 
-  const [allProducts, allCategories, allSuppliers, recentBatches, units, templates, sizeFamilies] = await Promise.all([
+  const [allProducts, allCategories, allSuppliers, recentBatches, sizeFamilies] = await Promise.all([
     // Los repuestos de catálogo se gestionan en Mantención → Catálogo de
     // repuestos: editarlos aquí podía cambiar marcas (EPP/servicio) que el CHECK
     // de `products` prohíbe combinar con `is_spare_part`.
@@ -43,15 +44,6 @@ export default async function ProductosPage() {
       orderBy: (batch, { desc }) => [desc(batch.createdAt)],
       limit: 10,
     }),
-    db.query.productUnits.findMany({
-      where: (unit, { eq }) => eq(unit.isActive, true),
-      orderBy: (unit, { asc }) => [asc(unit.sortOrder), asc(unit.code)],
-    }),
-    db.query.productAttributeTemplates.findMany({
-      where: (template, { eq }) => eq(template.isActive, true),
-      with: { category: true },
-      orderBy: (template, { asc }) => [asc(template.sortOrder), asc(template.name)],
-    }),
     // Las tallas del asistente salen de `size_catalog`, no del bundle.
     getSizeFamilyOptions(),
   ])
@@ -60,7 +52,7 @@ export default async function ProductosPage() {
     <PageContainer>
       <PageHeader
         title="Catálogo de productos"
-        description="Productos, categorías, atributos y EPP. Los repuestos se gestionan en Catálogo de repuestos."
+        description="Cada artículo que se compra o se entrega, con su talla y color. Los repuestos se gestionan en Catálogo de repuestos."
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Inicio", href: "/dashboard" },
@@ -72,22 +64,11 @@ export default async function ProductosPage() {
           <ProductActions
             categories={categoriesForCatalogProducts(allCategories).map((c) => ({ id: c.id, name: c.name, slug: c.slug, isEpp: c.isEpp, requiresPrevencion: c.requiresPrevencion, sortOrder: c.sortOrder }))}
             allSuppliers={allSuppliers.map((s) => ({ id: s.id, name: s.name }))}
-            units={units.map((unit) => ({ code: unit.code, label: unit.label, isActive: unit.isActive }))}
-            templates={templates.map((template) => ({
-              id: template.id,
-              categoryId: template.categoryId ?? "",
-              categoryName: template.category?.name,
-              name: template.name,
-              type: template.type as "text" | "select" | "number" | "integer",
-              isRequired: template.isRequired,
-              options: template.options ?? "",
-              sizeFamily: template.sizeFamily ?? undefined,
-              sortOrder: template.sortOrder,
-            }))}
             sizeFamilies={sizeFamilies}
           />
         }
       />
+      <CatalogTabs current="productos" />
       <ProductList
         products={allProducts.map((p) => ({
           id: p.id, sku: p.sku, name: p.name,
@@ -106,18 +87,6 @@ export default async function ProductosPage() {
         }))}
         categories={allCategories.map((c) => ({ id: c.id, name: c.name, slug: c.slug, isEpp: c.isEpp, requiresPrevencion: c.requiresPrevencion, sortOrder: c.sortOrder }))}
         allSuppliers={allSuppliers.map((s) => ({ id: s.id, name: s.name }))}
-        units={units.map((unit) => ({ code: unit.code, label: unit.label, isActive: unit.isActive }))}
-        templates={templates.map((template) => ({
-          id: template.id,
-          categoryId: template.categoryId ?? "",
-          categoryName: template.category?.name,
-          name: template.name,
-          type: template.type as "text" | "select" | "number" | "integer",
-          isRequired: template.isRequired,
-          options: template.options ?? "",
-          sizeFamily: template.sizeFamily ?? undefined,
-          sortOrder: template.sortOrder,
-        }))}
         sizeFamilies={sizeFamilies}
         recentBatches={recentBatches.map((batch) => {
           let rowCount: number | null = null

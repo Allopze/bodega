@@ -29,7 +29,6 @@ export const adminModule = {
     "admin:epp_import_confirm",
     "admin:suppliers",
     "admin:cost_centers",
-    "admin:product_catalogs",
     "admin:service_equipment",
     "admin:worksite_inventory",
     "admin:worksite_inventory_service",
@@ -83,7 +82,6 @@ export const adminModule = {
     "admin:epp_import_confirm": { id: "p-adm-epp-cf", description: "Confirmar importaciones EPP" },
     "admin:suppliers":         { id: "p-adm-sup",   description: "Gestionar proveedores" },
     "admin:cost_centers":      { id: "p-adm-cost",  description: "Gestionar centros de costo" },
-    "admin:product_catalogs":  { id: "p-adm-pcat",  description: "Gestionar catálogos auxiliares de productos" },
     "admin:document_taxonomy": { id: "p-adm-docx",  description: "Gestionar tipos de documento SST" },
     "admin:pdtp_catalog":      { id: "p-adm-pdtp",  description: "Gestionar catálogos base del programa preventivo" },
     "admin:deviation_catalog": { id: "p-adm-dev",   description: "Gestionar el catálogo maestro de desviaciones de inspección" },
@@ -129,7 +127,6 @@ export const adminModule = {
     { roleSlug: "administrador", permission: "admin:epp_import_confirm" },
     { roleSlug: "administrador", permission: "admin:suppliers" },
     { roleSlug: "administrador", permission: "admin:cost_centers" },
-    { roleSlug: "administrador", permission: "admin:product_catalogs" },
     { roleSlug: "administrador", permission: "admin:service_equipment" },
     { roleSlug: "administrador", permission: "admin:worksite_inventory" },
     { roleSlug: "administrador", permission: "admin:containers" },
@@ -158,7 +155,6 @@ export const adminModule = {
     { roleSlug: "secretaria", permission: "admin:epp_import_review" },
     { roleSlug: "secretaria", permission: "admin:suppliers" },
     { roleSlug: "secretaria", permission: "admin:cost_centers" },
-    { roleSlug: "secretaria", permission: "admin:product_catalogs" },
     { roleSlug: "secretaria", permission: "admin:service_equipment" },
     // Cargar el inventario de una faena es digitación de datos maestros, no una
     // tarea de Prevención: por eso lo tiene secretaría además de administración.
@@ -182,7 +178,6 @@ export const adminModule = {
     { roleSlug: "prevencionista_faena", permission: "admin:worksite_inventory_service" },
     // Jefa Chome (Jefatura)
     { roleSlug: "jefa_chome", permission: "admin:cost_centers" },
-    { roleSlug: "jefa_chome", permission: "admin:product_catalogs" },
     { roleSlug: "jefa_chome", permission: "admin:pdtp_catalog" },
     { roleSlug: "jefa_chome", permission: "admin:worker_positions" },
     { roleSlug: "jefa_chome", permission: "admin:fleet_catalog" },

@@ -1,7 +1,8 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { db } from "@/db"
-import { worksites, products, productAttributes, suppliers, productSuppliers, workers, serviceEquipment, productUnits } from "@/db/schema"
+import { worksites, products, productAttributes, suppliers, productSuppliers, workers, serviceEquipment } from "@/db/schema"
+import { PRODUCT_UNIT_CODES } from "@/lib/products/units"
 import { and, eq, asc, desc } from "drizzle-orm"
 import { can, canAccessWorksite, requireAuth } from "@/lib/auth/can"
 import { buildPrefill } from "./prefill"
@@ -58,7 +59,7 @@ export default async function NuevaSolicitudPage({
   // El catálogo de repuestos sólo sirve al buscador de «Solicitud de repuestos».
   const canPickSpareParts = can(session, "repuestos:create")
 
-  const [allWorksites, allProducts, allAttrs, productSupplierRows, allSuppliers, allWorkers, allEquipment, maxFileSizeMb, unitRows, vehicleOptions, operationalSettings] = await Promise.all([
+  const [allWorksites, allProducts, allAttrs, productSupplierRows, allSuppliers, allWorkers, allEquipment, maxFileSizeMb, vehicleOptions, operationalSettings] = await Promise.all([
     db.select().from(worksites)
       .where(eq(worksites.isActive, true))
       .orderBy(asc(worksites.name)),
@@ -93,12 +94,6 @@ export default async function NuevaSolicitudPage({
       .where(eq(serviceEquipment.isActive, true))
       .orderBy(asc(serviceEquipment.code)),
     getPdfMaxSizeMb(),
-    // Sugerencias de unidad desde el catálogo del admin. Antes era una
-    // constante hardcodeada, así que crear una unidad en /admin/catalogos-productos
-    // no aparecía nunca acá.
-    db.select({ code: productUnits.code }).from(productUnits)
-      .where(eq(productUnits.isActive, true))
-      .orderBy(asc(productUnits.sortOrder), asc(productUnits.code)),
     canPickFleetVehicle ? listVehicleOptionsForRequests(session) : Promise.resolve([]),
     getOperationalSettings(),
   ])
@@ -284,7 +279,7 @@ export default async function NuevaSolicitudPage({
       />
       <RequestForm
         worksites={worksiteOptions}
-        units={unitRows.map((u) => u.code)}
+        units={PRODUCT_UNIT_CODES}
         initialWorksiteId={initialWorksiteId}
         initialUrgency={initialUrgency}
         products={productOptions}

@@ -30,7 +30,7 @@ async function main() {
     select count(*)::int as count
     from products p
     where p.is_active = true
-      and not exists (select 1 from product_units u where u.is_active = true and u.name = p.unit_of_measure)
+      and not exists (select 1 from product_units u where u.is_active = true and u.code = p.unit_of_measure)
   `
   console.log(`[unidades] productos activos con unidad fuera del maestro: ${orphanUnits[0]!.count}`)
 

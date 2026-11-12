@@ -129,7 +129,7 @@ describe("catálogo de repuestos", () => {
 
   it("valida nombre y unidad activa", async () => {
     await expect(createPart({ name: "   " })).rejects.toThrow(/nombre/)
-    await expect(createPart({ name: "Correa", unitOfMeasure: "no-existe" })).rejects.toThrow(/catálogo de unidades/)
+    await expect(createPart({ name: "Correa", unitOfMeasure: "no-existe" })).rejects.toThrow(/unidades de medida/)
   })
 
   it("encuentra por N° de parte (con y sin marca) sólo entre activos", async () => {

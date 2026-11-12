@@ -918,7 +918,6 @@ const routeTargets: RouteTarget[] = [
   { slug: "admin", path: "/admin", auth: true },
   { slug: "admin-almacenamiento", path: "/admin/almacenamiento", auth: true, notes: "Backend de la biblioteca SST (filesystem o Cloudreve) y credenciales WebDAV." },
   { slug: "admin-auditoria", path: "/admin/auditoria", auth: true },
-  { slug: "admin-catalogos-productos", path: "/admin/catalogos-productos", auth: true },
   { slug: "admin-centros-costo", path: "/admin/centros-costo", auth: true },
   { slug: "admin-configuracion", path: "/admin/configuracion", auth: true },
   { slug: "admin-correo-smtp", path: "/admin/correo-smtp", auth: true },
@@ -942,7 +941,7 @@ const routeTargets: RouteTarget[] = [
   { slug: "admin-pdtp-catalogos", path: "/admin/pdtp-catalogos", auth: true },
   { slug: "admin-plantillas", path: "/admin/plantillas", auth: true },
   { slug: "admin-productos", path: "/admin/productos", auth: true },
-  { slug: "admin-epps", path: "/admin/epps", auth: true },
+  { slug: "admin-productos-familias", path: "/admin/productos/familias", auth: true },
   { slug: "admin-productos-nuevo", path: "/admin/productos/nuevo", auth: true },
   { slug: "admin-productos-detalle", path: "/admin/productos/prod-audit-1", auth: true, notes: "Detalle propio del producto: ya no redirige al listado." },
   { slug: "admin-productos-importar", path: "/admin/productos/importar/batch-audit-1", auth: true, notes: "Vista de revisión de lotes EPP importados." },
@@ -2321,10 +2320,6 @@ async function prepareDatabase(captureDbUrl: string) {
     { id: "unit-audit-par", code: "par", label: "Par", description: "EPP entregado por pares", sortOrder: 2, isActive: true, createdAt: now, updatedAt: now },
     { id: "unit-audit-rollo", code: "rollo", label: "Rollo", description: "Material en rollo", sortOrder: 3, isActive: true, createdAt: now, updatedAt: now },
   ]).onConflictDoNothing({ target: schema.productUnits.code })
-  await db.insert(schema.productAttributeTemplates).values([
-    { id: "template-audit-talla", categoryId: "cat-audit-epp", name: "Talla", type: "select", options: JSON.stringify(["S", "M", "L", "XL"]), isRequired: true, sortOrder: 1, isActive: true, createdAt: now, updatedAt: now },
-    { id: "template-audit-color", categoryId: "cat-audit-epp", name: "Color", type: "select", options: JSON.stringify(["Amarillo", "Azul", "Negro", "Rojo"]), isRequired: false, sortOrder: 2, isActive: true, createdAt: now, updatedAt: now },
-  ])
   await db.insert(schema.productAttributes).values({
     id: "attr-audit-1",
     productId,

@@ -7,7 +7,7 @@ const catalogRoutes = [
   { path: "/admin/proveedores", title: "Proveedores" },
   { path: "/admin/centros-costo", title: "Centros de costo" },
   { path: "/admin/productos", title: "Productos" },
-  { path: "/admin/catalogos-productos", title: "Catálogos de productos" },
+  { path: "/admin/productos/familias", title: "Familias EPP" },
   { path: "/admin/flota-catalogos/vehiculos", title: "Vehículos de combustible" },
   { path: "/admin/flota-catalogos/proveedores-combustible", title: "Proveedores de combustible" },
 ]
@@ -24,6 +24,29 @@ test.describe("Catálogos administrativos migrados", () => {
       await expect(page.getByPlaceholder("Filtrar en esta página...")).toBeVisible()
     })
   }
+
+  /*
+   * 2026-11-12: «Catálogo de EPP» dejó de ser un ítem del menú y pasó a ser la
+   * pestaña «Familias EPP» de Productos; «Catálogos de productos» se retiró.
+   * Los enlaces guardados a /admin/epps tienen que seguir llegando.
+   */
+  test("Productos y Familias EPP son pestañas de una misma entrada del menú", async ({ page }) => {
+    await page.goto("/admin/epps")
+    await expect(page).toHaveURL(/\/admin\/productos\/familias$/)
+    const tabs = page.getByRole("navigation", { name: "Vistas del catálogo de productos" })
+    await expect(tabs.getByRole("link", { name: "Familias EPP" })).toHaveAttribute("aria-current", "page")
+
+    await tabs.getByRole("link", { name: "Productos", exact: true }).click()
+    await expect(page).toHaveURL(/\/admin\/productos$/)
+    await expect(tabs.getByRole("link", { name: "Productos", exact: true })).toHaveAttribute("aria-current", "page")
+
+    const sidebar = page.getByRole("navigation", { name: "Navegación", exact: true })
+    await expect(sidebar.getByRole("link", { name: "Catálogo de EPP" })).toHaveCount(0)
+    await expect(sidebar.getByRole("link", { name: "Catálogos de productos" })).toHaveCount(0)
+
+    const retired = await page.goto("/admin/catalogos-productos")
+    expect(retired?.status()).toBe(404)
+  })
 
   test("el hub de flota enlaza las superficies canónicas", async ({ page }) => {
     await page.goto("/admin/flota-catalogos")

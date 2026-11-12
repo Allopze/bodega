@@ -37,7 +37,7 @@ vi.mock("@/lib/services/module-toggles", async (importOriginal) => ({
 
 await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
-const { updateEppFamilyAction, mergeEppFamiliesAction, setEppFamilyTypeAction, applyEppTypeSuggestionsAction } = await import("@/app/(app)/admin/epps/actions")
+const { updateEppFamilyAction, mergeEppFamiliesAction, setEppFamilyTypeAction, applyEppTypeSuggestionsAction } = await import("@/app/(app)/admin/productos/familias/actions")
 const { buildEppFamilyIdentityKey } = await import("@/lib/services/epp-import")
 const { resolveManualEppFamily } = await import("@/app/(app)/admin/productos/actions/helpers")
 

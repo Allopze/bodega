@@ -20,7 +20,7 @@ import { formatCLP, formatDateTime } from "@/lib/utils"
 import { toggleProductActive, getProductForEdit, prepareAddVariantForProduct, bulkToggleProductActiveAction } from "./actions"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { getProductWarnings, getFamilyWarnings, isProductEditDisabled, type ProductAttributeSummary } from "./product-list.helpers"
-import type { AttributeTemplateOption, SizeFamilyOption, ProductUnitOption } from "./product-form.types"
+import type { SizeFamilyOption } from "./product-form.types"
 import { formatProductVariant, groupProductVariants } from "@/lib/products/variant-grouping"
 import { COLUMNS, CONTRACT } from "./catalog-contract"
 import { categoriesForCatalogProducts } from "@/lib/products/spare-parts-category"
@@ -63,12 +63,10 @@ type ProductFamilyRow = {
   variantSearchText: string
 }
 
-export function ProductList({ products, categories, allSuppliers, units, templates, sizeFamilies, recentBatches }: {
+export function ProductList({ products, categories, allSuppliers, sizeFamilies, recentBatches }: {
   products:      ProductRow[]
   categories:    CategoryItem[]
   allSuppliers:  SupplierItem[]
-  units:         ProductUnitOption[]
-  templates:     AttributeTemplateOption[]
   sizeFamilies:  SizeFamilyOption[]
   recentBatches?: RecentBatch[]
 }) {
@@ -597,8 +595,6 @@ export function ProductList({ products, categories, allSuppliers, units, templat
         }}
         categories={categoriesForCatalogProducts(categories).map((c) => ({ id: c.id, name: c.name, slug: c.slug, isEpp: c.isEpp, requiresPrevencion: c.requiresPrevencion }))}
         allSuppliers={allSuppliers}
-        units={units}
-        templates={templates}
         sizeFamilies={sizeFamilies}
         editProduct={editProductFull}
         addVariantToFamily={addVariantFamily}

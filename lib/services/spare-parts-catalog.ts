@@ -258,7 +258,7 @@ async function normalizeInput(client: typeof db | Tx, input: SparePartInput): Pr
     throw new Error("El precio de referencia debe ser un número no negativo")
   }
 
-  const unitOfMeasure = await resolveActiveUnitCode(input.unitOfMeasure, client)
+  const unitOfMeasure = resolveActiveUnitCode(input.unitOfMeasure)
 
   return {
     name,

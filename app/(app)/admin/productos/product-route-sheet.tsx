@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation"
 import { ProductForm } from "./product-form"
 import type { getProductForEdit } from "./actions"
-import type { AttributeTemplateOption, SizeFamilyOption, ProductUnitOption } from "./product-form.types"
+import type { SizeFamilyOption } from "./product-form.types"
 
 interface Category {
   id: string
@@ -21,15 +21,11 @@ interface Supplier {
 export function ProductRouteSheet({
   categories,
   allSuppliers,
-  units,
-  templates,
   sizeFamilies,
   editProduct,
 }: {
   categories: Category[]
   allSuppliers: Supplier[]
-  units: ProductUnitOption[]
-  templates: AttributeTemplateOption[]
   sizeFamilies: SizeFamilyOption[]
   editProduct?: Awaited<ReturnType<typeof getProductForEdit>>
 }) {
@@ -41,8 +37,6 @@ export function ProductRouteSheet({
       onClose={() => router.push("/admin/productos")}
       categories={categories}
       allSuppliers={allSuppliers}
-      units={units}
-      templates={templates}
       sizeFamilies={sizeFamilies}
       editProduct={editProduct}
       variant="embedded"

@@ -10,7 +10,6 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import type { Session } from "next-auth"
-import { getTableName } from "drizzle-orm"
 
 const mockSetProductSupplierPriceTx = vi.hoisted(() => vi.fn().mockResolvedValue({ changed: true, stale: false }))
 const mockAuthFn = vi.hoisted(() => vi.fn())
@@ -24,26 +23,10 @@ const mockSelectWhere = vi.fn(() => ({
 // encadena `.select().from().where()` y espera el resultado, mientras que
 // otras rutas usan `.select().from()` directo. `then` vive al final de la
 // cadena para que ambas rutas resuelvan correctamente.
-/*
- * CAT-003: la unidad del producto ya no es texto libre, sale del catálogo
- * (`loadActiveUnitCodes`). Este doble tiene que devolverlo, o cualquier alta
- * fallaría aquí por falta de fixture y no por la regla que la prueba mide.
- * `unidadesActivas` es mutable a propósito: hay un caso que la vacía para
- * comprobar que la guarda está de verdad cableada en las acciones.
- */
-let unidadesActivas: Array<{ code: string }> = [{ code: "unidad" }, { code: "par" }, { code: "caja" }]
-const mockSelectFrom = vi.fn((table?: unknown) => {
-  const esCatalogoDeUnidades = Boolean(
-    table && typeof table === "object" && getTableName(table as never) === "product_units",
-  )
-  const filas = esCatalogoDeUnidades ? unidadesActivas : []
-  return {
-    where: esCatalogoDeUnidades
-      ? vi.fn(() => ({ then: (resolve: (rows: unknown[]) => unknown) => resolve(filas) }))
-      : mockSelectWhere,
-    then: (resolve: (rows: unknown[]) => unknown) => resolve(filas),
-  }
-})
+const mockSelectFrom = vi.fn(() => ({
+  where: mockSelectWhere,
+  then: (resolve: (rows: unknown[]) => unknown) => resolve([]),
+}))
 const mockCancelEppImportBatch = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
 // `.values(...)` tiene que ser esperable Y encadenable: el alta de familia usa
 // `.onConflictDoNothing(...).returning(...)` para no reventar cuando dos altas
@@ -233,20 +216,14 @@ describe("admin/productos actions", () => {
      * impide en la base; esto comprueba que el alta lo diga antes, con un
      * mensaje que se puede leer, en vez de reventar con un error del driver.
      */
-    it("rechaza una unidad que no está en el catálogo activo", async () => {
+    it("rechaza una unidad que no está en la lista de unidades", async () => {
       mockAuthFn.mockResolvedValue(makeSession("admin:products"))
-      const previas = unidadesActivas
-      unidadesActivas = [{ code: "unidad" }]
-      try {
-        const { createProduct } = await import("@/app/(app)/admin/productos/actions")
-        const fd = new FormData()
-        fd.set("name", "Aceite"); fd.set("categoryId", "cat-1"); fd.set("unitOfMeasure", "litros")
-        const r = await createProduct({ ok: false }, fd)
-        expect(r.ok).toBe(false)
-        expect(JSON.stringify(r)).toContain("catálogo de unidades")
-      } finally {
-        unidadesActivas = previas
-      }
+      const { createProduct } = await import("@/app/(app)/admin/productos/actions")
+      const fd = new FormData()
+      fd.set("name", "Aceite"); fd.set("categoryId", "cat-1"); fd.set("unitOfMeasure", "litros")
+      const r = await createProduct({ ok: false }, fd)
+      expect(r.ok).toBe(false)
+      expect(JSON.stringify(r)).toContain("unidades de medida")
     })
 
     it("normalizes EPP talla/color options as JSON for request dropdowns", async () => {

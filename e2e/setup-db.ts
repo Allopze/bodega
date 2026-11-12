@@ -405,7 +405,7 @@ async function main() {
 
   /*
    * Admin con permisos parciales: agrupa "admin:products" y
-   * "admin:product_catalogs" (categoría Catálogos, dos de sus ocho ítems) más
+   * "admin:deviation_catalog" (categoría Catálogos, dos de sus ítems) más
    * "admin:notifications" y "admin:smtp" (dos de los cuatro ítems de
    * Comunicaciones e integraciones — dos, no uno, para que esa categoría siga
    * mostrándose como acordeón y no colapse al caso plano de un solo ítem, que
@@ -415,7 +415,7 @@ async function main() {
    * sin ningún admin:* (ninguno), que no distinguen un bug de filtrado por ítem.
    */
   const partialAdminPermissionIds = [
-    "admin:products", "admin:product_catalogs", "admin:notifications", "admin:smtp",
+    "admin:products", "admin:deviation_catalog", "admin:notifications", "admin:smtp",
   ].map((name) => SYSTEM_PERMISSIONS.find((p) => p.name === name)!.id)
   await db.insert(schema.roles).values({
     id: "rol-admin-parcial",

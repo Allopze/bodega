@@ -2710,6 +2710,13 @@
       "when": 1794268934528,
       "tag": "0386_price_history_source_idx",
       "breakpoints": true
+    },
+    {
+      "idx": 387,
+      "version": "7",
+      "when": 1794498472563,
+      "tag": "0387_fixed_product_units",
+      "breakpoints": true
     }
   ]
 }

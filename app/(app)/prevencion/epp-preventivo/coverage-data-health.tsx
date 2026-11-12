@@ -36,7 +36,7 @@ export function CoverageDataHealth({ unclassifiedFamilies, ignoredDeliveries, ca
           {canFix && (
             <>
               {" "}
-              <Link href="/admin/epps" className="font-medium text-[var(--color-primary)] underline">
+              <Link href="/admin/productos/familias" className="font-medium text-[var(--color-primary)] underline">
                 Clasificar en el catálogo de EPP
               </Link>
             </>

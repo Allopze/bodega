@@ -1,6 +1,4 @@
-import { asc } from "drizzle-orm"
-import { db } from "@/db"
-import { productUnits } from "@/db/schema"
+import { PRODUCT_UNITS } from "@/lib/products/units"
 
 export interface SparePartUnit {
   code: string
@@ -9,13 +7,10 @@ export interface SparePartUnit {
 }
 
 /**
- * Catálogo de unidades de medida (`product_units`), activas primero por orden. El formulario ofrece sólo las
- * activas —el servicio rechaza una desactivada— y la ficha usa todas para nombrar la unidad ya guardada.
+ * Las unidades de medida de la plataforma (`PRODUCT_UNITS`), en su orden. Todas
+ * son elegibles; un repuesto con un código histórico fuera de la lista se
+ * muestra con el código tal cual.
  */
 export async function loadSparePartUnits(): Promise<SparePartUnit[]> {
-  const rows = await db
-    .select({ code: productUnits.code, label: productUnits.label, isActive: productUnits.isActive })
-    .from(productUnits)
-    .orderBy(asc(productUnits.sortOrder), asc(productUnits.code))
-  return rows
+  return PRODUCT_UNITS.map((unit) => ({ code: unit.code, label: unit.label, isActive: true }))
 }

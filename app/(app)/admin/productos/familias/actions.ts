@@ -67,11 +67,11 @@ export async function setEppFamilyTypeAction(familyId: string, eppTypeId: string
       oldState: { eppTypeId: family.eppTypeId }, newState: { eppTypeId },
     })
   } catch (e) {
-    logger.error("[admin/epps] setEppFamilyTypeAction", e)
+    logger.error("[admin/productos/familias] setEppFamilyTypeAction", e)
     return { ok: false, message: safeActionMessage(e, "No se pudo actualizar el tipo") }
   }
 
-  revalidatePath("/admin/epps")
+  revalidatePath("/admin/productos/familias")
   return { ok: true, message: "Tipo de EPP actualizado" }
 }
 
@@ -140,13 +140,13 @@ export async function applyEppTypeSuggestionsAction(
       return { written, skipped }
     })
 
-    revalidatePath("/admin/epps")
+    revalidatePath("/admin/productos/familias")
     revalidatePath("/prevencion/epp-preventivo")
     const suffix = applied.skipped > 0 ? ` · ${applied.skipped} se omitió por estar ya clasificada` : ""
     return { ok: true, message: `${applied.written} familia(s) clasificada(s)${suffix}` }
   } catch (e) {
     if (e instanceof EppFamilyValidationError) return { ok: false, message: e.message }
-    logger.error("[admin/epps] applyEppTypeSuggestionsAction", e)
+    logger.error("[admin/productos/familias] applyEppTypeSuggestionsAction", e)
     return { ok: false, message: safeActionMessage(e, "No se pudieron aplicar las sugerencias") }
   }
 }
@@ -217,11 +217,11 @@ export async function mergeEppFamiliesAction(sourceId: string, targetId: string)
       return { sourceName: source.canonicalName, targetName: target.canonicalName }
     })
 
-    revalidatePath("/admin/epps")
+    revalidatePath("/admin/productos/familias")
     return { ok: true, message: `«${merged.sourceName}» se fusionó en «${merged.targetName}»` }
   } catch (e) {
     if (e instanceof EppFamilyValidationError) return { ok: false, message: e.message }
-    logger.error("[admin/epps] mergeEppFamiliesAction", e)
+    logger.error("[admin/productos/familias] mergeEppFamiliesAction", e)
     return { ok: false, message: safeActionMessage(e, "No se pudo fusionar la familia") }
   }
 }
@@ -333,10 +333,10 @@ export async function updateEppFamilyAction(_prev: ActionState, formData: FormDa
     if (e instanceof EppFamilyValidationError) {
       return { ok: false, fieldErrors: { [e.field]: [e.message] } }
     }
-    logger.error("[admin/epps] updateEppFamilyAction", e)
+    logger.error("[admin/productos/familias] updateEppFamilyAction", e)
     return { ok: false, message: safeActionMessage(e, "No se pudo guardar la familia") }
   }
 
-  revalidatePath("/admin/epps")
+  revalidatePath("/admin/productos/familias")
   return { ok: true, message: "Familia actualizada" }
 }

@@ -313,7 +313,7 @@ export function EppFamilyList({ families, eppTypes, categories }: Props) {
 
       <TabsContent value="active">
         <DataTable
-          caption="Catálogo de EPP vigente"
+          caption="Familias EPP vigentes"
           columns={COLUMNS}
           rows={activeRows}
           searchKeys={["canonicalName", "skuSearch", "brand", "model", "certification"]}

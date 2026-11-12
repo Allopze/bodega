@@ -192,10 +192,11 @@ export const productSuppliersRelations = relations(productSuppliers, ({ one }) =
   supplier: one(suppliers, { fields: [productSuppliers.supplierId], references: [suppliers.id] }),
 }))
 
-/* ── Admin: product unit catalog ──────────────────────────────────────────── */
-// Plain-text catalog of units of measure (e.g. "unidad", "kg", "litro"). Used
-// to normalize the `products.unitOfMeasure` field that remains a text column
-// for backwards compatibility. Existing products retain their legacy value.
+/* ── Unidades de medida ───────────────────────────────────────────────────── */
+// Destino de la FK de `products.unit_of_measure`. La lista elegible es fija en
+// código (`lib/products/units.ts`, desde el 2026-11-12); acá además pueden
+// quedar códigos históricos que algún producto todavía usa. Una unidad nueva
+// entra por migración, no por pantalla.
 export const productUnits = pgTable("product_units", {
   id:          text("id").primaryKey(),
   code:        text("code").notNull().unique(),
@@ -206,28 +207,3 @@ export const productUnits = pgTable("product_units", {
   createdAt:   timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:   timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 })
-
-export const productUnitsRelations = relations(productUnits, ({ many }) => ({
-  attributeTemplates: many(productAttributeTemplates),
-}))
-
-/* ── Admin: reusable attribute templates ─────────────────────────────────── */
-// Templates attached to a product category. Reusable across all products that
-// belong to that category.
-export const productAttributeTemplates = pgTable("product_attribute_templates", {
-  id:          text("id").primaryKey(),
-  categoryId:  text("category_id").references(() => productCategories.id, { onDelete: "cascade" }),
-  name:        text("name").notNull(),
-  type:        text("type").notNull(),                                                    // "text" | "select" | "number"
-  options:     text("options"),                                                          // JSON array string for "select"
-  sizeFamily:  text("size_family"),                                                      // canonical family
-  isRequired:  boolean("is_required").notNull().default(false),
-  sortOrder:   integer("sort_order").notNull().default(0),
-  isActive:    boolean("is_active").notNull().default(true),
-  createdAt:   timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
-  updatedAt:   timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
-})
-
-export const productAttributeTemplatesRelations = relations(productAttributeTemplates, ({ one }) => ({
-  category: one(productCategories, { fields: [productAttributeTemplates.categoryId], references: [productCategories.id] }),
-}))
