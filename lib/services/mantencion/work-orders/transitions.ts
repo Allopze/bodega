@@ -1,6 +1,6 @@
-import { and, eq, inArray, isNull, sql } from "drizzle-orm"
+import { and, eq, inArray, isNull, ne, notInArray, sql } from "drizzle-orm"
 import type { Tx } from "@/db"
-import { mantDrivers, mantWorkOrderItems, mantWorkshops } from "@/db/schema"
+import { mantDrivers, mantWorkOrderItems, mantWorkOrders, mantWorkshops } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import type { WorkOrderEntryPayload } from "@/lib/mantencion/contracts"
 import {
@@ -475,6 +475,16 @@ export async function reopenWorkOrder(actor: WorkOrderActor, input: Base & { rea
   return runLocked(actor, input, async (ctx) => {
     assertAct(canActOnWorkOrder(actor, ctx.ot, "reopen"))
     const reason = assertReason("reopen", input.reason)
+    // Un hallazgo puede tener una OT cerrada y otra viva (re-derivado tras cancelar la CAPA):
+    // reabrir la vieja chocaría con el índice único y mezclaría dos intervenciones.
+    if (ctx.ot.inspectionFindingId) {
+      const [live] = await ctx.tx.select({ folio: mantWorkOrders.folio }).from(mantWorkOrders).where(and(
+        eq(mantWorkOrders.inspectionFindingId, ctx.ot.inspectionFindingId),
+        ne(mantWorkOrders.id, ctx.ot.id),
+        notInArray(mantWorkOrders.status, ["anulada", "cerrada"]),
+      )).limit(1)
+      if (live) refuse(`El hallazgo ya tiene otra OT abierta (${live.folio}): sigue el trabajo en esa en vez de reabrir ésta.`, "conflict")
+    }
     await supersedeWorkOrderCapaEvidence(ctx.tx, {
       workOrder: { id: ctx.ot.id, inspectionFindingId: ctx.ot.inspectionFindingId },
       actorUserId: actor.userId,

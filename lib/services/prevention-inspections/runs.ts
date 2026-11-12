@@ -1,4 +1,4 @@
-import { and, eq, inArray, ne, sql } from "drizzle-orm"
+import { and, eq, inArray, ne, notInArray, sql } from "drizzle-orm"
 import { z } from "zod"
 import { db, type Tx } from "@/db"
 import {
@@ -941,10 +941,13 @@ export async function createFindingCapa(input: unknown, access: InspectionAccess
 
       // Idempotencia: un hallazgo tiene a lo más una OT viva (índice único
       // parcial). Si ya existe —p. ej. una derivación anterior que no llegó a
-      // enlazar la CAPA—, se reutiliza en vez de chocar con el índice.
+      // enlazar la CAPA—, se reutiliza en vez de chocar con el índice. Una OT
+      // cerrada no se reutiliza: si se vuelve a derivar es porque hace falta
+      // trabajo nuevo (Prevención canceló la CAPA tras cerrarla), y la CAPA nueva
+      // se acredita con una OT nueva.
       const [existing] = await tx.select({ id: mantWorkOrders.id, folio: mantWorkOrders.folio })
         .from(mantWorkOrders)
-        .where(and(eq(mantWorkOrders.inspectionFindingId, data.findingId), ne(mantWorkOrders.status, "anulada")))
+        .where(and(eq(mantWorkOrders.inspectionFindingId, data.findingId), notInArray(mantWorkOrders.status, ["anulada", "cerrada"])))
         .limit(1)
       if (existing) {
         workOrder = { ...existing, created: false }

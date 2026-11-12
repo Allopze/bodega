@@ -1,0 +1,2 @@
+DROP INDEX IF EXISTS "mant_work_orders_finding_unique";--> statement-breakpoint
+CREATE UNIQUE INDEX "mant_work_orders_finding_unique" ON "mant_work_orders" USING btree ("inspection_finding_id") WHERE "mant_work_orders"."inspection_finding_id" IS NOT NULL AND "mant_work_orders"."status" NOT IN ('anulada', 'cerrada');

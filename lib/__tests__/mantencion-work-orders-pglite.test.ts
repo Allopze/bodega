@@ -813,6 +813,22 @@ describe("OT de un hallazgo de inspección: la conformidad acredita la CAPA", ()
     expect((await eventsOf(id)).map((event) => event.type)).not.toContain("conformed")
   })
 
+  it("una OT cerrada no se reabre si el hallazgo ya tiene otra OT abierta (re-derivado)", async () => {
+    const { findingId } = await seedFindingWithCapa()
+    const first = await otFromFinding(findingId)
+    ok(await transitions.assignWorkOrder(await actorOf(IDS.jefe), { workOrderId: first, assignedToUserId: IDS.mecBio }))
+    ok(await transitions.startWorkOrder(await actorOf(IDS.mecBio), { workOrderId: first, entry: entry() }))
+    await toConformed(first)
+    ok(await conform(first))
+    expect((await row(first)).status).toBe("cerrada")
+    // Cerrada la primera, el índice admite otra OT viva para el mismo hallazgo.
+    const second = await otFromFinding(findingId)
+    expect(second).not.toBe(first)
+    const blocked = refused(await transitions.reopenWorkOrder(await actorOf(IDS.jefe), { workOrderId: first, reason: "La falla reapareció en terreno" }))
+    expect(blocked.message).toMatch(/ya tiene otra OT abierta/)
+    expect((await row(first)).status).toBe("cerrada")
+  })
+
   it("un hallazgo ya cerrado por Prevención sin CAPA no bloquea la conformidad", async () => {
     const { findingId } = await seedFindingWithCapa()
     const id = await otFromFinding(findingId)

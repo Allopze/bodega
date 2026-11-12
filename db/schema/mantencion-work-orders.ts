@@ -103,9 +103,11 @@ export const mantWorkOrders = pgTable("mant_work_orders", {
   }).onDelete("set null"),
   uniqueIndex("mant_work_orders_folio_unique").on(table.folio),
   uniqueIndex("mant_work_orders_client_request_unique").on(table.clientRequestId),
-  // Un hallazgo deriva a lo más una OT viva; anularla permite derivar otra.
+  // Un hallazgo deriva a lo más una OT viva. Anularla o cerrarla permite derivar otra:
+  // si Prevención cancela la CAPA después de cerrada la OT y vuelve a derivar, el
+  // trabajo nuevo va en una OT nueva y la cerrada queda como historia (2026-11-12).
   uniqueIndex("mant_work_orders_finding_unique").on(table.inspectionFindingId)
-    .where(sql`${table.inspectionFindingId} IS NOT NULL AND ${table.status} <> 'anulada'`),
+    .where(sql`${table.inspectionFindingId} IS NOT NULL AND ${table.status} NOT IN ('anulada', 'cerrada')`),
   index("mant_work_orders_status_idx").on(table.status),
   index("mant_work_orders_worksite_status_idx").on(table.worksiteId, table.status),
   index("mant_work_orders_assigned_status_idx").on(table.assignedToUserId, table.status),
