@@ -166,7 +166,7 @@ test.describe("E2E 6 · Equipos", () => {
     const preview = page.getByRole("region", { name: "Vista previa de la importación" })
     await expect(preview.getByRole("row").filter({ hasText: "QA-IM2" })).toContainText("Con error")
     await expect(preview.getByRole("row").filter({ hasText: "QA-IM2" })).toContainText(/patente válida/)
-    await expect(preview.getByRole("row").filter({ hasText: "QA-IM2" })).toContainText(/Marca inexistente/)
+    // Una marca que no está en la lista ya no es error: se ofrece crearla con su casilla (plan 2, 2026-11-12).
     await expect(preview.getByRole("row").filter({ hasText: "QA-IM1" })).toContainText("Nuevo")
     await expect(preview.getByRole("row").filter({ hasText: "QA-EQ1" })).toContainText("Modelo: R500 → R600")
     // La vista previa no escribe nada.
