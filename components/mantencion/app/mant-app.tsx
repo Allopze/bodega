@@ -14,7 +14,7 @@ import { signOutToMantLogin } from "@/lib/mantencion/client/session"
 import type { DeviceAccount, QueueRecordItem } from "@/lib/mantencion/client/types"
 import { plural } from "@/lib/mantencion/format"
 import { AppActionsProvider, AppDataProvider, type AppActions } from "./app-context"
-import { Broken, Loading, NeedSignal, NoPermission } from "./boot-screens"
+import { Broken, Loading, NeedSignal, NoPermission, Revoked } from "./boot-screens"
 import { ConfirmDialog, CONTENT_ID, MODALS_ID } from "./dialog"
 import { DoneScreen } from "./done-screen"
 import { FlowScreen } from "./flow-screen"
@@ -171,6 +171,7 @@ export function MantApp({ sessionUser, appVersion, renderedAt }: MantAppProps) {
   if (boot.status === "error") content = <Broken message={boot.message} />
   else if (boot.status === "loading") content = <Loading />
   else if (boot.result.blocker === "no-permission") content = <NoPermission />
+  else if (boot.result.blocker === "revoked") content = <Revoked onSignIn={() => void signOutToMantLogin()} />
   else if (boot.result.blocker === "needs-signal" || !activeUserId) content = <NeedSignal onRetry={() => window.location.reload()} />
   else if (boot.result.pinSetupFor && !pinSetupDone) {
     content = <PinSetup userId={boot.result.pinSetupFor} name={sessionUser.name} onDone={() => setPinSetupDone(true)} />

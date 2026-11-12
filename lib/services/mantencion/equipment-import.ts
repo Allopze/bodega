@@ -2,7 +2,7 @@ import ExcelJS from "exceljs"
 import { db, type Tx } from "@/db"
 import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
-import { cleanName, nameKey, normalizeCode } from "@/lib/mantencion/normalize"
+import { cleanName, findByNameKey, nameKey, normalizeCode, normalizePlate, parseLocaleNumber } from "@/lib/mantencion/normalize"
 import { EXCEL_DATE_FORMAT } from "@/lib/reports/excel-dates"
 import { xlsxToBase64 } from "@/lib/reports/export-module/excel-builder"
 import type { MantActionResult } from "./result"
@@ -15,6 +15,7 @@ import {
   type EquipmentCatalogs, type EquipmentCurrent, type EquipmentInput, type ResolvedEquipment, type VehicleIdentity,
 } from "./equipment-resolve"
 import { styleHeaderRow } from "./export-equipment"
+import { listIncorporationCandidates } from "./fleet-incorporation"
 import { resolveOrCreateWorksite } from "./worksites"
 
 /**
@@ -97,16 +98,6 @@ export async function parseEquipmentWorkbook(buffer: ArrayBuffer): Promise<{ ok:
   return { ok: true, rows }
 }
 
-/** «40.312» → 40312; «1.234,5» → 1234.5; «1234.5» → 1234.5. */
-function parseNumberText(text: string): number | null | "invalid" {
-  if (!text) return null
-  let normalized = text.replace(/\s/g, "")
-  if (normalized.includes(",")) normalized = normalized.replace(/\./g, "").replace(",", ".")
-  else if (/^\d{1,3}(\.\d{3})+$/.test(normalized)) normalized = normalized.replace(/\./g, "")
-  if (!/^\d+(\.\d+)?$/.test(normalized)) return "invalid"
-  return Number(normalized)
-}
-
 /** `dd-mm-aaaa`, `dd/mm/aaaa` o `aaaa-mm-dd` → `aaaa-mm-dd`. */
 function parseDateText(text: string): string | null | "invalid" {
   if (!text) return null
@@ -128,6 +119,8 @@ export interface ImportRowResult {
 }
 
 export interface ImportSummary {
+  /** Filas con error al confirmar (la confirmación revalida: pueden diferir de la vista previa). */
+  errorRows?: ImportRowResult[]
   total: number
   created: number
   incorporated: number
@@ -147,13 +140,56 @@ type PlanItem =
 
 const SIN_PATENTE = "sin patente"
 
-/** Arma el `EquipmentInput` de una fila: la fila gana; lo que viene en blanco conserva la ficha actual. */
-function inputFromRow(raw: RawImportRow, current: EquipmentCurrent | null, catalogs: EquipmentCatalogs) {
+/** Vehículo cuya patente (normalizada) coincide con la de la fila. */
+function findIdentityByPlate(identities: readonly VehicleIdentity[], rawPlate: string): VehicleIdentity | null {
+  const key = normalizePlate(rawPlate)
+  if (!key) return null
+  return identities.find((item) => (normalizePlate(item.plate) ?? normalizeCode(item.plate)) === key) ?? null
+}
+
+/**
+ * Lo que la fila querría cambiar de la FLOTA en un vehículo que ya existe.
+ * Faena, patente y tipo son datos de la flota compartida: la planilla de
+ * Mantención no los cambia (decisión 2026-11-11, auditoría I-1/I-2). Un
+ * traslado se hace en la ficha, que exige administrar la faena de origen y la
+ * de destino. Se revisa ANTES de resolver: así una faena mal escrita nunca
+ * llega a crearse.
+ */
+function fleetConflicts(raw: RawImportRow, code: string, fleet: VehicleIdentity, catalogs: EquipmentCatalogs): string[] {
+  const messages: string[] = []
+  if (raw.worksite && fleet.worksiteId) {
+    const typed = findByNameKey(catalogs.worksites, raw.worksite)
+    if (typed?.id !== fleet.worksiteId) {
+      const currentName = catalogs.worksites.find((item) => item.id === fleet.worksiteId)?.name ?? "otra"
+      messages.push(`La faena de ${code} es ${currentName}: la planilla no traslada equipos. Para moverlo, usa su ficha.`)
+    }
+  }
+  if (raw.type && fleet.equipmentTypeId) {
+    const typed = catalogs.types.find((item) => nameKey(item.name) === nameKey(raw.type))
+    if (typed && typed.id !== fleet.equipmentTypeId) {
+      const currentName = catalogs.types.find((item) => item.id === fleet.equipmentTypeId)?.name ?? "otro tipo"
+      messages.push(`${code} es «${currentName}» en la flota: la planilla no cambia el tipo. Cámbialo en su ficha.`)
+    }
+  }
+  if (raw.plate) {
+    const typed = nameKey(raw.plate) === SIN_PATENTE ? code : (normalizePlate(raw.plate) ?? normalizeCode(raw.plate))
+    const current = normalizePlate(fleet.plate) ?? normalizeCode(fleet.plate)
+    if (typed !== current) messages.push(`La patente de ${code} es ${fleet.plate}: la planilla no la cambia. Corrígela en su ficha.`)
+  }
+  return messages
+}
+
+/** Arma el `EquipmentInput` de una fila: la fila gana; lo que viene en blanco conserva la ficha (o la flota). */
+function inputFromRow(raw: RawImportRow, current: EquipmentCurrent | null, fleet: VehicleIdentity | null, catalogs: EquipmentCatalogs) {
   const pre: Record<string, string> = {}
   const keep = current?.fields
-  const typeText = raw.type || keep?.type || ""
-  const type = typeText ? catalogs.types.find((item) => item.isActive && nameKey(item.name) === nameKey(typeText)) : undefined
-  if (typeText && !type) pre.equipmentTypeId = `El tipo «${typeText}» no existe. Revisa la hoja «Listas» de la plantilla.`
+  let typeId = fleet?.equipmentTypeId ?? ""
+  if (!typeId) {
+    const typeText = raw.type || keep?.type || ""
+    const type = typeText ? catalogs.types.find((item) => item.isActive && nameKey(item.name) === nameKey(typeText)) : undefined
+    if (typeText && !type) pre.equipmentTypeId = `El tipo «${typeText}» no existe. Revisa la hoja «Listas» de la plantilla.`
+    typeId = type?.id ?? ""
+  }
   const brandText = raw.brand || keep?.brand || ""
   const brand = brandText ? catalogs.brands.find((item) => item.isActive && nameKey(item.name) === nameKey(brandText)) : undefined
   if (brandText && !brand) pre.brandId = `La marca «${brandText}» no está en la lista de marcas.`
@@ -163,10 +199,12 @@ function inputFromRow(raw: RawImportRow, current: EquipmentCurrent | null, catal
     : undefined
   if (scheduleText && nameKey(scheduleText) !== "sin pauta" && !schedule) pre.scheduleId = `La pauta «${scheduleText}» no existe.`
 
-  const yearText = raw.year || (keep?.year != null ? String(keep.year) : "")
+  // Al incorporar, lo que la fila deja en blanco se conserva de la flota (antes se borraba el modelo y el año).
+  const keepYear = keep ? keep.year : fleet?.year ?? null
+  const yearText = raw.year || (keepYear != null ? String(keepYear) : "")
   const year = yearText ? Number(yearText) : null
   if (yearText && !/^\d{4}$/.test(yearText)) pre.year = "Año no válido."
-  const reading = raw.readingNumber ?? (raw.reading ? parseNumberText(raw.reading) : (keep?.initialReading ?? null))
+  const reading = raw.readingNumber ?? (raw.reading ? parseLocaleNumber(raw.reading) : (keep?.initialReading ?? null))
   if (reading === "invalid") pre.initialReading = "La lectura debe ser un número."
   const date = parseDateText(raw.readingDate)
   if (date === "invalid") pre.initialReadingDate = "Escribe la fecha como dd-mm-aaaa."
@@ -174,14 +212,15 @@ function inputFromRow(raw: RawImportRow, current: EquipmentCurrent | null, catal
   const noPlate = raw.plate ? nameKey(raw.plate) === SIN_PATENTE : (keep?.noPlate ?? false)
   const input: EquipmentInput = {
     code: raw.code,
-    plate: noPlate ? "" : raw.plate || keep?.plate || "",
+    plate: noPlate ? "" : raw.plate || keep?.plate || fleet?.plate || "",
     noPlate,
-    equipmentTypeId: type?.id ?? "",
+    equipmentTypeId: typeId,
     brandId: brand?.id ?? "",
-    model: raw.model || keep?.model || "",
+    model: raw.model || (keep ? keep.model : fleet?.model) || "",
     year: year !== null && Number.isInteger(year) ? year : null,
-    worksiteId: NEW_WORKSITE,
-    newWorksiteName: raw.worksite || keep?.worksite || "",
+    // Un vehículo que ya existe conserva su faena: va por id, no por nombre.
+    worksiteId: fleet?.worksiteId ?? NEW_WORKSITE,
+    newWorksiteName: fleet?.worksiteId ? "" : raw.worksite || keep?.worksite || "",
     scheduleId: schedule?.id ?? null,
     initialReading: reading === "invalid" ? null : reading,
     initialReadingDate: date === "invalid" ? null : date,
@@ -213,15 +252,36 @@ async function planImport(client: Pick<Tx, "select">, rows: RawImportRow[], cont
     seen.set(code, raw.row)
 
     const identity = findIdentityByCode(catalogs.identities, code)
+    // Un vehículo de la flota se reconoce por código o, si el código es nuevo, por patente.
+    const byPlate = !identity && raw.plate && nameKey(raw.plate) !== SIN_PATENTE ? findIdentityByPlate(catalogs.identities, raw.plate) : null
+    if (byPlate?.code && normalizeCode(byPlate.code) !== code) {
+      plan.push(fail(raw, [`La patente ${byPlate.plate} es del equipo ${byPlate.code} en la flota: usa ese código en la fila.`]))
+      continue
+    }
+    const existing = identity ?? byPlate
+    // Sólo cuenta como «de la flota» un vehículo guardado (las altas de este mismo archivo no tienen faena todavía).
+    const fleet = existing?.worksiteId ? existing : null
     const current = identity?.hasProfile ? currents.get(identity.id) ?? null : null
     if (current && !current.active) {
       plan.push(fail(raw, [`El equipo ${code} está dado de baja: reactívalo desde su ficha antes de actualizarlo.`]))
       continue
     }
-    const { input, pre } = inputFromRow(raw, current, catalogs)
+    if (fleet) {
+      // Alcance de ORIGEN: la faena que el vehículo tiene hoy (auditoría I-1/I-2).
+      if (!isWorksiteInScope(context.scope, fleet.worksiteId)) {
+        plan.push(fail(raw, ["Ese equipo es de una faena que no administras: no puedes importarlo."]))
+        continue
+      }
+      const conflicts = fleetConflicts(raw, code, fleet, catalogs)
+      if (conflicts.length) { plan.push(fail(raw, conflicts)); continue }
+    }
+    const { input, pre } = inputFromRow(raw, current, fleet, catalogs)
     const hasPre = Object.keys(pre).length > 0
     // Con errores de lectura de la fila no se crea la faena nueva: la fila no se va a importar.
-    const resolved = await resolveEquipment(client, input, { current, catalogs, createWorksite: hasPre ? undefined : context.createWorksite })
+    const resolved = await resolveEquipment(client, input, {
+      current, catalogs, keepWorksiteId: fleet?.worksiteId ?? null,
+      createWorksite: hasPre ? undefined : context.createWorksite,
+    })
     if (!resolved.ok) {
       plan.push(fail(raw, Object.values({ ...resolved.fieldErrors, ...pre })))
       continue
@@ -240,7 +300,12 @@ async function planImport(client: Pick<Tx, "select">, rows: RawImportRow[], cont
     if (!current) {
       const incorporate = resolved.incorporate
       if (incorporate) Object.assign(incorporate, { code: value.code, plate: value.plate, hasProfile: true })
-      else catalogs.identities.push({ id: `import-fila-${raw.row}`, code: value.code, plate: value.plate, isActive: true, hasProfile: true })
+      else {
+        catalogs.identities.push({
+          id: `import-fila-${raw.row}`, code: value.code, plate: value.plate, isActive: true, hasProfile: true,
+          worksiteId: null, equipmentTypeId: null,
+        })
+      }
       plan.push({
         kind: incorporate ? "incorporate" : "create", resolved: value, incorporate,
         result: { row: raw.row, code, kind: incorporate ? "incorporate" : "create", label, messages: [] },
@@ -311,12 +376,13 @@ export async function commitEquipmentImport(actor: MantActor, buffer: ArrayBuffe
     const summary = summarize(plan)
     // Las faenas se crearon durante la validación: se informan las creadas, ya no las pendientes.
     summary.newWorksites = createdWorksites
+    summary.errorRows = plan.filter((item) => item.kind === "error").map((item) => item.result)
     const written = summary.created + summary.incorporated + summary.updated
     if (written > 0) {
       await recordAudit({
         userId: actor.userId, userEmail: actor.email ?? undefined, action: "create",
         entityType: "mant_equipment_import", entityId: nanoid(),
-        newState: { fileName: cleanName(fileName).slice(0, 120), ...summary },
+        newState: { fileName: cleanName(fileName).slice(0, 120), ...summary, errorRows: undefined },
       }, tx)
     }
     const parts = [
@@ -330,15 +396,43 @@ export async function commitEquipmentImport(actor: MantActor, buffer: ArrayBuffe
   })
 }
 
-/** Plantilla descargable: hoja «Equipos» vacía con listas desplegables, y hojas de instrucciones y valores válidos. */
-export async function buildEquipmentTemplate(): Promise<{ base64: string; filename: string }> {
+/**
+ * Plantilla descargable. La hoja «Equipos» viene con los vehículos de la flota
+ * (del alcance de quien descarga) que aún no están en Mantención: código,
+ * patente, tipo y faena llenos y bloqueados —la planilla no los cambia—, y la
+ * marca sugerida; sólo falta completar marca, pauta y lectura. Debajo se pueden
+ * agregar altas nuevas. Trae además las hojas de instrucciones y valores válidos.
+ */
+export async function buildEquipmentTemplate(scope: MantWorksiteScope = "all"): Promise<{ base64: string; filename: string }> {
   const catalogs = await loadEquipmentCatalogs(db)
+  const candidates = (await listIncorporationCandidates(scope, catalogs)).filter((item) => !item.blocker).slice(0, IMPORT_MAX_ROWS)
   const workbook = new ExcelJS.Workbook()
   const sheet = workbook.addWorksheet("Equipos")
   sheet.columns = COLUMNS.map(({ header, key, width }) => ({ header, key, width }))
   styleHeaderRow(sheet, COLUMNS.length)
   sheet.getColumn("readingDate").numFmt = EXCEL_DATE_FORMAT
   sheet.getColumn("reading").numFmt = "#,##0"
+  const brandName = new Map(catalogs.brands.map((brand) => [brand.id, brand.name]))
+  const scheduleName = new Map(catalogs.schedules.map((schedule) => [schedule.id, schedule.name]))
+  for (const item of candidates) {
+    sheet.addRow({
+      code: item.code, plate: item.code && normalizeCode(item.plate) === normalizeCode(item.code) ? "Sin patente" : item.plate,
+      type: item.typeName, brand: item.suggestedBrandId ? brandName.get(item.suggestedBrandId) : undefined,
+      model: item.model ?? undefined, year: item.year ?? undefined, worksite: item.worksiteName,
+      schedule: item.suggestedScheduleId ? scheduleName.get(item.suggestedScheduleId) : undefined,
+    })
+  }
+  // Bloqueo: sólo las celdas de la flota en las filas precargadas. El resto (y las filas nuevas) se edita.
+  const lastEditableRow = IMPORT_MAX_ROWS + 1
+  const fleetLocked = new Set(["A", "B", "C", "G"])
+  for (let row = 2; row <= lastEditableRow; row++) {
+    for (const column of ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"]) {
+      sheet.getCell(`${column}${row}`).protection = { locked: row <= candidates.length + 1 && fleetLocked.has(column) }
+    }
+  }
+  if (candidates.length > 0) {
+    await sheet.protect("", { selectLockedCells: true, selectUnlockedCells: true, formatColumns: true, formatRows: true, autoFilter: true })
+  }
 
   const lists = workbook.addWorksheet("Listas")
   const types = catalogs.types.filter((item) => item.isActive && item.unit).sort((a, b) => a.name.localeCompare(b.name, "es"))
@@ -346,20 +440,23 @@ export async function buildEquipmentTemplate(): Promise<{ base64: string; filena
   const sites = catalogs.worksites.filter((item) => item.isActive).sort((a, b) => a.name.localeCompare(b.name, "es"))
   const schedules = [...catalogs.schedules].sort((a, b) => a.name.localeCompare(b.name, "es"))
   const lastRow = (count: number) => Math.max(2, count + 1)
+  const unitLabel = (unit: string | null | undefined) => (unit ? (unit === "km" ? "kilómetros" : "horas") : undefined)
   lists.columns = [
     { header: "Tipo de equipo", key: "type", width: 24 }, { header: "Se mide en", key: "unit", width: 12 },
-    { header: "Marca", key: "brand", width: 18 }, { header: "Faena", key: "site", width: 22 }, { header: "Pauta", key: "schedule", width: 26 },
+    { header: "Marca", key: "brand", width: 18 }, { header: "Faena", key: "site", width: 22 },
+    { header: "Pauta", key: "schedule", width: 26 }, { header: "Pauta se mide en", key: "scheduleUnit", width: 16 },
   ]
   const longest = Math.max(types.length, brands.length, sites.length, schedules.length)
   for (let index = 0; index < longest; index++) {
     lists.addRow({
-      type: types[index]?.name, unit: types[index] ? (types[index]!.unit === "km" ? "kilómetros" : "horas") : undefined,
-      brand: brands[index]?.name, site: sites[index]?.name, schedule: schedules[index]?.name,
+      type: types[index]?.name, unit: unitLabel(types[index]?.unit),
+      brand: brands[index]?.name, site: sites[index]?.name,
+      schedule: schedules[index]?.name, scheduleUnit: unitLabel(schedules[index]?.unit),
     })
   }
-  styleHeaderRow(lists, 5)
+  styleHeaderRow(lists, 6)
   const dropdown = (column: string, key: string, count: number) => {
-    for (let row = 2; row <= 501; row++) {
+    for (let row = 2; row <= lastEditableRow; row++) {
       sheet.getCell(`${key}${row}`).dataValidation = {
         type: "list", allowBlank: true, formulae: [`Listas!$${column}$2:$${column}$${lastRow(count)}`],
         // Aviso, no bloqueo: una faena nueva se puede escribir; el resto lo valida la vista previa.
@@ -381,7 +478,10 @@ export async function buildEquipmentTemplate(): Promise<{ base64: string; filena
     "• Tipo de equipo, Marca y Pauta deben ser los de la hoja «Listas». La Marca es de lista cerrada. La pauta debe medirse en la misma unidad que el tipo.",
     "• Faena: si no existe, se creará con ese nombre (si ya existe con otro acento o mayúsculas, se usa la existente).",
     "• Lectura inicial: kilómetros u horas actuales; sirve para calcular la próxima mantención antes del primer registro. Fecha de la lectura: dd-mm-aaaa (si la dejas vacía, hoy).",
+    "• Las primeras filas ya traen los vehículos de la flota que aún no están en Mantención: completa su Marca, Pauta y Lectura. Su código, patente, tipo y faena vienen de la flota y no se pueden cambiar aquí.",
     "• Si el código ya existe, la fila actualiza ese equipo: lo que dejes en blanco no se toca. Si el vehículo ya estaba en la flota sin mantención, se incorpora.",
+    "• Faena, patente y tipo de un vehículo que ya existe no se cambian con esta planilla: un traslado se hace en la ficha del equipo.",
+    "• Para quitarle la pauta a un equipo, escribe «Sin pauta» en la columna Pauta.",
     "• Esta planilla no da de baja ni reactiva equipos, y no cambia la lectura inicial de un equipo que ya tiene registros.",
     `• Hasta ${IMPORT_MAX_ROWS.toLocaleString("es-CL")} filas por archivo. Antes de importar verás una vista previa con las filas válidas y las que traen error.`,
   ]) help.addRow({ text: line })

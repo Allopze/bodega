@@ -74,6 +74,11 @@ describe("arranque de la app: qué cuenta queda activa", () => {
     expect(result.blocker).toBe("needs-signal")
   })
 
+  it("credencial revocada por jefatura (403 «revoked»): pide entrar de nuevo, no «sin permiso»", async () => {
+    const result = await open({ sessionUser: user("u-1"), register: fails({ kind: "auth", status: 403, code: "revoked", message: "revocado" }) })
+    expect(result.blocker).toBe("revoked")
+  })
+
   it("sin permiso (403) lo dice y no deja la cuenta activa", async () => {
     const result = await open({ sessionUser: user("u-1"), register: fails({ kind: "auth", status: 403, message: "sin permiso" }) })
     expect(result.blocker).toBe("no-permission")

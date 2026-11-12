@@ -46,8 +46,11 @@ const {
 const { commitEquipmentImport } = await import("@/lib/services/mantencion/equipment-import")
 const { assignEquipment } = await import("@/lib/services/mantencion/schedule-assign")
 const {
-  DEVICE_OUT_OF_SCOPE, authenticateDeviceToken, issueDeviceCredential, listDeviceCredentials, revokeDeviceCredential,
+  DEVICE_OUT_OF_SCOPE, DeviceReissueBlockedError, authenticateDeviceToken, issueDeviceCredential, listDeviceCredentials, revokeDeviceCredential,
 } = await import("@/lib/services/mantencion/device-credentials")
+const { authenticateSyncRequest } = await import("@/lib/services/mantencion/sync-auth")
+const { listIncorporationCandidates, incorporateFleetVehicles } = await import("@/lib/services/mantencion/fleet-incorporation")
+const { buildEquipmentTemplate } = await import("@/lib/services/mantencion/equipment-import")
 const { loadAppHistory } = await import("@/lib/services/mantencion/app-history")
 
 // ── Actores ─────────────────────────────────────────────────────────────────
@@ -387,6 +390,56 @@ describe("A4: administrar equipos no alcanza a las faenas que no se ven", () => 
     expect(codes).toContain("IM-810")
     expect(codes).not.toContain("IM-811")
   })
+
+  // Auditoría 2026-11-11 (I-1/I-2): la planilla no traslada ni edita equipos de otra faena.
+  it("la importación no mueve a su faena ni edita un equipo de otra faena", async () => {
+    const encargado = await equipmentActor(IDS.supBio)
+    const buffer = await workbookBuffer([["KA-941", null, null, null, "ROBADO", null, "Biodiversa", null, null, null]])
+    const result = await commitEquipmentImport(encargado, buffer, "equipos.xlsx")
+    expect(result).toMatchObject({ ok: true, data: { updated: 0, errors: 1 } })
+    const [cho] = await testDb.select().from(schema.fuelVehicles).where(eq(schema.fuelVehicles.id, choVehicleId))
+    expect(cho).toMatchObject({ worksiteId: IDS.wsCho })
+    expect(cho?.model).not.toBe("ROBADO")
+  })
+
+  it("la importación no incorpora un vehículo de la flota de otra faena, ni el formulario", async () => {
+    await testDb.insert(schema.fuelVehicles).values({
+      id: "veh-flota-cho", plate: "PRST-55", code: "FL-77", type: "camion", equipmentTypeId: "fet-test-km", worksiteId: IDS.wsCho, meterType: "odometer",
+    })
+    const encargado = await equipmentActor(IDS.supBio)
+    const porPlanilla = await commitEquipmentImport(encargado, await workbookBuffer([["FL-77", "PRST-55", "Camión", "Scania", null, null, "Biodiversa", null, null, null]]), "equipos.xlsx")
+    expect(porPlanilla).toMatchObject({ ok: true, data: { incorporated: 0, errors: 1 } })
+    const porFormulario = await createEquipment(encargado, {
+      code: "FL-77", plate: "PRST-55", noPlate: false, equipmentTypeId: "fet-test-km", brandId: IDS.brandScania,
+      model: "", year: null, worksiteId: IDS.wsBio, newWorksiteName: "", scheduleId: null, initialReading: null, initialReadingDate: null,
+    })
+    expect(porFormulario).toMatchObject({ ok: false, fieldErrors: { code: expect.stringContaining("no administras") } })
+    const [v] = await testDb.select().from(schema.fuelVehicles).where(eq(schema.fuelVehicles.id, "veh-flota-cho"))
+    expect(v?.worksiteId).toBe(IDS.wsCho)
+  })
+
+  it("ni la jefatura traslada por planilla: faena y patente de la flota son de sólo lectura", async () => {
+    const jefe = await equipmentActor(IDS.jefe)
+    const result = await commitEquipmentImport(jefe, await workbookBuffer([
+      ["KA-941", null, null, null, null, null, "Biodiversa", null, null, null],
+      ["KA-941X", "ZXCV-11", "Camión", "Scania", null, null, "Cholguán", null, null, null], // patente de KA-941 con otro código
+    ]), "equipos.xlsx")
+    expect(result).toMatchObject({ ok: true, data: { updated: 0, created: 0, errors: 2 } })
+    // Y una fila que sólo trae el código y la faena actual pasa (sin cambios).
+    const same = await commitEquipmentImport(jefe, await workbookBuffer([["KA-941", "ZXCV-11", null, null, null, null, "Cholguán", null, null, null]]), "equipos.xlsx")
+    expect(same).toMatchObject({ ok: true, data: { errors: 0 } })
+  })
+
+  it("un equipo de una faena desactivada se puede seguir editando sin trasladarlo (I-3)", async () => {
+    const jefe = await equipmentActor(IDS.jefe)
+    await testDb.update(schema.worksites).set({ isActive: false }).where(eq(schema.worksites.id, IDS.wsCho))
+    try {
+      const result = await commitEquipmentImport(jefe, await workbookBuffer([["KA-941", null, null, null, "R999", null, null, null, null, null]]), "equipos.xlsx")
+      expect(result).toMatchObject({ ok: true, data: { updated: 1, errors: 0 } })
+    } finally {
+      await testDb.update(schema.worksites).set({ isActive: true }).where(eq(schema.worksites.id, IDS.wsCho))
+    }
+  })
 })
 
 async function workbookBuffer(rows: Array<Array<string | number | null>>): Promise<ArrayBuffer> {
@@ -432,6 +485,33 @@ describe("A5: la lista y la revocación de dispositivos respetan la faena", () =
 
     expect((await revokeDeviceCredential({ credentialId: propio.credentialId, actorUserId: actor.userId, actor })).ok).toBe(true)
     expect((await revokeDeviceCredential({ credentialId: ajeno.credentialId, actorUserId: IDS.jefe, actor: await deviceActor(IDS.jefe) })).ok).toBe(true)
+  })
+  // Auditoría 2026-11-11: revocar no servía si la app volvía a pedir credencial con la misma sesión web.
+  it("tras una revocación de jefatura, sólo una sesión iniciada DESPUÉS reemite la credencial", async () => {
+    const antes = Date.now() - 60_000
+    const emitida = await issueDeviceCredential({ userId: IDS.mecCho, deviceId: "tab-robada" })
+    expect((await revokeDeviceCredential({ credentialId: emitida.credentialId, actorUserId: IDS.jefe, actor: await deviceActor(IDS.jefe) })).ok).toBe(true)
+    // La misma sesión vieja (cookie de la tablet), con éste u otro deviceId: bloqueada.
+    await expect(issueDeviceCredential({ userId: IDS.mecCho, deviceId: "tab-robada", sessionIssuedAt: antes })).rejects.toBeInstanceOf(DeviceReissueBlockedError)
+    await expect(issueDeviceCredential({ userId: IDS.mecCho, deviceId: "otro-uuid", sessionIssuedAt: antes })).rejects.toBeInstanceOf(DeviceReissueBlockedError)
+    // Entró de nuevo con su contraseña: sesión posterior a la revocación.
+    const nueva = await issueDeviceCredential({ userId: IDS.mecCho, deviceId: "tab-robada", sessionIssuedAt: Date.now() + 1000 })
+    expect(nueva.token).toBeTruthy()
+  })
+
+  it("restablecer la contraseña invalida las credenciales de la app emitidas antes", async () => {
+    const vieja = await issueDeviceCredential({ userId: IDS.mecBio, deviceId: "tab-clave" })
+    const sync = (token: string) => authenticateSyncRequest(
+      new Request("http://localhost/api/mantencion/sync/catalogo", { headers: { authorization: `Bearer ${token}` } }),
+      { pathname: "/api/mantencion/sync/catalogo" },
+    )
+    expect((await sync(vieja.token)).ok).toBe(true)
+    await testDb.update(schema.users).set({ sessionsValidFrom: new Date(Date.now() + 1000).toISOString() }).where(eq(schema.users.id, IDS.mecBio))
+    try {
+      expect((await sync(vieja.token)).ok).toBe(false)
+    } finally {
+      await testDb.update(schema.users).set({ sessionsValidFrom: null }).where(eq(schema.users.id, IDS.mecBio))
+    }
   })
 })
 
@@ -577,5 +657,74 @@ describe("A10: el historial de la app es de lectura abierta (decisión de produc
     expect(otro).toBeDefined()
     expect(otro).toMatchObject({ worksiteName: "Cholguán" })
     expect(otro?.photos.map((photo) => photo.id)).toContain(photoId)
+  })
+})
+
+// ── Incorporar desde la flota (auditoría 2026-11-11, fase 4) ────────────────
+
+describe("Incorporar desde la flota: sin volver a escribir lo que la flota ya tiene", () => {
+  beforeAll(async () => {
+    await testDb.insert(schema.fuelVehicles).values([
+      { id: "fl-bio-1", code: "FB-01", plate: "LKJH-21", type: "camion", equipmentTypeId: "fet-test-km", worksiteId: IDS.wsBio, brand: "scania", model: "G410", year: 2019 },
+      { id: "fl-bio-2", code: "FB-02", plate: "LKJH-22", type: "camion", equipmentTypeId: "fet-test-km", worksiteId: IDS.wsBio, brand: "Marca rara" },
+      { id: "fl-bio-sin", code: null, plate: "LKJH-23", type: "camion", equipmentTypeId: "fet-test-km", worksiteId: IDS.wsBio },
+      { id: "fl-cho-1", code: "FC-01", plate: "LKJH-24", type: "camion", equipmentTypeId: "fet-test-km", worksiteId: IDS.wsCho, brand: "Volvo" },
+      { id: "fl-bio-plan", code: "FB-03", plate: "LKJH-25", type: "camion", equipmentTypeId: "fet-test-km", worksiteId: IDS.wsBio, brand: "Volvo", model: "FH16", year: 2018 },
+    ])
+  })
+
+  it("lista sólo los de sus faenas, sugiere la marca de la lista y marca los que no se pueden incorporar", async () => {
+    const encargado = await equipmentActor(IDS.supBio)
+    const candidates = await listIncorporationCandidates(encargado.scope!)
+    const ids = candidates.map((item) => item.vehicleId)
+    expect(ids).toEqual(expect.arrayContaining(["fl-bio-1", "fl-bio-2", "fl-bio-sin"]))
+    expect(ids).not.toContain("fl-cho-1")
+    expect(candidates.find((item) => item.vehicleId === "fl-bio-1")).toMatchObject({ suggestedBrandId: IDS.brandScania, blocker: null })
+    expect(candidates.find((item) => item.vehicleId === "fl-bio-2")).toMatchObject({ suggestedBrandId: null, fleetBrand: "Marca rara" })
+    expect(candidates.find((item) => item.vehicleId === "fl-bio-sin")?.blocker).toMatch(/código interno/)
+  })
+
+  it("incorpora sin tocar faena, patente, modelo ni año; informa cada error por fila", async () => {
+    const encargado = await equipmentActor(IDS.supBio)
+    const result = await incorporateFleetVehicles(encargado, [
+      { vehicleId: "fl-bio-1", brandId: IDS.brandScania, scheduleId: null, initialReading: 120_500, initialReadingDate: null },
+      { vehicleId: "fl-cho-1", brandId: IDS.brandVolvo, scheduleId: null, initialReading: null, initialReadingDate: null },
+      { vehicleId: "fl-bio-2", brandId: "", scheduleId: null, initialReading: null, initialReadingDate: null },
+    ])
+    expect(result.incorporated).toBe(1)
+    expect(result.rows.find((row) => row.vehicleId === "fl-cho-1")?.messages.join(" ")).toMatch(/no administras/)
+    expect(result.rows.find((row) => row.vehicleId === "fl-bio-2")?.ok).toBe(false)
+    const [v] = await testDb.select().from(schema.fuelVehicles).where(eq(schema.fuelVehicles.id, "fl-bio-1"))
+    expect(v).toMatchObject({ worksiteId: IDS.wsBio, plate: "LKJH-21", code: "FB-01", model: "G410", year: 2019 })
+    const [profile] = await testDb.select().from(schema.mantEquipmentProfiles).where(eq(schema.mantEquipmentProfiles.vehicleId, "fl-bio-1"))
+    expect(profile).toMatchObject({ brandId: IDS.brandScania, initialReading: 120500 })
+    expect((await listIncorporationCandidates(encargado.scope!)).map((item) => item.vehicleId)).not.toContain("fl-bio-1")
+  })
+
+  it("la plantilla viene precargada con los vehículos sin ficha y con la flota bloqueada", async () => {
+    const encargado = await equipmentActor(IDS.supBio)
+    const template = await buildEquipmentTemplate(encargado.scope!)
+    const ExcelJS = (await import("exceljs")).default
+    const workbook = new ExcelJS.Workbook()
+    await workbook.xlsx.load(Buffer.from(template.base64, "base64") as never)
+    const sheet = workbook.getWorksheet("Equipos")!
+    const codes: string[] = []
+    sheet.eachRow((row, number) => { if (number > 1) codes.push(String(row.getCell(1).value ?? "")) })
+    expect(codes).toContain("FB-02")
+    expect(codes).not.toContain("FC-01") // otra faena
+    expect(codes).not.toContain("") // sin código: bloqueado, no se precarga
+    const row = codes.indexOf("FB-02") + 2
+    // Excel bloquea por defecto: al leer, ExcelJS omite `locked: true`. Lo que importa es que no venga desbloqueada y que la hoja esté protegida.
+    expect(sheet.getCell(`A${row}`).protection?.locked).not.toBe(false)
+    expect((sheet as unknown as { sheetProtection?: { sheet?: boolean } }).sheetProtection?.sheet).toBe(true)
+    expect(sheet.getCell(`D${row}`).protection?.locked).toBe(false)
+  })
+
+  it("incorporar por planilla con modelo y año en blanco conserva los de la flota", async () => {
+    const jefe = await equipmentActor(IDS.jefe)
+    const result = await commitEquipmentImport(jefe, await workbookBuffer([["FB-03", "LKJH-25", null, "Volvo", null, null, null, null, null, null]]), "equipos.xlsx")
+    expect(result).toMatchObject({ ok: true, data: { incorporated: 1, errors: 0 } })
+    const [v] = await testDb.select().from(schema.fuelVehicles).where(eq(schema.fuelVehicles.id, "fl-bio-plan"))
+    expect(v).toMatchObject({ model: "FH16", year: 2018, worksiteId: IDS.wsBio })
   })
 })

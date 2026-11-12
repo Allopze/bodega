@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
   estimatedRequestTotal,
   evaluateQuotationRequirement,
+  fastPathCoversRequest,
   quotationRequirementMessage,
   type QuotationRequirementInput,
 } from "./quotation-requirement"
@@ -115,5 +116,35 @@ describe("quotationRequirementMessage", () => {
     expect(quotationRequirementMessage("needs_three", null)).toBe(
       "Se requieren al menos 3 cotizaciones. Si no es posible, agrega una justificación en las notas de la solicitud.",
     )
+  })
+})
+
+describe("fastPathCoversRequest", () => {
+  const rapido = { quantity: 1, estimatedUnitPrice: 15_000, fastPath: true }
+  const normal = (price: number | null) => ({ quantity: 1, estimatedUnitPrice: price, fastPath: false })
+
+  it("sin ningún ítem de vía rápida no cubre", () => {
+    expect(fastPathCoversRequest([normal(1_000)], 200_000)).toBe(false)
+    expect(fastPathCoversRequest([], 200_000)).toBe(false)
+  })
+
+  it("con todos los ítems de vía rápida cubre", () => {
+    expect(fastPathCoversRequest([rapido, rapido], 200_000)).toBe(true)
+    expect(fastPathCoversRequest([rapido], null)).toBe(true)
+  })
+
+  it("un ítem de vía rápida no arrastra a otro sobre el umbral o sin precio", () => {
+    expect(fastPathCoversRequest([rapido, normal(2_000_000)], 200_000)).toBe(false)
+    expect(fastPathCoversRequest([rapido, normal(null)], 200_000)).toBe(false)
+  })
+
+  it("cubre si los ítems fuera de la vía rápida suman, por sí solos, bajo el umbral", () => {
+    expect(fastPathCoversRequest([rapido, normal(20_000), normal(30_000)], 200_000)).toBe(true)
+    expect(fastPathCoversRequest([rapido, normal(150_000), normal(60_000)], 200_000)).toBe(false)
+  })
+
+  it("con umbral 0 o sin umbral los ítems fuera de la vía rápida nunca quedan bajo él", () => {
+    expect(fastPathCoversRequest([rapido, normal(1)], 0)).toBe(false)
+    expect(fastPathCoversRequest([rapido, normal(1)], null)).toBe(false)
   })
 })

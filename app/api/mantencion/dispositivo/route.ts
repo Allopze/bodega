@@ -4,7 +4,7 @@ export const runtime = "nodejs"
 import { NextResponse } from "next/server"
 import { guardPermission } from "@/lib/auth/can"
 import { deviceCredentialRequestSchema, type DeviceCredentialResponse } from "@/lib/mantencion/contracts"
-import { issueDeviceCredential } from "@/lib/services/mantencion/device-credentials"
+import { DeviceReissueBlockedError, issueDeviceCredential } from "@/lib/services/mantencion/device-credentials"
 import { issueResponse, NO_STORE, readJsonBody } from "@/lib/services/mantencion/sync-http"
 import { logger } from "@/lib/logger"
 
@@ -31,6 +31,8 @@ export async function POST(request: Request) {
       deviceId: parsed.data.deviceId,
       label: parsed.data.label ?? null,
       actorEmail: user.email ?? null,
+      // Sin la marca de inicio (sesión anterior a AUTH-003) se cierra: se pide entrar de nuevo.
+      sessionIssuedAt: user.sessionIssuedAt ?? 0,
     })
     const response: DeviceCredentialResponse = {
       token: credential.token,
@@ -39,6 +41,9 @@ export async function POST(request: Request) {
     }
     return NextResponse.json(response, { headers: NO_STORE })
   } catch (error) {
+    if (error instanceof DeviceReissueBlockedError) {
+      return NextResponse.json({ ok: false, code: "revoked", message: error.message }, { status: 403, headers: NO_STORE })
+    }
     logger.error("[mantencion:dispositivo]", error)
     return NextResponse.json(
       { ok: false, code: "error", message: "No se pudo emitir la credencial del dispositivo. Reintenta." },

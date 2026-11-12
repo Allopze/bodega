@@ -11,6 +11,7 @@ import { equipmentScope, viewerFromSession } from "@/lib/services/mantencion/acc
 import { createEquipment, updateEquipment, type EquipmentInput, type EquipmentResult } from "@/lib/services/mantencion/equipment"
 import { buildEquipmentTemplate, commitEquipmentImport, IMPORT_MAX_BYTES, previewEquipmentImport, type ImportPreview, type ImportSummary } from "@/lib/services/mantencion/equipment-import"
 import { exportEquipment } from "@/lib/services/mantencion/export-equipment"
+import { INCORPORATE_MAX_ROWS, incorporateFleetVehicles, type IncorporationResult } from "@/lib/services/mantencion/fleet-incorporation"
 import type { MantActionResult } from "@/lib/services/mantencion/result"
 import type { ActionState } from "@/lib/validation/operations"
 
@@ -173,8 +174,55 @@ export async function downloadTemplateAction(): Promise<ExportActionResult> {
   const guard = await guardPermission("mant:equipment:manage", PATH)
   if (guard.error) return guard.error
   try {
-    return { ok: true, data: await buildEquipmentTemplate() }
+    // Precargada con los vehículos de la flota de SUS faenas que aún no están en Mantención.
+    return { ok: true, data: await buildEquipmentTemplate(equipmentScope(viewerFromSession(guard.session))) }
   } catch (error) {
     return actionErrorResult(error, "No se pudo generar la plantilla.")
   }
 }
+
+// ── Incorporar desde la flota ────────────────────────────────────────────────
+
+const incorporateSchema = z.object({
+  rows: z.array(z.object({
+    vehicleId: z.string().min(1).max(64),
+    brandId: z.string().max(64),
+    scheduleId: z.string().max(64).nullable(),
+    initialReading: z.string().max(20),
+    initialReadingDate: z.string().max(10).nullable(),
+  })).min(1).max(INCORPORATE_MAX_ROWS),
+})
+
+/**
+ * Crea la ficha de mantención de vehículos que ya están en la flota. Sólo viaja
+ * lo propio de Mantención (marca, pauta, lectura); código, patente, tipo y
+ * faena los lee el servidor de la flota y no se cambian.
+ */
+export async function incorporateFleetAction(input: z.input<typeof incorporateSchema>): Promise<MantActionResult<IncorporationResult>> {
+  const guard = await guardPermission("mant:equipment:manage", PATH)
+  if (guard.error) return guard.error
+  const parsed = incorporateSchema.safeParse(input)
+  if (!parsed.success) return { ok: false, message: "Elige al menos un vehículo para incorporar." }
+  try {
+    const result = await incorporateFleetVehicles(equipmentActor(guard.session), parsed.data.rows.map((row) => ({
+      vehicleId: row.vehicleId,
+      brandId: row.brandId,
+      scheduleId: row.scheduleId || null,
+      initialReading: numberOrNull(row.initialReading.trim()),
+      initialReadingDate: row.initialReadingDate || null,
+    })))
+    if (result.incorporated > 0) {
+      revalidateEquipment()
+      revalidatePath(`${PATH}/incorporar`)
+    }
+    const failed = result.rows.length - result.incorporated
+    const message = [
+      result.incorporated ? `${result.incorporated} ${result.incorporated === 1 ? "equipo incorporado" : "equipos incorporados"}` : "",
+      failed ? `${failed} con error` : "",
+    ].filter(Boolean).join(" · ")
+    return { ok: true, data: result, message }
+  } catch (error) {
+    return actionErrorResult(error, "No se pudo incorporar. No se guardó ningún cambio.")
+  }
+}
+

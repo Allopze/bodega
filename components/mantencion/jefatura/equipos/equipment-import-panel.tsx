@@ -62,6 +62,7 @@ export function EquipmentImportPanel() {
         <ImportSummaryLine summary={summary} written />
         {summary.newWorksites.length > 0 && <p className="mt-2 text-sm text-[var(--color-text-muted)]">Faenas creadas: {summary.newWorksites.join(", ")}.</p>}
         {summary.errors > 0 && <p className="mt-2 text-sm text-[var(--color-danger-ink)]">{plural(summary.errors, "fila con error no se importó", "filas con error no se importaron")}: corrígelas en la planilla y vuelve a subirla.</p>}
+        {summary.errorRows && summary.errorRows.length > 0 && <div className="mt-3"><ImportPreviewTable rows={summary.errorRows} /></div>}
         <div className="mt-4 flex flex-wrap gap-2">
           <Button asChild><Link href="/mantencion/equipos">Ver los equipos</Link></Button>
           <Button variant="secondary" onClick={() => setStage({ name: "choose" })}>Importar otra planilla</Button>
@@ -75,7 +76,10 @@ export function EquipmentImportPanel() {
 
   return (
     <div className="flex flex-col gap-5">
-      <SectionCard title="1. Descarga la plantilla" description="Trae las listas de tipos, marcas, faenas y pautas, e instrucciones.">
+      <Callout tone="info" title="¿Los vehículos ya están en la flota?">
+        No hace falta cargarlos de nuevo: en <Link href="/mantencion/equipos/incorporar" className="font-semibold underline underline-offset-2">Incorporar desde la flota</Link> sólo eliges su marca y su pauta. La plantilla de abajo también viene con ellos ya llenos.
+      </Callout>
+      <SectionCard title="1. Descarga la plantilla" description="Trae los vehículos de la flota que aún no están en Mantención, las listas de tipos, marcas, faenas y pautas, e instrucciones.">
         <Button variant="secondary" size="sm" onClick={downloadTemplate} loading={template.pending}>
           <DownloadSimple size={14} aria-hidden />Descargar plantilla (.xlsx)
         </Button>

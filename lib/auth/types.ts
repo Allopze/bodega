@@ -12,6 +12,8 @@ declare module "next-auth" {
       avatarColor:       string | null
       isActive:          boolean
       isGlobal?:         boolean  // Derived from roles.is_global at login; optional for backward compat
+      /** Instante (ms) en que empezó esta sesión (AUTH-003). Lo usa la emisión de credenciales de la app del mecánico. */
+      sessionIssuedAt?:  number
     }
   }
 }

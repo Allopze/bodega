@@ -133,7 +133,8 @@ export async function exportRecords(input: {
   const recordRows: ReportCell[][] = kept.map((row) => {
     const r = row.record
     const c = row.corrective
-    const workshop = c?.inWorkshop
+    // Sólo el vigente tiene estado de taller: un anulado no acumula «días detenido».
+    const workshop = c?.inWorkshop && r.status === "vigente"
       ? workshopState({ inWorkshop: true, entryDate: c.workshopEntryDate, workDate: r.workDate, updates: updatesByRecord.get(r.id) ?? [] }, today)
       : null
     return [

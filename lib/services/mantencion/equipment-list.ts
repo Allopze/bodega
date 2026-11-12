@@ -21,6 +21,12 @@ export interface EquipmentListFilters {
   /** Id de la pauta, o `NO_SCHEDULE`. */
   scheduleId?: string
   state?: MantEquipmentState
+  /**
+   * Sólo los equipos detenidos en taller (`?taller=1`): los que tienen una OT en ejecución o una
+   * correctiva abierta. Es una dimensión distinta del estado de la pauta, y es la misma cuenta del
+   * tile «Equipos en taller» del panel (`FleetRow.workshop`), así que el tile lleva a sus equipos.
+   */
+  inWorkshop?: boolean
   /** «Mostrar dados de baja»: los incluye junto a los activos. */
   includeRetired: boolean
 }
@@ -42,13 +48,14 @@ export function parseEquipmentListFilters(raw: RawSearchParams): EquipmentListFi
     typeId: first(raw, "tipo"),
     scheduleId: first(raw, "pauta"),
     state: knownState,
+    inWorkshop: first(raw, "taller") === "1" ? true : undefined,
     // Pedir «Dado de baja» sin marcar la casilla igual tiene que mostrar las bajas.
     includeRetired: first(raw, "bajas") === "1" || knownState === "baja",
   }
 }
 
 export function hasEquipmentListFilters(filters: EquipmentListFilters): boolean {
-  return !!(filters.worksiteId || filters.typeId || filters.scheduleId || filters.state || filters.includeRetired)
+  return !!(filters.worksiteId || filters.typeId || filters.scheduleId || filters.state || filters.inWorkshop || filters.includeRetired)
 }
 
 export function filterFleet(rows: readonly FleetRow[], filters: EquipmentListFilters): FleetRow[] {
@@ -58,6 +65,7 @@ export function filterFleet(rows: readonly FleetRow[], filters: EquipmentListFil
     if (filters.typeId && row.typeId !== filters.typeId) return false
     if (filters.scheduleId === NO_SCHEDULE ? row.scheduleId !== null : filters.scheduleId && row.scheduleId !== filters.scheduleId) return false
     if (filters.state && row.status.state !== filters.state) return false
+    if (filters.inWorkshop && row.workshop === null) return false
     return true
   })
 }

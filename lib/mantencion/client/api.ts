@@ -24,7 +24,7 @@ import type { StoredPhoto } from "./types"
  */
 
 export type ApiFailure =
-  | { kind: "auth"; status: number; message: string }
+  | { kind: "auth"; status: number; message: string; code?: string | null }
   | { kind: "forbidden"; status: 403; message: string }
   | { kind: "retry"; message: string; retryAfterMs: number | null; network: boolean }
   | { kind: "reject"; status: number; code: string | null; field: string | null; message: string }
@@ -113,7 +113,12 @@ export async function requestCredential(deviceId: string, label: string, fetchIm
   if (response.status === 401) return { kind: "auth", status: 401, message: "Tu sesión de la plataforma venció." }
   // Aquí el 403 viaja como `auth` a propósito: `bootstrap` lo usa para la pantalla «sin permiso»
   // (no hay app que abrir), que es distinto de un rechazo de envío durante el uso normal.
-  if (response.status === 403) return { kind: "auth", status: 403, message: "Tu cuenta no tiene permiso para usar la app de mantención." }
+  if (response.status === 403) {
+    // «revoked»: jefatura revocó un dispositivo después de que empezó esta sesión; hay que entrar de nuevo con contraseña.
+    const body = await readJson(response)
+    if (body?.code === "revoked") return { kind: "auth", status: 403, code: "revoked", message: messageFrom(body, "Tu acceso a la app fue revocado.") }
+    return { kind: "auth", status: 403, message: "Tu cuenta no tiene permiso para usar la app de mantención." }
+  }
   if (!response.ok) return failureFrom(response, "No pudimos preparar este teléfono.")
   const body = (await readJson(response)) as DeviceCredentialResponse | null
   if (!body?.token || !body.user?.id) return { kind: "retry", message: "La plataforma respondió algo inesperado.", retryAfterMs: null, network: false }

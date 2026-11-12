@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { civilDate } from "@/lib/validation/dates"
 import { REASON_MIN_LENGTH } from "@/lib/validation/reason-thresholds"
 import { workOrderEntrySchema } from "./contracts"
 import { OT_ITEM_MAX_PER_KIND } from "./work-order-states"
@@ -13,7 +14,8 @@ import { OT_ITEM_MAX_PER_KIND } from "./work-order-states"
  */
 
 const id = z.string().min(1).max(64)
-const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha inválida")
+// `civilDate` rechaza fechas que no existen (`2026-02-31`), que la regex sola dejaba pasar.
+const isoDate = civilDate("Fecha inválida")
 const isoDateTime = z.string().datetime({ offset: true })
 const expectedVersion = z.coerce.number().int().min(1)
 const reason = z.string().trim().min(REASON_MIN_LENGTH, `Escribe un motivo de al menos ${REASON_MIN_LENGTH} caracteres.`).max(1000)

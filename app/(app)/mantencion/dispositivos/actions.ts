@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache"
 import type { Session } from "next-auth"
 import { z } from "zod"
 import { guardPermission } from "@/lib/auth/can"
-import { hasMantPermission, viewerFromSession } from "@/lib/services/mantencion/access"
+import { deviceManagerActor, viewerFromSession } from "@/lib/services/mantencion/access"
 import { revokeDeviceCredential } from "@/lib/services/mantencion/device-credentials"
 import type { MantActionResult } from "@/lib/services/mantencion/result"
 
@@ -12,13 +12,7 @@ const PATH = "/mantencion/dispositivos"
 
 /** Quien revoca y las faenas cuyos dispositivos puede desconectar. */
 function deviceActor(session: Session) {
-  const viewer = viewerFromSession(session)
-  return {
-    userId: viewer.userId,
-    isGlobal: viewer.isGlobal,
-    viewAll: hasMantPermission(viewer, "mant:records:view_all"),
-    worksiteIds: viewer.worksiteIds,
-  }
+  return deviceManagerActor(viewerFromSession(session))
 }
 
 /**

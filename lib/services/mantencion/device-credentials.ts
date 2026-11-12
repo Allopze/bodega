@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto"
-import { and, desc, eq, exists, inArray, isNull, sql } from "drizzle-orm"
+import { and, desc, eq, exists, gt, inArray, isNotNull, isNull, sql } from "drizzle-orm"
 import { db, type Tx } from "@/db"
 import { mantDeviceCredentials, users, worksiteUsers } from "@/db/schema"
 import { isUniqueViolation } from "@/lib/action-error"
@@ -95,6 +95,14 @@ async function actorFromRbac(userId: string): Promise<DeviceCredentialActor | nu
   }
 }
 
+/** La jefatura revocó un dispositivo de esta persona después de que empezó su sesión web. */
+export class DeviceReissueBlockedError extends Error {
+  constructor() {
+    super("Tu acceso a la app en este dispositivo fue revocado. Cierra sesión y vuelve a entrar con tu contraseña para conectarlo de nuevo.")
+    this.name = "DeviceReissueBlockedError"
+  }
+}
+
 /**
  * Emite una credencial nueva para (usuario, dispositivo) y revoca la vigente
  * anterior en la MISMA transacción: el índice parcial único deja a lo más una
@@ -105,6 +113,15 @@ export async function issueDeviceCredential(input: {
   deviceId: string
   label?: string | null
   actorEmail?: string | null
+  /**
+   * Inicio (ms) de la sesión web que pide la credencial. Si alguien de jefatura
+   * revocó un dispositivo de esta persona DESPUÉS de ese instante, no se emite:
+   * revocar no servía, porque la app volvía a pedir una credencial con la
+   * misma sesión (una tablet robada conserva la cookie). Se exige iniciar
+   * sesión de nuevo, con contraseña. `undefined` (llamadores sin sesión, como
+   * las pruebas) no aplica el bloqueo. Auditoría 2026-11-11.
+   */
+  sessionIssuedAt?: number
 }): Promise<{ token: string; expiresAt: string; credentialId: string }> {
   const token = randomBytes(32).toString("base64url")
   const now = new Date()
@@ -118,6 +135,15 @@ export async function issueDeviceCredential(input: {
     await db.transaction(async (tx) => {
       // Serializa por (usuario, dispositivo): la segunda transacción ve la fila de la primera.
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`${input.userId}:${input.deviceId}`}))`)
+      if (input.sessionIssuedAt !== undefined) {
+        // Cualquier dispositivo, no sólo éste: borrar los datos de la app genera otro `deviceId`.
+        const [blocked] = await tx.select({ id: mantDeviceCredentials.id }).from(mantDeviceCredentials).where(and(
+          eq(mantDeviceCredentials.userId, input.userId),
+          isNotNull(mantDeviceCredentials.revokedBy),
+          gt(mantDeviceCredentials.revokedAt, new Date(input.sessionIssuedAt).toISOString()),
+        )).limit(1)
+        if (blocked) throw new DeviceReissueBlockedError()
+      }
       const replaced = await tx
         .update(mantDeviceCredentials)
         .set({ revokedAt: now.toISOString(), revokedBy: null })
@@ -168,13 +194,14 @@ export async function issueDeviceCredential(input: {
  */
 export async function authenticateDeviceToken(
   token: string,
-): Promise<{ credentialId: string; userId: string; deviceId: string } | null> {
+): Promise<{ credentialId: string; userId: string; deviceId: string; createdAt: string } | null> {
   if (!token || token.length > 200) return null
   const [row] = await db
     .select({
       id: mantDeviceCredentials.id,
       userId: mantDeviceCredentials.userId,
       deviceId: mantDeviceCredentials.deviceId,
+      createdAt: mantDeviceCredentials.createdAt,
       lastUsedAt: mantDeviceCredentials.lastUsedAt,
     })
     .from(mantDeviceCredentials)
@@ -194,7 +221,7 @@ export async function authenticateDeviceToken(
       .where(eq(mantDeviceCredentials.id, row.id))
       .catch(() => undefined)
   }
-  return { credentialId: row.id, userId: row.userId, deviceId: row.deviceId }
+  return { credentialId: row.id, userId: row.userId, deviceId: row.deviceId, createdAt: row.createdAt }
 }
 
 /**

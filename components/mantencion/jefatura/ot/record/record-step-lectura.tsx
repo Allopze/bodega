@@ -148,11 +148,11 @@ export function RecordStepLectura({ draft, dispatch, row, onConfirm }: {
         <Input
           ref={readingRef}
           id="ot-rec-reading"
-          inputMode="numeric"
+          inputMode="decimal"
           autoComplete="off"
           value={typed.text}
           placeholder="0"
-          onChange={(event) => dispatch({ type: "patch", patch: { readingText: String(parseReadingInput(event.target.value).value ?? "") } })}
+          onChange={(event) => dispatch({ type: "patch", patch: { readingText: parseReadingInput(event.target.value).stored } })}
         />
       </Field>
 

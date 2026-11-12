@@ -42,10 +42,24 @@ export async function activateWorkOrderCapaEvidence(
   const [finding] = await client.select({
     id: preventionInspectionFindings.id,
     capaActionId: preventionInspectionFindings.capaActionId,
+    status: preventionInspectionFindings.status,
   })
     .from(preventionInspectionFindings)
     .where(eq(preventionInspectionFindings.id, args.workOrder.inspectionFindingId)).for("update").limit(1)
-  if (!finding?.capaActionId) return
+  if (!finding) return
+  if (!finding.capaActionId) {
+    /* El hallazgo sigue vivo pero ya no tiene acción correctiva: cancelar la CAPA
+     * en Prevención lo devuelve a `open` y suelta `capa_action_id`
+     * (`prevention-capa.ts`). Salir en silencio dejaba cerrar la OT con el
+     * hallazgo abierto y sin evidencia, y el guard de «CAPA cancelada» de más
+     * abajo nunca se alcanzaba. Un hallazgo ya cerrado por Prevención sin CAPA
+     * no tiene nada que acreditar y no bloquea. */
+    if (finding.status === "closed") return
+    throw new OtRefusal(
+      "La acción correctiva del hallazgo fue cancelada en Prevención: no se puede dar la conformidad hasta que Prevención la reactive o derive una nueva.",
+      "conflict",
+    )
+  }
   const [capa] = await client.select({
     id: preventionCapaActions.id,
     status: preventionCapaActions.status,
@@ -154,6 +168,8 @@ export async function supersedeWorkOrderCapaEvidence(
   })
     .from(preventionInspectionFindings)
     .where(eq(preventionInspectionFindings.id, args.workOrder.inspectionFindingId)).for("update").limit(1)
+  // Sin CAPA enlazada (cancelada o soltada) no hay evidencia que reemplazar ni
+  // acción que reabrir: reabrir la OT no debe depender del estado en Prevención.
   if (!finding?.capaActionId) return
   const [capa] = await client.select({
     id: preventionCapaActions.id,

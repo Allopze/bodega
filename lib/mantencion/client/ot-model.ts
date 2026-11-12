@@ -127,8 +127,11 @@ function linkedRecords(ot: CatalogWorkOrder, queue: readonly QueueItem[], userId
     if (item.type !== "record" || item.authorUserId !== userId || item.status === "rejected") continue
     const record: QueueRecordItem = item
     if (record.payload.workOrderId !== ot.id || known.has(record.id)) continue
-    // Un registro firmado antes de la última devolución ya no cuenta para terminar.
-    if (since && record.payload.signedAt <= since) continue
+    // El servidor decide por la hora en que RECIBIÓ el registro, no por la firma (reloj del
+    // teléfono, que puede ir atrasado o adelantado). Uno ya recibido antes de la última devolución
+    // no cuenta para terminar; uno aún en cola lo recibirá después de una devolución que el
+    // teléfono ya conoce, así que cuenta.
+    if (since && record.receivedAt && new Date(record.receivedAt).getTime() <= new Date(since).getTime()) continue
     known.set(record.id, { id: record.id, folio: record.folio, kind: record.payload.kind, signedAt: record.payload.signedAt, pending: record.status !== "sent" })
   }
   return [...known.values()].sort((a, b) => a.signedAt.localeCompare(b.signedAt))

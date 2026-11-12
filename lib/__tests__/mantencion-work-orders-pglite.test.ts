@@ -313,9 +313,9 @@ describe("permisos por estado (rol × transición)", () => {
       solicitada: ["assign", "void"], asignada: ["assign", "unassign", "start", "void"], en_ejecucion: ["assign", "finish", "void"],
       trabajo_terminado: ["receive", "reject_receipt"], recepcionada: [], cerrada: ["reopen"], anulada: [],
     },
-    // El administrador de contrato de la faena: anula lo suyo sólo mientras está por asignar; recibe y da la conformidad.
+    // El administrador de contrato de la faena: anula lo suyo mientras no entra a taller (por asignar o asignada, que es como nace la suya); recibe y da la conformidad.
     [IDS.adminBio]: {
-      solicitada: ["void"], asignada: [], en_ejecucion: [], trabajo_terminado: ["receive", "reject_receipt"],
+      solicitada: ["void"], asignada: ["void"], en_ejecucion: [], trabajo_terminado: ["receive", "reject_receipt"],
       recepcionada: ["conform", "reject_conformity"], cerrada: [], anulada: [],
     },
     // El de otra faena no recibe ni da la conformidad de equipos ajenos.
@@ -573,6 +573,22 @@ describe("recepciones, rechazo y conformidad", () => {
     expect(ok(await finish()).status).toBe("trabajo_terminado")
   })
 
+  it("tras el rechazo cuenta la hora en que el servidor recibió la correctiva, no la firma del teléfono (reloj atrasado)", async () => {
+    const id = await finished()
+    ok(await transitions.rejectWorkOrder(await actorOf(IDS.adminBio), { workOrderId: id, reason: "El equipo sigue con fuga de aceite" }))
+    await markAll(id, IDS.mecBio)
+    const mecanico = await actorOf(IDS.mecBio)
+    // Un teléfono atrasado 3 horas firma ahora una correctiva «de antes del rechazo» según su propio reloj.
+    const skewed = new Date(Date.now() - 3 * 3_600_000).toISOString()
+    await linkedCorrective(IDS.mecBio, id, IDS.truckBio, { signedAt: skewed })
+    // La app del mecánico recibe la misma regla: la correctiva figura como posterior a la devolución.
+    const { loadCatalogWorkOrders } = await import("@/lib/services/mantencion/work-orders/catalog-items")
+    const catalog = await loadCatalogWorkOrders(await viewerOf(IDS.mecBio))
+    expect(catalog.workOrders.find((workOrder) => workOrder.id === id)?.linkedRecords).toHaveLength(1)
+    const outcome = await transitions.finishWorkOrder(mecanico, { workOrderId: id, exitAt: new Date(Date.now() - 1_000).toISOString(), note: null })
+    expect(ok(outcome).status).toBe("trabajo_terminado")
+  })
+
   it("el rechazo en la conformidad también devuelve a taller, con el aviso y la etapa en el historial", async () => {
     const id = await received()
     const back = ok(await transitions.rejectWorkOrder(await actorOf(IDS.adminBio), { workOrderId: id, reason: "La pintura quedó sin terminar" }))
@@ -600,6 +616,35 @@ describe("anular y reabrir", () => {
     ok(await transitions.voidWorkOrder(await actorOf(IDS.jefe), { workOrderId: assignedId, reason: "Ya no hace falta la OT" }))
     // Una anulada no admite nada más.
     expect(refused(await transitions.assignWorkOrder(await actorOf(IDS.jefe), { workOrderId: assignedId, assignedToUserId: IDS.mecBio })).code).toBe("conflict")
+  })
+
+  it("la OT que el administrador de contrato creó nace asignada y él puede anularla ahí; en taller ya no, y el mecánico recibe el aviso", async () => {
+    const admin = await actorOf(IDS.adminBio)
+    const id = await newOt({ assignedToUserId: IDS.mecBio }, IDS.adminBio)
+    expect(await row(id)).toMatchObject({ status: "asignada", assignedToUserId: IDS.mecBio })
+    ok(await transitions.voidWorkOrder(admin, { workOrderId: id, reason: "Se pidió el equipo equivocado" }))
+    expect(await row(id)).toMatchObject({ status: "anulada", voidedByUserId: IDS.adminBio })
+    await settle()
+    const voided = await notificationsOf("mant_ot_voided")
+    expect(voided.map((notification) => notification.userId)).toEqual([IDS.mecBio])
+    expect(voided[0]!.body).toContain("Se pidió el equipo equivocado")
+
+    // Una vez en taller (ejecución iniciada) sólo la jefatura anula.
+    const inShop = await newOt({ assignedToUserId: IDS.mecBio }, IDS.adminBio)
+    ok(await transitions.startWorkOrder(await actorOf(IDS.mecBio), { workOrderId: inShop, entry: entry() }))
+    const denied = refused(await transitions.voidWorkOrder(admin, { workOrderId: inShop, reason: "Ya no hace falta la OT" }))
+    expect(denied.code).toBe("forbidden")
+    expect(denied.message).toMatch(/mientras no haya entrado a taller/)
+  })
+
+  it("devolver la OT a «por asignar» avisa al mecánico que la tenía", async () => {
+    const id = await assigned()
+    await settle()
+    ok(await transitions.unassignWorkOrder(await actorOf(IDS.jefe), { workOrderId: id }))
+    await settle()
+    const unassigned = await notificationsOf("mant_ot_unassigned")
+    expect(unassigned.map((notification) => notification.userId)).toEqual([IDS.mecBio])
+    expect(unassigned[0]).toMatchObject({ entityId: id })
   })
 
   it("anular una OT en taller devuelve el equipo a operativo", async () => {
@@ -725,6 +770,40 @@ describe("OT de un hallazgo de inspección: la conformidad acredita la CAPA", ()
     expect((await eventsOf(id)).map((event) => event.type)).not.toContain("conformed")
     await settle()
     expect(await notificationsOf("mant_ot_closed")).toHaveLength(0)
+  })
+
+  it("si Prevención cancela la CAPA por su servicio real (el hallazgo vuelve a `open` sin vínculo) la conformidad se rechaza y el hallazgo no se cierra", async () => {
+    const { transitionCapaActionWithClient } = await import("@/lib/services/prevention-capa")
+    const { findingId, capaId } = await seedFindingWithCapa()
+    const id = await otFromFinding(findingId)
+    ok(await transitions.assignWorkOrder(await actorOf(IDS.jefe), { workOrderId: id, assignedToUserId: IDS.mecBio }))
+    ok(await transitions.startWorkOrder(await actorOf(IDS.mecBio), { workOrderId: id, entry: entry() }))
+    await toConformed(id)
+
+    await transitionCapaActionWithClient(testDb, {
+      actionId: capaId, expectedVersion: 1, toStatus: "cancelled", reason: "Se descarta la acción propuesta",
+    }, { ctx: { userId: AUTOR }, scope: { mode: "all", ids: [] }, permissions: ["prevention:capa:manage"] })
+    const [released] = await testDb.select().from(schema.preventionInspectionFindings).where(eq(schema.preventionInspectionFindings.id, findingId))
+    expect(released).toMatchObject({ status: "open", capaActionId: null })
+
+    const failed = refused(await conform(id))
+    expect(failed.message).toMatch(/fue cancelada en Prevención/)
+    expect(await row(id)).toMatchObject({ status: "recepcionada", closedAt: null, faenaReceivedAt: null })
+    expect((await testDb.select().from(schema.preventionInspectionFindings).where(eq(schema.preventionInspectionFindings.id, findingId)))[0]).toMatchObject({ status: "open" })
+    expect(await testDb.select().from(schema.preventionCapaEvidence).where(eq(schema.preventionCapaEvidence.actionId, capaId))).toHaveLength(0)
+    expect((await eventsOf(id)).map((event) => event.type)).not.toContain("conformed")
+  })
+
+  it("un hallazgo ya cerrado por Prevención sin CAPA no bloquea la conformidad", async () => {
+    const { findingId } = await seedFindingWithCapa()
+    const id = await otFromFinding(findingId)
+    ok(await transitions.assignWorkOrder(await actorOf(IDS.jefe), { workOrderId: id, assignedToUserId: IDS.mecBio }))
+    ok(await transitions.startWorkOrder(await actorOf(IDS.mecBio), { workOrderId: id, entry: entry() }))
+    await toConformed(id)
+    await testDb.update(schema.preventionInspectionFindings).set({ status: "closed", capaActionId: null })
+      .where(eq(schema.preventionInspectionFindings.id, findingId))
+    ok(await conform(id))
+    expect((await row(id)).status).toBe("cerrada")
   })
 })
 

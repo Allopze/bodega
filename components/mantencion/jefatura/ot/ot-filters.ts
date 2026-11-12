@@ -1,3 +1,4 @@
+import { isCivilDate } from "@/lib/validation/dates"
 import type { StageTab } from "@/components/ui/stage-tabs"
 import type { WorkOrderListFilters, WorkOrderTab } from "@/lib/services/mantencion/work-orders/query"
 
@@ -14,7 +15,6 @@ export const OT_PAGE_SIZE = 25
  */
 export const OT_FILTER_PARAMS = ["faena", "equipo", "mecanico", "desde", "hasta", "q", "repuestos"] as const
 
-const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/
 
 function first(raw: RawSearchParams, key: string): string | undefined {
   const value = raw[key]
@@ -42,8 +42,8 @@ export function parseWorkOrderQuery(raw: RawSearchParams): WorkOrderListFilters 
     worksiteId: first(raw, "faena"),
     vehicleId: first(raw, "equipo"),
     assignedToUserId: first(raw, "mecanico"),
-    from: desde && ISO_DAY.test(desde) ? desde : undefined,
-    to: hasta && ISO_DAY.test(hasta) ? hasta : undefined,
+    from: isCivilDate(desde) ? desde : undefined,
+    to: isCivilDate(hasta) ? hasta : undefined,
     q: first(raw, "q"),
     partsPending: first(raw, "repuestos") === "pendientes",
     page: Number.isFinite(page) && page > 0 ? page : 1,

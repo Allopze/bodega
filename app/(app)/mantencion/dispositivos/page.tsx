@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/ui/page-header"
 import { DevicesList } from "@/components/mantencion/jefatura/equipos/devices-list"
 import { MechanicAppInstallDialog } from "@/components/mantencion/jefatura/shared/mechanic-app-install-dialog"
 import { requirePermission } from "@/lib/auth/can"
+import { deviceManagerActor, viewerFromSession } from "@/lib/services/mantencion/access"
 import { listDeviceCredentials } from "@/lib/services/mantencion/device-credentials"
 import { groupDevicesByPerson } from "@/lib/services/mantencion/device-groups"
 
@@ -12,12 +13,14 @@ export const metadata: Metadata = { title: "Dispositivos de la app de mantenció
 export const dynamic = "force-dynamic"
 
 export default async function DevicesPage() {
+  let session
   try {
-    await requirePermission("mant:devices:manage", "/mantencion/equipos")
+    session = await requirePermission("mant:devices:manage", "/mantencion/equipos")
   } catch {
     redirect("/forbidden")
   }
-  const groups = groupDevicesByPerson(await listDeviceCredentials())
+  // La lista se acota a las faenas de quien la mira, igual que la revocación.
+  const groups = groupDevicesByPerson(await listDeviceCredentials({ actor: deviceManagerActor(viewerFromSession(session)) }))
   return (
     <PageContainer>
       <PageHeader

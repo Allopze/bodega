@@ -101,8 +101,13 @@ export function canActOnWorkOrder(viewer: AccessViewer, ot: WorkOrderAccessFacts
   const holds = hasMantPermission(viewer, rule.permission)
 
   if (rule.actor === "creator_or_manage") {
-    const creator = ot.status === "solicitada" && ot.requestedByUserId === viewer.userId && hasMantPermission(viewer, OT_PERMISSIONS.create)
-    if (!manage && !creator) return forbidden("Sólo la jefatura de mantención puede anular una OT (quien la creó, mientras siga por asignar).")
+    // La OT del administrador de contrato nace «asignada» al mecánico de su faena
+    // (`create.ts`): exigir «solicitada» le quitaba la anulación a quien la creó
+    // desde el primer instante. «Asignada» aún no tiene ingreso, ítems marcados ni
+    // registros (se firman sólo «en taller», y `unassign`/`assign` no pasan por
+    // ahí): ninguna ejecución ha empezado.
+    const creator = (ot.status === "solicitada" || ot.status === "asignada") && ot.requestedByUserId === viewer.userId && hasMantPermission(viewer, OT_PERMISSIONS.create)
+    if (!manage && !creator) return forbidden("Sólo la jefatura de mantención puede anular una OT (quien la creó, mientras no haya entrado a taller).")
     return allow
   }
   if (rule.actor === "assignee_or_manage") {

@@ -67,27 +67,49 @@ describe("formatos (§14): miles con punto, decimales con coma, unidades visible
 
 describe("parseReadingInput", () => {
   it("separa miles mientras se escribe", () => {
-    expect(parseReadingInput("40312")).toEqual({ value: 40_312, text: "40.312" })
-    expect(parseReadingInput("5400")).toEqual({ value: 5_400, text: "5.400" })
+    expect(parseReadingInput("40312")).toEqual({ value: 40_312, text: "40.312", stored: "40312" })
+    expect(parseReadingInput("5400")).toEqual({ value: 5_400, text: "5.400", stored: "5400" })
   })
 
-  it("descarta todo lo que no sea dígito, incluido el separador que ya se había puesto", () => {
-    expect(parseReadingInput("40.312 km")).toEqual({ value: 40_312, text: "40.312" })
-    expect(parseReadingInput("1,5")).toEqual({ value: 15, text: "15" })
+  it("el texto formateado que el campo recibe de vuelta sigue siendo la misma lectura (el punto es de miles)", () => {
+    expect(parseReadingInput("5.400")).toEqual({ value: 5_400, text: "5.400", stored: "5400" })
+    expect(parseReadingInput("5.4005")).toEqual({ value: 54_005, text: "54.005", stored: "54005" })
+    expect(parseReadingInput("5.40")).toEqual({ value: 540, text: "540", stored: "540" })
+    expect(parseReadingInput("40.312 km")).toEqual({ value: 40_312, text: "40.312", stored: "40312" })
+  })
+
+  it("la coma es decimal: «5400,5» es 5.400,5 y no 54.005", () => {
+    expect(parseReadingInput("5400,5")).toEqual({ value: 5_400.5, text: "5.400,5", stored: "5400,5" })
+    expect(parseReadingInput("1,5")).toEqual({ value: 1.5, text: "1,5", stored: "1,5" })
+    expect(parseReadingInput("1.234,5")).toEqual({ value: 1_234.5, text: "1.234,5", stored: "1234,5" })
+    // Lo que se guarda en el borrador vuelve a leerse igual (idempotente).
+    expect(parseReadingInput(parseReadingInput("5400,5").stored)).toEqual(parseReadingInput("5400,5"))
+  })
+
+  it("un punto con un solo dígito detrás es decimal y sólo se conserva un decimal", () => {
+    expect(parseReadingInput("1234.5")).toEqual({ value: 1_234.5, text: "1.234,5", stored: "1234,5" })
+    expect(parseReadingInput("5400,56")).toEqual({ value: 5_400.5, text: "5.400,5", stored: "5400,5" })
+  })
+
+  it("la coma recién escrita se conserva para poder seguir con el decimal", () => {
+    expect(parseReadingInput("5400,")).toEqual({ value: 5_400, text: "5.400,", stored: "5400," })
+    expect(parseReadingInput("12.")).toEqual({ value: 12, text: "12,", stored: "12," })
   })
 
   it("vacío o sin dígitos no es una lectura", () => {
-    expect(parseReadingInput("")).toEqual({ value: null, text: "" })
-    expect(parseReadingInput("abc")).toEqual({ value: null, text: "" })
+    expect(parseReadingInput("")).toEqual({ value: null, text: "", stored: "" })
+    expect(parseReadingInput("abc")).toEqual({ value: null, text: "", stored: "" })
+    expect(parseReadingInput(",")).toEqual({ value: null, text: "", stored: "" })
   })
 
   it("quita ceros a la izquierda pero conserva un cero solo", () => {
-    expect(parseReadingInput("0040")).toEqual({ value: 40, text: "40" })
-    expect(parseReadingInput("0")).toEqual({ value: 0, text: "0" })
+    expect(parseReadingInput("0040")).toEqual({ value: 40, text: "40", stored: "40" })
+    expect(parseReadingInput("0")).toEqual({ value: 0, text: "0", stored: "0" })
+    expect(parseReadingInput(",5")).toEqual({ value: 0.5, text: "0,5", stored: "0,5" })
   })
 
   it("corta en nueve dígitos", () => {
-    expect(parseReadingInput("1234567890")).toEqual({ value: 123_456_789, text: "123.456.789" })
+    expect(parseReadingInput("1234567890")).toEqual({ value: 123_456_789, text: "123.456.789", stored: "123456789" })
   })
 })
 

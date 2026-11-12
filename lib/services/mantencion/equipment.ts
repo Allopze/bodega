@@ -71,7 +71,8 @@ export async function applyCreate(
   actor: MantActor,
   resolved: ResolvedEquipment,
   incorporate: VehicleIdentity | null,
-  origin: "create" | "import",
+  /** `fleet`: «Incorporar desde la flota» (sólo ficha de mantención; la flota no cambia). */
+  origin: "create" | "import" | "fleet",
 ): Promise<{ vehicleId: string; incorporated: boolean }> {
   if (!resolved.worksite.id) throw new Error("La faena del equipo no se resolvió.")
   const now = new Date().toISOString()
@@ -130,6 +131,7 @@ export async function applyCreate(
   const changes = before ? diffEquipmentFields(before, resolved.fields) : {}
   const summary = origin === "import"
     ? (incorporate ? "Incorporado a la mantención desde la planilla de importación" : "Creado desde la planilla de importación")
+    : origin === "fleet" ? "Incorporado a la mantención desde la flota"
     : incorporate ? "Equipo incorporado a la mantención desde la flota" : "Equipo creado"
   await writeEquipmentHistory(tx, {
     vehicleId,
@@ -170,6 +172,11 @@ export async function createEquipment(
       if (!resolved.ok) return equipmentFailure(resolved.fieldErrors)
       if (!resolved.value.worksite.id) return equipmentFailure({ worksiteId: NEW_WORKSITE_OUT_OF_SCOPE })
       if (!isWorksiteInScope(scope, resolved.value.worksite.id)) return equipmentFailure({ worksiteId: EQUIPMENT_OUT_OF_SCOPE })
+      // Incorporar un vehículo de la flota también lo puede trasladar: su faena ACTUAL
+      // tiene que ser del alcance de quien lo incorpora (auditoría I-2).
+      if (resolved.incorporate && !isWorksiteInScope(scope, resolved.incorporate.worksiteId)) {
+        return equipmentFailure({ code: "Ese vehículo es de una faena que no administras: no puedes incorporarlo." })
+      }
       const data = await applyCreate(tx, actor, resolved.value, resolved.incorporate, "create")
       return { ok: true as const, data, message: data.incorporated ? "El vehículo ya estaba en la flota: se incorporó a la mantención." : "Equipo creado." }
     })
@@ -311,6 +318,7 @@ export async function updateEquipment(
       }
       const resolved = await resolveEquipment(tx, input, {
         current,
+        keepWorksiteId: current.worksiteId,
         createWorksite: scope === "all"
           ? (name) => resolveOrCreateWorksite(tx, { typedName: name, actor: { userId: actor.userId, email: actor.email } })
           : undefined,

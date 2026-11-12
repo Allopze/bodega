@@ -1,6 +1,7 @@
 import {
   estimatedRequestTotal,
   evaluateQuotationRequirement,
+  fastPathCoversRequest,
   quotationRequirementMessage,
 } from "@/lib/requests/quotation-requirement"
 import { formatCLP } from "@/lib/utils"
@@ -45,9 +46,13 @@ export function buildRequirementHint(input: {
 
   const thresholdClp = input.requestType === "repuestos" ? input.thresholdClp : null
   const estimatedTotal = estimatedRequestTotal(input.items)
-  // Vía rápida: alguna OT vinculada o un equipo que no está operativo.
-  const fastPathEligible = input.items.some((item) => item.workOrderId)
-    || input.items.some((item) => item.vehicleId && (input.vehicleStatusById.get(item.vehicleId) ?? "operativo") !== "operativo")
+  // Vía rápida por ítem: una OT vinculada o un equipo que no está operativo.
+  const fastPathEligible = fastPathCoversRequest(input.items.map((item) => ({
+    quantity: item.quantity,
+    estimatedUnitPrice: item.estimatedUnitPrice,
+    fastPath: !!item.workOrderId
+      || !!(item.vehicleId && (input.vehicleStatusById.get(item.vehicleId) ?? "operativo") !== "operativo"),
+  })), thresholdClp)
 
   const result = evaluateQuotationRequirement({
     quotationTotals: input.quotationTotals,

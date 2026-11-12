@@ -110,3 +110,17 @@ export function canObserveRecord(viewer: MantViewer, record: { worksiteId: strin
   if (hasMantPermission(viewer, "mant:records:view_all") || viewer.isGlobal) return true
   return viewer.worksiteIds.includes(record.worksiteId)
 }
+
+/**
+ * Alcance de quien administra dispositivos: lo usan la LISTA y la revocación.
+ * La página llamaba al servicio sin actor y listaba las credenciales de todas
+ * las faenas (auditoría 2026-11-11).
+ */
+export function deviceManagerActor(viewer: MantViewer) {
+  return {
+    userId: viewer.userId,
+    isGlobal: viewer.isGlobal,
+    viewAll: hasMantPermission(viewer, "mant:records:view_all"),
+    worksiteIds: viewer.worksiteIds,
+  }
+}

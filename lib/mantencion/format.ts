@@ -33,14 +33,45 @@ export function formatHours(hours: number): string {
 }
 
 /**
- * Lectura escrita con separador de miles mientras se tipea: deja sólo dígitos y
- * devuelve el número y su forma formateada. «40312» → `{ value: 40312, text: "40.312" }`.
+ * Lectura escrita con separador de miles mientras se tipea. «40312» →
+ * `{ value: 40312, text: "40.312", stored: "40312" }`.
+ *
+ * La coma es el separador decimal (la columna admite un decimal: 5400,5 h) y el punto
+ * es de miles —así sale el texto formateado que el campo vuelve a recibir al escribir—,
+ * salvo un punto seguido de UN solo dígito («1234.5»), que es decimal. Se descartan las
+ * letras y lo que sobre; el decimal se corta en un dígito y la parte entera en nueve.
+ * `stored` es lo que se guarda en el borrador: sin miles y con la coma pendiente
+ * («5400,») para poder seguir escribiendo el decimal.
  */
-export function parseReadingInput(raw: string): { value: number | null; text: string } {
-  const digits = raw.replace(/\D/g, "").replace(/^0+(?=\d)/, "").slice(0, 9)
-  if (!digits) return { value: null, text: "" }
-  const value = Number(digits)
-  return { value, text: INTEGER.format(value) }
+export function parseReadingInput(raw: string): { value: number | null; text: string; stored: string } {
+  const cleaned = raw.replace(/[^\d.,]/g, "")
+  if (!/\d/.test(cleaned)) return { value: null, text: "", stored: "" }
+
+  let integerPart: string
+  let fraction: string | null = null
+  const comma = cleaned.lastIndexOf(",")
+  const dots = cleaned.split(".").length - 1
+  const lastDot = cleaned.lastIndexOf(".")
+  if (comma >= 0) {
+    integerPart = cleaned.slice(0, comma)
+    fraction = cleaned.slice(comma + 1).replace(/\D/g, "")
+  } else if (dots === 1 && cleaned.length - lastDot - 1 <= 1) {
+    // «1234.5» o «1234.» (punto recién escrito): decimal. El texto formateado nunca termina en punto.
+    integerPart = cleaned.slice(0, lastDot)
+    fraction = cleaned.slice(lastDot + 1)
+  } else {
+    integerPart = cleaned
+  }
+  const digits = integerPart.replace(/\D/g, "").replace(/^0+(?=\d)/, "").slice(0, 9)
+  if (!digits && fraction === null) return { value: null, text: "", stored: "" }
+  const whole = Number(digits || "0")
+  const decimal = fraction === null ? null : fraction.slice(0, 1)
+  const value = decimal ? Number(`${whole}.${decimal}`) : whole
+  return {
+    value,
+    text: INTEGER.format(whole) + (decimal === null ? "" : `,${decimal}`),
+    stored: (digits || "0") + (decimal === null ? "" : `,${decimal}`),
+  }
 }
 
 /** «faltan 141 km» / «pasada por 312 km». */

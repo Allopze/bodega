@@ -55,6 +55,12 @@ export interface VehicleIdentity {
   plate: string
   isActive: boolean
   hasProfile: boolean
+  /** Faena y tipo que tiene hoy en la flota: la importación no los cambia (decisión 2026-11-11). */
+  worksiteId: string | null
+  equipmentTypeId: string | null
+  /** Modelo y año de la flota: una fila que los deja en blanco los conserva al incorporar. */
+  model?: string | null
+  year?: number | null
 }
 
 export interface ResolvedEquipment {
@@ -76,6 +82,9 @@ export interface ResolvedEquipment {
 /** La ficha tal como está hoy (edición) y los hechos que fijan sus reglas. */
 export interface EquipmentCurrent {
   vehicleId: string
+  /** Faena actual del vehículo: el alcance de ORIGEN que se exige al editarlo. */
+  worksiteId: string
+  equipmentTypeId: string
   active: boolean
   retiredReason: string | null
   unit: MantUnit
@@ -104,7 +113,11 @@ export async function loadEquipmentCatalogs(client: Reader): Promise<EquipmentCa
     client.select({ id: mantSchedules.id, name: mantSchedules.name, unit: mantSchedules.unit }).from(mantSchedules).where(isNull(mantSchedules.deletedAt)),
     client.select({ id: worksites.id, name: worksites.name, isActive: worksites.isActive }).from(worksites),
     client
-      .select({ id: fuelVehicles.id, code: fuelVehicles.code, plate: fuelVehicles.plate, isActive: fuelVehicles.isActive, profile: mantEquipmentProfiles.vehicleId })
+      .select({
+        id: fuelVehicles.id, code: fuelVehicles.code, plate: fuelVehicles.plate, isActive: fuelVehicles.isActive,
+        worksiteId: fuelVehicles.worksiteId, equipmentTypeId: fuelVehicles.equipmentTypeId, profile: mantEquipmentProfiles.vehicleId,
+        model: fuelVehicles.model, year: fuelVehicles.year,
+      })
       .from(fuelVehicles)
       .leftJoin(mantEquipmentProfiles, eq(mantEquipmentProfiles.vehicleId, fuelVehicles.id)),
   ])
@@ -116,7 +129,10 @@ export async function loadEquipmentCatalogs(client: Reader): Promise<EquipmentCa
     brands,
     schedules: schedules.map((row) => ({ ...row, unit: row.unit as MantUnit })),
     worksites: sites,
-    identities: vehicles.map((row) => ({ id: row.id, code: row.code, plate: row.plate, isActive: row.isActive, hasProfile: row.profile !== null })),
+    identities: vehicles.map((row) => ({
+      id: row.id, code: row.code, plate: row.plate, isActive: row.isActive, hasProfile: row.profile !== null,
+      worksiteId: row.worksiteId, equipmentTypeId: row.equipmentTypeId, model: row.model, year: row.year,
+    })),
   }
 }
 
@@ -143,6 +159,8 @@ export async function loadEquipmentCurrents(client: Reader, vehicleId?: string):
   const rows = await client
     .select({
       vehicleId: mantEquipmentProfiles.vehicleId,
+      worksiteId: fuelVehicles.worksiteId,
+      equipmentTypeId: fuelVehicles.equipmentTypeId,
       code: fuelVehicles.code,
       plate: fuelVehicles.plate,
       model: fuelVehicles.model,
@@ -179,6 +197,8 @@ export async function loadEquipmentCurrents(client: Reader, vehicleId?: string):
     if (!unit) continue
     currents.push({
       vehicleId: row.vehicleId,
+      worksiteId: row.worksiteId,
+      equipmentTypeId: row.equipmentTypeId,
       active: row.isActive,
       retiredReason: row.retiredReason,
       unit,
@@ -225,6 +245,11 @@ export interface ResolveOptions {
    * se valida: la vista previa de una importación no escribe nada.
    */
   createWorksite?: (name: string) => Promise<{ id: string; name: string }>
+  /**
+   * Faena que el equipo YA tiene: se acepta aunque esté inactiva. Sin esto, un
+   * equipo de una faena desactivada no se podía editar en nada (auditoría I-3).
+   */
+  keepWorksiteId?: string | null
 }
 
 /**
@@ -324,7 +349,8 @@ export async function resolveEquipment(
   } else if (!input.worksiteId) errors.worksiteId = "Elige la faena."
   else {
     const row = catalogs.worksites.find((item) => item.id === input.worksiteId)
-    if (!row || !row.isActive) errors.worksiteId = "Esa faena no existe o está inactiva."
+    const keeping = !!row && row.id === options.keepWorksiteId
+    if (!row || (!row.isActive && !keeping)) errors.worksiteId = "Esa faena no existe o está inactiva."
     else { worksiteId = row.id; worksiteName = row.name }
   }
 

@@ -127,7 +127,9 @@ export async function loadLifeRows(
   const today = todayInChile()
 
   const rows = kept.map<LifeRow>(({ record: r, corrective: c, worksiteName, registeredByName, voidReason, voidedAt, voidedByName }) => {
-    const workshop = c?.inWorkshop
+    // Un anulado no deja el equipo en taller ni acumula «días detenido»: sólo el vigente tiene estado.
+    const inWorkshopNow = !!c?.inWorkshop && r.status === "vigente"
+    const workshop = inWorkshopNow
       ? workshopState({ inWorkshop: true, entryDate: c.workshopEntryDate, workDate: r.workDate, updates: updatesByRecord.get(r.id) ?? [] }, today)
       : null
     return {
@@ -136,7 +138,7 @@ export async function loadLifeRows(
       intervalValue: r.intervalValue, suggestedIntervalValue: r.suggestedIntervalValue, scheduleName: r.scheduleNameSnapshot,
       worksiteName, executorKind: r.executorKind as MantExecutorKind, executorName: r.executorName, registeredByName, notes: r.notes,
       hours: c?.hours ?? null,
-      inWorkshop: !!c?.inWorkshop,
+      inWorkshop: inWorkshopNow,
       workshopEntryDate: c?.workshopEntryDate ?? null,
       workshopExitDate: workshop?.exitDate ?? null,
       daysInWorkshop: workshop?.daysStopped ?? null,

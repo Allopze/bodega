@@ -175,6 +175,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       session.user.avatarColor      = token.avatarColor as string | null
       session.user.isActive         = token.isActive as boolean
       session.user.isGlobal         = token.isGlobal as boolean
+      session.user.sessionIssuedAt  = typeof token[SESSION_ISSUED_AT_CLAIM] === "number" ? token[SESSION_ISSUED_AT_CLAIM] as number : undefined
       return session
     },
   },
