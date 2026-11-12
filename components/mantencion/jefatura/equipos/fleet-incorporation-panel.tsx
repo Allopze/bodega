@@ -7,6 +7,7 @@ import { useSafeShellHeader } from "@/components/layout/header-context"
 import { Button } from "@/components/ui/button"
 import { Callout } from "@/components/ui/callout"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Combobox } from "@/components/ui/combobox"
 import { DatePicker } from "@/components/ui/date-picker"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Input } from "@/components/ui/input"
@@ -20,11 +21,13 @@ import type { MantUnit } from "@/lib/mantencion/types"
 import type { IncorporationCandidate, IncorporationResult } from "@/lib/services/mantencion/fleet-incorporation"
 import { incorporateFleetAction } from "@/app/(app)/mantencion/equipos/actions"
 
-interface Draft { brandId: string; scheduleId: string; reading: string; date: string }
+/**
+ * `brand` es el id de una marca de la lista o, si no es ninguno, el nombre de
+ * una marca nueva que se crea al incorporar (sólo quien ve todas las faenas).
+ */
+interface Draft { brand: string; scheduleId: string; reading: string; date: string }
 
 const UNIT_SHORT: Record<MantUnit, string> = { km: "km", h: "h" }
-/** Valor del selector de marca que significa «crear esta marca» (la de la flota). */
-const NEW_BRAND = "nueva-marca:"
 
 /**
  * «Incorporar desde la flota»: la flota ya tiene código, patente, tipo y faena
@@ -41,9 +44,12 @@ export function FleetIncorporationPanel({ candidates, brands, schedules, today, 
   canCreateBrands?: boolean
 }) {
   const { searchQuery } = useSafeShellHeader()
-  const [drafts, setDrafts] = React.useState<Record<string, Draft>>(() => Object.fromEntries(candidates.map((item) => [item.vehicleId, {
-    brandId: item.suggestedBrandId ?? "", scheduleId: item.suggestedScheduleId ?? "", reading: "", date: "",
-  }])))
+  // La marca viene puesta: la de la lista que coincide con la flota o, si no está y se pueden crear, la de la flota tal cual.
+  const initialDraft = (item: IncorporationCandidate): Draft => ({
+    brand: item.suggestedBrandId ?? (canCreateBrands ? item.fleetBrand ?? "" : ""),
+    scheduleId: item.suggestedScheduleId ?? "", reading: "", date: "",
+  })
+  const [drafts, setDrafts] = React.useState<Record<string, Draft>>(() => Object.fromEntries(candidates.map((item) => [item.vehicleId, initialDraft(item)])))
   const [selected, setSelected] = React.useState<Set<string>>(new Set())
   const [errors, setErrors] = React.useState<Record<string, string[]>>({})
   const [worksiteId, setWorksiteId] = React.useState("")
@@ -56,10 +62,11 @@ export function FleetIncorporationPanel({ candidates, brands, schedules, today, 
     setDrafts((current) => {
       const next = { ...current }
       for (const item of candidates) {
-        next[item.vehicleId] ??= { brandId: item.suggestedBrandId ?? "", scheduleId: item.suggestedScheduleId ?? "", reading: "", date: "" }
+        next[item.vehicleId] ??= initialDraft(item)
       }
       return next
     })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sólo al cambiar la lista; `initialDraft` depende de props estables
   }, [candidates])
 
   const worksites = React.useMemo(
@@ -77,10 +84,9 @@ export function FleetIncorporationPanel({ candidates, brands, schedules, today, 
   const someVisibleSelected = selectable.some((item) => selected.has(item.vehicleId))
   const blocked = candidates.filter((item) => item.blocker).length
   const brandOptions = brands.map((brand) => ({ value: brand.id, label: brand.name }))
-  /** Las de la lista y, si la marca de la flota no está, «Crear «X»» al final. */
-  const brandOptionsFor = (item: IncorporationCandidate) => canCreateBrands && item.fleetBrand && !item.suggestedBrandId
-    ? [...brandOptions, { value: `${NEW_BRAND}${item.fleetBrand}`, label: `Crear «${item.fleetBrand}»` }]
-    : brandOptions
+  const brandIds = new Set(brands.map((brand) => brand.id))
+  /** Un valor que no es id de la lista es el nombre de una marca por crear. */
+  const isNewBrand = (value: string) => value.trim() !== "" && !brandIds.has(value)
   // «Sin pauta» es el valor vacío: lo pinta `emptyLabel` (Radix no admite una opción con valor "").
   const scheduleOptions = (unit: MantUnit) => schedules
     .filter((schedule) => schedule.unit === unit)
@@ -104,12 +110,12 @@ export function FleetIncorporationPanel({ candidates, brands, schedules, today, 
     })
   }
   /** Marca o pauta para todos los marcados; una pauta sólo cae en los equipos de su unidad. */
-  function applyToSelected(change: { brandId?: string; scheduleId?: string; unit?: MantUnit }) {
+  function applyToSelected(change: { brand?: string; scheduleId?: string; unit?: MantUnit }) {
     setDrafts((current) => {
       const next = { ...current }
       for (const item of candidates) {
         if (!selected.has(item.vehicleId)) continue
-        if (change.brandId !== undefined) next[item.vehicleId] = { ...next[item.vehicleId]!, brandId: change.brandId }
+        if (change.brand !== undefined) next[item.vehicleId] = { ...next[item.vehicleId]!, brand: change.brand }
         if (change.scheduleId !== undefined && item.unit === change.unit) next[item.vehicleId] = { ...next[item.vehicleId]!, scheduleId: change.scheduleId }
       }
       return next
@@ -118,7 +124,7 @@ export function FleetIncorporationPanel({ candidates, brands, schedules, today, 
 
   function submit() {
     const chosen = candidates.filter((item) => selected.has(item.vehicleId) && !item.blocker)
-    const missing = chosen.filter((item) => !drafts[item.vehicleId]?.brandId)
+    const missing = chosen.filter((item) => !drafts[item.vehicleId]?.brand.trim())
     if (missing.length) {
       setErrors((current) => ({ ...current, ...Object.fromEntries(missing.map((item) => [item.vehicleId, ["Elige la marca."]])) }))
       op.setMessage(`${plural(missing.length, "equipo marcado no tiene", "equipos marcados no tienen")} marca.`, "error")
@@ -128,9 +134,9 @@ export function FleetIncorporationPanel({ candidates, brands, schedules, today, 
       const result = await incorporateFleetAction({
         rows: chosen.map((item) => {
           const draft = drafts[item.vehicleId]!
-          const newBrandName = draft.brandId.startsWith(NEW_BRAND) ? draft.brandId.slice(NEW_BRAND.length) : null
+          const newBrandName = isNewBrand(draft.brand) ? draft.brand.trim() : null
           return {
-            vehicleId: item.vehicleId, brandId: newBrandName ? "" : draft.brandId, newBrandName, scheduleId: draft.scheduleId || null,
+            vehicleId: item.vehicleId, brandId: newBrandName ? "" : draft.brand, newBrandName, scheduleId: draft.scheduleId || null,
             initialReading: draft.reading, initialReadingDate: draft.reading.trim() ? draft.date || null : null,
           }
         }),
@@ -190,7 +196,10 @@ export function FleetIncorporationPanel({ candidates, brands, schedules, today, 
           {selected.size > 0 && (
             <div className="flex flex-wrap items-center gap-2 text-sm" role="group" aria-label="Aplicar a los marcados">
               <span className="font-medium text-[var(--color-text)]">{plural(selected.size, "marcado", "marcados")}:</span>
-              <OptionSelect aria-label="Marca para todos los marcados" className="h-9 w-full sm:w-44" placeholder="Marca para todos" options={brandOptions} value="" onValueChange={(value) => applyToSelected({ brandId: value })} />
+              <Combobox
+                aria-label="Marca para todos los marcados" className="w-full sm:w-48" placeholder={canCreateBrands ? "Marca para todos (o escribe una nueva)" : "Marca para todos"}
+                options={brandOptions} value="" allowCustomValue={canCreateBrands} onChange={(value) => { if (value.trim()) applyToSelected({ brand: value }) }}
+              />
               {[...selectedUnits].map((unit) => (
                 <OptionSelect
                   key={unit} aria-label={`Pauta para los marcados que se miden en ${unitName(unit)}`} className="h-9 w-full sm:w-52"
@@ -228,7 +237,7 @@ export function FleetIncorporationPanel({ candidates, brands, schedules, today, 
                 </TableRow>
               )}
               {visible.map((item) => {
-                const draft = drafts[item.vehicleId] ?? { brandId: "", scheduleId: "", reading: "", date: "" }
+                const draft = drafts[item.vehicleId] ?? initialDraft(item)
                 const rowErrors = errors[item.vehicleId] ?? []
                 const label = item.code ?? item.plate
                 return (
@@ -254,15 +263,15 @@ export function FleetIncorporationPanel({ candidates, brands, schedules, today, 
                     ) : (
                       <>
                         <TableCell className="align-top">
-                          <OptionSelect
-                            aria-label={`Marca de ${label}`} className="h-9 w-full" placeholder="Elige la marca"
-                            options={brandOptionsFor(item)} value={draft.brandId} error={rowErrors.length > 0 && !draft.brandId}
-                            onValueChange={(value) => patch(item.vehicleId, { brandId: value })}
+                          <Combobox
+                            aria-label={`Marca de ${label}`} className="w-full" placeholder={canCreateBrands ? "Busca o escribe una marca" : "Busca la marca"}
+                            options={brandOptions} value={draft.brand} allowCustomValue={canCreateBrands}
+                            onChange={(value) => patch(item.vehicleId, { brand: value })}
                           />
-                          {item.fleetBrand && !item.suggestedBrandId && !draft.brandId.startsWith(NEW_BRAND) && (
-                            <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                              En la flota dice «{item.fleetBrand}»{canCreateBrands ? ": puedes crearla al final de la lista." : ", que no está en la lista."}
-                            </p>
+                          {isNewBrand(draft.brand) ? (
+                            <p className="mt-1 text-xs text-[var(--color-text-muted)]">Marca nueva: se agrega a la lista al incorporar.</p>
+                          ) : item.fleetBrand && !item.suggestedBrandId && !canCreateBrands && (
+                            <p className="mt-1 text-xs text-[var(--color-text-muted)]">En la flota dice «{item.fleetBrand}», que no está en la lista.</p>
                           )}
                         </TableCell>
                         <TableCell className="align-top">
