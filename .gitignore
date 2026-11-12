@@ -184,3 +184,15 @@ miper-web-mockup-3.html
 .impeccable
 IMG_1337.HEIC
 Control_vencimientos_Chome_consolidado.xlsx
+
+# Material de trabajo local que se versionó por error: estado de ejecuciones de
+# agentes y un sitio de referencia copiado (fuentes, CSS y assets). Los archivos
+# siguen en disco; el historial no necesita cargarlos.
+/strix_runs/
+/referencia/
+
+# Exportaciones y carpetas documentales de la operación. Si un script necesita
+# una planilla como fixture, va bajo tests/fixtures/ con su excepción explícita.
+/Flota y manten*/
+/*.docx
+/*.xlsx
