@@ -238,8 +238,11 @@ describe("POST /sync/ot: el flujo del mecánico", () => {
     const newDate = addDaysToPlainDate(today, 5)
     const noReason = await send(mecanico, { ...base(id), action: "estimate", estimatedDeliveryDate: newDate, reason: null })
     expect(noReason.status).toBe(422)
-    // El teléfono pide ≥ 5 caracteres (la web, 10).
-    expect((await send(mecanico, { ...base(id), action: "estimate", estimatedDeliveryDate: newDate, reason: "Repuesto" })).status).toBe(200)
+    // Teléfono, web y servidor piden lo mismo (REASON_MIN_LENGTH, 10): ocho caracteres no alcanzan.
+    const short = await send(mecanico, { ...base(id), action: "estimate", estimatedDeliveryDate: newDate, reason: "Repuesto" })
+    expect(short.status).toBe(422)
+    expect(short.body).toMatchObject({ ok: false, field: "reason" })
+    expect((await send(mecanico, { ...base(id), action: "estimate", estimatedDeliveryDate: newDate, reason: "Repuesto importado" })).status).toBe(200)
     expect((await eventsOf(id)).find((event) => event.type === "estimate_changed")?.changeSet).toMatchObject({ to: newDate })
 
     // El ítem agregado en el teléfono conserva su uuid y una operación posterior lo puede marcar.

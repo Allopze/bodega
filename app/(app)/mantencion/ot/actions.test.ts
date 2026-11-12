@@ -47,4 +47,15 @@ describe("exportWorkOrdersAction", () => {
     expect(await exportWorkOrdersAction({ tab: "abiertas" })).toEqual({ ok: false, message: "Sin permiso" })
     expect(exportWorkOrders).not.toHaveBeenCalled()
   })
+
+  it("rechaza una fecha que no existe (2026-02-31) en vez de dejar que reviente el SQL del Excel", async () => {
+    const result = await exportWorkOrdersAction({ tab: "abiertas", from: "2026-02-31" })
+    expect(result).toMatchObject({ ok: false })
+    expect(exportWorkOrders).not.toHaveBeenCalled()
+  })
+
+  it("acepta un rango de fechas reales", async () => {
+    await exportWorkOrdersAction({ tab: "abiertas", from: "2026-02-01", to: "2026-02-28" })
+    expect(exportWorkOrders).toHaveBeenCalledWith({ session: SESSION, filters: { tab: "abiertas", from: "2026-02-01", to: "2026-02-28" } })
+  })
 })

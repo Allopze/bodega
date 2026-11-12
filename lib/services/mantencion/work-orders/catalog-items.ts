@@ -27,12 +27,13 @@ async function hydrate(viewer: MantViewer, rows: Array<{ ot: typeof mantWorkOrde
       .from(mantWorkOrderEvents)
       .where(and(inArray(mantWorkOrderEvents.workOrderId, ids), inArray(mantWorkOrderEvents.type, ["rejected", "reopened"])))
       .orderBy(desc(mantWorkOrderEvents.createdAt)),
-    db.select({ id: mantRecords.id, workOrderId: mantRecords.workOrderId, folio: mantRecords.folio, kind: mantRecords.kind, signedAt: mantRecords.signedAt })
+    db.select({ id: mantRecords.id, workOrderId: mantRecords.workOrderId, folio: mantRecords.folio, kind: mantRecords.kind, signedAt: mantRecords.signedAt, receivedAt: mantRecords.receivedAt })
       .from(mantRecords)
       .where(and(inArray(mantRecords.workOrderId, ids), eq(mantRecords.status, "vigente")))
       .orderBy(asc(mantRecords.signedAt)),
   ])
-  // Lo firmado «desde el último rechazo» (o reapertura): es lo que habilita terminar de nuevo.
+  // Lo recibido «desde el último rechazo» (o reapertura): es lo que habilita terminar de nuevo.
+  // Reloj del servidor (`received_at`), el mismo del evento; `signed_at` es del teléfono.
   const lastReturn = new Map<string, { type: string; reason: string | null; createdAt: string }>()
   for (const event of returns) if (!lastReturn.has(event.workOrderId)) lastReturn.set(event.workOrderId, event)
 
@@ -82,7 +83,7 @@ async function hydrate(viewer: MantViewer, rows: Array<{ ot: typeof mantWorkOrde
       })),
       lastRejection: rejected ? { count: ot.rejectionCount, reason: rejected.reason ?? "", at: iso(rejected.createdAt) } : null,
       linkedRecords: records
-        .filter((record) => record.workOrderId === ot.id && (!back || new Date(record.signedAt).getTime() > new Date(back.createdAt).getTime()))
+        .filter((record) => record.workOrderId === ot.id && (!back || new Date(record.receivedAt).getTime() > new Date(back.createdAt).getTime()))
         .map((record) => ({ id: record.id, folio: record.folio, kind: record.kind as "P" | "C", signedAt: iso(record.signedAt) })),
     }
   })

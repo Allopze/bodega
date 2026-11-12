@@ -8,8 +8,10 @@ import { inactiveRequestProductsMessage } from "../inactive-request-products"
 import {
   estimatedRequestTotal,
   evaluateQuotationRequirement,
+  fastPathCoversRequest,
   quotationRequirementMessage,
 } from "../quotation-requirement"
+import { assertLinkedWorkOrderOpen } from "./linked-work-order"
 import type { RequestModuleConfig, SubmitRequestInput } from "../request-config"
 
 export async function submitRequest(
@@ -80,19 +82,34 @@ export async function submitRequest(
       ? (await getOperationalSettings(tx)).repuestosQuotationThresholdClp
       : null
 
-    // Vía rápida: una OT vinculada, o un equipo que no está operativo. Sólo se
-    // consulta la flota cuando la respuesta puede cambiar algo.
-    let fastPathEligible = items.some((item) => item.workOrderId)
-    if (!fastPathEligible && thresholdClp !== null) {
-      const vehicleIds = [...new Set(items.flatMap((item) => (item.vehicleId ? [item.vehicleId] : [])))]
-      if (vehicleIds.length > 0) {
-        const vehicles = await tx
-          .select({ operationalStatus: fuelVehicles.operationalStatus })
-          .from(fuelVehicles)
-          .where(inArray(fuelVehicles.id, vehicleIds))
-        fastPathEligible = vehicles.some((vehicle) => vehicle.operationalStatus !== "operativo")
-      }
+    // La OT vinculada se valida al guardar el borrador, pero puede haberse
+    // cerrado o anulado desde entonces: la vía rápida cuelga de que siga abierta.
+    const linkedOrders = new Map<string, string>()
+    for (const item of items) {
+      if (item.workOrderId && item.vehicleId) linkedOrders.set(item.workOrderId, item.vehicleId)
+      else if (item.workOrderId) throw new Error("La OT exige elegir el equipo de flota")
     }
+    for (const [workOrderId, vehicleId] of linkedOrders) {
+      await assertLinkedWorkOrderOpen(tx, { workOrderId, vehicleId }, ": quita el vínculo o elige otra OT antes de enviar la solicitud")
+    }
+
+    // Vía rápida: una OT vinculada, o un equipo que no está operativo. Por ítem:
+    // una línea de vía rápida no exime a las demás (`fastPathCoversRequest`).
+    // Sólo se consulta la flota cuando la respuesta puede cambiar algo.
+    const nonOperationalVehicles = new Set<string>()
+    const vehicleIds = [...new Set(items.flatMap((item) => (item.vehicleId && !item.workOrderId ? [item.vehicleId] : [])))]
+    if (thresholdClp !== null && vehicleIds.length > 0) {
+      const vehicles = await tx
+        .select({ id: fuelVehicles.id, operationalStatus: fuelVehicles.operationalStatus })
+        .from(fuelVehicles)
+        .where(inArray(fuelVehicles.id, vehicleIds))
+      for (const vehicle of vehicles) if (vehicle.operationalStatus !== "operativo") nonOperationalVehicles.add(vehicle.id)
+    }
+    const fastPathEligible = fastPathCoversRequest(items.map((item) => ({
+      quantity: item.quantity,
+      estimatedUnitPrice: item.estimatedUnitPrice,
+      fastPath: !!item.workOrderId || (!!item.vehicleId && nonOperationalVehicles.has(item.vehicleId)),
+    })), thresholdClp)
 
     const verdict = evaluateQuotationRequirement({
       quotationTotals: quotations.map((quotation) => Number(quotation.totalAmount)),

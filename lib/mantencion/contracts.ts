@@ -38,6 +38,8 @@ export interface DeviceCredentialResponse {
 // ── Fotos: PUT /api/mantencion/sync/fotos/{id} (multipart: `file` + `meta`) ──
 
 export const MANT_PHOTO_MAX_BYTES = 10 * 1024 * 1024
+/** Tope de claves del `exif` declarado: el teléfono manda un puñado de campos; el resto es relleno. */
+export const MANT_PHOTO_EXIF_MAX_KEYS = 40
 
 export const photoMetaSchema = z.object({
   kind: z.enum(["filtros", "sticker", "correctiva"]),
@@ -46,7 +48,9 @@ export const photoMetaSchema = z.object({
   height: z.number().int().positive().max(10_000),
   stampedAt: isoDateTime,
   takenAtExif: isoDateTime.nullable(),
-  exif: z.record(z.string(), z.string().max(200)).nullable(),
+  exif: z.record(z.string(), z.string().max(200))
+    .refine((exif) => Object.keys(exif).length <= MANT_PHOTO_EXIF_MAX_KEYS, `Los datos EXIF de la foto traen más de ${MANT_PHOTO_EXIF_MAX_KEYS} campos.`)
+    .nullable(),
   deviceId: uuid,
 })
 export type PhotoMeta = z.infer<typeof photoMetaSchema>
@@ -228,7 +232,7 @@ export const workOrderOpSchema = z.discriminatedUnion("action", [
     ...workOrderOpBase,
     action: z.literal("estimate"),
     estimatedDeliveryDate: isoDate,
-    /** Obligatorio (≥ 5) al cambiar una fecha estimada que ya existía. */
+    /** Obligatorio (`REASON_MIN_LENGTH`, 10) al cambiar una fecha estimada que ya existía. */
     reason: z.string().trim().max(500).nullable(),
   }),
   z.object({

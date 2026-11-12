@@ -103,7 +103,7 @@ export type OtPermission = (typeof OT_PERMISSIONS)[keyof typeof OT_PERMISSIONS]
  * permiso:
  * - `any`: basta el permiso (y el alcance de faena que exija el servicio);
  * - `assignee_or_manage`: el mecánico asignado (con execute) o quien tenga manage;
- * - `creator_or_manage`: quien creó la OT mientras siga solicitada, o manage.
+ * - `creator_or_manage`: quien creó la OT mientras no haya entrado a taller (solicitada o asignada), o manage.
  */
 export type OtTransition =
   | "assign"

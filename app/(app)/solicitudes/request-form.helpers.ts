@@ -7,6 +7,7 @@ import { catalogItemIssues } from "@/lib/products/service-items"
 import {
   estimatedRequestTotal,
   evaluateQuotationRequirement,
+  fastPathCoversRequest,
   quotationRequirementMessage,
 } from "@/lib/requests/quotation-requirement"
 import { formatCLP } from "@/lib/utils"
@@ -154,9 +155,13 @@ export function evaluateRequestQuotations({
     estimatedUnitPrice: parseEstimatedPrice(item.estimatedUnitPrice),
   })))
   const operationalStatusById = new Map(vehicles.map((vehicle) => [vehicle.id, vehicle.operationalStatus]))
-  // Vía rápida: una OT vinculada o un equipo que no está operativo.
-  const fastPathEligible = items.some((item) => item.workOrderId
-    || (item.vehicleId && (operationalStatusById.get(item.vehicleId) ?? "operativo") !== "operativo"))
+  // Vía rápida por ítem: una OT vinculada o un equipo que no está operativo.
+  const fastPathEligible = fastPathCoversRequest(items.map((item) => ({
+    quantity: Number(item.quantity),
+    estimatedUnitPrice: parseEstimatedPrice(item.estimatedUnitPrice),
+    fastPath: !!item.workOrderId
+      || !!(item.vehicleId && (operationalStatusById.get(item.vehicleId) ?? "operativo") !== "operativo"),
+  })), thresholdClp)
 
   const result = evaluateQuotationRequirement({
     quotationTotals, estimatedTotal, thresholdClp, urgency, fastPathEligible,

@@ -121,7 +121,7 @@ export function OtEntryForm({ view, saving, error, onSubmit, onBack }: {
       </div>
       <div>
         <Label htmlFor="ot-lectura">{ot.unit === "km" ? "Odómetro al ingresar" : "Horómetro al ingresar"}</Label>
-        <input id="ot-lectura" className={errors.reading ? "inp bad" : "inp"} inputMode="numeric" autoComplete="off" value={parseReadingInput(readingText).text} aria-invalid={Boolean(errors.reading)}
+        <input id="ot-lectura" className={errors.reading ? "inp bad" : "inp"} inputMode="decimal" autoComplete="off" value={parseReadingInput(readingText).text} aria-invalid={Boolean(errors.reading)}
           onChange={(event) => { setReadingText(event.target.value); setErrors({}) }} />
         {last ? <p className="hint">Última lectura del {meter}: <span className="mono">{formatReading(last.value, ot.unit)}</span></p> : null}
         <FieldError message={errors.reading} />

@@ -109,3 +109,18 @@ export function deriveFolioCode(name: string, taken: ReadonlySet<string>): strin
   }
   throw new Error("No quedan códigos de folio disponibles")
 }
+
+/**
+ * Número escrito a la chilena: «40.312» → 40312 (punto de miles), «1.234,5» → 1234.5,
+ * «5400,5» → 5400.5 (coma decimal), «1234.5» → 1234.5. Vacío → `null`; cualquier otra
+ * cosa → `"invalid"` (nunca se adivina quitando letras: «5400,5» no puede volverse 54005).
+ */
+export function parseLocaleNumber(text: string): number | null | "invalid" {
+  if (!text) return null
+  let normalized = text.replace(/\s/g, "")
+  if (!normalized) return null
+  if (normalized.includes(",")) normalized = normalized.replace(/\./g, "").replace(",", ".")
+  else if (/^\d{1,3}(\.\d{3})+$/.test(normalized)) normalized = normalized.replace(/\./g, "")
+  if (!/^\d+(\.\d+)?$/.test(normalized)) return "invalid"
+  return Number(normalized)
+}

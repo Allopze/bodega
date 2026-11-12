@@ -72,13 +72,18 @@ export function PanelKpis({ data }: { data: PanelData }) {
           ? "Ninguno detenido"
           : workshop.stale > 0 ? `${plural(workshop.stale, "sin actualizar", "sin actualizar")} hace más de 2 días` : "Todos con estado al día"}
         tone={workshop.stale > 0 ? "signal" : "neutral"}
-        href={`/mantencion/registros?tipo=C&situacion=en_taller&estado=vigente${worksite}`}
+        // Al listado de EQUIPOS en taller, no al de registros: el tile cuenta equipos (una OT en ejecución
+        // también retiene el equipo, y un equipo con dos correctivas abiertas cuenta una vez), y sólo la
+        // lista de equipos vuelve a dar esa cifra. `loadPanel` y la lista salen del mismo `loadFleet`.
+        href={`/mantencion/equipos?taller=1${worksite}`}
       />
       <KpiCard
         icon={<CalendarX size={16} aria-hidden />}
         label={`Días fuera de servicio · ${period}`}
         value={stoppedDays.total}
-        detail={stoppedDays.total === 0 ? "Ningún equipo detenido" : `En ${plural(stoppedDays.equipment, "equipo", "equipos")}, de ingreso a salida`}
+        detail={stoppedDays.total === 0 ? "Ningún equipo detenido" : `En ${plural(stoppedDays.equipment, "equipo", "equipos")} · ver las correctivas que pasaron por taller`}
+        // Ninguna lista reproduce estos días (suman tramos de ingreso a salida, también de OT y recortados al
+        // período): lo más cercano son las correctivas del período con paso por taller, y el detalle lo dice.
         href={`/mantencion/registros?tipo=C&situacion=paso_taller&estado=vigente${since}${worksite}`}
       />
     </section>

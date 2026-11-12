@@ -14,7 +14,7 @@ import type { MantBrandRuleValue, MantUnit } from "@/lib/mantencion/types"
 import type { MantActor } from "./equipment-history"
 import { checkScheduleName, MAX_SCHEDULE_INTERVALS } from "./schedules"
 import { restoreDraft, scheduleDraftDiff } from "./schedule-draft"
-import { getScheduleSnapshot, publishScheduleVersion } from "./schedule-versions"
+import { buildScheduleSnapshot, getScheduleSnapshot, publishScheduleVersion } from "./schedule-versions"
 
 /**
  * Ediciones finas de una pauta (§10, regla 15), con el modelo «borrador + publicar».
@@ -78,6 +78,17 @@ export async function publishSchedule(actor: MantActor, scheduleId: string): Pro
     if (!schedule) return { ok: false as const, message: "Esa pauta ya no existe." }
     const diff = await scheduleDraftDiff(scheduleId, tx)
     if (!diff.dirty) return { ok: false as const, message: "No hay cambios por publicar." }
+    // Un intervalo activo sin ningún ítem marcado no se puede hacer: el servidor rechaza el registro
+    // («La pauta no tiene ítems para el intervalo…») mientras la app lo sigue sugiriendo.
+    const draft = await buildScheduleSnapshot(tx, scheduleId, schedule.version + 1)
+    const empty = draft.intervals.filter((_, column) => !draft.groups.some((group) => group.items.some((item) => item.applies[column])))
+    if (empty.length > 0) {
+      const names = empty.map((value) => formatReading(value, draft.unit)).join(", ")
+      return {
+        ok: false as const,
+        message: `No se puede publicar: ${empty.length === 1 ? "el intervalo" : "los intervalos"} ${names} no ${empty.length === 1 ? "tiene" : "tienen"} ítems. Marca al menos un ítem o quita ${empty.length === 1 ? "el intervalo" : "los intervalos"}.`,
+      }
+    }
     const version = await publishScheduleVersion(tx, { scheduleId, userId: actor.userId, summary: diff.changes.join(" · ") })
     await recordAudit({
       userId: actor.userId, userEmail: actor.email ?? undefined, action: "update",

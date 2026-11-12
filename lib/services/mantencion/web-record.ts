@@ -6,6 +6,7 @@ import {
   MANT_WEB_APP_VERSION, MANT_WEB_DEVICE_ID, MANT_WEB_PHOTO_TYPES, syncRecordSchema, webMetaField, webPhotoField,
   type CatalogEquipment, type SyncRecord, type SyncWarning,
 } from "@/lib/mantencion/contracts"
+import { logger } from "@/lib/logger"
 import type { MantScheduleSnapshot } from "@/lib/mantencion/types"
 import { resolveMantencionFile } from "@/lib/storage/config"
 import { removeFile } from "@/lib/storage/helpers"
@@ -137,7 +138,20 @@ async function discardUploadedPhotos(photoIds: string[], userId: string): Promis
   // nombrando su archivo. Un archivo que no se pueda borrar se queda sin fila, no al revés.
   for (const row of rows) {
     const filePath = resolveMantencionFile(row.storageKey)
-    if (filePath) await removeFile(filePath).catch(() => undefined)
+    if (!filePath) continue
+    await removeFile(filePath).catch((error: unknown) => {
+      if ((error as { code?: unknown } | null)?.code === "ENOENT") return
+      logger.warn("[mantencion/registro-web] no se pudo borrar el archivo de una foto descartada", { photoId: row.id, error })
+    })
+  }
+}
+
+/** Compensación sin enmascarar el error original: si falla, queda en el log y el GC de huérfanas la barre. */
+async function discardPhotosLogged(photoIds: string[], userId: string): Promise<void> {
+  try {
+    await discardUploadedPhotos(photoIds, userId)
+  } catch (error) {
+    logger.error("[mantencion/registro-web] no se pudieron descartar las fotos subidas tras un registro fallido", { photoIds, error })
   }
 }
 
@@ -172,7 +186,7 @@ export async function registerWorkOrderRecordFromWeb(context: SyncContext, form:
   // 3.4)—, así que se deshacen antes de devolver el error original.
   const uploaded: string[] = []
   const failPhotos = async (message: string): Promise<WebRecordOutcome> => {
-    await discardUploadedPhotos(uploaded, context.viewer.userId).catch(() => undefined)
+    await discardPhotosLogged(uploaded, context.viewer.userId)
     return fail(message, "photos")
   }
   for (const photo of record.photos) {
@@ -183,14 +197,32 @@ export async function registerWorkOrderRecordFromWeb(context: SyncContext, form:
     }
     const meta = withWebDevice(form.get(webMetaField(photo.id)))
     if (meta.kind !== undefined && meta.kind !== photo.kind) return failPhotos("Una foto se cargó con otro tipo que el declarado en el registro.")
-    const saved = await savePhoto({ photoId: photo.id, file, metaRaw: meta.raw }, context)
-    if (!saved.body.ok) return failPhotos(saved.body.message)
+    let saved: Awaited<ReturnType<typeof savePhoto>>
+    try {
+      saved = await savePhoto({ photoId: photo.id, file, metaRaw: meta.raw }, context)
+    } catch (error) {
+      await discardPhotosLogged(uploaded, context.viewer.userId)
+      throw error
+    }
+    // El «se vuelve a enviar sola» es del teléfono; en el formulario web la persona la vuelve a cargar.
+    if (!saved.body.ok) return failPhotos(saved.body.code === "retry" ? "Una foto llegó alterada o incompleta (la huella no coincide). Vuelve a cargarla." : saved.body.message)
     // Sólo se puede deshacer lo que creó esta petición: un «duplicado» ya era de otro envío.
     if (!saved.body.duplicate) uploaded.push(photo.id)
   }
 
-  const outcome = await createRecord(record, context)
+  // Si el registro se rechaza (o revienta) las fotos recién subidas no tienen a quién
+  // pertenecer: el formulario se reenvía con ids nuevos y nadie las reclamaría.
+  let outcome: Awaited<ReturnType<typeof createRecord>>
+  try {
+    outcome = await createRecord(record, context)
+  } catch (error) {
+    await discardPhotosLogged(uploaded, context.viewer.userId)
+    throw error
+  }
   const body = outcome.body
-  if (!body.ok) return fail(body.message, body.field)
+  if (!body.ok) {
+    await discardPhotosLogged(uploaded, context.viewer.userId)
+    return fail(body.message, body.field)
+  }
   return { ok: true, id: body.id, folio: body.folio, duplicate: body.duplicate, warnings: body.warnings, workOrderId: input.workOrderId, vehicleId: input.vehicleId }
 }

@@ -199,6 +199,15 @@ describe("getVehicleWorkOrderMetrics", () => {
     expect(byVehicle.get(IDS.machineBio)).toMatchObject({ openCount: 1, unassignedOpen: 0 })
   })
 
+  it("con equipos explícitos la faena no filtra por la faena de la OT (el equipo traspasado conserva sus OT abiertas)", async () => {
+    // Las OT de truckBio se abrieron en Biodiversa; pedir «Cholguán» sin equipos no trae nada de ellas…
+    const byWorksite = await getVehicleWorkOrderMetrics("all", { worksiteId: IDS.wsCho, now: NOW })
+    expect(byWorksite.get(IDS.truckBio)).toBeUndefined()
+    // …pero con el equipo en la mano (ya acotado por la flota a esa faena) sus OT abiertas cuentan.
+    const byVehicle = await getVehicleWorkOrderMetrics("all", { worksiteId: IDS.wsCho, vehicleIds: [IDS.truckBio], now: NOW })
+    expect(byVehicle.get(IDS.truckBio)).toMatchObject({ openCount: 3, inWorkshopNow: true })
+  })
+
   it("«en taller ahora» es sólo la OT en ejecución con ingreso y sin salida", async () => {
     const byVehicle = await getVehicleWorkOrderMetrics("all", { period: MARCH, now: NOW })
     expect(byVehicle.get(IDS.truckBio)!.inWorkshopNow).toBe(true)

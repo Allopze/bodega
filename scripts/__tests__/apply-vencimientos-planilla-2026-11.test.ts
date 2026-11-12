@@ -1,6 +1,7 @@
 import path from "node:path"
 import { PGlite } from "@electric-sql/pglite"
 import ExcelJS from "exceljs"
+import JSZip from "jszip"
 import { drizzle } from "drizzle-orm/pglite"
 import { and, eq } from "drizzle-orm"
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
@@ -220,6 +221,136 @@ describe("lectura de la planilla", () => {
     const headers = MACHINE_HEADERS.map((header) => (header === "Patente" ? "Placa" : header))
     await expect(readPlanilla(await buildPlanilla({ machineHeaders: headers }))).rejects.toThrow(/Patente/)
   })
+})
+
+/* ── Chome_Control_Vencimientos_FINAL (2026-11-08) ────────────────────────── */
+// Misma información que el consolidado más la faena Cholguán, con otra forma:
+// tres filas de título antes de los encabezados, columnas de trazabilidad al
+// final, hojas como tablas de Excel y el paquete escrito con OpenXML SDK (XML con
+// prefijo `x:` y relaciones con ruta absoluta), que ExcelJS no abre tal cual.
+
+const FINAL_MACHINE_HEADERS = ["Faena", "Máquina", "Código interno", "Patente", "Venc. SOAP", "Venc. permiso circulación", "Venc. revisión técnica", "Próximo vencimiento", "Documento crítico", "Días restantes", "Estado", "Observaciones", "Archivo origen", "Fila origen", "Faena original"]
+const FINAL_WORKER_HEADERS = ["Faena", "Nombre trabajador", "RUT", "Cargo", "Clase licencia", "Venc. licencia conducir", "Días restantes", "Estado", "Observaciones", "Archivo origen", "Fila origen", "Faena original"]
+
+/** Reescribe un .xlsx de ExcelJS como lo hace OpenXML SDK: elementos con prefijo `x:` y relaciones de tablas con ruta absoluta. */
+async function asOpenXmlSdk(buffer: Buffer): Promise<Buffer> {
+  const zip = await JSZip.loadAsync(buffer)
+  const main = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  for (const entry of Object.values(zip.files)) {
+    if (/^xl\/(workbook|styles|sharedStrings)\.xml$|^xl\/(worksheets|tables)\/[^/]+\.xml$/.test(entry.name)) {
+      const xml = await entry.async("string")
+      zip.file(entry.name, xml.replace(/<(\/?)([A-Za-z]\w*)(?=[\s/>])/g, "<$1x:$2").replace(`xmlns="${main}"`, `xmlns:x="${main}"`))
+    } else if (/^xl\/worksheets\/_rels\/.+\.rels$/.test(entry.name)) {
+      zip.file(entry.name, (await entry.async("string")).replace(/Target="\.\.\/tables\//g, 'Target="/xl/tables/'))
+    }
+  }
+  return zip.generateAsync({ type: "nodebuffer" })
+}
+
+async function buildFinalPlanilla(): Promise<Buffer> {
+  const workbook = new ExcelJS.Workbook()
+  workbook.addWorksheet("Resumen").addRow(["CHOME | CONTROL CONSOLIDADO"])
+
+  const machines = workbook.addWorksheet("Máquinas")
+  machines.addRow(["CONTROL DE VENCIMIENTOS | FLOTA"])
+  machines.addRow(["3 registros consolidados • Fechas y estados automáticos"])
+  machines.addRow([])
+  machines.addTable({
+    name: "FlotaPrueba", ref: "A4", headerRow: true, style: { theme: "TableStyleMedium2", showRowStripes: true },
+    columns: FINAL_MACHINE_HEADERS.map((name) => ({ name })),
+    rows: [
+      ["Horcones", "camion", "KA.20", "TEST-11", date("2099-01-01"), date("2099-01-02"), date("2099-01-03"), date("2099-01-01"), "SOAP", 100, "VIGENTE", null, "Control_vencimientos_Chome-2.xlsx", 4, "Horcones"],
+      ["Masisa Maderas", "TRACTO CAMION", "KCH-2", "TEST-22", date("2099-03-03"), null, date("2099-04-04"), date("2099-03-03"), "SOAP", 100, "VIGENTE", "Taller", "Control_vencimientos_Chome.xlsx", 5, "Masisa maderas"],
+      ["Cholguán Máquinas", "Camión", null, "TEST-33", null, null, null, null, null, null, "SIN FECHA", null, "Control_vencimientos_Cholguan.xlsx", 23, "Cholguan maquinas"],
+    ],
+  })
+
+  const workers = workbook.addWorksheet("Trabajadores")
+  workers.addRow(["CONTROL DE VENCIMIENTOS | PERSONAL"])
+  workers.addRow(["2 trabajadores consolidados"])
+  workers.addRow([])
+  workers.addTable({
+    name: "PersonalPrueba", ref: "A4", headerRow: true, style: { theme: "TableStyleMedium2", showRowStripes: true },
+    columns: FINAL_WORKER_HEADERS.map((name) => ({ name })),
+    rows: [
+      ["Masisa Maderas", "UNO PRUEBA SOTO", dotted(R.w1), "Chofer", "A2/A4/B", date("2099-06-01"), 100, "VIGENTE", "Prorroga por 6 meses", "Control_vencimientos_Chome.xlsx", 7, "Masisa maderas"],
+      ["Masisa Tableros", "DOS PRUEBA SOTO", dotted(R.w2), "CONDUCTOR", "A5", date("2099-05-05"), 100, "VIGENTE", null, "Control_vencimientos_Chome.xlsx", 6, "Masisa tableros"],
+    ],
+  })
+  for (const sheet of [machines, workers]) {
+    sheet.eachRow((row) => row.eachCell((cell) => { if (cell.value instanceof Date) cell.numFmt = "dd-mm-yyyy" }))
+  }
+  return asOpenXmlSdk(Buffer.from(await workbook.xlsx.writeBuffer()))
+}
+
+describe("planilla FINAL (encabezados en la fila 4, tablas y XML de OpenXML SDK)", () => {
+  it("ExcelJS no la abre tal cual: es el caso que cubre el lector", async () => {
+    const raw = new ExcelJS.Workbook()
+    await expect(raw.xlsx.load(await buildFinalPlanilla() as never)).rejects.toThrow()
+  })
+
+  it("lee máquinas y trabajadores: salta las filas de título y toma las columnas por su nombre", async () => {
+    const { readPlanilla } = await script()
+    const data = await readPlanilla(await buildFinalPlanilla())
+    expect(data.machines).toHaveLength(3)
+    expect(data.machines[0]).toMatchObject({ row: 5, faena: "Horcones", machine: "camion", code: "KA-20", plate: "TEST-11", dates: { soap: "2099-01-01", permit: "2099-01-02", review: "2099-01-03" } })
+    expect(data.machines[1]).toMatchObject({ row: 6, faena: "Masisa Maderas", machine: "TRACTO CAMION", plate: "TEST-22", dates: { soap: "2099-03-03", permit: null, review: "2099-04-04" } })
+    expect(data.machines[2]).toMatchObject({ faena: "Cholguán Máquinas", plate: "TEST-33", code: null })
+    expect(data.workers).toHaveLength(2)
+    expect(data.workers[0]).toMatchObject({ row: 5, rut: R.w1, cargo: "Chofer", classes: "A2/A4/B", expiresAt: "2099-06-01", notes: "Prorroga por 6 meses" })
+    expect(data.workers[1]).toMatchObject({ row: 6, rut: R.w2, faena: "Masisa Tableros", expiresAt: "2099-05-05" })
+    expect(data.skipped).toEqual([])
+  })
+
+  it("con la planilla FINAL el plan se aplica igual que con el consolidado: la faena sin resolver se omite y se informa", async () => {
+    const { applyVencimientosPlanilla202611 } = await script()
+    const report = await applyVencimientosPlanilla202611({ actorEmail: ACTOR, apply: false, buffer: await buildFinalPlanilla() })
+    expect(report.outcomes.find((o) => o.item === "TEST-33")).toMatchObject({ result: "omitido" })
+    expect(report.outcomes.filter((o) => o.item.startsWith("TEST-") && o.result === "dry-run").length).toBeGreaterThan(0)
+    // Dos trabajadores con RUT distinto: el RUT identifica y no hace falta el respaldo por nombre.
+    expect(report.review.filter((note) => note.kind === "identificado_por_nombre")).toEqual([])
+  }, 60_000)
+})
+
+/* ── Marca, modelo y año de los equipos nuevos ────────────────────────────── */
+
+describe("datos de los 15 carros y bateas nuevos", () => {
+  const PLATES = ["PWTD-82", "HGKG-54", "JP-3896", "JN-6770", "JN-9374", "JN-9376", "JWPY-64", "PWTY-84", "PWTY-85", "PWYL-34", "PWYL-35", "JA-1225", "PWTK-77", "JK-2385", "HGKG-53"]
+  const BATEAS = new Set(["JN-6770", "JN-9374", "JN-9376", "JWPY-64", "PWTK-77", "JK-2385"])
+
+  it("trae marca y año de cada uno, y deja el modelo en null cuando no informa nada", async () => {
+    const { NEW_VEHICLE_DETAILS } = await script()
+    expect(Object.keys(NEW_VEHICLE_DETAILS).sort()).toEqual([...PLATES].sort())
+    for (const [plate, details] of Object.entries(NEW_VEHICLE_DETAILS)) {
+      expect(details, plate).not.toBeNull()
+      expect(details!.brand, plate).toMatch(/^[A-Z][a-z]+$/)
+      expect(details!.year, plate).toBeGreaterThanOrEqual(2000)
+      expect(details!.year, plate).toBeLessThanOrEqual(2026)
+      // Un modelo que repite la marca o se declara genérico no es un modelo.
+      if (details!.model) {
+        expect(details!.model.toLowerCase(), plate).not.toBe(details!.brand!.toLowerCase())
+        expect(details!.model, plate).not.toMatch(/gen[eé]rico|sin modelo|hehizo/i)
+        expect(details!.model, plate).toBe(details!.model.trim())
+      }
+    }
+    expect(NEW_VEHICLE_DETAILS["PWTD-82"]).toEqual({ brand: "Emes", model: "PLANO 2 EJES", year: 2022 })
+    expect(NEW_VEHICLE_DETAILS["HGKG-54"]).toEqual({ brand: "Rocongu", model: null, year: 2017 })
+    expect(NEW_VEHICLE_DETAILS["JP-3896"]).toEqual({ brand: "Rocongu", model: null, year: 2015 })
+  })
+
+  it("al crear los equipos los guarda en la ficha", async () => {
+    const machines: MachineInput[] = PLATES.map((plate) => ["Biodiversa", BATEAS.has(plate) ? "Batea" : "Carro", null, plate, date("2099-01-01"), date("2099-01-02"), date("2099-01-03")])
+    await run(true, await buildPlanilla({ machines, workers: [] }))
+    expect(await vehicle("PWTD-82")).toMatchObject({ brand: "Emes", model: "PLANO 2 EJES", year: 2022, type: "carro" })
+    expect(await vehicle("HGKG-54")).toMatchObject({ brand: "Rocongu", model: null, year: 2017 })
+    expect(await vehicle("JN-9374")).toMatchObject({ brand: "Tremac", model: "SRTT20 3N", year: 2014, type: "batea" })
+    expect(await vehicle("PWTK-77")).toMatchObject({ brand: "Emes", model: "Semiremolque MELO", year: 2025, type: "batea" })
+    for (const plate of PLATES) {
+      const row = await vehicle(plate)
+      expect(row.brand, plate).toBeTruthy()
+      expect(row.year, plate).toBeTruthy()
+    }
+  }, 60_000)
 })
 
 /* ── Dry-run ──────────────────────────────────────────────────────────────── */

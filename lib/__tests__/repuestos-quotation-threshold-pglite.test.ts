@@ -266,6 +266,48 @@ describe("submitRequest · umbral de cotizaciones de repuestos", () => {
 
       await expect(submit(id)).rejects.toThrow(quotationRequirementMessage("needs_quotation", 200_000))
     })
+
+    it("una línea barata con OT no arrastra a otra línea cara sin OT: la vía rápida no la cubre", async () => {
+      await setThreshold(null)
+      const id = await draftRequest({
+        urgency: "critical", notes: "OT detenida esperando la pieza",
+        items: [{ price: 15_000, vehicleId: IDS.truckBio, workOrderId }, { price: 2_000_000 }],
+      })
+
+      await expect(submit(id)).rejects.toThrow(quotationRequirementMessage("needs_quotation", 200_000))
+      expect(await statusOf(id)).toBe("draft")
+    })
+
+    it("con la línea sin OT bajo el umbral la vía rápida sí cubre la solicitud", async () => {
+      await setThreshold(null)
+      const id = await draftRequest({
+        urgency: "critical", notes: "OT detenida esperando la pieza",
+        items: [{ price: 900_000, vehicleId: IDS.truckBio, workOrderId }, { price: 20_000 }],
+      })
+
+      await submit(id)
+
+      expect(await statusOf(id)).toBe("submitted")
+    })
+
+    it("al enviar se vuelve a validar la OT: si se anuló después de guardar el borrador, no hay vía rápida y no se envía", async () => {
+      await setThreshold(null)
+      const created = await testDb.transaction((tx) => createWorkOrderWithClient(tx as never, {
+        vehicleId: IDS.truckBio, inspectionFindingId: null, repair: true, maintenance: false,
+        repairDescription: "Cambio de manguera", observations: null, requesterName: "Alexis Morales",
+      }, { userId: IDS.jefe, name: "Alexis Morales" }))
+      const id = await draftRequest({
+        urgency: "critical", notes: "OT detenida esperando la pieza",
+        items: [{ price: 900_000, vehicleId: IDS.truckBio, workOrderId: created.id }],
+      })
+      await testDb.update(schema.mantWorkOrders).set({
+        status: "anulada", voidedAt: now, voidedByUserId: IDS.jefe, voidReason: "Duplicada por error",
+      }).where(eq(schema.mantWorkOrders.id, created.id))
+
+      await expect(submit(id)).rejects.toThrow(/La OT ya está cerrada o anulada/)
+      expect(await statusOf(id)).toBe("draft")
+      expect(await itemStatuses(id)).toEqual(["draft"])
+    })
   })
 
   describe("servicios conserva la regla de siempre", () => {

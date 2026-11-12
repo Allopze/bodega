@@ -18,6 +18,11 @@ export function invalidResponse(message: string, field?: string): Response {
   return jsonResponse({ ok: false, code: "invalid", message, ...(field ? { field } : {}) }, 422)
 }
 
+/** 413: el cuerpo declarado supera el tope; se contesta sin leerlo. Definitivo, como el resto de los 4xx. */
+export function payloadTooLargeResponse(message: string): Response {
+  return jsonResponse({ ok: false, code: "invalid", message }, 413)
+}
+
 export function issueResponse(error: ZodError): Response {
   const issue = error.issues[0]
   return invalidResponse(issue?.message ?? "Los datos enviados no son válidos.", issue?.path.join(".") || undefined)

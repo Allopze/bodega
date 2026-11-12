@@ -27,4 +27,10 @@ export const NoPermission = () => (
   <Splash title="Sin acceso a la app">Tu cuenta no tiene permiso para usar la app de mantención. Avisa a tu jefatura.</Splash>
 )
 
+export const Revoked = ({ onSignIn }: { onSignIn: () => void }) => (
+  <Splash title="Acceso revocado" action={<button type="button" className="btns wide" style={{ maxWidth: 320 }} onClick={onSignIn}>Entrar de nuevo</button>}>
+    Jefatura desconectó tu acceso a la app. Para volver a usarla en este teléfono, entra de nuevo con tu correo y contraseña.
+  </Splash>
+)
+
 export const Broken = ({ message }: { message: string }) => <Splash title="No pudimos abrir la app">{message}</Splash>

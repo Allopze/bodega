@@ -20,7 +20,7 @@ export interface EquipmentFilterOptions {
 }
 
 /** Todo lo que la barra escribe en la URL: «Limpiar filtros» los quita todos. */
-const FILTER_KEYS = ["faena", "tipo", "pauta", "estado", "bajas"] as const
+const FILTER_KEYS = ["faena", "tipo", "pauta", "estado", "bajas", "taller"] as const
 
 /**
  * Filtros estructurados de «Equipos» (A2): faena, tipo, pauta y estado, más la
@@ -50,6 +50,8 @@ export function EquipmentFilters({ options }: { options: EquipmentFilterOptions 
   add("tipo", "Tipo", filters.typeId, labelOf(options.types, filters.typeId))
   add("pauta", "Pauta", filters.scheduleId, filters.scheduleId === NO_SCHEDULE ? "Sin pauta" : labelOf(options.schedules, filters.scheduleId))
   add("estado", "Estado", filters.state, labelOf(STATE_OPTIONS, filters.state))
+  // «En taller» llega desde el tile del panel; no tiene control propio, sólo su chip para quitarlo (A2).
+  if (filters.inWorkshop) chips.push({ key: "taller", label: "Situación", value: "1", displayValue: "En taller" })
   if (filters.includeRetired && filters.state !== "baja") chips.push({ key: "bajas", label: "Incluye", value: "1", displayValue: "dados de baja" })
 
   const scheduleOptions: OptionSelectOption[] = [...options.schedules, { value: NO_SCHEDULE, label: "Sin pauta" }]

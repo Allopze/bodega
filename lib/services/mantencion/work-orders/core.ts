@@ -248,8 +248,11 @@ export async function lastReturnToExecution(client: Reader, workOrderId: string)
 
 /**
  * ¿La OT ya tiene el trabajo que exige «terminar»? Un registro VIGENTE enlazado
- * y firmado después de la última devolución a ejecución (sin devolución basta
- * cualquiera). La misma regla la usan `finishWorkOrder` (bajo bloqueo) y la
+ * y recibido por el servidor después de la última devolución a ejecución (sin
+ * devolución basta cualquiera). Se compara `received_at` y no `signed_at`: la
+ * firma la pone el reloj del teléfono y la devolución el del servidor, así que un
+ * teléfono atrasado dejaba «anterior» a un registro hecho después del rechazo
+ * (y uno adelantado, «posterior» a uno de antes). La misma regla la usan `finishWorkOrder` (bajo bloqueo) y la
  * ficha, que con ella decide si «Registrar trabajo» es la acción de la etapa.
  */
 export async function linkedRecordState(client: Reader, workOrderId: string): Promise<{ since: string | null; linked: boolean }> {
@@ -260,7 +263,7 @@ export async function linkedRecordState(client: Reader, workOrderId: string): Pr
     .where(and(
       eq(mantRecords.workOrderId, workOrderId),
       eq(mantRecords.status, "vigente"),
-      since ? sql`${mantRecords.signedAt} > ${since}::timestamptz` : undefined,
+      since ? sql`${mantRecords.receivedAt} > ${since}::timestamptz` : undefined,
     ))
     .limit(1)
   return { since, linked: !!linked }

@@ -1,8 +1,8 @@
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
 import ExcelJS from "exceljs"
-import { eq } from "drizzle-orm"
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
+import { eq, inArray } from "drizzle-orm"
+import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { Session } from "next-auth"
@@ -30,6 +30,12 @@ vi.mock("@/db", () => ({
   get Tx() { return undefined },
 }))
 
+// El navegador real no corre aquí: el render del PDF devuelve un archivo distinto en cada llamada.
+vi.mock("@/lib/pdf/render-print-page", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/pdf/render-print-page")>()),
+  renderPrintPageToPdf: vi.fn(async () => Buffer.from("%PDF-1.4 regenerado")),
+}))
+
 const storageDir = mkdtempSync(join(tmpdir(), "mant-records-"))
 process.env.STORAGE_PATH = storageDir
 
@@ -37,12 +43,14 @@ const { getUserRbacById } = await import("@/lib/auth/rbac")
 const { viewerFromSession } = await import("@/lib/services/mantencion/access")
 const { listRecords, loadRecordFilterOptions, loadRecordIndicators, loadRecordNeighbors, loadRecordReviewCounts } = await import("@/lib/services/mantencion/records-query")
 const { loadRecordDetail } = await import("@/lib/services/mantencion/records-detail")
+const { loadFleet } = await import("@/lib/services/mantencion/fleet")
+const { filterFleet } = await import("@/lib/services/mantencion/equipment-list")
 const { loadPanel } = await import("@/lib/services/mantencion/panel")
 const { parsePanelFilters } = await import("@/lib/services/mantencion/panel-filters")
 const { exportRecords } = await import("@/lib/services/mantencion/export-records")
 const { exportPanel } = await import("@/lib/services/mantencion/export-panel")
 const { voidRecord } = await import("@/lib/services/mantencion/record-lifecycle")
-const { getRecordPdf, pdfRevision, pdfStorageName } = await import("@/lib/services/mantencion/record-pdf")
+const { getRecordPdf, pdfMutableFingerprint, pdfRevision, pdfStorageName } = await import("@/lib/services/mantencion/record-pdf")
 const { createMantencionFilePath } = await import("@/lib/storage/config")
 
 type Filters = import("@/lib/services/mantencion/records-filters").RecordFilters
@@ -352,6 +360,26 @@ describe("detalle de un registro", () => {
     expect(duplicate?.duplicateOf).toEqual({ id: R.prev, folio: "MP-BIO-0001" })
   })
 
+  it("la lectura anterior de un registro antiguo no se pierde aunque el equipo tenga más de 40 registros posteriores", async () => {
+    const base = { kind: "P" as const, vehicleId: IDS.truckBio, worksiteId: IDS.wsBio, worksiteName: "Biodiversa", unit: "km" as const, registeredBy: IDS.mecBio, executorUserId: IDS.mecBio, executorName: "Javier Roa", snapshotCode: "KA-135", snapshotPlate: "RBYD-98" }
+    // La lectura inicial de la ficha es de hace 200 días; el anterior real del objetivo es de hace 170.
+    await insertRecord({ ...base, id: "bulk-prev", folio: "MP-BIO-0900", reading: 10_050, workDate: daysAgo(170) })
+    await insertRecord({ ...base, id: "bulk-target", folio: "MP-BIO-0901", reading: 10_080, workDate: daysAgo(160) })
+    for (let index = 0; index < 45; index += 1) {
+      await insertRecord({ ...base, id: `bulk-${index}`, folio: `MP-BIO-1${String(index).padStart(3, "0")}`, reading: 10_100 + index, workDate: daysAgo(150 - index) })
+    }
+    try {
+      const detail = await loadRecordDetail(await viewerOf(IDS.jefe), "bulk-target")
+      expect(detail?.previousReading).toMatchObject({ value: 10_050, source: "Registro" })
+      // El primero de todos sigue cayendo a la lectura inicial.
+      expect((await loadRecordDetail(await viewerOf(IDS.jefe), "bulk-prev"))?.previousReading).toMatchObject({ value: 10_000, source: "Lectura inicial" })
+      // Y uno intermedio toma el inmediatamente anterior, no el más reciente del equipo.
+      expect((await loadRecordDetail(await viewerOf(IDS.jefe), "bulk-20"))?.previousReading).toMatchObject({ value: 10_119 })
+    } finally {
+      await testDb.delete(schema.mantRecords).where(inArray(schema.mantRecords.id, ["bulk-prev", "bulk-target", ...Array.from({ length: 45 }, (_, index) => `bulk-${index}`)]))
+    }
+  })
+
   it("advierte cuando el sello y la recepción difieren más de 72 h sin período sin señal", async () => {
     const gap = (await loadRecordDetail(await viewerOf(IDS.jefe), R.prev))?.stampGap
     expect(gap?.hours).toBeGreaterThan(72)
@@ -496,6 +524,64 @@ describe("PDF archivado", () => {
   })
 })
 
+describe("PDF archivado: lo que cambia después de firmar invalida el archivo", () => {
+  const storedKey = async (id: string) => (await testDb.select({ key: schema.mantRecords.pdfStorageKey }).from(schema.mantRecords).where(eq(schema.mantRecords.id, id)))[0]?.key
+  const pdfOf = async (id: string) => getRecordPdf({ viewer: await viewerOf(IDS.jefe), recordId: id, origin: "http://127.0.0.1:1", credential: null })
+
+  it("observar y responder cambian la huella; sin nada la huella es vacía y el nombre no cambia", async () => {
+    expect(await pdfMutableFingerprint(R.prev, "vigente", "2026-11-01")).toBe("")
+    await testDb.insert(schema.mantRecordObservations).values({ id: "obs-pdf", recordId: R.prev, text: "Falta la foto del sticker", userId: IDS.supBio })
+    const observed = await pdfMutableFingerprint(R.prev, "vigente", "2026-11-01")
+    expect(observed).toMatch(/^[0-9a-f]{10}$/)
+    await testDb.update(schema.mantRecordObservations)
+      .set({ response: "Ya la subí", respondedBy: IDS.mecBio, respondedAt: new Date().toISOString() })
+      .where(eq(schema.mantRecordObservations.id, "obs-pdf"))
+    const answered = await pdfMutableFingerprint(R.prev, "vigente", "2026-11-01")
+    expect(answered).not.toBe(observed)
+    // Una preventiva no depende del día.
+    expect(await pdfMutableFingerprint(R.prev, "vigente", "2026-11-02")).toBe(answered)
+    await testDb.delete(schema.mantRecordObservations).where(eq(schema.mantRecordObservations.id, "obs-pdf"))
+  })
+
+  it("mientras el equipo sigue en taller la huella cambia cada día; anulado o fuera de taller, no", async () => {
+    const today = await pdfMutableFingerprint(R.workshop, "vigente", "2026-11-01")
+    expect(today).not.toBe(await pdfMutableFingerprint(R.workshop, "vigente", "2026-11-02"))
+    // Un anulado no acumula días (queda sólo la novedad de taller, que no cambia con el calendario).
+    expect(await pdfMutableFingerprint(R.workshop, "anulado", "2026-11-01")).toBe(await pdfMutableFingerprint(R.workshop, "anulado", "2026-11-02"))
+  })
+
+  it("una observación nueva regenera el PDF archivado y la respuesta lo vuelve a regenerar", async () => {
+    const plain = pdfStorageName(R.prev, 1)
+    mkdirSync(join(storageDir, "mantencion"), { recursive: true })
+    writeFileSync(join(storageDir, "mantencion", plain), Buffer.from("%PDF-1.4 archivado"))
+    await testDb.update(schema.mantRecords).set({ pdfStorageKey: createMantencionFilePath(plain) }).where(eq(schema.mantRecords.id, R.prev))
+    const archived = await pdfOf(R.prev)
+    expect(archived.ok && archived.generated).toBe(false)
+
+    await testDb.insert(schema.mantRecordObservations).values({ id: "obs-pdf-2", recordId: R.prev, text: "Revisar el nivel de aceite", userId: IDS.supBio })
+    const afterObserve = await pdfOf(R.prev)
+    expect(afterObserve.ok && afterObserve.generated).toBe(true)
+    expect(afterObserve.ok && afterObserve.buffer.toString()).toContain("regenerado")
+    const observedKey = await storedKey(R.prev)
+    expect(observedKey).not.toBe(createMantencionFilePath(plain))
+    // El archivo anterior ya no lo nombra la fila: se borra.
+    expect(existsSync(join(storageDir, "mantencion", plain))).toBe(false)
+    // Sin más cambios se reutiliza.
+    const again = await pdfOf(R.prev)
+    expect(again.ok && again.generated).toBe(false)
+
+    await testDb.update(schema.mantRecordObservations)
+      .set({ response: "Revisado, está en el nivel", respondedBy: IDS.mecBio, respondedAt: new Date().toISOString() })
+      .where(eq(schema.mantRecordObservations.id, "obs-pdf-2"))
+    const afterResponse = await pdfOf(R.prev)
+    expect(afterResponse.ok && afterResponse.generated).toBe(true)
+    expect(await storedKey(R.prev)).not.toBe(observedKey)
+
+    await testDb.delete(schema.mantRecordObservations).where(eq(schema.mantRecordObservations.id, "obs-pdf-2"))
+    await testDb.update(schema.mantRecords).set({ pdfStorageKey: null }).where(eq(schema.mantRecords.id, R.prev))
+  })
+})
+
 describe("panel", () => {
   const weeksFor = (data: Awaited<ReturnType<typeof loadPanel>>) => data.weeks.reduce((sum, week) => sum + week.preventive + week.corrective, 0)
 
@@ -505,6 +591,9 @@ describe("panel", () => {
     expect(jefe.records).toMatchObject({ total: 5, preventive: 3, corrective: 2 })
     expect(jefe.records.hours).toBeCloseTo(6.5)
     expect(jefe.workshop).toMatchObject({ equipment: 1, stale: 1 })
+    // El tile «Equipos en taller» lleva a `/mantencion/equipos?taller=1`: esa lista reproduce su cifra.
+    const fleet = await loadFleet({ scope: "all" })
+    expect(filterFleet(fleet, { includeRetired: false, inWorkshop: true })).toHaveLength(jefe.workshop.equipment)
     expect(jefe.fleet.active).toBe(4)
     expect(jefe.hoursByWorksite.map((row) => row.worksiteName)).toEqual(["Cholguán", "Biodiversa"])
     expect(jefe.notDone).toEqual([expect.objectContaining({ item: "Revisión pastillas", count: 1, lastReason: "Falta repuesto" })])
@@ -576,6 +665,22 @@ describe("panel", () => {
     expect(detail).toMatchObject({ status: "anulado", voided: { reason: "Se registró en el equipo equivocado" } })
   })
 
+  it("una correctiva anulada que dejó el equipo en taller ya no sigue en taller: ni en el detalle ni en el Excel", async () => {
+    const detail = await loadRecordDetail(await viewerOf(IDS.jefe), R.workshop)
+    expect(detail).toMatchObject({ status: "anulado", corrective: { inWorkshop: true, workshop: null } })
+
+    const outcome = await exportRecords({ session: await sessionOf(IDS.jefe), filters: {}, recordId: R.workshop })
+    expect(outcome.ok).toBe(true)
+    if (!outcome.ok) return
+    const workbook = new ExcelJS.Workbook()
+    await workbook.xlsx.load(Buffer.from(outcome.data.base64, "base64") as never)
+    const sheet = workbook.getWorksheet("Registros")!
+    const headers = (sheet.getRow(1).values as unknown[]).slice(1)
+    const row = sheet.getRow(2)
+    expect(row.getCell(headers.indexOf("Salió de taller") + 1).value || null).toBeNull()
+    expect(row.getCell(headers.indexOf("Días detenido") + 1).value || null).toBeNull()
+  })
+
   it("el libro del panel trae los indicadores con el período y la faena aplicados", async () => {
     const outcome = await exportPanel({ session: await sessionOf(IDS.jefe), filters: parsePanelFilters({ periodo: "30", faena: IDS.wsBio }) })
     expect(outcome.ok).toBe(true)
@@ -589,5 +694,29 @@ describe("panel", () => {
     expect(indicators.getRow(3).getCell(1).value).toBe("Faena")
     expect(indicators.getRow(3).getCell(2).value).toBe("Biodiversa")
     expect(workbook.getWorksheet("Registros por semana")!.getRow(2).getCell(1).value).toBeInstanceOf(Date)
+  })
+
+  it("D4: la fecha de inicio sale con formatDate y la columna de horas lleva el mismo nombre que la pantalla", async () => {
+    const outcome = await exportPanel({ session: await sessionOf(IDS.jefe), filters: parsePanelFilters({ periodo: "30" }) })
+    if (!outcome.ok) throw new Error("exportación rechazada")
+    const workbook = new ExcelJS.Workbook()
+    await workbook.xlsx.load(Buffer.from(outcome.data.base64, "base64") as never)
+    expect(String(workbook.getWorksheet("Indicadores")!.getRow(2).getCell(3).value)).toMatch(/^Desde el \d{2}-\d{2}-\d{4}$/)
+    expect(workbook.getWorksheet("Horas por faena")!.getRow(1).getCell(2).value).toBe("Horas hombre (h)")
+    expect(workbook.getWorksheet("Indicadores")!.getRow(8).getCell(1).value).toBe("Horas hombre del período (h)")
+  })
+
+  it("D4: una faena fuera del alcance de quien exporta no se aplica ni se nombra en el libro", async () => {
+    // El supervisor de Biodiversa pide la faena de Cholguán por la URL: sale con su propio alcance.
+    const outcome = await exportPanel({ session: await sessionOf(IDS.supBio), filters: parsePanelFilters({ periodo: "30", faena: IDS.wsCho }) })
+    if (!outcome.ok) throw new Error("exportación rechazada")
+    const workbook = new ExcelJS.Workbook()
+    await workbook.xlsx.load(Buffer.from(outcome.data.base64, "base64") as never)
+    const indicators = workbook.getWorksheet("Indicadores")!
+    expect(indicators.getRow(3).getCell(2).value).toBe("Todas las faenas")
+    const metadata = JSON.stringify(workbook.getWorksheet("Metadatos")!.getSheetValues())
+    expect(metadata).not.toContain("Cholguán")
+    const audit = (await testDb.select().from(schema.auditLog).where(eq(schema.auditLog.entityType, "mant_panel_export")))
+    expect(audit.every((row) => row.worksiteId === null || row.worksiteId !== IDS.wsCho)).toBe(true)
   })
 })

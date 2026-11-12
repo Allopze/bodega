@@ -62,7 +62,7 @@ const tokenFor = async (userId: string, deviceId = crypto.randomUUID()) => (awai
 async function uploadPhoto(token: string, kind: "filtros" | "sticker" | "correctiva") {
   const id = crypto.randomUUID()
   const buffer = await makeJpeg()
-  const response = await fotosPut.PUT(photoRequest(token, id, { file: buffer, meta: await metaFor(buffer, { kind }) }), idParams(id))
+  const response = await fotosPut.PUT(await photoRequest(token, id, { file: buffer, meta: await metaFor(buffer, { kind }) }), idParams(id))
   expect(response.status).toBe(200)
   return { id, kind }
 }
@@ -137,7 +137,7 @@ describe("autenticación Bearer de la sincronización", () => {
       () => registros.POST(jsonRequest("/api/mantencion/sync/registros", null, {})),
       () => taller.POST(jsonRequest("/api/mantencion/sync/taller", null, {})),
       () => observaciones.POST(jsonRequest("/api/mantencion/sync/observaciones", null, {})),
-      () => fotosPut.PUT(photoRequest(null, crypto.randomUUID(), {}), idParams(crypto.randomUUID())),
+      async () => fotosPut.PUT(await photoRequest(null, crypto.randomUUID(), {}), idParams(crypto.randomUUID())),
     ]
     for (const call of handlers) expect((await call()).status).toBe(401)
 
@@ -189,7 +189,7 @@ describe("fotos", () => {
     const buffer = await makeJpeg(40, 30)
     const meta = await metaFor(buffer, { kind: "filtros", exif: { Make: "Samsung" } })
 
-    const first = await fotosPut.PUT(photoRequest(token, id, { file: buffer, meta }), idParams(id))
+    const first = await fotosPut.PUT(await photoRequest(token, id, { file: buffer, meta }), idParams(id))
     expect(first.status).toBe(200)
     expect(await readJson(first)).toMatchObject({ ok: true, id, duplicate: false })
     const [row] = await testDb.select().from(schema.mantRecordPhotos).where(eq(schema.mantRecordPhotos.id, id))
@@ -199,7 +199,7 @@ describe("fotos", () => {
     })
     expect(existsSync(path.join(storageRoot, "mantencion", path.basename(row!.storageKey)))).toBe(true)
 
-    const again = await fotosPut.PUT(photoRequest(token, id, { file: buffer, meta }), idParams(id))
+    const again = await fotosPut.PUT(await photoRequest(token, id, { file: buffer, meta }), idParams(id))
     expect(await readJson(again)).toMatchObject({ ok: true, duplicate: true })
     expect(await testDb.select().from(schema.mantRecordPhotos)).toHaveLength(1)
     expect(readdirSync(path.join(storageRoot, "mantencion"))).toHaveLength(1)
@@ -211,14 +211,16 @@ describe("fotos", () => {
     const token = await tokenFor(IDS.mecBio)
     const buffer = await makeJpeg()
     const put = async (input: Parameters<typeof photoRequest>[2], id = crypto.randomUUID()) => {
-      const response = await fotosPut.PUT(photoRequest(token, id, input), idParams(id))
+      const response = await fotosPut.PUT(await photoRequest(token, id, input), idParams(id))
       return { status: response.status, body: await readJson(response) }
     }
 
     const wrongSha = await put({ file: buffer, meta: await metaFor(buffer, { sha256: "a".repeat(64) }) })
-    expect(wrongSha.status).toBe(422)
-    expect(wrongSha.body).toMatchObject({ ok: false, code: "invalid" })
+    // D3: una huella que no coincide es transporte dañado, no un rechazo del contenido: 409 `retry`.
+    expect(wrongSha.status).toBe(409)
+    expect(wrongSha.body).toMatchObject({ ok: false, code: "retry" })
     expect(String(wrongSha.body.message)).toContain("huella")
+    expect(String(wrongSha.body.message)).toContain("Se vuelve a enviar sola")
 
     const text = Buffer.from("esto no es una foto, es texto plano")
     expect((await put({ file: text, meta: await metaFor(buffer, { sha256: sha256(text) }) })).status).toBe(422)
@@ -238,16 +240,64 @@ describe("fotos", () => {
     expect(filesOnDisk()).toBe(filesBefore)
   })
 
+  it("D2: sin Content-Length (chunked) se acepta con tope por flujo; lo que pasa el tope responde 413", async () => {
+    const token = await tokenFor(IDS.mecBio)
+    const buffer = await makeJpeg()
+    // Un `Request` con `FormData` crudo no lleva Content-Length: es lo que ve el handler con chunked.
+    const chunkedRequest = async (id: string, file: Uint8Array) => {
+      const form = new FormData()
+      form.set("file", new File([file as BlobPart], "foto.jpg", { type: "image/jpeg" }))
+      form.set("meta", JSON.stringify(await metaFor(buffer)))
+      return new Request(`http://localhost/api/mantencion/sync/fotos/${id}`, { method: "PUT", headers: { authorization: `Bearer ${token}` }, body: form })
+    }
+    // Un túnel que quita la cabecera no puede dejar «Por corregir» las fotos (revisión final).
+    const okId = crypto.randomUUID()
+    const accepted = await fotosPut.PUT(await chunkedRequest(okId, buffer), idParams(okId))
+    expect(accepted.status).toBe(200)
+
+    // Sin cabecera y sobre el tope: se corta leyendo el flujo.
+    const bigId = crypto.randomUUID()
+    const huge = new Uint8Array(10 * 1024 * 1024 + 300 * 1024)
+    const refusedChunked = await fotosPut.PUT(await chunkedRequest(bigId, huge), idParams(bigId))
+    expect(refusedChunked.status).toBe(413)
+
+    // Con un tamaño declarado excesivo se rechaza sin leer el cuerpo.
+    const formData = vi.spyOn(Request.prototype, "formData")
+    try {
+      const tooBig = await photoRequest(token, bigId, { file: buffer, meta: await metaFor(buffer) })
+      tooBig.headers.set("content-length", String(10 * 1024 * 1024 + 256 * 1024 + 1))
+      const refused = await fotosPut.PUT(tooBig, idParams(bigId))
+      expect(refused.status).toBe(413)
+      expect(await readJson(refused)).toMatchObject({ ok: false, code: "invalid", message: expect.stringContaining("10 MB") })
+      expect(formData).not.toHaveBeenCalled()
+    } finally {
+      formData.mockRestore()
+    }
+    expect((await testDb.select().from(schema.mantRecordPhotos)).map((row) => row.id)).toEqual([okId])
+  })
+
+  it("D2: el `exif` declarado admite hasta 40 campos", async () => {
+    const token = await tokenFor(IDS.mecBio)
+    const buffer = await makeJpeg()
+    const fields = (count: number) => Object.fromEntries(Array.from({ length: count }, (_, index) => [`Campo${index}`, "x"]))
+    const tooMany = crypto.randomUUID()
+    const refused = await fotosPut.PUT(await photoRequest(token, tooMany, { file: buffer, meta: await metaFor(buffer, { exif: fields(41) }) }), idParams(tooMany))
+    expect(refused.status).toBe(422)
+    expect(String((await readJson(refused)).message)).toContain("EXIF")
+    const fits = crypto.randomUUID()
+    expect((await fotosPut.PUT(await photoRequest(token, fits, { file: buffer, meta: await metaFor(buffer, { exif: fields(40) }) }), idParams(fits))).status).toBe(200)
+  })
+
   it("el mismo id con otro contenido, o de otra persona, es un 409", async () => {
     const tokenA = await tokenFor(IDS.mecBio)
     const id = crypto.randomUUID()
     const original = await makeJpeg(32, 24, "#1e6e3e")
-    await fotosPut.PUT(photoRequest(tokenA, id, { file: original, meta: await metaFor(original) }), idParams(id))
+    await fotosPut.PUT(await photoRequest(tokenA, id, { file: original, meta: await metaFor(original) }), idParams(id))
 
     const other = await makeJpeg(32, 24, "#f39200")
-    const changed = await fotosPut.PUT(photoRequest(tokenA, id, { file: other, meta: await metaFor(other) }), idParams(id))
+    const changed = await fotosPut.PUT(await photoRequest(tokenA, id, { file: other, meta: await metaFor(other) }), idParams(id))
     expect(changed.status).toBe(409)
-    const stolen = await fotosPut.PUT(photoRequest(await tokenFor(IDS.mecBio2), id, { file: original, meta: await metaFor(original) }), idParams(id))
+    const stolen = await fotosPut.PUT(await photoRequest(await tokenFor(IDS.mecBio2), id, { file: original, meta: await metaFor(original) }), idParams(id))
     expect(stolen.status).toBe(409)
     expect(await testDb.select().from(schema.mantRecordPhotos)).toHaveLength(1)
   })

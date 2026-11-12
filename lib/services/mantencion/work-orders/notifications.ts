@@ -21,7 +21,7 @@ import { getUserIdsWithPermissionForWorksite } from "@/lib/services/notification
  * que el aviso no se pierda en una faena sin responsable.
  */
 
-export type OtNotifyEvent = "created" | "assigned" | "finished" | "received" | "rejected" | "reopened" | "closed"
+export type OtNotifyEvent = "created" | "assigned" | "unassigned" | "voided" | "finished" | "received" | "rejected" | "reopened" | "closed"
 
 export interface NotificationPlan {
   event: OtNotifyEvent
@@ -37,11 +37,15 @@ export interface NotificationPlan {
   equipment: string
   /** Complemento del cuerpo (motivo del rechazo, etc.). */
   detail?: string | null
+  /** `unassigned` por una reasignación: la OT no vuelve a «Por asignar», pasó a otro mecánico. */
+  reassigned?: boolean
 }
 
 const TYPE: Record<OtNotifyEvent, NotificationType> = {
   created: "mant_ot_created",
   assigned: "mant_ot_assigned",
+  unassigned: "mant_ot_unassigned",
+  voided: "mant_ot_voided",
   finished: "mant_ot_finished",
   received: "mant_ot_received",
   rejected: "mant_ot_rejected",
@@ -52,6 +56,8 @@ const TYPE: Record<OtNotifyEvent, NotificationType> = {
 const TITLE: Record<OtNotifyEvent, (folio: string) => string> = {
   created: (folio) => `Nueva orden de trabajo ${folio}`,
   assigned: (folio) => `Se te asignó la orden de trabajo ${folio}`,
+  unassigned: (folio) => `Se te quitó la orden de trabajo ${folio}`,
+  voided: (folio) => `Se anuló la orden de trabajo ${folio}`,
   finished: (folio) => `La orden de trabajo ${folio} salió de taller`,
   received: (folio) => `La orden de trabajo ${folio} espera tu conformidad`,
   rejected: (folio) => `La orden de trabajo ${folio} volvió a taller`,
@@ -62,6 +68,8 @@ const TITLE: Record<OtNotifyEvent, (folio: string) => string> = {
 const BODY: Record<OtNotifyEvent, string> = {
   created: "Está por asignar.",
   assigned: "Entra a taller y registra el ingreso desde la app o el PC.",
+  unassigned: "Volvió a «Por asignar»: ya no tienes que ejecutarla.",
+  voided: "Quedó anulada: no la ejecutes.",
   finished: "Falta registrar la recepción del equipo.",
   received: "Revisa el equipo y registra la recepción en faena (conformidad).",
   rejected: "Fue devuelta a «En taller». Registra el trabajo nuevo desde la app o desde la OT en el PC.",
@@ -109,7 +117,13 @@ async function recipients(plan: NotificationPlan): Promise<string[]> {
       ids.push(...await forPermission(OT_PERMISSIONS.manage))
       break
     case "assigned":
+    case "unassigned":
+      // En `unassigned` el plan trae al mecánico que la tenía, no al que queda (nadie).
       if (plan.assigneeUserId) ids.push(plan.assigneeUserId)
+      break
+    case "voided":
+      if (plan.assigneeUserId) ids.push(plan.assigneeUserId)
+      ids.push(plan.requestedByUserId)
       break
     case "finished":
       ids.push(plan.requestedByUserId, ...await forPermission(OT_PERMISSIONS.receive))
@@ -133,7 +147,11 @@ export async function sendWorkOrderNotification(plan: NotificationPlan): Promise
   const userIds = await recipients(plan)
   if (userIds.length === 0) return
   // La OT del administrador de contrato nace asignada al mecánico de su faena: entonces no está «por asignar».
-  const text = plan.event === "created" && plan.assigneeUserId ? "Ya tiene mecánico asignado; puedes reasignarla." : BODY[plan.event]
+  const text = plan.event === "created" && plan.assigneeUserId
+    ? "Ya tiene mecánico asignado; puedes reasignarla."
+    : plan.event === "unassigned" && plan.reassigned
+      ? "Se reasignó a otro mecánico: ya no tienes que ejecutarla."
+      : BODY[plan.event]
   const body = [plan.equipment, text, plan.detail ? `Motivo: ${plan.detail}` : null].filter(Boolean).join(" · ")
   await notifyManyUser(userIds, {
     type: TYPE[plan.event],

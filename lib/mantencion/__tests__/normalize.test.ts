@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
-  cleanName, deriveFolioCode, findByNameKey, formatFolio, isValidPlate, nameKey, normalizeCode, normalizePlate, resolvePlate,
+  cleanName, deriveFolioCode, findByNameKey, formatFolio, isValidPlate, nameKey, normalizeCode, normalizePlate, parseLocaleNumber, resolvePlate,
 } from "../normalize"
 
 describe("regla 17 · faena nueva no duplica", () => {
@@ -128,5 +128,29 @@ describe("deriveFolioCode", () => {
       expect(taken.has(code), code).toBe(false)
       taken.add(code)
     }
+  })
+})
+
+describe("parseLocaleNumber", () => {
+  it("el punto de miles y la coma decimal", () => {
+    expect(parseLocaleNumber("40.312")).toBe(40_312)
+    expect(parseLocaleNumber("1.234,5")).toBe(1234.5)
+    expect(parseLocaleNumber("5400,5")).toBe(5400.5)
+    expect(parseLocaleNumber("1.234.567")).toBe(1_234_567)
+  })
+
+  it("un punto que no es de miles es decimal", () => {
+    expect(parseLocaleNumber("1234.5")).toBe(1234.5)
+    expect(parseLocaleNumber("12.5")).toBe(12.5)
+    expect(parseLocaleNumber("5400")).toBe(5400)
+  })
+
+  it("vacío es null y lo que no es número es «invalid» (nunca se adivina)", () => {
+    expect(parseLocaleNumber("")).toBeNull()
+    expect(parseLocaleNumber("   ")).toBeNull()
+    expect(parseLocaleNumber("abc")).toBe("invalid")
+    expect(parseLocaleNumber("5400 km")).toBe("invalid")
+    expect(parseLocaleNumber("1,2,3")).toBe("invalid")
+    expect(parseLocaleNumber("-5")).toBe("invalid")
   })
 })

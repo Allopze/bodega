@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, ne } from "drizzle-orm"
+import { and, asc, desc, eq, lte, ne } from "drizzle-orm"
 import { alias } from "drizzle-orm/pg-core"
 import { db } from "@/db"
 import {
@@ -196,11 +196,16 @@ export async function loadRecordDetail(viewer: MantViewer, id: string): Promise<
     }).from(mantRecords)
       .where(and(eq(mantRecords.vehicleId, record.vehicleId), ne(mantRecords.id, id), eq(mantRecords.status, "vigente"), recordVisibilitySql(visibility)))
       .orderBy(desc(mantRecords.workDate), desc(mantRecords.receivedAt)).limit(5),
-    // La lectura anterior sale de todos los vigentes del equipo (regla 2), sin folio ni más dato que el número y su fecha.
+    // La lectura anterior (regla 2) es la del vigente del equipo con mayor fecha ≤ la de este registro
+    // (a igual fecha, la mayor lectura). Una consulta dirigida de una fila: con un `limit` sobre «los
+    // más recientes» un registro antiguo no encontraba su anterior y caía a la lectura inicial.
     db.select({ reading: mantRecords.reading, workDate: mantRecords.workDate })
       .from(mantRecords)
-      .where(and(eq(mantRecords.vehicleId, record.vehicleId), ne(mantRecords.id, id), eq(mantRecords.status, "vigente")))
-      .orderBy(desc(mantRecords.workDate), desc(mantRecords.reading)).limit(40),
+      .where(and(
+        eq(mantRecords.vehicleId, record.vehicleId), ne(mantRecords.id, id), eq(mantRecords.status, "vigente"),
+        lte(mantRecords.workDate, record.workDate),
+      ))
+      .orderBy(desc(mantRecords.workDate), desc(mantRecords.reading)).limit(1),
     db.select({ value: mantEquipmentProfiles.initialReading, date: mantEquipmentProfiles.initialReadingDate })
       .from(mantEquipmentProfiles).where(eq(mantEquipmentProfiles.vehicleId, record.vehicleId)).limit(1),
   ])
@@ -286,7 +291,8 @@ export async function loadRecordDetail(viewer: MantViewer, id: string): Promise<
         workshopReason: correctiveRow.workshopReason,
         jobs,
         drivers: drivers.map((driver) => driver.name),
-        workshop: correctiveRow.inWorkshop
+        // Sólo el vigente tiene estado de taller: un anulado no sigue «en taller» ni suma días.
+        workshop: correctiveRow.inWorkshop && record.status === "vigente"
           ? workshopState({
             inWorkshop: true,
             entryDate: correctiveRow.workshopEntryDate,

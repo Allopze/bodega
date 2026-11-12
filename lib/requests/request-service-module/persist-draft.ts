@@ -6,13 +6,12 @@ import {
   requestItemAttributes,
   approvalDecisions,
   fuelVehicles,
-  mantWorkOrders,
   products,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
-import { OT_OPEN_STATUSES, type OtStatus } from "@/lib/mantencion/work-order-states"
 import { nextCodeTx } from "@/lib/code-sequences"
 import { recordAudit } from "@/lib/audit"
+import { assertLinkedWorkOrderOpen } from "./linked-work-order"
 import type { RequestModuleConfig, RequestServiceInput } from "../request-config"
 import type { Session } from "next-auth"
 
@@ -56,14 +55,7 @@ async function assertItemFleetLink(
   if (vehicle.worksiteId !== worksiteId) throw new Error("El equipo pertenece a otra faena")
 
   if (!workOrderId) return
-  const [workOrder] = await tx
-    .select({ vehicleId: mantWorkOrders.vehicleId, status: mantWorkOrders.status })
-    .from(mantWorkOrders)
-    .where(eq(mantWorkOrders.id, workOrderId))
-  if (!workOrder || workOrder.vehicleId !== vehicleId) throw new Error("La OT no corresponde al equipo elegido")
-  if (!(OT_OPEN_STATUSES as readonly OtStatus[]).includes(workOrder.status as OtStatus)) {
-    throw new Error("La OT ya está cerrada o anulada")
-  }
+  await assertLinkedWorkOrderOpen(tx, { workOrderId, vehicleId })
 }
 
 /**

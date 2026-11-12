@@ -9,6 +9,8 @@
  * «la URL está mal».
  */
 
+import { isCivilDate } from "@/lib/validation/dates"
+
 export const RECORD_SORT_KEYS = ["fecha", "folio", "equipo", "faena", "lectura"] as const
 export type RecordSortKey = (typeof RECORD_SORT_KEYS)[number]
 export type SortDirection = "asc" | "desc"
@@ -69,7 +71,6 @@ export interface RecordListQuery {
 
 export type RawSearchParams = Record<string, string | string[] | undefined>
 
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 const EXECUTOR = /^(u|w):[\w-]{1,64}$/
 
 function one(raw: RawSearchParams, key: string): string {
@@ -94,9 +95,9 @@ export function parseRecordFilters(raw: RawSearchParams): RecordFilters {
   const registeredBy = one(raw, "registro")
   if (registeredBy && registeredBy.length <= 64) filters.registeredBy = registeredBy
   const from = one(raw, "desde")
-  if (ISO_DATE.test(from)) filters.from = from
+  if (isCivilDate(from)) filters.from = from
   const to = one(raw, "hasta")
-  if (ISO_DATE.test(to)) filters.to = to
+  if (isCivilDate(to)) filters.to = to
   const status = oneOf(one(raw, "estado"), ["vigente", "anulado"] as const)
   if (status) filters.status = status
   const review = oneOf(one(raw, "revision"), ["pendiente", "observado", "revisado"] as const)

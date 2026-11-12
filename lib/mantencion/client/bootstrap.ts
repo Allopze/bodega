@@ -29,7 +29,7 @@ export interface BootstrapInput {
   now?: number
 }
 
-export type Blocker = null | "needs-signal" | "no-permission"
+export type Blocker = null | "needs-signal" | "no-permission" | "revoked"
 
 export interface BootstrapResult {
   deviceId: string
@@ -72,7 +72,7 @@ export async function bootstrapDevice(input: BootstrapInput): Promise<BootstrapR
       sessionAccount = result.account
       await requeueAuthor(result.account.userId)
     } else if (result.failure.kind === "auth" && result.failure.status === 403) {
-      blocker = "no-permission"
+      blocker = result.failure.code === "revoked" ? "revoked" : "no-permission"
     }
   }
   if (input.fresh) await setMeta("lastSessionUserId", input.sessionUser.id)

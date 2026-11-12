@@ -4,7 +4,7 @@ import {
   fuelEquipmentTypes, fuelVehicles, mantBrands, mantEquipmentProfiles, mantRecords, mantSchedules, worksites,
 } from "@/db/schema"
 import { unitName } from "@/lib/mantencion/format"
-import { cleanName, findByNameKey, normalizeCode, normalizePlate, resolvePlate } from "@/lib/mantencion/normalize"
+import { cleanName, findByNameKey, nameKey, normalizeCode, normalizePlate, resolvePlate } from "@/lib/mantencion/normalize"
 import type { MantUnit } from "@/lib/mantencion/types"
 import { codeYear, todayInChile } from "@/lib/utils"
 import { unitFromMeter } from "./fleet"
@@ -55,6 +55,12 @@ export interface VehicleIdentity {
   plate: string
   isActive: boolean
   hasProfile: boolean
+  /** Faena y tipo que tiene hoy en la flota: la importación no los cambia (decisión 2026-11-11). */
+  worksiteId: string | null
+  equipmentTypeId: string | null
+  /** Modelo y año de la flota: una fila que los deja en blanco los conserva al incorporar. */
+  model?: string | null
+  year?: number | null
 }
 
 export interface ResolvedEquipment {
@@ -76,6 +82,9 @@ export interface ResolvedEquipment {
 /** La ficha tal como está hoy (edición) y los hechos que fijan sus reglas. */
 export interface EquipmentCurrent {
   vehicleId: string
+  /** Faena actual del vehículo: el alcance de ORIGEN que se exige al editarlo. */
+  worksiteId: string
+  equipmentTypeId: string
   active: boolean
   retiredReason: string | null
   unit: MantUnit
@@ -104,7 +113,11 @@ export async function loadEquipmentCatalogs(client: Reader): Promise<EquipmentCa
     client.select({ id: mantSchedules.id, name: mantSchedules.name, unit: mantSchedules.unit }).from(mantSchedules).where(isNull(mantSchedules.deletedAt)),
     client.select({ id: worksites.id, name: worksites.name, isActive: worksites.isActive }).from(worksites),
     client
-      .select({ id: fuelVehicles.id, code: fuelVehicles.code, plate: fuelVehicles.plate, isActive: fuelVehicles.isActive, profile: mantEquipmentProfiles.vehicleId })
+      .select({
+        id: fuelVehicles.id, code: fuelVehicles.code, plate: fuelVehicles.plate, isActive: fuelVehicles.isActive,
+        worksiteId: fuelVehicles.worksiteId, equipmentTypeId: fuelVehicles.equipmentTypeId, profile: mantEquipmentProfiles.vehicleId,
+        model: fuelVehicles.model, year: fuelVehicles.year,
+      })
       .from(fuelVehicles)
       .leftJoin(mantEquipmentProfiles, eq(mantEquipmentProfiles.vehicleId, fuelVehicles.id)),
   ])
@@ -116,7 +129,10 @@ export async function loadEquipmentCatalogs(client: Reader): Promise<EquipmentCa
     brands,
     schedules: schedules.map((row) => ({ ...row, unit: row.unit as MantUnit })),
     worksites: sites,
-    identities: vehicles.map((row) => ({ id: row.id, code: row.code, plate: row.plate, isActive: row.isActive, hasProfile: row.profile !== null })),
+    identities: vehicles.map((row) => ({
+      id: row.id, code: row.code, plate: row.plate, isActive: row.isActive, hasProfile: row.profile !== null,
+      worksiteId: row.worksiteId, equipmentTypeId: row.equipmentTypeId, model: row.model, year: row.year,
+    })),
   }
 }
 
@@ -143,6 +159,8 @@ export async function loadEquipmentCurrents(client: Reader, vehicleId?: string):
   const rows = await client
     .select({
       vehicleId: mantEquipmentProfiles.vehicleId,
+      worksiteId: fuelVehicles.worksiteId,
+      equipmentTypeId: fuelVehicles.equipmentTypeId,
       code: fuelVehicles.code,
       plate: fuelVehicles.plate,
       model: fuelVehicles.model,
@@ -179,6 +197,8 @@ export async function loadEquipmentCurrents(client: Reader, vehicleId?: string):
     if (!unit) continue
     currents.push({
       vehicleId: row.vehicleId,
+      worksiteId: row.worksiteId,
+      equipmentTypeId: row.equipmentTypeId,
       active: row.isActive,
       retiredReason: row.retiredReason,
       unit,
@@ -225,6 +245,17 @@ export interface ResolveOptions {
    * se valida: la vista previa de una importación no escribe nada.
    */
   createWorksite?: (name: string) => Promise<{ id: string; name: string }>
+  /**
+   * Faena que el equipo YA tiene: se acepta aunque esté inactiva. Sin esto, un
+   * equipo de una faena desactivada no se podía editar en nada (auditoría I-3).
+   */
+  keepWorksiteId?: string | null
+  /**
+   * Importación: si el equipo ya tiene registros y la fila trae otra lectura
+   * inicial, se conserva la actual con un aviso en vez de rechazar toda la fila
+   * (la planilla real traía 45 filas así; 2026-11-11). El formulario no lo usa.
+   */
+  ignoreLockedInitialReading?: boolean
 }
 
 /**
@@ -235,8 +266,10 @@ export async function resolveEquipment(
   client: Reader,
   input: EquipmentInput,
   options: ResolveOptions,
-): Promise<{ ok: true; value: ResolvedEquipment; incorporate: VehicleIdentity | null } | { ok: false; fieldErrors: FieldErrors }> {
+): Promise<{ ok: true; value: ResolvedEquipment; incorporate: VehicleIdentity | null; notices: string[] } | { ok: false; fieldErrors: FieldErrors }> {
   const errors: FieldErrors = {}
+  /** Avisos que no impiden guardar (sólo con `ignoreLockedInitialReading`). */
+  const notices: string[] = []
   const { current } = options
   const catalogs = options.catalogs ?? await loadEquipmentCatalogs(client)
   const today = todayInChile()
@@ -291,7 +324,8 @@ export async function resolveEquipment(
   }
   if (current && current.recordCount > 0) {
     if ((initialReading ?? null) !== current.fields.initialReading) {
-      errors.initialReading = "La lectura inicial no se puede cambiar: el equipo ya tiene registros."
+      if (options.ignoreLockedInitialReading) notices.push("La lectura inicial no se cambia: el equipo ya tiene registros. Se conserva la actual.")
+      else errors.initialReading = "La lectura inicial no se puede cambiar: el equipo ya tiene registros."
     }
     initialReading = current.fields.initialReading
     initialReadingDate = current.fields.initialReadingDate
@@ -317,14 +351,15 @@ export async function resolveEquipment(
     else if (typed.length > 80) errors.worksiteId = "El nombre de la faena es demasiado largo (máximo 80 caracteres)."
     else {
       const existing = findByNameKey(catalogs.worksites, typed)
-      if (existing && !existing.isActive) errors.worksiteId = `La faena «${existing.name}» existe pero está inactiva.`
+      if (existing && !existing.isActive) errors.worksiteId = inactiveWorksiteMessage(existing.name, catalogs.worksites)
       else if (existing) { worksiteId = existing.id; worksiteName = existing.name }
       else newWorksiteName = typed
     }
   } else if (!input.worksiteId) errors.worksiteId = "Elige la faena."
   else {
     const row = catalogs.worksites.find((item) => item.id === input.worksiteId)
-    if (!row || !row.isActive) errors.worksiteId = "Esa faena no existe o está inactiva."
+    const keeping = !!row && row.id === options.keepWorksiteId
+    if (!row || (!row.isActive && !keeping)) errors.worksiteId = "Esa faena no existe o está inactiva."
     else { worksiteId = row.id; worksiteName = row.name }
   }
 
@@ -393,5 +428,18 @@ export async function resolveEquipment(
       initialReadingDate,
     },
   }
-  return { ok: true, value, incorporate }
+  return { ok: true, value, incorporate, notices }
+}
+
+/**
+ * «La faena X está inactiva», con la activa que probablemente la reemplazó si
+ * hay exactamente una que empieza con la misma palabra (las faenas se
+ * unificaron el 2026-11; la planilla real traía los nombres antiguos).
+ */
+function inactiveWorksiteMessage(name: string, all: EquipmentCatalogs["worksites"]): string {
+  const first = nameKey(name).split(" ")[0] ?? ""
+  const candidates = first.length >= 3 ? all.filter((item) => item.isActive && nameKey(item.name).split(" ")[0] === first) : []
+  return candidates.length === 1
+    ? `La faena «${name}» está inactiva. ¿Es «${candidates[0]!.name}»? Escribe esa.`
+    : `La faena «${name}» existe pero está inactiva.`
 }

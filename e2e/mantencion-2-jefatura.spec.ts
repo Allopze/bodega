@@ -6,7 +6,7 @@ import ExcelJS from "exceljs"
 import postgres from "postgres"
 import sharp from "sharp"
 import { resolveE2eDatabaseUrl } from "./environment"
-import { expectPageTitle, login } from "./helpers"
+import { expectPageTitle, login, textoVisible } from "./helpers"
 
 /**
  * §16 E2E 5 · Jefatura de mantención: panel, registros, detalle, Excel y PDF.
@@ -226,9 +226,9 @@ test("el panel muestra los cuatro indicadores, el gráfico con sus datos y cada 
   await expect(page).toHaveURL(/\/mantencion\/equipos\?estado=vencida/)
   await page.goto("/mantencion/panel")
   await page.getByRole("link", { name: /^Equipos en taller/ }).click()
-  await expect(page).toHaveURL(/\/mantencion\/registros\?.*situacion=en_taller/)
-  await expect(page.getByRole("link", { name: `Ver el registro ${rec.B.folio}` })).toBeVisible()
-  await expect(page.getByRole("link", { name: `Ver el registro ${rec.A.folio}` })).toHaveCount(0)
+  // Lleva a la lista de EQUIPOS en taller (la cifra del tile cuenta equipos, también los retenidos por una OT).
+  await expect(page).toHaveURL(/\/mantencion\/equipos\?.*taller=1/)
+  await expect(textoVisible(page, rec.B.code).first()).toBeVisible()
 
   await page.goto("/mantencion/panel")
   await page.getByRole("link", { name: /^Registros · / }).click()

@@ -19,6 +19,12 @@
  * - **Licencias**: clase, vencimiento y observación de cada trabajador.
  * - Los trabajadores de la planilla que no están en Chome se crean, activos.
  *
+ * Acepta tanto el consolidado de 3 fuentes (`Control_vencimientos_Chome_consolidado.xlsx`,
+ * encabezados en la fila 2) como `Chome_Control_Vencimientos_FINAL.xlsx` (2026-11-08: las
+ * 4 fuentes, con la faena Cholguán, el RUT repetido ya corregido y los encabezados en la
+ * fila 4). Las columnas se buscan por su nombre, no por su posición. «Cholguán Máquinas» no
+ * tiene alias hacia una faena de Chome: sus filas se omiten y se informan hasta decidir cuál es.
+ *
  * El script **lee la planilla al ejecutarse** (`--file`): RUT, nombres y fechas
  * no entran al repositorio. Las únicas constantes que el código lleva son el
  * plan (faenas y cargos) y la marca, modelo y año de los equipos nuevos.
@@ -65,6 +71,7 @@ import {
 } from "@/lib/combustibles/xlsx-utils"
 import { civilDaysBetween } from "@/lib/expiry"
 import { nanoid } from "@/lib/id"
+import { loadXlsxTolerant } from "@/lib/reports/xlsx-normalize"
 import { cleanRut, validateRut } from "@/lib/rut"
 import { writeDriverLicense } from "@/lib/services/driver-licenses"
 import { getFleetAdminSettings } from "@/lib/services/system-settings"
@@ -136,27 +143,32 @@ interface VehicleDetails { brand: string | null; model: string | null; year: num
 /**
  * Marca, modelo y año de los 15 equipos que la planilla trae y Chome no tenía
  * (BPDH-67 sí estaba, con la patente mal escrita: ver `PLATE_CORRECTIONS`).
- * La planilla no los lleva: están pendientes del usuario. Un `null` crea el
- * equipo sin esos datos (son opcionales) y se completan después desde Flota.
- * La clave es la patente tal como la escribe la planilla.
+ * La planilla de vencimientos no los lleva: salen de la plantilla de equipos de
+ * mantención completada (hoja «Equipos», carpeta «Flota y mantención Chome»,
+ * 2026-11-11). Marca tal como la escribe la plantilla; el modelo se toma de ahí
+ * salvo cuando no informa nada: repite la marca («Rocongu» en HGKG-54) o se
+ * declara genérico («PLANO DE 2 EJES GENÉRICO» en JP-3896), y entonces queda en
+ * `null`. Un `null` crea el equipo sin ese dato (es opcional) y se completa
+ * después desde Flota. La clave es la patente tal como la escribe la planilla.
  */
 export const NEW_VEHICLE_DETAILS: Record<string, VehicleDetails | null> = {
-  // completar con los datos que entregue el usuario
-  "PWTD-82": null,
-  "HGKG-54": null,
-  "JP-3896": null,
-  "JN-6770": null,
-  "JN-9374": null,
-  "JN-9376": null,
-  "JWPY-64": null,
-  "PWTY-84": null,
-  "PWTY-85": null,
-  "PWYL-34": null,
-  "PWYL-35": null,
-  "JA-1225": null,
-  "PWTK-77": null,
-  "JK-2385": null,
-  "HGKG-53": null,
+  // Carros
+  "PWTD-82": { brand: "Emes", model: "PLANO 2 EJES", year: 2022 },
+  "HGKG-54": { brand: "Rocongu", model: null, year: 2017 },
+  "JP-3896": { brand: "Rocongu", model: null, year: 2015 },
+  "PWTY-84": { brand: "Rocongu", model: "BASE CONTENEDOR", year: 2023 },
+  "PWTY-85": { brand: "Rocongu", model: "BASE CONTENEDOR", year: 2023 },
+  "PWYL-34": { brand: "Rocongu", model: "BASE CONTENEDOR", year: 2023 },
+  "PWYL-35": { brand: "Rocongu", model: "BASE CONTENEDOR", year: 2023 },
+  "JA-1225": { brand: "Rabalme", model: "PLANO 2 EJES", year: 2004 },
+  "HGKG-53": { brand: "Rocongu", model: "PLANO 2 EJES 6 MTS", year: 2017 },
+  // Bateas
+  "JN-6770": { brand: "Tremac", model: "SRTT 20 3S", year: 2014 },
+  "JN-9374": { brand: "Tremac", model: "SRTT20 3N", year: 2014 },
+  "JN-9376": { brand: "Tremac", model: "SRTT 20 3N", year: 2014 },
+  "JWPY-64": { brand: "Randon", model: "SR-BA-AB-03-20", year: 2019 },
+  "PWTK-77": { brand: "Emes", model: "Semiremolque MELO", year: 2025 },
+  "JK-2385": { brand: "Randon", model: "Semiremolque Randon", year: 2012 },
 }
 
 /**
@@ -450,14 +462,23 @@ function cellDate(sheet: ExcelJS.Worksheet, rowNumber: number, column: number | 
   return { date, unreadable: false }
 }
 
+/**
+ * Abre el .xlsx. «Chome_Control_Vencimientos_FINAL» (2026-11-08) viene de OpenXML SDK:
+ * XML con prefijo (`<x:worksheet>`), que `loadXlsxTolerant` ya normaliza, y además
+ * las relaciones de las hojas a sus tablas con ruta absoluta (`/xl/tables/table1.xml`),
+ * que ExcelJS no resuelve y rompe con «Cannot read properties of undefined (reading
+ * 'name')». Si la carga tolerante falla, se reintenta con esas rutas en relativo
+ * (`../tables/table1.xml`, la forma que ExcelJS espera).
+ */
+async function loadPlanillaWorkbook(bytes: Uint8Array): Promise<ExcelJS.Workbook | null> {
+  // `loadXlsxTolerant` ya quita el prefijo `x:` y pasa a relativas las rutas absolutas de las hojas.
+  return loadXlsxTolerant(bytes)
+}
+
 /** Lee las hojas «Máquinas» y «Trabajadores». Las columnas se buscan por su nombre, no por su letra. */
 export async function readPlanilla(source: Buffer | ArrayBuffer): Promise<PlanillaData> {
-  const workbook = new ExcelJS.Workbook()
-  try {
-    await workbook.xlsx.load(source as never)
-  } catch {
-    throw new Error("El archivo no es una planilla Excel válida.")
-  }
+  const workbook = await loadPlanillaWorkbook(source instanceof Uint8Array ? source : new Uint8Array(source))
+  if (!workbook) throw new Error("El archivo no es una planilla Excel válida.")
   const skipped: ReviewNote[] = []
 
   const machineSheet = findSheet(workbook, "Máquinas")

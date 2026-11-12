@@ -168,6 +168,9 @@ describe("ediciones: borrador, publicar y snapshot (regla 15)", () => {
   it("marcar una celda y publicar sube la versión y sólo cambia esa columna", async () => {
     const model = (await loadScheduleEditor(sourceId))!
     const interval = model.intervals.find((item) => item.value === 20000)!
+    // Un ítem «ancla» (en su propio sistema, para no mover el orden del primero) aplica a todos los
+    // intervalos: publicar exige que cada intervalo activo tenga al menos un ítem.
+    ok(await addScheduleItem(actor, { scheduleId: sourceId, groupName: "Soporte", name: "Ancla" }))
     const result = ok(await setScheduleCell(actor, { scheduleId: sourceId, itemId, intervalId: interval.id, applies: false }))
     expect(result.draft).toBe(true)
     expect(await publish()).toBe(3)
@@ -179,10 +182,10 @@ describe("ediciones: borrador, publicar y snapshot (regla 15)", () => {
     const removed = ok(await setScheduleItemActive(actor, { scheduleId: sourceId, itemId, active: false }))
     expect(removed.draft).toBe(true)
     expect(await publish()).toBe(4)
-    expect((await getScheduleSnapshot(sourceId, 4))?.groups).toEqual([])
+    expect((await getScheduleSnapshot(sourceId, 4))?.groups.map((group) => group.name)).toEqual(["Soporte"])
     const [row] = await testDb.select().from(schema.mantScheduleItems).where(eq(schema.mantScheduleItems.id, itemId))
     expect(row?.isActive).toBe(false)
-    expect((await loadScheduleEditor(sourceId))?.groups).toEqual([])
+    expect((await loadScheduleEditor(sourceId))?.groups.map((group) => group.name)).toEqual(["Soporte"])
     // Las versiones viejas siguen mostrando el ítem: un registro firmado no cambia.
     expect((await getScheduleSnapshot(sourceId, 3))?.groups[0]?.items).toHaveLength(1)
 
@@ -206,6 +209,30 @@ describe("ediciones: borrador, publicar y snapshot (regla 15)", () => {
     ok(await renameSchedule(actor, sourceId, "Camiones y tractos"))
     expect((await audits("mant_schedule")).length).toBe(auditsBefore)
     expect(await publishSchedule(actor, sourceId)).toEqual({ ok: false, message: "No hay cambios por publicar." })
+  })
+})
+
+describe("publicar exige ítems en cada intervalo activo", () => {
+  it("rechaza publicar un intervalo sin ítems (nombrándolo) y publica cuando cada uno tiene al menos uno", async () => {
+    const created = ok(await createSchedule(actor, { name: "Pauta con hueco", unit: "km", intervals: [5000, 10000], copyFromId: null }))
+    const id = created.data.id
+    const item = newItemId(ok(await addScheduleItem(actor, { scheduleId: id, groupName: "Motor", name: "Nivel de aceite" })))
+    const model = (await loadScheduleEditor(id))!
+    const ten = model.intervals.find((interval) => interval.value === 10000)!
+    ok(await setScheduleCell(actor, { scheduleId: id, itemId: item, intervalId: ten.id, applies: false }))
+
+    const refused = await publishSchedule(actor, id)
+    expect(refused).toEqual({
+      ok: false,
+      message: "No se puede publicar: el intervalo 10.000 km no tiene ítems. Marca al menos un ítem o quita el intervalo.",
+    })
+    // No se publicó nada: la versión vigente sigue siendo la 1 y el borrador sigue sucio.
+    expect(await currentVersion(id)).toBe(1)
+    expect((await scheduleDraftDiff(id)).dirty).toBe(true)
+
+    // Marcar la celda lo resuelve.
+    ok(await setScheduleCell(actor, { scheduleId: id, itemId: item, intervalId: ten.id, applies: true }))
+    expect(await publish(id)).toBe(2)
   })
 })
 
@@ -341,7 +368,7 @@ describe("copia y reglas por marca", () => {
     const copy = ok(await createSchedule(actor, { name: "Copia de camiones", unit: "km", intervals: [10000, 30000], copyFromId: sourceId }))
     const model = (await loadScheduleEditor(copy.data.id))!
     expect(model.origin).toMatch(/^Copia de «Camiones y tractos»\./)
-    expect(model.groups.map((group) => group.name)).toEqual(["Motor"])
+    expect(model.groups.map((group) => group.name)).toEqual(["Motor", "Soporte"])
     expect(model.groups[0]!.items.map((item) => item.name)).toEqual(["Inspección visual"])
     expect(model.intervals.map((item) => [item.value, item.needsReview])).toEqual([[10000, false], [30000, true]])
     // 30.000 lo divide 10.000: hereda su columna.
@@ -374,7 +401,7 @@ describe("copia y reglas por marca", () => {
   it("lista las pautas con intervalos, ítems, equipos y si tienen reglas por marca", async () => {
     const rows = await listSchedules()
     const main = rows.find((row) => row.id === sourceId)
-    expect(main).toMatchObject({ name: "Camiones y tractos", unit: "km", itemCount: 1, hasBrandRules: true, dirty: false })
+    expect(main).toMatchObject({ name: "Camiones y tractos", unit: "km", itemCount: 2, hasBrandRules: true, dirty: false })
     expect(main?.intervals).toEqual([10000, 20000, 40000, 60000, 80000])
   })
 })
@@ -522,10 +549,43 @@ describe("exportar", () => {
     const sheet = workbook.getWorksheet("Camiones y tractos")!
     expect(sheet.getRow(1).values).toEqual([undefined, "Sistema", "Actividad", "10.000 km", "20.000 km", "40.000 km", "60.000 km", "80.000 km", "Nota"])
     expect(sheet.getRow(2).getCell(2).value).toBe("Inspección visual")
-    expect(sheet.getRow(4).getCell(1).value).toBe("Reglas por marca")
-    expect(sheet.getRow(5).getCell(3).value).toBe("Scania")
-    expect(sheet.getRow(6).getCell(3).value).toBe("No aplica")
+    // Tras la fila del ítem «Inspección visual» y la del ancla (sistema «Soporte») vienen las reglas por marca.
+    expect(sheet.getRow(5).getCell(1).value).toBe("Reglas por marca")
+    expect(sheet.getRow(6).getCell(3).value).toBe("Scania")
+    expect(sheet.getRow(7).getCell(3).value).toBe("No aplica")
     expect((await audits("mant_schedule_export")).length).toBe(1)
+  })
+
+  it("D4: el Excel trae la versión PUBLICADA, no el borrador, y la hoja de metadatos avisa de los cambios sin publicar", async () => {
+    const load = async (base64: string) => {
+      const workbook = new ExcelJS.Workbook()
+      await workbook.xlsx.load(Buffer.from(base64, "base64") as never)
+      return workbook
+    }
+    const metadataNotes = (workbook: ExcelJS.Workbook) => {
+      const notes: string[] = []
+      workbook.getWorksheet("Metadatos")!.eachRow((row) => { if (row.getCell(1).value === "Nota") notes.push(String(row.getCell(2).value)) })
+      return notes
+    }
+    const itemNames = (workbook: ExcelJS.Workbook) => {
+      const names: string[] = []
+      workbook.getWorksheet("Camiones y tractos")!.eachRow((row) => { names.push(String(row.getCell(2).value ?? "")) })
+      return names
+    }
+
+    // Limpio: sin aviso.
+    expect(metadataNotes(await load((await exportSchedules(session, { scheduleIds: [sourceId] })).base64))).toEqual([])
+
+    // Un ítem en el borrador, sin publicar: no sale en el archivo y la hoja de metadatos lo dice.
+    ok(await addScheduleItem(actor, { scheduleId: sourceId, groupName: "Motor", name: "Ítem solo en borrador" }))
+    try {
+      const draftExport = await load((await exportSchedules(session, { scheduleIds: [sourceId] })).base64)
+      expect(itemNames(draftExport)).not.toContain("Ítem solo en borrador")
+      expect(metadataNotes(draftExport)).toEqual([expect.stringContaining("sin publicar")])
+      expect(metadataNotes(draftExport)[0]).toContain("Camiones y tractos")
+    } finally {
+      ok(await discardScheduleDraft(actor, sourceId))
+    }
   })
 
   it("el Excel de equipos exporta el estado dentro del alcance y registra la auditoría", async () => {

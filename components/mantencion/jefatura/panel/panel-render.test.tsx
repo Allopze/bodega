@@ -41,7 +41,7 @@ describe("indicadores del panel (A1)", () => {
     const hrefOf = (name: RegExp) => screen.getByRole("link", { name }).getAttribute("href")
     expect(hrefOf(/^Registros · /)).toBe("/mantencion/registros?estado=vigente&desde=2026-09-29&faena=ws-1")
     expect(hrefOf(/^Mantenciones vencidas/)).toBe("/mantencion/equipos?estado=vencida&faena=ws-1")
-    expect(hrefOf(/^Equipos en taller/)).toBe("/mantencion/registros?tipo=C&situacion=en_taller&estado=vigente&faena=ws-1")
+    expect(hrefOf(/^Equipos en taller/)).toBe("/mantencion/equipos?taller=1&faena=ws-1")
     expect(hrefOf(/^Días fuera de servicio/)).toBe("/mantencion/registros?tipo=C&situacion=paso_taller&estado=vigente&desde=2026-09-29&faena=ws-1")
   })
 

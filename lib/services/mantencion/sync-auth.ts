@@ -1,4 +1,5 @@
 import { getUserRbacById } from "@/lib/auth/rbac"
+import { isSessionRevokedByCredentialChange } from "@/lib/auth/session-revocation"
 import { logger } from "@/lib/logger"
 import { consumeFixedWindowLimit } from "@/lib/services/rate-limit"
 import { isRouteOperational } from "@/lib/services/module-toggles"
@@ -65,6 +66,8 @@ export async function authenticateSyncRequest(request: Request, options: { pathn
   // RBAC SIEMPRE fresco (sin caché de 5 s): revocar el rol corta la sync al instante.
   const rbac = await getUserRbacById(credential.userId, true)
   if (!rbac || !rbac.isActive) return { ok: false, failure: FAILURES.inactive }
+  // Restablecer la contraseña corta también la app: una credencial emitida antes deja de valer (AUTH-003, auditoría 2026-11-11).
+  if (isSessionRevokedByCredentialChange(Date.parse(credential.createdAt), rbac.sessionsValidFrom)) return { ok: false, failure: FAILURES.badToken }
   if (!rbac.permissions.includes("mant:app:use")) return { ok: false, failure: FAILURES.noPermission }
 
   if (!(await isRouteOperational(options.pathname))) return { ok: false, failure: FAILURES.moduleOff }

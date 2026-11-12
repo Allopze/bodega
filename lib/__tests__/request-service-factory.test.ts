@@ -450,17 +450,19 @@ describe("submitRequest", () => {
     submitTx({
       request: { urgency: "critical" },
       items: [{ id: "item-1", quantity: 1, estimatedUnitPrice: 900_000, vehicleId: "veh-1", workOrderId: null }],
-      vehicles: [{ operationalStatus: "detenido" }],
+      vehicles: [{ id: "veh-1", operationalStatus: "detenido" }],
     })
     await expect(svc.submitRequest({ requestId: "req-1", userId: "user-1" })).rejects.toThrow("Urgencia crítica")
 
-    // Con una OT vinculada ya es elegible: no consulta la flota (la 4.ª lectura queda sin usar).
+    // Con una OT vinculada ya es elegible: la 4.ª lectura revalida que la OT siga abierta
+    // (auditoría 2026-11-11) y no se consulta la flota.
     const mockSelect = submitTx({
       request: { urgency: "critical", notes: "OT detenida" },
       items: [{ id: "item-1", quantity: 1, estimatedUnitPrice: 900_000, vehicleId: "veh-1", workOrderId: "ot-1" }],
+      vehicles: [{ vehicleId: "veh-1", status: "en_ejecucion" }],
     })
     await svc.submitRequest({ requestId: "req-1", userId: "user-1" })
-    expect(mockSelect).toHaveBeenCalledTimes(3)
+    expect(mockSelect).toHaveBeenCalledTimes(4)
   })
 
   describe("servicios", () => {

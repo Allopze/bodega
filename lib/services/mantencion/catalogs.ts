@@ -41,6 +41,11 @@ const TABLES: Record<MantCatalogKey, CatalogTable> = {
 
 export const MANT_CATALOG_KEYS = Object.keys(TABLES) as MantCatalogKey[]
 
+/** Tabla de un catálogo, tipada con las columnas comunes (para la administración del catálogo). */
+export function catalogTable(key: MantCatalogKey): CatalogTable {
+  return TABLES[key]
+}
+
 type Reader = Pick<Tx, "select">
 
 async function readCatalog(client: Reader, key: MantCatalogKey, includeInactive: boolean): Promise<CatalogEntry[]> {

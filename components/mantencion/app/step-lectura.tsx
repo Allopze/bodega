@@ -52,8 +52,8 @@ export function StepLectura({ draft, dispatch, row, onChangeEquipment, onConfirm
       <div>
         <label className="lbl" htmlFor="lect">{unit === "km" ? "Odómetro actual" : "Horómetro actual"}</label>
         <div className={errors.reading ? "lect bad" : "lect"}>
-          <input ref={readingRef} id="lect" inputMode="numeric" autoComplete="off" value={typed.text} placeholder="0" aria-describedby="lectinfo" aria-invalid={Boolean(errors.reading)}
-            onChange={(event) => dispatch({ type: "patch", patch: { readingText: String(parseReadingInput(event.target.value).value ?? "") } })} />
+          <input ref={readingRef} id="lect" inputMode="decimal" autoComplete="off" value={typed.text} placeholder="0" aria-describedby="lectinfo" aria-invalid={Boolean(errors.reading)}
+            onChange={(event) => dispatch({ type: "patch", patch: { readingText: parseReadingInput(event.target.value).stored } })} />
           <span className="mono" style={{ fontWeight: 600, color: "var(--gr)" }}>{unit}</span>
         </div>
         <div id="lectinfo">

@@ -33,6 +33,8 @@ interface LockedRecord {
   executorUserId: string | null
   /** OT a la que el registro da el trabajo (regla del enlace registro ↔ OT). */
   workOrderId: string | null
+  /** PDF archivado de la revisión vigente (su nombre puede llevar huella). */
+  pdfStorageKey: string | null
 }
 
 async function lockRecord(tx: Tx, recordId: string): Promise<LockedRecord | null> {
@@ -46,6 +48,7 @@ async function lockRecord(tx: Tx, recordId: string): Promise<LockedRecord | null
       registeredBy: mantRecords.registeredBy,
       executorUserId: mantRecords.executorUserId,
       workOrderId: mantRecords.workOrderId,
+      pdfStorageKey: mantRecords.pdfStorageKey,
     })
     .from(mantRecords)
     .where(eq(mantRecords.id, recordId))
@@ -109,9 +112,12 @@ export async function voidRecord(input: { recordId: string; reason: string; view
     // El archivo de la revisión que acaba de dejar de valer se borra: la fila ya no lo
     // nombra y el próximo «ANULADO» se archiva con otro nombre. Best effort: si no está
     // (o falla el borrado), la descarga lo regenera igual.
-    const archivedName = pdfStorageName(record.id, pdfRevision(record.status))
-    const archivedPdf = resolveMantencionFile(createMantencionFilePath(archivedName))
-    if (archivedPdf) await removeFile(archivedPdf).catch(() => undefined)
+    // Se borra el que la fila nombraba (puede llevar huella) y, por si acaso, el nombre sin huella.
+    const plainKey = createMantencionFilePath(pdfStorageName(record.id, pdfRevision(record.status)))
+    for (const key of [record.pdfStorageKey, plainKey]) {
+      const archivedPdf = key ? resolveMantencionFile(key) : null
+      if (archivedPdf) await removeFile(archivedPdf).catch(() => undefined)
+    }
     await recordAudit({
       userId: viewer.userId,
       userEmail: viewer.email ?? undefined,
@@ -138,7 +144,8 @@ export async function observeRecord(input: { recordId: string; text: string; vie
 
   return db.transaction(async (tx): Promise<MantActionResult> => {
     const record = await lockRecord(tx, input.recordId)
-    if (!record || !canObserveRecord(viewer, record)) return { ok: false, message: NOT_FOUND }
+    // Observar exige además poder LEER el registro, como anular o marcar revisado (auditoría 2026-11-11).
+    if (!record || !canObserveRecord(viewer, record) || !canSeeRecord(recordVisibility(viewer), record)) return { ok: false, message: NOT_FOUND }
     if (record.status === "anulado") return { ok: false, message: `El registro ${label(record)} está anulado: ya no admite observaciones.` }
 
     await tx.insert(mantRecordObservations).values({ id: nanoid(), recordId: record.id, text, userId: viewer.userId })

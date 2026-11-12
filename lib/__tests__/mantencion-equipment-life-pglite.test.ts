@@ -143,6 +143,20 @@ describe("hoja de vida: anuladas marcadas, totales sólo vigentes", () => {
     expect(totals).toEqual({ active: 3, activeCorrective: 1, activePreventive: 2, activeHours: 3, voided: 1 })
   })
 
+  it("una correctiva anulada que quedó marcada «en taller» no sigue en taller ni acumula días", async () => {
+    await testDb.update(schema.mantRecordCorrectives)
+      .set({ inWorkshop: true, workshopEntryDate: daysAgo(9), workshopReason: "Falla del radiador" })
+      .where(eq(schema.mantRecordCorrectives.recordId, "l-c"))
+    try {
+      const { rows } = await lifeAs(IDS.jefe)
+      expect(rows.find((row) => row.folio === "MC-BIO-0102")).toMatchObject({ status: "anulado", inWorkshop: false, daysInWorkshop: null, workshopExitDate: null })
+    } finally {
+      await testDb.update(schema.mantRecordCorrectives)
+        .set({ inWorkshop: false, workshopEntryDate: null, workshopReason: null })
+        .where(eq(schema.mantRecordCorrectives.recordId, "l-c"))
+    }
+  })
+
   it("los totales del supervisor se calculan sobre lo que ve", async () => {
     const { totals } = await lifeAs(IDS.supBio)
     expect(totals).toEqual({ active: 2, activeCorrective: 1, activePreventive: 1, activeHours: 3, voided: 1 })

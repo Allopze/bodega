@@ -171,18 +171,20 @@ export async function listWorkOrders(viewer: MantViewer, filters: WorkOrderListF
   const page = Math.max(1, filters.page)
   const today = todayInChile()
 
-  const [countRows, rows] = await Promise.all([
+  const pageRows = (pageNumber: number) => db.select(listColumns)
+    .from(mantWorkOrders)
+    .innerJoin(worksites, eq(worksites.id, mantWorkOrders.worksiteId))
+    .leftJoin(assignee, eq(assignee.id, mantWorkOrders.assignedToUserId))
+    .where(and(base, tabWhere(filters.tab)))
+    .orderBy(desc(mantWorkOrders.createdAt), asc(mantWorkOrders.id))
+    .limit(pageSize)
+    .offset((pageNumber - 1) * pageSize)
+  const [countRows, firstRows] = await Promise.all([
     db.select({ status: mantWorkOrders.status, count: sql<number>`count(*)::int` })
       .from(mantWorkOrders).where(base).groupBy(mantWorkOrders.status),
-    db.select(listColumns)
-      .from(mantWorkOrders)
-      .innerJoin(worksites, eq(worksites.id, mantWorkOrders.worksiteId))
-      .leftJoin(assignee, eq(assignee.id, mantWorkOrders.assignedToUserId))
-      .where(and(base, tabWhere(filters.tab)))
-      .orderBy(desc(mantWorkOrders.createdAt), asc(mantWorkOrders.id))
-      .limit(pageSize)
-      .offset((page - 1) * pageSize),
+    pageRows(page),
   ])
+  let rows = firstRows
 
   const byStatus = new Map(countRows.map((row) => [row.status, row.count]))
   const counts = Object.fromEntries(WORK_ORDER_TABS.map((tab) => [
@@ -191,6 +193,11 @@ export async function listWorkOrders(viewer: MantViewer, filters: WorkOrderListF
       ? OT_OPEN_STATUSES.reduce((sum, status) => sum + (byStatus.get(status) ?? 0), 0)
       : byStatus.get(tab) ?? 0,
   ])) as Record<WorkOrderTab, number>
+  // Una página más allá de la última (un enlace viejo, o filas que se movieron de pestaña) no
+  // devuelve filas y mostraba el estado vacío con la lista llena: se sirve la última página.
+  if (rows.length === 0 && page > 1 && counts[filters.tab] > 0) {
+    rows = await pageRows(Math.ceil(counts[filters.tab] / pageSize))
+  }
   return { rows: rows.map((row) => toListRow(row, today)), total: counts[filters.tab], counts }
 }
 

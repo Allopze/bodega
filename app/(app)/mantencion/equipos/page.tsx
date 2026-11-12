@@ -18,6 +18,7 @@ import {
   type RawSearchParams,
 } from "@/lib/services/mantencion/equipment-list"
 import { loadFleet } from "@/lib/services/mantencion/fleet"
+import { listIncorporationCandidates } from "@/lib/services/mantencion/fleet-incorporation"
 
 export const metadata: Metadata = { title: "Equipos de mantención" }
 export const dynamic = "force-dynamic"
@@ -51,8 +52,11 @@ export default async function EquipmentPage({ searchParams }: { searchParams: Pr
   if (filters.typeId) filterLabels.tipo = labelOf(options.types, filters.typeId)
   if (filters.scheduleId) filterLabels.pauta = filters.scheduleId === NO_SCHEDULE ? "Sin pauta" : labelOf(options.schedules, filters.scheduleId)
   if (filters.state) filterLabels.estado = EQUIPMENT_STATE_LABEL[filters.state]
+  if (filters.inWorkshop) filterLabels.situacion = "En taller"
 
   const canManage = can(session, "mant:equipment:manage")
+  // Vehículos de la flota sin ficha de mantención: se incorporan sin volver a escribirlos.
+  const pendingFleet = canManage ? (await listIncorporationCandidates(equipmentScope(viewer))).length : 0
   const canExport = can(session, "mant:export")
   // La app se reparte por QR. Quien administra los dispositivos lo hace desde «Dispositivos» (ítem del menú, con su
   // propio botón «Instalar app»); la supervisión de faena, que no entra ahí, la reparte desde esta cabecera.
@@ -79,6 +83,12 @@ export default async function EquipmentPage({ searchParams }: { searchParams: Pr
           <Callout tone="warning" icon={<Info size={16} />} title={`${plural(withoutSchedule, "equipo activo no tiene", "equipos activos no tienen")} pauta asignada`}>
             El mecánico no podrá registrarles una mantención preventiva.{" "}
             <Link href={`/mantencion/equipos?pauta=${NO_SCHEDULE}`} className="font-semibold underline underline-offset-2">Ver cuáles</Link>
+          </Callout>
+        )}
+        {pendingFleet > 0 && (
+          <Callout tone="info" icon={<Info size={16} />} title={`${plural(pendingFleet, "vehículo de la flota aún no está", "vehículos de la flota aún no están")} en Mantención`}>
+            Ya tienen código, patente, tipo y faena en la flota: sólo falta su marca y su pauta.{" "}
+            <Link href="/mantencion/equipos/incorporar" className="font-semibold underline underline-offset-2">Incorporarlos</Link>
           </Callout>
         )}
         <EquipmentFilters options={options} />

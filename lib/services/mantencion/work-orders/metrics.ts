@@ -109,6 +109,8 @@ function isoOrNull(value: unknown): string | null {
  * que tengan alguna OT vigente; con ellos, sólo esos (los que no tienen OT no
  * aparecen en el mapa: el llamador usa ceros).
  *
+ * `worksiteId` sólo filtra la faena de la OT cuando NO se piden `vehicleIds`.
+ *
  * `period` es opcional: sin él los campos del período quedan en 0, y la consulta
  * no calcula nada que el llamador no va a pintar (Flota sólo pide las abiertas).
  */
@@ -156,7 +158,10 @@ export async function getVehicleWorkOrderMetrics(
     .from(mantWorkOrders)
     .where(and(
       ne(mantWorkOrders.status, "anulada"),
-      scopeWhere(scope, options.worksiteId),
+      // Con equipos explícitos la faena filtra a los EQUIPOS (quien llama ya los acotó), no a la OT:
+      // `mant_work_orders.worksite_id` es la faena donde se abrió y no se mueve con el equipo, así que
+      // un equipo traspasado perdía sus OT abiertas del mapa. El alcance del usuario sigue rigiendo.
+      scopeWhere(scope, options.vehicleIds ? undefined : options.worksiteId),
       options.vehicleIds ? inArray(mantWorkOrders.vehicleId, [...options.vehicleIds]) : undefined,
     ))
     .groupBy(mantWorkOrders.vehicleId)

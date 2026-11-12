@@ -7,7 +7,7 @@ import {
   OT_ITEM_MAX_PER_KIND, OT_TRANSITIONS, type OtItemDone, type OtItemKind, type OtTransition,
 } from "@/lib/mantencion/work-order-states"
 import type { EditWorkOrderInput } from "@/lib/mantencion/work-order-schemas"
-import { REASON_MIN_LENGTH } from "@/lib/validation/reason-thresholds"
+import { isValidReason, REASON_MIN_LENGTH } from "@/lib/validation/reason-thresholds"
 import { todayInChile } from "@/lib/utils"
 import {
   canActOnWorkOrder, canEditExecution, canEditRequest, type AccessCheck,
@@ -71,7 +71,16 @@ export async function assignWorkOrder(actor: WorkOrderActor, input: Base & { ass
       assignedByUserId: actor.userId,
       assignedAt: nowIso(),
     }, [{ type: "assigned", changeSet: { from: ctx.ot.assignedToUserId, to: input.assignedToUserId }, clientOpId: input.clientOpId }])
-    return { row, notify: [planFor(row, "assigned", actor)] }
+    // El mecánico anterior también se entera: antes seguía creyendo que la OT era suya. El aviso
+    // `unassigned` le llega a él (el plan lleva al que la tenía, no al nuevo) y dice que fue reasignada.
+    const previous = ctx.ot.assignedToUserId
+    return {
+      row,
+      notify: [
+        planFor(row, "assigned", actor),
+        ...(previous ? [{ ...planFor(row, "unassigned", actor), assigneeUserId: previous, reassigned: true }] : []),
+      ],
+    }
   })
 }
 
@@ -85,7 +94,8 @@ export async function unassignWorkOrder(actor: WorkOrderActor, input: Base): Pro
       assignedByUserId: null,
       assignedAt: null,
     }, [{ type: "unassigned", changeSet: { from: ctx.ot.assignedToUserId }, clientOpId: input.clientOpId }])
-    return { row }
+    // El aviso va al mecánico que la tenía: la fila ya no trae asignado.
+    return { row, notify: ctx.ot.assignedToUserId ? [{ ...planFor(row, "unassigned", actor), assigneeUserId: ctx.ot.assignedToUserId }] : undefined }
   })
 }
 
@@ -214,7 +224,7 @@ export async function changeWorkOrderEstimate(
       refuse("La fecha estimada de entrega no puede ser anterior al ingreso.", "invalid", "estimatedDeliveryDate")
     }
     const reason = (input.reason ?? "").trim()
-    if (reason.length < 5) refuse("Cuenta por qué cambia la fecha estimada (al menos 5 caracteres).", "invalid", "reason")
+    if (!isValidReason(reason)) refuse(`Cuenta por qué cambia la fecha estimada (al menos ${REASON_MIN_LENGTH} caracteres).`, "invalid", "reason")
     const row = await applyChange(ctx, { estimatedDeliveryDate: input.estimatedDeliveryDate }, [
       { type: "estimate_changed", reason, changeSet: { from: current, to: input.estimatedDeliveryDate }, clientOpId: input.clientOpId },
     ])
@@ -440,7 +450,7 @@ export async function conformWorkOrder(actor: WorkOrderActor, input: Base & { fa
 
 // ── Anular y reabrir ────────────────────────────────────────────────────────
 
-/** Anula la OT (jefatura, o quien la creó mientras sigue «por asignar»). Si estaba en taller, revierte el estado del equipo. */
+/** Anula la OT (jefatura, o quien la creó mientras no ha entrado a taller: «por asignar» o «asignada»). Si estaba en taller, revierte el estado del equipo. */
 export async function voidWorkOrder(actor: WorkOrderActor, input: Base & { reason: string }): Promise<LockedResult> {
   return runLocked(actor, input, async (ctx) => {
     assertAct(canActOnWorkOrder(actor, ctx.ot, "void"))
@@ -455,7 +465,8 @@ export async function voidWorkOrder(actor: WorkOrderActor, input: Base & { reaso
     if (wasInWorkshop) {
       await markVehicleOutOfWorkshop(ctx.tx, { vehicleId: row.vehicleId, folio: row.folio, workOrderId: row.id, actorUserId: actor.userId, reason: "OT anulada" })
     }
-    return { row }
+    // Al mecánico asignado (que ya cuenta con ella) y a quien la solicitó.
+    return { row, notify: [planFor(row, "voided", actor, reason)] }
   })
 }
 

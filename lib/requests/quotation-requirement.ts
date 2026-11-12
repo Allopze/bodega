@@ -43,7 +43,7 @@ export interface QuotationRequirementInput {
    */
   thresholdClp: number | null
   urgency: string
-  /** Algún ítem tiene una OT vinculada o su vehículo no está operativo. */
+  /** La vía rápida cubre la solicitud (ver `fastPathCoversRequest`). */
   fastPathEligible: boolean
   /** La solicitud trae notas (la justificación vive en las notas generales). */
   hasJustification: boolean
@@ -67,6 +67,34 @@ export function estimatedRequestTotal(
     total += item.quantity * price
   }
   return total
+}
+
+/**
+ * ¿La vía rápida cubre la solicitud entera?
+ *
+ * La vía rápida la habilita un ítem con una OT vinculada o con un equipo que no
+ * está operativo, pero no puede arrastrar a los demás: una línea barata de una OT
+ * no exime del umbral a otra línea de $2.000.000 sin OT. Cubre la solicitud sólo
+ * si todos los ítems son de vía rápida, o si los que no lo son suman, por sí
+ * solos, un monto estimado conocido bajo el umbral (los que están sobre él
+ * siguen exigiendo sus cotizaciones). Sin umbral (servicios) o con umbral 0 los
+ * ítems fuera de la vía rápida nunca quedan bajo él.
+ */
+export function fastPathCoversRequest(
+  items: ReadonlyArray<{
+    quantity: number
+    estimatedUnitPrice: number | null | undefined
+    /** Ítem con OT vinculada abierta o con equipo no operativo. */
+    fastPath: boolean
+  }>,
+  thresholdClp: number | null,
+): boolean {
+  if (!items.some((item) => item.fastPath)) return false
+  const rest = items.filter((item) => !item.fastPath)
+  if (rest.length === 0) return true
+  if (thresholdClp === null || thresholdClp <= 0) return false
+  const restTotal = estimatedRequestTotal(rest)
+  return restTotal !== null && restTotal <= thresholdClp
 }
 
 export function evaluateQuotationRequirement(input: QuotationRequirementInput): QuotationRequirementResult {

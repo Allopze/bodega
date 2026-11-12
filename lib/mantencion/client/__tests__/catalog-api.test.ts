@@ -22,6 +22,15 @@ describe("clasificación de respuestas (contrato de SyncRecordResponse)", () => 
     expect(result).toMatchObject({ kind: "reject", status: 422, field: "reading", message: "La lectura es menor que la anterior." })
   })
 
+  it("un 409 con code «retry» (foto que llegó alterada) es un reintento, no un rechazo", async () => {
+    const message = "La foto llegó alterada o incompleta (la huella no coincide). Se vuelve a enviar sola."
+    const result = await uploadPhoto("t", photo(UUID(11)), vi.fn(async () => json(409, { ok: false, code: "retry", message })) as unknown as typeof fetch)
+    expect(result).toMatchObject({ kind: "retry", message, network: false })
+    // El mismo 409 sin ese código sigue siendo definitivo (otro contenido con el mismo id).
+    const conflict = await uploadPhoto("t", photo(UUID(11)), vi.fn(async () => json(409, { ok: false, code: "rejected", message: "Ese identificador ya existe." })) as unknown as typeof fetch)
+    expect(conflict).toMatchObject({ kind: "reject", status: 409, code: "rejected" })
+  })
+
   it("un 429 respeta Retry-After", async () => {
     const result = await postRecord("t", preventivePayload(UUID(1), [UUID(2), UUID(3)]), vi.fn(async () => json(429, { ok: false, code: "rate_limited", message: "Muchos envíos" }, { "retry-after": "60" })) as unknown as typeof fetch)
     expect(result).toMatchObject({ kind: "retry", retryAfterMs: 60_000, network: false })

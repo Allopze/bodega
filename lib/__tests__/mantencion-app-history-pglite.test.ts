@@ -276,7 +276,7 @@ describe("GET /sync/fotos/[id]", () => {
   async function upload(token: string, kind: "filtros" | "sticker" | "correctiva" = "filtros") {
     const id = crypto.randomUUID()
     const buffer = await makeJpeg(1200, 800)
-    const response = await fotos.PUT(photoRequest(token, id, { file: buffer, meta: await metaFor(buffer, { kind }) }), idParams(id))
+    const response = await fotos.PUT(await photoRequest(token, id, { file: buffer, meta: await metaFor(buffer, { kind }) }), idParams(id))
     expect(response.status).toBe(200)
     return id
   }

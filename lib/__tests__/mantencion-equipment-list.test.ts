@@ -66,6 +66,17 @@ describe("filterFleet y sortFleetByState", () => {
     expect(filterFleet(fleet, { includeRetired: false, scheduleId: "s-1" })).toHaveLength(5)
   })
 
+  it("«taller=1» deja sólo los equipos detenidos en taller, sea cual sea el estado de su pauta", () => {
+    const workshop = { inWorkshop: true, stale: false, lastActivityDate: "2026-11-01", exitDate: null, daysStopped: 3, recordId: "r-1", folio: null, entryDate: "2026-11-01", hours: 0 } as FleetRow["workshop"]
+    const withShop = [row("T-1", "vencida", { workshop }), row("T-2", "al_dia", { workshop }), row("T-3", "al_dia")]
+    expect(parseEquipmentListFilters({ taller: "1" }).inWorkshop).toBe(true)
+    expect(parseEquipmentListFilters({ taller: "0" }).inWorkshop).toBeUndefined()
+    expect(hasEquipmentListFilters(parseEquipmentListFilters({ taller: "1" }))).toBe(true)
+    expect(filterFleet(withShop, { includeRetired: false, inWorkshop: true }).map((item) => item.code)).toEqual(["T-1", "T-2"])
+    // Se combina con los demás filtros, que sólo achican.
+    expect(filterFleet(withShop, { includeRetired: false, inWorkshop: true, state: "vencida" }).map((item) => item.code)).toEqual(["T-1"])
+  })
+
   it("la fracción de urgencia usa el intervalo base para no mezclar kilómetros con horas", () => {
     const km = toEquipmentListRow(row("K", "proxima", { remaining: 1000, intervals: [10000] }))
     const hours = toEquipmentListRow(row("H", "proxima", { remaining: 30, unit: "h", intervals: [300] }))

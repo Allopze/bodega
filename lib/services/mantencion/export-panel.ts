@@ -1,17 +1,15 @@
-import { eq } from "drizzle-orm"
 import type { Session } from "next-auth"
-import { db } from "@/db"
-import { worksites } from "@/db/schema"
 import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { EQUIPMENT_STATE_LABEL, formatHours } from "@/lib/mantencion/format"
 import { MANT_EQUIPMENT_STATES } from "@/lib/mantencion/types"
 import { EXCEL_DATE_FORMAT, excelPlainDate } from "@/lib/reports/excel-dates"
+import { formatDate } from "@/lib/utils"
 import { buildXlsxBuffer } from "@/lib/reports/export-module/excel-builder"
 import type { ReportData } from "@/lib/reports/export-module/types"
 import { viewerFromSession } from "./access"
 import type { ExportOutcome } from "./export-records"
-import { loadPanel } from "./panel"
+import { loadPanel, loadPanelWorksites } from "./panel"
 import { fleetCoverage } from "./panel-coverage"
 import { PANEL_PERIOD_PHRASE, type PanelFilters } from "./panel-filters"
 
@@ -22,11 +20,15 @@ import { PANEL_PERIOD_PHRASE, type PanelFilters } from "./panel-filters"
  * respeta su alcance.
  */
 export async function exportPanel(input: { session: Session; filters: PanelFilters }): Promise<ExportOutcome> {
-  const data = await loadPanel(viewerFromSession(input.session), input.filters)
-  const worksiteName = input.filters.worksiteId
-    ? (await db.select({ name: worksites.name }).from(worksites).where(eq(worksites.id, input.filters.worksiteId)).limit(1))[0]?.name ?? "Faena desconocida"
-    : "Todas las faenas"
-  const period = PANEL_PERIOD_PHRASE[input.filters.period]
+  const viewer = viewerFromSession(input.session)
+  // Igual que la página: una faena de la URL que no está en el alcance de quien exporta no se
+  // aplica (ni se nombra, que sería revelar que existe) y el libro sale con todo su alcance.
+  const scopeWorksites = await loadPanelWorksites(viewer)
+  const worksite = input.filters.worksiteId ? scopeWorksites.find((item) => item.id === input.filters.worksiteId) : undefined
+  const filters: PanelFilters = { ...input.filters, worksiteId: worksite?.id }
+  const data = await loadPanel(viewer, filters)
+  const worksiteName = worksite?.name ?? "Todas las faenas"
+  const period = PANEL_PERIOD_PHRASE[filters.period]
   const coverage = fleetCoverage(data.fleet.counts)
 
   const report: ReportData = {
@@ -34,7 +36,7 @@ export async function exportPanel(input: { session: Session; filters: PanelFilte
     worksheetName: "Indicadores",
     headers: ["Indicador", "Valor", "Detalle"],
     rows: [
-      ["Período", period, data.from ? `Desde el ${data.from}` : "Sin límite de fecha"],
+      ["Período", period, data.from ? `Desde el ${formatDate(data.from)}` : "Sin límite de fecha"],
       ["Faena", worksiteName, ""],
       ["Registros del período", data.records.total, `${data.records.preventive} preventivas · ${data.records.corrective} correctivas · ${data.records.pendingReview} por revisar`],
       // «0 vencidas» no es «todo al día» si hay equipos que no se pudieron evaluar: el libro lo dice igual que la pantalla.
@@ -72,7 +74,7 @@ export async function exportPanel(input: { session: Session; filters: PanelFilte
       },
       {
         worksheetName: "Horas por faena",
-        headers: ["Faena", "Horas de taller (h)"],
+        headers: ["Faena", "Horas hombre (h)"],
         rows: data.hoursByWorksite.map((row) => [row.worksiteName, row.hours]),
         columnFormats: { 1: "0.0" },
       },
@@ -85,7 +87,7 @@ export async function exportPanel(input: { session: Session; filters: PanelFilte
   }
   const buffer = await buildXlsxBuffer(report, {
     session: input.session,
-    filters: { periodo: input.filters.period, faena: worksiteName },
+    filters: { periodo: filters.period, faena: worksiteName },
   })
   await recordAudit({
     userId: input.session.user.id,
@@ -93,8 +95,8 @@ export async function exportPanel(input: { session: Session; filters: PanelFilte
     action: "export",
     entityType: "mant_panel_export",
     entityId: nanoid(),
-    worksiteId: input.filters.worksiteId ?? null,
-    newState: { filters: { ...input.filters }, hours: formatHours(data.records.hours) },
+    worksiteId: filters.worksiteId ?? null,
+    newState: { filters: { ...filters }, hours: formatHours(data.records.hours) },
   })
   return {
     ok: true,

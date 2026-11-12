@@ -5,6 +5,7 @@ import { z } from "zod"
 import { guardAnyPermission } from "@/lib/auth/can"
 import { actionErrorResult } from "@/lib/actions/action-error-result"
 import { parseZ } from "@/lib/actions/parse-z"
+import { civilDate } from "@/lib/validation/dates"
 import type { ExportActionResult } from "@/components/ui/export-button"
 import { createWorkOrderSchema } from "@/lib/mantencion/work-order-schemas"
 import { actorFromSession } from "@/lib/services/mantencion/work-orders/action-support"
@@ -58,8 +59,8 @@ const exportFiltersSchema = z.object({
   worksiteId: z.string().max(64).optional(),
   vehicleId: z.string().max(64).optional(),
   assignedToUserId: z.string().max(64).optional(),
-  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  from: civilDate().optional(),
+  to: civilDate().optional(),
   q: z.string().max(100).optional(),
   /** `?repuestos=pendientes`: el Excel comparte `workOrdersWhere` con la lista; sin este campo el esquema lo descartaría. */
   partsPending: z.boolean().optional(),

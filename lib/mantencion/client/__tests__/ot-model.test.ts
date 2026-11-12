@@ -89,7 +89,8 @@ describe("ot-model: catálogo + cola", () => {
       status: "en_ejecucion", entry: ENTRY, items: workOrder().items.map((item) => ({ ...item, done: "si" as const })),
       lastRejection: { count: 1, reason: "Falta apretar la manguera", at: "2026-10-28T17:00:00.000Z" },
     })
-    const old = linkedRecord(1, "2026-10-28T16:00:00.000Z")
+    // Recibido por el servidor antes de la devolución: no cuenta, firme lo que firme el teléfono.
+    const old = { ...linkedRecord(1, "2026-10-28T16:00:00.000Z"), status: "sent" as const, receivedAt: "2026-10-28T16:01:00.000Z" }
     const [withOld] = buildOtViews(WITH({ workOrders: [returned] }), [old], USER).mine
     expect(withOld?.returnedReason).toBe("Falta apretar la manguera")
     expect(withOld?.linked).toHaveLength(0)
@@ -99,6 +100,21 @@ describe("ot-model: catálogo + cola", () => {
     const [withNew] = buildOtViews(WITH({ workOrders: [returned] }), [old, linkedRecord(2, "2026-10-28T18:00:00.000Z")], USER).mine
     expect(withNew?.linked).toHaveLength(1)
     expect(withNew?.flags.canFinish).toBe(true)
+  })
+
+  it("la devolución se compara con la hora de recepción del servidor, no con la firma del teléfono", () => {
+    const returned = workOrder({
+      status: "en_ejecucion", entry: ENTRY, items: workOrder().items.map((item) => ({ ...item, done: "si" as const })),
+      lastRejection: { count: 1, reason: "Falta apretar la manguera", at: "2026-10-28T17:00:00.000Z" },
+    })
+    // Teléfono atrasado: firmó «a las 16:00» pero el servidor la recibió a las 17:30, después de la devolución.
+    const behind = { ...linkedRecord(1, "2026-10-28T16:00:00.000Z"), status: "sent" as const, receivedAt: "2026-10-28T17:30:00.000Z" }
+    expect(buildOtViews(WITH({ workOrders: [returned] }), [behind], USER).mine[0]?.linked).toHaveLength(1)
+    // Teléfono adelantado: firmó «a las 18:00» pero el servidor la recibió a las 16:59, antes de la devolución.
+    const ahead = { ...linkedRecord(2, "2026-10-28T18:00:00.000Z"), status: "sent" as const, receivedAt: "2026-10-28T16:59:00.000Z" }
+    expect(buildOtViews(WITH({ workOrders: [returned] }), [ahead], USER).mine[0]?.linked).toHaveLength(0)
+    // Aún en cola: lo recibirá el servidor después de una devolución que el teléfono ya conoce, así que cuenta.
+    expect(buildOtViews(WITH({ workOrders: [returned] }), [linkedRecord(3, "2026-10-28T16:00:00.000Z")], USER).mine[0]?.linked).toHaveLength(1)
   })
 
   it("una operación ya enviada sólo se aplica mientras el catálogo sea más viejo que el envío", () => {

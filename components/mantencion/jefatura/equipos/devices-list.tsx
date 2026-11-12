@@ -87,7 +87,7 @@ export function DevicesList({ groups, canRevoke }: { groups: DevicePersonGroup[]
         open={target !== null}
         onOpenChange={(open) => { if (!open) setTarget(null) }}
         title={target ? `Revocar el acceso de ${target.userName}` : "Revocar acceso"}
-        description={`El dispositivo «${target?.deviceName ?? ""}» dejará de sincronizar. La persona tendrá que volver a entrar a la app con señal; los registros que tenga sin enviar no se pierden y se envían cuando vuelva a entrar.`}
+        description={`El dispositivo «${target?.deviceName ?? ""}» dejará de sincronizar y se cerrarán todas las sesiones de ${target?.userName ?? "la persona"} en la plataforma, también en sus otros equipos: tendrá que volver a entrar con su contraseña. Los registros que tenga sin enviar no se pierden y se envían cuando vuelva a entrar.`}
         confirmLabel="Revocar acceso"
         variant="destructive"
         loading={op.pending}
