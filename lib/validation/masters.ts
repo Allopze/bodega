@@ -208,7 +208,7 @@ export const productSchema = z.object({
   /**
    * Ficha de la familia EPP, no del producto: `certification` y
    * `lifespanMonths` viven en `epp_product_families`. El asistente no los pedía
-   * y sólo existían en /admin/epps, así que toda familia creada desde acá nacía
+   * y sólo existían en Productos → Familias EPP, así que toda familia creada desde acá nacía
    * sin certificación y sin vida útil — y sin vida útil ninguna entrega vence.
    */
   familyCertification:        z.string().trim().max(120).optional().or(z.literal("")),

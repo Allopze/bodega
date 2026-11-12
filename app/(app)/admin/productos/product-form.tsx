@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { useActionState } from "react"
+import Link from "next/link"
 import { toast } from "@/lib/toast"
 import { ArrowLeft, ArrowRight, X } from "@phosphor-icons/react"
 import { Sheet, SheetContent, SheetHeader, SheetBody, SheetFooter, SheetTitle, SheetDescription, SheetCloseButton } from "@/components/admin/sheet"
@@ -25,7 +26,8 @@ import {
   ADVANCED_ATTRIBUTE_TYPES, blankAdvancedAttribute, setQuantityDriver, duplicateAttributeNames,
   normalizeProductAttributeName, variantComboKey, splitEditColors, buildExtraColorVariants, extraColorAxes, type AdvancedAttributeType,
 } from "./product-form.helpers"
-import type { ProductFormProps, ProductFormMode, WizardStep, WizardGeneralState, WizardSupplierState, AttributeMultiValues, VariantCombo, SupplierRow, AttributeRow, SizeFamilyOption } from "./product-form.types"
+import type { ProductFormProps, ProductFormMode, WizardStep, WizardGeneralState, WizardSupplierState, AttributeMultiValues, VariantCombo, SupplierRow, AttributeRow, SizeFamilyOption, ProductUnitOption, ProductFamilyFicha } from "./product-form.types"
+import { PRODUCT_UNITS } from "@/lib/products/units"
 import { isSizeAttributeName } from "@/lib/products/product-size"
 import { defaultScaleCodes, suggestSizeScale } from "./size-scale.helpers"
 
@@ -40,7 +42,7 @@ const VARIANT_LIMIT = 500
 /** Cantidad a partir de la cual se muestra una advertencia visual. */
 const VARIANT_WARN_AT = 400
 
-export function ProductForm({ open, onClose, categories, allSuppliers, units, templates, sizeFamilies, editProduct, addVariantToFamily, variant = "sheet" }: ProductFormProps) {
+export function ProductForm({ open, onClose, categories, allSuppliers, sizeFamilies, editProduct, addVariantToFamily, variant = "sheet" }: ProductFormProps) {
   // Un formulario hace una sola operación a la vez. El modo se deriva de las
   // props: si viene una familia para "añadir variante" ese modo gana (un
   // producto en edición nunca trae familia), si no, edición cuando hay
@@ -49,6 +51,8 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
   const isEdit = mode === "edit"
   const isAddVariant = mode === "addVariant"
   const family = addVariantToFamily ?? null
+  /** La ficha común del EPP, si el producto ya tiene familia (o se le suma una variante). */
+  const familyFicha: ProductFamilyFicha | null = editProduct?.family ?? family ?? null
   const action = isEdit ? updateProduct : createProduct
 
   // ─── Dirty state tracking ────────────────────────────────────────────────
@@ -170,10 +174,12 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
   })
 
   // ── Derived: unit options ─────────────────────────────────────────────────
-  const unitOptions = React.useMemo(() => {
+  // Un producto con un código histórico fuera de la lista lo conserva visible.
+  const unitOptions = React.useMemo<ProductUnitOption[]>(() => {
+    const units: ProductUnitOption[] = PRODUCT_UNITS.map((unit) => ({ code: unit.code, label: unit.label, isActive: true }))
     if (!general.unitOfMeasure || units.some((unit) => unit.code === general.unitOfMeasure)) return units
     return [{ code: general.unitOfMeasure, label: `${general.unitOfMeasure} (heredada)`, isActive: false }, ...units]
-  }, [units, general.unitOfMeasure])
+  }, [general.unitOfMeasure])
 
   /** Valores por eje que ya existen en la familia (modo añadir-variante): el
    *  generador los pinta deshabilitados para que no se intente recrearlos. */
@@ -200,37 +206,12 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
   // ── Category change auto-detects EPP flags (only for new products) ────────
   function handleCategoryChange(id: string) {
     setGeneral((prev) => ({ ...prev, categoryId: id }))
-    // En "añadir variante" la categoría viene fija de la familia y su plantilla
-    // ya se aplicó en el alta original: cambiarla no debe re-mezclar templates.
+    // En "añadir variante" la categoría viene fija de la familia, y al editar
+    // las marcas EPP/Prevención ya son las del producto: no se re-deducen.
     if (isEdit || isAddVariant) return
     const category = categories.find((c) => c.id === id)
     if (!category) return
     setGeneral((prev) => ({ ...prev, isEpp: category.isEpp ?? false, requiresPrevencion: category.requiresPrevencion ?? false }))
-    // Plantillas de atributos de la categoría. Se reparten igual que los dos
-    // editores: las `select` son ejes de variante (paso 2) y el resto va al
-    // editor avanzado. Antes las no-`select` se filtraban y se perdían, así que
-    // una plantilla de tipo texto o número no servía para nada.
-    const categoryTemplates = templates.filter((t) => !t.categoryId || t.categoryId === id)
-    if (categoryTemplates.length > 0) {
-      const loadedSelect: AttributeMultiValues[] = categoryTemplates
-        .filter((t) => t.type === "select")
-        .map((t) => ({ name: t.name, type: "select", values: parseOptionsText(t.options), sizeFamily: t.sizeFamily }))
-      setWizAttrs((prev) => {
-        const existing = new Set(prev.map((a) => normalizeProductAttributeName(a.name)))
-        return [...prev, ...loadedSelect.filter((a) => !existing.has(normalizeProductAttributeName(a.name)))]
-      })
-
-      const loadedAdvanced: AttributeRow[] = categoryTemplates
-        .filter((t) => t.type !== "select")
-        .map((t, i) => ({
-          name: t.name, type: t.type, isRequired: t.isRequired,
-          options: "", sortOrder: t.sortOrder ?? i, drivesQuantity: false,
-        }))
-      setAdvAttrs((prev) => {
-        const existing = new Set(prev.map((a) => normalizeProductAttributeName(a.name)))
-        return [...prev, ...loadedAdvanced.filter((a) => !existing.has(normalizeProductAttributeName(a.name)))]
-      })
-    }
   }
 
   // ── Attribute management ──────────────────────────────────────────────────
@@ -629,8 +610,13 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
 
             {/* La ficha de la familia: sin vida útil ninguna entrega vence, y
                 sin certificación no hay trazabilidad de la norma que la exige.
-                El asistente no los pedía y sólo existían en /admin/epps. */}
-            {general.isEpp && (
+                Si el producto ya tiene familia, la ficha es de ella y se edita en
+                Familias EPP: acá se muestra. Antes se veía editable, pero el
+                servidor sólo la escribía si la familia no tenía valor, así que
+                cambiarla desde un producto no hacía nada. Sin familia (un alta),
+                se pide acá y crea la familia con esos datos. */}
+            {general.isEpp && familyFicha && <FamilyFichaSummary ficha={familyFicha} />}
+            {general.isEpp && !familyFicha && (
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <Field
                   label="Certificación"
@@ -986,7 +972,8 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
         <input type="hidden" name="name" value={general.name} />
         <input type="hidden" name="description" value={general.description} />
         <input type="hidden" name="categoryId" value={general.categoryId} />
-        {general.isEpp && (
+        {/* Sólo sin familia: con familia, la ficha se edita en Familias EPP. */}
+        {general.isEpp && !familyFicha && (
           <>
             <input type="hidden" name="familyCertification" value={general.familyCertification} />
             <input type="hidden" name="familyLifespanMonths" value={general.familyLifespanNotApplicable ? "" : general.familyLifespanMonths} />
@@ -1134,5 +1121,40 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
         }}
       />
     </>
+  )
+}
+
+/** La ficha de la familia, sin editar: se cambia en Productos → Familias EPP. */
+function FamilyFichaSummary({ ficha }: { ficha: ProductFamilyFicha }) {
+  const lifespan = ficha.lifespanNotApplicable
+    ? "No vence por diseño"
+    : ficha.lifespanMonths != null
+      ? `${ficha.lifespanMonths} ${ficha.lifespanMonths === 1 ? "mes" : "meses"}`
+      : null
+  return (
+    <section
+      aria-label="Ficha de la familia EPP"
+      className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-3"
+    >
+      <p className="text-sm text-[var(--color-text-muted)]">
+        Común a todas las tallas y colores de <span className="font-medium text-[var(--color-text)]">{ficha.canonicalName}</span>.
+      </p>
+      <dl className="mt-2 grid grid-cols-1 gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
+        <div className="flex gap-2">
+          <dt className="text-[var(--color-text-subtle)]">Certificación</dt>
+          <dd className="text-[var(--color-text)]">{ficha.certification || "Sin definir"}</dd>
+        </div>
+        <div className="flex gap-2">
+          <dt className="text-[var(--color-text-subtle)]">Vida útil</dt>
+          <dd className="text-[var(--color-text)]">{lifespan ?? "Sin definir"}</dd>
+        </div>
+      </dl>
+      <Link
+        href="/admin/productos/familias"
+        className="mt-2 inline-block text-sm font-medium text-[var(--color-primary)] underline"
+      >
+        Editar en Familias EPP
+      </Link>
+    </section>
   )
 }

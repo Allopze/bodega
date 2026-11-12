@@ -19,8 +19,6 @@ export const ADMIN_AREAS: AreaNode[] = [
     items: [
       { label: "Cargos y capacidades",  href: "/admin/cargos",              iconName: "Briefcase",         permissions: ["admin:worker_positions"] },
       { label: "Productos",             href: "/admin/productos",           iconName: "Cube",              permissions: ["admin:products"] },
-      { label: "Catálogo de EPP",       href: "/admin/epps",                iconName: "ShieldCheck",       permissions: ["admin:products"] },
-      { label: "Catálogos de productos", href: "/admin/catalogos-productos", iconName: "Cube",             permissions: ["admin:product_catalogs"] },
       { label: "Desviaciones",          href: "/admin/desviaciones",        iconName: "WarningCircle",     permissions: ["admin:deviation_catalog"] },
       { label: "Catálogos PDTP",        href: "/admin/pdtp-catalogos",      iconName: "FileText",          permissions: ["admin:pdtp_catalog"] },
       {

@@ -138,7 +138,7 @@ export async function resolveManualEppFamily(
  * Completa la ficha de la familia **sólo en los campos que están vacíos**.
  *
  * Dar de alta la segunda variante de una familia no debe reescribir en silencio
- * una certificación o una vida útil que alguien ya revisó en /admin/epps; pero
+ * una certificación o una vida útil que alguien ya revisó en Productos → Familias EPP; pero
  * dejar el dato en el aire cuando la familia no lo tiene tampoco sirve. Mismo
  * criterio que la fusión de familias.
  */

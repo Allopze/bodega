@@ -74,7 +74,7 @@ async function main() {
     console.log(`\n${code} (${names.length})`)
     for (const n of names) console.log(`  ${n}`)
   }
-  console.log(`\n? SIN TIPO INFERIBLE — clasificar a mano en /admin/epps (${unclear.length})`)
+  console.log(`\n? SIN TIPO INFERIBLE — clasificar a mano en Productos → Familias EPP (${unclear.length})`)
   for (const n of unclear) console.log(`  ${n}`)
 }
 

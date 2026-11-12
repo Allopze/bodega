@@ -2,18 +2,6 @@ export interface Category  { id: string; name: string; slug: string; isEpp?: boo
 export interface Supplier  { id: string; name: string }
 export interface ProductUnitOption { code: string; label: string; isActive?: boolean }
 
-export interface AttributeTemplateOption {
-  id: string
-  categoryId: string
-  categoryName?: string
-  name: string
-  type: "text" | "select" | "number" | "integer"
-  isRequired: boolean
-  options: string
-  sortOrder: number
-  sizeFamily?: string
-}
-
 export interface AttributeRow {
   id?: string
   name: string
@@ -49,8 +37,19 @@ export interface ProductForEdit {
   referencePrice:     number | null
   notes:              string | null
   isActive:           boolean
+  /** La familia EPP del producto, si tiene. Su ficha se muestra sin editar. */
+  family?:            ProductFamilyFicha | null
   attributes:         AttributeRow[]
   suppliers:          SupplierRow[]
+}
+
+/** Lo que es común a todas las variantes de un EPP y se edita en la familia. */
+export interface ProductFamilyFicha {
+  id:                    string
+  canonicalName:         string
+  certification:         string | null
+  lifespanMonths:        number | null
+  lifespanNotApplicable: boolean
 }
 
 export interface SizeFamilyOption {
@@ -68,8 +67,6 @@ export interface ProductFormProps {
   onClose:       () => void
   categories:    Category[]
   allSuppliers:  Supplier[]
-  units:         ProductUnitOption[]
-  templates:     AttributeTemplateOption[]
   /**
    * Familias de tallas del catálogo (`size_catalog`). Llegan del servidor y no
    * de una constante del bundle: agregar una talla 47 es una fila, no un

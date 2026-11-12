@@ -9,7 +9,7 @@ import { ProductForm } from "./product-form"
 import { ProductImportPanel } from "./product-import-panel"
 import { CatalogImportPanel } from "@/components/admin/catalog-import-panel"
 import { importProductsFromXlsx } from "./actions"
-import type { AttributeTemplateOption, SizeFamilyOption, ProductUnitOption } from "./product-form.types"
+import type { SizeFamilyOption } from "./product-form.types"
 
 interface CategoryItem {
   id: string; name: string; slug: string
@@ -20,12 +20,10 @@ interface SupplierItem { id: string; name: string }
 interface ProductActionsProps {
   categories: CategoryItem[]
   allSuppliers: SupplierItem[]
-  units: ProductUnitOption[]
-  templates: AttributeTemplateOption[]
   sizeFamilies: SizeFamilyOption[]
 }
 
-export function ProductActions({ categories, allSuppliers, units, templates, sizeFamilies }: ProductActionsProps) {
+export function ProductActions({ categories, allSuppliers, sizeFamilies }: ProductActionsProps) {
   const [productFormOpen, setProductFormOpen] = useState(false)
   const [importChoiceOpen, setImportChoiceOpen] = useState(false)
   const [importSheetOpen, setImportSheetOpen] = useState(false)
@@ -48,8 +46,6 @@ export function ProductActions({ categories, allSuppliers, units, templates, siz
         onClose={() => setProductFormOpen(false)}
         categories={categories.map((c) => ({ id: c.id, name: c.name, slug: c.slug, isEpp: c.isEpp, requiresPrevencion: c.requiresPrevencion }))}
         allSuppliers={allSuppliers}
-        units={units}
-        templates={templates}
         sizeFamilies={sizeFamilies}
         editProduct={null}
       />

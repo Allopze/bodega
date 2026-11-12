@@ -8,6 +8,10 @@ export { SYSTEM_PERMISSIONS, SYSTEM_ROLES, SYSTEM_ROLE_PERMISSIONS } from "@/lib
 
 /** Permissions removed from the registry that must not survive in direct grants. */
 const RETIRED_PERMISSION_NAMES = [
+  // «Catálogos de productos» se retiró el 2026-11-12: las unidades de medida
+  // quedaron fijas en código (`lib/products/units.ts`) y las plantillas de
+  // atributos, que nadie había llenado, se eliminaron.
+  "admin:product_catalogs",
   "prevention:pdtp:manage",
   // El motor de checklist propio del PDTP se retiró: los instrumentos viven en
   // Inspecciones. Sacarlos del manifiesto no basta —las concesiones ya

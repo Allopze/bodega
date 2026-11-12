@@ -67,7 +67,7 @@ export async function getEppCoverageExport(
           "Entregas excluidas del cálculo",
           String(health.ignoredDeliveries),
           health.ignoredDeliveries > 0
-            ? "Entregas a trabajador de EPP sin familia clasificada. Se resuelven clasificando la familia en Administración › Catálogo de EPP."
+            ? "Entregas a trabajador de EPP sin familia clasificada. Se resuelven clasificando la familia en Administración › Productos › Familias EPP."
             : "Ninguna.",
         ],
       ],

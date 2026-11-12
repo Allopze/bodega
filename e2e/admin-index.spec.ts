@@ -145,7 +145,7 @@ test("una sesión con permisos de admin parciales solo ve sus categorías e íte
 
   const sidebar = page.getByRole("navigation", { name: "Navegación", exact: true })
 
-  // Solo admin:products + admin:product_catalogs (en "Catálogos") y
+  // Solo admin:products + admin:deviation_catalog (en "Catálogos") y
   // admin:notifications + admin:smtp (en "Comunicaciones e integraciones") —
   // el resto de las 7 categorías no debería aparecer en absoluto.
   await expect(sidebar.getByRole("button", { name: "Catálogos", exact: true })).toBeVisible()
@@ -168,7 +168,7 @@ test("una sesión con permisos de admin parciales solo ve sus categorías e íte
   // autorizados se ven; el resto (p.ej. Cargos y capacidades, que pide
   // admin:worker_positions) no.
   await expect(sidebar.getByRole("link", { name: "Productos", exact: true })).toBeVisible()
-  await expect(sidebar.getByRole("link", { name: "Catálogos de productos" })).toBeVisible()
+  await expect(sidebar.getByRole("link", { name: "Desviaciones", exact: true })).toBeVisible()
   await expect(sidebar.getByRole("link", { name: "Cargos y capacidades" })).toHaveCount(0)
   await expect(sidebar.getByRole("link", { name: "Catálogos de flota" })).toHaveCount(0)
 

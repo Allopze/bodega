@@ -107,8 +107,6 @@ describe("getAdminAreas", () => {
     expect(catalogos?.items.map((item) => item.label)).toEqual([
       "Cargos y capacidades",
       "Productos",
-      "Catálogo de EPP",
-      "Catálogos de productos",
       "Desviaciones",
       "Catálogos PDTP",
       "Catálogos de flota",

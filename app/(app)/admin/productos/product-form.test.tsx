@@ -12,7 +12,7 @@ vi.mock("@/lib/toast", () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 const props: ProductFormProps = {
   open: true, onClose: vi.fn(), variant: "embedded",
   categories: [{ id: "cat", name: "EPP", slug: "epp" }],
-  allSuppliers: [], units: [{ code: "unidad", label: "Unidad" }], templates: [],
+  allSuppliers: [],
   sizeFamilies: [{ family: "ropa", attributeName: "Talla", codes: ["M", "L"] }],
 }
 

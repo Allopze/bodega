@@ -140,8 +140,8 @@ export async function importProductsFromXlsx(buffer: Buffer): Promise<ProductImp
   }
 
   /*
-   * CAT-003 (auditoría 2026-09-14): la unidad de cada fila tiene que existir en
-   * el catálogo `product_units` y estar activa. Este importador escribía el
+   * CAT-003 (auditoría 2026-09-14): la unidad de cada fila tiene que estar en
+   * la lista fija de unidades (`PRODUCT_UNITS`). Este importador escribía el
    * texto crudo de la planilla —sin normalizar siquiera espacios ni caja—, así
    * que era el camino por el que entraban las unidades fuera de catálogo
    * ("Cajas ", "UN.") que la migración 0229 tuvo que sanear a mano.
@@ -151,7 +151,7 @@ export async function importProductsFromXlsx(buffer: Buffer): Promise<ProductImp
    * dejar que la FK de base reventara a mitad del lote devolvería un error del
    * driver sin decir qué fila lo causó.
    */
-  const activeUnits = await loadActiveUnitCodes()
+  const activeUnits = loadActiveUnitCodes()
   const normalizedItems = parsed.items.map((item) => ({ ...item, unitOfMeasure: normalizeUnitCode(item.unitOfMeasure) }))
   const unitErrors = normalizedItems
     .filter((item) => !activeUnits.has(item.unitOfMeasure))

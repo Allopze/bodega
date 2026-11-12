@@ -1,18 +1,17 @@
 /**
- * `VALID_UNITS` (importador EPP) y la siembra de `product_units` (migración
- * 0228) son forzosamente dos copias: el módulo del importador es libre de
- * `@/db` a propósito porque lo importan componentes cliente, así que no puede
- * leer el catálogo. Esta prueba es lo que evita que se separen — si alguien
- * agrega una unidad en un lado y no en el otro, el importador bloquea filas
- * válidas o sugiere unidades que no existen.
+ * Las unidades de medida son una lista fija en código (`PRODUCT_UNITS`,
+ * `lib/products/units.ts`) y la tabla `product_units` es sólo el destino de la
+ * FK de `products.unit_of_measure`. Esta prueba es lo que evita que se separen:
+ * si alguien agrega una unidad a la lista sin la migración que la inserta, el
+ * formulario la ofrecería y la base la rechazaría al guardar.
  */
 import path from "node:path"
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
-import { eq } from "drizzle-orm"
 import { describe, expect, it } from "vitest"
 import * as schema from "@/db/schema"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
+import { PRODUCT_UNITS, PRODUCT_UNIT_CODES } from "@/lib/products/units"
 import { VALID_UNITS, UNIT_ALIASES } from "@/lib/services/epp-import.types"
 
 const pg = new PGlite()
@@ -20,36 +19,44 @@ const inMemoryDb = drizzle(pg, { schema })
 
 await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
-describe("catálogo de unidades de medida", () => {
-  it("la migración siembra el catálogo (antes producción tenía 1 sola fila)", async () => {
-    const units = await inMemoryDb.select().from(schema.productUnits)
-    expect(units.length).toBeGreaterThanOrEqual(16)
+describe("unidades de medida: lista fija y tabla de la FK", () => {
+  it("cada unidad de la lista existe en product_units, activa y con su rótulo", async () => {
+    const rows = await inMemoryDb.select().from(schema.productUnits)
+    const byCode = new Map(rows.map((row) => [row.code, row]))
+
+    const mismatches = PRODUCT_UNITS.flatMap((unit) => {
+      const row = byCode.get(unit.code)
+      if (!row) return [`${unit.code}: falta en product_units`]
+      if (!row.isActive) return [`${unit.code}: inactiva`]
+      if (row.label !== unit.label) return [`${unit.code}: rótulo «${row.label}» ≠ «${unit.label}»`]
+      return []
+    })
+    expect(mismatches).toEqual([])
   })
 
-  it("el catálogo cubre todas las unidades que el importador acepta", async () => {
-    const units = await inMemoryDb.select({ code: schema.productUnits.code }).from(schema.productUnits)
-    const codes = new Set(units.map((u) => u.code))
-
-    const missing = VALID_UNITS.filter((unit) => !codes.has(unit))
-    expect(missing).toEqual([])
+  it("los códigos de la lista son únicos y ya normalizados", () => {
+    expect(new Set(PRODUCT_UNIT_CODES).size).toBe(PRODUCT_UNIT_CODES.length)
+    for (const code of PRODUCT_UNIT_CODES) {
+      expect(code).toBe(code.trim().toLowerCase())
+    }
   })
 
-  it("todo alias del importador resuelve a un código real del catálogo", async () => {
-    const units = await inMemoryDb.select({ code: schema.productUnits.code }).from(schema.productUnits)
-    const codes = new Set(units.map((u) => u.code))
+  it("el importador EPP acepta exactamente la lista", () => {
+    expect([...VALID_UNITS]).toEqual([...PRODUCT_UNIT_CODES])
+  })
 
+  it("todo alias del importador resuelve a una unidad de la lista", () => {
+    const codes = new Set<string>(PRODUCT_UNIT_CODES)
     const dangling = Object.entries(UNIT_ALIASES)
       .filter(([, target]) => !codes.has(target))
       .map(([alias, target]) => `${alias} → ${target}`)
     expect(dangling).toEqual([])
   })
 
-  it("las unidades sembradas quedan activas y ordenadas antes que las legacy", async () => {
-    const [unidad] = await inMemoryDb.select().from(schema.productUnits)
-      .where(eq(schema.productUnits.code, "unidad"))
-
-    expect(unidad?.isActive).toBe(true)
-    // 0036 la había dejado en 1001, detrás de todo lo sembrado por 0228.
-    expect(unidad?.sortOrder).toBeLessThan(1000)
+  it("la tabla de plantillas de atributos ya no existe", async () => {
+    const result = await pg.query<{ exists: boolean }>(
+      "select to_regclass('public.product_attribute_templates') is not null as exists",
+    )
+    expect(result.rows[0]?.exists).toBe(false)
   })
 })

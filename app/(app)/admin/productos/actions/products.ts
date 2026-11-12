@@ -82,13 +82,12 @@ export async function createProduct(_prev: ActionState, formData: FormData): Pro
   }
 
   /*
-   * CAT-003: la unidad tiene que existir en el catálogo administrable y estar
-   * activa. Antes era texto libre: el catálogo era una sugerencia y una unidad
-   * desactivada seguía siendo elegible. La FK de base cubre "existe"; que esté
-   * ACTIVA sólo se puede comprobar acá.
+   * CAT-003: la unidad tiene que estar en la lista fija de unidades
+   * (`PRODUCT_UNITS`). Antes era texto libre. La FK de base cubre "existe";
+   * que sea elegible —y no un código histórico— sólo se puede comprobar acá.
    */
   let unitOfMeasure: string
-  try { unitOfMeasure = await resolveActiveUnitCode(d.unitOfMeasure) }
+  try { unitOfMeasure = resolveActiveUnitCode(d.unitOfMeasure) }
   catch (e) { return { ok: false, fieldErrors: { unitOfMeasure: [safeActionMessage(e, "Unidad inválida")] } } }
 
   const id = nanoid()
@@ -209,9 +208,9 @@ export async function updateProduct(_prev: ActionState, formData: FormData): Pro
   }
 
   // CAT-003: misma regla que al crear. Editar un producto no puede ser la
-  // puerta trasera por la que entra una unidad fuera del catálogo.
+  // puerta trasera por la que entra una unidad fuera de la lista.
   let unitOfMeasure: string
-  try { unitOfMeasure = await resolveActiveUnitCode(d.unitOfMeasure) }
+  try { unitOfMeasure = resolveActiveUnitCode(d.unitOfMeasure) }
   catch (e) { return { ok: false, fieldErrors: { unitOfMeasure: [safeActionMessage(e, "Unidad inválida")] } } }
 
   // Sin este try/catch cualquier error del driver (p.ej. el 23503 de un
@@ -464,6 +463,7 @@ export async function getProductForEdit(id: string) {
         with: { supplier: true },
         orderBy: (ps, { desc }) => [desc(ps.isPreferred)],
       },
+      family: true,
     },
   })
 
@@ -484,6 +484,15 @@ export async function getProductForEdit(id: string) {
     referencePrice:     product.referencePrice,
     notes:              product.notes,
     isActive:           product.isActive,
+    // La ficha común (certificación, vida útil) vive en la familia y se edita
+    // en Productos → Familias EPP; el formulario sólo la muestra.
+    family: product.family ? {
+      id:                    product.family.id,
+      canonicalName:         product.family.canonicalName,
+      certification:         product.family.certification,
+      lifespanMonths:        product.family.lifespanMonths,
+      lifespanNotApplicable: product.family.lifespanNotApplicable,
+    } : null,
     attributes: product.productAttributes.map((a) => ({
       id:             a.id,
       name:           a.name,
@@ -765,9 +774,9 @@ export async function createProductVariantBatch(input: ProductVariantBatchInput)
   let batchFirstSku = "desconocido"
 
   // CAT-003: el lote de variantes escribe productos igual que el formulario
-  // simple, así que pasa por la misma comprobación de catálogo.
+  // simple, así que pasa por la misma comprobación de unidad.
   let unitOfMeasure: string
-  try { unitOfMeasure = await resolveActiveUnitCode(d.unitOfMeasure) }
+  try { unitOfMeasure = resolveActiveUnitCode(d.unitOfMeasure) }
   catch (e) { return { ok: false, fieldErrors: { unitOfMeasure: [safeActionMessage(e, "Unidad inválida")] } } }
 
   try {

@@ -4,6 +4,8 @@
  * Extracted from epp-import.ts so client components can import them without
  * pulling in the Node.js `postgres` driver via @/db.
  */
+import { PRODUCT_UNIT_CODES } from "@/lib/products/units"
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export type ImportSeverity = "info" | "warning" | "blocking"
@@ -154,19 +156,12 @@ export function resolveSizeAttribute(
 }
 
 /**
- * Unidades que el importador acepta. Debe reflejar los códigos sembrados por
- * la migración `0228_seed_product_units` — ésa es la fuente de verdad; acá se
- * duplican porque este archivo es deliberadamente libre de `@/db` (lo importan
- * componentes cliente) y no puede consultar el catálogo.
- *
- * Con las 6 originales, una fila con `rollo`, `litro`, `kg` o `dosis` se
- * bloqueaba en la importación aunque fuera una unidad perfectamente válida.
+ * Unidades que el importador acepta: la lista fija de la plataforma
+ * (`lib/products/units.ts`). Antes era una copia a mano de la siembra de
+ * `product_units`, y con las 6 originales una fila con `rollo`, `litro`, `kg`
+ * o `dosis` se bloqueaba aunque fuera una unidad válida.
  */
-export const VALID_UNITS = [
-  "unidad", "par", "caja", "paquete", "set", "juego",
-  "bolsa", "rollo", "kit", "tarro", "bidon",
-  "kg", "litro", "metro", "servicio", "dosis",
-] as const
+export const VALID_UNITS = PRODUCT_UNIT_CODES
 export const VALID_COLORS = [...new Set(Object.values(COLOR_ALIASES))]
 
 export const RULE_LABELS: Record<string, string> = {

@@ -72,7 +72,7 @@ Permisos, sidebar y seed RBAC se derivan automáticamente del registry.
 
 | ID | Permisos | Descripción |
 |---|---|---|
-| `admin` | 38 | Usuarios, faenas, productos, proveedores, trabajadores, catálogos, configuración, auditoría, Talana (datos y configuración) |
+| `admin` | 37 | Usuarios, faenas, productos, proveedores, trabajadores, catálogos, configuración, auditoría, Talana (datos y configuración) |
 | `requests` | 4 | Solicitudes de compra |
 | `approvals` | 1 | Aprobaciones de ítems |
 | `purchasing` | 6 | Órdenes de compra |
@@ -94,7 +94,7 @@ Permisos, sidebar y seed RBAC se derivan automáticamente del registry.
 | `prevention` | 117 | Documentación SST, capacitaciones, incidentes, inspecciones, PDTP, indicadores |
 | `ti` | 10 | Módulo de TI |
 
-**Total: 288 permisos**, derivados automáticamente. Recalcular con:
+**Total: 287 permisos**, derivados automáticamente. Recalcular con:
 
 ```bash
 npx tsx -e "import { registry } from './modules/registry'; \
@@ -303,7 +303,7 @@ Fuente de verdad: `SYSTEM_ROLES` en `lib/auth/system-rbac.ts`.
 | `subgerente_operaciones` | Todas | Subgerente de operaciones |
 | `tecnico_ti` | Todas | Técnico TI |
 
-**288 permisos granulares** derivados del registry (`modules/registry.ts` vía
+**287 permisos granulares** derivados del registry (`modules/registry.ts` vía
 `modules/permissions.ts`). La lista completa vive en el registry, no se mantiene a mano.
 
 ### Guards
