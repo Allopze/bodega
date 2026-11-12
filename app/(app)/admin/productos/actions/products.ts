@@ -31,7 +31,7 @@ import { applyLogoRule } from "@/lib/products/epp-logo"
 import { productVariantBatchSchema, type ProductVariantBatchInput } from "./product-variant-batch.schema"
 import type { AttributeRow } from "../product-form.types"
 // Sólo helpers de texto/tipos: no arrastra nada de cliente ni de `@/db`.
-import { normalizeProductAttributeName, parseOptionsText, variantComboKey } from "../product-form.helpers"
+import { COLOR_ATTRIBUTE_NAME, normalizeProductAttributeName, parseOptionsText, variantComboKey } from "../product-form.helpers"
 
 // ── Product CRUD ──────────────────────────────────────────────────────────────
 
@@ -237,9 +237,24 @@ export async function updateProduct(_prev: ActionState, formData: FormData): Pro
       attrs.map(({ name, type, options }) => ({ name, type, options })),
       ({ name, type, options }) => ({ name, type, options }),
     )
-    const identity = (attrs: typeof d.attributes | typeof oldAttributes) => JSON.stringify(
-      resolveVariantAttributes(withLogoRule(attrs)).map((a) => [normalizeProductAttributeName(a.name), a.value]).sort(),
+    const identity = (attrs: typeof d.attributes | typeof oldAttributes) => new Map(
+      resolveVariantAttributes(withLogoRule(attrs)).map((a) => [normalizeProductAttributeName(a.name), a.value]),
     )
+    const before = identity(oldAttributes)
+    const after = identity(d.attributes)
+    /*
+     * Completar el color que la variante nunca tuvo no la reinterpreta: dice
+     * de qué color era lo que ya estaba registrado (EPP-045 «Cubrenuca
+     * Naranjo», sin atributos y con historial, no podía sumar colores porque
+     * el formulario le asigna el primero). Sólo vale si no tenía NINGUNA fila
+     * Color: una con varias opciones era un color elegido al solicitar, y su
+     * saldo puede ser mixto. Cambiar un valor fijado o sumar otro eje (una
+     * talla a un buzo con saldo de tallas mezcladas) sigue bloqueado.
+     */
+    const colorKey = normalizeProductAttributeName(COLOR_ATTRIBUTE_NAME)
+    const hadColorRow = oldAttributes.some((a) => normalizeProductAttributeName(a.name) === colorKey)
+    const identityChanged = [...before].some(([key, value]) => after.get(key) !== value)
+      || [...after.keys()].some((key) => !before.has(key) && (key !== colorKey || hadColorRow))
     /*
      * La sonda de historia se resuelve una sola vez y perezosamente: la usan
      * tanto la guarda de atributos como la de unidad/servicio (CAT-002), y una
@@ -254,7 +269,7 @@ export async function updateProduct(_prev: ActionState, formData: FormData): Pro
       or exists(select 1 from ${worksiteStock} where ${worksiteStock.productId} = ${productId})
     ` }).from(products).where(eq(products.id, productId)).then(([row]) => Boolean(row?.used)))
 
-    if (identity(oldAttributes) !== identity(d.attributes)) {
+    if (identityChanged) {
       if (await hasHistory()) throw new Error("No se puede cambiar la talla, color u otros valores de una variante con solicitudes, compras o inventario. Crea otra variante para conservar el historial.")
     }
 

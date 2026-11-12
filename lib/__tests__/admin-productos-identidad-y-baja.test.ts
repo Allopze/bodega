@@ -221,3 +221,66 @@ describe("CAT-002 — identidad de medida y naturaleza del producto", () => {
     expect(result.ok).toBe(false)
   })
 })
+
+/*
+ * 2026-11-12: «Cubrenuca Naranjo para Casco UV» (EPP-045) no tenía atributos y
+ * sí historial. Al marcarle colores, el formulario le asigna el primero y la
+ * guarda de identidad lo rechazaba: no había forma de sumarle colores.
+ * Completar un eje Color que la variante nunca tuvo se permite; cambiar un
+ * color fijado, sumar otro eje (talla) o fijar un color que se elegía al
+ * solicitar sigue bloqueado, porque reinterpreta lo ya registrado.
+ */
+describe("Variante con historial: completar el color que nunca tuvo", () => {
+  const color = (options: string[], id?: string) => ({
+    ...(id ? { id } : {}), name: "Color", type: "select", isRequired: true,
+    options: JSON.stringify(options), sortOrder: 0,
+  })
+  const conAtributos = (id: string, attrs: unknown[]) => editForm(id, { attributesJson: JSON.stringify(attrs) })
+  async function seedAttr(productId: string, name: string, options: string[]) {
+    const attrId = nanoid()
+    await inMemoryDb.insert(schema.productAttributes).values({
+      id: attrId, productId, name, type: "select", isRequired: true, options: JSON.stringify(options), sortOrder: 0,
+    })
+    return attrId
+  }
+
+  it("una variante sin color y con saldo acepta su color", async () => {
+    const id = await seedProduct("Cubrenuca Naranjo")
+    await withStock(id, wsNorte, 27)
+
+    const result = await updateProduct({ ok: false }, conAtributos(id, [color(["Naranjo"])]))
+    expect(result.ok).toBe(true)
+    const attrs = await inMemoryDb.select().from(schema.productAttributes)
+      .where(eq(schema.productAttributes.productId, id))
+    expect(attrs.map((a) => [a.name, a.options])).toEqual([["Color", '["Naranjo"]']])
+  })
+
+  it("cambiar un color ya fijado sigue bloqueado", async () => {
+    const id = await seedProduct("Cubrenuca fijado")
+    const attrId = await seedAttr(id, "Color", ["Naranjo"])
+    await withStock(id, wsNorte, 5)
+
+    const result = await updateProduct({ ok: false }, conAtributos(id, [color(["Azul"], attrId)]))
+    expect(result.ok).toBe(false)
+    expect(result.message).toContain("Crea otra variante")
+  })
+
+  it("sumar una talla a una variante con saldo sigue bloqueado", async () => {
+    const id = await seedProduct("Buzo sin talla")
+    await withStock(id, wsNorte, 350)
+
+    const result = await updateProduct({ ok: false }, conAtributos(id, [{ ...color(["M"]), name: "Talla" }]))
+    expect(result.ok).toBe(false)
+    expect(result.message).toContain("Crea otra variante")
+  })
+
+  it("fijar un color que se elegía al solicitar sigue bloqueado: el saldo puede ser mixto", async () => {
+    const id = await seedProduct("Cubrenuca a elección")
+    const attrId = await seedAttr(id, "Color", ["Naranjo", "Azul"])
+    await withStock(id, wsNorte, 12)
+
+    const result = await updateProduct({ ok: false }, conAtributos(id, [color(["Naranjo"], attrId)]))
+    expect(result.ok).toBe(false)
+    expect(result.message).toContain("Crea otra variante")
+  })
+})
