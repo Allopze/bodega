@@ -220,6 +220,30 @@ describe("derivación de hallazgos de inspección a CAPA", () => {
     expect(await ordersOf(FINDING_ID)).toHaveLength(1)
   })
 
+  it("si la OT anterior del hallazgo está cerrada, volver a derivar abre una OT nueva y la cerrada queda como historia", async () => {
+    // Prevención reabrió y luego canceló la CAPA de un trabajo ya cerrado: el hallazgo vuelve a
+    // `open` sin CAPA y hace falta trabajo nuevo (decisión del usuario, 2026-11-12). Antes se
+    // reutilizaba la OT cerrada y la CAPA nueva nunca se acreditaba.
+    const t = "2026-08-31T12:00:00.000Z"
+    await testDb.insert(schema.mantWorkOrders).values({
+      id: "inspection-maintenance-closed-ot", folio: "OT-PRE-0002", vehicleId: VEHICLE_ID, worksiteId: WORKSITE_ID,
+      equipmentSnapshot: {} as never, repair: true, requestDate: "2026-08-31", requestedByUserId: USER_ID,
+      requesterName: "Responsable Mantención", repairDescription: "Trabajo anterior del mismo hallazgo", inspectionFindingId: FINDING_ID,
+      status: "cerrada", assignedToUserId: USER_ID,
+      workshopEntryAt: t, estimatedDeliveryDate: "2026-08-31", startedAt: t, workshopKind: "interno",
+      workshopExitAt: t, finishedAt: t,
+      receivedAt: t, receivedByUserId: USER_ID, receivedRecordedAt: t, receiverName: "Pedro Retira",
+      faenaReceivedAt: t, faenaReceivedByUserId: USER_ID, closedAt: t, faenaReceiverName: "Ana Faena",
+    })
+
+    const result = await deriveFinding()
+
+    expect(result.workOrder).toMatchObject({ created: true })
+    expect(result.workOrder?.id).not.toBe("inspection-maintenance-closed-ot")
+    const orders = await ordersOf(FINDING_ID)
+    expect(orders.map((order) => order.status).sort()).toEqual(["cerrada", "solicitada"])
+  })
+
   it("un equipo que no está en el módulo de mantención deriva la CAPA igual, sin OT, y dice por qué", async () => {
     await testDb.delete(schema.mantEquipmentProfiles).where(eq(schema.mantEquipmentProfiles.vehicleId, VEHICLE_ID))
 
