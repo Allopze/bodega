@@ -105,12 +105,16 @@ const NEW_EQUIPMENT_TYPES = [
 const WORKSITE_ALIASES = new Map<string, string>([
   [worksiteKey("Masisa maderas"), "Masisa"],
   [worksiteKey("Masisa tableros"), "Masisa"],
+  // «Cholguán Máquinas» (planilla FINAL) es la faena «Cholguan - Arauco» (confirmado por el usuario, 2026-11-12).
+  [worksiteKey("Cholguán Máquinas"), "Cholguan - Arauco"],
 ])
 
 /** La columna «Máquina» de la planilla → slug del tipo de equipo. Lo que no está acá se busca por su slug. */
 const MACHINE_TYPE_SLUGS = new Map<string, string>([
   ["camion", "camion"],
   ["carro", "carro"],
+  // Cholguán (planilla FINAL): un carro de desechos es un carro (2026-11-12).
+  ["carro desechos", "carro"],
   ["batea", "batea"],
   ["tracto camion", "tracto"],
   ["tractocamion", "tracto"],
@@ -155,7 +159,8 @@ export const NEW_VEHICLE_DETAILS: Record<string, VehicleDetails | null> = {
   // Carros
   "PWTD-82": { brand: "Emes", model: "PLANO 2 EJES", year: 2022 },
   "HGKG-54": { brand: "Rocongu", model: null, year: 2017 },
-  "JP-3896": { brand: "Rocongu", model: null, year: 2015 },
+  // Modelo tal cual viene en la plantilla (confirmado por el usuario, 2026-11-12).
+  "JP-3896": { brand: "Rocongu", model: "PLANO DE 2 EJES GENÉRICO", year: 2015 },
   "PWTY-84": { brand: "Rocongu", model: "BASE CONTENEDOR", year: 2023 },
   "PWTY-85": { brand: "Rocongu", model: "BASE CONTENEDOR", year: 2023 },
   "PWYL-34": { brand: "Rocongu", model: "BASE CONTENEDOR", year: 2023 },
@@ -221,7 +226,7 @@ const POSITION_PLANS: readonly PositionPlan[] = [
   },
   {
     code: "OPERADOR-MAQUINARIA", name: "Operador de maquinaria",
-    aliases: ["Operador tractor", "Operador cargador frontal", "Operador bulldozer", "Operador grúa maderera"],
+    aliases: ["Operador tractor", "Operador cargador frontal", "Operador bulldozer", "Operador grúa maderera", "Operador cargador", "Operador grúa"],
     capabilities: ["operates_equipment", "drives_vehicle"], requiredLicenseClasses: ["D"],
   },
   { code: "SUPERVISOR", name: "Supervisor", aliases: [], capabilities: ["drives_vehicle"], requiredLicenseClasses: ["B"] },
