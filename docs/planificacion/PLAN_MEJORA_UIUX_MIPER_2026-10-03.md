@@ -22,7 +22,7 @@ La complejidad propia de identificar peligros, evaluar riesgos y acreditar medid
 - Base del checkout al inicio: `8c699148`, con cambios previos sin commit en importación y otros archivos. La auditoría contempla el árbol de trabajo actual, no una versión limpia del commit ni producción.
 - Durante el recorrido otros trabajos registraron los cambios de importación en `10363dd3` y `9de01f91`. No fueron commits de esta auditoría. Los hallazgos de importación se basan en la fuente y las capturas obtenidas durante esa actividad concurrente; revisar ese componente al implementar F6.
 - Navegador autenticado local en `http://localhost:3001`, con sesión existente. Recorrido de lectura y apertura/cierre de interfaces, sin confirmar escrituras de negocio.
-- El inventario exacto de capturas, comprobaciones y estados no disponibles está en [el informe de QA](qa/reports/2026-10-03-miper-uiux-audit.md). No se ejecutaron en esta auditoría las suites de pruebas que los informes anteriores declaran aprobadas.
+- El inventario exacto de capturas, comprobaciones y estados no disponibles está en [el informe de QA](../../qa/reports/2026-10-03-miper-uiux-audit.md). No se ejecutaron en esta auditoría las suites de pruebas que los informes anteriores declaran aprobadas.
 
 Las conclusiones distinguen **observado en navegador**, **confirmado en fuente** y **pendiente de validar con datos/roles adecuados**. Un escáner sin alertas no demuestra una interfaz intuitiva.
 

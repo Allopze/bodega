@@ -29,7 +29,7 @@ De las **81 actividades activas** de `pdtp-2026-v1`:
 |---|---|---|
 | ✅ **60** | — | Alguno de sus responsables tiene el permiso del **acto que acredita**: ejecuta en su módulo y el PDTP se entera solo. |
 | ⚠️ **21** | 7, 15, 17, 18, 19, 23, 26, 35, 36, 38, 43, 52, 53, 68, 69, 71, 72, 75, 77, 80, 83 | Ningún responsable tiene ese permiso. **Sólo pueden marcarse a mano en la planilla**, con evidencia autodeclarada en vez del registro del módulo. |
-| 🔴 **0** | — | Ninguna queda sin vía: todos los roles responsables tienen `prevention:pdtp:execute`, y `markPdtpExecution` no filtra por mecanismo ([executions.ts:16](lib/services/pdtp/executions.ts#L16)). |
+| 🔴 **0** | — | Ninguna queda sin vía: todos los roles responsables tienen `prevention:pdtp:execute`, y `markPdtpExecution` no filtra por mecanismo ([executions.ts:16](../../lib/services/pdtp/executions.ts#L16)). |
 
 La marca manual es la red, no la vía. Una actividad de `enganche` marcada a mano queda con
 `origin = 'manual'` y sin el registro del módulo detrás: para un fiscalizador es la diferencia entre
@@ -52,7 +52,7 @@ la planilla— y la planilla lo declara responsable de 15 actividades. No puede 
 (N°24, 29, 34, 39, 40), no puede registrar charlas (N°38, N°53 —la charla **diaria**), no puede tocar
 incidentes (N°69, 73, 76) ni el acta de trabajador nuevo (N°15, 52). Peor que el permiso: sin
 `prevention:inspections:view`, `training:view`, `incidents:view` ni `docs:view`, **esos módulos no le
-aparecen en el menú** ([manifest.ts:371 en adelante](modules/prevention/manifest.ts#L371)).
+aparecen en el menú** ([manifest.ts:371 en adelante](../../modules/prevention/manifest.ts#L371)).
 
 Le sigue `jefe_mantencion`: responsable de la N°83 y la N°84 sin `prevention:emergency:view` —
 Emergencias no existe en su navegación—, y `admin_contrato`, responsable de la N°43 (procedimientos de
@@ -66,9 +66,9 @@ matriz GRD exigen que aprobar esté segregado de crear y revisar. Está bien que
 el permiso — pero ver §4, porque la segregación promete más de lo que cumple.
 
 **B — El acta de trabajador nuevo: 4 actividades (N°15, 18, 23, 52) + la N°17.**
-Las cinco acreditan al **cerrar** el acta ([worker-onboarding-connector.ts](lib/services/pdtp-adapters/worker-onboarding-connector.ts)),
+Las cinco acreditan al **cerrar** el acta ([worker-onboarding-connector.ts](../../lib/services/pdtp-adapters/worker-onboarding-connector.ts)),
 y `sst:close` lo tienen sólo `prevencionista` y `administrador`
-([manifest.ts:37](modules/sst/manifest.ts#L37)). El `prevencionista_faena` crea el acta y no puede
+([manifest.ts:37](../../modules/sst/manifest.ts#L37)). El `prevencionista_faena` crea el acta y no puede
 cerrarla; el supervisor y el jefe de terreno **no tienen ningún permiso `sst:*`**, ni siquiera
 `sst:view`. El propio conector documenta que el Acta de Cierre va "firmada por supervisor y
 prevencionista": el instrumento pide una firma que la plataforma no le deja dar a nadie con ese rol.
@@ -90,7 +90,7 @@ el Sup ni el JT.
 
 Los 7 planes de emergencia ya están cargados (eran 0 en el informe anterior) pero **los 7 están en
 `draft`**. La N°83 acredita al aprobar el plan y la N°84 exige plan aprobado para siquiera programar
-un simulacro ([prevention-emergency.ts:539](lib/services/prevention-emergency.ts#L539)). Los tres
+un simulacro ([prevention-emergency.ts:539](../../lib/services/prevention-emergency.ts#L539)). Los tres
 responsables —PRF, administrador de contrato, jefe de mantención— no tienen `emergency:approve`. Las
 dos actividades esperan a `prevencionista` o `jefa_chome`.
 
@@ -100,7 +100,7 @@ dos actividades esperan a `prevencionista` o `jefa_chome`.
 
 ### D1 · Campañas preventivas pierden la acreditación en silencio
 
-[prevention-campaigns.ts:199](lib/services/prevention-campaigns.ts#L199) es el **único** llamador que
+[prevention-campaigns.ts:199](../../lib/services/prevention-campaigns.ts#L199) es el **único** llamador que
 quedó con el patrón que la capa de cumplimiento vino a eliminar:
 
 ```ts
@@ -110,9 +110,9 @@ catch (err) { logger.error({ err, campaignId }, "…") }
 
 Los otros cinco conectores pasan por `recordPdtpFulfillmentEvent`, que escribe un evento durable
 **antes** de intentar acreditar y lo deja en `pending` para que
-`reconcilePdtpFulfillmentEvents` lo reprocese ([fulfillment.ts:8](lib/services/pdtp/fulfillment.ts#L8)).
+`reconcilePdtpFulfillmentEvents` lo reprocese ([fulfillment.ts:8](../../lib/services/pdtp/fulfillment.ts#L8)).
 Campañas no. Con `pdtp-2026-v1` en `draft`, `accreditPdtpFromEvent` **lanza**
-([accreditation.ts:234](lib/services/pdtp/accreditation.ts#L234)) y el hecho desaparece: hay **35
+([accreditation.ts:234](../../lib/services/pdtp/accreditation.ts#L234)) y el hecho desaparece: hay **35
 campañas cargadas** (5 × 7 faenas, N°85–89) y ninguna cerrada todavía, así que aún no se perdió nada —
 pero la primera que se cierre antes de activar el programa se pierde sin evento que reprocesar.
 
@@ -122,11 +122,11 @@ pero la primera que se cierre antes de activar el programa se pierde sin evento 
 
 `onInspectionCompleted` tiene dos caminos. Sin transacción usa `safeAccredit` (durable). **Con**
 transacción llama directo a `accreditPdtpFromEvent` y no atrapa
-([pdtp-accreditation-connectors.ts:106](lib/services/pdtp-adapters/pdtp-accreditation-connectors.ts#L106)),
+([pdtp-accreditation-connectors.ts:106](../../lib/services/pdtp-adapters/pdtp-accreditation-connectors.ts#L106)),
 y los tres llamadores reales pasan `tx`
-([prevention-inspections.ts:1393](lib/services/prevention-inspections.ts#L1393),
-[:1608](lib/services/prevention-inspections.ts#L1608),
-[:2000](lib/services/prevention-inspections.ts#L2000)).
+([prevention-inspections.ts:1393](../../lib/services/prevention-inspections.ts#L1393),
+[:1608](../../lib/services/prevention-inspections.ts#L1608),
+[:2000](../../lib/services/prevention-inspections.ts#L2000)).
 
 Es deliberado —"nunca puede quedar el run completado sin su cumplimiento"— pero tiene un borde que
 nadie declaró: si la plantilla declara números PDTP y **no hay programa activo**, el `throw` de
@@ -171,7 +171,7 @@ contra los archivos del artefacto. Son ~20 líneas y cubren todos los módulos, 
 
 ### D4 · La compuerta no verifica el destino de las `compuesta`
 
-[fulfillment.ts:636](lib/services/pdtp/fulfillment.ts#L636) corre la verificación de permiso de destino
+[fulfillment.ts:636](../../lib/services/pdtp/fulfillment.ts#L636) corre la verificación de permiso de destino
 sólo `if (activity.mechanism === "enganche")`. Las cuatro `compuesta` —N°15, 18, 23, 52— apuntan a
 `sst:close` en el contrato y **ningún responsable lo tiene**, y no salen ni como `destination_review`.
 
@@ -194,11 +194,11 @@ compuerta pasaría de reportar 12 problemas a 16, y los 4 nuevos son reales.
 | 53 | `/prevencion/capacitacion?faena=…` | idem |
 | 83 | `/prevencion/emergencias?faena=…` | idem |
 
-[operational-work-queue.ts:790](lib/services/operational-work-queue.ts#L790) mantiene el `CASE` en SQL
+[operational-work-queue.ts:790](../../lib/services/operational-work-queue.ts#L790) mantiene el `CASE` en SQL
 que sólo distingue `constancia` del resto. Su propio comentario dice *"Espeja
 resolvePdtpFulfillmentTarget […] Si cambia uno, cambia el otro"* — y uno cambió cuando se escribió
 `fulfillment-contract-2026.ts`. El test
-[operational-work-queue-pdtp-activity-source.test.ts:213](lib/__tests__/operational-work-queue-pdtp-activity-source.test.ts#L213)
+[operational-work-queue-pdtp-activity-source.test.ts:213](../../lib/__tests__/operational-work-queue-pdtp-activity-source.test.ts#L213)
 fija el comportamiento viejo, así que la deriva no se ve.
 
 Importa para la pregunta de este informe: el responsable que abre `/pendientes` con la N°24 encima
@@ -216,7 +216,7 @@ buena. Tiene tres entradas que contradicen a otra fuente del propio repositorio:
 
 1. **N°26.** El contrato declara `prevention:inspections:review` con la nota *"Es la revisión y firma
    del report que otra persona ejecutó"*. Pero
-   [inspection-wiring.ts:83](lib/prevention/inspection-wiring.ts#L83) declara `n: [25, 26]` en la misma
+   [inspection-wiring.ts:83](../../lib/prevention/inspection-wiring.ts#L83) declara `n: [25, 26]` en la misma
    plantilla y documenta la decisión del 2026-08-23: *"Transcribirlo línea por línea ES revisarlo y
    firmarlo, así que la n=26 acredita al declarar ejecutada y no en un segundo paso"* — sin `reviewN`,
    confirmado en `prevention_inspection_templates.pdtp_review_activity_numbers`, vacío en las 25 filas.
@@ -226,7 +226,7 @@ buena. Tiene tres entradas que contradicen a otra fuente del propio repositorio:
 2. **N°28.** El contrato la manda a inspecciones/`review`. `inspection-wiring.ts` la deja fuera del
    catálogo con seis líneas de justificación (*"es un acto semanal sobre el CONJUNTO recibido"*) y su
    mecanismo en base es `constancia`. La entrada es código muerto que sólo puede confundir.
-3. **Docstring de `destinationPermissionFor`** ([fulfillment.ts:432](lib/services/pdtp/fulfillment.ts#L432))
+3. **Docstring de `destinationPermissionFor`** ([fulfillment.ts:432](../../lib/services/pdtp/fulfillment.ts#L432))
    sigue diciendo que el mapa actividad → módulo *"es justamente el contrato anual que el plan pedía en
    `fulfillment-contract-2026.ts` y que todavía no se escribió"*. Se escribió, y la función de al lado
    lo usa.
@@ -246,9 +246,9 @@ if (data.toStatus === "approved" && (matrix.createdByUserId === access.userId
     || matrix.reviewedByUserId === access.userId)) throw new Error("La aprobación debe estar segregada…")
 ```
 
-([prevention-cgrd.ts:481](lib/services/prevention-cgrd.ts#L481),
-[prevention-risk-legal.ts:498](lib/services/prevention-risk-legal.ts#L498),
-[:840](lib/services/prevention-risk-legal.ts#L840))
+([prevention-cgrd.ts:481](../../lib/services/prevention-cgrd.ts#L481),
+[prevention-risk-legal.ts:498](../../lib/services/prevention-risk-legal.ts#L498),
+[:840](../../lib/services/prevention-risk-legal.ts#L840))
 
 **Ninguno de los tres exige que quien publica sea distinto de quien aprobó.** Y en RBAC,
 `*:approve` y `*:publish` los tienen exactamente los mismos dos roles:
@@ -273,7 +273,7 @@ corrige el texto.
 
 - **`supervisor_faena` es un rol fantasma.** Existe en base con `prevention:docs:view` y
   `prevention:pdtp:view`, tiene un usuario asignado, y **no está en
-  [system-rbac.ts](lib/auth/system-rbac.ts#L29)** (15 roles definidos, 16 en base). El catálogo de
+  [system-rbac.ts](../../lib/auth/system-rbac.ts#L29)** (15 roles definidos, 16 en base). El catálogo de
   responsables mapea `sup` → `supervisor_terreno`, que sí está definido. Si en producción hay
   supervisores de faena sobre el rol legado, no ven ninguna de sus 15 actividades. **Verificar en
   producción antes que nada.**
@@ -373,9 +373,9 @@ las cinco segregadas: **N°35** (publicar la MIPER), **N°43** (publicar el proc
 ### La verificación, ahora permanente
 
 El cálculo de 76/5/0 dejó de ser un script ad hoc. Vive en
-[lib/services/pdtp/responsible-execution.ts](lib/services/pdtp/responsible-execution.ts) —lógica pura,
+[lib/services/pdtp/responsible-execution.ts](../../lib/services/pdtp/responsible-execution.ts) —lógica pura,
 siete tests sin base de datos— y lo consume el preflight que ya corría en cada despliegue
-([preflight-pdtp-accreditation-wiring.ts](scripts/preflight-pdtp-accreditation-wiring.ts)). Se extendió
+([preflight-pdtp-accreditation-wiring.ts](../../scripts/preflight-pdtp-accreditation-wiring.ts)). Se extendió
 ése en vez de crear uno nuevo justamente por lo que su propio comentario advierte: dos lugares que
 opinan sobre lo mismo se desincronizan, y el que avisa termina mintiendo.
 
@@ -422,7 +422,7 @@ crontab de `docker-compose.yml`, ni en `scripts/cron-runner.mjs`, ni en un workf
 Toda la maquinaria de recordatorios estaba escrita y **no corría**. Es el mismo episodio que CO-029/CO-039
 documenta para los crons de Combustible.
 
-Quedaron agendados en [`.github/workflows/prevention-daily-reminders.yml`](.github/workflows/prevention-daily-reminders.yml)
+Quedaron agendados en [`.github/workflows/prevention-daily-reminders.yml`](../../.github/workflows/prevention-daily-reminders.yml)
 y no en el runner de crond, porque ése exige un contrato de respuesta (`outcome`, `code`) que los ocho
 routes no emiten; `prevention-inspection-programs.yml` ya establecía el precedente de un cron de
 Prevención en Actions.

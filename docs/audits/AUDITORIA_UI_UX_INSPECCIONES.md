@@ -74,18 +74,18 @@ Resultados finales posteriores a la implementación:
 
 Evidencia representativa:
 
-- [Bandeja en escritorio](audit/screenshots/inspecciones-ui-ux-fixes-2026-08-24/desktop-prevencion-inspecciones.png)
-- [Bandeja en móvil](audit/screenshots/inspecciones-ui-ux-fixes-2026-08-24/mobile-prevencion-inspecciones.png)
-- [Detalle en móvil](audit/screenshots/inspecciones-ui-ux-fixes-2026-08-24/mobile-prevencion-inspeccion-detalle.png)
-- [Nueva inspección en móvil](audit/screenshots/inspecciones-ui-ux-fixes-2026-08-24/mobile-prevencion-inspecciones-modal-auto-nueva-inspecci-n.png)
-- [Plantillas en móvil](audit/screenshots/inspecciones-ui-ux-fixes-2026-08-24/mobile-prevencion-inspecciones-plantillas.png)
-- [Incorporar borrador en móvil](audit/screenshots/inspecciones-ui-ux-fixes-2026-08-24/mobile-prevencion-inspecciones-plantillas-modal-auto-incorporar-borrador.png)
-- [Nueva programación en móvil](audit/screenshots/inspecciones-ui-ux-fixes-2026-08-24/mobile-prevencion-inspecciones-programacion-modal-auto-nuevo-programa.png)
-- [Derivar a CAPA en móvil](audit/screenshots/inspecciones-ui-ux-fixes-2026-08-24/mobile-prevencion-inspeccion-detalle-modal-auto-derivar-a-capa.png)
-- [Acreditación PDTP en móvil](audit/screenshots/inspecciones-ui-ux-fixes-2026-08-24/mobile-prevencion-inspecciones-plantillas-modal-auto-acreditaci-n-pdtp.png)
-- [Acta en escritorio](audit/screenshots/inspecciones-ui-ux-fixes-2026-08-24/desktop-prevencion-inspeccion-print.png)
-- [Acta en móvil](audit/screenshots/inspecciones-ui-ux-fixes-2026-08-24/mobile-prevencion-inspeccion-print.png)
-- [Manifiesto completo](audit/screenshots/inspecciones-ui-ux-fixes-2026-08-24/manifest.json)
+- [Bandeja en escritorio](../../audit/screenshots/inspecciones-ui-ux-fixes-2026-08-24/desktop-prevencion-inspecciones.png)
+- [Bandeja en móvil](../../audit/screenshots/inspecciones-ui-ux-fixes-2026-08-24/mobile-prevencion-inspecciones.png)
+- [Detalle en móvil](../../audit/screenshots/inspecciones-ui-ux-fixes-2026-08-24/mobile-prevencion-inspeccion-detalle.png)
+- [Nueva inspección en móvil](../../audit/screenshots/inspecciones-ui-ux-fixes-2026-08-24/mobile-prevencion-inspecciones-modal-auto-nueva-inspecci-n.png)
+- [Plantillas en móvil](../../audit/screenshots/inspecciones-ui-ux-fixes-2026-08-24/mobile-prevencion-inspecciones-plantillas.png)
+- [Incorporar borrador en móvil](../../audit/screenshots/inspecciones-ui-ux-fixes-2026-08-24/mobile-prevencion-inspecciones-plantillas-modal-auto-incorporar-borrador.png)
+- [Nueva programación en móvil](../../audit/screenshots/inspecciones-ui-ux-fixes-2026-08-24/mobile-prevencion-inspecciones-programacion-modal-auto-nuevo-programa.png)
+- [Derivar a CAPA en móvil](../../audit/screenshots/inspecciones-ui-ux-fixes-2026-08-24/mobile-prevencion-inspeccion-detalle-modal-auto-derivar-a-capa.png)
+- [Acreditación PDTP en móvil](../../audit/screenshots/inspecciones-ui-ux-fixes-2026-08-24/mobile-prevencion-inspecciones-plantillas-modal-auto-acreditaci-n-pdtp.png)
+- [Acta en escritorio](../../audit/screenshots/inspecciones-ui-ux-fixes-2026-08-24/desktop-prevencion-inspeccion-print.png)
+- [Acta en móvil](../../audit/screenshots/inspecciones-ui-ux-fixes-2026-08-24/mobile-prevencion-inspeccion-print.png)
+- [Manifiesto completo](../../audit/screenshots/inspecciones-ui-ux-fixes-2026-08-24/manifest.json)
 
 ### Evidencia posterior: estados operativos que faltaban
 
@@ -107,11 +107,11 @@ La inspección en curso muestra en la primera pantalla móvil qué trabajo es, q
 
 Evidencia representativa adicional:
 
-- [Inspección en curso — escritorio](audit/screenshots/inspecciones-estados-operativos-2026-08-24/desktop-prevencion-inspeccion-en-curso.png)
-- [Inspección en curso — móvil](audit/screenshots/inspecciones-estados-operativos-2026-08-24/mobile-prevencion-inspeccion-en-curso.png)
-- [Reporte de Equipos — escritorio](audit/screenshots/inspecciones-estados-operativos-2026-08-24/desktop-prevencion-inspeccion-reporte-equipos.png)
-- [Reporte de Equipos — móvil](audit/screenshots/inspecciones-estados-operativos-2026-08-24/mobile-prevencion-inspeccion-reporte-equipos.png)
-- [Manifiesto de estados operativos](audit/screenshots/inspecciones-estados-operativos-2026-08-24/manifest.json)
+- [Inspección en curso — escritorio](../../audit/screenshots/inspecciones-estados-operativos-2026-08-24/desktop-prevencion-inspeccion-en-curso.png)
+- [Inspección en curso — móvil](../../audit/screenshots/inspecciones-estados-operativos-2026-08-24/mobile-prevencion-inspeccion-en-curso.png)
+- [Reporte de Equipos — escritorio](../../audit/screenshots/inspecciones-estados-operativos-2026-08-24/desktop-prevencion-inspeccion-reporte-equipos.png)
+- [Reporte de Equipos — móvil](../../audit/screenshots/inspecciones-estados-operativos-2026-08-24/mobile-prevencion-inspeccion-reporte-equipos.png)
+- [Manifiesto de estados operativos](../../audit/screenshots/inspecciones-estados-operativos-2026-08-24/manifest.json)
 
 La cobertura funcional completa también quedó ejecutada en Chromium: **17/17 E2E** de catálogo, programación, cierre, CAPA, flota y roles/permisos. La corrida descubrió y corrigió un caso real: una actividad PDTP ya acreditada desaparecía del selector cuando dejaba de pertenecer al programa activo; ahora se conserva rotulada como histórica y puede retirarse conscientemente.
 

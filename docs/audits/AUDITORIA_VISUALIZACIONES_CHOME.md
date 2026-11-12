@@ -381,17 +381,17 @@ Convención de rutas: las rutas de pantalla omiten el grupo `(app)`; los enlaces
 - **Módulo:** Prevención › Indicadores
 - **Pantalla:** Indicadores de accidentabilidad
 - **Ruta:** `/prevencion/indicadores`
-- **Archivos y líneas:** [canonical-indicators-dashboard.tsx:97-158](app/(app)/prevencion/indicadores/canonical-indicators-dashboard.tsx#L97-L158) (tira de 4 cifras y 3 pestañas de tablas); serie ya calculada en `getCanonicalSafetyIndicatorYear` ([prevention-indicadores.ts:361](lib/services/prevention-indicadores.ts#L361)); fórmulas en [safety-indicators-calc.ts:235-236](lib/prevention/safety-indicators-calc.ts#L235-L236); gráfico reutilizable `SstTrendChart` en [sst-charts.tsx:128](app/(app)/dashboard/charts/sst-charts.tsx#L128).
+- **Archivos y líneas:** [canonical-indicators-dashboard.tsx:97-158](../../app/(app)/prevencion/indicadores/canonical-indicators-dashboard.tsx#L97-L158) (tira de 4 cifras y 3 pestañas de tablas); serie ya calculada en `getCanonicalSafetyIndicatorYear` ([prevention-indicadores.ts:361](../../lib/services/prevention-indicadores.ts#L361)); fórmulas en [safety-indicators-calc.ts:235-236](../../lib/prevention/safety-indicators-calc.ts#L235-L236); gráfico reutilizable `SstTrendChart` en [sst-charts.tsx:128](../../app/(app)/dashboard/charts/sst-charts.tsx#L128).
 - **Representación actual:** cuatro cifras de períodos distintos (accidentabilidad anual, frecuencia del último mes con horas hombre (HH), gravedad semestral) y tres pestañas con tablas. **Ningún gráfico**: verificado por grep y en el navegador.
 - **Problema:** la pregunta de la pantalla («¿la siniestralidad mejora o empeora, y en qué faena?») exige leer 12 filas por faena. La serie existe y el tablero `/dashboard` la dibuja, pero la página propia del dominio no. Las cifras no tienen período anterior.
 - **Visualización recomendada:** líneas de tasa de frecuencia (TF) y tasa de gravedad (TG) por mes, con **eje doble** (regla A5b: escalas distintas), y barras tenues de lesionados como contexto. Los puntos `provisional` van con marcador hueco y los `confirmed` con marcador lleno. Debajo va una `RankedList` de TF anual por faena (un solo tono) que filtra la tabla.
-- **Datos y campos necesarios:** `prevention_incident_people` (días de ausencia y de cargo, [incidents.ts:66](db/schema/prevention/incidents.ts#L66)); `safety_indicator_denominators.worker_count`, `worked_hours` ([safety-indicators.ts:49-55](db/schema/prevention/safety-indicators.ts#L49-L55)); `prevention_incidents.occurred_at`, `worksite_id`.
+- **Datos y campos necesarios:** `prevention_incident_people` (días de ausencia y de cargo, [incidents.ts:66](../../db/schema/prevention/incidents.ts#L66)); `safety_indicator_denominators.worker_count`, `worked_hours` ([safety-indicators.ts:49-55](../../db/schema/prevention/safety-indicators.ts#L49-L55)); `prevention_incidents.occurred_at`, `worksite_id`.
 - **Fórmula o agregación:** TF = lesionados × 1.000.000 / HH. TG = (días de ausencia + días de cargo) × 1.000.000 / HH. Agregación por mes calendario y faena, en unidades × 10⁶ HH. **Nulos:** HH = 0 da tasa nula y se dibuja como hueco, nunca como 0. Comparación: el mismo mes del año anterior (el selector de año ya existe).
 - **Disponibilidad de datos:** **Disponible** (`view.groups[].monthly[]` ya llega a la página).
 - **Filtros e interacciones:** el selector de faena y año existente (hoy en estado local; debe pasar a la URL con `router.replace(…, { scroll:false })`). Tooltip con n de lesionados, HH y estado provisional o confirmado. Clic en un mes enfoca la fila de la tabla «Cálculo mensual».
 - **Beneficio funcional:** distingue tendencia de ruido y muestra qué faena arrastra el indicador.
 - **Beneficio visual:** la pantalla deja de ser tres tablas de cifras sin forma.
-- **Requisitos técnicos:** importar `SstTrendChart` y `toSstMonthlyPoints` ([sst-monthly-points.ts:32](app/(app)/dashboard/sst-monthly-points.ts#L32)) desde el tablero. Si se usa en dos superficies, conviene moverlo a `components/charts/`. Corregir `new Date().getFullYear()` ([page.tsx:27](app/(app)/prevencion/indicadores/page.tsx#L27)) y `getMonth()` ([canonical-indicators-dashboard.tsx:65](app/(app)/prevencion/indicadores/canonical-indicators-dashboard.tsx#L65)) por `codeYear()` y `todayInChile()`.
+- **Requisitos técnicos:** importar `SstTrendChart` y `toSstMonthlyPoints` ([sst-monthly-points.ts:32](../../app/(app)/dashboard/sst-monthly-points.ts#L32)) desde el tablero. Si se usa en dos superficies, conviene moverlo a `components/charts/`. Corregir `new Date().getFullYear()` ([page.tsx:27](../../app/(app)/prevencion/indicadores/page.tsx#L27)) y `getMonth()` ([canonical-indicators-dashboard.tsx:65](../../app/(app)/prevencion/indicadores/canonical-indicators-dashboard.tsx#L65)) por `codeYear()` y `todayInChile()`.
 - **Riesgos de interpretación:** con pocas HH, un solo caso dispara la tasa, por eso el tooltip debe mostrar n y HH. La TG es semestral por norma y el punto mensual es indicativo; hay que decirlo en el subtítulo.
 - **Complejidad:** baja.
 - **Puntuación:** 22 + 22 + 2[Ep] + 3[E] + 8 + 9 = **66** (revisada el 2026-11-03 con datos de producción; primera pasada: 84). En producción: 0 registros de HH y 1 incidente.
@@ -402,13 +402,13 @@ Convención de rutas: las rutas de pantalla omiten el grupo `(app)`; los enlaces
 - **Módulo:** Prevención › Incidentes
 - **Pantalla:** Incidentes
 - **Ruta:** `/prevencion/incidentes`
-- **Archivos y líneas:** lista con 4 tiles, 3 selects y DataTable ([incident-list.tsx:83-136](app/(app)/prevencion/incidentes/incident-list.tsx#L83-L136)); límite de 500 filas en [prevention-incidents.ts:961](lib/services/prevention-incidents.ts#L961); función de analítica **sin ningún llamador** `getIncidentAnalyticsData` ([prevention-indicadores.ts:1056](lib/services/prevention-indicadores.ts#L1056)), con 0 usos verificados por grep.
-- **Representación actual:** tiles de conteo que **no responden a los filtros** (`getIncidentDashboardCounts`, [prevention-incidents.ts:1806](lib/services/prevention-incidents.ts#L1806)) más una tabla de 5 columnas. Sin gráfico.
+- **Archivos y líneas:** lista con 4 tiles, 3 selects y DataTable ([incident-list.tsx:83-136](../../app/(app)/prevencion/incidentes/incident-list.tsx#L83-L136)); límite de 500 filas en [prevention-incidents.ts:961](../../lib/services/prevention-incidents.ts#L961); función de analítica **sin ningún llamador** `getIncidentAnalyticsData` ([prevention-indicadores.ts:1056](../../lib/services/prevention-indicadores.ts#L1056)), con 0 usos verificados por grep.
+- **Representación actual:** tiles de conteo que **no responden a los filtros** (`getIncidentDashboardCounts`, [prevention-incidents.ts:1806](../../lib/services/prevention-incidents.ts#L1806)) más una tabla de 5 columnas. Sin gráfico.
 - **Problema:** la señal preventiva clave (eventos de potencial alto o crítico sin daño, es decir, casi accidentes) sólo aparece si se lee fila por fila. Además, tile y lista divergen al filtrar.
 - **Visualización recomendada:**
   - **(a)** Barras apiladas por mes de ocurrencia, con 12 meses y los 8 `event_type` agrupados en 3 o 4 familias.
   - **(b)** Mapa de calor de 6 × 5: `actual_severity` (none → fatal) × `potential_severity` (low → fatal). Un solo tono secuencial por conteo, con la diagonal superior resaltada como «potencial mayor que el daño». Va en un bloque plegable sobre la tabla.
-- **Datos y campos necesarios:** `prevention_incidents.occurred_at`, `event_type`, `actual_severity`, `potential_severity`, `worksite_id` ([incidents.ts:17-57](db/schema/prevention/incidents.ts#L17-L57), con los CHECK de dominio en :56-57).
+- **Datos y campos necesarios:** `prevention_incidents.occurred_at`, `event_type`, `actual_severity`, `potential_severity`, `worksite_id` ([incidents.ts:17-57](../../db/schema/prevention/incidents.ts#L17-L57), con los CHECK de dominio en :56-57).
 - **Fórmula o agregación:** `count(*)` agrupado por `date_trunc('month', occurred_at)` × familia, y `count(*)` por par de gravedades. Unidad: eventos. Los eventos sin gravedad potencial van a una columna «sin evaluar».
 - **Disponibilidad de datos:** **Backend** (menor). Hay que extender `getIncidentAnalyticsData` con el eje mensual que ya usa `getMaterialEnvironmentalEvents`. Agregar en el cliente truncaría a 500.
 - **Filtros e interacciones:** los filtros de la página (faena, año, tipo) rigen también el gráfico. Clic en una celda o barra aplica ese filtro a la tabla y lo refleja en la URL. Con esto se corrige de paso la divergencia de los tiles.
@@ -425,19 +425,19 @@ Convención de rutas: las rutas de pantalla omiten el grupo `(app)`; los enlaces
 - **Módulo:** Prevención › CAPA (acciones correctivas y preventivas) / PDTP › Acciones
 - **Pantalla:** Acciones CAPA
 - **Ruta:** `/prevencion/capa` (y `/prevencion/pdtp/acciones`)
-- **Archivos y líneas:** tiles-botón ([capa-list.tsx:134-147](app/(app)/prevencion/capa/capa-list.tsx#L134-L147)); paginación de a 50 ([prevention-capa.ts:956](lib/services/prevention-capa.ts#L956)); `getCapaDashboardCounts` devuelve sólo 5 escalares ([prevention-capa.ts:996](lib/services/prevention-capa.ts#L996)).
+- **Archivos y líneas:** tiles-botón ([capa-list.tsx:134-147](../../app/(app)/prevencion/capa/capa-list.tsx#L134-L147)); paginación de a 50 ([prevention-capa.ts:956](../../lib/services/prevention-capa.ts#L956)); `getCapaDashboardCounts` devuelve sólo 5 escalares ([prevention-capa.ts:996](../../lib/services/prevention-capa.ts#L996)).
 - **Representación actual:** 4 tiles sin antigüedad ni tendencia, que no responden a los filtros, más una tabla de 6 columnas. El tile «Vencidas» y el `Select` de estado repiten la misma dimensión (A5).
 - **Problema:** «Vencidas: 12» no dice si son de ayer o de hace un semestre, ni si el backlog crece.
 - **Visualización recomendada:**
   - **(a)** Histograma de atraso en tramos 1–7, 8–30, 31–90 y >90 días, apilado por `priority`, sobre acciones abiertas.
   - **(b)** Flujo mensual: barras de creadas contra cerradas por mes, más una línea de backlog abierto al cierre de cada mes.
   - (a) reemplaza al tile «Vencidas»; el `Select` se conserva para los demás estados.
-- **Datos y campos necesarios:** `prevention_capa_actions.target_date`, `status`, `priority`, `source_type`, `worksite_id`, `created_at`, `closed_at`, `verified_at` ([capa.ts:7-90](db/schema/prevention/capa.ts#L7-L90)).
+- **Datos y campos necesarios:** `prevention_capa_actions.target_date`, `status`, `priority`, `source_type`, `worksite_id`, `created_at`, `closed_at`, `verified_at` ([capa.ts:7-90](../../db/schema/prevention/capa.ts#L7-L90)).
 - **Fórmula o agregación:**
   - Atraso = `todayInChile() − target_date` para estados abiertos. `target_date` es `text` y hay que parsearlo; si es nulo, cuenta como «sin plazo».
   - Backlog(m) = creadas ≤ m − cerradas ≤ m.
   - Las canceladas quedan fuera.
-  - Hay que **definir el cierre**: `closed` o `verified`, porque en PDTP son la misma cara ([action-plan.ts:290](lib/services/pdtp/action-plan.ts#L290)).
+  - Hay que **definir el cierre**: `closed` o `verified`, porque en PDTP son la misma cara ([action-plan.ts:290](../../lib/services/pdtp/action-plan.ts#L290)).
 - **Disponibilidad de datos:** **Backend**.
 - **Filtros e interacciones:** faena, fuente y prioridad. Clic en un tramo filtra la tabla con `?atraso=31-90`.
 - **Beneficio funcional:** prioriza lo crónico y muestra si el equipo cierra al ritmo que abre.
@@ -454,12 +454,12 @@ Convención de rutas: las rutas de pantalla omiten el grupo `(app)`; los enlaces
 - **Pantalla:** Cumplimiento PDTP y ficha del programa
 - **Ruta:** `/prevencion/pdtp`, `/prevencion/pdtp/[programId]`
 - **Archivos y líneas:**
-  - área de programadas contra ejecutadas: [pdtp-dashboard-charts.tsx:55](app/(app)/prevencion/pdtp/pdtp-dashboard-charts.tsx#L55)
-  - barra por faena con umbrales fijos 80/50: [:58](app/(app)/prevencion/pdtp/pdtp-dashboard-charts.tsx#L58)
-  - «Avance por eje» como `<ol>` de texto: [:62](app/(app)/prevencion/pdtp/pdtp-dashboard-charts.tsx#L62)
-  - `compliancePercent` calculado y descartado, con null convertido a 0: [page.tsx:169](app/(app)/prevencion/pdtp/page.tsx#L169)
-  - serie mensual sólo como tabla plegada: [pdtp-indicators-panel.tsx:141-173](app/(app)/prevencion/pdtp/pdtp-indicators-panel.tsx#L141-L173)
-  - anillo de progreso sin usos: `PdtpProgressRing` en [pdtp-sheet-table-ui.tsx:121](app/(app)/prevencion/pdtp/pdtp-sheet-table-ui.tsx#L121)
+  - área de programadas contra ejecutadas: [pdtp-dashboard-charts.tsx:55](../../app/(app)/prevencion/pdtp/pdtp-dashboard-charts.tsx#L55)
+  - barra por faena con umbrales fijos 80/50: [:58](../../app/(app)/prevencion/pdtp/pdtp-dashboard-charts.tsx#L58)
+  - «Avance por eje» como `<ol>` de texto: [:62](../../app/(app)/prevencion/pdtp/pdtp-dashboard-charts.tsx#L62)
+  - `compliancePercent` calculado y descartado, con null convertido a 0: [page.tsx:169](../../app/(app)/prevencion/pdtp/page.tsx#L169)
+  - serie mensual sólo como tabla plegada: [pdtp-indicators-panel.tsx:141-173](../../app/(app)/prevencion/pdtp/pdtp-indicators-panel.tsx#L141-L173)
+  - anillo de progreso sin usos: `PdtpProgressRing` en [pdtp-sheet-table-ui.tsx:121](../../app/(app)/prevencion/pdtp/pdtp-sheet-table-ui.tsx#L121)
 - **Representación actual:**
   - 4 tiles de períodos mezclados: ejecutadas del año, pendientes del mes, atrasadas del período.
   - Un área (que sugiere continuidad sobre conteos discretos).
@@ -489,7 +489,7 @@ Convención de rutas: las rutas de pantalla omiten el grupo `(app)`; los enlaces
 - **Módulo:** Prevención › PDTP
 - **Pantalla:** Reporte de gestión
 - **Ruta:** `/prevencion/pdtp/[programId]/reporte`
-- **Archivos y líneas:** tabla de 9 columnas ([reporte/page.tsx:145-190](app/(app)/prevencion/pdtp/%5BprogramId%5D/reporte/page.tsx#L145-L190)); comentario que nombra «el caso más grave» ([:21-27](app/(app)/prevencion/pdtp/%5BprogramId%5D/reporte/page.tsx#L21-L27)); datos en [management-report.ts:16-57](lib/services/pdtp/management-report.ts#L16-L57).
+- **Archivos y líneas:** tabla de 9 columnas ([reporte/page.tsx:145-190](../../app/(app)/prevencion/pdtp/%5BprogramId%5D/reporte/page.tsx#L145-L190)); comentario que nombra «el caso más grave» ([:21-27](../../app/(app)/prevencion/pdtp/%5BprogramId%5D/reporte/page.tsx#L21-L27)); datos en [management-report.ts:16-57](../../lib/services/pdtp/management-report.ts#L16-L57).
 - **Representación actual:** sólo la tabla. `report.target` no se muestra.
 - **Problema:** las actividades en desviación **sin desvío declarado** (lo más grave) se pierden entre filas que cumplen.
 - **Visualización recomendada:**
@@ -513,7 +513,7 @@ Convención de rutas: las rutas de pantalla omiten el grupo `(app)`; los enlaces
 - **Módulo:** Prevención › Indicadores
 - **Pantalla:** Indicadores material y ambiental
 - **Ruta:** `/prevencion/indicadores-material-ambiental`
-- **Archivos y líneas:** 4 gráficos que repiten los mismos 36 valores ([material-environmental-charts.tsx:45-95](app/(app)/prevencion/indicadores-material-ambiental/material-environmental-charts.tsx#L45-L95)); tile «Total eventos» que suma **todas** las faenas mientras los otros tres muestran la faena elegida ([material-environmental-dashboard.tsx:49-59, 96-115](app/(app)/prevencion/indicadores-material-ambiental/material-environmental-dashboard.tsx#L49-L115)). El defecto está **verificado leyendo el código**.
+- **Archivos y líneas:** 4 gráficos que repiten los mismos 36 valores ([material-environmental-charts.tsx:45-95](../../app/(app)/prevencion/indicadores-material-ambiental/material-environmental-charts.tsx#L45-L95)); tile «Total eventos» que suma **todas** las faenas mientras los otros tres muestran la faena elegida ([material-environmental-dashboard.tsx:49-59, 96-115](../../app/(app)/prevencion/indicadores-material-ambiental/material-environmental-dashboard.tsx#L49-L115)). El defecto está **verificado leyendo el código**.
 - **Representación actual:** tira de 4 cifras, más una pestaña de tabla, una de 4 gráficos (barras agrupadas, líneas `monotone`, barras apiladas por faena y combinado) y una tabla por faena.
 - **Problema:**
   - Hay redundancia: 3 de los 4 gráficos codifican el mismo dato.
@@ -525,8 +525,8 @@ Convención de rutas: las rutas de pantalla omiten el grupo `(app)`; los enlaces
   - Un comparativo por faena (`RankedList` o barras apiladas horizontales sin `radius` interno).
   - La tabla en la **misma** pestaña, plegable.
   - Corregir el tile para que use `selectedData`.
-  - Reutilizar `MaterialEnvironmentalChart` del tablero ([sst-charts.tsx:295](app/(app)/dashboard/charts/sst-charts.tsx#L295)).
-- **Datos y campos necesarios:** `prevention_incidents` con `event_type` ∈ {dangerous_incident, material_damage, environmental_spill} por mes (`getMaterialEnvironmentalEvents`, [prevention-indicadores.ts:939](lib/services/prevention-indicadores.ts#L939)).
+  - Reutilizar `MaterialEnvironmentalChart` del tablero ([sst-charts.tsx:295](../../app/(app)/dashboard/charts/sst-charts.tsx#L295)).
+- **Datos y campos necesarios:** `prevention_incidents` con `event_type` ∈ {dangerous_incident, material_damage, environmental_spill} por mes (`getMaterialEnvironmentalEvents`, [prevention-indicadores.ts:939](../../lib/services/prevention-indicadores.ts#L939)).
 - **Fórmula o agregación:** conteo de eventos por mes, tipo y faena.
 - **Disponibilidad de datos:** **Disponible**.
 - **Filtros e interacciones:** faena y año, ambos en la URL (hoy la faena es estado local y se pierde al cambiar de año).
@@ -543,7 +543,7 @@ Convención de rutas: las rutas de pantalla omiten el grupo `(app)`; los enlaces
 - **Módulo:** Prevención › MIPER (Matriz de Identificación de Peligros y Evaluación de Riesgos)
 - **Pantalla:** Workspace de la matriz y portafolio
 - **Ruta:** `/prevencion/miper/[id]` y `/prevencion/miper`
-- **Archivos y líneas:** resumen con barras `Progress` por actividad ([resumen-panel.tsx:72-121](app/(app)/prevencion/miper/%5Bid%5D/resumen-panel.tsx#L72-L121)); columnas `probability`, `consequence`, `magnitude`, `classification` y `residual_level` ([risk-legal.ts:219-241](db/schema/prevention/risk-legal.ts#L219-L241)); `classificationCounts` con los 4 niveles ([miper/queries.ts:164-168](lib/services/miper/queries.ts#L164-L168)), de los que el portafolio expone sólo 2 ([portfolio.ts:103-104](lib/services/miper/portfolio.ts#L103-L104)).
+- **Archivos y líneas:** resumen con barras `Progress` por actividad ([resumen-panel.tsx:72-121](../../app/(app)/prevencion/miper/%5Bid%5D/resumen-panel.tsx#L72-L121)); columnas `probability`, `consequence`, `magnitude`, `classification` y `residual_level` ([risk-legal.ts:219-241](../../db/schema/prevention/risk-legal.ts#L219-L241)); `classificationCounts` con los 4 niveles ([miper/queries.ts:164-168](../../lib/services/miper/queries.ts#L164-L168)), de los que el portafolio expone sólo 2 ([portfolio.ts:103-104](../../lib/services/miper/portfolio.ts#L103-L104)).
 - **Representación actual:** la cifra «Importantes e intolerables» y barras de avance. No hay distribución del riesgo.
 - **Problema:** una matriz de riesgos sin su propia matriz visual. No se ve dónde se concentra el riesgo ni el efecto de los controles.
 - **Visualización recomendada:**
@@ -583,11 +583,11 @@ Convención de rutas: las rutas de pantalla omiten el grupo `(app)`; los enlaces
   - `/prevencion/higiene`
   - `/prevencion/cgrd`
 - **Archivos y líneas:**
-  - grid de tarjetas: [training-occurrence-list.tsx:187-228](app/(app)/prevencion/capacitacion/training-occurrence-list.tsx#L187-L228)
-  - tabla de cierres: [cierres/page.tsx:76-84](app/(app)/prevencion/pdtp/%5BprogramId%5D/cierres/page.tsx#L76-L84)
-  - cifras inertes de CPHS: [committee-list.tsx:83-99](app/(app)/prevencion/cphs/committee-list.tsx#L83-L99)
-  - tabla mensual del programa CPHS: [program-panel.tsx:146-190](app/(app)/prevencion/cphs/%5BcommitteeId%5D/programa/program-panel.tsx#L146-L190)
-  - `ProgramSlotList`, que repite tarjetas «mes · semana» en 4 pantallas: [program-slot-list.tsx](components/prevention/program-slot-list.tsx)
+  - grid de tarjetas: [training-occurrence-list.tsx:187-228](../../app/(app)/prevencion/capacitacion/training-occurrence-list.tsx#L187-L228)
+  - tabla de cierres: [cierres/page.tsx:76-84](../../app/(app)/prevencion/pdtp/%5BprogramId%5D/cierres/page.tsx#L76-L84)
+  - cifras inertes de CPHS: [committee-list.tsx:83-99](../../app/(app)/prevencion/cphs/committee-list.tsx#L83-L99)
+  - tabla mensual del programa CPHS: [program-panel.tsx:146-190](../../app/(app)/prevencion/cphs/%5BcommitteeId%5D/programa/program-panel.tsx#L146-L190)
+  - `ProgramSlotList`, que repite tarjetas «mes · semana» en 4 pantallas: [program-slot-list.tsx](../../components/prevention/program-slot-list.tsx)
 - **Representación actual:** listas o grids de tarjetas y tablas. Hasta ~52 tarjetas por pantalla en alcotest.
 - **Problema:** todas responden «¿qué casilla del programa anual falta y en qué faena?», y ninguna lo muestra como calendario. El hueco (el mes sin sesión, sin capacitación o sin cierre) es el dato, y en una lista no se ve.
 - **Visualización recomendada:** **un solo primitivo** `ComplianceCalendar`: matriz de filas (faena, comité o tipo) × 12 columnas de mes. Cada celda muestra el estado:
@@ -623,7 +623,7 @@ Convención de rutas: las rutas de pantalla omiten el grupo `(app)`; los enlaces
 - **Módulo:** Prevención › Higiene ocupacional
 - **Pantalla:** Detalle de grupo de exposición similar (GES)
 - **Ruta:** `/prevencion/higiene/grupos/[groupId]` (y la lista `/prevencion/higiene`)
-- **Archivos y líneas:** tabla de mediciones ([group-detail.tsx:149-168](app/(app)/prevencion/higiene/grupos/%5BgroupId%5D/group-detail.tsx#L149-L168)); interfaz con `measurements` (:51-62); badge «Última medición» en la lista ([hygiene-dashboard.tsx:205-208](app/(app)/prevencion/higiene/hygiene-dashboard.tsx#L205-L208)).
+- **Archivos y líneas:** tabla de mediciones ([group-detail.tsx:149-168](../../app/(app)/prevencion/higiene/grupos/%5BgroupId%5D/group-detail.tsx#L149-L168)); interfaz con `measurements` (:51-62); badge «Última medición» en la lista ([hygiene-dashboard.tsx:205-208](../../app/(app)/prevencion/higiene/hygiene-dashboard.tsx#L205-L208)).
 - **Representación actual:** una serie temporal mostrada como tabla. La lista muestra sólo un badge.
 - **Problema:** no se ve si la exposición sube hacia el límite ni a qué distancia está.
 - **Visualización recomendada:**
@@ -648,7 +648,7 @@ Convención de rutas: las rutas de pantalla omiten el grupo `(app)`; los enlaces
 - **Módulo:** Prevención › Inspecciones / Alcotest
 - **Pantalla:** Inspecciones; Alcotest
 - **Ruta:** `/prevencion/inspecciones`, `/prevencion/alcotest`
-- **Archivos y líneas:** tiles sin período y tabla paginada (`inspection-run-list.tsx:284, 483`); `summarizeInspectionRuns` sólo con totales ([queries.ts:220](lib/services/prevention-inspections/queries.ts#L220)); `listAlcoholTests` hace `select()` de toda la tabla y filtra en JS ([prevention-alcotest.ts:232](lib/services/prevention-alcotest.ts#L232)); la interfaz corta a 30 ([alcotest-workbench.tsx:121](app/(app)/prevencion/alcotest/alcotest-workbench.tsx#L121)).
+- **Archivos y líneas:** tiles sin período y tabla paginada (`inspection-run-list.tsx:284, 483`); `summarizeInspectionRuns` sólo con totales ([queries.ts:220](../../lib/services/prevention-inspections/queries.ts#L220)); `listAlcoholTests` hace `select()` de toda la tabla y filtra en JS ([prevention-alcotest.ts:232](../../lib/services/prevention-alcotest.ts#L232)); la interfaz corta a 30 ([alcotest-workbench.tsx:121](../../app/(app)/prevencion/alcotest/alcotest-workbench.tsx#L121)).
 - **Representación actual:** tiles y tabla en inspecciones; 30 artículos en alcotest.
 - **Problema:** no se ve si el cumplimiento mejora ni qué plantilla o faena lo arrastra. Alcotest carga toda la tabla, un riesgo de rendimiento que crece con el uso.
 - **Visualización recomendada:**
@@ -671,7 +671,7 @@ Convención de rutas: las rutas de pantalla omiten el grupo `(app)`; los enlaces
 - **Módulo:** Prevención › PPA
 - **Pantalla:** PPA
 - **Ruta:** `/prevencion/ppa`
-- **Archivos y líneas:** `RankPanel` local que duplica `RankedList` ([ppa/page.tsx:21-51, 99-136](app/(app)/prevencion/ppa/page.tsx#L21-L136)); `getPpaStats` histórico completo, sin período ([calculos.ts:166-227](lib/services/ppa-module/calculos.ts#L166-L227)); «Total PPA» repetido en la tira y en la pestaña «Todos» ([ppa-list.tsx:24](app/(app)/prevencion/ppa/ppa-list.tsx#L24)).
+- **Archivos y líneas:** `RankPanel` local que duplica `RankedList` ([ppa/page.tsx:21-51, 99-136](../../app/(app)/prevencion/ppa/page.tsx#L21-L136)); `getPpaStats` histórico completo, sin período ([calculos.ts:166-227](../../lib/services/ppa-module/calculos.ts#L166-L227)); «Total PPA» repetido en la tira y en la pestaña «Todos» ([ppa-list.tsx:24](../../app/(app)/prevencion/ppa/ppa-list.tsx#L24)).
 - **Representación actual:** tira de métricas, 3 rankings hechos con `div` y una tabla.
 - **Problema:** el ranking de faenas ordena por **conteo absoluto** de detenidos, lo que castiga a la faena que más PPA llena. No hay período ni tendencia.
 - **Visualización recomendada:** barras mensuales de envíos con la tasa de detención en eje derecho (A5b), y `RankedList` de **tasa** de detención por faena (formato %, con n visible).
@@ -705,10 +705,10 @@ Convención de rutas: las rutas de pantalla omiten el grupo `(app)`; los enlaces
   - `/ti/garantias`
   - `/ti/licencias`
 - **Archivos y líneas:**
-  - `resourceFacts` sin fecha: [emergency-list.tsx:127-170](app/(app)/prevencion/emergencias/emergency-list.tsx#L127-L170)
-  - vencimientos de documentos sólo a 7, 15 y 30 días: [search.ts:196](lib/services/prevention-documents/search.ts#L196)
-  - bandas en chips: `countWarrantyBands`, [warranty-windows.ts:50](app/(app)/ti/garantias/warranty-windows.ts#L50)
-  - `it_licenses.renewal_date` y `cost`: [ti.ts:267-270](db/schema/ti.ts#L267-L270)
+  - `resourceFacts` sin fecha: [emergency-list.tsx:127-170](../../app/(app)/prevencion/emergencias/emergency-list.tsx#L127-L170)
+  - vencimientos de documentos sólo a 7, 15 y 30 días: [search.ts:196](../../lib/services/prevention-documents/search.ts#L196)
+  - bandas en chips: `countWarrantyBands`, [warranty-windows.ts:50](../../app/(app)/ti/garantias/warranty-windows.ts#L50)
+  - `it_licenses.renewal_date` y `cost`: [ti.ts:267-270](../../db/schema/ti.ts#L267-L270)
 - **Representación actual:** chips con contador, fechas sueltas en columnas de tabla y cifras totales.
 - **Problema:** «¿qué vence y cuándo se me junta el trabajo?» no se puede contestar sin ordenar una tabla.
 - **Visualización recomendada:** **un primitivo** `ExpiryHorizon`. Barras por semana (próximas 12) o por mes (próximos 12), con una barra «vencido» a la izquierda, apiladas por tipo (vence / inspección / renovación). En licencias, la variante mide costo. Reemplaza los chips de banda (para no duplicar, A5). Clic en una barra filtra la tabla.
@@ -739,7 +739,7 @@ Convención de rutas: las rutas de pantalla omiten el grupo `(app)`; los enlaces
 - **Módulo:** Prevención › Requisitos legales
 - **Pantalla:** Requisitos legales, pestaña Aplicabilidad
 - **Ruta:** `/prevencion/requisitos-legales`
-- **Archivos y líneas:** `complianceStatus` y `applicabilityStatus` ([risk-legal.ts:476-482](db/schema/prevention/risk-legal.ts#L476-L482)); `getLegalDashboard` ([prevention-risk-legal.ts:1097](lib/services/prevention-risk-legal.ts#L1097)).
+- **Archivos y líneas:** `complianceStatus` y `applicabilityStatus` ([risk-legal.ts:476-482](../../db/schema/prevention/risk-legal.ts#L476-L482)); `getLegalDashboard` ([prevention-risk-legal.ts:1097](../../lib/services/prevention-risk-legal.ts#L1097)).
 - **Representación actual:** N tarjetas. Los tiles enlazan a `#aplicabilidad` y `#brechas`, que viven en pestañas no activas. Es una inferencia del código: Radix no monta el contenido inactivo, así que el ancla no lleva a ningún lado. No se verificó en el navegador.
 - **Problema:** saber qué requisito falla en qué faena obliga a abrir cada tarjeta.
 - **Visualización recomendada:** matriz (requisitos en filas, faenas en columnas) con el estado de cumplimiento por celda (cumple / brecha / no aplica / sin evaluar), ícono y texto. Es una tabla visual, no un gráfico; se agrupa por norma.
@@ -760,7 +760,7 @@ Convención de rutas: las rutas de pantalla omiten el grupo `(app)`; los enlaces
 - **Módulo:** Prevención › Permisos de trabajo
 - **Pantalla:** Permisos
 - **Ruta:** `/prevencion/permisos`
-- **Archivos y líneas:** `planned_start_at`, `planned_end_at`, `extended_until_at` ([permits.ts:70-71](db/schema/prevention/permits.ts#L70-L71)); permisos completos en el cliente ([work-permit-list.tsx:99-103](app/(app)/prevencion/permisos/work-permit-list.tsx#L99-L103)).
+- **Archivos y líneas:** `planned_start_at`, `planned_end_at`, `extended_until_at` ([permits.ts:70-71](../../db/schema/prevention/permits.ts#L70-L71)); permisos completos en el cliente ([work-permit-list.tsx:99-103](../../app/(app)/prevencion/permisos/work-permit-list.tsx#L99-L103)).
 - **Representación actual:** tiles y una DataTable; la ventana se lee como texto.
 - **Problema:** «¿qué trabajo está habilitado ahora y hasta cuándo?» se calcula de cabeza.
 - **Visualización recomendada:** Gantt de hoy ±3 días, una barra por permiso vigente o pendiente, agrupado por faena. Línea de «ahora» y extensión en rayado.
@@ -782,10 +782,10 @@ Se agrupan aquí porque cada una es pequeña y comparte el mismo criterio: **dat
 
 | Pantalla | Ruta | Archivo | Propuesta | Datos | Disponibilidad |
 |---|---|---|---|---|---|
-| Historial del trabajador | `/prevencion/trabajador/[workerId]` | [page.tsx:70-71](app/(app)/prevencion/trabajador/%5BworkerId%5D/page.tsx#L70-L71) carga `evaluations` y las descarta | `MiniSparkline` del % de cumplimiento por fecha | `sst_evaluations.porcentaje_cumplimiento`, `fecha_evaluacion` | Disponible |
+| Historial del trabajador | `/prevencion/trabajador/[workerId]` | [page.tsx:70-71](../../app/(app)/prevencion/trabajador/%5BworkerId%5D/page.tsx#L70-L71) carga `evaluations` y las descarta | `MiniSparkline` del % de cumplimiento por fecha | `sst_evaluations.porcentaje_cumplimiento`, `fecha_evaluacion` | Disponible |
 | Faenas | `/prevencion/faenas` | `worksite-organization-list.tsx:21` | Barra de dotación con marcas en 10 y 25 (umbrales de comité y delegado) | `headcount` | Disponible |
 | EPP preventivo | `/prevencion/epp-preventivo` | `epp-gap-list.tsx:81` | `RankedList` de brechas por EPP exigido, que filtra la tabla | brechas ya cargadas | Procesamiento |
-| Programa CPHS | `/prevencion/cphs/[id]/programa` | [program-panel.tsx:146-190](app/(app)/prevencion/cphs/%5BcommitteeId%5D/programa/program-panel.tsx#L146-L190) | Barras apiladas de 12 meses (realizada / atrasada / pendiente) que reemplazan el tile «Actividades» | `planned_month`, `status`, `completed_at` | Disponible |
+| Programa CPHS | `/prevencion/cphs/[id]/programa` | [program-panel.tsx:146-190](../../app/(app)/prevencion/cphs/%5BcommitteeId%5D/programa/program-panel.tsx#L146-L190) | Barras apiladas de 12 meses (realizada / atrasada / pendiente) que reemplazan el tile «Actividades» | `planned_month`, `status`, `completed_at` | Disponible |
 | Asistencia CPHS | `/prevencion/cphs/[committeeId]` | `committee-detail.tsx:224` | `RankedList` en % de asistencia por integrante | `prevention_committee_attendance.attended` | Procesamiento |
 | Cobertura PDTP | `/prevencion/pdtp/cobertura` | `cobertura/page.tsx` | Barra apilada de actividades por tipo de fuente (MIPER, legal, CAPA…) | listas ya cargadas | Disponible |
 | Certificación CPHS | `/prevencion/cphs/[id]/certificacion` | `certification-panel.tsx:107-108` | Barra de progreso de requisitos cumplidos sobre aplicables; corregir el tile «Plazo de brechas», que filtra igual que «Brechas abiertas» | requisitos | Disponible |
@@ -802,7 +802,7 @@ Se agrupan aquí porque cada una es pequeña y comparte el mismo criterio: **dat
 - **Módulo:** Combustibles › Consumo
 - **Pantalla:** Litros y rendimiento
 - **Ruta:** `/combustibles/consumo/litros`
-- **Archivos y líneas:** `OverviewMeterChart` (km u horas contra litros con doble eje, [consumo/litros/page.tsx:241-262](app/(app)/combustibles/consumo/litros/page.tsx#L241-L262)); `getMeterSeries` ([overview.ts:134](lib/combustibles/control/queries/overview.ts#L134)); columnas `fuel_equipment_loads.meter_delta`, `accumulated_liters` ([fuel-control.ts:71](db/schema/fuel-control.ts#L71)).
+- **Archivos y líneas:** `OverviewMeterChart` (km u horas contra litros con doble eje, [consumo/litros/page.tsx:241-262](../../app/(app)/combustibles/consumo/litros/page.tsx#L241-L262)); `getMeterSeries` ([overview.ts:134](../../lib/combustibles/control/queries/overview.ts#L134)); columnas `fuel_equipment_loads.meter_delta`, `accumulated_liters` ([fuel-control.ts:71](../../db/schema/fuel-control.ts#L71)).
 - **Representación actual:**
   - el rendimiento global sale sólo como texto;
   - el gráfico de doble eje obliga a dividir de cabeza para obtener la tasa;
@@ -837,9 +837,9 @@ Se agrupan aquí porque cada una es pequeña y comparte el mismo criterio: **dat
 - **Pantalla:** Rendimiento por familia
 - **Ruta:** `/combustibles/consumo/rendimiento/[familia]`
 - **Archivos y líneas:**
-  - columnas «Dif. modelo» y «Dif. historial»: [stats-tables.tsx:131-132](app/(app)/combustibles/consumo/rendimiento/%5Bfamilia%5D/stats-tables.tsx#L131-L132)
-  - `deltaModelPct` y `deltaHistoryPct`: [performance.ts:90-113](lib/combustibles/control/queries/performance.ts#L90-L113)
-  - `getEquipmentWorseSummary` devuelve sólo 3 ejemplos: [:292](lib/combustibles/control/queries/performance.ts#L292)
+  - columnas «Dif. modelo» y «Dif. historial»: [stats-tables.tsx:131-132](../../app/(app)/combustibles/consumo/rendimiento/%5Bfamilia%5D/stats-tables.tsx#L131-L132)
+  - `deltaModelPct` y `deltaHistoryPct`: [performance.ts:90-113](../../lib/combustibles/control/queries/performance.ts#L90-L113)
+  - `getEquipmentWorseSummary` devuelve sólo 3 ejemplos: [:292](../../lib/combustibles/control/queries/performance.ts#L292)
 - **Representación actual:** tabla paginada; la anomalía queda en una columna «Aviso».
 - **Problema:** para saber qué equipos rinden peor que su modelo hay que recorrer páginas.
 - **Visualización recomendada:**
@@ -866,10 +866,10 @@ Se agrupan aquí porque cada una es pequeña y comparte el mismo criterio: **dat
 - **Pantalla:** Ficha de flota; ficha de equipo de mantención
 - **Ruta:** `/flota/[id]`, `/mantencion/equipos/[id]`
 - **Archivos y líneas:**
-  - efecto de la OT como texto «a → b» sin unidad: [flota/[id]/page.tsx:131-213](app/(app)/flota/%5Bid%5D/page.tsx#L131-L213), en particular la línea :189
-  - el impacto promedia `fuel_operation_records.rendimiento` (valor declarado) y no el rendimiento calculado: [fleet.ts:435-449](lib/services/fleet.ts#L435-L449)
-  - cifras sueltas en mantención: [equipment-read-sections.tsx:44-67](components/mantencion/jefatura/equipos/equipment-read-sections.tsx#L44-L67)
-  - hoja de vida de 8 columnas: [equipment-life-section.tsx:63-107](components/mantencion/jefatura/equipos/equipment-life-section.tsx#L63-L107)
+  - efecto de la OT como texto «a → b» sin unidad: [flota/[id]/page.tsx:131-213](../../app/(app)/flota/%5Bid%5D/page.tsx#L131-L213), en particular la línea :189
+  - el impacto promedia `fuel_operation_records.rendimiento` (valor declarado) y no el rendimiento calculado: [fleet.ts:435-449](../../lib/services/fleet.ts#L435-L449)
+  - cifras sueltas en mantención: [equipment-read-sections.tsx:44-67](../../components/mantencion/jefatura/equipos/equipment-read-sections.tsx#L44-L67)
+  - hoja de vida de 8 columnas: [equipment-life-section.tsx:63-107](../../components/mantencion/jefatura/equipos/equipment-life-section.tsx#L63-L107)
 - **Representación actual:** listas de intervalos de estado, texto «x.xx → y.yy» y tablas.
 - **Problema:**
   - la pregunta «¿la OT mejoró el equipo? ¿cada cuánto falla?» se responde comparando filas de pantallas distintas;
@@ -882,8 +882,8 @@ Se agrupan aquí porque cada una es pequeña y comparte el mismo criterio: **dat
   - La hoja de vida tabular se mantiene.
 - **Datos y campos necesarios:**
   - `fuel_equipment_loads.performance_value`, `occurred_at`;
-  - `mant_work_orders.workshop_entry_at`, `workshop_exit_at` ([mantencion-work-orders.ts:64-73](db/schema/mantencion-work-orders.ts#L64-L73));
-  - `fuel_vehicle_operational_intervals` ([fuel-vehicles.ts:108](db/schema/fuel-vehicles.ts#L108));
+  - `mant_work_orders.workshop_entry_at`, `workshop_exit_at` ([mantencion-work-orders.ts:64-73](../../db/schema/mantencion-work-orders.ts#L64-L73));
+  - `fuel_vehicle_operational_intervals` ([fuel-vehicles.ts:108](../../db/schema/fuel-vehicles.ts#L108));
   - `mant_records.reading`, `unit`, `work_date`, `kind`.
 - **Fórmula o agregación:** ninguna (series crudas). El efecto de la OT se calcula como la mediana del rendimiento 30 días antes contra 30 días después, con n visible.
 - **Disponibilidad de datos:** **Backend**: reutilizar la serie de `getEquipmentFile` y unificar la fuente del rendimiento.
@@ -905,10 +905,10 @@ Se agrupan aquí porque cada una es pequeña y comparte el mismo criterio: **dat
 - **Pantalla:** Mandante; Proveedor
 - **Ruta:** `/combustibles/cuadratura/mandante`, `/combustibles/cuadratura/proveedor`
 - **Archivos y líneas:**
-  - meses fuera de tolerancia como filas con badge: [mandante-sections.tsx:100-145](app/(app)/combustibles/cuadratura/mandante/mandante-sections.tsx#L100-L145)
-  - `MandanteMonthSummary`: [reconciliation-summary.ts:22-33](lib/combustibles/control/queries/reconciliation-summary.ts#L22-L33)
-  - proveedor: [medium-section.tsx:43-60](app/(app)/combustibles/cuadratura/proveedor/medium-section.tsx#L43-L60)
-  - `MediumCrossRow`: [reconciliation.ts:202-212](lib/combustibles/control/queries/reconciliation.ts#L202-L212)
+  - meses fuera de tolerancia como filas con badge: [mandante-sections.tsx:100-145](../../app/(app)/combustibles/cuadratura/mandante/mandante-sections.tsx#L100-L145)
+  - `MandanteMonthSummary`: [reconciliation-summary.ts:22-33](../../lib/combustibles/control/queries/reconciliation-summary.ts#L22-L33)
+  - proveedor: [medium-section.tsx:43-60](../../app/(app)/combustibles/cuadratura/proveedor/medium-section.tsx#L43-L60)
+  - `MediumCrossRow`: [reconciliation.ts:202-212](../../lib/combustibles/control/queries/reconciliation.ts#L202-L212)
 - **Representación actual:** dos tablas con pares de cifras.
 - **Problema:** «¿cuadra dentro de la tolerancia?» es una comparación contra un umbral, y la tabla no la dibuja.
 - **Visualización recomendada:**
@@ -937,15 +937,15 @@ Se agrupan aquí porque cada una es pequeña y comparte el mismo criterio: **dat
 - **Pantalla:** Estanques
 - **Ruta:** `/combustibles/cuadratura/estanques`
 - **Archivos y líneas:**
-  - 4 `KpiCard` y un gráfico plegado con **las mismas cifras**: [estanques/page.tsx:122-159](app/(app)/combustibles/cuadratura/estanques/page.tsx#L122-L159)
-  - nivel en tabla: [estanques-sections.tsx:44-63](app/(app)/combustibles/cuadratura/estanques/estanques-sections.tsx#L44-L63)
-  - `getFuelStorageBalances`: [fuel-cycle.ts:165](lib/combustibles/fuel-cycle.ts#L165)
+  - 4 `KpiCard` y un gráfico plegado con **las mismas cifras**: [estanques/page.tsx:122-159](../../app/(app)/combustibles/cuadratura/estanques/page.tsx#L122-L159)
+  - nivel en tabla: [estanques-sections.tsx:44-63](../../app/(app)/combustibles/cuadratura/estanques/estanques-sections.tsx#L44-L63)
+  - `getFuelStorageBalances`: [fuel-cycle.ts:165](../../lib/combustibles/fuel-cycle.ts#L165)
 - **Representación actual:** tiles, más un gráfico duplicado (A5) y tablas.
 - **Problema:** «¿cuánto queda y cuándo hay que pedir?» no se ve.
 - **Visualización recomendada:**
   - **Ahora:** bullet bar de nivel sobre capacidad por estanque, con la marca de reposición; se retira el gráfico duplicado.
   - **Después:** nivel en el tiempo (línea escalonada) con las entradas y salidas como barras.
-- **Datos y campos necesarios:** balances por estanque; `fuel_cycle_movements.quantity`, `occurred_at`, origen y destino ([fuel-cycle.ts:34](db/schema/fuel-cycle.ts#L34)).
+- **Datos y campos necesarios:** balances por estanque; `fuel_cycle_movements.quantity`, `occurred_at`, origen y destino ([fuel-cycle.ts:34](../../db/schema/fuel-cycle.ts#L34)).
 - **Fórmula o agregación:** nivel = Σ entradas − Σ salidas. Sin capacidad declarada, se muestra sólo el nivel.
 - **Disponibilidad de datos:** la bullet bar está **Disponible**; la serie temporal requiere **Backend**.
 - **Filtros e interacciones:** producto y faena.
@@ -962,7 +962,7 @@ Se agrupan aquí porque cada una es pequeña y comparte el mismo criterio: **dat
 - **Módulo:** Combustibles › Consumo › Motor en vacío
 - **Pantalla:** Motor en vacío
 - **Ruta:** `/combustibles/consumo/motor-en-vacio`
-- **Archivos y líneas:** `LitersPerHourTable` ([motor-en-vacio/page.tsx:151-153](app/(app)/combustibles/consumo/motor-en-vacio/page.tsx#L151-L153)); `getLitersPerHourComparison` ([idle-comparison.ts:16-28](lib/combustibles/control/queries/idle-comparison.ts#L16-L28)).
+- **Archivos y líneas:** `LitersPerHourTable` ([motor-en-vacio/page.tsx:151-153](../../app/(app)/combustibles/consumo/motor-en-vacio/page.tsx#L151-L153)); `getLitersPerHourComparison` ([idle-comparison.ts:16-28](../../lib/combustibles/control/queries/idle-comparison.ts#L16-L28)).
 - **Representación actual:** tabla de pares de L/h.
 - **Problema:** la discrepancia entre telemetría y registro de cargas (un posible desvío de combustible) se lee fila por fila.
 - **Visualización recomendada:** gráfico de dispersión con la diagonal y = x y una banda de ±15 %. Cada punto es un equipo-mes; los que quedan fuera de la banda llevan rótulo.
@@ -972,7 +972,7 @@ Se agrupan aquí porque cada una es pequeña y comparte el mismo criterio: **dat
 - **Filtros e interacciones:** mes. Clic lleva a la ficha del equipo.
 - **Beneficio funcional:** detecta descuadres por equipo.
 - **Beneficio visual:** muestra la desviación de un vistazo.
-- **Requisitos técnicos:** `ScatterChart` (ya hay uno en [scatter-charts.tsx](app/(app)/combustibles/scatter-charts.tsx)).
+- **Requisitos técnicos:** `ScatterChart` (ya hay uno en [scatter-charts.tsx](../../app/(app)/combustibles/scatter-charts.tsx)).
 - **Riesgos de interpretación:**
   - huecos de sincronización: la corrida diaria de VisionLink cubre 14 días;
   - meses sin cargas calculadas;
@@ -986,7 +986,7 @@ Se agrupan aquí porque cada una es pequeña y comparte el mismo criterio: **dat
 - **Módulo:** Combustibles › Fuentes
 - **Pantalla:** Fuentes de datos
 - **Ruta:** `/combustibles/fuentes`
-- **Archivos y líneas:** cobertura como `technical: string[]` ([sources-status.ts:66-72](lib/combustibles/sources-status.ts#L66-L72)); `fuel_provider_period_coverage` ([fuel-integrations.ts:205](db/schema/fuel-integrations.ts#L205)).
+- **Archivos y líneas:** cobertura como `technical: string[]` ([sources-status.ts:66-72](../../lib/combustibles/sources-status.ts#L66-L72)); `fuel_provider_period_coverage` ([fuel-integrations.ts:205](../../db/schema/fuel-integrations.ts#L205)).
 - **Representación actual:** tarjetas con frases de texto.
 - **Problema:** antes de creer cualquier gráfico de combustible hay que saber si el mes está completo. La memoria del proyecto registra que el sync de OnWay está caído desde el 2026-10-30, y eso no se ve de un vistazo.
 - **Visualización recomendada:** mapa de calor de fuentes (Copec TCT, Copec transacciones, OnWay, VisionLink, registro manual) × meses. La celda indica completo / parcial / sin datos / rechazos, con los litros en el tooltip. El mismo estado alimenta un **aviso de cobertura en cada gráfico de combustible** (ver la sección I, fase 4).
@@ -1008,16 +1008,16 @@ Se agrupan aquí porque cada una es pequeña y comparte el mismo criterio: **dat
 - **Pantalla:** Bandeja de revisión
 - **Ruta:** `/combustibles/revisar`
 - **Archivos y líneas:**
-  - torta y barras multicolor sin nombre accesible, con `RULE_COLORS`: [anomaly-distribution-chart.tsx:16-125](app/(app)/combustibles/anomalias/anomaly-distribution-chart.tsx#L16-L125)
-  - el conteo por tipo aparece dos veces, en `SegmentedControl` y en `RankedList`: [revisar/page.tsx:155-161, 255](app/(app)/combustibles/revisar/page.tsx#L155-L255)
-  - lecturas del medidor mostradas como tarjetas: [inbox-evidence.tsx:24-50](components/combustibles/inbox/inbox-evidence.tsx#L24-L50)
+  - torta y barras multicolor sin nombre accesible, con `RULE_COLORS`: [anomaly-distribution-chart.tsx:16-125](../../app/(app)/combustibles/anomalias/anomaly-distribution-chart.tsx#L16-L125)
+  - el conteo por tipo aparece dos veces, en `SegmentedControl` y en `RankedList`: [revisar/page.tsx:155-161, 255](../../app/(app)/combustibles/revisar/page.tsx#L155-L255)
+  - lecturas del medidor mostradas como tarjetas: [inbox-evidence.tsx:24-50](../../components/combustibles/inbox/inbox-evidence.tsx#L24-L50)
 - **Representación actual:** bandeja, torta, barras multicolor y un conteo duplicado.
 - **Problema:** el color no codifica nada (contradice la regla de `RankedList`), no hay tendencia de casos, y la evidencia del medidor regresivo se lee como números.
 - **Visualización recomendada:**
   - **(a)** Retirar la torta. Reemplazar las barras por reglas en `RankedList` de un solo tono y quitar el conteo duplicado.
   - **(b)** Casos por semana según `detected_at`, apilados por severidad.
   - **(c)** En la evidencia, un sparkline de las lecturas con el punto regresivo marcado.
-- **Datos y campos necesarios:** anomalías `detected_at`, `severity`, `rule` ([fuel-anomalies.ts:29-55](db/schema/fuel-anomalies.ts#L29-L55)); evidencia `type:"readings"`.
+- **Datos y campos necesarios:** anomalías `detected_at`, `severity`, `rule` ([fuel-anomalies.ts:29-55](../../db/schema/fuel-anomalies.ts#L29-L55)); evidencia `type:"readings"`.
 - **Fórmula o agregación:** conteo de casos por semana y severidad.
 - **Disponibilidad de datos:** (b) **Backend**; (a) y (c) **Disponible**.
 - **Filtros e interacciones:** clic en una regla filtra la bandeja.
@@ -1033,7 +1033,7 @@ Se agrupan aquí porque cada una es pequeña y comparte el mismo criterio: **dat
 
 - **Módulo:** Combustibles › Consumo › Equipo
 - **Ruta:** `/combustibles/consumo/equipos/[id]`
-- **Archivos y líneas:** 5 cifras sueltas ([equipos/[id]/page.tsx:190-202](app/(app)/combustibles/consumo/equipos/%5Bid%5D/page.tsx#L190-L202)); `IdleDailyChart` y `getIdleDailySeries` ya existen ([idle.ts:181](lib/combustibles/control/queries/idle.ts#L181)).
+- **Archivos y líneas:** 5 cifras sueltas ([equipos/[id]/page.tsx:190-202](../../app/(app)/combustibles/consumo/equipos/%5Bid%5D/page.tsx#L190-L202)); `IdleDailyChart` y `getIdleDailySeries` ya existen ([idle.ts:181](../../lib/combustibles/control/queries/idle.ts#L181)).
 - **Representación actual:** cifras sueltas.
 - **Visualización recomendada:** reutilizar `IdleDailyChart` filtrado por el equipo.
 - **Datos y campos necesarios:** horas de motor y horas en vacío por día, de `fuel_telemetry_daily`.
@@ -1053,9 +1053,9 @@ Se agrupan aquí porque cada una es pequeña y comparte el mismo criterio: **dat
 - **Pantalla:** Control operacional; Panel de mantención
 - **Ruta:** `/control-operacional`, `/mantencion/panel`
 - **Archivos y líneas:**
-  - `SummaryBar` con disponibilidad y MTTR (tiempo medio de reparación) sin período anterior: [control-operacional/page.tsx:248](app/(app)/control-operacional/page.tsx#L248)
-  - agregado sólo total: [operational-control.ts:143-162, 275-280](lib/services/operational-control.ts#L143-L280)
-  - MTTR ya calculado: [operational-control.ts:507-508](lib/services/operational-control.ts#L507-L508)
+  - `SummaryBar` con disponibilidad y MTTR (tiempo medio de reparación) sin período anterior: [control-operacional/page.tsx:248](../../app/(app)/control-operacional/page.tsx#L248)
+  - agregado sólo total: [operational-control.ts:143-162, 275-280](../../lib/services/operational-control.ts#L143-L280)
+  - MTTR ya calculado: [operational-control.ts:507-508](../../lib/services/operational-control.ts#L507-L508)
 - **Representación actual:** cifras sin tendencia.
 - **Problema:** «¿la disponibilidad empeora?» no tiene respuesta.
 - **Visualización recomendada:**
@@ -1080,9 +1080,9 @@ Se agrupan aquí porque cada una es pequeña y comparte el mismo criterio: **dat
 - **Pantalla:** Panel de jefatura; OT
 - **Ruta:** `/mantencion/panel`, `/mantencion/ot`
 - **Archivos y líneas:**
-  - KPI del panel: [panel-kpis.tsx:40-77](components/mantencion/jefatura/panel/panel-kpis.tsx#L40-L77)
-  - tarjetas: [panel-cards.tsx](components/mantencion/jefatura/panel/panel-cards.tsx)
-  - `mant_work_orders`: [mantencion-work-orders.ts:40-93](db/schema/mantencion-work-orders.ts#L40-L93)
+  - KPI del panel: [panel-kpis.tsx:40-77](../../components/mantencion/jefatura/panel/panel-kpis.tsx#L40-L77)
+  - tarjetas: [panel-cards.tsx](../../components/mantencion/jefatura/panel/panel-cards.tsx)
+  - `mant_work_orders`: [mantencion-work-orders.ts:40-93](../../db/schema/mantencion-work-orders.ts#L40-L93)
   - eventos de la OT: `mant_work_order_events` (:195-206)
   - `getWorkOrderGlobalMetrics` y `meanTimeToRepairHours`: `lib/services/mantencion/work-orders/metrics.ts:170, 217`
 - **Representación actual:** el panel ya tiene un gráfico semanal y `RankedList`, pero no muestra las OT abiertas, su antigüedad, el tiempo de ciclo ni el MTTR.
@@ -1120,7 +1120,7 @@ Se agrupan aquí porque cada una es pequeña y comparte el mismo criterio: **dat
 - **Módulo:** Mantención
 - **Pantalla:** Panel de jefatura, tarjeta «Próximas mantenciones»
 - **Ruta:** `/mantencion/panel`
-- **Archivos y líneas:** tabla `UpcomingCard` ([panel-cards.tsx:158](components/mantencion/jefatura/panel/panel-cards.tsx#L158)); `closeness()` ya normaliza ([panel.ts:195-198](lib/services/mantencion/panel.ts#L195-L198)).
+- **Archivos y líneas:** tabla `UpcomingCard` ([panel-cards.tsx:158](../../components/mantencion/jefatura/panel/panel-cards.tsx#L158)); `closeness()` ya normaliza ([panel.ts:195-198](../../lib/services/mantencion/panel.ts#L195-L198)).
 - **Representación actual:** una tabla expresada en lecturas restantes («faltan 1.200 km» o «faltan 40 h»).
 - **Problema:** no se pueden comparar un camión (km) y una grúa (horas). La urgencia relativa no se ve.
 - **Visualización recomendada:**
@@ -1144,8 +1144,8 @@ Se agrupan aquí porque cada una es pequeña y comparte el mismo criterio: **dat
 - **Módulo:** Flota › Monitoreo
 - **Ruta:** `/flota/monitoreo` (pestaña Historial)
 - **Archivos y líneas:**
-  - la pestaña «Historial» manda a la ficha de flota, que no tiene historial GPS: [fleet-gps-workspace.tsx:95](app/(app)/flota/monitoreo/fleet-gps-workspace.tsx#L95)
-  - `getFleetGpsHistory` **sin llamadores** (verificado por grep): [fleet-gps.ts:118](lib/services/fleet-gps.ts#L118)
+  - la pestaña «Historial» manda a la ficha de flota, que no tiene historial GPS: [fleet-gps-workspace.tsx:95](../../app/(app)/flota/monitoreo/fleet-gps-workspace.tsx#L95)
+  - `getFleetGpsHistory` **sin llamadores** (verificado por grep): [fleet-gps.ts:118](../../lib/services/fleet-gps.ts#L118)
 - **Representación actual:** mapa MapLibre de la última posición y una tabla.
 - **Problema:** el historial está consultado pero no tiene interfaz.
 - **Visualización recomendada:** recorrido diario como línea sobre el mapa existente y barras de km por día.
@@ -1154,7 +1154,7 @@ Se agrupan aquí porque cada una es pequeña y comparte el mismo criterio: **dat
 - **Disponibilidad de datos:** **Backend** (sólo la interfaz; el servicio existe). **Hoy, además, el sync OnWay está caído desde el 2026-10-30** según la memoria del proyecto, y eso debe resolverse primero.
 - **Filtros e interacciones:** equipo y día.
 - **Beneficio funcional:** reconstruir el uso de un equipo en un día dado.
-- **Requisitos técnicos:** capa GeoJSON en MapLibre. Hay que retirar los colores hex de [fleet-gps-map.tsx:43-45](app/(app)/flota/monitoreo/fleet-gps-map.tsx#L43-L45) y el estilo de teselas de desarrollo.
+- **Requisitos técnicos:** capa GeoJSON en MapLibre. Hay que retirar los colores hex de [fleet-gps-map.tsx:43-45](../../app/(app)/flota/monitoreo/fleet-gps-map.tsx#L43-L45) y el estilo de teselas de desarrollo.
 - **Riesgos de interpretación:** huecos de sincronización.
 - **Complejidad:** media.
 - **Puntuación:** 14 + 12 + 2[Ep] + 0[E] + 8 + 5 = **41** (revisada el 2026-11-03 con datos de producción; primera pasada: 51). En producción: 0 posiciones históricas; sync OnWay caído.
@@ -1171,14 +1171,14 @@ Se agrupan aquí porque cada una es pequeña y comparte el mismo criterio: **dat
 - **Ruta:** `/analitica`, `/seguimiento/[itemId]`, `/solicitudes/[id]`
 - **Archivos y líneas:**
   - **Fuentes de fecha:**
-    - `purchase_requests.submitted_at` ([requests.ts:33](db/schema/requests.ts#L33))
-    - `approval_decisions.decided_at` ([:176](db/schema/requests.ts#L176))
-    - `purchase_orders.issued_at` / `sent_at` ([purchasing.ts:28-30](db/schema/purchasing.ts#L28-L30)), unidas por `purchase_order_items.request_item_id` (:81)
-    - `receipts.received_at` ([receiving.ts:16](db/schema/receiving.ts#L16)), unidas por `receipt_items.purchase_order_item_id` (:67)
+    - `purchase_requests.submitted_at` ([requests.ts:33](../../db/schema/requests.ts#L33))
+    - `approval_decisions.decided_at` ([:176](../../db/schema/requests.ts#L176))
+    - `purchase_orders.issued_at` / `sent_at` ([purchasing.ts:28-30](../../db/schema/purchasing.ts#L28-L30)), unidas por `purchase_order_items.request_item_id` (:81)
+    - `receipts.received_at` ([receiving.ts:16](../../db/schema/receiving.ts#L16)), unidas por `receipt_items.purchase_order_item_id` (:67)
     - `deliveries.delivered_at` (:113), unidas por `delivery_items.request_item_id` (:155)
-    - alternativa: `status_history` ([audit.ts:45-53](db/schema/audit.ts#L45-L53))
+    - alternativa: `status_history` ([audit.ts:45-53](../../db/schema/audit.ts#L45-L53))
   - **Pantallas actuales:**
-    - el stepper sin fechas `RequestProgressPanel` ([request-progress-panel.tsx](components/states/request-progress-panel.tsx))
+    - el stepper sin fechas `RequestProgressPanel` ([request-progress-panel.tsx](../../components/states/request-progress-panel.tsx))
     - las 6 tablas de `/seguimiento/[itemId]`
 - **Representación actual:** un stepper sin duraciones y seis tablas separadas por ítem. **No existe ningún servicio de lead time** en `lib/services` (verificado).
 - **Problema:** la pregunta más frecuente de un área de abastecimiento («¿dónde se demora lo que pedí?») no tiene respuesta agregada. Por ítem, hay que reconstruirla leyendo seis tablas. La factura **no** forma parte de la traza (`TimelineEvent`, `types.ts:110-117`).
@@ -1212,7 +1212,7 @@ Se agrupan aquí porque cada una es pequeña y comparte el mismo criterio: **dat
 - **Módulo:** Adquisiciones › Aprobaciones
 - **Pantalla:** Aprobaciones
 - **Ruta:** `/aprobaciones`
-- **Archivos y líneas:** `ageDays` ya calculado ([aprobaciones/page.tsx:91](app/(app)/aprobaciones/page.tsx#L91)); la cola muestra sólo la fecha (`request-group.tsx:112-114`); permisos (:52-53).
+- **Archivos y líneas:** `ageDays` ya calculado ([aprobaciones/page.tsx:91](../../app/(app)/aprobaciones/page.tsx#L91)); la cola muestra sólo la fecha (`request-group.tsx:112-114`); permisos (:52-53).
 - **Representación actual:** una lista paginada agrupada por solicitud.
 - **Problema:** el aprobador no ve cuánto de lo suyo lleva más de una semana.
 - **Visualización recomendada:**
@@ -1237,8 +1237,8 @@ Se agrupan aquí porque cada una es pequeña y comparte el mismo criterio: **dat
 - **Módulo:** Adquisiciones › Seguimiento
 - **Ruta:** `/seguimiento`
 - **Archivos y líneas:**
-  - 4 `KpiCard` y un `MetricBar` de 3 ([consolidated-kpis.tsx:78-136](app/(app)/seguimiento/_components/consolidated-kpis.tsx#L78-L136));
-  - `computeAggregateKPIs` cuenta solicitudes con *alguna* línea en cada etapa, así que **las cifras no son excluyentes** ([trazabilidad-consolidated-builder.ts:393-440](lib/services/trazabilidad-consolidated-builder.ts#L393-L440));
+  - 4 `KpiCard` y un `MetricBar` de 3 ([consolidated-kpis.tsx:78-136](../../app/(app)/seguimiento/_components/consolidated-kpis.tsx#L78-L136));
+  - `computeAggregateKPIs` cuenta solicitudes con *alguna* línea en cada etapa, así que **las cifras no son excluyentes** ([trazabilidad-consolidated-builder.ts:393-440](../../lib/services/trazabilidad-consolidated-builder.ts#L393-L440));
   - «Esperando proveedor» cuenta OC, no solicitudes;
   - truncado a 2.000 ítems (`trazabilidad-consolidated-queries.ts:36`).
 - **Representación actual:** 7 cifras de una misma dimensión (la etapa), medidas en unidades distintas. Verificado en el navegador: 4 tiles y una tabla de 9 columnas.
@@ -1261,7 +1261,7 @@ Se agrupan aquí porque cada una es pequeña y comparte el mismo criterio: **dat
 - **Módulo:** Reportes
 - **Ruta:** `/reportes`
 - **Archivos y líneas:**
-  - tiles con `xl:grid-cols-5` para 4 tiles ([reportes/page.tsx:177-221](app/(app)/reportes/page.tsx#L177-L221));
+  - tiles con `xl:grid-cols-5` para 4 tiles ([reportes/page.tsx:177-221](../../app/(app)/reportes/page.tsx#L177-L221));
   - `pendingReceiptCount` mostrado 3 veces (l.141, 146 y 161; verificado);
   - «Recepciones» cuenta las anuladas (l.77-82);
   - una faena inactiva aparece como UUID (l.155);
@@ -1289,15 +1289,15 @@ Se agrupan aquí porque cada una es pequeña y comparte el mismo criterio: **dat
 - **Módulo:** Reportes › Analítica
 - **Ruta:** `/analitica`
 - **Archivos y líneas:**
-  - **Gráficos:** [analytics-charts.tsx](app/(app)/analitica/analytics-charts.tsx).
+  - **Gráficos:** [analytics-charts.tsx](../../app/(app)/analitica/analytics-charts.tsx).
     - Ninguno lleva `<Legend>`: la línea de 3 series sólo se distingue en el tooltip.
-    - Usan `Cell` de un color por barra, tomado de `CHART_SERIES` (l.63, 102), con hex ([chart-palette.ts:30-38](lib/chart-palette.ts#L30-L38)).
+    - Usan `Cell` de un color por barra, tomado de `CHART_SERIES` (l.63, 102), con hex ([chart-palette.ts:30-38](../../lib/chart-palette.ts#L30-L38)).
     - No tienen nombre accesible.
   - **Fechas:** se fecha por `createdAt` (`dashboard.ts:145, 161`), mientras el tablero Finanzas usa `issuedAt` (:53-63).
-  - **«Gasto total»:** no pasa `trendPolarity` y cae en `"up-good"` ([kpi-card.tsx:28](components/ui/kpi-card.tsx#L28)). **Verificado en el navegador:** una baja de 100 % del gasto aparece como chip rojo.
+  - **«Gasto total»:** no pasa `trendPolarity` y cae en `"up-good"` ([kpi-card.tsx:28](../../components/ui/kpi-card.tsx#L28)). **Verificado en el navegador:** una baja de 100 % del gasto aparece como chip rojo.
   - **Tile «Alertas»:** lleva a `/dashboard` (page.tsx:147).
 - **Representación actual:** 4 KPI, 4 gráficos (en `bodega_dev` se ven vacíos con `ChartEmpty`, que es correcto) y 4 tablas top-10.
-- **Problema:** **Con datos de producción** (captura [a-analitica.png](qa/reports/2026-11-03-visualizaciones/a-analitica.png)): con la ventana por defecto de 30 días la tendencia mensual es un solo punto; un alza de gasto de 133 % se pinta en verde; y combustible marca $0 porque el servicio lee `fuel_loads` (0 filas) y no las transacciones Copec (Anexo C, C-9 y C-10).
+- **Problema:** **Con datos de producción** (captura [a-analitica.png](../../qa/reports/2026-11-03-visualizaciones/a-analitica.png)): con la ventana por defecto de 30 días la tendencia mensual es un solo punto; un alza de gasto de 133 % se pinta en verde; y combustible marca $0 porque el servicio lee `fuel_loads` (0 filas) y no las transacciones Copec (Anexo C, C-9 y C-10).
   - el color no codifica nada;
   - las cifras de /analitica y de `/dashboard?vista=finanzas` divergen en el mismo período;
   - la semántica del delta está invertida.
@@ -1325,10 +1325,10 @@ Se agrupan aquí porque cada una es pequeña y comparte el mismo criterio: **dat
 - **Módulo:** Compras / Facturación
 - **Ruta:** `/compras/dte` y un panel en `/analitica`
 - **Archivos y líneas:**
-  - `purchase_orders.invoice_reconciliation_status` ([purchasing.ts:43](db/schema/purchasing.ts#L43)), con índice en l.74;
+  - `purchase_orders.invoice_reconciliation_status` ([purchasing.ts:43](../../db/schema/purchasing.ts#L43)), con índice en l.74;
   - `purchase_order_invoices.amount` / `document_kind` (:175-176);
-  - fórmula de monto por facturar ([invoice-reconciliation.ts:505](lib/services/purchasing-module/invoice-reconciliation.ts#L505));
-  - `dte_documents.periodo`, `monto_total`, `purchase_order_invoice_id`, `fuel_load_id` ([dte.ts:120-165](db/schema/dte.ts#L120-L165));
+  - fórmula de monto por facturar ([invoice-reconciliation.ts:505](../../lib/services/purchasing-module/invoice-reconciliation.ts#L505));
+  - `dte_documents.periodo`, `monto_total`, `purchase_order_invoice_id`, `fuel_load_id` ([dte.ts:120-165](../../db/schema/dte.ts#L120-L165));
   - tope de 300 filas (`compras/dte/page.tsx:23`).
 - **Representación actual:** el estado se ve OC por OC; los DTE se muestran en una tabla truncada.
 - **Problema:** no se sabe cuánto queda por facturar ni qué fracción de los DTE está sin vincular.
@@ -1358,10 +1358,10 @@ Se agrupan aquí porque cada una es pequeña y comparte el mismo criterio: **dat
 - **Pantalla:** Stock; Kardex
 - **Ruta:** `/bodega`
 - **Archivos y líneas:**
-  - hasta 2.000 filas sin paginar ([bodega/page.tsx:42](app/(app)/bodega/page.tsx#L42));
+  - hasta 2.000 filas sin paginar ([bodega/page.tsx:42](../../app/(app)/bodega/page.tsx#L42));
   - umbrales mínimos retirados el 2026-10-02 (`attention.ts:39-41`);
   - columna Saldo del kardex (`kardex-table.tsx:96`);
-  - `worksite_stock.quantity`, `inventory_movements.type`, `quantity`, `performed_at` ([stock.ts:14-54](db/schema/stock.ts#L14-L54)).
+  - `worksite_stock.quantity`, `inventory_movements.type`, `quantity`, `performed_at` ([stock.ts:14-54](../../db/schema/stock.ts#L14-L54)).
 - **Representación actual:** una tabla agrupada y el kardex paginado.
 - **Problema:** con los mínimos retirados, nada dice qué reponer. El kardex no muestra tendencia.
 - **Visualización recomendada:**
@@ -1387,8 +1387,8 @@ Se agrupan aquí porque cada una es pequeña y comparte el mismo criterio: **dat
 - **Módulo:** Facturación
 - **Ruta:** `/facturacion`
 - **Archivos y líneas:**
-  - tabla de antigüedad ([facturacion/page.tsx:139-165](app/(app)/facturacion/page.tsx#L139-L165));
-  - `summary.monthly` consultado y **no dibujado** ([billing/queries.ts:549, 767](lib/services/billing/queries.ts#L549); verificado: la página no lo referencia);
+  - tabla de antigüedad ([facturacion/page.tsx:139-165](../../app/(app)/facturacion/page.tsx#L139-L165));
+  - `summary.monthly` consultado y **no dibujado** ([billing/queries.ts:549, 767](../../lib/services/billing/queries.ts#L549); verificado: la página no lo referencia);
   - `toLocaleDateString` en l.118, que viola la regla de fechas (verificado);
   - `DebtAgingChart` y `BillingFlowChart` ya existen en `dashboard/charts/`.
 - **Representación actual:** 4 `MoneyStat` sin comparación, la tabla de antigüedad y listas de texto. Verificado en el navegador: 1 tabla de 5 filas y 75 cifras.
@@ -1414,7 +1414,7 @@ Se agrupan aquí porque cada una es pequeña y comparte el mismo criterio: **dat
 
 - **Módulo:** Bodega › Guías
 - **Ruta:** `/bodega/guias`
-- **Archivos y líneas:** `dispatch_guides.dispatched_at` → `received_at`, `destination_worksite_id` ([dispatch-guides.ts:26-44](db/schema/dispatch-guides.ts#L26-L44)).
+- **Archivos y líneas:** `dispatch_guides.dispatched_at` → `received_at`, `destination_worksite_id` ([dispatch-guides.ts:26-44](../../db/schema/dispatch-guides.ts#L26-L44)).
 - **Representación actual:** una tabla.
 - **Problema:** no se ve qué destino tarda en confirmar las guías.
 - **Visualización recomendada:** mediana y P90 de días por destino (`RankedList` con bigote), más la antigüedad de las guías despachadas sin confirmar.
@@ -1441,8 +1441,8 @@ Se agrupan aquí porque cada una es pequeña y comparte el mismo criterio: **dat
 - **Archivos y líneas:**
   - `getTicketsByMonth`, `getTicketsByCategory` y `getAssetsByAge` **existen y no tienen llamadores** (0 usos, verificado por grep; `lib/services/ti/queries.ts:187-225`);
   - `getTicketsByMonth` no aplica el filtro de «últimos 12 meses» que promete su comentario;
-  - `it_tickets.created_at`, `resolved_at`, `due_at`, `priority` ([ti.ts:214-233](db/schema/ti.ts#L214-L233));
-  - gráficos existentes ([ti-charts-inner.tsx:83, 121](app/(app)/ti/ti-charts-inner.tsx#L83-L121)), verificados en el navegador: 2 gráficos y 2 tablas.
+  - `it_tickets.created_at`, `resolved_at`, `due_at`, `priority` ([ti.ts:214-233](../../db/schema/ti.ts#L214-L233));
+  - gráficos existentes ([ti-charts-inner.tsx:83, 121](../../app/(app)/ti/ti-charts-inner.tsx#L83-L121)), verificados en el navegador: 2 gráficos y 2 tablas.
 - **Representación actual:** 4 KPI, equipos por faena y mantenciones por mes.
 - **Problema:** la mesa de ayuda no tiene tendencia ni medición de SLA; las consultas están escritas y no se usan.
 - **Visualización recomendada:** barras de tickets por mes con la línea de % de SLA cumplido en el eje derecho (A5b), y barras de antigüedad del parque por año de compra, con «sin fecha» aparte.
@@ -1462,7 +1462,7 @@ Se agrupan aquí porque cada una es pequeña y comparte el mismo criterio: **dat
 
 - **Módulo:** Admin
 - **Ruta:** `/admin/backups`, `/admin/notificaciones`
-- **Archivos y líneas:** `backup_log.started_at`, `completed_at`, `total_size_bytes` ([backups.ts:7-34](db/schema/backups.ts#L7-L34)); `notifications.type`, `created_at` ([audit.ts:146](db/schema/audit.ts#L146)).
+- **Archivos y líneas:** `backup_log.started_at`, `completed_at`, `total_size_bytes` ([backups.ts:7-34](../../db/schema/backups.ts#L7-L34)); `notifications.type`, `created_at` ([audit.ts:146](../../db/schema/audit.ts#L146)).
 - **Representación actual:** tablas.
 - **Problema:** las tendencias de tamaño, duración y volumen de correos sólo se pueden reconstruir leyendo filas.
 - **Visualización recomendada:** una línea de tamaño y duración de los respaldos, y barras de notificaciones por día y tipo.
@@ -1760,18 +1760,18 @@ Ordenadas por el puntaje de la primera pasada, que suponía datos. Conviene cons
 
 Las cifras y nombres dentro de los esquemas son **ilustrativos**, salvo cuando se citan de una captura. Los esquemas usan la estructura real del shell: `PageHeader` proyecta título y acciones al TopBar, `PageContainer` envuelve el contenido y las tarjetas flotan sobre el lienzo (regla 7), salvo en `/dashboard`.
 
-**Capturas de referencia.** Están anonimizadas en [qa/reports/2026-11-03-visualizaciones/](qa/reports/2026-11-03-visualizaciones/). **No se versionan**: el `.gitignore` excluye a propósito las imágenes de `qa/` y sólo guarda `.md`. Quedan en este checkout; para compartirlas hay que adjuntarlas o forzar su ingreso. Antes de cada captura, el script reemplazó en la página los nombres de usuarios, trabajadores y conductores por «Persona», los correos por «correo@ejemplo.cl» y los formatos de patente por «XXXX-00»; además ocultó los avatares. Se tomaron sobre `bodega_dev` (clon de producción más datos simulados del 2026-11-02): **mantención, higiene, incidentes, CAPA y las cargas de combustible que muestran son datos simulados** (en producción esas tablas están vacías; ver Anexo B), y el texto `QA_mock` que aparece en algunas los delata.
+**Capturas de referencia.** Están anonimizadas en [qa/reports/2026-11-03-visualizaciones/](../../qa/reports/2026-11-03-visualizaciones/). **No se versionan**: el `.gitignore` excluye a propósito las imágenes de `qa/` y sólo guarda `.md`. Quedan en este checkout; para compartirlas hay que adjuntarlas o forzar su ingreso. Antes de cada captura, el script reemplazó en la página los nombres de usuarios, trabajadores y conductores por «Persona», los correos por «correo@ejemplo.cl» y los formatos de patente por «XXXX-00»; además ocultó los avatares. Se tomaron sobre `bodega_dev` (clon de producción más datos simulados del 2026-11-02): **mantención, higiene, incidentes, CAPA y las cargas de combustible que muestran son datos simulados** (en producción esas tablas están vacías; ver Anexo B), y el texto `QA_mock` que aparece en algunas los delata.
 
 | Captura | Qué muestra |
 |---|---|
-| [h1-pdtp.png](qa/reports/2026-11-03-visualizaciones/h1-pdtp.png) | Estado actual de H.1 (PDTP): tiles de período mixto y gráficos sin meta |
-| [h2-capacitacion.png](qa/reports/2026-11-03-visualizaciones/h2-capacitacion.png) | Estado actual de H.2: el muro de tarjetas de capacitación |
-| [h3-indicadores.png](qa/reports/2026-11-03-visualizaciones/h3-indicadores.png) | Estado actual de H.3: indicadores DS 44 sólo en tabla |
-| [h4-mantencion-panel.png](qa/reports/2026-11-03-visualizaciones/h4-mantencion-panel.png) | Estado actual de H.4: panel de mantención, «Próximas mantenciones» en tabla |
-| [h5-aprobaciones.png](qa/reports/2026-11-03-visualizaciones/h5-aprobaciones.png) | Estado actual de H.5: cola de aprobaciones (vacía al momento del clon) |
-| [a-control-operacional.png](qa/reports/2026-11-03-visualizaciones/a-control-operacional.png) | Disponibilidad junto a su cobertura (riesgo de CHART-025) |
-| [a-analitica.png](qa/reports/2026-11-03-visualizaciones/a-analitica.png) | `/analitica` con datos: barras multicolor y rankings en tabla (CHART-033) |
-| [m-pdtp.png](qa/reports/2026-11-03-visualizaciones/m-pdtp.png), [m-mantencion-panel.png](qa/reports/2026-11-03-visualizaciones/m-mantencion-panel.png) | Móvil a 390 px: tiles a pantalla completa antes del primer gráfico |
+| [h1-pdtp.png](../../qa/reports/2026-11-03-visualizaciones/h1-pdtp.png) | Estado actual de H.1 (PDTP): tiles de período mixto y gráficos sin meta |
+| [h2-capacitacion.png](../../qa/reports/2026-11-03-visualizaciones/h2-capacitacion.png) | Estado actual de H.2: el muro de tarjetas de capacitación |
+| [h3-indicadores.png](../../qa/reports/2026-11-03-visualizaciones/h3-indicadores.png) | Estado actual de H.3: indicadores DS 44 sólo en tabla |
+| [h4-mantencion-panel.png](../../qa/reports/2026-11-03-visualizaciones/h4-mantencion-panel.png) | Estado actual de H.4: panel de mantención, «Próximas mantenciones» en tabla |
+| [h5-aprobaciones.png](../../qa/reports/2026-11-03-visualizaciones/h5-aprobaciones.png) | Estado actual de H.5: cola de aprobaciones (vacía al momento del clon) |
+| [a-control-operacional.png](../../qa/reports/2026-11-03-visualizaciones/a-control-operacional.png) | Disponibilidad junto a su cobertura (riesgo de CHART-025) |
+| [a-analitica.png](../../qa/reports/2026-11-03-visualizaciones/a-analitica.png) | `/analitica` con datos: barras multicolor y rankings en tabla (CHART-033) |
+| [m-pdtp.png](../../qa/reports/2026-11-03-visualizaciones/m-pdtp.png), [m-mantencion-panel.png](../../qa/reports/2026-11-03-visualizaciones/m-mantencion-panel.png) | Móvil a 390 px: tiles a pantalla completa antes del primer gráfico |
 
 ### H.1 CHART-004 — `/prevencion/pdtp`
 
@@ -1895,7 +1895,7 @@ Hoy (captura de 1440 px, después de migrar `bodega_dev`): la tarjeta muestra el
 
 ### H.6 CHART-007 — Matriz MIPER (`/prevencion/miper/[id]`, panel Resumen)
 
-Hoy, según el código ([resumen-panel.tsx:72-121](app/(app)/prevencion/miper/%5Bid%5D/resumen-panel.tsx#L72-L121)), el panel muestra la cifra «Importantes e intolerables» y barras de avance por actividad, pero ninguna distribución del riesgo.
+Hoy, según el código ([resumen-panel.tsx:72-121](../../app/(app)/prevencion/miper/%5Bid%5D/resumen-panel.tsx#L72-L121)), el panel muestra la cifra «Importantes e intolerables» y barras de avance por actividad, pero ninguna distribución del riesgo.
 
 Las cifras del esquema son **reales**: el total de las 3 matrices de producción al 2026-11-02, 540 riesgos.
 
@@ -1944,7 +1944,7 @@ En /seguimiento/[itemId] el mismo eje se dibuja como una sola fila con fechas po
 
 ### H.8 CHART-036 — Facturación (`/facturacion`)
 
-Hoy, según el código ([facturacion/page.tsx:125-175](app/(app)/facturacion/page.tsx#L125-L175)), la pantalla muestra 4 `MoneyStat` sin comparación, una tabla de antigüedad de la deuda y listas de texto.
+Hoy, según el código ([facturacion/page.tsx:125-175](../../app/(app)/facturacion/page.tsx#L125-L175)), la pantalla muestra 4 `MoneyStat` sin comparación, una tabla de antigüedad de la deuda y listas de texto.
 
 ```text
 ┌ TopBar ─ Facturación y cobranza ─────────────────────────────────── Moneda [CLP▾] Período ┐
@@ -2274,8 +2274,8 @@ Las afirmaciones que sostienen el Top 10 y la Fase 0 las verifiqué yo, además 
 - **Segundo recorrido**, con `bodega_dev` en 370/370: las 5 rutas cargan, igual que `/flota/[id]`, `/mantencion/equipos/[id]` y `/combustibles/consumo/equipos/[id]`, todas sin errores de consola. `/control-operacional` ya no muestra «1 de 4 fuentes no pudo cargarse».
 - **Errores de consola:** además de los 5 de entorno, se observó un error de hidratación en `/prevencion/pdtp/aprobaciones` (`pdtp-evidence-thumbs.tsx:112`, un `Tooltip` sobre un `span` con `tabIndex`). Es ajeno a la visualización y queda anotado para su propia investigación.
 - **Ruido conocido:** los avatares de `api.dicebear.com` fallan en el sandbox (sin internet).
-- **Recorrido de la revisión (2026-11-03):** sobre el clon de producción poblado, 198 rutas estáticas y 27 fichas. Hubo 1 corte por tiempo (`/flota/monitoreo`, C-11) y 3 errores de consola, todos de la CSP del mapa. El detalle por ruta está en [qa/reports/2026-11-03-revision-visualizaciones.md](qa/reports/2026-11-03-revision-visualizaciones.md).
-- **Resumen versionado:** las métricas por módulo están en la sección A. El resumen del recorrido está en [qa/reports/2026-11-02-recorrido-visualizaciones.md](qa/reports/2026-11-02-recorrido-visualizaciones.md).
+- **Recorrido de la revisión (2026-11-03):** sobre el clon de producción poblado, 198 rutas estáticas y 27 fichas. Hubo 1 corte por tiempo (`/flota/monitoreo`, C-11) y 3 errores de consola, todos de la CSP del mapa. El detalle por ruta está en [qa/reports/2026-11-03-revision-visualizaciones.md](../../qa/reports/2026-11-03-revision-visualizaciones.md).
+- **Resumen versionado:** las métricas por módulo están en la sección A. El resumen del recorrido está en [qa/reports/2026-11-02-recorrido-visualizaciones.md](../../qa/reports/2026-11-02-recorrido-visualizaciones.md).
 - **Capturas y JSON por ruta:** quedaron fuera del repositorio por los datos personales y operativos que contienen (ver la sección H).
 
 
@@ -2348,7 +2348,7 @@ Salieron al poblar y recorrer la plataforma con datos. No son propuestas de visu
 | C-7 | **Ningún riesgo MIPER tiene nivel residual registrado** (0 de 540). | `prevention_risk_entries.residual_level`. | Abierto. Fase 0b.6. |
 | C-8 | **Error de hidratación en `/prevencion/pdtp/aprobaciones`**: un `Tooltip` envuelve un `span` con `tabIndex` en `pdtp-evidence-thumbs.tsx:112`. | Log del servidor en el primer recorrido. | Abierto, sin investigar. |
 | C-9 | **`/analitica` muestra combustible en $0 en producción.** Calcula el gasto desde `fuel_loads` (`lib/services/analytics-module/dashboard.ts:143-175`), que tiene 0 filas, mientras las 5.671 transacciones Copec con monto viven en `fuel_provider_transactions`. | Anexo B y lectura del servicio. En el clon, analítica muestra «Combustible $0 · 0 cargas». | **Corregido** en `fix/fase0-cifras` (decisión del 2026-11-03). Analítica, el tablero (Flota y Finanzas) y `/flota` suman las transacciones Copec con la regla canónica compartida con la conciliación (`accountableProviderTransactionsWhere`), en base bruta. En el clon, octubre pasó de $0 a $116.076.702; sin la regla se habría contado $183.573.061. **Se mantienen a propósito sobre la serie facturada:** el panel de combustible («Facturado», junto a tarjetas y TAE) y `/control-operacional`, cuya columna ahora dice «Costo combustible facturado». Las lecturas de medidor de `/flota` («Km/Hr») salen de `fuel_meter_readings` (Copec), con el criterio de retrocesos y saltos del detector de anomalías; los totales de 12 meses avisan los meses sin datos del proveedor. |
-| C-10 | **La «Tendencia mensual de gasto» de `/analitica` es un solo punto** con la ventana por defecto (últimos 30 días); además, un aumento de gasto de 133 % se pinta en verde. | Captura [a-analitica.png](qa/reports/2026-11-03-visualizaciones/a-analitica.png). | **Corregido** en `fix/fase0-cifras`: la tendencia cubre los 12 meses que terminan en «hasta», marca el mes parcial y muestra como hueco los meses sin datos del proveedor (C-4). |
+| C-10 | **La «Tendencia mensual de gasto» de `/analitica` es un solo punto** con la ventana por defecto (últimos 30 días); además, un aumento de gasto de 133 % se pinta en verde. | Captura [a-analitica.png](../../qa/reports/2026-11-03-visualizaciones/a-analitica.png). | **Corregido** en `fix/fase0-cifras`: la tendencia cubre los 12 meses que terminan en «hasta», marca el mes parcial y muestra como hueco los meses sin datos del proveedor (C-4). |
 | C-11 | **El mapa de `/flota/monitoreo` no carga su estilo en desarrollo**: la CSP (`lib/security/csp.ts:54`, `connect-src 'self'`) bloquea `tiles.openfreemap.org`, el estilo por defecto fuera de producción (`fleet-gps-map.tsx:7`). La página no termina de cargar. | Error de consola en el recorrido de la revisión. | **Corregido el 2026-11-09.** En producción también fallaba: la CSP entregada no traía el origen del estilo, y además webpack fija `import.meta.url` en `file://`, así que MapLibre 6 no encontraba su worker (`defaultWorkerUrl()` devolvía `""`). Ahora la CSP abre el origen de `NEXT_PUBLIC_MAP_STYLE_URL` (`lib/maps/map-style.ts`), el worker se sirve desde `/vendor/maplibre/<versión>/` y el mapa avisa si no carga. Verificado en un build de producción local. |
 | C-12 | **El tile «Plazos atrasados» de incidentes siempre marcaba 0**, también en el tablero de inicio. En el `EXISTS` sobre las notificaciones, Drizzle emitía `"id"` sin calificar, y dentro de la subconsulta resolvía a la `id` de la propia notificación. | Prueba PGlite `prevention-incident-dashboard-counts.test.ts`. En el clon, el tile pasó de 0 a 1. | **Corregido** en `fix/fase0-cifras`, junto con 0.7 (los conteos usan el mismo `FROM` y filtros que la lista). |
 | C-13 | **La paginación de `/prevencion/capa` siempre mostraba la página 1**: el desplazamiento se calculaba con `resolvePagination({ totalItems: 0 })`, que recorta toda página a la primera. El mismo patrón está en `privacidad/solicitudes/page.tsx:29` y `emergencias/page.tsx:37`, sin verificar. | Prueba de la página. | **Corregido** en las tres pantallas (CAPA, privacidad/solicitudes y emergencias) dentro de `fix/fase0-cifras`. Se revisaron todos los demás puntos donde se usa `resolvePagination`: no había otro caso. |

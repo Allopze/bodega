@@ -4,7 +4,7 @@
 
 **Alcance:** las **81 actividades activas** de `pdtp-2026-v1`, verificadas contra el código y contra
 `bodega_dev`. Continúa [AUDITORIA_PDTP_ACREDITACION_2026-09-01.md](AUDITORIA_PDTP_ACREDITACION_2026-09-01.md)
-y las decisiones del [2026-09-02](PDTP_DECISIONES_TOMADAS_2026-09-02.md).
+y las decisiones del [2026-09-02](../prevencion/PDTP_DECISIONES_TOMADAS_2026-09-02.md).
 
 **Método:** dos preguntas por actividad, no una. *Ejecutar* = existe el acto en la plataforma (una plantilla
 vigente, un curso, un plan, un formulario). *Acreditar* = ese acto llega a `pdtp_executions` **y cuenta** en
@@ -21,7 +21,7 @@ exentas por su mecanismo.
 ## 1. El bloqueo que sigue en pie
 
 `pdtp-2026-v1` está en `draft`. `markPdtpExecution` rechaza toda ejecución
-([executions.ts:33](lib/services/pdtp/executions.ts#L33)) y `createPdtpObligation` exige programa activo. La
+([executions.ts:33](../../lib/services/pdtp/executions.ts#L33)) y `createPdtpObligation` exige programa activo. La
 base lo confirma: `pdtp_executions`, `pdtp_obligations` y `pdtp_fulfillment_events` en cero filas.
 
 Esto ya no pierde hechos —`recordPdtpFulfillmentEvent` los deja `pending` y `reconcilePdtpFulfillmentEvents`
@@ -32,8 +32,8 @@ los reprocesa—, pero sigue siendo el techo de todo lo demás. Es T05 y es una 
 ### A — Inspecciones: 13 actividades (N°10, 24, 25, 26, 27, 29, 33, 34, 39, 40, 41, 64, 65)
 
 Las plantillas que declaran el número de actividad están **todas en `draft`**, y sólo una plantilla `approved`
-puede programarse ([prevention-inspections.ts:650](lib/services/prevention-inspections.ts#L650)) o ejecutarse
-([:1066](lib/services/prevention-inspections.ts#L1066)). Es T09, el único paso que G1 dejó abierto, y parte en
+puede programarse ([prevention-inspections.ts:650](../../lib/services/prevention-inspections.ts#L650)) o ejecutarse
+([:1066](../../lib/services/prevention-inspections.ts#L1066)). Es T09, el único paso que G1 dejó abierto, y parte en
 dos el bloque:
 
 | Caso | Actividades | Qué pasa hoy |
@@ -43,7 +43,7 @@ dos el bloque:
 
 Ejemplo del primer caso: `inspeccion_extintores` v01 `approved` sin números convive con v02 `draft` con `[24]`.
 El mecanismo de reemplazo está bien construido —aprobar la nueva marca la anterior `superseded`
-([:483](lib/services/prevention-inspections.ts#L483))—; lo que falta es que alguien apruebe.
+([:483](../../lib/services/prevention-inspections.ts#L483))—; lo que falta es que alguien apruebe.
 
 De arrastre: `reporte_equipos` vigente es la v01 con `executor_of_record = 'platform_user'`. La corrección de
 la D04 viaja en la v02, que está en borrador, así que **el candado de independencia sigue impidiendo que el JT
@@ -53,14 +53,14 @@ firme** el report de uso diario.
 
 `prevention_emergency_plans` está en **cero filas**. La N°83 acredita al aprobar el plan con número fijo en el
 conector; la N°84 acredita al completar un simulacro y toma los números **del plan**
-([prevention-emergency.ts:700](lib/services/prevention-emergency.ts#L700)). Sin un plan cargado no hay ni acto
+([prevention-emergency.ts:700](../../lib/services/prevention-emergency.ts#L700)). Sin un plan cargado no hay ni acto
 ni número. Redactar el plan es trabajo de Prevención, no de la plataforma.
 
 ### C — Documentación SST: N°36 y N°43
 
 `sst_document_types` está en **cero filas**. `onDocumentVersionPublished` y `onDocumentAcknowledged` reciben
 los números que declara el **tipo** del documento
-([pdtp-accreditation-connectors.ts:396](lib/services/pdtp-adapters/pdtp-accreditation-connectors.ts#L396)), y
+([pdtp-accreditation-connectors.ts:396](../../lib/services/pdtp-adapters/pdtp-accreditation-connectors.ts#L396)), y
 con el arreglo vacío son no-op explícito. Publicar un procedimiento o registrar un acuse hoy no acredita nada,
 y el catálogo que habría que llenar todavía no tiene ni una fila.
 
@@ -74,7 +74,7 @@ de la compuerta: no aparecen en ninguno.
 
 - **N°16** (prueba de evaluación IRL). El comentario del conector de trabajador nuevo dice que su fuente es
   `prevention_training_attendance.assessment_score`
-  ([worker-onboarding-connector.ts:32](lib/services/pdtp-adapters/worker-onboarding-connector.ts#L32)), pero
+  ([worker-onboarding-connector.ts:32](../../lib/services/pdtp-adapters/worker-onboarding-connector.ts#L32)), pero
   ese cable **no se escribió**: el módulo de capacitación calcula la nota y no llama al motor por ella.
 - **N°17** (RE-28, personas especialmente sensibles). La D06 decidió expresamente que **no** se acredita desde
   el acta de trabajador nuevo, y el formulario propio que la reemplazaría no existe.
@@ -88,9 +88,9 @@ faena** — exactamente el patrón que el hallazgo H11 corrigió para la N°24 y
 ### E — Las `on_demand` que nadie obliga: N°11, 15, 16, 52, 57
 
 `closed_on_time` mide **obligaciones**: cuántas vencieron el mes y cuántas se cerraron a tiempo
-([compliance.ts:63](lib/services/pdtp/compliance.ts#L63)). Sin obligación, `casesDue = 0` y la actividad se
+([compliance.ts:63](../../lib/services/pdtp/compliance.ts#L63)). Sin obligación, `casesDue = 0` y la actividad se
 salta con el comentario *"no es un 0 %, es nada que medir"*
-([compliance.ts:298](lib/services/pdtp/compliance.ts#L298)).
+([compliance.ts:298](../../lib/services/pdtp/compliance.ts#L298)).
 
 El único generador automático de obligaciones es el conector de incidentes, que cubre las N°66–78. Las otras
 cinco `on_demand` dependen de que alguien las cree a mano en `/prevencion/pdtp/obligaciones`. La consecuencia
@@ -104,7 +104,7 @@ las hace exigibles.
 
 ## 4. Dos defectos de la compuerta
 
-La compuerta ([fulfillment.ts:337](lib/services/pdtp/fulfillment.ts#L337) en adelante) es la que debería
+La compuerta ([fulfillment.ts:337](../../lib/services/pdtp/fulfillment.ts#L337) en adelante) es la que debería
 haber detectado los grupos B, C y D. No lo hace por dos razones distintas:
 
 1. **Tres números están en la lista blanca equivocada.** `STRUCTURALLY_WIRED_ACTIVITY_NUMBERS` es, por su
@@ -115,7 +115,7 @@ haber detectado los grupos B, C y D. No lo hace por dos razones distintas:
    dos tablas vacías. La N°83 sí pertenece a la lista (número fijo en el conector).
 2. **`compuesta` está exenta de la verificación de enganche.** El chequeo de "su número está declarado en
    alguna plantilla, curso, campaña, plan o tipo de documento" corre sólo si `mechanism === 'enganche'`
-   ([fulfillment.ts:302](lib/services/pdtp/fulfillment.ts#L302)). La exención está razonada para el permiso
+   ([fulfillment.ts:302](../../lib/services/pdtp/fulfillment.ts#L302)). La exención está razonada para el permiso
    —*"nadie la ejecuta"*—, pero se arrastró al cableado, y es lo que deja pasar a la N°16 y la N°17: una
    `compuesta` sin ningún componente que la acredite no se cumple sola, no se cumple nunca.
 

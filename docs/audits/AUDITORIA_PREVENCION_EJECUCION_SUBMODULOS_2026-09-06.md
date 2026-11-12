@@ -80,10 +80,10 @@ defectos de código de la §3 son pocos pero dos de ellos dejan cumplimientos fa
 ### 3.1 · N°62 nunca acredita: el conector está cableado a un servicio sin llamador
 
 `onEppDeliveryCompleted` se llama desde
-[deliveries-worker-epp.ts:241](lib/services/deliveries-worker-epp.ts#L241) dentro de `registerWorkerEppDelivery`.
+[deliveries-worker-epp.ts:241](../../lib/services/deliveries-worker-epp.ts#L241) dentro de `registerWorkerEppDelivery`.
 Esa función **no tiene ningún llamador de producción**: sólo la re-exporta
-[deliveries.ts:12](lib/services/deliveries.ts#L12) y la usan tests. El flujo real de `/entregas`
-([entregas/actions.ts:60](app/(app)/entregas/actions.ts#L60)) llama a `registerWorkerStockDelivery`, y
+[deliveries.ts:12](../../lib/services/deliveries.ts#L12) y la usan tests. El flujo real de `/entregas`
+([entregas/actions.ts:60](../../app/(app)/entregas/actions.ts#L60)) llama a `registerWorkerStockDelivery`, y
 `lib/services/deliveries-worker-stock.ts` no tiene una sola referencia al PDTP. Tampoco `prevention-epp.ts`.
 
 El comentario del propio archivo dice que el conector "nunca tuvo llamador" y que ahora lo tiene: la corrección se
@@ -98,8 +98,8 @@ lo que no hace.
 ### 3.2 · `/pendientes` y Constancias muestran deudas anteriores a la activación que nadie puede pagar
 
 La cola operacional toma `MIN(month)` con `month <= mes actual` desde enero
-([operational-work-queue.ts:812-828](lib/services/operational-work-queue.ts#L812-L828)) y
-`listPdtpConstanciaActivities` hace lo mismo ([constancias.ts:92-101](lib/services/pdtp/constancias.ts#L92-L101)).
+([operational-work-queue.ts:812-828](../../lib/services/operational-work-queue.ts#L812-L828)) y
+`listPdtpConstanciaActivities` hace lo mismo ([constancias.ts:92-101](../../lib/services/pdtp/constancias.ts#L92-L101)).
 Ninguna de las dos aplica `filterPdtpRowsFromActivation`. La planilla, el reporte de gestión, el indicador y los
 recordatorios sí lo aplican.
 
@@ -114,7 +114,7 @@ fantasma el día uno.
 ### 3.3 · La N°1 se acredita antes de que exista programa activo, y nadie reconcilia
 
 `onPdtpProgramLegallyApproved` se dispara al aprobar el paso `legal`
-([approval-flow.ts:319](lib/services/pdtp/approval-flow.ts#L319)), cuando el programa está `in_review`. El motor
+([approval-flow.ts:319](../../lib/services/pdtp/approval-flow.ts#L319)), cuando el programa está `in_review`. El motor
 lanza `PdtpNoActiveProgramError` y `recordPdtpFulfillmentEvent` deja el evento en `error`. Es recuperable, pero:
 
 - `reconcilePdtpFulfillmentEvents` tiene **un solo llamador**: el script manual
@@ -132,7 +132,7 @@ semanal; exponer conteo de `pending`/`error` en el tablero del programa o en el 
 
 `fulfillment-contract-2026.ts` marca la N°9 con `sinDestino(...)` y `permission: null`, así que la compuerta no
 verifica permiso. Pero el acto que la acredita es `closeManagementReview`
-([prevention-cphs.ts:885](lib/services/prevention-cphs.ts#L885)), que exige `prevention:governance:review`, y ese
+([prevention-cphs.ts:885](../../lib/services/prevention-cphs.ts#L885)), que exige `prevention:governance:review`, y ese
 permiso lo tienen sólo `administrador` y `jefa_chome`. Los responsables declarados son `gerente_legal_rrhh`, `jdpr` y
 `prf`: ninguno puede cerrarla. El preflight reporta 76/5/0 porque esta actividad está exenta por contrato.
 
@@ -155,14 +155,14 @@ Indicadores. **No** se revierte, aunque el servicio tiene la operación inversa:
 | 57 | `onCompetencyObtained` | `revokeCompetency` (la obligación se reabre sólo en el barrido siguiente) |
 | 15, 17, 18, 19, 23, 52, 63 | conectores de acta | `deleteEvaluation` existe, contradiciendo la premisa "acta inmutable por DS 44" con que se justificó no tener reversión |
 
-Además: `invalidateClosedIndicatorPeriod` ([prevention-indicadores.ts:845](lib/services/prevention-indicadores.ts#L845))
-y `resolveWorkerEntryActor` ([worker-lifecycle-connector.ts:133](lib/services/pdtp-adapters/worker-lifecycle-connector.ts#L133))
+Además: `invalidateClosedIndicatorPeriod` ([prevention-indicadores.ts:845](../../lib/services/prevention-indicadores.ts#L845))
+y `resolveWorkerEntryActor` ([worker-lifecycle-connector.ts:133](../../lib/services/pdtp-adapters/worker-lifecycle-connector.ts#L133))
 están exportados y no tienen ningún llamador.
 
 ### 3.6 · Una constancia se puede enviar sin la evidencia mínima que declara
 
 `pdtpExecutionSchema` deja `evidenceText`, `evidenceUrl` y `evidencePhotos` opcionales
-([pdtp.ts:22-32](lib/validation/prevention-module/pdtp.ts#L22-L32)) y `markPdtpExecution` no consulta
+([pdtp.ts:22-32](../../lib/validation/prevention-module/pdtp.ts#L22-L32)) y `markPdtpExecution` no consulta
 `evidenceRequirement`. Las 9 constancias declaran evidencia mínima y la compuerta lo exige para enviar el programa a
 revisión, pero al ejecutar la constancia esa exigencia es sólo un texto en la tarjeta. La única red es el aprobador.
 El CTA de `/pendientes` tampoco preselecciona actividad ni período en Constancias (sólo `faena`), aunque el plan lo
@@ -207,7 +207,7 @@ Los 13 cursos que declaran número (`PDTP-16`, `PDTP-37`, `PDTP-38`, `PDTP-51`, 
 no puede publicar un curso.
 
 El preflight lista `coursesWithoutPublishedVersion` pero **no lo incluye en `ok`**
-([preflight-pdtp-accreditation-wiring.ts:172-175](scripts/preflight-pdtp-accreditation-wiring.ts#L172-L175)).
+([preflight-pdtp-accreditation-wiring.ts:172-175](../../scripts/preflight-pdtp-accreditation-wiring.ts#L172-L175)).
 Con las plantillas aprobadas, el diagnóstico diría "todo bien" con 13 actividades de capacitación imposibles de ejecutar.
 
 Detalle para la N°16: si la versión de `PDTP-16` se crea con `assessmentType: "none"`, todos los asistentes cuentan

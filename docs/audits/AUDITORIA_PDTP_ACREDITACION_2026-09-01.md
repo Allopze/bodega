@@ -10,7 +10,7 @@
 
 ## 1. Resumen ejecutivo
 
-El formulario de registro (`PdtpExecutionForm`) se dibuja en **todas** las filas de la planilla sin mirar el mecanismo de la actividad: sólo exige el permiso `prevention:pdtp:execute` y una faena seleccionada ([pdtp-sheet-table.tsx:285](<app/(app)/prevencion/pdtp/pdtp-sheet-table.tsx#L285>) y [:447](<app/(app)/prevencion/pdtp/pdtp-sheet-table.tsx#L447>)). No existe ninguna actividad que la plataforma impida marcar, ni por mecanismo ni por modo de programación: las 22 `on_demand` aparecen en la planilla igual que las 65 `scheduled`, y además tienen su propia vía por obligaciones.
+El formulario de registro (`PdtpExecutionForm`) se dibuja en **todas** las filas de la planilla sin mirar el mecanismo de la actividad: sólo exige el permiso `prevention:pdtp:execute` y una faena seleccionada ([pdtp-sheet-table.tsx:285](<../../app/(app)/prevencion/pdtp/pdtp-sheet-table.tsx#L285>) y [:447](<../../app/(app)/prevencion/pdtp/pdtp-sheet-table.tsx#L447>)). No existe ninguna actividad que la plataforma impida marcar, ni por mecanismo ni por modo de programación: las 22 `on_demand` aparecen en la planilla igual que las 65 `scheduled`, y además tienen su propia vía por obligaciones.
 
 La pregunta útil, entonces, no es si se puede marcar sino **cuántas se cierran sin intervención manual**. Ese es el eje de esta auditoría.
 
@@ -32,8 +32,8 @@ La pregunta útil, entonces, no es si se puede marcar sino **cuántas se cierran
 Se recorrió el catálogo desde tres fuentes independientes y se cruzaron:
 
 1. **La base** (`bodega_dev`): `pdtp_activities`, `pdtp_activity_schedule`, `pdtp_activity_checklists`, `prevention_inspection_templates`, `prevention_training_courses`, `prevention_campaigns`, `prevention_emergency_plans`.
-2. **El código**: el motor [lib/services/pdtp/accreditation.ts](lib/services/pdtp/accreditation.ts), los conectores de [lib/services/pdtp-adapters/](lib/services/pdtp-adapters/) y, sobre todo, **qué servicios de dominio los llaman de verdad**.
-3. **La clasificación de diseño**: [scripts/apply-pdtp-2026-mechanisms.ts](scripts/apply-pdtp-2026-mechanisms.ts) y el documento [2026-08-12-pdtp-actividades-accionables-design.md](docs/superpowers/specs/2026-08-12-pdtp-actividades-accionables-design.md).
+2. **El código**: el motor [lib/services/pdtp/accreditation.ts](../../lib/services/pdtp/accreditation.ts), los conectores de [lib/services/pdtp-adapters/](../../lib/services/pdtp-adapters/) y, sobre todo, **qué servicios de dominio los llaman de verdad**.
+3. **La clasificación de diseño**: [scripts/apply-pdtp-2026-mechanisms.ts](../../scripts/apply-pdtp-2026-mechanisms.ts) y el documento [2026-08-12-pdtp-actividades-accionables-design.md](../../docs/superpowers/specs/2026-08-12-pdtp-actividades-accionables-design.md).
 
 El criterio decisivo fue el tercero cruzado con el segundo: **una actividad clasificada `enganche` cuyo módulo no importa el motor no tiene mecanismo**, por más que el diseño lo dé por resuelto.
 
@@ -43,14 +43,14 @@ Lista completa, obtenida de los importadores del motor:
 
 | Servicio | Actividades | Origen del número |
 |---|---|---|
-| [pdtp/approval-flow.ts](lib/services/pdtp/approval-flow.ts) | N°1 | fijo en el conector |
-| [prevention-cphs.ts](lib/services/prevention-cphs.ts) | N°9, N°11 | fijo en el conector |
-| [prevention-incidents.ts](lib/services/prevention-incidents.ts) | N°66–78 | fijo en el conector |
-| [deliveries-worker-epp.ts](lib/services/deliveries-worker-epp.ts) | N°62 | fijo en el conector |
-| [prevention-inspections.ts](lib/services/prevention-inspections.ts) | 12 posibles | `prevention_inspection_templates.pdtp_activity_numbers` |
-| [prevention-training.ts](lib/services/prevention-training.ts) | 12 posibles | `prevention_training_courses.pdtp_activity_numbers` |
-| [prevention-campaigns.ts](lib/services/prevention-campaigns.ts) | 5 posibles | `prevention_campaigns.pdtp_activity_numbers` |
-| [prevention-emergency.ts](lib/services/prevention-emergency.ts) | N°84 | `prevention_emergency_plans.pdtp_activity_numbers` |
+| [pdtp/approval-flow.ts](../../lib/services/pdtp/approval-flow.ts) | N°1 | fijo en el conector |
+| [prevention-cphs.ts](../../lib/services/prevention-cphs.ts) | N°9, N°11 | fijo en el conector |
+| [prevention-incidents.ts](../../lib/services/prevention-incidents.ts) | N°66–78 | fijo en el conector |
+| [deliveries-worker-epp.ts](../../lib/services/deliveries-worker-epp.ts) | N°62 | fijo en el conector |
+| [prevention-inspections.ts](../../lib/services/prevention-inspections.ts) | 12 posibles | `prevention_inspection_templates.pdtp_activity_numbers` |
+| [prevention-training.ts](../../lib/services/prevention-training.ts) | 12 posibles | `prevention_training_courses.pdtp_activity_numbers` |
+| [prevention-campaigns.ts](../../lib/services/prevention-campaigns.ts) | 5 posibles | `prevention_campaigns.pdtp_activity_numbers` |
+| [prevention-emergency.ts](../../lib/services/prevention-emergency.ts) | N°84 | `prevention_emergency_plans.pdtp_activity_numbers` |
 
 Ningún otro servicio llama al motor. En particular **no acreditan** MIPER, Higiene, Vigilancia, Documentación SST, Indicadores, PPA ni Evaluaciones SST.
 
@@ -58,7 +58,7 @@ Ningún otro servicio llama al motor. En particular **no acreditan** MIPER, Higi
 
 ### 3.1 El programa está en borrador — bloquea las 87
 
-`markPdtpExecution` rechaza toda ejecución mientras `pdtp_programs.status` no sea `active` ([executions.ts:34](<lib/services/pdtp/executions.ts#L34>)), y `pdtp-2026-v1` sigue en `draft`. Hoy no se puede registrar cumplimiento de ninguna actividad, automática o manual. La base lo confirma: `pdtp_executions` y `pdtp_obligations` están en cero filas.
+`markPdtpExecution` rechaza toda ejecución mientras `pdtp_programs.status` no sea `active` ([executions.ts:34](<../../lib/services/pdtp/executions.ts#L34>)), y `pdtp-2026-v1` sigue en `draft`. Hoy no se puede registrar cumplimiento de ninguna actividad, automática o manual. La base lo confirma: `pdtp_executions` y `pdtp_obligations` están en cero filas.
 
 Al activarlo hay un efecto conocido y documentado: cada responsable recibe de golpe todo lo vencido del año. Medido en Cholguán con el programa actual, son 46 actividades vencidas para el PRF, 13 para el administrador de contrato, 11 para el jefe de terreno, 10 para el supervisor y 3 para el jefe de mantención. **Hay que decidir si se arranca desde enero o desde el mes en curso** antes de activar.
 
@@ -70,36 +70,36 @@ Las 87 tienen `mechanism = 'sin_definir'`. La clasificación de los siete bloque
 
 ### H1 — El bloque de incidentes ya está terminado (corrige el diseño)
 
-El documento de diseño marca las N°66–78 como "PROPUESTO" y dice que "falta construir el conector: son 13 llamadas". **Ya están.** [prevention-incidents.ts:28-38](lib/services/prevention-incidents.ts#L28-L38) importa las diez funciones de [incident-accreditation-connector.ts](lib/services/pdtp-adapters/incident-accreditation-connector.ts) y las llama en los diez puntos de cierre. Las trece actividades del flujo de accidentes se acreditan solas.
+El documento de diseño marca las N°66–78 como "PROPUESTO" y dice que "falta construir el conector: son 13 llamadas". **Ya están.** [prevention-incidents.ts:28-38](../../lib/services/prevention-incidents.ts#L28-L38) importa las diez funciones de [incident-accreditation-connector.ts](../../lib/services/pdtp-adapters/incident-accreditation-connector.ts) y las llama en los diez puntos de cierre. Las trece actividades del flujo de accidentes se acreditan solas.
 
 ### H2 — La UI de campañas fija el número en `[85]`
 
-[campanas-client.tsx:100](<app/(app)/prevencion/campanas/campanas-client.tsx#L100>) envía `pdtpActivityNumbers: [85]` literal al crear una campaña, y no existe ningún editor posterior del campo. **Las N°86 a N°89 no se pueden declarar desde la aplicación**: toda campaña creada por la UI acredita la N°85 y sólo la N°85. El servicio y la acción sí aceptan el arreglo completo; el que no lo ofrece es el diálogo de creación.
+[campanas-client.tsx:100](<../../app/(app)/prevencion/campanas/campanas-client.tsx#L100>) envía `pdtpActivityNumbers: [85]` literal al crear una campaña, y no existe ningún editor posterior del campo. **Las N°86 a N°89 no se pueden declarar desde la aplicación**: toda campaña creada por la UI acredita la N°85 y sólo la N°85. El servicio y la acción sí aceptan el arreglo completo; el que no lo ofrece es el diálogo de creación.
 
 ### H3 — El script de mecanismos quedó desfasado en dos actividades
 
 `apply-pdtp-2026-mechanisms.ts` clasifica:
 
-- **N°25 y N°26** como `formulario` ("pendientes de decisión A7"). Ya no lo son: la decisión del 2026-08-23 las enganchó a la plantilla `reporte_equipos`, que las declara juntas en [inspection-templates-2026.ts:89](lib/services/pdtp-adapters/inspection-templates-2026.ts#L89).
+- **N°25 y N°26** como `formulario` ("pendientes de decisión A7"). Ya no lo son: la decisión del 2026-08-23 las enganchó a la plantilla `reporte_equipos`, que las declara juntas en [inspection-templates-2026.ts:89](../../lib/services/pdtp-adapters/inspection-templates-2026.ts#L89).
 - **N°28** como `enganche`. Jefatura la dejó **manual** el 2026-08-21, y `PDTP_2026_INSPECTION_SPECS` la excluye con un comentario explícito.
 
 Correr el script tal como está congelaría dos clasificaciones equivocadas.
 
 ### H4 — La N°83 tiene número pero no tiene disparador
 
-`apply-pdtp-2026-mechanisms.ts` clasifica la N°83 ("Plan emergencia por cada amenaza") como `enganche` junto con la N°84. Pero el único punto que acredita en el módulo es `completeEmergencyDrill` → `onEmergencyDrillCompleted` ([prevention-emergency.ts:699](<lib/services/prevention-emergency.ts#L699>)), que lee los números **del plan** y se dispara **al completar un simulacro**. Publicar el plan de emergencia no acredita nada. Si se declara la N°83 en el plan, se acreditará recién cuando alguien corra un simulacro, que es otra cosa —y es justamente la N°84—.
+`apply-pdtp-2026-mechanisms.ts` clasifica la N°83 ("Plan emergencia por cada amenaza") como `enganche` junto con la N°84. Pero el único punto que acredita en el módulo es `completeEmergencyDrill` → `onEmergencyDrillCompleted` ([prevention-emergency.ts:699](<../../lib/services/prevention-emergency.ts#L699>)), que lee los números **del plan** y se dispara **al completar un simulacro**. Publicar el plan de emergencia no acredita nada. Si se declara la N°83 en el plan, se acreditará recién cuando alguien corra un simulacro, que es otra cosa —y es justamente la N°84—.
 
 ### H5 — El cálculo de cobertura está implementado y ninguna actividad lo usa
 
-El diseño lo lista como trabajo pendiente ("construir el cálculo de cobertura"). En realidad [compliance.ts:120-200](lib/services/pdtp/compliance.ts#L120-L200) ya resuelve el modo `coverage` completo, con padrón por faena desde `pdtp_activity_worksite_params` y caída a la dotación activa de `workers` cuando no hay parámetro cargado. Lo que falta es **dato**: las 87 están en `planned_vs_completed` (65) o `closed_on_time` (22), ninguna en `coverage`. Y hay UI para cambiarlo ([guided-activity-form.tsx](<app/(app)/prevencion/pdtp/[programId]/editar/guided-activity-form.tsx>), [worksite-adjustments-panel.tsx](<app/(app)/prevencion/pdtp/aplicabilidad/pdtp-aplicabilidad-client.tsx>)).
+El diseño lo lista como trabajo pendiente ("construir el cálculo de cobertura"). En realidad [compliance.ts:120-200](../../lib/services/pdtp/compliance.ts#L120-L200) ya resuelve el modo `coverage` completo, con padrón por faena desde `pdtp_activity_worksite_params` y caída a la dotación activa de `workers` cuando no hay parámetro cargado. Lo que falta es **dato**: las 87 están en `planned_vs_completed` (65) o `closed_on_time` (22), ninguna en `coverage`. Y hay UI para cambiarlo ([guided-activity-form.tsx](<../../app/(app)/prevencion/pdtp/[programId]/editar/guided-activity-form.tsx>), [worksite-adjustments-panel.tsx](<../../app/(app)/prevencion/pdtp/aplicabilidad/pdtp-aplicabilidad-client.tsx>)).
 
 ### H6 — Las plantillas de inspección están instaladas a medias
 
-De las doce actividades que dependen del motor de inspecciones, **sólo `inspeccion_taller` (N°27) declara su número** en `prevention_inspection_templates.pdtp_activity_numbers`. Las otras once dejan `onInspectionCompleted` en no-op: la inspección se completa y el PDTP no se entera. Las definiciones de checklist sí existen todas en [lib/sst/definitions/](lib/sst/definitions/), incluidas las nuevas `inspeccion_area` y `caminata_seguridad`. Falta correr el instalador.
+De las doce actividades que dependen del motor de inspecciones, **sólo `inspeccion_taller` (N°27) declara su número** en `prevention_inspection_templates.pdtp_activity_numbers`. Las otras once dejan `onInspectionCompleted` en no-op: la inspección se completa y el PDTP no se entera. Las definiciones de checklist sí existen todas en [lib/sst/definitions/](../../lib/sst/definitions/), incluidas las nuevas `inspeccion_area` y `caminata_seguridad`. Falta correr el instalador.
 
 ### H7 — Ningún curso de capacitación declara su actividad
 
-`prevention_training_courses` tiene el campo y la UI lo expone ([training-catalog.tsx:327](<app/(app)/prevencion/capacitacion/catalogo/training-catalog.tsx#L327>), con placeholder `"54, 56"`), pero el único curso cargado —B-01, Manejo a la defensiva— trae `[]`. Doce actividades del programa dependen de este dato.
+`prevention_training_courses` tiene el campo y la UI lo expone ([training-catalog.tsx:327](<../../app/(app)/prevencion/capacitacion/catalogo/training-catalog.tsx#L327>), con placeholder `"54, 56"`), pero el único curso cargado —B-01, Manejo a la defensiva— trae `[]`. Doce actividades del programa dependen de este dato.
 
 ### H8 — Cinco `sourceType` faltantes sostienen 14 enganches prometidos
 
@@ -160,7 +160,7 @@ Tres subgrupos merecen mirada aparte: el **alcotest** (N°30, 31, 32) y el **CGR
 ## 6. Plan de remediación
 
 El detalle operativo, dividido en grupos con checklist para avanzar de a poco, está en
-[tasks/TODO_PDTP_ACREDITACION_2026-09-01.md](tasks/TODO_PDTP_ACREDITACION_2026-09-01.md).
+[tasks/TODO_PDTP_ACREDITACION_2026-09-01.md](../../tasks/TODO_PDTP_ACREDITACION_2026-09-01.md).
 
 Resumen de la secuencia:
 
@@ -237,7 +237,7 @@ N°15, 73 y 76.
 Estas decisiones estaban escritas en `scripts/apply-pdtp-2026-catalog-decisions.ts` desde el 2026-08-12 y nunca
 habían corrido contra la base —el documento de diseño las daba por aplicadas—. Para que no vuelva a pasar,
 **el script ahora corre en cada deploy de producción** como el paso `apply-pdtp-catalog-decisions` de
-[deploy-prod.sh](scripts/deploy-prod.sh), con `PDTP_DECISIONS_DEPLOY_MODE=true` para no abortar el despliegue
+[deploy-prod.sh](../../scripts/deploy-prod.sh), con `PDTP_DECISIONS_DEPLOY_MODE=true` para no abortar el despliegue
 cuando el programa del año todavía no existe o ya está firmado.
 
 De la N°21 sigue pendiente la decisión de la jefa: es la única de ese grupo que el script no toma por su
@@ -250,10 +250,10 @@ entran en el digest.
 ## 7. Referencias
 
 - Documento navegable con las 87 fichas: <https://claude.ai/code/artifact/0a1bce2d-c1ad-4691-9c08-24034131c26e>
-- Motor: [lib/services/pdtp/accreditation.ts](lib/services/pdtp/accreditation.ts)
-- Conectores: [lib/services/pdtp-adapters/](lib/services/pdtp-adapters/)
-- Clasificación: [scripts/apply-pdtp-2026-mechanisms.ts](scripts/apply-pdtp-2026-mechanisms.ts)
-- Diseño previo: [docs/superpowers/specs/2026-08-12-pdtp-actividades-accionables-design.md](docs/superpowers/specs/2026-08-12-pdtp-actividades-accionables-design.md)
-- Catálogo notariado del XLSX: [db/seed/pdtp-catalog-2026.json](db/seed/pdtp-catalog-2026.json)
+- Motor: [lib/services/pdtp/accreditation.ts](../../lib/services/pdtp/accreditation.ts)
+- Conectores: [lib/services/pdtp-adapters/](../../lib/services/pdtp-adapters/)
+- Clasificación: [scripts/apply-pdtp-2026-mechanisms.ts](../../scripts/apply-pdtp-2026-mechanisms.ts)
+- Diseño previo: [docs/superpowers/specs/2026-08-12-pdtp-actividades-accionables-design.md](../../docs/superpowers/specs/2026-08-12-pdtp-actividades-accionables-design.md)
+- Catálogo notariado del XLSX: [db/seed/pdtp-catalog-2026.json](../../db/seed/pdtp-catalog-2026.json)
 
 Los conteos de filas por módulo salen de `bodega_dev` y no representan producción.

@@ -1,6 +1,6 @@
 # Plan de mejora UI/UX del módulo TI — 5 de octubre de 2026
 
-Implementa los 63 hallazgos de [qa/reports/2026-10-05-ti-uiux-audit.md](qa/reports/2026-10-05-ti-uiux-audit.md) (IDs `TIUX-NN`). Rama `fix/ti-uiux-audit`, base `8553b7e4`.
+Implementa los 63 hallazgos de [qa/reports/2026-10-05-ti-uiux-audit.md](../../qa/reports/2026-10-05-ti-uiux-audit.md) (IDs `TIUX-NN`). Rama `fix/ti-uiux-audit`, base `8553b7e4`.
 
 **Decisiones del usuario (2026-10-05):** integridad primero · alcance completo · tablero y accesos rediseñados alrededor de "qué atender hoy" · los datos `QA_` sembrados se conservan en `bodega_dev`.
 
@@ -156,7 +156,7 @@ Implementa los 63 hallazgos de [qa/reports/2026-10-05-ti-uiux-audit.md](qa/repor
 - [x] `npm run db:verify-migrations` (351 entradas, checksums OK) · `db:generate` sin cambios · `0350_thin_shape` aplicada en `bodega_dev`
 - [x] E2E completa (829 pruebas) en worktree desechable: 823 ✓. La regresión de PDTP (nombre del `Select`) se corrigió y reverificó; la falla de MIPER es preexistente en `main`. `ti-modulo.spec.ts` actualizado con títulos nuevos y 2 regresiones, que pasan.
 - [x] Recorrido en navegador: 19 vistas × 2 tamaños, 0 errores de consola, 0 requests fallidos, **0 violaciones axe**, sin desborde; reproducción del P0 **rechazada**. Corregidos en esta fase: tabla del inventario a 1440 px, `pointer-events: none` tras abrir una hoja desde un menú, y foco que no volvía al menú.
-- [x] Informe [`qa/reports/2026-10-05-ti-uiux-implementacion.md`](qa/reports/2026-10-05-ti-uiux-implementacion.md) (copiado en `latest.md`)
+- [x] Informe [`qa/reports/2026-10-05-ti-uiux-implementacion.md`](../../qa/reports/2026-10-05-ti-uiux-implementacion.md) (copiado en `latest.md`)
 
 ## Seguimiento (decisiones del usuario, 2026-10-05)
 

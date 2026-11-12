@@ -3,7 +3,7 @@
 **Fecha:** 2 de septiembre de 2026
 
 **Alcance:** las 22 decisiones que quedaron abiertas tras la auditoría de mecanismos de acreditación
-([AUDITORIA_PDTP_ACREDITACION_2026-09-01.md](AUDITORIA_PDTP_ACREDITACION_2026-09-01.md)) y el trabajo posterior
+([AUDITORIA_PDTP_ACREDITACION_2026-09-01.md](../audits/AUDITORIA_PDTP_ACREDITACION_2026-09-01.md)) y el trabajo posterior
 sobre el padrón de cobertura.
 
 **Estado:** las 22 resueltas. Cinco crean trabajo nuevo que no estaba en ningún plan; dos cambiaron de forma
@@ -52,7 +52,7 @@ hizo el operador, no el jefe de terreno**. El JT sólo transcribe un formulario 
 de quien lo ejecutó, así que no hay conflicto de independencia en que lo firme.
 
 Eso convierte la decisión en trabajo de código, no en un asunto de comunicación. Hoy
-[prevention-inspections.ts:1527](lib/services/prevention-inspections.ts#L1527) graba
+[prevention-inspections.ts:1527](../../lib/services/prevention-inspections.ts#L1527) graba
 `executedByUserId = access.userId` —el usuario de plataforma que completa el run— y el guard de revisión
 impide que ese mismo usuario firme. Con la plantilla `reporte_equipos` eso bloquea al JT aunque no haya
 ejecutado el acto inspeccionado.
@@ -72,7 +72,7 @@ Es coherente con la D04 y con el diseño del propio formulario, que tiene `opera
 obligatorio precisamente porque esas personas no tienen cuenta.
 
 **Consecuencia a resolver:** la cola de trabajo por responsable
-([operational-work-queue.ts](lib/services/operational-work-queue.ts)) deriva el dueño de cada actividad desde
+([operational-work-queue.ts](../../lib/services/operational-work-queue.ts)) deriva el dueño de cada actividad desde
 `pdtp_responsible_catalog` hacia un rol RBAC. Un responsable sin rol no genera trabajo para nadie, así que la
 N°25 quedaría invisible en `/pendientes`. Hay que decidir si la cola la asigna al JT —que es quien opera— o si
 la N°25 se declara deliberadamente sin cola, y dejarlo escrito para que no se lea como un bug.
@@ -135,7 +135,7 @@ sobreejecutada compensaba a otra que quedó en cero, y un mes podía marcar 100 
 
 ## 5. Referencias
 
-- Registro navegable de las 22 decisiones y su resolución: [PDTP_DECISIONES_TOMADAS_2026-09-02.html](PDTP_DECISIONES_TOMADAS_2026-09-02.html)
-- Registro de las 87 actividades: [PDTP_REGISTRO_ACTIVIDADES_2026-09-01.html](PDTP_REGISTRO_ACTIVIDADES_2026-09-01.html)
-- Auditoría de origen: [AUDITORIA_PDTP_ACREDITACION_2026-09-01.md](AUDITORIA_PDTP_ACREDITACION_2026-09-01.md)
-- Plan de trabajo por grupos: [tasks/TODO_PDTP_ACREDITACION_2026-09-01.md](tasks/TODO_PDTP_ACREDITACION_2026-09-01.md)
+- Registro navegable de las 22 decisiones y su resolución: [PDTP_DECISIONES_TOMADAS_2026-09-02.html](../../PDTP_DECISIONES_TOMADAS_2026-09-02.html)
+- Registro de las 87 actividades: [PDTP_REGISTRO_ACTIVIDADES_2026-09-01.html](../../PDTP_REGISTRO_ACTIVIDADES_2026-09-01.html)
+- Auditoría de origen: [AUDITORIA_PDTP_ACREDITACION_2026-09-01.md](../audits/AUDITORIA_PDTP_ACREDITACION_2026-09-01.md)
+- Plan de trabajo por grupos: [tasks/TODO_PDTP_ACREDITACION_2026-09-01.md](../../tasks/TODO_PDTP_ACREDITACION_2026-09-01.md)
