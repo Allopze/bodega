@@ -2,7 +2,7 @@ import type { ReactNode } from "react"
 import Link from "next/link"
 import { DetailItem } from "@/components/ui/detail-item"
 import { formatReading, recordKindText, remainingText, unitName } from "@/lib/mantencion/format"
-import { formatDate } from "@/lib/utils"
+import { formatDate, todayInChile } from "@/lib/utils"
 import { SectionCard } from "../shared/section-card"
 import { EquipmentStateBadge } from "../shared/equipment-state-badge"
 import type { EquipmentDetailData } from "./equipment-detail-types"
@@ -63,6 +63,41 @@ export function EquipmentStatusCard({ data }: { data: EquipmentDetailData }) {
           value={last ? <ValueOnDate value={recordKindText("P", last.intervalValue, unit)} date={last.date} /> : null}
         />
       </dl>
+      {data.gpsStatus ? (
+        <div className="mt-4 border-t border-[var(--color-border)] pt-3">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <p className="text-eyebrow">Estimación GPS</p>
+            <EquipmentStateBadge state={data.gpsStatus.state} workshop={null} />
+            {data.gpsReadingAt ? (
+              <span className="text-xs text-[var(--color-text-subtle)]">Lectura del {formatDate(todayInChile(data.gpsReadingAt))}</span>
+            ) : null}
+          </div>
+          <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
+            <DetailItem
+              layout="stacked"
+              mono
+              label="Última lectura GPS"
+              value={data.gpsStatus.currentReading
+                ? <NoBreak>{formatReading(data.gpsStatus.currentReading.value, unit)}</NoBreak>
+                : null}
+            />
+            <DetailItem
+              layout="stacked"
+              mono
+              label="Próxima lectura estimada"
+              value={data.gpsStatus.nextReading != null ? <NoBreak>{formatReading(data.gpsStatus.nextReading, unit)}</NoBreak> : null}
+            />
+            <DetailItem
+              layout="stacked"
+              label="Diferencia estimada"
+              value={data.gpsStatus.remaining != null ? remainingText(data.gpsStatus, unit) : null}
+            />
+          </dl>
+          <p className="mt-2 text-xs text-[var(--color-text-subtle)]">
+            No reemplaza la lectura registrada: es una referencia para programar la mantención.
+          </p>
+        </div>
+      ) : null}
     </SectionCard>
   )
 }

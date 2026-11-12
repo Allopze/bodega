@@ -7,7 +7,11 @@
  * lo importan el servidor y las pruebas.
  */
 
-/** Config JSON de una regla de anomalía (`fuel_anomaly_rules.config`); `{}` si falta o no es JSON. */
+import { todayInChile } from "@/lib/utils"
+
+/**
+ * Config JSON de una regla de anomalía (`fuel_anomaly_rules.config`); `{}` si falta o no es JSON.
+ */
 export const configOf = (rule: { config: string | null }): Record<string, unknown> => {
   try { return rule.config ? JSON.parse(rule.config) : {} } catch { return {} }
 }
@@ -61,6 +65,29 @@ export interface MeterSeriesPoint {
   occurredAt: string
   /** Un caso de medidor regresivo sobre ESTA lectura se cerró como `reset_medidor`: el medidor se reemplazó o reinició aquí. */
   acceptedReset?: boolean
+}
+
+/**
+ * ¿La serie cubre el período para dividir un gasto del mismo período? No basta
+ * con tener dos puntos: una serie que empezó ayer divide un gasto de 12 meses y
+ * publica un costo inflado. Se exige que el primer y el último punto caigan
+ * dentro de una tolerancia proporcional al largo de la ventana (mínimo 7 días).
+ */
+export function meterSeriesCoversPeriod(
+  points: readonly MeterSeriesPoint[],
+  from: string,
+  to: string,
+  options: { minToleranceDays?: number; ratio?: number } = {},
+): boolean {
+  if (points.length < 2) return false
+  const pointDay = (value: string): string =>
+    /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : todayInChile(value)
+  const first = points[0]?.occurredAt ? pointDay(points[0].occurredAt) : ""
+  const last = points.at(-1)?.occurredAt ? pointDay(points.at(-1)!.occurredAt) : ""
+  if (!first || !last || first < from || last > to) return false
+  const windowDays = elapsedDays(from, to)
+  const tolerance = Math.max(options.minToleranceDays ?? 7, Math.ceil(windowDays * (options.ratio ?? 0.05)))
+  return elapsedDays(from, first) <= tolerance && elapsedDays(last, to) <= tolerance
 }
 
 export interface MeterSeriesAdvance {

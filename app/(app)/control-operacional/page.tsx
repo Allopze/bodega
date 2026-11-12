@@ -42,6 +42,7 @@ import {
 } from "./attention-tiles"
 import { OperationalAssetsTable } from "./operational-assets-table"
 import { OperationalExportButton } from "./operational-export-button"
+import { GpsCrossChecks } from "./gps-cross-checks"
 import { buildPerformanceGlossary, buildPerformanceStats } from "./performance-stats"
 
 export const metadata: Metadata = { title: "Panel operacional" }
@@ -80,6 +81,7 @@ export default async function OperationalControlPage({
   if (!canViewOperationalControl(session)) redirect("/forbidden")
 
   const sp = await searchParams
+  const revision = sp.revision === "medidor-gps" ? "medidor-gps" : undefined
   // Un rango invertido (desde > hasta) rompe `resolveOperationalControlPeriod`.
   // No se cae a la página de error ni se redirige en silencio: se muestra el
   // período por defecto y se avisa por qué, para que quien lo escribió sepa que
@@ -139,13 +141,16 @@ export default async function OperationalControlPage({
   // rótulo de «Desempeño del período».
   const headerDescription = "Qué requiere atención hoy en flota y combustible, y el desempeño de los activos en el período elegido."
 
-  const { canViewFleet, canViewInspections, canViewCapa, canViewCosts, canViewServiceEquipment, canViewWorkOrders, canViewPurchaseCosts } = data.permissions
+  const { canViewFleet, canViewInspections, canViewCapa, canViewCosts, canViewServiceEquipment, canViewWorkOrders, canViewPurchaseCosts, canViewMaintenance } = data.permissions
   // Secciones que pueden degradarse: documentos, ajustes de flota y GPS (sólo
   // con flota), OT (con su capacidad), combustible y compras vinculadas (con
   // `purchasing:view`). El denominador se deriva de las secciones realmente
   // consultadas; antes era un 4 fijo.
-  const degradedTotal = (canViewFleet ? 3 : 0) + (canViewWorkOrders ? 1 : 0) + (canViewFuel ? 1 : 0) + (canViewPurchaseCosts ? 1 : 0)
+  const degradedTotal = (canViewFleet ? 5 + (canViewMaintenance ? 1 : 0) : 0) + (canViewWorkOrders ? 1 : 0) + (canViewFuel ? 1 : 0) + (canViewPurchaseCosts ? 1 : 0)
   const operationalAssets = data.assets.filter((asset) => asset.kind === "vehicle")
+  const visibleAssets = revision === "medidor-gps"
+    ? operationalAssets.filter((asset) => asset.meterMismatch)
+    : operationalAssets
   const fleetSize = operationalAssets.length
   const stateMismatchAssets = operationalAssets.filter((asset) => asset.stateMismatch)
   const serviceEquipmentCount = data.assets.filter((asset) => asset.kind === "service_equipment").length
@@ -174,6 +179,7 @@ export default async function OperationalControlPage({
     canViewPurchaseCosts,
     canViewLicenses,
     canViewTaeCoverage: canViewTae,
+    canViewMaintenance,
   })
 
   return (
@@ -245,6 +251,21 @@ export default async function OperationalControlPage({
         </div>
       )}
 
+      {revision === "medidor-gps" && (
+        <div className="mb-4">
+          <Callout tone="warning">
+            Mostrando {visibleAssets.length === 1 ? "1 equipo" : `${visibleAssets.length} equipos`} con discrepancia
+            entre la última carga y la lectura GPS del mismo medidor.{" "}
+            <Link
+              href={`/control-operacional?desde=${period.from}&hasta=${period.to}`}
+              className="underline underline-offset-4"
+            >
+              Quitar filtro
+            </Link>.
+          </Callout>
+        </div>
+      )}
+
       <section aria-labelledby="desempeno-periodo" className="mb-4 space-y-3">
         <div>
           <h2 id="desempeno-periodo" className="text-eyebrow">Desempeño del período</h2>
@@ -283,6 +304,21 @@ export default async function OperationalControlPage({
         )}
       </section>
 
+      {canViewFleet && (
+        <GpsCrossChecks
+          data={data.gpsCross}
+          period={period}
+          canViewFuel={canViewFuel}
+          canViewMaintenance={canViewMaintenance}
+          canViewPurchaseCosts={canViewPurchaseCosts}
+          canViewCosts={canViewCosts}
+          canViewWorkOrders={canViewWorkOrders}
+          canViewCapa={canViewCapa}
+          canViewInspections={canViewInspections}
+          degradedSources={data.degradedSources}
+        />
+      )}
+
       {/* `grid-cols-1` (= `minmax(0, 1fr)`) bajo xl: con la pista `auto` la
           tabla de activos —que desplaza dentro de su `TableRoot`— ensanchaba
           la columna 296 px fuera del pozo a 768 y 1024 px. */}
@@ -293,7 +329,7 @@ export default async function OperationalControlPage({
           </CardHeader>
           <CardContent>
             <OperationalAssetsTable
-              assets={operationalAssets}
+              assets={visibleAssets}
               canViewCosts={canViewCosts}
               canViewInspections={canViewInspections}
               canViewCapa={canViewCapa}
@@ -301,6 +337,7 @@ export default async function OperationalControlPage({
               canViewFleet={canViewFleet}
               canViewWorkOrders={canViewWorkOrders}
               canViewPurchaseCosts={canViewPurchaseCosts}
+              canViewMaintenance={canViewMaintenance}
             />
             {canViewServiceEquipment && serviceEquipmentCount > 0 && (
               <p className="mt-3 text-xs text-[var(--color-text-muted)]">

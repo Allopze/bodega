@@ -1,9 +1,16 @@
 import type { Session } from "next-auth"
-import { and, desc, eq, gte, isNull, lte } from "drizzle-orm"
+import { and, desc, eq, gte, isNull, lte, or, sql } from "drizzle-orm"
 import { db } from "@/db"
-import { fleetGpsAlerts, fleetGpsDriverMappings, fleetGpsLatestPositions, fleetGpsPositionHistory, fleetGpsSyncRuns, fleetGpsTrips, fuelVehicles, workers, worksites } from "@/db/schema"
+import { fleetGpsAlerts, fleetGpsDeviceLinks, fleetGpsDriverMappings, fleetGpsLatestPositions, fleetGpsPositionHistory, fleetGpsSyncRuns, fleetGpsTrips, fuelVehicles, workers, worksites } from "@/db/schema"
 import { can, canAccessWorksite } from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"
+import { mergeLatestGpsByVehicle, type LatestGpsRow } from "@/lib/integrations/fleet-gps/merge-latest"
+
+export interface FleetGpsSource {
+  provider: string
+  observedAt: string
+  gpsReportedAt: string | null
+}
 
 export interface FleetGpsPosition {
   id: string
@@ -18,6 +25,7 @@ export interface FleetGpsPosition {
   speedKph: number
   headingDegrees: number
   ignition: boolean
+  ignitionKnown: boolean
   sourceStatus: string | null
   gpsReportedAt: string | null
   gprsReportedAt: string | null
@@ -25,13 +33,35 @@ export interface FleetGpsPosition {
   gprsStatus: string | null
   movementState: string | null
   odometer: number | null
+  odometerAt: string | null
   hourMeter: number | null
+  hourMeterAt: string | null
+  /** Proveedor del que salieron odómetro y horómetro. */
+  meterProvider: string | null
+  fuelLevel: number | null
+  fuelLevelAt: string | null
   driverName: string | null
   gpsIsStale: boolean
   observedAt: string
+  provider: string
+  providers: string[]
+  primaryProvider: string
+  sources: FleetGpsSource[]
 }
 
-/** Compares an OnWay timestamp with the freshness threshold as instants, not text. */
+export interface FleetGpsProviderRun {
+  provider: string
+  id: string
+  status: string
+  startedAt: string
+  finishedAt: string | null
+  errorCode: string | null
+  devicesReceived: number
+  devicesAccepted: number
+  devicesUnmatched: number
+}
+
+/** Compares a GPS timestamp with the freshness threshold as instants, not text. */
 export function isGpsCaptureStale(latestCapture: string | null, staleBefore: string): boolean {
   if (!latestCapture) return false
   const capture = Date.parse(latestCapture)
@@ -39,10 +69,13 @@ export function isGpsCaptureStale(latestCapture: string | null, staleBefore: str
   return Number.isFinite(capture) && Number.isFinite(threshold) && capture < threshold
 }
 
-export async function getFleetGpsMonitoring(session: Session) {
-  const staleBefore = new Date(Date.now() - 15 * 60_000).toISOString()
-  const rawPositions = await db.select({
+type RawPositionRow = Awaited<ReturnType<typeof loadRawPositions>>[number]
+
+async function loadRawPositions(session: Session) {
+  return db.select({
     id: fleetGpsLatestPositions.id,
+    provider: fleetGpsLatestPositions.provider,
+    externalDeviceId: fleetGpsLatestPositions.externalDeviceId,
     vehicleId: fuelVehicles.id,
     plate: fuelVehicles.plate,
     code: fuelVehicles.code,
@@ -62,6 +95,8 @@ export async function getFleetGpsMonitoring(session: Session) {
     movementState: fleetGpsLatestPositions.movementState,
     odometer: fleetGpsLatestPositions.odometer,
     hourMeter: fleetGpsLatestPositions.hourMeter,
+    fuelLevel: fleetGpsLatestPositions.fuelLevel,
+    driverMappingId: fleetGpsLatestPositions.driverMappingId,
     driverFirstName: workers.firstName,
     driverLastName: workers.lastName,
     driverWorksiteId: workers.worksiteId,
@@ -73,36 +108,139 @@ export async function getFleetGpsMonitoring(session: Session) {
     .leftJoin(workers, eq(workers.id, fleetGpsDriverMappings.workerId))
     .where(worksiteScopeSql(session, fleetGpsLatestPositions.worksiteId))
     .orderBy(fuelVehicles.plate)
+}
+
+function toMergeRow(row: RawPositionRow): LatestGpsRow {
+  return {
+    id: row.id,
+    provider: row.provider,
+    externalDeviceId: row.externalDeviceId,
+    vehicleId: row.vehicleId,
+    worksiteId: null,
+    sourcePlate: row.plate,
+    normalizedPlate: row.plate,
+    latitude: row.latitude,
+    longitude: row.longitude,
+    speedKph: row.speedKph,
+    headingDegrees: row.headingDegrees,
+    ignition: row.ignition,
+    sourceStatus: row.sourceStatus,
+    gpsReportedAt: row.gpsReportedAt,
+    gprsReportedAt: row.gprsReportedAt,
+    gpsStatus: row.gpsStatus,
+    gprsStatus: row.gprsStatus,
+    movementState: row.movementState,
+    odometer: row.odometer,
+    hourMeter: row.hourMeter,
+    internalBatteryLevel: null,
+    externalPowerVolts: null,
+    engineRpm: null,
+    coolantTemperature: null,
+    fuelLevel: row.fuelLevel,
+    temperature1: null,
+    humidity1: null,
+    driverMappingId: row.driverMappingId,
+    observedAt: row.observedAt,
+  }
+}
+
+export async function getFleetGpsMonitoring(session: Session) {
+  const staleBefore = new Date(Date.now() - 15 * 60_000).toISOString()
+  const rawPositions = await loadRawPositions(session)
+
+  const vehicleInfo = new Map<string, Pick<RawPositionRow, "plate" | "code" | "brand" | "model" | "worksiteName">>()
+  const driverByMappingId = new Map<string, Pick<RawPositionRow, "driverFirstName" | "driverLastName" | "driverWorksiteId">>()
+  const providerLatestAt: Record<"onway" | "wialon", string | null> = { onway: null, wialon: null }
+  for (const row of rawPositions) {
+    if (!vehicleInfo.has(row.vehicleId)) {
+      vehicleInfo.set(row.vehicleId, {
+        plate: row.plate,
+        code: row.code,
+        brand: row.brand,
+        model: row.model,
+        worksiteName: row.worksiteName,
+      })
+    }
+    if (row.driverMappingId) {
+      driverByMappingId.set(row.driverMappingId, {
+        driverFirstName: row.driverFirstName,
+        driverLastName: row.driverLastName,
+        driverWorksiteId: row.driverWorksiteId,
+      })
+    }
+    if (row.provider === "onway" || row.provider === "wialon") {
+      const at = row.gpsReportedAt ?? row.observedAt
+      if (!providerLatestAt[row.provider] || at > providerLatestAt[row.provider]!) {
+        providerLatestAt[row.provider] = at
+      }
+    }
+  }
 
   const canViewDriver = can(session, "flota:view_gps_driver")
-  const positions: FleetGpsPosition[] = rawPositions.map(({ driverFirstName, driverLastName, driverWorksiteId, ...position }) => ({
-    ...position,
-    driverName: canViewDriver && driverWorksiteId && canAccessWorksite(session, driverWorksiteId)
-      ? `${driverFirstName ?? ""} ${driverLastName ?? ""}`.trim() || null
-      : null,
-    gpsIsStale: isGpsCaptureStale(position.gpsReportedAt, staleBefore),
-  }))
+  const merged = mergeLatestGpsByVehicle(rawPositions.map(toMergeRow), { staleMinutes: 15 })
+  const positions: FleetGpsPosition[] = merged.flatMap((position) => {
+    const info = vehicleInfo.get(position.vehicleId)
+    if (!info) return []
+    const driver = position.driverMappingId ? driverByMappingId.get(position.driverMappingId) : undefined
+    const driverName = canViewDriver && driver?.driverWorksiteId && canAccessWorksite(session, driver.driverWorksiteId)
+      ? `${driver.driverFirstName ?? ""} ${driver.driverLastName ?? ""}`.trim() || null
+      : null
+    return [{
+      ...position,
+      ...info,
+      driverName,
+      gpsIsStale: position.gpsIsStale || isGpsCaptureStale(position.gpsReportedAt, staleBefore),
+    }]
+  })
 
   const canManage = can(session, "flota:manage_gps")
-  const [latestRun, unmatched] = canManage
-    ? await Promise.all([
-        db.query.fleetGpsSyncRuns.findFirst({ orderBy: [desc(fleetGpsSyncRuns.startedAt)] }),
-        db.$count(fleetGpsLatestPositions, isNull(fleetGpsLatestPositions.vehicleId)),
-      ])
-    : [null, null]
+  let providerRuns: Record<"onway" | "wialon", FleetGpsProviderRun | null> = { onway: null, wialon: null }
+  let unmatchedByProvider: Record<"onway" | "wialon", number | null> = { onway: null, wialon: null }
+
+  if (canManage) {
+    const [onwayRun, wialonRun, onwayUnmatched, wialonUnmatched] = await Promise.all([
+      db.query.fleetGpsSyncRuns.findFirst({
+        where: eq(fleetGpsSyncRuns.provider, "onway"),
+        orderBy: [desc(fleetGpsSyncRuns.startedAt)],
+      }),
+      db.query.fleetGpsSyncRuns.findFirst({
+        where: eq(fleetGpsSyncRuns.provider, "wialon"),
+        orderBy: [desc(fleetGpsSyncRuns.startedAt)],
+      }),
+      db.$count(fleetGpsLatestPositions, and(
+        eq(fleetGpsLatestPositions.provider, "onway"),
+        isNull(fleetGpsLatestPositions.vehicleId),
+      )),
+      db.$count(fleetGpsLatestPositions, and(
+        eq(fleetGpsLatestPositions.provider, "wialon"),
+        isNull(fleetGpsLatestPositions.vehicleId),
+      )),
+    ])
+
+    providerRuns = { onway: onwayRun ?? null, wialon: wialonRun ?? null }
+    unmatchedByProvider = { onway: onwayUnmatched, wialon: wialonUnmatched }
+  }
+
+  const unmatched = canManage
+    ? (unmatchedByProvider.onway ?? 0) + (unmatchedByProvider.wialon ?? 0)
+    : null
 
   return {
     positions,
     canManage,
-    latestRun,
+    latestRun: providerRuns.onway,
+    providerRuns,
+    /** Última captura real de cada proveedor: una caída no se tapa con la otra. */
+    providerLatestAt,
     unmatched,
+    unmatchedByProvider,
     staleBefore,
   }
 }
 
 export async function getFleetGpsAlerts(session: Session, limit = 200) {
   const rows = await db.select({
-    id: fleetGpsAlerts.id, vehicleId: fleetGpsAlerts.vehicleId, plate: fuelVehicles.plate,
+    id: fleetGpsAlerts.id, provider: fleetGpsAlerts.provider, vehicleId: fleetGpsAlerts.vehicleId, plate: fuelVehicles.plate,
     worksiteName: worksites.name, alertType: fleetGpsAlerts.alertType, title: fleetGpsAlerts.title,
     priority: fleetGpsAlerts.priority, occurredAt: fleetGpsAlerts.occurredAt,
     processingStatus: fleetGpsAlerts.processingStatus, linkedEntityType: fleetGpsAlerts.linkedEntityType,
@@ -128,4 +266,77 @@ export async function getFleetGpsHistory(session: Session, vehicleId: string, fr
     db.select().from(fleetGpsTrips).where(and(worksiteScopeSql(session, fleetGpsTrips.worksiteId), eq(fleetGpsTrips.vehicleId, vehicleId), gte(fleetGpsTrips.startedAt, start.toISOString()), lte(fleetGpsTrips.startedAt, end.toISOString()))).orderBy(desc(fleetGpsTrips.startedAt)).limit(2_000),
   ])
   return { points, trips }
+}
+
+export interface WialonLinkableUnit {
+  unitId: string
+  unitName: string
+  observedAt: string
+  gpsReportedAt: string | null
+  vehicleId: string | null
+  plate: string | null
+  code: string | null
+  worksiteName: string | null
+  manualLinkId: string | null
+}
+
+export interface LinkableVehicle {
+  id: string
+  plate: string
+  code: string | null
+  worksiteName: string
+}
+
+/**
+ * Unidades Wialon con su vínculo actual, para la pantalla de configuración.
+ * Sólo `flota:manage_gps`; las unidades sin vehículo no tienen faena, así que
+ * se listan globalmente para que una persona las resuelva.
+ */
+export async function listWialonUnitsForLinking(session: Session, limit = 200): Promise<WialonLinkableUnit[]> {
+  if (!can(session, "flota:manage_gps")) return []
+  const scope = worksiteScopeSql(session, fuelVehicles.worksiteId)
+  return db.select({
+    unitId: fleetGpsLatestPositions.externalDeviceId,
+    unitName: fleetGpsLatestPositions.sourcePlate,
+    observedAt: fleetGpsLatestPositions.observedAt,
+    gpsReportedAt: fleetGpsLatestPositions.gpsReportedAt,
+    vehicleId: fleetGpsLatestPositions.vehicleId,
+    plate: fuelVehicles.plate,
+    code: fuelVehicles.code,
+    worksiteName: worksites.name,
+    manualLinkId: fleetGpsDeviceLinks.id,
+  }).from(fleetGpsLatestPositions)
+    .leftJoin(fleetGpsDeviceLinks, and(
+      eq(fleetGpsDeviceLinks.provider, "wialon"),
+      eq(fleetGpsDeviceLinks.externalDeviceId, fleetGpsLatestPositions.externalDeviceId),
+    ))
+    .leftJoin(fuelVehicles, eq(fuelVehicles.id, fleetGpsLatestPositions.vehicleId))
+    .leftJoin(worksites, eq(worksites.id, fuelVehicles.worksiteId))
+    .where(and(
+      eq(fleetGpsLatestPositions.provider, "wialon"),
+      // Una unidad vinculada a un equipo de otra faena no se puede reasignar
+      // desde acá. Las no vinculadas no tienen faena: se dejan ver para que
+      // alguien del alcance las resuelva.
+      scope ? or(isNull(fleetGpsLatestPositions.vehicleId), scope) : undefined,
+    ))
+    .orderBy(sql`${fleetGpsLatestPositions.vehicleId} IS NULL DESC`, fleetGpsLatestPositions.sourcePlate)
+    .limit(Math.min(Math.max(limit, 1), 500))
+}
+
+/** Vehículos activos del alcance para el selector de vínculo. */
+export async function listLinkableVehicles(session: Session, limit = 500): Promise<LinkableVehicle[]> {
+  if (!can(session, "flota:manage_gps")) return []
+  return db.select({
+    id: fuelVehicles.id,
+    plate: fuelVehicles.plate,
+    code: fuelVehicles.code,
+    worksiteName: worksites.name,
+  }).from(fuelVehicles)
+    .innerJoin(worksites, eq(worksites.id, fuelVehicles.worksiteId))
+    .where(and(
+      eq(fuelVehicles.isActive, true),
+      worksiteScopeSql(session, fuelVehicles.worksiteId),
+    ))
+    .orderBy(fuelVehicles.plate)
+    .limit(Math.min(Math.max(limit, 1), 1_000))
 }

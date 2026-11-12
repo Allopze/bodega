@@ -3,7 +3,7 @@
 import { SecretSettingField } from "@/components/admin/secret-setting-field"
 import type { CopecAdminStatus } from "@/lib/combustibles/copec-settings"
 import { clearCopecSettingsAction, saveCopecSettingsAction, testCopecConnectionAction } from "./actions"
-import { IntegrationSettingsDialog, SettingTextField } from "./integration-settings-dialog"
+import { IntegrationSettingsDialog, SettingTextField } from "@/components/admin/integration-settings-dialog"
 
 /**
  * Credenciales y actualización diaria de Copec. `status` es el DTO seguro: dice

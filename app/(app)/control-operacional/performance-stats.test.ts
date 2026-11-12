@@ -169,8 +169,15 @@ describe("formatKpi", () => {
 
 describe("buildPerformanceGlossary", () => {
   it("trae las definiciones de las cifras visibles y nada más", () => {
-    expect(buildPerformanceGlossary(ALL).map((e) => e.key)).toEqual(["availability", "state-coverage"])
+    expect(buildPerformanceGlossary(ALL).map((e) => e.key)).toEqual(["availability", "state-coverage", "gps-providers"])
     expect(buildPerformanceGlossary({ canViewFleet: false })).toEqual([])
+  })
+
+  it("define las fuentes GPS, el rendimiento y la estimación de mantención con sus capacidades", () => {
+    expect(buildPerformanceGlossary({ canViewFleet: true, canViewFuel: true, canViewMaintenance: true }).map((e) => e.key))
+      .toEqual(expect.arrayContaining(["gps-providers", "gps-performance", "gps-maintenance"]))
+    expect(buildPerformanceGlossary({ canViewFleet: true, canViewFuel: true }).map((e) => e.key))
+      .not.toContain("gps-maintenance")
   })
 
   it("no trae definiciones de mantenciones retiradas", () => {

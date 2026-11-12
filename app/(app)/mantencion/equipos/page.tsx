@@ -32,9 +32,18 @@ export default async function EquipmentPage({ searchParams }: { searchParams: Pr
   }
   const viewer = viewerFromSession(session)
   const filters = parseEquipmentListFilters(await searchParams)
+  // La estimación GPS es un dato de Flota. Sin `flota:view` no se carga ni se
+  // ofrece el filtro: un enlace con ?estimacionGps= no debe dejar la lista vacía.
+  const canViewFleet = can(session, "flota:view")
+  if (!canViewFleet) filters.gpsEstimate = undefined
 
   // Toda la flota del alcance (con bajas): de ahí salen las opciones de los filtros y los conteos.
-  const fleet = await loadFleet({ scope: equipmentScope(viewer), includeRetired: true, readingsPerEquipment: 1 })
+  const fleet = await loadFleet({
+    scope: equipmentScope(viewer),
+    includeRetired: true,
+    readingsPerEquipment: 1,
+    includeGpsEstimate: canViewFleet,
+  })
   const rows = sortFleetByState(filterFleet(fleet, filters)).map(toEquipmentListRow)
   const withoutSchedule = fleet.filter((row) => !row.retired && row.scheduleId === null).length
 
@@ -52,6 +61,7 @@ export default async function EquipmentPage({ searchParams }: { searchParams: Pr
   if (filters.typeId) filterLabels.tipo = labelOf(options.types, filters.typeId)
   if (filters.scheduleId) filterLabels.pauta = filters.scheduleId === NO_SCHEDULE ? "Sin pauta" : labelOf(options.schedules, filters.scheduleId)
   if (filters.state) filterLabels.estado = EQUIPMENT_STATE_LABEL[filters.state]
+  if (filters.gpsEstimate) filterLabels.estimacionGps = filters.gpsEstimate === "vencida" ? "Vencida (estimación GPS)" : "Próxima (estimación GPS)"
   if (filters.inWorkshop) filterLabels.situacion = "En taller"
 
   const canManage = can(session, "mant:equipment:manage")
@@ -91,8 +101,8 @@ export default async function EquipmentPage({ searchParams }: { searchParams: Pr
             <Link href="/mantencion/equipos/incorporar" className="font-semibold underline underline-offset-2">Incorporarlos</Link>
           </Callout>
         )}
-        <EquipmentFilters options={options} />
-        <EquipmentTable rows={rows} canManage={canManage} filtered={hasEquipmentListFilters(filters)} />
+        <EquipmentFilters options={options} canViewGps={canViewFleet} />
+        <EquipmentTable rows={rows} canManage={canManage} canViewGps={canViewFleet} filtered={hasEquipmentListFilters(filters)} />
       </div>
     </PageContainer>
   )

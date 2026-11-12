@@ -1,4 +1,4 @@
-import { desc, eq, sql } from "drizzle-orm"
+import { and, desc, eq, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
   fleetGpsAlerts,
@@ -106,7 +106,7 @@ export const ONWAY_STALLED_RUN_MS = 15 * 60_000
 export async function hasStalledOnwayCronRun(now = new Date()): Promise<boolean> {
   const [latest] = await db.select({ status: fleetGpsSyncRuns.status, startedAt: fleetGpsSyncRuns.startedAt })
     .from(fleetGpsSyncRuns)
-    .where(eq(fleetGpsSyncRuns.trigger, "cron"))
+    .where(and(eq(fleetGpsSyncRuns.trigger, "cron"), eq(fleetGpsSyncRuns.provider, "onway")))
     .orderBy(desc(fleetGpsSyncRuns.startedAt))
     .limit(1)
   if (!latest || latest.status !== "running") return false

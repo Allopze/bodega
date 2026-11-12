@@ -9,6 +9,10 @@ import { todayInChile } from "@/lib/utils"
 import { getCurrentScheduleSnapshots } from "./schedule-versions"
 import { equipmentStatus, WORKSHOP_UPDATE_DAYS, workshopState, type WorkshopState } from "@/lib/mantencion/status"
 import type { MantEquipmentStatus, MantReading, MantUnit } from "@/lib/mantencion/types"
+import { mergeLatestGpsByVehicle } from "@/lib/integrations/fleet-gps/merge-latest"
+import { loadLatestGpsRowsForVehicles } from "@/lib/services/fleet-gps-latest"
+import { maxMeterRatePerDayOf } from "@/lib/combustibles/meter-series"
+import { logger } from "@/lib/logger"
 
 /**
  * Estado de la flota de mantención, calculado en el servidor con las reglas
@@ -48,6 +52,14 @@ export interface FleetRow {
   recentPreventives: Array<{ id: string; folio: string | null; reading: number; date: string; intervalValue: number }>
   status: MantEquipmentStatus
   /**
+   * Estimación de la próxima mantención con la última lectura GPS, cuando es
+   * más nueva que la lectura oficial. Es advisory: no reemplaza `status` ni se
+   * escribe en `mant_records`.
+   */
+  gpsStatus: MantEquipmentStatus | null
+  gpsReading: number | null
+  gpsReadingAt: string | null
+  /**
    * Equipo en taller: por una OT en ejecución (la OT manda y gana) o por una correctiva abierta.
    * Con una OT, `recordId` es el id de la OT, `folio` el `OT-…` y `workOrderId` viene fijo: no es un
    * registro, así que «Sigue en taller» / «Ya salió» (que apuntan a un registro) no le aplican.
@@ -61,6 +73,8 @@ export interface LoadFleetOptions {
   vehicleIds?: string[]
   readingsPerEquipment?: number
   today?: string
+  /** Calcula también la estimación GPS (no altera el estado oficial). */
+  includeGpsEstimate?: boolean
 }
 
 export function unitFromMeter(meterType: string): MantUnit | null {
@@ -119,17 +133,28 @@ export async function loadFleet(options: LoadFleetOptions): Promise<FleetRow[]> 
 
   // Nombre e intervalos salen del snapshot VIGENTE de cada pauta, no de las tablas vivas: lo que
   // la jefatura edita en el borrador no cambia el estado de los equipos hasta que lo publica.
-  const [snapshots, readingRows, preventiveRows, workshopRows, workOrderRows] = await Promise.all([
+  const [snapshots, readingRows, preventiveRows, workshopRows, workOrderRows, gpsRows] = await Promise.all([
     getCurrentScheduleSnapshots(scheduleIds),
     recentRecords(vehicleIds, perEquipment, false),
     recentRecords(vehicleIds, 5, true),
     openWorkshopRecords(vehicleIds),
     openWorkshopOrders(vehicleIds),
+    options.includeGpsEstimate
+      ? loadLatestGpsRowsForVehicles(vehicleIds).catch(() => {
+          // La telemetría es un complemento: si falla, la lista de equipos
+          // sigue con sus lecturas oficiales en vez de caerse completa.
+          logger.warn("[mantencion/fleet] no se pudo leer GPS para la estimación", { code: "MANT_GPS_UNAVAILABLE" })
+          return []
+        })
+      : Promise.resolve([]),
   ])
 
   const snapshotBySchedule = new Map(snapshots.map((snapshot) => [snapshot.id, snapshot]))
   const readingsByVehicle = groupBy(readingRows, (row) => row.vehicleId)
   const preventivesByVehicle = groupBy(preventiveRows, (row) => row.vehicleId)
+  const gpsByVehicle = new Map(
+    mergeLatestGpsByVehicle(gpsRows, { staleMinutes: 24 * 60 }).map((row) => [row.vehicleId, row]),
+  )
   const workshopByVehicle = new Map<string, FleetRow["workshop"]>()
   for (const row of workshopRows) {
     if (workshopByVehicle.has(row.vehicleId)) continue
@@ -178,6 +203,38 @@ export async function loadFleet(options: LoadFleetOptions): Promise<FleetRow[]> 
     const preventives = (preventivesByVehicle.get(row.vehicleId) ?? [])
       .map((item) => ({ id: item.id, folio: item.folio, reading: item.reading, date: item.workDate, intervalValue: item.intervalValue ?? 0 }))
     const last = preventives[0]
+    const status = equipmentStatus({
+      retired: !row.isActive,
+      intervals: row.scheduleId && intervals.length ? intervals : null,
+      readings,
+      initial: initial ? { ...initial, source: "Lectura inicial" } : null,
+      lastPreventive: last ? { reading: last.reading, date: last.date, intervalValue: last.intervalValue } : null,
+    })
+    const gps = gpsByVehicle.get(row.vehicleId)
+    const gpsValue = unit === "km" ? (gps?.odometer ?? null) : (gps?.hourMeter ?? null)
+    const gpsAt = unit === "km" ? (gps?.odometerAt ?? null) : (gps?.hourMeterAt ?? null)
+    const gpsAtDate = gpsAt ? todayInChile(gpsAt) : null
+    const official = status.currentReading
+    // La estimación sólo aporta si la lectura GPS es más nueva que la oficial.
+    // Si es igual o anterior, el estado oficial ya la contiene y no se duplica.
+    const gpsIsNewer = gpsValue != null && gpsAtDate != null
+      && (official == null || gpsAtDate > official.date)
+    // Un GPS que partió en 0 o que va muy adelantado no comparte calibración
+    // con la lectura del mecánico. No se proyecta: se descarta la estimación.
+    const daysSinceOfficial = official && gpsAtDate ? Math.max(1, daysBetween(official.date, gpsAtDate)) : 1
+    const maxAdvance = (unit === "km" ? maxMeterRatePerDayOf({ config: null }, "km") : maxMeterRatePerDayOf({ config: null }, "hora")) * daysSinceOfficial
+    const plausible = official == null
+      || (gpsValue != null && gpsValue >= official.value && gpsValue - official.value <= maxAdvance)
+    const gpsEstimateApplies = gpsIsNewer && plausible && !row.isActive && intervals.length > 0
+    const gpsStatus = gpsEstimateApplies
+      ? equipmentStatus({
+          retired: false,
+          intervals,
+          readings: [{ value: gpsValue!, date: gpsAtDate!, source: "GPS" }],
+          initial: initial ? { ...initial, source: "Lectura inicial" } : null,
+          lastPreventive: last ? { reading: last.reading, date: last.date, intervalValue: last.intervalValue } : null,
+        })
+      : null
     rows.push({
       vehicleId: row.vehicleId,
       code: row.code ?? row.plate,
@@ -200,13 +257,10 @@ export async function loadFleet(options: LoadFleetOptions): Promise<FleetRow[]> 
       initialReading: initial,
       readings,
       recentPreventives: preventives,
-      status: equipmentStatus({
-        retired: !row.isActive,
-        intervals: row.scheduleId && intervals.length ? intervals : null,
-        readings,
-        initial: initial ? { ...initial, source: "Lectura inicial" } : null,
-        lastPreventive: last ? { reading: last.reading, date: last.date, intervalValue: last.intervalValue } : null,
-      }),
+      status,
+      gpsStatus,
+      gpsReading: gpsEstimateApplies ? gpsValue : null,
+      gpsReadingAt: gpsEstimateApplies ? gpsAt : null,
       workshop: workshopByVehicle.get(row.vehicleId) ?? null,
     })
   }

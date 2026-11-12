@@ -15,6 +15,7 @@ describe("operationalControlCapabilities", () => {
       canViewCosts: false,
       canViewWorkOrders: false,
       canViewPurchaseCosts: false,
+      canViewMaintenance: false,
     })
   })
 

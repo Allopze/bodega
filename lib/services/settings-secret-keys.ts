@@ -25,6 +25,8 @@ export const SHARED_KEYRING_SECRET_KEYS = [
   // Entel OnWay GPS (lib/integrations/onway/onway-settings.ts)
   "flota.onway.username",
   "flota.onway.password",
+  // Wialon GPS (lib/integrations/wialon/wialon-settings.ts)
+  "flota.wialon.token",
   // Cloudreve (lib/services/cloudreve/setting-keys.ts)
   "storage.cloudreve.username",
   "storage.cloudreve.password",

@@ -6,12 +6,14 @@ import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { SummaryBar, type SummaryStat } from "@/components/ui/summary-bar"
 import { requirePermission } from "@/lib/auth/can"
 import { readOnwayAdminStatus } from "@/lib/integrations/onway/onway-settings"
+import { readWialonAdminStatus } from "@/lib/integrations/wialon/wialon-settings"
 import { can } from "@/lib/auth/can"
-import { getFleetGpsAlerts, getFleetGpsMonitoring, isGpsCaptureStale } from "@/lib/services/fleet-gps"
+import { getFleetGpsAlerts, getFleetGpsMonitoring, isGpsCaptureStale, listLinkableVehicles, listWialonUnitsForLinking } from "@/lib/services/fleet-gps"
 import { formatDateTime } from "@/lib/utils"
 import { Callout } from "@/components/ui/callout"
 import { FleetGpsWorkspace } from "./fleet-gps-workspace"
 import { OnwayControls } from "./onway-controls"
+import { WialonControls } from "./wialon-controls"
 
 export const metadata: Metadata = { title: "Monitoreo GPS" }
 
@@ -34,40 +36,59 @@ export default async function FleetGpsMonitoringPage() {
   catch { redirect("/forbidden") }
 
   const [monitoring, alerts] = await Promise.all([getFleetGpsMonitoring(session), getFleetGpsAlerts(session)])
-  const adminStatus = monitoring.canManage ? await readOnwayAdminStatus() : null
-  const latestSyncAt = monitoring.positions.reduce<string | null>(
-    (latest, position) => !latest || position.observedAt > latest ? position.observedAt : latest,
-    null,
-  )
-  const syncIsStale = isGpsCaptureStale(latestSyncAt, monitoring.staleBefore)
+  const [adminStatus, wialonStatus, wialonLinks] = monitoring.canManage
+    ? await Promise.all([
+        readOnwayAdminStatus(),
+        readWialonAdminStatus(),
+        Promise.all([listWialonUnitsForLinking(session), listLinkableVehicles(session)]),
+      ])
+    : [null, null, null]
+  const latestSyncAt = [monitoring.providerLatestAt.onway, monitoring.providerLatestAt.wialon]
+    .filter((value): value is string => Boolean(value))
+    .reduce<string | null>((latest, value) => !latest || value > latest ? value : latest, null)
+  const onwayIsStale = isGpsCaptureStale(monitoring.providerLatestAt.onway, monitoring.staleBefore)
+  const wialonIsStale = isGpsCaptureStale(monitoring.providerLatestAt.wialon, monitoring.staleBefore)
   const hasData = monitoring.positions.length > 0
   const blockedAlerts = alerts.filter((alert) => alert.processingStatus === "blocked").length
   const stats: SummaryStat[] = hasData ? [
     { key: "linked", label: "Vehículos vinculados", value: monitoring.positions.length },
     { key: "moving", label: "En movimiento", value: monitoring.positions.filter((position) => position.speedKph > 0).length },
-    { key: "ignition", label: "Con encendido", value: monitoring.positions.filter((position) => position.ignition).length },
+    { key: "ignition", label: "Con encendido", value: monitoring.positions.filter((position) => position.ignitionKnown && position.ignition).length },
     { key: "capture", label: "Última consulta", value: latestSyncAt ? formatDateTime(latestSyncAt) : "Sin datos", valueKind: "text" },
   ] : []
   const onwayIsConfigured = adminStatus?.hasCredentials ?? false
+  const wialonIsConfigured = wialonStatus?.fields.token.configured ?? false
 
   return (
     <PageContainer>
       <PageHeader
         title="Monitoreo GPS"
-        description="Posición operacional de la flota vinculada con Entel OnWay."
+        description="Posición operacional de la flota vinculada con Entel OnWay y Wialon."
         breadcrumb={<Breadcrumbs items={[
           { label: "Control operacional", href: "/control-operacional" },
           { label: "Monitoreo GPS" },
         ]} />}
-        actions={adminStatus ? <OnwayControls status={adminStatus} /> : undefined}
+        actions={monitoring.canManage && adminStatus && wialonStatus ? (
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <OnwayControls status={adminStatus} />
+            <WialonControls status={wialonStatus} />
+          </div>
+        ) : undefined}
       />
 
       <SummaryBar stats={stats} />
 
-      {syncIsStale && latestSyncAt ? (
+      {onwayIsStale && monitoring.providerLatestAt.onway ? (
         <Callout tone="warning" className="mt-3">
-          <strong>Consulta a OnWay atrasada:</strong> la plataforma no consulta los datos desde hace {staleSinceLabel(latestSyncAt)}. Las ubicaciones reflejan el último reporte GPS recibido, no una lectura en tiempo real.
-          {monitoring.canManage ? <span> Si OnWay no responde, ejecuta <em>Actualizar ahora</em> desde la barra superior.</span> : null}
+          <strong>Consulta a OnWay atrasada:</strong> la plataforma no recibe una posición nueva de OnWay desde hace {staleSinceLabel(monitoring.providerLatestAt.onway)}. Las ubicaciones de OnWay reflejan el último reporte recibido, no una lectura en tiempo real.
+          {monitoring.canManage ? <span> Revisa la corrida de OnWay en <em>Configurar</em> o ejecuta una actualización manual.</span> : null}
+        </Callout>
+      ) : null}
+
+      {wialonIsStale && monitoring.providerLatestAt.wialon ? (
+        <Callout tone="warning" className="mt-3">
+          <strong>Consulta a Wialon atrasada:</strong> la plataforma no recibe una posición nueva de Wialon desde hace {staleSinceLabel(monitoring.providerLatestAt.wialon)}. Las ubicaciones de Wialon reflejan el último reporte recibido, no una lectura en tiempo real.
+          {monitoring.canManage ? <span> Revisa la corrida de Wialon en <em>Configurar</em> o ejecuta una actualización manual.</span> : null}
         </Callout>
       ) : null}
 
@@ -80,30 +101,54 @@ export default async function FleetGpsMonitoringPage() {
         </Callout>
       ) : null}
 
-      {monitoring.canManage && monitoring.latestRun?.status === "partial" && Number(monitoring.unmatched ?? 0) === 0 ? (
+      {monitoring.canManage && monitoring.latestRun?.status === "partial" && Number(monitoring.unmatchedByProvider.onway ?? 0) === 0 ? (
         <Callout tone="warning" role="status" className="mt-3">
-          <strong>La última sincronización fue parcial.</strong> OnWay devolvió datos incompletos; pueden faltar telemetría, alertas o historial.
+          <strong>La última sincronización de OnWay fue parcial.</strong> OnWay devolvió datos incompletos; pueden faltar telemetría, alertas o historial.
         </Callout>
       ) : null}
 
-      {monitoring.canManage && Number(monitoring.unmatched ?? 0) > 0 ? (
+      {monitoring.canManage && monitoring.providerRuns.wialon?.status === "failed" ? (
+        <Callout tone="danger" role="alert" className="mt-3">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <span><strong>Última sincronización de Wialon falló.</strong> Revisa el token en <em>Configurar</em> o ejecuta una corrida manual.</span>
+            {monitoring.providerRuns.wialon.errorCode ? <span className="rounded bg-[var(--color-surface-2)] px-2 py-0.5 font-mono text-xs">{monitoring.providerRuns.wialon.errorCode}</span> : null}
+          </div>
+        </Callout>
+      ) : null}
+
+      {monitoring.canManage && monitoring.providerRuns.wialon?.status === "partial" ? (
+        <Callout tone="warning" role="status" className="mt-3">
+          <strong>La última sincronización de Wialon fue parcial.</strong> Wialon devolvió más unidades de las que se pueden procesar en una corrida; revisa el límite de unidades.
+        </Callout>
+      ) : null}
+
+      {monitoring.canManage && Number(monitoring.unmatchedByProvider.onway ?? 0) > 0 ? (
         <Callout tone="warning" className="mt-3">
           <div className="flex flex-wrap items-start justify-between gap-2">
-            <span><strong>{monitoring.unmatched} dispositivo{monitoring.unmatched === 1 ? "" : "s"} de OnWay sin patente única</strong> en el catálogo de Flota. La posición se descarta hasta corregirlo.</span>
+            <span><strong>{monitoring.unmatchedByProvider.onway} dispositivo{monitoring.unmatchedByProvider.onway === 1 ? "" : "s"} de OnWay sin patente única</strong> en el catálogo de Flota. La posición se descarta hasta corregirlo.</span>
             <Link href="/admin/flota-catalogos/vehiculos" className="shrink-0 font-semibold underline">Revisar catálogo de vehículos</Link>
+          </div>
+        </Callout>
+      ) : null}
+
+      {monitoring.canManage && Number(monitoring.unmatchedByProvider.wialon ?? 0) > 0 ? (
+        <Callout tone="warning" className="mt-3">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <span><strong>{monitoring.unmatchedByProvider.wialon} unidad{monitoring.unmatchedByProvider.wialon === 1 ? "" : "es"} de Wialon sin vehículo</strong>. La posición se conserva, pero no entra al panel hasta vincularla.</span>
+            <Link href="#configuracion" className="shrink-0 font-semibold underline">Vincular en Configuración</Link>
           </div>
         </Callout>
       ) : null}
 
       {!hasData ? (
         <section role="status" className="mt-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4 text-sm text-[var(--color-text)]">
-          <p className="font-semibold">No hay posiciones de OnWay para mostrar.</p>
+          <p className="font-semibold">No hay posiciones GPS para mostrar.</p>
           <p className="mt-1 text-[var(--color-text-subtle)]">
-            {onwayIsConfigured
-              ? "La sincronización corre por cron; puedes forzar una corrida desde la barra superior. Si los vehículos ya están en el catálogo, la captura aparecerá en el siguiente ciclo."
-              : "Configura las credenciales de OnWay y vincula las patentes del catálogo de Flota. La primera captura demora unos minutos."}
+            {onwayIsConfigured || wialonIsConfigured
+              ? "La sincronización corre por cron; puedes forzar una corrida desde Configurar. Si los vehículos ya están en el catálogo y las unidades Wialon están vinculadas, la captura aparecerá en el siguiente ciclo."
+              : "Configura OnWay o Wialon y vincula las patentes del catálogo de Flota. La primera captura demora unos minutos."}
           </p>
-          {!onwayIsConfigured ? (
+          {!onwayIsConfigured && !wialonIsConfigured ? (
             <p className="mt-2">
               <Link href="/admin/flota-catalogos/vehiculos" className="font-semibold text-[var(--color-primary)] underline">Abrir catálogo de vehículos</Link>
             </p>
@@ -117,6 +162,9 @@ export default async function FleetGpsMonitoringPage() {
           alerts={alerts}
           canViewHistory={can(session, "flota:view_gps_history")}
           adminStatus={adminStatus}
+          wialonStatus={wialonStatus}
+          wialonUnits={wialonLinks?.[0] ?? []}
+          linkableVehicles={wialonLinks?.[1] ?? []}
           blockedAlertsCount={blockedAlerts}
         />
       </div>

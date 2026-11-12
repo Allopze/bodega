@@ -463,6 +463,25 @@ export function todayInChile(date: Date | string | number = new Date()): string 
 }
 
 /**
+ * Instante UTC en que empieza un día civil chileno (`YYYY-MM-DD`). Sirve para
+ * filtrar columnas `timestamptz`/ISO con `>=` y `<` sin envolver la columna en
+ * una función —el índice de la columna sigue disponible— y sin cortar el día
+ * tres o cuatro horas antes por medirlo en UTC.
+ */
+export function chileDayStartInstant(plainDate: string): string {
+  const wall = Date.parse(`${plainDate}T00:00:00Z`)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(plainDate) || !Number.isFinite(wall)) {
+    throw new Error(`Fecha inválida: ${plainDate}`)
+  }
+  // Dos pasadas: la primera estima el desfase; la segunda corrige si la
+  // estimación cayó al otro lado de un cambio de horario (mismo criterio que
+  // `santiagoInstant` en la importación de combustibles).
+  let utc = wall - chileOffsetMs(new Date(wall))
+  utc = wall - chileOffsetMs(new Date(utc))
+  return new Date(Math.round(utc / 1_000) * 1_000).toISOString()
+}
+
+/**
  * Año civil chileno, para los correlativos de código (`GC-2026-…`, `PE-2026-…`,
  * `INC-2026-…`).
  *

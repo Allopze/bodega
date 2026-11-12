@@ -3,7 +3,7 @@
 import { SecretSettingField } from "@/components/admin/secret-setting-field"
 import type { VisionLinkAdminStatus } from "@/lib/integrations/visionlink/visionlink-settings"
 import { clearVisionLinkSettingsAction, saveVisionLinkSettingsAction, testVisionLinkConnectionAction } from "./actions"
-import { IntegrationSettingsDialog, SettingTextField } from "./integration-settings-dialog"
+import { IntegrationSettingsDialog, SettingTextField } from "@/components/admin/integration-settings-dialog"
 
 /**
  * Credenciales y actualización diaria de VisionLink. `status` es el DTO seguro:

@@ -24,6 +24,16 @@ function formatUnitCost(value: number | null, label: string | null): string {
   return `$${value.toLocaleString("es-CL", { maximumFractionDigits: 1 })}/${unit}`
 }
 
+function meterSourceLabel(source: string | null): string | undefined {
+  return source === "copec_tct"
+    ? "Lectura Copec"
+    : source === "gps_wialon"
+      ? "Lectura GPS Wialon"
+      : source === "gps_onway"
+        ? "Lectura GPS OnWay"
+        : undefined
+}
+
 /**
  * «Próximo vencimiento»: el documento, su estado y cuánto falta, no solo una fecha. Sin ninguna fecha
  * registrada dice lo que falta con texto apagado y sin pastilla: con pastilla, una flota recién cargada
@@ -126,7 +136,11 @@ export function FleetTable({ vehicles, hasAnyVehicle, canViewCosts, canViewFuel,
             {canViewCosts && canViewFuel && (
               <TableCell
                 className="text-right font-mono"
-                title={vehicle.meterSeriesIncomplete ? "El recorrido es una cota inferior: parte de la serie se descartó por lecturas inválidas." : undefined}
+                title={[
+                  meterSourceLabel(vehicle.meterSource),
+                  vehicle.meterSeriesIncomplete ? "El recorrido es una cota inferior: parte de la serie se descartó por lecturas inválidas." : null,
+                  vehicle.meterSeriesCovered === false ? "Costo por km/h no calculado: la serie no cubre los 12 meses." : null,
+                ].filter(Boolean).join(" ") || undefined}
               >
                 {formatUnitCost(vehicle.fuelCostPerUnit, vehicle.fuelCostPerUnitLabel)}
               </TableCell>

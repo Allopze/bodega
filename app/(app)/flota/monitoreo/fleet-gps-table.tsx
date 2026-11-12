@@ -20,6 +20,15 @@ import type { FleetGpsPosition } from "@/lib/services/fleet-gps"
 import { formatDateTime } from "@/lib/utils"
 import { formatGpsMeter } from "./fleet-gps-format"
 
+function providerLabel(provider: string): string {
+  return provider === "onway" ? "OnWay" : provider === "wialon" ? "Wialon" : provider
+}
+
+function sourceLabel(position: FleetGpsPosition): string {
+  const sources = position.providers.map(providerLabel).join(" + ") || "Sin fuente"
+  return position.meterProvider ? `${sources} · medidor ${providerLabel(position.meterProvider)}` : sources
+}
+
 export function FleetGpsTable({ positions }: { positions: FleetGpsPosition[] }) {
   const { searchQuery } = useSafeShellHeader()
   const query = searchQuery.trim().toLocaleLowerCase("es-CL")
@@ -30,6 +39,7 @@ export function FleetGpsTable({ positions }: { positions: FleetGpsPosition[] }) 
         position.brand,
         position.model,
         position.worksiteName,
+        position.providers.join(" "),
       ].some((value) => value?.toLocaleLowerCase("es-CL").includes(query)))
     : positions
 
@@ -38,7 +48,7 @@ export function FleetGpsTable({ positions }: { positions: FleetGpsPosition[] }) 
       <EmptyState
         icon={<Truck size={24} aria-hidden />}
         title="Todavía no hay vehículos vinculados"
-        description="Configura OnWay, revisa que las patentes coincidan con el catálogo de Flota y ejecuta Actualizar ahora."
+        description="Configura OnWay o Wialon, revisa que las patentes o unidades coincidan con el catálogo de Flota y ejecuta una actualización."
         action={<Button asChild variant="secondary" size="sm"><Link href="/flota">Revisar catálogo</Link></Button>}
       />
     )
@@ -62,6 +72,7 @@ export function FleetGpsTable({ positions }: { positions: FleetGpsPosition[] }) 
           <TableRow>
             <TableHead>Vehículo</TableHead>
             <TableHead>Faena</TableHead>
+            <TableHead>Fuente</TableHead>
             <TableHead>Encendido</TableHead>
             <TableHead className="text-right">Velocidad</TableHead>
             <TableHead>Señal / medidor</TableHead>
@@ -80,7 +91,10 @@ export function FleetGpsTable({ positions }: { positions: FleetGpsPosition[] }) 
               </TableCell>
               <TableCell>{position.worksiteName}</TableCell>
               <TableCell>
-                <MetaBadge meta={{ label: `${position.ignition ? "Encendido" : "Apagado"}`, variant: position.ignition ? "success" : "neutral" }} dot />
+                <MetaBadge meta={{ label: sourceLabel(position), variant: position.providers.length > 1 ? "signal" : "neutral" }} />
+              </TableCell>
+              <TableCell>
+                <MetaBadge meta={{ label: !position.ignitionKnown ? "Sin dato" : position.ignition ? "Encendido" : "Apagado", variant: !position.ignitionKnown ? "neutral" : position.ignition ? "success" : "neutral" }} dot />
               </TableCell>
               <TableCellNum>{Math.round(position.speedKph)} km/h</TableCellNum>
               <TableCell>

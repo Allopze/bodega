@@ -13,6 +13,11 @@ const SELECT_CLASS = "h-11 w-full text-xs sm:h-8 sm:w-44"
 
 const STATE_OPTIONS: OptionSelectOption[] = MANT_EQUIPMENT_STATES.map((value) => ({ value, label: EQUIPMENT_STATE_LABEL[value] }))
 
+const GPS_STATE_OPTIONS: OptionSelectOption[] = [
+  { value: "vencida", label: "Vencida (estimación GPS)" },
+  { value: "proxima", label: "Próxima (estimación GPS)" },
+]
+
 export interface EquipmentFilterOptions {
   worksites: OptionSelectOption[]
   types: OptionSelectOption[]
@@ -20,7 +25,7 @@ export interface EquipmentFilterOptions {
 }
 
 /** Todo lo que la barra escribe en la URL: «Limpiar filtros» los quita todos. */
-const FILTER_KEYS = ["faena", "tipo", "pauta", "estado", "bajas", "taller"] as const
+const FILTER_KEYS = ["faena", "tipo", "pauta", "estado", "estimacionGps", "bajas", "taller"] as const
 
 /**
  * Filtros estructurados de «Equipos» (A2): faena, tipo, pauta y estado, más la
@@ -29,7 +34,7 @@ const FILTER_KEYS = ["faena", "tipo", "pauta", "estado", "bajas", "taller"] as c
  * URL (`router.replace`, sin mover el scroll), así que el panel puede enlazar con
  * `?estado=vencida` y el filtro sobrevive a recargar la página.
  */
-export function EquipmentFilters({ options }: { options: EquipmentFilterOptions }) {
+export function EquipmentFilters({ options, canViewGps = true }: { options: EquipmentFilterOptions; canViewGps?: boolean }) {
   const { searchParams, setFilter, setFilters, getFilter } = useUrlFilters()
   const filters = parseEquipmentListFilters(Object.fromEntries(searchParams.entries()))
   // La casilla responde al toque antes de que termine la navegación de la URL; si la URL cambia
@@ -50,6 +55,7 @@ export function EquipmentFilters({ options }: { options: EquipmentFilterOptions 
   add("tipo", "Tipo", filters.typeId, labelOf(options.types, filters.typeId))
   add("pauta", "Pauta", filters.scheduleId, filters.scheduleId === NO_SCHEDULE ? "Sin pauta" : labelOf(options.schedules, filters.scheduleId))
   add("estado", "Estado", filters.state, labelOf(STATE_OPTIONS, filters.state))
+  if (canViewGps) add("estimacionGps", "Estimación GPS", filters.gpsEstimate, labelOf(GPS_STATE_OPTIONS, filters.gpsEstimate))
   // «En taller» llega desde el tile del panel; no tiene control propio, sólo su chip para quitarlo (A2).
   if (filters.inWorkshop) chips.push({ key: "taller", label: "Situación", value: "1", displayValue: "En taller" })
   if (filters.includeRetired && filters.state !== "baja") chips.push({ key: "bajas", label: "Incluye", value: "1", displayValue: "dados de baja" })
@@ -66,6 +72,9 @@ export function EquipmentFilters({ options }: { options: EquipmentFilterOptions 
       <OptionSelect aria-label="Filtrar por tipo de equipo" className={SELECT_CLASS} emptyLabel="Todos los tipos" options={options.types} value={getFilter("tipo")} onValueChange={(v) => setFilter("tipo", v)} />
       <OptionSelect aria-label="Filtrar por pauta" className={SELECT_CLASS} emptyLabel="Todas las pautas" options={scheduleOptions} value={getFilter("pauta")} onValueChange={(v) => setFilter("pauta", v)} />
       <OptionSelect aria-label="Filtrar por estado de mantención" className={SELECT_CLASS} emptyLabel="Todos los estados" options={STATE_OPTIONS} value={getFilter("estado")} onValueChange={(v) => setFilter("estado", v)} />
+      {canViewGps && (
+        <OptionSelect aria-label="Filtrar por estimación GPS" className={SELECT_CLASS} emptyLabel="Toda estimación GPS" options={GPS_STATE_OPTIONS} value={getFilter("estimacionGps")} onValueChange={(v) => setFilter("estimacionGps", v)} />
+      )}
       <Checkbox
         id="eq-f-bajas"
         label="Mostrar dados de baja"

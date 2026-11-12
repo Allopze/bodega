@@ -1,4 +1,5 @@
 import type { OnwayDeviceSnapshot } from "./onway-contract"
+import { normalizePlate } from "@/lib/integrations/fleet-gps/identity"
 
 interface FleetVehicleIdentity {
   id: string
@@ -6,14 +7,10 @@ interface FleetVehicleIdentity {
   worksiteId: string
 }
 
-function normalizedPlate(value: string): string {
-  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9]/g, "").toUpperCase()
-}
-
 export function reconcileOnwayDevices(devices: OnwayDeviceSnapshot[], vehicles: FleetVehicleIdentity[]) {
   const vehiclesByPlate = new Map<string, FleetVehicleIdentity[]>()
   for (const vehicle of vehicles) {
-    const key = normalizedPlate(vehicle.plate)
+    const key = normalizePlate(vehicle.plate)
     vehiclesByPlate.set(key, [...(vehiclesByPlate.get(key) ?? []), vehicle])
   }
 

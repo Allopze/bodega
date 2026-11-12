@@ -1,7 +1,7 @@
 import type { EquipmentHistoryEntry } from "@/lib/services/mantencion/equipment-history"
 import type { EquipmentInsurance } from "@/lib/services/mantencion/equipment-life"
 import type { VehiclePurchaseRecord } from "@/lib/services/vehicle-purchase-history"
-import type { MantEquipmentState, MantUnit } from "@/lib/mantencion/types"
+import type { MantEquipmentState, MantEquipmentStatus, MantUnit } from "@/lib/mantencion/types"
 import type { EquipmentLifeData } from "./equipment-life-section"
 import type { EquipmentFormCatalogs, EquipmentFormValues } from "./equipment-form-types"
 
@@ -31,6 +31,9 @@ export interface EquipmentDetailData {
   }
   /** Correctiva abierta con el equipo en taller: ingreso, días detenido y fecha de la última novedad (`YYYY-MM-DD`). */
   workshop: { entryDate: string | null; daysStopped: number | null; stale: boolean; lastActivityDate: string } | null
+  /** Estimación GPS, separada del estado oficial; `null` si no hay lectura más nueva. */
+  gpsStatus: MantEquipmentStatus | null
+  gpsReadingAt: string | null
   recordCount: number
   /** Hoja de vida: historial completo de mantenciones dentro del alcance de lectura. */
   life: EquipmentLifeData

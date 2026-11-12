@@ -7,7 +7,7 @@ import { useSafeShellHeader } from "@/components/layout/header-context"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
-import { brandAndModel, formatReading, plural, remainingText } from "@/lib/mantencion/format"
+import { brandAndModel, EQUIPMENT_STATE_LABEL, formatReading, plural, remainingText } from "@/lib/mantencion/format"
 import { matchesEquipmentSearch, type EquipmentListRow } from "@/lib/services/mantencion/equipment-list"
 import { formatDate } from "@/lib/utils"
 import { EquipmentStateBadge } from "../shared/equipment-state-badge"
@@ -35,6 +35,7 @@ const COLUMNS: Array<{ key: SortKey | null; label: string }> = [
   { key: null, label: "Pauta" },
   { key: null, label: "Última lectura" },
   { key: "prox", label: "Próxima mantención" },
+  { key: null, label: "Estimación GPS" },
   { key: "estado", label: "Estado" },
 ]
 
@@ -76,7 +77,8 @@ function NextMaintenance({ row }: { row: EquipmentListRow }) {
  * tercer clic vuelve al orden por estado. «Mostrar 50 más» agranda la ventana
  * sobre la lista ya ordenada, no sobre una página.
  */
-export function EquipmentTable({ rows, canManage, filtered }: { rows: EquipmentListRow[]; canManage: boolean; filtered: boolean }) {
+export function EquipmentTable({ rows, canManage, canViewGps = true, filtered }: { rows: EquipmentListRow[]; canManage: boolean; canViewGps?: boolean; filtered: boolean }) {
+  const columns = canViewGps ? COLUMNS : COLUMNS.filter((column) => column.label !== "Estimación GPS")
   const { searchQuery } = useSafeShellHeader()
   const [sort, setSort] = React.useState<{ key: SortKey; dir: SortDir } | null>(null)
   const [limit, setLimit] = React.useState(EQUIPMENT_PAGE)
@@ -142,6 +144,7 @@ export function EquipmentTable({ rows, canManage, filtered }: { rows: EquipmentL
               <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
                 <EquipmentStateBadge state={row.state} workshop={row.inWorkshop ? { days: row.workshopDays ?? null } : null} />
                 {row.inWorkshop && row.workshopStale && <span className="text-xs font-semibold text-[var(--color-signal-ink)]">Sin actualizar</span>}
+                {canViewGps && row.gpsState && <span className="text-xs text-[var(--color-text-muted)]">GPS: {EQUIPMENT_STATE_LABEL[row.gpsState]}</span>}
               </span>
             </Link>
           </li>
@@ -151,13 +154,13 @@ export function EquipmentTable({ rows, canManage, filtered }: { rows: EquipmentL
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
-              {COLUMNS.map((column) => <SortHeader key={column.label} column={column} sort={sort} onSort={toggleSort} />)}
+              {columns.map((column) => <SortHeader key={column.label} column={column} sort={sort} onSort={toggleSort} />)}
             </TableRow>
           </TableHeader>
           <TableBody>
             {shown.length === 0 && (
               <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={COLUMNS.length} className="py-8 text-center text-[var(--color-text-muted)]">
+                <TableCell colSpan={columns.length} className="py-8 text-center text-[var(--color-text-muted)]">
                   Ningún equipo coincide con «{searchQuery.trim()}».
                 </TableCell>
               </TableRow>
@@ -192,6 +195,20 @@ export function EquipmentTable({ rows, canManage, filtered }: { rows: EquipmentL
                   )}
                 </TableCell>
                 <TableCell className="whitespace-nowrap"><NextMaintenance row={row} /></TableCell>
+                {canViewGps && (
+                  <TableCell className="whitespace-nowrap">
+                    {row.gpsState ? (
+                      <div className="flex flex-col gap-0.5">
+                        <EquipmentStateBadge state={row.gpsState} workshop={null} />
+                        {row.gpsRemaining != null && (
+                          <span className="text-xs text-[var(--color-text-muted)]">
+                            {remainingText({ remaining: row.gpsRemaining }, row.unit)}
+                          </span>
+                        )}
+                      </div>
+                    ) : <span className="text-[var(--color-text-subtle)]">—</span>}
+                  </TableCell>
+                )}
                 <TableCell>
                   {/* Sin fecha de ingreso (`workshopDays` nulo) no hay cuántos días decir: la etiqueta dice sólo «En taller». */}
                   <EquipmentStateBadge state={row.state} workshop={row.inWorkshop ? { days: row.workshopDays ?? null } : null} />

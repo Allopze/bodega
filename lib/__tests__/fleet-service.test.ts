@@ -58,6 +58,7 @@ vi.mock("@/lib/services/vehicle-purchase-history", () => ({
 }))
 
 import { getFleetOverview, getFleetVehicleDetail } from "@/lib/services/fleet"
+import { addMonths, todayInChile } from "@/lib/utils"
 
 /**
  * Texto de los trozos literales y de los parámetros de un predicado/orden de
@@ -121,11 +122,13 @@ describe("getFleetOverview", () => {
       },
     ])
     // Orden real: combustible, lecturas de medidor, regla de salto, documentos.
+    const today = todayInChile()
+    const since = addMonths(today, -12)
     selectResults.push(
       { data: [{ vehicleId: "veh-1", totalFuelAmount: 100_000, totalLiters: 80, loadCount: 2 }] },
       { data: [
-        { id: "mr-1", vehicleId: "veh-1", meterType: "odometer", occurredAt: "2026-10-01T12:00:00.000Z", value: 10_000, acceptedReset: false },
-        { id: "mr-2", vehicleId: "veh-1", meterType: "odometer", occurredAt: "2026-10-05T12:00:00.000Z", value: 12_500, acceptedReset: false },
+        { id: "mr-1", vehicleId: "veh-1", source: "copec_tct", meterType: "odometer", occurredAt: `${since}T12:00:00.000Z`, value: 10_000, acceptedReset: false },
+        { id: "mr-2", vehicleId: "veh-1", source: "copec_tct", meterType: "odometer", occurredAt: `${today}T12:00:00.000Z`, value: 12_500, acceptedReset: false },
       ] },
       { data: [] },
       { data: [] },
@@ -153,6 +156,61 @@ describe("getFleetOverview", () => {
     // La imputación de costos fue retirada: no debe existir ese campo.
     expect("totalAllocatedAmount" in vehicle).toBe(false)
     expect("allocationCount" in vehicle).toBe(false)
+  })
+
+  it("elige una fuente que cubra los 12 meses y no divide el gasto por una serie parcial", async () => {
+    findManyVehicles.mockResolvedValue([{
+      id: "veh-1", plate: "AA-BB-11", type: "camioneta", isActive: true, operationalStatus: "operativo",
+      performanceUnit: "km_per_liter", worksite: { name: "Faena Uno" }, responsibleUser: null,
+    }])
+    const today = todayInChile()
+    const since = addMonths(today, -12)
+    const recent = addMonths(today, -1)
+    selectResults.push(
+      { data: [{ vehicleId: "veh-1", totalFuelAmount: 100_000, totalLiters: 80, loadCount: 2 }] },
+      { data: [
+        // Copec sólo tiene los últimos días: no puede dividir 12 meses de gasto.
+        { id: "copec-1", vehicleId: "veh-1", source: "copec_tct", meterType: "odometer", occurredAt: `${recent}T12:00:00.000Z`, value: 11_000, acceptedReset: false },
+        { id: "copec-2", vehicleId: "veh-1", source: "copec_tct", meterType: "odometer", occurredAt: `${today}T12:00:00.000Z`, value: 11_200, acceptedReset: false },
+        // Wialon sí cubre la ventana completa.
+        { id: "wialon-1", vehicleId: "veh-1", source: "gps_wialon", meterType: "odometer", occurredAt: `${since}T12:00:00.000Z`, value: 10_000, acceptedReset: false },
+        { id: "wialon-2", vehicleId: "veh-1", source: "gps_wialon", meterType: "odometer", occurredAt: `${today}T12:00:00.000Z`, value: 12_500, acceptedReset: false },
+      ] },
+      { data: [] },
+      { data: [] },
+    )
+
+    const [vehicle] = await getFleetOverview(globalSession)
+    if (!vehicle) throw new Error("Se esperaba el vehículo")
+
+    expect(vehicle).toMatchObject({ meterSource: "gps_wialon", meterSeriesCovered: true })
+    expect(vehicle.fuelCostPerUnit).toBe(40)
+  })
+
+  it("deja el costo por km/h vacío si la única serie no cubre la ventana", async () => {
+    findManyVehicles.mockResolvedValue([{
+      id: "veh-1", plate: "AA-BB-11", type: "camioneta", isActive: true, operationalStatus: "operativo",
+      performanceUnit: "km_per_liter", worksite: { name: "Faena Uno" }, responsibleUser: null,
+    }])
+    const today = todayInChile()
+    const recent = addMonths(today, -1)
+    selectResults.push(
+      { data: [{ vehicleId: "veh-1", totalFuelAmount: 100_000, totalLiters: 80, loadCount: 2 }] },
+      { data: [
+        { id: "copec-1", vehicleId: "veh-1", source: "copec_tct", meterType: "odometer", occurredAt: `${recent}T12:00:00.000Z`, value: 11_000, acceptedReset: false },
+        { id: "copec-2", vehicleId: "veh-1", source: "copec_tct", meterType: "odometer", occurredAt: `${today}T12:00:00.000Z`, value: 11_200, acceptedReset: false },
+      ] },
+      { data: [] },
+      { data: [] },
+    )
+
+    const [vehicle] = await getFleetOverview(globalSession)
+    if (!vehicle) throw new Error("Se esperaba el vehículo")
+
+    expect(vehicle.meterSeriesCovered).toBe(false)
+    expect(vehicle.fuelCostPerUnit).toBeNull()
+    // La lectura igual se muestra: lo que no se publica es el costo del período.
+    expect(vehicle.lastOdometerReading).toBe(11_200)
   })
 
   describe("OT abiertas por equipo", () => {
@@ -255,9 +313,10 @@ describe("getFleetOverview", () => {
       expect(sqlChunks(where)).toContain("ws-1")
       expect(sqlChunks(where)).not.toContain("ws-2")
     }
-    // Y las lecturas vienen sólo del detalle de Copec, también las que un caso abierto objeta.
-    expect(sqlChunks(selectChains[1]!.where!.mock.calls[0]![0])).toContain("copec_tct")
-    expect(sqlChunks(selectChains[2]!.where!.mock.calls[0]![0])).toContain("copec_tct")
+    // Las lecturas ya no se filtran a Copec: se leen todas las fuentes y la
+    // selección (Copec → Wialon → OnWay) ocurre en memoria.
+    expect(sqlChunks(selectChains[1]!.where!.mock.calls[0]![0])).not.toContain("copec_tct")
+    expect(sqlChunks(selectChains[2]!.where!.mock.calls[0]![0])).not.toContain("copec_tct")
   })
 
   it("no devuelve filas de una faena fuera del alcance del rol", async () => {

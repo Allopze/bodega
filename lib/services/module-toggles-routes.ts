@@ -180,6 +180,9 @@ export const ROUTE_OWNER_ALIASES: RouteOwnerRule[] = [
   // GC de fotos de mantención que nunca llegaron a un registro (huérfanas > 7 días).
   { moduleId: "mantencion_equipos", submoduleHref: "/mantencion/registros", prefix: "/api/cron/mantencion-fotos-huerfanas" },
   { moduleId: "flota", submoduleHref: "/flota/monitoreo", prefix: "/api/cron/fleet-onway-sync" },
+  // Wialon es la segunda fuente de Monitoreo GPS; apagar Flota detiene también
+  // su refresco, igual que OnWay.
+  { moduleId: "flota", submoduleHref: "/flota/monitoreo", prefix: "/api/cron/fleet-wialon-sync" },
   // Refresco en vivo que pide la propia página de Monitoreo GPS.
   { moduleId: "flota", submoduleHref: "/flota/monitoreo", prefix: "/api/flota/monitoreo" },
   { moduleId: "warehouse", submoduleHref: "/seguimiento", prefix: "/api/cron/operational-integrity-scan" },

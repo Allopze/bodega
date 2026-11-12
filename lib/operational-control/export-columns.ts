@@ -1,4 +1,6 @@
 import type { OperationalAsset } from "@/lib/services/operational-control"
+import { EQUIPMENT_STATE_LABEL } from "@/lib/mantencion/format"
+import { meterSourceLabel } from "@/lib/combustibles/meter-source"
 
 export interface OperationalExportColumn {
   header: string
@@ -25,6 +27,7 @@ export function buildOperationalAssetExportColumns(
   canViewFleet = false,
   canViewWorkOrders = false,
   canViewPurchaseCosts = false,
+  canViewMaintenance = false,
 ): OperationalExportColumn[] {
   const showFuelCost = canViewFuel && canViewCosts
   const showCapa = canViewCapa && canViewInspections
@@ -42,13 +45,17 @@ export function buildOperationalAssetExportColumns(
           { header: "Documentos vencidos", key: "expiredDocuments", width: 24 },
           { header: "Odómetro GPS", key: "gpsOdometer", width: 16 },
           { header: "Horómetro GPS", key: "gpsHourMeter", width: 16 },
-          { header: "Última telemetría", key: "gpsObservedAt", width: 20 },
+          { header: "Última telemetría", key: "gpsReportedAt", width: 20 },
           { header: "Nivel estanque GPS", key: "gpsFuelLevel", width: 18 },
           { header: "Discrepancia GPS", key: "meterMismatch", width: 18 },
+          { header: "Fuente GPS", key: "gpsProviders", width: 18 },
+          { header: "Fuente del medidor", key: "gpsMeterProvider", width: 18 },
         ]
       : []),
     ...(canViewFuel
       ? [
+          { header: "Rendimiento GPS", key: "gpsPerformance", width: 20 },
+          { header: "Fuente del rendimiento", key: "gpsPerformanceSource", width: 20 },
           { header: "Litros operacionales", key: "fuelLiters", width: 18 },
           { header: "Cargas (período)", key: "fuelLoadCount", width: 16 },
           { header: "Última carga", key: "lastFuelLoadAt", width: 20 },
@@ -80,6 +87,10 @@ export function buildOperationalAssetExportColumns(
         ]
       : []),
     ...(canViewPurchaseCosts ? [{ header: "Repuestos y servicios (OC)", key: "purchaseAmount", width: 26 }] : []),
+    ...(canViewMaintenance ? [{ header: "Estimación GPS de mantención", key: "gpsMaintenance", width: 22 }] : []),
+    ...(showFuelCost && canViewPurchaseCosts && canViewWorkOrders
+      ? [{ header: "Costo por km/h (GPS)", key: "gpsCostPerUnit", width: 20 }]
+      : []),
     ...(showFuelCost ? [{ header: "Costo combustible (proveedor)", key: "fuelCost", width: 24 }] : []),
     ...(showFuelCost && canViewWorkOrders && canViewPurchaseCosts
       ? [{ header: "Costo total (combustible + mano de obra + compras)", key: "totalCost", width: 36 }]
@@ -102,6 +113,10 @@ function formatPerformance(
   return `${formatted} ${unit === "km_per_liter" ? "km/L" : "L/h"}`
 }
 
+function providerName(provider: string): string {
+  return provider === "onway" ? "OnWay" : provider === "wialon" ? "Wialon" : provider
+}
+
 export function buildOperationalAssetExportRow(
   asset: OperationalAsset,
   canViewInspections: boolean,
@@ -111,6 +126,7 @@ export function buildOperationalAssetExportRow(
   canViewFleet = false,
   canViewWorkOrders = false,
   canViewPurchaseCosts = false,
+  canViewMaintenance = false,
 ): Record<string, string | number | null> {
   const showFuelCost = canViewFuel && canViewCosts
   const showCapa = canViewCapa && canViewInspections
@@ -125,13 +141,17 @@ export function buildOperationalAssetExportRow(
           expiredDocuments: asset.expiredDocumentTypes.length > 0 ? asset.expiredDocumentTypes.join(", ") : null,
           gpsOdometer: asset.gpsOdometer,
           gpsHourMeter: asset.gpsHourMeter,
-          gpsObservedAt: asset.gpsObservedAt,
+          gpsReportedAt: asset.gpsReportedAt,
           gpsFuelLevel: asset.gpsFuelLevel,
           meterMismatch: asset.meterMismatch ? "Revisar" : null,
+          gpsProviders: asset.gpsProviders.length > 0 ? asset.gpsProviders.map(providerName).join(" + ") : null,
+          gpsMeterProvider: asset.gpsMeterProvider ? providerName(asset.gpsMeterProvider) : null,
         }
       : {}),
     ...(canViewFuel
       ? {
+          gpsPerformance: formatPerformance(asset.gpsPerformanceValue, asset.gpsPerformanceUnit),
+          gpsPerformanceSource: meterSourceLabel(asset.gpsMeterSource),
           fuelLiters: asset.fuelLiters,
           fuelLoadCount: asset.fuelLoadCount,
           lastFuelLoadAt: asset.lastFuelLoadAt,
@@ -163,6 +183,10 @@ export function buildOperationalAssetExportRow(
         }
       : {}),
     ...(canViewPurchaseCosts ? { purchaseAmount: asset.purchaseAmount } : {}),
+    ...(canViewMaintenance
+      ? { gpsMaintenance: asset.gpsMaintenanceState ? EQUIPMENT_STATE_LABEL[asset.gpsMaintenanceState] : null }
+      : {}),
+    ...(showFuelCost && canViewPurchaseCosts && canViewWorkOrders ? { gpsCostPerUnit: asset.gpsCostPerUnit } : {}),
     ...(showFuelCost ? { fuelCost: asset.fuelBilledAmount } : {}),
     ...(showFuelCost && canViewWorkOrders && canViewPurchaseCosts ? { totalCost: asset.totalCost } : {}),
   }

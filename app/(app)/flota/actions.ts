@@ -11,6 +11,7 @@ import { fuelVehicles } from "@/db/schema"
 import { can, requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite, serviceWorksiteScope } from "@/lib/auth/scope"
 import { VEHICLE_EXPIRY_FIELDS, formatFuelVehicleStatus, updateVehicleExpiriesSchema, type VehicleExpiryField } from "@/lib/combustibles/validation"
+import { meterSourceLabel } from "@/lib/combustibles/meter-source"
 import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
 import { uploadFleetDocument, deleteFleetDocument, getFleetOverview, getFleetProviderGapMonths, FLEET_OVERVIEW_LOOKBACK_MONTHS } from "@/lib/services/fleet"
@@ -241,6 +242,7 @@ export async function exportFleetXlsxAction(filters: FleetOverviewFilters = {}) 
       // P-9: la misma lectura que la columna «Km/Hr» de la lista (odómetro y, a falta de él, horómetro),
       // con la fecha en que se tomó y, si el detector tiene un caso abierto sobre ella, la misma marca.
       { header: "Última lectura", key: "lastReading", width: 44 },
+      { header: "Fuente de la lectura", key: "meterSource", width: 22 },
       // Misma marca que el aviso de la columna «Km/Hr» de la lista: hay un caso del detector aún abierto
       // sobre la última lectura del equipo.
       { header: "Lectura objetada", key: "objectedReading", width: 18 },
@@ -271,6 +273,7 @@ export async function exportFleetXlsxAction(filters: FleetOverviewFilters = {}) 
       liters: row.totalLiters,
       loads: row.loadCount,
       lastReading: formatLastReading(row),
+      meterSource: meterSourceLabel(row.meterSource) ?? "",
       // Vacía sin lectura: ahí no hay nada que objetar, y «No» afirmaría que la lectura está bien.
       objectedReading: row.lastOdometerReading == null && row.lastHourMeterReading == null ? "" : row.lastReadingObjection ? "Sí" : "No",
       openWorkOrders: row.openWorkOrders,

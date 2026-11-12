@@ -45,7 +45,7 @@ function featureCollection(positions: FleetGpsPosition[]) {
     type: "FeatureCollection" as const,
     features: positions.map((position) => ({
       type: "Feature" as const,
-      properties: { id: position.id, ignition: position.ignition },
+      properties: { id: position.id, ignition: position.ignition, ignitionKnown: position.ignitionKnown },
       geometry: { type: "Point" as const, coordinates: [position.longitude, position.latitude] },
     })),
   }
@@ -122,7 +122,7 @@ export function FleetGpsMap({ positions }: { positions: FleetGpsPosition[] }) {
           nextMap.addSource(SOURCE_ID, { type: "geojson", data: featureCollection(initial), cluster: true, clusterMaxZoom: 12, clusterRadius: 45 })
           nextMap.addLayer({ id: CLUSTER_LAYER, type: "circle", source: SOURCE_ID, filter: ["has", "point_count"], paint: { "circle-color": "#005c3f", "circle-radius": 18 } })
           nextMap.addLayer({ id: "fleet-gps-cluster-count", type: "symbol", source: SOURCE_ID, filter: ["has", "point_count"], layout: { "text-field": "{point_count_abbreviated}", "text-font": CLUSTER_COUNT_FONT, "text-size": 12 }, paint: { "text-color": "#ffffff" } })
-          nextMap.addLayer({ id: POINT_LAYER, type: "circle", source: SOURCE_ID, filter: ["!", ["has", "point_count"]], paint: { "circle-color": ["case", ["get", "ignition"], "#005c3f", "#64748b"], "circle-radius": 7, "circle-stroke-width": 2, "circle-stroke-color": "#ffffff" } })
+          nextMap.addLayer({ id: POINT_LAYER, type: "circle", source: SOURCE_ID, filter: ["!", ["has", "point_count"]], paint: { "circle-color": ["case", ["!", ["get", "ignitionKnown"]], "#94a3b8", ["get", "ignition"], "#005c3f", "#64748b"], "circle-radius": 7, "circle-stroke-width": 2, "circle-stroke-color": "#ffffff" } })
 
           nextMap.on("click", (event) => {
             const [feature] = nextMap.queryRenderedFeatures(event.point, { layers: [POINT_LAYER, CLUSTER_LAYER] })

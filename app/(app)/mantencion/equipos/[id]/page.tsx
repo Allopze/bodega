@@ -39,7 +39,8 @@ export default async function EquipmentDetailPage({
   const lifeLimit = Number.isInteger(requested) && requested > LIFE_PAGE_SIZE ? Math.min(requested, 500) : LIFE_PAGE_SIZE
 
   // El alcance de faenas se aplica en la carga: un equipo ajeno es «no encontrado», no «sin permiso».
-  const [row] = await loadFleet({ scope: equipmentScope(viewer), includeRetired: true, vehicleIds: [id], readingsPerEquipment: 1 })
+  const canViewFleet = can(session, "flota:view")
+  const [row] = await loadFleet({ scope: equipmentScope(viewer), includeRetired: true, vehicleIds: [id], readingsPerEquipment: 1, includeGpsEstimate: canViewFleet })
   if (!row) notFound()
 
   const canManage = can(session, "mant:equipment:manage")
@@ -86,10 +87,12 @@ export default async function EquipmentDetailPage({
       lastPreventive: status.lastPreventive,
     },
     workshop: workshop ? { entryDate: workshop.entryDate, daysStopped: workshop.daysStopped, stale: workshop.stale, lastActivityDate: workshop.lastActivityDate } : null,
+    gpsStatus: row.gpsStatus,
+    gpsReadingAt: row.gpsReadingAt,
     recordCount,
     life: { rows: life.rows, totals, hasMore: life.hasMore, limit: lifeLimit, workOrders, historical: { total: historical.total, vehicleId: id } },
     insurance,
-    canViewFleet: can(session, "flota:view"),
+    canViewFleet,
     history,
     purchases,
     purchaseLinks: {

@@ -1,5 +1,5 @@
 import type { Session } from "next-auth"
-import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm"
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
   fleetVehicleDocuments,
@@ -20,12 +20,12 @@ import { accountableProviderTransactionsWhere, providerLoadCountSql } from "@/li
 import { OPEN_ANOMALY_CASE_STATUSES } from "@/lib/combustibles/anomaly-labels"
 import { acceptedMeterResetSql } from "@/lib/combustibles/meter-reset-sql"
 import { getFuelProviderCoverageGaps } from "@/lib/combustibles/coverage-notice-data"
-import { maxMeterRatePerDayOf, meterSeriesAdvance, type MeterSeriesPoint } from "@/lib/combustibles/meter-series"
+import { maxMeterRatePerDayOf, meterSeriesAdvance, meterSeriesCoversPeriod, type MeterSeriesPoint } from "@/lib/combustibles/meter-series"
 import { fuelOperationOccurredAtSql } from "@/lib/combustibles/fuel-log"
 import { expiringDocuments, fleetDocumentMetadataSchema, resolveNextExpiryDate } from "@/lib/validation/fleet-documents"
 import { filterFleetOverviewRows, type FleetOverviewFilters } from "@/lib/fleet-overview-filters"
 import { isValidReason, reasonRequiredMessage } from "@/lib/validation/reason-thresholds"
-import { addMonths, todayInChile } from "@/lib/utils"
+import { addMonths, chileDayStartInstant, todayInChile } from "@/lib/utils"
 import {
   getVehicleWorkOrderMetrics,
   listRecentVehicleWorkOrders,
@@ -153,6 +153,11 @@ export async function getFleetOverview(
   )
 
   const since = fleetOverviewSince()
+  const today = todayInChile()
+  // La ventana es de días civiles chilenos; sus bordes se comparan como
+  // instantes ISO para que el índice de `occurred_at` siga disponible.
+  const sinceInstant = chileDayStartInstant(since)
+  const chileDay = sql`(${fuelMeterReadings.occurredAt}::timestamptz at time zone 'America/Santiago')::date`
 
   // Litros, costo y cargas por vehículo salen del libro del proveedor (Copec) con la regla
   // canónica compartida con Analítica y la conciliación (C-9): `fuel_loads` —la serie
@@ -161,7 +166,7 @@ export async function getFleetOverview(
   // `worksite_id` nulo (que el resolvedor de patentes no pudo atribuir) no desaparecen.
   const providerWhere = and(
     accountableProviderTransactionsWhere(),
-    sql`left(${fuelProviderTransactions.occurredAt}, 10) >= ${since}`,
+    gte(fuelProviderTransactions.occurredAt, since),
     worksiteScopeSql(session, fuelVehicles.worksiteId, worksiteId),
     vehicleIds ? inArray(fuelProviderTransactions.vehicleId, [...vehicleIds]) : undefined,
   )
@@ -186,31 +191,45 @@ export async function getFleetOverview(
       .innerJoin(fuelVehicles, eq(fuelProviderTransactions.vehicleId, fuelVehicles.id))
       .where(and(providerWhere, isNotNull(fuelProviderTransactions.vehicleId)))
       .groupBy(fuelProviderTransactions.vehicleId) : Promise.resolve([]),
-    // Lecturas de medidor de la ventana, de la fuente canónica: el detalle por transacción de
-    // Copec en `fuel_meter_readings`, la misma que lee Analítica. `fuel_loads` tiene 0 filas en
-    // producción, así que la columna «Km/Hr» no existía y el recorrido valía `null` para todo
-    // equipo. Una serie por equipo y tipo de medidor, en orden cronológico: la primera y la
-    // última lectura ya no bastan —un retroceso sin reset las vuelve inservibles—, así que el
-    // recorrido se calcula con `meterSeriesAdvance`. El alcance es el del equipo (la lectura no
-    // lleva faena propia): la tabla ya lista sólo los equipos de la faena visible.
+    // Lecturas de medidor de la ventana, de todas las fuentes. La fuente se
+    // elige en memoria (Copec → Wialon → OnWay), pero la lectura no se filtra
+    // a Copec: un equipo cubierto sólo por GPS también tiene «Km/Hr». Una
+    // lectura por día y fuente reduce la consulta sin perder la serie.
     canViewFuel ? db
-      .select({
-        id: fuelMeterReadings.id,
-        vehicleId: fuelMeterReadings.vehicleId,
-        meterType: fuelMeterReadings.meterType,
-        occurredAt: fuelMeterReadings.occurredAt,
-        value: fuelMeterReadings.value,
-        acceptedReset: acceptedResetSql,
-      })
+      .selectDistinctOn(
+        [
+          fuelMeterReadings.vehicleId,
+          fuelMeterReadings.source,
+          fuelMeterReadings.meterType,
+          chileDay,
+        ],
+        {
+          id: fuelMeterReadings.id,
+          vehicleId: fuelMeterReadings.vehicleId,
+          source: fuelMeterReadings.source,
+          meterType: fuelMeterReadings.meterType,
+          occurredAt: fuelMeterReadings.occurredAt,
+          value: fuelMeterReadings.value,
+          acceptedReset: acceptedResetSql,
+        },
+      )
       .from(fuelMeterReadings)
       .innerJoin(fuelVehicles, eq(fuelVehicles.id, fuelMeterReadings.vehicleId))
       .where(and(
-        eq(fuelMeterReadings.source, "copec_tct"),
-        sql`left(${fuelMeterReadings.occurredAt}, 10) >= ${since}`,
+        // Rango sobre la columna indexada; el día sólo se usa para quedarse con
+        // una lectura por día y fuente, no para filtrar.
+        gte(fuelMeterReadings.occurredAt, sinceInstant),
         vehicleScope,
         vehicleIds ? inArray(fuelMeterReadings.vehicleId, [...vehicleIds]) : undefined,
       ))
-      .orderBy(fuelMeterReadings.vehicleId, fuelMeterReadings.meterType, fuelMeterReadings.occurredAt, fuelMeterReadings.id) : Promise.resolve([]),
+      .orderBy(
+        fuelMeterReadings.vehicleId,
+        fuelMeterReadings.source,
+        fuelMeterReadings.meterType,
+        chileDay,
+        desc(fuelMeterReadings.occurredAt),
+        desc(fuelMeterReadings.id),
+      ) : Promise.resolve([]),
     // Casos del detector que siguen ABIERTOS (`open`, `in_review`, `reopened`: los mismos que lista «Por
     // revisar») sobre lecturas de esa misma ventana. Un caso cerrado, sea resuelto o descartado y con la
     // resolución que sea, ya no pide a nadie que mire la lectura y no entra. Mismo alcance que la lectura
@@ -231,8 +250,7 @@ export async function getFleetOverview(
       .where(and(
         eq(fuelAnomalyCases.referenceEntityType, "fuel_meter_reading"),
         inArray(fuelAnomalyCases.status, [...OPEN_ANOMALY_CASE_STATUSES]),
-        eq(fuelMeterReadings.source, "copec_tct"),
-        sql`left(${fuelMeterReadings.occurredAt}, 10) >= ${since}`,
+        gte(fuelMeterReadings.occurredAt, sinceInstant),
         vehicleScope,
         vehicleIds ? inArray(fuelMeterReadings.vehicleId, [...vehicleIds]) : undefined,
         worksiteScopeSql(session, fuelAnomalyCases.worksiteId, worksiteId),
@@ -277,18 +295,18 @@ export async function getFleetOverview(
   ])
 
   const fuelByVehicle = new Map(fuelRows.map((row) => [row.vehicleId, row]))
-  // Series de lecturas por equipo y tipo de medidor (la consulta ya las trae ordenadas).
-  const meterSeriesByVehicle = new Map<string, { odometer: MeterSeriesPoint[]; hour_meter: MeterSeriesPoint[] }>()
-  // Id de la última lectura de cada serie (la consulta ya las trae en orden): es la que Flota muestra y
-  // sobre la que se busca un caso abierto.
+  // Puntos por equipo + fuente + medidor. La consulta viene ordenada por fecha;
+  // la fuente se elige después, una sola por equipo y medidor, para no encadenar
+  // calibraciones distintas.
+  const meterPointsBySeries = new Map<string, MeterSeriesPoint[]>()
   const lastReadingIdBySeries = new Map<string, string>()
   for (const row of meterRows) {
     if (!row.vehicleId) continue
-    const series = meterSeriesByVehicle.get(row.vehicleId) ?? { odometer: [], hour_meter: [] }
-    const target = row.meterType === "hour_meter" ? series.hour_meter : series.odometer
-    target.push({ value: Number(row.value), occurredAt: row.occurredAt, acceptedReset: row.acceptedReset })
-    meterSeriesByVehicle.set(row.vehicleId, series)
-    lastReadingIdBySeries.set(`${row.vehicleId}:${row.meterType === "hour_meter" ? "hour_meter" : "odometer"}`, row.id)
+    const key = `${row.vehicleId}\u0000${row.source}\u0000${row.meterType}`
+    const points = meterPointsBySeries.get(key) ?? []
+    points.push({ value: Number(row.value), occurredAt: row.occurredAt, acceptedReset: row.acceptedReset })
+    meterPointsBySeries.set(key, points)
+    lastReadingIdBySeries.set(key, row.id)
   }
   // Primer caso abierto de cada lectura (la consulta viene ordenada: gana el más antiguo).
   const openObjectionByReading = new Map<string, { caseId: string; ruleLabel: string }>()
@@ -313,16 +331,55 @@ export async function getFleetOverview(
   return vehicles.map((vehicle) => {
     const fuel = fuelByVehicle.get(vehicle.id)
     const totalFuelAmount = canViewFuel && canViewCosts ? Number(fuel?.totalFuelAmount ?? 0) : null
-    const series = meterSeriesByVehicle.get(vehicle.id)
-    const lastOdometerPoint = series?.odometer.at(-1)
-    const lastHourMeterPoint = series?.hour_meter.at(-1)
+    const pickSeries = (meterType: "odometer" | "hour_meter") => {
+      const sources = ["copec_tct", "gps_wialon", "gps_onway"] as const
+      const pointsFor = (source: typeof sources[number]) =>
+        meterPointsBySeries.get(`${vehicle.id}\u0000${source}\u0000${meterType}`) ?? []
+      // Primero una fuente que cubra la ventana completa: así el costo del
+      // período no se divide por un avance de pocos días.
+      const covering = sources.find((source) => meterSeriesCoversPeriod(pointsFor(source), since, today))
+      if (covering) return covering
+      const withTwo = sources.find((source) => pointsFor(source).length >= 2)
+      if (withTwo) return withTwo
+      // Sin dos puntos no hay avance; para mostrar la última lectura se usa la
+      // fuente con el punto más reciente, nunca una mezcla.
+      let fallback: typeof sources[number] | null = null
+      let fallbackAt = ""
+      for (const source of sources) {
+        const last = pointsFor(source).at(-1)
+        if (last && last.occurredAt > fallbackAt) {
+          fallback = source
+          fallbackAt = last.occurredAt
+        }
+      }
+      return fallback
+    }
+    const odometerSource = pickSeries("odometer")
+    const hourMeterSource = pickSeries("hour_meter")
+    const odometerPoints = odometerSource
+      ? meterPointsBySeries.get(`${vehicle.id}\u0000${odometerSource}\u0000odometer`) ?? []
+      : []
+    const hourMeterPoints = hourMeterSource
+      ? meterPointsBySeries.get(`${vehicle.id}\u0000${hourMeterSource}\u0000hour_meter`) ?? []
+      : []
+    const series = { odometer: odometerPoints, hour_meter: hourMeterPoints }
+    const lastOdometerPoint = odometerPoints.at(-1)
+    const lastHourMeterPoint = hourMeterPoints.at(-1)
     const lastOdometer = lastOdometerPoint?.value ?? null
     const lastHourMeter = lastHourMeterPoint?.value ?? null
-    // La marca va sobre la lectura que la columna «Km/Hr» muestra (odómetro y, a falta de éste, horómetro:
-    // `app/(app)/flota/fleet-table.tsx`), no sobre la otra serie del equipo, que nadie ve en esa fila.
+    const meterSeriesCovered = vehicle.performanceUnit === "liters_per_hour"
+      ? lastHourMeter != null && meterSeriesCoversPeriod(hourMeterPoints, since, today)
+      : vehicle.performanceUnit === "km_per_liter"
+        ? lastOdometer != null && meterSeriesCoversPeriod(odometerPoints, since, today)
+        : lastOdometer != null
+          ? meterSeriesCoversPeriod(odometerPoints, since, today)
+          : lastHourMeter != null ? meterSeriesCoversPeriod(hourMeterPoints, since, today) : false
+    // La columna «Km/Hr» muestra una sola serie; su fuente va al tooltip para
+    // que el número no se confunda con una lectura de otro proveedor.
+    const shownSource = lastOdometer != null ? odometerSource : hourMeterSource
     const shownReadingId = lastOdometer != null
-      ? lastReadingIdBySeries.get(`${vehicle.id}:odometer`)
-      : lastHourMeter != null ? lastReadingIdBySeries.get(`${vehicle.id}:hour_meter`) : undefined
+      ? lastReadingIdBySeries.get(`${vehicle.id}\u0000${odometerSource}\u0000odometer`)
+      : lastHourMeter != null ? lastReadingIdBySeries.get(`${vehicle.id}\u0000${hourMeterSource}\u0000hour_meter`) : undefined
     const shownReadingAt = lastOdometer != null
       ? lastOdometerPoint?.occurredAt
       : lastHourMeter != null ? lastHourMeterPoint?.occurredAt : undefined
@@ -341,7 +398,7 @@ export async function getFleetOverview(
     // (CLP/km o CLP/h) y sólo con ambas capacidades y un recorrido positivo.
     const kmAdvance = km?.advance ?? 0
     const hoursAdvance = hours?.advance ?? 0
-    const costPerUnit = totalFuelAmount != null
+    const costPerUnit = totalFuelAmount != null && meterSeriesCovered
       ? vehicle.performanceUnit === "km_per_liter" && kmAdvance > 0
         ? { value: totalFuelAmount / kmAdvance, unit: "CLP/km" as const }
         : vehicle.performanceUnit === "liters_per_hour" && hoursAdvance > 0
@@ -397,6 +454,10 @@ export async function getFleetOverview(
        * `combustibles:view`. La exportación a Excel lo lleva como «fecha de la última lectura».
        */
       lastReadingAt: canViewFuel ? (shownReadingAt ?? null) : null,
+      /** Fuente de la serie que alimenta «Km/Hr» y el costo por km/h. */
+      meterSource: canViewFuel ? shownSource : null,
+      /** La serie cubre la ventana completa; sin esto no se publica un costo por km/h. */
+      meterSeriesCovered: canViewFuel ? meterSeriesCovered : null,
       /** Caso del detector aún abierto sobre la lectura que se muestra; `null` si no hay (o sin `combustibles:view`). */
       lastReadingObjection: canViewFuel && shownReadingId ? (openObjectionByReading.get(shownReadingId) ?? null) : null,
       kmDriven: km?.advance ?? null,

@@ -68,6 +68,8 @@ export interface IntegrationSettingsDialogProps {
   hasStoredSettings: boolean
   /** Valor vigente del interruptor al abrir. */
   syncEnabled: boolean
+  /** Rótulo del interruptor; «Actualización diaria» por defecto. */
+  syncLabel?: string
   /** Cuándo corre y qué hace la actualización diaria. */
   syncDescription: string
   saveAction: (prev: ActionState, formData: FormData) => Promise<ActionState>
@@ -94,6 +96,7 @@ export function IntegrationSettingsDialog({
   withoutKeyringNote,
   hasStoredSettings,
   syncEnabled: initialSyncEnabled,
+  syncLabel = "Actualización diaria",
   syncDescription,
   saveAction,
   clearAction,
@@ -169,13 +172,13 @@ export function IntegrationSettingsDialog({
 
             <div className="flex items-center justify-between gap-4 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2.5">
               <div>
-                <p className="text-sm font-medium text-[var(--color-text)]">Actualización diaria</p>
+                <p className="text-sm font-medium text-[var(--color-text)]">{syncLabel}</p>
                 <p className="text-xs text-[var(--color-text-muted)]">{syncDescription}</p>
               </div>
               <Switch
                 checked={syncEnabled}
                 onCheckedChange={setSyncEnabled}
-                label={`Activar la actualización diaria de ${providerName}`}
+                label={`Activar la actualización de ${providerName}`}
                 id={`${idPrefix}-sync-enabled`}
               />
               <input type="hidden" name="syncEnabled" value={syncEnabled ? "on" : ""} />

@@ -76,7 +76,7 @@ export const fleetGpsSyncRuns = pgTable("fleet_gps_sync_runs", {
   startedAt: timestamp("started_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   finishedAt: timestamp("finished_at", { withTimezone: true, mode: "string" }),
 }, (table) => [
-  check("fleet_gps_sync_runs_provider_valid", sql`${table.provider} IN ('onway')`),
+  check("fleet_gps_sync_runs_provider_valid", sql`${table.provider} IN ('onway', 'wialon')`),
   // `live`: refresco de posiciones mientras alguien tiene abierta Monitoreo GPS.
   check("fleet_gps_sync_runs_trigger_valid", sql`${table.trigger} IN ('manual', 'cron', 'live')`),
   check("fleet_gps_sync_runs_status_valid", sql`${table.status} IN ('running', 'success', 'partial', 'failed')`),
@@ -87,6 +87,28 @@ export const fleetGpsSyncRuns = pgTable("fleet_gps_sync_runs", {
   `),
   index("fleet_gps_sync_runs_started_idx").on(table.startedAt),
   index("fleet_gps_sync_runs_status_idx").on(table.status),
+])
+
+/**
+ * Vínculo manual entre un dispositivo GPS y un vehículo del catálogo.
+ *
+ * OnWay se reconcilia por patente; Wialon puede nombrar la unidad con texto
+ * libre, así que los casos que no calzan se resuelven acá y el sync los
+ * respeta en cada corrida. Un vínculo nunca crea un vehículo: sólo apunta a
+ * uno existente.
+ */
+export const fleetGpsDeviceLinks = pgTable("fleet_gps_device_links", {
+  id: text("id").primaryKey(),
+  provider: text("provider").notNull().default("wialon"),
+  externalDeviceId: text("external_device_id").notNull(),
+  vehicleId: text("vehicle_id").notNull().references(() => fuelVehicles.id, { onDelete: "cascade" }),
+  createdByUserId: text("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [
+  check("fleet_gps_device_links_provider_valid", sql`${table.provider} IN ('onway', 'wialon')`),
+  uniqueIndex("fleet_gps_device_links_device_unique").on(table.provider, table.externalDeviceId),
+  index("fleet_gps_device_links_vehicle_idx").on(table.vehicleId),
 ])
 
 /** Latest allowlisted telemetry only; sensitive portal payloads are never persisted. */
@@ -130,7 +152,7 @@ export const fleetGpsLatestPositions = pgTable("fleet_gps_latest_positions", {
     foreignColumns: [fuelVehicles.id, fuelVehicles.worksiteId],
     name: "fleet_gps_latest_positions_vehicle_worksite_fk",
   }).onUpdate("cascade").onDelete("cascade"),
-  check("fleet_gps_latest_positions_provider_valid", sql`${table.provider} IN ('onway')`),
+  check("fleet_gps_latest_positions_provider_valid", sql`${table.provider} IN ('onway', 'wialon')`),
   check("fleet_gps_latest_positions_vehicle_scope_consistent", sql`
     (${table.vehicleId} IS NULL AND ${table.worksiteId} IS NULL)
     OR (${table.vehicleId} IS NOT NULL AND ${table.worksiteId} IS NOT NULL)
@@ -249,6 +271,11 @@ export const fleetGpsAlerts = pgTable("fleet_gps_alerts", {
 export const fleetGpsSyncRunsRelations = relations(fleetGpsSyncRuns, ({ one, many }) => ({
   actor: one(users, { fields: [fleetGpsSyncRuns.actorUserId], references: [users.id] }),
   positions: many(fleetGpsLatestPositions),
+}))
+
+export const fleetGpsDeviceLinksRelations = relations(fleetGpsDeviceLinks, ({ one }) => ({
+  vehicle: one(fuelVehicles, { fields: [fleetGpsDeviceLinks.vehicleId], references: [fuelVehicles.id] }),
+  createdBy: one(users, { fields: [fleetGpsDeviceLinks.createdByUserId], references: [users.id] }),
 }))
 
 export const fleetGpsLatestPositionsRelations = relations(fleetGpsLatestPositions, ({ one }) => ({

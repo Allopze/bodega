@@ -38,6 +38,21 @@ export function canViewPurchaseCosts(session: Session): boolean {
   return can(session, "purchasing:view")
 }
 
+/**
+ * Lecturas y pautas de mantención: la estimación GPS cruza con Mantención, pero
+ * no se expone a quien sólo tiene Flota. Es la misma tríada que abre la lista
+ * de equipos (`app/(app)/mantencion/equipos/page.tsx`).
+ */
+export const OPERATIONAL_CONTROL_MAINTENANCE_PERMISSIONS: Permission[] = [
+  "mant:records:view_worksite",
+  "mant:records:view_all",
+  "mant:equipment:manage",
+]
+
+export function canViewMaintenanceEquipment(session: Session): boolean {
+  return canAny(session, ...OPERATIONAL_CONTROL_MAINTENANCE_PERMISSIONS)
+}
+
 /** `mant:ot:view_all`: ve las OT de todas las faenas, no sólo las de su alcance. */
 export function canViewAllWorkOrders(session: Session): boolean {
   return can(session, "mant:ot:view_all")
@@ -59,6 +74,7 @@ export function operationalControlCapabilities(session: Session) {
     canViewCosts: can(session, "combustibles:view_costs"),
     canViewWorkOrders: canViewWorkOrders(session),
     canViewPurchaseCosts: canViewPurchaseCosts(session),
+    canViewMaintenance: canViewMaintenanceEquipment(session),
   } as const
 }
 

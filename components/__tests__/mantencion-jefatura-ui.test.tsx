@@ -133,6 +133,7 @@ function equipmentRow(index: number, overrides: Partial<EquipmentListRow> = {}):
     typeName: "Camión", brandName: "Scania", model: "R450", year: 2021, worksiteName: index % 2 ? "Arauco" : "Teno",
     scheduleName: "Camiones y tractos", hasSchedule: true, unit: "km", state: "al_dia", stateOrder: 2, reading: 12000, readingDate: "2026-10-01",
     nextReading: 20000, remaining: 8000, urgency: 0.8, nextIntervalValue: 20000, inWorkshop: false, workshopDays: null, workshopStale: false,
+    gpsState: null, gpsReading: null, gpsReadingDate: null, gpsNextReading: null, gpsRemaining: null,
     ...overrides,
   }
 }

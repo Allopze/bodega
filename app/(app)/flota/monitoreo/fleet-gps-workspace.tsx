@@ -2,12 +2,15 @@
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import type { FleetGpsPosition } from "@/lib/services/fleet-gps"
+import type { FleetGpsPosition, LinkableVehicle, WialonLinkableUnit } from "@/lib/services/fleet-gps"
+import type { WialonAdminStatus } from "@/lib/integrations/wialon/wialon-settings"
 import { formatDateTime } from "@/lib/utils"
 import { FleetGpsLiveStatus } from "./fleet-gps-live-status"
 import { FleetGpsMap } from "./fleet-gps-map"
 import { FleetGpsTable } from "./fleet-gps-table"
 import { OnwayControls } from "./onway-controls"
+import { WialonControls } from "./wialon-controls"
+import { WialonUnitLinks } from "./wialon-unit-links"
 import { useOnwayLiveRefresh } from "./use-onway-live-refresh"
 
 type Alert = {
@@ -22,11 +25,14 @@ const ALERT_STATUS_LABEL: Record<string, string> = {
   blocked: "Requiere atención",
 }
 
-export function FleetGpsWorkspace({ positions, alerts, canViewHistory, adminStatus, blockedAlertsCount = 0 }: {
+export function FleetGpsWorkspace({ positions, alerts, canViewHistory, adminStatus, wialonStatus, wialonUnits, linkableVehicles, blockedAlertsCount = 0 }: {
   positions: FleetGpsPosition[]
   alerts: Alert[]
   canViewHistory: boolean
   adminStatus: React.ComponentProps<typeof OnwayControls>["status"] | null
+  wialonStatus: WialonAdminStatus | null
+  wialonUnits: WialonLinkableUnit[]
+  linkableVehicles: LinkableVehicle[]
   /** Alertas en estado `blocked` que ya vienen filtradas del servidor; permite
    *  etiquetar la pestaña antes de que el usuario la abra, sin recorrer la lista. */
   blockedAlertsCount?: number
@@ -58,7 +64,7 @@ export function FleetGpsWorkspace({ positions, alerts, canViewHistory, adminStat
         <Card id="vehiculos-gps" className="overflow-hidden">
           <CardHeader>
             <CardTitle as="h2" className="text-base">Vehículos monitoreados</CardTitle>
-            <CardDescription>La hora de captura indica cuándo la plataforma consultó OnWay; la hora GPS indica cuándo el dispositivo reportó la ubicación.</CardDescription>
+            <CardDescription>La hora de captura indica cuándo la plataforma consultó la fuente; la hora GPS indica cuándo el dispositivo reportó la ubicación.</CardDescription>
           </CardHeader>
           <FleetGpsTable positions={positions} />
         </Card>
@@ -104,15 +110,37 @@ export function FleetGpsWorkspace({ positions, alerts, canViewHistory, adminStat
           </Card>
         </TabsContent>
       ) : null}
-      {adminStatus ? (
-        <TabsContent value="settings">
-          <Card>
-            <CardHeader>
-              <CardTitle as="h2" className="text-base">Configuración de OnWay</CardTitle>
-              <CardDescription>Credenciales cifradas, sincronización, catálogo de alertas y mapeos de conductores se administran aquí. Las reglas quedan desactivadas hasta asignar un propietario con permiso para la faena.</CardDescription>
-            </CardHeader>
-            <div className="px-6 pb-6"><OnwayControls status={adminStatus} /></div>
-          </Card>
+      {(adminStatus || wialonStatus) ? (
+        <TabsContent value="settings" id="configuracion" className="space-y-3">
+          {adminStatus ? (
+            <Card>
+              <CardHeader>
+                <CardTitle as="h2" className="text-base">Configuración de OnWay</CardTitle>
+                <CardDescription>Credenciales cifradas, sincronización, catálogo de alertas y mapeos de conductores se administran aquí. Las reglas quedan desactivadas hasta asignar un propietario con permiso para la faena.</CardDescription>
+              </CardHeader>
+              <div className="px-6 pb-6"><OnwayControls status={adminStatus} /></div>
+            </Card>
+          ) : null}
+          {wialonStatus ? (
+            <Card>
+              <CardHeader>
+                <CardTitle as="h2" className="text-base">Configuración de Wialon</CardTitle>
+                <CardDescription>Token, URL y parámetros de sensores. La actualización corre cada 5 minutos y no reemplaza a OnWay: suma los equipos que OnWay no cubre.</CardDescription>
+              </CardHeader>
+              <div className="px-6 pb-6"><WialonControls status={wialonStatus} /></div>
+            </Card>
+          ) : null}
+          {wialonStatus ? (
+            <Card>
+              <CardHeader>
+                <CardTitle as="h2" className="text-base">Unidades Wialon y vínculo</CardTitle>
+                <CardDescription>Las unidades que no calzan por patente o código se vinculan a un vehículo. El vínculo se conserva entre lecturas y no crea equipos nuevos.</CardDescription>
+              </CardHeader>
+              <div className="px-6 pb-6">
+                <WialonUnitLinks units={wialonUnits} vehicles={linkableVehicles} />
+              </div>
+            </Card>
+          ) : null}
         </TabsContent>
       ) : null}
     </Tabs>

@@ -29,6 +29,25 @@ const asset: OperationalAsset = {
   gpsHourMeter: null,
   gpsObservedAt: "2026-10-30T10:00:00.000Z",
   gpsFuelLevel: 75,
+  gpsProvider: "wialon",
+  gpsProviders: ["onway", "wialon"],
+  gpsStale: false,
+  gpsReportedAt: "2026-10-30T10:00:00.000Z",
+  gpsOdometerAt: "2026-10-30T10:00:00.000Z",
+  gpsHourMeterAt: null,
+  gpsFuelLevelAt: "2026-10-30T10:00:00.000Z",
+  gpsSpeedKph: 0,
+  gpsIgnition: false,
+  gpsPerformanceValue: 11.2,
+  gpsPerformanceUnit: "km_per_liter",
+  gpsPerformanceStatus: "ok",
+  gpsCostPerUnit: 80,
+  gpsMeterSource: "gps_wialon",
+  gpsMeterProvider: "wialon",
+  gpsMaintenanceState: "al_dia",
+  gpsMaintenanceNextReading: 130000,
+  gpsMaintenanceRemaining: 6544,
+  gpsMaintenanceReadingAt: "2026-10-30T10:00:00.000Z",
   fuelLiters: 1200,
   fuelLoadCount: 4,
   lastFuelLoadAt: "2026-10-20T15:00:00.000Z",
@@ -57,10 +76,10 @@ function keys(cols: ReturnType<typeof buildOperationalAssetExportColumns>) {
 // Sin «Contrato» (el `key` interno) ni «Clase» (la hoja sólo lleva vehículos).
 const BASE = ["code", "name", "worksite", "status"]
 const INSPECTION_KEYS = ["inspections", "inspectionCompliance", "openFindings", "criticalOpenFindings", "openFindingsWithWorkOrder", "openFindingsWithoutWorkOrder"]
-const FUEL_KEYS = ["fuelLiters", "fuelLoadCount", "lastFuelLoadAt", "fuelPerformance", "flaggedLoads", "openAnomalyCases", "criticalOpenAnomalyCases", "idlePct", "litersIdle"]
+const FUEL_KEYS = ["gpsPerformance", "gpsPerformanceSource", "fuelLiters", "fuelLoadCount", "lastFuelLoadAt", "fuelPerformance", "flaggedLoads", "openAnomalyCases", "criticalOpenAnomalyCases", "idlePct", "litersIdle"]
 const WORK_ORDER_KEYS = ["openWorkOrders", "inWorkshop", "workshopHours", "maintenanceCost"]
 const PURCHASE_KEYS = ["purchaseAmount"]
-const FLEET_KEYS = ["nextExpiryDate", "expiredDocuments", "gpsOdometer", "gpsHourMeter", "gpsObservedAt", "gpsFuelLevel", "meterMismatch"]
+const FLEET_KEYS = ["nextExpiryDate", "expiredDocuments", "gpsOdometer", "gpsHourMeter", "gpsReportedAt", "gpsFuelLevel", "meterMismatch", "gpsProviders", "gpsMeterProvider"]
 
 describe("buildOperationalAssetExportColumns", () => {
   it("incluye todas las columnas con todas las capacidades", () => {
@@ -85,7 +104,7 @@ describe("buildOperationalAssetExportColumns", () => {
     ])
     // Con las tres, la compra va tras la mano de obra y el total cierra la fila.
     expect(keys(buildOperationalAssetExportColumns(true, true, true, true, true, true, true))).toEqual([
-      ...BASE, ...FLEET_KEYS, ...FUEL_KEYS, ...INSPECTION_KEYS, "overdueCapa", ...WORK_ORDER_KEYS, ...PURCHASE_KEYS, "fuelCost", "totalCost",
+      ...BASE, ...FLEET_KEYS, ...FUEL_KEYS, ...INSPECTION_KEYS, "overdueCapa", ...WORK_ORDER_KEYS, ...PURCHASE_KEYS, "gpsCostPerUnit", "fuelCost", "totalCost",
     ])
     // Sin costos de combustible tampoco hay total.
     expect(keys(buildOperationalAssetExportColumns(false, false, true, false, false, true, true))).toEqual([
@@ -136,6 +155,12 @@ describe("buildOperationalAssetExportColumns", () => {
 
   it("incluye vencimiento y telemetría con flota:view", () => {
     expect(keys(buildOperationalAssetExportColumns(false, false, false, false, true))).toEqual([...BASE, ...FLEET_KEYS])
+  })
+
+  it("incluye la estimación GPS de mantención sólo con su capacidad", () => {
+    expect(keys(buildOperationalAssetExportColumns(false, false, false, false, false, false, false, true))).toEqual([
+      ...BASE, "gpsMaintenance",
+    ])
   })
 })
 
@@ -233,7 +258,7 @@ describe("buildOperationalAssetExportRow", () => {
       expiredDocuments: "SOAP",
       gpsOdometer: 123456,
       gpsHourMeter: null,
-      gpsObservedAt: "2026-10-30T10:00:00.000Z",
+      gpsReportedAt: "2026-10-30T10:00:00.000Z",
       gpsFuelLevel: 75,
       meterMismatch: "Revisar",
     })

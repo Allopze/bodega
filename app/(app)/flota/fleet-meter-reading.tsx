@@ -18,7 +18,7 @@ const formatNumber = (value: number) => formatQty(value, undefined, { maximumFra
  * (`lastReadingObjection`), un triángulo de aviso a su lado lleva al caso en «Por revisar». El aviso no
  * corrige ni oculta la cifra —una lectura de «1 km» se sigue viendo—, sólo dice que alguien debe mirarla.
  */
-export function FleetMeterReading({ vehicle }: { vehicle: Pick<VehicleRow, "lastOdometerReading" | "lastHourMeterReading" | "lastReadingObjection"> }) {
+export function FleetMeterReading({ vehicle }: { vehicle: Pick<VehicleRow, "lastOdometerReading" | "lastHourMeterReading" | "lastReadingObjection"> & { meterSource?: VehicleRow["meterSource"] } }) {
   const reading = vehicle.lastOdometerReading != null
     ? `${formatNumber(vehicle.lastOdometerReading)} km`
     : vehicle.lastHourMeterReading != null
@@ -26,8 +26,19 @@ export function FleetMeterReading({ vehicle }: { vehicle: Pick<VehicleRow, "last
       : null
   if (reading === null) return <>—</>
 
+  const sourceLabel = vehicle.meterSource === "copec_tct"
+    ? "Lectura Copec"
+    : vehicle.meterSource === "gps_wialon"
+      ? "Lectura GPS Wialon"
+      : vehicle.meterSource === "gps_onway"
+        ? "Lectura GPS OnWay"
+        : null
+  const readingNode = sourceLabel
+    ? <Tooltip content={sourceLabel} side="top"><span>{reading}</span></Tooltip>
+    : <>{reading}</>
+
   const objection = vehicle.lastReadingObjection
-  if (!objection) return <>{reading}</>
+  if (!objection) return readingNode
 
   return (
     <span className="inline-flex items-center justify-end gap-1.5">
@@ -40,7 +51,7 @@ export function FleetMeterReading({ vehicle }: { vehicle: Pick<VehicleRow, "last
           <span className="sr-only">Lectura objetada: revisar caso</span>
         </Link>
       </Tooltip>
-      {reading}
+      {readingNode}
     </span>
   )
 }

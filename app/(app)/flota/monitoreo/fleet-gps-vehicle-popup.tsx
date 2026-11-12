@@ -19,13 +19,15 @@ export function FleetGpsVehiclePopup({ position }: { position: FleetGpsPosition 
       </div>
 
       <div className="space-y-1">
-        <MetaBadge meta={{ label: position.ignition ? "Encendido" : "Apagado", variant: position.ignition ? "success" : "neutral" }} dot />
+        <MetaBadge meta={{ label: !position.ignitionKnown ? "Sin dato" : position.ignition ? "Encendido" : "Apagado", variant: !position.ignitionKnown ? "neutral" : position.ignition ? "success" : "neutral" }} dot />
         <p className="text-xs text-[var(--color-text-muted)]">{movementLabel(position)}</p>
       </div>
 
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
         <dt className="text-[var(--color-text-subtle)]">Faena</dt>
         <dd>{position.worksiteName}</dd>
+        <dt className="text-[var(--color-text-subtle)]">Fuente</dt>
+        <dd>{position.providers.map((provider) => provider === "onway" ? "OnWay" : provider === "wialon" ? "Wialon" : provider).join(" + ") || "Sin fuente"}</dd>
         <dt className="text-[var(--color-text-subtle)]">Medidor</dt>
         <dd className="tabular-nums">{formatGpsMeter(position)}</dd>
         {position.driverName ? (

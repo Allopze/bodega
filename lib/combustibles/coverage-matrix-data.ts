@@ -125,7 +125,10 @@ async function telemetryRow(session: Session, months: string[], from: string, to
 
 async function onwayRow(months: string[], from: string, today: string): Promise<CoverageRow[]> {
   const day = chileDay(fleetGpsSyncRuns.startedAt)
-  const succeeded = inArray(fleetGpsSyncRuns.status, ["success", "partial"])
+  const succeeded = and(
+    eq(fleetGpsSyncRuns.provider, "onway"),
+    inArray(fleetGpsSyncRuns.status, ["success", "partial"]),
+  )
   const [perDay, [first]] = await Promise.all([
     db.select({ day: sql<string>`${day}::text`, runs: sql<number>`count(*)::int` })
       .from(fleetGpsSyncRuns)

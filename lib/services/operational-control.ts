@@ -1,10 +1,11 @@
 import type { Session } from "next-auth"
-import { and, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm"
+import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
-  fleetGpsLatestPositions,
   fleetVehicleDocuments,
+  fuelAnomalyRules,
   fuelEquipmentTypes,
+  fuelMeterReadings,
   fuelVehicleOperationalIntervals,
   fuelVehicles,
   mantWorkOrders,
@@ -15,12 +16,15 @@ import {
   worksites,
 } from "@/db/schema"
 import { can } from "@/lib/auth/can"
-import { worksiteScopeSql } from "@/lib/auth/scope"
+import { serviceWorksiteScope, worksiteScopeSql } from "@/lib/auth/scope"
 import { expiredDocumentTypes, resolveNextExpiryDate } from "@/lib/validation/fleet-documents"
 import { getAssetFuelSummary, type AssetFuelSummary } from "@/lib/combustibles/control/queries/asset-fuel-summary"
 import { getVehiclePurchaseSummary, type VehiclePurchaseSummary } from "@/lib/services/purchasing-module/vehicle-purchase-summary"
 import { logger } from "@/lib/logger"
 import { getFleetAdminSettings } from "@/lib/services/system-settings"
+import { loadMergedGpsByVehicle } from "@/lib/services/fleet-gps-latest"
+import { maxMeterRatePerDayOf, meterSeriesAdvance, meterSeriesCoversPeriod, type MeterSeriesPoint } from "@/lib/combustibles/meter-series"
+import { loadFleet } from "@/lib/services/mantencion/fleet"
 import {
   getVehicleWorkOrderMetrics,
   getWorkOrderGlobalMetrics,
@@ -31,9 +35,10 @@ import {
 } from "@/lib/services/mantencion/work-orders/metrics"
 import {
   canViewPurchaseCosts as sessionCanViewPurchaseCosts,
+  canViewMaintenanceEquipment as sessionCanViewMaintenanceEquipment,
   canViewWorkOrders as sessionCanViewWorkOrders,
 } from "@/lib/operational-control/capabilities"
-import { addDaysToPlainDate, todayInChile } from "@/lib/utils"
+import { addDaysToPlainDate, chileDayStartInstant, todayInChile } from "@/lib/utils"
 import { civilDate } from "@/lib/validation/dates"
 import {
   countFleetDocumentExpiry,
@@ -84,6 +89,34 @@ export type OperationalAsset = {
   gpsHourMeter: number | null
   gpsObservedAt: string | null
   gpsFuelLevel: number | null
+  /** Fuente que aportó la posición más reciente (`onway` o `wialon`). */
+  gpsProvider: string | null
+  /** Fuentes que reportaron el equipo; puede haber más de una. */
+  gpsProviders: string[]
+  /** La posición más reciente supera los 15 minutos. */
+  gpsStale: boolean
+  /** Hora del mensaje del dispositivo, no la de la consulta. */
+  gpsReportedAt: string | null
+  gpsOdometerAt: string | null
+  gpsHourMeterAt: string | null
+  gpsFuelLevelAt: string | null
+  /** Última posición: velocidad y encendido, para cruzar uso con prevención. */
+  gpsSpeedKph: number | null
+  gpsIgnition: boolean | null
+  /** Rendimiento calculado con la serie GPS del período; `null` si la cobertura no alcanza. */
+  gpsPerformanceValue: number | null
+  gpsPerformanceUnit: "km_per_liter" | "liters_per_hour" | null
+  gpsPerformanceStatus: "ok" | "insufficient_series" | "insufficient_period" | "no_fuel" | "not_applicable"
+  /** Costo total del período ÷ avance GPS; `null` sin costo completo o cobertura. */
+  gpsCostPerUnit: number | null
+  gpsMeterSource: "gps_wialon" | "gps_onway" | null
+  /** Proveedor del que salieron odómetro y horómetro; no se mezclan fuentes. */
+  gpsMeterProvider: string | null
+  /** Estimación de mantención con la lectura GPS; nunca reemplaza el estado oficial. */
+  gpsMaintenanceState: import("@/lib/mantencion/types").MantEquipmentState | null
+  gpsMaintenanceNextReading: number | null
+  gpsMaintenanceRemaining: number | null
+  gpsMaintenanceReadingAt: string | null
   /** Litros de la serie operacional (`fuel_equipment_loads`) que cuentan en el período. */
   fuelLiters: number | null
   fuelLoadCount: number | null
@@ -202,6 +235,61 @@ export interface OperationalControlHubOptions {
   includeAttention?: boolean
 }
 
+type GpsPerformanceStatus = "ok" | "insufficient_series" | "insufficient_period" | "no_fuel" | "not_applicable"
+
+/**
+ * Avance del medidor GPS en el período. Se elige UNA fuente: Wialon si tiene
+ * serie suficiente, si no OnWay. Nunca se encadenan puntos de proveedores
+ * distintos, porque son medidores y calibraciones distintas.
+ */
+function computeGpsAdvance(
+  vehicle: { id: string; performanceUnit: string; equipmentTypeSlug: string | null },
+  series: ReadonlyMap<string, MeterSeriesPoint[]>,
+  period: { from: string; to: string },
+  jumpRule: { config: string | null },
+): { advance: number | null; source: "gps_wialon" | "gps_onway" | null; status: GpsPerformanceStatus } {
+  if (vehicle.performanceUnit !== "km_per_liter" && vehicle.performanceUnit !== "liters_per_hour") {
+    return { advance: null, source: null, status: "not_applicable" }
+  }
+  const meterType = vehicle.performanceUnit === "km_per_liter" ? "odometer" : "hour_meter"
+  const wialon = series.get(`${vehicle.id}:gps_wialon:${meterType}`) ?? []
+  const onway = series.get(`${vehicle.id}:gps_onway:${meterType}`) ?? []
+  // Primero la fuente que cubre el período COMPLETO: tener dos puntos de hace
+  // tres días no sirve para dividir los 90 días de gasto.
+  const wialonCovers = meterSeriesCoversPeriod(wialon, period.from, period.to)
+  const onwayCovers = meterSeriesCoversPeriod(onway, period.from, period.to)
+  const source = wialonCovers ? "gps_wialon" as const : onwayCovers ? "gps_onway" as const : null
+  if (!source) {
+    // Se informa la fuente que existe para que la UI no diga «sin proveedor»;
+    // el estado distingue serie insuficiente de período incompleto.
+    const fallbackSource = wialon.length >= 2 ? "gps_wialon" as const : onway.length >= 2 ? "gps_onway" as const : null
+    return { advance: null, source: fallbackSource, status: fallbackSource ? "insufficient_period" : "insufficient_series" }
+  }
+
+  const points = source === "gps_wialon" ? wialon : onway
+  const maxPerDay = maxMeterRatePerDayOf(
+    jumpRule,
+    meterType === "odometer" ? "km" : "hora",
+    vehicle.equipmentTypeSlug ?? undefined,
+  )
+  const advance = meterSeriesAdvance(points, maxPerDay).advance
+  return advance != null && advance > 0
+    ? { advance, source, status: "ok" }
+    : { advance: null, source, status: "insufficient_series" }
+}
+
+export interface OperationalGpsCross {
+  totalVehicles: number
+  reporting24h: number
+  withoutReport24h: number
+  byProvider: { onway: number; wialon: number; both: number }
+  meterMismatches: number
+  fuelPerformance: { calculated: number; insufficient: number }
+  maintenance: { overdue: number; upcoming: number; estimated: number }
+  purchases: { calculated: number; insufficient: number }
+  prevention: { overdueCapaAssets: number; overdueCapaTotal: number; operatingWithOverdueCapa: number }
+}
+
 /** Read model común: unifica navegación y métricas sin borrar las diferencias de dominio. */
 export async function getOperationalControlHub(
   session: Session,
@@ -220,6 +308,7 @@ export async function getOperationalControlHub(
   // Las OT se ven con `mant:ot:view_*`; no abren el hub (el gate de abajo sigue
   // siendo flota, inspecciones o combustible) y su alcance es el de las OT.
   const canViewWorkOrders = sessionCanViewWorkOrders(session)
+  const canViewMaintenance = sessionCanViewMaintenanceEquipment(session)
   const workOrderScope = canViewWorkOrders ? workOrderMetricsScope(session) : null
   if (!canViewFleet && !canViewInspections && !canViewFuel) throw new Error("Sin permisos para Control operacional")
   const vehicleScope = worksiteScopeSql(session, fuelVehicles.worksiteId)
@@ -229,9 +318,9 @@ export async function getOperationalControlHub(
   // mostrar un vacío indistinguible de «no hay datos».
   const degradedSources: string[] = []
 
-  const [vehicles, instruments, inspectionAgg, findingsAgg, capaAgg, availabilityRows, documents, fleetSettings, gpsRows, workOrders] = await Promise.all([
+  const [vehicles, instruments, inspectionAgg, findingsAgg, capaAgg, availabilityRows, documents, fleetSettings, gpsRows, workOrders, gpsJumpRules] = await Promise.all([
     canViewFleet || canViewInspections || canViewFuel
-      ? db.select({ id: fuelVehicles.id, code: fuelVehicles.code, plate: fuelVehicles.plate, type: fuelVehicles.type, typeName: fuelEquipmentTypes.name, performanceUnit: fuelVehicles.performanceUnit, meterType: fuelVehicles.meterType, worksiteId: fuelVehicles.worksiteId, worksiteName: worksites.name, operationalStatus: fuelVehicles.operationalStatus, intervalStatus: fuelVehicleOperationalIntervals.status, isActive: fuelVehicles.isActive, soapExpiresAt: fuelVehicles.soapExpiresAt, technicalReviewExpiresAt: fuelVehicles.technicalReviewExpiresAt, circulationPermitExpiresAt: fuelVehicles.circulationPermitExpiresAt, insuranceExpiresAt: fuelVehicles.insuranceExpiresAt })
+      ? db.select({ id: fuelVehicles.id, code: fuelVehicles.code, plate: fuelVehicles.plate, type: fuelVehicles.type, typeName: fuelEquipmentTypes.name, equipmentTypeSlug: fuelEquipmentTypes.slug, performanceUnit: fuelVehicles.performanceUnit, meterType: fuelVehicles.meterType, worksiteId: fuelVehicles.worksiteId, worksiteName: worksites.name, operationalStatus: fuelVehicles.operationalStatus, intervalStatus: fuelVehicleOperationalIntervals.status, isActive: fuelVehicles.isActive, soapExpiresAt: fuelVehicles.soapExpiresAt, technicalReviewExpiresAt: fuelVehicles.technicalReviewExpiresAt, circulationPermitExpiresAt: fuelVehicles.circulationPermitExpiresAt, insuranceExpiresAt: fuelVehicles.insuranceExpiresAt })
           .from(fuelVehicles)
           .innerJoin(worksites, eq(worksites.id, fuelVehicles.worksiteId))
           .innerJoin(fuelEquipmentTypes, eq(fuelEquipmentTypes.id, fuelVehicles.equipmentTypeId))
@@ -332,18 +421,10 @@ export async function getOperationalControlHub(
         vehicleScope,
       )), degradedSources) : [],
     includeAttention && canViewFleet ? settleAttention("ajustes de flota", () => getFleetAdminSettings(), degradedSources) : null,
-    // Última telemetría por vehículo; puede haber más de un dispositivo por
-    // equipo, así que se toma la lectura observada más reciente.
-    canViewFleet ? settleAttention("telemetría GPS", () => db.selectDistinctOn([fleetGpsLatestPositions.vehicleId], {
-      vehicleId: fleetGpsLatestPositions.vehicleId,
-      odometer: fleetGpsLatestPositions.odometer,
-      hourMeter: fleetGpsLatestPositions.hourMeter,
-      observedAt: fleetGpsLatestPositions.observedAt,
-      fuelLevel: fleetGpsLatestPositions.fuelLevel,
-    }).from(fleetGpsLatestPositions)
-      .innerJoin(fuelVehicles, eq(fuelVehicles.id, fleetGpsLatestPositions.vehicleId))
-      .where(vehicleScope)
-      .orderBy(fleetGpsLatestPositions.vehicleId, desc(fleetGpsLatestPositions.observedAt)), degradedSources) : [],
+    // Última telemetría por vehículo, colapsada entre OnWay y Wialon. La
+    // posición sale del dispositivo más fresco y cada medidor de su lectura
+    // más reciente; nunca se suman series de proveedores distintos.
+    canViewFleet ? settleAttention("telemetría GPS", () => loadMergedGpsByVehicle(session), degradedSources) : [],
     // Cifras de OT: por equipo (columna y horas en taller del período) y, sólo
     // para el panel, las globales del tile. Una sola sección degradable: si
     // falla, el resto del panel sigue y las cifras de OT quedan en null.
@@ -354,6 +435,13 @@ export async function getOperationalControlHub(
       ])
       return { byVehicle, global }
     }, degradedSources) : null,
+    // Cota de avance para descartar saltos imposibles también en la serie GPS.
+    canViewFleet
+      ? settleAttention("reglas de medidor", () => db.select({ config: fuelAnomalyRules.config })
+          .from(fuelAnomalyRules)
+          .where(eq(fuelAnomalyRules.code, "salto_medidor_implausible"))
+          .limit(1), degradedSources)
+      : [],
   ])
 
   // Lo comprado por OC para cada equipo (repuestos y servicios vinculados) se pide en
@@ -391,6 +479,71 @@ export async function getOperationalControlHub(
   const purchaseUnavailable = purchaseSummaryPending !== null && purchaseSummary === null
   const purchaseByVehicle = purchaseSummary ?? new Map<string, VehiclePurchaseSummary>()
 
+  // La serie de medidores GPS se filtra por instantes de día chileno: el
+  // período es una fecha civil, no un corte UTC.
+  const gpsPeriodStart = chileDayStartInstant(period.from)
+  const gpsPeriodEnd = chileDayStartInstant(addDaysToPlainDate(period.to, 1))
+  const gpsChileDay = sql`(${fuelMeterReadings.occurredAt}::timestamptz at time zone 'America/Santiago')::date`
+
+  // Serie de medidores GPS del período. Se lee de `fuel_meter_readings`, que ya
+  // distingue la fuente; no se mezcla con Copec ni entre proveedores.
+  const gpsMeterRows = canViewFleet && vehicles.length > 0
+    ? await settleAttention("medidores GPS", () => db.selectDistinctOn(
+        [
+          fuelMeterReadings.vehicleId,
+          fuelMeterReadings.source,
+          fuelMeterReadings.meterType,
+          gpsChileDay,
+        ],
+        {
+          vehicleId: fuelMeterReadings.vehicleId,
+          source: fuelMeterReadings.source,
+          meterType: fuelMeterReadings.meterType,
+          occurredAt: fuelMeterReadings.occurredAt,
+          value: fuelMeterReadings.value,
+        },
+      )
+        .from(fuelMeterReadings)
+        .innerJoin(fuelVehicles, eq(fuelVehicles.id, fuelMeterReadings.vehicleId))
+        .where(and(
+          inArray(fuelMeterReadings.source, ["gps_wialon", "gps_onway"]),
+          inArray(fuelMeterReadings.vehicleId, vehicles.map((vehicle) => vehicle.id)),
+          // Rango sobre la columna indexada; el día sólo se usa para reducir a
+          // una lectura diaria por fuente y medidor, no para filtrar.
+          gte(fuelMeterReadings.occurredAt, gpsPeriodStart),
+          lt(fuelMeterReadings.occurredAt, gpsPeriodEnd),
+        ))
+        .orderBy(
+          fuelMeterReadings.vehicleId,
+          fuelMeterReadings.source,
+          fuelMeterReadings.meterType,
+          gpsChileDay,
+          desc(fuelMeterReadings.occurredAt),
+        ), degradedSources)
+    : []
+
+  const gpsSeries = new Map<string, MeterSeriesPoint[]>()
+  for (const row of gpsMeterRows ?? []) {
+    if (!row.vehicleId) continue
+    const key = `${row.vehicleId}:${row.source}:${row.meterType}`
+    const points = gpsSeries.get(key) ?? []
+    points.push({ value: Number(row.value), occurredAt: row.occurredAt })
+    gpsSeries.set(key, points)
+  }
+  const gpsJumpRule = { config: (gpsJumpRules ?? [])[0]?.config ?? null }
+
+  // Estimación de mantención por GPS: se apoya en las reglas puras de
+  // Mantención, pero no escribe ni reemplaza la lectura oficial.
+  const maintenanceEstimates = canViewFleet && canViewMaintenance && vehicles.length > 0
+    ? await settleAttention("mantención GPS", () => loadFleet({
+        scope: serviceWorksiteScope(session),
+        vehicleIds: vehicles.map((vehicle) => vehicle.id),
+        readingsPerEquipment: 1,
+        includeGpsEstimate: true,
+      }), degradedSources)
+    : []
+  const maintenanceByVehicle = new Map((maintenanceEstimates ?? []).map((row) => [row.vehicleId, row]))
+
   const inspectionsByVehicle = new Map(inspectionAgg.filter((row) => row.vehicleId).map((row) => [row.vehicleId!, row]))
   const findingsByVehicle = new Map(findingsAgg.filter((row) => row.vehicleId).map((row) => [row.vehicleId!, row]))
   const capaByVehicle = new Map(capaAgg.filter((row) => row.vehicleId).map((row) => [row.vehicleId!, row]))
@@ -409,6 +562,8 @@ export async function getOperationalControlHub(
     const fuel = fuelByVehicle.get(vehicle.id)
     const vehicleDocuments = documentsByVehicle.get(vehicle.id) ?? []
     const gps = gpsByVehicle.get(vehicle.id)
+    const gpsAdvance = computeGpsAdvance(vehicle, gpsSeries, period, gpsJumpRule)
+    const maintenance = maintenanceByVehicle.get(vehicle.id)
     const workOrder = workOrdersByVehicle?.get(vehicle.id)
     const fuelBilledAmount = canViewFuel && canViewCosts ? fuelValue(fuel?.billedAmount, 0) : null
     // Sin OT cerradas con costo en el período, la mano de obra del equipo es $0 de
@@ -425,6 +580,16 @@ export async function getOperationalControlHub(
     const totalCost = fuelBilledAmount != null && maintenanceCost != null && purchaseAmount != null
       ? fuelBilledAmount + maintenanceCost + purchaseAmount
       : null
+    const gpsAdvanceValue = gpsAdvance.status === "ok" ? gpsAdvance.advance : null
+    const gpsPerformanceStatus: GpsPerformanceStatus = gpsAdvance.status !== "ok"
+      ? gpsAdvance.status
+      : (fuel?.liters ?? 0) > 0 ? "ok" : "no_fuel"
+    const gpsPerformanceValue = gpsPerformanceStatus === "ok" && gpsAdvanceValue != null && fuel
+      ? vehicle.performanceUnit === "km_per_liter"
+        ? gpsAdvanceValue / fuel.liters
+        : fuel.liters / gpsAdvanceValue
+      : null
+    const gpsCostPerUnit = totalCost != null && gpsAdvanceValue != null ? totalCost / gpsAdvanceValue : null
     const declaredExpiry = {
       soapExpiresAt: vehicle.soapExpiresAt,
       technicalReviewExpiresAt: vehicle.technicalReviewExpiresAt,
@@ -439,14 +604,15 @@ export async function getOperationalControlHub(
     // del mismo medidor, son recientes entre sí y la diferencia supera el
     // ruido normal de dos fuentes distintas (2 h / 5 km).
     const gpsMeter = vehicle.meterType === "hour_meter" ? gps?.hourMeter : vehicle.meterType === "odometer" ? gps?.odometer : null
+    const gpsMeterAt = vehicle.meterType === "hour_meter" ? gps?.hourMeterAt : vehicle.meterType === "odometer" ? gps?.odometerAt : null
     const meterMismatch = canViewFleet && canViewFuel && !fuelUnavailable
       && vehicle.meterType !== "none"
       && fuel?.lastMeterReading != null
       && fuel.lastMeterType === vehicle.meterType
       && fuel.lastMeterAt != null
-      && gps?.observedAt != null
+      && gpsMeterAt != null
       && gpsMeter != null
-      && Math.abs(Date.parse(gps.observedAt) - Date.parse(fuel.lastMeterAt)) <= 7 * 86_400_000
+      && Math.abs(Date.parse(gpsMeterAt) - Date.parse(fuel.lastMeterAt)) <= 7 * 86_400_000
       && Math.abs(Number(gpsMeter) - fuel.lastMeterReading) > (vehicle.meterType === "hour_meter" ? 2 : 5)
     return {
       key: `vehicle:${vehicle.id}`,
@@ -481,6 +647,27 @@ export async function getOperationalControlHub(
       gpsHourMeter: canViewFleet ? (gps?.hourMeter == null ? null : Number(gps.hourMeter)) : null,
       gpsObservedAt: canViewFleet ? (gps?.observedAt ?? null) : null,
       gpsFuelLevel: canViewFleet ? (gps?.fuelLevel == null ? null : Number(gps.fuelLevel)) : null,
+      gpsProvider: canViewFleet ? (gps?.primaryProvider ?? null) : null,
+      gpsProviders: canViewFleet ? (gps?.providers ?? []) : [],
+      gpsStale: canViewFleet ? (gps?.gpsIsStale ?? false) : false,
+      gpsReportedAt: canViewFleet ? (gps?.gpsReportedAt ?? null) : null,
+      gpsOdometerAt: canViewFleet ? (gps?.odometerAt ?? null) : null,
+      gpsHourMeterAt: canViewFleet ? (gps?.hourMeterAt ?? null) : null,
+      gpsFuelLevelAt: canViewFleet ? (gps?.fuelLevelAt ?? null) : null,
+      gpsSpeedKph: canViewFleet ? (gps?.speedKph ?? null) : null,
+      gpsIgnition: canViewFleet && gps?.ignitionKnown ? (gps.ignition ?? null) : null,
+      gpsPerformanceValue,
+      gpsPerformanceUnit: gpsAdvanceValue != null && (vehicle.performanceUnit === "km_per_liter" || vehicle.performanceUnit === "liters_per_hour")
+        ? vehicle.performanceUnit
+        : null,
+      gpsPerformanceStatus,
+      gpsCostPerUnit,
+      gpsMeterSource: gpsAdvance.source,
+      gpsMeterProvider: canViewFleet ? (gps?.meterProvider ?? null) : null,
+      gpsMaintenanceState: maintenance?.gpsStatus?.state ?? null,
+      gpsMaintenanceNextReading: maintenance?.gpsStatus?.nextReading ?? null,
+      gpsMaintenanceRemaining: maintenance?.gpsStatus?.remaining ?? null,
+      gpsMaintenanceReadingAt: maintenance?.gpsReadingAt ?? null,
       fuelLiters: canViewFuel ? fuelValue(fuel?.liters, 0) : null,
       fuelLoadCount: canViewFuel ? fuelValue(fuel?.loadCount, 0) : null,
       lastFuelLoadAt: canViewFuel ? fuelValue(fuel?.lastLoadAt, null) : null,
@@ -529,6 +716,25 @@ export async function getOperationalControlHub(
     gpsHourMeter: null,
     gpsObservedAt: null,
     gpsFuelLevel: null,
+    gpsProvider: null,
+    gpsProviders: [],
+    gpsStale: false,
+    gpsReportedAt: null,
+    gpsOdometerAt: null,
+    gpsHourMeterAt: null,
+    gpsFuelLevelAt: null,
+    gpsSpeedKph: null,
+    gpsIgnition: null,
+    gpsPerformanceValue: null,
+    gpsPerformanceUnit: null,
+    gpsPerformanceStatus: "not_applicable",
+    gpsCostPerUnit: null,
+    gpsMeterSource: null,
+    gpsMeterProvider: null,
+    gpsMaintenanceState: null,
+    gpsMaintenanceNextReading: null,
+    gpsMaintenanceRemaining: null,
+    gpsMaintenanceReadingAt: null,
     // Tampoco tienen serie de combustible: no son `fuel_vehicles` y no
     // aparecen en las cargas. Null, no 0, para no simular un historial vacío.
     fuelLiters: null,
@@ -557,6 +763,50 @@ export async function getOperationalControlHub(
 
   const totalIntervalHours = availabilityRows.reduce((sum, row) => sum + Number(row.totalHours), 0)
   const operativeHours = availabilityRows.reduce((sum, row) => sum + Number(row.operativeHours), 0)
+
+  const activeVehicleAssets = vehicleAssets.filter((asset) => asset.operationalStatus !== "inactivo")
+  const reporting24h = activeVehicleAssets.filter((asset) => {
+    const reportedAt = asset.gpsReportedAt ?? asset.gpsObservedAt
+    if (!reportedAt) return false
+    const observed = Date.parse(reportedAt)
+    return Number.isFinite(observed) && Date.now() - observed <= 86_400_000
+  }).length
+  const byProvider = { onway: 0, wialon: 0, both: 0 }
+  for (const asset of activeVehicleAssets) {
+    const hasOnway = asset.gpsProviders.includes("onway")
+    const hasWialon = asset.gpsProviders.includes("wialon")
+    if (hasOnway && hasWialon) byProvider.both++
+    else if (hasOnway) byProvider.onway++
+    else if (hasWialon) byProvider.wialon++
+  }
+  const gpsCross: OperationalGpsCross = {
+    totalVehicles: activeVehicleAssets.length,
+    reporting24h,
+    withoutReport24h: activeVehicleAssets.length - reporting24h,
+    byProvider,
+    meterMismatches: vehicleAssets.filter((asset) => asset.meterMismatch).length,
+    fuelPerformance: {
+      calculated: activeVehicleAssets.filter((asset) => asset.gpsPerformanceValue != null).length,
+      insufficient: activeVehicleAssets.filter((asset) => asset.gpsPerformanceStatus !== "not_applicable" && asset.gpsPerformanceValue == null).length,
+    },
+    maintenance: {
+      overdue: vehicleAssets.filter((asset) => asset.gpsMaintenanceState === "vencida").length,
+      upcoming: vehicleAssets.filter((asset) => asset.gpsMaintenanceState === "proxima").length,
+      estimated: vehicleAssets.filter((asset) => asset.gpsMaintenanceState != null).length,
+    },
+    purchases: {
+      calculated: activeVehicleAssets.filter((asset) => asset.gpsCostPerUnit != null).length,
+      insufficient: activeVehicleAssets.filter((asset) => asset.gpsPerformanceStatus !== "not_applicable" && asset.gpsCostPerUnit == null).length,
+    },
+    prevention: {
+      overdueCapaAssets: vehicleAssets.filter((asset) => (asset.overdueCapa ?? 0) > 0).length,
+      overdueCapaTotal: vehicleAssets.reduce((sum, asset) => sum + (asset.overdueCapa ?? 0), 0),
+      operatingWithOverdueCapa: vehicleAssets.filter((asset) =>
+        (asset.overdueCapa ?? 0) > 0 && !asset.gpsStale && ((asset.gpsSpeedKph ?? 0) > 0 || asset.gpsIgnition === true),
+      ).length,
+    },
+  }
+
   const periodDays = Math.round(
     (Date.parse(`${period.to}T00:00:00Z`) - Date.parse(`${period.from}T00:00:00Z`)) / 86_400_000,
   ) + 1
@@ -590,6 +840,7 @@ export async function getOperationalControlHub(
     period,
     attention,
     degradedSources,
+    gpsCross,
     assets: [...vehicleAssets, ...serviceAssets],
     metrics: {
       ...calculateOperationalControlMetrics({
@@ -602,6 +853,6 @@ export async function getOperationalControlHub(
       // MTTR = horas en taller de las OT de reparación cerradas ÷ cuántas son. Sin ninguna cerrada no hay qué promediar.
       mttrHours: workOrdersByVehicle ? meanTimeToRepairHours(repairClosed, repairWorkshopHours) : null,
     },
-    permissions: { canViewFleet, canViewInspections, canViewCapa, canViewFuel, canViewCosts, canViewServiceEquipment, canViewWorkOrders, canViewPurchaseCosts },
+    permissions: { canViewFleet, canViewInspections, canViewCapa, canViewFuel, canViewCosts, canViewServiceEquipment, canViewWorkOrders, canViewPurchaseCosts, canViewMaintenance },
   }
 }

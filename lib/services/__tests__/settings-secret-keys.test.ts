@@ -5,6 +5,7 @@ vi.mock("@/db", () => ({ db: {} }))
 const { SHARED_KEYRING_SECRET_KEYS } = await import("../settings-secret-keys")
 const { CHIPAX_SETTING_KEYS } = await import("@/lib/services/billing/chipax-settings")
 const { ONWAY_SETTING_KEYS } = await import("@/lib/integrations/onway/onway-settings")
+const { WIALON_SETTINGS } = await import("@/lib/integrations/wialon/wialon-settings")
 const { CLOUDREVE_SETTING_KEYS } = await import("@/lib/services/cloudreve/setting-keys")
 
 /**
@@ -20,6 +21,7 @@ describe("SHARED_KEYRING_SECRET_KEYS", () => {
       CHIPAX_SETTING_KEYS.secretKey,
       ONWAY_SETTING_KEYS.username,
       ONWAY_SETTING_KEYS.password,
+      WIALON_SETTINGS.fields.token.key,
       CLOUDREVE_SETTING_KEYS.username,
       CLOUDREVE_SETTING_KEYS.password,
     ]) {

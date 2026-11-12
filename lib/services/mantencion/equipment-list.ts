@@ -27,6 +27,12 @@ export interface EquipmentListFilters {
    * tile «Equipos en taller» del panel (`FleetRow.workshop`), así que el tile lleva a sus equipos.
    */
   inWorkshop?: boolean
+  /**
+   * Estimación GPS de la próxima mantención (`?estimacionGps=vencida|proxima`).
+   * Es distinta del estado oficial: no lee `mant_records`, sólo la última
+   * lectura GPS cuando es más nueva.
+   */
+  gpsEstimate?: Extract<MantEquipmentState, "vencida" | "proxima">
   /** «Mostrar dados de baja»: los incluye junto a los activos. */
   includeRetired: boolean
 }
@@ -43,19 +49,21 @@ function first(raw: RawSearchParams, key: string): string | undefined {
 export function parseEquipmentListFilters(raw: RawSearchParams): EquipmentListFilters {
   const state = first(raw, "estado")
   const knownState = (MANT_EQUIPMENT_STATES as readonly string[]).includes(state ?? "") ? (state as MantEquipmentState) : undefined
+  const gpsEstimate = first(raw, "estimacionGps")
   return {
     worksiteId: first(raw, "faena"),
     typeId: first(raw, "tipo"),
     scheduleId: first(raw, "pauta"),
     state: knownState,
     inWorkshop: first(raw, "taller") === "1" ? true : undefined,
+    gpsEstimate: gpsEstimate === "vencida" || gpsEstimate === "proxima" ? gpsEstimate : undefined,
     // Pedir «Dado de baja» sin marcar la casilla igual tiene que mostrar las bajas.
     includeRetired: first(raw, "bajas") === "1" || knownState === "baja",
   }
 }
 
 export function hasEquipmentListFilters(filters: EquipmentListFilters): boolean {
-  return !!(filters.worksiteId || filters.typeId || filters.scheduleId || filters.state || filters.inWorkshop || filters.includeRetired)
+  return !!(filters.worksiteId || filters.typeId || filters.scheduleId || filters.state || filters.inWorkshop || filters.gpsEstimate || filters.includeRetired)
 }
 
 export function filterFleet(rows: readonly FleetRow[], filters: EquipmentListFilters): FleetRow[] {
@@ -65,6 +73,7 @@ export function filterFleet(rows: readonly FleetRow[], filters: EquipmentListFil
     if (filters.typeId && row.typeId !== filters.typeId) return false
     if (filters.scheduleId === NO_SCHEDULE ? row.scheduleId !== null : filters.scheduleId && row.scheduleId !== filters.scheduleId) return false
     if (filters.state && row.status.state !== filters.state) return false
+    if (filters.gpsEstimate && row.gpsStatus?.state !== filters.gpsEstimate) return false
     if (filters.inWorkshop && row.workshop === null) return false
     return true
   })
@@ -114,6 +123,12 @@ export interface EquipmentListRow extends Record<string, unknown> {
   workshopDays: number | null
   /** En taller y sin novedades hace más de 2 días (C4: se muestra como «Sin actualizar»). */
   workshopStale: boolean
+  /** Estimación GPS, separada del estado oficial; `null` si no hay lectura más nueva. */
+  gpsState: MantEquipmentState | null
+  gpsReading: number | null
+  gpsReadingDate: string | null
+  gpsNextReading: number | null
+  gpsRemaining: number | null
 }
 
 export function toEquipmentListRow(row: FleetRow): EquipmentListRow {
@@ -143,6 +158,11 @@ export function toEquipmentListRow(row: FleetRow): EquipmentListRow {
     inWorkshop: row.workshop !== null,
     workshopDays: row.workshop?.daysStopped ?? null,
     workshopStale: row.workshop?.stale ?? false,
+    gpsState: row.gpsStatus?.state ?? null,
+    gpsReading: row.gpsStatus?.currentReading?.value ?? null,
+    gpsReadingDate: row.gpsStatus?.currentReading?.date ?? null,
+    gpsNextReading: row.gpsStatus?.nextReading ?? null,
+    gpsRemaining: row.gpsStatus?.remaining ?? null,
   }
 }
 

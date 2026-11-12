@@ -19,7 +19,7 @@ export async function exportOperationalControlXlsxAction(filters: Partial<Operat
     const period = resolveOperationalControlPeriod(filters)
     // El Excel lleva activos e indicadores; los conteos de «Requiere atención» son del panel.
     const data = await getOperationalControlHub(session, period, { includeAttention: false })
-    const { canViewFleet, canViewInspections, canViewCapa, canViewFuel, canViewCosts, canViewWorkOrders, canViewPurchaseCosts } = data.permissions
+    const { canViewFleet, canViewInspections, canViewCapa, canViewFuel, canViewCosts, canViewWorkOrders, canViewPurchaseCosts, canViewMaintenance } = data.permissions
     const showFuelCost = canViewFuel && canViewCosts
     // Los instrumentos de servicio no tienen combustible modelado; no se
     // exportan como activos operacionales para no pintar filas inertes.
@@ -27,9 +27,9 @@ export async function exportOperationalControlXlsxAction(filters: Partial<Operat
     const ExcelJS = await import("exceljs")
     const workbook = new ExcelJS.Workbook()
     const sheet = workbook.addWorksheet("Activos")
-    sheet.columns = buildOperationalAssetExportColumns(canViewInspections, canViewCosts, canViewFuel, canViewCapa, canViewFleet, canViewWorkOrders, canViewPurchaseCosts)
+    sheet.columns = buildOperationalAssetExportColumns(canViewInspections, canViewCosts, canViewFuel, canViewCapa, canViewFleet, canViewWorkOrders, canViewPurchaseCosts, canViewMaintenance)
     for (const asset of operationalAssets) {
-      sheet.addRow(buildOperationalAssetExportRow(asset, canViewInspections, canViewCosts, canViewFuel, canViewCapa, canViewFleet, canViewWorkOrders, canViewPurchaseCosts))
+      sheet.addRow(buildOperationalAssetExportRow(asset, canViewInspections, canViewCosts, canViewFuel, canViewCapa, canViewFleet, canViewWorkOrders, canViewPurchaseCosts, canViewMaintenance))
     }
     sheet.getRow(1).font = { bold: true }
     sheet.views = [{ state: "frozen", ySplit: 1 }]
@@ -40,6 +40,7 @@ export async function exportOperationalControlXlsxAction(filters: Partial<Operat
     if (canViewWorkOrders) sheet.getColumn("maintenanceCost").numFmt = "$#,##0"
     if (canViewPurchaseCosts) sheet.getColumn("purchaseAmount").numFmt = "$#,##0"
     if (showFuelCost && canViewWorkOrders && canViewPurchaseCosts) sheet.getColumn("totalCost").numFmt = "$#,##0"
+    if (showFuelCost && canViewWorkOrders && canViewPurchaseCosts) sheet.getColumn("gpsCostPerUnit").numFmt = "$#,##0"
     if (canViewInspections) sheet.getColumn("inspectionCompliance").numFmt = '0.0"%"'
 
     // Mismos decimales que la pantalla: un float crudo en el Excel se copia
@@ -87,6 +88,18 @@ export async function exportOperationalControlXlsxAction(filters: Partial<Operat
     }
     if (canViewInspections && canViewCapa) {
       indicatorRows.push(["CAPA vencidas", sumIfPresent((asset) => asset.overdueCapa)])
+    }
+    if (canViewFleet) {
+      indicatorRows.push(
+        ["Equipos con reporte GPS (24 h)", `${data.gpsCross.reporting24h} de ${data.gpsCross.totalVehicles}`],
+        ["Discrepancias de medidor GPS", data.gpsCross.meterMismatches],
+      )
+    }
+    if (canViewFleet && canViewMaintenance) {
+      indicatorRows.push(["Mantención vencida según GPS", data.gpsCross.maintenance.overdue])
+    }
+    if (canViewCapa && canViewInspections) {
+      indicatorRows.push(["CAPA vencidas con equipo operando (GPS)", data.gpsCross.prevention.operatingWithOverdueCapa])
     }
     if (data.degradedSources.length > 0) {
       indicatorRows.push(["Secciones no cargadas", data.degradedSources.join(", ")])

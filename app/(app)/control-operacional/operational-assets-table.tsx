@@ -6,6 +6,7 @@ import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { TableCell, TableRow } from "@/components/ui/table"
 import { formatCLP, formatDate, formatDateTime } from "@/lib/utils"
+import { EQUIPMENT_STATE_LABEL } from "@/lib/mantencion/format"
 import { fuelEquipmentHref } from "@/lib/combustibles/routes"
 import type { OperationalAsset } from "@/lib/services/operational-control"
 
@@ -32,7 +33,33 @@ function formatPerformance(asset: OperationalAsset): string | null {
   return `${value} ${asset.fuelPerformanceUnit === "km_per_liter" ? "km/L" : "L/h"}`
 }
 
-const COLUMNS = (canViewCosts: boolean, canViewInspections: boolean, canViewFuel: boolean, canViewCapa: boolean, canViewFleet: boolean, canViewWorkOrders: boolean, canViewPurchaseCosts: boolean) => {
+function formatGpsPerformance(asset: OperationalAsset): string | null {
+  if (asset.gpsPerformanceValue == null || asset.gpsPerformanceUnit == null) return null
+  const value = asset.gpsPerformanceValue.toLocaleString("es-CL", { maximumFractionDigits: 2 })
+  return `${value} ${asset.gpsPerformanceUnit === "km_per_liter" ? "km/L" : "L/h"}`
+}
+
+function providerName(provider: string): string {
+  return provider === "onway" ? "OnWay" : provider === "wialon" ? "Wialon" : provider
+}
+
+function formatGpsSource(asset: OperationalAsset): string {
+  const sources = asset.gpsProviders.length > 0 ? asset.gpsProviders.map(providerName).join(" + ") : "—"
+  const meter = asset.gpsMeterProvider ? ` · medidor ${providerName(asset.gpsMeterProvider)}` : ""
+  return `${sources}${meter}`
+}
+
+function formatGpsMaintenance(asset: OperationalAsset): string | null {
+  return asset.gpsMaintenanceState ? EQUIPMENT_STATE_LABEL[asset.gpsMaintenanceState] : null
+}
+
+function formatGpsCost(asset: OperationalAsset): string | null {
+  if (asset.gpsCostPerUnit == null) return null
+  const unit = asset.gpsPerformanceUnit === "km_per_liter" ? "km" : asset.gpsPerformanceUnit === "liters_per_hour" ? "h" : null
+  return unit ? `${formatCLP(asset.gpsCostPerUnit)}/${unit}` : null
+}
+
+const COLUMNS = (canViewCosts: boolean, canViewInspections: boolean, canViewFuel: boolean, canViewCapa: boolean, canViewFleet: boolean, canViewWorkOrders: boolean, canViewPurchaseCosts: boolean, canViewMaintenance: boolean) => {
   const showFuelCost = canViewFuel && canViewCosts
   const showCapa = canViewCapa && canViewInspections
   return [
@@ -44,10 +71,12 @@ const COLUMNS = (canViewCosts: boolean, canViewInspections: boolean, canViewFuel
       ? [
           { key: "nextExpiryDate", label: "Próximo vencimiento", sortable: true },
           { key: "meterMismatch", label: "Discrepancia GPS", sortable: false },
+          { key: "gpsProviders", label: "Fuente GPS", sortable: false, defaultVisible: false },
         ]
       : []),
     ...(canViewFuel
       ? [
+          { key: "gpsPerformanceValue", label: "Rendimiento GPS", sortable: false, numeric: true, defaultVisible: false },
           { key: "fuelLiters", label: "Litros", sortable: true, numeric: true },
           { key: "fuelLoadCount", label: "Cargas (período)", sortable: true, numeric: true, defaultVisible: false },
           { key: "lastFuelLoadAt", label: "Última carga", sortable: true, defaultVisible: false },
@@ -61,6 +90,9 @@ const COLUMNS = (canViewCosts: boolean, canViewInspections: boolean, canViewFuel
           { key: "idlePct", label: "Motor en vacío", sortable: true, numeric: true },
           { key: "litersIdle", label: "Litros en vacío", sortable: true, numeric: true, defaultVisible: false },
         ]
+      : []),
+    ...(canViewMaintenance
+      ? [{ key: "gpsMaintenanceState", label: "Estimación GPS", sortable: false, defaultVisible: false }]
       : []),
     ...(canViewInspections
       ? [
@@ -91,6 +123,9 @@ const COLUMNS = (canViewCosts: boolean, canViewInspections: boolean, canViewFuel
     ...(canViewPurchaseCosts
       ? [{ key: "purchaseAmount", label: "Repuestos y servicios (OC)", sortable: true, numeric: true }]
       : []),
+    ...(showFuelCost && canViewPurchaseCosts && canViewWorkOrders
+      ? [{ key: "gpsCostPerUnit", label: "Costo por km/h (GPS)", sortable: false, numeric: true, defaultVisible: false }]
+      : []),
     // El total suma las tres series; con una sola ausente no se publica.
     ...(canViewWorkOrders && showFuelCost && canViewPurchaseCosts
       ? [{ key: "totalCost", label: "Costo total", sortable: true, numeric: true }]
@@ -116,6 +151,7 @@ export function OperationalAssetsTable({
   canViewFleet,
   canViewWorkOrders = false,
   canViewPurchaseCosts = false,
+  canViewMaintenance = false,
 }: {
   assets: OperationalAsset[]
   canViewCosts: boolean
@@ -126,6 +162,8 @@ export function OperationalAssetsTable({
   canViewWorkOrders?: boolean
   /** `purchasing:view`: abre «Repuestos y servicios (OC)» y, con las otras dos series, el costo total. */
   canViewPurchaseCosts?: boolean
+  /** Lecturas y pautas de mantención: habilita «Estimación GPS». */
+  canViewMaintenance?: boolean
 }) {
   const showFuelCost = canViewFuel && canViewCosts
   const showTotalCost = canViewWorkOrders && showFuelCost && canViewPurchaseCosts
@@ -152,8 +190,21 @@ export function OperationalAssetsTable({
             </div>
             <div>
               <dt className="text-[var(--color-text-subtle)]">Última telemetría</dt>
-              <dd>{asset.gpsObservedAt ? formatDateTime(asset.gpsObservedAt) : "—"}</dd>
+              <dd>{asset.gpsReportedAt ? formatDateTime(asset.gpsReportedAt) : "—"}</dd>
             </div>
+            <div>
+              <dt className="text-[var(--color-text-subtle)]">Fuente GPS</dt>
+              <dd className="flex flex-wrap items-center gap-1">
+                {formatGpsSource(asset)}
+                {asset.gpsStale && asset.gpsReportedAt ? <MetaBadge meta={{ label: "Sin reporte", variant: "warning" }} /> : null}
+              </dd>
+            </div>
+            {canViewMaintenance && (
+              <div>
+                <dt className="text-[var(--color-text-subtle)]">Estimación GPS</dt>
+                <dd>{formatGpsMaintenance(asset) ?? "—"}</dd>
+              </div>
+            )}
             <div>
               <dt className="text-[var(--color-text-subtle)]">Odómetro GPS</dt>
               <dd>{asset.gpsOdometer != null ? `${asset.gpsOdometer.toLocaleString("es-CL")} km` : "—"}</dd>
@@ -189,6 +240,16 @@ export function OperationalAssetsTable({
               <dt className="text-[var(--color-text-subtle)]">Rendimiento promedio</dt>
               <dd>{formatPerformance(asset) ?? "—"}</dd>
             </div>
+            <div>
+              <dt className="text-[var(--color-text-subtle)]">Rendimiento GPS</dt>
+              <dd>{formatGpsPerformance(asset) ?? "—"}</dd>
+            </div>
+            {showFuelCost && canViewPurchaseCosts && (
+              <div>
+                <dt className="text-[var(--color-text-subtle)]">Costo por km/h (GPS)</dt>
+                <dd>{formatGpsCost(asset) ?? "—"}</dd>
+              </div>
+            )}
             <div>
               <dt className="text-[var(--color-text-subtle)]">Cargas marcadas (período)</dt>
               <dd>{asset.flaggedLoads == null ? "—" : asset.flaggedLoads}</dd>
@@ -335,10 +396,19 @@ export function OperationalAssetsTable({
           <TableCell>
             {asset.meterMismatch ? <MetaBadge meta={{ label: "Revisar", variant: "signal" }} /> : "—"}
           </TableCell>
+          <TableCell className="text-xs">
+            <span className="flex flex-wrap items-center gap-1">
+              {formatGpsSource(asset)}
+              {asset.gpsStale && asset.gpsReportedAt ? <MetaBadge meta={{ label: "Sin reporte", variant: "warning" }} /> : null}
+            </span>
+          </TableCell>
         </>
       )}
       {canViewFuel && (
         <>
+          <TableCell className="text-right font-mono">
+            {asset.kind === "service_equipment" ? "—" : (formatGpsPerformance(asset) ?? "—")}
+          </TableCell>
           <TableCell className="text-right font-mono">
             {asset.kind === "service_equipment" || asset.fuelLiters == null
               ? "—"
@@ -375,6 +445,11 @@ export function OperationalAssetsTable({
               : asset.litersIdle.toLocaleString("es-CL", { maximumFractionDigits: 1 })}
           </TableCell>
         </>
+      )}
+      {canViewMaintenance && (
+        <TableCell className="text-xs">
+          {asset.kind === "vehicle" ? (formatGpsMaintenance(asset) ?? "—") : "—"}
+        </TableCell>
       )}
       {canViewInspections && (
         <>
@@ -456,6 +531,11 @@ export function OperationalAssetsTable({
           {asset.kind === "service_equipment" || asset.purchaseAmount == null ? "—" : formatCLP(asset.purchaseAmount)}
         </TableCell>
       )}
+      {showFuelCost && canViewPurchaseCosts && (
+        <TableCell className="text-right font-mono">
+          {asset.kind === "service_equipment" ? "—" : (formatGpsCost(asset) ?? "—")}
+        </TableCell>
+      )}
       {showTotalCost && (
         <TableCell className="text-right font-mono">
           {asset.kind === "service_equipment" || asset.totalCost == null ? "—" : formatCLP(asset.totalCost)}
@@ -479,7 +559,7 @@ export function OperationalAssetsTable({
   return (
     <DataTable
       caption="Activos operacionales"
-      columns={COLUMNS(canViewCosts, canViewInspections, canViewFuel, canViewCapa, canViewFleet, canViewWorkOrders, canViewPurchaseCosts)}
+      columns={COLUMNS(canViewCosts, canViewInspections, canViewFuel, canViewCapa, canViewFleet, canViewWorkOrders, canViewPurchaseCosts, canViewMaintenance)}
       rows={assets}
       enableColumnToggle
       stickyFirstColumn

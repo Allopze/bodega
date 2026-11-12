@@ -34,6 +34,7 @@ function data(overrides: Partial<EquipmentDetailData> = {}): EquipmentDetailData
       lastPreventive: { reading: 80_000, date: "2026-09-29", intervalValue: 40_000 },
     },
     workshop: null, recordCount: 1, life: { rows: [], totals: { active: 0, activeCorrective: 0, activePreventive: 0, activeHours: 0, voided: 0 }, hasMore: false, limit: 20 },
+    gpsStatus: null, gpsReadingAt: null,
     insurance: { policyNumber: null, expiresAt: null, state: "sin_fecha", days: null, documents: [], hasData: false }, canViewFleet: true, history: [],
     purchases: null, purchaseLinks: { canOpenRequests: false, canOpenOrders: false, canOpenSpareParts: false, newRequestHref: null },
     ...overrides,

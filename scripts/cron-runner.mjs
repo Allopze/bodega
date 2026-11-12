@@ -81,6 +81,14 @@ const JOBS = Object.freeze({
     internalSecretEnv: "FLEET_GPS_CRON_INTERNAL_SECRET",
     internalSecretHeader: "X-Fleet-Gps-Cron-Secret",
   },
+  "fleet-wialon-sync": {
+    url: "http://app:3000/api/cron/fleet-wialon-sync",
+    timeoutMs: 2 * 60 * 1_000,
+    kind: "sync",
+    codePrefix: "FLEET_GPS_CRON_",
+    internalSecretEnv: "FLEET_GPS_CRON_INTERNAL_SECRET",
+    internalSecretHeader: "X-Fleet-Gps-Cron-Secret",
+  },
   // Talana (RR. HH.) → trabajadores: lectura diaria de contratos y ausencias.
   // Sólo `Authorization: Bearer CRON_SECRET`: la ruta no tiene camino de secreto
   // interno ni de origen, igual que los jobs DTE.

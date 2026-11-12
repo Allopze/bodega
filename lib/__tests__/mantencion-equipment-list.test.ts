@@ -19,6 +19,9 @@ function row(code: string, state: MantEquipmentState, overrides: Partial<FleetRo
     scheduleId: "s-1", scheduleName: "Camiones y tractos", intervals: [10000, 20000], retired: state === "baja", retiredReason: null,
     initialReading: null, readings: [], recentPreventives: [],
     status: { state, currentReading: null, nextReading: null, remaining, nextIntervalValue: null, lastPreventive: null },
+    gpsStatus: null,
+    gpsReading: null,
+    gpsReadingAt: null,
     workshop: null,
     ...rest,
   }

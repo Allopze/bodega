@@ -160,6 +160,8 @@ export function buildPerformanceGlossary(permissions: {
   canViewPurchaseCosts?: boolean
   canViewLicenses?: boolean
   canViewTaeCoverage?: boolean
+  /** Lecturas y pautas de mantención: habilita la definición de la estimación GPS. */
+  canViewMaintenance?: boolean
 }): GlossaryEntry[] {
   const entries: GlossaryEntry[] = []
   if (permissions.canViewFleet) {
@@ -176,7 +178,29 @@ export function buildPerformanceGlossary(permissions: {
         definition:
           "Parte del calendario de los equipos activos que cubre el historial de estado. Una disponibilidad alta sobre una cobertura baja no representa al período completo; por eso se muestran las dos cifras.",
       },
+      {
+        key: "gps-providers",
+        term: "Fuentes GPS",
+        definition:
+          "Si un equipo reporta por OnWay y por Wialon se muestra una sola fila: la posición sale del mensaje más reciente y los medidores, de un solo proveedor. La fuente y la hora acompañan al dato; nunca se suman medidores de proveedores distintos.",
+      },
     )
+    if (permissions.canViewFuel) {
+      entries.push({
+        key: "gps-performance",
+        term: "Rendimiento GPS",
+        definition:
+          "Avance del medidor GPS del período dividido por los litros operacionales. Se usa la primera fuente que cubra el período completo (Wialon o OnWay); si ninguna lo cubre no hay cifra. No se mezcla con la lectura Copec.",
+      })
+    }
+    if (permissions.canViewMaintenance) {
+      entries.push({
+        key: "gps-maintenance",
+        term: "Estimación GPS de mantención",
+        definition:
+          "Aplica la misma regla de intervalos de Mantención a la última lectura GPS, sólo cuando es más nueva que la lectura registrada. Es una referencia para programar: no reemplaza la lectura oficial ni cambia el estado del equipo.",
+      })
+    }
   }
   if (permissions.canViewLicenses) {
     entries.push({

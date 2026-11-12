@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { elapsedDays, maxMeterRatePerDayOf, meterSeriesAdvance, meterSeriesSegments, type MeterSeriesPoint } from "../meter-series"
+import { elapsedDays, maxMeterRatePerDayOf, meterSeriesAdvance, meterSeriesCoversPeriod, meterSeriesSegments, type MeterSeriesPoint } from "../meter-series"
 
 /**
  * El recorrido de un equipo en una ventana (Flota) se calcula con las mismas
@@ -134,6 +134,47 @@ describe("maxMeterRatePerDayOf", () => {
  * `meterSeriesAdvance` se calcula desde ella: si las dos tuvieran su propia vara, el recorrido de Flota y el
  * del gráfico podrían contar pares distintos.
  */
+describe("meterSeriesCoversPeriod", () => {
+  const from = "2026-03-01"
+  const to = "2026-05-30"
+
+  it("acepta una serie que empieza y termina dentro de la tolerancia", () => {
+    expect(meterSeriesCoversPeriod([
+      { value: 10_000, occurredAt: "2026-03-03T12:00:00.000Z" },
+      { value: 12_000, occurredAt: "2026-05-28T12:00:00.000Z" },
+    ], from, to)).toBe(true)
+  })
+
+  it("rechaza una serie que empezó a mitad del período", () => {
+    expect(meterSeriesCoversPeriod([
+      { value: 10_000, occurredAt: "2026-04-20T12:00:00.000Z" },
+      { value: 11_000, occurredAt: "2026-05-25T12:00:00.000Z" },
+    ], from, to)).toBe(false)
+  })
+
+  it("rechaza una serie que dejó de reportar antes del final", () => {
+    expect(meterSeriesCoversPeriod([
+      { value: 10_000, occurredAt: "2026-03-02T12:00:00.000Z" },
+      { value: 11_000, occurredAt: "2026-04-10T12:00:00.000Z" },
+    ], from, to)).toBe(false)
+  })
+
+  it("una serie de un solo punto no cubre nada", () => {
+    expect(meterSeriesCoversPeriod([{ value: 10_000, occurredAt: "2026-03-01T12:00:00.000Z" }], from, to)).toBe(false)
+  })
+
+  it("la tolerancia crece con la ventana, pero tiene un piso de 7 días", () => {
+    expect(meterSeriesCoversPeriod([
+      { value: 10_000, occurredAt: "2026-03-07T12:00:00.000Z" },
+      { value: 11_000, occurredAt: "2026-05-24T12:00:00.000Z" },
+    ], from, to)).toBe(true)
+    expect(meterSeriesCoversPeriod([
+      { value: 10_000, occurredAt: "2026-03-09T12:00:00.000Z" },
+      { value: 11_000, occurredAt: "2026-05-24T12:00:00.000Z" },
+    ], from, to)).toBe(false)
+  })
+})
+
 describe("meterSeriesSegments", () => {
   it("clasifica cada par: sumado, descartado (retroceso o salto imposible) o parte de un reset aceptado", () => {
     const series = [at(10_000, 1), at(10_300, 3), at(1_030, 5), at(10_600, 8), at(10_900, 10), at(1_000, 12, true), at(1_200, 14)]

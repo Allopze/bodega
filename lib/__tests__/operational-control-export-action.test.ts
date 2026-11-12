@@ -57,6 +57,15 @@ beforeEach(() => {
       canViewFuel: false,
       canViewCosts: false,
       canViewServiceEquipment: false,
+      canViewWorkOrders: false,
+      canViewPurchaseCosts: false,
+      canViewMaintenance: false,
+    },
+    gpsCross: {
+      reporting24h: 0,
+      totalVehicles: 0,
+      maintenance: { overdue: 0, upcoming: 0, estimated: 0 },
+      prevention: { operatingWithOverdueCapa: 0 },
     },
   })
 })
@@ -95,6 +104,13 @@ describe("exportOperationalControlXlsxAction", () => {
           canViewServiceEquipment: false,
           canViewWorkOrders: false,
           canViewPurchaseCosts: options.canViewPurchaseCosts,
+          canViewMaintenance: false,
+        },
+        gpsCross: {
+          reporting24h: 0,
+          totalVehicles: 0,
+          maintenance: { overdue: 0, upcoming: 0, estimated: 0 },
+          prevention: { operatingWithOverdueCapa: 0 },
         },
       })
       const result = await exportOperationalControlXlsxAction({ from: "2026-07-25", to: "2026-10-22" })

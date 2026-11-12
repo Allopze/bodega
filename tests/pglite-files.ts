@@ -192,6 +192,10 @@ export const pgliteTestFiles = [
   "lib/__tests__/fuel-control-imports-pglite.test.ts",
   // VisionLink: cruce por serie, upsert idempotente y fuente separada de los lotes manuales.
   "lib/__tests__/visionlink-sync-pglite.test.ts",
+  // Wialon: posiciones y medidores con fuente propia, upsert idempotente y unidades sin vincular.
+  "lib/__tests__/wialon-sync-pglite.test.ts",
+  // Acciones de vínculo Wialon: alcance de faena al reasociar o desvincular.
+  "app/(app)/flota/monitoreo/actions-wialon-links-pglite.test.ts",
   "lib/__tests__/fuel-control-catalogs-pglite.test.ts",
   "lib/__tests__/fuel-control-review-queue.test.ts",
   "lib/__tests__/fuel-log-personal.test.ts",
@@ -222,6 +226,8 @@ export const pgliteTestFiles = [
   // Panel operacional: vencimientos documentales con la columna canónica y
   // última telemetría GPS por vehículo.
   "lib/__tests__/operational-control-documents-gps-pglite.test.ts",
+  // Cruce OnWay + Wialon por vehículo en el panel y en Monitoreo GPS.
+  "lib/__tests__/operational-control-wialon-cross-pglite.test.ts",
   "lib/__tests__/fuel-statements-preview-pglite.test.ts",
   "lib/__tests__/fuel-sources-status-pglite.test.ts",
   // Faltaba desde que se escribió: instancia PGlite y migra, igual que las de
