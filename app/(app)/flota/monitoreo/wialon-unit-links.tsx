@@ -69,7 +69,7 @@ export function WialonUnitLinks({ units, vehicles }: {
 
   return (
     <>
-      <TableRoot>
+      <TableRoot framed={false}>
         <Table>
           <TableHeader>
             <TableRow>

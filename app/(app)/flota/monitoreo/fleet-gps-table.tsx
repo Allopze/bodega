@@ -4,6 +4,7 @@ import Link from "next/link"
 import { MapPin, Truck } from "@phosphor-icons/react/dist/ssr"
 import { useSafeShellHeader } from "@/components/layout/header-context"
 import { MetaBadge } from "@/components/states/state-badge"
+import { VehicleIdentity } from "@/components/fleet/vehicle-identity"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import {
@@ -19,15 +20,7 @@ import {
 import type { FleetGpsPosition } from "@/lib/services/fleet-gps"
 import { formatDateTime } from "@/lib/utils"
 import { formatGpsMeter } from "./fleet-gps-format"
-
-function providerLabel(provider: string): string {
-  return provider === "onway" ? "OnWay" : provider === "wialon" ? "Wialon" : provider
-}
-
-function sourceLabel(position: FleetGpsPosition): string {
-  const sources = position.providers.map(providerLabel).join(" + ") || "Sin fuente"
-  return position.meterProvider ? `${sources} · medidor ${providerLabel(position.meterProvider)}` : sources
-}
+import { gpsSignalLabel, gpsSourceLabel, ignitionMeta } from "./fleet-gps-labels"
 
 export function FleetGpsTable({ positions }: { positions: FleetGpsPosition[] }) {
   const { searchQuery } = useSafeShellHeader()
@@ -48,8 +41,8 @@ export function FleetGpsTable({ positions }: { positions: FleetGpsPosition[] }) 
       <EmptyState
         icon={<Truck size={24} aria-hidden />}
         title="Todavía no hay vehículos vinculados"
-        description="Configura OnWay o Wialon, revisa que las patentes o unidades coincidan con el catálogo de Flota y ejecuta una actualización."
-        action={<Button asChild variant="secondary" size="sm"><Link href="/flota">Revisar catálogo</Link></Button>}
+        description="Configura OnWay o Wialon, revisa que las patentes o unidades coincidan con los vehículos de Flota y actualiza."
+        action={<Button asChild variant="secondary" size="sm"><Link href="/flota">Revisar vehículos</Link></Button>}
       />
     )
   }
@@ -66,7 +59,7 @@ export function FleetGpsTable({ positions }: { positions: FleetGpsPosition[] }) 
   }
 
   return (
-    <TableRoot stickyHeader={rows.length > 20} className="rounded-none border-x-0 border-b-0">
+    <TableRoot stickyHeader={rows.length > 20} framed={false} className="border-t border-[var(--color-border)]">
       <Table>
         <TableHeader>
           <TableRow>
@@ -84,21 +77,24 @@ export function FleetGpsTable({ positions }: { positions: FleetGpsPosition[] }) 
           {rows.map((position) => (
             <TableRow key={position.id}>
               <TableCell>
-                <div className="font-medium">{position.plate}</div>
-                <div className="text-xs text-[var(--color-text-subtle)]">
-                  {[position.code, position.brand, position.model].filter(Boolean).join(" · ")}
-                </div>
+                <VehicleIdentity
+                  code={position.code}
+                  plate={position.plate}
+                  type={[position.brand, position.model].filter(Boolean).join(" ") || null}
+                  href={`/flota/${encodeURIComponent(position.vehicleId)}`}
+                />
               </TableCell>
               <TableCell>{position.worksiteName}</TableCell>
               <TableCell>
-                <MetaBadge meta={{ label: sourceLabel(position), variant: position.providers.length > 1 ? "signal" : "neutral" }} />
+                {/* Neutral: la fuente es un dato, no un estado; «signal» es naranja de pendiente. */}
+                <MetaBadge meta={{ label: gpsSourceLabel(position), variant: "neutral" }} />
               </TableCell>
               <TableCell>
-                <MetaBadge meta={{ label: !position.ignitionKnown ? "Sin dato" : position.ignition ? "Encendido" : "Apagado", variant: !position.ignitionKnown ? "neutral" : position.ignition ? "success" : "neutral" }} dot />
+                <MetaBadge meta={ignitionMeta(position)} dot />
               </TableCell>
               <TableCellNum>{Math.round(position.speedKph)} km/h</TableCellNum>
               <TableCell>
-                <div>{position.gpsStatus ?? position.sourceStatus ?? "Sin estado GPS"}</div>
+                <div>{gpsSignalLabel(position)}</div>
                 <div className="text-xs text-[var(--color-text-subtle)]">
                   {formatGpsMeter(position)}
                   {position.driverName ? ` · ${position.driverName}` : ""}

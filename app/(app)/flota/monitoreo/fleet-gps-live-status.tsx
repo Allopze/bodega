@@ -11,12 +11,14 @@ const MESSAGE: Record<OnwayLiveStatus["kind"], string> = {
 
 /**
  * Estado del refresco en vivo de Monitoreo GPS. La hora de la última lectura
- * no se repite aquí: ya está en «Última consulta» del resumen (A5).
+ * no se repite aquí: ya está en «Última consulta» del resumen (A5). Si OnWay
+ * está atrasado no se promete una actualización cada minuto (F6).
  */
-export function FleetGpsLiveStatus({ refreshing, status }: { refreshing: boolean; status: OnwayLiveStatus }) {
+export function FleetGpsLiveStatus({ refreshing, status, stale = false }: { refreshing: boolean; status: OnwayLiveStatus; stale?: boolean }) {
   return (
     <div className="flex flex-col items-start gap-0.5 text-xs sm:items-end">
-      {status.kind !== "disabled" ? (
+      {/* Con la fuente atrasada «cada minuto» sería falso: los datos tienen días y eso lo dice «Estado de las fuentes». */}
+      {status.kind !== "disabled" && !stale ? (
         <p className="flex items-center gap-1.5 text-[var(--color-text-muted)]">
           <ArrowClockwise size={14} aria-hidden className={refreshing ? "motion-safe:animate-spin" : undefined} />
           Actualización automática cada minuto

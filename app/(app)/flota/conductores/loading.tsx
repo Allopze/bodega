@@ -1,5 +1,5 @@
 import { PageContainer } from "@/components/ui/page-container"
-import { PageHeader } from "@/components/ui/page-header"
+import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Skeleton, SkeletonPage } from "@/components/ui/skeleton"
 
 /**
@@ -9,7 +9,11 @@ import { Skeleton, SkeletonPage } from "@/components/ui/skeleton"
 export default function Loading() {
   return (
     <PageContainer>
-      <PageHeader title="Conductores" description="Licencias de conducir por faena" />
+      <PageHeader
+        title="Conductores"
+        description="Licencias de conducir por faena"
+        breadcrumb={<Breadcrumbs items={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Conductores" }]} />}
+      />
       <div role="status" aria-busy="true" className="flex flex-col gap-3">
         <span className="sr-only">Cargando conductores…</span>
         <div className="flex flex-wrap gap-2" aria-hidden>

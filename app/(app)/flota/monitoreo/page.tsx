@@ -3,32 +3,19 @@ import Link from "next/link"
 import { redirect } from "next/navigation"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
+import { Button } from "@/components/ui/button"
+import { EmptyState } from "@/components/ui/empty-state"
 import { SummaryBar, type SummaryStat } from "@/components/ui/summary-bar"
 import { requirePermission } from "@/lib/auth/can"
 import { readOnwayAdminStatus } from "@/lib/integrations/onway/onway-settings"
 import { readWialonAdminStatus } from "@/lib/integrations/wialon/wialon-settings"
-import { can } from "@/lib/auth/can"
 import { getFleetGpsAlerts, getFleetGpsMonitoring, isGpsCaptureStale, listLinkableVehicles, listWialonUnitsForLinking } from "@/lib/services/fleet-gps"
 import { formatDateTime } from "@/lib/utils"
-import { Callout } from "@/components/ui/callout"
+import { buildSourceStatusRow } from "./fleet-gps-source-status"
 import { FleetGpsWorkspace } from "./fleet-gps-workspace"
-import { OnwayControls } from "./onway-controls"
-import { WialonControls } from "./wialon-controls"
+import { GpsRefreshButton } from "./gps-refresh-button"
 
 export const metadata: Metadata = { title: "Monitoreo GPS" }
-
-function staleSinceLabel(observedAt: string): string {
-  // Sin capturar por más de un día, dejar de contar en minutos y hablar en días
-  // para no acumular cuatro dígitos en el banner.
-  const diffMs = Date.now() - Date.parse(observedAt)
-  if (!Number.isFinite(diffMs) || diffMs <= 0) return "reciente"
-  const minutes = Math.round(diffMs / 60_000)
-  if (minutes < 60) return `${minutes} minuto${minutes === 1 ? "" : "s"}`
-  const hours = Math.round(diffMs / 3_600_000)
-  if (hours < 24) return `${hours} hora${hours === 1 ? "" : "s"}`
-  const days = Math.round(diffMs / 86_400_000)
-  return `${days} día${days === 1 ? "" : "s"}`
-}
 
 export default async function FleetGpsMonitoringPage() {
   let session
@@ -59,6 +46,26 @@ export default async function FleetGpsMonitoringPage() {
   const onwayIsConfigured = adminStatus?.hasCredentials ?? false
   const wialonIsConfigured = wialonStatus?.fields.token.configured ?? false
 
+  // Un solo bloque «Estado de las fuentes», una fila por proveedor, en vez de hasta ocho avisos apilados.
+  const sourceRows = [
+    buildSourceStatusRow({
+      provider: "onway",
+      latestAt: monitoring.providerLatestAt.onway,
+      stale: onwayIsStale,
+      run: monitoring.providerRuns.onway,
+      unmatched: monitoring.unmatchedByProvider.onway,
+      canManage: monitoring.canManage,
+    }),
+    buildSourceStatusRow({
+      provider: "wialon",
+      latestAt: monitoring.providerLatestAt.wialon,
+      stale: wialonIsStale,
+      run: monitoring.providerRuns.wialon,
+      unmatched: monitoring.unmatchedByProvider.wialon,
+      canManage: monitoring.canManage,
+    }),
+  ].filter((row) => row !== null)
+
   return (
     <PageContainer>
       <PageHeader
@@ -68,104 +75,42 @@ export default async function FleetGpsMonitoringPage() {
           { label: "Control operacional", href: "/control-operacional" },
           { label: "Monitoreo GPS" },
         ]} />}
-        actions={monitoring.canManage && adminStatus && wialonStatus ? (
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <OnwayControls status={adminStatus} />
-            <WialonControls status={wialonStatus} />
-          </div>
-        ) : undefined}
+        // La configuración vive sólo en su pestaña; la cabecera deja la acción de uso diario.
+        actions={monitoring.canManage && (onwayIsConfigured || wialonIsConfigured)
+          ? <GpsRefreshButton onway={onwayIsConfigured} wialon={wialonIsConfigured} />
+          : undefined}
       />
 
       <SummaryBar stats={stats} />
-
-      {onwayIsStale && monitoring.providerLatestAt.onway ? (
-        <Callout tone="warning" className="mt-3">
-          <strong>Consulta a OnWay atrasada:</strong> la plataforma no recibe una posición nueva de OnWay desde hace {staleSinceLabel(monitoring.providerLatestAt.onway)}. Las ubicaciones de OnWay reflejan el último reporte recibido, no una lectura en tiempo real.
-          {monitoring.canManage ? <span> Revisa la corrida de OnWay en <em>Configurar</em> o ejecuta una actualización manual.</span> : null}
-        </Callout>
-      ) : null}
-
-      {wialonIsStale && monitoring.providerLatestAt.wialon ? (
-        <Callout tone="warning" className="mt-3">
-          <strong>Consulta a Wialon atrasada:</strong> la plataforma no recibe una posición nueva de Wialon desde hace {staleSinceLabel(monitoring.providerLatestAt.wialon)}. Las ubicaciones de Wialon reflejan el último reporte recibido, no una lectura en tiempo real.
-          {monitoring.canManage ? <span> Revisa la corrida de Wialon en <em>Configurar</em> o ejecuta una actualización manual.</span> : null}
-        </Callout>
-      ) : null}
-
-      {monitoring.canManage && monitoring.latestRun?.status === "failed" ? (
-        <Callout tone="danger" role="alert" className="mt-3">
-          <div className="flex flex-wrap items-start justify-between gap-2">
-            <span><strong>Última sincronización de OnWay falló.</strong> Revisa las credenciales en <em>Configurar</em> (arriba a la derecha) o ejecuta una corrida manual.</span>
-            {monitoring.latestRun.errorCode ? <span className="rounded bg-[var(--color-surface-2)] px-2 py-0.5 font-mono text-xs">{monitoring.latestRun.errorCode}</span> : null}
-          </div>
-        </Callout>
-      ) : null}
-
-      {monitoring.canManage && monitoring.latestRun?.status === "partial" && Number(monitoring.unmatchedByProvider.onway ?? 0) === 0 ? (
-        <Callout tone="warning" role="status" className="mt-3">
-          <strong>La última sincronización de OnWay fue parcial.</strong> OnWay devolvió datos incompletos; pueden faltar telemetría, alertas o historial.
-        </Callout>
-      ) : null}
-
-      {monitoring.canManage && monitoring.providerRuns.wialon?.status === "failed" ? (
-        <Callout tone="danger" role="alert" className="mt-3">
-          <div className="flex flex-wrap items-start justify-between gap-2">
-            <span><strong>Última sincronización de Wialon falló.</strong> Revisa el token en <em>Configurar</em> o ejecuta una corrida manual.</span>
-            {monitoring.providerRuns.wialon.errorCode ? <span className="rounded bg-[var(--color-surface-2)] px-2 py-0.5 font-mono text-xs">{monitoring.providerRuns.wialon.errorCode}</span> : null}
-          </div>
-        </Callout>
-      ) : null}
-
-      {monitoring.canManage && monitoring.providerRuns.wialon?.status === "partial" ? (
-        <Callout tone="warning" role="status" className="mt-3">
-          <strong>La última sincronización de Wialon fue parcial.</strong> Wialon devolvió más unidades de las que se pueden procesar en una corrida; revisa el límite de unidades.
-        </Callout>
-      ) : null}
-
-      {monitoring.canManage && Number(monitoring.unmatchedByProvider.onway ?? 0) > 0 ? (
-        <Callout tone="warning" className="mt-3">
-          <div className="flex flex-wrap items-start justify-between gap-2">
-            <span><strong>{monitoring.unmatchedByProvider.onway} dispositivo{monitoring.unmatchedByProvider.onway === 1 ? "" : "s"} de OnWay sin patente única</strong> en el catálogo de Flota. La posición se descarta hasta corregirlo.</span>
-            <Link href="/admin/flota-catalogos/vehiculos" className="shrink-0 font-semibold underline">Revisar catálogo de vehículos</Link>
-          </div>
-        </Callout>
-      ) : null}
-
-      {monitoring.canManage && Number(monitoring.unmatchedByProvider.wialon ?? 0) > 0 ? (
-        <Callout tone="warning" className="mt-3">
-          <div className="flex flex-wrap items-start justify-between gap-2">
-            <span><strong>{monitoring.unmatchedByProvider.wialon} unidad{monitoring.unmatchedByProvider.wialon === 1 ? "" : "es"} de Wialon sin vehículo</strong>. La posición se conserva, pero no entra al panel hasta vincularla.</span>
-            <Link href="#configuracion" className="shrink-0 font-semibold underline">Vincular en Configuración</Link>
-          </div>
-        </Callout>
-      ) : null}
-
-      {!hasData ? (
-        <section role="status" className="mt-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4 text-sm text-[var(--color-text)]">
-          <p className="font-semibold">No hay posiciones GPS para mostrar.</p>
-          <p className="mt-1 text-[var(--color-text-subtle)]">
-            {onwayIsConfigured || wialonIsConfigured
-              ? "La sincronización corre por cron; puedes forzar una corrida desde Configurar. Si los vehículos ya están en el catálogo y las unidades Wialon están vinculadas, la captura aparecerá en el siguiente ciclo."
-              : "Configura OnWay o Wialon y vincula las patentes del catálogo de Flota. La primera captura demora unos minutos."}
-          </p>
-          {!onwayIsConfigured && !wialonIsConfigured ? (
-            <p className="mt-2">
-              <Link href="/admin/flota-catalogos/vehiculos" className="font-semibold text-[var(--color-primary)] underline">Abrir catálogo de vehículos</Link>
-            </p>
-          ) : null}
-        </section>
-      ) : null}
 
       <div className="mt-3">
         <FleetGpsWorkspace
           positions={monitoring.positions}
           alerts={alerts}
-          canViewHistory={can(session, "flota:view_gps_history")}
           adminStatus={adminStatus}
           wialonStatus={wialonStatus}
           wialonUnits={wialonLinks?.[0] ?? []}
           linkableVehicles={wialonLinks?.[1] ?? []}
           blockedAlertsCount={blockedAlerts}
+          sourceRows={sourceRows}
+          onwayStale={onwayIsStale}
+          emptyState={(
+            <div className="rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-[var(--color-surface)]">
+              <EmptyState
+                title="No hay posiciones GPS para mostrar"
+                description={onwayIsConfigured || wialonIsConfigured
+                  ? "Las posiciones se actualizan solas; también puedes pedirlo con «Actualizar ahora». Si los vehículos ya están en Flota y las unidades de Wialon están vinculadas, aparecerán en la próxima actualización."
+                  : monitoring.canManage
+                    ? "Configura OnWay o Wialon en la pestaña «Configuración» y vincula las patentes de los vehículos de Flota. La primera captura demora unos minutos."
+                    : "Todavía no hay una fuente GPS conectada. Pide a quien administra el monitoreo que la configure."}
+                action={monitoring.canManage && !onwayIsConfigured && !wialonIsConfigured ? (
+                  <Button asChild variant="secondary" size="sm">
+                    <Link href="/admin/flota-catalogos/vehiculos">Abrir catálogo de vehículos</Link>
+                  </Button>
+                ) : undefined}
+              />
+            </div>
+          )}
         />
       </div>
     </PageContainer>
