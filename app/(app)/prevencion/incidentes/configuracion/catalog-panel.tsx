@@ -73,6 +73,7 @@ export function CatalogPanel({ rows, legacyRows, onEdit, onCreate }: {
             rows={rows}
             searchKeys={["name", "code", "listLabel", "parentLabel"]}
             pageSize={50}
+            framed={false}
             hideDensityToggle
             emptyTitle="Ninguna lista coincide con la búsqueda"
             emptyDescription="Prueba con otro nombre o agrega un valor nuevo a la lista que corresponda."
