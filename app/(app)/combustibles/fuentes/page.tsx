@@ -179,8 +179,7 @@ export default async function FuentesPage({ searchParams }: { searchParams: Prom
             <EmptyState
               compact
               title="Todavía no se ha importado ningún archivo"
-              description="Cuando subas una planilla, un reporte de tarjeta o la telemetría de los equipos, quedará acá con lo que trajo."
-              action={<AddFuelDataButton options={options} />}
+              description="Cuando subas una planilla, un reporte de tarjeta o la telemetría de los equipos con «Agregar datos», arriba, quedará acá con lo que trajo."
             />
           )}
         </section>

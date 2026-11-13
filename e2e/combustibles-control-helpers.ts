@@ -292,9 +292,7 @@ export async function buildSupplyWorkbook(): Promise<Buffer> {
  * diálogo y Playwright no lo repite solo; se vuelve a pulsar sólo si no está abierto.
  */
 export async function openAddDataSelector(page: Page): Promise<Locator> {
-  // `.first()` es el de la cabecera: con «Archivos importados» vacío, Fuentes repite la
-  // acción en su estado vacío (A4) y ambos abren el mismo selector.
-  const agregar = page.getByRole("button", { name: "Agregar datos", exact: true }).first()
+  const agregar = page.getByRole("button", { name: "Agregar datos", exact: true })
   const selector = page.getByRole("dialog", { name: "¿Qué tienes en la mano?" })
   await expect(async () => {
     if (!(await selector.isVisible())) await agregar.click({ timeout: 5_000 })

@@ -70,10 +70,12 @@ export default async function ArchivosImportadosPage({ searchParams }: { searchP
               title={kind || status ? "Ningún archivo coincide con el filtro" : "Todavía no se ha importado ningún archivo"}
               description={kind || status
                 ? "Quita el filtro de tipo o de estado para ver todos los archivos."
-                : "Cuando subas una planilla, un reporte de tarjeta o la telemetría de los equipos, quedará acá con lo que trajo."}
+                : "Cuando subas una planilla, un reporte de tarjeta o la telemetría de los equipos con «Agregar datos», arriba, quedará acá con lo que trajo."}
+              // «Agregar datos» vive una sola vez por pantalla, en la cabecera (regla del área que fija
+              // `e2e/control-operacional-navegacion.spec.ts`): el vacío remite a él en vez de repetirlo.
               action={kind || status
                 ? <Button asChild variant="secondary"><Link href={FUEL_PATHS.fuentesArchivos}>Quitar filtros</Link></Button>
-                : <AddFuelDataButton options={fuelAddDataOptions(session)} />}
+                : undefined}
             />
           ) : (
             <>
