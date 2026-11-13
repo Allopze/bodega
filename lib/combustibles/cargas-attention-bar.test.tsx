@@ -63,15 +63,23 @@ describe("la tira de señales de terreno, ya pintada", () => {
 
 describe("CargasAttentionStrip: tiles o una sola línea (UX-13)", () => {
   it("con las cuatro señales en cero es una línea con el período, sin grupo, tiles ni «Ninguna»", () => {
-    render(<CargasAttentionStrip attention={{ toValidate: 0, observed: 0, sealIncomplete: 0, photosIncomplete: 0 }} searchParams={{}} periodInLabel="en noviembre" />)
+    render(<CargasAttentionStrip attention={{ toValidate: 0, observed: 0, sealIncomplete: 0, photosIncomplete: 0 }} searchParams={{}} periodInLabel="noviembre" />)
     expect(screen.getByText("Nada por validar, observar ni completar en noviembre")).toBeInTheDocument()
     expect(screen.queryByRole("group")).toBeNull()
     expect(screen.queryByText("Ninguna")).toBeNull()
     expect(screen.queryAllByRole("link")).toHaveLength(0)
   })
 
+  it("sin señales de terreno pero con cargas abiertas en la lista, no dice «nada pendiente»: las nombra y enlaza", () => {
+    render(<CargasAttentionStrip attention={{ toValidate: 0, observed: 0, sealIncomplete: 0, photosIncomplete: 0 }} searchParams={{ periodo: "2026-11" }} periodInLabel="noviembre" pending={9} />)
+    expect(screen.getByText(/Nada por validar ni completar en noviembre; 9 cargas con algo pendiente/)).toBeInTheDocument()
+    expect(screen.queryByText(/observar ni completar/)).toBeNull()
+    const link = screen.getByRole("link", { name: "Ver cuáles" })
+    expect(new URL(link.getAttribute("href")!, "http://localhost").searchParams.get("pendiente")).toBe("si")
+  })
+
   it("con una sola señal distinta de cero vuelve a las cuatro celdas, y el «Ninguna» de las demás informa", () => {
-    render(<CargasAttentionStrip attention={{ toValidate: 0, observed: 2, sealIncomplete: 0, photosIncomplete: 0 }} searchParams={{}} periodInLabel="en noviembre" />)
+    render(<CargasAttentionStrip attention={{ toValidate: 0, observed: 2, sealIncomplete: 0, photosIncomplete: 0 }} searchParams={{}} periodInLabel="noviembre" />)
     expect(screen.getByRole("group", { name: "Cargas en terreno que piden atención" })).toBeInTheDocument()
     expect(screen.getByRole("link", { name: "Con observación 2" })).toBeInTheDocument()
     expect(screen.getAllByText("Ninguna")).toHaveLength(3)

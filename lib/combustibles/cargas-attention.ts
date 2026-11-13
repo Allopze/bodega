@@ -17,6 +17,7 @@
  * pulsarlo quedan las validadas con el sello incompleto.
  */
 import type { SummaryStat } from "@/components/ui/summary-bar"
+import { countOf } from "@/lib/utils"
 import { withCargasParams, type CargasSearchParams } from "@/lib/combustibles/fuel-log-params"
 import { FUEL_LOAD_STATE_LABEL, type FieldLoadAttention } from "@/lib/combustibles/fuel-log-shared"
 
@@ -42,10 +43,18 @@ export function isAttentionClear(attention: FieldLoadAttention): boolean {
 
 /**
  * La línea tranquila de «todo despejado». `inLabel` es la frase del período que ya resuelve la
- * página (`ResolvedFuelPeriod.inLabel`: «en octubre», «en la semana del 26 de octubre», «en 2026»).
+ * página (`ResolvedFuelPeriod.inLabel`), SIN preposición: «noviembre», «la semana del 26 de
+ * octubre», «el 3.er trimestre», «2026». La preposición «en» la pone esta función: antes se
+ * esperaba dentro de `inLabel` y la frase salía «…completar noviembre».
+ *
+ * La línea no puede afirmar «nada pendiente» mientras la lista muestre cargas con algo abierto
+ * (una marcada por revisar, un caso, un pedido): `pending` es cuántas hay con los mismos filtros
+ * de la página, y si no es cero la frase las nombra en vez de contradecirlas.
  */
-export function attentionClearText(inLabel: string): string {
-  return `Nada por validar, observar ni completar ${inLabel}`
+export function attentionClearText(inLabel: string, pending = 0): string {
+  const when = `en ${inLabel}`
+  if (pending > 0) return `Nada por validar ni completar ${when}; ${countOf(pending, "carga")} con algo pendiente`
+  return `Nada por validar, observar ni completar ${when}`
 }
 
 /**

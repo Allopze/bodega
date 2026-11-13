@@ -27,6 +27,18 @@ const ALL = "_all"
 const PAGE_KEYS = ["pagina", "page"]
 
 /**
+ * El estado en UN solo control (A5). Además de los estados de la carga, el select ofrece los tres
+ * «pendientes» que antes eran casillas aparte (`pendiente=si`, `anomalia=si`, `revision=si`). Las
+ * URL antiguas siguen valiendo: el servidor lee los mismos parámetros y aquí sólo se decide cuál
+ * de ellos muestra el select (el primero que esté puesto).
+ */
+const PENDING_STATE_OPTIONS = [
+  { value: "con-algo-pendiente", label: "Con algo pendiente", param: "pendiente" },
+  { value: "con-caso-abierto", label: "Con un caso abierto", param: "anomalia" },
+  { value: "con-pedido-abierto", label: "Con un pedido de revisión abierto", param: "revision" },
+] as const
+
+/**
  * Lo que busca el cuadro de búsqueda (`fuel-log.ts`): código de equipo, patente y, en las
  * facturas, el proveedor; conductor y supervisor sólo con `combustibles:view_personal`. El
  * rótulo dice lo mismo que la consulta, sin ofrecer buscar personas a quien no puede.
@@ -112,7 +124,7 @@ function CheckboxParam({ param, label }: { param: string; label: string }) {
 
 /** «Cómo llegó»: varios orígenes a la vez (`como=qr,app`). */
 function OriginFilter({ selected, onChange }: { selected: FuelLoadOriginSlug[]; onChange: (next: FuelLoadOriginSlug[]) => void }) {
-  const summary = selected.length === 0 ? "Llegó de cualquier forma" : selected.length === 1 ? FUEL_LOAD_ORIGIN_LABEL[selected[0]!] : `Cómo llegó (${selected.length})`
+  const summary = selected.length === 0 ? "Cómo llegó: todas" : selected.length === 1 ? FUEL_LOAD_ORIGIN_LABEL[selected[0]!] : `Cómo llegó (${selected.length})`
   return (
     <Popover>
       <PopoverTrigger asChild>
@@ -142,8 +154,8 @@ function OriginFilter({ selected, onChange }: { selected: FuelLoadOriginSlug[]; 
 
 /**
  * Filtros de «Cargas a equipos». El período vive en la cabecera; aquí van los de
- * uso diario (buscar, faena, cómo llegó, estado, «con algo pendiente») y, en
- * «Más filtros (N)», el resto. Cada filtro activo tiene su chip. Se aplican al
+ * uso diario (buscar, faena, cómo llegó, estado —incluidos los «con algo pendiente»,
+ * «con un caso abierto» y «con un pedido de revisión abierto»—) y, en «Más filtros (N)», el resto. Cada filtro activo tiene su chip. Se aplican al
  * instante: la URL cambia con `router.replace` sin saltar el scroll.
  */
 export function CargasFilters({ lookups, canViewPersonal }: { lookups: CargasFilterLookups; canViewPersonal: boolean }) {
@@ -154,9 +166,21 @@ export function CargasFilters({ lookups, canViewPersonal }: { lookups: CargasFil
   const origins = parseFuelLoadOrigins(get("como"))
   const stateSlug = parseFuelLoadState(get("estado"))
   const pendingOnly = get("pendiente") === "si"
+  // Qué muestra el control de estado: un estado de la carga o, si no hay, el primer «pendiente» puesto en la URL.
+  const pendingState = PENDING_STATE_OPTIONS.find((option) => get(option.param) === "si")
+  const stateValue = stateSlug ?? pendingState?.value ?? ""
+  function changeState(next: string) {
+    const pending = PENDING_STATE_OPTIONS.find((option) => option.value === next)
+    setFilters({
+      estado: pending || next === ALL ? null : next,
+      ...Object.fromEntries(PENDING_STATE_OPTIONS.map((option) => [option.param, option === pending ? "si" : null])),
+    })
+  }
   const searchLabel = canViewPersonal ? SEARCH_LABEL_WITH_PERSONAL : SEARCH_LABEL
 
-  const advancedKeys = CARGAS_ADVANCED_FILTER_KEYS.filter((key) => canViewPersonal || (key !== "conductor" && key !== "supervisor"))
+  // `anomalia` y `revision` son opciones del control de estado, no de «Más filtros»: no suman a su contador.
+  const inStateControl = new Set<string>(PENDING_STATE_OPTIONS.map((option) => option.param))
+  const advancedKeys = CARGAS_ADVANCED_FILTER_KEYS.filter((key) => (canViewPersonal || (key !== "conductor" && key !== "supervisor")) && !inStateControl.has(key))
   const advancedActive = advancedKeys.filter((key) => Boolean(get(key)))
 
   const label = (options: CargasFilterOption[], value: string) => options.find((option) => option.value === value)?.label ?? value
@@ -166,7 +190,7 @@ export function CargasFilters({ lookups, canViewPersonal }: { lookups: CargasFil
   if (get("faena")) addChip("faena", "Faena", label(lookups.worksites, get("faena")))
   if (origins.length > 0) addChip("como", "Cómo llegó", origins.map((slug) => FUEL_LOAD_ORIGIN_LABEL[slug]).join(", "))
   if (stateSlug) addChip("estado", "Estado", FUEL_LOAD_STATE_LABEL[stateSlug])
-  if (pendingOnly) addChip("pendiente", "Pendiente", "Sólo con algo pendiente")
+  if (pendingOnly) addChip("pendiente", "Estado", "Con algo pendiente")
   if (get("equipo")) addChip("equipo", "Equipo", lookups.equipmentLabel ?? "Equipo elegido")
   if (get("tipo")) addChip("tipo", "Tipo de equipo", label(lookups.equipmentTypes, get("tipo")))
   if (get("marca")) addChip("marca", "Marca", get("marca"))
@@ -185,11 +209,11 @@ export function CargasFilters({ lookups, canViewPersonal }: { lookups: CargasFil
   if (get("punto_carga") || get("punto")) addChip(get("punto_carga") ? "punto_carga" : "punto", "Punto de carga", label(lookups.loadingPoints, get("punto_carga") || get("punto")))
   if (get("mias") === "si") addChip("mias", "Registradas", "Registradas por mí")
   if (get("observaciones") === "si") addChip("observaciones", "Observaciones", "Sólo con observaciones")
-  if (get("anomalia") === "si") addChip("anomalia", "Casos", "Sólo con casos abiertos")
+  if (get("anomalia") === "si") addChip("anomalia", "Estado", "Con un caso abierto")
   if (get("anomalia_tipo")) addChip("anomalia_tipo", "Tipo de caso", label(lookups.anomalyRules, get("anomalia_tipo")))
   if (get("anomalia_severidad")) addChip("anomalia_severidad", "Gravedad", ANOMALY_RULE_SEVERITY_LABELS[get("anomalia_severidad") as keyof typeof ANOMALY_RULE_SEVERITY_LABELS] ?? get("anomalia_severidad"))
   if (get("anomalia_responsable")) addChip("anomalia_responsable", "Responsable", label(lookups.anomalyAssignees, get("anomalia_responsable")))
-  if (get("revision") === "si") addChip("revision", "Revisión", "Sólo con pedido de revisión abierto")
+  if (get("revision") === "si") addChip("revision", "Estado", "Con un pedido de revisión abierto")
 
   // El conteo de «Más filtros» incluye el alias antiguo `punto` (que se lee como `punto_carga`).
   const advancedCount = advancedActive.length + (get("punto") && !get("punto_carga") ? 1 : 0)
@@ -245,11 +269,9 @@ export function CargasFilters({ lookups, canViewPersonal }: { lookups: CargasFil
         <SelectFilter value={get("punto_carga") || get("punto")} onValue={(next) => setFilters({ punto_carga: next === ALL ? null : next, punto: null })} allLabel="Cualquier punto de carga" ariaLabel="Filtrar por punto de carga" options={lookups.loadingPoints} className="h-11 w-full text-xs sm:h-9" />
         <CheckboxParam param="mias" label="Sólo las que registré yo" />
         <CheckboxParam param="observaciones" label="Sólo con observaciones" />
-        <CheckboxParam param="anomalia" label="Sólo con casos abiertos" />
         <SelectFilter value={get("anomalia_tipo")} onValue={(next) => setFilter("anomalia_tipo", next)} allLabel="Cualquier tipo de caso" ariaLabel="Filtrar por tipo de caso" options={lookups.anomalyRules} className="h-11 w-full text-xs sm:h-9" />
         <SelectFilter value={get("anomalia_severidad")} onValue={(next) => setFilter("anomalia_severidad", next)} allLabel="Cualquier gravedad" ariaLabel="Filtrar por gravedad del caso" options={ANOMALY_RULE_SEVERITIES.map((item) => ({ value: item, label: ANOMALY_RULE_SEVERITY_LABELS[item] }))} className="h-11 w-full text-xs sm:h-9" />
         <SelectFilter value={get("anomalia_responsable")} onValue={(next) => setFilter("anomalia_responsable", next)} allLabel="Cualquier responsable" ariaLabel="Filtrar por responsable del caso" options={lookups.anomalyAssignees} className="h-11 w-full text-xs sm:h-9" />
-        <CheckboxParam param="revision" label="Sólo con pedido de revisión abierto" />
       </fieldset>
     </div>
   )
@@ -277,13 +299,15 @@ export function CargasFilters({ lookups, canViewPersonal }: { lookups: CargasFil
         <SelectFilter value={get("faena")} onValue={(next) => setFilter("faena", next)} allLabel="Todas tus faenas" ariaLabel="Filtrar por faena" options={lookups.worksites} />
         <OriginFilter selected={origins} onChange={(next) => setFilter("como", next.length > 0 ? next.join(",") : null)} />
         <SelectFilter
-          value={stateSlug ?? ""}
-          onValue={(next) => setFilter("estado", next)}
+          value={stateValue}
+          onValue={changeState}
           allLabel="Cualquier estado"
           ariaLabel="Filtrar por estado"
-          options={(Object.keys(FUEL_LOAD_STATE_SLUGS) as Array<keyof typeof FUEL_LOAD_STATE_SLUGS>).map((slug) => ({ value: slug, label: FUEL_LOAD_STATE_LABEL[slug] }))}
+          options={[
+            ...(Object.keys(FUEL_LOAD_STATE_SLUGS) as Array<keyof typeof FUEL_LOAD_STATE_SLUGS>).map((slug) => ({ value: slug, label: FUEL_LOAD_STATE_LABEL[slug] })),
+            ...PENDING_STATE_OPTIONS.map((option) => ({ value: option.value, label: option.label })),
+          ]}
         />
-        <Checkbox id="cargas-pendiente" label="Sólo con algo pendiente" checked={pendingOnly} onChange={(event) => setFilter("pendiente", event.target.checked ? "si" : null)} />
       </FilterToolbar>
     </div>
   )

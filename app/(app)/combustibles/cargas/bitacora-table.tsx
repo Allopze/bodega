@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { VehicleIdentity } from "@/components/fleet/vehicle-identity"
 import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui/responsive-data-list"
 import { ReviewRequestControl } from "@/components/combustibles/load-detail/review-request-control"
 import type { CargaRowHrefs } from "@/lib/combustibles/cargas-hrefs"
@@ -54,18 +55,19 @@ function meterUnit(label: string | null): string {
 /**
  * El motivo de una carga por decidir, corto para la insignia de la columna: el
  * texto entero («Lectura de medidor menor a la anterior») hacía una insignia de
- * tres líneas. La frase completa queda en el `title` de la insignia y es la que
- * se lee en la ficha de la carga y en «Por revisar».
+ * tres líneas. Cada etiqueta cabe en una sola línea (la insignia no se parte) y la
+ * frase completa queda en el `title`, que es la que se lee en la ficha de la carga
+ * y en «Por revisar».
  */
 const FLAG_REASON_SHORT_LABELS: Record<FlagReason, string> = {
   outlier: "Rendimiento atípico",
-  implausible: "Rendimiento fuera de rango",
-  meter_regression: "Lectura menor a la anterior",
-  over_capacity: "Litros sobre la capacidad",
+  implausible: "Fuera de rango",
+  meter_regression: "Lectura menor",
+  over_capacity: "Sobre capacidad",
   filler_value: "Valor de relleno",
   duplicate: "Posible duplicada",
   unknown_vehicle: "Equipo sin ficha",
-  late_entry: "Registrada después",
+  late_entry: "Registrada tarde",
 }
 
 function PendingCell({ row }: { row: EnrichedRow }) {
@@ -77,12 +79,11 @@ function PendingCell({ row }: { row: EnrichedRow }) {
     <span className="flex flex-wrap gap-1">
       {pending.map((item) => {
         const href = hrefFor(item.kind)
-        // El motivo de una carga por decidir va corto y con la frase completa en el `title`. Aun así un motivo
-        // se parte en dos líneas si hace falta: en la tarjeta del celular la columna mide la mitad del ancho y
-        // el badge, que no corta por defecto, se salía de ella.
+        // El motivo de una carga por decidir va corto, en una sola línea, y con la frase completa en el `title`.
+        // Las pastillas se acomodan una bajo otra si no caben juntas (`flex-wrap`), pero ninguna se parte.
         const short = item.kind === "decide" && flagReason ? FLAG_REASON_SHORT_LABELS[flagReason] : item.label
         const full = item.kind === "decide" && flagReason ? FLAG_REASON_LABELS[flagReason] : undefined
-        const badge = <MetaBadge meta={{ label: short, variant: "signal" }} size="sm" title={full} className="max-w-full whitespace-normal text-left" />
+        const badge = <MetaBadge meta={{ label: short, variant: "signal" }} size="sm" title={full ?? short} className="max-w-full whitespace-nowrap" />
         return href ? <Link key={item.kind} href={href} className="max-w-full rounded-full focus-visible:outline-2 focus-visible:outline-[var(--color-primary)]">{badge}</Link> : <span key={item.kind} className="max-w-full">{badge}</span>
       })}
     </span>
@@ -91,19 +92,14 @@ function PendingCell({ row }: { row: EnrichedRow }) {
 
 function StateCell({ row }: { row: EnrichedRow }) {
   // La planilla no tiene un estado propio: llega importada y se queda así.
-  if (row.source === "operation_manual") return <Badge variant="default" size="sm">Importada</Badge>
+  // Con punto, igual que el resto de los estados de la columna: un solo estilo de insignia.
+  if (row.source === "operation_manual") return <Badge variant="default" size="sm" dot>Importada</Badge>
   return row.statusLabel ? <StateBadge state={row.statusLabel} entity="fuel_log" size="sm" /> : <>—</>
 }
 
 function EquipmentCell({ row }: { row: EnrichedRow }) {
   const code = row.equipmentCode ?? row.plate ?? "Equipo sin identificar"
-  const detail = [row.equipmentTypeName, row.plate && row.equipmentCode ? row.plate : null].filter(Boolean).join(" · ")
-  return (
-    <span className="flex flex-col">
-      <Link href={row.hrefs.detail} className="font-medium text-[var(--color-primary-ink)] hover:underline" aria-label={`Abrir la carga de ${code}`}>{code}</Link>
-      {detail ? <span className="text-xs text-[var(--color-text-subtle)]">{detail}</span> : null}
-    </span>
-  )
+  return <VehicleIdentity code={row.equipmentCode} plate={row.plate} type={row.equipmentTypeName} href={row.hrefs.detail} linkLabel={`Abrir la carga de ${code}`} />
 }
 
 const COLUMNS: ColumnDef[] = [
@@ -124,7 +120,7 @@ const COLUMNS: ColumnDef[] = [
   { key: "driverName", label: "Conductor", defaultVisible: false, render: (r, personal) => personalCell(r.driverName, personal) },
   { key: "supervisorName", label: "Supervisor", defaultVisible: false, render: (r, personal) => personalCell(r.supervisorName, personal) },
   { key: "supplierName", label: "Proveedor", defaultVisible: false, render: (r) => r.supplierName ?? "—" },
-  { key: "loadingPointName", label: "Lugar de carga", defaultVisible: false, render: (r) => r.loadingPointName ?? "—" },
+  { key: "loadingPointName", label: "Punto de carga", defaultVisible: false, render: (r) => r.loadingPointName ?? "—" },
   { key: "productName", label: "Combustible", defaultVisible: false, render: (r) => r.productName ?? "—" },
   { key: "performance", label: "Rendimiento", defaultVisible: false, numeric: true, render: (r) => r.performanceValue == null ? "—" : <span>{Number(r.performanceValue).toLocaleString("es-CL")}<span className="ml-1 text-[var(--color-text-muted)]">{r.performanceUnit === "km_lt" ? "km/L" : r.performanceUnit === "lt_hr" ? "L/h" : ""}</span></span> },
   { key: "seals", label: "Sellos", defaultVisible: false, render: (r) => (r.sealRemoved || r.sealInstalled) ? `${r.sealRemoved ?? "—"} → ${r.sealInstalled ?? "—"}` : "—" },

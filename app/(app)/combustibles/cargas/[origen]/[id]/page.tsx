@@ -18,7 +18,7 @@ import { FacturaLoadDetail } from "@/components/combustibles/load-detail/factura
 import { loadFacturaDetail, loadPlanillaDetail, loadTerrenoDetail, type LoadCommon } from "@/lib/combustibles/fuel-log-detail"
 import { canWithdrawOthersReviewRequest } from "@/lib/combustibles/fuel-log-review-request"
 import type { FuelLogSource } from "@/lib/combustibles/fuel-log-shared"
-import { FUEL_PATHS, isFuelLoadOrigin } from "@/lib/combustibles/routes"
+import { FUEL_PATHS, isFuelLoadOrigin, withFuelContext } from "@/lib/combustibles/routes"
 import { formatDate, formatDateTime } from "@/lib/utils"
 import { EditFuelLoadForm } from "../../../[id]/edit-fuel-load-form"
 
@@ -138,7 +138,7 @@ export default async function FichaCargaPage({ params, searchParams }: { params:
       <PageHeader
         title={title}
         description={description}
-        breadcrumb={<FuelBreadcrumbs items={[{ label: "Cargas", href: FUEL_PATHS.cargas }, { label: common.equipmentLabel }]} />}
+        breadcrumb={<FuelBreadcrumbs items={[{ label: "Cargas", href: withFuelContext(FUEL_PATHS.cargas, search) }, { label: common.equipmentLabel }]} />}
         actions={
           <FuelHeaderActions>
             <ReviewRequestControl source={SOURCE_BY_ORIGIN[origen]} entityId={id} openRequest={openRequest} canWithdraw={canWithdraw} equipmentLabel={common.equipmentLabel} />

@@ -39,7 +39,7 @@ export default async function HistorialCargaPage({ params, searchParams }: { par
       <PageHeader
         title={`Historial de la carga de ${history.equipmentLabel}`}
         description="Quién hizo qué con esta carga, y cuándo"
-        breadcrumb={<FuelBreadcrumbs items={[{ label: "Cargas", href: FUEL_PATHS.cargas }, { label: history.equipmentLabel, href: fichaHref }, { label: "Historial" }]} />}
+        breadcrumb={<FuelBreadcrumbs items={[{ label: "Cargas", href: withFuelContext(FUEL_PATHS.cargas, search) }, { label: history.equipmentLabel, href: fichaHref }, { label: "Historial" }]} />}
         actions={<FuelHeaderActions />}
       />
 

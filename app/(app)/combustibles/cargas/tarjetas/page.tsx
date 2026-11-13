@@ -12,19 +12,23 @@ import { inboxDueDate } from "@/lib/combustibles/inbox/types"
 import { FUEL_CARRY_PARAMS, monthlyGranularityNote, toStatementMonths } from "@/lib/combustibles/period"
 import { resolveFuelPeriodForPage } from "@/lib/combustibles/period/server"
 import { FUEL_PATHS, fuelBatchHref, fuelEquipmentHref, fuelInboxHref, withFuelContext } from "@/lib/combustibles/routes"
+import { fuelRecordSourceLabel } from "@/lib/combustibles/source-labels"
 import { cargasNavItems } from "@/lib/combustibles/section-nav"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
+import Link from "next/link"
 import { Callout } from "@/components/ui/callout"
 import { DegradedDataBanner } from "@/components/ui/degraded-data-banner"
 import { PageContainer } from "@/components/ui/page-container"
 import { PageHeader } from "@/components/ui/page-header"
 import { SectionNav } from "@/components/ui/section-nav"
 import { FuelBreadcrumbs } from "@/components/combustibles/fuel-breadcrumbs"
+import { EmptyState } from "@/components/ui/empty-state"
+import { Button } from "@/components/ui/button"
 import { FuelHeaderActions } from "@/components/combustibles/fuel-header-actions"
 import { ConsumptionDetailTable, type ConsumptionRecordRow } from "../../consumption-detail-table"
 import { TarjetasFilters } from "./tarjetas-filters"
 
-export const metadata: Metadata = { title: "Tarjetas (total por patente y mes)" }
+export const metadata: Metadata = { title: "Tarjetas Copec" }
 
 type SearchParams = Record<string, string | string[] | undefined>
 
@@ -37,7 +41,7 @@ function first(sp: SearchParams, key: string): string | undefined {
 }
 
 /**
- * Tarjetas (total por patente y mes): lo que informa Copec, antes la
+ * Tarjetas Copec (un total por patente y mes): lo que informa Copec, antes la
  * vista «Registros» de la raíz del módulo. Cada fila es un total mensual por
  * patente, no una carga: por eso va aparte de «Cargas a equipos». El período es
  * en meses: con una semana o un rango se muestran los meses completos que toca.
@@ -121,7 +125,7 @@ export default async function CargasTarjetasPage({ searchParams }: { searchParam
         periodoHasta: true,
         fuente: true,
       },
-      with: { vehicle: { columns: { id: true, plate: true, type: true } } },
+      with: { vehicle: { columns: { id: true, code: true, plate: true, type: true, performanceUnit: true } } },
       orderBy: [desc(fuelConsumptionRecords.periodoDesde), asc(fuelConsumptionRecords.patente), desc(fuelConsumptionRecords.createdAt)],
       limit: PAGE_SIZE,
       offset: pagination.offset,
@@ -152,6 +156,7 @@ export default async function CargasTarjetasPage({ searchParams }: { searchParam
     batchHref: canOpenBatch ? context(fuelBatchHref("tarjeta", row.batchId)) : null,
   }))
 
+  const filtered = Boolean(worksiteId || fuente || search || unlinkedOnly)
   const fuentes = fuentesRows.map((row) => row.fuente).filter((value): value is string => Boolean(value)).sort()
   const granularityNote = monthlyGranularityNote(period)
   const hrefForPage = (target: number) => buildPaginationHref(FUEL_PATHS.tarjetas, { ...sp, page: undefined }, target, "pagina")
@@ -159,24 +164,23 @@ export default async function CargasTarjetasPage({ searchParams }: { searchParam
   return (
     <PageContainer>
       <PageHeader
-        title="Tarjetas (total por patente y mes)"
+        title="Tarjetas Copec"
         description="Lo que informa Copec por patente y mes"
-        breadcrumb={<FuelBreadcrumbs items={[{ label: "Cargas", href: FUEL_PATHS.cargas }, { label: "Tarjetas" }]} />}
+        breadcrumb={<FuelBreadcrumbs items={[{ label: "Cargas", href: FUEL_PATHS.cargas }, { label: "Tarjetas Copec" }]} />}
         actions={<FuelHeaderActions period={period} granularity="month" />}
       />
       <SectionNav items={cargasNavItems()} activeKey="tarjetas" ariaLabel="Vistas de cargas" carryParams={FUEL_CARRY_PARAMS} />
       <DegradedDataBanner degraded={degraded} total={tracked} />
 
-      <div className="mb-4 space-y-2">
-        <Callout tone="info" role="status" title="Las tarjetas informan un total por patente y por mes, no cada carga">
-          Por eso van aparte de las cargas a equipos. Copec se actualiza automáticamente cada mañana.
-          {granularityNote ? <span className="mt-1 block">{granularityNote}</span> : null}
-        </Callout>
-      </div>
+      {/* Un solo aviso: qué es cada fila, de dónde sale y qué tan lejos se puede fiar del rendimiento. */}
+      <Callout tone="info" role="status" className="mb-4" title="Cada fila es un total por patente y mes, no una carga">
+        Copec se actualiza solo cada mañana. El rendimiento lo calcula el proveedor y puede no coincidir con el de la plataforma, que usa las lecturas de cada carga.
+        {granularityNote ? <span className="mt-1 block">{granularityNote}</span> : null}
+      </Callout>
 
       <TarjetasFilters
         worksites={worksitesList.map((item) => ({ value: item.id, label: item.name }))}
-        suppliers={fuentes.map((name) => ({ value: name, label: name }))}
+        suppliers={fuentes.map((name) => ({ value: name, label: fuelRecordSourceLabel(name) }))}
       />
 
       <ConsumptionDetailTable
@@ -186,8 +190,27 @@ export default async function CargasTarjetasPage({ searchParams }: { searchParam
         canViewCosts={canViewCosts}
         unlinkedHref={context(fuelInboxHref({ tipo: "patente" }))}
         degraded={countDegraded}
+        emptyState={
+          filtered ? (
+            <EmptyState
+              compact
+              title="Ningún total coincide con estos filtros"
+              description="Prueba con otra faena, otro proveedor u otra patente, o quita los filtros para ver todos los totales del período."
+              action={<Button asChild size="sm" variant="secondary"><Link href={context(FUEL_PATHS.tarjetas)} replace scroll={false}>Quitar filtros</Link></Button>}
+              className="rounded-[var(--radius-2xl)] border border-dashed border-[var(--color-border-strong)]"
+            />
+          ) : (
+            <EmptyState
+              compact
+              title={`Aún no hay totales de tarjeta ${period.inLabel}`}
+              description="Copec los envía solos cada mañana. Si falta un mes, agrega el reporte de tarjeta a mano."
+              action={canOpenBatch ? <Button asChild size="sm"><Link href={`${FUEL_PATHS.fuentes}/agregar/tarjeta`}>Agregar reporte de tarjeta</Link></Button> : undefined}
+              secondaryAction={<Button asChild size="sm" variant="secondary"><Link href={context(FUEL_PATHS.fuentes)}>Ver fuentes de datos</Link></Button>}
+              className="rounded-[var(--radius-2xl)] border border-dashed border-[var(--color-border-strong)]"
+            />
+          )
+        }
       />
-      <p className="mt-3 text-xs text-[var(--color-text-subtle)]">El rendimiento lo calcula el proveedor y puede no coincidir con el de la plataforma, que usa las lecturas de cada carga.</p>
     </PageContainer>
   )
 }
