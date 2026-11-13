@@ -38,7 +38,9 @@ test.describe("Combustibles module", () => {
     await expectPageTitle(page, "Panel de combustible")
 
     // La firma del Panel de jefatura: «N de 5 pasos listos» y un paso por cada cosa que falta para cerrar el período.
-    await expect(page.getByRole("progressbar", { name: /de 5 pasos listos$/ })).toBeVisible()
+    // El avance se dice una sola vez, como texto: sin barra además (excepción declarada en AGENTS.md).
+    await expect(page.getByText(/\d de 5/).filter({ hasText: "pasos listos" })).toBeVisible()
+    await expect(page.getByRole("progressbar")).toHaveCount(0)
     const pasos = page.getByRole("region", { name: "Pasos para cerrar el período" })
     await expect(pasos.locator("li[data-step]")).toHaveCount(5)
     /** Cada paso es un enlace al lugar donde se trabaja; el período puede viajar en el `href`. */
