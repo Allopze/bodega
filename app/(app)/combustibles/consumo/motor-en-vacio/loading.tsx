@@ -10,7 +10,7 @@ export default function Loading() {
   return (
     <PageContainer>
       <PageHeader
-        title="Consumo y rendimiento"
+        title="Motor en vacío"
         description="Horas con el motor encendido sin trabajar, según la telemetría de los equipos"
         breadcrumb={<FuelBreadcrumbs items={[{ label: "Consumo", href: FUEL_PATHS.consumo }, { label: "Motor en vacío" }]} />}
       />

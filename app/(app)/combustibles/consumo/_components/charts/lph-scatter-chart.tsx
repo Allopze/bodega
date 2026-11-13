@@ -7,7 +7,7 @@ import { RankedList } from "@/components/ui/ranked-list"
 import { CHART_COLORS } from "@/lib/chart-palette"
 import { LPH_BAND_PCT, type LphComparisonView, type LphPoint } from "@/lib/combustibles/control/calc/lph-comparison"
 import { MONTH_LABELS, countOf, formatQty } from "@/lib/utils"
-import { AXIS_TICK } from "./chart-shared"
+import { AXIS_TICK } from "../../../_shared/chart-shared"
 import { useChartMotion } from "@/components/ui/chart-interactions"
 
 /**

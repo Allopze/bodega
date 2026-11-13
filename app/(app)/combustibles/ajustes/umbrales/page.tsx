@@ -10,7 +10,7 @@ import { FUEL_PATHS } from "@/lib/combustibles/routes"
 import { loadThresholdsData } from "../config-queries"
 import { ThresholdsForm } from "./thresholds-form"
 
-export const metadata: Metadata = { title: "¿Cuándo una carga pide revisión?" }
+export const metadata: Metadata = { title: "Umbrales de revisión" }
 
 export default async function AjustesUmbralesPage() {
   try { await requirePermission("combustibles:manage_control", FUEL_PATHS.ajustes) } catch { redirect("/forbidden") }
@@ -20,9 +20,9 @@ export default async function AjustesUmbralesPage() {
   return (
     <PageContainer>
       <PageHeader
-        title="¿Cuándo una carga pide revisión?"
-        description="Los umbrales que marcan una carga para que alguien la decida"
-        breadcrumb={<FuelBreadcrumbs items={[{ label: "Ajustes", href: FUEL_PATHS.ajustes }, { label: "¿Cuándo una carga pide revisión?" }]} />}
+        title="Umbrales de revisión"
+        description="¿Cuándo una carga pide revisión? Los umbrales que la marcan para que alguien la decida"
+        breadcrumb={<FuelBreadcrumbs items={[{ label: "Ajustes", href: FUEL_PATHS.ajustes }, { label: "Umbrales de revisión" }]} />}
         actions={<FuelHeaderActions />}
       />
       <div className="space-y-4">

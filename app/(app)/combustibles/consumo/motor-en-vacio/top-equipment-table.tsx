@@ -1,7 +1,7 @@
 import Link from "next/link"
 import { Table, TableBody, TableCell, TableCellNum, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import type { IdleEquipmentSummary } from "@/lib/combustibles/control/queries/idle-summary"
-import { litersText, numberText, pctText } from "../../control/_components/format"
+import { litersText, numberText, pctText } from "../_components/format"
 
 const hours = (value: number) => `${numberText(value)} h`
 

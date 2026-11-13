@@ -305,7 +305,7 @@ test.describe.serial("Control de combustible — registro, revisión y conciliac
     expect(parseLitersOrZero(await entroDespues.innerText()) - inputBefore).toBe(1000)
     await expect(mandanteRowCell(page, "Mandante CTL E2E", 4)).toHaveText(/^[−-]?[\d.]+(,\d)? L · [−-]?[\d.]+(,\d)? %$/)
 
-    // C-03, ahora en «Proveedor y terreno»: el medio informa 1.000 L contra lo registrado en terreno con ese medio este mes.
+    // C-03, ahora en «Facturado y terreno»: el medio informa 1.000 L contra lo registrado en terreno con ese medio este mes.
     await page.goto(mediumUrl)
     const fieldLiters = await withSql(async (sql) => {
       const [row] = await sql<Array<{ liters: number }>>`

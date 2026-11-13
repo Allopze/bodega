@@ -13,7 +13,7 @@ import { controlFiltersForRange, wholeMonthRange } from "@/lib/combustibles/cont
 import { resolveFuelPeriodForPage } from "@/lib/combustibles/period/server"
 import { FUEL_PATHS, withFuelContext } from "@/lib/combustibles/routes"
 import { FUEL_CARRY_PARAMS, cuadraturaNavItems } from "@/lib/combustibles/section-nav"
-import { ControlFilters } from "../../control/_components/control-filters"
+import { ControlFilters } from "../../_shared/control-filters"
 import { loadCuadraturaContext } from "../_components/context"
 import { firstParam, periodContext } from "../_components/params"
 import { wholeMonthsNote } from "../_components/period-text"

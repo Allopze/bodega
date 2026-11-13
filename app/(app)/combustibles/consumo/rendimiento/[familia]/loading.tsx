@@ -10,7 +10,7 @@ export default function Loading() {
   return (
     <PageContainer>
       <PageHeader
-        title="Consumo y rendimiento"
+        title="Rendimiento"
         description="Cuánto rinde cada equipo contra su modelo y contra su propio historial"
         breadcrumb={<FuelBreadcrumbs items={[{ label: "Consumo", href: FUEL_PATHS.consumo }, { label: "Rendimiento" }]} />}
       />

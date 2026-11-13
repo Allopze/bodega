@@ -34,13 +34,13 @@ import { ConsumoNav } from "../../consumo-nav"
 import { ConsumptionFiltersBar } from "../../consumption-filters"
 import { ConsumptionWatchList } from "../../consumption-alerts"
 import { FuelOriginSummary } from "../../fuel-control-overview"
-import { OverviewMeterChart, OverviewMonthlyChart } from "../../control/_charts/overview-charts-lazy"
-import { SectionError, ViewSection } from "../../control/_charts/overview-section"
-import { ReviewExclusionNote } from "../../control/_charts/performance-review-note"
-import { loadControlContext } from "../../control/_components/control-context"
-import { ControlFilters } from "../../control/_components/control-filters"
-import { hrefInContext, searchWith } from "../../control/_components/page-links"
-import { createSourceTracker } from "../../control/_components/track-sources"
+import { OverviewMeterChart, OverviewMonthlyChart } from "../_components/charts/overview-charts-lazy"
+import { SectionError, ViewSection } from "../_components/charts/overview-section"
+import { ReviewExclusionNote } from "../_components/charts/performance-review-note"
+import { loadControlContext } from "../_components/control-context"
+import { ControlFilters } from "../../_shared/control-filters"
+import { hrefInContext, searchWith } from "../_components/page-links"
+import { createSourceTracker } from "../_components/track-sources"
 import { UrlFold } from "../_components/url-fold"
 import { CardsAnalysis } from "./cards-analysis"
 import { exportOverviewAction } from "./export-actions"
@@ -48,7 +48,7 @@ import { MeterRateSections } from "./meter-rate-sections"
 import { PlanillaAnalysis } from "./planilla-analysis"
 import { WorksiteMedium } from "./worksite-medium"
 
-export const metadata: Metadata = { title: "Consumo y rendimiento" }
+export const metadata: Metadata = { title: "Litros cargados" }
 
 type SearchParams = Record<string, string | string[] | undefined>
 
@@ -183,7 +183,7 @@ export default async function ConsumoLitrosPage({ searchParams }: { searchParams
   return (
     <PageContainer>
       <PageHeader
-        title="Consumo y rendimiento"
+        title="Litros cargados"
         description="Litros por faena, equipo y origen del combustible"
         breadcrumb={<FuelBreadcrumbs items={[{ label: "Consumo", href: FUEL_PATHS.consumo }, { label: "Litros" }]} />}
         actions={

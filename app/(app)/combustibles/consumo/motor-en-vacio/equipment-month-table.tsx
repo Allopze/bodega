@@ -2,7 +2,7 @@ import { ServerPagination } from "@/components/ui/server-pagination"
 import { Table, TableBody, TableCell, TableCellNum, TableFooter, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import type { IdleEquipmentMonthRow, IdleStats } from "@/lib/combustibles/control/queries/idle"
 import type { PaginationState } from "@/lib/pagination"
-import { litersText, monthText, numberText, pctText } from "../../control/_components/format"
+import { litersText, monthText, numberText, pctText } from "../_components/format"
 
 const hours = (value: number | null) => (value === null ? "—" : `${numberText(value)} h`)
 

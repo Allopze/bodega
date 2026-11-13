@@ -19,7 +19,7 @@ import { getMandantesReconciliation } from "@/lib/combustibles/control/queries/r
 import { resolveFuelPeriodForPage } from "@/lib/combustibles/period/server"
 import { FUEL_PATHS, withFuelContext } from "@/lib/combustibles/routes"
 import { FUEL_CARRY_PARAMS, cuadraturaNavItems } from "@/lib/combustibles/section-nav"
-import { ControlFilters } from "../../control/_components/control-filters"
+import { ControlFilters } from "../../_shared/control-filters"
 import { loadCuadraturaContext } from "../_components/context"
 import { firstParam, hrefWith, periodContext } from "../_components/params"
 import { wholeMonthsNote, wholeMonthsPhrase } from "../_components/period-text"

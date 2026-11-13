@@ -132,7 +132,7 @@ export function ImportWizard({ kind, media, open, onOpenChange }: {
                 <Input value={source} onChange={(event) => setSource(event.target.value)} maxLength={60} />
               </Field>
             ) : (
-              <Field label="Medio de suministro" helper="Todas las filas del archivo se asocian a este medio. Se administran en Ajustes › ¿Por dónde llega el combustible?." required>
+              <Field label="Medio de suministro" helper="Todas las filas del archivo se asocian a este medio. Se administran en Ajustes › Medios de suministro." required>
                 <OptionSelect
                   aria-label="Medio de suministro"
                   options={media.map((medium) => ({ value: medium.id, label: medium.name }))}

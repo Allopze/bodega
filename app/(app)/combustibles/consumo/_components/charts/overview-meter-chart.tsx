@@ -8,7 +8,7 @@ import { CHART_COLORS } from "@/lib/chart-palette"
 import { formatQty } from "@/lib/utils"
 import type { PerformanceUnit } from "@/lib/combustibles/control/contracts"
 import { fillMonthKeys, monthFullLabel, monthShortLabel } from "@/lib/combustibles/control/view-helpers"
-import { AXIS_TICK, compactNumber } from "./chart-shared"
+import { AXIS_TICK, compactNumber } from "../../../_shared/chart-shared"
 import { useChartMotion } from "@/components/ui/chart-interactions"
 
 export interface MeterChartPoint {

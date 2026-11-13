@@ -3,7 +3,7 @@ import { ChartSection } from "@/components/charts/chart-section"
 import { PERFORMANCE_UNIT_LABELS, type PerformanceUnit } from "@/lib/combustibles/control/contracts"
 import { describeMeterRate, type MeterRateSeries } from "@/lib/combustibles/meter-rate-series"
 import { meterRateNotes, meterRateTable } from "@/lib/combustibles/meter-rate-view"
-import { MeterRateChart } from "../../control/_charts/overview-charts-lazy"
+import { MeterRateChart } from "../_components/charts/overview-charts-lazy"
 
 const TITLES: Record<PerformanceUnit, string> = {
   km_per_liter: "Equipos con odómetro · km/L",

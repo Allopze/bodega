@@ -2,7 +2,7 @@ import { SectionNav } from "@/components/ui/section-nav"
 import { FUEL_CARRY_PARAMS, consumoNavItems, type ConsumoTab } from "@/lib/combustibles/section-nav"
 
 /**
- * La barra de «Consumo y rendimiento»: Rendimiento, Consumo y Motor en vacío.
+ * La barra de «Consumo y rendimiento»: Rendimiento, Litros y Motor en vacío.
  * Las tres pantallas pintan la misma barra con el mismo contexto arrastrado
  * (período y faena: `FUEL_CARRY_PARAMS`); cada una sólo dice cuál es la suya.
  * Va inmediatamente después del `PageHeader` (y del banner de datos

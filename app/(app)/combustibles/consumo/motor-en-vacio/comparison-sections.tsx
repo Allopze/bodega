@@ -7,8 +7,8 @@ import { LPH_BAND_PCT, buildLphComparison, describeLphComparison, type LphCompar
 import type { LitersPerHourComparisonRow } from "@/lib/combustibles/control/queries/idle-comparison"
 import type { IdleTopDay } from "@/lib/combustibles/control/queries/idle"
 import { countOf, formatDate } from "@/lib/utils"
-import { LphScatterChartLazy } from "../../control/_charts/idle-charts-lazy"
-import { monthText, numberText, pctText } from "../../control/_components/format"
+import { LphScatterChartLazy } from "../_components/charts/idle-charts-lazy"
+import { monthText, numberText, pctText } from "../_components/format"
 
 const lph = (value: number | null) => (value === null ? "—" : `${numberText(value, 2)} L/h`)
 

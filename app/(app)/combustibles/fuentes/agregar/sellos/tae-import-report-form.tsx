@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "@/lib/toast"
 import { downloadBase64Xlsx } from "@/components/ui/export-button"
 import type { TaeImportMappingDecision, TaeImportPreview } from "@/lib/combustibles/tae-import-service"
-import { generateTaeImportReportAction, importTaeHistoryAction } from "./actions"
+import { generateTaeImportReportAction, importTaeHistoryAction } from "../../../tae/importar/actions"
 
 type ImportResult = { importedRows: number; validatedRows: number; observedRows: number; invalidRows: number; totalLiters: number }
 type ImportState = { file: File | null; loading: boolean; reportGenerated: boolean; confirmed: boolean; preview: TaeImportPreview | null; decisions: Record<string, string | null>; result: ImportResult | null }

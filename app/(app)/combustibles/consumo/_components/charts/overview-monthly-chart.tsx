@@ -8,7 +8,7 @@ import { RankedList } from "@/components/ui/ranked-list"
 import { ChartErrorBoundary } from "@/components/chart-error-boundary"
 import { formatQty } from "@/lib/utils"
 import type { MonthlyMediumChartData } from "@/lib/combustibles/control/view-helpers"
-import { AXIS_TICK, compactNumber, mediumColor } from "./chart-shared"
+import { AXIS_TICK, compactNumber, mediumColor } from "../../../_shared/chart-shared"
 import { useChartMotion } from "@/components/ui/chart-interactions"
 
 /** Más segmentos que esto en una columna apilada no caben bajo 360 px (ni se distinguen): pasan a lista. */

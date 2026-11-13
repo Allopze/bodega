@@ -51,7 +51,7 @@ describe("AjustesNav", () => {
     render(<AjustesNav items={ajustesNavItems(session)} />)
     const nav = screen.getByRole("navigation", { name: "Secciones de ajustes" })
     expect(nav).toBeInTheDocument()
-    expect(screen.getByRole("link", { name: /¿Cuándo una carga pide revisión\?/ })).toHaveAttribute("aria-current", "page")
+    expect(screen.getByRole("link", { name: /Umbrales de revisión/ })).toHaveAttribute("aria-current", "page")
     expect(screen.getByRole("link", { name: /Mandantes y tolerancias/ })).not.toHaveAttribute("aria-current")
     expect(screen.getByRole("link", { name: /Reglas de detección/ })).toHaveAttribute("href", FUEL_PATHS.ajustesReglas)
   })

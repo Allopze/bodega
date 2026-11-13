@@ -10,7 +10,7 @@ import { FUEL_PATHS } from "@/lib/combustibles/routes"
 import { loadSupplyMediaData } from "../config-queries"
 import { NewSupplyMediumButton, SupplyMediaTable } from "./supply-media-table"
 
-export const metadata: Metadata = { title: "¿Por dónde llega el combustible?" }
+export const metadata: Metadata = { title: "Medios de suministro" }
 
 export default async function AjustesMediosPage() {
   try { await requirePermission("combustibles:manage_control", FUEL_PATHS.ajustes) } catch { redirect("/forbidden") }
@@ -20,9 +20,9 @@ export default async function AjustesMediosPage() {
   return (
     <PageContainer>
       <PageHeader
-        title="¿Por dónde llega el combustible?"
-        description="Los medios de suministro y sus reglas"
-        breadcrumb={<FuelBreadcrumbs items={[{ label: "Ajustes", href: FUEL_PATHS.ajustes }, { label: "¿Por dónde llega el combustible?" }]} />}
+        title="Medios de suministro"
+        description="¿Por dónde llega el combustible? Los medios de suministro y sus reglas"
+        breadcrumb={<FuelBreadcrumbs items={[{ label: "Ajustes", href: FUEL_PATHS.ajustes }, { label: "Medios de suministro" }]} />}
         actions={<FuelHeaderActions><NewSupplyMediumButton suppliers={suppliers} /></FuelHeaderActions>}
       />
       <div className="space-y-4">

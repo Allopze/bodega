@@ -1,9 +1,9 @@
 import { ExportButton } from "@/components/ui/export-button"
 import { PERFORMANCE_UNIT_LABELS, type PerformanceUnit } from "@/lib/combustibles/control/contracts"
 import type { Crosstab } from "@/lib/combustibles/control/view-helpers"
-import { OverviewRankingChart } from "../../control/_charts/overview-charts-lazy"
-import { OverviewCrosstab } from "../../control/_charts/overview-crosstab"
-import { SectionError } from "../../control/_charts/overview-section"
+import { OverviewRankingChart } from "../_components/charts/overview-charts-lazy"
+import { OverviewCrosstab } from "../_components/charts/overview-crosstab"
+import { SectionError } from "../_components/charts/overview-section"
 import { exportCrosstabAction } from "./export-actions"
 
 const RANKING_LIMIT = 12

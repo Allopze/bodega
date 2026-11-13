@@ -23,7 +23,7 @@ import { FUEL_CARRY_PARAMS, cuadraturaNavItems } from "@/lib/combustibles/sectio
 import { getSealHistory } from "@/lib/combustibles/seal-history"
 import { getTaeGroupedTotals, type TaeGroupRow } from "@/lib/combustibles/tae-dashboard"
 import { resolvePagination } from "@/lib/pagination"
-import { ControlFilters } from "../../control/_components/control-filters"
+import { ControlFilters } from "../../_shared/control-filters"
 import { loadCuadraturaContext } from "../_components/context"
 import { LazyDetails } from "../_components/lazy-details"
 import { firstParam, hrefWith, periodContext } from "../_components/params"

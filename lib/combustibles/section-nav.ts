@@ -27,7 +27,7 @@ export type AjustesSection = "mandantes" | "medios" | "familias" | "umbrales" | 
 export function cargasNavItems(): SectionNavItem[] {
   return [
     { key: "cargas", href: FUEL_PATHS.cargas, label: "Cargas a equipos" },
-    { key: "tarjetas", href: FUEL_PATHS.tarjetas, label: "Tarjetas (total por patente y mes)" },
+    { key: "tarjetas", href: FUEL_PATHS.tarjetas, label: "Tarjetas Copec" },
   ]
 }
 
@@ -47,7 +47,7 @@ export function cuadraturaNavItems(session: Session): SectionNavItem[] {
   items.push({ key: "estanques", href: FUEL_PATHS.cuadraturaEstanques, label: "Estanques" })
   if (tae) {
     items.push(
-      { key: "proveedor", href: FUEL_PATHS.cuadraturaProveedor, label: "Proveedor y terreno" },
+      { key: "proveedor", href: FUEL_PATHS.cuadraturaProveedor, label: "Facturado y terreno" },
       { key: "tarjeta-y-terreno", href: FUEL_PATHS.cuadraturaTarjetaTerreno, label: "Tarjeta y terreno" },
     )
   }
@@ -62,8 +62,8 @@ export function firstAllowedCuadraturaHref(session: Session): string {
 export function consumoNavItems(): SectionNavItem[] {
   return [
     { key: "rendimiento", href: FIRST_PERFORMANCE_HREF, label: "Rendimiento" },
-    { key: "litros", href: FUEL_PATHS.consumoLitros, label: "Consumo" },
-    { key: "motor-en-vacio", href: FUEL_PATHS.consumoMotorVacio, label: "Motor en vacío (ralentí)" },
+    { key: "litros", href: FUEL_PATHS.consumoLitros, label: "Litros" },
+    { key: "motor-en-vacio", href: FUEL_PATHS.consumoMotorVacio, label: "Motor en vacío" },
   ]
 }
 
@@ -88,15 +88,15 @@ export function ajustesNavItems(session: Session): AjustesNavItem[] {
   const items: AjustesNavItem[] = []
   if (can(session, "combustibles:manage_control")) {
     items.push(
-      { key: "mandantes", href: FUEL_PATHS.ajustesMandantes, label: "Mandantes y tolerancias" },
-      { key: "medios", href: FUEL_PATHS.ajustesMedios, label: "¿Por dónde llega el combustible?", hint: "Medios de suministro" },
-      { key: "familias", href: FUEL_PATHS.ajustesFamilias, label: "Familias de equipos" },
-      { key: "umbrales", href: FUEL_PATHS.ajustesUmbrales, label: "¿Cuándo una carga pide revisión?", hint: "Umbrales" },
+      { key: "mandantes", href: FUEL_PATHS.ajustesMandantes, label: "Mandantes y tolerancias", hint: "La diferencia aceptada en la cuadratura" },
+      { key: "medios", href: FUEL_PATHS.ajustesMedios, label: "Medios de suministro", hint: "¿Por dónde llega el combustible?" },
+      { key: "familias", href: FUEL_PATHS.ajustesFamilias, label: "Familias de equipos", hint: "Cómo se comparan los rendimientos" },
+      { key: "umbrales", href: FUEL_PATHS.ajustesUmbrales, label: "Umbrales de revisión", hint: "¿Cuándo una carga pide revisión?" },
     )
   }
-  if (can(session, "combustibles:manage_anomaly_rules")) items.push({ key: "reglas", href: FUEL_PATHS.ajustesReglas, label: "Reglas de detección" })
-  if (can(session, "combustibles:tae_manage_config")) items.push({ key: "puntos-de-carga", href: FUEL_PATHS.ajustesPuntos, label: "Puntos de carga y QR" })
-  if (can(session, "combustibles:manage_integrations")) items.push({ key: "integraciones", href: FUEL_PATHS.ajustesIntegraciones, label: "Integraciones" })
+  if (can(session, "combustibles:manage_anomaly_rules")) items.push({ key: "reglas", href: FUEL_PATHS.ajustesReglas, label: "Reglas de detección", hint: "Qué abre un caso" })
+  if (can(session, "combustibles:tae_manage_config")) items.push({ key: "puntos-de-carga", href: FUEL_PATHS.ajustesPuntos, label: "Puntos de carga y QR", hint: "Dónde se carga y su código" })
+  if (can(session, "combustibles:manage_integrations")) items.push({ key: "integraciones", href: FUEL_PATHS.ajustesIntegraciones, label: "Integraciones", hint: "Copec y VisionLink" })
   if (can(session, "admin:fleet_catalog") || can(session, "admin:fleet_vehicles") || can(session, "combustibles:manage_suppliers")) {
     items.push({ key: "catalogos", href: "/admin/flota-catalogos", label: "Proveedores y vehículos", hint: "En Catálogos de flota", external: true })
   }

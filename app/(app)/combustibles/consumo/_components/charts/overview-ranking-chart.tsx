@@ -8,7 +8,7 @@ import { RankedList } from "@/components/ui/ranked-list"
 import { ChartErrorBoundary } from "@/components/chart-error-boundary"
 import { CHART_COLORS } from "@/lib/chart-palette"
 import { formatQty } from "@/lib/utils"
-import { AXIS_TICK, compactNumber } from "./chart-shared"
+import { AXIS_TICK, compactNumber } from "../../../_shared/chart-shared"
 import { useChartMotion } from "@/components/ui/chart-interactions"
 
 export interface RankingItem {

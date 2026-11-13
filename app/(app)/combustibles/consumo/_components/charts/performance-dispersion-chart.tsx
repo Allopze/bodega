@@ -6,7 +6,7 @@ import { ChartEmpty } from "@/components/ui/chart-empty"
 import { ChartErrorBoundary } from "@/components/chart-error-boundary"
 import { CHART_COLORS } from "@/lib/chart-palette"
 import { PERFORMANCE_UNIT_LABELS, type PerformanceUnit } from "@/lib/combustibles/control/contracts"
-import { AXIS_TICK } from "./chart-shared"
+import { AXIS_TICK } from "../../../_shared/chart-shared"
 import { useChartMotion } from "@/components/ui/chart-interactions"
 
 export interface DispersionPoint {

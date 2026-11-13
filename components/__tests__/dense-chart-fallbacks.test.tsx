@@ -20,9 +20,9 @@ vi.mock("next/navigation", () => ({
 }))
 
 import { buildLphComparison } from "@/lib/combustibles/control/calc/lph-comparison"
-import { LphScatterChart } from "@/app/(app)/combustibles/control/_charts/lph-scatter-chart"
-import { OverviewRankingChart } from "@/app/(app)/combustibles/control/_charts/overview-ranking-chart"
-import { OverviewMonthlyChart } from "@/app/(app)/combustibles/control/_charts/overview-monthly-chart"
+import { LphScatterChart } from "@/app/(app)/combustibles/consumo/_components/charts/lph-scatter-chart"
+import { OverviewRankingChart } from "@/app/(app)/combustibles/consumo/_components/charts/overview-ranking-chart"
+import { OverviewMonthlyChart } from "@/app/(app)/combustibles/consumo/_components/charts/overview-monthly-chart"
 import type { MonthlyMediumChartData } from "@/lib/combustibles/control/view-helpers"
 import { EvolutionByVehicleChart } from "@/app/(app)/combustibles/evolution-by-vehicle-chart"
 import { LitersVsKmChart } from "@/app/(app)/combustibles/scatter-charts"

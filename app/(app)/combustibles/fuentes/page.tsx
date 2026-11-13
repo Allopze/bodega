@@ -24,7 +24,7 @@ import { describeFuelSources, getFuelSourceStatuses, type FuelSourceStatus } fro
 import { downloadOperationsTemplateAction } from "../actions-operaciones"
 import { downloadImportTemplateAction } from "../control/importar/actions"
 import type { MediumOption } from "../control/importar/import-types"
-import { CopecSyncStatus } from "../importar/copec-sync-status"
+import { CopecSyncStatus } from "./copec-sync-status"
 import { CopecPeriodReview } from "./copec-period-review"
 import { FuelProviderQualityExportButton } from "../importar/fuel-provider-quality-export-button"
 import { AddDataLauncher } from "./add-data-launcher"

@@ -21,7 +21,7 @@ import { FUEL_PATHS, fuelInboxHref, withFuelContext } from "@/lib/combustibles/r
 import { FUEL_CARRY_PARAMS, cuadraturaNavItems } from "@/lib/combustibles/section-nav"
 import { getTaeCopecReconciliation, summarizeCardFieldCoverage, type TaeCopecFilters } from "@/lib/combustibles/tae-copec-reconciliation"
 import { resolvePagination } from "@/lib/pagination"
-import { ControlFilters } from "../../control/_components/control-filters"
+import { ControlFilters } from "../../_shared/control-filters"
 import { loadCuadraturaContext } from "../_components/context"
 import { litersText } from "../_components/format"
 import { firstParam, hrefWith, periodContext } from "../_components/params"

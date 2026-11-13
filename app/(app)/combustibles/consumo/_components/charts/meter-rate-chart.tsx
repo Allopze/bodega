@@ -8,7 +8,7 @@ import { PERFORMANCE_UNIT_LABELS } from "@/lib/combustibles/control/contracts"
 import { MIN_RATE_SEGMENTS, type MeterRateSeries } from "@/lib/combustibles/meter-rate-series"
 import { RATE_BAND_PCT, meterRateChartData, rateAxisDomain, type MeterRateChartRow } from "@/lib/combustibles/meter-rate-view"
 import { countOf, formatQty } from "@/lib/utils"
-import { AXIS_TICK } from "./chart-shared"
+import { AXIS_TICK } from "../../../_shared/chart-shared"
 import { useChartMotion } from "@/components/ui/chart-interactions"
 
 /**

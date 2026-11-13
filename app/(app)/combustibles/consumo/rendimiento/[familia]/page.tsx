@@ -22,12 +22,12 @@ import { FUEL_PATHS, fuelEquipmentHref, fuelInboxHref } from "@/lib/combustibles
 import { fuelAddDataOptions } from "@/lib/combustibles/section-nav"
 import { formatQty } from "@/lib/utils"
 import { ConsumoNav } from "../../../consumo-nav"
-import { PerformanceDispersionChart } from "../../../control/_charts/performance-charts-lazy"
-import { SectionError, ViewSection } from "../../../control/_charts/overview-section"
-import { ReviewExclusionNote } from "../../../control/_charts/performance-review-note"
-import { loadControlContext } from "../../../control/_components/control-context"
-import { hrefInContext, fuelContextParams, searchWith } from "../../../control/_components/page-links"
-import { createSourceTracker } from "../../../control/_components/track-sources"
+import { PerformanceDispersionChart } from "../../_components/charts/performance-charts-lazy"
+import { SectionError, ViewSection } from "../../_components/charts/overview-section"
+import { ReviewExclusionNote } from "../../_components/charts/performance-review-note"
+import { loadControlContext } from "../../_components/control-context"
+import { hrefInContext, fuelContextParams, searchWith } from "../../_components/page-links"
+import { createSourceTracker } from "../../_components/track-sources"
 import { Disclosure } from "../../_components/disclosure"
 import { exportEquipmentStatsAction, exportLoadDetailAction, exportWorksiteStatsAction } from "../export-actions"
 import { FamilyFilters } from "./family-filters"
@@ -105,7 +105,7 @@ export default async function FamilyPerformancePage({ params, searchParams }: Pa
   return (
     <PageContainer>
       <PageHeader
-        title="Consumo y rendimiento"
+        title="Rendimiento"
         description="Cuánto rinde cada equipo contra su modelo y contra su propio historial"
         breadcrumb={<FuelBreadcrumbs items={[{ label: "Consumo", href: FUEL_PATHS.consumo }, { label: "Rendimiento" }]} />}
         actions={<FuelHeaderActions period={period} />}
