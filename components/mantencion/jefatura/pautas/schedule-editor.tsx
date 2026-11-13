@@ -3,6 +3,7 @@
 import * as React from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
+import { Callout } from "@/components/ui/callout"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { ExportButton } from "@/components/ui/export-button"
 import { PageContainer } from "@/components/ui/page-container"
@@ -67,6 +68,7 @@ export function ScheduleEditor({ model, candidates, canExport }: { model: Schedu
   }
 
   const equipmentCount = model.equipment.total
+  const activityCount = model.groups.reduce((sum, group) => sum + group.items.length, 0)
   return (
     <PageContainer width="workbench">
       <PageHeader
@@ -82,6 +84,11 @@ export function ScheduleEditor({ model, candidates, canExport }: { model: Schedu
         )}
       />
       <div className="flex flex-col gap-5">
+        {activityCount === 0 && (
+          <Callout tone="warning" title="Esta pauta aún no tiene actividades">
+            Mientras no tenga ninguna, el mecánico no puede registrar una mantención preventiva con ella. Agrega las actividades en la matriz de más abajo.
+          </Callout>
+        )}
         {dirty && <ScheduleDraftBar version={model.version} changes={model.draft.changes} pending={pending} onDiscard={() => setDiscardOpen(true)} />}
         <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)]">
           <ScheduleNameCard scheduleId={model.id} name={model.name} origin={model.origin} />

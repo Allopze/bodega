@@ -219,7 +219,7 @@ export function EntryDialog({
                 <Input id="ot-entry-h" inputMode="decimal" value={hourmeter} onChange={(event) => setHourmeter(event.target.value)} />
               </Field>
             </div>
-            <Field label="Fec. estimada de entrega" htmlFor="ot-entry-estimate" required helper="Se puede cambiar después; cada cambio queda en el historial.">
+            <Field label="Entrega estimada" htmlFor="ot-entry-estimate" required helper="Se puede cambiar después; cada cambio queda en el historial.">
               <DatePicker id="ot-entry-estimate" value={estimate} onChange={setEstimate} min={entryAt.slice(0, 10)} ariaLabel="Fecha estimada de entrega" />
             </Field>
           </div>
