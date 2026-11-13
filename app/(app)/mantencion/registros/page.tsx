@@ -24,7 +24,7 @@ import { listRecords, loadRecordFilterOptions, loadRecordIndicators, loadRecordR
 import { formatDate } from "@/lib/utils"
 import { RecordsExportButton } from "./records-export-button"
 
-export const metadata: Metadata = { title: "Registros de mantención" }
+export const metadata: Metadata = { title: "Registros firmados" }
 export const dynamic = "force-dynamic"
 
 const PATHNAME = "/mantencion/registros"
@@ -154,7 +154,7 @@ export default async function RecordsPage({ searchParams }: { searchParams: Prom
   return (
     <PageContainer>
       <PageHeader
-        title="Registros de mantención"
+        title="Registros firmados"
         description="Las mantenciones firmadas por los mecánicos. Un registro anulado sigue visible, marcado, pero no cuenta en los indicadores."
         breadcrumb={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Mantención" }, { label: "Registros" }]}
         actions={

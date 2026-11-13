@@ -72,7 +72,7 @@ export function ScheduleEditor({ model, candidates, canExport }: { model: Schedu
       <PageHeader
         title={model.name}
         description={`Pauta en ${unitName(model.unit)} · versión ${formatNumber(model.version)} publicada${dirty ? ` · cambios sin publicar (${formatNumber(changeCount)})` : ""}`}
-        breadcrumb={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Pautas", href: "/mantencion/pautas" }, { label: model.name }]}
+        breadcrumb={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Mantención" }, { label: "Pautas", href: "/mantencion/pautas" }, { label: model.name }]}
         actions={(
           <div className="flex flex-wrap items-center gap-2">
             {canExport && <ExportButton action={exportSchedulesAction} filters={{ scheduleId: model.id }} />}

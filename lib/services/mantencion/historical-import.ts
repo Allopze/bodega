@@ -88,7 +88,7 @@ async function plan(client: Client, rows: HistoricalRow[], fileName: string): Pr
   }
   const pending = planned.filter((item) => !item.vehicleId || !item.worksiteId).slice(0, 50).map((item) => ({
     sheet: item.row.sheet, rowNumber: item.row.rowNumber, equipment: item.row.equipmentText, worksite: item.row.worksiteText,
-    issue: [!item.vehicleId ? (item.equipmentMatch === "conflict" ? "Código y patente requieren revisión" : "Equipo no encontrado") : "", !item.worksiteId ? "Faena sin vincular" : ""].filter(Boolean).join("; "),
+    issue: [!item.vehicleId ? (item.equipmentMatch === "conflict" ? "Código y patente requieren revisión" : "Equipo no encontrado") : "", !item.worksiteId ? "Faena sin identificar" : ""].filter(Boolean).join("; "),
   }))
   return { ok: true, data: { rows: planned, preview: { summary, pending } } }
 }
@@ -125,7 +125,7 @@ export async function commitHistoricalImport(actor: MantActor, buffer: ArrayBuff
       userId: actor.userId, userEmail: actor.email ?? undefined, action: "create", entityType: "mant_historical_import", entityId: nanoid(),
       newState: { fileName: file, ...summary },
     }, tx)
-    return { ok: true as const, data: summary, message: `${summary.created} trabajos importados; ${summary.relinked} vínculos completados.` }
+    return { ok: true as const, data: summary, message: `${summary.created} trabajos importados; ${summary.relinked} completados con equipo o faena.` }
   })
 }
 
@@ -180,12 +180,12 @@ export async function historicalLinkOptions() {
 
 /** La conciliación manual sólo completa vínculos vacíos y conserva el contenido de origen. */
 export async function linkHistoricalRecord(actor: MantActor, sourceKey: string, input: { vehicleId?: string; worksiteId?: string }): Promise<MantActionResult> {
-  if (!/^[a-f0-9]{64}$/.test(sourceKey) || (!input.vehicleId && !input.worksiteId)) return { ok: false, message: "Elige un equipo o una faena para vincular." }
+  if (!/^[a-f0-9]{64}$/.test(sourceKey) || (!input.vehicleId && !input.worksiteId)) return { ok: false, message: "Elige un equipo o una faena para identificar." }
   return db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext('mant-historical-import'))`)
     const [current] = await tx.select().from(mantHistoricalRecords).where(eq(mantHistoricalRecords.sourceKey, sourceKey)).limit(1)
-    if (!current) return { ok: false as const, message: "No se encontró el antecedente." }
-    if ((input.vehicleId && current.vehicleId) || (input.worksiteId && current.worksiteId)) return { ok: false as const, message: "El vínculo ya fue resuelto. Recarga la página para revisarlo." }
+    if (!current) return { ok: false as const, message: "No se encontró el trabajo." }
+    if ((input.vehicleId && current.vehicleId) || (input.worksiteId && current.worksiteId)) return { ok: false as const, message: "El equipo o la faena ya estaba identificado. Recarga la página para revisarlo." }
     if (input.vehicleId) {
       const [vehicle] = await tx.select({ id: fuelVehicles.id }).from(fuelVehicles).where(eq(fuelVehicles.id, input.vehicleId)).limit(1)
       if (!vehicle) return { ok: false as const, message: "El equipo elegido no existe." }
@@ -201,6 +201,6 @@ export async function linkHistoricalRecord(actor: MantActor, sourceKey: string, 
       userId: actor.userId, userEmail: actor.email ?? undefined, action: "update", entityType: "mant_historical_record", entityId: sourceKey,
       oldState: { vehicleId: current.vehicleId, worksiteId: current.worksiteId }, newState: { vehicleId, worksiteId },
     }, tx)
-    return { ok: true as const, message: "Vínculos guardados." }
+    return { ok: true as const, message: "Equipo y faena guardados." }
   })
 }

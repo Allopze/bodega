@@ -20,8 +20,8 @@ export function HistoricalLinkForm({ sourceKey, needsVehicle, needsWorksite, veh
   }
   return <form onSubmit={submit} className="space-y-4">
     <Callout tone="warning">Compara los datos originales antes de elegir. La asociación quedará registrada con tu usuario.</Callout>
-    {needsVehicle && <Field label="Equipo" htmlFor="historical-vehicle"><Combobox id="historical-vehicle" options={vehicles} value={vehicleId} onChange={setVehicleId} clearLabel="Sin vincular" placeholder="Buscar código o patente" /></Field>}
-    {needsWorksite && <Field label="Faena" htmlFor="historical-worksite"><Combobox id="historical-worksite" options={sites} value={worksiteId} onChange={setWorksiteId} clearLabel="Sin vincular" placeholder="Buscar faena" /></Field>}
-    <Button type="submit" loading={save.pending} disabled={!vehicleId && !worksiteId}>Guardar vínculos</Button>
+    {needsVehicle && <Field label="Equipo" htmlFor="historical-vehicle"><Combobox id="historical-vehicle" options={vehicles} value={vehicleId} onChange={setVehicleId} clearLabel="Sin identificar" placeholder="Buscar código o patente" /></Field>}
+    {needsWorksite && <Field label="Faena" htmlFor="historical-worksite"><Combobox id="historical-worksite" options={sites} value={worksiteId} onChange={setWorksiteId} clearLabel="Sin identificar" placeholder="Buscar faena" /></Field>}
+    <Button type="submit" loading={save.pending} disabled={!vehicleId && !worksiteId}>Guardar</Button>
   </form>
 }

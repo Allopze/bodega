@@ -13,7 +13,7 @@ import { plural } from "@/lib/mantencion/format"
 import { countActiveEquipmentWithoutSchedule, listSchedules } from "@/lib/services/mantencion/schedules"
 import { exportSchedulesAction } from "./actions"
 
-export const metadata: Metadata = { title: "Pautas de mantención" }
+export const metadata: Metadata = { title: "Pautas" }
 export const dynamic = "force-dynamic"
 
 export default async function SchedulesPage() {
@@ -27,7 +27,7 @@ export default async function SchedulesPage() {
   return (
     <PageContainer>
       <PageHeader
-        title="Pautas de mantención"
+        title="Pautas"
         description="Qué revisa el mecánico en cada intervalo. Cada equipo tiene una pauta."
         breadcrumb={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Mantención" }, { label: "Pautas" }]}
         actions={(

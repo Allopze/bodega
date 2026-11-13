@@ -9,7 +9,7 @@ import { deviceManagerActor, viewerFromSession } from "@/lib/services/mantencion
 import { listDeviceCredentials } from "@/lib/services/mantencion/device-credentials"
 import { groupDevicesByPerson } from "@/lib/services/mantencion/device-groups"
 
-export const metadata: Metadata = { title: "Dispositivos de la app de mantención" }
+export const metadata: Metadata = { title: "Dispositivos" }
 export const dynamic = "force-dynamic"
 
 export default async function DevicesPage() {
@@ -24,7 +24,7 @@ export default async function DevicesPage() {
   return (
     <PageContainer>
       <PageHeader
-        title="Dispositivos de la app"
+        title="Dispositivos"
         description="Teléfonos y tablets con la app del mecánico conectada. Revocar un acceso lo desconecta sin borrar lo que la persona tiene sin enviar."
         breadcrumb={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Mantención" }, { label: "Dispositivos" }]}
         // Con la lista vacía el botón es el llamado del estado vacío: dos iguales a la vista no suman.

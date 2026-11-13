@@ -145,7 +145,7 @@ function EquipmentWorkOrdersSection({ workOrders, code }: { workOrders: LifeWork
       title="Órdenes de trabajo"
       description={rows.length ? `${plural(total, "orden", "órdenes")} de reparación o mantención en taller` : "Reparaciones y mantenciones pedidas al taller"}
       action={total > rows.length ? (
-        <Link href={`/mantencion/ot?q=${encodeURIComponent(code)}`} className="inline-flex min-h-11 items-center text-sm font-semibold text-[var(--color-primary-ink)] hover:underline sm:min-h-0">
+        <Link href={`/mantencion/ot?estado=abiertas&q=${encodeURIComponent(code)}`} className="inline-flex min-h-11 items-center text-sm font-semibold text-[var(--color-primary-ink)] hover:underline sm:min-h-0">
           Ver todas en la lista de órdenes
         </Link>
       ) : undefined}
@@ -203,7 +203,7 @@ export function EquipmentLifeSection({ life, code }: { life: EquipmentLifeData; 
     <div className="flex flex-col gap-5">
       <MaintenanceLifeSection life={life} code={code} />
       {!!life.historical?.total && <SectionCard title="Historial anterior" description={`${plural(life.historical.total, "trabajo registrado", "trabajos registrados")} en formularios anteriores`}>
-        <Link href={`/mantencion/registros/historicos?equipo=${encodeURIComponent(life.historical.vehicleId)}`} className="text-sm font-semibold text-[var(--color-primary-ink)] hover:underline">Ver antecedentes de este equipo</Link>
+        <Link href={`/mantencion/registros/historicos?equipo=${encodeURIComponent(life.historical.vehicleId)}`} className="text-sm font-semibold text-[var(--color-primary-ink)] hover:underline">Ver el historial anterior de este equipo</Link>
       </SectionCard>}
       <EquipmentWorkOrdersSection workOrders={life.workOrders ?? null} code={code} />
     </div>

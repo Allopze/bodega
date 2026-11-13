@@ -5,7 +5,7 @@ import { can, requirePermission } from "@/lib/auth/can"
 import { listAssignCandidates } from "@/lib/services/mantencion/schedule-assign"
 import { loadScheduleEditor } from "@/lib/services/mantencion/schedules"
 
-export const metadata: Metadata = { title: "Editor de pauta" }
+export const metadata: Metadata = { title: "Pauta" }
 export const dynamic = "force-dynamic"
 
 export default async function ScheduleEditorPage({ params }: { params: Promise<{ id: string }> }) {

@@ -49,7 +49,7 @@ export function ImportPreviewTable({ rows }: { rows: ImportPreview["rows"] }) {
           {listed.map((row) => (
             <TableRow key={row.row} className={row.kind === "error" ? "bg-[var(--color-danger-tint)]/50" : undefined}>
               <TableCell className="font-mono text-xs tabular-nums">{row.row}</TableCell>
-              <TableCell className="font-mono text-[13px] font-semibold">{row.code || "—"}</TableCell>
+              <TableCell className="font-mono text-sm font-semibold">{row.code || "—"}</TableCell>
               <TableCell><MetaBadge meta={KIND[row.kind]} size="sm" /></TableCell>
               <TableCell className="text-sm">
                 {row.kind === "error" ? (

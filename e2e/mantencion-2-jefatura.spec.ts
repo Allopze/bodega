@@ -262,7 +262,7 @@ test("registros: indicadores con su rango, filtros en la URL y orden por columna
   const consoleErrors = trackConsole(page)
   await login(page, JEFE)
   await page.goto("/mantencion/registros")
-  await expectPageTitle(page, "Registros de mantención")
+  await expectPageTitle(page, "Registros firmados")
   await expect(page.getByRole("heading", { level: 2, name: /^Indicadores · \d+ registros? vigentes? del \d{2}-\d{2}-\d{4} al \d{2}-\d{2}-\d{4}/ })).toBeVisible()
   for (const seeded of [rec.A, rec.B, rec.C, rec.D]) {
     await expect(page.getByRole("link", { name: `Ver el registro ${seeded.folio}` })).toBeVisible()

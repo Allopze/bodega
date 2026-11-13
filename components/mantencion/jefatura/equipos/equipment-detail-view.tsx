@@ -62,7 +62,7 @@ export function EquipmentDetailView({
       <PageHeader
         title={data.code}
         description={subtitle}
-        breadcrumb={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Equipos", href: "/mantencion/equipos" }, { label: data.code }]}
+        breadcrumb={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Mantención" }, { label: "Equipos", href: "/mantencion/equipos" }, { label: data.code }]}
         actions={(
           <>
             {canExport && <ExportButton action={exportEquipmentHistoryAction} filters={data.vehicleId} label="Exportar historial" />}

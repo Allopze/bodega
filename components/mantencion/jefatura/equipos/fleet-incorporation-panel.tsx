@@ -157,7 +157,7 @@ export function FleetIncorporationPanel({ candidates, brands, schedules, today, 
     <PageHeader
       title="Incorporar desde la flota"
       description="Vehículos de la flota que aún no están en Mantención. Elige su marca y su pauta: código, patente, tipo y faena se quedan como están en la flota."
-      breadcrumb={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Equipos", href: "/mantencion/equipos" }, { label: "Incorporar desde la flota" }]}
+      breadcrumb={[{ label: "Control operacional", href: "/control-operacional" }, { label: "Mantención" }, { label: "Equipos", href: "/mantencion/equipos" }, { label: "Incorporar desde la flota" }]}
       actions={candidates.length > 0 ? (
         <Button size="sm" onClick={submit} loading={op.pending} disabled={chosenCount === 0}>
           {chosenCount === 0 ? "Marca los equipos" : `Incorporar ${plural(chosenCount, "equipo", "equipos")}`}
@@ -250,7 +250,7 @@ export function FleetIncorporationPanel({ candidates, brands, schedules, today, 
                       />
                     </TableCell>
                     <TableCell className="align-top">
-                      <div className="whitespace-nowrap font-mono text-[13px] font-semibold text-[var(--color-text)]">{item.code ?? "Sin código"}</div>
+                      <div className="whitespace-nowrap font-mono text-sm font-semibold text-[var(--color-text)]">{item.code ?? "Sin código"}</div>
                       <div className="whitespace-nowrap font-mono text-xs text-[var(--color-text-muted)]">{item.plate}</div>
                       {rowErrors.length > 0 && <p className="mt-1 max-w-56 text-xs text-[var(--color-danger-ink)]">{rowErrors.join(" ")}</p>}
                     </TableCell>

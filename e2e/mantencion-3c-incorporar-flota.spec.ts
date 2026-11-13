@@ -95,7 +95,7 @@ test.describe("Incorporar desde la flota", () => {
     const errors = trackConsole(page)
     await asJefe(page)
     await page.goto("/mantencion/catalogos")
-    await expectPageTitle(page, "Catálogos de mantención")
+    await expectPageTitle(page, "Marcas y talleres")
     await expect(page.getByRole("cell", { name: "Scania", exact: true })).toBeVisible()
     await page.getByRole("link", { name: /^Talleres/ }).click()
     await expect(page).toHaveURL(/catalogo=talleres/)

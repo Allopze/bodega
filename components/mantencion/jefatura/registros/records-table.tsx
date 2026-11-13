@@ -157,7 +157,7 @@ export function RecordsTable({
           return (
             <li key={row.id}>
               <ResponsiveDataListCard
-                title={<span className="font-mono text-[13px] font-semibold">{folio}</span>}
+                title={<span className="font-mono text-sm font-semibold">{folio}</span>}
                 description={<><span className="whitespace-nowrap font-mono tabular-nums">{formatDate(row.workDate)}</span> · {row.worksiteName}</>}
                 actions={(
                   <Button asChild variant="secondary" size="sm" className="w-full">
@@ -165,13 +165,13 @@ export function RecordsTable({
                   </Button>
                 )}
               >
-                <ResponsiveDataListField label="Equipo"><span className="font-mono text-[13px] text-[var(--color-text)]">{equipmentLabel(row)}</span></ResponsiveDataListField>
+                <ResponsiveDataListField label="Equipo"><span className="font-mono text-sm text-[var(--color-text)]">{equipmentLabel(row)}</span></ResponsiveDataListField>
                 <ResponsiveDataListField label="Tipo"><span className="text-[var(--color-text)]">{recordKindText(row.kind, row.intervalValue, row.unit)}</span></ResponsiveDataListField>
                 <ResponsiveDataListField label="Hecho por">
                   <span className="text-[var(--color-text)]">{row.executorName}</span>
                   <ExecutorLine row={row} />
                 </ResponsiveDataListField>
-                <ResponsiveDataListField label="Lectura"><span className="whitespace-nowrap font-mono text-[13px] tabular-nums text-[var(--color-text)]">{formatReading(row.reading, row.unit)}</span></ResponsiveDataListField>
+                <ResponsiveDataListField label="Lectura"><span className="whitespace-nowrap font-mono text-sm tabular-nums text-[var(--color-text)]">{formatReading(row.reading, row.unit)}</span></ResponsiveDataListField>
                 <ResponsiveDataListField label="Estado" className="col-span-2"><RecordState row={row} /></ResponsiveDataListField>
               </ResponsiveDataListCard>
             </li>
@@ -199,21 +199,21 @@ export function RecordsTable({
                 <TableCell className="whitespace-nowrap">
                   <Link
                     href={recordDetailHref(row.id, listQuery)}
-                    className="font-mono text-[13px] font-semibold text-[var(--color-primary-ink)] underline-offset-2 hover:underline focus-visible:underline"
+                    className="font-mono text-sm font-semibold text-[var(--color-primary-ink)] underline-offset-2 hover:underline focus-visible:underline"
                     aria-label={`Ver el registro ${row.folio ?? "sin folio"}`}
                   >
                     {row.folio ?? "Sin folio"}
                   </Link>
                 </TableCell>
-                <TableCell className="whitespace-nowrap font-mono text-[13px] tabular-nums">{formatDate(row.workDate)}</TableCell>
+                <TableCell className="whitespace-nowrap font-mono text-sm tabular-nums">{formatDate(row.workDate)}</TableCell>
                 <TableCell>{row.worksiteName}</TableCell>
-                <TableCell className="whitespace-nowrap font-mono text-[13px]">{equipmentLabel(row)}</TableCell>
+                <TableCell className="whitespace-nowrap font-mono text-sm">{equipmentLabel(row)}</TableCell>
                 <TableCell className="whitespace-nowrap">{recordKindText(row.kind, row.intervalValue, row.unit)}</TableCell>
                 <TableCell>
                   <div>{row.executorName}</div>
                   <ExecutorLine row={row} />
                 </TableCell>
-                <TableCell className="whitespace-nowrap font-mono text-[13px] tabular-nums">{formatReading(row.reading, row.unit)}</TableCell>
+                <TableCell className="whitespace-nowrap font-mono text-sm tabular-nums">{formatReading(row.reading, row.unit)}</TableCell>
                 <TableCell><RecordState row={row} /></TableCell>
               </TableRow>
             ))}

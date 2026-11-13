@@ -66,7 +66,7 @@ export function AssignEquipmentList({ candidates, selected, scheduleId, onToggle
                         className="h-4 w-4 shrink-0 accent-[var(--color-primary)]"
                       />
                       <span className="min-w-0 flex-1">
-                        <span className="font-mono text-[13px] font-semibold">{item.code}</span>
+                        <span className="font-mono text-sm font-semibold">{item.code}</span>
                         <span className="block truncate text-xs text-[var(--color-text-muted)]">{item.typeName} · {item.brandName}</span>
                       </span>
                       <ChangeTag change={change} candidate={item} />

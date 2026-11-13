@@ -38,7 +38,7 @@ export function SchedulesTable({ rows }: { rows: ScheduleListRow[] }) {
               {row.dirty && <Badge variant="warning" size="sm" className="ml-2 align-middle">Cambios sin publicar</Badge>}
             </TableCell>
             <TableCell>{unitName(row.unit)}</TableCell>
-            <TableCell className="font-mono text-[13px]">{row.intervals.map(formatNumber).join(" · ")}</TableCell>
+            <TableCell className="font-mono text-sm">{row.intervals.map(formatNumber).join(" · ")}</TableCell>
             <TableCell className="text-right font-mono tabular-nums">{row.itemCount}</TableCell>
             <TableCell className="text-right font-mono tabular-nums">{row.equipmentCount}</TableCell>
             <TableCell>{row.hasBrandRules ? <Badge variant="info" size="sm">Sí</Badge> : <Badge variant="default" size="sm">No</Badge>}</TableCell>

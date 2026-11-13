@@ -63,7 +63,7 @@ function NextMaintenance({ row }: { row: EquipmentListRow }) {
   if (row.nextReading == null) return <span className="text-[var(--color-text-subtle)]">—</span>
   return (
     <>
-      <span className="font-mono text-[13px] tabular-nums">{formatReading(row.nextReading, row.unit)}</span>
+      <span className="font-mono text-sm tabular-nums">{formatReading(row.nextReading, row.unit)}</span>
       <div className="text-xs text-[var(--color-text-muted)]">{remainingText({ remaining: row.remaining }, row.unit)}</div>
     </>
   )
@@ -128,7 +128,7 @@ export function EquipmentTable({ rows, canManage, canViewGps = true, filtered }:
               className="flex min-h-11 flex-col gap-1.5 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 transition-colors duration-(--duration-fast) hover:bg-[var(--color-surface-2)]"
             >
               <span className="flex items-baseline justify-between gap-3">
-                <span className="whitespace-nowrap font-mono text-[13px] font-semibold text-[var(--color-primary-ink)]">
+                <span className="whitespace-nowrap font-mono text-sm font-semibold text-[var(--color-primary-ink)]">
                   {row.code}
                   {row.showPlate && <span className="ml-2 font-normal text-[var(--color-text-muted)]">{row.plate}</span>}
                 </span>
@@ -171,7 +171,7 @@ export function EquipmentTable({ rows, canManage, canViewGps = true, filtered }:
                   {/* Objetivo táctil de 44 px en móvil; en escritorio la línea normal. */}
                   <Link
                     href={`/mantencion/equipos/${row.id}`}
-                    className="inline-flex min-h-11 items-center font-mono text-[13px] font-semibold text-[var(--color-primary-ink)] underline-offset-2 hover:underline focus-visible:underline sm:min-h-0"
+                    className="inline-flex min-h-11 items-center font-mono text-sm font-semibold text-[var(--color-primary-ink)] underline-offset-2 hover:underline focus-visible:underline sm:min-h-0"
                   >
                     {row.code}
                   </Link>
@@ -189,7 +189,7 @@ export function EquipmentTable({ rows, canManage, canViewGps = true, filtered }:
                 <TableCell className="whitespace-nowrap">
                   {row.reading == null ? <span className="text-[var(--color-text-subtle)]">—</span> : (
                     <>
-                      <span className="font-mono text-[13px] tabular-nums">{formatReading(row.reading, row.unit)}</span>
+                      <span className="font-mono text-sm tabular-nums">{formatReading(row.reading, row.unit)}</span>
                       {row.readingDate && <div className="text-xs text-[var(--color-text-muted)]">{formatDate(row.readingDate)}</div>}
                     </>
                   )}

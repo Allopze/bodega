@@ -94,7 +94,7 @@ export function ScheduleIntervalsCard({ scheduleId, unit, intervals, equipmentCo
         {intervals.map((interval) => (
           <li
             key={interval.id}
-            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border-control)] bg-[var(--color-surface)] py-0 pl-3 pr-0.5 font-mono text-[13px] sm:py-0.5"
+            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border-control)] bg-[var(--color-surface)] py-0 pl-3 pr-0.5 font-mono text-sm sm:py-0.5"
           >
             {formatReading(interval.value, unit)}
             {interval.needsReview && <Badge variant="warning" size="sm">Por revisar</Badge>}

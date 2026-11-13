@@ -154,7 +154,7 @@ export function PreventiveSection({ detail }: { detail: RecordDetail }) {
                 return (
                   <TableRow key={group.name}>
                     <TableCell className="font-semibold">{group.name}</TableCell>
-                    <TableCell className="whitespace-nowrap font-mono text-[13px] tabular-nums">{groupDone} de {group.items.length}</TableCell>
+                    <TableCell className="whitespace-nowrap font-mono text-sm tabular-nums">{groupDone} de {group.items.length}</TableCell>
                     <TableCell className="text-[var(--color-text-muted)]">
                       {missing.length === 0 && skipped.length === 0 && warned.length === 0 && "Sin novedad"}
                       {missing.length > 0 && (

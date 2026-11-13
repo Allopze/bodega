@@ -166,6 +166,6 @@ describe("«Órdenes de trabajo» de la hoja de vida", () => {
     const { rerender } = render(<EquipmentLifeSection life={life({ rows: [], total: 0 })} code="KA-107" />)
     expect(screen.getByText("Este equipo aún no tiene órdenes de trabajo")).toBeTruthy()
     rerender(<EquipmentLifeSection life={life(workOrders({ total: 14 }))} code="KA-107" />)
-    expect(screen.getByRole("link", { name: "Ver todas en la lista de órdenes" }).getAttribute("href")).toBe("/mantencion/ot?q=KA-107")
+    expect(screen.getByRole("link", { name: "Ver todas en la lista de órdenes" }).getAttribute("href")).toBe("/mantencion/ot?estado=abiertas&q=KA-107")
   })
 })

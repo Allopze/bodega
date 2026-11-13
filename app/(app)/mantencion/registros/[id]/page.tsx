@@ -20,7 +20,7 @@ import { loadRecordNeighbors } from "@/lib/services/mantencion/records-query"
 import { formatDateTime } from "@/lib/utils"
 
 export const dynamic = "force-dynamic"
-export const metadata: Metadata = { title: "Registro de mantención" }
+export const metadata: Metadata = { title: "Registro firmado" }
 
 export default async function RecordDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<RawSearchParams> }) {
   let session
