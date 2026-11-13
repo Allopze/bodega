@@ -307,7 +307,7 @@ export function ItemsDialog({ open, onOpenChange, base, folio, items }: DialogPr
         <form onSubmit={submit}>
           <DialogHeader>
             <DialogTitle>Marcar los ítems de {folio}</DialogTitle>
-            <DialogDescription>Marca SÍ o NO en cada trabajo pedido. Para terminar la orden, todos deben quedar marcados.</DialogDescription>
+            <DialogDescription>Marca Sí o No en cada trabajo pedido. Para terminar la orden, todos deben quedar marcados.</DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-3">
             {items.length === 0 && <p className="text-sm text-[var(--color-text-muted)]">La orden no trae ítems pedidos. Puedes agregar los que se hacen en el taller.</p>}
@@ -328,7 +328,7 @@ export function ItemsDialog({ open, onOpenChange, base, folio, items }: DialogPr
                           variant={mark.done === value ? "primary" : "secondary"}
                           onClick={() => setMark(item.id, { done: value })}
                         >
-                          {value === "si" ? "SÍ" : "NO"}
+                          {value === "si" ? "Sí" : "No"}
                         </Button>
                       ))}
                     </div>
@@ -434,7 +434,7 @@ export function ReceiptDialog({
       () => (conform
         ? conformWorkOrderAction({ ...base, faenaReceivedAt: when, faenaReceiverName: name.trim() })
         : receiveWorkOrderAction({ ...base, receivedAt: when, receiverName: name.trim() })),
-      conform ? "Conformidad registrada: la OT quedó cerrada" : "Recepción registrada",
+      conform ? "Conformidad registrada: la orden quedó cerrada" : "Equipo recibido",
     )
   }
   return (
@@ -442,10 +442,10 @@ export function ReceiptDialog({
       <DialogContent>
         <form onSubmit={submit}>
           <DialogHeader>
-            <DialogTitle>{conform ? "Dar conformidad a" : "Recepcionar"} {folio}</DialogTitle>
+            <DialogTitle>{conform ? "Dar conformidad a" : "Recibir equipo"} {folio}</DialogTitle>
             <DialogDescription>
               {conform
-                ? "Es la «Recepción en faena» del talonario: confirma que el equipo llegó bien y cierra la orden."
+                ? "Es la conformidad en faena: confirma que el equipo llegó bien y cierra la orden."
                 : "La registra quien retira el equipo del taller."}
             </DialogDescription>
           </DialogHeader>
@@ -453,12 +453,12 @@ export function ReceiptDialog({
             <Field label="Fecha y hora" htmlFor="ot-receipt-at" required>
               <DateTimePicker id="ot-receipt-at" value={at} onChange={setAt} />
             </Field>
-            <Field label="Sr. (quien recibe)" htmlFor="ot-receipt-name" required>
+            <Field label="Recibió" htmlFor="ot-receipt-name" required>
               <Input id="ot-receipt-name" value={name} maxLength={120} onChange={(event) => setName(event.target.value)} />
             </Field>
           </div>
           <ErrorLine message={op.message} />
-          <Footer pending={op.pending} onCancel={() => onOpenChange(false)} submitLabel={conform ? "Dar conformidad" : "Registrar recepción"} disabled={!at || name.trim().length < 2} />
+          <Footer pending={op.pending} onCancel={() => onOpenChange(false)} submitLabel={conform ? "Dar conformidad" : "Recibir equipo"} disabled={!at || name.trim().length < 2} />
         </form>
       </DialogContent>
     </Dialog>

@@ -45,7 +45,7 @@ function props(overrides: Partial<Props> = {}): Props {
   }
 }
 
-const BUTTONS = ["Registrar ingreso", "Registrar trabajo", "Registrar salida", "Recepcionar", "Dar conformidad", "Asignar", "Marcar ítems", "Rechazar", "Reabrir"]
+const BUTTONS = ["Registrar ingreso", "Registrar trabajo", "Registrar salida", "Recibir equipo", "Dar conformidad", "Asignar", "Marcar ítems", "Rechazar", "Reabrir"]
 const MENU = ["Reasignar", "Desasignar", "Cambiar entrega estimada", "Corregir ingreso", "Registrar otra correctiva", "Registrar otra preventiva", "Pedir repuestos", "Descargar PDF", "Anular"]
 
 function visibleButtons() {
@@ -69,7 +69,7 @@ describe("OtActions: sólo se dibuja lo que allowedTransitions permite", () => {
     ["asignada: ingreso a la vista; reasignar, desasignar y anular en el menú", { status: "asignada", allowedTransitions: ["assign", "unassign", "start", "void"] }, ["Registrar ingreso"], ["Reasignar", "Desasignar", "Descargar PDF", "Anular"]],
     ["en taller con jefatura: salida e ítems a la vista; el resto en el menú", { allowedTransitions: ["assign", "finish", "void"], canEditExecution: true }, ["Registrar salida", "Marcar ítems"], ["Reasignar", "Cambiar entrega estimada", "Corregir ingreso", "Descargar PDF", "Anular"]],
     ["en taller sin permiso de edición: no marca ítems ni cambia la fecha", { allowedTransitions: ["finish"], canEditExecution: false }, ["Registrar salida"], ["Descargar PDF"]],
-    ["por recibir: recepcionar y rechazar", { status: "trabajo_terminado", allowedTransitions: ["receive", "reject_receipt"] }, ["Recepcionar", "Rechazar"], ["Descargar PDF"]],
+    ["por recibir: recibir el equipo y rechazar", { status: "trabajo_terminado", allowedTransitions: ["receive", "reject_receipt"] }, ["Recibir equipo", "Rechazar"], ["Descargar PDF"]],
     ["por conformidad: conformidad y rechazar", { status: "recepcionada", allowedTransitions: ["conform", "reject_conformity"] }, ["Dar conformidad", "Rechazar"], ["Descargar PDF"]],
     ["cerrada: reabrir", { status: "cerrada", allowedTransitions: ["reopen"] }, ["Reabrir"], ["Descargar PDF"]],
   ]
@@ -165,12 +165,12 @@ describe("OtActions: diálogos y envío con expectedVersion", () => {
     expect(submit.disabled).toBe(false)
   })
 
-  it("dar conformidad pide fecha, hora y «Sr.» (por defecto, quien actúa) y envía la hora como instante UTC", async () => {
+  it("dar conformidad pide fecha, hora y «Recibió» (por defecto, quien actúa) y envía la hora como instante UTC", async () => {
     actions.conformWorkOrderAction.mockResolvedValue({ ok: true, data: { version: 8, status: "cerrada" } })
     render(<OtActions {...props({ status: "recepcionada", allowedTransitions: ["conform"] })} />)
     fireEvent.click(screen.getByRole("button", { name: "Dar conformidad" }))
     const dialog = within(await screen.findByRole("dialog"))
-    expect((dialog.getByRole("textbox", { name: /Sr\./ }) as HTMLInputElement).value).toBe("Ana Pérez")
+    expect((dialog.getByRole("textbox", { name: /Recibió/ }) as HTMLInputElement).value).toBe("Ana Pérez")
     fireEvent.click(dialog.getByRole("button", { name: "Dar conformidad" }))
     await waitFor(() => expect(actions.conformWorkOrderAction).toHaveBeenCalled())
     const input = actions.conformWorkOrderAction.mock.calls[0]![0]
@@ -218,9 +218,9 @@ describe("OtActions: diálogos y envío con expectedVersion", () => {
     const dialog = within(await screen.findByRole("dialog"))
     const submit = dialog.getByRole("button", { name: "Guardar marcas" }) as HTMLButtonElement
     expect(submit.disabled).toBe(true)
-    // «Rectificar discos» (i2) estaba pendiente: se marca SÍ.
+    // «Rectificar discos» (i2) estaba pendiente: se marca Sí.
     const group = dialog.getByRole("group", { name: /Rectificar discos/ })
-    fireEvent.click(within(group).getByRole("button", { name: "SÍ" }))
+    fireEvent.click(within(group).getByRole("button", { name: "Sí" }))
     expect(submit.disabled).toBe(false)
     fireEvent.click(submit)
     await waitFor(() => expect(actions.markWorkOrderItemsAction).toHaveBeenCalledWith({

@@ -1,7 +1,7 @@
 import { expect, test, type Browser, type BrowserContext, type Page } from "@playwright/test"
 import { clearRateLimits, cerrarSesion, selectRadixById, textoVisible } from "./helpers"
 import { campoLectura, definirPin, entrar, jpeg, nuevoContexto } from "./mantencion-app-helpers"
-import { chileDay, fichaValue, withSql } from "./mantencion-3-helpers"
+import { chileDay, withSql } from "./mantencion-3-helpers"
 
 /**
  * §9 E2E · Orden de trabajo (OT) de punta a punta, con la interfaz real.
@@ -84,7 +84,8 @@ async function esperarEstado(folio: string, status: string) {
 
 /** Cada detalle de la OT en la plataforma: el estado que muestra su ficha. */
 async function expectEstadoEnFicha(page: Page, etiqueta: string) {
-  await expect(fichaValue(page, "Estado")).toHaveText(etiqueta, { timeout: 30_000 })
+  // El estado vive en el bloque «Avance», arriba de la ficha.
+  await expect(page.getByTestId("ot-estado")).toHaveText(etiqueta, { timeout: 30_000 })
 }
 
 /** Un diálogo de acción del detalle: su botón de envío. */
@@ -185,7 +186,7 @@ test.describe("Orden de trabajo (OT)", () => {
     await page.goto("/mantencion/ot")
     await expect(page.getByRole("heading", { level: 1, name: "Órdenes de trabajo" })).toBeVisible()
 
-    await page.getByRole("button", { name: "Nueva OT", exact: true }).click()
+    await page.getByRole("button", { name: "Nueva orden", exact: true }).click()
     const hoja = page.getByRole("dialog", { name: "Nueva orden de trabajo" })
     await expect(hoja).toBeVisible()
     // El selector abierto (cualquier mecánico, opcional) es de la jefatura.
@@ -194,7 +195,7 @@ test.describe("Orden de trabajo (OT)", () => {
     await hoja.locator("#ot-equipo").click()
     await hoja.locator("#ot-equipo").fill(equipo.code)
     await page.getByRole("option", { name: new RegExp(equipo.code) }).first().click()
-    await expect(hoja.getByText(/Faena: Biodiversa\. La OT queda en la faena del equipo\./)).toBeVisible()
+    await expect(hoja.getByText(/Faena: Biodiversa\. La orden queda en la faena del equipo\./)).toBeVisible()
     // La OT queda asignada al mecánico de su faena; con dos en Biodiversa, se elige entre ellos.
     await selectRadixById(page, "ot-mecanico", NOMBRE_MECANICO_BIO)
 
@@ -205,7 +206,7 @@ test.describe("Orden de trabajo (OT)", () => {
     await hoja.getByRole("textbox", { name: /Trabajos anexos \(reparación\), línea 1/ }).fill(ITEM_ANEXO)
     await hoja.getByRole("button", { name: "Agregar línea" }).last().click()
     await hoja.getByRole("textbox", { name: /Mantenciones solicitadas o asignadas en taller, línea 1/ }).fill(ITEM_MANTENCION)
-    await hoja.getByRole("button", { name: "Crear OT", exact: true }).click()
+    await hoja.getByRole("button", { name: "Crear orden", exact: true }).click()
 
     await expect(page).toHaveURL(/\/mantencion\/ot\/[^/]+$/, { timeout: 30_000 })
     otId = new URL(page.url()).pathname.split("/").pop() ?? ""
@@ -217,7 +218,7 @@ test.describe("Orden de trabajo (OT)", () => {
     await expect(textoVisible(page, new RegExp(`${NOMBRE_MECANICO_BIO}.*desde`))).toBeVisible()
     await expect(textoVisible(page, ITEM_ANEXO)).toBeVisible()
     await expect(textoVisible(page, ITEM_MANTENCION)).toBeVisible()
-    await expect(page.getByRole("list", { name: "Historial de la orden de trabajo" }).getByText("OT solicitada")).toBeVisible()
+    await expect(page.getByRole("list", { name: "Historial de la orden de trabajo" }).getByText("Orden solicitada")).toBeVisible()
     await expect(page.getByRole("list", { name: "Historial de la orden de trabajo" }).getByText("Mecánico asignado")).toBeVisible()
     // Reasignar es de la jefatura: el administrador de contrato no lo ve.
     await page.getByRole("button", { name: /^Más acciones/ }).click()
@@ -263,8 +264,8 @@ test.describe("Orden de trabajo (OT)", () => {
     await entrarPlataforma(page, MECANICO)
     await page.goto("/mantencion/ot")
     await expect(page.getByRole("heading", { level: 1, name: "Órdenes de trabajo" })).toBeVisible()
-    // El mecánico no crea OT ni las toma: no hay «Nueva OT» ni pestaña «Por asignar».
-    await expect(page.getByRole("button", { name: "Nueva OT", exact: true })).toHaveCount(0)
+    // El mecánico no crea OT ni las toma: no hay «Nueva orden» ni pestaña «Por asignar».
+    await expect(page.getByRole("button", { name: "Nueva orden", exact: true })).toHaveCount(0)
     await expect(page.getByRole("navigation", { name: "Estado de las órdenes de trabajo" }).getByRole("link", { name: /^Por asignar/ })).toHaveCount(0)
     await page.getByRole("link", { name: `Ver la OT ${folio}` }).click()
     await expect(page).toHaveURL(new RegExp(`/mantencion/ot/${otId}$`))
@@ -332,11 +333,11 @@ test.describe("Orden de trabajo (OT)", () => {
     await entrarPlataforma(page, ADMIN)
     await page.goto(`/mantencion/ot/${otId}`)
     await expectEstadoEnFicha(page, "Por recibir")
-    await expect(textoVisible(page, /Todavía no hay|Aún no se registra la recepción/)).toBeVisible()
+    await expect(page.getByRole("list", { name: "Etapas de la orden" }).getByText("Pendiente").first()).toBeVisible()
 
-    await page.getByRole("button", { name: "Recepcionar", exact: true }).click()
-    await expect(dialogo(page).getByLabel("Sr. (quien recibe)")).toHaveValue(/Admin Contrato Biodiversa E2E/)
-    await dialogo(page).getByRole("button", { name: "Registrar recepción", exact: true }).click()
+    await page.getByRole("button", { name: "Recibir equipo", exact: true }).click()
+    await expect(dialogo(page).getByLabel("Recibió")).toHaveValue(/Admin Contrato Biodiversa E2E/)
+    await dialogo(page).getByRole("button", { name: "Recibir equipo", exact: true }).click()
     await expect(dialogo(page)).toHaveCount(0)
     await expectEstadoEnFicha(page, "Por conformidad")
 
@@ -416,8 +417,8 @@ test.describe("Orden de trabajo (OT)", () => {
     await entrarPlataforma(page, ADMIN)
     await page.goto(`/mantencion/ot/${otId}`)
     await expectEstadoEnFicha(page, "Por recibir")
-    await page.getByRole("button", { name: "Recepcionar", exact: true }).click()
-    await dialogo(page).getByRole("button", { name: "Registrar recepción", exact: true }).click()
+    await page.getByRole("button", { name: "Recibir equipo", exact: true }).click()
+    await dialogo(page).getByRole("button", { name: "Recibir equipo", exact: true }).click()
     await expect(dialogo(page)).toHaveCount(0)
     await expectEstadoEnFicha(page, "Por conformidad")
 
@@ -427,12 +428,12 @@ test.describe("Orden de trabajo (OT)", () => {
     await expectEstadoEnFicha(page, "Cerrada")
     expect((await estadoOt(folio))?.status).toBe("cerrada")
     // Cerrada: ya no hay acciones de flujo (sólo el PDF).
-    for (const accion of ["Recepcionar", "Rechazar", "Dar conformidad", "Registrar salida"]) {
+    for (const accion of ["Recibir equipo", "Rechazar", "Dar conformidad", "Registrar salida"]) {
       await expect(page.getByRole("button", { name: accion, exact: true })).toHaveCount(0)
     }
 
     const historial = page.getByRole("list", { name: "Historial de la orden de trabajo" })
-    for (const evento of ["OT solicitada", "Mecánico asignado", "Ingreso a taller", "Rechazada", "Recepción en faena (conformidad)"]) {
+    for (const evento of ["Orden solicitada", "Mecánico asignado", "Ingreso a taller", "Rechazada", "Conformidad en faena"]) {
       await expect(historial.getByText(evento).first()).toBeVisible()
     }
     await expect(historial.getByText(MOTIVO_RECHAZO)).toBeVisible()
@@ -470,7 +471,7 @@ test.describe("Orden de trabajo (OT)", () => {
     await page.goto("/mantencion/ot?estado=cerrada")
     await expect(page.getByRole("heading", { level: 1, name: "Órdenes de trabajo" })).toBeVisible()
     await expect(page.getByText(folio)).toHaveCount(0)
-    await page.getByRole("button", { name: /^(Nueva OT|Crear la primera orden)$/ }).first().click()
+    await page.getByRole("button", { name: /^(Nueva orden|Crear la primera orden)$/ }).first().click()
     const hoja = page.getByRole("dialog", { name: "Nueva orden de trabajo" })
     await hoja.locator("#ot-equipo").click()
     await hoja.locator("#ot-equipo").fill(equipo.code)

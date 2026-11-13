@@ -9,7 +9,7 @@ export const OT_STATE_META: Record<OtStatus, StateMetaInput> = Object.fromEntrie
 
 /** Qué dice cada evento en la línea de tiempo (el historial no muestra el valor crudo del enum: regla A6). */
 export const OT_EVENT_LABELS: Record<OtEventType, string> = {
-  created: "OT solicitada",
+  created: "Orden solicitada",
   edited: "Solicitud editada",
   assigned: "Mecánico asignado",
   unassigned: "Asignación retirada",
@@ -20,12 +20,12 @@ export const OT_EVENT_LABELS: Record<OtEventType, string> = {
   item_added: "Ítem agregado en taller",
   items_marked: "Ítems marcados",
   finished: "Salida de taller",
-  received: "Recepción",
+  received: "Equipo recibido",
   rejected: "Rechazada",
-  conformed: "Recepción en faena (conformidad)",
-  voided: "OT anulada",
-  reopened: "OT reabierta",
-  record_linked: "Registro de mantención enlazado",
+  conformed: "Conformidad en faena",
+  voided: "Orden anulada",
+  reopened: "Orden reabierta",
+  record_linked: "Registro firmado enlazado",
 }
 
 /** REPARACIÓN / MANTENCIÓN / ambas, como se marca en el talonario. */

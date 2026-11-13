@@ -6,8 +6,8 @@ import { OtActions } from "@/components/mantencion/jefatura/ot/ot-actions"
 import { OtAside } from "@/components/mantencion/jefatura/ot/ot-aside"
 import { equipmentText, workOrderTypeText } from "@/components/mantencion/jefatura/ot/ot-labels"
 import {
-  OtEntrySection, OtExitSection, OtFaenaReceptionSection, OtHeaderSection, OtItemsSection, OtObservationsSection,
-  OtPartsRequestsSection, OtReceptionSection, OtRejectionNotice, OtRepairSection, OtVoidedNotice,
+  OtHeaderSection, OtItemsSection, OtObservationsSection, OtPartsRequestsSection, OtProgressSection, OtRejectionNotice, OtRepairSection,
+  OtVoidedNotice,
 } from "@/components/mantencion/jefatura/ot/ot-sections"
 import { can, requireAnyPermission } from "@/lib/auth/can"
 import { viewerFromSession } from "@/lib/services/mantencion/access"
@@ -96,16 +96,13 @@ export default async function WorkOrderDetailPage({ params }: { params: Promise<
 
       <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
         <div className="flex min-w-0 flex-col gap-4">
+          <OtProgressSection detail={detail} />
           <OtHeaderSection detail={detail} />
           <OtRepairSection detail={detail} />
           <OtItemsSection detail={detail} kind="anexo" />
           <OtItemsSection detail={detail} kind="mantencion" />
           <OtPartsRequestsSection detail={detail} canOpenRequests={canOpenRequests} canOpenSpareParts={canOpenSpareParts} partsRequestHref={partsRequestHref} />
           <OtObservationsSection detail={detail} />
-          <OtEntrySection detail={detail} />
-          <OtExitSection detail={detail} />
-          <OtReceptionSection detail={detail} />
-          <OtFaenaReceptionSection detail={detail} />
         </div>
         <OtAside detail={detail} showCosts={canDownloadPdf} />
       </div>

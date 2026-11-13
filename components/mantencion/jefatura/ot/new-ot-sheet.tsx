@@ -36,7 +36,7 @@ export interface NewOtSheetProps {
   today: string
   /** Nombre de quien crea: SOLICITANTE por defecto, editable. */
   defaultRequesterName: string
-  /** Rótulo del botón que abre el formulario (por defecto «Nueva OT»). */
+  /** Rótulo del botón que abre el formulario (por defecto «Nueva orden»). */
   triggerLabel?: string
   triggerVariant?: "primary" | "secondary"
 }
@@ -102,7 +102,7 @@ export function NewWorkOrderCta(props: NewOtSheetProps) {
     if (result.ok) {
       const id = String(result.data?.id ?? "")
       const folio = String(result.data?.folio ?? "")
-      toast.success(result.message ?? (folio ? `OT ${folio} creada` : "OT creada"))
+      toast.success(folio ? `Orden ${folio} creada` : "Orden creada")
       setOpen(false)
       if (id) router.push(`/mantencion/ot/${id}`)
     }
@@ -140,7 +140,7 @@ export function NewWorkOrderCta(props: NewOtSheetProps) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetTrigger asChild>
-        <Button variant={props.triggerVariant ?? "primary"}><Plus size={14} className="mr-1.5" aria-hidden /> {props.triggerLabel ?? "Nueva OT"}</Button>
+        <Button variant={props.triggerVariant ?? "primary"}><Plus size={14} className="mr-1.5" aria-hidden /> {props.triggerLabel ?? "Nueva orden"}</Button>
       </SheetTrigger>
       <SheetContent className="sm:max-w-xl">
         <form ref={formRef} action={formAction} className="flex min-h-0 flex-1 flex-col">
@@ -148,7 +148,7 @@ export function NewWorkOrderCta(props: NewOtSheetProps) {
             <div>
               <SheetTitle>Nueva orden de trabajo</SheetTitle>
               <SheetDescription>
-                Pide una reparación o una mantención para un equipo. Le avisamos a Mantención y la OT queda en tu nombre.
+                Pide una reparación o una mantención para un equipo. Le avisamos a Mantención y la orden queda en tu nombre.
               </SheetDescription>
             </div>
             <SheetCloseButton />
@@ -166,7 +166,7 @@ export function NewWorkOrderCta(props: NewOtSheetProps) {
                 htmlFor="ot-equipo"
                 required
                 error={fieldError("vehicleId")}
-                helper={chosen ? `Faena: ${chosen.worksiteName}. La OT queda en la faena del equipo.` : undefined}
+                helper={chosen ? `Faena: ${chosen.worksiteName}. La orden queda en la faena del equipo.` : undefined}
               >
                 <Combobox
                   id="ot-equipo"
@@ -191,8 +191,8 @@ export function NewWorkOrderCta(props: NewOtSheetProps) {
               </fieldset>
 
               <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Fecha de la OT" htmlFor="ot-fecha" required error={fieldError("requestDate")}>
-                  <DatePicker id="ot-fecha" value={values.requestDate} onChange={(iso) => set("requestDate", iso)} ariaLabel="Fecha de la OT" />
+                <Field label="Fecha de la orden" htmlFor="ot-fecha" required error={fieldError("requestDate")}>
+                  <DatePicker id="ot-fecha" value={values.requestDate} onChange={(iso) => set("requestDate", iso)} ariaLabel="Fecha de la orden" />
                 </Field>
                 <Field label="Solicitante" htmlFor="ot-solicitante" required error={fieldError("requesterName")}>
                   <Input id="ot-solicitante" value={values.requesterName} maxLength={120} onChange={(event) => set("requesterName", event.target.value)} />
@@ -228,7 +228,7 @@ export function NewWorkOrderCta(props: NewOtSheetProps) {
                 <OtItemListEditor
                   idPrefix="ot-mant"
                   legend="Mantenciones solicitadas o asignadas en taller"
-                  helper="Cada mantención que se pide hacer. El mecánico marca SÍ o NO al terminar."
+                  helper="Cada mantención que se pide hacer. El mecánico marca Sí o No al terminar."
                   placeholder="Ej. Cambio de aceite y filtros"
                   items={values.maintenanceItems}
                   onChange={(next) => set("maintenanceItems", next)}
@@ -258,7 +258,7 @@ export function NewWorkOrderCta(props: NewOtSheetProps) {
               </Field>
 
               {props.mechanics && (
-                <Field label="Mecánico (opcional)" htmlFor="ot-mecanico" error={fieldError("assignedToUserId")} helper="Si lo dejas vacío, la OT queda por asignar hasta que la asignes.">
+                <Field label="Mecánico (opcional)" htmlFor="ot-mecanico" error={fieldError("assignedToUserId")} helper="Si lo dejas vacío, la orden queda por asignar hasta que la asignes.">
                   <OptionSelect
                     id="ot-mecanico"
                     emptyLabel="Dejar por asignar"
@@ -284,7 +284,7 @@ export function NewWorkOrderCta(props: NewOtSheetProps) {
                   <p className="text-sm text-[var(--color-text-muted)]" data-testid="ot-mecanico-faena">
                     {faenaMechanics.length === 1
                       ? <>Se asigna a <strong className="font-semibold text-[var(--color-text)]">{faenaMechanics[0]!.name}</strong>, mecánico de {chosen.worksiteName}. La jefatura de mantención puede reasignarla.</>
-                      : `${chosen.worksiteName} no tiene mecánico: la OT queda por asignar y la jefatura de mantención la asigna.`}
+                      : `${chosen.worksiteName} no tiene mecánico: la orden queda por asignar y la jefatura de mantención la asigna.`}
                   </p>
                 )
               )}
@@ -293,7 +293,7 @@ export function NewWorkOrderCta(props: NewOtSheetProps) {
 
           <SheetFooter>
             <Button type="button" variant="secondary" onClick={() => setOpen(false)}>Cancelar</Button>
-            <SubmitButton label="Crear OT" loadingLabel="Creando…" disabled={!values.vehicleId || !clientRequestId} />
+            <SubmitButton label="Crear orden" loadingLabel="Creando…" disabled={!values.vehicleId || !clientRequestId} />
           </SheetFooter>
         </form>
       </SheetContent>

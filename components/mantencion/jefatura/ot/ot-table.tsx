@@ -59,7 +59,7 @@ export function OtTable({ rows }: { rows: WorkOrderListRow[] }) {
         {rows.map((row) => (
           <li key={row.id}>
             <ResponsiveDataListCard
-              title={<span className="font-mono text-[13px] font-semibold">{row.folio}</span>}
+              title={<span className="font-mono text-sm font-semibold">{row.folio}</span>}
               description={<>{equipmentText(row)} · {row.worksiteName}</>}
               status={<MetaBadge meta={OT_STATE_META[row.status]} size="sm" />}
               actions={(
@@ -102,19 +102,19 @@ export function OtTable({ rows }: { rows: WorkOrderListRow[] }) {
                 <TableCell className="whitespace-nowrap">
                   <Link
                     href={`/mantencion/ot/${row.id}`}
-                    className="font-mono text-[13px] font-semibold text-[var(--color-primary-ink)] underline-offset-2 hover:underline focus-visible:underline"
+                    className="font-mono text-sm font-semibold text-[var(--color-primary-ink)] underline-offset-2 hover:underline focus-visible:underline"
                     aria-label={`Ver la OT ${row.folio}`}
                   >
                     {row.folio}
                   </Link>
                 </TableCell>
-                <TableCell className="whitespace-nowrap font-mono text-[13px]">{equipmentText(row)}</TableCell>
+                <TableCell className="whitespace-nowrap font-mono text-sm">{equipmentText(row)}</TableCell>
                 <TableCell>{row.worksiteName}</TableCell>
                 <TableCell className="whitespace-nowrap">{workOrderTypeText(row)}</TableCell>
                 <TableCell><StatusCell row={row} /></TableCell>
                 <TableCell>{row.assignedToName ?? <span className={QUIET}>Sin asignar</span>}</TableCell>
-                <TableCell className="whitespace-nowrap font-mono text-[13px] tabular-nums">{row.workshopEntryAt ? formatDateTime(row.workshopEntryAt) : <span className={QUIET}>—</span>}</TableCell>
-                <TableCell className="text-[13px]"><EstimateCell row={row} /></TableCell>
+                <TableCell className="whitespace-nowrap font-mono text-sm tabular-nums">{row.workshopEntryAt ? formatDateTime(row.workshopEntryAt) : <span className={QUIET}>—</span>}</TableCell>
+                <TableCell className="text-sm"><EstimateCell row={row} /></TableCell>
                 <TableCell className="whitespace-nowrap">{daysText(row)}</TableCell>
               </TableRow>
             ))}
