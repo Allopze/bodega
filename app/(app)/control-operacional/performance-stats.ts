@@ -1,12 +1,14 @@
 import type { SummaryStat } from "@/components/ui/summary-bar"
 
 /**
- * Desempeño del período del Panel operacional: la tira editorial bajo los
- * tiles de atención y el glosario que la explica. Datos puros; la página los
- * pinta con `SummaryBar`.
+ * Desempeño del período del Panel operacional: una tira de texto compacta con
+ * tres cifras (disponibilidad, horas en taller y tiempo de reparación) y el
+ * glosario que la explica. Datos puros; la página los pinta con `SummaryBar compact`.
  *
- * Lo que sólo mide el período (disponibilidad y cobertura del historial de
- * estado) vive aquí. Lo que está pasando hoy vive en los tiles de «Requiere atención».
+ * Lo que sólo mide el período vive aquí. Lo que está pasando hoy vive en los
+ * tiles de «Requiere atención», fuera de la zona que gobierna el selector de
+ * período. Licencias y canales de combustible no se repiten aquí: tienen su
+ * propia pantalla y, el segundo, su fila en «Cruces».
  */
 
 export interface PerformanceMetrics {
@@ -22,14 +24,6 @@ export interface PerformancePermissions {
   canViewFleet: boolean
   /** `mant:ot:view_*`: sin ella no se pintan las cifras de órdenes de trabajo. */
   canViewWorkOrders?: boolean
-  /** Conteo de licencias de conducir; `null` sin `flota:manage_licenses` o si falló. */
-  licenseAttention?: import("@/lib/services/driver-licenses-contract").DriverLicenseAttention | null
-  /** Cobertura TAE/TCT del período; `null` sin `combustibles:tae_view` o si falló. */
-  taeCoverage?: {
-    bothChannels: number
-    taeOnly: number
-    tctOnly: number
-  } | null
 }
 
 export function formatKpi(value: number | null, suffix = "", precision = 1): string {
@@ -53,67 +47,36 @@ function belowThreshold(value: number | null, thresholds: { danger: number; warn
 
 export const AVAILABILITY_THRESHOLDS = { danger: 80, warning: 90 }
 
-/** Disponibilidad y cobertura son indicadores de Flota: sin `flota:view` no se pintan. */
+/** Bajo este porcentaje de cobertura del historial de estado, la disponibilidad lo avisa. */
+const COVERAGE_WARNING = 80
+
+/**
+ * Disponibilidad (con su cobertura de historial al lado: una disponibilidad alta
+ * sobre una cobertura baja no representa al período), horas en taller y tiempo
+ * de reparación. La disponibilidad es de Flota: sin `flota:view` no se pinta.
+ */
 export function buildPerformanceStats(metrics: PerformanceMetrics, permissions: PerformancePermissions): SummaryStat[] {
   const stats: SummaryStat[] = []
   const { canViewFleet, canViewWorkOrders = false } = permissions
 
   if (canViewFleet) {
     const hasData = metrics.availabilityPercent != null
+    const threshold = belowThreshold(metrics.availabilityPercent, AVAILABILITY_THRESHOLDS)
+    // Una disponibilidad sobre un historial incompleto no representa al período:
+    // sólo se avisa cuando la cobertura es baja; la definición completa vive en el glosario.
+    const coverage = metrics.stateCoveragePercent != null && metrics.stateCoveragePercent < COVERAGE_WARNING
+      ? `historial al ${formatKpi(metrics.stateCoveragePercent, "%", 0)}`
+      : null
+    const hint = [threshold.hint, hasData ? coverage : null].filter(Boolean).join(" · ")
     stats.push({
       key: "availability",
       label: "Disponibilidad",
       value: formatKpi(metrics.availabilityPercent, "%"),
       valueKind: hasData ? "number" : "text",
       secondary: hasData ? "Horas operativas / horas con estado registrado" : "Sin datos en el período",
-      ...belowThreshold(metrics.availabilityPercent, AVAILABILITY_THRESHOLDS),
+      ...threshold,
+      ...(hint ? { hint } : {}),
     })
-    const hasCoverage = metrics.stateCoveragePercent != null
-    stats.push({
-      key: "state-coverage",
-      label: "Cobertura de estado",
-      value: formatKpi(metrics.stateCoveragePercent, "%"),
-      valueKind: hasCoverage ? "number" : "text",
-      secondary: hasCoverage
-        ? "Horas con historial / horas calendario de equipos activos"
-        : "Sin equipos activos o sin historial",
-    })
-  }
-
-  if (permissions.licenseAttention) {
-    const { total, expired, expiringSoon, warningDays } = permissions.licenseAttention
-    stats.push({
-      key: "driver-licenses",
-      label: "Licencias por regularizar",
-      // Sin nómina no hay un «al día» verificable: es ausencia de dato.
-      value: total === 0 ? "Sin datos" : expired === 0 ? "Al día" : expired,
-      valueKind: total === 0 || expired === 0 ? "text" : "number",
-      secondary: total === 0
-        ? "No hay trabajadores con licencia en el alcance"
-        : expired === 0
-          ? (expiringSoon > 0 ? `${expiringSoon} por vencer en ${warningDays} días` : `Nada por vencer en ${warningDays} días`)
-          : `${expiringSoon} por vencer en ${warningDays} días`,
-      ...(total > 0 && expired > 0 ? { tone: "danger" as const } : total > 0 && expiringSoon > 0 ? { tone: "signal" as const } : {}),
-      href: "/flota/conductores",
-    })
-  }
-
-  if (permissions.taeCoverage) {
-    const { bothChannels, taeOnly, tctOnly } = permissions.taeCoverage
-    const singleChannel = taeOnly + tctOnly
-    // Sin equipos con ningún canal no es «0 equipos con un solo canal»: es que
-    // no hay datos TAE/TCT que comparar en el período.
-    if (bothChannels + singleChannel > 0) {
-      stats.push({
-        key: "tae-tct-coverage",
-        label: "Equipos con un solo canal",
-        value: singleChannel,
-        valueKind: "number",
-        secondary: `${taeOnly} sólo TAE · ${tctOnly} sólo TCT · ${bothChannels} con ambos`,
-        ...(singleChannel > 0 ? { tone: "signal" as const } : {}),
-        href: "/combustibles/cuadratura/tarjeta-y-terreno",
-      })
-    }
   }
 
   if (canViewWorkOrders) {
@@ -128,7 +91,7 @@ export function buildPerformanceStats(metrics: PerformanceMetrics, permissions: 
     const mttrHours = metrics.mttrHours ?? null
     stats.push({
       key: "mttr",
-      label: "Tiempo de reparación (MTTR)",
+      label: "Tiempo de reparación",
       value: formatKpi(mttrHours, " h", 1),
       valueKind: mttrHours == null ? "text" : "number",
       secondary: mttrHours == null ? "Sin reparaciones cerradas en el período" : "Horas en taller por reparación cerrada",
@@ -158,7 +121,7 @@ export function buildPerformanceGlossary(permissions: {
   canViewWorkOrders?: boolean
   /** `purchasing:view`: abre la definición de las compras vinculadas y la del costo total. */
   canViewPurchaseCosts?: boolean
-  canViewLicenses?: boolean
+  /** `combustibles:tae_view`: define la fila «Combustible por canal» de «Cruces». */
   canViewTaeCoverage?: boolean
   /** Lecturas y pautas de mantención: habilita la definición de la estimación GPS. */
   canViewMaintenance?: boolean
@@ -176,7 +139,7 @@ export function buildPerformanceGlossary(permissions: {
         key: "state-coverage",
         term: "Cobertura de estado",
         definition:
-          "Parte del calendario de los equipos activos que cubre el historial de estado. Una disponibilidad alta sobre una cobertura baja no representa al período completo; por eso se muestran las dos cifras.",
+          "Parte del calendario de los equipos activos que cubre el historial de estado. Una disponibilidad alta sobre una cobertura baja no representa al período completo; por eso la disponibilidad avisa cuando el historial cubre menos del 80 %.",
       },
       {
         key: "gps-providers",
@@ -202,20 +165,12 @@ export function buildPerformanceGlossary(permissions: {
       })
     }
   }
-  if (permissions.canViewLicenses) {
-    entries.push({
-      key: "driver-licenses",
-      term: "Licencias por regularizar",
-      definition:
-        "Trabajadores del alcance con licencia vencida, sin licencia o sin la clase que exige su cargo. Es la misma nómina de /flota/conductores; las que están por vencer usan la ventana de aviso de Flota. Sin trabajadores en la nómina se muestra «Sin datos», no «Al día».",
-    })
-  }
   if (permissions.canViewTaeCoverage) {
     entries.push({
       key: "tae-tct-coverage",
-      term: "Equipos con un solo canal",
+      term: "Combustible por canal",
       definition:
-        "Equipos que, en el período, tienen litros por TAE pero no por tarjeta TCT (o al revés). «Con ambos» son los que cuadran por los dos canales. La conciliación detallada vive en Cuadratura › Tarjeta y terreno.",
+        "Equipos que, en el período, tienen litros por abastecimiento de estanques pero no por la tarjeta Copec de equipos (o al revés). «Con ambos» son los que se pueden cuadrar por los dos canales. El detalle está en Cuadratura.",
     })
   }
   if (permissions.canViewWorkOrders) {
@@ -234,7 +189,7 @@ export function buildPerformanceGlossary(permissions: {
       },
       {
         key: "mttr",
-        term: "MTTR · tiempo medio de reparación (mean time to repair)",
+        term: "Tiempo medio de reparación",
         definition:
           "Promedio de horas en taller, del ingreso a la salida, de las órdenes de reparación cerradas (con conformidad de la faena) dentro del período. Sin ninguna reparación cerrada no hay qué promediar y se muestra «Sin datos». Una cifra alta sugiere repuestos, mano de obra o aprobaciones frenando el retorno del equipo.",
       },
@@ -266,7 +221,7 @@ export function buildPerformanceGlossary(permissions: {
         key: "open-findings-work-order",
         term: "Hallazgos con OT",
         definition:
-          "Del total de hallazgos abiertos, los que tienen una orden de trabajo vigente vinculada (`inspection_finding_id`). Los «sin OT» son trabajo correctivo detectado que todavía no entró a Mantención.",
+          "Del total de hallazgos abiertos, los que tienen una orden de trabajo vigente vinculada. Los «sin OT» son trabajo correctivo detectado que todavía no entró a Mantención.",
       },
     )
   }
@@ -304,7 +259,7 @@ export function buildPerformanceGlossary(permissions: {
         key: "fuel-idle",
         term: "Motor en vacío",
         definition:
-          "Horas con el motor encendido sin trabajar sobre las horas de funcionamiento de la telemetría del período (Σ vacío ÷ Σ funcionamiento). Se informa junto con los litros consumidos en vacío; sin telemetría se muestra «—», no se estima.",
+          "Horas con el motor encendido sin trabajar sobre las horas de funcionamiento de la telemetría del período. Se informa junto con los litros consumidos en vacío; sin telemetría se muestra «—», no se estima.",
       },
       {
         key: "fuel-gps-mismatch",

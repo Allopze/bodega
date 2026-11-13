@@ -32,7 +32,7 @@ async function cleanup() {
   })
 }
 
-test.describe("Panel operacional — combustible por activo", () => {
+test.describe("Panel operacional — combustible por vehículo", () => {
   test.beforeEach(async ({ page }) => {
     await cleanup()
     await withSql(async (sql) => {
@@ -84,7 +84,14 @@ test.describe("Panel operacional — combustible por activo", () => {
 
   test("la fila del vehículo muestra litros, rendimiento, cargas por decidir y costo facturado", async ({ page }) => {
     // Período explícito: la prueba no depende de la fecha en que se ejecute.
-    await page.goto("/control-operacional?desde=2026-10-01&hasta=2026-10-31")
+    // Por defecto la tabla muestra seis columnas (Vehículo, Faena, Estado,
+    // Próximo vencimiento, OT abiertas y Casos abiertos); las de combustible se
+    // piden por la URL de la vista, que es lo que guarda el menú «Columnas».
+    const columnas = [
+      "code", "worksiteName", "operationalStatusLabel", "fuelLiters", "fuelPerformanceValue",
+      "flaggedLoads", "openAnomalyCases", "fuelBilledAmount",
+    ].join(",")
+    await page.goto(`/control-operacional?desde=2026-10-01&hasta=2026-10-31&control-operacional-activos_cols=${columnas}`)
 
     const table = page.getByRole("table", { name: "Activos operacionales" })
     await expect(table).toBeVisible()
@@ -110,7 +117,8 @@ test.describe("Panel operacional — combustible por activo", () => {
     await expect(cells.nth(column("Cargas marcadas (período)"))).toHaveText("1")
     await expect(cells.nth(column("Casos abiertos"))).toHaveText("0")
     await expect(cells.nth(column("Costo combustible (proveedor)"))).toContainText("$50.000")
-    await expect(row.getByRole("link", { name: "Combustible" })).toHaveAttribute(
+    // El enlace dice a qué vehículo pertenece: «Combustible de E2E…».
+    await expect(row.getByRole("link", { name: /^Combustible de / })).toHaveAttribute(
       "href",
       `/combustibles/consumo/equipos/${VEHICLE_ID}`,
     )

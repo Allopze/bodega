@@ -2,29 +2,15 @@
 
 import Link from "next/link"
 import { DataTable } from "@/components/ui/data-table"
-import { MetaBadge } from "@/components/states/state-badge"
+import { MetaBadge, StateBadge } from "@/components/states/state-badge"
+import { VehicleIdentity } from "@/components/fleet/vehicle-identity"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { TableCell, TableRow } from "@/components/ui/table"
 import { formatCLP, formatDate, formatDateTime } from "@/lib/utils"
 import { EQUIPMENT_STATE_LABEL } from "@/lib/mantencion/format"
 import { fuelEquipmentHref } from "@/lib/combustibles/routes"
 import type { OperationalAsset } from "@/lib/services/operational-control"
-
-type Variant = "success" | "signal" | "warning" | "neutral" | "outline"
-
-/**
- * B-01: el estado de vehículo se pinta con etiqueta humana (regla A6). El
- * variant del badge se deriva de la etiqueta, no del enum crudo, así "En
- * mantención" cae en `warning` y "Fuera de servicio" en `signal` — sin
- * enumerar valores que el modelo aún no soporta.
- */
-function statusVariant(label: string): Variant {
-  if (label === "Operativo") return "success"
-  if (label === "En mantención") return "warning"
-  if (label === "Fuera de servicio") return "signal"
-  if (label === "Inactivo") return "outline"
-  return "neutral"
-}
 
 /** «12,3 km/L» o «18,4 L/h»; `—` cuando el equipo no mide rendimiento o no tuvo cargas válidas. */
 function formatPerformance(asset: OperationalAsset): string | null {
@@ -59,37 +45,66 @@ function formatGpsCost(asset: OperationalAsset): string | null {
   return unit ? `${formatCLP(asset.gpsCostPerUnit)}/${unit}` : null
 }
 
-const COLUMNS = (canViewCosts: boolean, canViewInspections: boolean, canViewFuel: boolean, canViewCapa: boolean, canViewFleet: boolean, canViewWorkOrders: boolean, canViewPurchaseCosts: boolean, canViewMaintenance: boolean) => {
+/** Litros con una decimal como mucho y sin unidad (la cabecera la dice); la tarjeta móvil le agrega «L». */
+function formatLiters(asset: OperationalAsset): string | null {
+  return asset.fuelLiters == null ? null : asset.fuelLiters.toLocaleString("es-CL", { maximumFractionDigits: 1 })
+}
+
+/** «2 críticos» como insignia con texto: el rojo solo no basta para un conteo (auditoría 2026-11-13, P5). */
+function CriticalBadge({ count }: { count: number | null }) {
+  if (count == null || count <= 0) return null
+  return <Badge variant="danger" size="sm">{count === 1 ? "1 crítico" : `${count} críticos`}</Badge>
+}
+
+/**
+ * Columnas del panel. Las visibles por defecto responden a «qué vehículo,
+ * dónde, cómo está, qué le vence y qué lo espera»: Vehículo, Faena, Estado,
+ * Próximo vencimiento, OT abiertas y Casos abiertos. El resto queda en
+ * «Columnas»: 19 a la vista cortaban la tabla a 1440 px (auditoría 2026-11-13, P3).
+ *
+ * El orden tiene que seguir el de las celdas de `renderRow`: la tabla oculta
+ * por posición.
+ */
+const COLUMNS = (showMeterMismatch: boolean, canViewCosts: boolean, canViewInspections: boolean, canViewFuel: boolean, canViewCapa: boolean, canViewFleet: boolean, canViewWorkOrders: boolean, canViewPurchaseCosts: boolean, canViewMaintenance: boolean) => {
   const showFuelCost = canViewFuel && canViewCosts
   const showCapa = canViewCapa && canViewInspections
   return [
-    { key: "code", label: "Código", sortable: true },
-    { key: "name", label: "Activo", sortable: true },
+    { key: "code", label: "Vehículo", sortable: true },
     { key: "worksiteName", label: "Faena", sortable: true },
     { key: "operationalStatusLabel", label: "Estado", sortable: true },
     ...(canViewFleet
       ? [
           { key: "nextExpiryDate", label: "Próximo vencimiento", sortable: true },
-          { key: "meterMismatch", label: "Discrepancia GPS", sortable: false },
+          { key: "meterMismatch", label: "Discrepancia GPS", sortable: false, defaultVisible: showMeterMismatch },
           { key: "gpsProviders", label: "Fuente GPS", sortable: false, defaultVisible: false },
         ]
       : []),
     ...(canViewFuel
       ? [
           { key: "gpsPerformanceValue", label: "Rendimiento GPS", sortable: false, numeric: true, defaultVisible: false },
-          { key: "fuelLiters", label: "Litros", sortable: true, numeric: true },
+          { key: "fuelLiters", label: "Litros", sortable: true, numeric: true, defaultVisible: false },
           { key: "fuelLoadCount", label: "Cargas (período)", sortable: true, numeric: true, defaultVisible: false },
           { key: "lastFuelLoadAt", label: "Última carga", sortable: true, defaultVisible: false },
           // km/L y L/h son magnitudes distintas: ordenar por el número crudo
           // mezcla unidades y pone un «40 L/h» antes que un «12 km/L». Sin un
           // criterio común, la columna no ofrece orden.
-          { key: "fuelPerformanceValue", label: "Rendimiento promedio", sortable: false, numeric: true },
-          { key: "flaggedLoads", label: "Cargas marcadas (período)", sortable: true, numeric: true },
+          { key: "fuelPerformanceValue", label: "Rendimiento promedio", sortable: false, numeric: true, defaultVisible: false },
+          { key: "flaggedLoads", label: "Cargas marcadas (período)", sortable: true, numeric: true, defaultVisible: false },
+        ]
+      : []),
+    ...(canViewWorkOrders
+      ? [{ key: "openWorkOrders", label: "OT abiertas", sortable: true, numeric: true }]
+      : []),
+    ...(canViewFuel
+      ? [
           { key: "openAnomalyCases", label: "Casos abiertos", sortable: true, numeric: true },
           { key: "criticalOpenAnomalyCases", label: "Casos críticos", sortable: true, numeric: true, defaultVisible: false },
-          { key: "idlePct", label: "Motor en vacío", sortable: true, numeric: true },
+          { key: "idlePct", label: "Motor en vacío", sortable: true, numeric: true, defaultVisible: false },
           { key: "litersIdle", label: "Litros en vacío", sortable: true, numeric: true, defaultVisible: false },
         ]
+      : []),
+    ...(canViewWorkOrders
+      ? [{ key: "workshopHours", label: "Horas en taller", sortable: true, numeric: true, defaultVisible: false }]
       : []),
     ...(canViewMaintenance
       ? [{ key: "gpsMaintenanceState", label: "Estimación GPS", sortable: false, defaultVisible: false }]
@@ -98,37 +113,31 @@ const COLUMNS = (canViewCosts: boolean, canViewInspections: boolean, canViewFuel
       ? [
           { key: "inspectionCount", label: "Inspecciones", sortable: true, numeric: true, defaultVisible: false },
           { key: "inspectionCompliancePercent", label: "Cumplimiento inspecciones", sortable: true, numeric: true, defaultVisible: false },
-          { key: "openFindings", label: "Hallazgos abiertos", sortable: true, numeric: true },
-          { key: "openFindingsWithWorkOrder", label: "Hallazgos con OT", sortable: true, numeric: true },
+          { key: "openFindings", label: "Hallazgos abiertos", sortable: true, numeric: true, defaultVisible: false },
+          { key: "openFindingsWithWorkOrder", label: "Hallazgos con OT", sortable: true, numeric: true, defaultVisible: false },
           { key: "openFindingsWithoutWorkOrder", label: "Hallazgos sin OT", sortable: true, numeric: true, defaultVisible: false },
         ]
       : []),
     ...(showCapa
-      ? [{ key: "overdueCapa", label: "CAPA vencidas", sortable: true, numeric: true }]
-      : []),
-    ...(canViewWorkOrders
-      ? [
-          { key: "openWorkOrders", label: "OT abiertas", sortable: true, numeric: true },
-          { key: "workshopHours", label: "Horas en taller", sortable: true, numeric: true, defaultVisible: false },
-        ]
+      ? [{ key: "overdueCapa", label: "CAPA vencidas", sortable: true, numeric: true, defaultVisible: false }]
       : []),
     ...(showFuelCost
-      ? [{ key: "fuelBilledAmount", label: "Costo combustible (proveedor)", sortable: true, numeric: true }]
+      ? [{ key: "fuelBilledAmount", label: "Costo combustible (proveedor)", sortable: true, numeric: true, defaultVisible: false }]
       : []),
     // Mano de obra y taller externo que jefatura carga en la OT cerrada. Los
     // repuestos y servicios comprados por OC van en su propia columna.
     ...(canViewWorkOrders
-      ? [{ key: "maintenanceCost", label: "Mano de obra / taller (OT)", sortable: true, numeric: true }]
+      ? [{ key: "maintenanceCost", label: "Mano de obra / taller (OT)", sortable: true, numeric: true, defaultVisible: false }]
       : []),
     ...(canViewPurchaseCosts
-      ? [{ key: "purchaseAmount", label: "Repuestos y servicios (OC)", sortable: true, numeric: true }]
+      ? [{ key: "purchaseAmount", label: "Repuestos y servicios (OC)", sortable: true, numeric: true, defaultVisible: false }]
       : []),
     ...(showFuelCost && canViewPurchaseCosts && canViewWorkOrders
-      ? [{ key: "gpsCostPerUnit", label: "Costo por km/h (GPS)", sortable: false, numeric: true, defaultVisible: false }]
+      ? [{ key: "gpsCostPerUnit", label: "Costo por km u hora (GPS)", sortable: false, numeric: true, defaultVisible: false }]
       : []),
     // El total suma las tres series; con una sola ausente no se publica.
     ...(canViewWorkOrders && showFuelCost && canViewPurchaseCosts
-      ? [{ key: "totalCost", label: "Costo total", sortable: true, numeric: true }]
+      ? [{ key: "totalCost", label: "Costo total", sortable: true, numeric: true, defaultVisible: false }]
       : []),
     // Las acciones no se ocultan: sin «Ver»/«Combustible» la fila no tiene
     // salida y el menú «Columnas» mostraba el id crudo `_action`.
@@ -138,8 +147,9 @@ const COLUMNS = (canViewCosts: boolean, canViewInspections: boolean, canViewFuel
 
 const SEARCH_KEYS = ["code", "name", "worksiteName", "operationalStatusLabel"] as const
 
+/** El panel sólo lista vehículos (los instrumentos de servicio se cuentan aparte, bajo la tabla). */
 function assetHref(asset: OperationalAsset): string {
-  return asset.kind === "vehicle" ? `/flota/${asset.id}` : `/admin/equipos/${asset.id}`
+  return `/flota/${asset.id}`
 }
 
 export function OperationalAssetsTable({
@@ -152,6 +162,7 @@ export function OperationalAssetsTable({
   canViewWorkOrders = false,
   canViewPurchaseCosts = false,
   canViewMaintenance = false,
+  showMeterMismatch = false,
 }: {
   assets: OperationalAsset[]
   canViewCosts: boolean
@@ -164,188 +175,38 @@ export function OperationalAssetsTable({
   canViewPurchaseCosts?: boolean
   /** Lecturas y pautas de mantención: habilita «Estimación GPS». */
   canViewMaintenance?: boolean
+  /** La revisión «medidor-gps» lista sólo vehículos con discrepancia: su columna es el motivo y arranca visible. */
+  showMeterMismatch?: boolean
 }) {
   const showFuelCost = canViewFuel && canViewCosts
   const showTotalCost = canViewWorkOrders && showFuelCost && canViewPurchaseCosts
   const showCapa = canViewCapa && canViewInspections
 
+  /**
+   * Tarjeta móvil: la identidad, el estado y seis datos, no los veinte de la
+   * tabla (llegaba a ~25 líneas por vehículo). El resto está en la ficha.
+   */
   const renderMobileCard = (asset: OperationalAsset) => (
-    <article className="rounded-2xl border border-[var(--color-border)] bg-white p-4">
-      <div className="flex justify-between gap-3">
-        <div>
-          <p className="font-mono text-sm font-semibold">{asset.code}</p>
-          <p className="text-sm text-[var(--color-text-muted)]">{asset.name}</p>
-        </div>
-        <MetaBadge meta={{ label: asset.operationalStatusLabel, variant: statusVariant(asset.operationalStatusLabel) }} />
+    <article className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+      <div className="flex items-start justify-between gap-3">
+        <VehicleIdentity code={asset.code} plate={asset.plate} type={asset.typeName} />
+        <StateBadge entity="fleet" state={asset.operationalStatus} />
       </div>
-      <dl className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs">
-        {canViewFleet && asset.kind === "vehicle" && (
-          <>
-            <div>
-              <dt className="text-[var(--color-text-subtle)]">Próximo vencimiento</dt>
-              <dd>
-                {asset.nextExpiryDate ? formatDate(asset.nextExpiryDate) : "—"}
-                {asset.expiredDocumentTypes.length > 0 && ` · ${asset.expiredDocumentTypes.join(", ")}`}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-[var(--color-text-subtle)]">Última telemetría</dt>
-              <dd>{asset.gpsReportedAt ? formatDateTime(asset.gpsReportedAt) : "—"}</dd>
-            </div>
-            <div>
-              <dt className="text-[var(--color-text-subtle)]">Fuente GPS</dt>
-              <dd className="flex flex-wrap items-center gap-1">
-                {formatGpsSource(asset)}
-                {asset.gpsStale && asset.gpsReportedAt ? <MetaBadge meta={{ label: "Sin reporte", variant: "warning" }} /> : null}
-              </dd>
-            </div>
-            {canViewMaintenance && (
-              <div>
-                <dt className="text-[var(--color-text-subtle)]">Estimación GPS</dt>
-                <dd>{formatGpsMaintenance(asset) ?? "—"}</dd>
-              </div>
-            )}
-            <div>
-              <dt className="text-[var(--color-text-subtle)]">Odómetro GPS</dt>
-              <dd>{asset.gpsOdometer != null ? `${asset.gpsOdometer.toLocaleString("es-CL")} km` : "—"}</dd>
-            </div>
-            <div>
-              <dt className="text-[var(--color-text-subtle)]">Horómetro GPS</dt>
-              <dd>{asset.gpsHourMeter != null ? `${asset.gpsHourMeter.toLocaleString("es-CL")} h` : "—"}</dd>
-            </div>
-            {asset.gpsFuelLevel != null && (
-              <div>
-                <dt className="text-[var(--color-text-subtle)]">Nivel estanque GPS</dt>
-                <dd>{asset.gpsFuelLevel.toLocaleString("es-CL")} %</dd>
-              </div>
-            )}
-            {asset.meterMismatch && (
-              <div className="sm:col-span-2">
-                <dt className="text-[var(--color-text-subtle)]">Lectura GPS vs carga</dt>
-                <dd className="flex flex-wrap items-center gap-1">
-                  <MetaBadge meta={{ label: "Revisar", variant: "signal" }} />
-                  La telemetría y la última carga difieren más de la tolerancia.
-                </dd>
-              </div>
-            )}
-          </>
-        )}
-        {canViewFuel && asset.kind === "vehicle" && (
-          <>
-            <div>
-              <dt className="text-[var(--color-text-subtle)]">Litros del período</dt>
-              <dd>{asset.fuelLiters == null ? "—" : `${asset.fuelLiters.toLocaleString("es-CL", { maximumFractionDigits: 1 })} L`}</dd>
-            </div>
-            <div>
-              <dt className="text-[var(--color-text-subtle)]">Rendimiento promedio</dt>
-              <dd>{formatPerformance(asset) ?? "—"}</dd>
-            </div>
-            <div>
-              <dt className="text-[var(--color-text-subtle)]">Rendimiento GPS</dt>
-              <dd>{formatGpsPerformance(asset) ?? "—"}</dd>
-            </div>
-            {showFuelCost && canViewPurchaseCosts && (
-              <div>
-                <dt className="text-[var(--color-text-subtle)]">Costo por km/h (GPS)</dt>
-                <dd>{formatGpsCost(asset) ?? "—"}</dd>
-              </div>
-            )}
-            <div>
-              <dt className="text-[var(--color-text-subtle)]">Cargas marcadas (período)</dt>
-              <dd>{asset.flaggedLoads == null ? "—" : asset.flaggedLoads}</dd>
-            </div>
-            <div>
-              <dt className="text-[var(--color-text-subtle)]">Casos abiertos</dt>
-              <dd>
-                {asset.openAnomalyCases == null
-                  ? "—"
-                  : `${asset.openAnomalyCases}${(asset.criticalOpenAnomalyCases ?? 0) > 0 ? ` · ${asset.criticalOpenAnomalyCases} críticos` : ""}`}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-[var(--color-text-subtle)]">Motor en vacío</dt>
-              <dd>
-                {asset.idlePct == null
-                  ? "—"
-                  : `${asset.idlePct.toLocaleString("es-CL", { maximumFractionDigits: 1 })}%`}
-                {asset.litersIdle != null && ` · ${asset.litersIdle.toLocaleString("es-CL", { maximumFractionDigits: 1 })} L`}
-                {asset.idleHours != null && asset.idleHours > 0 && ` · ${asset.idleHours.toLocaleString("es-CL", { maximumFractionDigits: 1 })} h`}
-              </dd>
-            </div>
-          </>
-        )}
-        {/* Costos: cada serie con la capacidad de su dominio, no con la de combustible
-            (una persona con compras u OT pero sin combustible también los ve). */}
-        {asset.kind === "vehicle" && (
-          <>
-            {showFuelCost && (
-              <div>
-                <dt className="text-[var(--color-text-subtle)]">Costo combustible (proveedor)</dt>
-                <dd>{asset.fuelBilledAmount == null ? "—" : formatCLP(asset.fuelBilledAmount)}</dd>
-              </div>
-            )}
-            {canViewWorkOrders && (
-              <div>
-                <dt className="text-[var(--color-text-subtle)]">Mano de obra / taller (OT)</dt>
-                <dd>{asset.maintenanceCost == null ? "—" : formatCLP(asset.maintenanceCost)}</dd>
-              </div>
-            )}
-            {canViewPurchaseCosts && (
-              <div>
-                <dt className="text-[var(--color-text-subtle)]">Repuestos y servicios (OC)</dt>
-                <dd>{asset.purchaseAmount == null ? "—" : formatCLP(asset.purchaseAmount)}</dd>
-              </div>
-            )}
-            {showTotalCost && (
-              <div>
-                <dt className="text-[var(--color-text-subtle)]">Costo total</dt>
-                <dd>{asset.totalCost == null ? "—" : formatCLP(asset.totalCost)}</dd>
-              </div>
-            )}
-          </>
-        )}
-        {canViewInspections && asset.kind === "vehicle" && (
-          <>
-            <div>
-              <dt className="text-[var(--color-text-subtle)]">Inspecciones</dt>
-              <dd>{asset.inspectionCount}</dd>
-            </div>
-            <div>
-              <dt className="text-[var(--color-text-subtle)]">Cumplimiento inspecciones</dt>
-              <dd>
-                {asset.inspectionCompliancePercent == null
-                  ? "—"
-                  : `${asset.inspectionCompliancePercent.toLocaleString("es-CL", { maximumFractionDigits: 1 })}%`}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-[var(--color-text-subtle)]">Hallazgos abiertos</dt>
-              <dd>
-                {asset.openFindings == null ? "—" : (
-                  <>
-                    {asset.openFindings}
-                    {(asset.criticalOpenFindings ?? 0) > 0 && ` · ${asset.criticalOpenFindings} críticos`}
-                  </>
-                )}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-[var(--color-text-subtle)]">Hallazgos con OT</dt>
-              <dd>
-                {asset.openFindingsWithWorkOrder == null
-                  ? "—"
-                  : `${asset.openFindingsWithWorkOrder} con OT · ${asset.openFindingsWithoutWorkOrder ?? 0} sin OT`}
-              </dd>
-            </div>
-          </>
-        )}
-        {showCapa && asset.kind === "vehicle" && (
+      <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+        <div>
+          <dt className="text-[var(--color-text-subtle)]">Faena</dt>
+          <dd>{asset.worksiteName}</dd>
+        </div>
+        {canViewFleet && (
           <div>
-            <dt className="text-[var(--color-text-subtle)]">CAPA vencidas</dt>
-            <dd>{asset.overdueCapa == null ? "—" : asset.overdueCapa}</dd>
+            <dt className="text-[var(--color-text-subtle)]">Próximo vencimiento</dt>
+            <dd className="flex flex-wrap items-center gap-1">
+              {asset.nextExpiryDate ? formatDate(asset.nextExpiryDate) : "—"}
+              {asset.expiredDocumentTypes.length > 0 && <Badge variant="danger" size="sm">Vencido</Badge>}
+            </dd>
           </div>
         )}
-        {canViewWorkOrders && asset.kind === "vehicle" && (
+        {canViewWorkOrders && (
           <div>
             <dt className="text-[var(--color-text-subtle)]">OT abiertas</dt>
             <dd>
@@ -354,15 +215,34 @@ export function OperationalAssetsTable({
             </dd>
           </div>
         )}
+        {canViewFuel && (
+          <>
+            <div>
+              <dt className="text-[var(--color-text-subtle)]">Casos abiertos</dt>
+              <dd className="flex flex-wrap items-center gap-1">
+                {asset.openAnomalyCases == null ? "—" : asset.openAnomalyCases}
+                <CriticalBadge count={asset.criticalOpenAnomalyCases} />
+              </dd>
+            </div>
+            <div>
+              <dt className="text-[var(--color-text-subtle)]">Litros del período</dt>
+              <dd>{formatLiters(asset) == null ? "—" : `${formatLiters(asset)} L`}</dd>
+            </div>
+            <div>
+              <dt className="text-[var(--color-text-subtle)]">Rendimiento promedio</dt>
+              <dd>{formatPerformance(asset) ?? "—"}</dd>
+            </div>
+          </>
+        )}
       </dl>
       <div className="mt-3 flex gap-2">
-        {canViewFuel && asset.kind === "vehicle" && (
+        {canViewFuel && (
           <Button asChild size="sm" variant="ghost" className="flex-1">
-            <Link href={fuelEquipmentHref(asset.id)}>Combustible</Link>
+            <Link href={fuelEquipmentHref(asset.id)} aria-label={`Combustible de ${asset.code}`}>Combustible</Link>
           </Button>
         )}
         <Button asChild size="sm" variant="ghost" className="flex-1">
-          <Link href={assetHref(asset)}>Ver ficha</Link>
+          <Link href={assetHref(asset)} aria-label={`Ver ficha de ${asset.code}`}>Ver ficha</Link>
         </Button>
       </div>
     </article>
@@ -370,21 +250,17 @@ export function OperationalAssetsTable({
 
   const renderRow = (asset: OperationalAsset) => (
     <TableRow key={asset.key}>
-      <TableCell className="font-mono">{asset.code}</TableCell>
       <TableCell>
-        {asset.name}
-        <span className="block text-xs text-[var(--color-text-subtle)]">
-          {asset.kind === "vehicle" ? "Vehículo / equipo móvil" : "Instrumento de servicio"}
-        </span>
+        <VehicleIdentity code={asset.code} plate={asset.plate} type={asset.typeName} href={assetHref(asset)} />
       </TableCell>
       <TableCell>{asset.worksiteName}</TableCell>
       <TableCell>
-        <MetaBadge meta={{ label: asset.operationalStatusLabel, variant: statusVariant(asset.operationalStatusLabel) }} />
+        <StateBadge entity="fleet" state={asset.operationalStatus} />
       </TableCell>
       {canViewFleet && (
         <>
           <TableCell>
-            {asset.kind === "service_equipment" || !asset.nextExpiryDate ? "—" : (
+            {!asset.nextExpiryDate ? "—" : (
               <span className="flex flex-wrap items-center gap-1">
                 <span className="font-mono text-xs">{formatDate(asset.nextExpiryDate)}</span>
                 {asset.expiredDocumentTypes.length > 0 && (
@@ -406,150 +282,121 @@ export function OperationalAssetsTable({
       )}
       {canViewFuel && (
         <>
+          <TableCell className="text-right font-mono">{formatGpsPerformance(asset) ?? "—"}</TableCell>
+          <TableCell className="text-right font-mono">{formatLiters(asset) ?? "—"}</TableCell>
+          <TableCell className="text-right font-mono">{asset.fuelLoadCount ?? "—"}</TableCell>
           <TableCell className="text-right font-mono">
-            {asset.kind === "service_equipment" ? "—" : (formatGpsPerformance(asset) ?? "—")}
+            {asset.lastFuelLoadAt == null ? "—" : formatDateTime(asset.lastFuelLoadAt)}
           </TableCell>
+          <TableCell className="text-right font-mono">{formatPerformance(asset) ?? "—"}</TableCell>
+          <TableCell className="text-right font-mono">{asset.flaggedLoads ?? "—"}</TableCell>
+        </>
+      )}
+      {canViewWorkOrders && (
+        <TableCell className="text-right font-mono">
+          {asset.openWorkOrders == null ? "—" : (
+            <>
+              {asset.openWorkOrders}
+              {asset.inWorkshop && (
+                <span className="ml-1 font-sans text-xs text-[var(--color-warning-ink)]">en taller</span>
+              )}
+            </>
+          )}
+        </TableCell>
+      )}
+      {canViewFuel && (
+        <>
           <TableCell className="text-right font-mono">
-            {asset.kind === "service_equipment" || asset.fuelLiters == null
-              ? "—"
-              : asset.fuelLiters.toLocaleString("es-CL", { maximumFractionDigits: 1 })}
+            {asset.openAnomalyCases == null ? (
+              "—"
+            ) : (
+              <span className="inline-flex items-center justify-end gap-1.5">
+                {asset.openAnomalyCases}
+                <CriticalBadge count={asset.criticalOpenAnomalyCases} />
+              </span>
+            )}
           </TableCell>
+          <TableCell className="text-right font-mono">{asset.criticalOpenAnomalyCases ?? "—"}</TableCell>
           <TableCell className="text-right font-mono">
-            {asset.kind === "service_equipment" || asset.fuelLoadCount == null ? "—" : asset.fuelLoadCount}
-          </TableCell>
-          <TableCell className="text-right font-mono">
-            {asset.kind === "service_equipment" || asset.lastFuelLoadAt == null ? "—" : formatDateTime(asset.lastFuelLoadAt)}
-          </TableCell>
-          <TableCell className="text-right font-mono">
-            {asset.kind === "service_equipment" ? "—" : (formatPerformance(asset) ?? "—")}
-          </TableCell>
-          <TableCell className="text-right font-mono">
-            {asset.kind === "service_equipment" || asset.flaggedLoads == null ? "—" : asset.flaggedLoads}
-          </TableCell>
-          <TableCell className="text-right font-mono">
-            {asset.kind === "service_equipment" || asset.openAnomalyCases == null ? "—" : asset.openAnomalyCases}
-          </TableCell>
-          <TableCell className="text-right font-mono">
-            {asset.kind === "service_equipment" || asset.criticalOpenAnomalyCases == null
-              ? "—"
-              : asset.criticalOpenAnomalyCases}
-          </TableCell>
-          <TableCell className="text-right font-mono">
-            {asset.kind === "service_equipment" || asset.idlePct == null
+            {asset.idlePct == null
               ? "—"
               : `${asset.idlePct.toLocaleString("es-CL", { maximumFractionDigits: 1 })}%`}
           </TableCell>
           <TableCell className="text-right font-mono">
-            {asset.kind === "service_equipment" || asset.litersIdle == null
+            {asset.litersIdle == null
               ? "—"
               : asset.litersIdle.toLocaleString("es-CL", { maximumFractionDigits: 1 })}
           </TableCell>
         </>
       )}
-      {canViewMaintenance && (
-        <TableCell className="text-xs">
-          {asset.kind === "vehicle" ? (formatGpsMaintenance(asset) ?? "—") : "—"}
+      {canViewWorkOrders && (
+        <TableCell className="text-right font-mono">
+          {asset.workshopHours == null
+            ? "—"
+            : asset.workshopHours.toLocaleString("es-CL", { maximumFractionDigits: 1 })}
         </TableCell>
+      )}
+      {canViewMaintenance && (
+        <TableCell className="text-xs">{formatGpsMaintenance(asset) ?? "—"}</TableCell>
       )}
       {canViewInspections && (
         <>
-          <TableCell className="text-right font-mono">
-            {asset.kind === "service_equipment" ? "—" : asset.inspectionCount}
-          </TableCell>
+          <TableCell className="text-right font-mono">{asset.inspectionCount}</TableCell>
           <TableCell
             className="text-right font-mono"
-            title={asset.kind === "service_equipment"
-              ? undefined
-              : `${asset.inspectionNonConforming ?? 0} no conformes · ${asset.inspectionPartial ?? 0} parciales en el período`}
+            title={`${asset.inspectionNonConforming ?? 0} no conformes · ${asset.inspectionPartial ?? 0} parciales en el período`}
           >
-            {asset.kind === "service_equipment" || asset.inspectionCompliancePercent == null
+            {asset.inspectionCompliancePercent == null
               ? "—"
               : `${asset.inspectionCompliancePercent.toLocaleString("es-CL", { maximumFractionDigits: 1 })}%`}
           </TableCell>
           <TableCell className="text-right font-mono">
-            {asset.kind === "service_equipment" || asset.openFindings == null ? "—" : (
-              <>
+            {asset.openFindings == null ? "—" : (
+              <span className="inline-flex items-center justify-end gap-1.5">
                 {asset.openFindings}
-                {(asset.criticalOpenFindings ?? 0) > 0 && (
-                  <span className="ml-1 text-[var(--color-danger-ink)]" title={`${asset.criticalOpenFindings} críticos`}>
-                    · {asset.criticalOpenFindings}
-                  </span>
-                )}
-              </>
+                <CriticalBadge count={asset.criticalOpenFindings} />
+              </span>
             )}
           </TableCell>
-          <TableCell className="text-right font-mono">
-            {asset.kind === "service_equipment" || asset.openFindingsWithWorkOrder == null
-              ? "—"
-              : asset.openFindingsWithWorkOrder}
-          </TableCell>
-          <TableCell className="text-right font-mono">
-            {asset.kind === "service_equipment" || asset.openFindingsWithoutWorkOrder == null
-              ? "—"
-              : asset.openFindingsWithoutWorkOrder}
-          </TableCell>
+          <TableCell className="text-right font-mono">{asset.openFindingsWithWorkOrder ?? "—"}</TableCell>
+          <TableCell className="text-right font-mono">{asset.openFindingsWithoutWorkOrder ?? "—"}</TableCell>
         </>
       )}
       {showCapa && (
-        <TableCell className="text-right font-mono">
-          {asset.kind === "service_equipment" || asset.overdueCapa == null ? "—" : asset.overdueCapa}
-        </TableCell>
-      )}
-      {canViewWorkOrders && (
-        <>
-          <TableCell className="text-right font-mono">
-            {asset.kind === "service_equipment" || asset.openWorkOrders == null ? "—" : (
-              <>
-                {asset.openWorkOrders}
-                {asset.inWorkshop && (
-                  <span className="ml-1 font-sans text-xs text-[var(--color-warning-ink)]">en taller</span>
-                )}
-              </>
-            )}
-          </TableCell>
-          <TableCell className="text-right font-mono">
-            {asset.kind === "service_equipment" || asset.workshopHours == null
-              ? "—"
-              : asset.workshopHours.toLocaleString("es-CL", { maximumFractionDigits: 1 })}
-          </TableCell>
-        </>
+        <TableCell className="text-right font-mono">{asset.overdueCapa ?? "—"}</TableCell>
       )}
       {showFuelCost && (
         <TableCell className="text-right font-mono">
-          {asset.kind === "service_equipment" || asset.fuelBilledAmount == null
-            ? "—"
-            : formatCLP(asset.fuelBilledAmount)}
+          {asset.fuelBilledAmount == null ? "—" : formatCLP(asset.fuelBilledAmount)}
         </TableCell>
       )}
       {canViewWorkOrders && (
         <TableCell className="text-right font-mono">
-          {asset.kind === "service_equipment" || asset.maintenanceCost == null ? "—" : formatCLP(asset.maintenanceCost)}
+          {asset.maintenanceCost == null ? "—" : formatCLP(asset.maintenanceCost)}
         </TableCell>
       )}
       {canViewPurchaseCosts && (
         <TableCell className="text-right font-mono">
-          {asset.kind === "service_equipment" || asset.purchaseAmount == null ? "—" : formatCLP(asset.purchaseAmount)}
+          {asset.purchaseAmount == null ? "—" : formatCLP(asset.purchaseAmount)}
         </TableCell>
       )}
-      {showFuelCost && canViewPurchaseCosts && (
-        <TableCell className="text-right font-mono">
-          {asset.kind === "service_equipment" ? "—" : (formatGpsCost(asset) ?? "—")}
-        </TableCell>
+      {showFuelCost && canViewPurchaseCosts && canViewWorkOrders && (
+        <TableCell className="text-right font-mono">{formatGpsCost(asset) ?? "—"}</TableCell>
       )}
       {showTotalCost && (
         <TableCell className="text-right font-mono">
-          {asset.kind === "service_equipment" || asset.totalCost == null ? "—" : formatCLP(asset.totalCost)}
+          {asset.totalCost == null ? "—" : formatCLP(asset.totalCost)}
         </TableCell>
       )}
       <TableCell className="text-right">
         <div className="flex justify-end gap-1">
-          {canViewFuel && asset.kind === "vehicle" && (
+          {canViewFuel && (
             <Button asChild size="sm" variant="ghost">
-              <Link href={fuelEquipmentHref(asset.id)}>Combustible</Link>
+              <Link href={fuelEquipmentHref(asset.id)} aria-label={`Combustible de ${asset.code}`}>Combustible</Link>
             </Button>
           )}
           <Button asChild size="sm" variant="ghost">
-            <Link href={assetHref(asset)}>Ver</Link>
+            <Link href={assetHref(asset)} aria-label={`Ver ficha de ${asset.code}`}>Ver</Link>
           </Button>
         </div>
       </TableCell>
@@ -559,10 +406,13 @@ export function OperationalAssetsTable({
   return (
     <DataTable
       caption="Activos operacionales"
-      columns={COLUMNS(canViewCosts, canViewInspections, canViewFuel, canViewCapa, canViewFleet, canViewWorkOrders, canViewPurchaseCosts, canViewMaintenance)}
+      columns={COLUMNS(showMeterMismatch, canViewCosts, canViewInspections, canViewFuel, canViewCapa, canViewFleet, canViewWorkOrders, canViewPurchaseCosts, canViewMaintenance)}
       rows={assets}
       enableColumnToggle
       stickyFirstColumn
+      // La `Card` de la página ya es la superficie: la tabla no lleva marco propio
+      // (dos marcos concéntricos del mismo radio; auditoría 2026-11-13, §8).
+      framed={false}
       viewKey="control-operacional-activos"
       // M-06: el `searchKeys` apunta a la etiqueta humana del estado
       // (`operationalStatusLabel`) para que la búsqueda del TopBar encuentre
@@ -571,8 +421,8 @@ export function OperationalAssetsTable({
       // español. El matcher del DataTable sigue siendo `toLowerCase` literal.
       searchKeys={SEARCH_KEYS as unknown as (keyof OperationalAsset)[]}
       pageSize={25}
-      emptyTitle="No hay activos visibles"
-      emptyDescription="El alcance de faena y los permisos determinan qué activos aparecen."
+      emptyTitle="No hay vehículos visibles"
+      emptyDescription="El alcance de faena y los permisos determinan qué vehículos aparecen."
       renderMobileCard={renderMobileCard}
       renderRow={renderRow}
     />

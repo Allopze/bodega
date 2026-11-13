@@ -18,8 +18,25 @@ function keys(stats: ReturnType<typeof buildPerformanceStats>) {
 }
 
 describe("buildPerformanceStats", () => {
-  it("muestra disponibilidad y cobertura de estado con flota:view", () => {
-    expect(keys(buildPerformanceStats(METRICS, ALL))).toEqual(["availability", "state-coverage"])
+  it("muestra sólo la disponibilidad con flota:view (la cobertura va en su aviso, no en una cifra aparte)", () => {
+    expect(keys(buildPerformanceStats(METRICS, ALL))).toEqual(["availability"])
+  })
+
+  it("la tira es de tres cifras como máximo y no repite licencias ni canales de combustible", () => {
+    const stats = keys(buildPerformanceStats({ ...METRICS, workshopHours: 10, mttrHours: 5 }, { canViewFleet: true, canViewWorkOrders: true }))
+    expect(stats).toEqual(["availability", "workshop-hours", "mttr"])
+    expect(stats).not.toContain("driver-licenses")
+    expect(stats).not.toContain("tae-tct-coverage")
+  })
+
+  it("avisa un historial incompleto junto a la disponibilidad, sin pintar la cobertura como cifra", () => {
+    const at = (stateCoveragePercent: number | null) =>
+      buildPerformanceStats({ ...METRICS, availabilityPercent: 95, stateCoveragePercent }, ALL).find((s) => s.key === "availability")!
+    expect(at(98)).not.toHaveProperty("hint")
+    expect(at(null)).not.toHaveProperty("hint")
+    expect(at(60)).toMatchObject({ hint: "historial al 60%" })
+    expect(buildPerformanceStats({ ...METRICS, availabilityPercent: 85, stateCoveragePercent: 60 }, ALL)[0])
+      .toMatchObject({ tone: "signal", hint: "Bajo 90% · historial al 60%" })
   })
 
   it("la disponibilidad es de Flota: sin flota:view no aparece", () => {
@@ -33,19 +50,20 @@ describe("buildPerformanceStats", () => {
     }
   })
 
-  it("las cifras de OT (horas en taller y MTTR) sólo se pintan con la capacidad de OT, sin depender de flota", () => {
+  it("las cifras de OT (horas en taller y tiempo de reparación) sólo se pintan con la capacidad de OT, sin depender de flota", () => {
     const withMetrics = { ...METRICS, workshopHours: 120.4, mttrHours: 36.25 }
     expect(keys(buildPerformanceStats(withMetrics, ALL))).not.toContain("workshop-hours")
     expect(keys(buildPerformanceStats(withMetrics, { canViewFleet: true, canViewWorkOrders: true })))
-      .toEqual(["availability", "state-coverage", "workshop-hours", "mttr"])
+      .toEqual(["availability", "workshop-hours", "mttr"])
     expect(keys(buildPerformanceStats(withMetrics, { canViewFleet: false, canViewWorkOrders: true })))
       .toEqual(["workshop-hours", "mttr"])
   })
 
-  it("formatea horas en taller y MTTR; 0 h es un dato y el MTTR sin reparaciones cerradas es «Sin datos»", () => {
+  it("formatea horas en taller y tiempo de reparación; 0 h es un dato y el MTTR sin reparaciones cerradas es «Sin datos»", () => {
     const stats = buildPerformanceStats({ ...METRICS, workshopHours: 0, mttrHours: null }, { canViewFleet: false, canViewWorkOrders: true })
     expect(stats.find((s) => s.key === "workshop-hours")).toMatchObject({ value: "0 h", valueKind: "number" })
     expect(stats.find((s) => s.key === "mttr")).toMatchObject({
+      label: "Tiempo de reparación",
       value: "Sin datos",
       valueKind: "text",
       secondary: "Sin reparaciones cerradas en el período",
@@ -60,69 +78,14 @@ describe("buildPerformanceStats", () => {
     expect(stats.find((s) => s.key === "workshop-hours")).toMatchObject({ value: "Sin datos", secondary: "No se pudo calcular" })
   })
 
-  it("cruza las licencias de conducir sin depender de flota:view", () => {
-    const stats = buildPerformanceStats(METRICS, {
-      canViewFleet: false,
-      licenseAttention: { total: 12, expired: 2, expiringSoon: 3, warningDays: 30 },
-    })
-    expect(stats.find((s) => s.key === "driver-licenses")).toMatchObject({
-      label: "Licencias por regularizar",
-      value: 2,
-      valueKind: "number",
-      secondary: "3 por vencer en 30 días",
-      tone: "danger",
-      href: "/flota/conductores",
-    })
-    const ok = buildPerformanceStats(METRICS, {
-      canViewFleet: false,
-      licenseAttention: { total: 12, expired: 0, expiringSoon: 0, warningDays: 30 },
-    })
-    expect(ok.find((s) => s.key === "driver-licenses")).toMatchObject({
-      value: "Al día",
-      valueKind: "text",
-      secondary: "Nada por vencer en 30 días",
-    })
-    const empty = buildPerformanceStats(METRICS, {
-      canViewFleet: false,
-      licenseAttention: { total: 0, expired: 0, expiringSoon: 0, warningDays: 30 },
-    })
-    expect(empty.find((s) => s.key === "driver-licenses")).toMatchObject({
-      value: "Sin datos",
-      valueKind: "text",
-      secondary: "No hay trabajadores con licencia en el alcance",
-    })
-  })
-
-  it("cruza la cobertura TAE/TCT del período", () => {
-    const stats = buildPerformanceStats(METRICS, {
-      canViewFleet: false,
-      taeCoverage: { bothChannels: 8, taeOnly: 2, tctOnly: 1 },
-    })
-    expect(stats.find((s) => s.key === "tae-tct-coverage")).toMatchObject({
-      label: "Equipos con un solo canal",
-      value: 3,
-      valueKind: "number",
-      secondary: "2 sólo TAE · 1 sólo TCT · 8 con ambos",
-      tone: "signal",
-      href: "/combustibles/cuadratura/tarjeta-y-terreno",
-    })
-    const noData = buildPerformanceStats(METRICS, {
-      canViewFleet: false,
-      taeCoverage: { bothChannels: 0, taeOnly: 0, tctOnly: 0 },
-    })
-    expect(noData.find((s) => s.key === "tae-tct-coverage")).toBeUndefined()
-  })
-
   it("sin datos pinta «Sin datos» como texto, no 0", () => {
     const stats = buildPerformanceStats(
       { availabilityPercent: null, stateCoveragePercent: null },
       ALL,
     )
-    for (const key of ["availability", "state-coverage"]) {
-      const stat = stats.find((s) => s.key === key)!
-      expect(stat.value).toBe("Sin datos")
-      expect(stat.valueKind).toBe("text")
-    }
+    const stat = stats.find((s) => s.key === "availability")!
+    expect(stat.value).toBe("Sin datos")
+    expect(stat.valueKind).toBe("text")
   })
 
   it("marca bajo 90% con el umbral escrito, y más bajo todavía con el umbral crítico", () => {
@@ -187,7 +150,17 @@ describe("buildPerformanceGlossary", () => {
     }
   })
 
-  it("define horas en taller y MTTR sólo con la capacidad de OT", () => {
+  it("no filtra jerga de implementación: ni columnas, ni rutas, ni siglas en inglés, ni sumatorias", () => {
+    const all = buildPerformanceGlossary({
+      canViewFleet: true, canViewInspections: true, canViewCapa: true, canViewFuel: true, canViewCosts: true,
+      canViewWorkOrders: true, canViewPurchaseCosts: true, canViewTaeCoverage: true, canViewMaintenance: true,
+    })
+    const text = all.map((e) => `${e.term} ${e.definition}`).join("\n")
+    expect(text).not.toMatch(/inspection_finding_id|\/flota\/|mean time|MTTR|Σ|TAE|TCT/)
+    expect(all.find((e) => e.key === "mttr")!.term).toBe("Tiempo medio de reparación")
+  })
+
+  it("define horas en taller y tiempo de reparación sólo con la capacidad de OT", () => {
     expect(buildPerformanceGlossary(ALL).map((e) => e.key)).not.toContain("mttr")
     const entries = buildPerformanceGlossary({ canViewFleet: false, canViewWorkOrders: true })
     expect(entries.map((e) => e.key)).toEqual(["ot-maintenance-cost", "workshop-hours", "mttr"])
