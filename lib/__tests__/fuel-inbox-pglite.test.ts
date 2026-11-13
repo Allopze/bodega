@@ -423,19 +423,24 @@ describe("bandeja Por revisar", () => {
       // Una sesión de la faena B no ve lo de la A, por más que se lo pida: el alcance sale de la sesión.
       const inB = await getFuelInboxPendingForSession(scopedSession(["ws-b"]))
       expect(inB).toEqual({ carga: 1, caso: 1, patente: 1, pedido: 1 })
-      // El tile entrega la cifra como número (la formatea KpiCard) y la marca
-      // como cifra; «Al día» va como texto (más abajo).
+      // El tile entrega la cifra como número (la formatea KpiCard) y la marca como cifra; «Al día» va como texto
+      // (más abajo). La cifra es lo que se resuelve ahora (cargas, patentes y pedidos): los casos van en el detalle,
+      // como «en seguimiento», para que un histórico enorme no tape las cargas del mes.
       expect(fuelReviewTile(inB)).toMatchObject({
-        value: 4,
+        value: 3,
         valueKind: "number",
-        detail: "1 carga por decidir · 1 caso · 1 patente sin vincular · 1 pedido de revisión",
+        detail: "1 carga por decidir · 1 patente sin vincular · 1 pedido de revisión · 1 caso en seguimiento",
         tone: "signal",
       })
       const sessions: Array<[Session, string[] | "all"]> = [[globalSession(), "all"], [scopedSession(["ws-a"]), ["ws-a"]], [scopedSession(["ws-b"]), ["ws-b"]]]
       for (const [session, scope] of sessions) {
-        const tile = fuelReviewTile(await getFuelInboxPendingForSession(session))
+        const counts = await getFuelInboxPendingForSession(session)
+        const tile = fuelReviewTile(counts)
+        // Lo que cuenta el tile es el total pendiente sin los casos (van en el detalle).
+        const actionable = (await countFuelInboxPending(scope)) - (counts.caso ?? 0)
         // `value` es `string | number` desde que KpiCard formatea cifras (UX-06).
-        expect(Number(String(tile.value).replace(/\./g, ""))).toBe(await countFuelInboxPending(scope))
+        if (tile.valueKind === "number") expect(Number(String(tile.value).replace(/\./g, ""))).toBe(actionable)
+        else expect(actionable).toBe(0)
       }
       // Sin ninguna faena a la vista el valor es «Al día», nunca un 0 pelado.
       expect(await getFuelInboxPendingForSession(scopedSession([]))).toEqual(NONE)
