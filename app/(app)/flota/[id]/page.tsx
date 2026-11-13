@@ -62,7 +62,7 @@ export default async function FlotaVehiclePage({
   })
   const canEditExpiries = can(session, "flota:manage_documents") && canAccessWorksite(session, vehicle.worksiteId)
   // La ficha de Mantención existe sólo si el vehículo ya fue incorporado (tiene perfil).
-  const canViewMaintenance = ["mant:records:view_worksite", "mant:records:view_all", "mant:equipment:manage"].some((permission) => can(session, permission))
+  const canViewMaintenance = can(session, "mant:records:view_worksite") || can(session, "mant:records:view_all") || can(session, "mant:equipment:manage")
   const maintenanceHref = canViewMaintenance && await hasMaintenanceProfile(vehicle.id) ? `/mantencion/equipos/${encodeURIComponent(vehicle.id)}` : null
 
   return (
