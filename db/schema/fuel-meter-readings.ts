@@ -50,7 +50,7 @@ export const fuelMeterReadings = pgTable("fuel_meter_readings", {
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
-  check("fuel_meter_readings_source_valid", sql`${table.source} IN ('copec_tct', 'gps_onway', 'gps_wialon')`),
+  check("fuel_meter_readings_source_valid", sql`${table.source} IN ('copec_tct', 'gps_onway', 'gps_wialon', 'visionlink_api')`),
   check("fuel_meter_readings_meter_type_valid", sql`${table.meterType} IN ('odometer', 'hour_meter')`),
   check("fuel_meter_readings_value_positive", sql`${table.value} >= 0`),
   check("fuel_meter_readings_liters_positive", sql`${table.liters} IS NULL OR ${table.liters} >= 0`),

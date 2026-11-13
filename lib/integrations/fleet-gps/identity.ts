@@ -18,8 +18,17 @@ export function normalizeGpsKey(value: string): string {
 /** Alias con el nombre que ya usa la reconciliación de OnWay. */
 export const normalizePlate = normalizeGpsKey
 
-/** Patentes chilenas: formato nuevo (BBBB11) y antiguo (BB1234). */
-const PLATE_PATTERN = /\b[A-Z]{4}\d{2}\b|\b[A-Z]{2}\d{4}\b/g
+/**
+ * Patentes chilenas: formato nuevo (BBBB11) y antiguo (BB1234). Se aceptan
+ * guion, punto, espacio o «·» entre los grupos porque el catálogo y los nombres
+ * de unidad las escriben así («Camión CBJY-18», «CB-JY-18», «XX·4243»): sin
+ * separadores, la patente embebida nunca calzaba.
+ */
+const SEP = "[-\\s.\u00b7]?"
+const PLATE_PATTERN = new RegExp(
+  `\\b[A-Z]{2}${SEP}[A-Z]{2}${SEP}\\d{2}\\b|\\b[A-Z]{2}${SEP}\\d{2}${SEP}\\d{2}\\b`,
+  "g",
+)
 
 /** Patentes embebidas en un nombre libre, ya normalizadas. */
 export function plateCandidatesFromText(value: string): string[] {
@@ -95,4 +104,34 @@ export function matchVehicleByIdentity(
     }
   }
   return { kind: "unmatched" }
+}
+
+export interface PlateResolvable {
+  id: string
+  plate: string
+  meterType: string
+}
+
+/**
+ * Resolver de patente → vehículo para `saveMeterReadings`.
+ *
+ * Primero la patente EXACTA del catálogo (la lectura se arma con ella); la
+ * normalizada sólo sirve de respaldo cuando es única. OnWay comparaba la
+ * patente normalizada del catálogo contra la cruda («CBJY18» vs «CBJY-18») y
+ * ninguna lectura `gps_onway` llegó a guardarse.
+ */
+export function buildVehicleResolverByPlate(
+  vehicles: readonly PlateResolvable[],
+): (plate: string) => { id: string; meterType: string } | undefined {
+  const byExact = new Map(vehicles.map((vehicle) => [vehicle.plate, vehicle]))
+  const byNormalized = new Map<string, PlateResolvable | null>()
+  for (const vehicle of vehicles) {
+    const key = normalizePlate(vehicle.plate)
+    if (!key) continue
+    byNormalized.set(key, byNormalized.has(key) ? null : vehicle)
+  }
+  return (plate) => {
+    const vehicle = byExact.get(plate) ?? byNormalized.get(normalizePlate(plate)) ?? undefined
+    return vehicle ? { id: vehicle.id, meterType: vehicle.meterType } : undefined
+  }
 }

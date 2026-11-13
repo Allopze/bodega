@@ -225,7 +225,7 @@ export async function loadFleet(options: LoadFleetOptions): Promise<FleetRow[]> 
     const maxAdvance = (unit === "km" ? maxMeterRatePerDayOf({ config: null }, "km") : maxMeterRatePerDayOf({ config: null }, "hora")) * daysSinceOfficial
     const plausible = official == null
       || (gpsValue != null && gpsValue >= official.value && gpsValue - official.value <= maxAdvance)
-    const gpsEstimateApplies = gpsIsNewer && plausible && !row.isActive && intervals.length > 0
+    const gpsEstimateApplies = gpsIsNewer && plausible && row.isActive && intervals.length > 0
     const gpsStatus = gpsEstimateApplies
       ? equipmentStatus({
           retired: false,

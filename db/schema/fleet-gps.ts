@@ -101,12 +101,24 @@ export const fleetGpsDeviceLinks = pgTable("fleet_gps_device_links", {
   id: text("id").primaryKey(),
   provider: text("provider").notNull().default("wialon"),
   externalDeviceId: text("external_device_id").notNull(),
-  vehicleId: text("vehicle_id").notNull().references(() => fuelVehicles.id, { onDelete: "cascade" }),
+  /**
+   * `linked`: el dispositivo apunta a `vehicleId`. `excluded`: una persona
+   * declaró que el dispositivo no es de la flota (equipo de terceros, unidad de
+   * prueba); el sync no lo vuelve a cruzar por patente ni por nombre y deja de
+   * contarlo como pendiente. La exclusión exige motivo y queda auditada.
+   */
+  status: text("status").notNull().default("linked"),
+  vehicleId: text("vehicle_id").references(() => fuelVehicles.id, { onDelete: "cascade" }),
+  reason: text("reason"),
   createdByUserId: text("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   check("fleet_gps_device_links_provider_valid", sql`${table.provider} IN ('onway', 'wialon')`),
+  check("fleet_gps_device_links_status_valid", sql`
+    (${table.status} = 'linked' AND ${table.vehicleId} IS NOT NULL)
+    OR (${table.status} = 'excluded' AND ${table.vehicleId} IS NULL AND ${table.reason} IS NOT NULL)
+  `),
   uniqueIndex("fleet_gps_device_links_device_unique").on(table.provider, table.externalDeviceId),
   index("fleet_gps_device_links_vehicle_idx").on(table.vehicleId),
 ])
@@ -134,6 +146,12 @@ export const fleetGpsLatestPositions = pgTable("fleet_gps_latest_positions", {
   movementState: text("movement_state"),
   odometer: numeric("odometer", { precision: 14, scale: 2, mode: "number" }),
   hourMeter: numeric("hour_meter", { precision: 14, scale: 2, mode: "number" }),
+  /**
+   * Hora del mensaje del que salieron odómetro, horómetro y nivel. Puede ser
+   * posterior a `gpsReportedAt`: un equipo sin fix sigue mandando mensajes con
+   * medidores, y fechar el medidor con la última posición lo atrasaba días.
+   */
+  metersReportedAt: timestamp("meters_reported_at", { withTimezone: true, mode: "string" }),
   internalBatteryLevel: numeric("internal_battery_level", { precision: 7, scale: 2, mode: "number" }),
   externalPowerVolts: numeric("external_power_volts", { precision: 7, scale: 2, mode: "number" }),
   engineRpm: numeric("engine_rpm", { precision: 9, scale: 2, mode: "number" }),

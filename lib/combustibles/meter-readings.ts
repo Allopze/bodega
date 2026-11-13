@@ -16,7 +16,7 @@ import { formatExcelDateUTC, normKey, normalizePlate, parseChileanNumber, santia
 import { ACCOUNTABLE_FUEL_LOAD_STATUSES } from "./load-status"
 import { isValidReason, reasonRequiredMessage } from "@/lib/validation/reason-thresholds"
 
-export const METER_READING_SOURCES = ["copec_tct", "gps_onway", "gps_wialon"] as const
+export const METER_READING_SOURCES = ["copec_tct", "gps_onway", "gps_wialon", "visionlink_api"] as const
 export type MeterReadingSource = (typeof METER_READING_SOURCES)[number]
 
 export interface ParsedMeterReading {

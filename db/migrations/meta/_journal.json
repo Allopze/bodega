@@ -2731,6 +2731,13 @@
       "when": 1794511652779,
       "tag": "0389_tidy_payback",
       "breakpoints": true
+    },
+    {
+      "idx": 390,
+      "version": "7",
+      "when": 1794533913994,
+      "tag": "0390_cynical_night_thrasher",
+      "breakpoints": true
     }
   ]
 }
