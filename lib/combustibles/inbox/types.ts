@@ -9,6 +9,8 @@
  *
  * Módulo puro: lo usan la página, la hoja de decisión (cliente) y el Panel.
  */
+import { addDaysToPlainDate, todayInChile } from "@/lib/utils"
+
 export const FUEL_INBOX_KINDS = ["carga", "caso", "patente", "pedido"] as const
 export type FuelInboxKind = (typeof FUEL_INBOX_KINDS)[number]
 
@@ -45,7 +47,7 @@ export interface FuelInboxRow {
   datum: string
   /** Mes del dato ("YYYY-MM"): define la fecha límite. */
   dataMonth: string
-  /** Último día de `dataMonth`: lo que cambia las cifras del mes debería resolverse antes del cierre. */
+  /** Fecha límite (`inboxDueDate`): fin de `dataMonth` si se detectó en él; detección + 7 días si ya había cerrado. */
   dueDate: string
   /** Desde cuándo espera (instante ISO). */
   waitingSince: string
@@ -122,10 +124,35 @@ function pad(n: number): string {
   return String(n).padStart(2, "0")
 }
 
+/** Días de plazo de lo que se detecta cuando el mes de su dato ya cerró (decisión de producto 2026-11-13). */
+export const INBOX_LATE_DETECTION_DAYS = 7
+
 /** Último día del mes "YYYY-MM". */
-export function inboxDueDate(dataMonth: string): string {
+export function lastDayOfMonth(dataMonth: string): string {
   const [year = 0, month = 1] = dataMonth.split("-").map(Number)
   return `${dataMonth}-${pad(new Date(Date.UTC(year, month, 0)).getUTCDate())}`
+}
+
+/**
+ * Fecha límite de un pendiente.
+ *
+ *  - Detectado dentro del mes de su dato (o sin fecha de detección): el último día de ese mes.
+ *  - Detectado cuando su mes ya cerró (un caso histórico que aparece tarde): detección + 7 días.
+ *
+ * Sin la segunda regla, 482 casos de enero decían «venció el 31-01» y encabezaban la bandeja
+ * sobre las cargas del mes, aunque nadie los conocía hasta ayer. `detectedAt` es el instante
+ * en que el sistema supo del pendiente: `detectedAt` en un caso, `createdAt` en una carga, un
+ * pedido o los registros de una patente; el día se mide en hora de Chile.
+ *
+ * `dueDateSql()` (queries.ts) repite esta misma regla en SQL: si se cambia una, se cambia la otra.
+ */
+export function inboxDueDate(dataMonth: string, detectedAt?: string | null): string {
+  const monthEnd = lastDayOfMonth(dataMonth)
+  if (!detectedAt) return monthEnd
+  const ms = Date.parse(detectedAt)
+  if (!Number.isFinite(ms)) return monthEnd
+  const detectedDay = todayInChile(new Date(ms))
+  return detectedDay.slice(0, 7) > dataMonth ? addDaysToPlainDate(detectedDay, INBOX_LATE_DETECTION_DAYS) : monthEnd
 }
 
 /** Fecha límite ascendente y, a igual fecha, lo que lleva más tiempo esperando primero. */

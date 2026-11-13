@@ -135,13 +135,16 @@ describe("bandeja Por revisar", () => {
       await submission("veh-2", "2026-03-03T12:00:00.000Z", 800, 40, { worksiteId: "ws-b" }),
     ]
     await projectTaeSubmissions(tx, march)
+    // Las cargas se crean «ahora» en la prueba; en la vida real se registran cuando ocurren. Sin esto,
+    // todas parecerían detectadas hoy con su mes ya cerrado y vencerían a hoy + 7 días.
+    await pg.query(`update fuel_equipment_loads set created_at = occurred_at`)
 
     // Casos de anomalía.
     await inMemoryDb.insert(schema.fuelAnomalyRules).values({ id: "rule-1", code: "sello_repetido", name: "Sello repetido", severity: "high" })
     const refSubmission = await submission("veh-1", "2026-03-05T09:00:00.000Z", 1300, 20, { equipmentCodeSnapshot: "CAM-01" })
     const caseBase = { ruleId: "rule-1", ruleCode: "sello_repetido", severity: "high", description: "El sello 004530 ya se puso el 14 de octubre" }
     await inMemoryDb.insert(schema.fuelAnomalyCases).values([
-      // Detectado en abril, pero habla de una carga de marzo: la fecha límite sigue al dato, no a la detección.
+      // Detectado en abril, pero habla de una carga de marzo (mes ya cerrado): vence a la detección + 7 días.
       { ...caseBase, id: "case-ref", worksiteId: "ws-a", vehicleId: "veh-1", referenceEntityType: "fuel_tae_submission", referenceEntityId: refSubmission, status: "open", detectedAt: "2026-04-02T06:00:00.000Z" },
       { ...caseBase, id: "case-taken", worksiteId: "ws-a", vehicleId: "veh-3", status: "in_review", assigneeId: "reviewer", detectedAt: "2026-02-20T06:00:00.000Z" },
       { ...caseBase, id: "case-closed", worksiteId: "ws-a", vehicleId: "veh-1", status: "dismissed", resolution: "No era un problema", resolvedById: "reviewer", resolvedAt: "2026-03-10T15:00:00.000Z", detectedAt: "2026-03-08T06:00:00.000Z" },
@@ -175,6 +178,7 @@ describe("bandeja Por revisar", () => {
       record("r5", "batch-b", "ws-b", "WWWW66", 20),
       record("r6", "batch-abr", "ws-a", "VVVV55", 30),
     ])
+    await pg.query(`update fuel_consumption_records set created_at = (periodo_desde::date + 10)::timestamptz`)
     await inMemoryDb.insert(schema.fuelProviderMappings).values({
       id: "map-1", provider: "copec", sourceAccount: "tct:diesel", externalKey: "UUUU44", normalizedValue: "UUUU44", worksiteId: "ws-a", vehicleId: "veh-3",
       decidedBy: "reviewer", reason: "Vínculo manual desde el detalle de una importación de combustible", effectiveFrom: "2026-03-01", createdAt: "2026-03-12T10:00:00.000Z",
@@ -219,7 +223,7 @@ describe("bandeja Por revisar", () => {
     const febrero = page.rows.find((row) => row.dataMonth === "2026-02" && row.kind === "carga")!
     expect(febrero.dueDate).toBe("2026-02-28")
     const caseRef = page.rows.find((row) => row.id === "case-ref")!
-    expect(caseRef).toMatchObject({ dataMonth: "2026-03", dueDate: "2026-03-31", severity: "high", title: "Caso · Sello repetido" })
+    expect(caseRef).toMatchObject({ dataMonth: "2026-03", dueDate: "2026-04-09", severity: "high", title: "Caso · Sello repetido" })
     const plate = page.rows.find((row) => row.equipmentLabel === "ZZZZ99")!
     expect(plate).toMatchObject({ dataMonth: "2026-03", datum: "640 L de marzo no cuentan en ningún equipo (Copec TCT Diesel)", canAct: true })
     expect(plate.href).toBe("/combustibles/fuentes/archivos/tarjeta/batch-a")
@@ -234,6 +238,32 @@ describe("bandeja Por revisar", () => {
     for (let i = 1; i < page.rows.length; i += 1) {
       const [prev, row] = [page.rows[i - 1]!, page.rows[i]!]
       if (prev.dueDate === row.dueDate) expect(prev.waitingSince <= row.waitingSince).toBe(true)
+    }
+  })
+
+  it("un caso histórico detectado tarde no encabeza la bandeja: la carga del mes que vence antes va primero", async () => {
+    // Datos de enero detectados el 28 de febrero (mes cerrado): vence el 7 de marzo.
+    // Una carga de febrero registrada en febrero vence el 28: va antes.
+    await inMemoryDb.insert(schema.fuelAnomalyCases).values({
+      id: "case-historico", ruleId: "rule-1", ruleCode: "sello_repetido", severity: "high", description: "Histórico", worksiteId: "ws-a", vehicleId: "veh-3",
+      status: "open", detectedAt: "2026-02-28T15:00:00.000Z", referenceEntityType: "fuel_consumption_record", referenceEntityId: "reg:2026-01-15",
+    })
+    try {
+      const page = await getFuelInbox(globalSession(), MARCH, pending({ worksiteId: "ws-a", pageSize: 100 }))
+      const historic = page.rows.find((row) => row.id === "case-historico")!
+      expect(historic).toMatchObject({ dataMonth: "2026-01", dueDate: "2026-03-07" })
+      const febLoad = page.rows.find((row) => row.kind === "carga" && row.dataMonth === "2026-02")!
+      expect(febLoad.dueDate).toBe("2026-02-28")
+      const keys = page.rows.map((row) => row.key)
+      expect(keys.indexOf(febLoad.key)).toBeLessThan(keys.indexOf(historic.key))
+      // La paginación por tipo coincide con el orden unido: el histórico queda donde dice su fecha límite.
+      const due = page.rows.map((row) => row.dueDate)
+      expect(due).toEqual([...due].sort())
+      const onlyCases = await getFuelInbox(globalSession(), MARCH, pending({ worksiteId: "ws-a", kind: "caso", pageSize: 100 }))
+      const caseDue = onlyCases.rows.map((row) => row.dueDate)
+      expect(caseDue).toEqual([...caseDue].sort())
+    } finally {
+      await inMemoryDb.delete(schema.fuelAnomalyCases).where(eq(schema.fuelAnomalyCases.id, "case-historico"))
     }
   })
 

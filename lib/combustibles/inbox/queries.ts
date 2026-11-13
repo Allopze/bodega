@@ -49,6 +49,7 @@ import { flagDatum, flagReasonsLabel, flagReasonTitle, knownFlagReasons, primary
 import {
   FUEL_INBOX_KINDS,
   compareInboxRows,
+  INBOX_LATE_DETECTION_DAYS,
   inboxDueDate,
   inboxRowKey,
   parseInboxRowKey,
@@ -149,6 +150,24 @@ function refMonthSql(typeColumn: AnyColumn, idColumn: AnyColumn, fallback: AnyCo
     end,
     to_char(${fallback} at time zone 'America/Santiago', 'YYYY-MM')
   )`
+}
+
+/**
+ * Fecha límite ("YYYY-MM-DD") de un pendiente, la misma regla de `inboxDueDate` (types.ts) en SQL:
+ * si el pendiente se detectó con el mes de su dato ya cerrado vence a la detección + 7 días; si no,
+ * el último día de ese mes. El orden de «Pendientes» sale de aquí para que la paginación por tipo
+ * coincida con `compareInboxRows` al unir las listas.
+ *
+ * Qué cuenta como «detección» en cada tipo: en un caso, `detected_at`; en una carga, una patente
+ * (la primera fila del grupo) y un pedido, el `created_at` — el instante en que la plataforma supo
+ * del pendiente. Una carga de octubre registrada el 3 de noviembre vence entonces el 10, no el 31.
+ */
+function dueDateSql(month: SQL | AnyColumn, detectedAt: SQL | AnyColumn): SQL<string> {
+  return sql<string>`case
+    when to_char(${detectedAt} at time zone 'America/Santiago', 'YYYY-MM') > ${month}
+      then to_char((${detectedAt} at time zone 'America/Santiago')::date + ${sql.raw(String(INBOX_LATE_DETECTION_DAYS))}, 'YYYY-MM-DD')
+    else to_char(to_date(${month} || '-01', 'YYYY-MM-DD') + interval '1 month' - interval '1 day', 'YYYY-MM-DD')
+  end`
 }
 
 const ENTITY_ORIGIN: Record<string, FuelLoadOrigin> = {
@@ -319,7 +338,7 @@ function cargaToRow(raw: CargaRaw, ranges: Map<string, RangeInfo>, session: Sess
       range: range ? { low: range.low, high: range.high } : null,
     }),
     dataMonth: raw.month,
-    dueDate: inboxDueDate(raw.month),
+    dueDate: inboxDueDate(raw.month, iso(raw.createdAt)),
     waitingSince: iso(raw.createdAt),
     severity: null,
     assignee: null,
@@ -333,7 +352,7 @@ function cargaToRow(raw: CargaRaw, ranges: Map<string, RangeInfo>, session: Sess
 
 async function cargaRows(ctx: Ctx, view: View, limit: number, offset: number): Promise<FuelInboxRow[]> {
   const order = view === "pendientes"
-    ? [asc(fuelEquipmentLoads.month), asc(fuelEquipmentLoads.createdAt), asc(fuelEquipmentLoads.id)]
+    ? [asc(dueDateSql(fuelEquipmentLoads.month, fuelEquipmentLoads.createdAt)), asc(fuelEquipmentLoads.createdAt), asc(fuelEquipmentLoads.id)]
     : [desc(fuelEquipmentLoads.reviewedAt), asc(fuelEquipmentLoads.id)]
   const raw = await fetchCargaRaw(cargaWhere(ctx, view), order, limit, offset)
   const ranges = await vehicleRanges(raw)
@@ -350,6 +369,8 @@ async function cargaCount(ctx: Ctx, view: View): Promise<{ n: number; oldest: st
 /* ────────────────────────────────── Casos ────────────────────────────────────── */
 
 const caseMonthSql = () => refMonthSql(fuelAnomalyCases.referenceEntityType, fuelAnomalyCases.referenceEntityId, fuelAnomalyCases.detectedAt)
+/** Fecha límite de un caso: ver `dueDateSql`. */
+const caseDueSql = () => dueDateSql(caseMonthSql(), fuelAnomalyCases.detectedAt)
 
 function casoStatuses(ctx: Ctx, view: View): string[] {
   if (view === "pendientes") return ctx.filters.caseState ? [ctx.filters.caseState] : [...OPEN_CASE_STATUSES]
@@ -399,7 +420,7 @@ function casoToRow(row: AnomalyCaseRow, month: string, labels: Map<string, { cod
     reasonLabel: ruleLabel,
     datum: legacyFuelVariation ? `Histórico sin producto atribuible · ${datum}` : datum,
     dataMonth: month,
-    dueDate: inboxDueDate(month),
+    dueDate: inboxDueDate(month, iso(row.detectedAt)),
     waitingSince: iso(row.detectedAt),
     severity: row.severity,
     assignee: row.assigneeId ? { id: row.assigneeId, name: row.assigneeName } : null,
@@ -421,7 +442,7 @@ async function casoRows(ctx: Ctx, view: View, limit: number, offset: number): Pr
   const page = await db.select({ id: fuelAnomalyCases.id, month })
     .from(fuelAnomalyCases)
     .where(casoWhere(ctx, view))
-    .orderBy(...(view === "pendientes" ? [asc(month), asc(fuelAnomalyCases.detectedAt), asc(fuelAnomalyCases.id)] : [desc(fuelAnomalyCases.resolvedAt), asc(fuelAnomalyCases.id)]))
+    .orderBy(...(view === "pendientes" ? [asc(caseDueSql()), asc(fuelAnomalyCases.detectedAt), asc(fuelAnomalyCases.id)] : [desc(fuelAnomalyCases.resolvedAt), asc(fuelAnomalyCases.id)]))
     .limit(limit)
     .offset(offset)
   if (page.length === 0) return []
@@ -540,7 +561,7 @@ function patenteToRow(row: PlateRaw, canLink: boolean): FuelInboxRow {
     reasonLabel: "Patente sin vincular",
     datum: `${fmt(row.liters, 0)} L de ${monthName(month)} no cuentan en ningún equipo (${row.source})`,
     dataMonth: month,
-    dueDate: inboxDueDate(month),
+    dueDate: inboxDueDate(month, iso(row.waiting)),
     waitingSince: iso(row.waiting),
     severity: null,
     assignee: null,
@@ -603,7 +624,7 @@ async function patenteRows(ctx: Ctx, view: View, limit: number, offset: number):
   if (view === "decididas") return linkedPlateRows(ctx, limit, offset)
   const canLink = can(ctx.session, "combustibles:manage_vehicles")
   const rows = await plateGroupSelect(patenteBase(ctx))
-    .orderBy(asc(fuelImportBatches.periodoDesde), asc(sql`min(${fuelConsumptionRecords.createdAt})`), asc(fuelConsumptionRecords.batchId), asc(fuelConsumptionRecords.patente))
+    .orderBy(asc(dueDateSql(sql`substr(${fuelImportBatches.periodoDesde}, 1, 7)`, sql`min(${fuelConsumptionRecords.createdAt})`)), asc(sql`min(${fuelConsumptionRecords.createdAt})`), asc(fuelConsumptionRecords.batchId), asc(fuelConsumptionRecords.patente))
     .limit(limit)
     .offset(offset)
   return rows.map((row) => patenteToRow(row, canLink))
@@ -710,7 +731,7 @@ function pedidoToRow(raw: PedidoRaw, refs: Map<string, RefInfo>, session: Sessio
     reasonLabel: "Pedida por una persona",
     datum: raw.notes?.trim() ? `${requested}: «${raw.notes.trim()}»` : `${requested} pidió que la revisen, sin nota`,
     dataMonth: raw.month,
-    dueDate: inboxDueDate(raw.month),
+    dueDate: inboxDueDate(raw.month, iso(raw.createdAt)),
     waitingSince: iso(raw.createdAt),
     severity: null,
     assignee: null,
@@ -724,7 +745,7 @@ function pedidoToRow(raw: PedidoRaw, refs: Map<string, RefInfo>, session: Sessio
 
 async function pedidoRows(ctx: Ctx, view: View, limit: number, offset: number): Promise<FuelInboxRow[]> {
   const order = view === "pendientes"
-    ? [asc(markMonthSql()), asc(fuelReviewMarks.createdAt), asc(fuelReviewMarks.id)]
+    ? [asc(dueDateSql(markMonthSql(), fuelReviewMarks.createdAt)), asc(fuelReviewMarks.createdAt), asc(fuelReviewMarks.id)]
     : [desc(fuelReviewMarks.resolvedAt), asc(fuelReviewMarks.id)]
   const raw = await pedidoSelect(pedidoWhere(ctx, view), order, limit, offset)
   const refs = await hydrateRefs(raw)
