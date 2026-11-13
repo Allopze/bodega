@@ -49,7 +49,7 @@ test("importa y consulta historia, conserva pendientes y permite conciliarlos", 
     await expect(page.getByText(/2 trabajos guardados/)).toBeVisible()
     await page.getByRole("link", { name: "Ver historial anterior", exact: true }).click()
     // La búsqueda se aplica sola al escribir (sin botón «Buscar»): espera a que viaje en la URL.
-    await page.getByRole("textbox", { name: "Buscar en el historial" }).fill(marker)
+    await page.getByRole("searchbox", { name: "Buscar en el historial" }).fill(marker)
     await expect(page).toHaveURL(new RegExp(`q=${marker}`))
     await expect(textoVisible(page, `Trabajo QA ${marker}`)).toBeVisible()
     await expect(textoVisible(page, `Trabajo pendiente ${marker}`)).toBeVisible()
