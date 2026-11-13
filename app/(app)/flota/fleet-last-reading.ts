@@ -7,7 +7,7 @@ type FleetReadingRow = Pick<
 >
 
 /**
- * Celda «Última lectura» de la exportación: lo que la columna «Km/Hr» de Flota muestra (odómetro en km y,
+ * Celda «Última lectura» de la exportación: lo que la columna «Lectura (km u h)» de Flota muestra (odómetro en km y,
  * a falta de él, horómetro en h, con la cifra en es-CL) más el día en que se tomó, y la misma marca de
  * lectura objetada que el aviso de la tabla («Lectura objetada: <regla>»). Un equipo sin lectura queda
  * vacío, no «0 km»: la ausencia de dato no es un valor. Sin fecha (no debería ocurrir) se dice sólo la cifra.

@@ -123,4 +123,25 @@ test.describe("Panel operacional — combustible por vehículo", () => {
       `/combustibles/consumo/equipos/${VEHICLE_ID}`,
     )
   })
+
+  test("por defecto la tabla muestra seis columnas y la atención de hoy queda fuera de la zona del período", async ({ page }) => {
+    await page.goto("/control-operacional?desde=2026-10-01&hasta=2026-10-31")
+
+    const table = page.getByRole("table", { name: "Activos operacionales" })
+    await expect(table).toBeVisible()
+    const headers = (await table.getByRole("columnheader").allTextContents())
+      .map((header) => header.replace(/^Ordenar por /, "").trim())
+    for (const label of ["Vehículo", "Faena", "Estado", "Próximo vencimiento", "OT abiertas", "Casos abiertos"]) {
+      expect(headers, `columna «${label}»`).toContain(label)
+    }
+    // Lo demás está en «Columnas», no a la vista.
+    expect(headers).not.toContain("Costo combustible (proveedor)")
+    expect(headers).not.toContain("Rendimiento promedio")
+
+    // «Requiere atención ahora» abre la pantalla sin la nota «Foto de hoy»; el selector de período vive en su zona.
+    await expect(page.getByRole("heading", { name: "Requiere atención ahora" })).toBeVisible()
+    await expect(page.getByText(/Foto de hoy/)).toHaveCount(0)
+    const zonaDelPeriodo = page.getByRole("heading", { name: "Desempeño del período" }).locator("xpath=ancestor::section[1]")
+    await expect(zonaDelPeriodo.getByRole("button", { name: /Período|oct|2026/ }).first()).toBeVisible()
+  })
 })
