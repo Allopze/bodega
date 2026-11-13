@@ -4,18 +4,18 @@ import { notFound, redirect } from "next/navigation"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { MetaBadge } from "@/components/states/state-badge"
+import { MetaBadge, StateBadge } from "@/components/states/state-badge"
 import { VehiclePurchasesCard } from "@/components/fleet/vehicle-purchases-card"
 import { Button } from "@/components/ui/button"
 import { can, requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite } from "@/lib/auth/scope"
 import { getFleetVehicleDetail } from "@/lib/services/fleet"
 import { getFleetAdminSettings } from "@/lib/services/system-settings"
-import { FUEL_PERFORMANCE_UNIT_LABELS, VEHICLE_EXPIRY_FIELDS, formatFuelVehicleStatus } from "@/lib/combustibles/validation"
+import { FUEL_PERFORMANCE_UNIT_LABELS, VEHICLE_EXPIRY_FIELDS } from "@/lib/combustibles/validation"
 import { CANONICAL_FIELD_LABEL, expiringDocuments } from "@/lib/validation/fleet-documents"
 import { formatDate, formatDateTime, formatQty, todayInChile } from "@/lib/utils"
 import { OT_STATUS_LABELS, OT_STATUS_TONES } from "@/lib/mantencion/work-order-states"
-import { FleetDocumentsPanel } from "./fleet-documents-panel"
+import { FleetDocumentUpload, FleetDocumentsPanel } from "./fleet-documents-panel"
 import { VehicleExpiries } from "./vehicle-expiries"
 import { fuelEquipmentHref } from "@/lib/combustibles/routes"
 
@@ -49,11 +49,6 @@ export default async function FlotaVehiclePage({
     },
     detail.documents.filter((document) => document.status === "current"),
   ).map((entry) => [entry.documentType, entry]))
-  // El próximo vencimiento puede ser de un tipo sin columna canónica (Padrón,
-  // Certificado de emisiones): la cabecera lo nombra para que no aparezca una
-  // fecha que la tarjeta de Vencimientos no explique.
-  const nextExpiry = [...expiring.values()]
-    .sort((a, b) => a.expiresAt.localeCompare(b.expiresAt) || a.documentType.localeCompare(b.documentType))[0]
   const expiryRows = VEHICLE_EXPIRY_FIELDS.map((field) => {
     const label = CANONICAL_FIELD_LABEL[field]
     const entry = expiring.get(label)
@@ -69,13 +64,14 @@ export default async function FlotaVehiclePage({
   return (
     <PageContainer>
       <PageHeader
-        title={vehicle.plate}
+        // El código interno es el nombre con que se conoce el vehículo en el resto del área; la patente va a su lado.
+        title={vehicle.code ? `${vehicle.code} · ${vehicle.plate}` : vehicle.plate}
         description={[vehicle.brand, vehicle.model, vehicle.year].filter(Boolean).join(" ") || vehicle.equipmentType?.name || vehicle.type}
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Control operacional", href: "/control-operacional" },
             { label: "Vehículos", href: "/flota" },
-            { label: vehicle.plate },
+            { label: vehicle.code ?? vehicle.plate },
           ]} />
         }
         actions={
@@ -102,34 +98,50 @@ export default async function FlotaVehiclePage({
             <Fact label="Capacidad" value={vehicle.tankCapacityLiters != null ? formatQty(Number(vehicle.tankCapacityLiters), "L") : "Sin información"} />
             <Fact label="Proveedor habitual" value={vehicle.usualFuelSupplier?.name ?? "No asignado"} />
             <Fact label="Responsable" value={vehicle.responsibleUser?.name ?? vehicle.responsibleUser?.email ?? "—"} />
-            <Fact label="Estado" value={<MetaBadge meta={{ label: `${formatFuelVehicleStatus(vehicle.operationalStatus)}`, variant: vehicle.operationalStatus === "operativo" ? "success" : "outline" }} />} />
-            <Fact
-              label="Próximo vencimiento"
-              value={nextExpiry ? `${nextExpiry.documentType} · ${formatDate(nextExpiry.expiresAt)}` : "—"}
-            />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader><CardTitle as="h2" className="text-base">Vencimientos</CardTitle></CardHeader>
-          <CardContent>
-            <VehicleExpiries
-              vehicleId={vehicle.id}
-              vehicleLabel={vehicle.code ? `${vehicle.code} · ${vehicle.plate}` : vehicle.plate}
-              rows={expiryRows}
-              today={todayInChile()}
-              warningDays={warningDays}
-              canEdit={canEditExpiries}
-            />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader><CardTitle as="h2" className="text-base">Seguro</CardTitle></CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <Fact label="Póliza" value={vehicle.insurancePolicyNumber ?? "—"} />
-            <Fact label="Estado catálogo" value={vehicle.isActive ? "Activo" : "Inactivo"} />
+            {/* Un vehículo dado de baja es «Inactivo» sea cual sea su último estado operativo; el catálogo no necesita una fila aparte. */}
+            <Fact label="Estado" value={<StateBadge entity="fleet" state={vehicle.isActive ? vehicle.operationalStatus : "inactivo"} />} />
             <Fact label="Notas" value={vehicle.notes ?? "—"} />
+          </CardContent>
+        </Card>
+
+        {/* Vencimientos, seguro y archivos en una sola tarjeta: eran tres, con «Próximo vencimiento» dicho dos veces. */}
+        <Card className="lg:col-span-2">
+          <CardHeader className="flex-row items-center justify-between gap-3">
+            <CardTitle as="h2" className="text-base">Documentos</CardTitle>
+            {can(session, "flota:manage_documents") && <FleetDocumentUpload vehicleId={vehicle.id} />}
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <section aria-labelledby="documentos-vencimientos" className="space-y-3">
+              <h3 id="documentos-vencimientos" className="text-eyebrow">Vencimientos</h3>
+              <VehicleExpiries
+                vehicleId={vehicle.id}
+                vehicleLabel={vehicle.code ? `${vehicle.code} · ${vehicle.plate}` : vehicle.plate}
+                rows={expiryRows}
+                today={todayInChile()}
+                warningDays={warningDays}
+                canEdit={canEditExpiries}
+              />
+              <div className="text-sm">
+                <Fact label="Póliza del seguro" value={vehicle.insurancePolicyNumber ?? "—"} />
+              </div>
+            </section>
+            <section aria-labelledby="documentos-archivos" className="space-y-3">
+              <h3 id="documentos-archivos" className="text-eyebrow">Archivos</h3>
+              <FleetDocumentsPanel
+                vehicleId={vehicle.id}
+                canManageDocuments={can(session, "flota:manage_documents")}
+                documents={detail.documents.map((document) => ({
+                  id: document.id,
+                  documentType: document.documentType,
+                  fileName: document.fileName,
+                  mimeType: document.mimeType ?? null,
+                  expiresAt: document.expiresAt ?? null,
+                  status: document.status,
+                  supersededAt: document.supersededAt ?? null,
+                  createdAt: document.createdAt,
+                }))}
+              />
+            </section>
           </CardContent>
         </Card>
       </div>
@@ -139,16 +151,15 @@ export default async function FlotaVehiclePage({
           <CardHeader><CardTitle as="h2" className="text-base">Uso operacional</CardTitle></CardHeader>
           <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-3 text-sm">
-              <Fact label="Código interno" value={vehicle.code ?? "—"} />
               {detail.providerReading ? (
                 <>
                   <Fact
                     label="Última lectura del proveedor (Copec)"
                     value={
                       detail.providerReading.odometer != null
-                        ? `${detail.providerReading.odometer.toLocaleString("es-CL")} km`
+                        ? formatQty(detail.providerReading.odometer, "km", { maximumFractionDigits: 1 })
                         : detail.providerReading.hourMeter != null
-                          ? `${detail.providerReading.hourMeter.toLocaleString("es-CL")} h`
+                          ? formatQty(detail.providerReading.hourMeter, "h", { maximumFractionDigits: 1 })
                           : "—"
                     }
                   />
@@ -167,11 +178,11 @@ export default async function FlotaVehiclePage({
                     label="Última lectura (log de cargas)"
                     value={
                       detail.currentReading.horometro != null
-                        ? `${detail.currentReading.horometro} ${detail.currentReading.medidoPor === "hora" ? "hr" : detail.currentReading.medidoPor === "km" ? "km" : ""}`.trim()
+                        ? formatQty(Number(detail.currentReading.horometro), detail.currentReading.medidoPor === "hora" ? "h" : detail.currentReading.medidoPor === "km" ? "km" : undefined, { maximumFractionDigits: 1 })
                         : "—"
                     }
                   />
-                  <Fact label="Fecha de lectura" value={detail.currentReading.fecha} />
+                  <Fact label="Fecha de lectura" value={formatDate(detail.currentReading.fecha)} />
                   <Fact label="Último operador" value={detail.currentReading.operador ?? "—"} />
                 </>
               ) : (
@@ -202,7 +213,7 @@ export default async function FlotaVehiclePage({
             <ol className="divide-y divide-[var(--color-border)]">
               {detail.operationalIntervals.map((interval) => (
                 <li key={interval.id} className="grid gap-1 py-3 text-sm sm:grid-cols-[10rem_1fr_auto] sm:items-center sm:gap-4">
-                  <MetaBadge meta={{ label: `${formatFuelVehicleStatus(interval.status)}`, variant: interval.status === "operativo" ? "success" : interval.status === "mantencion" ? "warning" : "danger" }} />
+                  <StateBadge entity="fleet" state={interval.status} />
                   <div>
                     <p>{interval.reason ?? "Sin motivo informado"}</p>
                     <p className="text-xs text-[var(--color-text-muted)]">{interval.changedByUser?.name ?? interval.changedByUser?.email ?? "Usuario no disponible"}</p>
@@ -256,7 +267,7 @@ export default async function FlotaVehiclePage({
                             </span>
                           )}
                           {impact && (impact.avgBefore != null || impact.avgAfter != null) && (
-                            <span className="block font-mono">{impact.avgBefore?.toFixed(2) ?? "—"} → {impact.avgAfter?.toFixed(2) ?? "—"}</span>
+                            <span className="block font-mono">{formatPerformanceAvg(impact.avgBefore, vehicle.performanceUnit)} → {formatPerformanceAvg(impact.avgAfter, vehicle.performanceUnit, true)}</span>
                           )}
                         </p>
                       </li>
@@ -282,27 +293,15 @@ export default async function FlotaVehiclePage({
         />
       )}
 
-      <Card>
-        <CardHeader><CardTitle as="h2" className="text-base">Documentos del vehículo</CardTitle></CardHeader>
-        <CardContent>
-          <FleetDocumentsPanel
-            vehicleId={vehicle.id}
-            canManageDocuments={can(session, "flota:manage_documents")}
-            documents={detail.documents.map((document) => ({
-              id: document.id,
-              documentType: document.documentType,
-              fileName: document.fileName,
-              mimeType: document.mimeType ?? null,
-              expiresAt: document.expiresAt ?? null,
-              status: document.status,
-              supersededAt: document.supersededAt ?? null,
-              createdAt: document.createdAt,
-            }))}
-          />
-        </CardContent>
-      </Card>
     </PageContainer>
   )
+}
+
+/** Rendimiento con coma decimal y la unidad del equipo; la unidad va sólo al final del par «antes → después». */
+function formatPerformanceAvg(value: number | null | undefined, performanceUnit: string, withUnit = false): string {
+  if (value == null) return "—"
+  const unit = performanceUnit === "km_per_liter" ? "km/L" : performanceUnit === "liters_per_hour" ? "L/h" : undefined
+  return formatQty(value, withUnit ? unit : undefined, { maximumFractionDigits: 2 })
 }
 
 function Fact({ label, value }: { label: string; value: React.ReactNode }) {

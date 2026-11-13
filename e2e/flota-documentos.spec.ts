@@ -13,7 +13,21 @@ test.describe("Flota — gestión documental", () => {
 
   test("vehicle detail shows documents panel", async ({ page }) => {
     await page.goto("/flota/fuel-veh-e2e")
-    await expect(page.getByRole("heading", { name: "Documentos del vehículo" })).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByRole("heading", { name: "Documentos", exact: true })).toBeVisible({ timeout: 10_000 })
+  })
+
+  test("subir un documento se hace desde una hoja, no desde un formulario siempre abierto", async ({ page }) => {
+    await page.goto("/flota/fuel-veh-e2e")
+    await expect(page.getByRole("heading", { name: "Documentos", exact: true })).toBeVisible({ timeout: 10_000 })
+    // El formulario no está en la página hasta que se pide.
+    await expect(page.getByRole("dialog", { name: "Subir documento" })).toHaveCount(0)
+    await page.getByRole("button", { name: "Subir documento", exact: true }).click()
+    const hoja = page.getByRole("dialog", { name: "Subir documento" })
+    await expect(hoja).toBeVisible()
+    // Sin elegir el tipo no se puede enviar.
+    await expect(hoja.getByRole("button", { name: "Subir documento", exact: true })).toBeDisabled()
+    await hoja.getByRole("button", { name: "Cancelar", exact: true }).click()
+    await expect(hoja).toBeHidden()
   })
 })
 

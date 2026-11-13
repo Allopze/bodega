@@ -20,7 +20,7 @@ vi.mock("@/components/ui/page-header", () => ({
   PageHeader: ({ title, actions }: { title: string; actions?: React.ReactNode }) => <header><h1>{title}</h1>{actions}</header>,
   Breadcrumbs: () => null,
 }))
-vi.mock("./fleet-documents-panel", () => ({ FleetDocumentsPanel: () => null }))
+vi.mock("./fleet-documents-panel", () => ({ FleetDocumentsPanel: () => null, FleetDocumentUpload: () => <button type="button">Subir documento</button> }))
 
 import FlotaVehiclePage from "./page"
 
@@ -218,5 +218,65 @@ describe("ficha de vehículo: repuestos y servicios comprados", () => {
 
     expect(screen.getByText("Sin compras vinculadas")).toBeInTheDocument()
     expect(screen.queryByRole("link", { name: "Pedir repuestos" })).toBeNull()
+  })
+})
+
+describe("ficha de vehículo: documentos y encabezado", () => {
+  async function renderFicha(overrides: Parameters<typeof detail>[1] = {}, extra: Record<string, unknown> = {}) {
+    mocks.detail.mockResolvedValue({ ...detail("km_per_liter", overrides), ...extra })
+    render(await FlotaVehiclePage({ params: Promise.resolve({ id: "veh-1" }) }))
+  }
+
+  it("el encabezado nombra el vehículo por su código interno y su patente", async () => {
+    await renderFicha({ vehicle: { code: "KA-115" } })
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("KA-115 · RBYD-98")
+  })
+
+  it("sin código interno el encabezado es la patente", async () => {
+    await renderFicha()
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("RBYD-98")
+  })
+
+  it("vencimientos, seguro y archivos son una sola tarjeta «Documentos», sin «Próximo vencimiento» repetido", async () => {
+    await renderFicha({ vehicle: { soapExpiresAt: "2027-03-31", insurancePolicyNumber: "POL-123" } })
+
+    expect(screen.getAllByRole("heading", { level: 2 }).map((heading) => heading.textContent)).toContain("Documentos")
+    expect(screen.queryByRole("heading", { name: "Vencimientos", level: 2 })).toBeNull()
+    expect(screen.queryByRole("heading", { name: "Seguro", level: 2 })).toBeNull()
+    expect(screen.queryByText("Próximo vencimiento")).toBeNull()
+    expect(screen.getByText("Póliza del seguro").nextElementSibling?.textContent).toBe("POL-123")
+  })
+
+  it("estado y notas viven en «Operación»; el estado usa el vocabulario de flota", async () => {
+    await renderFicha({ vehicle: { operationalStatus: "mantencion", notes: "Revisar frenos" } })
+
+    expect(screen.getByText("Estado").nextElementSibling?.textContent).toBe("En mantención")
+    expect(screen.getByText("Notas").nextElementSibling?.textContent).toBe("Revisar frenos")
+    expect(screen.queryByText("Estado catálogo")).toBeNull()
+  })
+
+  it("un vehículo dado de baja figura «Inactivo»", async () => {
+    await renderFicha({ vehicle: { isActive: false } })
+    expect(screen.getByText("Estado").nextElementSibling?.textContent).toBe("Inactivo")
+  })
+
+  it("sólo quien gestiona documentos ve «Subir documento»", async () => {
+    await renderFicha()
+    expect(screen.queryByRole("button", { name: "Subir documento" })).toBeNull()
+    cleanup()
+
+    mocks.can.mockImplementation((_session, permission) => permission === "flota:manage_documents")
+    await renderFicha()
+    expect(screen.getByRole("button", { name: "Subir documento" })).toBeInTheDocument()
+  })
+
+  it("el rendimiento antes y después de una OT lleva coma decimal y la unidad del equipo", async () => {
+    await renderFicha({}, {
+      recentWorkOrders: [{ id: "ot-1", folio: "OT-1", status: "cerrada", repair: true, maintenance: false, requestDate: "2026-10-01", workshopEntryAt: null, workshopExitAt: null }],
+      workOrderConsumptionImpact: [{ workOrderId: "ot-1", avgBefore: 5.4321, avgAfter: 6.1 }],
+    })
+
+    expect(screen.getByText("5,43 → 6,1 km/L")).toBeInTheDocument()
+    expect(screen.queryByText(/5\.43/)).toBeNull()
   })
 })
