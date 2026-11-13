@@ -66,6 +66,7 @@ export function StorageLevelBars({ balances, canEditTanks = false }: { balances:
       <ChartSection
         title="Nivel contra capacidad"
         headingLevel={3}
+        bare
         empty={{
           label: "Ningún estanque tiene capacidad informada",
           hint: "Con la capacidad cargada, acá se ve cuánto queda en cada uno. Por ahora el nivel está en la tabla de abajo.",

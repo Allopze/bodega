@@ -46,7 +46,7 @@ export default async function NuevaFacturaPage() {
       <PageHeader
         title="Nueva factura"
         description="Registra una carga facturada con su neto, IEC e IVA"
-        breadcrumb={<FuelBreadcrumbs items={[{ label: "Pagos", href: FUEL_PATHS.pagos }, { label: "Nueva factura" }]} />}
+        breadcrumb={<FuelBreadcrumbs items={[{ label: "Facturas y pagos", href: FUEL_PATHS.pagos }, { label: "Nueva factura" }]} />}
         actions={<FuelHeaderActions />}
       />
       <NewFuelLoadForm

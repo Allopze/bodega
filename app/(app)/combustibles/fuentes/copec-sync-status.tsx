@@ -10,6 +10,8 @@ import { toast } from "@/lib/toast"
 import { reportBoundaryError } from "@/lib/observability/sentry-client"
 import type { FuelSourceStatus } from "@/lib/combustibles/sources-status"
 import { fuelInboxHref } from "@/lib/combustibles/routes"
+import { COPEC_CHANNEL_SHORT_LABELS } from "@/lib/combustibles/source-labels"
+import { Progress } from "@/components/ui/progress"
 import { SourceRow } from "./source-row"
 import { confirmCopecPeriodEmptyAction, getCopecSyncProgressAction, getCopecSyncStatusAction, startCopecSyncAction, updateCopecSyncStartAction, type CopecSweepRunView, type CopecSyncStartOptions, type CopecSyncStatus } from "./copec-sync-action"
 import { Textarea } from "@/components/ui/textarea"
@@ -34,7 +36,7 @@ function PendingNotice({ pending, month, items }: { pending: number; month: stri
   const hidden = items.length - shown.length
   return (
     <div className="space-y-1 text-xs text-[var(--color-warning-ink)]">
-      <p>{pending} carga(s) de {month ? formatMonth(month) : "la última corrida"} quedaron pendientes. No se importan hasta resolverlo y volver a sincronizar ese mes.</p>
+      <p>{pending === 1 ? "1 carga" : `${pending} cargas`} de {month ? formatMonth(month) : "la última corrida"} {pending === 1 ? "quedó pendiente" : "quedaron pendientes"}. No se importan hasta resolverlo y volver a sincronizar ese mes.</p>
       {shown.length ? (
         <ul aria-label="Tarjetas y patentes con cargas pendientes" className="list-disc space-y-0.5 pl-5">
           {shown.map((item) => (
@@ -60,7 +62,7 @@ const COVERAGE_STATUS_LABEL: Record<CopecSyncStatus["coverage"][number]["status"
 }
 
 /** Los canales de Copec con el nombre que usa la plataforma (los valores viajan como TCT/TAE). */
-const CHANNEL_LABEL = { TCT: "Tarjeta de equipos", TAE: "Abastecimiento de estanques" } as const
+const CHANNEL_LABEL = COPEC_CHANNEL_SHORT_LABELS
 
 const STATUS_TIMEOUT_MS = 10_000
 /** Cada cuánto se pregunta por el avance de una corrida en segundo plano. */
@@ -322,13 +324,16 @@ export function CopecSyncStatus({ source, initialStatus, initialStartOptions, qu
           <div className="mb-1.5 flex items-center justify-between gap-3 text-xs text-[var(--color-text-muted)]">
             <span>
               {progress.current ? `Sincronizando ${formatMonth(progress.current)}` : "Preparando la sesión en Copec"}
-              {progress.planned.length > 0 ? ` · ${Math.min(progress.done, progress.planned.length)} de ${progress.planned.length} mes(es) listos` : ""}
+              {progress.planned.length > 0 ? ` · ${Math.min(progress.done, progress.planned.length)} de ${progress.planned.length} ${progress.planned.length === 1 ? "mes listo" : "meses listos"}` : ""}
             </span>
             <span className="font-mono tabular-nums">{progress.planned.length ? Math.round((Math.min(progress.done, progress.planned.length) / progress.planned.length) * 100) : 0}%</span>
           </div>
-          <div className="h-1.5 overflow-hidden rounded-full bg-[var(--color-surface-2)]">
-            <div className="h-full rounded-full bg-[var(--color-primary)] transition-[width] duration-300" style={{ width: `${progress.planned.length ? Math.round((Math.min(progress.done, progress.planned.length) / progress.planned.length) * 100) : 0}%` }} />
-          </div>
+          <Progress
+            size="sm"
+            value={Math.min(progress.done, progress.planned.length)}
+            max={Math.max(progress.planned.length, 1)}
+            label={`Sincronización de Copec: ${Math.min(progress.done, progress.planned.length)} de ${progress.planned.length} ${progress.planned.length === 1 ? "mes listo" : "meses listos"}`}
+          />
           <p className="mt-1.5 text-xs text-[var(--color-text-muted)]">La corrida sigue en el servidor aunque cierres esta página.</p>
         </div>
       ) : null}
@@ -354,7 +359,7 @@ export function CopecSyncStatus({ source, initialStatus, initialStartOptions, qu
             </div>
           ))}
         </div>
-        <p className="mt-2 text-xs text-[var(--color-text-muted)]">Solo “Completo” y “Vacío confirmado” cierran un producto y canal. Un mes sin archivo sigue desconocido hasta verificarlo.</p>
+        <p className="mt-2 text-xs text-[var(--color-text-muted)]">Sólo «Completo» y «Vacío confirmado» cierran un producto y canal. Un mes sin archivo sigue desconocido hasta verificarlo.</p>
       </div>
 
       <details>
@@ -363,16 +368,16 @@ export function CopecSyncStatus({ source, initialStatus, initialStartOptions, qu
           <p className="text-xs text-[var(--color-text-muted)]">Disponible para meses cerrados. Registra qué verificaste en el portal; la confirmación queda asociada a tu usuario.</p>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="grid gap-1.5">
-              <label className="text-xs font-medium text-[var(--color-text)]">Canal</label>
+              <label htmlFor="copec-empty-channel" className="text-xs font-medium text-[var(--color-text)]">Canal</label>
               <Select value={emptyConfirmation.channel} onValueChange={(value) => setEmptyConfirmation((current) => ({ ...current, channel: value as "TCT" | "TAE" }))}>
-                <SelectTrigger aria-label="Canal de Copec"><SelectValue /></SelectTrigger>
+                <SelectTrigger id="copec-empty-channel"><SelectValue /></SelectTrigger>
                 <SelectContent><SelectItem value="TCT">{CHANNEL_LABEL.TCT}</SelectItem><SelectItem value="TAE">{CHANNEL_LABEL.TAE}</SelectItem></SelectContent>
               </Select>
             </div>
             <div className="grid gap-1.5">
-              <label className="text-xs font-medium text-[var(--color-text)]">Producto</label>
+              <label htmlFor="copec-empty-product" className="text-xs font-medium text-[var(--color-text)]">Producto</label>
               <Select value={emptyConfirmation.product} onValueChange={(value) => setEmptyConfirmation((current) => ({ ...current, product: value as "diesel" | "bluemax" }))}>
-                <SelectTrigger aria-label="Producto Copec"><SelectValue /></SelectTrigger>
+                <SelectTrigger id="copec-empty-product"><SelectValue /></SelectTrigger>
                 <SelectContent><SelectItem value="diesel">Diésel</SelectItem><SelectItem value="bluemax">BlueMax</SelectItem></SelectContent>
               </Select>
             </div>

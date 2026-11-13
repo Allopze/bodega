@@ -11,6 +11,7 @@ import { FUEL_CARRY_PARAMS, fuelAddDataOptions, pagosNavItems } from "@/lib/comb
 import { buildPaginationHref } from "@/lib/pagination"
 import { formatCLP, formatQty } from "@/lib/utils"
 import { AddFuelDataButton } from "@/components/combustibles/add-fuel-data-button"
+import { FuelTerm } from "@/components/combustibles/fuel-glossary"
 import { FuelBreadcrumbs } from "@/components/combustibles/fuel-breadcrumbs"
 import { FuelHeaderActions } from "@/components/combustibles/fuel-header-actions"
 import { Button } from "@/components/ui/button"
@@ -28,12 +29,12 @@ import { INVOICE_FILTER_KEYS, invoiceEquipmentLabel, parseInvoiceParams } from "
 import type { InvoiceFilters as InvoiceQueryFilters } from "./invoice-query"
 import { InvoicesTable } from "./invoices-table"
 
-export const metadata: Metadata = { title: "Pagos" }
+export const metadata: Metadata = { title: "Facturas y pagos" }
 
 type SearchParams = Record<string, string | string[] | undefined>
 
 /**
- * Pagos › Facturas: las cargas facturadas del período con su neto, IEC e IVA.
+ * Facturas y pagos › Facturas: las cargas facturadas del período con su neto, IEC e IVA.
  * Antes era `/combustibles/facturas`. Exige costos (`view_costs`) y el alcance por
  * faena de la sesión; el período es el de la cabecera (`toInvoiceFilters`). Las
  * consultas viven en `invoice-data.ts`.
@@ -72,13 +73,13 @@ export default async function PagosPage({ searchParams }: { searchParams: Promis
   return (
     <PageContainer>
       <PageHeader
-        title="Pagos"
+        title="Facturas y pagos"
         description="Facturas de combustible con su neto, IEC e IVA"
-        breadcrumb={<FuelBreadcrumbs items={[{ label: "Pagos" }]} />}
+        breadcrumb={<FuelBreadcrumbs items={[{ label: "Facturas y pagos" }]} />}
         actions={
           <FuelHeaderActions period={period}>
             {can(session, "combustibles:export_sensitive") && (
-              <ExportButton action={exportFuelLoadsXlsxAction} filters={exportFilters} label="Exportar con montos" ariaLabel="Exportar con montos a Excel" />
+              <ExportButton action={exportFuelLoadsXlsxAction} filters={exportFilters} label="Exportar Excel" ariaLabel="Exportar las facturas con montos a Excel" />
             )}
             <AddFuelDataButton options={fuelAddDataOptions(session)} />
             {canCreate && (
@@ -97,7 +98,7 @@ export default async function PagosPage({ searchParams }: { searchParams: Promis
         <div className="mb-4 space-y-1">
           <p className="text-sm text-[var(--color-text)]">
             {params.estado ? "Hay " : hasFilters ? "Con estos filtros se facturaron " : "Se facturaron "}
-            <strong className="font-semibold"><span className="font-mono tabular-nums">{formatQty(summary.loads)}</span> {summary.loads === 1 ? "carga" : "cargas"}</strong>
+            <strong className="font-semibold"><span className="font-mono tabular-nums">{formatQty(summary.loads)}</span> {summary.loads === 1 ? "factura" : "facturas"}</strong>
             {" por "}
             <strong className="font-mono font-semibold tabular-nums">{formatCLP(summary.total)}</strong>
             {` ${period.inLabel}`}
@@ -105,8 +106,8 @@ export default async function PagosPage({ searchParams }: { searchParams: Promis
           </p>
           <p className="text-xs text-[var(--color-text-muted)]">
             Neto <span className="font-mono tabular-nums">{formatCLP(summary.base)}</span>
-            {" · IEC "}<span className="font-mono tabular-nums">{formatCLP(summary.iec)}</span>
-            {" · IVA "}<span className="font-mono tabular-nums">{formatCLP(summary.iva)}</span>
+            {" · "}<FuelTerm term="IEC">IEC</FuelTerm>{" "}<span className="font-mono tabular-nums">{formatCLP(summary.iec)}</span>
+            {" · "}<FuelTerm term="IVA">IVA</FuelTerm>{" "}<span className="font-mono tabular-nums">{formatCLP(summary.iva)}</span>
             {" · "}<span className="font-mono tabular-nums">{formatQty(summary.liters)}</span> litros
             {!params.estado && ". No cuenta borradores ni cargas anuladas."}
           </p>
@@ -126,7 +127,7 @@ export default async function PagosPage({ searchParams }: { searchParams: Promis
           title={hasFilters ? "Ninguna factura coincide con estos filtros" : `No hay facturas ${period.inLabel}`}
           description={hasFilters
             ? "Prueba con otro período o quita algún filtro para ver más."
-            : "Aquí aparecen las cargas facturadas del período, con su neto, IEC e IVA. Registra una factura o cárgalas desde un Excel con «Agregar datos»."}
+            : "Aquí aparecen las facturas de combustible del período, con su neto, IEC e IVA. Registra una factura o cárgalas desde un Excel con «Agregar datos»."}
           action={hasFilters
             ? <Button asChild variant="secondary"><Link href={clearFiltersHref}>Quitar filtros</Link></Button>
             : canCreate ? <Button asChild variant="primary"><Link href={FUEL_PATHS.pagosNueva}>Nueva factura</Link></Button> : undefined}

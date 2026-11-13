@@ -32,7 +32,7 @@ export default async function AjustesReglasPage() {
     : await countCases(codes, monthStart)
   const caseCounts = Object.fromEntries(counts.value.map((row) => [row.ruleCode, row.total]))
 
-  const degraded = (rules === failed ? 1 : 0) + (counts.failed ? 1 : 0)
+  const degraded = [rules === failed ? "reglas de detección" : null, counts.failed ? "casos abiertos por regla" : null].filter((label): label is string => label !== null)
 
   return (
     <PageContainer>
@@ -43,7 +43,7 @@ export default async function AjustesReglasPage() {
         actions={<FuelHeaderActions><NewAnomalyRuleButton existingCodes={codes} /></FuelHeaderActions>}
       />
       <div className="space-y-4">
-        <DegradedDataBanner degraded={Array.from({ length: degraded }, () => "fuente")} total={2} />
+        <DegradedDataBanner degraded={degraded} total={2} />
         <p className="max-w-3xl text-sm text-[var(--color-text-muted)]">
           Cada regla abre un caso cuando se cumple. La gravedad nueva se aplica a los casos nuevos; los que ya están abiertos no cambian.
         </p>

@@ -70,7 +70,7 @@ describe("CopecPeriodReview", () => {
 
   it("rotula la cuenta y la fecha en lenguaje de usuario, no con la clave ni el ISO crudo", () => {
     render(<CopecPeriodReview state={state({ openRejections: [rejection({ occurredAt: "2026-10-05T15:30:00.000Z" })] })} />)
-    expect(screen.getByText("Tarjetas de equipo · Diésel · KA-1")).toBeInTheDocument()
+    expect(screen.getByText("Tarjeta de equipos · Diésel · KA-1")).toBeInTheDocument()
     expect(screen.queryByText(/tct:diesel/)).not.toBeInTheDocument()
     expect(screen.queryByText(/2026-10-05T/)).not.toBeInTheDocument()
   })

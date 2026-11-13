@@ -26,12 +26,12 @@ export default async function AjustesMediosPage() {
         actions={<FuelHeaderActions><NewSupplyMediumButton suppliers={suppliers} /></FuelHeaderActions>}
       />
       <div className="space-y-4">
-        <DegradedDataBanner degraded={Array.from({ length: degraded }, () => "fuente")} total={total} />
+        <DegradedDataBanner degraded={degraded} total={total} />
         <p className="max-w-3xl text-sm text-[var(--color-text-muted)]">
           Los medios de suministro aparecen en el formulario en terreno y ordenan la cuadratura: tarjetas, estaciones, surtidores del mandante y estanques propios.
           Los alias traducen cómo los escribe la planilla de cargas.
         </p>
-        {degraded > 0 && media.length === 0 ? null : (
+        {degraded.length > 0 && media.length === 0 ? null : (
           <SupplyMediaTable
             media={media}
             suppliers={suppliers}

@@ -12,7 +12,7 @@ export default function Loading() {
       <PageHeader
         title="Estados de cuenta"
         description="El resumen mensual de cada proveedor, con lo que se debe y lo pagado"
-        breadcrumb={<FuelBreadcrumbs items={[{ label: "Pagos", href: FUEL_PATHS.pagos }, { label: "Estados de cuenta" }]} />}
+        breadcrumb={<FuelBreadcrumbs items={[{ label: "Facturas y pagos", href: FUEL_PATHS.pagos }, { label: "Estados de cuenta" }]} />}
       />
       <SectionNavSkeleton tabs={2} />
       <div className="mb-4 space-y-2">

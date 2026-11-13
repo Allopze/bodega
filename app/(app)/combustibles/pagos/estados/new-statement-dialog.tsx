@@ -8,6 +8,7 @@ import type { ActionState } from "@/lib/validation/masters"
 import type { StatementPreview } from "@/lib/combustibles/statements-preview"
 import { fuelMonthLabel } from "@/lib/combustibles/calculations"
 import { fuelStatementHref } from "@/lib/combustibles/routes"
+import { FuelTerm } from "@/components/combustibles/fuel-glossary"
 import { Button } from "@/components/ui/button"
 import { Callout } from "@/components/ui/callout"
 import { DatePicker } from "@/components/ui/date-picker"
@@ -209,8 +210,8 @@ function PreviewBody({ preview, pending, error, ready, supplierName }: {
           </p>
           <dl className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-4">
             <PreviewFigure label="Neto" value={formatCLP(totals.totalBaseAmount)} />
-            <PreviewFigure label="IEC" value={formatCLP(totals.totalIec)} />
-            <PreviewFigure label="IVA" value={formatCLP(totals.totalIva)} />
+            <PreviewFigure label={<FuelTerm term="IEC">IEC</FuelTerm>} value={formatCLP(totals.totalIec)} />
+            <PreviewFigure label={<FuelTerm term="IVA">IVA</FuelTerm>} value={formatCLP(totals.totalIva)} />
             <PreviewFigure label="Total a pagar" value={formatCLP(totals.totalAmount)} strong />
           </dl>
           <p className="text-xs text-[var(--color-text-muted)]">Al crearlo queda todo por pagar; los pagos se registran en el detalle del estado de cuenta.</p>
@@ -224,7 +225,7 @@ function PreviewBody({ preview, pending, error, ready, supplierName }: {
   )
 }
 
-function PreviewFigure({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
+function PreviewFigure({ label, value, strong }: { label: React.ReactNode; value: string; strong?: boolean }) {
   return (
     <div>
       <dt className="text-xs text-[var(--color-text-subtle)]">{label}</dt>

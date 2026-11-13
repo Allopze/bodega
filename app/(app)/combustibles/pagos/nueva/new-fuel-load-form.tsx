@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { createFuelLoadAction } from "../../actions"
 import type { ActionState } from "@/lib/validation/masters"
 import { calculateFuelAmounts } from "@/lib/combustibles/calculations"
+import { FuelTerm } from "@/components/combustibles/fuel-glossary"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -178,13 +179,13 @@ export function NewFuelLoadForm({ data, rates }: { data: NewFuelLoadData; rates:
           </div>
 
           <dl className="grid grid-cols-2 gap-x-4 gap-y-3 rounded-[var(--radius-lg)] bg-[var(--color-surface-2)] p-4 text-sm md:grid-cols-4">
-            <div><dt className="text-xs text-[var(--color-text-subtle)]">IEC fijo</dt><dd className="font-mono tabular-nums">{formatCLP(iecFixed)}</dd></div>
-            <div><dt className="text-xs text-[var(--color-text-subtle)]">IEC variable</dt><dd className="font-mono tabular-nums">{formatCLP(iecVariable)}</dd></div>
-            <div><dt className="text-xs text-[var(--color-text-subtle)]">IVA (19 %)</dt><dd className="font-mono tabular-nums">{formatCLP(ivaAmount)}</dd></div>
+            <div><dt className="text-xs text-[var(--color-text-subtle)]"><FuelTerm term="IEC">IEC</FuelTerm> fijo</dt><dd className="font-mono tabular-nums">{formatCLP(iecFixed)}</dd></div>
+            <div><dt className="text-xs text-[var(--color-text-subtle)]"><FuelTerm term="IEC">IEC</FuelTerm> variable</dt><dd className="font-mono tabular-nums">{formatCLP(iecVariable)}</dd></div>
+            <div><dt className="text-xs text-[var(--color-text-subtle)]"><FuelTerm term="IVA">IVA</FuelTerm> (19 %)</dt><dd className="font-mono tabular-nums">{formatCLP(ivaAmount)}</dd></div>
             <div><dt className="text-xs font-semibold text-[var(--color-text)]">Total</dt><dd className="font-mono text-base font-semibold tabular-nums">{formatCLP(totalAmount)}</dd></div>
           </dl>
           <p className="text-xs text-[var(--color-text-muted)]">
-            El IEC (impuesto específico a los combustibles) y el IVA se calculan solos con los litros y el neto.
+            El <FuelTerm term="IEC">IEC</FuelTerm> (impuesto específico al combustible) y el <FuelTerm term="IVA">IVA</FuelTerm> se calculan solos con los litros y el neto.
           </p>
         </CardContent>
       </Card>

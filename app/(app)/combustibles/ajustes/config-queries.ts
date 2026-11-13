@@ -20,7 +20,7 @@ async function load<T>(promise: Promise<T>, fallback: T, label: string): Promise
   return value === failed ? { value: fallback, failed: true } : { value: value as T, failed: false }
 }
 
-export async function loadMandantesData(session: Session): Promise<{ mandantes: MandanteRow[]; worksites: WorksiteOption[]; clients: Option[]; degraded: number; total: number }> {
+export async function loadMandantesData(session: Session): Promise<{ mandantes: MandanteRow[]; worksites: WorksiteOption[]; clients: Option[]; degraded: string[]; total: number }> {
   const scope = resolveWorksiteScope(session)
   const [mandanteRows, linkRows, worksiteRows, clientRows] = await Promise.all([
     load(
@@ -49,11 +49,16 @@ export async function loadMandantesData(session: Session): Promise<{ mandantes: 
     ...row,
     worksiteIds: linkRows.value.filter((link) => link.mandanteId === row.id && visibleWorksiteIds.has(link.worksiteId)).map((link) => link.worksiteId),
   }))
-  const sources = [mandanteRows, linkRows, worksiteRows, clientRows]
-  return { mandantes, worksites: worksiteOptions, clients: clientRows.value, degraded: sources.filter((source) => source.failed).length, total: sources.length }
+  const sources = [
+    { label: "mandantes", failed: mandanteRows.failed },
+    { label: "faenas de cada mandante", failed: linkRows.failed },
+    { label: "faenas", failed: worksiteRows.failed },
+    { label: "clientes", failed: clientRows.failed },
+  ]
+  return { mandantes, worksites: worksiteOptions, clients: clientRows.value, degraded: sources.filter((source) => source.failed).map((source) => source.label), total: sources.length }
 }
 
-export async function loadSupplyMediaData(): Promise<{ media: SupplyMediumRow[]; suppliers: Option[]; degraded: number; total: number }> {
+export async function loadSupplyMediaData(): Promise<{ media: SupplyMediumRow[]; suppliers: Option[]; degraded: string[]; total: number }> {
   const [mediaRows, supplierRows] = await Promise.all([
     load(
       db.select({
@@ -68,11 +73,14 @@ export async function loadSupplyMediaData(): Promise<{ media: SupplyMediumRow[];
     id: row.id, name: row.name, kind: row.kind, fuelSupplierId: row.fuelSupplierId, fuelSupplierName: row.fuelSupplierName,
     providerMapping: providerMappingFromColumns(row.providerCode, row.providerChannel), aliases: row.aliases, sortOrder: row.sortOrder, isActive: row.isActive,
   }))
-  const sources = [mediaRows, supplierRows]
-  return { media, suppliers: supplierRows.value, degraded: sources.filter((source) => source.failed).length, total: sources.length }
+  const sources = [
+    { label: "medios de suministro", failed: mediaRows.failed },
+    { label: "proveedores", failed: supplierRows.failed },
+  ]
+  return { media, suppliers: supplierRows.value, degraded: sources.filter((source) => source.failed).map((source) => source.label), total: sources.length }
 }
 
-export async function loadEquipmentFamiliesData(): Promise<{ types: EquipmentTypeRow[]; degraded: number; total: number }> {
+export async function loadEquipmentFamiliesData(): Promise<{ types: EquipmentTypeRow[]; degraded: string[]; total: number }> {
   const typeRows = await load(
     db.select({ id: fuelEquipmentTypes.id, name: fuelEquipmentTypes.name, performanceFamily: fuelEquipmentTypes.performanceFamily, vehicleCount: count(fuelVehicles.id) })
       .from(fuelEquipmentTypes).leftJoin(fuelVehicles, eq(fuelVehicles.equipmentTypeId, fuelEquipmentTypes.id))
@@ -80,7 +88,7 @@ export async function loadEquipmentFamiliesData(): Promise<{ types: EquipmentTyp
     [], "ajustes-equipment-types",
   )
   const types: EquipmentTypeRow[] = typeRows.value.map((row) => ({ id: row.id, name: row.name, performanceFamily: row.performanceFamily as PerformanceFamily | null, vehicleCount: Number(row.vehicleCount) }))
-  return { types, degraded: typeRows.failed ? 1 : 0, total: 1 }
+  return { types, degraded: typeRows.failed ? ["tipos de equipo"] : [], total: 1 }
 }
 
 export async function loadThresholdsData(): Promise<{ settings: PerformanceControlSettings; failed: boolean }> {

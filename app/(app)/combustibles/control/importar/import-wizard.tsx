@@ -152,7 +152,7 @@ export function ImportWizard({ kind, media, open, onOpenChange }: {
               helperText={copy.helper}
             />
             <div className="flex items-center justify-between gap-3">
-              <ExportButton action={downloadImportTemplateAction} filters={kind} label="Descargar plantilla" variant="ghost" />
+              <ExportButton action={downloadImportTemplateAction} filters={kind} label="Descargar plantilla" ariaLabel={kind === "telemetry" ? "Descargar la plantilla de telemetría" : "Descargar la plantilla de despachos de surtidor"} variant="ghost" />
               <p className="text-xs text-[var(--color-text-muted)]">La plantilla trae los encabezados exactos y una hoja de instrucciones.</p>
             </div>
             {message ? <p role="alert" className="text-sm text-[var(--color-danger-ink)]">{message}</p> : null}

@@ -1,4 +1,5 @@
 import Link from "next/link"
+import { VehicleIdentity } from "@/components/fleet/vehicle-identity"
 import { FuelTerm } from "@/components/combustibles/fuel-glossary"
 import { MetaBadge, metaFor } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
@@ -57,7 +58,7 @@ export function InvoicesTable({
     <div>
       <p className="mb-3 text-sm text-[var(--color-text-muted)]" aria-live="polite">
         <span className="font-mono tabular-nums">{formatQty(pagination.totalItems)}</span>{" "}
-        {pagination.totalItems === 1 ? "carga" : "cargas"} en esta lista
+        {pagination.totalItems === 1 ? "factura" : "facturas"} en esta lista
       </p>
 
       <div className="grid grid-cols-1 gap-2 md:hidden">
@@ -88,7 +89,7 @@ export function InvoicesTable({
       </div>
 
       <TableRoot className="hidden md:block" aria-label="Facturas de combustible">
-        <Table className="min-w-[1180px]">
+        <Table className="min-w-[1040px]">
           <TableHeader>
             <TableRow>
               <TableHead>Fecha</TableHead>
@@ -96,7 +97,7 @@ export function InvoicesTable({
               <TableHead>Proveedor</TableHead>
               <TableHead>Faena</TableHead>
               <TableHead>Producto</TableHead>
-              <TableHead>N.º factura</TableHead>
+              <TableHead className="whitespace-nowrap">N.º factura</TableHead>
               <TableHead className="text-right">Litros</TableHead>
               <TableHead className="text-right">Neto</TableHead>
               <TableHead className="text-right"><FuelTerm term="IEC">IEC</FuelTerm></TableHead>
@@ -114,17 +115,17 @@ export function InvoicesTable({
               return (
                 <TableRow key={row.id}>
                   <TableCell className="whitespace-nowrap font-mono text-sm">{formatDate(row.loadDate)}</TableCell>
-                  <TableCell className="whitespace-nowrap">
-                    <span className="font-mono font-semibold">{invoiceEquipmentLabel(row.vehicle)}</span>
-                    {meter && <span className="block text-xs text-[var(--color-text-subtle)]"><span className="font-mono tabular-nums">{meter}</span></span>}
-                  </TableCell>
                   <TableCell>
-                    {row.supplierName ?? "—"}
-                    <span className="block text-xs text-[var(--color-text-subtle)]">{SERVICE_TYPE_LABELS[row.serviceType] ?? row.serviceType}</span>
+                    {/* El medidor al cargar viaja donde otras tablas ponen el tipo: «120.300 km · AA-BB-11». */}
+                    {row.vehicle ? <VehicleIdentity code={row.vehicle.code} plate={row.vehicle.plate} type={meter} /> : "—"}
                   </TableCell>
-                  <TableCell className="max-w-40 truncate" title={row.worksiteName ?? undefined}>{row.worksiteName ?? "—"}</TableCell>
-                  <TableCell>{row.product}</TableCell>
-                  <TableCell className="font-mono text-sm">{row.receiptNumber ?? "—"}</TableCell>
+                  <TableCell className="max-w-44 whitespace-nowrap">
+                    <span className="block truncate" title={row.supplierName ?? undefined}>{row.supplierName ?? "—"}</span>
+                    <span className="block truncate text-xs text-[var(--color-text-subtle)]">{SERVICE_TYPE_LABELS[row.serviceType] ?? row.serviceType}</span>
+                  </TableCell>
+                  <TableCell className="max-w-32 truncate" title={row.worksiteName ?? undefined}>{row.worksiteName ?? "—"}</TableCell>
+                  <TableCell className="max-w-32 truncate" title={row.product}>{row.product}</TableCell>
+                  <TableCell className="whitespace-nowrap font-mono text-sm">{row.receiptNumber ?? "—"}</TableCell>
                   <TableCellNum>{formatQty(row.liters)}</TableCellNum>
                   <TableCellNum>{formatCLP(row.baseAmount)}</TableCellNum>
                   <TableCellNum>{formatCLP(row.iecTotal)}</TableCellNum>

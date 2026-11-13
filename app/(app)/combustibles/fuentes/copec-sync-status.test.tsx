@@ -81,7 +81,7 @@ describe("aviso de cargas pendientes", () => {
 
   it("habla de cargas y de su mes, no de patentes", () => {
     render(<CopecSyncStatus source={source} initialStatus={{ ...status, pending: 566, lastRunMonth: "2025-01-01" }} initialStartOptions={startOptions} />)
-    expect(screen.getByText(/566 carga\(s\) de enero de 2025 quedaron pendientes/)).toBeInTheDocument()
+    expect(screen.getByText(/566 cargas de enero de 2025 quedaron pendientes/)).toBeInTheDocument()
     expect(screen.queryByText(/patente\(s\) sin vehículo/)).not.toBeInTheDocument()
   })
 
@@ -178,7 +178,7 @@ describe("sincronización Copec en segundo plano", () => {
     renderPanel()
 
     await clickSyncAndAdvance(4_001)
-    expect(screen.getByText(/Sincronizando octubre de 2026 · 0 de 2 mes\(es\) listos/i)).toBeInTheDocument()
+    expect(screen.getByText(/Sincronizando octubre de 2026 · 0 de 2 meses listos/i)).toBeInTheDocument()
     expect(mocks.progress).toHaveBeenCalledWith({ since: "2026-10-29T23:00:00.000Z" })
 
     await act(async () => { await vi.advanceTimersByTimeAsync(4_001) })

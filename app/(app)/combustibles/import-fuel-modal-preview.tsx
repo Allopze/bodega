@@ -200,7 +200,7 @@ export function PreviewStep({
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="border rounded-lg overflow-x-auto max-h-64 overflow-y-auto">
+          <div className="rounded-lg border border-[var(--color-border)] overflow-x-auto max-h-64 overflow-y-auto">
             <Table>
               <TableHeader>
                 <TableRow>

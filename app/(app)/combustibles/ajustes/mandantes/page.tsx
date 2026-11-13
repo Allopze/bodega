@@ -27,12 +27,12 @@ export default async function AjustesMandantesPage() {
         actions={<FuelHeaderActions><NewMandanteButton worksites={worksites} clients={clients} /></FuelHeaderActions>}
       />
       <div className="space-y-4">
-        <DegradedDataBanner degraded={Array.from({ length: degraded }, () => "fuente")} total={total} />
+        <DegradedDataBanner degraded={degraded} total={total} />
         <p className="max-w-3xl text-sm text-[var(--color-text-muted)]">
           Cada faena pertenece a lo más a un mandante. La tolerancia es la diferencia aceptada entre lo que entró y lo que se entregó, en porcentaje de lo que entró.
         </p>
         {/* Con la lectura caída una lista vacía no significa «no hay mandantes»: el aviso de arriba ya lo dice. */}
-        {degraded > 0 && mandantes.length === 0 ? null : (
+        {degraded.length > 0 && mandantes.length === 0 ? null : (
           <MandantesTable
             mandantes={mandantes}
             worksites={worksites}

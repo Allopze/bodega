@@ -75,7 +75,7 @@ export default async function AjustesIntegracionesPage() {
         actions={<FuelHeaderActions />}
       />
       <div className="space-y-4">
-        <DegradedDataBanner degraded={Array.from({ length: data.degraded }, () => "fuente")} total={1} />
+        <DegradedDataBanner degraded={data.degraded} total={1} />
         <p className="max-w-3xl text-sm text-[var(--color-text-muted)]">
           Credenciales y actualización automática de los proveedores. Cada mañana la plataforma lee lo nuevo, sin descargar planillas.
           {canSeeSources ? <> Para actualizar a mano o ver mes por mes lo que llegó, entra a <Link href={FUEL_PATHS.fuentes} className="font-medium text-[var(--color-primary-ink)] underline underline-offset-2">Fuentes de datos</Link>.</> : null}

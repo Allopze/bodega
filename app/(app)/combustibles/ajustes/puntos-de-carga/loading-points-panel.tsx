@@ -156,7 +156,7 @@ export function LoadingPointsPanel({ points, links, storageLocations, emptyActio
         {revokedLinks.length > 0 ? (
           <details className="rounded-xl border border-[var(--color-border)] p-4 [&_summary]:cursor-pointer">
             <summary className="text-sm font-semibold text-[var(--color-text)]">Enlaces revocados ({revokedLinks.length})</summary>
-            <div className="mt-3"><LinksTable rows={revokedLinks} ariaLabel="Enlaces revocados" /></div>
+            <div className="mt-3"><LinksTable rows={revokedLinks} ariaLabel="Enlaces revocados" framed={false} /></div>
           </details>
         ) : null}
       </section>
@@ -186,9 +186,9 @@ export function LoadingPointsPanel({ points, links, storageLocations, emptyActio
   )
 }
 
-function LinksTable({ rows, ariaLabel, onRevoke }: { rows: PublicLinkRow[]; ariaLabel: string; onRevoke?: (link: PublicLinkRow) => void }) {
+function LinksTable({ rows, ariaLabel, onRevoke, framed = true }: { rows: PublicLinkRow[]; ariaLabel: string; onRevoke?: (link: PublicLinkRow) => void; framed?: boolean }) {
   return (
-    <TableRoot aria-label={ariaLabel}>
+    <TableRoot framed={framed} aria-label={ariaLabel}>
       <Table className="min-w-[720px]">
         <TableHeader>
           <TableRow>

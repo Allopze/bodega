@@ -8,6 +8,7 @@ import { settle } from "@/lib/async-settle"
 import { can, requireAnyPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { DegradedDataBanner } from "@/components/ui/degraded-data-banner"
+import { EmptyState } from "@/components/ui/empty-state"
 import { ExportButton } from "@/components/ui/export-button"
 import { Button } from "@/components/ui/button"
 import { PageContainer } from "@/components/ui/page-container"
@@ -78,53 +79,42 @@ export default async function FuentesPage({ searchParams }: { searchParams: Prom
   const files = filesResult === FAILED ? null : filesResult
   const copecState = copecResult === FAILED ? null : copecResult
   const copecStart = copecStartResult === FAILED ? null : copecStartResult
-  const degraded = [
-    statuses === null ? "estado de las fuentes" : null,
-    coverage === null ? "cobertura por mes" : null,
-    files === null ? "archivos importados" : null,
-    canSync && (copecState === null || copecStart === null) ? "sincronización de Copec" : null,
-    worksitesResult === FAILED ? "faenas" : null,
-    mediaResult === FAILED ? "medios de suministro" : null,
-  ].filter((label): label is string => label !== null)
+  // Cada consulta que esta pantalla hace (y por tanto puede fallar) se declara una sola vez: el aviso de datos
+  // incompletos toma de aquí cuáles fallaron y de cuántas, sin un total escrito a mano.
+  const queries: Array<{ label: string; failed: boolean }> = [
+    { label: "estado de las fuentes", failed: statuses === null },
+    { label: "cobertura por mes", failed: coverage === null },
+    { label: "archivos importados", failed: files === null },
+    ...(canSync ? [{ label: "sincronización de Copec", failed: copecState === null || copecStart === null }] : []),
+    ...(addKind === "facturas" && scope.mode !== "none" ? [{ label: "faenas", failed: worksitesResult === FAILED }] : []),
+    ...(addKind === "surtidor" ? [{ label: "medios de suministro", failed: mediaResult === FAILED }] : []),
+  ]
+  const degraded = queries.filter((query) => query.failed).map((query) => query.label)
 
-  const importHref = (kind: "telemetria" | "surtidor" | "facturas") => `${FUEL_PATHS.fuentes}?agregar=${kind}`
+  const problemSources = statuses ? statuses.filter((source) => source.problem).length : 0
   const secondary = (href: string, label: string) => <Button asChild variant="secondary" size="sm"><Link href={href}>{label}</Link></Button>
   const ghost = (href: string, label: string) => <Button asChild variant="ghost" size="sm"><Link href={href}>{label}</Link></Button>
 
+  /**
+   * Para meter datos hay un solo verbo y un solo lugar: «Agregar datos», arriba. Las filas de cada fuente ya no
+   * repiten un botón «Importar…» que abría el mismo diálogo; conservan lo que sólo ellas ofrecen (la plantilla, la
+   * exportación de pendientes, los puntos de carga). Cada «Descargar plantilla» dice de qué fuente es.
+   */
   function actionsFor(source: FuelSourceStatus) {
     switch (source.key) {
       // Quien exporta pero no administra la integración no recibe la fila interactiva: conserva el botón de exportar.
       case "copec":
         return canExportQuality ? <FuelProviderQualityExportButton /> : null
       case "planilla":
-        return canImport ? (
-          <>
-            {secondary(`${FUEL_PATHS.fuentes}/agregar/planilla`, "Importar planilla")}
-            <ExportButton action={downloadOperationsTemplateAction} label="Descargar plantilla" variant="ghost" />
-          </>
-        ) : null
+        return canImport ? <ExportButton action={downloadOperationsTemplateAction} label="Descargar plantilla" ariaLabel="Descargar la plantilla de la planilla de cargas" variant="ghost" /> : null
       case "telemetria":
-        return canImport ? (
-          <>
-            {secondary(importHref("telemetria"), "Importar telemetría")}
-            <ExportButton action={downloadImportTemplateAction} filters="telemetry" label="Descargar plantilla" variant="ghost" />
-          </>
-        ) : null
+        return canImport ? <ExportButton action={downloadImportTemplateAction} filters="telemetry" label="Descargar plantilla" ariaLabel="Descargar la plantilla de telemetría" variant="ghost" /> : null
       case "surtidor":
-        return canImport ? (
-          <>
-            {secondary(importHref("surtidor"), "Importar despachos")}
-            <ExportButton action={downloadImportTemplateAction} filters="supply_inputs" label="Descargar plantilla" variant="ghost" />
-          </>
-        ) : null
-      case "facturas":
-        return options.some((option) => option.kind === "facturas" && option.allowed) ? secondary(importHref("facturas"), "Importar facturas") : null
-      case "historico-sellos":
-        return can(session, "combustibles:tae_import") ? secondary(`${FUEL_PATHS.fuentes}/agregar/sellos`, "Importar histórico") : null
+        return canImport ? <ExportButton action={downloadImportTemplateAction} filters="supply_inputs" label="Descargar plantilla" ariaLabel="Descargar la plantilla de despachos de surtidor" variant="ghost" /> : null
       case "terreno":
         return (
           <>
-            {can(session, "combustibles:tae_manage_config") ? secondary(FUEL_PATHS.ajustesPuntos, "Puntos de carga y QR") : null}
+            {can(session, "combustibles:tae_manage_config") ? secondary(FUEL_PATHS.ajustesPuntos, "Ver puntos de carga y QR") : null}
             {ghost(FUEL_PATHS.cargas, "Ver las cargas")}
           </>
         )
@@ -141,20 +131,18 @@ export default async function FuentesPage({ searchParams }: { searchParams: Prom
         breadcrumb={<FuelBreadcrumbs items={[{ label: "Fuentes de datos" }]} />}
         actions={<FuelHeaderActions period={period}><AddFuelDataButton options={options} /></FuelHeaderActions>}
       />
-      <DegradedDataBanner degraded={degraded} total={3 + Number(canSync) + Number(addKind === "facturas" && scope.mode !== "none") + Number(addKind === "surtidor")} />
+      <DegradedDataBanner degraded={degraded} total={queries.length} />
 
       {statuses ? (
         <>
-          <div role="status" className="mb-4 max-w-4xl text-sm text-[var(--color-text)]">
-            <p className="font-medium">{describeFuelSources(statuses, period)}</p>
-            {statuses.some((source) => source.problem) ? (
-              <ul className="mt-1 list-disc space-y-0.5 pl-5">
-                {statuses.filter((source) => source.problem).map((source) => (
-                  <li key={source.key}><span className="font-medium">{source.name}:</span> {source.problem}</li>
-                ))}
-              </ul>
-            ) : null}
-          </div>
+          {/* El detalle de cada problema vive en la tarjeta de su fuente («Falta»): listarlo también aquí lo repetía. */}
+          <p role="status" className="mb-4 max-w-4xl text-sm font-medium text-[var(--color-text)]">
+            {problemSources === 0
+              ? describeFuelSources(statuses, period)
+              : problemSources === 1
+                ? "Una fuente necesita atención; el detalle está en su tarjeta."
+                : `${problemSources} fuentes necesitan atención; el detalle está en cada tarjeta.`}
+          </p>
           {coverage ? <CoverageMap matrix={coverage} /> : null}
           {/* `grid-cols-1` y no la columna automática: con ella una fila de contenido ancho estira la columna de todas. */}
           <div className="grid grid-cols-1 gap-3">
@@ -188,7 +176,12 @@ export default async function FuentesPage({ searchParams }: { searchParams: Prom
             {files.total > files.rows.length ? ghost(FUEL_PATHS.fuentesArchivos, `Ver los ${files.total} archivos`) : null}
           </div>
           {files.rows.length > 0 ? <ImportedFilesTable rows={files.rows} caption="Últimos archivos importados" /> : (
-            <p className="text-sm text-[var(--color-text-muted)]">Todavía no se ha importado ningún archivo. Usa «Agregar datos» para subir el primero.</p>
+            <EmptyState
+              compact
+              title="Todavía no se ha importado ningún archivo"
+              description="Cuando subas una planilla, un reporte de tarjeta o la telemetría de los equipos, quedará acá con lo que trajo."
+              action={<AddFuelDataButton options={options} />}
+            />
           )}
         </section>
       ) : null}

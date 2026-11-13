@@ -105,7 +105,7 @@ export async function TarjetaDetail({ session, id }: { session: Session; id: str
           title={`Filas rechazadas (${rejections.length})`}
           description="Filas del archivo que no se importaron: patentes sin vehículo, colisiones de catálogo o filas inválidas. Quedan registradas para corregirlas y reprocesar el archivo."
         >
-          <TableRoot aria-label="Filas rechazadas de la importación">
+          <TableRoot framed={false} aria-label="Filas rechazadas de la importación">
             <Table className="min-w-[640px]">
               <TableHeader>
                 <TableRow>
@@ -131,7 +131,7 @@ export async function TarjetaDetail({ session, id }: { session: Session; id: str
       )}
 
       <Section title={`Registros del archivo (${batch.records.length})`}>
-        <TableRoot aria-label="Registros del reporte de tarjeta">
+        <TableRoot framed={false} aria-label="Registros del reporte de tarjeta">
           <Table className="min-w-[720px]">
             <TableHeader>
               <TableRow>
@@ -153,7 +153,7 @@ export async function TarjetaDetail({ session, id }: { session: Session; id: str
                   <TableCell className="text-right font-mono tabular-nums">{formatQty(record.numeroTransacciones)}</TableCell>
                   <TableCell className="text-right font-mono tabular-nums">{formatQty(record.cantidadUnidad, "L")}</TableCell>
                   {showCosts ? <TableCell className="text-right font-mono tabular-nums">{formatCLP(record.monto)}</TableCell> : null}
-                  <TableCell className="text-right font-mono tabular-nums">{record.rendimientoPromedio > 0 ? record.rendimientoPromedio.toFixed(2) : "—"}</TableCell>
+                  <TableCell className="text-right font-mono tabular-nums">{record.rendimientoPromedio > 0 ? formatQty(record.rendimientoPromedio, "km/L", { maximumFractionDigits: 2 }) : "—"}</TableCell>
                 </TableRow>
               ))}
             </TableBody>

@@ -96,7 +96,7 @@ export async function PlanillaDetail({ session, id }: { session: Session; id: st
         ) : (
           <div className="space-y-3">
             <p className="text-sm text-[var(--color-text-muted)]">Estas filas no se convirtieron en carga. Descarga el Excel, corrige el dato indicado y vuelve a subirlas como un archivo nuevo.</p>
-            <TableRoot aria-label="Filas rechazadas de la planilla">
+            <TableRoot framed={false} aria-label="Filas rechazadas de la planilla">
               <Table className="min-w-[600px]">
                 <TableHeader>
                   <TableRow>
@@ -152,7 +152,7 @@ export async function PlanillaDetail({ session, id }: { session: Session; id: st
       ) : null}
 
       <Section title={`Muestra de registros (los primeros ${SAMPLE_LIMIT} por fecha, de ${formatQty(batch.filasValidas)})`}>
-        <TableRoot aria-label="Muestra de registros de la planilla">
+        <TableRoot framed={false} aria-label="Muestra de registros de la planilla">
           <Table className="min-w-[900px]">
             <TableHeader>
               <TableRow>
@@ -175,7 +175,7 @@ export async function PlanillaDetail({ session, id }: { session: Session; id: st
                   <TableCell>{record.worksite?.name ?? record.faenaNombre ?? "—"}</TableCell>
                   <TableCell className="text-right font-mono tabular-nums">{formatQty(record.liters, "L")}</TableCell>
                   {showCosts ? <TableCell className="text-right font-mono tabular-nums">{record.monto != null ? formatCLP(record.monto) : "—"}</TableCell> : null}
-                  <TableCell className="text-right font-mono tabular-nums">{record.rendimiento != null ? record.rendimiento.toFixed(2) : "—"}</TableCell>
+                  <TableCell className="text-right font-mono tabular-nums">{record.rendimiento != null ? formatQty(record.rendimiento, record.tipoRendimiento === "lt_hr" ? "L/h" : record.tipoRendimiento === "km_lt" ? "km/L" : undefined, { maximumFractionDigits: 2 }) : "—"}</TableCell>
                   <TableCell className="text-sm">{record.operador ?? "—"}</TableCell>
                 </TableRow>
               ))}

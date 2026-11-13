@@ -36,7 +36,7 @@ import { UrlSelect } from "../_components/url-select"
 import { litersText } from "../_components/format"
 import { formatQty } from "@/lib/utils"
 
-export const metadata: Metadata = { title: "Estanques" }
+export const metadata: Metadata = { title: "Cuadratura de estanques" }
 
 type SearchParams = Record<string, string | string[] | undefined>
 
@@ -107,7 +107,7 @@ export default async function CuadraturaEstanquesPage({ searchParams }: { search
   return (
     <PageContainer>
       <PageHeader
-        title="Estanques"
+        title="Cuadratura de estanques"
         description="Lo que recibió cada estanque contra lo que entregó"
         breadcrumb={<FuelBreadcrumbs items={[{ label: "Cuadratura", href: FUEL_PATHS.cuadratura }, { label: "Estanques" }]} />}
         actions={

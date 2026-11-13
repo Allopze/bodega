@@ -3,6 +3,8 @@
 import { useReducer } from "react"
 import { FileXls, Upload } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
+import { Callout } from "@/components/ui/callout"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { toast } from "@/lib/toast"
@@ -56,7 +58,7 @@ export function TaeImportReportForm() {
       if (result.ok && result.data) {
         downloadBase64Xlsx(result.data.base64, result.data.filename)
         dispatch({ type: "previewReady", preview: result.data.preview })
-        toast.success("Reporte generado. Revisa el archivo antes de aprobar cualquier match.")
+        toast.success("Reporte generado. Revisa el archivo antes de aprobar cualquier coincidencia.")
       } else {
         toast.error(result.message ?? "No se pudo generar el reporte")
       }
@@ -92,24 +94,25 @@ export function TaeImportReportForm() {
   const pendingDecisions = preview?.reviewItems.filter((item) => !Object.prototype.hasOwnProperty.call(decisions, item.key)).length ?? 0
 
   return (
-    <div className="space-y-4 border border-(--color-border) bg-(--color-surface) p-5">
-      <div>
-        <p className="text-eyebrow">Reporte de mapeo sugerido</p>
-        <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+    <Card>
+      <CardHeader>
+        <CardTitle as="h2">Reporte de mapeo sugerido</CardTitle>
+        <CardDescription>
           Sube el Excel de la planilla antigua del formulario de sellos. Se genera un Excel de solo lectura con la faena, equipo, conductor y
           supervisor sugeridos para cada fila (con nivel de confianza), más observaciones de continuidad de sello y
           lecturas. Descarga y revisa ese reporte antes de habilitar la importación definitiva.
-        </p>
-      </div>
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
-        <label className="flex cursor-pointer items-center gap-2 border border-dashed border-(--color-border-strong) bg-(--color-surface-2) px-4 py-3 text-sm">
+        <label className="flex cursor-pointer items-center gap-2 rounded-[var(--radius-lg)] border border-dashed border-[var(--color-border-strong)] bg-[var(--color-surface-2)] px-4 py-3 text-sm focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-[var(--color-primary)]">
           <Upload size={16} />
           {file ? file.name : "Seleccionar archivo .xlsx"}
           <input type="file" accept=".xlsx" className="sr-only" onChange={(event) => dispatch({ type: "fileSelected", file: event.target.files?.[0] ?? null })} />
         </label>
         <Button onClick={handleGenerate} disabled={loading || !file}>
           <FileXls className="mr-1 h-4 w-4" />
-          {loading ? "Generando..." : "Generar reporte"}
+          {loading ? "Generando…" : "Generar reporte"}
         </Button>
       </div>
       {reportGenerated && preview && !result && <section className="space-y-4 border-t border-(--color-border) pt-4" aria-labelledby="tae-preview-title">
@@ -122,24 +125,24 @@ export function TaeImportReportForm() {
               más abajo en la comparación entre la revisión previa y la importación. */}
           <PreviewMetric label="Filas a importar" value={preview.planned.validatedRows + preview.planned.observedRows} />
           <PreviewMetric label="Litros a importar" value={`${preview.planned.totalLiters.toLocaleString("es-CL")} L`} />
-          <PreviewMetric label="Sello observadas" value={preview.sealObservations} />
+          <PreviewMetric label="Sellos observados" value={preview.sealObservations} />
           <PreviewMetric label="Filas rechazadas" value={preview.planned.rejectedRows} />
         </div>
         <div>
-          <h2 id="tae-preview-title" className="text-sm font-semibold">Revisión previa a la importación</h2>
+          <h3 id="tae-preview-title" className="text-sm font-semibold">Revisión previa a la importación</h3>
           <p className="mt-1 text-sm text-(--color-text-muted)">
-            La revisión previa dejó {preview.reviewItems.length.toLocaleString("es-CL")} identidades dudosas. Cada una debe quedar asignada a su catálogo o marcada explícitamente como “Sin equivalente”.
+            La revisión previa dejó {preview.reviewItems.length.toLocaleString("es-CL")} identidades dudosas. Cada una debe quedar asignada a su catálogo o marcada explícitamente como «Sin equivalente».
           </p>
         </div>
         {preview.reviewItems.length > 0 && <ul className="space-y-2" aria-label="Identidades históricas pendientes de mapeo">
           {preview.reviewItems.map((item) => {
             const hasDecision = Object.prototype.hasOwnProperty.call(decisions, item.key)
             const currentValue = hasDecision ? (decisions[item.key] ?? "__none__") : ""
-            return <li key={item.key} className="flex flex-wrap items-center justify-between gap-3 border border-(--color-border) p-3 text-sm">
+            return <li key={item.key} className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-lg)] border border-[var(--color-border)] p-3 text-sm">
               <div className="min-w-56">
                 <p className="text-xs text-(--color-text-muted)">{KIND_LABEL[item.kind]} · {item.worksiteName} · {item.occurrences.toLocaleString("es-CL")} filas</p>
                 <p className="font-medium">{item.legacyValue}</p>
-                <p className="text-xs text-(--color-text-muted)">Sugerencia: {item.suggestedLabel ?? "Sin match"} · {item.confidence}</p>
+                <p className="text-xs text-(--color-text-muted)">Sugerencia: {item.suggestedLabel ?? CONFIDENCE_LABEL.sin_match} · {CONFIDENCE_LABEL[item.confidence] ?? item.confidence}</p>
               </div>
               <div className="flex items-center gap-2">
                 <label className="sr-only" htmlFor={`mapping-${item.key}`}>Destino de {item.legacyValue}</label>
@@ -158,20 +161,29 @@ export function TaeImportReportForm() {
             </li>
           })}
         </ul>}
-        {preview.reviewItems.length === 0 && <p className="border border-(--color-success-line) bg-(--color-success-tint) p-3 text-sm text-(--color-success-ink)">No hay identidades ambiguas pendientes. El plan usa sólo coincidencias confiables o decisiones ya guardadas.</p>}
+        {preview.reviewItems.length === 0 && <Callout tone="success">No hay identidades ambiguas pendientes. El plan usa sólo coincidencias confiables o decisiones ya guardadas.</Callout>}
         <div className="border-t border-(--color-border) pt-4">
           <Checkbox checked={confirmed} onChange={(event) => dispatch({ type: "confirmed", value: event.target.checked })} disabled={pendingDecisions > 0} label={<>Revisé el reporte y las decisiones anteriores. Confirmo importar las filas con faena válida; las cargas que conserven observaciones de lectura, sello o identidad quedarán en estado <strong>Observada</strong>.</>} />
           {pendingDecisions > 0 && <p className="mt-2 text-xs text-(--color-warning-ink)">Faltan {pendingDecisions.toLocaleString("es-CL")} decisiones de mapeo.</p>}
           <Button className="mt-3" variant="destructive" onClick={handleImport} disabled={loading || !confirmed || pendingDecisions > 0}>{loading ? "Importando…" : "Importar histórico definitivamente"}</Button>
         </div>
       </section>}
-      {result && <section aria-live="polite" className="border border-[var(--color-success-line)] bg-[var(--color-success-tint)] p-4 text-sm text-[var(--color-success-ink)]"><p className="font-medium">Importación completada</p><p className="mt-1">{result.importedRows.toLocaleString("es-CL")} filas · {result.validatedRows.toLocaleString("es-CL")} validadas · {result.observedRows.toLocaleString("es-CL")} observadas · {result.invalidRows.toLocaleString("es-CL")} no importadas · {Number(result.totalLiters).toLocaleString("es-CL")} L</p>{preview && <div className="mt-3 border-t border-current/20 pt-3"><p className="font-medium">Comparación entre la revisión previa y la importación</p><p className="mt-1">Validadas: {preview.planned.validatedRows.toLocaleString("es-CL")} → {result.validatedRows.toLocaleString("es-CL")} · Observadas: {preview.planned.observedRows.toLocaleString("es-CL")} → {result.observedRows.toLocaleString("es-CL")} · Rechazadas: {preview.planned.rejectedRows.toLocaleString("es-CL")} → {result.invalidRows.toLocaleString("es-CL")}</p></div>}</section>}
-    </div>
+      {result && <Callout tone="success" className="p-4"><p className="font-medium">Importación completada</p><p className="mt-1">{result.importedRows.toLocaleString("es-CL")} filas · {result.validatedRows.toLocaleString("es-CL")} validadas · {result.observedRows.toLocaleString("es-CL")} observadas · {result.invalidRows.toLocaleString("es-CL")} no importadas · {Number(result.totalLiters).toLocaleString("es-CL")} L</p>{preview && <div className="mt-3 border-t border-current/20 pt-3"><p className="font-medium">Comparación entre la revisión previa y la importación</p><p className="mt-1">Validadas: {preview.planned.validatedRows.toLocaleString("es-CL")} → {result.validatedRows.toLocaleString("es-CL")} · Observadas: {preview.planned.observedRows.toLocaleString("es-CL")} → {result.observedRows.toLocaleString("es-CL")} · Rechazadas: {preview.planned.rejectedRows.toLocaleString("es-CL")} → {result.invalidRows.toLocaleString("es-CL")}</p></div>}</Callout>}
+      </CardContent>
+    </Card>
   )
+}
+
+/** Nivel de confianza de una equivalencia sugerida, en palabras (nunca el valor interno). */
+const CONFIDENCE_LABEL: Record<string, string> = {
+  exacta: "Coincide",
+  probable: "Probable",
+  posible: "Posible",
+  sin_match: "Sin coincidencia",
 }
 
 const KIND_LABEL: Record<TaeImportPreview["reviewItems"][number]["kind"], string> = { vehicle: "Equipo", driver: "Conductor", supervisor: "Supervisor" }
 
 function PreviewMetric({ label, value }: { label: string; value: string | number }) {
-  return <div className="border border-(--color-border) bg-(--color-surface-2) p-3"><p className="text-xs text-(--color-text-muted)">{label}</p><p className="mt-1 font-mono text-sm font-semibold">{typeof value === "number" ? value.toLocaleString("es-CL") : value}</p></div>
+  return <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3"><p className="text-xs text-(--color-text-muted)">{label}</p><p className="mt-1 font-mono text-sm font-semibold">{typeof value === "number" ? value.toLocaleString("es-CL") : value}</p></div>
 }

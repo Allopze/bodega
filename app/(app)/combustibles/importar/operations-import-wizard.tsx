@@ -231,7 +231,7 @@ export function OperationsImportWizard() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <ExportButton action={downloadOperationsTemplateAction} label="Descargar plantilla" />
+          <ExportButton action={downloadOperationsTemplateAction} label="Descargar plantilla" ariaLabel="Descargar la plantilla de la planilla de cargas" />
           <span className="text-xs text-[var(--color-text-muted)]">Mismas columnas que lee el importador, con una hoja de instrucciones (formatos y unidades).</span>
         </div>
 
