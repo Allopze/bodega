@@ -14,9 +14,10 @@ export function FuelGlossaryButton() {
   return (
     <Sheet>
       <SheetTrigger asChild>
-        <Button type="button" variant="ghost" size="sm" aria-label="¿Qué significa? Glosario de combustible">
+        {/* Sólo ícono: el texto competía con la acción primaria en una cabecera que
+            ya lleva período, «Agregar datos» y exportación (auditoría 2026-11-13, C12). */}
+        <Button type="button" variant="ghost" size="icon" aria-label="¿Qué significa? Glosario de combustible" title="¿Qué significa?">
           <Question aria-hidden="true" />
-          <span className="hidden sm:inline">¿Qué significa?</span>
         </Button>
       </SheetTrigger>
       <SheetContent className="sm:max-w-lg">

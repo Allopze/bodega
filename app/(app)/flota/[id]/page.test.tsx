@@ -13,6 +13,7 @@ vi.mock("@/lib/auth/can", () => ({
   can: (...args: unknown[]) => mocks.can(...args),
 }))
 vi.mock("@/lib/services/fleet", () => ({ getFleetVehicleDetail: mocks.detail }))
+vi.mock("@/lib/services/mantencion/equipment", () => ({ hasMaintenanceProfile: async () => false }))
 vi.mock("@/lib/services/system-settings", () => ({ getFleetAdminSettings: async () => ({ warningDays: 30, defaultVehicleStatus: "operativo" }) }))
 // La hoja «Actualizar vencimientos» importa la acción; su lógica tiene su propia prueba.
 vi.mock("../actions", () => ({ updateVehicleExpiriesAction: vi.fn() }))

@@ -18,7 +18,7 @@ import {
   type EquipmentCurrent, type EquipmentInput, type EquipmentResult, type FieldErrors, type ResolvedEquipment, type VehicleIdentity,
 } from "./equipment-resolve"
 
-export { NEW_WORKSITE, countEquipmentRecords } from "./equipment-resolve"
+export { NEW_WORKSITE, countEquipmentRecords, hasMaintenanceProfile } from "./equipment-resolve"
 export type { EquipmentCurrent, EquipmentInput, EquipmentResult, FieldErrors, ResolvedEquipment } from "./equipment-resolve"
 
 /**

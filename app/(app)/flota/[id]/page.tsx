@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { can, requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite } from "@/lib/auth/scope"
 import { getFleetVehicleDetail } from "@/lib/services/fleet"
+import { hasMaintenanceProfile } from "@/lib/services/mantencion/equipment"
 import { getFleetAdminSettings } from "@/lib/services/system-settings"
 import { FUEL_PERFORMANCE_UNIT_LABELS, VEHICLE_EXPIRY_FIELDS } from "@/lib/combustibles/validation"
 import { CANONICAL_FIELD_LABEL, expiringDocuments } from "@/lib/validation/fleet-documents"
@@ -60,6 +61,9 @@ export default async function FlotaVehiclePage({
     }
   })
   const canEditExpiries = can(session, "flota:manage_documents") && canAccessWorksite(session, vehicle.worksiteId)
+  // La ficha de Mantención existe sólo si el vehículo ya fue incorporado (tiene perfil).
+  const canViewMaintenance = ["mant:records:view_worksite", "mant:records:view_all", "mant:equipment:manage"].some((permission) => can(session, permission))
+  const maintenanceHref = canViewMaintenance && await hasMaintenanceProfile(vehicle.id) ? `/mantencion/equipos/${encodeURIComponent(vehicle.id)}` : null
 
   return (
     <PageContainer>
@@ -79,8 +83,11 @@ export default async function FlotaVehiclePage({
             {can(session, "combustibles:view") && <Button asChild size="sm" variant="secondary">
               <Link href={fuelEquipmentHref(vehicle.id)}>Combustible</Link>
             </Button>}
+            {maintenanceHref && <Button asChild size="sm" variant="secondary">
+              <Link href={maintenanceHref}>Ficha de mantención</Link>
+            </Button>}
             {detail.recentWorkOrders && <Button asChild size="sm" variant="secondary">
-              <Link href={`/mantencion/ot?equipo=${vehicle.id}`}>Ver órdenes de trabajo</Link>
+              <Link href={`/mantencion/ot?equipo=${vehicle.id}&estado=abiertas`}>Ver órdenes de trabajo</Link>
             </Button>}
           </div>
         }
@@ -236,7 +243,7 @@ export default async function FlotaVehiclePage({
             {detail.recentWorkOrders.length === 0 ? (
               <p className="text-sm text-[var(--color-text-muted)]">
                 Este equipo aún no tiene órdenes de trabajo. Se piden desde{" "}
-                <Link href={`/mantencion/ot?equipo=${vehicle.id}`} className="text-[var(--color-primary-ink)] underline underline-offset-4">Órdenes de trabajo</Link>.
+                <Link href={`/mantencion/ot?equipo=${vehicle.id}&estado=abiertas`} className="text-[var(--color-primary-ink)] underline underline-offset-4">Órdenes de trabajo</Link>.
               </p>
             ) : (
               <>
