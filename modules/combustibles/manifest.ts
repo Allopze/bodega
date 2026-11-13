@@ -73,24 +73,34 @@ export const combustiblesModule = {
     {
       areaId: "control-operacional",
       // Ordenado por lo que la persona viene a hacer (rediseño «El mes como hilo»,
-      // 2026-10-31). Las URL de antes redirigen desde `lib/combustibles/legacy-redirects.ts`,
+      // 2026-10-31; «Fuentes de datos» y «Ajustes» se pliegan bajo «Configuración»
+      // el 2026-11-13). Las URL de antes redirigen desde `lib/combustibles/legacy-redirects.ts`,
       // así que no hacen falta alias: cada pantalla vive bajo el href de su ítem.
-      // «Panel» y «Consumo» repiten rótulos de Mantención en la misma área; la regla
-      // de unicidad y ⌘K distinguen por grupo.
+      // Los rótulos «Panel de combustible» y «Consumo» se distinguen de los de Mantención
+      // por su grupo en el menú y en ⌘K.
       items: [
-        { label: "Panel", href: "/combustibles", iconName: "Gauge", permissions: ["combustibles:view"], group: "Combustible" },
+        { label: "Panel de combustible", href: "/combustibles", iconName: "Gauge", permissions: ["combustibles:view"], group: "Combustible" },
         { label: "Cargas", href: "/combustibles/cargas", iconName: "GasPump", permissions: ["combustibles:view"], group: "Combustible" },
         { label: "Por revisar", href: "/combustibles/revisar", iconName: "Tray", permissions: ["combustibles:view"], group: "Combustible", badge: "count" as const },
         { label: "Cuadratura", href: "/combustibles/cuadratura", iconName: "Scales", permissions: ["combustibles:view"], group: "Combustible" },
         { label: "Consumo", href: "/combustibles/consumo", iconName: "ChartLineUp", permissions: ["combustibles:view"], group: "Combustible" },
-        { label: "Pagos", href: "/combustibles/pagos", iconName: "Receipt", permissions: ["combustibles:view_costs"], group: "Combustible" },
+        { label: "Facturas y pagos", href: "/combustibles/pagos", iconName: "Receipt", permissions: ["combustibles:view_costs"], group: "Combustible" },
         {
-          label: "Fuentes de datos", href: "/combustibles/fuentes", iconName: "Database", group: "Combustible",
-          permissions: ["combustibles:import", "combustibles:tae_import", "combustibles:sync_integrations"],
-        },
-        {
-          label: "Ajustes", href: "/combustibles/ajustes", iconName: "GearSix", group: "Combustible",
-          permissions: ["combustibles:manage_control", "combustibles:manage_anomaly_rules", "combustibles:tae_manage_config", "combustibles:manage_integrations"],
+          // Padre sin permisos propios: sólo un contenedor, visible si la persona ve al
+          // menos un hijo (`getVisibleAreas`). Cada hijo conserva su permiso de antes.
+          // El `href` es una entrada sin pantalla propia que redirige al primer hijo
+          // permitido.
+          label: "Configuración", href: "/combustibles/configuracion", iconName: "GearSix", permissions: [], group: "Combustible",
+          children: [
+            {
+              label: "Fuentes de datos", href: "/combustibles/fuentes",
+              permissions: ["combustibles:import", "combustibles:tae_import", "combustibles:sync_integrations"],
+            },
+            {
+              label: "Ajustes", href: "/combustibles/ajustes",
+              permissions: ["combustibles:manage_control", "combustibles:manage_anomaly_rules", "combustibles:tae_manage_config", "combustibles:manage_integrations"],
+            },
+          ],
         },
       ],
     },

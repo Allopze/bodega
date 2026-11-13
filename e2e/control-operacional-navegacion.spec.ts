@@ -1,6 +1,7 @@
 /**
  * E2E: navegación del área «Control operacional» ordenada por tarea
- * (rama `feat/control-operacional-orden`, 2026-10-22).
+ * (rama `feat/control-operacional-orden`, 2026-10-22; menú reorganizado el
+ * 2026-11-13 en `feat/control-operacional-uiux`).
  *
  * El área pasó de diez ítems planos de tres módulos a nueve ítems en tres
  * grupos (Seguimiento, Flota, Combustible), con rutas alias que deben dejar
@@ -64,9 +65,20 @@ function menuDelArea(page: Page): Locator {
     .filter({ has: page.locator('a[href="/control-operacional"]') })
 }
 
-/** Un ítem del sidebar, por href. */
+/**
+ * Un ítem del sidebar, por href. «Configuración» (Mantención y Combustible) es un
+ * padre que lleva a su primer hijo: su enlace comparte href con ese hijo, así que
+ * los hijos se buscan dentro de la lista anidada (`li li`) y los ítems de primer
+ * nivel por su enlace propio.
+ */
 function itemDelMenu(page: Page, href: string): Locator {
-  return menuDelArea(page).locator(`a[href="${href}"]`)
+  const enlaces = menuDelArea(page).locator(`a[href="${href}"]`)
+  return HREFS_DE_HIJOS.has(href) ? menuDelArea(page).locator(`li li a[href="${href}"]`) : enlaces.first()
+}
+
+/** La fila de primer nivel (`<li>`) cuyo enlace lleva a `href`: para leer a un padre con sus hijos. */
+function filaDePrimerNivel(page: Page, href: string): Locator {
+  return menuDelArea(page).locator(":scope > li").filter({ has: page.locator(`a[href="${href}"]`) })
 }
 
 function barraDe(page: Page, etiqueta: string): Locator {
@@ -82,7 +94,13 @@ function empiezaCon(texto: string): RegExp {
 // Menú del área
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface DestinoDelMenu { href: string; nombre: string | RegExp }
+interface DestinoDelMenu {
+  /** Para un padre es el href de su primer hijo visible (así lo resuelve `getVisibleAreas`). */
+  href: string
+  nombre: string | RegExp
+  /** Destinos anidados de un padre («Configuración»); sólo se pintan con el padre abierto. */
+  hijos?: readonly DestinoDelMenu[]
+}
 
 const MENU_DEL_AREA: ReadonlyArray<{ grupo: string; destinos: readonly DestinoDelMenu[] }> = [
   {
@@ -100,41 +118,58 @@ const MENU_DEL_AREA: ReadonlyArray<{ grupo: string; destinos: readonly DestinoDe
   {
     grupo: "Mantención",
     destinos: [
+      // «Panel de mantención» y «Panel de combustible» ya no repiten rótulo; igual se distinguen por href y por grupo.
+      { href: "/mantencion/panel", nombre: "Panel de mantención" },
       { href: "/mantencion/ot", nombre: "Órdenes de trabajo" },
-      { href: "/mantencion/panel", nombre: "Panel" },
-      { href: "/mantencion/registros", nombre: "Registros" },
+      { href: "/mantencion/registros", nombre: "Registros firmados" },
       { href: "/mantencion/equipos", nombre: "Equipos" },
-      { href: "/mantencion/pautas", nombre: "Pautas" },
-      { href: "/mantencion/dispositivos", nombre: "Dispositivos" },
-      // El catálogo es del módulo `repuestos`, que se registra después de Mantención de equipos: en el grupo manda el orden de registro.
+      {
+        href: "/mantencion/pautas",
+        nombre: "Configuración",
+        hijos: [
+          { href: "/mantencion/pautas", nombre: "Pautas" },
+          { href: "/mantencion/catalogos", nombre: "Marcas y talleres" },
+          { href: "/mantencion/dispositivos", nombre: "Dispositivos" },
+        ],
+      },
+      // El catálogo es del módulo `repuestos`, apagable por separado de Mantención de equipos: no puede colgar del padre de otro módulo.
       { href: "/mantencion/repuestos", nombre: "Catálogo de repuestos" },
     ],
   },
   {
     grupo: "Combustible",
     destinos: [
-      // «Panel» y «Consumo» repiten rótulos de Mantención en la misma área: se distinguen por href y por grupo.
-      { href: "/combustibles", nombre: "Panel" },
+      { href: "/combustibles", nombre: "Panel de combustible" },
       { href: "/combustibles/cargas", nombre: "Cargas" },
       // El contador de pendientes (`badge: "count"`) va dentro del enlace: sólo se lee el rótulo por prefijo.
       { href: "/combustibles/revisar", nombre: empiezaCon("Por revisar") },
       { href: "/combustibles/cuadratura", nombre: "Cuadratura" },
       { href: "/combustibles/consumo", nombre: "Consumo" },
-      { href: "/combustibles/pagos", nombre: "Pagos" },
-      { href: "/combustibles/fuentes", nombre: "Fuentes de datos" },
-      { href: "/combustibles/ajustes", nombre: "Ajustes" },
+      { href: "/combustibles/pagos", nombre: "Facturas y pagos" },
+      {
+        href: "/combustibles/fuentes",
+        nombre: "Configuración",
+        hijos: [
+          { href: "/combustibles/fuentes", nombre: "Fuentes de datos" },
+          { href: "/combustibles/ajustes", nombre: "Ajustes" },
+        ],
+      },
     ],
   },
 ]
 
-const HREFS_DEL_MENU: string[] = MENU_DEL_AREA.flatMap((grupo) => grupo.destinos.map((destino) => destino.href))
+/** Destinos propios de cada pantalla (los hijos de un padre y las hojas), sin contar al padre que comparte href con su primer hijo. */
+const DESTINOS_DEL_MENU: DestinoDelMenu[] = MENU_DEL_AREA.flatMap((grupo) =>
+  grupo.destinos.flatMap((destino) => destino.hijos ?? [destino]))
+const HREFS_DEL_MENU: string[] = DESTINOS_DEL_MENU.map((destino) => destino.href)
+const HREFS_DE_HIJOS = new Set(MENU_DEL_AREA.flatMap((grupo) => grupo.destinos.flatMap((destino) => (destino.hijos ?? []).map((hijo) => hijo.href))))
 
 test.describe("Control operacional — menú del área", () => {
   test.beforeEach(async ({ page }) => {
     await login(page)
   })
 
-  test("agrupa el área en Seguimiento, Flota, Mantención y Combustible con sus diecinueve destinos en orden", async ({ page }) => {
+  test("agrupa el área en Seguimiento, Flota, Mantención y Combustible con sus ítems de primer nivel en orden", async ({ page }) => {
     await page.goto("/control-operacional")
 
     const area = page
@@ -143,7 +178,9 @@ test.describe("Control operacional — menú del área", () => {
     await expect(area).toHaveAttribute("aria-expanded", "true")
 
     const menu = menuDelArea(page)
-    await expect(menu.getByRole("link")).toHaveCount(HREFS_DEL_MENU.length)
+    // Con el área recién abierta los padres («Configuración») están plegados: sólo se
+    // pintan los ítems de primer nivel.
+    await expect(menu.getByRole("link")).toHaveCount(MENU_DEL_AREA.reduce((suma, grupo) => suma + grupo.destinos.length, 0))
 
     // Estructura completa en un solo vistazo: cada encabezado de grupo
     // (`<li aria-hidden>`) seguido de los hrefs de sus ítems, en el orden del menú.
@@ -156,7 +193,30 @@ test.describe("Control operacional — menú del área", () => {
 
     // Y cada ítem tiene un rótulo legible, no un guion ni un texto vacío.
     for (const { href, nombre } of MENU_DEL_AREA.flatMap((grupo) => grupo.destinos)) {
-      await expect.soft(itemDelMenu(page, href), `ítem ${href}`).toHaveText(nombre)
+      await expect.soft(filaDePrimerNivel(page, href).locator("a").first(), `ítem ${href}`).toHaveText(nombre)
+    }
+  })
+
+  test("«Configuración» pliega sus destinos bajo un solo padre y se abre sola al entrar a uno de ellos", async ({ page }) => {
+    // El padre no tiene pantalla propia: su enlace lleva al primer hijo que la persona
+    // puede abrir. Con el administrador del seed (todos los permisos) son Pautas y
+    // Fuentes de datos; los hijos se pintan sólo con el padre abierto.
+    for (const grupo of MENU_DEL_AREA) {
+      for (const padre of grupo.destinos.filter((destino) => destino.hijos)) {
+        const hijos = padre.hijos ?? []
+        const primero = hijos[0]!
+        await page.goto(primero.href)
+        await expect.soft(page, `${primero.href} no debe mandar a /forbidden`).not.toHaveURL(/\/forbidden|\/login/)
+
+        const fila = filaDePrimerNivel(page, padre.href)
+        await expect.soft(fila.getByRole("button", { name: "Mostrar destinos de Configuración", exact: true }), `${grupo.grupo}: el padre se abre al entrar a un hijo`)
+          .toHaveAttribute("aria-expanded", "true")
+        const enlaces = fila.locator("li a")
+        await expect.soft(enlaces, `${grupo.grupo}: hijos de Configuración`).toHaveCount(hijos.length)
+        await expect.soft(enlaces, `${grupo.grupo}: orden y rótulos de los hijos`).toHaveText(hijos.map((hijo) => hijo.nombre as string))
+        // El padre queda como camino (sin `aria-current`): el destino activo es el hijo.
+        await expect.soft(fila.locator('[aria-current="page"]'), `${grupo.grupo}: un solo destino activo`).toHaveCount(1)
+      }
     }
   })
 

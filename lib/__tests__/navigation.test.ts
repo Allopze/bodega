@@ -300,25 +300,90 @@ describe("sidebar navigation", () => {
       ["Flota", "Vehículos"],
       ["Flota", "Conductores"],
       ["Flota", "Monitoreo GPS"],
+      ["Mantención", "Panel de mantención"],
       ["Mantención", "Órdenes de trabajo"],
-      ["Mantención", "Panel"],
-      ["Mantención", "Registros"],
+      ["Mantención", "Registros firmados"],
       ["Mantención", "Equipos"],
-      ["Mantención", "Pautas"],
-      ["Mantención", "Catálogos"],
-      ["Mantención", "Dispositivos"],
-      // El catálogo es del módulo `repuestos`, que se registra después de Mantención de equipos:
-      // dentro del grupo manda el orden de registro.
+      // Lo que se toca poco se pliega bajo un solo padre, sin permisos propios.
+      ["Mantención", "Configuración"],
+      // El catálogo es del módulo `repuestos` (apagable por separado de Mantención de
+      // equipos), así que no puede colgar de un padre declarado por otro módulo:
+      // queda como ítem propio al final del grupo.
       ["Mantención", "Catálogo de repuestos"],
-      ["Combustible", "Panel"],
+      ["Combustible", "Panel de combustible"],
       ["Combustible", "Cargas"],
       ["Combustible", "Por revisar"],
       ["Combustible", "Cuadratura"],
       ["Combustible", "Consumo"],
-      ["Combustible", "Pagos"],
-      ["Combustible", "Fuentes de datos"],
-      ["Combustible", "Ajustes"],
+      ["Combustible", "Facturas y pagos"],
+      ["Combustible", "Configuración"],
     ])
+  })
+
+  describe("«Configuración» de Mantención y de Combustible", () => {
+    const withPermissions = (permissions: string[]) => ({
+      ...adminSession,
+      user: { ...adminSession.user, roles: [], permissions },
+    }) satisfies Session
+    const configuracion = (session: Session, grupo: string) =>
+      getVisibleAreas(session)
+        .find((area) => area.id === "control-operacional")
+        ?.items.find((item) => item.group === grupo && item.label === "Configuración")
+
+    it("conserva en cada hijo exactamente los permisos que tenía como ítem suelto", () => {
+      const area = AREA_TREE.find((candidate) => candidate.id === "control-operacional")
+      const mantencion = area?.items.find((item) => item.group === "Mantención" && item.label === "Configuración")
+      const combustible = area?.items.find((item) => item.group === "Combustible" && item.label === "Configuración")
+
+      expect(mantencion?.children?.map((child) => [child.label, child.href, child.permissions])).toEqual([
+        ["Pautas", "/mantencion/pautas", ["mant:schedules:manage"]],
+        ["Marcas y talleres", "/mantencion/catalogos", ["mant:equipment:manage"]],
+        ["Dispositivos", "/mantencion/dispositivos", ["mant:devices:manage"]],
+      ])
+      expect(combustible?.children?.map((child) => [child.label, child.href, child.permissions])).toEqual([
+        ["Fuentes de datos", "/combustibles/fuentes", ["combustibles:import", "combustibles:tae_import", "combustibles:sync_integrations"]],
+        ["Ajustes", "/combustibles/ajustes", ["combustibles:manage_control", "combustibles:manage_anomaly_rules", "combustibles:tae_manage_config", "combustibles:manage_integrations"]],
+      ])
+    })
+
+    it("el padre existe sólo si la persona ve al menos un hijo y lleva al primero que ve", () => {
+      expect(configuracion(withPermissions([]), "Mantención")).toBeUndefined()
+      expect(configuracion(withPermissions(["mant:records:view_all"]), "Mantención")).toBeUndefined()
+
+      const soloDispositivos = configuracion(withPermissions(["mant:devices:manage"]), "Mantención")
+      expect(soloDispositivos?.href).toBe("/mantencion/dispositivos")
+      expect(soloDispositivos?.children?.map((child) => child.href)).toEqual(["/mantencion/dispositivos"])
+
+      const varios = configuracion(withPermissions(["mant:equipment:manage", "mant:devices:manage"]), "Mantención")
+      expect(varios?.href).toBe("/mantencion/catalogos")
+      expect(varios?.children?.map((child) => child.href)).toEqual(["/mantencion/catalogos", "/mantencion/dispositivos"])
+
+      expect(configuracion(withPermissions(["combustibles:view"]), "Combustible")).toBeUndefined()
+      expect(configuracion(withPermissions(["combustibles:manage_control"]), "Combustible")?.href).toBe("/combustibles/ajustes")
+      expect(configuracion(withPermissions(["combustibles:tae_import", "combustibles:manage_control"]), "Combustible")?.href)
+        .toBe("/combustibles/fuentes")
+    })
+
+    it("en ⌘K aparecen los hijos y no el contenedor, sin repetir destinos", () => {
+      const session = withPermissions(["mant:schedules:manage", "mant:devices:manage", "combustibles:import", "combustibles:manage_control"])
+      const targets = flattenNavTargets(session)
+      expect(targets.filter((target) => target.label === "Configuración")).toEqual([])
+      expect(targets.map((target) => target.href)).toEqual(expect.arrayContaining([
+        "/mantencion/pautas",
+        "/mantencion/dispositivos",
+        "/combustibles/fuentes",
+        "/combustibles/ajustes",
+      ]))
+      const hrefs = targets.map((target) => target.href)
+      expect(new Set(hrefs).size).toBe(hrefs.length)
+    })
+
+    it("la ruta hija deja activa a su fila y no al contenedor", () => {
+      expect(isHrefActive("/mantencion/catalogos", "/mantencion/catalogos")).toBe(true)
+      expect(isHrefActive("/mantencion/configuracion", "/mantencion/catalogos")).toBe(false)
+      expect(isHrefActive("/combustibles/ajustes", "/combustibles/ajustes/medios")).toBe(true)
+      expect(isHrefActive("/combustibles/configuracion", "/combustibles/ajustes/medios")).toBe(false)
+    })
   })
 
   it("keeps Evaluaciones SST active for its list, creation and worker detail routes only", () => {
