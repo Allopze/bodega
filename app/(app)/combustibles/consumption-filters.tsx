@@ -2,12 +2,12 @@
 
 import { useMemo, useState, useTransition } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { ArrowCounterClockwise, SpinnerGap, X } from "@phosphor-icons/react"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
+import { SpinnerGap } from "@phosphor-icons/react"
 import { Label } from "@/components/ui/field"
+import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { fuelRecordSourceLabel } from "@/lib/combustibles/source-labels"
 import { buildLitrosHref } from "./consumption-url"
 
 interface ConsumptionFiltersProps {
@@ -23,26 +23,27 @@ interface ConsumptionFiltersProps {
   proveedor?: string
 }
 
-interface FilterChip { key: string; label: string }
-
 const FILTER_KEYS = ["fuente", "patente", "asociacion", "proveedor"] as const
 
-function buildChips(filters: ConsumptionFiltersProps["currentFilters"], proveedor: string | undefined): FilterChip[] {
-  const chips: Array<FilterChip | null> = [
-    filters.fuente ? { key: "fuente", label: `Fuente: ${filters.fuente}` } : null,
-    filters.patente ? { key: "patente", label: `Patente: ${filters.patente}` } : null,
-    filters.associated ? { key: "asociacion", label: filters.associated === "yes" ? "Con vehículo asociado" : "Sin vehículo asociado" } : null,
-    proveedor ? { key: "proveedor", label: `Proveedor: ${proveedor}` } : null,
+const LINK_LABEL = { yes: "Con equipo vinculado", no: "Sin equipo vinculado" } as const
+
+function buildChips(filters: ConsumptionFiltersProps["currentFilters"], proveedor: string | undefined): ActiveFilterChip[] {
+  const chips: Array<ActiveFilterChip | null> = [
+    filters.fuente ? { key: "fuente", label: "Fuente", value: filters.fuente, displayValue: fuelRecordSourceLabel(filters.fuente) } : null,
+    filters.patente ? { key: "patente", label: "Patente", value: filters.patente, displayValue: filters.patente } : null,
+    filters.associated ? { key: "asociacion", label: "Vínculo", value: filters.associated, displayValue: LINK_LABEL[filters.associated] } : null,
+    proveedor ? { key: "proveedor", label: "Proveedor", value: proveedor, displayValue: proveedor } : null,
   ]
-  return chips.filter((chip): chip is FilterChip => chip !== null)
+  return chips.filter((chip): chip is ActiveFilterChip => chip !== null)
 }
 
 /**
- * Filtros de los análisis de «Consumo»: fuente (sólo tarjetas), patente y
- * asociación, más el proveedor, que se fija desde el gráfico de la planilla. El período ya no se
- * elige aquí —vive en la cabecera— y la faena es la de toda la pantalla. Cada
- * filtro activo queda como chip removible (A2). Todo en la URL, con
- * `router.replace` y sin mover el scroll.
+ * Filtros de los análisis de «Consumo»: es el `FilterToolbar` compartido. A la
+ * vista, la fuente (sólo tarjetas) y la patente; tras «Más filtros (N)», si la
+ * patente está vinculada a un equipo. El proveedor se fija desde el gráfico de la
+ * planilla y aparece como chip. El período no se elige aquí —vive en la cabecera—
+ * y la faena es la de toda la pantalla. Todo en la URL, con `router.replace` y
+ * sin mover el scroll.
  */
 export function ConsumptionFiltersBar({ section, fuentes, currentFilters, proveedor }: ConsumptionFiltersProps) {
   const router = useRouter()
@@ -69,34 +70,48 @@ export function ConsumptionFiltersBar({ section, fuentes, currentFilters, provee
     if (next !== (currentFilters.patente ?? "")) go({ patente: next })
   }
 
-  function clearFilters() {
-    go(Object.fromEntries(FILTER_KEYS.map((key) => [key, null])))
-  }
-
   return (
-    <section className="mb-6" aria-labelledby="consumption-filters-title" aria-busy={isPending || undefined}>
+    <section className="mb-2" aria-labelledby="consumption-filters-title" aria-busy={isPending || undefined}>
       <h3 id="consumption-filters-title" className="sr-only">Filtros del análisis de tarjetas</h3>
-      <div className="flex flex-wrap items-end gap-3">
-        {section === "tarjetas" ? (
-          <div className="flex min-w-0 flex-col gap-1">
-            <Label id="consumo-fuente-label" className="text-xs">Fuente</Label>
-            <Select value={currentFilters.fuente ?? "all"} onValueChange={(value) => go({ fuente: value === "all" ? null : value })}>
-              <SelectTrigger aria-labelledby="consumo-fuente-label" className="w-48"><SelectValue /></SelectTrigger>
+      <FilterToolbar
+        className="mb-4"
+        activeChips={chips}
+        onRemoveChip={(key) => go({ [key]: null })}
+        onClearAll={() => go(Object.fromEntries(FILTER_KEYS.map((key) => [key, null])))}
+        hasActiveFilters={chips.length > 0}
+        activeCount={currentFilters.associated ? 1 : 0}
+        overflowTitle="Más filtros del análisis"
+        overflowDescription="Si la patente ya está vinculada a un equipo de la flota."
+        overflowFilters={
+          <div className="flex flex-col gap-1.5">
+            <Label id="consumo-asociacion-label" className="text-xs">Vínculo con un equipo</Label>
+            <Select value={currentFilters.associated ?? "all"} onValueChange={(value) => go({ asociacion: value === "all" ? null : value })}>
+              <SelectTrigger aria-labelledby="consumo-asociacion-label"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Todas las fuentes</SelectItem>
-                {fuentes.map((fuente) => <SelectItem key={fuente} value={fuente}>{fuente}</SelectItem>)}
+                <SelectItem value="all">Todas las patentes</SelectItem>
+                <SelectItem value="yes">{LINK_LABEL.yes}</SelectItem>
+                <SelectItem value="no">{LINK_LABEL.no}</SelectItem>
               </SelectContent>
             </Select>
           </div>
+        }
+      >
+        {section === "tarjetas" ? (
+          <Select value={currentFilters.fuente ?? "all"} onValueChange={(value) => go({ fuente: value === "all" ? null : value })}>
+            <SelectTrigger aria-label="Fuente" className="w-48"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todas las fuentes</SelectItem>
+              {fuentes.map((fuente) => <SelectItem key={fuente} value={fuente}>{fuelRecordSourceLabel(fuente)}</SelectItem>)}
+            </SelectContent>
+          </Select>
         ) : null}
-
-        <div className="flex min-w-0 flex-col gap-1">
-          <Label htmlFor="consumo-patente" className="text-xs">Patente</Label>
+        <div className="flex items-center gap-2">
+          <Label htmlFor="consumo-patente" className="sr-only">Patente</Label>
           <Input
             id="consumo-patente"
             // eslint-disable-next-line local/ui-type-scale -- normaliza el dato, no es un rótulo
             className="w-40 uppercase"
-            placeholder="ABCD12"
+            placeholder="Patente, ej. ABCD12"
             value={patenteDraft}
             onChange={(event) => setPatenteDraft(event.target.value.toUpperCase())}
             onBlur={applyPatente}
@@ -108,37 +123,8 @@ export function ConsumptionFiltersBar({ section, fuentes, currentFilters, provee
             }}
           />
         </div>
-
-        <div className="flex min-w-0 flex-col gap-1">
-          <Label id="consumo-asociacion-label" className="text-xs">Asociación</Label>
-          <Select value={currentFilters.associated ?? "all"} onValueChange={(value) => go({ asociacion: value === "all" ? null : value })}>
-            <SelectTrigger aria-labelledby="consumo-asociacion-label" className="w-52"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todas las patentes</SelectItem>
-              <SelectItem value="yes">Con vehículo asociado</SelectItem>
-              <SelectItem value="no">Sin vehículo asociado</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        {chips.length > 0 ? (
-          <Button type="button" variant="ghost" size="sm" onClick={clearFilters} disabled={isPending} className="min-h-10">
-            <ArrowCounterClockwise className="mr-1.5 h-4 w-4" aria-hidden />Limpiar filtros
-          </Button>
-        ) : null}
-        {isPending ? <SpinnerGap size={16} className="mb-2.5 animate-spin text-[var(--color-primary)]" aria-label="Actualizando análisis" /> : null}
-      </div>
-
-      {chips.length > 0 ? (
-        <div className="mt-3 flex flex-wrap items-center gap-1.5">
-          <span className="text-xs font-medium text-[var(--color-text-subtle)]">Filtros activos:</span>
-          {chips.map((chip) => (
-            <button key={chip.key} type="button" onClick={() => go({ [chip.key]: null })} disabled={isPending} aria-label={`Quitar el filtro ${chip.label}`}>
-              <Badge variant="outline" size="sm" className="inline-flex items-center gap-1 hover:bg-[var(--color-surface-2)]">{chip.label}<X size={10} aria-hidden /></Badge>
-            </button>
-          ))}
-        </div>
-      ) : null}
+        {isPending ? <SpinnerGap size={16} className="animate-spin text-[var(--color-primary)]" aria-label="Actualizando análisis" /> : null}
+      </FilterToolbar>
     </section>
   )
 }

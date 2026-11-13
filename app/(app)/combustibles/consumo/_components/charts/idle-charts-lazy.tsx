@@ -8,7 +8,7 @@ import type { IdleDailyPoint } from "./idle-daily-chart"
 import type { IdleLitersPoint } from "./idle-liters-chart"
 import type { IdleMonthlyPoint } from "./idle-monthly-chart"
 
-/** Recharts pesa: se descarga solo cuando la vista de ralentí llega al navegador (patrón de `fuel-charts-lazy`). */
+/** Recharts pesa: se descarga solo cuando la vista de motor en vacío llega al navegador (patrón de `fuel-charts-lazy`). */
 const Loading = () => <Skeleton className="h-72 w-full" />
 
 const MonthlyChart = dynamic(() => import("./idle-monthly-chart").then((m) => m.IdleMonthlyChart), { ssr: false, loading: Loading })

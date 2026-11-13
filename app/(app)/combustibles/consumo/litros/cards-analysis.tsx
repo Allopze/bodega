@@ -1,10 +1,14 @@
 import type * as React from "react"
+import Link from "next/link"
+import { Button } from "@/components/ui/button"
+import { EmptyState } from "@/components/ui/empty-state"
 import { ChartDataTable, type ChartDataExcel } from "@/components/charts/chart-data-table"
 import { ChartErrorBoundary } from "@/components/chart-error-boundary"
 import type { ConsumptionDashboardData, EquipmentTypeConsumptionRow, HeatmapCell, VehicleEvolutionPoint } from "@/lib/combustibles/consumption-dashboard"
 import { buildEvolutionPanels, describeEvolution, evolutionTable } from "@/lib/combustibles/evolution-panels"
 import type { ScatterPoint } from "@/lib/combustibles/operations-dashboard"
 import { ConsumptionAnalysisMetrics } from "../../consumption-kpis"
+import { Disclosure } from "../_components/disclosure"
 import { EvolutionChart, PatenteRankingChart, PriceEvolutionChart, RendimientoChart } from "../../consumption-charts-lazy"
 import { CategoryBarChart } from "../../fuel-charts-lazy"
 import { LitersVsHourMeterChart, LitersVsKmChart, EvolutionByVehicleChart } from "../../operations-charts-lazy"
@@ -38,12 +42,27 @@ function Block({ id, title, hint, children }: { id: string; title: string; hint?
 }
 
 /**
+ * Un análisis de apoyo, plegado: el pliegue «Más análisis de tarjetas» no puede
+ * abrirse con una docena de gráficos a la vez. A la vista quedan los tres que
+ * responden lo principal (tendencia, precio y litros por tipo de equipo) y el
+ * resto se abre a demanda. `Disclosure` monta su contenido sólo al abrirse, así
+ * que un gráfico plegado ni siquiera se dibuja.
+ */
+function FoldBlock({ id, title, hint, children }: { id: string; title: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <section id={id} aria-label={title} className="mb-3 last:mb-0">
+      <Disclosure title={title} description={hint}>{children}</Disclosure>
+    </section>
+  )
+}
+
+/**
  * «Más análisis de tarjetas»: todo lo que traía la vista «Consumo por tarjeta»
- * de antes, sin perder un gráfico. Tendencia y precio, litros por tipo de
- * equipo, litros contra odómetro y horómetro, evolución por equipo, la matriz
- * faena × equipo en un solo tono y los rankings por patente (un clic abre la
- * ficha del equipo). Los datos llegan ya filtrados por fuente, patente y
- * asociación.
+ * de antes, sin perder un gráfico. Tendencia y precio y litros por tipo de
+ * equipo quedan a la vista (a lo más tres gráficos); litros contra odómetro y
+ * horómetro, evolución por equipo, la matriz faena × equipo en un solo tono y
+ * los rankings por patente (un clic abre la ficha del equipo) van plegados. Los
+ * datos llegan ya filtrados por fuente, patente y vínculo con un equipo.
  */
 export function CardsAnalysis({ dashboard, byEquipmentType, scatter, evolution, heatmap, canViewCosts, emptyAction, periodLabel, evolutionCaption, excel }: CardsAnalysisProps) {
   const scatterKm = scatter.filter((point) => point.medidoPor === "km")
@@ -56,10 +75,12 @@ export function CardsAnalysis({ dashboard, byEquipmentType, scatter, evolution, 
 
   if (!hasAnything) {
     return (
-      <div className="rounded-[var(--radius-lg)] border border-dashed border-[var(--color-border)] bg-[var(--color-surface-2)] px-6 py-10 text-center">
-        <p className="text-sm font-medium text-[var(--color-text)]">Sin datos de tarjetas en el período</p>
-        <p className="mt-1 text-sm text-[var(--color-text-muted)]">Amplía el período, quita la faena o los filtros, o agrega el reporte de tarjeta para ver tendencias, rendimientos y rankings por patente.</p>
-      </div>
+      <EmptyState
+        compact
+        title="Sin datos de tarjetas en el período"
+        description="Amplía el período, quita la faena o los filtros, o agrega el reporte de tarjeta para ver tendencias, rendimientos y rankings por patente."
+        action={emptyAction ? <Button asChild variant="secondary" size="sm"><Link href={emptyAction.href}>{emptyAction.label}</Link></Button> : undefined}
+      />
     )
   }
 
@@ -91,7 +112,7 @@ export function CardsAnalysis({ dashboard, byEquipmentType, scatter, evolution, 
       ) : null}
 
       {scatterKm.length > 0 || scatterHora.length > 0 ? (
-        <Block id="dispersion" title="Litros contra odómetro y horómetro" hint="Cada punto es una carga de la planilla con lectura de medidor y litros mayores a cero.">
+        <FoldBlock id="dispersion" title="Litros contra odómetro y horómetro" hint="Cada punto es una carga de la planilla con lectura de medidor y litros mayores a cero.">
           <div className="grid gap-6 lg:grid-cols-2">
             <div>
               <h4 className="mb-1 text-sm font-semibold text-[var(--color-text)]">Litros contra kilometraje <span className="font-normal text-[var(--color-text-muted)]">· {scatterKm.length} cargas con odómetro</span></h4>
@@ -102,24 +123,24 @@ export function CardsAnalysis({ dashboard, byEquipmentType, scatter, evolution, 
               <ChartErrorBoundary chartName="Litros vs horómetro"><LitersVsHourMeterChart points={scatterHora} /></ChartErrorBoundary>
             </div>
           </div>
-        </Block>
+        </FoldBlock>
       ) : null}
 
       {evolution.length > 0 ? (
-        <Block id="evolucion-equipo" title="Evolución por equipo" hint={[evolutionCaption, evolutionSummary, "Un panel por equipo, todos con la misma escala; se muestran hasta 8."].filter(Boolean).join(" ")}>
+        <FoldBlock id="evolucion-equipo" title="Evolución por equipo" hint={[evolutionCaption, evolutionSummary, "Un panel por equipo, todos con la misma escala; se muestran hasta 8."].filter(Boolean).join(" ")}>
           <ChartErrorBoundary chartName="Evolución por equipo"><EvolutionByVehicleChart view={evolutionView} /></ChartErrorBoundary>
           {evolutionView.panels.length > 0 ? <ChartDataTable caption="Litros por equipo y período" {...evolutionTable(evolutionView)} excel={excel} /> : null}
-        </Block>
+        </FoldBlock>
       ) : null}
 
       {heatmap.length > 0 ? (
-        <Block id="matriz" title="¿Dónde y qué equipo consume más?" hint="Litros por faena y equipo, las 12 faenas y los 12 equipos con más litros. Más oscuro es más litros.">
+        <FoldBlock id="matriz" title="¿Dónde y qué equipo consume más?" hint="Litros por faena y equipo, las 12 faenas y los 12 equipos con más litros. Más oscuro es más litros.">
           <WorksiteEquipmentHeatmap cells={heatmap} />
-        </Block>
+        </FoldBlock>
       ) : null}
 
       {dashboard ? (
-        <Block id="rankings" title="Patentes bajo observación" hint="Selecciona una barra para abrir la ficha del equipo (si la patente no es un equipo de la flota, filtra sus tarjetas).">
+        <FoldBlock id="rankings" title="Patentes bajo observación" hint="Selecciona una barra para abrir la ficha del equipo (si la patente no es un equipo de la flota, filtra sus tarjetas).">
           <div className="grid gap-6 lg:grid-cols-2">
             <div>
               <h4 className="mb-1 text-sm font-semibold text-[var(--color-text)]">Mayor consumo</h4>
@@ -141,7 +162,7 @@ export function CardsAnalysis({ dashboard, byEquipmentType, scatter, evolution, 
               <ChartErrorBoundary chartName="Rendimiento por patente"><RendimientoChart data={dashboard.rendimientoPorPatente} /></ChartErrorBoundary>
             </div>
           </div>
-        </Block>
+        </FoldBlock>
       ) : null}
     </div>
   )

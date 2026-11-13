@@ -8,13 +8,14 @@ import { RankedList } from "@/components/ui/ranked-list"
 import { formatQty } from "@/lib/utils"
 import type { ScatterPoint } from "@/lib/combustibles/operations-dashboard"
 import { useChartMotion } from "@/components/ui/chart-interactions"
+import { AXIS_TICK } from "./_shared/chart-shared"
 
 const DOT_COLOR = "var(--color-primary)"
 const DOT_OPACITY = 0.55
 const GRID_COLOR = "var(--color-border)"
 
 function chartAxisProps() {
-  return { axisLine: false, tickLine: false, tick: { fill: "var(--color-text-muted)", fontSize: 11 } }
+  return { axisLine: false, tickLine: false, tick: AXIS_TICK }
 }
 
 function MeterScatter({

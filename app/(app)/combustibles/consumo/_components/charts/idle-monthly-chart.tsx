@@ -5,6 +5,7 @@ import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } f
 import { ChartEmpty } from "@/components/ui/chart-empty"
 import { IDLE_COLORS, hoursTick, pctTick, tooltipRow } from "./idle-chart-parts"
 import { useChartMotion } from "@/components/ui/chart-interactions"
+import { AXIS_TICK } from "../../../_shared/chart-shared"
 
 export interface IdleMonthlyPoint { label: string; workingHours: number; idleHours: number; idlePct: number | null }
 
@@ -22,9 +23,9 @@ export function IdleMonthlyChart({ data }: { data: IdleMonthlyPoint[] }) {
     <ChartContainer config={config} className="aspect-auto h-72 w-full" role="img" aria-label="Horas trabajando y en vacío por mes, con el porcentaje en vacío">
       <ComposedChart data={data} margin={{ top: 8, right: 4, left: 0, bottom: 0 }}>
         <CartesianGrid vertical={false} strokeDasharray="3 3" />
-        <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} tick={{ fontSize: 11 }} />
-        <YAxis yAxisId="hours" tickLine={false} axisLine={false} width={44} tickFormatter={hoursTick} tick={{ fontSize: 11 }} label={{ value: "horas", angle: -90, position: "insideLeft", fontSize: 11, fill: "var(--color-text-muted)" }} />
-        <YAxis yAxisId="pct" orientation="right" domain={[0, 100]} tickLine={false} axisLine={false} width={44} tickFormatter={pctTick} tick={{ fontSize: 11 }} />
+        <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} tick={AXIS_TICK} />
+        <YAxis yAxisId="hours" tickLine={false} axisLine={false} width={44} tickFormatter={hoursTick} tick={AXIS_TICK} label={{ value: "horas", angle: -90, position: "insideLeft", fontSize: 11, fill: "var(--color-text-muted)" }} />
+        <YAxis yAxisId="pct" orientation="right" domain={[0, 100]} tickLine={false} axisLine={false} width={52} tickFormatter={pctTick} tick={AXIS_TICK} label={{ value: "% en vacío", angle: 90, position: "insideRight", fontSize: 11, fill: "var(--color-text-muted)" }} />
         <ChartTooltip content={<ChartTooltipContent formatter={(value, name, item) => tooltipRow(value, name, item, (series) => (series === "% en vacío" ? "%" : "h"))} />} />
         <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
         <Bar yAxisId="hours" stackId="hours" dataKey="workingHours" name="Horas trabajando" fill={IDLE_COLORS.working} maxBarSize={44} {...motion} />

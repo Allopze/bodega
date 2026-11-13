@@ -205,7 +205,7 @@ export function OperationsImportWizard() {
           <div className="flex justify-end gap-2">
             <Button variant="secondary" onClick={() => setStep("form")}>Volver</Button>
             <Button onClick={handleConfirm} disabled={loading || !canConfirm}>
-              {loading ? "Importando..." : `Confirmar (${preview.totales.totalFilas} registros)`}
+              {loading ? "Importando…" : `Confirmar (${preview.totales.totalFilas} registros)`}
             </Button>
           </div>
         </CardContent>
@@ -270,7 +270,7 @@ export function OperationsImportWizard() {
 
         <div className="flex justify-end">
           <Button onClick={handlePreview} disabled={loading}>
-            {loading ? "Leyendo..." : "Revisar"}
+            {loading ? "Leyendo…" : "Revisar"}
           </Button>
         </div>
       </CardContent>

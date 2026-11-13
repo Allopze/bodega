@@ -15,6 +15,7 @@ import { fuelEquipmentHref, withFuelContext } from "@/lib/combustibles/routes"
 import { buildLitrosHref } from "./consumption-url"
 import { formatCompactCLP, formatCompactQty, formatPricePerLiter, formatQty } from "@/lib/utils"
 import { useChartMotion } from "@/components/ui/chart-interactions"
+import { AXIS_TICK } from "./_shared/chart-shared"
 
 const MONTO_COLOR = "var(--color-info)"
 const CANTIDAD_COLOR = "var(--color-primary)"
@@ -93,7 +94,7 @@ function chartAxisProps() {
   return {
     axisLine: false,
     tickLine: false,
-    tick: { fill: "var(--color-text-muted)", fontSize: 11 },
+    tick: AXIS_TICK,
   }
 }
 

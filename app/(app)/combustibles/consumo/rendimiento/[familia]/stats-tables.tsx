@@ -1,5 +1,6 @@
 import Link from "next/link"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Table, TableBody, TableCell, TableCellNum, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import { PERFORMANCE_UNIT_LABELS, PERFORMANCE_UNIT_TITLES, STAT_MISSING, type PerformanceUnit } from "@/lib/combustibles/control/contracts"
@@ -102,6 +103,11 @@ function DeltaCell({ value, worse }: { value: number | null; worse: boolean }) {
   )
 }
 
+/** ¿Tiene el equipo alguna cifra que mostrar además de su nombre? */
+function hasAnyFigure(row: EquipmentStatRow): boolean {
+  return [row.mean, row.modelMean, row.historyMean, row.deltaModelPct, row.deltaHistoryPct].some((value) => value !== null)
+}
+
 /** Qué comparación dice «rinde peor»: contra su modelo, contra su historial, o las dos. */
 function worseTitle(row: Pick<EquipmentStatRow, "worseThanModel" | "worseThanHistory">): string {
   const against = [row.worseThanModel ? "su modelo" : null, row.worseThanHistory ? "su propio historial" : null].filter(Boolean).join(" y ")
@@ -113,11 +119,32 @@ function worseTitle(row: Pick<EquipmentStatRow, "worseThanModel" | "worseThanHis
  * 12 meses, si sus cargas son parejas o irregulares y si «rinde peor». El
  * código del equipo abre su ficha.
  */
-export function EquipmentStatsTable({ rows, equipmentHref }: { rows: EquipmentStatRow[]; equipmentHref?: (vehicleId: string) => string }) {
+export function EquipmentStatsTable({ rows: allRows, equipmentHref, clearFiltersHref }: { rows: EquipmentStatRow[]; equipmentHref?: (vehicleId: string) => string; clearFiltersHref?: string }) {
+  if (allRows.length === 0) {
+    return (
+      <EmptyState
+        compact
+        title="Sin equipos con cargas"
+        description="Ningún equipo de esta familia tiene cargas con estos filtros. Amplía el período, o quita la faena, el medio o el equipo elegido."
+        action={clearFiltersHref ? <Button asChild variant="secondary" size="sm"><Link href={clearFiltersHref}>Quitar filtros</Link></Button> : undefined}
+      />
+    )
+  }
+  // Un equipo con cargas pero sin ninguna cifra de rendimiento sería una fila de «—» de punta a punta: no dice nada.
+  const rows = allRows.filter(hasAnyFigure)
+  const hidden = allRows.length - rows.length
   if (rows.length === 0) {
-    return <EmptyState compact title="Sin equipos con cargas" description="Ningún equipo de esta familia tiene cargas con estos filtros. Amplía el período, o quita la faena, el medio o el equipo elegido." />
+    return (
+      <EmptyState
+        compact
+        title="Ningún equipo tiene rendimiento calculado"
+        description="Los equipos de esta familia tienen cargas, pero sin las lecturas de medidor que hacen falta para calcular un rendimiento. Se completan con las lecturas de cada carga."
+        action={clearFiltersHref ? <Button asChild variant="secondary" size="sm"><Link href={clearFiltersHref}>Quitar filtros</Link></Button> : undefined}
+      />
+    )
   }
   return (
+    <>
     <TableRoot aria-label="Rendimiento por equipo">
       <Table>
         <TableHeader>
@@ -164,6 +191,12 @@ export function EquipmentStatsTable({ rows, equipmentHref }: { rows: EquipmentSt
         </TableBody>
       </Table>
     </TableRoot>
+    {hidden > 0 ? (
+      <p className="mt-2 text-xs text-[var(--color-text-muted)]">
+        {hidden === 1 ? "1 equipo de la lista no tiene" : `${hidden} equipos de la lista no tienen`} rendimiento calculado y no se muestra{hidden === 1 ? "" : "n"} aquí.
+      </p>
+    ) : null}
+    </>
   )
 }
 

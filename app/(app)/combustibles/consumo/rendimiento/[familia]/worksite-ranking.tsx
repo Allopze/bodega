@@ -1,3 +1,5 @@
+import Link from "next/link"
+import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { RankedList, type RankedListItem } from "@/components/ui/ranked-list"
 import { PERFORMANCE_UNIT_LABELS, PERFORMANCE_UNIT_TITLES, type PerformanceUnit } from "@/lib/combustibles/control/contracts"
@@ -20,10 +22,17 @@ function regularityText(cv: number | null): string {
  * comparten escala ni polaridad (regla A5b). Una faena sin cargas válidas no
  * tiene promedio y no aparece.
  */
-export function WorksiteRanking({ rows, hrefForWorksite }: { rows: WorksiteStatRow[]; hrefForWorksite?: (worksiteId: string) => string }) {
+export function WorksiteRanking({ rows, hrefForWorksite, clearFiltersHref }: { rows: WorksiteStatRow[]; hrefForWorksite?: (worksiteId: string) => string; clearFiltersHref?: string }) {
   const present = UNITS.filter((unit) => rows.some((row) => row.unit === unit && row.mean !== null))
   if (present.length === 0) {
-    return <EmptyState compact title="Sin rendimientos calculados" description="Ninguna faena tiene cargas con rendimiento calculado y sin decisión pendiente con estos filtros. Amplía el período o quita la faena." />
+    return (
+      <EmptyState
+        compact
+        title="Sin rendimientos calculados"
+        description="Ninguna faena tiene cargas con rendimiento calculado y sin decisión pendiente con estos filtros. Amplía el período o quita la faena."
+        action={clearFiltersHref ? <Button asChild variant="secondary" size="sm"><Link href={clearFiltersHref}>Quitar filtros</Link></Button> : undefined}
+      />
+    )
   }
   return (
     <div className={present.length > 1 ? "grid gap-8 lg:grid-cols-2" : undefined}>

@@ -52,8 +52,8 @@ export function OverviewMeterChart({ unit, points }: { unit: PerformanceUnit; po
         <ComposedChart data={data} margin={{ top: 8, right: 0, left: 0, bottom: 0 }}>
           <CartesianGrid vertical={false} strokeDasharray="2 5" />
           <XAxis dataKey="label" tickLine={false} axisLine={false} tick={AXIS_TICK} minTickGap={12} />
-          <YAxis yAxisId="measure" tickLine={false} axisLine={false} tick={AXIS_TICK} width={48} tickFormatter={compactNumber} />
-          <YAxis yAxisId="liters" orientation="right" tickLine={false} axisLine={false} tick={AXIS_TICK} width={48} tickFormatter={compactNumber} />
+          <YAxis yAxisId="measure" tickLine={false} axisLine={false} tick={AXIS_TICK} width={56} tickFormatter={compactNumber} label={{ value: copy.measureUnit, angle: -90, position: "insideLeft", fontSize: 11, fill: "var(--color-text-muted)" }} />
+          <YAxis yAxisId="liters" orientation="right" tickLine={false} axisLine={false} tick={AXIS_TICK} width={56} tickFormatter={compactNumber} label={{ value: "litros", angle: 90, position: "insideRight", fontSize: 11, fill: "var(--color-text-muted)" }} />
           <ChartTooltip
             content={
               <ChartTooltipContent

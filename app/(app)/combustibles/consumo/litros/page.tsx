@@ -41,6 +41,7 @@ import { loadControlContext } from "../_components/control-context"
 import { ControlFilters } from "../../_shared/control-filters"
 import { hrefInContext, searchWith } from "../_components/page-links"
 import { createSourceTracker } from "../_components/track-sources"
+import { Disclosure } from "../_components/disclosure"
 import { UrlFold } from "../_components/url-fold"
 import { CardsAnalysis } from "./cards-analysis"
 import { exportOverviewAction } from "./export-actions"
@@ -188,7 +189,7 @@ export default async function ConsumoLitrosPage({ searchParams }: { searchParams
         breadcrumb={<FuelBreadcrumbs items={[{ label: "Consumo", href: FUEL_PATHS.consumo }, { label: "Litros" }]} />}
         actions={
           <FuelHeaderActions period={period}>
-            {canExport && loads && loads.loadCount > 0 ? <ExportButton action={exportOverviewAction} filters={{ params: exportParams, historyParams }} label="Exportar Excel" /> : null}
+            {canExport && loads && loads.loadCount > 0 ? <ExportButton action={exportOverviewAction} filters={{ params: exportParams, historyParams }} label="Exportar Excel" ariaLabel="Exportar a Excel los litros del período y la serie mensual" /> : null}
           </FuelHeaderActions>
         }
       />
@@ -266,35 +267,44 @@ export default async function ConsumoLitrosPage({ searchParams }: { searchParams
         {rates.data ? <MeterRateSections series={rates.data} sourcesHref={inContext(FUEL_PATHS.fuentes)} excel={chartExcel} /> : <SectionError what="el rendimiento por mes" />}
       </ViewSection>
 
-      <div className="mb-10 grid gap-8 xl:grid-cols-2">
-        {([
-          { unit: "km_per_liter", id: "serie-km", title: "Kilómetros contra litros", question: "¿Cuántos kilómetros se recorrieron con los litros cargados, mes a mes? Equipos con odómetro, según las cargas de terreno y la planilla.", measureUnit: "km", sums: "Σ km ÷ Σ litros" },
-          { unit: "liters_per_hour", id: "serie-horas", title: "Horas contra litros", question: "¿Cuántas horas de motor se trabajaron con los litros cargados, mes a mes? Equipos con horómetro, según las cargas de terreno y la planilla.", measureUnit: "h", sums: "Σ litros ÷ Σ horas" },
-        ] as const).map(({ unit, id, title, question, measureUnit, sums }) => {
-          const data = series.data?.[unit]
-          return (
-            <ViewSection key={id} id={id} title={title} question={question}>
-              {data ? (
-                <div className="grid gap-3">
-                  <OverviewMeterChart unit={unit} points={data.points} />
-                  <p className="text-sm text-[var(--color-text-muted)]">
-                    {data.ratio === null ? (
-                      "Todavía no hay tramos con rendimiento calculado en estos meses."
-                    ) : (
-                      <>
-                        Global de estos meses:{" "}
-                        <strong className="font-semibold tabular-nums text-[var(--color-text)]">{formatQty(data.ratio, undefined, { maximumFractionDigits: 2 })} {PERFORMANCE_UNIT_LABELS[unit]}</strong>
-                        {" "}= {sums} de {formatQty(data.points.reduce((sum, point) => sum + point.segments, 0))} tramos ({formatQty(data.totalMeasure, undefined, { maximumFractionDigits: 0 })} {measureUnit}).
-                      </>
-                    )}
-                  </p>
-                </div>
-              ) : (
-                <SectionError what={unit === "km_per_liter" ? "la serie de kilómetros" : "la serie de horas"} />
-              )}
-            </ViewSection>
-          )
-        })}
+      {/* Las dos series de medidor son el respaldo del «Rendimiento por mes» de arriba: van plegadas para que la
+          pantalla muestre a lo más tres gráficos (litros por mes y el rendimiento de cada unidad). */}
+      <div className="mb-10">
+        <Disclosure
+          title="Kilómetros y horas contra litros, mes a mes"
+          description="Cuántos kilómetros o cuántas horas de motor se trabajaron con los litros cargados, y el global de estos meses."
+        >
+          <div className="grid gap-8 xl:grid-cols-2">
+            {([
+              { unit: "km_per_liter", id: "serie-km", title: "Kilómetros contra litros", question: "¿Cuántos kilómetros se recorrieron con los litros cargados, mes a mes? Equipos con odómetro, según las cargas de terreno y la planilla.", measureUnit: "km", sums: "suma de km ÷ suma de litros" },
+              { unit: "liters_per_hour", id: "serie-horas", title: "Horas contra litros", question: "¿Cuántas horas de motor se trabajaron con los litros cargados, mes a mes? Equipos con horómetro, según las cargas de terreno y la planilla.", measureUnit: "h", sums: "suma de litros ÷ suma de horas" },
+            ] as const).map(({ unit, id, title, question, measureUnit, sums }) => {
+              const data = series.data?.[unit]
+              return (
+                <ViewSection key={id} id={id} title={title} question={question}>
+                  {data ? (
+                    <div className="grid gap-3">
+                      <OverviewMeterChart unit={unit} points={data.points} />
+                      <p className="text-sm text-[var(--color-text-muted)]">
+                        {data.ratio === null ? (
+                          "Todavía no hay tramos con rendimiento calculado en estos meses."
+                        ) : (
+                          <>
+                            Global de estos meses:{" "}
+                            <strong className="font-semibold tabular-nums text-[var(--color-text)]">{formatQty(data.ratio, undefined, { maximumFractionDigits: 2 })} {PERFORMANCE_UNIT_LABELS[unit]}</strong>
+                            {" "}= {sums} de {formatQty(data.points.reduce((sum, point) => sum + point.segments, 0))} tramos ({formatQty(data.totalMeasure, undefined, { maximumFractionDigits: 0 })} {measureUnit}).
+                          </>
+                        )}
+                      </p>
+                    </div>
+                  ) : (
+                    <SectionError what={unit === "km_per_liter" ? "la serie de kilómetros" : "la serie de horas"} />
+                  )}
+                </ViewSection>
+              )
+            })}
+          </div>
+        </Disclosure>
       </div>
 
       <ViewSection id="patentes-para-mirar" title="Patentes para mirar" question="Consumo alto, muchas transacciones, sin rendimiento o sin vincular. Un clic abre la ficha del equipo.">
@@ -335,7 +345,7 @@ export default async function ConsumoLitrosPage({ searchParams }: { searchParams
           closeHref={foldHref(null)}
         >
           <ConsumptionFiltersBar section="planilla" fuentes={[]} currentFilters={{ patente, associated }} proveedor={proveedor} />
-          {planilla?.failed ? <SectionError what="los gráficos de la planilla" /> : <PlanillaAnalysis summary={planilla?.data ?? null} canViewCosts={canViewCosts} />}
+          {planilla?.failed ? <SectionError what="los gráficos de la planilla" /> : <PlanillaAnalysis summary={planilla?.data ?? null} canViewCosts={canViewCosts} emptyAction={addPlanilla?.allowed ? { label: "Agregar planilla de cargas", href: addPlanilla.href } : undefined} />}
         </UrlFold>
 
         <UrlFold

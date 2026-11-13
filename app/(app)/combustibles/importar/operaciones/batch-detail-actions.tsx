@@ -38,7 +38,7 @@ export function LinkOperationVehicleForm({
         </SelectContent>
       </Select>
       <Button type="submit" size="sm" disabled={!vehicleId || pending}>
-        {pending ? "Vinculando..." : "Vincular"}
+        {pending ? "Vinculando…" : "Vincular"}
       </Button>
       {state.fieldErrors && <span className="text-xs text-[var(--color-danger)]">Revisa los datos</span>}
     </form>
@@ -73,7 +73,7 @@ export function LinkOperationWorksiteForm({
         </SelectContent>
       </Select>
       <Button type="submit" size="sm" disabled={!worksiteId || pending}>
-        {pending ? "Vinculando..." : "Vincular"}
+        {pending ? "Vinculando…" : "Vincular"}
       </Button>
       {state.fieldErrors && <span className="text-xs text-[var(--color-danger)]">Revisa los datos</span>}
     </form>

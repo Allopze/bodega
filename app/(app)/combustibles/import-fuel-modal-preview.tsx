@@ -61,7 +61,7 @@ export function PreviewStep({
           disabled={importing || loads.length === 0 || !allFaenasMapped}
         >
           {importing
-            ? "Importando..."
+            ? "Importando…"
             : `Confirmar (${loads.length} cargas)`}
         </Button>
       </div>

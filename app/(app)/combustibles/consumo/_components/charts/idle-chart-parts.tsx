@@ -2,9 +2,10 @@
 
 import type { ReactNode } from "react"
 import type { ChartTooltipItem } from "@/components/ui/chart"
+import { compactNumber } from "../../../_shared/chart-shared"
 import { formatQty } from "@/lib/utils"
 
-/** Colores del ralentí: trabajar y gastar en vacío no son alertas, así que ni rojo ni ámbar. */
+/** Colores del motor en vacío: trabajar y gastar en vacío no son alertas, así que ni rojo ni ámbar. */
 export const IDLE_COLORS = {
   working: "var(--color-primary)",
   idle: "var(--color-info)",
@@ -29,4 +30,5 @@ export function tooltipRow(value: unknown, name: unknown, item: ChartTooltipItem
 
 export const hoursTick = (value: number) => compact(value, 0)
 export const pctTick = (value: number) => `${compact(value, 0)} %`
-export const litersTick = (value: number) => (Math.abs(value) >= 1000 ? `${compact(value / 1000)}K` : compact(value, 0))
+/** Una sola abreviatura de miles para todos los ejes del módulo: la de `chart-shared` («12,3 mil», «1,2 M»). */
+export const litersTick = compactNumber

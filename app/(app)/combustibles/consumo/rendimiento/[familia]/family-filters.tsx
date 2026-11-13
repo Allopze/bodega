@@ -10,7 +10,7 @@ import { WorksiteSelect } from "@/components/ui/worksite-select"
 import { useUrlFilters } from "@/lib/hooks/use-url-filters"
 
 const ALL = "_all"
-/** Filtros propios de la vista: se borran todos con «Limpiar filtros». El período vive en la cabecera y no se toca. */
+/** Filtros propios de la vista: se borran todos con «Quitar filtros». El período vive en la cabecera y no se toca. */
 const MANAGED_KEYS = ["faena", "mandante", "unidad", "medio", "equipo"] as const
 
 interface Option { id: string; name: string }
@@ -30,7 +30,7 @@ const UNIT_LABELS: Record<string, string> = { km_per_liter: "km/L (odómetro)", 
  * activo queda como chip removible bajo la barra. Todo en la URL, para poder
  * compartir la vista. El equipo se elige de la lista de equipos de la familia
  * (no es texto libre). El período ya no vive aquí: lo elige el control de la
- * cabecera y «Limpiar filtros» no lo toca.
+ * cabecera y «Quitar filtros» no lo toca.
  */
 export function FamilyFilters({ worksites, mandantes, media, vehicles }: FamilyFiltersProps) {
   const searchParams = useSearchParams()
